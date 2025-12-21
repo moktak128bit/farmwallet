@@ -1,0 +1,1725 @@
+import React, { useMemo, useRef, useState } from "react";
+import type { Account, StockPrice, StockTrade, TradeSide, SymbolInfo } from "../types";
+import { computePositions } from "../calculations";
+import { fetchYahooQuotes, searchYahooSymbol, searchKoreaSymbol } from "../yahooFinanceApi";
+
+interface Props {
+  accounts: Account[];
+  trades: StockTrade[];
+  prices: StockPrice[];
+  customSymbols: SymbolInfo[];
+  onChangeTrades: (next: StockTrade[]) => void;
+  onChangePrices: (next: StockPrice[]) => void;
+  onChangeCustomSymbols: (next: SymbolInfo[]) => void;
+}
+
+const sideLabel: Record<TradeSide, string> = {
+  buy: "Îß§Ïàò",
+  sell: "Îß§ÎèÑ"
+};
+
+type PositionSortKey =
+  | "ticker"
+  | "name"
+  | "quantity"
+  | "avgPrice"
+  | "marketPrice"
+  | "diff"
+  | "marketValue"
+  | "totalBuyAmount"
+  | "pnl"
+  | "pnlRate";
+
+type TradeSortKey =
+  | "date"
+  | "accountId"
+  | "ticker"
+  | "name"
+  | "side"
+  | "quantity"
+  | "price"
+  | "fee"
+  | "totalAmount"
+  | "cashImpact";
+
+function createDefaultTradeForm() {
+  return {
+    id: undefined as string | undefined,
+    date: new Date().toISOString().slice(0, 10),
+    accountId: "",
+    ticker: "",
+    name: "",
+    side: "buy" as TradeSide,
+    quantity: "",
+    price: "",
+    fee: "0"
+  };
+}
+
+export const StocksView: React.FC<Props> = ({
+  accounts,
+  trades,
+  prices,
+  customSymbols,
+  onChangeTrades,
+  onChangePrices,
+  onChangeCustomSymbols
+}) => {
+  const [tradeForm, setTradeForm] = useState(createDefaultTradeForm);
+  const [isLoadingQuotes, setIsLoadingQuotes] = useState(false);
+  const [quoteError, setQuoteError] = useState<string | null>(null);
+  const [yahooUpdatedAt, setYahooUpdatedAt] = useState<string | null>(null);
+  const [draggingTradeId, setDraggingTradeId] = useState<string | null>(null);
+  const [isLookingUpTicker, setIsLookingUpTicker] = useState(false);
+  const [fxRate, setFxRate] = useState<number | null>(null);
+  const [fxUpdatedAt, setFxUpdatedAt] = useState<string | null>(null);
+  const [showUSD, setShowUSD] = useState(false);
+  const [activeStocksSection, setActiveStocksSection] = useState<"portfolio" | "quotes">("portfolio");
+  const [activeQuoteMarket, setActiveQuoteMarket] = useState<"korea" | "us">("korea");
+  const [suggestions, setSuggestions] = useState<Array<{ ticker: string; name?: string }>>([]);
+  const [isSearching, setIsSearching] = useState(false);
+  const [searchMarket, setSearchMarket] = useState<"all" | "korea" | "us">("all");
+  const [searchInput, setSearchInput] = useState("");
+  const searchTimer = useRef<number | null>(null);
+  const searchCacheRef = useRef<Map<string, Array<{ ticker: string; name?: string }>>>(new Map());
+  const [activeSuggestion, setActiveSuggestion] = useState<number>(-1);
+  const [recentTickers, setRecentTickers] = useState<Array<{ ticker: string; name?: string }>>([]);
+  const [favoriteTickers, setFavoriteTickers] = useState<Array<{ ticker: string; name?: string }>>([]);
+  const [symbolForm, setSymbolForm] = useState<{ ticker: string; name: string }>({ ticker: "", name: "" });
+  const [isUpdatingLibrary, setIsUpdatingLibrary] = useState(false);
+  const [positionSort, setPositionSort] = useState<{ key: PositionSortKey; direction: "asc" | "desc" }>({
+    key: "ticker",
+    direction: "asc"
+  });
+  const [tradeSort, setTradeSort] = useState<{ key: TradeSortKey; direction: "asc" | "desc" }>({
+    key: "date",
+    direction: "desc"
+  });
+  const [inlineEdit, setInlineEdit] = useState<{
+    id: string;
+    date: string;
+    accountId: string;
+    ticker: string;
+    name: string;
+    side: TradeSide;
+    quantity: string;
+    price: string;
+    fee: string;
+  } | null>(null);
+  const [tickerInfo, setTickerInfo] = useState<{
+    ticker: string;
+    name?: string;
+    price?: number;
+    currency?: string;
+  } | null>(null);
+  const [viewMode, setViewMode] = useState<"simple" | "detailed">("simple");
+  const [quickFilter, setQuickFilter] = useState<"pnl" | "volatility" | "sector">("pnl");
+  const [simpleSearch, setSimpleSearch] = useState("");
+  const [justUpdatedTickers, setJustUpdatedTickers] = useState<string[]>([]);
+
+  const adjustedPrices = useMemo(() => {
+    if (!fxRate) return prices;
+    return prices.map((p) => {
+      if (p.currency && p.currency !== "KRW" && p.currency === "USD") {
+        return { ...p, price: p.price * fxRate, currency: "KRW" };
+      }
+      return p;
+    });
+  }, [prices, fxRate]);
+
+  const positions = useMemo(() => computePositions(trades, adjustedPrices, accounts), [
+    trades,
+    adjustedPrices,
+    accounts
+  ]);
+
+  type PositionWithPrice = ReturnType<typeof computePositions>[number] & {
+    displayMarketPrice: number;
+    currency?: string;
+    diff: number;
+  };
+
+  const positionsWithPrice = useMemo<PositionWithPrice[]>(() => {
+    return positions.map((p) => {
+      const priceInfo = prices.find((x) => x.ticker === p.ticker);
+      const displayMarketPrice = priceInfo?.price ?? p.marketPrice;
+      const currency = priceInfo?.currency;
+      const diff = displayMarketPrice - Math.round(p.avgPrice);
+      return { ...p, displayMarketPrice, currency, diff };
+    });
+  }, [positions, prices]);
+
+  const totals = useMemo(() => {
+    const totalMarketValue = positionsWithPrice.reduce((sum, p) => sum + p.marketValue, 0);
+    const totalCost = positionsWithPrice.reduce((sum, p) => sum + p.totalBuyAmount, 0);
+    const totalPnl = positionsWithPrice.reduce((sum, p) => sum + p.pnl, 0);
+    const dayPnl = positionsWithPrice.reduce((sum, p) => {
+      const priceInfo = prices.find((x) => x.ticker === p.ticker);
+      const change = priceInfo?.change ?? 0;
+      return sum + change * p.quantity;
+    }, 0);
+    return { totalMarketValue, totalCost, totalPnl, dayPnl };
+  }, [positionsWithPrice, prices]);
+
+  const topHoldings = useMemo(
+    () => [...positionsWithPrice].sort((a, b) => b.marketValue - a.marketValue).slice(0, 3),
+    [positionsWithPrice]
+  );
+
+  const getVolatilityScore = (ticker: string) => {
+    const priceInfo = prices.find((p) => p.ticker === ticker);
+    return Math.abs(priceInfo?.changePercent ?? 0);
+  };
+
+  const filteredPositions = useMemo(() => {
+    const q = simpleSearch.trim().toLowerCase();
+    const sorted = [...positionsWithPrice].sort((a, b) => {
+      if (quickFilter === "pnl") return b.pnlRate - a.pnlRate;
+      if (quickFilter === "volatility") return getVolatilityScore(b.ticker) - getVolatilityScore(a.ticker);
+      return String(a.currency ?? "").localeCompare(String(b.currency ?? "")) || a.ticker.localeCompare(b.ticker);
+    });
+    const filtered = q
+      ? sorted.filter((p) => {
+          const name = (p.name || "").toLowerCase();
+          return p.ticker.toLowerCase().includes(q) || name.includes(q);
+        })
+      : sorted;
+    return filtered.slice(0, 8);
+  }, [positionsWithPrice, quickFilter, simpleSearch, prices]);
+
+  const totalReturnRate = useMemo(
+    () => (totals.totalCost ? totals.totalPnl / totals.totalCost : 0),
+    [totals]
+  );
+
+  type PositionSortKey =
+    | "ticker"
+    | "name"
+    | "quantity"
+    | "avgPrice"
+    | "marketPrice"
+    | "diff"
+    | "marketValue"
+    | "totalBuyAmount"
+    | "pnl"
+    | "pnlRate";
+
+  type TradeSortKey =
+    | "date"
+    | "accountId"
+    | "ticker"
+    | "name"
+    | "side"
+    | "quantity"
+    | "price"
+    | "fee"
+    | "totalAmount"
+    | "cashImpact";
+
+  const sortPositions = (rows: PositionWithPrice[]) => {
+    const dir = positionSort.direction === "asc" ? 1 : -1;
+    return [...rows].sort((a, b) => {
+      const key = positionSort.key;
+      const va = (a as any)[key] ?? 0;
+      const vb = (b as any)[key] ?? 0;
+      if (typeof va === "string" || typeof vb === "string") {
+        return String(va).localeCompare(String(vb)) * dir;
+      }
+      return (va - vb) * dir;
+    });
+  };
+
+  const sortTrades = (rows: StockTrade[]) => {
+    const dir = tradeSort.direction === "asc" ? 1 : -1;
+    return [...rows].sort((a, b) => {
+      const key = tradeSort.key;
+      const va = (a as any)[key];
+      const vb = (b as any)[key];
+      if (key === "date") {
+        return (va < vb ? -1 : va > vb ? 1 : 0) * dir;
+      }
+      if (typeof va === "string" || typeof vb === "string") {
+        return String(va ?? "").localeCompare(String(vb ?? "")) * dir;
+      }
+      return ((va ?? 0) - (vb ?? 0)) * dir;
+    });
+  };
+
+  const togglePositionSort = (key: PositionSortKey) => {
+    setPositionSort((prev) => ({
+      key,
+      direction: prev.key === key && prev.direction === "asc" ? "desc" : "asc"
+    }));
+  };
+
+  const toggleTradeSort = (key: TradeSortKey) => {
+    setTradeSort((prev) => ({
+      key,
+      direction: prev.key === key && prev.direction === "asc" ? "desc" : "asc"
+    }));
+  };
+
+  const sortIndicator = (activeKey: string, key: string, direction: "asc" | "desc") => {
+    if (activeKey !== key) return "??;
+    return direction === "asc" ? "?? : "??;
+  };
+
+  const updateFxRate = async () => {
+    try {
+      const res = await fetchYahooQuotes(["USDKRW=X"]);
+      const r = res[0];
+      if (r?.price) {
+        setFxRate(r.price);
+        setFxUpdatedAt(r.updatedAt ?? new Date().toISOString());
+      }
+    } catch (err) {
+      console.warn("FX fetch failed", err);
+    }
+  };
+
+  React.useEffect(() => {
+    updateFxRate();
+    try {
+      const recentRaw = localStorage.getItem("fw-recent-tickers");
+      if (recentRaw) setRecentTickers(JSON.parse(recentRaw));
+      const favRaw = localStorage.getItem("fw-fav-tickers");
+      if (favRaw) setFavoriteTickers(JSON.parse(favRaw));
+    } catch {
+      // ignore
+    }
+  }, []);
+
+  const cleanTicker = (raw: string) => raw.toUpperCase().replace(/\.(KS|KQ|KO|K|KSQ)$/i, "");
+
+  React.useEffect(() => {
+    const q = searchInput.trim();
+    const isNumeric = /^[0-9]+$/.test(q);
+    const isKorean = /[Í∞Ä-??/.test(q);
+    if (q.length === 0 || (!isNumeric && q.length < 2 && !isKorean)) {
+      setSuggestions([]);
+      setActiveSuggestion(-1);
+      return;
+    }
+    if (searchTimer.current) {
+      window.clearTimeout(searchTimer.current);
+    }
+    searchTimer.current = window.setTimeout(async () => {
+      try {
+        setIsSearching(true);
+        const cacheKey = `${searchMarket}:${q}`;
+        const cached = searchCacheRef.current.get(cacheKey);
+        if (cached) {
+          setSuggestions(cached);
+          setActiveSuggestion(-1);
+          setIsSearching(false);
+          return;
+        }
+        const resultsKorea = searchMarket === "us" ? [] : await searchKoreaSymbol(q);
+
+        let yahooQueries: string[] = [];
+        if (searchMarket !== "korea") {
+          if (isNumeric) {
+            yahooQueries = [`${q}.KS`, `${q}.KQ`, q];
+          } else {
+            yahooQueries = [q];
+          }
+        } else {
+          // Íµ?Ç¥Îß??†ÌÉù?àÏùÑ ?åÎèÑ ?ºÌõÑÎ°??¥Î∞±
+          yahooQueries = isNumeric ? [`${q}.KS`, `${q}.KQ`, q] : [q];
+        }
+
+        const resultsYahoo = (await Promise.all(
+          yahooQueries.map(async (qq) => {
+            try {
+              return await searchYahooSymbol(qq);
+            } catch {
+              return [];
+            }
+          })
+        )).flat();
+
+        const map = new Map<string, { ticker: string; name?: string }>();
+        [...customSymbols, ...resultsKorea, ...resultsYahoo].forEach((item) => {
+          const ticker = cleanTicker(item.ticker);
+          if (!map.has(ticker)) map.set(ticker, { ...item, ticker });
+        });
+        const merged = Array.from(map.values()).slice(0, 12);
+        searchCacheRef.current.set(cacheKey, merged);
+        setSuggestions(merged);
+        setActiveSuggestion(-1);
+      } catch (err) {
+        console.error(err);
+        setSuggestions([]);
+        setActiveSuggestion(-1);
+      } finally {
+        setIsSearching(false);
+      }
+    }, 250);
+  }, [searchInput, searchMarket]);
+
+  const formatNumber = (value: number) => Math.round(value).toLocaleString("ko-KR");
+  const formatKRW = (value: number) => `${formatNumber(value)} ??;
+  const formatUSD = (value: number) =>
+    value.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+  const formatPriceWithCurrency = (value: number, currency?: string) => {
+    if (currency === "USD" && showUSD) {
+      const base = `${formatUSD(value)} USD`;
+      if (fxRate) {
+        return `${base} (? ${formatKRW(value * fxRate)})`;
+      }
+      return base;
+    }
+    if (currency === "USD" && fxRate && !showUSD) {
+      return `${formatKRW(value * fxRate)}`;
+    }
+    if (currency && currency !== "KRW" && showUSD) {
+      return `${value.toLocaleString("en-US")} ${currency}`;
+    }
+    return `${formatKRW(value)}`;
+  };
+
+  // Î≥¥Ïú†/Í±∞Îûò ?¥Ïó≠???±Ïû•?òÎäî ?∞Ïª§ Î™©Î°ù (ÎØ∏Íµ≠ Ï£ºÏãù Í∏∞Ï?, Ï§ëÎ≥µ ?úÍ±∞)
+  const uniqueTickers = useMemo(() => {
+    const set = new Set<string>();
+    for (const t of trades) {
+      const symbol = t.ticker.trim().toUpperCase();
+      if (symbol) set.add(symbol);
+    }
+    return Array.from(set);
+  }, [trades]);
+
+  const koreanQuotes = useMemo(() => prices.filter((p) => p.currency === "KRW"), [prices]);
+  const usQuotes = useMemo(() => prices.filter((p) => p.currency === "USD"), [prices]);
+
+  const renderQuoteTable = (items: StockPrice[], marketLabel: string) => (
+    <table className="data-table">
+      <thead>
+        <tr>
+          <th>?∞Ïª§</th>
+          <th>Ï¢ÖÎ™©Î™?/th>
+          <th>?ÑÏû¨Í∞Ä</th>
+          <th>Î≥Ä??/th>
+          <th>Î≥Ä?ôÎ•†</th>
+          <th>?ÖÎç∞?¥Ìä∏</th>
+        </tr>
+      </thead>
+      <tbody>
+        {items.length === 0 ? (
+          <tr>
+            <td colSpan={6} style={{ textAlign: "center" }}>
+              {marketLabel} ?úÏÑ∏Í∞Ä ?ÜÏäµ?àÎã§. ?∞Ïª§Î•??±Î°ù?òÍ≥† ?úÏÑ∏ Í∞±Ïã† Î≤ÑÌäº???åÎü¨Î≥¥ÏÑ∏??
+            </td>
+          </tr>
+        ) : (
+          items.map((item) => {
+            const changeClass =
+              item.change == null ? "" : item.change >= 0 ? "positive" : "negative";
+            const changePercentClass =
+              item.changePercent == null ? "" : item.changePercent >= 0 ? "positive" : "negative";
+            return (
+              <tr key={item.ticker}>
+                <td>{item.ticker}</td>
+                <td>{item.name ?? "-"}</td>
+                <td className="number">{formatPriceWithCurrency(item.price ?? 0, item.currency)}</td>
+                <td className={`number ${changeClass}`}>
+                  {item.change != null ? formatKRW(item.change) : "-"}
+                </td>
+                <td className={`number ${changePercentClass}`}>
+                  {item.changePercent != null ? `${item.changePercent.toFixed(2)}%` : "-"}
+                </td>
+                <td>{item.updatedAt ? new Date(item.updatedAt).toLocaleString("ko-KR") : "-"}</td>
+              </tr>
+            );
+          })
+        )}
+      </tbody>
+    </table>
+  );
+
+  const handleRefreshQuotes = async () => {
+
+    if (uniqueTickers.length === 0) {
+
+      setQuoteError("??? ??? ??? ??? ? ????. ?? ??? ??????.");
+
+      return;
+
+    }
+
+    try {
+
+      setIsLoadingQuotes(true);
+
+      setQuoteError(null);
+
+      updateFxRate();
+
+      const updatedSymbols: string[] = [];
+
+      const results = await fetchYahooQuotes(uniqueTickers);
+
+      if (!results.length) {
+
+        setQuoteError("?? ? ?? ??????. ?? ??? ????.");
+
+        return;
+
+      }
+
+      const next: StockPrice[] = [...prices];
+
+      for (const r of results) {
+
+        const idx = next.findIndex((p) => p.ticker === r.ticker);
+
+        const existingName = next[idx]?.name ?? trades.find((t) => t.ticker === r.ticker)?.name;
+
+        const item: StockPrice = {
+
+          ticker: r.ticker,
+
+          name: r.name ?? existingName ?? r.ticker,
+
+          price: r.price,
+
+          currency: r.currency,
+
+          change: r.change,
+
+          changePercent: r.changePercent,
+
+          updatedAt: r.updatedAt
+
+        };
+
+        if (idx >= 0) {
+
+          next[idx] = { ...next[idx], ...item };
+
+        } else {
+
+          next.push(item);
+
+        }
+
+        updatedSymbols.push(r.ticker);
+      }
+
+      onChangePrices(next);
+
+      const latestUpdatedAt =
+        results
+          .map((r) => r.updatedAt)
+          .filter((v): v is string => Boolean(v))
+          .sort()
+          .at(-1) ?? new Date().toISOString();
+      setYahooUpdatedAt(latestUpdatedAt);
+
+      setJustUpdatedTickers(updatedSymbols);
+
+      if (typeof window !== "undefined") {
+
+        window.setTimeout(() => setJustUpdatedTickers([]), 500);
+
+      }
+
+    } catch (err) {
+
+      console.error(err);
+
+      setQuoteError("???? ??? ??? ???? ?????. ?? ??????.");
+
+    } finally {
+
+      setIsLoadingQuotes(false);
+
+    }
+
+  };
+
+
+
+  const handleLookupTicker = async () => {
+    const symbolInput = cleanTicker(tradeForm.ticker.trim().toUpperCase());
+    const nameQuery = tradeForm.name.trim();
+    let symbol = symbolInput;
+    let matchedName: string | undefined;
+    if (!symbol && nameQuery) {
+      try {
+        setIsLookingUpTicker(true);
+        setQuoteError(null);
+        const matches = await searchYahooSymbol(nameQuery);
+        if (!matches.length) {
+          setQuoteError("?ÖÎ†•???¥Î¶Ñ?ºÎ°ú ?∞Ïª§Î•?Ï∞æÏ? Î™ªÌñà?µÎãà??");
+          setTickerInfo(null);
+          return;
+        }
+        symbol = matches[0].ticker;
+        matchedName = matches[0].name;
+        setTradeForm((prev) => ({
+          ...prev,
+          ticker: symbol,
+          name: prev.name || matchedName || nameQuery
+        }));
+      } catch (err) {
+        console.error(err);
+        setQuoteError("Ï¢ÖÎ™©Î™?Í≤Ä??Ï§??§Î•òÍ∞Ä Î∞úÏÉù?àÏäµ?àÎã§.");
+        return;
+      } finally {
+        setIsLookingUpTicker(false);
+      }
+    }
+
+    if (!symbol) return;
+    try {
+      setIsLookingUpTicker(true);
+      setQuoteError(null);
+      const results = await fetchYahooQuotes([symbol]);
+      if (!results.length) {
+        setQuoteError("?¥Îãπ ?∞Ïª§Î°??ºÌõÑ?êÏÑú ?úÏÑ∏Î•?Ï∞æÏ? Î™ªÌñà?µÎãà??");
+        setTickerInfo(null);
+        return;
+      }
+      const r = results[0];
+      const nameToUse = matchedName || r.name;
+      applyQuoteResult(symbol, { ...r, name: nameToUse }, matchedName);
+    } catch (err) {
+      console.error(err);
+      setQuoteError("?∞Ïª§ Ï°∞Ìöå Ï§??§Î•òÍ∞Ä Î∞úÏÉù?àÏäµ?àÎã§. ?†Ïãú ???§Ïãú ?úÎèÑ?¥Ï£º?∏Ïöî.");
+    } finally {
+      setIsLookingUpTicker(false);
+    }
+  };
+
+  const applyQuoteResult = (symbol: string, r: StockPrice, fallbackName?: string) => {
+    const isKoreaTicker = /^[0-9]{6}$/.test(symbol);
+    const existingPriceName = prices.find((p) => p.ticker === symbol)?.name;
+    const preferredName =
+      r.name ||
+      (fallbackName && fallbackName.trim()) ||
+      existingPriceName ||
+      (isKoreaTicker ? symbol : tickerInfo?.name) ||
+      symbol;
+    setTickerInfo({
+      ticker: symbol,
+      name: preferredName,
+      price: r.price,
+      currency: r.currency
+    });
+
+    setTradeForm((prev) => ({
+      ...prev,
+      ticker: symbol,
+      name: prev.name || preferredName
+    }));
+
+    const next: StockPrice[] = [...prices];
+    const idx = next.findIndex((p) => p.ticker === symbol);
+    const item: StockPrice = {
+      ticker: symbol,
+      name: preferredName,
+      price: r.price,
+      currency: r.currency,
+      change: r.change,
+      changePercent: r.changePercent,
+      updatedAt: r.updatedAt
+    };
+    if (idx >= 0) {
+      next[idx] = { ...next[idx], ...item };
+    } else {
+      next.push(item);
+    }
+    onChangePrices(next);
+  };
+
+  const addRecentTicker = (ticker: string, name?: string) => {
+    setRecentTickers((prev) => {
+      const filtered = prev.filter((i) => i.ticker !== ticker);
+      const next = [{ ticker, name }, ...filtered].slice(0, 8);
+      try {
+        localStorage.setItem("fw-recent-tickers", JSON.stringify(next));
+      } catch {
+        //
+      }
+      return next;
+    });
+  };
+
+  const toggleFavorite = (ticker: string, name?: string) => {
+    setFavoriteTickers((prev) => {
+      const exists = prev.some((i) => i.ticker === ticker);
+      const next = exists ? prev.filter((i) => i.ticker !== ticker) : [{ ticker, name }, ...prev].slice(0, 12);
+      try {
+        localStorage.setItem("fw-fav-tickers", JSON.stringify(next));
+      } catch {
+        //
+      }
+      return next;
+    });
+  };
+
+  const quickPrefillTrade = (ticker: string, name?: string, side: TradeSide = "buy") => {
+    setViewMode("detailed");
+    setActiveStocksSection("portfolio");
+    setTradeForm((prev) => ({
+      ...prev,
+      ticker,
+      name: name || prev.name || ticker,
+      side,
+      quantity: "",
+      price: "",
+      fee: prev.fee
+    }));
+  };
+
+  const handleRefreshSymbolLibrary = async () => {
+    const set = new Set<string>();
+    customSymbols.forEach((s) => set.add(cleanTicker(s.ticker)));
+    trades.forEach((t) => set.add(cleanTicker(t.ticker)));
+    prices.forEach((p) => set.add(cleanTicker(p.ticker)));
+    const allSymbols = Array.from(set).filter(Boolean);
+    if (allSymbols.length === 0) return;
+    try {
+      setIsUpdatingLibrary(true);
+      const results = await fetchYahooQuotes(allSymbols);
+      const updatedPrices: StockPrice[] = [...prices];
+      let updatedCustom = [...customSymbols];
+
+      for (const r of results) {
+        const idx = updatedPrices.findIndex((p) => p.ticker === r.ticker);
+        const item: StockPrice = {
+          ticker: r.ticker,
+          name: r.name ?? r.ticker,
+          price: r.price,
+          currency: r.currency,
+          change: r.change,
+          changePercent: r.changePercent,
+          updatedAt: r.updatedAt
+        };
+        if (idx >= 0) {
+          updatedPrices[idx] = { ...updatedPrices[idx], ...item };
+        } else {
+          updatedPrices.push(item);
+        }
+
+        if (!updatedCustom.some((c) => c.ticker === r.ticker)) {
+          updatedCustom = [{ ticker: r.ticker, name: r.name ?? r.ticker }, ...updatedCustom].slice(0, 150);
+        } else {
+          updatedCustom = updatedCustom.map((c) =>
+            c.ticker === r.ticker ? { ...c, name: c.name || r.name || c.ticker } : c
+          );
+        }
+      }
+      onChangePrices(updatedPrices);
+      onChangeCustomSymbols(updatedCustom);
+    } catch (err) {
+      console.error(err);
+      setQuoteError("?¨Î≥º ?ºÏù¥Î∏åÎü¨Î¶??ÖÎç∞?¥Ìä∏ Ï§??§Î•òÍ∞Ä Î∞úÏÉù?àÏäµ?àÎã§.");
+    } finally {
+      setIsUpdatingLibrary(false);
+    }
+  };
+
+  const handleSelectSuggestion = async (ticker: string, name?: string) => {
+    const cleaned = cleanTicker(ticker);
+    setTradeForm((prev) => ({
+      ...prev,
+      ticker: cleaned,
+      name: name ?? cleaned
+    }));
+    addRecentTicker(cleaned, name);
+    setActiveSuggestion(-1);
+    try {
+      setIsLookingUpTicker(true);
+      setQuoteError(null);
+      const results = await fetchYahooQuotes([cleaned]);
+      if (results.length) {
+        applyQuoteResult(cleaned, results[0], name);
+      }
+    } catch (err) {
+      console.error(err);
+      setQuoteError("?úÏÑ∏ Ï°∞Ìöå Ï§??§Î•òÍ∞Ä Î∞úÏÉù?àÏäµ?àÎã§.");
+    } finally {
+    setIsLookingUpTicker(false);
+      setSuggestions([]);
+    }
+  };
+
+  const positionsByAccount = useMemo(() => {
+    const map = new Map<
+      string,
+      {
+        accountName: string;
+        rows: PositionWithPrice[];
+      }
+    >();
+    for (const p of positionsWithPrice) {
+      const group = map.get(p.accountId) ?? { accountName: p.accountName, rows: [] };
+      group.rows.push(p);
+      map.set(p.accountId, group);
+    }
+    return Array.from(map.entries()).map(([accountId, { accountName, rows }]) => ({
+      accountId,
+      accountName,
+      rows: sortPositions(rows)
+    }));
+  }, [positionsWithPrice, positionSort]);
+
+  const recentTrades = useMemo(
+    () => [...trades].sort((a, b) => (a.date < b.date ? 1 : -1)).slice(0, 4),
+    [trades]
+  );
+
+  const handleTradeSubmit = (e: React.FormEvent) => {
+    e.preventDefault();
+    const tickerClean = cleanTicker(tradeForm.ticker);
+    const quantity = Number(tradeForm.quantity);
+    const price = Number(tradeForm.price);
+    const fee = Number(tradeForm.fee || "0");
+    if (!tradeForm.date || !tradeForm.accountId || !tickerClean || !quantity || !price) {
+      return;
+    }
+    const totalAmount = quantity * price + fee;
+    const cashImpact = tradeForm.side === "buy" ? -totalAmount : totalAmount;
+    const fallbackName =
+      prices.find((p) => p.ticker === tickerClean)?.name ||
+      trades.find((t) => t.ticker === tickerClean)?.name ||
+      tickerClean;
+
+    if (tradeForm.id) {
+      const updated = trades.map((t) =>
+        t.id === tradeForm.id
+          ? {
+              ...t,
+              date: tradeForm.date,
+              accountId: tradeForm.accountId,
+              ticker: tickerClean,
+              name: fallbackName,
+              side: tradeForm.side,
+              quantity,
+              price,
+              fee,
+              totalAmount,
+              cashImpact
+            }
+          : t
+      );
+      onChangeTrades(updated);
+    } else {
+      const id = `T${Date.now()}`;
+      const trade: StockTrade = {
+        id,
+        date: tradeForm.date,
+        accountId: tradeForm.accountId,
+        ticker: tickerClean,
+        name: fallbackName,
+        side: tradeForm.side,
+        quantity,
+        price,
+        fee,
+        totalAmount,
+        cashImpact
+      };
+      onChangeTrades([trade, ...trades]);
+    }
+    setTradeForm((prev) => ({
+      ...createDefaultTradeForm(),
+      side: prev.side,
+      accountId: prev.accountId || tradeForm.accountId
+    }));
+  };
+
+  const startEditTrade = (t: StockTrade) => {
+    setTradeForm({
+      id: t.id,
+      date: t.date,
+      accountId: t.accountId,
+      ticker: t.ticker,
+      name: t.name,
+      side: t.side,
+      quantity: String(t.quantity),
+      price: String(t.price),
+      fee: String(t.fee)
+    });
+  };
+
+  const startCopyTrade = (t: StockTrade) => {
+    setTradeForm({
+      id: undefined,
+      date: new Date().toISOString().slice(0, 10),
+      accountId: t.accountId,
+      ticker: t.ticker,
+      name: t.name,
+      side: t.side,
+      quantity: String(t.quantity),
+      price: String(t.price),
+      fee: String(t.fee)
+    });
+  };
+
+  const resetTradeForm = () => {
+    setTradeForm((prev) => ({
+      ...createDefaultTradeForm(),
+      side: prev.side,
+      accountId: prev.accountId
+    }));
+  };
+
+  const isEditingTrade = Boolean(tradeForm.id);
+
+  const handleDeleteTrade = (id: string) => {
+    const next = trades.filter((t) => t.id !== id);
+    onChangeTrades(next);
+    if (tradeForm.id === id) {
+      resetTradeForm();
+    }
+    if (inlineEdit?.id === id) {
+      setInlineEdit(null);
+    }
+  };
+
+  const handleReorderTrade = (id: string, newIndex: number) => {
+    const currentIndex = trades.findIndex((t) => t.id === id);
+    if (currentIndex === -1) return;
+    const clamped = Math.max(0, Math.min(trades.length - 1, newIndex));
+    if (clamped === currentIndex) return;
+    const next = [...trades];
+    const [item] = next.splice(currentIndex, 1);
+    next.splice(clamped, 0, item);
+    onChangeTrades(next);
+  };
+
+  const startInlineEdit = (t: StockTrade) => {
+    setInlineEdit({
+      id: t.id,
+      date: t.date,
+      accountId: t.accountId,
+      ticker: t.ticker,
+      name: t.name,
+      side: t.side,
+      quantity: String(t.quantity),
+      price: String(t.price),
+      fee: String(t.fee)
+    });
+  };
+
+  const cancelInlineEdit = () => setInlineEdit(null);
+
+  const saveInlineEdit = () => {
+    if (!inlineEdit) return;
+    const quantity = Number(inlineEdit.quantity);
+    const price = Number(inlineEdit.price);
+    const fee = Number(inlineEdit.fee || "0");
+    if (!inlineEdit.date || !inlineEdit.accountId || !inlineEdit.ticker || !quantity || !price) {
+      return;
+    }
+    const totalAmount = quantity * price + fee;
+    const cashImpact = inlineEdit.side === "buy" ? -totalAmount : totalAmount;
+    const updated = trades.map((t) =>
+      t.id === inlineEdit.id
+        ? {
+            ...t,
+            date: inlineEdit.date,
+            accountId: inlineEdit.accountId,
+            ticker: inlineEdit.ticker,
+            name: inlineEdit.name || inlineEdit.ticker,
+            side: inlineEdit.side,
+            quantity,
+            price,
+            fee,
+            totalAmount,
+            cashImpact
+          }
+        : t
+    );
+    onChangeTrades(updated);
+    setInlineEdit(null);
+  };
+
+  if (viewMode === "simple") {
+    return (
+      <div className="stocks-page">
+        <div className="section-header">
+          <h2>??Î≥¥Ïú† ?ÑÌô©</h2>
+          <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
+            <label style={{ display: "flex", alignItems: "center", gap: 8 }}>
+              <span>Í≤Ä??/span>
+              <input
+                type="search"
+                value={simpleSearch}
+                placeholder="?∞Ïª§??Ï¢ÖÎ™©Î™?
+                onChange={(e) => setSimpleSearch(e.target.value)}
+                style={{ minWidth: 180 }}
+              />
+            </label>
+            <button type="button" className="secondary" onClick={() => setViewMode("detailed")}>
+              ?ÅÏÑ∏ Î≥¥Í∏∞Î°??¥Îèô
+            </button>
+          </div>
+        </div>
+
+        <div className="card" style={{ padding: 16, marginBottom: 16 }}>
+          <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(220px, 1fr))", gap: 12 }}>
+            <div style={{ background: "#0f172a", color: "#e2e8f0", padding: 12, borderRadius: 12 }}>
+              <div className="muted">Ï¥??âÍ???/div>
+              <div style={{ fontSize: 24, fontWeight: 700 }}>{formatKRW(totals.totalMarketValue)}</div>
+            </div>
+            <div style={{ background: "#0d9488", color: "#0b1f1d", padding: 12, borderRadius: 12 }}>
+              <div className="muted">?ºÏùº ?êÏùµ</div>
+              <div style={{ fontSize: 20, fontWeight: 700 }}>
+                {formatKRW(totals.dayPnl)} ({totals.totalMarketValue ? ((totals.dayPnl / totals.totalMarketValue) * 100).toFixed(2) : "0.00"}%)
+              </div>
+            </div>
+            <div style={{ background: "#f8fafc", color: "#0f172a", padding: 12, borderRadius: 12 }}>
+              <div className="muted">?ÑÏ†Å ?êÏùµ</div>
+              <div style={{ fontSize: 20, fontWeight: 700 }}>
+                {formatKRW(totals.totalPnl)} ({(totalReturnRate * 100).toFixed(2)}%)
+              </div>
+              <div className="muted" style={{ fontSize: 12 }}>Ï¥ùÎß§??{formatKRW(totals.totalCost)}</div>
+            </div>
+          </div>
+        </div>
+
+        <div className="card" style={{ padding: 16, marginBottom: 16 }}>
+          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 8 }}>
+            <h3 style={{ margin: 0 }}>?ÅÏúÑ 3Ï¢ÖÎ™©</h3>
+            <span className="hint">Îß§Ïàò/Îß§ÎèÑ/?åÎ¶º????Î≤àÏóê</span>
+          </div>
+          <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(240px, 1fr))", gap: 12 }}>
+            {topHoldings.map((p) => {
+              const weight = totals.totalMarketValue ? Math.max(6, Math.round((p.marketValue / totals.totalMarketValue) * 100)) : 0;
+              const priceInfo = prices.find((x) => x.ticker === p.ticker);
+              const changePercent = priceInfo?.changePercent ?? 0;
+              const updated = justUpdatedTickers.includes(p.ticker);
+              return (
+                <div
+                  key={p.ticker}
+                  style={{
+                    border: "1px solid #e2e8f0",
+                    borderRadius: 12,
+                    padding: 12,
+                    background: updated ? "rgba(255,240,200,0.6)" : "#fff",
+                    transition: "background 0.3s ease"
+                  }}
+                >
+                  <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", gap: 8 }}>
+                    <div>
+                      <div style={{ fontWeight: 700 }}>{p.ticker}</div>
+                      <div className="muted" style={{ fontSize: 12 }}>{p.name}</div>
+                    </div>
+                    <div style={{ display: "flex", gap: 6 }}>
+                      <button type="button" className="secondary" onClick={() => quickPrefillTrade(p.ticker, p.name, "buy")}>Îß§Ïàò</button>
+                      <button type="button" className="secondary" onClick={() => quickPrefillTrade(p.ticker, p.name, "sell")}>Îß§ÎèÑ</button>
+                      <button type="button" className="secondary" onClick={() => toggleFavorite(p.ticker, p.name)}>?åÎ¶º</button>
+                    </div>
+                  </div>
+                  <div style={{ display: "flex", justifyContent: "space-between", margin: "8px 0" }}>
+                    <div>
+                      <div style={{ fontSize: 18, fontWeight: 700 }}>{formatPriceWithCurrency(p.displayMarketPrice, p.currency)}</div>
+                      <div className={changePercent >= 0 ? "positive" : "negative"} style={{ fontSize: 12 }}>
+                        {priceInfo?.change != null ? formatKRW(priceInfo.change) : "-"} ({changePercent.toFixed(2)}%)
+                      </div>
+                    </div>
+                    <div style={{ textAlign: "right" }}>
+                      <div className={p.pnl >= 0 ? "positive" : "negative"} style={{ fontWeight: 700 }}>{formatKRW(p.pnl)}</div>
+                      <div className={p.pnl >= 0 ? "positive" : "negative"} style={{ fontSize: 12 }}>{(p.pnlRate * 100).toFixed(2)}%</div>
+                    </div>
+                  </div>
+                  <div style={{ height: 6, background: "#e2e8f0", borderRadius: 999, overflow: "hidden", marginBottom: 6 }}>
+                    <div style={{ width: `${weight}%`, height: "100%", background: "linear-gradient(90deg,#22c55e,#0ea5e9)" }} />
+                  </div>
+                  <div style={{ display: "grid", gridTemplateColumns: "repeat(3,1fr)", gap: 8, fontSize: 12 }}>
+                    <div>Î≥¥Ïú† {formatNumber(p.quantity)}</div>
+                    <div>?âÎã® {formatKRW(Math.round(p.avgPrice))}</div>
+                    <div>?âÍ? {formatKRW(p.marketValue)}</div>
+                  </div>
+                </div>
+              );
+            })}
+            {topHoldings.length === 0 && <div className="muted">Î≥¥Ïú† Ï¢ÖÎ™©???ÜÏäµ?àÎã§.</div>}
+          </div>
+        </div>
+
+        <div className="card" style={{ padding: 16, marginBottom: 16 }}>
+          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 12, flexWrap: "wrap", gap: 8 }}>
+            <h3 style={{ margin: 0 }}>?¨Ï???Î¶¨Ïä§??/h3>
+            <div style={{ display: "flex", gap: 6 }}>
+              <button type="button" className={quickFilter === "pnl" ? "primary" : "secondary"} onClick={() => setQuickFilter("pnl")}>?òÏùµÎ•?/button>
+              <button type="button" className={quickFilter === "volatility" ? "primary" : "secondary"} onClick={() => setQuickFilter("volatility")}>Î≥Ä?ôÏÑ±</button>
+              <button type="button" className={quickFilter === "sector" ? "primary" : "secondary"} onClick={() => setQuickFilter("sector")}>?πÌÑ∞/?µÌôî</button>
+            </div>
+          </div>
+          <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(220px, 1fr))", gap: 10 }}>
+            {filteredPositions.map((p) => {
+              const priceInfo = prices.find((x) => x.ticker === p.ticker);
+              const updated = justUpdatedTickers.includes(p.ticker);
+              return (
+                <div
+                  key={p.ticker}
+                  style={{
+                    padding: 10,
+                    border: "1px solid #e2e8f0",
+                    borderRadius: 10,
+                    background: updated ? "rgba(255,240,200,0.6)" : "#fff",
+                    transition: "background 0.3s ease"
+                  }}
+                >
+                  <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+                    <div style={{ fontWeight: 700 }}>{p.ticker}</div>
+                    <div className={p.pnl >= 0 ? "positive" : "negative"} style={{ fontSize: 12 }}>
+                      {(p.pnlRate * 100).toFixed(2)}%
+                    </div>
+                  </div>
+                  <div className="muted" style={{ fontSize: 12 }}>{p.name}</div>
+                  <div style={{ display: "flex", justifyContent: "space-between", marginTop: 6 }}>
+                    <span>{formatPriceWithCurrency(p.displayMarketPrice, p.currency)}</span>
+                    <span className={(priceInfo?.change ?? 0) >= 0 ? "positive" : "negative"}>
+                      {priceInfo?.changePercent != null ? `${priceInfo.changePercent.toFixed(2)}%` : "-"}
+                    </span>
+                  </div>
+                  <div style={{ display: "flex", justifyContent: "space-between", marginTop: 6, fontSize: 12 }}>
+                    <span>Î≥¥Ïú† {formatNumber(p.quantity)}</span>
+                    <span>?âÍ? {formatKRW(p.marketValue)}</span>
+                  </div>
+                  <button type="button" className="link" style={{ marginTop: 6 }} onClick={() => quickPrefillTrade(p.ticker, p.name, "buy")}>
+                    Îß§Ïàò/Îß§ÎèÑ Î∞îÎ°úÍ∞ÄÍ∏?
+                  </button>
+                </div>
+              );
+            })}
+            {filteredPositions.length === 0 && <div className="muted">?¨Ï??òÏù¥ ?ÜÏäµ?àÎã§.</div>}
+          </div>
+        </div>
+
+        <div
+          style={{
+            position: "sticky",
+            bottom: 0,
+            zIndex: 1,
+            background: "#fff",
+            borderTop: "1px solid #e2e8f0",
+            padding: "10px 12px",
+            display: "flex",
+            alignItems: "center",
+            gap: 8,
+            flexWrap: "wrap"
+          }}
+        >
+          <strong>Îπ†Î•∏ Ï£ºÎ¨∏</strong>
+          <button type="button" className="primary" onClick={() => setViewMode("detailed")}>
+            Ï£ºÎ¨∏ ?ÖÎ†• ?¥Í∏∞
+          </button>
+          <span className="muted" style={{ fontSize: 12 }}>?òÎã® Í≥†Ï†ïÎ∞?¬∑ 2??Ïπ¥Îìú Íµ¨ÏÑ±?ºÎ°ú Î™®Î∞î???∞ÏÑ†</span>
+        </div>
+      </div>
+    );
+  }
+
+  return (
+    <div>
+      <div className="section-header">
+        <h2>?? ?? & ??? (??)</h2>
+        <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
+          {fxRate && (
+            <span className="pill">
+              USD/KRW: {formatNumber(fxRate)} ?
+              {fxUpdatedAt && (
+                <span className="muted" style={{ marginLeft: 6 }}>
+                  ????:{' '}
+                  {new Date(fxUpdatedAt).toLocaleString("ko-KR", {
+                    month: "2-digit",
+                    day: "2-digit",
+                    hour: "2-digit",
+                    minute: "2-digit"
+                  })}
+                </span>
+              )}
+            </span>
+          )}
+          <button
+            type="button"
+            className={showUSD ? "primary" : "secondary"}
+            onClick={() => setShowUSD((v) => !v)}
+          >
+            {showUSD ? "?? ON" : "?? OFF"}
+          </button>
+          <button type="button" className="secondary" onClick={() => setViewMode("simple")}>
+            ?? ??
+          </button>
+          <button
+            type="button"
+            className="secondary"
+            onClick={handleRefreshQuotes}
+            disabled={isLoadingQuotes}
+          >
+            {isLoadingQuotes ? "?? ???? ?.." : "?? ?? (??)"}
+          </button>
+          {yahooUpdatedAt && (
+            <span className="hint">?? ??: {new Date(yahooUpdatedAt).toLocaleString()}</span>
+          )}
+        </div>
+      </div>
+
+      <div
+        className="stocks-section-tabs"
+        style={{ display: "flex", gap: 8, marginBottom: 16, flexWrap: "wrap" }}
+      >
+        <button
+          type="button"
+          className={activeStocksSection === "portfolio" ? "primary" : "secondary"}
+          onClick={() => setActiveStocksSection("portfolio")}
+        >
+          Í±∞Îûò/?âÍ?
+        </button>
+        <button
+          type="button"
+          className={activeStocksSection === "quotes" ? "primary" : "secondary"}
+          onClick={() => setActiveStocksSection("quotes")}
+        >
+          Ï£ºÏãù?úÏÑ∏
+        </button>
+      </div>
+
+      {activeStocksSection === "portfolio" ? (
+        <>
+          <div className="two-column">
+            <form className="card form-grid" onSubmit={handleTradeSubmit}>
+          <h3>Ï£ºÏãù Í±∞Îûò ?ÖÎ†•</h3>
+          <p className="hint" style={{ margin: 0 }}>Í∏∞Î≥∏ ?µÌôî: ?êÌôî(KRW) Í∏∞Ï??ºÎ°ú ?úÏãú?©Îãà??</p>
+          <label>
+            <span>Í±∞Îûò??/span>
+            <input
+              type="date"
+              value={tradeForm.date}
+              onChange={(e) => setTradeForm({ ...tradeForm, date: e.target.value })}
+            />
+          </label>
+          <label>
+            <span>Ï¶ùÍ∂åÍ≥ÑÏ¢å</span>
+            <select
+              value={tradeForm.accountId}
+              onChange={(e) => setTradeForm({ ...tradeForm, accountId: e.target.value })}
+            >
+              <option value="">?†ÌÉù</option>
+              {accounts
+                .filter((a) => a.type === "securities")
+                .map((a) => (
+                  <option key={a.id} value={a.id}>
+                    {a.id} - {a.name}
+                  </option>
+                ))}
+            </select>
+          </label>
+          <label>
+            <span>?∞Ïª§</span>
+            <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
+              <input
+                type="text"
+                value={tradeForm.ticker}
+                placeholder="?∞Ïª§Î•?ÏßÅÏ†ë ?ÖÎ†• (Í≤Ä?âÏ? ?ÑÎûò '???∞Ïª§/Ï¢ÖÎ™©' ?ÅÏó≠ ?¨Ïö©)"
+                onChange={(e) =>
+                  setTradeForm((prev) => ({
+                    ...prev,
+                    ticker: e.target.value.toUpperCase(),
+                    name: ""
+                  }))
+                }
+              />
+              <button
+                type="button"
+                className="secondary"
+                onClick={handleLookupTicker}
+                disabled={isLookingUpTicker || !tradeForm.ticker.trim()}
+              >
+                {isLookingUpTicker ? "Ï°∞Ìöå Ï§?.." : "?úÏÑ∏ Ï°∞Ìöå"}
+              </button>
+            </div>
+          </label>
+          <label>
+            <span>Îß§Ïàò/Îß§ÎèÑ</span>
+            <select
+              value={tradeForm.side}
+              onChange={(e) =>
+                setTradeForm({ ...tradeForm, side: e.target.value as TradeSide })
+              }
+            >
+              <option value="buy">Îß§Ïàò</option>
+              <option value="sell">Îß§ÎèÑ</option>
+            </select>
+          </label>
+          <label>
+            <span>?òÎüâ</span>
+            <input
+              type="number"
+              min={0}
+              value={tradeForm.quantity}
+              onChange={(e) => setTradeForm({ ...tradeForm, quantity: e.target.value })}
+            />
+          </label>
+          <label>
+            <span>?®Í?</span>
+            <input
+              type="number"
+              min={0}
+              value={tradeForm.price}
+              onChange={(e) => setTradeForm({ ...tradeForm, price: e.target.value })}
+            />
+          </label>
+          <label>
+            <span>?òÏàòÎ£??∏Í∏à</span>
+            <input
+              type="number"
+              min={0}
+              value={tradeForm.fee}
+              onChange={(e) => setTradeForm({ ...tradeForm, fee: e.target.value })}
+            />
+          </label>
+          <div className="stock-actions align-end">
+            {isEditingTrade && (
+              <button type="button" onClick={resetTradeForm}>
+                Ï∑®ÏÜå
+              </button>
+            )}
+            <button type="submit" className="primary">
+              {isEditingTrade ? "Í±∞Îûò ?Ä?? : "Í±∞Îûò Ï∂îÍ?"}
+            </button>
+          </div>
+        </form>
+        <div className="card form-grid">
+          <h3>???∞Ïª§/Ï¢ÖÎ™© Î™©Î°ù</h3>
+          <div className="ticker-lookup-row" style={{ gap: 8, alignItems: "flex-start" }}>
+            <div style={{ flex: 1 }}>
+              <label className="wide" style={{ marginBottom: 8 }}>
+                <span>?∞Ïª§/Ï¢ÖÎ™© Í≤Ä??/span>
+                <input
+                  type="text"
+                  value={searchInput}
+                  placeholder="?∞Ïª§ ?êÎäî Ï¢ÖÎ™©Î™ÖÏùÑ ?ÖÎ†•"
+                  onChange={(e) => {
+                    setSearchInput(e.target.value);
+                    setActiveSuggestion(-1);
+                  }}
+                />
+              </label>
+              {(suggestions.length > 0 || recentTickers.length > 0 || favoriteTickers.length > 0) && (
+                <div className="suggestions inline-list">
+                  {favoriteTickers.length > 0 && (
+                    <div className="suggest-section">
+                      <div className="suggest-section-title">Ï¶êÍ≤®Ï∞æÍ∏∞</div>
+                      <ul>
+                        {favoriteTickers.map((s) => (
+                          <li
+                            key={`fav-${s.ticker}`}
+                            onClick={() => handleSelectSuggestion(s.ticker, s.name)}
+                          >
+                            <div className="suggest-row">
+                              <span className="suggest-ticker">{s.ticker}</span>
+                              <span className="suggest-name">{s.name}</span>
+                            </div>
+                          </li>
+                        ))}
+                      </ul>
+                    </div>
+                  )}
+                  {suggestions.length > 0 && (
+                    <div className="suggest-section">
+                      <div className="suggest-section-title">Í≤Ä??Í≤∞Í≥º</div>
+                      <ul>
+                        {suggestions.map((s, idx) => {
+                          const fav = favoriteTickers.some((f) => f.ticker === s.ticker);
+                          return (
+                            <li
+                              key={s.ticker}
+                              className={idx === activeSuggestion ? "active" : ""}
+                              onMouseEnter={() => setActiveSuggestion(idx)}
+                              onClick={() => handleSelectSuggestion(s.ticker, s.name)}
+                            >
+                              <div className="suggest-row">
+                                <span className="suggest-ticker">{s.ticker}</span>
+                                <span className="suggest-name">{s.name}</span>
+                              </div>
+                              <button
+                                type="button"
+                                className={`star-btn ${fav ? "active" : ""}`}
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  toggleFavorite(s.ticker, s.name);
+                                }}
+                                aria-label="Ï¶êÍ≤®Ï∞æÍ∏∞"
+                              >
+                                {fav ? "?? : "??}
+                              </button>
+                            </li>
+                          );
+                        })}
+                      </ul>
+                    </div>
+                  )}
+                  {recentTickers.length > 0 && (
+                    <div className="suggest-section">
+                      <div className="suggest-section-title">ÏµúÍ∑º Í≤Ä??/div>
+                      <ul>
+                        {recentTickers.map((s) => (
+                          <li
+                            key={`recent-${s.ticker}`}
+                            onClick={() => handleSelectSuggestion(s.ticker, s.name)}
+                          >
+                            <div className="suggest-row">
+                              <span className="suggest-ticker">{s.ticker}</span>
+                              <span className="suggest-name">{s.name}</span>
+                            </div>
+                          </li>
+                        ))}
+                      </ul>
+                    </div>
+                  )}
+                </div>
+              )}
+              {isSearching && <p className="hint" style={{ marginTop: 4 }}>Í≤Ä??Ï§?..</p>}
+            </div>
+            <div className="chip-group" style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+              <span className="hint">Í≤Ä???úÏû•</span>
+              <button
+                type="button"
+                className={`chip ${searchMarket === "all" ? "active" : ""}`}
+                onClick={() => setSearchMarket("all")}
+              >
+                ?µÌï©
+              </button>
+              <button
+                type="button"
+                className={`chip ${searchMarket === "korea" ? "active" : ""}`}
+                onClick={() => setSearchMarket("korea")}
+              >
+                Íµ?Ç¥
+              </button>
+              <button
+                type="button"
+                className={`chip ${searchMarket === "us" ? "active" : ""}`}
+                onClick={() => setSearchMarket("us")}
+              >
+                ÎØ∏Íµ≠
+              </button>
+            </div>
+          </div>
+          <label>
+            <span>?∞Ïª§</span>
+            <input
+              value={symbolForm.ticker}
+              onChange={(e) => setSymbolForm({ ...symbolForm, ticker: e.target.value.toUpperCase() })}
+              placeholder="?? 005930 ?êÎäî AAPL"
+            />
+          </label>
+          <label className="wide">
+            <span>Ï¢ÖÎ™©Î™?/span>
+            <input
+              value={symbolForm.name}
+              onChange={(e) => setSymbolForm({ ...symbolForm, name: e.target.value })}
+              placeholder="?? ?ºÏÑ±?ÑÏûê"
+            />
+          </label>
+          <div className="form-actions">
+            <button
+              type="button"
+              className="primary"
+              onClick={() => {
+                if (!symbolForm.ticker.trim()) return;
+                const next = [{ ticker: cleanTicker(symbolForm.ticker), name: symbolForm.name.trim() }, ...customSymbols.filter((s) => s.ticker !== cleanTicker(symbolForm.ticker))].slice(0, 100);
+                onChangeCustomSymbols(next);
+                setSymbolForm({ ticker: "", name: "" });
+              }}
+            >
+              Ï∂îÍ?/?ÖÎç∞?¥Ìä∏
+            </button>
+            <button type="button" className="secondary" onClick={handleRefreshSymbolLibrary} disabled={isUpdatingLibrary}>
+              {isUpdatingLibrary ? "?ÖÎç∞?¥Ìä∏ Ï§?.." : "?ÑÏ≤¥ ?úÏÑ∏/?¥Î¶Ñ ?ÖÎç∞?¥Ìä∏"}
+            </button>
+          </div>
+          <table className="data-table compact">
+            <thead>
+              <tr>
+                <th style={{ width: "30%" }}>?∞Ïª§</th>
+                <th>Ï¢ÖÎ™©Î™?/th>
+                <th style={{ width: 120 }}>?ëÏóÖ</th>
+              </tr>
+            </thead>
+            <tbody>
+              {customSymbols.map((s) => (
+                <tr key={s.ticker}>
+                  <td>{s.ticker}</td>
+                  <td>{s.name}</td>
+                  <td>
+                    <button
+                      type="button"
+                      className="danger"
+                      onClick={() => onChangeCustomSymbols(customSymbols.filter((c) => c.ticker !== s.ticker))}
+                    >
+                      ??†ú
+                    </button>
+                  </td>
+                </tr>
+              ))}
+              {customSymbols.length === 0 && (
+                <tr>
+                  <td colSpan={3} style={{ textAlign: "center" }}>
+                    ?±Î°ù???∞Ïª§Í∞Ä ?ÜÏäµ?àÎã§.
+                  </td>
+                </tr>
+              )}
+            </tbody>
+          </table>
+        </div>
+      </div>
+
+      {tickerInfo && (
+        <p className="hint" style={{ marginTop: 8 }}>
+          {tickerInfo.ticker} / {tickerInfo.name}{" "}
+          {tickerInfo.price != null && (
+            <>
+              - ?ÑÏû¨Í∞Ä {formatPriceWithCurrency(tickerInfo.price, tickerInfo.currency)}
+            </>
+          )}
+        </p>
+      )}
+      {quoteError && (
+        <p className="error-text" style={{ marginTop: 4 }}>
+          {quoteError}
+        </p>
+      )}
+
+      <h3>Î≥¥Ïú† Ï¢ÖÎ™© ?ÑÌô© (Í≥ÑÏ¢åÎ≥?</h3>
+      {positionsByAccount.map((group) => (
+        <div key={group.accountId}>
+          <h4>Í≥ÑÏ¢å: {group.accountName}</h4>
+          <table className="data-table">
+            <thead>
+              <tr>
+                <th>
+                  <button type="button" className="sort-header" onClick={() => togglePositionSort("ticker")}>
+                    ?∞Ïª§ <span className="arrow">{sortIndicator(positionSort.key, "ticker", positionSort.direction)}</span>
+                  </button>
+                </th>
+                <th>
+                  <button type="button" className="sort-header" onClick={() => togglePositionSort("name")}>
+                    Ï¢ÖÎ™©Î™?<span className="arrow">{sortIndicator(positionSort.key, "name", positionSort.direction)}</span>
+                  </button>
+                </th>
+                <th>
+                  <button type="button" className="sort-header" onClick={() => togglePositionSort("quantity")}>
+                    Î≥¥Ïú†?òÎüâ <span className="arrow">{sortIndicator(positionSort.key, "quantity", positionSort.direction)}</span>
+                  </button>
+                </th>
+                <th>
+                  <button type="button" className="sort-header" onClick={() => togglePositionSort("avgPrice")}>
+                    ?âÍ∑†?®Í? <span className="arrow">{sortIndicator(positionSort.key, "avgPrice", positionSort.direction)}</span>
+                  </button>
+                </th>
+                <th>
+                  <button type="button" className="sort-header" onClick={() => togglePositionSort("marketPrice")}>
+                    ?ÑÏû¨Í∞Ä <span className="arrow">{sortIndicator(positionSort.key, "marketPrice", positionSort.direction)}</span>
+                  </button>
+                </th>
+                <th>
+                  <button type="button" className="sort-header" onClick={() => togglePositionSort("diff")}>
+                    ?òÏùµ <span className="arrow">{sortIndicator(positionSort.key, "diff", positionSort.direction)}</span>
+                  </button>
+                </th>
+                <th>
+                  <button type="button" className="sort-header" onClick={() => togglePositionSort("marketValue")}>
+                    ?âÍ?Í∏àÏï° <span className="arrow">{sortIndicator(positionSort.key, "marketValue", positionSort.direction)}</span>
+                  </button>
+                </th>
+                <th>
+                  <button type="button" className="sort-header" onClick={() => togglePositionSort("totalBuyAmount")}>
+                    Ï¥ùÎß§?ÖÍ∏à??<span className="arrow">{sortIndicator(positionSort.key, "totalBuyAmount", positionSort.direction)}</span>
+                  </button>
+                </th>
+                <th>
+                  <button type="button" className="sort-header" onClick={() => togglePositionSort("pnl")}>
+                    ?âÍ??êÏùµ <span className="arrow">{sortIndicator(positionSort.key, "pnl", positionSort.direction)}</span>
+                  </button>
+                </th>
+                <th>
+                  <button type="button" className="sort-header" onClick={() => togglePositionSort("pnlRate")}>
+                    ?òÏùµÎ•?<span className="arrow">{sortIndicator(positionSort.key, "pnlRate", positionSort.direction)}</span>
+                  </button>
+                </th>
+              </tr>
+            </thead>
+            <tbody>
+              {group.rows.map((p) => {
+                const diff = p.diff;
+                const diffClass = diff >= 0 ? "positive" : "negative";
+                return (
+                  <tr key={`${group.accountId}-${p.ticker}`}>
+                    <td>{p.ticker}</td>
+                    <td>{p.name}</td>
+                    <td className="number">{formatNumber(p.quantity)}</td>
+                    <td className="number">{formatKRW(Math.round(p.avgPrice))}</td>
+                    <td className="number">
+                      {formatPriceWithCurrency(p.displayMarketPrice, p.currency)}
+                    </td>
+                    <td className={`number ${diffClass}`}>
+                      {diff === 0 ? "-" : formatKRW(diff)}
+                    </td>
+                    <td className={`number ${p.marketValue >= p.totalBuyAmount ? "positive" : "negative"}`}>
+                      {formatKRW(p.marketValue)}
+                    </td>
+                    <td className="number">{formatKRW(p.totalBuyAmount)}</td>
+                    <td className={`number ${p.pnl >= 0 ? "positive" : "negative"}`}>
+                      {formatKRW(p.pnl)}
+                    </td>
+                    <td className={`number ${p.pnl >= 0 ? "positive" : "negative"}`}>
+                      {(p.pnlRate * 100).toFixed(2)}%
+                    </td>
+                  </tr>
+                );
+              })}
+            </tbody>
+          </table>
+        </div>
+      ))}
+
+      <h3>Í±∞Îûò ?¥Ïó≠</h3>
+      <table className="data-table trades-table">
+        <thead>
+          <tr>
+            <th style={{ width: 60 }}>?úÏÑú</th>
+            <th>
+              <button type="button" className="sort-header" onClick={() => toggleTradeSort("date")}>
+                ?†Ïßú <span className="arrow">{sortIndicator(tradeSort.key, "date", tradeSort.direction)}</span>
+              </button>
+            </th>
+            <th>
+              <button type="button" className="sort-header" onClick={() => toggleTradeSort("accountId")}>
+                Í≥ÑÏ¢å <span className="arrow">{sortIndicator(tradeSort.key, "accountId", tradeSort.direction)}</span>
+              </button>
+            </th>
+            <th>
+              <button type="button" className="sort-header" onClick={() => toggleTradeSort("ticker")}>
+                ?∞Ïª§ <span className="arrow">{sortIndicator(tradeSort.key, "ticker", tradeSort.direction)}</span>
+              </button>
+            </th>
+            <th>
+              <button type="button" className="sort-header" onClick={() => toggleTradeSort("name")}>
+                Ï¢ÖÎ™©Î™?<span className="arrow">{sortIndicator(tradeSort.key, "name", tradeSort.direction)}</span>
+              </button>
+            </th>
+            <th>
+              <button type="button" className="sort-header" onClick={() => toggleTradeSort("side")}>
+                Îß§Ïàò/Îß§ÎèÑ <span className="arrow">{sortIndicator(tradeSort.key, "side", tradeSort.direction)}</span>
+              </button>
+            </th>
+            <th>
+              <button type="button" className="sort-header" onClick={() => toggleTradeSort("quantity")}>
+                ?òÎüâ <span className="arrow">{sortIndicator(tradeSort.key, "quantity", tradeSort.direction)}</span>
+              </button>
+            </th>
+            <th>
+              <button type="button" className="sort-header" onClick={() => toggleTradeSort("price")}>
+                ?®Í? <span className="arrow">{sortIndicator(tradeSort.key, "price", tradeSort.direction)}</span>
+              </button>
+            </th>
+            <th>
+              <button type="button" className="sort-header" onClick={() => toggleTradeSort("fee")}>
+                ?òÏàòÎ£??∏Í∏à <span className="arrow">{sortIndicator(tradeSort.key, "fee", tradeSort.direction)}</span>
+              </button>
+            </th>
+            <th>
+              <button type="button" className="sort-header" onClick={() => toggleTradeSort("totalAmount")}>
+                Ï¥ùÍ∏à??<span className="arrow">{sortIndicator(tradeSort.key, "totalAmount", tradeSort.direction)}</span>
+              </button>
+            </th>
+            <th>
+              <button type="button" className="sort-header" onClick={() => toggleTradeSort("cashImpact")}>
+                ?ÑÍ∏àÎ≥Ä??<span className="arrow">{sortIndicator(tradeSort.key, "cashImpact", tradeSort.direction)}</span>
+              </button>
+            </th>
+            <th>?ëÏóÖ</th>
+          </tr>
+        </thead>
+        <tbody>
+          {sortTrades(trades).map((t, index) => (
+            <tr
+              key={t.id}
+              draggable
+              onDragOver={(e) => {
+                if (!draggingTradeId) return;
+                e.preventDefault();
+              }}
+              onDrop={(e) => {
+                if (!draggingTradeId) return;
+                e.preventDefault();
+                handleReorderTrade(draggingTradeId, index);
+                setDraggingTradeId(null);
+              }}
+              onDragStart={() => setDraggingTradeId(t.id)}
+              onDragEnd={() => setDraggingTradeId(null)}
+              onDoubleClick={() => startEditTrade(t)}
+            >
+              <td className="drag-cell">
+                <span className="drag-handle" title="?°Í≥† ???ÑÎûòÎ°??åÏñ¥???úÏÑú Î≥ÄÍ≤?>??/span>
+              </td>
+              <td>{t.date}</td>
+              <td>{t.accountId}</td>
+              <td>{t.ticker}</td>
+              <td className="name-cell" title={t.name}>{t.name}</td>
+              <td>{sideLabel[t.side]}</td>
+              <td className="number">{formatNumber(t.quantity)}</td>
+              <td className={`number ${t.price >= 0 ? "positive" : "negative"}`}>{formatKRW(t.price)}</td>
+              <td className={`number ${t.fee >= 0 ? "positive" : "negative"}`}>{formatKRW(t.fee)}</td>
+              <td className={`number ${t.totalAmount >= 0 ? "positive" : "negative"}`}>
+                {formatKRW(t.totalAmount)}
+              </td>
+              <td className={`number ${t.cashImpact >= 0 ? "positive" : "negative"}`}>
+                {formatKRW(t.cashImpact)}
+              </td>
+              <td>
+                <button type="button" onClick={() => startEditTrade(t)}>
+                  ?∏Ïßë
+                </button>
+                <button type="button" onClick={() => startCopyTrade(t)}>
+                  Î≥µÏÇ¨
+                </button>
+                <button type="button" className="danger" onClick={() => handleDeleteTrade(t.id)}>
+                  ??†ú
+                </button>
+              </td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+        </>
+      ) : (
+        <div className="card" style={{ marginTop: 16 }}>
+          <div style={{ display: "flex", gap: 8, flexWrap: "wrap", marginBottom: 12 }}>
+            <button
+              type="button"
+              className={activeQuoteMarket === "korea" ? "primary" : "secondary"}
+              onClick={() => setActiveQuoteMarket("korea")}
+            >
+              ?úÍµ≠Ï£ºÏãù
+            </button>
+            <button
+              type="button"
+              className={activeQuoteMarket === "us" ? "primary" : "secondary"}
+              onClick={() => setActiveQuoteMarket("us")}
+            >
+              ÎØ∏Íµ≠Ï£ºÏãù
+            </button>
+          </div>
+          <p className="hint" style={{ marginTop: 0, marginBottom: 12 }}>
+            ?±Î°ù???∞Ïª§Î≥??úÏÑ∏Î•??úÏû• ?®ÏúÑÎ°??ïÏù∏?òÍ≥† ?ºÌõÑ ?úÏÑ∏ Í∞±Ïã† Î≤ÑÌäº???åÎü¨ ÏµúÏã† ?ÅÌÉúÎ°??†Ï??òÏÑ∏??
+          </p>
+          <div style={{ overflowX: "auto" }}>
+            {activeQuoteMarket === "korea"
+              ? renderQuoteTable(koreanQuotes, "?úÍµ≠Ï£ºÏãù")
+              : renderQuoteTable(usQuotes, "ÎØ∏Íµ≠Ï£ºÏãù")}
+          </div>
+        </div>
+      )}
+    </div>
+  );
+};
+
+

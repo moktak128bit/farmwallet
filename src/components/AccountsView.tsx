@@ -1,6 +1,7 @@
 import React, { useMemo, useState } from "react";
 import type { Account, AccountType, LedgerEntry } from "../types";
 import type { AccountBalanceRow, PositionRow } from "../calculations";
+import { formatNumber } from "../utils/format";
 
 interface Props {
   accounts: Account[];
@@ -42,6 +43,11 @@ export const AccountsView: React.FC<Props> = ({
   } | null>(null);
   const [editingCellValue, setEditingCellValue] = useState("");
   const [draggingId, setDraggingId] = useState<string | null>(null);
+  const [adjustingAccount, setAdjustingAccount] = useState<{
+    id: string;
+    type: AccountType;
+  } | null>(null);
+  const [adjustValue, setAdjustValue] = useState("");
 
   const handleAddAccount = (account: Account) => {
     onChangeAccounts([...safeAccounts, account]);
@@ -49,9 +55,39 @@ export const AccountsView: React.FC<Props> = ({
   };
 
   const handleDeleteAccount = (id: string) => {
-    if (confirm("정말 이 계좌를 삭제하시겠습니까? 관련된 거래 내역은 유지됩니다.")) {
-      onChangeAccounts(safeAccounts.filter((a) => a.id !== id));
+    onChangeAccounts(safeAccounts.filter((a) => a.id !== id));
+  };
+
+  const handleAdjustBalance = () => {
+    if (!adjustingAccount || !adjustValue) return;
+    const value = Number(adjustValue.replace(/,/g, "")) || 0;
+    if (value === 0) {
+      alert("0이 아닌 값을 입력해주세요.");
+      return;
     }
+
+    const updated = safeAccounts.map((a) => {
+      if (a.id !== adjustingAccount.id) return a;
+
+      if (adjustingAccount.type === "card") {
+        // 카드 계좌: 부채에 더하기
+        return { ...a, debt: (a.debt ?? 0) + value };
+      } else if (adjustingAccount.type === "securities") {
+        // 증권 계좌: 현금 조정에 더하기 (또는 initialCashBalance)
+        if (a.cashAdjustment !== undefined) {
+          return { ...a, cashAdjustment: (a.cashAdjustment ?? 0) + value };
+        } else {
+          return { ...a, initialCashBalance: (a.initialCashBalance ?? a.initialBalance ?? 0) + value };
+        }
+      } else {
+        // 입출금, 저축, 기타: 초기 잔액에 더하기
+        return { ...a, initialBalance: (a.initialBalance ?? 0) + value };
+      }
+    });
+
+    onChangeAccounts(updated);
+    // 모달을 닫지 않고 입력 필드만 초기화하여 계속 추가할 수 있게 함
+    setAdjustValue("");
   };
 
   const startEditNumber = (
@@ -156,9 +192,8 @@ export const AccountsView: React.FC<Props> = ({
     return map;
   }, [safePositions]);
 
-  const formatNumber = (n?: number) => Math.round(n ?? 0).toLocaleString();
 
-  // 카드 계좌의 부채 계산 (가계부 지출 합계)
+  // 카드 계좌의 부채 계산 (카드 사용 - 카드대금 결제)
   const cardDebtMap = useMemo(() => {
     const map = new Map<string, { total: number; monthly: number }>();
     const now = new Date();
@@ -166,19 +201,44 @@ export const AccountsView: React.FC<Props> = ({
     
     safeBalances.forEach((row) => {
       if (row.account.type === "card") {
-        // 전체 부채: 해당 계좌에서 지출된 모든 금액
-        const totalDebt = ledger
+        // 카드 사용 합계 (expense)
+        const totalUsage = ledger
           .filter((l) => l.kind === "expense" && l.fromAccountId === row.account.id)
           .reduce((sum, l) => sum + l.amount, 0);
         
-        // 월 부채: 이번 달 지출 금액
-        const monthlyDebt = ledger
+        // 카드대금 결제 합계 (transfer, 신용카드 > 카드대금)
+        // 카드 계좌로 들어온 결제 (실제 계좌에서 카드 계좌로 이체된 금액)
+        const totalPayment = ledger
+          .filter((l) => 
+            l.kind === "transfer" && 
+            l.category === "신용카드" && 
+            l.subCategory === "카드대금" &&
+            l.toAccountId === row.account.id
+          )
+          .reduce((sum, l) => sum + l.amount, 0);
+        
+        // 전체 부채 = 사용 - 결제
+        const totalDebt = totalUsage - totalPayment;
+        
+        // 월 부채: 이번 달 사용 - 이번 달 결제
+        const monthlyUsage = ledger
           .filter((l) => {
             if (l.kind !== "expense" || l.fromAccountId !== row.account.id) return false;
             if (!l.date) return false;
             return l.date.slice(0, 7) === currentMonth;
           })
           .reduce((sum, l) => sum + l.amount, 0);
+        
+        const monthlyPayment = ledger
+          .filter((l) => {
+            if (l.kind !== "transfer" || l.category !== "신용카드" || l.subCategory !== "카드대금") return false;
+            if (l.toAccountId !== row.account.id) return false;
+            if (!l.date) return false;
+            return l.date.slice(0, 7) === currentMonth;
+          })
+          .reduce((sum, l) => sum + l.amount, 0);
+        
+        const monthlyDebt = monthlyUsage - monthlyPayment;
         
         map.set(row.account.id, { total: totalDebt, monthly: monthlyDebt });
       }
@@ -317,67 +377,28 @@ export const AccountsView: React.FC<Props> = ({
         )}
       </td>
       {(() => {
-        // 증권계좌: 초기현금잔액만 표시
+        // 증권계좌: 주식, 현금, 총액 표시 (주식 탭과 동일한 계산 방식)
         if (accountType === "securities") {
-          const value = row.account.initialCashBalance ?? row.account.initialBalance ?? 0;
-          const isEditing =
-            editingNumber &&
-            editingNumber.id === row.account.id &&
-            editingNumber.field === "initialCashBalance";
+          const stockAsset = stockMap.get(row.account.id) ?? 0;
+          const cashAsset = row.currentBalance; // 주식 탭과 동일하게 계산된 현금 잔액
+          const totalAsset = stockAsset + cashAsset;
+          
+          // 현금은 수정 불가 (거래 내역으로 자동 계산됨)
           return (
-            <td className="number" key={`${row.account.id}-initialCashBalance`}>
-              {isEditing ? (
-                <div style={{ display: "flex", gap: "4px", alignItems: "center" }}>
-                  <input
-                    type="number"
-                    value={editValue}
-                    onChange={(e) => setEditValue(e.target.value)}
-                    onKeyDown={(e) => {
-                      if (e.key === "Enter") {
-                        saveNumber();
-                      } else if (e.key === "Escape") {
-                        cancelEditNumber();
-                      }
-                    }}
-                    onBlur={saveNumber}
-                    autoFocus
-                    style={{ width: "120px", padding: "4px 8px" }}
-                  />
-                  <button
-                    type="button"
-                    onClick={saveNumber}
-                    style={{ padding: "2px 8px", fontSize: "12px" }}
-                  >
-                    저장
-                  </button>
-                  <button
-                    type="button"
-                    onClick={cancelEditNumber}
-                    style={{ padding: "2px 8px", fontSize: "12px" }}
-                  >
-                    취소
-                  </button>
-                </div>
-              ) : (
-                <span
-                  onDoubleClick={() =>
-                    startEditNumber(
-                      row.account.id,
-                      "initialCashBalance",
-                      value
-                    )
-                  }
-                  style={{
-                    cursor: "pointer",
-                    textDecoration: "underline",
-                    textDecorationStyle: "dotted"
-                  }}
-                  title="더블클릭하여 수정"
-                >
-                  {formatNumber(value)}
-                </span>
-              )}
-            </td>
+            <>
+              {/* 주식 */}
+              <td className={`number ${stockAsset >= 0 ? "positive" : "negative"}`}>
+                {formatNumber(stockAsset)}
+              </td>
+              {/* 현금 (주식 탭과 동일한 값) */}
+              <td className={`number ${cashAsset >= 0 ? "positive" : "negative"}`}>
+                {formatNumber(cashAsset)}
+              </td>
+              {/* 총액 */}
+              <td className={`number ${totalAsset >= 0 ? "positive" : "negative"}`}>
+                {formatNumber(totalAsset)}
+              </td>
+            </>
           );
         }
         
@@ -386,203 +407,16 @@ export const AccountsView: React.FC<Props> = ({
           return null;
         }
         
-        // 저축계좌: 초기잔액, 적금만 표시 (부채 제외)
-        if (accountType === "savings") {
-          return ["initialBalance", "savings"].map((field) => {
-            const value =
-              field === "initialBalance"
-                ? row.account.initialBalance
-                : row.account.savings ?? 0;
-            const isEditing =
-              editingNumber &&
-              editingNumber.id === row.account.id &&
-              editingNumber.field === field;
-            return (
-              <td className="number" key={`${row.account.id}-${field}`}>
-                {isEditing ? (
-                  <div style={{ display: "flex", gap: "4px", alignItems: "center" }}>
-                    <input
-                      type="number"
-                      value={editValue}
-                      onChange={(e) => setEditValue(e.target.value)}
-                      onKeyDown={(e) => {
-                        if (e.key === "Enter") {
-                          saveNumber();
-                        } else if (e.key === "Escape") {
-                          cancelEditNumber();
-                        }
-                      }}
-                      onBlur={saveNumber}
-                      autoFocus
-                      style={{ width: "120px", padding: "4px 8px" }}
-                    />
-                    <button
-                      type="button"
-                      onClick={saveNumber}
-                      style={{ padding: "2px 8px", fontSize: "12px" }}
-                    >
-                      저장
-                    </button>
-                    <button
-                      type="button"
-                      onClick={cancelEditNumber}
-                      style={{ padding: "2px 8px", fontSize: "12px" }}
-                    >
-                      취소
-                    </button>
-                  </div>
-                ) : (
-                  <span
-                    onDoubleClick={() =>
-                      startEditNumber(
-                        row.account.id,
-                        field as "initialBalance" | "savings",
-                        value
-                      )
-                    }
-                    style={{
-                      cursor: "pointer",
-                      textDecoration: "underline",
-                      textDecorationStyle: "dotted"
-                    }}
-                    title="더블클릭하여 수정"
-                  >
-                    {formatNumber(value)}
-                  </span>
-                )}
-              </td>
-            );
-          });
-        }
+        // 입출금, 저축, 기타 계좌: 보유 금액(총자산)만 표시
+        const cashAsset = row.currentBalance;
+        const stockAsset = stockMap.get(row.account.id) ?? 0;
+        const debt = row.account.debt ?? 0;
+        const savings = row.account.savings ?? 0;
+        const totalAsset = cashAsset + stockAsset + savings - debt;
         
-        // 다른 계좌 타입: 초기잔액, 부채, 적금 모두 표시
-        return ["initialBalance", "debt", "savings"].map((field) => {
-        const value =
-          field === "initialBalance"
-            ? row.account.initialBalance
-            : field === "debt"
-              ? row.account.debt ?? 0
-              : row.account.savings ?? 0;
-        const isEditing =
-          editingNumber &&
-          editingNumber.id === row.account.id &&
-          editingNumber.field === field;
         return (
-          <td className="number" key={`${row.account.id}-${field}`}>
-            {isEditing ? (
-              <div style={{ display: "flex", gap: "4px", alignItems: "center" }}>
-                <input
-                  type="number"
-                  value={editValue}
-                  onChange={(e) => setEditValue(e.target.value)}
-                  onKeyDown={(e) => {
-                    if (e.key === "Enter") {
-                      saveNumber();
-                    } else if (e.key === "Escape") {
-                      cancelEditNumber();
-                    }
-                  }}
-                  onBlur={saveNumber}
-                  autoFocus
-                  style={{ width: "120px", padding: "4px 8px" }}
-                />
-                <button
-                  type="button"
-                  onClick={saveNumber}
-                  style={{ padding: "2px 8px", fontSize: "12px" }}
-                >
-                  저장
-                </button>
-                <button
-                  type="button"
-                  onClick={cancelEditNumber}
-                  style={{ padding: "2px 8px", fontSize: "12px" }}
-                >
-                  취소
-                </button>
-              </div>
-            ) : (
-              <span
-                onDoubleClick={() =>
-                  startEditNumber(
-                    row.account.id,
-                    field as "initialBalance" | "debt" | "savings",
-                    value
-                  )
-                }
-                style={{
-                  cursor: "pointer",
-                  textDecoration: "underline",
-                  textDecorationStyle: "dotted"
-                }}
-                title="더블클릭하여 수정"
-              >
-                {formatNumber(value)}
-              </span>
-            )}
-          </td>
-        );
-      });
-      })()}
-      {accountType === "securities" && (() => {
-        const value = row.account.cashAdjustment ?? 0;
-        const isEditing =
-          editingNumber &&
-          editingNumber.id === row.account.id &&
-          editingNumber.field === "cashAdjustment";
-        return (
-          <td className="number" key={`${row.account.id}-cashAdjustment`}>
-            {isEditing ? (
-              <div style={{ display: "flex", gap: "4px", alignItems: "center" }}>
-                <input
-                  type="number"
-                  value={editValue}
-                  onChange={(e) => setEditValue(e.target.value)}
-                  onKeyDown={(e) => {
-                    if (e.key === "Enter") {
-                      saveNumber();
-                    } else if (e.key === "Escape") {
-                      cancelEditNumber();
-                    }
-                  }}
-                  onBlur={saveNumber}
-                  autoFocus
-                  style={{ width: "120px", padding: "4px 8px" }}
-                />
-                <button
-                  type="button"
-                  onClick={saveNumber}
-                  style={{ padding: "2px 8px", fontSize: "12px" }}
-                >
-                  저장
-                </button>
-                <button
-                  type="button"
-                  onClick={cancelEditNumber}
-                  style={{ padding: "2px 8px", fontSize: "12px" }}
-                >
-                  취소
-                </button>
-              </div>
-            ) : (
-              <span
-                onDoubleClick={() =>
-                  startEditNumber(
-                    row.account.id,
-                    "cashAdjustment",
-                    value
-                  )
-                }
-                style={{
-                  cursor: "pointer",
-                  textDecoration: "underline",
-                  textDecorationStyle: "dotted"
-                }}
-                title="더블클릭하여 수정 (현금 조정)"
-              >
-                {formatNumber(value)}
-              </span>
-            )}
+          <td className={`number ${totalAsset >= 0 ? "positive" : "negative"}`}>
+            {formatNumber(totalAsset)}
           </td>
         );
       })()}
@@ -601,40 +435,34 @@ export const AccountsView: React.FC<Props> = ({
             </>
           );
         }
-        
-        const cashAsset = row.currentBalance;
-        const stockAsset = stockMap.get(row.account.id) ?? 0;
-        if (accountType === "securities") {
-          // 증권계좌: 주식재산만 표시
-          return (
-            <td className={`number ${stockAsset >= 0 ? "positive" : "negative"}`}>
-              {formatNumber(stockAsset)}
-            </td>
-          );
-        } else {
-          // 다른 계좌: 기존대로 현금자산, 주식자산, 총자산 표시
-          const debt = row.account.debt ?? 0;
-          const savings = row.account.savings ?? 0;
-          const totalAsset = cashAsset + stockAsset + savings - debt;
-          return (
-            <>
-              <td className={`number ${cashAsset >= 0 ? "positive" : "negative"}`}>
-                {formatNumber(cashAsset)}
-              </td>
-              <td className={`number ${stockAsset >= 0 ? "positive" : "negative"}`}>
-                {formatNumber(stockAsset)}
-              </td>
-              <td className={`number ${totalAsset >= 0 ? "positive" : "negative"}`}>
-                {formatNumber(totalAsset)}
-              </td>
-            </>
-          );
-        }
+        return null;
       })()}
-      <td>
-        <button type="button" className="danger" onClick={() => handleDeleteAccount(row.account.id)}>
-          삭제
-        </button>
+      <td style={{ whiteSpace: "nowrap" }}>
+        <div style={{ display: "flex", gap: "8px", alignItems: "center" }}>
+          <button
+            type="button"
+            className="primary"
+            onClick={() => {
+              setAdjustingAccount({ id: row.account.id, type: accountType });
+              setAdjustValue("");
+            }}
+            style={{ fontSize: "13px", padding: "6px 12px" }}
+          >
+            수정
+          </button>
+          <button
+            type="button"
+            className="danger"
+            onClick={() => {
+              if (window.confirm(`정말 "${row.account.name}" 계좌를 삭제하시겠습니까?\n\n관련된 거래 내역은 유지됩니다.`)) {
+                handleDeleteAccount(row.account.id);
+              }
+            }}
+            style={{ fontSize: "13px", padding: "6px 12px" }}
+          >
+            삭제
+          </button>
+        </div>
       </td>
     </tr>
   );
@@ -669,17 +497,9 @@ export const AccountsView: React.FC<Props> = ({
             <th>종류</th>
             {type === "securities" ? (
               <>
-                <th>초기잔액</th>
-                <th>기타</th>
-                <th>주식재산</th>
-              </>
-            ) : type === "savings" ? (
-              <>
-                <th>초기잔액</th>
-                <th>적금</th>
-                <th>현금자산</th>
-                <th>주식자산</th>
-                <th>총자산</th>
+                <th>주식</th>
+                <th>현금</th>
+                <th>총액</th>
               </>
             ) : type === "card" ? (
               <>
@@ -687,14 +507,7 @@ export const AccountsView: React.FC<Props> = ({
                 <th>월 부채</th>
               </>
             ) : (
-              <>
-                <th>초기잔액</th>
-                <th>부채</th>
-                <th>적금</th>
-                <th>현금자산</th>
-                <th>주식자산</th>
-                <th>총자산</th>
-              </>
+              <th>보유 금액</th>
             )}
             <th>작업</th>
           </tr>
@@ -708,6 +521,119 @@ export const AccountsView: React.FC<Props> = ({
       })}
 
       {accounts.length === 0 && <p>아직 계좌가 없습니다. 새 계좌를 추가해 보세요.</p>}
+
+      {/* 금액 조정 모달 */}
+      {adjustingAccount && (() => {
+        const account = safeAccounts.find((a) => a.id === adjustingAccount.id);
+        if (!account) return null;
+
+        // 현재 조정된 총액 계산
+        let currentAdjustment = 0;
+        let initialValue = 0;
+        if (adjustingAccount.type === "card") {
+          initialValue = 0; // 부채는 초기값이 0
+          currentAdjustment = account.debt ?? 0;
+        } else if (adjustingAccount.type === "securities") {
+          initialValue = account.initialCashBalance ?? account.initialBalance ?? 0;
+          currentAdjustment = (account.cashAdjustment ?? 0) + (account.initialCashBalance ?? account.initialBalance ?? 0) - initialValue;
+        } else {
+          initialValue = 0; // 입출금/저축은 초기값이 0일 수 있음
+          currentAdjustment = account.initialBalance ?? 0;
+        }
+
+        return (
+          <div className="modal-backdrop" onClick={() => setAdjustingAccount(null)}>
+            <div className="modal" onClick={(e) => e.stopPropagation()} style={{ maxWidth: "500px" }}>
+              <div className="modal-header">
+                <h3>
+                  {(() => {
+                    const label = `${account.name} (${ACCOUNT_TYPE_LABEL[adjustingAccount.type]})`;
+                    if (adjustingAccount.type === "card") {
+                      return `${label} - 부채 조정`;
+                    } else if (adjustingAccount.type === "securities") {
+                      return `${label} - 현금 조정`;
+                    } else {
+                      return `${label} - 보유금액 조정`;
+                    }
+                  })()}
+                </h3>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setAdjustingAccount(null);
+                    setAdjustValue("");
+                  }}
+                  style={{ background: "transparent", border: "none", fontSize: "20px", cursor: "pointer", padding: "0", width: "24px", height: "24px" }}
+                >
+                  ×
+                </button>
+              </div>
+              <div className="modal-body">
+                {/* 조정 내역 표시 */}
+                <div style={{ marginBottom: "20px", padding: "12px", background: "var(--bg)", borderRadius: "8px" }}>
+                  <div style={{ fontSize: "13px", color: "var(--text-muted)", marginBottom: "8px" }}>
+                    {adjustingAccount.type === "card" ? "현재 부채" : adjustingAccount.type === "securities" ? "현재 현금 조정액" : "현재 보유금액 조정액"}
+                  </div>
+                  <div style={{ fontSize: "20px", fontWeight: "700", color: currentAdjustment >= 0 ? "var(--primary)" : "var(--danger)" }}>
+                    {currentAdjustment >= 0 ? "+" : ""}{formatNumber(currentAdjustment)} 원
+                  </div>
+                </div>
+
+                {/* 새 금액 입력 */}
+                <label>
+                  <span>
+                    {adjustingAccount.type === "card"
+                      ? "추가할 부채 금액 (음수 입력 시 차감)"
+                      : adjustingAccount.type === "securities"
+                      ? "추가할 현금 금액 (음수 입력 시 차감)"
+                      : "추가할 보유금액 (음수 입력 시 차감)"}
+                  </span>
+                  <input
+                    type="text"
+                    value={adjustValue}
+                    onChange={(e) => {
+                      const val = e.target.value.replace(/[^0-9-]/g, "");
+                      setAdjustValue(val);
+                    }}
+                    placeholder="금액을 입력하세요 (예: 100000 또는 -50000)"
+                    autoFocus
+                    onKeyDown={(e) => {
+                      if (e.key === "Enter") {
+                        handleAdjustBalance();
+                        setAdjustValue(""); // 입력 필드 초기화
+                      } else if (e.key === "Escape") {
+                        setAdjustingAccount(null);
+                        setAdjustValue("");
+                      }
+                    }}
+                  />
+                </label>
+                <div className="form-actions" style={{ marginTop: "16px" }}>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setAdjustingAccount(null);
+                      setAdjustValue("");
+                    }}
+                  >
+                    닫기
+                  </button>
+                  <button
+                    type="button"
+                    className="primary"
+                    onClick={() => {
+                      handleAdjustBalance();
+                      setAdjustValue(""); // 입력 필드 초기화하여 계속 추가 가능하게
+                    }}
+                  >
+                    추가
+                  </button>
+                </div>
+              </div>
+            </div>
+          </div>
+        );
+      })()}
     </div>
   );
 };

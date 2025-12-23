@@ -1,4 +1,4 @@
-import React, { useMemo, useRef, useState, useCallback, useEffect } from "react";
+import React, { useMemo, useState, useCallback, useEffect } from "react";
 import {
   PieChart,
   Pie,
@@ -18,6 +18,7 @@ import type { AccountBalanceRow } from "../calculations";
 import { computePositions } from "../calculations";
 import { fetchYahooQuotes, searchYahooSymbol } from "../yahooFinanceApi";
 import { saveTickerDatabaseBackup, saveTickerToJson } from "../storage";
+import { formatNumber, formatKRW, formatUSD } from "../utils/format";
 
 interface Props {
   accounts: Account[];
@@ -515,9 +516,6 @@ export const StocksView: React.FC<Props> = ({
     }
   }, []);
 
-  const formatNumber = (value: number) => Math.round(value).toLocaleString("ko-KR");
-  const formatKRW = (value: number) => `${formatNumber(value)} 원`;
-  const formatUSD = (value: number) => Math.round(value).toLocaleString("en-US");
   const formatPriceWithCurrency = (value: number, currency?: string) => {
     if (currency === "USD" && showUSD) {
       const base = `${formatUSD(value)} USD`;

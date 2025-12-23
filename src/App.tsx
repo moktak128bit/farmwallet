@@ -425,6 +425,7 @@ export const App: React.FC = () => {
     toast.success("계좌 ID 변경 완료");
   };
 
+
   return (
     <div className="app-root">
       <Toaster position="bottom-center" toastOptions={{
@@ -565,14 +566,13 @@ export const App: React.FC = () => {
               prices={data.prices}
               tickerDatabase={data.tickerDatabase ?? []}
               onChangeLedger={(ledger) => setDataWithHistory({ ...data, ledger })}
-              onChangeAccounts={(accounts) => setDataWithHistory({ ...data, accounts })}
             />
           )}
           {tab === "debt" && (
             <DebtView
-              accounts={data.accounts}
+              loans={data.loans}
               ledger={data.ledger}
-              onChangeLedger={(ledger) => setDataWithHistory({ ...data, ledger })}
+              onChangeLoans={(loans) => setDataWithHistory({ ...data, loans })}
             />
           )}
           {tab === "budget" && (

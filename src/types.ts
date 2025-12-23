@@ -125,6 +125,20 @@ export interface LedgerTemplate {
   lastUsed?: string; // 마지막 사용 날짜 (ISO yyyy-mm-dd)
 }
 
+export type RepaymentMethod = "equal_payment" | "equal_principal" | "bullet";
+
+export interface Loan {
+  id: string;
+  institution: string; // 기관명
+  loanName: string; // 대출명
+  loanAmount: number; // 대출금액
+  annualInterestRate: number; // 연이자율 (%)
+  repaymentMethod: RepaymentMethod; // 상환방법
+  loanDate: string; // 대출일 (yyyy-mm-dd)
+  maturityDate: string; // 상환만기일 (yyyy-mm-dd)
+  gracePeriodYears?: number; // 거치년도 (선택)
+}
+
 export interface AppData {
   accounts: Account[];
   ledger: LedgerEntry[];
@@ -138,4 +152,5 @@ export interface AppData {
   tickerDatabase?: TickerInfo[]; // 티커 목록 데이터베이스
   ledgerTemplates?: LedgerTemplate[];
   stockPresets?: StockPreset[];
+  loans?: Loan[]; // 대출 목록
 }

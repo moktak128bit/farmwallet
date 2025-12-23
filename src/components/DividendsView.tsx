@@ -3,6 +3,7 @@ import { Autocomplete } from "./Autocomplete";
 import type { Account, LedgerEntry, StockPrice, StockTrade, TickerInfo } from "../types";
 import { computePositions } from "../calculations";
 import { fetchYahooQuotes } from "../yahooFinanceApi";
+import { formatNumber, formatKRW } from "../utils/format";
 
 interface Props {
   accounts: Account[];
@@ -11,7 +12,6 @@ interface Props {
   prices: StockPrice[];
   tickerDatabase: TickerInfo[];
   onChangeLedger: (ledger: LedgerEntry[]) => void;
-  onChangeAccounts?: (accounts: Account[]) => void; // 더 이상 사용하지 않지만 호환성을 위해 유지
 }
 
 interface DividendRow {
@@ -24,7 +24,7 @@ interface DividendRow {
 
 type TabType = "dividend" | "interest";
 
-export const DividendsView: React.FC<Props> = ({ accounts, ledger, trades, prices, tickerDatabase, onChangeLedger, onChangeAccounts }) => {
+export const DividendsView: React.FC<Props> = ({ accounts, ledger, trades, prices, tickerDatabase, onChangeLedger }) => {
   const [activeTab, setActiveTab] = useState<TabType>("dividend");
   const [showUSD, setShowUSD] = useState(false);
   const [fxRate, setFxRate] = useState<number | null>(null);
@@ -138,9 +138,6 @@ export const DividendsView: React.FC<Props> = ({ accounts, ledger, trades, price
     updateFxRate();
   }, []);
 
-  // 통화 포맷팅 함수 (주식 탭과 동일)
-  const formatNumber = (value: number) => Math.round(value).toLocaleString("ko-KR");
-  const formatKRW = (value: number) => `${formatNumber(value)} 원`;
   const formatUSD = (value: number) => Math.round(value).toLocaleString("en-US");
   const formatCurrency = (value: number, currency?: string, originalValue?: number) => {
     // value는 이미 원화로 변환된 값 (adjustedPrices 사용)

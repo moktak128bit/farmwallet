@@ -46,7 +46,9 @@ export function loadData(): AppData {
     budgetGoals: [],
     customSymbols: [],
     usTickers: getDefaultUsTickers(),
-    tickerDatabase: []
+    tickerDatabase: [],
+    ledgerTemplates: [],
+    stockPresets: []
   };
 
   if (typeof window === "undefined") {
@@ -76,7 +78,9 @@ export function loadData(): AppData {
       budgetGoals: parsed.budgetGoals ?? [],
       customSymbols: parsed.customSymbols ?? [],
       usTickers: parsed.usTickers ?? getDefaultUsTickers(),
-      tickerDatabase: parsed.tickerDatabase ?? []
+      tickerDatabase: parsed.tickerDatabase ?? [],
+      ledgerTemplates: parsed.ledgerTemplates ?? [],
+      stockPresets: parsed.stockPresets ?? []
     };
   } catch {
     // 오류 발생 시에도 빈 데이터 반환

@@ -1,0 +1,1172 @@
+{
+  "accounts": [
+    {
+      "id": "CMA",
+      "name": "농협CMA",
+      "institution": "나무증권",
+      "type": "securities",
+      "initialBalance": 0,
+      "debt": 0,
+      "savings": 0
+    },
+    {
+      "id": "ISA",
+      "name": "ISA농협",
+      "institution": "나무증권",
+      "type": "securities",
+      "initialBalance": 0,
+      "debt": 0,
+      "savings": 0
+    },
+    {
+      "id": "연금저축",
+      "name": "100세연금저축계좌",
+      "institution": "나무증권",
+      "type": "securities",
+      "initialBalance": 0,
+      "debt": 0,
+      "savings": 0
+    },
+    {
+      "id": "마이너스통장",
+      "name": "농협마이너스통장",
+      "institution": "농협은행",
+      "type": "checking",
+      "initialBalance": 0,
+      "debt": 5000000,
+      "savings": 0
+    },
+    {
+      "id": "농협",
+      "name": "농협입출금계좌",
+      "institution": "지역농축협",
+      "type": "checking",
+      "initialBalance": 0,
+      "debt": 0,
+      "savings": 0
+    },
+    {
+      "id": "나라사랑",
+      "name": "KB나라사랑은행",
+      "institution": "국민은행",
+      "type": "checking",
+      "initialBalance": 0,
+      "debt": 0,
+      "savings": 0
+    },
+    {
+      "id": "삼성페이카드",
+      "name": "삼성페이카드",
+      "institution": "삼성카드",
+      "type": "card",
+      "initialBalance": 0,
+      "debt": 0,
+      "savings": 0
+    },
+    {
+      "id": "카카오페이",
+      "name": "카카오페이",
+      "institution": "카카오",
+      "type": "savings",
+      "initialBalance": 0,
+      "debt": 0,
+      "savings": 0
+    },
+    {
+      "id": "청년도약",
+      "name": "청년도약계좌",
+      "institution": "농협은행",
+      "type": "savings",
+      "initialBalance": 0,
+      "debt": 0,
+      "savings": 0
+    },
+    {
+      "id": "주택청약",
+      "name": "청년드림주택청약",
+      "institution": "국민은행",
+      "type": "savings",
+      "initialBalance": 0,
+      "debt": 0,
+      "savings": 0
+    },
+    {
+      "id": "저축은행",
+      "name": "OK짠테크통장",
+      "institution": "OK저축은행",
+      "type": "savings",
+      "initialBalance": 0,
+      "debt": 0,
+      "savings": 0
+    }
+  ],
+  "ledger": [
+    {
+      "id": "D1766043769172",
+      "date": "2025-12-18",
+      "kind": "income",
+      "category": "배당",
+      "description": "SCHD 배당",
+      "toAccountId": "CMA",
+      "amount": 54000,
+      "note": "정리됨"
+    },
+    {
+      "id": "L1766043605170",
+      "date": "2025-12-18",
+      "kind": "expense",
+      "isFixedExpense": false,
+      "category": "유류교통비",
+      "subCategory": "유류비/충전비",
+      "description": "",
+      "amount": 50000,
+      "fromAccountId": "ISA"
+    }
+  ],
+  "trades": [
+    {
+      "id": "T1766320933186",
+      "date": "2025-12-21",
+      "accountId": "연금저축",
+      "ticker": "0048J0",
+      "name": "0048J0",
+      "side": "buy",
+      "quantity": 7,
+      "price": 13890,
+      "fee": 0,
+      "totalAmount": 97230,
+      "cashImpact": -97230
+    },
+    {
+      "id": "T1766320905735",
+      "date": "2025-12-21",
+      "accountId": "연금저축",
+      "ticker": "308620",
+      "name": "Samsung KODEX Energy & chemicals Securities ETF-Kodex Treasury Note Futures Fund",
+      "side": "buy",
+      "quantity": 9,
+      "price": 11570,
+      "fee": 0,
+      "totalAmount": 104130,
+      "cashImpact": -104130
+    },
+    {
+      "id": "T1766320882058",
+      "date": "2025-12-21",
+      "accountId": "연금저축",
+      "ticker": "379810",
+      "name": "Samsung KODEX US Nasdaq100 ETF",
+      "side": "buy",
+      "quantity": 11,
+      "price": 22265,
+      "fee": 0,
+      "totalAmount": 244915,
+      "cashImpact": -244915
+    },
+    {
+      "id": "T1766320852852",
+      "date": "2025-12-21",
+      "accountId": "연금저축",
+      "ticker": "379800",
+      "name": "Samsung KODEX S&P500 ETF",
+      "side": "buy",
+      "quantity": 30,
+      "price": 19975,
+      "fee": 0,
+      "totalAmount": 599250,
+      "cashImpact": -599250
+    },
+    {
+      "id": "T1766320806854",
+      "date": "2025-12-21",
+      "accountId": "CMA",
+      "ticker": "IONQ",
+      "name": "IonQ, Inc.",
+      "side": "buy",
+      "quantity": 1,
+      "price": 77621,
+      "fee": 0,
+      "totalAmount": 77621,
+      "cashImpact": -77621
+    },
+    {
+      "id": "T1766320786071",
+      "date": "2025-12-21",
+      "accountId": "CMA",
+      "ticker": "SCHD",
+      "name": "Schwab U.S. Dividend Equity ETF",
+      "side": "buy",
+      "quantity": 2,
+      "price": 38740,
+      "fee": 0,
+      "totalAmount": 77480,
+      "cashImpact": -77480
+    },
+    {
+      "id": "T1766320763955",
+      "date": "2025-12-21",
+      "accountId": "CMA",
+      "ticker": "QBTS",
+      "name": "QBTS",
+      "side": "buy",
+      "quantity": 3,
+      "price": 31932,
+      "fee": 0,
+      "totalAmount": 95796,
+      "cashImpact": -95796
+    },
+    {
+      "id": "T1766320750386",
+      "date": "2025-12-21",
+      "accountId": "CMA",
+      "ticker": "O",
+      "name": "Realty Income Corporation",
+      "side": "buy",
+      "quantity": 2,
+      "price": 83996,
+      "fee": 0,
+      "totalAmount": 167992,
+      "cashImpact": -167992
+    },
+    {
+      "id": "T1766320707748",
+      "date": "2025-12-21",
+      "accountId": "CMA",
+      "ticker": "RKLB",
+      "name": "Rocket Lab Corporation",
+      "side": "buy",
+      "quantity": 14,
+      "price": 69889,
+      "fee": 0,
+      "totalAmount": 978446,
+      "cashImpact": -978446
+    },
+    {
+      "id": "T1766320644844",
+      "date": "2025-12-21",
+      "accountId": "ISA",
+      "ticker": "458730",
+      "name": "Mirae Asset Tiger U.S. Dividend Equity Etf",
+      "side": "buy",
+      "quantity": 109,
+      "price": 11987,
+      "fee": 0,
+      "totalAmount": 1306583,
+      "cashImpact": -1306583
+    },
+    {
+      "id": "T1766320605020",
+      "date": "2025-12-21",
+      "accountId": "ISA",
+      "ticker": "485540",
+      "name": "Samsung Kodex Us Ai Tech Top10+15% Premium Etf Etf",
+      "side": "buy",
+      "quantity": 289,
+      "price": 14646,
+      "fee": 0,
+      "totalAmount": 4232694,
+      "cashImpact": -4232694
+    },
+    {
+      "id": "T1766320521019",
+      "date": "2025-12-21",
+      "accountId": "ISA",
+      "ticker": "0047A0",
+      "name": "Mirae Asset Global Investments - Mirae Asset Tiger China Tech Top 10 ETF",
+      "side": "buy",
+      "quantity": 105,
+      "price": 13024,
+      "fee": 0,
+      "totalAmount": 1367520,
+      "cashImpact": -1367520
+    },
+    {
+      "id": "T1766320068463",
+      "date": "2025-12-21",
+      "accountId": "ISA",
+      "ticker": "136490",
+      "name": "Sunjin Co.,Ltd.",
+      "side": "buy",
+      "quantity": 1,
+      "price": 10480,
+      "fee": 0,
+      "totalAmount": 10480,
+      "cashImpact": -10480
+    },
+    {
+      "id": "T1765716711555",
+      "date": "2025-12-14",
+      "accountId": "ISA",
+      "ticker": "0053L0",
+      "name": "TIGER CHINA HUMANOID ROBOT",
+      "side": "buy",
+      "quantity": 105,
+      "price": 13024,
+      "fee": 0,
+      "totalAmount": 1367520,
+      "cashImpact": -1367520
+    }
+  ],
+  "prices": [
+    {
+      "ticker": "SCHD",
+      "name": "Schwab U.S. Dividend Equity ETF",
+      "price": 27.46,
+      "currency": "USD",
+      "change": -0.019999999999999574,
+      "changePercent": -0.07278020378456904,
+      "updatedAt": "2025-12-19T21:00:00.000Z"
+    },
+    {
+      "ticker": "QQQM",
+      "name": "Invesco NASDAQ 100 ETF",
+      "price": 247.19,
+      "currency": "USD",
+      "change": -4.659999999999997,
+      "changePercent": -1.850307722850902,
+      "updatedAt": "2025-12-17T21:00:00.000Z"
+    },
+    {
+      "ticker": "485540",
+      "name": "Samsung Kodex Us Ai Tech Top10 Etf",
+      "price": 14830,
+      "currency": "KRW",
+      "change": 265,
+      "changePercent": 1.8194301407483693,
+      "updatedAt": "2025-12-19T06:30:19.000Z"
+    },
+    {
+      "ticker": "0053L0",
+      "name": "TIGER CHINA HUMANOID ROBOT",
+      "price": 12715,
+      "currency": "KRW",
+      "change": 195,
+      "changePercent": 1.5575079872204471,
+      "updatedAt": "2025-12-19T06:30:30.000Z"
+    },
+    {
+      "ticker": "UNH",
+      "name": "UnitedHealth Group Incorporated",
+      "price": 331.63,
+      "currency": "USD",
+      "change": -2.569999999999993,
+      "changePercent": -0.7690005984440434,
+      "updatedAt": "2025-12-17T21:00:02.000Z"
+    },
+    {
+      "ticker": "458730",
+      "name": "Mirae Asset Tiger U.S. Dividend Equity Etf",
+      "price": 13000,
+      "currency": "KRW",
+      "change": -20,
+      "changePercent": -0.15360983102918588,
+      "updatedAt": "2025-12-19T06:30:06.000Z"
+    },
+    {
+      "ticker": "BRK-B",
+      "name": "Berkshire Hathaway Inc.",
+      "price": 494.53,
+      "currency": "USD",
+      "change": -8.860000000000014,
+      "changePercent": -1.7600667474522762,
+      "updatedAt": "2025-12-19T21:03:07.000Z"
+    },
+    {
+      "ticker": "O",
+      "name": "Realty Income Corporation",
+      "price": 56.33,
+      "currency": "USD",
+      "change": -0.44000000000000483,
+      "changePercent": -0.7750572485467762,
+      "updatedAt": "2025-12-19T21:00:02.000Z"
+    },
+    {
+      "ticker": "136490",
+      "name": "Sunjin Co.,Ltd.",
+      "price": 9740,
+      "currency": "KRW",
+      "change": 40,
+      "changePercent": 0.4123711340206186,
+      "updatedAt": "2025-12-19T06:30:30.000Z"
+    },
+    {
+      "ticker": "RKLB",
+      "name": "Rocket Lab Corporation",
+      "price": 70.52,
+      "currency": "USD",
+      "change": 10.599999999999994,
+      "changePercent": 17.690253671562072,
+      "updatedAt": "2025-12-19T21:00:00.000Z"
+    },
+    {
+      "ticker": "0047A0",
+      "name": "Mirae Asset Global Investments - Mirae Asset Tiger China Tech Top 10 ETF",
+      "price": 12195,
+      "currency": "KRW",
+      "change": 130,
+      "changePercent": 1.077496891835889,
+      "updatedAt": "2025-12-19T06:30:30.000Z"
+    }
+  ],
+  "categoryPresets": {
+    "income": [
+      "이월",
+      "급여",
+      "수당",
+      "배당",
+      "지역화폐",
+      "정산",
+      "상여",
+      "투자수익",
+      "이자",
+      "부수익",
+      "대출",
+      "처분소득",
+      "용돈",
+      "지원",
+      "기타수입"
+    ],
+    "expense": [
+      "저축성지출",
+      "식비",
+      "유류교통비",
+      "생활용품비",
+      "데이트비",
+      "의류미용비",
+      "교육비",
+      "문화생활비",
+      "의료건강비",
+      "구독비",
+      "통신비",
+      "경조사비",
+      "유흥오락비",
+      "주거비",
+      "놀이",
+      "대출",
+      "실수"
+    ],
+    "expenseDetails": [
+      {
+        "main": "저축성지출",
+        "subs": [
+          "예금",
+          "적금",
+          "주택청약",
+          "투자(ISA)",
+          "연금저축",
+          "나무(CMA)",
+          "투자(IRP)",
+          "비상금",
+          "빚상환용",
+          "해외주식",
+          "토스주식",
+          "가상자산",
+          "기타저축"
+        ]
+      },
+      {
+        "main": "식비",
+        "subs": [
+          "시장/마트",
+          "외식/배달",
+          "간식",
+          "술/회식",
+          "커피숍",
+          "편의점",
+          "기타식비"
+        ]
+      },
+      {
+        "main": "유류교통비",
+        "subs": [
+          "버스/지하철",
+          "택시",
+          "유류비/충전비",
+          "자동차용품",
+          "수리비",
+          "유지보수비",
+          "톨비/하이패스",
+          "주차비",
+          "자동차보험",
+          "자동차할부",
+          "자동차세",
+          "기차",
+          "항공",
+          "기타교통"
+        ]
+      },
+      {
+        "main": "생활용품비",
+        "subs": [
+          "가구/가전",
+          "주방/욕실",
+          "오피스/문구",
+          "멤버십",
+          "기타생활용품",
+          "기타잡지출"
+        ]
+      },
+      {
+        "main": "데이트비",
+        "subs": [
+          "식사",
+          "카페",
+          "이동",
+          "숙박",
+          "문화생활",
+          "간식",
+          "물건",
+          "선물",
+          "기타데이트"
+        ]
+      },
+      {
+        "main": "의류미용비",
+        "subs": [
+          "의류",
+          "패션잡화",
+          "세탁비",
+          "기타의류",
+          "화장품",
+          "미용실",
+          "기타미용"
+        ]
+      },
+      {
+        "main": "교육비",
+        "subs": [
+          "학교",
+          "학원",
+          "도서",
+          "강의",
+          "등록금",
+          "헬스장",
+          "운동",
+          "자격증",
+          "기타교육"
+        ]
+      },
+      {
+        "main": "문화생활비",
+        "subs": [
+          "영화/관람",
+          "여가",
+          "여행",
+          "OTT",
+          "대관비",
+          "기타문화생활"
+        ]
+      },
+      {
+        "main": "의료건강비",
+        "subs": [
+          "병원",
+          "의약품",
+          "영양제",
+          "보험료",
+          "기타의료비"
+        ]
+      },
+      {
+        "main": "구독비",
+        "subs": [
+          "유튜브",
+          "넷플릭스",
+          "쿠팡",
+          "ChatGPT",
+          "microsoft",
+          "카카오톡서랍",
+          "네이버",
+          "토스프라임",
+          "삼성케어플러스",
+          "CursorAI"
+        ]
+      },
+      {
+        "main": "통신비",
+        "subs": [
+          "핸드폰",
+          "인터넷",
+          "IPTV",
+          "우편/택배",
+          "기타통신"
+        ]
+      },
+      {
+        "main": "경조사비",
+        "subs": [
+          "축의금",
+          "조의금",
+          "생일",
+          "기부금",
+          "모임회비",
+          "선물",
+          "기타경조사"
+        ]
+      },
+      {
+        "main": "유흥오락비",
+        "subs": [
+          "복권",
+          "연금복권",
+          "경마",
+          "게임"
+        ]
+      },
+      {
+        "main": "주거비",
+        "subs": [
+          "재산세",
+          "월세",
+          "주담대이자",
+          "주담대원금",
+          "관리비",
+          "수도세",
+          "전기세",
+          "가스비",
+          "기타주거비"
+        ]
+      },
+      {
+        "main": "놀이",
+        "subs": [
+          "피씨방",
+          "노래방",
+          "풋살비"
+        ]
+      },
+      {
+        "main": "대출",
+        "subs": [
+          "학자금대출"
+        ]
+      },
+      {
+        "main": "실수",
+        "subs": [
+          "아차차",
+          "구독미스",
+          "API 초과"
+        ]
+      }
+    ],
+    "transfer": [
+      "저축이체",
+      "계좌이체",
+      "카드결제이체"
+    ]
+  },
+  "recurringExpenses": [],
+  "budgetGoals": [],
+  "customSymbols": [],
+  "usTickers": [
+    "AAPL",
+    "MSFT",
+    "QQQ",
+    "SPY",
+    "VOO",
+    "IVV"
+  ],
+  "tickerDatabase": [
+    {
+      "ticker": "035420",
+      "name": "NAVER Corporation",
+      "market": "KR",
+      "exchange": "KOSPI"
+    },
+    {
+      "ticker": "003670",
+      "name": "Posco Future M Co., Ltd.",
+      "market": "KR",
+      "exchange": "KOSPI"
+    },
+    {
+      "ticker": "022100",
+      "name": "Posco Dx Company Ltd.",
+      "market": "KR",
+      "exchange": "KOSPI"
+    },
+    {
+      "ticker": "005490",
+      "name": "POSCO Holdings Inc.",
+      "market": "KR",
+      "exchange": "KOSPI"
+    },
+    {
+      "ticker": "469170",
+      "name": "KIM ACE POSCO Group Focus ETF",
+      "market": "KR",
+      "exchange": "KOSPI"
+    },
+    {
+      "ticker": "469050",
+      "name": "Kb Kbstar Us Semiconductor ICE ETF",
+      "market": "KR",
+      "exchange": "KOSPI"
+    },
+    {
+      "ticker": "000660",
+      "name": "SK hynix Inc.",
+      "market": "KR",
+      "exchange": "KOSPI"
+    },
+    {
+      "ticker": "MSFT",
+      "name": "Microsoft Corporation",
+      "market": "US",
+      "exchange": "NASDAQ"
+    },
+    {
+      "ticker": "GOOGL",
+      "name": "Alphabet Inc.",
+      "market": "US",
+      "exchange": "NASDAQ"
+    },
+    {
+      "ticker": "AMZN",
+      "name": "Amazon.com, Inc.",
+      "market": "US",
+      "exchange": "NASDAQ"
+    },
+    {
+      "ticker": "NVDA",
+      "name": "NVIDIA Corporation",
+      "market": "US",
+      "exchange": "NASDAQ"
+    },
+    {
+      "ticker": "META",
+      "name": "Meta Platforms, Inc.",
+      "market": "US",
+      "exchange": "NASDAQ"
+    },
+    {
+      "ticker": "NFLX",
+      "name": "Netflix, Inc.",
+      "market": "US",
+      "exchange": "NASDAQ"
+    },
+    {
+      "ticker": "ADBE",
+      "name": "Adobe Inc.",
+      "market": "US",
+      "exchange": "NASDAQ"
+    },
+    {
+      "ticker": "CRM",
+      "name": "Salesforce, Inc.",
+      "market": "US",
+      "exchange": "NASDAQ"
+    },
+    {
+      "ticker": "INTC",
+      "name": "Intel Corporation",
+      "market": "US",
+      "exchange": "NASDAQ"
+    },
+    {
+      "ticker": "AMD",
+      "name": "Advanced Micro Devices, Inc.",
+      "market": "US",
+      "exchange": "NASDAQ"
+    },
+    {
+      "ticker": "QCOM",
+      "name": "QUALCOMM Incorporated",
+      "market": "US",
+      "exchange": "NASDAQ"
+    },
+    {
+      "ticker": "AVGO",
+      "name": "Broadcom Inc.",
+      "market": "US",
+      "exchange": "NYSE"
+    },
+    {
+      "ticker": "TXN",
+      "name": "Texas Instruments Incorporated",
+      "market": "US",
+      "exchange": "NYSE"
+    },
+    {
+      "ticker": "ORCL",
+      "name": "Oracle Corporation",
+      "market": "US",
+      "exchange": "NYSE"
+    },
+    {
+      "ticker": "NOW",
+      "name": "ServiceNow, Inc.",
+      "market": "US",
+      "exchange": "NYSE"
+    },
+    {
+      "ticker": "SNOW",
+      "name": "Snowflake Inc.",
+      "market": "US",
+      "exchange": "NYSE"
+    },
+    {
+      "ticker": "PLTR",
+      "name": "Palantir Technologies Inc.",
+      "market": "US",
+      "exchange": "NYSE"
+    },
+    {
+      "ticker": "COIN",
+      "name": "Coinbase Global, Inc.",
+      "market": "US",
+      "exchange": "NYSE"
+    },
+    {
+      "ticker": "JPM",
+      "name": "JPMorgan Chase & Co.",
+      "market": "US",
+      "exchange": "NYSE"
+    },
+    {
+      "ticker": "V",
+      "name": "Visa Inc.",
+      "market": "US",
+      "exchange": "NYSE"
+    },
+    {
+      "ticker": "UNH",
+      "name": "UnitedHealth Group Incorporated",
+      "market": "US",
+      "exchange": "NYSE"
+    },
+    {
+      "ticker": "JNJ",
+      "name": "Johnson & Johnson",
+      "market": "US",
+      "exchange": "NYSE"
+    },
+    {
+      "ticker": "PFE",
+      "name": "Pfizer Inc.",
+      "market": "US",
+      "exchange": "NYSE"
+    },
+    {
+      "ticker": "ABT",
+      "name": "Abbott Laboratories",
+      "market": "US",
+      "exchange": "NYSE"
+    },
+    {
+      "ticker": "TMO",
+      "name": "Thermo Fisher Scientific Inc.",
+      "market": "US",
+      "exchange": "NYSE"
+    },
+    {
+      "ticker": "DHR",
+      "name": "Danaher Corporation",
+      "market": "US",
+      "exchange": "NYSE"
+    },
+    {
+      "ticker": "ABBV",
+      "name": "AbbVie Inc.",
+      "market": "US",
+      "exchange": "NYSE"
+    },
+    {
+      "ticker": "LLY",
+      "name": "Eli Lilly and Company",
+      "market": "US",
+      "exchange": "NYSE"
+    },
+    {
+      "ticker": "MRK",
+      "name": "Merck & Co., Inc.",
+      "market": "US",
+      "exchange": "NYSE"
+    },
+    {
+      "ticker": "WMT",
+      "name": "Walmart Inc.",
+      "market": "US",
+      "exchange": "NYSE"
+    },
+    {
+      "ticker": "HD",
+      "name": "The Home Depot, Inc.",
+      "market": "US",
+      "exchange": "NYSE"
+    },
+    {
+      "ticker": "MCD",
+      "name": "McDonald's Corporation",
+      "market": "US",
+      "exchange": "NYSE"
+    },
+    {
+      "ticker": "SBUX",
+      "name": "Starbucks Corporation",
+      "market": "US",
+      "exchange": "NYSE"
+    },
+    {
+      "ticker": "NKE",
+      "name": "NIKE, Inc.",
+      "market": "US",
+      "exchange": "NYSE"
+    },
+    {
+      "ticker": "TGT",
+      "name": "Target Corporation",
+      "market": "US",
+      "exchange": "NYSE"
+    },
+    {
+      "ticker": "COST",
+      "name": "Costco Wholesale Corporation",
+      "market": "US",
+      "exchange": "NYSE"
+    },
+    {
+      "ticker": "LOW",
+      "name": "Lowe's Companies, Inc.",
+      "market": "US",
+      "exchange": "NYSE"
+    },
+    {
+      "ticker": "TJX",
+      "name": "The TJX Companies, Inc.",
+      "market": "US",
+      "exchange": "NYSE"
+    },
+    {
+      "ticker": "BA",
+      "name": "The Boeing Company",
+      "market": "US",
+      "exchange": "NYSE"
+    },
+    {
+      "ticker": "CAT",
+      "name": "Caterpillar Inc.",
+      "market": "US",
+      "exchange": "NYSE"
+    },
+    {
+      "ticker": "GE",
+      "name": "GE Aerospace",
+      "market": "US",
+      "exchange": "NYSE"
+    },
+    {
+      "ticker": "HON",
+      "name": "Honeywell International Inc.",
+      "market": "US",
+      "exchange": "NYSE"
+    },
+    {
+      "ticker": "UPS",
+      "name": "United Parcel Service, Inc.",
+      "market": "US",
+      "exchange": "NYSE"
+    },
+    {
+      "ticker": "FDX",
+      "name": "FedEx Corporation",
+      "market": "US",
+      "exchange": "NYSE"
+    },
+    {
+      "ticker": "RTX",
+      "name": "RTX Corporation",
+      "market": "US",
+      "exchange": "NYSE"
+    },
+    {
+      "ticker": "LMT",
+      "name": "Lockheed Martin Corporation",
+      "market": "US",
+      "exchange": "NYSE"
+    },
+    {
+      "ticker": "NOC",
+      "name": "Northrop Grumman Corporation",
+      "market": "US",
+      "exchange": "NYSE"
+    },
+    {
+      "ticker": "GD",
+      "name": "General Dynamics Corporation",
+      "market": "US",
+      "exchange": "NYSE"
+    },
+    {
+      "ticker": "XOM",
+      "name": "Exxon Mobil Corporation",
+      "market": "US",
+      "exchange": "NYSE"
+    },
+    {
+      "ticker": "CVX",
+      "name": "Chevron Corporation",
+      "market": "US",
+      "exchange": "NYSE"
+    },
+    {
+      "ticker": "SLB",
+      "name": "SLB N.V.",
+      "market": "US",
+      "exchange": "NYSE"
+    },
+    {
+      "ticker": "COP",
+      "name": "ConocoPhillips",
+      "market": "US",
+      "exchange": "NYSE"
+    },
+    {
+      "ticker": "EOG",
+      "name": "EOG Resources, Inc.",
+      "market": "US",
+      "exchange": "NYSE"
+    },
+    {
+      "ticker": "MPC",
+      "name": "Marathon Petroleum Corporation",
+      "market": "US",
+      "exchange": "NYSE"
+    },
+    {
+      "ticker": "VLO",
+      "name": "Valero Energy Corporation",
+      "market": "US",
+      "exchange": "NYSE"
+    },
+    {
+      "ticker": "PSX",
+      "name": "Phillips 66",
+      "market": "US",
+      "exchange": "NYSE"
+    },
+    {
+      "ticker": "HAL",
+      "name": "Halliburton Company",
+      "market": "US",
+      "exchange": "NYSE"
+    },
+    {
+      "ticker": "OXY",
+      "name": "Occidental Petroleum Corporation",
+      "market": "US",
+      "exchange": "NYSE"
+    },
+    {
+      "ticker": "SPY",
+      "name": "SPDR S&P 500 ETF",
+      "market": "US",
+      "exchange": "NYSE"
+    },
+    {
+      "ticker": "QQQ",
+      "name": "Invesco QQQ Trust",
+      "market": "US",
+      "exchange": "NYSE"
+    },
+    {
+      "ticker": "VOO",
+      "name": "Vanguard S&P 500 ETF",
+      "market": "US",
+      "exchange": "NYSE"
+    },
+    {
+      "ticker": "IVV",
+      "name": "iShares Core S&P 500 ETF",
+      "market": "US",
+      "exchange": "NYSE"
+    },
+    {
+      "ticker": "SCHD",
+      "name": "Schwab U.S. Dividend Equity ETF",
+      "market": "US",
+      "exchange": "NYSE"
+    },
+    {
+      "ticker": "VTI",
+      "name": "Vanguard Total Stock Market Index Fund ETF Shares",
+      "market": "US",
+      "exchange": "NYSE"
+    },
+    {
+      "ticker": "DIA",
+      "name": "SPDR Dow Jones Industrial Average ETF Trust",
+      "market": "US",
+      "exchange": "NYSE"
+    },
+    {
+      "ticker": "IWM",
+      "name": "iShares Russell 2000 ETF",
+      "market": "US",
+      "exchange": "NYSE"
+    },
+    {
+      "ticker": "VEA",
+      "name": "Vanguard FTSE Developed Markets Index Fund ETF Shares",
+      "market": "US",
+      "exchange": "NYSE"
+    },
+    {
+      "ticker": "VWO",
+      "name": "Vanguard Emerging Markets Stock Index Fund",
+      "market": "US",
+      "exchange": "NYSE"
+    },
+    {
+      "ticker": "VTV",
+      "name": "Vanguard Value Index Fund ETF Shares",
+      "market": "US",
+      "exchange": "NYSE"
+    },
+    {
+      "ticker": "VXF",
+      "name": "Vanguard Extended Market Index Fund ETF Shares",
+      "market": "US",
+      "exchange": "NYSE"
+    },
+    {
+      "ticker": "VB",
+      "name": "Vanguard Small-Cap Index Fund ETF Shares",
+      "market": "US",
+      "exchange": "NYSE"
+    },
+    {
+      "ticker": "VO",
+      "name": "Vanguard Mid-Cap Index Fund ETF Shares",
+      "market": "US",
+      "exchange": "NYSE"
+    },
+    {
+      "ticker": "VTHR",
+      "name": "Vanguard Russell 3000 Index Fund ETF Shares",
+      "market": "US",
+      "exchange": "NYSE"
+    },
+    {
+      "ticker": "VONE",
+      "name": "Vanguard Russell 1000 Index Fund ETF Shares",
+      "market": "US",
+      "exchange": "NYSE"
+    },
+    {
+      "ticker": "VONG",
+      "name": "Vanguard Russell 1000 Growth Index Fund ETF Shares",
+      "market": "US",
+      "exchange": "NYSE"
+    },
+    {
+      "ticker": "VTEB",
+      "name": "Vanguard Tax-Exempt Bond Index Fund ETF Shares",
+      "market": "US",
+      "exchange": "NYSE"
+    }
+  ],
+  "ledgerTemplates": [],
+  "stockPresets": []
+}

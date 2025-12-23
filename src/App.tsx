@@ -6,6 +6,7 @@ import { AccountsView } from "./components/AccountsView";
 import { LedgerView } from "./components/LedgerView";
 import { DashboardView } from "./components/DashboardView";
 import { DividendsView } from "./components/DividendsView";
+import { DebtView } from "./components/DebtView";
 import { StocksView } from "./components/StocksView";
 import { BudgetRecurringView } from "./components/BudgetRecurringView";
 import { SettingsView } from "./components/SettingsView";
@@ -22,7 +23,7 @@ import {
 } from "./storage";
 import type { AppData } from "./types";
 import { computeAccountBalances, computePositions } from "./calculations";
-import { buildInitialTickerDatabase } from "./yahooFinanceApi";
+import { buildInitialTickerDatabase, fetchYahooQuotes } from "./yahooFinanceApi";
 
 const TAB_ORDER: TabId[] = [
   "dashboard",
@@ -30,6 +31,7 @@ const TAB_ORDER: TabId[] = [
   "ledger",
   "stocks",
   "dividends",
+  "debt",
   "budget",
   "categories",
   "settings"
@@ -57,6 +59,7 @@ export const App: React.FC = () => {
     { id: string; name: string; query: typeof searchQuery }[]
   >([]);
   const [theme, setTheme] = useState<"light" | "dark">("light");
+  const [fxRate, setFxRate] = useState<number | null>(null);
   
   // 실행 취소/다시 실행을 위한 히스토리
   const undoStackRef = useRef<AppData[]>([]);
@@ -73,6 +76,25 @@ export const App: React.FC = () => {
       setTheme("dark");
       document.documentElement.classList.add("dark");
     }
+  }, []);
+
+  // 환율 가져오기
+  useEffect(() => {
+    const updateFxRate = async () => {
+      try {
+        const res = await fetchYahooQuotes(["USDKRW=X"]);
+        const r = res[0];
+        if (r?.price) {
+          setFxRate(r.price);
+        }
+      } catch (err) {
+        console.warn("FX fetch failed", err);
+      }
+    };
+    updateFxRate();
+    // 1시간마다 환율 업데이트
+    const interval = setInterval(updateFxRate, 60 * 60 * 1000);
+    return () => clearInterval(interval);
   }, []);
 
   const toggleTheme = () => {
@@ -367,9 +389,21 @@ export const App: React.FC = () => {
     () => computeAccountBalances(data.accounts, data.ledger, data.trades),
     [data.accounts, data.ledger, data.trades]
   );
+  // USD 주식 가격을 KRW로 변환
+  const adjustedPrices = useMemo(() => {
+    if (!fxRate) return data.prices;
+    
+    return data.prices.map((p) => {
+      if (p.currency && p.currency !== "KRW" && p.currency === "USD") {
+        return { ...p, price: p.price * fxRate, currency: "KRW" };
+      }
+      return p;
+    });
+  }, [data.prices, fxRate]);
+
   const positions = useMemo(
-    () => computePositions(data.trades, data.prices, data.accounts),
-    [data.trades, data.prices, data.accounts]
+    () => computePositions(data.trades, adjustedPrices, data.accounts),
+    [data.trades, adjustedPrices, data.accounts]
   );
   const handleRenameAccountId = (oldId: string, newId: string) => {
     if (!oldId || !newId || oldId === newId) return;
@@ -484,6 +518,7 @@ export const App: React.FC = () => {
               accounts={data.accounts}
               balances={balances}
               positions={positions}
+              ledger={data.ledger}
               onChangeAccounts={(accounts) => setDataWithHistory({ ...data, accounts })}
               onRenameAccountId={handleRenameAccountId}
             />
@@ -494,6 +529,8 @@ export const App: React.FC = () => {
               ledger={data.ledger}
               categoryPresets={data.categoryPresets}
               onChangeLedger={(ledger) => setDataWithHistory({ ...data, ledger })}
+              templates={data.ledgerTemplates}
+              onChangeTemplates={(ledgerTemplates) => setDataWithHistory({ ...data, ledgerTemplates })}
             />
           )}
           {tab === "categories" && (
@@ -516,6 +553,8 @@ export const App: React.FC = () => {
               onChangeTickerDatabase={(tickerDatabase) => setDataWithHistory({ ...data, tickerDatabase })}
               onLoadInitialTickers={handleLoadInitialTickers}
               isLoadingTickerDatabase={isLoadingTickerDatabase}
+              presets={data.stockPresets}
+              onChangePresets={(stockPresets) => setDataWithHistory({ ...data, stockPresets })}
             />
           )}
           {tab === "dividends" && (
@@ -524,12 +563,21 @@ export const App: React.FC = () => {
               ledger={data.ledger}
               trades={data.trades}
               prices={data.prices}
+              tickerDatabase={data.tickerDatabase ?? []}
               onChangeLedger={(ledger) => setDataWithHistory({ ...data, ledger })}
               onChangeAccounts={(accounts) => setDataWithHistory({ ...data, accounts })}
             />
           )}
+          {tab === "debt" && (
+            <DebtView
+              accounts={data.accounts}
+              ledger={data.ledger}
+              onChangeLedger={(ledger) => setDataWithHistory({ ...data, ledger })}
+            />
+          )}
           {tab === "budget" && (
             <BudgetRecurringView
+              accounts={data.accounts}
               recurring={data.recurringExpenses}
               budgets={data.budgetGoals}
               ledger={data.ledger}

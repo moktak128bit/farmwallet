@@ -7,7 +7,8 @@ import {
   CircleDollarSign,
   PiggyBank,
   Tags,
-  Settings
+  Settings,
+  CreditCard
 } from "lucide-react";
 
 export type TabId =
@@ -16,6 +17,7 @@ export type TabId =
   | "stocks"
   | "dashboard"
   | "dividends"
+  | "debt"
   | "budget"
   | "categories"
   | "settings";
@@ -32,6 +34,7 @@ const TABS: TabItem[] = [
   { id: "ledger", label: "가계부", icon: <BookOpen size={18} /> },
   { id: "stocks", label: "주식", icon: <TrendingUp size={18} /> },
   { id: "dividends", label: "배당/이자", icon: <CircleDollarSign size={18} /> },
+  { id: "debt", label: "부채", icon: <CreditCard size={18} /> },
   { id: "budget", label: "예산/반복", icon: <PiggyBank size={18} /> },
   { id: "categories", label: "카테고리", icon: <Tags size={18} /> },
   { id: "settings", label: "백업/설정", icon: <Settings size={18} /> }

@@ -40,6 +40,8 @@ body {
   color: var(--text);
   min-height: 100vh;
   transition: background 0.3s ease, color 0.3s ease;
+  font-size: 15px;
+  line-height: 1.6;
 }
 
 :root.dark body {
@@ -49,10 +51,22 @@ body {
     var(--bg);
 }
 
+h3 {
+  font-size: 20px;
+  font-weight: 600;
+  margin: 24px 0 16px 0;
+}
+
+h4 {
+  font-size: 18px;
+  font-weight: 600;
+  margin: 20px 0 12px 0;
+}
+
 .app-root {
-  max-width: 100%;
+  max-width: 1600px;
   margin: 0 auto;
-  padding: 20px 20px 36px;
+  padding: 32px 40px 48px;
   width: 100%;
 }
 
@@ -60,15 +74,16 @@ body {
   display: flex;
   justify-content: space-between;
   align-items: flex-start;
-  margin-bottom: 18px;
-  gap: 12px;
+  margin-bottom: 24px;
+  gap: 16px;
   flex-wrap: wrap;
 }
 
 .app-header h1 {
   margin: 0;
-  font-size: 22px;
+  font-size: 28px;
   letter-spacing: -0.02em;
+  font-weight: 700;
 }
 
 .subtitle {
@@ -79,8 +94,8 @@ body {
 
 .layout {
   display: grid;
-  grid-template-columns: 260px minmax(0, 1fr);
-  gap: 16px;
+  grid-template-columns: 280px minmax(0, 1fr);
+  gap: 24px;
   align-items: flex-start;
   max-width: 100%;
 }
@@ -88,15 +103,17 @@ body {
 .sidebar {
   background: var(--surface);
   border-radius: 18px;
-  padding: 14px 10px;
+  padding: 16px 12px;
   border: 1px solid var(--border);
   box-shadow: 0 10px 24px rgba(0, 0, 0, 0.05);
+  position: sticky;
+  top: 32px;
 }
 
 .app-main {
   background: var(--surface);
   border-radius: 20px;
-  padding: 18px 22px 22px;
+  padding: 32px 40px;
   box-shadow:
     0 18px 40px rgba(0, 0, 0, 0.05),
     0 0 0 1px var(--border);
@@ -105,7 +122,7 @@ body {
 .tabs {
   display: flex;
   flex-direction: column;
-  gap: 4px;
+  gap: 6px;
   margin: 4px 0 0;
 }
 
@@ -115,13 +132,14 @@ body {
   background: transparent;
   cursor: pointer;
   color: var(--muted);
-  font-size: 13px;
-  padding: 7px 11px;
+  font-size: 14px;
+  padding: 10px 14px;
   display: flex;
   align-items: center;
   justify-content: flex-start;
-  gap: 8px;
+  gap: 10px;
   width: 100%;
+  transition: all 0.2s ease;
 }
 
 .tab-button.active {
@@ -144,13 +162,14 @@ body {
   display: flex;
   justify-content: space-between;
   align-items: center;
-  margin-bottom: 12px;
-  gap: 12px;
+  margin-bottom: 20px;
+  gap: 16px;
 }
 
 .section-header h2 {
   margin: 0;
-  font-size: 18px;
+  font-size: 22px;
+  font-weight: 600;
 }
 
 .pill {
@@ -312,9 +331,10 @@ button:disabled {
 .card {
   background: var(--surface);
   border-radius: 12px;
-  padding: 14px 16px;
+  padding: 20px 24px;
   border: 1px solid var(--border);
   box-shadow: 0 10px 24px rgba(15, 23, 42, 0.06);
+  margin-bottom: 16px;
 }
 
 .card.highlight {
@@ -415,11 +435,12 @@ button:disabled {
 
 .data-table {
   width: 100%;
-  border-collapse: collapse;
-  margin-top: 12px;
+  border-collapse: separate;
+  border-spacing: 0;
+  margin-top: 16px;
   background: #ffffff;
-  border-radius: 10px;
-  font-size: 13px;
+  border-radius: 12px;
+  font-size: 14px;
   box-shadow: 0 8px 18px rgba(15, 23, 42, 0.06);
   display: table;
   table-layout: auto;
@@ -443,9 +464,10 @@ button:disabled {
 
 .data-table th,
 .data-table td {
-  padding: 8px 10px;
+  padding: 8px 12px;
   border-bottom: 1px solid #e5e7eb;
   border-right: 1px solid #e5e7eb;
+  vertical-align: middle;
 }
 
 .data-table th:last-child,
@@ -455,19 +477,38 @@ button:disabled {
 
 .data-table thead {
   background: linear-gradient(135deg, #ecfeff, #e0f2fe);
+  position: sticky;
+  top: 0;
+  z-index: 10;
 }
 
 .data-table th {
   text-align: left;
   color: var(--muted);
+  font-weight: 600;
+  font-size: 13px;
+  padding: 10px 12px;
+  border-bottom: 2px solid #cbd5e1;
 }
 
-.data-table tr:nth-child(even) td {
-  background: #f9fafb;
+.data-table tbody tr {
+  transition: background-color 0.15s ease;
 }
 
-.data-table tr:hover td {
-  background: #e0f2fe;
+.data-table tbody tr:nth-child(even) td {
+  background: #f8fafc;
+}
+
+.data-table tbody tr:nth-child(odd) td {
+  background: #ffffff;
+}
+
+.data-table tbody tr:hover td {
+  background: #e0f2fe !important;
+}
+
+.data-table tbody tr:last-child td {
+  border-bottom: none;
 }
 
 .data-table td[style*="cursor: pointer"]:hover {
@@ -477,7 +518,8 @@ button:disabled {
 
 .data-table.compact th,
 .data-table.compact td {
-  padding: 6px 8px;
+  padding: 6px 10px;
+  font-size: 13px;
 }
 
 .number {
@@ -486,11 +528,11 @@ button:disabled {
 }
 
 .positive {
-  color: #16a34a;
+  color: #dc2626;
 }
 
 .negative {
-  color: #dc2626;
+  color: #2563eb;
 }
 
 .strong {
@@ -499,22 +541,23 @@ button:disabled {
 
 .two-column {
   display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
-  gap: 12px;
-  margin-bottom: 16px;
+  grid-template-columns: repeat(auto-fit, minmax(400px, 1fr));
+  gap: 24px;
+  margin-bottom: 24px;
 }
 
 .form-grid {
   display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
-  gap: 8px 12px;
+  grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
+  gap: 16px 20px;
   align-items: flex-end;
 }
 
 .form-grid h3 {
   grid-column: 1 / -1;
-  margin: 0 0 4px;
-  font-size: 15px;
+  margin: 0 0 12px;
+  font-size: 18px;
+  font-weight: 600;
 }
 
 .ticker-lookup {
@@ -591,12 +634,22 @@ button:disabled {
 .trades-table th,
 .trades-table td {
   white-space: nowrap;
+  padding: 8px 12px;
 }
 .trades-table .name-cell {
-  max-width: 320px;
+  max-width: 200px;
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
+  font-size: 12px;
+}
+
+.data-table .name-cell {
+  max-width: 200px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  font-size: 12px;
 }
 
 .autocomplete {
@@ -963,6 +1016,7 @@ textarea:focus {
     backdrop-filter: blur(10px);
     box-shadow: 0 -4px 20px rgba(0,0,0,0.2);
     margin: 0;
+    top: auto;
   }
 
   .tabs {
@@ -984,6 +1038,7 @@ textarea:focus {
     justify-content: center;
     border-radius: 8px;
     border: none;
+    width: auto;
   }
   
   .tab-button.active {
@@ -1042,7 +1097,7 @@ textarea:focus {
   
   .data-table th,
   .data-table td {
-    padding: 6px 8px;
+    padding: 10px 12px;
     border-right: 1px solid #e5e7eb;
   }
   

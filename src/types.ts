@@ -8,6 +8,8 @@ export interface Account {
   initialBalance: number;
   debt?: number;
   savings?: number;
+  cashAdjustment?: number; // 증권계좌의 현금 조정 (기타)
+  initialCashBalance?: number; // 증권계좌의 초기 현금 잔액
   note?: string;
 }
 
@@ -63,6 +65,7 @@ export interface RecurringExpense {
   frequency: Recurrence;
   startDate: string; // yyyy-mm-dd
   endDate?: string;
+  fromAccountId?: string;
   note?: string;
 }
 
@@ -98,6 +101,30 @@ export interface TickerInfo {
   lastUpdated?: string; // 마지막 업데이트 날짜
 }
 
+export interface StockPreset {
+  id: string;
+  name: string;
+  accountId: string;
+  ticker: string;
+  stockName?: string;
+  quantity?: number;
+  fee?: number;
+  lastUsed?: string; // 마지막 사용 날짜 (ISO yyyy-mm-dd)
+}
+
+export interface LedgerTemplate {
+  id: string;
+  name: string;
+  kind: LedgerKind;
+  mainCategory?: string;
+  subCategory?: string;
+  description?: string;
+  amount?: number;
+  fromAccountId?: string;
+  toAccountId?: string;
+  lastUsed?: string; // 마지막 사용 날짜 (ISO yyyy-mm-dd)
+}
+
 export interface AppData {
   accounts: Account[];
   ledger: LedgerEntry[];
@@ -109,4 +136,6 @@ export interface AppData {
   customSymbols: SymbolInfo[];
   usTickers?: string[];
   tickerDatabase?: TickerInfo[]; // 티커 목록 데이터베이스
+  ledgerTemplates?: LedgerTemplate[];
+  stockPresets?: StockPreset[];
 }

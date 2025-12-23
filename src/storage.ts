@@ -90,8 +90,42 @@ export function loadData(): AppData {
   }
 }
 
+// localStorage 쓰기 디바운스
+let saveTimeout: ReturnType<typeof setTimeout> | null = null;
+let pendingData: AppData | null = null;
+
 export function saveData(data: AppData) {
   if (typeof window === "undefined") return;
+  
+  pendingData = data;
+  
+  // 기존 타이머 취소
+  if (saveTimeout) {
+    clearTimeout(saveTimeout);
+  }
+  
+  // 500ms 후에 저장 (디바운스)
+  saveTimeout = setTimeout(() => {
+    if (pendingData) {
+      window.localStorage.setItem(STORAGE_KEY, JSON.stringify(pendingData, null, 2));
+      void saveServerData(pendingData);
+      pendingData = null;
+    }
+    saveTimeout = null;
+  }, 500);
+}
+
+// 즉시 저장이 필요한 경우 (예: 백업 전)
+export function saveDataImmediate(data: AppData) {
+  if (typeof window === "undefined") return;
+  
+  // 대기 중인 저장 취소
+  if (saveTimeout) {
+    clearTimeout(saveTimeout);
+    saveTimeout = null;
+  }
+  pendingData = null;
+  
   window.localStorage.setItem(STORAGE_KEY, JSON.stringify(data, null, 2));
   void saveServerData(data);
 }

@@ -139,8 +139,8 @@ export const App: React.FC = () => {
       const next = typeof newData === "function" ? newData(prev) : newData;
       // 이전 상태를 undo 스택에 저장
       undoStackRef.current.push(prev);
-      // 최대 50개까지만 저장
-      if (undoStackRef.current.length > 50) {
+      // 최대 20개까지만 저장
+      if (undoStackRef.current.length > 20) {
         undoStackRef.current.shift();
       }
       // redo 스택 초기화
@@ -204,6 +204,36 @@ export const App: React.FC = () => {
         return;
       }
       
+      // Ctrl+S (빠른 저장)
+      if (e.ctrlKey && e.key === "s" && !e.shiftKey && !e.altKey) {
+        e.preventDefault();
+        handleManualBackup();
+        return;
+      }
+      
+      // Ctrl+F (전역 검색)
+      if (e.ctrlKey && e.key === "f" && !e.shiftKey && !e.altKey) {
+        e.preventDefault();
+        setIsSearchOpen(true);
+        return;
+      }
+      
+      // Ctrl+N (새 항목 추가 - 현재 탭에 따라 다르게 동작)
+      if (e.ctrlKey && e.key === "n" && !e.shiftKey && !e.altKey) {
+        e.preventDefault();
+        // 현재 탭에 따라 새 항목 추가 로직은 각 뷰에서 처리
+        toast.success("새 항목 추가는 각 탭에서 버튼을 사용하세요", { duration: 2000 });
+        return;
+      }
+      
+      // Esc (모달 닫기)
+      if (e.key === "Escape" && !e.ctrlKey && !e.altKey && !e.shiftKey) {
+        if (isSearchOpen) {
+          setIsSearchOpen(false);
+        }
+        return;
+      }
+      
       // Alt+화살표 (탭 이동)
       if (e.altKey && !e.ctrlKey && !e.shiftKey) {
         if (e.key === "ArrowLeft") {
@@ -223,7 +253,7 @@ export const App: React.FC = () => {
     return () => {
       window.removeEventListener("keydown", handleKeyDown);
     };
-  }, [handleUndo, handleRedo, navigateTab]);
+  }, [handleUndo, handleRedo, navigateTab, isSearchOpen]);
 
   useEffect(() => {
     if (typeof window === "undefined") return;
@@ -306,7 +336,9 @@ export const App: React.FC = () => {
   const handleManualBackup = async () => {
     const toastId = toast.loading("백업 저장 중...");
     try {
-      saveData(data);
+      // 백업 전에는 즉시 저장
+      const { saveDataImmediate } = await import("./storage");
+      saveDataImmediate(data);
       await saveBackupSnapshot(data);
       await refreshLatestBackup();
       toast.success("백업 스냅샷 저장 완료", { id: toastId });
@@ -512,6 +544,7 @@ export const App: React.FC = () => {
               ledger={data.ledger}
               trades={data.trades}
               prices={data.prices}
+              loans={data.loans}
             />
           )}
           {tab === "accounts" && (

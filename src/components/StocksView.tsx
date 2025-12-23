@@ -80,7 +80,7 @@ function createDefaultTradeForm() {
   };
 }
 
-export const StocksView: React.FC<Props> = ({
+export const StocksView: React.FC<Props> = React.memo(({
   accounts,
   balances,
   trades,
@@ -2990,4 +2990,4 @@ export const StocksView: React.FC<Props> = ({
       )}
     </div>
   );
-};
+});

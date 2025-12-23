@@ -37,6 +37,7 @@ export interface BackupEntry extends BackupMeta {
 export function loadData(): AppData {
   const defaults = getDefaultCategoryPresets();
   const emptyData: AppData = {
+    loans: [],
     accounts: [],
     ledger: [],
     trades: [],
@@ -69,6 +70,7 @@ export function loadData(): AppData {
       savings: a.savings ?? 0
     }));
     return {
+      loans: parsed.loans ?? [],
       accounts,
       ledger: parsed.ledger ?? [],
       trades: parsed.trades ?? [],
@@ -141,6 +143,7 @@ export async function saveTickerToJson(ticker: string, name: string, market: 'KR
 export function getInitialSampleData(): AppData {
   const today = new Date().toISOString().slice(0, 10);
   return {
+    loans: [],
     accounts: [
       {
         id: "CHK_KB",
@@ -470,6 +473,10 @@ function getDefaultCategoryPresets(): CategoryPresets {
     {
       main: "실수",
       subs: ["아차차", "구독미스", "API 초과"]
+    },
+    {
+      main: "신용카드",
+      subs: ["카드대금"]
     }
   ];
 

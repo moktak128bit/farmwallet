@@ -18,6 +18,7 @@ import {
 import type { Account, LedgerEntry, StockPrice, StockTrade } from "../types";
 import { computeAccountBalances, computeMonthlyNetWorth, computePositions } from "../calculations";
 import { fetchYahooQuotes } from "../yahooFinanceApi";
+import { formatKRW } from "../utils/format";
 
 interface Props {
   accounts: Account[];
@@ -261,15 +262,7 @@ export const DashboardView: React.FC<Props> = ({
       .filter((p) => p.marketValue > 0);
   }, [positions, adjustedPrices]);
 
-  // 날짜 간격 계산 함수 (15일 간격 샘플링에 사용)
-  const daysBetween = (date1: string, date2: string): number => {
-    const d1 = new Date(date1);
-    const d2 = new Date(date2);
-    const diffTime = Math.abs(d2.getTime() - d1.getTime());
-    return Math.ceil(diffTime / (1000 * 60 * 60 * 24));
-  };
-
-  // 15일 간격 전체 자산 변동 데이터
+  // 하루 단위 전체 자산 변동 데이터
   const dailyAssetData = useMemo(() => {
     const dateSet = new Set<string>();
     trades.forEach((t) => {
@@ -281,21 +274,20 @@ export const DashboardView: React.FC<Props> = ({
     const dates = Array.from(dateSet).sort();
     if (dates.length === 0) return [];
 
-    // 15일 간격으로 필터링
-    const filteredDates: string[] = [];
-    let lastDate = "";
-    for (const date of dates) {
-      if (!lastDate || daysBetween(lastDate, date) >= 15) {
-        filteredDates.push(date);
-        lastDate = date;
+    // 모든 날짜를 포함 (하루 단위)
+    const startDate = new Date(dates[0]);
+    const endDate = new Date(dates[dates.length - 1]);
+    const allDates: string[] = [];
+    
+    for (let d = new Date(startDate); d <= endDate; d.setDate(d.getDate() + 1)) {
+      const dateStr = d.toISOString().slice(0, 10);
+      // 거래나 가계부 내역이 있는 날짜만 포함
+      if (dateSet.has(dateStr)) {
+        allDates.push(dateStr);
       }
     }
-    // 마지막 날짜도 포함
-    if (dates.length > 0 && filteredDates[filteredDates.length - 1] !== dates[dates.length - 1]) {
-      filteredDates.push(dates[dates.length - 1]);
-    }
 
-    return filteredDates.map((date) => {
+    return allDates.map((date) => {
       // 해당 날짜까지의 거래만 필터링
       const filteredTrades = trades.filter((t) => t.date && t.date <= date);
       const filteredLedger = ledger.filter((l) => l.date && l.date <= date);
@@ -322,10 +314,6 @@ export const DashboardView: React.FC<Props> = ({
     });
   }, [trades, adjustedPrices, accounts, ledger]);
 
-  const formatKRW = (value: number) => {
-    if (typeof value !== "number" || isNaN(value)) return "0 원";
-    return `${Math.round(value).toLocaleString("ko-KR")} 원`;
-  };
 
   // 에러 방지: 데이터가 없거나 잘못된 경우 빈 배열 반환
   const safePositionsWithPrice = positionsWithPrice || [];
@@ -505,7 +493,7 @@ export const DashboardView: React.FC<Props> = ({
 
       <div className="cards-row">
         <div className="card" style={{ gridColumn: "span 2" }}>
-          <div className="card-title">전체 자산 변동 (15일 간격)</div>
+          <div className="card-title">전체 자산 변동 (일별)</div>
           <div style={{ width: "100%", height: 350, marginTop: 10 }}>
             {safeDailyAssetData.length > 0 ? (
               <ResponsiveContainer>

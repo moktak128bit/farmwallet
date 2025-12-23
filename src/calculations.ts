@@ -45,11 +45,20 @@ export function computeAccountBalances(
       .reduce((s, l) => s + l.amount, 0);
     
     // 이체: transfer 종류의 거래에서 이 계좌로 들어온 금액과 나간 금액
+    // 단, "신용카드" > "카드대금"은 자산 계산에서 제외 (이미 지출로 반영되었으므로)
     const transferOut = ledger
-      .filter((l) => l.kind === "transfer" && l.fromAccountId === account.id)
+      .filter((l) => {
+        if (l.kind !== "transfer" || l.fromAccountId !== account.id) return false;
+        // 카드대금 결제는 자산 계산에서 제외
+        return !(l.category === "신용카드" && l.subCategory === "카드대금");
+      })
       .reduce((s, l) => s + l.amount, 0);
     const transferIn = ledger
-      .filter((l) => l.kind === "transfer" && l.toAccountId === account.id)
+      .filter((l) => {
+        if (l.kind !== "transfer" || l.toAccountId !== account.id) return false;
+        // 카드대금 결제는 자산 계산에서 제외
+        return !(l.category === "신용카드" && l.subCategory === "카드대금");
+      })
       .reduce((s, l) => s + l.amount, 0);
     const transferNet = transferIn - transferOut;
 

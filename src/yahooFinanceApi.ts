@@ -8,6 +8,40 @@ export interface YahooQuoteResult {
   updatedAt?: string;
 }
 
+// API 호출 캐싱
+const quoteCache = new Map<string, { data: YahooQuoteResult; timestamp: number }>();
+const CACHE_TTL = 5 * 60 * 1000; // 5분
+
+function getCachedQuote(symbol: string): YahooQuoteResult | null {
+  const cached = quoteCache.get(symbol);
+  if (!cached) return null;
+  const age = Date.now() - cached.timestamp;
+  if (age > CACHE_TTL) {
+    quoteCache.delete(symbol);
+    return null;
+  }
+  return cached.data;
+}
+
+function setCachedQuote(symbol: string, data: YahooQuoteResult): void {
+  quoteCache.set(symbol, { data, timestamp: Date.now() });
+}
+
+// 캐시 정리 (오래된 항목 제거)
+function cleanCache(): void {
+  const now = Date.now();
+  for (const [key, value] of quoteCache.entries()) {
+    if (now - value.timestamp > CACHE_TTL) {
+      quoteCache.delete(key);
+    }
+  }
+}
+
+// 주기적으로 캐시 정리 (5분마다)
+if (typeof window !== "undefined") {
+  setInterval(cleanCache, 5 * 60 * 1000);
+}
+
 
 interface YahooSearchResponse {
   quotes?: Array<{
@@ -70,13 +104,27 @@ export async function fetchYahooBatchQuotes(symbols: string[]): Promise<YahooQuo
   const uniq = Array.from(new Set(symbols.map((s) => s.trim()).filter(Boolean)));
   if (!uniq.length) return [];
 
-  const chunkSize = 30;
-  const chunks: string[][] = [];
-  for (let i = 0; i < uniq.length; i += chunkSize) {
-    chunks.push(uniq.slice(i, i + chunkSize));
+  const results: YahooQuoteResult[] = [];
+  const symbolsToFetch: string[] = [];
+
+  // 캐시에서 먼저 확인
+  for (const symbol of uniq) {
+    const key = symbol.trim().toUpperCase();
+    const cached = getCachedQuote(key);
+    if (cached) {
+      results.push(cached);
+    } else {
+      symbolsToFetch.push(key);
+    }
   }
 
-  const results: YahooQuoteResult[] = [];
+  if (symbolsToFetch.length === 0) return results;
+
+  const chunkSize = 30;
+  const chunks: string[][] = [];
+  for (let i = 0; i < symbolsToFetch.length; i += chunkSize) {
+    chunks.push(symbolsToFetch.slice(i, i + chunkSize));
+  }
 
   for (const chunk of chunks) {
     const qs = new URLSearchParams({ symbols: chunk.join(",") });
@@ -100,7 +148,7 @@ export async function fetchYahooBatchQuotes(symbols: string[]): Promise<YahooQuo
             ? new Date(item.regularMarketTime * 1000).toISOString()
             : undefined;
 
-        results.push({
+        const quote: YahooQuoteResult = {
           ticker: item.symbol.toUpperCase(),
           name: item.longName ?? item.shortName ?? item.symbol,
           price: item.regularMarketPrice,
@@ -108,7 +156,11 @@ export async function fetchYahooBatchQuotes(symbols: string[]): Promise<YahooQuo
           change,
           changePercent,
           updatedAt
-        });
+        };
+        
+        // 캐시에 저장
+        setCachedQuote(quote.ticker, quote);
+        results.push(quote);
       });
     } catch (err) {
       console.warn("batch quote chunk failed", chunk.slice(0, 3), err);
@@ -543,8 +595,21 @@ export async function fetchYahooQuotes(symbols: string[]): Promise<YahooQuoteRes
   if (uniq.length === 0) return [];
 
   const results: YahooQuoteResult[] = [];
+  const symbolsToFetch: string[] = [];
 
+  // 캐시에서 먼저 확인
   for (const raw of uniq) {
+    const requestedSymbol = raw.trim().toUpperCase();
+    const cached = getCachedQuote(requestedSymbol);
+    if (cached) {
+      results.push(cached);
+    } else {
+      symbolsToFetch.push(requestedSymbol);
+    }
+  }
+
+  // 캐시에 없는 것만 API 호출
+  for (const raw of symbolsToFetch) {
     const requestedSymbol = raw.trim().toUpperCase();
     let quote: YahooQuoteResult | null = null;
 
@@ -566,6 +631,7 @@ export async function fetchYahooQuotes(symbols: string[]): Promise<YahooQuoteRes
     }
 
     if (quote) {
+      setCachedQuote(requestedSymbol, quote);
       results.push(quote);
     }
   }

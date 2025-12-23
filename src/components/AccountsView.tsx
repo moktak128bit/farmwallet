@@ -20,7 +20,7 @@ const ACCOUNT_TYPE_LABEL: Record<AccountType, string> = {
   other: "기타"
 };
 
-export const AccountsView: React.FC<Props> = ({
+export const AccountsView: React.FC<Props> = React.memo(({
   accounts,
   balances,
   positions,
@@ -636,7 +636,7 @@ export const AccountsView: React.FC<Props> = ({
       })()}
     </div>
   );
-};
+});
 
 interface AccountFormProps {
   onAdd: (account: Account) => void;

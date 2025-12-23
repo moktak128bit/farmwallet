@@ -938,7 +938,7 @@
     },
     {
       "ticker": "0047A0",
-      "name": "TIGER 차이나테크TOP10"
+      "name": "Mirae Asset Global Investments - Mirae Asset Tiger China Tech Top 10 ETF"
     },
     {
       "ticker": "0047N0",
@@ -974,7 +974,7 @@
     },
     {
       "ticker": "0048J0",
-      "name": "KODEX 미국머니마켓액티브"
+      "name": "Samsung Kodex US Money Market Active ETF"
     },
     {
       "ticker": "0048K0",
@@ -3342,7 +3342,7 @@
     },
     {
       "ticker": "136490",
-      "name": "선진"
+      "name": "Sunjin Co.,Ltd."
     },
     {
       "ticker": "136660",
@@ -4798,7 +4798,7 @@
     },
     {
       "ticker": "308620",
-      "name": "KODEX 미국10년국채선물"
+      "name": "Samsung KODEX Energy & chemicals Securities ETF-Kodex Treasury Note Futures Fund"
     },
     {
       "ticker": "308700",
@@ -5266,11 +5266,11 @@
     },
     {
       "ticker": "379800",
-      "name": "KODEX 미국S&P500"
+      "name": "Samsung KODEX S&P500 ETF"
     },
     {
       "ticker": "379810",
-      "name": "KODEX 미국나스닥100"
+      "name": "Samsung KODEX US Nasdaq100 ETF"
     },
     {
       "ticker": "380340",
@@ -6054,7 +6054,7 @@
     },
     {
       "ticker": "458730",
-      "name": "TIGER 미국배당다우존스"
+      "name": "Mirae Asset Tiger U.S. Dividend Equity Etf"
     },
     {
       "ticker": "458750",
@@ -6486,7 +6486,7 @@
     },
     {
       "ticker": "483280",
-      "name": "KODEX 미국AI테크TOP10타겟커버드콜"
+      "name": "Samsung Kodex Us Ai Tech Top10+15% Premium Etf Etf"
     },
     {
       "ticker": "483290",
@@ -6526,7 +6526,7 @@
     },
     {
       "ticker": "485540",
-      "name": "KODEX 미국AI테크TOP10"
+      "name": "Samsung Kodex Us Ai Tech Top10 Etf"
     },
     {
       "ticker": "485690",
@@ -6936,7 +6936,7 @@
     },
     {
       "ticker": "AAPL",
-      "name": "AAPL"
+      "name": "Apple Inc."
     },
     {
       "ticker": "AARD",
@@ -21736,7 +21736,7 @@
     },
     {
       "ticker": "IONQ",
-      "name": "IONQ"
+      "name": "IonQ, Inc."
     },
     {
       "ticker": "IONR",
@@ -25740,7 +25740,7 @@
     },
     {
       "ticker": "MSFT",
-      "name": "MSFT"
+      "name": "Microsoft Corporation"
     },
     {
       "ticker": "MSGE",
@@ -27520,7 +27520,7 @@
     },
     {
       "ticker": "O",
-      "name": "O"
+      "name": "Realty Income Corporation"
     },
     {
       "ticker": "OABI",
@@ -30100,7 +30100,7 @@
     },
     {
       "ticker": "QBTS",
-      "name": "QBTS"
+      "name": "D-Wave Quantum Inc."
     },
     {
       "ticker": "QCLS",
@@ -31040,7 +31040,7 @@
     },
     {
       "ticker": "RKLB",
-      "name": "RKLB"
+      "name": "Rocket Lab Corporation"
     },
     {
       "ticker": "RKT",
@@ -35616,11 +35616,11 @@
     },
     {
       "ticker": "TSLA",
-      "name": "TSLA"
+      "name": "Tesla, Inc."
     },
     {
       "ticker": "TSLL",
-      "name": "TSLL"
+      "name": "Direxion Daily TSLA Bull 2X Shares"
     },
     {
       "ticker": "TSLX",
@@ -35628,7 +35628,7 @@
     },
     {
       "ticker": "TSM",
-      "name": "TSM"
+      "name": "Taiwan Semiconductor Manufacturing Company Limited"
     },
     {
       "ticker": "TSN",
@@ -36196,7 +36196,7 @@
     },
     {
       "ticker": "UNH",
-      "name": "UNH"
+      "name": "UnitedHealth Group Incorporated"
     },
     {
       "ticker": "UNIT",

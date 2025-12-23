@@ -1,6 +1,19 @@
 import React, { useMemo, useRef, useState, useCallback, useEffect } from "react";
+import {
+  PieChart,
+  Pie,
+  Cell,
+  Tooltip,
+  Legend,
+  ResponsiveContainer,
+  BarChart,
+  Bar,
+  XAxis,
+  YAxis,
+  CartesianGrid
+} from "recharts";
 import { Autocomplete, type AutocompleteOption } from "./Autocomplete";
-import type { Account, StockPrice, StockTrade, TradeSide, SymbolInfo, TickerInfo } from "../types";
+import type { Account, StockPrice, StockTrade, TradeSide, SymbolInfo, TickerInfo, StockPreset } from "../types";
 import type { AccountBalanceRow } from "../calculations";
 import { computePositions } from "../calculations";
 import { fetchYahooQuotes, searchYahooSymbol } from "../yahooFinanceApi";
@@ -19,6 +32,8 @@ interface Props {
   onChangeTickerDatabase: (next: TickerInfo[]) => void;
   onLoadInitialTickers: () => Promise<void>;
   isLoadingTickerDatabase: boolean;
+  presets?: StockPreset[];
+  onChangePresets?: (next: StockPreset[]) => void;
 }
 
 const sideLabel: Record<TradeSide, string> = {
@@ -76,17 +91,29 @@ export const StocksView: React.FC<Props> = ({
   onChangeCustomSymbols,
   onChangeTickerDatabase,
   onLoadInitialTickers,
-  isLoadingTickerDatabase
+  isLoadingTickerDatabase,
+  presets = [],
+  onChangePresets
 }) => {
   const [tradeForm, setTradeForm] = useState(createDefaultTradeForm);
+  const [showPresetModal, setShowPresetModal] = useState(false);
   const [isLoadingQuotes, setIsLoadingQuotes] = useState(false);
   const [quoteError, setQuoteError] = useState<string | null>(null);
   const [yahooUpdatedAt, setYahooUpdatedAt] = useState<string | null>(null);
   const [draggingTradeId, setDraggingTradeId] = useState<string | null>(null);
+  const [draggingAccountId, setDraggingAccountId] = useState<string | null>(null);
+  const [accountOrder, setAccountOrder] = useState<string[]>(() => {
+    try {
+      const saved = localStorage.getItem("fw-account-order");
+      return saved ? JSON.parse(saved) : [];
+    } catch {
+      return [];
+    }
+  });
   const [fxRate, setFxRate] = useState<number | null>(null);
   const [fxUpdatedAt, setFxUpdatedAt] = useState<string | null>(null);
   const [showUSD, setShowUSD] = useState(false);
-  const [activeStocksSection, setActiveStocksSection] = useState<"portfolio" | "dca" | "quotes">("portfolio");
+  const [activeStocksSection, setActiveStocksSection] = useState<"portfolio" | "dca" | "quotes" | "stats">("portfolio");
   const [activeQuoteMarket, setActiveQuoteMarket] = useState<"korea" | "us">("korea");
   const [recentTickers, setRecentTickers] = useState<Array<{ ticker: string; name?: string }>>([]);
   const [favoriteTickers, setFavoriteTickers] = useState<Array<{ ticker: string; name?: string }>>([]);
@@ -99,6 +126,8 @@ export const StocksView: React.FC<Props> = ({
   });
   const [isLoadingDca, setIsLoadingDca] = useState(false);
   const [dcaMessage, setDcaMessage] = useState<string | null>(null);
+  const [buyingPlanId, setBuyingPlanId] = useState<string | null>(null);
+  const [isBuyingAll, setIsBuyingAll] = useState(false);
   const [tickerSuggestions, setTickerSuggestions] = useState<TickerInfo[]>([]);
   // showTickerSuggestions 상태 제거 (Autocomplete 내부에서 처리)
   const [positionSort, setPositionSort] = useState<{ key: PositionSortKey; direction: "asc" | "desc" }>({
@@ -199,15 +228,25 @@ export const StocksView: React.FC<Props> = ({
         const results = await fetchYahooQuotes([symbol]);
         if (results.length > 0) {
           const r = results[0];
-          const existingName = tickerDatabase.find(t => t.ticker === symbol)?.name || tradeForm.name;
+          // 종목명 우선순위: API에서 가져온 이름 > tickerDatabase > 기존 tradeForm.name > 티커
+          const stockName = r.name || 
+            tickerDatabase.find(t => cleanTicker(t.ticker) === symbol)?.name || 
+            tradeForm.name || 
+            symbol;
           
           // 시세 정보 업데이트
           setTickerInfo({
             ticker: symbol,
-            name: r.name || existingName || symbol,
+            name: stockName,
             price: r.price,
             currency: r.currency
           });
+          
+          // tradeForm의 name도 업데이트 (종목명 필드에 표시되도록)
+          setTradeForm((prev) => ({
+            ...prev,
+            name: prev.name || stockName
+          }));
           
           // ticker.json에 저장
           if (r.name) {
@@ -905,12 +944,62 @@ export const StocksView: React.FC<Props> = ({
       group.rows.push(p);
       map.set(p.accountId, group);
     }
-    return Array.from(map.entries()).map(([accountId, { accountName, rows }]) => ({
+    const result = Array.from(map.entries()).map(([accountId, { accountName, rows }]) => ({
       accountId,
       accountName,
       rows: sortPositions(rows)
     }));
-  }, [positionsWithPrice, positionSort]);
+    
+    // 계좌 순서 정렬
+    if (accountOrder.length > 0) {
+      const orderMap = new Map(accountOrder.map((id, idx) => [id, idx]));
+      result.sort((a, b) => {
+        const aOrder = orderMap.get(a.accountId) ?? 999;
+        const bOrder = orderMap.get(b.accountId) ?? 999;
+        if (aOrder !== bOrder) return aOrder - bOrder;
+        return a.accountName.localeCompare(b.accountName);
+      });
+    } else {
+      result.sort((a, b) => a.accountName.localeCompare(b.accountName));
+    }
+    
+    return result;
+  }, [positionsWithPrice, positionSort, accountOrder]);
+
+  // 계좌 순서 변경 핸들러
+  const handleAccountReorder = (accountId: string, newPosition: number) => {
+    const currentOrder = accountOrder.length > 0 
+      ? accountOrder 
+      : positionsByAccount.map((g) => g.accountId);
+    const currentIndex = currentOrder.indexOf(accountId);
+    if (currentIndex === -1) return;
+    
+    const clamped = Math.max(0, Math.min(currentOrder.length - 1, newPosition));
+    if (clamped === currentIndex) return;
+    
+    const next = [...currentOrder];
+    const [item] = next.splice(currentIndex, 1);
+    next.splice(clamped, 0, item);
+    
+    setAccountOrder(next);
+    localStorage.setItem("fw-account-order", JSON.stringify(next));
+  };
+
+  // 초기 보유 여부 토글 (현금 흐름 반영/미반영)
+  const toggleInitialHolding = (trade: StockTrade) => {
+    // 매수(buy) 거래만 토글 가능
+    if (trade.side !== "buy") return;
+
+    const isCurrentlyInitial = trade.cashImpact === 0;
+    // 현재 초기 보유(cashImpact가 0)면 -> 일반 매수로 변경 (cashImpact = -totalAmount)
+    // 현재 일반 매수(cashImpact가 있음)면 -> 초기 보유로 변경 (cashImpact = 0)
+    const newCashImpact = isCurrentlyInitial ? -trade.totalAmount : 0;
+
+    const updated = trades.map((t) =>
+      t.id === trade.id ? { ...t, cashImpact: newCashImpact } : t
+    );
+    onChangeTrades(updated);
+  };
 
   const recentTrades = useMemo(
     () => [...trades].sort((a, b) => (a.date < b.date ? 1 : -1)).slice(0, 4),
@@ -930,9 +1019,12 @@ export const StocksView: React.FC<Props> = ({
     // 매도는 보유 종목 클릭으로만 가능, 매수는 기본값
     const side = tradeForm.side || "buy";
     const cashImpact = side === "buy" ? -totalAmount : totalAmount;
+    // 종목명 우선순위: tradeForm.name > prices > trades > tickerDatabase > 티커
     const fallbackName =
-      prices.find((p) => p.ticker === tickerClean)?.name ||
-      trades.find((t) => t.ticker === tickerClean)?.name ||
+      tradeForm.name ||
+      prices.find((p) => cleanTicker(p.ticker) === tickerClean)?.name ||
+      trades.find((t) => cleanTicker(t.ticker) === tickerClean)?.name ||
+      tickerDatabase.find(t => cleanTicker(t.ticker) === tickerClean)?.name ||
       tickerClean;
 
     if (tradeForm.id) {
@@ -1079,6 +1171,184 @@ export const StocksView: React.FC<Props> = ({
     }));
   };
 
+  // DCA 플랜으로 지금 매수
+  const handleDcaBuyNow = async (plan: typeof dcaPlans[0]) => {
+    const today = new Date().toISOString().slice(0, 10);
+    setBuyingPlanId(plan.id);
+    setDcaMessage(null);
+
+    try {
+      // API로 현재 가격과 환율 조회
+      const quotes = await fetchYahooQuotes([plan.ticker, "USDKRW=X"]);
+      const fx = quotes.find((q) => q.ticker === "USDKRW=X")?.price;
+      if (fx) setFxRate(fx);
+      
+      const quote = quotes.find((q) => q.ticker.toUpperCase() === plan.ticker.toUpperCase());
+      if (!quote || !quote.price || quote.price <= 0) {
+        setDcaMessage("시세를 조회할 수 없습니다. 티커를 확인해주세요.");
+        setBuyingPlanId(null);
+        return;
+      }
+
+      // 환율 계산
+      let priceKRW = quote.price;
+      const currency = quote.currency;
+      if (currency === "USD" && fx) {
+        priceKRW = quote.price * fx;
+      }
+
+      // 매수 수량 계산
+      const shares = plan.amount / priceKRW;
+      const quantity = Number(shares.toFixed(6));
+      const totalAmount = quantity * priceKRW;
+      const fee = plan.fee ?? 0;
+      const finalAmount = totalAmount + fee;
+
+      // 매수 기록 생성
+      const trade: StockTrade = {
+        id: `DCA-${plan.id}-${today}-${Math.random().toString(36).substr(2, 9)}`,
+        date: today,
+        accountId: plan.accountId,
+        ticker: plan.ticker,
+        name: quote.name ?? plan.ticker,
+        side: "buy",
+        quantity,
+        price: Math.round(priceKRW),
+        fee,
+        totalAmount: finalAmount,
+        cashImpact: -finalAmount
+      };
+
+      // 거래 기록 추가
+      onChangeTrades([trade, ...trades]);
+
+      // 평가액 계산 (현재 가격 기준)
+      const marketValue = quantity * priceKRW;
+      const profit = marketValue - finalAmount;
+      const profitRate = (profit / finalAmount) * 100;
+
+      setDcaMessage(
+        `매수 완료: ${quantity.toFixed(6)}주, 매수액 ${formatKRW(Math.round(finalAmount))}, ` +
+        `평가액 ${formatKRW(Math.round(marketValue))} ` +
+        `(${profit >= 0 ? '+' : ''}${formatKRW(Math.round(profit))}, ${profitRate >= 0 ? '+' : ''}${profitRate.toFixed(2)}%)`
+      );
+
+      // 플랜의 마지막 실행 날짜 업데이트
+      const updatedPlans = dcaPlans.map((p) =>
+        p.id === plan.id ? { ...p, lastRunDate: today } : p
+      );
+      persistDcaPlans(updatedPlans);
+    } catch (err) {
+      console.error("DCA 지금 매수 오류:", err);
+      setDcaMessage("DCA 지금 매수 중 오류가 발생했습니다.");
+    } finally {
+      setBuyingPlanId(null);
+    }
+  };
+
+  // 모든 활성화된 DCA 플랜 전체 매수
+  const handleDcaBuyAll = async () => {
+    const today = new Date().toISOString().slice(0, 10);
+    const activePlans = dcaPlans.filter((p) => p.active);
+    
+    if (activePlans.length === 0) {
+      setDcaMessage("활성화된 DCA 플랜이 없습니다.");
+      return;
+    }
+
+    setIsBuyingAll(true);
+    setDcaMessage(null);
+
+    try {
+      // 모든 티커의 가격과 환율 조회
+      const tickers = Array.from(new Set(activePlans.map((p) => p.ticker.toUpperCase())));
+      const quotes = await fetchYahooQuotes([...tickers, "USDKRW=X"]);
+      const fx = quotes.find((q) => q.ticker === "USDKRW=X")?.price;
+      if (fx) setFxRate(fx);
+
+      const quoteMap = new Map(quotes.map((q) => [q.ticker.toUpperCase(), q]));
+      const newTrades: StockTrade[] = [];
+      const updatedPlans = [...dcaPlans];
+      let successCount = 0;
+      let failCount = 0;
+      const failMessages: string[] = [];
+
+      for (const plan of activePlans) {
+        try {
+          const q = quoteMap.get(plan.ticker.toUpperCase());
+          if (!q || !q.price || q.price <= 0) {
+            failCount++;
+            failMessages.push(`${plan.ticker}: 시세 조회 실패`);
+            continue;
+          }
+
+          // 환율 계산
+          let priceKRW = q.price;
+          const currency = q.currency;
+          if (currency === "USD" && fx) {
+            priceKRW = q.price * fx;
+          }
+
+          // 매수 수량 계산
+          const shares = plan.amount / priceKRW;
+          const quantity = Number(shares.toFixed(6));
+          const totalAmount = quantity * priceKRW;
+          const fee = plan.fee ?? 0;
+          const finalAmount = totalAmount + fee;
+
+          // 매수 기록 생성
+          const trade: StockTrade = {
+            id: `DCA-${plan.id}-${today}-${Math.random().toString(36).substr(2, 9)}`,
+            date: today,
+            accountId: plan.accountId,
+            ticker: plan.ticker,
+            name: q.name ?? plan.ticker,
+            side: "buy",
+            quantity,
+            price: Math.round(priceKRW),
+            fee,
+            totalAmount: finalAmount,
+            cashImpact: -finalAmount
+          };
+
+          newTrades.push(trade);
+          successCount++;
+
+          // 플랜의 마지막 실행 날짜 업데이트
+          const planIndex = updatedPlans.findIndex((p) => p.id === plan.id);
+          if (planIndex >= 0) {
+            updatedPlans[planIndex] = { ...updatedPlans[planIndex], lastRunDate: today };
+          }
+        } catch (err) {
+          console.error(`DCA 플랜 ${plan.id} 매수 오류:`, err);
+          failCount++;
+          failMessages.push(`${plan.ticker}: 오류 발생`);
+        }
+      }
+
+      // 거래 기록 추가
+      if (newTrades.length > 0) {
+        onChangeTrades([...newTrades, ...trades]);
+        persistDcaPlans(updatedPlans);
+      }
+
+      // 결과 메시지
+      let message = `전체 매수 완료: ${successCount}개 성공`;
+      if (failCount > 0) {
+        message += `, ${failCount}개 실패`;
+        if (failMessages.length > 0) {
+          message += ` (${failMessages.slice(0, 3).join(", ")}${failMessages.length > 3 ? "..." : ""})`;
+        }
+      }
+      setDcaMessage(message);
+    } catch (err) {
+      console.error("DCA 전체 매수 오류:", err);
+      setDcaMessage("DCA 전체 매수 중 오류가 발생했습니다.");
+    } finally {
+      setIsBuyingAll(false);
+    }
+  };
+
   // 매일 10:30에 자동 실행
   React.useEffect(() => {
     const timer = setInterval(async () => {
@@ -1184,6 +1454,147 @@ export const StocksView: React.FC<Props> = ({
       accountId: prev.accountId
     }));
   };
+
+  // 프리셋 관련 함수들
+  const applyPreset = (preset: StockPreset) => {
+    setTradeForm((prev) => ({
+      ...prev,
+      accountId: preset.accountId || prev.accountId,
+      ticker: preset.ticker || prev.ticker,
+      name: preset.stockName || prev.name,
+      quantity: preset.quantity ? String(preset.quantity) : prev.quantity,
+      fee: preset.fee ? String(preset.fee) : prev.fee || "0"
+    }));
+
+    // 프리셋 사용 기록 업데이트
+    if (onChangePresets) {
+      const updated = presets.map((p) =>
+        p.id === preset.id ? { ...p, lastUsed: new Date().toISOString() } : p
+      );
+      onChangePresets(updated);
+    }
+  };
+
+  const saveCurrentAsPreset = () => {
+    const presetName = prompt("프리셋 이름을 입력하세요:");
+    if (!presetName || !presetName.trim()) return;
+
+    const newPreset: StockPreset = {
+      id: `PRESET-${Date.now()}`,
+      name: presetName.trim(),
+      accountId: tradeForm.accountId,
+      ticker: tradeForm.ticker,
+      stockName: tradeForm.name || undefined,
+      quantity: tradeForm.quantity ? Number(tradeForm.quantity) : undefined,
+      fee: tradeForm.fee ? Number(tradeForm.fee) : undefined
+    };
+
+    if (onChangePresets) {
+      onChangePresets([...presets, newPreset]);
+    }
+  };
+
+  const deletePreset = (id: string) => {
+    if (!confirm("프리셋을 삭제하시겠습니까?")) return;
+    if (onChangePresets) {
+      onChangePresets(presets.filter((p) => p.id !== id));
+    }
+  };
+
+  // 필터링된 프리셋 (최근 사용한 것 우선, 최대 9개)
+  const filteredPresets = useMemo(() => {
+    return presets
+      .sort((a, b) => {
+        if (a.lastUsed && b.lastUsed) {
+          return b.lastUsed.localeCompare(a.lastUsed);
+        }
+        if (a.lastUsed) return -1;
+        if (b.lastUsed) return 1;
+        return a.name.localeCompare(b.name);
+      })
+      .slice(0, 9); // 최대 9개만 표시 (Ctrl+1~9)
+  }, [presets]);
+
+  // 키보드 단축키 처리
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      // Ctrl+1~9: 프리셋 적용
+      if (e.ctrlKey && !e.shiftKey && !e.altKey && e.key >= "1" && e.key <= "9") {
+        const index = parseInt(e.key) - 1;
+        if (filteredPresets[index]) {
+          e.preventDefault();
+          applyPreset(filteredPresets[index]);
+        }
+      }
+      // Ctrl+S: 저장 (handleTradeSubmit 로직 직접 구현)
+      if (e.ctrlKey && e.key === "s" && !e.shiftKey && !e.altKey) {
+        e.preventDefault();
+        const tickerClean = cleanTicker(tradeForm.ticker);
+        const quantity = Number(tradeForm.quantity);
+        const price = Number(tradeForm.price);
+        const fee = Number(tradeForm.fee || "0");
+        if (tradeForm.date && tradeForm.accountId && tickerClean && quantity && price) {
+          const totalAmount = quantity * price + fee;
+          const side = tradeForm.side || "buy";
+          const cashImpact = side === "buy" ? -totalAmount : totalAmount;
+          // 종목명 우선순위: tradeForm.name > prices > trades > tickerDatabase > 티커
+          const fallbackName =
+            tradeForm.name ||
+            prices.find((p) => cleanTicker(p.ticker) === tickerClean)?.name ||
+            trades.find((t) => cleanTicker(t.ticker) === tickerClean)?.name ||
+            tickerDatabase.find(t => cleanTicker(t.ticker) === tickerClean)?.name ||
+            tickerClean;
+
+          if (tradeForm.id) {
+            const updated = trades.map((t) =>
+              t.id === tradeForm.id
+                ? {
+                    ...t,
+                    date: tradeForm.date,
+                    accountId: tradeForm.accountId,
+                    ticker: tickerClean,
+                    name: fallbackName,
+                    side,
+                    quantity,
+                    price,
+                    fee,
+                    totalAmount,
+                    cashImpact
+                  }
+                : t
+            );
+            onChangeTrades(updated);
+          } else {
+            const id = `T${Date.now()}`;
+            const trade: StockTrade = {
+              id,
+              date: tradeForm.date,
+              accountId: tradeForm.accountId,
+              ticker: tickerClean,
+              name: fallbackName,
+              side,
+              quantity,
+              price,
+              fee,
+              totalAmount,
+              cashImpact
+            };
+            onChangeTrades([trade, ...trades]);
+          }
+          setTradeForm((prev) => ({
+            ...createDefaultTradeForm(),
+            side: "buy",
+            accountId: prev.accountId || tradeForm.accountId
+          }));
+        }
+      }
+    };
+
+    window.addEventListener("keydown", handleKeyDown);
+    return () => {
+      window.removeEventListener("keydown", handleKeyDown);
+    };
+  }, [filteredPresets, tradeForm, trades, prices, onChangeTrades]);
 
   const isEditingTrade = Boolean(tradeForm.id);
 
@@ -1408,10 +1819,64 @@ export const StocksView: React.FC<Props> = ({
         >
           주식시세
         </button>
+        <button
+          type="button"
+          className={activeStocksSection === "stats" ? "primary" : "secondary"}
+          onClick={() => setActiveStocksSection("stats")}
+        >
+          통계/차트
+        </button>
       </div>
 
-      {activeStocksSection === "portfolio" ? (
+      {activeStocksSection === "portfolio" && (
         <>
+          {/* 프리셋 버튼 영역 */}
+          <div className="card" style={{ padding: 12, marginBottom: 12 }}>
+            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 8 }}>
+              <span style={{ fontSize: 13, fontWeight: 500, color: "var(--muted)" }}>
+                프리셋 {filteredPresets.length > 0 ? `(Ctrl+1~9)` : ""}
+              </span>
+              <div style={{ display: "flex", gap: 6 }}>
+                <button
+                  type="button"
+                  className="secondary"
+                  onClick={saveCurrentAsPreset}
+                  style={{ fontSize: 11, padding: "4px 8px" }}
+                >
+                  현재 저장
+                </button>
+                <button
+                  type="button"
+                  className="secondary"
+                  onClick={() => setShowPresetModal(true)}
+                  style={{ fontSize: 11, padding: "4px 8px" }}
+                >
+                  관리
+                </button>
+              </div>
+            </div>
+            {filteredPresets.length > 0 ? (
+              <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
+                {filteredPresets.map((preset, index) => (
+                  <button
+                    key={preset.id}
+                    type="button"
+                    className="secondary"
+                    onClick={() => applyPreset(preset)}
+                    style={{ fontSize: 12, padding: "6px 12px" }}
+                    title={`Ctrl+${index + 1}: ${preset.name}`}
+                  >
+                    {index + 1}. {preset.name}
+                  </button>
+                ))}
+              </div>
+            ) : (
+              <p className="hint" style={{ margin: 0, fontSize: 12 }}>
+                프리셋이 없습니다. 자주 매수하는 종목을 입력한 후 "현재 저장" 버튼을 클릭하세요.
+              </p>
+            )}
+          </div>
+
           <div className="two-column">
             <form className="card" onSubmit={handleTradeSubmit} style={{ padding: 16 }}>
           <h3 style={{ marginTop: 0, marginBottom: 8 }}>
@@ -1465,11 +1930,34 @@ export const StocksView: React.FC<Props> = ({
                     subLabel: `${t.market === "KR" ? "🇰🇷 한국" : "🇺🇸 미국"} ${t.exchange || ""}`
                   }))}
                   onSelect={(option) => {
+                    const selectedTicker = option.value;
+                    const selectedName = option.label || "";
                     setTradeForm((prev) => ({
                       ...prev,
-                      ticker: option.value,
-                      name: option.label || ""
+                      ticker: selectedTicker,
+                      name: selectedName || prev.name || selectedTicker
                     }));
+                    // 티커 선택 시 시세도 조회
+                    const symbol = cleanTicker(selectedTicker);
+                    if (symbol) {
+                      fetchYahooQuotes([symbol]).then((results) => {
+                        if (results.length > 0) {
+                          const r = results[0];
+                          setTickerInfo({
+                            ticker: symbol,
+                            name: r.name || selectedName || symbol,
+                            price: r.price,
+                            currency: r.currency
+                          });
+                          setTradeForm((prev) => ({
+                            ...prev,
+                            name: prev.name || r.name || selectedName || symbol
+                          }));
+                        }
+                      }).catch(() => {
+                        // 에러 무시
+                      });
+                    }
                   }}
                   placeholder="티커 또는 종목명 입력 (예: 005930, 삼성, AAPL, Apple)"
                 />
@@ -1506,6 +1994,7 @@ export const StocksView: React.FC<Props> = ({
             />
           </label>
           </div>
+
           <div style={{ display: "flex", gap: 8, marginTop: 12, justifyContent: "flex-end" }}>
             {tradeForm.side === "sell" && !isEditingTrade && (
                 <button
@@ -1610,15 +2099,42 @@ export const StocksView: React.FC<Props> = ({
       )}
 
       <h3>보유 종목 현황 (계좌별)</h3>
-      {positionsByAccount.map((group) => {
+      {positionsByAccount.map((group, groupIndex) => {
         const balance = balances.find((b) => b.account.id === group.accountId);
         const cashBalance = balance?.currentBalance ?? 0;
         const stockValue = group.rows.reduce((sum, p) => sum + p.marketValue, 0);
         const totalAsset = cashBalance + stockValue;
         
         return (
-        <div key={group.accountId}>
+        <div 
+          key={group.accountId}
+          draggable
+          onDragStart={() => setDraggingAccountId(group.accountId)}
+          onDragOver={(e) => {
+            e.preventDefault();
+          }}
+          onDrop={(e) => {
+            e.preventDefault();
+            if (draggingAccountId && draggingAccountId !== group.accountId) {
+              handleAccountReorder(draggingAccountId, groupIndex);
+            }
+            setDraggingAccountId(null);
+          }}
+          onDragEnd={() => setDraggingAccountId(null)}
+          style={{ 
+            marginBottom: 24,
+            opacity: draggingAccountId === group.accountId ? 0.5 : 1,
+            cursor: "move"
+          }}
+        >
           <h4 style={{ display: "flex", alignItems: "center", gap: 16, marginBottom: 12 }}>
+            <span 
+              className="drag-handle" 
+              title="잡고 위/아래로 끌어서 계좌 순서 변경"
+              style={{ cursor: "grab", fontSize: 18, userSelect: "none" }}
+            >
+              ☰
+            </span>
             <span>{group.accountName}</span>
             <span style={{ fontSize: 14, fontWeight: 400, color: "var(--muted)" }}>
               현금+예수금: <span className={cashBalance >= 0 ? "positive" : "negative"}>{formatKRW(Math.round(cashBalance))}</span>
@@ -1644,36 +2160,6 @@ export const StocksView: React.FC<Props> = ({
                   </button>
                 </th>
                 <th>
-                  <button type="button" className="sort-header" onClick={() => togglePositionSort("quantity")}>
-                    보유수량 <span className="arrow">{sortIndicator(positionSort.key, "quantity", positionSort.direction)}</span>
-                  </button>
-                </th>
-                <th>
-                  <button type="button" className="sort-header" onClick={() => togglePositionSort("avgPrice")}>
-                    평균단가 <span className="arrow">{sortIndicator(positionSort.key, "avgPrice", positionSort.direction)}</span>
-                  </button>
-                </th>
-                <th>
-                  <button type="button" className="sort-header" onClick={() => togglePositionSort("marketPrice")}>
-                    현재가 <span className="arrow">{sortIndicator(positionSort.key, "marketPrice", positionSort.direction)}</span>
-                  </button>
-                </th>
-                <th>
-                  <button type="button" className="sort-header" onClick={() => togglePositionSort("diff")}>
-                    수익 <span className="arrow">{sortIndicator(positionSort.key, "diff", positionSort.direction)}</span>
-                  </button>
-                </th>
-                <th>
-                  <button type="button" className="sort-header" onClick={() => togglePositionSort("marketValue")}>
-                    평가금액 <span className="arrow">{sortIndicator(positionSort.key, "marketValue", positionSort.direction)}</span>
-                  </button>
-                </th>
-                <th>
-                  <button type="button" className="sort-header" onClick={() => togglePositionSort("totalBuyAmount")}>
-                    총매입금액 <span className="arrow">{sortIndicator(positionSort.key, "totalBuyAmount", positionSort.direction)}</span>
-                  </button>
-                </th>
-                <th>
                   <button type="button" className="sort-header" onClick={() => togglePositionSort("pnl")}>
                     평가손익 <span className="arrow">{sortIndicator(positionSort.key, "pnl", positionSort.direction)}</span>
                   </button>
@@ -1683,12 +2169,35 @@ export const StocksView: React.FC<Props> = ({
                     수익률 <span className="arrow">{sortIndicator(positionSort.key, "pnlRate", positionSort.direction)}</span>
                   </button>
                 </th>
+                <th>
+                  <button type="button" className="sort-header" onClick={() => togglePositionSort("marketPrice")}>
+                    현재가 <span className="arrow">{sortIndicator(positionSort.key, "marketPrice", positionSort.direction)}</span>
+                  </button>
+                </th>
+                <th>
+                  <button type="button" className="sort-header" onClick={() => togglePositionSort("avgPrice")}>
+                    평균단가 <span className="arrow">{sortIndicator(positionSort.key, "avgPrice", positionSort.direction)}</span>
+                  </button>
+                </th>
+                <th>
+                  <button type="button" className="sort-header" onClick={() => togglePositionSort("quantity")}>
+                    보유수량 <span className="arrow">{sortIndicator(positionSort.key, "quantity", positionSort.direction)}</span>
+                  </button>
+                </th>
+                <th>
+                  <button type="button" className="sort-header" onClick={() => togglePositionSort("totalBuyAmount")}>
+                    총매입금액 <span className="arrow">{sortIndicator(positionSort.key, "totalBuyAmount", positionSort.direction)}</span>
+                  </button>
+                </th>
+                <th>
+                  <button type="button" className="sort-header" onClick={() => togglePositionSort("marketValue")}>
+                    총평가금액 <span className="arrow">{sortIndicator(positionSort.key, "marketValue", positionSort.direction)}</span>
+                  </button>
+                </th>
               </tr>
             </thead>
             <tbody>
               {group.rows.map((p) => {
-                const diff = p.diff;
-                const diffClass = diff >= 0 ? "positive" : "negative";
                 return (
                   <tr key={`${group.accountId}-${p.ticker}`}>
                     <td 
@@ -1700,13 +2209,26 @@ export const StocksView: React.FC<Props> = ({
                     </td>
                     <td 
                       onClick={() => handlePositionClick(p)}
-                      style={{ cursor: "pointer", textDecoration: "underline", color: "var(--primary)" }}
-                      title="클릭하여 매도하기"
+                      style={{ 
+                        cursor: "pointer", 
+                        textDecoration: "underline", 
+                        color: "var(--primary)",
+                        fontSize: "12px",
+                        whiteSpace: "nowrap",
+                        overflow: "hidden",
+                        textOverflow: "ellipsis",
+                        maxWidth: "200px"
+                      }}
+                      title={p.name}
                     >
                       {p.name}
                     </td>
-                    <td className="number">{formatNumber(p.quantity)}</td>
-                    <td className="number">{formatKRW(Math.round(p.avgPrice))}</td>
+                    <td className={`number ${p.pnl >= 0 ? "positive" : "negative"}`}>
+                      {formatKRW(p.pnl)}
+                    </td>
+                    <td className={`number ${p.pnl >= 0 ? "positive" : "negative"}`}>
+                      {(p.pnlRate * 100).toFixed(2)}%
+                    </td>
                     <td className="number">
                       {formatPriceWithCurrency(
                         p.currency === "USD" && p.originalMarketPrice != null 
@@ -1715,18 +2237,11 @@ export const StocksView: React.FC<Props> = ({
                         p.currency
                       )}
                     </td>
-                    <td className={`number ${diffClass}`}>
-                      {diff === 0 ? "-" : formatKRW(diff)}
-                    </td>
+                    <td className="number">{formatKRW(Math.round(p.avgPrice))}</td>
+                    <td className="number">{p.quantity % 1 === 0 ? formatNumber(p.quantity) : p.quantity.toFixed(6)}</td>
+                    <td className="number">{formatKRW(p.totalBuyAmount)}</td>
                     <td className={`number ${p.marketValue >= p.totalBuyAmount ? "positive" : "negative"}`}>
                       {formatKRW(p.marketValue)}
-                    </td>
-                    <td className="number">{formatKRW(p.totalBuyAmount)}</td>
-                    <td className={`number ${p.pnl >= 0 ? "positive" : "negative"}`}>
-                      {formatKRW(p.pnl)}
-                    </td>
-                    <td className={`number ${p.pnl >= 0 ? "positive" : "negative"}`}>
-                      {(p.pnlRate * 100).toFixed(2)}%
                     </td>
                   </tr>
                 );
@@ -1742,7 +2257,6 @@ export const StocksView: React.FC<Props> = ({
         const totalBuyAmount = trades.filter(t => t.side === "buy").reduce((sum, t) => sum + t.totalAmount, 0);
         const totalSellAmount = trades.filter(t => t.side === "sell").reduce((sum, t) => sum + t.totalAmount, 0);
         const totalFee = trades.reduce((sum, t) => sum + t.fee, 0);
-        const totalCashImpact = trades.reduce((sum, t) => sum + t.cashImpact, 0);
         return (
           <div className="card" style={{ marginBottom: 16, padding: 12 }}>
             <div style={{ display: "flex", gap: 24, flexWrap: "wrap", fontSize: 14 }}>
@@ -1757,12 +2271,6 @@ export const StocksView: React.FC<Props> = ({
               <div>
                 <span style={{ color: "var(--muted)", marginRight: 8 }}>총 수수료:</span>
                 <span className="negative">{formatKRW(Math.round(totalFee))}</span>
-              </div>
-              <div>
-                <span style={{ color: "var(--muted)", marginRight: 8 }}>순 현금 변동:</span>
-                <span className={totalCashImpact >= 0 ? "positive" : "negative"}>
-                  {formatKRW(Math.round(totalCashImpact))}
-                </span>
               </div>
             </div>
           </div>
@@ -1817,11 +2325,7 @@ export const StocksView: React.FC<Props> = ({
                 총금액 <span className="arrow">{sortIndicator(tradeSort.key, "totalAmount", tradeSort.direction)}</span>
               </button>
             </th>
-            <th>
-              <button type="button" className="sort-header" onClick={() => toggleTradeSort("cashImpact")}>
-                현금변동 <span className="arrow">{sortIndicator(tradeSort.key, "cashImpact", tradeSort.direction)}</span>
-              </button>
-            </th>
+            <th>초기보유</th>
             <th style={{ width: 60 }}>작업</th>
           </tr>
         </thead>
@@ -1908,8 +2412,17 @@ export const StocksView: React.FC<Props> = ({
               <td 
                 className="name-cell" 
                 onClick={() => startEditTrade(t)}
-                style={{ cursor: "pointer", textDecoration: "underline", color: "var(--primary)" }}
-                title="클릭하여 편집하기"
+                style={{ 
+                  cursor: "pointer", 
+                  textDecoration: "underline", 
+                  color: "var(--primary)",
+                  fontSize: "12px",
+                  whiteSpace: "nowrap",
+                  overflow: "hidden",
+                  textOverflow: "ellipsis",
+                  maxWidth: "200px"
+                }}
+                title={t.name}
               >
                 {t.name}
               </td>
@@ -1934,7 +2447,7 @@ export const StocksView: React.FC<Props> = ({
                     style={{ width: "80px", padding: "2px 4px", fontSize: 13, textAlign: "right" }}
                   />
                 ) : (
-                  formatNumber(t.quantity)
+                  t.quantity % 1 === 0 ? formatNumber(t.quantity) : t.quantity.toFixed(6)
                 )}
               </td>
               <td 
@@ -2014,8 +2527,15 @@ export const StocksView: React.FC<Props> = ({
                   formatKRW(t.totalAmount)
                 )}
               </td>
-              <td className={`number ${t.cashImpact >= 0 ? "positive" : "negative"}`}>
-                {formatKRW(t.cashImpact)}
+              <td style={{ textAlign: "center" }}>
+                {t.side === "buy" && (
+                  <input
+                    type="checkbox"
+                    checked={t.cashImpact === 0}
+                    onChange={() => toggleInitialHolding(t)}
+                    title="체크 시 현금 차감 안 함 (초기 보유)"
+                  />
+                )}
               </td>
               <td style={{ width: 60, padding: "4px" }}>
                 <button 
@@ -2032,7 +2552,9 @@ export const StocksView: React.FC<Props> = ({
         </tbody>
       </table>
         </>
-      ) : activeStocksSection === "dca" ? (
+      )}
+
+      {activeStocksSection === "dca" && (
         <div className="card" style={{ padding: 16, marginBottom: 16 }}>
           <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 12, flexWrap: "wrap" }}>
             <h3 style={{ margin: 0 }}>정액매수 (DCA)</h3>
@@ -2160,7 +2682,20 @@ export const StocksView: React.FC<Props> = ({
           </div>
 
           <div style={{ marginTop: 16 }}>
-            <h4 style={{ margin: "0 0 8px 0" }}>DCA 진행 중 목록</h4>
+            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 8 }}>
+              <h4 style={{ margin: 0 }}>DCA 진행 중 목록</h4>
+              {dcaPlans.length > 0 && (
+                <button
+                  type="button"
+                  className="primary"
+                  onClick={handleDcaBuyAll}
+                  disabled={isBuyingAll}
+                  style={{ padding: "6px 12px", fontSize: 13 }}
+                >
+                  {isBuyingAll ? "매수 중..." : "목록 전체 매수"}
+                </button>
+              )}
+            </div>
             {dcaPlans.length === 0 && <p className="hint">등록된 DCA 플랜이 없습니다.</p>}
             {dcaPlans.length > 0 && (
               <div style={{ overflowX: "auto" }}>
@@ -2192,6 +2727,15 @@ export const StocksView: React.FC<Props> = ({
                           </span>
                         </td>
                         <td style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
+                          <button 
+                            type="button" 
+                            className="primary" 
+                            onClick={() => handleDcaBuyNow(p)} 
+                            disabled={buyingPlanId === p.id}
+                            style={{ padding: "4px 10px", fontSize: 12 }}
+                          >
+                            {buyingPlanId === p.id ? "매수 중..." : "지금 매수"}
+                          </button>
                           <button type="button" className="secondary" onClick={() => toggleDcaPlan(p.id)} style={{ padding: "4px 10px", fontSize: 12 }}>
                             {p.active ? "일시정지" : "재개"}
                           </button>
@@ -2207,7 +2751,9 @@ export const StocksView: React.FC<Props> = ({
             )}
           </div>
         </div>
-      ) : (
+      )}
+
+      {activeStocksSection === "quotes" && (
         <div className="card" style={{ marginTop: 16 }}>
           <div style={{ display: "flex", gap: 8, flexWrap: "wrap", marginBottom: 12 }}>
             <button
@@ -2232,6 +2778,215 @@ export const StocksView: React.FC<Props> = ({
             {activeQuoteMarket === "korea"
               ? renderQuoteTable(koreanQuotes, "한국주식")
               : renderQuoteTable(usQuotes, "미국주식")}
+          </div>
+        </div>
+      )}
+      
+      {activeStocksSection === "stats" && (
+        <div className="card" style={{ padding: 16 }}>
+          <h3 style={{ margin: "0 0 16px 0" }}>주식 포트폴리오 분석</h3>
+          
+          <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(300px, 1fr))", gap: 24 }}>
+            {/* 1. 포트폴리오 비중 (평가금액 기준) */}
+            <div className="card" style={{ border: "1px solid var(--border)", boxShadow: "none", padding: 16 }}>
+              <h4 style={{ margin: "0 0 12px 0", textAlign: "center" }}>종목별 비중 (평가액)</h4>
+              <div style={{ width: "100%", height: 300 }}>
+                {positionsWithPrice.length > 0 ? (
+                  <ResponsiveContainer>
+                    <PieChart>
+                      <Pie
+                        data={[...positionsWithPrice]
+                          .sort((a, b) => b.marketValue - a.marketValue)
+                          .map(p => ({
+                            name: p.name || p.ticker,
+                            value: p.marketValue
+                          }))
+                        }
+                        cx="50%"
+                        cy="50%"
+                        outerRadius={80}
+                        fill="#8884d8"
+                        dataKey="value"
+                        label={({ name, percent }) => `${name} ${percent ? (percent * 100).toFixed(1) : 0}%`}
+                        labelLine={true}
+                      >
+                        {[...positionsWithPrice].map((entry, index) => (
+                          <Cell key={`cell-${index}`} fill={["#0ea5e9", "#6366f1", "#f43f5e", "#10b981", "#f59e0b", "#8b5cf6", "#ec4899", "#14b8a6"][index % 8]} />
+                        ))}
+                      </Pie>
+                      <Tooltip formatter={(value: any) => formatKRW(value)} />
+                      <Legend />
+                    </PieChart>
+                  </ResponsiveContainer>
+                ) : (
+                  <div style={{ display: "flex", justifyContent: "center", alignItems: "center", height: "100%", color: "var(--muted)" }}>
+                    보유 종목이 없습니다.
+                  </div>
+                )}
+              </div>
+            </div>
+
+            {/* 2. 계좌별 자산 비중 */}
+            <div className="card" style={{ border: "1px solid var(--border)", boxShadow: "none", padding: 16 }}>
+              <h4 style={{ margin: "0 0 12px 0", textAlign: "center" }}>계좌별 자산 비중 (주식+현금)</h4>
+              <div style={{ width: "100%", height: 300 }}>
+                <ResponsiveContainer>
+                  <PieChart>
+                    <Pie
+                      data={positionsByAccount.map(group => {
+                        const balance = balances.find(b => b.account.id === group.accountId);
+                        const cash = balance?.currentBalance ?? 0;
+                        const stock = group.rows.reduce((sum, p) => sum + p.marketValue, 0);
+                        return {
+                          name: group.accountName,
+                          value: Math.max(0, cash + stock)
+                        };
+                      }).filter(d => d.value > 0)}
+                      cx="50%"
+                      cy="50%"
+                      innerRadius={60}
+                      outerRadius={80}
+                      fill="#8884d8"
+                      dataKey="value"
+                      label={({ name, percent }) => `${name} ${percent ? (percent * 100).toFixed(1) : 0}%`}
+                    >
+                      {positionsByAccount.map((entry, index) => (
+                        <Cell key={`cell-${index}`} fill={["#f59e0b", "#10b981", "#0ea5e9", "#6366f1", "#f43f5e"][index % 5]} />
+                      ))}
+                    </Pie>
+                    <Tooltip formatter={(value: any) => formatKRW(value)} />
+                    <Legend />
+                  </PieChart>
+                </ResponsiveContainer>
+              </div>
+            </div>
+          </div>
+
+          <div style={{ marginTop: 24 }}>
+             {/* 3. 종목별 평가손익 (Bar Chart) */}
+             <div className="card" style={{ border: "1px solid var(--border)", boxShadow: "none", padding: 16 }}>
+              <h4 style={{ margin: "0 0 12px 0", textAlign: "center" }}>종목별 평가 손익</h4>
+              <div style={{ width: "100%", height: 300 }}>
+                {positionsWithPrice.length > 0 ? (
+                  <ResponsiveContainer>
+                    <BarChart
+                      data={[...positionsWithPrice]
+                        .sort((a, b) => b.pnl - a.pnl)
+                        .map(p => ({
+                          name: p.name || p.ticker,
+                          pnl: p.pnl,
+                          fill: p.pnl >= 0 ? "#f43f5e" : "#0ea5e9"
+                        }))
+                      }
+                      margin={{ top: 20, right: 30, left: 20, bottom: 5 }}
+                    >
+                      <CartesianGrid strokeDasharray="3 3" vertical={false} />
+                      <XAxis dataKey="name" fontSize={12} tickLine={false} />
+                      <YAxis 
+                        tickFormatter={(val) => `${(val / 10000).toFixed(0)}만`} 
+                        fontSize={12}
+                        tickLine={false}
+                        axisLine={false}
+                      />
+                      <Tooltip formatter={(value: any) => formatKRW(value)} cursor={{fill: 'transparent'}} />
+                      <Bar dataKey="pnl" name="평가손익">
+                        {
+                          [...positionsWithPrice].sort((a, b) => b.pnl - a.pnl).map((entry, index) => (
+                            <Cell key={`cell-${index}`} fill={entry.pnl >= 0 ? "#f43f5e" : "#0ea5e9"} />
+                          ))
+                        }
+                      </Bar>
+                    </BarChart>
+                  </ResponsiveContainer>
+                ) : (
+                  <div style={{ display: "flex", justifyContent: "center", alignItems: "center", height: "100%", color: "var(--muted)" }}>
+                    데이터 없음
+                  </div>
+                )}
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* 프리셋 관리 모달 */}
+      {showPresetModal && (
+        <div className="modal-backdrop" onClick={() => setShowPresetModal(false)}>
+          <div className="modal" onClick={(e) => e.stopPropagation()}>
+            <div className="modal-header">
+              <h3 style={{ margin: 0 }}>프리셋 관리</h3>
+              <button type="button" className="secondary" onClick={() => setShowPresetModal(false)}>
+                닫기
+              </button>
+            </div>
+            <div className="modal-body">
+              <div style={{ marginBottom: 16 }}>
+                <button
+                  type="button"
+                  className="primary"
+                  onClick={() => {
+                    saveCurrentAsPreset();
+                    setShowPresetModal(false);
+                  }}
+                >
+                  새 프리셋 추가
+                </button>
+              </div>
+              <div style={{ maxHeight: 400, overflowY: "auto" }}>
+                {presets.length === 0 ? (
+                  <p className="hint">저장된 프리셋이 없습니다.</p>
+                ) : (
+                  <table className="data-table">
+                    <thead>
+                      <tr>
+                        <th>이름</th>
+                        <th>계좌</th>
+                        <th>티커</th>
+                        <th>종목명</th>
+                        <th>수량</th>
+                        <th>수수료</th>
+                        <th>마지막 사용</th>
+                        <th>작업</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {presets.map((preset) => (
+                        <tr key={preset.id}>
+                          <td>{preset.name}</td>
+                          <td>{preset.accountId}</td>
+                          <td>{preset.ticker}</td>
+                          <td>{preset.stockName || "-"}</td>
+                          <td className="number">{preset.quantity ? preset.quantity : "-"}</td>
+                          <td className="number">{preset.fee ? Math.round(preset.fee).toLocaleString() : "-"}</td>
+                          <td>{preset.lastUsed ? new Date(preset.lastUsed).toLocaleDateString() : "-"}</td>
+                          <td>
+                            <button
+                              type="button"
+                              className="secondary"
+                              onClick={() => {
+                                applyPreset(preset);
+                                setShowPresetModal(false);
+                              }}
+                              style={{ marginRight: 4, fontSize: 11, padding: "4px 8px" }}
+                            >
+                              적용
+                            </button>
+                            <button
+                              type="button"
+                              className="danger"
+                              onClick={() => deletePreset(preset.id)}
+                              style={{ fontSize: 11, padding: "4px 8px" }}
+                            >
+                              삭제
+                            </button>
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                )}
+              </div>
+            </div>
           </div>
         </div>
       )}

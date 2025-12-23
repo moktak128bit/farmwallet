@@ -240,6 +240,97 @@ export const DashboardView: React.FC<Props> = ({
       .slice(-6);
   }, [ledger]);
 
+  // 주식 비율 트리맵 데이터
+  const positionsWithPrice = useMemo(() => {
+    return positions
+      .filter((p) => p.quantity > 0)
+      .map((p) => {
+        const priceInfo = adjustedPrices.find((x) => x.ticker === p.ticker);
+        const marketPrice = priceInfo?.price ?? p.marketPrice ?? 0;
+        const marketValue = (marketPrice || 0) * (p.quantity || 0);
+        const pnl = marketValue - (p.totalBuyAmount || 0);
+        const pnlRate = (p.totalBuyAmount || 0) > 0 ? pnl / p.totalBuyAmount : 0;
+        return {
+          ...p,
+          marketPrice,
+          marketValue,
+          pnl,
+          pnlRate
+        };
+      })
+      .filter((p) => p.marketValue > 0);
+  }, [positions, adjustedPrices]);
+
+  // 날짜 간격 계산 함수 (15일 간격 샘플링에 사용)
+  const daysBetween = (date1: string, date2: string): number => {
+    const d1 = new Date(date1);
+    const d2 = new Date(date2);
+    const diffTime = Math.abs(d2.getTime() - d1.getTime());
+    return Math.ceil(diffTime / (1000 * 60 * 60 * 24));
+  };
+
+  // 15일 간격 전체 자산 변동 데이터
+  const dailyAssetData = useMemo(() => {
+    const dateSet = new Set<string>();
+    trades.forEach((t) => {
+      if (t.date) dateSet.add(t.date);
+    });
+    ledger.forEach((l) => {
+      if (l.date) dateSet.add(l.date);
+    });
+    const dates = Array.from(dateSet).sort();
+    if (dates.length === 0) return [];
+
+    // 15일 간격으로 필터링
+    const filteredDates: string[] = [];
+    let lastDate = "";
+    for (const date of dates) {
+      if (!lastDate || daysBetween(lastDate, date) >= 15) {
+        filteredDates.push(date);
+        lastDate = date;
+      }
+    }
+    // 마지막 날짜도 포함
+    if (dates.length > 0 && filteredDates[filteredDates.length - 1] !== dates[dates.length - 1]) {
+      filteredDates.push(dates[dates.length - 1]);
+    }
+
+    return filteredDates.map((date) => {
+      // 해당 날짜까지의 거래만 필터링
+      const filteredTrades = trades.filter((t) => t.date && t.date <= date);
+      const filteredLedger = ledger.filter((l) => l.date && l.date <= date);
+      const filteredPositions = computePositions(filteredTrades, adjustedPrices, accounts);
+      const filteredBalances = computeAccountBalances(accounts, filteredLedger, filteredTrades);
+      
+      // 주식 자산 계산
+      const stockAsset = filteredPositions.reduce((sum, p) => sum + (p.marketValue || 0), 0);
+      
+      // 현금 자산 계산 (증권계좌만)
+      const cashAsset = filteredBalances
+        .filter((b) => b.account.type === "securities")
+        .reduce((sum, b) => sum + b.currentBalance, 0);
+      
+      // 총 자산
+      const totalAsset = stockAsset + cashAsset;
+      
+      return {
+        date,
+        stockAsset,
+        cashAsset,
+        totalAsset
+      };
+    });
+  }, [trades, adjustedPrices, accounts, ledger]);
+
+  const formatKRW = (value: number) => {
+    if (typeof value !== "number" || isNaN(value)) return "0 원";
+    return `${Math.round(value).toLocaleString("ko-KR")} 원`;
+  };
+
+  // 에러 방지: 데이터가 없거나 잘못된 경우 빈 배열 반환
+  const safePositionsWithPrice = positionsWithPrice || [];
+  const safeDailyAssetData = dailyAssetData || [];
+
   return (
     <div>
       <h2>대시보드</h2>
@@ -407,6 +498,91 @@ export const DashboardView: React.FC<Props> = ({
               </ResponsiveContainer>
             ) : (
               <p className="hint">데이터 없음</p>
+            )}
+          </div>
+        </div>
+      </div>
+
+      <div className="cards-row">
+        <div className="card" style={{ gridColumn: "span 2" }}>
+          <div className="card-title">전체 자산 변동 (15일 간격)</div>
+          <div style={{ width: "100%", height: 350, marginTop: 10 }}>
+            {safeDailyAssetData.length > 0 ? (
+              <ResponsiveContainer>
+                <AreaChart data={safeDailyAssetData} margin={{ top: 10, right: 30, left: 0, bottom: 0 }}>
+                  <defs>
+                    <linearGradient id="colorTotalAsset" x1="0" y1="0" x2="0" y2="1">
+                      <stop offset="5%" stopColor="#6366f1" stopOpacity={0.3}/>
+                      <stop offset="95%" stopColor="#6366f1" stopOpacity={0}/>
+                    </linearGradient>
+                    <linearGradient id="colorStockAsset" x1="0" y1="0" x2="0" y2="1">
+                      <stop offset="5%" stopColor="#0ea5e9" stopOpacity={0.3}/>
+                      <stop offset="95%" stopColor="#0ea5e9" stopOpacity={0}/>
+                    </linearGradient>
+                    <linearGradient id="colorCashAsset" x1="0" y1="0" x2="0" y2="1">
+                      <stop offset="5%" stopColor="#10b981" stopOpacity={0.3}/>
+                      <stop offset="95%" stopColor="#10b981" stopOpacity={0}/>
+                    </linearGradient>
+                  </defs>
+                  <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="var(--border)" />
+                  <XAxis 
+                    dataKey="date" 
+                    fontSize={11} 
+                    tickFormatter={(v) => {
+                      const date = new Date(v);
+                      return `${date.getMonth() + 1}/${date.getDate()}`;
+                    }}
+                    tickMargin={10}
+                    axisLine={false}
+                    tickLine={false}
+                  />
+                  <YAxis 
+                    fontSize={11} 
+                    tickFormatter={(v) => `${(v / 100000000).toFixed(1)}억`} 
+                    width={50}
+                    axisLine={false}
+                    tickLine={false}
+                  />
+                  <Tooltip 
+                    formatter={(value: any) => formatKRW(value)}
+                    labelFormatter={(label) => {
+                      const date = new Date(label);
+                      return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')}`;
+                    }}
+                    contentStyle={{ borderRadius: "8px", border: "none", boxShadow: "0 4px 12px rgba(0,0,0,0.1)" }}
+                  />
+                  <Area 
+                    type="monotone" 
+                    dataKey="totalAsset" 
+                    name="총 자산"
+                    stroke="#6366f1" 
+                    strokeWidth={2}
+                    fillOpacity={1} 
+                    fill="url(#colorTotalAsset)" 
+                  />
+                  <Area 
+                    type="monotone" 
+                    dataKey="stockAsset" 
+                    name="주식 자산"
+                    stroke="#0ea5e9" 
+                    strokeWidth={2}
+                    fillOpacity={1} 
+                    fill="url(#colorStockAsset)" 
+                  />
+                  <Area 
+                    type="monotone" 
+                    dataKey="cashAsset" 
+                    name="현금 자산"
+                    stroke="#10b981" 
+                    strokeWidth={2}
+                    fillOpacity={1} 
+                    fill="url(#colorCashAsset)" 
+                  />
+                  <Legend verticalAlign="top" height={36} iconType="rect" wrapperStyle={{ top: -10 }} />
+                </AreaChart>
+              </ResponsiveContainer>
+            ) : (
+              <p className="hint">거래 내역이 없습니다.</p>
             )}
           </div>
         </div>

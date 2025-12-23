@@ -1,11 +1,12 @@
 import React, { useMemo, useState } from "react";
-import type { Account, AccountType } from "../types";
+import type { Account, AccountType, LedgerEntry } from "../types";
 import type { AccountBalanceRow, PositionRow } from "../calculations";
 
 interface Props {
   accounts: Account[];
   balances: AccountBalanceRow[];
   positions: PositionRow[];
+  ledger: LedgerEntry[];
   onChangeAccounts: (next: Account[]) => void;
   onRenameAccountId: (oldId: string, newId: string) => void;
 }
@@ -22,6 +23,7 @@ export const AccountsView: React.FC<Props> = ({
   accounts,
   balances,
   positions,
+  ledger,
   onChangeAccounts,
   onRenameAccountId
 }) => {
@@ -31,7 +33,7 @@ export const AccountsView: React.FC<Props> = ({
   const [showForm, setShowForm] = useState(false);
   const [editingNumber, setEditingNumber] = useState<{
     id: string;
-    field: "initialBalance" | "debt" | "savings";
+    field: "initialBalance" | "debt" | "savings" | "cashAdjustment" | "initialCashBalance";
   } | null>(null);
   const [editValue, setEditValue] = useState("");
   const [editingCell, setEditingCell] = useState<{
@@ -54,7 +56,7 @@ export const AccountsView: React.FC<Props> = ({
 
   const startEditNumber = (
     accountId: string,
-    field: "initialBalance" | "debt" | "savings",
+    field: "initialBalance" | "debt" | "savings" | "cashAdjustment" | "initialCashBalance",
     currentValue: number
   ) => {
     setEditingNumber({ id: accountId, field });
@@ -64,9 +66,18 @@ export const AccountsView: React.FC<Props> = ({
   const saveNumber = () => {
     if (!editingNumber) return;
     const value = Number(editValue.replace(/,/g, "")) || 0;
-    const updated = accounts.map((a) =>
-      a.id === editingNumber.id ? { ...a, [editingNumber.field]: value } : a
-    );
+    const updated = accounts.map((a) => {
+      if (a.id === editingNumber.id) {
+        if (editingNumber.field === "cashAdjustment") {
+          return { ...a, cashAdjustment: value };
+        }
+        if (editingNumber.field === "initialCashBalance") {
+          return { ...a, initialCashBalance: value };
+        }
+        return { ...a, [editingNumber.field]: value };
+      }
+      return a;
+    });
     onChangeAccounts(updated);
     setEditingNumber(null);
     setEditValue("");
@@ -137,12 +148,44 @@ export const AccountsView: React.FC<Props> = ({
   const stockMap = useMemo(() => {
     const map = new Map<string, number>();
     safePositions.forEach((p) => {
-      map.set(p.accountId, (map.get(p.accountId) ?? 0) + p.marketValue);
+      // 보유 수량이 0보다 크고 평가금액이 0보다 큰 경우만 합산
+      if (p.quantity > 0 && p.marketValue > 0) {
+        map.set(p.accountId, (map.get(p.accountId) ?? 0) + p.marketValue);
+      }
     });
     return map;
   }, [safePositions]);
 
   const formatNumber = (n?: number) => Math.round(n ?? 0).toLocaleString();
+
+  // 카드 계좌의 부채 계산 (가계부 지출 합계)
+  const cardDebtMap = useMemo(() => {
+    const map = new Map<string, { total: number; monthly: number }>();
+    const now = new Date();
+    const currentMonth = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}`;
+    
+    safeBalances.forEach((row) => {
+      if (row.account.type === "card") {
+        // 전체 부채: 해당 계좌에서 지출된 모든 금액
+        const totalDebt = ledger
+          .filter((l) => l.kind === "expense" && l.fromAccountId === row.account.id)
+          .reduce((sum, l) => sum + l.amount, 0);
+        
+        // 월 부채: 이번 달 지출 금액
+        const monthlyDebt = ledger
+          .filter((l) => {
+            if (l.kind !== "expense" || l.fromAccountId !== row.account.id) return false;
+            if (!l.date) return false;
+            return l.date.slice(0, 7) === currentMonth;
+          })
+          .reduce((sum, l) => sum + l.amount, 0);
+        
+        map.set(row.account.id, { total: totalDebt, monthly: monthlyDebt });
+      }
+    });
+    
+    return map;
+  }, [safeBalances, ledger]);
 
   // 계좌를 타입별로 그룹화
   const accountsByType = useMemo(() => {
@@ -163,7 +206,7 @@ export const AccountsView: React.FC<Props> = ({
     return grouped;
   }, [safeBalances]);
 
-  const renderAccountRow = (row: typeof safeBalances[0], index: number) => (
+  const renderAccountRow = (row: typeof safeBalances[0], index: number, accountType: AccountType) => (
     <tr
       key={row.account.id}
       draggable
@@ -273,7 +316,147 @@ export const AccountsView: React.FC<Props> = ({
           ACCOUNT_TYPE_LABEL[row.account.type]
         )}
       </td>
-      {["initialBalance", "debt", "savings"].map((field) => {
+      {(() => {
+        // 증권계좌: 초기현금잔액만 표시
+        if (accountType === "securities") {
+          const value = row.account.initialCashBalance ?? row.account.initialBalance ?? 0;
+          const isEditing =
+            editingNumber &&
+            editingNumber.id === row.account.id &&
+            editingNumber.field === "initialCashBalance";
+          return (
+            <td className="number" key={`${row.account.id}-initialCashBalance`}>
+              {isEditing ? (
+                <div style={{ display: "flex", gap: "4px", alignItems: "center" }}>
+                  <input
+                    type="number"
+                    value={editValue}
+                    onChange={(e) => setEditValue(e.target.value)}
+                    onKeyDown={(e) => {
+                      if (e.key === "Enter") {
+                        saveNumber();
+                      } else if (e.key === "Escape") {
+                        cancelEditNumber();
+                      }
+                    }}
+                    onBlur={saveNumber}
+                    autoFocus
+                    style={{ width: "120px", padding: "4px 8px" }}
+                  />
+                  <button
+                    type="button"
+                    onClick={saveNumber}
+                    style={{ padding: "2px 8px", fontSize: "12px" }}
+                  >
+                    저장
+                  </button>
+                  <button
+                    type="button"
+                    onClick={cancelEditNumber}
+                    style={{ padding: "2px 8px", fontSize: "12px" }}
+                  >
+                    취소
+                  </button>
+                </div>
+              ) : (
+                <span
+                  onDoubleClick={() =>
+                    startEditNumber(
+                      row.account.id,
+                      "initialCashBalance",
+                      value
+                    )
+                  }
+                  style={{
+                    cursor: "pointer",
+                    textDecoration: "underline",
+                    textDecorationStyle: "dotted"
+                  }}
+                  title="더블클릭하여 수정"
+                >
+                  {formatNumber(value)}
+                </span>
+              )}
+            </td>
+          );
+        }
+        
+        // 카드계좌: 초기잔액 등의 열은 표시하지 않음 (부채 정보는 아래에서 별도 처리)
+        if (accountType === "card") {
+          return null;
+        }
+        
+        // 저축계좌: 초기잔액, 적금만 표시 (부채 제외)
+        if (accountType === "savings") {
+          return ["initialBalance", "savings"].map((field) => {
+            const value =
+              field === "initialBalance"
+                ? row.account.initialBalance
+                : row.account.savings ?? 0;
+            const isEditing =
+              editingNumber &&
+              editingNumber.id === row.account.id &&
+              editingNumber.field === field;
+            return (
+              <td className="number" key={`${row.account.id}-${field}`}>
+                {isEditing ? (
+                  <div style={{ display: "flex", gap: "4px", alignItems: "center" }}>
+                    <input
+                      type="number"
+                      value={editValue}
+                      onChange={(e) => setEditValue(e.target.value)}
+                      onKeyDown={(e) => {
+                        if (e.key === "Enter") {
+                          saveNumber();
+                        } else if (e.key === "Escape") {
+                          cancelEditNumber();
+                        }
+                      }}
+                      onBlur={saveNumber}
+                      autoFocus
+                      style={{ width: "120px", padding: "4px 8px" }}
+                    />
+                    <button
+                      type="button"
+                      onClick={saveNumber}
+                      style={{ padding: "2px 8px", fontSize: "12px" }}
+                    >
+                      저장
+                    </button>
+                    <button
+                      type="button"
+                      onClick={cancelEditNumber}
+                      style={{ padding: "2px 8px", fontSize: "12px" }}
+                    >
+                      취소
+                    </button>
+                  </div>
+                ) : (
+                  <span
+                    onDoubleClick={() =>
+                      startEditNumber(
+                        row.account.id,
+                        field as "initialBalance" | "savings",
+                        value
+                      )
+                    }
+                    style={{
+                      cursor: "pointer",
+                      textDecoration: "underline",
+                      textDecorationStyle: "dotted"
+                    }}
+                    title="더블클릭하여 수정"
+                  >
+                    {formatNumber(value)}
+                  </span>
+                )}
+              </td>
+            );
+          });
+        }
+        
+        // 다른 계좌 타입: 초기잔액, 부채, 적금 모두 표시
+        return ["initialBalance", "debt", "savings"].map((field) => {
         const value =
           field === "initialBalance"
             ? row.account.initialBalance
@@ -339,26 +522,114 @@ export const AccountsView: React.FC<Props> = ({
             )}
           </td>
         );
-      })}
+      });
+      })()}
+      {accountType === "securities" && (() => {
+        const value = row.account.cashAdjustment ?? 0;
+        const isEditing =
+          editingNumber &&
+          editingNumber.id === row.account.id &&
+          editingNumber.field === "cashAdjustment";
+        return (
+          <td className="number" key={`${row.account.id}-cashAdjustment`}>
+            {isEditing ? (
+              <div style={{ display: "flex", gap: "4px", alignItems: "center" }}>
+                <input
+                  type="number"
+                  value={editValue}
+                  onChange={(e) => setEditValue(e.target.value)}
+                  onKeyDown={(e) => {
+                    if (e.key === "Enter") {
+                      saveNumber();
+                    } else if (e.key === "Escape") {
+                      cancelEditNumber();
+                    }
+                  }}
+                  onBlur={saveNumber}
+                  autoFocus
+                  style={{ width: "120px", padding: "4px 8px" }}
+                />
+                <button
+                  type="button"
+                  onClick={saveNumber}
+                  style={{ padding: "2px 8px", fontSize: "12px" }}
+                >
+                  저장
+                </button>
+                <button
+                  type="button"
+                  onClick={cancelEditNumber}
+                  style={{ padding: "2px 8px", fontSize: "12px" }}
+                >
+                  취소
+                </button>
+              </div>
+            ) : (
+              <span
+                onDoubleClick={() =>
+                  startEditNumber(
+                    row.account.id,
+                    "cashAdjustment",
+                    value
+                  )
+                }
+                style={{
+                  cursor: "pointer",
+                  textDecoration: "underline",
+                  textDecorationStyle: "dotted"
+                }}
+                title="더블클릭하여 수정 (현금 조정)"
+              >
+                {formatNumber(value)}
+              </span>
+            )}
+          </td>
+        );
+      })()}
       {(() => {
+        if (accountType === "card") {
+          // 카드계좌: 전체 부채, 월 부채만 표시
+          const debtInfo = cardDebtMap.get(row.account.id) ?? { total: 0, monthly: 0 };
+          return (
+            <>
+              <td className={`number ${debtInfo.total >= 0 ? "negative" : "positive"}`}>
+                {formatNumber(debtInfo.total)}
+              </td>
+              <td className={`number ${debtInfo.monthly >= 0 ? "negative" : "positive"}`}>
+                {formatNumber(debtInfo.monthly)}
+              </td>
+            </>
+          );
+        }
+        
         const cashAsset = row.currentBalance;
         const stockAsset = stockMap.get(row.account.id) ?? 0;
-        const debt = row.account.debt ?? 0;
-        const savings = row.account.savings ?? 0;
-        const totalAsset = cashAsset + stockAsset + savings - debt;
-        return (
-          <>
-            <td className={`number ${cashAsset >= 0 ? "positive" : "negative"}`}>
-              {formatNumber(cashAsset)}
-            </td>
+        if (accountType === "securities") {
+          // 증권계좌: 주식재산만 표시
+          return (
             <td className={`number ${stockAsset >= 0 ? "positive" : "negative"}`}>
               {formatNumber(stockAsset)}
             </td>
-            <td className={`number ${totalAsset >= 0 ? "positive" : "negative"}`}>
-              {formatNumber(totalAsset)}
-            </td>
-          </>
-        );
+          );
+        } else {
+          // 다른 계좌: 기존대로 현금자산, 주식자산, 총자산 표시
+          const debt = row.account.debt ?? 0;
+          const savings = row.account.savings ?? 0;
+          const totalAsset = cashAsset + stockAsset + savings - debt;
+          return (
+            <>
+              <td className={`number ${cashAsset >= 0 ? "positive" : "negative"}`}>
+                {formatNumber(cashAsset)}
+              </td>
+              <td className={`number ${stockAsset >= 0 ? "positive" : "negative"}`}>
+                {formatNumber(stockAsset)}
+              </td>
+              <td className={`number ${totalAsset >= 0 ? "positive" : "negative"}`}>
+                {formatNumber(totalAsset)}
+              </td>
+            </>
+          );
+        }
       })()}
       <td>
         <button type="button" className="danger" onClick={() => handleDeleteAccount(row.account.id)}>
@@ -396,17 +667,40 @@ export const AccountsView: React.FC<Props> = ({
             <th>계좌명</th>
             <th>기관</th>
             <th>종류</th>
-            <th>초기잔액</th>
-            <th>부채</th>
-            <th>적금</th>
-            <th>현금자산</th>
-            <th>주식자산</th>
-            <th>총자산</th>
+            {type === "securities" ? (
+              <>
+                <th>초기잔액</th>
+                <th>기타</th>
+                <th>주식재산</th>
+              </>
+            ) : type === "savings" ? (
+              <>
+                <th>초기잔액</th>
+                <th>적금</th>
+                <th>현금자산</th>
+                <th>주식자산</th>
+                <th>총자산</th>
+              </>
+            ) : type === "card" ? (
+              <>
+                <th>전체 부채</th>
+                <th>월 부채</th>
+              </>
+            ) : (
+              <>
+                <th>초기잔액</th>
+                <th>부채</th>
+                <th>적금</th>
+                <th>현금자산</th>
+                <th>주식자산</th>
+                <th>총자산</th>
+              </>
+            )}
             <th>작업</th>
           </tr>
         </thead>
               <tbody>
-                {accountsOfType.map((row) => renderAccountRow(row, 0))}
+                {accountsOfType.map((row) => renderAccountRow(row, 0, type))}
               </tbody>
             </table>
           </div>
@@ -432,6 +726,8 @@ const AccountForm: React.FC<AccountFormProps> = ({ onAdd, existingIds }) => {
     initialBalance: "",
     debt: "",
     savings: "",
+    cashAdjustment: "",
+    initialCashBalance: "",
     note: ""
   });
 
@@ -448,6 +744,8 @@ const AccountForm: React.FC<AccountFormProps> = ({ onAdd, existingIds }) => {
     const amount = Number(form.initialBalance.replace(/,/g, "")) || 0;
     const debt = Number(form.debt.replace(/,/g, "")) || 0;
     const savings = Number(form.savings.replace(/,/g, "")) || 0;
+    const cashAdjustment = Number(form.cashAdjustment.replace(/,/g, "")) || 0;
+    const initialCashBalance = Number(form.initialCashBalance.replace(/,/g, "")) || 0;
     const account: Account = {
       id: form.id.trim(),
       name: form.name.trim(),
@@ -456,6 +754,8 @@ const AccountForm: React.FC<AccountFormProps> = ({ onAdd, existingIds }) => {
       initialBalance: amount,
       debt,
       savings,
+      cashAdjustment: form.type === "securities" ? cashAdjustment : undefined,
+      initialCashBalance: form.type === "securities" && initialCashBalance > 0 ? initialCashBalance : undefined,
       note: form.note.trim() || undefined
     };
     onAdd(account);
@@ -467,6 +767,8 @@ const AccountForm: React.FC<AccountFormProps> = ({ onAdd, existingIds }) => {
       initialBalance: "",
       debt: "",
       savings: "",
+      cashAdjustment: "",
+      initialCashBalance: "",
       note: ""
     });
   };
@@ -543,6 +845,28 @@ const AccountForm: React.FC<AccountFormProps> = ({ onAdd, existingIds }) => {
           onChange={(e) => setForm({ ...form, savings: e.target.value })}
         />
       </label>
+      {form.type === "securities" && (
+        <>
+          <label>
+            <span>초기 현금 잔액</span>
+            <input
+              type="number"
+              placeholder="0"
+              value={form.initialCashBalance}
+              onChange={(e) => setForm({ ...form, initialCashBalance: e.target.value })}
+            />
+          </label>
+          <label>
+            <span>기타 (현금 조정)</span>
+            <input
+              type="number"
+              placeholder="0"
+              value={form.cashAdjustment}
+              onChange={(e) => setForm({ ...form, cashAdjustment: e.target.value })}
+            />
+          </label>
+        </>
+      )}
       <label className="wide">
         <span>비고</span>
         <input

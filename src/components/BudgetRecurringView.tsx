@@ -1,7 +1,8 @@
 import React, { useMemo, useState } from "react";
-import type { BudgetGoal, RecurringExpense, Recurrence, LedgerEntry } from "../types";
+import type { Account, BudgetGoal, RecurringExpense, Recurrence, LedgerEntry } from "../types";
 
 interface Props {
+  accounts: Account[];
   recurring: RecurringExpense[];
   budgets: BudgetGoal[];
   onChangeRecurring: (next: RecurringExpense[]) => void;
@@ -34,6 +35,7 @@ const createBudget = (): BudgetGoal => ({
 });
 
 export const BudgetRecurringView: React.FC<Props> = ({
+  accounts,
   recurring,
   budgets,
   onChangeRecurring,
@@ -43,6 +45,9 @@ export const BudgetRecurringView: React.FC<Props> = ({
 }) => {
   const [recForm, setRecForm] = useState<RecurringExpense>(createRecurring);
   const [budForm, setBudForm] = useState<BudgetGoal>(createBudget);
+  const [editingRecurringId, setEditingRecurringId] = useState<string | null>(null);
+  const [editingField, setEditingField] = useState<{ id: string; field: string } | null>(null);
+  const [editingValue, setEditingValue] = useState<string>("");
   const currentMonth = new Date().toISOString().slice(0, 7); // yyyy-mm
 
   const nextRun = (item: RecurringExpense) => {
@@ -57,12 +62,76 @@ export const BudgetRecurringView: React.FC<Props> = ({
 
   const addRecurring = () => {
     if (!recForm.title || !recForm.amount) return;
-    onChangeRecurring([recForm, ...recurring]);
+    if (editingRecurringId) {
+      // 수정 모드
+      onChangeRecurring(recurring.map((r) => (r.id === editingRecurringId ? recForm : r)));
+      setEditingRecurringId(null);
+    } else {
+      // 추가 모드
+      onChangeRecurring([recForm, ...recurring]);
+    }
     setRecForm(createRecurring());
+  };
+
+  const editRecurring = (item: RecurringExpense) => {
+    setRecForm(item);
+    setEditingRecurringId(item.id);
+  };
+
+  const cancelEdit = () => {
+    setRecForm(createRecurring());
+    setEditingRecurringId(null);
   };
 
   const deleteRecurring = (id: string) => {
     onChangeRecurring(recurring.filter((r) => r.id !== id));
+    if (editingRecurringId === id) {
+      setEditingRecurringId(null);
+      setRecForm(createRecurring());
+    }
+    if (editingField?.id === id) {
+      setEditingField(null);
+    }
+  };
+
+  const startEditField = (id: string, field: string, currentValue: string | number) => {
+    setEditingField({ id, field });
+    setEditingValue(String(currentValue));
+  };
+
+  const saveEditField = () => {
+    if (!editingField) return;
+    const { id, field } = editingField;
+    const item = recurring.find((r) => r.id === id);
+    if (!item) return;
+
+    const updated = { ...item };
+    if (field === "title") {
+      updated.title = editingValue;
+    } else if (field === "amount") {
+      updated.amount = Number(editingValue) || 0;
+    } else if (field === "category") {
+      updated.category = editingValue;
+    } else if (field === "frequency") {
+      updated.frequency = editingValue as Recurrence;
+    } else if (field === "startDate") {
+      updated.startDate = editingValue;
+    } else if (field === "endDate") {
+      updated.endDate = editingValue || undefined;
+    } else if (field === "note") {
+      updated.note = editingValue;
+    } else if (field === "fromAccountId") {
+      updated.fromAccountId = editingValue || undefined;
+    }
+
+    onChangeRecurring(recurring.map((r) => (r.id === id ? updated : r)));
+    setEditingField(null);
+    setEditingValue("");
+  };
+
+  const cancelEditField = () => {
+    setEditingField(null);
+    setEditingValue("");
   };
 
   const addBudget = () => {
@@ -95,7 +164,7 @@ export const BudgetRecurringView: React.FC<Props> = ({
             subCategory: r.title,
             description: r.title,
             amount: r.amount,
-            fromAccountId: undefined,
+            fromAccountId: r.fromAccountId,
             toAccountId: undefined
           });
         }
@@ -144,7 +213,7 @@ export const BudgetRecurringView: React.FC<Props> = ({
 
       <div className="two-column">
         <div className="card form-grid">
-          <h3>고정 지출/구독 추가</h3>
+          <h3>{editingRecurringId ? "고정 지출/구독 수정" : "고정 지출/구독 추가"}</h3>
           <label>
             <span>제목</span>
             <input
@@ -189,6 +258,20 @@ export const BudgetRecurringView: React.FC<Props> = ({
               onChange={(e) => setRecForm({ ...recForm, startDate: e.target.value })}
             />
           </label>
+          <label>
+            <span>출금 계좌</span>
+            <select
+              value={recForm.fromAccountId || ""}
+              onChange={(e) => setRecForm({ ...recForm, fromAccountId: e.target.value || undefined })}
+            >
+              <option value="">선택</option>
+              {accounts.map((acc) => (
+                <option key={acc.id} value={acc.id}>
+                  {acc.id} - {acc.name}
+                </option>
+              ))}
+            </select>
+          </label>
           <label className="wide">
             <span>메모</span>
             <input
@@ -197,8 +280,13 @@ export const BudgetRecurringView: React.FC<Props> = ({
             />
           </label>
           <div className="form-actions">
+            {editingRecurringId && (
+              <button type="button" className="secondary" onClick={cancelEdit}>
+                취소
+              </button>
+            )}
             <button type="button" className="primary" onClick={addRecurring}>
-              추가
+              {editingRecurringId ? "수정" : "추가"}
             </button>
           </div>
         </div>
@@ -243,6 +331,7 @@ export const BudgetRecurringView: React.FC<Props> = ({
             <th>금액</th>
             <th>카테고리</th>
             <th>주기</th>
+            <th>출금 계좌</th>
             <th>다음 예정</th>
             <th>메모</th>
             <th>작업</th>
@@ -251,12 +340,181 @@ export const BudgetRecurringView: React.FC<Props> = ({
         <tbody>
           {recurring.map((r) => (
             <tr key={r.id}>
-              <td>{r.title}</td>
-              <td className="number">{Math.round(r.amount).toLocaleString()} 원</td>
-              <td>{r.category}</td>
-              <td>{freqLabel[r.frequency]}</td>
-              <td>{nextRun(r)}</td>
-              <td>{r.note}</td>
+              <td
+                onDoubleClick={() => startEditField(r.id, "title", r.title)}
+                style={{ cursor: "pointer" }}
+                title="더블클릭하여 수정"
+              >
+                {editingField?.id === r.id && editingField.field === "title" ? (
+                  <input
+                    type="text"
+                    value={editingValue}
+                    onChange={(e) => setEditingValue(e.target.value)}
+                    onBlur={saveEditField}
+                    onKeyDown={(e) => {
+                      if (e.key === "Enter") saveEditField();
+                      if (e.key === "Escape") cancelEditField();
+                    }}
+                    autoFocus
+                    style={{ width: "100%", padding: "4px", fontSize: 14 }}
+                  />
+                ) : (
+                  r.title
+                )}
+              </td>
+              <td
+                className="number"
+                onDoubleClick={() => startEditField(r.id, "amount", r.amount)}
+                style={{ cursor: "pointer" }}
+                title="더블클릭하여 수정"
+              >
+                {editingField?.id === r.id && editingField.field === "amount" ? (
+                  <input
+                    type="number"
+                    value={editingValue}
+                    onChange={(e) => setEditingValue(e.target.value)}
+                    onBlur={saveEditField}
+                    onKeyDown={(e) => {
+                      if (e.key === "Enter") saveEditField();
+                      if (e.key === "Escape") cancelEditField();
+                    }}
+                    autoFocus
+                    style={{ width: "100%", padding: "4px", fontSize: 14 }}
+                  />
+                ) : (
+                  `${Math.round(r.amount).toLocaleString()} 원`
+                )}
+              </td>
+              <td
+                onDoubleClick={() => startEditField(r.id, "category", r.category)}
+                style={{ cursor: "pointer" }}
+                title="더블클릭하여 수정"
+              >
+                {editingField?.id === r.id && editingField.field === "category" ? (
+                  <input
+                    type="text"
+                    value={editingValue}
+                    onChange={(e) => setEditingValue(e.target.value)}
+                    onBlur={saveEditField}
+                    onKeyDown={(e) => {
+                      if (e.key === "Enter") saveEditField();
+                      if (e.key === "Escape") cancelEditField();
+                    }}
+                    autoFocus
+                    style={{ width: "100%", padding: "4px", fontSize: 14 }}
+                  />
+                ) : (
+                  r.category
+                )}
+              </td>
+              <td
+                onDoubleClick={() => startEditField(r.id, "frequency", r.frequency)}
+                style={{ cursor: "pointer" }}
+                title="더블클릭하여 수정"
+              >
+                {editingField?.id === r.id && editingField.field === "frequency" ? (
+                  <select
+                    value={editingValue}
+                    onChange={(e) => {
+                      const newValue = e.target.value;
+                      const item = recurring.find((r) => r.id === editingField.id);
+                      if (item) {
+                        const updated = { ...item, frequency: newValue as Recurrence };
+                        onChangeRecurring(recurring.map((r) => (r.id === editingField.id ? updated : r)));
+                        setEditingField(null);
+                        setEditingValue("");
+                      }
+                    }}
+                    autoFocus
+                    style={{ width: "100%", padding: "4px", fontSize: 14 }}
+                  >
+                    <option value="weekly">매주</option>
+                    <option value="monthly">매월</option>
+                    <option value="yearly">매년</option>
+                  </select>
+                ) : (
+                  freqLabel[r.frequency]
+                )}
+              </td>
+              <td
+                onDoubleClick={(e) => {
+                  e.stopPropagation();
+                  startEditField(r.id, "fromAccountId", r.fromAccountId || "");
+                }}
+                style={{ cursor: "pointer" }}
+                title="더블클릭하여 수정"
+              >
+                {editingField?.id === r.id && editingField.field === "fromAccountId" ? (
+                  <select
+                    value={editingValue}
+                    onChange={(e) => {
+                      const newValue = e.target.value;
+                      const item = recurring.find((r) => r.id === editingField.id);
+                      if (item) {
+                        const updated = { ...item, fromAccountId: newValue || undefined };
+                        onChangeRecurring(recurring.map((r) => (r.id === editingField.id ? updated : r)));
+                        setEditingField(null);
+                        setEditingValue("");
+                      }
+                    }}
+                    autoFocus
+                    style={{ width: "100%", padding: "4px", fontSize: 14 }}
+                  >
+                    <option value="">-</option>
+                    {accounts.map((acc) => (
+                      <option key={acc.id} value={acc.id}>
+                        {acc.id} - {acc.name}
+                      </option>
+                    ))}
+                  </select>
+                ) : (
+                  r.fromAccountId ? accounts.find((a) => a.id === r.fromAccountId)?.id || r.fromAccountId : "-"
+                )}
+              </td>
+              <td
+                onDoubleClick={() => startEditField(r.id, "startDate", r.startDate)}
+                style={{ cursor: "pointer" }}
+                title="더블클릭하여 수정"
+              >
+                {editingField?.id === r.id && editingField.field === "startDate" ? (
+                  <input
+                    type="date"
+                    value={editingValue}
+                    onChange={(e) => setEditingValue(e.target.value)}
+                    onBlur={saveEditField}
+                    onKeyDown={(e) => {
+                      if (e.key === "Enter") saveEditField();
+                      if (e.key === "Escape") cancelEditField();
+                    }}
+                    autoFocus
+                    style={{ width: "100%", padding: "4px", fontSize: 14 }}
+                  />
+                ) : (
+                  nextRun(r)
+                )}
+              </td>
+              <td
+                onDoubleClick={() => startEditField(r.id, "note", r.note || "")}
+                style={{ cursor: "pointer" }}
+                title="더블클릭하여 수정"
+              >
+                {editingField?.id === r.id && editingField.field === "note" ? (
+                  <input
+                    type="text"
+                    value={editingValue}
+                    onChange={(e) => setEditingValue(e.target.value)}
+                    onBlur={saveEditField}
+                    onKeyDown={(e) => {
+                      if (e.key === "Enter") saveEditField();
+                      if (e.key === "Escape") cancelEditField();
+                    }}
+                    autoFocus
+                    style={{ width: "100%", padding: "4px", fontSize: 14 }}
+                  />
+                ) : (
+                  r.note
+                )}
+              </td>
               <td>
                 <button type="button" className="danger" onClick={() => deleteRecurring(r.id)}>
                   삭제
@@ -266,7 +524,7 @@ export const BudgetRecurringView: React.FC<Props> = ({
           ))}
           {recurring.length === 0 && (
             <tr>
-              <td colSpan={7} style={{ textAlign: "center" }}>
+              <td colSpan={8} style={{ textAlign: "center" }}>
                 등록된 고정 지출이 없습니다.
               </td>
             </tr>

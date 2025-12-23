@@ -58,10 +58,15 @@ export function computeAccountBalances(
       .filter((t) => t.accountId === account.id)
       .reduce((s, t) => s + t.cashImpact, 0);
 
-    // 현재 잔액 = 초기잔액 + 수입 - 지출 + 이체순액 + 주식거래현금영향
+    // 현재 잔액 = 초기잔액 + 수입 - 지출 + 이체순액 + 주식거래현금영향 + 현금조정(기타)
     // savings와 debt는 별도 필드로 관리되며, 총자산 계산 시에만 사용됨
+    // 증권계좌의 경우 initialCashBalance를 사용, 없으면 initialBalance 사용
+    const baseBalance = account.type === "securities" 
+      ? (account.initialCashBalance ?? account.initialBalance)
+      : account.initialBalance;
+    const cashAdjustment = account.cashAdjustment ?? 0;
     const currentBalance =
-      account.initialBalance + incomeSum - expenseSum + transferNet + tradeCashImpact;
+      baseBalance + incomeSum - expenseSum + transferNet + tradeCashImpact + cashAdjustment;
 
     return {
       account,
@@ -116,12 +121,16 @@ export function computePositions(
     // 평균단가: 매수 금액을 매수 수량으로 나눈 값 (매수한 평균 단가)
     const avgPrice = buyQty > 0 ? totalBuyAmount / buyQty : 0;
     
+    // 보유 수량이 0 이하인 경우는 포지션에서 제외
+    if (quantity <= 0) {
+      continue;
+    }
+
     // 평가금액: 현재가 × 보유수량
     const marketValue = marketPrice * quantity;
     
     // 평가손익: 평가금액 - 순매입금액
-    // 보유수량이 0이면 평가손익도 0
-    const pnl = quantity > 0 ? marketValue - netBuyAmount : 0;
+    const pnl = marketValue - netBuyAmount;
     
     // 수익률: 순매입금액이 0보다 클 때만 계산
     const pnlRate = netBuyAmount > 0 ? pnl / netBuyAmount : 0;

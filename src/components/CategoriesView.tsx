@@ -184,13 +184,14 @@ export const CategoriesView: React.FC<Props> = ({ presets, onChangePresets }) =>
           <table className="data-table category-matrix">
             <thead>
               <tr>
-                <th style={{ minWidth: 60 }}>행</th>
-                <th className="income-col">수입</th>
-                <th className="transfer-col">이체</th>
+                <th style={{ minWidth: 60, width: 60 }}>행</th>
+                <th className="income-col" style={{ minWidth: 140, width: 140 }}>수입</th>
+                <th className="transfer-col" style={{ minWidth: 140, width: 140 }}>이체</th>
                 {expenseGroups.map((g, idx) => (
                   <th
                     key={idx}
                     draggable
+                    style={{ minWidth: 150, width: 150 }}
                     onDragStart={() => setDragCol(idx)}
                     onDragOver={(e) => {
                       if (dragCol === null) return;
@@ -204,7 +205,7 @@ export const CategoriesView: React.FC<Props> = ({ presets, onChangePresets }) =>
                     }}
                     onDragEnd={() => setDragCol(null)}
                   >
-                    <div style={{ display: "flex", alignItems: "center", gap: 2 }}>
+                    <div style={{ display: "flex", alignItems: "center", gap: 4 }}>
                       <span className="col-drag-handle" title="잡아서 좌우로 옮길 수 있습니다.">
                         ☰
                       </span>
@@ -212,7 +213,7 @@ export const CategoriesView: React.FC<Props> = ({ presets, onChangePresets }) =>
                         type="text"
                         value={g.main}
                         onChange={(e) => updateMain(idx, e.target.value)}
-                        style={{ flex: 1, minWidth: 80 }}
+                        style={{ flex: 1, minWidth: 100 }}
                       />
                       <button
                         type="button"

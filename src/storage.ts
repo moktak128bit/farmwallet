@@ -90,42 +90,8 @@ export function loadData(): AppData {
   }
 }
 
-// localStorage 쓰기 디바운스
-let saveTimeout: ReturnType<typeof setTimeout> | null = null;
-let pendingData: AppData | null = null;
-
 export function saveData(data: AppData) {
   if (typeof window === "undefined") return;
-  
-  pendingData = data;
-  
-  // 기존 타이머 취소
-  if (saveTimeout) {
-    clearTimeout(saveTimeout);
-  }
-  
-  // 500ms 후에 저장 (디바운스)
-  saveTimeout = setTimeout(() => {
-    if (pendingData) {
-      window.localStorage.setItem(STORAGE_KEY, JSON.stringify(pendingData, null, 2));
-      void saveServerData(pendingData);
-      pendingData = null;
-    }
-    saveTimeout = null;
-  }, 500);
-}
-
-// 즉시 저장이 필요한 경우 (예: 백업 전)
-export function saveDataImmediate(data: AppData) {
-  if (typeof window === "undefined") return;
-  
-  // 대기 중인 저장 취소
-  if (saveTimeout) {
-    clearTimeout(saveTimeout);
-    saveTimeout = null;
-  }
-  pendingData = null;
-  
   window.localStorage.setItem(STORAGE_KEY, JSON.stringify(data, null, 2));
   void saveServerData(data);
 }
@@ -348,31 +314,59 @@ async function saveServerBackup(data: AppData): Promise<FileBackupResult | null>
 }
 
 export async function fetchServerBackupList(): Promise<BackupEntry[]> {
+  // #region agent log
+  fetch('http://127.0.0.1:7242/ingest/882185e7-1338-4f3b-a05b-acdab4efccb1',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'storage.ts:fetchServerBackupList',message:'백업 목록 조회 시작',data:{url:BACKUP_API},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'B'})}).catch(()=>{});
+  // #endregion
   if (typeof window === "undefined") return [];
   try {
     const res = await fetch(BACKUP_API);
+    // #region agent log
+    fetch('http://127.0.0.1:7242/ingest/882185e7-1338-4f3b-a05b-acdab4efccb1',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'storage.ts:fetchServerBackupList',message:'fetch 응답',data:{ok:res.ok,status:res.status},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'B'})}).catch(()=>{});
+    // #endregion
     if (!res.ok) return [];
     const list = (await res.json()) as FileBackupResult[];
+    // #region agent log
+    fetch('http://127.0.0.1:7242/ingest/882185e7-1338-4f3b-a05b-acdab4efccb1',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'storage.ts:fetchServerBackupList',message:'백업 목록 파싱',data:{count:list.length,firstFew:list.slice(0,3).map(l=>({fileName:l.fileName}))},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'B'})}).catch(()=>{});
+    // #endregion
     return list.map((item) => ({
       id: item.fileName,
       createdAt: item.createdAt,
       fileName: item.fileName,
       source: "server" as const
     }));
-  } catch {
+  } catch (err) {
+    // #region agent log
+    fetch('http://127.0.0.1:7242/ingest/882185e7-1338-4f3b-a05b-acdab4efccb1',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'storage.ts:fetchServerBackupList',message:'백업 목록 조회 에러',data:{error:String(err)},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'B'})}).catch(()=>{});
+    // #endregion
     return [];
   }
 }
 
 export async function loadServerBackupData(fileName: string): Promise<AppData | null> {
+  // #region agent log
+  fetch('http://127.0.0.1:7242/ingest/882185e7-1338-4f3b-a05b-acdab4efccb1',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'storage.ts:loadServerBackupData',message:'백업 로드 시작',data:{fileName},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'C'})}).catch(()=>{});
+  // #endregion
   if (typeof window === "undefined") return null;
   try {
     const params = new URLSearchParams({ fileName });
-    const res = await fetch(`${BACKUP_API}?${params.toString()}`);
+    const url = `${BACKUP_API}?${params.toString()}`;
+    // #region agent log
+    fetch('http://127.0.0.1:7242/ingest/882185e7-1338-4f3b-a05b-acdab4efccb1',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'storage.ts:loadServerBackupData',message:'fetch 요청',data:{url,fileName},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'C'})}).catch(()=>{});
+    // #endregion
+    const res = await fetch(url);
+    // #region agent log
+    fetch('http://127.0.0.1:7242/ingest/882185e7-1338-4f3b-a05b-acdab4efccb1',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'storage.ts:loadServerBackupData',message:'fetch 응답',data:{ok:res.ok,status:res.status,statusText:res.statusText},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'C'})}).catch(()=>{});
+    // #endregion
     if (!res.ok) return null;
     const data = (await res.json()) as AppData;
+    // #region agent log
+    fetch('http://127.0.0.1:7242/ingest/882185e7-1338-4f3b-a05b-acdab4efccb1',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'storage.ts:loadServerBackupData',message:'백업 로드 성공',data:{hasData:!!data,accountsCount:data?.accounts?.length},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'C'})}).catch(()=>{});
+    // #endregion
     return data;
-  } catch {
+  } catch (err) {
+    // #region agent log
+    fetch('http://127.0.0.1:7242/ingest/882185e7-1338-4f3b-a05b-acdab4efccb1',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'storage.ts:loadServerBackupData',message:'백업 로드 에러',data:{error:String(err)},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'C'})}).catch(()=>{});
+    // #endregion
     return null;
   }
 }
@@ -572,13 +566,19 @@ async function computeBackupHash(data: AppData): Promise<string> {
     .join("");
 }
 
-export async function saveBackupSnapshot(data: AppData) {
+export async function saveBackupSnapshot(
+  data: AppData,
+  options?: { skipHash?: boolean; folder?: string }
+) {
+  // #region agent log
+  fetch('http://127.0.0.1:7242/ingest/882185e7-1338-4f3b-a05b-acdab4efccb1',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'storage.ts:saveBackupSnapshot',message:'함수 시작',data:{hasOptions:!!options,options},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'D'})}).catch(()=>{});
+  // #endregion
   if (typeof window === "undefined") return;
   try {
     const raw = window.localStorage.getItem(BACKUP_KEY);
     const current: StoredBackup[] = raw ? (JSON.parse(raw) as StoredBackup[]) : [];
     const now = new Date().toISOString();
-    const hash = await computeBackupHash(data);
+    const hash = options?.skipHash ? undefined : await computeBackupHash(data);
 
     const backup: StoredBackup = {
       id: `B${Date.now()}`,
@@ -587,16 +587,60 @@ export async function saveBackupSnapshot(data: AppData) {
       hash
     };
 
-    const next = [backup, ...current].slice(0, 20); // 최근 20개만 보관
-    window.localStorage.setItem(BACKUP_KEY, JSON.stringify(next, null, 2));
-  } catch {
+    // localStorage 용량 제한을 고려하여 최근 5개만 보관 (20개에서 줄임)
+    const next = [backup, ...current].slice(0, 5);
+    try {
+      window.localStorage.setItem(BACKUP_KEY, JSON.stringify(next, null, 2));
+      // #region agent log
+      fetch('http://127.0.0.1:7242/ingest/882185e7-1338-4f3b-a05b-acdab4efccb1',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'storage.ts:saveBackupSnapshot',message:'localStorage 백업 완료',data:{backupId:backup.id,hasHash:!!hash,count:next.length},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'D'})}).catch(()=>{});
+      // #endregion
+    } catch (quotaErr) {
+      // 용량 초과 시 기존 백업을 더 줄이고 재시도
+      // #region agent log
+      fetch('http://127.0.0.1:7242/ingest/882185e7-1338-4f3b-a05b-acdab4efccb1',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'storage.ts:saveBackupSnapshot',message:'localStorage 용량 초과, 백업 개수 줄임',data:{error:String(quotaErr),tryingCount:3},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'D'})}).catch(()=>{});
+      // #endregion
+      // 최근 3개만 보관하고 재시도
+      const reduced = [backup, ...current].slice(0, 3);
+      try {
+        window.localStorage.setItem(BACKUP_KEY, JSON.stringify(reduced, null, 2));
+        // #region agent log
+        fetch('http://127.0.0.1:7242/ingest/882185e7-1338-4f3b-a05b-acdab4efccb1',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'storage.ts:saveBackupSnapshot',message:'localStorage 백업 완료 (개수 줄임)',data:{backupId:backup.id,count:reduced.length},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'D'})}).catch(()=>{});
+        // #endregion
+      } catch (retryErr) {
+        // 그래도 실패하면 최신 1개만 저장 시도
+        try {
+          window.localStorage.setItem(BACKUP_KEY, JSON.stringify([backup], null, 2));
+          // #region agent log
+          fetch('http://127.0.0.1:7242/ingest/882185e7-1338-4f3b-a05b-acdab4efccb1',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'storage.ts:saveBackupSnapshot',message:'localStorage 백업 완료 (최신 1개만)',data:{backupId:backup.id},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'D'})}).catch(()=>{});
+          // #endregion
+        } catch (finalErr) {
+          // 최종 실패 시 localStorage 백업은 포기 (서버 백업은 계속 진행)
+          // #region agent log
+          fetch('http://127.0.0.1:7242/ingest/882185e7-1338-4f3b-a05b-acdab4efccb1',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'storage.ts:saveBackupSnapshot',message:'localStorage 백업 최종 실패',data:{error:String(finalErr)},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'D'})}).catch(()=>{});
+          // #endregion
+        }
+      }
+    }
+  } catch (err) {
+    // #region agent log
+    fetch('http://127.0.0.1:7242/ingest/882185e7-1338-4f3b-a05b-acdab4efccb1',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'storage.ts:saveBackupSnapshot',message:'localStorage 백업 예외',data:{error:String(err)},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'D'})}).catch(()=>{});
+    // #endregion
     // 백업은 실패해도 앱 동작에 영향을 주지 않도록 조용히 무시
   }
 
   // 로컬 파일에도 동일한 스냅샷을 남겨 브라우저를 바꿔도 복원 가능하도록 저장
   try {
+    // #region agent log
+    fetch('http://127.0.0.1:7242/ingest/882185e7-1338-4f3b-a05b-acdab4efccb1',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'storage.ts:saveBackupSnapshot',message:'서버 백업 시작',data:{},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'A'})}).catch(()=>{});
+    // #endregion
     await saveServerBackup(data);
-  } catch {
+    // #region agent log
+    fetch('http://127.0.0.1:7242/ingest/882185e7-1338-4f3b-a05b-acdab4efccb1',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'storage.ts:saveBackupSnapshot',message:'서버 백업 완료',data:{},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'A'})}).catch(()=>{});
+    // #endregion
+  } catch (err) {
+    // #region agent log
+    fetch('http://127.0.0.1:7242/ingest/882185e7-1338-4f3b-a05b-acdab4efccb1',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'storage.ts:saveBackupSnapshot',message:'서버 백업 에러',data:{error:String(err)},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'A'})}).catch(()=>{});
+    // #endregion
     // 서버 저장 실패도 무시 (브라우저 로컬 백업은 이미 완료됨)
   }
 }

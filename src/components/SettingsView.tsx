@@ -43,22 +43,46 @@ export const SettingsView: React.FC<Props> = ({ data, onChangeData, backupVersio
   };
 
   const handleRestoreBackup = async (entry: BackupEntry) => {
+    // #region agent log
+    fetch('http://127.0.0.1:7242/ingest/882185e7-1338-4f3b-a05b-acdab4efccb1',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'SettingsView.tsx:handleRestoreBackup',message:'백업 복원 시작',data:{source:entry.source,fileName:entry.fileName,id:entry.id},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'C'})}).catch(()=>{});
+    // #endregion
     try {
       let restored: AppData | null = null;
       if (entry.source === "server") {
+        // #region agent log
+        fetch('http://127.0.0.1:7242/ingest/882185e7-1338-4f3b-a05b-acdab4efccb1',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'SettingsView.tsx:handleRestoreBackup',message:'서버 백업 로드 시도',data:{fileName:entry.fileName,id:entry.id},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'C'})}).catch(()=>{});
+        // #endregion
         restored = await loadServerBackupData(entry.fileName ?? entry.id);
+        // #region agent log
+        fetch('http://127.0.0.1:7242/ingest/882185e7-1338-4f3b-a05b-acdab4efccb1',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'SettingsView.tsx:handleRestoreBackup',message:'서버 백업 로드 결과',data:{restored:!!restored,hasAccounts:!!restored?.accounts},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'C'})}).catch(()=>{});
+        // #endregion
       } else {
+        // #region agent log
+        fetch('http://127.0.0.1:7242/ingest/882185e7-1338-4f3b-a05b-acdab4efccb1',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'SettingsView.tsx:handleRestoreBackup',message:'브라우저 백업 로드 시도',data:{id:entry.id},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'C'})}).catch(()=>{});
+        // #endregion
         restored = loadBackupData(entry.id);
+        // #region agent log
+        fetch('http://127.0.0.1:7242/ingest/882185e7-1338-4f3b-a05b-acdab4efccb1',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'SettingsView.tsx:handleRestoreBackup',message:'브라우저 백업 로드 결과',data:{restored:!!restored},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'C'})}).catch(()=>{});
+        // #endregion
       }
 
       if (!restored) {
+        // #region agent log
+        fetch('http://127.0.0.1:7242/ingest/882185e7-1338-4f3b-a05b-acdab4efccb1',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'SettingsView.tsx:handleRestoreBackup',message:'백업 로드 실패',data:{source:entry.source},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'C'})}).catch(()=>{});
+        // #endregion
         setError("선택한 백업을 불러올 수 없습니다.");
         return;
       }
+      // #region agent log
+      fetch('http://127.0.0.1:7242/ingest/882185e7-1338-4f3b-a05b-acdab4efccb1',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'SettingsView.tsx:handleRestoreBackup',message:'백업 복원 성공',data:{accountsCount:restored.accounts?.length},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'C'})}).catch(()=>{});
+      // #endregion
       onChangeData(restored);
       setText(JSON.stringify(restored, null, 2));
       setError(null);
     } catch (e) {
+      // #region agent log
+      fetch('http://127.0.0.1:7242/ingest/882185e7-1338-4f3b-a05b-acdab4efccb1',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'SettingsView.tsx:handleRestoreBackup',message:'백업 복원 예외',data:{error:String(e)},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'C'})}).catch(()=>{});
+      // #endregion
       setError("백업을 불러오는 중 문제가 발생했습니다.");
     }
   };

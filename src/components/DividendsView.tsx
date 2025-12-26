@@ -122,52 +122,6 @@ export const DividendsView: React.FC<Props> = ({ accounts, ledger, trades, price
     return undefined;
   }, [prices, tickerDatabase, dividendForm.ticker]);
 
-  // 세금 자동 계산 함수
-  const calculateTax = useMemo(() => {
-    return (amount: number, currency: string | undefined, type: "dividend" | "capital_gain") => {
-      if (!amount || amount <= 0) return 0;
-      
-      const isKR = currency === "KRW" || /^[0-9]{6}$/.test(dividendForm.ticker || "");
-      
-      if (type === "dividend") {
-        // 배당 소득세
-        if (isKR) {
-          // 한국 배당: 15.4% (소득세 14% + 지방소득세 1.4%)
-          return Math.round(amount * 0.154);
-        } else {
-          // 미국 배당: 30% (비거주자 원천징수) 또는 15% (거주자, 세금협정)
-          // 기본값: 15% (일반적인 세금협정 비율)
-          return Math.round(amount * 0.15);
-        }
-      } else {
-        // 매도 시세차익세
-        if (isKR) {
-          // 한국: 2024년 기준 비과세 한도 200만원, 초과분 22% (소득세 20% + 지방소득세 2%)
-          const exemptAmount = 2000000; // 비과세 한도
-          if (amount <= exemptAmount) return 0;
-          return Math.round((amount - exemptAmount) * 0.22);
-        } else {
-          // 미국: 비거주자는 원천징수 없음 (거주자는 소득세율 적용)
-          // 기본값: 0% (비거주자 기준)
-          return 0;
-        }
-      }
-    };
-  }, [dividendForm.ticker]);
-
-  // 배당 세금 자동 계산
-  useEffect(() => {
-    if (dividendForm.amount && selectedTickerCurrency) {
-      const amount = Number(dividendForm.amount);
-      if (amount > 0 && !dividendForm.tax) {
-        const autoTax = calculateTax(amount, selectedTickerCurrency, "dividend");
-        if (autoTax > 0) {
-          setDividendForm((prev) => ({ ...prev, tax: String(autoTax) }));
-        }
-      }
-    }
-  }, [dividendForm.amount, selectedTickerCurrency, calculateTax, dividendForm.tax]);
-
   // 환율 조회
   useEffect(() => {
     const updateFxRate = async () => {

@@ -1,6 +1,7 @@
-import React, { useEffect, useMemo, useState, useCallback } from "react";
+import React, { useEffect, useMemo, useState } from "react";
 import { Autocomplete } from "./Autocomplete";
 import type { Account, CategoryPresets, ExpenseDetailGroup, LedgerEntry, LedgerKind, LedgerTemplate } from "../types";
+import { formatShortDate } from "../utils/format";
 
 interface Props {
   accounts: Account[];
@@ -53,12 +54,6 @@ export const LedgerView: React.FC<Props> = ({
   templates = [],
   onChangeTemplates
 }) => {
-  // 안전성 체크
-  const safeAccounts = accounts || [];
-  const safeLedger = ledger || [];
-  const safeCategoryPresets = categoryPresets || { income: [], expense: [], transfer: [], expenseDetails: [] };
-  const safeTemplates = templates || [];
-  
   const [form, setForm] = useState(createDefaultForm);
   const [viewMode, setViewMode] = useState<"all" | "monthly">("all");
   // 기본 탭을 지출로 설정해 입력 흐름을 간소화
@@ -73,322 +68,111 @@ export const LedgerView: React.FC<Props> = ({
   const [editingTemplate, setEditingTemplate] = useState<LedgerTemplate | null>(null);
   const [editingField, setEditingField] = useState<{ id: string; field: string } | null>(null);
   const [editingValue, setEditingValue] = useState<string>("");
-  const [csvImportError, setCsvImportError] = useState<string | null>(null);
   
-  // CSV 파일 가져오기 (한국어 컬럼명 지원)
-  const handleCsvImport = useCallback((event: React.ChangeEvent<HTMLInputElement>) => {
-    const file = event.target.files?.[0];
-    if (!file) return;
-
-    const inputElement = event.target; // 나중에 초기화하기 위해 저장
-
-    const reader = new FileReader();
-    reader.onload = (e) => {
-      try {
-        const text = e.target?.result as string;
-        if (!text || text.trim().length === 0) {
-          setCsvImportError('CSV 파일이 비어있습니다.');
-          if (inputElement) inputElement.value = '';
-          return;
-        }
-
-        // 탭으로 구분된 경우도 처리
-        const delimiter = text.includes('\t') ? '\t' : ',';
-        // 줄바꿈 처리 (Windows \r\n, Unix \n, Mac \r)
-        const lines = text.split(/\r?\n|\r/).filter(line => line.trim().length > 0);
-        if (lines.length < 2) {
-          setCsvImportError('CSV 파일에 헤더와 최소 1개의 데이터 행이 필요합니다.');
-          if (inputElement) inputElement.value = '';
-          return;
-        }
-
-        // 헤더 파싱 및 매핑
-        const headerLine = lines[0];
-        // 탭/쉼표로 분리하고 따옴표 제거
-        const headers = headerLine.split(delimiter).map(h => h.trim().replace(/^["']|["']$/g, ''));
-        
-        // 디버깅: 헤더 확인
-        console.log('CSV Headers:', headers);
-        
-        // 한국어 컬럼명을 영어로 매핑 (사용자 지정 매핑)
-        const columnMap: Record<string, string> = {};
-        
-        headers.forEach((header, idx) => {
-          const normalized = header.toLowerCase().trim();
-          const originalHeader = header.trim();
-          
-          // 정확한 매칭 우선
-          if (normalized === '날짜' || normalized === 'date') {
-            columnMap['date'] = idx.toString();
-          } else if (normalized === '구분' && !normalized.includes('대분류')) {
-            // CSV의 "구분" → 앱의 "출금계좌" (fromAccountId)
-            columnMap['fromAccountId'] = idx.toString();
-          } else if (normalized === '대분류' || normalized.includes('대분류')) {
-            // CSV의 "대분류" → 앱의 "구분(대분류)" (category)
-            columnMap['category'] = idx.toString();
-          } else if (normalized === '소분류' || normalized.includes('소분류')) {
-            // CSV의 "소분류" → 앱의 "항목" (subCategory)
-            columnMap['subCategory'] = idx.toString();
-          } else if (normalized === '지출 내용' || normalized === '지출내용' || normalized.includes('지출내용') || normalized.includes('지출 내용')) {
-            // CSV의 "지출 내용" → 앱의 "상세내역" (description)
-            // 이미 설정되지 않았을 때만 설정 (첫 번째 것만 사용)
-            if (!columnMap['description']) {
-              columnMap['description'] = idx.toString();
-            }
-          } else if (normalized === '결제금액' || normalized === '금액' || normalized.includes('결제금액') || normalized.includes('금액')) {
-            // CSV의 "결제금액" → 앱의 "금액" (amount)
-            columnMap['amount'] = idx.toString();
-          } else if (normalized.includes('출금') || normalized.includes('from') || normalized.includes('fromaccount')) {
-            if (!columnMap['fromAccountId']) {
-              columnMap['fromAccountId'] = idx.toString();
-            }
-          } else if (normalized.includes('입금') || normalized.includes('to') || normalized.includes('toaccount')) {
-            columnMap['toAccountId'] = idx.toString();
-          } else if (normalized.includes('비고') || normalized.includes('메모') || normalized === 'note') {
-            columnMap['note'] = idx.toString();
-          }
-        });
-        
-        // 디버깅: 컬럼 매핑 확인
-        console.log('Column Map:', columnMap);
-
-        // 필수 필드 확인 (지출내용은 선택사항)
-        if (!columnMap['date'] || !columnMap['amount'] || !columnMap['category']) {
-          setCsvImportError('필수 컬럼이 없습니다: 날짜, 금액, 대분류');
-          if (inputElement) inputElement.value = '';
-          return;
-        }
-
-        // 구분(kind) 매핑 함수
-        const mapKind = (value: string): LedgerKind | null => {
-          const normalized = value.trim().toLowerCase();
-          if (normalized.includes('수입') || normalized.includes('income') || normalized === '수입') {
-            return 'income';
-          } else if (normalized.includes('지출') || normalized.includes('expense') || normalized === '지출') {
-            return 'expense';
-          } else if (normalized.includes('이체') || normalized.includes('transfer') || normalized === '이체') {
-            return 'transfer';
-          }
-          return null;
-        };
-
-        // 데이터 파싱
-        const newEntries: LedgerEntry[] = [];
-        let skippedCount = 0;
-        const skipReasons: Record<string, number> = {}; // 스킵 이유 추적
-        
-        for (let i = 1; i < lines.length; i++) {
-          const line = lines[i].trim();
-          if (!line) {
-            skipReasons['빈 줄'] = (skipReasons['빈 줄'] || 0) + 1;
-            continue; // 빈 줄 스킵
-          }
-          
-          // 탭/쉼표로 분리하고 따옴표 제거, 빈 값 처리
-          const values = line.split(delimiter).map(v => {
-            const trimmed = v.trim().replace(/^["']|["']$/g, '');
-            return trimmed;
-          });
-          
-          // 금액 컬럼이 분리된 경우 합치기 (예: '20' + '000' -> '20000')
-          const amountIndex = columnMap['amount'] ? Number(columnMap['amount']) : -1;
-          if (amountIndex >= 0 && amountIndex < values.length) {
-            // 금액 컬럼 이후에 숫자만 있는 컬럼이 있으면 합치기
-            let amountStr = values[amountIndex] || '';
-            for (let j = amountIndex + 1; j < values.length; j++) {
-              const nextValue = values[j] || '';
-              // 숫자만 있는 경우 합치기
-              if (nextValue.match(/^\d+$/)) {
-                amountStr += nextValue;
-                values[j] = ''; // 합친 후 빈 값으로 표시
-              } else {
-                break; // 숫자가 아니면 중단
-              }
-            }
-            values[amountIndex] = amountStr;
-          }
-          
-          // 날짜 파싱 (다양한 형식 지원)
-          const dateIndex = columnMap['date'] ? Number(columnMap['date']) : -1;
-          if (dateIndex < 0 || dateIndex >= values.length) {
-            skipReasons['날짜 인덱스 오류'] = (skipReasons['날짜 인덱스 오류'] || 0) + 1;
-            skippedCount++;
-            continue;
-          }
-          const dateStr = values[dateIndex] || '';
-          let date: string | null = null;
-          
-          // YYYY-MM-DD 형식
-          if (dateStr.match(/^\d{4}-\d{2}-\d{2}$/)) {
-            date = dateStr;
-          }
-          // YYYY.MM.DD 형식
-          else if (dateStr.match(/^\d{4}\.\d{2}\.\d{2}$/)) {
-            date = dateStr.replace(/\./g, '-');
-          }
-          // YYYY/MM/DD 형식
-          else if (dateStr.match(/^\d{4}\/\d{2}\/\d{2}$/)) {
-            date = dateStr.replace(/\//g, '-');
-          }
-          // YYYYMMDD 형식
-          else if (dateStr.match(/^\d{8}$/)) {
-            date = `${dateStr.slice(0, 4)}-${dateStr.slice(4, 6)}-${dateStr.slice(6, 8)}`;
-          }
-          // MM/DD/YYYY 형식 (미국식)
-          else if (dateStr.match(/^\d{1,2}\/\d{1,2}\/\d{4}$/)) {
-            const parts = dateStr.split('/');
-            date = `${parts[2]}-${parts[0].padStart(2, '0')}-${parts[1].padStart(2, '0')}`;
-          }
-          
-          if (!date) {
-            skipReasons[`날짜 파싱 실패: "${dateStr}"`] = (skipReasons[`날짜 파싱 실패: "${dateStr}"`] || 0) + 1;
-            skippedCount++;
-            continue; // 날짜 형식을 파싱할 수 없으면 스킵
-          }
-
-          // 구분(kind) 파싱 - 기본값은 지출
-          let kind: LedgerKind = 'expense';
-
-          // 금액 파싱 (이미 위에서 합쳐진 값 사용)
-          if (amountIndex < 0 || amountIndex >= values.length) {
-            skipReasons['금액 인덱스 오류'] = (skipReasons['금액 인덱스 오류'] || 0) + 1;
-            skippedCount++;
-            continue;
-          }
-          let amountStr = values[amountIndex] || '';
-          
-          // 금액 문자열에서 숫자만 추출 (한글/영문 제거)
-          // 예: "수분크림11000" -> "11000", "20,000" -> "20000"
-          amountStr = amountStr.replace(/[^\d,.-]/g, ''); // 숫자, 쉼표, 점, 마이너스만 남김
-          amountStr = amountStr.replace(/[,\s]/g, ''); // 쉼표와 공백 제거
-          
-          const amount = Number(amountStr);
-          if (isNaN(amount) || amount <= 0) {
-            // 디버깅: 첫 번째 실패한 행만 상세 로그
-            if (Object.keys(skipReasons).filter(k => k.includes('금액 파싱 실패')).length === 0) {
-              console.log(`금액 파싱 실패 - 행 ${i}:`, {
-                원본값: values[amountIndex],
-                처리후: amountStr,
-                전체행: values
-              });
-            }
-            skipReasons[`금액 파싱 실패: "${values[amountIndex]}"`] = (skipReasons[`금액 파싱 실패: "${values[amountIndex]}"`] || 0) + 1;
-            skippedCount++;
-            continue; // 금액이 유효하지 않으면 스킵
-          }
-
-          // 카테고리
-          const categoryIndex = columnMap['category'] ? Number(columnMap['category']) : -1;
-          if (categoryIndex < 0 || categoryIndex >= values.length) {
-            skipReasons['카테고리 인덱스 오류'] = (skipReasons['카테고리 인덱스 오류'] || 0) + 1;
-            skippedCount++;
-            continue;
-          }
-          const category = values[categoryIndex] || '';
-          if (!category) {
-            skipReasons['카테고리 비어있음'] = (skipReasons['카테고리 비어있음'] || 0) + 1;
-            skippedCount++;
-            continue; // 카테고리가 없으면 스킵
-          }
-
-          // 설명 (지출 내용 - 비어있어도 허용)
-          const descIndex = columnMap['description'] ? Number(columnMap['description']) : -1;
-          let description = '';
-          if (descIndex >= 0 && descIndex < values.length) {
-            description = (values[descIndex] || '').trim();
-          }
-          // 설명이 비어있어도 허용 (스킵하지 않음)
-
-          // 세부 항목
-          const subCategoryIndex = columnMap['subCategory'] ? Number(columnMap['subCategory']) : -1;
-          const subCategory = subCategoryIndex >= 0 && subCategoryIndex < values.length ? values[subCategoryIndex] || undefined : undefined;
-
-          // 계좌 정보 (있으면 사용)
-          const fromAccountIndex = columnMap['fromAccountId'] ? Number(columnMap['fromAccountId']) : -1;
-          const fromAccountId = fromAccountIndex >= 0 && fromAccountIndex < values.length ? values[fromAccountIndex] || undefined : undefined;
-          const toAccountIndex = columnMap['toAccountId'] ? Number(columnMap['toAccountId']) : -1;
-          const toAccountId = toAccountIndex >= 0 && toAccountIndex < values.length ? values[toAccountIndex] || undefined : undefined;
-
-          // 비고
-          const noteIndex = columnMap['note'] ? Number(columnMap['note']) : -1;
-          const note = noteIndex >= 0 && noteIndex < values.length ? values[noteIndex] || undefined : undefined;
-
-          // LedgerEntry 생성
-          const entry: LedgerEntry = {
-            id: `L${Date.now()}-${i}-${Math.random().toString(36).substr(2, 9)}`,
-            date: date,
-            kind: kind,
-            category: category,
-            subCategory: subCategory,
-            description: description,
-            amount: amount,
-            fromAccountId: fromAccountId,
-            toAccountId: toAccountId,
-            note: note
-          };
-
-          newEntries.push(entry);
-        }
-
-        if (newEntries.length === 0) {
-          const reasonText = Object.entries(skipReasons)
-            .map(([reason, count]) => `${reason}: ${count}개`)
-            .join(', ');
-          setCsvImportError(`가져올 수 있는 유효한 데이터가 없습니다. (스킵된 행: ${skippedCount}) CSV 형식을 확인해주세요. 스킵 이유: ${reasonText}`);
-          if (inputElement) inputElement.value = '';
-          return;
-        }
-
-        // 기존 데이터에 추가
-        onChangeLedger([...newEntries, ...ledger]);
-        setCsvImportError(null);
-        
-        // 스킵 이유 요약
-        const reasonText = Object.entries(skipReasons)
-          .map(([reason, count]) => `${reason}: ${count}개`)
-          .join(', ');
-        
-        console.log('스킵된 행 상세:', skipReasons);
-        alert(`CSV에서 ${newEntries.length}개의 가계부 항목을 가져왔습니다.${skippedCount > 0 ? `\n\n${skippedCount}개 행 스킵됨:\n${reasonText}` : ''}`);
-        
-        // 파일 입력 초기화
-        if (inputElement) inputElement.value = '';
-      } catch (error) {
-        setCsvImportError(`CSV 파일을 읽는 중 오류가 발생했습니다: ${error instanceof Error ? error.message : '알 수 없는 오류'}`);
-        if (inputElement) inputElement.value = '';
-      }
-    };
-
-    reader.onerror = () => {
-      setCsvImportError('파일을 읽는 중 오류가 발생했습니다.');
-      if (inputElement) inputElement.value = '';
-    };
-
-    reader.readAsText(file, 'UTF-8');
-  }, [ledger, onChangeLedger]);
+  // 정렬 상태
+  type LedgerSortKey = "date" | "kind" | "category" | "subCategory" | "description" | "fromAccountId" | "toAccountId" | "amount";
+  const [ledgerSort, setLedgerSort] = useState<{ key: LedgerSortKey; direction: "asc" | "desc" }>({
+    key: "date",
+    direction: "desc"
+  });
   
-  // 자동완성을 위한 이전 내역 추출
-  const descriptionSuggestions = useMemo(() => {
-    try {
-      const suggestions = new Map<string, number>();
-      if (safeLedger && Array.isArray(safeLedger)) {
-        safeLedger.forEach((l) => {
-          if (l && l.description && typeof l.description === 'string' && l.description.trim()) {
-            const desc = l.description.trim();
-            suggestions.set(desc, (suggestions.get(desc) || 0) + 1);
+  // 컬럼 너비 상태 (localStorage에서 로드, 순서 컬럼 제거로 9개)
+  const [columnWidths, setColumnWidths] = useState<number[]>(() => {
+    if (typeof window !== "undefined") {
+      const saved = localStorage.getItem("ledger-column-widths");
+      if (saved) {
+        try {
+          const parsed = JSON.parse(saved);
+          if (Array.isArray(parsed)) {
+            // 기존 10개 배열이면 첫 번째 제거하고 9개로 변환
+            if (parsed.length === 10) {
+              return parsed.slice(1);
+            }
+            // 이미 9개면 그대로 사용
+            if (parsed.length === 9) {
+              return parsed;
+            }
           }
-        });
+        } catch (e) {
+          // 파싱 실패 시 기본값 사용
+        }
       }
-      // 빈도순으로 정렬하여 반환
-      return Array.from(suggestions.entries())
-        .sort((a, b) => b[1] - a[1])
-        .slice(0, 20)
-        .map(([desc]) => ({ value: desc }));
-    } catch (error) {
-      console.error('descriptionSuggestions 오류:', error);
-      return [];
     }
-  }, [safeLedger]);
+    // 최적화된 컬럼 너비: 날짜, 구분, 대분류, 항목, 상세내역, 출금, 입금, 금액, 작업
+    return [8, 6, 12, 13, 22, 12, 9, 13, 5];
+  });
+  const [resizingColumn, setResizingColumn] = useState<number | null>(null);
+  const [resizeStartX, setResizeStartX] = useState(0);
+  const [resizeStartWidth, setResizeStartWidth] = useState(0);
+  
+  // 컬럼 너비 변경 시 localStorage에 저장
+  useEffect(() => {
+    if (typeof window !== "undefined") {
+      localStorage.setItem("ledger-column-widths", JSON.stringify(columnWidths));
+    }
+  }, [columnWidths]);
+  
+  // 정렬 함수
+  const toggleLedgerSort = (key: LedgerSortKey) => {
+    setLedgerSort((prev) => ({
+      key,
+      direction: prev.key === key && prev.direction === "asc" ? "desc" : "asc"
+    }));
+  };
+  
+  const sortIndicator = (activeKey: string, key: string, direction: "asc" | "desc") => {
+    if (activeKey !== key) return "↕";
+    return direction === "asc" ? "↑" : "↓";
+  };
+  
+  // 컬럼 리사이즈 핸들러
+  const handleResizeStart = (e: React.MouseEvent, columnIndex: number) => {
+    e.preventDefault();
+    setResizingColumn(columnIndex);
+    setResizeStartX(e.clientX);
+    setResizeStartWidth(columnWidths[columnIndex]);
+  };
+  
+  useEffect(() => {
+    if (resizingColumn === null) return;
+    
+    const handleMouseMove = (e: MouseEvent) => {
+      const table = document.querySelector(".data-table") as HTMLElement;
+      if (!table) return;
+      
+      const tableWidth = table.offsetWidth;
+      const deltaX = e.clientX - resizeStartX;
+      const deltaPercent = (deltaX / tableWidth) * 100;
+      
+      const newWidths = [...columnWidths];
+      const newWidth = Math.max(3, Math.min(30, resizeStartWidth + deltaPercent));
+      newWidths[resizingColumn] = newWidth;
+      
+      // 총합이 100%가 되도록 조정
+      const total = newWidths.reduce((sum, w) => sum + w, 0);
+      if (total > 0) {
+        const scale = 100 / total;
+        const adjustedWidths = newWidths.map(w => w * scale);
+        setColumnWidths(adjustedWidths);
+        // localStorage에 즉시 저장
+        if (typeof window !== "undefined") {
+          localStorage.setItem("ledger-column-widths", JSON.stringify(adjustedWidths));
+        }
+      }
+    };
+    
+    const handleMouseUp = () => {
+      setResizingColumn(null);
+    };
+    
+    document.addEventListener("mousemove", handleMouseMove);
+    document.addEventListener("mouseup", handleMouseUp);
+    
+    return () => {
+      document.removeEventListener("mousemove", handleMouseMove);
+      document.removeEventListener("mouseup", handleMouseUp);
+    };
+  }, [resizingColumn, resizeStartX, resizeStartWidth, columnWidths]);
   
   // 고정지출 자동 생성: 이전 달의 고정지출을 현재 달로 복사
   useEffect(() => {
@@ -401,12 +185,12 @@ export const LedgerView: React.FC<Props> = ({
     const prevMonth = `${prevMonthDate.getFullYear()}-${String(prevMonthDate.getMonth() + 1).padStart(2, "0")}`;
     
     // 현재 달의 고정지출 확인
-    const currentMonthFixed = safeLedger.filter(
+    const currentMonthFixed = ledger.filter(
       (l) => l.isFixedExpense && l.date.startsWith(currentMonth)
     );
     
     // 이전 달의 고정지출 확인
-    const prevMonthFixed = safeLedger.filter(
+    const prevMonthFixed = ledger.filter(
       (l) => l.isFixedExpense && l.date.startsWith(prevMonth)
     );
     
@@ -419,7 +203,7 @@ export const LedgerView: React.FC<Props> = ({
         const newDateStr = newDate.toISOString().slice(0, 10);
         
         // 같은 내용의 항목이 이미 있는지 확인 (같은 날짜, 같은 카테고리, 같은 금액)
-        const exists = safeLedger.some(
+        const exists = ledger.some(
           (l) =>
             l.date === newDateStr &&
             l.category === prev.category &&
@@ -438,15 +222,15 @@ export const LedgerView: React.FC<Props> = ({
       }).filter((e): e is LedgerEntry => e !== null);
       
       if (newEntries.length > 0) {
-        onChangeLedger([...newEntries, ...safeLedger]);
+        onChangeLedger([...newEntries, ...ledger]);
       }
     }
-  }, [safeLedger, onChangeLedger]);
+  }, [ledger, onChangeLedger]);
   
   // 최근 사용한 항목 추적
   const recentItems = useMemo(() => {
     const items = new Map<string, { count: number; lastUsed: string }>();
-    safeLedger.forEach((l) => {
+    ledger.forEach((l) => {
       const key = form.kind === "income" 
         ? `${l.kind}:${l.subCategory || l.category}`
         : `${l.kind}:${l.category}:${l.subCategory || ""}`;
@@ -464,12 +248,12 @@ export const LedgerView: React.FC<Props> = ({
       })
       .slice(0, 5)
       .map(([key]) => key);
-  }, [safeLedger, form.kind]);
+  }, [ledger, form.kind]);
   
   // 최근 사용한 계좌 추적
   const recentAccounts = useMemo(() => {
     const accountMap = new Map<string, { count: number; lastUsed: string }>();
-    safeLedger.forEach((l) => {
+    ledger.forEach((l) => {
       if (l.fromAccountId) {
         const existing = accountMap.get(l.fromAccountId);
         if (existing) {
@@ -494,17 +278,17 @@ export const LedgerView: React.FC<Props> = ({
       })
       .slice(0, 3)
       .map(([id]) => id);
-  }, [safeLedger]);
+  }, [ledger]);
 
   const expenseSubSuggestions = useMemo(() => {
-    const groups: ExpenseDetailGroup[] = safeCategoryPresets.expenseDetails ?? [];
+    const groups: ExpenseDetailGroup[] = categoryPresets.expenseDetails ?? [];
     if (!groups.length) return [] as string[];
     if (form.mainCategory) {
       const g = groups.find((x) => x.main === form.mainCategory);
       if (g) return g.subs;
     }
-      return groups.flatMap((g) => g.subs);
-  }, [safeCategoryPresets.expenseDetails, form.mainCategory]);
+    return groups.flatMap((g) => g.subs);
+  }, [categoryPresets.expenseDetails, form.mainCategory]);
 
   const parseAmount = (value: string): number => {
     const numeric = value.replace(/[^\d]/g, "");
@@ -570,12 +354,12 @@ export const LedgerView: React.FC<Props> = ({
     };
 
     if (form.id) {
-      const updated = safeLedger.map((l) => (l.id === form.id ? { ...base, id: l.id } : l));
+      const updated = ledger.map((l) => (l.id === form.id ? { ...base, id: l.id } : l));
       onChangeLedger(updated);
     } else {
       const id = `L${Date.now()}`;
       const entry: LedgerEntry = { id, ...base };
-      onChangeLedger([entry, ...safeLedger]);
+      onChangeLedger([entry, ...ledger]);
     }
 
     setForm((prev) => {
@@ -609,7 +393,6 @@ export const LedgerView: React.FC<Props> = ({
   };
 
   const startEdit = (entry: LedgerEntry) => {
-    if (!entry) return;
     setForm({
       id: entry.id,
       date: entry.date,
@@ -646,7 +429,7 @@ export const LedgerView: React.FC<Props> = ({
     });
     // 저축성 지출 판단: transfer이고 toAccountId가 증권/저축 계좌인 경우
     const isSavingsExpense = entry.kind === "transfer" && entry.toAccountId && 
-      safeAccounts.find(a => a.id === entry.toAccountId && (a.type === "securities" || a.type === "savings"));
+      accounts.find(a => a.id === entry.toAccountId && (a.type === "securities" || a.type === "savings"));
     
     const nextTab: LedgerTab =
       entry.kind === "income"
@@ -677,7 +460,7 @@ export const LedgerView: React.FC<Props> = ({
   const saveEditField = () => {
     if (!editingField) return;
     const { id, field } = editingField;
-    const entry = safeLedger.find((l) => l.id === id);
+    const entry = ledger.find((l) => l.id === id);
     if (!entry) return;
 
     const updated: LedgerEntry = { ...entry };
@@ -705,7 +488,7 @@ export const LedgerView: React.FC<Props> = ({
       }
     }
 
-    onChangeLedger(safeLedger.map((l) => (l.id === id ? updated : l)));
+    onChangeLedger(ledger.map((l) => (l.id === id ? updated : l)));
     setEditingField(null);
     setEditingValue("");
   };
@@ -745,7 +528,7 @@ export const LedgerView: React.FC<Props> = ({
 
     // 템플릿 사용 기록 업데이트
     if (onChangeTemplates) {
-      const updated = safeTemplates.map((t) =>
+      const updated = templates.map((t) =>
         t.id === template.id ? { ...t, lastUsed: new Date().toISOString() } : t
       );
       onChangeTemplates(updated);
@@ -772,14 +555,14 @@ export const LedgerView: React.FC<Props> = ({
     };
 
     if (onChangeTemplates) {
-      onChangeTemplates([...safeTemplates, newTemplate]);
+      onChangeTemplates([...templates, newTemplate]);
     }
   };
 
   const deleteTemplate = (id: string) => {
     if (!confirm("템플릿을 삭제하시겠습니까?")) return;
     if (onChangeTemplates) {
-      onChangeTemplates(safeTemplates.filter((t) => t.id !== id));
+      onChangeTemplates(templates.filter((t) => t.id !== id));
     }
   };
 
@@ -787,7 +570,7 @@ export const LedgerView: React.FC<Props> = ({
   const filteredTemplates = useMemo(() => {
     const kindForTab: LedgerKind =
       ledgerTab === "income" ? "income" : ledgerTab === "transfer" || ledgerTab === "savingsExpense" ? "transfer" : "expense";
-    return safeTemplates
+    return templates
       .filter((t) => t.kind === kindForTab)
       .sort((a, b) => {
         // 최근 사용한 것 우선, 그 다음 이름순
@@ -832,30 +615,55 @@ export const LedgerView: React.FC<Props> = ({
 
   // 월별 필터링된 거래 목록
   const ledgerByTab = useMemo(() => {
-    if (!safeLedger || !Array.isArray(safeLedger)) return [];
-    return safeLedger.filter((l) => {
+    return ledger.filter((l) => {
       if (ledgerTab === "income") return l.kind === "income";
       if (ledgerTab === "transfer") {
         // 일반 이체만 (저축성 지출 제외)
         if (l.kind !== "transfer") return false;
-        const toAccount = safeAccounts.find(a => a.id === l.toAccountId);
+        const toAccount = accounts.find(a => a.id === l.toAccountId);
         return !toAccount || (toAccount.type !== "securities" && toAccount.type !== "savings");
       }
       if (ledgerTab === "savingsExpense") {
         // 저축성 지출: transfer이고 toAccountId가 증권/저축 계좌
         if (l.kind !== "transfer") return false;
-        const toAccount = safeAccounts.find(a => a.id === l.toAccountId);
+        const toAccount = accounts.find(a => a.id === l.toAccountId);
         return toAccount && (toAccount.type === "securities" || toAccount.type === "savings");
       }
       return l.kind === "expense" && !(l.isFixedExpense ?? false);
     });
-  }, [safeLedger, ledgerTab, safeAccounts]);
+  }, [ledger, ledgerTab, accounts]);
 
   const filteredLedger = useMemo(() => {
     const base = ledgerByTab;
-    if (viewMode === "all") return base;
-    return base.filter((l) => l.date.startsWith(selectedMonth));
-  }, [ledgerByTab, viewMode, selectedMonth]);
+    const filtered = viewMode === "all" ? base : base.filter((l) => l.date.startsWith(selectedMonth));
+    
+    // 정렬 적용
+    const sorted = [...filtered].sort((a, b) => {
+      const dir = ledgerSort.direction === "asc" ? 1 : -1;
+      const key = ledgerSort.key;
+      
+      if (key === "date") {
+        return (a.date < b.date ? -1 : a.date > b.date ? 1 : 0) * dir;
+      } else if (key === "amount") {
+        return (a.amount - b.amount) * dir;
+      } else if (key === "kind") {
+        return (a.kind < b.kind ? -1 : a.kind > b.kind ? 1 : 0) * dir;
+      } else if (key === "category") {
+        return ((a.category || "") < (b.category || "") ? -1 : (a.category || "") > (b.category || "") ? 1 : 0) * dir;
+      } else if (key === "subCategory") {
+        return ((a.subCategory || "") < (b.subCategory || "") ? -1 : (a.subCategory || "") > (b.subCategory || "") ? 1 : 0) * dir;
+      } else if (key === "description") {
+        return ((a.description || "") < (b.description || "") ? -1 : (a.description || "") > (b.description || "") ? 1 : 0) * dir;
+      } else if (key === "fromAccountId") {
+        return ((a.fromAccountId || "") < (b.fromAccountId || "") ? -1 : (a.fromAccountId || "") > (b.fromAccountId || "") ? 1 : 0) * dir;
+      } else if (key === "toAccountId") {
+        return ((a.toAccountId || "") < (b.toAccountId || "") ? -1 : (a.toAccountId || "") > (b.toAccountId || "") ? 1 : 0) * dir;
+      }
+      return 0;
+    });
+    
+    return sorted;
+  }, [ledgerByTab, viewMode, selectedMonth, ledgerSort]);
 
   const tabLabel: Record<LedgerTab, string> = {
     income: "수입",
@@ -898,11 +706,11 @@ export const LedgerView: React.FC<Props> = ({
 
   const handleReorder = (id: string, newPosition: number) => {
     if (viewMode !== "all") return;
-    const currentIndex = safeLedger.findIndex((l) => l.id === id);
+    const currentIndex = ledger.findIndex((l) => l.id === id);
     if (currentIndex === -1) return;
-    const clamped = Math.max(0, Math.min(safeLedger.length - 1, newPosition));
+    const clamped = Math.max(0, Math.min(ledger.length - 1, newPosition));
     if (clamped === currentIndex) return;
-    const next = [...safeLedger];
+    const next = [...ledger];
     const [item] = next.splice(currentIndex, 1);
     next.splice(clamped, 0, item);
     onChangeLedger(next);
@@ -912,29 +720,10 @@ export const LedgerView: React.FC<Props> = ({
     <div>
       <div className="section-header">
         <h2>가계부 (거래 입력)</h2>
-        <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
-          <div className="pill">
-            {viewMode === "all"
-              ? `${tabLabel[ledgerTab]} 합계: ${Math.round(totalByTab).toLocaleString()}원`
-              : `${selectedMonth} ${tabLabel[ledgerTab]}: ${Math.round(monthlyTotalByTab).toLocaleString()}원`}
-          </div>
-          <button
-            type="button"
-            className="secondary"
-            onClick={() => {
-              const input = document.createElement('input');
-              input.type = 'file';
-              input.accept = '.csv';
-              input.onchange = (e) => {
-                const event = e as unknown as React.ChangeEvent<HTMLInputElement>;
-                handleCsvImport(event);
-              };
-              input.click();
-            }}
-            style={{ fontSize: 12, padding: "6px 12px" }}
-          >
-            📄 CSV 가져오기
-          </button>
+        <div className="pill">
+          {viewMode === "all"
+            ? `${tabLabel[ledgerTab]} 합계: ${Math.round(totalByTab).toLocaleString()}원`
+            : `${selectedMonth} ${tabLabel[ledgerTab]}: ${Math.round(monthlyTotalByTab).toLocaleString()}원`}
         </div>
       </div>
 
@@ -1051,22 +840,6 @@ export const LedgerView: React.FC<Props> = ({
         )}
       </div>
 
-      {/* CSV 가져오기 오류 표시 */}
-      {csvImportError && (
-        <div className="card" style={{ padding: 12, marginBottom: 12, backgroundColor: "#fee", border: "1px solid #fcc" }}>
-          <div style={{ color: "#c00", fontSize: 13 }}>
-            <strong>CSV 가져오기 오류:</strong> {csvImportError}
-          </div>
-          <button
-            type="button"
-            onClick={() => setCsvImportError(null)}
-            style={{ marginTop: 8, fontSize: 11, padding: "4px 8px" }}
-          >
-            닫기
-          </button>
-        </div>
-      )}
-
       {/* 템플릿 버튼 영역 */}
       <div className="card" style={{ padding: 12, marginBottom: 12 }}>
         <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 8 }}>
@@ -1133,8 +906,8 @@ export const LedgerView: React.FC<Props> = ({
                 <Autocomplete
                   value={form.subCategory}
                   onChange={(val) => setForm({ ...form, subCategory: val })}
-                  options={(safeCategoryPresets.income || [])
-                    .filter((c) => c.toLowerCase().includes((form.subCategory || "").toLowerCase()))
+                  options={categoryPresets.income
+                    .filter((c) => c.toLowerCase().includes(form.subCategory.toLowerCase()))
                     .map((c) => ({ value: c }))}
                   placeholder="급여, 배당 등"
                 />
@@ -1146,13 +919,13 @@ export const LedgerView: React.FC<Props> = ({
                   <Autocomplete
                     value={form.mainCategory}
                     onChange={(val) => setForm({ ...form, mainCategory: val })}
-                    options={(safeCategoryPresets.expense || [])
-                      .filter((c) => c.toLowerCase().includes((form.mainCategory || "").toLowerCase()))
+                    options={categoryPresets.expense
+                      .filter((c) => c.toLowerCase().includes(form.mainCategory.toLowerCase()))
                       .map((c) => ({ value: c }))}
                     placeholder="식비, 주거비 등"
                   />
                   <div className="category-chip-row" style={{ marginTop: 8, display: "flex", flexWrap: "wrap", gap: 6 }}>
-                    {(safeCategoryPresets.expense || []).map((c) => (
+                    {categoryPresets.expense.map((c) => (
                       <button
                         key={c}
                         type="button"
@@ -1213,7 +986,7 @@ export const LedgerView: React.FC<Props> = ({
                 >
                   <option value="">선택</option>
                   {recentAccounts.map((id) => {
-                    const acc = safeAccounts.find((a) => a.id === id);
+                    const acc = accounts.find((a) => a.id === id);
                     return acc ? (
                       <option key={id} value={id}>
                         {acc.id}
@@ -1254,7 +1027,7 @@ export const LedgerView: React.FC<Props> = ({
                     // 일반 이체/수입: 모든 계좌
                     <>
                       {recentAccounts.map((id) => {
-                        const acc = safeAccounts.find((a) => a.id === id);
+                        const acc = accounts.find((a) => a.id === id);
                         return acc ? (
                           <option key={id} value={id}>
                             {acc.id}
@@ -1307,13 +1080,13 @@ export const LedgerView: React.FC<Props> = ({
               <Autocomplete
                 value={form.subCategory}
                 onChange={(val) => setForm({ ...form, subCategory: val })}
-                options={(safeCategoryPresets.income || [])
-                  .filter((c) => c.toLowerCase().includes((form.subCategory || "").toLowerCase()))
+                options={categoryPresets.income
+                  .filter((c) => c.toLowerCase().includes(form.subCategory.toLowerCase()))
                   .map((c) => ({ value: c }))}
                 placeholder="예: 급여, 배당, 이자"
               />
               <div className="category-chip-row">
-                {(safeCategoryPresets.income || []).map((c) => (
+                {categoryPresets.income.map((c) => (
                   <button
                     key={c}
                     type="button"
@@ -1339,13 +1112,13 @@ export const LedgerView: React.FC<Props> = ({
               <Autocomplete
                 value={form.mainCategory}
                 onChange={(val) => setForm({ ...form, mainCategory: val })}
-                options={(safeCategoryPresets.expense || [])
-                  .filter((c) => c.toLowerCase().includes((form.mainCategory || "").toLowerCase()))
+                options={categoryPresets.expense
+                  .filter((c) => c.toLowerCase().includes(form.mainCategory.toLowerCase()))
                   .map((c) => ({ value: c }))}
                 placeholder="예: 식비, 주거비"
               />
               <div className="category-chip-row">
-                {(safeCategoryPresets.expense || []).map((c) => (
+                {categoryPresets.expense.map((c) => (
                   <button
                     key={c}
                     type="button"
@@ -1396,14 +1169,10 @@ export const LedgerView: React.FC<Props> = ({
         )}
         <label className="wide">
           <span>상세내역</span>
-          <Autocomplete
-            value={form.description || ""}
-            onChange={(val) => setForm({ ...form, description: val })}
-            options={descriptionSuggestions.filter((opt) => {
-              const searchTerm = (form.description || "").toLowerCase();
-              return opt.value.toLowerCase().includes(searchTerm);
-            })}
-            placeholder="설명 입력"
+          <input
+            type="text"
+            value={form.description}
+            onChange={(e) => setForm({ ...form, description: e.target.value })}
           />
         </label>
         {(form.kind === "expense" || form.kind === "transfer") && (
@@ -1414,7 +1183,7 @@ export const LedgerView: React.FC<Props> = ({
               onChange={(e) => setForm({ ...form, fromAccountId: e.target.value })}
             >
               <option value="">선택</option>
-              {safeAccounts.map((a) => (
+              {accounts.map((a) => (
                 <option key={a.id} value={a.id}>
                   {a.id}
                 </option>
@@ -1444,7 +1213,7 @@ export const LedgerView: React.FC<Props> = ({
                   ))
               ) : (
                 // 일반 이체/수입: 모든 계좌
-                safeAccounts.map((a) => (
+                accounts.map((a) => (
                   <option key={a.id} value={a.id}>
                     {a.id}
                   </option>
@@ -1485,18 +1254,88 @@ export const LedgerView: React.FC<Props> = ({
       )}
 
       <table className="data-table">
+        <colgroup>
+          {columnWidths.map((width, index) => (
+            <col key={index} style={{ width: `${width}%` }} />
+          ))}
+        </colgroup>
         <thead>
           <tr>
-            <th style={{ width: 60 }}>순서</th>
-            <th>날짜</th>
-            <th>구분</th>
-            <th>구분(대분류)</th>
-            <th>항목</th>
-            <th>상세내역</th>
-            <th>출금계좌</th>
-            <th>입금계좌</th>
-            <th>금액</th>
-            <th>작업</th>
+            <th style={{ position: "relative" }}>
+              <button type="button" className="sort-header" onClick={() => toggleLedgerSort("date")}>
+                날짜 <span className="arrow">{sortIndicator(ledgerSort.key, "date", ledgerSort.direction)}</span>
+              </button>
+              <div
+                className="resize-handle"
+                onMouseDown={(e) => handleResizeStart(e, 0)}
+              />
+            </th>
+            <th style={{ position: "relative" }}>
+              <button type="button" className="sort-header" onClick={() => toggleLedgerSort("kind")}>
+                구분 <span className="arrow">{sortIndicator(ledgerSort.key, "kind", ledgerSort.direction)}</span>
+              </button>
+              <div
+                className="resize-handle"
+                onMouseDown={(e) => handleResizeStart(e, 1)}
+              />
+            </th>
+            <th style={{ position: "relative" }}>
+              <button type="button" className="sort-header" onClick={() => toggleLedgerSort("category")}>
+                대분류 <span className="arrow">{sortIndicator(ledgerSort.key, "category", ledgerSort.direction)}</span>
+              </button>
+              <div
+                className="resize-handle"
+                onMouseDown={(e) => handleResizeStart(e, 2)}
+              />
+            </th>
+            <th style={{ position: "relative" }}>
+              <button type="button" className="sort-header" onClick={() => toggleLedgerSort("subCategory")}>
+                항목 <span className="arrow">{sortIndicator(ledgerSort.key, "subCategory", ledgerSort.direction)}</span>
+              </button>
+              <div
+                className="resize-handle"
+                onMouseDown={(e) => handleResizeStart(e, 3)}
+              />
+            </th>
+            <th style={{ position: "relative" }}>
+              <button type="button" className="sort-header" onClick={() => toggleLedgerSort("description")}>
+                상세내역 <span className="arrow">{sortIndicator(ledgerSort.key, "description", ledgerSort.direction)}</span>
+              </button>
+              <div
+                className="resize-handle"
+                onMouseDown={(e) => handleResizeStart(e, 4)}
+              />
+            </th>
+            <th style={{ position: "relative" }}>
+              <button type="button" className="sort-header" onClick={() => toggleLedgerSort("fromAccountId")}>
+                출금 <span className="arrow">{sortIndicator(ledgerSort.key, "fromAccountId", ledgerSort.direction)}</span>
+              </button>
+              <div
+                className="resize-handle"
+                onMouseDown={(e) => handleResizeStart(e, 5)}
+              />
+            </th>
+            <th style={{ position: "relative" }}>
+              <button type="button" className="sort-header" onClick={() => toggleLedgerSort("toAccountId")}>
+                입금 <span className="arrow">{sortIndicator(ledgerSort.key, "toAccountId", ledgerSort.direction)}</span>
+              </button>
+              <div
+                className="resize-handle"
+                onMouseDown={(e) => handleResizeStart(e, 6)}
+              />
+            </th>
+            <th style={{ position: "relative" }}>
+              <button type="button" className="sort-header" onClick={() => toggleLedgerSort("amount")}>
+                금액 <span className="arrow">{sortIndicator(ledgerSort.key, "amount", ledgerSort.direction)}</span>
+              </button>
+              <div
+                className="resize-handle"
+                onMouseDown={(e) => handleResizeStart(e, 7)}
+              />
+            </th>
+            <th style={{ position: "relative" }}>
+              작업
+            </th>
           </tr>
         </thead>
         <tbody>
@@ -1522,36 +1361,41 @@ export const LedgerView: React.FC<Props> = ({
               }}
               onDragEnd={() => setDraggingId(null)}
             >
-              <td className="drag-cell">
-                {viewMode === "all" ? (
-                  <span className="drag-handle" title="잡고 위/아래로 끌어서 순서 변경">☰</span>
-                ) : (
-                  index + 1
-                )}
-              </td>
               <td
                 onDoubleClick={(e) => {
                   e.stopPropagation();
                   startEditField(l.id, "date", l.date);
                 }}
-                style={{ cursor: "pointer" }}
+                style={{ cursor: "pointer", position: "relative" }}
                 title="더블클릭하여 수정"
               >
                 {editingField?.id === l.id && editingField.field === "date" ? (
-                  <input
-                    type="date"
-                    value={editingValue}
-                    onChange={(e) => setEditingValue(e.target.value)}
-                    onBlur={saveEditField}
-                    onKeyDown={(e) => {
-                      if (e.key === "Enter") saveEditField();
-                      if (e.key === "Escape") cancelEditField();
-                    }}
-                    autoFocus
-                    style={{ width: "100%", padding: "4px", fontSize: 14 }}
-                  />
+                  <>
+                    {viewMode === "all" && (
+                      <span style={{ position: "absolute", left: "4px", color: "var(--muted)", fontSize: "12px" }}>=</span>
+                    )}
+                    <input
+                      type="date"
+                      value={editingValue}
+                      onChange={(e) => setEditingValue(e.target.value)}
+                      onBlur={saveEditField}
+                      onKeyDown={(e) => {
+                        if (e.key === "Enter") saveEditField();
+                        if (e.key === "Escape") cancelEditField();
+                      }}
+                      autoFocus
+                      style={{ width: "100%", padding: "4px", fontSize: 14, marginLeft: viewMode === "all" ? "16px" : "0" }}
+                    />
+                  </>
                 ) : (
-                  l.date
+                  <>
+                    {viewMode === "all" && (
+                      <span style={{ position: "absolute", left: "4px", color: "var(--muted)", fontSize: "12px" }}>=</span>
+                    )}
+                    <span style={{ marginLeft: viewMode === "all" ? "16px" : "0" }}>
+                      {formatShortDate(l.date)}
+                    </span>
+                  </>
                 )}
               </td>
               <td>{l.kind === "expense" && (l.isFixedExpense ?? false) ? "지출(고정)" : KIND_LABEL[l.kind]}</td>
@@ -1561,7 +1405,7 @@ export const LedgerView: React.FC<Props> = ({
                   startEditField(l.id, "category", l.category);
                 }}
                 style={{ cursor: "pointer" }}
-                title="더블클릭하여 수정"
+                title={l.category ? l.category + " (더블클릭하여 수정)" : "더블클릭하여 수정"}
               >
                 {editingField?.id === l.id && editingField.field === "category" ? (
                   <input
@@ -1586,7 +1430,7 @@ export const LedgerView: React.FC<Props> = ({
                   startEditField(l.id, "subCategory", l.subCategory || "");
                 }}
                 style={{ cursor: "pointer" }}
-                title="더블클릭하여 수정"
+                title={l.subCategory ? l.subCategory + " (더블클릭하여 수정)" : "더블클릭하여 수정"}
               >
                 {editingField?.id === l.id && editingField.field === "subCategory" ? (
                   <input
@@ -1611,7 +1455,7 @@ export const LedgerView: React.FC<Props> = ({
                   startEditField(l.id, "description", l.description || "");
                 }}
                 style={{ cursor: "pointer" }}
-                title="더블클릭하여 수정"
+                title={l.description ? l.description + " (더블클릭하여 수정)" : "더블클릭하여 수정"}
               >
                 {editingField?.id === l.id && editingField.field === "description" ? (
                   <input
@@ -1627,7 +1471,7 @@ export const LedgerView: React.FC<Props> = ({
                     style={{ width: "100%", padding: "4px", fontSize: 14 }}
                   />
                 ) : (
-                  l.description
+                  l.description || "-"
                 )}
               </td>
               <td
@@ -1636,17 +1480,17 @@ export const LedgerView: React.FC<Props> = ({
                   startEditField(l.id, "fromAccountId", l.fromAccountId || "");
                 }}
                 style={{ cursor: "pointer" }}
-                title="더블클릭하여 수정"
+                title={l.fromAccountId ? l.fromAccountId + " (더블클릭하여 수정)" : "더블클릭하여 수정"}
               >
                 {editingField?.id === l.id && editingField.field === "fromAccountId" ? (
                   <select
                     value={editingValue}
                     onChange={(e) => {
                       setEditingValue(e.target.value);
-                      const entry = safeLedger.find((l) => l.id === editingField.id);
+                      const entry = ledger.find((l) => l.id === editingField.id);
                       if (entry) {
                         const updated = { ...entry, fromAccountId: e.target.value || undefined };
-                        onChangeLedger(safeLedger.map((l) => (l.id === editingField.id ? updated : l)));
+                        onChangeLedger(ledger.map((l) => (l.id === editingField.id ? updated : l)));
                         setEditingField(null);
                         setEditingValue("");
                       }
@@ -1655,7 +1499,7 @@ export const LedgerView: React.FC<Props> = ({
                     style={{ width: "100%", padding: "4px", fontSize: 14 }}
                   >
                     <option value="">-</option>
-                    {safeAccounts.map((acc) => (
+                    {accounts.map((acc) => (
                       <option key={acc.id} value={acc.id}>
                         {acc.id}
                       </option>
@@ -1671,17 +1515,17 @@ export const LedgerView: React.FC<Props> = ({
                   startEditField(l.id, "toAccountId", l.toAccountId || "");
                 }}
                 style={{ cursor: "pointer" }}
-                title="더블클릭하여 수정"
+                title={l.toAccountId ? l.toAccountId + " (더블클릭하여 수정)" : "더블클릭하여 수정"}
               >
                 {editingField?.id === l.id && editingField.field === "toAccountId" ? (
                   <select
                     value={editingValue}
                     onChange={(e) => {
                       setEditingValue(e.target.value);
-                      const entry = safeLedger.find((l) => l.id === editingField.id);
+                      const entry = ledger.find((l) => l.id === editingField.id);
                       if (entry) {
                         const updated = { ...entry, toAccountId: e.target.value || undefined };
-                        onChangeLedger(safeLedger.map((l) => (l.id === editingField.id ? updated : l)));
+                        onChangeLedger(ledger.map((l) => (l.id === editingField.id ? updated : l)));
                         setEditingField(null);
                         setEditingValue("");
                       }
@@ -1690,7 +1534,7 @@ export const LedgerView: React.FC<Props> = ({
                     style={{ width: "100%", padding: "4px", fontSize: 14 }}
                   >
                     <option value="">-</option>
-                    {safeAccounts.map((acc) => (
+                    {accounts.map((acc) => (
                       <option key={acc.id} value={acc.id}>
                         {acc.id}
                       </option>
@@ -1743,7 +1587,7 @@ export const LedgerView: React.FC<Props> = ({
                     onClick={(e) => {
                       e.stopPropagation();
                       if (confirm("이 항목을 삭제하시겠습니까?")) {
-                        onChangeLedger(safeLedger.filter((entry) => entry.id !== l.id));
+                        onChangeLedger(ledger.filter((entry) => entry.id !== l.id));
                       }
                     }}
                   >
@@ -1787,7 +1631,7 @@ export const LedgerView: React.FC<Props> = ({
                 </button>
               </div>
               <div style={{ maxHeight: 400, overflowY: "auto" }}>
-                {safeTemplates.length === 0 ? (
+                {templates.length === 0 ? (
                   <p className="hint">저장된 템플릿이 없습니다.</p>
                 ) : (
                   <table className="data-table">
@@ -1803,7 +1647,7 @@ export const LedgerView: React.FC<Props> = ({
                       </tr>
                     </thead>
                     <tbody>
-                      {safeTemplates.map((template) => (
+                      {templates.map((template) => (
                         <tr key={template.id}>
                           <td>{template.name}</td>
                           <td>{KIND_LABEL[template.kind]}</td>

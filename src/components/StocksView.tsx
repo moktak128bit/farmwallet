@@ -18,7 +18,7 @@ import type { AccountBalanceRow } from "../calculations";
 import { computePositions } from "../calculations";
 import { fetchYahooQuotes, searchYahooSymbol } from "../yahooFinanceApi";
 import { saveTickerDatabaseBackup, saveTickerToJson } from "../storage";
-import { formatNumber, formatKRW, formatUSD } from "../utils/format";
+import { formatNumber, formatKRW, formatUSD, formatShortDate } from "../utils/format";
 
 interface Props {
   accounts: Account[];
@@ -80,7 +80,7 @@ function createDefaultTradeForm() {
   };
 }
 
-export const StocksView: React.FC<Props> = React.memo(({
+export const StocksView: React.FC<Props> = ({
   accounts,
   balances,
   trades,
@@ -593,6 +593,14 @@ export const StocksView: React.FC<Props> = React.memo(({
 
   const renderQuoteTable = (items: StockPrice[], marketLabel: string) => (
     <table className="data-table">
+      <colgroup>
+        <col style={{ width: "12%" }} />
+        <col style={{ width: "18%" }} />
+        <col style={{ width: "15%" }} />
+        <col style={{ width: "15%" }} />
+        <col style={{ width: "12%" }} />
+        <col style={{ width: "18%" }} />
+      </colgroup>
       <thead>
         <tr>
           <th>티커</th>
@@ -2145,6 +2153,17 @@ export const StocksView: React.FC<Props> = React.memo(({
             </span>
           </h4>
           <table className="data-table">
+            <colgroup>
+              <col style={{ width: "7%" }} />
+              <col style={{ width: "20%" }} />
+              <col style={{ width: "11%" }} />
+              <col style={{ width: "8%" }} />
+              <col style={{ width: "9%" }} />
+              <col style={{ width: "9%" }} />
+              <col style={{ width: "8%" }} />
+              <col style={{ width: "10%" }} />
+              <col style={{ width: "10%" }} />
+            </colgroup>
             <thead>
               <tr>
                 <th>
@@ -2212,10 +2231,8 @@ export const StocksView: React.FC<Props> = React.memo(({
                         textDecoration: "underline", 
                         color: "var(--primary)",
                         fontSize: "12px",
-                        whiteSpace: "nowrap",
-                        overflow: "hidden",
-                        textOverflow: "ellipsis",
-                        maxWidth: "200px"
+                        whiteSpace: "normal",
+                        wordBreak: "break-word"
                       }}
                       title={p.name}
                     >
@@ -2275,9 +2292,23 @@ export const StocksView: React.FC<Props> = React.memo(({
         );
       })()}
       <table className="data-table trades-table">
+        <colgroup>
+          <col style={{ width: "3%" }} />
+          <col style={{ width: "6%" }} />
+          <col style={{ width: "6%" }} />
+          <col style={{ width: "5%" }} />
+          <col style={{ width: "18%" }} />
+          <col style={{ width: "6%" }} />
+          <col style={{ width: "6%" }} />
+          <col style={{ width: "8%" }} />
+          <col style={{ width: "7%" }} />
+          <col style={{ width: "11%" }} />
+          <col style={{ width: "5%" }} />
+          <col style={{ width: "7%" }} />
+        </colgroup>
         <thead>
           <tr>
-            <th style={{ width: 60 }}>순서</th>
+            <th>순서</th>
             <th>
               <button type="button" className="sort-header" onClick={() => toggleTradeSort("date")}>
                 날짜 <span className="arrow">{sortIndicator(tradeSort.key, "date", tradeSort.direction)}</span>
@@ -2300,7 +2331,7 @@ export const StocksView: React.FC<Props> = React.memo(({
             </th>
             <th>
               <button type="button" className="sort-header" onClick={() => toggleTradeSort("side")}>
-                매수/매도 <span className="arrow">{sortIndicator(tradeSort.key, "side", tradeSort.direction)}</span>
+                매매 <span className="arrow">{sortIndicator(tradeSort.key, "side", tradeSort.direction)}</span>
               </button>
             </th>
             <th>
@@ -2315,7 +2346,7 @@ export const StocksView: React.FC<Props> = React.memo(({
             </th>
             <th>
               <button type="button" className="sort-header" onClick={() => toggleTradeSort("fee")}>
-                수수료+세금 <span className="arrow">{sortIndicator(tradeSort.key, "fee", tradeSort.direction)}</span>
+                수수료 <span className="arrow">{sortIndicator(tradeSort.key, "fee", tradeSort.direction)}</span>
               </button>
             </th>
             <th>
@@ -2324,7 +2355,7 @@ export const StocksView: React.FC<Props> = React.memo(({
               </button>
             </th>
             <th>초기보유</th>
-            <th style={{ width: 60 }}>작업</th>
+            <th>작업</th>
           </tr>
         </thead>
         <tbody>
@@ -2367,7 +2398,7 @@ export const StocksView: React.FC<Props> = React.memo(({
                     style={{ padding: "2px 4px", fontSize: 13 }}
                   />
                 ) : (
-                  t.date
+                  formatShortDate(t.date)
                 )}
               </td>
               <td 
@@ -2415,10 +2446,8 @@ export const StocksView: React.FC<Props> = React.memo(({
                   textDecoration: "underline", 
                   color: "var(--primary)",
                   fontSize: "12px",
-                  whiteSpace: "nowrap",
-                  overflow: "hidden",
-                  textOverflow: "ellipsis",
-                  maxWidth: "200px"
+                  whiteSpace: "normal",
+                  wordBreak: "break-word"
                 }}
                 title={t.name}
               >
@@ -2698,6 +2727,16 @@ export const StocksView: React.FC<Props> = React.memo(({
             {dcaPlans.length > 0 && (
               <div style={{ overflowX: "auto" }}>
                 <table className="data-table compact">
+                  <colgroup>
+                    <col style={{ width: "12%" }} />
+                    <col style={{ width: "14%" }} />
+                    <col style={{ width: "14%" }} />
+                    <col style={{ width: "12%" }} />
+                    <col style={{ width: "13%" }} />
+                    <col style={{ width: "13%" }} />
+                    <col style={{ width: "10%" }} />
+                    <col style={{ width: "12%" }} />
+                  </colgroup>
                   <thead>
                     <tr>
                       <th>티커</th>
@@ -2935,6 +2974,16 @@ export const StocksView: React.FC<Props> = React.memo(({
                   <p className="hint">저장된 프리셋이 없습니다.</p>
                 ) : (
                   <table className="data-table">
+                    <colgroup>
+                      <col style={{ width: "14%" }} />
+                      <col style={{ width: "12%" }} />
+                      <col style={{ width: "10%" }} />
+                      <col style={{ width: "16%" }} />
+                      <col style={{ width: "10%" }} />
+                      <col style={{ width: "12%" }} />
+                      <col style={{ width: "14%" }} />
+                      <col style={{ width: "12%" }} />
+                    </colgroup>
                     <thead>
                       <tr>
                         <th>이름</th>
@@ -2990,4 +3039,4 @@ export const StocksView: React.FC<Props> = React.memo(({
       )}
     </div>
   );
-});
+};

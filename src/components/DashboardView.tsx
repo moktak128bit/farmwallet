@@ -6,9 +6,7 @@ import {
   BarChart,
   CartesianGrid,
   Cell,
-  ComposedChart,
   Legend,
-  Line,
   Pie,
   PieChart,
   ResponsiveContainer,
@@ -17,7 +15,7 @@ import {
   YAxis,
   Label
 } from "recharts";
-import type { Account, LedgerEntry, StockPrice, StockTrade, Loan } from "../types";
+import type { Account, LedgerEntry, StockPrice, StockTrade } from "../types";
 import { computeAccountBalances, computeMonthlyNetWorth, computePositions } from "../calculations";
 import { fetchYahooQuotes } from "../yahooFinanceApi";
 import { formatKRW } from "../utils/format";
@@ -27,17 +25,15 @@ interface Props {
   ledger: LedgerEntry[];
   trades: StockTrade[];
   prices: StockPrice[];
-  loans?: Loan[];
 }
 
 const COLORS = ["#0ea5e9", "#6366f1", "#f43f5e", "#10b981", "#f59e0b", "#8b5cf6"];
 
-export const DashboardView: React.FC<Props> = React.memo(({
+export const DashboardView: React.FC<Props> = ({
   accounts,
   ledger,
   trades,
-  prices,
-  loans = []
+  prices
 }) => {
   const [fxRate, setFxRate] = useState<number | null>(null);
   const [equityPeriod, setEquityPeriod] = useState<"ytd" | "1y" | "all">("ytd");
@@ -245,115 +241,6 @@ export const DashboardView: React.FC<Props> = React.memo(({
       .slice(-6);
   }, [ledger]);
 
-  // 1. 월별 수입/지출 추이
-  const monthlyIncomeExpenseSeries = useMemo(() => {
-    const map = new Map<string, { income: number; expense: number; net: number }>();
-    ledger.forEach((l) => {
-      const month = l.date.slice(0, 7);
-      const current = map.get(month) || { income: 0, expense: 0, net: 0 };
-      if (l.kind === "income") {
-        current.income += l.amount;
-        current.net += l.amount;
-      } else if (l.kind === "expense") {
-        current.expense += l.amount;
-        current.net -= l.amount;
-      }
-      map.set(month, current);
-    });
-    return Array.from(map.entries())
-      .map(([month, data]) => ({ month, ...data }))
-      .sort((a, b) => a.month.localeCompare(b.month))
-      .slice(-12); // 최근 12개월
-  }, [ledger]);
-
-  // 2. 저축률 추이
-  const savingsRateSeries = useMemo(() => {
-    return monthlyIncomeExpenseSeries.map((d) => {
-      const rate = d.income > 0 ? (d.net / d.income) * 100 : 0;
-      return { month: d.month, rate: Math.max(0, rate) };
-    });
-  }, [monthlyIncomeExpenseSeries]);
-  const avgSavingsRate = useMemo(() => {
-    if (savingsRateSeries.length === 0) return 0;
-    const sum = savingsRateSeries.reduce((s, d) => s + d.rate, 0);
-    return sum / savingsRateSeries.length;
-  }, [savingsRateSeries]);
-
-  // 3. 투자 성과 지표
-  const investmentMetrics = useMemo(() => {
-    const totalInvested = positions.reduce((s, p) => s + p.totalBuyAmount, 0);
-    const totalValue = positions.reduce((s, p) => s + p.marketValue, 0);
-    const totalPnl = positions.reduce((s, p) => s + p.pnl, 0);
-    const totalReturnRate = totalInvested > 0 ? (totalPnl / totalInvested) * 100 : 0;
-    
-    // 승률: 수익 종목 비율
-    const profitableCount = positions.filter((p) => p.pnl > 0).length;
-    const winRate = positions.length > 0 ? (profitableCount / positions.length) * 100 : 0;
-    
-    // 최대 낙폭 (간단 버전: 최저 수익률)
-    const minReturn = positions.length > 0 
-      ? Math.min(...positions.map((p) => p.pnlRate * 100))
-      : 0;
-    
-    // 연환산 수익률 (간단 버전: YTD 기준)
-    const ytdReturn = returnYtd.replace('%', '');
-    const annualizedReturn = parseFloat(ytdReturn) || 0;
-    
-    return {
-      totalInvested,
-      totalValue,
-      totalPnl,
-      totalReturnRate,
-      winRate,
-      minReturn,
-      annualizedReturn
-    };
-  }, [positions, returnYtd]);
-
-  // 4. 부채 대비 자산 비율
-  const debtToAssetRatio = useMemo(() => {
-    const totalAssets = totalNetWorth + totalDebt; // 부채 포함 총 자산
-    const ratio = totalAssets > 0 ? (totalDebt / totalAssets) * 100 : 0;
-    return ratio;
-  }, [totalNetWorth, totalDebt]);
-
-  // 5. 대출 상환 진행 상황
-  const loanRepaymentProgress = useMemo(() => {
-    const repayments = new Map<string, number>();
-    ledger
-      .filter((l) => l.category === "대출" && l.subCategory === "빚")
-      .forEach((l) => {
-        // 설명에서 대출명을 찾아서 매칭
-        const loan = loans.find((loan) => l.description && l.description.includes(loan.loanName));
-        if (loan) {
-          repayments.set(loan.id, (repayments.get(loan.id) || 0) + l.amount);
-        }
-      });
-
-    return loans.map((loan) => {
-      const repaid = repayments.get(loan.id) || 0;
-      const progress = loan.loanAmount > 0 ? (repaid / loan.loanAmount) * 100 : 0;
-      const remaining = loan.loanAmount - repaid;
-      
-      // 예상 완전 상환일 계산 (간단 버전: 평균 상환 속도 기준)
-      const today = new Date();
-      const loanDate = new Date(loan.loanDate);
-      const daysSinceLoan = Math.floor((today.getTime() - loanDate.getTime()) / (1000 * 60 * 60 * 24));
-      const avgDailyRepayment = daysSinceLoan > 0 ? repaid / daysSinceLoan : 0;
-      const daysToFullRepayment = avgDailyRepayment > 0 ? remaining / avgDailyRepayment : 0;
-      const estimatedDate = new Date(today);
-      estimatedDate.setDate(estimatedDate.getDate() + daysToFullRepayment);
-      
-      return {
-        ...loan,
-        repaid,
-        remaining,
-        progress: Math.min(100, Math.max(0, progress)),
-        estimatedFullRepaymentDate: estimatedDate.toISOString().slice(0, 10)
-      };
-    });
-  }, [loans, ledger]);
-
   // 주식 비율 트리맵 데이터
   const positionsWithPrice = useMemo(() => {
     return positions
@@ -374,56 +261,6 @@ export const DashboardView: React.FC<Props> = React.memo(({
       })
       .filter((p) => p.marketValue > 0);
   }, [positions, adjustedPrices]);
-
-  // 포트폴리오 분석: 섹터/지역/자산 유형별 분산
-  const portfolioAnalysis = useMemo(() => {
-    // 지역별 분산 (KR vs US)
-    const byRegion = new Map<string, number>();
-    // 자산 유형별 분산 (주식 vs 현금 vs 저축 vs 부채)
-    const byAssetType = new Map<string, number>();
-    
-    // 주식 포지션 분석
-    positionsWithPrice.forEach((p) => {
-      const ticker = p.ticker;
-      // 한국 주식 (6자리 숫자 티커)
-      const isKR = /^[0-9]{6}$/.test(ticker);
-      const region = isKR ? "한국" : "미국";
-      byRegion.set(region, (byRegion.get(region) || 0) + p.marketValue);
-    });
-    
-    // 자산 유형별 분산
-    byAssetType.set("주식", totalStockValue);
-    byAssetType.set("현금", totalCashValue);
-    byAssetType.set("저축", totalSavings);
-    byAssetType.set("부채", -totalDebt); // 부채는 음수로 표시
-    
-    // 지역별 비율 계산
-    const regionData = Array.from(byRegion.entries())
-      .map(([region, value]) => ({
-        name: region,
-        value,
-        percentage: totalStockValue > 0 ? (value / totalStockValue) * 100 : 0
-      }))
-      .sort((a, b) => b.value - a.value);
-    
-    // 자산 유형별 비율 계산
-    const totalAssets = totalNetWorth + totalDebt;
-    const assetTypeData = Array.from(byAssetType.entries())
-      .map(([type, value]) => ({
-        name: type,
-        value: Math.abs(value),
-        percentage: totalAssets > 0 ? (Math.abs(value) / totalAssets) * 100 : 0,
-        isDebt: value < 0
-      }))
-      .sort((a, b) => b.value - a.value);
-    
-    return {
-      byRegion: regionData,
-      byAssetType: assetTypeData,
-      totalStockValue,
-      totalAssets
-    };
-  }, [positionsWithPrice, totalStockValue, totalCashValue, totalSavings, totalDebt, totalNetWorth]);
 
   // 하루 단위 전체 자산 변동 데이터
   const dailyAssetData = useMemo(() => {
@@ -511,8 +348,8 @@ export const DashboardView: React.FC<Props> = React.memo(({
       <div className="cards-row">
         <div className="card" style={{ gridColumn: "span 1" }}>
           <h3 style={{ margin: "0 0 10px 0", fontSize: 16 }}>자산 구성</h3>
-          <div style={{ width: "100%", height: 240, minWidth: 0, minHeight: 240 }}>
-            <ResponsiveContainer width="100%" height="100%" minHeight={240}>
+          <div style={{ width: "100%", height: 240, position: "relative" }}>
+            <ResponsiveContainer>
               <PieChart>
                 <Pie
                   data={assetSegments}
@@ -560,8 +397,8 @@ export const DashboardView: React.FC<Props> = React.memo(({
               </button>
             </div>
           </div>
-          <div style={{ width: "100%", height: 240, minWidth: 0, minHeight: 240 }}>
-            <ResponsiveContainer width="100%" height="100%" minHeight={240}>
+          <div style={{ width: "100%", height: 240 }}>
+            <ResponsiveContainer>
               <AreaChart data={filteredEquitySeries} margin={{ top: 10, right: 10, left: 0, bottom: 0 }}>
                 <defs>
                   <linearGradient id="colorNetWorth" x1="0" y1="0" x2="0" y2="1">
@@ -618,9 +455,9 @@ export const DashboardView: React.FC<Props> = React.memo(({
       <div className="cards-row">
         <div className="card">
           <div className="card-title">이번달 소비 TOP 5</div>
-          <div style={{ width: "100%", height: 180, minWidth: 0, minHeight: 180, marginTop: 10 }}>
+          <div style={{ width: "100%", height: 180, marginTop: 10 }}>
             {monthlyExpenseByCategory.length > 0 ? (
-              <ResponsiveContainer width="100%" height="100%" minHeight={180}>
+              <ResponsiveContainer>
                 <BarChart layout="vertical" data={monthlyExpenseByCategory} margin={{ left: 20 }}>
                   <XAxis type="number" hide />
                   <YAxis dataKey="name" type="category" width={60} fontSize={11} />
@@ -636,9 +473,9 @@ export const DashboardView: React.FC<Props> = React.memo(({
 
         <div className="card">
           <div className="card-title">최근 6개월 배당금</div>
-          <div style={{ width: "100%", height: 180, minWidth: 0, minHeight: 180, marginTop: 10 }}>
+          <div style={{ width: "100%", height: 180, marginTop: 10 }}>
             {monthlyDividendSeries.length > 0 ? (
-              <ResponsiveContainer width="100%" height="100%" minHeight={180}>
+              <ResponsiveContainer>
                 <BarChart data={monthlyDividendSeries}>
                   <CartesianGrid strokeDasharray="3 3" vertical={false} />
                   <XAxis dataKey="month" fontSize={11} tickFormatter={(v) => v.slice(5)} />
@@ -657,9 +494,9 @@ export const DashboardView: React.FC<Props> = React.memo(({
       <div className="cards-row">
         <div className="card" style={{ gridColumn: "span 2" }}>
           <div className="card-title">전체 자산 변동 (일별)</div>
-          <div style={{ width: "100%", height: 350, minWidth: 0, minHeight: 350, marginTop: 10 }}>
+          <div style={{ width: "100%", height: 350, marginTop: 10 }}>
             {safeDailyAssetData.length > 0 ? (
-              <ResponsiveContainer width="100%" height="100%" minHeight={350}>
+              <ResponsiveContainer>
                 <AreaChart data={safeDailyAssetData} margin={{ top: 10, right: 30, left: 0, bottom: 0 }}>
                   <defs>
                     <linearGradient id="colorTotalAsset" x1="0" y1="0" x2="0" y2="1">
@@ -789,345 +626,6 @@ export const DashboardView: React.FC<Props> = React.memo(({
             ))}
         </tbody>
       </table>
-
-      {/* 1. 월별 수입/지출 추이 */}
-      <div className="cards-row">
-        <div className="card" style={{ gridColumn: "span 2" }}>
-          <h3 style={{ margin: "0 0 10px 0", fontSize: 16 }}>월별 수입/지출 추이</h3>
-          <div style={{ width: "100%", height: 280, minWidth: 0, minHeight: 280 }}>
-            {monthlyIncomeExpenseSeries.length > 0 ? (
-              <ResponsiveContainer width="100%" height="100%" minHeight={280}>
-                <ComposedChart data={monthlyIncomeExpenseSeries} margin={{ top: 10, right: 10, left: 0, bottom: 0 }}>
-                  <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="var(--border)" />
-                  <XAxis 
-                    dataKey="month" 
-                    fontSize={11} 
-                    tickFormatter={(v) => v.slice(2)}
-                    tickMargin={10}
-                    axisLine={false}
-                    tickLine={false}
-                  />
-                  <YAxis 
-                    fontSize={11} 
-                    tickFormatter={(v) => `${(v / 1000000).toFixed(0)}만`} 
-                    width={50}
-                    axisLine={false}
-                    tickLine={false}
-                  />
-                  <Tooltip 
-                    formatter={(value: any) => formatKRW(value)}
-                    labelFormatter={(label) => `${label}`}
-                    contentStyle={{ borderRadius: "8px", border: "none", boxShadow: "0 4px 12px rgba(0,0,0,0.1)" }}
-                  />
-                  <Bar dataKey="income" name="수입" fill="#10b981" radius={[4, 4, 0, 0]} />
-                  <Bar dataKey="expense" name="지출" fill="#f43f5e" radius={[4, 4, 0, 0]} />
-                  <Line 
-                    type="monotone" 
-                    dataKey="net" 
-                    name="순수입" 
-                    stroke="#6366f1" 
-                    strokeWidth={2}
-                    dot={{ r: 4 }}
-                  />
-                  <Legend verticalAlign="top" height={36} iconType="rect" />
-                </ComposedChart>
-              </ResponsiveContainer>
-            ) : (
-              <p className="hint">데이터 없음</p>
-            )}
-          </div>
-        </div>
-      </div>
-
-      {/* 2. 저축률 추이 */}
-      <div className="cards-row">
-        <div className="card">
-          <div className="card-title">평균 저축률</div>
-          <div className="card-value" style={{ fontSize: "32px", fontWeight: "800" }}>
-            {avgSavingsRate.toFixed(1)}%
-          </div>
-        </div>
-        <div className="card" style={{ gridColumn: "span 2" }}>
-          <h3 style={{ margin: "0 0 10px 0", fontSize: 16 }}>저축률 추이</h3>
-          <div style={{ width: "100%", height: 200, minWidth: 0, minHeight: 200 }}>
-            {savingsRateSeries.length > 0 ? (
-              <ResponsiveContainer width="100%" height="100%" minHeight={200}>
-                <AreaChart data={savingsRateSeries} margin={{ top: 10, right: 10, left: 0, bottom: 0 }}>
-                  <defs>
-                    <linearGradient id="colorSavingsRate" x1="0" y1="0" x2="0" y2="1">
-                      <stop offset="5%" stopColor="#10b981" stopOpacity={0.3}/>
-                      <stop offset="95%" stopColor="#10b981" stopOpacity={0}/>
-                    </linearGradient>
-                  </defs>
-                  <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="var(--border)" />
-                  <XAxis 
-                    dataKey="month" 
-                    fontSize={11} 
-                    tickFormatter={(v) => v.slice(2)}
-                    tickMargin={10}
-                    axisLine={false}
-                    tickLine={false}
-                  />
-                  <YAxis 
-                    fontSize={11} 
-                    tickFormatter={(v) => `${v.toFixed(0)}%`} 
-                    width={40}
-                    axisLine={false}
-                    tickLine={false}
-                  />
-                  <Tooltip 
-                    formatter={(value: any) => `${Number(value).toFixed(1)}%`}
-                    labelFormatter={(label) => `${label}`}
-                    contentStyle={{ borderRadius: "8px", border: "none", boxShadow: "0 4px 12px rgba(0,0,0,0.1)" }}
-                  />
-                  <Area 
-                    type="monotone" 
-                    dataKey="rate" 
-                    name="저축률"
-                    stroke="#10b981" 
-                    strokeWidth={2}
-                    fillOpacity={1} 
-                    fill="url(#colorSavingsRate)" 
-                  />
-                </AreaChart>
-              </ResponsiveContainer>
-            ) : (
-              <p className="hint">데이터 없음</p>
-            )}
-          </div>
-        </div>
-      </div>
-
-      {/* 3. 투자 성과 지표 카드 */}
-      <div className="cards-row">
-        <div className="card">
-          <div className="card-title">총 투자금액</div>
-          <div className="card-value">{formatKRW(Math.round(investmentMetrics.totalInvested))}</div>
-        </div>
-        <div className="card">
-          <div className="card-title">총 평가액</div>
-          <div className="card-value">{formatKRW(Math.round(investmentMetrics.totalValue))}</div>
-        </div>
-        <div className="card">
-          <div className="card-title">총 수익률</div>
-          <div className={`card-value ${investmentMetrics.totalReturnRate >= 0 ? "positive" : "negative"}`}>
-            {investmentMetrics.totalReturnRate.toFixed(2)}%
-          </div>
-        </div>
-        <div className="card">
-          <div className="card-title">승률</div>
-          <div className="card-value">{investmentMetrics.winRate.toFixed(1)}%</div>
-        </div>
-        <div className="card">
-          <div className="card-title">연환산 수익률</div>
-          <div className={`card-value ${investmentMetrics.annualizedReturn >= 0 ? "positive" : "negative"}`}>
-            {investmentMetrics.annualizedReturn.toFixed(2)}%
-          </div>
-        </div>
-      </div>
-
-      {/* 4. 부채 대비 자산 비율 */}
-      <div className="cards-row">
-        <div className="card">
-          <h3 style={{ margin: "0 0 20px 0", fontSize: 16 }}>부채 대비 자산 비율</h3>
-          <div style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: "16px" }}>
-            <div style={{ position: "relative", width: "200px", height: "200px" }}>
-              <svg width="200" height="200" viewBox="0 0 200 200">
-                <circle
-                  cx="100"
-                  cy="100"
-                  r="80"
-                  fill="none"
-                  stroke="var(--border)"
-                  strokeWidth="20"
-                />
-                <circle
-                  cx="100"
-                  cy="100"
-                  r="80"
-                  fill="none"
-                  stroke={debtToAssetRatio < 30 ? "#10b981" : debtToAssetRatio < 50 ? "#f59e0b" : "#f43f5e"}
-                  strokeWidth="20"
-                  strokeDasharray={`${2 * Math.PI * 80}`}
-                  strokeDashoffset={`${2 * Math.PI * 80 * (1 - debtToAssetRatio / 100)}`}
-                  transform="rotate(-90 100 100)"
-                  strokeLinecap="round"
-                />
-                <text
-                  x="100"
-                  y="95"
-                  textAnchor="middle"
-                  fontSize="32"
-                  fontWeight="700"
-                  fill="var(--text)"
-                >
-                  {debtToAssetRatio.toFixed(1)}%
-                </text>
-                <text
-                  x="100"
-                  y="115"
-                  textAnchor="middle"
-                  fontSize="14"
-                  fill="var(--text-muted)"
-                >
-                  부채 비율
-                </text>
-              </svg>
-            </div>
-            <div style={{ textAlign: "center", fontSize: "14px", color: "var(--text-muted)" }}>
-              {debtToAssetRatio < 30 ? "건강한 수준" : debtToAssetRatio < 50 ? "주의 필요" : "위험 수준"}
-            </div>
-            <div style={{ display: "flex", gap: "16px", fontSize: "13px" }}>
-              <span>총 자산: {formatKRW(Math.round(totalNetWorth + totalDebt))}</span>
-              <span>부채: {formatKRW(Math.round(totalDebt))}</span>
-            </div>
-          </div>
-        </div>
-      </div>
-
-      {/* 5. 대출 상환 진행 상황 */}
-      {loanRepaymentProgress.length > 0 && (
-        <>
-          <h3>대출 상환 진행 상황</h3>
-          <div className="cards-row">
-            {loanRepaymentProgress.map((loan) => (
-              <div key={loan.id} className="card">
-                <div style={{ marginBottom: "12px" }}>
-                  <div style={{ fontSize: "16px", fontWeight: "600", marginBottom: "4px" }}>
-                    {loan.loanName}
-                  </div>
-                  <div style={{ fontSize: "13px", color: "var(--text-muted)" }}>
-                    {loan.institution}
-                  </div>
-                </div>
-                <div style={{ marginBottom: "12px" }}>
-                  <div style={{ display: "flex", justifyContent: "space-between", fontSize: "13px", marginBottom: "4px" }}>
-                    <span>상환 진행률</span>
-                    <span style={{ fontWeight: "600" }}>{loan.progress.toFixed(1)}%</span>
-                  </div>
-                  <div style={{ width: "100%", height: "8px", background: "var(--bg)", borderRadius: "4px", overflow: "hidden" }}>
-                    <div
-                      style={{
-                        width: `${loan.progress}%`,
-                        height: "100%",
-                        background: loan.progress >= 100 ? "#10b981" : "#6366f1",
-                        transition: "width 0.3s"
-                      }}
-                    />
-                  </div>
-                </div>
-                <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "8px", fontSize: "13px" }}>
-                  <div>
-                    <div style={{ color: "var(--text-muted)" }}>대출금액</div>
-                    <div style={{ fontWeight: "600" }}>{formatKRW(Math.round(loan.loanAmount))}</div>
-                  </div>
-                  <div>
-                    <div style={{ color: "var(--text-muted)" }}>상환금액</div>
-                    <div style={{ fontWeight: "600", color: "#10b981" }}>
-                      {formatKRW(Math.round(loan.repaid))}
-                    </div>
-                  </div>
-                  <div>
-                    <div style={{ color: "var(--text-muted)" }}>잔액</div>
-                    <div style={{ fontWeight: "600" }}>{formatKRW(Math.round(loan.remaining))}</div>
-                  </div>
-                  <div>
-                    <div style={{ color: "var(--text-muted)" }}>예상 완전상환</div>
-                    <div style={{ fontWeight: "600", fontSize: "12px" }}>
-                      {loan.estimatedFullRepaymentDate}
-                    </div>
-                  </div>
-                </div>
-              </div>
-            ))}
-          </div>
-        </>
-      )}
-
-      {/* 포트폴리오 분석 */}
-      <h3>포트폴리오 분석</h3>
-      <div className="cards-row">
-        <div className="card" style={{ gridColumn: "span 1" }}>
-          <h3 style={{ margin: "0 0 10px 0", fontSize: 16 }}>지역별 분산</h3>
-          <div style={{ width: "100%", height: 240, minWidth: 0, minHeight: 240 }}>
-            {portfolioAnalysis.byRegion.length > 0 ? (
-              <ResponsiveContainer width="100%" height="100%" minHeight={240}>
-                <PieChart>
-                  <Pie
-                    data={portfolioAnalysis.byRegion}
-                    cx="50%"
-                    cy="50%"
-                    innerRadius={60}
-                    outerRadius={85}
-                    paddingAngle={2}
-                    dataKey="value"
-                    stroke="none"
-                  >
-                    {portfolioAnalysis.byRegion.map((entry, index) => (
-                      <Cell key={`cell-${index}`} fill={COLORS[index % COLORS.length]} />
-                    ))}
-                    <Label
-                      value={`주식 ${Math.round(portfolioAnalysis.totalStockValue / 10000)}만원`}
-                      position="center"
-                      fill="var(--text)"
-                      style={{ fontSize: "14px", fontWeight: "bold" }}
-                    />
-                  </Pie>
-                  <Tooltip 
-                    formatter={(value: any) => `${Math.round(Number(value || 0)).toLocaleString()} 원 (${portfolioAnalysis.totalStockValue > 0 ? ((Number(value || 0) / portfolioAnalysis.totalStockValue) * 100).toFixed(1) : 0}%)`}
-                    contentStyle={{ borderRadius: "8px", border: "none", boxShadow: "0 4px 12px rgba(0,0,0,0.1)" }}
-                  />
-                  <Legend verticalAlign="bottom" height={36} iconType="circle" />
-                </PieChart>
-              </ResponsiveContainer>
-            ) : (
-              <p className="hint">주식 보유 내역이 없습니다.</p>
-            )}
-          </div>
-        </div>
-        
-        <div className="card" style={{ gridColumn: "span 1" }}>
-          <h3 style={{ margin: "0 0 10px 0", fontSize: 16 }}>자산 유형별 분산</h3>
-          <div style={{ width: "100%", height: 240, minWidth: 0, minHeight: 240 }}>
-            {portfolioAnalysis.byAssetType.filter((a) => a.value > 0).length > 0 ? (
-              <ResponsiveContainer width="100%" height="100%" minHeight={240}>
-                <PieChart>
-                  <Pie
-                    data={portfolioAnalysis.byAssetType.filter((a) => a.value > 0)}
-                    cx="50%"
-                    cy="50%"
-                    innerRadius={60}
-                    outerRadius={85}
-                    paddingAngle={2}
-                    dataKey="value"
-                    stroke="none"
-                  >
-                    {portfolioAnalysis.byAssetType.filter((a) => a.value > 0).map((entry, index) => (
-                      <Cell 
-                        key={`cell-${index}`} 
-                        fill={entry.isDebt ? "#f43f5e" : COLORS[index % COLORS.length]} 
-                      />
-                    ))}
-                    <Label
-                      value={`총자산 ${Math.round((portfolioAnalysis.totalAssets) / 10000)}만원`}
-                      position="center"
-                      fill="var(--text)"
-                      style={{ fontSize: "14px", fontWeight: "bold" }}
-                    />
-                  </Pie>
-                  <Tooltip 
-                    formatter={(value: any) => `${Math.round(Number(value || 0)).toLocaleString()} 원 (${portfolioAnalysis.totalAssets > 0 ? ((Number(value || 0) / portfolioAnalysis.totalAssets) * 100).toFixed(1) : 0}%)`}
-                    contentStyle={{ borderRadius: "8px", border: "none", boxShadow: "0 4px 12px rgba(0,0,0,0.1)" }}
-                  />
-                  <Legend verticalAlign="bottom" height={36} iconType="circle" />
-                </PieChart>
-              </ResponsiveContainer>
-            ) : (
-              <p className="hint">자산 데이터가 없습니다.</p>
-            )}
-          </div>
-        </div>
-      </div>
     </div>
   );
-});
+};

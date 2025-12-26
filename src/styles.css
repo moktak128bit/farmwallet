@@ -215,11 +215,12 @@ a:hover {
   width: 100%;
   border-collapse: separate;
   border-spacing: 0;
-  font-size: 15px; /* Increased from 13/14px */
+  font-size: 13px; /* 최적화: 15px → 13px */
   border: 1px solid var(--border);
   border-radius: 8px;
   overflow: hidden;
   margin-bottom: 24px;
+  table-layout: fixed; /* 고정 레이아웃으로 컬럼 너비 일정하게 */
 }
 
 .data-table thead {
@@ -227,19 +228,103 @@ a:hover {
 }
 
 .data-table th {
-  padding: 14px 16px;
+  padding: 10px 12px; /* 최적화: 14px 16px → 10px 12px */
   text-align: left;
   font-weight: 700;
   color: var(--text-secondary);
   border-bottom: 2px solid var(--border);
+  border-right: 1px solid var(--border); /* 컬럼 구분선 추가 */
   white-space: nowrap;
+  position: relative;
+  /* 헤더 텍스트는 잘리지 않도록 overflow 제거 - 컬럼 너비로 제어 */
 }
 
+.data-table th:last-child {
+  border-right: none; /* 마지막 컬럼은 구분선 제거 */
+}
+
+/* 정렬 버튼 스타일 */
+.data-table th .sort-header {
+  background: none;
+  border: none;
+  padding: 0;
+  margin: 0;
+  font: inherit;
+  color: inherit;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  width: 100%;
+  text-align: left;
+}
+
+.data-table th .sort-header:hover {
+  opacity: 0.8;
+}
+
+.data-table th .arrow {
+  font-size: 12px;
+  color: var(--primary);
+  opacity: 0.7;
+}
+
+/* 리사이즈 핸들 */
+.data-table th .resize-handle {
+  position: absolute;
+  right: 0;
+  top: 0;
+  bottom: 0;
+  width: 4px;
+  cursor: col-resize;
+  background: transparent;
+  z-index: 1;
+}
+
+.data-table th .resize-handle:hover {
+  background: var(--primary);
+  opacity: 0.3;
+}
+
+/* 리사이즈 중인 컬럼 강조는 JavaScript로 처리 (브라우저 호환성을 위해 :has() 제거) */
+
 .data-table td {
-  padding: 14px 16px;
+  padding: 10px 12px; /* 최적화: 14px 16px → 10px 12px */
   border-bottom: 1px solid var(--border-light);
+  border-right: 1px solid var(--border-light); /* 컬럼 구분선 추가 */
   color: var(--text);
   vertical-align: middle;
+  white-space: nowrap; /* 기본적으로 한 줄로 표시 */
+  overflow: hidden;
+  text-overflow: ellipsis; /* 긴 텍스트는 생략 표시 */
+  word-wrap: break-word;
+  overflow-wrap: break-word;
+}
+
+.data-table td:last-child {
+  border-right: none; /* 마지막 컬럼은 구분선 제거 */
+}
+
+/* 숫자 컬럼은 한 줄로 유지 */
+.data-table td.number {
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+/* 긴 텍스트 컬럼은 줄바꿈 허용 */
+.data-table td.text-wrap {
+  white-space: normal;
+  word-break: break-word;
+  overflow-wrap: break-word;
+}
+
+/* 인라인 스타일로 white-space: normal이 지정된 경우도 줄바꿈 허용 */
+.data-table td[style*="whiteSpace: \"normal\""],
+.data-table td[style*="white-space: normal"] {
+  white-space: normal !important;
+  word-break: break-word;
+  overflow-wrap: break-word;
 }
 
 .data-table tr:last-child td {
@@ -257,8 +342,90 @@ a:hover {
 
 .data-table.compact th,
 .data-table.compact td {
-  padding: 10px 12px;
+  padding: 10px 8px; /* 최적화: 더 작은 패딩 */
+  font-size: 12px; /* 최적화: 더 작은 폰트 */
+}
+
+/* 카테고리 매트릭스 테이블 스타일 */
+.data-table.category-matrix {
+  font-size: 14px; /* compact 제거로 기본 크기 사용 */
+}
+
+.data-table.category-matrix th,
+.data-table.category-matrix td {
+  padding: 12px 14px; /* 충분한 패딩으로 가독성 향상 */
   font-size: 14px;
+}
+
+.data-table.category-matrix input {
+  width: 100%;
+  padding: 8px 10px;
+  font-size: 14px;
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  background: var(--surface);
+  color: var(--text);
+  transition: border-color 0.2s;
+}
+
+.data-table.category-matrix input:focus {
+  outline: none;
+  border-color: var(--primary);
+  box-shadow: 0 0 0 2px var(--primary-light);
+}
+
+.data-table.category-matrix th input {
+  font-weight: 600;
+  background: var(--surface-hover);
+}
+
+.data-table.category-matrix .row-handle-cell {
+  background: var(--surface-hover);
+  text-align: center;
+  font-weight: 600;
+  min-width: 50px;
+  width: 50px;
+}
+
+.data-table.category-matrix .income-col,
+.data-table.category-matrix .income-cell {
+  background: var(--primary-light);
+  min-width: 120px;
+}
+
+.data-table.category-matrix .transfer-col,
+.data-table.category-matrix .transfer-cell {
+  background: var(--accent-light);
+  min-width: 120px;
+}
+
+.data-table.category-matrix .col-drag-handle {
+  cursor: move;
+  color: var(--muted);
+  font-size: 16px;
+  padding: 2px;
+}
+
+.data-table.category-matrix .col-drag-handle:hover {
+  color: var(--primary);
+}
+
+.data-table.category-matrix .icon-button {
+  background: transparent;
+  border: none;
+  color: var(--danger);
+  font-size: 20px;
+  padding: 2px 6px;
+  cursor: pointer;
+  border-radius: 4px;
+  line-height: 1;
+  min-width: auto;
+  width: auto;
+}
+
+.data-table.category-matrix .icon-button:hover {
+  background: var(--danger-light);
+  color: var(--danger);
 }
 
 /* Numeric columns */

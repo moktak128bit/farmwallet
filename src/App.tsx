@@ -65,6 +65,8 @@ export const App: React.FC = () => {
   const undoStackRef = useRef<AppData[]>([]);
   const redoStackRef = useRef<AppData[]>([]);
   const isUndoRedoRef = useRef(false);
+  const saveTimerRef = useRef<number | null>(null);
+  const manualBackupRef = useRef(false);
 
   // 테마 초기화
   useEffect(() => {
@@ -139,8 +141,8 @@ export const App: React.FC = () => {
       const next = typeof newData === "function" ? newData(prev) : newData;
       // 이전 상태를 undo 스택에 저장
       undoStackRef.current.push(prev);
-      // 최대 20개까지만 저장
-      if (undoStackRef.current.length > 20) {
+      // 최대 50개까지만 저장
+      if (undoStackRef.current.length > 50) {
         undoStackRef.current.shift();
       }
       // redo 스택 초기화
@@ -204,36 +206,6 @@ export const App: React.FC = () => {
         return;
       }
       
-      // Ctrl+S (빠른 저장)
-      if (e.ctrlKey && e.key === "s" && !e.shiftKey && !e.altKey) {
-        e.preventDefault();
-        handleManualBackup();
-        return;
-      }
-      
-      // Ctrl+F (전역 검색)
-      if (e.ctrlKey && e.key === "f" && !e.shiftKey && !e.altKey) {
-        e.preventDefault();
-        setIsSearchOpen(true);
-        return;
-      }
-      
-      // Ctrl+N (새 항목 추가 - 현재 탭에 따라 다르게 동작)
-      if (e.ctrlKey && e.key === "n" && !e.shiftKey && !e.altKey) {
-        e.preventDefault();
-        // 현재 탭에 따라 새 항목 추가 로직은 각 뷰에서 처리
-        toast.success("새 항목 추가는 각 탭에서 버튼을 사용하세요", { duration: 2000 });
-        return;
-      }
-      
-      // Esc (모달 닫기)
-      if (e.key === "Escape" && !e.ctrlKey && !e.altKey && !e.shiftKey) {
-        if (isSearchOpen) {
-          setIsSearchOpen(false);
-        }
-        return;
-      }
-      
       // Alt+화살표 (탭 이동)
       if (e.altKey && !e.ctrlKey && !e.shiftKey) {
         if (e.key === "ArrowLeft") {
@@ -253,7 +225,7 @@ export const App: React.FC = () => {
     return () => {
       window.removeEventListener("keydown", handleKeyDown);
     };
-  }, [handleUndo, handleRedo, navigateTab, isSearchOpen]);
+  }, [handleUndo, handleRedo, navigateTab]);
 
   useEffect(() => {
     if (typeof window === "undefined") return;
@@ -271,6 +243,25 @@ export const App: React.FC = () => {
     });
     void refreshLatestBackup();
   }, [refreshLatestBackup, setDataWithHistory]);
+
+  // 데이터 변경 시 자동 저장 (목록 순서 변경 등 포함)
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    if (manualBackupRef.current) return; // 수동 백업 중에는 자동 저장 스킵
+    if (saveTimerRef.current) {
+      window.clearTimeout(saveTimerRef.current);
+    }
+    saveTimerRef.current = window.setTimeout(() => {
+      if (manualBackupRef.current) return;
+      saveData(data);
+      saveTimerRef.current = null;
+    }, 500);
+    return () => {
+      if (saveTimerRef.current) {
+        window.clearTimeout(saveTimerRef.current);
+      }
+    };
+  }, [data]);
 
   // 초기 티커 목록 로드 (localStorage와 백업에서만 로드, 자동 생성하지 않음)
   useEffect(() => {
@@ -334,16 +325,23 @@ export const App: React.FC = () => {
   }, [setDataWithHistory, data]);
 
   const handleManualBackup = async () => {
-    const toastId = toast.loading("백업 저장 중...");
+    if (manualBackupRef.current) {
+      toast("백업이 이미 진행 중입니다.", { id: "manual-backup" });
+      return;
+    }
+    manualBackupRef.current = true;
+    const toastId = "manual-backup";
+    toast.loading("백업 저장 중...", { id: toastId });
+    const folder = new Date().toISOString().slice(0, 10);
     try {
-      // 백업 전에는 즉시 저장
-      const { saveDataImmediate } = await import("./storage");
-      saveDataImmediate(data);
-      await saveBackupSnapshot(data);
+      saveData(data);
+      await saveBackupSnapshot(data, { skipHash: true, folder });
       await refreshLatestBackup();
       toast.success("백업 스냅샷 저장 완료", { id: toastId });
     } catch (err) {
       toast.error("백업 저장 실패", { id: toastId });
+    } finally {
+      manualBackupRef.current = false;
     }
   };
 
@@ -544,7 +542,6 @@ export const App: React.FC = () => {
               ledger={data.ledger}
               trades={data.trades}
               prices={data.prices}
-              loans={data.loans}
             />
           )}
           {tab === "accounts" && (

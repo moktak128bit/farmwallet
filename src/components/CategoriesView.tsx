@@ -181,7 +181,7 @@ export const CategoriesView: React.FC<Props> = ({ presets, onChangePresets }) =>
         </p>
 
         <div style={{ overflowX: "auto" }}>
-          <table className="data-table compact category-matrix">
+          <table className="data-table category-matrix">
             <thead>
               <tr>
                 <th style={{ minWidth: 60 }}>행</th>

@@ -14,6 +14,22 @@ function backupApiPlugin(): Plugin {
       const dataFile = path.join(dataDir, "app-data.json");
 
       server.middlewares.use("/api/backup", (req: IncomingMessage, res: ServerResponse, next) => {
+        // #region agent log
+        const logPath = path.join(process.cwd(), ".cursor", "debug.log");
+        const log = (msg: string, data: any) => {
+          try {
+            const entry = JSON.stringify({
+              timestamp: Date.now(),
+              location: "vite.config.ts:backup-api",
+              message: msg,
+              data,
+              sessionId: "debug-session",
+              runId: "run1"
+            }) + "\n";
+            fs.appendFileSync(logPath, entry, "utf-8");
+          } catch {}
+        };
+        // #endregion
         if (req.method === "POST") {
           let body = "";
           req.on("data", (chunk: Buffer) => {
@@ -21,19 +37,40 @@ function backupApiPlugin(): Plugin {
           });
           req.on("end", () => {
             try {
+              // #region agent log
+              log("POST /api/backup 시작", { backupsDir, bodyLength: body.length });
+              // #endregion
               const parsed = JSON.parse(body);
               if (!fs.existsSync(backupsDir)) {
                 fs.mkdirSync(backupsDir, { recursive: true });
               }
               const timestamp = new Date().toISOString().replace(/[:.]/g, "-");
+              const dateFolder = new Date().toISOString().slice(0, 10); // YYYY-MM-DD
+              const dateDir = path.join(backupsDir, dateFolder);
+              // #region agent log
+              log("날짜 폴더 생성 시도", { dateFolder, dateDir, exists: fs.existsSync(dateDir) });
+              // #endregion
+              if (!fs.existsSync(dateDir)) {
+                fs.mkdirSync(dateDir, { recursive: true });
+              }
               const fileName = `backup-${timestamp}.json`;
-              const fullPath = path.join(backupsDir, fileName);
+              const fullPath = path.join(dateDir, fileName);
+              const relativePath = `${dateFolder}/${fileName}`;
+              // #region agent log
+              log("백업 파일 저장 경로", { fileName, fullPath, relativePath });
+              // #endregion
               // 포맷팅된 JSON으로 저장 (들여쓰기 2칸)
               const formatted = JSON.stringify(parsed, null, 2);
               fs.writeFileSync(fullPath, formatted, "utf-8");
+              // #region agent log
+              log("백업 파일 저장 완료", { relativePath, fileSize: formatted.length });
+              // #endregion
               res.setHeader("Content-Type", "application/json");
-              res.end(JSON.stringify({ fileName, createdAt: new Date().toISOString() }));
-            } catch {
+              res.end(JSON.stringify({ fileName: relativePath, createdAt: new Date().toISOString() }));
+            } catch (err) {
+              // #region agent log
+              log("POST /api/backup 에러", { error: String(err) });
+              // #endregion
               res.statusCode = 500;
               res.setHeader("Content-Type", "application/json");
               res.end(JSON.stringify({ error: "Failed to save backup" }));
@@ -44,6 +81,9 @@ function backupApiPlugin(): Plugin {
 
         if (req.method === "GET") {
           try {
+            // #region agent log
+            log("GET /api/backup 시작", { backupsDir, exists: fs.existsSync(backupsDir) });
+            // #endregion
             if (!fs.existsSync(backupsDir)) {
               res.setHeader("Content-Type", "application/json");
               res.end("[]");
@@ -53,38 +93,66 @@ function backupApiPlugin(): Plugin {
             const url = new URL(req.url ?? "/", "http://localhost");
             const fileNameParam = url.searchParams.get("fileName");
             if (fileNameParam) {
-              const safeName = path.basename(fileNameParam);
-              const fullPath = path.join(backupsDir, safeName);
+              // #region agent log
+              log("특정 백업 파일 로드 요청", { fileNameParam });
+              // #endregion
+              // 날짜 폴더를 포함한 경로 처리 (예: "2025-12-26/backup-xxx.json")
+              const normalizedPath = fileNameParam.replace(/\\/g, "/"); // Windows 경로 정규화
+              const fullPath = path.join(backupsDir, normalizedPath);
+              // #region agent log
+              log("백업 파일 경로 해석", { normalizedPath, fullPath, exists: fs.existsSync(fullPath) });
+              // #endregion
               if (!fs.existsSync(fullPath)) {
+                // #region agent log
+                log("백업 파일 없음", { fullPath });
+                // #endregion
                 res.statusCode = 404;
                 res.setHeader("Content-Type", "application/json");
                 res.end(JSON.stringify({ error: "Backup not found" }));
                 return;
               }
               const raw = fs.readFileSync(fullPath, "utf-8");
+              // #region agent log
+              log("백업 파일 로드 성공", { fullPath, fileSize: raw.length });
+              // #endregion
               res.setHeader("Content-Type", "application/json");
               res.end(raw);
               return;
             }
 
-            const files = fs.readdirSync(backupsDir).filter((f: string) => f.endsWith(".json"));
-            const list = files
-              .map((fileName: string) => {
-                const fullPath = path.join(backupsDir, fileName);
-                const stat = fs.statSync(fullPath);
-                const createdAt =
-                  typeof stat.mtime === "string"
-                    ? stat.mtime
-                    : new Date(stat.mtimeMs).toISOString();
-                return { fileName, createdAt };
-              })
-              .sort((a: { fileName: string }, b: { fileName: string }) =>
-                b.fileName.localeCompare(a.fileName)
-              );
+            // 날짜별 폴더를 재귀적으로 탐색
+            const list: Array<{ fileName: string; createdAt: string }> = [];
+            const scanDir = (dir: string, basePath: string = "") => {
+              const entries = fs.readdirSync(dir, { withFileTypes: true });
+              for (const entry of entries) {
+                const fullPath = path.join(dir, entry.name);
+                const relativePath = basePath ? `${basePath}/${entry.name}` : entry.name;
+                if (entry.isDirectory()) {
+                  scanDir(fullPath, relativePath);
+                } else if (entry.isFile() && entry.name.endsWith(".json") && entry.name.startsWith("backup-")) {
+                  // backup-로 시작하는 파일만 백업으로 간주 (ticker-latest.json 제외)
+                  const stat = fs.statSync(fullPath);
+                  const createdAt =
+                    typeof stat.mtime === "string"
+                      ? stat.mtime
+                      : new Date(stat.mtimeMs).toISOString();
+                  list.push({ fileName: relativePath, createdAt });
+                }
+              }
+            };
+            scanDir(backupsDir);
+            // #region agent log
+            log("백업 목록 스캔 완료", { count: list.length, files: list.slice(0, 5).map(l => l.fileName) });
+            // #endregion
+            // createdAt 기준으로 정렬 (최신순)
+            list.sort((a, b) => b.createdAt.localeCompare(a.createdAt));
 
             res.setHeader("Content-Type", "application/json");
             res.end(JSON.stringify(list));
-          } catch {
+          } catch (err) {
+            // #region agent log
+            log("GET /api/backup 에러", { error: String(err) });
+            // #endregion
             res.statusCode = 500;
             res.setHeader("Content-Type", "application/json");
             res.end("[]");

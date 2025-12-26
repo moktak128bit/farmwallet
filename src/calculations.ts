@@ -75,7 +75,13 @@ export function computeAccountBalances(
       : account.initialBalance;
     const cashAdjustment = account.cashAdjustment ?? 0;
     const currentBalance =
-      baseBalance + incomeSum - expenseSum + transferNet + tradeCashImpact + cashAdjustment;
+      baseBalance +
+      incomeSum -
+      expenseSum +
+      transferNet +
+      tradeCashImpact +
+      cashAdjustment +
+      (account.savings ?? 0);
 
     return {
       account,
@@ -162,7 +168,6 @@ export function computePositions(
   return rows;
 }
 
-// 월별 순자산 계산 최적화: 증분 계산 사용
 export function computeMonthlyNetWorth(
   accounts: Account[],
   ledger: LedgerEntry[],
@@ -179,46 +184,11 @@ export function computeMonthlyNetWorth(
   const months = Array.from(monthSet).sort();
   if (months.length === 0) return [];
 
-  // 월별로 그룹화하여 한 번만 순회
-  const ledgerByMonth = new Map<string, LedgerEntry[]>();
-  const tradesByMonth = new Map<string, StockTrade[]>();
-  
-  for (const l of ledger) {
-    if (l.date) {
-      const month = l.date.slice(0, 7);
-      const list = ledgerByMonth.get(month) ?? [];
-      list.push(l);
-      ledgerByMonth.set(month, list);
-    }
-  }
-  
-  for (const t of trades) {
-    if (t.date) {
-      const month = t.date.slice(0, 7);
-      const list = tradesByMonth.get(month) ?? [];
-      list.push(t);
-      tradesByMonth.set(month, list);
-    }
-  }
-
-  // 누적 데이터로 계산 (증분 방식)
-  const results: MonthlyNetWorthRow[] = [];
-  let cumulativeLedger: LedgerEntry[] = [];
-  let cumulativeTrades: StockTrade[] = [];
-
-  for (const month of months) {
-    // 해당 월의 데이터 추가
-    const monthLedger = ledgerByMonth.get(month) ?? [];
-    const monthTrades = tradesByMonth.get(month) ?? [];
-    cumulativeLedger = [...cumulativeLedger, ...monthLedger];
-    cumulativeTrades = [...cumulativeTrades, ...monthTrades];
-    
-    // 누적 데이터로 잔액 계산
-    const balances = computeAccountBalances(accounts, cumulativeLedger, cumulativeTrades);
+  return months.map((month) => {
+    const filteredLedger = ledger.filter((l) => l.date.slice(0, 7) <= month);
+    const filteredTrades = trades.filter((t) => t.date.slice(0, 7) <= month);
+    const balances = computeAccountBalances(accounts, filteredLedger, filteredTrades);
     const netWorth = balances.reduce((sum, b) => sum + b.currentBalance, 0);
-    results.push({ month, netWorth });
-  }
-
-  return results;
+    return { month, netWorth };
+  });
 }
-

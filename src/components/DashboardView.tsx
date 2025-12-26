@@ -262,7 +262,25 @@ export const DashboardView: React.FC<Props> = ({
       .filter((p) => p.marketValue > 0);
   }, [positions, adjustedPrices]);
 
-  // 하루 단위 전체 자산 변동 데이터
+  // 계좌별 포지션 그룹화
+  const positionsByAccount = useMemo(() => {
+    const map = new Map<
+      string,
+      {
+        accountId: string;
+        accountName: string;
+        rows: typeof positionsWithPrice;
+      }
+    >();
+    for (const p of positionsWithPrice) {
+      const group = map.get(p.accountId) ?? { accountId: p.accountId, accountName: p.accountName, rows: [] };
+      group.rows.push(p);
+      map.set(p.accountId, group);
+    }
+    return Array.from(map.values());
+  }, [positionsWithPrice]);
+
+  // 하루 단위 전체 자산 변동 데이터 (최적화: 월별 계산 또는 샘플링)
   const dailyAssetData = useMemo(() => {
     const dateSet = new Set<string>();
     trades.forEach((t) => {
@@ -274,44 +292,87 @@ export const DashboardView: React.FC<Props> = ({
     const dates = Array.from(dateSet).sort();
     if (dates.length === 0) return [];
 
-    // 모든 날짜를 포함 (하루 단위)
-    const startDate = new Date(dates[0]);
-    const endDate = new Date(dates[dates.length - 1]);
-    const allDates: string[] = [];
+    // 날짜가 너무 많으면 월별로만 계산 (성능 최적화)
+    const maxDates = 100;
+    let selectedDates: string[];
     
-    for (let d = new Date(startDate); d <= endDate; d.setDate(d.getDate() + 1)) {
-      const dateStr = d.toISOString().slice(0, 10);
-      // 거래나 가계부 내역이 있는 날짜만 포함
-      if (dateSet.has(dateStr)) {
-        allDates.push(dateStr);
-      }
+    if (dates.length <= maxDates) {
+      // 날짜가 적으면 모든 날짜 사용
+      selectedDates = dates;
+    } else {
+      // 날짜가 많으면 월별로 샘플링 (각 월의 첫 날짜와 마지막 날짜만)
+      const monthMap = new Map<string, { first: string; last: string }>();
+      dates.forEach((date) => {
+        const month = date.slice(0, 7); // YYYY-MM
+        const existing = monthMap.get(month);
+        if (!existing) {
+          monthMap.set(month, { first: date, last: date });
+        } else {
+          if (date < existing.first) existing.first = date;
+          if (date > existing.last) existing.last = date;
+        }
+      });
+      
+      selectedDates = [];
+      const months = Array.from(monthMap.keys()).sort();
+      months.forEach((month) => {
+        const { first, last } = monthMap.get(month)!;
+        if (first !== last) {
+          selectedDates.push(first);
+          selectedDates.push(last);
+        } else {
+          selectedDates.push(first);
+        }
+      });
     }
 
-    return allDates.map((date) => {
+    // 최신 데이터는 한 번만 계산 (캐싱)
+    const latestPositions = computePositions(trades, adjustedPrices, accounts);
+    const latestBalances = computeAccountBalances(accounts, ledger, trades);
+    const latestStockAsset = latestPositions.reduce((sum, p) => sum + (p.marketValue || 0), 0);
+    const latestCashAsset = latestBalances
+      .filter((b) => b.account.type === "securities")
+      .reduce((sum, b) => sum + b.currentBalance, 0);
+
+    // 역순으로 계산 (최신부터 과거로)
+    const result: Array<{ date: string; stockAsset: number; cashAsset: number; totalAsset: number }> = [];
+    
+    for (let i = selectedDates.length - 1; i >= 0; i--) {
+      const date = selectedDates[i];
+      
+      // 최신 날짜면 캐시된 데이터 사용
+      if (date === dates[dates.length - 1]) {
+        result.unshift({
+          date,
+          stockAsset: latestStockAsset,
+          cashAsset: latestCashAsset,
+          totalAsset: latestStockAsset + latestCashAsset
+        });
+        continue;
+      }
+
       // 해당 날짜까지의 거래만 필터링
       const filteredTrades = trades.filter((t) => t.date && t.date <= date);
       const filteredLedger = ledger.filter((l) => l.date && l.date <= date);
+      
+      // 계산 수행
       const filteredPositions = computePositions(filteredTrades, adjustedPrices, accounts);
       const filteredBalances = computeAccountBalances(accounts, filteredLedger, filteredTrades);
       
-      // 주식 자산 계산
       const stockAsset = filteredPositions.reduce((sum, p) => sum + (p.marketValue || 0), 0);
-      
-      // 현금 자산 계산 (증권계좌만)
       const cashAsset = filteredBalances
         .filter((b) => b.account.type === "securities")
         .reduce((sum, b) => sum + b.currentBalance, 0);
       
-      // 총 자산
-      const totalAsset = stockAsset + cashAsset;
-      
-      return {
+      result.unshift({
         date,
         stockAsset,
         cashAsset,
-        totalAsset
-      };
-    });
+        totalAsset: stockAsset + cashAsset
+      });
+    }
+
+    return result;
   }, [trades, adjustedPrices, accounts, ledger]);
 
 
@@ -575,6 +636,194 @@ export const DashboardView: React.FC<Props> = ({
           </div>
         </div>
       </div>
+
+      {/* 주식 포트폴리오 분석 */}
+      {safePositionsWithPrice.length > 0 && (
+        <div style={{ marginTop: 32 }}>
+          <h3 style={{ margin: "0 0 16px 0" }}>주식 포트폴리오 분석</h3>
+          
+          <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(300px, 1fr))", gap: 24 }}>
+            {/* 1. 포트폴리오 비중 (평가금액 기준) */}
+            <div className="card" style={{ border: "1px solid var(--border)", boxShadow: "none", padding: 16 }}>
+              <h4 style={{ margin: "0 0 12px 0", textAlign: "center" }}>종목별 비중 (평가액)</h4>
+              <div style={{ width: "100%", height: 300 }}>
+                {(() => {
+                  const sorted = [...safePositionsWithPrice].sort((a, b) => b.marketValue - a.marketValue);
+                  const topN = 8; // 상위 8개만 표시
+                  const topPositions = sorted.slice(0, topN);
+                  const others = sorted.slice(topN);
+                  const othersValue = others.reduce((sum, p) => sum + p.marketValue, 0);
+                  
+                  const chartData = [
+                    ...topPositions.map(p => ({
+                      name: (p.name || p.ticker).length > 15 ? (p.name || p.ticker).slice(0, 15) + "..." : (p.name || p.ticker),
+                      value: p.marketValue,
+                      fullName: p.name || p.ticker
+                    })),
+                    ...(othersValue > 0 ? [{
+                      name: `기타 (${others.length}개)`,
+                      value: othersValue,
+                      fullName: `기타 ${others.length}개 종목`
+                    }] : [])
+                  ];
+                  
+                  const colors = ["#0ea5e9", "#6366f1", "#f43f5e", "#10b981", "#f59e0b", "#8b5cf6", "#ec4899", "#14b8a6", "#64748b"];
+                  
+                  return (
+                    <ResponsiveContainer>
+                      <PieChart>
+                        <Pie
+                          data={chartData}
+                          cx="50%"
+                          cy="50%"
+                          outerRadius={80}
+                          fill="#8884d8"
+                          dataKey="value"
+                          label={({ percent }) => percent ? `${(percent * 100).toFixed(1)}%` : "0%"}
+                          labelLine={false}
+                        >
+                          {chartData.map((entry, index) => (
+                            <Cell key={`cell-${index}`} fill={colors[index % colors.length]} />
+                          ))}
+                        </Pie>
+                        <Tooltip 
+                          formatter={(value: any, payload: any) => [
+                            formatKRW(value),
+                            payload?.payload?.fullName || payload?.name
+                          ]}
+                        />
+                        <Legend 
+                          formatter={(value: any, entry: any) => entry.payload?.fullName || value}
+                          wrapperStyle={{ fontSize: "11px" }}
+                        />
+                      </PieChart>
+                    </ResponsiveContainer>
+                  );
+                })()}
+              </div>
+            </div>
+
+            {/* 2. 계좌별 자산 비중 */}
+            <div className="card" style={{ border: "1px solid var(--border)", boxShadow: "none", padding: 16 }}>
+              <h4 style={{ margin: "0 0 12px 0", textAlign: "center" }}>계좌별 자산 비중 (주식+현금)</h4>
+              <div style={{ width: "100%", height: 300 }}>
+                {(() => {
+                  const accountData = positionsByAccount.map(group => {
+                    const balance = balances.find(b => b.account.id === group.accountId);
+                    const cash = balance?.currentBalance ?? 0;
+                    const stock = group.rows.reduce((sum, p) => sum + p.marketValue, 0);
+                    return {
+                      name: group.accountName,
+                      value: Math.max(0, cash + stock),
+                      cash,
+                      stock
+                    };
+                  }).filter(d => d.value > 0);
+                  
+                  const totalAsset = accountData.reduce((sum, d) => sum + d.value, 0);
+                  const colors = ["#f59e0b", "#10b981", "#0ea5e9", "#6366f1", "#f43f5e"];
+                  
+                  return (
+                    <ResponsiveContainer>
+                      <PieChart>
+                        <Pie
+                          data={accountData}
+                          cx="50%"
+                          cy="50%"
+                          innerRadius={60}
+                          outerRadius={80}
+                          fill="#8884d8"
+                          dataKey="value"
+                          label={({ percent }) => percent ? `${(percent * 100).toFixed(1)}%` : "0%"}
+                          labelLine={false}
+                        >
+                          {accountData.map((entry, index) => (
+                            <Cell key={`cell-${index}`} fill={colors[index % colors.length]} />
+                          ))}
+                        </Pie>
+                        <Label
+                          value={`총 자산\n${formatKRW(totalAsset)}`}
+                          position="center"
+                          fill="var(--text)"
+                          style={{ fontSize: "13px", fontWeight: "bold", textAlign: "center" }}
+                        />
+                        <Tooltip 
+                          formatter={(value: any, payload: any) => [
+                            formatKRW(value),
+                            `${payload?.name}\n주식: ${formatKRW(payload?.stock || 0)}\n현금: ${formatKRW(payload?.cash || 0)}`
+                          ]}
+                        />
+                        <Legend 
+                          wrapperStyle={{ fontSize: "11px" }}
+                        />
+                      </PieChart>
+                    </ResponsiveContainer>
+                  );
+                })()}
+              </div>
+            </div>
+          </div>
+
+          <div style={{ marginTop: 24 }}>
+             {/* 3. 종목별 평가손익 (수평 Bar Chart) */}
+             <div className="card" style={{ border: "1px solid var(--border)", boxShadow: "none", padding: 16 }}>
+              <h4 style={{ margin: "0 0 12px 0", textAlign: "center" }}>종목별 평가 손익 (상위/하위 10개)</h4>
+              <div style={{ width: "100%", height: Math.max(400, safePositionsWithPrice.length * 30) }}>
+                {(() => {
+                  const sorted = [...safePositionsWithPrice].sort((a, b) => b.pnl - a.pnl);
+                  const top10 = sorted.slice(0, 10);
+                  const bottom10 = sorted.slice(-10).reverse();
+                  const chartData = [...top10, ...bottom10].map(p => ({
+                    name: (p.name || p.ticker).length > 20 ? (p.name || p.ticker).slice(0, 20) + "..." : (p.name || p.ticker),
+                    pnl: p.pnl,
+                    fullName: p.name || p.ticker,
+                    fill: p.pnl >= 0 ? "#10b981" : "#f43f5e" // 녹색=수익, 빨강=손실
+                  }));
+                  
+                  return (
+                    <ResponsiveContainer>
+                      <BarChart
+                        data={chartData}
+                        layout="vertical"
+                        margin={{ top: 5, right: 30, left: 100, bottom: 5 }}
+                      >
+                        <CartesianGrid strokeDasharray="3 3" horizontal={false} />
+                        <XAxis 
+                          type="number"
+                          tickFormatter={(val) => `${(val / 10000).toFixed(0)}만`} 
+                          fontSize={11}
+                          tickLine={false}
+                          axisLine={false}
+                        />
+                        <YAxis 
+                          type="category"
+                          dataKey="name" 
+                          fontSize={11}
+                          tickLine={false}
+                          axisLine={false}
+                          width={95}
+                        />
+                        <Tooltip 
+                          formatter={(value: any, payload: any) => [
+                            formatKRW(value),
+                            payload?.payload?.fullName || payload?.name
+                          ]}
+                          cursor={{fill: 'rgba(0,0,0,0.05)'}}
+                        />
+                        <Bar dataKey="pnl" name="평가손익" radius={[0, 4, 4, 0]}>
+                          {chartData.map((entry, index) => (
+                            <Cell key={`cell-${index}`} fill={entry.fill} />
+                          ))}
+                        </Bar>
+                      </BarChart>
+                    </ResponsiveContainer>
+                  );
+                })()}
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
 
       <h3>계좌별 현재 잔액</h3>
       <table className="data-table compact">

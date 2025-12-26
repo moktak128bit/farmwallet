@@ -25,6 +25,8 @@ import type { AppData } from "./types";
 import { computeAccountBalances, computePositions } from "./calculations";
 import { buildInitialTickerDatabase, fetchYahooQuotes } from "./yahooFinanceApi";
 
+declare const __APP_VERSION__: string;
+
 const TAB_ORDER: TabId[] = [
   "dashboard",
   "accounts",
@@ -335,7 +337,7 @@ export const App: React.FC = () => {
     const folder = new Date().toISOString().slice(0, 10);
     try {
       saveData(data);
-      await saveBackupSnapshot(data, { skipHash: true, folder });
+      await saveBackupSnapshot(data, { skipHash: false, folder }); // 해시 포함하여 저장
       await refreshLatestBackup();
       toast.success("백업 스냅샷 저장 완료", { id: toastId });
     } catch (err) {
@@ -467,7 +469,7 @@ export const App: React.FC = () => {
       }} />
       <header className="app-header">
         <div>
-          <h1>FarmWallet</h1>
+          <h1>FarmWallet <span style={{ fontSize: "0.6em", fontWeight: "normal", color: "var(--text-muted)", marginLeft: "8px" }}>v{__APP_VERSION__}</span></h1>
           <p className="subtitle">자산 · 주식 관리</p>
         </div>
         <div style={{ display: "flex", flexDirection: "column", alignItems: "flex-end", gap: 6 }}>

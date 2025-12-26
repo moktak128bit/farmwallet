@@ -351,8 +351,13 @@ function backupApiPlugin(): Plugin {
   };
 }
 
+import packageJson from "./package.json";
+
 export default defineConfig({
   plugins: [react(), backupApiPlugin()],
+  define: {
+    __APP_VERSION__: JSON.stringify(packageJson.version)
+  },
   server: {
     port: 5174
   }

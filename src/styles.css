@@ -349,12 +349,16 @@ a:hover {
 /* 카테고리 매트릭스 테이블 스타일 */
 .data-table.category-matrix {
   font-size: 14px; /* compact 제거로 기본 크기 사용 */
+  table-layout: auto; /* 자동 레이아웃으로 컬럼 너비 자동 조정 */
+  width: auto; /* 내용에 맞게 자동 조정 */
+  min-width: 100%; /* 최소 너비는 100% */
 }
 
 .data-table.category-matrix th,
 .data-table.category-matrix td {
   padding: 12px 14px; /* 충분한 패딩으로 가독성 향상 */
   font-size: 14px;
+  white-space: nowrap; /* 텍스트 줄바꿈 방지 */
 }
 
 .data-table.category-matrix input {
@@ -366,6 +370,7 @@ a:hover {
   background: var(--surface);
   color: var(--text);
   transition: border-color 0.2s;
+  box-sizing: border-box;
 }
 
 .data-table.category-matrix input:focus {
@@ -377,26 +382,33 @@ a:hover {
 .data-table.category-matrix th input {
   font-weight: 600;
   background: var(--surface-hover);
+  min-width: 100px; /* 헤더 입력 필드 최소 너비 증가 */
+}
+
+.data-table.category-matrix td input {
+  min-width: 120px; /* 데이터 입력 필드 최소 너비 증가 */
 }
 
 .data-table.category-matrix .row-handle-cell {
   background: var(--surface-hover);
   text-align: center;
   font-weight: 600;
-  min-width: 50px;
-  width: 50px;
+  min-width: 60px;
+  width: 60px;
 }
 
 .data-table.category-matrix .income-col,
 .data-table.category-matrix .income-cell {
   background: var(--primary-light);
-  min-width: 120px;
+  min-width: 140px;
+  width: 140px;
 }
 
 .data-table.category-matrix .transfer-col,
 .data-table.category-matrix .transfer-cell {
   background: var(--accent-light);
-  min-width: 120px;
+  min-width: 140px;
+  width: 140px;
 }
 
 .data-table.category-matrix .col-drag-handle {

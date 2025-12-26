@@ -1025,6 +1025,9 @@ export const StocksView: React.FC<Props> = ({
     // 매도는 보유 종목 클릭으로만 가능, 매수는 기본값
     const side = tradeForm.side || "buy";
     const cashImpact = side === "buy" ? -totalAmount : totalAmount;
+    // #region agent log
+    fetch('http://127.0.0.1:7242/ingest/882185e7-1338-4f3b-a05b-acdab4efccb1',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'StocksView.tsx:handleTradeSubmit',message:'주식 거래 생성',data:{accountId:tradeForm.accountId,ticker:tickerClean,side,quantity,price,fee,totalAmount,cashImpact},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'B'})}).catch(()=>{});
+    // #endregion
     // 종목명 우선순위: tradeForm.name > prices > trades > tickerDatabase > 티커
     const fallbackName =
       tradeForm.name ||

@@ -70,13 +70,13 @@ export const LedgerView: React.FC<Props> = ({
   const [editingValue, setEditingValue] = useState<string>("");
   
   // 정렬 상태
-  type LedgerSortKey = "date" | "kind" | "category" | "subCategory" | "description" | "fromAccountId" | "toAccountId" | "amount";
+  type LedgerSortKey = "date" | "category" | "subCategory" | "description" | "fromAccountId" | "toAccountId" | "amount";
   const [ledgerSort, setLedgerSort] = useState<{ key: LedgerSortKey; direction: "asc" | "desc" }>({
     key: "date",
     direction: "desc"
   });
   
-  // 컬럼 너비 상태 (localStorage에서 로드, 순서 컬럼 제거로 9개)
+  // 컬럼 너비 상태 (localStorage에서 로드, 순서/구분 컬럼 제거로 8개)
   const [columnWidths, setColumnWidths] = useState<number[]>(() => {
     if (typeof window !== "undefined") {
       const saved = localStorage.getItem("ledger-column-widths");
@@ -84,12 +84,20 @@ export const LedgerView: React.FC<Props> = ({
         try {
           const parsed = JSON.parse(saved);
           if (Array.isArray(parsed)) {
-            // 기존 10개 배열이면 첫 번째 제거하고 9개로 변환
+            // 기존 10개 배열이면 첫 번째(순서), 두 번째(구분) 제거하고 8개로 변환
             if (parsed.length === 10) {
-              return parsed.slice(1);
+              const newWidths = parsed.slice(2); // 첫 번째, 두 번째 컬럼 제거
+              const total = newWidths.reduce((sum, w) => sum + w, 0);
+              return newWidths.map(w => w * (100 / total)); // 100%로 재조정
             }
-            // 이미 9개면 그대로 사용
+            // 기존 9개 배열이면 두 번째(구분) 제거하고 8개로 변환
             if (parsed.length === 9) {
+              const newWidths = [...parsed.slice(0, 1), ...parsed.slice(2)]; // 두 번째 컬럼 제거
+              const total = newWidths.reduce((sum, w) => sum + w, 0);
+              return newWidths.map(w => w * (100 / total)); // 100%로 재조정
+            }
+            // 이미 8개면 그대로 사용
+            if (parsed.length === 8) {
               return parsed;
             }
           }
@@ -98,8 +106,8 @@ export const LedgerView: React.FC<Props> = ({
         }
       }
     }
-    // 최적화된 컬럼 너비: 날짜, 구분, 대분류, 항목, 상세내역, 출금, 입금, 금액, 작업
-    return [8, 6, 12, 13, 22, 12, 9, 13, 5];
+    // 최적화된 컬럼 너비: 날짜, 대분류, 항목, 상세내역, 출금, 입금, 금액, 작업
+    return [9, 13, 14, 24, 13, 10, 14, 3];
   });
   const [resizingColumn, setResizingColumn] = useState<number | null>(null);
   const [resizeStartX, setResizeStartX] = useState(0);
@@ -624,12 +632,18 @@ export const LedgerView: React.FC<Props> = ({
         return !toAccount || (toAccount.type !== "securities" && toAccount.type !== "savings");
       }
       if (ledgerTab === "savingsExpense") {
-        // 저축성 지출: transfer이고 toAccountId가 증권/저축 계좌
-        if (l.kind !== "transfer") return false;
-        const toAccount = accounts.find(a => a.id === l.toAccountId);
-        return toAccount && (toAccount.type === "securities" || toAccount.type === "savings");
+        // 저축성 지출: transfer이고 toAccountId가 증권/저축 계좌이거나, expense이고 대분류가 저축성지출
+        if (l.kind === "transfer") {
+          const toAccount = accounts.find(a => a.id === l.toAccountId);
+          return toAccount && (toAccount.type === "securities" || toAccount.type === "savings");
+        }
+        if (l.kind === "expense") {
+          return l.category === "저축성지출";
+        }
+        return false;
       }
-      return l.kind === "expense" && !(l.isFixedExpense ?? false);
+      // 지출 탭: expense이고 고정지출이 아니며, 대분류가 저축성지출이 아닌 것만
+      return l.kind === "expense" && !(l.isFixedExpense ?? false) && l.category !== "저축성지출";
     });
   }, [ledger, ledgerTab, accounts]);
 
@@ -646,8 +660,6 @@ export const LedgerView: React.FC<Props> = ({
         return (a.date < b.date ? -1 : a.date > b.date ? 1 : 0) * dir;
       } else if (key === "amount") {
         return (a.amount - b.amount) * dir;
-      } else if (key === "kind") {
-        return (a.kind < b.kind ? -1 : a.kind > b.kind ? 1 : 0) * dir;
       } else if (key === "category") {
         return ((a.category || "") < (b.category || "") ? -1 : (a.category || "") > (b.category || "") ? 1 : 0) * dir;
       } else if (key === "subCategory") {
@@ -1271,21 +1283,12 @@ export const LedgerView: React.FC<Props> = ({
               />
             </th>
             <th style={{ position: "relative" }}>
-              <button type="button" className="sort-header" onClick={() => toggleLedgerSort("kind")}>
-                구분 <span className="arrow">{sortIndicator(ledgerSort.key, "kind", ledgerSort.direction)}</span>
-              </button>
-              <div
-                className="resize-handle"
-                onMouseDown={(e) => handleResizeStart(e, 1)}
-              />
-            </th>
-            <th style={{ position: "relative" }}>
               <button type="button" className="sort-header" onClick={() => toggleLedgerSort("category")}>
                 대분류 <span className="arrow">{sortIndicator(ledgerSort.key, "category", ledgerSort.direction)}</span>
               </button>
               <div
                 className="resize-handle"
-                onMouseDown={(e) => handleResizeStart(e, 2)}
+                onMouseDown={(e) => handleResizeStart(e, 1)}
               />
             </th>
             <th style={{ position: "relative" }}>
@@ -1294,7 +1297,7 @@ export const LedgerView: React.FC<Props> = ({
               </button>
               <div
                 className="resize-handle"
-                onMouseDown={(e) => handleResizeStart(e, 3)}
+                onMouseDown={(e) => handleResizeStart(e, 2)}
               />
             </th>
             <th style={{ position: "relative" }}>
@@ -1303,7 +1306,7 @@ export const LedgerView: React.FC<Props> = ({
               </button>
               <div
                 className="resize-handle"
-                onMouseDown={(e) => handleResizeStart(e, 4)}
+                onMouseDown={(e) => handleResizeStart(e, 3)}
               />
             </th>
             <th style={{ position: "relative" }}>
@@ -1312,7 +1315,7 @@ export const LedgerView: React.FC<Props> = ({
               </button>
               <div
                 className="resize-handle"
-                onMouseDown={(e) => handleResizeStart(e, 5)}
+                onMouseDown={(e) => handleResizeStart(e, 4)}
               />
             </th>
             <th style={{ position: "relative" }}>
@@ -1321,7 +1324,7 @@ export const LedgerView: React.FC<Props> = ({
               </button>
               <div
                 className="resize-handle"
-                onMouseDown={(e) => handleResizeStart(e, 6)}
+                onMouseDown={(e) => handleResizeStart(e, 5)}
               />
             </th>
             <th style={{ position: "relative" }}>
@@ -1330,7 +1333,7 @@ export const LedgerView: React.FC<Props> = ({
               </button>
               <div
                 className="resize-handle"
-                onMouseDown={(e) => handleResizeStart(e, 7)}
+                onMouseDown={(e) => handleResizeStart(e, 6)}
               />
             </th>
             <th style={{ position: "relative" }}>
@@ -1398,7 +1401,6 @@ export const LedgerView: React.FC<Props> = ({
                   </>
                 )}
               </td>
-              <td>{l.kind === "expense" && (l.isFixedExpense ?? false) ? "지출(고정)" : KIND_LABEL[l.kind]}</td>
               <td
                 onDoubleClick={(e) => {
                   e.stopPropagation();

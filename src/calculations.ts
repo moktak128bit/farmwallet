@@ -33,55 +33,80 @@ export function computeAccountBalances(
   ledger: LedgerEntry[],
   trades: StockTrade[]
 ): AccountBalanceRow[] {
+  // #region agent log
+  fetch('http://127.0.0.1:7242/ingest/882185e7-1338-4f3b-a05b-acdab4efccb1',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'calculations.ts:computeAccountBalances',message:'함수 시작',data:{accountsCount:accounts.length,ledgerCount:ledger.length,tradesCount:trades.length},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'A'})}).catch(()=>{});
+  // #endregion
   return accounts.map((account) => {
+    // #region agent log
+    fetch('http://127.0.0.1:7242/ingest/882185e7-1338-4f3b-a05b-acdab4efccb1',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'calculations.ts:computeAccountBalances',message:'계좌 계산 시작',data:{accountId:account.id,accountType:account.type,initialBalance:account.initialBalance},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'A'})}).catch(()=>{});
+    // #endregion
+    
     // 수입: toAccountId가 이 계좌인 항목들의 합계
-    const incomeSum = ledger
-      .filter((l) => l.kind === "income" && l.toAccountId === account.id)
-      .reduce((s, l) => s + l.amount, 0);
+    const incomeEntries = ledger.filter((l) => l.kind === "income" && l.toAccountId === account.id);
+    const incomeSum = incomeEntries.reduce((s, l) => s + l.amount, 0);
+    // #region agent log
+    fetch('http://127.0.0.1:7242/ingest/882185e7-1338-4f3b-a05b-acdab4efccb1',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'calculations.ts:computeAccountBalances',message:'수입 계산 완료',data:{accountId:account.id,incomeCount:incomeEntries.length,incomeSum},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'A'})}).catch(()=>{});
+    // #endregion
     
     // 지출: fromAccountId가 이 계좌인 항목들의 합계
-    const expenseSum = ledger
-      .filter((l) => l.kind === "expense" && l.fromAccountId === account.id)
-      .reduce((s, l) => s + l.amount, 0);
+    const expenseEntries = ledger.filter((l) => l.kind === "expense" && l.fromAccountId === account.id);
+    const expenseSum = expenseEntries.reduce((s, l) => s + l.amount, 0);
+    // #region agent log
+    fetch('http://127.0.0.1:7242/ingest/882185e7-1338-4f3b-a05b-acdab4efccb1',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'calculations.ts:computeAccountBalances',message:'지출 계산 완료',data:{accountId:account.id,expenseCount:expenseEntries.length,expenseSum},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'A'})}).catch(()=>{});
+    // #endregion
     
     // 이체: transfer 종류의 거래에서 이 계좌로 들어온 금액과 나간 금액
     // 단, "신용카드" > "카드대금"은 자산 계산에서 제외 (이미 지출로 반영되었으므로)
-    const transferOut = ledger
-      .filter((l) => {
-        if (l.kind !== "transfer" || l.fromAccountId !== account.id) return false;
-        // 카드대금 결제는 자산 계산에서 제외
-        return !(l.category === "신용카드" && l.subCategory === "카드대금");
-      })
-      .reduce((s, l) => s + l.amount, 0);
-    const transferIn = ledger
-      .filter((l) => {
-        if (l.kind !== "transfer" || l.toAccountId !== account.id) return false;
-        // 카드대금 결제는 자산 계산에서 제외
-        return !(l.category === "신용카드" && l.subCategory === "카드대금");
-      })
-      .reduce((s, l) => s + l.amount, 0);
+    const transferOutEntries = ledger.filter((l) => {
+      if (l.kind !== "transfer" || l.fromAccountId !== account.id) return false;
+      // 카드대금 결제는 자산 계산에서 제외
+      return !(l.category === "신용카드" && l.subCategory === "카드대금");
+    });
+    const transferOut = transferOutEntries.reduce((s, l) => s + l.amount, 0);
+    const transferInEntries = ledger.filter((l) => {
+      if (l.kind !== "transfer" || l.toAccountId !== account.id) return false;
+      // 카드대금 결제는 자산 계산에서 제외
+      return !(l.category === "신용카드" && l.subCategory === "카드대금");
+    });
+    const transferIn = transferInEntries.reduce((s, l) => s + l.amount, 0);
     const transferNet = transferIn - transferOut;
+    // #region agent log
+    fetch('http://127.0.0.1:7242/ingest/882185e7-1338-4f3b-a05b-acdab4efccb1',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'calculations.ts:computeAccountBalances',message:'이체 계산 완료',data:{accountId:account.id,transferOutCount:transferOutEntries.length,transferOut,transferInCount:transferInEntries.length,transferIn,transferNet},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'C'})}).catch(()=>{});
+    // #endregion
 
     // 주식 거래의 현금 영향 (매수: 음수, 매도: 양수)
-    const tradeCashImpact = trades
-      .filter((t) => t.accountId === account.id)
-      .reduce((s, t) => s + t.cashImpact, 0);
+    const accountTrades = trades.filter((t) => t.accountId === account.id);
+    const tradeCashImpact = accountTrades.reduce((s, t) => s + t.cashImpact, 0);
+    
+    // 초기 보유 거래(cashImpact=0)의 totalAmount 합계 (baseBalance에 반영되어야 함)
+    const initialHoldingsAmount = accountTrades
+      .filter((t) => t.cashImpact === 0 && t.side === "buy")
+      .reduce((s, t) => s + t.totalAmount, 0);
+    // #region agent log
+    fetch('http://127.0.0.1:7242/ingest/882185e7-1338-4f3b-a05b-acdab4efccb1',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'calculations.ts:computeAccountBalances',message:'주식 거래 현금 영향 계산 완료',data:{accountId:account.id,tradesCount:accountTrades.length,tradeCashImpact,initialHoldingsAmount,trades:accountTrades.map(t=>({id:t.id,side:t.side,quantity:t.quantity,price:t.price,fee:t.fee,totalAmount:t.totalAmount,cashImpact:t.cashImpact}))},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'B'})}).catch(()=>{});
+    // #endregion
 
     // 현재 잔액 = 초기잔액 + 수입 - 지출 + 이체순액 + 주식거래현금영향 + 현금조정(기타)
     // savings와 debt는 별도 필드로 관리되며, 총자산 계산 시에만 사용됨
     // 증권계좌의 경우 initialCashBalance를 사용, 없으면 initialBalance 사용
+    // 초기 보유 거래(cashImpact=0)의 totalAmount는 baseBalance에 포함되어야 함
     const baseBalance = account.type === "securities" 
       ? (account.initialCashBalance ?? account.initialBalance)
       : account.initialBalance;
     const cashAdjustment = account.cashAdjustment ?? 0;
+    const savings = account.savings ?? 0;
     const currentBalance =
       baseBalance +
+      initialHoldingsAmount + // 초기 보유 거래 금액 추가
       incomeSum -
       expenseSum +
       transferNet +
       tradeCashImpact +
       cashAdjustment +
-      (account.savings ?? 0);
+      savings;
+    // #region agent log
+    fetch('http://127.0.0.1:7242/ingest/882185e7-1338-4f3b-a05b-acdab4efccb1',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'calculations.ts:computeAccountBalances',message:'최종 잔액 계산 완료',data:{accountId:account.id,baseBalance,incomeSum,expenseSum,transferNet,tradeCashImpact,cashAdjustment,savings,currentBalance},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'A'})}).catch(()=>{});
+    // #endregion
 
     return {
       account,
@@ -99,6 +124,9 @@ export function computePositions(
   prices: StockPrice[],
   accounts: Account[]
 ): PositionRow[] {
+  // #region agent log
+  fetch('http://127.0.0.1:7242/ingest/882185e7-1338-4f3b-a05b-acdab4efccb1',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'calculations.ts:computePositions',message:'함수 시작',data:{tradesCount:trades.length,pricesCount:prices.length,accountsCount:accounts.length},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'E'})}).catch(()=>{});
+  // #endregion
   const byKey = new Map<string, StockTrade[]>();
   for (const t of trades) {
     const key = `${t.accountId}::${t.ticker}`;
@@ -128,6 +156,9 @@ export function computePositions(
     const totalSellAmount = sells.reduce((s, t) => s + t.totalAmount, 0);
     // 순매입금액: 총매입금액 - 총매도금액 (실제 투자한 순 금액)
     const netBuyAmount = totalBuyAmount - totalSellAmount;
+    // #region agent log
+    fetch('http://127.0.0.1:7242/ingest/882185e7-1338-4f3b-a05b-acdab4efccb1',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'calculations.ts:computePositions',message:'포지션 계산',data:{accountId,ticker,buyCount:buys.length,buyQty,totalBuyAmount,sellCount:sells.length,sellQty,totalSellAmount,netBuyAmount,quantity,buys:buys.map(t=>({id:t.id,quantity:t.quantity,price:t.price,fee:t.fee,totalAmount:t.totalAmount})),sells:sells.map(t=>({id:t.id,quantity:t.quantity,price:t.price,fee:t.fee,totalAmount:t.totalAmount}))},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'E'})}).catch(()=>{});
+    // #endregion
     
     const priceInfo = prices.find((p) => p.ticker === ticker);
     const marketPrice = priceInfo?.price ?? 0;

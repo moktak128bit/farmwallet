@@ -1,7 +1,7 @@
 import React, { useMemo, useState } from "react";
 import type { Account, AccountType, LedgerEntry } from "../types";
 import type { AccountBalanceRow, PositionRow } from "../calculations";
-import { formatNumber } from "../utils/format";
+import { formatNumber, formatShortDate } from "../utils/format";
 
 interface Props {
   accounts: Account[];
@@ -48,6 +48,7 @@ export const AccountsView: React.FC<Props> = ({
     type: AccountType;
   } | null>(null);
   const [adjustValue, setAdjustValue] = useState("");
+  const [selectedAccount, setSelectedAccount] = useState<Account | null>(null);
 
   const handleAddAccount = (account: Account) => {
     onChangeAccounts([...safeAccounts, account]);
@@ -109,6 +110,12 @@ export const AccountsView: React.FC<Props> = ({
         }
         if (editingNumber.field === "initialCashBalance") {
           return { ...a, initialCashBalance: value };
+        }
+        if (editingNumber.field === "debt") {
+          return { ...a, debt: value };
+        }
+        if (editingNumber.field === "savings") {
+          return { ...a, savings: value };
         }
         return { ...a, [editingNumber.field]: value };
       }
@@ -193,7 +200,7 @@ export const AccountsView: React.FC<Props> = ({
   }, [safePositions]);
 
 
-  // 카드 계좌의 부채 계산 (카드 사용 - 카드대금 결제)
+  // 카드 계좌의 부채 계산 (카드 사용 - 카드대금 결제 + 계좌의 debt 필드)
   const cardDebtMap = useMemo(() => {
     const map = new Map<string, { total: number; monthly: number }>();
     const now = new Date();
@@ -217,8 +224,11 @@ export const AccountsView: React.FC<Props> = ({
           )
           .reduce((sum, l) => sum + l.amount, 0);
         
-        // 전체 부채 = 사용 - 결제
-        const totalDebt = totalUsage - totalPayment;
+        // 계좌의 debt 필드 값 (수동으로 추가한 부채)
+        const accountDebt = row.account.debt ?? 0;
+        
+        // 전체 부채 = 사용 - 결제 + 계좌의 debt 필드
+        const totalDebt = totalUsage - totalPayment + accountDebt;
         
         // 월 부채: 이번 달 사용 - 이번 달 결제
         const monthlyUsage = ledger
@@ -309,9 +319,15 @@ export const AccountsView: React.FC<Props> = ({
         )}
       </td>
       <td
+        onClick={(e) => {
+          if (!editingCell || editingCell.id !== row.account.id || editingCell.field !== "name") {
+            e.stopPropagation();
+            setSelectedAccount(row.account);
+          }
+        }}
         onDoubleClick={() => startEditCell(row.account.id, "name", row.account.name)}
         style={{ cursor: "pointer" }}
-        title="더블클릭하여 계좌명을 수정"
+        title="클릭: 거래 내역 보기, 더블클릭: 계좌명 수정"
       >
         {editingCell && editingCell.id === row.account.id && editingCell.field === "name" ? (
           <input
@@ -407,16 +423,12 @@ export const AccountsView: React.FC<Props> = ({
           return null;
         }
         
-        // 입출금, 저축, 기타 계좌: 보유 금액(총자산)만 표시
+        // 입출금, 저축, 기타 계좌: 현재 잔액 표시
         const cashAsset = row.currentBalance;
-        const stockAsset = stockMap.get(row.account.id) ?? 0;
-        const debt = row.account.debt ?? 0;
-        const savings = row.account.savings ?? 0;
-        const totalAsset = cashAsset + stockAsset + savings - debt;
         
         return (
-          <td className={`number ${totalAsset >= 0 ? "positive" : "negative"}`}>
-            {formatNumber(totalAsset)}
+          <td className={`number ${cashAsset >= 0 ? "positive" : "negative"}`}>
+            {formatNumber(cashAsset)}
           </td>
         );
       })()}
@@ -507,13 +519,75 @@ export const AccountsView: React.FC<Props> = ({
                 <th>월 부채</th>
               </>
             ) : (
-              <th>보유 금액</th>
+              <th>현재 잔액</th>
             )}
             <th>작업</th>
           </tr>
         </thead>
               <tbody>
                 {accountsOfType.map((row) => renderAccountRow(row, 0, type))}
+                {/* 합계 행 */}
+                {(() => {
+                  if (type === "securities") {
+                    const totalStock = accountsOfType.reduce((sum, row) => {
+                      return sum + (stockMap.get(row.account.id) ?? 0);
+                    }, 0);
+                    const totalCash = accountsOfType.reduce((sum, row) => {
+                      return sum + row.currentBalance;
+                    }, 0);
+                    const totalAsset = totalStock + totalCash;
+                    return (
+                      <tr key="total" style={{ backgroundColor: "var(--bg)", fontWeight: "bold", borderTop: "2px solid var(--border)" }}>
+                        <td colSpan={5} style={{ textAlign: "right", padding: "12px" }}>합계</td>
+                        <td className={`number ${totalStock >= 0 ? "positive" : "negative"}`}>
+                          {formatNumber(totalStock)}
+                        </td>
+                        <td className={`number ${totalCash >= 0 ? "positive" : "negative"}`}>
+                          {formatNumber(totalCash)}
+                        </td>
+                        <td className={`number ${totalAsset >= 0 ? "positive" : "negative"}`}>
+                          {formatNumber(totalAsset)}
+                        </td>
+                        <td></td>
+                      </tr>
+                    );
+                  } else if (type === "card") {
+                    const totalDebt = accountsOfType.reduce((sum, row) => {
+                      const debtInfo = cardDebtMap.get(row.account.id) ?? { total: 0, monthly: 0 };
+                      return sum + debtInfo.total;
+                    }, 0);
+                    const totalMonthlyDebt = accountsOfType.reduce((sum, row) => {
+                      const debtInfo = cardDebtMap.get(row.account.id) ?? { total: 0, monthly: 0 };
+                      return sum + debtInfo.monthly;
+                    }, 0);
+                    return (
+                      <tr key="total" style={{ backgroundColor: "var(--bg)", fontWeight: "bold", borderTop: "2px solid var(--border)" }}>
+                        <td colSpan={5} style={{ textAlign: "right", padding: "12px" }}>합계</td>
+                        <td className={`number ${totalDebt >= 0 ? "negative" : "positive"}`}>
+                          {formatNumber(totalDebt)}
+                        </td>
+                        <td className={`number ${totalMonthlyDebt >= 0 ? "negative" : "positive"}`}>
+                          {formatNumber(totalMonthlyDebt)}
+                        </td>
+                        <td></td>
+                      </tr>
+                    );
+                  } else {
+                    // 입출금, 저축, 기타 계좌
+                    const totalBalance = accountsOfType.reduce((sum, row) => {
+                      return sum + row.currentBalance;
+                    }, 0);
+                    return (
+                      <tr key="total" style={{ backgroundColor: "var(--bg)", fontWeight: "bold", borderTop: "2px solid var(--border)" }}>
+                        <td colSpan={5} style={{ textAlign: "right", padding: "12px" }}>합계</td>
+                        <td className={`number ${totalBalance >= 0 ? "positive" : "negative"}`}>
+                          {formatNumber(totalBalance)}
+                        </td>
+                        <td></td>
+                      </tr>
+                    );
+                  }
+                })()}
               </tbody>
             </table>
           </div>
@@ -629,6 +703,85 @@ export const AccountsView: React.FC<Props> = ({
                     추가
                   </button>
                 </div>
+              </div>
+            </div>
+          </div>
+        );
+      })()}
+
+      {/* 계좌 상세 내역 모달 */}
+      {selectedAccount && (() => {
+        // 해당 계좌와 관련된 거래 내역 필터링
+        const accountTransactions = ledger.filter((l) => {
+          if (l.fromAccountId === selectedAccount.id || l.toAccountId === selectedAccount.id) {
+            return true;
+          }
+          return false;
+        }).sort((a, b) => b.date.localeCompare(a.date)); // 최신순 정렬
+
+        const KIND_LABEL: Record<string, string> = {
+          income: "수입",
+          expense: "지출",
+          transfer: "이체"
+        };
+
+        return (
+          <div className="modal-backdrop" onClick={() => setSelectedAccount(null)}>
+            <div className="modal" onClick={(e) => e.stopPropagation()} style={{ maxWidth: "900px", maxHeight: "80vh" }}>
+              <div className="modal-header">
+                <h3>{selectedAccount.name} ({selectedAccount.id}) - 거래 내역</h3>
+                <button
+                  type="button"
+                  onClick={() => setSelectedAccount(null)}
+                  style={{ background: "transparent", border: "none", fontSize: "20px", cursor: "pointer", padding: "0", width: "24px", height: "24px" }}
+                >
+                  ×
+                </button>
+              </div>
+              <div className="modal-body" style={{ overflowY: "auto", maxHeight: "calc(80vh - 120px)" }}>
+                {accountTransactions.length === 0 ? (
+                  <p style={{ textAlign: "center", color: "var(--text-muted)", padding: "40px" }}>
+                    이 계좌와 관련된 거래 내역이 없습니다.
+                  </p>
+                ) : (
+                  <table className="data-table" style={{ fontSize: "13px" }}>
+                    <thead>
+                      <tr>
+                        <th>날짜</th>
+                        <th>구분</th>
+                        <th>대분류</th>
+                        <th>항목</th>
+                        <th>상세내역</th>
+                        <th>출금계좌</th>
+                        <th>입금계좌</th>
+                        <th style={{ textAlign: "right" }}>금액</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {accountTransactions.map((l) => {
+                        const isFrom = l.fromAccountId === selectedAccount.id;
+                        const isTo = l.toAccountId === selectedAccount.id;
+                        const amount = l.amount;
+                        const displayAmount = isFrom ? -amount : amount; // 출금이면 음수, 입금이면 양수
+
+                        return (
+                          <tr key={l.id}>
+                            <td>{formatShortDate(l.date)}</td>
+                            <td>{KIND_LABEL[l.kind] || l.kind}</td>
+                            <td>{l.category || "-"}</td>
+                            <td>{l.subCategory || "-"}</td>
+                            <td>{l.description || "-"}</td>
+                            <td>{l.fromAccountId || "-"}</td>
+                            <td>{l.toAccountId || "-"}</td>
+                            <td style={{ textAlign: "right", color: displayAmount >= 0 ? "var(--primary)" : "var(--danger)" }}>
+                              {displayAmount >= 0 ? "+" : ""}{formatNumber(displayAmount)} 원
+                            </td>
+                          </tr>
+                        );
+                      })}
+                    </tbody>
+                  </table>
+                )}
               </div>
             </div>
           </div>

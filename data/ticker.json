@@ -35636,7 +35636,7 @@
     },
     {
       "ticker": "TSN",
-      "name": "TSN"
+      "name": "Tyson Foods, Inc."
     },
     {
       "ticker": "TSQ",
@@ -38393,6 +38393,10 @@
     {
       "ticker": "XOSWW",
       "name": "XOSWW"
+    },
+    {
+      "ticker": "XOVR",
+      "name": "ERShares Private-Public Crossover ETF"
     },
     {
       "ticker": "XP",

@@ -11,6 +11,8 @@ import { StocksView } from "./components/StocksView";
 import { BudgetRecurringView } from "./components/BudgetRecurringView";
 import { SettingsView } from "./components/SettingsView";
 import { CategoriesView } from "./components/CategoriesView";
+import { ShortcutsHelp } from "./components/ShortcutsHelp";
+import { ReportView } from "./components/ReportView";
 import {
   fetchServerData,
   getAllBackupList,
@@ -21,7 +23,7 @@ import {
   loadTickerDatabaseFromBackup,
   saveTickerDatabaseBackup
 } from "./storage";
-import type { AppData } from "./types";
+import type { AppData, LedgerEntry } from "./types";
 import { computeAccountBalances, computePositions } from "./calculations";
 import { buildInitialTickerDatabase, fetchYahooQuotes } from "./yahooFinanceApi";
 
@@ -36,6 +38,7 @@ const TAB_ORDER: TabId[] = [
   "debt",
   "budget",
   "categories",
+  "reports",
   "settings"
 ];
 
@@ -62,6 +65,8 @@ export const App: React.FC = () => {
   >([]);
   const [theme, setTheme] = useState<"light" | "dark">("light");
   const [fxRate, setFxRate] = useState<number | null>(null);
+  const [showShortcutsHelp, setShowShortcutsHelp] = useState(false);
+  const [copyRequest, setCopyRequest] = useState<LedgerEntry | null>(null);
   
   // 실행 취소/다시 실행을 위한 히스토리
   const undoStackRef = useRef<AppData[]>([]);
@@ -79,6 +84,12 @@ export const App: React.FC = () => {
     } else if (window.matchMedia("(prefers-color-scheme: dark)").matches) {
       setTheme("dark");
       document.documentElement.classList.add("dark");
+    }
+    
+    // 고대비 모드 초기화
+    const highContrast = localStorage.getItem("fw-high-contrast");
+    if (highContrast === "true") {
+      document.documentElement.classList.add("high-contrast");
     }
   }, []);
 
@@ -221,28 +232,66 @@ export const App: React.FC = () => {
           return;
         }
       }
+      
+      // Ctrl+K (전역 검색)
+      if ((e.ctrlKey || e.metaKey) && e.key === "k") {
+        e.preventDefault();
+        setIsSearchOpen(true);
+        return;
+      }
+      
+      // Ctrl+/ (단축키 도움말)
+      if ((e.ctrlKey || e.metaKey) && e.key === "/") {
+        e.preventDefault();
+        setShowShortcutsHelp((prev) => !prev);
+        return;
+      }
+
+      // Ctrl+1-9 (탭 이동)
+      if ((e.ctrlKey || e.metaKey) && e.key >= "1" && e.key <= "9") {
+        e.preventDefault();
+        const index = parseInt(e.key) - 1;
+        if (index < TAB_ORDER.length) {
+          setTab(TAB_ORDER[index]);
+        }
+        return;
+      }
+
+      // F2 (편집 모드 - 현재 포커스된 항목 편집)
+      if (e.key === "F2") {
+        e.preventDefault();
+        const activeElement = document.activeElement;
+        if (activeElement && activeElement instanceof HTMLElement) {
+          const editable = activeElement.closest("[data-editable]");
+          if (editable) {
+            editable.dispatchEvent(new MouseEvent("dblclick", { bubbles: true }));
+          }
+        }
+        return;
+      }
     };
 
     window.addEventListener("keydown", handleKeyDown);
     return () => {
       window.removeEventListener("keydown", handleKeyDown);
     };
-  }, [handleUndo, handleRedo, navigateTab]);
+  }, [handleUndo, handleRedo, navigateTab, setTab]);
 
   useEffect(() => {
     if (typeof window === "undefined") return;
-    fetchServerData().then((serverData) => {
-      if (serverData) {
-        setDataWithHistory((prev) => ({
-          ...prev,
-          ...serverData,
-          customSymbols: serverData.customSymbols ?? prev.customSymbols ?? [],
-          usTickers: serverData.usTickers ?? prev.usTickers,
-          tickerDatabase: serverData.tickerDatabase ?? prev.tickerDatabase ?? []
-        }));
-        toast.success("서버 데이터 동기화 완료");
-      }
-    });
+    // 서버 동기화 비활성화 - 로컬 백업만 사용
+    // fetchServerData().then((serverData) => {
+    //   if (serverData) {
+    //     setDataWithHistory((prev) => ({
+    //       ...prev,
+    //       ...serverData,
+    //       customSymbols: serverData.customSymbols ?? prev.customSymbols ?? [],
+    //       usTickers: serverData.usTickers ?? prev.usTickers,
+    //       tickerDatabase: serverData.tickerDatabase ?? prev.tickerDatabase ?? []
+    //     }));
+    //     toast.success("서버 데이터 동기화 완료");
+    //   }
+    // });
     void refreshLatestBackup();
   }, [refreshLatestBackup, setDataWithHistory]);
 
@@ -533,11 +582,11 @@ export const App: React.FC = () => {
         </div>
       </header>
 
-      <div className="layout">
-        <aside className="sidebar">
-          <Tabs active={tab} onChange={setTab} />
-        </aside>
-        <main className="app-main">
+          <div className="layout">
+            <aside className="sidebar" role="navigation" aria-label="주 메뉴">
+              <Tabs active={tab} onChange={setTab} />
+            </aside>
+            <main className="app-main" role="main">
           {tab === "dashboard" && (
             <DashboardView
               accounts={data.accounts}
@@ -564,12 +613,15 @@ export const App: React.FC = () => {
               onChangeLedger={(ledger) => setDataWithHistory({ ...data, ledger })}
               templates={data.ledgerTemplates}
               onChangeTemplates={(ledgerTemplates) => setDataWithHistory({ ...data, ledgerTemplates })}
+              copyRequest={copyRequest}
+              onCopyComplete={() => setCopyRequest(null)}
             />
           )}
           {tab === "categories" && (
             <CategoriesView
               presets={data.categoryPresets}
               onChangePresets={(categoryPresets) => setDataWithHistory({ ...data, categoryPresets })}
+              ledger={data.ledger}
             />
           )}
           {tab === "stocks" && (
@@ -580,7 +632,10 @@ export const App: React.FC = () => {
               prices={data.prices}
               customSymbols={data.customSymbols ?? []}
               tickerDatabase={data.tickerDatabase ?? []}
-              onChangeTrades={(trades) => setDataWithHistory({ ...data, trades })}
+              onChangeTrades={(trades) => setDataWithHistory((prev) => ({ 
+                ...prev, 
+                trades: typeof trades === "function" ? trades(prev.trades) : trades 
+              }))}
               onChangePrices={(prices) => setDataWithHistory({ ...data, prices })}
               onChangeCustomSymbols={(customSymbols) => setDataWithHistory({ ...data, customSymbols })}
               onChangeTickerDatabase={(tickerDatabase) => setDataWithHistory({ ...data, tickerDatabase })}
@@ -588,6 +643,10 @@ export const App: React.FC = () => {
               isLoadingTickerDatabase={isLoadingTickerDatabase}
               presets={data.stockPresets}
               onChangePresets={(stockPresets) => setDataWithHistory({ ...data, stockPresets })}
+              ledger={data.ledger}
+              onChangeLedger={(ledger) => setDataWithHistory({ ...data, ledger })}
+              onChangeAccounts={(accounts) => setDataWithHistory((prev) => ({ ...prev, accounts }))}
+              fxRate={fxRate}
             />
           )}
           {tab === "dividends" && (
@@ -598,6 +657,7 @@ export const App: React.FC = () => {
               prices={data.prices}
               tickerDatabase={data.tickerDatabase ?? []}
               onChangeLedger={(ledger) => setDataWithHistory({ ...data, ledger })}
+              fxRate={fxRate}
             />
           )}
           {tab === "debt" && (
@@ -616,6 +676,15 @@ export const App: React.FC = () => {
               onChangeRecurring={(recurringExpenses) => setDataWithHistory({ ...data, recurringExpenses })}
               onChangeBudgets={(budgetGoals) => setDataWithHistory({ ...data, budgetGoals })}
               onChangeLedger={(ledger) => setDataWithHistory({ ...data, ledger })}
+            />
+          )}
+          {tab === "reports" && (
+            <ReportView
+              accounts={data.accounts}
+              ledger={data.ledger}
+              trades={data.trades}
+              prices={data.prices}
+              fxRate={fxRate}
             />
           )}
           {tab === "settings" && (
@@ -761,6 +830,8 @@ export const App: React.FC = () => {
           </div>
         </div>
       )}
+
+      <ShortcutsHelp isOpen={showShortcutsHelp} onClose={() => setShowShortcutsHelp(false)} />
     </div>
   );
 };

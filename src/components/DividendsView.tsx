@@ -2,7 +2,6 @@ import React, { useMemo, useState, useEffect } from "react";
 import { Autocomplete } from "./Autocomplete";
 import type { Account, LedgerEntry, StockPrice, StockTrade, TickerInfo } from "../types";
 import { computePositions } from "../calculations";
-import { fetchYahooQuotes } from "../yahooFinanceApi";
 import { formatNumber, formatKRW } from "../utils/format";
 
 interface Props {
@@ -12,6 +11,7 @@ interface Props {
   prices: StockPrice[];
   tickerDatabase: TickerInfo[];
   onChangeLedger: (ledger: LedgerEntry[]) => void;
+  fxRate?: number | null;
 }
 
 interface DividendRow {
@@ -20,14 +20,17 @@ interface DividendRow {
   amount: number;
   ticker?: string;
   yieldRate?: number;
+  accountId?: string;
+  accountName?: string;
+  quantity?: number;
 }
 
 type TabType = "dividend" | "interest";
 
-export const DividendsView: React.FC<Props> = ({ accounts, ledger, trades, prices, tickerDatabase, onChangeLedger }) => {
+export const DividendsView: React.FC<Props> = ({ accounts, ledger, trades, prices, tickerDatabase, onChangeLedger, fxRate: propFxRate = null }) => {
   const [activeTab, setActiveTab] = useState<TabType>("dividend");
   const [showUSD, setShowUSD] = useState(false);
-  const [fxRate, setFxRate] = useState<number | null>(null);
+  const [fxRate, setFxRate] = useState<number | null>(propFxRate);
   
   // 배당 입력 폼
   const [dividendForm, setDividendForm] = useState({
@@ -122,21 +125,12 @@ export const DividendsView: React.FC<Props> = ({ accounts, ledger, trades, price
     return undefined;
   }, [prices, tickerDatabase, dividendForm.ticker]);
 
-  // 환율 조회
+  // 환율 업데이트 (props에서 전달받은 경우)
   useEffect(() => {
-    const updateFxRate = async () => {
-      try {
-        const res = await fetchYahooQuotes(["USDKRW=X"]);
-        const r = res[0];
-        if (r?.price) {
-          setFxRate(r.price);
-        }
-      } catch (err) {
-        console.warn("FX fetch failed", err);
-      }
-    };
-    updateFxRate();
-  }, []);
+    if (propFxRate !== null) {
+      setFxRate(propFxRate);
+    }
+  }, [propFxRate]);
 
   const formatUSD = (value: number) => Math.round(value).toLocaleString("en-US");
   const formatCurrency = (value: number, currency?: string, originalValue?: number) => {
@@ -200,7 +194,8 @@ export const DividendsView: React.FC<Props> = ({ accounts, ledger, trades, price
     // 최근 배당 내역을 티커별로 추출 (최신 것만)
     for (const l of ledger) {
       if (!isDividend(l)) continue;
-      const tickerMatch = (l.description ?? "").match(/([0-9]{6}|[A-Z]{1,6})/);
+      const tickerMatch = (l.description ?? "").match(/([0-9]{6}|[0-9A-Z]{1,10})/i) ||
+        (l.category ?? "").match(/([0-9]{6}|[0-9A-Z]{1,10})/i);
       if (!tickerMatch) continue;
       
       const ticker = tickerMatch[1].toUpperCase();
@@ -345,29 +340,45 @@ export const DividendsView: React.FC<Props> = ({ accounts, ledger, trades, price
         return map;
       }, new Map<string, number>());
 
+    const accountMap = new Map(accounts.map(a => [a.id, a]));
+    
+    // 현재 보유 주식 수량 맵
+    const quantityByTicker = new Map<string, number>();
+    positions.forEach(p => {
+      if (p.quantity > 0) {
+        quantityByTicker.set(p.ticker, p.quantity);
+      }
+    });
+
     const rows: DividendRow[] = [];
     for (const l of ledger) {
       if (!isDividend(l)) continue;
       const month = l.date?.slice(0, 7) || "기타";
+      // 티커 추출: 숫자 6자리 또는 영문+숫자 조합 (예: 0048J0, AAPL 등)
       const tickerMatch =
-        (l.description ?? "").match(/([0-9]{6}|[A-Z]{1,6})/) ||
-        (l.category ?? "").match(/([0-9]{6}|[A-Z]{1,6})/);
+        (l.description ?? "").match(/([0-9]{6}|[0-9A-Z]{1,10})/i) ||
+        (l.category ?? "").match(/([0-9]{6}|[0-9A-Z]{1,10})/i);
       const ticker = tickerMatch ? tickerMatch[1].toUpperCase() : undefined;
       const name =
         ticker && (prices.find((p) => p.ticker === ticker)?.name || trades.find((t) => t.ticker === ticker)?.name);
       const source = ticker ? `${ticker}${name ? ` - ${name}` : ""}` : l.description || l.category || "기타";
       const basis = ticker ? buyAmountByTicker.get(ticker) ?? 0 : 0;
       const yieldRate = basis > 0 ? l.amount / basis : undefined;
+      const account = l.toAccountId ? accountMap.get(l.toAccountId) : undefined;
+      const currentQuantity = ticker ? quantityByTicker.get(ticker) : undefined;
       rows.push({
         month,
         source,
         ticker,
         amount: l.amount,
-        yieldRate
+        yieldRate,
+        accountId: l.toAccountId,
+        accountName: account?.name,
+        quantity: currentQuantity
       });
     }
     return rows;
-  }, [ledger, trades, prices]);
+  }, [ledger, trades, prices, accounts, positions]);
 
   const monthlyTotal = useMemo(() => {
     const map = new Map<string, number>();
@@ -388,6 +399,47 @@ export const DividendsView: React.FC<Props> = ({ accounts, ledger, trades, price
     });
     return Array.from(map.entries()).sort((a, b) => a[0].localeCompare(b[0]));
   }, [incomeRows]);
+
+  // 종목별 합계 계산
+  const byTicker = useMemo(() => {
+    const map = new Map<string, { ticker: string; name: string; total: number; count: number }>();
+    incomeRows.forEach((r) => {
+      if (!r.ticker) return;
+      const key = r.ticker;
+      const existing = map.get(key);
+      if (existing) {
+        existing.total += r.amount;
+        existing.count += 1;
+      } else {
+        const name = r.source.includes(" - ") ? r.source.split(" - ")[1] : "";
+        map.set(key, {
+          ticker: key,
+          name,
+          total: r.amount,
+          count: 1
+        });
+      }
+    });
+    return Array.from(map.values())
+      .sort((a, b) => b.total - a.total);
+  }, [incomeRows]);
+
+  // 배당과 이자 분리
+  const dividendRows = useMemo(() => {
+    return incomeRows.filter(r => r.source.includes("배당") || (r.ticker && !r.source.includes("이자")));
+  }, [incomeRows]);
+  
+  const interestRows = useMemo(() => {
+    return incomeRows.filter(r => r.source.includes("이자") || (!r.ticker && r.source.includes("이자")));
+  }, [incomeRows]);
+
+  const totalDividend = useMemo(() => {
+    return dividendRows.reduce((s, r) => s + r.amount, 0);
+  }, [dividendRows]);
+
+  const totalInterest = useMemo(() => {
+    return interestRows.reduce((s, r) => s + r.amount, 0);
+  }, [interestRows]);
 
   return (
     <div>
@@ -749,18 +801,58 @@ export const DividendsView: React.FC<Props> = ({ accounts, ledger, trades, price
 
       <div className="cards-row">
         <div className="card highlight">
-          <div className="card-title">누적 배당/이자</div>
+          <div className="card-title">전체 누적</div>
           <div className="card-value">
-            {Math.round(incomeRows.reduce((s, r) => s + r.amount, 0)).toLocaleString()} 원
+            {formatKRW(Math.round(incomeRows.reduce((s, r) => s + r.amount, 0)))}
           </div>
         </div>
         <div className="card">
-          <div className="card-title">최근 월 배당/이자</div>
+          <div className="card-title">배당 총액</div>
+          <div className="card-value positive">
+            {formatKRW(Math.round(totalDividend))}
+          </div>
+        </div>
+        <div className="card">
+          <div className="card-title">이자 총액</div>
+          <div className="card-value positive">
+            {formatKRW(Math.round(totalInterest))}
+          </div>
+        </div>
+        <div className="card">
+          <div className="card-title">최근 월 합계</div>
           <div className="card-value">
-            {Math.round(monthlyTotal.at(-1)?.total ?? 0).toLocaleString()} 원
+            {formatKRW(Math.round(monthlyTotal.at(-1)?.total ?? 0))}
           </div>
         </div>
       </div>
+
+      {byTicker.length > 0 && (
+        <>
+          <h3>종목별 누적 배당</h3>
+          <table className="data-table compact">
+            <thead>
+              <tr>
+                <th>티커</th>
+                <th>종목명</th>
+                <th>횟수</th>
+                <th>총 배당금</th>
+              </tr>
+            </thead>
+            <tbody>
+              {byTicker.map((item) => (
+                <tr key={item.ticker}>
+                  <td style={{ fontWeight: 600 }}>{item.ticker}</td>
+                  <td>{item.name || "-"}</td>
+                  <td className="number">{item.count}회</td>
+                  <td className="number positive" style={{ fontWeight: 600, fontSize: 15 }}>
+                    {formatKRW(Math.round(item.total))}
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </>
+      )}
 
       <h3>월별 합계</h3>
       <table className="data-table compact">
@@ -773,8 +865,10 @@ export const DividendsView: React.FC<Props> = ({ accounts, ledger, trades, price
         <tbody>
           {monthlyTotal.map((row) => (
             <tr key={row.month}>
-              <td>{row.month}</td>
-              <td className="number">{Math.round(row.total).toLocaleString()}</td>
+              <td style={{ fontWeight: 500 }}>{row.month}</td>
+              <td className="number positive" style={{ fontWeight: 600, fontSize: 15 }}>
+                {formatKRW(Math.round(row.total))}
+              </td>
             </tr>
           ))}
           {monthlyTotal.length === 0 && (
@@ -787,38 +881,204 @@ export const DividendsView: React.FC<Props> = ({ accounts, ledger, trades, price
         </tbody>
       </table>
 
-      <h3 style={{ marginTop: 16 }}>월별 상세 (종목별)</h3>
-      <table className="data-table compact">
-        <thead>
-          <tr>
-            <th>월</th>
-            <th>출처</th>
-            <th>금액</th>
-            <th>배당/이자율</th>
-          </tr>
-        </thead>
-        <tbody>
-          {byMonthSource.length === 0 && (
-            <tr>
-              <td colSpan={4} style={{ textAlign: "center" }}>
-                배당/이자 내역이 없습니다.
-              </td>
-            </tr>
-          )}
-          {byMonthSource.map(([month, rows]) =>
-            rows.map((r, idx) => (
-              <tr key={`${month}-${r.source}-${idx}`}>
-                <td>{idx === 0 ? month : ""}</td>
-                <td>{r.source}</td>
-                <td className="number positive">{Math.round(r.amount).toLocaleString()} 원</td>
-                <td className="number">
-                  {r.yieldRate != null ? `${(r.yieldRate * 100).toFixed(2)}%` : "-"}
-                </td>
-              </tr>
-            ))
-          )}
-        </tbody>
-      </table>
+      <h3 style={{ marginTop: 16 }}>월별 종목별 배당 내역</h3>
+      {byMonthSource.length === 0 ? (
+        <p className="hint" style={{ textAlign: "center", padding: 20 }}>
+          배당/이자 내역이 없습니다.
+        </p>
+      ) : (
+        byMonthSource.map(([month, rows]) => {
+          const monthTotal = rows.reduce((sum, r) => sum + r.amount, 0);
+          const dividendRows = rows.filter(r => r.ticker || r.source.includes("배당"));
+          const interestRows = rows.filter(r => !r.ticker && r.source.includes("이자"));
+          
+          return (
+            <div key={month} style={{ marginBottom: 32 }}>
+              <div style={{ 
+                display: "flex", 
+                justifyContent: "space-between", 
+                alignItems: "center",
+                marginBottom: 12,
+                paddingBottom: 8,
+                borderBottom: "2px solid var(--border)"
+              }}>
+                <h4 style={{ margin: 0, fontSize: 18, fontWeight: 600 }}>{month}</h4>
+                <div style={{ fontSize: 16, fontWeight: 600, color: "#10b981" }}>
+                  합계: {formatKRW(Math.round(monthTotal))}
+                </div>
+              </div>
+              
+              {dividendRows.length > 0 && (
+                <table className="data-table" style={{ marginBottom: 16 }}>
+                  <thead>
+                    <tr>
+                      <th style={{ width: "12%" }}>티커</th>
+                      <th style={{ width: "23%" }}>종목명</th>
+                      <th style={{ width: "12%" }}>보유주식</th>
+                      <th style={{ width: "18%" }}>배당금액</th>
+                      <th style={{ width: "12%" }}>배당율</th>
+                      <th style={{ width: "15%" }}>계좌</th>
+                      <th style={{ width: "8%" }}></th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {dividendRows.map((r, idx) => {
+                      const tickerName = r.source.includes(" - ") ? r.source.split(" - ")[1] : "";
+                      const displayName = tickerName.length > 30 ? tickerName.slice(0, 30) + "..." : tickerName;
+                      // 해당 배당 기록 찾기
+                      const ledgerEntry = ledger.find(l => {
+                        if (l.kind !== "income") return false;
+                        const lMonth = l.date?.slice(0, 7) || "기타";
+                        if (lMonth !== month) return false;
+                        const lTickerMatch = (l.description ?? "").match(/([0-9]{6}|[0-9A-Z]{1,10})/i) ||
+                          (l.category ?? "").match(/([0-9]{6}|[0-9A-Z]{1,10})/i);
+                        const lTicker = lTickerMatch ? lTickerMatch[1].toUpperCase() : undefined;
+                        return lTicker === r.ticker && Math.abs(l.amount - r.amount) < 1;
+                      });
+                      
+                      return (
+                        <tr key={`${month}-${r.ticker}-${idx}`}>
+                          <td style={{ fontWeight: 600, fontSize: 14 }}>{r.ticker || "-"}</td>
+                          <td title={tickerName || "-"} style={{ 
+                            overflow: "hidden", 
+                            textOverflow: "ellipsis", 
+                            whiteSpace: "nowrap",
+                            maxWidth: "200px"
+                          }}>
+                            {displayName || "-"}
+                          </td>
+                          <td className="number">
+                            {r.quantity != null ? `${Math.round(r.quantity).toLocaleString()}주` : "-"}
+                          </td>
+                          <td className="number positive" style={{ fontWeight: 600, fontSize: 15 }}>
+                            {formatKRW(Math.round(r.amount))}
+                          </td>
+                          <td className="number">
+                            {r.yieldRate != null ? `${(r.yieldRate * 100).toFixed(2)}%` : "-"}
+                          </td>
+                          <td style={{ fontSize: 13, color: "#666" }}>
+                            {r.accountName || r.accountId || "-"}
+                          </td>
+                          <td style={{ textAlign: "center" }}>
+                            {ledgerEntry && (
+                              <button
+                                type="button"
+                                onClick={() => {
+                                  if (confirm(`이 배당 기록을 삭제하시겠습니까?\n${r.ticker || r.source}: ${formatKRW(Math.round(r.amount))}`)) {
+                                    const newLedger = ledger.filter(l => l.id !== ledgerEntry.id);
+                                    onChangeLedger(newLedger);
+                                  }
+                                }}
+                                style={{
+                                  background: "none",
+                                  border: "none",
+                                  color: "#ef4444",
+                                  cursor: "pointer",
+                                  fontSize: 18,
+                                  padding: "4px 8px",
+                                  borderRadius: 4,
+                                  display: "inline-flex",
+                                  alignItems: "center",
+                                  justifyContent: "center"
+                                }}
+                                onMouseEnter={(e) => {
+                                  e.currentTarget.style.backgroundColor = "#fee2e2";
+                                }}
+                                onMouseLeave={(e) => {
+                                  e.currentTarget.style.backgroundColor = "transparent";
+                                }}
+                                title="삭제"
+                              >
+                                ×
+                              </button>
+                            )}
+                          </td>
+                        </tr>
+                      );
+                    })}
+                  </tbody>
+                </table>
+              )}
+              
+              {interestRows.length > 0 && (
+                <table className="data-table">
+                  <thead>
+                    <tr>
+                      <th style={{ width: "40%" }}>출처</th>
+                      <th style={{ width: "30%" }}>이자금액</th>
+                      <th style={{ width: "22%" }}>계좌</th>
+                      <th style={{ width: "8%" }}></th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {interestRows.map((r, idx) => {
+                      const ledgerEntry = ledger.find(l => {
+                        if (l.kind !== "income") return false;
+                        const lMonth = l.date?.slice(0, 7) || "기타";
+                        if (lMonth !== month) return false;
+                        return (l.description || l.category || "") === r.source && Math.abs(l.amount - r.amount) < 1;
+                      });
+                      
+                      return (
+                        <tr key={`${month}-interest-${idx}`}>
+                          <td style={{ 
+                            overflow: "hidden", 
+                            textOverflow: "ellipsis", 
+                            whiteSpace: "nowrap",
+                            maxWidth: "300px"
+                          }} title={r.source}>
+                            {r.source.length > 40 ? r.source.slice(0, 40) + "..." : r.source}
+                          </td>
+                          <td className="number positive" style={{ fontWeight: 600, fontSize: 15 }}>
+                            {formatKRW(Math.round(r.amount))}
+                          </td>
+                          <td style={{ fontSize: 13, color: "#666" }}>
+                            {r.accountName || r.accountId || "-"}
+                          </td>
+                          <td style={{ textAlign: "center" }}>
+                            {ledgerEntry && (
+                              <button
+                                type="button"
+                                onClick={() => {
+                                  if (confirm(`이 이자 기록을 삭제하시겠습니까?\n${r.source}: ${formatKRW(Math.round(r.amount))}`)) {
+                                    const newLedger = ledger.filter(l => l.id !== ledgerEntry.id);
+                                    onChangeLedger(newLedger);
+                                  }
+                                }}
+                                style={{
+                                  background: "none",
+                                  border: "none",
+                                  color: "#ef4444",
+                                  cursor: "pointer",
+                                  fontSize: 18,
+                                  padding: "4px 8px",
+                                  borderRadius: 4,
+                                  display: "inline-flex",
+                                  alignItems: "center",
+                                  justifyContent: "center"
+                                }}
+                                onMouseEnter={(e) => {
+                                  e.currentTarget.style.backgroundColor = "#fee2e2";
+                                }}
+                                onMouseLeave={(e) => {
+                                  e.currentTarget.style.backgroundColor = "transparent";
+                                }}
+                                title="삭제"
+                              >
+                                ×
+                              </button>
+                            )}
+                          </td>
+                        </tr>
+                      );
+                    })}
+                  </tbody>
+                </table>
+              )}
+            </div>
+          );
+        })
+      )}
     </div>
   );
 };

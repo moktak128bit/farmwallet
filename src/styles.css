@@ -215,10 +215,10 @@ a:hover {
   width: 100%;
   border-collapse: separate;
   border-spacing: 0;
-  font-size: 13px; /* 최적화: 15px → 13px */
+  font-size: 13px; /* 행 높이 감소를 위해 13px로 조정 */
   border: 1px solid var(--border);
   border-radius: 8px;
-  overflow: hidden;
+  overflow: visible; /* 텍스트가 잘리지 않도록 visible로 변경 */
   margin-bottom: 24px;
   table-layout: fixed; /* 고정 레이아웃으로 컬럼 너비 일정하게 */
 }
@@ -228,7 +228,7 @@ a:hover {
 }
 
 .data-table th {
-  padding: 10px 12px; /* 최적화: 14px 16px → 10px 12px */
+  padding: 8px 12px; /* 행 높이 감소를 위해 패딩 축소 */
   text-align: left;
   font-weight: 700;
   color: var(--text-secondary);
@@ -236,6 +236,7 @@ a:hover {
   border-right: 1px solid var(--border); /* 컬럼 구분선 추가 */
   white-space: nowrap;
   position: relative;
+  line-height: 1.4; /* 행 높이 감소 */
   /* 헤더 텍스트는 잘리지 않도록 overflow 제거 - 컬럼 너비로 제어 */
 }
 
@@ -289,16 +290,18 @@ a:hover {
 /* 리사이즈 중인 컬럼 강조는 JavaScript로 처리 (브라우저 호환성을 위해 :has() 제거) */
 
 .data-table td {
-  padding: 10px 12px; /* 최적화: 14px 16px → 10px 12px */
+  padding: 8px 12px; /* 행 높이 감소를 위해 패딩 축소 */
   border-bottom: 1px solid var(--border-light);
   border-right: 1px solid var(--border-light); /* 컬럼 구분선 추가 */
   color: var(--text);
   vertical-align: middle;
   white-space: nowrap; /* 기본적으로 한 줄로 표시 */
-  overflow: hidden;
-  text-overflow: ellipsis; /* 긴 텍스트는 생략 표시 */
+  overflow: visible; /* 텍스트가 잘리지 않도록 visible로 변경 */
+  text-overflow: clip; /* ellipsis 대신 clip 사용 */
   word-wrap: break-word;
   overflow-wrap: break-word;
+  line-height: 1.4; /* 행 높이 감소 */
+  max-height: none; /* 높이 제한 제거 */
 }
 
 .data-table td:last-child {
@@ -317,6 +320,16 @@ a:hover {
   white-space: normal;
   word-break: break-word;
   overflow-wrap: break-word;
+}
+
+/* 상세내역 컬럼은 항상 줄바꿈 허용 */
+.data-table td[style*="whiteSpace: \"normal\""],
+.data-table td[style*="white-space: normal"] {
+  white-space: normal !important;
+  word-break: break-word;
+  overflow-wrap: break-word;
+  overflow: visible !important;
+  text-overflow: clip !important;
 }
 
 /* 인라인 스타일로 white-space: normal이 지정된 경우도 줄바꿈 허용 */
@@ -503,6 +516,11 @@ button:disabled {
   cursor: not-allowed;
 }
 
+button:focus-visible {
+  outline: 2px solid var(--primary);
+  outline-offset: 2px;
+}
+
 input, select, textarea {
   font-family: inherit;
   font-size: 15px;
@@ -516,7 +534,8 @@ input, select, textarea {
 }
 
 input:focus, select:focus, textarea:focus {
-  outline: none;
+  outline: 2px solid var(--primary);
+  outline-offset: 2px;
   border-color: var(--primary);
   box-shadow: 0 0 0 3px var(--primary-light);
 }
@@ -679,4 +698,69 @@ label {
   .cards-row {
     grid-template-columns: 1fr;
   }
+}
+
+/* =========================================
+   Animations
+   ========================================= */
+
+@keyframes spin {
+  from {
+    transform: rotate(0deg);
+  }
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+/* =========================================
+   High Contrast Mode
+   ========================================= */
+
+.high-contrast {
+  --bg: #ffffff;
+  --surface: #ffffff;
+  --surface-hover: #f0f0f0;
+  --text: #000000;
+  --text-secondary: #333333;
+  --text-muted: #666666;
+  --border: #000000;
+  --primary: #0000ff;
+  --primary-hover: #0000cc;
+  --accent: #0066cc;
+  --danger: #ff0000;
+  --warning: #ff8800;
+  --success: #008800;
+}
+
+.high-contrast.dark {
+  --bg: #000000;
+  --surface: #000000;
+  --surface-hover: #1a1a1a;
+  --text: #ffffff;
+  --text-secondary: #cccccc;
+  --text-muted: #999999;
+  --border: #ffffff;
+  --primary: #00ffff;
+  --primary-hover: #00cccc;
+  --accent: #00aaff;
+  --danger: #ff0000;
+  --warning: #ffaa00;
+  --success: #00ff00;
+}
+
+/* 고대비 모드에서 모든 요소에 명확한 테두리 */
+.high-contrast * {
+  border-color: var(--border) !important;
+}
+
+.high-contrast button,
+.high-contrast input,
+.high-contrast select,
+.high-contrast textarea {
+  border-width: 2px !important;
+}
+
+.high-contrast a {
+  text-decoration: underline;
 }

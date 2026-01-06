@@ -10,6 +10,9 @@ export interface Account {
   savings?: number;
   cashAdjustment?: number; // 증권계좌의 현금 조정 (기타)
   initialCashBalance?: number; // 증권계좌의 초기 현금 잔액
+  currency?: "KRW" | "USD"; // 통화 (기본값: KRW)
+  usdBalance?: number; // 증권계좌의 달러 보유량
+  krwBalance?: number; // 증권계좌의 원화 보유량
   note?: string;
 }
 
@@ -27,6 +30,7 @@ export interface LedgerEntry {
   toAccountId?: string;
   amount: number;
   note?: string;
+  tags?: string[]; // 태그 시스템
 }
 
 export type TradeSide = "buy" | "sell";
@@ -66,7 +70,7 @@ export interface RecurringExpense {
   startDate: string; // yyyy-mm-dd
   endDate?: string;
   fromAccountId?: string;
-  note?: string;
+  toAccountId?: string; // 입금계좌 (저축성지출/이체용)
 }
 
 export interface BudgetGoal {

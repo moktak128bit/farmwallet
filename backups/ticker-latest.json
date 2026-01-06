@@ -348,6 +348,12 @@
     "exchange": "NYSE"
   },
   {
+    "ticker": "XOVR",
+    "name": "ERShares Private-Public Crossover ETF",
+    "market": "US",
+    "exchange": "NYSE"
+  },
+  {
     "ticker": "COP",
     "name": "ConocoPhillips",
     "market": "US",

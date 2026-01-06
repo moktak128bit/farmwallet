@@ -11,8 +11,13 @@ export const formatKRW = (value: number): string => {
 };
 
 export const formatUSD = (value: number): string => {
-  if (typeof value !== "number" || isNaN(value)) return "0";
-  return formatNumber(value, "en-US");
+  if (typeof value !== "number" || isNaN(value)) return "$0.000";
+  // 소수점 3자리까지 표시
+  const formatted = value.toFixed(3);
+  // 천 단위 구분자 추가
+  const parts = formatted.split(".");
+  parts[0] = parseInt(parts[0]).toLocaleString("en-US");
+  return `$${parts.join(".")}`;
 };
 
 // 날짜 형식 단축: YYYY-MM-DD → YY.MM.DD

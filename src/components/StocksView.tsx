@@ -14,12 +14,16 @@ import {
   Label
 } from "recharts";
 import { Autocomplete, type AutocompleteOption } from "./Autocomplete";
-import type { Account, StockPrice, StockTrade, TradeSide, SymbolInfo, TickerInfo, StockPreset } from "../types";
+import { StockDetailModal } from "./StockDetailModal";
+import type { Account, StockPrice, StockTrade, TradeSide, SymbolInfo, TickerInfo, StockPreset, LedgerEntry } from "../types";
 import type { AccountBalanceRow } from "../calculations";
 import { computePositions } from "../calculations";
 import { fetchYahooQuotes, searchYahooSymbol } from "../yahooFinanceApi";
 import { saveTickerDatabaseBackup, saveTickerToJson } from "../storage";
 import { formatNumber, formatKRW, formatUSD, formatShortDate } from "../utils/format";
+import { isUSDStock, cleanTicker } from "../utils/tickerUtils";
+import { toast } from "react-hot-toast";
+import { validateDate, validateTicker, validateRequired, validateQuantity, validateAmount } from "../utils/validation";
 
 interface Props {
   accounts: Account[];
@@ -28,7 +32,7 @@ interface Props {
   prices: StockPrice[];
   customSymbols: SymbolInfo[];
   tickerDatabase: TickerInfo[];
-  onChangeTrades: (next: StockTrade[]) => void;
+  onChangeTrades: (next: StockTrade[] | ((prev: StockTrade[]) => StockTrade[])) => void;
   onChangePrices: (next: StockPrice[]) => void;
   onChangeCustomSymbols: (next: SymbolInfo[]) => void;
   onChangeTickerDatabase: (next: TickerInfo[]) => void;
@@ -36,6 +40,10 @@ interface Props {
   isLoadingTickerDatabase: boolean;
   presets?: StockPreset[];
   onChangePresets?: (next: StockPreset[]) => void;
+  ledger?: LedgerEntry[];
+  onChangeLedger?: (next: LedgerEntry[]) => void;
+  onChangeAccounts?: (next: Account[]) => void;
+  fxRate?: number | null;
 }
 
 const sideLabel: Record<TradeSide, string> = {
@@ -95,7 +103,11 @@ export const StocksView: React.FC<Props> = ({
   onLoadInitialTickers,
   isLoadingTickerDatabase,
   presets = [],
-  onChangePresets
+  onChangePresets,
+  ledger = [],
+  onChangeLedger,
+  onChangeAccounts,
+  fxRate: propFxRate = null
 }) => {
   const [tradeForm, setTradeForm] = useState(createDefaultTradeForm);
   const [showPresetModal, setShowPresetModal] = useState(false);
@@ -104,6 +116,14 @@ export const StocksView: React.FC<Props> = ({
   const [yahooUpdatedAt, setYahooUpdatedAt] = useState<string | null>(null);
   const [draggingTradeId, setDraggingTradeId] = useState<string | null>(null);
   const [draggingAccountId, setDraggingAccountId] = useState<string | null>(null);
+  const [isAccountReorderMode, setIsAccountReorderMode] = useState<boolean>(() => {
+    try {
+      const saved = localStorage.getItem("fw-account-reorder-mode");
+      return saved === "true";
+    } catch {
+      return false;
+    }
+  });
   const [accountOrder, setAccountOrder] = useState<string[]>(() => {
     try {
       const saved = localStorage.getItem("fw-account-order");
@@ -112,10 +132,17 @@ export const StocksView: React.FC<Props> = ({
       return [];
     }
   });
-  const [fxRate, setFxRate] = useState<number | null>(null);
+  const [fxRate, setFxRate] = useState<number | null>(propFxRate);
   const [fxUpdatedAt, setFxUpdatedAt] = useState<string | null>(null);
-  const [showUSD, setShowUSD] = useState(false);
-  const [activeStocksSection, setActiveStocksSection] = useState<"portfolio" | "dca" | "quotes" | "stats">("portfolio");
+
+  // props에서 전달받은 환율 업데이트
+  useEffect(() => {
+    if (propFxRate !== null) {
+      setFxRate(propFxRate);
+    }
+  }, [propFxRate]);
+  // 탭 관리
+  const [activeTab, setActiveTab] = useState<"stocks" | "portfolio" | "fx">("stocks");
   const [activeQuoteMarket, setActiveQuoteMarket] = useState<"korea" | "us">("korea");
   const [recentTickers, setRecentTickers] = useState<Array<{ ticker: string; name?: string }>>([]);
   const [favoriteTickers, setFavoriteTickers] = useState<Array<{ ticker: string; name?: string }>>([]);
@@ -140,6 +167,9 @@ export const StocksView: React.FC<Props> = ({
     key: "date",
     direction: "desc"
   });
+  // 거래 내역 페이징
+  const [tradeCurrentPage, setTradeCurrentPage] = useState(1);
+  const [tradePageSize] = useState(50);
   const [dcaPlans, setDcaPlans] = useState<
     Array<{
       id: string;
@@ -178,9 +208,7 @@ export const StocksView: React.FC<Props> = ({
   const [quickFilter, setQuickFilter] = useState<"pnl" | "volatility" | "sector">("pnl");
   const [simpleSearch, setSimpleSearch] = useState("");
   const [justUpdatedTickers, setJustUpdatedTickers] = useState<string[]>([]);
-
-  // 티커 문자열을 표준화 (대문자, 야후 접미사 제거)
-  const cleanTicker = (raw: string) => raw.toUpperCase().replace(/\.(KS|KQ|KO|K|KSQ)$/i, "");
+  const [selectedPosition, setSelectedPosition] = useState<PositionWithPrice | null>(null);
 
   // 티커 검색 함수
   const searchTickers = useCallback((query: string): TickerInfo[] => {
@@ -267,19 +295,9 @@ export const StocksView: React.FC<Props> = ({
     return () => clearTimeout(timer);
   }, [tradeForm.ticker, tickerSuggestions.length, tickerDatabase, tradeForm.name]);
 
-  const adjustedPrices = useMemo(() => {
-    if (!fxRate) return prices;
-    return prices.map((p) => {
-      if (p.currency && p.currency !== "KRW" && p.currency === "USD") {
-        return { ...p, price: p.price * fxRate, currency: "KRW" };
-      }
-      return p;
-    });
-  }, [prices, fxRate]);
-
-  const positions = useMemo(() => computePositions(trades, adjustedPrices, accounts), [
+  const positions = useMemo(() => computePositions(trades, prices, accounts), [
     trades,
-    adjustedPrices,
+    prices,
     accounts
   ]);
 
@@ -292,20 +310,24 @@ export const StocksView: React.FC<Props> = ({
 
   const positionsWithPrice = useMemo<PositionWithPrice[]>(() => {
     return positions.map((p) => {
-      // adjustedPrices에서 가져오면 이미 KRW로 변환된 가격
-      const adjustedPriceInfo = adjustedPrices.find((x) => x.ticker === p.ticker);
-      // 원본 prices에서 통화 정보와 원본 가격 가져오기 (표시용)
+      // 원본 prices에서 통화 정보와 원본 가격 가져오기
       const originalPriceInfo = prices.find((x) => x.ticker === p.ticker);
-      // 표시용/계산용 현재가 (KRW로 맞춘 값)
-      const displayMarketPrice = adjustedPriceInfo?.price ?? p.marketPrice;
-      const originalMarketPrice = originalPriceInfo?.currency === "USD" ? originalPriceInfo.price : undefined;
-      const currency = originalPriceInfo?.currency;
+      // 티커로 해외 종목 판단 (6자리 숫자가 아니면 해외 종목)
+      const isForeignStock = !/^[0-9]{6}$/.test(p.ticker);
+      const currency = originalPriceInfo?.currency || (isForeignStock ? "USD" : "KRW");
+      const isUSD = currency === "USD" || isForeignStock;
+      
+      // USD 종목은 USD 가격 사용, KRW 종목은 KRW 가격 사용
+      const displayMarketPrice = isUSD 
+        ? (originalPriceInfo?.price ?? p.marketPrice)
+        : (prices.find((x) => x.ticker === p.ticker)?.price ?? p.marketPrice);
+      const originalMarketPrice = isUSD ? originalPriceInfo?.price : undefined;
 
-      // 평가금액/손익/수익률을 KRW 기준으로 재계산
+      // 평가금액/손익 계산 (USD 종목은 USD 기준, KRW 종목은 KRW 기준)
       const marketValue = displayMarketPrice * p.quantity;
       const pnl = marketValue - p.totalBuyAmount;
       const pnlRate = p.totalBuyAmount > 0 ? pnl / p.totalBuyAmount : 0;
-      // 단가와 현재가 차이 (KRW 기준)
+      // 단가와 현재가 차이
       const diff = displayMarketPrice - Math.round(p.avgPrice);
 
       return {
@@ -319,7 +341,7 @@ export const StocksView: React.FC<Props> = ({
         diff
       };
     });
-  }, [positions, adjustedPrices, prices]);
+  }, [positions, prices]);
 
   const totals = useMemo(() => {
     const totalMarketValue = positionsWithPrice.reduce((sum, p) => sum + p.marketValue, 0);
@@ -361,7 +383,7 @@ export const StocksView: React.FC<Props> = ({
       console.error("DCA 계산 오류:", err);
       return null;
     }
-  }, [dcaForm, prices, adjustedPrices, fxRate, trades]);
+  }, [dcaForm, prices, fxRate, trades]);
 
   const persistDcaPlans = (next: typeof dcaPlans) => {
     setDcaPlans(next);
@@ -450,6 +472,37 @@ export const StocksView: React.FC<Props> = ({
     });
   };
 
+  const sortedTrades = useMemo(() => {
+    const dir = tradeSort.direction === "asc" ? 1 : -1;
+    return [...trades].sort((a, b) => {
+      const key = tradeSort.key;
+      const va = (a as any)[key];
+      const vb = (b as any)[key];
+      if (key === "date") {
+        return (va < vb ? -1 : va > vb ? 1 : 0) * dir;
+      }
+      if (typeof va === "string" || typeof vb === "string") {
+        return String(va ?? "").localeCompare(String(vb ?? "")) * dir;
+      }
+      return ((va ?? 0) - (vb ?? 0)) * dir;
+    });
+  }, [trades, tradeSort]);
+
+  const paginatedTrades = useMemo(() => {
+    const startIndex = (tradeCurrentPage - 1) * tradePageSize;
+    const endIndex = startIndex + tradePageSize;
+    return sortedTrades.slice(startIndex, endIndex);
+  }, [sortedTrades, tradeCurrentPage, tradePageSize]);
+
+  const tradeTotalPages = useMemo(() => {
+    return Math.ceil(sortedTrades.length / tradePageSize);
+  }, [sortedTrades.length, tradePageSize]);
+
+  // 거래 정렬 변경 시 첫 페이지로
+  useEffect(() => {
+    setTradeCurrentPage(1);
+  }, [tradeSort.key, tradeSort.direction]);
+
   const sortTrades = (rows: StockTrade[]) => {
     const dir = tradeSort.direction === "asc" ? 1 : -1;
     return [...rows].sort((a, b) => {
@@ -498,6 +551,56 @@ export const StocksView: React.FC<Props> = ({
     }
   };
 
+  // 기존 달러 종목 거래의 cashImpact를 원화로 재계산 (한 번만 실행)
+  const hasRecalculatedRef = React.useRef(false);
+  React.useEffect(() => {
+    if (!fxRate || trades.length === 0 || hasRecalculatedRef.current) return;
+    
+    const needsUpdate = trades.some(t => {
+      const isUSD = isUSDStock(t.ticker);
+      const priceInfo = prices.find((p) => cleanTicker(p.ticker) === cleanTicker(t.ticker));
+      const currency = priceInfo?.currency || (isUSD ? "USD" : "KRW");
+      if (currency !== "USD") return false;
+      
+      // totalAmount가 달러로 저장되어 있고, cashImpact가 원화로 변환되지 않은 경우
+      // (cashImpact의 절댓값이 totalAmount와 비슷하면 원화 변환이 안 된 것으로 간주)
+      const expectedKRW = Math.abs(t.totalAmount * fxRate);
+      const currentImpact = Math.abs(t.cashImpact);
+      // 10% 이상 차이나면 재계산 필요
+      return Math.abs(currentImpact - expectedKRW) / expectedKRW > 0.1;
+    });
+    
+    if (needsUpdate) {
+      const updated = trades.map(t => {
+        const isUSD = isUSDStock(t.ticker);
+        const priceInfo = prices.find((p) => cleanTicker(p.ticker) === cleanTicker(t.ticker));
+        const currency = priceInfo?.currency || (isUSD ? "USD" : "KRW");
+        
+        if (currency === "USD" && fxRate) {
+          // totalAmount는 달러로 저장되어 있으므로 원화로 변환
+          const totalAmountKRW = t.totalAmount * fxRate;
+          const cashImpact = t.side === "buy" ? -totalAmountKRW : totalAmountKRW;
+          
+          // cashImpact가 이미 올바르게 계산되어 있으면 변경하지 않음
+          const currentImpact = Math.abs(t.cashImpact);
+          const expectedImpact = Math.abs(totalAmountKRW);
+          if (Math.abs(currentImpact - expectedImpact) / expectedImpact > 0.1) {
+            return { ...t, cashImpact };
+          }
+        }
+        return t;
+      });
+      
+      // 변경사항이 있으면 업데이트
+      const hasChanges = updated.some((t, i) => t.cashImpact !== trades[i].cashImpact);
+      if (hasChanges) {
+        onChangeTrades(updated);
+        hasRecalculatedRef.current = true;
+        toast.success("달러 종목 거래의 계좌 잔액이 재계산되었습니다.");
+      }
+    }
+  }, [fxRate, trades, prices, onChangeTrades]);
+
   React.useEffect(() => {
     updateFxRate().catch((err) => {
       console.warn("FX rate update failed:", err);
@@ -517,25 +620,20 @@ export const StocksView: React.FC<Props> = ({
     }
   }, []);
 
-  const formatPriceWithCurrency = (value: number, currency?: string) => {
-    if (currency === "USD" && showUSD) {
-      const base = `${formatUSD(value)} USD`;
-      if (fxRate) {
-        return `${base} (약 ${formatKRW(Math.round(value * fxRate))})`;
-      }
-      return base;
+
+  const formatPriceWithCurrency = (value: number, currency?: string, ticker?: string) => {
+    // 티커 형식으로 통화 판단
+    const isUSD = currency === "USD" || isUSDStock(ticker);
+    
+    if (isUSD) {
+      return formatUSD(value);
     }
-    if (currency === "USD" && fxRate && !showUSD) {
-      return `${formatKRW(Math.round(value * fxRate))}`;
-    }
-    if (currency && currency !== "KRW" && showUSD) {
-      return `${Math.round(value).toLocaleString("en-US")} ${currency}`;
-    }
-    return `${formatKRW(value)}`;
+    // 한국 종목은 원화로 표시
+    return formatKRW(value);
   };
 
   const getMarketStatus = (ticker: string, currency?: string) => {
-    const isKorea = /^[0-9]{6}$/.test(ticker) || currency === "KRW";
+    const isKorea = !isUSDStock(ticker) && (currency === "KRW" || /[0-9]/.test(ticker));
     const zone = isKorea ? "Asia/Seoul" : "America/New_York";
     const label = isKorea ? "한국장" : "미국장";
     const now = new Date();
@@ -562,7 +660,7 @@ export const StocksView: React.FC<Props> = ({
 
   const getPriceInfoForDca = (ticker: string) => {
     const symbol = cleanTicker(ticker);
-    const adjusted = adjustedPrices.find((p) => cleanTicker(p.ticker) === symbol);
+    const adjusted = prices.find((p) => cleanTicker(p.ticker) === symbol);
     const original = prices.find((p) => cleanTicker(p.ticker) === symbol);
     const priceKRW =
       adjusted?.price ??
@@ -629,9 +727,9 @@ export const StocksView: React.FC<Props> = ({
               <tr key={item.ticker}>
                 <td>{item.ticker}</td>
                 <td>{item.name ?? "-"}</td>
-                <td className="number">{formatPriceWithCurrency(item.price ?? 0, item.currency)}</td>
+                <td className="number">{formatPriceWithCurrency(item.price ?? 0, item.currency, item.ticker)}</td>
                 <td className={`number ${changeClass}`}>
-                  {item.change != null ? formatKRW(item.change) : "-"}
+                  {item.change != null ? formatPriceWithCurrency(item.change, item.currency, item.ticker) : "-"}
                 </td>
                 <td className={`number ${changePercentClass}`}>
                   {item.changePercent != null ? `${item.changePercent.toFixed(2)}%` : "-"}
@@ -859,7 +957,7 @@ export const StocksView: React.FC<Props> = ({
   };
 
   const quickPrefillTrade = (ticker: string, name?: string, side: TradeSide = "buy") => {
-    setActiveStocksSection("portfolio");
+    // 탭 기능 제거됨
     setTradeForm((prev) => ({
       ...prev,
       ticker,
@@ -872,21 +970,8 @@ export const StocksView: React.FC<Props> = ({
   };
 
   const handlePositionClick = (p: PositionWithPrice) => {
-    // 보유 종목 클릭 시 매도 폼 열기
-    setActiveStocksSection("portfolio");
-    const priceInfo = prices.find((x) => x.ticker === p.ticker);
-    const currentPrice = priceInfo?.price ?? p.marketPrice;
-    setTradeForm({
-      id: undefined,
-      date: new Date().toISOString().slice(0, 10),
-      accountId: p.accountId,
-      ticker: p.ticker,
-      name: p.name,
-      side: "sell",
-      quantity: String(p.quantity), // 보유 수량으로 자동 채움
-      price: String(Math.round(currentPrice)), // 현재가로 자동 채움
-      fee: "0"
-    });
+    // 보유 종목 클릭 시 종목 상세 모달 열기
+    setSelectedPosition(p);
   };
 
   const handleRefreshSymbolLibrary = async () => {
@@ -1013,22 +1098,134 @@ export const StocksView: React.FC<Props> = ({
     [trades]
   );
 
+  // 거래 폼 검증
+  const tradeFormValidation = useMemo(() => {
+    const errors: Record<string, string> = {};
+    const tickerClean = cleanTicker(tradeForm.ticker);
+    
+    // 날짜 검증
+    // 주의: 주식 거래는 미래 날짜도 허용합니다 (과거 거래 기록 입력, 예약 주문 등)
+    // LedgerView와 달리 maxDate를 전달하지 않아 미래 날짜 제한이 없습니다
+    const dateValidation = validateDate(tradeForm.date);
+    if (!dateValidation.valid) {
+      errors.date = dateValidation.error || "";
+    }
+    
+    // 계좌 검증
+    const accountValidation = validateRequired(tradeForm.accountId, "계좌");
+    if (!accountValidation.valid) {
+      errors.accountId = accountValidation.error || "";
+    }
+    
+    // 티커 검증
+    if (tradeForm.ticker.trim()) {
+      const tickerValidation = validateTicker(tradeForm.ticker);
+      if (!tickerValidation.valid) {
+        errors.ticker = tickerValidation.error || "";
+      }
+    } else {
+      errors.ticker = "티커를 입력해주세요";
+    }
+    
+    // 수량 검증
+    const quantityValidation = validateQuantity(tradeForm.quantity, false); // 정수만
+    if (!quantityValidation.valid) {
+      errors.quantity = quantityValidation.error || "";
+    }
+    
+    // 가격 검증 (소수점 허용 - USD 주식 가격 등)
+    const priceValidation = validateAmount(tradeForm.price, false, 0.001, undefined, true); // 최소 0.001, 소수점 허용
+    if (!priceValidation.valid) {
+      errors.price = priceValidation.error || "";
+    }
+    
+    // 수수료 검증 (선택적이지만 입력되면 유효해야 함)
+    const feeTrimmed = tradeForm.fee?.trim() || "";
+    if (feeTrimmed && feeTrimmed !== "0") {
+      const feeValidation = validateAmount(feeTrimmed, false, 0);
+      if (!feeValidation.valid) {
+        errors.fee = feeValidation.error || "";
+      }
+    }
+    
+    return errors;
+  }, [tradeForm]);
+  
+  const isTradeFormValid = Object.keys(tradeFormValidation).length === 0;
+
   const handleTradeSubmit = (e: React.FormEvent) => {
     e.preventDefault();
+    
+    // 검증 실패 시 제출 방지
+    if (!isTradeFormValid) {
+      const firstError = Object.values(tradeFormValidation)[0];
+      if (firstError) {
+        toast.error(firstError);
+      }
+      return;
+    }
+    
     const tickerClean = cleanTicker(tradeForm.ticker);
     const quantity = Number(tradeForm.quantity);
     const price = Number(tradeForm.price);
     const fee = Number(tradeForm.fee || "0");
+    
     if (!tradeForm.date || !tradeForm.accountId || !tickerClean || !quantity || !price) {
       return;
     }
-    const totalAmount = quantity * price + fee;
     // 매도는 보유 종목 클릭으로만 가능, 매수는 기본값
     const side = tradeForm.side || "buy";
-    const cashImpact = side === "buy" ? -totalAmount : totalAmount;
-    // #region agent log
-    fetch('http://127.0.0.1:7242/ingest/882185e7-1338-4f3b-a05b-acdab4efccb1',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'StocksView.tsx:handleTradeSubmit',message:'주식 거래 생성',data:{accountId:tradeForm.accountId,ticker:tickerClean,side,quantity,price,fee,totalAmount,cashImpact},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'B'})}).catch(()=>{});
-    // #endregion
+    
+    // 선택된 계좌 확인
+    const selectedAccount = accounts.find((a) => a.id === tradeForm.accountId);
+    if (!selectedAccount) {
+      toast.error("계좌를 선택해주세요.");
+      return;
+    }
+    
+    // 증권계좌는 달러와 원화 모두 사용 가능
+    const isSecuritiesAccount = selectedAccount.type === "securities";
+    
+    // 계좌의 통화 확인 (증권계좌가 아닌 경우에만 currency 필드 사용)
+    const accountCurrency = isSecuritiesAccount ? undefined : (selectedAccount.currency || "KRW");
+    
+    // 달러 종목 여부 확인
+    const isUSD = isUSDStock(tickerClean);
+    const priceInfo = prices.find((p) => cleanTicker(p.ticker) === tickerClean);
+    const currency = priceInfo?.currency || (isUSD ? "USD" : "KRW");
+    const isUSDCurrency = currency === "USD";
+    
+    // 계좌 통화와 티커 통화 일치 검증 (증권계좌는 제외)
+    if (!isSecuritiesAccount) {
+      if (accountCurrency === "USD" && !isUSDCurrency) {
+        toast.error("달러 계좌에서는 달러 종목만 거래할 수 있습니다.");
+        return;
+      }
+      if (accountCurrency === "KRW" && isUSDCurrency) {
+        toast.error("원화 계좌에서는 원화 종목만 거래할 수 있습니다.");
+        return;
+      }
+    }
+    
+    // 달러 종목인 경우 환율 적용
+    const exchangeRate = isUSDCurrency && fxRate ? fxRate : 1;
+    
+    // 매수: totalAmount = quantity * price + fee (지불한 총액)
+    // 매도: totalAmount = quantity * price - fee (받은 총액, 수수료 차감)
+    const totalAmount = side === "buy" 
+      ? quantity * price + fee 
+      : quantity * price - fee;
+    
+    // cashImpact는 원화 기준으로 계산 (달러 종목은 환율 적용)
+    // 증권계좌의 달러 종목은 USD 잔액에서 차감되므로 cashImpact는 0으로 설정
+    const totalAmountKRW = totalAmount * exchangeRate;
+    // 매수: cashImpact = -totalAmount (계좌에서 나감)
+    // 매도: cashImpact = +totalAmount (계좌에 들어옴)
+    // 증권계좌의 달러 종목은 USD 잔액에서 처리되므로 cashImpact는 0
+    const cashImpact = (isSecuritiesAccount && isUSDCurrency) 
+      ? 0 
+      : (side === "buy" ? -totalAmountKRW : totalAmountKRW);
+    
     // 종목명 우선순위: tradeForm.name > prices > trades > tickerDatabase > 티커
     const fallbackName =
       tradeForm.name ||
@@ -1038,25 +1235,74 @@ export const StocksView: React.FC<Props> = ({
       tickerClean;
 
     if (tradeForm.id) {
-      const updated = trades.map((t) =>
-        t.id === tradeForm.id
-          ? {
-              ...t,
-              date: tradeForm.date,
-              accountId: tradeForm.accountId,
-              ticker: tickerClean,
-              name: fallbackName,
-              side,
-              quantity,
-              price,
-              fee,
-              totalAmount,
-              cashImpact
-            }
-          : t
+      // 거래 수정: 기존 거래의 USD 영향 제거 후 새 USD 영향 적용
+      const oldTrade = trades.find((t) => t.id === tradeForm.id);
+      let usdImpact = 0;
+      
+      if (isSecuritiesAccount && oldTrade) {
+        // 기존 거래가 달러 종목이었는지 확인
+        const oldPriceInfo = prices.find((p) => cleanTicker(p.ticker) === cleanTicker(oldTrade.ticker));
+        const oldIsUSD = oldPriceInfo?.currency === "USD" || isUSDStock(oldTrade.ticker);
+        
+        if (oldIsUSD) {
+          // 기존 거래의 USD 영향 되돌리기
+          const oldUsdImpact = oldTrade.side === "buy" ? oldTrade.totalAmount : -oldTrade.totalAmount;
+          usdImpact -= oldUsdImpact;
+        }
+        
+        // 새 거래가 달러 종목인 경우 USD 영향 적용
+        if (isUSDCurrency) {
+          const newUsdImpact = side === "buy" ? -totalAmount : totalAmount;
+          usdImpact += newUsdImpact;
+        }
+      } else if (isSecuritiesAccount && isUSDCurrency) {
+        // 새로 달러 종목으로 변경
+        usdImpact = side === "buy" ? -totalAmount : totalAmount;
+      }
+      
+      // USD 잔액 업데이트 준비
+      let updatedAccounts = accounts;
+      if (isSecuritiesAccount && onChangeAccounts && usdImpact !== 0) {
+        updatedAccounts = accounts.map((a) => {
+          if (a.id === tradeForm.accountId) {
+            const currentUsdBalance = a.usdBalance ?? 0;
+            const newUsdBalance = currentUsdBalance + usdImpact;
+            console.log(`[USD Balance Update - Edit] Account: ${a.id}, Current: ${currentUsdBalance}, Impact: ${usdImpact}, New: ${newUsdBalance}`);
+            return { ...a, usdBalance: newUsdBalance };
+          }
+          return a;
+        });
+      }
+      
+      // 거래 저장 먼저 (함수형 업데이트로 최신 상태 보장)
+      onChangeTrades((prevTrades) =>
+        prevTrades.map((t) =>
+          t.id === tradeForm.id
+            ? {
+                ...t,
+                date: tradeForm.date,
+                accountId: tradeForm.accountId,
+                ticker: tickerClean,
+                name: fallbackName,
+                side,
+                quantity,
+                price,
+                fee,
+                totalAmount,
+                cashImpact
+              }
+            : t
+        )
       );
-      onChangeTrades(updated);
+      
+      // USD 잔액 업데이트 (거래 저장 후 약간의 지연)
+      if (isSecuritiesAccount && onChangeAccounts && usdImpact !== 0) {
+        setTimeout(() => {
+          onChangeAccounts(updatedAccounts);
+        }, 0);
+      }
     } else {
+      // 새 거래 추가
       const id = `T${Date.now()}`;
       const trade: StockTrade = {
         id,
@@ -1071,7 +1317,35 @@ export const StocksView: React.FC<Props> = ({
         totalAmount,
         cashImpact
       };
-      onChangeTrades([trade, ...trades]);
+      
+      // 증권계좌에서 달러 종목 거래 시 USD 잔액 업데이트 준비
+      let updatedAccounts = accounts;
+      if (isSecuritiesAccount && isUSDCurrency && onChangeAccounts) {
+        const usdImpact = side === "buy" ? -totalAmount : totalAmount; // 매수: USD 차감, 매도: USD 증가
+        updatedAccounts = accounts.map((a) => {
+          if (a.id === tradeForm.accountId) {
+            const currentUsdBalance = a.usdBalance ?? 0;
+            const newUsdBalance = currentUsdBalance + usdImpact;
+            console.log(`[USD Balance Update] Account: ${a.id}, Current: ${currentUsdBalance}, Impact: ${usdImpact}, New: ${newUsdBalance}`);
+            return { ...a, usdBalance: newUsdBalance };
+          }
+          return a;
+        });
+      }
+      
+      // 거래 저장 먼저 (함수형 업데이트로 최신 상태 보장)
+      onChangeTrades((prevTrades) => [trade, ...prevTrades]);
+      
+      // 새 거래 추가 시 첫 페이지로 이동 (최신 거래가 보이도록)
+      setTradeCurrentPage(1);
+      
+      // 증권계좌에서 달러 종목 거래 시 USD 잔액 업데이트 (거래 저장 후 약간의 지연)
+      if (isSecuritiesAccount && isUSDCurrency && onChangeAccounts) {
+        // React 상태 업데이트가 완료된 후 계좌 업데이트
+        setTimeout(() => {
+          onChangeAccounts(updatedAccounts);
+        }, 0);
+      }
     }
     setTradeForm((prev) => ({
       ...createDefaultTradeForm(),
@@ -1173,7 +1447,8 @@ export const StocksView: React.FC<Props> = ({
     const nextPlans = [plan, ...dcaPlans];
     persistDcaPlans(nextPlans);
     
-    setDcaMessage(`DCA 플랜 등록 완료: ${symbol} 매일 ${formatKRW(Math.round(amount))} (${startDate}부터 시작)`);
+    const isUSD = isUSDStock(symbol);
+    setDcaMessage(`DCA 플랜 등록 완료: ${symbol} 매일 ${isUSD ? formatUSD(amount) : formatKRW(Math.round(amount))} (${startDate}부터 시작)`);
     setDcaForm((prev) => ({
       accountId: prev.accountId,
       ticker: "",
@@ -1200,9 +1475,36 @@ export const StocksView: React.FC<Props> = ({
         return;
       }
 
+      // 선택된 계좌 확인
+      const selectedAccount = accounts.find((a) => a.id === plan.accountId);
+      if (!selectedAccount) {
+        setDcaMessage("계좌를 찾을 수 없습니다.");
+        setBuyingPlanId(null);
+        return;
+      }
+
+      // 계좌의 통화 확인 (증권계좌의 경우 currency 필드 사용)
+      const accountCurrency = selectedAccount.currency || "KRW";
+      
+      // 티커의 통화 확인
+      const tickerIsUSD = isUSDStock(plan.ticker);
+      const currency = quote.currency || (tickerIsUSD ? "USD" : "KRW");
+      const isUSDCurrency = currency === "USD";
+      
+      // 계좌 통화와 티커 통화 일치 검증
+      if (accountCurrency === "USD" && !isUSDCurrency) {
+        setDcaMessage("달러 계좌에서는 달러 종목만 거래할 수 있습니다.");
+        setBuyingPlanId(null);
+        return;
+      }
+      if (accountCurrency === "KRW" && isUSDCurrency) {
+        setDcaMessage("원화 계좌에서는 원화 종목만 거래할 수 있습니다.");
+        setBuyingPlanId(null);
+        return;
+      }
+
       // 환율 계산
       let priceKRW = quote.price;
-      const currency = quote.currency;
       if (currency === "USD" && fx) {
         priceKRW = quote.price * fx;
       }
@@ -1236,11 +1538,14 @@ export const StocksView: React.FC<Props> = ({
       const marketValue = quantity * priceKRW;
       const profit = marketValue - finalAmount;
       const profitRate = (profit / finalAmount) * 100;
+      
+      const tickerIsUSDForFormat = isUSDStock(plan.ticker);
+      const formatAmount = tickerIsUSDForFormat ? (v: number) => formatUSD(v) : (v: number) => formatKRW(Math.round(v));
 
       setDcaMessage(
-        `매수 완료: ${quantity.toFixed(6)}주, 매수액 ${formatKRW(Math.round(finalAmount))}, ` +
-        `평가액 ${formatKRW(Math.round(marketValue))} ` +
-        `(${profit >= 0 ? '+' : ''}${formatKRW(Math.round(profit))}, ${profitRate >= 0 ? '+' : ''}${profitRate.toFixed(2)}%)`
+        `매수 완료: ${quantity.toFixed(6)}주, 매수액 ${formatAmount(finalAmount)}, ` +
+        `평가액 ${formatAmount(marketValue)} ` +
+        `(${profit >= 0 ? '+' : ''}${formatAmount(profit)}, ${profitRate >= 0 ? '+' : ''}${profitRate.toFixed(2)}%)`
       );
 
       // 플랜의 마지막 실행 날짜 업데이트
@@ -1292,9 +1597,36 @@ export const StocksView: React.FC<Props> = ({
             continue;
           }
 
+          // 선택된 계좌 확인
+          const selectedAccount = accounts.find((a) => a.id === plan.accountId);
+          if (!selectedAccount) {
+            failCount++;
+            failMessages.push(`${plan.ticker}: 계좌를 찾을 수 없음`);
+            continue;
+          }
+
+          // 계좌의 통화 확인 (증권계좌의 경우 currency 필드 사용)
+          const accountCurrency = selectedAccount.currency || "KRW";
+          
+          // 티커의 통화 확인
+          const isUSD = isUSDStock(plan.ticker);
+          const currency = q.currency || (isUSD ? "USD" : "KRW");
+          const isUSDCurrency = currency === "USD";
+          
+          // 계좌 통화와 티커 통화 일치 검증
+          if (accountCurrency === "USD" && !isUSDCurrency) {
+            failCount++;
+            failMessages.push(`${plan.ticker}: 달러 계좌에서는 달러 종목만 거래 가능`);
+            continue;
+          }
+          if (accountCurrency === "KRW" && isUSDCurrency) {
+            failCount++;
+            failMessages.push(`${plan.ticker}: 원화 계좌에서는 원화 종목만 거래 가능`);
+            continue;
+          }
+
           // 환율 계산
           let priceKRW = q.price;
-          const currency = q.currency;
           if (currency === "USD" && fx) {
             priceKRW = q.price * fx;
           }
@@ -1544,9 +1876,57 @@ export const StocksView: React.FC<Props> = ({
         const price = Number(tradeForm.price);
         const fee = Number(tradeForm.fee || "0");
         if (tradeForm.date && tradeForm.accountId && tickerClean && quantity && price) {
-          const totalAmount = quantity * price + fee;
           const side = tradeForm.side || "buy";
-          const cashImpact = side === "buy" ? -totalAmount : totalAmount;
+          
+          // 선택된 계좌 확인
+          const selectedAccount = accounts.find((a) => a.id === tradeForm.accountId);
+          if (!selectedAccount) {
+            toast.error("계좌를 선택해주세요.");
+            return;
+          }
+          
+          // 증권계좌는 달러와 원화 모두 사용 가능
+          const isSecuritiesAccount = selectedAccount.type === "securities";
+          
+          // 계좌의 통화 확인 (증권계좌가 아닌 경우에만 currency 필드 사용)
+          const accountCurrency = isSecuritiesAccount ? undefined : (selectedAccount.currency || "KRW");
+          
+          // 달러 종목 여부 확인
+          const isUSD = isUSDStock(tickerClean);
+          const priceInfo = prices.find((p) => cleanTicker(p.ticker) === tickerClean);
+          const currency = priceInfo?.currency || (isUSD ? "USD" : "KRW");
+          const isUSDCurrency = currency === "USD";
+          
+          // 계좌 통화와 티커 통화 일치 검증 (증권계좌는 제외)
+          if (!isSecuritiesAccount) {
+            if (accountCurrency === "USD" && !isUSDCurrency) {
+              toast.error("달러 계좌에서는 달러 종목만 거래할 수 있습니다.");
+              return;
+            }
+            if (accountCurrency === "KRW" && isUSDCurrency) {
+              toast.error("원화 계좌에서는 원화 종목만 거래할 수 있습니다.");
+              return;
+            }
+          }
+          
+          // 달러 종목인 경우 환율 적용
+          const exchangeRate = isUSDCurrency && fxRate ? fxRate : 1;
+          
+          // 매수: totalAmount = quantity * price + fee (지불한 총액)
+          // 매도: totalAmount = quantity * price - fee (받은 총액, 수수료 차감)
+          const totalAmount = side === "buy" 
+            ? quantity * price + fee 
+            : quantity * price - fee;
+          
+          // cashImpact는 원화 기준으로 계산 (달러 종목은 환율 적용)
+          // 증권계좌의 달러 종목은 USD 잔액에서 차감되므로 cashImpact는 0으로 설정
+          const totalAmountKRW = totalAmount * exchangeRate;
+          // 매수: cashImpact = -totalAmount (계좌에서 나감)
+          // 매도: cashImpact = +totalAmount (계좌에 들어옴)
+          // 증권계좌의 달러 종목은 USD 잔액에서 처리되므로 cashImpact는 0
+          const cashImpact = (isSecuritiesAccount && isUSDCurrency) 
+            ? 0 
+            : (side === "buy" ? -totalAmountKRW : totalAmountKRW);
           // 종목명 우선순위: tradeForm.name > prices > trades > tickerDatabase > 티커
           const fallbackName =
             tradeForm.name ||
@@ -1554,6 +1934,19 @@ export const StocksView: React.FC<Props> = ({
             trades.find((t) => cleanTicker(t.ticker) === tickerClean)?.name ||
             tickerDatabase.find(t => cleanTicker(t.ticker) === tickerClean)?.name ||
             tickerClean;
+
+          // 증권계좌에서 달러 종목 거래 시 USD 잔액 업데이트 준비
+          let updatedAccounts = accounts;
+          if (isSecuritiesAccount && isUSDCurrency && onChangeAccounts) {
+            const usdImpact = side === "buy" ? -totalAmount : totalAmount; // 매수: USD 차감, 매도: USD 증가
+            updatedAccounts = accounts.map((a) => {
+              if (a.id === tradeForm.accountId) {
+                const currentUsdBalance = a.usdBalance ?? 0;
+                return { ...a, usdBalance: currentUsdBalance + usdImpact };
+              }
+              return a;
+            });
+          }
 
           if (tradeForm.id) {
             const updated = trades.map((t) =>
@@ -1574,6 +1967,13 @@ export const StocksView: React.FC<Props> = ({
                 : t
             );
             onChangeTrades(updated);
+            
+            // USD 잔액 업데이트 (거래 저장 후 약간의 지연)
+            if (isSecuritiesAccount && isUSDCurrency && onChangeAccounts) {
+              setTimeout(() => {
+                onChangeAccounts(updatedAccounts);
+              }, 0);
+            }
           } else {
             const id = `T${Date.now()}`;
             const trade: StockTrade = {
@@ -1590,6 +1990,13 @@ export const StocksView: React.FC<Props> = ({
               cashImpact
             };
             onChangeTrades([trade, ...trades]);
+            
+            // USD 잔액 업데이트 (거래 저장 후 약간의 지연)
+            if (isSecuritiesAccount && isUSDCurrency && onChangeAccounts) {
+              setTimeout(() => {
+                onChangeAccounts(updatedAccounts);
+              }, 0);
+            }
           }
           setTradeForm((prev) => ({
             ...createDefaultTradeForm(),
@@ -1609,8 +2016,41 @@ export const StocksView: React.FC<Props> = ({
   const isEditingTrade = Boolean(tradeForm.id);
 
   const handleDeleteTrade = (id: string) => {
-    const next = trades.filter((t) => t.id !== id);
-    onChangeTrades(next);
+    // 삭제할 거래 찾기
+    const tradeToDelete = trades.find((t) => t.id === id);
+    if (!tradeToDelete) return;
+    
+    // 증권계좌의 달러 종목 거래 삭제 시 USD 잔액 되돌리기 준비
+    let updatedAccounts = accounts;
+    const account = accounts.find((a) => a.id === tradeToDelete.accountId);
+    if (account?.type === "securities" && onChangeAccounts) {
+      const priceInfo = prices.find((p) => cleanTicker(p.ticker) === cleanTicker(tradeToDelete.ticker));
+      const isUSD = priceInfo?.currency === "USD" || isUSDStock(tradeToDelete.ticker);
+      
+      if (isUSD) {
+        // 거래를 되돌리기: 매수였으면 USD 증가, 매도였으면 USD 차감
+        const usdImpact = tradeToDelete.side === "buy" ? tradeToDelete.totalAmount : -tradeToDelete.totalAmount;
+        updatedAccounts = accounts.map((a) => {
+          if (a.id === tradeToDelete.accountId) {
+            const currentUsdBalance = a.usdBalance ?? 0;
+            const newUsdBalance = currentUsdBalance + usdImpact;
+            console.log(`[USD Balance Update - Delete] Account: ${a.id}, Current: ${currentUsdBalance}, Impact: ${usdImpact}, New: ${newUsdBalance}`);
+            return { ...a, usdBalance: newUsdBalance };
+          }
+          return a;
+        });
+      }
+    }
+    
+    // 거래 삭제 먼저 (함수형 업데이트로 최신 상태 보장)
+    onChangeTrades((prevTrades) => prevTrades.filter((t) => t.id !== id));
+    
+    // USD 잔액 업데이트 (거래 삭제 후 약간의 지연)
+    if (account?.type === "securities" && onChangeAccounts && updatedAccounts !== accounts) {
+      setTimeout(() => {
+        onChangeAccounts(updatedAccounts);
+      }, 0);
+    }
     if (tradeForm.id === id) {
       resetTradeForm();
     }
@@ -1658,8 +2098,48 @@ export const StocksView: React.FC<Props> = ({
     if (!inlineEdit.date || !inlineEdit.accountId || !inlineEdit.ticker || !quantity || !price) {
       return;
     }
-    const totalAmount = quantity * price + fee;
-    const cashImpact = inlineEdit.side === "buy" ? -totalAmount : totalAmount;
+    const side = inlineEdit.side;
+    
+    // 선택된 계좌 확인
+    const selectedAccount = accounts.find((a) => a.id === inlineEdit.accountId);
+    if (!selectedAccount) {
+      toast.error("계좌를 선택해주세요.");
+      return;
+    }
+    
+    // 계좌의 통화 확인 (증권계좌의 경우 currency 필드 사용)
+    const accountCurrency = selectedAccount.currency || "KRW";
+    
+    // 달러 종목 여부 확인
+    const isUSD = isUSDStock(inlineEdit.ticker);
+    const priceInfo = prices.find((p) => cleanTicker(p.ticker) === cleanTicker(inlineEdit.ticker));
+    const currency = priceInfo?.currency || (isUSD ? "USD" : "KRW");
+    const isUSDCurrency = currency === "USD";
+    
+    // 계좌 통화와 티커 통화 일치 검증
+    if (accountCurrency === "USD" && !isUSDCurrency) {
+      toast.error("달러 계좌에서는 달러 종목만 거래할 수 있습니다.");
+      return;
+    }
+    if (accountCurrency === "KRW" && isUSDCurrency) {
+      toast.error("원화 계좌에서는 원화 종목만 거래할 수 있습니다.");
+      return;
+    }
+    
+    // 달러 종목인 경우 환율 적용
+    const exchangeRate = isUSDCurrency && fxRate ? fxRate : 1;
+    
+    // 매수: totalAmount = quantity * price + fee (지불한 총액)
+    // 매도: totalAmount = quantity * price - fee (받은 총액, 수수료 차감)
+    const totalAmount = side === "buy" 
+      ? quantity * price + fee 
+      : quantity * price - fee;
+    
+    // cashImpact는 원화 기준으로 계산 (달러 종목은 환율 적용)
+    const totalAmountKRW = totalAmount * exchangeRate;
+    // 매수: cashImpact = -totalAmount (계좌에서 나감)
+    // 매도: cashImpact = +totalAmount (계좌에 들어옴)
+    const cashImpact = side === "buy" ? -totalAmountKRW : totalAmountKRW;
     const updated = trades.map((t) =>
       t.id === inlineEdit.id
         ? {
@@ -1685,9 +2165,40 @@ export const StocksView: React.FC<Props> = ({
 
     return (
     <div>
-      {/* StocksView 렌더링 확인 */}
-      <div className="section-header">
+      {/* 탭 네비게이션 */}
+      <div style={{ display: "flex", gap: 8, marginBottom: 16, borderBottom: "1px solid var(--border)" }}>
+        <button
+          type="button"
+          className={activeTab === "stocks" ? "primary" : "secondary"}
+          onClick={() => setActiveTab("stocks")}
+          style={{ padding: "8px 16px", fontSize: 14, borderRadius: "6px 6px 0 0", borderBottom: activeTab === "stocks" ? "2px solid var(--primary)" : "none" }}
+        >
+          주식
+        </button>
+        <button
+          type="button"
+          className={activeTab === "portfolio" ? "primary" : "secondary"}
+          onClick={() => setActiveTab("portfolio")}
+          style={{ padding: "8px 16px", fontSize: 14, borderRadius: "6px 6px 0 0", borderBottom: activeTab === "portfolio" ? "2px solid var(--primary)" : "none" }}
+        >
+          포트폴리오 분석
+        </button>
+        {onChangeLedger && (
+          <button
+            type="button"
+            className={activeTab === "fx" ? "primary" : "secondary"}
+            onClick={() => setActiveTab("fx")}
+            style={{ padding: "8px 16px", fontSize: 14, borderRadius: "6px 6px 0 0", borderBottom: activeTab === "fx" ? "2px solid var(--primary)" : "none" }}
+          >
+            환전
+          </button>
+        )}
+      </div>
 
+      {/* 주식 탭 */}
+      {activeTab === "stocks" && (
+        <>
+      <div className="section-header">
         <h2>주식 거래 & 평가</h2>
 
         <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
@@ -1723,20 +2234,6 @@ export const StocksView: React.FC<Props> = ({
             </span>
 
           )}
-
-          <button
-
-            type="button"
-
-            className={showUSD ? "primary" : "secondary"}
-
-            onClick={() => setShowUSD((v) => !v)}
-
-          >
-
-            {showUSD ? "USD ON" : "USD OFF"}
-
-          </button>
 
           <button
 
@@ -1804,41 +2301,8 @@ export const StocksView: React.FC<Props> = ({
         </div>
       </div>
 
-      <div
-        className="stocks-section-tabs"
-        style={{ display: "flex", gap: 8, marginBottom: 16, flexWrap: "wrap" }}
-      >
-        <button
-          type="button"
-          className={activeStocksSection === "portfolio" ? "primary" : "secondary"}
-          onClick={() => setActiveStocksSection("portfolio")}
-        >
-          거래/평가
-        </button>
-        <button
-          type="button"
-          className={activeStocksSection === "dca" ? "primary" : "secondary"}
-          onClick={() => setActiveStocksSection("dca")}
-        >
-          DCA
-        </button>
-        <button
-          type="button"
-          className={activeStocksSection === "quotes" ? "primary" : "secondary"}
-          onClick={() => setActiveStocksSection("quotes")}
-        >
-          주식시세
-        </button>
-        <button
-          type="button"
-          className={activeStocksSection === "stats" ? "primary" : "secondary"}
-          onClick={() => setActiveStocksSection("stats")}
-        >
-          통계/차트
-        </button>
-      </div>
-
-      {activeStocksSection === "portfolio" && (
+      {/* 거래/평가 섹션 */}
+      {(
         <>
           {/* 프리셋 버튼 영역 */}
           <div className="card" style={{ padding: 12, marginBottom: 12 }}>
@@ -1889,10 +2353,32 @@ export const StocksView: React.FC<Props> = ({
 
           <div className="two-column">
             <form className="card" onSubmit={handleTradeSubmit} style={{ padding: 16 }}>
-          <h3 style={{ marginTop: 0, marginBottom: 8 }}>
-            {tradeForm.side === "sell" ? "주식 매도" : "주식 거래 입력 (매수)"}
-          </h3>
-          <p className="hint" style={{ margin: "0 0 12px 0", fontSize: 12 }}>기본 통화: 원화(KRW) 기준으로 표시합니다.</p>
+          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 8 }}>
+            <h3 style={{ marginTop: 0, marginBottom: 0 }}>
+              {tradeForm.side === "sell" ? "주식 매도" : "주식 거래 입력 (매수)"}
+            </h3>
+            {!isEditingTrade && (
+              <button
+                type="button"
+                onClick={() => {
+                  setTradeForm((prev) => ({
+                    ...prev,
+                    side: prev.side === "buy" ? "sell" : "buy",
+                    quantity: "",
+                    price: "",
+                    fee: prev.fee
+                  }));
+                }}
+                className={tradeForm.side === "sell" ? "primary" : "secondary"}
+                style={{ padding: "6px 12px", fontSize: 13, whiteSpace: "nowrap" }}
+              >
+                {tradeForm.side === "sell" ? "매수 모드로 전환" : "매도 모드로 전환"}
+              </button>
+            )}
+          </div>
+          <p className="hint" style={{ margin: "0 0 12px 0", fontSize: 12 }}>
+            한국 종목은 원화(KRW), 해외 종목은 달러(USD)로 입력 및 표시됩니다.
+          </p>
           <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(180px, 1fr))", gap: "10px 12px" }}>
             <label style={{ display: "flex", flexDirection: "column", gap: 4 }}>
               <span style={{ fontSize: 13, fontWeight: 500 }}>거래일</span>
@@ -1900,15 +2386,32 @@ export const StocksView: React.FC<Props> = ({
               type="date"
               value={tradeForm.date}
               onChange={(e) => setTradeForm({ ...tradeForm, date: e.target.value })}
-                style={{ padding: "6px 8px", fontSize: 14 }}
+                style={{ 
+                  padding: "6px 8px", 
+                  fontSize: 14,
+                  borderColor: tradeFormValidation.date ? "var(--danger)" : undefined
+                }}
+                aria-invalid={!!tradeFormValidation.date}
+                aria-describedby={tradeFormValidation.date ? "trade-date-error" : undefined}
             />
+            {tradeFormValidation.date && (
+              <span id="trade-date-error" style={{ fontSize: 11, color: "var(--danger)", display: "block", marginTop: 2 }}>
+                {tradeFormValidation.date}
+              </span>
+            )}
           </label>
             <label style={{ display: "flex", flexDirection: "column", gap: 4 }}>
               <span style={{ fontSize: 13, fontWeight: 500 }}>증권계좌</span>
             <select
               value={tradeForm.accountId}
               onChange={(e) => setTradeForm({ ...tradeForm, accountId: e.target.value })}
-                style={{ padding: "6px 8px", fontSize: 14 }}
+                style={{ 
+                  padding: "6px 8px", 
+                  fontSize: 14,
+                  borderColor: tradeFormValidation.accountId ? "var(--danger)" : undefined
+                }}
+                aria-invalid={!!tradeFormValidation.accountId}
+                aria-describedby={tradeFormValidation.accountId ? "trade-account-error" : undefined}
             >
               <option value="">선택</option>
               {accounts
@@ -1919,11 +2422,21 @@ export const StocksView: React.FC<Props> = ({
                   </option>
                 ))}
             </select>
+            {tradeFormValidation.accountId && (
+              <span id="trade-account-error" style={{ fontSize: 11, color: "var(--danger)", display: "block", marginTop: 2 }}>
+                {tradeFormValidation.accountId}
+              </span>
+            )}
           </label>
             <label style={{ display: "flex", flexDirection: "column", gap: 4, gridColumn: "1 / -1" }}>
               <span style={{ fontSize: 13, fontWeight: 500 }}>
                 티커
               </span>
+              {tradeFormValidation.ticker && (
+                <span style={{ fontSize: 11, color: "var(--danger)", display: "block" }}>
+                  {tradeFormValidation.ticker}
+                </span>
+              )}
               <div style={{ position: "relative" }}>
                 <Autocomplete
                   value={tradeForm.ticker}
@@ -1980,24 +2493,64 @@ export const StocksView: React.FC<Props> = ({
               min={0}
               value={tradeForm.quantity}
               onChange={(e) => setTradeForm({ ...tradeForm, quantity: e.target.value })}
-                style={{ padding: "6px 8px", fontSize: 14 }}
+                style={{ 
+                  padding: "6px 8px", 
+                  fontSize: 14,
+                  borderColor: tradeFormValidation.quantity ? "var(--danger)" : undefined
+                }}
+                aria-invalid={!!tradeFormValidation.quantity}
+                aria-describedby={tradeFormValidation.quantity ? "trade-quantity-error" : undefined}
             />
+            {tradeFormValidation.quantity && (
+              <span id="trade-quantity-error" style={{ fontSize: 11, color: "var(--danger)", display: "block", marginTop: 2 }}>
+                {tradeFormValidation.quantity}
+              </span>
+            )}
           </label>
             <label style={{ display: "flex", flexDirection: "column", gap: 4 }}>
-              <span style={{ fontSize: 13, fontWeight: 500 }}>단가</span>
+              <span style={{ fontSize: 13, fontWeight: 500 }}>
+                단가 {(() => {
+                  const ticker = tradeForm.ticker.toUpperCase();
+                  const isKorea = /^[0-9]{6}$/.test(ticker);
+                  const priceInfo = prices.find((p) => p.ticker === ticker);
+                  const currency = priceInfo?.currency || (isKorea ? "KRW" : "USD");
+                  return isKorea ? "(KRW)" : "(USD)";
+                })()}
+              </span>
             <input
               type="number"
               min={0}
+              step="0.01"
               value={tradeForm.price}
               onChange={(e) => setTradeForm({ ...tradeForm, price: e.target.value })}
-                style={{ padding: "6px 8px", fontSize: 14 }}
+                style={{ 
+                  padding: "6px 8px", 
+                  fontSize: 14,
+                  borderColor: tradeFormValidation.price ? "var(--danger)" : undefined
+                }}
+                aria-invalid={!!tradeFormValidation.price}
+                aria-describedby={tradeFormValidation.price ? "trade-price-error" : undefined}
             />
+            {tradeFormValidation.price && (
+              <span id="trade-price-error" style={{ fontSize: 11, color: "var(--danger)", display: "block", marginTop: 2 }}>
+                {tradeFormValidation.price}
+              </span>
+            )}
           </label>
             <label style={{ display: "flex", flexDirection: "column", gap: 4 }}>
-              <span style={{ fontSize: 13, fontWeight: 500 }}>수수료+세금</span>
+              <span style={{ fontSize: 13, fontWeight: 500 }}>
+                수수료+세금 {(() => {
+                  const ticker = tradeForm.ticker.toUpperCase();
+                  const isKorea = /^[0-9]{6}$/.test(ticker);
+                  const priceInfo = prices.find((p) => p.ticker === ticker);
+                  const currency = priceInfo?.currency || (isKorea ? "KRW" : "USD");
+                  return isKorea ? "(KRW)" : "(USD)";
+                })()}
+              </span>
             <input
               type="number"
               min={0}
+              step="0.01"
               value={tradeForm.fee}
               onChange={(e) => setTradeForm({ ...tradeForm, fee: e.target.value })}
                 style={{ padding: "6px 8px", fontSize: 14 }}
@@ -2006,27 +2559,18 @@ export const StocksView: React.FC<Props> = ({
           </div>
 
           <div style={{ display: "flex", gap: 8, marginTop: 12, justifyContent: "flex-end" }}>
-            {tradeForm.side === "sell" && !isEditingTrade && (
-                <button
-                  type="button"
-                onClick={() => {
-                  setTradeForm({
-                    ...createDefaultTradeForm(),
-                    accountId: tradeForm.accountId
-                  });
-                }} 
-                className="secondary"
-                style={{ padding: "8px 16px", fontSize: 14 }}
-              >
-                매수로 전환
-                </button>
-            )}
             {isEditingTrade && (
               <button type="button" onClick={resetTradeForm} style={{ padding: "8px 16px", fontSize: 14 }}>
                 취소
                 </button>
             )}
-            <button type="submit" className="primary" style={{ padding: "8px 16px", fontSize: 14 }}>
+            <button 
+              type="submit" 
+              className="primary" 
+              style={{ padding: "8px 16px", fontSize: 14 }}
+              disabled={!isTradeFormValid}
+              title={!isTradeFormValid ? "필수 항목을 입력해주세요" : ""}
+            >
               {isEditingTrade 
                 ? "거래 저장" 
                 : tradeForm.side === "sell" 
@@ -2076,7 +2620,7 @@ export const StocksView: React.FC<Props> = ({
                       </div>
                       <div style={{ textAlign: "right" }}>
                         {tickerInfo.price != null ? (
-                      <div style={{ fontWeight: 700, fontSize: 18 }}>{formatPriceWithCurrency(tickerInfo.price, tickerInfo.currency)}</div>
+                      <div style={{ fontWeight: 700, fontSize: 18 }}>{formatPriceWithCurrency(tickerInfo.price, tickerInfo.currency, tradeForm.ticker.toUpperCase())}</div>
                         ) : (
                       <div className="muted">가격 없음</div>
                         )}
@@ -2097,7 +2641,7 @@ export const StocksView: React.FC<Props> = ({
           {tickerInfo.ticker} / {tickerInfo.name}{" "}
           {tickerInfo.price != null && (
             <>
-              - 현재가 {formatPriceWithCurrency(tickerInfo.price, tickerInfo.currency)}
+              - 현재가 {formatPriceWithCurrency(tickerInfo.price, tickerInfo.currency, tradeForm.ticker.toUpperCase())}
             </>
           )}
         </p>
@@ -2108,44 +2652,99 @@ export const StocksView: React.FC<Props> = ({
         </p>
       )}
 
-      <h3>보유 종목 현황 (계좌별)</h3>
+      <h3 style={{ display: "flex", alignItems: "center", gap: 12 }}>
+        보유 종목 현황 (계좌별)
+        <label style={{ display: "flex", alignItems: "center", gap: 6, fontSize: 14, fontWeight: "normal", cursor: "pointer" }}>
+          <input
+            type="checkbox"
+            checked={isAccountReorderMode}
+            onChange={(e) => {
+              setIsAccountReorderMode(e.target.checked);
+              localStorage.setItem("fw-account-reorder-mode", String(e.target.checked));
+            }}
+            style={{ cursor: "pointer" }}
+          />
+          <span>계좌순서 바꾸기</span>
+        </label>
+      </h3>
       {positionsByAccount.map((group, groupIndex) => {
         const balance = balances.find((b) => b.account.id === group.accountId);
-        const cashBalance = balance?.currentBalance ?? 0;
+        const account = accounts.find((a) => a.id === group.accountId);
+        const isSecuritiesAccount = account?.type === "securities";
+        
+        // 증권계좌의 경우 USD와 KRW 잔액을 별도로 계산
+        let cashBalance = 0;
+        if (isSecuritiesAccount) {
+          const usdBalance = account?.usdBalance ?? 0;
+          const krwBalance = balance?.currentBalance ?? 0;
+          // 현금 = 달러(환율 적용) + 원화
+          cashBalance = fxRate ? (usdBalance * fxRate) + krwBalance : krwBalance;
+        } else {
+          cashBalance = balance?.currentBalance ?? 0;
+        }
+        
         const stockValue = group.rows.reduce((sum, p) => sum + p.marketValue, 0);
         const totalAsset = cashBalance + stockValue;
         
         return (
         <div 
           key={group.accountId}
-          draggable
-          onDragStart={() => setDraggingAccountId(group.accountId)}
+          draggable={isAccountReorderMode}
+          onDragStart={() => {
+            if (isAccountReorderMode) {
+              setDraggingAccountId(group.accountId);
+            }
+          }}
           onDragOver={(e) => {
-            e.preventDefault();
+            if (isAccountReorderMode) {
+              e.preventDefault();
+            }
           }}
           onDrop={(e) => {
-            e.preventDefault();
-            if (draggingAccountId && draggingAccountId !== group.accountId) {
-              handleAccountReorder(draggingAccountId, groupIndex);
+            if (isAccountReorderMode) {
+              e.preventDefault();
+              if (draggingAccountId && draggingAccountId !== group.accountId) {
+                handleAccountReorder(draggingAccountId, groupIndex);
+              }
+              setDraggingAccountId(null);
             }
-            setDraggingAccountId(null);
           }}
-          onDragEnd={() => setDraggingAccountId(null)}
+          onDragEnd={() => {
+            if (isAccountReorderMode) {
+              setDraggingAccountId(null);
+            }
+          }}
           style={{ 
             marginBottom: 24,
             opacity: draggingAccountId === group.accountId ? 0.5 : 1,
-            cursor: "move"
+            cursor: isAccountReorderMode ? "move" : "default"
           }}
         >
-          <h4 style={{ display: "flex", alignItems: "center", gap: 16, marginBottom: 12 }}>
-            <span 
-              className="drag-handle" 
-              title="잡고 위/아래로 끌어서 계좌 순서 변경"
-              style={{ cursor: "grab", fontSize: 18, userSelect: "none" }}
-            >
-              ☰
-            </span>
+          <h4 style={{ display: "flex", alignItems: "center", gap: 16, marginBottom: 12, flexWrap: "wrap" }}>
+            {isAccountReorderMode && (
+              <span 
+                className="drag-handle" 
+                title="잡고 위/아래로 끌어서 계좌 순서 변경"
+                style={{ cursor: "grab", fontSize: 18, userSelect: "none" }}
+              >
+                ☰
+              </span>
+            )}
             <span>{group.accountName}</span>
+            {isSecuritiesAccount && (
+              <>
+                <span style={{ fontSize: 14, fontWeight: 400, color: "var(--muted)" }}>
+                  달러: <span className={(account?.usdBalance ?? 0) >= 0 ? "positive" : "negative"}>
+                    {formatUSD(account?.usdBalance ?? 0)}
+                  </span>
+                </span>
+                <span style={{ fontSize: 14, fontWeight: 400, color: "var(--muted)" }}>
+                  원화: <span className={(balance?.currentBalance ?? 0) >= 0 ? "positive" : "negative"}>
+                    {formatKRW(Math.round(balance?.currentBalance ?? 0))}
+                  </span>
+                </span>
+              </>
+            )}
             <span style={{ fontSize: 14, fontWeight: 400, color: "var(--muted)" }}>
               현금+예수금: <span className={cashBalance >= 0 ? "positive" : "negative"}>{formatKRW(Math.round(cashBalance))}</span>
             </span>
@@ -2156,18 +2755,19 @@ export const StocksView: React.FC<Props> = ({
               총자산: <span className={totalAsset >= 0 ? "positive" : "negative"}>{formatKRW(Math.round(totalAsset))}</span>
             </span>
           </h4>
-          <table className="data-table">
-            <colgroup>
-              <col style={{ width: "7%" }} />
-              <col style={{ width: "20%" }} />
-              <col style={{ width: "11%" }} />
-              <col style={{ width: "8%" }} />
-              <col style={{ width: "9%" }} />
-              <col style={{ width: "9%" }} />
-              <col style={{ width: "8%" }} />
-              <col style={{ width: "10%" }} />
-              <col style={{ width: "10%" }} />
-            </colgroup>
+          <div>
+            <table className="data-table" style={{ width: "100%" }}>
+              <colgroup>
+                <col style={{ width: "60px" }} />
+                <col style={{ width: "auto", minWidth: "150px" }} />
+                <col style={{ width: "100px" }} />
+                <col style={{ width: "80px" }} />
+                <col style={{ width: "100px" }} />
+                <col style={{ width: "100px" }} />
+                <col style={{ width: "80px" }} />
+                <col style={{ width: "110px" }} />
+                <col style={{ width: "110px" }} />
+              </colgroup>
             <thead>
               <tr>
                 <th>
@@ -2220,96 +2820,139 @@ export const StocksView: React.FC<Props> = ({
             <tbody>
               {group.rows.map((p) => {
                 return (
-                  <tr key={`${group.accountId}-${p.ticker}`}>
-                    <td 
-                      onClick={() => handlePositionClick(p)}
-                      style={{ cursor: "pointer", textDecoration: "underline", color: "var(--primary)" }}
-                      title="클릭하여 매도하기"
-                    >
+                  <tr 
+                    key={`${group.accountId}-${p.ticker}`}
+                    onClick={() => handlePositionClick(p)}
+                    style={{ cursor: "pointer" }}
+                    title="클릭하여 상세 정보 보기"
+                    onMouseEnter={(e) => {
+                      e.currentTarget.style.backgroundColor = "var(--surface-hover)";
+                    }}
+                    onMouseLeave={(e) => {
+                      e.currentTarget.style.backgroundColor = "";
+                    }}
+                  >
+                    <td style={{ color: "var(--primary)", fontWeight: 500 }}>
                       {p.ticker}
                     </td>
                     <td 
-                      onClick={() => handlePositionClick(p)}
                       style={{ 
-                        cursor: "pointer", 
-                        textDecoration: "underline", 
-                        color: "var(--primary)",
                         fontSize: "12px",
-                        whiteSpace: "normal",
-                        wordBreak: "break-word"
+                        whiteSpace: "nowrap",
+                        overflow: "hidden",
+                        textOverflow: "ellipsis",
+                        maxWidth: "200px"
                       }}
                       title={p.name}
                     >
                       {p.name}
                     </td>
-                    <td className={`number ${p.pnl >= 0 ? "positive" : "negative"}`}>
-                      {formatKRW(p.pnl)}
+                    <td 
+                      className="number"
+                      style={{ 
+                        color: p.pnl >= 0 ? "#f43f5e" : "#0ea5e9",
+                        fontWeight: "600"
+                      }}
+                    >
+                      {formatPriceWithCurrency(p.pnl, p.currency, p.ticker)}
                     </td>
-                    <td className={`number ${p.pnl >= 0 ? "positive" : "negative"}`}>
+                    <td 
+                      className="number"
+                      style={{ 
+                        color: p.pnl >= 0 ? "#f43f5e" : "#0ea5e9",
+                        fontWeight: "600"
+                      }}
+                    >
                       {(p.pnlRate * 100).toFixed(2)}%
                     </td>
                     <td className="number">
-                      {formatPriceWithCurrency(
-                        p.currency === "USD" && p.originalMarketPrice != null 
-                          ? p.originalMarketPrice 
-                          : p.displayMarketPrice, 
-                        p.currency
-                      )}
+                      {formatPriceWithCurrency(p.displayMarketPrice, p.currency, p.ticker)}
                     </td>
-                    <td className="number">{formatKRW(Math.round(p.avgPrice))}</td>
+                    <td className="number">{formatPriceWithCurrency(Math.round(p.avgPrice), p.currency, p.ticker)}</td>
                     <td className="number">{p.quantity % 1 === 0 ? formatNumber(p.quantity) : p.quantity.toFixed(6)}</td>
-                    <td className="number">{formatKRW(p.totalBuyAmount)}</td>
+                    <td className="number">{formatPriceWithCurrency(p.totalBuyAmount, p.currency, p.ticker)}</td>
                     <td className={`number ${p.marketValue >= p.totalBuyAmount ? "positive" : "negative"}`}>
-                      {formatKRW(p.marketValue)}
+                      {formatPriceWithCurrency(p.marketValue, p.currency, p.ticker)}
                     </td>
                   </tr>
                 );
               })}
             </tbody>
-          </table>
+            </table>
+          </div>
         </div>
         );
       })}
 
       <h3>거래 내역</h3>
       {(() => {
-        const totalBuyAmount = trades.filter(t => t.side === "buy").reduce((sum, t) => sum + t.totalAmount, 0);
-        const totalSellAmount = trades.filter(t => t.side === "sell").reduce((sum, t) => sum + t.totalAmount, 0);
-        const totalFee = trades.reduce((sum, t) => sum + t.fee, 0);
+        // 통화별로 합계 계산
+        const krwTrades = trades.filter(t => !isUSDStock(t.ticker));
+        const usdTrades = trades.filter(t => isUSDStock(t.ticker));
+        
+        const krwBuyAmount = krwTrades.filter(t => t.side === "buy").reduce((sum, t) => sum + t.totalAmount, 0);
+        const krwSellAmount = krwTrades.filter(t => t.side === "sell").reduce((sum, t) => sum + t.totalAmount, 0);
+        const krwFee = krwTrades.reduce((sum, t) => sum + t.fee, 0);
+        
+        const usdBuyAmount = usdTrades.filter(t => t.side === "buy").reduce((sum, t) => sum + t.totalAmount, 0);
+        const usdSellAmount = usdTrades.filter(t => t.side === "sell").reduce((sum, t) => sum + t.totalAmount, 0);
+        const usdFee = usdTrades.reduce((sum, t) => sum + t.fee, 0);
+        
         return (
           <div className="card" style={{ marginBottom: 16, padding: 12 }}>
             <div style={{ display: "flex", gap: 24, flexWrap: "wrap", fontSize: 14 }}>
-              <div>
-                <span style={{ color: "var(--muted)", marginRight: 8 }}>총 매수:</span>
-                <span className="negative">{formatKRW(Math.round(totalBuyAmount))}</span>
-              </div>
-              <div>
-                <span style={{ color: "var(--muted)", marginRight: 8 }}>총 매도:</span>
-                <span className="positive">{formatKRW(Math.round(totalSellAmount))}</span>
-              </div>
-              <div>
-                <span style={{ color: "var(--muted)", marginRight: 8 }}>총 수수료:</span>
-                <span className="negative">{formatKRW(Math.round(totalFee))}</span>
-              </div>
+              {krwBuyAmount + krwSellAmount + krwFee > 0 && (
+                <>
+                  <div>
+                    <span style={{ color: "var(--muted)", marginRight: 8 }}>총 매수 (KRW):</span>
+                    <span className="negative">{formatKRW(Math.round(krwBuyAmount))}</span>
+                  </div>
+                  <div>
+                    <span style={{ color: "var(--muted)", marginRight: 8 }}>총 매도 (KRW):</span>
+                    <span className="positive">{formatKRW(Math.round(krwSellAmount))}</span>
+                  </div>
+                  <div>
+                    <span style={{ color: "var(--muted)", marginRight: 8 }}>총 수수료 (KRW):</span>
+                    <span className="negative">{formatKRW(Math.round(krwFee))}</span>
+                  </div>
+                </>
+              )}
+              {usdBuyAmount + usdSellAmount + usdFee > 0 && (
+                <>
+                  <div>
+                    <span style={{ color: "var(--muted)", marginRight: 8 }}>총 매수 (USD):</span>
+                    <span className="negative">{formatUSD(usdBuyAmount)}</span>
+                  </div>
+                  <div>
+                    <span style={{ color: "var(--muted)", marginRight: 8 }}>총 매도 (USD):</span>
+                    <span className="positive">{formatUSD(usdSellAmount)}</span>
+                  </div>
+                  <div>
+                    <span style={{ color: "var(--muted)", marginRight: 8 }}>총 수수료 (USD):</span>
+                    <span className="negative">{formatUSD(usdFee)}</span>
+                  </div>
+                </>
+              )}
             </div>
           </div>
         );
       })()}
-      <table className="data-table trades-table">
-        <colgroup>
-          <col style={{ width: "3%" }} />
-          <col style={{ width: "6%" }} />
-          <col style={{ width: "6%" }} />
-          <col style={{ width: "5%" }} />
-          <col style={{ width: "18%" }} />
-          <col style={{ width: "6%" }} />
-          <col style={{ width: "6%" }} />
-          <col style={{ width: "8%" }} />
-          <col style={{ width: "7%" }} />
-          <col style={{ width: "11%" }} />
-          <col style={{ width: "5%" }} />
-          <col style={{ width: "7%" }} />
-        </colgroup>
+      <div className="card" style={{ padding: 0 }}>
+        <table className="data-table trades-table" style={{ width: "100%" }}>
+          <colgroup>
+            <col style={{ width: "30px" }} />
+            <col style={{ width: "70px" }} />
+            <col style={{ width: "60px" }} />
+            <col style={{ width: "60px" }} />
+            <col style={{ width: "auto", minWidth: "150px" }} />
+            <col style={{ width: "45px" }} />
+            <col style={{ width: "60px" }} />
+            <col style={{ width: "100px" }} />
+            <col style={{ width: "80px" }} />
+            <col style={{ width: "120px" }} />
+            <col style={{ width: "50px" }} />
+            <col style={{ width: "60px" }} />
+          </colgroup>
         <thead>
           <tr>
             <th>순서</th>
@@ -2363,7 +3006,9 @@ export const StocksView: React.FC<Props> = ({
           </tr>
         </thead>
         <tbody>
-          {sortTrades(trades).map((t, index) => (
+          {paginatedTrades.map((t, index) => {
+            const actualIndex = (tradeCurrentPage - 1) * tradePageSize + index;
+            return (
             <tr
               key={t.id}
               draggable
@@ -2450,8 +3095,10 @@ export const StocksView: React.FC<Props> = ({
                   textDecoration: "underline", 
                   color: "var(--primary)",
                   fontSize: "12px",
-                  whiteSpace: "normal",
-                  wordBreak: "break-word"
+                  whiteSpace: "nowrap",
+                  overflow: "hidden",
+                  textOverflow: "ellipsis",
+                  maxWidth: "220px"
                 }}
                 title={t.name}
               >
@@ -2501,7 +3148,11 @@ export const StocksView: React.FC<Props> = ({
                     style={{ width: "100px", padding: "2px 4px", fontSize: 13, textAlign: "right" }}
                   />
                 ) : (
-                  formatKRW(t.price)
+                  (() => {
+                    const priceInfo = prices.find((p) => p.ticker === t.ticker);
+                    const currency = priceInfo?.currency;
+                    return formatPriceWithCurrency(t.price, currency, t.ticker);
+                  })()
                 )}
               </td>
               <td 
@@ -2524,7 +3175,11 @@ export const StocksView: React.FC<Props> = ({
                     style={{ width: "100px", padding: "2px 4px", fontSize: 13, textAlign: "right" }}
                   />
                 ) : (
-                  formatKRW(t.fee)
+                  (() => {
+                    const priceInfo = prices.find((p) => p.ticker === t.ticker);
+                    const currency = priceInfo?.currency;
+                    return formatPriceWithCurrency(t.fee, currency, t.ticker);
+                  })()
                 )}
               </td>
               <td 
@@ -2555,7 +3210,11 @@ export const StocksView: React.FC<Props> = ({
                     style={{ width: "120px", padding: "2px 4px", fontSize: 13, textAlign: "right" }}
                   />
                 ) : (
-                  formatKRW(t.totalAmount)
+                  (() => {
+                    const priceInfo = prices.find((p) => p.ticker === t.ticker);
+                    const currency = priceInfo?.currency;
+                    return formatPriceWithCurrency(t.totalAmount, currency, t.ticker);
+                  })()
                 )}
               </td>
               <td style={{ textAlign: "center" }}>
@@ -2579,259 +3238,70 @@ export const StocksView: React.FC<Props> = ({
                 </button>
               </td>
             </tr>
-          ))}
+            );
+          })}
         </tbody>
-      </table>
-        </>
-      )}
-
-      {activeStocksSection === "dca" && (
-        <div className="card" style={{ padding: 16, marginBottom: 16 }}>
-          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 12, flexWrap: "wrap" }}>
-            <h3 style={{ margin: 0 }}>정액매수 (DCA)</h3>
-            {dcaCalc?.market && (
-              <span className="pill" style={{ background: dcaCalc.market.isOpen ? "#e0f2fe" : "#f1f5f9", color: dcaCalc.market.isOpen ? "#0284c7" : "#475569" }}>
-                {dcaCalc.market.label} · {dcaCalc.market.session}
-              </span>
-            )}
+        </table>
+      {sortedTrades.length > 0 && tradeTotalPages > 1 && (
+        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginTop: "16px", padding: "12px", background: "var(--surface)", borderRadius: "8px" }}>
+          <div style={{ fontSize: "14px", color: "var(--text-muted)" }}>
+            총 {sortedTrades.length}건 중 {((tradeCurrentPage - 1) * tradePageSize) + 1}-{Math.min(tradeCurrentPage * tradePageSize, sortedTrades.length)}건 표시
           </div>
-          <p className="hint" style={{ margin: "6px 0 14px 0" }}>
-            계좌, 종목, 금액(KRW)을 입력하면 환율과 시세를 반영해 예상 매수 수량을 계산합니다. 시장 개장 시간에만 기록됩니다.
-          </p>
-          <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(220px, 1fr))", gap: "10px 12px", marginBottom: 12 }}>
-            <label style={{ display: "flex", flexDirection: "column", gap: 4 }}>
-              <span style={{ fontSize: 13, fontWeight: 500 }}>증권계좌</span>
-              <select
-                value={dcaForm.accountId}
-                onChange={(e) => setDcaForm((prev) => ({ ...prev, accountId: e.target.value }))}
-                style={{ padding: "6px 8px", fontSize: 14 }}
-              >
-                <option value="">선택</option>
-                {accounts
-                  .filter((a) => a.type === "securities")
-                  .map((a) => (
-                    <option key={a.id} value={a.id}>
-                      {a.id}
-                    </option>
-                  ))}
-              </select>
-            </label>
-            <label style={{ display: "flex", flexDirection: "column", gap: 4 }}>
-              <span style={{ fontSize: 13, fontWeight: 500 }}>티커</span>
-              <div style={{ display: "flex", gap: 6, alignItems: "center" }}>
-                <input
-                  type="text"
-                  value={dcaForm.ticker}
-                  onChange={(e) => setDcaForm((prev) => ({ ...prev, ticker: e.target.value.toUpperCase() }))}
-                  placeholder="예: 005930, AAPL"
-                  style={{ flex: 1, padding: "6px 8px", fontSize: 14 }}
-                />
-                <button
-                  type="button"
-                  className="secondary"
-                  onClick={handleDcaFetchPrice}
-                  disabled={isLoadingDca || !dcaForm.ticker.trim()}
-                  style={{ padding: "6px 12px", fontSize: 13, whiteSpace: "nowrap" }}
-                >
-                  {isLoadingDca ? "조회 중..." : "시세 불러오기"}
-                </button>
-              </div>
-            </label>
-            <label style={{ display: "flex", flexDirection: "column", gap: 4 }}>
-              <span style={{ fontSize: 13, fontWeight: 500 }}>투입 금액 (KRW)</span>
-              <input
-                type="number"
-                min={0}
-                value={dcaForm.amount}
-                onChange={(e) => setDcaForm((prev) => ({ ...prev, amount: e.target.value }))}
-                placeholder="원화 금액을 입력하세요"
-                style={{ padding: "6px 8px", fontSize: 14 }}
-              />
-            </label>
-          </div>
-
-          <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(180px, 1fr))", gap: 12, alignItems: "center" }}>
-            <div style={{ fontSize: 14, fontWeight: 500 }}>
-              <span className="muted" style={{ fontSize: 13 }}>현재가: </span>
-              {dcaCalc?.price && dcaCalc.price > 0 ? (
-                <span style={{ fontWeight: 600 }}>
-                  {dcaCalc.currency === "USD" && dcaCalc.originalPrice
-                    ? `${formatUSD(dcaCalc.originalPrice)} USD`
-                    : formatKRW(Math.round(dcaCalc.price))}
-                  {dcaCalc.currency === "USD" && fxRate && (
-                    <span className="muted" style={{ fontSize: 12, marginLeft: 4 }}>
-                      (약 {formatKRW(Math.round(dcaCalc.price))})
-                    </span>
-                  )}
-                </span>
-              ) : (
-                <span className="muted">시세를 불러오세요</span>
-              )}
-            </div>
-            <div className="muted" style={{ fontSize: 13 }}>
-              환율: {fxRate ? `USD/KRW ${formatNumber(fxRate)}` : "미확인"}
-            </div>
-            <div style={{ fontWeight: 600 }}>
-              예상 매수 수량: {dcaCalc && dcaCalc.price > 0 ? dcaCalc.shares.toFixed(6) : "-"} 주
-            </div>
-            <div>
-              예상 소요금액: {dcaCalc && dcaCalc.price > 0 ? formatKRW(Math.round(dcaCalc.estimatedCost)) : "-"}
-            </div>
-            <div className="muted" style={{ fontSize: 13 }}>
-              남는 금액(미사용): {dcaCalc && dcaCalc.price > 0 ? formatKRW(Math.round(dcaCalc.remainder)) : "-"}
-            </div>
-          </div>
-
-          {dcaMessage && (
-            <p className="hint" style={{ marginTop: 10 }}>
-              {dcaMessage}
-            </p>
-          )}
-
-          <div style={{ display: "flex", justifyContent: "flex-end", gap: 8, marginTop: 12, flexWrap: "wrap" }}>
+          <div style={{ display: "flex", gap: "8px", alignItems: "center" }}>
             <button
               type="button"
               className="secondary"
-              onClick={() => setDcaForm({ accountId: dcaForm.accountId, ticker: "", amount: "" })}
+              onClick={() => setTradeCurrentPage(1)}
+              disabled={tradeCurrentPage === 1}
             >
-              리셋
+              처음
             </button>
             <button
               type="button"
-              className="primary"
-              onClick={handleDcaSubmit}
-              disabled={
-                !dcaForm.accountId ||
-                !dcaForm.ticker.trim() ||
-                !dcaForm.amount ||
-                Number(dcaForm.amount) <= 0 ||
-                (dcaCalc?.currency === "USD" && !fxRate)
-              }
+              className="secondary"
+              onClick={() => setTradeCurrentPage(prev => Math.max(1, prev - 1))}
+              disabled={tradeCurrentPage === 1}
             >
-              DCA 매수
+              이전
             </button>
-          </div>
-
-          <div style={{ marginTop: 16 }}>
-            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 8 }}>
-              <h4 style={{ margin: 0 }}>DCA 진행 중 목록</h4>
-              {dcaPlans.length > 0 && (
-                <button
-                  type="button"
-                  className="primary"
-                  onClick={handleDcaBuyAll}
-                  disabled={isBuyingAll}
-                  style={{ padding: "6px 12px", fontSize: 13 }}
-                >
-                  {isBuyingAll ? "매수 중..." : "목록 전체 매수"}
-                </button>
-              )}
-            </div>
-            {dcaPlans.length === 0 && <p className="hint">등록된 DCA 플랜이 없습니다.</p>}
-            {dcaPlans.length > 0 && (
-              <div style={{ overflowX: "auto" }}>
-                <table className="data-table compact">
-                  <colgroup>
-                    <col style={{ width: "12%" }} />
-                    <col style={{ width: "14%" }} />
-                    <col style={{ width: "14%" }} />
-                    <col style={{ width: "12%" }} />
-                    <col style={{ width: "13%" }} />
-                    <col style={{ width: "13%" }} />
-                    <col style={{ width: "10%" }} />
-                    <col style={{ width: "12%" }} />
-                  </colgroup>
-                  <thead>
-                    <tr>
-                      <th>티커</th>
-                      <th>계좌</th>
-                      <th>금액(원)</th>
-                      <th>수수료</th>
-                      <th>시작일</th>
-                      <th>마지막 실행</th>
-                      <th>상태</th>
-                      <th>작업</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {dcaPlans.map((p) => (
-                      <tr key={p.id}>
-                        <td>{p.ticker}</td>
-                        <td>{p.accountId}</td>
-                        <td className="number">{formatKRW(Math.round(p.amount))}</td>
-                        <td className="number">{p.fee ? formatKRW(Math.round(p.fee)) : "-"}</td>
-                        <td>{p.startDate}</td>
-                        <td>{p.lastRunDate ?? "-"}</td>
-                        <td>
-                          <span className={`pill ${p.active ? "success" : "muted"}`} style={{ padding: "2px 8px", fontSize: 11 }}>
-                            {p.active ? "진행중" : "일시정지"}
-                          </span>
-                        </td>
-                        <td style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
-                          <button 
-                            type="button" 
-                            className="primary" 
-                            onClick={() => handleDcaBuyNow(p)} 
-                            disabled={buyingPlanId === p.id}
-                            style={{ padding: "4px 10px", fontSize: 12 }}
-                          >
-                            {buyingPlanId === p.id ? "매수 중..." : "지금 매수"}
-                          </button>
-                          <button type="button" className="secondary" onClick={() => toggleDcaPlan(p.id)} style={{ padding: "4px 10px", fontSize: 12 }}>
-                            {p.active ? "일시정지" : "재개"}
-                          </button>
-                          <button type="button" className="danger" onClick={() => deleteDcaPlan(p.id)} style={{ padding: "4px 10px", fontSize: 12 }}>
-                            취소
-                          </button>
-                        </td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </div>
-            )}
+            <span style={{ padding: "0 12px", fontSize: "14px" }}>
+              {tradeCurrentPage} / {tradeTotalPages}
+            </span>
+            <button
+              type="button"
+              className="secondary"
+              onClick={() => setTradeCurrentPage(prev => Math.min(tradeTotalPages, prev + 1))}
+              disabled={tradeCurrentPage === tradeTotalPages}
+            >
+              다음
+            </button>
+            <button
+              type="button"
+              className="secondary"
+              onClick={() => setTradeCurrentPage(tradeTotalPages)}
+              disabled={tradeCurrentPage === tradeTotalPages}
+            >
+              마지막
+            </button>
           </div>
         </div>
       )}
-
-      {activeStocksSection === "quotes" && (
-        <div className="card" style={{ marginTop: 16 }}>
-          <div style={{ display: "flex", gap: 8, flexWrap: "wrap", marginBottom: 12 }}>
-            <button
-              type="button"
-              className={activeQuoteMarket === "korea" ? "primary" : "secondary"}
-              onClick={() => setActiveQuoteMarket("korea")}
-            >
-              한국주식
-            </button>
-            <button
-              type="button"
-              className={activeQuoteMarket === "us" ? "primary" : "secondary"}
-              onClick={() => setActiveQuoteMarket("us")}
-            >
-              미국주식
-            </button>
-          </div>
-          <p className="hint" style={{ marginTop: 0, marginBottom: 12 }}>
-            등록된 티커별 시세를 시장 단위로 확인하고 야후 시세 갱신 버튼을 눌러 최신 상태로 유지하세요.
-          </p>
-          <div style={{ overflowX: "auto" }}>
-            {activeQuoteMarket === "korea"
-              ? renderQuoteTable(koreanQuotes, "한국주식")
-              : renderQuoteTable(usQuotes, "미국주식")}
-          </div>
-        </div>
+      </div>
+        </>
       )}
-      
-      {activeStocksSection === "stats" && (
+        </>
+      )}
+
+      {/* 포트폴리오 분석 탭 */}
+      {activeTab === "portfolio" && (
         <div className="card" style={{ padding: 16 }}>
-          <h3 style={{ margin: "0 0 16px 0" }}>주식 포트폴리오 분석</h3>
+          <h2 style={{ margin: "0 0 16px 0" }}>주식 포트폴리오 분석</h2>
           
           <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(300px, 1fr))", gap: 24 }}>
             {/* 1. 포트폴리오 비중 (평가금액 기준) */}
             <div className="card" style={{ border: "1px solid var(--border)", boxShadow: "none", padding: 16 }}>
               <h4 style={{ margin: "0 0 12px 0", textAlign: "center" }}>종목별 비중 (평가액)</h4>
-              <div style={{ width: "100%", height: 300 }}>
+              <div style={{ width: "100%", height: 300, minHeight: 300, minWidth: 0 }}>
                 {positionsWithPrice.length > 0 ? (() => {
                   const sorted = [...positionsWithPrice].sort((a, b) => b.marketValue - a.marketValue);
                   const topN = 8; // 상위 8개만 표시
@@ -2855,7 +3325,7 @@ export const StocksView: React.FC<Props> = ({
                   const colors = ["#0ea5e9", "#6366f1", "#f43f5e", "#10b981", "#f59e0b", "#8b5cf6", "#ec4899", "#14b8a6", "#64748b"];
                   
                   return (
-                    <ResponsiveContainer>
+                    <ResponsiveContainer width="100%" height="100%" minHeight={300} minWidth={0}>
                       <PieChart>
                         <Pie
                           data={chartData}
@@ -2895,7 +3365,7 @@ export const StocksView: React.FC<Props> = ({
             {/* 2. 계좌별 자산 비중 */}
             <div className="card" style={{ border: "1px solid var(--border)", boxShadow: "none", padding: 16 }}>
               <h4 style={{ margin: "0 0 12px 0", textAlign: "center" }}>계좌별 자산 비중 (주식+현금)</h4>
-              <div style={{ width: "100%", height: 300 }}>
+              <div style={{ width: "100%", height: 300, minHeight: 300, minWidth: 0 }}>
                 {(() => {
                   const accountData = positionsByAccount.map(group => {
                     const balance = balances.find(b => b.account.id === group.accountId);
@@ -2913,7 +3383,7 @@ export const StocksView: React.FC<Props> = ({
                   const colors = ["#f59e0b", "#10b981", "#0ea5e9", "#6366f1", "#f43f5e"];
                   
                   return (
-                    <ResponsiveContainer>
+                    <ResponsiveContainer width="100%" height="100%" minHeight={300} minWidth={0}>
                       <PieChart>
                         <Pie
                           data={accountData}
@@ -2957,7 +3427,7 @@ export const StocksView: React.FC<Props> = ({
              {/* 3. 종목별 평가손익 (수평 Bar Chart) */}
              <div className="card" style={{ border: "1px solid var(--border)", boxShadow: "none", padding: 16 }}>
               <h4 style={{ margin: "0 0 12px 0", textAlign: "center" }}>종목별 평가 손익 (상위/하위 10개)</h4>
-              <div style={{ width: "100%", height: Math.max(400, positionsWithPrice.length * 30) }}>
+              <div style={{ width: "100%", height: Math.max(400, positionsWithPrice.length * 30), minHeight: 400, minWidth: 0 }}>
                 {positionsWithPrice.length > 0 ? (() => {
                   const sorted = [...positionsWithPrice].sort((a, b) => b.pnl - a.pnl);
                   const top10 = sorted.slice(0, 10);
@@ -2970,7 +3440,7 @@ export const StocksView: React.FC<Props> = ({
                   }));
                   
                   return (
-                    <ResponsiveContainer>
+                    <ResponsiveContainer width="100%" height="100%" minHeight={400} minWidth={0}>
                       <BarChart
                         data={chartData}
                         layout="vertical"
@@ -3109,6 +3579,382 @@ export const StocksView: React.FC<Props> = ({
           </div>
         </div>
       )}
+
+      {/* 환전 탭 */}
+      {activeTab === "fx" && onChangeLedger && (
+        <div>
+          <h2>환전</h2>
+          <p className="hint" style={{ marginBottom: 16 }}>
+            KRW 계좌와 USD 계좌 간의 환전 거래를 기록합니다.
+          </p>
+
+          <div className="card" style={{ padding: 16, marginBottom: 16 }}>
+            <h3 style={{ marginTop: 0, marginBottom: 12 }}>환전 거래 입력</h3>
+            <FxFormSection
+              accounts={accounts}
+              ledger={ledger}
+              onChangeLedger={onChangeLedger}
+              fxRate={fxRate}
+            />
+          </div>
+
+          <h3>환전 내역</h3>
+          <FxHistorySection ledger={ledger} prices={prices} />
+        </div>
+      )}
+
+      {/* 종목 상세 모달 */}
+      {selectedPosition && (
+        <StockDetailModal
+          position={selectedPosition}
+          accounts={accounts}
+          trades={trades}
+          prices={prices}
+          ledger={ledger}
+          tickerDatabase={tickerDatabase}
+          onClose={() => setSelectedPosition(null)}
+          onChangeLedger={onChangeLedger || (() => {})}
+        />
+      )}
+    </div>
+  );
+};
+
+// 환전 폼 섹션 컴포넌트
+interface FxFormSectionProps {
+  accounts: Account[];
+  ledger: LedgerEntry[];
+  onChangeLedger: (next: LedgerEntry[]) => void;
+  fxRate: number | null;
+}
+
+const FxFormSection: React.FC<FxFormSectionProps> = ({ accounts, ledger, onChangeLedger, fxRate }) => {
+  const [form, setForm] = useState({
+    date: new Date().toISOString().slice(0, 10),
+    fromAccountId: "",
+    toAccountId: "",
+    fromAmount: "",
+    toAmount: "",
+    rate: fxRate ? String(Math.round(fxRate * 100) / 100) : "",
+    description: ""
+  });
+  const [loadingRate, setLoadingRate] = useState(false);
+
+  const krwAccounts = useMemo(() => {
+    return accounts.filter((a) => {
+      const name = (a.name + a.id).toLowerCase();
+      return !name.includes("usd") && !name.includes("dollar") && !name.includes("달러");
+    });
+  }, [accounts]);
+
+  const usdAccounts = useMemo(() => {
+    return accounts.filter((a) => {
+      const name = (a.name + a.id).toLowerCase();
+      return name.includes("usd") || name.includes("dollar") || name.includes("달러");
+    });
+  }, [accounts]);
+
+  const handleRateChange = (newRate: string) => {
+    const rate = parseFloat(newRate) || 0;
+    setForm((prev) => {
+      if (prev.fromAmount && rate > 0) {
+        const fromAmount = parseFloat(prev.fromAmount) || 0;
+        const toAmount = fromAmount * rate;
+        return { ...prev, rate: newRate, toAmount: String(Math.round(toAmount * 100) / 100) };
+      }
+      return { ...prev, rate: newRate };
+    });
+  };
+
+  const handleFromAmountChange = (value: string) => {
+    const amount = parseFloat(value) || 0;
+    const rate = parseFloat(form.rate) || 0;
+    setForm((prev) => ({
+      ...prev,
+      fromAmount: value,
+      toAmount: rate > 0 ? String(Math.round(amount * rate * 100) / 100) : prev.toAmount
+    }));
+  };
+
+  const handleToAmountChange = (value: string) => {
+    const amount = parseFloat(value) || 0;
+    const rate = parseFloat(form.rate) || 0;
+    setForm((prev) => ({
+      ...prev,
+      toAmount: value,
+      fromAmount: rate > 0 ? String(Math.round((amount / rate) * 100) / 100) : prev.fromAmount
+    }));
+  };
+
+  const handleSubmit = (e: React.FormEvent) => {
+    e.preventDefault();
+
+    if (!form.fromAccountId || !form.toAccountId) {
+      toast.error("출발 계좌와 도착 계좌를 선택해주세요");
+      return;
+    }
+
+    if (form.fromAccountId === form.toAccountId) {
+      toast.error("출발 계좌와 도착 계좌가 같을 수 없습니다");
+      return;
+    }
+
+    const fromAmount = parseFloat(form.fromAmount) || 0;
+    const toAmount = parseFloat(form.toAmount) || 0;
+    const rate = parseFloat(form.rate) || 0;
+
+    if (fromAmount <= 0 || toAmount <= 0 || rate <= 0) {
+      toast.error("금액과 환율을 올바르게 입력해주세요");
+      return;
+    }
+
+    const isKrwToUsd = krwAccounts.some((a) => a.id === form.fromAccountId) && 
+                       usdAccounts.some((a) => a.id === form.toAccountId);
+    const isUsdToKrw = usdAccounts.some((a) => a.id === form.fromAccountId) && 
+                       krwAccounts.some((a) => a.id === form.toAccountId);
+
+    if (!isKrwToUsd && !isUsdToKrw) {
+      toast.error("KRW 계좌와 USD 계좌 간의 환전만 가능합니다");
+      return;
+    }
+
+    const description = form.description || 
+      (isKrwToUsd 
+        ? `환전: ${formatKRW(fromAmount)} → ${formatUSD(toAmount)} (환율: ${rate.toFixed(2)})`
+        : `환전: ${formatUSD(fromAmount)} → ${formatKRW(toAmount)} (환율: ${rate.toFixed(2)})`);
+
+    const newEntry: LedgerEntry = {
+      id: `fx-${Date.now()}`,
+      date: form.date,
+      kind: "transfer",
+      category: "환전",
+      description: description,
+      fromAccountId: form.fromAccountId,
+      toAccountId: form.toAccountId,
+      amount: fromAmount
+    };
+
+    onChangeLedger([...ledger, newEntry]);
+    toast.success("환전 거래가 추가되었습니다");
+    setForm({
+      date: new Date().toISOString().slice(0, 10),
+      fromAccountId: "",
+      toAccountId: "",
+      fromAmount: "",
+      toAmount: "",
+      rate: fxRate ? String(Math.round(fxRate * 100) / 100) : "",
+      description: ""
+    });
+  };
+
+  return (
+    <form onSubmit={handleSubmit}>
+      <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(200px, 1fr))", gap: "12px" }}>
+        <label style={{ display: "flex", flexDirection: "column", gap: 4 }}>
+          <span style={{ fontSize: 13, fontWeight: 500 }}>거래일</span>
+          <input
+            type="date"
+            value={form.date}
+            onChange={(e) => setForm({ ...form, date: e.target.value })}
+            style={{ padding: "6px 8px", fontSize: 14 }}
+            required
+          />
+        </label>
+
+        <label style={{ display: "flex", flexDirection: "column", gap: 4 }}>
+          <span style={{ fontSize: 13, fontWeight: 500 }}>출발 계좌</span>
+          <select
+            value={form.fromAccountId}
+            onChange={(e) => setForm({ ...form, fromAccountId: e.target.value })}
+            style={{ padding: "6px 8px", fontSize: 14 }}
+            required
+          >
+            <option value="">선택</option>
+            {accounts.map((a) => (
+              <option key={a.id} value={a.id}>
+                {a.id} {a.name ? `(${a.name})` : ""}
+              </option>
+            ))}
+          </select>
+        </label>
+
+        <label style={{ display: "flex", flexDirection: "column", gap: 4 }}>
+          <span style={{ fontSize: 13, fontWeight: 500 }}>도착 계좌</span>
+          <select
+            value={form.toAccountId}
+            onChange={(e) => setForm({ ...form, toAccountId: e.target.value })}
+            style={{ padding: "6px 8px", fontSize: 14 }}
+            required
+          >
+            <option value="">선택</option>
+            {accounts.map((a) => (
+              <option key={a.id} value={a.id}>
+                {a.id} {a.name ? `(${a.name})` : ""}
+              </option>
+            ))}
+          </select>
+        </label>
+
+        <label style={{ display: "flex", flexDirection: "column", gap: 4 }}>
+          <span style={{ fontSize: 13, fontWeight: 500 }}>
+            출발 금액 {krwAccounts.some((a) => a.id === form.fromAccountId) ? "(KRW)" : usdAccounts.some((a) => a.id === form.fromAccountId) ? "(USD)" : ""}
+          </span>
+          <input
+            type="number"
+            min={0}
+            step="0.01"
+            value={form.fromAmount}
+            onChange={(e) => handleFromAmountChange(e.target.value)}
+            style={{ padding: "6px 8px", fontSize: 14 }}
+            required
+          />
+        </label>
+
+        <label style={{ display: "flex", flexDirection: "column", gap: 4 }}>
+          <span style={{ fontSize: 13, fontWeight: 500 }}>환율 (USD/KRW)</span>
+          <div style={{ display: "flex", gap: 4 }}>
+            <input
+              type="number"
+              min={0}
+              step="0.01"
+              value={form.rate}
+              onChange={(e) => handleRateChange(e.target.value)}
+              style={{ padding: "6px 8px", fontSize: 14, flex: 1 }}
+              required
+            />
+            {loadingRate ? (
+              <button type="button" disabled style={{ padding: "6px 12px", fontSize: 12 }}>
+                조회 중...
+              </button>
+            ) : (
+              <button
+                type="button"
+                onClick={async () => {
+                  try {
+                    setLoadingRate(true);
+                    const res = await fetchYahooQuotes(["USDKRW=X"]);
+                    if (res[0]?.price) {
+                      const rate = Math.round(res[0].price * 100) / 100;
+                      handleRateChange(String(rate));
+                      toast.success(`현재 환율: ${rate.toFixed(2)}`);
+                    }
+                  } catch (err) {
+                    toast.error("환율 조회 실패");
+                  } finally {
+                    setLoadingRate(false);
+                  }
+                }}
+                className="secondary"
+                style={{ padding: "6px 12px", fontSize: 12 }}
+              >
+                현재 환율
+              </button>
+            )}
+          </div>
+        </label>
+
+        <label style={{ display: "flex", flexDirection: "column", gap: 4 }}>
+          <span style={{ fontSize: 13, fontWeight: 500 }}>
+            도착 금액 {krwAccounts.some((a) => a.id === form.toAccountId) ? "(KRW)" : usdAccounts.some((a) => a.id === form.toAccountId) ? "(USD)" : ""}
+          </span>
+          <input
+            type="number"
+            min={0}
+            step="0.01"
+            value={form.toAmount}
+            onChange={(e) => handleToAmountChange(e.target.value)}
+            style={{ padding: "6px 8px", fontSize: 14 }}
+            required
+          />
+        </label>
+
+        <label style={{ display: "flex", flexDirection: "column", gap: 4, gridColumn: "1 / -1" }}>
+          <span style={{ fontSize: 13, fontWeight: 500 }}>메모 (선택)</span>
+          <input
+            type="text"
+            value={form.description}
+            onChange={(e) => setForm({ ...form, description: e.target.value })}
+            placeholder="환전 거래 메모"
+            style={{ padding: "6px 8px", fontSize: 14 }}
+          />
+        </label>
+      </div>
+
+      <div style={{ display: "flex", gap: 8, marginTop: 16, justifyContent: "flex-end" }}>
+        <button
+          type="button"
+          onClick={() => setForm({
+            date: new Date().toISOString().slice(0, 10),
+            fromAccountId: "",
+            toAccountId: "",
+            fromAmount: "",
+            toAmount: "",
+            rate: fxRate ? String(Math.round(fxRate * 100) / 100) : "",
+            description: ""
+          })}
+          className="secondary"
+          style={{ padding: "8px 16px", fontSize: 14 }}
+        >
+          초기화
+        </button>
+        <button type="submit" className="primary" style={{ padding: "8px 16px", fontSize: 14 }}>
+          환전 거래 추가
+        </button>
+      </div>
+    </form>
+  );
+};
+
+// 환전 내역 섹션 컴포넌트
+interface FxHistorySectionProps {
+  ledger: LedgerEntry[];
+  prices: StockPrice[];
+}
+
+const FxHistorySection: React.FC<FxHistorySectionProps> = ({ ledger }) => {
+  const fxEntries = useMemo(() => {
+    return ledger.filter((entry) => 
+      entry.kind === "transfer" && 
+      (entry.description.toLowerCase().includes("환전") ||
+       entry.description.toLowerCase().includes("fx") ||
+       entry.description.toLowerCase().includes("exchange"))
+    );
+  }, [ledger]);
+
+  if (fxEntries.length === 0) {
+    return (
+      <div className="card" style={{ padding: 16, textAlign: "center", color: "var(--text-muted)" }}>
+        환전 거래 내역이 없습니다.
+      </div>
+    );
+  }
+
+  return (
+    <div className="card" style={{ padding: 0, overflow: "hidden" }}>
+      <table className="data-table">
+        <thead>
+          <tr>
+            <th>날짜</th>
+            <th>출발 계좌</th>
+            <th>도착 계좌</th>
+            <th>금액</th>
+            <th>설명</th>
+          </tr>
+        </thead>
+        <tbody>
+          {fxEntries
+            .sort((a, b) => b.date.localeCompare(a.date))
+            .map((entry) => (
+              <tr key={entry.id}>
+                <td>{formatShortDate(entry.date)}</td>
+                <td>{entry.fromAccountId || "-"}</td>
+                <td>{entry.toAccountId || "-"}</td>
+                <td className="number">{formatKRW(entry.amount)}</td>
+                <td>{entry.description}</td>
+              </tr>
+            ))}
+        </tbody>
+      </table>
     </div>
   );
 };

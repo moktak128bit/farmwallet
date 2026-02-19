@@ -113,7 +113,7 @@ a:hover {
    ========================================= */
 
 .app-root {
-  max-width: 1400px;
+  max-width: 1600px;
   margin: 0 auto;
   padding: 24px;
   min-height: 100vh;
@@ -130,7 +130,7 @@ a:hover {
 
 .layout {
   display: grid;
-  grid-template-columns: 260px 1fr;
+  grid-template-columns: 220px 1fr;
   gap: 32px;
   align-items: flex-start;
 }
@@ -142,10 +142,10 @@ a:hover {
   border-radius: 12px;
   border: 1px solid var(--border);
   box-shadow: var(--shadow-sm);
-  padding: 16px;
+  padding: 12px;
   display: flex;
   flex-direction: column;
-  gap: 8px;
+  gap: 6px;
 }
 
 .app-main {
@@ -225,19 +225,22 @@ a:hover {
 
 .data-table thead {
   background-color: var(--surface-hover);
+  position: sticky;
+  top: 0;
+  z-index: 5;
 }
 
 .data-table th {
-  padding: 8px 12px; /* 행 높이 감소를 위해 패딩 축소 */
+  padding: 10px 8px; /* 좌우 패딩을 줄여서 공간 확보 */
   text-align: left;
-  font-weight: 700;
+  font-weight: 600;
   color: var(--text-secondary);
   border-bottom: 2px solid var(--border);
   border-right: 1px solid var(--border); /* 컬럼 구분선 추가 */
   white-space: nowrap;
   position: relative;
-  line-height: 1.4; /* 행 높이 감소 */
-  /* 헤더 텍스트는 잘리지 않도록 overflow 제거 - 컬럼 너비로 제어 */
+  line-height: 1.4;
+  font-size: 12px; /* 헤더 폰트 크기 약간 축소 */
 }
 
 .data-table th:last-child {
@@ -290,29 +293,35 @@ a:hover {
 /* 리사이즈 중인 컬럼 강조는 JavaScript로 처리 (브라우저 호환성을 위해 :has() 제거) */
 
 .data-table td {
-  padding: 8px 12px; /* 행 높이 감소를 위해 패딩 축소 */
+  padding: 10px 8px;
   border-bottom: 1px solid var(--border-light);
-  border-right: 1px solid var(--border-light); /* 컬럼 구분선 추가 */
+  border-right: 1px solid var(--border-light);
   color: var(--text);
   vertical-align: middle;
-  white-space: nowrap; /* 기본적으로 한 줄로 표시 */
-  overflow: visible; /* 텍스트가 잘리지 않도록 visible로 변경 */
-  text-overflow: clip; /* ellipsis 대신 clip 사용 */
-  word-wrap: break-word;
-  overflow-wrap: break-word;
-  line-height: 1.4; /* 행 높이 감소 */
-  max-height: none; /* 높이 제한 제거 */
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  line-height: 1.4;
+  font-size: 13px;
 }
 
 .data-table td:last-child {
   border-right: none; /* 마지막 컬럼은 구분선 제거 */
 }
 
-/* 숫자 컬럼은 한 줄로 유지 */
+/* 보유 종목 테이블: 티커 컬럼은 잘리지 않게 표시 */
+.data-table.positions-table td.ticker-cell {
+  overflow: visible;
+  text-overflow: clip;
+}
+
+/* 숫자 컬럼은 한 줄로 유지하고 오른쪽 정렬 */
 .data-table td.number {
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
+  text-align: right;
+  font-variant-numeric: tabular-nums; /* 숫자 정렬 개선 */
 }
 
 /* 긴 텍스트 컬럼은 줄바꿈 허용 */
@@ -351,6 +360,78 @@ a:hover {
 /* Zebra striping for better readability */
 .data-table tbody tr:nth-child(even) {
   background-color: var(--bg);
+}
+
+/* 가계부 인라인 편집용 드롭다운 */
+.data-table .ledger-cell-select {
+  width: 100%;
+  min-height: 32px;
+  padding: 6px 10px;
+  font-size: 14px;
+  font-family: inherit;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: var(--surface);
+  color: var(--text);
+  cursor: pointer;
+  transition: border-color 0.2s, box-shadow 0.2s;
+}
+
+.data-table .ledger-cell-select:hover {
+  border-color: var(--primary);
+}
+
+.data-table .ledger-cell-select:focus {
+  outline: none;
+  border-color: var(--primary);
+  box-shadow: 0 0 0 2px var(--primary-light);
+}
+
+/* 카테고리 타입별 색상 스타일 */
+.category-income {
+  background-color: rgba(5, 150, 105, 0.1) !important;
+  color: var(--text);
+}
+
+.category-transfer {
+  background-color: rgba(107, 114, 128, 0.15) !important;
+  color: var(--text);
+}
+
+.category-savings {
+  background-color: rgba(16, 185, 129, 0.15) !important;
+  color: var(--text);
+}
+
+.category-fixed {
+  background-color: rgba(59, 130, 246, 0.15) !important;
+  color: var(--text);
+}
+
+.category-variable {
+  background-color: rgba(251, 146, 60, 0.15) !important;
+  color: var(--text);
+}
+
+/* 다크 모드 대응 */
+:root.dark .category-income {
+  background-color: rgba(5, 150, 105, 0.2) !important;
+}
+
+:root.dark .category-transfer {
+  background-color: rgba(107, 114, 128, 0.25) !important;
+}
+
+:root.dark .category-savings {
+  background-color: rgba(16, 185, 129, 0.2) !important;
+}
+
+:root.dark .category-fixed {
+  background-color: rgba(59, 130, 246, 0.2) !important;
+}
+
+:root.dark .category-variable {
+  background-color: rgba(251, 146, 60, 0.2) !important;
 }
 
 .data-table.compact th,
@@ -451,6 +532,18 @@ a:hover {
 .data-table.category-matrix .icon-button:hover {
   background: var(--danger-light);
   color: var(--danger);
+}
+
+.data-table.category-matrix .icon-button-small {
+  font-size: 12px;
+  padding: 1px 3px;
+  min-width: 18px;
+}
+
+/* 고정 지출/구독 목록 테이블 */
+.data-table.recurring-table {
+  table-layout: fixed;
+  min-width: 700px;
 }
 
 /* Numeric columns */
@@ -561,14 +654,14 @@ label {
 
 .tab-button {
   width: 100%;
-  padding: 12px 16px;
+  padding: 10px 12px;
   text-align: left;
   border: none;
   background: transparent;
   border-radius: 8px;
   color: var(--text-muted);
   font-weight: 500;
-  font-size: 15px;
+  font-size: 14px;
   justify-content: flex-start;
   margin-bottom: 2px;
 }
@@ -584,8 +677,41 @@ label {
   font-weight: 700;
 }
 
+/* 월별 보기 - 월 탭 (다중 선택) */
+.month-tabs {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.month-tab {
+  padding: 6px 12px;
+  font-size: 13px;
+  font-weight: 500;
+  border-radius: 8px;
+  border: 1px solid var(--border);
+  background: var(--surface);
+  color: var(--text-secondary);
+}
+
+.month-tab:hover {
+  background: var(--surface-hover);
+  border-color: var(--text-muted);
+}
+
+.month-tab.active {
+  background: var(--primary);
+  color: var(--primary-text);
+  border-color: var(--primary-hover);
+  font-weight: 700;
+}
+
+.month-tab.empty {
+  opacity: 0.5;
+}
+
 .tab-label {
-  margin-left: 10px;
+  margin-left: 8px;
 }
 
 /* =========================================
@@ -618,6 +744,19 @@ label {
   margin-bottom: 24px;
   padding-bottom: 16px;
   border-bottom: 1px solid var(--border-light);
+}
+
+.section-header h2 {
+  margin: 0;
+  font-size: 24px;
+  font-weight: 700;
+  color: var(--text);
+}
+
+/* 요약 숫자(잔액·총계 등) 가독성 */
+.card-value {
+  font-size: 1.25em;
+  font-weight: 700;
 }
 
 .hint {
@@ -660,6 +799,38 @@ label {
   justify-content: space-between;
   align-items: center;
   margin-bottom: 24px;
+}
+
+/* 셀 슬라이더 애니메이션 */
+.cell-slider {
+  animation: cellSliderIn 0.2s ease;
+}
+
+@keyframes cellSliderIn {
+  from {
+    opacity: 0;
+    transform: translateY(-4px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+@keyframes slideUp {
+  from {
+    transform: translateY(100%);
+    opacity: 0.9;
+  }
+  to {
+    transform: translateY(0);
+    opacity: 1;
+  }
+}
+
+@keyframes fadeIn {
+  from { opacity: 0; }
+  to { opacity: 1; }
 }
 
 /* =========================================

@@ -1,3 +1,5 @@
+import { isKRWStock } from "./utils/tickerUtils";
+
 export interface YahooQuoteResult {
   ticker: string;
   name?: string;
@@ -339,40 +341,14 @@ async function fetchTickersFromFile(): Promise<Array<{
   market: 'KR' | 'US';
   exchange?: string;
 }>> {
-  console.log('ticker.json 파일에서 티커 목록 읽는 중...');
   const { koreanTickers, usTickers } = await loadTickersFromFile();
-  
-  const results: Array<{
-    ticker: string;
-    name: string;
-    market: 'KR' | 'US';
-    exchange?: string;
-  }> = [];
-  
-  console.log(`한국 티커 ${koreanTickers.length}개, 미국 티커 ${usTickers.length}개 발견`);
-  
-  // 한국 티커 처리 (파일에서 읽은 데이터 그대로 사용)
+  const results: Array<{ ticker: string; name: string; market: 'KR' | 'US'; exchange?: string }> = [];
   koreanTickers.forEach(({ ticker, name }) => {
-    results.push({
-      ticker,
-      name,
-      market: 'KR',
-      exchange: undefined
-    });
+    results.push({ ticker, name, market: 'KR', exchange: undefined });
   });
-  console.log(`한국 종목 ${koreanTickers.length}개 처리 완료`);
-  
-  // 미국 티커 처리 (종목명이 없으면 티커를 종목명으로 사용)
   usTickers.forEach(({ ticker, name }) => {
-    results.push({
-      ticker,
-      name: name || ticker, // 종목명이 없으면 티커 사용
-      market: 'US',
-      exchange: 'NYSE' // 기본값
-    });
+    results.push({ ticker, name: name || ticker, market: 'US', exchange: 'NYSE' });
   });
-  console.log(`미국 종목 ${usTickers.length}개 처리 완료`);
-  console.log(`총 ${results.length}개 티커 목록 생성 완료`);
   return results;
 }
 
@@ -386,49 +362,19 @@ export async function buildInitialTickerDatabase(): Promise<Array<{
   market: 'KR' | 'US';
   exchange?: string;
 }>> {
-  console.log('초기 티커 목록 생성 시작 (ticker.txt 파일 사용)...');
-  
   try {
-    const results = await fetchTickersFromFile();
-    return results;
+    return await fetchTickersFromFile();
   } catch (err) {
     console.error('ticker.json 파일에서 티커 목록 읽기 실패, 기본 목록 사용:', err);
-    
-    // 폴백: 기존 방식 사용
-    const results: Array<{
-      ticker: string;
-      name: string;
-      market: 'KR' | 'US';
-      exchange?: string;
-    }> = [];
-    
-    // 한국 종목 가져오기
-    console.log('한국 코스피/코스닥 종목 가져오는 중...');
+    const results: Array<{ ticker: string; name: string; market: 'KR' | 'US'; exchange?: string }> = [];
     const koreaStocks = await fetchKoreaTopStocks();
-    koreaStocks.forEach(s => {
-      results.push({
-        ticker: s.ticker,
-        name: s.name || s.ticker,
-        market: 'KR',
-        exchange: s.exchange
-      });
+    koreaStocks.forEach((s) => {
+      results.push({ ticker: s.ticker, name: s.name || s.ticker, market: 'KR', exchange: s.exchange });
     });
-    console.log(`한국 종목 ${koreaStocks.length}개 추가됨`);
-    
-    // 미국 종목 가져오기
-    console.log('미국 주요 종목 가져오는 중...');
     const usStocks = await fetchUSTopStocks();
-    usStocks.forEach(s => {
-      results.push({
-        ticker: s.ticker,
-        name: s.name || s.ticker,
-        market: 'US',
-        exchange: s.exchange
-      });
+    usStocks.forEach((s) => {
+      results.push({ ticker: s.ticker, name: s.name || s.ticker, market: 'US', exchange: s.exchange });
     });
-    console.log(`미국 종목 ${usStocks.length}개 추가됨`);
-    
-    console.log(`총 ${results.length}개 티커 목록 생성 완료`);
     return results;
   }
 }
@@ -452,15 +398,8 @@ const buildLookupCandidates = (symbol: string) => {
     return [hyphenated, cleaned]; // 하이픈 형식 우선, 원본도 시도
   }
   
-  // 한국 주식 티커 패턴: 6자리 (숫자만 또는 숫자+알파벳 조합)
-  // 예: 005930, 0053L0, 000660 등
-  if (/^[0-9A-Z]{6}$/.test(cleaned) && /[0-9]/.test(cleaned)) {
-    // 한국 6자리 티커: KOSPI(.KS) 우선, 안 되면 KOSDAQ(.KQ), 마지막으로 원문 시도
-    return [`${cleaned}.KS`, `${cleaned}.KQ`, cleaned];
-  }
-  
-  // 순수 숫자 6자리도 한국 주식일 가능성 높음
-  if (/^[0-9]{6}$/.test(cleaned)) {
+  // 한국 주식: 6자 이상 (tickerUtils 규칙)
+  if (isKRWStock(cleaned)) {
     return [`${cleaned}.KS`, `${cleaned}.KQ`, cleaned];
   }
   
@@ -471,6 +410,9 @@ const fetchFromYahooChart = async (
   requestedSymbol: string,
   lookupSymbol: string
 ): Promise<YahooQuoteResult | null> => {
+  // #region agent log
+  fetch('http://127.0.0.1:7242/ingest/882185e7-1338-4f3b-a05b-acdab4efccb1',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'yahooFinanceApi.ts:470',message:'fetchFromYahooChart start',data:{requestedSymbol,lookupSymbol},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'A'})}).catch(()=>{});
+  // #endregion
   const params = new URLSearchParams({
     interval: "1d",
     range: "1d",
@@ -480,99 +422,166 @@ const fetchFromYahooChart = async (
   });
   const innerUrl = `${YAHOO_CHART_BASE}/${encodeURIComponent(lookupSymbol)}?${params.toString()}`;
   const proxyUrl = `${ALL_ORIGINS_PROXY}${encodeURIComponent(innerUrl)}`;
-  const res = await fetch(proxyUrl);
-  if (!res.ok) throw new Error(`HTTP ${res.status}`);
-  const payload = (await res.json()) as { contents?: string };
-  const data = payload.contents
-    ? (JSON.parse(payload.contents) as YahooChartResponse)
-    : (payload as unknown as YahooChartResponse);
+  // #region agent log
+  fetch('http://127.0.0.1:7242/ingest/882185e7-1338-4f3b-a05b-acdab4efccb1',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'yahooFinanceApi.ts:483',message:'before fetch',data:{proxyUrl},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'B'})}).catch(()=>{});
+  // #endregion
+  const startTime = Date.now();
+  const controller = new AbortController();
+  const timeoutId = setTimeout(() => controller.abort(), 10000);
+  try {
+    const res = await fetch(proxyUrl, { signal: controller.signal });
+    clearTimeout(timeoutId);
+    const duration = Date.now() - startTime;
+    // #region agent log
+    fetch('http://127.0.0.1:7242/ingest/882185e7-1338-4f3b-a05b-acdab4efccb1',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'yahooFinanceApi.ts:497',message:'after fetch',data:{status:res.status,ok:res.ok,duration},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'B'})}).catch(()=>{});
+    // #endregion
+    if (!res.ok) throw new Error(`HTTP ${res.status}`);
+    const payload = (await res.json()) as { contents?: string };
+    const data = payload.contents
+      ? (JSON.parse(payload.contents) as YahooChartResponse)
+      : (payload as unknown as YahooChartResponse);
 
-  const meta = data.chart?.result?.[0]?.meta;
-  const closes = data.chart?.result?.[0]?.indicators?.quote?.[0]?.close ?? [];
-  const lastClose = closes.filter((v): v is number => typeof v === "number").at(-1);
-  const price = typeof meta?.regularMarketPrice === "number" ? meta.regularMarketPrice : lastClose;
-  if (price == null) return null;
+    const meta = data.chart?.result?.[0]?.meta;
+    const closes = data.chart?.result?.[0]?.indicators?.quote?.[0]?.close ?? [];
+    const lastClose = closes.filter((v): v is number => typeof v === "number").at(-1);
+    const price = typeof meta?.regularMarketPrice === "number" ? meta.regularMarketPrice : lastClose;
+    if (price == null) return null;
 
-  let change: number | undefined;
-  let changePercent: number | undefined;
-  if (typeof meta?.chartPreviousClose === "number") {
-    change = price - meta.chartPreviousClose;
-    if (meta.chartPreviousClose !== 0) {
-      changePercent = (change / meta.chartPreviousClose) * 100;
+    let change: number | undefined;
+    let changePercent: number | undefined;
+    if (typeof meta?.chartPreviousClose === "number") {
+      change = price - meta.chartPreviousClose;
+      if (meta.chartPreviousClose !== 0) {
+        changePercent = (change / meta.chartPreviousClose) * 100;
+      }
     }
+
+    const updatedAt =
+      typeof meta?.regularMarketTime === "number"
+        ? new Date(meta.regularMarketTime * 1000).toISOString()
+        : undefined;
+
+    return {
+      ticker: requestedSymbol,
+      name: meta?.longName ?? meta?.shortName ?? requestedSymbol,
+      price,
+      currency: meta?.currency,
+      change,
+      changePercent,
+      updatedAt
+    };
+  } catch (err) {
+    clearTimeout(timeoutId);
+    if (err instanceof Error && err.name === 'AbortError') {
+      throw new Error('Request timeout');
+    }
+    throw err;
   }
-
-  const updatedAt =
-    typeof meta?.regularMarketTime === "number"
-      ? new Date(meta.regularMarketTime * 1000).toISOString()
-      : undefined;
-
-  return {
-    ticker: requestedSymbol,
-    name: meta?.longName ?? meta?.shortName ?? requestedSymbol,
-    price,
-    currency: meta?.currency,
-    change,
-    changePercent,
-    updatedAt
-  };
 };
 
 const fetchFromStooq = async (requestedSymbol: string): Promise<YahooQuoteResult | null> => {
+  // #region agent log
+  fetch('http://127.0.0.1:7242/ingest/882185e7-1338-4f3b-a05b-acdab4efccb1',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'yahooFinanceApi.ts:521',message:'fetchFromStooq start',data:{requestedSymbol},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'D'})}).catch(()=>{});
+  // #endregion
   const url = `${STOOQ_BASE}?s=${encodeURIComponent(
     requestedSymbol.toLowerCase()
   )}.us&f=sd2t2ohlcv&h&e=json`;
-  const res = await fetch(url);
-  if (!res.ok) return null;
-  const json = (await res.json()) as {
-    symbols?: Array<{ symbol: string; name?: string; close?: string }>;
-  };
-  const item = json.symbols?.[0];
-  const price = item?.close ? Number(item.close) : NaN;
-  if (!item?.symbol || Number.isNaN(price)) return null;
-  return {
-    ticker: requestedSymbol,
-    name: item.name ?? requestedSymbol,
-    price,
-    updatedAt: new Date().toISOString()
-  };
+  const controller = new AbortController();
+  const timeoutId = setTimeout(() => controller.abort(), 5000);
+  try {
+    const res = await fetch(url, { signal: controller.signal });
+    clearTimeout(timeoutId);
+    // #region agent log
+    fetch('http://127.0.0.1:7242/ingest/882185e7-1338-4f3b-a05b-acdab4efccb1',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'yahooFinanceApi.ts:529',message:'stooq fetch result',data:{status:res.status,ok:res.ok},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'D'})}).catch(()=>{});
+    // #endregion
+    if (!res.ok) return null;
+    const json = (await res.json()) as {
+      symbols?: Array<{ symbol: string; name?: string; close?: string }>;
+    };
+    const item = json.symbols?.[0];
+    const price = item?.close ? Number(item.close) : NaN;
+    if (!item?.symbol || Number.isNaN(price)) return null;
+    return {
+      ticker: requestedSymbol,
+      name: item.name ?? requestedSymbol,
+      price,
+      updatedAt: new Date().toISOString()
+    };
+  } catch (err) {
+    clearTimeout(timeoutId);
+    if (err instanceof Error && err.name === 'AbortError') {
+      throw new Error('Request timeout');
+    }
+    throw err;
+  }
 };
 
+// 전역 요청 추적을 위한 맵
+const activeRequests = new Map<string, Promise<YahooQuoteResult[]>>();
+
 export async function fetchYahooQuotes(symbols: string[]): Promise<YahooQuoteResult[]> {
+  // #region agent log
+  fetch('http://127.0.0.1:7242/ingest/882185e7-1338-4f3b-a05b-acdab4efccb1',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'yahooFinanceApi.ts:541',message:'fetchYahooQuotes start',data:{symbols,activeRequestsCount:activeRequests.size},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'A'})}).catch(()=>{});
+  // #endregion
   const uniq = Array.from(new Set(symbols.map((s) => s.trim()).filter(Boolean)));
   if (uniq.length === 0) return [];
 
-  const results: YahooQuoteResult[] = [];
-
-  for (const raw of uniq) {
-    const requestedSymbol = raw.trim().toUpperCase();
-    let quote: YahooQuoteResult | null = null;
-
-    for (const lookupSymbol of buildLookupCandidates(requestedSymbol)) {
-      try {
-        quote = await fetchFromYahooChart(requestedSymbol, lookupSymbol);
-        if (quote) break;
-      } catch (err) {
-        console.warn("yahoo chart fetch failed", lookupSymbol, err);
-      }
-    }
-
-    if (!quote) {
-      try {
-        quote = await fetchFromStooq(requestedSymbol);
-      } catch (err) {
-        console.warn("stooq fetch failed", err);
-      }
-    }
-
-    if (quote) {
-      results.push(quote);
-    }
+  // 중복 요청 방지: 같은 심볼에 대한 요청이 이미 진행 중이면 기존 요청 재사용
+  const requestKey = uniq.sort().join(',');
+  if (activeRequests.has(requestKey)) {
+    // #region agent log
+    fetch('http://127.0.0.1:7242/ingest/882185e7-1338-4f3b-a05b-acdab4efccb1',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'yahooFinanceApi.ts:548',message:'reusing existing request',data:{requestKey},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'A'})}).catch(()=>{});
+    // #endregion
+    return activeRequests.get(requestKey)!;
   }
 
-  if (results.length) return results;
+  const requestPromise = (async () => {
+    try {
+      const results: YahooQuoteResult[] = [];
 
-  throw new Error("야후에서 시세를 불러오지 못했습니다.");
+      for (const raw of uniq) {
+        const requestedSymbol = raw.trim().toUpperCase();
+        let quote: YahooQuoteResult | null = null;
+
+        for (const lookupSymbol of buildLookupCandidates(requestedSymbol)) {
+          try {
+            quote = await fetchFromYahooChart(requestedSymbol, lookupSymbol);
+            if (quote) break;
+          } catch (err) {
+            // #region agent log
+            fetch('http://127.0.0.1:7242/ingest/882185e7-1338-4f3b-a05b-acdab4efccb1',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'yahooFinanceApi.ts:556',message:'yahoo chart fetch failed',data:{lookupSymbol,error:String(err)},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'C'})}).catch(()=>{});
+            // #endregion
+            // 조용히 실패 처리 (프록시 서버 문제일 수 있음)
+          }
+        }
+
+        if (!quote) {
+          try {
+            quote = await fetchFromStooq(requestedSymbol);
+          } catch (err) {
+            // #region agent log
+            fetch('http://127.0.0.1:7242/ingest/882185e7-1338-4f3b-a05b-acdab4efccb1',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'yahooFinanceApi.ts:564',message:'stooq fetch failed',data:{requestedSymbol,error:String(err)},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'D'})}).catch(()=>{});
+            // #endregion
+            // 조용히 실패 처리 (CORS 문제일 수 있음)
+          }
+        }
+
+        if (quote) {
+          results.push(quote);
+        }
+      }
+
+      if (results.length) return results;
+
+      // 에러를 던지지 않고 빈 배열 반환 (조용히 실패 처리)
+      return [];
+    } finally {
+      activeRequests.delete(requestKey);
+    }
+  })();
+
+  activeRequests.set(requestKey, requestPromise);
+  return requestPromise;
 }
 
 export async function searchYahooSymbol(
@@ -581,9 +590,7 @@ export async function searchYahooSymbol(
   const trimmed = query.trim().toUpperCase();
   if (!trimmed) return [];
   
-  // 한국 주식 티커 패턴: 6자리 (숫자만 또는 숫자+알파벳 조합)
-  // 예: 005930, 0053L0, 000660 등
-  const isKoreanTicker = /^[0-9A-Z]{6}$/.test(trimmed) && /[0-9]/.test(trimmed);
+  const isKoreanTicker = isKRWStock(trimmed);
   const queries = isKoreanTicker 
     ? [trimmed, `${trimmed}.KS`, `${trimmed}.KQ`]
     : [trimmed];

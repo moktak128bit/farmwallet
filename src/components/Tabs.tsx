@@ -1,4 +1,4 @@
-﻿import React from "react";
+import React from "react";
 import {
   LayoutDashboard,
   Wallet,
@@ -48,19 +48,49 @@ interface Props {
   onChange: (id: TabId) => void;
 }
 
+const TAB_GROUPS: TabId[][] = [
+  ["dashboard"],
+  ["accounts", "ledger"],
+  ["stocks", "dividends"],
+  ["debt", "budget"],
+  ["categories", "reports", "settings"]
+];
+
 export const Tabs: React.FC<Props> = ({ active, onChange }) => {
   return (
     <div className="tabs">
-      {TABS.map((tab) => (
-        <button
-          key={tab.id}
-          className={`tab-button ${active === tab.id ? "active" : ""}`}
-          onClick={() => onChange(tab.id)}
-          type="button"
-        >
-          {tab.icon}
-          <span className="tab-label">{tab.label}</span>
-        </button>
+      {TAB_GROUPS.map((group, groupIdx) => (
+        <React.Fragment key={groupIdx}>
+          {groupIdx > 0 && (
+            <span
+              className="tab-separator"
+              style={{
+                width: 1,
+                alignSelf: "stretch",
+                backgroundColor: "var(--border)",
+                margin: "4px 4px 4px 0"
+              }}
+              aria-hidden
+            />
+          )}
+          {group.map((tabId) => {
+            const tab = TABS.find((t) => t.id === tabId);
+            if (!tab) return null;
+            return (
+              <button
+                key={tab.id}
+                className={`tab-button ${active === tab.id ? "active" : ""}`}
+                onClick={() => onChange(tab.id)}
+                type="button"
+                aria-label={tab.label}
+                aria-current={active === tab.id ? "true" : undefined}
+              >
+                {tab.icon}
+                <span className="tab-label">{tab.label}</span>
+              </button>
+            );
+          })}
+        </React.Fragment>
       ))}
     </div>
   );

@@ -1,4 +1,5 @@
 import React, { useMemo, useState } from "react";
+import { toast } from "react-hot-toast";
 import type { Account, BudgetGoal, RecurringExpense, Recurrence, LedgerEntry } from "../types";
 
 interface Props {
@@ -49,12 +50,21 @@ export const BudgetRecurringView: React.FC<Props> = ({
   const [editingRecurringId, setEditingRecurringId] = useState<string | null>(null);
   const [editingField, setEditingField] = useState<{ id: string; field: string } | null>(null);
   const [editingValue, setEditingValue] = useState<string>("");
+  const [editingBudgetField, setEditingBudgetField] = useState<{ id: string; field: string } | null>(null);
+  const [editingBudgetValue, setEditingBudgetValue] = useState<string>("");
   const [selectedRecurringIds, setSelectedRecurringIds] = useState<Set<string>>(new Set());
   const currentMonth = new Date().toISOString().slice(0, 7); // yyyy-mm
 
-  const nextRun = (item: RecurringExpense) => {
+  const formatNextRun = (item: RecurringExpense): string => {
     const start = item.startDate || "";
-    return start;
+    if (!start) return "-";
+    const d = new Date(start);
+    if (isNaN(d.getTime())) return start;
+    const month = d.getMonth() + 1;
+    const day = d.getDate();
+    if (item.frequency === "monthly") return `${day}일`;
+    if (item.frequency === "yearly") return `${month}월 ${day}일`;
+    return start; // 매주: 전체 날짜
   };
 
   const totalBudget = useMemo(
@@ -146,65 +156,77 @@ export const BudgetRecurringView: React.FC<Props> = ({
     onChangeBudgets(budgets.filter((b) => b.id !== id));
   };
 
-  const generateOccurrencesForMonth = (month: string): LedgerEntry[] => {
-    const [y, m] = month.split("-").map(Number);
-    const monthStart = new Date(y, m - 1, 1);
-    const monthEnd = new Date(y, m, 0);
-    const entries: LedgerEntry[] = [];
+  const startEditBudgetField = (id: string, field: string, currentValue: string | number) => {
+    setEditingBudgetField({ id, field });
+    setEditingBudgetValue(String(currentValue));
+  };
 
-    for (const r of recurring) {
-      const start = new Date(r.startDate);
-      if (r.endDate && new Date(r.endDate) < monthStart) continue;
-      let cursor = new Date(start);
-      const pushIfInMonth = (date: Date) => {
-        if (date >= monthStart && date <= monthEnd) {
-          entries.push({
-            id: `L${Date.now()}${Math.random().toString(16).slice(2)}`,
-            date: date.toISOString().slice(0, 10),
-            kind: r.toAccountId ? "transfer" : "expense", // 입금계좌가 있으면 이체, 없으면 지출
-            category: r.category || (r.toAccountId ? "저축성지출" : "(고정지출)"),
-            subCategory: r.title,
-            description: r.title,
-            amount: r.amount,
-            fromAccountId: r.fromAccountId,
-            toAccountId: r.toAccountId
-          });
-        }
-      };
+  const saveEditBudgetField = () => {
+    if (!editingBudgetField) return;
+    const { id, field } = editingBudgetField;
+    const item = budgets.find((b) => b.id === id);
+    if (!item) return;
 
-      if (r.frequency === "monthly") {
-        const target = new Date(y, m - 1, start.getDate());
-        pushIfInMonth(target);
-      } else if (r.frequency === "yearly") {
-        if (start.getMonth() + 1 === m) {
-          const target = new Date(y, m - 1, start.getDate());
-          pushIfInMonth(target);
-        }
-      } else if (r.frequency === "weekly") {
-        cursor = new Date(start);
-        while (cursor <= monthEnd) {
-          if (cursor >= monthStart) pushIfInMonth(new Date(cursor));
-          cursor.setDate(cursor.getDate() + 7);
-        }
-      }
+    const updated = { ...item };
+    if (field === "category") {
+      updated.category = editingBudgetValue;
+    } else if (field === "monthlyLimit") {
+      updated.monthlyLimit = Number(editingBudgetValue) || 0;
+    } else if (field === "note") {
+      updated.note = editingBudgetValue || undefined;
     }
-    return entries;
+
+    onChangeBudgets(budgets.map((b) => (b.id === id ? updated : b)));
+    setEditingBudgetField(null);
+    setEditingBudgetValue("");
+  };
+
+  const cancelEditBudgetField = () => {
+    setEditingBudgetField(null);
+    setEditingBudgetValue("");
   };
 
   const handleApplyCurrentMonth = () => {
-    // 체크된 항목들만 필터링
     const selectedRecurring = recurring.filter((r) => selectedRecurringIds.has(r.id));
     if (selectedRecurring.length === 0) {
       alert("반영할 항목을 선택해주세요.");
       return;
     }
-    
-    // 선택된 항목들만으로 발생 항목 생성
+
     const occurrences = generateOccurrencesForMonthFromRecurring(selectedRecurring, currentMonth);
-    if (occurrences.length === 0) return;
-    onChangeLedger([...occurrences, ...ledger]);
-    // 반영 후 선택 초기화
+    const deduped = filterDuplicateOccurrences(occurrences, ledger, currentMonth);
+    if (deduped.length === 0) {
+      toast.error("해당 월에 이미 반영된 항목만 선택되었습니다. 새로운 항목을 선택해주세요.");
+      return;
+    }
+    onChangeLedger([...deduped, ...ledger]);
     setSelectedRecurringIds(new Set());
+    const skipped = occurrences.length - deduped.length;
+    toast.success(
+      skipped > 0
+        ? `${deduped.length}건 반영됨 (중복 ${skipped}건 제외)`
+        : `${deduped.length}건 가계부에 반영되었습니다.`
+    );
+  };
+
+  const filterDuplicateOccurrences = (
+    occurrences: LedgerEntry[],
+    existingLedger: LedgerEntry[],
+    month: string
+  ): LedgerEntry[] => {
+    const monthLedger = existingLedger.filter((l) => l.date?.startsWith(month));
+    return occurrences.filter((occ) => {
+      const dup = monthLedger.some(
+        (l) =>
+          l.date === occ.date &&
+          l.category === occ.category &&
+          l.subCategory === occ.subCategory &&
+          l.amount === occ.amount &&
+          l.fromAccountId === occ.fromAccountId &&
+          l.toAccountId === occ.toAccountId
+      );
+      return !dup;
+    });
   };
 
   const generateOccurrencesForMonthFromRecurring = (recurringList: RecurringExpense[], month: string): LedgerEntry[] => {
@@ -214,35 +236,41 @@ export const BudgetRecurringView: React.FC<Props> = ({
     const entries: LedgerEntry[] = [];
 
     for (const r of recurringList) {
+      if (!r.startDate || !r.startDate.trim()) continue;
       const start = new Date(r.startDate);
+      if (isNaN(start.getTime())) continue;
       if (r.endDate && new Date(r.endDate) < monthStart) continue;
-      let cursor = new Date(start);
+
       const pushIfInMonth = (date: Date) => {
         if (date >= monthStart && date <= monthEnd) {
           entries.push({
             id: `L${Date.now()}${Math.random().toString(16).slice(2)}`,
             date: date.toISOString().slice(0, 10),
-            kind: r.toAccountId ? "transfer" : "expense", // 입금계좌가 있으면 이체, 없으면 지출
+            kind: r.toAccountId ? "transfer" : "expense",
             category: r.category || (r.toAccountId ? "저축성지출" : "(고정지출)"),
             subCategory: r.title,
             description: r.title,
             amount: r.amount,
             fromAccountId: r.fromAccountId,
-            toAccountId: r.toAccountId
+            toAccountId: r.toAccountId,
+            isFixedExpense: true // LedgerView 이전 달→현재 달 자동 복사에 사용
           });
         }
       };
 
       if (r.frequency === "monthly") {
-        const target = new Date(y, m - 1, start.getDate());
-        pushIfInMonth(target);
+        const day = start.getDate();
+        if (day >= 1 && day <= 31) {
+          const target = new Date(y, m - 1, Math.min(day, new Date(y, m, 0).getDate()));
+          pushIfInMonth(target);
+        }
       } else if (r.frequency === "yearly") {
         if (start.getMonth() + 1 === m) {
           const target = new Date(y, m - 1, start.getDate());
           pushIfInMonth(target);
         }
       } else if (r.frequency === "weekly") {
-        cursor = new Date(start);
+        const cursor = new Date(start);
         while (cursor <= monthEnd) {
           if (cursor >= monthStart) pushIfInMonth(new Date(cursor));
           cursor.setDate(cursor.getDate() + 7);
@@ -388,7 +416,22 @@ export const BudgetRecurringView: React.FC<Props> = ({
       </div>
 
       <h3 style={{ marginTop: 16 }}>고정 지출/구독 목록</h3>
-      <table className="data-table">
+      <p className="hint" style={{ marginTop: -8, marginBottom: 8 }}>
+        각 셀을 더블클릭하여 수정할 수 있습니다.
+      </p>
+      <div style={{ overflowX: "auto" }}>
+      <table className="data-table recurring-table">
+        <colgroup>
+          <col style={{ width: 40 }} />
+          <col style={{ width: 100 }} />
+          <col style={{ width: 100 }} />
+          <col style={{ width: 90 }} />
+          <col style={{ width: 60 }} />
+          <col style={{ width: 100 }} />
+          <col style={{ width: 100 }} />
+          <col style={{ width: 90 }} />
+          <col style={{ width: 70 }} />
+        </colgroup>
         <thead>
           <tr>
             <th style={{ width: "40px" }}>
@@ -556,12 +599,47 @@ export const BudgetRecurringView: React.FC<Props> = ({
                     <option value="">-</option>
                     {accounts.map((acc) => (
                       <option key={acc.id} value={acc.id}>
-                        {acc.id} - {acc.name}
+                        {acc.name}
                       </option>
                     ))}
                   </select>
                 ) : (
-                  r.fromAccountId ? accounts.find((a) => a.id === r.fromAccountId)?.id || r.fromAccountId : "-"
+                  r.fromAccountId ? accounts.find((a) => a.id === r.fromAccountId)?.name ?? "-" : "-"
+                )}
+              </td>
+              <td
+                onDoubleClick={(e) => {
+                  e.stopPropagation();
+                  startEditField(r.id, "toAccountId", r.toAccountId || "");
+                }}
+                style={{ cursor: "pointer" }}
+                title="더블클릭하여 수정"
+              >
+                {editingField?.id === r.id && editingField.field === "toAccountId" ? (
+                  <select
+                    value={editingValue}
+                    onChange={(e) => {
+                      const newValue = e.target.value;
+                      const item = recurring.find((r) => r.id === editingField.id);
+                      if (item) {
+                        const updated = { ...item, toAccountId: newValue || undefined };
+                        onChangeRecurring(recurring.map((r) => (r.id === editingField.id ? updated : r)));
+                        setEditingField(null);
+                        setEditingValue("");
+                      }
+                    }}
+                    autoFocus
+                    style={{ width: "100%", padding: "4px", fontSize: 14 }}
+                  >
+                    <option value="">-</option>
+                    {accounts.map((acc) => (
+                      <option key={acc.id} value={acc.id}>
+                        {acc.name}
+                      </option>
+                    ))}
+                  </select>
+                ) : (
+                  r.toAccountId ? accounts.find((a) => a.id === r.toAccountId)?.name ?? "-" : "-"
                 )}
               </td>
               <td
@@ -583,7 +661,7 @@ export const BudgetRecurringView: React.FC<Props> = ({
                     style={{ width: "100%", padding: "4px", fontSize: 14 }}
                   />
                 ) : (
-                  nextRun(r)
+                  formatNextRun(r)
                 )}
               </td>
               <td>
@@ -602,6 +680,7 @@ export const BudgetRecurringView: React.FC<Props> = ({
           )}
         </tbody>
       </table>
+      </div>
       <div style={{ marginTop: 8, display: "flex", justifyContent: "space-between", alignItems: "center" }}>
         <span style={{ fontSize: 14, color: "var(--text-muted)" }}>
           {selectedRecurringIds.size > 0 ? `${selectedRecurringIds.size}개 항목 선택됨` : "반영할 항목을 선택하세요"}
@@ -618,6 +697,9 @@ export const BudgetRecurringView: React.FC<Props> = ({
       </div>
 
       <h3 style={{ marginTop: 16 }}>예산/목표</h3>
+      <p className="hint" style={{ marginTop: -8, marginBottom: 8 }}>
+        카테고리, 월 예산, 메모를 더블클릭하여 수정할 수 있습니다.
+      </p>
       <table className="data-table">
         <thead>
           <tr>
@@ -632,15 +714,79 @@ export const BudgetRecurringView: React.FC<Props> = ({
         <tbody>
           {budgetUsage.map((b) => (
             <tr key={b.id}>
-              <td>{b.category}</td>
-              <td className="number">{Math.round(b.monthlyLimit).toLocaleString()} 원</td>
+              <td
+                onDoubleClick={() => startEditBudgetField(b.id, "category", b.category)}
+                style={{ cursor: "pointer" }}
+                title="더블클릭하여 수정"
+              >
+                {editingBudgetField?.id === b.id && editingBudgetField.field === "category" ? (
+                  <input
+                    type="text"
+                    value={editingBudgetValue}
+                    onChange={(e) => setEditingBudgetValue(e.target.value)}
+                    onBlur={saveEditBudgetField}
+                    onKeyDown={(e) => {
+                      if (e.key === "Enter") saveEditBudgetField();
+                      if (e.key === "Escape") cancelEditBudgetField();
+                    }}
+                    autoFocus
+                    style={{ width: "100%", padding: "4px", fontSize: 14 }}
+                  />
+                ) : (
+                  b.category
+                )}
+              </td>
+              <td
+                className="number"
+                onDoubleClick={() => startEditBudgetField(b.id, "monthlyLimit", b.monthlyLimit)}
+                style={{ cursor: "pointer" }}
+                title="더블클릭하여 수정"
+              >
+                {editingBudgetField?.id === b.id && editingBudgetField.field === "monthlyLimit" ? (
+                  <input
+                    type="number"
+                    value={editingBudgetValue}
+                    onChange={(e) => setEditingBudgetValue(e.target.value)}
+                    onBlur={saveEditBudgetField}
+                    onKeyDown={(e) => {
+                      if (e.key === "Enter") saveEditBudgetField();
+                      if (e.key === "Escape") cancelEditBudgetField();
+                    }}
+                    autoFocus
+                    style={{ width: "100%", padding: "4px", fontSize: 14 }}
+                  />
+                ) : (
+                  `${Math.round(b.monthlyLimit).toLocaleString()} 원`
+                )}
+              </td>
               <td className={`number ${b.remain < 0 ? "negative" : "positive"}`}>
                 {Math.round(b.spent).toLocaleString()} 원
               </td>
               <td className={`number ${b.remain < 0 ? "negative" : "positive"}`}>
                 {Math.round(b.remain).toLocaleString()} 원
               </td>
-              <td>{b.note}</td>
+              <td
+                onDoubleClick={() => startEditBudgetField(b.id, "note", b.note || "")}
+                style={{ cursor: "pointer" }}
+                title="더블클릭하여 수정"
+              >
+                {editingBudgetField?.id === b.id && editingBudgetField.field === "note" ? (
+                  <input
+                    type="text"
+                    value={editingBudgetValue}
+                    onChange={(e) => setEditingBudgetValue(e.target.value)}
+                    onBlur={saveEditBudgetField}
+                    onKeyDown={(e) => {
+                      if (e.key === "Enter") saveEditBudgetField();
+                      if (e.key === "Escape") cancelEditBudgetField();
+                    }}
+                    autoFocus
+                    style={{ width: "100%", padding: "4px", fontSize: 14 }}
+                  />
+                ) : (
+                  b.note || "-"
+                )}
+              </td>
               <td>
                 <button type="button" className="danger" onClick={() => deleteBudget(b.id)}>
                   삭제
@@ -650,7 +796,7 @@ export const BudgetRecurringView: React.FC<Props> = ({
           ))}
           {budgets.length === 0 && (
             <tr>
-              <td colSpan={5} style={{ textAlign: "center" }}>
+              <td colSpan={6} style={{ textAlign: "center" }}>
                 설정된 예산이 없습니다.
               </td>
             </tr>

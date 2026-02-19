@@ -170,8 +170,8 @@
       "date": "2025-12-01",
       "kind": "transfer",
       "category": "저축성지출",
-      "subCategory": "적금",
-      "description": "적금",
+      "subCategory": "청년도약계좌",
+      "description": "청년도약계좌",
       "amount": 700000,
       "fromAccountId": "농협",
       "toAccountId": "청년도약"
@@ -262,8 +262,8 @@
       "date": "2025-11-30",
       "kind": "transfer",
       "category": "저축성지출",
-      "subCategory": "적금",
-      "description": "적금",
+      "subCategory": "청년도약계좌",
+      "description": "청년도약계좌",
       "amount": 700000,
       "fromAccountId": "농협",
       "toAccountId": "청년도약"
@@ -1088,7 +1088,7 @@
       "date": "2025-07-05",
       "kind": "expense",
       "category": "저축성지출",
-      "subCategory": "적금",
+      "subCategory": "청년도약계좌",
       "description": "농협청년도약계좌",
       "amount": 700000,
       "fromAccountId": "계좌이체"
@@ -1898,7 +1898,7 @@
       "date": "2025-08-01",
       "kind": "expense",
       "category": "저축성지출",
-      "subCategory": "적금",
+      "subCategory": "청년도약계좌",
       "description": "농협청년도약계좌",
       "amount": 700000,
       "fromAccountId": "계좌이체"
@@ -2688,7 +2688,7 @@
       "date": "2025-09-01",
       "kind": "expense",
       "category": "저축성지출",
-      "subCategory": "적금",
+      "subCategory": "청년도약계좌",
       "description": "청년도약계좌 4회차",
       "amount": 700000,
       "fromAccountId": "계좌이체"
@@ -3428,7 +3428,7 @@
       "date": "2025-10-01",
       "kind": "expense",
       "category": "저축성지출",
-      "subCategory": "적금",
+      "subCategory": "청년도약계좌",
       "description": "청년도약계좌 5회차",
       "amount": 700000,
       "fromAccountId": "계좌이체"
@@ -4178,7 +4178,7 @@
       "date": "2025-11-03",
       "kind": "expense",
       "category": "저축성지출",
-      "subCategory": "적금",
+      "subCategory": "청년도약계좌",
       "description": "청년도약계좌 5회차",
       "amount": 700000,
       "fromAccountId": "계좌이체"
@@ -4890,7 +4890,7 @@
       "date": "2025-12-24",
       "accountId": "ISA",
       "ticker": "0144L0",
-      "name": "Samsung Kodex Us Growth Covered Call Active Etf",
+      "name": "KODEX 미국성장커버드콜액티브",
       "side": "buy",
       "quantity": 33,
       "price": 10015,
@@ -4903,7 +4903,7 @@
       "date": "2025-12-24",
       "accountId": "ISA",
       "ticker": "0047A0",
-      "name": "Mirae Asset Global Investments - Mirae Asset Tiger China Tech Top 10 ETF",
+      "name": "TIGER 차이나테크TOP10",
       "side": "sell",
       "quantity": 27,
       "price": 12210,
@@ -4929,7 +4929,7 @@
       "date": "2025-12-21",
       "accountId": "연금저축",
       "ticker": "0048J0",
-      "name": "Samsung Kodex US Money Market Active ETF",
+      "name": "KODEX 미국머니마켓액티브",
       "side": "buy",
       "quantity": 7,
       "price": 13890,
@@ -4942,7 +4942,7 @@
       "date": "2025-12-21",
       "accountId": "연금저축",
       "ticker": "308620",
-      "name": "Samsung KODEX Energy & chemicals Securities ETF-Kodex Treasury Note Futures Fund",
+      "name": "KODEX 미국10년국채선물",
       "side": "buy",
       "quantity": 9,
       "price": 11570,
@@ -4955,7 +4955,7 @@
       "date": "2025-12-21",
       "accountId": "연금저축",
       "ticker": "379810",
-      "name": "Samsung KODEX US Nasdaq100 ETF",
+      "name": "KODEX 미국나스닥100",
       "side": "buy",
       "quantity": 11,
       "price": 22265,
@@ -4968,7 +4968,7 @@
       "date": "2025-12-21",
       "accountId": "연금저축",
       "ticker": "379800",
-      "name": "Samsung KODEX S&P500 ETF",
+      "name": "KODEX 미국S&P500",
       "side": "buy",
       "quantity": 30,
       "price": 19975,
@@ -4994,7 +4994,7 @@
       "date": "2025-12-21",
       "accountId": "ISA",
       "ticker": "458730",
-      "name": "Mirae Asset Tiger U.S. Dividend Equity Etf",
+      "name": "TIGER 미국배당다우존스",
       "side": "buy",
       "quantity": 109,
       "price": 11987,
@@ -5007,7 +5007,7 @@
       "date": "2025-12-21",
       "accountId": "ISA",
       "ticker": "485540",
-      "name": "Samsung Kodex Us Ai Tech Top10+15% Premium Etf Etf",
+      "name": "KODEX 미국AI테크TOP10",
       "side": "buy",
       "quantity": 289,
       "price": 14646,
@@ -5020,7 +5020,7 @@
       "date": "2025-12-21",
       "accountId": "ISA",
       "ticker": "0047A0",
-      "name": "Mirae Asset Global Investments - Mirae Asset Tiger China Tech Top 10 ETF",
+      "name": "TIGER 차이나테크TOP10",
       "side": "buy",
       "quantity": 27,
       "price": 11881,
@@ -5033,7 +5033,7 @@
       "date": "2025-12-21",
       "accountId": "ISA",
       "ticker": "136490",
-      "name": "Sunjin Co.,Ltd.",
+      "name": "선진",
       "side": "buy",
       "quantity": 1,
       "price": 10480,
@@ -5046,7 +5046,7 @@
       "date": "2025-12-14",
       "accountId": "ISA",
       "ticker": "0053L0",
-      "name": "TIGER CHINA HUMANOID ROBOT",
+      "name": "TIGER 차이나휴머노이드로봇",
       "side": "buy",
       "quantity": 105,
       "price": 13024,
@@ -5076,7 +5076,7 @@
     },
     {
       "ticker": "485540",
-      "name": "Samsung Kodex Us Ai Tech Top10 Etf",
+      "name": "KODEX 미국AI테크TOP10",
       "price": 14830,
       "currency": "KRW",
       "change": 265,
@@ -5085,7 +5085,7 @@
     },
     {
       "ticker": "0053L0",
-      "name": "TIGER CHINA HUMANOID ROBOT",
+      "name": "TIGER 차이나휴머노이드로봇",
       "price": 12715,
       "currency": "KRW",
       "change": 195,
@@ -5103,7 +5103,7 @@
     },
     {
       "ticker": "458730",
-      "name": "Mirae Asset Tiger U.S. Dividend Equity Etf",
+      "name": "TIGER 미국배당다우존스",
       "price": 13000,
       "currency": "KRW",
       "change": -20,
@@ -5130,7 +5130,7 @@
     },
     {
       "ticker": "136490",
-      "name": "Sunjin Co.,Ltd.",
+      "name": "선진",
       "price": 9740,
       "currency": "KRW",
       "change": 40,
@@ -5148,7 +5148,7 @@
     },
     {
       "ticker": "0047A0",
-      "name": "Mirae Asset Global Investments - Mirae Asset Tiger China Tech Top 10 ETF",
+      "name": "TIGER 차이나테크TOP10",
       "price": 12195,
       "currency": "KRW",
       "change": 130,
@@ -5157,7 +5157,7 @@
     },
     {
       "ticker": "0048J0",
-      "name": "Samsung Kodex US Money Market Active ETF",
+      "name": "KODEX 미국머니마켓액티브",
       "price": 14820,
       "currency": "KRW",
       "change": -10,
@@ -5166,7 +5166,7 @@
     },
     {
       "ticker": "308620",
-      "name": "Samsung KODEX Energy & chemicals Securities ETF-Kodex Treasury Note Futures Fund",
+      "name": "KODEX 미국10년국채선물",
       "price": 12745,
       "currency": "KRW",
       "change": -5,
@@ -5175,7 +5175,7 @@
     },
     {
       "ticker": "379810",
-      "name": "Samsung KODEX US Nasdaq100 ETF",
+      "name": "KODEX 미국나스닥100",
       "price": 24615,
       "currency": "KRW",
       "change": 270,
@@ -5184,7 +5184,7 @@
     },
     {
       "ticker": "379800",
-      "name": "Samsung KODEX S&P500 ETF",
+      "name": "KODEX 미국S&P500",
       "price": 22770,
       "currency": "KRW",
       "change": 130,
@@ -5220,7 +5220,7 @@
     },
     {
       "ticker": "0144L0",
-      "name": "Samsung Kodex Us Growth Covered Call Active Etf",
+      "name": "KODEX 미국성장커버드콜액티브",
       "price": 10020,
       "currency": "KRW",
       "change": -80,
@@ -5271,7 +5271,7 @@
         "main": "저축성지출",
         "subs": [
           "예금",
-          "적금",
+          "청년도약계좌",
           "주택청약",
           "투자(ISA)",
           "연금저축",
@@ -5524,7 +5524,7 @@
       "startDate": "2025-11-01",
       "note": "",
       "fromAccountId": "농협",
-      "subCategory": "적금",
+      "subCategory": "청년도약계좌",
       "toAccountId": "청년도약"
     },
     {
@@ -5637,7 +5637,7 @@
     },
     {
       "ticker": "000050",
-      "name": "경방",
+      "name": "PLUS 미국AI에이전트",
       "market": "KR"
     },
     {
@@ -5817,7 +5817,7 @@
     },
     {
       "ticker": "0005G0",
-      "name": "Ai Semiconductor Core Technology Etf",
+      "name": "ITF K-AI반도체코어테크",
       "market": "KR"
     },
     {
@@ -6782,7 +6782,7 @@
     },
     {
       "ticker": "0047A0",
-      "name": "Mirae Asset Global Investments - Mirae Asset Tiger China Tech Top 10 ETF",
+      "name": "TIGER 차이나테크TOP10",
       "market": "KR"
     },
     {
@@ -6827,7 +6827,7 @@
     },
     {
       "ticker": "0048J0",
-      "name": "Samsung Kodex US Money Market Active ETF",
+      "name": "KODEX 미국머니마켓액티브",
       "market": "KR"
     },
     {
@@ -6942,7 +6942,7 @@
     },
     {
       "ticker": "0053L0",
-      "name": "TIGER CHINA HUMANOID ROBOT",
+      "name": "TIGER 차이나휴머노이드로봇",
       "market": "KR"
     },
     {
@@ -9787,7 +9787,7 @@
     },
     {
       "ticker": "136490",
-      "name": "Sunjin Co.,Ltd.",
+      "name": "선진",
       "market": "KR"
     },
     {
@@ -11607,7 +11607,7 @@
     },
     {
       "ticker": "308620",
-      "name": "Samsung KODEX Energy & chemicals Securities ETF-Kodex Treasury Note Futures Fund",
+      "name": "KODEX 미국10년국채선물",
       "market": "KR"
     },
     {
@@ -12192,12 +12192,12 @@
     },
     {
       "ticker": "379800",
-      "name": "Samsung KODEX S&P500 ETF",
+      "name": "KODEX 미국S&P500",
       "market": "KR"
     },
     {
       "ticker": "379810",
-      "name": "Samsung KODEX US Nasdaq100 ETF",
+      "name": "KODEX 미국나스닥100",
       "market": "KR"
     },
     {
@@ -12887,7 +12887,7 @@
     },
     {
       "ticker": "446440",
-      "name": "에��바이오텍",
+      "name": "에피바이오텍",
       "market": "KR"
     },
     {
@@ -13157,7 +13157,7 @@
     },
     {
       "ticker": "457190",
-      "name": "이수스페셜티케��컬",
+      "name": "이수스페셜티케미컬",
       "market": "KR"
     },
     {
@@ -13177,7 +13177,7 @@
     },
     {
       "ticker": "458730",
-      "name": "Mirae Asset Tiger U.S. Dividend Equity Etf",
+      "name": "TIGER 미국배당다우존스",
       "market": "KR"
     },
     {
@@ -13717,7 +13717,7 @@
     },
     {
       "ticker": "483280",
-      "name": "Samsung Kodex Us Ai Tech Top10+15% Premium Etf Etf",
+      "name": "KODEX 미국AI테크TOP10타겟커버드콜",
       "market": "KR"
     },
     {
@@ -13767,7 +13767,7 @@
     },
     {
       "ticker": "485540",
-      "name": "Samsung Kodex Us Ai Tech Top10 Etf",
+      "name": "KODEX 미국AI테크TOP10",
       "market": "KR"
     },
     {
@@ -36746,7 +36746,7 @@
     },
     {
       "ticker": "IREN",
-      "name": "IREN",
+      "name": "IREN Limited",
       "market": "US",
       "exchange": "NYSE"
     },
@@ -57338,7 +57338,7 @@
     },
     {
       "ticker": "TSN",
-      "name": "TSN",
+      "name": "Tyson Foods, Inc.",
       "market": "US",
       "exchange": "NYSE"
     },

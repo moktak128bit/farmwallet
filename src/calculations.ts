@@ -1,11 +1,13 @@
 import type { Account, LedgerEntry, StockPrice, StockTrade } from "./types";
-import { isUSDStock } from "./utils/tickerUtils";
+import { isUSDStock, canonicalTickerForMatch } from "./utils/tickerUtils";
 
 export interface AccountBalanceRow {
   account: Account;
   incomeSum: number;
   expenseSum: number;
   transferNet: number;
+  /** 이체로 인한 USD 순증액 (증권계좌 전용, currency=USD인 ledger 반영) */
+  usdTransferNet: number;
   tradeCashImpact: number;
   currentBalance: number;
 }
@@ -42,20 +44,24 @@ export function computeAccountBalances(
     const expenseEntries = ledger.filter((l) => l.kind === "expense" && l.fromAccountId === account.id);
     const expenseSum = expenseEntries.reduce((s, l) => s + l.amount, 0);
     // 이체: transfer 종류의 거래에서 이 계좌로 들어온 금액과 나간 금액
-    // 단, "신용카드" > "카드대금"은 자산 계산에서 제외 (이미 지출로 반영되었으므로)
+    // KRW 이체(currency !== "USD")는 currentBalance에, USD 이체는 usdTransferNet에 반영
+    const isUsdEntry = (l: LedgerEntry) => l.currency === "USD";
     const transferOutEntries = ledger.filter((l) => {
       if (l.kind !== "transfer" || l.fromAccountId !== account.id) return false;
-      // 카드대금 결제는 자산 계산에서 제외
       return !(l.category === "신용카드" && l.subCategory === "카드대금");
     });
-    const transferOut = transferOutEntries.reduce((s, l) => s + l.amount, 0);
+    const transferOut = transferOutEntries.filter((l) => !isUsdEntry(l)).reduce((s, l) => s + l.amount, 0);
     const transferInEntries = ledger.filter((l) => {
       if (l.kind !== "transfer" || l.toAccountId !== account.id) return false;
-      // 카드대금 결제는 자산 계산에서 제외
       return !(l.category === "신용카드" && l.subCategory === "카드대금");
     });
-    const transferIn = transferInEntries.reduce((s, l) => s + l.amount, 0);
+    const transferIn = transferInEntries.filter((l) => !isUsdEntry(l)).reduce((s, l) => s + l.amount, 0);
     const transferNet = transferIn - transferOut;
+
+    // USD 이체 순액 (증권계좌 등에서 달러 계좌 간 이체)
+    const usdTransferOut = transferOutEntries.filter((l) => isUsdEntry(l)).reduce((s, l) => s + l.amount, 0);
+    const usdTransferIn = transferInEntries.filter((l) => isUsdEntry(l)).reduce((s, l) => s + l.amount, 0);
+    const usdTransferNet = usdTransferIn - usdTransferOut;
 
     // 주식 거래의 현금 영향 (매수: 음수, 매도: 양수)
     const accountTrades = trades.filter((t) => t.accountId === account.id);
@@ -98,6 +104,7 @@ export function computeAccountBalances(
       incomeSum,
       expenseSum,
       transferNet,
+      usdTransferNet,
       tradeCashImpact,
       currentBalance
     };
@@ -111,7 +118,9 @@ export function computePositions(
 ): PositionRow[] {
   const byKey = new Map<string, StockTrade[]>();
   for (const t of trades) {
-    const key = `${t.accountId}::${t.ticker}`;
+    const norm = canonicalTickerForMatch(t.ticker);
+    if (!norm) continue;
+    const key = `${t.accountId}::${norm}`;
     const list = byKey.get(key) ?? [];
     list.push(t);
     byKey.set(key, list);
@@ -120,7 +129,7 @@ export function computePositions(
   const rows: PositionRow[] = [];
 
   for (const [key, ts] of byKey.entries()) {
-    const [accountId, ticker] = key.split("::");
+    const [accountId, tickerNorm] = key.split("::");
     const accountName =
       accounts.find((a) => a.id === accountId)?.name ?? accounts.find((a) => a.id === accountId)?.id ??
       accountId;
@@ -138,10 +147,11 @@ export function computePositions(
     const totalSellAmount = sells.reduce((s, t) => s + t.totalAmount, 0);
     // 순매입금액: 총매입금액 - 총매도금액 (실제 투자한 순 금액)
     const netBuyAmount = totalBuyAmount - totalSellAmount;
-    
-    const priceInfo = prices.find((p) => p.ticker === ticker);
+
+    const priceInfo = prices.find((p) => canonicalTickerForMatch(p.ticker) === tickerNorm);
     const marketPrice = priceInfo?.price ?? 0;
-    const name = priceInfo?.name ?? ts[0]?.name ?? ticker;
+    const canonicalTicker = priceInfo?.ticker ?? ts[0]?.ticker ?? tickerNorm;
+    const name = priceInfo?.name ?? ts[0]?.name ?? canonicalTicker;
 
     // 평균단가: 매수 금액을 매수 수량으로 나눈 값 (매수한 평균 단가)
     const avgPrice = buyQty > 0 ? totalBuyAmount / buyQty : 0;
@@ -163,7 +173,7 @@ export function computePositions(
     rows.push({
       accountId,
       accountName,
-      ticker,
+      ticker: canonicalTicker,
       name,
       quantity,
       avgPrice,

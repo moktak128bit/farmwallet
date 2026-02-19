@@ -1,5 +1,6 @@
 import React, { useState, useMemo } from "react";
 import type { Account, LedgerEntry } from "../types";
+import { normalizeCategory, normalizeSubCategory } from "../utils/categoryNormalize";
 
 interface SearchQuery {
   keyword: string;
@@ -48,12 +49,25 @@ export const AdvancedSearch: React.FC<Props> = ({
     setFilterName("");
   };
 
-  // 고유한 카테고리 목록 추출
-  const uniqueCategories = useMemo(() => {
+  // 대분류와 세부분류를 구분하여 추출 (정규화 적용)
+  const mainCategories = useMemo(() => {
     const cats = new Set<string>();
     ledger.forEach(l => {
-      if (l.category) cats.add(l.category);
-      if (l.subCategory) cats.add(l.subCategory);
+      if (l.category) {
+        const normalized = normalizeCategory(l.category);
+        cats.add(normalized);
+      }
+    });
+    return Array.from(cats).sort();
+  }, [ledger]);
+
+  const subCategories = useMemo(() => {
+    const cats = new Set<string>();
+    ledger.forEach(l => {
+      if (l.subCategory) {
+        const normalized = normalizeSubCategory(l.subCategory);
+        cats.add(normalized);
+      }
     });
     return Array.from(cats).sort();
   }, [ledger]);
@@ -153,11 +167,38 @@ export const AdvancedSearch: React.FC<Props> = ({
               </div>
             </label>
 
-            {/* 카테고리 선택 */}
+            {/* 대분류 선택 */}
             <label>
-              <span>카테고리 (다중 선택)</span>
+              <span>대분류 (다중 선택)</span>
               <div style={{ display: "flex", flexWrap: "wrap", gap: "8px", marginTop: "8px" }}>
-                {uniqueCategories.map((cat) => {
+                {mainCategories.map((cat) => {
+                  const isSelected = query.categories?.includes(cat);
+                  return (
+                    <button
+                      key={cat}
+                      type="button"
+                      className={isSelected ? "primary" : "secondary"}
+                      onClick={() => {
+                        const current = query.categories || [];
+                        const next = isSelected
+                          ? current.filter((c) => c !== cat)
+                          : [...current, cat];
+                        onChange({ ...query, categories: next.length > 0 ? next : undefined });
+                      }}
+                      style={{ fontSize: "12px", padding: "6px 12px" }}
+                    >
+                      {cat}
+                    </button>
+                  );
+                })}
+              </div>
+            </label>
+
+            {/* 세부분류 선택 */}
+            <label>
+              <span>세부분류 (다중 선택)</span>
+              <div style={{ display: "flex", flexWrap: "wrap", gap: "8px", marginTop: "8px" }}>
+                {subCategories.map((cat) => {
                   const isSelected = query.categories?.includes(cat);
                   return (
                     <button

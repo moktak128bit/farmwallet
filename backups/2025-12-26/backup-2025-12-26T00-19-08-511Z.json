@@ -263,8 +263,8 @@
         "date": "2025-12-01",
         "kind": "transfer",
         "category": "저축성지출",
-        "subCategory": "적금",
-        "description": "적금",
+        "subCategory": "청년도약계좌",
+        "description": "청년도약계좌",
         "amount": 700000,
         "fromAccountId": "농협",
         "toAccountId": "청년도약"
@@ -355,8 +355,8 @@
         "date": "2025-11-30",
         "kind": "transfer",
         "category": "저축성지출",
-        "subCategory": "적금",
-        "description": "적금",
+        "subCategory": "청년도약계좌",
+        "description": "청년도약계좌",
         "amount": 700000,
         "fromAccountId": "농협",
         "toAccountId": "청년도약"
@@ -1181,7 +1181,7 @@
         "date": "2025-07-05",
         "kind": "expense",
         "category": "저축성지출",
-        "subCategory": "적금",
+        "subCategory": "청년도약계좌",
         "description": "농협청년도약계좌",
         "amount": 700000,
         "fromAccountId": "계좌이체"
@@ -1991,7 +1991,7 @@
         "date": "2025-08-01",
         "kind": "expense",
         "category": "저축성지출",
-        "subCategory": "적금",
+        "subCategory": "청년도약계좌",
         "description": "농협청년도약계좌",
         "amount": 700000,
         "fromAccountId": "계좌이체"
@@ -2781,7 +2781,7 @@
         "date": "2025-09-01",
         "kind": "expense",
         "category": "저축성지출",
-        "subCategory": "적금",
+        "subCategory": "청년도약계좌",
         "description": "청년도약계좌 4회차",
         "amount": 700000,
         "fromAccountId": "계좌이체"
@@ -3521,7 +3521,7 @@
         "date": "2025-10-01",
         "kind": "expense",
         "category": "저축성지출",
-        "subCategory": "적금",
+        "subCategory": "청년도약계좌",
         "description": "청년도약계좌 5회차",
         "amount": 700000,
         "fromAccountId": "계좌이체"
@@ -4271,7 +4271,7 @@
         "date": "2025-11-03",
         "kind": "expense",
         "category": "저축성지출",
-        "subCategory": "적금",
+        "subCategory": "청년도약계좌",
         "description": "청년도약계좌 5회차",
         "amount": 700000,
         "fromAccountId": "계좌이체"
@@ -5386,7 +5386,7 @@
           "main": "저축성지출",
           "subs": [
             "예금",
-            "적금",
+            "청년도약계좌",
             "주택청약",
             "투자(ISA)",
             "연금저축",
@@ -5642,7 +5642,7 @@
         "startDate": "2025-11-01",
         "note": "",
         "fromAccountId": "농협",
-        "subCategory": "적금",
+        "subCategory": "청년도약계좌",
         "toAccountId": "청년도약"
       },
       {

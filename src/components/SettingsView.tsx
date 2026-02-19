@@ -7,8 +7,10 @@ import {
   loadServerBackupData,
   type BackupEntry
 } from "../storage";
+import { generateLedgerMarkdownReport } from "../utils/ledgerMarkdownReport";
 import { DataIntegrityView } from "./DataIntegrityView";
 import { ThemeCustomizer } from "./ThemeCustomizer";
+import { getKoreaTime } from "../utils/dateUtils";
 
 interface Props {
   data: AppData;
@@ -32,7 +34,7 @@ export const SettingsView: React.FC<Props> = ({ data, onChangeData, backupVersio
       return list;
     } catch (error) {
       console.error("백업 목록 로드 실패:", error);
-      toast.error("백업 목록을 불러오는 중 오류가 발생했습니다.");
+      toast.error("백업 목록을 불러오는 중 오류가 발생했습니다. 다시 시도해 보세요.");
       return [];
     }
   }, []);
@@ -49,15 +51,6 @@ export const SettingsView: React.FC<Props> = ({ data, onChangeData, backupVersio
     }
   };
 
-  // 한국 시간을 얻는 헬퍼 함수 (정확한 타임존 변환)
-  const getKoreaTime = useCallback(() => {
-    const now = new Date();
-    // 한국 시간대 오프셋: UTC+9
-    const koreaOffset = 9 * 60; // 분 단위
-    const utcTime = now.getTime() + (now.getTimezoneOffset() * 60000);
-    return new Date(utcTime + (koreaOffset * 60000));
-  }, []);
-
   // 백업 파일로 다운로드
   const handleDownloadBackup = useCallback(() => {
     try {
@@ -66,7 +59,6 @@ export const SettingsView: React.FC<Props> = ({ data, onChangeData, backupVersio
       const url = URL.createObjectURL(blob);
       const a = document.createElement("a");
       a.href = url;
-      // 한국 시간 기준으로 파일명 생성
       const koreaTime = getKoreaTime();
       const year = koreaTime.getFullYear();
       const month = String(koreaTime.getMonth() + 1).padStart(2, "0");
@@ -83,9 +75,28 @@ export const SettingsView: React.FC<Props> = ({ data, onChangeData, backupVersio
       if (import.meta.env.DEV) {
         console.error("백업 다운로드 실패:", error);
       }
-      toast.error("백업 파일 다운로드 중 오류가 발생했습니다.");
+      toast.error("백업 파일 다운로드 중 오류가 발생했습니다. 다시 시도해 보세요.");
     }
-  }, [data, getKoreaTime]);
+  }, [data]);
+
+  const handleExportLedgerMd = useCallback(() => {
+    try {
+      const md = generateLedgerMarkdownReport(data.ledger, data.accounts);
+      const blob = new Blob([md], { type: "text/markdown;charset=utf-8" });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = "정리.md";
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      URL.revokeObjectURL(url);
+      toast.success("정리.md를 다운로드했습니다. 프로젝트의 정리.md를 덮어쓰면 됩니다.");
+    } catch (err) {
+      if (import.meta.env.DEV) console.error("정리.md 내보내기 실패:", err);
+      toast.error("정리.md 내보내기 중 오류가 발생했습니다.");
+    }
+  }, [data.ledger, data.accounts]);
 
   // 백업 파일에서 불러오기
   const handleUploadBackup = useCallback(() => {
@@ -106,7 +117,7 @@ export const SettingsView: React.FC<Props> = ({ data, onChangeData, backupVersio
         toast.success("백업 파일을 성공적으로 불러왔습니다.", { id: toastId });
         await loadBackupList();
       } catch (error) {
-        const errorMsg = "백업 파일 형식이 올바르지 않습니다.";
+        const errorMsg = "백업 파일 형식이 올바르지 않습니다. JSON 파일인지 확인해 보세요.";
         setError(errorMsg);
         toast.error(errorMsg, { id: toastId });
         if (import.meta.env.DEV) {
@@ -144,7 +155,7 @@ export const SettingsView: React.FC<Props> = ({ data, onChangeData, backupVersio
       const list = await loadBackupList();
       toast.success(`백업 목록을 새로고침했습니다. (${list.length}개)`, { id: toastId });
     } catch (error) {
-      toast.error("백업 목록 새로고침 실패", { id: toastId });
+      toast.error("백업 목록 새로고침 실패. 다시 시도해 보세요.", { id: toastId });
     }
   }, [loadBackupList]);
 
@@ -176,7 +187,7 @@ export const SettingsView: React.FC<Props> = ({ data, onChangeData, backupVersio
       // 백업 목록도 새로고침
       await loadBackupList();
     } catch (e) {
-      const errorMsg = "백업을 불러오는 중 문제가 발생했습니다.";
+      const errorMsg = "백업을 불러오는 중 문제가 발생했습니다. 다시 시도해 보세요.";
       setError(errorMsg);
       toast.error(errorMsg, { id: toastId });
       if (import.meta.env.DEV) {
@@ -246,6 +257,16 @@ export const SettingsView: React.FC<Props> = ({ data, onChangeData, backupVersio
               백업 파일 불러오기
             </button>
           </div>
+        </div>
+        <div className="card">
+          <div className="card-title">가계부 정리 (정리.md)</div>
+          <p>
+            수입 / 지출 / 저축성 지출 / 이체를 구분해 표 스타일로 정리한 마크다운을 내보냅니다.
+            다운로드한 파일을 프로젝트의 <code>정리.md</code>에 저장하면 됩니다.
+          </p>
+          <button type="button" className="primary" onClick={handleExportLedgerMd}>
+            정리.md 내보내기
+          </button>
         </div>
         <div className="card">
           <div className="card-title">자동 백업 스냅샷</div>
@@ -371,6 +392,7 @@ export const SettingsView: React.FC<Props> = ({ data, onChangeData, backupVersio
           </p>
         </div>
       )}
+
     </div>
   );
 };

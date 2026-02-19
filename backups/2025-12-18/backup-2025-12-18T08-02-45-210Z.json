@@ -84,7 +84,7 @@
       "date": "2025-12-14",
       "accountId": "ISA",
       "ticker": "0053L0",
-      "name": "TIGER CHINA HUMANOID ROBOT",
+      "name": "TIGER 차이나휴머노이드로봇",
       "side": "buy",
       "quantity": 1,
       "price": 13000,
@@ -140,7 +140,7 @@
     },
     {
       "ticker": "485540",
-      "name": "Samsung Kodex Us Ai Tech Top10 Etf",
+      "name": "KODEX 미국AI테크TOP10",
       "price": 15095,
       "currency": "KRW",
       "change": 90,
@@ -149,7 +149,7 @@
     },
     {
       "ticker": "0053L0",
-      "name": "TIGER CHINA HUMANOID ROBOT",
+      "name": "TIGER 차이나휴머노이드로봇",
       "price": 12520,
       "currency": "KRW",
       "change": -205,
@@ -167,7 +167,7 @@
     },
     {
       "ticker": "458730",
-      "name": "Mirae Asset Tiger U.S. Dividend Equity Etf",
+      "name": "TIGER 미국배당다우존스",
       "price": 13020,
       "currency": "KRW",
       "change": -5,
@@ -217,7 +217,7 @@
         "main": "저축성지출",
         "subs": [
           "예금",
-          "적금",
+          "청년도약계좌",
           "주택청약",
           "투자(ISA)",
           "연금저축",

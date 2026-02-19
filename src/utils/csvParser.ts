@@ -34,12 +34,13 @@ export function parseCSV(
     complete: (results) => {
       const rows: ParsedRow[] = [];
       const errors: string[] = [];
+      const data = results.data as any[][];
 
-      results.data.forEach((row: any[], index: number) => {
+      data.forEach((row: any[], index: number) => {
         try {
           const parsed: ParsedRow = {};
 
-          if (mapping.date !== undefined && row[mapping.date]) {
+          if (mapping.date !== undefined && mapping.date >= 0 && mapping.date < row.length && row[mapping.date]) {
             const dateStr = String(row[mapping.date]).trim();
             // 다양한 날짜 형식 파싱
             const date = parseDate(dateStr);
@@ -50,11 +51,11 @@ export function parseCSV(
             }
           }
 
-          if (mapping.description !== undefined && row[mapping.description]) {
+          if (mapping.description !== undefined && mapping.description >= 0 && mapping.description < row.length && row[mapping.description]) {
             parsed.description = String(row[mapping.description]).trim();
           }
 
-          if (mapping.amount !== undefined && row[mapping.amount]) {
+          if (mapping.amount !== undefined && mapping.amount >= 0 && mapping.amount < row.length && row[mapping.amount]) {
             const amountStr = String(row[mapping.amount]).replace(/[^\d-]/g, "");
             const amount = Number(amountStr);
             if (!isNaN(amount)) {
@@ -68,23 +69,23 @@ export function parseCSV(
             }
           }
 
-          if (mapping.category !== undefined && row[mapping.category]) {
+          if (mapping.category !== undefined && mapping.category >= 0 && mapping.category < row.length && row[mapping.category]) {
             parsed.category = String(row[mapping.category]).trim();
           }
 
-          if (mapping.subCategory !== undefined && row[mapping.subCategory]) {
+          if (mapping.subCategory !== undefined && mapping.subCategory >= 0 && mapping.subCategory < row.length && row[mapping.subCategory]) {
             parsed.subCategory = String(row[mapping.subCategory]).trim();
           }
 
-          if (mapping.fromAccount !== undefined && row[mapping.fromAccount]) {
+          if (mapping.fromAccount !== undefined && mapping.fromAccount >= 0 && mapping.fromAccount < row.length && row[mapping.fromAccount]) {
             parsed.fromAccount = String(row[mapping.fromAccount]).trim();
           }
 
-          if (mapping.toAccount !== undefined && row[mapping.toAccount]) {
+          if (mapping.toAccount !== undefined && mapping.toAccount >= 0 && mapping.toAccount < row.length && row[mapping.toAccount]) {
             parsed.toAccount = String(row[mapping.toAccount]).trim();
           }
 
-          if (mapping.kind !== undefined && row[mapping.kind]) {
+          if (mapping.kind !== undefined && mapping.kind >= 0 && mapping.kind < row.length && row[mapping.kind]) {
             const kindStr = String(row[mapping.kind]).trim().toLowerCase();
             if (kindStr === "수입" || kindStr === "income") parsed.kind = "income";
             else if (kindStr === "지출" || kindStr === "expense") parsed.kind = "expense";

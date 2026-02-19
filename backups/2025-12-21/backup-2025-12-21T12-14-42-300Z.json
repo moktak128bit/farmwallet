@@ -129,7 +129,7 @@
       "date": "2025-12-14",
       "accountId": "ISA",
       "ticker": "0053L0",
-      "name": "TIGER CHINA HUMANOID ROBOT",
+      "name": "TIGER 차이나휴머노이드로봇",
       "side": "buy",
       "quantity": 1,
       "price": 13000,
@@ -185,7 +185,7 @@
     },
     {
       "ticker": "485540",
-      "name": "Samsung Kodex Us Ai Tech Top10 Etf",
+      "name": "KODEX 미국AI테크TOP10",
       "price": 15095,
       "currency": "KRW",
       "change": 90,
@@ -194,7 +194,7 @@
     },
     {
       "ticker": "0053L0",
-      "name": "TIGER CHINA HUMANOID ROBOT",
+      "name": "TIGER 차이나휴머노이드로봇",
       "price": 12520,
       "currency": "KRW",
       "change": -205,
@@ -212,7 +212,7 @@
     },
     {
       "ticker": "458730",
-      "name": "Mirae Asset Tiger U.S. Dividend Equity Etf",
+      "name": "TIGER 미국배당다우존스",
       "price": 13020,
       "currency": "KRW",
       "change": -5,
@@ -280,7 +280,7 @@
         "main": "저축성지출",
         "subs": [
           "예금",
-          "적금",
+          "청년도약계좌",
           "주택청약",
           "투자(ISA)",
           "연금저축",
@@ -500,43 +500,43 @@
   "tickerDatabase": [
     {
       "ticker": "035420",
-      "name": "NAVER Corporation",
+      "name": "NAVER",
       "market": "KR",
       "exchange": "KOSPI"
     },
     {
       "ticker": "003670",
-      "name": "Posco Future M Co., Ltd.",
+      "name": "포스코퓨처엠",
       "market": "KR",
       "exchange": "KOSPI"
     },
     {
       "ticker": "022100",
-      "name": "Posco Dx Company Ltd.",
+      "name": "포스코DX",
       "market": "KR",
       "exchange": "KOSPI"
     },
     {
       "ticker": "005490",
-      "name": "POSCO Holdings Inc.",
+      "name": "POSCO홀딩스",
       "market": "KR",
       "exchange": "KOSPI"
     },
     {
       "ticker": "469170",
-      "name": "KIM ACE POSCO Group Focus ETF",
+      "name": "ACE 포스코그룹포커스",
       "market": "KR",
       "exchange": "KOSPI"
     },
     {
       "ticker": "469050",
-      "name": "Kb Kbstar Us Semiconductor ICE ETF",
+      "name": "RISE 미국반도체NYSE(H)",
       "market": "KR",
       "exchange": "KOSPI"
     },
     {
       "ticker": "000660",
-      "name": "SK hynix Inc.",
+      "name": "SK하이닉스",
       "market": "KR",
       "exchange": "KOSPI"
     },
@@ -548,115 +548,115 @@
     },
     {
       "ticker": "GOOGL",
-      "name": "Alphabet Inc.",
+      "name": "GOOGL",
       "market": "US",
       "exchange": "NASDAQ"
     },
     {
       "ticker": "AMZN",
-      "name": "Amazon.com, Inc.",
+      "name": "AMZN",
       "market": "US",
       "exchange": "NASDAQ"
     },
     {
       "ticker": "NVDA",
-      "name": "NVIDIA Corporation",
+      "name": "NVDA",
       "market": "US",
       "exchange": "NASDAQ"
     },
     {
       "ticker": "META",
-      "name": "Meta Platforms, Inc.",
+      "name": "META",
       "market": "US",
       "exchange": "NASDAQ"
     },
     {
       "ticker": "NFLX",
-      "name": "Netflix, Inc.",
+      "name": "NFLX",
       "market": "US",
       "exchange": "NASDAQ"
     },
     {
       "ticker": "ADBE",
-      "name": "Adobe Inc.",
+      "name": "ADBE",
       "market": "US",
       "exchange": "NASDAQ"
     },
     {
       "ticker": "CRM",
-      "name": "Salesforce, Inc.",
+      "name": "CRM",
       "market": "US",
       "exchange": "NASDAQ"
     },
     {
       "ticker": "INTC",
-      "name": "Intel Corporation",
+      "name": "INTC",
       "market": "US",
       "exchange": "NASDAQ"
     },
     {
       "ticker": "AMD",
-      "name": "Advanced Micro Devices, Inc.",
+      "name": "AMD",
       "market": "US",
       "exchange": "NASDAQ"
     },
     {
       "ticker": "QCOM",
-      "name": "QUALCOMM Incorporated",
+      "name": "QCOM",
       "market": "US",
       "exchange": "NASDAQ"
     },
     {
       "ticker": "AVGO",
-      "name": "Broadcom Inc.",
+      "name": "AVGO",
       "market": "US",
       "exchange": "NYSE"
     },
     {
       "ticker": "TXN",
-      "name": "Texas Instruments Incorporated",
+      "name": "TXN",
       "market": "US",
       "exchange": "NYSE"
     },
     {
       "ticker": "ORCL",
-      "name": "Oracle Corporation",
+      "name": "ORCL",
       "market": "US",
       "exchange": "NYSE"
     },
     {
       "ticker": "NOW",
-      "name": "ServiceNow, Inc.",
+      "name": "NOW",
       "market": "US",
       "exchange": "NYSE"
     },
     {
       "ticker": "SNOW",
-      "name": "Snowflake Inc.",
+      "name": "SNOW",
       "market": "US",
       "exchange": "NYSE"
     },
     {
       "ticker": "PLTR",
-      "name": "Palantir Technologies Inc.",
+      "name": "PLTR",
       "market": "US",
       "exchange": "NYSE"
     },
     {
       "ticker": "COIN",
-      "name": "Coinbase Global, Inc.",
+      "name": "COIN",
       "market": "US",
       "exchange": "NYSE"
     },
     {
       "ticker": "JPM",
-      "name": "JPMorgan Chase & Co.",
+      "name": "JPM",
       "market": "US",
       "exchange": "NYSE"
     },
     {
       "ticker": "V",
-      "name": "Visa Inc.",
+      "name": "V",
       "market": "US",
       "exchange": "NYSE"
     },
@@ -668,247 +668,247 @@
     },
     {
       "ticker": "JNJ",
-      "name": "Johnson & Johnson",
+      "name": "JNJ",
       "market": "US",
       "exchange": "NYSE"
     },
     {
       "ticker": "PFE",
-      "name": "Pfizer Inc.",
+      "name": "PFE",
       "market": "US",
       "exchange": "NYSE"
     },
     {
       "ticker": "ABT",
-      "name": "Abbott Laboratories",
+      "name": "ABT",
       "market": "US",
       "exchange": "NYSE"
     },
     {
       "ticker": "TMO",
-      "name": "Thermo Fisher Scientific Inc.",
+      "name": "TMO",
       "market": "US",
       "exchange": "NYSE"
     },
     {
       "ticker": "DHR",
-      "name": "Danaher Corporation",
+      "name": "DHR",
       "market": "US",
       "exchange": "NYSE"
     },
     {
       "ticker": "ABBV",
-      "name": "AbbVie Inc.",
+      "name": "ABBV",
       "market": "US",
       "exchange": "NYSE"
     },
     {
       "ticker": "LLY",
-      "name": "Eli Lilly and Company",
+      "name": "LLY",
       "market": "US",
       "exchange": "NYSE"
     },
     {
       "ticker": "MRK",
-      "name": "Merck & Co., Inc.",
+      "name": "MRK",
       "market": "US",
       "exchange": "NYSE"
     },
     {
       "ticker": "WMT",
-      "name": "Walmart Inc.",
+      "name": "WMT",
       "market": "US",
       "exchange": "NYSE"
     },
     {
       "ticker": "HD",
-      "name": "The Home Depot, Inc.",
+      "name": "HD",
       "market": "US",
       "exchange": "NYSE"
     },
     {
       "ticker": "MCD",
-      "name": "McDonald's Corporation",
+      "name": "MCD",
       "market": "US",
       "exchange": "NYSE"
     },
     {
       "ticker": "SBUX",
-      "name": "Starbucks Corporation",
+      "name": "SBUX",
       "market": "US",
       "exchange": "NYSE"
     },
     {
       "ticker": "NKE",
-      "name": "NIKE, Inc.",
+      "name": "NKE",
       "market": "US",
       "exchange": "NYSE"
     },
     {
       "ticker": "TGT",
-      "name": "Target Corporation",
+      "name": "TGT",
       "market": "US",
       "exchange": "NYSE"
     },
     {
       "ticker": "COST",
-      "name": "Costco Wholesale Corporation",
+      "name": "COST",
       "market": "US",
       "exchange": "NYSE"
     },
     {
       "ticker": "LOW",
-      "name": "Lowe's Companies, Inc.",
+      "name": "LOW",
       "market": "US",
       "exchange": "NYSE"
     },
     {
       "ticker": "TJX",
-      "name": "The TJX Companies, Inc.",
+      "name": "TJX",
       "market": "US",
       "exchange": "NYSE"
     },
     {
       "ticker": "BA",
-      "name": "The Boeing Company",
+      "name": "BA",
       "market": "US",
       "exchange": "NYSE"
     },
     {
       "ticker": "CAT",
-      "name": "Caterpillar Inc.",
+      "name": "CAT",
       "market": "US",
       "exchange": "NYSE"
     },
     {
       "ticker": "GE",
-      "name": "GE Aerospace",
+      "name": "GE",
       "market": "US",
       "exchange": "NYSE"
     },
     {
       "ticker": "HON",
-      "name": "Honeywell International Inc.",
+      "name": "HON",
       "market": "US",
       "exchange": "NYSE"
     },
     {
       "ticker": "UPS",
-      "name": "United Parcel Service, Inc.",
+      "name": "UPS",
       "market": "US",
       "exchange": "NYSE"
     },
     {
       "ticker": "FDX",
-      "name": "FedEx Corporation",
+      "name": "FDX",
       "market": "US",
       "exchange": "NYSE"
     },
     {
       "ticker": "RTX",
-      "name": "RTX Corporation",
+      "name": "RTX",
       "market": "US",
       "exchange": "NYSE"
     },
     {
       "ticker": "LMT",
-      "name": "Lockheed Martin Corporation",
+      "name": "LMT",
       "market": "US",
       "exchange": "NYSE"
     },
     {
       "ticker": "NOC",
-      "name": "Northrop Grumman Corporation",
+      "name": "NOC",
       "market": "US",
       "exchange": "NYSE"
     },
     {
       "ticker": "GD",
-      "name": "General Dynamics Corporation",
+      "name": "GD",
       "market": "US",
       "exchange": "NYSE"
     },
     {
       "ticker": "XOM",
-      "name": "Exxon Mobil Corporation",
+      "name": "XOM",
       "market": "US",
       "exchange": "NYSE"
     },
     {
       "ticker": "CVX",
-      "name": "Chevron Corporation",
+      "name": "CVX",
       "market": "US",
       "exchange": "NYSE"
     },
     {
       "ticker": "SLB",
-      "name": "SLB N.V.",
+      "name": "SLB",
       "market": "US",
       "exchange": "NYSE"
     },
     {
       "ticker": "COP",
-      "name": "ConocoPhillips",
+      "name": "COP",
       "market": "US",
       "exchange": "NYSE"
     },
     {
       "ticker": "EOG",
-      "name": "EOG Resources, Inc.",
+      "name": "EOG",
       "market": "US",
       "exchange": "NYSE"
     },
     {
       "ticker": "MPC",
-      "name": "Marathon Petroleum Corporation",
+      "name": "MPC",
       "market": "US",
       "exchange": "NYSE"
     },
     {
       "ticker": "VLO",
-      "name": "Valero Energy Corporation",
+      "name": "VLO",
       "market": "US",
       "exchange": "NYSE"
     },
     {
       "ticker": "PSX",
-      "name": "Phillips 66",
+      "name": "PSX",
       "market": "US",
       "exchange": "NYSE"
     },
     {
       "ticker": "HAL",
-      "name": "Halliburton Company",
+      "name": "HAL",
       "market": "US",
       "exchange": "NYSE"
     },
     {
       "ticker": "OXY",
-      "name": "Occidental Petroleum Corporation",
+      "name": "OXY",
       "market": "US",
       "exchange": "NYSE"
     },
     {
       "ticker": "SPY",
-      "name": "SPDR S&P 500 ETF",
+      "name": "SPY",
       "market": "US",
       "exchange": "NYSE"
     },
     {
       "ticker": "QQQ",
-      "name": "Invesco QQQ Trust",
+      "name": "QQQ",
       "market": "US",
       "exchange": "NYSE"
     },
     {
       "ticker": "VOO",
-      "name": "Vanguard S&P 500 ETF",
+      "name": "VOO",
       "market": "US",
       "exchange": "NYSE"
     },
     {
       "ticker": "IVV",
-      "name": "iShares Core S&P 500 ETF",
+      "name": "IVV",
       "market": "US",
       "exchange": "NYSE"
     },
@@ -920,55 +920,55 @@
     },
     {
       "ticker": "VTI",
-      "name": "Vanguard Total Stock Market Index Fund ETF Shares",
+      "name": "VTI",
       "market": "US",
       "exchange": "NYSE"
     },
     {
       "ticker": "DIA",
-      "name": "SPDR Dow Jones Industrial Average ETF Trust",
+      "name": "DIA",
       "market": "US",
       "exchange": "NYSE"
     },
     {
       "ticker": "IWM",
-      "name": "iShares Russell 2000 ETF",
+      "name": "IWM",
       "market": "US",
       "exchange": "NYSE"
     },
     {
       "ticker": "VEA",
-      "name": "Vanguard FTSE Developed Markets Index Fund ETF Shares",
+      "name": "VEA",
       "market": "US",
       "exchange": "NYSE"
     },
     {
       "ticker": "VWO",
-      "name": "Vanguard Emerging Markets Stock Index Fund",
+      "name": "VWO",
       "market": "US",
       "exchange": "NYSE"
     },
     {
       "ticker": "VTV",
-      "name": "Vanguard Value Index Fund ETF Shares",
+      "name": "VTV",
       "market": "US",
       "exchange": "NYSE"
     },
     {
       "ticker": "VXF",
-      "name": "Vanguard Extended Market Index Fund ETF Shares",
+      "name": "VXF",
       "market": "US",
       "exchange": "NYSE"
     },
     {
       "ticker": "VB",
-      "name": "Vanguard Small-Cap Index Fund ETF Shares",
+      "name": "VB",
       "market": "US",
       "exchange": "NYSE"
     },
     {
       "ticker": "VO",
-      "name": "Vanguard Mid-Cap Index Fund ETF Shares",
+      "name": "VO",
       "market": "US",
       "exchange": "NYSE"
     },
@@ -992,7 +992,7 @@
     },
     {
       "ticker": "VTEB",
-      "name": "Vanguard Tax-Exempt Bond Index Fund ETF Shares",
+      "name": "VTEB",
       "market": "US",
       "exchange": "NYSE"
     }

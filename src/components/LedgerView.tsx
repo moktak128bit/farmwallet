@@ -1,13 +1,13 @@
 import React, { useEffect, useMemo, useState, useRef, useCallback } from "react";
 import { Autocomplete } from "./Autocomplete";
-import { AdvancedSearch } from "./AdvancedSearch";
-import type { Account, CategoryPresets, ExpenseDetailGroup, LedgerEntry, LedgerKind, LedgerTemplate } from "../types";
+import type { Account, CategoryPresets, ExpenseDetailGroup, LedgerEntry, LedgerKind } from "../types";
 import { formatShortDate, formatUSD, formatKRW } from "../utils/format";
 import { shortcutManager, type ShortcutAction } from "../utils/shortcuts";
-import { recommendCategory } from "../utils/categoryRecommendation";
 import { parseCSV, convertToLedgerEntries } from "../utils/csvParser";
 import * as XLSX from "xlsx";
-import { validateAmount, validateDate, validateRequired, validateTransfer } from "../utils/validation";
+import { validateDate, validateRequired, validateTransfer } from "../utils/validation";
+import { isSavingsExpenseEntry } from "../utils/categoryUtils";
+import { getKoreaTime, getTodayKST, getThisMonthKST } from "../utils/dateUtils";
 import { toast } from "react-hot-toast";
 
 interface Props {
@@ -15,8 +15,6 @@ interface Props {
   ledger: LedgerEntry[];
   categoryPresets: CategoryPresets;
   onChangeLedger: (next: LedgerEntry[]) => void;
-  templates?: LedgerTemplate[];
-  onChangeTemplates?: (next: LedgerTemplate[]) => void;
   copyRequest?: LedgerEntry | null;
   onCopyComplete?: () => void;
 }
@@ -27,16 +25,7 @@ const KIND_LABEL: Record<LedgerKind, string> = {
   transfer: "이체"
 };
 
-type LedgerTab = "income" | "expense" | "savingsExpense" | "transfer";
-
-// 한국 시간을 얻는 헬퍼 함수
-function getKoreaTime(): Date {
-  const now = new Date();
-  // 한국 시간대 오프셋: UTC+9
-  const koreaOffset = 9 * 60; // 분 단위
-  const utcTime = now.getTime() + (now.getTimezoneOffset() * 60000);
-  return new Date(utcTime + (koreaOffset * 60000));
-}
+type LedgerTab = "all" | "income" | "expense" | "savingsExpense" | "transfer";
 
 function createDefaultForm(): {
   id?: string;
@@ -49,16 +38,12 @@ function createDefaultForm(): {
   fromAccountId: string;
   toAccountId: string;
   amount: string;
+  currency: "KRW" | "USD";
   tags: string[];
 } {
-  // 한국 시간 기준으로 날짜 생성
-  const koreaTime = getKoreaTime();
-  const year = koreaTime.getFullYear();
-  const month = String(koreaTime.getMonth() + 1).padStart(2, "0");
-  const day = String(koreaTime.getDate()).padStart(2, "0");
   return {
     id: undefined,
-    date: `${year}-${month}-${day}`,
+    date: getTodayKST(),
     kind: "income",
     isFixedExpense: false,
     mainCategory: "",
@@ -67,6 +52,7 @@ function createDefaultForm(): {
     fromAccountId: "",
     toAccountId: "",
     amount: "",
+    currency: "KRW",
     tags: []
   };
 }
@@ -76,8 +62,6 @@ export const LedgerView: React.FC<Props> = ({
   ledger,
   categoryPresets,
   onChangeLedger,
-  templates = [],
-  onChangeTemplates,
   copyRequest,
   onCopyComplete
 }) => {
@@ -87,51 +71,37 @@ export const LedgerView: React.FC<Props> = ({
   // 페이징 상태
   const [currentPage, setCurrentPage] = useState(1);
   const [pageSize, setPageSize] = useState(50);
-  // 기본 탭을 지출로 설정해 입력 흐름을 간소화
   const [ledgerTab, setLedgerTab] = useState<LedgerTab>("expense");
+  const [formKindWhenAll, setFormKindWhenAll] = useState<"income"|"expense"|"savingsExpense"|"transfer">("expense");
+  const effectiveFormKind = ledgerTab === "all" ? formKindWhenAll : ledgerTab;
+  const kindForTab: LedgerKind = useMemo(
+    () =>
+      effectiveFormKind === "income"
+        ? "income"
+        : effectiveFormKind === "transfer" || effectiveFormKind === "savingsExpense"
+          ? "transfer"
+          : "expense",
+    [effectiveFormKind]
+  );
   const isCopyingRef = useRef(false);
-  const [selectedMonth, setSelectedMonth] = useState(() => {
-    // 한국 시간 기준으로 현재 월 계산
-    const now = new Date();
-    const koreaOffset = 9 * 60; // 분 단위 (UTC+9)
-    const utcTime = now.getTime() + (now.getTimezoneOffset() * 60000);
-    const koreaTime = new Date(utcTime + (koreaOffset * 60000));
-    return `${koreaTime.getFullYear()}-${String(koreaTime.getMonth() + 1).padStart(2, "0")}`;
-  });
+  const [selectedMonths, setSelectedMonths] = useState<Set<string>>(() => new Set([getThisMonthKST()]));
+  const [currentYear, setCurrentYear] = useState(() => String(getKoreaTime().getFullYear()));
   const [draggingId, setDraggingId] = useState<string | null>(null);
-  const [showTemplateModal, setShowTemplateModal] = useState(false);
-  const [editingTemplate, setEditingTemplate] = useState<LedgerTemplate | null>(null);
   const [editingField, setEditingField] = useState<{ id: string; field: string } | null>(null);
   const [editingValue, setEditingValue] = useState<string>("");
-  const [showAdvancedSearch, setShowAdvancedSearch] = useState(false);
-  const [advancedSearchQuery, setAdvancedSearchQuery] = useState<{
-    keyword: string;
-    startDate?: string;
-    endDate?: string;
-    minAmount?: number;
-    maxAmount?: number;
-    accountIds?: string[];
-    categories?: string[];
-    kinds?: ("income" | "expense" | "transfer")[];
-    tags?: string[];
-  }>({ keyword: "" });
-  const [savedFilters, setSavedFilters] = useState<
-    { id: string; name: string; query: typeof advancedSearchQuery }[]
-  >(() => {
-    if (typeof window !== "undefined") {
-      try {
-        const saved = localStorage.getItem("fw-ledger-saved-filters");
-        if (saved) return JSON.parse(saved);
-      } catch {}
-    }
-    return [];
-  });
+  const [filterMainCategory, setFilterMainCategory] = useState<string | undefined>();
+  const [filterSubCategory, setFilterSubCategory] = useState<string | undefined>();
+  const [filterFromAccountId, setFilterFromAccountId] = useState<string | undefined>();
+  const [filterToAccountId, setFilterToAccountId] = useState<string | undefined>();
+  const [filterAmountMin, setFilterAmountMin] = useState<number | undefined>();
+  const [filterAmountMax, setFilterAmountMax] = useState<number | undefined>();
   // 정렬 상태
   type LedgerSortKey = "date" | "category" | "subCategory" | "description" | "fromAccountId" | "toAccountId" | "amount";
   const [ledgerSort, setLedgerSort] = useState<{ key: LedgerSortKey; direction: "asc" | "desc" }>({
     key: "date",
     direction: "desc"
   });
+  const [lastAddedEntryId, setLastAddedEntryId] = useState<string | null>(null);
   
   // 컬럼 너비 상태 (localStorage에서 로드, 순서/구분 컬럼 제거로 8개)
   const [columnWidths, setColumnWidths] = useState<number[]>(() => {
@@ -197,14 +167,13 @@ export const LedgerView: React.FC<Props> = ({
   
   // 즐겨찾기 카테고리 목록
   const favoriteCategoryList = useMemo(() => {
-    if (ledgerTab === "income") {
-      return categoryPresets.income.filter((c) => favoriteCategories.has(c));
-    } else if (ledgerTab === "transfer") {
-      return categoryPresets.transfer.filter((c) => favoriteCategories.has(c));
-    } else {
-      return categoryPresets.expense.filter((c) => favoriteCategories.has(c));
-    }
-  }, [ledgerTab, categoryPresets, favoriteCategories]);
+    const list = effectiveFormKind === "income"
+      ? (categoryPresets?.income ?? [])
+      : effectiveFormKind === "transfer"
+        ? (categoryPresets?.transfer ?? [])
+        : (categoryPresets?.expense ?? []);
+    return list.filter((c) => favoriteCategories.has(c));
+  }, [effectiveFormKind, categoryPresets, favoriteCategories]);
   
   // 즐겨찾기 계좌 목록
   const favoriteAccountList = useMemo(() => {
@@ -315,6 +284,21 @@ export const LedgerView: React.FC<Props> = ({
       document.removeEventListener("mouseup", handleMouseUp);
     };
   }, [resizingColumn, resizeStartX, resizeStartWidth, columnWidths]);
+
+  // 탭 전환 시 필터 초기화
+  useEffect(() => {
+    setFilterMainCategory(undefined);
+    setFilterSubCategory(undefined);
+    setFilterFromAccountId(undefined);
+    setFilterToAccountId(undefined);
+  }, [ledgerTab]);
+
+  // 이체 탭일 때 form.mainCategory를 "이체"로 설정 (항목 목록 표시용)
+  useEffect(() => {
+    if (ledgerTab === "transfer" && form.mainCategory !== "이체") {
+      setForm((prev) => ({ ...prev, mainCategory: "이체" }));
+    }
+  }, [ledgerTab]);
   
   // 고정지출 자동 생성: 이전 달의 고정지출을 현재 달로 복사
   useEffect(() => {
@@ -348,14 +332,15 @@ export const LedgerView: React.FC<Props> = ({
         const day = String(newDate.getDate()).padStart(2, "0");
         const newDateStr = `${year}-${month}-${day}`;
         
-        // 같은 내용의 항목이 이미 있는지 확인 (같은 날짜, 같은 카테고리, 같은 금액)
+        // 같은 내용의 항목이 이미 있는지 확인 (날짜, 카테고리, 금액, 계좌)
         const exists = ledger.some(
           (l) =>
             l.date === newDateStr &&
             l.category === prev.category &&
             l.subCategory === prev.subCategory &&
             l.amount === prev.amount &&
-            l.fromAccountId === prev.fromAccountId
+            l.fromAccountId === prev.fromAccountId &&
+            l.toAccountId === prev.toAccountId
         );
         
         if (exists) return null;
@@ -399,10 +384,10 @@ export const LedgerView: React.FC<Props> = ({
 
   // 최근 사용한 세부 항목 추적 (대분류별)
   const recentSubCategories = useMemo(() => {
-    if (!form.mainCategory && ledgerTab !== "transfer") return [];
+    if (!form.mainCategory && effectiveFormKind !== "transfer") return [];
     const items = new Map<string, { count: number; lastUsed: string }>();
     // 이체 탭일 때는 transfer kind의 항목도 포함
-    if (ledgerTab === "transfer") {
+    if (effectiveFormKind === "transfer") {
       ledger
         .filter((l) => l.kind === "transfer" && l.category === "이체" && l.subCategory)
         .forEach((l) => {
@@ -436,7 +421,7 @@ export const LedgerView: React.FC<Props> = ({
       })
       .slice(0, 10)
       .map(([key]) => key);
-  }, [ledger, form.mainCategory, ledgerTab]);
+  }, [ledger, form.mainCategory, effectiveFormKind]);
 
   // 최근 사용한 수입 항목 추적
   const recentIncomeCategories = useMemo(() => {
@@ -493,13 +478,9 @@ export const LedgerView: React.FC<Props> = ({
   }, [ledger]);
 
   const expenseSubSuggestions = useMemo(() => {
-    // 이체 탭일 때는 transfer 카테고리를 세부 항목으로 사용
-    if (ledgerTab === "transfer" && form.mainCategory === "이체") {
-      const transferCategories = categoryPresets.transfer || [];
-      // 최근 사용한 항목을 앞에 배치
-      const recent = recentSubCategories.filter((c) => transferCategories.includes(c));
-      const other = transferCategories.filter((s) => !recent.includes(s));
-      return [...recent, ...other];
+    // 이체 탭일 때는 transfer 카테고리를 세부 항목으로 사용 (카테고리 탭 순서 그대로)
+    if (effectiveFormKind === "transfer" && form.mainCategory === "이체") {
+      return categoryPresets.transfer || [];
     }
     
     // 카테고리 프리셋이 제대로 로드되었는지 확인
@@ -517,12 +498,10 @@ export const LedgerView: React.FC<Props> = ({
       // 대분류에 해당하는 그룹 찾기 (정확히 일치하는 것만)
       const g = groups.find((x) => x.main === form.mainCategory);
       if (g && g.subs && Array.isArray(g.subs) && g.subs.length > 0) {
-        // 해당 대분류의 모든 세부 항목 사용
+        // 해당 대분류의 세부 항목을 카테고리 탭 입력 순서 그대로 사용
         suggestions = [...g.subs];
       } else {
-        // 대분류에 해당하는 그룹이 없으면 빈 배열 반환
         suggestions = [];
-        // 디버깅: 대분류가 있는데 그룹을 찾지 못한 경우
         if (import.meta.env.DEV) {
           console.warn(`[LedgerView] 대분류 "${form.mainCategory}"에 해당하는 세부 항목 그룹을 찾을 수 없습니다.`, {
             availableGroups: groups.map((g) => g.main),
@@ -532,97 +511,65 @@ export const LedgerView: React.FC<Props> = ({
         }
       }
     } else {
-      // 대분류가 선택되지 않았으면 빈 배열 반환
       suggestions = [];
     }
     
-    // 중복 제거 및 유효성 검사
-    suggestions = Array.from(new Set(suggestions)).filter((s) => s && s.trim().length > 0);
-    
-    // 최근 사용한 항목을 앞에 배치 (현재 대분류에 해당하는 것만)
-    const recent = recentSubCategories.filter((c) => suggestions.includes(c));
-    const other = suggestions.filter((s) => !recent.includes(s));
-    const result = [...recent, ...other];
-    
-    // 디버깅: 결과 확인
-    if (import.meta.env.DEV && form.mainCategory) {
-      console.log(`[LedgerView] 대분류 "${form.mainCategory}"의 세부 항목:`, {
-        total: result.length,
-        items: result,
-        fromPreset: suggestions.length,
-        recent: recent.length,
-        other: other.length,
-        allGroups: groups.map((g) => ({ main: g.main, subsCount: g.subs?.length || 0 }))
-      });
-    }
-    
-    return result;
-  }, [ledgerTab, categoryPresets, categoryPresets?.expenseDetails, categoryPresets?.transfer, form.mainCategory, recentSubCategories]);
+    // 중복 제거 (순서 유지)
+    const seen = new Set<string>();
+    return suggestions.filter((s) => s && s.trim().length > 0 && !seen.has(s) && (seen.add(s), true));
+  }, [effectiveFormKind, categoryPresets, categoryPresets?.expenseDetails, categoryPresets?.transfer, form.mainCategory]);
 
-  // 대분류 옵션 (최근 사용한 항목 우선)
+  // 대분류 옵션 (카테고리 탭에서 입력한 순서 그대로)
   const mainCategoryOptions = useMemo(() => {
-    // 이체 탭일 때는 "이체"만 반환 (대분류 고정)
-    if (ledgerTab === "transfer") {
+    if (effectiveFormKind === "transfer") {
       return ["이체"];
     }
-    // 지출/저축성 지출 탭일 때는 expense 카테고리 사용
+    if (effectiveFormKind === "savingsExpense") {
+      return ["저축성지출"];
+    }
     if (!categoryPresets || !categoryPresets.expense) {
       if (import.meta.env.DEV) {
         console.warn("[LedgerView] categoryPresets.expense가 없습니다.", categoryPresets);
       }
       return [];
     }
-    const all = categoryPresets.expense || [];
-    const recent = recentMainCategories;
-    const other = all.filter((c) => !recent.includes(c));
-    const result = [...recent, ...other];
-    
-    // 디버깅: 대분류 목록 확인
-    if (import.meta.env.DEV) {
-      console.log("[LedgerView] 대분류 옵션:", {
-        total: result.length,
-        allCategories: all,
-        recent: recent.length,
-        other: other.length,
-        result: result
-      });
-    }
-    
-    return result;
-  }, [ledgerTab, categoryPresets, categoryPresets?.expense, recentMainCategories]);
+    const list = categoryPresets.expense;
+    return effectiveFormKind === "expense"
+      ? list.filter((c) => c !== "저축성지출")
+      : list;
+  }, [effectiveFormKind, categoryPresets, categoryPresets?.expense]);
 
-  // 수입 항목 옵션 (최근 사용한 항목 우선)
+  // 수입 항목 옵션 (카테고리 탭에서 입력한 순서 그대로)
   const incomeCategoryOptions = useMemo(() => {
-    const all = categoryPresets.income || [];
-    const recent = recentIncomeCategories;
-    const other = all.filter((c) => !recent.includes(c));
-    return [...recent, ...other];
-  }, [categoryPresets.income, recentIncomeCategories]);
+    return categoryPresets?.income ?? [];
+  }, [categoryPresets?.income]);
 
-  // parseAmount와 formatAmount를 먼저 정의 (다른 useMemo에서 사용되므로)
-  const parseAmount = useCallback((value: string): number => {
+  // parseAmount와 formatAmount (USD 이체 시 소수점 허용)
+  const parseAmount = useCallback((value: string, allowDecimal?: boolean): number => {
+    if (allowDecimal) {
+      const cleaned = value.replace(/[^\d.]/g, "");
+      const parsed = parseFloat(cleaned);
+      return isNaN(parsed) ? 0 : parsed;
+    }
     const numeric = value.replace(/[^\d]/g, "");
     if (!numeric) return 0;
     return Number(numeric);
   }, []);
 
-  const formatAmount = useCallback((value: string): string => {
+  const formatAmount = useCallback((value: string, allowDecimal?: boolean): string => {
+    if (allowDecimal) {
+      const cleaned = value.replace(/[^\d.]/g, "");
+      if (!cleaned) return "";
+      const parts = cleaned.split(".");
+      if (parts.length > 1) {
+        return parts[0].replace(/\B(?=(\d{3})+(?!\d))/g, ",") + "." + parts[1].slice(0, 2);
+      }
+      return parts[0].replace(/\B(?=(\d{3})+(?!\d))/g, ",");
+    }
     const numeric = value.replace(/[^\d]/g, "");
     if (!numeric) return "";
     return Math.round(Number(numeric)).toLocaleString();
   }, []);
-
-  // 자동 카테고리 추천
-  const categoryRecommendations = useMemo(() => {
-    if (!form.description || form.description.length < 2) return [];
-    const amount = parseAmount(form.amount);
-    if (amount <= 0) return [];
-    try {
-      return recommendCategory(form.description, amount, form.kind, ledger);
-    } catch {
-      return [];
-    }
-  }, [form.description, form.amount, form.kind, ledger]);
 
   useEffect(() => {
     // 복사 중일 때는 폼을 초기화하지 않음
@@ -630,32 +577,26 @@ export const LedgerView: React.FC<Props> = ({
       // 복사가 완료될 때까지 기다림 - 플래그는 startCopy에서 해제됨
       return;
     }
-    
-    const kindForTab: LedgerKind =
-      ledgerTab === "income" ? "income" : ledgerTab === "transfer" || ledgerTab === "savingsExpense" ? "transfer" : "expense";
     setForm((prev) => ({
       ...prev,
       kind: kindForTab,
       isFixedExpense: false,
-      mainCategory: "",
+      mainCategory:
+        effectiveFormKind === "savingsExpense" ? "저축성지출" : effectiveFormKind === "transfer" ? "이체" : "",
       subCategory: "",
       fromAccountId: kindForTab === "income" ? "" : prev.fromAccountId,
       toAccountId: kindForTab === "expense" ? "" : prev.toAccountId
     }));
-  }, [ledgerTab]);
+  }, [effectiveFormKind, kindForTab]);
 
   // 실시간 폼 검증
   const validateForm = useMemo(() => {
     const errors: Record<string, string> = {};
-    const kindForTab: LedgerKind =
-      ledgerTab === "income" ? "income" : ledgerTab === "transfer" || ledgerTab === "savingsExpense" ? "transfer" : "expense";
-    
     // 날짜 검증
     // 주의: 가계부(Ledger)는 미래 날짜를 제한합니다 (현재 날짜까지만 허용)
     // StocksView와 달리 maxDate를 전달하여 미래 날짜 입력을 방지합니다
     // 한국 시간 기준으로 현재 날짜 계산
-    const koreaTime = getKoreaTime();
-    const todayStr = `${koreaTime.getFullYear()}-${String(koreaTime.getMonth() + 1).padStart(2, "0")}-${String(koreaTime.getDate()).padStart(2, "0")}`;
+    const todayStr = getTodayKST();
     const todayDate = new Date(todayStr + "T00:00:00+09:00"); // 한국 시간 기준
     
     const dateValidation = validateDate(form.date, todayDate); // 미래 날짜 제한
@@ -663,8 +604,9 @@ export const LedgerView: React.FC<Props> = ({
       errors.date = dateValidation.error || "";
     }
     
-    // 금액 검증 (최소값 제한 제거 - 1원 이상만 허용)
-    const parsedAmount = parseAmount(form.amount);
+    // 금액 검증 (USD 이체 시 소수점 허용)
+    const allowDecimal = kindForTab === "transfer" && form.currency === "USD";
+    const parsedAmount = parseAmount(form.amount, allowDecimal);
     if (parsedAmount <= 0) {
       if (!form.amount || form.amount.trim() === "") {
         errors.amount = "금액을 입력해주세요";
@@ -715,7 +657,7 @@ export const LedgerView: React.FC<Props> = ({
     // 상세내역은 선택사항이므로 검증하지 않음
     
     return errors;
-  }, [form, ledgerTab, parseAmount]);
+  }, [form, effectiveFormKind, parseAmount]);
   
   // formErrors를 직접 사용 (useEffect 제거로 성능 개선)
   const formErrors = validateForm;
@@ -730,12 +672,10 @@ export const LedgerView: React.FC<Props> = ({
       }
       return;
     }
-    
-    const amount = parseAmount(form.amount);
+    const allowDecimal = kindForTab === "transfer" && form.currency === "USD";
+    const amount = parseAmount(form.amount, allowDecimal);
     if (!form.date || !amount || amount <= 0) return;
 
-    const kindForTab: LedgerKind =
-      ledgerTab === "income" ? "income" : ledgerTab === "transfer" || ledgerTab === "savingsExpense" ? "transfer" : "expense";
     const isFixed = false;
 
     // 카테고리 값 정규화 (빈 문자열 체크)
@@ -763,7 +703,8 @@ export const LedgerView: React.FC<Props> = ({
       toAccountId:
         kindForTab === "income" || kindForTab === "transfer"
           ? (form.toAccountId?.trim() || undefined)
-          : undefined
+          : undefined,
+      ...(kindForTab === "transfer" && form.currency === "USD" ? { currency: "USD" as const } : {})
     };
 
     if (form.id) {
@@ -773,6 +714,18 @@ export const LedgerView: React.FC<Props> = ({
       const id = `L${Date.now()}`;
       const entry: LedgerEntry = { id, ...base };
       onChangeLedger([entry, ...ledger]);
+      setLastAddedEntryId(id);
+      const amountStr = kindForTab === "transfer" && form.currency === "USD"
+        ? `${amount.toLocaleString()} USD`
+        : `${amount.toLocaleString()}원`;
+      const msg = effectiveFormKind === "income"
+        ? `${normalizedSubCategory || "수입"} ${amountStr} 추가 되었습니다.`
+        : effectiveFormKind === "savingsExpense"
+          ? `저축성지출 - ${normalizedSubCategory || "(미분류)"} ${amountStr} 추가 되었습니다.`
+          : effectiveFormKind === "transfer"
+            ? `${amountStr} 이체 추가 되었습니다.`
+            : `지출 - ${normalizedMainCategory} - ${normalizedSubCategory} ${amountStr} 추가 되었습니다.`;
+      toast.success(msg);
     }
 
     setForm((prev) => {
@@ -816,7 +769,8 @@ export const LedgerView: React.FC<Props> = ({
       description: entry.description,
       fromAccountId: entry.fromAccountId ?? "",
       toAccountId: entry.toAccountId ?? "",
-      amount: String(entry.amount),
+      amount: entry.currency === "USD" ? String(entry.amount) : String(Math.round(entry.amount)),
+      currency: entry.currency ?? "KRW",
       tags: entry.tags || []
     });
     const nextTab: LedgerTab =
@@ -830,14 +784,13 @@ export const LedgerView: React.FC<Props> = ({
 
   const startCopy = (entry: LedgerEntry) => {
     try {
-      // 저축성 지출 판단: transfer이고 toAccountId가 증권/저축 계좌인 경우
-      const isSavingsExpense = entry.kind === "transfer" && entry.toAccountId && 
-        accounts.find(a => a.id === entry.toAccountId && (a.type === "securities" || a.type === "savings"));
+      // 저축성 지출: expense+category "저축성지출" 또는 transfer→증권/저축 계좌 (categoryUtils 단일 소스)
+      const isSavings = isSavingsExpenseEntry(entry, accounts);
       
       const nextTab: LedgerTab =
         entry.kind === "income"
           ? "income"
-          : isSavingsExpense
+          : isSavings
             ? "savingsExpense"
             : entry.kind === "transfer"
               ? "transfer"
@@ -857,6 +810,7 @@ export const LedgerView: React.FC<Props> = ({
         fromAccountId: entry.fromAccountId ?? "",
         toAccountId: entry.toAccountId ?? "",
         amount: "", // 스마트 복사: 금액은 비워둠
+        currency: (entry.currency ?? "KRW") as "KRW" | "USD",
         tags: entry.tags ? [...entry.tags] : []
       };
       
@@ -889,30 +843,7 @@ export const LedgerView: React.FC<Props> = ({
     }
   }, [copyRequest, onCopyComplete]);
 
-  // 탭 변경 시 대분류 자동 설정
-  useEffect(() => {
-    if (ledgerTab === "savingsExpense") {
-      // 저축성 지출 탭일 때 대분류를 "저축성지출"로 설정
-      setForm((prev) => ({
-        ...prev,
-        mainCategory: "저축성지출",
-        subCategory: "",
-        description: ""
-      }));
-    } else if (ledgerTab === "transfer") {
-      // 이체 탭일 때 대분류를 "이체"로 고정
-      setForm((prev) => ({
-        ...prev,
-        mainCategory: "이체",
-        subCategory: "",
-        description: ""
-      }));
-    }
-  }, [ledgerTab]);
-
   const resetForm = () => {
-    const kindForTab: LedgerKind =
-      ledgerTab === "income" ? "income" : ledgerTab === "transfer" || ledgerTab === "savingsExpense" ? "transfer" : "expense";
     setForm({
       ...createDefaultForm(),
       kind: kindForTab,
@@ -945,8 +876,11 @@ export const LedgerView: React.FC<Props> = ({
     } else if (field === "toAccountId") {
       updated.toAccountId = editingValue || undefined;
     } else if (field === "amount") {
-      const amount = Number(editingValue.replace(/[^\d]/g, ""));
-      if (amount > 0) {
+      const isUSD = entry.currency === "USD";
+      const amount = isUSD
+        ? parseFloat(editingValue.replace(/[^\d.]/g, ""))
+        : Number(editingValue.replace(/[^\d]/g, ""));
+      if (amount > 0 && !isNaN(amount)) {
         updated.amount = amount;
       } else {
         // 금액이 0 이하면 저장하지 않음
@@ -965,92 +899,6 @@ export const LedgerView: React.FC<Props> = ({
     setEditingField(null);
     setEditingValue("");
   };
-
-  // 템플릿 관련 함수들
-  const applyTemplate = (template: LedgerTemplate) => {
-    const kindForTab: LedgerKind =
-      ledgerTab === "income" ? "income" : ledgerTab === "transfer" || ledgerTab === "savingsExpense" ? "transfer" : "expense";
-    
-    // 템플릿의 kind와 현재 탭이 일치하는지 확인
-    if (template.kind !== kindForTab) {
-      // 탭을 템플릿에 맞게 변경
-      if (template.kind === "income") {
-        setLedgerTab("income");
-      } else if (template.kind === "transfer") {
-        setLedgerTab(ledgerTab === "savingsExpense" ? "savingsExpense" : "transfer");
-      } else {
-        setLedgerTab("expense");
-      }
-    }
-
-    setForm((prev) => ({
-      ...prev,
-      kind: template.kind,
-      mainCategory: template.mainCategory || prev.mainCategory,
-      subCategory: template.subCategory || prev.subCategory,
-      description: template.description || prev.description,
-      fromAccountId: template.fromAccountId || prev.fromAccountId,
-      toAccountId: template.toAccountId || prev.toAccountId,
-      amount: template.amount ? String(template.amount) : prev.amount
-    }));
-
-    // 템플릿 사용 기록 업데이트
-    if (onChangeTemplates) {
-      const updated = templates.map((t) =>
-        t.id === template.id ? { ...t, lastUsed: new Date().toISOString() } : t
-      );
-      onChangeTemplates(updated);
-    }
-  };
-
-  const saveCurrentAsTemplate = () => {
-    const kindForTab: LedgerKind =
-      ledgerTab === "income" ? "income" : ledgerTab === "transfer" || ledgerTab === "savingsExpense" ? "transfer" : "expense";
-    
-    const templateName = prompt("템플릿 이름을 입력하세요:");
-    if (!templateName || !templateName.trim()) return;
-
-    const newTemplate: LedgerTemplate = {
-      id: `TEMPLATE-${Date.now()}`,
-      name: templateName.trim(),
-      kind: kindForTab,
-      mainCategory: form.mainCategory || undefined,
-      subCategory: form.subCategory || undefined,
-      description: form.description || undefined,
-      fromAccountId: form.fromAccountId || undefined,
-      toAccountId: form.toAccountId || undefined,
-      amount: form.amount ? parseAmount(form.amount) : undefined
-    };
-
-    if (onChangeTemplates) {
-      onChangeTemplates([...templates, newTemplate]);
-    }
-  };
-
-  const deleteTemplate = (id: string) => {
-    if (!confirm("템플릿을 삭제하시겠습니까?")) return;
-    if (onChangeTemplates) {
-      onChangeTemplates(templates.filter((t) => t.id !== id));
-    }
-  };
-
-  // 현재 탭에 맞는 템플릿 필터링
-  const filteredTemplates = useMemo(() => {
-    const kindForTab: LedgerKind =
-      ledgerTab === "income" ? "income" : ledgerTab === "transfer" || ledgerTab === "savingsExpense" ? "transfer" : "expense";
-    return templates
-      .filter((t) => t.kind === kindForTab)
-      .sort((a, b) => {
-        // 최근 사용한 것 우선, 그 다음 이름순
-        if (a.lastUsed && b.lastUsed) {
-          return b.lastUsed.localeCompare(a.lastUsed);
-        }
-        if (a.lastUsed) return -1;
-        if (b.lastUsed) return 1;
-        return a.name.localeCompare(b.name);
-      })
-      .slice(0, 9); // 최대 9개만 표시 (Ctrl+1~9)
-  }, [templates, ledgerTab]);
 
   const isEditing = Boolean(form.id);
   const formRef = useRef<HTMLFormElement>(null);
@@ -1072,12 +920,14 @@ export const LedgerView: React.FC<Props> = ({
         handler: () => {
           submitForm(false);
         },
-        enabled: () => Boolean(form.date && parseAmount(form.amount) > 0)
+        enabled: () => {
+          const allowDec = effectiveFormKind === "transfer" && form.currency === "USD";
+          return Boolean(form.date && parseAmount(form.amount, allowDec) > 0);
+        }
       },
       {
         action: "close-modal" as ShortcutAction,
         handler: () => {
-          if (showTemplateModal) setShowTemplateModal(false);
           if (editingField) cancelEditField();
         }
       }
@@ -1087,7 +937,7 @@ export const LedgerView: React.FC<Props> = ({
     return () => {
       handlers.forEach(handler => shortcutManager.unregister(handler));
     };
-  }, [isEditing, form, showTemplateModal, editingField]);
+  }, [isEditing, form, editingField]);
 
   // 빠른 필터 상태
   const [dateFilter, setDateFilter] = useState<{
@@ -1145,18 +995,11 @@ export const LedgerView: React.FC<Props> = ({
 
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
-      // Ctrl+1~9: 템플릿 적용
-      if (e.ctrlKey && !e.shiftKey && !e.altKey && e.key >= "1" && e.key <= "9") {
-        const index = parseInt(e.key) - 1;
-        if (filteredTemplates[index]) {
-          e.preventDefault();
-          applyTemplate(filteredTemplates[index]);
-        }
-      }
       // Ctrl+S: 저장
       if (e.ctrlKey && e.key === "s" && !e.shiftKey && !e.altKey) {
         e.preventDefault();
-        const amount = parseAmount(form.amount);
+        const allowDec = effectiveFormKind === "transfer" && form.currency === "USD";
+        const amount = parseAmount(form.amount, allowDec);
         if (form.date && amount && amount > 0) {
           submitForm(true);
         }
@@ -1167,102 +1010,66 @@ export const LedgerView: React.FC<Props> = ({
     return () => {
       window.removeEventListener("keydown", handleKeyDown);
     };
-  }, [filteredTemplates, form]);
+  }, [form]);
 
-  // 월별 필터링된 거래 목록
+  // 탭별 필터링된 거래 목록
   const ledgerByTab = useMemo(() => {
     return ledger.filter((l) => {
+      if (ledgerTab === "all") return true;
       if (ledgerTab === "income") return l.kind === "income";
-      if (ledgerTab === "transfer") {
-        // 일반 이체만 (저축성 지출 제외)
-        if (l.kind !== "transfer") return false;
-        const toAccount = accounts.find(a => a.id === l.toAccountId);
-        return !toAccount || (toAccount.type !== "securities" && toAccount.type !== "savings");
-      }
-      if (ledgerTab === "savingsExpense") {
-        // 저축성 지출: transfer이고 toAccountId가 증권/저축 계좌이거나, expense이고 대분류가 저축성지출
-        if (l.kind === "transfer") {
-          const toAccount = accounts.find(a => a.id === l.toAccountId);
-          return toAccount && (toAccount.type === "securities" || toAccount.type === "savings");
-        }
-        if (l.kind === "expense") {
-          return l.category === "저축성지출";
-        }
-        return false;
-      }
-      // 지출 탭: expense이고 고정지출이 아니며, 대분류가 저축성지출이 아닌 것만
-      return l.kind === "expense" && !(l.isFixedExpense ?? false) && l.category !== "저축성지출";
+      if (ledgerTab === "transfer") return l.kind === "transfer" && !isSavingsExpenseEntry(l, accounts);
+      if (ledgerTab === "savingsExpense") return isSavingsExpenseEntry(l, accounts);
+      return l.kind === "expense" && !isSavingsExpenseEntry(l, accounts) && !(l.isFixedExpense ?? false);
     });
   }, [ledger, ledgerTab, accounts]);
 
   const filteredLedger = useMemo(() => {
     const base = ledgerByTab;
-    let filtered = viewMode === "all" ? base : base.filter((l) => l.date.startsWith(selectedMonth));
+    let filtered = viewMode === "all"
+      ? base
+      : base.filter((l) => l.date && selectedMonths.size > 0 && selectedMonths.has(l.date.slice(0, 7)));
     
     // 날짜 필터 적용
     if (dateFilter.startDate || dateFilter.endDate) {
       filtered = filtered.filter((l) => {
+        if (!l.date) return false;
         if (dateFilter.startDate && l.date < dateFilter.startDate) return false;
         if (dateFilter.endDate && l.date > dateFilter.endDate) return false;
         return true;
       });
     }
 
-    // 고급 검색 필터 적용
-    if (advancedSearchQuery.keyword || advancedSearchQuery.startDate || advancedSearchQuery.endDate || 
-        advancedSearchQuery.minAmount || advancedSearchQuery.maxAmount || 
-        advancedSearchQuery.accountIds || advancedSearchQuery.categories || 
-        advancedSearchQuery.kinds || advancedSearchQuery.tags) {
+    // 대분류/항목 필터
+    if (filterMainCategory || filterSubCategory) {
       filtered = filtered.filter((l) => {
-        // 키워드 검색
-        if (advancedSearchQuery.keyword) {
-          const keyword = advancedSearchQuery.keyword.toLowerCase();
-          const matchesKeyword = 
-            l.description.toLowerCase().includes(keyword) ||
-            (l.note && l.note.toLowerCase().includes(keyword)) ||
-            l.category.toLowerCase().includes(keyword) ||
-            (l.subCategory && l.subCategory.toLowerCase().includes(keyword));
-          if (!matchesKeyword) return false;
+        if (filterMainCategory) {
+          if (ledgerTab === "savingsExpense" && filterMainCategory === "저축성지출") {
+            // 저축성 지출 탭: 모든 항목이 이미 저축성 지출이므로 대분류 필터 생략
+          } else if (l.category !== filterMainCategory) {
+            return false;
+          }
         }
-
-        // 날짜 범위
-        if (advancedSearchQuery.startDate && l.date < advancedSearchQuery.startDate) return false;
-        if (advancedSearchQuery.endDate && l.date > advancedSearchQuery.endDate) return false;
-
-        // 금액 범위
-        if (advancedSearchQuery.minAmount && l.amount < advancedSearchQuery.minAmount) return false;
-        if (advancedSearchQuery.maxAmount && l.amount > advancedSearchQuery.maxAmount) return false;
-
-        // 계좌 필터
-        if (advancedSearchQuery.accountIds && advancedSearchQuery.accountIds.length > 0) {
-          const matchesAccount = 
-            (l.fromAccountId && advancedSearchQuery.accountIds.includes(l.fromAccountId)) ||
-            (l.toAccountId && advancedSearchQuery.accountIds.includes(l.toAccountId));
-          if (!matchesAccount) return false;
-        }
-
-        // 카테고리 필터
-        if (advancedSearchQuery.categories && advancedSearchQuery.categories.length > 0) {
-          const matchesCategory = 
-            advancedSearchQuery.categories.includes(l.category) ||
-            (l.subCategory && advancedSearchQuery.categories.includes(l.subCategory));
-          if (!matchesCategory) return false;
-        }
-
-        // 구분 필터
-        if (advancedSearchQuery.kinds && advancedSearchQuery.kinds.length > 0) {
-          if (!advancedSearchQuery.kinds.includes(l.kind)) return false;
-        }
-
-        // 태그 필터
-        if (advancedSearchQuery.tags && advancedSearchQuery.tags.length > 0) {
-          const entryTags = l.tags || [];
-          const hasMatchingTag = advancedSearchQuery.tags.some(tag => entryTags.includes(tag));
-          if (!hasMatchingTag) return false;
-        }
-
+        if (filterSubCategory && l.subCategory !== filterSubCategory) return false;
         return true;
       });
+    }
+
+    // 출금계좌 필터
+    if (filterFromAccountId) {
+      filtered = filtered.filter((l) => l.fromAccountId === filterFromAccountId);
+    }
+
+    // 입금계좌 필터 (수입/이체/저축성지출 탭)
+    if (filterToAccountId) {
+      filtered = filtered.filter((l) => l.toAccountId === filterToAccountId);
+    }
+
+    // 금액 범위 필터
+    if (filterAmountMin != null) {
+      filtered = filtered.filter((l) => (l.amount ?? 0) >= filterAmountMin);
+    }
+    if (filterAmountMax != null) {
+      filtered = filtered.filter((l) => (l.amount ?? 0) <= filterAmountMax);
     }
     
     // 정렬 적용
@@ -1273,7 +1080,7 @@ export const LedgerView: React.FC<Props> = ({
       if (key === "date") {
         return (a.date < b.date ? -1 : a.date > b.date ? 1 : 0) * dir;
       } else if (key === "amount") {
-        return (a.amount - b.amount) * dir;
+        return ((a.amount ?? 0) - (b.amount ?? 0)) * dir;
       } else if (key === "category") {
         return ((a.category || "") < (b.category || "") ? -1 : (a.category || "") > (b.category || "") ? 1 : 0) * dir;
       } else if (key === "subCategory") {
@@ -1289,9 +1096,10 @@ export const LedgerView: React.FC<Props> = ({
     });
     
     return sorted;
-  }, [ledgerByTab, viewMode, selectedMonth, ledgerSort]);
+  }, [ledgerByTab, ledgerTab, viewMode, selectedMonths, dateFilter, filterMainCategory, filterSubCategory, filterFromAccountId, filterToAccountId, filterAmountMin, filterAmountMax, ledgerSort]);
 
   const tabLabel: Record<LedgerTab, string> = {
+    all: "전체",
     income: "수입",
     expense: "지출",
     savingsExpense: "저축성 지출",
@@ -1307,6 +1115,18 @@ export const LedgerView: React.FC<Props> = ({
     [filteredLedger]
   );
 
+  // 필터 적용 시 지출액/수입액/전체 요약
+  const filteredSummary = useMemo(() => {
+    const expenseAmount = filteredLedger
+      .filter((l) => l.kind === "expense" || isSavingsExpenseEntry(l, accounts))
+      .reduce((s, l) => s + l.amount, 0);
+    const incomeAmount = filteredLedger
+      .filter((l) => l.kind === "income")
+      .reduce((s, l) => s + l.amount, 0);
+    const total = incomeAmount - expenseAmount;
+    return { expenseAmount, incomeAmount, total };
+  }, [filteredLedger, accounts]);
+
   // 페이징된 데이터 계산
   const paginatedLedger = useMemo(() => {
     const startIndex = (currentPage - 1) * pageSize;
@@ -1321,7 +1141,7 @@ export const LedgerView: React.FC<Props> = ({
   // 페이지 변경 시 첫 페이지로 리셋
   useEffect(() => {
     setCurrentPage(1);
-  }, [filteredLedger.length, viewMode, selectedMonth, dateFilter]);
+  }, [filteredLedger.length, viewMode, selectedMonths, dateFilter, filterMainCategory, filterSubCategory, filterFromAccountId, filterToAccountId]);
 
   // 사용 가능한 월 목록 (거래가 있는 월들) - 년도별로 정리
   const availableMonths = useMemo(() => {
@@ -1356,6 +1176,12 @@ export const LedgerView: React.FC<Props> = ({
     return monthsByYear;
   }, [availableMonths]);
 
+  // 선택된 월 표시용 레이블
+  const selectedMonthsLabel = useMemo(() => {
+    if (selectedMonths.size === 0) return "";
+    return Array.from(selectedMonths).sort().join(", ");
+  }, [selectedMonths]);
+
   const availableYears = useMemo(() => {
     const years = new Set<string>();
     ledgerByTab.forEach((l) => {
@@ -1367,13 +1193,13 @@ export const LedgerView: React.FC<Props> = ({
         }
       }
     });
-    // 현재 선택된 월의 년도도 포함
-    if (selectedMonth && selectedMonth.length >= 4) {
-      const currentYear = selectedMonth.slice(0, 4);
-      if (/^\d{4}$/.test(currentYear)) {
-        years.add(currentYear);
+    // 선택된 월들의 년도 포함
+    selectedMonths.forEach((m) => {
+      if (m.length >= 4) {
+        const y = m.slice(0, 4);
+        if (/^\d{4}$/.test(y)) years.add(y);
       }
-    }
+    });
     // 현재 년도와 다음 년도도 항상 포함 (입력 편의를 위해)
     const koreaTime = getKoreaTime();
     const currentYear = String(koreaTime.getFullYear());
@@ -1382,9 +1208,8 @@ export const LedgerView: React.FC<Props> = ({
     years.add(nextYear);
     
     return Array.from(years).sort((a, b) => b.localeCompare(a)); // 최신순 (내림차순)
-  }, [ledgerByTab, selectedMonth]);
+  }, [ledgerByTab, selectedMonths]);
 
-  const currentYear = selectedMonth && selectedMonth.length >= 4 ? selectedMonth.slice(0, 4) : String(getKoreaTime().getFullYear());
   
   // 현재 선택된 년도에 해당하는 월만 필터링
   const availableMonthsForCurrentYear = useMemo(() => {
@@ -1403,18 +1228,740 @@ export const LedgerView: React.FC<Props> = ({
     onChangeLedger(next);
   };
 
+  useEffect(() => {
+    if (!lastAddedEntryId) return;
+    const id = lastAddedEntryId;
+    setLastAddedEntryId(null);
+    const t = setTimeout(() => {
+      const el = document.querySelector(`[data-ledger-id="${id}"]`);
+      if (el) el.scrollIntoView({ behavior: "smooth", block: "nearest" });
+    }, 100);
+    return () => clearTimeout(t);
+  }, [lastAddedEntryId]);
+
+  const hasCategoryFilter = !!(filterMainCategory || filterSubCategory || filterFromAccountId || filterToAccountId);
+  const hasDateFilter = !!(dateFilter.startDate || dateFilter.endDate);
+  const hasAmountFilter = filterAmountMin != null || filterAmountMax != null;
+  const hasFilter = hasCategoryFilter || hasDateFilter || hasAmountFilter;
+  const filterFromAccount = filterFromAccountId ? accounts.find((a) => a.id === filterFromAccountId) : null;
+  const filterFromAccountName = filterFromAccountId ? (filterFromAccount?.name || filterFromAccount?.id || filterFromAccountId) : null;
+  const filterToAccount = filterToAccountId ? accounts.find((a) => a.id === filterToAccountId) : null;
+  const filterToAccountName = filterToAccountId ? (filterToAccount?.name || filterToAccount?.id || filterToAccountId) : null;
+
   return (
     <div>
       <div className="section-header">
         <h2>가계부 (거래 입력)</h2>
-        <div className="pill">
-          {viewMode === "all"
-            ? `${tabLabel[ledgerTab]} 합계: ${Math.round(totalByTab).toLocaleString()}원`
-            : `${selectedMonth} ${tabLabel[ledgerTab]}: ${Math.round(monthlyTotalByTab).toLocaleString()}원`}
+      </div>
+
+      {/* 요약 카드: 항상 표시, 필터 적용 시 해당 결과 합계 */}
+      <div style={{
+        marginBottom: "16px",
+        padding: "20px 24px",
+        background: "var(--surface)",
+        borderRadius: "12px",
+        border: "2px solid var(--border)",
+        boxShadow: "0 2px 8px rgba(0,0,0,0.06)"
+      }}>
+        <div style={{
+          display: "flex",
+          flexDirection: "column",
+          gap: "12px",
+          alignItems: "stretch"
+        }}>
+          {/* 전체: 가장 크게, 가운데 */}
+          <div style={{ textAlign: "center" }}>
+            <span style={{ fontSize: 11, color: "var(--text-muted)", fontWeight: 600, display: "block", marginBottom: 4 }}>
+              {hasFilter
+                ? `필터 적용 · ${viewMode === "monthly" ? selectedMonthsLabel || "월 선택" : "전체"} ${tabLabel[ledgerTab]}`
+                : viewMode === "monthly"
+                  ? `${selectedMonthsLabel || "월 선택"} ${tabLabel[ledgerTab]}`
+                  : `전체 ${tabLabel[ledgerTab]}`}
+            </span>
+            <span style={{
+              fontSize: 28,
+              fontWeight: 800,
+              color: filteredSummary.total >= 0 ? "var(--primary)" : "var(--danger)",
+              letterSpacing: "-0.5px"
+            }}>
+              {formatKRW(filteredSummary.total)}
+            </span>
+          </div>
+          {/* 지출 / 수입: 나란히, 색상·크기로 구분 */}
+          <div style={{
+            display: "grid",
+            gridTemplateColumns: "1fr 1fr",
+            gap: "16px",
+            alignItems: "center"
+          }}>
+            <div style={{
+              display: "flex",
+              flexDirection: "column",
+              gap: 2,
+              padding: "12px 16px",
+              background: "rgba(239, 68, 68, 0.08)",
+              borderRadius: "8px",
+              border: "1px solid rgba(239, 68, 68, 0.2)"
+            }}>
+              <span style={{ fontSize: 11, color: "var(--text-muted)", fontWeight: 600 }}>지출</span>
+              <span style={{ fontSize: 18, fontWeight: 700, color: "var(--danger)" }}>
+                {formatKRW(filteredSummary.expenseAmount)}
+              </span>
+            </div>
+            <div style={{
+              display: "flex",
+              flexDirection: "column",
+              gap: 2,
+              padding: "12px 16px",
+              background: "rgba(34, 197, 94, 0.08)",
+              borderRadius: "8px",
+              border: "1px solid rgba(34, 197, 94, 0.2)"
+            }}>
+              <span style={{ fontSize: 11, color: "var(--text-muted)", fontWeight: 600 }}>수입</span>
+              <span style={{ fontSize: 18, fontWeight: 700, color: "var(--success)" }}>
+                {formatKRW(filteredSummary.incomeAmount)}
+              </span>
+            </div>
+          </div>
+          {/* 필터 칩: 적용된 조건 한 줄에 표시 */}
+          {hasFilter && (
+            <div style={{
+              display: "flex",
+              flexWrap: "wrap",
+              gap: "8px",
+              alignItems: "center",
+              paddingTop: "8px",
+              borderTop: "1px solid var(--border)"
+            }}>
+              <span style={{ fontSize: 11, color: "var(--text-muted)", marginRight: 4 }}>필터:</span>
+              {filterMainCategory && (
+                <button
+                  type="button"
+                  onClick={() => { setFilterMainCategory(undefined); setFilterSubCategory(undefined); setForm((p) => ({ ...p, mainCategory: "", subCategory: "" })); }}
+                  style={{
+                    padding: "6px 12px",
+                    fontSize: 12,
+                    fontWeight: 600,
+                    borderRadius: "20px",
+                    border: "1px solid var(--primary)",
+                    background: "var(--primary-light)",
+                    color: "var(--primary)",
+                    cursor: "pointer"
+                  }}
+                >
+                  {filterMainCategory} ×
+                </button>
+              )}
+              {filterSubCategory && (
+                <button
+                  type="button"
+                  onClick={() => { setFilterSubCategory(undefined); setForm((p) => ({ ...p, subCategory: "" })); }}
+                  style={{
+                    padding: "6px 12px",
+                    fontSize: 12,
+                    fontWeight: 600,
+                    borderRadius: "20px",
+                    border: "1px solid var(--primary)",
+                    background: "var(--primary-light)",
+                    color: "var(--primary)",
+                    cursor: "pointer"
+                  }}
+                >
+                  {filterSubCategory} ×
+                </button>
+              )}
+              {filterFromAccountId && (
+                <button
+                  type="button"
+                  onClick={() => { setFilterFromAccountId(undefined); setForm((p) => ({ ...p, fromAccountId: "" })); }}
+                  style={{
+                    padding: "6px 12px",
+                    fontSize: 12,
+                    fontWeight: 600,
+                    borderRadius: "20px",
+                    border: "1px solid var(--primary)",
+                    background: "var(--primary-light)",
+                    color: "var(--primary)",
+                    cursor: "pointer"
+                  }}
+                >
+                  출금: {filterFromAccountName} ×
+                </button>
+              )}
+              {filterToAccountId && (
+                <button
+                  type="button"
+                  onClick={() => { setFilterToAccountId(undefined); setForm((p) => ({ ...p, toAccountId: "" })); }}
+                  style={{
+                    padding: "6px 12px",
+                    fontSize: 12,
+                    fontWeight: 600,
+                    borderRadius: "20px",
+                    border: "1px solid var(--primary)",
+                    background: "var(--primary-light)",
+                    color: "var(--primary)",
+                    cursor: "pointer"
+                  }}
+                >
+                  입금: {filterToAccountName} ×
+                </button>
+              )}
+              {hasDateFilter && (
+                <button
+                  type="button"
+                  onClick={clearDateFilter}
+                  style={{
+                    padding: "6px 12px",
+                    fontSize: 12,
+                    fontWeight: 600,
+                    borderRadius: "20px",
+                    border: "1px solid var(--primary)",
+                    background: "var(--primary-light)",
+                    color: "var(--primary)",
+                    cursor: "pointer"
+                  }}
+                >
+                  {dateFilter.startDate && dateFilter.endDate
+                    ? `${dateFilter.startDate} ~ ${dateFilter.endDate}`
+                    : dateFilter.startDate
+                      ? `${dateFilter.startDate} ~`
+                      : `~ ${dateFilter.endDate}`} ×
+                </button>
+              )}
+              {hasAmountFilter && (
+                <button
+                  type="button"
+                  onClick={() => { setFilterAmountMin(undefined); setFilterAmountMax(undefined); }}
+                  style={{
+                    padding: "6px 12px",
+                    fontSize: 12,
+                    fontWeight: 600,
+                    borderRadius: "20px",
+                    border: "1px solid var(--primary)",
+                    background: "var(--primary-light)",
+                    color: "var(--primary)",
+                    cursor: "pointer"
+                  }}
+                >
+                  금액: {filterAmountMin != null && filterAmountMax != null
+                    ? `${formatKRW(filterAmountMin)} ~ ${formatKRW(filterAmountMax)}`
+                    : filterAmountMin != null
+                      ? `${formatKRW(filterAmountMin)} 이상`
+                      : filterAmountMax != null
+                        ? `${formatKRW(filterAmountMax)} 이하`
+                        : ""} ×
+                </button>
+              )}
+            </div>
+          )}
         </div>
       </div>
 
+      {/* 월별 비교 모드: 2개 이상 월 선택 시 */}
+      {viewMode === "monthly" && selectedMonths.size >= 2 && (() => {
+        const sortedMonths = Array.from(selectedMonths).sort();
+        const monthSummaries = sortedMonths.map((monthKey) => {
+          const entries = filteredLedger.filter((l) => l.date && l.date.startsWith(monthKey));
+          const expenseAmount = entries
+            .filter((l) => l.kind === "expense" || isSavingsExpenseEntry(l, accounts))
+            .reduce((s, l) => s + l.amount, 0);
+          const incomeAmount = entries
+            .filter((l) => l.kind === "income")
+            .reduce((s, l) => s + l.amount, 0);
+          const total = incomeAmount - expenseAmount;
+          return { monthKey, expenseAmount, incomeAmount, total };
+        });
+        return (
+          <div style={{
+            marginBottom: "16px",
+            padding: "16px 20px",
+            background: "var(--surface)",
+            borderRadius: "12px",
+            border: "2px solid var(--border)",
+            overflowX: "auto"
+          }}>
+            <div style={{ fontSize: 12, fontWeight: 700, color: "var(--text-muted)", marginBottom: 12 }}>월별 비교</div>
+            <div style={{ display: "flex", gap: 16, minWidth: "max-content" }}>
+              {monthSummaries.map(({ monthKey, expenseAmount, incomeAmount, total }) => (
+                <div
+                  key={monthKey}
+                  style={{
+                    flex: "0 0 auto",
+                    width: 140,
+                    padding: 12,
+                    background: "var(--bg)",
+                    borderRadius: 8,
+                    border: "1px solid var(--border)"
+                  }}
+                >
+                  <div style={{ fontSize: 13, fontWeight: 700, marginBottom: 10, color: "var(--primary)" }}>{monthKey}</div>
+                  <div style={{ fontSize: 11, color: "var(--danger)", marginBottom: 4 }}>지출 {formatKRW(expenseAmount)}</div>
+                  <div style={{ fontSize: 11, color: "var(--success)", marginBottom: 4 }}>수입 {formatKRW(incomeAmount)}</div>
+                  <div style={{ fontSize: 13, fontWeight: 700, color: total >= 0 ? "var(--primary)" : "var(--danger)", borderTop: "1px solid var(--border)", paddingTop: 8, marginTop: 8 }}>
+                    순액 {formatKRW(total)}
+                  </div>
+                </div>
+              ))}
+            </div>
+          </div>
+        );
+      })()}
+
+      {/* 입력 폼 */}
+      <form className="card" onSubmit={handleSubmit} style={{ padding: 16, marginBottom: 16 }}>
+          <div style={{ display: "flex", flexDirection: "column", gap: "16px" }}>
+            {ledgerTab === "all" && (
+              <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+                {(["expense", "savingsExpense", "income", "transfer"] as const).map((k) => (
+                  <button
+                    key={k}
+                    type="button"
+                    className={formKindWhenAll === k ? "primary" : "secondary"}
+                    onClick={() => setFormKindWhenAll(k)}
+                    style={{ fontSize: 13, padding: "6px 12px" }}
+                  >
+                    {tabLabel[k]}
+                  </button>
+                ))}
+              </div>
+            )}
+            {/* 상단: 날짜와 금액을 한 줄에 */}
+            <div style={{ display: "grid", gridTemplateColumns: "1fr 2fr", gap: "12px", alignItems: "start" }}>
+              {/* 날짜 */}
+              <label style={{ margin: 0 }}>
+                <span style={{ fontSize: 11, marginBottom: 4, display: "block", color: "var(--text-muted)" }}>날짜 *</span>
+                <input
+                  type="date"
+                  value={form.date}
+                  onChange={(e) => setForm({ ...form, date: e.target.value })}
+                  style={{ 
+                    padding: "10px", 
+                    fontSize: 14,
+                    width: "100%",
+                    border: formErrors.date ? "2px solid var(--danger)" : "1px solid var(--border)",
+                    borderRadius: "6px"
+                  }}
+                  aria-invalid={!!formErrors.date}
+                  aria-describedby={formErrors.date ? "date-error" : undefined}
+                />
+                {formErrors.date && (
+                  <span id="date-error" style={{ fontSize: 10, color: "var(--danger)", display: "block", marginTop: 4 }}>
+                    {formErrors.date}
+                  </span>
+                )}
+              </label>
+              
+              {/* 금액 */}
+              <label style={{ margin: 0 }}>
+                <span style={{ fontSize: 11, marginBottom: 4, display: "block", color: "var(--text-muted)" }}>
+                  금액 * {effectiveFormKind === "transfer" && (
+                    <span style={{ marginLeft: 8 }}>
+                      <button
+                        type="button"
+                        className={form.currency === "KRW" ? "primary" : "secondary"}
+                        onClick={() => setForm((prev) => ({ ...prev, currency: "KRW" }))}
+                        style={{ fontSize: 11, padding: "2px 8px" }}
+                      >
+                        KRW
+                      </button>
+                      <button
+                        type="button"
+                        className={form.currency === "USD" ? "primary" : "secondary"}
+                        onClick={() => setForm((prev) => ({ ...prev, currency: "USD" }))}
+                        style={{ fontSize: 11, padding: "2px 8px", marginLeft: 4 }}
+                      >
+                        USD
+                      </button>
+                    </span>
+                  )}
+                </span>
+                <input
+                  type="text"
+                  inputMode={effectiveFormKind === "transfer" && form.currency === "USD" ? "decimal" : "numeric"}
+                  placeholder={effectiveFormKind === "transfer" && form.currency === "USD" ? "0.00" : "0"}
+                  value={form.amount}
+                  onChange={useCallback((e: React.ChangeEvent<HTMLInputElement>) => {
+                    const allowDec = effectiveFormKind === "transfer" && form.currency === "USD";
+                    const formatted = formatAmount(e.target.value, allowDec);
+                    setForm((prev) => ({ ...prev, amount: formatted }));
+                  }, [formatAmount, effectiveFormKind, form.currency])}
+                  onKeyDown={(e) => {
+                    if (e.key === "Enter") {
+                      e.preventDefault();
+                      submitForm(true);
+                    }
+                  }}
+                  style={{ 
+                    padding: "12px", 
+                    fontSize: 18, 
+                    fontWeight: 600,
+                    textAlign: "right",
+                    width: "100%",
+                    border: formErrors.amount ? "2px solid var(--danger)" : "1px solid var(--border)",
+                    borderRadius: "6px"
+                  }}
+                  aria-invalid={!!formErrors.amount}
+                  aria-describedby={formErrors.amount ? "amount-error" : undefined}
+                />
+                {formErrors.amount && (
+                  <span id="amount-error" style={{ fontSize: 10, color: "var(--danger)", display: "block", marginTop: 4 }}>
+                    {formErrors.amount}
+                  </span>
+                )}
+              </label>
+            </div>
+
+            {/* 2. 대분류 (지출/이체만) 또는 수입 항목 */}
+            {form.kind === "income" ? (
+              <label>
+                <span style={{ fontSize: 14, marginBottom: 8, display: "block", fontWeight: 600 }}>수입 항목 *</span>
+                <div style={{ borderColor: formErrors.subCategory ? "var(--danger)" : undefined, border: formErrors.subCategory ? "1px solid var(--danger)" : "1px solid var(--border)" }}>
+                  <Autocomplete
+                    value={form.subCategory}
+                    onChange={(val) => {
+                      setForm((prev) => ({ ...prev, subCategory: val || "" }));
+                    }}
+                    options={incomeCategoryOptions
+                      .filter((c: string) => c.toLowerCase().includes(form.subCategory.toLowerCase()))
+                      .map((c: string) => ({ value: c, label: c }))}
+                    placeholder="급여, 배당 등"
+                  />
+                </div>
+                {formErrors.subCategory && (
+                  <span style={{ fontSize: 11, color: "var(--danger)", display: "block", marginTop: 4 }}>
+                    {formErrors.subCategory}
+                  </span>
+                )}
+                <div className="category-chip-row" style={{ marginTop: 12, display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(120px, 1fr))", gap: 10 }}>
+                  {incomeCategoryOptions.map((c) => (
+                      <button
+                        key={c}
+                        type="button"
+                        className={`category-chip ${form.subCategory === c ? "active" : ""}`}
+                        onClick={() => {
+                          if (form.subCategory === c) {
+                            setForm((prev) => ({ ...prev, subCategory: "" }));
+                            setFilterMainCategory(undefined);
+                            setFilterSubCategory(undefined);
+                          } else {
+                            setForm((prev) => ({ ...prev, subCategory: c || "" }));
+                            setFilterMainCategory("수입");
+                            setFilterSubCategory(c);
+                          }
+                        }}
+                        style={{ 
+                          fontSize: 15, 
+                          fontWeight: form.subCategory === c ? 600 : 500,
+                          padding: "12px 16px",
+                          border: form.subCategory === c ? "2px solid var(--primary)" : "1px solid var(--border)",
+                          background: form.subCategory === c ? "var(--primary-light)" : "var(--surface)",
+                          color: form.subCategory === c ? "var(--primary)" : "var(--text)",
+                          borderRadius: "8px",
+                          textAlign: "center",
+                          transition: "all 0.2s"
+                        }}
+                      >
+                        {c}
+                      </button>
+                  ))}
+                </div>
+              </label>
+            ) : (
+              <>
+                {/* 이체 탭일 때는 대분류를 숨기고 "이체"로 고정 */}
+                {ledgerTab === "transfer" ? (
+                  <div style={{ marginBottom: 8 }}>
+                    <span style={{ fontSize: 12, marginBottom: 8, display: "block", fontWeight: 600 }}>대분류: 이체</span>
+                    <div style={{ 
+                      padding: "10px 12px", 
+                      background: "var(--primary-light)", 
+                      border: "2px solid var(--primary)", 
+                      borderRadius: "8px",
+                      color: "var(--primary)",
+                      fontWeight: 600,
+                      textAlign: "center"
+                    }}>
+                      이체
+                    </div>
+                  </div>
+                ) : (
+                  <label>
+                    <span style={{ fontSize: 12, marginBottom: 8, display: "block" }}>대분류 *</span>
+                    {formErrors.mainCategory && (
+                      <span style={{ fontSize: 11, color: "var(--danger)", display: "block", marginBottom: 4 }}>
+                        {formErrors.mainCategory}
+                      </span>
+                    )}
+                    {/* 대분류 버튼 그리드 - 모든 대분류 표시 */}
+                    <div style={{ 
+                      display: "grid", 
+                      gridTemplateColumns: "repeat(auto-fill, minmax(100px, 1fr))", 
+                      gap: 8,
+                      marginBottom: 8
+                    }}>
+                    {mainCategoryOptions.map((c) => (
+                      <button
+                        key={c}
+                        type="button"
+                        onClick={() => {
+                          if (form.mainCategory === c) {
+                            if (effectiveFormKind === "savingsExpense") {
+                              setFilterMainCategory(undefined);
+                              setFilterSubCategory(undefined);
+                            } else {
+                              setForm((prev) => ({ ...prev, mainCategory: "", subCategory: "" }));
+                              setFilterMainCategory(undefined);
+                              setFilterSubCategory(undefined);
+                            }
+                          } else {
+                            setForm((prev) => ({ ...prev, mainCategory: c || "", subCategory: "" }));
+                            setFilterMainCategory(c);
+                            setFilterSubCategory(undefined);
+                          }
+                        }}
+                        style={{
+                          padding: "10px 8px",
+                          fontSize: 13,
+                          fontWeight: form.mainCategory === c ? 600 : 400,
+                          border: form.mainCategory === c ? "2px solid var(--primary)" : "1px solid var(--border)",
+                          borderRadius: "8px",
+                          background: form.mainCategory === c ? "var(--primary-light)" : "var(--surface)",
+                          color: form.mainCategory === c ? "var(--primary)" : "var(--text)",
+                          cursor: "pointer",
+                          transition: "all 0.2s",
+                          textAlign: "center"
+                        }}
+                      >
+                        {c}
+                      </button>
+                    ))}
+                  </div>
+                </label>
+                )}
+
+                {/* 3. 항목 (세부 항목) - 대분류 선택 시에만 표시 (이체 탭일 때는 항상 표시) */}
+                {(form.mainCategory || ledgerTab === "transfer") ? (
+                  <label>
+                    <span style={{ fontSize: 12, marginBottom: 8, display: "block" }}>
+                      항목 * <span style={{ fontSize: 11, color: "var(--text-muted)", fontWeight: 400 }}>({ledgerTab === "transfer" ? "이체" : form.mainCategory}의 세부 항목)</span>
+                    </span>
+                    {formErrors.subCategory && (
+                      <span style={{ fontSize: 11, color: "var(--danger)", display: "block", marginBottom: 4 }}>
+                        {formErrors.subCategory}
+                      </span>
+                    )}
+                    {/* 세부 항목 버튼 그리드 - 선택된 대분류에 해당하는 항목만 표시 */}
+                    <div style={{ 
+                      display: "grid", 
+                      gridTemplateColumns: "repeat(auto-fill, minmax(100px, 1fr))", 
+                      gap: 8
+                    }}>
+                      {expenseSubSuggestions.map((c) => {
+                        const isSelected = form.subCategory === c;
+                        return (
+                          <button
+                            key={c}
+                            type="button"
+                            onClick={() => {
+                              if (form.subCategory === c) {
+                                setForm((prev) => ({ ...prev, subCategory: "" }));
+                                setFilterSubCategory(undefined);
+                                if (effectiveFormKind === "transfer") setFilterMainCategory(undefined);
+                              } else {
+                                setForm((prev) => ({ ...prev, subCategory: c || "" }));
+                                setFilterSubCategory(c);
+                                if (effectiveFormKind === "transfer") setFilterMainCategory("이체");
+                                if (effectiveFormKind === "savingsExpense") setFilterMainCategory("저축성지출");
+                              }
+                            }}
+                            style={{
+                              padding: "10px 8px",
+                              fontSize: 13,
+                              fontWeight: isSelected ? 600 : 400,
+                              border: isSelected ? "2px solid var(--primary)" : "1px solid var(--border)",
+                              borderRadius: "8px",
+                              background: isSelected ? "var(--primary-light)" : "var(--surface)",
+                              color: isSelected ? "var(--primary)" : "var(--text)",
+                              cursor: "pointer",
+                              transition: "all 0.2s",
+                              textAlign: "center"
+                            }}
+                          >
+                            {c}
+                          </button>
+                        );
+                      })}
+                    </div>
+                  </label>
+                ) : (
+                  <div style={{ 
+                    padding: "16px", 
+                    textAlign: "center", 
+                    color: "var(--text-muted)",
+                    fontSize: 13,
+                    border: "1px dashed var(--border)",
+                    borderRadius: "8px",
+                    background: "var(--surface)"
+                  }}>
+                    대분류를 먼저 선택하세요
+                  </div>
+                )}
+              </>
+            )}
+
+            {/* 4. 상세내역 (선택) - 작게 */}
+            <label style={{ margin: 0 }}>
+              <span style={{ fontSize: 10, marginBottom: 4, display: "block", color: "var(--text-muted)" }}>상세내역 (선택)</span>
+              <input
+                type="text"
+                value={form.description}
+                onChange={(e) => setForm({ ...form, description: e.target.value })}
+                placeholder="예: 김밥천국, 아파트 관리비 등"
+                style={{ 
+                  padding: "8px", 
+                  fontSize: 13,
+                  width: "100%",
+                  border: "1px solid var(--border)",
+                  borderRadius: "6px"
+                }}
+              />
+            </label>
+
+            {/* 5. 출금계좌 (지출/이체만) - 버튼 그리드 */}
+            {(form.kind === "expense" || form.kind === "transfer") && (
+              <div>
+                <div style={{ fontSize: 11, marginBottom: 8, color: "var(--text-muted)", display: "flex", alignItems: "center", gap: 4 }}>
+                  <span>출금계좌 *</span>
+                  {(formErrors.fromAccountId || formErrors.transfer) && (
+                    <span style={{ fontSize: 10, color: "var(--danger)" }}>({(formErrors.fromAccountId || formErrors.transfer)})</span>
+                  )}
+                </div>
+                <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(120px, 1fr))", gap: 8 }}>
+                  {accounts.map((a) => {
+                      const accountName = (a.name + a.id).toLowerCase();
+                      const isUSD = a.currency === "USD" || 
+                                   accountName.includes("usd") || 
+                                   accountName.includes("dollar") || 
+                                   accountName.includes("달러");
+                      return (
+                        <button
+                          key={a.id}
+                          type="button"
+                          onClick={() => {
+                            if (form.fromAccountId === a.id) {
+                              setForm((prev) => ({ ...prev, fromAccountId: "" }));
+                              setFilterFromAccountId(undefined);
+                            } else {
+                              setForm((prev) => ({ ...prev, fromAccountId: a.id || "" }));
+                              setFilterFromAccountId(a.id);
+                            }
+                          }}
+                          style={{
+                            padding: "10px 8px",
+                            fontSize: 13,
+                            fontWeight: form.fromAccountId === a.id ? 600 : 400,
+                            border: form.fromAccountId === a.id ? "2px solid var(--primary)" : "1px solid var(--border)",
+                            borderRadius: "8px",
+                            background: form.fromAccountId === a.id ? "var(--primary-light)" : "var(--surface)",
+                            color: form.fromAccountId === a.id ? "var(--primary)" : "var(--text)",
+                            cursor: "pointer",
+                            transition: "all 0.2s",
+                            textAlign: "left"
+                          }}
+                        >
+                          {a.id} {isUSD ? "(USD)" : ""}
+                        </button>
+                      );
+                  })}
+                </div>
+              </div>
+            )}
+
+            {/* 입금계좌 (수입/이체만) - 버튼 그리드 */}
+            {(form.kind === "income" || form.kind === "transfer") && (
+              <div>
+                <div style={{ fontSize: 11, marginBottom: 8, color: "var(--text-muted)", display: "flex", alignItems: "center", gap: 4 }}>
+                  <span>{ledgerTab === "savingsExpense" ? "저축계좌 (증권/저축) *" : "입금계좌 *"}</span>
+                  {(formErrors.toAccountId || formErrors.transfer) && (
+                    <span style={{ fontSize: 10, color: "var(--danger)" }}>({(formErrors.toAccountId || formErrors.transfer)})</span>
+                  )}
+                </div>
+                <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(120px, 1fr))", gap: 8 }}>
+                  {(() => {
+                    const targetAccounts = ledgerTab === "savingsExpense"
+                      ? accounts.filter((a) => a.type === "securities" || a.type === "savings")
+                      : accounts;
+                    return targetAccounts.map((a) => {
+                            const accountName = (a.name + a.id).toLowerCase();
+                            const isUSD = a.currency === "USD" || 
+                                         accountName.includes("usd") || 
+                                         accountName.includes("dollar") || 
+                                         accountName.includes("달러");
+                            return (
+                              <button
+                                key={a.id}
+                                type="button"
+                                onClick={() => {
+                              if (form.toAccountId === a.id) {
+                                setForm((prev) => ({ ...prev, toAccountId: "" }));
+                                setFilterToAccountId(undefined);
+                              } else {
+                                setForm((prev) => ({ ...prev, toAccountId: a.id || "" }));
+                                setFilterToAccountId(a.id);
+                              }
+                            }}
+                                style={{
+                                  padding: "10px 8px",
+                                  fontSize: 13,
+                                  fontWeight: form.toAccountId === a.id ? 600 : 400,
+                                  border: form.toAccountId === a.id ? "2px solid var(--primary)" : "1px solid var(--border)",
+                                  borderRadius: "8px",
+                                  background: form.toAccountId === a.id ? "var(--primary-light)" : "var(--surface)",
+                                  color: form.toAccountId === a.id ? "var(--primary)" : "var(--text)",
+                                  cursor: "pointer",
+                                  transition: "all 0.2s",
+                                  textAlign: "left"
+                                }}
+                              >
+                                {a.id} {isUSD ? "(USD)" : ""}
+                              </button>
+                            );
+                          });
+                  })()}
+                </div>
+              </div>
+            )}
+
+            {/* 제출 버튼 */}
+            <div style={{ display: "flex", gap: 8, marginTop: 8 }}>
+              <button 
+                type="submit" 
+                className="primary" 
+                style={{ 
+                  padding: "14px 24px", 
+                  fontSize: 16, 
+                  fontWeight: 600,
+                  flex: 1,
+                  borderRadius: "8px"
+                }}
+                disabled={!isFormValid}
+                title={!isFormValid ? "필수 항목을 입력해주세요" : ""}
+              >
+                추가
+              </button>
+            </div>
+          </div>
+        </form>
+
+      {/* 필터: 가계부 입력칸과 목록 사이 */}
       <div style={{ marginBottom: "12px", display: "flex", gap: "8px", flexWrap: "wrap", alignItems: "center" }}>
+        <button
+          type="button"
+          className={ledgerTab === "all" ? "primary" : ""}
+          onClick={() => setLedgerTab("all")}
+        >
+          전체
+        </button>
         <button
           type="button"
           className={ledgerTab === "expense" ? "primary" : ""}
@@ -1447,7 +1994,7 @@ export const LedgerView: React.FC<Props> = ({
         </div>
       </div>
 
-      <div style={{ marginBottom: "16px", display: "flex", gap: "12px", alignItems: "center", flexWrap: "wrap" }}>
+      <div style={{ marginBottom: "12px", display: "flex", gap: "12px", alignItems: "center", flexWrap: "wrap" }}>
         <button
           type="button"
           className={viewMode === "monthly" ? "primary" : ""}
@@ -1468,51 +2015,6 @@ export const LedgerView: React.FC<Props> = ({
         >
           전체 보기
         </button>
-          <button
-            type="button"
-            className={showAdvancedSearch ? "primary" : "secondary"}
-            onClick={() => setShowAdvancedSearch(!showAdvancedSearch)}
-            style={{ fontSize: 12, padding: "6px 12px" }}
-          >
-            🔍 고급 검색
-          </button>
-          {filteredLedger.length > 0 && (
-            <button
-              type="button"
-              className="secondary"
-              onClick={() => {
-                // CSV 내보내기
-                const headers = ["날짜", "대분류", "항목", "상세내역", "출금", "입금", "금액"];
-                const rows = filteredLedger.map((l) => [
-                  l.date,
-                  l.category || "",
-                  l.subCategory || "",
-                  l.description || "",
-                  l.fromAccountId || "",
-                  l.toAccountId || "",
-                  l.amount.toString()
-                ]);
-                const csvContent = [headers, ...rows].map((row) => row.map((cell) => `"${cell}"`).join(",")).join("\n");
-                const blob = new Blob(["\uFEFF" + csvContent], { type: "text/csv;charset=utf-8;" });
-                const link = document.createElement("a");
-                const url = URL.createObjectURL(blob);
-                link.setAttribute("href", url);
-                const koreaTime = getKoreaTime();
-                const year = koreaTime.getFullYear();
-                const month = String(koreaTime.getMonth() + 1).padStart(2, "0");
-                const day = String(koreaTime.getDate()).padStart(2, "0");
-                link.setAttribute("download", `가계부_${year}-${month}-${day}.csv`);
-                link.style.visibility = "hidden";
-                document.body.appendChild(link);
-                link.click();
-                document.body.removeChild(link);
-                toast.success("CSV 파일로 내보냈습니다");
-              }}
-              style={{ fontSize: 12, padding: "6px 12px" }}
-            >
-              📥 검색 결과 내보내기 (CSV)
-            </button>
-          )}
         {(dateFilter.startDate || dateFilter.endDate) && (
           <button
             type="button"
@@ -1576,24 +2078,108 @@ export const LedgerView: React.FC<Props> = ({
           >
             지난 1년
           </button>
+          <span style={{ marginLeft: 8, marginRight: 4, fontSize: 12, color: "var(--text-muted)" }}>날짜</span>
+          <input
+            type="date"
+            value={dateFilter.startDate || ""}
+            onChange={(e) => {
+              setDateFilter((prev) => ({ ...prev, startDate: e.target.value || undefined }));
+              setViewMode("all");
+            }}
+            style={{ padding: "6px 8px", fontSize: 12, borderRadius: 6, border: "1px solid var(--border)", width: 120, boxSizing: "border-box" }}
+            title="시작일"
+          />
+          <span style={{ margin: "0 2px", fontSize: 12, color: "var(--text-muted)" }}>~</span>
+          <input
+            type="date"
+            value={dateFilter.endDate || ""}
+            onChange={(e) => {
+              setDateFilter((prev) => ({ ...prev, endDate: e.target.value || undefined }));
+              setViewMode("all");
+            }}
+            style={{ padding: "6px 8px", fontSize: 12, borderRadius: 6, border: "1px solid var(--border)", width: 120, boxSizing: "border-box" }}
+            title="종료일"
+          />
+          <span style={{ marginLeft: 12, marginRight: 4, fontSize: 12, color: "var(--text-muted)" }}>금액</span>
+          <input
+            type="number"
+            value={filterAmountMin ?? ""}
+            onChange={(e) => {
+              const v = e.target.value;
+              setFilterAmountMin(v === "" ? undefined : Number(v) || undefined);
+            }}
+            placeholder="최소"
+            style={{ padding: "6px 8px", fontSize: 12, borderRadius: 6, border: "1px solid var(--border)", width: 80, boxSizing: "border-box" }}
+            title="최소 금액"
+          />
+          <span style={{ margin: "0 2px", fontSize: 12, color: "var(--text-muted)" }}>~</span>
+          <input
+            type="number"
+            value={filterAmountMax ?? ""}
+            onChange={(e) => {
+              const v = e.target.value;
+              setFilterAmountMax(v === "" ? undefined : Number(v) || undefined);
+            }}
+            placeholder="최대"
+            style={{ padding: "6px 8px", fontSize: 12, borderRadius: 6, border: "1px solid var(--border)", width: 80, boxSizing: "border-box" }}
+            title="최대 금액"
+          />
+          {filteredLedger.length > 0 && (
+            <button
+              type="button"
+              className="secondary"
+              onClick={() => {
+                const headers = ["날짜", "대분류", "항목", "상세내역", "출금", "입금", "금액"];
+                const rows = filteredLedger.map((l) => [
+                  l.date,
+                  l.category || "",
+                  l.subCategory || "",
+                  l.description || "",
+                  l.fromAccountId || "",
+                  l.toAccountId || "",
+                  l.amount.toString()
+                ]);
+                const csvContent = [headers, ...rows].map((row) => row.map((cell) => `"${cell}"`).join(",")).join("\n");
+                const blob = new Blob(["\uFEFF" + csvContent], { type: "text/csv;charset=utf-8;" });
+                const link = document.createElement("a");
+                const url = URL.createObjectURL(blob);
+                link.setAttribute("href", url);
+                const koreaTime = getKoreaTime();
+                const year = koreaTime.getFullYear();
+                const month = String(koreaTime.getMonth() + 1).padStart(2, "0");
+                const day = String(koreaTime.getDate()).padStart(2, "0");
+                link.setAttribute("download", `가계부_${year}-${month}-${day}.csv`);
+                link.style.visibility = "hidden";
+                document.body.appendChild(link);
+                link.click();
+                document.body.removeChild(link);
+                toast.success("CSV 파일로 내보냈습니다");
+              }}
+              style={{ fontSize: 12, padding: "6px 12px", marginLeft: 8 }}
+            >
+              📥 검색 결과 내보내기 (CSV)
+            </button>
+          )}
         </div>
         {viewMode === "monthly" && (
           <>
+            <button
+              type="button"
+              className="secondary"
+              onClick={() => {
+                const k = getKoreaTime();
+                const yyyy = k.getFullYear();
+                const mm = String(k.getMonth() + 1).padStart(2, "0");
+                setSelectedMonths(new Set([`${yyyy}-${mm}`]));
+                setCurrentYear(String(yyyy));
+              }}
+              style={{ padding: "6px 10px", fontSize: 13 }}
+            >
+              이번 달
+            </button>
             <select
               value={currentYear}
-              onChange={(e) => {
-                const year = e.target.value;
-                // 년도 변경 시 해당 년도의 첫 번째 월로 이동 (또는 유효한 월 유지)
-                const monthsForYear = availableMonthsByYear.get(year) || [];
-                if (monthsForYear.length > 0) {
-                  // 해당 년도에 데이터가 있으면 가장 최근 월로 이동
-                  setSelectedMonth(monthsForYear[0]);
-                } else {
-                  // 데이터가 없으면 해당 년도의 현재 월로 설정
-                  const currentMonth = selectedMonth && selectedMonth.length >= 7 ? selectedMonth.slice(5, 7) : String(getKoreaTime().getMonth() + 1).padStart(2, "0");
-                  setSelectedMonth(`${year}-${currentMonth}`);
-                }
-              }}
+              onChange={(e) => setCurrentYear(e.target.value)}
               style={{
                 padding: "8px 12px",
                 borderRadius: "8px",
@@ -1614,9 +2200,8 @@ export const LedgerView: React.FC<Props> = ({
                 const monthNum = idx + 1;
                 const monthPart = String(monthNum).padStart(2, "0");
                 const key = `${currentYear}-${monthPart}`;
-                // 현재 선택된 년도에 해당하는 월만 확인
                 const hasData = availableMonthsForCurrentYear.includes(key);
-                const isActive = selectedMonth === key;
+                const isActive = selectedMonths.has(key);
                 return (
                   <button
                     key={key}
@@ -1624,7 +2209,17 @@ export const LedgerView: React.FC<Props> = ({
                     className={`month-tab ${isActive ? "active" : ""} ${
                       !hasData ? "empty" : ""
                     }`}
-                    onClick={() => setSelectedMonth(key)}
+                    onClick={() => {
+                      setSelectedMonths((prev) => {
+                        const next = new Set(prev);
+                        if (next.has(key)) {
+                          next.delete(key);
+                        } else {
+                          next.add(key);
+                        }
+                        return next;
+                      });
+                    }}
                   >
                     {monthNum}월
                   </button>
@@ -1634,661 +2229,6 @@ export const LedgerView: React.FC<Props> = ({
           </>
         )}
       </div>
-
-      {/* 템플릿 버튼 영역 */}
-      <div className="card" style={{ padding: 12, marginBottom: 12 }}>
-        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 8 }}>
-          <span style={{ fontSize: 13, fontWeight: 500, color: "var(--muted)" }}>
-            템플릿 {filteredTemplates.length > 0 ? `(Ctrl+1~9)` : ""}
-          </span>
-          <div style={{ display: "flex", gap: 6 }}>
-            <button
-              type="button"
-              className="secondary"
-              onClick={saveCurrentAsTemplate}
-              style={{ fontSize: 11, padding: "4px 8px" }}
-            >
-              현재 저장
-            </button>
-            <button
-              type="button"
-              className="secondary"
-              onClick={() => setShowTemplateModal(true)}
-              style={{ fontSize: 11, padding: "4px 8px" }}
-            >
-              관리
-            </button>
-          </div>
-        </div>
-        {filteredTemplates.length > 0 ? (
-          <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
-            {filteredTemplates.map((template, index) => (
-              <button
-                key={template.id}
-                type="button"
-                className="secondary"
-                onClick={() => applyTemplate(template)}
-                style={{ fontSize: 12, padding: "6px 12px" }}
-                title={`Ctrl+${index + 1}: ${template.name}`}
-              >
-                {index + 1}. {template.name}
-              </button>
-            ))}
-          </div>
-        ) : (
-          <p className="hint" style={{ margin: 0, fontSize: 12 }}>
-            템플릿이 없습니다. 자주 사용하는 항목을 입력한 후 "현재 저장" 버튼을 클릭하세요.
-          </p>
-        )}
-      </div>
-
-      {/* 버튼식 입력 모드 */}
-      <form className="card" onSubmit={handleSubmit} style={{ padding: 16, marginBottom: 16 }}>
-          <div style={{ display: "flex", flexDirection: "column", gap: "16px" }}>
-            {/* 상단: 날짜와 금액을 한 줄에 */}
-            <div style={{ display: "grid", gridTemplateColumns: "1fr 2fr", gap: "12px", alignItems: "start" }}>
-              {/* 날짜 */}
-              <label style={{ margin: 0 }}>
-                <span style={{ fontSize: 11, marginBottom: 4, display: "block", color: "var(--text-muted)" }}>날짜 *</span>
-                <input
-                  type="date"
-                  value={form.date}
-                  onChange={(e) => setForm({ ...form, date: e.target.value })}
-                  style={{ 
-                    padding: "10px", 
-                    fontSize: 14,
-                    width: "100%",
-                    border: formErrors.date ? "2px solid var(--danger)" : "1px solid var(--border)",
-                    borderRadius: "6px"
-                  }}
-                  aria-invalid={!!formErrors.date}
-                  aria-describedby={formErrors.date ? "date-error" : undefined}
-                />
-                {formErrors.date && (
-                  <span id="date-error" style={{ fontSize: 10, color: "var(--danger)", display: "block", marginTop: 4 }}>
-                    {formErrors.date}
-                  </span>
-                )}
-              </label>
-              
-              {/* 금액 */}
-              <label style={{ margin: 0 }}>
-                <span style={{ fontSize: 11, marginBottom: 4, display: "block", color: "var(--text-muted)" }}>금액 *</span>
-                <input
-                  type="text"
-                  inputMode="numeric"
-                  placeholder="0"
-                  value={form.amount}
-                  onChange={useCallback((e: React.ChangeEvent<HTMLInputElement>) => {
-                    const formatted = formatAmount(e.target.value);
-                    setForm((prev) => ({ ...prev, amount: formatted }));
-                  }, [formatAmount])}
-                  onKeyDown={(e) => {
-                    if (e.key === "Enter") {
-                      e.preventDefault();
-                      submitForm(true);
-                    }
-                  }}
-                  style={{ 
-                    padding: "12px", 
-                    fontSize: 18, 
-                    fontWeight: 600,
-                    textAlign: "right",
-                    width: "100%",
-                    border: formErrors.amount ? "2px solid var(--danger)" : "1px solid var(--border)",
-                    borderRadius: "6px"
-                  }}
-                  aria-invalid={!!formErrors.amount}
-                  aria-describedby={formErrors.amount ? "amount-error" : undefined}
-                />
-                {formErrors.amount && (
-                  <span id="amount-error" style={{ fontSize: 10, color: "var(--danger)", display: "block", marginTop: 4 }}>
-                    {formErrors.amount}
-                  </span>
-                )}
-              </label>
-            </div>
-
-            {/* 2. 대분류 (지출/이체만) 또는 수입 항목 */}
-            {form.kind === "income" ? (
-              <label>
-                <span style={{ fontSize: 14, marginBottom: 8, display: "block", fontWeight: 600 }}>수입 항목 *</span>
-                <div style={{ borderColor: formErrors.subCategory ? "var(--danger)" : undefined, border: formErrors.subCategory ? "1px solid var(--danger)" : "1px solid var(--border)" }}>
-                  <Autocomplete
-                    value={form.subCategory}
-                    onChange={(val) => {
-                      setForm((prev) => ({ ...prev, subCategory: val || "" }));
-                    }}
-                    options={incomeCategoryOptions
-                      .filter((c: string) => c.toLowerCase().includes(form.subCategory.toLowerCase()))
-                      .map((c: string) => ({ value: c, label: c }))}
-                    placeholder="급여, 배당 등"
-                  />
-                </div>
-                {formErrors.subCategory && (
-                  <span style={{ fontSize: 11, color: "var(--danger)", display: "block", marginTop: 4 }}>
-                    {formErrors.subCategory}
-                  </span>
-                )}
-                <div className="category-chip-row" style={{ marginTop: 12, display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(120px, 1fr))", gap: 10 }}>
-                  {recentIncomeCategories.slice(0, 5).map((c) => (
-                    <button
-                      key={c}
-                      type="button"
-                      className={`category-chip ${form.subCategory === c ? "active" : ""}`}
-                      onClick={() => {
-                        setForm((prev) => ({ ...prev, subCategory: c || "" }));
-                      }}
-                      style={{ 
-                        fontSize: 15, 
-                        fontWeight: form.subCategory === c ? 600 : 500,
-                        padding: "12px 16px", 
-                        border: form.subCategory === c ? "2px solid var(--primary)" : "1px solid var(--border)",
-                        background: form.subCategory === c ? "var(--primary-light)" : "var(--surface)",
-                        color: form.subCategory === c ? "var(--primary)" : "var(--text)",
-                        borderRadius: "8px",
-                        textAlign: "center",
-                        transition: "all 0.2s"
-                      }}
-                      title="최근 사용"
-                    >
-                      {c}
-                    </button>
-                  ))}
-                  {incomeCategoryOptions.slice(0, 12).map((c) => {
-                    if (recentIncomeCategories.includes(c)) return null;
-                    return (
-                      <button
-                        key={c}
-                        type="button"
-                        className={`category-chip ${form.subCategory === c ? "active" : ""}`}
-                        onClick={() => {
-                        setForm((prev) => ({ ...prev, subCategory: c || "" }));
-                      }}
-                        style={{ 
-                          fontSize: 15, 
-                          fontWeight: form.subCategory === c ? 600 : 500,
-                          padding: "12px 16px",
-                          border: form.subCategory === c ? "2px solid var(--primary)" : "1px solid var(--border)",
-                          background: form.subCategory === c ? "var(--primary-light)" : "var(--surface)",
-                          color: form.subCategory === c ? "var(--primary)" : "var(--text)",
-                          borderRadius: "8px",
-                          textAlign: "center",
-                          transition: "all 0.2s"
-                        }}
-                      >
-                        {c}
-                      </button>
-                    );
-                  })}
-                </div>
-              </label>
-            ) : (
-              <>
-                {/* 이체 탭일 때는 대분류를 숨기고 "이체"로 고정 */}
-                {ledgerTab === "transfer" ? (
-                  <div style={{ marginBottom: 8 }}>
-                    <span style={{ fontSize: 12, marginBottom: 8, display: "block", fontWeight: 600 }}>대분류: 이체</span>
-                    <div style={{ 
-                      padding: "10px 12px", 
-                      background: "var(--primary-light)", 
-                      border: "2px solid var(--primary)", 
-                      borderRadius: "8px",
-                      color: "var(--primary)",
-                      fontWeight: 600,
-                      textAlign: "center"
-                    }}>
-                      이체
-                    </div>
-                  </div>
-                ) : (
-                  <label>
-                    <span style={{ fontSize: 12, marginBottom: 8, display: "block" }}>대분류 *</span>
-                    {formErrors.mainCategory && (
-                      <span style={{ fontSize: 11, color: "var(--danger)", display: "block", marginBottom: 4 }}>
-                        {formErrors.mainCategory}
-                      </span>
-                    )}
-                    {/* 대분류 버튼 그리드 - 모든 대분류 표시 */}
-                    <div style={{ 
-                      display: "grid", 
-                      gridTemplateColumns: "repeat(auto-fill, minmax(100px, 1fr))", 
-                      gap: 8,
-                      marginBottom: 8
-                    }}>
-                    {/* 최근 사용한 대분류 - 모든 최근 항목 표시 (이체 탭 제외) */}
-                    {(ledgerTab === "income" || ledgerTab === "expense" || ledgerTab === "savingsExpense") && recentMainCategories.map((c) => (
-                      <button
-                        key={c}
-                        type="button"
-                        onClick={() => {
-                          setForm((prev) => ({ ...prev, mainCategory: c || "", subCategory: "" }));
-                        }}
-                        style={{
-                          padding: "10px 8px",
-                          fontSize: 13,
-                          fontWeight: form.mainCategory === c ? 600 : 400,
-                          border: form.mainCategory === c ? "2px solid var(--primary)" : "2px solid var(--primary)",
-                          borderRadius: "8px",
-                          background: form.mainCategory === c ? "var(--primary-light)" : "var(--primary-lightest)",
-                          color: form.mainCategory === c ? "var(--primary)" : "var(--primary)",
-                          cursor: "pointer",
-                          transition: "all 0.2s",
-                          textAlign: "center"
-                        }}
-                        title="최근 사용"
-                      >
-                        {c}
-                      </button>
-                    ))}
-                    {/* 즐겨찾기 대분류 */}
-                    {favoriteCategoryList.map((c) => (
-                      <button
-                        key={c}
-                        type="button"
-                        onClick={() => {
-                          setForm((prev) => ({ ...prev, mainCategory: c || "", subCategory: "" }));
-                        }}
-                        onContextMenu={(e) => {
-                          e.preventDefault();
-                          toggleFavoriteCategory(c);
-                        }}
-                        style={{
-                          padding: "10px 8px",
-                          fontSize: 13,
-                          fontWeight: form.mainCategory === c ? 600 : 400,
-                          border: form.mainCategory === c ? "2px solid var(--primary)" : "2px solid var(--primary)",
-                          borderRadius: "8px",
-                          background: form.mainCategory === c ? "var(--primary-light)" : "var(--primary-lightest)",
-                          color: form.mainCategory === c ? "var(--primary)" : "var(--primary)",
-                          cursor: "pointer",
-                          transition: "all 0.2s",
-                          textAlign: "center"
-                        }}
-                        title="우클릭하여 즐겨찾기 제거"
-                      >
-                        ⭐ {c}
-                      </button>
-                    ))}
-                    {/* 나머지 모든 대분류 */}
-                    {mainCategoryOptions.map((c) => {
-                      if (((ledgerTab === "income" || ledgerTab === "expense" || ledgerTab === "savingsExpense") && recentMainCategories.includes(c)) || favoriteCategories.has(c)) return null;
-                      return (
-                        <button
-                          key={c}
-                          type="button"
-                          onClick={() => {
-                            setForm((prev) => ({ ...prev, mainCategory: c || "", subCategory: "" }));
-                          }}
-                          onContextMenu={(e) => {
-                            e.preventDefault();
-                            toggleFavoriteCategory(c);
-                          }}
-                          style={{
-                            padding: "10px 8px",
-                            fontSize: 13,
-                            fontWeight: form.mainCategory === c ? 600 : 400,
-                            border: form.mainCategory === c ? "2px solid var(--primary)" : "1px solid var(--border)",
-                            borderRadius: "8px",
-                            background: form.mainCategory === c ? "var(--primary-light)" : "var(--surface)",
-                            color: form.mainCategory === c ? "var(--primary)" : "var(--text)",
-                            cursor: "pointer",
-                            transition: "all 0.2s",
-                            textAlign: "center"
-                          }}
-                          title="우클릭하여 즐겨찾기 추가"
-                        >
-                          {c}
-                        </button>
-                      );
-                    })}
-                  </div>
-                </label>
-                )}
-
-                {/* 3. 항목 (세부 항목) - 대분류 선택 시에만 표시 (이체 탭일 때는 항상 표시) */}
-                {(form.mainCategory || ledgerTab === "transfer") ? (
-                  <label>
-                    <span style={{ fontSize: 12, marginBottom: 8, display: "block" }}>
-                      항목 * <span style={{ fontSize: 11, color: "var(--text-muted)", fontWeight: 400 }}>({ledgerTab === "transfer" ? "이체" : form.mainCategory}의 세부 항목)</span>
-                    </span>
-                    {formErrors.subCategory && (
-                      <span style={{ fontSize: 11, color: "var(--danger)", display: "block", marginBottom: 4 }}>
-                        {formErrors.subCategory}
-                      </span>
-                    )}
-                    {/* 세부 항목 버튼 그리드 - 선택된 대분류에 해당하는 항목만 표시 */}
-                    <div style={{ 
-                      display: "grid", 
-                      gridTemplateColumns: "repeat(auto-fill, minmax(100px, 1fr))", 
-                      gap: 8
-                    }}>
-                      {/* 모든 세부 항목 표시 (expenseSubSuggestions는 이미 최근 사용한 항목을 앞에 배치한 상태) */}
-                      {expenseSubSuggestions.map((c, index) => {
-                        const isRecent = recentSubCategories.includes(c);
-                        const isSelected = form.subCategory === c;
-                        return (
-                          <button
-                            key={c}
-                            type="button"
-                            onClick={() => {
-                              setForm((prev) => ({ ...prev, subCategory: c || "" }));
-                            }}
-                            style={{
-                              padding: "10px 8px",
-                              fontSize: 13,
-                              fontWeight: isSelected ? 600 : 400,
-                              border: isSelected 
-                                ? "2px solid var(--primary)" 
-                                : isRecent 
-                                  ? "2px solid var(--primary)" 
-                                  : "1px solid var(--border)",
-                              borderRadius: "8px",
-                              background: isSelected 
-                                ? "var(--primary-light)" 
-                                : isRecent 
-                                  ? "var(--primary-lightest)" 
-                                  : "var(--surface)",
-                              color: isSelected 
-                                ? "var(--primary)" 
-                                : isRecent 
-                                  ? "var(--primary)" 
-                                  : "var(--text)",
-                              cursor: "pointer",
-                              transition: "all 0.2s",
-                              textAlign: "center"
-                            }}
-                            title={isRecent ? "최근 사용" : undefined}
-                          >
-                            {c}
-                          </button>
-                        );
-                      })}
-                    </div>
-                  </label>
-                ) : (
-                  <div style={{ 
-                    padding: "16px", 
-                    textAlign: "center", 
-                    color: "var(--text-muted)",
-                    fontSize: 13,
-                    border: "1px dashed var(--border)",
-                    borderRadius: "8px",
-                    background: "var(--surface)"
-                  }}>
-                    대분류를 먼저 선택하세요
-                  </div>
-                )}
-              </>
-            )}
-
-            {/* 4. 상세내역 (선택) - 작게 */}
-            <label style={{ margin: 0 }}>
-              <span style={{ fontSize: 10, marginBottom: 4, display: "block", color: "var(--text-muted)" }}>상세내역 (선택)</span>
-              <input
-                type="text"
-                value={form.description}
-                onChange={(e) => setForm({ ...form, description: e.target.value })}
-                placeholder="예: 김밥천국, 아파트 관리비 등"
-                style={{ 
-                  padding: "8px", 
-                  fontSize: 13,
-                  width: "100%",
-                  border: "1px solid var(--border)",
-                  borderRadius: "6px"
-                }}
-              />
-            </label>
-
-            {/* 5. 출금계좌 (지출/이체만) - 버튼 그리드 */}
-            {(form.kind === "expense" || form.kind === "transfer") && (
-              <div>
-                <div style={{ fontSize: 11, marginBottom: 8, color: "var(--text-muted)", display: "flex", alignItems: "center", gap: 4 }}>
-                  <span>출금계좌 *</span>
-                  {(formErrors.fromAccountId || formErrors.transfer) && (
-                    <span style={{ fontSize: 10, color: "var(--danger)" }}>({(formErrors.fromAccountId || formErrors.transfer)})</span>
-                  )}
-                </div>
-                <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(120px, 1fr))", gap: 8 }}>
-                  {favoriteAccountList.map((acc) => {
-                    const accountName = (acc.name + acc.id).toLowerCase();
-                    const isUSD = acc.currency === "USD" || 
-                                 accountName.includes("usd") || 
-                                 accountName.includes("dollar") || 
-                                 accountName.includes("달러");
-                    return (
-                      <button
-                        key={acc.id}
-                        type="button"
-                        onClick={() => {
-                          setForm((prev) => ({ ...prev, fromAccountId: acc.id || "" }));
-                        }}
-                        style={{
-                          padding: "10px 8px",
-                          fontSize: 13,
-                          fontWeight: form.fromAccountId === acc.id ? 600 : 400,
-                          border: form.fromAccountId === acc.id ? "2px solid var(--primary)" : "1px solid var(--border)",
-                          borderRadius: "8px",
-                          background: form.fromAccountId === acc.id ? "var(--primary-light)" : "var(--surface)",
-                          color: form.fromAccountId === acc.id ? "var(--primary)" : "var(--text)",
-                          cursor: "pointer",
-                          transition: "all 0.2s",
-                          textAlign: "left"
-                        }}
-                      >
-                        ⭐ {acc.id} {isUSD ? "(USD)" : ""}
-                      </button>
-                    );
-                  })}
-                  {recentAccounts.map((id) => {
-                    const acc = accounts.find((a) => a.id === id);
-                    if (!acc || favoriteAccounts.has(id)) return null;
-                    const accountName = (acc.name + acc.id).toLowerCase();
-                    const isUSD = acc.currency === "USD" || 
-                                 accountName.includes("usd") || 
-                                 accountName.includes("dollar") || 
-                                 accountName.includes("달러");
-                    return (
-                      <button
-                        key={id}
-                        type="button"
-                        onClick={() => {
-                          setForm((prev) => ({ ...prev, fromAccountId: id || "" }));
-                        }}
-                        style={{
-                          padding: "10px 8px",
-                          fontSize: 13,
-                          fontWeight: form.fromAccountId === id ? 600 : 400,
-                          border: form.fromAccountId === id ? "2px solid var(--primary)" : "1px solid var(--border)",
-                          borderRadius: "8px",
-                          background: form.fromAccountId === id ? "var(--primary-light)" : "var(--surface)",
-                          color: form.fromAccountId === id ? "var(--primary)" : "var(--text)",
-                          cursor: "pointer",
-                          transition: "all 0.2s",
-                          textAlign: "left"
-                        }}
-                      >
-                        {acc.id} {isUSD ? "(USD)" : ""}
-                      </button>
-                    );
-                  })}
-                  {accounts
-                    .filter((a) => !recentAccounts.includes(a.id) && !favoriteAccounts.has(a.id))
-                    .map((a) => {
-                      const accountName = (a.name + a.id).toLowerCase();
-                      const isUSD = a.currency === "USD" || 
-                                   accountName.includes("usd") || 
-                                   accountName.includes("dollar") || 
-                                   accountName.includes("달러");
-                      return (
-                        <button
-                          key={a.id}
-                          type="button"
-                          onClick={() => {
-                          setForm((prev) => ({ ...prev, fromAccountId: a.id || "" }));
-                        }}
-                          style={{
-                            padding: "10px 8px",
-                            fontSize: 13,
-                            fontWeight: form.fromAccountId === a.id ? 600 : 400,
-                            border: form.fromAccountId === a.id ? "2px solid var(--primary)" : "1px solid var(--border)",
-                            borderRadius: "8px",
-                            background: form.fromAccountId === a.id ? "var(--primary-light)" : "var(--surface)",
-                            color: form.fromAccountId === a.id ? "var(--primary)" : "var(--text)",
-                            cursor: "pointer",
-                            transition: "all 0.2s",
-                            textAlign: "left"
-                          }}
-                        >
-                          {a.id} {isUSD ? "(USD)" : ""}
-                        </button>
-                      );
-                    })}
-                </div>
-              </div>
-            )}
-
-            {/* 입금계좌 (수입/이체만) - 버튼 그리드 */}
-            {(form.kind === "income" || form.kind === "transfer") && (
-              <div>
-                <div style={{ fontSize: 11, marginBottom: 8, color: "var(--text-muted)", display: "flex", alignItems: "center", gap: 4 }}>
-                  <span>{ledgerTab === "savingsExpense" ? "저축계좌 (증권/저축) *" : "입금계좌 *"}</span>
-                  {(formErrors.toAccountId || formErrors.transfer) && (
-                    <span style={{ fontSize: 10, color: "var(--danger)" }}>({(formErrors.toAccountId || formErrors.transfer)})</span>
-                  )}
-                </div>
-                <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(120px, 1fr))", gap: 8 }}>
-                  {(() => {
-                    const targetAccounts = ledgerTab === "savingsExpense"
-                      ? accounts.filter((a) => a.type === "securities" || a.type === "savings")
-                      : accounts;
-                    
-                    return (
-                      <>
-                        {favoriteAccountList
-                          .filter((acc) => targetAccounts.some((a) => a.id === acc.id))
-                          .map((acc) => {
-                            const accountName = (acc.name + acc.id).toLowerCase();
-                            const isUSD = acc.currency === "USD" || 
-                                         accountName.includes("usd") || 
-                                         accountName.includes("dollar") || 
-                                         accountName.includes("달러");
-                            return (
-                              <button
-                                key={acc.id}
-                                type="button"
-                                onClick={() => {
-                          setForm((prev) => ({ ...prev, toAccountId: acc.id || "" }));
-                        }}
-                                style={{
-                                  padding: "10px 8px",
-                                  fontSize: 13,
-                                  fontWeight: form.toAccountId === acc.id ? 600 : 400,
-                                  border: form.toAccountId === acc.id ? "2px solid var(--primary)" : "1px solid var(--border)",
-                                  borderRadius: "8px",
-                                  background: form.toAccountId === acc.id ? "var(--primary-light)" : "var(--surface)",
-                                  color: form.toAccountId === acc.id ? "var(--primary)" : "var(--text)",
-                                  cursor: "pointer",
-                                  transition: "all 0.2s",
-                                  textAlign: "left"
-                                }}
-                              >
-                                ⭐ {acc.id} {isUSD ? "(USD)" : ""}
-                              </button>
-                            );
-                          })}
-                        {recentAccounts
-                          .map((id) => targetAccounts.find((a) => a.id === id))
-                          .filter((acc): acc is Account => acc !== undefined && !favoriteAccounts.has(acc.id))
-                          .map((acc) => {
-                            const accountName = (acc.name + acc.id).toLowerCase();
-                            const isUSD = acc.currency === "USD" || 
-                                         accountName.includes("usd") || 
-                                         accountName.includes("dollar") || 
-                                         accountName.includes("달러");
-                            return (
-                              <button
-                                key={acc.id}
-                                type="button"
-                                onClick={() => {
-                          setForm((prev) => ({ ...prev, toAccountId: acc.id || "" }));
-                        }}
-                                style={{
-                                  padding: "10px 8px",
-                                  fontSize: 13,
-                                  fontWeight: form.toAccountId === acc.id ? 600 : 400,
-                                  border: form.toAccountId === acc.id ? "2px solid var(--primary)" : "1px solid var(--border)",
-                                  borderRadius: "8px",
-                                  background: form.toAccountId === acc.id ? "var(--primary-light)" : "var(--surface)",
-                                  color: form.toAccountId === acc.id ? "var(--primary)" : "var(--text)",
-                                  cursor: "pointer",
-                                  transition: "all 0.2s",
-                                  textAlign: "left"
-                                }}
-                              >
-                                {acc.id} {isUSD ? "(USD)" : ""}
-                              </button>
-                            );
-                          })}
-                        {targetAccounts
-                          .filter((a) => !recentAccounts.includes(a.id) && !favoriteAccounts.has(a.id))
-                          .map((a) => {
-                            const accountName = (a.name + a.id).toLowerCase();
-                            const isUSD = a.currency === "USD" || 
-                                         accountName.includes("usd") || 
-                                         accountName.includes("dollar") || 
-                                         accountName.includes("달러");
-                            return (
-                              <button
-                                key={a.id}
-                                type="button"
-                                onClick={() => {
-                          setForm((prev) => ({ ...prev, toAccountId: a.id || "" }));
-                        }}
-                                style={{
-                                  padding: "10px 8px",
-                                  fontSize: 13,
-                                  fontWeight: form.toAccountId === a.id ? 600 : 400,
-                                  border: form.toAccountId === a.id ? "2px solid var(--primary)" : "1px solid var(--border)",
-                                  borderRadius: "8px",
-                                  background: form.toAccountId === a.id ? "var(--primary-light)" : "var(--surface)",
-                                  color: form.toAccountId === a.id ? "var(--primary)" : "var(--text)",
-                                  cursor: "pointer",
-                                  transition: "all 0.2s",
-                                  textAlign: "left"
-                                }}
-                              >
-                                {a.id} {isUSD ? "(USD)" : ""}
-                              </button>
-                            );
-                          })}
-                      </>
-                    );
-                  })()}
-                </div>
-              </div>
-            )}
-
-            {/* 제출 버튼 */}
-            <div style={{ display: "flex", gap: 8, marginTop: 8 }}>
-              <button 
-                type="submit" 
-                className="primary" 
-                style={{ 
-                  padding: "14px 24px", 
-                  fontSize: 16, 
-                  fontWeight: 600,
-                  flex: 1,
-                  borderRadius: "8px"
-                }}
-                disabled={!isFormValid}
-                title={!isFormValid ? "필수 항목을 입력해주세요" : ""}
-              >
-                추가
-              </button>
-            </div>
-          </div>
-        </form>
 
       <table className="data-table">
         <colgroup>
@@ -2388,6 +2328,7 @@ export const LedgerView: React.FC<Props> = ({
             return (
             <tr
               key={l.id}
+              data-ledger-id={l.id}
               draggable={viewMode === "all" && !isBatchEditMode}
               onDragStart={() => {
                 if (viewMode !== "all" || isBatchEditMode) return;
@@ -2470,18 +2411,44 @@ export const LedgerView: React.FC<Props> = ({
                 title={l.category ? l.category + " (더블클릭하여 수정)" : "더블클릭하여 수정"}
               >
                 {editingField?.id === l.id && editingField.field === "category" ? (
-                  <input
-                    type="text"
+                  <select
+                    className="ledger-cell-select"
                     value={editingValue}
-                    onChange={(e) => setEditingValue(e.target.value)}
-                    onBlur={saveEditField}
+                    onChange={(e) => {
+                      const v = e.target.value;
+                      let updated: LedgerEntry = { ...l, category: v };
+                      if (l.kind === "expense") {
+                        const g = (categoryPresets?.expenseDetails ?? []).find((x) => x.main === v);
+                        const subs = g?.subs ?? [];
+                        const currentSub = (l.subCategory ?? "").trim();
+                        if (currentSub && !subs.includes(currentSub)) {
+                          updated = { ...updated, subCategory: undefined };
+                        }
+                      }
+                      onChangeLedger(ledger.map((x) => (x.id === l.id ? updated : x)));
+                      setEditingField(null);
+                      setEditingValue("");
+                    }}
                     onKeyDown={(e) => {
-                      if (e.key === "Enter") saveEditField();
                       if (e.key === "Escape") cancelEditField();
                     }}
                     autoFocus
-                    style={{ width: "100%", padding: "4px", fontSize: 14 }}
-                  />
+                    style={{ width: "100%" }}
+                  >
+                    {l.kind === "income"
+                      ? [<option key="수입" value="수입">수입</option>]
+                      : l.kind === "transfer"
+                        ? [<option key="이체" value="이체">이체</option>]
+                        : (() => {
+                            const expenseCats = categoryPresets?.expense ?? [];
+                            const current = l.category?.trim();
+                            const hasCurrent = current && !expenseCats.includes(current);
+                            const options = hasCurrent ? [current, ...expenseCats] : expenseCats;
+                            return options.map((c) => (
+                              <option key={c} value={c}>{c}</option>
+                            ));
+                          })()}
+                  </select>
                 ) : (
                   l.category
                 )}
@@ -2495,18 +2462,64 @@ export const LedgerView: React.FC<Props> = ({
                 title={l.subCategory ? l.subCategory + " (더블클릭하여 수정)" : "더블클릭하여 수정"}
               >
                 {editingField?.id === l.id && editingField.field === "subCategory" ? (
-                  <input
-                    type="text"
+                  <select
+                    className="ledger-cell-select"
                     value={editingValue}
-                    onChange={(e) => setEditingValue(e.target.value)}
-                    onBlur={saveEditField}
+                    onChange={(e) => {
+                      const v = e.target.value;
+                      const updated = { ...l, subCategory: v || undefined };
+                      onChangeLedger(ledger.map((x) => (x.id === l.id ? updated : x)));
+                      setEditingField(null);
+                      setEditingValue("");
+                    }}
                     onKeyDown={(e) => {
-                      if (e.key === "Enter") saveEditField();
                       if (e.key === "Escape") cancelEditField();
                     }}
                     autoFocus
-                    style={{ width: "100%", padding: "4px", fontSize: 14 }}
-                  />
+                    style={{ width: "100%" }}
+                  >
+                    <option value="">-</option>
+                    {l.kind === "income" || l.category === "수입"
+                      ? (() => {
+                          const incomeCats = categoryPresets?.income ?? [];
+                          const current = (l.subCategory || l.category)?.trim();
+                          const hasCurrent = current && !incomeCats.includes(current);
+                          const options = hasCurrent ? [current, ...incomeCats] : incomeCats;
+                          return options.map((c) => (
+                            <option key={c} value={c}>{c}</option>
+                          ));
+                        })()
+                      : (l.kind === "transfer" && l.category === "이체")
+                        ? (() => {
+                            const transferCats = categoryPresets?.transfer ?? [];
+                            const current = l.subCategory?.trim();
+                            const hasCurrent = current && !transferCats.includes(current);
+                            const options = hasCurrent ? [current, ...transferCats] : transferCats;
+                            return options.map((c) => (
+                              <option key={c} value={c}>{c}</option>
+                            ));
+                          })()
+                        : (() => {
+                            const g = (categoryPresets?.expenseDetails ?? []).find((x) => x.main === l.category);
+                            const subs = g?.subs ?? [];
+                            if (!l.category?.trim() || !g) {
+                              const current = l.subCategory?.trim();
+                              const hint = l.category?.trim() ? "(해당 대분류 없음)" : "대분류를 먼저 선택하세요";
+                              return (
+                                <>
+                                  {current ? <option value={current}>{current}</option> : null}
+                                  <option value="">{hint}</option>
+                                </>
+                              );
+                            }
+                            const current = l.subCategory?.trim();
+                            const hasCurrent = current && !subs.includes(current);
+                            const options = hasCurrent ? [current, ...subs] : subs;
+                            return options.map((c) => (
+                              <option key={c} value={c}>{c}</option>
+                            ));
+                          })()}
+                  </select>
                 ) : (
                   l.subCategory ?? "-"
                 )}
@@ -2546,6 +2559,7 @@ export const LedgerView: React.FC<Props> = ({
               >
                 {editingField?.id === l.id && editingField.field === "fromAccountId" ? (
                   <select
+                    className="ledger-cell-select"
                     value={editingValue}
                     onChange={(e) => {
                       setEditingValue(e.target.value);
@@ -2558,7 +2572,7 @@ export const LedgerView: React.FC<Props> = ({
                       }
                     }}
                     autoFocus
-                    style={{ width: "100%", padding: "4px", fontSize: 14 }}
+                    style={{ width: "100%" }}
                   >
                     <option value="">-</option>
                     {accounts.map((acc) => (
@@ -2581,6 +2595,7 @@ export const LedgerView: React.FC<Props> = ({
               >
                 {editingField?.id === l.id && editingField.field === "toAccountId" ? (
                   <select
+                    className="ledger-cell-select"
                     value={editingValue}
                     onChange={(e) => {
                       setEditingValue(e.target.value);
@@ -2593,7 +2608,7 @@ export const LedgerView: React.FC<Props> = ({
                       }
                     }}
                     autoFocus
-                    style={{ width: "100%", padding: "4px", fontSize: 14 }}
+                    style={{ width: "100%" }}
                   >
                     <option value="">-</option>
                     {accounts.map((acc) => (
@@ -2618,10 +2633,11 @@ export const LedgerView: React.FC<Props> = ({
                 {editingField?.id === l.id && editingField.field === "amount" ? (
                   <input
                     type="text"
+                    inputMode={l.currency === "USD" ? "decimal" : "numeric"}
                     value={editingValue}
                     onChange={(e) => {
-                      const formatted = e.target.value.replace(/[^\d]/g, "");
-                      setEditingValue(formatted);
+                      const re = l.currency === "USD" ? /[^\d.]/g : /[^\d]/g;
+                      setEditingValue(e.target.value.replace(re, ""));
                     }}
                     onBlur={saveEditField}
                     onKeyDown={(e) => {
@@ -2632,7 +2648,9 @@ export const LedgerView: React.FC<Props> = ({
                     style={{ width: "100%", padding: "4px", fontSize: 14 }}
                   />
                 ) : (
-                  Math.round(l.amount).toLocaleString()
+                  l.currency === "USD"
+                    ? formatUSD(l.amount)
+                    : Math.round(l.amount).toLocaleString()
                 )}
               </td>
               <td>
@@ -2666,7 +2684,7 @@ export const LedgerView: React.FC<Props> = ({
         <p>
           {viewMode === "all"
             ? "아직 거래가 없습니다. 위 폼에서 첫 거래를 입력해 보세요."
-            : `${selectedMonth}에 거래 내역이 없습니다.`}
+            : "이 달에는 내역이 없습니다."}
         </p>
       )}
       {filteredLedger.length > 0 && totalPages > 1 && (
@@ -2714,121 +2732,6 @@ export const LedgerView: React.FC<Props> = ({
         </div>
       )}
 
-      {/* 템플릿 관리 모달 */}
-      {showTemplateModal && (
-        <div className="modal-backdrop" onClick={() => setShowTemplateModal(false)}>
-          <div className="modal" onClick={(e) => e.stopPropagation()}>
-            <div className="modal-header">
-              <h3 style={{ margin: 0 }}>템플릿 관리</h3>
-              <button type="button" className="secondary" onClick={() => setShowTemplateModal(false)}>
-                닫기
-              </button>
-            </div>
-            <div className="modal-body">
-              <div style={{ marginBottom: 16 }}>
-                <button
-                  type="button"
-                  className="primary"
-                  onClick={() => {
-                    setEditingTemplate(null);
-                    setShowTemplateModal(true);
-                  }}
-                >
-                  새 템플릿 추가
-                </button>
-              </div>
-              <div style={{ maxHeight: 400, overflowY: "auto" }}>
-                {templates.length === 0 ? (
-                  <p className="hint">저장된 템플릿이 없습니다.</p>
-                ) : (
-                  <table className="data-table">
-                    <thead>
-                      <tr>
-                        <th>이름</th>
-                        <th>구분</th>
-                        <th>카테고리</th>
-                        <th>계좌</th>
-                        <th>금액</th>
-                        <th>마지막 사용</th>
-                        <th>작업</th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {templates.map((template) => (
-                        <tr key={template.id}>
-                          <td>{template.name}</td>
-                          <td>{KIND_LABEL[template.kind]}</td>
-                          <td>
-                            {template.description || template.subCategory || template.mainCategory || ""}
-                          </td>
-                          <td>
-                            {template.fromAccountId || ""}
-                            {template.toAccountId ? ` → ${template.toAccountId}` : ""}
-                          </td>
-                          <td className="number">
-                            {template.amount ? Math.round(template.amount).toLocaleString() : "-"}
-                          </td>
-                          <td>{template.lastUsed ? new Date(template.lastUsed).toLocaleDateString() : "-"}</td>
-                          <td>
-                            <button
-                              type="button"
-                              className="secondary"
-                              onClick={() => {
-                                applyTemplate(template);
-                                setShowTemplateModal(false);
-                              }}
-                              style={{ marginRight: 4, fontSize: 11, padding: "4px 8px" }}
-                            >
-                              적용
-                            </button>
-                            <button
-                              type="button"
-                              className="danger"
-                              onClick={() => deleteTemplate(template.id)}
-                              style={{ fontSize: 11, padding: "4px 8px" }}
-                            >
-                              삭제
-                            </button>
-                          </td>
-                        </tr>
-                      ))}
-                    </tbody>
-                  </table>
-                )}
-              </div>
-            </div>
-          </div>
-        </div>
-      )}
-
-      {/* 고급 검색 모달 */}
-      {showAdvancedSearch && (
-        <AdvancedSearch
-          accounts={accounts}
-          ledger={ledger}
-          categories={categoryPresets.expense.concat(categoryPresets.income).concat(categoryPresets.transfer)}
-          tags={Array.from(new Set(ledger.flatMap(l => l.tags || [])))}
-          query={advancedSearchQuery}
-          onChange={setAdvancedSearchQuery}
-          onSave={(name, query) => {
-            const newFilter = { id: `FILTER-${Date.now()}`, name, query };
-            setSavedFilters([...savedFilters, newFilter]);
-            if (typeof window !== "undefined") {
-              localStorage.setItem("fw-ledger-saved-filters", JSON.stringify([...savedFilters, newFilter]));
-            }
-          }}
-          savedFilters={savedFilters}
-          onLoadFilter={(query) => setAdvancedSearchQuery(query)}
-          onDeleteFilter={(id) => {
-            const updated = savedFilters.filter(f => f.id !== id);
-            setSavedFilters(updated);
-            if (typeof window !== "undefined") {
-              localStorage.setItem("fw-ledger-saved-filters", JSON.stringify(updated));
-            }
-          }}
-          onClose={() => setShowAdvancedSearch(false)}
-        />
-      )}
     </div>
   );
 };

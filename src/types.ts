@@ -29,6 +29,7 @@ export interface LedgerEntry {
   fromAccountId?: string;
   toAccountId?: string;
   amount: number;
+  currency?: "KRW" | "USD"; // 기본 KRW. 이체 시 달러 선택 가능
   note?: string;
   tags?: string[]; // 태그 시스템
 }
@@ -95,6 +96,11 @@ export interface CategoryPresets {
   expense: string[];
   expenseDetails?: ExpenseDetailGroup[];
   transfer: string[];
+  categoryTypes?: {
+    fixed?: string[];      // 고정지출 카테고리 목록
+    savings?: string[];    // 저축성지출 카테고리 목록
+    transfer?: string[];   // 이체 카테고리 목록
+  };
 }
 
 export interface TickerInfo {
@@ -103,6 +109,24 @@ export interface TickerInfo {
   market: "KR" | "US";
   exchange?: string; // 'KOSPI' | 'KOSDAQ' | 'NYSE' | 'NASDAQ' 등
   lastUpdated?: string; // 마지막 업데이트 날짜
+}
+
+/** 목표 포트폴리오 한 종목 (비중 %) */
+export interface TargetPortfolioItem {
+  ticker: string;
+  targetPercent: number;
+  /** 그래프에 표시할 별칭 (선택) */
+  alias?: string;
+}
+
+/** 목표 포트폴리오: 계좌별 또는 전체 */
+export interface TargetPortfolio {
+  id: string;
+  name: string;
+  /** null = 전체 기준, 값 있으면 해당 계좌만 */
+  accountId: string | null;
+  items: TargetPortfolioItem[];
+  updatedAt?: string;
 }
 
 export interface StockPreset {
@@ -156,5 +180,6 @@ export interface AppData {
   tickerDatabase?: TickerInfo[]; // 티커 목록 데이터베이스
   ledgerTemplates?: LedgerTemplate[];
   stockPresets?: StockPreset[];
+  targetPortfolios?: TargetPortfolio[];
   loans?: Loan[]; // 대출 목록
 }

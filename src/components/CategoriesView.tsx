@@ -1,4 +1,5 @@
-import React, { useMemo, useState } from "react";
+import React, { useMemo, useState, useEffect } from "react";
+import { toast } from "react-hot-toast";
 import type { CategoryPresets, ExpenseDetailGroup, LedgerEntry } from "../types";
 
 interface Props {
@@ -22,6 +23,29 @@ export const CategoriesView: React.FC<Props> = ({ presets, onChangePresets, ledg
   }, [presets.expense, presets.expenseDetails]);
 
   const [expenseGroups, setExpenseGroups] = useState<ExpenseDetailGroup[]>(initialExpenseGroups);
+
+  // 카테고리 타입 상태 관리
+  const [categoryTypes, setCategoryTypes] = useState<{
+    fixed: string[];
+    savings: string[];
+    transfer: string[];
+  }>(() => {
+    const defaults = {
+      fixed: presets.categoryTypes?.fixed ?? ["주거비", "통신비", "구독비"],
+      savings: presets.categoryTypes?.savings ?? ["저축성지출"],
+      transfer: presets.categoryTypes?.transfer ?? presets.transfer
+    };
+    return defaults;
+  });
+
+  // presets이 변경되면 categoryTypes도 업데이트
+  useEffect(() => {
+    setCategoryTypes({
+      fixed: presets.categoryTypes?.fixed ?? ["주거비", "통신비", "구독비"],
+      savings: presets.categoryTypes?.savings ?? ["저축성지출"],
+      transfer: presets.categoryTypes?.transfer ?? presets.transfer
+    });
+  }, [presets]);
 
   const maxRows = useMemo(
     () =>
@@ -51,8 +75,14 @@ export const CategoriesView: React.FC<Props> = ({ presets, onChangePresets, ledg
       income: normalize(incomeRows),
       expense: cleanedGroups.map((g) => g.main),
       expenseDetails: cleanedGroups,
-      transfer: normalize(transferRows)
+      transfer: normalize(transferRows),
+      categoryTypes: {
+        fixed: categoryTypes.fixed,
+        savings: categoryTypes.savings,
+        transfer: categoryTypes.transfer
+      }
     });
+    toast.success("카테고리 설정이 저장되었습니다.");
   };
 
   const addColumn = () => {
@@ -119,16 +149,26 @@ export const CategoriesView: React.FC<Props> = ({ presets, onChangePresets, ledg
       }
       const [item] = next.splice(from, 1);
       next.splice(to, 0, item);
-      // 뒤쪽 완전 공백 행은 정리
       while (next.length && !next[next.length - 1]) {
         next.pop();
       }
       return next;
     };
 
-    // 수입/이체 행 위치만 변경, 지출 세부항목 행 순서는 유지
+    // 수입·이체·지출 세부항목 행 전체 이동
     setIncomeRows((prev) => moveArray(prev));
     setTransferRows((prev) => moveArray(prev));
+    setExpenseGroups((prev) =>
+      prev.map((g) => {
+        const subs = [...g.subs];
+        const maxPos = Math.max(from, to);
+        while (subs.length <= maxPos) subs.push("");
+        const [item] = subs.splice(from, 1);
+        subs.splice(to, 0, item);
+        const trimmed = subs.filter((s, i) => s || subs.some((x, j) => j > i && x));
+        return { ...g, subs: trimmed.length ? trimmed : [] };
+      })
+    );
   };
 
   const moveGroup = (from: number, to: number) => {
@@ -139,10 +179,48 @@ export const CategoriesView: React.FC<Props> = ({ presets, onChangePresets, ledg
     setExpenseGroups(next);
   };
 
+  const moveSubInGroup = (groupIndex: number, fromIdx: number, toIdx: number) => {
+    if (fromIdx === toIdx || toIdx < 0 || groupIndex < 0 || groupIndex >= expenseGroups.length) return;
+    const group = expenseGroups[groupIndex];
+    const subs = [...group.subs];
+    if (fromIdx >= subs.length) return;
+    const [item] = subs.splice(fromIdx, 1);
+    const insertAt = toIdx > fromIdx ? Math.min(toIdx - 1, subs.length) : Math.min(toIdx, subs.length);
+    subs.splice(insertAt, 0, item);
+    const trimmed = subs.filter((s, i) => s || subs.some((x, j) => j > i && x));
+    const next = expenseGroups.map((g, i) =>
+      i === groupIndex ? { ...g, subs: trimmed.length ? trimmed : [] } : g
+    );
+    setExpenseGroups(next);
+  };
+
+  const moveItemInArray = (arr: string[], fromIdx: number, toIdx: number): string[] => {
+    if (fromIdx === toIdx || toIdx < 0) return arr;
+    const next = [...arr];
+    const maxPos = Math.max(fromIdx, toIdx);
+    while (next.length <= maxPos) next.push("");
+    const [item] = next.splice(fromIdx, 1);
+    const insertAt = toIdx > fromIdx ? Math.min(toIdx - 1, next.length) : Math.min(toIdx, next.length);
+    next.splice(insertAt, 0, item);
+    return next.filter((s, i) => s || next.some((x, j) => j > i && x));
+  };
+
+  const moveIncomeRow = (fromIdx: number, toIdx: number) => {
+    setIncomeRows((prev) => moveItemInArray(prev, fromIdx, toIdx));
+  };
+
+  const moveTransferRow = (fromIdx: number, toIdx: number) => {
+    setTransferRows((prev) => moveItemInArray(prev, fromIdx, toIdx));
+  };
+
   const [dragRow, setDragRow] = useState<number | null>(null);
   const [dragCol, setDragCol] = useState<number | null>(null);
+  const [dragSub, setDragSub] = useState<{ groupIdx: number; rowIdx: number } | null>(null);
+  const [dragIncome, setDragIncome] = useState<number | null>(null);
+  const [dragTransfer, setDragTransfer] = useState<number | null>(null);
 
   const removeGroup = (index: number) => {
+    if (!confirm("정말 지우시겠습니까?")) return;
     if (expenseGroups.length <= 1) {
       // 최소 1개는 유지
       const next = expenseGroups.map((g, i) =>
@@ -153,6 +231,28 @@ export const CategoriesView: React.FC<Props> = ({ presets, onChangePresets, ledg
     }
     const next = expenseGroups.slice();
     next.splice(index, 1);
+    setExpenseGroups(next);
+  };
+
+  const removeIncomeRow = (rowIdx: number) => {
+    if (!confirm("정말 지우시겠습니까?")) return;
+    setIncomeRows((prev) => prev.filter((_, i) => i !== rowIdx));
+  };
+
+  const removeTransferRow = (rowIdx: number) => {
+    if (!confirm("정말 지우시겠습니까?")) return;
+    setTransferRows((prev) => prev.filter((_, i) => i !== rowIdx));
+  };
+
+  const removeSubInGroup = (groupIdx: number, rowIdx: number) => {
+    if (!confirm("정말 지우시겠습니까?")) return;
+    const group = expenseGroups[groupIdx];
+    if (!group || rowIdx >= group.subs.length) return;
+    const next = expenseGroups.map((g, i) =>
+      i === groupIdx
+        ? { ...g, subs: g.subs.filter((_, idx) => idx !== rowIdx) }
+        : g
+    );
     setExpenseGroups(next);
   };
 
@@ -308,24 +408,64 @@ export const CategoriesView: React.FC<Props> = ({ presets, onChangePresets, ledg
                     }}
                     onDragEnd={() => setDragCol(null)}
                   >
-                    <div style={{ display: "flex", alignItems: "center", gap: 4 }}>
-                      <span className="col-drag-handle" title="잡아서 좌우로 옮길 수 있습니다.">
-                        ☰
-                      </span>
-                      <input
-                        type="text"
-                        value={g.main}
-                        onChange={(e) => updateMain(idx, e.target.value)}
-                        style={{ flex: 1, minWidth: 100 }}
-                      />
-                      <button
-                        type="button"
-                        className="icon-button"
-                        onClick={() => removeGroup(idx)}
-                        title="이 대분류 삭제"
-                      >
-                        ×
-                      </button>
+                    <div style={{ display: "flex", flexDirection: "column", gap: 4 }}>
+                      <div style={{ display: "flex", alignItems: "center", gap: 4 }}>
+                        <span className="col-drag-handle" title="잡아서 좌우로 옮길 수 있습니다.">
+                          ☰
+                        </span>
+                        <input
+                          type="text"
+                          value={g.main}
+                          onChange={(e) => updateMain(idx, e.target.value)}
+                          style={{ flex: 1, minWidth: 100 }}
+                        />
+                        <button
+                          type="button"
+                          className="icon-button"
+                          onClick={() => removeGroup(idx)}
+                          title="이 대분류 삭제"
+                        >
+                          ×
+                        </button>
+                      </div>
+                      {g.main && (
+                        <select
+                          value={
+                            categoryTypes.savings.includes(g.main) ? "savings" :
+                            categoryTypes.fixed.includes(g.main) ? "fixed" :
+                            "variable"
+                          }
+                          onChange={(e) => {
+                            const newType = e.target.value;
+                            const newCategoryTypes = { ...categoryTypes };
+                            
+                            // 기존 타입에서 제거
+                            newCategoryTypes.savings = newCategoryTypes.savings.filter(c => c !== g.main);
+                            newCategoryTypes.fixed = newCategoryTypes.fixed.filter(c => c !== g.main);
+                            
+                            // 새 타입에 추가
+                            if (newType === "savings") {
+                              newCategoryTypes.savings.push(g.main);
+                            } else if (newType === "fixed") {
+                              newCategoryTypes.fixed.push(g.main);
+                            }
+                            
+                            setCategoryTypes(newCategoryTypes);
+                          }}
+                          style={{ 
+                            fontSize: 11, 
+                            padding: "2px 4px",
+                            border: "1px solid var(--border)",
+                            borderRadius: 4,
+                            backgroundColor: "var(--surface)"
+                          }}
+                          onClick={(e) => e.stopPropagation()}
+                        >
+                          <option value="variable">변동지출</option>
+                          <option value="fixed">고정지출</option>
+                          <option value="savings">저축성지출</option>
+                        </select>
+                      )}
                     </div>
                   </th>
                 ))}
@@ -333,48 +473,156 @@ export const CategoriesView: React.FC<Props> = ({ presets, onChangePresets, ledg
             </thead>
             <tbody>
               {Array.from({ length: maxRows }).map((_, rowIdx) => (
-                <tr
-                  key={rowIdx}
-                  draggable
-                  onDragStart={() => setDragRow(rowIdx)}
-                  onDragOver={(e) => {
-                    if (dragRow === null) return;
-                    e.preventDefault();
-                  }}
-                  onDrop={(e) => {
-                    if (dragRow === null) return;
-                    e.preventDefault();
-                    moveRow(dragRow, rowIdx);
-                    setDragRow(null);
-                  }}
-                  onDragEnd={() => setDragRow(null)}
-                >
-                  <td className="row-handle-cell">
+                <tr key={rowIdx}>
+                  <td
+                    className="row-handle-cell"
+                    draggable
+                    onDragStart={() => setDragRow(rowIdx)}
+                    onDragOver={(e) => {
+                      if (dragRow === null) return;
+                      e.preventDefault();
+                    }}
+                    onDrop={(e) => {
+                      if (dragRow === null) return;
+                      e.preventDefault();
+                      moveRow(dragRow, rowIdx);
+                      setDragRow(null);
+                    }}
+                    onDragEnd={() => setDragRow(null)}
+                    title="드래그: 수입·이체·지출 행 전체 순서 변경"
+                    style={{ cursor: "grab" }}
+                  >
                     <div className="row-handle-inner">
                       <span className="row-index">{rowIdx + 1}</span>
+                      <span style={{ marginLeft: 4, opacity: 0.6 }}>☰</span>
                     </div>
                   </td>
-                  <td className="income-cell">
-                    <input
-                      type="text"
-                      value={incomeItems[rowIdx] ?? ""}
-                      onChange={(e) => updateIncomeRow(rowIdx, e.target.value)}
-                    />
-                  </td>
-                  <td className="transfer-cell">
-                    <input
-                      type="text"
-                      value={transferItems[rowIdx] ?? ""}
-                      onChange={(e) => updateTransferRow(rowIdx, e.target.value)}
-                    />
-                  </td>
-                  {expenseGroups.map((g, colIdx) => (
-                    <td key={`${colIdx}-${rowIdx}`}>
+                  <td
+                    className="income-cell"
+                    draggable
+                    onDragStart={(e) => {
+                      e.stopPropagation();
+                      setDragIncome(rowIdx);
+                    }}
+                    onDragOver={(e) => {
+                      if (dragIncome === null) return;
+                      e.preventDefault();
+                    }}
+                    onDrop={(e) => {
+                      if (dragIncome === null) return;
+                      e.preventDefault();
+                      moveIncomeRow(dragIncome, rowIdx);
+                      setDragIncome(null);
+                    }}
+                    onDragEnd={() => setDragIncome(null)}
+                    title="드래그: 수입 항목 순서 변경"
+                    style={{ cursor: "grab" }}
+                  >
+                    <div style={{ display: "flex", alignItems: "center", gap: 4 }}>
+                      <span style={{ flexShrink: 0, opacity: 0.6, cursor: "grab" }}>☰</span>
                       <input
                         type="text"
-                        value={g.subs[rowIdx] ?? ""}
-                        onChange={(e) => updateSub(colIdx, rowIdx, e.target.value)}
+                        value={incomeItems[rowIdx] ?? ""}
+                        onChange={(e) => updateIncomeRow(rowIdx, e.target.value)}
+                        style={{ flex: 1, minWidth: 0 }}
+                        onClick={(e) => e.stopPropagation()}
                       />
+                      {(incomeItems[rowIdx] ?? "").trim() && (
+                        <button
+                          type="button"
+                          className="icon-button icon-button-small"
+                          onClick={(e) => { e.stopPropagation(); removeIncomeRow(rowIdx); }}
+                          title="이 수입 항목 삭제"
+                        >
+                          ×
+                        </button>
+                      )}
+                    </div>
+                  </td>
+                  <td
+                    className="transfer-cell"
+                    draggable
+                    onDragStart={(e) => {
+                      e.stopPropagation();
+                      setDragTransfer(rowIdx);
+                    }}
+                    onDragOver={(e) => {
+                      if (dragTransfer === null) return;
+                      e.preventDefault();
+                    }}
+                    onDrop={(e) => {
+                      if (dragTransfer === null) return;
+                      e.preventDefault();
+                      moveTransferRow(dragTransfer, rowIdx);
+                      setDragTransfer(null);
+                    }}
+                    onDragEnd={() => setDragTransfer(null)}
+                    title="드래그: 이체 항목 순서 변경"
+                    style={{ cursor: "grab" }}
+                  >
+                    <div style={{ display: "flex", alignItems: "center", gap: 4 }}>
+                      <span style={{ flexShrink: 0, opacity: 0.6, cursor: "grab" }}>☰</span>
+                      <input
+                        type="text"
+                        value={transferItems[rowIdx] ?? ""}
+                        onChange={(e) => updateTransferRow(rowIdx, e.target.value)}
+                        style={{ flex: 1, minWidth: 0 }}
+                        onClick={(e) => e.stopPropagation()}
+                      />
+                      {(transferItems[rowIdx] ?? "").trim() && (
+                        <button
+                          type="button"
+                          className="icon-button icon-button-small"
+                          onClick={(e) => { e.stopPropagation(); removeTransferRow(rowIdx); }}
+                          title="이 이체 항목 삭제"
+                        >
+                          ×
+                        </button>
+                      )}
+                    </div>
+                  </td>
+                  {expenseGroups.map((g, colIdx) => (
+                    <td
+                      key={`${colIdx}-${rowIdx}`}
+                      draggable
+                      onDragStart={(e) => {
+                        e.stopPropagation();
+                        setDragSub({ groupIdx: colIdx, rowIdx });
+                      }}
+                      onDragOver={(e) => {
+                        if (dragSub === null || dragSub.groupIdx !== colIdx) return;
+                        e.preventDefault();
+                      }}
+                      onDrop={(e) => {
+                        if (dragSub === null || dragSub.groupIdx !== colIdx) return;
+                        e.preventDefault();
+                        moveSubInGroup(colIdx, dragSub.rowIdx, rowIdx);
+                        setDragSub(null);
+                      }}
+                      onDragEnd={() => setDragSub(null)}
+                      title="드래그: 이 열(대분류) 내 세부항목 순서만 변경"
+                      style={{ cursor: "grab" }}
+                    >
+                      <div style={{ display: "flex", alignItems: "center", gap: 4 }}>
+                        <span style={{ flexShrink: 0, opacity: 0.6, cursor: "grab" }}>☰</span>
+                        <input
+                          type="text"
+                          value={g.subs[rowIdx] ?? ""}
+                          onChange={(e) => updateSub(colIdx, rowIdx, e.target.value)}
+                          style={{ flex: 1, minWidth: 0 }}
+                          onClick={(e) => e.stopPropagation()}
+                        />
+                        {(g.subs[rowIdx] ?? "").trim() && (
+                          <button
+                            type="button"
+                            className="icon-button icon-button-small"
+                            onClick={(e) => { e.stopPropagation(); removeSubInGroup(colIdx, rowIdx); }}
+                            title="이 세부 항목 삭제"
+                          >
+                            ×
+                          </button>
+                        )}
+                      </div>
                     </td>
                   ))}
                 </tr>

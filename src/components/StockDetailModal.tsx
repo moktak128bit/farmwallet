@@ -2,6 +2,8 @@ import React, { useMemo, useState, useEffect } from "react";
 import type { Account, LedgerEntry, StockPrice, StockTrade, TickerInfo } from "../types";
 import { Autocomplete } from "./Autocomplete";
 import { formatKRW, formatNumber } from "../utils/format";
+import { isKRWStock, isUSDStock, extractTickerFromText } from "../utils/tickerUtils";
+import { toast } from "react-hot-toast";
 
 interface PositionWithPrice {
   accountId: string;
@@ -43,12 +45,19 @@ export const StockDetailModal: React.FC<Props> = ({
   const [fxRate, setFxRate] = useState<number | null>(propFxRate);
   
   // 배당 입력 폼
-  const [dividendForm, setDividendForm] = useState({
+  const [dividendForm, setDividendForm] = useState(() => ({
     date: new Date().toISOString().slice(0, 10),
-    accountId: "",
+    accountId: position?.accountId ?? "",
     amount: "",
     tax: "",
     fee: ""
+  }));
+  const [editingDividendId, setEditingDividendId] = useState<string | null>(null);
+  const [editingDividendValues, setEditingDividendValues] = useState({
+    date: "",
+    accountId: "",
+    amount: "",
+    description: ""
   });
 
   // 환율 업데이트 (props에서 전달받은 경우)
@@ -57,6 +66,24 @@ export const StockDetailModal: React.FC<Props> = ({
       setFxRate(propFxRate);
     }
   }, [propFxRate]);
+
+  useEffect(() => {
+    if (!position?.accountId) return;
+    setDividendForm((prev) => ({
+      ...prev,
+      accountId: position.accountId
+    }));
+  }, [position?.accountId]);
+
+  useEffect(() => {
+    setEditingDividendId(null);
+    setEditingDividendValues({
+      date: "",
+      accountId: "",
+      amount: "",
+      description: ""
+    });
+  }, [position?.ticker]);
 
   if (!position) return null;
 
@@ -77,13 +104,9 @@ export const StockDetailModal: React.FC<Props> = ({
       return "KRW";
     }
     
-    const ticker = position.ticker.toUpperCase();
-    if (/^[0-9]{6}$/.test(ticker)) {
-      return "KRW";
-    }
-    if (/^[A-Z]{1,6}$/.test(ticker)) {
-      return "USD";
-    }
+    const ticker = position.ticker;
+    if (isKRWStock(ticker)) return "KRW";
+    if (isUSDStock(ticker)) return "USD";
     
     return undefined;
   }, [prices, tickerDatabase, position.ticker]);
@@ -99,12 +122,10 @@ export const StockDetailModal: React.FC<Props> = ({
   const positionDividends = useMemo(() => {
     const isDividend = (l: LedgerEntry) => {
       if (l.kind !== "income") return false;
-      if (l.category !== "배당" && !(l.description ?? "").includes("배당")) return false;
+      const isDividendEntry = l.category === "배당" || (l.category === "수입" && l.subCategory === "배당") || (l.description ?? "").includes("배당");
+      if (!isDividendEntry) return false;
       
-      // 티커 매칭: description이나 category에서 티커 찾기
-      const tickerMatch = (l.description ?? "").match(/([0-9]{6}|[0-9A-Z]{1,10})/i) ||
-        (l.category ?? "").match(/([0-9]{6}|[0-9A-Z]{1,10})/i);
-      const ledgerTicker = tickerMatch ? tickerMatch[1].toUpperCase() : "";
+      const ledgerTicker = (extractTickerFromText(l.description ?? "") ?? extractTickerFromText(l.category ?? ""))?.toUpperCase() ?? "";
       
       return ledgerTicker === position.ticker.toUpperCase();
     };
@@ -177,7 +198,8 @@ export const StockDetailModal: React.FC<Props> = ({
       id: `D${Date.now()}`,
       date: dividendForm.date,
       kind: "income",
-      category: "배당",
+      category: "수입",
+      subCategory: "배당",
       description: description,
       toAccountId: dividendForm.accountId,
       amount: netAmount
@@ -202,6 +224,57 @@ export const StockDetailModal: React.FC<Props> = ({
       const newLedger = ledger.filter((l) => l.id !== dividendId);
       onChangeLedger(newLedger);
     }
+  };
+
+  const handleStartEditDividend = (dividend: LedgerEntry) => {
+    setEditingDividendId(dividend.id);
+    setEditingDividendValues({
+      date: dividend.date || new Date().toISOString().slice(0, 10),
+      accountId: dividend.toAccountId || "",
+      amount: dividend.amount != null ? String(dividend.amount) : "",
+      description: dividend.description || ""
+    });
+  };
+
+  const handleCancelEditDividend = () => {
+    setEditingDividendId(null);
+    setEditingDividendValues({
+      date: "",
+      accountId: "",
+      amount: "",
+      description: ""
+    });
+  };
+
+  const handleSaveDividendEdit = () => {
+    if (!editingDividendId) return;
+    const target = ledger.find((l) => l.id === editingDividendId);
+    if (!target) {
+      handleCancelEditDividend();
+      return;
+    }
+
+    const amountNumber = Number(editingDividendValues.amount.replace(/,/g, "").trim());
+    if (!editingDividendValues.date || !amountNumber || amountNumber <= 0) {
+      toast.error("날짜와 금액을 올바르게 입력해주세요.");
+      return;
+    }
+
+    const updatedLedger = ledger.map((l) =>
+      l.id === editingDividendId
+        ? {
+            ...l,
+            date: editingDividendValues.date,
+            toAccountId: editingDividendValues.accountId || undefined,
+            amount: amountNumber,
+            description: editingDividendValues.description
+          }
+        : l
+    );
+
+    onChangeLedger(updatedLedger);
+    toast.success("배당 기록을 수정했습니다.");
+    handleCancelEditDividend();
   };
 
   return (
@@ -462,46 +535,143 @@ export const StockDetailModal: React.FC<Props> = ({
                       <th>금액</th>
                       <th>계좌</th>
                       <th>설명</th>
-                      <th></th>
+                      <th>작업</th>
                     </tr>
                   </thead>
                   <tbody>
-                    {positionDividends.map((dividend) => (
-                      <tr key={dividend.id}>
-                        <td>{dividend.date}</td>
-                        <td className="number positive" style={{ fontWeight: 600 }}>
-                          {formatKRW(Math.round(dividend.amount))}
-                        </td>
-                        <td>{dividend.toAccountId || "-"}</td>
-                        <td style={{ fontSize: 13, color: "var(--text-muted)" }}>
-                          {dividend.description || "-"}
-                        </td>
-                        <td style={{ textAlign: "center" }}>
-                          <button
-                            type="button"
-                            onClick={() => handleDeleteDividend(dividend.id)}
-                            style={{
-                              background: "none",
-                              border: "none",
-                              color: "#ef4444",
-                              cursor: "pointer",
-                              fontSize: 18,
-                              padding: "4px 8px",
-                              borderRadius: 4
-                            }}
-                            onMouseEnter={(e) => {
-                              e.currentTarget.style.backgroundColor = "#fee2e2";
-                            }}
-                            onMouseLeave={(e) => {
-                              e.currentTarget.style.backgroundColor = "transparent";
-                            }}
-                            title="삭제"
-                          >
-                            ×
-                          </button>
-                        </td>
-                      </tr>
-                    ))}
+                    {positionDividends.map((dividend) => {
+                      const isEditing = dividend.id === editingDividendId;
+                      return (
+                        <tr key={dividend.id}>
+                          <td>
+                            {isEditing ? (
+                              <input
+                                type="date"
+                                value={editingDividendValues.date}
+                                onChange={(e) =>
+                                  setEditingDividendValues((prev) => ({ ...prev, date: e.target.value }))
+                                }
+                                style={{ padding: "4px 8px", fontSize: 13, width: "100%" }}
+                              />
+                            ) : (
+                              dividend.date || "-"
+                            )}
+                          </td>
+                          <td className="number positive" style={{ fontWeight: 600 }}>
+                            {isEditing ? (
+                              <input
+                                type="number"
+                                min={0}
+                                step={0.01}
+                                value={editingDividendValues.amount}
+                                onChange={(e) =>
+                                  setEditingDividendValues((prev) => ({ ...prev, amount: e.target.value }))
+                                }
+                                style={{ padding: "4px 8px", fontSize: 13, width: "100%" }}
+                              />
+                            ) : (
+                              formatKRW(Math.round(dividend.amount))
+                            )}
+                          </td>
+                          <td>
+                            {isEditing ? (
+                              <select
+                                value={editingDividendValues.accountId}
+                                onChange={(e) =>
+                                  setEditingDividendValues((prev) => ({ ...prev, accountId: e.target.value }))
+                                }
+                                style={{ padding: "4px 8px", fontSize: 13, width: "100%" }}
+                              >
+                                <option value="">선택</option>
+                                {accounts.map((acc) => (
+                                  <option key={acc.id} value={acc.id}>
+                                    {acc.id}
+                                  </option>
+                                ))}
+                              </select>
+                            ) : (
+                              dividend.toAccountId || "-"
+                            )}
+                          </td>
+                          <td style={{ fontSize: 13, color: "var(--text-muted)" }}>
+                            {isEditing ? (
+                              <textarea
+                                value={editingDividendValues.description}
+                                onChange={(e) =>
+                                  setEditingDividendValues((prev) => ({ ...prev, description: e.target.value }))
+                                }
+                                rows={2}
+                                style={{
+                                  width: "100%",
+                                  padding: "4px 8px",
+                                  fontSize: 13,
+                                  borderRadius: 4,
+                                  border: "1px solid var(--border)",
+                                  resize: "vertical"
+                                }}
+                              />
+                            ) : (
+                              dividend.description || "-"
+                            )}
+                          </td>
+                          <td style={{ textAlign: "center", whiteSpace: "nowrap" }}>
+                            {isEditing ? (
+                              <div style={{ display: "flex", gap: 6, justifyContent: "center" }}>
+                                <button
+                                  type="button"
+                                  className="primary"
+                                  onClick={handleSaveDividendEdit}
+                                  style={{ padding: "4px 8px", fontSize: 12 }}
+                                >
+                                  저장
+                                </button>
+                                <button
+                                  type="button"
+                                  className="secondary"
+                                  onClick={handleCancelEditDividend}
+                                  style={{ padding: "4px 8px", fontSize: 12 }}
+                                >
+                                  취소
+                                </button>
+                              </div>
+                            ) : (
+                              <div style={{ display: "flex", gap: 4, justifyContent: "center" }}>
+                                <button
+                                  type="button"
+                                  className="secondary"
+                                  onClick={() => handleStartEditDividend(dividend)}
+                                  style={{ padding: "4px 8px", fontSize: 12 }}
+                                >
+                                  수정
+                                </button>
+                                <button
+                                  type="button"
+                                  onClick={() => handleDeleteDividend(dividend.id)}
+                                  style={{
+                                    background: "none",
+                                    border: "none",
+                                    color: "#ef4444",
+                                    cursor: "pointer",
+                                    fontSize: 16,
+                                    padding: "4px 8px",
+                                    borderRadius: 4
+                                  }}
+                                  onMouseEnter={(e) => {
+                                    e.currentTarget.style.backgroundColor = "#fee2e2";
+                                  }}
+                                  onMouseLeave={(e) => {
+                                    e.currentTarget.style.backgroundColor = "transparent";
+                                  }}
+                                  title="삭제"
+                                >
+                                  ×
+                                </button>
+                              </div>
+                            )}
+                          </td>
+                        </tr>
+                      );
+                    })}
                   </tbody>
                 </table>
               )}

@@ -35,7 +35,7 @@ export function checkBudgetExceeded(
       })
       .reduce((sum, l) => sum + l.amount, 0);
 
-    const percentage = budget.amount > 0 ? (monthExpenses / budget.amount) * 100 : 0;
+    const percentage = budget.monthlyLimit > 0 ? (monthExpenses / budget.monthlyLimit) * 100 : 0;
 
     if (percentage >= 100) {
       alerts.push({
@@ -43,7 +43,7 @@ export function checkBudgetExceeded(
         message: `${budget.category || "전체"} 예산을 초과했습니다`,
         category: budget.category,
         current: monthExpenses,
-        limit: budget.amount,
+        limit: budget.monthlyLimit,
         percentage
       });
     } else if (percentage >= 80) {
@@ -52,7 +52,7 @@ export function checkBudgetExceeded(
         message: `${budget.category || "전체"} 예산의 ${percentage.toFixed(1)}%를 사용했습니다`,
         category: budget.category,
         current: monthExpenses,
-        limit: budget.amount,
+        limit: budget.monthlyLimit,
         percentage
       });
     }
@@ -84,7 +84,7 @@ export function checkBudgetThreshold(
       })
       .reduce((sum, l) => sum + l.amount, 0);
 
-    const percentage = budget.amount > 0 ? (monthExpenses / budget.amount) * 100 : 0;
+    const percentage = budget.monthlyLimit > 0 ? (monthExpenses / budget.monthlyLimit) * 100 : 0;
 
     if (percentage >= threshold) {
       alerts.push({
@@ -92,7 +92,7 @@ export function checkBudgetThreshold(
         message: `${budget.category || "전체"} 예산의 ${percentage.toFixed(1)}% 사용`,
         category: budget.category,
         current: monthExpenses,
-        limit: budget.amount,
+        limit: budget.monthlyLimit,
         percentage
       });
     }
@@ -123,8 +123,3 @@ export function calculateExpectedRecurringExpenses(
       return sum + r.amount;
     }, 0);
 }
-
-
-
-
-

@@ -3,6 +3,8 @@ import type { Account, AccountType, LedgerEntry } from "../types";
 import type { AccountBalanceRow, PositionRow } from "../calculations";
 import { formatNumber, formatShortDate, formatKRW, formatUSD } from "../utils/format";
 import { fetchYahooQuotes } from "../yahooFinanceApi";
+import { EmptyState } from "./EmptyState";
+import { Wallet } from "lucide-react";
 
 interface Props {
   accounts: Account[];
@@ -51,6 +53,7 @@ export const AccountsView: React.FC<Props> = ({
   const [adjustValue, setAdjustValue] = useState("");
   const [adjustValueUSD, setAdjustValueUSD] = useState("");
   const [isAdjustingUSD, setIsAdjustingUSD] = useState(false);
+  const [isSetDirectly, setIsSetDirectly] = useState(false); // true: 목표 잔액으로 설정, false: 추가
   const [editUsdBalance, setEditUsdBalance] = useState("");
   const [editKrwBalance, setEditKrwBalance] = useState("");
   const [selectedAccount, setSelectedAccount] = useState<Account | null>(null);
@@ -86,24 +89,55 @@ export const AccountsView: React.FC<Props> = ({
   const handleAdjustBalance = () => {
     if (!adjustingAccount) return;
     
-    // 증권계좌인 경우 달러/원화 보유량 직접 수정
+    // 증권계좌: 다른 계좌처럼 추가/감소 또는 목표로 설정
     if (adjustingAccount.type === "securities") {
-      const usdValue = Number(editUsdBalance.replace(/[^\d.-]/g, "")) || 0;
-      const krwValue = Number(editKrwBalance.replace(/[^\d.-]/g, "")) || 0;
+      const balanceRow = safeBalances.find((b) => b.account.id === adjustingAccount.id);
+      const account = safeAccounts.find((a) => a.id === adjustingAccount.id);
+      if (!account || !balanceRow) return;
+      
+      const inputUsd = Number(editUsdBalance.replace(/[^\d.-]/g, "")) || 0;
+      const inputKrw = Number(editKrwBalance.replace(/[^\d.-]/g, "")) || 0;
+      
+      let targetUsd: number;
+      let targetKrw: number;
+      const dispUsd = (account.usdBalance ?? 0) + (balanceRow.usdTransferNet ?? 0);
+      const currentKrw = balanceRow.currentBalance ?? 0;
+      
+      if (isSetDirectly) {
+        targetUsd = inputUsd;
+        targetKrw = inputKrw;
+      } else {
+        // 추가/감소 모드
+        if (inputUsd === 0 && inputKrw === 0) {
+          alert("달러 또는 원화 중 하나 이상 0이 아닌 값을 입력해주세요.");
+          return;
+        }
+        targetUsd = dispUsd + inputUsd;
+        targetKrw = currentKrw + inputKrw;
+      }
+      
+      const usdTransferNet = balanceRow.usdTransferNet ?? 0;
+      const newUsdBalance = targetUsd - usdTransferNet;
+      const currentCashAdj = account.cashAdjustment ?? 0;
+      const baseWithoutAdj = balanceRow.currentBalance - currentCashAdj;
+      const newCashAdjustment = targetKrw - baseWithoutAdj;
       
       onChangeAccounts(
         safeAccounts.map((a) => {
           if (a.id !== adjustingAccount.id) return a;
-          return { ...a, usdBalance: usdValue, krwBalance: krwValue };
+          return { ...a, usdBalance: newUsdBalance, cashAdjustment: newCashAdjustment };
         })
       );
       setAdjustingAccount(null);
       setEditUsdBalance("");
       setEditKrwBalance("");
+      setIsSetDirectly(false);
       return;
     }
     
-    // 달러 입력인 경우 환율 적용
+    const balanceRow = safeBalances.find((b) => b.account.id === adjustingAccount.id);
+    const currentBalance = balanceRow?.currentBalance ?? 0;
+
     let value = 0;
     if (isAdjustingUSD && adjustValueUSD) {
       const usdValue = Number(adjustValueUSD.replace(/,/g, "")) || 0;
@@ -118,7 +152,7 @@ export const AccountsView: React.FC<Props> = ({
       value = usdValue * fxRate;
     } else if (adjustValue) {
       value = Number(adjustValue.replace(/,/g, "")) || 0;
-      if (value === 0) {
+      if (value === 0 && !isSetDirectly) {
         alert("0이 아닌 값을 입력해주세요.");
         return;
       }
@@ -131,10 +165,17 @@ export const AccountsView: React.FC<Props> = ({
       if (a.id !== adjustingAccount.id) return a;
 
       if (adjustingAccount.type === "card") {
-        // 카드 계좌: 부채에 더하기
+        if (isSetDirectly) {
+          return { ...a, debt: value };
+        }
         return { ...a, debt: (a.debt ?? 0) + value };
       } else {
-        // 입출금, 저축, 기타: 초기 잔액에 더하기
+        // 입출금, 저축, 기타
+        if (isSetDirectly) {
+          // 목표 잔액으로 설정: initialBalance = 목표 - (currentBalance - initialBalance)
+          const delta = value - currentBalance;
+          return { ...a, initialBalance: (a.initialBalance ?? 0) + delta };
+        }
         return { ...a, initialBalance: (a.initialBalance ?? 0) + value };
       }
     });
@@ -144,6 +185,7 @@ export const AccountsView: React.FC<Props> = ({
     setAdjustValue("");
     setAdjustValueUSD("");
     setIsAdjustingUSD(false);
+    setIsSetDirectly(false);
   };
 
   const startEditNumber = (
@@ -279,13 +321,13 @@ export const AccountsView: React.FC<Props> = ({
           .filter((l) => l.kind === "expense" && l.fromAccountId === row.account.id)
           .reduce((sum, l) => sum + l.amount, 0);
         
-        // 카드대금 결제 합계 (transfer, 신용카드 > 카드대금)
+        // 카드대금 결제 합계 (transfer, 이체>카드결제이체)
         // 카드 계좌로 들어온 결제 (실제 계좌에서 카드 계좌로 이체된 금액)
         const totalPayment = ledger
-          .filter((l) => 
-            l.kind === "transfer" && 
-            l.category === "신용카드" && 
-            l.subCategory === "카드대금" &&
+          .filter((l) =>
+            l.kind === "transfer" &&
+            l.category === "이체" &&
+            l.subCategory === "카드결제이체" &&
             l.toAccountId === row.account.id
           )
           .reduce((sum, l) => sum + l.amount, 0);
@@ -306,12 +348,14 @@ export const AccountsView: React.FC<Props> = ({
           .reduce((sum, l) => sum + l.amount, 0);
         
         const monthlyPayment = ledger
-          .filter((l) => {
-            if (l.kind !== "transfer" || l.category !== "신용카드" || l.subCategory !== "카드대금") return false;
-            if (l.toAccountId !== row.account.id) return false;
-            if (!l.date) return false;
-            return l.date.slice(0, 7) === currentMonth;
-          })
+          .filter((l) =>
+            l.kind === "transfer" &&
+            l.category === "이체" &&
+            l.subCategory === "카드결제이체" &&
+            l.toAccountId === row.account.id &&
+            l.date &&
+            l.date.slice(0, 7) === currentMonth
+          )
           .reduce((sum, l) => sum + l.amount, 0);
         
         const monthlyDebt = monthlyUsage - monthlyPayment;
@@ -347,9 +391,9 @@ export const AccountsView: React.FC<Props> = ({
     // 증권계좌
     const securitiesAccounts = safeBalances.filter((row) => row.account.type === "securities");
     
-    // 달러 보유량 합계와 원화 보유량 합계
+    // 달러 보유량 합계 (usdBalance + usdTransferNet)
     const totalUsdBalance = securitiesAccounts.reduce((sum, row) => {
-      return sum + (row.account.usdBalance ?? 0);
+      return sum + (row.account.usdBalance ?? 0) + (row.usdTransferNet ?? 0);
     }, 0);
     // 원화 보유량: ledger를 기반으로 계산된 currentBalance 사용
     const totalKrwBalance = securitiesAccounts.reduce((sum, row) => {
@@ -391,6 +435,28 @@ export const AccountsView: React.FC<Props> = ({
       totalAssetUSD
     };
   }, [safeBalances, stockMap, fxRate]);
+
+  // 타입별 요약: 입출금→현금, 저축→저축, 카드→부채, 증권→주식
+  const typeSummary = useMemo(() => {
+    const checking = safeBalances
+      .filter((r) => r.account.type === "checking")
+      .reduce((s, r) => s + r.currentBalance, 0);
+    const savings = safeBalances
+      .filter((r) => r.account.type === "savings")
+      .reduce((s, r) => s + r.currentBalance, 0);
+    const debt = Array.from(cardDebtMap.values()).reduce((s, v) => s + v.total, 0);
+    const securities = safeBalances
+      .filter((r) => r.account.type === "securities")
+      .reduce((s, row) => {
+        const stock = stockMap.get(row.account.id) ?? 0;
+        const krw = row.currentBalance;
+        const usd = (row.account.usdBalance ?? 0) + (row.usdTransferNet ?? 0);
+        const usdKrw = fxRate ? usd * fxRate : 0;
+        return s + stock + krw + usdKrw;
+      }, 0);
+    const total = checking + savings + securities - debt;
+    return { checking, savings, debt, securities, total };
+  }, [safeBalances, stockMap, cardDebtMap, fxRate]);
 
   const renderAccountRow = (row: typeof safeBalances[0], index: number, accountType: AccountType) => (
     <tr
@@ -490,8 +556,8 @@ export const AccountsView: React.FC<Props> = ({
         (() => {
           const stockAsset = stockMap.get(row.account.id) ?? 0;
           
-          // 달러 보유량 (주식 거래로만 변경됨)
-          const usdBalance = row.account.usdBalance ?? 0;
+          // 달러 보유량 = 주식거래 기준값 + 이체(USD) 순액
+          const usdBalance = (row.account.usdBalance ?? 0) + (row.usdTransferNet ?? 0);
           // 원화 보유량: ledger를 기반으로 계산된 currentBalance 사용 (배당 등이 반영됨)
           // 증권계좌의 경우 currentBalance는 initialCashBalance + income - expense + transfer + tradeCashImpact
           const krwBalance = row.currentBalance;
@@ -509,7 +575,7 @@ export const AccountsView: React.FC<Props> = ({
             <>
               {/* 달러 보유량 */}
               <td
-                onDoubleClick={() => startEditCell(row.account.id, "usdBalance", usdBalance)}
+                onDoubleClick={() => startEditCell(row.account.id, "usdBalance", row.account.usdBalance ?? 0)}
                 style={{ cursor: "pointer", padding: "8px", textAlign: "right" }}
                 title="더블클릭하여 달러 보유량 수정"
                 className="number"
@@ -667,10 +733,11 @@ export const AccountsView: React.FC<Props> = ({
             onClick={() => {
               setAdjustingAccount({ id: row.account.id, type: accountType });
               setAdjustValue("");
-              // 증권계좌인 경우 현재 달러/원화 보유량으로 초기화
+              setIsSetDirectly(false);
+              // 증권계좌: 다른 계좌처럼 추가/감소 모드로 초기화 (빈 입력)
               if (accountType === "securities") {
-                setEditUsdBalance(String(row.account.usdBalance ?? 0));
-                setEditKrwBalance(String(row.account.krwBalance ?? 0));
+                setEditUsdBalance("");
+                setEditKrwBalance("");
               }
             }}
             style={{ fontSize: "13px", padding: "6px 12px" }}
@@ -703,63 +770,64 @@ export const AccountsView: React.FC<Props> = ({
         </button>
       </div>
 
-      {showForm && <AccountForm onAdd={handleAddAccount} existingIds={safeAccounts.map((a) => a.id)} />}
-
-      {/* 전체 총합 요약 - 한 줄로 표시 */}
+      {/* 타입별 요약: 입출금→현금, 저축→저축, 카드→부채, 증권→주식 (맨 위에 표시) */}
       {safeBalances.length > 0 && (
-        <div style={{ 
-          marginBottom: "24px", 
-          padding: "12px 16px", 
-          background: "var(--surface)", 
-          borderRadius: "8px", 
+        <div style={{
+          marginBottom: "24px",
+          padding: "16px 20px",
+          background: "var(--surface)",
+          borderRadius: "8px",
           border: "2px solid var(--primary)",
           boxShadow: "0 2px 8px rgba(0,0,0,0.1)"
         }}>
-          <div style={{ 
-            display: "flex", 
-            alignItems: "center", 
-            gap: "24px", 
-            flexWrap: "wrap"
+          <div style={{
+            display: "grid",
+            gridTemplateColumns: "repeat(auto-fit, minmax(140px, 1fr))",
+            gap: "16px 24px",
+            alignItems: "center"
           }}>
-            <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
-              <span style={{ fontSize: "14px", color: "var(--text-muted)", fontWeight: "600" }}>달러:</span>
-              <span style={{ fontSize: "16px", fontWeight: "700", color: "var(--primary)" }}>
-                {formatUSD(totalSummary.totalUsdBalance)}
+            <div style={{ display: "flex", flexDirection: "column", gap: 4 }}>
+              <span style={{ fontSize: 12, color: "var(--text-muted)", fontWeight: 600 }}>현금</span>
+              <span style={{ fontSize: 18, fontWeight: 700, color: "var(--primary)" }}>
+                {formatKRW(typeSummary.checking)}
               </span>
             </div>
-            <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
-              <span style={{ fontSize: "14px", color: "var(--text-muted)", fontWeight: "600" }}>원화:</span>
-              <span style={{ fontSize: "16px", fontWeight: "700", color: "var(--primary)" }}>
-                {formatKRW(totalSummary.totalKrwBalance)}
+            <div style={{ display: "flex", flexDirection: "column", gap: 4 }}>
+              <span style={{ fontSize: 12, color: "var(--text-muted)", fontWeight: 600 }}>저축</span>
+              <span style={{ fontSize: 18, fontWeight: 700, color: "var(--primary)" }}>
+                {formatKRW(typeSummary.savings)}
               </span>
             </div>
-            <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
-              <span style={{ fontSize: "14px", color: "var(--text-muted)", fontWeight: "600" }}>주식:</span>
-              <span style={{ fontSize: "16px", fontWeight: "700", color: "var(--primary)" }}>
-                {formatKRW(totalSummary.totalStock)}
+            <div style={{ display: "flex", flexDirection: "column", gap: 4 }}>
+              <span style={{ fontSize: 12, color: "var(--text-muted)", fontWeight: 600 }}>부채</span>
+              <span style={{ fontSize: 18, fontWeight: 700, color: typeSummary.debt > 0 ? "var(--danger)" : "var(--text-muted)" }}>
+                {formatKRW(typeSummary.debt)}
               </span>
             </div>
-            <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
-              <span style={{ fontSize: "14px", color: "var(--text-muted)", fontWeight: "600" }}>현금:</span>
-              <span style={{ fontSize: "16px", fontWeight: "700", color: "var(--primary)" }}>
-                {formatKRW(totalSummary.totalCash)}
+            <div style={{ display: "flex", flexDirection: "column", gap: 4 }}>
+              <span style={{ fontSize: 12, color: "var(--text-muted)", fontWeight: 600 }}>주식</span>
+              <span style={{ fontSize: 18, fontWeight: 700, color: "var(--primary)" }}>
+                {formatKRW(typeSummary.securities)}
               </span>
             </div>
-            <div style={{ 
-              display: "flex", 
-              alignItems: "center", 
-              gap: "8px",
-              paddingLeft: "16px",
-              borderLeft: "2px solid var(--border)"
+            <div style={{
+              display: "flex",
+              flexDirection: "column",
+              gap: 4,
+              paddingLeft: "24px",
+              borderLeft: "2px solid var(--border)",
+              gridColumn: "span 1"
             }}>
-              <span style={{ fontSize: "16px", color: "var(--primary)", fontWeight: "700" }}>총액:</span>
-              <span style={{ fontSize: "20px", fontWeight: "700", color: "var(--primary)" }}>
-                {formatKRW(totalSummary.totalAsset)}
+              <span style={{ fontSize: 12, color: "var(--text-muted)", fontWeight: 600 }}>순자산</span>
+              <span style={{ fontSize: 20, fontWeight: 700, color: typeSummary.total >= 0 ? "var(--primary)" : "var(--danger)" }}>
+                {formatKRW(typeSummary.total)}
               </span>
             </div>
           </div>
         </div>
       )}
+
+      {showForm && <AccountForm onAdd={handleAddAccount} existingIds={safeAccounts.map((a) => a.id)} />}
 
       {(["checking", "savings", "card", "securities", "other"] as AccountType[]).map((type) => {
         const accountsOfType = accountsByType.get(type) ?? [];
@@ -905,7 +973,14 @@ export const AccountsView: React.FC<Props> = ({
         );
       })}
 
-      {accounts.length === 0 && <p>아직 계좌가 없습니다. 새 계좌를 추가해 보세요.</p>}
+      {accounts.length === 0 && (
+        <EmptyState
+          icon={<Wallet size={48} />}
+          title="아직 계좌가 없습니다"
+          message="새 계좌를 추가해 보세요."
+          action={{ label: "계좌 추가", onClick: () => setShowForm(true) }}
+        />
+      )}
 
       {/* 금액 조정 모달 */}
       {adjustingAccount && (() => {
@@ -946,6 +1021,7 @@ export const AccountsView: React.FC<Props> = ({
                     setAdjustValue("");
                     setAdjustValueUSD("");
                     setIsAdjustingUSD(false);
+                    setIsSetDirectly(false);
                     setEditUsdBalance("");
                     setEditKrwBalance("");
                   }}
@@ -966,11 +1042,31 @@ export const AccountsView: React.FC<Props> = ({
                                accountName.includes("달러");
                   const formatAmount = (value: number) => isUSD ? formatUSD(value) : formatKRW(value);
                   
+                  if (adjustingAccount.type === "securities" && balanceRow) {
+                    const dispUsd = (account.usdBalance ?? 0) + (balanceRow.usdTransferNet ?? 0);
+                    return (
+                      <div style={{ marginBottom: "20px", padding: "12px", background: "var(--bg)", borderRadius: "8px", border: "1px solid var(--border)" }}>
+                        <div style={{ fontSize: "13px", color: "var(--text-muted)", marginBottom: "8px" }}>현재 보유금액</div>
+                        <div style={{ display: "flex", gap: "16px", flexWrap: "wrap" }}>
+                          <div>
+                            <span style={{ fontSize: "12px", color: "var(--text-muted)" }}>달러: </span>
+                            <span style={{ fontSize: "20px", fontWeight: "700", color: dispUsd >= 0 ? "var(--primary)" : "var(--danger)" }}>
+                              {formatUSD(dispUsd)}
+                            </span>
+                          </div>
+                          <div>
+                            <span style={{ fontSize: "12px", color: "var(--text-muted)" }}>원화: </span>
+                            <span style={{ fontSize: "20px", fontWeight: "700", color: currentBalance >= 0 ? "var(--primary)" : "var(--danger)" }}>
+                              {formatKRW(currentBalance)}
+                            </span>
+                          </div>
+                        </div>
+                      </div>
+                    );
+                  }
                   return (
                     <div style={{ marginBottom: "20px", padding: "12px", background: "var(--bg)", borderRadius: "8px", border: "1px solid var(--border)" }}>
-                      <div style={{ fontSize: "13px", color: "var(--text-muted)", marginBottom: "8px" }}>
-                        현재 계좌 잔액
-                      </div>
+                      <div style={{ fontSize: "13px", color: "var(--text-muted)", marginBottom: "8px" }}>현재 계좌 잔액</div>
                       <div style={{ fontSize: "24px", fontWeight: "700", color: currentBalance >= 0 ? "var(--primary)" : "var(--danger)" }}>
                         {formatAmount(currentBalance)}
                       </div>
@@ -978,12 +1074,22 @@ export const AccountsView: React.FC<Props> = ({
                   );
                 })()}
                 
-                {/* 증권계좌인 경우 달러/원화 보유량 직접 수정 */}
+                {/* 증권계좌인 경우 달러/원화 추가/감소 또는 목표 설정 */}
                 {adjustingAccount.type === "securities" ? (
                   <>
+                    <label style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 8 }}>
+                      <input
+                        type="checkbox"
+                        checked={isSetDirectly}
+                        onChange={(e) => setIsSetDirectly(e.target.checked)}
+                      />
+                      <span style={{ fontSize: 13 }}>
+                        목표 잔액으로 직접 설정 (체크 시 입력값이 현재 잔액이 됨)
+                      </span>
+                    </label>
                     <label style={{ marginBottom: "16px" }}>
                       <span style={{ fontSize: "14px", fontWeight: "600", marginBottom: "8px", display: "block" }}>
-                        달러 보유량 (USD)
+                        {isSetDirectly ? "달러 보유량 (USD)" : "달러 추가/감소 (USD, 음수 입력 시 차감)"}
                       </span>
                       <input
                         type="text"
@@ -992,7 +1098,7 @@ export const AccountsView: React.FC<Props> = ({
                           const val = e.target.value.replace(/[^\d.-]/g, "");
                           setEditUsdBalance(val);
                         }}
-                        placeholder="달러 보유량을 입력하세요 (예: 1000.50)"
+                        placeholder={isSetDirectly ? "달러 보유량 (예: 1000.50)" : "추가할 달러 (예: 100 또는 -50)"}
                         autoFocus
                         style={{ width: "100%", padding: "10px", fontSize: "16px" }}
                         onKeyDown={(e) => {
@@ -1014,7 +1120,7 @@ export const AccountsView: React.FC<Props> = ({
                     
                     <label style={{ marginBottom: "16px" }}>
                       <span style={{ fontSize: "14px", fontWeight: "600", marginBottom: "8px", display: "block" }}>
-                        원화 보유량 (KRW)
+                        {isSetDirectly ? "원화 보유량 (KRW)" : "원화 추가/감소 (KRW, 음수 입력 시 차감)"}
                       </span>
                       <input
                         type="text"
@@ -1023,7 +1129,7 @@ export const AccountsView: React.FC<Props> = ({
                           const val = e.target.value.replace(/[^\d.-]/g, "");
                           setEditKrwBalance(val);
                         }}
-                        placeholder="원화 보유량을 입력하세요 (예: 1000000)"
+                        placeholder={isSetDirectly ? "원화 보유량 (예: 1000000)" : "추가할 원화 (예: 100000 또는 -50000)"}
                         style={{ width: "100%", padding: "10px", fontSize: "16px" }}
                         onKeyDown={(e) => {
                           if (e.key === "Enter") {
@@ -1055,12 +1161,24 @@ export const AccountsView: React.FC<Props> = ({
                       </div>
                     </div>
 
-                    {/* 새 금액 입력 */}
+                    {/* 추가/직접 설정 모드 */}
+                    <label style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 8 }}>
+                      <input
+                        type="checkbox"
+                        checked={isSetDirectly}
+                        onChange={(e) => setIsSetDirectly(e.target.checked)}
+                      />
+                      <span style={{ fontSize: 13 }}>
+                        목표 잔액으로 직접 설정 (체크 시 입력값이 현재 잔액이 됨)
+                      </span>
+                    </label>
                     <label>
                       <span>
-                        {adjustingAccount.type === "card"
-                          ? "추가할 부채 금액 (음수 입력 시 차감)"
-                          : "추가할 보유금액 (음수 입력 시 차감)"}
+                        {isSetDirectly
+                          ? (adjustingAccount.type === "card" ? "목표 부채 금액" : "목표 잔액")
+                          : (adjustingAccount.type === "card"
+                              ? "추가할 부채 금액 (음수 입력 시 차감)"
+                              : "추가할 보유금액 (음수 입력 시 차감)")}
                       </span>
                       
                       <input
@@ -1106,7 +1224,7 @@ export const AccountsView: React.FC<Props> = ({
                       handleAdjustBalance();
                     }}
                   >
-                    {adjustingAccount.type === "securities" ? "저장" : "추가"}
+                    {adjustingAccount.type === "securities" ? (isSetDirectly ? "저장" : "추가") : "추가"}
                   </button>
                 </div>
               </div>

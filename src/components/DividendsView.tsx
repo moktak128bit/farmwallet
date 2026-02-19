@@ -2,7 +2,10 @@ import React, { useMemo, useState, useEffect } from "react";
 import { Autocomplete } from "./Autocomplete";
 import type { Account, LedgerEntry, StockPrice, StockTrade, TickerInfo } from "../types";
 import { computePositions } from "../calculations";
-import { formatNumber, formatKRW } from "../utils/format";
+import { formatNumber, formatKRW, formatShortDate } from "../utils/format";
+import { isKRWStock, isUSDStock, canonicalTickerForMatch, extractTickerFromText } from "../utils/tickerUtils";
+import krNames from "../data/krNames.json";
+import { toast } from "react-hot-toast";
 
 interface Props {
   accounts: Account[];
@@ -16,9 +19,11 @@ interface Props {
 
 interface DividendRow {
   month: string;
+  date: string;
   source: string;
   amount: number;
   ticker?: string;
+  name?: string; // 종목명 (별도 필드로 명확히)
   yieldRate?: number;
   accountId?: string;
   accountName?: string;
@@ -31,6 +36,13 @@ export const DividendsView: React.FC<Props> = ({ accounts, ledger, trades, price
   const [activeTab, setActiveTab] = useState<TabType>("dividend");
   const [showUSD, setShowUSD] = useState(false);
   const [fxRate, setFxRate] = useState<number | null>(propFxRate);
+  const [editingEntryId, setEditingEntryId] = useState<string | null>(null);
+  const [editingTicker, setEditingTicker] = useState<string>("");
+  const [editingName, setEditingName] = useState<string>("");
+  const [editingQuantity, setEditingQuantity] = useState<string>("");
+  const [editingAmount, setEditingAmount] = useState<string>("");
+  const [editingDate, setEditingDate] = useState<string>("");
+  const [editingAccountId, setEditingAccountId] = useState<string>("");
   
   // 배당 입력 폼
   const [dividendForm, setDividendForm] = useState({
@@ -68,9 +80,12 @@ export const DividendsView: React.FC<Props> = ({ accounts, ledger, trades, price
     return computePositions(trades, adjustedPrices, accounts);
   }, [trades, adjustedPrices, accounts]);
 
-  // 티커 자동완성 옵션 (보유 종목만)
+  // 티커 자동완성 옵션 (보유 종목만) + "티커 없음" 옵션
   const tickerOptions = useMemo(() => {
-    const options: Array<{ value: string; label: string; subLabel?: string }> = [];
+    const options: Array<{ value: string; label: string; subLabel?: string }> = [
+      { value: "", label: "티커 없음 (이자로 등록)", subLabel: "비우거나 '이자' 입력 시 이자로 저장" },
+      { value: "이자", label: "이자 (은행이자)", subLabel: "이자로 저장됩니다" }
+    ];
     
     // 보유 종목만 추가
     positions.forEach((pos) => {
@@ -83,13 +98,19 @@ export const DividendsView: React.FC<Props> = ({ accounts, ledger, trades, price
       }
     });
     
-    return options.sort((a, b) => a.value.localeCompare(b.value));
+    return options.sort((a, b) => {
+      if (a.value === "") return -1;
+      if (b.value === "") return 1;
+      if (a.value === "이자") return -1;
+      if (b.value === "이자") return 1;
+      return a.value.localeCompare(b.value);
+    });
   }, [positions]);
 
   // 선택한 티커의 보유 정보 (주식 탭과 동일: 원화 기준)
   const selectedPosition = useMemo(() => {
     if (!dividendForm.ticker) return null;
-    return positions.find((p) => p.ticker === dividendForm.ticker && p.quantity > 0);
+    return positions.find((p) => canonicalTickerForMatch(p.ticker) === canonicalTickerForMatch(dividendForm.ticker) && p.quantity > 0);
   }, [positions, dividendForm.ticker]);
 
   // 선택한 티커의 통화 정보 (StocksView와 동일한 방식)
@@ -97,13 +118,13 @@ export const DividendsView: React.FC<Props> = ({ accounts, ledger, trades, price
     if (!dividendForm.ticker) return undefined;
     
     // 1. 원본 prices에서 통화 정보 가져오기 (StocksView와 동일)
-    const originalPriceInfo = prices.find((p) => p.ticker === dividendForm.ticker);
+    const originalPriceInfo = prices.find((p) => canonicalTickerForMatch(p.ticker) === canonicalTickerForMatch(dividendForm.ticker));
     if (originalPriceInfo?.currency) {
       return originalPriceInfo.currency;
     }
     
     // 2. prices에 없으면 tickerDatabase에서 market 정보로 판단
-    const tickerInfo = tickerDatabase.find((t) => t.ticker === dividendForm.ticker);
+    const tickerInfo = tickerDatabase.find((t) => canonicalTickerForMatch(t.ticker) === canonicalTickerForMatch(dividendForm.ticker));
     if (tickerInfo?.market === "US") {
       return "USD";
     }
@@ -111,16 +132,10 @@ export const DividendsView: React.FC<Props> = ({ accounts, ledger, trades, price
       return "KRW";
     }
     
-    // 3. tickerDatabase에도 없으면 티커 패턴으로 판단
-    // 한국 주식: 6자리 숫자 (예: 005930)
-    // 미국 주식: 영문자 (예: AAPL, SCHD)
-    const ticker = dividendForm.ticker.toUpperCase();
-    if (/^[0-9]{6}$/.test(ticker)) {
-      return "KRW";
-    }
-    if (/^[A-Z]{1,6}$/.test(ticker)) {
-      return "USD";
-    }
+    // 3. tickerDatabase에도 없으면 티커 유틸로 판단 (4자 이하=USD, 6자 이상=KRW)
+    const ticker = dividendForm.ticker;
+    if (isKRWStock(ticker)) return "KRW";
+    if (isUSDStock(ticker)) return "USD";
     
     return undefined;
   }, [prices, tickerDatabase, dividendForm.ticker]);
@@ -187,26 +202,35 @@ export const DividendsView: React.FC<Props> = ({ accounts, ledger, trades, price
   // 이전 배당 입력 내역 (빠른 재입력용)
   const recentDividends = useMemo(() => {
     const isDividend = (l: LedgerEntry) =>
-      l.kind === "income" && (l.category === "배당" || (l.description ?? "").includes("배당"));
+      l.kind === "income" && (l.category === "배당" || (l.category === "수입" && l.subCategory === "배당") || (l.description ?? "").includes("배당"));
 
     const tickerMap = new Map<string, { ticker: string; name: string; amount: number; accountId: string; date: string }>();
     
     // 최근 배당 내역을 티커별로 추출 (최신 것만)
     for (const l of ledger) {
       if (!isDividend(l)) continue;
-      const tickerMatch = (l.description ?? "").match(/([0-9]{6}|[0-9A-Z]{1,10})/i) ||
-        (l.category ?? "").match(/([0-9]{6}|[0-9A-Z]{1,10})/i);
-      if (!tickerMatch) continue;
-      
-      const ticker = tickerMatch[1].toUpperCase();
-      const name = prices.find((p) => p.ticker === ticker)?.name || 
-                   trades.find((t) => t.ticker === ticker)?.name || 
-                   "";
+      const ticker = (extractTickerFromText(l.description ?? "") ?? extractTickerFromText(l.category ?? ""))?.toUpperCase();
+      if (!ticker) continue;
+      const ct = canonicalTickerForMatch(ticker);
+      const desc = l.description ?? "";
+      // description에서 "TICKER - Name 배당" 형식으로 종목명 추출
+      const nameMatch = desc.match(/\s-\s([^-]+?)(?:\s배당|$)/);
+      let name = nameMatch ? nameMatch[1].trim() : "";
+      if (!name && isKRWStock(ct)) {
+        const krName = (krNames as Record<string, string>)[ct];
+        if (krName) name = krName;
+      }
+      if (!name) {
+        name = prices.find((p) => canonicalTickerForMatch(p.ticker) === ct)?.name ||
+          trades.find((t) => canonicalTickerForMatch(t.ticker) === ct)?.name ||
+          tickerDatabase.find((t) => canonicalTickerForMatch(t.ticker) === ct)?.name ||
+          "";
+      }
       
       // 같은 티커가 이미 있으면 날짜가 더 최신인 것만 유지
-      const existing = tickerMap.get(ticker);
+      const existing = tickerMap.get(ct);
       if (!existing || (l.date && existing.date < l.date)) {
-        tickerMap.set(ticker, {
+        tickerMap.set(ct, {
           ticker,
           name,
           amount: l.amount,
@@ -217,9 +241,9 @@ export const DividendsView: React.FC<Props> = ({ accounts, ledger, trades, price
     }
     
     return Array.from(tickerMap.values())
-      .filter((d) => positions.some((p) => p.ticker === d.ticker && p.quantity > 0)) // 보유 종목만
+      .filter((d) => positions.some((p) => canonicalTickerForMatch(p.ticker) === canonicalTickerForMatch(d.ticker) && p.quantity > 0)) // 보유 종목만
       .sort((a, b) => b.date.localeCompare(a.date)); // 최신순 정렬
-  }, [ledger, prices, trades, positions]);
+  }, [ledger, prices, trades, positions, tickerDatabase]);
 
   // 빠른 입력: 이전 배당 내역 적용 (수정 가능)
   const applyRecentDividend = (recent: { ticker: string; name: string; amount: number; accountId: string }) => {
@@ -240,7 +264,35 @@ export const DividendsView: React.FC<Props> = ({ accounts, ledger, trades, price
     const tax = dividendForm.tax ? Number(dividendForm.tax) : 0;
     const fee = dividendForm.fee ? Number(dividendForm.fee) : 0;
     
-    if (!dividendForm.date || !dividendForm.accountId || !dividendForm.ticker || !amount || amount <= 0) {
+    if (!dividendForm.date || !dividendForm.accountId || !amount || amount <= 0) {
+      return;
+    }
+
+    const tickerTrimmed = dividendForm.ticker?.trim() ?? "";
+    
+    // 티커가 비어 있거나 "이자"로 입력하면 이자(은행이자)로 저장
+    if (!tickerTrimmed || tickerTrimmed === "이자") {
+      const netAmount = amount - tax - fee;
+      const description = `이자${tax > 0 ? `, 세금: ${Math.round(tax).toLocaleString()}원` : ""}${fee > 0 ? `, 수수료: ${Math.round(fee).toLocaleString()}원` : ""}`;
+      const entry: LedgerEntry = {
+        id: `I${Date.now()}`,
+        date: dividendForm.date,
+        kind: "income",
+        category: "이자",
+        description: description,
+        toAccountId: dividendForm.accountId,
+        amount: netAmount
+      };
+      onChangeLedger([entry, ...ledger]);
+      setDividendForm({
+        date: new Date().toISOString().slice(0, 10),
+        accountId: dividendForm.accountId,
+        ticker: "",
+        name: "",
+        amount: "",
+        tax: "",
+        fee: ""
+      });
       return;
     }
 
@@ -270,7 +322,8 @@ export const DividendsView: React.FC<Props> = ({ accounts, ledger, trades, price
       id: `D${Date.now()}`,
       date: dividendForm.date,
       kind: "income",
-      category: "배당",
+      category: "수입",
+      subCategory: "배당",
       description: description,
       toAccountId: dividendForm.accountId,
       amount: netAmount // 순 배당금 (세금, 수수료 제외) - 항상 원화 기준으로 저장
@@ -279,12 +332,12 @@ export const DividendsView: React.FC<Props> = ({ accounts, ledger, trades, price
     const newLedger = [entry, ...ledger];
     onChangeLedger(newLedger);
 
-    // 폼 초기화
+    // 같은 종목·계좌 유지 (다음 배당 입력 시 편의)
     setDividendForm({
       date: new Date().toISOString().slice(0, 10),
       accountId: dividendForm.accountId,
-      ticker: "",
-      name: "",
+      ticker: dividendForm.ticker,
+      name: dividendForm.name ?? "",
       amount: "",
       tax: "",
       fee: ""
@@ -330,55 +383,105 @@ export const DividendsView: React.FC<Props> = ({ accounts, ledger, trades, price
       l.kind === "income" &&
       ((l.category ?? "").includes("배당") ||
         (l.category ?? "").includes("이자") ||
+        (l.subCategory ?? "").includes("배당") ||
+        (l.subCategory ?? "").includes("이자") ||
         (l.description ?? "").includes("배당") ||
         (l.description ?? "").includes("이자"));
 
     const buyAmountByTicker = trades
       .filter((t) => t.side === "buy")
       .reduce((map, t) => {
-        map.set(t.ticker, (map.get(t.ticker) ?? 0) + t.totalAmount);
+        const key = canonicalTickerForMatch(t.ticker);
+        map.set(key, (map.get(key) ?? 0) + t.totalAmount);
         return map;
       }, new Map<string, number>());
 
     const accountMap = new Map(accounts.map(a => [a.id, a]));
-    
-    // 현재 보유 주식 수량 맵
-    const quantityByTicker = new Map<string, number>();
-    positions.forEach(p => {
-      if (p.quantity > 0) {
-        quantityByTicker.set(p.ticker, p.quantity);
+
+    // description에서 종목명 추출 ("TICKER - Name 배당" 또는 "TICKER - Name" 형식)
+    const parseNameFromDescription = (desc: string): string => {
+      const m = desc.match(/\s-\s([^-]+?)(?:\s배당|$)/);
+      return m ? m[1].trim() : "";
+    };
+
+    // 티커로 종목명 조회: 한국 종목은 krNames 한글명 최우선 (description 영문명 무시), 그 다음 description, prices/trades/tickerDatabase
+    const krNamesMap = krNames as Record<string, string>;
+    const getStockName = (ticker: string, description: string): string => {
+      const ct = canonicalTickerForMatch(ticker);
+      // 한국 종목(6자 이상)은 krNames 한글명 최우선 - description에 영문 저장돼 있어도 덮어씀
+      if (isKRWStock(ct)) {
+        const krName = krNamesMap[ct];
+        if (krName) return krName;
       }
-    });
+      const fromDesc = parseNameFromDescription(description);
+      if (fromDesc) return fromDesc;
+      return (
+        prices.find((p) => canonicalTickerForMatch(p.ticker) === ct)?.name ||
+        trades.find((t) => canonicalTickerForMatch(t.ticker) === ct)?.name ||
+        tickerDatabase.find((t) => canonicalTickerForMatch(t.ticker) === ct)?.name ||
+        ""
+      );
+    };
+    
+    // 배당 날짜 기준으로 보유 수량 계산 함수
+    const getQuantityAtDate = (ticker: string, date: string): number => {
+      if (!ticker || !date) return 0;
+      const ct = canonicalTickerForMatch(ticker);
+      
+      const relevantTrades = trades.filter(t => 
+        canonicalTickerForMatch(t.ticker) === ct && t.date <= date
+      );
+      
+      let quantity = 0;
+      for (const trade of relevantTrades) {
+        if (trade.side === "buy") {
+          quantity += trade.quantity;
+        } else if (trade.side === "sell") {
+          quantity -= trade.quantity;
+        }
+      }
+      
+      return Math.max(0, quantity); // 음수 방지
+    };
 
     const rows: DividendRow[] = [];
     for (const l of ledger) {
       if (!isDividend(l)) continue;
       const month = l.date?.slice(0, 7) || "기타";
-      // 티커 추출: 숫자 6자리 또는 영문+숫자 조합 (예: 0048J0, AAPL 등)
-      const tickerMatch =
-        (l.description ?? "").match(/([0-9]{6}|[0-9A-Z]{1,10})/i) ||
-        (l.category ?? "").match(/([0-9]{6}|[0-9A-Z]{1,10})/i);
-      const ticker = tickerMatch ? tickerMatch[1].toUpperCase() : undefined;
-      const name =
-        ticker && (prices.find((p) => p.ticker === ticker)?.name || trades.find((t) => t.ticker === ticker)?.name);
+      const desc = l.description ?? "";
+      const ticker = (extractTickerFromText(desc) ?? extractTickerFromText(l.category ?? ""))?.toUpperCase();
+      const name = ticker ? getStockName(ticker, desc) : "";
       const source = ticker ? `${ticker}${name ? ` - ${name}` : ""}` : l.description || l.category || "기타";
-      const basis = ticker ? buyAmountByTicker.get(ticker) ?? 0 : 0;
+      const basis = ticker ? buyAmountByTicker.get(canonicalTickerForMatch(ticker)) ?? 0 : 0;
       const yieldRate = basis > 0 ? l.amount / basis : undefined;
       const account = l.toAccountId ? accountMap.get(l.toAccountId) : undefined;
-      const currentQuantity = ticker ? quantityByTicker.get(ticker) : undefined;
+      // 배당 날짜 기준 보유 수량 계산
+      // note 필드에 저장된 보유주식이 있으면 우선 사용, 없으면 계산된 값 사용
+      let quantityAtDate: number | undefined;
+      if (l.note && l.note.includes("보유주식:")) {
+        const noteMatch = l.note.match(/보유주식:\s*(\d+)/);
+        if (noteMatch) {
+          quantityAtDate = parseInt(noteMatch[1], 10);
+        }
+      }
+      if (quantityAtDate === undefined) {
+        quantityAtDate = ticker && l.date ? getQuantityAtDate(ticker, l.date) : undefined;
+      }
       rows.push({
         month,
+        date: l.date || "",
         source,
         ticker,
+        name,
         amount: l.amount,
         yieldRate,
         accountId: l.toAccountId,
         accountName: account?.name,
-        quantity: currentQuantity
+        quantity: quantityAtDate
       });
     }
-    return rows;
-  }, [ledger, trades, prices, accounts, positions]);
+    return rows.sort((a, b) => b.date.localeCompare(a.date)); // 최신순
+  }, [ledger, trades, prices, accounts, tickerDatabase]);
 
   const monthlyTotal = useMemo(() => {
     const map = new Map<string, number>();
@@ -387,7 +490,7 @@ export const DividendsView: React.FC<Props> = ({ accounts, ledger, trades, price
     });
     return Array.from(map.entries())
       .map(([month, total]) => ({ month, total }))
-      .sort((a, b) => a.month.localeCompare(b.month));
+      .sort((a, b) => b.month.localeCompare(a.month)); // 최신 월이 위로
   }, [incomeRows]);
 
   const byMonthSource = useMemo(() => {
@@ -397,7 +500,7 @@ export const DividendsView: React.FC<Props> = ({ accounts, ledger, trades, price
       list.push(r);
       map.set(r.month, list);
     });
-    return Array.from(map.entries()).sort((a, b) => a[0].localeCompare(b[0]));
+    return Array.from(map.entries()).sort((a, b) => b[0].localeCompare(a[0])); // 최신 월이 위로
   }, [incomeRows]);
 
   // 종목별 합계 계산
@@ -405,15 +508,15 @@ export const DividendsView: React.FC<Props> = ({ accounts, ledger, trades, price
     const map = new Map<string, { ticker: string; name: string; total: number; count: number }>();
     incomeRows.forEach((r) => {
       if (!r.ticker) return;
-      const key = r.ticker;
+      const key = canonicalTickerForMatch(r.ticker);
       const existing = map.get(key);
       if (existing) {
         existing.total += r.amount;
         existing.count += 1;
       } else {
-        const name = r.source.includes(" - ") ? r.source.split(" - ")[1] : "";
+        const name = r.name ?? (r.source.includes(" - ") ? r.source.split(" - ")[1] : "");
         map.set(key, {
-          ticker: key,
+          ticker: r.ticker,
           name,
           total: r.amount,
           count: 1
@@ -479,24 +582,19 @@ export const DividendsView: React.FC<Props> = ({ accounts, ledger, trades, price
               </p>
               <div style={{ display: "flex", flexWrap: "wrap", gap: 8 }}>
                 {recentDividends.map((recent, idx) => {
-                  const pos = positions.find((p) => p.ticker === recent.ticker);
+                  const pos = positions.find((p) => canonicalTickerForMatch(p.ticker) === canonicalTickerForMatch(recent.ticker));
                   // 통화 정보 가져오기 (StocksView와 동일한 방식)
-                  const originalPriceInfo = prices.find((p) => p.ticker === recent.ticker);
+                  const originalPriceInfo = prices.find((p) => canonicalTickerForMatch(p.ticker) === canonicalTickerForMatch(recent.ticker));
                   let currency = originalPriceInfo?.currency;
                   if (!currency) {
-                    const tickerInfo = tickerDatabase.find((t) => t.ticker === recent.ticker);
+                    const tickerInfo = tickerDatabase.find((t) => canonicalTickerForMatch(t.ticker) === canonicalTickerForMatch(recent.ticker));
                     if (tickerInfo?.market === "US") {
                       currency = "USD";
                     } else if (tickerInfo?.market === "KR") {
                       currency = "KRW";
                     } else {
-                      // 티커 패턴으로 판단
-                      const ticker = recent.ticker.toUpperCase();
-                      if (/^[0-9]{6}$/.test(ticker)) {
-                        currency = "KRW";
-                      } else if (/^[A-Z]{1,6}$/.test(ticker)) {
-                        currency = "USD";
-                      }
+                      if (isKRWStock(recent.ticker)) currency = "KRW";
+                      else if (isUSDStock(recent.ticker)) currency = "USD";
                     }
                   }
                   return (
@@ -564,7 +662,7 @@ export const DividendsView: React.FC<Props> = ({ accounts, ledger, trades, price
               )}
             </div>
             <p className="hint" style={{ marginBottom: 12 }}>
-              받은 배당금을 입력하세요. 보유 종목의 평균 단가와 수량이 자동으로 표시됩니다.
+              받은 배당금을 입력하세요. 보유 종목의 평균 단가와 수량이 자동으로 표시됩니다. <strong>티커를 비우면 이자(은행이자)로 등록됩니다.</strong>
             </p>
             <form onSubmit={handleDividendSubmit}>
             <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(200px, 1fr))", gap: "10px 12px" }}>
@@ -595,19 +693,20 @@ export const DividendsView: React.FC<Props> = ({ accounts, ledger, trades, price
                 </select>
               </label>
               <label style={{ display: "flex", flexDirection: "column", gap: 4, gridColumn: "1 / -1" }}>
-                <span style={{ fontSize: 13, fontWeight: 500 }}>티커</span>
+                <span style={{ fontSize: 13, fontWeight: 500 }}>티커 <span style={{ fontWeight: 400, color: "var(--text-muted)" }}>(비우거나 '이자' 입력 시 이자)</span></span>
                 <Autocomplete
                   value={dividendForm.ticker}
                   onChange={(val) => setDividendForm({ ...dividendForm, ticker: val.toUpperCase(), name: "" })}
                   options={tickerOptions}
                   onSelect={(option) => {
+                    const isInterest = option.value === "" || option.value === "이자";
                     setDividendForm({
                       ...dividendForm,
                       ticker: option.value,
-                      name: option.label || ""
+                      name: isInterest ? "" : (option.label || "")
                     });
                   }}
-                  placeholder="티커를 입력하거나 선택하세요"
+                  placeholder="티커 입력 / 비우기 또는 '이자' = 이자로 저장"
                 />
               </label>
               {selectedPosition && (
@@ -821,7 +920,7 @@ export const DividendsView: React.FC<Props> = ({ accounts, ledger, trades, price
         <div className="card">
           <div className="card-title">최근 월 합계</div>
           <div className="card-value">
-            {formatKRW(Math.round(monthlyTotal.at(-1)?.total ?? 0))}
+            {formatKRW(Math.round(monthlyTotal[0]?.total ?? 0))}
           </div>
         </div>
       </div>
@@ -909,88 +1008,398 @@ export const DividendsView: React.FC<Props> = ({ accounts, ledger, trades, price
               </div>
               
               {dividendRows.length > 0 && (
-                <table className="data-table" style={{ marginBottom: 16 }}>
+                <table className="data-table" style={{ marginBottom: 16, tableLayout: "fixed" }}>
                   <thead>
                     <tr>
-                      <th style={{ width: "12%" }}>티커</th>
-                      <th style={{ width: "23%" }}>종목명</th>
-                      <th style={{ width: "12%" }}>보유주식</th>
-                      <th style={{ width: "18%" }}>배당금액</th>
-                      <th style={{ width: "12%" }}>배당율</th>
-                      <th style={{ width: "15%" }}>계좌</th>
+                      <th style={{ width: "10%", minWidth: 80 }}>날짜</th>
+                      <th style={{ width: "10%", minWidth: 70 }}>티커</th>
+                      <th style={{ width: "25%", minWidth: 140 }}>종목명</th>
+                      <th style={{ width: "10%" }}>보유주식</th>
+                      <th style={{ width: "15%" }}>배당금액</th>
+                      <th style={{ width: "10%" }}>배당율</th>
+                      <th style={{ width: "12%" }}>계좌</th>
                       <th style={{ width: "8%" }}></th>
                     </tr>
                   </thead>
                   <tbody>
                     {dividendRows.map((r, idx) => {
-                      const tickerName = r.source.includes(" - ") ? r.source.split(" - ")[1] : "";
+                      const tickerName = r.name ?? (r.source.includes(" - ") ? r.source.split(" - ")[1] : "");
                       const displayName = tickerName.length > 30 ? tickerName.slice(0, 30) + "..." : tickerName;
                       // 해당 배당 기록 찾기
                       const ledgerEntry = ledger.find(l => {
                         if (l.kind !== "income") return false;
                         const lMonth = l.date?.slice(0, 7) || "기타";
                         if (lMonth !== month) return false;
-                        const lTickerMatch = (l.description ?? "").match(/([0-9]{6}|[0-9A-Z]{1,10})/i) ||
-                          (l.category ?? "").match(/([0-9]{6}|[0-9A-Z]{1,10})/i);
-                        const lTicker = lTickerMatch ? lTickerMatch[1].toUpperCase() : undefined;
+                        const lTicker = (extractTickerFromText(l.description ?? "") ?? extractTickerFromText(l.category ?? ""))?.toUpperCase();
                         return lTicker === r.ticker && Math.abs(l.amount - r.amount) < 1;
                       });
                       
+                      const isEditing = ledgerEntry && editingEntryId === ledgerEntry.id;
+                      
+                      // description에서 티커와 종목명 추출
+                      const extractTickerAndName = (desc: string) => {
+                        const ticker = (extractTickerFromText(desc) ?? "").toUpperCase();
+                        const nameMatch = desc.match(/\s-\s([^-]+?)(?:\s배당|$)/);
+                        const name = nameMatch ? nameMatch[1].trim() : "";
+                        return { ticker, name };
+                      };
+                      
+                      const { ticker: currentTicker, name: currentName } = ledgerEntry 
+                        ? extractTickerAndName(ledgerEntry.description || "")
+                        : { ticker: r.ticker || "", name: tickerName || "" };
+                      
+                      const handleSaveEdit = (e?: React.FocusEvent) => {
+                        if (!ledgerEntry) return;
+                        
+                        // 같은 행의 다른 편집 필드로 포커스가 이동하는 경우는 저장하지 않음
+                        if (e?.relatedTarget) {
+                          const relatedTarget = e.relatedTarget as HTMLElement;
+                          const isSameRowInput = relatedTarget.closest('tr') === e.currentTarget.closest('tr') &&
+                                                 ['INPUT', 'TEXTAREA', 'SELECT'].includes(relatedTarget.tagName);
+                          if (isSameRowInput) {
+                            return; // 같은 행의 다른 입력 필드로 이동하는 경우 저장하지 않음
+                          }
+                        }
+                        
+                        // description 재구성: "티커 - 종목명 배당" 형식
+                        const restOfDesc = ledgerEntry.description || "";
+                        const restMatch = restOfDesc.match(/\s배당.*$/);
+                        const restPart = restMatch ? restMatch[0] : " 배당";
+                        
+                        const newTicker = editingTicker.trim().toUpperCase() || currentTicker;
+                        const newName = editingName.trim();
+                        const newDescription = newName 
+                          ? `${newTicker} - ${newName}${restPart}`
+                          : `${newTicker}${restPart}`;
+                        
+                        // 배당금액 수정
+                        const newAmount = editingAmount ? Number(editingAmount) : ledgerEntry.amount;
+                        
+                        // 보유주식은 note 필드에 저장 (나중에 참조용)
+                        const newNote = editingQuantity ? `보유주식: ${editingQuantity}` : ledgerEntry.note;
+                        
+                        // 날짜, 계좌 수정
+                        const newDate = editingDate || ledgerEntry.date || "";
+                        const newToAccountId = editingAccountId || ledgerEntry.toAccountId || "";
+                        
+                        const newLedger = ledger.map(l => 
+                          l.id === ledgerEntry.id 
+                            ? { 
+                                ...l, 
+                                date: newDate,
+                                description: newDescription,
+                                amount: newAmount,
+                                note: newNote,
+                                toAccountId: newToAccountId
+                              }
+                            : l
+                        );
+                        onChangeLedger(newLedger);
+                        toast.success("배당 기록이 수정되었습니다.");
+                        setEditingEntryId(null);
+                        setEditingTicker("");
+                        setEditingName("");
+                        setEditingQuantity("");
+                        setEditingAmount("");
+                        setEditingDate("");
+                        setEditingAccountId("");
+                      };
+                      
+                      const cancelEdit = () => {
+                        setEditingEntryId(null);
+                        setEditingTicker("");
+                        setEditingName("");
+                        setEditingQuantity("");
+                        setEditingAmount("");
+                        setEditingDate("");
+                        setEditingAccountId("");
+                      };
+                      
                       return (
                         <tr key={`${month}-${r.ticker}-${idx}`}>
-                          <td style={{ fontWeight: 600, fontSize: 14 }}>{r.ticker || "-"}</td>
-                          <td title={tickerName || "-"} style={{ 
-                            overflow: "hidden", 
-                            textOverflow: "ellipsis", 
-                            whiteSpace: "nowrap",
-                            maxWidth: "200px"
-                          }}>
-                            {displayName || "-"}
+                          <td style={{ fontSize: 13, color: "#666", position: "relative" }}>
+                            {isEditing ? (
+                              <input
+                                type="date"
+                                value={editingDate}
+                                onChange={(e) => setEditingDate(e.target.value)}
+                                onBlur={(e) => handleSaveEdit(e)}
+                                onKeyDown={(e) => {
+                                  if (e.key === "Enter") {
+                                    e.preventDefault();
+                                    (e.currentTarget.closest("tr")?.querySelector("input[type='text']:nth-of-type(1)") as HTMLInputElement)?.focus();
+                                  } else if (e.key === "Escape") cancelEdit();
+                                }}
+                                style={{
+                                  width: "100%",
+                                  padding: "4px 8px",
+                                  fontSize: 13,
+                                  border: "1px solid var(--accent)",
+                                  borderRadius: 4,
+                                  backgroundColor: "var(--surface)"
+                                }}
+                                onClick={(e) => e.stopPropagation()}
+                                autoFocus
+                              />
+                            ) : (
+                              r.date ? formatShortDate(r.date) : "-"
+                            )}
                           </td>
-                          <td className="number">
-                            {r.quantity != null ? `${Math.round(r.quantity).toLocaleString()}주` : "-"}
+                          <td 
+                            style={{ 
+                              fontWeight: 600, 
+                              fontSize: 14,
+                              position: "relative"
+                            }}
+                          >
+                            {isEditing ? (
+                              <input
+                                type="text"
+                                value={editingTicker}
+                                onChange={(e) => setEditingTicker(e.target.value.toUpperCase())}
+                                onBlur={(e) => handleSaveEdit(e)}
+                                onKeyDown={(e) => {
+                                  if (e.key === "Enter") {
+                                    e.preventDefault();
+                                    const nameInput = e.currentTarget.closest("tr")?.querySelector("input[type='text']:nth-of-type(2)") as HTMLInputElement;
+                                    nameInput?.focus();
+                                  } else if (e.key === "Escape") cancelEdit();
+                                  else if (e.key === "Tab") { /* 기본 동작 */ }
+                                }}
+                                autoFocus
+                                style={{
+                                  width: "100%",
+                                  padding: "4px 8px",
+                                  fontSize: 13,
+                                  border: "1px solid var(--accent)",
+                                  borderRadius: 4,
+                                  backgroundColor: "var(--surface)"
+                                }}
+                                onClick={(e) => e.stopPropagation()}
+                                placeholder="티커"
+                              />
+                            ) : (
+                              <span>{r.ticker || "-"}</span>
+                            )}
                           </td>
-                          <td className="number positive" style={{ fontWeight: 600, fontSize: 15 }}>
-                            {formatKRW(Math.round(r.amount))}
+                          <td 
+                            title={tickerName || "-"} 
+                            style={{ 
+                              overflow: "hidden", 
+                              textOverflow: "ellipsis", 
+                              whiteSpace: "nowrap",
+                              position: "relative"
+                            }}
+                          >
+                            {isEditing ? (
+                              <input
+                                type="text"
+                                value={editingName}
+                                onChange={(e) => setEditingName(e.target.value)}
+                                onBlur={(e) => handleSaveEdit(e)}
+                                onKeyDown={(e) => {
+                                  if (e.key === "Enter") {
+                                    e.preventDefault();
+                                    const quantityInput = e.currentTarget.closest("tr")?.querySelector("input[type='number']:nth-of-type(1)") as HTMLInputElement;
+                                    quantityInput?.focus();
+                                  } else if (e.key === "Escape") cancelEdit();
+                                  else if (e.key === "Tab") { /* 기본 동작 */ }
+                                }}
+                                style={{
+                                  width: "100%",
+                                  padding: "4px 8px",
+                                  fontSize: 13,
+                                  border: "1px solid var(--accent)",
+                                  borderRadius: 4,
+                                  backgroundColor: "var(--surface)"
+                                }}
+                                onClick={(e) => e.stopPropagation()}
+                                placeholder="종목명"
+                              />
+                            ) : (
+                              <span>{displayName || "-"}</span>
+                            )}
+                          </td>
+                          <td 
+                            className="number"
+                            style={{ position: "relative" }}
+                          >
+                            {isEditing ? (
+                              <input
+                                type="number"
+                                value={editingQuantity}
+                                onChange={(e) => setEditingQuantity(e.target.value)}
+                                onBlur={(e) => handleSaveEdit(e)}
+                                onKeyDown={(e) => {
+                                  if (e.key === "Enter") {
+                                    e.preventDefault();
+                                    const amountInput = e.currentTarget.closest("tr")?.querySelector("input[type='number']:nth-of-type(2)") as HTMLInputElement;
+                                    amountInput?.focus();
+                                  } else if (e.key === "Escape") cancelEdit();
+                                  else if (e.key === "Tab") { /* 기본 동작 */ }
+                                }}
+                                style={{
+                                  width: "100%",
+                                  padding: "4px 8px",
+                                  fontSize: 13,
+                                  border: "1px solid var(--accent)",
+                                  borderRadius: 4,
+                                  backgroundColor: "var(--surface)",
+                                  textAlign: "right"
+                                }}
+                                onClick={(e) => e.stopPropagation()}
+                                placeholder="보유주식"
+                                min={0}
+                                step={1}
+                              />
+                            ) : (
+                              <span>{r.quantity != null ? `${Math.round(r.quantity).toLocaleString()}주` : "-"}</span>
+                            )}
+                          </td>
+                          <td 
+                            className="number positive" 
+                            style={{ 
+                              fontWeight: 600, 
+                              fontSize: 15,
+                              position: "relative"
+                            }}
+                          >
+                            {isEditing ? (
+                              <input
+                                type="number"
+                                value={editingAmount}
+                                onChange={(e) => setEditingAmount(e.target.value)}
+                                onBlur={(e) => handleSaveEdit(e)}
+                                onKeyDown={(e) => {
+                                  if (e.key === "Enter") {
+                                    e.currentTarget.blur();
+                                    handleSaveEdit();
+                                  } else if (e.key === "Escape") cancelEdit();
+                                  else if (e.key === "Tab") { /* 기본 동작 */ }
+                                }}
+                                style={{
+                                  width: "100%",
+                                  padding: "4px 8px",
+                                  fontSize: 13,
+                                  border: "1px solid var(--accent)",
+                                  borderRadius: 4,
+                                  backgroundColor: "var(--surface)",
+                                  textAlign: "right"
+                                }}
+                                onClick={(e) => e.stopPropagation()}
+                                placeholder="배당금액"
+                                min={0}
+                                step={0.01}
+                              />
+                            ) : (
+                              <span>{formatKRW(Math.round(r.amount))}</span>
+                            )}
                           </td>
                           <td className="number">
                             {r.yieldRate != null ? `${(r.yieldRate * 100).toFixed(2)}%` : "-"}
                           </td>
-                          <td style={{ fontSize: 13, color: "#666" }}>
-                            {r.accountName || r.accountId || "-"}
+                          <td style={{ fontSize: 13, color: "#666", position: "relative" }}>
+                            {isEditing ? (
+                              <select
+                                value={editingAccountId}
+                                onChange={(e) => setEditingAccountId(e.target.value)}
+                                onBlur={(e) => handleSaveEdit(e)}
+                                onKeyDown={(e) => {
+                                  if (e.key === "Enter") {
+                                    e.preventDefault();
+                                    handleSaveEdit();
+                                  } else if (e.key === "Escape") cancelEdit();
+                                }}
+                                style={{
+                                  width: "100%",
+                                  padding: "4px 8px",
+                                  fontSize: 13,
+                                  border: "1px solid var(--accent)",
+                                  borderRadius: 4,
+                                  backgroundColor: "var(--surface)"
+                                }}
+                                onClick={(e) => e.stopPropagation()}
+                              >
+                                <option value="">선택</option>
+                                {accounts.map((acc) => (
+                                  <option key={acc.id} value={acc.id}>
+                                    {acc.name || acc.id}
+                                  </option>
+                                ))}
+                              </select>
+                            ) : (
+                              r.accountName || r.accountId || "-"
+                            )}
                           </td>
                           <td style={{ textAlign: "center" }}>
                             {ledgerEntry && (
-                              <button
-                                type="button"
-                                onClick={() => {
-                                  if (confirm(`이 배당 기록을 삭제하시겠습니까?\n${r.ticker || r.source}: ${formatKRW(Math.round(r.amount))}`)) {
-                                    const newLedger = ledger.filter(l => l.id !== ledgerEntry.id);
-                                    onChangeLedger(newLedger);
-                                  }
-                                }}
-                                style={{
-                                  background: "none",
-                                  border: "none",
-                                  color: "#ef4444",
-                                  cursor: "pointer",
-                                  fontSize: 18,
-                                  padding: "4px 8px",
-                                  borderRadius: 4,
-                                  display: "inline-flex",
-                                  alignItems: "center",
-                                  justifyContent: "center"
-                                }}
-                                onMouseEnter={(e) => {
-                                  e.currentTarget.style.backgroundColor = "#fee2e2";
-                                }}
-                                onMouseLeave={(e) => {
-                                  e.currentTarget.style.backgroundColor = "transparent";
-                                }}
-                                title="삭제"
-                              >
-                                ×
-                              </button>
+                              <div style={{ display: "flex", gap: 4, justifyContent: "center", alignItems: "center" }}>
+                                {!isEditing && (
+                                  <button
+                                    type="button"
+                                    onClick={() => {
+                                      setEditingEntryId(ledgerEntry.id);
+                                      setEditingTicker(currentTicker);
+                                      setEditingName(currentName);
+                                      setEditingQuantity(r.quantity != null ? r.quantity.toString() : "");
+                                      setEditingAmount(ledgerEntry.amount.toString());
+                                      setEditingDate(ledgerEntry.date || r.date || "");
+                                      setEditingAccountId(ledgerEntry.toAccountId || r.accountId || "");
+                                    }}
+                                    style={{
+                                      background: "none",
+                                      border: "1px solid var(--border)",
+                                      color: "var(--accent)",
+                                      cursor: "pointer",
+                                      fontSize: 12,
+                                      padding: "4px 8px",
+                                      borderRadius: 4,
+                                      display: "inline-flex",
+                                      alignItems: "center",
+                                      justifyContent: "center"
+                                    }}
+                                    onMouseEnter={(e) => {
+                                      e.currentTarget.style.backgroundColor = "var(--accent-light)";
+                                    }}
+                                    onMouseLeave={(e) => {
+                                      e.currentTarget.style.backgroundColor = "transparent";
+                                    }}
+                                    title="수정"
+                                  >
+                                    ✏️
+                                  </button>
+                                )}
+                                <button
+                                  type="button"
+                                  onClick={() => {
+                                    if (confirm(`이 배당 기록을 삭제하시겠습니까?\n${r.ticker || r.source}: ${formatKRW(Math.round(r.amount))}`)) {
+                                      const newLedger = ledger.filter(l => l.id !== ledgerEntry.id);
+                                      onChangeLedger(newLedger);
+                                    }
+                                  }}
+                                  style={{
+                                    background: "none",
+                                    border: "none",
+                                    color: "#ef4444",
+                                    cursor: "pointer",
+                                    fontSize: 18,
+                                    padding: "4px 8px",
+                                    borderRadius: 4,
+                                    display: "inline-flex",
+                                    alignItems: "center",
+                                    justifyContent: "center"
+                                  }}
+                                  onMouseEnter={(e) => {
+                                    e.currentTarget.style.backgroundColor = "#fee2e2";
+                                  }}
+                                  onMouseLeave={(e) => {
+                                    e.currentTarget.style.backgroundColor = "transparent";
+                                  }}
+                                  title="삭제"
+                                >
+                                  ×
+                                </button>
+                              </div>
                             )}
                           </td>
                         </tr>
@@ -1004,10 +1413,11 @@ export const DividendsView: React.FC<Props> = ({ accounts, ledger, trades, price
                 <table className="data-table">
                   <thead>
                     <tr>
-                      <th style={{ width: "40%" }}>출처</th>
-                      <th style={{ width: "30%" }}>이자금액</th>
-                      <th style={{ width: "22%" }}>계좌</th>
-                      <th style={{ width: "8%" }}></th>
+                      <th style={{ width: "10%" }}>날짜</th>
+                      <th style={{ width: "35%" }}>출처</th>
+                      <th style={{ width: "25%" }}>이자금액</th>
+                      <th style={{ width: "20%" }}>계좌</th>
+                      <th style={{ width: "10%" }}></th>
                     </tr>
                   </thead>
                   <tbody>
@@ -1021,9 +1431,12 @@ export const DividendsView: React.FC<Props> = ({ accounts, ledger, trades, price
                       
                       return (
                         <tr key={`${month}-interest-${idx}`}>
-                          <td style={{ 
-                            overflow: "hidden", 
-                            textOverflow: "ellipsis", 
+                          <td style={{ fontSize: 13, color: "#666" }}>
+                            {r.date ? formatShortDate(r.date) : "-"}
+                          </td>
+                          <td style={{
+                            overflow: "hidden",
+                            textOverflow: "ellipsis",
                             whiteSpace: "nowrap",
                             maxWidth: "300px"
                           }} title={r.source}>

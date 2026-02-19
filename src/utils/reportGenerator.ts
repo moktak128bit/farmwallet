@@ -4,7 +4,7 @@
 
 import type { Account, LedgerEntry, StockTrade, StockPrice } from "../types";
 import { computeAccountBalances, computePositions } from "../calculations";
-import { formatKRW, formatUSD } from "./format";
+import { isSavingsExpenseEntry } from "./categoryUtils";
 
 export interface MonthlyReport {
   month: string;
@@ -50,6 +50,19 @@ export interface AccountReport {
   currentBalance: number;
   change: number;
   changeRate: number;
+}
+
+export interface DailyReport {
+  date: string;
+  income: number;
+  expense: number;
+  savingsExpense: number;
+  transfer: number;
+  stockValue: number;
+  cashValue: number;
+  savingsValue: number;
+  totalAsset: number;
+  netWorth: number;
 }
 
 /**
@@ -179,7 +192,7 @@ export function generateStockPerformanceReport(
   return positions.map((pos) => ({
     ticker: pos.ticker,
     name: pos.name || pos.ticker,
-    totalBuyAmount: pos.totalCost,
+    totalBuyAmount: pos.totalBuyAmount,
     currentValue: pos.marketValue,
     pnl: pos.pnl,
     pnlRate: pos.pnlRate,
@@ -258,9 +271,137 @@ export function generateMonthlyIncomeDetail(
 }
 
 /**
+ * 일별 리포트 생성 (일자별 자산 계산)
+ */
+export function generateDailyReport(
+  accounts: Account[],
+  ledger: LedgerEntry[],
+  trades: StockTrade[],
+  prices: StockPrice[],
+  startDate?: string,
+  endDate?: string,
+  fxRate?: number
+): DailyReport[] {
+  // 모든 날짜 수집
+  const dateSet = new Set<string>();
+  trades.forEach((t) => {
+    if (t.date) dateSet.add(t.date);
+  });
+  ledger.forEach((l) => {
+    if (l.date) dateSet.add(l.date);
+  });
+  
+  if (dateSet.size === 0) return [];
+  
+  const allDates = Array.from(dateSet).sort();
+  const firstDate = allDates[0];
+  const lastDate = allDates[allDates.length - 1];
+  
+  // 날짜 범위 결정
+  const start = startDate || firstDate;
+  const end = endDate || lastDate;
+  
+  // 시작일부터 종료일까지 모든 날짜 생성
+  const dates: string[] = [];
+  const currentDate = new Date(start);
+  const endDateObj = new Date(end);
+  
+  while (currentDate <= endDateObj) {
+    dates.push(currentDate.toISOString().split('T')[0]);
+    currentDate.setDate(currentDate.getDate() + 1);
+  }
+  
+  // USD를 KRW로 변환한 가격 목록
+  const adjustedPrices = fxRate ? prices.map((p) => {
+    if (p.currency && p.currency !== "KRW" && p.currency === "USD") {
+      return { ...p, price: p.price * fxRate, currency: "KRW" };
+    }
+    return p;
+  }) : prices;
+  
+  const reports: DailyReport[] = [];
+  
+  for (const date of dates) {
+    // 해당 날짜까지의 거래와 ledger만 필터링
+    const filteredTrades = trades.filter((t) => t.date && t.date <= date);
+    const filteredLedger = ledger.filter((l) => l.date && l.date <= date);
+    
+    // 해당 날짜의 수입/지출/저축/이체 계산 (가계부 단일 소스: isSavingsExpenseEntry)
+    const dayIncome = filteredLedger
+      .filter((l) => l.kind === "income" && l.date === date)
+      .reduce((sum, l) => sum + l.amount, 0);
+    
+    const dayExpense = filteredLedger
+      .filter((l) => l.kind === "expense" && !isSavingsExpenseEntry(l, accounts) && l.date === date)
+      .reduce((sum, l) => sum + l.amount, 0);
+    
+    const daySavingsExpense = filteredLedger
+      .filter((l) => isSavingsExpenseEntry(l, accounts) && l.date === date)
+      .reduce((sum, l) => sum + l.amount, 0);
+    
+    const dayTransfer = filteredLedger
+      .filter((l) => l.kind === "transfer" && !isSavingsExpenseEntry(l, accounts) && l.date === date)
+      .reduce((sum, l) => sum + l.amount, 0);
+    
+    // 해당 날짜까지의 자산 계산
+    const positions = computePositions(filteredTrades, adjustedPrices, accounts);
+    const balances = computeAccountBalances(accounts, filteredLedger, filteredTrades);
+    
+    // 주식 평가액
+    const stockValue = positions.reduce((sum, p) => sum + (p.marketValue || 0), 0);
+    
+    // 현금 (입출금, 증권계좌 현금)
+    const securitiesAccounts = balances.filter((b) => b.account.type === "securities");
+    const securitiesCash = securitiesAccounts.reduce((sum, b) => {
+      const account = b.account;
+      const usdBalance = (account.usdBalance ?? 0) + (b.usdTransferNet ?? 0);
+      const krwBalance = b.currentBalance;
+      const cash = fxRate ? (usdBalance * fxRate) + krwBalance : krwBalance;
+      return sum + cash;
+    }, 0);
+    
+    const checkingSavings = balances
+      .filter((b) => b.account.type === "checking" || b.account.type === "other")
+      .reduce((sum, b) => sum + b.currentBalance, 0);
+    
+    const cashValue = securitiesCash + checkingSavings;
+    
+    // 저축
+    const savingsValue = balances
+      .filter((b) => b.account.type === "savings")
+      .reduce((sum, b) => sum + b.currentBalance, 0) + 
+      accounts.reduce((sum, a) => sum + (a.savings ?? 0), 0);
+    
+    // 부채
+    const debt = accounts.reduce((sum, a) => sum + (a.debt ?? 0), 0);
+    
+    // 전체 자산
+    const totalAsset = stockValue + cashValue + savingsValue;
+    
+    // 순자산
+    const netWorth = totalAsset - debt;
+    
+    reports.push({
+      date,
+      income: dayIncome,
+      expense: dayExpense,
+      savingsExpense: daySavingsExpense,
+      transfer: dayTransfer,
+      stockValue,
+      cashValue,
+      savingsValue,
+      totalAsset,
+      netWorth
+    });
+  }
+  
+  return reports;
+}
+
+/**
  * 리포트를 CSV 형식으로 변환
  */
-export function reportToCSV(report: MonthlyReport[] | CategoryReport[] | StockPerformanceReport[] | AccountReport[] | MonthlyIncomeDetail[]): string {
+export function reportToCSV(report: MonthlyReport[] | CategoryReport[] | StockPerformanceReport[] | AccountReport[] | MonthlyIncomeDetail[] | DailyReport[]): string {
   if (report.length === 0) return "";
 
   const first = report[0];

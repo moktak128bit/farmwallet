@@ -15,13 +15,21 @@ import {
 } from "recharts";
 import { Autocomplete, type AutocompleteOption } from "./Autocomplete";
 import { StockDetailModal } from "./StockDetailModal";
-import type { Account, StockPrice, StockTrade, TradeSide, SymbolInfo, TickerInfo, StockPreset, LedgerEntry } from "../types";
+import { FxFormSection } from "./stocks/FxFormSection";
+import { FxHistorySection } from "./stocks/FxHistorySection";
+import { PortfolioChartsSection } from "./stocks/PortfolioChartsSection";
+import { StockStatsCard } from "./stocks/StockStatsCard";
+import { PresetSection } from "./stocks/PresetSection";
+import { TradeHistorySection } from "./stocks/TradeHistorySection";
+import { PositionListSection } from "./stocks/PositionListSection";
+import { TargetPortfolioSection } from "./stocks/TargetPortfolioSection";
+import type { Account, StockPrice, StockTrade, TradeSide, SymbolInfo, TickerInfo, StockPreset, LedgerEntry, TargetPortfolio } from "../types";
 import type { AccountBalanceRow } from "../calculations";
 import { computePositions } from "../calculations";
 import { fetchYahooQuotes, searchYahooSymbol } from "../yahooFinanceApi";
 import { saveTickerDatabaseBackup, saveTickerToJson } from "../storage";
 import { formatNumber, formatKRW, formatUSD, formatShortDate } from "../utils/format";
-import { isUSDStock, cleanTicker } from "../utils/tickerUtils";
+import { isUSDStock, isKRWStock, canonicalTickerForMatch } from "../utils/tickerUtils";
 import { toast } from "react-hot-toast";
 import { validateDate, validateTicker, validateRequired, validateQuantity, validateAmount } from "../utils/validation";
 
@@ -44,6 +52,8 @@ interface Props {
   onChangeLedger?: (next: LedgerEntry[]) => void;
   onChangeAccounts?: (next: Account[]) => void;
   fxRate?: number | null;
+  targetPortfolios?: TargetPortfolio[];
+  onChangeTargetPortfolios?: (next: TargetPortfolio[]) => void;
 }
 
 const sideLabel: Record<TradeSide, string> = {
@@ -107,23 +117,16 @@ export const StocksView: React.FC<Props> = ({
   ledger = [],
   onChangeLedger,
   onChangeAccounts,
-  fxRate: propFxRate = null
+  fxRate: propFxRate = null,
+  targetPortfolios = [],
+  onChangeTargetPortfolios
 }) => {
   const [tradeForm, setTradeForm] = useState(createDefaultTradeForm);
   const [showPresetModal, setShowPresetModal] = useState(false);
+  const [showAdvancedOptions, setShowAdvancedOptions] = useState(false);
   const [isLoadingQuotes, setIsLoadingQuotes] = useState(false);
   const [quoteError, setQuoteError] = useState<string | null>(null);
   const [yahooUpdatedAt, setYahooUpdatedAt] = useState<string | null>(null);
-  const [draggingTradeId, setDraggingTradeId] = useState<string | null>(null);
-  const [draggingAccountId, setDraggingAccountId] = useState<string | null>(null);
-  const [isAccountReorderMode, setIsAccountReorderMode] = useState<boolean>(() => {
-    try {
-      const saved = localStorage.getItem("fw-account-reorder-mode");
-      return saved === "true";
-    } catch {
-      return false;
-    }
-  });
   const [accountOrder, setAccountOrder] = useState<string[]>(() => {
     try {
       const saved = localStorage.getItem("fw-account-order");
@@ -163,13 +166,6 @@ export const StocksView: React.FC<Props> = ({
     key: "ticker",
     direction: "asc"
   });
-  const [tradeSort, setTradeSort] = useState<{ key: TradeSortKey; direction: "asc" | "desc" }>({
-    key: "date",
-    direction: "desc"
-  });
-  // 거래 내역 페이징
-  const [tradeCurrentPage, setTradeCurrentPage] = useState(1);
-  const [tradePageSize] = useState(50);
   const [dcaPlans, setDcaPlans] = useState<
     Array<{
       id: string;
@@ -182,18 +178,6 @@ export const StocksView: React.FC<Props> = ({
       active: boolean;
     }>
   >([]);
-  const [inlineEdit, setInlineEdit] = useState<{
-    id: string;
-    date: string;
-    accountId: string;
-    ticker: string;
-    name: string;
-    side: TradeSide;
-    quantity: string;
-    price: string;
-    fee: string;
-  } | null>(null);
-  const [inlineEditField, setInlineEditField] = useState<"date" | "accountId" | "quantity" | "price" | "fee" | "totalAmount" | null>(null);
   const [tickerInfo, setTickerInfo] = useState<{
     ticker: string;
     name?: string;
@@ -243,7 +227,7 @@ export const StocksView: React.FC<Props> = ({
 
   // 거래 입력 폼의 티커 입력 시 자동으로 시세 조회
   useEffect(() => {
-    const symbol = cleanTicker(tradeForm.ticker.trim());
+    const symbol = canonicalTickerForMatch(tradeForm.ticker.trim());
     if (!symbol || symbol.length < 2) {
       return;
     }
@@ -260,7 +244,7 @@ export const StocksView: React.FC<Props> = ({
           const r = results[0];
           // 종목명 우선순위: API에서 가져온 이름 > tickerDatabase > 기존 tradeForm.name > 티커
           const stockName = r.name || 
-            tickerDatabase.find(t => cleanTicker(t.ticker) === symbol)?.name || 
+            tickerDatabase.find(t => canonicalTickerForMatch(t.ticker) === symbol)?.name || 
             tradeForm.name || 
             symbol;
           
@@ -280,7 +264,7 @@ export const StocksView: React.FC<Props> = ({
           
           // ticker.json에 저장
           if (r.name) {
-            const market = /^[0-9A-Z]{6}$/.test(symbol) && /[0-9]/.test(symbol) ? 'KR' : 'US';
+            const market = isKRWStock(symbol) ? 'KR' : 'US';
             await saveTickerToJson(symbol, r.name, market);
           }
         }
@@ -310,17 +294,13 @@ export const StocksView: React.FC<Props> = ({
 
   const positionsWithPrice = useMemo<PositionWithPrice[]>(() => {
     return positions.map((p) => {
-      // 원본 prices에서 통화 정보와 원본 가격 가져오기
-      const originalPriceInfo = prices.find((x) => x.ticker === p.ticker);
-      // 티커로 해외 종목 판단 (6자리 숫자가 아니면 해외 종목)
-      const isForeignStock = !/^[0-9]{6}$/.test(p.ticker);
-      const currency = originalPriceInfo?.currency || (isForeignStock ? "USD" : "KRW");
-      const isUSD = currency === "USD" || isForeignStock;
-      
-      // USD 종목은 USD 가격 사용, KRW 종목은 KRW 가격 사용
-      const displayMarketPrice = isUSD 
+      const pNorm = canonicalTickerForMatch(p.ticker);
+      const originalPriceInfo = prices.find((x) => canonicalTickerForMatch(x.ticker) === pNorm);
+      const currency = originalPriceInfo?.currency || (isUSDStock(p.ticker) ? "USD" : "KRW");
+      const isUSD = currency === "USD";
+      const displayMarketPrice = isUSD
         ? (originalPriceInfo?.price ?? p.marketPrice)
-        : (prices.find((x) => x.ticker === p.ticker)?.price ?? p.marketPrice);
+        : (originalPriceInfo?.price ?? p.marketPrice);
       const originalMarketPrice = isUSD ? originalPriceInfo?.price : undefined;
 
       // 평가금액/손익 계산 (USD 종목은 USD 기준, KRW 종목은 KRW 기준)
@@ -348,7 +328,7 @@ export const StocksView: React.FC<Props> = ({
     const totalCost = positionsWithPrice.reduce((sum, p) => sum + p.totalBuyAmount, 0);
     const totalPnl = positionsWithPrice.reduce((sum, p) => sum + p.pnl, 0);
     const dayPnl = positionsWithPrice.reduce((sum, p) => {
-      const priceInfo = prices.find((x) => x.ticker === p.ticker);
+      const priceInfo = prices.find((x) => canonicalTickerForMatch(x.ticker) === canonicalTickerForMatch(p.ticker));
       const change = priceInfo?.change ?? 0;
       return sum + change * p.quantity;
     }, 0);
@@ -358,7 +338,7 @@ export const StocksView: React.FC<Props> = ({
   const dcaCalc = useMemo(() => {
     try {
       const amount = Number(dcaForm.amount);
-      const symbol = cleanTicker(dcaForm.ticker.trim());
+      const symbol = canonicalTickerForMatch(dcaForm.ticker.trim());
       if (!amount || amount <= 0 || !symbol) return null;
       const info = getPriceInfoForDca(symbol);
       const price = info.priceKRW;
@@ -472,62 +452,8 @@ export const StocksView: React.FC<Props> = ({
     });
   };
 
-  const sortedTrades = useMemo(() => {
-    const dir = tradeSort.direction === "asc" ? 1 : -1;
-    return [...trades].sort((a, b) => {
-      const key = tradeSort.key;
-      const va = (a as any)[key];
-      const vb = (b as any)[key];
-      if (key === "date") {
-        return (va < vb ? -1 : va > vb ? 1 : 0) * dir;
-      }
-      if (typeof va === "string" || typeof vb === "string") {
-        return String(va ?? "").localeCompare(String(vb ?? "")) * dir;
-      }
-      return ((va ?? 0) - (vb ?? 0)) * dir;
-    });
-  }, [trades, tradeSort]);
-
-  const paginatedTrades = useMemo(() => {
-    const startIndex = (tradeCurrentPage - 1) * tradePageSize;
-    const endIndex = startIndex + tradePageSize;
-    return sortedTrades.slice(startIndex, endIndex);
-  }, [sortedTrades, tradeCurrentPage, tradePageSize]);
-
-  const tradeTotalPages = useMemo(() => {
-    return Math.ceil(sortedTrades.length / tradePageSize);
-  }, [sortedTrades.length, tradePageSize]);
-
-  // 거래 정렬 변경 시 첫 페이지로
-  useEffect(() => {
-    setTradeCurrentPage(1);
-  }, [tradeSort.key, tradeSort.direction]);
-
-  const sortTrades = (rows: StockTrade[]) => {
-    const dir = tradeSort.direction === "asc" ? 1 : -1;
-    return [...rows].sort((a, b) => {
-      const key = tradeSort.key;
-      const va = (a as any)[key];
-      const vb = (b as any)[key];
-      if (key === "date") {
-        return (va < vb ? -1 : va > vb ? 1 : 0) * dir;
-      }
-      if (typeof va === "string" || typeof vb === "string") {
-        return String(va ?? "").localeCompare(String(vb ?? "")) * dir;
-      }
-      return ((va ?? 0) - (vb ?? 0)) * dir;
-    });
-  };
-
   const togglePositionSort = (key: PositionSortKey) => {
     setPositionSort((prev) => ({
-      key,
-      direction: prev.key === key && prev.direction === "asc" ? "desc" : "asc"
-    }));
-  };
-
-  const toggleTradeSort = (key: TradeSortKey) => {
-    setTradeSort((prev) => ({
       key,
       direction: prev.key === key && prev.direction === "asc" ? "desc" : "asc"
     }));
@@ -558,7 +484,7 @@ export const StocksView: React.FC<Props> = ({
     
     const needsUpdate = trades.some(t => {
       const isUSD = isUSDStock(t.ticker);
-      const priceInfo = prices.find((p) => cleanTicker(p.ticker) === cleanTicker(t.ticker));
+      const priceInfo = prices.find((p) => canonicalTickerForMatch(p.ticker) === canonicalTickerForMatch(t.ticker));
       const currency = priceInfo?.currency || (isUSD ? "USD" : "KRW");
       if (currency !== "USD") return false;
       
@@ -573,7 +499,7 @@ export const StocksView: React.FC<Props> = ({
     if (needsUpdate) {
       const updated = trades.map(t => {
         const isUSD = isUSDStock(t.ticker);
-        const priceInfo = prices.find((p) => cleanTicker(p.ticker) === cleanTicker(t.ticker));
+        const priceInfo = prices.find((p) => canonicalTickerForMatch(p.ticker) === canonicalTickerForMatch(t.ticker));
         const currency = priceInfo?.currency || (isUSD ? "USD" : "KRW");
         
         if (currency === "USD" && fxRate) {
@@ -623,7 +549,7 @@ export const StocksView: React.FC<Props> = ({
 
   const formatPriceWithCurrency = (value: number, currency?: string, ticker?: string) => {
     // 티커 형식으로 통화 판단
-    const isUSD = currency === "USD" || isUSDStock(ticker);
+    const isUSD = currency === "USD" || (ticker ? isUSDStock(ticker) : false);
     
     if (isUSD) {
       return formatUSD(value);
@@ -633,7 +559,7 @@ export const StocksView: React.FC<Props> = ({
   };
 
   const getMarketStatus = (ticker: string, currency?: string) => {
-    const isKorea = !isUSDStock(ticker) && (currency === "KRW" || /[0-9]/.test(ticker));
+    const isKorea = ticker ? isKRWStock(ticker) : (currency === "KRW");
     const zone = isKorea ? "Asia/Seoul" : "America/New_York";
     const label = isKorea ? "한국장" : "미국장";
     const now = new Date();
@@ -659,15 +585,15 @@ export const StocksView: React.FC<Props> = ({
   };
 
   const getPriceInfoForDca = (ticker: string) => {
-    const symbol = cleanTicker(ticker);
-    const adjusted = prices.find((p) => cleanTicker(p.ticker) === symbol);
-    const original = prices.find((p) => cleanTicker(p.ticker) === symbol);
+    const symbol = canonicalTickerForMatch(ticker);
+    const adjusted = prices.find((p) => canonicalTickerForMatch(p.ticker) === symbol);
+    const original = prices.find((p) => canonicalTickerForMatch(p.ticker) === symbol);
     const priceKRW =
       adjusted?.price ??
       (original?.currency === "USD" && fxRate ? original.price * fxRate : original?.price ?? 0);
     const name =
       original?.name ||
-      trades.find((t) => cleanTicker(t.ticker) === symbol)?.name ||
+      trades.find((t) => canonicalTickerForMatch(t.ticker) === symbol)?.name ||
       symbol;
     return {
       priceKRW,
@@ -783,7 +709,7 @@ export const StocksView: React.FC<Props> = ({
 
         // ticker.json에 티커와 종목명 저장
         if (r.name) {
-          const market = /^[0-9A-Z]{6}$/.test(r.ticker) && /[0-9]/.test(r.ticker) ? 'KR' : 'US';
+          const market = isKRWStock(r.ticker) ? 'KR' : 'US';
           await saveTickerToJson(r.ticker, r.name, market);
         }
 
@@ -855,7 +781,7 @@ export const StocksView: React.FC<Props> = ({
   };
 
   const applyQuoteResult = (symbol: string, r: StockPrice, fallbackName?: string) => {
-    const isKoreaTicker = /^[0-9]{6}$/.test(symbol);
+    const isKoreaTicker = isKRWStock(symbol);
     const existingPriceName = prices.find((p) => p.ticker === symbol)?.name;
     const preferredName =
       r.name ||
@@ -897,7 +823,7 @@ export const StocksView: React.FC<Props> = ({
 
   // 시세 검색 핸들러
   const handleSearchQuote = async () => {
-    const symbol = cleanTicker(quoteSearchTicker.trim());
+    const symbol = canonicalTickerForMatch(quoteSearchTicker.trim());
     if (!symbol) {
       setQuoteError("티커를 입력하세요.");
       return;
@@ -914,7 +840,7 @@ export const StocksView: React.FC<Props> = ({
         
         // ticker.json에 저장
         if (r.name) {
-          const market = /^[0-9A-Z]{6}$/.test(symbol) && /[0-9]/.test(symbol) ? 'KR' : 'US';
+          const market = isKRWStock(symbol) ? 'KR' : 'US';
           await saveTickerToJson(symbol, r.name, market);
         }
         
@@ -974,11 +900,85 @@ export const StocksView: React.FC<Props> = ({
     setSelectedPosition(p);
   };
 
+  const handleQuickSell = (p: PositionWithPrice, e: React.MouseEvent) => {
+    e.stopPropagation(); // 상세 모달 열기 방지
+    // 매도 폼에 자동으로 정보 채우기
+    const priceInfo = prices.find((pr) => pr.ticker === p.ticker);
+    const currentPrice = priceInfo?.price ?? p.marketPrice;
+    
+    setTradeForm({
+      id: undefined,
+      date: new Date().toISOString().slice(0, 10),
+      accountId: p.accountId,
+      ticker: p.ticker,
+      name: p.name,
+      side: "sell",
+      quantity: String(p.quantity),
+      price: String(currentPrice),
+      fee: "0"
+    });
+    
+    // 티커 정보도 설정
+    if (priceInfo) {
+      setTickerInfo({
+        ticker: p.ticker,
+        name: p.name,
+        price: currentPrice,
+        currency: priceInfo.currency
+      });
+    }
+    
+    // 거래 입력 폼으로 스크롤
+    setTimeout(() => {
+      const formElement = document.querySelector('form[class*="card"]');
+      if (formElement) {
+        formElement.scrollIntoView({ behavior: 'smooth', block: 'start' });
+      }
+    }, 100);
+  };
+
+  const handleQuickBuy = (p: PositionWithPrice, e: React.MouseEvent) => {
+    e.stopPropagation(); // 상세 모달 열기 방지
+    // 매수 폼에 자동으로 정보 채우기
+    const priceInfo = prices.find((pr) => pr.ticker === p.ticker);
+    const currentPrice = priceInfo?.price ?? p.marketPrice;
+    
+    setTradeForm({
+      id: undefined,
+      date: new Date().toISOString().slice(0, 10),
+      accountId: p.accountId,
+      ticker: p.ticker,
+      name: p.name,
+      side: "buy",
+      quantity: "",
+      price: String(currentPrice),
+      fee: "0"
+    });
+    
+    // 티커 정보도 설정
+    if (priceInfo) {
+      setTickerInfo({
+        ticker: p.ticker,
+        name: p.name,
+        price: currentPrice,
+        currency: priceInfo.currency
+      });
+    }
+    
+    // 거래 입력 폼으로 스크롤
+    setTimeout(() => {
+      const formElement = document.querySelector('form[class*="card"]');
+      if (formElement) {
+        formElement.scrollIntoView({ behavior: 'smooth', block: 'start' });
+      }
+    }, 100);
+  };
+
   const handleRefreshSymbolLibrary = async () => {
     const set = new Set<string>();
-    customSymbols.forEach((s) => set.add(cleanTicker(s.ticker)));
-    trades.forEach((t) => set.add(cleanTicker(t.ticker)));
-    prices.forEach((p) => set.add(cleanTicker(p.ticker)));
+    customSymbols.forEach((s) => set.add(canonicalTickerForMatch(s.ticker)));
+    trades.forEach((t) => set.add(canonicalTickerForMatch(t.ticker)));
+    prices.forEach((p) => set.add(canonicalTickerForMatch(p.ticker)));
     const allSymbols = Array.from(set).filter(Boolean);
     if (allSymbols.length === 0) return;
     try {
@@ -1039,7 +1039,7 @@ export const StocksView: React.FC<Props> = ({
     const result = Array.from(map.entries()).map(([accountId, { accountName, rows }]) => ({
       accountId,
       accountName,
-      rows: sortPositions(rows)
+      rows
     }));
     
     // 계좌 순서 정렬
@@ -1056,7 +1056,7 @@ export const StocksView: React.FC<Props> = ({
     }
     
     return result;
-  }, [positionsWithPrice, positionSort, accountOrder]);
+  }, [positionsWithPrice, accountOrder]);
 
   // 계좌 순서 변경 핸들러
   const handleAccountReorder = (accountId: string, newPosition: number) => {
@@ -1077,21 +1077,6 @@ export const StocksView: React.FC<Props> = ({
     localStorage.setItem("fw-account-order", JSON.stringify(next));
   };
 
-  // 초기 보유 여부 토글 (현금 흐름 반영/미반영)
-  const toggleInitialHolding = (trade: StockTrade) => {
-    // 매수(buy) 거래만 토글 가능
-    if (trade.side !== "buy") return;
-
-    const isCurrentlyInitial = trade.cashImpact === 0;
-    // 현재 초기 보유(cashImpact가 0)면 -> 일반 매수로 변경 (cashImpact = -totalAmount)
-    // 현재 일반 매수(cashImpact가 있음)면 -> 초기 보유로 변경 (cashImpact = 0)
-    const newCashImpact = isCurrentlyInitial ? -trade.totalAmount : 0;
-
-    const updated = trades.map((t) =>
-      t.id === trade.id ? { ...t, cashImpact: newCashImpact } : t
-    );
-    onChangeTrades(updated);
-  };
 
   const recentTrades = useMemo(
     () => [...trades].sort((a, b) => (a.date < b.date ? 1 : -1)).slice(0, 4),
@@ -1101,7 +1086,7 @@ export const StocksView: React.FC<Props> = ({
   // 거래 폼 검증
   const tradeFormValidation = useMemo(() => {
     const errors: Record<string, string> = {};
-    const tickerClean = cleanTicker(tradeForm.ticker);
+    const tickerClean = canonicalTickerForMatch(tradeForm.ticker);
     
     // 날짜 검증
     // 주의: 주식 거래는 미래 날짜도 허용합니다 (과거 거래 기록 입력, 예약 주문 등)
@@ -1165,19 +1150,36 @@ export const StocksView: React.FC<Props> = ({
       return;
     }
     
-    const tickerClean = cleanTicker(tradeForm.ticker);
+    const tickerClean = canonicalTickerForMatch(tradeForm.ticker);
     const quantity = Number(tradeForm.quantity);
-    const price = Number(tradeForm.price);
+    let price = Number(tradeForm.price);
     const fee = Number(tradeForm.fee || "0");
     
-    if (!tradeForm.date || !tradeForm.accountId || !tickerClean || !quantity || !price) {
+    let accountId = tradeForm.accountId;
+    if (!accountId) {
+      const securitiesAccounts = accounts.filter(a => a.type === "securities");
+      const recentAccount = trades.length > 0 
+        ? trades[trades.length - 1].accountId 
+        : securitiesAccounts[0]?.id || "";
+      accountId = recentAccount;
+    }
+    
+    let date = tradeForm.date;
+    if (!date) {
+      date = new Date().toISOString().slice(0, 10);
+    }
+    
+    if (!date || !accountId || !tickerClean || !quantity || !price) {
+      if (!price) {
+        toast.error("시세를 조회할 수 없습니다. 티커를 확인하거나 고급 옵션에서 가격을 직접 입력하세요.");
+      }
       return;
     }
     // 매도는 보유 종목 클릭으로만 가능, 매수는 기본값
     const side = tradeForm.side || "buy";
     
     // 선택된 계좌 확인
-    const selectedAccount = accounts.find((a) => a.id === tradeForm.accountId);
+    const selectedAccount = accounts.find((a) => a.id === accountId);
     if (!selectedAccount) {
       toast.error("계좌를 선택해주세요.");
       return;
@@ -1191,7 +1193,7 @@ export const StocksView: React.FC<Props> = ({
     
     // 달러 종목 여부 확인
     const isUSD = isUSDStock(tickerClean);
-    const priceInfo = prices.find((p) => cleanTicker(p.ticker) === tickerClean);
+    const priceInfo = prices.find((p) => canonicalTickerForMatch(p.ticker) === tickerClean);
     const currency = priceInfo?.currency || (isUSD ? "USD" : "KRW");
     const isUSDCurrency = currency === "USD";
     
@@ -1229,9 +1231,9 @@ export const StocksView: React.FC<Props> = ({
     // 종목명 우선순위: tradeForm.name > prices > trades > tickerDatabase > 티커
     const fallbackName =
       tradeForm.name ||
-      prices.find((p) => cleanTicker(p.ticker) === tickerClean)?.name ||
-      trades.find((t) => cleanTicker(t.ticker) === tickerClean)?.name ||
-      tickerDatabase.find(t => cleanTicker(t.ticker) === tickerClean)?.name ||
+      prices.find((p) => canonicalTickerForMatch(p.ticker) === tickerClean)?.name ||
+      trades.find((t) => canonicalTickerForMatch(t.ticker) === tickerClean)?.name ||
+      tickerDatabase.find(t => canonicalTickerForMatch(t.ticker) === tickerClean)?.name ||
       tickerClean;
 
     if (tradeForm.id) {
@@ -1241,7 +1243,7 @@ export const StocksView: React.FC<Props> = ({
       
       if (isSecuritiesAccount && oldTrade) {
         // 기존 거래가 달러 종목이었는지 확인
-        const oldPriceInfo = prices.find((p) => cleanTicker(p.ticker) === cleanTicker(oldTrade.ticker));
+        const oldPriceInfo = prices.find((p) => canonicalTickerForMatch(p.ticker) === canonicalTickerForMatch(oldTrade.ticker));
         const oldIsUSD = oldPriceInfo?.currency === "USD" || isUSDStock(oldTrade.ticker);
         
         if (oldIsUSD) {
@@ -1264,10 +1266,9 @@ export const StocksView: React.FC<Props> = ({
       let updatedAccounts = accounts;
       if (isSecuritiesAccount && onChangeAccounts && usdImpact !== 0) {
         updatedAccounts = accounts.map((a) => {
-          if (a.id === tradeForm.accountId) {
+          if (a.id === accountId) {
             const currentUsdBalance = a.usdBalance ?? 0;
             const newUsdBalance = currentUsdBalance + usdImpact;
-            console.log(`[USD Balance Update - Edit] Account: ${a.id}, Current: ${currentUsdBalance}, Impact: ${usdImpact}, New: ${newUsdBalance}`);
             return { ...a, usdBalance: newUsdBalance };
           }
           return a;
@@ -1280,8 +1281,8 @@ export const StocksView: React.FC<Props> = ({
           t.id === tradeForm.id
             ? {
                 ...t,
-                date: tradeForm.date,
-                accountId: tradeForm.accountId,
+                date: date,
+                accountId: accountId,
                 ticker: tickerClean,
                 name: fallbackName,
                 side,
@@ -1306,8 +1307,8 @@ export const StocksView: React.FC<Props> = ({
       const id = `T${Date.now()}`;
       const trade: StockTrade = {
         id,
-        date: tradeForm.date,
-        accountId: tradeForm.accountId,
+        date: date,
+        accountId: accountId,
         ticker: tickerClean,
         name: fallbackName,
         side,
@@ -1323,10 +1324,9 @@ export const StocksView: React.FC<Props> = ({
       if (isSecuritiesAccount && isUSDCurrency && onChangeAccounts) {
         const usdImpact = side === "buy" ? -totalAmount : totalAmount; // 매수: USD 차감, 매도: USD 증가
         updatedAccounts = accounts.map((a) => {
-          if (a.id === tradeForm.accountId) {
+          if (a.id === accountId) {
             const currentUsdBalance = a.usdBalance ?? 0;
             const newUsdBalance = currentUsdBalance + usdImpact;
-            console.log(`[USD Balance Update] Account: ${a.id}, Current: ${currentUsdBalance}, Impact: ${usdImpact}, New: ${newUsdBalance}`);
             return { ...a, usdBalance: newUsdBalance };
           }
           return a;
@@ -1335,9 +1335,6 @@ export const StocksView: React.FC<Props> = ({
       
       // 거래 저장 먼저 (함수형 업데이트로 최신 상태 보장)
       onChangeTrades((prevTrades) => [trade, ...prevTrades]);
-      
-      // 새 거래 추가 시 첫 페이지로 이동 (최신 거래가 보이도록)
-      setTradeCurrentPage(1);
       
       // 증권계좌에서 달러 종목 거래 시 USD 잔액 업데이트 (거래 저장 후 약간의 지연)
       if (isSecuritiesAccount && isUSDCurrency && onChangeAccounts) {
@@ -1350,12 +1347,12 @@ export const StocksView: React.FC<Props> = ({
     setTradeForm((prev) => ({
       ...createDefaultTradeForm(),
       side: "buy", // 매도 후에는 다시 매수 모드로 리셋
-      accountId: prev.accountId || tradeForm.accountId
+      accountId: prev.accountId || accountId || ""
     }));
   };
 
   const handleDcaFetchPrice = async () => {
-    const symbol = cleanTicker(dcaForm.ticker.trim().toUpperCase());
+    const symbol = canonicalTickerForMatch(dcaForm.ticker.trim().toUpperCase());
     if (!symbol) return;
     try {
       setIsLoadingDca(true);
@@ -1421,7 +1418,7 @@ export const StocksView: React.FC<Props> = ({
   };
 
   const handleDcaSubmit = () => {
-    const symbol = cleanTicker(dcaForm.ticker.trim().toUpperCase());
+    const symbol = canonicalTickerForMatch(dcaForm.ticker.trim().toUpperCase());
     const amount = Number(dcaForm.amount);
     if (!symbol || !amount || amount <= 0 || !dcaForm.accountId) {
       setDcaMessage("계좌, 티커, 금액을 모두 입력하세요.");
@@ -1871,7 +1868,7 @@ export const StocksView: React.FC<Props> = ({
       // Ctrl+S: 저장 (handleTradeSubmit 로직 직접 구현)
       if (e.ctrlKey && e.key === "s" && !e.shiftKey && !e.altKey) {
         e.preventDefault();
-        const tickerClean = cleanTicker(tradeForm.ticker);
+        const tickerClean = canonicalTickerForMatch(tradeForm.ticker);
         const quantity = Number(tradeForm.quantity);
         const price = Number(tradeForm.price);
         const fee = Number(tradeForm.fee || "0");
@@ -1893,7 +1890,7 @@ export const StocksView: React.FC<Props> = ({
           
           // 달러 종목 여부 확인
           const isUSD = isUSDStock(tickerClean);
-          const priceInfo = prices.find((p) => cleanTicker(p.ticker) === tickerClean);
+          const priceInfo = prices.find((p) => canonicalTickerForMatch(p.ticker) === tickerClean);
           const currency = priceInfo?.currency || (isUSD ? "USD" : "KRW");
           const isUSDCurrency = currency === "USD";
           
@@ -1930,9 +1927,9 @@ export const StocksView: React.FC<Props> = ({
           // 종목명 우선순위: tradeForm.name > prices > trades > tickerDatabase > 티커
           const fallbackName =
             tradeForm.name ||
-            prices.find((p) => cleanTicker(p.ticker) === tickerClean)?.name ||
-            trades.find((t) => cleanTicker(t.ticker) === tickerClean)?.name ||
-            tickerDatabase.find(t => cleanTicker(t.ticker) === tickerClean)?.name ||
+            prices.find((p) => canonicalTickerForMatch(p.ticker) === tickerClean)?.name ||
+            trades.find((t) => canonicalTickerForMatch(t.ticker) === tickerClean)?.name ||
+            tickerDatabase.find(t => canonicalTickerForMatch(t.ticker) === tickerClean)?.name ||
             tickerClean;
 
           // 증권계좌에서 달러 종목 거래 시 USD 잔액 업데이트 준비
@@ -2014,153 +2011,6 @@ export const StocksView: React.FC<Props> = ({
   }, [filteredPresets, tradeForm, trades, prices, onChangeTrades]);
 
   const isEditingTrade = Boolean(tradeForm.id);
-
-  const handleDeleteTrade = (id: string) => {
-    // 삭제할 거래 찾기
-    const tradeToDelete = trades.find((t) => t.id === id);
-    if (!tradeToDelete) return;
-    
-    // 증권계좌의 달러 종목 거래 삭제 시 USD 잔액 되돌리기 준비
-    let updatedAccounts = accounts;
-    const account = accounts.find((a) => a.id === tradeToDelete.accountId);
-    if (account?.type === "securities" && onChangeAccounts) {
-      const priceInfo = prices.find((p) => cleanTicker(p.ticker) === cleanTicker(tradeToDelete.ticker));
-      const isUSD = priceInfo?.currency === "USD" || isUSDStock(tradeToDelete.ticker);
-      
-      if (isUSD) {
-        // 거래를 되돌리기: 매수였으면 USD 증가, 매도였으면 USD 차감
-        const usdImpact = tradeToDelete.side === "buy" ? tradeToDelete.totalAmount : -tradeToDelete.totalAmount;
-        updatedAccounts = accounts.map((a) => {
-          if (a.id === tradeToDelete.accountId) {
-            const currentUsdBalance = a.usdBalance ?? 0;
-            const newUsdBalance = currentUsdBalance + usdImpact;
-            console.log(`[USD Balance Update - Delete] Account: ${a.id}, Current: ${currentUsdBalance}, Impact: ${usdImpact}, New: ${newUsdBalance}`);
-            return { ...a, usdBalance: newUsdBalance };
-          }
-          return a;
-        });
-      }
-    }
-    
-    // 거래 삭제 먼저 (함수형 업데이트로 최신 상태 보장)
-    onChangeTrades((prevTrades) => prevTrades.filter((t) => t.id !== id));
-    
-    // USD 잔액 업데이트 (거래 삭제 후 약간의 지연)
-    if (account?.type === "securities" && onChangeAccounts && updatedAccounts !== accounts) {
-      setTimeout(() => {
-        onChangeAccounts(updatedAccounts);
-      }, 0);
-    }
-    if (tradeForm.id === id) {
-      resetTradeForm();
-    }
-    if (inlineEdit?.id === id) {
-      setInlineEdit(null);
-    }
-  };
-
-  const handleReorderTrade = (id: string, newIndex: number) => {
-    const currentIndex = trades.findIndex((t) => t.id === id);
-    if (currentIndex === -1) return;
-    const clamped = Math.max(0, Math.min(trades.length - 1, newIndex));
-    if (clamped === currentIndex) return;
-    const next = [...trades];
-    const [item] = next.splice(currentIndex, 1);
-    next.splice(clamped, 0, item);
-    onChangeTrades(next);
-  };
-
-  const startInlineEdit = (t: StockTrade, field?: "date" | "accountId" | "quantity" | "price" | "fee" | "totalAmount") => {
-    setInlineEdit({
-      id: t.id,
-      date: t.date,
-      accountId: t.accountId,
-      ticker: t.ticker,
-      name: t.name,
-      side: t.side,
-      quantity: String(t.quantity),
-      price: String(t.price),
-      fee: String(t.fee)
-    });
-    setInlineEditField(field || null);
-  };
-
-  const cancelInlineEdit = () => {
-    setInlineEdit(null);
-    setInlineEditField(null);
-  };
-
-  const saveInlineEdit = () => {
-    if (!inlineEdit) return;
-    const quantity = Number(inlineEdit.quantity);
-    const price = Number(inlineEdit.price);
-    const fee = Number(inlineEdit.fee || "0");
-    if (!inlineEdit.date || !inlineEdit.accountId || !inlineEdit.ticker || !quantity || !price) {
-      return;
-    }
-    const side = inlineEdit.side;
-    
-    // 선택된 계좌 확인
-    const selectedAccount = accounts.find((a) => a.id === inlineEdit.accountId);
-    if (!selectedAccount) {
-      toast.error("계좌를 선택해주세요.");
-      return;
-    }
-    
-    // 계좌의 통화 확인 (증권계좌의 경우 currency 필드 사용)
-    const accountCurrency = selectedAccount.currency || "KRW";
-    
-    // 달러 종목 여부 확인
-    const isUSD = isUSDStock(inlineEdit.ticker);
-    const priceInfo = prices.find((p) => cleanTicker(p.ticker) === cleanTicker(inlineEdit.ticker));
-    const currency = priceInfo?.currency || (isUSD ? "USD" : "KRW");
-    const isUSDCurrency = currency === "USD";
-    
-    // 계좌 통화와 티커 통화 일치 검증
-    if (accountCurrency === "USD" && !isUSDCurrency) {
-      toast.error("달러 계좌에서는 달러 종목만 거래할 수 있습니다.");
-      return;
-    }
-    if (accountCurrency === "KRW" && isUSDCurrency) {
-      toast.error("원화 계좌에서는 원화 종목만 거래할 수 있습니다.");
-      return;
-    }
-    
-    // 달러 종목인 경우 환율 적용
-    const exchangeRate = isUSDCurrency && fxRate ? fxRate : 1;
-    
-    // 매수: totalAmount = quantity * price + fee (지불한 총액)
-    // 매도: totalAmount = quantity * price - fee (받은 총액, 수수료 차감)
-    const totalAmount = side === "buy" 
-      ? quantity * price + fee 
-      : quantity * price - fee;
-    
-    // cashImpact는 원화 기준으로 계산 (달러 종목은 환율 적용)
-    const totalAmountKRW = totalAmount * exchangeRate;
-    // 매수: cashImpact = -totalAmount (계좌에서 나감)
-    // 매도: cashImpact = +totalAmount (계좌에 들어옴)
-    const cashImpact = side === "buy" ? -totalAmountKRW : totalAmountKRW;
-    const updated = trades.map((t) =>
-      t.id === inlineEdit.id
-        ? {
-            ...t,
-            date: inlineEdit.date,
-            accountId: inlineEdit.accountId,
-            ticker: inlineEdit.ticker,
-            name: inlineEdit.name || inlineEdit.ticker,
-            side: inlineEdit.side,
-            quantity,
-            price,
-            fee,
-            totalAmount,
-            cashImpact
-          }
-        : t
-    );
-    onChangeTrades(updated);
-    setInlineEdit(null);
-    setInlineEditField(null);
-  };
 
 
     return (
@@ -2259,11 +2109,17 @@ export const StocksView: React.FC<Props> = ({
             {isLoadingTickerDatabase ? "불러오는 중..." : "종목 불러오기"}
           </button>
 
-          {yahooUpdatedAt && (
-
-            <span className="hint">마지막 갱신: {new Date(yahooUpdatedAt).toLocaleString()}</span>
-
-          )}
+          {yahooUpdatedAt && (() => {
+            const then = new Date(yahooUpdatedAt).getTime();
+            const now = Date.now();
+            const diffMin = Math.floor((now - then) / 60000);
+            const label = diffMin < 1 ? "방금 전" : diffMin < 60 ? `${diffMin}분 전` : `${Math.floor(diffMin / 60)}시간 전`;
+            return (
+              <span className="hint" title={new Date(yahooUpdatedAt).toLocaleString("ko-KR")}>
+                마지막 갱신: {label}
+              </span>
+            );
+          })()}
 
         </div>
 
@@ -2271,85 +2127,24 @@ export const StocksView: React.FC<Props> = ({
 
 
 
-      <div className="card" style={{ padding: 16, marginBottom: 16 }}>
-        <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(200px, 1fr))", gap: 12 }}>
-          <div
-            style={{
-              background: "#f8fafc",
-              color: "#0f172a",
-              padding: 12,
-              borderRadius: 12,
-              border: "1px solid #e2e8f0"
-            }}
-          >
-            <div style={{ color: "#475569", fontSize: 14, fontWeight: 600, marginBottom: 4 }}>총 평가액</div>
-            <div style={{ fontSize: 24, fontWeight: 700, color: "#0f172a" }}>{formatKRW(totals.totalMarketValue)}</div>
-          </div>
-          <div style={{ background: "#0d9488", color: "#ffffff", padding: 12, borderRadius: 12 }}>
-            <div style={{ color: "#ffffff", fontSize: 14, fontWeight: 600, marginBottom: 4, opacity: 0.9 }}>일일 손익</div>
-            <div style={{ fontSize: 20, fontWeight: 700, color: "#ffffff" }}>
-              {formatKRW(totals.dayPnl)} ({totals.totalMarketValue ? ((totals.dayPnl / totals.totalMarketValue) * 100).toFixed(2) : "0.00"}%)
-            </div>
-          </div>
-          <div style={{ background: "#f8fafc", color: "#0f172a", padding: 12, borderRadius: 12, border: "1px solid #e2e8f0" }}>
-            <div style={{ color: "#64748b", fontSize: 14, fontWeight: 600, marginBottom: 4 }}>총 손익</div>
-            <div style={{ fontSize: 20, fontWeight: 700, color: "#0f172a" }}>
-              {formatKRW(totals.totalPnl)} ({(totalReturnRate * 100).toFixed(2)}%)
-            </div>
-            <div style={{ color: "#94a3b8", fontSize: 12, marginTop: 4 }}>총매입 {formatKRW(totals.totalCost)}</div>
-          </div>
-        </div>
-      </div>
+      <StockStatsCard
+        totalMarketValue={totals.totalMarketValue}
+        dayPnl={totals.dayPnl}
+        totalPnl={totals.totalPnl}
+        totalCost={totals.totalCost}
+        totalReturnRate={totalReturnRate}
+      />
 
       {/* 거래/평가 섹션 */}
       {(
         <>
           {/* 프리셋 버튼 영역 */}
-          <div className="card" style={{ padding: 12, marginBottom: 12 }}>
-            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 8 }}>
-              <span style={{ fontSize: 13, fontWeight: 500, color: "var(--muted)" }}>
-                프리셋 {filteredPresets.length > 0 ? `(Ctrl+1~9)` : ""}
-              </span>
-              <div style={{ display: "flex", gap: 6 }}>
-                <button
-                  type="button"
-                  className="secondary"
-                  onClick={saveCurrentAsPreset}
-                  style={{ fontSize: 11, padding: "4px 8px" }}
-                >
-                  현재 저장
-                </button>
-                <button
-                  type="button"
-                  className="secondary"
-                  onClick={() => setShowPresetModal(true)}
-                  style={{ fontSize: 11, padding: "4px 8px" }}
-                >
-                  관리
-                </button>
-              </div>
-            </div>
-            {filteredPresets.length > 0 ? (
-              <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
-                {filteredPresets.map((preset, index) => (
-                  <button
-                    key={preset.id}
-                    type="button"
-                    className="secondary"
-                    onClick={() => applyPreset(preset)}
-                    style={{ fontSize: 12, padding: "6px 12px" }}
-                    title={`Ctrl+${index + 1}: ${preset.name}`}
-                  >
-                    {index + 1}. {preset.name}
-                  </button>
-                ))}
-              </div>
-            ) : (
-              <p className="hint" style={{ margin: 0, fontSize: 12 }}>
-                프리셋이 없습니다. 자주 매수하는 종목을 입력한 후 "현재 저장" 버튼을 클릭하세요.
-              </p>
-            )}
-          </div>
+          <PresetSection
+            presets={filteredPresets}
+            onApplyPreset={applyPreset}
+            onSaveCurrent={saveCurrentAsPreset}
+            onOpenModal={() => setShowPresetModal(true)}
+          />
 
           <div className="two-column">
             <form className="card" onSubmit={handleTradeSubmit} style={{ padding: 16 }}>
@@ -2379,7 +2174,9 @@ export const StocksView: React.FC<Props> = ({
           <p className="hint" style={{ margin: "0 0 12px 0", fontSize: 12 }}>
             한국 종목은 원화(KRW), 해외 종목은 달러(USD)로 입력 및 표시됩니다.
           </p>
-          <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(180px, 1fr))", gap: "10px 12px" }}>
+          
+            {/* 전체 폼 */}
+            <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(180px, 1fr))", gap: "10px 12px" }}>
             <label style={{ display: "flex", flexDirection: "column", gap: 4 }}>
               <span style={{ fontSize: 13, fontWeight: 500 }}>거래일</span>
             <input
@@ -2461,7 +2258,7 @@ export const StocksView: React.FC<Props> = ({
                       name: selectedName || prev.name || selectedTicker
                     }));
                     // 티커 선택 시 시세도 조회
-                    const symbol = cleanTicker(selectedTicker);
+                    const symbol = canonicalTickerForMatch(selectedTicker);
                     if (symbol) {
                       fetchYahooQuotes([symbol]).then((results) => {
                         if (results.length > 0) {
@@ -2510,11 +2307,10 @@ export const StocksView: React.FC<Props> = ({
             <label style={{ display: "flex", flexDirection: "column", gap: 4 }}>
               <span style={{ fontSize: 13, fontWeight: 500 }}>
                 단가 {(() => {
-                  const ticker = tradeForm.ticker.toUpperCase();
-                  const isKorea = /^[0-9]{6}$/.test(ticker);
-                  const priceInfo = prices.find((p) => p.ticker === ticker);
-                  const currency = priceInfo?.currency || (isKorea ? "KRW" : "USD");
-                  return isKorea ? "(KRW)" : "(USD)";
+                  const tickerClean = canonicalTickerForMatch(tradeForm.ticker);
+                  const priceInfo = prices.find((p) => canonicalTickerForMatch(p.ticker) === tickerClean);
+                  const currency = priceInfo?.currency || (isKRWStock(tradeForm.ticker) ? "KRW" : "USD");
+                  return currency === "USD" ? "(USD)" : "(KRW)";
                 })()}
               </span>
             <input
@@ -2540,11 +2336,10 @@ export const StocksView: React.FC<Props> = ({
             <label style={{ display: "flex", flexDirection: "column", gap: 4 }}>
               <span style={{ fontSize: 13, fontWeight: 500 }}>
                 수수료+세금 {(() => {
-                  const ticker = tradeForm.ticker.toUpperCase();
-                  const isKorea = /^[0-9]{6}$/.test(ticker);
-                  const priceInfo = prices.find((p) => p.ticker === ticker);
-                  const currency = priceInfo?.currency || (isKorea ? "KRW" : "USD");
-                  return isKorea ? "(KRW)" : "(USD)";
+                  const tickerClean = canonicalTickerForMatch(tradeForm.ticker);
+                  const priceInfo = prices.find((p) => canonicalTickerForMatch(p.ticker) === tickerClean);
+                  const currency = priceInfo?.currency || (isKRWStock(tradeForm.ticker) ? "KRW" : "USD");
+                  return currency === "USD" ? "(USD)" : "(KRW)";
                 })()}
               </span>
             <input
@@ -2647,646 +2442,47 @@ export const StocksView: React.FC<Props> = ({
         </p>
       )}
       {quoteError && (
-        <p className="error-text" style={{ marginTop: 4 }}>
-          {quoteError}
-        </p>
-      )}
-
-      <h3 style={{ display: "flex", alignItems: "center", gap: 12 }}>
-        보유 종목 현황 (계좌별)
-        <label style={{ display: "flex", alignItems: "center", gap: 6, fontSize: 14, fontWeight: "normal", cursor: "pointer" }}>
-          <input
-            type="checkbox"
-            checked={isAccountReorderMode}
-            onChange={(e) => {
-              setIsAccountReorderMode(e.target.checked);
-              localStorage.setItem("fw-account-reorder-mode", String(e.target.checked));
+        <div style={{ marginTop: 8, display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
+          <p className="error-text" style={{ margin: 0 }}>
+            {quoteError}
+          </p>
+          <button
+            type="button"
+            className="primary"
+            onClick={() => {
+              setQuoteError(null);
+              handleRefreshQuotes();
             }}
-            style={{ cursor: "pointer" }}
-          />
-          <span>계좌순서 바꾸기</span>
-        </label>
-      </h3>
-      {positionsByAccount.map((group, groupIndex) => {
-        const balance = balances.find((b) => b.account.id === group.accountId);
-        const account = accounts.find((a) => a.id === group.accountId);
-        const isSecuritiesAccount = account?.type === "securities";
-        
-        // 증권계좌의 경우 USD와 KRW 잔액을 별도로 계산
-        let cashBalance = 0;
-        if (isSecuritiesAccount) {
-          const usdBalance = account?.usdBalance ?? 0;
-          const krwBalance = balance?.currentBalance ?? 0;
-          // 현금 = 달러(환율 적용) + 원화
-          cashBalance = fxRate ? (usdBalance * fxRate) + krwBalance : krwBalance;
-        } else {
-          cashBalance = balance?.currentBalance ?? 0;
-        }
-        
-        const stockValue = group.rows.reduce((sum, p) => sum + p.marketValue, 0);
-        const totalAsset = cashBalance + stockValue;
-        
-        return (
-        <div 
-          key={group.accountId}
-          draggable={isAccountReorderMode}
-          onDragStart={() => {
-            if (isAccountReorderMode) {
-              setDraggingAccountId(group.accountId);
-            }
-          }}
-          onDragOver={(e) => {
-            if (isAccountReorderMode) {
-              e.preventDefault();
-            }
-          }}
-          onDrop={(e) => {
-            if (isAccountReorderMode) {
-              e.preventDefault();
-              if (draggingAccountId && draggingAccountId !== group.accountId) {
-                handleAccountReorder(draggingAccountId, groupIndex);
-              }
-              setDraggingAccountId(null);
-            }
-          }}
-          onDragEnd={() => {
-            if (isAccountReorderMode) {
-              setDraggingAccountId(null);
-            }
-          }}
-          style={{ 
-            marginBottom: 24,
-            opacity: draggingAccountId === group.accountId ? 0.5 : 1,
-            cursor: isAccountReorderMode ? "move" : "default"
-          }}
-        >
-          <h4 style={{ display: "flex", alignItems: "center", gap: 16, marginBottom: 12, flexWrap: "wrap" }}>
-            {isAccountReorderMode && (
-              <span 
-                className="drag-handle" 
-                title="잡고 위/아래로 끌어서 계좌 순서 변경"
-                style={{ cursor: "grab", fontSize: 18, userSelect: "none" }}
-              >
-                ☰
-              </span>
-            )}
-            <span>{group.accountName}</span>
-            {isSecuritiesAccount && (
-              <>
-                <span style={{ fontSize: 14, fontWeight: 400, color: "var(--muted)" }}>
-                  달러: <span className={(account?.usdBalance ?? 0) >= 0 ? "positive" : "negative"}>
-                    {formatUSD(account?.usdBalance ?? 0)}
-                  </span>
-                </span>
-                <span style={{ fontSize: 14, fontWeight: 400, color: "var(--muted)" }}>
-                  원화: <span className={(balance?.currentBalance ?? 0) >= 0 ? "positive" : "negative"}>
-                    {formatKRW(Math.round(balance?.currentBalance ?? 0))}
-                  </span>
-                </span>
-              </>
-            )}
-            <span style={{ fontSize: 14, fontWeight: 400, color: "var(--muted)" }}>
-              현금+예수금: <span className={cashBalance >= 0 ? "positive" : "negative"}>{formatKRW(Math.round(cashBalance))}</span>
-            </span>
-            <span style={{ fontSize: 14, fontWeight: 400, color: "var(--muted)" }}>
-              주식평가액: {formatKRW(Math.round(stockValue))}
-            </span>
-            <span style={{ fontSize: 14, fontWeight: 400, color: "var(--muted)" }}>
-              총자산: <span className={totalAsset >= 0 ? "positive" : "negative"}>{formatKRW(Math.round(totalAsset))}</span>
-            </span>
-          </h4>
-          <div>
-            <table className="data-table" style={{ width: "100%" }}>
-              <colgroup>
-                <col style={{ width: "60px" }} />
-                <col style={{ width: "auto", minWidth: "150px" }} />
-                <col style={{ width: "100px" }} />
-                <col style={{ width: "80px" }} />
-                <col style={{ width: "100px" }} />
-                <col style={{ width: "100px" }} />
-                <col style={{ width: "80px" }} />
-                <col style={{ width: "110px" }} />
-                <col style={{ width: "110px" }} />
-              </colgroup>
-            <thead>
-              <tr>
-                <th>
-                  <button type="button" className="sort-header" onClick={() => togglePositionSort("ticker")}>
-                    티커 <span className="arrow">{sortIndicator(positionSort.key, "ticker", positionSort.direction)}</span>
-                  </button>
-                </th>
-                <th>
-                  <button type="button" className="sort-header" onClick={() => togglePositionSort("name")}>
-                    종목명 <span className="arrow">{sortIndicator(positionSort.key, "name", positionSort.direction)}</span>
-                  </button>
-                </th>
-                <th>
-                  <button type="button" className="sort-header" onClick={() => togglePositionSort("pnl")}>
-                    평가손익 <span className="arrow">{sortIndicator(positionSort.key, "pnl", positionSort.direction)}</span>
-                  </button>
-                </th>
-                <th>
-                  <button type="button" className="sort-header" onClick={() => togglePositionSort("pnlRate")}>
-                    수익률 <span className="arrow">{sortIndicator(positionSort.key, "pnlRate", positionSort.direction)}</span>
-                  </button>
-                </th>
-                <th>
-                  <button type="button" className="sort-header" onClick={() => togglePositionSort("marketPrice")}>
-                    현재가 <span className="arrow">{sortIndicator(positionSort.key, "marketPrice", positionSort.direction)}</span>
-                  </button>
-                </th>
-                <th>
-                  <button type="button" className="sort-header" onClick={() => togglePositionSort("avgPrice")}>
-                    평균단가 <span className="arrow">{sortIndicator(positionSort.key, "avgPrice", positionSort.direction)}</span>
-                  </button>
-                </th>
-                <th>
-                  <button type="button" className="sort-header" onClick={() => togglePositionSort("quantity")}>
-                    보유수량 <span className="arrow">{sortIndicator(positionSort.key, "quantity", positionSort.direction)}</span>
-                  </button>
-                </th>
-                <th>
-                  <button type="button" className="sort-header" onClick={() => togglePositionSort("totalBuyAmount")}>
-                    총매입금액 <span className="arrow">{sortIndicator(positionSort.key, "totalBuyAmount", positionSort.direction)}</span>
-                  </button>
-                </th>
-                <th>
-                  <button type="button" className="sort-header" onClick={() => togglePositionSort("marketValue")}>
-                    총평가금액 <span className="arrow">{sortIndicator(positionSort.key, "marketValue", positionSort.direction)}</span>
-                  </button>
-                </th>
-              </tr>
-            </thead>
-            <tbody>
-              {group.rows.map((p) => {
-                return (
-                  <tr 
-                    key={`${group.accountId}-${p.ticker}`}
-                    onClick={() => handlePositionClick(p)}
-                    style={{ cursor: "pointer" }}
-                    title="클릭하여 상세 정보 보기"
-                    onMouseEnter={(e) => {
-                      e.currentTarget.style.backgroundColor = "var(--surface-hover)";
-                    }}
-                    onMouseLeave={(e) => {
-                      e.currentTarget.style.backgroundColor = "";
-                    }}
-                  >
-                    <td style={{ color: "var(--primary)", fontWeight: 500 }}>
-                      {p.ticker}
-                    </td>
-                    <td 
-                      style={{ 
-                        fontSize: "12px",
-                        whiteSpace: "nowrap",
-                        overflow: "hidden",
-                        textOverflow: "ellipsis",
-                        maxWidth: "200px"
-                      }}
-                      title={p.name}
-                    >
-                      {p.name}
-                    </td>
-                    <td 
-                      className="number"
-                      style={{ 
-                        color: p.pnl >= 0 ? "#f43f5e" : "#0ea5e9",
-                        fontWeight: "600"
-                      }}
-                    >
-                      {formatPriceWithCurrency(p.pnl, p.currency, p.ticker)}
-                    </td>
-                    <td 
-                      className="number"
-                      style={{ 
-                        color: p.pnl >= 0 ? "#f43f5e" : "#0ea5e9",
-                        fontWeight: "600"
-                      }}
-                    >
-                      {(p.pnlRate * 100).toFixed(2)}%
-                    </td>
-                    <td className="number">
-                      {formatPriceWithCurrency(p.displayMarketPrice, p.currency, p.ticker)}
-                    </td>
-                    <td className="number">{formatPriceWithCurrency(Math.round(p.avgPrice), p.currency, p.ticker)}</td>
-                    <td className="number">{p.quantity % 1 === 0 ? formatNumber(p.quantity) : p.quantity.toFixed(6)}</td>
-                    <td className="number">{formatPriceWithCurrency(p.totalBuyAmount, p.currency, p.ticker)}</td>
-                    <td className={`number ${p.marketValue >= p.totalBuyAmount ? "positive" : "negative"}`}>
-                      {formatPriceWithCurrency(p.marketValue, p.currency, p.ticker)}
-                    </td>
-                  </tr>
-                );
-              })}
-            </tbody>
-            </table>
-          </div>
-        </div>
-        );
-      })}
-
-      <h3>거래 내역</h3>
-      {(() => {
-        // 통화별로 합계 계산
-        const krwTrades = trades.filter(t => !isUSDStock(t.ticker));
-        const usdTrades = trades.filter(t => isUSDStock(t.ticker));
-        
-        const krwBuyAmount = krwTrades.filter(t => t.side === "buy").reduce((sum, t) => sum + t.totalAmount, 0);
-        const krwSellAmount = krwTrades.filter(t => t.side === "sell").reduce((sum, t) => sum + t.totalAmount, 0);
-        const krwFee = krwTrades.reduce((sum, t) => sum + t.fee, 0);
-        
-        const usdBuyAmount = usdTrades.filter(t => t.side === "buy").reduce((sum, t) => sum + t.totalAmount, 0);
-        const usdSellAmount = usdTrades.filter(t => t.side === "sell").reduce((sum, t) => sum + t.totalAmount, 0);
-        const usdFee = usdTrades.reduce((sum, t) => sum + t.fee, 0);
-        
-        return (
-          <div className="card" style={{ marginBottom: 16, padding: 12 }}>
-            <div style={{ display: "flex", gap: 24, flexWrap: "wrap", fontSize: 14 }}>
-              {krwBuyAmount + krwSellAmount + krwFee > 0 && (
-                <>
-                  <div>
-                    <span style={{ color: "var(--muted)", marginRight: 8 }}>총 매수 (KRW):</span>
-                    <span className="negative">{formatKRW(Math.round(krwBuyAmount))}</span>
-                  </div>
-                  <div>
-                    <span style={{ color: "var(--muted)", marginRight: 8 }}>총 매도 (KRW):</span>
-                    <span className="positive">{formatKRW(Math.round(krwSellAmount))}</span>
-                  </div>
-                  <div>
-                    <span style={{ color: "var(--muted)", marginRight: 8 }}>총 수수료 (KRW):</span>
-                    <span className="negative">{formatKRW(Math.round(krwFee))}</span>
-                  </div>
-                </>
-              )}
-              {usdBuyAmount + usdSellAmount + usdFee > 0 && (
-                <>
-                  <div>
-                    <span style={{ color: "var(--muted)", marginRight: 8 }}>총 매수 (USD):</span>
-                    <span className="negative">{formatUSD(usdBuyAmount)}</span>
-                  </div>
-                  <div>
-                    <span style={{ color: "var(--muted)", marginRight: 8 }}>총 매도 (USD):</span>
-                    <span className="positive">{formatUSD(usdSellAmount)}</span>
-                  </div>
-                  <div>
-                    <span style={{ color: "var(--muted)", marginRight: 8 }}>총 수수료 (USD):</span>
-                    <span className="negative">{formatUSD(usdFee)}</span>
-                  </div>
-                </>
-              )}
-            </div>
-          </div>
-        );
-      })()}
-      <div className="card" style={{ padding: 0 }}>
-        <table className="data-table trades-table" style={{ width: "100%" }}>
-          <colgroup>
-            <col style={{ width: "30px" }} />
-            <col style={{ width: "70px" }} />
-            <col style={{ width: "60px" }} />
-            <col style={{ width: "60px" }} />
-            <col style={{ width: "auto", minWidth: "150px" }} />
-            <col style={{ width: "45px" }} />
-            <col style={{ width: "60px" }} />
-            <col style={{ width: "100px" }} />
-            <col style={{ width: "80px" }} />
-            <col style={{ width: "120px" }} />
-            <col style={{ width: "50px" }} />
-            <col style={{ width: "60px" }} />
-          </colgroup>
-        <thead>
-          <tr>
-            <th>순서</th>
-            <th>
-              <button type="button" className="sort-header" onClick={() => toggleTradeSort("date")}>
-                날짜 <span className="arrow">{sortIndicator(tradeSort.key, "date", tradeSort.direction)}</span>
-              </button>
-            </th>
-            <th>
-              <button type="button" className="sort-header" onClick={() => toggleTradeSort("accountId")}>
-                계좌 <span className="arrow">{sortIndicator(tradeSort.key, "accountId", tradeSort.direction)}</span>
-              </button>
-            </th>
-            <th>
-              <button type="button" className="sort-header" onClick={() => toggleTradeSort("ticker")}>
-                티커 <span className="arrow">{sortIndicator(tradeSort.key, "ticker", tradeSort.direction)}</span>
-              </button>
-            </th>
-            <th>
-              <button type="button" className="sort-header" onClick={() => toggleTradeSort("name")}>
-                종목명 <span className="arrow">{sortIndicator(tradeSort.key, "name", tradeSort.direction)}</span>
-              </button>
-            </th>
-            <th>
-              <button type="button" className="sort-header" onClick={() => toggleTradeSort("side")}>
-                매매 <span className="arrow">{sortIndicator(tradeSort.key, "side", tradeSort.direction)}</span>
-              </button>
-            </th>
-            <th>
-              <button type="button" className="sort-header" onClick={() => toggleTradeSort("quantity")}>
-                수량 <span className="arrow">{sortIndicator(tradeSort.key, "quantity", tradeSort.direction)}</span>
-              </button>
-            </th>
-            <th>
-              <button type="button" className="sort-header" onClick={() => toggleTradeSort("price")}>
-                단가 <span className="arrow">{sortIndicator(tradeSort.key, "price", tradeSort.direction)}</span>
-              </button>
-            </th>
-            <th>
-              <button type="button" className="sort-header" onClick={() => toggleTradeSort("fee")}>
-                수수료 <span className="arrow">{sortIndicator(tradeSort.key, "fee", tradeSort.direction)}</span>
-              </button>
-            </th>
-            <th>
-              <button type="button" className="sort-header" onClick={() => toggleTradeSort("totalAmount")}>
-                총금액 <span className="arrow">{sortIndicator(tradeSort.key, "totalAmount", tradeSort.direction)}</span>
-              </button>
-            </th>
-            <th>초기보유</th>
-            <th>작업</th>
-          </tr>
-        </thead>
-        <tbody>
-          {paginatedTrades.map((t, index) => {
-            const actualIndex = (tradeCurrentPage - 1) * tradePageSize + index;
-            return (
-            <tr
-              key={t.id}
-              draggable
-              onDragOver={(e) => {
-                if (!draggingTradeId) return;
-                e.preventDefault();
-              }}
-              onDrop={(e) => {
-                if (!draggingTradeId) return;
-                e.preventDefault();
-                handleReorderTrade(draggingTradeId, index);
-                setDraggingTradeId(null);
-              }}
-              onDragStart={() => setDraggingTradeId(t.id)}
-              onDragEnd={() => setDraggingTradeId(null)}
-            >
-              <td className="drag-cell">
-                <span className="drag-handle" title="잡고 위/아래로 끌어서 순서 변경">☰</span>
-              </td>
-              <td 
-                onDoubleClick={() => startInlineEdit(t, "date")}
-                style={{ cursor: "pointer" }}
-                title="더블클릭하여 수정"
-              >
-                {inlineEdit?.id === t.id && inlineEditField === "date" ? (
-                  <input
-                    type="date"
-                    value={inlineEdit.date}
-                    onChange={(e) => setInlineEdit({ ...inlineEdit, date: e.target.value })}
-                    onBlur={saveInlineEdit}
-                    onKeyDown={(e) => {
-                      if (e.key === "Enter") saveInlineEdit();
-                      if (e.key === "Escape") cancelInlineEdit();
-                    }}
-                    autoFocus
-                    style={{ padding: "2px 4px", fontSize: 13 }}
-                  />
-                ) : (
-                  formatShortDate(t.date)
-                )}
-              </td>
-              <td 
-                onDoubleClick={() => startInlineEdit(t, "accountId")}
-                style={{ cursor: "pointer" }}
-                title="더블클릭하여 수정"
-              >
-                {inlineEdit?.id === t.id && inlineEditField === "accountId" ? (
-                  <select
-                    value={inlineEdit.accountId}
-                    onChange={(e) => setInlineEdit({ ...inlineEdit, accountId: e.target.value })}
-                    onBlur={saveInlineEdit}
-                    onKeyDown={(e) => {
-                      if (e.key === "Enter") saveInlineEdit();
-                      if (e.key === "Escape") cancelInlineEdit();
-                    }}
-                    autoFocus
-                    style={{ padding: "2px 4px", fontSize: 13 }}
-                  >
-                    <option value="">선택</option>
-                    {accounts
-                      .filter((a) => a.type === "securities")
-                      .map((a) => (
-                        <option key={a.id} value={a.id}>
-                          {a.id} - {a.name}
-                        </option>
-                      ))}
-                  </select>
-                ) : (
-                  t.accountId
-                )}
-              </td>
-              <td 
-                onClick={() => startEditTrade(t)}
-                style={{ cursor: "pointer", textDecoration: "underline", color: "var(--primary)" }}
-                title="클릭하여 편집하기"
-              >
-                {t.ticker}
-              </td>
-              <td 
-                className="name-cell" 
-                onClick={() => startEditTrade(t)}
-                style={{ 
-                  cursor: "pointer", 
-                  textDecoration: "underline", 
-                  color: "var(--primary)",
-                  fontSize: "12px",
-                  whiteSpace: "nowrap",
-                  overflow: "hidden",
-                  textOverflow: "ellipsis",
-                  maxWidth: "220px"
-                }}
-                title={t.name}
-              >
-                {t.name}
-              </td>
-              <td>{sideLabel[t.side]}</td>
-              <td 
-                className="number"
-                onDoubleClick={() => startInlineEdit(t, "quantity")}
-                style={{ cursor: "pointer" }}
-                title="더블클릭하여 수정"
-              >
-                {inlineEdit?.id === t.id ? (
-                  <input
-                    type="number"
-                    value={inlineEdit.quantity}
-                    onChange={(e) => setInlineEdit({ ...inlineEdit, quantity: e.target.value })}
-                    onBlur={saveInlineEdit}
-                    onKeyDown={(e) => {
-                      if (e.key === "Enter") saveInlineEdit();
-                      if (e.key === "Escape") cancelInlineEdit();
-                    }}
-                    autoFocus={inlineEditField === "quantity"}
-                    style={{ width: "80px", padding: "2px 4px", fontSize: 13, textAlign: "right" }}
-                  />
-                ) : (
-                  t.quantity % 1 === 0 ? formatNumber(t.quantity) : t.quantity.toFixed(6)
-                )}
-              </td>
-              <td 
-                className={`number ${t.price >= 0 ? "positive" : "negative"}`}
-                onDoubleClick={() => startInlineEdit(t, "price")}
-                style={{ cursor: "pointer" }}
-                title="더블클릭하여 수정"
-              >
-                {inlineEdit?.id === t.id ? (
-                  <input
-                    type="number"
-                    value={inlineEdit.price}
-                    onChange={(e) => setInlineEdit({ ...inlineEdit, price: e.target.value })}
-                    onBlur={saveInlineEdit}
-                    onKeyDown={(e) => {
-                      if (e.key === "Enter") saveInlineEdit();
-                      if (e.key === "Escape") cancelInlineEdit();
-                    }}
-                    autoFocus={inlineEditField === "price"}
-                    style={{ width: "100px", padding: "2px 4px", fontSize: 13, textAlign: "right" }}
-                  />
-                ) : (
-                  (() => {
-                    const priceInfo = prices.find((p) => p.ticker === t.ticker);
-                    const currency = priceInfo?.currency;
-                    return formatPriceWithCurrency(t.price, currency, t.ticker);
-                  })()
-                )}
-              </td>
-              <td 
-                className={`number ${t.fee >= 0 ? "positive" : "negative"}`}
-                onDoubleClick={() => startInlineEdit(t, "fee")}
-                style={{ cursor: "pointer" }}
-                title="더블클릭하여 수정"
-              >
-                {inlineEdit?.id === t.id ? (
-                  <input
-                    type="number"
-                    value={inlineEdit.fee}
-                    onChange={(e) => setInlineEdit({ ...inlineEdit, fee: e.target.value })}
-                    onBlur={saveInlineEdit}
-                    onKeyDown={(e) => {
-                      if (e.key === "Enter") saveInlineEdit();
-                      if (e.key === "Escape") cancelInlineEdit();
-                    }}
-                    autoFocus={inlineEditField === "fee"}
-                    style={{ width: "100px", padding: "2px 4px", fontSize: 13, textAlign: "right" }}
-                  />
-                ) : (
-                  (() => {
-                    const priceInfo = prices.find((p) => p.ticker === t.ticker);
-                    const currency = priceInfo?.currency;
-                    return formatPriceWithCurrency(t.fee, currency, t.ticker);
-                  })()
-                )}
-              </td>
-              <td 
-                className={`number ${t.totalAmount >= 0 ? "positive" : "negative"}`}
-                onDoubleClick={() => startInlineEdit(t, "totalAmount")}
-                style={{ cursor: "pointer" }}
-                title="더블클릭하여 수정 (수량 자동 조정)"
-              >
-                {inlineEdit?.id === t.id && inlineEditField === "totalAmount" ? (
-                  <input
-                    type="number"
-                    value={Math.round(Number(inlineEdit.quantity) * Number(inlineEdit.price) + Number(inlineEdit.fee || 0))}
-                    onChange={(e) => {
-                      const newTotal = Number(e.target.value);
-                      const fee = Number(inlineEdit.fee || 0);
-                      const price = Number(inlineEdit.price);
-                      if (price > 0) {
-                        const newQuantity = (newTotal - fee) / price;
-                        setInlineEdit({ ...inlineEdit, quantity: String(Math.max(0, Math.round(newQuantity * 100) / 100)) });
-                      }
-                    }}
-                    onBlur={saveInlineEdit}
-                    onKeyDown={(e) => {
-                      if (e.key === "Enter") saveInlineEdit();
-                      if (e.key === "Escape") cancelInlineEdit();
-                    }}
-                    autoFocus
-                    style={{ width: "120px", padding: "2px 4px", fontSize: 13, textAlign: "right" }}
-                  />
-                ) : (
-                  (() => {
-                    const priceInfo = prices.find((p) => p.ticker === t.ticker);
-                    const currency = priceInfo?.currency;
-                    return formatPriceWithCurrency(t.totalAmount, currency, t.ticker);
-                  })()
-                )}
-              </td>
-              <td style={{ textAlign: "center" }}>
-                {t.side === "buy" && (
-                  <input
-                    type="checkbox"
-                    checked={t.cashImpact === 0}
-                    onChange={() => toggleInitialHolding(t)}
-                    title="체크 시 현금 차감 안 함 (초기 보유)"
-                  />
-                )}
-              </td>
-              <td style={{ width: 60, padding: "4px" }}>
-                <button 
-                  type="button" 
-                  className="danger" 
-                  onClick={() => handleDeleteTrade(t.id)}
-                  style={{ padding: "4px 8px", fontSize: 12 }}
-                >
-                  삭제
-                </button>
-              </td>
-            </tr>
-            );
-          })}
-        </tbody>
-        </table>
-      {sortedTrades.length > 0 && tradeTotalPages > 1 && (
-        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginTop: "16px", padding: "12px", background: "var(--surface)", borderRadius: "8px" }}>
-          <div style={{ fontSize: "14px", color: "var(--text-muted)" }}>
-            총 {sortedTrades.length}건 중 {((tradeCurrentPage - 1) * tradePageSize) + 1}-{Math.min(tradeCurrentPage * tradePageSize, sortedTrades.length)}건 표시
-          </div>
-          <div style={{ display: "flex", gap: "8px", alignItems: "center" }}>
-            <button
-              type="button"
-              className="secondary"
-              onClick={() => setTradeCurrentPage(1)}
-              disabled={tradeCurrentPage === 1}
-            >
-              처음
-            </button>
-            <button
-              type="button"
-              className="secondary"
-              onClick={() => setTradeCurrentPage(prev => Math.max(1, prev - 1))}
-              disabled={tradeCurrentPage === 1}
-            >
-              이전
-            </button>
-            <span style={{ padding: "0 12px", fontSize: "14px" }}>
-              {tradeCurrentPage} / {tradeTotalPages}
-            </span>
-            <button
-              type="button"
-              className="secondary"
-              onClick={() => setTradeCurrentPage(prev => Math.min(tradeTotalPages, prev + 1))}
-              disabled={tradeCurrentPage === tradeTotalPages}
-            >
-              다음
-            </button>
-            <button
-              type="button"
-              className="secondary"
-              onClick={() => setTradeCurrentPage(tradeTotalPages)}
-              disabled={tradeCurrentPage === tradeTotalPages}
-            >
-              마지막
-            </button>
-          </div>
+            style={{ padding: "6px 12px", fontSize: 13 }}
+          >
+            다시 시도
+          </button>
         </div>
       )}
-      </div>
+
+      <PositionListSection
+        positionsByAccount={positionsByAccount}
+        balances={balances}
+        accounts={accounts}
+        prices={prices}
+        fxRate={fxRate}
+        accountOrder={accountOrder}
+        onAccountReorder={handleAccountReorder}
+        onPositionClick={handlePositionClick}
+        onQuickSell={handleQuickSell}
+        onQuickBuy={handleQuickBuy}
+      />
+
+      <TradeHistorySection
+        trades={trades}
+        accounts={accounts}
+        prices={prices}
+        fxRate={fxRate}
+        onChangeTrades={onChangeTrades}
+        onStartEditTrade={startEditTrade}
+        onResetTradeForm={resetTradeForm}
+        onChangeAccounts={onChangeAccounts}
+      />
         </>
       )}
         </>
@@ -3294,198 +2490,25 @@ export const StocksView: React.FC<Props> = ({
 
       {/* 포트폴리오 분석 탭 */}
       {activeTab === "portfolio" && (
-        <div className="card" style={{ padding: 16 }}>
-          <h2 style={{ margin: "0 0 16px 0" }}>주식 포트폴리오 분석</h2>
-          
-          <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(300px, 1fr))", gap: 24 }}>
-            {/* 1. 포트폴리오 비중 (평가금액 기준) */}
-            <div className="card" style={{ border: "1px solid var(--border)", boxShadow: "none", padding: 16 }}>
-              <h4 style={{ margin: "0 0 12px 0", textAlign: "center" }}>종목별 비중 (평가액)</h4>
-              <div style={{ width: "100%", height: 300, minHeight: 300, minWidth: 0 }}>
-                {positionsWithPrice.length > 0 ? (() => {
-                  const sorted = [...positionsWithPrice].sort((a, b) => b.marketValue - a.marketValue);
-                  const topN = 8; // 상위 8개만 표시
-                  const topPositions = sorted.slice(0, topN);
-                  const others = sorted.slice(topN);
-                  const othersValue = others.reduce((sum, p) => sum + p.marketValue, 0);
-                  
-                  const chartData = [
-                    ...topPositions.map(p => ({
-                      name: (p.name || p.ticker).length > 15 ? (p.name || p.ticker).slice(0, 15) + "..." : (p.name || p.ticker),
-                      value: p.marketValue,
-                      fullName: p.name || p.ticker
-                    })),
-                    ...(othersValue > 0 ? [{
-                      name: `기타 (${others.length}개)`,
-                      value: othersValue,
-                      fullName: `기타 ${others.length}개 종목`
-                    }] : [])
-                  ];
-                  
-                  const colors = ["#0ea5e9", "#6366f1", "#f43f5e", "#10b981", "#f59e0b", "#8b5cf6", "#ec4899", "#14b8a6", "#64748b"];
-                  
-                  return (
-                    <ResponsiveContainer width="100%" height="100%" minHeight={300} minWidth={0}>
-                      <PieChart>
-                        <Pie
-                          data={chartData}
-                          cx="50%"
-                          cy="50%"
-                          outerRadius={80}
-                          fill="#8884d8"
-                          dataKey="value"
-                          label={({ percent }) => percent ? `${(percent * 100).toFixed(1)}%` : "0%"}
-                          labelLine={false}
-                        >
-                          {chartData.map((entry, index) => (
-                            <Cell key={`cell-${index}`} fill={colors[index % colors.length]} />
-                          ))}
-                        </Pie>
-                        <Tooltip 
-                          formatter={(value: any, payload: any) => [
-                            formatKRW(value),
-                            payload?.payload?.fullName || payload?.name
-                          ]}
-                        />
-                        <Legend 
-                          formatter={(value: any, entry: any) => entry.payload?.fullName || value}
-                          wrapperStyle={{ fontSize: "11px" }}
-                        />
-                      </PieChart>
-                    </ResponsiveContainer>
-                  );
-                })() : (
-                  <div style={{ display: "flex", justifyContent: "center", alignItems: "center", height: "100%", color: "var(--muted)" }}>
-                    보유 종목이 없습니다.
-                  </div>
-                )}
-              </div>
-            </div>
-
-            {/* 2. 계좌별 자산 비중 */}
-            <div className="card" style={{ border: "1px solid var(--border)", boxShadow: "none", padding: 16 }}>
-              <h4 style={{ margin: "0 0 12px 0", textAlign: "center" }}>계좌별 자산 비중 (주식+현금)</h4>
-              <div style={{ width: "100%", height: 300, minHeight: 300, minWidth: 0 }}>
-                {(() => {
-                  const accountData = positionsByAccount.map(group => {
-                    const balance = balances.find(b => b.account.id === group.accountId);
-                    const cash = balance?.currentBalance ?? 0;
-                    const stock = group.rows.reduce((sum, p) => sum + p.marketValue, 0);
-                    return {
-                      name: group.accountName,
-                      value: Math.max(0, cash + stock),
-                      cash,
-                      stock
-                    };
-                  }).filter(d => d.value > 0);
-                  
-                  const totalAsset = accountData.reduce((sum, d) => sum + d.value, 0);
-                  const colors = ["#f59e0b", "#10b981", "#0ea5e9", "#6366f1", "#f43f5e"];
-                  
-                  return (
-                    <ResponsiveContainer width="100%" height="100%" minHeight={300} minWidth={0}>
-                      <PieChart>
-                        <Pie
-                          data={accountData}
-                          cx="50%"
-                          cy="50%"
-                          innerRadius={60}
-                          outerRadius={80}
-                          fill="#8884d8"
-                          dataKey="value"
-                          label={({ percent }) => percent ? `${(percent * 100).toFixed(1)}%` : "0%"}
-                          labelLine={false}
-                        >
-                          {accountData.map((entry, index) => (
-                            <Cell key={`cell-${index}`} fill={colors[index % colors.length]} />
-                          ))}
-                        </Pie>
-                        <Label
-                          value={`총 자산\n${formatKRW(totalAsset)}`}
-                          position="center"
-                          fill="var(--text)"
-                          style={{ fontSize: "13px", fontWeight: "bold", textAlign: "center" }}
-                        />
-                        <Tooltip 
-                          formatter={(value: any, payload: any) => [
-                            formatKRW(value),
-                            `${payload?.name}\n주식: ${formatKRW(payload?.stock || 0)}\n현금: ${formatKRW(payload?.cash || 0)}`
-                          ]}
-                        />
-                        <Legend 
-                          wrapperStyle={{ fontSize: "11px" }}
-                        />
-                      </PieChart>
-                    </ResponsiveContainer>
-                  );
-                })()}
-              </div>
-            </div>
-          </div>
-
-          <div style={{ marginTop: 24 }}>
-             {/* 3. 종목별 평가손익 (수평 Bar Chart) */}
-             <div className="card" style={{ border: "1px solid var(--border)", boxShadow: "none", padding: 16 }}>
-              <h4 style={{ margin: "0 0 12px 0", textAlign: "center" }}>종목별 평가 손익 (상위/하위 10개)</h4>
-              <div style={{ width: "100%", height: Math.max(400, positionsWithPrice.length * 30), minHeight: 400, minWidth: 0 }}>
-                {positionsWithPrice.length > 0 ? (() => {
-                  const sorted = [...positionsWithPrice].sort((a, b) => b.pnl - a.pnl);
-                  const top10 = sorted.slice(0, 10);
-                  const bottom10 = sorted.slice(-10).reverse();
-                  const chartData = [...top10, ...bottom10].map(p => ({
-                    name: (p.name || p.ticker).length > 20 ? (p.name || p.ticker).slice(0, 20) + "..." : (p.name || p.ticker),
-                    pnl: p.pnl,
-                    fullName: p.name || p.ticker,
-                    fill: p.pnl >= 0 ? "#10b981" : "#f43f5e" // 녹색=수익, 빨강=손실
-                  }));
-                  
-                  return (
-                    <ResponsiveContainer width="100%" height="100%" minHeight={400} minWidth={0}>
-                      <BarChart
-                        data={chartData}
-                        layout="vertical"
-                        margin={{ top: 5, right: 30, left: 100, bottom: 5 }}
-                      >
-                        <CartesianGrid strokeDasharray="3 3" horizontal={false} />
-                        <XAxis 
-                          type="number"
-                          tickFormatter={(val) => `${(val / 10000).toFixed(0)}만`} 
-                          fontSize={11}
-                          tickLine={false}
-                          axisLine={false}
-                        />
-                        <YAxis 
-                          type="category"
-                          dataKey="name" 
-                          fontSize={11}
-                          tickLine={false}
-                          axisLine={false}
-                          width={95}
-                        />
-                        <Tooltip 
-                          formatter={(value: any, payload: any) => [
-                            formatKRW(value),
-                            payload?.payload?.fullName || payload?.name
-                          ]}
-                          cursor={{fill: 'rgba(0,0,0,0.05)'}}
-                        />
-                        <Bar dataKey="pnl" name="평가손익" radius={[0, 4, 4, 0]}>
-                          {chartData.map((entry, index) => (
-                            <Cell key={`cell-${index}`} fill={entry.fill} />
-                          ))}
-                        </Bar>
-                      </BarChart>
-                    </ResponsiveContainer>
-                  );
-                })() : (
-                  <div style={{ display: "flex", justifyContent: "center", alignItems: "center", height: "100%", color: "var(--muted)" }}>
-                    데이터 없음
-                  </div>
-                )}
-              </div>
-            </div>
-          </div>
-        </div>
+        <>
+          <PortfolioChartsSection
+            positionsWithPrice={positionsWithPrice}
+            positionsByAccount={positionsByAccount}
+            balances={balances}
+          />
+          {onChangeTargetPortfolios && (
+            <TargetPortfolioSection
+              positionsWithPrice={positionsWithPrice}
+              positionsByAccount={positionsByAccount}
+              accounts={accounts}
+              prices={prices}
+              tickerDatabase={tickerDatabase}
+              targetPortfolios={targetPortfolios}
+              onChangeTargetPortfolios={onChangeTargetPortfolios}
+              fxRate={propFxRate}
+            />
+          )}
+        </>
       )}
 
       {/* 프리셋 관리 모달 */}
@@ -3599,7 +2622,7 @@ export const StocksView: React.FC<Props> = ({
           </div>
 
           <h3>환전 내역</h3>
-          <FxHistorySection ledger={ledger} prices={prices} />
+          <FxHistorySection ledger={ledger} />
         </div>
       )}
 
@@ -3620,341 +2643,3 @@ export const StocksView: React.FC<Props> = ({
   );
 };
 
-// 환전 폼 섹션 컴포넌트
-interface FxFormSectionProps {
-  accounts: Account[];
-  ledger: LedgerEntry[];
-  onChangeLedger: (next: LedgerEntry[]) => void;
-  fxRate: number | null;
-}
-
-const FxFormSection: React.FC<FxFormSectionProps> = ({ accounts, ledger, onChangeLedger, fxRate }) => {
-  const [form, setForm] = useState({
-    date: new Date().toISOString().slice(0, 10),
-    fromAccountId: "",
-    toAccountId: "",
-    fromAmount: "",
-    toAmount: "",
-    rate: fxRate ? String(Math.round(fxRate * 100) / 100) : "",
-    description: ""
-  });
-  const [loadingRate, setLoadingRate] = useState(false);
-
-  const krwAccounts = useMemo(() => {
-    return accounts.filter((a) => {
-      const name = (a.name + a.id).toLowerCase();
-      return !name.includes("usd") && !name.includes("dollar") && !name.includes("달러");
-    });
-  }, [accounts]);
-
-  const usdAccounts = useMemo(() => {
-    return accounts.filter((a) => {
-      const name = (a.name + a.id).toLowerCase();
-      return name.includes("usd") || name.includes("dollar") || name.includes("달러");
-    });
-  }, [accounts]);
-
-  const handleRateChange = (newRate: string) => {
-    const rate = parseFloat(newRate) || 0;
-    setForm((prev) => {
-      if (prev.fromAmount && rate > 0) {
-        const fromAmount = parseFloat(prev.fromAmount) || 0;
-        const toAmount = fromAmount * rate;
-        return { ...prev, rate: newRate, toAmount: String(Math.round(toAmount * 100) / 100) };
-      }
-      return { ...prev, rate: newRate };
-    });
-  };
-
-  const handleFromAmountChange = (value: string) => {
-    const amount = parseFloat(value) || 0;
-    const rate = parseFloat(form.rate) || 0;
-    setForm((prev) => ({
-      ...prev,
-      fromAmount: value,
-      toAmount: rate > 0 ? String(Math.round(amount * rate * 100) / 100) : prev.toAmount
-    }));
-  };
-
-  const handleToAmountChange = (value: string) => {
-    const amount = parseFloat(value) || 0;
-    const rate = parseFloat(form.rate) || 0;
-    setForm((prev) => ({
-      ...prev,
-      toAmount: value,
-      fromAmount: rate > 0 ? String(Math.round((amount / rate) * 100) / 100) : prev.fromAmount
-    }));
-  };
-
-  const handleSubmit = (e: React.FormEvent) => {
-    e.preventDefault();
-
-    if (!form.fromAccountId || !form.toAccountId) {
-      toast.error("출발 계좌와 도착 계좌를 선택해주세요");
-      return;
-    }
-
-    if (form.fromAccountId === form.toAccountId) {
-      toast.error("출발 계좌와 도착 계좌가 같을 수 없습니다");
-      return;
-    }
-
-    const fromAmount = parseFloat(form.fromAmount) || 0;
-    const toAmount = parseFloat(form.toAmount) || 0;
-    const rate = parseFloat(form.rate) || 0;
-
-    if (fromAmount <= 0 || toAmount <= 0 || rate <= 0) {
-      toast.error("금액과 환율을 올바르게 입력해주세요");
-      return;
-    }
-
-    const isKrwToUsd = krwAccounts.some((a) => a.id === form.fromAccountId) && 
-                       usdAccounts.some((a) => a.id === form.toAccountId);
-    const isUsdToKrw = usdAccounts.some((a) => a.id === form.fromAccountId) && 
-                       krwAccounts.some((a) => a.id === form.toAccountId);
-
-    if (!isKrwToUsd && !isUsdToKrw) {
-      toast.error("KRW 계좌와 USD 계좌 간의 환전만 가능합니다");
-      return;
-    }
-
-    const description = form.description || 
-      (isKrwToUsd 
-        ? `환전: ${formatKRW(fromAmount)} → ${formatUSD(toAmount)} (환율: ${rate.toFixed(2)})`
-        : `환전: ${formatUSD(fromAmount)} → ${formatKRW(toAmount)} (환율: ${rate.toFixed(2)})`);
-
-    const newEntry: LedgerEntry = {
-      id: `fx-${Date.now()}`,
-      date: form.date,
-      kind: "transfer",
-      category: "환전",
-      description: description,
-      fromAccountId: form.fromAccountId,
-      toAccountId: form.toAccountId,
-      amount: fromAmount
-    };
-
-    onChangeLedger([...ledger, newEntry]);
-    toast.success("환전 거래가 추가되었습니다");
-    setForm({
-      date: new Date().toISOString().slice(0, 10),
-      fromAccountId: "",
-      toAccountId: "",
-      fromAmount: "",
-      toAmount: "",
-      rate: fxRate ? String(Math.round(fxRate * 100) / 100) : "",
-      description: ""
-    });
-  };
-
-  return (
-    <form onSubmit={handleSubmit}>
-      <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(200px, 1fr))", gap: "12px" }}>
-        <label style={{ display: "flex", flexDirection: "column", gap: 4 }}>
-          <span style={{ fontSize: 13, fontWeight: 500 }}>거래일</span>
-          <input
-            type="date"
-            value={form.date}
-            onChange={(e) => setForm({ ...form, date: e.target.value })}
-            style={{ padding: "6px 8px", fontSize: 14 }}
-            required
-          />
-        </label>
-
-        <label style={{ display: "flex", flexDirection: "column", gap: 4 }}>
-          <span style={{ fontSize: 13, fontWeight: 500 }}>출발 계좌</span>
-          <select
-            value={form.fromAccountId}
-            onChange={(e) => setForm({ ...form, fromAccountId: e.target.value })}
-            style={{ padding: "6px 8px", fontSize: 14 }}
-            required
-          >
-            <option value="">선택</option>
-            {accounts.map((a) => (
-              <option key={a.id} value={a.id}>
-                {a.id} {a.name ? `(${a.name})` : ""}
-              </option>
-            ))}
-          </select>
-        </label>
-
-        <label style={{ display: "flex", flexDirection: "column", gap: 4 }}>
-          <span style={{ fontSize: 13, fontWeight: 500 }}>도착 계좌</span>
-          <select
-            value={form.toAccountId}
-            onChange={(e) => setForm({ ...form, toAccountId: e.target.value })}
-            style={{ padding: "6px 8px", fontSize: 14 }}
-            required
-          >
-            <option value="">선택</option>
-            {accounts.map((a) => (
-              <option key={a.id} value={a.id}>
-                {a.id} {a.name ? `(${a.name})` : ""}
-              </option>
-            ))}
-          </select>
-        </label>
-
-        <label style={{ display: "flex", flexDirection: "column", gap: 4 }}>
-          <span style={{ fontSize: 13, fontWeight: 500 }}>
-            출발 금액 {krwAccounts.some((a) => a.id === form.fromAccountId) ? "(KRW)" : usdAccounts.some((a) => a.id === form.fromAccountId) ? "(USD)" : ""}
-          </span>
-          <input
-            type="number"
-            min={0}
-            step="0.01"
-            value={form.fromAmount}
-            onChange={(e) => handleFromAmountChange(e.target.value)}
-            style={{ padding: "6px 8px", fontSize: 14 }}
-            required
-          />
-        </label>
-
-        <label style={{ display: "flex", flexDirection: "column", gap: 4 }}>
-          <span style={{ fontSize: 13, fontWeight: 500 }}>환율 (USD/KRW)</span>
-          <div style={{ display: "flex", gap: 4 }}>
-            <input
-              type="number"
-              min={0}
-              step="0.01"
-              value={form.rate}
-              onChange={(e) => handleRateChange(e.target.value)}
-              style={{ padding: "6px 8px", fontSize: 14, flex: 1 }}
-              required
-            />
-            {loadingRate ? (
-              <button type="button" disabled style={{ padding: "6px 12px", fontSize: 12 }}>
-                조회 중...
-              </button>
-            ) : (
-              <button
-                type="button"
-                onClick={async () => {
-                  try {
-                    setLoadingRate(true);
-                    const res = await fetchYahooQuotes(["USDKRW=X"]);
-                    if (res[0]?.price) {
-                      const rate = Math.round(res[0].price * 100) / 100;
-                      handleRateChange(String(rate));
-                      toast.success(`현재 환율: ${rate.toFixed(2)}`);
-                    }
-                  } catch (err) {
-                    toast.error("환율 조회 실패");
-                  } finally {
-                    setLoadingRate(false);
-                  }
-                }}
-                className="secondary"
-                style={{ padding: "6px 12px", fontSize: 12 }}
-              >
-                현재 환율
-              </button>
-            )}
-          </div>
-        </label>
-
-        <label style={{ display: "flex", flexDirection: "column", gap: 4 }}>
-          <span style={{ fontSize: 13, fontWeight: 500 }}>
-            도착 금액 {krwAccounts.some((a) => a.id === form.toAccountId) ? "(KRW)" : usdAccounts.some((a) => a.id === form.toAccountId) ? "(USD)" : ""}
-          </span>
-          <input
-            type="number"
-            min={0}
-            step="0.01"
-            value={form.toAmount}
-            onChange={(e) => handleToAmountChange(e.target.value)}
-            style={{ padding: "6px 8px", fontSize: 14 }}
-            required
-          />
-        </label>
-
-        <label style={{ display: "flex", flexDirection: "column", gap: 4, gridColumn: "1 / -1" }}>
-          <span style={{ fontSize: 13, fontWeight: 500 }}>메모 (선택)</span>
-          <input
-            type="text"
-            value={form.description}
-            onChange={(e) => setForm({ ...form, description: e.target.value })}
-            placeholder="환전 거래 메모"
-            style={{ padding: "6px 8px", fontSize: 14 }}
-          />
-        </label>
-      </div>
-
-      <div style={{ display: "flex", gap: 8, marginTop: 16, justifyContent: "flex-end" }}>
-        <button
-          type="button"
-          onClick={() => setForm({
-            date: new Date().toISOString().slice(0, 10),
-            fromAccountId: "",
-            toAccountId: "",
-            fromAmount: "",
-            toAmount: "",
-            rate: fxRate ? String(Math.round(fxRate * 100) / 100) : "",
-            description: ""
-          })}
-          className="secondary"
-          style={{ padding: "8px 16px", fontSize: 14 }}
-        >
-          초기화
-        </button>
-        <button type="submit" className="primary" style={{ padding: "8px 16px", fontSize: 14 }}>
-          환전 거래 추가
-        </button>
-      </div>
-    </form>
-  );
-};
-
-// 환전 내역 섹션 컴포넌트
-interface FxHistorySectionProps {
-  ledger: LedgerEntry[];
-  prices: StockPrice[];
-}
-
-const FxHistorySection: React.FC<FxHistorySectionProps> = ({ ledger }) => {
-  const fxEntries = useMemo(() => {
-    return ledger.filter((entry) => 
-      entry.kind === "transfer" && 
-      (entry.description.toLowerCase().includes("환전") ||
-       entry.description.toLowerCase().includes("fx") ||
-       entry.description.toLowerCase().includes("exchange"))
-    );
-  }, [ledger]);
-
-  if (fxEntries.length === 0) {
-    return (
-      <div className="card" style={{ padding: 16, textAlign: "center", color: "var(--text-muted)" }}>
-        환전 거래 내역이 없습니다.
-      </div>
-    );
-  }
-
-  return (
-    <div className="card" style={{ padding: 0, overflow: "hidden" }}>
-      <table className="data-table">
-        <thead>
-          <tr>
-            <th>날짜</th>
-            <th>출발 계좌</th>
-            <th>도착 계좌</th>
-            <th>금액</th>
-            <th>설명</th>
-          </tr>
-        </thead>
-        <tbody>
-          {fxEntries
-            .sort((a, b) => b.date.localeCompare(a.date))
-            .map((entry) => (
-              <tr key={entry.id}>
-                <td>{formatShortDate(entry.date)}</td>
-                <td>{entry.fromAccountId || "-"}</td>
-                <td>{entry.toAccountId || "-"}</td>
-                <td className="number">{formatKRW(entry.amount)}</td>
-                <td>{entry.description}</td>
-              </tr>
-            ))}
-        </tbody>
-      </table>
-    </div>
-  );
-};

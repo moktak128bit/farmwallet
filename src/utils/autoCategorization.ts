@@ -91,7 +91,7 @@ export function applyAutoCategorization(entries: LedgerEntry[]): LedgerEntry[] {
 
     // 자동 분류 시도
     const result = autoCategorize(entry.description, savedRules);
-    if (result) {
+    if (result && result.category) {
       return {
         ...entry,
         category: result.category,
@@ -102,8 +102,3 @@ export function applyAutoCategorization(entries: LedgerEntry[]): LedgerEntry[] {
     return entry;
   });
 }
-
-
-
-
-

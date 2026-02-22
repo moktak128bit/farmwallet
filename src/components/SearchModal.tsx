@@ -1,4 +1,4 @@
-import React from "react";
+import React, { useEffect } from "react";
 import type { SearchQuery, SavedFilter } from "../hooks/useSearch";
 
 interface SearchModalProps {
@@ -32,6 +32,15 @@ export const SearchModal: React.FC<SearchModalProps> = ({
   onApplyFilter,
   onDeleteFilter
 }) => {
+  useEffect(() => {
+    if (!isOpen) return;
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key === "Escape") onClose();
+    };
+    window.addEventListener("keydown", handleKeyDown);
+    return () => window.removeEventListener("keydown", handleKeyDown);
+  }, [isOpen, onClose]);
+
   if (!isOpen) return null;
 
   return (

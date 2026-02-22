@@ -52,6 +52,14 @@ function isSavingsExpense(
   accounts: Account[] | undefined,
   categoryPresets: CategoryPresets
 ): boolean {
+  // transfer인 경우: 입금계좌가 증권/저축이면 저축성 지출 (카테고리와 무관)
+  if (entry && kind === "transfer" && entry.toAccountId && accounts) {
+    const toAccount = accounts.find(a => a.id === entry.toAccountId);
+    if (toAccount && (toAccount.type === "securities" || toAccount.type === "savings")) {
+      return true;
+    }
+  }
+
   // 일반 이체(이체·계좌이체·카드결제이체)는 저축성 지출이 아님
   const generalTransferCategories = ["이체", "계좌이체", "카드결제이체"];
   if (generalTransferCategories.includes(category)) {
@@ -62,14 +70,6 @@ function isSavingsExpense(
   const savingsCategories = categoryPresets.categoryTypes?.savings ?? ["저축성지출"];
   if (savingsCategories.includes(category)) {
     return true;
-  }
-
-  // transfer이고 toAccountId가 증권/저축 계좌인 경우 (저축성 지출 탭에서 입력한 적금·ISA 등)
-  if (entry && kind === "transfer" && entry.toAccountId && accounts) {
-    const toAccount = accounts.find(a => a.id === entry.toAccountId);
-    if (toAccount && (toAccount.type === "securities" || toAccount.type === "savings")) {
-      return true;
-    }
   }
 
   // expense이고 대분류가 저축성지출인 경우
@@ -84,12 +84,13 @@ function isSavingsExpense(
  * 가계부 단일 소스: 저축성지출 여부 (entry + accounts만 사용, 대시보드·리포트 등 동일 로직)
  */
 export function isSavingsExpenseEntry(entry: LedgerEntry, accounts: Account[]): boolean {
-  const generalTransferCategories = ["이체", "계좌이체", "카드결제이체"];
-  if (generalTransferCategories.includes(entry.category)) return false;
+  // 이체인 경우: 입금계좌가 증권/저축이면 저축성 지출 (카테고리와 무관)
   if (entry.kind === "transfer" && entry.toAccountId) {
     const to = accounts.find((a) => a.id === entry.toAccountId);
     if (to && (to.type === "securities" || to.type === "savings")) return true;
   }
+  const generalTransferCategories = ["이체", "계좌이체", "카드결제이체"];
+  if (generalTransferCategories.includes(entry.category)) return false;
   if (entry.kind === "expense" && entry.category === "저축성지출") return true;
   return false;
 }

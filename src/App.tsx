@@ -1,19 +1,20 @@
-import React, { useMemo, useState } from "react";
+import React, { useMemo, useState, lazy, Suspense } from "react";
 import { Toaster, toast } from "react-hot-toast";
 import { Moon, Sun } from "lucide-react";
 import { Tabs, type TabId } from "./components/Tabs";
-import { AccountsView } from "./components/AccountsView";
-import { LedgerView } from "./components/LedgerView";
 import { DashboardView } from "./components/DashboardView";
-import { DividendsView } from "./components/DividendsView";
-import { DebtView } from "./components/DebtView";
-import { StocksView } from "./components/StocksView";
-import { BudgetRecurringView } from "./components/BudgetRecurringView";
-import { SettingsView } from "./components/SettingsView";
-import { CategoriesView } from "./components/CategoriesView";
 import { ShortcutsHelp } from "./components/ShortcutsHelp";
-import { ReportView } from "./components/ReportView";
 import { SearchModal } from "./components/SearchModal";
+
+const AccountsView = lazy(() => import("./components/AccountsView").then((m) => ({ default: m.AccountsView })));
+const LedgerView = lazy(() => import("./components/LedgerView").then((m) => ({ default: m.LedgerView })));
+const CategoriesView = lazy(() => import("./components/CategoriesView").then((m) => ({ default: m.CategoriesView })));
+const StocksView = lazy(() => import("./components/StocksView").then((m) => ({ default: m.StocksView })));
+const DividendsView = lazy(() => import("./components/DividendsView").then((m) => ({ default: m.DividendsView })));
+const DebtView = lazy(() => import("./components/DebtView").then((m) => ({ default: m.DebtView })));
+const BudgetRecurringView = lazy(() => import("./components/BudgetRecurringView").then((m) => ({ default: m.BudgetRecurringView })));
+const ReportView = lazy(() => import("./components/ReportView").then((m) => ({ default: m.ReportView })));
+const SettingsView = lazy(() => import("./components/SettingsView").then((m) => ({ default: m.SettingsView })));
 import { useAppData } from "./hooks/useAppData";
 import { useUndoRedo } from "./hooks/useUndoRedo";
 import { useBackup } from "./hooks/useBackup";
@@ -31,7 +32,7 @@ export const App: React.FC = () => {
   const [copyRequest, setCopyRequest] = useState<import("./types").LedgerEntry | null>(null);
 
   // 커스텀 훅 사용
-  const { data, setData, setManualBackupFlag } = useAppData();
+  const { data, setData, isLoading, loadFailed, clearLoadFailed, setManualBackupFlag, saveNow } = useAppData();
   const { setDataWithHistory, handleUndo, handleRedo } = useUndoRedo(data, setData);
   const { theme, toggleTheme } = useTheme();
   const fxRate = useFxRate();
@@ -70,7 +71,15 @@ export const App: React.FC = () => {
       }
     },
     onSearch: () => setIsSearchOpen(true),
-    onShortcutsHelp: () => setShowShortcutsHelp((prev) => !prev)
+    onShortcutsHelp: () => setShowShortcutsHelp((prev) => !prev),
+    onSave: () => {
+      saveNow();
+      toast.success("저장됨", { id: "save" });
+    },
+    onAddLedger: () => {
+      setTab("ledger");
+      window.dispatchEvent(new CustomEvent("farmwallet:focus-ledger-form"));
+    }
   });
 
 
@@ -114,6 +123,28 @@ export const App: React.FC = () => {
     toast.success("계좌 ID 변경 완료");
   };
 
+
+  if (isLoading) {
+    return (
+      <div className="app-root" style={{ display: "flex", alignItems: "center", justifyContent: "center", minHeight: "100vh" }}>
+        <p style={{ color: "var(--text-muted)", fontSize: 15 }}>로딩 중...</p>
+      </div>
+    );
+  }
+
+  if (loadFailed) {
+    return (
+      <div className="app-root" style={{ display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", minHeight: "100vh", padding: 24, textAlign: "center" }}>
+        <p style={{ color: "var(--danger)", fontSize: 16, fontWeight: 600, marginBottom: 8 }}>데이터를 불러오지 못했습니다</p>
+        <p style={{ color: "var(--text-muted)", fontSize: 14, marginBottom: 24, maxWidth: 400 }}>
+          저장된 데이터가 손상되었거나 읽을 수 없습니다. 설정 탭에서 &quot;백업 파일 불러오기&quot;로 이전에 받아 둔 JSON 백업을 불러오세요.
+        </p>
+        <button type="button" className="primary" onClick={() => setTab("settings")}>
+          설정 탭으로 이동
+        </button>
+      </div>
+    );
+  }
 
   return (
     <div className="app-root">
@@ -190,6 +221,7 @@ export const App: React.FC = () => {
               <Tabs active={tab} onChange={setTab} />
             </aside>
             <main className="app-main" role="main">
+          <Suspense fallback={<div className="card" style={{ padding: 24, textAlign: "center", color: "var(--text-muted)" }}>로딩 중...</div>}>
           {tab === "dashboard" && (
             <DashboardView
               accounts={data.accounts}
@@ -295,12 +327,14 @@ export const App: React.FC = () => {
             <SettingsView
               data={data}
               backupVersion={backupVersion}
+              onBackupRestored={clearLoadFailed}
               onChangeData={(next) => {
                 setDataWithHistory(next);
                 toast.success("데이터가 업데이트되었습니다.");
               }}
             />
           )}
+          </Suspense>
         </main>
       </div>
 

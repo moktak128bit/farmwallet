@@ -1,5 +1,5 @@
 // Re-export from services for backward compatibility
-export { loadData, saveData } from "./services/dataService";
+export { loadData, saveData, getEmptyData } from "./services/dataService";
 export {
   saveBackupSnapshot,
   getBackupList,

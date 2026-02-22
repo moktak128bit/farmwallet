@@ -71,7 +71,7 @@ export const LedgerView: React.FC<Props> = ({
   // 페이징 상태
   const [currentPage, setCurrentPage] = useState(1);
   const [pageSize, setPageSize] = useState(50);
-  const [ledgerTab, setLedgerTab] = useState<LedgerTab>("expense");
+  const [ledgerTab, setLedgerTab] = useState<LedgerTab>("all");
   const [formKindWhenAll, setFormKindWhenAll] = useState<"income"|"expense"|"savingsExpense"|"transfer">("expense");
   const effectiveFormKind = ledgerTab === "all" ? formKindWhenAll : ledgerTab;
   const kindForTab: LedgerKind = useMemo(
@@ -133,9 +133,8 @@ export const LedgerView: React.FC<Props> = ({
         }
       }
     }
-    // 최적화된 컬럼 너비: 날짜, 대분류, 항목, 상세내역, 출금, 입금, 금액, 작업
-    // 더 넓고 읽기 좋은 비율로 조정
-    return [10, 12, 12, 28, 11, 11, 13, 3];
+    // 날짜, 대분류, 항목, 상세내역, 출금, 입금, 금액, 작업 — 맨 오른쪽 복사/삭제가 보이도록 작업 컬럼 확보
+    return [9, 11, 11, 24, 10, 10, 12, 9];
   });
   const [resizingColumn, setResizingColumn] = useState<number | null>(null);
   const [resizeStartX, setResizeStartX] = useState(0);
@@ -215,7 +214,14 @@ export const LedgerView: React.FC<Props> = ({
   // 배치 편집 모드 상태
   const [isBatchEditMode, setIsBatchEditMode] = useState(false);
   const [selectedLedgerIds, setSelectedLedgerIds] = useState<Set<string>>(new Set());
-  
+  // Ctrl+드래그 구간 선택 / Shift+클릭 추가·제거
+  const [selectedLedgerIdsForSum, setSelectedLedgerIdsForSum] = useState<Set<string>>(new Set());
+  const [dragSumStartIndex, setDragSumStartIndex] = useState<number | null>(null);
+  const [dragSumEndIndex, setDragSumEndIndex] = useState<number | null>(null);
+  const dragSumListenersRef = useRef<{ move: (e: MouseEvent) => void; up: () => void } | null>(null);
+  const dragSumStartRef = useRef<number>(0);
+  const dragSumEndRef = useRef<number>(0);
+
   // 컬럼 너비 변경 시 localStorage에 저장
   useEffect(() => {
     if (typeof window !== "undefined") {
@@ -715,6 +721,14 @@ export const LedgerView: React.FC<Props> = ({
       const entry: LedgerEntry = { id, ...base };
       onChangeLedger([entry, ...ledger]);
       setLastAddedEntryId(id);
+      // 새 항목 추가 시 기존 필터 초기화
+      setFilterMainCategory(undefined);
+      setFilterSubCategory(undefined);
+      setFilterFromAccountId(undefined);
+      setFilterToAccountId(undefined);
+      setFilterAmountMin(undefined);
+      setFilterAmountMax(undefined);
+      setDateFilter({});
       const amountStr = kindForTab === "transfer" && form.currency === "USD"
         ? `${amount.toLocaleString()} USD`
         : `${amount.toLocaleString()}원`;
@@ -993,6 +1007,17 @@ export const LedgerView: React.FC<Props> = ({
     setDateFilter({});
   };
 
+  const clearAllFilters = () => {
+    setFilterMainCategory(undefined);
+    setFilterSubCategory(undefined);
+    setFilterFromAccountId(undefined);
+    setFilterToAccountId(undefined);
+    setFilterAmountMin(undefined);
+    setFilterAmountMax(undefined);
+    setDateFilter({});
+    setForm((p) => ({ ...p, mainCategory: "", subCategory: "", fromAccountId: "", toAccountId: "" }));
+  };
+
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
       // Ctrl+S: 저장
@@ -1138,6 +1163,51 @@ export const LedgerView: React.FC<Props> = ({
     return Math.ceil(filteredLedger.length / pageSize);
   }, [filteredLedger.length, pageSize]);
 
+  const paginatedLedgerRef = useRef<LedgerEntry[]>([]);
+  useEffect(() => {
+    paginatedLedgerRef.current = paginatedLedger;
+  }, [paginatedLedger]);
+
+  // 페이지/필터 변경 시 선택 합계 초기화 (다른 목록이 보이므로)
+  useEffect(() => {
+    setSelectedLedgerIdsForSum(new Set());
+  }, [currentPage, filteredLedger.length]);
+
+  // Ctrl+N 시 전역 이벤트로 가계부 폼 포커스
+  useEffect(() => {
+    const handler = () => {
+      const el = document.querySelector("[data-ledger-focus=\"amount\"]") as HTMLInputElement | null;
+      if (el) {
+        el.focus();
+        el.scrollIntoView({ behavior: "smooth", block: "center" });
+      }
+    };
+    window.addEventListener("farmwallet:focus-ledger-form", handler);
+    return () => window.removeEventListener("farmwallet:focus-ledger-form", handler);
+  }, []);
+
+  // 선택된 행 기준 합계 (표시용)
+  const sumResultFromSelection = useMemo(() => {
+    if (selectedLedgerIdsForSum.size === 0) return null;
+    const slice = filteredLedger.filter((e) => selectedLedgerIdsForSum.has(e.id));
+    if (slice.length === 0) return null;
+    let incomeSum = 0;
+    let expenseSum = 0;
+    let transferSum = 0;
+    slice.forEach((e) => {
+      if (e.kind === "income") incomeSum += e.amount;
+      else if (e.kind === "transfer" || isSavingsExpenseEntry(e, accounts)) transferSum += e.amount;
+      else expenseSum += e.amount;
+    });
+    return {
+      count: slice.length,
+      incomeSum,
+      expenseSum,
+      transferSum,
+      net: incomeSum - expenseSum - transferSum
+    };
+  }, [filteredLedger, selectedLedgerIdsForSum, accounts]);
+
   // 페이지 변경 시 첫 페이지로 리셋
   useEffect(() => {
     setCurrentPage(1);
@@ -1227,6 +1297,47 @@ export const LedgerView: React.FC<Props> = ({
     next.splice(clamped, 0, item);
     onChangeLedger(next);
   };
+
+  const handleDragSumStart = useCallback((index: number) => {
+    dragSumStartRef.current = index;
+    dragSumEndRef.current = index;
+    setDragSumStartIndex(index);
+    setDragSumEndIndex(index);
+
+    const onMove = (e: MouseEvent) => {
+      const el = document.elementFromPoint(e.clientX, e.clientY);
+      const tr = el?.closest?.("tr[data-ledger-id]");
+      if (tr) {
+        const id = tr.getAttribute("data-ledger-id");
+        const list = paginatedLedgerRef.current;
+        const idx = list.findIndex((l) => l.id === id);
+        if (idx >= 0) {
+          dragSumEndRef.current = idx;
+          setDragSumEndIndex(idx);
+        }
+      }
+    };
+    const onUp = () => {
+      const start = dragSumStartRef.current;
+      const end = dragSumEndRef.current;
+      const list = paginatedLedgerRef.current;
+      const lo = Math.min(start, end);
+      const hi = Math.max(start, end);
+      const slice = list.slice(lo, hi + 1);
+      document.removeEventListener("mousemove", onMove);
+      document.removeEventListener("mouseup", onUp);
+      dragSumListenersRef.current = null;
+      setDragSumStartIndex(null);
+      setDragSumEndIndex(null);
+      if (slice.length > 0) {
+        setSelectedLedgerIdsForSum(new Set(slice.map((e) => e.id)));
+        toast.success("선택한 구간 합계를 아래에 표시했습니다.", { duration: 2000 });
+      }
+    };
+    document.addEventListener("mousemove", onMove);
+    document.addEventListener("mouseup", onUp);
+    dragSumListenersRef.current = { move: onMove, up: onUp };
+  }, [accounts]);
 
   useEffect(() => {
     if (!lastAddedEntryId) return;
@@ -1452,6 +1563,22 @@ export const LedgerView: React.FC<Props> = ({
                         : ""} ×
                 </button>
               )}
+              <button
+                type="button"
+                onClick={clearAllFilters}
+                style={{
+                  padding: "6px 12px",
+                  fontSize: 12,
+                  fontWeight: 600,
+                  borderRadius: "20px",
+                  border: "1px solid var(--border)",
+                  background: "var(--surface)",
+                  color: "var(--text-secondary)",
+                  cursor: "pointer"
+                }}
+              >
+                필터 한번에 지우기
+              </button>
             </div>
           )}
         </div>
@@ -1576,6 +1703,7 @@ export const LedgerView: React.FC<Props> = ({
                   )}
                 </span>
                 <input
+                  data-ledger-focus="amount"
                   type="text"
                   inputMode={effectiveFormKind === "transfer" && form.currency === "USD" ? "decimal" : "numeric"}
                   placeholder={effectiveFormKind === "transfer" && form.currency === "USD" ? "0.00" : "0"}
@@ -2022,7 +2150,17 @@ export const LedgerView: React.FC<Props> = ({
             onClick={clearDateFilter}
             style={{ fontSize: 12, padding: "6px 12px" }}
           >
-            필터 해제
+            날짜 필터 해제
+          </button>
+        )}
+        {hasFilter && (
+          <button
+            type="button"
+            className="secondary"
+            onClick={clearAllFilters}
+            style={{ fontSize: 12, padding: "6px 12px" }}
+          >
+            필터 한번에 지우기
           </button>
         )}
         <div style={{ marginLeft: "auto", display: "flex", gap: "6px", flexWrap: "wrap" }}>
@@ -2230,13 +2368,81 @@ export const LedgerView: React.FC<Props> = ({
         )}
       </div>
 
-      <table className="data-table">
-        <colgroup>
-          {columnWidths.map((width, index) => (
-            <col key={index} style={{ width: `${width}%` }} />
-          ))}
-        </colgroup>
-        <thead>
+      {viewMode === "all" && !isBatchEditMode && (
+        <p style={{ fontSize: 12, color: "var(--text-muted)", marginBottom: 8 }}>
+          <strong>Ctrl+드래그</strong>로 구간 쭉 선택, <strong>Shift+클릭</strong>으로 행 추가/제거. 합계는 아래에 고정 표시됩니다.
+        </p>
+      )}
+      {dragSumStartIndex != null && (
+        <div
+          style={{
+            marginBottom: 8,
+            padding: "10px 14px",
+            background: "var(--primary-light)",
+            borderRadius: 8,
+            border: "2px solid var(--primary)",
+            fontSize: 13,
+            fontWeight: 600,
+            color: "var(--primary)"
+          }}
+        >
+          선택 중: {Math.min(dragSumStartIndex, dragSumEndIndex ?? dragSumStartIndex) + 1}행 ~ {Math.max(dragSumStartIndex, dragSumEndIndex ?? dragSumStartIndex) + 1}행 (
+          {Math.abs((dragSumEndIndex ?? dragSumStartIndex) - dragSumStartIndex) + 1}건) — 마우스를 놓으면 합계가 아래 상자에 고정됩니다
+        </div>
+      )}
+      {sumResultFromSelection != null && (
+        <div
+          style={{
+            marginBottom: 12,
+            padding: "14px 18px",
+            background: "var(--surface)",
+            borderRadius: 10,
+            border: "2px solid var(--primary)",
+            boxShadow: "0 2px 8px rgba(0,0,0,0.08)"
+          }}
+        >
+          <div style={{ display: "flex", flexWrap: "wrap", alignItems: "center", justifyContent: "space-between", gap: 12 }}>
+            <div style={{ display: "flex", flexWrap: "wrap", alignItems: "center", gap: 16 }}>
+              <span style={{ fontSize: 14, fontWeight: 700, color: "var(--text)" }}>
+                선택 {sumResultFromSelection.count}건 합계
+              </span>
+              {sumResultFromSelection.incomeSum > 0 && (
+                <span style={{ fontSize: 13, color: "var(--success)", fontWeight: 600 }}>수입 {formatKRW(sumResultFromSelection.incomeSum)}</span>
+              )}
+              {sumResultFromSelection.expenseSum > 0 && (
+                <span style={{ fontSize: 13, color: "var(--danger)", fontWeight: 600 }}>지출 {formatKRW(sumResultFromSelection.expenseSum)}</span>
+              )}
+              {sumResultFromSelection.transferSum > 0 && (
+                <span style={{ fontSize: 13, color: "var(--accent)", fontWeight: 600 }}>이체 {formatKRW(sumResultFromSelection.transferSum)}</span>
+              )}
+              <span style={{ fontSize: 14, fontWeight: 800, color: sumResultFromSelection.net >= 0 ? "var(--primary)" : "var(--danger)" }}>
+                순합계 {formatKRW(sumResultFromSelection.net)}
+              </span>
+            </div>
+            <button
+              type="button"
+              className="secondary"
+              onClick={() => setSelectedLedgerIdsForSum(new Set())}
+              style={{ fontSize: 12, padding: "6px 12px" }}
+            >
+              선택 해제
+            </button>
+          </div>
+        </div>
+      )}
+      <div style={{ overflowX: "auto" }}>
+        <table className="data-table ledger-table">
+          <colgroup>
+            {columnWidths.map((width, index) => {
+              if (index === 7) {
+                return <col key={index} style={{ width: "100px" }} />;
+              }
+              const sumFirst7 = columnWidths.slice(0, 7).reduce((s, w) => s + w, 0);
+              const pct = sumFirst7 > 0 ? (width / sumFirst7) * 100 : 100 / 7;
+              return <col key={index} style={{ width: `calc((100% - 100px) * ${pct / 100})` }} />;
+            })}
+          </colgroup>
+          <thead>
           <tr>
             {isBatchEditMode && (
               <th style={{ width: "40px" }}>
@@ -2325,12 +2531,41 @@ export const LedgerView: React.FC<Props> = ({
         <tbody>
           {paginatedLedger.map((l, index) => {
             const actualIndex = (currentPage - 1) * pageSize + index;
+            const isDraggingRange =
+              dragSumStartIndex != null &&
+              index >= Math.min(dragSumStartIndex, dragSumEndIndex ?? dragSumStartIndex) &&
+              index <= Math.max(dragSumStartIndex, dragSumEndIndex ?? dragSumStartIndex);
+            const isInSumSelection = selectedLedgerIdsForSum.has(l.id);
+            const isInDragSumRange = isDraggingRange || isInSumSelection;
             return (
             <tr
               key={l.id}
               data-ledger-id={l.id}
               draggable={viewMode === "all" && !isBatchEditMode}
-              onDragStart={() => {
+              onMouseDown={(e) => {
+                if (e.ctrlKey && viewMode === "all" && !isBatchEditMode) {
+                  e.preventDefault();
+                  e.stopPropagation();
+                  handleDragSumStart(index);
+                }
+              }}
+              onClick={(e) => {
+                if (e.shiftKey && viewMode === "all" && !isBatchEditMode) {
+                  e.preventDefault();
+                  e.stopPropagation();
+                  setSelectedLedgerIdsForSum((prev) => {
+                    const next = new Set(prev);
+                    if (next.has(l.id)) next.delete(l.id);
+                    else next.add(l.id);
+                    return next;
+                  });
+                }
+              }}
+              onDragStart={(e) => {
+                if (e.ctrlKey) {
+                  e.preventDefault();
+                  return;
+                }
                 if (viewMode !== "all" || isBatchEditMode) return;
                 setDraggingId(l.id);
               }}
@@ -2347,6 +2582,15 @@ export const LedgerView: React.FC<Props> = ({
                 setDraggingId(null);
               }}
               onDragEnd={() => setDraggingId(null)}
+              style={
+                isInDragSumRange
+                  ? {
+                      backgroundColor: "var(--primary-light)",
+                      outline: isInSumSelection ? "2px solid var(--primary)" : undefined,
+                      outlineOffset: -1
+                    }
+                  : undefined
+              }
             >
               {isBatchEditMode && (
                 <td>
@@ -2679,7 +2923,8 @@ export const LedgerView: React.FC<Props> = ({
             );
           })}
         </tbody>
-      </table>
+        </table>
+      </div>
       {filteredLedger.length === 0 && (
         <p>
           {viewMode === "all"

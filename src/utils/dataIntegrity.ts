@@ -2,7 +2,7 @@
  * 데이터 무결성 검증 유틸리티
  */
 
-import type { Account, LedgerEntry, StockTrade } from "../types";
+import type { Account, LedgerEntry, StockTrade, CategoryPresets } from "../types";
 import { computeAccountBalances } from "../calculations";
 
 export interface DuplicateTrade {
@@ -25,11 +25,20 @@ export interface MissingReference {
   usedIn: Array<{ type: "ledger" | "trade"; id: string; field: string }>;
 }
 
+export interface CategoryMismatch {
+  entryId: string;
+  kind: string;
+  category: string;
+  subCategory?: string;
+  expectedMain?: string[];
+  expectedSubs?: string[];
+}
+
 export interface IntegrityIssue {
-  type: "duplicate" | "balance_mismatch" | "missing_reference" | "date_order" | "amount_consistency";
+  type: "duplicate" | "balance_mismatch" | "missing_reference" | "date_order" | "amount_consistency" | "category_mismatch";
   severity: "error" | "warning" | "info";
   message: string;
-  data: DuplicateTrade | BalanceMismatch | MissingReference | any;
+  data: DuplicateTrade | BalanceMismatch | MissingReference | CategoryMismatch | any;
 }
 
 /**
@@ -258,12 +267,106 @@ export function validateAmountConsistency(
 }
 
 /**
+ * 카테고리 일관성 검증: 가계부 항목의 category/subCategory가 CategoryPresets와 맞는지 검사
+ */
+export function checkCategoryConsistency(
+  ledger: LedgerEntry[],
+  categoryPresets: CategoryPresets
+): IntegrityIssue[] {
+  const issues: IntegrityIssue[] = [];
+  const incomeSet = new Set(categoryPresets.income ?? []);
+  const expenseSet = new Set(categoryPresets.expense ?? []);
+  const transferSet = new Set(categoryPresets.transfer ?? []);
+  const expenseDetails = categoryPresets.expenseDetails ?? [];
+  const savingsCategories = new Set(categoryPresets.categoryTypes?.savings ?? ["저축성지출"]);
+
+  ledger.forEach((entry) => {
+    const main = (entry.category ?? "").trim();
+    const sub = (entry.subCategory ?? "").trim();
+
+    if (entry.kind === "income") {
+      if (main && !incomeSet.has(main)) {
+        issues.push({
+          type: "category_mismatch",
+          severity: "warning",
+          message: `가계부 항목 ${entry.id}: 수입 카테고리 "${main}"이(가) 수입 프리셋에 없습니다`,
+          data: {
+            entryId: entry.id,
+            kind: "income",
+            category: main,
+            subCategory: sub || undefined,
+            expectedMain: categoryPresets.income
+          } as CategoryMismatch
+        });
+      }
+      return;
+    }
+
+    if (entry.kind === "transfer") {
+      if (main && !transferSet.has(main) && !savingsCategories.has(main)) {
+        issues.push({
+          type: "category_mismatch",
+          severity: "warning",
+          message: `가계부 항목 ${entry.id}: 이체 카테고리 "${main}"이(가) 이체/저축성지출 프리셋에 없습니다`,
+          data: {
+            entryId: entry.id,
+            kind: "transfer",
+            category: main,
+            subCategory: sub || undefined,
+            expectedMain: categoryPresets.transfer
+          } as CategoryMismatch
+        });
+      }
+      return;
+    }
+
+    if (entry.kind === "expense") {
+      if (main && !expenseSet.has(main) && !savingsCategories.has(main)) {
+        issues.push({
+          type: "category_mismatch",
+          severity: "warning",
+          message: `가계부 항목 ${entry.id}: 지출 대분류 "${main}"이(가) 지출 프리셋에 없습니다`,
+          data: {
+            entryId: entry.id,
+            kind: "expense",
+            category: main,
+            subCategory: sub || undefined,
+            expectedMain: categoryPresets.expense
+          } as CategoryMismatch
+        });
+        return;
+      }
+      const detailGroup = expenseDetails.find((g) => g.main === main);
+      const allowedSubs = detailGroup ? new Set(detailGroup.subs ?? []) : null;
+      if (sub && allowedSubs && !allowedSubs.has(sub)) {
+        issues.push({
+          type: "category_mismatch",
+          severity: "warning",
+          message: `가계부 항목 ${entry.id}: 지출 세부분류 "${main} > ${sub}"이(가) 프리셋에 없습니다`,
+          data: {
+            entryId: entry.id,
+            kind: "expense",
+            category: main,
+            subCategory: sub,
+            expectedMain: categoryPresets.expense,
+            expectedSubs: detailGroup?.subs
+          } as CategoryMismatch
+        });
+      }
+    }
+  });
+
+  return issues;
+}
+
+/**
  * 전체 무결성 체크 실행
  */
 export function runIntegrityCheck(
   accounts: Account[],
   ledger: LedgerEntry[],
-  trades: StockTrade[]
+  trades: StockTrade[],
+  categoryPresets?: CategoryPresets
 ): IntegrityIssue[] {
   const issues: IntegrityIssue[] = [];
 
@@ -307,6 +410,12 @@ export function runIntegrityCheck(
   // 금액 일관성 검증
   const amountIssues = validateAmountConsistency(ledger, trades);
   issues.push(...amountIssues);
+
+  // 카테고리 일관성 검증
+  if (categoryPresets) {
+    const categoryIssues = checkCategoryConsistency(ledger, categoryPresets);
+    issues.push(...categoryIssues);
+  }
 
   return issues;
 }

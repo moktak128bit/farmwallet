@@ -40,6 +40,7 @@ export function generateLedgerMarkdownReport(
   const sorted = [...ledger].sort((a, b) => a.date.localeCompare(b.date));
 
   let md = `# 가계부 정리\n\n`;
+  md += `> 이 문서는 Farm Wallet 앱의 **설정 > 백업/복원 > 정리.md 내보내기**로 생성되었습니다.\n\n`;
   md += `생성일: ${new Date().toLocaleString("ko-KR")}\n\n`;
   md += `총 ${ledger.length}건 (수입 ${income.length} / 지출 ${expense.length} / 저축성 지출 ${savingsExpense.length} / 이체 ${transfer.length})\n\n`;
 

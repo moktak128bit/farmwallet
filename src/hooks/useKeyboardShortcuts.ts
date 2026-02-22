@@ -9,6 +9,8 @@ interface UseKeyboardShortcutsOptions {
   onRedo: () => void;
   onSearch: () => void;
   onShortcutsHelp: () => void;
+  onSave?: () => void;
+  onAddLedger?: () => void;
 }
 
 export function useKeyboardShortcuts({
@@ -17,10 +19,26 @@ export function useKeyboardShortcuts({
   onUndo,
   onRedo,
   onSearch,
-  onShortcutsHelp
+  onShortcutsHelp,
+  onSave,
+  onAddLedger
 }: UseKeyboardShortcutsOptions) {
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
+      // Ctrl+S (저장)
+      if ((e.ctrlKey || e.metaKey) && e.key === "s") {
+        e.preventDefault();
+        onSave?.();
+        return;
+      }
+
+      // Ctrl+N (가계부 추가)
+      if ((e.ctrlKey || e.metaKey) && e.key === "n") {
+        e.preventDefault();
+        onAddLedger?.();
+        return;
+      }
+      
       // Ctrl+Z (실행 취소)
       if (e.ctrlKey && e.key === "z" && !e.shiftKey && !e.altKey) {
         e.preventDefault();
@@ -97,5 +115,5 @@ export function useKeyboardShortcuts({
     return () => {
       window.removeEventListener("keydown", handleKeyDown);
     };
-  }, [tab, setTab, onUndo, onRedo, onSearch, onShortcutsHelp]);
+  }, [tab, setTab, onUndo, onRedo, onSearch, onShortcutsHelp, onSave, onAddLedger]);
 }

@@ -20,7 +20,7 @@ import {
 import type { Account, LedgerEntry, StockPrice, StockTrade, CategoryPresets, TargetPortfolio } from "../types";
 import { computeAccountBalances, computeMonthlyNetWorth, computePositions } from "../calculations";
 import { formatKRW } from "../utils/format";
-import { isUSDStock, canonicalTickerForMatch } from "../utils/tickerUtils";
+import { isUSDStock, canonicalTickerForMatch, extractTickerFromText } from "../utils/tickerUtils";
 import { getCategoryType, isSavingsExpenseEntry } from "../utils/categoryUtils";
 import { useFxRate } from "../hooks/useFxRate";
 import { SAVINGS_RATE_GOAL, ISA_PORTFOLIO } from "../constants/config";
@@ -242,6 +242,51 @@ export const DashboardView: React.FC<Props> = ({
     [netWorthSeries]
   );
   const latestNetWorth = netWorthSeries.at(-1)?.netWorth ?? totalNetWorth;
+
+  // 2025년 수익 (25-01-01 ~ 25-12-31, 넣은 돈 대비) — 1월 데이터 없어도 netFlow로 계산
+  const return2025 = useMemo(() => {
+    const getNetWorthAtDate = (dateStr: string): number => {
+      const filteredLedger = ledger.filter((l) => l.date && l.date <= dateStr);
+      const filteredTrades = trades.filter((t) => t.date && t.date <= dateStr);
+      const bal = computeAccountBalances(accounts, filteredLedger, filteredTrades);
+      const pos = computePositions(filteredTrades, adjustedPrices, accounts);
+      const stockMap = new Map<string, number>();
+      pos.forEach((p) => {
+        stockMap.set(p.accountId, (stockMap.get(p.accountId) ?? 0) + p.marketValue);
+      });
+      return bal.reduce((sum, row) => {
+        const cash = row.currentBalance;
+        const stock = stockMap.get(row.account.id) ?? 0;
+        const debt = row.account.debt ?? 0;
+        const usd = row.account.type === "securities" ? (row.account.usdBalance ?? 0) + (row.usdTransferNet ?? 0) : 0;
+        const usdKrw = fxRate && usd ? usd * fxRate : 0;
+        return sum + cash + usdKrw + stock - debt;
+      }, 0);
+    };
+    const startNW = getNetWorthAtDate("2025-01-01");
+    const endNW = getNetWorthAtDate("2025-12-31");
+    const now = new Date();
+    const currentYear = now.getFullYear();
+    const endValue = currentYear === 2025 ? totalNetWorth : endNW;
+    const netFlow2025 = ledger
+      .filter((l) => l.date >= "2025-01-01" && l.date <= "2025-12-31")
+      .reduce((sum, l) => {
+        if (l.kind === "income") return sum + l.amount;
+        if (l.kind === "expense" || isSavingsExpense(l, accounts)) return sum - l.amount;
+        return sum;
+      }, 0);
+    const invested = startNW + netFlow2025;
+    if (invested <= 0 && endValue <= 0) return null;
+    const profit = endValue - invested;
+    const pct = invested > 0 ? (profit / invested) * 100 : null;
+    return {
+      invested,
+      profit,
+      pct,
+      endValue,
+      endLabel: currentYear === 2025 ? "현재" : "2025-12"
+    };
+  }, [accounts, ledger, trades, adjustedPrices, fxRate, totalNetWorth]);
 
   const thisMonth = useMemo(() => getThisMonthKST(), []);
 
@@ -937,10 +982,17 @@ export const DashboardView: React.FC<Props> = ({
   // 458730 (TIGER 미국배당다우존스) 전용 월별 배당 및 배당율
   const dividend458730Monthly = useMemo(() => {
     const TICKER = "458730";
-    const isDividend458730 = (l: LedgerEntry) =>
-      l.kind === "income" &&
-      ((l.category && l.category.includes("배당")) || (l.description && l.description.includes("배당"))) &&
-      (l.description || "").includes(TICKER);
+    const TICKER_CANON = canonicalTickerForMatch(TICKER);
+    const isDividend458730 = (l: LedgerEntry) => {
+      if (l.kind !== "income") return false;
+      const hasDividend = (l.category && l.category.includes("배당")) || (l.description && l.description.includes("배당"));
+      if (!hasDividend) return false;
+      const desc = l.description ?? "";
+      const cat = l.category ?? "";
+      const extracted = extractTickerFromText(desc) ?? extractTickerFromText(cat);
+      if (!extracted) return desc.includes(TICKER) || cat.includes(TICKER);
+      return canonicalTickerForMatch(extracted) === TICKER_CANON;
+    };
 
     const byMonth = new Map<string, number>();
     ledger.filter(isDividend458730).forEach((l) => {
@@ -1443,6 +1495,26 @@ export const DashboardView: React.FC<Props> = ({
             현금성자산 ÷ 평균순소비(3M)
           </div>
         </div>
+        {return2025 != null && (
+          <div className="card">
+            <div className="card-title">2025 수익 (1/1~12/31, 넣은 돈 대비)</div>
+            <div className={`card-value ${return2025.profit >= 0 ? "positive" : "negative"}`}>
+              {return2025.profit >= 0 ? "+" : ""}{Math.round(return2025.profit).toLocaleString()}원
+            </div>
+            <div style={{ fontSize: 13, marginTop: 4 }}>
+              {return2025.pct != null ? (
+                <span className={return2025.pct >= 0 ? "positive" : "negative"}>
+                  {return2025.pct >= 0 ? "+" : ""}{return2025.pct.toFixed(2)}%
+                </span>
+              ) : (
+                <span style={{ color: "var(--text-muted)" }}>수익률 -</span>
+              )}
+              <span style={{ color: "var(--text-muted)", marginLeft: 8 }}>
+                넣은 돈 {Math.round(return2025.invested).toLocaleString()}원 → {return2025.endLabel} {Math.round(return2025.endValue).toLocaleString()}원
+              </span>
+            </div>
+          </div>
+        )}
       </div>
       )}
 
@@ -1911,6 +1983,25 @@ export const DashboardView: React.FC<Props> = ({
             </div>
             {dividend458730Monthly.length > 0 ? (
               <>
+                {(() => {
+                  const last = dividend458730Monthly[dividend458730Monthly.length - 1];
+                  return (
+                    <div style={{ marginBottom: 12, padding: "10px 12px", background: "var(--surface-hover)", borderRadius: 8, fontSize: 13 }}>
+                      <strong>보유</strong> {last.shares}주
+                      {last.shares > 0 && (
+                        <>
+                          {" · "}
+                          <strong>주당 배당금</strong> {Math.round(last.dividendPerShare).toLocaleString()}원/주
+                          {" · "}
+                          <strong>주당 배당율</strong> {last.yieldPerShare.toFixed(3)}%
+                        </>
+                      )}
+                      {last.shares === 0 && (
+                        <span style={{ color: "var(--text-muted)" }}> (주식 탭에서 458730 매수/매도 입력 시 표시)</span>
+                      )}
+                    </div>
+                  );
+                })()}
                 {/* 주당 배당금 · 주당 배당율 그래프 */}
                 <div style={{ marginBottom: 24 }}>
                   <h4 style={{ fontSize: 13, fontWeight: 600, marginBottom: 8 }}>주당 배당금 · 주당 배당율 (월별)</h4>
@@ -1993,7 +2084,7 @@ export const DashboardView: React.FC<Props> = ({
                       />
                       <Tooltip 
                         formatter={(val: any, name?: string, props?: any) => {
-                          const row = props?.payload;
+                          const row = Array.isArray(props?.payload) ? props.payload[0] : props?.payload;
                           if (!row) return [val, name ?? ""];
                           if ((name ?? "") === "yield") {
                             return [`월 ${row.yieldMonthly.toFixed(3)}% / 연환산 ${row.yieldAnnual.toFixed(2)}%`, "배당율"];
@@ -2001,7 +2092,12 @@ export const DashboardView: React.FC<Props> = ({
                           if ((name ?? "") === "누적") {
                             return [`누적 수익률 ${row.cumulativeYield.toFixed(2)}%`, "누적 수익률"];
                           }
-                          return [`${Math.round(val).toLocaleString()}원`, "배당금"];
+                          if ((name ?? "") === "배당금") {
+                            const shares = row.shares ?? 0;
+                            const perShare = shares > 0 ? ` · ${row.shares}주 보유, 주당 ${Math.round(row.dividendPerShare ?? 0).toLocaleString()}원` : "";
+                            return [`${Math.round(val).toLocaleString()}원${perShare}`, "배당금"];
+                          }
+                          return [`${Math.round(val).toLocaleString()}원`, name ?? ""];
                         }}
                         labelFormatter={(label) => `${label}`}
                       />
@@ -2017,8 +2113,8 @@ export const DashboardView: React.FC<Props> = ({
                       <tr>
                         <th>월</th>
                         <th className="number">배당금</th>
-                        <th className="number">주당 배당금</th>
-                        <th className="number">보유</th>
+                        <th className="number" style={{ minWidth: 90 }}>주당 배당금</th>
+                        <th className="number" style={{ minWidth: 64 }}>보유(주)</th>
                         <th className="number">주당 배당율</th>
                         <th className="number">원금(월말)</th>
                         <th className="number">연환산</th>
@@ -2031,8 +2127,8 @@ export const DashboardView: React.FC<Props> = ({
                         <tr key={row.month}>
                           <td>{row.month}</td>
                           <td className="number">{formatKRW(Math.round(row.dividend))}</td>
-                          <td className="number">{row.shares > 0 ? `${Math.round(row.dividendPerShare).toLocaleString()}원/주` : "-"}</td>
-                          <td className="number">{row.shares}주</td>
+                          <td className="number" style={{ whiteSpace: "nowrap" }}>{row.shares > 0 ? `${Math.round(row.dividendPerShare).toLocaleString()}원/주` : "-"}</td>
+                          <td className="number" style={{ whiteSpace: "nowrap" }}>{row.shares}주</td>
                           <td className="number">{row.yieldPerShare.toFixed(3)}%</td>
                           <td className="number">{formatKRW(Math.round(row.costBasis))}</td>
                           <td className="number positive">{row.yieldAnnual.toFixed(2)}%</td>

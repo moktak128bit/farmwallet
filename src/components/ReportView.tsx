@@ -31,6 +31,7 @@ import {
 import { formatKRW } from "../utils/format";
 import { toast } from "react-hot-toast";
 import { useFxRate } from "../hooks/useFxRate";
+import { isSavingsExpenseEntry } from "../utils/categoryUtils";
 
 interface Props {
   accounts: Account[];
@@ -39,7 +40,7 @@ interface Props {
   prices: StockPrice[];
 }
 
-type ReportType = "monthly" | "yearly" | "category" | "stock" | "account" | "daily";
+type ReportType = "monthly" | "yearly" | "category" | "stock" | "account" | "daily" | "periodCompare";
 
 export const ReportView: React.FC<Props> = ({ accounts, ledger, trades, prices }) => {
   const fxRate = useFxRate();
@@ -79,6 +80,36 @@ export const ReportView: React.FC<Props> = ({ accounts, ledger, trades, prices }
     return generateDailyReport(accounts, ledger, trades, prices, startDate, endDate, fxRate || undefined);
   }, [accounts, ledger, trades, prices, startDate, endDate, fxRate]);
 
+  const periodCompareData = useMemo(() => {
+    const now = new Date();
+    const year = now.getFullYear();
+    const month = now.getMonth() + 1;
+    const thisMonthKey = `${year}-${String(month).padStart(2, "0")}`;
+    const lastMonthKey =
+      month === 1 ? `${year - 1}-12` : `${year}-${String(month - 1).padStart(2, "0")}`;
+    const sum = (entries: LedgerEntry[]) => {
+      let income = 0;
+      let expense = 0;
+      let savings = 0;
+      let transfer = 0;
+      entries.forEach((l) => {
+        if (l.kind === "income") income += l.amount;
+        else if (isSavingsExpenseEntry(l, accounts)) savings += l.amount;
+        else if (l.kind === "transfer") transfer += l.amount;
+        else expense += l.amount;
+      });
+      return { income, expense, savings, transfer, net: income - expense - savings };
+    };
+    const thisMonthLedger = ledger.filter((l) => l.date.startsWith(thisMonthKey));
+    const lastMonthLedger = ledger.filter((l) => l.date.startsWith(lastMonthKey));
+    return {
+      thisMonthKey,
+      lastMonthKey,
+      thisMonth: sum(thisMonthLedger),
+      lastMonth: sum(lastMonthLedger)
+    };
+  }, [ledger, accounts]);
+
   const handleExportCSV = () => {
     let csvContent = "";
     let filename = "";
@@ -111,6 +142,20 @@ export const ReportView: React.FC<Props> = ({ accounts, ledger, trades, prices }
         csvContent = reportToCSV(dailyReport);
         filename = `일별_리포트_${new Date().toISOString().slice(0, 10)}.csv`;
         break;
+      case "periodCompare": {
+        const { thisMonthKey, lastMonthKey, thisMonth, lastMonth } = periodCompareData;
+        const fmt = (n: number) => String(n);
+        csvContent = [
+          ["항목", thisMonthKey, lastMonthKey, "차이"].join(","),
+          ["수입", fmt(thisMonth.income), fmt(lastMonth.income), fmt(thisMonth.income - lastMonth.income)].join(","),
+          ["지출", fmt(thisMonth.expense), fmt(lastMonth.expense), fmt(thisMonth.expense - lastMonth.expense)].join(","),
+          ["저축성지출", fmt(thisMonth.savings), fmt(lastMonth.savings), fmt(thisMonth.savings - lastMonth.savings)].join(","),
+          ["이체", fmt(thisMonth.transfer), fmt(lastMonth.transfer), fmt(thisMonth.transfer - lastMonth.transfer)].join(","),
+          ["순수입", fmt(thisMonth.net), fmt(lastMonth.net), fmt(thisMonth.net - lastMonth.net)].join(",")
+        ].join("\n");
+        filename = `기간비교_${thisMonthKey}_${lastMonthKey}.csv`;
+        break;
+      }
     }
 
     if (!csvContent) {
@@ -559,6 +604,54 @@ export const ReportView: React.FC<Props> = ({ accounts, ledger, trades, prices }
             </div>
           </div>
         );
+
+      case "periodCompare": {
+        const { thisMonthKey, lastMonthKey, thisMonth, lastMonth } = periodCompareData;
+        const diff = (key: keyof typeof thisMonth) => thisMonth[key] - lastMonth[key];
+        const rows: { label: string; thisVal: number; lastVal: number; diffVal: number }[] = [
+          { label: "수입", thisVal: thisMonth.income, lastVal: lastMonth.income, diffVal: diff("income") },
+          { label: "지출", thisVal: thisMonth.expense, lastVal: lastMonth.expense, diffVal: diff("expense") },
+          { label: "저축성지출", thisVal: thisMonth.savings, lastVal: lastMonth.savings, diffVal: diff("savings") },
+          { label: "이체", thisVal: thisMonth.transfer, lastVal: lastMonth.transfer, diffVal: diff("transfer") },
+          { label: "순수입", thisVal: thisMonth.net, lastVal: lastMonth.net, diffVal: diff("net") }
+        ];
+        return (
+          <div>
+            <h3>이번 달 vs 지난달</h3>
+            <p style={{ marginBottom: 16, color: "var(--text-secondary)" }}>
+              {thisMonthKey} (이번 달) · {lastMonthKey} (지난달)
+            </p>
+            <div style={{ overflowX: "auto", width: "100%" }}>
+              <table className="data-table" style={{ width: "100%", minWidth: "480px" }}>
+                <thead>
+                  <tr>
+                    <th style={{ width: "120px" }}>항목</th>
+                    <th className="number" style={{ minWidth: "120px" }}>{thisMonthKey}</th>
+                    <th className="number" style={{ minWidth: "120px" }}>{lastMonthKey}</th>
+                    <th className="number" style={{ minWidth: "120px" }}>차이</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {rows.map((r) => (
+                    <tr key={r.label}>
+                      <td>{r.label}</td>
+                      <td className={`number ${r.label === "순수입" ? (r.thisVal >= 0 ? "positive" : "negative") : r.label === "수입" ? "positive" : r.label === "지출" || r.label === "저축성지출" ? "negative" : ""}`}>
+                        {formatKRW(r.thisVal)}
+                      </td>
+                      <td className={`number ${r.label === "순수입" ? (r.lastVal >= 0 ? "positive" : "negative") : r.label === "수입" ? "positive" : r.label === "지출" || r.label === "저축성지출" ? "negative" : ""}`}>
+                        {formatKRW(r.lastVal)}
+                      </td>
+                      <td className={`number ${r.diffVal >= 0 ? "positive" : "negative"}`}>
+                        {r.diffVal >= 0 ? "+" : ""}{formatKRW(r.diffVal)}
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          </div>
+        );
+      }
     }
   };
 
@@ -613,6 +706,13 @@ export const ReportView: React.FC<Props> = ({ accounts, ledger, trades, prices }
           onClick={() => setReportType("daily")}
         >
           일별 리포트
+        </button>
+        <button
+          type="button"
+          className={reportType === "periodCompare" ? "primary" : ""}
+          onClick={() => setReportType("periodCompare")}
+        >
+          기간 비교 (이번 달 vs 지난달)
         </button>
       </div>
 

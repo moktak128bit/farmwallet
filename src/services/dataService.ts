@@ -326,9 +326,10 @@ function fixCorruptedCategoryNames(ledger: AppData["ledger"]): AppData["ledger"]
   });
 }
 
-export function loadData(): AppData {
+/** 초기 로딩/빈 상태용 기본 데이터 (로딩 UI 표시 시 훅에 넘기기 위해 사용) */
+export function getEmptyData(): AppData {
   const defaults = getDefaultCategoryPresets();
-  const emptyData: AppData = {
+  return {
     loans: [],
     accounts: [],
     ledger: [],
@@ -344,6 +345,11 @@ export function loadData(): AppData {
     stockPresets: [],
     targetPortfolios: []
   };
+}
+
+export function loadData(): AppData {
+  const emptyData = getEmptyData();
+  const defaults = getDefaultCategoryPresets();
 
   if (typeof window === "undefined") {
     return emptyData;
@@ -399,12 +405,13 @@ export function loadData(): AppData {
       saveData(finalData);
     }
     return finalData;
-  } catch {
-    return emptyData;
+  } catch (e) {
+    console.error("[FarmWallet] loadData failed", e);
+    throw e;
   }
 }
 
 export function saveData(data: AppData): void {
   if (typeof window === "undefined") return;
-  window.localStorage.setItem(STORAGE_KEYS.DATA, JSON.stringify(data, null, 2));
+  window.localStorage.setItem(STORAGE_KEYS.DATA, JSON.stringify(data));
 }

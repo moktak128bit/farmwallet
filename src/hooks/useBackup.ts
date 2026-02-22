@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { getAllBackupList, getLatestLocalBackupIntegrity, saveBackupSnapshot, saveData } from "../storage";
 import type { AppData } from "../types";
 import { toast } from "react-hot-toast";
@@ -10,6 +10,8 @@ export interface BackupIntegrity {
 }
 
 export function useBackup(data: AppData, setManualBackupFlag: (flag: boolean) => void) {
+  const dataRef = useRef(data);
+  dataRef.current = data;
   const [latestBackupAt, setLatestBackupAt] = useState<string | null>(null);
   const [backupVersion, setBackupVersion] = useState<number>(0);
   const [backupIntegrity, setBackupIntegrity] = useState<BackupIntegrity>({
@@ -26,10 +28,7 @@ export function useBackup(data: AppData, setManualBackupFlag: (flag: boolean) =>
     setBackupVersion(Date.now());
   }, []);
 
-  useEffect(() => {
-    if (typeof window === "undefined") return;
-    void refreshLatestBackup();
-  }, [refreshLatestBackup]);
+  // 진입 시 자동 백업/목록 조회 제거 (빈 화면 방지)
 
   const handleManualBackup = useCallback(async () => {
     setManualBackupFlag(true);

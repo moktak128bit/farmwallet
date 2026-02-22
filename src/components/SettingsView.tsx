@@ -11,22 +11,26 @@ import { generateLedgerMarkdownReport } from "../utils/ledgerMarkdownReport";
 import { DataIntegrityView } from "./DataIntegrityView";
 import { ThemeCustomizer } from "./ThemeCustomizer";
 import { getKoreaTime } from "../utils/dateUtils";
+import { usePWAInstall } from "../hooks/usePWAInstall";
 
 interface Props {
   data: AppData;
   onChangeData: (next: AppData) => void;
   backupVersion: number;
+  /** 로드 실패 후 백업 복원했을 때 호출 (저장 재활성화) */
+  onBackupRestored?: () => void;
 }
 
 type SettingsTab = "backup" | "integrity" | "theme" | "accessibility";
 
-export const SettingsView: React.FC<Props> = ({ data, onChangeData, backupVersion }) => {
+export const SettingsView: React.FC<Props> = ({ data, onChangeData, backupVersion, onBackupRestored }) => {
   const [activeTab, setActiveTab] = useState<SettingsTab>("backup");
   const [showThemeCustomizer, setShowThemeCustomizer] = useState(false);
   const [text, setText] = useState(JSON.stringify(data, null, 2));
   const [error, setError] = useState<string | null>(null);
   const [backups, setBackups] = useState<BackupEntry[]>([]);
   const latestBackup = useMemo(() => backups[0], [backups]);
+  const { canInstall, isStandalone, install: installPWA } = usePWAInstall();
   const loadBackupList = useCallback(async () => {
     try {
       const list = await getAllBackupList();
@@ -115,6 +119,7 @@ export const SettingsView: React.FC<Props> = ({ data, onChangeData, backupVersio
         setText(text);
         setError(null);
         toast.success("백업 파일을 성공적으로 불러왔습니다.", { id: toastId });
+        onBackupRestored?.();
         await loadBackupList();
       } catch (error) {
         const errorMsg = "백업 파일 형식이 올바르지 않습니다. JSON 파일인지 확인해 보세요.";
@@ -126,7 +131,7 @@ export const SettingsView: React.FC<Props> = ({ data, onChangeData, backupVersio
       }
     };
     input.click();
-  }, [onChangeData, loadBackupList]);
+  }, [onChangeData, loadBackupList, onBackupRestored]);
 
   const handleImport = useCallback(() => {
     try {
@@ -139,6 +144,7 @@ export const SettingsView: React.FC<Props> = ({ data, onChangeData, backupVersio
       onChangeData(parsed);
       setError(null);
       toast.success("데이터를 성공적으로 불러왔습니다.");
+      onBackupRestored?.();
     } catch (e) {
       const errorMessage = "JSON 형식이 올바르지 않습니다. 중괄호/쉼표를 다시 확인해 주세요.";
       setError(errorMessage);
@@ -147,7 +153,7 @@ export const SettingsView: React.FC<Props> = ({ data, onChangeData, backupVersio
         console.error("JSON 파싱 오류:", e);
       }
     }
-  }, [text, onChangeData]);
+  }, [text, onChangeData, onBackupRestored]);
 
   const handleRefreshBackups = useCallback(async () => {
     const toastId = toast.loading("백업 목록을 불러오는 중...");
@@ -183,8 +189,7 @@ export const SettingsView: React.FC<Props> = ({ data, onChangeData, backupVersio
       setText(JSON.stringify(restored, null, 2));
       setError(null);
       toast.success("백업이 성공적으로 복원되었습니다.", { id: toastId });
-      
-      // 백업 목록도 새로고침
+      onBackupRestored?.();
       await loadBackupList();
     } catch (e) {
       const errorMsg = "백업을 불러오는 중 문제가 발생했습니다. 다시 시도해 보세요.";
@@ -194,7 +199,7 @@ export const SettingsView: React.FC<Props> = ({ data, onChangeData, backupVersio
         console.error("백업 복원 오류:", e);
       }
     }
-  }, [onChangeData, loadBackupList]);
+  }, [onChangeData, loadBackupList, onBackupRestored]);
 
   useEffect(() => {
     void loadBackupList();
@@ -237,6 +242,28 @@ export const SettingsView: React.FC<Props> = ({ data, onChangeData, backupVersio
 
       {activeTab === "backup" && (
         <>
+          {(canInstall || isStandalone) && (
+            <div className="card" style={{ marginBottom: 16 }}>
+              <div className="card-title">앱처럼 사용하기</div>
+              {isStandalone ? (
+                <p style={{ margin: 0, color: "var(--text-muted)" }}>
+                  홈 화면에서 실행 중입니다. 오프라인에서도 캐시된 화면을 볼 수 있습니다.
+                </p>
+              ) : canInstall ? (
+                <p style={{ margin: "0 0 12px 0", color: "var(--text-muted)" }}>
+                  홈 화면에 추가하면 앱처럼 실행하고, 오프라인에서도 사용할 수 있습니다.
+                </p>
+              ) : null}
+              {canInstall && (
+                <button type="button" className="primary" onClick={async () => {
+                  const ok = await installPWA();
+                  if (ok) toast.success("홈 화면에 추가되었습니다.");
+                }}>
+                  홈 화면에 추가
+                </button>
+              )}
+            </div>
+          )}
           <div className="cards-row">
         <div className="card">
           <div className="card-title">데이터 백업</div>
@@ -245,6 +272,8 @@ export const SettingsView: React.FC<Props> = ({ data, onChangeData, backupVersio
             웹에서 저장한 백업은 Cursor 내부에서 보이지 않으며, 그 반대도 마찬가지입니다.
             <br />
             <strong>다른 환경에서 백업을 사용하려면:</strong> "백업 파일 다운로드"로 파일을 저장한 후, 다른 환경에서 "백업 파일 불러오기"로 불러오세요.
+            <br />
+            <strong style={{ color: "var(--primary)" }}>권장:</strong> 데이터 안전을 위해 정기적으로 "백업 파일 다운로드"로 JSON 파일을 저장해 두세요.
           </p>
           <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
             <button type="button" onClick={handleExport}>
@@ -261,8 +290,8 @@ export const SettingsView: React.FC<Props> = ({ data, onChangeData, backupVersio
         <div className="card">
           <div className="card-title">가계부 정리 (정리.md)</div>
           <p>
-            수입 / 지출 / 저축성 지출 / 이체를 구분해 표 스타일로 정리한 마크다운을 내보냅니다.
-            다운로드한 파일을 프로젝트의 <code>정리.md</code>에 저장하면 됩니다.
+            수입·지출·저축성 지출·이체 전체가 포함된 마크다운을 <code>정리.md</code>로 다운로드합니다.
+            표 스타일로 정리된 문서를 프로젝트에 저장해 두면 됩니다.
           </p>
           <button type="button" className="primary" onClick={handleExportLedgerMd}>
             정리.md 내보내기

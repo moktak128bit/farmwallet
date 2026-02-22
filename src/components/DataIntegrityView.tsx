@@ -16,7 +16,12 @@ export const DataIntegrityView: React.FC<Props> = ({ data, onChangeData }) => {
   const runCheck = () => {
     setIsChecking(true);
     try {
-      const foundIssues = runIntegrityCheck(data.accounts, data.ledger, data.trades);
+      const foundIssues = runIntegrityCheck(
+        data.accounts,
+        data.ledger,
+        data.trades,
+        data.categoryPresets
+      );
       setIssues(foundIssues);
       toast.success(`검사 완료: ${foundIssues.length}개 문제 발견`);
     } catch (error) {
@@ -172,6 +177,7 @@ export const DataIntegrityView: React.FC<Props> = ({ data, onChangeData }) => {
                   {type === "missing_reference" && "누락된 참조"}
                   {type === "date_order" && "날짜 순서"}
                   {type === "amount_consistency" && "금액 일관성"}
+                  {type === "category_mismatch" && "카테고리 불일치"}
                   ({typeIssues.length}건)
                 </h4>
                 {typeIssues.map((issue, idx) => (

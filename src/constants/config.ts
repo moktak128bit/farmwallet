@@ -54,3 +54,6 @@ export const BACKUP_WARNING_HOURS = {
   WARNING: 12,
   CRITICAL: 24
 } as const;
+
+// 자동 백업 간격 (밀리초, 30분)
+export const AUTO_BACKUP_INTERVAL_MS = 30 * 60 * 1000;

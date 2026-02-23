@@ -30,6 +30,7 @@ import {
 } from "../utils/reportGenerator";
 import { formatKRW } from "../utils/format";
 import { toast } from "react-hot-toast";
+import { ERROR_MESSAGES } from "../constants/errorMessages";
 import { useFxRate } from "../hooks/useFxRate";
 import { isSavingsExpenseEntry } from "../utils/categoryUtils";
 
@@ -87,6 +88,7 @@ export const ReportView: React.FC<Props> = ({ accounts, ledger, trades, prices }
     const thisMonthKey = `${year}-${String(month).padStart(2, "0")}`;
     const lastMonthKey =
       month === 1 ? `${year - 1}-12` : `${year}-${String(month - 1).padStart(2, "0")}`;
+    const lastYearSameMonthKey = `${year - 1}-${String(month).padStart(2, "0")}`;
     const sum = (entries: LedgerEntry[]) => {
       let income = 0;
       let expense = 0;
@@ -102,11 +104,14 @@ export const ReportView: React.FC<Props> = ({ accounts, ledger, trades, prices }
     };
     const thisMonthLedger = ledger.filter((l) => l.date.startsWith(thisMonthKey));
     const lastMonthLedger = ledger.filter((l) => l.date.startsWith(lastMonthKey));
+    const lastYearSameMonthLedger = ledger.filter((l) => l.date.startsWith(lastYearSameMonthKey));
     return {
       thisMonthKey,
       lastMonthKey,
+      lastYearSameMonthKey,
       thisMonth: sum(thisMonthLedger),
-      lastMonth: sum(lastMonthLedger)
+      lastMonth: sum(lastMonthLedger),
+      lastYearSameMonth: sum(lastYearSameMonthLedger)
     };
   }, [ledger, accounts]);
 
@@ -159,7 +164,7 @@ export const ReportView: React.FC<Props> = ({ accounts, ledger, trades, prices }
     }
 
     if (!csvContent) {
-      toast.error("내보낼 데이터가 없습니다");
+      toast.error(ERROR_MESSAGES.NO_DATA_TO_EXPORT);
       return;
     }
 
@@ -214,8 +219,23 @@ export const ReportView: React.FC<Props> = ({ accounts, ledger, trades, prices }
                 <Bar dataKey="net" fill="#6366f1" name="순수입" />
               </BarChart>
             </ResponsiveContainer>
+            <div style={{ marginTop: 24 }}>
+              <h4 style={{ marginBottom: 12 }}>월별 수입/지출 추이</h4>
+              <ResponsiveContainer width="100%" height={280}>
+                <LineChart data={monthlyReport} margin={{ top: 10, right: 30, left: 0, bottom: 0 }}>
+                  <CartesianGrid strokeDasharray="3 3" />
+                  <XAxis dataKey="month" />
+                  <YAxis tickFormatter={(v) => (Math.abs(v) >= 10000 ? `${(v / 10000).toFixed(0)}만` : String(v))} />
+                  <Tooltip formatter={(value: number | undefined) => formatKRW(value ?? 0)} />
+                  <Legend />
+                  <Line type="monotone" dataKey="income" stroke="#10b981" name="수입" strokeWidth={2} dot={{ r: 3 }} />
+                  <Line type="monotone" dataKey="expense" stroke="#f43f5e" name="지출" strokeWidth={2} dot={{ r: 3 }} />
+                  <Line type="monotone" dataKey="net" stroke="#6366f1" name="순수입" strokeWidth={2} dot={{ r: 3 }} />
+                </LineChart>
+              </ResponsiveContainer>
+            </div>
             <div style={{ overflowX: "auto", width: "100%" }}>
-              <table className="data-table" style={{ marginTop: 24, width: "100%", minWidth: "600px" }}>
+              <table className="data-table" style={{ marginTop: 24, width: "100%", minWidth: "800px" }}>
                 <thead>
                   <tr>
                     <th style={{ minWidth: "100px" }}>월</th>
@@ -223,20 +243,46 @@ export const ReportView: React.FC<Props> = ({ accounts, ledger, trades, prices }
                     <th className="number" style={{ minWidth: "120px" }}>지출</th>
                     <th className="number" style={{ minWidth: "120px" }}>이체</th>
                     <th className="number" style={{ minWidth: "120px" }}>순수입</th>
+                    <th className="number" style={{ minWidth: "120px" }}>전월 대비(순수입)</th>
+                    <th className="number" style={{ minWidth: "120px" }}>전년 동월 대비(순수입)</th>
                   </tr>
                 </thead>
                 <tbody>
-                  {monthlyReport.map((r) => (
-                    <tr key={r.month}>
-                      <td>{r.month}</td>
-                      <td className="number positive">{formatKRW(r.income)}</td>
-                      <td className="number negative">{formatKRW(r.expense)}</td>
-                      <td className="number">{formatKRW(r.transfer)}</td>
-                      <td className={`number ${r.net >= 0 ? "positive" : "negative"}`}>
-                        {formatKRW(r.net)}
-                      </td>
-                    </tr>
-                  ))}
+                  {(() => {
+                    const byMonth = new Map(monthlyReport.map((r) => [r.month, r]));
+                    const prevMonth = (m: string) => {
+                      const [y, mo] = m.split("-").map(Number);
+                      if (mo === 1) return `${y - 1}-12`;
+                      return `${y}-${String(mo - 1).padStart(2, "0")}`;
+                    };
+                    const lastYearMonth = (m: string) => {
+                      const [y, mo] = m.split("-").map(Number);
+                      return `${y - 1}-${String(mo).padStart(2, "0")}`;
+                    };
+                    return monthlyReport.map((r) => {
+                      const prev = byMonth.get(prevMonth(r.month));
+                      const lastYear = byMonth.get(lastYearMonth(r.month));
+                      const diffPrev = prev != null ? r.net - prev.net : null;
+                      const diffLastYear = lastYear != null ? r.net - lastYear.net : null;
+                      return (
+                        <tr key={r.month}>
+                          <td>{r.month}</td>
+                          <td className="number positive">{formatKRW(r.income)}</td>
+                          <td className="number negative">{formatKRW(r.expense)}</td>
+                          <td className="number">{formatKRW(r.transfer)}</td>
+                          <td className={`number ${r.net >= 0 ? "positive" : "negative"}`}>
+                            {formatKRW(r.net)}
+                          </td>
+                          <td className={`number ${diffPrev != null ? (diffPrev >= 0 ? "positive" : "negative") : ""}`}>
+                            {diffPrev != null ? (diffPrev >= 0 ? "+" : "") + formatKRW(diffPrev) : "-"}
+                          </td>
+                          <td className={`number ${diffLastYear != null ? (diffLastYear >= 0 ? "positive" : "negative") : ""}`}>
+                            {diffLastYear != null ? (diffLastYear >= 0 ? "+" : "") + formatKRW(diffLastYear) : "-"}
+                          </td>
+                        </tr>
+                      );
+                    });
+                  })()}
                 </tbody>
               </table>
             </div>
@@ -323,8 +369,13 @@ export const ReportView: React.FC<Props> = ({ accounts, ledger, trades, prices }
           </div>
         );
 
-      case "category":
+      case "category": {
         const topCategories = categoryReport.slice(0, 10);
+        const categoryTotalSum = categoryReport.reduce((s, r) => s + r.total, 0);
+        const topWithShare = topCategories.map((r) => ({
+          ...r,
+          sharePct: categoryTotalSum > 0 ? (r.total / categoryTotalSum) * 100 : 0
+        }));
         return (
           <div>
             <h3>카테고리별 지출 리포트</h3>
@@ -337,12 +388,22 @@ export const ReportView: React.FC<Props> = ({ accounts, ledger, trades, prices }
               </label>
             </div>
             <ResponsiveContainer width="100%" height={400}>
-              <BarChart data={topCategories} layout="vertical">
+              <BarChart data={topWithShare} layout="vertical">
                 <CartesianGrid strokeDasharray="3 3" />
-                <XAxis type="number" />
+                <XAxis type="number" tickFormatter={(v) => (v >= 10000 ? `${(v / 10000).toFixed(0)}만` : String(v))} />
                 <YAxis dataKey="category" type="category" width={150} />
                 <Tooltip formatter={(value: number | undefined) => formatKRW(value ?? 0)} />
-                <Bar dataKey="total" fill="#6366f1" />
+                <Bar dataKey="total" fill="#6366f1" name="총액" />
+              </BarChart>
+            </ResponsiveContainer>
+            <h4 style={{ marginTop: 24, marginBottom: 12 }}>카테고리별 비중</h4>
+            <ResponsiveContainer width="100%" height={300}>
+              <BarChart data={topWithShare} layout="vertical" margin={{ left: 80, right: 20 }}>
+                <CartesianGrid strokeDasharray="3 3" />
+                <XAxis type="number" domain={[0, 100]} unit="%" tickFormatter={(v) => `${v}%`} />
+                <YAxis dataKey="category" type="category" width={150} />
+                <Tooltip formatter={(value: number | undefined) => [`${(value ?? 0).toFixed(1)}%`, "비중"]} />
+                <Bar dataKey="sharePct" fill="#8b5cf6" name="비중(%)" />
               </BarChart>
             </ResponsiveContainer>
             <div style={{ overflowX: "auto", width: "100%" }}>
@@ -352,25 +413,31 @@ export const ReportView: React.FC<Props> = ({ accounts, ledger, trades, prices }
                     <th style={{ minWidth: "120px" }}>카테고리</th>
                     <th style={{ minWidth: "120px" }}>세부 항목</th>
                     <th className="number" style={{ minWidth: "120px" }}>총액</th>
+                    <th className="number" style={{ minWidth: "80px" }}>비중(%)</th>
                     <th className="number" style={{ minWidth: "80px" }}>건수</th>
                     <th className="number" style={{ minWidth: "120px" }}>평균</th>
                   </tr>
                 </thead>
                 <tbody>
-                  {categoryReport.map((r, idx) => (
-                    <tr key={idx}>
-                      <td>{r.category}</td>
-                      <td>{r.subCategory || "-"}</td>
-                      <td className="number">{formatKRW(r.total)}</td>
-                      <td className="number">{r.count}</td>
-                      <td className="number">{formatKRW(r.average)}</td>
-                    </tr>
-                  ))}
+                  {categoryReport.map((r, idx) => {
+                    const sharePct = categoryTotalSum > 0 ? (r.total / categoryTotalSum) * 100 : 0;
+                    return (
+                      <tr key={idx}>
+                        <td>{r.category}</td>
+                        <td>{r.subCategory || "-"}</td>
+                        <td className="number">{formatKRW(r.total)}</td>
+                        <td className="number">{sharePct.toFixed(1)}%</td>
+                        <td className="number">{r.count}</td>
+                        <td className="number">{formatKRW(r.average)}</td>
+                      </tr>
+                    );
+                  })}
                 </tbody>
               </table>
             </div>
           </div>
         );
+      }
 
       case "stock":
         return (
@@ -386,12 +453,13 @@ export const ReportView: React.FC<Props> = ({ accounts, ledger, trades, prices }
                     <th className="number" style={{ minWidth: "130px" }}>현재가치</th>
                     <th className="number" style={{ minWidth: "130px" }}>손익</th>
                     <th className="number" style={{ minWidth: "100px" }}>수익률</th>
+                    <th className="number" style={{ minWidth: "90px" }}>IRR(연)</th>
                     <th className="number" style={{ minWidth: "100px" }}>보유수량</th>
                   </tr>
                 </thead>
                 <tbody>
                   {stockReport.map((r) => (
-                    <tr key={r.ticker}>
+                    <tr key={`${r.accountId}-${r.ticker}`}>
                       <td>{r.ticker}</td>
                       <td>{r.name}</td>
                       <td className="number">{formatKRW(r.totalBuyAmount)}</td>
@@ -401,6 +469,9 @@ export const ReportView: React.FC<Props> = ({ accounts, ledger, trades, prices }
                       </td>
                       <td className={`number ${r.pnlRate >= 0 ? "positive" : "negative"}`}>
                         {r.pnlRate.toFixed(2)}%
+                      </td>
+                      <td className={`number ${r.irr != null ? (r.irr >= 0 ? "positive" : "negative") : ""}`} title="연간 수익률 (XIRR)">
+                        {r.irr != null ? `${(r.irr * 100).toFixed(2)}%` : "-"}
                       </td>
                       <td className="number">{r.quantity}</td>
                     </tr>
@@ -606,22 +677,32 @@ export const ReportView: React.FC<Props> = ({ accounts, ledger, trades, prices }
         );
 
       case "periodCompare": {
-        const { thisMonthKey, lastMonthKey, thisMonth, lastMonth } = periodCompareData;
-        const diff = (key: keyof typeof thisMonth) => thisMonth[key] - lastMonth[key];
-        const rows: { label: string; thisVal: number; lastVal: number; diffVal: number }[] = [
-          { label: "수입", thisVal: thisMonth.income, lastVal: lastMonth.income, diffVal: diff("income") },
-          { label: "지출", thisVal: thisMonth.expense, lastVal: lastMonth.expense, diffVal: diff("expense") },
-          { label: "저축성지출", thisVal: thisMonth.savings, lastVal: lastMonth.savings, diffVal: diff("savings") },
-          { label: "이체", thisVal: thisMonth.transfer, lastVal: lastMonth.transfer, diffVal: diff("transfer") },
-          { label: "순수입", thisVal: thisMonth.net, lastVal: lastMonth.net, diffVal: diff("net") }
+        const { thisMonthKey, lastMonthKey, lastYearSameMonthKey, thisMonth, lastMonth, lastYearSameMonth } = periodCompareData;
+        const diff = (a: typeof thisMonth, b: typeof thisMonth) => (key: keyof typeof thisMonth) => a[key] - b[key];
+        const rowClass = (label: string, val: number) =>
+          label === "순수입" ? (val >= 0 ? "positive" : "negative") : label === "수입" ? "positive" : label === "지출" || label === "저축성지출" ? "negative" : "";
+        const rowsPrev: { label: string; thisVal: number; otherVal: number; diffVal: number }[] = [
+          { label: "수입", thisVal: thisMonth.income, otherVal: lastMonth.income, diffVal: diff(thisMonth, lastMonth)("income") },
+          { label: "지출", thisVal: thisMonth.expense, otherVal: lastMonth.expense, diffVal: diff(thisMonth, lastMonth)("expense") },
+          { label: "저축성지출", thisVal: thisMonth.savings, otherVal: lastMonth.savings, diffVal: diff(thisMonth, lastMonth)("savings") },
+          { label: "이체", thisVal: thisMonth.transfer, otherVal: lastMonth.transfer, diffVal: diff(thisMonth, lastMonth)("transfer") },
+          { label: "순수입", thisVal: thisMonth.net, otherVal: lastMonth.net, diffVal: diff(thisMonth, lastMonth)("net") }
+        ];
+        const rowsLastYear: { label: string; thisVal: number; otherVal: number; diffVal: number }[] = [
+          { label: "수입", thisVal: thisMonth.income, otherVal: lastYearSameMonth.income, diffVal: diff(thisMonth, lastYearSameMonth)("income") },
+          { label: "지출", thisVal: thisMonth.expense, otherVal: lastYearSameMonth.expense, diffVal: diff(thisMonth, lastYearSameMonth)("expense") },
+          { label: "저축성지출", thisVal: thisMonth.savings, otherVal: lastYearSameMonth.savings, diffVal: diff(thisMonth, lastYearSameMonth)("savings") },
+          { label: "이체", thisVal: thisMonth.transfer, otherVal: lastYearSameMonth.transfer, diffVal: diff(thisMonth, lastYearSameMonth)("transfer") },
+          { label: "순수입", thisVal: thisMonth.net, otherVal: lastYearSameMonth.net, diffVal: diff(thisMonth, lastYearSameMonth)("net") }
         ];
         return (
           <div>
-            <h3>이번 달 vs 지난달</h3>
-            <p style={{ marginBottom: 16, color: "var(--text-secondary)" }}>
+            <h3>기간 비교</h3>
+            <h4 style={{ marginTop: 16, marginBottom: 8 }}>이번 달 vs 전월</h4>
+            <p style={{ marginBottom: 12, color: "var(--text-secondary)", fontSize: 14 }}>
               {thisMonthKey} (이번 달) · {lastMonthKey} (지난달)
             </p>
-            <div style={{ overflowX: "auto", width: "100%" }}>
+            <div style={{ overflowX: "auto", width: "100%", marginBottom: 32 }}>
               <table className="data-table" style={{ width: "100%", minWidth: "480px" }}>
                 <thead>
                   <tr>
@@ -632,15 +713,39 @@ export const ReportView: React.FC<Props> = ({ accounts, ledger, trades, prices }
                   </tr>
                 </thead>
                 <tbody>
-                  {rows.map((r) => (
+                  {rowsPrev.map((r) => (
                     <tr key={r.label}>
                       <td>{r.label}</td>
-                      <td className={`number ${r.label === "순수입" ? (r.thisVal >= 0 ? "positive" : "negative") : r.label === "수입" ? "positive" : r.label === "지출" || r.label === "저축성지출" ? "negative" : ""}`}>
-                        {formatKRW(r.thisVal)}
+                      <td className={`number ${rowClass(r.label, r.thisVal)}`}>{formatKRW(r.thisVal)}</td>
+                      <td className={`number ${rowClass(r.label, r.otherVal)}`}>{formatKRW(r.otherVal)}</td>
+                      <td className={`number ${r.diffVal >= 0 ? "positive" : "negative"}`}>
+                        {r.diffVal >= 0 ? "+" : ""}{formatKRW(r.diffVal)}
                       </td>
-                      <td className={`number ${r.label === "순수입" ? (r.lastVal >= 0 ? "positive" : "negative") : r.label === "수입" ? "positive" : r.label === "지출" || r.label === "저축성지출" ? "negative" : ""}`}>
-                        {formatKRW(r.lastVal)}
-                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+            <h4 style={{ marginTop: 24, marginBottom: 8 }}>이번 달 vs 전년 동월</h4>
+            <p style={{ marginBottom: 12, color: "var(--text-secondary)", fontSize: 14 }}>
+              {thisMonthKey} (이번 달) · {lastYearSameMonthKey} (전년 동월)
+            </p>
+            <div style={{ overflowX: "auto", width: "100%" }}>
+              <table className="data-table" style={{ width: "100%", minWidth: "480px" }}>
+                <thead>
+                  <tr>
+                    <th style={{ width: "120px" }}>항목</th>
+                    <th className="number" style={{ minWidth: "120px" }}>{thisMonthKey}</th>
+                    <th className="number" style={{ minWidth: "120px" }}>{lastYearSameMonthKey}</th>
+                    <th className="number" style={{ minWidth: "120px" }}>차이</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {rowsLastYear.map((r) => (
+                    <tr key={r.label}>
+                      <td>{r.label}</td>
+                      <td className={`number ${rowClass(r.label, r.thisVal)}`}>{formatKRW(r.thisVal)}</td>
+                      <td className={`number ${rowClass(r.label, r.otherVal)}`}>{formatKRW(r.otherVal)}</td>
                       <td className={`number ${r.diffVal >= 0 ? "positive" : "negative"}`}>
                         {r.diffVal >= 0 ? "+" : ""}{formatKRW(r.diffVal)}
                       </td>

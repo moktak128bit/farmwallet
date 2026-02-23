@@ -19,6 +19,7 @@ interface SearchModalProps {
   onSaveFilter: (name: string) => void;
   onApplyFilter: (id: string) => void;
   onDeleteFilter: (id: string) => void;
+  onNavigate?: (payload: { type: "ledger" | "trade"; id: string }) => void;
 }
 
 export const SearchModal: React.FC<SearchModalProps> = ({
@@ -30,7 +31,8 @@ export const SearchModal: React.FC<SearchModalProps> = ({
   filteredResults,
   onSaveFilter,
   onApplyFilter,
-  onDeleteFilter
+  onDeleteFilter,
+  onNavigate
 }) => {
   useEffect(() => {
     if (!isOpen) return;
@@ -154,7 +156,24 @@ export const SearchModal: React.FC<SearchModalProps> = ({
           <div className="search-results" style={{ maxHeight: 320, overflow: "auto", marginTop: 8 }}>
             {filteredResults.length === 0 && <p className="hint">검색 결과가 없습니다.</p>}
             {filteredResults.map((r) => (
-              <div key={r.id} className="search-row">
+              <div
+                key={r.id}
+                className="search-row"
+                role="button"
+                tabIndex={0}
+                onClick={() => {
+                  onNavigate?.({ type: r.type, id: r.id });
+                  onClose();
+                }}
+                onKeyDown={(e) => {
+                  if (e.key === "Enter" || e.key === " ") {
+                    e.preventDefault();
+                    onNavigate?.({ type: r.type, id: r.id });
+                    onClose();
+                  }
+                }}
+                style={{ cursor: onNavigate ? "pointer" : undefined }}
+              >
                 <div className="search-row-title">
                   <span className={`pill ${r.type === "trade" ? "muted" : ""}`} style={{ padding: "3px 8px", fontSize: 11 }}>
                     {r.type === "trade" ? "거래" : "가계부"}

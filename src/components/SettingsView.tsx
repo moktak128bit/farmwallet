@@ -12,6 +12,8 @@ import { DataIntegrityView } from "./DataIntegrityView";
 import { ThemeCustomizer } from "./ThemeCustomizer";
 import { getKoreaTime } from "../utils/dateUtils";
 import { usePWAInstall } from "../hooks/usePWAInstall";
+import { STORAGE_KEYS } from "../constants/config";
+import { ERROR_MESSAGES } from "../constants/errorMessages";
 
 interface Props {
   data: AppData;
@@ -21,7 +23,20 @@ interface Props {
   onBackupRestored?: () => void;
 }
 
-type SettingsTab = "backup" | "integrity" | "theme" | "accessibility";
+type SettingsTab = "backup" | "integrity" | "theme" | "accessibility" | "dashboard";
+
+const DASHBOARD_WIDGET_ORDER = ["summary", "assets", "income", "budget", "stocks", "portfolio", "targetPortfolio", "458730", "isa"];
+const DASHBOARD_WIDGET_NAMES: Record<string, string> = {
+  summary: "요약 카드",
+  assets: "자산 구성",
+  income: "수입/지출",
+  budget: "예산 요약",
+  stocks: "주식 성과",
+  portfolio: "포트폴리오",
+  targetPortfolio: "목표 포트폴리오",
+  "458730": "458730 배당율 (TIGER 미국배당다우존스)",
+  isa: "ISA 포트폴리오"
+};
 
 export const SettingsView: React.FC<Props> = ({ data, onChangeData, backupVersion, onBackupRestored }) => {
   const [activeTab, setActiveTab] = useState<SettingsTab>("backup");
@@ -31,6 +46,40 @@ export const SettingsView: React.FC<Props> = ({ data, onChangeData, backupVersio
   const [backups, setBackups] = useState<BackupEntry[]>([]);
   const latestBackup = useMemo(() => backups[0], [backups]);
   const { canInstall, isStandalone, install: installPWA } = usePWAInstall();
+
+  const [backupOnSave, setBackupOnSave] = useState(() => {
+    if (typeof window === "undefined") return false;
+    return localStorage.getItem(STORAGE_KEYS.BACKUP_ON_SAVE) === "true";
+  });
+
+  const [priceApiEnabled, setPriceApiEnabled] = useState(() => {
+    if (typeof window === "undefined") return false;
+    return localStorage.getItem(STORAGE_KEYS.PRICE_API_ENABLED) === "true";
+  });
+
+  const [dashboardVisibleWidgets, setDashboardVisibleWidgets] = useState<Set<string>>(() => {
+    if (typeof window === "undefined") return new Set(DASHBOARD_WIDGET_ORDER);
+    try {
+      const raw = localStorage.getItem(STORAGE_KEYS.DASHBOARD_WIDGETS);
+      if (raw) return new Set(JSON.parse(raw));
+    } catch (e) {
+      console.warn("[SettingsView] 대시보드 위젯 설정 로드 실패", e);
+    }
+    return new Set(DASHBOARD_WIDGET_ORDER);
+  });
+  const [dashboardWidgetOrder, setDashboardWidgetOrder] = useState<string[]>(() => {
+    if (typeof window === "undefined") return [...DASHBOARD_WIDGET_ORDER];
+    try {
+      const raw = localStorage.getItem(STORAGE_KEYS.DASHBOARD_WIDGET_ORDER);
+      if (raw) {
+        const parsed = JSON.parse(raw) as string[];
+        if (Array.isArray(parsed) && parsed.length === DASHBOARD_WIDGET_ORDER.length) return parsed;
+      }
+    } catch (e) {
+      console.warn("[SettingsView] 위젯 순서 로드 실패", e);
+    }
+    return [...DASHBOARD_WIDGET_ORDER];
+  });
   const loadBackupList = useCallback(async () => {
     try {
       const list = await getAllBackupList();
@@ -38,7 +87,7 @@ export const SettingsView: React.FC<Props> = ({ data, onChangeData, backupVersio
       return list;
     } catch (error) {
       console.error("백업 목록 로드 실패:", error);
-      toast.error("백업 목록을 불러오는 중 오류가 발생했습니다. 다시 시도해 보세요.");
+      toast.error(ERROR_MESSAGES.BACKUP_LIST_LOAD_FAILED);
       return [];
     }
   }, []);
@@ -50,7 +99,7 @@ export const SettingsView: React.FC<Props> = ({ data, onChangeData, backupVersio
       toast.success("현재 데이터를 불러왔습니다.");
     } catch (error) {
       console.error("데이터 내보내기 실패:", error);
-      toast.error("데이터를 불러오는 중 오류가 발생했습니다.");
+      toast.error(ERROR_MESSAGES.DATA_LOAD_FAILED);
       setError("데이터를 불러오는 중 오류가 발생했습니다.");
     }
   };
@@ -79,7 +128,7 @@ export const SettingsView: React.FC<Props> = ({ data, onChangeData, backupVersio
       if (import.meta.env.DEV) {
         console.error("백업 다운로드 실패:", error);
       }
-      toast.error("백업 파일 다운로드 중 오류가 발생했습니다. 다시 시도해 보세요.");
+      toast.error(ERROR_MESSAGES.BACKUP_DOWNLOAD_FAILED);
     }
   }, [data]);
 
@@ -98,7 +147,7 @@ export const SettingsView: React.FC<Props> = ({ data, onChangeData, backupVersio
       toast.success("정리.md를 다운로드했습니다. 프로젝트의 정리.md를 덮어쓰면 됩니다.");
     } catch (err) {
       if (import.meta.env.DEV) console.error("정리.md 내보내기 실패:", err);
-      toast.error("정리.md 내보내기 중 오류가 발생했습니다.");
+      toast.error(ERROR_MESSAGES.EXPORT_MARKDOWN_FAILED);
     }
   }, [data.ledger, data.accounts]);
 
@@ -122,9 +171,8 @@ export const SettingsView: React.FC<Props> = ({ data, onChangeData, backupVersio
         onBackupRestored?.();
         await loadBackupList();
       } catch (error) {
-        const errorMsg = "백업 파일 형식이 올바르지 않습니다. JSON 파일인지 확인해 보세요.";
-        setError(errorMsg);
-        toast.error(errorMsg, { id: toastId });
+        setError(ERROR_MESSAGES.BACKUP_FILE_INVALID);
+        toast.error(ERROR_MESSAGES.BACKUP_FILE_INVALID, { id: toastId });
         if (import.meta.env.DEV) {
           console.error("백업 파일 불러오기 오류:", error);
         }
@@ -136,8 +184,8 @@ export const SettingsView: React.FC<Props> = ({ data, onChangeData, backupVersio
   const handleImport = useCallback(() => {
     try {
       if (!text || !text.trim()) {
-        toast.error("JSON 데이터를 입력해주세요.");
-        setError("JSON 데이터를 입력해주세요.");
+        toast.error(ERROR_MESSAGES.JSON_INPUT_REQUIRED);
+        setError(ERROR_MESSAGES.JSON_INPUT_REQUIRED);
         return;
       }
       const parsed = JSON.parse(text) as AppData;
@@ -146,9 +194,8 @@ export const SettingsView: React.FC<Props> = ({ data, onChangeData, backupVersio
       toast.success("데이터를 성공적으로 불러왔습니다.");
       onBackupRestored?.();
     } catch (e) {
-      const errorMessage = "JSON 형식이 올바르지 않습니다. 중괄호/쉼표를 다시 확인해 주세요.";
-      setError(errorMessage);
-      toast.error(errorMessage);
+      setError(ERROR_MESSAGES.JSON_FORMAT_INVALID);
+      toast.error(ERROR_MESSAGES.JSON_FORMAT_INVALID);
       if (import.meta.env.DEV) {
         console.error("JSON 파싱 오류:", e);
       }
@@ -161,7 +208,7 @@ export const SettingsView: React.FC<Props> = ({ data, onChangeData, backupVersio
       const list = await loadBackupList();
       toast.success(`백업 목록을 새로고침했습니다. (${list.length}개)`, { id: toastId });
     } catch (error) {
-      toast.error("백업 목록 새로고침 실패. 다시 시도해 보세요.", { id: toastId });
+      toast.error(ERROR_MESSAGES.BACKUP_REFRESH_FAILED, { id: toastId });
     }
   }, [loadBackupList]);
 
@@ -174,14 +221,13 @@ export const SettingsView: React.FC<Props> = ({ data, onChangeData, backupVersio
         restored = loadBackupData(entry.id);
       } else {
         // 서버 백업은 복원하지 않음
-        toast.error("서버 백업 복원은 비활성화되어 있습니다. 로컬 백업만 사용할 수 있습니다.", { id: toastId });
+        toast.error(ERROR_MESSAGES.SERVER_BACKUP_DISABLED, { id: toastId });
         return;
       }
 
       if (!restored) {
-        const errorMsg = "선택한 백업을 불러올 수 없습니다.";
-        setError(errorMsg);
-        toast.error(errorMsg, { id: toastId });
+        setError(ERROR_MESSAGES.BACKUP_SELECTED_NOT_FOUND);
+        toast.error(ERROR_MESSAGES.BACKUP_SELECTED_NOT_FOUND, { id: toastId });
         return;
       }
       
@@ -192,9 +238,8 @@ export const SettingsView: React.FC<Props> = ({ data, onChangeData, backupVersio
       onBackupRestored?.();
       await loadBackupList();
     } catch (e) {
-      const errorMsg = "백업을 불러오는 중 문제가 발생했습니다. 다시 시도해 보세요.";
-      setError(errorMsg);
-      toast.error(errorMsg, { id: toastId });
+      setError(ERROR_MESSAGES.BACKUP_RESTORE_FAILED);
+      toast.error(ERROR_MESSAGES.BACKUP_RESTORE_FAILED, { id: toastId });
       if (import.meta.env.DEV) {
         console.error("백업 복원 오류:", e);
       }
@@ -204,6 +249,56 @@ export const SettingsView: React.FC<Props> = ({ data, onChangeData, backupVersio
   useEffect(() => {
     void loadBackupList();
   }, [backupVersion, loadBackupList]);
+
+  useEffect(() => {
+    if (activeTab === "backup") {
+      setBackupOnSave(localStorage.getItem(STORAGE_KEYS.BACKUP_ON_SAVE) === "true");
+      setPriceApiEnabled(localStorage.getItem(STORAGE_KEYS.PRICE_API_ENABLED) === "true");
+    }
+    if (activeTab !== "dashboard") return;
+    try {
+      const raw = localStorage.getItem(STORAGE_KEYS.DASHBOARD_WIDGETS);
+      if (raw) setDashboardVisibleWidgets(new Set(JSON.parse(raw)));
+      const rawOrder = localStorage.getItem(STORAGE_KEYS.DASHBOARD_WIDGET_ORDER);
+      if (rawOrder) {
+        const parsed = JSON.parse(rawOrder) as string[];
+        if (Array.isArray(parsed) && parsed.length === DASHBOARD_WIDGET_ORDER.length) setDashboardWidgetOrder(parsed);
+      }
+    } catch (e) {
+      console.warn("[SettingsView] 탭 전환 시 위젯 순서 로드 실패", e);
+    }
+  }, [activeTab]);
+
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    localStorage.setItem(STORAGE_KEYS.DASHBOARD_WIDGETS, JSON.stringify(Array.from(dashboardVisibleWidgets)));
+  }, [dashboardVisibleWidgets]);
+
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    localStorage.setItem(STORAGE_KEYS.DASHBOARD_WIDGET_ORDER, JSON.stringify(dashboardWidgetOrder));
+  }, [dashboardWidgetOrder]);
+
+  const toggleDashboardWidget = (id: string) => {
+    setDashboardVisibleWidgets((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+  };
+
+  const moveDashboardWidgetOrder = (id: string, direction: "up" | "down") => {
+    const idx = dashboardWidgetOrder.indexOf(id);
+    if (idx === -1) return;
+    const swap = direction === "up" ? idx - 1 : idx + 1;
+    if (swap < 0 || swap >= dashboardWidgetOrder.length) return;
+    setDashboardWidgetOrder((prev) => {
+      const next = [...prev];
+      [next[idx], next[swap]] = [next[swap], next[idx]];
+      return next;
+    });
+  };
 
   return (
     <div>
@@ -237,6 +332,13 @@ export const SettingsView: React.FC<Props> = ({ data, onChangeData, backupVersio
           onClick={() => setActiveTab("accessibility")}
         >
           접근성
+        </button>
+        <button
+          type="button"
+          className={activeTab === "dashboard" ? "primary" : ""}
+          onClick={() => setActiveTab("dashboard")}
+        >
+          대시보드 위젯
         </button>
       </div>
 
@@ -299,6 +401,21 @@ export const SettingsView: React.FC<Props> = ({ data, onChangeData, backupVersio
         </div>
         <div className="card">
           <div className="card-title">자동 백업 스냅샷</div>
+          <label style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 12 }}>
+            <input
+              type="checkbox"
+              checked={backupOnSave}
+              onChange={(e) => {
+                const v = e.target.checked;
+                setBackupOnSave(v);
+                if (typeof window !== "undefined") {
+                  localStorage.setItem(STORAGE_KEYS.BACKUP_ON_SAVE, v ? "true" : "false");
+                  toast.success(v ? "저장 시 스냅샷 저장을 켰습니다." : "저장 시 스냅샷 저장을 껐습니다.");
+                }
+              }}
+            />
+            <span>저장할 때마다 스냅샷 저장 (자동 저장·수동 저장 시 백업 스냅샷 함께 생성)</span>
+          </label>
           <p>최근 20개까지 자동으로 저장된 백업 목록입니다. 원하는 시점으로 되돌릴 수 있습니다.</p>
           <button type="button" onClick={handleRefreshBackups}>
             백업 목록 새로고침
@@ -317,6 +434,27 @@ export const SettingsView: React.FC<Props> = ({ data, onChangeData, backupVersio
                 })}`
               : "아직 저장된 백업이 없습니다. 상단의 '백업 스냅샷 저장' 버튼을 눌러주세요."}
           </div>
+        </div>
+        <div className="card">
+          <div className="card-title">가격 API</div>
+          <label style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 8 }}>
+            <input
+              type="checkbox"
+              checked={priceApiEnabled}
+              onChange={(e) => {
+                const v = e.target.checked;
+                setPriceApiEnabled(v);
+                if (typeof window !== "undefined") {
+                  localStorage.setItem(STORAGE_KEYS.PRICE_API_ENABLED, v ? "true" : "false");
+                  toast.success(v ? "가격 API 사용을 켰습니다." : "가격 API 사용을 껐습니다.");
+                }
+              }}
+            />
+            <span>가격 API 사용 (외부 API로 주식 가격 배치 갱신)</span>
+          </label>
+          <p className="hint" style={{ marginTop: 4 }}>
+            켜면 티커 백업 로드 후 선택한 제공자의 API로 가격을 배치 갱신할 수 있습니다. 실제 API 연동은 추후 제공 예정입니다.
+          </p>
         </div>
       </div>
 
@@ -419,6 +557,51 @@ export const SettingsView: React.FC<Props> = ({ data, onChangeData, backupVersio
           <p style={{ fontSize: 12, color: "var(--text-muted)", marginTop: 8 }}>
             고대비 모드는 시각적 대비를 높여 가독성을 향상시킵니다.
           </p>
+        </div>
+      )}
+
+      {activeTab === "dashboard" && (
+        <div className="card">
+          <h3>대시보드 위젯 표시 및 순서</h3>
+          <p style={{ fontSize: 12, color: "var(--text-muted)", marginBottom: 12 }}>
+            표시 여부를 선택하고, 순서는 위/아래로 변경할 수 있습니다. 대시보드 탭에서도 동일하게 적용됩니다.
+          </p>
+          {dashboardWidgetOrder.map((id, index) => (
+            <div
+              key={id}
+              style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 8 }}
+            >
+              <input
+                type="checkbox"
+                id={`settings-widget-${id}`}
+                checked={dashboardVisibleWidgets.has(id)}
+                onChange={() => toggleDashboardWidget(id)}
+              />
+              <label htmlFor={`settings-widget-${id}`} style={{ flex: 1 }}>
+                {DASHBOARD_WIDGET_NAMES[id] ?? id}
+              </label>
+              <button
+                type="button"
+                className="secondary"
+                style={{ padding: "4px 8px", fontSize: 11 }}
+                onClick={() => moveDashboardWidgetOrder(id, "up")}
+                disabled={index === 0}
+                title="위로"
+              >
+                위
+              </button>
+              <button
+                type="button"
+                className="secondary"
+                style={{ padding: "4px 8px", fontSize: 11 }}
+                onClick={() => moveDashboardWidgetOrder(id, "down")}
+                disabled={index === dashboardWidgetOrder.length - 1}
+                title="아래로"
+              >
+                아래
+              </button>
+            </div>
+          ))}
         </div>
       )}
 

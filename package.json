@@ -29,6 +29,7 @@
     "list-scripts": "node scripts/list-all-scripts.mjs"
   },
   "dependencies": {
+    "@tanstack/react-virtual": "^3.13.18",
     "lucide-react": "^0.562.0",
     "papaparse": "^5.5.3",
     "react": "^18.3.1",

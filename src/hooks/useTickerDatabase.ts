@@ -4,6 +4,7 @@ import { buildInitialTickerDatabase } from "../yahooFinanceApi";
 import type { AppData, TickerInfo } from "../types";
 import { toast } from "react-hot-toast";
 import { STORAGE_KEYS } from "../constants/config";
+import { ERROR_MESSAGES } from "../constants/errorMessages";
 
 export function useTickerDatabase(
   data: AppData,
@@ -66,7 +67,7 @@ export function useTickerDatabase(
       toast.success(`티커 데이터베이스 생성 완료 (${tickers.length}개)`, { id: toastId });
     } catch (err) {
       console.error("초기 티커 목록 생성 실패:", err);
-      toast.error("티커 데이터베이스 생성 실패", { id: toastId });
+      toast.error(ERROR_MESSAGES.TICKER_DB_CREATE_FAILED, { id: toastId });
     } finally {
       setIsLoadingTickerDatabase(false);
     }

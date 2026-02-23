@@ -22,7 +22,10 @@ export function useLedgerForm(
   accounts: Account[]
 ) {
   const getKindForTab = useCallback((tab: LedgerTab): LedgerKind => {
-    return tab === "income" ? "income" : tab === "transfer" || tab === "savingsExpense" ? "transfer" : "expense";
+    if (tab === "income") return "income";
+    if (tab === "transfer") return "transfer";
+    if (tab === "savingsExpense") return "expense"; // 저축성 지출 = 지출(expense)로만 저장
+    return "expense";
   }, []);
 
   const parseAmountValue = useCallback((value: string): number => {

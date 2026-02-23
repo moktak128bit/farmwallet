@@ -65,7 +65,9 @@ export function loadSavedRules(): CategoryRule[] {
   try {
     const saved = localStorage.getItem("fw-auto-category-rules");
     if (saved) return JSON.parse(saved);
-  } catch {}
+  } catch (e) {
+    console.warn("[autoCategorization] 저장된 규칙 로드 실패", e);
+  }
   return [];
 }
 

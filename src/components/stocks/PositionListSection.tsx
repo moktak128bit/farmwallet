@@ -66,8 +66,8 @@ export const PositionListSection: React.FC<PositionListSectionProps> = ({
   onQuickBuy
 }) => {
   const [positionSort, setPositionSort] = useState<{ key: PositionSortKey; direction: "asc" | "desc" }>({
-    key: "ticker",
-    direction: "asc"
+    key: "marketValue",
+    direction: "desc"
   });
   const [draggingAccountId, setDraggingAccountId] = useState<string | null>(null);
   const [isAccountReorderMode, setIsAccountReorderMode] = useState<boolean>(() => {

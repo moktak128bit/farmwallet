@@ -326,6 +326,26 @@ function fixCorruptedCategoryNames(ledger: AppData["ledger"]): AppData["ledger"]
   });
 }
 
+/**
+ * 이체(kind=transfer)로 잘못 저장된 저축성 지출 → 지출(expense)로 일괄 수정.
+ * 저축성 지출 = 지출의 한 종류이므로 kind는 "expense"만 허용.
+ */
+function migrateSavingsExpenseFromTransfer(
+  ledger: AppData["ledger"],
+  categoryPresets: CategoryPresets
+): AppData["ledger"] {
+  const savingsCategories = categoryPresets.categoryTypes?.savings ?? ["저축성지출"];
+  return ledger.map((entry) => {
+    if (entry.kind !== "transfer") return entry;
+    if (!entry.category || !savingsCategories.includes(entry.category)) return entry;
+    return {
+      ...entry,
+      kind: "expense" as const,
+      category: entry.category
+    };
+  });
+}
+
 /** 초기 로딩/빈 상태용 기본 데이터 (로딩 UI 표시 시 훅에 넘기기 위해 사용) */
 export function getEmptyData(): AppData {
   const defaults = getDefaultCategoryPresets();
@@ -387,18 +407,21 @@ export function loadData(): AppData {
     // 깨진 카테고리 이름 수정
     const originalLedger = dataWithKrNames.ledger;
     const fixedLedger = fixCorruptedCategoryNames(originalLedger);
+    // 이체로 저장된 저축성 지출 → 지출(expense)로 일괄 수정
+    const migratedLedger = migrateSavingsExpenseFromTransfer(fixedLedger, dataWithKrNames.categoryPresets);
 
     const hasLedgerChanges =
-      originalLedger.length !== fixedLedger.length ||
+      originalLedger.length !== migratedLedger.length ||
       originalLedger.some((entry, idx) => {
-        const fixed = fixedLedger[idx];
-        return !fixed || entry.category !== fixed.category || entry.subCategory !== fixed.subCategory;
+        const m = migratedLedger[idx];
+        if (!m) return true;
+        return entry.kind !== m.kind || entry.category !== m.category || entry.subCategory !== m.subCategory;
       });
 
     const finalData: AppData = {
       ...dataWithKrNames,
       accounts,
-      ledger: fixedLedger
+      ledger: migratedLedger
     };
 
     if (hasLedgerChanges || krNamesChanged) {
@@ -411,7 +434,24 @@ export function loadData(): AppData {
   }
 }
 
+const SAVE_RETRY_COUNT = 2;
+
 export function saveData(data: AppData): void {
   if (typeof window === "undefined") return;
-  window.localStorage.setItem(STORAGE_KEYS.DATA, JSON.stringify(data));
+  let lastErr: unknown;
+  for (let attempt = 0; attempt <= SAVE_RETRY_COUNT; attempt++) {
+    try {
+      window.localStorage.setItem(STORAGE_KEYS.DATA, JSON.stringify(data));
+      return;
+    } catch (e) {
+      lastErr = e;
+      if (attempt === SAVE_RETRY_COUNT) break;
+    }
+  }
+  const message = lastErr instanceof DOMException && lastErr.name === "QuotaExceededError"
+    ? "저장 공간이 부족합니다. 오래된 백업을 지우거나 데이터를 줄여 주세요."
+    : lastErr instanceof Error
+      ? lastErr.message
+      : "저장에 실패했습니다.";
+  throw new Error(message);
 }

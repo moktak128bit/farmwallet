@@ -17,7 +17,7 @@ import {
   YAxis,
   Label
 } from "recharts";
-import type { Account, LedgerEntry, StockPrice, StockTrade, CategoryPresets, TargetPortfolio } from "../types";
+import type { Account, LedgerEntry, StockPrice, StockTrade, CategoryPresets, TargetPortfolio, BudgetGoal } from "../types";
 import { computeAccountBalances, computeMonthlyNetWorth, computePositions } from "../calculations";
 import { formatKRW } from "../utils/format";
 import { isUSDStock, canonicalTickerForMatch, extractTickerFromText } from "../utils/tickerUtils";
@@ -26,10 +26,6 @@ import { useFxRate } from "../hooks/useFxRate";
 import { SAVINGS_RATE_GOAL, ISA_PORTFOLIO } from "../constants/config";
 import { getThisMonthKST } from "../utils/dateUtils";
 
-// 가계부 단일 소스: 저축성지출 판단 (LedgerView와 동일 로직)
-const isSavingsExpense = (entry: LedgerEntry, accounts: Account[]) =>
-  isSavingsExpenseEntry(entry, accounts);
-
 interface Props {
   accounts: Account[];
   ledger: LedgerEntry[];
@@ -37,6 +33,7 @@ interface Props {
   prices: StockPrice[];
   categoryPresets: CategoryPresets;
   targetPortfolios?: TargetPortfolio[];
+  budgets?: BudgetGoal[];
 }
 
 const COLORS = ["#0ea5e9", "#6366f1", "#f43f5e", "#10b981", "#f59e0b", "#8b5cf6"];
@@ -62,11 +59,13 @@ const LAST_CURVE_VALUE = TARGET_NET_WORTH_CURVE[LAST_CURVE_DATE] ?? 0;
 /** 이 날짜부터 순자산은 실제 계산값 사용 (목표 곡선 미사용) */
 const CALC_START_DATE = "2026-01-01";
 
-const DEFAULT_WIDGET_ORDER = ["summary", "assets", "income", "stocks", "portfolio", "targetPortfolio", "458730", "isa"];
+const DEFAULT_WIDGET_ORDER = ["summary", "assets", "income", "savingsFlow", "budget", "stocks", "portfolio", "targetPortfolio", "458730", "isa"];
 const WIDGET_NAMES: Record<string, string> = {
   summary: "요약 카드",
   assets: "자산 구성",
   income: "수입/지출",
+  savingsFlow: "저축·투자 기간별 현황",
+  budget: "예산 요약",
   stocks: "주식 성과",
   portfolio: "포트폴리오",
   targetPortfolio: "목표 포트폴리오",
@@ -84,19 +83,27 @@ export const DashboardView: React.FC<Props> = ({
   trades,
   prices,
   categoryPresets,
-  targetPortfolios = []
+  targetPortfolios = [],
+  budgets = []
 }) => {
   const fxRate = useFxRate(); // useFxRate 훅 사용으로 중복 요청 제거
-  
+
+  const isSavingsExpense = useCallback(
+    (entry: LedgerEntry) => isSavingsExpenseEntry(entry, accounts, categoryPresets),
+    [accounts, categoryPresets]
+  );
+
   // 위젯 표시/숨김 설정
   const [visibleWidgets, setVisibleWidgets] = useState<Set<string>>(() => {
     if (typeof window !== "undefined") {
       try {
         const saved = localStorage.getItem("fw-dashboard-widgets");
         if (saved) return new Set(JSON.parse(saved));
-      } catch {}
+      } catch (e) {
+        console.warn("[DashboardView] 위젯 설정 로드 실패", e);
+      }
     }
-    return new Set(["summary", "assets", "income", "stocks", "portfolio", "targetPortfolio", "458730", "isa"]);
+    return new Set(["summary", "assets", "income", "savingsFlow", "stocks", "portfolio", "targetPortfolio", "458730", "isa"]);
   });
 
   // 위젯 순서 (표시 순서, localStorage에 저장)
@@ -108,7 +115,9 @@ export const DashboardView: React.FC<Props> = ({
           const parsed = JSON.parse(saved) as string[];
           if (Array.isArray(parsed) && parsed.length === DEFAULT_WIDGET_ORDER.length) return parsed;
         }
-      } catch {}
+      } catch (e) {
+        console.warn("[DashboardView] 위젯 순서 로드 실패", e);
+      }
     }
     return [...DEFAULT_WIDGET_ORDER];
   });
@@ -207,6 +216,20 @@ export const DashboardView: React.FC<Props> = ({
 
   const totalStockPnl = useMemo(() => positions.reduce((s, p) => s + p.pnl, 0), [positions]);
   const totalStockValue = useMemo(() => positions.reduce((s, p) => s + p.marketValue, 0), [positions]);
+
+  const currentMonth = useMemo(() => new Date().toISOString().slice(0, 7), []);
+  const budgetUsage = useMemo(() => {
+    return budgets.map((b) => {
+      const spent = ledger
+        .filter((l) => l.kind === "expense" && l.category === b.category && l.date.startsWith(currentMonth))
+        .reduce((s, l) => s + l.amount, 0);
+      const limit = b.monthlyLimit || 0;
+      const pct = limit > 0 ? Math.min(100, (spent / limit) * 100) : 0;
+      const isOver = spent > limit && limit > 0;
+      return { ...b, spent, limit, pct, isOver };
+    });
+  }, [budgets, ledger, currentMonth]);
+  const budgetOverCount = useMemo(() => budgetUsage.filter((b) => b.isOver).length, [budgetUsage]);
   
   // 현금 잔액: 입출금/증권/기타 계좌 (증권 USD 포함, 계좌 화면과 동일)
   const totalCashValue = useMemo(() => {
@@ -272,7 +295,7 @@ export const DashboardView: React.FC<Props> = ({
       .filter((l) => l.date >= "2025-01-01" && l.date <= "2025-12-31")
       .reduce((sum, l) => {
         if (l.kind === "income") return sum + l.amount;
-        if (l.kind === "expense" || isSavingsExpense(l, accounts)) return sum - l.amount;
+        if (l.kind === "expense" || isSavingsExpense(l)) return sum - l.amount;
         return sum;
       }, 0);
     const invested = startNW + netFlow2025;
@@ -289,6 +312,135 @@ export const DashboardView: React.FC<Props> = ({
   }, [accounts, ledger, trades, adjustedPrices, fxRate, totalNetWorth]);
 
   const thisMonth = useMemo(() => getThisMonthKST(), []);
+
+  // 저축·증권 계좌 ID (저축성지출에 해당하는 계좌 = savings + securities)
+  const savingsOrSecuritiesIds = useMemo(
+    () => new Set(accounts.filter((a) => a.type === "savings" || a.type === "securities").map((a) => a.id)),
+    [accounts]
+  );
+
+  // 기간별 저축·투자 현황: 월 / 분기 / 년
+  const [savingsFlowPeriodType, setSavingsFlowPeriodType] = useState<"month" | "quarter" | "year">("month");
+  type SavingsFlowPeriodRow = {
+    label: string;
+    startDate: string;
+    endDate: string;
+    inflows: number;
+    outflows: number;
+    startBalance: number;
+    endBalance: number;
+    returnRate: number | null;
+  };
+  const getSavingsSecuritiesBalanceAtDate = useCallback(
+    (dateStr: string): number => {
+      const filteredLedger = ledger.filter((l) => l.date && l.date <= dateStr);
+      const filteredTrades = trades.filter((t) => t.date && t.date <= dateStr);
+      const bal = computeAccountBalances(accounts, filteredLedger, filteredTrades);
+      const pos = computePositions(filteredTrades, adjustedPrices, accounts);
+      const stockMapByAccount = new Map<string, number>();
+      pos.forEach((p) => {
+        if (!savingsOrSecuritiesIds.has(p.accountId)) return;
+        stockMapByAccount.set(p.accountId, (stockMapByAccount.get(p.accountId) ?? 0) + p.marketValue);
+      });
+      return bal.reduce((sum, row) => {
+        if (!savingsOrSecuritiesIds.has(row.account.id)) return sum;
+        const cash = row.currentBalance;
+        const stock = stockMapByAccount.get(row.account.id) ?? 0;
+        const usd = row.account.type === "securities" ? (row.account.usdBalance ?? 0) + (row.usdTransferNet ?? 0) : 0;
+        const usdKrw = fxRate && usd ? usd * fxRate : 0;
+        return sum + cash + usdKrw + stock;
+      }, 0);
+    },
+    [accounts, ledger, trades, adjustedPrices, fxRate, savingsOrSecuritiesIds]
+  );
+  const savingsFlowByPeriod = useMemo((): SavingsFlowPeriodRow[] => {
+    const now = new Date();
+    const periods: { label: string; startDate: string; endDate: string }[] = [];
+    if (savingsFlowPeriodType === "month") {
+      for (let i = 11; i >= 0; i--) {
+        const d = new Date(now.getFullYear(), now.getMonth() - i, 1);
+        const y = d.getFullYear();
+        const m = d.getMonth();
+        const startDate = `${y}-${String(m + 1).padStart(2, "0")}-01`;
+        const lastDay = new Date(y, m + 1, 0).getDate();
+        const endDate = `${y}-${String(m + 1).padStart(2, "0")}-${String(lastDay).padStart(2, "0")}`;
+        periods.push({ label: `${y}-${String(m + 1).padStart(2, "0")}`, startDate, endDate });
+      }
+    } else if (savingsFlowPeriodType === "quarter") {
+      const y = now.getFullYear();
+      const currentQ = Math.floor(now.getMonth() / 3) + 1;
+      const totalQuarters = y * 4 + currentQ;
+      for (let i = 7; i >= 0; i--) {
+        const tq = totalQuarters - i;
+        let yy = Math.floor(tq / 4);
+        let qq = tq % 4;
+        if (qq === 0) {
+          qq = 4;
+          yy -= 1;
+        }
+        const startMonth = (qq - 1) * 3 + 1;
+        const endMonth = qq * 3;
+        const startDate = `${yy}-${String(startMonth).padStart(2, "0")}-01`;
+        const endDate = `${yy}-${String(endMonth).padStart(2, "0")}-${String(new Date(yy, endMonth, 0).getDate()).padStart(2, "0")}`;
+        periods.push({ label: `${yy}-Q${qq}`, startDate, endDate });
+      }
+    } else {
+      const y = now.getFullYear();
+      for (let i = 4; i >= 0; i--) {
+        const yy = y - i;
+        periods.push({
+          label: `${yy}`,
+          startDate: `${yy}-01-01`,
+          endDate: `${yy}-12-31`
+        });
+      }
+    }
+    const dayBefore = (dateStr: string) => {
+      const [y, m, d] = dateStr.split("-").map(Number);
+      const prev = new Date(y, m - 1, d - 1);
+      return prev.toISOString().slice(0, 10);
+    };
+    return periods.map(({ label, startDate, endDate }) => {
+      // 들어간 금액: 저축성 지출(지출)만 — expense이고 대분류가 저축성지출인 항목
+      const savingsCategories = categoryPresets.categoryTypes?.savings ?? ["저축성지출"];
+      const inflows = ledger
+        .filter(
+          (l) =>
+            l.kind === "expense" &&
+            l.date >= startDate &&
+            l.date <= endDate &&
+            savingsCategories.includes(l.category)
+        )
+        .reduce((s, l) => s + (l.currency === "USD" && fxRate ? l.amount * fxRate : l.amount), 0);
+      const outflows = ledger
+        .filter(
+          (l) =>
+            l.kind === "transfer" &&
+            l.date >= startDate &&
+            l.date <= endDate &&
+            l.fromAccountId &&
+            savingsOrSecuritiesIds.has(l.fromAccountId)
+        )
+        .reduce((s, l) => s + (l.currency === "USD" && fxRate ? l.amount * fxRate : l.amount), 0);
+      const startBalance = getSavingsSecuritiesBalanceAtDate(dayBefore(startDate));
+      const endBalance = getSavingsSecuritiesBalanceAtDate(endDate);
+      const netInvested = inflows - outflows;
+      const returnRate =
+        startBalance > 0
+          ? (endBalance - startBalance - netInvested) / startBalance
+          : null;
+      return {
+        label,
+        startDate,
+        endDate,
+        inflows,
+        outflows,
+        startBalance,
+        endBalance,
+        returnRate
+      };
+    });
+  }, [savingsFlowPeriodType, ledger, savingsOrSecuritiesIds, getSavingsSecuritiesBalanceAtDate, categoryPresets, fxRate]);
 
   // 순자산 변화 추적 (이전 월 대비)
   const netWorthChangeAnalysis = useMemo(() => {
@@ -350,14 +502,14 @@ export const DashboardView: React.FC<Props> = ({
       const periodExpense = ledger
         .filter(l => {
           const month = l.date.slice(0, 7);
-          return month > prevMonth && month <= currentMonth && l.kind === "expense" && !isSavingsExpense(l, accounts);
+          return month > prevMonth && month <= currentMonth && l.kind === "expense" && !isSavingsExpense(l);
         })
         .reduce((s, l) => s + l.amount, 0);
       
       const periodSavingsExpense = ledger
         .filter(l => {
           const month = l.date.slice(0, 7);
-          return month > prevMonth && month <= currentMonth && isSavingsExpense(l, accounts);
+          return month > prevMonth && month <= currentMonth && isSavingsExpense(l);
         })
         .reduce((s, l) => s + l.amount, 0);
       
@@ -423,14 +575,14 @@ export const DashboardView: React.FC<Props> = ({
     const periodExpense = ledger
       .filter(l => {
         const month = l.date.slice(0, 7);
-        return month > prevMonth && month <= currentMonth && l.kind === "expense" && !isSavingsExpense(l, accounts);
+        return month > prevMonth && month <= currentMonth && l.kind === "expense" && !isSavingsExpense(l);
       })
       .reduce((s, l) => s + l.amount, 0);
     
     const periodSavingsExpense = ledger
       .filter(l => {
         const month = l.date.slice(0, 7);
-        return month > prevMonth && month <= currentMonth && isSavingsExpense(l, accounts);
+        return month > prevMonth && month <= currentMonth && isSavingsExpense(l);
       })
       .reduce((s, l) => s + l.amount, 0);
     
@@ -501,7 +653,7 @@ export const DashboardView: React.FC<Props> = ({
     ledger
       .filter((l) => {
         // expense이고 저축성지출이 아닌 것만
-        if (l.kind === "expense" && !isSavingsExpense(l, accounts) && l.date.startsWith(thisMonth)) {
+        if (l.kind === "expense" && !isSavingsExpense(l) && l.date.startsWith(thisMonth)) {
           return true;
         }
         return false;
@@ -515,7 +667,7 @@ export const DashboardView: React.FC<Props> = ({
     ledger
       .filter((l) => {
         if (l.kind === "expense" && l.date.startsWith(thisMonth)) return true;
-        if (isSavingsExpense(l, accounts) && l.date.startsWith(thisMonth)) return true;
+        if (isSavingsExpense(l) && l.date.startsWith(thisMonth)) return true;
         return false;
       })
       .reduce((s, l) => s + l.amount, 0),
@@ -525,7 +677,7 @@ export const DashboardView: React.FC<Props> = ({
   // 이번달 저축성 지출 합계
   const monthlySavingsExpense = useMemo(() =>
     ledger
-      .filter((l) => isSavingsExpense(l, accounts) && l.date.startsWith(thisMonth))
+      .filter((l) => isSavingsExpense(l) && l.date.startsWith(thisMonth))
       .reduce((s, l) => s + l.amount, 0),
     [ledger, thisMonth, accounts]
   );
@@ -548,7 +700,7 @@ export const DashboardView: React.FC<Props> = ({
     const monthlyAmounts = months.map((month) => {
       return ledger
         .filter((l) => {
-          if (l.kind === "expense" && !isSavingsExpense(l, accounts) && l.date.startsWith(month)) {
+          if (l.kind === "expense" && !isSavingsExpense(l) && l.date.startsWith(month)) {
             return true;
           }
           return false;
@@ -570,12 +722,12 @@ export const DashboardView: React.FC<Props> = ({
     ledger
       .filter((l) => {
         if (l.kind === "expense" && l.date.startsWith(thisMonth)) return true;
-        if (isSavingsExpense(l, accounts) && l.date.startsWith(thisMonth)) return true;
+        if (isSavingsExpense(l) && l.date.startsWith(thisMonth)) return true;
         return false;
       })
       .forEach((l) => {
         // 저축성지출의 경우 카테고리를 "저축성지출"로 통일
-        const key = isSavingsExpense(l, accounts) ? "저축성지출" : (l.category || "기타");
+        const key = isSavingsExpense(l) ? "저축성지출" : (l.category || "기타");
         map.set(key, (map.get(key) ?? 0) + l.amount);
       });
     return Array.from(map.entries())
@@ -594,13 +746,13 @@ export const DashboardView: React.FC<Props> = ({
         // expense만 포함
         if (l.kind === "expense" && l.date) return true;
         // 저축성지출(transfer to savings/securities)도 포함
-        if (isSavingsExpense(l, accounts) && l.date) return true;
+        if (isSavingsExpense(l) && l.date) return true;
         return false;
       })
       .forEach((l) => {
         const month = l.date.slice(0, 7);
         // 저축성지출의 경우 카테고리를 "저축성지출"로 통일, 그 외는 원래 카테고리 사용
-        const category = isSavingsExpense(l, accounts) ? "저축성지출" : (l.category || "기타");
+        const category = isSavingsExpense(l) ? "저축성지출" : (l.category || "기타");
         
         if (!categoryMonthMap.has(category)) {
           categoryMonthMap.set(category, new Map());
@@ -652,13 +804,13 @@ export const DashboardView: React.FC<Props> = ({
         // expense만 포함
         if (l.kind === "expense" && l.date) return true;
         // 저축성지출(transfer to savings/securities)도 포함
-        if (isSavingsExpense(l, accounts) && l.date) return true;
+        if (isSavingsExpense(l) && l.date) return true;
         return false;
       })
       .forEach((l) => {
         const month = l.date.slice(0, 7);
         // 저축성지출의 경우 카테고리를 "저축성지출"로 통일, 그 외는 원래 카테고리 사용
-        const category = isSavingsExpense(l, accounts) ? "저축성지출" : (l.category || "기타");
+        const category = isSavingsExpense(l) ? "저축성지출" : (l.category || "기타");
         const subCategory = l.subCategory;
         const key = subCategory ? `${category} > ${subCategory}` : category;
         
@@ -694,7 +846,7 @@ export const DashboardView: React.FC<Props> = ({
     let weekendTotal = 0;
     let weekdayTotal = 0;
     ledger
-      .filter((l) => l.kind === "expense" && !isSavingsExpense(l, accounts) && l.date.startsWith(thisMonth))
+      .filter((l) => l.kind === "expense" && !isSavingsExpense(l) && l.date.startsWith(thisMonth))
       .forEach((l) => {
         const parts = l.date.split("-").map(Number);
         const day = new Date(parts[0], parts[1] - 1, parts[2]).getDay();
@@ -871,6 +1023,7 @@ export const DashboardView: React.FC<Props> = ({
       .filter(
         (l) =>
           (l.category && l.category.includes("배당")) ||
+          (l.subCategory && l.subCategory.includes("배당")) ||
           (l.description && l.description.includes("배당"))
       )
       .forEach((l) => {
@@ -891,7 +1044,7 @@ export const DashboardView: React.FC<Props> = ({
     ledger
       .filter((l) => {
         // expense이고 저축성지출이 아닌 것만
-        if (l.kind === "expense" && !isSavingsExpense(l, accounts) && l.date.startsWith(thisMonth)) {
+        if (l.kind === "expense" && !isSavingsExpense(l) && l.date.startsWith(thisMonth)) {
           return true;
         }
         return false;
@@ -931,7 +1084,7 @@ export const DashboardView: React.FC<Props> = ({
     const monthTotals = new Map<string, number>();
     const categoryByMonth = new Map<string, Map<string, number>>();
     ledger
-      .filter((l) => l.kind === "expense" && !isSavingsExpense(l, accounts))
+      .filter((l) => l.kind === "expense" && !isSavingsExpense(l))
       .forEach((l) => {
         const month = l.date.slice(0, 7);
         const categoryType = getCategoryType(l.category, l.subCategory, l.kind, categoryPresets, l, accounts);
@@ -966,7 +1119,7 @@ export const DashboardView: React.FC<Props> = ({
     const monthTotals = new Map<string, number>();
     ledger
       .filter((l) => l.kind === "income")
-      .filter((l) => (l.category && l.category.includes("배당")) || (l.description && l.description.includes("배당")))
+      .filter((l) => (l.category && l.category.includes("배당")) || (l.subCategory && l.subCategory.includes("배당")) || (l.description && l.description.includes("배당")))
       .forEach((l) => {
         const month = l.date.slice(0, 7);
         monthTotals.set(month, (monthTotals.get(month) ?? 0) + l.amount);
@@ -985,7 +1138,7 @@ export const DashboardView: React.FC<Props> = ({
     const TICKER_CANON = canonicalTickerForMatch(TICKER);
     const isDividend458730 = (l: LedgerEntry) => {
       if (l.kind !== "income") return false;
-      const hasDividend = (l.category && l.category.includes("배당")) || (l.description && l.description.includes("배당"));
+      const hasDividend = (l.category && l.category.includes("배당")) || (l.subCategory && l.subCategory.includes("배당")) || (l.description && l.description.includes("배당"));
       if (!hasDividend) return false;
       const desc = l.description ?? "";
       const cat = l.category ?? "";
@@ -1059,7 +1212,27 @@ export const DashboardView: React.FC<Props> = ({
       };
     });
   }, [ledger, trades]);
-  
+
+  // 458730 위젯 데이터가 비어 있을 때 필터 통과 여부 디버깅
+  useEffect(() => {
+    if (dividend458730Monthly.length > 0) return;
+    const TICKER = "458730";
+    const TICKER_CANON = canonicalTickerForMatch(TICKER);
+    const isDividend458730 = (l: LedgerEntry) => {
+      if (l.kind !== "income") return false;
+      const hasDividend = (l.category && l.category.includes("배당")) || (l.subCategory && l.subCategory.includes("배당")) || (l.description && l.description.includes("배당"));
+      if (!hasDividend) return false;
+      const desc = l.description ?? "";
+      const cat = l.category ?? "";
+      const extracted = extractTickerFromText(desc) ?? extractTickerFromText(cat);
+      if (!extracted) return desc.includes(TICKER) || cat.includes(TICKER);
+      return canonicalTickerForMatch(extracted) === TICKER_CANON;
+    };
+    const passed = ledger.filter(isDividend458730);
+    const withDividend = ledger.filter((l) => l.kind === "income" && ((l.category ?? "").includes("배당") || (l.subCategory ?? "").includes("배당") || (l.description ?? "").includes("배당")));
+    console.log("[458730 위젯] 배당 내역 없음. 필터 통과 건수:", passed.length, "/ 배당 수입 전체:", withDividend.length, "건. 통과한 항목 샘플:", passed.slice(0, 3));
+  }, [ledger, dividend458730Monthly.length]);
+
   // 이번달 배당금
   const monthlyDividend = useMemo(() => {
     return ledger
@@ -1067,6 +1240,7 @@ export const DashboardView: React.FC<Props> = ({
       .filter(
         (l) =>
           (l.category && l.category.includes("배당")) ||
+          (l.subCategory && l.subCategory.includes("배당")) ||
           (l.description && l.description.includes("배당"))
       )
       .reduce((s, l) => s + l.amount, 0);
@@ -1138,35 +1312,32 @@ export const DashboardView: React.FC<Props> = ({
     return Array.from(map.values());
   }, [positionsWithPrice]);
 
-  // 목표 포트폴리오 vs 실제 비중 차트 데이터 (전체 계좌 기준)
+  // 목표 포트폴리오 vs 실제 비중 차트 데이터 (주식 탭과 동일 로직: 전체 계좌, marketValue는 이미 KRW)
   const targetPortfolioChartData = useMemo(() => {
     const target = targetPortfolios.find((t) => t.accountId === null && t.items.length > 0) ?? targetPortfolios.find((t) => t.items.length > 0);
     if (!target || target.items.length === 0 || positionsWithPrice.length === 0) return [];
-    const rate = fxRate ?? 0;
-    const totalMarketValueKRW = positionsWithPrice.reduce((sum, p) => {
-      const isUSD = isUSDStock(p.ticker);
-      return sum + (isUSD ? (p.marketValue ?? 0) * rate : (p.marketValue ?? 0));
-    }, 0);
+    // positionsWithPrice의 marketValue는 adjustedPrices 기준이라 이미 KRW
+    const totalMarketValueKRW = positionsWithPrice.reduce((sum, p) => sum + (p.marketValue ?? 0), 0);
     if (totalMarketValueKRW <= 0) return [];
 
     return target.items.map((item) => {
-      const currentValue = positionsWithPrice
+      const currentValueKRW = positionsWithPrice
         .filter((p) => normTicker(p.ticker) === normTicker(item.ticker))
         .reduce((s, p) => s + (p.marketValue ?? 0), 0);
-      const isUSD = isUSDStock(item.ticker);
-      const currentValueKRW = isUSD ? currentValue * rate : currentValue;
       const currentPercent = totalMarketValueKRW > 0 ? (currentValueKRW / totalMarketValueKRW) * 100 : 0;
       const priceInfo = adjustedPrices.find((x) => normTicker(x.ticker) === normTicker(item.ticker));
-      const name = priceInfo?.name ?? item.ticker;
+      const baseName = priceInfo?.name ?? item.ticker;
+      const displayName = item.alias?.trim() || baseName;
+      const name = displayName.length > 12 ? `${displayName.slice(0, 11)}…` : displayName;
       return {
-        name: name.length > 12 ? `${item.ticker}` : name,
+        name,
         ticker: item.ticker,
         target: item.targetPercent,
         actual: Math.round(currentPercent * 10) / 10,
         달성도: item.targetPercent > 0 ? Math.round((currentPercent / item.targetPercent) * 100) : 0
       };
     });
-  }, [targetPortfolios, positionsWithPrice, adjustedPrices, fxRate]);
+  }, [targetPortfolios, positionsWithPrice, adjustedPrices]);
   
   // 종목 집중도 경고: 특정 종목 비중이 15% 이상인 경우
   const concentrationWarnings = useMemo(() => {
@@ -1826,6 +1997,108 @@ export const DashboardView: React.FC<Props> = ({
           )
         )}
       </div>
+      )}
+
+      {visibleWidgets.has("savingsFlow") && (
+        <div className="cards-row" style={{ order: widgetOrder.indexOf("savingsFlow") }}>
+          <div className="card" style={{ gridColumn: "span 2" }}>
+            <div className="card-title">저축·투자 기간별 현황</div>
+            <div style={{ fontSize: 12, color: "var(--text-muted)", marginBottom: 10 }}>
+              들어간 금액은 저축성 지출(지출)만, 뺀 금액은 저축·증권으로 나간 이체. 기간 말 잔액·수익률 포함.
+            </div>
+            <div style={{ display: "flex", gap: 8, marginBottom: 12 }}>
+              {(["month", "quarter", "year"] as const).map((t) => (
+                <button
+                  key={t}
+                  type="button"
+                  className={savingsFlowPeriodType === t ? "primary" : "secondary"}
+                  style={{ padding: "6px 12px", fontSize: 12 }}
+                  onClick={() => setSavingsFlowPeriodType(t)}
+                >
+                  {t === "month" ? "월" : t === "quarter" ? "분기" : "년"}
+                </button>
+              ))}
+            </div>
+            <div style={{ overflowX: "auto" }}>
+              <table className="table" style={{ minWidth: 520, fontSize: 12 }}>
+                <thead>
+                  <tr>
+                    <th style={{ textAlign: "left" }}>기간</th>
+                    <th style={{ textAlign: "right" }}>들어간 금액</th>
+                    <th style={{ textAlign: "right" }}>뺀 금액</th>
+                    <th style={{ textAlign: "right" }}>기간 말 잔액</th>
+                    <th style={{ textAlign: "right" }}>수익률</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {savingsFlowByPeriod.map((row) => (
+                    <tr key={row.label}>
+                      <td style={{ fontWeight: 500 }}>{row.label}</td>
+                      <td className="number" style={{ textAlign: "right", color: "var(--color-positive)" }}>
+                        +{Math.round(row.inflows).toLocaleString()}
+                      </td>
+                      <td className="number" style={{ textAlign: "right", color: "var(--color-negative)" }}>
+                        -{Math.round(row.outflows).toLocaleString()}
+                      </td>
+                      <td className="number" style={{ textAlign: "right" }}>
+                        {Math.round(row.endBalance).toLocaleString()}
+                      </td>
+                      <td className="number" style={{ textAlign: "right" }}>
+                        {row.returnRate != null ? `${(row.returnRate * 100).toFixed(1)}%` : "-"}
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {visibleWidgets.has("budget") && (
+        <div className="cards-row" style={{ order: widgetOrder.indexOf("budget") }}>
+          <div className="card">
+            <div className="card-title">
+              예산 요약
+              {budgetOverCount > 0 && (
+                <span style={{ marginLeft: 8, fontSize: 11, fontWeight: 600, background: "var(--danger)", color: "white", padding: "2px 8px", borderRadius: 4 }}>
+                  초과 {budgetOverCount}건
+                </span>
+              )}
+            </div>
+            <div style={{ padding: "12px 0" }}>
+              {budgetUsage.length === 0 ? (
+                <p className="hint">설정된 예산이 없습니다. 예산/반복 탭에서 추가하세요.</p>
+              ) : (
+                <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
+                  {budgetUsage.map((b) => (
+                    <div key={b.id} style={{ fontSize: 13 }}>
+                      <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 4 }}>
+                        <span style={{ fontWeight: 500 }}>{b.category}</span>
+                        <span className="number" style={{ color: b.isOver ? "var(--danger)" : "var(--text-secondary)" }}>
+                          {Math.round(b.spent).toLocaleString()} / {Math.round(b.limit).toLocaleString()}원
+                          {b.isOver && " 초과"}
+                        </span>
+                      </div>
+                      <div style={{ height: 6, background: "var(--surface-hover)", borderRadius: 3, overflow: "hidden" }}>
+                        <div
+                          style={{
+                            width: `${Math.min(100, b.pct)}%`,
+                            height: "100%",
+                            background: b.isOver ? "var(--danger)" : b.pct >= 90 ? "var(--warning)" : "var(--primary)",
+                            borderRadius: 3,
+                            transition: "width 0.2s"
+                          }}
+                        />
+                      </div>
+                      <div style={{ fontSize: 11, color: "var(--text-muted)", marginTop: 2 }}>{b.pct.toFixed(0)}% 사용</div>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+          </div>
+        </div>
       )}
 
       {visibleWidgets.has("targetPortfolio") && (

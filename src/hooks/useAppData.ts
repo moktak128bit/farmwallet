@@ -1,5 +1,7 @@
 import { useEffect, useRef, useState, useCallback } from "react";
-import { loadData, saveData, getEmptyData } from "../storage";
+import { toast } from "react-hot-toast";
+import { loadData, saveData, getEmptyData, saveBackupSnapshot } from "../storage";
+import { STORAGE_KEYS } from "../constants/config";
 import type { AppData } from "../types";
 import { AUTO_SAVE_DELAY } from "../constants/config";
 
@@ -36,7 +38,14 @@ export function useAppData() {
     }
     saveTimerRef.current = window.setTimeout(() => {
       if (manualBackupRef.current) return;
-      saveData(data);
+      try {
+        saveData(data);
+        if (typeof window !== "undefined" && window.localStorage.getItem(STORAGE_KEYS.BACKUP_ON_SAVE) === "true") {
+          void saveBackupSnapshot(data, { skipHash: false });
+        }
+      } catch (e) {
+        toast.error(e instanceof Error ? e.message : "저장 실패");
+      }
       saveTimerRef.current = null;
     }, AUTO_SAVE_DELAY);
     return () => {
@@ -54,7 +63,14 @@ export function useAppData() {
       if (saveTimerRef.current) {
         window.clearTimeout(saveTimerRef.current);
         saveTimerRef.current = null;
-        saveData(dataRef.current);
+        try {
+          saveData(dataRef.current);
+          if (typeof window !== "undefined" && window.localStorage.getItem(STORAGE_KEYS.BACKUP_ON_SAVE) === "true") {
+            void saveBackupSnapshot(dataRef.current, { skipHash: false });
+          }
+        } catch (e) {
+          toast.error(e instanceof Error ? e.message : "저장 실패");
+        }
       }
     };
     const handleBeforeUnload = () => {
@@ -77,7 +93,14 @@ export function useAppData() {
 
   const saveNow = useCallback(() => {
     if (loadFailedRef.current) return;
-    saveData(dataRef.current);
+    try {
+      saveData(dataRef.current);
+      if (typeof window !== "undefined" && window.localStorage.getItem(STORAGE_KEYS.BACKUP_ON_SAVE) === "true") {
+        void saveBackupSnapshot(dataRef.current, { skipHash: false });
+      }
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : "저장 실패");
+    }
   }, []);
 
   /** 로드 실패 후 백업 복원했을 때 저장 허용용 */

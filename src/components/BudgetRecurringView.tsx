@@ -1,5 +1,6 @@
 import React, { useMemo, useState } from "react";
 import { toast } from "react-hot-toast";
+import { ERROR_MESSAGES } from "../constants/errorMessages";
 import type { Account, BudgetGoal, RecurringExpense, Recurrence, LedgerEntry } from "../types";
 
 interface Props {
@@ -196,7 +197,7 @@ export const BudgetRecurringView: React.FC<Props> = ({
     const occurrences = generateOccurrencesForMonthFromRecurring(selectedRecurring, currentMonth);
     const deduped = filterDuplicateOccurrences(occurrences, ledger, currentMonth);
     if (deduped.length === 0) {
-      toast.error("해당 월에 이미 반영된 항목만 선택되었습니다. 새로운 항목을 선택해주세요.");
+      toast.error(ERROR_MESSAGES.BUDGET_ALREADY_APPLIED);
       return;
     }
     onChangeLedger([...deduped, ...ledger]);
@@ -707,13 +708,17 @@ export const BudgetRecurringView: React.FC<Props> = ({
             <th>월 예산</th>
             <th>지출</th>
             <th>잔여</th>
+            <th>달성률</th>
             <th>메모</th>
             <th>작업</th>
           </tr>
         </thead>
         <tbody>
-          {budgetUsage.map((b) => (
-            <tr key={b.id}>
+          {budgetUsage.map((b) => {
+            const pct = b.monthlyLimit > 0 ? Math.min(100, (b.spent / b.monthlyLimit) * 100) : 0;
+            const isOver = b.spent > b.monthlyLimit && b.monthlyLimit > 0;
+            return (
+            <tr key={b.id} style={isOver ? { backgroundColor: "var(--danger-light, rgba(244, 63, 94, 0.08))" } : undefined}>
               <td
                 onDoubleClick={() => startEditBudgetField(b.id, "category", b.category)}
                 style={{ cursor: "pointer" }}
@@ -764,6 +769,37 @@ export const BudgetRecurringView: React.FC<Props> = ({
               </td>
               <td className={`number ${b.remain < 0 ? "negative" : "positive"}`}>
                 {Math.round(b.remain).toLocaleString()} 원
+                {isOver && (
+                  <span style={{ marginLeft: 6, fontSize: 11, fontWeight: 600, background: "var(--danger)", color: "white", padding: "2px 6px", borderRadius: 4 }}>
+                    초과
+                  </span>
+                )}
+              </td>
+              <td style={{ minWidth: 120 }}>
+                <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                  <div
+                    style={{
+                      flex: 1,
+                      height: 8,
+                      background: "var(--surface-hover)",
+                      borderRadius: 4,
+                      overflow: "hidden"
+                    }}
+                  >
+                    <div
+                      style={{
+                        width: `${Math.min(100, pct)}%`,
+                        height: "100%",
+                        background: isOver ? "var(--danger)" : pct >= 90 ? "var(--warning)" : "var(--primary)",
+                        borderRadius: 4,
+                        transition: "width 0.2s"
+                      }}
+                    />
+                  </div>
+                  <span className="number" style={{ fontSize: 12, minWidth: 36 }}>
+                    {b.monthlyLimit > 0 ? `${pct.toFixed(0)}%` : "-"}
+                  </span>
+                </div>
               </td>
               <td
                 onDoubleClick={() => startEditBudgetField(b.id, "note", b.note || "")}
@@ -793,10 +829,11 @@ export const BudgetRecurringView: React.FC<Props> = ({
                 </button>
               </td>
             </tr>
-          ))}
+            );
+          })}
           {budgets.length === 0 && (
             <tr>
-              <td colSpan={6} style={{ textAlign: "center" }}>
+              <td colSpan={7} style={{ textAlign: "center" }}>
                 설정된 예산이 없습니다.
               </td>
             </tr>

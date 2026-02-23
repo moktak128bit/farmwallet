@@ -9,6 +9,7 @@ import { validateDate, validateRequired, validateTransfer } from "../utils/valid
 import { isSavingsExpenseEntry } from "../utils/categoryUtils";
 import { getKoreaTime, getTodayKST, getThisMonthKST } from "../utils/dateUtils";
 import { toast } from "react-hot-toast";
+import { ERROR_MESSAGES } from "../constants/errorMessages";
 
 interface Props {
   accounts: Account[];
@@ -17,6 +18,8 @@ interface Props {
   onChangeLedger: (next: LedgerEntry[]) => void;
   copyRequest?: LedgerEntry | null;
   onCopyComplete?: () => void;
+  highlightLedgerId?: string | null;
+  onClearHighlightLedger?: () => void;
 }
 
 const KIND_LABEL: Record<LedgerKind, string> = {
@@ -63,22 +66,24 @@ export const LedgerView: React.FC<Props> = ({
   categoryPresets,
   onChangeLedger,
   copyRequest,
-  onCopyComplete
+  onCopyComplete,
+  highlightLedgerId,
+  onClearHighlightLedger
 }) => {
   const [form, setForm] = useState(createDefaultForm);
   // 기본값을 월별 보기로 설정하여 성능 최적화
   const [viewMode, setViewMode] = useState<"all" | "monthly">("monthly");
-  // 페이징 상태
-  const [currentPage, setCurrentPage] = useState(1);
-  const [pageSize, setPageSize] = useState(50);
+  const ledgerScrollRef = useRef<HTMLDivElement>(null);
+  const ledgerTableRef = useRef<HTMLTableElement>(null);
   const [ledgerTab, setLedgerTab] = useState<LedgerTab>("all");
   const [formKindWhenAll, setFormKindWhenAll] = useState<"income"|"expense"|"savingsExpense"|"transfer">("expense");
   const effectiveFormKind = ledgerTab === "all" ? formKindWhenAll : ledgerTab;
+  // 저축성 지출 = 지출(expense)로만 저장. 이체 = transfer만.
   const kindForTab: LedgerKind = useMemo(
     () =>
       effectiveFormKind === "income"
         ? "income"
-        : effectiveFormKind === "transfer" || effectiveFormKind === "savingsExpense"
+        : effectiveFormKind === "transfer"
           ? "transfer"
           : "expense",
     [effectiveFormKind]
@@ -95,6 +100,7 @@ export const LedgerView: React.FC<Props> = ({
   const [filterToAccountId, setFilterToAccountId] = useState<string | undefined>();
   const [filterAmountMin, setFilterAmountMin] = useState<number | undefined>();
   const [filterAmountMax, setFilterAmountMax] = useState<number | undefined>();
+  const [filterTagsInput, setFilterTagsInput] = useState<string>("");
   // 정렬 상태
   type LedgerSortKey = "date" | "category" | "subCategory" | "description" | "fromAccountId" | "toAccountId" | "amount";
   const [ledgerSort, setLedgerSort] = useState<{ key: LedgerSortKey; direction: "asc" | "desc" }>({
@@ -137,9 +143,11 @@ export const LedgerView: React.FC<Props> = ({
     return [9, 11, 11, 24, 10, 10, 12, 9];
   });
   const [resizingColumn, setResizingColumn] = useState<number | null>(null);
-  const [resizeStartX, setResizeStartX] = useState(0);
-  const [resizeStartWidth, setResizeStartWidth] = useState(0);
-  
+  const [liveColumnWidths, setLiveColumnWidths] = useState<number[] | null>(null);
+  const resizeStartRef = useRef<{ x: number; width: number; widths: number[] }>({ x: 0, width: 0, widths: [] });
+
+  const widthsForRender = (resizingColumn !== null && liveColumnWidths && liveColumnWidths.length === 8) ? liveColumnWidths : columnWidths;
+
   // 폼 검증 오류는 validateForm useMemo에서 직접 계산됨
   
   // 즐겨찾기 카테고리 상태
@@ -148,7 +156,9 @@ export const LedgerView: React.FC<Props> = ({
       try {
         const saved = localStorage.getItem("fw-favorite-categories");
         if (saved) return new Set(JSON.parse(saved));
-      } catch {}
+      } catch (e) {
+        console.warn("[LedgerView] 즐겨찾기 카테고리 로드 실패", e);
+      }
     }
     return new Set();
   });
@@ -159,7 +169,9 @@ export const LedgerView: React.FC<Props> = ({
       try {
         const saved = localStorage.getItem("fw-favorite-accounts");
         if (saved) return new Set(JSON.parse(saved));
-      } catch {}
+      } catch (e) {
+        console.warn("[LedgerView] 즐겨찾기 계좌 로드 실패", e);
+      }
     }
     return new Set();
   });
@@ -242,54 +254,75 @@ export const LedgerView: React.FC<Props> = ({
     return direction === "asc" ? "↑" : "↓";
   };
   
-  // 컬럼 리사이즈 핸들러
-  const handleResizeStart = (e: React.MouseEvent, columnIndex: number) => {
+  // 컬럼 리사이즈: ref에 시작값 고정, 리사이즈 중에는 liveColumnWidths로 표시
+  const handleResizeStart = (e: React.MouseEvent | React.PointerEvent, columnIndex: number) => {
     e.preventDefault();
+    e.stopPropagation();
+    const clientX = "clientX" in e ? e.clientX : (e as React.PointerEvent).clientX;
+    resizeStartRef.current = {
+      x: clientX,
+      width: columnWidths[columnIndex],
+      widths: [...columnWidths]
+    };
+    setLiveColumnWidths([...columnWidths]);
     setResizingColumn(columnIndex);
-    setResizeStartX(e.clientX);
-    setResizeStartWidth(columnWidths[columnIndex]);
   };
-  
+
   useEffect(() => {
     if (resizingColumn === null) return;
-    
-    const handleMouseMove = (e: MouseEvent) => {
-      const table = document.querySelector(".data-table") as HTMLElement;
+
+    const handleMove = (e: MouseEvent | PointerEvent) => {
+      const table = ledgerTableRef.current || document.querySelector(".ledger-table") as HTMLElement | null;
       if (!table) return;
-      
-      const tableWidth = table.offsetWidth;
-      const deltaX = e.clientX - resizeStartX;
+      let tableWidth = table.offsetWidth;
+      if (tableWidth <= 0) tableWidth = table.getBoundingClientRect().width || (table.parentElement?.clientWidth ?? 0);
+      if (tableWidth <= 0) return;
+
+      const { x, width, widths } = resizeStartRef.current;
+      if (!widths.length) return;
+      const clientX = "clientX" in e ? e.clientX : (e as PointerEvent).clientX;
+      const deltaX = clientX - x;
       const deltaPercent = (deltaX / tableWidth) * 100;
-      
-      const newWidths = [...columnWidths];
-      const newWidth = Math.max(3, Math.min(30, resizeStartWidth + deltaPercent));
+
+      const newWidths = [...widths];
+      const newWidth = Math.max(1, Math.min(80, width + deltaPercent));
       newWidths[resizingColumn] = newWidth;
-      
-      // 총합이 100%가 되도록 조정
+
       const total = newWidths.reduce((sum, w) => sum + w, 0);
-      if (total > 0) {
-        const scale = 100 / total;
-        const adjustedWidths = newWidths.map(w => w * scale);
-        setColumnWidths(adjustedWidths);
-        // localStorage에 즉시 저장
-        if (typeof window !== "undefined") {
-          localStorage.setItem("ledger-column-widths", JSON.stringify(adjustedWidths));
-        }
+      if (total <= 0) return;
+      const scale = 100 / total;
+      const adjustedWidths = newWidths.map((w) => w * scale);
+
+      setLiveColumnWidths(adjustedWidths);
+      setColumnWidths(adjustedWidths);
+      if (typeof window !== "undefined") {
+        localStorage.setItem("ledger-column-widths", JSON.stringify(adjustedWidths));
       }
     };
-    
-    const handleMouseUp = () => {
+
+    const handleUp = () => {
       setResizingColumn(null);
+      setLiveColumnWidths(null);
     };
-    
-    document.addEventListener("mousemove", handleMouseMove);
-    document.addEventListener("mouseup", handleMouseUp);
-    
+
+    const opts = { capture: true };
+    document.body.style.userSelect = "none";
+    document.body.style.cursor = "col-resize";
+    document.addEventListener("mousemove", handleMove as (e: MouseEvent) => void, opts);
+    document.addEventListener("mouseup", handleUp, opts);
+    document.addEventListener("pointermove", handleMove as (e: PointerEvent) => void, opts);
+    document.addEventListener("pointerup", handleUp, opts);
+    document.addEventListener("pointercancel", handleUp, opts);
     return () => {
-      document.removeEventListener("mousemove", handleMouseMove);
-      document.removeEventListener("mouseup", handleMouseUp);
+      document.body.style.userSelect = "";
+      document.body.style.cursor = "";
+      document.removeEventListener("mousemove", handleMove as (e: MouseEvent) => void, opts);
+      document.removeEventListener("mouseup", handleUp, opts);
+      document.removeEventListener("pointermove", handleMove as (e: PointerEvent) => void, opts);
+      document.removeEventListener("pointerup", handleUp, opts);
+      document.removeEventListener("pointercancel", handleUp, opts);
     };
-  }, [resizingColumn, resizeStartX, resizeStartWidth, columnWidths]);
+  }, [resizingColumn]);
 
   // 탭 전환 시 필터 초기화
   useEffect(() => {
@@ -792,14 +825,15 @@ export const LedgerView: React.FC<Props> = ({
         ? "income"
         : entry.kind === "transfer"
           ? "transfer"
-          : "expense";
+          : isSavingsExpenseEntry(entry, accounts, categoryPresets)
+            ? "savingsExpense"
+            : "expense";
     setLedgerTab(nextTab);
   };
 
   const startCopy = (entry: LedgerEntry) => {
     try {
-      // 저축성 지출: expense+category "저축성지출" 또는 transfer→증권/저축 계좌 (categoryUtils 단일 소스)
-      const isSavings = isSavingsExpenseEntry(entry, accounts);
+      const isSavings = isSavingsExpenseEntry(entry, accounts, categoryPresets);
       
       const nextTab: LedgerTab =
         entry.kind === "income"
@@ -844,7 +878,7 @@ export const LedgerView: React.FC<Props> = ({
       }, 10);
     } catch (error) {
       console.error("복사 중 오류 발생:", error);
-      toast.error("복사 중 오류가 발생했습니다.");
+      toast.error(ERROR_MESSAGES.COPY_FAILED);
       isCopyingRef.current = false;
     }
   };
@@ -1014,6 +1048,7 @@ export const LedgerView: React.FC<Props> = ({
     setFilterToAccountId(undefined);
     setFilterAmountMin(undefined);
     setFilterAmountMax(undefined);
+    setFilterTagsInput("");
     setDateFilter({});
     setForm((p) => ({ ...p, mainCategory: "", subCategory: "", fromAccountId: "", toAccountId: "" }));
   };
@@ -1042,18 +1077,22 @@ export const LedgerView: React.FC<Props> = ({
     return ledger.filter((l) => {
       if (ledgerTab === "all") return true;
       if (ledgerTab === "income") return l.kind === "income";
-      if (ledgerTab === "transfer") return l.kind === "transfer" && !isSavingsExpenseEntry(l, accounts);
-      if (ledgerTab === "savingsExpense") return isSavingsExpenseEntry(l, accounts);
-      return l.kind === "expense" && !isSavingsExpenseEntry(l, accounts) && !(l.isFixedExpense ?? false);
+      if (ledgerTab === "transfer") return l.kind === "transfer";
+      if (ledgerTab === "savingsExpense") return isSavingsExpenseEntry(l, accounts, categoryPresets);
+      return l.kind === "expense" && !isSavingsExpenseEntry(l, accounts, categoryPresets) && !(l.isFixedExpense ?? false);
     });
-  }, [ledger, ledgerTab, accounts]);
+  }, [ledger, ledgerTab, accounts, categoryPresets]);
 
   const filteredLedger = useMemo(() => {
     const base = ledgerByTab;
-    let filtered = viewMode === "all"
-      ? base
-      : base.filter((l) => l.date && selectedMonths.size > 0 && selectedMonths.has(l.date.slice(0, 7)));
-    
+    // 월별 보기: 월 선택이 없으면 전체 표시(날짜 필터는 아래에서 적용). 월 선택 있으면 해당 월만.
+    let filtered =
+      viewMode === "all"
+        ? base
+        : selectedMonths.size > 0
+          ? base.filter((l) => l.date && selectedMonths.has(l.date.slice(0, 7)))
+          : base;
+
     // 날짜 필터 적용
     if (dateFilter.startDate || dateFilter.endDate) {
       filtered = filtered.filter((l) => {
@@ -1096,7 +1135,17 @@ export const LedgerView: React.FC<Props> = ({
     if (filterAmountMax != null) {
       filtered = filtered.filter((l) => (l.amount ?? 0) <= filterAmountMax);
     }
-    
+
+    const selectedTags = new Set(
+      filterTagsInput.split(",").map((s) => s.trim()).filter(Boolean)
+    );
+    if (selectedTags.size > 0) {
+      filtered = filtered.filter((l) => {
+        const entryTags = l.tags ?? [];
+        return [...selectedTags].every((tag) => entryTags.includes(tag));
+      });
+    }
+
     // 정렬 적용
     const sorted = [...filtered].sort((a, b) => {
       const dir = ledgerSort.direction === "asc" ? 1 : -1;
@@ -1121,7 +1170,7 @@ export const LedgerView: React.FC<Props> = ({
     });
     
     return sorted;
-  }, [ledgerByTab, ledgerTab, viewMode, selectedMonths, dateFilter, filterMainCategory, filterSubCategory, filterFromAccountId, filterToAccountId, filterAmountMin, filterAmountMax, ledgerSort]);
+  }, [ledgerByTab, ledgerTab, viewMode, selectedMonths, dateFilter, filterMainCategory, filterSubCategory, filterFromAccountId, filterToAccountId, filterAmountMin, filterAmountMax, filterTagsInput, ledgerSort]);
 
   const tabLabel: Record<LedgerTab, string> = {
     all: "전체",
@@ -1143,7 +1192,7 @@ export const LedgerView: React.FC<Props> = ({
   // 필터 적용 시 지출액/수입액/전체 요약
   const filteredSummary = useMemo(() => {
     const expenseAmount = filteredLedger
-      .filter((l) => l.kind === "expense" || isSavingsExpenseEntry(l, accounts))
+      .filter((l) => l.kind === "expense" || isSavingsExpenseEntry(l, accounts, categoryPresets))
       .reduce((s, l) => s + l.amount, 0);
     const incomeAmount = filteredLedger
       .filter((l) => l.kind === "income")
@@ -1152,26 +1201,90 @@ export const LedgerView: React.FC<Props> = ({
     return { expenseAmount, incomeAmount, total };
   }, [filteredLedger, accounts]);
 
-  // 페이징된 데이터 계산
-  const paginatedLedger = useMemo(() => {
-    const startIndex = (currentPage - 1) * pageSize;
-    const endIndex = startIndex + pageSize;
-    return filteredLedger.slice(startIndex, endIndex);
-  }, [filteredLedger, currentPage, pageSize]);
-
-  const totalPages = useMemo(() => {
-    return Math.ceil(filteredLedger.length / pageSize);
-  }, [filteredLedger.length, pageSize]);
-
-  const paginatedLedgerRef = useRef<LedgerEntry[]>([]);
+  const filteredLedgerRef = useRef<LedgerEntry[]>([]);
   useEffect(() => {
-    paginatedLedgerRef.current = paginatedLedger;
-  }, [paginatedLedger]);
+    filteredLedgerRef.current = filteredLedger;
+  }, [filteredLedger]);
 
-  // 페이지/필터 변경 시 선택 합계 초기화 (다른 목록이 보이므로)
+  // 필터 변경 시 테이블이 보이도록 스크롤
+  const ledgerScrollKey = useMemo(
+    () =>
+      [
+        viewMode,
+        Array.from(selectedMonths).sort().join(","),
+        dateFilter.startDate ?? "",
+        dateFilter.endDate ?? "",
+        ledgerTab,
+        filterMainCategory ?? "",
+        filterSubCategory ?? "",
+        filterFromAccountId ?? "",
+        filterToAccountId ?? "",
+        filterTagsInput
+      ].join("|"),
+    [
+      viewMode,
+      selectedMonths,
+      dateFilter.startDate,
+      dateFilter.endDate,
+      ledgerTab,
+      filterMainCategory,
+      filterSubCategory,
+      filterFromAccountId,
+      filterToAccountId,
+      filterTagsInput
+    ]
+  );
+
+  // 헤더·본문 열 너비 — 리사이즈 중에는 liveColumnWidths(widthsForRender)로 실시간 반영
+  const ledgerColumnWidthStyles = useMemo(() => {
+    const workColPx = 168;
+    return widthsForRender.map((width, index) => {
+      if (index === 7) return `${workColPx}px`;
+      const sumFirst7 = widthsForRender.slice(0, 7).reduce((s, w) => s + w, 0);
+      const pct = sumFirst7 > 0 ? (width / sumFirst7) * 100 : 100 / 7;
+      return `calc((100% - ${workColPx}px) * ${pct / 100})`;
+    });
+  }, [widthsForRender]);
+
+  // 필터 변경 시 선택 합계 초기화
   useEffect(() => {
     setSelectedLedgerIdsForSum(new Set());
-  }, [currentPage, filteredLedger.length]);
+  }, [filteredLedger.length]);
+
+  // 필터(월/보기/날짜) 변경 시 스크롤을 맨 위로 초기화해 새 목록이 보이도록 함
+  useEffect(() => {
+    ledgerScrollRef.current?.scrollIntoView({ behavior: "auto", block: "start" });
+  }, [viewMode, selectedMonths, dateFilter.startDate, dateFilter.endDate, ledgerTab, filterMainCategory, filterSubCategory, filterFromAccountId, filterToAccountId, filterTagsInput]);
+
+  // 검색에서 이동: 해당 행으로 스크롤
+  useEffect(() => {
+    if (!highlightLedgerId) return;
+    const el = document.querySelector(`tr[data-ledger-id="${highlightLedgerId}"]`);
+    if (el) el.scrollIntoView({ behavior: "smooth", block: "center" });
+  }, [highlightLedgerId]);
+
+  // 검색에서 이동: 행 하이라이트 후 해제 (DOM 반영 후 실행)
+  const highlightClearTimerRef = useRef<number | null>(null);
+  useEffect(() => {
+    if (!highlightLedgerId || !onClearHighlightLedger) return;
+    const t1 = window.setTimeout(() => {
+      const el = document.querySelector(`tr[data-ledger-id="${highlightLedgerId}"]`);
+      if (!el) return;
+      el.classList.add("ledger-row-highlight");
+      highlightClearTimerRef.current = window.setTimeout(() => {
+        el.classList.remove("ledger-row-highlight");
+        onClearHighlightLedger();
+        highlightClearTimerRef.current = null;
+      }, 2500);
+    }, 150);
+    return () => {
+      window.clearTimeout(t1);
+      if (highlightClearTimerRef.current !== null) {
+        window.clearTimeout(highlightClearTimerRef.current);
+        highlightClearTimerRef.current = null;
+      }
+    };
+  }, [highlightLedgerId, onClearHighlightLedger]);
 
   // Ctrl+N 시 전역 이벤트로 가계부 폼 포커스
   useEffect(() => {
@@ -1196,7 +1309,7 @@ export const LedgerView: React.FC<Props> = ({
     let transferSum = 0;
     slice.forEach((e) => {
       if (e.kind === "income") incomeSum += e.amount;
-      else if (e.kind === "transfer" || isSavingsExpenseEntry(e, accounts)) transferSum += e.amount;
+      else if (e.kind === "transfer" || isSavingsExpenseEntry(e, accounts, categoryPresets)) transferSum += e.amount;
       else expenseSum += e.amount;
     });
     return {
@@ -1207,11 +1320,6 @@ export const LedgerView: React.FC<Props> = ({
       net: incomeSum - expenseSum - transferSum
     };
   }, [filteredLedger, selectedLedgerIdsForSum, accounts]);
-
-  // 페이지 변경 시 첫 페이지로 리셋
-  useEffect(() => {
-    setCurrentPage(1);
-  }, [filteredLedger.length, viewMode, selectedMonths, dateFilter, filterMainCategory, filterSubCategory, filterFromAccountId, filterToAccountId]);
 
   // 사용 가능한 월 목록 (거래가 있는 월들) - 년도별로 정리
   const availableMonths = useMemo(() => {
@@ -1309,7 +1417,7 @@ export const LedgerView: React.FC<Props> = ({
       const tr = el?.closest?.("tr[data-ledger-id]");
       if (tr) {
         const id = tr.getAttribute("data-ledger-id");
-        const list = paginatedLedgerRef.current;
+        const list = filteredLedgerRef.current;
         const idx = list.findIndex((l) => l.id === id);
         if (idx >= 0) {
           dragSumEndRef.current = idx;
@@ -1320,7 +1428,7 @@ export const LedgerView: React.FC<Props> = ({
     const onUp = () => {
       const start = dragSumStartRef.current;
       const end = dragSumEndRef.current;
-      const list = paginatedLedgerRef.current;
+      const list = filteredLedgerRef.current;
       const lo = Math.min(start, end);
       const hi = Math.max(start, end);
       const slice = list.slice(lo, hi + 1);
@@ -1344,8 +1452,8 @@ export const LedgerView: React.FC<Props> = ({
     const id = lastAddedEntryId;
     setLastAddedEntryId(null);
     const t = setTimeout(() => {
-      const el = document.querySelector(`[data-ledger-id="${id}"]`);
-      if (el) el.scrollIntoView({ behavior: "smooth", block: "nearest" });
+      const el = document.querySelector(`tr[data-ledger-id="${id}"]`);
+      if (el) el.scrollIntoView({ behavior: "smooth", block: "center" });
     }, 100);
     return () => clearTimeout(t);
   }, [lastAddedEntryId]);
@@ -1353,7 +1461,8 @@ export const LedgerView: React.FC<Props> = ({
   const hasCategoryFilter = !!(filterMainCategory || filterSubCategory || filterFromAccountId || filterToAccountId);
   const hasDateFilter = !!(dateFilter.startDate || dateFilter.endDate);
   const hasAmountFilter = filterAmountMin != null || filterAmountMax != null;
-  const hasFilter = hasCategoryFilter || hasDateFilter || hasAmountFilter;
+  const hasTagFilter = filterTagsInput.trim() !== "";
+  const hasFilter = hasCategoryFilter || hasDateFilter || hasAmountFilter || hasTagFilter;
   const filterFromAccount = filterFromAccountId ? accounts.find((a) => a.id === filterFromAccountId) : null;
   const filterFromAccountName = filterFromAccountId ? (filterFromAccount?.name || filterFromAccount?.id || filterFromAccountId) : null;
   const filterToAccount = filterToAccountId ? accounts.find((a) => a.id === filterToAccountId) : null;
@@ -1563,6 +1672,24 @@ export const LedgerView: React.FC<Props> = ({
                         : ""} ×
                 </button>
               )}
+              {hasTagFilter && (
+                <button
+                  type="button"
+                  onClick={() => setFilterTagsInput("")}
+                  style={{
+                    padding: "6px 12px",
+                    fontSize: 12,
+                    fontWeight: 600,
+                    borderRadius: "20px",
+                    border: "1px solid var(--primary)",
+                    background: "var(--primary-light)",
+                    color: "var(--primary)",
+                    cursor: "pointer"
+                  }}
+                >
+                  태그: {filterTagsInput.trim()} ×
+                </button>
+              )}
               <button
                 type="button"
                 onClick={clearAllFilters}
@@ -1590,7 +1717,7 @@ export const LedgerView: React.FC<Props> = ({
         const monthSummaries = sortedMonths.map((monthKey) => {
           const entries = filteredLedger.filter((l) => l.date && l.date.startsWith(monthKey));
           const expenseAmount = entries
-            .filter((l) => l.kind === "expense" || isSavingsExpenseEntry(l, accounts))
+            .filter((l) => l.kind === "expense" || isSavingsExpenseEntry(l, accounts, categoryPresets))
             .reduce((s, l) => s + l.amount, 0);
           const incomeAmount = entries
             .filter((l) => l.kind === "income")
@@ -2262,6 +2389,15 @@ export const LedgerView: React.FC<Props> = ({
             style={{ padding: "6px 8px", fontSize: 12, borderRadius: 6, border: "1px solid var(--border)", width: 80, boxSizing: "border-box" }}
             title="최대 금액"
           />
+          <span style={{ marginLeft: 12, marginRight: 4, fontSize: 12, color: "var(--text-muted)" }}>태그</span>
+          <input
+            type="text"
+            value={filterTagsInput}
+            onChange={(e) => setFilterTagsInput(e.target.value)}
+            placeholder="쉼표 구분 (예: A, B)"
+            style={{ padding: "6px 8px", fontSize: 12, borderRadius: 6, border: "1px solid var(--border)", width: 140, boxSizing: "border-box" }}
+            title="포함할 태그 (모두 포함된 항목만)"
+          />
           {filteredLedger.length > 0 && (
             <button
               type="button"
@@ -2364,6 +2500,11 @@ export const LedgerView: React.FC<Props> = ({
                 );
               })}
             </div>
+            {selectedMonths.size === 0 && (
+              <p style={{ fontSize: 12, color: "var(--text-muted)", marginTop: 8, marginBottom: 0 }}>
+                월을 선택하면 해당 월만 표시됩니다. 선택 없음 시 전체 기간이 표시됩니다.
+              </p>
+            )}
           </>
         )}
       </div>
@@ -2430,22 +2571,25 @@ export const LedgerView: React.FC<Props> = ({
           </div>
         </div>
       )}
-      <div style={{ overflowX: "auto" }}>
-        <table className="data-table ledger-table">
+      <div ref={ledgerScrollRef} style={{ overflowX: "hidden" }}>
+        <div key={ledgerScrollKey}>
+        <table ref={ledgerTableRef} className="data-table ledger-table" style={{ width: "100%", minWidth: 0, tableLayout: "fixed" }}>
           <colgroup>
-            {columnWidths.map((width, index) => {
+            {isBatchEditMode && <col key="cb" style={{ width: "40px" }} />}
+            {widthsForRender.map((width, index) => {
+              const workColPx = 168;
               if (index === 7) {
-                return <col key={index} style={{ width: "100px" }} />;
+                return <col key={index} style={{ width: `${workColPx}px` }} />;
               }
-              const sumFirst7 = columnWidths.slice(0, 7).reduce((s, w) => s + w, 0);
+              const sumFirst7 = widthsForRender.slice(0, 7).reduce((s, w) => s + w, 0);
               const pct = sumFirst7 > 0 ? (width / sumFirst7) * 100 : 100 / 7;
-              return <col key={index} style={{ width: `calc((100% - 100px) * ${pct / 100})` }} />;
+              return <col key={index} style={{ width: `calc((100% - ${workColPx}px) * ${pct / 100})` }} />;
             })}
           </colgroup>
           <thead>
           <tr>
             {isBatchEditMode && (
-              <th style={{ width: "40px" }}>
+              <th style={{ width: "40px", minWidth: "40px" }}>
                 <input
                   type="checkbox"
                   checked={selectedLedgerIds.size === filteredLedger.length && filteredLedger.length > 0}
@@ -2460,77 +2604,90 @@ export const LedgerView: React.FC<Props> = ({
                 />
               </th>
             )}
-            <th style={{ position: "relative" }}>
+            <th className="ledger-col-date" style={{ position: "relative", width: ledgerColumnWidthStyles[0] }}>
               <button type="button" className="sort-header" onClick={() => toggleLedgerSort("date")}>
                 날짜 <span className="arrow">{sortIndicator(ledgerSort.key, "date", ledgerSort.direction)}</span>
               </button>
               <div
                 className="resize-handle"
                 onMouseDown={(e) => handleResizeStart(e, 0)}
+                onPointerDown={(e) => handleResizeStart(e, 0)}
+                title="컬럼 너비 조절"
               />
             </th>
-            <th style={{ position: "relative" }}>
+            <th style={{ position: "relative", width: ledgerColumnWidthStyles[1] }}>
               <button type="button" className="sort-header" onClick={() => toggleLedgerSort("category")}>
                 대분류 <span className="arrow">{sortIndicator(ledgerSort.key, "category", ledgerSort.direction)}</span>
               </button>
               <div
                 className="resize-handle"
                 onMouseDown={(e) => handleResizeStart(e, 1)}
+                onPointerDown={(e) => handleResizeStart(e, 1)}
+                title="컬럼 너비 조절"
               />
             </th>
-            <th style={{ position: "relative" }}>
+            <th style={{ position: "relative", width: ledgerColumnWidthStyles[2] }}>
               <button type="button" className="sort-header" onClick={() => toggleLedgerSort("subCategory")}>
                 항목 <span className="arrow">{sortIndicator(ledgerSort.key, "subCategory", ledgerSort.direction)}</span>
               </button>
               <div
                 className="resize-handle"
                 onMouseDown={(e) => handleResizeStart(e, 2)}
+                onPointerDown={(e) => handleResizeStart(e, 2)}
+                title="컬럼 너비 조절"
               />
             </th>
-            <th style={{ position: "relative" }}>
+            <th style={{ position: "relative", width: ledgerColumnWidthStyles[3] }}>
               <button type="button" className="sort-header" onClick={() => toggleLedgerSort("description")}>
                 상세내역 <span className="arrow">{sortIndicator(ledgerSort.key, "description", ledgerSort.direction)}</span>
               </button>
               <div
                 className="resize-handle"
                 onMouseDown={(e) => handleResizeStart(e, 3)}
+                onPointerDown={(e) => handleResizeStart(e, 3)}
+                title="컬럼 너비 조절"
               />
             </th>
-            <th style={{ position: "relative" }}>
+            <th style={{ position: "relative", width: ledgerColumnWidthStyles[4] }}>
               <button type="button" className="sort-header" onClick={() => toggleLedgerSort("fromAccountId")}>
                 출금 <span className="arrow">{sortIndicator(ledgerSort.key, "fromAccountId", ledgerSort.direction)}</span>
               </button>
               <div
                 className="resize-handle"
                 onMouseDown={(e) => handleResizeStart(e, 4)}
+                onPointerDown={(e) => handleResizeStart(e, 4)}
+                title="컬럼 너비 조절"
               />
             </th>
-            <th style={{ position: "relative" }}>
+            <th style={{ position: "relative", width: ledgerColumnWidthStyles[5] }}>
               <button type="button" className="sort-header" onClick={() => toggleLedgerSort("toAccountId")}>
                 입금 <span className="arrow">{sortIndicator(ledgerSort.key, "toAccountId", ledgerSort.direction)}</span>
               </button>
               <div
                 className="resize-handle"
                 onMouseDown={(e) => handleResizeStart(e, 5)}
+                onPointerDown={(e) => handleResizeStart(e, 5)}
+                title="컬럼 너비 조절"
               />
             </th>
-            <th style={{ position: "relative" }}>
+            <th style={{ position: "relative", width: ledgerColumnWidthStyles[6] }}>
               <button type="button" className="sort-header" onClick={() => toggleLedgerSort("amount")}>
                 금액 <span className="arrow">{sortIndicator(ledgerSort.key, "amount", ledgerSort.direction)}</span>
               </button>
               <div
                 className="resize-handle"
                 onMouseDown={(e) => handleResizeStart(e, 6)}
+                onPointerDown={(e) => handleResizeStart(e, 6)}
+                title="컬럼 너비 조절"
               />
             </th>
-            <th style={{ position: "relative" }}>
+            <th style={{ position: "relative", width: ledgerColumnWidthStyles[7] }}>
               작업
             </th>
           </tr>
         </thead>
         <tbody>
-          {paginatedLedger.map((l, index) => {
-            const actualIndex = (currentPage - 1) * pageSize + index;
+          {filteredLedger.map((l, index) => {
             const isDraggingRange =
               dragSumStartIndex != null &&
               index >= Math.min(dragSumStartIndex, dragSumEndIndex ?? dragSumStartIndex) &&
@@ -2577,7 +2734,8 @@ export const LedgerView: React.FC<Props> = ({
                 if (viewMode !== "all") return;
                 e.preventDefault();
                 if (draggingId && draggingId !== l.id) {
-                  handleReorder(draggingId, index);
+                  const targetLedgerIndex = ledger.findIndex((x) => x.id === l.id);
+                  if (targetLedgerIndex >= 0) handleReorder(draggingId, targetLedgerIndex);
                 }
                 setDraggingId(null);
               }}
@@ -2593,7 +2751,7 @@ export const LedgerView: React.FC<Props> = ({
               }
             >
               {isBatchEditMode && (
-                <td>
+                <td style={{ width: "40px", minWidth: "40px" }}>
                   <input
                     type="checkbox"
                     checked={selectedLedgerIds.has(l.id)}
@@ -2610,11 +2768,12 @@ export const LedgerView: React.FC<Props> = ({
                 </td>
               )}
               <td
+                className="ledger-col-date"
                 onDoubleClick={(e) => {
                   e.stopPropagation();
                   startEditField(l.id, "date", l.date);
                 }}
-                style={{ cursor: "pointer", position: "relative" }}
+                style={{ cursor: "pointer", position: "relative", width: ledgerColumnWidthStyles[0] }}
                 title="더블클릭하여 수정"
               >
                 {editingField?.id === l.id && editingField.field === "date" ? (
@@ -2651,7 +2810,7 @@ export const LedgerView: React.FC<Props> = ({
                   e.stopPropagation();
                   startEditField(l.id, "category", l.category);
                 }}
-                style={{ cursor: "pointer" }}
+                style={{ cursor: "pointer", width: ledgerColumnWidthStyles[1] }}
                 title={l.category ? l.category + " (더블클릭하여 수정)" : "더블클릭하여 수정"}
               >
                 {editingField?.id === l.id && editingField.field === "category" ? (
@@ -2702,7 +2861,7 @@ export const LedgerView: React.FC<Props> = ({
                   e.stopPropagation();
                   startEditField(l.id, "subCategory", l.subCategory || "");
                 }}
-                style={{ cursor: "pointer" }}
+                style={{ cursor: "pointer", width: ledgerColumnWidthStyles[2] }}
                 title={l.subCategory ? l.subCategory + " (더블클릭하여 수정)" : "더블클릭하여 수정"}
               >
                 {editingField?.id === l.id && editingField.field === "subCategory" ? (
@@ -2773,7 +2932,7 @@ export const LedgerView: React.FC<Props> = ({
                   e.stopPropagation();
                   startEditField(l.id, "description", l.description || "");
                 }}
-                style={{ cursor: "pointer", whiteSpace: "normal", wordBreak: "break-word" }}
+                style={{ cursor: "pointer", whiteSpace: "normal", wordBreak: "break-word", width: ledgerColumnWidthStyles[3] }}
                 title={l.description ? l.description + " (더블클릭하여 수정)" : "더블클릭하여 수정"}
               >
                 {editingField?.id === l.id && editingField.field === "description" ? (
@@ -2798,7 +2957,7 @@ export const LedgerView: React.FC<Props> = ({
                   e.stopPropagation();
                   startEditField(l.id, "fromAccountId", l.fromAccountId || "");
                 }}
-                style={{ cursor: "pointer" }}
+                style={{ cursor: "pointer", width: ledgerColumnWidthStyles[4] }}
                 title={l.fromAccountId ? l.fromAccountId + " (더블클릭하여 수정)" : "더블클릭하여 수정"}
               >
                 {editingField?.id === l.id && editingField.field === "fromAccountId" ? (
@@ -2834,7 +2993,7 @@ export const LedgerView: React.FC<Props> = ({
                   e.stopPropagation();
                   startEditField(l.id, "toAccountId", l.toAccountId || "");
                 }}
-                style={{ cursor: "pointer" }}
+                style={{ cursor: "pointer", width: ledgerColumnWidthStyles[5] }}
                 title={l.toAccountId ? l.toAccountId + " (더블클릭하여 수정)" : "더블클릭하여 수정"}
               >
                 {editingField?.id === l.id && editingField.field === "toAccountId" ? (
@@ -2871,7 +3030,7 @@ export const LedgerView: React.FC<Props> = ({
                   e.stopPropagation();
                   startEditField(l.id, "amount", l.amount);
                 }}
-                style={{ cursor: "pointer" }}
+                style={{ cursor: "pointer", width: ledgerColumnWidthStyles[6] }}
                 title="더블클릭하여 수정"
               >
                 {editingField?.id === l.id && editingField.field === "amount" ? (
@@ -2897,7 +3056,7 @@ export const LedgerView: React.FC<Props> = ({
                     : Math.round(l.amount).toLocaleString()
                 )}
               </td>
-              <td>
+              <td style={{ width: ledgerColumnWidthStyles[7] }}>
                 <div style={{ display: "flex", gap: 8 }}>
                   <button type="button" onClick={(e) => {
                     e.stopPropagation();
@@ -2924,6 +3083,7 @@ export const LedgerView: React.FC<Props> = ({
           })}
         </tbody>
         </table>
+        </div>
       </div>
       {filteredLedger.length === 0 && (
         <p>
@@ -2932,48 +3092,9 @@ export const LedgerView: React.FC<Props> = ({
             : "이 달에는 내역이 없습니다."}
         </p>
       )}
-      {filteredLedger.length > 0 && totalPages > 1 && (
-        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginTop: "16px", padding: "12px", background: "var(--surface)", borderRadius: "8px" }}>
-          <div style={{ fontSize: "14px", color: "var(--text-muted)" }}>
-            총 {filteredLedger.length}건 중 {((currentPage - 1) * pageSize) + 1}-{Math.min(currentPage * pageSize, filteredLedger.length)}건 표시
-          </div>
-          <div style={{ display: "flex", gap: "8px", alignItems: "center" }}>
-            <button
-              type="button"
-              className="secondary"
-              onClick={() => setCurrentPage(1)}
-              disabled={currentPage === 1}
-            >
-              처음
-            </button>
-            <button
-              type="button"
-              className="secondary"
-              onClick={() => setCurrentPage(prev => Math.max(1, prev - 1))}
-              disabled={currentPage === 1}
-            >
-              이전
-            </button>
-            <span style={{ padding: "0 12px", fontSize: "14px" }}>
-              {currentPage} / {totalPages}
-            </span>
-            <button
-              type="button"
-              className="secondary"
-              onClick={() => setCurrentPage(prev => Math.min(totalPages, prev + 1))}
-              disabled={currentPage === totalPages}
-            >
-              다음
-            </button>
-            <button
-              type="button"
-              className="secondary"
-              onClick={() => setCurrentPage(totalPages)}
-              disabled={currentPage === totalPages}
-            >
-              마지막
-            </button>
-          </div>
+      {filteredLedger.length > 0 && (
+        <div style={{ marginTop: "8px", fontSize: "14px", color: "var(--text-muted)" }}>
+          총 {filteredLedger.length}건
         </div>
       )}
 

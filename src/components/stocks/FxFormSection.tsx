@@ -3,6 +3,8 @@ import { toast } from "react-hot-toast";
 import type { Account, LedgerEntry } from "../../types";
 import { fetchYahooQuotes } from "../../yahooFinanceApi";
 import { formatKRW, formatUSD } from "../../utils/format";
+import { validateTransfer } from "../../utils/validation";
+import { ERROR_MESSAGES } from "../../constants/errorMessages";
 
 interface FxFormSectionProps {
   accounts: Account[];
@@ -73,12 +75,12 @@ export const FxFormSection: React.FC<FxFormSectionProps> = ({ accounts, ledger, 
     e.preventDefault();
 
     if (!form.fromAccountId || !form.toAccountId) {
-      toast.error("출발 계좌와 도착 계좌를 선택해주세요");
+      toast.error(ERROR_MESSAGES.FX_ACCOUNTS_REQUIRED);
       return;
     }
-
-    if (form.fromAccountId === form.toAccountId) {
-      toast.error("출발 계좌와 도착 계좌가 같을 수 없습니다");
+    const transferValidation = validateTransfer(form.fromAccountId, form.toAccountId, { from: "출발", to: "도착" });
+    if (!transferValidation.valid) {
+      toast.error(transferValidation.error ?? ERROR_MESSAGES.FX_SAME_ACCOUNT);
       return;
     }
 
@@ -87,7 +89,7 @@ export const FxFormSection: React.FC<FxFormSectionProps> = ({ accounts, ledger, 
     const rate = parseFloat(form.rate) || 0;
 
     if (fromAmount <= 0 || toAmount <= 0 || rate <= 0) {
-      toast.error("금액과 환율을 올바르게 입력해주세요");
+      toast.error(ERROR_MESSAGES.FX_AMOUNT_RATE_REQUIRED);
       return;
     }
 
@@ -97,7 +99,7 @@ export const FxFormSection: React.FC<FxFormSectionProps> = ({ accounts, ledger, 
                        krwAccounts.some((a) => a.id === form.toAccountId);
 
     if (!isKrwToUsd && !isUsdToKrw) {
-      toast.error("KRW 계좌와 USD 계좌 간의 환전만 가능합니다");
+      toast.error(ERROR_MESSAGES.FX_KRW_USD_ONLY);
       return;
     }
 
@@ -222,7 +224,7 @@ export const FxFormSection: React.FC<FxFormSectionProps> = ({ accounts, ledger, 
                       toast.success(`현재 환율: ${rate.toFixed(2)}`);
                     }
                   } catch (err) {
-                    toast.error("환율 조회 실패");
+                    toast.error(ERROR_MESSAGES.QUOTE_FETCH_FAILED);
                   } finally {
                     setLoadingRate(false);
                   }

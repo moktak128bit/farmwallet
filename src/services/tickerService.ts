@@ -12,7 +12,8 @@ export async function loadTickerDatabaseFromBackup(): Promise<TickerInfo[] | nul
       return (json as { tickers: TickerInfo[] }).tickers;
     }
     return null;
-  } catch {
+  } catch (e) {
+    console.warn("[tickerService] 티커 백업 로드 실패", e);
     return null;
   }
 }

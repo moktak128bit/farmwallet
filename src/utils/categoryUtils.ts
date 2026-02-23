@@ -1,10 +1,21 @@
 /**
  * 카테고리 타입 판단 유틸리티
+ *
+ * 구분 (일관된 정의):
+ * - 저축성 지출: kind === "expense" 이고 대분류가 저축성지출 카테고리. (지출의 한 분류, 계좌 잔액 이동 없음)
+ * - 이체: kind === "transfer" 전부. (계좌 간 이동, 저축/증권으로 가도 이체)
  */
 
 import type { LedgerKind, CategoryPresets, LedgerEntry, Account } from "../types";
 
 export type CategoryType = "income" | "transfer" | "savings" | "fixed" | "variable";
+
+/**
+ * 저축성지출 카테고리 목록 (categoryPresets 미제공 시 기본값)
+ */
+function getSavingsCategories(categoryPresets?: CategoryPresets): string[] {
+  return categoryPresets?.categoryTypes?.savings ?? ["저축성지출"];
+}
 
 /**
  * 카테고리 타입을 판단하는 함수
@@ -14,85 +25,35 @@ export function getCategoryType(
   subCategory: string | undefined,
   kind: LedgerKind,
   categoryPresets: CategoryPresets,
-  entry?: LedgerEntry,
-  accounts?: Account[]
+  _entry?: LedgerEntry,
+  _accounts?: Account[]
 ): CategoryType {
-  // 수입은 항상 "income"
-  if (kind === "income") {
-    return "income";
-  }
+  if (kind === "income") return "income";
 
-  // 저축성지출 판단 (transfer→증권/저축, expense+저축성지출) — "이체" 일반 이체 제외
-  if (isSavingsExpense(category, subCategory, kind, entry, accounts, categoryPresets)) {
+  // 저축성 지출 = expense + 저축성지출 카테고리만
+  if (kind === "expense" && getSavingsCategories(categoryPresets).includes(category)) {
     return "savings";
   }
 
-  // 일반 이체(이체 탭에서 입력, category "이체")는 "transfer"
-  if (kind === "transfer") {
-    return "transfer";
-  }
+  // 이체 = transfer 전부
+  if (kind === "transfer") return "transfer";
 
-  // 고정지출 판단
-  if (isFixedExpense(category, subCategory, categoryPresets)) {
-    return "fixed";
-  }
-
-  // 나머지는 변동지출
+  if (isFixedExpense(category, subCategory, categoryPresets)) return "fixed";
   return "variable";
 }
 
 /**
- * 저축성지출인지 판단
+ * 가계부 단일 소스: 저축성지출 여부.
+ * 저축성 지출 = kind === "expense" 이고 대분류가 저축성지출 카테고리.
+ * @param categoryPresets - 선택. 미제공 시 기본 ["저축성지출"] 사용
  */
-function isSavingsExpense(
-  category: string,
-  subCategory: string | undefined,
-  kind: LedgerKind,
-  entry: LedgerEntry | undefined,
-  accounts: Account[] | undefined,
-  categoryPresets: CategoryPresets
+export function isSavingsExpenseEntry(
+  entry: LedgerEntry,
+  accounts: Account[],
+  categoryPresets?: CategoryPresets
 ): boolean {
-  // transfer인 경우: 입금계좌가 증권/저축이면 저축성 지출 (카테고리와 무관)
-  if (entry && kind === "transfer" && entry.toAccountId && accounts) {
-    const toAccount = accounts.find(a => a.id === entry.toAccountId);
-    if (toAccount && (toAccount.type === "securities" || toAccount.type === "savings")) {
-      return true;
-    }
-  }
-
-  // 일반 이체(이체·계좌이체·카드결제이체)는 저축성 지출이 아님
-  const generalTransferCategories = ["이체", "계좌이체", "카드결제이체"];
-  if (generalTransferCategories.includes(category)) {
-    return false;
-  }
-
-  // categoryTypes에 정의된 저축성지출 카테고리 확인
-  const savingsCategories = categoryPresets.categoryTypes?.savings ?? ["저축성지출"];
-  if (savingsCategories.includes(category)) {
-    return true;
-  }
-
-  // expense이고 대분류가 저축성지출인 경우
-  if (kind === "expense" && category === "저축성지출") {
-    return true;
-  }
-
-  return false;
-}
-
-/**
- * 가계부 단일 소스: 저축성지출 여부 (entry + accounts만 사용, 대시보드·리포트 등 동일 로직)
- */
-export function isSavingsExpenseEntry(entry: LedgerEntry, accounts: Account[]): boolean {
-  // 이체인 경우: 입금계좌가 증권/저축이면 저축성 지출 (카테고리와 무관)
-  if (entry.kind === "transfer" && entry.toAccountId) {
-    const to = accounts.find((a) => a.id === entry.toAccountId);
-    if (to && (to.type === "securities" || to.type === "savings")) return true;
-  }
-  const generalTransferCategories = ["이체", "계좌이체", "카드결제이체"];
-  if (generalTransferCategories.includes(entry.category)) return false;
-  if (entry.kind === "expense" && entry.category === "저축성지출") return true;
-  return false;
+  const savingsCategories = getSavingsCategories(categoryPresets);
+  return entry.kind === "expense" && savingsCategories.includes(entry.category);
 }
 
 /**

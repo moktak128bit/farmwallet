@@ -23,7 +23,11 @@ export const STORAGE_KEYS = {
   HIGH_CONTRAST: "fw-high-contrast",
   SAVED_FILTERS: "fw-saved-filters",
   DASHBOARD_WIDGETS: "fw-dashboard-widgets",
-  TICKER: "ticker"
+  DASHBOARD_WIDGET_ORDER: "fw-dashboard-widget-order",
+  BACKUP_ON_SAVE: "fw-backup-on-save",
+  TICKER: "ticker",
+  /** 가격 API 사용 여부 (켜면 외부 API로 배치 갱신 가능, 연동은 추후 구현) */
+  PRICE_API_ENABLED: "fw-price-api-enabled"
 } as const;
 
 // 백업 설정

@@ -4,6 +4,7 @@ import { Autocomplete } from "./Autocomplete";
 import { formatKRW, formatNumber } from "../utils/format";
 import { isKRWStock, isUSDStock, extractTickerFromText } from "../utils/tickerUtils";
 import { toast } from "react-hot-toast";
+import { ERROR_MESSAGES } from "../constants/errorMessages";
 
 interface PositionWithPrice {
   accountId: string;
@@ -256,7 +257,7 @@ export const StockDetailModal: React.FC<Props> = ({
 
     const amountNumber = Number(editingDividendValues.amount.replace(/,/g, "").trim());
     if (!editingDividendValues.date || !amountNumber || amountNumber <= 0) {
-      toast.error("날짜와 금액을 올바르게 입력해주세요.");
+      toast.error(ERROR_MESSAGES.DATE_AMOUNT_REQUIRED);
       return;
     }
 

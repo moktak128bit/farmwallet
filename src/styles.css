@@ -213,12 +213,11 @@ a:hover {
 
 .data-table {
   width: 100%;
-  border-collapse: separate;
-  border-spacing: 0;
+  border-collapse: collapse;
   font-size: 13px; /* 행 높이 감소를 위해 13px로 조정 */
   border: 1px solid var(--border);
   border-radius: 8px;
-  overflow: visible; /* 텍스트가 잘리지 않도록 visible로 변경 */
+  overflow: hidden; /* 헤더·본문 경계 틈 방지 및 border-radius 유지 */
   margin-bottom: 24px;
   table-layout: fixed; /* 고정 레이아웃으로 컬럼 너비 일정하게 */
 }
@@ -228,6 +227,7 @@ a:hover {
   position: sticky;
   top: 0;
   z-index: 5;
+  box-shadow: 0 1px 0 0 var(--border); /* 스크롤 시 헤더 아래 선 유지 */
 }
 
 .data-table th {
@@ -235,7 +235,7 @@ a:hover {
   text-align: left;
   font-weight: 600;
   color: var(--text-secondary);
-  border-bottom: 2px solid var(--border);
+  border-bottom: 1px solid var(--border);
   border-right: 1px solid var(--border); /* 컬럼 구분선 추가 */
   white-space: nowrap;
   position: relative;
@@ -247,7 +247,7 @@ a:hover {
   border-right: none; /* 마지막 컬럼은 구분선 제거 */
 }
 
-/* 정렬 버튼 스타일 */
+/* 정렬 버튼 스타일 — z-index 낮춰 리사이즈 핸들이 클릭되도록 */
 .data-table th .sort-header {
   background: none;
   border: none;
@@ -261,6 +261,8 @@ a:hover {
   gap: 4px;
   width: 100%;
   text-align: left;
+  position: relative;
+  z-index: 0;
 }
 
 .data-table th .sort-header:hover {
@@ -273,21 +275,27 @@ a:hover {
   opacity: 0.7;
 }
 
-/* 리사이즈 핸들 */
+/* 리사이즈 핸들 — 정렬 버튼보다 위에 두고 히트 영역 확보 */
 .data-table th .resize-handle {
   position: absolute;
   right: 0;
   top: 0;
   bottom: 0;
-  width: 4px;
+  width: 14px;
+  margin-right: -7px;
   cursor: col-resize;
   background: transparent;
-  z-index: 1;
+  z-index: 10;
+  pointer-events: auto;
 }
 
 .data-table th .resize-handle:hover {
   background: var(--primary);
-  opacity: 0.3;
+  opacity: 0.4;
+}
+.data-table th .resize-handle:active {
+  background: var(--primary);
+  opacity: 0.6;
 }
 
 /* 리사이즈 중인 컬럼 강조는 JavaScript로 처리 (브라우저 호환성을 위해 :has() 제거) */
@@ -312,10 +320,35 @@ a:hover {
 /* 가계부: 맨 오른쪽 복사/삭제 버튼이 항상 보이도록 작업 열 */
 .data-table.ledger-table th:last-child,
 .data-table.ledger-table td:last-child {
-  min-width: 96px;
   box-sizing: border-box;
   overflow: visible;
   text-overflow: clip;
+}
+
+/* 가계부: 출금/입금 열 내용이 잘리지 않도록 */
+.data-table.ledger-table tbody td:nth-child(5),
+.data-table.ledger-table tbody td:nth-child(6) {
+  overflow: visible;
+  text-overflow: clip;
+}
+
+/* 가계부: 모든 셀 가운데 정렬 */
+/* 가계부 목록: 헤더는 모두 가운데, 본문은 날짜만 가운데·나머지 오른쪽 */
+.data-table.ledger-table th {
+  text-align: center;
+}
+.data-table.ledger-table th .sort-header {
+  justify-content: center;
+  text-align: center;
+}
+.data-table.ledger-table td {
+  text-align: right;
+}
+.data-table.ledger-table td.ledger-col-date {
+  text-align: center;
+}
+.data-table.ledger-table td.number {
+  text-align: right;
 }
 
 /* 보유 종목 테이블: 티커 컬럼은 잘리지 않게 표시 */
@@ -364,6 +397,12 @@ a:hover {
 
 .data-table tbody tr:hover {
   background-color: var(--primary-light);
+}
+
+/* 검색에서 이동 시 행 하이라이트 */
+.data-table tbody tr.ledger-row-highlight {
+  background-color: var(--primary-light);
+  box-shadow: inset 0 0 0 2px var(--primary);
 }
 
 /* Zebra striping for better readability */
@@ -888,6 +927,75 @@ label {
    Responsive Design
    ========================================= */
 
+/* 모바일: 햄버거만 표시, 사이드 탭 숨김 */
+.mobile-menu-btn {
+  display: none;
+  align-items: center;
+  justify-content: center;
+  width: 40px;
+  height: 40px;
+  padding: 0;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--surface);
+  color: var(--text);
+  cursor: pointer;
+}
+.mobile-menu-btn:hover {
+  background: var(--surface-hover);
+}
+
+.drawer-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 999;
+  background: rgba(0, 0, 0, 0.4);
+  animation: fadeIn 0.2s ease;
+}
+
+.drawer-panel {
+  position: fixed;
+  left: 0;
+  top: 0;
+  bottom: 0;
+  width: 280px;
+  max-width: 85vw;
+  z-index: 1000;
+  background: var(--surface);
+  border-right: 1px solid var(--border);
+  box-shadow: var(--shadow-lg);
+  padding: 16px;
+  overflow-y: auto;
+  animation: drawerSlideIn 0.25s ease;
+}
+
+@keyframes drawerSlideIn {
+  from {
+    transform: translateX(-100%);
+  }
+  to {
+    transform: translateX(0);
+  }
+}
+
+.drawer-panel .tabs {
+  flex-direction: column;
+  gap: 4px;
+}
+
+.drawer-panel .tab-separator {
+  width: 100%;
+  height: 1px;
+  margin: 8px 0;
+  align-self: stretch;
+}
+
+.drawer-panel .tab-button {
+  width: 100%;
+  justify-content: flex-start;
+  white-space: nowrap;
+}
+
 @media (max-width: 1024px) {
   .layout {
     grid-template-columns: 1fr;
@@ -907,6 +1015,18 @@ label {
 }
 
 @media (max-width: 768px) {
+  .mobile-menu-btn {
+    display: flex;
+  }
+
+  .sidebar {
+    display: none;
+  }
+
+  .layout {
+    grid-template-columns: 1fr;
+  }
+
   .app-root {
     padding: 16px;
   }

@@ -46,6 +46,7 @@ const TABS: TabItem[] = [
 interface Props {
   active: TabId;
   onChange: (id: TabId) => void;
+  tabBadges?: Partial<Record<TabId, string>>;
 }
 
 const TAB_GROUPS: TabId[][] = [
@@ -56,7 +57,7 @@ const TAB_GROUPS: TabId[][] = [
   ["categories", "reports", "settings"]
 ];
 
-export const Tabs: React.FC<Props> = ({ active, onChange }) => {
+export const Tabs: React.FC<Props> = ({ active, onChange, tabBadges }) => {
   return (
     <div className="tabs">
       {TAB_GROUPS.map((group, groupIdx) => (
@@ -76,6 +77,7 @@ export const Tabs: React.FC<Props> = ({ active, onChange }) => {
           {group.map((tabId) => {
             const tab = TABS.find((t) => t.id === tabId);
             if (!tab) return null;
+            const badge = tabBadges?.[tab.id];
             return (
               <button
                 key={tab.id}
@@ -87,6 +89,22 @@ export const Tabs: React.FC<Props> = ({ active, onChange }) => {
               >
                 {tab.icon}
                 <span className="tab-label">{tab.label}</span>
+                {badge && (
+                  <span
+                    className="tab-badge"
+                    style={{
+                      marginLeft: 6,
+                      fontSize: 10,
+                      padding: "2px 6px",
+                      borderRadius: 10,
+                      background: "var(--danger)",
+                      color: "white",
+                      fontWeight: 600
+                    }}
+                  >
+                    {badge}
+                  </span>
+                )}
               </button>
             );
           })}

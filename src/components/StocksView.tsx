@@ -31,7 +31,8 @@ import { saveTickerDatabaseBackup, saveTickerToJson } from "../storage";
 import { formatNumber, formatKRW, formatUSD, formatShortDate } from "../utils/format";
 import { isUSDStock, isKRWStock, canonicalTickerForMatch } from "../utils/tickerUtils";
 import { toast } from "react-hot-toast";
-import { validateDate, validateTicker, validateRequired, validateQuantity, validateAmount } from "../utils/validation";
+import { validateDate, validateTicker, validateRequired, validateQuantity, validateAmount, validateAccountTickerCurrency } from "../utils/validation";
+import { ERROR_MESSAGES } from "../constants/errorMessages";
 
 interface Props {
   accounts: Account[];
@@ -54,6 +55,8 @@ interface Props {
   fxRate?: number | null;
   targetPortfolios?: TargetPortfolio[];
   onChangeTargetPortfolios?: (next: TargetPortfolio[]) => void;
+  highlightTradeId?: string | null;
+  onClearHighlightTrade?: () => void;
 }
 
 const sideLabel: Record<TradeSide, string> = {
@@ -119,7 +122,9 @@ export const StocksView: React.FC<Props> = ({
   onChangeAccounts,
   fxRate: propFxRate = null,
   targetPortfolios = [],
-  onChangeTargetPortfolios
+  onChangeTargetPortfolios,
+  highlightTradeId,
+  onClearHighlightTrade
 }) => {
   const [tradeForm, setTradeForm] = useState(createDefaultTradeForm);
   const [showPresetModal, setShowPresetModal] = useState(false);
@@ -491,6 +496,7 @@ export const StocksView: React.FC<Props> = ({
       // totalAmount가 달러로 저장되어 있고, cashImpact가 원화로 변환되지 않은 경우
       // (cashImpact의 절댓값이 totalAmount와 비슷하면 원화 변환이 안 된 것으로 간주)
       const expectedKRW = Math.abs(t.totalAmount * fxRate);
+      if (expectedKRW <= 0) return false;
       const currentImpact = Math.abs(t.cashImpact);
       // 10% 이상 차이나면 재계산 필요
       return Math.abs(currentImpact - expectedKRW) / expectedKRW > 0.1;
@@ -510,6 +516,7 @@ export const StocksView: React.FC<Props> = ({
           // cashImpact가 이미 올바르게 계산되어 있으면 변경하지 않음
           const currentImpact = Math.abs(t.cashImpact);
           const expectedImpact = Math.abs(totalAmountKRW);
+          if (expectedImpact <= 0) return t;
           if (Math.abs(currentImpact - expectedImpact) / expectedImpact > 0.1) {
             return { ...t, cashImpact };
           }
@@ -1042,7 +1049,7 @@ export const StocksView: React.FC<Props> = ({
       rows
     }));
     
-    // 계좌 순서 정렬
+    // 계좌 순서 정렬: 사용자 지정 순서가 있으면 그대로, 없으면 총평가금 큰 순
     if (accountOrder.length > 0) {
       const orderMap = new Map(accountOrder.map((id, idx) => [id, idx]));
       result.sort((a, b) => {
@@ -1052,7 +1059,12 @@ export const StocksView: React.FC<Props> = ({
         return a.accountName.localeCompare(b.accountName);
       });
     } else {
-      result.sort((a, b) => a.accountName.localeCompare(b.accountName));
+      result.sort((a, b) => {
+        const aValue = a.rows.reduce((s, p) => s + p.marketValue, 0);
+        const bValue = b.rows.reduce((s, p) => s + p.marketValue, 0);
+        if (bValue !== aValue) return bValue - aValue;
+        return a.accountName.localeCompare(b.accountName);
+      });
     }
     
     return result;
@@ -1171,7 +1183,7 @@ export const StocksView: React.FC<Props> = ({
     
     if (!date || !accountId || !tickerClean || !quantity || !price) {
       if (!price) {
-        toast.error("시세를 조회할 수 없습니다. 티커를 확인하거나 고급 옵션에서 가격을 직접 입력하세요.");
+        toast.error(ERROR_MESSAGES.QUOTE_UNAVAILABLE);
       }
       return;
     }
@@ -1181,35 +1193,19 @@ export const StocksView: React.FC<Props> = ({
     // 선택된 계좌 확인
     const selectedAccount = accounts.find((a) => a.id === accountId);
     if (!selectedAccount) {
-      toast.error("계좌를 선택해주세요.");
+      toast.error(ERROR_MESSAGES.ACCOUNT_REQUIRED);
       return;
     }
-    
-    // 증권계좌는 달러와 원화 모두 사용 가능
-    const isSecuritiesAccount = selectedAccount.type === "securities";
-    
-    // 계좌의 통화 확인 (증권계좌가 아닌 경우에만 currency 필드 사용)
-    const accountCurrency = isSecuritiesAccount ? undefined : (selectedAccount.currency || "KRW");
-    
-    // 달러 종목 여부 확인
-    const isUSD = isUSDStock(tickerClean);
     const priceInfo = prices.find((p) => canonicalTickerForMatch(p.ticker) === tickerClean);
+    const currencyValidation = validateAccountTickerCurrency(selectedAccount, tickerClean, priceInfo);
+    if (!currencyValidation.valid) {
+      toast.error(currencyValidation.error ?? "계좌와 종목 통화가 일치하지 않습니다.");
+      return;
+    }
+    const isSecuritiesAccount = selectedAccount.type === "securities";
+    const isUSD = isUSDStock(tickerClean);
     const currency = priceInfo?.currency || (isUSD ? "USD" : "KRW");
     const isUSDCurrency = currency === "USD";
-    
-    // 계좌 통화와 티커 통화 일치 검증 (증권계좌는 제외)
-    if (!isSecuritiesAccount) {
-      if (accountCurrency === "USD" && !isUSDCurrency) {
-        toast.error("달러 계좌에서는 달러 종목만 거래할 수 있습니다.");
-        return;
-      }
-      if (accountCurrency === "KRW" && isUSDCurrency) {
-        toast.error("원화 계좌에서는 원화 종목만 거래할 수 있습니다.");
-        return;
-      }
-    }
-    
-    // 달러 종목인 경우 환율 적용
     const exchangeRate = isUSDCurrency && fxRate ? fxRate : 1;
     
     // 매수: totalAmount = quantity * price + fee (지불한 총액)
@@ -1475,30 +1471,19 @@ export const StocksView: React.FC<Props> = ({
       // 선택된 계좌 확인
       const selectedAccount = accounts.find((a) => a.id === plan.accountId);
       if (!selectedAccount) {
-        setDcaMessage("계좌를 찾을 수 없습니다.");
+        setDcaMessage(ERROR_MESSAGES.ACCOUNT_NOT_FOUND);
         setBuyingPlanId(null);
         return;
       }
 
-      // 계좌의 통화 확인 (증권계좌의 경우 currency 필드 사용)
-      const accountCurrency = selectedAccount.currency || "KRW";
-      
-      // 티커의 통화 확인
+      const currencyValidation = validateAccountTickerCurrency(selectedAccount, plan.ticker, quote);
+      if (!currencyValidation.valid) {
+        setDcaMessage(currencyValidation.error ?? "");
+        setBuyingPlanId(null);
+        return;
+      }
       const tickerIsUSD = isUSDStock(plan.ticker);
       const currency = quote.currency || (tickerIsUSD ? "USD" : "KRW");
-      const isUSDCurrency = currency === "USD";
-      
-      // 계좌 통화와 티커 통화 일치 검증
-      if (accountCurrency === "USD" && !isUSDCurrency) {
-        setDcaMessage("달러 계좌에서는 달러 종목만 거래할 수 있습니다.");
-        setBuyingPlanId(null);
-        return;
-      }
-      if (accountCurrency === "KRW" && isUSDCurrency) {
-        setDcaMessage("원화 계좌에서는 원화 종목만 거래할 수 있습니다.");
-        setBuyingPlanId(null);
-        return;
-      }
 
       // 환율 계산
       let priceKRW = quote.price;
@@ -1598,29 +1583,18 @@ export const StocksView: React.FC<Props> = ({
           const selectedAccount = accounts.find((a) => a.id === plan.accountId);
           if (!selectedAccount) {
             failCount++;
-            failMessages.push(`${plan.ticker}: 계좌를 찾을 수 없음`);
+            failMessages.push(`${plan.ticker}: ${ERROR_MESSAGES.ACCOUNT_NOT_FOUND}`);
             continue;
           }
 
-          // 계좌의 통화 확인 (증권계좌의 경우 currency 필드 사용)
-          const accountCurrency = selectedAccount.currency || "KRW";
-          
-          // 티커의 통화 확인
+          const currencyValidation = validateAccountTickerCurrency(selectedAccount, plan.ticker, q);
+          if (!currencyValidation.valid) {
+            failCount++;
+            failMessages.push(`${plan.ticker}: ${currencyValidation.error ?? ""}`);
+            continue;
+          }
           const isUSD = isUSDStock(plan.ticker);
           const currency = q.currency || (isUSD ? "USD" : "KRW");
-          const isUSDCurrency = currency === "USD";
-          
-          // 계좌 통화와 티커 통화 일치 검증
-          if (accountCurrency === "USD" && !isUSDCurrency) {
-            failCount++;
-            failMessages.push(`${plan.ticker}: 달러 계좌에서는 달러 종목만 거래 가능`);
-            continue;
-          }
-          if (accountCurrency === "KRW" && isUSDCurrency) {
-            failCount++;
-            failMessages.push(`${plan.ticker}: 원화 계좌에서는 원화 종목만 거래 가능`);
-            continue;
-          }
 
           // 환율 계산
           let priceKRW = q.price;
@@ -1878,35 +1852,19 @@ export const StocksView: React.FC<Props> = ({
           // 선택된 계좌 확인
           const selectedAccount = accounts.find((a) => a.id === tradeForm.accountId);
           if (!selectedAccount) {
-            toast.error("계좌를 선택해주세요.");
+            toast.error(ERROR_MESSAGES.ACCOUNT_REQUIRED);
             return;
           }
-          
-          // 증권계좌는 달러와 원화 모두 사용 가능
-          const isSecuritiesAccount = selectedAccount.type === "securities";
-          
-          // 계좌의 통화 확인 (증권계좌가 아닌 경우에만 currency 필드 사용)
-          const accountCurrency = isSecuritiesAccount ? undefined : (selectedAccount.currency || "KRW");
-          
-          // 달러 종목 여부 확인
-          const isUSD = isUSDStock(tickerClean);
           const priceInfo = prices.find((p) => canonicalTickerForMatch(p.ticker) === tickerClean);
+          const currencyValidation = validateAccountTickerCurrency(selectedAccount, tickerClean, priceInfo);
+          if (!currencyValidation.valid) {
+            toast.error(currencyValidation.error ?? "계좌와 종목 통화가 일치하지 않습니다.");
+            return;
+          }
+          const isSecuritiesAccount = selectedAccount.type === "securities";
+          const isUSD = isUSDStock(tickerClean);
           const currency = priceInfo?.currency || (isUSD ? "USD" : "KRW");
           const isUSDCurrency = currency === "USD";
-          
-          // 계좌 통화와 티커 통화 일치 검증 (증권계좌는 제외)
-          if (!isSecuritiesAccount) {
-            if (accountCurrency === "USD" && !isUSDCurrency) {
-              toast.error("달러 계좌에서는 달러 종목만 거래할 수 있습니다.");
-              return;
-            }
-            if (accountCurrency === "KRW" && isUSDCurrency) {
-              toast.error("원화 계좌에서는 원화 종목만 거래할 수 있습니다.");
-              return;
-            }
-          }
-          
-          // 달러 종목인 경우 환율 적용
           const exchangeRate = isUSDCurrency && fxRate ? fxRate : 1;
           
           // 매수: totalAmount = quantity * price + fee (지불한 총액)
@@ -2482,6 +2440,8 @@ export const StocksView: React.FC<Props> = ({
         onStartEditTrade={startEditTrade}
         onResetTradeForm={resetTradeForm}
         onChangeAccounts={onChangeAccounts}
+        highlightTradeId={highlightTradeId}
+        onClearHighlightTrade={onClearHighlightTrade}
       />
         </>
       )}

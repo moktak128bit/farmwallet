@@ -35,8 +35,8 @@ export function useSearch(data: AppData) {
         const parsed = JSON.parse(raw) as SavedFilter[];
         setSavedFilters(parsed);
       }
-    } catch {
-      // ignore
+    } catch (e) {
+      console.warn("[useSearch] 검색 인덱스 로드 실패", e);
     }
   }, []);
 

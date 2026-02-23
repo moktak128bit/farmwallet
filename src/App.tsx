@@ -1,6 +1,6 @@
-import React, { useMemo, useState, lazy, Suspense } from "react";
+import React, { useEffect, useMemo, useState, lazy, Suspense } from "react";
 import { Toaster, toast } from "react-hot-toast";
-import { Moon, Sun } from "lucide-react";
+import { Moon, Sun, Menu } from "lucide-react";
 import { Tabs, type TabId } from "./components/Tabs";
 import { DashboardView } from "./components/DashboardView";
 import { ShortcutsHelp } from "./components/ShortcutsHelp";
@@ -25,11 +25,21 @@ import { useTickerDatabase } from "./hooks/useTickerDatabase";
 import { useKeyboardShortcuts } from "./hooks/useKeyboardShortcuts";
 import { computeAccountBalances, computePositions } from "./calculations";
 import { APP_VERSION } from "./constants/config";
+import { runIntegrityCheck } from "./utils/dataIntegrity";
 
 export const App: React.FC = () => {
   const [tab, setTab] = useState<TabId>("dashboard");
   const [showShortcutsHelp, setShowShortcutsHelp] = useState(false);
   const [copyRequest, setCopyRequest] = useState<import("./types").LedgerEntry | null>(null);
+  const [highlightLedgerId, setHighlightLedgerId] = useState<string | null>(null);
+  const [highlightTradeId, setHighlightTradeId] = useState<string | null>(null);
+  const [integritySummary, setIntegritySummary] = useState<{ error: number; warning: number } | null>(null);
+  const [mobileDrawerOpen, setMobileDrawerOpen] = useState(false);
+
+  const handleTabChange = (id: TabId) => {
+    setTab(id);
+    setMobileDrawerOpen(false);
+  };
 
   // 커스텀 훅 사용
   const { data, setData, isLoading, loadFailed, clearLoadFailed, setManualBackupFlag, saveNow } = useAppData();
@@ -103,6 +113,36 @@ export const App: React.FC = () => {
     () => computePositions(data.trades, adjustedPrices, data.accounts),
     [data.trades, adjustedPrices, data.accounts]
   );
+
+  useEffect(() => {
+    if (tab !== "settings") return;
+    let cancelled = false;
+    try {
+      const issues = runIntegrityCheck(
+        data.accounts,
+        data.ledger,
+        data.trades,
+        data.categoryPresets
+      );
+      if (!cancelled) {
+        setIntegritySummary({
+          error: issues.filter((i) => i.severity === "error").length,
+          warning: issues.filter((i) => i.severity === "warning").length
+        });
+      }
+    } catch {
+      if (!cancelled) setIntegritySummary(null);
+    }
+    return () => { cancelled = true; };
+  }, [tab, data.accounts, data.ledger, data.trades, data.categoryPresets]);
+
+  const settingsTabBadge = useMemo(() => {
+    if (!integritySummary) return undefined;
+    if (integritySummary.error > 0) return `오류 ${integritySummary.error}`;
+    if (integritySummary.warning > 0) return `경고 ${integritySummary.warning}`;
+    return undefined;
+  }, [integritySummary]);
+
   const handleRenameAccountId = (oldId: string, newId: string) => {
     if (!oldId || !newId || oldId === newId) return;
     setDataWithHistory((prev) => {
@@ -156,9 +196,20 @@ export const App: React.FC = () => {
         }
       }} />
       <header className="app-header">
-        <div>
+        <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
+          <button
+            type="button"
+            className="mobile-menu-btn"
+            onClick={() => setMobileDrawerOpen(true)}
+            aria-label="메뉴 열기"
+            title="메뉴"
+          >
+            <Menu size={24} />
+          </button>
+          <div>
           <h1>FarmWallet <span style={{ fontSize: "0.6em", fontWeight: "normal", color: "var(--text-muted)", marginLeft: "8px" }}>v{APP_VERSION}</span></h1>
           <p className="subtitle">자산 · 주식 관리</p>
+          </div>
         </div>
         <div style={{ display: "flex", flexDirection: "column", alignItems: "flex-end", gap: 6 }}>
           <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
@@ -218,8 +269,28 @@ export const App: React.FC = () => {
 
           <div className="layout">
             <aside className="sidebar" role="navigation" aria-label="주 메뉴">
-              <Tabs active={tab} onChange={setTab} />
+              <Tabs active={tab} onChange={handleTabChange} tabBadges={settingsTabBadge ? { settings: settingsTabBadge } : undefined} />
             </aside>
+            {mobileDrawerOpen && (
+              <>
+                <div
+                  className="drawer-overlay"
+                  role="presentation"
+                  onClick={() => setMobileDrawerOpen(false)}
+                  onKeyDown={(e) => e.key === "Escape" && setMobileDrawerOpen(false)}
+                  aria-hidden
+                />
+                <div className="drawer-panel" role="dialog" aria-label="메뉴">
+                  <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 12 }}>
+                    <span style={{ fontWeight: 600 }}>메뉴</span>
+                    <button type="button" className="icon-button" onClick={() => setMobileDrawerOpen(false)} aria-label="닫기">
+                      ✕
+                    </button>
+                  </div>
+                  <Tabs active={tab} onChange={handleTabChange} tabBadges={settingsTabBadge ? { settings: settingsTabBadge } : undefined} />
+                </div>
+              </>
+            )}
             <main className="app-main" role="main">
           <Suspense fallback={<div className="card" style={{ padding: 24, textAlign: "center", color: "var(--text-muted)" }}>로딩 중...</div>}>
           {tab === "dashboard" && (
@@ -230,6 +301,7 @@ export const App: React.FC = () => {
               prices={data.prices}
               categoryPresets={data.categoryPresets}
               targetPortfolios={data.targetPortfolios ?? []}
+              budgets={data.budgetGoals ?? []}
             />
           )}
           {tab === "accounts" && (
@@ -250,6 +322,8 @@ export const App: React.FC = () => {
               onChangeLedger={(ledger) => setDataWithHistory({ ...data, ledger })}
               copyRequest={copyRequest}
               onCopyComplete={() => setCopyRequest(null)}
+              highlightLedgerId={highlightLedgerId}
+              onClearHighlightLedger={() => setHighlightLedgerId(null)}
             />
           )}
           {tab === "categories" && (
@@ -267,6 +341,8 @@ export const App: React.FC = () => {
               prices={data.prices}
               customSymbols={data.customSymbols ?? []}
               tickerDatabase={data.tickerDatabase ?? []}
+              highlightTradeId={highlightTradeId}
+              onClearHighlightTrade={() => setHighlightTradeId(null)}
               onChangeTrades={(trades) => setDataWithHistory((prev) => ({ 
                 ...prev, 
                 trades: typeof trades === "function" ? trades(prev.trades) : trades 
@@ -348,6 +424,17 @@ export const App: React.FC = () => {
         onSaveFilter={saveCurrentFilter}
         onApplyFilter={applySavedFilter}
         onDeleteFilter={deleteSavedFilter}
+        onNavigate={({ type, id }) => {
+          if (type === "ledger") {
+            setTab("ledger");
+            setHighlightLedgerId(id);
+            setHighlightTradeId(null);
+          } else {
+            setTab("stocks");
+            setHighlightTradeId(id);
+            setHighlightLedgerId(null);
+          }
+        }}
       />
 
       <ShortcutsHelp isOpen={showShortcutsHelp} onClose={() => setShowShortcutsHelp(false)} />

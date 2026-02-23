@@ -303,11 +303,11 @@ export function checkCategoryConsistency(
     }
 
     if (entry.kind === "transfer") {
-      if (main && !transferSet.has(main) && !savingsCategories.has(main)) {
+      if (main && !transferSet.has(main)) {
         issues.push({
           type: "category_mismatch",
           severity: "warning",
-          message: `가계부 항목 ${entry.id}: 이체 카테고리 "${main}"이(가) 이체/저축성지출 프리셋에 없습니다`,
+          message: `가계부 항목 ${entry.id}: 이체 카테고리 "${main}"이(가) 이체 프리셋에 없습니다`,
           data: {
             entryId: entry.id,
             kind: "transfer",

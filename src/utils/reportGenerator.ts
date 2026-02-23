@@ -5,6 +5,8 @@
 import type { Account, LedgerEntry, StockTrade, StockPrice } from "../types";
 import { computeAccountBalances, computePositions } from "../calculations";
 import { isSavingsExpenseEntry } from "./categoryUtils";
+import { xirr } from "./irr";
+import { canonicalTickerForMatch } from "./tickerUtils";
 
 export interface MonthlyReport {
   month: string;
@@ -34,6 +36,7 @@ export interface CategoryReport {
 }
 
 export interface StockPerformanceReport {
+  accountId: string;
   ticker: string;
   name: string;
   totalBuyAmount: number;
@@ -41,6 +44,8 @@ export interface StockPerformanceReport {
   pnl: number;
   pnlRate: number;
   quantity: number;
+  /** 연간 수익률 (XIRR), 계산 불가 시 undefined */
+  irr?: number | null;
 }
 
 export interface AccountReport {
@@ -180,7 +185,7 @@ export function generateCategoryReport(
 }
 
 /**
- * 주식 성과 리포트 생성
+ * 주식 성과 리포트 생성 (종목·계좌별 IRR 포함)
  */
 export function generateStockPerformanceReport(
   trades: StockTrade[],
@@ -188,16 +193,31 @@ export function generateStockPerformanceReport(
   accounts: Account[]
 ): StockPerformanceReport[] {
   const positions = computePositions(trades, prices, accounts);
+  const today = new Date().toISOString().slice(0, 10);
 
-  return positions.map((pos) => ({
-    ticker: pos.ticker,
-    name: pos.name || pos.ticker,
-    totalBuyAmount: pos.totalBuyAmount,
-    currentValue: pos.marketValue,
-    pnl: pos.pnl,
-    pnlRate: pos.pnlRate,
-    quantity: pos.quantity
-  })).sort((a, b) => b.pnl - a.pnl);
+  return positions.map((pos) => {
+    const posTrades = trades
+      .filter(
+        (t) =>
+          t.accountId === pos.accountId &&
+          canonicalTickerForMatch(t.ticker) === canonicalTickerForMatch(pos.ticker)
+      )
+      .sort((a, b) => a.date.localeCompare(b.date));
+    const flows = posTrades.map((t) => ({ date: t.date, amount: t.cashImpact }));
+    flows.push({ date: today, amount: pos.marketValue });
+    const irrVal = xirr(flows);
+    return {
+      accountId: pos.accountId,
+      ticker: pos.ticker,
+      name: pos.name || pos.ticker,
+      totalBuyAmount: pos.totalBuyAmount,
+      currentValue: pos.marketValue,
+      pnl: pos.pnl,
+      pnlRate: pos.pnlRate,
+      quantity: pos.quantity,
+      irr: irrVal != null ? irrVal : undefined
+    };
+  }).sort((a, b) => b.pnl - a.pnl);
 }
 
 /**
@@ -340,7 +360,7 @@ export function generateDailyReport(
       .reduce((sum, l) => sum + l.amount, 0);
     
     const dayTransfer = filteredLedger
-      .filter((l) => l.kind === "transfer" && !isSavingsExpenseEntry(l, accounts) && l.date === date)
+      .filter((l) => l.kind === "transfer" && l.date === date)
       .reduce((sum, l) => sum + l.amount, 0);
     
     // 해당 날짜까지의 자산 계산

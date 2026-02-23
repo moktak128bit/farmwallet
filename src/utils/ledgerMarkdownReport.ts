@@ -43,6 +43,7 @@ export function generateLedgerMarkdownReport(
   md += `> 이 문서는 Farm Wallet 앱의 **설정 > 백업/복원 > 정리.md 내보내기**로 생성되었습니다.\n\n`;
   md += `생성일: ${new Date().toLocaleString("ko-KR")}\n\n`;
   md += `총 ${ledger.length}건 (수입 ${income.length} / 지출 ${expense.length} / 저축성 지출 ${savingsExpense.length} / 이체 ${transfer.length})\n\n`;
+  md += `> 아래 통계는 원장(수입·지출·이체) 합계만 포함합니다. 앱에서 보이는 계좌 잔액·총액과 다를 수 있습니다.\n\n`;
 
   const totalIncome = income.reduce((s, e) => s + e.amount, 0);
   const totalExpense = expense.reduce((s, e) => s + e.amount, 0);
@@ -58,6 +59,21 @@ export function generateLedgerMarkdownReport(
   md += `| 저축성 지출 | ${formatAmount(totalSavings)} |\n`;
   md += `| 이체 | ${formatAmount(totalTransfer)} |\n`;
   md += `| 순수입 (수입 - 지출 - 저축) | ${formatAmount(net)} |\n\n`;
+
+  // 계좌별 조정값 (초기잔액 + 현금조정 + 저축 등, 원장에 없는 부분)
+  md += `## 계좌별 조정값\n\n`;
+  md += `| 계좌 | 조정값 |\n`;
+  md += `|------|------|\n`;
+  for (const a of accounts) {
+    const baseBalance = a.type === "securities"
+      ? (a.initialCashBalance ?? a.initialBalance)
+      : a.initialBalance;
+    const cashAdjustment = a.cashAdjustment ?? 0;
+    const savings = a.savings ?? 0;
+    const adjustment = baseBalance + cashAdjustment + savings;
+    md += `| ${a.name} | ${formatAmount(adjustment)} |\n`;
+  }
+  md += `\n`;
 
   const monthMap = new Map<
     string,

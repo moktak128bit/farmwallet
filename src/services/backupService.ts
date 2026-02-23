@@ -92,8 +92,8 @@ async function saveServerBackup(data: AppData): Promise<void> {
     if (!res.ok) {
       throw new Error("Backup save failed");
     }
-  } catch {
-    // 실패해도 무시
+  } catch (e) {
+    console.warn("[backupService] 백업 저장 실패", e);
   }
 }
 
@@ -104,7 +104,8 @@ export function getBackupList(): BackupMeta[] {
     if (!raw) return [];
     const current = JSON.parse(raw) as StoredBackup[];
     return current.map((b) => ({ id: b.id, createdAt: b.createdAt, hash: b.hash }));
-  } catch {
+  } catch (e) {
+    console.warn("[backupService] 백업 목록 로드 실패", e);
     return [];
   }
 }
@@ -117,7 +118,8 @@ export function loadBackupData(id: string): AppData | null {
     const current = JSON.parse(raw) as StoredBackup[];
     const found = current.find((b) => b.id === id);
     return found ? found.data : null;
-  } catch {
+  } catch (e) {
+    console.warn("[backupService] 백업 데이터 로드 실패", e);
     return null;
   }
 }
@@ -137,7 +139,8 @@ export async function getLatestLocalBackupIntegrity(): Promise<{
     const hash = await computeBackupHash(latest.data);
     const status = hash === latest.hash ? "valid" : "mismatch";
     return { createdAt: latest.createdAt, status };
-  } catch {
+  } catch (e) {
+    console.warn("[backupService] 백업 무결성 조회 실패", e);
     return { createdAt: null, status: "none" };
   }
 }
@@ -161,7 +164,8 @@ export async function loadServerBackupData(fileName: string): Promise<AppData | 
     if (!res.ok) return null;
     const data = (await res.json()) as AppData;
     return data;
-  } catch {
+  } catch (e) {
+    console.warn("[backupService] 서버 백업 로드 실패", e);
     return null;
   }
 }

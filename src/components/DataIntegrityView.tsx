@@ -2,6 +2,7 @@ import React, { useMemo, useState } from "react";
 import type { AppData } from "../types";
 import { runIntegrityCheck, mergeDuplicates, type IntegrityIssue, type DuplicateTrade } from "../utils/dataIntegrity";
 import { toast } from "react-hot-toast";
+import { ERROR_MESSAGES } from "../constants/errorMessages";
 
 interface Props {
   data: AppData;
@@ -26,7 +27,7 @@ export const DataIntegrityView: React.FC<Props> = ({ data, onChangeData }) => {
       toast.success(`검사 완료: ${foundIssues.length}개 문제 발견`);
     } catch (error) {
       console.error("무결성 검사 오류:", error);
-      toast.error("무결성 검사 중 오류가 발생했습니다");
+      toast.error(ERROR_MESSAGES.INTEGRITY_CHECK_FAILED);
     } finally {
       setIsChecking(false);
     }
@@ -50,7 +51,7 @@ export const DataIntegrityView: React.FC<Props> = ({ data, onChangeData }) => {
   const handleFixDuplicates = () => {
     const duplicateIssues = issues.filter((i) => i.type === "duplicate") as Array<IntegrityIssue & { data: DuplicateTrade }>;
     if (duplicateIssues.length === 0) {
-      toast.error("중복 항목이 없습니다");
+      toast.error(ERROR_MESSAGES.NO_DUPLICATES);
       return;
     }
 
@@ -73,7 +74,7 @@ export const DataIntegrityView: React.FC<Props> = ({ data, onChangeData }) => {
   const handleFixMissingReferences = () => {
     const missingRefIssues = issues.filter((i) => i.type === "missing_reference");
     if (missingRefIssues.length === 0) {
-      toast.error("누락된 참조가 없습니다");
+      toast.error(ERROR_MESSAGES.NO_MISSING_REFERENCE);
       return;
     }
 

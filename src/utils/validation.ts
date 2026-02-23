@@ -2,6 +2,9 @@
  * 폼 검증 유틸리티 함수들
  */
 
+import type { Account } from "../types";
+import { isUSDStock } from "./tickerUtils";
+
 export interface ValidationResult {
   valid: boolean;
   error?: string;
@@ -241,20 +244,45 @@ export function validateRequired(
 }
 
 /**
+ * 계좌 통화와 티커 통화 일치 검증 (주식 거래용)
+ * 증권계좌는 통과. 일반 계좌는 USD/KRW와 티커 통화가 일치해야 함.
+ */
+export function validateAccountTickerCurrency(
+  account: Account,
+  ticker: string,
+  priceInfo?: { currency?: string } | null
+): ValidationResult {
+  if (account.type === "securities") return { valid: true };
+  const accountCurrency = account.currency || "KRW";
+  const isUSD = isUSDStock(ticker);
+  const currency = priceInfo?.currency || (isUSD ? "USD" : "KRW");
+  const isUSDCurrency = currency === "USD";
+  if (accountCurrency === "USD" && !isUSDCurrency)
+    return { valid: false, error: "달러 계좌에서는 달러 종목만 거래할 수 있습니다." };
+  if (accountCurrency === "KRW" && isUSDCurrency)
+    return { valid: false, error: "원화 계좌에서는 원화 종목만 거래할 수 있습니다." };
+  return { valid: true };
+}
+
+/**
  * 이체 검증 (출금계좌와 입금계좌가 다른지 확인)
  * @param fromAccountId 출금 계좌 ID
  * @param toAccountId 입금 계좌 ID
+ * @param labels 환전 등 다른 문맥용 라벨 (기본: 출금/입금)
  */
 export function validateTransfer(
   fromAccountId: string,
-  toAccountId: string
+  toAccountId: string,
+  labels?: { from?: string; to?: string }
 ): ValidationResult {
   if (!fromAccountId || !toAccountId) {
     return { valid: true }; // 필수 필드 검증은 별도로 처리
   }
 
+  const from = labels?.from ?? "출금";
+  const to = labels?.to ?? "입금";
   if (fromAccountId === toAccountId) {
-    return { valid: false, error: "출금 계좌와 입금 계좌가 같을 수 없습니다" };
+    return { valid: false, error: `${from} 계좌와 ${to} 계좌가 같을 수 없습니다` };
   }
 
   return { valid: true };

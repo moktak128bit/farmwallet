@@ -3,6 +3,7 @@ import { getAllBackupList, getLatestLocalBackupIntegrity, saveBackupSnapshot, sa
 import type { AppData } from "../types";
 import { toast } from "react-hot-toast";
 import { BACKUP_WARNING_HOURS } from "../constants/config";
+import { ERROR_MESSAGES } from "../constants/errorMessages";
 
 export interface BackupIntegrity {
   createdAt: string | null;
@@ -41,7 +42,7 @@ export function useBackup(data: AppData, setManualBackupFlag: (flag: boolean) =>
       await refreshLatestBackup();
       toast.success("백업 스냅샷 저장 완료", { id: toastId });
     } catch (err) {
-      toast.error("백업 저장 실패", { id: toastId });
+      toast.error(ERROR_MESSAGES.BACKUP_SAVE_FAILED, { id: toastId });
     } finally {
       setManualBackupFlag(false);
     }

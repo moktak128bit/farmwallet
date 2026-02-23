@@ -54,7 +54,9 @@ export const ThemeCustomizer: React.FC<Props> = ({ onClose }) => {
       try {
         const saved = localStorage.getItem("fw-custom-theme");
         if (saved) return JSON.parse(saved);
-      } catch {}
+      } catch (e) {
+        console.warn("[ThemeCustomizer] 저장된 테마 로드 실패", e);
+      }
     }
     return PRESET_THEMES.default;
   });

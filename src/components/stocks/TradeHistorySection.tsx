@@ -1,7 +1,9 @@
-import React, { useState, useMemo, useEffect } from "react";
+import React, { useState, useMemo, useEffect, useRef } from "react";
 import { toast } from "react-hot-toast";
 import type { Account, StockPrice, StockTrade, TradeSide } from "../../types";
 import { isUSDStock, canonicalTickerForMatch } from "../../utils/tickerUtils";
+import { validateAccountTickerCurrency } from "../../utils/validation";
+import { ERROR_MESSAGES } from "../../constants/errorMessages";
 import { formatNumber, formatKRW, formatUSD, formatShortDate } from "../../utils/format";
 
 const sideLabel: Record<TradeSide, string> = {
@@ -20,6 +22,8 @@ interface TradeHistorySectionProps {
   onStartEditTrade: (trade: StockTrade) => void;
   onResetTradeForm?: () => void;
   onChangeAccounts?: (next: Account[]) => void;
+  highlightTradeId?: string | null;
+  onClearHighlightTrade?: () => void;
 }
 
 const formatPriceWithCurrency = (value: number, currency?: string, ticker?: string) => {
@@ -43,7 +47,9 @@ export const TradeHistorySection: React.FC<TradeHistorySectionProps> = ({
   onChangeTrades,
   onStartEditTrade,
   onResetTradeForm,
-  onChangeAccounts
+  onChangeAccounts,
+  highlightTradeId,
+  onClearHighlightTrade
 }) => {
   const [tradeSort, setTradeSort] = useState<{ key: TradeSortKey; direction: "asc" | "desc" }>({
     key: "date",
@@ -64,7 +70,9 @@ export const TradeHistorySection: React.FC<TradeHistorySectionProps> = ({
             if (total > 0) return parsed.map((w: number) => (w / total) * 100);
           }
         }
-      } catch {}
+      } catch (e) {
+        console.warn("[TradeHistorySection] 로컬 저장 로드 실패", e);
+      }
     }
     return [3, 8, 7, 7, 18, 5, 7, 11, 9, 13, 5, 7];
   });
@@ -110,6 +118,38 @@ export const TradeHistorySection: React.FC<TradeHistorySectionProps> = ({
   const tradeTotalPages = useMemo(() => {
     return Math.ceil(sortedTrades.length / tradePageSize);
   }, [sortedTrades.length, tradePageSize]);
+
+  // 검색에서 이동: 해당 거래가 있는 페이지로 전환
+  useEffect(() => {
+    if (!highlightTradeId) return;
+    const idx = sortedTrades.findIndex((t) => t.id === highlightTradeId);
+    if (idx === -1) return;
+    const page = Math.max(1, Math.ceil((idx + 1) / tradePageSize));
+    if (page !== tradeCurrentPage) setTradeCurrentPage(page);
+  }, [highlightTradeId, sortedTrades, tradePageSize, tradeCurrentPage]);
+
+  const highlightClearTimerRef = useRef<number | null>(null);
+  useEffect(() => {
+    if (!highlightTradeId || !onClearHighlightTrade) return;
+    const t1 = window.setTimeout(() => {
+      const el = document.querySelector(`tr[data-trade-id="${highlightTradeId}"]`);
+      if (!el) return;
+      el.scrollIntoView({ behavior: "smooth", block: "center" });
+      el.classList.add("ledger-row-highlight");
+      highlightClearTimerRef.current = window.setTimeout(() => {
+        el.classList.remove("ledger-row-highlight");
+        onClearHighlightTrade();
+        highlightClearTimerRef.current = null;
+      }, 2500);
+    }, 150);
+    return () => {
+      window.clearTimeout(t1);
+      if (highlightClearTimerRef.current !== null) {
+        window.clearTimeout(highlightClearTimerRef.current);
+        highlightClearTimerRef.current = null;
+      }
+    };
+  }, [highlightTradeId, onClearHighlightTrade]);
 
   useEffect(() => {
     setTradeCurrentPage(1);
@@ -213,25 +253,16 @@ export const TradeHistorySection: React.FC<TradeHistorySectionProps> = ({
     
     const selectedAccount = accounts.find((a) => a.id === inlineEdit.accountId);
     if (!selectedAccount) {
-      toast.error("계좌를 선택해주세요.");
+      toast.error(ERROR_MESSAGES.ACCOUNT_REQUIRED);
       return;
     }
-    
-    const accountCurrency = selectedAccount.currency || "KRW";
-    const isUSD = isUSDStock(inlineEdit.ticker);
     const priceInfo = prices.find((p) => canonicalTickerForMatch(p.ticker) === canonicalTickerForMatch(inlineEdit.ticker));
-    const currency = priceInfo?.currency || (isUSD ? "USD" : "KRW");
-    const isUSDCurrency = currency === "USD";
-    
-    if (accountCurrency === "USD" && !isUSDCurrency) {
-      toast.error("달러 계좌에서는 달러 종목만 거래할 수 있습니다.");
+    const currencyValidation = validateAccountTickerCurrency(selectedAccount, inlineEdit.ticker, priceInfo);
+    if (!currencyValidation.valid) {
+      toast.error(currencyValidation.error ?? "계좌와 종목 통화가 일치하지 않습니다.");
       return;
     }
-    if (accountCurrency === "KRW" && isUSDCurrency) {
-      toast.error("원화 계좌에서는 원화 종목만 거래할 수 있습니다.");
-      return;
-    }
-    
+    const isUSDCurrency = priceInfo?.currency === "USD" || isUSDStock(inlineEdit.ticker);
     const exchangeRate = isUSDCurrency && fxRate ? fxRate : 1;
     const totalAmount = side === "buy" 
       ? quantity * price + fee 
@@ -460,6 +491,7 @@ export const TradeHistorySection: React.FC<TradeHistorySectionProps> = ({
               return (
                 <tr
                   key={t.id}
+                  data-trade-id={t.id}
                   draggable
                   onDragOver={(e) => {
                     if (!draggingTradeId) return;

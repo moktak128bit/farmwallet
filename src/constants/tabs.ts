@@ -8,6 +8,7 @@ export const TAB_ORDER: TabId[] = [
   "dividends",
   "debt",
   "budget",
+  "workout",
   "categories",
   "reports",
   "settings"
@@ -21,6 +22,7 @@ export const TAB_NAMES: Record<TabId, string> = {
   dividends: "배당",
   debt: "대출",
   budget: "예산",
+  workout: "운동",
   categories: "카테고리",
   reports: "리포트",
   settings: "설정"

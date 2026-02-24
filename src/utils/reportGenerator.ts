@@ -364,7 +364,7 @@ export function generateDailyReport(
       .reduce((sum, l) => sum + l.amount, 0);
     
     // 해당 날짜까지의 자산 계산
-    const positions = computePositions(filteredTrades, adjustedPrices, accounts);
+    const positions = computePositions(filteredTrades, adjustedPrices, accounts, { fxRate: fxRate ?? undefined });
     const balances = computeAccountBalances(accounts, filteredLedger, filteredTrades);
     
     // 주식 평가액

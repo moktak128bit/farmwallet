@@ -43,6 +43,9 @@ export function computeAccountBalances(
     // 지출: fromAccountId가 이 계좌인 항목들의 합계
     const expenseEntries = ledger.filter((l) => l.kind === "expense" && l.fromAccountId === account.id);
     const expenseSum = expenseEntries.reduce((s, l) => s + l.amount, 0);
+    // 저축·재테크(expense+toAccountId)로 이 계좌에 들어온 금액
+    const savingsExpenseInEntries = ledger.filter((l) => l.kind === "expense" && l.toAccountId === account.id);
+    const savingsExpenseIn = savingsExpenseInEntries.reduce((s, l) => s + l.amount, 0);
     // 이체: transfer 종류의 거래에서 이 계좌로 들어온 금액과 나간 금액
     // KRW 이체(currency !== "USD")는 currentBalance에, USD 이체는 usdTransferNet에 반영
     const isUsdEntry = (l: LedgerEntry) => l.currency === "USD";
@@ -94,6 +97,7 @@ export function computeAccountBalances(
       initialHoldingsAmount + // 초기 보유 거래 금액 추가
       incomeSum -
       expenseSum +
+      savingsExpenseIn + // 저축·재테크로 들어온 금액
       transferNet +
       tradeCashImpact +
       cashAdjustment +
@@ -114,7 +118,8 @@ export function computeAccountBalances(
 export function computePositions(
   trades: StockTrade[],
   prices: StockPrice[],
-  accounts: Account[]
+  accounts: Account[],
+  options?: { fxRate?: number }
 ): PositionRow[] {
   const byKey = new Map<string, StockTrade[]>();
   for (const t of trades) {
@@ -127,12 +132,12 @@ export function computePositions(
   }
 
   const rows: PositionRow[] = [];
+  const fxRate = options?.fxRate;
 
   for (const [key, ts] of byKey.entries()) {
     const [accountId, tickerNorm] = key.split("::");
-    const accountName =
-      accounts.find((a) => a.id === accountId)?.name ?? accounts.find((a) => a.id === accountId)?.id ??
-      accountId;
+    const account = accounts.find((a) => a.id === accountId);
+    const accountName = account?.name ?? account?.id ?? accountId;
 
     const buys = ts.filter((t) => t.side === "buy");
     const sells = ts.filter((t) => t.side === "sell");
@@ -146,29 +151,33 @@ export function computePositions(
     // 총매도금액: 매도 거래의 totalAmount 합계
     const totalSellAmount = sells.reduce((s, t) => s + t.totalAmount, 0);
     // 순매입금액: 총매입금액 - 총매도금액 (실제 투자한 순 금액)
-    const netBuyAmount = totalBuyAmount - totalSellAmount;
+    const netBuyAmountRaw = totalBuyAmount - totalSellAmount;
 
     const priceInfo = prices.find((p) => canonicalTickerForMatch(p.ticker) === tickerNorm);
     const marketPrice = priceInfo?.price ?? 0;
     const canonicalTicker = priceInfo?.ticker ?? ts[0]?.ticker ?? tickerNorm;
     const name = priceInfo?.name ?? ts[0]?.name ?? canonicalTicker;
 
-    // 평균단가: 매수 금액을 매수 수량으로 나눈 값 (매수한 평균 단가)
-    const avgPrice = buyQty > 0 ? totalBuyAmount / buyQty : 0;
-    
+    // 가격이 원화로 들어온 경우(adjustedPrices): USD 종목/계좌는 순매입금액을 원화로 환산
+    const isUSD = (account?.currency === "USD" || isUSDStock(canonicalTicker)) && fxRate != null && fxRate > 0;
+    const netBuyAmount = isUSD ? netBuyAmountRaw * fxRate : netBuyAmountRaw;
+
     // 보유 수량이 0 이하인 경우는 포지션에서 제외
     if (quantity <= 0) {
       continue;
     }
 
-    // 평가금액: 현재가 × 보유수량
+    // 평가금액: 현재가 × 보유수량 (가격이 원화면 원화, 달러면 달러)
     const marketValue = marketPrice * quantity;
     
-    // 평가손익: 평가금액 - 순매입금액
+    // 평가손익: 평가금액 - 순매입금액 (같은 통화로 맞춘 뒤 계산)
     const pnl = marketValue - netBuyAmount;
     
     // 수익률: 순매입금액이 0보다 클 때만 계산
     const pnlRate = netBuyAmount > 0 ? pnl / netBuyAmount : 0;
+
+    // 평균단가: 순매입금액/수량 (표시 통화는 netBuyAmount와 동일)
+    const avgPrice = quantity > 0 ? netBuyAmount / quantity : 0;
 
     rows.push({
       accountId,
@@ -177,7 +186,7 @@ export function computePositions(
       name,
       quantity,
       avgPrice,
-      totalBuyAmount: netBuyAmount, // 순매입금액을 totalBuyAmount로 사용
+      totalBuyAmount: netBuyAmount, // 순매입금액 (표시/합산용, 원화면 원화)
       marketPrice,
       marketValue,
       pnl,
@@ -186,6 +195,100 @@ export function computePositions(
   }
 
   return rows;
+}
+
+/**
+ * 기간 내 매도 차익 (FIFO). 지정 계좌들의 증권 매도 실현손익 합계.
+ * USD 계좌는 fxRate로 원화 환산 (accounts, fxRate 옵션).
+ */
+export function computeRealizedGainInPeriod(
+  trades: StockTrade[],
+  startDate: string,
+  endDate: string,
+  accountIds: Set<string>,
+  options?: { accounts: Account[]; fxRate?: number }
+): number {
+  type Lot = { qty: number; totalAmount: number };
+  const byKey = new Map<string, StockTrade[]>();
+  for (const t of trades) {
+    if (!accountIds.has(t.accountId)) continue;
+    const norm = canonicalTickerForMatch(t.ticker);
+    if (!norm) continue;
+    const key = `${t.accountId}::${norm}`;
+    const list = byKey.get(key) ?? [];
+    list.push(t);
+    byKey.set(key, list);
+  }
+  let totalGain = 0;
+  for (const list of byKey.values()) {
+    const sorted = [...list].sort((a, b) => a.date.localeCompare(b.date));
+    const account = options?.accounts?.find((a) => a.id === list[0].accountId);
+    const isUsd = account?.currency === "USD" && options?.fxRate;
+    const toKrw = (x: number) => (isUsd ? x * (options!.fxRate!) : x);
+    const queue: Lot[] = [];
+    for (const t of sorted) {
+      if (t.side === "buy") {
+        queue.push({ qty: t.quantity, totalAmount: t.totalAmount });
+      } else {
+        let remaining = t.quantity;
+        let costBasis = 0;
+        while (remaining > 0 && queue.length > 0) {
+          const lot = queue[0];
+          const use = Math.min(remaining, lot.qty);
+          const cost = (lot.totalAmount / lot.qty) * use;
+          costBasis += cost;
+          remaining -= use;
+          lot.qty -= use;
+          lot.totalAmount -= cost;
+          if (lot.qty <= 0) queue.shift();
+        }
+        if (t.date >= startDate && t.date <= endDate) {
+          totalGain += toKrw(t.totalAmount - costBasis);
+        }
+      }
+    }
+  }
+  return totalGain;
+}
+
+/** 매도 건별 실현손익 (FIFO). 매도 거래 id → 실현손익(매도총액 - 매수원가). 동일 통화. */
+export function computeRealizedPnlByTradeId(trades: StockTrade[]): Map<string, number> {
+  type Lot = { qty: number; totalAmount: number };
+  const byKey = new Map<string, StockTrade[]>();
+  for (const t of trades) {
+    const norm = canonicalTickerForMatch(t.ticker);
+    if (!norm) continue;
+    const key = `${t.accountId}::${norm}`;
+    const list = byKey.get(key) ?? [];
+    list.push(t);
+    byKey.set(key, list);
+  }
+  const result = new Map<string, number>();
+  for (const list of byKey.values()) {
+    const sorted = [...list].sort((a, b) => a.date.localeCompare(b.date));
+    const queue: Lot[] = [];
+    for (const t of sorted) {
+      if (t.side === "buy") {
+        queue.push({ qty: t.quantity, totalAmount: t.totalAmount });
+      } else {
+        let remaining = t.quantity;
+        let costBasis = 0;
+        while (remaining > 0 && queue.length > 0) {
+          const lot = queue[0];
+          const use = Math.min(remaining, lot.qty);
+          const cost = (lot.totalAmount / lot.qty) * use;
+          costBasis += cost;
+          remaining -= use;
+          lot.qty -= use;
+          lot.totalAmount -= cost;
+          if (lot.qty <= 0) queue.shift();
+        }
+        const realizedPnl = t.totalAmount - costBasis;
+        result.set(t.id, realizedPnl);
+      }
+    }
+  }
+  return result;
 }
 
 export function computeMonthlyNetWorth(

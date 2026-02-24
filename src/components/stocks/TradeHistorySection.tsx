@@ -1,6 +1,7 @@
 import React, { useState, useMemo, useEffect, useRef } from "react";
 import { toast } from "react-hot-toast";
 import type { Account, StockPrice, StockTrade, TradeSide } from "../../types";
+import { computeRealizedPnlByTradeId } from "../../calculations";
 import { isUSDStock, canonicalTickerForMatch } from "../../utils/tickerUtils";
 import { validateAccountTickerCurrency } from "../../utils/validation";
 import { ERROR_MESSAGES } from "../../constants/errorMessages";
@@ -58,14 +59,14 @@ export const TradeHistorySection: React.FC<TradeHistorySectionProps> = ({
   const [tradeCurrentPage, setTradeCurrentPage] = useState(1);
   const [tradePageSize] = useState(50);
 
-  // 컬럼 너비 (퍼센트, 합계 100). 순서, 날짜, 계좌, 티커, 종목명, 매매, 수량, 단가, 수수료, 총금액, 초기보유, 작업
+  // 컬럼 너비 (퍼센트, 합계 100). 순서, 날짜, 계좌, 티커, 종목명, 매매, 수량, 단가, 수수료, 총금액, 실현손익, 초기보유, 작업
   const [columnWidths, setColumnWidths] = useState<number[]>(() => {
     if (typeof window !== "undefined") {
       try {
         const saved = localStorage.getItem("trades-column-widths");
         if (saved) {
           const parsed = JSON.parse(saved);
-          if (Array.isArray(parsed) && parsed.length === 12) {
+          if (Array.isArray(parsed) && parsed.length === 13) {
             const total = parsed.reduce((s: number, w: number) => s + w, 0);
             if (total > 0) return parsed.map((w: number) => (w / total) * 100);
           }
@@ -74,7 +75,7 @@ export const TradeHistorySection: React.FC<TradeHistorySectionProps> = ({
         console.warn("[TradeHistorySection] 로컬 저장 로드 실패", e);
       }
     }
-    return [3, 8, 7, 7, 18, 5, 7, 11, 9, 13, 5, 7];
+    return [3, 7, 6, 6, 14, 5, 6, 9, 8, 11, 10, 5, 6];
   });
   const [resizingColumn, setResizingColumn] = useState<number | null>(null);
   const [resizeStartX, setResizeStartX] = useState(0);
@@ -92,6 +93,8 @@ export const TradeHistorySection: React.FC<TradeHistorySectionProps> = ({
     fee: string;
   } | null>(null);
   const [inlineEditField, setInlineEditField] = useState<"date" | "accountId" | "quantity" | "price" | "fee" | "totalAmount" | null>(null);
+
+  const realizedPnlByTradeId = useMemo(() => computeRealizedPnlByTradeId(trades), [trades]);
 
   const sortedTrades = useMemo(() => {
     const dir = tradeSort.direction === "asc" ? 1 : -1;
@@ -367,10 +370,16 @@ export const TradeHistorySection: React.FC<TradeHistorySectionProps> = ({
   const krwBuyAmount = krwTrades.filter(t => t.side === "buy").reduce((sum, t) => sum + t.totalAmount, 0);
   const krwSellAmount = krwTrades.filter(t => t.side === "sell").reduce((sum, t) => sum + t.totalAmount, 0);
   const krwFee = krwTrades.reduce((sum, t) => sum + t.fee, 0);
-  
+  const krwRealizedPnl = krwTrades
+    .filter(t => t.side === "sell")
+    .reduce((sum, t) => sum + (realizedPnlByTradeId.get(t.id) ?? 0), 0);
+
   const usdBuyAmount = usdTrades.filter(t => t.side === "buy").reduce((sum, t) => sum + t.totalAmount, 0);
   const usdSellAmount = usdTrades.filter(t => t.side === "sell").reduce((sum, t) => sum + t.totalAmount, 0);
   const usdFee = usdTrades.reduce((sum, t) => sum + t.fee, 0);
+  const usdRealizedPnl = usdTrades
+    .filter(t => t.side === "sell")
+    .reduce((sum, t) => sum + (realizedPnlByTradeId.get(t.id) ?? 0), 0);
 
   return (
     <>
@@ -391,6 +400,12 @@ export const TradeHistorySection: React.FC<TradeHistorySectionProps> = ({
                 <span style={{ color: "var(--muted)", marginRight: 8 }}>총 수수료 (KRW):</span>
                 <span className="negative">{formatKRW(Math.round(krwFee))}</span>
               </div>
+              <div>
+                <span style={{ color: "var(--muted)", marginRight: 8 }}>총 실현손익 (KRW):</span>
+                <span className={krwRealizedPnl >= 0 ? "positive" : "negative"}>
+                  {krwRealizedPnl >= 0 ? "+" : ""}{formatKRW(Math.round(krwRealizedPnl))}
+                </span>
+              </div>
             </>
           )}
           {usdBuyAmount + usdSellAmount + usdFee > 0 && (
@@ -406,6 +421,12 @@ export const TradeHistorySection: React.FC<TradeHistorySectionProps> = ({
               <div>
                 <span style={{ color: "var(--muted)", marginRight: 8 }}>총 수수료 (USD):</span>
                 <span className="negative">{formatUSD(usdFee)}</span>
+              </div>
+              <div>
+                <span style={{ color: "var(--muted)", marginRight: 8 }}>총 실현손익 (USD):</span>
+                <span className={usdRealizedPnl >= 0 ? "positive" : "negative"}>
+                  {usdRealizedPnl >= 0 ? "+" : ""}{formatUSD(usdRealizedPnl)}
+                </span>
               </div>
             </>
           )}
@@ -478,9 +499,13 @@ export const TradeHistorySection: React.FC<TradeHistorySectionProps> = ({
                 </button>
                 <div className="resize-handle" onMouseDown={(e) => handleResizeStart(e, 9)} />
               </th>
+              <th style={{ position: "relative" }} title="매도 건당 FIFO 기준 실현손익">
+                실현손익
+                <div className="resize-handle" onMouseDown={(e) => handleResizeStart(e, 10)} />
+              </th>
               <th style={{ position: "relative" }}>
                 초기보유
-                <div className="resize-handle" onMouseDown={(e) => handleResizeStart(e, 10)} />
+                <div className="resize-handle" onMouseDown={(e) => handleResizeStart(e, 11)} />
               </th>
               <th>작업</th>
             </tr>
@@ -696,6 +721,23 @@ export const TradeHistorySection: React.FC<TradeHistorySectionProps> = ({
                         return formatPriceWithCurrency(t.totalAmount, currency, t.ticker);
                       })()
                     )}
+                  </td>
+                  <td
+                    className="number"
+                    title={t.side === "sell" ? "매도 건당 실현손익 (FIFO)" : "매수 건은 해당 없음"}
+                  >
+                    {t.side === "sell" ? (() => {
+                      const pnl = realizedPnlByTradeId.get(t.id);
+                      if (pnl === undefined) return "-";
+                      const priceInfo = prices.find((p) => p.ticker === t.ticker);
+                      const currency = priceInfo?.currency;
+                      const fmt = formatPriceWithCurrency(pnl, currency, t.ticker);
+                      return (
+                        <span className={pnl >= 0 ? "positive" : "negative"}>
+                          {pnl >= 0 ? "+" : ""}{fmt}
+                        </span>
+                      );
+                    })() : "-"}
                   </td>
                   <td style={{ textAlign: "center" }}>
                     {t.side === "buy" && (

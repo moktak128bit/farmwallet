@@ -77,8 +77,8 @@ export const DividendsView: React.FC<Props> = ({ accounts, ledger, trades, price
 
   // 보유 종목 정보 계산 (주식 탭과 동일: adjustedPrices 사용)
   const positions = useMemo(() => {
-    return computePositions(trades, adjustedPrices, accounts);
-  }, [trades, adjustedPrices, accounts]);
+    return computePositions(trades, adjustedPrices, accounts, { fxRate: fxRate ?? undefined });
+  }, [trades, adjustedPrices, accounts, fxRate]);
 
   // 티커 자동완성 옵션 (보유 종목만) + "티커 없음" 옵션
   const tickerOptions = useMemo(() => {

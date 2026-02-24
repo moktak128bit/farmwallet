@@ -10,11 +10,16 @@ import type { LedgerKind, CategoryPresets, LedgerEntry, Account } from "../types
 
 export type CategoryType = "income" | "transfer" | "savings" | "fixed" | "variable";
 
+/** 재테크/저축 탭에서 보여줄 대분류 (항상 포함해 이전 저장 데이터와 호환) */
+const SAVINGS_CATEGORIES_FALLBACK = ["재테크", "저축성지출"] as const;
+
 /**
- * 저축성지출 카테고리 목록 (categoryPresets 미제공 시 기본값)
+ * 재테크·저축성지출 카테고리 목록. 저장된 설정에 "재테크"가 없어도 항상 포함.
  */
-function getSavingsCategories(categoryPresets?: CategoryPresets): string[] {
-  return categoryPresets?.categoryTypes?.savings ?? ["저축성지출"];
+export function getSavingsCategories(categoryPresets?: CategoryPresets): string[] {
+  const fromPreset = categoryPresets?.categoryTypes?.savings;
+  const base = Array.isArray(fromPreset) && fromPreset.length > 0 ? fromPreset : [...SAVINGS_CATEGORIES_FALLBACK];
+  return [...new Set([...base, ...SAVINGS_CATEGORIES_FALLBACK])];
 }
 
 /**

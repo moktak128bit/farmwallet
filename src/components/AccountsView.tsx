@@ -58,6 +58,8 @@ export const AccountsView: React.FC<Props> = ({
   const [editKrwBalance, setEditKrwBalance] = useState("");
   const [selectedAccount, setSelectedAccount] = useState<Account | null>(null);
   const [fxRate, setFxRate] = useState<number | null>(null);
+  /** 초기잔액 역산: 계좌별로 입력한 "현재 잔액 (실제)" */
+  const [actualCurrentInput, setActualCurrentInput] = useState<Record<string, string>>({});
 
   // 환율 가져오기
   useEffect(() => {
@@ -306,6 +308,34 @@ export const AccountsView: React.FC<Props> = ({
     });
     return map;
   }, [safePositions]);
+
+  /** 역산 초기잔액 = 입력한 현재잔액 - (계산된 현재잔액 - baseBalance) = 입력한 현재잔액 - 계산된 현재잔액 + baseBalance */
+  const reversedInitialBalance = (accountId: string): number | null => {
+    const inputStr = actualCurrentInput[accountId];
+    if (inputStr == null || inputStr.trim() === "") return null;
+    const desired = Number(String(inputStr).replace(/[^\d.-]/g, "")) || 0;
+    const row = safeBalances.find((b) => b.account.id === accountId);
+    const account = safeAccounts.find((a) => a.id === accountId);
+    if (!row || !account) return null;
+    const baseBalance =
+      account.type === "securities"
+        ? (account.initialCashBalance ?? account.initialBalance ?? 0)
+        : (account.initialBalance ?? 0);
+    const computedCurrent = row.currentBalance ?? 0;
+    return desired - computedCurrent + baseBalance;
+  };
+
+  const applyReversedInitial = () => {
+    const updates: Account[] = safeAccounts.map((acc) => {
+      const rev = reversedInitialBalance(acc.id);
+      if (rev == null || acc.type === "card") return acc;
+      if (acc.type === "securities") {
+        return { ...acc, initialCashBalance: rev, initialBalance: acc.initialBalance ?? 0 };
+      }
+      return { ...acc, initialBalance: rev };
+    });
+    onChangeAccounts(updates);
+  };
 
 
   // 카드 계좌의 부채 계산 (카드 사용 - 카드대금 결제 + 계좌의 debt 필드)
@@ -972,6 +1002,70 @@ export const AccountsView: React.FC<Props> = ({
           </div>
         );
       })}
+
+      {/* 초기잔액 역산: 현재 잔액(실제)을 입력하면 역산한 초기잔액 표시 */}
+      {safeBalances.filter((b) => b.account.type !== "card").length > 0 && (
+        <div className="card" style={{ marginTop: 24, padding: 20 }}>
+          <h3 style={{ margin: "0 0 8px", fontSize: 16 }}>초기잔액 역산</h3>
+          <p style={{ margin: "0 0 16px", fontSize: 13, color: "var(--text-muted)" }}>
+            각 계좌의 <strong>현재 잔액(실제)</strong>을 입력하면, 가계부·거래 기준으로 역산한 초기잔액을 보여줍니다.
+          </p>
+          <table className="data-table" style={{ fontSize: 13 }}>
+            <thead>
+              <tr>
+                <th style={{ textAlign: "left" }}>계좌</th>
+                <th style={{ textAlign: "right" }}>현재 잔액 (실제)</th>
+                <th style={{ textAlign: "right" }}>역산 초기잔액</th>
+              </tr>
+            </thead>
+            <tbody>
+              {safeBalances
+                .filter((b) => b.account.type !== "card")
+                .map((row) => {
+                  const rev = reversedInitialBalance(row.account.id);
+                  return (
+                    <tr key={row.account.id}>
+                      <td>
+                        {row.account.name} ({row.account.institution || "-"})
+                      </td>
+                      <td style={{ textAlign: "right" }}>
+                        <input
+                          type="text"
+                          inputMode="numeric"
+                          value={actualCurrentInput[row.account.id] ?? ""}
+                          onChange={(e) =>
+                            setActualCurrentInput((prev) => ({
+                              ...prev,
+                              [row.account.id]: e.target.value
+                            }))
+                          }
+                          placeholder="입력"
+                          style={{
+                            width: 120,
+                            padding: "6px 8px",
+                            borderRadius: 4,
+                            textAlign: "right"
+                          }}
+                        />
+                      </td>
+                      <td style={{ textAlign: "right", fontWeight: 600 }}>
+                        {rev != null ? formatKRW(Math.round(rev)) : "-"}
+                      </td>
+                    </tr>
+                  );
+                })}
+            </tbody>
+          </table>
+          <button
+            type="button"
+            className="primary"
+            onClick={applyReversedInitial}
+            style={{ marginTop: 12, padding: "8px 16px", fontSize: 13 }}
+          >
+            역산 초기잔액을 계좌에 적용
+          </button>
+        </div>
+      )}
 
       {accounts.length === 0 && (
         <EmptyState

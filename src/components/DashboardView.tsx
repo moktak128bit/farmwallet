@@ -18,10 +18,10 @@ import {
   Label
 } from "recharts";
 import type { Account, LedgerEntry, StockPrice, StockTrade, CategoryPresets, TargetPortfolio, BudgetGoal } from "../types";
-import { computeAccountBalances, computeMonthlyNetWorth, computePositions } from "../calculations";
+import { computeAccountBalances, computeMonthlyNetWorth, computePositions, computeRealizedGainInPeriod, computeRealizedPnlByTradeId } from "../calculations";
 import { formatKRW } from "../utils/format";
 import { isUSDStock, canonicalTickerForMatch, extractTickerFromText } from "../utils/tickerUtils";
-import { getCategoryType, isSavingsExpenseEntry } from "../utils/categoryUtils";
+import { getCategoryType, getSavingsCategories, isSavingsExpenseEntry } from "../utils/categoryUtils";
 import { useFxRate } from "../hooks/useFxRate";
 import { SAVINGS_RATE_GOAL, ISA_PORTFOLIO } from "../constants/config";
 import { getThisMonthKST } from "../utils/dateUtils";
@@ -180,8 +180,8 @@ export const DashboardView: React.FC<Props> = ({
     [accounts, ledger, trades]
   );
   const positions = useMemo(
-    () => computePositions(trades, adjustedPrices, accounts),
-    [trades, adjustedPrices, accounts]
+    () => computePositions(trades, adjustedPrices, accounts, { fxRate: fxRate ?? undefined }),
+    [trades, adjustedPrices, accounts, fxRate]
   );
   const monthlyNetWorth = useMemo(
     () => computeMonthlyNetWorth(accounts, ledger, trades),
@@ -216,6 +216,19 @@ export const DashboardView: React.FC<Props> = ({
 
   const totalStockPnl = useMemo(() => positions.reduce((s, p) => s + p.pnl, 0), [positions]);
   const totalStockValue = useMemo(() => positions.reduce((s, p) => s + p.marketValue, 0), [positions]);
+
+  // 누적 실현손익(KRW): 매도 건별 FIFO 실현손익 합계 (USD는 fxRate로 원화 환산)
+  const totalRealizedPnlKRW = useMemo(() => {
+    const byId = computeRealizedPnlByTradeId(trades);
+    let krw = 0;
+    trades.forEach((t) => {
+      if (t.side !== "sell") return;
+      const pnl = byId.get(t.id) ?? 0;
+      if (isUSDStock(t.ticker) && fxRate) krw += pnl * fxRate;
+      else krw += pnl;
+    });
+    return krw;
+  }, [trades, fxRate]);
 
   const currentMonth = useMemo(() => new Date().toISOString().slice(0, 7), []);
   const budgetUsage = useMemo(() => {
@@ -266,39 +279,57 @@ export const DashboardView: React.FC<Props> = ({
   );
   const latestNetWorth = netWorthSeries.at(-1)?.netWorth ?? totalNetWorth;
 
-  // 2025년 수익 (25-01-01 ~ 25-12-31, 넣은 돈 대비) — 1월 데이터 없어도 netFlow로 계산
+  // 저축·증권 계좌 ID (return2025에서 먼저 사용)
+  const savingsOrSecuritiesIdsForReturn = useMemo(
+    () => new Set(accounts.filter((a) => a.type === "savings" || a.type === "securities").map((a) => a.id)),
+    [accounts]
+  );
+
+  // 2025년 수익 (재테크만: 저축·증권 1/1~12/31, 넣은 돈 = 연초 잔액 + 당해 유입)
   const return2025 = useMemo(() => {
-    const getNetWorthAtDate = (dateStr: string): number => {
+    const getRecheckBalanceAtDate = (dateStr: string): number => {
       const filteredLedger = ledger.filter((l) => l.date && l.date <= dateStr);
       const filteredTrades = trades.filter((t) => t.date && t.date <= dateStr);
       const bal = computeAccountBalances(accounts, filteredLedger, filteredTrades);
-      const pos = computePositions(filteredTrades, adjustedPrices, accounts);
+      const pos = computePositions(filteredTrades, adjustedPrices, accounts, { fxRate: fxRate ?? undefined });
       const stockMap = new Map<string, number>();
       pos.forEach((p) => {
+        if (!savingsOrSecuritiesIdsForReturn.has(p.accountId)) return;
         stockMap.set(p.accountId, (stockMap.get(p.accountId) ?? 0) + p.marketValue);
       });
       return bal.reduce((sum, row) => {
+        if (!savingsOrSecuritiesIdsForReturn.has(row.account.id)) return sum;
         const cash = row.currentBalance;
         const stock = stockMap.get(row.account.id) ?? 0;
-        const debt = row.account.debt ?? 0;
         const usd = row.account.type === "securities" ? (row.account.usdBalance ?? 0) + (row.usdTransferNet ?? 0) : 0;
         const usdKrw = fxRate && usd ? usd * fxRate : 0;
-        return sum + cash + usdKrw + stock - debt;
+        return sum + cash + usdKrw + stock;
       }, 0);
     };
-    const startNW = getNetWorthAtDate("2025-01-01");
-    const endNW = getNetWorthAtDate("2025-12-31");
+    const toKrw = (l: LedgerEntry) => (l.currency === "USD" && fxRate ? l.amount * fxRate : l.amount);
+    const in2025 = (l: LedgerEntry) => l.date >= "2025-01-01" && l.date <= "2025-12-31";
+    // 2025년 재테크 유입: 대분류 "재테크"만 + 이체로 저축·증권 입금
+    const principal2025 =
+      ledger
+        .filter(
+          (l) =>
+            l.kind === "expense" && in2025(l) && l.category === "재테크"
+        )
+        .reduce((s, l) => s + toKrw(l), 0) +
+      ledger
+        .filter(
+          (l) =>
+            l.kind === "transfer" && in2025(l) && l.toAccountId && savingsOrSecuritiesIdsForReturn.has(l.toAccountId)
+        )
+        .reduce((s, l) => s + toKrw(l), 0);
+    const startBalance = getRecheckBalanceAtDate("2024-12-31");
+    const endBalanceDec = getRecheckBalanceAtDate("2025-12-31");
     const now = new Date();
     const currentYear = now.getFullYear();
-    const endValue = currentYear === 2025 ? totalNetWorth : endNW;
-    const netFlow2025 = ledger
-      .filter((l) => l.date >= "2025-01-01" && l.date <= "2025-12-31")
-      .reduce((sum, l) => {
-        if (l.kind === "income") return sum + l.amount;
-        if (l.kind === "expense" || isSavingsExpense(l)) return sum - l.amount;
-        return sum;
-      }, 0);
-    const invested = startNW + netFlow2025;
+    const endValue = currentYear === 2025
+      ? getRecheckBalanceAtDate(now.toISOString().slice(0, 10))
+      : endBalanceDec;
+    const invested = startBalance + principal2025;
     if (invested <= 0 && endValue <= 0) return null;
     const profit = endValue - invested;
     const pct = invested > 0 ? (profit / invested) * 100 : null;
@@ -309,7 +340,7 @@ export const DashboardView: React.FC<Props> = ({
       endValue,
       endLabel: currentYear === 2025 ? "현재" : "2025-12"
     };
-  }, [accounts, ledger, trades, adjustedPrices, fxRate, totalNetWorth]);
+  }, [accounts, ledger, trades, adjustedPrices, fxRate, categoryPresets, savingsOrSecuritiesIdsForReturn]);
 
   const thisMonth = useMemo(() => getThisMonthKST(), []);
 
@@ -319,15 +350,20 @@ export const DashboardView: React.FC<Props> = ({
     [accounts]
   );
 
-  // 기간별 저축·투자 현황: 월 / 분기 / 년
+  // 기간별 저축·투자 현황: 월 / 분기 / 년 (원금 = 저축·투자 유입, 수익 = 주식 매도 수익 + 배당 + 이자 + 평가손익)
   const [savingsFlowPeriodType, setSavingsFlowPeriodType] = useState<"month" | "quarter" | "year">("month");
   type SavingsFlowPeriodRow = {
     label: string;
     startDate: string;
     endDate: string;
-    inflows: number;
+    principal: number;
     outflows: number;
-    startBalance: number;
+    cumulativePrincipal: number;
+    realizedGain: number;
+    valuationGain: number;
+    interest: number;
+    dividend: number;
+    profit: number;
     endBalance: number;
     returnRate: number | null;
   };
@@ -336,7 +372,7 @@ export const DashboardView: React.FC<Props> = ({
       const filteredLedger = ledger.filter((l) => l.date && l.date <= dateStr);
       const filteredTrades = trades.filter((t) => t.date && t.date <= dateStr);
       const bal = computeAccountBalances(accounts, filteredLedger, filteredTrades);
-      const pos = computePositions(filteredTrades, adjustedPrices, accounts);
+      const pos = computePositions(filteredTrades, adjustedPrices, accounts, { fxRate: fxRate ?? undefined });
       const stockMapByAccount = new Map<string, number>();
       pos.forEach((p) => {
         if (!savingsOrSecuritiesIds.has(p.accountId)) return;
@@ -353,94 +389,153 @@ export const DashboardView: React.FC<Props> = ({
     },
     [accounts, ledger, trades, adjustedPrices, fxRate, savingsOrSecuritiesIds]
   );
+  /** 저축·증권 계좌만 해당 일자 기준 보유 포지션의 매입원가(비용) 합계 */
+  const getSavingsSecuritiesCostBasisAtDate = useCallback(
+    (dateStr: string): number => {
+      const filteredTrades = trades.filter((t) => t.date && t.date <= dateStr);
+      const pos = computePositions(filteredTrades, adjustedPrices, accounts, { fxRate: fxRate ?? undefined });
+      return pos
+        .filter((p) => savingsOrSecuritiesIds.has(p.accountId))
+        .reduce((sum, p) => sum + (p.totalBuyAmount ?? 0), 0);
+    },
+    [accounts, trades, adjustedPrices, fxRate, savingsOrSecuritiesIds]
+  );
   const savingsFlowByPeriod = useMemo((): SavingsFlowPeriodRow[] => {
     const now = new Date();
-    const periods: { label: string; startDate: string; endDate: string }[] = [];
-    if (savingsFlowPeriodType === "month") {
-      for (let i = 11; i >= 0; i--) {
-        const d = new Date(now.getFullYear(), now.getMonth() - i, 1);
-        const y = d.getFullYear();
-        const m = d.getMonth();
-        const startDate = `${y}-${String(m + 1).padStart(2, "0")}-01`;
-        const lastDay = new Date(y, m + 1, 0).getDate();
-        const endDate = `${y}-${String(m + 1).padStart(2, "0")}-${String(lastDay).padStart(2, "0")}`;
-        periods.push({ label: `${y}-${String(m + 1).padStart(2, "0")}`, startDate, endDate });
-      }
-    } else if (savingsFlowPeriodType === "quarter") {
-      const y = now.getFullYear();
-      const currentQ = Math.floor(now.getMonth() / 3) + 1;
-      const totalQuarters = y * 4 + currentQ;
-      for (let i = 7; i >= 0; i--) {
-        const tq = totalQuarters - i;
-        let yy = Math.floor(tq / 4);
-        let qq = tq % 4;
-        if (qq === 0) {
-          qq = 4;
-          yy -= 1;
-        }
-        const startMonth = (qq - 1) * 3 + 1;
-        const endMonth = qq * 3;
-        const startDate = `${yy}-${String(startMonth).padStart(2, "0")}-01`;
-        const endDate = `${yy}-${String(endMonth).padStart(2, "0")}-${String(new Date(yy, endMonth, 0).getDate()).padStart(2, "0")}`;
-        periods.push({ label: `${yy}-Q${qq}`, startDate, endDate });
-      }
-    } else {
-      const y = now.getFullYear();
-      for (let i = 4; i >= 0; i--) {
-        const yy = y - i;
-        periods.push({
-          label: `${yy}`,
-          startDate: `${yy}-01-01`,
-          endDate: `${yy}-12-31`
-        });
-      }
-    }
+    const savingsCategories = getSavingsCategories(categoryPresets);
+    const toKrw = (l: LedgerEntry) => (l.currency === "USD" && fxRate ? l.amount * fxRate : l.amount);
     const dayBefore = (dateStr: string) => {
       const [y, m, d] = dateStr.split("-").map(Number);
       const prev = new Date(y, m - 1, d - 1);
       return prev.toISOString().slice(0, 10);
     };
-    return periods.map(({ label, startDate, endDate }) => {
-      // 들어간 금액: 저축성 지출(지출)만 — expense이고 대분류가 저축성지출인 항목
-      const savingsCategories = categoryPresets.categoryTypes?.savings ?? ["저축성지출"];
-      const inflows = ledger
+    const ledgerDates = ledger
+      .filter(
+        (l) =>
+          (l.kind === "expense" && l.date && savingsCategories.includes(l.category!)) ||
+          (l.kind === "transfer" && l.date && (savingsOrSecuritiesIds.has(l.toAccountId!) || savingsOrSecuritiesIds.has(l.fromAccountId!)))
+      )
+      .map((l) => l.date!);
+    const tradeDates = trades.filter((t) => savingsOrSecuritiesIds.has(t.accountId)).map((t) => t.date);
+    const allDates = [...ledgerDates, ...tradeDates];
+    const earliestDate = allDates.length > 0 ? allDates.reduce((a, b) => (a < b ? a : b)) : now.toISOString().slice(0, 10);
+    const earliestMonth = earliestDate.slice(0, 7);
+
+    const fullPeriods: { label: string; startDate: string; endDate: string }[] = [];
+    if (savingsFlowPeriodType === "month") {
+      const [ey, em] = earliestMonth.split("-").map(Number);
+      const startYear = ey;
+      const startMonth = em;
+      const endYear = now.getFullYear();
+      const endMonth = now.getMonth() + 1;
+      for (let y = startYear; y <= endYear; y++) {
+        const mStart = y === startYear ? startMonth : 1;
+        const mEnd = y === endYear ? endMonth : 12;
+        for (let m = mStart; m <= mEnd; m++) {
+          const startDate = `${y}-${String(m).padStart(2, "0")}-01`;
+          const lastDay = new Date(y, m, 0).getDate();
+          const endDate = `${y}-${String(m).padStart(2, "0")}-${String(lastDay).padStart(2, "0")}`;
+          fullPeriods.push({ label: `${y}-${String(m).padStart(2, "0")}`, startDate, endDate });
+        }
+      }
+    } else if (savingsFlowPeriodType === "quarter") {
+      const [ey] = earliestMonth.split("-").map(Number);
+      const endYear = now.getFullYear();
+      const currentQ = Math.floor(now.getMonth() / 3) + 1;
+      for (let y = ey; y <= endYear; y++) {
+        const qEnd = y === endYear ? currentQ : 4;
+        for (let q = 1; q <= qEnd; q++) {
+          const startMonth = (q - 1) * 3 + 1;
+          const endMonth = q * 3;
+          const startDate = `${y}-${String(startMonth).padStart(2, "0")}-01`;
+          const endDate = `${y}-${String(endMonth).padStart(2, "0")}-${String(new Date(y, endMonth, 0).getDate()).padStart(2, "0")}`;
+          fullPeriods.push({ label: `${y}-Q${q}`, startDate, endDate });
+        }
+      }
+    } else {
+      const [ey] = earliestMonth.split("-").map(Number);
+      const endYear = now.getFullYear();
+      for (let y = ey; y <= endYear; y++) {
+        fullPeriods.push({
+          label: `${y}`,
+          startDate: `${y}-01-01`,
+          endDate: `${y}-12-31`
+        });
+      }
+    }
+
+    const rows: SavingsFlowPeriodRow[] = [];
+    let cumulativePrincipal = 0;
+    for (const { label, startDate, endDate } of fullPeriods) {
+      const inPeriod = (l: LedgerEntry) => l.date >= startDate && l.date <= endDate;
+      // 원금 = 저축성 지출(재테크+저축성지출) + 이체 입금 − 이체 출금
+      const savingsExpenseAmount = ledger
         .filter(
           (l) =>
-            l.kind === "expense" &&
-            l.date >= startDate &&
-            l.date <= endDate &&
-            savingsCategories.includes(l.category)
+            l.kind === "expense" && inPeriod(l) && savingsCategories.includes(l.category!)
         )
-        .reduce((s, l) => s + (l.currency === "USD" && fxRate ? l.amount * fxRate : l.amount), 0);
+        .reduce((s, l) => s + toKrw(l), 0);
+      const transferIn = ledger
+        .filter(
+          (l) =>
+            l.kind === "transfer" && inPeriod(l) && l.toAccountId && savingsOrSecuritiesIds.has(l.toAccountId)
+        )
+        .reduce((s, l) => s + toKrw(l), 0);
       const outflows = ledger
         .filter(
           (l) =>
-            l.kind === "transfer" &&
-            l.date >= startDate &&
-            l.date <= endDate &&
-            l.fromAccountId &&
-            savingsOrSecuritiesIds.has(l.fromAccountId)
+            l.kind === "transfer" && inPeriod(l) && l.fromAccountId && savingsOrSecuritiesIds.has(l.fromAccountId)
         )
-        .reduce((s, l) => s + (l.currency === "USD" && fxRate ? l.amount * fxRate : l.amount), 0);
+        .reduce((s, l) => s + toKrw(l), 0);
+      const principal = savingsExpenseAmount + transferIn - outflows;
+      cumulativePrincipal += principal;
       const startBalance = getSavingsSecuritiesBalanceAtDate(dayBefore(startDate));
       const endBalance = getSavingsSecuritiesBalanceAtDate(endDate);
-      const netInvested = inflows - outflows;
-      const returnRate =
-        startBalance > 0
-          ? (endBalance - startBalance - netInvested) / startBalance
-          : null;
-      return {
+      const startCostBasis = getSavingsSecuritiesCostBasisAtDate(dayBefore(startDate));
+      const endCostBasis = getSavingsSecuritiesCostBasisAtDate(endDate);
+      const realizedGain = computeRealizedGainInPeriod(trades, startDate, endDate, savingsOrSecuritiesIds, { accounts, fxRate: fxRate ?? undefined });
+      // 평가상승 = 기간 말 미실현손익 − 기간 초 미실현손익 (잔액·매입원가는 해당 시점 기준)
+      const unrealizedStart = startBalance - startCostBasis;
+      const unrealizedEnd = endBalance - endCostBasis;
+      const valuationGain = unrealizedEnd - unrealizedStart;
+      const interest = ledger
+        .filter(
+          (l) =>
+            l.kind === "income" &&
+            inPeriod(l) &&
+            (l.category?.includes("이자") || l.subCategory?.includes("이자") || l.description?.includes("이자"))
+        )
+        .reduce((s, l) => s + toKrw(l), 0);
+      const dividend = ledger
+        .filter(
+          (l) =>
+            l.kind === "income" &&
+            inPeriod(l) &&
+            (l.category?.includes("배당") || l.subCategory?.includes("배당") || l.description?.includes("배당"))
+        )
+        .reduce((s, l) => s + toKrw(l), 0);
+      const profit = realizedGain + valuationGain + interest + dividend;
+      let returnRate: number | null = principal > 0 ? profit / principal : null;
+      if (returnRate != null && (returnRate > 10 || returnRate < -1)) returnRate = null;
+      rows.push({
         label,
         startDate,
         endDate,
-        inflows,
+        principal,
         outflows,
-        startBalance,
+        cumulativePrincipal,
+        realizedGain,
+        valuationGain,
+        interest,
+        dividend,
+        profit,
         endBalance,
         returnRate
-      };
-    });
-  }, [savingsFlowPeriodType, ledger, savingsOrSecuritiesIds, getSavingsSecuritiesBalanceAtDate, categoryPresets, fxRate]);
+      });
+    }
+    const take = savingsFlowPeriodType === "month" ? 12 : savingsFlowPeriodType === "quarter" ? 8 : 5;
+    return rows.slice(-take);
+  }, [savingsFlowPeriodType, ledger, trades, savingsOrSecuritiesIds, getSavingsSecuritiesBalanceAtDate, getSavingsSecuritiesCostBasisAtDate, categoryPresets, fxRate]);
 
   // 순자산 변화 추적 (이전 월 대비)
   const netWorthChangeAnalysis = useMemo(() => {
@@ -465,7 +560,7 @@ export const DashboardView: React.FC<Props> = ({
       const prevFilteredLedger = ledger.filter(l => l.date.slice(0, 7) <= prevMonth);
       const prevFilteredTrades = trades.filter(t => t.date.slice(0, 7) <= prevMonth);
       const prevBalances = computeAccountBalances(accounts, prevFilteredLedger, prevFilteredTrades);
-      const prevPositions = computePositions(prevFilteredTrades, adjustedPrices, accounts);
+      const prevPositions = computePositions(prevFilteredTrades, adjustedPrices, accounts, { fxRate: fxRate ?? undefined });
       const prevStockMap = new Map<string, number>();
       prevPositions.forEach((p) => {
         const current = prevStockMap.get(p.accountId) ?? 0;
@@ -541,7 +636,7 @@ export const DashboardView: React.FC<Props> = ({
     const prevFilteredLedger = ledger.filter(l => l.date.slice(0, 7) <= prevMonth);
     const prevFilteredTrades = trades.filter(t => t.date.slice(0, 7) <= prevMonth);
     const prevBalances = computeAccountBalances(accounts, prevFilteredLedger, prevFilteredTrades);
-    const prevPositions = computePositions(prevFilteredTrades, adjustedPrices, accounts);
+    const prevPositions = computePositions(prevFilteredTrades, adjustedPrices, accounts, { fxRate: fxRate ?? undefined });
     
     const prevCash = prevBalances
       .filter((b) => b.account.type === "checking" || b.account.type === "securities" || b.account.type === "other")
@@ -659,7 +754,7 @@ export const DashboardView: React.FC<Props> = ({
         return false;
       })
       .reduce((s, l) => s + l.amount, 0),
-    [ledger, thisMonth, accounts]
+    [ledger, thisMonth, accounts, categoryPresets]
   );
   
   // 이전 총지출 계산 (하위 호환성)
@@ -671,7 +766,7 @@ export const DashboardView: React.FC<Props> = ({
         return false;
       })
       .reduce((s, l) => s + l.amount, 0),
-    [ledger, thisMonth, accounts]
+    [ledger, thisMonth, accounts, categoryPresets]
   );
   
   // 이번달 저축성 지출 합계
@@ -679,7 +774,7 @@ export const DashboardView: React.FC<Props> = ({
     ledger
       .filter((l) => isSavingsExpense(l) && l.date.startsWith(thisMonth))
       .reduce((s, l) => s + l.amount, 0),
-    [ledger, thisMonth, accounts]
+    [ledger, thisMonth, accounts, categoryPresets]
   );
   
   // 저축률: 저축성지출 ÷ 수입
@@ -710,7 +805,7 @@ export const DashboardView: React.FC<Props> = ({
     
     const sum = monthlyAmounts.reduce((s, v) => s + v, 0);
     return sum / 3;
-  }, [ledger, accounts]);
+  }, [ledger, accounts, categoryPresets]);
   
   // 비상금 지수: 현금성 자산 ÷ 최근 3개월 평균 순소비
   const emergencyFundIndex = useMemo(() => {
@@ -720,40 +815,26 @@ export const DashboardView: React.FC<Props> = ({
   const monthlyExpenseByCategory = useMemo(() => {
     const map = new Map<string, number>();
     ledger
-      .filter((l) => {
-        if (l.kind === "expense" && l.date.startsWith(thisMonth)) return true;
-        if (isSavingsExpense(l) && l.date.startsWith(thisMonth)) return true;
-        return false;
-      })
+      .filter((l) => l.kind === "expense" && !isSavingsExpense(l) && l.date.startsWith(thisMonth))
       .forEach((l) => {
-        // 저축성지출의 경우 카테고리를 "저축성지출"로 통일
-        const key = isSavingsExpense(l) ? "저축성지출" : (l.category || "기타");
+        const key = l.category || "기타";
         map.set(key, (map.get(key) ?? 0) + l.amount);
       });
     return Array.from(map.entries())
       .map(([name, value]) => ({ name, value }))
       .sort((a, b) => b.value - a.value)
       .slice(0, 5);
-  }, [ledger, thisMonth, accounts]);
+  }, [ledger, thisMonth, accounts, categoryPresets]);
 
-  // 월별 카테고리별 소비 데이터 (대분류 기준, 최근 12개월)
+  // 월별 카테고리별 소비 데이터 (대분류 기준, 최근 12개월) — 저축성지출 제외, 순소비만
   const monthlyExpenseByCategoryTimeSeries = useMemo(() => {
     const categoryMonthMap = new Map<string, Map<string, number>>();
     
-    // 실제 지출(expense)과 저축성지출(transfer to savings/securities) 포함
     ledger
-      .filter((l) => {
-        // expense만 포함
-        if (l.kind === "expense" && l.date) return true;
-        // 저축성지출(transfer to savings/securities)도 포함
-        if (isSavingsExpense(l) && l.date) return true;
-        return false;
-      })
+      .filter((l) => l.kind === "expense" && !isSavingsExpense(l) && l.date)
       .forEach((l) => {
         const month = l.date.slice(0, 7);
-        // 저축성지출의 경우 카테고리를 "저축성지출"로 통일, 그 외는 원래 카테고리 사용
-        const category = isSavingsExpense(l) ? "저축성지출" : (l.category || "기타");
-        
+        const category = l.category || "기타";
         if (!categoryMonthMap.has(category)) {
           categoryMonthMap.set(category, new Map());
         }
@@ -792,28 +873,19 @@ export const DashboardView: React.FC<Props> = ({
       });
       return data;
     });
-  }, [ledger, accounts]);
+  }, [ledger, accounts, categoryPresets]);
 
-  // 월별 소분류 포함 소비 데이터
+  // 월별 소분류 포함 소비 데이터 — 저축성지출 제외, 순소비만
   const monthlyExpenseByCategoryDetail = useMemo(() => {
     const detailMonthMap = new Map<string, Map<string, number>>();
     
-    // 실제 지출(expense)과 저축성지출(transfer to savings/securities) 포함
     ledger
-      .filter((l) => {
-        // expense만 포함
-        if (l.kind === "expense" && l.date) return true;
-        // 저축성지출(transfer to savings/securities)도 포함
-        if (isSavingsExpense(l) && l.date) return true;
-        return false;
-      })
+      .filter((l) => l.kind === "expense" && !isSavingsExpense(l) && l.date)
       .forEach((l) => {
         const month = l.date.slice(0, 7);
-        // 저축성지출의 경우 카테고리를 "저축성지출"로 통일, 그 외는 원래 카테고리 사용
-        const category = isSavingsExpense(l) ? "저축성지출" : (l.category || "기타");
+        const category = l.category || "기타";
         const subCategory = l.subCategory;
         const key = subCategory ? `${category} > ${subCategory}` : category;
-        
         if (!detailMonthMap.has(key)) {
           detailMonthMap.set(key, new Map());
         }
@@ -822,7 +894,7 @@ export const DashboardView: React.FC<Props> = ({
       });
 
     return detailMonthMap;
-  }, [ledger]);
+  }, [ledger, accounts, categoryPresets]);
 
   // 라인 차트용 카테고리 목록 추출
   const expenseCategories = useMemo(() => {
@@ -864,7 +936,7 @@ export const DashboardView: React.FC<Props> = ({
       weekdayAvg,
       total: weekendTotal + weekdayTotal
     };
-  }, [ledger, thisMonth, accounts]);
+  }, [ledger, thisMonth, accounts, categoryPresets]);
 
   // 1. 자산군별 비중 분석 (Doughnut Chart)
   const assetAllocation = useMemo(() => {
@@ -971,7 +1043,7 @@ export const DashboardView: React.FC<Props> = ({
     return sortedMonths.map((month) => {
       // 해당 월까지의 거래로 positions 계산
       const filteredTrades = trades.filter((t) => t.date.slice(0, 7) <= month);
-      const monthPositions = computePositions(filteredTrades, adjustedPrices, accounts);
+      const monthPositions = computePositions(filteredTrades, adjustedPrices, accounts, { fxRate: fxRate ?? undefined });
       const monthEndValue = monthPositions.reduce((sum, p) => sum + p.marketValue, 0);
       
       // 해당 월의 누적 투입 금액
@@ -989,7 +1061,7 @@ export const DashboardView: React.FC<Props> = ({
         returnRate
       };
     }).filter(item => item.investedAmount > 0 || item.marketValue > 0);
-  }, [trades, adjustedPrices, accounts]);
+  }, [trades, adjustedPrices, accounts, fxRate]);
 
   // 4. 외화 자산 비중 (Pie Chart) - 주식만
   const foreignAssetRatio = useMemo(() => {
@@ -1417,7 +1489,7 @@ export const DashboardView: React.FC<Props> = ({
         const filteredTrades = trades.filter((t) => t.date && t.date <= date);
         const filteredLedger = ledger.filter((l) => l.date && l.date <= date);
 
-        const filteredPositions = computePositions(filteredTrades, adjustedPrices, accounts);
+        const filteredPositions = computePositions(filteredTrades, adjustedPrices, accounts, { fxRate: fxRate ?? undefined });
         const filteredBalances = computeAccountBalances(accounts, filteredLedger, filteredTrades);
 
         const stockMap = new Map<string, number>();
@@ -1502,7 +1574,7 @@ export const DashboardView: React.FC<Props> = ({
       const last = lastDayOfMonth[String(m).padStart(2, "0")] ?? 31;
       const date = toDate(month, last);
       const filteredTrades = trades.filter((t) => t.date && t.date <= date);
-      const filteredPositions = computePositions(filteredTrades, adjustedPrices, accounts);
+      const filteredPositions = computePositions(filteredTrades, adjustedPrices, accounts, { fxRate: fxRate ?? undefined });
       const totalValue = filteredPositions.reduce((sum, p) => sum + (p.marketValue || 0), 0);
       const actualTotalCost = filteredTrades
         .filter((t) => t.side === "buy")
@@ -2004,7 +2076,7 @@ export const DashboardView: React.FC<Props> = ({
           <div className="card" style={{ gridColumn: "span 2" }}>
             <div className="card-title">저축·투자 기간별 현황</div>
             <div style={{ fontSize: 12, color: "var(--text-muted)", marginBottom: 10 }}>
-              들어간 금액은 저축성 지출(지출)만, 뺀 금액은 저축·증권으로 나간 이체. 기간 말 잔액·수익률 포함.
+              원금 = 기간 내 순유입(저축성 지출 + 이체 입금 − 이체 출금). 누적원금 = 데이터 최초 시점부터 해당 기간 말까지의 원금 누적. 평가상승 = 기간 말 미실현손익 − 기간 초 미실현손익. 수익 = 매도차익 + 배당 + 이자 + 평가상승. 잔액·매입원가는 해당 시점 기준(현재가 적용).
             </div>
             <div style={{ display: "flex", gap: 8, marginBottom: 12 }}>
               {(["month", "quarter", "year"] as const).map((t) => (
@@ -2020,13 +2092,17 @@ export const DashboardView: React.FC<Props> = ({
               ))}
             </div>
             <div style={{ overflowX: "auto" }}>
-              <table className="table" style={{ minWidth: 520, fontSize: 12 }}>
+              <table className="table" style={{ minWidth: 680, fontSize: 12 }}>
                 <thead>
                   <tr>
                     <th style={{ textAlign: "left" }}>기간</th>
-                    <th style={{ textAlign: "right" }}>들어간 금액</th>
-                    <th style={{ textAlign: "right" }}>뺀 금액</th>
-                    <th style={{ textAlign: "right" }}>기간 말 잔액</th>
+                    <th style={{ textAlign: "right" }}>원금</th>
+                    <th style={{ textAlign: "right" }}>누적원금</th>
+                    <th style={{ textAlign: "right" }}>매도차익</th>
+                    <th style={{ textAlign: "right" }}>평가상승</th>
+                    <th style={{ textAlign: "right" }}>이자</th>
+                    <th style={{ textAlign: "right" }}>배당</th>
+                    <th style={{ textAlign: "right" }}>수익</th>
                     <th style={{ textAlign: "right" }}>수익률</th>
                   </tr>
                 </thead>
@@ -2034,17 +2110,29 @@ export const DashboardView: React.FC<Props> = ({
                   {savingsFlowByPeriod.map((row) => (
                     <tr key={row.label}>
                       <td style={{ fontWeight: 500 }}>{row.label}</td>
+                      <td className="number" style={{ textAlign: "right" }}>
+                        {Math.round(row.principal).toLocaleString()}
+                      </td>
+                      <td className="number" style={{ textAlign: "right" }}>
+                        {Math.round(row.cumulativePrincipal).toLocaleString()}
+                      </td>
+                      <td className="number" style={{ textAlign: "right", color: row.realizedGain >= 0 ? "var(--color-positive)" : "var(--color-negative)" }}>
+                        {row.realizedGain >= 0 ? "+" : ""}{Math.round(row.realizedGain).toLocaleString()}
+                      </td>
+                      <td className="number" style={{ textAlign: "right", color: row.valuationGain >= 0 ? "var(--color-positive)" : "var(--color-negative)" }}>
+                        {row.valuationGain >= 0 ? "+" : ""}{Math.round(row.valuationGain).toLocaleString()}
+                      </td>
                       <td className="number" style={{ textAlign: "right", color: "var(--color-positive)" }}>
-                        +{Math.round(row.inflows).toLocaleString()}
+                        +{Math.round(row.interest).toLocaleString()}
                       </td>
-                      <td className="number" style={{ textAlign: "right", color: "var(--color-negative)" }}>
-                        -{Math.round(row.outflows).toLocaleString()}
+                      <td className="number" style={{ textAlign: "right", color: "var(--color-positive)" }}>
+                        +{Math.round(row.dividend).toLocaleString()}
+                      </td>
+                      <td className="number" style={{ textAlign: "right", fontWeight: 600, color: row.profit >= 0 ? "var(--color-positive)" : "var(--color-negative)" }}>
+                        {row.profit >= 0 ? "+" : ""}{Math.round(row.profit).toLocaleString()}
                       </td>
                       <td className="number" style={{ textAlign: "right" }}>
-                        {Math.round(row.endBalance).toLocaleString()}
-                      </td>
-                      <td className="number" style={{ textAlign: "right" }}>
-                        {row.returnRate != null ? `${(row.returnRate * 100).toFixed(1)}%` : "-"}
+                        {row.returnRate != null ? `${(row.returnRate * 100).toFixed(1)}%` : "—"}
                       </td>
                     </tr>
                   ))}
@@ -2095,6 +2183,40 @@ export const DashboardView: React.FC<Props> = ({
                     </div>
                   ))}
                 </div>
+              )}
+            </div>
+          </div>
+        </div>
+      )}
+
+      {visibleWidgets.has("stocks") && (
+        <div className="cards-row" style={{ order: widgetOrder.indexOf("stocks") }}>
+          <div className="card">
+            <div className="card-title">주식 성과</div>
+            <div style={{ padding: "12px 0" }}>
+              {totalStockValue === 0 && totalRealizedPnlKRW === 0 ? (
+                <p className="hint">주식 거래/매도 내역이 없습니다.</p>
+              ) : (
+                <>
+                  <div style={{ marginBottom: 12 }}>
+                    <div style={{ fontSize: 11, color: "var(--text-muted)", marginBottom: 4 }}>현재 보유 종목 평가손익</div>
+                    <div style={{ fontSize: 20, fontWeight: 600, color: totalStockPnl >= 0 ? "var(--success)" : "var(--danger)" }}>
+                      {totalStockPnl >= 0 ? "+" : ""}{Math.round(totalStockPnl).toLocaleString()}원
+                    </div>
+                  </div>
+                  <div style={{ marginBottom: 12 }}>
+                    <div style={{ fontSize: 11, color: "var(--text-muted)", marginBottom: 4 }}>매도 확정 손익 (FIFO)</div>
+                    <div style={{ fontSize: 20, fontWeight: 600, color: totalRealizedPnlKRW >= 0 ? "var(--success)" : "var(--danger)" }}>
+                      {totalRealizedPnlKRW >= 0 ? "+" : ""}{Math.round(totalRealizedPnlKRW).toLocaleString()}원
+                    </div>
+                  </div>
+                  <div style={{ paddingTop: 8, borderTop: "1px solid var(--border)" }}>
+                    <div style={{ fontSize: 11, color: "var(--text-muted)", marginBottom: 4 }}>총 손익 (평가 + 실현)</div>
+                    <div style={{ fontSize: 18, fontWeight: 600, color: (totalStockPnl + totalRealizedPnlKRW) >= 0 ? "var(--success)" : "var(--danger)" }}>
+                      {(totalStockPnl + totalRealizedPnlKRW) >= 0 ? "+" : ""}{Math.round(totalStockPnl + totalRealizedPnlKRW).toLocaleString()}원
+                    </div>
+                  </div>
+                </>
               )}
             </div>
           </div>
@@ -2682,18 +2804,25 @@ export const DashboardView: React.FC<Props> = ({
           </div>
 
           {/* 주식 수익률 */}
-          {totalStockValue > 0 && (
+          {(totalStockValue > 0 || totalRealizedPnlKRW !== 0) && (
             <div className="card">
               <div className="card-title">주식 총 수익률</div>
               <div style={{ padding: "16px 0" }}>
-                <div style={{ fontSize: 24, fontWeight: "bold", marginBottom: 8, color: totalStockPnl >= 0 ? "var(--success)" : "var(--danger)" }}>
-                  {totalStockPnl >= 0 ? "+" : ""}{((totalStockPnl / (totalStockValue - totalStockPnl)) * 100).toFixed(2)}%
-                </div>
-                <div style={{ fontSize: 12, color: "var(--text-secondary)" }}>
-                  {totalStockPnl >= 0 ? "📈 수익" : "📉 손실"}: {Math.round(Math.abs(totalStockPnl)).toLocaleString()}원
-                </div>
-                <div style={{ fontSize: 11, color: "var(--text-muted)", marginTop: 8 }}>
-                  평가액: {Math.round(totalStockValue).toLocaleString()}원
+                {totalStockValue > 0 && (
+                  <>
+                    <div style={{ fontSize: 24, fontWeight: "bold", marginBottom: 8, color: totalStockPnl >= 0 ? "var(--success)" : "var(--danger)" }}>
+                      {totalStockPnl >= 0 ? "+" : ""}{((totalStockPnl / (totalStockValue - totalStockPnl)) * 100).toFixed(2)}%
+                    </div>
+                    <div style={{ fontSize: 12, color: "var(--text-secondary)" }}>
+                      평가손익: {totalStockPnl >= 0 ? "+" : ""}{Math.round(totalStockPnl).toLocaleString()}원
+                    </div>
+                    <div style={{ fontSize: 11, color: "var(--text-muted)", marginTop: 8 }}>
+                      평가액: {Math.round(totalStockValue).toLocaleString()}원
+                    </div>
+                  </>
+                )}
+                <div style={{ fontSize: 12, color: "var(--text-secondary)", marginTop: totalStockValue > 0 ? 8 : 0 }}>
+                  실현손익(매도 확정): <span style={{ color: totalRealizedPnlKRW >= 0 ? "var(--success)" : "var(--danger)", fontWeight: 600 }}>{totalRealizedPnlKRW >= 0 ? "+" : ""}{Math.round(totalRealizedPnlKRW).toLocaleString()}원</span>
                 </div>
               </div>
             </div>

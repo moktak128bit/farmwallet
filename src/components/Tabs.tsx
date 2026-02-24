@@ -9,7 +9,8 @@ import {
   Tags,
   Settings,
   CreditCard,
-  FileText
+  FileText,
+  Dumbbell
 } from "lucide-react";
 
 export type TabId =
@@ -22,7 +23,8 @@ export type TabId =
   | "budget"
   | "categories"
   | "settings"
-  | "reports";
+  | "reports"
+  | "workout";
 
 interface TabItem {
   id: TabId;
@@ -38,6 +40,7 @@ const TABS: TabItem[] = [
   { id: "dividends", label: "배당/이자", icon: <CircleDollarSign size={18} /> },
   { id: "debt", label: "부채", icon: <CreditCard size={18} /> },
   { id: "budget", label: "예산/반복", icon: <PiggyBank size={18} /> },
+  { id: "workout", label: "운동", icon: <Dumbbell size={18} /> },
   { id: "categories", label: "카테고리", icon: <Tags size={18} /> },
   { id: "reports", label: "리포트", icon: <FileText size={18} /> },
   { id: "settings", label: "백업/설정", icon: <Settings size={18} /> }
@@ -54,6 +57,7 @@ const TAB_GROUPS: TabId[][] = [
   ["accounts", "ledger"],
   ["stocks", "dividends"],
   ["debt", "budget"],
+  ["workout"],
   ["categories", "reports", "settings"]
 ];
 

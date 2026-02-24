@@ -167,6 +167,35 @@ export interface Loan {
   gracePeriodYears?: number; // 거치년도 (선택)
 }
 
+// 운동 기록 (주간: 일요일 Day1 → 월요일 휴식 → 화요일 Day2)
+export interface WorkoutSet {
+  weightKg: number;
+  reps: number;
+}
+
+export interface WorkoutExercise {
+  id: string;
+  name: string; // 벤치프레스, 스쿼트, RDL 등
+  sets: WorkoutSet[];
+  note?: string; // 상태, 실패 여부 등
+}
+
+export interface WorkoutDayEntry {
+  id: string;
+  date: string; // yyyy-mm-dd
+  type: "workout" | "rest";
+  dayLabel?: string; // "Day 1 (상체)", "Day 2 (하체)", "휴식"
+  exercises?: WorkoutExercise[];
+  cardio?: string; // "러닝 3km", "트레드밀 10분"
+  restNotes?: string; // 휴식일: 수면, 근육통, 컨디션
+}
+
+export interface WorkoutWeek {
+  id: string;
+  weekStart: string; // 해당 주 일요일 yyyy-mm-dd
+  entries: WorkoutDayEntry[];
+}
+
 export interface AppData {
   accounts: Account[];
   ledger: LedgerEntry[];
@@ -182,4 +211,5 @@ export interface AppData {
   stockPresets?: StockPreset[];
   targetPortfolios?: TargetPortfolio[];
   loans?: Loan[]; // 대출 목록
+  workoutWeeks?: WorkoutWeek[];
 }

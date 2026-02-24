@@ -15,6 +15,7 @@ const DebtView = lazy(() => import("./components/DebtView").then((m) => ({ defau
 const BudgetRecurringView = lazy(() => import("./components/BudgetRecurringView").then((m) => ({ default: m.BudgetRecurringView })));
 const ReportView = lazy(() => import("./components/ReportView").then((m) => ({ default: m.ReportView })));
 const SettingsView = lazy(() => import("./components/SettingsView").then((m) => ({ default: m.SettingsView })));
+const WorkoutView = lazy(() => import("./components/WorkoutView").then((m) => ({ default: m.WorkoutView })));
 import { useAppData } from "./hooks/useAppData";
 import { useUndoRedo } from "./hooks/useUndoRedo";
 import { useBackup } from "./hooks/useBackup";
@@ -110,8 +111,8 @@ export const App: React.FC = () => {
   }, [data.prices, fxRate]);
 
   const positions = useMemo(
-    () => computePositions(data.trades, adjustedPrices, data.accounts),
-    [data.trades, adjustedPrices, data.accounts]
+    () => computePositions(data.trades, adjustedPrices, data.accounts, { fxRate: fxRate ?? undefined }),
+    [data.trades, adjustedPrices, data.accounts, fxRate]
   );
 
   useEffect(() => {
@@ -397,6 +398,12 @@ export const App: React.FC = () => {
               ledger={data.ledger}
               trades={data.trades}
               prices={data.prices}
+            />
+          )}
+          {tab === "workout" && (
+            <WorkoutView
+              workoutWeeks={data.workoutWeeks ?? []}
+              onChangeWorkoutWeeks={(workoutWeeks) => setDataWithHistory({ ...data, workoutWeeks })}
             />
           )}
           {tab === "settings" && (

@@ -116,22 +116,8 @@ function applyKoreanStockNames(data: AppData): { data: AppData; changed: boolean
 function getDefaultCategoryPresets(): CategoryPresets {
   const expenseDetails: ExpenseDetailGroup[] = [
     {
-      main: "저축성지출",
-      subs: [
-        "예금",
-        "청년도약계좌",
-        "주택청약",
-        "투자(ISA)",
-        "연금저축",
-        "나무(CMA)",
-        "투자(IRP)",
-        "비상금",
-        "빚상환용",
-        "해외주식",
-        "토스주식",
-        "가상자산",
-        "기타저축"
-      ]
+      main: "재테크",
+      subs: ["저축", "투자"]
     },
     {
       main: "식비",
@@ -262,7 +248,7 @@ function getDefaultCategoryPresets(): CategoryPresets {
     transfer: ["저축이체", "계좌이체", "카드결제이체"],
     categoryTypes: {
       fixed: ["주거비", "통신비", "구독비"],
-      savings: ["저축성지출"],
+      savings: ["재테크", "저축성지출"],
       transfer: ["저축이체", "계좌이체", "카드결제이체"]
     }
   };
@@ -277,9 +263,6 @@ function mergeCategoryPresets(
   const income = fromStorage.income && Array.isArray(fromStorage.income) && fromStorage.income.length > 0 
     ? fromStorage.income 
     : defaults.income;
-  const expense = fromStorage.expense && Array.isArray(fromStorage.expense) && fromStorage.expense.length > 0 
-    ? fromStorage.expense 
-    : defaults.expense;
   const transfer = fromStorage.transfer && Array.isArray(fromStorage.transfer) && fromStorage.transfer.length > 0 
     ? fromStorage.transfer 
     : defaults.transfer;
@@ -291,11 +274,30 @@ function mergeCategoryPresets(
     expenseDetails = defaults.expenseDetails ?? [];
   }
 
+  // 항목 매트릭스: 저축성지출 제거, 재테크만 저축/투자로 유지
+  expenseDetails = expenseDetails.filter((g) => g.main !== "저축성지출");
+  const hasRecheck = expenseDetails.some((g) => g.main === "재테크");
+  expenseDetails = expenseDetails.map((g) =>
+    g.main === "재테크" ? { main: "재테크", subs: ["저축", "투자"] } : g
+  );
+  if (!hasRecheck) {
+    expenseDetails = [{ main: "재테크", subs: ["저축", "투자"] }, ...expenseDetails];
+  }
+  const expense = expenseDetails.map((g) => g.main);
+
   // categoryTypes 마이그레이션: 기존 데이터에 없으면 기본값 사용
-  const categoryTypes = fromStorage.categoryTypes || defaults.categoryTypes || {
+  let categoryTypes = fromStorage.categoryTypes || defaults.categoryTypes || {
     fixed: ["주거비", "통신비", "구독비"],
-    savings: ["저축성지출"],
+    savings: ["재테크", "저축성지출"],
     transfer: defaults.transfer
+  };
+  // 재테크는 항상 저축성지출(고정지출·변동지출 아님): savings에 포함, fixed에서 제외
+  const savingsList = [...new Set([...(categoryTypes.savings ?? []), "재테크"])];
+  const fixedList = (categoryTypes.fixed ?? []).filter((c) => c !== "재테크");
+  categoryTypes = {
+    ...categoryTypes,
+    savings: savingsList,
+    fixed: fixedList
   };
 
   return {
@@ -363,7 +365,8 @@ export function getEmptyData(): AppData {
     tickerDatabase: [],
     ledgerTemplates: [],
     stockPresets: [],
-    targetPortfolios: []
+    targetPortfolios: [],
+    workoutWeeks: []
   };
 }
 
@@ -399,7 +402,8 @@ export function loadData(): AppData {
       tickerDatabase: parsed.tickerDatabase ?? [],
       ledgerTemplates: parsed.ledgerTemplates ?? [],
       stockPresets: parsed.stockPresets ?? [],
-      targetPortfolios: parsed.targetPortfolios ?? []
+      targetPortfolios: parsed.targetPortfolios ?? [],
+      workoutWeeks: parsed.workoutWeeks ?? []
     };
     const { data: dataWithKrNames, changed: krNamesChanged } = applyKoreanStockNames(parsedData);
     const accounts = dataWithKrNames.accounts;

@@ -1129,7 +1129,21 @@ export const StocksView: React.FC<Props> = ({
     if (!quantityValidation.valid) {
       errors.quantity = quantityValidation.error || "";
     }
-    
+    // 매도 시: 보유 수량 초과 여부
+    if (tradeForm.side === "sell" && tradeForm.accountId && tickerClean && !errors.quantity) {
+      const q = Number(tradeForm.quantity);
+      if (!Number.isNaN(q) && q > 0) {
+        const pos = positions.find(
+          (p) => p.accountId === tradeForm.accountId && canonicalTickerForMatch(p.ticker) === tickerClean
+        );
+        if (!pos) {
+          errors.quantity = "해당 계좌에 이 종목 보유 내역이 없습니다.";
+        } else if (q > pos.quantity) {
+          errors.quantity = `보유 수량(${pos.quantity}주)을 초과할 수 없습니다.`;
+        }
+      }
+    }
+
     // 가격 검증 (소수점 허용 - USD 주식 가격 등)
     const priceValidation = validateAmount(tradeForm.price, false, 0.001, undefined, true); // 최소 0.001, 소수점 허용
     if (!priceValidation.valid) {
@@ -1146,7 +1160,7 @@ export const StocksView: React.FC<Props> = ({
     }
     
     return errors;
-  }, [tradeForm]);
+  }, [tradeForm, positions]);
   
   const isTradeFormValid = Object.keys(tradeFormValidation).length === 0;
 

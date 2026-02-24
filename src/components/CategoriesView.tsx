@@ -64,12 +64,26 @@ export const CategoriesView: React.FC<Props> = ({ presets, onChangePresets, ledg
         .map((v) => v.trim())
         .filter((v, idx, arr) => v && arr.indexOf(v) === idx);
 
-    const cleanedGroups: ExpenseDetailGroup[] = expenseGroups
+    let cleanedGroups: ExpenseDetailGroup[] = expenseGroups
       .map((g) => ({
         main: g.main.trim(),
         subs: g.subs.map((s) => s.trim()).filter((s, idx, arr) => s && arr.indexOf(s) === idx)
       }))
       .filter((g) => g.main);
+
+    // 항목 매트릭스: 저축성지출 제거, 재테크만 저축/투자로 유지
+    cleanedGroups = cleanedGroups.filter((g) => g.main !== "저축성지출");
+    const hasRecheck = cleanedGroups.some((g) => g.main === "재테크");
+    cleanedGroups = cleanedGroups.map((g) =>
+      g.main === "재테크" ? { main: "재테크", subs: ["저축", "투자"] } : g
+    );
+    if (!hasRecheck) {
+      cleanedGroups = [{ main: "재테크", subs: ["저축", "투자"] }, ...cleanedGroups];
+    }
+
+    // 재테크는 항상 저축성지출: savings에 포함, fixed에서 제외
+    const normalizedSavings = [...new Set([...categoryTypes.savings, "재테크"])];
+    const normalizedFixed = categoryTypes.fixed.filter((c) => c !== "재테크");
 
     onChangePresets({
       income: normalize(incomeRows),
@@ -77,8 +91,8 @@ export const CategoriesView: React.FC<Props> = ({ presets, onChangePresets, ledg
       expenseDetails: cleanedGroups,
       transfer: normalize(transferRows),
       categoryTypes: {
-        fixed: categoryTypes.fixed,
-        savings: categoryTypes.savings,
+        fixed: normalizedFixed,
+        savings: normalizedSavings,
         transfer: categoryTypes.transfer
       }
     });
@@ -429,42 +443,58 @@ export const CategoriesView: React.FC<Props> = ({ presets, onChangePresets, ledg
                         </button>
                       </div>
                       {g.main && (
-                        <select
-                          value={
-                            categoryTypes.savings.includes(g.main) ? "savings" :
-                            categoryTypes.fixed.includes(g.main) ? "fixed" :
-                            "variable"
-                          }
-                          onChange={(e) => {
-                            const newType = e.target.value;
-                            const newCategoryTypes = { ...categoryTypes };
-                            
-                            // 기존 타입에서 제거
-                            newCategoryTypes.savings = newCategoryTypes.savings.filter(c => c !== g.main);
-                            newCategoryTypes.fixed = newCategoryTypes.fixed.filter(c => c !== g.main);
-                            
-                            // 새 타입에 추가
-                            if (newType === "savings") {
-                              newCategoryTypes.savings.push(g.main);
-                            } else if (newType === "fixed") {
-                              newCategoryTypes.fixed.push(g.main);
+                        g.main === "재테크" ? (
+                          <span
+                            style={{
+                              fontSize: 11,
+                              padding: "2px 6px",
+                              border: "1px solid var(--border)",
+                              borderRadius: 4,
+                              backgroundColor: "var(--surface)",
+                              color: "var(--text-secondary)"
+                            }}
+                            title="재테크는 항상 저축성지출입니다."
+                          >
+                            저축성지출
+                          </span>
+                        ) : (
+                          <select
+                            value={
+                              categoryTypes.savings.includes(g.main) ? "savings" :
+                              categoryTypes.fixed.includes(g.main) ? "fixed" :
+                              "variable"
                             }
-                            
-                            setCategoryTypes(newCategoryTypes);
-                          }}
-                          style={{ 
-                            fontSize: 11, 
-                            padding: "2px 4px",
-                            border: "1px solid var(--border)",
-                            borderRadius: 4,
-                            backgroundColor: "var(--surface)"
-                          }}
-                          onClick={(e) => e.stopPropagation()}
-                        >
-                          <option value="variable">변동지출</option>
-                          <option value="fixed">고정지출</option>
-                          <option value="savings">저축성지출</option>
-                        </select>
+                            onChange={(e) => {
+                              const newType = e.target.value;
+                              const newCategoryTypes = { ...categoryTypes };
+                              
+                              // 기존 타입에서 제거
+                              newCategoryTypes.savings = newCategoryTypes.savings.filter(c => c !== g.main);
+                              newCategoryTypes.fixed = newCategoryTypes.fixed.filter(c => c !== g.main);
+                              
+                              // 새 타입에 추가
+                              if (newType === "savings") {
+                                newCategoryTypes.savings.push(g.main);
+                              } else if (newType === "fixed") {
+                                newCategoryTypes.fixed.push(g.main);
+                              }
+                              
+                              setCategoryTypes(newCategoryTypes);
+                            }}
+                            style={{ 
+                              fontSize: 11, 
+                              padding: "2px 4px",
+                              border: "1px solid var(--border)",
+                              borderRadius: 4,
+                              backgroundColor: "var(--surface)"
+                            }}
+                            onClick={(e) => e.stopPropagation()}
+                          >
+                            <option value="variable">변동지출</option>
+                            <option value="fixed">고정지출</option>
+                            <option value="savings">저축성지출</option>
+                          </select>
+                        )
                       )}
                     </div>
                   </th>

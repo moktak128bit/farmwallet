@@ -8,7 +8,9 @@ import {
   type BackupEntry
 } from "../storage";
 import { generateLedgerMarkdownReport } from "../utils/ledgerMarkdownReport";
+import { buildUnifiedCsv } from "../utils/unifiedCsvExport";
 import { DataIntegrityView } from "./DataIntegrityView";
+import { SavingsMigrationView } from "./SavingsMigrationView";
 import { ThemeCustomizer } from "./ThemeCustomizer";
 import { getKoreaTime } from "../utils/dateUtils";
 import { usePWAInstall } from "../hooks/usePWAInstall";
@@ -23,13 +25,14 @@ interface Props {
   onBackupRestored?: () => void;
 }
 
-type SettingsTab = "backup" | "integrity" | "theme" | "accessibility" | "dashboard";
+type SettingsTab = "backup" | "integrity" | "theme" | "accessibility" | "dashboard" | "savingsMigration";
 
-const DASHBOARD_WIDGET_ORDER = ["summary", "assets", "income", "budget", "stocks", "portfolio", "targetPortfolio", "458730", "isa"];
+const DASHBOARD_WIDGET_ORDER = ["summary", "assets", "income", "savingsFlow", "budget", "stocks", "portfolio", "targetPortfolio", "458730", "isa"];
 const DASHBOARD_WIDGET_NAMES: Record<string, string> = {
   summary: "요약 카드",
   assets: "자산 구성",
   income: "수입/지출",
+  savingsFlow: "저축·투자 기간별 현황",
   budget: "예산 요약",
   stocks: "주식 성과",
   portfolio: "포트폴리오",
@@ -150,6 +153,29 @@ export const SettingsView: React.FC<Props> = ({ data, onChangeData, backupVersio
       toast.error(ERROR_MESSAGES.EXPORT_MARKDOWN_FAILED);
     }
   }, [data.ledger, data.accounts]);
+
+  const handleExportUnifiedCsv = useCallback(() => {
+    try {
+      const csvContent = buildUnifiedCsv(data.ledger, data.trades, data.accounts);
+      const blob = new Blob(["\uFEFF" + csvContent], { type: "text/csv;charset=utf-8" });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url;
+      const k = getKoreaTime();
+      const y = k.getFullYear();
+      const m = String(k.getMonth() + 1).padStart(2, "0");
+      const d = String(k.getDate()).padStart(2, "0");
+      a.download = `가계부_주식_통합_${y}-${m}-${d}.csv`;
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      URL.revokeObjectURL(url);
+      toast.success("가계부·주식 통합 CSV를 다운로드했습니다.");
+    } catch (err) {
+      if (import.meta.env.DEV) console.error("통합 CSV 내보내기 실패:", err);
+      toast.error("CSV 내보내기 중 오류가 발생했습니다.");
+    }
+  }, [data.ledger, data.trades, data.accounts]);
 
   // 백업 파일에서 불러오기
   const handleUploadBackup = useCallback(() => {
@@ -340,6 +366,13 @@ export const SettingsView: React.FC<Props> = ({ data, onChangeData, backupVersio
         >
           대시보드 위젯
         </button>
+        <button
+          type="button"
+          className={activeTab === "savingsMigration" ? "primary" : ""}
+          onClick={() => setActiveTab("savingsMigration")}
+        >
+          저축성지출 수정
+        </button>
       </div>
 
       {activeTab === "backup" && (
@@ -397,6 +430,16 @@ export const SettingsView: React.FC<Props> = ({ data, onChangeData, backupVersio
           </p>
           <button type="button" className="primary" onClick={handleExportLedgerMd}>
             정리.md 내보내기
+          </button>
+        </div>
+        <div className="card">
+          <div className="card-title">가계부·주식 통합 CSV</div>
+          <p>
+            수입·지출·이체(가계부)와 주식 매수·매도 기록을 <strong>일자순으로 한 CSV 파일</strong>로 내보냅니다.
+            데이터구분(가계부/주식), 일자, 구분, 대분류·금액·계좌(가계부), 티커·수량·단가·총액(주식) 등이 포함됩니다.
+          </p>
+          <button type="button" className="primary" onClick={handleExportUnifiedCsv}>
+            통합 CSV 내보내기
           </button>
         </div>
         <div className="card">
@@ -603,6 +646,10 @@ export const SettingsView: React.FC<Props> = ({ data, onChangeData, backupVersio
             </div>
           ))}
         </div>
+      )}
+
+      {activeTab === "savingsMigration" && (
+        <SavingsMigrationView data={data} onChangeData={onChangeData} />
       )}
 
     </div>

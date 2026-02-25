@@ -419,6 +419,17 @@ export const StocksView: React.FC<Props> = ({
     [totals]
   );
 
+  const totalDividend = useMemo(() => {
+    const isDividend = (l: LedgerEntry) =>
+      l.kind === "income" &&
+      ((l.category ?? "").includes("배당") ||
+        (l.subCategory ?? "").includes("배당") ||
+        (l.description ?? "").includes("배당"));
+    const toKrw = (l: LedgerEntry) =>
+      l.currency === "USD" && fxRate ? l.amount * fxRate : l.amount;
+    return ledger.filter(isDividend).reduce((s, l) => s + toKrw(l), 0);
+  }, [ledger, fxRate]);
+
   type PositionSortKey =
     | "ticker"
     | "name"
@@ -2104,6 +2115,7 @@ export const StocksView: React.FC<Props> = ({
         totalPnl={totals.totalPnl}
         totalCost={totals.totalCost}
         totalReturnRate={totalReturnRate}
+        totalDividend={totalDividend}
       />
 
       {/* 거래/평가 섹션 */}

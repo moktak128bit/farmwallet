@@ -1193,17 +1193,22 @@ export const LedgerView: React.FC<Props> = ({
     [filteredLedger]
   );
 
-  // 필터 적용 시 지출액/수입액/전체 요약
+  // 필터 적용 시 지출액/수입액/전체 요약 (지출 = 재테크·저축성지출 제외한 expense만)
   const filteredSummary = useMemo(() => {
     const expenseAmount = filteredLedger
-      .filter((l) => l.kind === "expense" || isSavingsExpenseEntry(l, accounts, categoryPresets))
+      .filter(
+        (l) =>
+          l.kind === "expense" &&
+          l.category !== "재테크" &&
+          l.category !== "저축성지출"
+      )
       .reduce((s, l) => s + l.amount, 0);
     const incomeAmount = filteredLedger
       .filter((l) => l.kind === "income")
       .reduce((s, l) => s + l.amount, 0);
     const total = incomeAmount - expenseAmount;
     return { expenseAmount, incomeAmount, total };
-  }, [filteredLedger, accounts]);
+  }, [filteredLedger]);
 
   const filteredLedgerRef = useRef<LedgerEntry[]>([]);
   useEffect(() => {
@@ -1720,7 +1725,12 @@ export const LedgerView: React.FC<Props> = ({
         const monthSummaries = sortedMonths.map((monthKey) => {
           const entries = filteredLedger.filter((l) => l.date && l.date.startsWith(monthKey));
           const expenseAmount = entries
-            .filter((l) => l.kind === "expense" || isSavingsExpenseEntry(l, accounts, categoryPresets))
+            .filter(
+              (l) =>
+                l.kind === "expense" &&
+                l.category !== "재테크" &&
+                l.category !== "저축성지출"
+            )
             .reduce((s, l) => s + l.amount, 0);
           const incomeAmount = entries
             .filter((l) => l.kind === "income")
@@ -2419,18 +2429,19 @@ export const LedgerView: React.FC<Props> = ({
               type="button"
               className="secondary"
               onClick={() => {
-                const headers = ["날짜", "대분류", "항목", "상세내역", "출금", "입금", "금액"];
+                const headers = ["날짜", "대분류", "항목", "상세내역", "태그", "출금", "입금", "금액"];
                 const rows = filteredLedger.map((l) => [
                   l.date,
                   l.category || "",
                   l.subCategory || "",
                   l.description || "",
+                  Array.isArray(l.tags) ? l.tags.join(",") : "",
                   l.fromAccountId || "",
                   l.toAccountId || "",
                   l.amount.toString()
                 ]);
-                const csvContent = [headers, ...rows].map((row) => row.map((cell) => `"${cell}"`).join(",")).join("\n");
-                const blob = new Blob(["\uFEFF" + csvContent], { type: "text/csv;charset=utf-8;" });
+                const csvContent = [headers, ...rows].map((row) => row.map((cell) => `"${String(cell).replace(/"/g, '""')}"`).join(",")).join("\r\n");
+                const blob = new Blob(["\uFEFF" + csvContent], { type: "text/csv;charset=utf-8" });
                 const link = document.createElement("a");
                 const url = URL.createObjectURL(blob);
                 link.setAttribute("href", url);

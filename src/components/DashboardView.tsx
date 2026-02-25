@@ -18,7 +18,22 @@ import {
   Label
 } from "recharts";
 import type { Account, LedgerEntry, StockPrice, StockTrade, CategoryPresets, TargetPortfolio, BudgetGoal } from "../types";
-import { computeAccountBalances, computeMonthlyNetWorth, computePositions, computeRealizedGainInPeriod, computeRealizedPnlByTradeId } from "../calculations";
+import {
+  computeAccountBalances,
+  computeMonthlyNetWorth,
+  computePositions,
+  computeRealizedGainInPeriod,
+  computeTotalNetWorth,
+  computeTotalStockPnl,
+  computeTotalStockValue,
+  computeTotalRealizedPnlKRW,
+  computeBalanceAtDateForAccounts,
+  computeCostBasisAtDateForAccounts,
+  computeTotalCashValue,
+  computeTotalSavings,
+  computeTotalDebt,
+  computeExpenseSumForMonthAndCategory
+} from "../calculations";
 import { formatKRW } from "../utils/format";
 import { isUSDStock, canonicalTickerForMatch, extractTickerFromText } from "../utils/tickerUtils";
 import { getCategoryType, getSavingsCategories, isSavingsExpenseEntry } from "../utils/categoryUtils";
@@ -188,7 +203,7 @@ export const DashboardView: React.FC<Props> = ({
     [accounts, ledger, trades]
   );
 
-  // 계좌별 주식 평가액 맵 생성
+  // 계좌별 주식 평가액 맵 (일부 위젯에서 사용)
   const stockMap = useMemo(() => {
     const map = new Map<string, number>();
     positions.forEach((p) => {
@@ -198,44 +213,25 @@ export const DashboardView: React.FC<Props> = ({
     return map;
   }, [positions]);
 
-  // 전체 순자산 계산: 현금(KRW+USD) + 주식 + 저축 - 부채 (계좌 화면과 동일 로직)
-  const totalNetWorth = useMemo(() => {
-    return balances.reduce((sum, row) => {
-      const krwCash = row.currentBalance;
-      const stockAsset = stockMap.get(row.account.id) ?? 0;
-      const debt = row.account.debt ?? 0;
-      // 증권계좌 USD: usdBalance + usdTransferNet (계좌 화면과 동일)
-      const usdCash = row.account.type === "securities"
-        ? (row.account.usdBalance ?? 0) + (row.usdTransferNet ?? 0)
-        : 0;
-      const usdToKrw = fxRate && usdCash !== 0 ? usdCash * fxRate : 0;
-      // currentBalance에 이미 account.savings 포함됨 → 별도 추가 시 이중 합산
-      return sum + krwCash + usdToKrw + stockAsset - debt;
-    }, 0);
-  }, [balances, stockMap, fxRate]);
-
-  const totalStockPnl = useMemo(() => positions.reduce((s, p) => s + p.pnl, 0), [positions]);
-  const totalStockValue = useMemo(() => positions.reduce((s, p) => s + p.marketValue, 0), [positions]);
-
-  // 누적 실현손익(KRW): 매도 건별 FIFO 실현손익 합계 (USD는 fxRate로 원화 환산)
-  const totalRealizedPnlKRW = useMemo(() => {
-    const byId = computeRealizedPnlByTradeId(trades);
-    let krw = 0;
-    trades.forEach((t) => {
-      if (t.side !== "sell") return;
-      const pnl = byId.get(t.id) ?? 0;
-      if (isUSDStock(t.ticker) && fxRate) krw += pnl * fxRate;
-      else krw += pnl;
-    });
-    return krw;
-  }, [trades, fxRate]);
+  const totalNetWorth = useMemo(
+    () => computeTotalNetWorth(balances, positions, fxRate),
+    [balances, positions, fxRate]
+  );
+  const totalStockPnl = useMemo(() => computeTotalStockPnl(positions), [positions]);
+  const totalStockValue = useMemo(() => computeTotalStockValue(positions), [positions]);
+  const totalRealizedPnlKRW = useMemo(
+    () => computeTotalRealizedPnlKRW(trades, accounts, fxRate),
+    [trades, accounts, fxRate]
+  );
 
   const currentMonth = useMemo(() => new Date().toISOString().slice(0, 7), []);
   const budgetUsage = useMemo(() => {
     return budgets.map((b) => {
-      const spent = ledger
-        .filter((l) => l.kind === "expense" && l.category === b.category && l.date.startsWith(currentMonth))
-        .reduce((s, l) => s + l.amount, 0);
+      const spent = computeExpenseSumForMonthAndCategory(
+        ledger,
+        currentMonth,
+        b.category || undefined
+      );
       const limit = b.monthlyLimit || 0;
       const pct = limit > 0 ? Math.min(100, (spent / limit) * 100) : 0;
       const isOver = spent > limit && limit > 0;
@@ -243,30 +239,16 @@ export const DashboardView: React.FC<Props> = ({
     });
   }, [budgets, ledger, currentMonth]);
   const budgetOverCount = useMemo(() => budgetUsage.filter((b) => b.isOver).length, [budgetUsage]);
-  
-  // 현금 잔액: 입출금/증권/기타 계좌 (증권 USD 포함, 계좌 화면과 동일)
-  const totalCashValue = useMemo(() => {
-    return balances
-      .filter((b) => b.account.type === "checking" || b.account.type === "securities" || b.account.type === "other")
-      .reduce((s, b) => {
-        const krw = b.currentBalance;
-        const usd = b.account.type === "securities"
-          ? (b.account.usdBalance ?? 0) + (b.usdTransferNet ?? 0)
-          : 0;
-        return s + krw + (fxRate && usd ? usd * fxRate : 0);
-      }, 0);
-  }, [balances, fxRate]);
-  
-  // 저축: 저축(savings) 타입 계좌의 currentBalance + accounts의 savings 필드
-  const totalSavings = useMemo(() => {
-    const savingsAccountsBalance = balances
-      .filter((b) => b.account.type === "savings")
-      .reduce((s, b) => s + b.currentBalance, 0);
-    const savingsField = accounts.reduce((s, a) => s + (a.savings ?? 0), 0);
-    return savingsAccountsBalance + savingsField;
-  }, [balances, accounts]);
-  
-  const totalDebt = useMemo(() => accounts.reduce((s, a) => s + (a.debt ?? 0), 0), [accounts]);
+
+  const totalCashValue = useMemo(
+    () => computeTotalCashValue(balances, fxRate),
+    [balances, fxRate]
+  );
+  const totalSavings = useMemo(
+    () => computeTotalSavings(balances, accounts),
+    [balances, accounts]
+  );
+  const totalDebt = useMemo(() => computeTotalDebt(accounts), [accounts]);
 
   // 월별 순자산 시리즈를 맵으로 변환
   const netWorthSeries = useMemo(
@@ -368,37 +350,29 @@ export const DashboardView: React.FC<Props> = ({
     returnRate: number | null;
   };
   const getSavingsSecuritiesBalanceAtDate = useCallback(
-    (dateStr: string): number => {
-      const filteredLedger = ledger.filter((l) => l.date && l.date <= dateStr);
-      const filteredTrades = trades.filter((t) => t.date && t.date <= dateStr);
-      const bal = computeAccountBalances(accounts, filteredLedger, filteredTrades);
-      const pos = computePositions(filteredTrades, adjustedPrices, accounts, { fxRate: fxRate ?? undefined });
-      const stockMapByAccount = new Map<string, number>();
-      pos.forEach((p) => {
-        if (!savingsOrSecuritiesIds.has(p.accountId)) return;
-        stockMapByAccount.set(p.accountId, (stockMapByAccount.get(p.accountId) ?? 0) + p.marketValue);
-      });
-      return bal.reduce((sum, row) => {
-        if (!savingsOrSecuritiesIds.has(row.account.id)) return sum;
-        const cash = row.currentBalance;
-        const stock = stockMapByAccount.get(row.account.id) ?? 0;
-        const usd = row.account.type === "securities" ? (row.account.usdBalance ?? 0) + (row.usdTransferNet ?? 0) : 0;
-        const usdKrw = fxRate && usd ? usd * fxRate : 0;
-        return sum + cash + usdKrw + stock;
-      }, 0);
-    },
-    [accounts, ledger, trades, adjustedPrices, fxRate, savingsOrSecuritiesIds]
+    (dateStr: string): number =>
+      computeBalanceAtDateForAccounts(
+        accounts,
+        ledger,
+        trades,
+        dateStr,
+        savingsOrSecuritiesIds,
+        adjustedPrices,
+        { fxRate: fxRate ?? undefined }
+      ),
+    [accounts, ledger, trades, savingsOrSecuritiesIds, adjustedPrices, fxRate]
   );
-  /** 저축·증권 계좌만 해당 일자 기준 보유 포지션의 매입원가(비용) 합계 */
   const getSavingsSecuritiesCostBasisAtDate = useCallback(
-    (dateStr: string): number => {
-      const filteredTrades = trades.filter((t) => t.date && t.date <= dateStr);
-      const pos = computePositions(filteredTrades, adjustedPrices, accounts, { fxRate: fxRate ?? undefined });
-      return pos
-        .filter((p) => savingsOrSecuritiesIds.has(p.accountId))
-        .reduce((sum, p) => sum + (p.totalBuyAmount ?? 0), 0);
-    },
-    [accounts, trades, adjustedPrices, fxRate, savingsOrSecuritiesIds]
+    (dateStr: string): number =>
+      computeCostBasisAtDateForAccounts(
+        trades,
+        dateStr,
+        savingsOrSecuritiesIds,
+        adjustedPrices,
+        accounts,
+        { fxRate: fxRate ?? undefined }
+      ),
+    [trades, savingsOrSecuritiesIds, adjustedPrices, accounts, fxRate]
   );
   const savingsFlowByPeriod = useMemo((): SavingsFlowPeriodRow[] => {
     const now = new Date();

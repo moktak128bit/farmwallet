@@ -22,13 +22,11 @@ import {
   computeAccountBalances,
   computeMonthlyNetWorth,
   computePositions,
-  computeRealizedGainInPeriod,
   computeTotalNetWorth,
   computeTotalStockPnl,
   computeTotalStockValue,
   computeTotalRealizedPnlKRW,
-  computeBalanceAtDateForAccounts,
-  computeCostBasisAtDateForAccounts,
+  computeMonthlyFixedVariableExpense,
   computeTotalCashValue,
   computeTotalSavings,
   computeTotalDebt,
@@ -36,7 +34,7 @@ import {
 } from "../calculations";
 import { formatKRW } from "../utils/formatter";
 import { isUSDStock, canonicalTickerForMatch, extractTickerFromText } from "../utils/finance";
-import { getCategoryType, getSavingsCategories, isSavingsExpenseEntry } from "../utils/category";
+import { getCategoryType, isSavingsExpenseEntry } from "../utils/category";
 import { useFxRate } from "../hooks/useFxRate";
 import { SAVINGS_RATE_GOAL, ISA_PORTFOLIO } from "../constants/config";
 import { getThisMonthKST } from "../utils/date";
@@ -64,11 +62,13 @@ const LAST_CURVE_DATE = "2025-12-15";
 /** 이 날짜부터 순자산은 실제 계산값 사용 (목표 곡선 미사용) */
 const CALC_START_DATE = "2026-01-01";
 
-const DEFAULT_WIDGET_ORDER = ["summary", "assets", "income", "savingsFlow", "budget", "stocks", "portfolio", "targetPortfolio", WIDGET_ID_DIVIDEND_TRACKING, "isa"];
+const DEFAULT_WIDGET_ORDER = ["summary", "assets", "income", "monthlyWealth", "budget", "stocks", "portfolio", "targetPortfolio", WIDGET_ID_DIVIDEND_TRACKING, "isa"];
 
 /** 기존 "458730" 위젯 ID를 "dividendTracking"으로 마이그레이션 */
 function migrateWidgetId(id: string): string {
-  return id === "458730" ? WIDGET_ID_DIVIDEND_TRACKING : id;
+  if (id === "458730") return WIDGET_ID_DIVIDEND_TRACKING;
+  if (id === "savingsFlow") return "monthlyWealth";
+  return id;
 }
 
 function getWidgetNames(dividendTicker?: string): Record<string, string> {
@@ -76,7 +76,7 @@ function getWidgetNames(dividendTicker?: string): Record<string, string> {
     summary: "요약 카드",
     assets: "자산 구성",
     income: "수입/지출",
-    savingsFlow: "저축·투자 기간별 현황",
+    monthlyWealth: "월별 재산 변화",
     budget: "예산 요약",
     stocks: "주식 성과",
     portfolio: "포트폴리오",
@@ -125,7 +125,7 @@ export const DashboardView: React.FC<Props> = (props) => {
         console.warn("[DashboardView] 위젯 설정 로드 실패", e);
       }
     }
-    return new Set(["summary", "assets", "income", "savingsFlow", "stocks", "portfolio", "targetPortfolio", WIDGET_ID_DIVIDEND_TRACKING, "isa"]);
+    return new Set(["summary", "assets", "income", "monthlyWealth", "stocks", "portfolio", "targetPortfolio", WIDGET_ID_DIVIDEND_TRACKING, "isa"]);
   });
 
   // 위젯 순서 (표시 순서, localStorage에 저장, 기존 "458730" → "dividendTracking" 마이그레이션)
@@ -265,8 +265,8 @@ export const DashboardView: React.FC<Props> = (props) => {
   );
   const totalDebt = useMemo(() => computeTotalDebt(accounts), [accounts]);
   const totalAssetForPie = useMemo(
-    () => totalCashValue + totalSavings + totalStockValue,
-    [totalCashValue, totalSavings, totalStockValue]
+    () => totalCashValue + totalSavings + totalStockValue - totalDebt,
+    [totalCashValue, totalSavings, totalStockValue, totalDebt]
   );
 
   // 월별 순자산 시리즈를 맵으로 변환
@@ -279,259 +279,19 @@ export const DashboardView: React.FC<Props> = (props) => {
     [netWorthSeries]
   );
   const latestNetWorth = netWorthSeries.at(-1)?.netWorth ?? totalNetWorth;
-
-  // 저축·증권 계좌 ID (return2025에서 먼저 사용)
-  const savingsOrSecuritiesIdsForReturn = useMemo(
-    () => new Set(accounts.filter((a) => a.type === "savings" || a.type === "securities").map((a) => a.id)),
-    [accounts]
-  );
-
-  // 2025년 수익 (재테크만: 저축·증권 1/1~12/31, 넣은 돈 = 연초 잔액 + 당해 유입)
-  const return2025 = useMemo(() => {
-    const getRecheckBalanceAtDate = (dateStr: string): number =>
-      computeBalanceAtDateForAccounts(
-        accounts,
-        ledger,
-        trades,
-        dateStr,
-        savingsOrSecuritiesIdsForReturn,
-        adjustedPrices,
-        { fxRate: fxRate ?? undefined }
-      );
-    const toKrw = (l: LedgerEntry) => (l.currency === "USD" && fxRate ? l.amount * fxRate : l.amount);
-    const in2025 = (l: LedgerEntry) => l.date >= "2025-01-01" && l.date <= "2025-12-31";
-    // 2025년 재테크 유입: 대분류 "재테크"만 + 이체로 저축·증권 입금
-    const principal2025 =
-      ledger
-        .filter(
-          (l) =>
-            l.kind === "expense" && in2025(l) && l.category === "재테크"
-        )
-        .reduce((s, l) => s + toKrw(l), 0) +
-      ledger
-        .filter(
-          (l) =>
-            l.kind === "transfer" && in2025(l) && l.toAccountId && savingsOrSecuritiesIdsForReturn.has(l.toAccountId)
-        )
-        .reduce((s, l) => s + toKrw(l), 0);
-    const transferOut2025 = ledger
-      .filter(
-        (l) =>
-          l.kind === "transfer" &&
-          in2025(l) &&
-          l.fromAccountId &&
-          savingsOrSecuritiesIdsForReturn.has(l.fromAccountId)
-      )
-      .reduce((s, l) => s + toKrw(l), 0);
-    const principal2025Net = principal2025 - transferOut2025;
-    const startBalance = getRecheckBalanceAtDate("2024-12-31");
-    const endBalanceDec = getRecheckBalanceAtDate("2025-12-31");
-    const now = new Date();
-    const currentYear = now.getFullYear();
-    const endValue = currentYear === 2025
-      ? getRecheckBalanceAtDate(now.toISOString().slice(0, 10))
-      : endBalanceDec;
-    const invested = startBalance + principal2025Net;
-    if (invested <= 0 && endValue <= 0) return null;
-    const profit = endValue - invested;
-    const pct = invested > 0 ? (profit / invested) * 100 : null;
-    return {
-      invested,
-      profit,
-      pct,
-      endValue,
-      endLabel: currentYear === 2025 ? "현재" : "2025-12"
-    };
-  }, [accounts, ledger, trades, adjustedPrices, fxRate, categoryPresets, savingsOrSecuritiesIdsForReturn]);
+  const monthlyWealthRows = useMemo(() => {
+    return netWorthSeries
+      .map((row, index, arr) => {
+        const prev = index > 0 ? arr[index - 1] : null;
+        const change = prev ? row.netWorth - prev.netWorth : 0;
+        const changeRate = prev && prev.netWorth !== 0 ? (change / prev.netWorth) * 100 : null;
+        return { month: row.month, netWorth: row.netWorth, change, changeRate };
+      })
+      .slice(-24);
+  }, [netWorthSeries]);
 
   const thisMonth = useMemo(() => getThisMonthKST(), []);
 
-  // 저축·증권 계좌 ID (저축성지출에 해당하는 계좌 = savings + securities)
-  const savingsOrSecuritiesIds = useMemo(
-    () => new Set(accounts.filter((a) => a.type === "savings" || a.type === "securities").map((a) => a.id)),
-    [accounts]
-  );
-
-  // 기간별 저축·투자 현황: 월 / 분기 / 년 (원금 = 저축·투자 유입, 수익 = 주식 매도 수익 + 배당 + 이자 + 평가손익)
-  const [savingsFlowPeriodType, setSavingsFlowPeriodType] = useState<"month" | "quarter" | "year">("month");
-  type SavingsFlowPeriodRow = {
-    label: string;
-    startDate: string;
-    endDate: string;
-    principal: number;
-    outflows: number;
-    cumulativePrincipal: number;
-    realizedGain: number;
-    valuationGain: number;
-    interest: number;
-    dividend: number;
-    profit: number;
-    endBalance: number;
-    returnRate: number | null;
-  };
-  const getSavingsSecuritiesBalanceAtDate = useCallback(
-    (dateStr: string): number =>
-      computeBalanceAtDateForAccounts(
-        accounts,
-        ledger,
-        trades,
-        dateStr,
-        savingsOrSecuritiesIds,
-        adjustedPrices,
-        { fxRate: fxRate ?? undefined }
-      ),
-    [accounts, ledger, trades, savingsOrSecuritiesIds, adjustedPrices, fxRate]
-  );
-  const getSavingsSecuritiesCostBasisAtDate = useCallback(
-    (dateStr: string): number =>
-      computeCostBasisAtDateForAccounts(
-        trades,
-        dateStr,
-        savingsOrSecuritiesIds,
-        adjustedPrices,
-        accounts,
-        { fxRate: fxRate ?? undefined }
-      ),
-    [trades, savingsOrSecuritiesIds, adjustedPrices, accounts, fxRate]
-  );
-  const savingsFlowByPeriod = useMemo((): SavingsFlowPeriodRow[] => {
-    const now = new Date();
-    const savingsCategories = getSavingsCategories(categoryPresets);
-    const toKrw = (l: LedgerEntry) => (l.currency === "USD" && fxRate ? l.amount * fxRate : l.amount);
-    const dayBefore = (dateStr: string) => {
-      const [y, m, d] = dateStr.split("-").map(Number);
-      const prev = new Date(y, m - 1, d - 1);
-      return prev.toISOString().slice(0, 10);
-    };
-    const ledgerDates = ledger
-      .filter(
-        (l) =>
-          (l.kind === "expense" && l.date && savingsCategories.includes(l.category!)) ||
-          (l.kind === "transfer" && l.date && (savingsOrSecuritiesIds.has(l.toAccountId!) || savingsOrSecuritiesIds.has(l.fromAccountId!)))
-      )
-      .map((l) => l.date!);
-    const tradeDates = trades.filter((t) => savingsOrSecuritiesIds.has(t.accountId)).map((t) => t.date);
-    const allDates = [...ledgerDates, ...tradeDates];
-    const earliestDate = allDates.length > 0 ? allDates.reduce((a, b) => (a < b ? a : b)) : now.toISOString().slice(0, 10);
-    const earliestMonth = earliestDate.slice(0, 7);
-
-    const fullPeriods: { label: string; startDate: string; endDate: string }[] = [];
-    if (savingsFlowPeriodType === "month") {
-      const [ey, em] = earliestMonth.split("-").map(Number);
-      const startYear = ey;
-      const startMonth = em;
-      const endYear = now.getFullYear();
-      const endMonth = now.getMonth() + 1;
-      for (let y = startYear; y <= endYear; y++) {
-        const mStart = y === startYear ? startMonth : 1;
-        const mEnd = y === endYear ? endMonth : 12;
-        for (let m = mStart; m <= mEnd; m++) {
-          const startDate = `${y}-${String(m).padStart(2, "0")}-01`;
-          const lastDay = new Date(y, m, 0).getDate();
-          const endDate = `${y}-${String(m).padStart(2, "0")}-${String(lastDay).padStart(2, "0")}`;
-          fullPeriods.push({ label: `${y}-${String(m).padStart(2, "0")}`, startDate, endDate });
-        }
-      }
-    } else if (savingsFlowPeriodType === "quarter") {
-      const [ey] = earliestMonth.split("-").map(Number);
-      const endYear = now.getFullYear();
-      const currentQ = Math.floor(now.getMonth() / 3) + 1;
-      for (let y = ey; y <= endYear; y++) {
-        const qEnd = y === endYear ? currentQ : 4;
-        for (let q = 1; q <= qEnd; q++) {
-          const startMonth = (q - 1) * 3 + 1;
-          const endMonth = q * 3;
-          const startDate = `${y}-${String(startMonth).padStart(2, "0")}-01`;
-          const endDate = `${y}-${String(endMonth).padStart(2, "0")}-${String(new Date(y, endMonth, 0).getDate()).padStart(2, "0")}`;
-          fullPeriods.push({ label: `${y}-Q${q}`, startDate, endDate });
-        }
-      }
-    } else {
-      const [ey] = earliestMonth.split("-").map(Number);
-      const endYear = now.getFullYear();
-      for (let y = ey; y <= endYear; y++) {
-        fullPeriods.push({
-          label: `${y}`,
-          startDate: `${y}-01-01`,
-          endDate: `${y}-12-31`
-        });
-      }
-    }
-
-    const rows: SavingsFlowPeriodRow[] = [];
-    let cumulativePrincipal = 0;
-    for (const { label, startDate, endDate } of fullPeriods) {
-      const inPeriod = (l: LedgerEntry) => l.date >= startDate && l.date <= endDate;
-      // 원금 = 저축성 지출(재테크+저축성지출) + 이체 입금 − 이체 출금
-      const savingsExpenseAmount = ledger
-        .filter(
-          (l) =>
-            l.kind === "expense" && inPeriod(l) && savingsCategories.includes(l.category!)
-        )
-        .reduce((s, l) => s + toKrw(l), 0);
-      const transferIn = ledger
-        .filter(
-          (l) =>
-            l.kind === "transfer" && inPeriod(l) && l.toAccountId && savingsOrSecuritiesIds.has(l.toAccountId)
-        )
-        .reduce((s, l) => s + toKrw(l), 0);
-      const outflows = ledger
-        .filter(
-          (l) =>
-            l.kind === "transfer" && inPeriod(l) && l.fromAccountId && savingsOrSecuritiesIds.has(l.fromAccountId)
-        )
-        .reduce((s, l) => s + toKrw(l), 0);
-      const principal = savingsExpenseAmount + transferIn - outflows;
-      cumulativePrincipal += principal;
-      const startBalance = getSavingsSecuritiesBalanceAtDate(dayBefore(startDate));
-      const endBalance = getSavingsSecuritiesBalanceAtDate(endDate);
-      const startCostBasis = getSavingsSecuritiesCostBasisAtDate(dayBefore(startDate));
-      const endCostBasis = getSavingsSecuritiesCostBasisAtDate(endDate);
-      const realizedGain = computeRealizedGainInPeriod(trades, startDate, endDate, savingsOrSecuritiesIds, { accounts, fxRate: fxRate ?? undefined });
-      // 평가상승 = 기간 말 미실현손익 − 기간 초 미실현손익 (잔액·매입원가는 해당 시점 기준)
-      const unrealizedStart = startBalance - startCostBasis;
-      const unrealizedEnd = endBalance - endCostBasis;
-      const valuationGain = unrealizedEnd - unrealizedStart;
-      const interest = ledger
-        .filter(
-          (l) =>
-            l.kind === "income" &&
-            inPeriod(l) &&
-            (l.category?.includes("이자") || l.subCategory?.includes("이자") || l.description?.includes("이자"))
-        )
-        .reduce((s, l) => s + toKrw(l), 0);
-      const dividend = ledger
-        .filter(
-          (l) =>
-            l.kind === "income" &&
-            inPeriod(l) &&
-            (l.category?.includes("배당") || l.subCategory?.includes("배당") || l.description?.includes("배당"))
-        )
-        .reduce((s, l) => s + toKrw(l), 0);
-      const profit = realizedGain + valuationGain + interest + dividend;
-      let returnRate: number | null = principal > 0 ? profit / principal : null;
-      if (returnRate != null && (returnRate > 10 || returnRate < -1)) returnRate = null;
-      rows.push({
-        label,
-        startDate,
-        endDate,
-        principal,
-        outflows,
-        cumulativePrincipal,
-        realizedGain,
-        valuationGain,
-        interest,
-        dividend,
-        profit,
-        endBalance,
-        returnRate
-      });
-    }
-    const take = savingsFlowPeriodType === "month" ? 12 : savingsFlowPeriodType === "quarter" ? 8 : 5;
-    return rows.slice(-take);
-  }, [savingsFlowPeriodType, ledger, trades, savingsOrSecuritiesIds, getSavingsSecuritiesBalanceAtDate, getSavingsSecuritiesCostBasisAtDate, categoryPresets, fxRate]);
-
-  // 순자산 변화 추적 (이전 월 대비)
   const netWorthChangeAnalysis = useMemo(() => {
     if (netWorthSeries.length < 2) {
       return null;
@@ -702,9 +462,10 @@ export const DashboardView: React.FC<Props> = (props) => {
     return [
       { name: "주식", value: totalStockValue },
       { name: "현금", value: totalCashValue },
-      { name: "저축", value: totalSavings }
+      { name: "저축", value: totalSavings },
+      { name: "부채", value: Math.max(0, totalDebt) }
     ].filter((i) => i.value > 0);
-  }, [totalCashValue, totalSavings, totalStockValue]);
+  }, [totalCashValue, totalSavings, totalStockValue, totalDebt]);
 
   const monthlyIncome = useMemo(() => {
     const monthEntries = index.ledgerByMonth.get(thisMonth) ?? [];
@@ -1104,48 +865,14 @@ export const DashboardView: React.FC<Props> = (props) => {
   
   // 이번달 고정비 vs 변동비 분석
   const monthlyFixedVariableExpense = useMemo(() => {
-    let fixedExpense = 0;
-    let variableExpense = 0;
-    
-    ledger
-      .filter((l) => {
-        // expense이고 저축성지출이 아닌 것만
-        if (l.kind === "expense" && !isSavingsExpense(l) && l.date.startsWith(thisMonth)) {
-          return true;
-        }
-        return false;
-      })
-      .forEach((l) => {
-        // 카테고리 타입 시스템 우선 사용, 없으면 기존 isFixedExpense 플래그 사용
-        const categoryType = getCategoryType(l.category, l.subCategory, l.kind, categoryPresets, l, accounts);
-        if (categoryType === "fixed") {
-          fixedExpense += l.amount;
-        } else if (categoryType === "variable") {
-          variableExpense += l.amount;
-        } else {
-          // categoryType이 fixed/variable이 아닌 경우 (저축성지출 등), 기존 로직 사용
-          if (l.isFixedExpense) {
-            fixedExpense += l.amount;
-          } else {
-            variableExpense += l.amount;
-          }
-        }
-      });
-    
-    return {
-      fixedExpense,
-      variableExpense,
-      total: fixedExpense + variableExpense,
-      fixedRatio: fixedExpense + variableExpense > 0 
-        ? (fixedExpense / (fixedExpense + variableExpense)) * 100 
-        : 0,
-      variableRatio: fixedExpense + variableExpense > 0 
-        ? (variableExpense / (fixedExpense + variableExpense)) * 100 
-        : 0
-    };
+    return computeMonthlyFixedVariableExpense(
+      ledger,
+      thisMonth,
+      accounts,
+      categoryPresets
+    );
   }, [ledger, thisMonth, accounts, categoryPresets]);
 
-  // 월평균 고정비 (최근 12개월) + 카테고리별 월평균 내역
   const monthlyAvgFixedExpenseData = useMemo(() => {
     const monthTotals = new Map<string, number>();
     const categoryByMonth = new Map<string, Map<string, number>>();
@@ -1754,26 +1481,6 @@ export const DashboardView: React.FC<Props> = (props) => {
             현금성자산 ÷ 평균순소비(3M)
           </div>
         </div>
-        {return2025 != null && (
-          <div className="card">
-            <div className="card-title">2025 수익 (1/1~12/31, 넣은 돈 대비)</div>
-            <div className={`card-value ${return2025.profit >= 0 ? "positive" : "negative"}`}>
-              {return2025.profit >= 0 ? "+" : ""}{Math.round(return2025.profit).toLocaleString()}원
-            </div>
-            <div style={{ fontSize: 13, marginTop: 4 }}>
-              {return2025.pct != null ? (
-                <span className={return2025.pct >= 0 ? "positive" : "negative"}>
-                  {return2025.pct >= 0 ? "+" : ""}{return2025.pct.toFixed(2)}%
-                </span>
-              ) : (
-                <span style={{ color: "var(--text-muted)" }}>수익률 -</span>
-              )}
-              <span style={{ color: "var(--text-muted)", marginLeft: 8 }}>
-                넣은 돈 {Math.round(return2025.invested).toLocaleString()}원 → {return2025.endLabel} {Math.round(return2025.endValue).toLocaleString()}원
-              </span>
-            </div>
-          </div>
-        )}
       </div>
       )}
 
@@ -2090,68 +1797,55 @@ export const DashboardView: React.FC<Props> = (props) => {
       </div>
       )}
 
-      {visibleWidgets.has("savingsFlow") && (
-        <div className="cards-row" style={{ order: widgetOrder.indexOf("savingsFlow") }}>
+      {visibleWidgets.has("monthlyWealth") && (
+        <div className="cards-row" style={{ order: widgetOrder.indexOf("monthlyWealth") }}>
           <div className="card" style={{ gridColumn: "span 2" }}>
-            <div className="card-title">저축·투자 기간별 현황</div>
-            <div style={{ fontSize: 12, color: "var(--text-muted)", marginBottom: 10 }}>
-              원금 = 기간 내 순유입(저축성 지출 + 이체 입금 − 이체 출금). 누적원금 = 데이터 최초 시점부터 해당 기간 말까지의 원금 누적. 평가상승 = 기간 말 미실현손익 − 기간 초 미실현손익. 수익 = 매도차익 + 배당 + 이자 + 평가상승. 잔액·매입원가는 해당 시점 기준(현재가 적용).
+            <div className="card-title">?? ?? ??</div>
+            <div style={{ width: "100%", height: 260, marginTop: 10, minHeight: 260, minWidth: 0, display: "block" }}>
+              {monthlyWealthRows.length > 0 ? (
+                <ResponsiveContainer width="100%" height={260} minHeight={260} minWidth={0}>
+                  <LineChart data={monthlyWealthRows} margin={{ top: 10, right: 20, left: 0, bottom: 0 }}>
+                    <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="var(--border)" />
+                    <XAxis dataKey="month" fontSize={11} tickFormatter={(v) => v.slice(2)} />
+                    <YAxis
+                      fontSize={11}
+                      tickFormatter={(v) => Math.round(Number(v) / 10000).toLocaleString() + "?"}
+                      width={64}
+                    />
+                    <Tooltip
+                      formatter={(value: any) => Math.round(Number(value || 0)).toLocaleString() + " ?"}
+                      labelFormatter={(label) => String(label)}
+                      contentStyle={{ borderRadius: "8px", border: "none", boxShadow: "0 4px 12px rgba(0,0,0,0.1)" }}
+                    />
+                    <Line type="monotone" dataKey="netWorth" name="???" stroke="#2563eb" strokeWidth={2.5} dot={{ r: 3 }} activeDot={{ r: 5 }} />
+                  </LineChart>
+                </ResponsiveContainer>
+              ) : (
+                <p className="hint">??? ??</p>
+              )}
             </div>
-            <div style={{ display: "flex", gap: 8, marginBottom: 12 }}>
-              {(["month", "quarter", "year"] as const).map((t) => (
-                <button
-                  key={t}
-                  type="button"
-                  className={savingsFlowPeriodType === t ? "primary" : "secondary"}
-                  style={{ padding: "6px 12px", fontSize: 12 }}
-                  onClick={() => setSavingsFlowPeriodType(t)}
-                >
-                  {t === "month" ? "월" : t === "quarter" ? "분기" : "년"}
-                </button>
-              ))}
-            </div>
-            <div style={{ overflowX: "auto" }}>
-              <table className="table" style={{ minWidth: 680, fontSize: 12 }}>
+            <div style={{ overflowX: "auto", marginTop: 12 }}>
+              <table className="table" style={{ minWidth: 560, fontSize: 12 }}>
                 <thead>
                   <tr>
-                    <th style={{ textAlign: "left" }}>기간</th>
-                    <th style={{ textAlign: "right" }}>원금</th>
-                    <th style={{ textAlign: "right" }}>누적원금</th>
-                    <th style={{ textAlign: "right" }}>매도차익</th>
-                    <th style={{ textAlign: "right" }}>평가상승</th>
-                    <th style={{ textAlign: "right" }}>이자</th>
-                    <th style={{ textAlign: "right" }}>배당</th>
-                    <th style={{ textAlign: "right" }}>수익</th>
-                    <th style={{ textAlign: "right" }}>수익률</th>
+                    <th style={{ textAlign: "left" }}>?</th>
+                    <th style={{ textAlign: "right" }}>???</th>
+                    <th style={{ textAlign: "right" }}>??</th>
+                    <th style={{ textAlign: "right" }}>???</th>
                   </tr>
                 </thead>
                 <tbody>
-                  {savingsFlowByPeriod.map((row) => (
-                    <tr key={row.label}>
-                      <td style={{ fontWeight: 500 }}>{row.label}</td>
+                  {monthlyWealthRows.slice(-12).map((row) => (
+                    <tr key={row.month}>
+                      <td style={{ fontWeight: 500 }}>{row.month}</td>
                       <td className="number" style={{ textAlign: "right" }}>
-                        {Math.round(row.principal).toLocaleString()}
+                        {Math.round(row.netWorth).toLocaleString()}
                       </td>
-                      <td className="number" style={{ textAlign: "right" }}>
-                        {Math.round(row.cumulativePrincipal).toLocaleString()}
+                      <td className="number" style={{ textAlign: "right", color: row.change >= 0 ? "var(--color-positive)" : "var(--color-negative)" }}>
+                        {row.change >= 0 ? "+" : ""}{Math.round(row.change).toLocaleString()}
                       </td>
-                      <td className="number" style={{ textAlign: "right", color: row.realizedGain >= 0 ? "var(--color-positive)" : "var(--color-negative)" }}>
-                        {row.realizedGain >= 0 ? "+" : ""}{Math.round(row.realizedGain).toLocaleString()}
-                      </td>
-                      <td className="number" style={{ textAlign: "right", color: row.valuationGain >= 0 ? "var(--color-positive)" : "var(--color-negative)" }}>
-                        {row.valuationGain >= 0 ? "+" : ""}{Math.round(row.valuationGain).toLocaleString()}
-                      </td>
-                      <td className="number" style={{ textAlign: "right", color: "var(--color-positive)" }}>
-                        +{Math.round(row.interest).toLocaleString()}
-                      </td>
-                      <td className="number" style={{ textAlign: "right", color: "var(--color-positive)" }}>
-                        +{Math.round(row.dividend).toLocaleString()}
-                      </td>
-                      <td className="number" style={{ textAlign: "right", fontWeight: 600, color: row.profit >= 0 ? "var(--color-positive)" : "var(--color-negative)" }}>
-                        {row.profit >= 0 ? "+" : ""}{Math.round(row.profit).toLocaleString()}
-                      </td>
-                      <td className="number" style={{ textAlign: "right" }}>
-                        {row.returnRate != null ? `${(row.returnRate * 100).toFixed(1)}%` : "—"}
+                      <td className="number" style={{ textAlign: "right", color: (row.changeRate ?? 0) >= 0 ? "var(--color-positive)" : "var(--color-negative)" }}>
+                        {row.changeRate == null ? "-" : (row.changeRate >= 0 ? "+" : "") + row.changeRate.toFixed(2) + "%"}
                       </td>
                     </tr>
                   ))}

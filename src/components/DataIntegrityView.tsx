@@ -173,12 +173,17 @@ export const DataIntegrityView: React.FC<Props> = ({ data, onChangeData }) => {
             {Array.from(issuesByType.entries()).map(([type, typeIssues]) => (
               <div key={type}>
                 <h4 style={{ fontSize: 14, fontWeight: 600, marginBottom: 8 }}>
-                  {type === "duplicate" && "중복 거래"}
-                  {type === "balance_mismatch" && "잔액 불일치"}
-                  {type === "missing_reference" && "누락된 참조"}
-                  {type === "date_order" && "날짜 순서"}
-                  {type === "amount_consistency" && "금액 일관성"}
-                  {type === "category_mismatch" && "카테고리 불일치"}
+                  {{
+                    duplicate: "중복 거래",
+                    balance_mismatch: "잔액 불일치",
+                    missing_reference: "누락된 참조",
+                    date_order: "날짜 순서",
+                    amount_consistency: "금액 일관성",
+                    category_mismatch: "카테고리 불일치",
+                    transfer_pair_mismatch: "이체 쌍 불일치",
+                    transfer_invalid_reference: "이체 참조 누락",
+                    usd_securities_mismatch: "USD 증권 잔액 불일치"
+                  }[type] ?? type}
                   ({typeIssues.length}건)
                 </h4>
                 {typeIssues.map((issue, idx) => (

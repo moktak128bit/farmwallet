@@ -378,7 +378,7 @@ export function getEmptyData(): AppData {
     targetPortfolios: [],
     workoutWeeks: [],
     targetNetWorthCurve: {},
-    dividendTrackingTicker: undefined,
+    dividendTrackingTicker: "458730",
     isaPortfolio: getDefaultIsaPortfolio()
   };
 }

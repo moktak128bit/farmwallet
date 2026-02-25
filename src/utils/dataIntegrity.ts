@@ -4,6 +4,7 @@
 
 import type { Account, LedgerEntry, StockTrade, CategoryPresets } from "../types";
 import { computeAccountBalances } from "../calculations";
+import { isUSDStock } from "./finance";
 
 export interface DuplicateTrade {
   type: "ledger" | "trade";
@@ -35,10 +36,19 @@ export interface CategoryMismatch {
 }
 
 export interface IntegrityIssue {
-  type: "duplicate" | "balance_mismatch" | "missing_reference" | "date_order" | "amount_consistency" | "category_mismatch";
+  type: "duplicate" | "balance_mismatch" | "missing_reference" | "date_order" | "amount_consistency" | "category_mismatch" | "transfer_pair_mismatch" | "transfer_invalid_reference" | "usd_securities_mismatch";
   severity: "error" | "warning" | "info";
   message: string;
   data: DuplicateTrade | BalanceMismatch | MissingReference | CategoryMismatch | any;
+}
+
+/** 이체 제외: 신용카드·카드대금 이체 (calculations.ts와 동일) */
+function isCardPaymentTransfer(l: LedgerEntry): boolean {
+  return l.category === "신용카드" && l.subCategory === "카드대금";
+}
+
+function isUsdEntry(l: LedgerEntry): boolean {
+  return l.currency === "USD";
 }
 
 /**
@@ -244,11 +254,12 @@ export function validateAmountConsistency(
 
   // 주식 거래의 totalAmount 검증
   trades.forEach((trade) => {
+    const f = trade.fee ?? 0;
     // 매수: totalAmount = quantity * price + fee (지불한 총액)
     // 매도: totalAmount = quantity * price - fee (받은 총액, 수수료 차감)
-    const expectedTotal = trade.side === "buy" 
-      ? trade.quantity * trade.price + trade.fee
-      : trade.quantity * trade.price - trade.fee;
+    const expectedTotal = trade.side === "buy"
+      ? trade.quantity * trade.price + f
+      : trade.quantity * trade.price - f;
     const actualTotal = trade.totalAmount;
     const difference = Math.abs(expectedTotal - actualTotal);
 
@@ -260,6 +271,130 @@ export function validateAmountConsistency(
         message: `주식 거래 ${trade.id}의 총액이 계산값과 다릅니다. 계산: ${expectedTotal.toLocaleString()}, 실제: ${actualTotal.toLocaleString()}`,
         data: { tradeId: trade.id, expected: expectedTotal, actual: actualTotal, difference }
       });
+    }
+  });
+
+  return issues;
+}
+
+/**
+ * 내부 이체 쌍 검증: fromAccountId·toAccountId 모두 있는 이체는 계좌 간 합계 0이어야 함
+ */
+export function validateTransferPairConsistency(
+  ledger: LedgerEntry[],
+  accounts: Account[]
+): IntegrityIssue[] {
+  const issues: IntegrityIssue[] = [];
+  const accountIds = new Set(accounts.map((a) => a.id));
+
+  const internalTransfers = ledger.filter(
+    (l) =>
+      l.kind === "transfer" &&
+      l.fromAccountId &&
+      l.toAccountId &&
+      !isCardPaymentTransfer(l)
+  );
+
+  const krwNetByAccount = new Map<string, number>();
+  const usdNetByAccount = new Map<string, number>();
+
+  internalTransfers.forEach((l) => {
+    const from = l.fromAccountId!;
+    const to = l.toAccountId!;
+    if (!accountIds.has(from) || !accountIds.has(to)) return;
+
+    if (isUsdEntry(l)) {
+      usdNetByAccount.set(from, (usdNetByAccount.get(from) ?? 0) - l.amount);
+      usdNetByAccount.set(to, (usdNetByAccount.get(to) ?? 0) + l.amount);
+    } else {
+      krwNetByAccount.set(from, (krwNetByAccount.get(from) ?? 0) - l.amount);
+      krwNetByAccount.set(to, (krwNetByAccount.get(to) ?? 0) + l.amount);
+    }
+  });
+
+  const totalKrw = Array.from(krwNetByAccount.values()).reduce((s, v) => s + v, 0);
+  const totalUsd = Array.from(usdNetByAccount.values()).reduce((s, v) => s + v, 0);
+
+  if (internalTransfers.length > 0 && Math.abs(totalKrw) >= 1) {
+    issues.push({
+      type: "transfer_pair_mismatch",
+      severity: "error",
+      message: `내부 이체(KRW)의 합계가 0이 아닙니다. 차이: ${totalKrw.toLocaleString()}원`,
+      data: { currency: "KRW", totalNet: totalKrw }
+    });
+  }
+  if (internalTransfers.length > 0 && Math.abs(totalUsd) >= 0.01) {
+    issues.push({
+      type: "transfer_pair_mismatch",
+      severity: "error",
+      message: `내부 이체(USD)의 합계가 0이 아닙니다. 차이: ${totalUsd.toLocaleString()} USD`,
+      data: { currency: "USD", totalNet: totalUsd }
+    });
+  }
+
+  return issues;
+}
+
+/**
+ * 이체 필수 필드 검증: kind=transfer인데 fromAccountId 또는 toAccountId가 없으면 경고
+ */
+export function validateTransferRequiredFields(
+  ledger: LedgerEntry[]
+): IntegrityIssue[] {
+  const issues: IntegrityIssue[] = [];
+
+  ledger.forEach((entry) => {
+    if (entry.kind !== "transfer") return;
+    const hasFrom = !!entry.fromAccountId;
+    const hasTo = !!entry.toAccountId;
+    if (!hasFrom || !hasTo) {
+      issues.push({
+        type: "transfer_invalid_reference",
+        severity: "warning",
+        message: `이체 항목 ${entry.id}: fromAccountId 또는 toAccountId가 없습니다. 내부 이체는 양쪽 모두 필요합니다.`,
+        data: { entryId: entry.id, hasFrom, hasTo }
+      });
+    }
+  });
+
+  return issues;
+}
+
+/**
+ * USD 증권 계좌 일관성 검증: USD 거래 순합계와 usdBalance+usdTransferNet 비교
+ * usdBalance는 수동 입력이므로, USD 거래가 있는데 잔액이 0이면 경고
+ */
+export function validateUsdSecuritiesConsistency(
+  accounts: Account[],
+  ledger: LedgerEntry[],
+  trades: StockTrade[]
+): IntegrityIssue[] {
+  const issues: IntegrityIssue[] = [];
+  const balances = computeAccountBalances(accounts, ledger, trades);
+
+  const securitiesAccounts = accounts.filter((a) => a.type === "securities");
+  securitiesAccounts.forEach((account) => {
+    const accountTrades = trades.filter(
+      (t) => t.accountId === account.id && isUSDStock(t.ticker)
+    );
+    const tradeUsdNet = accountTrades.reduce(
+      (sum, t) => sum + (t.side === "sell" ? t.totalAmount : -t.totalAmount),
+      0
+    );
+    const balanceRow = balances.find((b) => b.account.id === account.id);
+    const reportedUsd =
+      (account.usdBalance ?? 0) + (balanceRow?.usdTransferNet ?? 0);
+
+    if (accountTrades.length > 0 && Math.abs(tradeUsdNet) >= 0.01) {
+      const diff = Math.abs(reportedUsd - tradeUsdNet);
+      if (diff >= 1) {
+        issues.push({
+          type: "usd_securities_mismatch",
+          severity: "warning",
+          message: `증권 계좌 ${account.name}: USD 거래 순합계(${tradeUsdNet.toFixed(2)})와 usdBalance+usdTransferNet(${reportedUsd.toFixed(2)})이 다릅니다. USD 잔액을 수동 반영했는지 확인하세요.`,
+          data: { accountId: account.id, tradeUsdNet, reportedUsd }
+        });
+      }
     }
   });
 
@@ -381,16 +516,8 @@ export function runIntegrityCheck(
     });
   });
 
-  // 계좌 잔액 검증
-  const balanceMismatches = validateAccountBalances(accounts, ledger, trades);
-  balanceMismatches.forEach((mismatch) => {
-    issues.push({
-      type: "balance_mismatch",
-      severity: Math.abs(mismatch.difference) > 1000 ? "error" : "warning",
-      message: `계좌 ${mismatch.accountName}(${mismatch.accountId})의 잔액이 불일치합니다. 차이: ${mismatch.difference.toLocaleString()}원`,
-      data: mismatch
-    });
-  });
+  // 계좌 잔액 검증: 제거됨 (기존 expectedBalance 정의가 잘못되어 오탐 유발)
+  // validateAccountBalances는 초기값만 사용해 실제 잔액과 비교 불가, 증권 계좌 이중 산입 문제 있음
 
   // 누락된 참조 확인
   const missingRefs = checkMissingReferences(accounts, ledger, trades);
@@ -410,6 +537,22 @@ export function runIntegrityCheck(
   // 금액 일관성 검증
   const amountIssues = validateAmountConsistency(ledger, trades);
   issues.push(...amountIssues);
+
+  // 내부 이체 쌍 검증
+  const transferPairIssues = validateTransferPairConsistency(ledger, accounts);
+  issues.push(...transferPairIssues);
+
+  // 이체 필수 필드 검증
+  const transferRefIssues = validateTransferRequiredFields(ledger);
+  issues.push(...transferRefIssues);
+
+  // USD 증권 일관성 검증
+  const usdSecuritiesIssues = validateUsdSecuritiesConsistency(
+    accounts,
+    ledger,
+    trades
+  );
+  issues.push(...usdSecuritiesIssues);
 
   // 카테고리 일관성 검증
   if (categoryPresets) {

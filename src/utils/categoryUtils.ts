@@ -18,8 +18,11 @@ const SAVINGS_CATEGORIES_FALLBACK = ["재테크", "저축성지출"] as const;
  */
 export function getSavingsCategories(categoryPresets?: CategoryPresets): string[] {
   const fromPreset = categoryPresets?.categoryTypes?.savings;
-  const base = Array.isArray(fromPreset) && fromPreset.length > 0 ? fromPreset : [...SAVINGS_CATEGORIES_FALLBACK];
-  return [...new Set([...base, ...SAVINGS_CATEGORIES_FALLBACK])];
+  const result = new Set<string>(SAVINGS_CATEGORIES_FALLBACK);
+  if (Array.isArray(fromPreset) && fromPreset.length > 0) {
+    fromPreset.forEach((c) => result.add(c));
+  }
+  return Array.from(result);
 }
 
 /**

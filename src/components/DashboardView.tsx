@@ -1508,7 +1508,7 @@ export const DashboardView: React.FC<Props> = (props) => {
         const lastCurveVal = targetNetWorthCurve[LAST_CURVE_DATE] ?? 0;
         return { date, totalAsset: lastCurveVal };
       }
-      // 2026-01-01 이후: 전체 순자산과 동일한 실제 계산 (초기잔액·저축·부채 포함)
+      // 2026-01-01 이후: computeTotalNetWorth와 동일한 계산 (현금·USD·주식·부채 일관 적용)
       if (date >= CALC_START_DATE) {
         const filteredTrades = trades.filter((t) => t.date && t.date <= date);
         const filteredLedger = ledger.filter((l) => l.date && l.date <= date);
@@ -1516,18 +1516,11 @@ export const DashboardView: React.FC<Props> = (props) => {
         const filteredPositions = computePositions(filteredTrades, adjustedPrices, accounts, { fxRate: fxRate ?? undefined });
         const filteredBalances = computeAccountBalances(accounts, filteredLedger, filteredTrades);
 
-        const stockMap = new Map<string, number>();
-        filteredPositions.forEach((p) => {
-          const cur = stockMap.get(p.accountId) ?? 0;
-          stockMap.set(p.accountId, cur + (p.marketValue || 0));
-        });
-
-        const totalAsset = filteredBalances.reduce((sum, row) => {
-          const cashAsset = row.currentBalance;
-          const stockAsset = stockMap.get(row.account.id) ?? 0;
-          const debt = row.account.debt ?? 0;
-          return sum + cashAsset + stockAsset - debt;
-        }, 0);
+        const totalAsset = computeTotalNetWorth(
+          filteredBalances,
+          filteredPositions,
+          fxRate ?? undefined
+        );
         return { date, totalAsset };
       }
       return { date, totalAsset: 0 };

@@ -335,7 +335,8 @@ export function computeExpenseSumForMonthAndCategory(
 
 // ---------------------------------------------------------------------------
 // computeMonthlyNetWorth
-// 규칙: 월별로 ledger/trades 자르고 computeAccountBalances 잔액 합계 → netWorth (주식 미포함, 현금·저축만)
+// 규칙: 월별로 ledger/trades 자르고 computeAccountBalances 잔액 합계 → netWorth
+// 주의: 주식 미포함. 현금·저축·증권계좌 KRW 잔액만 합산 (현금성 자산만)
 // ---------------------------------------------------------------------------
 
 export function computeMonthlyNetWorth(
@@ -472,7 +473,7 @@ export function computeCostBasisAtDateForAccounts(
     .reduce((sum, p) => sum + (p.totalBuyAmount ?? 0), 0);
 }
 
-/** 현금 잔액 합계: 입출금/증권/기타 계좌, 증권 USD는 fxRate 환산 */
+/** 현금 잔액 합계: 입출금/증권/기타 계좌, 증권 USD는 fxRate 환산. currentBalance 그대로 사용 (account.savings 차감 없음) */
 export function computeTotalCashValue(
   balances: AccountBalanceRowLike[],
   fxRate?: number | null
@@ -485,8 +486,7 @@ export function computeTotalCashValue(
         b.account.type === "other"
     )
     .reduce((s, b) => {
-      const reservedSavings = b.account.type !== "savings" ? (b.account.savings ?? 0) : 0;
-      const krw = b.currentBalance - reservedSavings;
+      const krw = b.currentBalance;
       const usd =
         b.account.type === "securities"
           ? (b.account.usdBalance ?? 0) + (b.usdTransferNet ?? 0)
@@ -495,18 +495,14 @@ export function computeTotalCashValue(
     }, 0);
 }
 
-/** 저축 합계: savings 타입 계좌 잔액 + account.savings 필드 */
+/** 저축 합계: savings 타입 계좌 잔액만 (account.savings는 currentBalance에 이미 포함되어 있어 별도 합산 시 이중 집계됨) */
 export function computeTotalSavings(
   balances: AccountBalanceRowLike[],
-  accounts: Account[]
+  _accounts: Account[]
 ): number {
-  const fromBalances = balances
+  return balances
     .filter((b) => b.account.type === "savings")
     .reduce((s, b) => s + b.currentBalance, 0);
-  const fromAccounts = accounts
-    .filter((a) => a.type !== "savings")
-    .reduce((s, a) => s + (a.savings ?? 0), 0);
-  return fromBalances + fromAccounts;
 }
 
 /** 부채 합계 */

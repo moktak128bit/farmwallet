@@ -34,101 +34,108 @@ import {
   computeTotalDebt,
   computeExpenseSumForMonthAndCategory
 } from "../calculations";
-import { formatKRW } from "../utils/format";
-import { isUSDStock, canonicalTickerForMatch, extractTickerFromText } from "../utils/tickerUtils";
-import { getCategoryType, getSavingsCategories, isSavingsExpenseEntry } from "../utils/categoryUtils";
+import { formatKRW } from "../utils/formatter";
+import { isUSDStock, canonicalTickerForMatch, extractTickerFromText } from "../utils/finance";
+import { getCategoryType, getSavingsCategories, isSavingsExpenseEntry } from "../utils/category";
 import { useFxRate } from "../hooks/useFxRate";
 import { SAVINGS_RATE_GOAL, ISA_PORTFOLIO } from "../constants/config";
-import { getThisMonthKST } from "../utils/dateUtils";
+import { getThisMonthKST } from "../utils/date";
+import { useDashboardIndex } from "./dashboard/hooks/useDashboardIndex";
+import { useAppStore } from "../store/appStore";
 
 interface Props {
-  accounts: Account[];
-  ledger: LedgerEntry[];
-  trades: StockTrade[];
-  prices: StockPrice[];
-  categoryPresets: CategoryPresets;
+  accounts?: Account[];
+  ledger?: LedgerEntry[];
+  trades?: StockTrade[];
+  prices?: StockPrice[];
+  categoryPresets?: CategoryPresets;
   targetPortfolios?: TargetPortfolio[];
   budgets?: BudgetGoal[];
+  dividendTrackingTicker?: string;
+  targetNetWorthCurve?: Record<string, number>;
+  isaPortfolio?: Array<{ ticker: string; name: string; weight: number; label: string }>;
 }
 
 const COLORS = ["#0ea5e9", "#6366f1", "#f43f5e", "#10b981", "#f59e0b", "#8b5cf6"];
 
-/** 목표 자산 곡선 (참고용). 2026-01-01 이전 구간 표시용. 이후는 실제 계산값 사용 */
-const TARGET_NET_WORTH_CURVE: Record<string, number> = {
-  "2025-07-01": 3_120_000,
-  "2025-07-15": 3_940_516,
-  "2025-08-01": 5_440_516,
-  "2025-08-15": 6_220_885,
-  "2025-09-01": 7_668_405,
-  "2025-09-15": 9_039_432,
-  "2025-10-01": 14_308_249,
-  "2025-10-15": 15_044_538,
-  "2025-11-01": 17_420_644,
-  "2025-11-15": 19_026_463,
-  "2025-12-01": 19_613_151,
-  "2025-12-15": 20_333_151
-};
+const WIDGET_ID_DIVIDEND_TRACKING = "dividendTracking";
 const FIRST_CURVE_DATE = "2025-07-01";
 const LAST_CURVE_DATE = "2025-12-15";
-const LAST_CURVE_VALUE = TARGET_NET_WORTH_CURVE[LAST_CURVE_DATE] ?? 0;
 /** 이 날짜부터 순자산은 실제 계산값 사용 (목표 곡선 미사용) */
 const CALC_START_DATE = "2026-01-01";
 
-const DEFAULT_WIDGET_ORDER = ["summary", "assets", "income", "savingsFlow", "budget", "stocks", "portfolio", "targetPortfolio", "458730", "isa"];
-const WIDGET_NAMES: Record<string, string> = {
-  summary: "요약 카드",
-  assets: "자산 구성",
-  income: "수입/지출",
-  savingsFlow: "저축·투자 기간별 현황",
-  budget: "예산 요약",
-  stocks: "주식 성과",
-  portfolio: "포트폴리오",
-  targetPortfolio: "목표 포트폴리오",
-  "458730": "458730 배당율 (TIGER 미국배당다우존스)",
-  isa: "ISA 포트폴리오"
-};
+const DEFAULT_WIDGET_ORDER = ["summary", "assets", "income", "savingsFlow", "budget", "stocks", "portfolio", "targetPortfolio", WIDGET_ID_DIVIDEND_TRACKING, "isa"];
+
+/** 기존 "458730" 위젯 ID를 "dividendTracking"으로 마이그레이션 */
+function migrateWidgetId(id: string): string {
+  return id === "458730" ? WIDGET_ID_DIVIDEND_TRACKING : id;
+}
+
+function getWidgetNames(dividendTicker?: string): Record<string, string> {
+  return {
+    summary: "요약 카드",
+    assets: "자산 구성",
+    income: "수입/지출",
+    savingsFlow: "저축·투자 기간별 현황",
+    budget: "예산 요약",
+    stocks: "주식 성과",
+    portfolio: "포트폴리오",
+    targetPortfolio: "목표 포트폴리오",
+    [WIDGET_ID_DIVIDEND_TRACKING]: dividendTicker ? `배당 추적 (${dividendTicker})` : "배당 추적 (티커 선택)",
+    isa: "ISA 포트폴리오"
+  };
+}
 
 function normTicker(t: string): string {
   return canonicalTickerForMatch(t);
 }
 
-export const DashboardView: React.FC<Props> = ({
-  accounts,
-  ledger,
-  trades,
-  prices,
-  categoryPresets,
-  targetPortfolios = [],
-  budgets = []
-}) => {
+export const DashboardView: React.FC<Props> = (props) => {
+  const storeData = useAppStore((s) => s.data);
+  const accounts = props.accounts ?? storeData.accounts;
+  const ledger = props.ledger ?? storeData.ledger;
+  const trades = props.trades ?? storeData.trades;
+  const prices = props.prices ?? storeData.prices;
+  const categoryPresets = props.categoryPresets ?? storeData.categoryPresets;
+  const targetPortfolios = props.targetPortfolios ?? storeData.targetPortfolios ?? [];
+  const budgets = props.budgets ?? storeData.budgetGoals ?? [];
+  const dividendTrackingTicker = props.dividendTrackingTicker ?? storeData.dividendTrackingTicker;
+  const targetNetWorthCurve = props.targetNetWorthCurve ?? storeData.targetNetWorthCurve ?? {};
+  const isaPortfolioProp = props.isaPortfolio ?? storeData.isaPortfolio;
+  const isaPortfolio = isaPortfolioProp ?? ISA_PORTFOLIO.map((item) => ({ ticker: item.ticker, name: item.name, weight: item.weight, label: item.label }));
+  const WIDGET_NAMES = useMemo(() => getWidgetNames(dividendTrackingTicker), [dividendTrackingTicker]);
   const fxRate = useFxRate(); // useFxRate 훅 사용으로 중복 요청 제거
+  const index = useDashboardIndex(ledger, trades);
 
   const isSavingsExpense = useCallback(
     (entry: LedgerEntry) => isSavingsExpenseEntry(entry, accounts, categoryPresets),
     [accounts, categoryPresets]
   );
 
-  // 위젯 표시/숨김 설정
+  // 위젯 표시/숨김 설정 (기존 "458730" → "dividendTracking" 마이그레이션)
   const [visibleWidgets, setVisibleWidgets] = useState<Set<string>>(() => {
     if (typeof window !== "undefined") {
       try {
         const saved = localStorage.getItem("fw-dashboard-widgets");
-        if (saved) return new Set(JSON.parse(saved));
+        if (saved) {
+          const arr = JSON.parse(saved) as string[];
+          return new Set(Array.isArray(arr) ? arr.map(migrateWidgetId) : DEFAULT_WIDGET_ORDER);
+        }
       } catch (e) {
         console.warn("[DashboardView] 위젯 설정 로드 실패", e);
       }
     }
-    return new Set(["summary", "assets", "income", "savingsFlow", "stocks", "portfolio", "targetPortfolio", "458730", "isa"]);
+    return new Set(["summary", "assets", "income", "savingsFlow", "stocks", "portfolio", "targetPortfolio", WIDGET_ID_DIVIDEND_TRACKING, "isa"]);
   });
 
-  // 위젯 순서 (표시 순서, localStorage에 저장)
+  // 위젯 순서 (표시 순서, localStorage에 저장, 기존 "458730" → "dividendTracking" 마이그레이션)
   const [widgetOrder, setWidgetOrder] = useState<string[]>(() => {
     if (typeof window !== "undefined") {
       try {
         const saved = localStorage.getItem("fw-dashboard-widget-order");
         if (saved) {
           const parsed = JSON.parse(saved) as string[];
-          if (Array.isArray(parsed) && parsed.length === DEFAULT_WIDGET_ORDER.length) return parsed;
+          if (Array.isArray(parsed) && parsed.length === DEFAULT_WIDGET_ORDER.length) return parsed.map(migrateWidgetId);
         }
       } catch (e) {
         console.warn("[DashboardView] 위젯 순서 로드 실패", e);
@@ -219,6 +226,14 @@ export const DashboardView: React.FC<Props> = ({
   );
   const totalStockPnl = useMemo(() => computeTotalStockPnl(positions), [positions]);
   const totalStockValue = useMemo(() => computeTotalStockValue(positions), [positions]);
+  const totalStockCost = useMemo(
+    () => positions.reduce((sum, p) => sum + (p.totalBuyAmount ?? 0), 0),
+    [positions]
+  );
+  const totalStockReturnRate = useMemo(
+    () => (totalStockCost > 0 ? (totalStockPnl / totalStockCost) * 100 : null),
+    [totalStockPnl, totalStockCost]
+  );
   const totalRealizedPnlKRW = useMemo(
     () => computeTotalRealizedPnlKRW(trades, accounts, fxRate),
     [trades, accounts, fxRate]
@@ -249,6 +264,10 @@ export const DashboardView: React.FC<Props> = ({
     [balances, accounts]
   );
   const totalDebt = useMemo(() => computeTotalDebt(accounts), [accounts]);
+  const totalAssetForPie = useMemo(
+    () => totalCashValue + totalSavings + totalStockValue,
+    [totalCashValue, totalSavings, totalStockValue]
+  );
 
   // 월별 순자산 시리즈를 맵으로 변환
   const netWorthSeries = useMemo(
@@ -269,25 +288,16 @@ export const DashboardView: React.FC<Props> = ({
 
   // 2025년 수익 (재테크만: 저축·증권 1/1~12/31, 넣은 돈 = 연초 잔액 + 당해 유입)
   const return2025 = useMemo(() => {
-    const getRecheckBalanceAtDate = (dateStr: string): number => {
-      const filteredLedger = ledger.filter((l) => l.date && l.date <= dateStr);
-      const filteredTrades = trades.filter((t) => t.date && t.date <= dateStr);
-      const bal = computeAccountBalances(accounts, filteredLedger, filteredTrades);
-      const pos = computePositions(filteredTrades, adjustedPrices, accounts, { fxRate: fxRate ?? undefined });
-      const stockMap = new Map<string, number>();
-      pos.forEach((p) => {
-        if (!savingsOrSecuritiesIdsForReturn.has(p.accountId)) return;
-        stockMap.set(p.accountId, (stockMap.get(p.accountId) ?? 0) + p.marketValue);
-      });
-      return bal.reduce((sum, row) => {
-        if (!savingsOrSecuritiesIdsForReturn.has(row.account.id)) return sum;
-        const cash = row.currentBalance;
-        const stock = stockMap.get(row.account.id) ?? 0;
-        const usd = row.account.type === "securities" ? (row.account.usdBalance ?? 0) + (row.usdTransferNet ?? 0) : 0;
-        const usdKrw = fxRate && usd ? usd * fxRate : 0;
-        return sum + cash + usdKrw + stock;
-      }, 0);
-    };
+    const getRecheckBalanceAtDate = (dateStr: string): number =>
+      computeBalanceAtDateForAccounts(
+        accounts,
+        ledger,
+        trades,
+        dateStr,
+        savingsOrSecuritiesIdsForReturn,
+        adjustedPrices,
+        { fxRate: fxRate ?? undefined }
+      );
     const toKrw = (l: LedgerEntry) => (l.currency === "USD" && fxRate ? l.amount * fxRate : l.amount);
     const in2025 = (l: LedgerEntry) => l.date >= "2025-01-01" && l.date <= "2025-12-31";
     // 2025년 재테크 유입: 대분류 "재테크"만 + 이체로 저축·증권 입금
@@ -304,6 +314,16 @@ export const DashboardView: React.FC<Props> = ({
             l.kind === "transfer" && in2025(l) && l.toAccountId && savingsOrSecuritiesIdsForReturn.has(l.toAccountId)
         )
         .reduce((s, l) => s + toKrw(l), 0);
+    const transferOut2025 = ledger
+      .filter(
+        (l) =>
+          l.kind === "transfer" &&
+          in2025(l) &&
+          l.fromAccountId &&
+          savingsOrSecuritiesIdsForReturn.has(l.fromAccountId)
+      )
+      .reduce((s, l) => s + toKrw(l), 0);
+    const principal2025Net = principal2025 - transferOut2025;
     const startBalance = getRecheckBalanceAtDate("2024-12-31");
     const endBalanceDec = getRecheckBalanceAtDate("2025-12-31");
     const now = new Date();
@@ -311,7 +331,7 @@ export const DashboardView: React.FC<Props> = ({
     const endValue = currentYear === 2025
       ? getRecheckBalanceAtDate(now.toISOString().slice(0, 10))
       : endBalanceDec;
-    const invested = startBalance + principal2025;
+    const invested = startBalance + principal2025Net;
     if (invested <= 0 && endValue <= 0) return null;
     const profit = endValue - invested;
     const pct = invested > 0 ? (profit / invested) * 100 : null;
@@ -541,11 +561,9 @@ export const DashboardView: React.FC<Props> = ({
         prevStockMap.set(p.accountId, current + p.marketValue);
       });
       
-      const prevCash = prevBalances.reduce((s, b) => s + b.currentBalance, 0);
+      const prevCash = computeTotalCashValue(prevBalances, fxRate);
       const prevStock = prevPositions.reduce((s, p) => s + p.marketValue, 0);
-      const prevSavings = prevBalances
-        .filter((b) => b.account.type === "savings")
-        .reduce((s, b) => s + b.currentBalance, 0) + accounts.reduce((s, a) => s + (a.savings ?? 0), 0);
+      const prevSavings = computeTotalSavings(prevBalances, accounts);
       const prevDebt = accounts.reduce((s, a) => s + (a.debt ?? 0), 0);
       
       // 현재 월의 순자산 구성 요소
@@ -612,13 +630,9 @@ export const DashboardView: React.FC<Props> = ({
     const prevBalances = computeAccountBalances(accounts, prevFilteredLedger, prevFilteredTrades);
     const prevPositions = computePositions(prevFilteredTrades, adjustedPrices, accounts, { fxRate: fxRate ?? undefined });
     
-    const prevCash = prevBalances
-      .filter((b) => b.account.type === "checking" || b.account.type === "securities" || b.account.type === "other")
-      .reduce((s, b) => s + b.currentBalance, 0);
+    const prevCash = computeTotalCashValue(prevBalances, fxRate);
     const prevStock = prevPositions.reduce((s, p) => s + p.marketValue, 0);
-    const prevSavings = prevBalances
-      .filter((b) => b.account.type === "savings")
-      .reduce((s, b) => s + b.currentBalance, 0) + accounts.reduce((s, a) => s + (a.savings ?? 0), 0);
+    const prevSavings = computeTotalSavings(prevBalances, accounts);
     const prevDebt = accounts.reduce((s, a) => s + (a.debt ?? 0), 0);
     
     // 현재 월의 순자산 구성 요소
@@ -672,7 +686,7 @@ export const DashboardView: React.FC<Props> = ({
     };
   }, [netWorthSeries, thisMonth, ledger, trades, accounts, balances, positions, adjustedPrices, totalCashValue, totalStockValue, totalSavings, totalDebt]);
 
-  const assetSegments = useMemo(() => {
+  const _legacyAssetSegments = useMemo(() => {
     const stock = totalStockValue;
     const debtAbs = Math.max(0, totalDebt);
     
@@ -684,12 +698,18 @@ export const DashboardView: React.FC<Props> = ({
     ].filter(i => i.value > 0);
   }, [totalCashValue, totalSavings, totalStockValue, totalDebt]);
 
-  const monthlyIncome = useMemo(() => 
-    ledger
-      .filter((l) => l.kind === "income" && l.date.startsWith(thisMonth))
-      .reduce((s, l) => s + l.amount, 0),
-    [ledger, thisMonth]
-  );
+  const assetSegments = useMemo(() => {
+    return [
+      { name: "주식", value: totalStockValue },
+      { name: "현금", value: totalCashValue },
+      { name: "저축", value: totalSavings }
+    ].filter((i) => i.value > 0);
+  }, [totalCashValue, totalSavings, totalStockValue]);
+
+  const monthlyIncome = useMemo(() => {
+    const monthEntries = index.ledgerByMonth.get(thisMonth) ?? [];
+    return monthEntries.filter((l) => l.kind === "income").reduce((s, l) => s + l.amount, 0);
+  }, [index.ledgerByMonth, thisMonth]);
 
   /** 이번달 급여만 (subCategory 또는 category가 '급여') */
   const monthlySalaryThisMonth = useMemo(() => {
@@ -1178,9 +1198,10 @@ export const DashboardView: React.FC<Props> = ({
     return { month, amount };
   }, [ledger]);
 
-  // 458730 (TIGER 미국배당다우존스) 전용 월별 배당 및 배당율
-  const dividend458730Monthly = useMemo(() => {
-    const TICKER = "458730";
+  // 배당 추적 위젯: 선택된 티커의 월별 배당 및 배당율
+  const dividendTrackingMonthly = useMemo(() => {
+    if (!dividendTrackingTicker || !dividendTrackingTicker.trim()) return [];
+    const TICKER = dividendTrackingTicker.trim();
     const TICKER_CANON = canonicalTickerForMatch(TICKER);
     const isDividend458730 = (l: LedgerEntry) => {
       if (l.kind !== "income") return false;
@@ -1194,51 +1215,88 @@ export const DashboardView: React.FC<Props> = ({
     };
 
     const byMonth = new Map<string, number>();
-    ledger.filter(isDividend458730).forEach((l) => {
-      const month = l.date.slice(0, 7);
-      byMonth.set(month, (byMonth.get(month) ?? 0) + l.amount);
-    });
+    for (const [month, entries] of index.ledgerByMonth) {
+      const dividendSum = entries.filter(isDividend458730).reduce((s, l) => s + l.amount, 0);
+      if (dividendSum > 0) byMonth.set(month, (byMonth.get(month) ?? 0) + dividendSum);
+    }
 
     // 해당 월 말일까지의 458730 매수/매도 누적 → 비용기준(원금)
-    const getCostBasisAtMonth = (month: string): number => {
+    const getSnapshotAtMonth = (month: string): { costBasis: number; shares: number } => {
       const endDate = `${month}-31`;
-      let buyTotal = 0;
-      let sellTotal = 0;
-      trades
-        .filter((t) => canonicalTickerForMatch(t.ticker) === canonicalTickerForMatch(TICKER))
-        .forEach((t) => {
-          if (t.date > endDate) return;
-          if (t.side === "buy") buyTotal += t.totalAmount;
-          else if (t.side === "sell") sellTotal += t.totalAmount;
-        });
-      return Math.max(0, buyTotal - sellTotal);
+      const tickerTrades = trades
+        .filter(
+          (t) =>
+            t.date &&
+            t.date <= endDate &&
+            canonicalTickerForMatch(t.ticker) === TICKER_CANON
+        )
+        .sort((a, b) => a.date.localeCompare(b.date));
+
+      const byAccount = new Map<string, typeof tickerTrades>();
+      tickerTrades.forEach((t) => {
+        const list = byAccount.get(t.accountId) ?? [];
+        list.push(t);
+        byAccount.set(t.accountId, list);
+      });
+
+      let shares = 0;
+      let costBasis = 0;
+      byAccount.forEach((accountTrades) => {
+        type Lot = { qty: number; cost: number };
+        const lots: Lot[] = [];
+        for (const t of accountTrades) {
+          if (t.side === "buy") {
+            lots.push({ qty: t.quantity, cost: t.totalAmount });
+            continue;
+          }
+          let remaining = t.quantity;
+          while (remaining > 0 && lots.length > 0) {
+            const lot = lots[0];
+            const useQty = Math.min(remaining, lot.qty);
+            const unitCost = lot.cost / lot.qty;
+            lot.qty -= useQty;
+            lot.cost -= unitCost * useQty;
+            remaining -= useQty;
+            if (lot.qty <= 0) lots.shift();
+          }
+        }
+
+        shares += lots.reduce((sum, lot) => sum + lot.qty, 0);
+        costBasis += lots.reduce((sum, lot) => sum + lot.cost, 0);
+      });
+
+      return {
+        costBasis: Math.max(0, costBasis),
+        shares: Math.max(0, shares)
+      };
     };
 
-    // 해당 월 말일까지의 458730 보유 수량
-    const getSharesAtMonth = (month: string): number => {
-      const endDate = `${month}-31`;
-      let qty = 0;
-      trades
-        .filter((t) => canonicalTickerForMatch(t.ticker) === canonicalTickerForMatch(TICKER))
-        .forEach((t) => {
-          if (t.date > endDate) return;
-          if (t.side === "buy") qty += t.quantity;
-          else if (t.side === "sell") qty -= t.quantity;
-        });
-      return Math.max(0, qty);
-    };
-
+    // 해당 월 말일까지의 보유 수량
     const sorted = Array.from(byMonth.entries())
       .sort((a, b) => a[0].localeCompare(b[0]))
       .slice(-24);
 
+    const prevMonth = (m: string): string => {
+      const [y, mo] = m.split("-").map(Number);
+      if (mo === 1) return `${y - 1}-12`;
+      return `${y}-${String(mo - 1).padStart(2, "0")}`;
+    };
+
     let cumulativeDividend = 0;
     return sorted.map(([month, dividend]) => {
       cumulativeDividend += dividend;
-      const costBasis = getCostBasisAtMonth(month);
-      const shares = getSharesAtMonth(month);
+      const snapshot = getSnapshotAtMonth(month);
+      const costBasis = snapshot.costBasis;
+      const shares = snapshot.shares;
       const yieldMonthly = costBasis > 0 ? (dividend / costBasis) * 100 : 0;
-      const yieldAnnual = yieldMonthly * 12;
+      // TTM 배당률 = 최근 12개월 누적 배당금 ÷ 해당 월말 원금
+      let ttmDividend = 0;
+      let m = month;
+      for (let i = 0; i < 12; i++) {
+        ttmDividend += byMonth.get(m) ?? 0;
+        m = prevMonth(m);
+      }
+      const yieldAnnual = costBasis > 0 ? (ttmDividend / costBasis) * 100 : 0;
       // 누적 배당 수익률: 투입금 대비 지금까지 받은 배당 합계
       const cumulativeYield = costBasis > 0 ? (cumulativeDividend / costBasis) * 100 : 0;
       // 주당 배당금(원/주), 주당 배당율(월배당율 %)
@@ -1257,14 +1315,14 @@ export const DashboardView: React.FC<Props> = ({
         shares
       };
     });
-  }, [ledger, trades]);
+  }, [index.ledgerByMonth, ledger, trades, adjustedPrices, accounts, fxRate, dividendTrackingTicker]);
 
-  // 458730 위젯 데이터가 비어 있을 때 필터 통과 여부 디버깅
+  // 배당 추적 위젯 데이터가 비어 있을 때 필터 통과 여부 디버깅
   useEffect(() => {
-    if (dividend458730Monthly.length > 0) return;
-    const TICKER = "458730";
+    if (!dividendTrackingTicker || dividendTrackingMonthly.length > 0) return;
+    const TICKER = dividendTrackingTicker.trim();
     const TICKER_CANON = canonicalTickerForMatch(TICKER);
-    const isDividend458730 = (l: LedgerEntry) => {
+    const isDividendForTicker = (l: LedgerEntry) => {
       if (l.kind !== "income") return false;
       const hasDividend = (l.category && l.category.includes("배당")) || (l.subCategory && l.subCategory.includes("배당")) || (l.description && l.description.includes("배당"));
       if (!hasDividend) return false;
@@ -1274,15 +1332,16 @@ export const DashboardView: React.FC<Props> = ({
       if (!extracted) return desc.includes(TICKER) || cat.includes(TICKER);
       return canonicalTickerForMatch(extracted) === TICKER_CANON;
     };
-    const passed = ledger.filter(isDividend458730);
+    const passed = ledger.filter(isDividendForTicker);
     const withDividend = ledger.filter((l) => l.kind === "income" && ((l.category ?? "").includes("배당") || (l.subCategory ?? "").includes("배당") || (l.description ?? "").includes("배당")));
-    console.log("[458730 위젯] 배당 내역 없음. 필터 통과 건수:", passed.length, "/ 배당 수입 전체:", withDividend.length, "건. 통과한 항목 샘플:", passed.slice(0, 3));
-  }, [ledger, dividend458730Monthly.length]);
+    console.log("[배당 추적 위젯] 배당 내역 없음. 필터 통과 건수:", passed.length, "/ 배당 수입 전체:", withDividend.length, "건. 통과한 항목 샘플:", passed.slice(0, 3));
+  }, [ledger, dividendTrackingMonthly.length, dividendTrackingTicker]);
 
   // 이번달 배당금
   const monthlyDividend = useMemo(() => {
-    return ledger
-      .filter((l) => l.kind === "income" && l.date.startsWith(thisMonth))
+    const monthEntries = index.ledgerByMonth.get(thisMonth) ?? [];
+    return monthEntries
+      .filter((l) => l.kind === "income")
       .filter(
         (l) =>
           (l.category && l.category.includes("배당")) ||
@@ -1290,7 +1349,7 @@ export const DashboardView: React.FC<Props> = ({
           (l.description && l.description.includes("배당"))
       )
       .reduce((s, l) => s + l.amount, 0);
-  }, [ledger, thisMonth]);
+  }, [index.ledgerByMonth, thisMonth]);
   
   // 배당금 커버리지 비율: 가장 최근 달 배당금 ÷ 월평균 고정비
   const dividendCoverageRatio = useMemo(() => {
@@ -1301,16 +1360,7 @@ export const DashboardView: React.FC<Props> = ({
   // 주식 비율 트리맵 데이터
   // 중요: positions의 totalBuyAmount는 netBuyAmount이므로, 실제 총매입금액을 직접 계산해야 함
   // 성능 최적화: trades를 미리 그룹화하여 반복 필터링 방지
-  const buyTradesByPosition = useMemo(() => {
-    const map = new Map<string, number>();
-    trades
-      .filter(t => t.side === "buy")
-      .forEach(t => {
-        const key = `${t.accountId}::${t.ticker}`;
-        map.set(key, (map.get(key) ?? 0) + t.totalAmount);
-      });
-    return map;
-  }, [trades]);
+  // Keep dashboard PnL aligned with computePositions net cost basis.
   
   const positionsWithPrice = useMemo(() => {
     return positions
@@ -1321,8 +1371,7 @@ export const DashboardView: React.FC<Props> = ({
         const marketValue = (marketPrice || 0) * (p.quantity || 0);
         
         // 실제 총매입금액 계산: 미리 그룹화된 맵에서 조회
-        const key = `${p.accountId}::${p.ticker}`;
-        const actualTotalBuyAmount = buyTradesByPosition.get(key) ?? 0;
+        const actualTotalBuyAmount = p.totalBuyAmount;
         
         // 평가손익 = 평가금액 - 실제 총매입금액 (실제 계좌 화면과 동일)
         const pnl = marketValue - actualTotalBuyAmount;
@@ -1338,7 +1387,7 @@ export const DashboardView: React.FC<Props> = ({
         };
       })
       .filter((p) => p.marketValue > 0);
-  }, [positions, adjustedPrices, buyTradesByPosition]);
+  }, [positions, adjustedPrices]);
 
   // 계좌별 포지션 그룹화
   const positionsByAccount = useMemo(() => {
@@ -1451,12 +1500,13 @@ export const DashboardView: React.FC<Props> = ({
         return { date, totalAsset: 0 };
       }
       // 2025-07-01 ~ 2025-12-15: 고정 표 값
-      if (date in TARGET_NET_WORTH_CURVE) {
-        return { date, totalAsset: TARGET_NET_WORTH_CURVE[date] };
+      if (date in targetNetWorthCurve) {
+        return { date, totalAsset: targetNetWorthCurve[date] };
       }
       // 2025-12-16 ~ 2025-12-31: 마지막 값 유지
       if (date > LAST_CURVE_DATE && date < CALC_START_DATE) {
-        return { date, totalAsset: LAST_CURVE_VALUE };
+        const lastCurveVal = targetNetWorthCurve[LAST_CURVE_DATE] ?? 0;
+        return { date, totalAsset: lastCurveVal };
       }
       // 2026-01-01 이후: 전체 순자산과 동일한 실제 계산 (초기잔액·저축·부채 포함)
       if (date >= CALC_START_DATE) {
@@ -1476,14 +1526,13 @@ export const DashboardView: React.FC<Props> = ({
           const cashAsset = row.currentBalance;
           const stockAsset = stockMap.get(row.account.id) ?? 0;
           const debt = row.account.debt ?? 0;
-          const savings = row.account.savings ?? 0;
-          return sum + cashAsset + stockAsset + savings - debt;
+          return sum + cashAsset + stockAsset - debt;
         }, 0);
         return { date, totalAsset };
       }
       return { date, totalAsset: 0 };
     });
-  }, [trades, adjustedPrices, accounts, ledger]);
+  }, [trades, adjustedPrices, accounts, ledger, targetNetWorthCurve]);
 
 
   // 에러 방지: 데이터가 없거나 잘못된 경우 빈 배열 반환
@@ -1764,7 +1813,7 @@ export const DashboardView: React.FC<Props> = ({
                     return <Cell key={`cell-${index}`} fill={color} />;
                   })}
                   <Label
-                    value={Math.round(totalNetWorth / 10000) + "만원"}
+                    value={Math.round(totalAssetForPie / 10000) + "만원"}
                     position="center"
                     fill="var(--text)"
                     style={{ fontSize: "14px", fontWeight: "bold" }}
@@ -1780,6 +1829,9 @@ export const DashboardView: React.FC<Props> = ({
             ) : (
               <p className="hint">데이터 없음</p>
             )}
+          </div>
+          <div className="hint" style={{ marginTop: 8, textAlign: "center" }}>
+            순자산: {Math.round(totalNetWorth).toLocaleString()}원
           </div>
           </div>
           
@@ -2343,17 +2395,23 @@ export const DashboardView: React.FC<Props> = ({
         </div>
       )}
 
-      {visibleWidgets.has("458730") && (
-        <div className="cards-row" style={{ order: widgetOrder.indexOf("458730") }}>
+      {visibleWidgets.has(WIDGET_ID_DIVIDEND_TRACKING) && (
+        <div className="cards-row" style={{ order: widgetOrder.indexOf(WIDGET_ID_DIVIDEND_TRACKING) }}>
           <div className="card" style={{ gridColumn: "span 2" }}>
-            <div className="card-title">458730 TIGER 미국배당다우존스 · 월별 배당율</div>
-            <div style={{ fontSize: 12, color: "var(--text-muted)", marginBottom: 12 }}>
-              월별 배당금 ÷ 해당 월말 원금 기준 · 연환산 = 월배당율 × 12 · 누적 수익률 = 투입금 대비 지금까지 받은 배당 합계
+            <div className="card-title">
+              {dividendTrackingTicker ? `${dividendTrackingTicker} 배당 추적 · 월별 배당율` : "배당 추적 (티커 선택)"}
             </div>
-            {dividend458730Monthly.length > 0 ? (
+            {!dividendTrackingTicker ? (
+              <p className="hint" style={{ textAlign: "center", padding: 40 }}>설정 탭에서 배당 추적할 티커를 선택하세요.</p>
+            ) : (
+            <>
+            <div style={{ fontSize: 12, color: "var(--text-muted)", marginBottom: 12 }}>
+              월별 배당금 ÷ 해당 월말 원금 기준 · TTM 배당률 = 최근 12개월 누적 배당 ÷ 원금 · 누적 수익률 = 투입금 대비 지금까지 받은 배당 합계
+            </div>
+            {dividendTrackingMonthly.length > 0 ? (
               <>
                 {(() => {
-                  const last = dividend458730Monthly[dividend458730Monthly.length - 1];
+                  const last = dividendTrackingMonthly[dividendTrackingMonthly.length - 1];
                   return (
                     <div style={{ marginBottom: 12, padding: "10px 12px", background: "var(--surface-hover)", borderRadius: 8, fontSize: 13 }}>
                       <strong>보유</strong> {last.shares}주
@@ -2366,7 +2424,7 @@ export const DashboardView: React.FC<Props> = ({
                         </>
                       )}
                       {last.shares === 0 && (
-                        <span style={{ color: "var(--text-muted)" }}> (주식 탭에서 458730 매수/매도 입력 시 표시)</span>
+                        <span style={{ color: "var(--text-muted)" }}> (주식 탭에서 {dividendTrackingTicker} 매수/매도 입력 시 표시)</span>
                       )}
                     </div>
                   );
@@ -2376,7 +2434,7 @@ export const DashboardView: React.FC<Props> = ({
                   <h4 style={{ fontSize: 13, fontWeight: 600, marginBottom: 8 }}>주당 배당금 · 주당 배당율 (월별)</h4>
                   <div style={{ width: "100%", height: 180, minHeight: 180 }}>
                     <ResponsiveContainer width="100%" height={180}>
-                      <BarChart data={dividend458730Monthly} margin={{ top: 10, right: 50, left: 0, bottom: 0 }}>
+                      <BarChart data={dividendTrackingMonthly} margin={{ top: 10, right: 50, left: 0, bottom: 0 }}>
                         <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="var(--border)" />
                         <XAxis dataKey="month" fontSize={11} tickFormatter={(v) => v.slice(5)} />
                         <YAxis
@@ -2399,7 +2457,7 @@ export const DashboardView: React.FC<Props> = ({
                         <Tooltip
                           formatter={(val: unknown, name?: string, props?: any) => {
                             const p = props?.payload;
-                            const row = (Array.isArray(p) ? p[0] : p) as typeof dividend458730Monthly[0] | undefined;
+                            const row = (Array.isArray(p) ? p[0] : p) as typeof dividendTrackingMonthly[0] | undefined;
                             if (!row) return [String(val ?? ""), name ?? ""];
                             if ((name ?? "") === "주당 배당율") {
                               return [`${row.yieldPerShare.toFixed(3)}%`, "주당 배당율"];
@@ -2431,7 +2489,7 @@ export const DashboardView: React.FC<Props> = ({
                 </div>
                 <div style={{ width: "100%", height: 200, marginTop: 10, minHeight: 200 }}>
                   <ResponsiveContainer width="100%" height={200}>
-                    <BarChart data={dividend458730Monthly} margin={{ top: 10, right: 20, left: 0, bottom: 0 }}>
+                    <BarChart data={dividendTrackingMonthly} margin={{ top: 10, right: 20, left: 0, bottom: 0 }}>
                       <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="var(--border)" />
                       <XAxis dataKey="month" fontSize={11} tickFormatter={(v) => v.slice(5)} />
                       <YAxis 
@@ -2456,7 +2514,7 @@ export const DashboardView: React.FC<Props> = ({
                           const row = Array.isArray(props?.payload) ? props.payload[0] : props?.payload;
                           if (!row) return [val, name ?? ""];
                           if ((name ?? "") === "yield") {
-                            return [`월 ${row.yieldMonthly.toFixed(3)}% / 연환산 ${row.yieldAnnual.toFixed(2)}%`, "배당율"];
+                            return [`월 ${row.yieldMonthly.toFixed(3)}% / TTM ${row.yieldAnnual.toFixed(2)}%`, "배당율"];
                           }
                           if ((name ?? "") === "누적") {
                             return [`누적 수익률 ${row.cumulativeYield.toFixed(2)}%`, "누적 수익률"];
@@ -2471,7 +2529,7 @@ export const DashboardView: React.FC<Props> = ({
                         labelFormatter={(label) => `${label}`}
                       />
                       <Bar yAxisId="right" dataKey="dividend" fill="#10b981" radius={[4, 4, 0, 0]} barSize={24} name="배당금" />
-                      <Line yAxisId="left" type="monotone" dataKey="yieldAnnual" stroke="#6366f1" strokeWidth={2} dot={{ r: 3 }} name="연환산 배당율 (%)" />
+                      <Line yAxisId="left" type="monotone" dataKey="yieldAnnual" stroke="#6366f1" strokeWidth={2} dot={{ r: 3 }} name="TTM 배당률 (%)" />
                       <Line yAxisId="left" type="monotone" dataKey="cumulativeYield" stroke="#f59e0b" strokeWidth={2} strokeDasharray="4 4" dot={{ r: 3 }} name="누적" />
                     </BarChart>
                   </ResponsiveContainer>
@@ -2486,13 +2544,13 @@ export const DashboardView: React.FC<Props> = ({
                         <th className="number" style={{ minWidth: 64 }}>보유(주)</th>
                         <th className="number">주당 배당율</th>
                         <th className="number">원금(월말)</th>
-                        <th className="number">연환산</th>
+                        <th className="number">TTM</th>
                         <th className="number">누적 배당금</th>
                         <th className="number">누적 수익률</th>
                       </tr>
                     </thead>
                     <tbody>
-                      {[...dividend458730Monthly].reverse().map((row) => (
+                      {[...dividendTrackingMonthly].reverse().map((row) => (
                         <tr key={row.month}>
                           <td>{row.month}</td>
                           <td className="number">{formatKRW(Math.round(row.dividend))}</td>
@@ -2510,7 +2568,9 @@ export const DashboardView: React.FC<Props> = ({
                 </div>
               </>
             ) : (
-              <p className="hint" style={{ textAlign: "center", padding: 40 }}>458730 배당 내역이 없습니다.</p>
+              <p className="hint" style={{ textAlign: "center", padding: 40 }}>{dividendTrackingTicker} 배당 내역이 없습니다.</p>
+            )}
+            </>
             )}
           </div>
         </div>
@@ -2521,14 +2581,14 @@ export const DashboardView: React.FC<Props> = ({
           <div className="card" style={{ gridColumn: "span 2" }}>
             <div className="card-title">ISA 포트폴리오 (목표 비중)</div>
             <div style={{ fontSize: 12, color: "var(--text-muted)", marginBottom: 12 }}>
-              AI 20% · 우주항공 20% · 양자 20% · 배당 20% · 금 10% · 달러 10%
+              {isaPortfolio.map((item) => `${item.label} ${item.weight}%`).join(" · ")}
             </div>
             <div style={{ display: "flex", gap: 24, flexWrap: "wrap", alignItems: "flex-start" }}>
               <div style={{ width: 280, height: 280, minWidth: 280, minHeight: 280 }}>
                 <ResponsiveContainer width="100%" height="100%">
                   <PieChart>
                     <Pie
-                      data={ISA_PORTFOLIO.map((item) => ({ name: item.label, value: item.weight }))}
+                      data={isaPortfolio.map((item) => ({ name: item.label, value: item.weight }))}
                       cx="50%"
                       cy="50%"
                       innerRadius={60}
@@ -2537,7 +2597,7 @@ export const DashboardView: React.FC<Props> = ({
                       dataKey="value"
                       stroke="none"
                     >
-                      {ISA_PORTFOLIO.map((_, index) => (
+                      {isaPortfolio.map((_, index) => (
                         <Cell key={`isa-${index}`} fill={COLORS[index % COLORS.length]} />
                       ))}
                       <Label
@@ -2565,7 +2625,7 @@ export const DashboardView: React.FC<Props> = ({
                     </tr>
                   </thead>
                   <tbody>
-                    {ISA_PORTFOLIO.map((item, i) => (
+                    {isaPortfolio.map((item, i) => (
                       <tr key={item.ticker}>
                         <td>
                           <span style={{ display: "inline-block", width: 8, height: 8, borderRadius: 4, backgroundColor: COLORS[i % COLORS.length], marginRight: 6, verticalAlign: "middle" }} />
@@ -2785,7 +2845,9 @@ export const DashboardView: React.FC<Props> = ({
                 {totalStockValue > 0 && (
                   <>
                     <div style={{ fontSize: 24, fontWeight: "bold", marginBottom: 8, color: totalStockPnl >= 0 ? "var(--success)" : "var(--danger)" }}>
-                      {totalStockPnl >= 0 ? "+" : ""}{((totalStockPnl / (totalStockValue - totalStockPnl)) * 100).toFixed(2)}%
+                      {totalStockReturnRate != null
+                        ? `${totalStockReturnRate >= 0 ? "+" : ""}${totalStockReturnRate.toFixed(2)}%`
+                        : "-"}
                     </div>
                     <div style={{ fontSize: 12, color: "var(--text-secondary)" }}>
                       평가손익: {totalStockPnl >= 0 ? "+" : ""}{Math.round(totalStockPnl).toLocaleString()}원
@@ -2934,8 +2996,8 @@ export const DashboardView: React.FC<Props> = ({
                 }
                 
                 // 주식 수익률 해석
-                if (totalStockPnl > 0 && totalStockValue > 0) {
-                  const returnRate = (totalStockPnl / (totalStockValue - totalStockPnl)) * 100;
+                if (totalStockReturnRate != null && totalStockValue > 0) {
+                  const returnRate = totalStockReturnRate;
                   if (returnRate >= 20) {
                     insights.push("🚀 주식 수익률 20% 이상! 대박");
                   } else if (returnRate < -10) {

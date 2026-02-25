@@ -4,7 +4,7 @@
  */
 
 import type { Account, LedgerEntry } from "../types";
-import { isSavingsExpenseEntry } from "./categoryUtils";
+import { isSavingsExpenseEntry } from "./category";
 
 function formatAmount(amount: number): string {
   return new Intl.NumberFormat("ko-KR").format(amount) + "원";

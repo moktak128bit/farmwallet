@@ -34,4 +34,3 @@ export function formatShortDate(dateStr: string): string {
     return dateStr; // 에러 발생 시 원본 반환
   }
 }
-

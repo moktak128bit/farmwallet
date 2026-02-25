@@ -2,7 +2,7 @@ import React, { useMemo, useState } from "react";
 import { toast } from "react-hot-toast";
 import type { Account, LedgerEntry } from "../../types";
 import { fetchYahooQuotes } from "../../yahooFinanceApi";
-import { formatKRW, formatUSD } from "../../utils/format";
+import { formatKRW, formatUSD } from "../../utils/formatter";
 import { validateTransfer } from "../../utils/validation";
 import { ERROR_MESSAGES } from "../../constants/errorMessages";
 

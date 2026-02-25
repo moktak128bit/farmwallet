@@ -1,6 +1,6 @@
 import React, { useState, useMemo } from "react";
 import type { Account, LedgerEntry } from "../types";
-import { normalizeCategory, normalizeSubCategory } from "../utils/categoryNormalize";
+import { normalizeCategory, normalizeSubCategory } from "../utils/category";
 
 interface SearchQuery {
   keyword: string;
@@ -375,4 +375,3 @@ export const AdvancedSearch: React.FC<Props> = ({
     </div>
   );
 };
-

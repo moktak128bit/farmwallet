@@ -1,6 +1,6 @@
 import React, { useMemo } from "react";
 import type { LedgerEntry } from "../../types";
-import { formatKRW, formatShortDate } from "../../utils/format";
+import { formatKRW, formatShortDate } from "../../utils/formatter";
 
 interface FxHistorySectionProps {
   ledger: LedgerEntry[];

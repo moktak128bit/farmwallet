@@ -3,7 +3,7 @@
  */
 
 import type { Account } from "../types";
-import { isUSDStock } from "./tickerUtils";
+import { isUSDStock } from "./finance";
 
 export interface ValidationResult {
   valid: boolean;
@@ -288,3 +288,11 @@ export function validateTransfer(
   return { valid: true };
 }
 
+export type {
+  AccountPerformanceInput,
+  AccountPerformanceResult
+} from "./accountPerformanceValidation";
+export {
+  calculateAccountPerformance,
+  logAccountPerformance
+} from "./accountPerformanceValidation";

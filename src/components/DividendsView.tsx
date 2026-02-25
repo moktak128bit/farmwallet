@@ -2,8 +2,8 @@ import React, { useMemo, useState, useEffect } from "react";
 import { Autocomplete } from "./Autocomplete";
 import type { Account, LedgerEntry, StockPrice, StockTrade, TickerInfo } from "../types";
 import { computePositions } from "../calculations";
-import { formatNumber, formatKRW, formatShortDate } from "../utils/format";
-import { isKRWStock, isUSDStock, canonicalTickerForMatch, extractTickerFromText } from "../utils/tickerUtils";
+import { formatNumber, formatKRW, formatShortDate } from "../utils/formatter";
+import { isKRWStock, isUSDStock, canonicalTickerForMatch, extractTickerFromText } from "../utils/finance";
 import krNames from "../data/krNames.json";
 import { toast } from "react-hot-toast";
 
@@ -1495,4 +1495,3 @@ export const DividendsView: React.FC<Props> = ({ accounts, ledger, trades, price
     </div>
   );
 };
-

@@ -13,8 +13,8 @@ import {
   CartesianGrid,
   Label
 } from "recharts";
-import type { AccountBalanceRow } from "../../calculations";
-import { formatKRW } from "../../utils/format";
+import type { AccountBalanceRow } from "../../types";
+import { formatKRW } from "../../utils/formatter";
 
 interface PositionWithPrice {
   accountId: string;

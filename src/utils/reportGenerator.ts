@@ -4,9 +4,9 @@
 
 import type { Account, LedgerEntry, StockTrade, StockPrice } from "../types";
 import { computeAccountBalances, computePositions } from "../calculations";
-import { isSavingsExpenseEntry } from "./categoryUtils";
+import { isSavingsExpenseEntry } from "./category";
 import { xirr } from "./irr";
-import { canonicalTickerForMatch } from "./tickerUtils";
+import { canonicalTickerForMatch } from "./finance";
 
 export interface MonthlyReport {
   month: string;
@@ -397,7 +397,9 @@ export function generateDailyReport(
     const savingsValue = balances
       .filter((b) => b.account.type === "savings")
       .reduce((sum, b) => sum + b.currentBalance, 0) + 
-      accounts.reduce((sum, a) => sum + (a.savings ?? 0), 0);
+      accounts
+        .filter((a) => a.type !== "savings")
+        .reduce((sum, a) => sum + (a.savings ?? 0), 0);
     
     // 부채
     const debt = accounts.reduce((sum, a) => sum + (a.debt ?? 0), 0);
@@ -442,4 +444,3 @@ export function reportToCSV(report: MonthlyReport[] | CategoryReport[] | StockPe
 
   return [headers, ...rows].map((row) => row.map((cell) => `"${cell}"`).join(",")).join("\n");
 }
-

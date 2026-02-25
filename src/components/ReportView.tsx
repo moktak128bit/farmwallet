@@ -28,11 +28,11 @@ import {
   type MonthlyIncomeDetail,
   type DailyReport
 } from "../utils/reportGenerator";
-import { formatKRW } from "../utils/format";
+import { formatKRW } from "../utils/formatter";
 import { toast } from "react-hot-toast";
 import { ERROR_MESSAGES } from "../constants/errorMessages";
 import { useFxRate } from "../hooks/useFxRate";
-import { isSavingsExpenseEntry } from "../utils/categoryUtils";
+import { isSavingsExpenseEntry } from "../utils/category";
 
 interface Props {
   accounts: Account[];
@@ -825,4 +825,3 @@ export const ReportView: React.FC<Props> = ({ accounts, ledger, trades, prices }
     </div>
   );
 };
-

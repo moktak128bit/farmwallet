@@ -2,24 +2,24 @@ import { useEffect, useRef, useState, useCallback } from "react";
 import { toast } from "react-hot-toast";
 import { loadData, saveData, getEmptyData, saveBackupSnapshot } from "../storage";
 import { STORAGE_KEYS } from "../constants/config";
-import type { AppData } from "../types";
 import { AUTO_SAVE_DELAY } from "../constants/config";
+import { useAppStore } from "../store/appStore";
 
 export function useAppData() {
-  const [data, setData] = useState<AppData>(() => getEmptyData());
+  const data = useAppStore((s) => s.data);
+  const setData = useAppStore((s) => s.setData);
   const [isLoading, setIsLoading] = useState(true);
   const [loadFailed, setLoadFailed] = useState(false);
   const loadFailedRef = useRef(false);
   loadFailedRef.current = loadFailed;
   const saveTimerRef = useRef<number | null>(null);
   const manualBackupRef = useRef(false);
-  const dataRef = useRef(data);
-  dataRef.current = data;
 
-  // 초기 데이터 로드 (한 번만)
+  // 초기 데이터 로드 (한 번만) → Zustand store에 반영
   useEffect(() => {
     try {
-      setData(loadData());
+      const loaded = loadData();
+      useAppStore.setState({ data: loaded });
       setLoadFailed(false);
     } catch (e) {
       console.error("[FarmWallet] 초기 데이터 로드 실패", e);
@@ -39,9 +39,10 @@ export function useAppData() {
     saveTimerRef.current = window.setTimeout(() => {
       if (manualBackupRef.current) return;
       try {
-        saveData(data);
+        const currentData = useAppStore.getState().data;
+        saveData(currentData);
         if (typeof window !== "undefined" && window.localStorage.getItem(STORAGE_KEYS.BACKUP_ON_SAVE) === "true") {
-          void saveBackupSnapshot(data, { skipHash: false });
+          void saveBackupSnapshot(currentData, { skipHash: false });
         }
       } catch (e) {
         toast.error(e instanceof Error ? e.message : "저장 실패");
@@ -64,9 +65,10 @@ export function useAppData() {
         window.clearTimeout(saveTimerRef.current);
         saveTimerRef.current = null;
         try {
-          saveData(dataRef.current);
+          const currentData = useAppStore.getState().data;
+          saveData(currentData);
           if (typeof window !== "undefined" && window.localStorage.getItem(STORAGE_KEYS.BACKUP_ON_SAVE) === "true") {
-            void saveBackupSnapshot(dataRef.current, { skipHash: false });
+            void saveBackupSnapshot(currentData, { skipHash: false });
           }
         } catch (e) {
           toast.error(e instanceof Error ? e.message : "저장 실패");
@@ -94,9 +96,10 @@ export function useAppData() {
   const saveNow = useCallback(() => {
     if (loadFailedRef.current) return;
     try {
-      saveData(dataRef.current);
+      const currentData = useAppStore.getState().data;
+      saveData(currentData);
       if (typeof window !== "undefined" && window.localStorage.getItem(STORAGE_KEYS.BACKUP_ON_SAVE) === "true") {
-        void saveBackupSnapshot(dataRef.current, { skipHash: false });
+        void saveBackupSnapshot(currentData, { skipHash: false });
       }
     } catch (e) {
       toast.error(e instanceof Error ? e.message : "저장 실패");

@@ -14,9 +14,9 @@ import { buildUnifiedCsv } from "../utils/unifiedCsvExport";
 import { DataIntegrityView } from "./DataIntegrityView";
 import { SavingsMigrationView } from "./SavingsMigrationView";
 import { ThemeCustomizer } from "./ThemeCustomizer";
-import { getKoreaTime } from "../utils/dateUtils";
+import { getKoreaTime } from "../utils/date";
 import { usePWAInstall } from "../hooks/usePWAInstall";
-import { STORAGE_KEYS } from "../constants/config";
+import { STORAGE_KEYS, ISA_PORTFOLIO } from "../constants/config";
 import { ERROR_MESSAGES } from "../constants/errorMessages";
 
 interface Props {
@@ -29,19 +29,73 @@ interface Props {
 
 type SettingsTab = "backup" | "integrity" | "theme" | "accessibility" | "dashboard" | "savingsMigration";
 
-const DASHBOARD_WIDGET_ORDER = ["summary", "assets", "income", "savingsFlow", "budget", "stocks", "portfolio", "targetPortfolio", "458730", "isa"];
-const DASHBOARD_WIDGET_NAMES: Record<string, string> = {
-  summary: "요약 카드",
-  assets: "자산 구성",
-  income: "수입/지출",
-  savingsFlow: "저축·투자 기간별 현황",
-  budget: "예산 요약",
-  stocks: "주식 성과",
-  portfolio: "포트폴리오",
-  targetPortfolio: "목표 포트폴리오",
-  "458730": "458730 배당율 (TIGER 미국배당다우존스)",
-  isa: "ISA 포트폴리오"
-};
+const WIDGET_ID_DIVIDEND_TRACKING = "dividendTracking";
+
+function migrateWidgetId(id: string): string {
+  return id === "458730" ? WIDGET_ID_DIVIDEND_TRACKING : id;
+}
+
+const DASHBOARD_WIDGET_ORDER = ["summary", "assets", "income", "savingsFlow", "budget", "stocks", "portfolio", "targetPortfolio", WIDGET_ID_DIVIDEND_TRACKING, "isa"];
+
+function TargetNetWorthCurveEditor({
+  value,
+  onChange
+}: {
+  value: Record<string, number>;
+  onChange: (v: Record<string, number>) => void;
+}) {
+  const valueKey = JSON.stringify(value);
+  const [raw, setRaw] = useState(() => JSON.stringify(value, null, 2));
+  const [error, setError] = useState<string | null>(null);
+
+  useEffect(() => {
+    setRaw(JSON.stringify(value, null, 2));
+  }, [valueKey]);
+
+  const handleChange = (text: string) => {
+    setRaw(text);
+    try {
+      const parsed = JSON.parse(text);
+      if (parsed && typeof parsed === "object" && !Array.isArray(parsed)) {
+        const cleaned: Record<string, number> = {};
+        for (const [k, v] of Object.entries(parsed)) {
+          if (typeof k === "string" && typeof v === "number") cleaned[k] = v;
+        }
+        onChange(cleaned);
+        setError(null);
+      }
+    } catch {
+      setError("유효하지 않은 JSON");
+    }
+  };
+
+  return (
+    <>
+      <textarea
+        value={raw}
+        onChange={(e) => handleChange(e.target.value)}
+        placeholder='{"2025-07-01": 3120000, "2025-12-15": 20333151}'
+        style={{ width: "100%", minHeight: 100, padding: 8, fontSize: 12, fontFamily: "monospace" }}
+      />
+      {error && <p style={{ fontSize: 12, color: "var(--danger)", marginTop: 4 }}>{error}</p>}
+    </>
+  );
+}
+
+function getDashboardWidgetNames(dividendTicker?: string): Record<string, string> {
+  return {
+    summary: "요약 카드",
+    assets: "자산 구성",
+    income: "수입/지출",
+    savingsFlow: "저축·투자 기간별 현황",
+    budget: "예산 요약",
+    stocks: "주식 성과",
+    portfolio: "포트폴리오",
+    targetPortfolio: "목표 포트폴리오",
+    [WIDGET_ID_DIVIDEND_TRACKING]: dividendTicker ? `배당 추적 (${dividendTicker})` : "배당 추적 (티커 선택)",
+    isa: "ISA 포트폴리오"
+  };
+}
 
 export const SettingsView: React.FC<Props> = ({ data, onChangeData, backupVersion, onBackupRestored }) => {
   const [activeTab, setActiveTab] = useState<SettingsTab>("backup");
@@ -66,7 +120,10 @@ export const SettingsView: React.FC<Props> = ({ data, onChangeData, backupVersio
     if (typeof window === "undefined") return new Set(DASHBOARD_WIDGET_ORDER);
     try {
       const raw = localStorage.getItem(STORAGE_KEYS.DASHBOARD_WIDGETS);
-      if (raw) return new Set(JSON.parse(raw));
+      if (raw) {
+        const arr = JSON.parse(raw) as string[];
+        return new Set(Array.isArray(arr) ? arr.map(migrateWidgetId) : DASHBOARD_WIDGET_ORDER);
+      }
     } catch (e) {
       console.warn("[SettingsView] 대시보드 위젯 설정 로드 실패", e);
     }
@@ -78,7 +135,7 @@ export const SettingsView: React.FC<Props> = ({ data, onChangeData, backupVersio
       const raw = localStorage.getItem(STORAGE_KEYS.DASHBOARD_WIDGET_ORDER);
       if (raw) {
         const parsed = JSON.parse(raw) as string[];
-        if (Array.isArray(parsed) && parsed.length === DASHBOARD_WIDGET_ORDER.length) return parsed;
+        if (Array.isArray(parsed) && parsed.length === DASHBOARD_WIDGET_ORDER.length) return parsed.map(migrateWidgetId);
       }
     } catch (e) {
       console.warn("[SettingsView] 위젯 순서 로드 실패", e);
@@ -301,11 +358,14 @@ export const SettingsView: React.FC<Props> = ({ data, onChangeData, backupVersio
     if (activeTab !== "dashboard") return;
     try {
       const raw = localStorage.getItem(STORAGE_KEYS.DASHBOARD_WIDGETS);
-      if (raw) setDashboardVisibleWidgets(new Set(JSON.parse(raw)));
+      if (raw) {
+        const arr = JSON.parse(raw) as string[];
+        setDashboardVisibleWidgets(new Set(Array.isArray(arr) ? arr.map(migrateWidgetId) : DASHBOARD_WIDGET_ORDER));
+      }
       const rawOrder = localStorage.getItem(STORAGE_KEYS.DASHBOARD_WIDGET_ORDER);
       if (rawOrder) {
         const parsed = JSON.parse(rawOrder) as string[];
-        if (Array.isArray(parsed) && parsed.length === DASHBOARD_WIDGET_ORDER.length) setDashboardWidgetOrder(parsed);
+        if (Array.isArray(parsed) && parsed.length === DASHBOARD_WIDGET_ORDER.length) setDashboardWidgetOrder(parsed.map(migrateWidgetId));
       }
     } catch (e) {
       console.warn("[SettingsView] 탭 전환 시 위젯 순서 로드 실패", e);
@@ -636,6 +696,20 @@ export const SettingsView: React.FC<Props> = ({ data, onChangeData, backupVersio
       {activeTab === "dashboard" && (
         <div className="card">
           <h3>대시보드 위젯 표시 및 순서</h3>
+          <div style={{ marginBottom: 16 }}>
+            <label htmlFor="dividend-tracking-ticker" style={{ display: "block", fontWeight: 600, marginBottom: 4 }}>배당 추적 위젯 티커</label>
+            <input
+              id="dividend-tracking-ticker"
+              type="text"
+              placeholder="예: 458730"
+              value={data.dividendTrackingTicker ?? ""}
+              onChange={(e) => onChangeData({ ...data, dividendTrackingTicker: e.target.value.trim() || undefined })}
+              style={{ width: "100%", maxWidth: 200, padding: "8px 12px" }}
+            />
+            <p style={{ fontSize: 12, color: "var(--text-muted)", marginTop: 4 }}>
+              대시보드 배당 추적 위젯에 표시할 종목 티커. 비워두면 위젯에서 티커 선택 안내가 표시됩니다.
+            </p>
+          </div>
           <p style={{ fontSize: 12, color: "var(--text-muted)", marginBottom: 12 }}>
             표시 여부를 선택하고, 순서는 위/아래로 변경할 수 있습니다. 대시보드 탭에서도 동일하게 적용됩니다.
           </p>
@@ -651,7 +725,7 @@ export const SettingsView: React.FC<Props> = ({ data, onChangeData, backupVersio
                 onChange={() => toggleDashboardWidget(id)}
               />
               <label htmlFor={`settings-widget-${id}`} style={{ flex: 1 }}>
-                {DASHBOARD_WIDGET_NAMES[id] ?? id}
+                {getDashboardWidgetNames(data.dividendTrackingTicker)[id] ?? id}
               </label>
               <button
                 type="button"
@@ -675,6 +749,117 @@ export const SettingsView: React.FC<Props> = ({ data, onChangeData, backupVersio
               </button>
             </div>
           ))}
+          <h3 style={{ marginTop: 24, marginBottom: 12 }}>ISA 목표 포트폴리오</h3>
+          <p style={{ fontSize: 12, color: "var(--text-muted)", marginBottom: 12 }}>
+            대시보드 ISA 위젯에 표시될 목표 비중을 편집합니다. 비중 합계는 100%가 되도록 조정하세요.
+          </p>
+          <div style={{ overflowX: "auto" }}>
+            <table className="data-table compact" style={{ fontSize: 13 }}>
+              <thead>
+                <tr>
+                  <th>라벨</th>
+                  <th>티커</th>
+                  <th>종목명</th>
+                  <th style={{ width: 80 }}>비중 (%)</th>
+                  <th style={{ width: 60 }}></th>
+                </tr>
+              </thead>
+              <tbody>
+                {(data.isaPortfolio ?? ISA_PORTFOLIO.map((item) => ({ ticker: item.ticker, name: item.name, weight: item.weight, label: item.label }))).map((item, index) => (
+                  <tr key={`${item.ticker}-${index}`}>
+                    <td>
+                      <input
+                        type="text"
+                        value={item.label}
+                        onChange={(e) => {
+                          const list = [...(data.isaPortfolio ?? ISA_PORTFOLIO.map((i) => ({ ticker: i.ticker, name: i.name, weight: i.weight, label: i.label })))];
+                          list[index] = { ...list[index], label: e.target.value };
+                          onChangeData({ ...data, isaPortfolio: list });
+                        }}
+                        style={{ width: "100%", padding: "4px 8px", fontSize: 12 }}
+                      />
+                    </td>
+                    <td>
+                      <input
+                        type="text"
+                        value={item.ticker}
+                        onChange={(e) => {
+                          const list = [...(data.isaPortfolio ?? ISA_PORTFOLIO.map((i) => ({ ticker: i.ticker, name: i.name, weight: i.weight, label: i.label })))];
+                          list[index] = { ...list[index], ticker: e.target.value };
+                          onChangeData({ ...data, isaPortfolio: list });
+                        }}
+                        style={{ width: "100%", padding: "4px 8px", fontSize: 12 }}
+                      />
+                    </td>
+                    <td>
+                      <input
+                        type="text"
+                        value={item.name}
+                        onChange={(e) => {
+                          const list = [...(data.isaPortfolio ?? ISA_PORTFOLIO.map((i) => ({ ticker: i.ticker, name: i.name, weight: i.weight, label: i.label })))];
+                          list[index] = { ...list[index], name: e.target.value };
+                          onChangeData({ ...data, isaPortfolio: list });
+                        }}
+                        style={{ width: "100%", padding: "4px 8px", fontSize: 12 }}
+                      />
+                    </td>
+                    <td>
+                      <input
+                        type="number"
+                        min={0}
+                        max={100}
+                        step={1}
+                        value={item.weight}
+                        onChange={(e) => {
+                          const list = [...(data.isaPortfolio ?? ISA_PORTFOLIO.map((i) => ({ ticker: i.ticker, name: i.name, weight: i.weight, label: i.label })))];
+                          list[index] = { ...list[index], weight: Number(e.target.value) || 0 };
+                          onChangeData({ ...data, isaPortfolio: list });
+                        }}
+                        style={{ width: "100%", padding: "4px 8px", fontSize: 12 }}
+                      />
+                    </td>
+                    <td>
+                      <button
+                        type="button"
+                        className="secondary"
+                        style={{ padding: "4px 8px", fontSize: 11 }}
+                        onClick={() => {
+                          const list = (data.isaPortfolio ?? ISA_PORTFOLIO.map((i) => ({ ticker: i.ticker, name: i.name, weight: i.weight, label: i.label }))).filter((_, i) => i !== index);
+                          onChangeData({ ...data, isaPortfolio: list });
+                        }}
+                        title="삭제"
+                      >
+                        삭제
+                      </button>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+          <button
+            type="button"
+            className="secondary"
+            style={{ marginTop: 8 }}
+            onClick={() => {
+              const list = data.isaPortfolio ?? ISA_PORTFOLIO.map((i) => ({ ticker: i.ticker, name: i.name, weight: i.weight, label: i.label }));
+              onChangeData({
+                ...data,
+                isaPortfolio: [...list, { ticker: "", name: "", weight: 0, label: "" }]
+              });
+            }}
+          >
+            + 종목 추가
+          </button>
+
+          <h3 style={{ marginTop: 24, marginBottom: 12 }}>목표 자산 곡선</h3>
+          <p style={{ fontSize: 12, color: "var(--text-muted)", marginBottom: 8 }}>
+            2026년 1월 이전 구간에서 참고용으로 표시할 목표 자산 금액. 날짜(YYYY-MM-DD)를 키로, 금액을 값으로 하는 JSON. 비워두면 해당 구간은 0원으로 표시됩니다.
+          </p>
+          <TargetNetWorthCurveEditor
+            value={data.targetNetWorthCurve ?? {}}
+            onChange={(targetNetWorthCurve) => onChangeData({ ...data, targetNetWorthCurve })}
+          />
         </div>
       )}
 

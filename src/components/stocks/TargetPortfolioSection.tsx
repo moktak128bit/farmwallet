@@ -15,8 +15,8 @@ import {
 import type { TargetPortfolio, TargetPortfolioItem, Account } from "../../types";
 import type { StockPrice } from "../../types";
 import type { TickerInfo } from "../../types";
-import { formatKRW, formatUSD } from "../../utils/format";
-import { isUSDStock, canonicalTickerForMatch } from "../../utils/tickerUtils";
+import { formatKRW, formatUSD } from "../../utils/formatter";
+import { isUSDStock, canonicalTickerForMatch } from "../../utils/finance";
 
 const CHART_COLORS = ["#0ea5e9", "#6366f1", "#f43f5e", "#10b981", "#f59e0b", "#8b5cf6", "#ec4899", "#14b8a6", "#64748b"];
 

@@ -1,6 +1,6 @@
 import type { AppData } from "../types";
 import { STORAGE_KEYS, BACKUP_CONFIG } from "../constants/config";
-import { getKoreaTime } from "../utils/dateUtils";
+import { getKoreaTime } from "../utils/date";
 
 interface StoredBackup {
   id: string;

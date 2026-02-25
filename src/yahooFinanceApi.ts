@@ -1,4 +1,4 @@
-import { isKRWStock } from "./utils/tickerUtils";
+import { isKRWStock } from "./utils/finance";
 
 export interface YahooQuoteResult {
   ticker: string;
@@ -628,4 +628,3 @@ export async function searchYahooSymbol(
   
   return allResults;
 }
-

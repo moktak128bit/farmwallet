@@ -1,8 +1,10 @@
 /**
  * 예산 모니터링 및 알림 시스템
+ * 집계: calculations.computeExpenseSumForMonthAndCategory 사용
  */
 
 import type { LedgerEntry, BudgetGoal, RecurringExpense } from "../types";
+import { computeExpenseSumForMonthAndCategory } from "../calculations";
 
 export interface BudgetAlert {
   type: "warning" | "danger";
@@ -25,15 +27,11 @@ export function checkBudgetExceeded(
   const month = currentMonth || new Date().toISOString().slice(0, 7);
 
   budgets.forEach((budget) => {
-    const monthExpenses = ledger
-      .filter((l) => l.kind === "expense" && l.date.startsWith(month))
-      .filter((l) => {
-        if (budget.category) {
-          return l.category === budget.category || l.subCategory === budget.category;
-        }
-        return true;
-      })
-      .reduce((sum, l) => sum + l.amount, 0);
+    const monthExpenses = computeExpenseSumForMonthAndCategory(
+      ledger,
+      month,
+      budget.category ?? undefined
+    );
 
     const percentage = budget.monthlyLimit > 0 ? (monthExpenses / budget.monthlyLimit) * 100 : 0;
 
@@ -74,15 +72,11 @@ export function checkBudgetThreshold(
   const month = currentMonth || new Date().toISOString().slice(0, 7);
 
   budgets.forEach((budget) => {
-    const monthExpenses = ledger
-      .filter((l) => l.kind === "expense" && l.date.startsWith(month))
-      .filter((l) => {
-        if (budget.category) {
-          return l.category === budget.category || l.subCategory === budget.category;
-        }
-        return true;
-      })
-      .reduce((sum, l) => sum + l.amount, 0);
+    const monthExpenses = computeExpenseSumForMonthAndCategory(
+      ledger,
+      month,
+      budget.category ?? undefined
+    );
 
     const percentage = budget.monthlyLimit > 0 ? (monthExpenses / budget.monthlyLimit) * 100 : 0;
 

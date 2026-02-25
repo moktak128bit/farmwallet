@@ -31,10 +31,15 @@ export function parseCSV(
   Papa.parse(file, {
     header: false,
     skipEmptyLines: true,
+    encoding: "UTF-8",
     complete: (results) => {
       const rows: ParsedRow[] = [];
       const errors: string[] = [];
       const data = results.data as any[][];
+      const BOM = "\uFEFF";
+      if (data.length > 0 && Array.isArray(data[0]) && data[0].length > 0 && typeof data[0][0] === "string" && data[0][0].startsWith(BOM)) {
+        data[0][0] = data[0][0].slice(BOM.length);
+      }
 
       data.forEach((row: any[], index: number) => {
         try {

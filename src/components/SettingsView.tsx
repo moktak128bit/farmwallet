@@ -5,6 +5,8 @@ import {
   getAllBackupList,
   loadBackupData,
   loadServerBackupData,
+  getEmptyData,
+  saveData,
   type BackupEntry
 } from "../storage";
 import { generateLedgerMarkdownReport } from "../utils/ledgerMarkdownReport";
@@ -111,7 +113,7 @@ export const SettingsView: React.FC<Props> = ({ data, onChangeData, backupVersio
   const handleDownloadBackup = useCallback(() => {
     try {
       const jsonData = JSON.stringify(data, null, 2);
-      const blob = new Blob([jsonData], { type: "application/json" });
+      const blob = new Blob([jsonData], { type: "application/json;charset=utf-8" });
       const url = URL.createObjectURL(blob);
       const a = document.createElement("a");
       a.href = url;
@@ -153,6 +155,21 @@ export const SettingsView: React.FC<Props> = ({ data, onChangeData, backupVersio
       toast.error(ERROR_MESSAGES.EXPORT_MARKDOWN_FAILED);
     }
   }, [data.ledger, data.accounts]);
+
+  const handleResetAllData = useCallback(() => {
+    if (!window.confirm("가계부, 주식, 계좌 등 모든 데이터가 삭제됩니다. 복구할 수 없습니다. 정말 초기화하시겠습니까?")) return;
+    try {
+      const empty = getEmptyData();
+      saveData(empty);
+      onChangeData(empty);
+      setText(JSON.stringify(empty, null, 2));
+      setError(null);
+      toast.success("모든 데이터가 초기화되었습니다. 처음부터 다시 사용할 수 있습니다.");
+    } catch (err) {
+      if (import.meta.env.DEV) console.error("데이터 초기화 실패:", err);
+      toast.error("초기화 중 오류가 발생했습니다.");
+    }
+  }, [onChangeData]);
 
   const handleExportUnifiedCsv = useCallback(() => {
     try {
@@ -440,6 +457,19 @@ export const SettingsView: React.FC<Props> = ({ data, onChangeData, backupVersio
           </p>
           <button type="button" className="primary" onClick={handleExportUnifiedCsv}>
             통합 CSV 내보내기
+          </button>
+        </div>
+        <div className="card">
+          <div className="card-title">데이터 초기화</div>
+          <p>
+            <strong style={{ color: "var(--danger)" }}>⚠️ 주의:</strong> 가계부, 주식 거래, 계좌, 예산, 배당·이자 등 <strong>모든 앱 데이터를 삭제</strong>하고 빈 상태로 되돌립니다. 복구할 수 없으니 필요 시 먼저 "백업 파일 다운로드"로 저장해 두세요.
+          </p>
+          <button
+            type="button"
+            onClick={handleResetAllData}
+            style={{ background: "var(--danger)", color: "white", border: "none" }}
+          >
+            모든 데이터 초기화하고 처음부터 다시 하기
           </button>
         </div>
         <div className="card">

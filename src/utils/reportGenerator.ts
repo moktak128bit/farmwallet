@@ -72,6 +72,7 @@ export interface DailyReport {
 
 /**
  * 월별 리포트 생성
+ * 집계 규칙: ledger를 월별로 묶어 수입(income)·지출(expense)·이체(transfer) 금액 합산, net = income - expense
  */
 export function generateMonthlyReport(
   ledger: LedgerEntry[],
@@ -113,6 +114,7 @@ export function generateMonthlyReport(
 
 /**
  * 연도별 리포트 생성
+ * 집계 규칙: ledger를 연도별로 묶어 수입·지출·이체 합산 (generateMonthlyReport와 동일, 단위만 연도)
  */
 export function generateYearlyReport(ledger: LedgerEntry[]): MonthlyReport[] {
   const reports = new Map<string, { income: number; expense: number; transfer: number }>();
@@ -147,6 +149,7 @@ export function generateYearlyReport(ledger: LedgerEntry[]): MonthlyReport[] {
 
 /**
  * 카테고리별 리포트 생성
+ * 집계 규칙: expense만 기간 필터 후 대분류(·세부)별 금액 합산, 건수·평균
  */
 export function generateCategoryReport(
   ledger: LedgerEntry[],
@@ -186,6 +189,7 @@ export function generateCategoryReport(
 
 /**
  * 주식 성과 리포트 생성 (종목·계좌별 IRR 포함)
+ * 집계 규칙: calculations.computePositions로 포지션 산출 후, 종목별 cashFlow + 현재 평가액으로 XIRR 계산
  */
 export function generateStockPerformanceReport(
   trades: StockTrade[],
@@ -222,6 +226,7 @@ export function generateStockPerformanceReport(
 
 /**
  * 계좌 리포트 생성
+ * 집계 규칙: calculations.computeAccountBalances로 계좌별 잔액 산출 후, 초기잔액 대비 변동·변동률
  */
 export function generateAccountReport(
   accounts: Account[],
@@ -250,6 +255,7 @@ export function generateAccountReport(
 
 /**
  * 월별 수입 상세 리포트 생성 (배당/이자 등)
+ * 집계 규칙: ledger 중 income만, 배당/이자 관련 카테고리·설명 필터 후 월·일자순 정렬
  */
 export function generateMonthlyIncomeDetail(
   ledger: LedgerEntry[],
@@ -292,6 +298,7 @@ export function generateMonthlyIncomeDetail(
 
 /**
  * 일별 리포트 생성 (일자별 자산 계산)
+ * 집계 규칙: 날짜별로 ledger/trades 자른 뒤 계산; 일별 수입·지출·저축성지출·이체 합계, computeAccountBalances·computePositions로 잔액·평가액 산출 후 현금·저축·주식·순자산
  */
 export function generateDailyReport(
   accounts: Account[],

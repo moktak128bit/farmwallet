@@ -31,6 +31,7 @@ export function buildUnifiedCsv(
     "출금계좌",
     "입금계좌",
     "메모",
+    "태그",
     "계좌",
     "티커",
     "종목명",
@@ -61,6 +62,7 @@ export function buildUnifiedCsv(
         l.fromAccountId ? accountNameById.get(l.fromAccountId) ?? l.fromAccountId : "",
         l.toAccountId ? accountNameById.get(l.toAccountId) ?? l.toAccountId : "",
         l.note ?? "",
+        Array.isArray(l.tags) ? l.tags.join(",") : "",
         "", "", "", "", "", "", "", "",
         l.id
       ]
@@ -76,6 +78,7 @@ export function buildUnifiedCsv(
         t.date,
         sideLabel,
         "", "", "",
+        "",
         "",
         "",
         "", "",

@@ -1,5 +1,10 @@
-import type { Account, LedgerEntry, StockPrice, StockTrade } from "./types";
-import { isUSDStock, canonicalTickerForMatch } from "./utils/tickerUtils";
+import type {
+  Account,
+  LedgerEntry,
+  StockPrice,
+  StockTrade
+} from "./types";
+import { isUSDStock, canonicalTickerForMatch } from "./utils/finance";
 
 // ---------------------------------------------------------------------------
 // Types (unchanged for callers)
@@ -480,7 +485,8 @@ export function computeTotalCashValue(
         b.account.type === "other"
     )
     .reduce((s, b) => {
-      const krw = b.currentBalance;
+      const reservedSavings = b.account.type !== "savings" ? (b.account.savings ?? 0) : 0;
+      const krw = b.currentBalance - reservedSavings;
       const usd =
         b.account.type === "securities"
           ? (b.account.usdBalance ?? 0) + (b.usdTransferNet ?? 0)
@@ -497,7 +503,9 @@ export function computeTotalSavings(
   const fromBalances = balances
     .filter((b) => b.account.type === "savings")
     .reduce((s, b) => s + b.currentBalance, 0);
-  const fromAccounts = accounts.reduce((s, a) => s + (a.savings ?? 0), 0);
+  const fromAccounts = accounts
+    .filter((a) => a.type !== "savings")
+    .reduce((s, a) => s + (a.savings ?? 0), 0);
   return fromBalances + fromAccounts;
 }
 

@@ -2,10 +2,10 @@ import React, { useState, useMemo, useEffect, useRef } from "react";
 import { toast } from "react-hot-toast";
 import type { Account, StockPrice, StockTrade, TradeSide } from "../../types";
 import { computeRealizedPnlByTradeId } from "../../calculations";
-import { isUSDStock, canonicalTickerForMatch } from "../../utils/tickerUtils";
+import { isUSDStock, canonicalTickerForMatch } from "../../utils/finance";
 import { validateAccountTickerCurrency } from "../../utils/validation";
 import { ERROR_MESSAGES } from "../../constants/errorMessages";
-import { formatNumber, formatKRW, formatUSD, formatShortDate } from "../../utils/format";
+import { formatNumber, formatKRW, formatUSD, formatShortDate } from "../../utils/formatter";
 
 const sideLabel: Record<TradeSide, string> = {
   buy: "매수",

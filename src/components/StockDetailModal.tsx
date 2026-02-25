@@ -1,8 +1,8 @@
 import React, { useMemo, useState, useEffect } from "react";
 import type { Account, LedgerEntry, StockPrice, StockTrade, TickerInfo } from "../types";
 import { Autocomplete } from "./Autocomplete";
-import { formatKRW, formatNumber } from "../utils/format";
-import { isKRWStock, isUSDStock, extractTickerFromText } from "../utils/tickerUtils";
+import { formatKRW, formatNumber } from "../utils/formatter";
+import { isKRWStock, isUSDStock, extractTickerFromText } from "../utils/finance";
 import { toast } from "react-hot-toast";
 import { ERROR_MESSAGES } from "../constants/errorMessages";
 
@@ -683,4 +683,3 @@ export const StockDetailModal: React.FC<Props> = ({
     </div>
   );
 };
-

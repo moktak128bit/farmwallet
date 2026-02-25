@@ -1,5 +1,5 @@
 import React from "react";
-import { formatKRW } from "../../utils/format";
+import { formatKRW } from "../../utils/formatter";
 
 interface StockStatsCardProps {
   totalMarketValue: number;

@@ -2,7 +2,7 @@ import React, { useEffect, useMemo, useState, lazy, Suspense } from "react";
 import { Toaster, toast } from "react-hot-toast";
 import { Moon, Sun, Menu } from "lucide-react";
 import { Tabs, type TabId } from "./components/Tabs";
-import { DashboardView } from "./components/DashboardView";
+import { DashboardView } from "./components/dashboard";
 import { ShortcutsHelp } from "./components/ShortcutsHelp";
 import { SearchModal } from "./components/SearchModal";
 
@@ -294,17 +294,7 @@ export const App: React.FC = () => {
             )}
             <main className="app-main" role="main">
           <Suspense fallback={<div className="card" style={{ padding: 24, textAlign: "center", color: "var(--text-muted)" }}>로딩 중...</div>}>
-          {tab === "dashboard" && (
-            <DashboardView
-              accounts={data.accounts}
-              ledger={data.ledger}
-              trades={data.trades}
-              prices={data.prices}
-              categoryPresets={data.categoryPresets}
-              targetPortfolios={data.targetPortfolios ?? []}
-              budgets={data.budgetGoals ?? []}
-            />
-          )}
+          {tab === "dashboard" && <DashboardView />}
           {tab === "accounts" && (
             <AccountsView
               accounts={data.accounts}

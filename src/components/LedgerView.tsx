@@ -1,13 +1,13 @@
 import React, { useEffect, useMemo, useState, useRef, useCallback } from "react";
 import { Autocomplete } from "./Autocomplete";
 import type { Account, CategoryPresets, ExpenseDetailGroup, LedgerEntry, LedgerKind } from "../types";
-import { formatShortDate, formatUSD, formatKRW } from "../utils/format";
+import { formatShortDate, formatUSD, formatKRW } from "../utils/formatter";
 import { shortcutManager, type ShortcutAction } from "../utils/shortcuts";
 import { parseCSV, convertToLedgerEntries } from "../utils/csvParser";
 import * as XLSX from "xlsx";
 import { validateDate, validateRequired, validateTransfer } from "../utils/validation";
-import { isSavingsExpenseEntry } from "../utils/categoryUtils";
-import { getKoreaTime, getTodayKST, getThisMonthKST } from "../utils/dateUtils";
+import { isSavingsExpenseEntry } from "../utils/category";
+import { getKoreaTime, getTodayKST, getThisMonthKST } from "../utils/date";
 import { toast } from "react-hot-toast";
 import { ERROR_MESSAGES } from "../constants/errorMessages";
 

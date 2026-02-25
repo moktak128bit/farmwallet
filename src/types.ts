@@ -1,3 +1,5 @@
+// --- Models ---
+
 export type AccountType = "checking" | "savings" | "card" | "securities" | "other";
 
 export interface Account {
@@ -196,6 +198,45 @@ export interface WorkoutWeek {
   entries: WorkoutDayEntry[];
 }
 
+// --- Calculation Results ---
+
+export interface AccountBalanceRow {
+  account: Account;
+  incomeSum: number;
+  expenseSum: number;
+  transferNet: number;
+  usdTransferNet: number;
+  tradeCashImpact: number;
+  currentBalance: number;
+}
+
+export interface PositionRow {
+  accountId: string;
+  accountName: string;
+  ticker: string;
+  name: string;
+  quantity: number;
+  avgPrice: number;
+  totalBuyAmount: number;
+  marketPrice: number;
+  marketValue: number;
+  pnl: number;
+  pnlRate: number;
+}
+
+export interface MonthlyNetWorthRow {
+  month: string; // yyyy-mm
+  netWorth: number;
+}
+
+/** ISA 포트폴리오 한 종목 (목표 비중 %) */
+export interface IsaPortfolioItem {
+  ticker: string;
+  name: string;
+  weight: number;
+  label: string;
+}
+
 export interface AppData {
   accounts: Account[];
   ledger: LedgerEntry[];
@@ -212,4 +253,10 @@ export interface AppData {
   targetPortfolios?: TargetPortfolio[];
   loans?: Loan[]; // 대출 목록
   workoutWeeks?: WorkoutWeek[];
+  /** 목표 자산 곡선 (날짜별 목표 금액). 비어 있으면 date < CALC_START_DATE 구간은 0 표시 */
+  targetNetWorthCurve?: Record<string, number>;
+  /** 배당 추적 위젯에 표시할 티커. 비어 있으면 위젯 비활성화 또는 티커 선택 프롬프트 */
+  dividendTrackingTicker?: string;
+  /** ISA 목표 포트폴리오. 비어 있으면 config 기본값 사용 */
+  isaPortfolio?: IsaPortfolioItem[];
 }

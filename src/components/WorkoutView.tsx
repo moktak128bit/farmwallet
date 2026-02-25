@@ -1,6 +1,6 @@
 import React, { useState, useMemo } from "react";
 import type { WorkoutWeek, WorkoutDayEntry, WorkoutExercise, WorkoutSet } from "../types";
-import { formatNumber } from "../utils/format";
+import { formatNumber } from "../utils/formatter";
 
 interface Props {
   workoutWeeks?: WorkoutWeek[];
@@ -204,12 +204,12 @@ export const WorkoutView: React.FC<Props> = ({ workoutWeeks = [], onChangeWorkou
                   <span style={{ fontSize: 13 }}>유형</span>
                   <select
                     value={entry.type}
-                    onChange={(e) =>
-                      updateDay(entry.date, (e) => ({
-                        ...e,
-                        type: e.target.value as "workout" | "rest",
-                        exercises: e.target.value === "workout" ? e.exercises ?? [] : undefined,
-                        restNotes: e.target.value === "rest" ? e.restNotes ?? "" : undefined
+                    onChange={(evt) =>
+                      updateDay(entry.date, (day) => ({
+                        ...day,
+                        type: evt.target.value as "workout" | "rest",
+                        exercises: evt.target.value === "workout" ? day.exercises ?? [] : undefined,
+                        restNotes: evt.target.value === "rest" ? day.restNotes ?? "" : undefined
                       }))
                     }
                     style={{ padding: "4px 8px", borderRadius: 4 }}

@@ -1,6 +1,6 @@
-import type { AppData, CategoryPresets, ExpenseDetailGroup } from "../types";
-import { STORAGE_KEYS, DEFAULT_US_TICKERS } from "../constants/config";
-import { normalizeCategory, normalizeSubCategory } from "../utils/categoryNormalize";
+import type { AppData, CategoryPresets, ExpenseDetailGroup, IsaPortfolioItem } from "../types";
+import { STORAGE_KEYS, DEFAULT_US_TICKERS, ISA_PORTFOLIO } from "../constants/config";
+import { normalizeCategory, normalizeSubCategory } from "../utils/category";
 import krNames from "../data/krNames.json";
 
 function cleanTicker(raw: string): string {
@@ -348,6 +348,16 @@ function migrateSavingsExpenseFromTransfer(
   });
 }
 
+/** ISA 포트폴리오 기본값 (config 기반) */
+function getDefaultIsaPortfolio(): IsaPortfolioItem[] {
+  return ISA_PORTFOLIO.map((item) => ({
+    ticker: item.ticker,
+    name: item.name,
+    weight: item.weight,
+    label: item.label
+  }));
+}
+
 /** 초기 로딩/빈 상태용 기본 데이터 (로딩 UI 표시 시 훅에 넘기기 위해 사용) */
 export function getEmptyData(): AppData {
   const defaults = getDefaultCategoryPresets();
@@ -366,7 +376,10 @@ export function getEmptyData(): AppData {
     ledgerTemplates: [],
     stockPresets: [],
     targetPortfolios: [],
-    workoutWeeks: []
+    workoutWeeks: [],
+    targetNetWorthCurve: {},
+    dividendTrackingTicker: undefined,
+    isaPortfolio: getDefaultIsaPortfolio()
   };
 }
 
@@ -403,7 +416,10 @@ export function loadData(): AppData {
       ledgerTemplates: parsed.ledgerTemplates ?? [],
       stockPresets: parsed.stockPresets ?? [],
       targetPortfolios: parsed.targetPortfolios ?? [],
-      workoutWeeks: parsed.workoutWeeks ?? []
+      workoutWeeks: parsed.workoutWeeks ?? [],
+      targetNetWorthCurve: parsed.targetNetWorthCurve && typeof parsed.targetNetWorthCurve === "object" ? parsed.targetNetWorthCurve : {},
+      dividendTrackingTicker: parsed.dividendTrackingTicker !== undefined && parsed.dividendTrackingTicker !== null ? String(parsed.dividendTrackingTicker) : "458730",
+      isaPortfolio: parsed.isaPortfolio && Array.isArray(parsed.isaPortfolio) && parsed.isaPortfolio.length > 0 ? parsed.isaPortfolio : getDefaultIsaPortfolio()
     };
     const { data: dataWithKrNames, changed: krNamesChanged } = applyKoreanStockNames(parsedData);
     const accounts = dataWithKrNames.accounts;

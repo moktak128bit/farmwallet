@@ -53,6 +53,4 @@ export function extractTickerFromText(text: string): string | null {
   const m = text.match(/([0-9A-Z]{1,10})/i);
   return m ? m[1] : null;
 }
-
-
-
+ 

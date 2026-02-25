@@ -23,13 +23,12 @@ import { PresetSection } from "./stocks/PresetSection";
 import { TradeHistorySection } from "./stocks/TradeHistorySection";
 import { PositionListSection } from "./stocks/PositionListSection";
 import { TargetPortfolioSection } from "./stocks/TargetPortfolioSection";
-import type { Account, StockPrice, StockTrade, TradeSide, SymbolInfo, TickerInfo, StockPreset, LedgerEntry, TargetPortfolio } from "../types";
-import type { AccountBalanceRow } from "../calculations";
+import type { Account, StockPrice, StockTrade, TradeSide, SymbolInfo, TickerInfo, StockPreset, LedgerEntry, TargetPortfolio, AccountBalanceRow } from "../types";
 import { computePositions } from "../calculations";
 import { fetchYahooQuotes, searchYahooSymbol } from "../yahooFinanceApi";
 import { saveTickerDatabaseBackup, saveTickerToJson } from "../storage";
-import { formatNumber, formatKRW, formatUSD, formatShortDate } from "../utils/format";
-import { isUSDStock, isKRWStock, canonicalTickerForMatch } from "../utils/tickerUtils";
+import { formatNumber, formatKRW, formatUSD, formatShortDate } from "../utils/formatter";
+import { isUSDStock, isKRWStock, canonicalTickerForMatch } from "../utils/finance";
 import { toast } from "react-hot-toast";
 import { validateDate, validateTicker, validateRequired, validateQuantity, validateAmount, validateAccountTickerCurrency } from "../utils/validation";
 import { ERROR_MESSAGES } from "../constants/errorMessages";
@@ -2616,4 +2615,3 @@ export const StocksView: React.FC<Props> = ({
     </div>
   );
 };
-

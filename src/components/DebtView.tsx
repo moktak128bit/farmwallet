@@ -1,6 +1,6 @@
 import React, { useState, useMemo } from "react";
 import type { Loan, RepaymentMethod, LedgerEntry } from "../types";
-import { formatNumber } from "../utils/format";
+import { formatNumber } from "../utils/formatter";
 
 interface Props {
   loans?: Loan[];

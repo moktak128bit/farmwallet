@@ -42,9 +42,12 @@ export interface IntegrityIssue {
   data: DuplicateTrade | BalanceMismatch | MissingReference | CategoryMismatch | any;
 }
 
-/** 이체 제외: 신용카드·카드대금 이체 (calculations.ts와 동일) */
 function isCardPaymentTransfer(l: LedgerEntry): boolean {
-  return l.category === "신용카드" && l.subCategory === "카드대금";
+  return (
+    l.kind === "transfer" &&
+    ((l.category === "\uC2E0\uC6A9\uCE74\uB4DC" && l.subCategory === "\uCE74\uB4DC\uB300\uAE08") ||
+      (l.category === "\uC774\uCCB4" && l.subCategory === "\uCE74\uB4DC\uACB0\uC81C\uC774\uCCB4"))
+  );
 }
 
 function isUsdEntry(l: LedgerEntry): boolean {
@@ -52,7 +55,7 @@ function isUsdEntry(l: LedgerEntry): boolean {
 }
 
 /**
- * 중복 거래 감지
+ * 중복 거래 탐지
  */
 export function detectDuplicateTrades(
   ledger: LedgerEntry[],
@@ -61,10 +64,20 @@ export function detectDuplicateTrades(
 ): DuplicateTrade[] {
   const duplicates: DuplicateTrade[] = [];
 
-  // 가계부 중복 감지
+  // 원장 중복 탐지
   const ledgerGroups = new Map<string, LedgerEntry[]>();
   ledger.forEach((entry) => {
-    const key = `${entry.date}_${entry.amount}_${entry.fromAccountId || ""}_${entry.toAccountId || ""}_${entry.category}`;
+    const key = [
+      entry.date,
+      entry.kind,
+      entry.amount,
+      entry.fromAccountId || "",
+      entry.toAccountId || "",
+      (entry.category || "").trim(),
+      (entry.subCategory || "").trim(),
+      (entry.description || "").trim(),
+      entry.currency || "KRW"
+    ].join("|");
     if (!ledgerGroups.has(key)) {
       ledgerGroups.set(key, []);
     }
@@ -81,7 +94,7 @@ export function detectDuplicateTrades(
     }
   });
 
-  // 주식 거래 중복 감지
+  // 주식 거래 중복 탐지
   const tradeGroups = new Map<string, StockTrade[]>();
   trades.forEach((trade) => {
     const key = `${trade.date}_${trade.accountId}_${trade.ticker}_${trade.side}_${trade.quantity}_${trade.price}`;
@@ -105,8 +118,7 @@ export function detectDuplicateTrades(
 }
 
 /**
- * 계좌 잔액 검증
- */
+ * 계좌 잔액 검증 */
 export function validateAccountBalances(
   accounts: Account[],
   ledger: LedgerEntry[],
@@ -119,7 +131,6 @@ export function validateAccountBalances(
     const balanceRow = balances.find((b) => b.account.id === account.id);
     if (!balanceRow) return;
 
-    // 초기 잔액 + 현금 조정 + 초기 현금 잔액
     const expectedBalance =
       account.initialBalance +
       (account.cashAdjustment ?? 0) +
@@ -128,7 +139,7 @@ export function validateAccountBalances(
     const calculatedBalance = balanceRow.currentBalance;
     const difference = calculatedBalance - expectedBalance;
 
-    // 차이가 1원 이상이면 불일치로 간주
+    // 차이가 1원 이상이면 이슈로 추가
     if (Math.abs(difference) >= 1) {
       mismatches.push({
         accountId: account.id,
@@ -144,8 +155,7 @@ export function validateAccountBalances(
 }
 
 /**
- * 누락된 참조 확인
- */
+ * 주식 거래 참조 검사 */
 export function checkMissingReferences(
   accounts: Account[],
   ledger: LedgerEntry[],
@@ -153,9 +163,6 @@ export function checkMissingReferences(
 ): MissingReference[] {
   const issues: MissingReference[] = [];
   const accountIds = new Set(accounts.map((a) => a.id));
-  const tickerSet = new Set<string>(); // 주식 티커는 동적으로 추가되므로 경고만
-
-  // 가계부에서 누락된 계좌 참조 확인
   const missingAccountRefs = new Map<string, Array<{ type: "ledger" | "trade"; id: string; field: string }>>();
 
   ledger.forEach((entry) => {
@@ -169,6 +176,7 @@ export function checkMissingReferences(
         field: "fromAccountId"
       });
     }
+
     if (entry.toAccountId && !accountIds.has(entry.toAccountId)) {
       if (!missingAccountRefs.has(entry.toAccountId)) {
         missingAccountRefs.set(entry.toAccountId, []);
@@ -181,7 +189,6 @@ export function checkMissingReferences(
     }
   });
 
-  // 주식 거래에서 누락된 계좌 참조 확인
   trades.forEach((trade) => {
     if (trade.accountId && !accountIds.has(trade.accountId)) {
       if (!missingAccountRefs.has(trade.accountId)) {
@@ -205,17 +212,14 @@ export function checkMissingReferences(
 
   return issues;
 }
-
 /**
- * 날짜 순서 검증
- */
+ * 날짜 순서 검증 */
 export function validateDateOrder(
   ledger: LedgerEntry[],
   trades: StockTrade[]
 ): IntegrityIssue[] {
   const issues: IntegrityIssue[] = [];
 
-  // 가계부 날짜 검증 (미래 날짜 체크)
   const today = new Date().toISOString().slice(0, 10);
   ledger.forEach((entry) => {
     if (entry.date > today) {
@@ -228,7 +232,6 @@ export function validateDateOrder(
     }
   });
 
-  // 주식 거래 날짜 검증
   trades.forEach((trade) => {
     if (trade.date > today) {
       issues.push({
@@ -242,28 +245,22 @@ export function validateDateOrder(
 
   return issues;
 }
-
 /**
- * 금액 일관성 검증
- */
+ * 금액 일관성 검증 */
 export function validateAmountConsistency(
   ledger: LedgerEntry[],
   trades: StockTrade[]
 ): IntegrityIssue[] {
   const issues: IntegrityIssue[] = [];
 
-  // 주식 거래의 totalAmount 검증
   trades.forEach((trade) => {
     const f = trade.fee ?? 0;
-    // 매수: totalAmount = quantity * price + fee (지불한 총액)
-    // 매도: totalAmount = quantity * price - fee (받은 총액, 수수료 차감)
     const expectedTotal = trade.side === "buy"
       ? trade.quantity * trade.price + f
       : trade.quantity * trade.price - f;
     const actualTotal = trade.totalAmount;
     const difference = Math.abs(expectedTotal - actualTotal);
 
-    // 1원 이상 차이나면 경고
     if (difference >= 1) {
       issues.push({
         type: "amount_consistency",
@@ -276,10 +273,8 @@ export function validateAmountConsistency(
 
   return issues;
 }
-
 /**
- * 내부 이체 쌍 검증: fromAccountId·toAccountId 모두 있는 이체는 계좌 간 합계 0이어야 함
- */
+  * 내부 이체 쌍 검증: fromAccountId·toAccountId 모두 있는 이체는 계좌 간 합계 0이어야 함 */
 export function validateTransferPairConsistency(
   ledger: LedgerEntry[],
   accounts: Account[]
@@ -319,7 +314,7 @@ export function validateTransferPairConsistency(
     issues.push({
       type: "transfer_pair_mismatch",
       severity: "error",
-      message: `내부 이체(KRW)의 합계가 0이 아닙니다. 차이: ${totalKrw.toLocaleString()}원`,
+      message: `내부 이체(KRW) 합계가 0이 아닙니다. 차이: ${totalKrw.toLocaleString()}원`,
       data: { currency: "KRW", totalNet: totalKrw }
     });
   }
@@ -327,7 +322,7 @@ export function validateTransferPairConsistency(
     issues.push({
       type: "transfer_pair_mismatch",
       severity: "error",
-      message: `내부 이체(USD)의 합계가 0이 아닙니다. 차이: ${totalUsd.toLocaleString()} USD`,
+      message: `내부 이체(USD) 합계가 0이 아닙니다. 차이: ${totalUsd.toLocaleString()} USD`,
       data: { currency: "USD", totalNet: totalUsd }
     });
   }
@@ -336,8 +331,7 @@ export function validateTransferPairConsistency(
 }
 
 /**
- * 이체 필수 필드 검증: kind=transfer인데 fromAccountId 또는 toAccountId가 없으면 경고
- */
+ * 이체 항목 쌍 검증: kind=transfer일 때 fromAccountId 또는 toAccountId가 없으면 검사 */
 export function validateTransferRequiredFields(
   ledger: LedgerEntry[]
 ): IntegrityIssue[] {
@@ -362,7 +356,6 @@ export function validateTransferRequiredFields(
 
 /**
  * USD 증권 계좌 일관성 검증: USD 거래 순합계와 usdBalance+usdTransferNet 비교
- * usdBalance는 수동 입력이므로, USD 거래가 있는데 잔액이 0이면 경고
  */
 export function validateUsdSecuritiesConsistency(
   accounts: Account[],
@@ -402,7 +395,7 @@ export function validateUsdSecuritiesConsistency(
 }
 
 /**
- * 카테고리 일관성 검증: 가계부 항목의 category/subCategory가 CategoryPresets와 맞는지 검사
+ * 카테고리 일관성 검증: 원장 항목의 category/subCategory가 CategoryPresets에 있는지 검사
  */
 export function checkCategoryConsistency(
   ledger: LedgerEntry[],
@@ -414,17 +407,43 @@ export function checkCategoryConsistency(
   const transferSet = new Set(categoryPresets.transfer ?? []);
   const expenseDetails = categoryPresets.expenseDetails ?? [];
   const savingsCategories = new Set(categoryPresets.categoryTypes?.savings ?? ["저축성지출"]);
+  const systemExpenseCategories = new Set(["신용결제"]);
+  const incomeWrapperCategories = new Set(["수입"]);
+  const transferWrapperCategories = new Set(["이체"]);
+  const unclassifiedSubCategories = new Set(["(미분류)", "미분류", "-"]);
+
+  const normalizeKey = (value: string) => value.replace(/\s+/g, "").trim();
+  const hasCategory = (set: Set<string>, normalizedSet: Set<string>, value: string) =>
+    set.has(value) || normalizedSet.has(normalizeKey(value));
+
+  const normalizedIncomeSet = new Set(Array.from(incomeSet).map(normalizeKey));
+  const normalizedExpenseSet = new Set(Array.from(expenseSet).map(normalizeKey));
+  const normalizedTransferSet = new Set(Array.from(transferSet).map(normalizeKey));
+  const normalizedSavingsSet = new Set(Array.from(savingsCategories).map(normalizeKey));
+  const expenseDetailsByMain = new Map<
+    string,
+    { subs: Set<string>; normalizedSubs: Set<string> }
+  >();
+  expenseDetails.forEach((group) => {
+    const subs = new Set(group.subs ?? []);
+    expenseDetailsByMain.set(normalizeKey(group.main), {
+      subs,
+      normalizedSubs: new Set(Array.from(subs).map(normalizeKey))
+    });
+  });
 
   ledger.forEach((entry) => {
     const main = (entry.category ?? "").trim();
     const sub = (entry.subCategory ?? "").trim();
 
     if (entry.kind === "income") {
-      if (main && !incomeSet.has(main)) {
+      const usesWrapperMain = !main || incomeWrapperCategories.has(main);
+      const candidate = usesWrapperMain ? sub : main;
+      if (!candidate || !hasCategory(incomeSet, normalizedIncomeSet, candidate)) {
         issues.push({
           type: "category_mismatch",
           severity: "warning",
-          message: `가계부 항목 ${entry.id}: 수입 카테고리 "${main}"이(가) 수입 프리셋에 없습니다`,
+          message: `가계부 항목 ${entry.id}: 수입 항목 "${candidate || main || sub || "(빈값)"}"이(가) 수입 프리셋에 없습니다`,
           data: {
             entryId: entry.id,
             kind: "income",
@@ -438,11 +457,13 @@ export function checkCategoryConsistency(
     }
 
     if (entry.kind === "transfer") {
-      if (main && !transferSet.has(main)) {
+      const usesWrapperMain = !main || transferWrapperCategories.has(main);
+      const candidate = usesWrapperMain ? sub : main;
+      if (!candidate || !hasCategory(transferSet, normalizedTransferSet, candidate)) {
         issues.push({
           type: "category_mismatch",
           severity: "warning",
-          message: `가계부 항목 ${entry.id}: 이체 카테고리 "${main}"이(가) 이체 프리셋에 없습니다`,
+          message: `가계부 항목 ${entry.id}: 이체 항목 "${candidate || main || sub || "(빈값)"}"이(가) 이체 프리셋에 없습니다`,
           data: {
             entryId: entry.id,
             kind: "transfer",
@@ -456,7 +477,13 @@ export function checkCategoryConsistency(
     }
 
     if (entry.kind === "expense") {
-      if (main && !expenseSet.has(main) && !savingsCategories.has(main)) {
+      const isKnownExpenseMain =
+        !!main &&
+        (hasCategory(expenseSet, normalizedExpenseSet, main) ||
+          hasCategory(savingsCategories, normalizedSavingsSet, main) ||
+          systemExpenseCategories.has(main));
+
+      if (main && !isKnownExpenseMain) {
         issues.push({
           type: "category_mismatch",
           severity: "warning",
@@ -471,9 +498,25 @@ export function checkCategoryConsistency(
         });
         return;
       }
-      const detailGroup = expenseDetails.find((g) => g.main === main);
-      const allowedSubs = detailGroup ? new Set(detailGroup.subs ?? []) : null;
-      if (sub && allowedSubs && !allowedSubs.has(sub)) {
+
+      if (
+        !main ||
+        systemExpenseCategories.has(main) ||
+        hasCategory(savingsCategories, normalizedSavingsSet, main)
+      ) {
+        return;
+      }
+
+      if (
+        !sub ||
+        unclassifiedSubCategories.has(sub) ||
+        normalizeKey(main) === normalizeKey(sub)
+      ) {
+        return;
+      }
+
+      const detailGroup = expenseDetailsByMain.get(normalizeKey(main));
+      if (detailGroup && !hasCategory(detailGroup.subs, detailGroup.normalizedSubs, sub)) {
         issues.push({
           type: "category_mismatch",
           severity: "warning",
@@ -484,7 +527,7 @@ export function checkCategoryConsistency(
             category: main,
             subCategory: sub,
             expectedMain: categoryPresets.expense,
-            expectedSubs: detailGroup?.subs
+            expectedSubs: Array.from(detailGroup.subs)
           } as CategoryMismatch
         });
       }
@@ -493,9 +536,8 @@ export function checkCategoryConsistency(
 
   return issues;
 }
-
 /**
- * 전체 무결성 체크 실행
+ * 무결성 검사 전체 실행 진입점
  */
 export function runIntegrityCheck(
   accounts: Account[],
@@ -505,7 +547,7 @@ export function runIntegrityCheck(
 ): IntegrityIssue[] {
   const issues: IntegrityIssue[] = [];
 
-  // 중복 거래 감지
+  // 중복 거래 탐지
   const duplicates = detectDuplicateTrades(ledger, trades);
   duplicates.forEach((dup) => {
     issues.push({
@@ -516,10 +558,8 @@ export function runIntegrityCheck(
     });
   });
 
-  // 계좌 잔액 검증: 제거됨 (기존 expectedBalance 정의가 잘못되어 오탐 유발)
-  // validateAccountBalances는 초기값만 사용해 실제 잔액과 비교 불가, 증권 계좌 이중 산입 문제 있음
+  // 계좌 잔액 검증 생략
 
-  // 누락된 참조 확인
   const missingRefs = checkMissingReferences(accounts, ledger, trades);
   missingRefs.forEach((ref) => {
     issues.push({
@@ -530,23 +570,18 @@ export function runIntegrityCheck(
     });
   });
 
-  // 날짜 순서 검증
   const dateIssues = validateDateOrder(ledger, trades);
   issues.push(...dateIssues);
 
-  // 금액 일관성 검증
   const amountIssues = validateAmountConsistency(ledger, trades);
   issues.push(...amountIssues);
 
-  // 내부 이체 쌍 검증
   const transferPairIssues = validateTransferPairConsistency(ledger, accounts);
   issues.push(...transferPairIssues);
 
-  // 이체 필수 필드 검증
   const transferRefIssues = validateTransferRequiredFields(ledger);
   issues.push(...transferRefIssues);
 
-  // USD 증권 일관성 검증
   const usdSecuritiesIssues = validateUsdSecuritiesConsistency(
     accounts,
     ledger,
@@ -554,7 +589,6 @@ export function runIntegrityCheck(
   );
   issues.push(...usdSecuritiesIssues);
 
-  // 카테고리 일관성 검증
   if (categoryPresets) {
     const categoryIssues = checkCategoryConsistency(ledger, categoryPresets);
     issues.push(...categoryIssues);
@@ -575,7 +609,7 @@ export function mergeDuplicates(
 
   duplicates.forEach((dup) => {
     if (keepFirst) {
-      // 첫 번째 항목을 유지하고 나머지 제거
+      // 첫 번째 항목만 남기고 제거
       for (let i = 1; i < dup.entries.length; i++) {
         if (dup.type === "ledger") {
           ledgerToRemove.add((dup.entries[i] as LedgerEntry).id);
@@ -584,7 +618,7 @@ export function mergeDuplicates(
         }
       }
     } else {
-      // 마지막 항목을 유지하고 나머지 제거
+      // 마지막 항목만 남기고 제거
       for (let i = 0; i < dup.entries.length - 1; i++) {
         if (dup.type === "ledger") {
           ledgerToRemove.add((dup.entries[i] as LedgerEntry).id);
@@ -600,4 +634,11 @@ export function mergeDuplicates(
     trades: tradesToRemove
   };
 }
+
+
+
+
+
+
+
 

@@ -657,7 +657,7 @@ export const DividendsView: React.FC<Props> = ({ accounts, ledger, trades, price
                   onClick={() => setShowUSD((v) => !v)}
                   style={{ padding: "6px 12px", fontSize: 13 }}
                 >
-                  {showUSD ? "USD ON" : "USD OFF"}
+                  {showUSD ? "USD 표시" : "원화 표시"}
                 </button>
               )}
             </div>

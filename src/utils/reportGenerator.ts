@@ -401,14 +401,14 @@ export function generateDailyReport(
         .filter((a) => a.type !== "savings")
         .reduce((sum, a) => sum + (a.savings ?? 0), 0);
     
-    // 부채
+    // 부채 (음수)
     const debt = accounts.reduce((sum, a) => sum + (a.debt ?? 0), 0);
     
     // 전체 자산
     const totalAsset = stockValue + cashValue + savingsValue;
     
     // 순자산
-    const netWorth = totalAsset - debt;
+    const netWorth = totalAsset + debt;
     
     reports.push({
       date,

@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useState } from "react";
 import { getAllBackupList, getLatestLocalBackupIntegrity, saveBackupSnapshot, saveData } from "../storage";
 import type { AppData } from "../types";
 import { toast } from "react-hot-toast";
@@ -10,9 +10,7 @@ export interface BackupIntegrity {
   status: "valid" | "missing-hash" | "mismatch" | "none";
 }
 
-export function useBackup(data: AppData, setManualBackupFlag: (flag: boolean) => void) {
-  const dataRef = useRef(data);
-  dataRef.current = data;
+export function useBackup(data: AppData) {
   const [latestBackupAt, setLatestBackupAt] = useState<string | null>(null);
   const [backupVersion, setBackupVersion] = useState<number>(0);
   const [backupIntegrity, setBackupIntegrity] = useState<BackupIntegrity>({
@@ -29,10 +27,7 @@ export function useBackup(data: AppData, setManualBackupFlag: (flag: boolean) =>
     setBackupVersion(Date.now());
   }, []);
 
-  // 진입 시 자동 백업/목록 조회 제거 (빈 화면 방지)
-
   const handleManualBackup = useCallback(async () => {
-    setManualBackupFlag(true);
     const toastId = "manual-backup";
     toast.loading("백업 저장 중...", { id: toastId });
     const folder = new Date().toISOString().slice(0, 10);
@@ -40,13 +35,11 @@ export function useBackup(data: AppData, setManualBackupFlag: (flag: boolean) =>
       saveData(data);
       await saveBackupSnapshot(data, { skipHash: false, folder });
       await refreshLatestBackup();
-      toast.success("백업 스냅샷 저장 완료", { id: toastId });
+      toast.success("백업 저장 완료", { id: toastId });
     } catch (err) {
       toast.error(ERROR_MESSAGES.BACKUP_SAVE_FAILED, { id: toastId });
-    } finally {
-      setManualBackupFlag(false);
     }
-  }, [data, refreshLatestBackup, setManualBackupFlag]);
+  }, [data, refreshLatestBackup]);
 
   const getBackupWarning = () => {
     if (!latestBackupAt) return null;

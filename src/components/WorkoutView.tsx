@@ -1,4 +1,4 @@
-import React, { useState, useMemo } from "react";
+﻿import React, { useMemo, useState } from "react";
 import type { WorkoutWeek, WorkoutDayEntry, WorkoutExercise, WorkoutSet } from "../types";
 import { formatNumber } from "../utils/formatter";
 
@@ -7,33 +7,83 @@ interface Props {
   onChangeWorkoutWeeks: (weeks: WorkoutWeek[]) => void;
 }
 
-/** 해당 날짜가 속한 주의 일요일 (yyyy-mm-dd) */
-function getWeekStart(d: Date): string {
-  const date = new Date(d);
-  const day = date.getDay();
-  const diff = date.getDate() - day;
-  const sunday = new Date(date);
-  sunday.setDate(diff);
-  return sunday.toISOString().slice(0, 10);
+interface CalendarCell {
+  date: string;
+  inCurrentMonth: boolean;
 }
 
-/** weekStart(일요일) 기준 offset일째 날짜 (0=일, 1=월, 2=화) */
-function getDateByOffset(weekStart: string, offset: number): string {
-  const d = new Date(weekStart + "T12:00:00");
-  d.setDate(d.getDate() + offset);
-  return d.toISOString().slice(0, 10);
+interface EntryRef {
+  weekId: string;
+  weekStart: string;
+  entry: WorkoutDayEntry;
 }
 
-const DAY_LABELS: [string, string][] = [
-  ["일요일", "Day 1 (상체)"],
-  ["월요일", "휴식"],
-  ["화요일", "Day 2 (하체)"]
+const WEEKDAY_LABELS = ["일", "월", "화", "수", "목", "금", "토"];
+
+const DAY_TEMPLATE: Array<{
+  offset: number;
+  type: "workout" | "rest";
+  dayLabel: string;
+}> = [
+  { offset: 0, type: "workout", dayLabel: "Day 1 (상체)" },
+  { offset: 1, type: "rest", dayLabel: "휴식" },
+  { offset: 2, type: "workout", dayLabel: "Day 2 (하체)" }
 ];
 
+function toDateString(date: Date): string {
+  const y = date.getFullYear();
+  const m = String(date.getMonth() + 1).padStart(2, "0");
+  const d = String(date.getDate()).padStart(2, "0");
+  return `${y}-${m}-${d}`;
+}
+
+function parseDate(dateStr: string): Date {
+  return new Date(`${dateStr}T12:00:00`);
+}
+
+function getWeekStart(dateLike: Date | string): string {
+  const date = typeof dateLike === "string" ? parseDate(dateLike) : new Date(dateLike);
+  const local = new Date(date.getFullYear(), date.getMonth(), date.getDate(), 12, 0, 0);
+  local.setDate(local.getDate() - local.getDay());
+  return toDateString(local);
+}
+
+function getDateByOffset(weekStart: string, offset: number): string {
+  const d = parseDate(weekStart);
+  d.setDate(d.getDate() + offset);
+  return toDateString(d);
+}
+
+function getMonthStart(dateLike: Date | string): string {
+  const date = typeof dateLike === "string" ? parseDate(dateLike) : new Date(dateLike);
+  const first = new Date(date.getFullYear(), date.getMonth(), 1, 12, 0, 0);
+  return toDateString(first);
+}
+
+function formatMonthLabel(monthStart: string): string {
+  const d = parseDate(monthStart);
+  return `${d.getFullYear()}년 ${String(d.getMonth() + 1).padStart(2, "0")}월`;
+}
+
+function formatDisplayDate(dateStr: string): string {
+  return parseDate(dateStr).toLocaleDateString("ko-KR", {
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+    weekday: "short"
+  });
+}
+
+function makeId(prefix: string): string {
+  return `${prefix}-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+}
+
 function computeExerciseVolume(exercises: WorkoutExercise[]): number {
-  return exercises.reduce((sum, ex) => {
-    return sum + ex.sets.reduce((s, set) => s + set.weightKg * set.reps, 0);
-  }, 0);
+  return exercises.reduce(
+    (sum, exercise) =>
+      sum + exercise.sets.reduce((setSum, set) => setSum + set.weightKg * set.reps, 0),
+    0
+  );
 }
 
 const AddSetForm: React.FC<{
@@ -41,18 +91,23 @@ const AddSetForm: React.FC<{
 }> = ({ onAdd }) => {
   const [weight, setWeight] = useState("");
   const [reps, setReps] = useState("");
+
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
-    const w = Number(weight.replace(/,/g, ""));
-    const r = Number(reps.replace(/,/g, ""));
-    if (w > 0 && r > 0) {
-      onAdd(w, r);
+    const weightKg = Number(weight.replace(/,/g, ""));
+    const repsValue = Number(reps.replace(/,/g, ""));
+    if (weightKg > 0 && repsValue > 0) {
+      onAdd(weightKg, repsValue);
       setWeight("");
       setReps("");
     }
   };
+
   return (
-    <form onSubmit={handleSubmit} style={{ display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap", marginTop: 4 }}>
+    <form
+      onSubmit={handleSubmit}
+      style={{ display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap", marginTop: 6 }}
+    >
       <input
         type="number"
         min={0}
@@ -60,16 +115,16 @@ const AddSetForm: React.FC<{
         value={weight}
         onChange={(e) => setWeight(e.target.value)}
         placeholder="중량(kg)"
-        style={{ width: 72, padding: "4px 6px", borderRadius: 4 }}
+        style={{ width: 84, padding: "4px 6px", borderRadius: 4 }}
       />
-      <span>×</span>
+      <span>x</span>
       <input
         type="number"
         min={1}
         value={reps}
         onChange={(e) => setReps(e.target.value)}
         placeholder="반복"
-        style={{ width: 56, padding: "4px 6px", borderRadius: 4 }}
+        style={{ width: 70, padding: "4px 6px", borderRadius: 4 }}
       />
       <span>회</span>
       <button type="submit" className="secondary" style={{ fontSize: 12, padding: "4px 10px" }}>
@@ -79,289 +134,517 @@ const AddSetForm: React.FC<{
   );
 };
 
-function ensureWeekEntries(week: WorkoutWeek): WorkoutDayEntry[] {
-  const entries = [...(week.entries || [])];
-  for (let i = 0; i < 3; i++) {
-    const date = getDateByOffset(week.weekStart, i);
-    const existing = entries.find((e) => e.date === date);
-    if (!existing) {
-      entries.push({
-        id: `day-${week.id}-${i}-${Date.now()}`,
-        date,
-        type: i === 1 ? "rest" : "workout",
-        dayLabel: DAY_LABELS[i][1],
-        exercises: i === 1 ? undefined : [],
-        restNotes: i === 1 ? "" : undefined
+export const WorkoutView: React.FC<Props> = ({ workoutWeeks = [], onChangeWorkoutWeeks }) => {
+  const today = toDateString(new Date());
+  const [currentMonth, setCurrentMonth] = useState<string>(() => getMonthStart(today));
+  const [selectedDate, setSelectedDate] = useState<string>(today);
+
+  const sortedWeeks = useMemo(
+    () => [...workoutWeeks].sort((a, b) => b.weekStart.localeCompare(a.weekStart)),
+    [workoutWeeks]
+  );
+
+  const entryByDate = useMemo(() => {
+    const map = new Map<string, EntryRef>();
+    sortedWeeks.forEach((week) => {
+      (week.entries ?? []).forEach((entry) => {
+        if (!entry.date) return;
+        if (!map.has(entry.date)) {
+          map.set(entry.date, { weekId: week.id, weekStart: week.weekStart, entry });
+        }
+      });
+    });
+    return map;
+  }, [sortedWeeks]);
+
+  const calendarCells = useMemo<CalendarCell[]>(() => {
+    const monthDate = parseDate(currentMonth);
+    const year = monthDate.getFullYear();
+    const month = monthDate.getMonth();
+    const firstDay = new Date(year, month, 1, 12, 0, 0);
+    const gridStart = new Date(year, month, 1 - firstDay.getDay(), 12, 0, 0);
+
+    const cells: CalendarCell[] = [];
+    for (let i = 0; i < 42; i++) {
+      const d = new Date(gridStart);
+      d.setDate(gridStart.getDate() + i);
+      cells.push({
+        date: toDateString(d),
+        inCurrentMonth: d.getMonth() === month
       });
     }
-  }
-  return entries.sort((a, b) => a.date.localeCompare(b.date));
-}
+    return cells;
+  }, [currentMonth]);
 
-export const WorkoutView: React.FC<Props> = ({ workoutWeeks = [], onChangeWorkoutWeeks }) => {
-  const weeks = useMemo(() => {
-    const list = [...workoutWeeks].sort((a, b) => b.weekStart.localeCompare(a.weekStart));
-    if (list.length === 0) {
-      const sun = getWeekStart(new Date());
-      return [{ id: `w-${Date.now()}`, weekStart: sun, entries: [] }];
+  const selectedRef = entryByDate.get(selectedDate);
+  const selectedEntry = selectedRef?.entry ?? null;
+
+  const monthStats = useMemo(() => {
+    const monthKey = currentMonth.slice(0, 7);
+    let workoutDays = 0;
+    let restDays = 0;
+    let volume = 0;
+
+    entryByDate.forEach(({ entry }, date) => {
+      if (!date.startsWith(monthKey)) return;
+      if (entry.type === "rest") {
+        restDays += 1;
+      } else {
+        workoutDays += 1;
+        volume += computeExerciseVolume(entry.exercises ?? []);
+      }
+    });
+
+    return { workoutDays, restDays, volume };
+  }, [currentMonth, entryByDate]);
+
+  const moveMonth = (delta: number) => {
+    setCurrentMonth((prev) => {
+      const d = parseDate(prev);
+      d.setMonth(d.getMonth() + delta);
+      return getMonthStart(d);
+    });
+  };
+
+  const goToday = () => {
+    setCurrentMonth(getMonthStart(today));
+    setSelectedDate(today);
+  };
+
+  const upsertEntry = (date: string, updater: (entry: WorkoutDayEntry) => WorkoutDayEntry) => {
+    const weekStart = getWeekStart(date);
+
+    const nextWeeks = [...workoutWeeks];
+    const weekIndex = nextWeeks.findIndex((week) => week.weekStart === weekStart);
+
+    const createBaseEntry = (): WorkoutDayEntry => ({
+      id: makeId("day"),
+      date,
+      type: "workout",
+      dayLabel: "",
+      exercises: [],
+      cardio: ""
+    });
+
+    if (weekIndex === -1) {
+      const entry = updater(createBaseEntry());
+      const newWeek: WorkoutWeek = {
+        id: makeId("w"),
+        weekStart,
+        entries: [entry]
+      };
+      nextWeeks.push(newWeek);
+    } else {
+      const week = nextWeeks[weekIndex];
+      const entries = [...(week.entries ?? [])];
+      const entryIndex = entries.findIndex((entry) => entry.date === date);
+      const baseEntry = entryIndex >= 0 ? entries[entryIndex] : createBaseEntry();
+      const updatedEntry = updater({ ...baseEntry });
+
+      if (entryIndex >= 0) {
+        entries[entryIndex] = updatedEntry;
+      } else {
+        entries.push(updatedEntry);
+      }
+      entries.sort((a, b) => a.date.localeCompare(b.date));
+
+      nextWeeks[weekIndex] = {
+        ...week,
+        entries
+      };
     }
-    return list;
-  }, [workoutWeeks]);
 
-  const [selectedWeekId, setSelectedWeekId] = useState<string>(weeks[0]?.id ?? "");
-  const selectedWeek = useMemo(() => weeks.find((w) => w.id === selectedWeekId) ?? weeks[0], [weeks, selectedWeekId]);
+    nextWeeks.sort((a, b) => b.weekStart.localeCompare(a.weekStart));
+    onChangeWorkoutWeeks(nextWeeks);
+  };
 
-  const dayEntries = useMemo(() => ensureWeekEntries(selectedWeek), [selectedWeek]);
+  const removeEntry = (date: string) => {
+    const weekStart = getWeekStart(date);
+    const nextWeeks = workoutWeeks
+      .map((week) => {
+        if (week.weekStart !== weekStart) return week;
+        return {
+          ...week,
+          entries: (week.entries ?? []).filter((entry) => entry.date !== date)
+        };
+      })
+      .filter((week) => (week.entries ?? []).length > 0);
 
-  const updateWeek = (updater: (w: WorkoutWeek) => WorkoutWeek) => {
-    if (workoutWeeks.length === 0) {
-      onChangeWorkoutWeeks([updater(selectedWeek)]);
+    onChangeWorkoutWeeks(nextWeeks);
+  };
+
+  const addExercise = () => {
+    const name = window.prompt("운동 이름을 입력하세요 (예: 벤치프레스)");
+    if (!name?.trim()) return;
+
+    upsertEntry(selectedDate, (entry) => ({
+      ...entry,
+      type: "workout",
+      exercises: [
+        ...(entry.exercises ?? []),
+        {
+          id: makeId("ex"),
+          name: name.trim(),
+          sets: []
+        }
+      ]
+    }));
+  };
+
+  const addCurrentWeekTemplate = () => {
+    const weekStart = getWeekStart(today);
+    const existingWeek = workoutWeeks.find((week) => week.weekStart === weekStart);
+
+    const templateEntries = DAY_TEMPLATE.map(({ offset, type, dayLabel }) => ({
+      id: makeId("day"),
+      date: getDateByOffset(weekStart, offset),
+      type,
+      dayLabel,
+      exercises: type === "workout" ? [] : undefined,
+      restNotes: type === "rest" ? "" : undefined,
+      cardio: type === "workout" ? "" : undefined
+    }));
+
+    if (!existingWeek) {
+      onChangeWorkoutWeeks([
+        ...workoutWeeks,
+        {
+          id: makeId("w"),
+          weekStart,
+          entries: templateEntries
+        }
+      ]);
       return;
     }
+
+    const existingDates = new Set((existingWeek.entries ?? []).map((entry) => entry.date));
+    const mergedEntries = [
+      ...(existingWeek.entries ?? []),
+      ...templateEntries.filter((entry) => !existingDates.has(entry.date))
+    ].sort((a, b) => a.date.localeCompare(b.date));
+
     onChangeWorkoutWeeks(
-      workoutWeeks.map((w) => (w.id === selectedWeek.id ? updater(w) : w))
+      workoutWeeks.map((week) =>
+        week.id === existingWeek.id
+          ? {
+              ...week,
+              entries: mergedEntries
+            }
+          : week
+      )
     );
   };
-
-  const setDayEntries = (entries: WorkoutDayEntry[]) => {
-    updateWeek((w) => ({ ...w, entries }));
-  };
-
-  const updateDay = (date: string, updater: (e: WorkoutDayEntry) => WorkoutDayEntry) => {
-    const next = dayEntries.map((e) => (e.date === date ? updater(e) : e));
-    setDayEntries(next);
-  };
-
-  const addWeek = () => {
-    const sun = getWeekStart(new Date());
-    const id = `w-${Date.now()}`;
-    const newWeek: WorkoutWeek = { id, weekStart: sun, entries: [] };
-    onChangeWorkoutWeeks([newWeek, ...workoutWeeks]);
-    setSelectedWeekId(id);
-  };
-
-  // 주별 3일 요약: 날짜, 내용, 웨이트 볼륨
-  const summaryRows = useMemo(() => {
-    return dayEntries.map((e) => {
-      const content =
-        e.type === "rest"
-          ? "휴식"
-          : (e.dayLabel ?? "") + (e.exercises?.length ? ` (${e.exercises.map((x) => x.name).join(", ")})` : "");
-      const volume = e.type === "workout" && e.exercises?.length ? computeExerciseVolume(e.exercises) : 0;
-      return { date: e.date, content, volume };
-    });
-  }, [dayEntries]);
-
-  const totalVolume = useMemo(() => summaryRows.reduce((s, r) => s + r.volume, 0), [summaryRows]);
 
   return (
     <div>
       <div className="section-header">
-        <h2>📅 주간 기록 정리</h2>
-        <button type="button" className="primary" onClick={addWeek}>
-          새 주 추가
-        </button>
+        <h2>운동 기록 캘린더</h2>
+        <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+          <button type="button" className="secondary" onClick={addCurrentWeekTemplate}>
+            이번 주 기본 템플릿 추가
+          </button>
+          <button type="button" className="primary" onClick={goToday}>
+            오늘로 이동
+          </button>
+        </div>
       </div>
 
-      <div style={{ marginBottom: 16, display: "flex", gap: 8, flexWrap: "wrap", alignItems: "center" }}>
-        <label style={{ display: "flex", alignItems: "center", gap: 8 }}>
-          <span>주 선택:</span>
-          <select
-            value={selectedWeekId}
-            onChange={(e) => setSelectedWeekId(e.target.value)}
-            style={{ padding: "6px 10px", borderRadius: 6, minWidth: 160 }}
-          >
-            {weeks.map((w) => {
-              const sun = new Date(w.weekStart + "T12:00:00");
-              const mon = getDateByOffset(w.weekStart, 1);
-              const label = `${w.weekStart} (일~화 ${mon})`;
-              return (
-                <option key={w.id} value={w.id}>
-                  {label}
-                </option>
-              );
-            })}
-          </select>
-        </label>
+      <div className="card" style={{ padding: 16, marginBottom: 16 }}>
+        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 12 }}>
+          <button type="button" className="secondary" onClick={() => moveMonth(-1)}>
+            이전 달
+          </button>
+          <strong style={{ fontSize: 18 }}>{formatMonthLabel(currentMonth)}</strong>
+          <button type="button" className="secondary" onClick={() => moveMonth(1)}>
+            다음 달
+          </button>
+        </div>
+
+        <div style={{ display: "grid", gridTemplateColumns: "repeat(7, minmax(0, 1fr))", gap: 6, marginBottom: 6 }}>
+          {WEEKDAY_LABELS.map((label) => (
+            <div key={label} style={{ textAlign: "center", fontSize: 12, color: "var(--text-muted)", fontWeight: 600 }}>
+              {label}
+            </div>
+          ))}
+        </div>
+
+        <div style={{ display: "grid", gridTemplateColumns: "repeat(7, minmax(0, 1fr))", gap: 6 }}>
+          {calendarCells.map((cell) => {
+            const ref = entryByDate.get(cell.date);
+            const entry = ref?.entry;
+            const isSelected = cell.date === selectedDate;
+            const dayVolume = entry?.type === "workout" ? computeExerciseVolume(entry.exercises ?? []) : 0;
+
+            return (
+              <button
+                key={cell.date}
+                type="button"
+                onClick={() => {
+                  setSelectedDate(cell.date);
+                  if (!cell.inCurrentMonth) {
+                    setCurrentMonth(getMonthStart(cell.date));
+                  }
+                }}
+                style={{
+                  minHeight: 110,
+                  textAlign: "left",
+                  padding: 8,
+                  borderRadius: 8,
+                  border: isSelected ? "2px solid var(--primary)" : "1px solid var(--border)",
+                  background: entry
+                    ? entry.type === "rest"
+                      ? "rgba(59,130,246,0.08)"
+                      : "rgba(16,185,129,0.08)"
+                    : "var(--surface)",
+                  opacity: cell.inCurrentMonth ? 1 : 0.5,
+                  cursor: "pointer"
+                }}
+              >
+                <div style={{ fontWeight: 700, marginBottom: 6 }}>{Number(cell.date.slice(8, 10))}</div>
+                {entry ? (
+                  <>
+                    <div style={{ fontSize: 12, fontWeight: 600 }}>
+                      {entry.type === "rest" ? "휴식" : `운동 ${entry.exercises?.length ?? 0}개`}
+                    </div>
+                    {entry.type === "workout" && (
+                      <div style={{ fontSize: 11, color: "var(--text-muted)", marginTop: 4 }}>
+                        볼륨 {formatNumber(dayVolume)}kg
+                      </div>
+                    )}
+                    {entry.cardio && (
+                      <div style={{ fontSize: 11, color: "var(--text-muted)", marginTop: 2, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>
+                        {entry.cardio}
+                      </div>
+                    )}
+                  </>
+                ) : (
+                  <div style={{ fontSize: 11, color: "var(--text-muted)" }}>기록 없음</div>
+                )}
+              </button>
+            );
+          })}
+        </div>
       </div>
 
-      <div style={{ display: "flex", flexDirection: "column", gap: 20 }}>
-        {dayEntries.map((entry, idx) => {
-          const [dayName] = DAY_LABELS[idx];
-          const isRest = entry.type === "rest";
-          return (
-            <div key={entry.id} className="card" style={{ padding: 16 }}>
-              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 12 }}>
-                <h3 style={{ margin: 0, fontSize: 16 }}>
-                  {dayName} – {entry.date}
-                  {entry.dayLabel && (
-                    <span style={{ marginLeft: 8, color: "var(--text-muted)", fontWeight: 500 }}>
-                      {entry.dayLabel}
-                    </span>
-                  )}
-                </h3>
-                <label style={{ display: "flex", alignItems: "center", gap: 6 }}>
-                  <span style={{ fontSize: 13 }}>유형</span>
-                  <select
-                    value={entry.type}
-                    onChange={(evt) =>
-                      updateDay(entry.date, (day) => ({
-                        ...day,
-                        type: evt.target.value as "workout" | "rest",
-                        exercises: evt.target.value === "workout" ? day.exercises ?? [] : undefined,
-                        restNotes: evt.target.value === "rest" ? day.restNotes ?? "" : undefined
-                      }))
-                    }
-                    style={{ padding: "4px 8px", borderRadius: 4 }}
-                  >
-                    <option value="workout">운동</option>
-                    <option value="rest">휴식</option>
-                  </select>
-                </label>
-              </div>
+      <div className="card" style={{ padding: 16, marginBottom: 16 }}>
+        <div style={{ display: "grid", gridTemplateColumns: "repeat(3, minmax(0, 1fr))", gap: 12 }}>
+          <div>
+            <div style={{ fontSize: 12, color: "var(--text-muted)" }}>운동일</div>
+            <div style={{ fontSize: 20, fontWeight: 700 }}>{monthStats.workoutDays}일</div>
+          </div>
+          <div>
+            <div style={{ fontSize: 12, color: "var(--text-muted)" }}>휴식일</div>
+            <div style={{ fontSize: 20, fontWeight: 700 }}>{monthStats.restDays}일</div>
+          </div>
+          <div>
+            <div style={{ fontSize: 12, color: "var(--text-muted)" }}>월간 볼륨</div>
+            <div style={{ fontSize: 20, fontWeight: 700 }}>{formatNumber(monthStats.volume)}kg</div>
+          </div>
+        </div>
+      </div>
 
-              {isRest ? (
-                <div>
-                  <label style={{ display: "block", marginBottom: 4, fontSize: 13 }}>
-                    특이사항 (수면, 근육통, 컨디션)
+      <div className="card" style={{ padding: 16 }}>
+        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 12 }}>
+          <h3 style={{ margin: 0 }}>{formatDisplayDate(selectedDate)} 기록</h3>
+          {selectedEntry && (
+            <button
+              type="button"
+              className="secondary"
+              onClick={() => {
+                if (window.confirm("이 날짜 기록을 삭제하시겠습니까?")) {
+                  removeEntry(selectedDate);
+                }
+              }}
+            >
+              기록 삭제
+            </button>
+          )}
+        </div>
+
+        {!selectedEntry ? (
+          <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+            <button
+              type="button"
+              className="primary"
+              onClick={() =>
+                upsertEntry(selectedDate, (entry) => ({
+                  ...entry,
+                  type: "workout",
+                  dayLabel: entry.dayLabel ?? "",
+                  exercises: entry.exercises ?? [],
+                  cardio: entry.cardio ?? ""
+                }))
+              }
+            >
+              운동 기록 시작
+            </button>
+            <button
+              type="button"
+              className="secondary"
+              onClick={() =>
+                upsertEntry(selectedDate, (entry) => ({
+                  ...entry,
+                  type: "rest",
+                  dayLabel: entry.dayLabel || "휴식",
+                  exercises: undefined,
+                  restNotes: entry.restNotes ?? ""
+                }))
+              }
+            >
+              휴식 기록 시작
+            </button>
+          </div>
+        ) : (
+          <>
+            <div style={{ marginBottom: 12, display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap" }}>
+              <span style={{ fontSize: 13 }}>유형</span>
+              <select
+                value={selectedEntry.type}
+                onChange={(e) => {
+                  const nextType = e.target.value as "workout" | "rest";
+                  upsertEntry(selectedDate, (entry) => ({
+                    ...entry,
+                    type: nextType,
+                    dayLabel: nextType === "rest" ? entry.dayLabel || "휴식" : entry.dayLabel || "",
+                    exercises: nextType === "workout" ? entry.exercises ?? [] : undefined,
+                    restNotes: nextType === "rest" ? entry.restNotes ?? "" : undefined,
+                    cardio: nextType === "workout" ? entry.cardio ?? "" : undefined
+                  }));
+                }}
+                style={{ padding: "6px 10px", borderRadius: 6 }}
+              >
+                <option value="workout">운동</option>
+                <option value="rest">휴식</option>
+              </select>
+            </div>
+
+            {selectedEntry.type === "rest" ? (
+              <label style={{ display: "block" }}>
+                <span style={{ display: "block", marginBottom: 6, fontSize: 13 }}>휴식 메모</span>
+                <textarea
+                  rows={3}
+                  value={selectedEntry.restNotes ?? ""}
+                  onChange={(e) =>
+                    upsertEntry(selectedDate, (entry) => ({
+                      ...entry,
+                      restNotes: e.target.value
+                    }))
+                  }
+                  placeholder="수면, 컨디션, 피로도 등을 기록하세요"
+                  style={{ width: "100%", padding: 8, borderRadius: 6, resize: "vertical" }}
+                />
+              </label>
+            ) : (
+              <>
+                <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(220px, 1fr))", gap: 12, marginBottom: 12 }}>
+                  <label>
+                    <span style={{ display: "block", marginBottom: 6, fontSize: 13 }}>일정 라벨</span>
+                    <input
+                      type="text"
+                      value={selectedEntry.dayLabel ?? ""}
+                      onChange={(e) =>
+                        upsertEntry(selectedDate, (entry) => ({
+                          ...entry,
+                          dayLabel: e.target.value
+                        }))
+                      }
+                      placeholder="예: Day 1 (상체)"
+                      style={{ width: "100%", padding: "6px 8px", borderRadius: 6 }}
+                    />
                   </label>
-                  <textarea
-                    value={entry.restNotes ?? ""}
-                    onChange={(e) => updateDay(entry.date, (d) => ({ ...d, restNotes: e.target.value }))}
-                    placeholder="기록 안 하면 다음 중량 조정 어려움"
-                    rows={2}
-                    style={{ width: "100%", padding: 8, borderRadius: 6, resize: "vertical" }}
-                  />
+
+                  <label>
+                    <span style={{ display: "block", marginBottom: 6, fontSize: 13 }}>유산소</span>
+                    <input
+                      type="text"
+                      value={selectedEntry.cardio ?? ""}
+                      onChange={(e) =>
+                        upsertEntry(selectedDate, (entry) => ({
+                          ...entry,
+                          cardio: e.target.value
+                        }))
+                      }
+                      placeholder="예: 러닝 3km, 트레드밀 10분"
+                      style={{ width: "100%", padding: "6px 8px", borderRadius: 6 }}
+                    />
+                  </label>
                 </div>
-              ) : (
-                <>
-                  <label style={{ display: "block", marginBottom: 4, fontSize: 13 }}>
-                    일차 라벨 (선택)
-                  </label>
-                  <input
-                    type="text"
-                    value={entry.dayLabel ?? ""}
-                    onChange={(e) => updateDay(entry.date, (d) => ({ ...d, dayLabel: e.target.value }))}
-                    placeholder="예: Day 1 (상체)"
-                    style={{ width: "100%", maxWidth: 240, marginBottom: 12, padding: "6px 8px", borderRadius: 4 }}
-                  />
-                  {(entry.exercises ?? []).map((ex) => (
-                    <div key={ex.id} style={{ marginBottom: 16, padding: 12, background: "var(--bg-secondary)", borderRadius: 8 }}>
+
+                {(selectedEntry.exercises ?? []).map((exercise) => {
+                  const volume = computeExerciseVolume([exercise]);
+                  return (
+                    <div key={exercise.id} style={{ marginBottom: 14, padding: 12, border: "1px solid var(--border)", borderRadius: 8 }}>
                       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 8 }}>
-                        <strong>{ex.name}</strong>
+                        <strong>{exercise.name}</strong>
                         <button
                           type="button"
                           className="secondary"
                           style={{ fontSize: 12, padding: "2px 8px" }}
                           onClick={() =>
-                            updateDay(entry.date, (d) => ({
-                              ...d,
-                              exercises: (d.exercises ?? []).filter((e) => e.id !== ex.id)
+                            upsertEntry(selectedDate, (entry) => ({
+                              ...entry,
+                              exercises: (entry.exercises ?? []).filter((ex) => ex.id !== exercise.id)
                             }))
                           }
                         >
-                          삭제
+                          운동 삭제
                         </button>
                       </div>
-                      <div style={{ fontSize: 13, marginBottom: 6 }}>
-                        {ex.sets.map((set, i) => (
-                          <span key={i} style={{ marginRight: 12 }}>
-                            {set.weightKg}kg × {set.reps}회
-                          </span>
-                        ))}
-                        <span style={{ color: "var(--text-muted)" }}>
-                          (볼륨: {formatNumber(computeExerciseVolume([ex]))}kg)
-                        </span>
-                      </div>
+
+                      {(exercise.sets ?? []).length > 0 ? (
+                        <div style={{ fontSize: 13, marginBottom: 8 }}>
+                          {exercise.sets.map((set, idx) => (
+                            <span key={`${exercise.id}-${idx}`} style={{ marginRight: 10 }}>
+                              {set.weightKg}kg x {set.reps}회
+                            </span>
+                          ))}
+                          <span style={{ color: "var(--text-muted)" }}>볼륨 {formatNumber(volume)}kg</span>
+                        </div>
+                      ) : (
+                        <div style={{ fontSize: 12, color: "var(--text-muted)", marginBottom: 8 }}>세트 기록이 없습니다.</div>
+                      )}
+
                       <AddSetForm
                         onAdd={(weightKg, reps) => {
                           const newSet: WorkoutSet = { weightKg, reps };
-                          updateDay(entry.date, (d) => ({
-                            ...d,
-                            exercises: (d.exercises ?? []).map((e) =>
-                              e.id === ex.id ? { ...e, sets: [...e.sets, newSet] } : e
+                          upsertEntry(selectedDate, (entry) => ({
+                            ...entry,
+                            exercises: (entry.exercises ?? []).map((ex) =>
+                              ex.id === exercise.id ? { ...ex, sets: [...ex.sets, newSet] } : ex
                             )
                           }));
                         }}
                       />
-                      <label style={{ display: "block", marginTop: 6, fontSize: 12 }}>
-                        메모 (상태, 실패 등)
+
+                      <label style={{ display: "block", marginTop: 8 }}>
+                        <span style={{ display: "block", marginBottom: 4, fontSize: 12 }}>메모</span>
                         <input
                           type="text"
-                          value={ex.note ?? ""}
-                          onChange={(ev) =>
-                            updateDay(entry.date, (d) => ({
-                              ...d,
-                              exercises: (d.exercises ?? []).map((e) =>
-                                e.id === ex.id ? { ...e, note: ev.target.value } : e
+                          value={exercise.note ?? ""}
+                          onChange={(e) =>
+                            upsertEntry(selectedDate, (entry) => ({
+                              ...entry,
+                              exercises: (entry.exercises ?? []).map((ex) =>
+                                ex.id === exercise.id ? { ...ex, note: e.target.value } : ex
                               )
                             }))
                           }
-                          placeholder="선택"
-                          style={{ marginLeft: 8, padding: "4px 6px", width: "60%", maxWidth: 280, borderRadius: 4 }}
+                          placeholder="중량 상승, 실패 세트 등"
+                          style={{ width: "100%", padding: "6px 8px", borderRadius: 6 }}
                         />
                       </label>
                     </div>
-                  ))}
-                  <button
-                    type="button"
-                    className="secondary"
-                    style={{ marginBottom: 12 }}
-                    onClick={() => {
-                      const name = window.prompt("운동 이름 (예: 벤치프레스, 스쿼트)");
-                      if (!name?.trim()) return;
-                      const newEx: WorkoutExercise = {
-                        id: `ex-${Date.now()}`,
-                        name: name.trim(),
-                        sets: []
-                      };
-                      updateDay(entry.date, (d) => ({
-                        ...d,
-                        exercises: [...(d.exercises ?? []), newEx]
-                      }));
-                    }}
-                  >
-                    + 운동 추가
-                  </button>
-                  <label style={{ display: "block", marginBottom: 4, fontSize: 13 }}>유산소</label>
-                  <input
-                    type="text"
-                    value={entry.cardio ?? ""}
-                    onChange={(e) => updateDay(entry.date, (d) => ({ ...d, cardio: e.target.value }))}
-                    placeholder="예: 러닝 3km, 트레드밀 10분"
-                    style={{ width: "100%", maxWidth: 320, padding: "6px 8px", borderRadius: 4 }}
-                  />
-                </>
-              )}
-            </div>
-          );
-        })}
-      </div>
+                  );
+                })}
 
-      <div className="card" style={{ marginTop: 24, padding: 16 }}>
-        <h3 style={{ margin: "0 0 12px", fontSize: 16 }}>📊 3일 요약</h3>
-        <table className="data-table" style={{ marginBottom: 8 }}>
-          <thead>
-            <tr>
-              <th>날짜</th>
-              <th>내용</th>
-              <th style={{ textAlign: "right" }}>웨이트 볼륨</th>
-            </tr>
-          </thead>
-          <tbody>
-            {summaryRows.map((row) => (
-              <tr key={row.date}>
-                <td>{row.date}</td>
-                <td>{row.content || "—"}</td>
-                <td style={{ textAlign: "right" }}>{row.volume > 0 ? `${formatNumber(row.volume)}kg` : "0"}</td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
-        <p style={{ margin: 0, fontSize: 14, color: "var(--text-muted)" }}>
-          총 웨이트: <strong>{formatNumber(totalVolume)}kg</strong>
-        </p>
+                <button type="button" className="secondary" onClick={addExercise}>
+                  운동 추가
+                </button>
+              </>
+            )}
+          </>
+        )}
       </div>
     </div>
   );
-}
+};

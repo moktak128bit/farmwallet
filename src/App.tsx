@@ -42,8 +42,8 @@ export const App: React.FC = () => {
     setMobileDrawerOpen(false);
   };
 
-  // 커스텀 훅 사용
-  const { data, setData, isLoading, loadFailed, clearLoadFailed, setManualBackupFlag, saveNow } = useAppData();
+  // Zustand store 사용
+  const { data, setData, isLoading, loadFailed, clearLoadFailed } = useAppData();
   const { setDataWithHistory, handleUndo, handleRedo } = useUndoRedo(data, setData);
   const { theme, toggleTheme } = useTheme();
   const fxRate = useFxRate();
@@ -64,28 +64,27 @@ export const App: React.FC = () => {
     backupIntegrity,
     handleManualBackup,
     backupWarning
-  } = useBackup(data, setManualBackupFlag);
+  } = useBackup(data);
   const { isLoadingTickerDatabase, handleLoadInitialTickers } = useTickerDatabase(data, setDataWithHistory);
 
-  // 키보드 단축키
+  // keyboard shortcuts
   useKeyboardShortcuts({
     tab,
     setTab,
     onUndo: () => {
       if (handleUndo()) {
-        toast.success("실행 취소됨", { id: "undo" });
+        toast.success("실행 취소", { id: "undo" });
       }
     },
     onRedo: () => {
       if (handleRedo()) {
-        toast.success("다시 실행됨", { id: "redo" });
+        toast.success("다시 실행", { id: "redo" });
       }
     },
     onSearch: () => setIsSearchOpen(true),
     onShortcutsHelp: () => setShowShortcutsHelp((prev) => !prev),
     onSave: () => {
-      saveNow();
-      toast.success("저장됨", { id: "save" });
+      void handleManualBackup();
     },
     onAddLedger: () => {
       setTab("ledger");
@@ -94,26 +93,31 @@ export const App: React.FC = () => {
   });
 
 
-  const balances = useMemo(
-    () => computeAccountBalances(data.accounts, data.ledger, data.trades),
-    [data.accounts, data.ledger, data.trades]
-  );
-  // USD 주식 가격을 KRW로 변환
+  const needsPortfolioAggregation = tab === "accounts" || tab === "stocks";
+
+  const balances = useMemo(() => {
+    if (!needsPortfolioAggregation) return [];
+    return computeAccountBalances(data.accounts, data.ledger, data.trades);
+  }, [needsPortfolioAggregation, data.accounts, data.ledger, data.trades]);
+
+  // USD prices are converted to KRW only when portfolio widgets need them.
   const adjustedPrices = useMemo(() => {
-    if (!fxRate) return data.prices;
-    
+    if (!needsPortfolioAggregation || !fxRate) return data.prices;
+
     return data.prices.map((p) => {
       if (p.currency && p.currency !== "KRW" && p.currency === "USD") {
         return { ...p, price: p.price * fxRate, currency: "KRW" };
       }
       return p;
     });
-  }, [data.prices, fxRate]);
+  }, [needsPortfolioAggregation, data.prices, fxRate]);
 
-  const positions = useMemo(
-    () => computePositions(data.trades, adjustedPrices, data.accounts, { fxRate: fxRate ?? undefined }),
-    [data.trades, adjustedPrices, data.accounts, fxRate]
-  );
+  const positions = useMemo(() => {
+    if (!needsPortfolioAggregation) return [];
+    return computePositions(data.trades, adjustedPrices, data.accounts, {
+      fxRate: fxRate ?? undefined
+    });
+  }, [needsPortfolioAggregation, data.trades, adjustedPrices, data.accounts, fxRate]);
 
   useEffect(() => {
     if (tab !== "settings") return;
@@ -176,7 +180,7 @@ export const App: React.FC = () => {
   if (loadFailed) {
     return (
       <div className="app-root" style={{ display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", minHeight: "100vh", padding: 24, textAlign: "center" }}>
-        <p style={{ color: "var(--danger)", fontSize: 16, fontWeight: 600, marginBottom: 8 }}>데이터를 불러오지 못했습니다</p>
+        <p style={{ color: "var(--danger)", fontSize: 16, fontWeight: 600, marginBottom: 8 }}>데이터를 불러오지 못했습니다.</p>
         <p style={{ color: "var(--text-muted)", fontSize: 14, marginBottom: 24, maxWidth: 400 }}>
           저장된 데이터가 손상되었거나 읽을 수 없습니다. 설정 탭에서 &quot;백업 파일 불러오기&quot;로 이전에 받아 둔 JSON 백업을 불러오세요.
         </p>
@@ -209,7 +213,7 @@ export const App: React.FC = () => {
           </button>
           <div>
           <h1>FarmWallet <span style={{ fontSize: "0.6em", fontWeight: "normal", color: "var(--text-muted)", marginLeft: "8px" }}>v{APP_VERSION}</span></h1>
-          <p className="subtitle">자산 · 주식 관리</p>
+          <p className="subtitle">자산 및 주식 관리</p>
           </div>
         </div>
         <div style={{ display: "flex", flexDirection: "column", alignItems: "flex-end", gap: 6 }}>
@@ -234,7 +238,7 @@ export const App: React.FC = () => {
                 })}
               </div>
             ) : (
-              <div className="pill muted">백업 기록이 아직 없습니다</div>
+              <div className="pill muted">백업 기록 없음</div>
             )}
           </div>
           {backupWarning && (
@@ -242,12 +246,12 @@ export const App: React.FC = () => {
               {backupWarning.message}
             </div>
           )}
-          {backupIntegrity.status === "valid" && <div className="pill success">최근 로컬 백업 무결성 확인됨 (SHA-256)</div>}
+          {backupIntegrity.status === "valid" && <div className="pill success">최근 로컬 백업 무결성 검사됨 (SHA-256)</div>}
           {backupIntegrity.status === "missing-hash" && (
-            <div className="pill warning">이전 백업에 해시가 없어 무결성 확인 불가 (새로 백업 권장)</div>
+            <div className="pill warning">현재 백업에 해시가 없어 무결성 검사 불가 (다시 백업 권장)</div>
           )}
           {backupIntegrity.status === "mismatch" && (
-            <div className="pill danger">최근 로컬 백업 해시 불일치! 새 백업을 다시 생성하세요</div>
+            <div className="pill danger">최근 로컬 백업 해시 불일치. 백업을 다시 생성하세요.</div>
           )}
           <div style={{ display: 'flex', gap: 6 }}>
             <button
@@ -255,14 +259,14 @@ export const App: React.FC = () => {
               className="primary"
               onClick={handleManualBackup}
             >
-              백업 스냅샷 저장
+              백업
             </button>
             <button
               type="button"
               className="secondary"
               onClick={() => setIsSearchOpen(true)}
             >
-              🔍 전역 검색
+              빠른 검색
             </button>
           </div>
         </div>
@@ -285,7 +289,7 @@ export const App: React.FC = () => {
                   <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 12 }}>
                     <span style={{ fontWeight: 600 }}>메뉴</span>
                     <button type="button" className="icon-button" onClick={() => setMobileDrawerOpen(false)} aria-label="닫기">
-                      ✕
+                      닫기
                     </button>
                   </div>
                   <Tabs active={tab} onChange={handleTabChange} tabBadges={settingsTabBadge ? { settings: settingsTabBadge } : undefined} />
@@ -368,7 +372,10 @@ export const App: React.FC = () => {
             <DebtView
               loans={data.loans}
               ledger={data.ledger}
+              accounts={data.accounts}
+              categoryPresets={data.categoryPresets}
               onChangeLoans={(loans) => setDataWithHistory({ ...data, loans })}
+              onChangeLedger={(ledger) => setDataWithHistory({ ...data, ledger })}
             />
           )}
           {tab === "budget" && (
@@ -401,9 +408,25 @@ export const App: React.FC = () => {
               data={data}
               backupVersion={backupVersion}
               onBackupRestored={clearLoadFailed}
+              onNavigateToRecord={({ type, id }) => {
+                if (type === "ledger") {
+                  setTab("ledger");
+                  setHighlightLedgerId(id);
+                  setHighlightTradeId(null);
+                } else {
+                  setTab("stocks");
+                  setHighlightTradeId(id);
+                  setHighlightLedgerId(null);
+                }
+              }}
+              onNavigateToTab={(nextTab) => {
+                setTab(nextTab);
+                if (nextTab !== "ledger") setHighlightLedgerId(null);
+                if (nextTab !== "stocks") setHighlightTradeId(null);
+              }}
               onChangeData={(next) => {
                 setDataWithHistory(next);
-                toast.success("데이터가 업데이트되었습니다.");
+                toast.success("데이터 저장되었습니다");
               }}
             />
           )}

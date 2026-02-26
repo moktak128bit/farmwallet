@@ -216,6 +216,10 @@ function getDefaultCategoryPresets(): CategoryPresets {
       subs: ["학자금대출"]
     },
     {
+      main: "대출상환",
+      subs: ["학자금대출", "주담대원금", "주담대이자", "개인대출", "기타대출상환"]
+    },
+    {
       main: "실수",
       subs: ["아차차", "구독미스", "API 초과"]
     },
@@ -329,6 +333,24 @@ function fixCorruptedCategoryNames(ledger: AppData["ledger"]): AppData["ledger"]
 }
 
 /**
+ * 기존 대출/빚(category=대출, subCategory=빚) → 대출상환/세부항목으로 마이그레이션
+ */
+function migrateLoanRepaymentTo대출상환(ledger: AppData["ledger"]): AppData["ledger"] {
+  return ledger.map((entry) => {
+    if (entry.kind !== "expense" || entry.category !== "대출" || entry.subCategory !== "빚") {
+      return entry;
+    }
+    const desc = (entry.description || "").toLowerCase();
+    let sub = "기타대출상환";
+    if (/학자금|등록금/.test(desc)) sub = "학자금대출";
+    else if (/주담대|주택담보|주택대출/.test(desc) && /이자|금리/.test(desc)) sub = "주담대이자";
+    else if (/주담대|주택담보|주택대출/.test(desc)) sub = "주담대원금";
+    else if (/개인|신용대출|신용 loan/i.test(desc)) sub = "개인대출";
+    return { ...entry, category: "대출상환", subCategory: sub };
+  });
+}
+
+/**
  * 이체(kind=transfer)로 잘못 저장된 저축성 지출 → 지출(expense)로 일괄 수정.
  * 저축성 지출 = 지출의 한 종류이므로 kind는 "expense"만 허용.
  */
@@ -349,6 +371,51 @@ function migrateSavingsExpenseFromTransfer(
 }
 
 /** ISA 포트폴리오 기본값 (config 기반) */
+function normalizeExpenseSourceAccounts(
+  ledger: AppData["ledger"],
+  accounts: AppData["accounts"]
+): AppData["ledger"] {
+  const samsungCardId = accounts.find(
+    (a) => a.id === "\uC0BC\uC131\uD398\uC774\uCE74\uB4DC" || a.name === "\uC0BC\uC131\uD398\uC774\uCE74\uB4DC"
+  )?.id;
+  const nhBankId = accounts.find(
+    (a) => a.id === "\uB18D\uD611" || a.name === "\uB18D\uD611"
+  )?.id;
+  const localPayId = accounts.find(
+    (a) => a.id === "\uC9C0\uC5ED\uD398\uC774" || a.name === "\uC9C0\uC5ED\uD398\uC774"
+  )?.id;
+  const kakaoPayId = accounts.find(
+    (a) => a.id === "\uCE74\uCE74\uC624\uD398\uC774" || a.name === "\uCE74\uCE74\uC624\uD398\uC774"
+  )?.id;
+  const regionalPayTargetId = localPayId ?? kakaoPayId;
+
+  if (!samsungCardId && !nhBankId && !regionalPayTargetId) return ledger;
+
+  return ledger.map((entry) => {
+    const source = (entry.fromAccountId ?? "").trim();
+    if (!source) return entry;
+
+    const normalizedSource = source.replace(/\ufffd/g, "");
+    const isCreditCardSource =
+      normalizedSource === "\uC2E0\uC6A9\uCE74\uB4DC" || normalizedSource === "\uC2E0\uCE74\uB4DC";
+    const isBankSource =
+      normalizedSource === "\uCCB4\uD06C\uCE74\uB4DC" || normalizedSource === "\uACC4\uC88C\uC774\uCCB4";
+    const isRegionalPaySource =
+      normalizedSource === "\uC9C0\uC5ED\uCE74\uB4DC" || normalizedSource.endsWith("\uC5ED\uCE74\uB4DC");
+
+    if (isCreditCardSource && samsungCardId && entry.fromAccountId !== samsungCardId) {
+      return { ...entry, fromAccountId: samsungCardId };
+    }
+    if (isBankSource && nhBankId && entry.fromAccountId !== nhBankId) {
+      return { ...entry, fromAccountId: nhBankId };
+    }
+    if (isRegionalPaySource && regionalPayTargetId && entry.fromAccountId !== regionalPayTargetId) {
+      return { ...entry, fromAccountId: regionalPayTargetId };
+    }
+    return entry;
+  });
+}
+
 function getDefaultIsaPortfolio(): IsaPortfolioItem[] {
   return ISA_PORTFOLIO.map((item) => ({
     ticker: item.ticker,
@@ -399,11 +466,14 @@ export function loadData(): AppData {
     const parsed = JSON.parse(raw) as Partial<AppData>;
     const parsedData: AppData = {
       loans: parsed.loans ?? [],
-      accounts: (parsed.accounts ?? []).map((a) => ({
-        ...a,
-        debt: a.debt ?? 0,
-        savings: a.savings ?? 0
-      })),
+      accounts: (parsed.accounts ?? []).map((a) => {
+        const debtValue = typeof a.debt === "number" ? a.debt : Number(a.debt ?? 0) || 0;
+        return {
+          ...a,
+          debt: debtValue,
+          savings: a.savings ?? 0
+        };
+      }),
       ledger: parsed.ledger ?? [],
       trades: parsed.trades ?? [],
       prices: parsed.prices ?? [],
@@ -427,21 +497,32 @@ export function loadData(): AppData {
     // 깨진 카테고리 이름 수정
     const originalLedger = dataWithKrNames.ledger;
     const fixedLedger = fixCorruptedCategoryNames(originalLedger);
+    // 대출/빚 → 대출상환/세부항목 마이그레이션
+    const afterLoanMigrate = migrateLoanRepaymentTo대출상환(fixedLedger);
     // 이체로 저장된 저축성 지출 → 지출(expense)로 일괄 수정
-    const migratedLedger = migrateSavingsExpenseFromTransfer(fixedLedger, dataWithKrNames.categoryPresets);
+    const migratedLedger = migrateSavingsExpenseFromTransfer(afterLoanMigrate, dataWithKrNames.categoryPresets);
+    const normalizedLedger = normalizeExpenseSourceAccounts(
+      migratedLedger,
+      accounts
+    );
 
     const hasLedgerChanges =
-      originalLedger.length !== migratedLedger.length ||
+      originalLedger.length !== normalizedLedger.length ||
       originalLedger.some((entry, idx) => {
-        const m = migratedLedger[idx];
+        const m = normalizedLedger[idx];
         if (!m) return true;
-        return entry.kind !== m.kind || entry.category !== m.category || entry.subCategory !== m.subCategory;
+        return (
+          entry.kind !== m.kind ||
+          entry.category !== m.category ||
+          entry.subCategory !== m.subCategory ||
+          entry.fromAccountId !== m.fromAccountId
+        );
       });
 
     const finalData: AppData = {
       ...dataWithKrNames,
       accounts,
-      ledger: migratedLedger
+      ledger: normalizedLedger
     };
 
     if (hasLedgerChanges || krNamesChanged) {

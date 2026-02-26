@@ -1,4 +1,5 @@
-import type { LedgerEntry, StockTrade, Account } from "../types";
+import type { Account, CategoryPresets, LedgerEntry, StockTrade } from "../types";
+import { getSavingsCategories } from "./category";
 
 function escapeCsvCell(value: string | number): string {
   const s = String(value ?? "");
@@ -9,37 +10,38 @@ function escapeCsvCell(value: string | number): string {
 }
 
 /**
- * 가계부(ledger)와 주식 거래(trades)를 일자순으로 통합한 CSV 문자열 생성.
- * 한 파일에 모든 기록을 타입별 컬럼으로 담고, 계좌 ID는 계좌명으로 치환.
+ * Build a date-sorted unified CSV of ledger + stock trades.
  */
 export function buildUnifiedCsv(
   ledger: LedgerEntry[],
   trades: StockTrade[],
-  accounts: Account[]
+  accounts: Account[],
+  categoryPresets?: CategoryPresets
 ): string {
   const accountNameById = new Map(accounts.map((a) => [a.id, a.name ?? a.id]));
+  const savingsCategories = new Set(getSavingsCategories(categoryPresets));
 
   const headers = [
-    "데이터구분",
-    "일자",
-    "구분",
-    "대분류",
-    "세부",
-    "적요",
-    "금액",
-    "통화",
-    "출금계좌",
-    "입금계좌",
-    "메모",
-    "태그",
-    "계좌",
-    "티커",
-    "종목명",
-    "매수매도",
-    "수량",
-    "단가",
-    "총액",
-    "수수료",
+    "source",
+    "date",
+    "kind",
+    "category",
+    "subCategory",
+    "description",
+    "amount",
+    "currency",
+    "fromAccount",
+    "toAccount",
+    "note",
+    "tags",
+    "tradeAccount",
+    "ticker",
+    "stockName",
+    "side",
+    "quantity",
+    "price",
+    "totalAmount",
+    "fee",
     "id"
   ];
 
@@ -47,11 +49,19 @@ export function buildUnifiedCsv(
   const withDate: { date: string; row: Row }[] = [];
 
   for (const l of ledger) {
-    const kindLabel = l.kind === "income" ? "수입" : l.kind === "expense" ? "지출" : "이체";
+    const kindLabel =
+      l.kind === "income"
+        ? "income"
+        : l.kind === "transfer"
+          ? "transfer"
+          : savingsCategories.has(l.category ?? "")
+            ? "investment"
+            : "expense";
+
     withDate.push({
       date: l.date,
       row: [
-        "가계부",
+        "ledger",
         l.date,
         kindLabel,
         l.category ?? "",
@@ -63,25 +73,35 @@ export function buildUnifiedCsv(
         l.toAccountId ? accountNameById.get(l.toAccountId) ?? l.toAccountId : "",
         l.note ?? "",
         Array.isArray(l.tags) ? l.tags.join(",") : "",
-        "", "", "", "", "", "", "", "",
+        "",
+        "",
+        "",
+        "",
+        "",
+        "",
+        "",
+        "",
         l.id
       ]
     });
   }
 
   for (const t of trades) {
-    const sideLabel = t.side === "buy" ? "매수" : "매도";
+    const sideLabel = t.side === "buy" ? "buy" : "sell";
     withDate.push({
       date: t.date,
       row: [
-        "주식",
+        "trade",
         t.date,
         sideLabel,
-        "", "", "",
         "",
         "",
         "",
-        "", "",
+        "",
+        "",
+        "",
+        "",
+        "",
         "",
         accountNameById.get(t.accountId) ?? t.accountId,
         t.ticker,

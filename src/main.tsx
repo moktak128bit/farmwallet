@@ -6,7 +6,7 @@ import "./styles.css";
 const rootElement = document.getElementById("root");
 
 if (!rootElement) {
-  throw new Error("Root element not found");
+  throw new Error("루트 요소를 찾을 수 없습니다.");
 }
 
 if (typeof window !== "undefined" && "serviceWorker" in navigator && import.meta.env.PROD) {
@@ -22,7 +22,7 @@ try {
     </React.StrictMode>
   );
 } catch (error) {
-  console.error("Failed to render app:", error);
+  console.error("앱 렌더링 실패:", error);
   rootElement.innerHTML = `
     <div style="padding: 20px; font-family: system-ui;">
       <h1>오류 발생</h1>
@@ -31,6 +31,5 @@ try {
     </div>
   `;
 }
-
 
 

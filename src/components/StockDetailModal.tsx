@@ -413,7 +413,7 @@ export const StockDetailModal: React.FC<Props> = ({
                     onClick={() => setShowUSD((v) => !v)}
                     style={{ padding: "6px 12px", fontSize: 13 }}
                   >
-                    {showUSD ? "USD ON" : "USD OFF"}
+                    {showUSD ? "USD 표시" : "원화 표시"}
                   </button>
                 )}
               </div>

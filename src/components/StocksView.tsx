@@ -488,7 +488,7 @@ export const StocksView: React.FC<Props> = ({
         setFxUpdatedAt(r.updatedAt ?? new Date().toISOString());
       }
     } catch (err) {
-      console.warn("FX fetch failed", err);
+      console.warn("환율 조회 실패", err);
     }
   };
 
@@ -546,7 +546,7 @@ export const StocksView: React.FC<Props> = ({
 
   React.useEffect(() => {
     updateFxRate().catch((err) => {
-      console.warn("FX rate update failed:", err);
+      console.warn("환율 갱신 실패:", err);
     });
     try {
       const recentRaw = localStorage.getItem("fw-recent-tickers");

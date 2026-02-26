@@ -58,11 +58,6 @@ function isUsdEntry(l: LedgerEntry): boolean {
   return l.currency === "USD";
 }
 
-/** 이체 제외: 신용카드·카드대금 이체는 잔액 계산에서 제외 */
-function isCardPaymentTransfer(l: LedgerEntry): boolean {
-  return l.category === "신용카드" && l.subCategory === "카드대금";
-}
-
 /** 계좌·티커별 거래 그룹화 키 */
 function tradeGroupKey(accountId: string, ticker: string): string {
   const norm = canonicalTickerForMatch(ticker);
@@ -120,55 +115,81 @@ function fifoRealizedPnlBySell(
 
 // ---------------------------------------------------------------------------
 // computeAccountBalances
-// 규칙: 수입(toAccountId)·지출(fromAccountId)·저축성지출(toAccountId)·이체(KRW/USD 구분)·주식 cashImpact·초기잔액·initialHoldings·cashAdjustment·savings → currentBalance
+// 규칙: 수입(toAccountId)·지출(fromAccountId)·저축성지출(toAccountId)·이체(KRW/USD 구분)·주식 cashImpact·초기잔액·cashAdjustment·savings → currentBalance
+// 최적화: ledger/trades 1회 순회 후 Map으로 O(1) 조회
 // ---------------------------------------------------------------------------
+
+function buildLedgerIndex(
+  ledger: LedgerEntry[]
+): {
+  incomeByTo: Map<string, number>;
+  expenseByFrom: Map<string, number>;
+  expenseByTo: Map<string, number>;
+  transferOutKrw: Map<string, number>;
+  transferInKrw: Map<string, number>;
+  transferOutUsd: Map<string, number>;
+  transferInUsd: Map<string, number>;
+} {
+  const incomeByTo = new Map<string, number>();
+  const expenseByFrom = new Map<string, number>();
+  const expenseByTo = new Map<string, number>();
+  const transferOutKrw = new Map<string, number>();
+  const transferInKrw = new Map<string, number>();
+  const transferOutUsd = new Map<string, number>();
+  const transferInUsd = new Map<string, number>();
+
+  const add = (m: Map<string, number>, k: string, v: number) => m.set(k, (m.get(k) ?? 0) + v);
+
+  for (const l of ledger) {
+    if (l.kind === "income" && l.toAccountId) add(incomeByTo, l.toAccountId, l.amount);
+    else if (l.kind === "expense") {
+      if (l.fromAccountId) add(expenseByFrom, l.fromAccountId, l.amount);
+      if (l.toAccountId) add(expenseByTo, l.toAccountId, l.amount);
+    } else if (l.kind === "transfer") {
+      const isUsd = isUsdEntry(l);
+      if (l.fromAccountId) add(isUsd ? transferOutUsd : transferOutKrw, l.fromAccountId, l.amount);
+      if (l.toAccountId) add(isUsd ? transferInUsd : transferInKrw, l.toAccountId, l.amount);
+    }
+  }
+
+  return {
+    incomeByTo,
+    expenseByFrom,
+    expenseByTo,
+    transferOutKrw,
+    transferInKrw,
+    transferOutUsd,
+    transferInUsd
+  };
+}
 
 export function computeAccountBalances(
   accounts: Account[],
   ledger: LedgerEntry[],
   trades: StockTrade[]
 ): AccountBalanceRow[] {
+  const idx = buildLedgerIndex(ledger);
+  const securitiesIds = new Set(accounts.filter((a) => a.type === "securities").map((a) => a.id));
+  const tradeCashByAccount = new Map<string, number>();
+  for (const t of trades) {
+    if (securitiesIds.has(t.accountId) && isUSDStock(t.ticker)) continue;
+    tradeCashByAccount.set(t.accountId, (tradeCashByAccount.get(t.accountId) ?? 0) + t.cashImpact);
+  }
+
   return accounts.map((account) => {
-    const incomeSum = sumAmount(
-      ledger.filter((l) => l.kind === "income" && l.toAccountId === account.id)
-    );
-    const expenseSum = sumAmount(
-      ledger.filter((l) => l.kind === "expense" && l.fromAccountId === account.id)
-    );
-    const savingsExpenseIn = sumAmount(
-      ledger.filter((l) => l.kind === "expense" && l.toAccountId === account.id)
-    );
+    const incomeSum = idx.incomeByTo.get(account.id) ?? 0;
+    const expenseSum = idx.expenseByFrom.get(account.id) ?? 0;
+    const savingsExpenseIn = idx.expenseByTo.get(account.id) ?? 0;
 
-    const transferOutEntries = ledger.filter(
-      (l) =>
-        l.kind === "transfer" &&
-        l.fromAccountId === account.id &&
-        !isCardPaymentTransfer(l)
-    );
-    const transferInEntries = ledger.filter(
-      (l) =>
-        l.kind === "transfer" &&
-        l.toAccountId === account.id &&
-        !isCardPaymentTransfer(l)
-    );
-
-    const transferOutKrw = sumAmount(transferOutEntries.filter((l) => !isUsdEntry(l)));
-    const transferInKrw = sumAmount(transferInEntries.filter((l) => !isUsdEntry(l)));
+    const transferOutKrw = idx.transferOutKrw.get(account.id) ?? 0;
+    const transferInKrw = idx.transferInKrw.get(account.id) ?? 0;
     const transferNet = transferInKrw - transferOutKrw;
 
-    const usdTransferOut = sumAmount(transferOutEntries.filter(isUsdEntry));
-    const usdTransferIn = sumAmount(transferInEntries.filter(isUsdEntry));
+    const usdTransferOut = idx.transferOutUsd.get(account.id) ?? 0;
+    const usdTransferIn = idx.transferInUsd.get(account.id) ?? 0;
     const usdTransferNet = usdTransferIn - usdTransferOut;
 
-    const accountTrades = trades.filter((t) => t.accountId === account.id);
-    const tradeCashImpact = accountTrades.reduce((s, t) => {
-      if (account.type === "securities" && isUSDStock(t.ticker)) return s;
-      return s + t.cashImpact;
-    }, 0);
-
-    const initialHoldingsAmount = accountTrades
-      .filter((t) => t.cashImpact === 0 && t.side === "buy")
-      .reduce((s, t) => s + t.totalAmount, 0);
+    const tradeCashImpact = tradeCashByAccount.get(account.id) ?? 0;
 
     const baseBalance =
       account.type === "securities"
@@ -179,7 +200,6 @@ export function computeAccountBalances(
 
     const currentBalance =
       baseBalance +
-      initialHoldingsAmount +
       incomeSum -
       expenseSum +
       savingsExpenseIn +
@@ -209,21 +229,51 @@ export function computePositions(
   trades: StockTrade[],
   prices: StockPrice[],
   accounts: Account[],
-  options?: { fxRate?: number }
+  options?: { fxRate?: number; priceFallback?: "zero" | "cost" }
 ): PositionRow[] {
-  const byKey = groupTradesByAccountTicker(trades);
+  let tradesSorted = trades;
+  for (let i = 1; i < trades.length; i += 1) {
+    const prev = trades[i - 1];
+    const curr = trades[i];
+    if (prev.date > curr.date || (prev.date === curr.date && prev.id > curr.id)) {
+      tradesSorted = [...trades].sort((a, b) => {
+        if (a.date === b.date) return a.id.localeCompare(b.id);
+        return a.date.localeCompare(b.date);
+      });
+      break;
+    }
+  }
+
+  const byKey = groupTradesByAccountTicker(tradesSorted);
+  const accountNameById = new Map(
+    accounts.map((account) => [account.id, account.name ?? account.id])
+  );
+  const latestPriceByTicker = new Map<string, StockPrice>();
+  for (const price of prices) {
+    const tickerNorm = canonicalTickerForMatch(price.ticker);
+    if (!tickerNorm) continue;
+    const prev = latestPriceByTicker.get(tickerNorm);
+    if (!prev) {
+      latestPriceByTicker.set(tickerNorm, price);
+      continue;
+    }
+    const prevUpdated = prev.updatedAt ?? "";
+    const nextUpdated = price.updatedAt ?? "";
+    if (nextUpdated >= prevUpdated) {
+      latestPriceByTicker.set(tickerNorm, price);
+    }
+  }
+
   const rows: PositionRow[] = [];
 
   for (const [key, ts] of byKey.entries()) {
     const [accountId, tickerNorm] = key.split("::");
-    const account = accounts.find((a) => a.id === accountId);
-    const accountName = account?.name ?? account?.id ?? accountId;
+    const accountName = accountNameById.get(accountId) ?? accountId;
 
     // Keep unrealized basis consistent with FIFO realized PnL calculation.
-    const sorted = [...ts].sort((a, b) => a.date.localeCompare(b.date));
     type Lot = { qty: number; totalAmount: number };
     const queue: Lot[] = [];
-    for (const t of sorted) {
+    for (const t of ts) {
       if (t.side === "buy") {
         queue.push({ qty: t.quantity, totalAmount: t.totalAmount });
         continue;
@@ -242,18 +292,23 @@ export function computePositions(
     const quantity = queue.reduce((s, lot) => s + lot.qty, 0);
     if (quantity <= 0) continue;
     const remainingCostBasis = queue.reduce((s, lot) => s + lot.totalAmount, 0);
+    const avgPrice = quantity > 0 ? remainingCostBasis / quantity : 0;
 
-    const priceInfo = prices.find(
-      (p) => canonicalTickerForMatch(p.ticker) === tickerNorm
-    );
-    const marketPrice = priceInfo?.price ?? 0;
-    const canonicalTicker = priceInfo?.ticker ?? ts[0]?.ticker ?? tickerNorm;
-    const name = priceInfo?.name ?? ts[0]?.name ?? canonicalTicker;
+    const priceInfo = latestPriceByTicker.get(tickerNorm);
+    const hasMarketPrice =
+      typeof priceInfo?.price === "number" && Number.isFinite(priceInfo.price);
+    const marketPrice = hasMarketPrice
+      ? (priceInfo?.price ?? 0)
+      : options?.priceFallback === "cost"
+        ? avgPrice
+        : 0;
+    const firstTrade = ts[0];
+    const canonicalTicker = priceInfo?.ticker ?? firstTrade?.ticker ?? tickerNorm;
+    const name = priceInfo?.name ?? firstTrade?.name ?? canonicalTicker;
 
     const marketValue = marketPrice * quantity;
     const pnl = marketValue - remainingCostBasis;
     const pnlRate = remainingCostBasis > 0 ? pnl / remainingCostBasis : 0;
-    const avgPrice = quantity > 0 ? remainingCostBasis / quantity : 0;
 
     rows.push({
       accountId,
@@ -381,7 +436,7 @@ export function computeMonthlyNetWorth(
 export type AccountBalanceRowLike = { account: Account; currentBalance: number; usdTransferNet?: number };
 export type PositionRowLike = { accountId: string; marketValue: number; totalBuyAmount?: number; pnl?: number };
 
-/** 전체 순자산: 현금(KRW+USD환산) + 주식 평가액 - 부채 */
+/** 전체 순자산: 현금(KRW+USD환산) + 주식 평가액 + 부채(음수) */
 export function computeTotalNetWorth(
   balances: AccountBalanceRowLike[],
   positions: PositionRowLike[],
@@ -400,7 +455,7 @@ export function computeTotalNetWorth(
         ? (row.account.usdBalance ?? 0) + (row.usdTransferNet ?? 0)
         : 0;
     const usdToKrw = fxRate && usdCash !== 0 ? usdCash * fxRate : 0;
-    return sum + krwCash + usdToKrw + stockAsset - debt;
+    return sum + krwCash + usdToKrw + stockAsset + debt;
   }, 0);
 }
 
@@ -516,7 +571,7 @@ export function computeTotalSavings(
     .reduce((s, b) => s + b.currentBalance, 0);
 }
 
-/** 부채 합계 */
+/** 부채 합계 (음수=부채, 양수=선결제/환급) */
 export function computeTotalDebt(accounts: Account[]): number {
   return accounts.reduce((s, a) => s + (a.debt ?? 0), 0);
 }

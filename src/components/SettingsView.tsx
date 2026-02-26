@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, useState, useMemo } from "react";
+import React, { useCallback, useEffect, useState, useMemo, useRef, lazy, Suspense } from "react";
 import { toast } from "react-hot-toast";
 import type { AppData } from "../types";
 import {
@@ -9,12 +9,11 @@ import {
   saveData,
   type BackupEntry
 } from "../storage";
-import { generateLedgerMarkdownReport } from "../utils/ledgerMarkdownReport";
-import { buildUnifiedCsv } from "../utils/unifiedCsvExport";
-import { DataIntegrityView } from "./DataIntegrityView";
-import { SavingsMigrationView } from "./SavingsMigrationView";
-import { ThemeCustomizer } from "./ThemeCustomizer";
 import { getKoreaTime } from "../utils/date";
+
+const DataIntegrityView = lazy(() => import("./DataIntegrityView").then((m) => ({ default: m.DataIntegrityView })));
+const SavingsMigrationView = lazy(() => import("./SavingsMigrationView").then((m) => ({ default: m.SavingsMigrationView })));
+const ThemeCustomizer = lazy(() => import("./ThemeCustomizer").then((m) => ({ default: m.ThemeCustomizer })));
 import { usePWAInstall } from "../hooks/usePWAInstall";
 import { STORAGE_KEYS, ISA_PORTFOLIO } from "../constants/config";
 import { ERROR_MESSAGES } from "../constants/errorMessages";
@@ -25,6 +24,8 @@ interface Props {
   backupVersion: number;
   /** 로드 실패 후 백업 복원했을 때 호출 (저장 재활성화) */
   onBackupRestored?: () => void;
+  onNavigateToRecord?: (payload: { type: "ledger" | "trade"; id: string }) => void;
+  onNavigateToTab?: (tab: "accounts" | "ledger" | "stocks") => void;
 }
 
 type SettingsTab = "backup" | "integrity" | "theme" | "accessibility" | "dashboard" | "savingsMigration";
@@ -97,10 +98,17 @@ function getDashboardWidgetNames(dividendTicker?: string): Record<string, string
   };
 }
 
-export const SettingsView: React.FC<Props> = ({ data, onChangeData, backupVersion, onBackupRestored }) => {
+export const SettingsView: React.FC<Props> = ({
+  data,
+  onChangeData,
+  backupVersion,
+  onBackupRestored,
+  onNavigateToRecord,
+  onNavigateToTab
+}) => {
   const [activeTab, setActiveTab] = useState<SettingsTab>("backup");
   const [showThemeCustomizer, setShowThemeCustomizer] = useState(false);
-  const [text, setText] = useState(JSON.stringify(data, null, 2));
+  const [text, setText] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [backups, setBackups] = useState<BackupEntry[]>([]);
   const latestBackup = useMemo(() => backups[0], [backups]);
@@ -194,8 +202,9 @@ export const SettingsView: React.FC<Props> = ({ data, onChangeData, backupVersio
     }
   }, [data]);
 
-  const handleExportLedgerMd = useCallback(() => {
+  const handleExportLedgerMd = useCallback(async () => {
     try {
+      const { generateLedgerMarkdownReport } = await import("../utils/ledgerMarkdownReport");
       const md = generateLedgerMarkdownReport(data.ledger, data.accounts);
       const blob = new Blob([md], { type: "text/markdown;charset=utf-8" });
       const url = URL.createObjectURL(blob);
@@ -228,9 +237,15 @@ export const SettingsView: React.FC<Props> = ({ data, onChangeData, backupVersio
     }
   }, [onChangeData]);
 
-  const handleExportUnifiedCsv = useCallback(() => {
+  const handleExportUnifiedCsv = useCallback(async () => {
     try {
-      const csvContent = buildUnifiedCsv(data.ledger, data.trades, data.accounts);
+      const { buildUnifiedCsv } = await import("../utils/unifiedCsvExport");
+      const csvContent = buildUnifiedCsv(
+        data.ledger,
+        data.trades,
+        data.accounts,
+        data.categoryPresets
+      );
       const blob = new Blob(["\uFEFF" + csvContent], { type: "text/csv;charset=utf-8" });
       const url = URL.createObjectURL(blob);
       const a = document.createElement("a");
@@ -249,7 +264,7 @@ export const SettingsView: React.FC<Props> = ({ data, onChangeData, backupVersio
       if (import.meta.env.DEV) console.error("통합 CSV 내보내기 실패:", err);
       toast.error("CSV 내보내기 중 오류가 발생했습니다.");
     }
-  }, [data.ledger, data.trades, data.accounts]);
+  }, [data.ledger, data.trades, data.accounts, data.categoryPresets]);
 
   // 백업 파일에서 불러오기
   const handleUploadBackup = useCallback(() => {
@@ -347,8 +362,9 @@ export const SettingsView: React.FC<Props> = ({ data, onChangeData, backupVersio
   }, [onChangeData, loadBackupList, onBackupRestored]);
 
   useEffect(() => {
+    if (activeTab !== "backup") return;
     void loadBackupList();
-  }, [backupVersion, loadBackupList]);
+  }, [activeTab, backupVersion, loadBackupList]);
 
   useEffect(() => {
     if (activeTab === "backup") {
@@ -372,14 +388,30 @@ export const SettingsView: React.FC<Props> = ({ data, onChangeData, backupVersio
     }
   }, [activeTab]);
 
+  const dashboardSaveTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   useEffect(() => {
     if (typeof window === "undefined") return;
-    localStorage.setItem(STORAGE_KEYS.DASHBOARD_WIDGETS, JSON.stringify(Array.from(dashboardVisibleWidgets)));
+    if (dashboardSaveTimerRef.current) clearTimeout(dashboardSaveTimerRef.current);
+    dashboardSaveTimerRef.current = setTimeout(() => {
+      localStorage.setItem(STORAGE_KEYS.DASHBOARD_WIDGETS, JSON.stringify(Array.from(dashboardVisibleWidgets)));
+      dashboardSaveTimerRef.current = null;
+    }, 300);
+    return () => {
+      if (dashboardSaveTimerRef.current) clearTimeout(dashboardSaveTimerRef.current);
+    };
   }, [dashboardVisibleWidgets]);
 
+  const dashboardOrderSaveTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   useEffect(() => {
     if (typeof window === "undefined") return;
-    localStorage.setItem(STORAGE_KEYS.DASHBOARD_WIDGET_ORDER, JSON.stringify(dashboardWidgetOrder));
+    if (dashboardOrderSaveTimerRef.current) clearTimeout(dashboardOrderSaveTimerRef.current);
+    dashboardOrderSaveTimerRef.current = setTimeout(() => {
+      localStorage.setItem(STORAGE_KEYS.DASHBOARD_WIDGET_ORDER, JSON.stringify(dashboardWidgetOrder));
+      dashboardOrderSaveTimerRef.current = null;
+    }, 300);
+    return () => {
+      if (dashboardOrderSaveTimerRef.current) clearTimeout(dashboardOrderSaveTimerRef.current);
+    };
   }, [dashboardWidgetOrder]);
 
   const toggleDashboardWidget = (id: string) => {
@@ -634,6 +666,7 @@ export const SettingsView: React.FC<Props> = ({ data, onChangeData, backupVersio
         className="json-editor"
         value={text}
         onChange={(e) => setText(e.target.value)}
+        placeholder="JSON을 붙여넣거나 위 '현재 데이터 다시 불러오기'를 눌러주세요."
         rows={20}
       />
       <div className="form-actions">
@@ -646,7 +679,14 @@ export const SettingsView: React.FC<Props> = ({ data, onChangeData, backupVersio
       )}
 
       {activeTab === "integrity" && (
-        <DataIntegrityView data={data} onChangeData={onChangeData} />
+        <Suspense fallback={<div className="card" style={{ padding: 24, textAlign: "center", color: "var(--text-muted)" }}>로딩 중...</div>}>
+          <DataIntegrityView
+            data={data}
+            onChangeData={onChangeData}
+            onNavigateToRecord={onNavigateToRecord}
+            onNavigateToTab={onNavigateToTab}
+          />
+        </Suspense>
       )}
 
       {activeTab === "theme" && (
@@ -663,7 +703,9 @@ export const SettingsView: React.FC<Props> = ({ data, onChangeData, backupVersio
       )}
 
       {showThemeCustomizer && (
-        <ThemeCustomizer onClose={() => setShowThemeCustomizer(false)} />
+        <Suspense fallback={<div style={{ padding: 24, textAlign: "center" }}>로딩 중...</div>}>
+          <ThemeCustomizer onClose={() => setShowThemeCustomizer(false)} />
+        </Suspense>
       )}
 
       {activeTab === "accessibility" && (
@@ -864,7 +906,9 @@ export const SettingsView: React.FC<Props> = ({ data, onChangeData, backupVersio
       )}
 
       {activeTab === "savingsMigration" && (
-        <SavingsMigrationView data={data} onChangeData={onChangeData} />
+        <Suspense fallback={<div className="card" style={{ padding: 24, textAlign: "center", color: "var(--text-muted)" }}>로딩 중...</div>}>
+          <SavingsMigrationView data={data} onChangeData={onChangeData} />
+        </Suspense>
       )}
 
     </div>

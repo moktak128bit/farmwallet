@@ -31,6 +31,18 @@
   --shadow-sm: 0 1px 2px 0 rgb(0 0 0 / 0.05);
   --shadow: 0 4px 6px -1px rgb(0 0 0 / 0.1), 0 2px 4px -2px rgb(0 0 0 / 0.1);
   --shadow-lg: 0 10px 15px -3px rgb(0 0 0 / 0.1), 0 4px 6px -4px rgb(0 0 0 / 0.1);
+
+  /* Chart Colors - 테마 대응 (수입=빨강, 지출=파랑) */
+  --chart-income: var(--danger);
+  --chart-expense: var(--accent);
+  --chart-positive: var(--success);
+  --chart-negative: var(--danger);
+  --chart-accent: var(--accent);
+  --chart-primary: var(--primary);
+  --chart-warning: var(--warning);
+  --chart-series-a: #0284c7;
+  --chart-series-b: #0c4a6e;
+  --font-kr: "Noto Sans KR", "Malgun Gothic", "Apple SD Gothic Neo", -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
 }
 
 :root.dark {
@@ -62,6 +74,17 @@
   --shadow-sm: 0 1px 2px 0 rgb(0 0 0 / 0.3);
   --shadow: 0 4px 6px -1px rgb(0 0 0 / 0.3);
   --shadow-lg: 0 10px 15px -3px rgb(0 0 0 / 0.3);
+
+  /* Chart Colors - 테마 대응 (수입=빨강, 지출=파랑) */
+  --chart-income: var(--danger);
+  --chart-expense: var(--accent);
+  --chart-positive: var(--success);
+  --chart-negative: var(--danger);
+  --chart-accent: var(--accent);
+  --chart-primary: var(--primary);
+  --chart-warning: var(--warning);
+  --chart-series-a: #38bdf8;
+  --chart-series-b: #7dd3fc;
 }
 
 /* =========================================
@@ -74,13 +97,27 @@
 
 body {
   margin: 0;
-  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+  font-family: var(--font-kr);
   background-color: var(--bg);
   color: var(--text);
-  font-size: 16px; /* Increased base font size */
+  font-size: 16px;
   line-height: 1.6;
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
+}
+
+/* 차트/그래프 한글 폰트 (Recharts SVG 포함) */
+.recharts-wrapper,
+.recharts-surface,
+[class^="recharts"],
+.app-root svg text {
+  font-family: var(--font-kr) !important;
+}
+.recharts-wrapper text,
+.recharts-surface text,
+[class^="recharts"] text,
+.app-root svg text {
+  font-family: var(--font-kr) !important;
 }
 
 h1, h2, h3, h4, h5, h6 {

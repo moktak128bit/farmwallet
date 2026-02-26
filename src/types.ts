@@ -32,6 +32,8 @@ export interface LedgerEntry {
   toAccountId?: string;
   amount: number;
   currency?: "KRW" | "USD"; // 기본 KRW. 이체 시 달러 선택 가능
+  /** 할인금액 (신용결제 시 선택, 원금 대비 할인된 금액) */
+  discountAmount?: number;
   note?: string;
   tags?: string[]; // 태그 시스템
 }
@@ -161,6 +163,8 @@ export interface Loan {
   id: string;
   institution: string; // 기관명
   loanName: string; // 대출명
+  /** 세부 항목 (학자금대출, 주담대원금, 주담대이자, 개인대출, 기타대출상환 등) */
+  subCategory?: string;
   loanAmount: number; // 대출금액
   annualInterestRate: number; // 연이자율 (%)
   repaymentMethod: RepaymentMethod; // 상환방법

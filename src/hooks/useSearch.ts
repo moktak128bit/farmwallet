@@ -40,7 +40,18 @@ export function useSearch(data: AppData) {
     }
   }, []);
 
+  const isSearchActive = useMemo(() => {
+    const hasKeyword = searchQuery.keyword.trim().length > 0;
+    const hasAmountRange =
+      searchQuery.minAmount != null || searchQuery.maxAmount != null;
+    const hasTypeFilter =
+      !searchQuery.includeLedger || !searchQuery.includeTrades;
+    return isSearchOpen || hasKeyword || hasAmountRange || hasTypeFilter;
+  }, [isSearchOpen, searchQuery]);
+
   const unifiedRecords = useMemo(() => {
+    if (!isSearchActive) return [];
+
     const ledgerRecords = data.ledger.map((l) => ({
       type: "ledger" as const,
       id: l.id,
@@ -64,23 +75,33 @@ export function useSearch(data: AppData) {
       accountId: t.accountId
     }));
     return [...ledgerRecords, ...tradeRecords].sort((a, b) => b.date.localeCompare(a.date));
-  }, [data.ledger, data.trades]);
+  }, [data.ledger, data.trades, isSearchActive]);
 
   const filteredSearchResults = useMemo(() => {
+    if (!isSearchActive) return [];
+
     const { keyword, minAmount, maxAmount, includeLedger, includeTrades } = searchQuery;
     const key = keyword.trim().toLowerCase();
-    return unifiedRecords.filter((r) => {
-      if (r.type === "ledger" && !includeLedger) return false;
-      if (r.type === "trade" && !includeTrades) return false;
+    const broadSearch =
+      key.length === 0 && minAmount == null && maxAmount == null;
+    const resultLimit = broadSearch ? 500 : Number.POSITIVE_INFINITY;
+    const results: typeof unifiedRecords = [];
+
+    for (const r of unifiedRecords) {
+      if (r.type === "ledger" && !includeLedger) continue;
+      if (r.type === "trade" && !includeTrades) continue;
       if (key) {
         const hay = `${r.title} ${r.meta} ${r.accounts}`.toLowerCase();
-        if (!hay.includes(key)) return false;
+        if (!hay.includes(key)) continue;
       }
-      if (minAmount != null && r.amount < minAmount) return false;
-      if (maxAmount != null && r.amount > maxAmount) return false;
-      return true;
-    });
-  }, [searchQuery, unifiedRecords]);
+      if (minAmount != null && r.amount < minAmount) continue;
+      if (maxAmount != null && r.amount > maxAmount) continue;
+      results.push(r);
+      if (results.length >= resultLimit) break;
+    }
+
+    return results;
+  }, [searchQuery, unifiedRecords, isSearchActive]);
 
   const saveCurrentFilter = (name: string) => {
     if (!name.trim()) return;

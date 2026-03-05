@@ -1,6 +1,6 @@
 {
   "name": "farmwallet-web",
-  "version": "3.2.3",
+  "version": "3.7.0",
   "private": true,
   "scripts": {
     "predev": "npm run -s check-text && node scripts/generate-kr-names.mjs",
@@ -28,6 +28,7 @@
     "scan-broken-tickers": "node scripts/scan-broken-tickers-table.mjs",
     "list-scripts": "node scripts/list-all-scripts.mjs",
     "check-text": "node scripts/check-text-integrity.mjs",
+    "check-text:report": "node scripts/check-text-integrity.mjs --report",
     "check-text:update-baseline": "node scripts/check-text-integrity.mjs --update-baseline"
   },
   "dependencies": {

@@ -1,6 +1,6 @@
 {
   "name": "farmwallet-web",
-  "version": "3.7.0",
+  "version": "3.7.1",
   "private": true,
   "scripts": {
     "predev": "npm run -s check-text && node scripts/generate-kr-names.mjs",
@@ -9,6 +9,9 @@
     "build": "vite build",
     "preview": "vite preview",
     "lint": "tsc --noEmit",
+    "test": "npm run test:smoke",
+    "test:smoke": "node scripts/smoke-test.mjs",
+    "ci": "npm run -s check-text && npm run -s lint && npm run -s build && npm run -s test:smoke",
     "export-ledger": "node scripts/export-ledger-to-md.mjs",
     "apply-ticker": "node scripts/apply-ticker-to-app-data.mjs",
     "fix-categories": "node scripts/fix-corrupted-categories.mjs",

@@ -13,157 +13,168 @@ function backupApiPlugin(): Plugin {
       const dataDir = path.join(process.cwd(), "data");
       const dataFile = path.join(dataDir, "app-data.json");
 
+      const backupRoot = path.resolve(backupsDir);
+      const backupRootPrefix = `${backupRoot.toLowerCase()}${path.sep}`;
+      const MAX_BACKUP_BODY_BYTES = 20 * 1024 * 1024;
+
+      const resolveSafeBackupPath = (inputPath: string): string | null => {
+        const normalized = path.posix.normalize(inputPath.replace(/\\/g, "/")).replace(/^\/+/, "");
+        if (!normalized || normalized.startsWith("..")) return null;
+
+        const resolved = path.resolve(backupsDir, normalized);
+        const resolvedLower = resolved.toLowerCase();
+        if (resolvedLower !== backupRoot.toLowerCase() && !resolvedLower.startsWith(backupRootPrefix)) {
+          return null;
+        }
+        return resolved;
+      };
+
+      const parseCreatedAtFromBackupFileName = (fileName: string): string => {
+        const match = /^backup-(\d{4}-\d{2}-\d{2})T(\d{2})-(\d{2})-(\d{2})-(\d{3})Z\.json$/i.exec(
+          fileName
+        );
+        if (!match) return new Date(0).toISOString();
+        return `${match[1]}T${match[2]}:${match[3]}:${match[4]}.${match[5]}Z`;
+      };
+
       server.middlewares.use("/api/backup", (req: IncomingMessage, res: ServerResponse, next) => {
-        // #region agent log
-        const logPath = path.join(process.cwd(), ".cursor", "debug.log");
-        const log = (msg: string, data: any) => {
-          try {
-            const entry = JSON.stringify({
-              timestamp: Date.now(),
-              location: "vite.config.ts:backup-api",
-              message: msg,
-              data,
-              sessionId: "debug-session",
-              runId: "run1"
-            }) + "\n";
-            fs.appendFileSync(logPath, entry, "utf-8");
-          } catch {}
-        };
-        // #endregion
         if (req.method === "POST") {
           let body = "";
+          let bodyBytes = 0;
+          let tooLarge = false;
+
           req.on("data", (chunk: Buffer) => {
-            body += chunk.toString();
-          });
-          req.on("end", () => {
-            try {
-              // #region agent log
-              log("POST /api/backup 시작", { backupsDir, bodyLength: body.length });
-              // #endregion
-              const parsed = JSON.parse(body);
-              if (!fs.existsSync(backupsDir)) {
-                fs.mkdirSync(backupsDir, { recursive: true });
-              }
-              const timestamp = new Date().toISOString().replace(/[:.]/g, "-");
-              const dateFolder = new Date().toISOString().slice(0, 10); // YYYY-MM-DD
-              const dateDir = path.join(backupsDir, dateFolder);
-              // #region agent log
-              log("날짜 폴더 생성 시도", { dateFolder, dateDir, exists: fs.existsSync(dateDir) });
-              // #endregion
-              if (!fs.existsSync(dateDir)) {
-                fs.mkdirSync(dateDir, { recursive: true });
-              }
-              const fileName = `backup-${timestamp}.json`;
-              const fullPath = path.join(dateDir, fileName);
-              const relativePath = `${dateFolder}/${fileName}`;
-              // #region agent log
-              log("백업 파일 저장 경로", { fileName, fullPath, relativePath });
-              // #endregion
-              // 포맷팅된 JSON으로 저장 (들여쓰기 2칸)
-              const formatted = JSON.stringify(parsed, null, 2);
-              fs.writeFileSync(fullPath, formatted, "utf-8");
-              // #region agent log
-              log("백업 파일 저장 완료", { relativePath, fileSize: formatted.length });
-              // #endregion
+            if (tooLarge) return;
+            bodyBytes += chunk.length;
+            if (bodyBytes > MAX_BACKUP_BODY_BYTES) {
+              tooLarge = true;
+              res.statusCode = 413;
               res.setHeader("Content-Type", "application/json");
-              res.end(JSON.stringify({ fileName: relativePath, createdAt: new Date().toISOString() }));
-            } catch (err) {
-              // #region agent log
-              log("POST /api/backup 에러", { error: String(err) });
-              // #endregion
+              res.end(JSON.stringify({ error: "Backup payload is too large" }));
+              return;
+            }
+            body += chunk.toString("utf-8");
+          });
+
+          req.on("end", () => {
+            if (tooLarge) return;
+            void (async () => {
+              try {
+                JSON.parse(body);
+                const nowIso = new Date().toISOString();
+                const timestamp = nowIso.replace(/[:.]/g, "-");
+                const dateFolder = nowIso.slice(0, 10);
+                const dateDir = path.join(backupsDir, dateFolder);
+                await fs.promises.mkdir(dateDir, { recursive: true });
+
+                const fileName = `backup-${timestamp}.json`;
+                const fullPath = path.join(dateDir, fileName);
+                const relativePath = `${dateFolder}/${fileName}`;
+                await fs.promises.writeFile(fullPath, body, "utf-8");
+
+                res.setHeader("Content-Type", "application/json");
+                res.end(JSON.stringify({ fileName: relativePath, createdAt: nowIso }));
+              } catch (error) {
+                console.error("[backup-api] POST failed", error);
+                res.statusCode = 500;
+                res.setHeader("Content-Type", "application/json");
+                res.end(JSON.stringify({ error: "Failed to save backup" }));
+              }
+            })();
+          });
+
+          req.on("error", (error) => {
+            console.error("[backup-api] POST stream error", error);
+            if (!res.writableEnded) {
               res.statusCode = 500;
               res.setHeader("Content-Type", "application/json");
-              res.end(JSON.stringify({ error: "Failed to save backup" }));
+              res.end(JSON.stringify({ error: "Failed to read backup payload" }));
             }
           });
           return;
         }
 
         if (req.method === "GET") {
-          try {
-            // #region agent log
-            log("GET /api/backup 시작", { backupsDir, exists: fs.existsSync(backupsDir) });
-            // #endregion
-            if (!fs.existsSync(backupsDir)) {
-              res.setHeader("Content-Type", "application/json");
-              res.end("[]");
-              return;
-            }
+          void (async () => {
+            try {
+              const url = new URL(req.url ?? "/", "http://localhost");
+              const fileNameParam = url.searchParams.get("fileName");
 
-            const url = new URL(req.url ?? "/", "http://localhost");
-            const fileNameParam = url.searchParams.get("fileName");
-            if (fileNameParam) {
-              // #region agent log
-              log("특정 백업 파일 로드 요청", { fileNameParam });
-              // #endregion
-              // 날짜 폴더를 포함한 경로 처리 (예: "2025-12-26/backup-xxx.json")
-              const normalizedPath = fileNameParam.replace(/\\/g, "/"); // Windows 경로 정규화
-              const fullPath = path.join(backupsDir, normalizedPath);
-              // #region agent log
-              log("백업 파일 경로 해석", { normalizedPath, fullPath, exists: fs.existsSync(fullPath) });
-              // #endregion
-              if (!fs.existsSync(fullPath)) {
-                // #region agent log
-                log("백업 파일 없음", { fullPath });
-                // #endregion
-                res.statusCode = 404;
-                res.setHeader("Content-Type", "application/json");
-                res.end(JSON.stringify({ error: "Backup not found" }));
+              if (fileNameParam) {
+                const safePath = resolveSafeBackupPath(fileNameParam);
+                const baseName = path.basename(fileNameParam.replace(/\\/g, "/"));
+                if (!safePath || !baseName.startsWith("backup-") || !baseName.endsWith(".json")) {
+                  res.statusCode = 400;
+                  res.setHeader("Content-Type", "application/json");
+                  res.end(JSON.stringify({ error: "Invalid backup path" }));
+                  return;
+                }
+
+                try {
+                  const raw = await fs.promises.readFile(safePath, "utf-8");
+                  res.setHeader("Content-Type", "application/json");
+                  res.end(raw);
+                } catch {
+                  res.statusCode = 404;
+                  res.setHeader("Content-Type", "application/json");
+                  res.end(JSON.stringify({ error: "Backup not found" }));
+                }
                 return;
               }
-              const raw = fs.readFileSync(fullPath, "utf-8");
-              // #region agent log
-              log("백업 파일 로드 성공", { fullPath, fileSize: raw.length });
-              // #endregion
-              res.setHeader("Content-Type", "application/json");
-              res.end(raw);
-              return;
-            }
 
-            // 날짜별 폴더를 재귀적으로 탐색
-            const list: Array<{ fileName: string; createdAt: string }> = [];
-            const scanDir = (dir: string, basePath: string = "") => {
-              const entries = fs.readdirSync(dir, { withFileTypes: true });
-              for (const entry of entries) {
-                const fullPath = path.join(dir, entry.name);
-                const relativePath = basePath ? `${basePath}/${entry.name}` : entry.name;
-                if (entry.isDirectory()) {
-                  scanDir(fullPath, relativePath);
-                } else if (entry.isFile() && entry.name.endsWith(".json") && entry.name.startsWith("backup-")) {
-                  // backup-로 시작하는 파일만 백업으로 간주 (ticker-latest.json 제외)
-                  const stat = fs.statSync(fullPath);
-                  const createdAt =
-                    typeof stat.mtime === "string"
-                      ? stat.mtime
-                      : new Date(stat.mtimeMs).toISOString();
-                  list.push({ fileName: relativePath, createdAt });
+              try {
+                await fs.promises.access(backupsDir, fs.constants.F_OK);
+              } catch {
+                res.setHeader("Content-Type", "application/json");
+                res.end("[]");
+                return;
+              }
+
+              const list: Array<{ fileName: string; createdAt: string }> = [];
+              const stack: Array<{ dir: string; basePath: string }> = [{ dir: backupsDir, basePath: "" }];
+
+              while (stack.length > 0) {
+                const current = stack.pop();
+                if (!current) continue;
+                const entries = await fs.promises.readdir(current.dir, { withFileTypes: true });
+
+                for (const entry of entries) {
+                  const fullPath = path.join(current.dir, entry.name);
+                  const relativePath = current.basePath
+                    ? `${current.basePath}/${entry.name}`
+                    : entry.name;
+
+                  if (entry.isDirectory()) {
+                    stack.push({ dir: fullPath, basePath: relativePath });
+                    continue;
+                  }
+
+                  if (!entry.isFile()) continue;
+                  if (!entry.name.startsWith("backup-") || !entry.name.endsWith(".json")) continue;
+
+                  list.push({
+                    fileName: relativePath,
+                    createdAt: parseCreatedAtFromBackupFileName(entry.name)
+                  });
                 }
               }
-            };
-            scanDir(backupsDir);
-            // #region agent log
-            log("백업 목록 스캔 완료", { count: list.length, files: list.slice(0, 5).map(l => l.fileName) });
-            // #endregion
-            // createdAt 기준으로 정렬 (최신순)
-            list.sort((a, b) => b.createdAt.localeCompare(a.createdAt));
 
-            res.setHeader("Content-Type", "application/json");
-            res.end(JSON.stringify(list));
-          } catch (err) {
-            // #region agent log
-            log("GET /api/backup 에러", { error: String(err) });
-            // #endregion
-            res.statusCode = 500;
-            res.setHeader("Content-Type", "application/json");
-            res.end("[]");
-          }
+              list.sort((a, b) => b.createdAt.localeCompare(a.createdAt));
+              res.setHeader("Content-Type", "application/json");
+              res.end(JSON.stringify(list));
+            } catch (error) {
+              console.error("[backup-api] GET failed", error);
+              res.statusCode = 500;
+              res.setHeader("Content-Type", "application/json");
+              res.end("[]");
+            }
+          })();
           return;
         }
 
         next();
       });
-
-      // App data 저장/로드 (로컬 파일)
+      // App data read/write API (local file)
       server.middlewares.use("/api/data-store", (req: IncomingMessage, res: ServerResponse, next) => {
         try {
           if (!fs.existsSync(dataDir)) {
@@ -215,7 +226,178 @@ function backupApiPlugin(): Plugin {
         next();
       });
 
-      // 야후 파이낸스 프록시 (CORS 우회용)
+      // CORS proxy: server-side fetch for /api/external (Yahoo) and /api/stooq (allorigins 대체)
+      server.middlewares.use("/api/external", (req: IncomingMessage, res: ServerResponse, next) => {
+        if (req.method !== "GET" || !req.url) {
+          next();
+          return;
+        }
+        try {
+          const url = new URL(req.url, "http://localhost");
+          const pathSegments = url.pathname.replace(/^\/api\/external\/?/, "").split("/").filter(Boolean);
+          const pathType = pathSegments[0] ?? "";
+          const innerUrl = url.searchParams.get("url");
+          if ((pathType !== "get" && pathType !== "raw") || !innerUrl) {
+            res.statusCode = 400;
+            res.setHeader("Content-Type", "application/json");
+            res.end(JSON.stringify({ error: "url query required" }));
+            return;
+          }
+          const decoded = decodeURIComponent(innerUrl);
+          if (!decoded.startsWith("https://")) {
+            res.statusCode = 400;
+            res.setHeader("Content-Type", "application/json");
+            res.end(JSON.stringify({ error: "Invalid url" }));
+            return;
+          }
+          // Simple in-memory cache to reduce Yahoo 429s during dev
+          const cacheKey = `${pathType}:${decoded}`;
+          const now = Date.now();
+          const cacheTTL =
+            decoded.includes("finance/quote")
+              ? 30_000
+              : decoded.includes("finance/chart")
+                ? 10_000
+                : 15_000;
+          const cached = (server as unknown as { __externalCache?: Map<string, { expires: number; status: number; body: string }> })
+            .__externalCache;
+          if (cached) {
+            const hit = cached.get(cacheKey);
+            if (hit && hit.expires > now) {
+              res.statusCode = hit.status;
+              res.setHeader("Content-Type", "application/json");
+              res.end(hit.body);
+              return;
+            }
+          }
+          https
+            .get(decoded, (extRes) => {
+              let body = "";
+              extRes.on("data", (chunk) => { body += chunk.toString(); });
+              extRes.on("end", () => {
+                res.statusCode = extRes.statusCode ?? 200;
+                res.setHeader("Content-Type", "application/json");
+                const responseBody = pathType === "get" ? JSON.stringify({ contents: body }) : body;
+                const status = res.statusCode ?? 200;
+                // 429/5xx는 캐시하지 않아 다음 요청에서 Yahoo 재시도 가능
+                if (status >= 200 && status < 300) {
+                  const cacheStore = (server as unknown as { __externalCache?: Map<string, { expires: number; status: number; body: string }> });
+                  if (!cacheStore.__externalCache) {
+                    cacheStore.__externalCache = new Map();
+                  }
+                  cacheStore.__externalCache.set(cacheKey, {
+                    expires: now + cacheTTL,
+                    status,
+                    body: responseBody
+                  });
+                }
+                res.end(responseBody);
+              });
+            })
+            .on("error", (err) => {
+              console.warn("[api/external] fetch failed", err.message);
+              res.statusCode = 502;
+              res.setHeader("Content-Type", "application/json");
+              res.end(JSON.stringify({ error: "Proxy fetch failed" }));
+            });
+        } catch (e) {
+          res.statusCode = 500;
+          res.setHeader("Content-Type", "application/json");
+          res.end(JSON.stringify({ error: "Invalid request" }));
+        }
+      });
+
+      server.middlewares.use("/api/stooq", (req: IncomingMessage, res: ServerResponse, next) => {
+        if (req.method !== "GET" || !req.url) {
+          next();
+          return;
+        }
+        try {
+          const url = new URL(req.url, "http://localhost");
+          const query = url.searchParams.toString();
+          const stooqUrl = `https://stooq.pl/q/l/?${query}`;
+          https
+            .get(stooqUrl, (extRes) => {
+              let body = "";
+              extRes.on("data", (chunk) => { body += chunk.toString(); });
+              extRes.on("end", () => {
+                res.statusCode = extRes.statusCode ?? 200;
+                res.setHeader("Content-Type", extRes.headers["content-type"] ?? "application/json");
+                res.end(body);
+              });
+            })
+            .on("error", (err) => {
+              console.warn("[api/stooq] fetch failed", err.message);
+              res.statusCode = 502;
+              res.setHeader("Content-Type", "application/json");
+              res.end(JSON.stringify({ error: "Proxy fetch failed" }));
+            });
+        } catch (e) {
+          res.statusCode = 500;
+          res.setHeader("Content-Type", "application/json");
+          res.end(JSON.stringify({ error: "Invalid request" }));
+        }
+      });
+
+      // Yahoo Finance proxy (bypass CORS in local dev). 2xx만 캐시. 429 방지를 위해 Yahoo 요청 직렬화 + 최소 2.5초 간격.
+      const yahooQuoteCache = new Map<string, { expires: number; status: number; body: string }>();
+      const YAHOO_QUOTE_CACHE_TTL_MS = 60_000;
+      const YAHOO_MIN_INTERVAL_MS = 2500;
+      let lastYahooRequestEnd = 0;
+      const yahooQuoteQueue: Array<{
+        symbols: string;
+        resolve: (body: string, status: number) => void;
+      }> = [];
+      let yahooQuoteInFlight = false;
+
+      const processYahooQuoteQueue = () => {
+        if (yahooQuoteInFlight || yahooQuoteQueue.length === 0) return;
+        const job = yahooQuoteQueue.shift()!;
+        const wait = Math.max(0, lastYahooRequestEnd + YAHOO_MIN_INTERVAL_MS - Date.now());
+        yahooQuoteInFlight = true;
+        setTimeout(() => {
+          const doRequest = (
+            symbols: string,
+            onDone: (body: string, status: number) => void,
+            isRetry = false
+          ) => {
+            const yahooUrl = new URL("https://query1.finance.yahoo.com/v7/finance/quote");
+            yahooUrl.searchParams.set("symbols", symbols);
+            https
+              .get(yahooUrl, (yahooRes) => {
+                let body = "";
+                yahooRes.on("data", (chunk) => {
+                  body += chunk.toString();
+                });
+                yahooRes.on("end", () => {
+                  const status = yahooRes.statusCode ?? 200;
+                  lastYahooRequestEnd = Date.now();
+                  if (status === 429 && !isRetry) {
+                    // 429 시 60초 후 한 번만 재시도
+                    setTimeout(() => {
+                      doRequest(symbols, onDone, true);
+                    }, 60_000);
+                    return;
+                  }
+                  yahooQuoteInFlight = false;
+                  onDone(body, status);
+                });
+              })
+              .on("error", () => {
+                lastYahooRequestEnd = Date.now();
+                yahooQuoteInFlight = false;
+                onDone(JSON.stringify({ error: "Failed to fetch Yahoo quotes" }), 500);
+                processYahooQuoteQueue();
+              });
+          };
+          doRequest(job.symbols, (body, status) => {
+            yahooQuoteInFlight = false;
+            job.resolve(body, status);
+            processYahooQuoteQueue();
+          });
+        }, wait);
+      };
+
       server.middlewares.use(
         "/api/yahoo-quote",
         (req: IncomingMessage, res: ServerResponse, next) => {
@@ -224,47 +406,101 @@ function backupApiPlugin(): Plugin {
             return;
           }
 
-          try {
-            const url = new URL(req.url, "http://localhost");
-            const symbols = url.searchParams.get("symbols");
-            if (!symbols) {
-              res.statusCode = 400;
-              res.setHeader("Content-Type", "application/json");
-              res.end(JSON.stringify({ error: "symbols query is required" }));
-              return;
-            }
-
-            const yahooUrl = new URL(
-              "https://query1.finance.yahoo.com/v7/finance/quote"
-            );
-            yahooUrl.searchParams.set("symbols", symbols);
-
-            https
-              .get(yahooUrl, (yahooRes) => {
-                let body = "";
-                yahooRes.on("data", (chunk) => {
-                  body += chunk.toString();
-                });
-                yahooRes.on("end", () => {
-                  res.statusCode = yahooRes.statusCode ?? 200;
-                  res.setHeader("Content-Type", "application/json");
-                  res.end(body);
-                });
-              })
-              .on("error", () => {
-                res.statusCode = 500;
+          (async () => {
+            try {
+              const url = new URL(req.url, "http://localhost");
+              const symbols = url.searchParams.get("symbols");
+              if (!symbols) {
+                res.statusCode = 400;
                 res.setHeader("Content-Type", "application/json");
-                res.end(JSON.stringify({ error: "Failed to fetch Yahoo quotes" }));
+                res.end(JSON.stringify({ error: "symbols query is required" }));
+                return;
+              }
+              const cacheKey = symbols;
+              const now = Date.now();
+              const hit = yahooQuoteCache.get(cacheKey);
+              if (hit && hit.expires > now) {
+                res.statusCode = hit.status;
+                res.setHeader("Content-Type", "application/json");
+                res.end(hit.body);
+                return;
+              }
+
+              const { body, status } = await new Promise<{ body: string; status: number }>((resolve) => {
+                yahooQuoteQueue.push({
+                  symbols,
+                  resolve: (b, s) => resolve({ body: b, status: s })
+                });
+                processYahooQuoteQueue();
               });
-          } catch {
-            res.statusCode = 500;
-            res.setHeader("Content-Type", "application/json");
-            res.end(JSON.stringify({ error: "Invalid request" }));
-          }
+
+              res.statusCode = status;
+              res.setHeader("Content-Type", "application/json");
+              if (status >= 200 && status < 300) {
+                yahooQuoteCache.set(cacheKey, {
+                  expires: now + YAHOO_QUOTE_CACHE_TTL_MS,
+                  status,
+                  body
+                });
+              }
+              res.end(body);
+            } catch {
+              res.statusCode = 500;
+              res.setHeader("Content-Type", "application/json");
+              res.end(JSON.stringify({ error: "Invalid request" }));
+            }
+          })();
         }
       );
 
-      // ticker.json 파일 업데이트 API
+      // ticker database backup API (GET/POST) — dev에서 SPA fallback 대신 JSON 반환
+      const tickerBackupFile = path.join(process.cwd(), "data", "ticker-backup.json");
+      server.middlewares.use("/api/ticker-backup", (req: IncomingMessage, res: ServerResponse, next) => {
+        if (req.method === "GET") {
+          (async () => {
+            try {
+              if (!fs.existsSync(tickerBackupFile)) {
+                res.setHeader("Content-Type", "application/json");
+                res.end("[]");
+                return;
+              }
+              const raw = await fs.promises.readFile(tickerBackupFile, "utf-8");
+              res.setHeader("Content-Type", "application/json");
+              res.end(raw);
+            } catch (err) {
+              console.warn("[ticker-backup] GET failed", err);
+              res.statusCode = 500;
+              res.setHeader("Content-Type", "application/json");
+              res.end("[]");
+            }
+          })();
+          return;
+        }
+        if (req.method === "POST") {
+          let body = "";
+          req.on("data", (chunk: Buffer) => { body += chunk.toString(); });
+          req.on("end", () => {
+            try {
+              const parsed = JSON.parse(body) as { tickers?: unknown[] };
+              const tickers = Array.isArray(parsed.tickers) ? parsed.tickers : Array.isArray(parsed) ? parsed : [];
+              const dataDir = path.join(process.cwd(), "data");
+              if (!fs.existsSync(dataDir)) fs.mkdirSync(dataDir, { recursive: true });
+              fs.writeFileSync(tickerBackupFile, JSON.stringify(tickers), "utf-8");
+              res.setHeader("Content-Type", "application/json");
+              res.end(JSON.stringify({ ok: true }));
+            } catch (err) {
+              console.warn("[ticker-backup] POST failed", err);
+              res.statusCode = 400;
+              res.setHeader("Content-Type", "application/json");
+              res.end(JSON.stringify({ error: "Invalid body" }));
+            }
+          });
+          return;
+        }
+        next();
+      });
+
+      // ticker.json update API
       const tickerJsonFile = path.join(process.cwd(), "data", "ticker.json");
       server.middlewares.use("/api/ticker-json", (req: IncomingMessage, res: ServerResponse, next) => {
         if (req.method === "POST") {
@@ -276,7 +512,7 @@ function backupApiPlugin(): Plugin {
             try {
               const { ticker, name, market } = JSON.parse(body);
               
-              // 기존 파일 읽기
+              // Read existing ticker file
               let tickerData: { KR: Array<{ ticker: string; name: string }>; US: Array<{ ticker: string; name: string }> } = { KR: [], US: [] };
               
               if (fs.existsSync(tickerJsonFile)) {
@@ -291,26 +527,25 @@ function backupApiPlugin(): Plugin {
               const normalizedTicker = ticker.toUpperCase();
               const targetArray = market === 'KR' ? tickerData.KR : tickerData.US;
               
-              // 기존 티커 찾아서 업데이트
+              // Update existing ticker if found
               const existingIndex = targetArray.findIndex(item => item.ticker.toUpperCase() === normalizedTicker);
               
               if (existingIndex >= 0) {
-                // 티커가 있는데 이름이 다르면 이름 변경
+                // Update name only when changed.
                 if (name && targetArray[existingIndex].name !== name) {
                   targetArray[existingIndex].name = name;
                 }
               } else {
-                // 없으면 추가(티커와 종목명)
+                // Add ticker if it does not exist
                 targetArray.push({
                   ticker: normalizedTicker,
                   name: name || normalizedTicker
                 });
               }
               
-              // 정렬 (한국은 티커 기준, 미국도 티커 기준)
+              // Sort by ticker
               targetArray.sort((a, b) => a.ticker.localeCompare(b.ticker));
               
-              // 파일 저장
               const formatted = JSON.stringify(tickerData, null, 2);
               fs.writeFileSync(tickerJsonFile, formatted, "utf-8");
               
@@ -358,7 +593,21 @@ export default defineConfig({
   define: {
     __APP_VERSION__: JSON.stringify(packageJson.version)
   },
+  build: {
+    chunkSizeWarningLimit: 600,
+    rollupOptions: {
+      output: {
+        manualChunks(id) {
+          if (id.includes("node_modules/recharts")) {
+            return "recharts";
+          }
+          return undefined;
+        }
+      }
+    }
+  },
   server: {
     port: 5174
   }
 });
+

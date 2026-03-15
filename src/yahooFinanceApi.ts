@@ -8,6 +8,8 @@ export interface YahooQuoteResult {
   change?: number;
   changePercent?: number;
   updatedAt?: string;
+  sector?: string;
+  industry?: string;
 }
 
 
@@ -50,20 +52,8 @@ interface YahooQuoteApiResponse {
       currency?: string;
       regularMarketPreviousClose?: number;
       regularMarketTime?: number;
-    }>;
-  };
-}
-
-interface YahooQuoteApiResponse {
-  quoteResponse?: {
-    result?: Array<{
-      symbol?: string;
-      longName?: string;
-      shortName?: string;
-      regularMarketPrice?: number;
-      currency?: string;
-      regularMarketPreviousClose?: number;
-      regularMarketTime?: number;
+      sector?: string;
+      industry?: string;
     }>;
   };
 }
@@ -109,14 +99,16 @@ export async function fetchYahooBatchQuotes(symbols: string[]): Promise<YahooQuo
           currency: item.currency,
           change,
           changePercent,
-          updatedAt
+          updatedAt,
+          sector: item.sector,
+          industry: item.industry
         });
       });
     } catch (err) {
       console.warn("batch quote chunk failed", chunk.slice(0, 3), err);
     }
-    // 가벼운 딜레이로 서버 부담 완화
-    await new Promise((r) => setTimeout(r, 200));
+    // 가벼운 딜레이로 서버 부담 완화 (429 방지)
+    await new Promise((r) => setTimeout(r, 400));
   }
 
   return results;
@@ -387,6 +379,16 @@ const YAHOO_CHART_BASE = "https://query1.finance.yahoo.com/v8/finance/chart";
 const ALL_ORIGINS_PROXY = "https://api.allorigins.win/get?url=";
 const STOOQ_BASE = "https://stooq.pl/q/l/";
 
+const getEnv = (): Record<string, string | boolean | undefined> =>
+  (typeof import.meta !== "undefined"
+    ? (import.meta as { env?: Record<string, string | boolean | undefined> }).env
+    : undefined) ?? {};
+const useCorsProxy = (): boolean => getEnv().DEV === true || getEnv().MODE === "development";
+const getAllOriginsUrl = (path: "get" | "raw", encodedInnerUrl: string): string =>
+  useCorsProxy()
+    ? `/api/external/${path}?url=${encodedInnerUrl}`
+    : `https://api.allorigins.win/${path}?url=${encodedInnerUrl}`;
+
 
 const buildLookupCandidates = (symbol: string) => {
   const cleaned = symbol.trim().toUpperCase();
@@ -397,6 +399,11 @@ const buildLookupCandidates = (symbol: string) => {
     const hyphenated = cleaned.replace(/\./g, "-");
     return [hyphenated, cleaned]; // 하이픈 형식 우선, 원본도 시도
   }
+
+  // Yahoo 특수 심볼(환율/지수 등)은 KR 접미사(.KS/.KQ) 붙이지 않음
+  if (cleaned.includes("=X") || cleaned.startsWith("^")) {
+    return [cleaned];
+  }
   
   // 한국 주식: 6자 이상 (tickerUtils 규칙)
   if (isKRWStock(cleaned)) {
@@ -406,13 +413,196 @@ const buildLookupCandidates = (symbol: string) => {
   return [cleaned];
 };
 
+/** 429 Too Many Requests */
+class RateLimitError extends Error {
+  readonly status = 429;
+  constructor() {
+    super("HTTP 429 Too Many Requests");
+    this.name = "RateLimitError";
+  }
+}
+
+// 글로벌 429 쿨다운 (여러 호출 간 공유)
+let globalRateLimitUntil = 0;
+
+/** 최근 시세 캐시 TTL (ms). TTL 이내면 재요청하지 않음 */
+const QUOTE_CACHE_TTL_MS = 2 * 60 * 1000; // 2분
+const quoteCache = new Map<string, { result: YahooQuoteResult; fetchedAt: number }>();
+
+function getCachedQuote(symbol: string): YahooQuoteResult | null {
+  const entry = quoteCache.get(symbol);
+  if (!entry) return null;
+  if (Date.now() - entry.fetchedAt > QUOTE_CACHE_TTL_MS) {
+    quoteCache.delete(symbol);
+    return null;
+  }
+  return entry.result;
+}
+
+function setCachedQuote(symbol: string, result: YahooQuoteResult): void {
+  quoteCache.set(symbol, { result, fetchedAt: Date.now() });
+}
+
+const fetchFromYahooQuoteBatch = async (
+  requestedSymbols: string[],
+  lookupSymbols: string[]
+): Promise<Map<string, YahooQuoteResult>> => {
+  if (lookupSymbols.length === 0) return new Map();
+
+  // 개발 환경: /api/yahoo-quote 우선 사용(동일 서버에서 직접 Yahoo 호출, 429 캐시 없음)
+  if (useCorsProxy()) {
+    try {
+      const qs = new URLSearchParams({ symbols: lookupSymbols.join(",") });
+      const res = await fetch(`/api/yahoo-quote?${qs.toString()}`);
+      if (res.ok) {
+        const data = (await res.json()) as YahooQuoteApiResponse;
+        const list = data.quoteResponse?.result ?? [];
+        const byClean = new Map<string, (typeof list)[number]>();
+        for (const item of list) {
+          const symbol = String(item?.symbol ?? "").toUpperCase();
+          if (!symbol) continue;
+          const key = symbol.replace(/\.(KS|KQ|KO|K|KSQ)$/i, "");
+          if (!byClean.has(key)) byClean.set(key, item);
+        }
+        const results = new Map<string, YahooQuoteResult>();
+        for (const requested of requestedSymbols) {
+          const key = requested.replace(/\.(KS|KQ|KO|K|KSQ)$/i, "");
+          const item = byClean.get(key);
+          if (!item || typeof item.regularMarketPrice !== "number") continue;
+          let change: number | undefined;
+          let changePercent: number | undefined;
+          if (typeof item.regularMarketPreviousClose === "number") {
+            change = item.regularMarketPrice - item.regularMarketPreviousClose;
+            if (item.regularMarketPreviousClose !== 0) {
+              changePercent = (change / item.regularMarketPreviousClose) * 100;
+            }
+          }
+          const updatedAt =
+            typeof item.regularMarketTime === "number"
+              ? new Date(item.regularMarketTime * 1000).toISOString()
+              : undefined;
+          results.set(requested, {
+            ticker: requested,
+            name: item.longName ?? item.shortName ?? requested,
+            price: item.regularMarketPrice,
+            currency: item.currency,
+            change,
+            changePercent,
+            updatedAt,
+            sector: item.sector,
+            industry: item.industry
+          });
+        }
+        return results;
+      }
+      // 429 또는 기타 비정상 시 아래 proxy 경로로 폴백
+    } catch {
+      // 네트워크 오류 등: 아래 proxy 경로로 폴백
+    }
+  }
+
+  const params = new URLSearchParams({ symbols: lookupSymbols.join(",") });
+  const innerUrl = `https://query1.finance.yahoo.com/v7/finance/quote?${params.toString()}`;
+  const encodedUrl = encodeURIComponent(innerUrl);
+  // 개발에서 429 폴백: 먼저 allorigins 직접 시도, 실패 시 /api/external (서버 경유)
+  const proxyUrls = useCorsProxy()
+    ? [
+        `https://api.allorigins.win/get?url=${encodedUrl}`,
+        `/api/external/get?url=${encodedUrl}`
+      ]
+    : [getAllOriginsUrl("get", encodedUrl)];
+
+  const controller = new AbortController();
+  const timeoutId = setTimeout(() => controller.abort(), 10000);
+  try {
+    let res: Response | null = null;
+    let lastErr: unknown = null;
+    for (const proxyUrl of proxyUrls) {
+      try {
+        res = await fetch(proxyUrl, { signal: controller.signal });
+        if (res.ok) break;
+        if (res.status === 429) throw new RateLimitError();
+        lastErr = null;
+      } catch (e) {
+        lastErr = e;
+        if (e instanceof RateLimitError) throw e;
+      }
+    }
+    clearTimeout(timeoutId);
+    if (!res || !res.ok) {
+      if (lastErr instanceof RateLimitError) throw lastErr;
+      return new Map();
+    }
+    const payload = (await res.json()) as {
+      contents?: string;
+      status?: { http_code?: number };
+    };
+    if (payload.status?.http_code === 429) return new Map();
+    let data: YahooQuoteApiResponse;
+    try {
+      data = payload.contents
+        ? (JSON.parse(payload.contents) as YahooQuoteApiResponse)
+        : (payload as unknown as YahooQuoteApiResponse);
+    } catch {
+      return new Map();
+    }
+    const list = data.quoteResponse?.result ?? [];
+    const byClean = new Map<string, (typeof list)[number]>();
+    for (const item of list) {
+      const symbol = String(item?.symbol ?? "").toUpperCase();
+      if (!symbol) continue;
+      const key = symbol.replace(/\.(KS|KQ|KO|K|KSQ)$/i, "");
+      if (!byClean.has(key)) byClean.set(key, item);
+    }
+
+    const results = new Map<string, YahooQuoteResult>();
+    for (const requested of requestedSymbols) {
+      const key = requested.replace(/\.(KS|KQ|KO|K|KSQ)$/i, "");
+      const item = byClean.get(key);
+      if (!item) continue;
+      if (typeof item.regularMarketPrice !== "number") continue;
+
+      let change: number | undefined;
+      let changePercent: number | undefined;
+      if (typeof item.regularMarketPreviousClose === "number") {
+        change = item.regularMarketPrice - item.regularMarketPreviousClose;
+        if (item.regularMarketPreviousClose !== 0) {
+          changePercent = (change / item.regularMarketPreviousClose) * 100;
+        }
+      }
+
+      const updatedAt =
+        typeof item.regularMarketTime === "number"
+          ? new Date(item.regularMarketTime * 1000).toISOString()
+          : undefined;
+
+      results.set(requested, {
+        ticker: requested,
+        name: item.longName ?? item.shortName ?? requested,
+        price: item.regularMarketPrice,
+        currency: item.currency,
+        change,
+        changePercent,
+        updatedAt,
+        sector: item.sector,
+        industry: item.industry
+      });
+    }
+
+    return results;
+  } catch (err) {
+    clearTimeout(timeoutId);
+    if (err instanceof Error && err.name === "AbortError") {
+      throw new Error("Request timeout");
+    }
+    throw err;
+  }
+};
+
 const fetchFromYahooChart = async (
   requestedSymbol: string,
   lookupSymbol: string
 ): Promise<YahooQuoteResult | null> => {
-  // #region agent log
-  fetch('http://127.0.0.1:7242/ingest/882185e7-1338-4f3b-a05b-acdab4efccb1',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'yahooFinanceApi.ts:470',message:'fetchFromYahooChart start',data:{requestedSymbol,lookupSymbol},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'A'})}).catch(()=>{});
-  // #endregion
   const params = new URLSearchParams({
     interval: "1d",
     range: "1d",
@@ -421,21 +611,16 @@ const fetchFromYahooChart = async (
     includePrePost: "false"
   });
   const innerUrl = `${YAHOO_CHART_BASE}/${encodeURIComponent(lookupSymbol)}?${params.toString()}`;
-  const proxyUrl = `${ALL_ORIGINS_PROXY}${encodeURIComponent(innerUrl)}`;
-  // #region agent log
-  fetch('http://127.0.0.1:7242/ingest/882185e7-1338-4f3b-a05b-acdab4efccb1',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'yahooFinanceApi.ts:483',message:'before fetch',data:{proxyUrl},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'B'})}).catch(()=>{});
-  // #endregion
-  const startTime = Date.now();
+  const proxyUrl = getAllOriginsUrl("get", encodeURIComponent(innerUrl));
   const controller = new AbortController();
   const timeoutId = setTimeout(() => controller.abort(), 10000);
   try {
     const res = await fetch(proxyUrl, { signal: controller.signal });
     clearTimeout(timeoutId);
-    const duration = Date.now() - startTime;
-    // #region agent log
-    fetch('http://127.0.0.1:7242/ingest/882185e7-1338-4f3b-a05b-acdab4efccb1',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'yahooFinanceApi.ts:497',message:'after fetch',data:{status:res.status,ok:res.ok,duration},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'B'})}).catch(()=>{});
-    // #endregion
-    if (!res.ok) throw new Error(`HTTP ${res.status}`);
+    if (!res.ok) {
+      if (res.status === 429) throw new RateLimitError();
+      throw new Error(`HTTP ${res.status}`);
+    }
     const payload = (await res.json()) as { contents?: string };
     const data = payload.contents
       ? (JSON.parse(payload.contents) as YahooChartResponse)
@@ -480,20 +665,14 @@ const fetchFromYahooChart = async (
 };
 
 const fetchFromStooq = async (requestedSymbol: string): Promise<YahooQuoteResult | null> => {
-  // #region agent log
-  fetch('http://127.0.0.1:7242/ingest/882185e7-1338-4f3b-a05b-acdab4efccb1',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'yahooFinanceApi.ts:521',message:'fetchFromStooq start',data:{requestedSymbol},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'D'})}).catch(()=>{});
-  // #endregion
-  const url = `${STOOQ_BASE}?s=${encodeURIComponent(
-    requestedSymbol.toLowerCase()
-  )}.us&f=sd2t2ohlcv&h&e=json`;
+  const sym = `${requestedSymbol.toLowerCase()}.us`;
+  const query = `s=${encodeURIComponent(sym)}&f=sd2t2ohlcv&h&e=json`;
+  const url = useCorsProxy() ? `/api/stooq?${query}` : `${STOOQ_BASE}?${query}`;
   const controller = new AbortController();
   const timeoutId = setTimeout(() => controller.abort(), 5000);
   try {
     const res = await fetch(url, { signal: controller.signal });
     clearTimeout(timeoutId);
-    // #region agent log
-    fetch('http://127.0.0.1:7242/ingest/882185e7-1338-4f3b-a05b-acdab4efccb1',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'yahooFinanceApi.ts:529',message:'stooq fetch result',data:{status:res.status,ok:res.ok},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'D'})}).catch(()=>{});
-    // #endregion
     if (!res.ok) return null;
     const json = (await res.json()) as {
       symbols?: Array<{ symbol: string; name?: string; close?: string }>;
@@ -519,61 +698,174 @@ const fetchFromStooq = async (requestedSymbol: string): Promise<YahooQuoteResult
 // 전역 요청 추적을 위한 맵
 const activeRequests = new Map<string, Promise<YahooQuoteResult[]>>();
 
-export async function fetchYahooQuotes(symbols: string[]): Promise<YahooQuoteResult[]> {
-  // #region agent log
-  fetch('http://127.0.0.1:7242/ingest/882185e7-1338-4f3b-a05b-acdab4efccb1',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'yahooFinanceApi.ts:541',message:'fetchYahooQuotes start',data:{symbols,activeRequestsCount:activeRequests.size},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'A'})}).catch(()=>{});
-  // #endregion
+export type FetchYahooQuotesOptions = {
+  onProgress?: (done: number, total: number) => void;
+};
+
+export async function fetchYahooQuotes(
+  symbols: string[],
+  options?: FetchYahooQuotesOptions
+): Promise<YahooQuoteResult[]> {
   const uniq = Array.from(new Set(symbols.map((s) => s.trim()).filter(Boolean)));
   if (uniq.length === 0) return [];
 
   // 중복 요청 방지: 같은 심볼에 대한 요청이 이미 진행 중이면 기존 요청 재사용
   const requestKey = uniq.sort().join(',');
   if (activeRequests.has(requestKey)) {
-    // #region agent log
-    fetch('http://127.0.0.1:7242/ingest/882185e7-1338-4f3b-a05b-acdab4efccb1',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'yahooFinanceApi.ts:548',message:'reusing existing request',data:{requestKey},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'A'})}).catch(()=>{});
-    // #endregion
     return activeRequests.get(requestKey)!;
   }
+
+  const onProgress = options?.onProgress;
+  const total = uniq.length;
 
   const requestPromise = (async () => {
     try {
       const results: YahooQuoteResult[] = [];
+      const now = Date.now();
+      if (now < globalRateLimitUntil) {
+        // 쿨다운 중이면 캐시만 반환 (추가 요청 방지). 캐시가 비어 있으면 쿨다운을 우회해 실제 요청 시도(시세 갱신이 영원히 안 되는 것 방지)
+        for (const raw of uniq) {
+          const requestedSymbol = raw.trim().toUpperCase();
+          const cached = getCachedQuote(requestedSymbol);
+          if (cached) results.push(cached);
+        }
+        if (results.length > 0) return results;
+        // 캐시가 비었으면 쿨다운 무시하고 아래에서 실제 요청 수행
+      }
 
-      for (const raw of uniq) {
-        const requestedSymbol = raw.trim().toUpperCase();
-        let quote: YahooQuoteResult | null = null;
+      let rateLimitBackoffMs = 5000; // 429 시 지수 백오프 초기값
 
-        for (const lookupSymbol of buildLookupCandidates(requestedSymbol)) {
-          try {
-            quote = await fetchFromYahooChart(requestedSymbol, lookupSymbol);
-            if (quote) break;
-          } catch (err) {
-            // #region agent log
-            fetch('http://127.0.0.1:7242/ingest/882185e7-1338-4f3b-a05b-acdab4efccb1',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'yahooFinanceApi.ts:556',message:'yahoo chart fetch failed',data:{lookupSymbol,error:String(err)},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'C'})}).catch(()=>{});
-            // #endregion
-            // 조용히 실패 처리 (프록시 서버 문제일 수 있음)
+      // 1) 배치: 미국/기타 한 번에, 한국은 2종목씩 작은 청크로 요청(청크 간 1.5초 지연)해 429 회피.
+      const requestedSymbols = uniq.map((s) => s.trim().toUpperCase());
+      const krTickers = requestedSymbols.filter((s) => isKRWStock(s));
+      const batchTickers = requestedSymbols.filter((s) => !isKRWStock(s));
+      let batchResults = new Map<string, YahooQuoteResult>();
+      if (batchTickers.length > 0) {
+        const lookupSymbols: string[] = [];
+        const seen = new Set<string>();
+        for (const s of batchTickers) {
+          for (const c of buildLookupCandidates(s)) {
+            if (!seen.has(c)) {
+              seen.add(c);
+              lookupSymbols.push(c);
+            }
           }
         }
-
-        if (!quote) {
-          try {
-            quote = await fetchFromStooq(requestedSymbol);
-          } catch (err) {
-            // #region agent log
-            fetch('http://127.0.0.1:7242/ingest/882185e7-1338-4f3b-a05b-acdab4efccb1',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'yahooFinanceApi.ts:564',message:'stooq fetch failed',data:{requestedSymbol,error:String(err)},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'D'})}).catch(()=>{});
-            // #endregion
-            // 조용히 실패 처리 (CORS 문제일 수 있음)
+        try {
+          const chunkMap = await fetchFromYahooQuoteBatch(batchTickers, lookupSymbols);
+          for (const [ticker, quote] of chunkMap.entries()) {
+            batchResults.set(ticker, quote);
+            setCachedQuote(ticker, quote);
+            results.push(quote);
+          }
+        } catch (err) {
+          if (err instanceof RateLimitError) {
+            globalRateLimitUntil = Date.now() + 30 * 1000;
+            console.warn("[시세] 배치 429. 종목별 chart 폴백 진행.");
+          } else throw err;
+        }
+      }
+      const KR_BATCH_CHUNK = 2;
+      if (krTickers.length > 0) {
+        await new Promise((r) => setTimeout(r, 2500)); // 미국 배치 직후 429 회피
+      }
+      for (let i = 0; i < krTickers.length; i += KR_BATCH_CHUNK) {
+        const chunk = krTickers.slice(i, i + KR_BATCH_CHUNK);
+        const chunkLookup: string[] = [];
+        const seen = new Set<string>();
+        for (const s of chunk) {
+          for (const c of buildLookupCandidates(s)) {
+            if (!seen.has(c)) {
+              seen.add(c);
+              chunkLookup.push(c);
+            }
           }
         }
-
-        if (quote) {
-          results.push(quote);
+        if (chunkLookup.length === 0) continue;
+        try {
+          const chunkMap = await fetchFromYahooQuoteBatch(chunk, chunkLookup);
+          for (const [ticker, quote] of chunkMap.entries()) {
+            batchResults.set(ticker, quote);
+            setCachedQuote(ticker, quote);
+            results.push(quote);
+          }
+        } catch (err) {
+          if (err instanceof RateLimitError) {
+            globalRateLimitUntil = Date.now() + 30 * 1000;
+            console.warn("[시세] 한국 배치 청크 429. 나머지 한국 종목은 chart 폴백.");
+            break;
+          }
+          // 네트워크 등 기타 오류 시 해당 청크만 스킵
+        }
+        if (i + KR_BATCH_CHUNK < krTickers.length) {
+          await new Promise((r) => setTimeout(r, 2500)); // 청크 간 2.5초
         }
       }
 
-      if (results.length) return results;
+      for (let i = 0; i < uniq.length; i++) {
+        const raw = uniq[i];
+        const requestedSymbol = raw.trim().toUpperCase();
+        if (batchResults.has(requestedSymbol)) {
+          onProgress?.(i + 1, total);
+          continue;
+        }
 
-      // 에러를 던지지 않고 빈 배열 반환 (조용히 실패 처리)
+        const cached = getCachedQuote(requestedSymbol);
+        if (cached) {
+          results.push(cached);
+          onProgress?.(i + 1, total);
+          continue;
+        }
+
+        let quote: YahooQuoteResult | null = null;
+        try {
+          // 배치가 실패(429 등)했으면 Yahoo 대신 Stooq 먼저 시도(미국 종목 등)
+          if (batchResults.size === 0) {
+            try {
+              quote = await fetchFromStooq(requestedSymbol);
+            } catch (err) {
+              if (err instanceof RateLimitError) throw err;
+            }
+          }
+          if (!quote) {
+            const chartDelayMs = isKRWStock(requestedSymbol) ? 800 : 400; // 한국 종목은 chart만 사용하므로 간격 넓혀 429 완화
+            for (const lookupSymbol of buildLookupCandidates(requestedSymbol)) {
+              try {
+                await new Promise((r) => setTimeout(r, chartDelayMs));
+                quote = await fetchFromYahooChart(requestedSymbol, lookupSymbol);
+                if (quote) break;
+              } catch (err) {
+                if (err instanceof RateLimitError) throw err;
+                // 조용히 실패 처리 (프록시/서버 문제 가능)
+              }
+            }
+          }
+          if (!quote) {
+            try {
+              quote = await fetchFromStooq(requestedSymbol);
+            } catch (err) {
+              if (err instanceof RateLimitError) throw err;
+            }
+          }
+        } catch (err) {
+          if (err instanceof RateLimitError) {
+            console.warn("[시세] 429 Too Many Requests. 해당 종목 스킵, 나머지 계속.", rateLimitBackoffMs, "ms 쿨다운");
+            globalRateLimitUntil = Date.now() + rateLimitBackoffMs;
+            rateLimitBackoffMs = Math.min(rateLimitBackoffMs * 2, 60000);
+            onProgress?.(i + 1, total);
+            continue;
+          }
+          throw err;
+        }
+
+        if (quote) {
+          setCachedQuote(requestedSymbol, quote);
+          results.push(quote);
+        }
+        onProgress?.(i + 1, total);
+      }
+
+      if (results.length) return results;
       return [];
     } finally {
       activeRequests.delete(requestKey);
@@ -604,7 +896,7 @@ export async function searchYahooSymbol(
         q
       )}&quotesCount=15&newsCount=0`;
   // raw 응답으로 받아 contents 파싱 단계를 줄인다.
-  const url = `https://api.allorigins.win/raw?url=${encodeURIComponent(innerUrl)}`;
+  const url = getAllOriginsUrl("raw", encodeURIComponent(innerUrl));
   const res = await fetch(url);
       if (!res.ok) continue;
   const data = (await res.json()) as YahooSearchResponse;

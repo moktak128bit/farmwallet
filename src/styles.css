@@ -118,6 +118,7 @@ body {
 [class^="recharts"] text,
 .app-root svg text {
   font-family: var(--font-kr) !important;
+  font-size: 12px;
 }
 
 h1, h2, h3, h4, h5, h6 {
@@ -163,6 +164,62 @@ a:hover {
   margin-bottom: 32px;
   padding-bottom: 24px;
   border-bottom: 1px solid var(--border);
+}
+
+/* FarmWallet v3.7.2 옆 로그 패널 */
+.app-log-panel {
+  flex: 0 1 320px;
+  max-width: 360px;
+  min-width: 200px;
+  margin-left: 16px;
+  padding: 8px 12px;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  font-size: 12px;
+  max-height: 140px;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+.app-log-panel-title {
+  font-weight: 600;
+  color: var(--text-muted);
+  margin-bottom: 6px;
+  flex-shrink: 0;
+}
+.app-log-panel-list {
+  overflow-y: auto;
+  flex: 1;
+  min-height: 0;
+}
+.app-log-panel-empty {
+  color: var(--text-muted);
+  font-size: 11px;
+  padding: 4px 0;
+}
+.app-log-panel-item {
+  padding: 4px 0;
+  border-bottom: 1px solid var(--border-light);
+  line-height: 1.35;
+  word-break: break-word;
+}
+.app-log-panel-item:last-child {
+  border-bottom: none;
+}
+.app-log-panel-item.app-log-success { color: var(--success); }
+.app-log-panel-item.app-log-error { color: var(--danger); }
+.app-log-panel-item.app-log-info { color: var(--accent); }
+.app-log-time {
+  color: var(--text-muted);
+  margin-right: 6px;
+  flex-shrink: 0;
+}
+
+@media (max-width: 900px) {
+  .app-log-panel {
+    display: none;
+  }
 }
 
 .layout {
@@ -229,17 +286,17 @@ a:hover {
 }
 
 .card-title {
-  font-size: 14px;
+  font-size: 15px;
   font-weight: 600;
-  color: var(--text-muted);
+  color: var(--text-secondary);
   text-transform: uppercase;
   letter-spacing: 0.5px;
-  margin-bottom: 8px;
+  margin-bottom: 10px;
 }
 
 .card-value {
-  font-size: 28px;
-  font-weight: 800;
+  font-size: 26px;
+  font-weight: 700;
   color: var(--text);
   letter-spacing: -0.5px;
 }
@@ -251,12 +308,18 @@ a:hover {
 .data-table {
   width: 100%;
   border-collapse: collapse;
-  font-size: 13px; /* 행 높이 감소를 위해 13px로 조정 */
+  font-size: 14px;
   border: 1px solid var(--border);
   border-radius: 8px;
-  overflow: hidden; /* 헤더·본문 경계 틈 방지 및 border-radius 유지 */
+  overflow: hidden;
   margin-bottom: 24px;
-  table-layout: fixed; /* 고정 레이아웃으로 컬럼 너비 일정하게 */
+  table-layout: fixed;
+}
+
+.data-table.compact,
+.data-table.table.compact,
+.table.compact {
+  font-size: 13px;
 }
 
 .data-table thead {
@@ -636,7 +699,7 @@ a:hover {
   text-align: right;
   font-feature-settings: "tnum";
   font-variant-numeric: tabular-nums;
-  font-weight: 500;
+  font-weight: 600;
 }
 
 .positive { color: var(--danger); font-weight: 600; } /* Red for up in Korea */
@@ -880,16 +943,10 @@ label {
   color: var(--text);
 }
 
-/* 요약 숫자(잔액·총계 등) 가독성 */
-.card-value {
-  font-size: 1.25em;
-  font-weight: 700;
-}
-
 .hint {
   font-size: 14px;
   color: var(--text-muted);
-  margin-top: 6px;
+  margin-top: 8px;
 }
 
 .error-text {
@@ -1142,4 +1199,48 @@ label {
 
 .high-contrast a {
   text-decoration: underline;
+}
+
+/* 시세 갱신 진행바 (하단 고정, % 표시) */
+.quote-refresh-progress {
+  position: fixed;
+  bottom: 0;
+  left: 0;
+  right: 0;
+  height: 28px;
+  background: var(--surface);
+  border-top: 1px solid var(--border);
+  z-index: 1000;
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  padding: 0 12px;
+  box-shadow: 0 -2px 8px rgb(0 0 0 / 0.06);
+}
+.quote-refresh-progress__bar {
+  position: absolute;
+  left: 0;
+  top: 0;
+  bottom: 0;
+  background: var(--primary);
+  opacity: 0.2;
+  transition: width 0.2s ease-out;
+}
+.quote-refresh-progress__bar--determinate {
+  opacity: 0.25;
+  animation: none;
+}
+.quote-refresh-progress__label {
+  position: relative;
+  z-index: 1;
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--primary);
+  text-align: center;
+}
+@keyframes quote-refresh-slide {
+  0% { transform: translateX(-100%); width: 40%; }
+  50% { transform: translateX(100%); width: 40%; }
+  100% { transform: translateX(-100%); width: 40%; }
 }

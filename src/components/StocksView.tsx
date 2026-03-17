@@ -52,6 +52,7 @@ interface Props {
   onChangeTickerDatabase: (next: TickerInfo[]) => void;
   onLoadInitialTickers: () => Promise<void>;
   isLoadingTickerDatabase: boolean;
+  onLog?: (message: string, type?: "success" | "error" | "info") => void;
   presets?: StockPreset[];
   onChangePresets?: (next: StockPreset[]) => void;
   ledger?: LedgerEntry[];
@@ -111,6 +112,9 @@ function createDefaultTradeForm() {
     accountId: "",
     ticker: "",
     name: "",
+    /** 시장: 코스피/코스닥/미장/코인 직접 선택 */
+    market: undefined as "KR" | "US" | "CRYPTO" | undefined,
+    exchange: undefined as string | undefined,
     side: "buy" as TradeSide,
     quantity: "",
     price: "",
@@ -136,6 +140,7 @@ export const StocksView: React.FC<Props> = ({
   onChangeTickerDatabase,
   onLoadInitialTickers,
   isLoadingTickerDatabase,
+  onLog,
   presets = [],
   onChangePresets,
   ledger = [],
@@ -268,37 +273,30 @@ export const StocksView: React.FC<Props> = ({
       
       setIsSearchingTradeFormQuote(true);
       try {
-        const results = await fetchYahooQuotes([symbol]);
+        const exchangeMap =
+          tradeForm.exchange && (tradeForm.exchange === "KOSPI" || tradeForm.exchange === "KOSDAQ")
+            ? { [symbol]: tradeForm.exchange }
+            : undefined;
+        const results = await fetchYahooQuotes([symbol], { exchangeMap });
         if (results.length > 0) {
           const r = results[0];
-          // 종목명 우선순위: API에서 가져온 이름 > tickerDatabase > 기존 tradeForm.name > 티커
-          const stockName = r.name || 
-            tickerDatabase.find(t => canonicalTickerForMatch(t.ticker) === symbol)?.name || 
-            tradeForm.name || 
+          const stockName = r.name ||
+            tickerDatabase.find((t) => canonicalTickerForMatch(t.ticker) === symbol)?.name ||
+            tradeForm.name ||
             symbol;
-          
-          // 시세 정보 업데이트
           setTickerInfo({
             ticker: symbol,
             name: stockName,
             price: r.price,
             currency: r.currency
           });
-          
-          // tradeForm의 name도 업데이트 (종목명 필드에 표시되도록)
-          setTradeForm((prev) => ({
-            ...prev,
-            name: prev.name || stockName
-          }));
-          
-          // ticker.json에 저장
+          setTradeForm((prev) => ({ ...prev, name: prev.name || stockName }));
           if (r.name) {
-            const market = isKRWStock(symbol) ? 'KR' : 'US';
-            await saveTickerToJson(symbol, r.name, market);
+            const market = tradeForm.market ?? (isKRWStock(symbol) ? "KR" : "US");
+            if (market !== "CRYPTO") await saveTickerToJson(symbol, r.name, market);
           }
         }
       } catch (err) {
-        // 에러는 무시 (사용자가 입력 중일 수 있으므로)
         console.warn("거래 입력 폼 시세 자동 조회 실패:", err);
       } finally {
         setIsSearchingTradeFormQuote(false);
@@ -306,7 +304,7 @@ export const StocksView: React.FC<Props> = ({
     }, 500);
 
     return () => clearTimeout(timer);
-  }, [tradeForm.ticker, tickerSuggestions.length, tickerDatabase, tradeForm.name]);
+  }, [tradeForm.ticker, tradeForm.exchange, tradeForm.market, tradeForm.name, tickerSuggestions.length, tickerDatabase]);
 
   const positions = useMemo(
     () =>
@@ -738,8 +736,12 @@ export const StocksView: React.FC<Props> = ({
     [uniqueTickers]
   );
 
-  const koreanQuotes = useMemo(() => prices.filter((p) => p.currency === "KRW"), [prices]);
+  const koreanQuotes = useMemo(
+    () => prices.filter((p) => p.currency === "KRW" && !isCryptoStock(p.ticker)),
+    [prices]
+  );
   const usQuotes = useMemo(() => prices.filter((p) => p.currency === "USD"), [prices]);
+  const cryptoQuotes = useMemo(() => prices.filter((p) => isCryptoStock(p.ticker)), [prices]);
 
   const renderQuoteTable = (items: StockPrice[], marketLabel: string) => (
     <table className="data-table">
@@ -835,9 +837,11 @@ export const StocksView: React.FC<Props> = ({
   const handleRefreshQuotes = async () => {
     if (uniqueTickers.length === 0) {
       setQuoteError("거래 내역에 등록된 티커가 없습니다. 먼저 거래를 추가하세요.");
+      onLog?.("시세 갱신: 거래 내역에 등록된 티커가 없습니다.", "error");
       return;
     }
 
+    onLog?.("시세 갱신 시작...", "info");
     try {
       setIsLoadingQuotes(true);
       setQuoteError(null);
@@ -848,12 +852,18 @@ export const StocksView: React.FC<Props> = ({
       const allResults: StockPrice[] = [];
       let failedTickers: string[] = [];
 
-      // 주식: Yahoo API (진행률 콜백 + 실패 시 최대 3회 재시도, 2초 간격)
+      // 주식: Yahoo API (tickerDatabase의 exchange로 .KS/.KQ 우선순위 반영)
       if (uniqueStockTickers.length > 0) {
+        const exchangeMap: Record<string, string> = {};
+        for (const t of tickerDatabase) {
+          const key = canonicalTickerForMatch(t.ticker);
+          if (key && (t.exchange === "KOSPI" || t.exchange === "KOSDAQ")) exchangeMap[key] = t.exchange;
+        }
         const onStockProgress = (done: number) =>
           setQuoteRefreshProgress((p) => ({ ...p, current: done }));
         let stockResults = await fetchYahooQuotes(uniqueStockTickers, {
-          onProgress: (done) => onStockProgress(done)
+          onProgress: (done) => onStockProgress(done),
+          exchangeMap: Object.keys(exchangeMap).length ? exchangeMap : undefined
         });
         let successStock = new Set(
           stockResults.filter((r) => r.ticker !== "USDKRW=X" && r.price != null && Number.isFinite(r.price)).map((r) => r.ticker)
@@ -863,7 +873,8 @@ export const StocksView: React.FC<Props> = ({
         for (let attempt = 1; attempt < maxRetries && failedStock.length > 0; attempt++) {
           await new Promise((r) => setTimeout(r, 2000));
           const retryResults = await fetchYahooQuotes(failedStock, {
-            onProgress: (done) => onStockProgress(uniqueStockTickers.length - failedStock.length + done)
+            onProgress: (done) => onStockProgress(uniqueStockTickers.length - failedStock.length + done),
+            exchangeMap: Object.keys(exchangeMap).length ? exchangeMap : undefined
           });
           const retrySuccess = new Set(retryResults.filter((r) => r.price != null && Number.isFinite(r.price)).map((r) => r.ticker));
           failedStock = failedStock.filter((t) => !retrySuccess.has(t));
@@ -895,11 +906,31 @@ export const StocksView: React.FC<Props> = ({
 
       if (allResults.length === 0) {
         setQuoteError("시세를 가져오지 못했습니다. 잠시 후 다시 시도하세요.");
+        onLog?.("시세 갱신: 시세를 가져오지 못했습니다.", "error");
         return;
       }
 
       const next = mergeQuoteResultsIntoPrices(prices, allResults);
       onChangePrices(next);
+
+      // 시세 결과로 tickerDatabase 종목명 갱신 (미국/한국 이름 표시 개선, market·exchange 유지)
+      onChangeTickerDatabase((prev) => {
+        const list = Array.isArray(prev) ? prev : [];
+        const byKey = new Map(list.map((t) => [canonicalTickerForMatch(t.ticker), t]));
+        for (const r of allResults) {
+          if (r.ticker === "USDKRW=X") continue;
+          const key = canonicalTickerForMatch(r.ticker);
+          const name = displayNameForTicker(r.ticker, r.name ?? undefined) || r.name || r.ticker;
+          const existing = byKey.get(key);
+          byKey.set(key, {
+            ticker: key,
+            name: name || existing?.name || key,
+            market: existing?.market ?? (isCryptoStock(r.ticker) ? "CRYPTO" : isKRWStock(r.ticker) ? "KR" : "US"),
+            exchange: existing?.exchange
+          });
+        }
+        return Array.from(byKey.values()).sort((a, b) => a.ticker.localeCompare(b.ticker));
+      });
 
       const latestUpdatedAt =
         allResults
@@ -913,14 +944,17 @@ export const StocksView: React.FC<Props> = ({
         window.setTimeout(() => setJustUpdatedTickers([]), 500);
       }
 
-      if (failedTickers.length > 0) {
-        toast.error(
-          `시세 갱신 실패 (${failedTickers.length}종목): ${failedTickers.slice(0, 5).join(", ")}${failedTickers.length > 5 ? " …" : ""}. 평가금은 기존 시세 기준으로 표시됩니다.`
-        );
-      }
+      const successCount = allResults.filter((r) => r.price != null && Number.isFinite(r.price)).length;
+      const successMsg =
+        failedTickers.length > 0
+          ? `시세 불러오기 완료: ${successCount}종목 반영됨. (${failedTickers.length}종목 실패: ${failedTickers.slice(0, 3).join(", ")}${failedTickers.length > 3 ? " …" : ""})`
+          : `시세 불러오기 완료: ${successCount}종목 반영됨.`;
+      toast.success(successMsg, { duration: failedTickers.length > 0 ? 5000 : 4000 });
+      onLog?.(successMsg, "success");
     } catch (err) {
       console.error(err);
       setQuoteError("시세 갱신 중 오류가 발생했습니다. 잠시 후 다시 시도하세요.");
+      onLog?.("시세 갱신 실패: 오류가 발생했습니다.", "error");
     } finally {
       setIsLoadingQuotes(false);
     }
@@ -1048,16 +1082,18 @@ export const StocksView: React.FC<Props> = ({
 
   const handleQuickSell = (p: PositionWithPrice, e: React.MouseEvent) => {
     e.stopPropagation(); // 상세 모달 열기 방지
-    // 매도 폼에 자동으로 정보 채우기
     const priceInfo = prices.find((pr) => pr.ticker === p.ticker);
     const currentPrice = priceInfo?.price ?? p.marketPrice;
-    
+    const db = tickerDatabase.find((x) => canonicalTickerForMatch(x.ticker) === canonicalTickerForMatch(p.ticker));
     setTradeForm({
+      ...createDefaultTradeForm(),
       id: undefined,
       date: new Date().toISOString().slice(0, 10),
       accountId: p.accountId,
       ticker: p.ticker,
       name: p.name,
+      market: db?.market,
+      exchange: db?.exchange,
       side: "sell",
       quantity: String(p.quantity),
       price: String(currentPrice),
@@ -1085,16 +1121,18 @@ export const StocksView: React.FC<Props> = ({
 
   const handleQuickBuy = (p: PositionWithPrice, e: React.MouseEvent) => {
     e.stopPropagation(); // 상세 모달 열기 방지
-    // 매수 폼에 자동으로 정보 채우기
     const priceInfo = prices.find((pr) => pr.ticker === p.ticker);
     const currentPrice = priceInfo?.price ?? p.marketPrice;
-    
+    const db = tickerDatabase.find((x) => canonicalTickerForMatch(x.ticker) === canonicalTickerForMatch(p.ticker));
     setTradeForm({
+      ...createDefaultTradeForm(),
       id: undefined,
       date: new Date().toISOString().slice(0, 10),
       accountId: p.accountId,
       ticker: p.ticker,
       name: p.name,
+      market: db?.market,
+      exchange: db?.exchange,
       side: "buy",
       quantity: "",
       price: String(currentPrice),
@@ -1467,6 +1505,14 @@ export const StocksView: React.FC<Props> = ({
             : t
         )
       );
+      const marketEdit =
+        tradeForm.market ??
+        (isKRWStock(tickerClean) ? "KR" : isUSDStock(tickerClean) ? "US" : "CRYPTO");
+      onChangeTickerDatabase((prev) => {
+        const next = prev.filter((t) => canonicalTickerForMatch(t.ticker) !== tickerClean);
+        next.push({ ticker: tickerClean, name: fallbackName, market: marketEdit, exchange: tradeForm.exchange });
+        return next.sort((a, b) => a.ticker.localeCompare(b.ticker));
+      });
       if (onChangeAccounts && usdDeltaByAccount.size > 0) {
         setTimeout(() => onChangeAccounts(updatedAccounts), 0);
       }
@@ -1498,10 +1544,20 @@ export const StocksView: React.FC<Props> = ({
         fxRateAtTrade: isUSDCurrency && exchangeRate > 0 ? exchangeRate : undefined
       };
       onChangeTrades((prevTrades) => [trade, ...prevTrades]);
+      const market =
+        tradeForm.market ??
+        (isKRWStock(tickerClean) ? "KR" : isUSDStock(tickerClean) ? "US" : "CRYPTO");
+      const exchange = tradeForm.exchange;
+      onChangeTickerDatabase((prev) => {
+        const next = prev.filter((t) => canonicalTickerForMatch(t.ticker) !== tickerClean);
+        next.push({ ticker: tickerClean, name: fallbackName, market, exchange });
+        return next.sort((a, b) => a.ticker.localeCompare(b.ticker));
+      });
       if (onChangeAccounts && usdDeltaByAccount.size > 0) {
         setTimeout(() => onChangeAccounts(updatedAccounts), 0);
       }
     }
+    onLog?.("저장 완료: 거래가 저장되었습니다.", "success");
     setTradeForm((prev) => ({ ...createDefaultTradeForm(), side: "buy", accountId: prev.accountId || accountId || "" }));
   }, [
     tradeForm,
@@ -1516,6 +1572,8 @@ export const StocksView: React.FC<Props> = ({
     shouldUseUsdBalanceMode,
     onChangeTrades,
     onChangeAccounts,
+    onChangeTickerDatabase,
+    onLog,
     createDefaultTradeForm
   ]);
 
@@ -1912,12 +1970,15 @@ export const StocksView: React.FC<Props> = ({
   const startEditTrade = (t: StockTrade) => {
     const isUSD = isUSDStock(t.ticker);
     const rate = t.fxRateAtTrade ?? fxRate ?? 0;
+    const db = tickerDatabase.find((x) => canonicalTickerForMatch(x.ticker) === canonicalTickerForMatch(t.ticker));
     setTradeForm({
       id: t.id,
       date: t.date,
       accountId: t.accountId,
       ticker: t.ticker,
       name: t.name,
+      market: db?.market,
+      exchange: db?.exchange,
       side: t.side,
       quantity: String(t.quantity),
       price: String(t.price),
@@ -1930,12 +1991,15 @@ export const StocksView: React.FC<Props> = ({
   const startCopyTrade = (t: StockTrade) => {
     const isUSD = isUSDStock(t.ticker);
     const rate = t.fxRateAtTrade ?? fxRate ?? 0;
+    const db = tickerDatabase.find((x) => canonicalTickerForMatch(x.ticker) === canonicalTickerForMatch(t.ticker));
     setTradeForm({
       id: undefined,
       date: new Date().toISOString().slice(0, 10),
       accountId: t.accountId,
       ticker: t.ticker,
       name: t.name,
+      market: db?.market,
+      exchange: db?.exchange,
       side: t.side,
       quantity: String(t.quantity),
       price: String(t.price),
@@ -2130,7 +2194,10 @@ export const StocksView: React.FC<Props> = ({
           <button
             type="button"
             className="secondary"
-            onClick={onLoadInitialTickers}
+            onClick={async () => {
+              onLog?.("종목 불러오기 시작...", "info");
+              await onLoadInitialTickers();
+            }}
             disabled={isLoadingTickerDatabase}
           >
             {isLoadingTickerDatabase ? "불러오는 중..." : "종목 불러오기"}
@@ -2295,26 +2362,34 @@ export const StocksView: React.FC<Props> = ({
                     setTradeForm((prev) => ({
                       ...prev,
                       ticker: val.toUpperCase(),
-                      name: "" // 티커 변경 시 이름 초기화
+                      name: "",
+                      market: undefined,
+                      exchange: undefined
                     }))
                   }
                   options={tickerSuggestions.map((t) => ({
                     value: t.ticker,
                     label: t.name,
-                    subLabel: `${t.market === "KR" ? "🇰🇷 한국" : "🇺🇸 미국"} ${t.exchange || ""}`
+                    subLabel: `${t.market === "KR" ? "🇰🇷 한국" : t.market === "CRYPTO" ? "🪙 코인" : "🇺🇸 미국"} ${t.exchange || ""}`,
+                    market: t.market,
+                    exchange: t.exchange
                   }))}
                   onSelect={(option) => {
                     const selectedTicker = option.value;
                     const selectedName = option.label || "";
+                    const market = option.market;
+                    const exchange = option.exchange;
                     setTradeForm((prev) => ({
                       ...prev,
                       ticker: selectedTicker,
-                      name: selectedName || prev.name || selectedTicker
+                      name: selectedName || prev.name || selectedTicker,
+                      market,
+                      exchange
                     }));
-                    // 티커 선택 시 시세도 조회
                     const symbol = canonicalTickerForMatch(selectedTicker);
                     if (symbol) {
-                      fetchYahooQuotes([symbol]).then((results) => {
+                      const exchangeMap = exchange ? { [symbol]: exchange } : undefined;
+                      fetchYahooQuotes([symbol], { exchangeMap }).then((results) => {
                         if (results.length > 0) {
                           const r = results[0];
                           setTickerInfo({
@@ -2328,13 +2403,38 @@ export const StocksView: React.FC<Props> = ({
                             name: prev.name || r.name || selectedName || symbol
                           }));
                         }
-                      }).catch(() => {
-                        // 에러 무시
-                      });
+                      }).catch(() => {});
                     }
                   }}
                   placeholder="티커 또는 종목명 입력 (예: 005930, 삼성, AAPL, Apple)"
                 />
+              </div>
+            </label>
+            <label style={{ display: "flex", flexDirection: "column", gap: 6 }}>
+              <span style={{ fontSize: 13, fontWeight: 500 }}>시장</span>
+              <div style={{ display: "flex", flexWrap: "wrap", gap: 6 }}>
+                {[
+                  { id: "KOSPI", label: "코스피", market: "KR" as const, exchange: "KOSPI" },
+                  { id: "KOSDAQ", label: "코스닥", market: "KR" as const, exchange: "KOSDAQ" },
+                  { id: "US", label: "미장", market: "US" as const, exchange: undefined },
+                  { id: "CRYPTO", label: "코인", market: "CRYPTO" as const, exchange: undefined }
+                ].map(({ id, label, market, exchange }) => {
+                  const active =
+                    (tradeForm.market === market && (market !== "KR" || tradeForm.exchange === exchange));
+                  return (
+                    <button
+                      key={id}
+                      type="button"
+                      className={active ? "primary" : "secondary"}
+                      style={{ padding: "6px 12px", fontSize: 13 }}
+                      onClick={() =>
+                        setTradeForm((prev) => ({ ...prev, market, exchange }))
+                      }
+                    >
+                      {label}
+                    </button>
+                  );
+                })}
               </div>
             </label>
             <label style={{ display: "flex", flexDirection: "column", gap: 4 }}>
@@ -2507,7 +2607,7 @@ export const StocksView: React.FC<Props> = ({
                   options={quoteSearchSuggestions.map((t) => ({
                     value: t.ticker,
                     label: t.name,
-                    subLabel: `${t.market === "KR" ? "🇰🇷 한국" : "🇺🇸 미국"} ${t.exchange || ""}`
+                    subLabel: `${t.market === "KR" ? "🇰🇷 한국" : t.market === "CRYPTO" ? "🪙 코인" : "🇺🇸 미국"} ${t.exchange || ""}`
                   }))}
                   onSelect={(option) => {
                     setQuoteSearchTicker(option.value);
@@ -2587,6 +2687,8 @@ export const StocksView: React.FC<Props> = ({
         balances={balances}
         accounts={accounts}
         prices={prices}
+        tickerDatabase={tickerDatabase}
+        onChangeTickerDatabase={onChangeTickerDatabase}
         fxRate={fxRate}
         accountOrder={accountOrder}
         onAccountReorder={handleAccountReorder}

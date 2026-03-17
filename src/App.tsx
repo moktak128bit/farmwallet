@@ -1,21 +1,48 @@
-import React, { useEffect, useMemo, useState, lazy, Suspense } from "react";
+import React, { useCallback, useEffect, useMemo, useState, lazy, Suspense } from "react";
 import { Toaster, toast } from "react-hot-toast";
 import { Moon, Sun, Menu } from "lucide-react";
 import { Tabs, type TabId } from "./components/Tabs";
-import { DashboardView } from "./components/dashboard";
 import { ShortcutsHelp } from "./components/ShortcutsHelp";
 import { SearchModal } from "./components/SearchModal";
 
-const AccountsView = lazy(() => import("./components/AccountsView").then((m) => ({ default: m.AccountsView })));
-const LedgerView = lazy(() => import("./components/LedgerView").then((m) => ({ default: m.LedgerView })));
-const CategoriesView = lazy(() => import("./components/CategoriesView").then((m) => ({ default: m.CategoriesView })));
-const StocksView = lazy(() => import("./components/StocksView").then((m) => ({ default: m.StocksView })));
-const DividendsView = lazy(() => import("./components/DividendsView").then((m) => ({ default: m.DividendsView })));
-const DebtView = lazy(() => import("./components/DebtView").then((m) => ({ default: m.DebtView })));
-const BudgetRecurringView = lazy(() => import("./components/BudgetRecurringView").then((m) => ({ default: m.BudgetRecurringView })));
-const ReportView = lazy(() => import("./components/ReportView").then((m) => ({ default: m.ReportView })));
-const SettingsView = lazy(() => import("./components/SettingsView").then((m) => ({ default: m.SettingsView })));
-const WorkoutView = lazy(() => import("./components/WorkoutView").then((m) => ({ default: m.WorkoutView })));
+// 동일 로더를 lazy와 프리페치에서 공유해 탭 호버 시 청크 미리 로드
+const loadDashboard = () => import("./components/dashboard").then((m) => ({ default: m.DashboardView }));
+const loadAccounts = () => import("./components/AccountsView").then((m) => ({ default: m.AccountsView }));
+const loadLedger = () => import("./components/LedgerView").then((m) => ({ default: m.LedgerView }));
+const loadCategories = () => import("./components/CategoriesView").then((m) => ({ default: m.CategoriesView }));
+const loadStocks = () => import("./components/StocksView").then((m) => ({ default: m.StocksView }));
+const loadDividends = () => import("./components/DividendsView").then((m) => ({ default: m.DividendsView }));
+const loadDebt = () => import("./components/DebtView").then((m) => ({ default: m.DebtView }));
+const loadBudget = () => import("./components/BudgetRecurringView").then((m) => ({ default: m.BudgetRecurringView }));
+const loadReport = () => import("./components/ReportView").then((m) => ({ default: m.ReportView }));
+const loadSettings = () => import("./components/SettingsView").then((m) => ({ default: m.SettingsView }));
+const loadWorkout = () => import("./components/WorkoutView").then((m) => ({ default: m.WorkoutView }));
+
+const DashboardView = lazy(loadDashboard);
+const AccountsView = lazy(loadAccounts);
+const LedgerView = lazy(loadLedger);
+const CategoriesView = lazy(loadCategories);
+const StocksView = lazy(loadStocks);
+const DividendsView = lazy(loadDividends);
+const DebtView = lazy(loadDebt);
+const BudgetRecurringView = lazy(loadBudget);
+const ReportView = lazy(loadReport);
+const SettingsView = lazy(loadSettings);
+const WorkoutView = lazy(loadWorkout);
+
+const TAB_PREFETCH: Record<TabId, () => Promise<{ default: React.ComponentType<any> }>> = {
+  dashboard: loadDashboard,
+  accounts: loadAccounts,
+  ledger: loadLedger,
+  categories: loadCategories,
+  stocks: loadStocks,
+  dividends: loadDividends,
+  debt: loadDebt,
+  budget: loadBudget,
+  reports: loadReport,
+  settings: loadSettings,
+  workout: loadWorkout
+};
 import { useAppData } from "./hooks/useAppData";
 import { useUndoRedo } from "./hooks/useUndoRedo";
 import { useBackup } from "./hooks/useBackup";
@@ -24,9 +51,12 @@ import { useTheme } from "./hooks/useTheme";
 import { useFxRate } from "./hooks/useFxRate";
 import { useTickerDatabase } from "./hooks/useTickerDatabase";
 import { useKeyboardShortcuts } from "./hooks/useKeyboardShortcuts";
-import { computeAccountBalances, computePositions } from "./calculations";
+import { usePortfolioWorker } from "./hooks/usePortfolioWorker";
 import { APP_VERSION } from "./constants/config";
 import { runIntegrityCheck } from "./utils/dataIntegrity";
+
+export type AppLogEntry = { id: number; message: string; type: "success" | "error" | "info"; time: string };
+const APP_LOG_MAX = 20;
 
 export const App: React.FC = () => {
   const [tab, setTab] = useState<TabId>("dashboard");
@@ -36,11 +66,48 @@ export const App: React.FC = () => {
   const [highlightTradeId, setHighlightTradeId] = useState<string | null>(null);
   const [integritySummary, setIntegritySummary] = useState<{ error: number; warning: number } | null>(null);
   const [mobileDrawerOpen, setMobileDrawerOpen] = useState(false);
+  const [appLog, setAppLog] = useState<AppLogEntry[]>([]);
+  const appLogIdRef = React.useRef(0);
+
+  const addAppLog = useCallback((message: string, type: "success" | "error" | "info" = "success") => {
+    const id = ++appLogIdRef.current;
+    const time = new Date().toLocaleTimeString("ko-KR", { hour: "2-digit", minute: "2-digit", second: "2-digit" });
+    setAppLog((prev) => [...prev.slice(-(APP_LOG_MAX - 1)), { id, message, type, time }]);
+  }, []);
 
   const handleTabChange = (id: TabId) => {
     setTab(id);
     setMobileDrawerOpen(false);
   };
+
+  const handlePrefetchTab = useCallback((id: TabId) => {
+    TAB_PREFETCH[id]?.();
+  }, []);
+
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    const toWarmup: TabId[] = ["ledger", "stocks", "reports"];
+    const runPrefetch = () => {
+      toWarmup.forEach((id) => TAB_PREFETCH[id]?.());
+    };
+
+    const win = window as Window & {
+      requestIdleCallback?: (callback: IdleRequestCallback, options?: IdleRequestOptions) => number;
+      cancelIdleCallback?: (handle: number) => void;
+    };
+
+    if (typeof win.requestIdleCallback === "function") {
+      const handle = win.requestIdleCallback(() => runPrefetch(), { timeout: 2000 });
+      return () => {
+        if (typeof win.cancelIdleCallback === "function") {
+          win.cancelIdleCallback(handle);
+        }
+      };
+    }
+
+    const timeoutId = window.setTimeout(runPrefetch, 1500);
+    return () => window.clearTimeout(timeoutId);
+  }, []);
 
   // Zustand store 사용
   const { data, setData, isLoading, loadFailed, clearLoadFailed } = useAppData();
@@ -64,8 +131,8 @@ export const App: React.FC = () => {
     backupIntegrity,
     handleManualBackup,
     backupWarning
-  } = useBackup(data);
-  const { isLoadingTickerDatabase, handleLoadInitialTickers } = useTickerDatabase(data, setDataWithHistory);
+  } = useBackup(data, { onLog: addAppLog });
+  const { isLoadingTickerDatabase, handleLoadInitialTickers } = useTickerDatabase(data, setDataWithHistory, { onLog: addAppLog });
 
   // keyboard shortcuts
   useKeyboardShortcuts({
@@ -94,30 +161,17 @@ export const App: React.FC = () => {
 
 
   const needsPortfolioAggregation = tab === "accounts" || tab === "stocks";
+  const needsBalances = tab === "accounts" || tab === "ledger" || tab === "stocks";
 
-  const balances = useMemo(() => {
-    if (!needsPortfolioAggregation) return [];
-    return computeAccountBalances(data.accounts, data.ledger, data.trades);
-  }, [needsPortfolioAggregation, data.accounts, data.ledger, data.trades]);
-
-  // USD prices are converted to KRW only when portfolio widgets need them.
-  const adjustedPrices = useMemo(() => {
-    if (!needsPortfolioAggregation || !fxRate) return data.prices;
-
-    return data.prices.map((p) => {
-      if (p.currency && p.currency !== "KRW" && p.currency === "USD") {
-        return { ...p, price: p.price * fxRate, currency: "KRW" };
-      }
-      return p;
-    });
-  }, [needsPortfolioAggregation, data.prices, fxRate]);
-
-  const positions = useMemo(() => {
-    if (!needsPortfolioAggregation) return [];
-    return computePositions(data.trades, adjustedPrices, data.accounts, {
-      fxRate: fxRate ?? undefined
-    });
-  }, [needsPortfolioAggregation, data.trades, adjustedPrices, data.accounts, fxRate]);
+  const { balances, positions } = usePortfolioWorker({
+    accounts: data.accounts,
+    ledger: data.ledger,
+    trades: data.trades,
+    prices: data.prices,
+    fxRate,
+    needsBalances,
+    needsPortfolioAggregation
+  });
 
   useEffect(() => {
     if (tab !== "settings") return;
@@ -193,15 +247,22 @@ export const App: React.FC = () => {
 
   return (
     <div className="app-root">
-      <Toaster position="bottom-center" toastOptions={{
-        style: {
-          background: 'var(--surface)',
-          color: 'var(--text)',
-          border: '1px solid var(--border)',
-        }
-      }} />
+      <Toaster
+        position="top-center"
+        toastOptions={{
+          duration: 4000,
+          style: {
+            background: "var(--surface)",
+            color: "var(--text)",
+            border: "1px solid var(--border)",
+            boxShadow: "var(--shadow-lg)",
+            zIndex: 9999
+          }
+        }}
+        containerStyle={{ top: 12, zIndex: 9999 }}
+      />
       <header className="app-header">
-        <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
+        <div style={{ display: "flex", alignItems: "center", gap: 12, flex: 1, minWidth: 0 }}>
           <button
             type="button"
             className="mobile-menu-btn"
@@ -214,6 +275,20 @@ export const App: React.FC = () => {
           <div>
           <h1>FarmWallet <span style={{ fontSize: "0.6em", fontWeight: "normal", color: "var(--text-muted)", marginLeft: "8px" }}>v{APP_VERSION}</span></h1>
           <p className="subtitle">자산 및 주식 관리</p>
+          </div>
+          <div className="app-log-panel" aria-live="polite">
+            <div className="app-log-panel-title">로그</div>
+            <div className="app-log-panel-list">
+              {appLog.length === 0 ? (
+                <div className="app-log-panel-empty">저장·시세·종목 불러오기 시 여기에 표시됩니다.</div>
+              ) : (
+                [...appLog].reverse().slice(0, 8).map((e) => (
+                  <div key={e.id} className={`app-log-panel-item app-log-${e.type}`}>
+                    <span className="app-log-time">{e.time}</span> {e.message}
+                  </div>
+                ))
+              )}
+            </div>
           </div>
         </div>
         <div style={{ display: "flex", flexDirection: "column", alignItems: "flex-end", gap: 6 }}>
@@ -274,7 +349,7 @@ export const App: React.FC = () => {
 
           <div className="layout">
             <aside className="sidebar" role="navigation" aria-label="주 메뉴">
-              <Tabs active={tab} onChange={handleTabChange} tabBadges={settingsTabBadge ? { settings: settingsTabBadge } : undefined} />
+              <Tabs active={tab} onChange={handleTabChange} onPrefetch={handlePrefetchTab} tabBadges={settingsTabBadge ? { settings: settingsTabBadge } : undefined} />
             </aside>
             {mobileDrawerOpen && (
               <>
@@ -292,7 +367,7 @@ export const App: React.FC = () => {
                       닫기
                     </button>
                   </div>
-                  <Tabs active={tab} onChange={handleTabChange} tabBadges={settingsTabBadge ? { settings: settingsTabBadge } : undefined} />
+                  <Tabs active={tab} onChange={handleTabChange} onPrefetch={handlePrefetchTab} tabBadges={settingsTabBadge ? { settings: settingsTabBadge } : undefined} />
                 </div>
               </>
             )}
@@ -305,7 +380,10 @@ export const App: React.FC = () => {
               balances={balances}
               positions={positions}
               ledger={data.ledger}
-              onChangeAccounts={(accounts) => setDataWithHistory({ ...data, accounts })}
+              trades={data.trades}
+              fxRate={fxRate}
+              onChangeAccounts={(accounts) => setDataWithHistory((prev) => ({ ...prev, accounts }))}
+              onChangeLedger={(ledger) => setDataWithHistory((prev) => ({ ...prev, ledger }))}
               onRenameAccountId={handleRenameAccountId}
             />
           )}
@@ -313,8 +391,10 @@ export const App: React.FC = () => {
             <LedgerView
               accounts={data.accounts}
               ledger={data.ledger}
+              balances={balances}
+              trades={data.trades}
               categoryPresets={data.categoryPresets}
-              onChangeLedger={(ledger) => setDataWithHistory({ ...data, ledger })}
+              onChangeLedger={(ledger) => setDataWithHistory((prev) => ({ ...prev, ledger }))}
               copyRequest={copyRequest}
               onCopyComplete={() => setCopyRequest(null)}
               highlightLedgerId={highlightLedgerId}
@@ -335,22 +415,30 @@ export const App: React.FC = () => {
               trades={data.trades}
               prices={data.prices}
               customSymbols={data.customSymbols ?? []}
-              tickerDatabase={data.tickerDatabase ?? []}
+              tickerDatabase={Array.isArray(data.tickerDatabase) ? data.tickerDatabase : []}
+              historicalDailyCloses={data.historicalDailyCloses ?? []}
               highlightTradeId={highlightTradeId}
               onClearHighlightTrade={() => setHighlightTradeId(null)}
               onChangeTrades={(trades) => setDataWithHistory((prev) => ({ 
                 ...prev, 
                 trades: typeof trades === "function" ? trades(prev.trades) : trades 
               }))}
-              onChangePrices={(prices) => setDataWithHistory({ ...data, prices })}
-              onChangeCustomSymbols={(customSymbols) => setDataWithHistory({ ...data, customSymbols })}
-              onChangeTickerDatabase={(tickerDatabase) => setDataWithHistory({ ...data, tickerDatabase })}
+              onChangePrices={(prices) => setDataWithHistory((prev) => ({ ...prev, prices }))}
+              onChangeCustomSymbols={(customSymbols) => setDataWithHistory((prev) => ({ ...prev, customSymbols }))}
+              onChangeTickerDatabase={(next) =>
+                setDataWithHistory((prev) => {
+                  const current = Array.isArray(prev.tickerDatabase) ? prev.tickerDatabase : [];
+                  const nextDb = typeof next === "function" ? next(current) : next;
+                  return { ...prev, tickerDatabase: Array.isArray(nextDb) ? nextDb : current };
+                })
+              }
               onLoadInitialTickers={handleLoadInitialTickers}
               isLoadingTickerDatabase={isLoadingTickerDatabase}
+              onLog={addAppLog}
               presets={data.stockPresets}
-              onChangePresets={(stockPresets) => setDataWithHistory({ ...data, stockPresets })}
+              onChangePresets={(stockPresets) => setDataWithHistory((prev) => ({ ...prev, stockPresets }))}
               ledger={data.ledger}
-              onChangeLedger={(ledger) => setDataWithHistory({ ...data, ledger })}
+              onChangeLedger={(ledger) => setDataWithHistory((prev) => ({ ...prev, ledger }))}
               onChangeAccounts={(accounts) => setDataWithHistory((prev) => ({ ...prev, accounts }))}
               fxRate={fxRate}
               targetPortfolios={data.targetPortfolios ?? []}
@@ -363,8 +451,9 @@ export const App: React.FC = () => {
               ledger={data.ledger}
               trades={data.trades}
               prices={data.prices}
-              tickerDatabase={data.tickerDatabase ?? []}
-              onChangeLedger={(ledger) => setDataWithHistory({ ...data, ledger })}
+              tickerDatabase={Array.isArray(data.tickerDatabase) ? data.tickerDatabase : []}
+              historicalDailyCloses={data.historicalDailyCloses ?? []}
+              onChangeLedger={(ledger) => setDataWithHistory((prev) => ({ ...prev, ledger }))}
               fxRate={fxRate}
             />
           )}
@@ -374,8 +463,8 @@ export const App: React.FC = () => {
               ledger={data.ledger}
               accounts={data.accounts}
               categoryPresets={data.categoryPresets}
-              onChangeLoans={(loans) => setDataWithHistory({ ...data, loans })}
-              onChangeLedger={(ledger) => setDataWithHistory({ ...data, ledger })}
+              onChangeLoans={(loans) => setDataWithHistory((prev) => ({ ...prev, loans }))}
+              onChangeLedger={(ledger) => setDataWithHistory((prev) => ({ ...prev, ledger }))}
             />
           )}
           {tab === "budget" && (
@@ -383,10 +472,11 @@ export const App: React.FC = () => {
               accounts={data.accounts}
               recurring={data.recurringExpenses}
               budgets={data.budgetGoals}
+              categoryPresets={data.categoryPresets}
               ledger={data.ledger}
-              onChangeRecurring={(recurringExpenses) => setDataWithHistory({ ...data, recurringExpenses })}
-              onChangeBudgets={(budgetGoals) => setDataWithHistory({ ...data, budgetGoals })}
-              onChangeLedger={(ledger) => setDataWithHistory({ ...data, ledger })}
+              onChangeRecurring={(recurringExpenses) => setDataWithHistory((prev) => ({ ...prev, recurringExpenses }))}
+              onChangeBudgets={(budgetGoals) => setDataWithHistory((prev) => ({ ...prev, budgetGoals }))}
+              onChangeLedger={(ledger) => setDataWithHistory((prev) => ({ ...prev, ledger }))}
             />
           )}
           {tab === "reports" && (
@@ -400,7 +490,7 @@ export const App: React.FC = () => {
           {tab === "workout" && (
             <WorkoutView
               workoutWeeks={data.workoutWeeks ?? []}
-              onChangeWorkoutWeeks={(workoutWeeks) => setDataWithHistory({ ...data, workoutWeeks })}
+              onChangeWorkoutWeeks={(workoutWeeks) => setDataWithHistory((prev) => ({ ...prev, workoutWeeks }))}
             />
           )}
           {tab === "settings" && (
@@ -426,7 +516,7 @@ export const App: React.FC = () => {
               }}
               onChangeData={(next) => {
                 setDataWithHistory(next);
-                toast.success("데이터 저장되었습니다");
+                addAppLog("저장 완료: 거래·시세·종목 등 데이터가 저장되었습니다.", "success");
               }}
             />
           )}
@@ -441,6 +531,7 @@ export const App: React.FC = () => {
         setSearchQuery={setSearchQuery}
         savedFilters={savedFilters}
         filteredResults={filteredSearchResults}
+        fxRate={fxRate}
         onSaveFilter={saveCurrentFilter}
         onApplyFilter={applySavedFilter}
         onDeleteFilter={deleteSavedFilter}

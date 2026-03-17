@@ -33,6 +33,7 @@ interface YahooChartResponse {
         chartPreviousClose?: number;
         regularMarketTime?: number;
       };
+      timestamp?: number[];
       indicators?: {
         quote?: Array<{
           close?: Array<number | null>;
@@ -390,7 +391,8 @@ const getAllOriginsUrl = (path: "get" | "raw", encodedInnerUrl: string): string 
     : `https://api.allorigins.win/${path}?url=${encodedInnerUrl}`;
 
 
-const buildLookupCandidates = (symbol: string) => {
+/** exchange: 사용자가 지정한 거래소(KOSPI/KOSDAQ)가 있으면 그에 맞춰 .KS/.KQ 우선순위 결정 */
+const buildLookupCandidates = (symbol: string, exchange?: string) => {
   const cleaned = symbol.trim().toUpperCase();
   
   // BRK.A, BRK.B 같은 경우 점(.)을 하이픈(-)으로 변환
@@ -405,11 +407,16 @@ const buildLookupCandidates = (symbol: string) => {
     return [cleaned];
   }
   
-  // 한국 주식: 6자 이상 (tickerUtils 규칙)
+  // 한국 주식: 사용자 지정 exchange 우선, 없으면 티커 패턴으로 추정
   if (isKRWStock(cleaned)) {
-    return [`${cleaned}.KS`, `${cleaned}.KQ`, cleaned];
+    const ks = `${cleaned}.KS`;
+    const kq = `${cleaned}.KQ`;
+    if (exchange === "KOSPI") return [ks, kq, cleaned];
+    if (exchange === "KOSDAQ") return [kq, ks, cleaned];
+    const isKospi = /^0[0-3][0-9A-Z]{4}$/.test(cleaned);
+    return isKospi ? [ks, kq, cleaned] : [kq, ks, cleaned];
   }
-  
+
   return [cleaned];
 };
 
@@ -664,6 +671,62 @@ const fetchFromYahooChart = async (
   }
 };
 
+/** 기간별 일별 종가 조회 (배당/수익률용). startDate/endDate는 yyyy-mm-dd */
+export async function fetchYahooHistoricalCloses(
+  ticker: string,
+  startDate: string,
+  endDate: string
+): Promise<Array<{ date: string; close: number }>> {
+  const cleaned = ticker.trim().toUpperCase();
+  const candidates = buildLookupCandidates(cleaned);
+  const period1 = Math.floor(new Date(startDate + "T00:00:00Z").getTime() / 1000);
+  const period2 = Math.ceil(new Date(endDate + "T23:59:59Z").getTime() / 1000);
+
+  for (const lookupSymbol of candidates) {
+    try {
+      const params = new URLSearchParams({
+        interval: "1d",
+        period1: String(period1),
+        period2: String(period2),
+        lang: "en-US",
+        region: "US",
+        includePrePost: "false"
+      });
+      const innerUrl = `${YAHOO_CHART_BASE}/${encodeURIComponent(lookupSymbol)}?${params.toString()}`;
+      const proxyUrl = getAllOriginsUrl("get", encodeURIComponent(innerUrl));
+      const controller = new AbortController();
+      const timeoutId = setTimeout(() => controller.abort(), 15000);
+      const res = await fetch(proxyUrl, { signal: controller.signal });
+      clearTimeout(timeoutId);
+      if (!res.ok) {
+        if (res.status === 429) throw new RateLimitError();
+        continue;
+      }
+      const payload = (await res.json()) as { contents?: string };
+      const data = payload.contents
+        ? (JSON.parse(payload.contents) as YahooChartResponse)
+        : (payload as unknown as YahooChartResponse);
+      const result = data.chart?.result?.[0];
+      const timestamps = result?.timestamp ?? [];
+      const closes = result?.indicators?.quote?.[0]?.close ?? [];
+      const rows: Array<{ date: string; close: number }> = [];
+      for (let i = 0; i < timestamps.length; i++) {
+        const ts = timestamps[i];
+        const c = closes[i];
+        if (typeof ts !== "number" || typeof c !== "number") continue;
+        const date = new Date(ts * 1000).toISOString().slice(0, 10);
+        if (date < startDate || date > endDate) continue;
+        rows.push({ date, close: c });
+      }
+      if (rows.length > 0) return rows;
+    } catch (err) {
+      if (err instanceof RateLimitError) throw err;
+      continue;
+    }
+  }
+  return [];
+}
+
 const fetchFromStooq = async (requestedSymbol: string): Promise<YahooQuoteResult | null> => {
   const sym = `${requestedSymbol.toLowerCase()}.us`;
   const query = `s=${encodeURIComponent(sym)}&f=sd2t2ohlcv&h&e=json`;
@@ -700,6 +763,8 @@ const activeRequests = new Map<string, Promise<YahooQuoteResult[]>>();
 
 export type FetchYahooQuotesOptions = {
   onProgress?: (done: number, total: number) => void;
+  /** 티커별 거래소(KOSPI/KOSDAQ). 지정 시 해당 티커는 .KS/.KQ 우선순위에 사용 */
+  exchangeMap?: Record<string, string>;
 };
 
 export async function fetchYahooQuotes(
@@ -716,6 +781,7 @@ export async function fetchYahooQuotes(
   }
 
   const onProgress = options?.onProgress;
+  const exchangeMap = options?.exchangeMap ?? {};
   const total = uniq.length;
 
   const requestPromise = (async () => {
@@ -765,22 +831,14 @@ export async function fetchYahooQuotes(
           } else throw err;
         }
       }
-      const KR_BATCH_CHUNK = 2;
+      const KR_BATCH_CHUNK = 6;
       if (krTickers.length > 0) {
-        await new Promise((r) => setTimeout(r, 2500)); // 미국 배치 직후 429 회피
+        await new Promise((r) => setTimeout(r, 1200)); // 미국 배치 직후 429 회피
       }
-      for (let i = 0; i < krTickers.length; i += KR_BATCH_CHUNK) {
+      // 한국: 티커당 첫 번째 후보(.KQ 또는 .KS)만 배치에 넣어 요청. 한 번에 18개 보내면 Yahoo가 일부만 반환하는 경우가 있어 실패 종목이 생김.
+        for (let i = 0; i < krTickers.length; i += KR_BATCH_CHUNK) {
         const chunk = krTickers.slice(i, i + KR_BATCH_CHUNK);
-        const chunkLookup: string[] = [];
-        const seen = new Set<string>();
-        for (const s of chunk) {
-          for (const c of buildLookupCandidates(s)) {
-            if (!seen.has(c)) {
-              seen.add(c);
-              chunkLookup.push(c);
-            }
-          }
-        }
+        const chunkLookup = chunk.map((s) => buildLookupCandidates(s, exchangeMap[s])[0]);
         if (chunkLookup.length === 0) continue;
         try {
           const chunkMap = await fetchFromYahooQuoteBatch(chunk, chunkLookup);
@@ -798,7 +856,7 @@ export async function fetchYahooQuotes(
           // 네트워크 등 기타 오류 시 해당 청크만 스킵
         }
         if (i + KR_BATCH_CHUNK < krTickers.length) {
-          await new Promise((r) => setTimeout(r, 2500)); // 청크 간 2.5초
+          await new Promise((r) => setTimeout(r, 1200)); // 청크 간 1.2초
         }
       }
 
@@ -828,8 +886,8 @@ export async function fetchYahooQuotes(
             }
           }
           if (!quote) {
-            const chartDelayMs = isKRWStock(requestedSymbol) ? 800 : 400; // 한국 종목은 chart만 사용하므로 간격 넓혀 429 완화
-            for (const lookupSymbol of buildLookupCandidates(requestedSymbol)) {
+            const chartDelayMs = isKRWStock(requestedSymbol) ? 1000 : 400; // 한국 종목은 chart만 사용, 간격 넓혀 429·누락 완화
+            for (const lookupSymbol of buildLookupCandidates(requestedSymbol, exchangeMap[requestedSymbol])) {
               try {
                 await new Promise((r) => setTimeout(r, chartDelayMs));
                 quote = await fetchFromYahooChart(requestedSymbol, lookupSymbol);
@@ -883,33 +941,34 @@ export async function searchYahooSymbol(
   if (!trimmed) return [];
   
   const isKoreanTicker = isKRWStock(trimmed);
-  const queries = isKoreanTicker 
-    ? [trimmed, `${trimmed}.KS`, `${trimmed}.KQ`]
+  // 한국 종목: .KS/.KQ를 먼저 쿼리해 Yahoo 검색 결과가 잘 나오도록 함
+  const queries = isKoreanTicker
+    ? [`${trimmed}.KS`, `${trimmed}.KQ`, trimmed]
     : [trimmed];
-  
+
   const allResults: Array<{ ticker: string; name?: string }> = [];
   const seen = new Set<string>();
-  
+
   for (const q of queries) {
     try {
-  const innerUrl = `https://query1.finance.yahoo.com/v1/finance/search?q=${encodeURIComponent(
+      const innerUrl = `https://query1.finance.yahoo.com/v1/finance/search?q=${encodeURIComponent(
         q
       )}&quotesCount=15&newsCount=0`;
-  // raw 응답으로 받아 contents 파싱 단계를 줄인다.
-  const url = getAllOriginsUrl("raw", encodeURIComponent(innerUrl));
-  const res = await fetch(url);
+      const url = getAllOriginsUrl("raw", encodeURIComponent(innerUrl));
+      const res = await fetch(url);
       if (!res.ok) continue;
-  const data = (await res.json()) as YahooSearchResponse;
-  const list = data.quotes ?? [];
-      
+      const data = (await res.json()) as YahooSearchResponse;
+      const list = data.quotes ?? [];
+
       list.forEach((quote) => {
         if (!quote.symbol) return;
-        const ticker = (quote.symbol as string).toUpperCase();
-        const key = ticker.replace(/\.(KS|KQ|KO|K|KSQ)$/i, "");
+        const rawTicker = (quote.symbol as string).toUpperCase();
+        // 사용자에게는 종목 코드만 표시: .KS/.KQ 제거한 canonical 형태
+        const key = rawTicker.replace(/\.(KS|KQ|KO|K|KSQ)$/i, "");
         if (seen.has(key)) return;
         seen.add(key);
         allResults.push({
-          ticker,
+          ticker: key,
           name: quote.longname ?? quote.shortname ?? quote.symbol
         });
       });

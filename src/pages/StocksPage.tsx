@@ -1,36 +1,35 @@
-import React, { useMemo, useState, useCallback, useEffect } from "react";
-import {
-  PieChart,
-  Pie,
-  Cell,
-  Tooltip,
-  Legend,
-  BarChart,
-  Bar,
-  XAxis,
-  YAxis,
-  CartesianGrid,
-  Label
-} from "recharts";
-import { Autocomplete, type AutocompleteOption } from "./Autocomplete";
-import { StockDetailModal } from "./StockDetailModal";
-import { FxFormSection } from "./stocks/FxFormSection";
-import { FxHistorySection } from "./stocks/FxHistorySection";
-import { PortfolioChartsSection } from "./stocks/PortfolioChartsSection";
-import { StockStatsCard } from "./stocks/StockStatsCard";
-import { PresetSection } from "./stocks/PresetSection";
-import { TradeHistorySection } from "./stocks/TradeHistorySection";
-import { PositionListSection } from "./stocks/PositionListSection";
-import { TargetPortfolioSection } from "./stocks/TargetPortfolioSection";
+import React, { lazy, Suspense, useMemo, useState, useCallback, useEffect, useRef } from "react";
+import { Autocomplete, type AutocompleteOption } from "../components/ui/Autocomplete";
+import { StockDetailModal } from "../components/StockDetailModal";
+import { FxFormSection } from "../features/stocks/FxFormSection";
+import { FxHistorySection } from "../features/stocks/FxHistorySection";
+import { StockStatsCard } from "../features/stocks/StockStatsCard";
+import { PresetSection } from "../features/stocks/PresetSection";
+import { TradeHistorySection } from "../features/stocks/TradeHistorySection";
+import { PositionListSection } from "../features/stocks/PositionListSection";
+import { ChartSkeleton } from "../components/charts/ChartSkeleton";
+
+const LazyPortfolioChartsSection = lazy(() =>
+  import("../features/stocks/PortfolioChartsSection").then((m) => ({ default: m.PortfolioChartsSection }))
+);
+const LazyTargetPortfolioSection = lazy(() =>
+  import("../features/stocks/TargetPortfolioSection").then((m) => ({ default: m.TargetPortfolioSection }))
+);
 import type { Account, StockPrice, StockTrade, TradeSide, SymbolInfo, TickerInfo, StockPreset, LedgerEntry, TargetPortfolio, AccountBalanceRow, HistoricalDailyClose } from "../types";
 import { computePositions } from "../calculations";
-import { fetchYahooQuotes, searchYahooSymbol } from "../yahooFinanceApi";
+import { fetchYahooQuotes, fetchTickersFromFile, searchYahooSymbol, type YahooQuoteResult } from "../yahooFinanceApi";
 import { fetchCryptoQuotes } from "../coinGeckoApi";
-import { saveTickerDatabaseBackup, saveTickerToJson } from "../storage";
+import { saveTickerToJson } from "../storage";
 import { formatNumber, formatKRW, formatUSD, formatShortDate } from "../utils/formatter";
-import { isUSDStock, isKRWStock, isCryptoStock, canonicalTickerForMatch } from "../utils/finance";
+import {
+  isUSDStock,
+  isKRWStock,
+  isCryptoStock,
+  canonicalTickerForMatch,
+  getUniqueTickersFromTrades
+} from "../utils/finance";
 import { shouldUseUsdBalanceMode as shouldUseUsdBalanceModeUtil, computeTradeCashImpact } from "../utils/tradeCashImpact";
-import krNames from "../data/krNames.json";
+import { getKrNames } from "../storage";
 import { toast } from "react-hot-toast";
 import { validateDate, validateTicker, validateRequired, validateQuantity, validateAmount, validateAccountTickerCurrency } from "../utils/validation";
 import { ERROR_MESSAGES } from "../constants/errorMessages";
@@ -49,7 +48,7 @@ interface Props {
   onChangeTrades: (next: StockTrade[] | ((prev: StockTrade[]) => StockTrade[])) => void;
   onChangePrices: (next: StockPrice[]) => void;
   onChangeCustomSymbols: (next: SymbolInfo[]) => void;
-  onChangeTickerDatabase: (next: TickerInfo[]) => void;
+  onChangeTickerDatabase: (next: TickerInfo[] | ((prev: TickerInfo[]) => TickerInfo[])) => void;
   onLoadInitialTickers: () => Promise<void>;
   isLoadingTickerDatabase: boolean;
   onLog?: (message: string, type?: "success" | "error" | "info") => void;
@@ -75,7 +74,7 @@ function displayNameForTicker(ticker: string, apiName?: string): string {
   const key = canonicalTickerForMatch(ticker);
   if (!key) return apiName ?? ticker ?? "";
   if (isKRWStock(ticker)) {
-    const krName = (krNames as Record<string, string>)[key];
+    const krName = getKrNames()[key];
     if (krName) return krName;
   }
   return apiName ?? ticker ?? "";
@@ -156,6 +155,8 @@ export const StocksView: React.FC<Props> = ({
   const [showPresetModal, setShowPresetModal] = useState(false);
   const [showAdvancedOptions, setShowAdvancedOptions] = useState(false);
   const [isLoadingQuotes, setIsLoadingQuotes] = useState(false);
+  /** 에러 시 「다시 시도」에 사용 */
+  const lastQuoteRefreshModeRef = useRef<"holdings" | "full" | null>(null);
   const [quoteRefreshProgress, setQuoteRefreshProgress] = useState({ current: 0, total: 1 });
   const [quoteError, setQuoteError] = useState<string | null>(null);
   const [yahooUpdatedAt, setYahooUpdatedAt] = useState<string | null>(null);
@@ -717,24 +718,28 @@ export const StocksView: React.FC<Props> = ({
     return { isOpen, label: `${label} ${isOpen ? "개장" : "폐장"}`, session };
   };
 
-  // 보유/거래 내역에 등장하는 티커 목록 (중복 제거). 주식=대문자, 암호화폐=소문자(CoinGecko ID)
-  const uniqueTickers = useMemo(() => {
-    const set = new Set<string>();
-    for (const t of trades) {
-      const symbol = canonicalTickerForMatch(t.ticker);
-      if (symbol) set.add(symbol);
-    }
-    return Array.from(set);
-  }, [trades]);
+  // 시세 갱신 대상: 거래 내역(trades)에 실제로 등장한 티커만 (중복 제거·정규화)
+  const uniqueTickers = useMemo(() => getUniqueTickersFromTrades(trades), [trades]);
 
-  const uniqueStockTickers = useMemo(
-    () => uniqueTickers.filter((t) => !isCryptoStock(t)).map((t) => t.toUpperCase()),
-    [uniqueTickers]
-  );
-  const uniqueCryptoTickers = useMemo(
-    () => uniqueTickers.filter((t) => isCryptoStock(t)).map((t) => t.toLowerCase()),
-    [uniqueTickers]
-  );
+  /** tickerDatabase의 market=CRYPTO 우선, 없으면 티커 문자열 휴리스틱 */
+  const uniqueStockTickers = useMemo(() => {
+    const dbByKey = new Map(tickerDatabase.map((x) => [canonicalTickerForMatch(x.ticker), x]));
+    const isHoldingsCrypto = (t: string) => {
+      const db = dbByKey.get(canonicalTickerForMatch(t));
+      if (db?.market === "CRYPTO") return true;
+      return isCryptoStock(t);
+    };
+    return uniqueTickers.filter((t) => !isHoldingsCrypto(t)).map((t) => t.toUpperCase());
+  }, [uniqueTickers, tickerDatabase]);
+  const uniqueCryptoTickers = useMemo(() => {
+    const dbByKey = new Map(tickerDatabase.map((x) => [canonicalTickerForMatch(x.ticker), x]));
+    const isHoldingsCrypto = (t: string) => {
+      const db = dbByKey.get(canonicalTickerForMatch(t));
+      if (db?.market === "CRYPTO") return true;
+      return isCryptoStock(t);
+    };
+    return uniqueTickers.filter((t) => isHoldingsCrypto(t)).map((t) => t.toLowerCase());
+  }, [uniqueTickers, tickerDatabase]);
 
   const koreanQuotes = useMemo(
     () => prices.filter((p) => p.currency === "KRW" && !isCryptoStock(p.ticker)),
@@ -797,21 +802,31 @@ export const StocksView: React.FC<Props> = ({
   );
 
   const mergeQuoteResultsIntoPrices = useCallback(
-    (currentPrices: StockPrice[], results: StockPrice[]): StockPrice[] => {
+    (
+      currentPrices: StockPrice[],
+      results: StockPrice[],
+      opts?: { persistToTickerJson?: boolean }
+    ): StockPrice[] => {
+      const persistToTickerJson = opts?.persistToTickerJson !== false;
       const next: StockPrice[] = [...currentPrices];
       for (const r of results) {
         if (r.ticker === "USDKRW=X") continue;
+        const rKey = canonicalTickerForMatch(r.ticker);
         const displayName = displayNameForTicker(
           r.ticker,
-          r.name ?? next.find((p) => p.ticker === r.ticker)?.name ?? trades.find((t) => t.ticker === r.ticker)?.name ?? undefined
+          r.name ??
+            next.find((p) => canonicalTickerForMatch(p.ticker) === rKey)?.name ??
+            trades.find((t) => canonicalTickerForMatch(t.ticker) === rKey)?.name ??
+            undefined
         );
         const nameToSave = displayName || r.name || r.ticker;
-        if (nameToSave) {
-          const market = isCryptoStock(r.ticker) ? "CRYPTO" : isKRWStock(r.ticker) ? "KR" : "US";
+        if (persistToTickerJson && nameToSave && !isCryptoStock(r.ticker)) {
+          const market = isKRWStock(r.ticker) ? "KR" : "US";
           void saveTickerToJson(r.ticker, nameToSave, market);
         }
-        const idx = next.findIndex((p) => p.ticker === r.ticker);
-        const existingName = next[idx]?.name ?? trades.find((t) => t.ticker === r.ticker)?.name;
+        const idx = next.findIndex((p) => canonicalTickerForMatch(p.ticker) === rKey);
+        const existingName =
+          next[idx]?.name ?? trades.find((t) => canonicalTickerForMatch(t.ticker) === rKey)?.name;
         const item: StockPrice = {
           ticker: r.ticker,
           name: displayName || existingName || r.ticker,
@@ -834,131 +849,238 @@ export const StocksView: React.FC<Props> = ({
     [trades]
   );
 
-  const handleRefreshQuotes = async () => {
-    if (uniqueTickers.length === 0) {
-      setQuoteError("거래 내역에 등록된 티커가 없습니다. 먼저 거래를 추가하세요.");
-      onLog?.("시세 갱신: 거래 내역에 등록된 티커가 없습니다.", "error");
-      return;
-    }
+  const runQuoteRefresh = useCallback(
+    async (params: {
+      mode: "holdings" | "full";
+      stockTickers: string[];
+      cryptoTickers: string[];
+      updateTickerDatabase: boolean;
+      persistToTickerJson: boolean;
+      logLabel: string;
+    }) => {
+      const {
+        mode,
+        stockTickers: uniqueStockTickers,
+        cryptoTickers: uniqueCryptoTickers,
+        updateTickerDatabase,
+        persistToTickerJson,
+        logLabel
+      } = params;
 
-    onLog?.("시세 갱신 시작...", "info");
-    try {
-      setIsLoadingQuotes(true);
-      setQuoteError(null);
-      updateFxRate();
       const totalSymbols = uniqueStockTickers.length + uniqueCryptoTickers.length;
-      setQuoteRefreshProgress({ current: 0, total: Math.max(1, totalSymbols) });
+      if (totalSymbols === 0) {
+        const msg =
+          mode === "holdings"
+            ? "거래 내역에 등록된 티커가 없습니다. 먼저 거래를 추가하세요."
+            : "ticker.json에서 불러온 종목이 없습니다. 개발 서버(npm run dev)에서 시도하세요.";
+        setQuoteError(msg);
+        onLog?.(`${logLabel}: ${msg}`, "error");
+        return;
+      }
 
-      const allResults: StockPrice[] = [];
-      let failedTickers: string[] = [];
+      onLog?.(`${logLabel} 시작...`, "info");
+      try {
+        setIsLoadingQuotes(true);
+        setQuoteError(null);
+        void updateFxRate();
+        setQuoteRefreshProgress({ current: 0, total: Math.max(1, totalSymbols) });
+        onLog?.(`[시작] ${logLabel} — ${totalSymbols}개 티커`, "info");
 
-      // 주식: Yahoo API (tickerDatabase의 exchange로 .KS/.KQ 우선순위 반영)
-      if (uniqueStockTickers.length > 0) {
+        const allResults: StockPrice[] = [];
+        let failedTickers: string[] = [];
+
         const exchangeMap: Record<string, string> = {};
         for (const t of tickerDatabase) {
           const key = canonicalTickerForMatch(t.ticker);
           if (key && (t.exchange === "KOSPI" || t.exchange === "KOSDAQ")) exchangeMap[key] = t.exchange;
         }
-        const onStockProgress = (done: number) =>
-          setQuoteRefreshProgress((p) => ({ ...p, current: done }));
-        let stockResults = await fetchYahooQuotes(uniqueStockTickers, {
-          onProgress: (done) => onStockProgress(done),
-          exchangeMap: Object.keys(exchangeMap).length ? exchangeMap : undefined
+        const exchangeMapOpt = Object.keys(exchangeMap).length ? exchangeMap : undefined;
+
+        if (uniqueStockTickers.length > 0) {
+          const onStockProgress = (done: number) =>
+            setQuoteRefreshProgress((p) => ({ ...p, current: done }));
+          let stockResults = await fetchYahooQuotes(uniqueStockTickers, {
+            onProgress: (done, total, ticker, status) => {
+              onStockProgress(done);
+              if (ticker != null && status != null) {
+                const percent = total > 0 ? Math.round((done / total) * 100) : 0;
+                onLog?.(`[${logLabel}] [${done}/${total} - ${percent}%] ${ticker} : ${status}`, "info");
+              }
+            },
+            exchangeMap: exchangeMapOpt
+          });
+          let successStock = new Set(
+            stockResults
+              .filter((r) => r.ticker !== "USDKRW=X" && r.price != null && Number.isFinite(r.price))
+              .map((r) => r.ticker)
+          );
+          let failedStock = uniqueStockTickers.filter((t) => !successStock.has(t));
+          const maxRetries = 3;
+          for (let attempt = 1; attempt < maxRetries && failedStock.length > 0; attempt++) {
+            onLog?.(`[${logLabel}] [재시도 ${attempt}/${maxRetries - 1}] 실패 ${failedStock.length}종목...`, "info");
+            await new Promise((r) => setTimeout(r, 2000));
+            const retryResults = await fetchYahooQuotes(failedStock, {
+              onProgress: (done, total, ticker, status) => {
+                onStockProgress(uniqueStockTickers.length - failedStock.length + done);
+                if (ticker != null && status != null) {
+                  const percent = total > 0 ? Math.round((done / total) * 100) : 0;
+                  onLog?.(`[${logLabel}] [재시도 ${done}/${total} - ${percent}%] ${ticker} : ${status}`, "info");
+                }
+              },
+              exchangeMap: exchangeMapOpt
+            });
+            const retrySuccess = new Set(
+              retryResults.filter((r) => r.price != null && Number.isFinite(r.price)).map((r) => r.ticker)
+            );
+            failedStock = failedStock.filter((t) => !retrySuccess.has(t));
+            stockResults = [...stockResults, ...retryResults];
+            successStock = new Set(
+              stockResults.filter((r) => r.ticker !== "USDKRW=X" && r.price != null).map((r) => r.ticker)
+            );
+          }
+          setQuoteRefreshProgress((p) => ({ ...p, current: uniqueStockTickers.length }));
+          allResults.push(...stockResults.filter((r) => r.ticker !== "USDKRW=X"));
+          failedTickers.push(...failedStock);
+        }
+
+        if (uniqueCryptoTickers.length > 0) {
+          const cryptoResults = await fetchCryptoQuotes(uniqueCryptoTickers, fxRate ?? undefined);
+          const cryptoAsStockPrice: StockPrice[] = cryptoResults.map((c) => ({
+            ticker: c.ticker,
+            name: c.symbol,
+            price: c.priceKrw,
+            currency: "KRW" as const,
+            changePercent: c.changePercent24h,
+            updatedAt: c.updatedAt
+          }));
+          const successCrypto = new Set(cryptoResults.map((c) => c.ticker));
+          const failedCrypto = uniqueCryptoTickers.filter((t) => !successCrypto.has(t));
+          allResults.push(...cryptoAsStockPrice);
+          failedTickers.push(...failedCrypto);
+          setQuoteRefreshProgress((p) => ({ ...p, current: p.total }));
+        }
+
+        if (allResults.length === 0) {
+          setQuoteError("시세를 가져오지 못했습니다. 잠시 후 다시 시도하세요.");
+          onLog?.(`${logLabel}: 시세를 가져오지 못했습니다.`, "error");
+          return;
+        }
+
+        const next = mergeQuoteResultsIntoPrices(prices, allResults, { persistToTickerJson });
+        onChangePrices(next);
+
+        if (updateTickerDatabase) {
+          onChangeTickerDatabase((prev) => {
+            const list = Array.isArray(prev) ? prev : [];
+            const byKey = new Map(list.map((t) => [canonicalTickerForMatch(t.ticker), t]));
+            for (const r of allResults) {
+              if (r.ticker === "USDKRW=X") continue;
+              const key = canonicalTickerForMatch(r.ticker);
+              const name = displayNameForTicker(r.ticker, r.name ?? undefined) || r.name || r.ticker;
+              const existing = byKey.get(key);
+              byKey.set(key, {
+                ticker: key,
+                name: name || existing?.name || key,
+                market: existing?.market ?? (isCryptoStock(r.ticker) ? "CRYPTO" : isKRWStock(r.ticker) ? "KR" : "US"),
+                exchange: existing?.exchange
+              });
+            }
+            return Array.from(byKey.values()).sort((a, b) => a.ticker.localeCompare(b.ticker));
+          });
+        }
+
+        const latestUpdatedAt =
+          allResults
+            .map((r) => r.updatedAt)
+            .filter((v): v is string => Boolean(v))
+            .sort()
+            .at(-1) ?? new Date().toISOString();
+        setYahooUpdatedAt(latestUpdatedAt);
+        if (mode === "holdings") {
+          setJustUpdatedTickers(allResults.map((r) => r.ticker));
+          if (typeof window !== "undefined") {
+            window.setTimeout(() => setJustUpdatedTickers([]), 500);
+          }
+        }
+
+        const successCount = allResults.filter((r) => r.price != null && Number.isFinite(r.price)).length;
+        const successMsg =
+          failedTickers.length > 0
+            ? `[${logLabel}] 시세 반영: ${successCount}종목 (실패 ${failedTickers.length}종목: ${failedTickers.slice(0, 3).join(", ")}${failedTickers.length > 3 ? " …" : ""})`
+            : `[${logLabel}] 시세 반영: ${successCount}종목`;
+        onLog?.(successMsg, "success");
+        toast.success(successMsg.replace(`[${logLabel}] `, ""), {
+          duration: failedTickers.length > 0 ? 5000 : 4000
         });
-        let successStock = new Set(
-          stockResults.filter((r) => r.ticker !== "USDKRW=X" && r.price != null && Number.isFinite(r.price)).map((r) => r.ticker)
-        );
-        let failedStock = uniqueStockTickers.filter((t) => !successStock.has(t));
-        const maxRetries = 3;
-        for (let attempt = 1; attempt < maxRetries && failedStock.length > 0; attempt++) {
-          await new Promise((r) => setTimeout(r, 2000));
-          const retryResults = await fetchYahooQuotes(failedStock, {
-            onProgress: (done) => onStockProgress(uniqueStockTickers.length - failedStock.length + done),
-            exchangeMap: Object.keys(exchangeMap).length ? exchangeMap : undefined
-          });
-          const retrySuccess = new Set(retryResults.filter((r) => r.price != null && Number.isFinite(r.price)).map((r) => r.ticker));
-          failedStock = failedStock.filter((t) => !retrySuccess.has(t));
-          stockResults = [...stockResults, ...retryResults];
-          successStock = new Set(stockResults.filter((r) => r.ticker !== "USDKRW=X" && r.price != null).map((r) => r.ticker));
-        }
-        setQuoteRefreshProgress((p) => ({ ...p, current: uniqueStockTickers.length }));
-        allResults.push(...stockResults.filter((r) => r.ticker !== "USDKRW=X"));
-        failedTickers.push(...failedStock);
+      } catch (err) {
+        console.error(err);
+        setQuoteError("시세 갱신 중 오류가 발생했습니다. 잠시 후 다시 시도하세요.");
+        onLog?.(`${logLabel} 실패: 오류가 발생했습니다.`, "error");
+      } finally {
+        setIsLoadingQuotes(false);
       }
+    },
+    [
+      mergeQuoteResultsIntoPrices,
+      onChangePrices,
+      onChangeTickerDatabase,
+      onLog,
+      prices,
+      tickerDatabase,
+      updateFxRate
+    ]
+  );
 
-      // 암호화폐: CoinGecko API
-      if (uniqueCryptoTickers.length > 0) {
-        const cryptoResults = await fetchCryptoQuotes(uniqueCryptoTickers);
-        const cryptoAsStockPrice: StockPrice[] = cryptoResults.map((c) => ({
-          ticker: c.ticker,
-          name: c.symbol,
-          price: c.priceKrw,
-          currency: "KRW" as const,
-          changePercent: c.changePercent24h,
-          updatedAt: c.updatedAt
-        }));
-        const successCrypto = new Set(cryptoResults.map((c) => c.ticker));
-        const failedCrypto = uniqueCryptoTickers.filter((t) => !successCrypto.has(t));
-        allResults.push(...cryptoAsStockPrice);
-        failedTickers.push(...failedCrypto);
-        setQuoteRefreshProgress((p) => ({ ...p, current: p.total }));
-      }
+  const handleRefreshQuotesHoldings = useCallback(async () => {
+    lastQuoteRefreshModeRef.current = "holdings";
+    await runQuoteRefresh({
+      mode: "holdings",
+      stockTickers: uniqueStockTickers,
+      cryptoTickers: uniqueCryptoTickers,
+      updateTickerDatabase: true,
+      persistToTickerJson: true,
+      logLabel: "보유 종목"
+    });
+  }, [runQuoteRefresh, uniqueStockTickers, uniqueCryptoTickers]);
 
-      if (allResults.length === 0) {
-        setQuoteError("시세를 가져오지 못했습니다. 잠시 후 다시 시도하세요.");
-        onLog?.("시세 갱신: 시세를 가져오지 못했습니다.", "error");
-        return;
-      }
-
-      const next = mergeQuoteResultsIntoPrices(prices, allResults);
-      onChangePrices(next);
-
-      // 시세 결과로 tickerDatabase 종목명 갱신 (미국/한국 이름 표시 개선, market·exchange 유지)
-      onChangeTickerDatabase((prev) => {
-        const list = Array.isArray(prev) ? prev : [];
-        const byKey = new Map(list.map((t) => [canonicalTickerForMatch(t.ticker), t]));
-        for (const r of allResults) {
-          if (r.ticker === "USDKRW=X") continue;
-          const key = canonicalTickerForMatch(r.ticker);
-          const name = displayNameForTicker(r.ticker, r.name ?? undefined) || r.name || r.ticker;
-          const existing = byKey.get(key);
-          byKey.set(key, {
-            ticker: key,
-            name: name || existing?.name || key,
-            market: existing?.market ?? (isCryptoStock(r.ticker) ? "CRYPTO" : isKRWStock(r.ticker) ? "KR" : "US"),
-            exchange: existing?.exchange
-          });
-        }
-        return Array.from(byKey.values()).sort((a, b) => a.ticker.localeCompare(b.ticker));
-      });
-
-      const latestUpdatedAt =
-        allResults
-          .map((r) => r.updatedAt)
-          .filter((v): v is string => Boolean(v))
-          .sort()
-          .at(-1) ?? new Date().toISOString();
-      setYahooUpdatedAt(latestUpdatedAt);
-      setJustUpdatedTickers(allResults.map((r) => r.ticker));
-      if (typeof window !== "undefined") {
-        window.setTimeout(() => setJustUpdatedTickers([]), 500);
-      }
-
-      const successCount = allResults.filter((r) => r.price != null && Number.isFinite(r.price)).length;
-      const successMsg =
-        failedTickers.length > 0
-          ? `시세 불러오기 완료: ${successCount}종목 반영됨. (${failedTickers.length}종목 실패: ${failedTickers.slice(0, 3).join(", ")}${failedTickers.length > 3 ? " …" : ""})`
-          : `시세 불러오기 완료: ${successCount}종목 반영됨.`;
-      toast.success(successMsg, { duration: failedTickers.length > 0 ? 5000 : 4000 });
-      onLog?.(successMsg, "success");
-    } catch (err) {
-      console.error(err);
-      setQuoteError("시세 갱신 중 오류가 발생했습니다. 잠시 후 다시 시도하세요.");
-      onLog?.("시세 갱신 실패: 오류가 발생했습니다.", "error");
-    } finally {
-      setIsLoadingQuotes(false);
+  const handleRefreshQuotesFull = useCallback(async () => {
+    const rows = await fetchTickersFromFile();
+    if (rows.length === 0) {
+      const msg =
+        "ticker.json을 불러오지 못했습니다. 전체 갱신은 개발 서버(npm run dev)의 /api/ticker-json이 필요합니다.";
+      toast.error(msg);
+      onLog?.(`전체 시세: ${msg}`, "error");
+      return;
     }
-  };
+    const seen = new Set<string>();
+    const stockTickers: string[] = [];
+    for (const r of rows) {
+      const key = canonicalTickerForMatch(r.ticker);
+      if (!key || seen.has(key)) continue;
+      seen.add(key);
+      stockTickers.push(key.toUpperCase());
+    }
+    const n = stockTickers.length;
+    if (
+      typeof window !== "undefined" &&
+      !window.confirm(
+        `data/ticker.json 기준 ${n}개 종목 시세를 갱신합니다. 종목이 많으면 매우 오래 걸리고 API 제한에 걸릴 수 있습니다.\n\n` +
+          `· prices(시세 캐시)만 갱신합니다.\n` +
+          `· tickerDatabase·ticker.json 파일에는 쓰지 않습니다.\n\n계속할까요?`
+      )
+    ) {
+      return;
+    }
+    lastQuoteRefreshModeRef.current = "full";
+    await runQuoteRefresh({
+      mode: "full",
+      stockTickers,
+      cryptoTickers: [],
+      updateTickerDatabase: false,
+      persistToTickerJson: false,
+      logLabel: "전체(ticker.json)"
+    });
+  }, [runQuoteRefresh, onLog]);
 
   const applyQuoteResult = (symbol: string, r: StockPrice, fallbackName?: string) => {
     const existingPriceName = prices.find((p) => p.ticker === symbol)?.name;
@@ -1010,6 +1132,7 @@ export const StocksView: React.FC<Props> = ({
 
     setIsSearchingQuote(true);
     setQuoteError(null);
+    onLog?.(`시세 검색: ${symbol} 조회 중...`, "info");
     try {
       const results = await fetchYahooQuotes([symbol]);
       if (results.length > 0) {
@@ -1025,12 +1148,15 @@ export const StocksView: React.FC<Props> = ({
         }
         
         setQuoteSearchTicker("");
+        onLog?.(`시세 검색: ${symbol} 조회 완료.`, "success");
       } else {
         setQuoteError("시세를 찾지 못했습니다.");
+        onLog?.(`시세 검색: ${symbol} 시세를 찾지 못했습니다.`, "error");
       }
     } catch (err) {
       console.error("시세 검색 오류:", err);
       setQuoteError("시세 검색 중 오류가 발생했습니다.");
+      onLog?.("시세 검색: 오류가 발생했습니다.", "error");
     } finally {
       setIsSearchingQuote(false);
     }
@@ -1159,21 +1285,53 @@ export const StocksView: React.FC<Props> = ({
   };
 
   const handleRefreshSymbolLibrary = async () => {
-    const set = new Set<string>();
-    customSymbols.forEach((s) => set.add(canonicalTickerForMatch(s.ticker)));
-    trades.forEach((t) => set.add(canonicalTickerForMatch(t.ticker)));
-    prices.forEach((p) => set.add(canonicalTickerForMatch(p.ticker)));
-    const allSymbols = Array.from(set).filter(Boolean);
-    if (allSymbols.length === 0) return;
+    const tradeTickers = getUniqueTickersFromTrades(trades);
+    if (tradeTickers.length === 0) {
+      setQuoteError("거래 내역에 티커가 없습니다. 먼저 거래를 추가하세요.");
+      return;
+    }
+    const stockSymbols = tradeTickers.filter((t) => !isCryptoStock(t)).map((t) => t.toUpperCase());
+    const cryptoSymbols = tradeTickers.filter((t) => isCryptoStock(t)).map((t) => t.toLowerCase());
     try {
       setIsUpdatingLibrary(true);
-      const results = await fetchYahooQuotes(allSymbols);
+      setQuoteError(null);
+
+      const exchangeMap: Record<string, string> = {};
+      for (const t of tickerDatabase) {
+        const key = canonicalTickerForMatch(t.ticker);
+        if (key && (t.exchange === "KOSPI" || t.exchange === "KOSDAQ")) exchangeMap[key] = t.exchange;
+      }
+
+      const allResults: YahooQuoteResult[] = [];
+
+      if (stockSymbols.length > 0) {
+        const stockRes = await fetchYahooQuotes(stockSymbols, {
+          exchangeMap: Object.keys(exchangeMap).length ? exchangeMap : undefined
+        });
+        allResults.push(...stockRes);
+      }
+      if (cryptoSymbols.length > 0) {
+        const cryptoRes = await fetchCryptoQuotes(cryptoSymbols, fxRate ?? undefined);
+        for (const c of cryptoRes) {
+          allResults.push({
+            ticker: c.ticker,
+            name: c.symbol,
+            price: c.priceKrw,
+            currency: "KRW",
+            changePercent: c.changePercent24h,
+            updatedAt: c.updatedAt
+          });
+        }
+      }
+
       const updatedPrices: StockPrice[] = [...prices];
       let updatedCustom = [...customSymbols];
 
-      for (const r of results) {
-        const name = displayNameForTicker(r.ticker, r.name ?? undefined) || r.ticker;
-        const idx = updatedPrices.findIndex((p) => p.ticker === r.ticker);
+      for (const r of allResults) {
+        if (r.ticker === "USDKRW=X") continue;
+        const name = displayNameForTicker(r.ticker, r.name ?? undefined) || r.name || r.ticker;
+        const key = canonicalTickerForMatch(r.ticker);
+        const idx = updatedPrices.findIndex((p) => canonicalTickerForMatch(p.ticker) === key);
         const item: StockPrice = {
           ticker: r.ticker,
           name,
@@ -1189,11 +1347,12 @@ export const StocksView: React.FC<Props> = ({
           updatedPrices.push(item);
         }
 
-        if (!updatedCustom.some((c) => c.ticker === r.ticker)) {
+        const customKey = (x: string) => canonicalTickerForMatch(x);
+        if (!updatedCustom.some((c) => customKey(c.ticker) === key)) {
           updatedCustom = [{ ticker: r.ticker, name }, ...updatedCustom].slice(0, 150);
         } else {
           updatedCustom = updatedCustom.map((c) =>
-            c.ticker === r.ticker ? { ...c, name: c.name || name || c.ticker } : c
+            customKey(c.ticker) === key ? { ...c, name: c.name || name || c.ticker } : c
           );
         }
       }
@@ -1405,7 +1564,7 @@ export const StocksView: React.FC<Props> = ({
     const isUSD = isUSDStock(tickerClean);
     const currency = priceInfo?.currency || (isUSD ? "USD" : "KRW");
     const isUSDCurrency = currency === "USD";
-    const useUsdBalanceMode = shouldUseUsdBalanceMode(accountId, isSecuritiesAccount, isUSDCurrency, accounts, ledger);
+    const useUsdBalanceMode = shouldUseUsdBalanceMode(accountId, isSecuritiesAccount, isUSDCurrency);
 
     const priceKRWNum = Number(tradeForm.priceKRW ?? 0);
     const feeKRWNum = Number(tradeForm.feeKRW ?? 0);
@@ -1720,18 +1879,24 @@ export const StocksView: React.FC<Props> = ({
       const tickerIsUSD = isUSDStock(plan.ticker);
       const currency = quote.currency || (tickerIsUSD ? "USD" : "KRW");
 
-      // 환율 계산
-      let priceKRW = quote.price;
-      if (currency === "USD" && fx) {
-        priceKRW = quote.price * fx;
-      }
+      const effectiveFx = fx && fx > 0 ? fx : (fxRate && fxRate > 0 ? fxRate : DEFAULT_FX_RATE);
+      const quotePrice = quote.price;
+      const priceInPlanCurrency = currency === "USD" ? quotePrice * effectiveFx : quotePrice;
 
-      // 매수 수량 계산
-      const shares = plan.amount / priceKRW;
+      // 매수 수량 계산 (plan.amount는 KRW 예산)
+      const shares = plan.amount / priceInPlanCurrency;
       const quantity = Number(shares.toFixed(6));
-      const totalAmount = quantity * priceKRW;
-      const fee = plan.fee ?? 0;
-      const finalAmount = totalAmount + fee;
+      const feeInput = plan.fee ?? 0;
+      const feeInTradeCurrency = currency === "USD" ? feeInput / effectiveFx : feeInput;
+      const totalAmount = quantity * quotePrice;
+      const finalAmount = totalAmount + feeInTradeCurrency;
+      const totalAmountKRW = currency === "USD" ? finalAmount * effectiveFx : finalAmount;
+      const useUsdBalanceMode = shouldUseUsdBalanceMode(
+        plan.accountId,
+        selectedAccount.type === "securities" || selectedAccount.type === "crypto",
+        currency === "USD"
+      );
+      const cashImpact = computeTradeCashImpact("buy", totalAmountKRW, useUsdBalanceMode);
 
       // 매수 기록 생성
       const trade: StockTrade = {
@@ -1742,19 +1907,20 @@ export const StocksView: React.FC<Props> = ({
         name: quote.name ?? plan.ticker,
         side: "buy",
         quantity,
-        price: Math.round(priceKRW),
-        fee,
+        price: quotePrice,
+        fee: feeInTradeCurrency,
         totalAmount: finalAmount,
-        cashImpact: -finalAmount
+        cashImpact,
+        fxRateAtTrade: currency === "USD" ? effectiveFx : undefined
       };
 
       // 거래 기록 추가
       onChangeTrades([trade, ...trades]);
 
       // 평가액 계산 (현재 가격 기준)
-      const marketValue = quantity * priceKRW;
+      const marketValue = quantity * quotePrice;
       const profit = marketValue - finalAmount;
-      const profitRate = (profit / finalAmount) * 100;
+      const profitRate = finalAmount > 0 ? (profit / finalAmount) * 100 : 0;
       
       const tickerIsUSDForFormat = isUSDStock(plan.ticker);
       const formatAmount = tickerIsUSDForFormat ? (v: number) => formatUSD(v) : (v: number) => formatKRW(Math.round(v));
@@ -1831,18 +1997,24 @@ export const StocksView: React.FC<Props> = ({
           const isUSD = isUSDStock(plan.ticker);
           const currency = q.currency || (isUSD ? "USD" : "KRW");
 
-          // 환율 계산
-          let priceKRW = q.price;
-          if (currency === "USD" && fx) {
-            priceKRW = q.price * fx;
-          }
+      const effectiveFx = fx && fx > 0 ? fx : (fxRate && fxRate > 0 ? fxRate : DEFAULT_FX_RATE);
+      const quotePrice = q.price;
+      const priceInPlanCurrency = currency === "USD" ? quotePrice * effectiveFx : quotePrice;
 
-          // 매수 수량 계산
-          const shares = plan.amount / priceKRW;
+      // 매수 수량 계산 (plan.amount는 KRW 예산)
+      const shares = plan.amount / priceInPlanCurrency;
           const quantity = Number(shares.toFixed(6));
-          const totalAmount = quantity * priceKRW;
-          const fee = plan.fee ?? 0;
-          const finalAmount = totalAmount + fee;
+      const feeInput = plan.fee ?? 0;
+      const feeInTradeCurrency = currency === "USD" ? feeInput / effectiveFx : feeInput;
+      const totalAmount = quantity * quotePrice;
+      const finalAmount = totalAmount + feeInTradeCurrency;
+      const totalAmountKRW = currency === "USD" ? finalAmount * effectiveFx : finalAmount;
+      const useUsdBalanceMode = shouldUseUsdBalanceMode(
+        plan.accountId,
+        selectedAccount.type === "securities" || selectedAccount.type === "crypto",
+        currency === "USD"
+      );
+      const cashImpact = computeTradeCashImpact("buy", totalAmountKRW, useUsdBalanceMode);
 
           // 매수 기록 생성
           const trade: StockTrade = {
@@ -1853,10 +2025,11 @@ export const StocksView: React.FC<Props> = ({
             name: q.name ?? plan.ticker,
             side: "buy",
             quantity,
-            price: Math.round(priceKRW),
-            fee,
+            price: quotePrice,
+            fee: feeInTradeCurrency,
             totalAmount: finalAmount,
-            cashImpact: -finalAmount
+            cashImpact,
+            fxRateAtTrade: currency === "USD" ? effectiveFx : undefined
           };
 
           newTrades.push(trade);
@@ -1925,18 +2098,29 @@ export const StocksView: React.FC<Props> = ({
           const q = quoteMap.get(p.ticker.toUpperCase());
           const price = q?.price;
           const currency = q?.currency;
-          let priceKRW = price ?? 0;
-          if (currency === "USD" && fx) priceKRW = priceKRW * fx;
-          if (!priceKRW || priceKRW <= 0) return p;
+          const selectedAccount = accounts.find((a) => a.id === p.accountId);
+          if (!selectedAccount) return p;
+          if (!price || price <= 0) return p;
+          const effectiveFx = fx && fx > 0 ? fx : (fxRate && fxRate > 0 ? fxRate : DEFAULT_FX_RATE);
+          const priceInPlanCurrency = currency === "USD" ? price * effectiveFx : price;
+          if (!priceInPlanCurrency || priceInPlanCurrency <= 0) return p;
           
           // 장 개장 여부 확인
           const market = getMarketStatus(p.ticker, currency);
           if (!market.isOpen) return p; // 장이 닫혀있으면 실행하지 않음
           
-          const shares = p.amount / priceKRW;
+          const shares = p.amount / priceInPlanCurrency;
           const quantity = Number(shares.toFixed(6));
-          const totalAmount = quantity * priceKRW + (p.fee ?? 0);
-          const cashImpact = -totalAmount;
+          const feeInput = p.fee ?? 0;
+          const feeInTradeCurrency = currency === "USD" ? feeInput / effectiveFx : feeInput;
+          const totalAmount = quantity * price + feeInTradeCurrency;
+          const useUsdBalanceMode = shouldUseUsdBalanceMode(
+            p.accountId,
+            selectedAccount.type === "securities" || selectedAccount.type === "crypto",
+            currency === "USD"
+          );
+          const totalAmountKRW = currency === "USD" ? totalAmount * effectiveFx : totalAmount;
+          const cashImpact = computeTradeCashImpact("buy", totalAmountKRW, useUsdBalanceMode);
           const trade: StockTrade = {
             id: `DCA-${p.id}-${today}`,
             date: today,
@@ -1945,10 +2129,11 @@ export const StocksView: React.FC<Props> = ({
             name: q?.name ?? p.ticker,
             side: "buy",
             quantity,
-            price: Math.round(priceKRW),
-            fee: p.fee ?? 0,
+            price,
+            fee: feeInTradeCurrency,
             totalAmount,
-            cashImpact
+            cashImpact,
+            fxRateAtTrade: currency === "USD" ? effectiveFx : undefined
           };
           newTrades.push(trade);
           changed = true;
@@ -2177,19 +2362,22 @@ export const StocksView: React.FC<Props> = ({
           )}
 
           <button
-
             type="button"
-
             className="secondary"
-
-            onClick={handleRefreshQuotes}
-
+            onClick={() => void handleRefreshQuotesHoldings()}
             disabled={isLoadingQuotes}
-
+            title="거래 내역에 있는 티커만 시세 갱신 · prices 및 tickerDatabase 반영"
           >
-
+            {isLoadingQuotes ? "갱신 중..." : "시세 조회 (보유)"}
+          </button>
+          <button
+            type="button"
+            className="secondary"
+            onClick={() => void handleRefreshQuotesFull()}
+            disabled={isLoadingQuotes}
+            title="data/ticker.json의 KR+US 전 종목 (개발 서버 필요). prices만 갱신"
+          >
             {isLoadingQuotes ? "갱신 중..." : "시세 갱신 (전체)"}
-
           </button>
           <button
             type="button"
@@ -2623,7 +2811,7 @@ export const StocksView: React.FC<Props> = ({
                 onClick={handleSearchQuote}
                 disabled={isSearchingQuote || !quoteSearchTicker.trim()}
               >
-                {isSearchingQuote ? "검색 중..." : "시세 조회"}
+                {isSearchingQuote ? "검색 중..." : "단일 조회"}
               </button>
             </div>
           </div>
@@ -2646,7 +2834,7 @@ export const StocksView: React.FC<Props> = ({
                   </div>
                 ) : (
               <div className="muted" style={{ textAlign: "center", padding: "20px 0" }}>
-                티커를 입력하고 시세 조회 버튼을 클릭하세요.
+                티커를 입력하고 단일 조회를 클릭하세요.
               </div>
                 )}
           </div>
@@ -2673,7 +2861,9 @@ export const StocksView: React.FC<Props> = ({
             className="primary"
             onClick={() => {
               setQuoteError(null);
-              handleRefreshQuotes();
+              const m = lastQuoteRefreshModeRef.current;
+              if (m === "full") void handleRefreshQuotesFull();
+              else void handleRefreshQuotesHoldings();
             }}
             style={{ padding: "6px 12px", fontSize: 13 }}
           >
@@ -2717,23 +2907,27 @@ export const StocksView: React.FC<Props> = ({
       {/* 포트폴리오 분석 탭 */}
       {activeTab === "portfolio" && (
         <>
-          <PortfolioChartsSection
-            positionsWithPrice={positionsWithPrice}
-            positionsByAccount={positionsByAccount}
-            balances={balances}
-            fxRate={fxRate}
-          />
-          {onChangeTargetPortfolios && (
-            <TargetPortfolioSection
+          <Suspense fallback={<ChartSkeleton height={300} />}>
+            <LazyPortfolioChartsSection
               positionsWithPrice={positionsWithPrice}
               positionsByAccount={positionsByAccount}
-              accounts={accounts}
-              prices={prices}
-              tickerDatabase={tickerDatabase}
-              targetPortfolios={targetPortfolios}
-              onChangeTargetPortfolios={onChangeTargetPortfolios}
-              fxRate={propFxRate}
+              balances={balances}
+              fxRate={fxRate}
             />
+          </Suspense>
+          {onChangeTargetPortfolios && (
+            <Suspense fallback={<ChartSkeleton height={300} />}>
+              <LazyTargetPortfolioSection
+                positionsWithPrice={positionsWithPrice}
+                positionsByAccount={positionsByAccount}
+                accounts={accounts}
+                prices={prices}
+                tickerDatabase={tickerDatabase}
+                targetPortfolios={targetPortfolios}
+                onChangeTargetPortfolios={onChangeTargetPortfolios}
+                fxRate={propFxRate}
+              />
+            </Suspense>
           )}
         </>
       )}

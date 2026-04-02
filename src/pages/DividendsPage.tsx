@@ -1,10 +1,12 @@
-import React, { useMemo, useState, useEffect } from "react";
-import { Autocomplete } from "./Autocomplete";
-import type { Account, LedgerEntry, StockPrice, StockTrade, TickerInfo } from "../types";
+import React, { useMemo, useState, useEffect, useDeferredValue } from "react";
+import { Autocomplete } from "../components/ui/Autocomplete";
+import type { Account, HistoricalDailyClose, LedgerEntry, StockPrice, StockTrade, TickerInfo } from "../types";
 import { computePositions } from "../calculations";
 import { formatNumber, formatKRW, formatShortDate } from "../utils/formatter";
 import { isKRWStock, isUSDStock, canonicalTickerForMatch, extractTickerFromText } from "../utils/finance";
-import krNames from "../data/krNames.json";
+import { parseExDateFromNote, parseQuantityFromNote, buildDividendNote } from "../utils/dividend";
+import { findStoredCloseAtOrBefore } from "../hooks/useAutoFetchHistoricalCloses";
+import { getKrNames } from "../storage";
 import { toast } from "react-hot-toast";
 
 interface Props {
@@ -13,6 +15,7 @@ interface Props {
   trades: StockTrade[];
   prices: StockPrice[];
   tickerDatabase: TickerInfo[];
+  historicalDailyCloses?: HistoricalDailyClose[];
   onChangeLedger: (ledger: LedgerEntry[]) => void;
   fxRate?: number | null;
 }
@@ -24,16 +27,27 @@ interface DividendRow {
   amount: number;
   ticker?: string;
   name?: string; // 종목명 (별도 필드로 명확히)
+  /** 주당배당금 (총 배당금 ÷ 보유주수) */
+  dividendPerShare?: number;
+  /** 배당율 매입대비 (소수, 예: 0.0325 = 3.25%) */
   yieldRate?: number;
+  /** 해당 시점 매입금액(원). 평단가·배당률 계산에 사용 */
+  costBasis?: number;
   accountId?: string;
   accountName?: string;
   quantity?: number;
+  /** ledger category/description 기준 이자 여부 (배당 테이블에서 제외) */
+  isInterest?: boolean;
 }
 
 type TabType = "dividend" | "interest";
+type ViewMode = "all" | "dividend" | "interest";
 
-export const DividendsView: React.FC<Props> = ({ accounts, ledger, trades, prices, tickerDatabase, onChangeLedger, fxRate: propFxRate = null }) => {
+export const DividendsView: React.FC<Props> = ({ accounts, ledger, trades, prices, tickerDatabase, historicalDailyCloses = [], onChangeLedger, fxRate: propFxRate = null }) => {
+  const deferredLedger = useDeferredValue(ledger);
+  const deferredTrades = useDeferredValue(trades);
   const [activeTab, setActiveTab] = useState<TabType>("dividend");
+  const [viewMode, setViewMode] = useState<ViewMode>("all");
   const [showUSD, setShowUSD] = useState(false);
   const [fxRate, setFxRate] = useState<number | null>(propFxRate);
   const [editingEntryId, setEditingEntryId] = useState<string | null>(null);
@@ -44,15 +58,17 @@ export const DividendsView: React.FC<Props> = ({ accounts, ledger, trades, price
   const [editingDate, setEditingDate] = useState<string>("");
   const [editingAccountId, setEditingAccountId] = useState<string>("");
   
-  // 배당 입력 폼
+  // 배당 입력 폼 (date = 수령일, exDate = 배당락일, 배당율은 락일 기준 주가 사용)
   const [dividendForm, setDividendForm] = useState({
     date: new Date().toISOString().slice(0, 10),
+    exDate: "", // 배당락일 (선택, 있으면 배당율 계산에 락일 기준 주가 사용)
     accountId: "",
     ticker: "",
     name: "",
     amount: "",
-    tax: "", // 세금
-    fee: "" // 수수료
+    quantity: "",
+    tax: "",
+    fee: ""
   });
 
   // 이자 입력 폼
@@ -113,12 +129,44 @@ export const DividendsView: React.FC<Props> = ({ accounts, ledger, trades, price
     return positions.find((p) => canonicalTickerForMatch(p.ticker) === canonicalTickerForMatch(dividendForm.ticker) && p.quantity > 0);
   }, [positions, dividendForm.ticker]);
 
+  // 티커 선택 시 보유 수량을 폼 기본값으로 채움 (수정 가능하므로 사용자가 바꿀 수 있음)
+  useEffect(() => {
+    if (selectedPosition) {
+      setDividendForm((prev) => ({
+        ...prev,
+        quantity: String(selectedPosition.quantity)
+      }));
+    } else {
+      setDividendForm((prev) => ({ ...prev, quantity: "" }));
+    }
+  }, [selectedPosition?.ticker, selectedPosition?.quantity]);
+
+  // canonical 티커별 최신 시세 (updatedAt 기준) — 평가/표시 일관성
+  const latestPriceByCanonicalTicker = useMemo(() => {
+    const map = new Map<string, StockPrice>();
+    for (const price of prices) {
+      const key = canonicalTickerForMatch(price.ticker);
+      if (!key) continue;
+      const prev = map.get(key);
+      if (!prev) {
+        map.set(key, price);
+        continue;
+      }
+      const prevUpdated = prev.updatedAt ?? "";
+      const nextUpdated = price.updatedAt ?? "";
+      if (nextUpdated >= prevUpdated) {
+        map.set(key, price);
+      }
+    }
+    return map;
+  }, [prices]);
+
   // 선택한 티커의 통화 정보 (StocksView와 동일한 방식)
   const selectedTickerCurrency = useMemo(() => {
     if (!dividendForm.ticker) return undefined;
     
-    // 1. 원본 prices에서 통화 정보 가져오기 (StocksView와 동일)
-    const originalPriceInfo = prices.find((p) => canonicalTickerForMatch(p.ticker) === canonicalTickerForMatch(dividendForm.ticker));
+    // 1. 원본 prices에서 통화 정보 가져오기 (최신 시세 기준)
+    const originalPriceInfo = latestPriceByCanonicalTicker.get(canonicalTickerForMatch(dividendForm.ticker));
     if (originalPriceInfo?.currency) {
       return originalPriceInfo.currency;
     }
@@ -138,7 +186,7 @@ export const DividendsView: React.FC<Props> = ({ accounts, ledger, trades, price
     if (isUSDStock(ticker)) return "USD";
     
     return undefined;
-  }, [prices, tickerDatabase, dividendForm.ticker]);
+  }, [latestPriceByCanonicalTicker, tickerDatabase, dividendForm.ticker]);
 
   // 환율 업데이트 (props에서 전달받은 경우)
   useEffect(() => {
@@ -168,19 +216,19 @@ export const DividendsView: React.FC<Props> = ({ accounts, ledger, trades, price
     return `${formatKRW(Math.round(value))}`;
   };
 
-  // 배당율 계산 (주식 탭과 동일: 항상 원화 기준, 순 배당금 기준)
+  // 배당율 계산 (주식 탭과 동일: 항상 원화 기준, 순 배당금 기준. 수량은 폼 값 우선)
   const dividendYield = useMemo(() => {
     if (!dividendForm.amount || !selectedPosition) return null;
     let amount = Number(dividendForm.amount);
     const tax = dividendForm.tax ? Number(dividendForm.tax) : 0;
     const fee = dividendForm.fee ? Number(dividendForm.fee) : 0;
-    
-    if (amount <= 0 || selectedPosition.avgPrice <= 0 || selectedPosition.quantity <= 0) return null;
-    
+    const quantity = dividendForm.quantity !== "" ? Number(dividendForm.quantity) || 0 : selectedPosition.quantity;
+
+    if (amount <= 0 || selectedPosition.avgPrice <= 0 || quantity <= 0) return null;
+
     // USD 종목이고 USD로 입력받았으면 원화로 변환
     if (selectedTickerCurrency === "USD" && showUSD && fxRate) {
       amount = amount * fxRate;
-      // 세금과 수수료도 USD로 입력받았으면 원화로 변환
       if (tax > 0) {
         const taxKRW = tax * fxRate;
         amount = amount - taxKRW;
@@ -190,14 +238,12 @@ export const DividendsView: React.FC<Props> = ({ accounts, ledger, trades, price
         amount = amount - feeKRW;
       }
     } else {
-      // 원화로 입력받았으면 세금/수수료 차감
       amount = amount - tax - fee;
     }
-    
-    // totalCost는 이미 원화 기준 (positions는 adjustedPrices 사용)
-    const totalCost = selectedPosition.avgPrice * selectedPosition.quantity;
+
+    const totalCost = selectedPosition.avgPrice * quantity;
     return (amount / totalCost) * 100;
-  }, [dividendForm.amount, dividendForm.tax, dividendForm.fee, selectedPosition, selectedTickerCurrency, showUSD, fxRate]);
+  }, [dividendForm.amount, dividendForm.tax, dividendForm.fee, dividendForm.quantity, selectedPosition, selectedTickerCurrency, showUSD, fxRate]);
 
   // 이전 배당 입력 내역 (빠른 재입력용)
   const recentDividends = useMemo(() => {
@@ -217,11 +263,11 @@ export const DividendsView: React.FC<Props> = ({ accounts, ledger, trades, price
       const nameMatch = desc.match(/\s-\s([^-]+?)(?:\s배당|$)/);
       let name = nameMatch ? nameMatch[1].trim() : "";
       if (!name && isKRWStock(ct)) {
-        const krName = (krNames as Record<string, string>)[ct];
+        const krName = getKrNames()[ct];
         if (krName) name = krName;
       }
       if (!name) {
-        name = prices.find((p) => canonicalTickerForMatch(p.ticker) === ct)?.name ||
+        name = latestPriceByCanonicalTicker.get(ct)?.name ||
           trades.find((t) => canonicalTickerForMatch(t.ticker) === ct)?.name ||
           tickerDatabase.find((t) => canonicalTickerForMatch(t.ticker) === ct)?.name ||
           "";
@@ -243,18 +289,20 @@ export const DividendsView: React.FC<Props> = ({ accounts, ledger, trades, price
     return Array.from(tickerMap.values())
       .filter((d) => positions.some((p) => canonicalTickerForMatch(p.ticker) === canonicalTickerForMatch(d.ticker) && p.quantity > 0)) // 보유 종목만
       .sort((a, b) => b.date.localeCompare(a.date)); // 최신순 정렬
-  }, [ledger, prices, trades, positions, tickerDatabase]);
+  }, [ledger, latestPriceByCanonicalTicker, trades, positions, tickerDatabase]);
 
   // 빠른 입력: 이전 배당 내역 적용 (수정 가능)
   const applyRecentDividend = (recent: { ticker: string; name: string; amount: number; accountId: string }) => {
     setDividendForm({
       date: new Date().toISOString().slice(0, 10),
+      exDate: "",
       accountId: recent.accountId || dividendForm.accountId,
       ticker: recent.ticker,
       name: recent.name,
       amount: recent.amount.toString(),
-      tax: "", // 세금은 매번 새로 입력
-      fee: "" // 수수료는 매번 새로 입력
+      quantity: "",
+      tax: "",
+      fee: ""
     });
   };
 
@@ -286,10 +334,12 @@ export const DividendsView: React.FC<Props> = ({ accounts, ledger, trades, price
       onChangeLedger([entry, ...ledger]);
       setDividendForm({
         date: new Date().toISOString().slice(0, 10),
+        exDate: "",
         accountId: dividendForm.accountId,
         ticker: "",
         name: "",
         amount: "",
+        quantity: "",
         tax: "",
         fee: ""
       });
@@ -318,6 +368,9 @@ export const DividendsView: React.FC<Props> = ({ accounts, ledger, trades, price
     const netAmount = amount;
 
     const description = `${dividendForm.ticker}${dividendForm.name ? ` - ${dividendForm.name}` : ""} 배당${tax > 0 ? `, 세금: ${Math.round(tax).toLocaleString()}원` : ""}${fee > 0 ? `, 수수료: ${Math.round(fee).toLocaleString()}원` : ""}`;
+    const qtyForNote = dividendForm.quantity !== "" ? parseInt(dividendForm.quantity, 10) : selectedPosition?.quantity;
+    const quantityToSave = typeof qtyForNote === "number" && !Number.isNaN(qtyForNote) && qtyForNote >= 0 ? qtyForNote : undefined;
+    const note = buildDividendNote(quantityToSave, dividendForm.exDate?.trim());
     const entry: LedgerEntry = {
       id: `D${Date.now()}`,
       date: dividendForm.date,
@@ -326,19 +379,21 @@ export const DividendsView: React.FC<Props> = ({ accounts, ledger, trades, price
       subCategory: "배당",
       description: description,
       toAccountId: dividendForm.accountId,
-      amount: netAmount // 순 배당금 (세금, 수수료 제외) - 항상 원화 기준으로 저장
+      amount: netAmount,
+      note
     };
 
     const newLedger = [entry, ...ledger];
     onChangeLedger(newLedger);
 
-    // 같은 종목·계좌 유지 (다음 배당 입력 시 편의)
     setDividendForm({
       date: new Date().toISOString().slice(0, 10),
+      exDate: "",
       accountId: dividendForm.accountId,
       ticker: dividendForm.ticker,
       name: dividendForm.name ?? "",
       amount: "",
+      quantity: dividendForm.quantity,
       tax: "",
       fee: ""
     });
@@ -388,15 +443,27 @@ export const DividendsView: React.FC<Props> = ({ accounts, ledger, trades, price
         (l.description ?? "").includes("배당") ||
         (l.description ?? "").includes("이자"));
 
-    const buyAmountByTicker = trades
-      .filter((t) => t.side === "buy")
-      .reduce((map, t) => {
-        const key = canonicalTickerForMatch(t.ticker);
-        map.set(key, (map.get(key) ?? 0) + t.totalAmount);
-        return map;
-      }, new Map<string, number>());
+    const accountMap = new Map(accounts.map((a) => [a.id, a]));
 
-    const accountMap = new Map(accounts.map(a => [a.id, a]));
+    // 배당락일(또는 수령일) 기준 주가 조회 → KRW 가격. 없으면 현재가 fallback
+    const getPriceKrwForYield = (ticker: string, dateForPrice: string): number | undefined => {
+      const ct = canonicalTickerForMatch(ticker);
+      const close = historicalDailyCloses.length > 0 ? findStoredCloseAtOrBefore(historicalDailyCloses, ticker, dateForPrice) : null;
+      if (close != null && close > 0) {
+        return isUSDStock(ticker) && fxRate ? close * fxRate : close;
+      }
+      const current = adjustedPrices.find((p) => canonicalTickerForMatch(p.ticker) === ct);
+      if (current && typeof current.price === "number" && current.price > 0) return current.price;
+      return undefined;
+    };
+
+    const priceKrwByTicker = new Map<string, number>();
+    adjustedPrices.forEach((p) => {
+      const key = canonicalTickerForMatch(p.ticker);
+      if (typeof p.price === "number" && p.price > 0) {
+        priceKrwByTicker.set(key, p.price);
+      }
+    });
 
     // description에서 종목명 추출 ("TICKER - Name 배당" 또는 "TICKER - Name" 형식)
     const parseNameFromDescription = (desc: string): string => {
@@ -405,83 +472,120 @@ export const DividendsView: React.FC<Props> = ({ accounts, ledger, trades, price
     };
 
     // 티커로 종목명 조회: 한국 종목은 krNames 한글명 최우선 (description 영문명 무시), 그 다음 description, prices/trades/tickerDatabase
-    const krNamesMap = krNames as Record<string, string>;
     const getStockName = (ticker: string, description: string): string => {
       const ct = canonicalTickerForMatch(ticker);
       // 한국 종목(6자 이상)은 krNames 한글명 최우선 - description에 영문 저장돼 있어도 덮어씀
       if (isKRWStock(ct)) {
-        const krName = krNamesMap[ct];
+        const krName = getKrNames()[ct];
         if (krName) return krName;
       }
       const fromDesc = parseNameFromDescription(description);
       if (fromDesc) return fromDesc;
       return (
-        prices.find((p) => canonicalTickerForMatch(p.ticker) === ct)?.name ||
+        latestPriceByCanonicalTicker.get(ct)?.name ||
         trades.find((t) => canonicalTickerForMatch(t.ticker) === ct)?.name ||
         tickerDatabase.find((t) => canonicalTickerForMatch(t.ticker) === ct)?.name ||
         ""
       );
     };
     
-    // 배당 날짜 기준으로 보유 수량 계산 함수
-    const getQuantityAtDate = (ticker: string, date: string): number => {
+    // 배당 수령일 기준 보유 수량 (그날 거래 제외 = “배당 받을 때” 보유 주식, 모든 계좌 합산)
+    const getQuantityAtDate = (ticker: string, date: string, accountId?: string): number => {
       if (!ticker || !date) return 0;
       const ct = canonicalTickerForMatch(ticker);
-      
-      const relevantTrades = trades.filter(t => 
-        canonicalTickerForMatch(t.ticker) === ct && t.date <= date
+      const relevantTrades = deferredTrades.filter(
+        (t) =>
+          canonicalTickerForMatch(t.ticker) === ct &&
+          t.date < date &&
+          (!accountId || t.accountId === accountId)
       );
-      
       let quantity = 0;
       for (const trade of relevantTrades) {
-        if (trade.side === "buy") {
-          quantity += trade.quantity;
-        } else if (trade.side === "sell") {
-          quantity -= trade.quantity;
-        }
+        const side = (trade.side ?? "").toString().toLowerCase();
+        if (side === "buy") quantity += trade.quantity;
+        else if (side === "sell") quantity -= trade.quantity;
       }
-      
-      return Math.max(0, quantity); // 음수 방지
+      return Math.max(0, quantity);
+    };
+
+    // 해당일 거래 전 보유 주식의 매입금액(FIFO). accountId 있으면 해당 계좌만(주식 탭 평단가와 동일), 원화
+    const getCostBasisAtDate = (ticker: string, date: string, accountId?: string): number => {
+      if (!ticker || !date) return 0;
+      const ct = canonicalTickerForMatch(ticker);
+      const relevant = deferredTrades
+        .filter(
+          (t) =>
+            canonicalTickerForMatch(t.ticker) === ct &&
+            t.date < date &&
+            (!accountId || t.accountId === accountId)
+        )
+        .sort((a, b) => a.date.localeCompare(b.date) || a.id.localeCompare(b.id));
+      type Lot = { qty: number; totalAmount: number };
+      const lots: Lot[] = [];
+      for (const t of relevant) {
+        const side = (t.side ?? "").toString().toLowerCase();
+        const amtKrW = isUSDStock(ticker) && fxRate ? t.totalAmount * fxRate : t.totalAmount;
+        if (side === "buy") {
+          lots.push({ qty: t.quantity, totalAmount: amtKrW });
+        } else if (side === "sell") {
+          let remaining = t.quantity;
+          while (remaining > 0 && lots.length > 0) {
+            const lot = lots[0];
+            const used = Math.min(remaining, lot.qty);
+            const usedCost = lot.qty > 0 ? (lot.totalAmount / lot.qty) * used : 0;
+            lot.qty -= used;
+            lot.totalAmount -= usedCost;
+            remaining -= used;
+            if (lot.qty <= 0) lots.shift();
+          }
+        }
+        // side가 buy/sell이 아니면 무시(매입금액에 반영 안 함)
+      }
+      return lots.reduce((sum, lot) => sum + lot.totalAmount, 0);
     };
 
     const rows: DividendRow[] = [];
-    for (const l of ledger) {
+    for (const l of deferredLedger) {
       if (!isDividend(l)) continue;
       const month = l.date?.slice(0, 7) || "기타";
       const desc = l.description ?? "";
       const ticker = (extractTickerFromText(desc) ?? extractTickerFromText(l.category ?? ""))?.toUpperCase();
       const name = ticker ? getStockName(ticker, desc) : "";
       const source = ticker ? `${ticker}${name ? ` - ${name}` : ""}` : l.description || l.category || "기타";
-      const basis = ticker ? buyAmountByTicker.get(canonicalTickerForMatch(ticker)) ?? 0 : 0;
-      const yieldRate = basis > 0 ? l.amount / basis : undefined;
       const account = l.toAccountId ? accountMap.get(l.toAccountId) : undefined;
       // 배당 날짜 기준 보유 수량 계산
-      // note 필드에 저장된 보유주식이 있으면 우선 사용, 없으면 계산된 값 사용
-      let quantityAtDate: number | undefined;
-      if (l.note && l.note.includes("보유주식:")) {
-        const noteMatch = l.note.match(/보유주식:\s*(\d+)/);
-        if (noteMatch) {
-          quantityAtDate = parseInt(noteMatch[1], 10);
-        }
-      }
+      // 배당 탭에서 입력한 보유주식 수 우선 사용, 없으면 거래 기준 계산
+      let quantityAtDate: number | undefined = parseQuantityFromNote(l.note) ?? undefined;
+      const accountIdForPosition = l.toAccountId || undefined;
       if (quantityAtDate === undefined) {
-        quantityAtDate = ticker && l.date ? getQuantityAtDate(ticker, l.date) : undefined;
+        quantityAtDate = ticker && l.date ? getQuantityAtDate(ticker, l.date, accountIdForPosition) : undefined;
       }
+      const quantity = quantityAtDate;
+      const amount = l.amount;
+      const dividendPerShare = quantity != null && quantity > 0 ? amount / quantity : undefined;
+      const dateForCost = parseExDateFromNote(l.note) || l.date || "";
+      const costBasis = ticker && dateForCost ? getCostBasisAtDate(ticker, dateForCost, accountIdForPosition) : 0;
+      const yieldRate =
+        amount > 0 && costBasis > 0 ? amount / costBasis : undefined;
+      const isInterest = (l.category ?? "") === "이자" || ((desc.includes("이자") || (l.category ?? "").includes("이자")) && !ticker);
       rows.push({
         month,
         date: l.date || "",
         source,
         ticker,
         name,
-        amount: l.amount,
+        amount,
+        dividendPerShare,
         yieldRate,
+        costBasis: costBasis > 0 ? costBasis : undefined,
         accountId: l.toAccountId,
         accountName: account?.name,
-        quantity: quantityAtDate
+        quantity: quantityAtDate,
+        isInterest
       });
     }
     return rows.sort((a, b) => b.date.localeCompare(a.date)); // 최신순
-  }, [ledger, trades, prices, accounts, tickerDatabase]);
+  }, [deferredLedger, deferredTrades, prices, accounts, tickerDatabase, adjustedPrices, historicalDailyCloses, fxRate, latestPriceByCanonicalTicker]);
 
   const monthlyTotal = useMemo(() => {
     const map = new Map<string, number>();
@@ -503,10 +607,19 @@ export const DividendsView: React.FC<Props> = ({ accounts, ledger, trades, price
     return Array.from(map.entries()).sort((a, b) => b[0].localeCompare(a[0])); // 최신 월이 위로
   }, [incomeRows]);
 
-  // 종목별 합계 계산
+  // 배당과 이자 분리 (ledger category/description 기준 이자면 배당 테이블에 노출 안 함)
+  const dividendRows = useMemo(() => {
+    return incomeRows.filter(r => !r.isInterest && (r.source.includes("배당") || !!r.ticker));
+  }, [incomeRows]);
+
+  const interestRows = useMemo(() => {
+    return incomeRows.filter(r => !!r.isInterest);
+  }, [incomeRows]);
+
+  // 종목별 합계 계산 (배당만)
   const byTicker = useMemo(() => {
     const map = new Map<string, { ticker: string; name: string; total: number; count: number }>();
-    incomeRows.forEach((r) => {
+    dividendRows.forEach((r) => {
       if (!r.ticker) return;
       const key = canonicalTickerForMatch(r.ticker);
       const existing = map.get(key);
@@ -525,16 +638,7 @@ export const DividendsView: React.FC<Props> = ({ accounts, ledger, trades, price
     });
     return Array.from(map.values())
       .sort((a, b) => b.total - a.total);
-  }, [incomeRows]);
-
-  // 배당과 이자 분리
-  const dividendRows = useMemo(() => {
-    return incomeRows.filter(r => r.source.includes("배당") || (r.ticker && !r.source.includes("이자")));
-  }, [incomeRows]);
-  
-  const interestRows = useMemo(() => {
-    return incomeRows.filter(r => r.source.includes("이자") || (!r.ticker && r.source.includes("이자")));
-  }, [incomeRows]);
+  }, [dividendRows]);
 
   const totalDividend = useMemo(() => {
     return dividendRows.reduce((s, r) => s + r.amount, 0);
@@ -544,14 +648,44 @@ export const DividendsView: React.FC<Props> = ({ accounts, ledger, trades, price
     return interestRows.reduce((s, r) => s + r.amount, 0);
   }, [interestRows]);
 
+  const byMonthInterest = useMemo(() => {
+    const map = new Map<string, DividendRow[]>();
+    interestRows.forEach((r) => {
+      const list = map.get(r.month) ?? [];
+      list.push(r);
+      map.set(r.month, list);
+    });
+    return Array.from(map.entries()).sort((a, b) => b[0].localeCompare(a[0]));
+  }, [interestRows]);
+
+  const monthlyDividendTotal = useMemo(() => {
+    const map = new Map<string, number>();
+    dividendRows.forEach((r) => {
+      map.set(r.month, (map.get(r.month) ?? 0) + r.amount);
+    });
+    return Array.from(map.entries())
+      .map(([month, total]) => ({ month, total }))
+      .sort((a, b) => b.month.localeCompare(a.month));
+  }, [dividendRows]);
+
+  const monthlyInterestTotal = useMemo(() => {
+    const map = new Map<string, number>();
+    interestRows.forEach((r) => {
+      map.set(r.month, (map.get(r.month) ?? 0) + r.amount);
+    });
+    return Array.from(map.entries())
+      .map(([month, total]) => ({ month, total }))
+      .sort((a, b) => b.month.localeCompare(a.month));
+  }, [interestRows]);
+
   return (
     <div>
       <div className="section-header">
         <h2>배당/이자 (수입)</h2>
       </div>
 
-      {/* 탭 버튼 */}
-      <div style={{ display: "flex", gap: 8, marginBottom: 16 }}>
+      {/* 입력 탭: 배당 입력 / 이자 입력 */}
+      <div style={{ display: "flex", gap: 8, marginBottom: 12 }}>
         <button
           type="button"
           className={activeTab === "dividend" ? "primary" : ""}
@@ -570,6 +704,34 @@ export const DividendsView: React.FC<Props> = ({ accounts, ledger, trades, price
         </button>
       </div>
 
+      {/* 보기 탭: 전체 / 배당만 / 이자만 */}
+      <div style={{ display: "flex", gap: 8, marginBottom: 16 }}>
+        <button
+          type="button"
+          className={viewMode === "all" ? "primary" : ""}
+          onClick={() => setViewMode("all")}
+          style={{ padding: "6px 14px", fontSize: 13 }}
+        >
+          전체 보기
+        </button>
+        <button
+          type="button"
+          className={viewMode === "dividend" ? "primary" : ""}
+          onClick={() => setViewMode("dividend")}
+          style={{ padding: "6px 14px", fontSize: 13 }}
+        >
+          배당만 보기
+        </button>
+        <button
+          type="button"
+          className={viewMode === "interest" ? "primary" : ""}
+          onClick={() => setViewMode("interest")}
+          style={{ padding: "6px 14px", fontSize: 13 }}
+        >
+          이자만 보기
+        </button>
+      </div>
+
       {/* 배당 입력 폼 */}
       {activeTab === "dividend" && (
         <>
@@ -583,8 +745,8 @@ export const DividendsView: React.FC<Props> = ({ accounts, ledger, trades, price
               <div style={{ display: "flex", flexWrap: "wrap", gap: 8 }}>
                 {recentDividends.map((recent, idx) => {
                   const pos = positions.find((p) => canonicalTickerForMatch(p.ticker) === canonicalTickerForMatch(recent.ticker));
-                  // 통화 정보 가져오기 (StocksView와 동일한 방식)
-                  const originalPriceInfo = prices.find((p) => canonicalTickerForMatch(p.ticker) === canonicalTickerForMatch(recent.ticker));
+                  // 통화 정보 가져오기 (최신 시세 기준)
+                  const originalPriceInfo = latestPriceByCanonicalTicker.get(canonicalTickerForMatch(recent.ticker));
                   let currency = originalPriceInfo?.currency;
                   if (!currency) {
                     const tickerInfo = tickerDatabase.find((t) => canonicalTickerForMatch(t.ticker) === canonicalTickerForMatch(recent.ticker));
@@ -667,13 +829,22 @@ export const DividendsView: React.FC<Props> = ({ accounts, ledger, trades, price
             <form onSubmit={handleDividendSubmit}>
             <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(200px, 1fr))", gap: "10px 12px" }}>
               <label style={{ display: "flex", flexDirection: "column", gap: 4 }}>
-                <span style={{ fontSize: 13, fontWeight: 500 }}>날짜</span>
+                <span style={{ fontSize: 13, fontWeight: 500 }}>날짜 (수령일)</span>
                 <input
                   type="date"
                   value={dividendForm.date}
                   onChange={(e) => setDividendForm({ ...dividendForm, date: e.target.value })}
                   style={{ padding: "6px 8px", fontSize: 14 }}
                   required
+                />
+              </label>
+              <label style={{ display: "flex", flexDirection: "column", gap: 4 }}>
+                <span style={{ fontSize: 13, fontWeight: 500 }}>배당락일 <span style={{ fontWeight: 400, color: "var(--text-muted)" }}>(선택, 배당율 계산용)</span></span>
+                <input
+                  type="date"
+                  value={dividendForm.exDate}
+                  onChange={(e) => setDividendForm({ ...dividendForm, exDate: e.target.value })}
+                  style={{ padding: "6px 8px", fontSize: 14 }}
                 />
               </label>
               <label style={{ display: "flex", flexDirection: "column", gap: 4 }}>
@@ -721,12 +892,15 @@ export const DividendsView: React.FC<Props> = ({ accounts, ledger, trades, price
                     />
                   </label>
                   <label style={{ display: "flex", flexDirection: "column", gap: 4 }}>
-                    <span style={{ fontSize: 13, fontWeight: 500 }}>보유 수량</span>
+                    <span style={{ fontSize: 13, fontWeight: 500 }}>보유 수량 <span style={{ fontWeight: 400, color: "var(--text-muted)" }}>(기본: 해당 종목 보유, 수정 가능)</span></span>
                     <input
-                      type="text"
-                      value={`${selectedPosition.quantity}주`}
-                      disabled
-                      style={{ padding: "6px 8px", fontSize: 14, backgroundColor: "#f5f5f5" }}
+                      type="number"
+                      min={0}
+                      step={1}
+                      value={dividendForm.quantity}
+                      onChange={(e) => setDividendForm({ ...dividendForm, quantity: e.target.value })}
+                      placeholder={String(selectedPosition.quantity)}
+                      style={{ padding: "6px 8px", fontSize: 14 }}
                     />
                   </label>
                   <label style={{ display: "flex", flexDirection: "column", gap: 4 }}>
@@ -899,33 +1073,57 @@ export const DividendsView: React.FC<Props> = ({ accounts, ledger, trades, price
 
 
       <div className="cards-row">
-        <div className="card highlight">
-          <div className="card-title">전체 누적</div>
-          <div className="card-value">
-            {formatKRW(Math.round(incomeRows.reduce((s, r) => s + r.amount, 0)))}
+        {(viewMode === "all" || viewMode === "dividend") && (
+          <div className={viewMode === "dividend" ? "card highlight" : "card"}>
+            <div className="card-title">배당 총액</div>
+            <div className="card-value positive">
+              {formatKRW(Math.round(totalDividend))}
+            </div>
           </div>
-        </div>
-        <div className="card">
-          <div className="card-title">배당 총액</div>
-          <div className="card-value positive">
-            {formatKRW(Math.round(totalDividend))}
+        )}
+        {(viewMode === "all" || viewMode === "interest") && (
+          <div className={viewMode === "interest" ? "card highlight" : "card"}>
+            <div className="card-title">이자 총액</div>
+            <div className="card-value positive">
+              {formatKRW(Math.round(totalInterest))}
+            </div>
           </div>
-        </div>
-        <div className="card">
-          <div className="card-title">이자 총액</div>
-          <div className="card-value positive">
-            {formatKRW(Math.round(totalInterest))}
+        )}
+        {viewMode === "all" && (
+          <>
+            <div className="card">
+              <div className="card-title">전체 누적</div>
+              <div className="card-value">
+                {formatKRW(Math.round(incomeRows.reduce((s, r) => s + r.amount, 0)))}
+              </div>
+            </div>
+            <div className="card">
+              <div className="card-title">최근 월 합계</div>
+              <div className="card-value">
+                {formatKRW(Math.round(monthlyTotal[0]?.total ?? 0))}
+              </div>
+            </div>
+          </>
+        )}
+        {viewMode === "dividend" && (
+          <div className="card">
+            <div className="card-title">최근 월 배당</div>
+            <div className="card-value">
+              {formatKRW(Math.round(monthlyDividendTotal[0]?.total ?? 0))}
+            </div>
           </div>
-        </div>
-        <div className="card">
-          <div className="card-title">최근 월 합계</div>
-          <div className="card-value">
-            {formatKRW(Math.round(monthlyTotal[0]?.total ?? 0))}
+        )}
+        {viewMode === "interest" && (
+          <div className="card">
+            <div className="card-title">최근 월 이자</div>
+            <div className="card-value">
+              {formatKRW(Math.round(monthlyInterestTotal[0]?.total ?? 0))}
+            </div>
           </div>
-        </div>
+        )}
       </div>
 
-      {byTicker.length > 0 && (
+      {(viewMode === "all" || viewMode === "dividend") && byTicker.length > 0 && (
         <>
           <h3>종목별 누적 배당</h3>
           <table className="data-table compact">
@@ -953,43 +1151,79 @@ export const DividendsView: React.FC<Props> = ({ accounts, ledger, trades, price
         </>
       )}
 
-      <h3>월별 합계</h3>
-      <table className="data-table compact">
-        <thead>
-          <tr>
-            <th>월</th>
-            <th>총액</th>
-          </tr>
-        </thead>
-        <tbody>
-          {monthlyTotal.map((row) => (
-            <tr key={row.month}>
-              <td style={{ fontWeight: 500 }}>{row.month}</td>
-              <td className="number positive" style={{ fontWeight: 600, fontSize: 15 }}>
-                {formatKRW(Math.round(row.total))}
-              </td>
-            </tr>
-          ))}
-          {monthlyTotal.length === 0 && (
-            <tr>
-              <td colSpan={2} style={{ textAlign: "center" }}>
-                배당/이자 내역이 없습니다.
-              </td>
-            </tr>
-          )}
-        </tbody>
-      </table>
+      {(viewMode === "all" || viewMode === "dividend") && (
+        <>
+          <h3>{viewMode === "dividend" ? "월별 배당 합계" : "월별 합계"}</h3>
+          <table className="data-table compact">
+            <thead>
+              <tr>
+                <th>월</th>
+                <th>총액</th>
+              </tr>
+            </thead>
+            <tbody>
+              {(viewMode === "all" ? monthlyTotal : monthlyDividendTotal).map((row) => (
+                <tr key={row.month}>
+                  <td style={{ fontWeight: 500 }}>{row.month}</td>
+                  <td className="number positive" style={{ fontWeight: 600, fontSize: 15 }}>
+                    {formatKRW(Math.round(row.total))}
+                  </td>
+                </tr>
+              ))}
+              {(viewMode === "all" ? monthlyTotal : monthlyDividendTotal).length === 0 && (
+                <tr>
+                  <td colSpan={2} style={{ textAlign: "center" }}>
+                    {viewMode === "dividend" ? "배당 내역이 없습니다." : "배당/이자 내역이 없습니다."}
+                  </td>
+                </tr>
+              )}
+            </tbody>
+          </table>
+        </>
+      )}
 
+      {viewMode === "interest" && (
+        <>
+          <h3>월별 이자 합계</h3>
+          <table className="data-table compact">
+            <thead>
+              <tr>
+                <th>월</th>
+                <th>이자 합계</th>
+              </tr>
+            </thead>
+            <tbody>
+              {monthlyInterestTotal.map((row) => (
+                <tr key={row.month}>
+                  <td style={{ fontWeight: 500 }}>{row.month}</td>
+                  <td className="number positive" style={{ fontWeight: 600, fontSize: 15 }}>
+                    {formatKRW(Math.round(row.total))}
+                  </td>
+                </tr>
+              ))}
+              {monthlyInterestTotal.length === 0 && (
+                <tr>
+                  <td colSpan={2} style={{ textAlign: "center" }}>
+                    이자 내역이 없습니다.
+                  </td>
+                </tr>
+              )}
+            </tbody>
+          </table>
+        </>
+      )}
+
+      {(viewMode === "all" || viewMode === "dividend") && (
+        <>
       <h3 style={{ marginTop: 16 }}>월별 종목별 배당 내역</h3>
       {byMonthSource.length === 0 ? (
         <p className="hint" style={{ textAlign: "center", padding: 20 }}>
-          배당/이자 내역이 없습니다.
+          배당 내역이 없습니다.
         </p>
       ) : (
         byMonthSource.map(([month, rows]) => {
-          const monthTotal = rows.reduce((sum, r) => sum + r.amount, 0);
-          const dividendRows = rows.filter(r => r.ticker || r.source.includes("배당"));
-          const interestRows = rows.filter(r => !r.ticker && r.source.includes("이자"));
+          const dividendRowsInMonth = rows.filter(r => !r.isInterest && (r.ticker || r.source.includes("배당")));
+          const monthDividendTotal = dividendRowsInMonth.reduce((sum, r) => sum + r.amount, 0);
           
           return (
             <div key={month} style={{ marginBottom: 32 }}>
@@ -1003,26 +1237,28 @@ export const DividendsView: React.FC<Props> = ({ accounts, ledger, trades, price
               }}>
                 <h4 style={{ margin: 0, fontSize: 18, fontWeight: 600 }}>{month}</h4>
                 <div style={{ fontSize: 16, fontWeight: 600, color: "#10b981" }}>
-                  합계: {formatKRW(Math.round(monthTotal))}
+                  배당 합계: {formatKRW(Math.round(monthDividendTotal))}
                 </div>
               </div>
               
-              {dividendRows.length > 0 && (
+              {dividendRowsInMonth.length > 0 && (
                 <table className="data-table" style={{ marginBottom: 16, tableLayout: "fixed" }}>
                   <thead>
                     <tr>
-                      <th style={{ width: "10%", minWidth: 80 }}>날짜</th>
-                      <th style={{ width: "10%", minWidth: 70 }}>티커</th>
-                      <th style={{ width: "25%", minWidth: 140 }}>종목명</th>
-                      <th style={{ width: "10%" }}>보유주식</th>
-                      <th style={{ width: "15%" }}>배당금액</th>
-                      <th style={{ width: "10%" }}>배당율</th>
-                      <th style={{ width: "12%" }}>계좌</th>
-                      <th style={{ width: "8%" }}></th>
+                      <th style={{ width: "9%", minWidth: 80 }}>날짜</th>
+                      <th style={{ width: "9%", minWidth: 70 }}>티커</th>
+                      <th style={{ width: "16%", minWidth: 120 }}>종목명</th>
+                      <th style={{ width: "10%" }}>평단가</th>
+                      <th style={{ width: "10%" }}>주당배당금</th>
+                      <th style={{ width: "8%" }}>보유주수</th>
+                      <th style={{ width: "11%" }}>총 배당금</th>
+                      <th style={{ width: "16%" }}>배당율(매입대비)</th>
+                      <th style={{ width: "10%" }}>계좌</th>
+                      <th style={{ width: "5%" }}></th>
                     </tr>
                   </thead>
                   <tbody>
-                    {dividendRows.map((r, idx) => {
+                    {dividendRowsInMonth.map((r, idx) => {
                       const tickerName = r.name ?? (r.source.includes(" - ") ? r.source.split(" - ")[1] : "");
                       const displayName = tickerName.length > 30 ? tickerName.slice(0, 30) + "..." : tickerName;
                       // 해당 배당 기록 찾기
@@ -1220,6 +1456,20 @@ export const DividendsView: React.FC<Props> = ({ accounts, ledger, trades, price
                               <span>{displayName || "-"}</span>
                             )}
                           </td>
+                          <td className="number" title={r.costBasis != null && r.quantity != null && r.quantity > 0 ? `매입금액 ${formatKRW(Math.round(r.costBasis))} ÷ ${r.quantity}주` : ""}>
+                            {r.costBasis != null && r.quantity != null && r.quantity > 0
+                              ? formatKRW(Math.round(r.costBasis / r.quantity))
+                              : "-"}
+                          </td>
+                          <td className="number" style={{ position: "relative" }}>
+                            {isEditing ? (() => {
+                              const q = Number(editingQuantity) || 0;
+                              const a = Number(editingAmount) || 0;
+                              return q > 0 ? formatKRW(Math.round(a / q)) : "-";
+                            })() : (
+                              r.dividendPerShare != null ? formatKRW(Math.round(r.dividendPerShare)) : "-"
+                            )}
+                          </td>
                           <td 
                             className="number"
                             style={{ position: "relative" }}
@@ -1248,7 +1498,7 @@ export const DividendsView: React.FC<Props> = ({ accounts, ledger, trades, price
                                   textAlign: "right"
                                 }}
                                 onClick={(e) => e.stopPropagation()}
-                                placeholder="보유주식"
+                                placeholder="보유주수"
                                 min={0}
                                 step={1}
                               />
@@ -1287,7 +1537,7 @@ export const DividendsView: React.FC<Props> = ({ accounts, ledger, trades, price
                                   textAlign: "right"
                                 }}
                                 onClick={(e) => e.stopPropagation()}
-                                placeholder="배당금액"
+                                placeholder="총 배당금"
                                 min={0}
                                 step={0.01}
                               />
@@ -1295,8 +1545,27 @@ export const DividendsView: React.FC<Props> = ({ accounts, ledger, trades, price
                               <span>{formatKRW(Math.round(r.amount))}</span>
                             )}
                           </td>
-                          <td className="number">
-                            {r.yieldRate != null ? `${(r.yieldRate * 100).toFixed(2)}%` : "-"}
+                          <td className="number" style={{ whiteSpace: "nowrap" }}>
+                            {isEditing ? (() => {
+                              const q = Number(editingQuantity) || 0;
+                              const a = Number(editingAmount) || 0;
+                              const tickerForPrice = editingTicker.trim().toUpperCase() || currentTicker || r.ticker;
+                              const pos = tickerForPrice ? positions.find((p) => canonicalTickerForMatch(p.ticker) === canonicalTickerForMatch(tickerForPrice)) : null;
+                              const priceKrw = pos?.marketPrice;
+                              if (q <= 0 || a <= 0 || !priceKrw || priceKrw <= 0) return "-";
+                              const dps = a / q;
+                              const yieldPct = (dps / priceKrw) * 100;
+                              return `${yieldPct.toFixed(2)}%`;
+                            })() : r.yieldRate != null ? (
+                              <span title={`매입금액 ${r.costBasis != null ? formatKRW(Math.round(r.costBasis)) : "?"} ÷ 배당금 ${formatKRW(Math.round(r.amount))} = ${(r.yieldRate * 100).toFixed(2)}%`}>
+                                <span style={{ fontWeight: 600 }}>{(r.yieldRate * 100).toFixed(2)}%</span>
+                                {r.costBasis != null && (
+                                  <div className="hint" style={{ fontSize: 10, marginTop: 2 }}>
+                                    매입 {formatKRW(Math.round(r.costBasis))} 기준
+                                  </div>
+                                )}
+                              </span>
+                            ) : "-"}
                           </td>
                           <td style={{ fontSize: 13, color: "#666", position: "relative" }}>
                             {isEditing ? (
@@ -1408,89 +1677,199 @@ export const DividendsView: React.FC<Props> = ({ accounts, ledger, trades, price
                   </tbody>
                 </table>
               )}
-              
-              {interestRows.length > 0 && (
-                <table className="data-table">
-                  <thead>
-                    <tr>
-                      <th style={{ width: "10%" }}>날짜</th>
-                      <th style={{ width: "35%" }}>출처</th>
-                      <th style={{ width: "25%" }}>이자금액</th>
-                      <th style={{ width: "20%" }}>계좌</th>
-                      <th style={{ width: "10%" }}></th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {interestRows.map((r, idx) => {
-                      const ledgerEntry = ledger.find(l => {
-                        if (l.kind !== "income") return false;
-                        const lMonth = l.date?.slice(0, 7) || "기타";
-                        if (lMonth !== month) return false;
-                        return (l.description || l.category || "") === r.source && Math.abs(l.amount - r.amount) < 1;
-                      });
-                      
-                      return (
-                        <tr key={`${month}-interest-${idx}`}>
-                          <td style={{ fontSize: 13, color: "#666" }}>
-                            {r.date ? formatShortDate(r.date) : "-"}
-                          </td>
-                          <td style={{
-                            overflow: "hidden",
-                            textOverflow: "ellipsis",
-                            whiteSpace: "nowrap",
-                            maxWidth: "300px"
-                          }} title={r.source}>
-                            {r.source.length > 40 ? r.source.slice(0, 40) + "..." : r.source}
-                          </td>
-                          <td className="number positive" style={{ fontWeight: 600, fontSize: 15 }}>
-                            {formatKRW(Math.round(r.amount))}
-                          </td>
-                          <td style={{ fontSize: 13, color: "#666" }}>
-                            {r.accountName || r.accountId || "-"}
-                          </td>
-                          <td style={{ textAlign: "center" }}>
-                            {ledgerEntry && (
+            </div>
+          );
+        })
+      )}
+        </>
+      )}
+
+      {(viewMode === "all" || viewMode === "interest") && (
+        <>
+      <h3 style={{ marginTop: viewMode === "interest" ? 0 : 24 }}>월별 이자 내역</h3>
+      {byMonthInterest.length === 0 ? (
+        <p className="hint" style={{ textAlign: "center", padding: 20 }}>
+          이자 내역이 없습니다.
+        </p>
+      ) : (
+        byMonthInterest.map(([month, rows]) => {
+          const monthInterestTotal = rows.reduce((s, r) => s + r.amount, 0);
+          return (
+            <div key={month} style={{ marginBottom: 32 }}>
+              <div style={{
+                display: "flex",
+                justifyContent: "space-between",
+                alignItems: "center",
+                marginBottom: 12,
+                paddingBottom: 8,
+                borderBottom: "2px solid var(--border)"
+              }}>
+                <h4 style={{ margin: 0, fontSize: 18, fontWeight: 600 }}>{month}</h4>
+                <div style={{ fontSize: 16, fontWeight: 600, color: "#10b981" }}>
+                  이자 합계: {formatKRW(Math.round(monthInterestTotal))}
+                </div>
+              </div>
+              <table className="data-table" style={{ tableLayout: "fixed" }}>
+                <thead>
+                  <tr>
+                    <th style={{ width: "12%" }}>날짜</th>
+                    <th style={{ width: "38%" }}>출처</th>
+                    <th style={{ width: "20%" }}>이자금액</th>
+                    <th style={{ width: "18%" }}>계좌</th>
+                    <th style={{ width: "12%" }}></th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {rows.map((r, idx) => {
+                    const ledgerEntry = ledger.find(l => {
+                      if (l.kind !== "income") return false;
+                      const isInterestEntry = (l.category ?? "") === "이자" || (l.description ?? "").includes("이자");
+                      if (!isInterestEntry) return false;
+                      const lMonth = l.date?.slice(0, 7) || "기타";
+                      if (lMonth !== month) return false;
+                      const lSource = l.description || l.category || "기타";
+                      return lSource === r.source && Math.abs(l.amount - r.amount) < 1;
+                    });
+                    const isEditing = ledgerEntry && editingEntryId === ledgerEntry.id;
+                    const handleSaveInterestEdit = (e?: React.FocusEvent) => {
+                      if (!ledgerEntry) return;
+                      if (e?.relatedTarget) {
+                        const relatedTarget = e.relatedTarget as HTMLElement;
+                        const isSameRow = relatedTarget.closest("tr") === e.currentTarget.closest("tr") &&
+                          ["INPUT", "TEXTAREA", "SELECT"].includes(relatedTarget.tagName);
+                        if (isSameRow) return;
+                      }
+                      const newDate = editingDate || ledgerEntry.date || "";
+                      const newDescription = ((editingName ?? ledgerEntry.description ?? "").trim() || (ledgerEntry.description ?? ""));
+                      const newAmount = editingAmount ? Number(editingAmount) : ledgerEntry.amount;
+                      const newToAccountId = editingAccountId ?? ledgerEntry.toAccountId ?? "";
+                      const newLedger = ledger.map(l =>
+                        l.id === ledgerEntry.id
+                          ? { ...l, date: newDate, description: newDescription, amount: newAmount, toAccountId: newToAccountId }
+                          : l
+                      );
+                      onChangeLedger(newLedger);
+                      toast.success("이자 기록이 수정되었습니다.");
+                      setEditingEntryId(null);
+                      setEditingDate("");
+                      setEditingAmount("");
+                      setEditingAccountId("");
+                      setEditingName("");
+                    };
+                    const cancelInterestEdit = () => {
+                      setEditingEntryId(null);
+                      setEditingDate("");
+                      setEditingAmount("");
+                      setEditingAccountId("");
+                      setEditingName("");
+                    };
+                    return (
+                      <tr key={`${month}-interest-${idx}`}>
+                        <td style={{ fontSize: 13, color: "#666", position: "relative" }}>
+                          {isEditing ? (
+                            <input
+                              type="date"
+                              value={editingDate}
+                              onChange={(e) => setEditingDate(e.target.value)}
+                              onBlur={handleSaveInterestEdit}
+                              onKeyDown={(e) => { if (e.key === "Escape") cancelInterestEdit(); }}
+                              style={{ width: "100%", padding: "4px 8px", fontSize: 13, border: "1px solid var(--accent)", borderRadius: 4, backgroundColor: "var(--surface)" }}
+                            />
+                          ) : (
+                            r.date ? formatShortDate(r.date) : "-"
+                          )}
+                        </td>
+                        <td style={{ position: "relative", overflow: "hidden", textOverflow: "ellipsis" }}>
+                          {isEditing ? (
+                            <input
+                              type="text"
+                              value={editingName}
+                              onChange={(e) => setEditingName(e.target.value)}
+                              onBlur={handleSaveInterestEdit}
+                              onKeyDown={(e) => { if (e.key === "Escape") cancelInterestEdit(); }}
+                              placeholder="출처/설명"
+                              style={{ width: "100%", padding: "4px 8px", fontSize: 13, border: "1px solid var(--accent)", borderRadius: 4, backgroundColor: "var(--surface)" }}
+                            />
+                          ) : (
+                            <span title={r.source}>{r.source.length > 40 ? r.source.slice(0, 40) + "..." : r.source}</span>
+                          )}
+                        </td>
+                        <td className="number positive" style={{ fontWeight: 600, fontSize: 15, position: "relative" }}>
+                          {isEditing ? (
+                            <input
+                              type="number"
+                              value={editingAmount}
+                              onChange={(e) => setEditingAmount(e.target.value)}
+                              onBlur={handleSaveInterestEdit}
+                              onKeyDown={(e) => { if (e.key === "Escape") cancelInterestEdit(); }}
+                              style={{ width: "100%", padding: "4px 8px", fontSize: 13, border: "1px solid var(--accent)", borderRadius: 4, backgroundColor: "var(--surface)", textAlign: "right" }}
+                            />
+                          ) : (
+                            formatKRW(Math.round(r.amount))
+                          )}
+                        </td>
+                        <td style={{ fontSize: 13, color: "#666", position: "relative" }}>
+                          {isEditing ? (
+                            <select
+                              value={editingAccountId}
+                              onChange={(e) => setEditingAccountId(e.target.value)}
+                              onBlur={handleSaveInterestEdit}
+                              onKeyDown={(e) => { if (e.key === "Escape") cancelInterestEdit(); }}
+                              style={{ width: "100%", padding: "4px 8px", fontSize: 13, border: "1px solid var(--accent)", borderRadius: 4, backgroundColor: "var(--surface)" }}
+                            >
+                              <option value="">선택</option>
+                              {accounts.map((acc) => (
+                                <option key={acc.id} value={acc.id}>{acc.name || acc.id}</option>
+                              ))}
+                            </select>
+                          ) : (
+                            r.accountName || r.accountId || "-"
+                          )}
+                        </td>
+                        <td style={{ textAlign: "center" }}>
+                          {ledgerEntry && (
+                            <div style={{ display: "flex", gap: 4, justifyContent: "center", alignItems: "center" }}>
+                              {!isEditing ? (
+                                <button
+                                  type="button"
+                                  onClick={() => {
+                                    setEditingEntryId(ledgerEntry.id);
+                                    setEditingDate(ledgerEntry.date || r.date || "");
+                                    setEditingName(ledgerEntry.description ?? r.source);
+                                    setEditingAmount(ledgerEntry.amount.toString());
+                                    setEditingAccountId(ledgerEntry.toAccountId ?? r.accountId ?? "");
+                                  }}
+                                  style={{ background: "none", border: "1px solid var(--border)", color: "var(--accent)", cursor: "pointer", fontSize: 12, padding: "4px 8px", borderRadius: 4 }}
+                                  title="수정"
+                                >
+                                  ✏️
+                                </button>
+                              ) : null}
                               <button
                                 type="button"
                                 onClick={() => {
                                   if (confirm(`이 이자 기록을 삭제하시겠습니까?\n${r.source}: ${formatKRW(Math.round(r.amount))}`)) {
-                                    const newLedger = ledger.filter(l => l.id !== ledgerEntry.id);
-                                    onChangeLedger(newLedger);
+                                    onChangeLedger(ledger.filter(l => l.id !== ledgerEntry.id));
                                   }
                                 }}
-                                style={{
-                                  background: "none",
-                                  border: "none",
-                                  color: "#ef4444",
-                                  cursor: "pointer",
-                                  fontSize: 18,
-                                  padding: "4px 8px",
-                                  borderRadius: 4,
-                                  display: "inline-flex",
-                                  alignItems: "center",
-                                  justifyContent: "center"
-                                }}
-                                onMouseEnter={(e) => {
-                                  e.currentTarget.style.backgroundColor = "#fee2e2";
-                                }}
-                                onMouseLeave={(e) => {
-                                  e.currentTarget.style.backgroundColor = "transparent";
-                                }}
+                                style={{ background: "none", border: "none", color: "#ef4444", cursor: "pointer", fontSize: 18, padding: "4px 8px" }}
                                 title="삭제"
                               >
                                 ×
                               </button>
-                            )}
-                          </td>
-                        </tr>
-                      );
-                    })}
-                  </tbody>
-                </table>
-              )}
+                            </div>
+                          )}
+                        </td>
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
             </div>
           );
         })
+      )}
+        </>
       )}
     </div>
   );

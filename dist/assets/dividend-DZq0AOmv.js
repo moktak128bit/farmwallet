@@ -1,0 +1,2 @@
+function i(r){if(!r||typeof r!="string")return null;const n=r.match(/배당락일\s*:\s*(\d{4}-\d{2}-\d{2})/);return n?n[1]:null}function t(r){if(!r||typeof r!="string")return null;const n=r.match(/보유주식\s*:\s*(\d+)/);return n?parseInt(n[1],10):null}function u(r,n){const s=[];return r!=null&&Number.isInteger(r)&&r>=0&&s.push(`보유주식: ${r}`),n!=null&&n.trim()&&s.push(`배당락일:${n.trim()}`),s.length>0?s.join(`
+`):void 0}export{i as a,u as b,t as p};

@@ -1,5 +1,5 @@
 import { useEffect } from "react";
-import type { TabId } from "../components/Tabs";
+import type { TabId } from "../components/ui/Tabs";
 import { TAB_ORDER } from "../constants/tabs";
 
 interface UseKeyboardShortcutsOptions {

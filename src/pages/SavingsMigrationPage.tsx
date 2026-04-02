@@ -10,7 +10,7 @@ interface Props {
 const TARGET_CATEGORY = "저축성지출";
 const RECHECK_CATEGORY = "재테크";
 
-/** 이 세부 항목은 재테크에서 "저축"으로, 나머지는 "투자"로 매핑 */
+/** 이 중분류는 재테크에서 "저축"으로, 나머지는 "투자"로 매핑 */
 const SUB_TO_SAVINGS: ReadonlySet<string> = new Set([
   "예금",
   "적금",
@@ -139,11 +139,13 @@ export const SavingsMigrationView: React.FC<Props> = ({ data, onChangeData }) =>
     const typeLabel =
       a.type === "securities"
         ? "증권"
-        : a.type === "savings"
-          ? "저축"
-          : a.type === "checking"
-            ? "입출금"
-            : a.type;
+        : a.type === "crypto"
+          ? "암호화폐"
+          : a.type === "savings"
+            ? "저축"
+            : a.type === "checking"
+              ? "입출금"
+              : a.type;
     return `${a.name || a.id} (${a.institution || "-"}) [${typeLabel}]`;
   };
 
@@ -158,7 +160,7 @@ export const SavingsMigrationView: React.FC<Props> = ({ data, onChangeData }) =>
       ) : (
         <>
           <p style={{ margin: "0 0 16px", fontSize: 13, color: "var(--text-muted)" }}>
-            대상 <strong>{targetEntries.length}건</strong>. 출금 계좌를 농협으로 통일하고, 세부 항목별 입금 계좌를 지정한 뒤 일괄 적용합니다.
+            대상 <strong>{targetEntries.length}건</strong>. 출금 계좌를 농협으로 통일하고, 중분류별 입금 계좌를 지정한 뒤 일괄 적용합니다.
           </p>
 
       <div style={{ marginBottom: 20 }}>
@@ -186,12 +188,12 @@ export const SavingsMigrationView: React.FC<Props> = ({ data, onChangeData }) =>
 
       <div style={{ marginBottom: 20 }}>
         <div style={{ marginBottom: 8, fontSize: 13, fontWeight: 600 }}>
-          세부 항목별 입금 계좌
+          중분류별 입금 계좌
         </div>
         <table className="data-table" style={{ fontSize: 13 }}>
           <thead>
             <tr>
-              <th style={{ textAlign: "left" }}>세부 항목</th>
+              <th style={{ textAlign: "left" }}>중분류</th>
               <th style={{ textAlign: "left" }}>입금 계좌</th>
             </tr>
           </thead>
@@ -216,6 +218,7 @@ export const SavingsMigrationView: React.FC<Props> = ({ data, onChangeData }) =>
                         (a) =>
                           a.type === "savings" ||
                           a.type === "securities" ||
+                          a.type === "crypto" ||
                           a.type === "checking"
                       )
                       .map((a) => (
@@ -244,7 +247,7 @@ export const SavingsMigrationView: React.FC<Props> = ({ data, onChangeData }) =>
 
       <h3 style={{ margin: "0 0 12px", fontSize: 16 }}>재테크로 전환</h3>
       <p style={{ margin: "0 0 16px", fontSize: 13, color: "var(--text-muted)" }}>
-        대분류를 <strong>재테크</strong>로, 세부 항목을 <strong>저축</strong> 또는 <strong>투자</strong>로 일괄 변경합니다.
+        대분류를 <strong>재테크</strong>로, 중분류를 <strong>저축</strong> 또는 <strong>투자</strong>로 일괄 변경합니다.
         <br />
         예금·적금·청년도약계좌·주택청약·비상금·빚상환용·기타저축 → 저축, 그 외 → 투자.
       </p>

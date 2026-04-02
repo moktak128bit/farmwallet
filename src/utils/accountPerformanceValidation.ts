@@ -55,7 +55,7 @@ export function calculateAccountPerformance(
   }
 
   // 3. 초기 현금 잔액
-  const initialCash = account.type === "securities" 
+  const initialCash = (account.type === "securities" || account.type === "crypto")
     ? (account.initialCashBalance ?? account.initialBalance ?? 0)
     : 0;
 

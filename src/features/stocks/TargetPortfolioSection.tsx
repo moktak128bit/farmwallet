@@ -5,13 +5,13 @@ import {
   Cell,
   Tooltip,
   Legend,
-  ResponsiveContainer,
   BarChart,
   Bar,
   XAxis,
   YAxis,
   CartesianGrid
 } from "recharts";
+import { DeferredResponsiveContainer as ResponsiveContainer } from "../../components/charts/DeferredResponsiveContainer";
 import type { TargetPortfolio, TargetPortfolioItem, Account } from "../../types";
 import type { StockPrice } from "../../types";
 import type { TickerInfo } from "../../types";
@@ -58,7 +58,7 @@ export const TargetPortfolioSection: React.FC<TargetPortfolioSectionProps> = ({
   fxRate
 }) => {
   const securitiesAccounts = useMemo(
-    () => accounts.filter((a) => a.type === "securities"),
+    () => accounts.filter((a) => a.type === "securities" || a.type === "crypto"),
     [accounts]
   );
 
@@ -487,7 +487,12 @@ export const TargetPortfolioSection: React.FC<TargetPortfolioSectionProps> = ({
                             <Cell key={`target-${index}`} fill={CHART_COLORS[index % CHART_COLORS.length]} />
                           ))}
                         </Pie>
-                        <Tooltip formatter={(value: unknown) => [`${Number(value ?? 0)}%`, ""]} />
+                        <Tooltip
+                          formatter={(value: unknown, name: unknown, item: { payload?: { fullName?: string; name?: string; alias?: string } }) => [
+                            `${Number(value ?? 0)}%`,
+                            item?.payload?.fullName ?? item?.payload?.name ?? item?.payload?.alias ?? (name as string) ?? ""
+                          ]}
+                        />
                         <Legend formatter={(_: string, entry: unknown) => (entry as { payload?: { fullName?: string } })?.payload?.fullName ?? ""} wrapperStyle={{ fontSize: 11 }} />
                       </PieChart>
                     </ResponsiveContainer>
@@ -521,7 +526,12 @@ export const TargetPortfolioSection: React.FC<TargetPortfolioSectionProps> = ({
                             <Cell key={`current-${index}`} fill={CHART_COLORS[index % CHART_COLORS.length]} />
                           ))}
                         </Pie>
-                        <Tooltip formatter={(value: unknown) => [`${Number(value ?? 0)}%`, ""]} />
+                        <Tooltip
+                          formatter={(value: unknown, name: unknown, item: { payload?: { fullName?: string; name?: string; alias?: string } }) => [
+                            `${Number(value ?? 0)}%`,
+                            item?.payload?.fullName ?? item?.payload?.name ?? item?.payload?.alias ?? (name as string) ?? ""
+                          ]}
+                        />
                         <Legend formatter={(_: string, entry: unknown) => (entry as { payload?: { fullName?: string } })?.payload?.fullName ?? ""} wrapperStyle={{ fontSize: 11 }} />
                       </PieChart>
                     </ResponsiveContainer>
@@ -583,8 +593,8 @@ export const TargetPortfolioSection: React.FC<TargetPortfolioSectionProps> = ({
                       </td>
                       <td>{r.targetPercent.toFixed(1)}%</td>
                       <td>{currentPercent.toFixed(1)}%</td>
-                      <td>{formatKRW(Math.round(r.targetValueKRW))}</td>
-                      <td>{formatKRW(Math.round(r.currentValueKRW))}</td>
+                      <td className="number">{formatKRW(Math.round(r.targetValueKRW))}</td>
+                      <td className="number">{formatKRW(Math.round(r.currentValueKRW))}</td>
                       <td>
                         <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
                           <div

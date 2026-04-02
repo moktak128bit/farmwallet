@@ -1,12 +1,13 @@
 import React, { useMemo, useState } from "react";
 import { toast } from "react-hot-toast";
 import { ERROR_MESSAGES } from "../constants/errorMessages";
-import type { Account, BudgetGoal, RecurringExpense, Recurrence, LedgerEntry } from "../types";
+import type { Account, BudgetGoal, CategoryPresets, RecurringExpense, Recurrence, LedgerEntry } from "../types";
 
 interface Props {
   accounts: Account[];
   recurring: RecurringExpense[];
   budgets: BudgetGoal[];
+  categoryPresets: CategoryPresets;
   onChangeRecurring: (next: RecurringExpense[]) => void;
   onChangeBudgets: (next: BudgetGoal[]) => void;
   ledger: LedgerEntry[];
@@ -41,6 +42,7 @@ export const BudgetRecurringView: React.FC<Props> = ({
   accounts,
   recurring,
   budgets,
+  categoryPresets,
   onChangeRecurring,
   onChangeBudgets,
   ledger,
@@ -230,6 +232,14 @@ export const BudgetRecurringView: React.FC<Props> = ({
     });
   };
 
+  // 프리셋 지출 대분류 중 첫 항목 (반복 반영 시 카테고리 비었을 때 사용, 버튼 필터에 잡히도록)
+  const defaultExpenseCategory = useMemo(() => {
+    const list = categoryPresets?.expense;
+    if (!list || list.length === 0) return "(고정지출)";
+    const exceptRecheck = list.filter((c) => c !== "재테크");
+    return exceptRecheck[0] ?? list[0] ?? "(고정지출)";
+  }, [categoryPresets?.expense]);
+
   const generateOccurrencesForMonthFromRecurring = (recurringList: RecurringExpense[], month: string): LedgerEntry[] => {
     const [y, m] = month.split("-").map(Number);
     const monthStart = new Date(y, m - 1, 1);
@@ -244,11 +254,14 @@ export const BudgetRecurringView: React.FC<Props> = ({
 
       const pushIfInMonth = (date: Date) => {
         if (date >= monthStart && date <= monthEnd) {
+          const category =
+            (r.category && r.category.trim()) ||
+            (r.toAccountId ? "저축성지출" : defaultExpenseCategory);
           entries.push({
             id: `L${Date.now()}${Math.random().toString(16).slice(2)}`,
             date: date.toISOString().slice(0, 10),
             kind: r.toAccountId ? "transfer" : "expense",
-            category: r.category || (r.toAccountId ? "저축성지출" : "(고정지출)"),
+            category,
             subCategory: r.title,
             description: r.title,
             amount: r.amount,

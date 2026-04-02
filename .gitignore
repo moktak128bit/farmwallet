@@ -9,6 +9,13 @@ dist/
 *.swp
 *.swo
 *~
+tmp_*
+scripts/text-integrity-report.json
+backups/**
+data/app-data.json
+data/app-data-tables.json
+data/ticker-backup.json
+src/data/krNames.json
 
 
 

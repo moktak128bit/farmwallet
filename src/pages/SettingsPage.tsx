@@ -1,22 +1,29 @@
 import React, { useCallback, useEffect, useState, useMemo, useRef, lazy, Suspense } from "react";
 import { toast } from "react-hot-toast";
-import type { AppData } from "../types";
+import type {
+  AppData,
+  AssetSnapshotAccountBreakdown,
+  AssetSnapshotPoint
+} from "../types";
 import {
   getAllBackupList,
   loadBackupData,
   loadServerBackupData,
+  clearOldBackups,
   getEmptyData,
+  normalizeImportedData,
   saveData,
   type BackupEntry
 } from "../storage";
 import { getKoreaTime } from "../utils/date";
 
-const DataIntegrityView = lazy(() => import("./DataIntegrityView").then((m) => ({ default: m.DataIntegrityView })));
-const SavingsMigrationView = lazy(() => import("./SavingsMigrationView").then((m) => ({ default: m.SavingsMigrationView })));
-const ThemeCustomizer = lazy(() => import("./ThemeCustomizer").then((m) => ({ default: m.ThemeCustomizer })));
+const DataIntegrityView = lazy(() => import("./DataIntegrityPage").then((m) => ({ default: m.DataIntegrityView })));
+const SavingsMigrationView = lazy(() => import("./SavingsMigrationPage").then((m) => ({ default: m.SavingsMigrationView })));
+const ThemeCustomizer = lazy(() => import("../components/ThemeCustomizer").then((m) => ({ default: m.ThemeCustomizer })));
 import { usePWAInstall } from "../hooks/usePWAInstall";
 import { STORAGE_KEYS, ISA_PORTFOLIO } from "../constants/config";
 import { ERROR_MESSAGES } from "../constants/errorMessages";
+import { appDataFromTableBackupPayload, buildTableBackupFile } from "../utils/tableDataBackup";
 
 interface Props {
   data: AppData;
@@ -24,6 +31,8 @@ interface Props {
   backupVersion: number;
   /** 로드 실패 후 백업 복원했을 때 호출 (저장 재활성화) */
   onBackupRestored?: () => void;
+  /** 백업 목록이 변경되었을 때 호출 (헤더 최신화) */
+  onBackupsChanged?: () => void | Promise<void>;
   onNavigateToRecord?: (payload: { type: "ledger" | "trade"; id: string }) => void;
   onNavigateToTab?: (tab: "accounts" | "ledger" | "stocks") => void;
 }
@@ -37,6 +46,192 @@ function migrateWidgetId(id: string): string {
 }
 
 const DASHBOARD_WIDGET_ORDER = ["summary", "assets", "income", "savingsFlow", "budget", "stocks", "portfolio", "targetPortfolio", WIDGET_ID_DIVIDEND_TRACKING, "isa"];
+
+type SnapshotNumericField = Exclude<keyof Omit<AssetSnapshotPoint, "date">, "accountBreakdown">;
+
+const SNAPSHOT_FIELD_BY_LABEL: Record<string, SnapshotNumericField> = {
+  "적금": "installmentSavings",
+  "예금": "termDeposit",
+  "연금저축(원금)": "pensionPrincipal",
+  "연금저축(평가금)": "pensionEvaluation",
+  "투자(매수금)": "investmentBuyAmount",
+  "투자(평가금)": "investmentEvaluationAmount",
+  "가상자산": "cryptoAssets",
+  "배당,이자(누적)": "dividendInterestCumulative",
+  "총자산(매수금)": "totalAssetBuyAmount",
+  "총자산(평가금)": "totalAssetEvaluationAmount",
+  "투자성과": "investmentPerformance"
+};
+
+const SNAPSHOT_NUMERIC_FIELDS: SnapshotNumericField[] = [
+  "installmentSavings",
+  "termDeposit",
+  "pensionPrincipal",
+  "pensionEvaluation",
+  "investmentBuyAmount",
+  "investmentEvaluationAmount",
+  "cryptoAssets",
+  "dividendInterestCumulative",
+  "totalAssetBuyAmount",
+  "totalAssetEvaluationAmount",
+  "investmentPerformance"
+];
+
+function parseNullableNumber(value: unknown): number | null {
+  if (typeof value === "number") {
+    return Number.isFinite(value) ? value : null;
+  }
+  if (typeof value === "string") {
+    const trimmed = value.trim();
+    if (!trimmed || trimmed === "-") return null;
+    const normalized = trimmed.replace(/,/g, "");
+    const parsed = Number(normalized);
+    return Number.isFinite(parsed) ? parsed : null;
+  }
+  return null;
+}
+
+function normalizeSnapshotAccountBreakdown(raw: unknown): AssetSnapshotAccountBreakdown[] {
+  if (!Array.isArray(raw)) return [];
+  const rows: AssetSnapshotAccountBreakdown[] = [];
+  for (const item of raw) {
+    if (!item || typeof item !== "object") continue;
+    const obj = item as Record<string, unknown>;
+    const accountId = String(obj.accountId ?? "").trim();
+    if (!accountId) continue;
+    const accountName = String(obj.accountName ?? accountId).trim() || accountId;
+    const buyAmount = parseNullableNumber(obj.buyAmount);
+    const evaluationAmount = parseNullableNumber(obj.evaluationAmount);
+    if (buyAmount == null || evaluationAmount == null) continue;
+    rows.push({ accountId, accountName, buyAmount, evaluationAmount });
+  }
+  return rows;
+}
+
+function normalizeSnapshotLabel(label: string): string {
+  return label.replace(/\s+/g, "");
+}
+
+function normalizeAssetSnapshots(input: unknown): AssetSnapshotPoint[] | null {
+  if (!Array.isArray(input)) return null;
+  const rows: AssetSnapshotPoint[] = [];
+
+  for (const item of input) {
+    if (!item || typeof item !== "object") continue;
+    const obj = item as Record<string, unknown>;
+    const date = String(obj.date ?? "").trim();
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(date)) continue;
+
+    const row: AssetSnapshotPoint = { date };
+    SNAPSHOT_NUMERIC_FIELDS.forEach((field) => {
+      row[field] = parseNullableNumber(obj[field]);
+    });
+    row.accountBreakdown = normalizeSnapshotAccountBreakdown(obj.accountBreakdown);
+    rows.push(row);
+  }
+
+  rows.sort((a, b) => a.date.localeCompare(b.date));
+  return rows;
+}
+
+function splitTableLine(line: string): string[] {
+  if (line.includes("\t")) {
+    return line.split("\t").map((cell) => cell.trim());
+  }
+  return line.split(/\s{2,}/).map((cell) => cell.trim());
+}
+
+function parseAssetSnapshotTable(text: string): AssetSnapshotPoint[] | null {
+  const lines = text
+    .split(/\r?\n/)
+    .map((line) => line.trim())
+    .filter((line) => line.length > 0);
+  if (lines.length < 2) return null;
+
+  const header = splitTableLine(lines[0]);
+  if (header.length < 2 || !header[0].includes("날짜")) return null;
+  const dates = header.slice(1).map((d) => d.trim()).filter((d) => /^\d{4}-\d{2}-\d{2}$/.test(d));
+  if (dates.length === 0) return null;
+
+  const rows: AssetSnapshotPoint[] = dates.map((date) => ({ date }));
+
+  for (const line of lines.slice(1)) {
+    const cells = splitTableLine(line);
+    if (cells.length < 2) continue;
+    const labelKey = normalizeSnapshotLabel(cells[0]);
+    const field = SNAPSHOT_FIELD_BY_LABEL[labelKey];
+    if (!field) continue;
+
+    dates.forEach((_, index) => {
+      const raw = cells[index + 1] ?? "";
+      rows[index][field] = parseNullableNumber(raw);
+    });
+  }
+
+  rows.sort((a, b) => a.date.localeCompare(b.date));
+  return rows;
+}
+
+function AssetSnapshotEditor({
+  value,
+  onChange
+}: {
+  value: AssetSnapshotPoint[];
+  onChange: (v: AssetSnapshotPoint[]) => void;
+}) {
+  const valueKey = JSON.stringify(value);
+  const [raw, setRaw] = useState(() => JSON.stringify(value, null, 2));
+  const [error, setError] = useState<string | null>(null);
+
+  useEffect(() => {
+    setRaw(JSON.stringify(value, null, 2));
+  }, [valueKey]);
+
+  const handleChange = (text: string) => {
+    setRaw(text);
+    const trimmed = text.trim();
+    if (!trimmed) {
+      onChange([]);
+      setError(null);
+      return;
+    }
+
+    try {
+      const parsed = JSON.parse(trimmed);
+      const normalized = normalizeAssetSnapshots(parsed);
+      if (normalized == null) {
+        setError("JSON 배열 형식으로 입력하세요.");
+        return;
+      }
+      onChange(normalized);
+      setError(null);
+      return;
+    } catch {
+      // fall through to tabular parser
+    }
+
+    const fromTable = parseAssetSnapshotTable(text);
+    if (fromTable) {
+      onChange(fromTable);
+      setError(null);
+      return;
+    }
+
+    setError("JSON 배열 또는 탭(표) 형식으로 입력하세요.");
+  };
+
+  return (
+    <>
+      <textarea
+        value={raw}
+        onChange={(e) => handleChange(e.target.value)}
+        placeholder='날짜\t2025-07-01\t2025-07-15\n투자(매수금)\t500000\t1000000\n투자(평가금)\t500000\t1025000\n총자산(매수금)\t3120000\t3940516\n총자산(평가금)\t3120000\t3980000'
+        style={{ width: "100%", minHeight: 140, padding: 8, fontSize: 12, fontFamily: "monospace" }}
+      />
+      {error && <p style={{ fontSize: 12, color: "var(--danger)", marginTop: 4 }}>{error}</p>}
+    </>
+  );
+}
 
 function TargetNetWorthCurveEditor({
   value,
@@ -103,6 +298,7 @@ export const SettingsView: React.FC<Props> = ({
   onChangeData,
   backupVersion,
   onBackupRestored,
+  onBackupsChanged,
   onNavigateToRecord,
   onNavigateToTab
 }) => {
@@ -202,6 +398,65 @@ export const SettingsView: React.FC<Props> = ({
     }
   }, [data]);
 
+  const handleDownloadTableBackup = useCallback(() => {
+    try {
+      const payload = buildTableBackupFile(data);
+      const jsonData = JSON.stringify(payload, null, 2);
+      const blob = new Blob([jsonData], { type: "application/json;charset=utf-8" });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url;
+      const koreaTime = getKoreaTime();
+      const year = koreaTime.getFullYear();
+      const month = String(koreaTime.getMonth() + 1).padStart(2, "0");
+      const day = String(koreaTime.getDate()).padStart(2, "0");
+      const hours = String(koreaTime.getHours()).padStart(2, "0");
+      const minutes = String(koreaTime.getMinutes()).padStart(2, "0");
+      a.download = `farmwallet-tables-${year}${month}${day}-${hours}${minutes}.json`;
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      URL.revokeObjectURL(url);
+      toast.success("테이블 백업 JSON을 다운로드했습니다.");
+    } catch (error) {
+      if (import.meta.env.DEV) {
+        console.error("테이블 백업 다운로드 실패:", error);
+      }
+      toast.error(ERROR_MESSAGES.BACKUP_DOWNLOAD_FAILED);
+    }
+  }, [data]);
+
+  const handleUploadTableBackup = useCallback(() => {
+    const input = document.createElement("input");
+    input.type = "file";
+    input.accept = ".json,application/json";
+    input.onchange = async (e) => {
+      const file = (e.target as HTMLInputElement).files?.[0];
+      if (!file) return;
+
+      const toastId = toast.loading("테이블 백업에서 복원하는 중...");
+      try {
+        const text = await file.text();
+        const parsed = JSON.parse(text) as unknown;
+        const appJson = appDataFromTableBackupPayload(parsed);
+        const normalized = normalizeImportedData(appJson);
+        onChangeData(normalized);
+        setText(JSON.stringify(normalized, null, 2));
+        setError(null);
+        toast.success("테이블 백업에서 데이터를 복원했습니다.", { id: toastId });
+        onBackupRestored?.();
+        await loadBackupList();
+      } catch (error) {
+        setError(ERROR_MESSAGES.TABLE_BACKUP_FILE_INVALID);
+        toast.error(ERROR_MESSAGES.TABLE_BACKUP_FILE_INVALID, { id: toastId });
+        if (import.meta.env.DEV) {
+          console.error("테이블 백업 불러오기 오류:", error);
+        }
+      }
+    };
+    input.click();
+  }, [onChangeData, loadBackupList, onBackupRestored]);
+
   const handleExportLedgerMd = useCallback(async () => {
     try {
       const { generateLedgerMarkdownReport } = await import("../utils/ledgerMarkdownReport");
@@ -278,9 +533,10 @@ export const SettingsView: React.FC<Props> = ({
       const toastId = toast.loading("백업 파일을 불러오는 중...");
       try {
         const text = await file.text();
-        const parsed = JSON.parse(text) as AppData;
-        onChangeData(parsed);
-        setText(text);
+        const parsed = JSON.parse(text);
+        const normalized = normalizeImportedData(parsed);
+        onChangeData(normalized);
+        setText(JSON.stringify(normalized, null, 2));
         setError(null);
         toast.success("백업 파일을 성공적으로 불러왔습니다.", { id: toastId });
         onBackupRestored?.();
@@ -303,8 +559,10 @@ export const SettingsView: React.FC<Props> = ({
         setError(ERROR_MESSAGES.JSON_INPUT_REQUIRED);
         return;
       }
-      const parsed = JSON.parse(text) as AppData;
-      onChangeData(parsed);
+      const parsed = JSON.parse(text);
+      const normalized = normalizeImportedData(parsed);
+      onChangeData(normalized);
+      setText(JSON.stringify(normalized, null, 2));
       setError(null);
       toast.success("데이터를 성공적으로 불러왔습니다.");
       onBackupRestored?.();
@@ -327,6 +585,17 @@ export const SettingsView: React.FC<Props> = ({
     }
   }, [loadBackupList]);
 
+  const handleClearOldBackups = useCallback(() => {
+    const removed = clearOldBackups(1);
+    if (removed > 0) {
+      toast.success(`오래된 백업 ${removed}개를 삭제했습니다. 저장 공간이 확보되었습니다.`);
+      void loadBackupList();
+      void onBackupsChanged?.();
+    } else {
+      toast("삭제할 오래된 백업이 없습니다. (최신 1개만 유지 중)");
+    }
+  }, [loadBackupList, onBackupsChanged]);
+
   const handleRestoreBackup = useCallback(async (entry: BackupEntry) => {
     const toastId = toast.loading("백업을 복원하는 중...");
     try {
@@ -346,8 +615,9 @@ export const SettingsView: React.FC<Props> = ({
         return;
       }
       
-      onChangeData(restored);
-      setText(JSON.stringify(restored, null, 2));
+      const normalized = normalizeImportedData(restored);
+      onChangeData(normalized);
+      setText(JSON.stringify(normalized, null, 2));
       setError(null);
       toast.success("백업이 성공적으로 복원되었습니다.", { id: toastId });
       onBackupRestored?.();
@@ -518,6 +788,10 @@ export const SettingsView: React.FC<Props> = ({
             <strong>다른 환경에서 백업을 사용하려면:</strong> "백업 파일 다운로드"로 파일을 저장한 후, 다른 환경에서 "백업 파일 불러오기"로 불러오세요.
             <br />
             <strong style={{ color: "var(--primary)" }}>권장:</strong> 데이터 안전을 위해 정기적으로 "백업 파일 다운로드"로 JSON 파일을 저장해 두세요.
+            <br />
+            <strong>테이블 백업:</strong> 같은 데이터를 <code>tables</code> 아래 행 배열로도 저장합니다. 일반 백업 JSON 없이{" "}
+            <strong>테이블 백업 파일만</strong>으로도 복구할 수 있습니다. 데이터를 저장할 때마다 브라우저에 사본이 갱신되고,{" "}
+            <code>npm run dev</code>일 때는 프로젝트 <code>data/app-data-tables.json</code>에도 기록됩니다.
           </p>
           <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
             <button type="button" onClick={handleExport}>
@@ -528,6 +802,12 @@ export const SettingsView: React.FC<Props> = ({
             </button>
             <button type="button" className="secondary" onClick={handleUploadBackup}>
               백업 파일 불러오기
+            </button>
+            <button type="button" className="secondary" onClick={handleDownloadTableBackup}>
+              테이블 백업 다운로드
+            </button>
+            <button type="button" className="secondary" onClick={handleUploadTableBackup}>
+              테이블 백업에서 복구
             </button>
           </div>
         </div>
@@ -582,9 +862,19 @@ export const SettingsView: React.FC<Props> = ({
             <span>저장할 때마다 스냅샷 저장 (자동 저장·수동 저장 시 백업 스냅샷 함께 생성)</span>
           </label>
           <p>최근 20개까지 자동으로 저장된 백업 목록입니다. 원하는 시점으로 되돌릴 수 있습니다.</p>
-          <button type="button" onClick={handleRefreshBackups}>
-            백업 목록 새로고침
-          </button>
+          <div style={{ display: "flex", gap: 8, flexWrap: "wrap", marginBottom: 8 }}>
+            <button type="button" onClick={handleRefreshBackups}>
+              백업 목록 새로고침
+            </button>
+            <button
+              type="button"
+              className="secondary"
+              onClick={handleClearOldBackups}
+              title="저장 공간 부족 시 브라우저의 오래된 백업을 삭제합니다. 최신 1개만 유지합니다."
+            >
+              저장 공간 확보 (오래된 백업 삭제)
+            </button>
+          </div>
           <div className="hint" style={{ marginTop: 6 }}>
             {latestBackup
               ? `총 ${backups.length}개 · 최근 백업: ${new Date(
@@ -893,6 +1183,16 @@ export const SettingsView: React.FC<Props> = ({
           >
             + 종목 추가
           </button>
+
+          <h3 style={{ marginTop: 24, marginBottom: 12 }}>자산 스냅샷(반월/일별)</h3>
+          <p style={{ fontSize: 12, color: "var(--text-muted)", marginBottom: 8 }}>
+            표를 그대로 붙여넣거나(JSON 배열도 가능) 날짜별 자산 스냅샷을 저장합니다. 저장된 값은 대시보드에서
+            총자산(매수금/평가금), 투자성과, 1일/15일 수익률로 시각화됩니다.
+          </p>
+          <AssetSnapshotEditor
+            value={data.assetSnapshots ?? []}
+            onChange={(assetSnapshots) => onChangeData({ ...data, assetSnapshots })}
+          />
 
           <h3 style={{ marginTop: 24, marginBottom: 12 }}>목표 자산 곡선</h3>
           <p style={{ fontSize: 12, color: "var(--text-muted)", marginBottom: 8 }}>

@@ -1,5 +1,5 @@
 /**
- * 카테고리/세부분류 정규화 유틸
+ * 카테고리/중분류 정규화 유틸
  * dataService, AdvancedSearch 등에서 공통 사용
  */
 
@@ -74,7 +74,7 @@ export function normalizeCategory(cat: string): string {
 }
 
 /**
- * 세부분류 정규화
+ * 중분류 정규화
  */
 export function normalizeSubCategory(sub: string): string {
   if (!sub) return sub;

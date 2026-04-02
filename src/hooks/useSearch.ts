@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState } from "react";
 import type { AppData } from "../types";
 import { STORAGE_KEYS } from "../constants/config";
 import { toast } from "react-hot-toast";
+import { isUSDStock } from "../utils/finance";
 
 export interface SearchQuery {
   keyword: string;
@@ -58,6 +59,7 @@ export function useSearch(data: AppData) {
       date: l.date,
       title: l.description || l.category || l.kind,
       amount: l.amount,
+      currency: l.currency ?? "KRW",
       meta: `${l.kind} ${l.category ?? ""} ${l.subCategory ?? ""} ${l.description ?? ""}`.toLowerCase(),
       accounts: [l.fromAccountId, l.toAccountId].filter(Boolean).join(" / "),
       ticker: "",
@@ -69,6 +71,7 @@ export function useSearch(data: AppData) {
       date: t.date,
       title: `${t.ticker} ${t.name ?? ""} ${t.side === "buy" ? "매수" : "매도"}`,
       amount: t.totalAmount,
+      currency: isUSDStock(t.ticker) ? "USD" : "KRW",
       meta: `${t.ticker} ${t.name ?? ""} ${t.side}`.toLowerCase(),
       accounts: t.accountId,
       ticker: t.ticker,

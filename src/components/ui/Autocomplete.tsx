@@ -5,6 +5,9 @@ export interface AutocompleteOption {
   label?: string;
   subLabel?: string;
   group?: string;
+  /** 시장 구분 (거래 폼 등에서 사용) */
+  market?: "KR" | "US" | "CRYPTO";
+  exchange?: string;
 }
 
 interface AutocompleteProps {

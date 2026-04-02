@@ -1,5 +1,7 @@
 import type { Account, CategoryPresets, LedgerEntry, StockTrade } from "../types";
 import { getSavingsCategories } from "./category";
+import { computeRealizedPnlByTradeId } from "../calculations";
+import { isUSDStock } from "./finance";
 
 function escapeCsvCell(value: string | number): string {
   const s = String(value ?? "");
@@ -86,19 +88,28 @@ export function buildUnifiedCsv(
     });
   }
 
+  const realizedPnlByTradeId = computeRealizedPnlByTradeId(trades);
   for (const t of trades) {
     const sideLabel = t.side === "buy" ? "buy" : "sell";
+    const isSell = t.side === "sell";
+    const rawPnl = isSell ? (realizedPnlByTradeId.get(t.id) ?? t.totalAmount) : 0;
+    const subCategory = isSell ? (rawPnl >= 0 ? "투자수익" : "투자손실") : "";
+    const kind = isSell ? "expense" : sideLabel;
+    const category = isSell ? "재테크" : "";
+    const description = isSell ? subCategory : "";
+    const amount = isSell ? Math.abs(Number(rawPnl)) : "";
+    const currency = isUSDStock(t.ticker) ? "USD" : "KRW";
     withDate.push({
       date: t.date,
       row: [
         "trade",
         t.date,
-        sideLabel,
-        "",
-        "",
-        "",
-        "",
-        "",
+        kind,
+        category,
+        subCategory,
+        description,
+        amount,
+        isSell ? currency : "",
         "",
         "",
         "",

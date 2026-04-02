@@ -1,12 +1,17 @@
 import type { TickerInfo } from "../types";
-import { STORAGE_KEYS, BACKUP_CONFIG } from "../constants/config";
 
 export async function loadTickerDatabaseFromBackup(): Promise<TickerInfo[] | null> {
   if (typeof window === "undefined") return null;
   try {
     const res = await fetch("/api/ticker-backup");
     if (!res.ok) return null;
-    const json = await res.json();
+    const contentType = res.headers.get("Content-Type") ?? "";
+    const text = await res.text();
+    if (!text.trim()) return null;
+    if (!contentType.includes("application/json") || text.trimStart().startsWith("<")) {
+      return null;
+    }
+    const json = JSON.parse(text) as unknown;
     if (Array.isArray(json)) return json as TickerInfo[];
     if (Array.isArray((json as { tickers?: unknown }).tickers)) {
       return (json as { tickers: TickerInfo[] }).tickers;

@@ -1,6 +1,7 @@
 // 앱 버전은 vite.config.ts에서 __APP_VERSION__으로 주입됨
 declare const __APP_VERSION__: string;
 export const APP_VERSION = __APP_VERSION__;
+export const DATA_SCHEMA_VERSION = 3;
 
 /** 저축 목표: 월급의 비율 (%) */
 export const SAVINGS_RATE_GOAL = 70;
@@ -18,6 +19,7 @@ export const ISA_PORTFOLIO = [
 // 스토리지 키
 export const STORAGE_KEYS = {
   DATA: "farmwallet-data-v1",
+  DATA_SCHEMA_VERSION: "farmwallet-data-schema-version",
   BACKUPS: "farmwallet-backups-v1",
   THEME: "fw-theme",
   HIGH_CONTRAST: "fw-high-contrast",
@@ -27,14 +29,20 @@ export const STORAGE_KEYS = {
   BACKUP_ON_SAVE: "fw-backup-on-save",
   TICKER: "ticker",
   /** 가격 API 사용 여부 (켜면 외부 API로 배치 갱신 가능, 연동은 추후 구현) */
-  PRICE_API_ENABLED: "fw-price-api-enabled"
+  PRICE_API_ENABLED: "fw-price-api-enabled",
+  /** 테이블 형태 백업 JSON (일반 DATA와 별도; 저장 시 동기 갱신) */
+  DATA_TABLE_BACKUP: "farmwallet-data-tables-v1",
+  /** 마지막으로 성공한 USD/KRW 환율 캐시 */
+  LAST_FX_RATE: "fw-last-fx-rate"
 } as const;
 
 // 백업 설정
 export const BACKUP_CONFIG = {
   API_PATH: "/api/backup",
-  TICKER_BACKUP_FILE: "/backups/ticker-latest.json",
-  MAX_UNDO_HISTORY: 50
+  MAX_UNDO_HISTORY: 50,
+  API_TIMEOUT_MS: 3000,
+  MAX_LOCAL_BACKUPS: 120,
+  MAX_BACKUP_PAYLOAD_BYTES: 20 * 1024 * 1024
 } as const;
 
 // 기본 US 티커 목록

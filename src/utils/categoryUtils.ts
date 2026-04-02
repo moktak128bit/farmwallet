@@ -80,7 +80,7 @@ function isFixedExpense(
     return true;
   }
 
-  // 주거비의 세부 항목 "주담대이자"도 고정지출로 처리
+  // 주거비의 중분류 "주담대이자"도 고정지출로 처리
   if (category === "주거비" && subCategory === "주담대이자") {
     return true;
   }

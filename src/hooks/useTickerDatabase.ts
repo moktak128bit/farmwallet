@@ -17,14 +17,14 @@ export function useTickerDatabase(
   const onLog = options?.onLog;
   const [isLoadingTickerDatabase, setIsLoadingTickerDatabase] = useState(false);
 
-  // 초기 티커 목록 로드 (localStorage와 백업에서만 로드, 자동 생성하지 않음)
+  // 초기 티커 목록 로드 (개발 서버 백업 API → localStorage만, 자동 생성하지 않음)
   useEffect(() => {
     if (typeof window === "undefined") return;
     if (data.tickerDatabase && data.tickerDatabase.length > 0) return; // 이미 있으면 스킵
     
     let isMounted = true;
     const loadTickerDb = async () => {
-      // 1) backups/ticker-latest.json 시도
+      // 1) 개발 서버: GET /api/ticker-backup → data/ticker-backup.json (Vite 미들웨어)
       try {
         const backupTickers = await loadTickerDatabaseFromBackup();
         if (isMounted && backupTickers && backupTickers.length > 0) {

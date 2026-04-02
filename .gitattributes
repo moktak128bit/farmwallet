@@ -1,4 +1,4 @@
-* text=auto eol=lf encoding=utf-8
+* text=auto eol=lf
 *.json text
 *.ts text
 *.tsx text

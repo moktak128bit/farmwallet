@@ -1,7 +1,8 @@
 #!/usr/bin/env node
 /**
- * ticker.json + ticker.md에서 한국 종목 한글이름 맵 생성
+ * ticker.json (+ 선택적 ticker.md)에서 한국 종목 한글이름 맵 생성
  * 출력: src/data/krNames.json (ticker -> name)
+ * ticker.md가 없으면 ticker.json만 사용 (단일 소스 운영 가능)
  */
 
 import fs from "fs";
@@ -42,21 +43,23 @@ try {
   console.warn("ticker.json 로드 실패:", e.message);
 }
 
-// 2. ticker.md (덮어쓰기)
-try {
-  const lines = fs.readFileSync(tickerMdPath, "utf-8").split("\n").slice(1);
-  for (const line of lines) {
-    const parts = line.split("\t");
-    if (parts.length >= 2) {
-      const ticker = cleanTicker(parts[0].trim());
-      const name = parts[1].trim().replace(/\r\n|\r|\n/g, "");
-      if (ticker && name && isKRWStock(ticker)) {
-        map[ticker] = name;
+// 2. ticker.md (있을 때만, ticker.json 맵 위에 덮어쓰기)
+if (fs.existsSync(tickerMdPath)) {
+  try {
+    const lines = fs.readFileSync(tickerMdPath, "utf-8").split("\n").slice(1);
+    for (const line of lines) {
+      const parts = line.split("\t");
+      if (parts.length >= 2) {
+        const ticker = cleanTicker(parts[0].trim());
+        const name = parts[1].trim().replace(/\r\n|\r|\n/g, "");
+        if (ticker && name && isKRWStock(ticker)) {
+          map[ticker] = name;
+        }
       }
     }
+  } catch (e) {
+    console.warn("ticker.md 로드 실패:", e.message);
   }
-} catch (e) {
-  console.warn("ticker.md 로드 실패:", e.message);
 }
 
 const outDir = path.dirname(outPath);

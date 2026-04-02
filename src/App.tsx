@@ -1,22 +1,23 @@
 import React, { useCallback, useEffect, useMemo, useState, lazy, Suspense } from "react";
 import { Toaster, toast } from "react-hot-toast";
 import { Moon, Sun, Menu } from "lucide-react";
-import { Tabs, type TabId } from "./components/Tabs";
+import { Tabs, type TabId } from "./components/ui/Tabs";
 import { ShortcutsHelp } from "./components/ShortcutsHelp";
 import { SearchModal } from "./components/SearchModal";
 
 // 동일 로더를 lazy와 프리페치에서 공유해 탭 호버 시 청크 미리 로드
-const loadDashboard = () => import("./components/dashboard").then((m) => ({ default: m.DashboardView }));
-const loadAccounts = () => import("./components/AccountsView").then((m) => ({ default: m.AccountsView }));
-const loadLedger = () => import("./components/LedgerView").then((m) => ({ default: m.LedgerView }));
-const loadCategories = () => import("./components/CategoriesView").then((m) => ({ default: m.CategoriesView }));
-const loadStocks = () => import("./components/StocksView").then((m) => ({ default: m.StocksView }));
-const loadDividends = () => import("./components/DividendsView").then((m) => ({ default: m.DividendsView }));
-const loadDebt = () => import("./components/DebtView").then((m) => ({ default: m.DebtView }));
+const loadDashboard = () => import("./pages/DashboardPage").then((m) => ({ default: m.DashboardView }));
+const loadAccounts = () => import("./pages/AccountsPage").then((m) => ({ default: m.AccountsView }));
+const loadLedger = () => import("./pages/LedgerPage").then((m) => ({ default: m.LedgerView }));
+const loadCategories = () => import("./pages/CategoriesPage").then((m) => ({ default: m.CategoriesView }));
+const loadStocks = () => import("./pages/StocksPage").then((m) => ({ default: m.StocksView }));
+const loadDividends = () => import("./pages/DividendsPage").then((m) => ({ default: m.DividendsView }));
+const loadDebt = () => import("./pages/DebtPage").then((m) => ({ default: m.DebtView }));
+const loadSpend = () => import("./pages/SpendPage").then((m) => ({ default: m.SpendView }));
 const loadBudget = () => import("./components/BudgetRecurringView").then((m) => ({ default: m.BudgetRecurringView }));
-const loadReport = () => import("./components/ReportView").then((m) => ({ default: m.ReportView }));
-const loadSettings = () => import("./components/SettingsView").then((m) => ({ default: m.SettingsView }));
-const loadWorkout = () => import("./components/WorkoutView").then((m) => ({ default: m.WorkoutView }));
+const loadReport = () => import("./pages/ReportPage").then((m) => ({ default: m.ReportView }));
+const loadSettings = () => import("./pages/SettingsPage").then((m) => ({ default: m.SettingsView }));
+const loadWorkout = () => import("./pages/WorkoutPage").then((m) => ({ default: m.WorkoutView }));
 
 const DashboardView = lazy(loadDashboard);
 const AccountsView = lazy(loadAccounts);
@@ -25,6 +26,7 @@ const CategoriesView = lazy(loadCategories);
 const StocksView = lazy(loadStocks);
 const DividendsView = lazy(loadDividends);
 const DebtView = lazy(loadDebt);
+const SpendView = lazy(loadSpend);
 const BudgetRecurringView = lazy(loadBudget);
 const ReportView = lazy(loadReport);
 const SettingsView = lazy(loadSettings);
@@ -38,6 +40,7 @@ const TAB_PREFETCH: Record<TabId, () => Promise<{ default: React.ComponentType<a
   stocks: loadStocks,
   dividends: loadDividends,
   debt: loadDebt,
+  spend: loadSpend,
   budget: loadBudget,
   reports: loadReport,
   settings: loadSettings,
@@ -48,7 +51,7 @@ import { useUndoRedo } from "./hooks/useUndoRedo";
 import { useBackup } from "./hooks/useBackup";
 import { useSearch } from "./hooks/useSearch";
 import { useTheme } from "./hooks/useTheme";
-import { useFxRate } from "./hooks/useFxRate";
+import { useFxRateValue } from "./context/FxRateContext";
 import { useTickerDatabase } from "./hooks/useTickerDatabase";
 import { useKeyboardShortcuts } from "./hooks/useKeyboardShortcuts";
 import { usePortfolioWorker } from "./hooks/usePortfolioWorker";
@@ -56,7 +59,7 @@ import { APP_VERSION } from "./constants/config";
 import { runIntegrityCheck } from "./utils/dataIntegrity";
 
 export type AppLogEntry = { id: number; message: string; type: "success" | "error" | "info"; time: string };
-const APP_LOG_MAX = 20;
+const APP_LOG_MAX = 200;
 
 export const App: React.FC = () => {
   const [tab, setTab] = useState<TabId>("dashboard");
@@ -68,12 +71,17 @@ export const App: React.FC = () => {
   const [mobileDrawerOpen, setMobileDrawerOpen] = useState(false);
   const [appLog, setAppLog] = useState<AppLogEntry[]>([]);
   const appLogIdRef = React.useRef(0);
+  const appLogListRef = React.useRef<HTMLDivElement>(null);
 
   const addAppLog = useCallback((message: string, type: "success" | "error" | "info" = "success") => {
     const id = ++appLogIdRef.current;
     const time = new Date().toLocaleTimeString("ko-KR", { hour: "2-digit", minute: "2-digit", second: "2-digit" });
     setAppLog((prev) => [...prev.slice(-(APP_LOG_MAX - 1)), { id, message, type, time }]);
   }, []);
+
+  React.useEffect(() => {
+    if (appLogListRef.current) appLogListRef.current.scrollTop = appLogListRef.current.scrollHeight;
+  }, [appLog]);
 
   const handleTabChange = (id: TabId) => {
     setTab(id);
@@ -86,34 +94,45 @@ export const App: React.FC = () => {
 
   useEffect(() => {
     if (typeof window === "undefined") return;
-    const toWarmup: TabId[] = ["ledger", "stocks", "reports"];
-    const runPrefetch = () => {
-      toWarmup.forEach((id) => TAB_PREFETCH[id]?.());
-    };
+    // 1단계: 가벼운 탭은 idle 시 즉시 (100ms 이내)
+    const lightTabs: TabId[] = ["ledger", "categories", "accounts", "dividends", "debt", "budget", "workout"];
+    // 2단계: 무거운 탭은 1단계 이후 750ms 뒤 (초기 렌더와 경합 방지)
+    const heavyTabs: TabId[] = ["stocks", "reports", "spend"];
 
     const win = window as Window & {
       requestIdleCallback?: (callback: IdleRequestCallback, options?: IdleRequestOptions) => number;
       cancelIdleCallback?: (handle: number) => void;
     };
 
+    let handle1: number | undefined;
+    let handle2: number | undefined;
+    let timer: ReturnType<typeof setTimeout> | undefined;
+
     if (typeof win.requestIdleCallback === "function") {
-      const handle = win.requestIdleCallback(() => runPrefetch(), { timeout: 2000 });
+      handle1 = win.requestIdleCallback(() => {
+        lightTabs.forEach((id) => TAB_PREFETCH[id]?.());
+        timer = setTimeout(() => {
+          heavyTabs.forEach((id) => TAB_PREFETCH[id]?.());
+        }, 750);
+      }, { timeout: 1000 });
       return () => {
-        if (typeof win.cancelIdleCallback === "function") {
-          win.cancelIdleCallback(handle);
-        }
+        if (handle1 !== undefined && typeof win.cancelIdleCallback === "function") win.cancelIdleCallback(handle1);
+        if (handle2 !== undefined && typeof win.cancelIdleCallback === "function") win.cancelIdleCallback(handle2);
+        if (timer !== undefined) clearTimeout(timer);
       };
     }
 
-    const timeoutId = window.setTimeout(runPrefetch, 1500);
-    return () => window.clearTimeout(timeoutId);
+    // requestIdleCallback 미지원 폴백
+    const t1 = window.setTimeout(() => lightTabs.forEach((id) => TAB_PREFETCH[id]?.()), 300);
+    const t2 = window.setTimeout(() => heavyTabs.forEach((id) => TAB_PREFETCH[id]?.()), 1500);
+    return () => { window.clearTimeout(t1); window.clearTimeout(t2); };
   }, []);
 
   // Zustand store 사용
   const { data, setData, isLoading, loadFailed, clearLoadFailed } = useAppData();
   const { setDataWithHistory, handleUndo, handleRedo } = useUndoRedo(data, setData);
   const { theme, toggleTheme } = useTheme();
-  const fxRate = useFxRate();
+  const fxRate = useFxRateValue();
   const {
     isSearchOpen,
     setIsSearchOpen,
@@ -278,11 +297,11 @@ export const App: React.FC = () => {
           </div>
           <div className="app-log-panel" aria-live="polite">
             <div className="app-log-panel-title">로그</div>
-            <div className="app-log-panel-list">
+            <div ref={appLogListRef} className="app-log-panel-list">
               {appLog.length === 0 ? (
                 <div className="app-log-panel-empty">저장·시세·종목 불러오기 시 여기에 표시됩니다.</div>
               ) : (
-                [...appLog].reverse().slice(0, 8).map((e) => (
+                appLog.map((e) => (
                   <div key={e.id} className={`app-log-panel-item app-log-${e.type}`}>
                     <span className="app-log-time">{e.time}</span> {e.message}
                   </div>
@@ -465,6 +484,13 @@ export const App: React.FC = () => {
               categoryPresets={data.categoryPresets}
               onChangeLoans={(loans) => setDataWithHistory((prev) => ({ ...prev, loans }))}
               onChangeLedger={(ledger) => setDataWithHistory((prev) => ({ ...prev, ledger }))}
+            />
+          )}
+          {tab === "spend" && (
+            <SpendView
+              accounts={data.accounts}
+              ledger={data.ledger}
+              categoryPresets={data.categoryPresets}
             />
           )}
           {tab === "budget" && (

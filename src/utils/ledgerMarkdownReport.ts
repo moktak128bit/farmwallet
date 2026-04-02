@@ -52,7 +52,7 @@ export function generateLedgerMarkdownReport(
   const net = totalIncome - totalExpense - totalSavings;
 
   md += `## 통계\n\n`;
-  md += `| 항목 | 금액 |\n`;
+  md += `| 구분 | 금액 |\n`;
   md += `|------|------|\n`;
   md += `| 총 수입 | ${formatAmount(totalIncome)} |\n`;
   md += `| 총 지출 | ${formatAmount(totalExpense)} |\n`;
@@ -65,7 +65,7 @@ export function generateLedgerMarkdownReport(
   md += `| 계좌 | 조정값 |\n`;
   md += `|------|------|\n`;
   for (const a of accounts) {
-    const baseBalance = a.type === "securities"
+    const baseBalance = (a.type === "securities" || a.type === "crypto")
       ? (a.initialCashBalance ?? a.initialBalance)
       : a.initialBalance;
     const cashAdjustment = a.cashAdjustment ?? 0;
@@ -122,7 +122,7 @@ export function generateLedgerMarkdownReport(
   md += `\n`;
 
   const tableHeader =
-    "| 날짜 | 종류 | 카테고리 | 세부분류 | 설명 | 금액 | 계좌 | 비고 |\n";
+    "| 날짜 | 종류 | 카테고리 | 중분류 | 설명 | 금액 | 계좌 | 비고 |\n";
   const tableSep =
     "|------|------|----------|----------|------|------|------|------|\n";
 

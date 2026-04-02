@@ -1,4 +1,4 @@
-﻿import React, { useMemo, useState } from "react";
+import React, { useMemo, useState } from "react";
 import type { WorkoutWeek, WorkoutDayEntry, WorkoutExercise, WorkoutSet } from "../types";
 import { formatNumber } from "../utils/formatter";
 

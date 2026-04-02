@@ -1,8 +1,10 @@
-import React, { useMemo, useState, useEffect } from "react";
-import type { Account, LedgerEntry, StockPrice, StockTrade, TickerInfo } from "../types";
-import { Autocomplete } from "./Autocomplete";
+import React, { useCallback, useMemo, useState, useEffect } from "react";
+import type { Account, HistoricalDailyClose, LedgerEntry, StockPrice, StockTrade, TickerInfo } from "../types";
+import { Autocomplete } from "./ui/Autocomplete";
 import { formatKRW, formatNumber } from "../utils/formatter";
 import { isKRWStock, isUSDStock, extractTickerFromText } from "../utils/finance";
+import { parseExDateFromNote, buildDividendNote } from "../utils/dividend";
+import { findStoredCloseAtOrBefore } from "../hooks/useAutoFetchHistoricalCloses";
 import { toast } from "react-hot-toast";
 import { ERROR_MESSAGES } from "../constants/errorMessages";
 
@@ -14,6 +16,7 @@ interface PositionWithPrice {
   quantity: number;
   avgPrice: number;
   totalBuyAmount: number;
+  totalBuyAmountKRW?: number;
   displayMarketPrice: number;
   currency?: string;
 }
@@ -25,6 +28,7 @@ interface Props {
   prices: StockPrice[];
   ledger: LedgerEntry[];
   tickerDatabase: TickerInfo[];
+  historicalDailyCloses?: HistoricalDailyClose[];
   onClose: () => void;
   onChangeLedger: (ledger: LedgerEntry[]) => void;
   fxRate?: number | null;
@@ -37,6 +41,7 @@ export const StockDetailModal: React.FC<Props> = ({
   prices,
   ledger,
   tickerDatabase,
+  historicalDailyCloses = [],
   onClose,
   onChangeLedger,
   fxRate: propFxRate = null
@@ -45,11 +50,12 @@ export const StockDetailModal: React.FC<Props> = ({
   const [showUSD, setShowUSD] = useState(false);
   const [fxRate, setFxRate] = useState<number | null>(propFxRate);
   
-  // 배당 입력 폼
   const [dividendForm, setDividendForm] = useState(() => ({
     date: new Date().toISOString().slice(0, 10),
+    exDate: "" as string,
     accountId: position?.accountId ?? "",
-    amount: "",
+    quantity: position?.quantity != null ? String(position.quantity) : "",
+    dividendPerShare: "",
     tax: "",
     fee: ""
   }));
@@ -125,31 +131,125 @@ export const StockDetailModal: React.FC<Props> = ({
       if (l.kind !== "income") return false;
       const isDividendEntry = l.category === "배당" || (l.category === "수입" && l.subCategory === "배당") || (l.description ?? "").includes("배당");
       if (!isDividendEntry) return false;
-      
       const ledgerTicker = (extractTickerFromText(l.description ?? "") ?? extractTickerFromText(l.category ?? ""))?.toUpperCase() ?? "";
-      
       return ledgerTicker === position.ticker.toUpperCase();
     };
-    
-    return ledger
-      .filter(isDividend)
-      .sort((a, b) => b.date.localeCompare(a.date));
+    return ledger.filter(isDividend).sort((a, b) => b.date.localeCompare(a.date));
   }, [ledger, position]);
+
+  // 해당일 거래 전 보유 수량
+  const getQuantityAtDate = useCallback(
+    (date: string): number => {
+      if (!position) return 0;
+      let qty = 0;
+      for (const t of trades) {
+        if (t.ticker !== position.ticker || t.accountId !== position.accountId || t.date >= date) continue;
+        if (t.side === "buy") qty += t.quantity;
+        else qty -= t.quantity;
+      }
+      return Math.max(0, qty);
+    },
+    [position, trades]
+  );
+
+  // 해당일 거래 전 보유 주식의 매입금액(FIFO, 이 종목·계좌, 원화)
+  const getCostBasisAtDate = useCallback(
+    (date: string): number => {
+      if (!position) return 0;
+      const relevant = trades
+        .filter(
+          (t) =>
+            t.ticker === position.ticker &&
+            t.accountId === position.accountId &&
+            t.date < date
+        )
+        .sort((a, b) => a.date.localeCompare(b.date));
+      type Lot = { qty: number; totalAmount: number };
+      const lots: Lot[] = [];
+      for (const t of relevant) {
+        const appliedFx =
+          t.fxRateAtTrade && t.fxRateAtTrade > 0
+            ? t.fxRateAtTrade
+            : fxRate && fxRate > 0
+              ? fxRate
+              : null;
+        const amtKrW =
+          isUSDStock(position.ticker) && appliedFx
+            ? t.totalAmount * appliedFx
+            : t.totalAmount;
+        if (t.side === "buy") {
+          lots.push({ qty: t.quantity, totalAmount: amtKrW });
+        } else {
+          let remaining = t.quantity;
+          while (remaining > 0 && lots.length > 0) {
+            const lot = lots[0];
+            const used = Math.min(remaining, lot.qty);
+            const usedCost = (lot.totalAmount / lot.qty) * used;
+            lot.qty -= used;
+            lot.totalAmount -= usedCost;
+            remaining -= used;
+            if (lot.qty <= 0) lots.shift();
+          }
+        }
+      }
+      return lots.reduce((sum, lot) => sum + lot.totalAmount, 0);
+    },
+    [position, trades, fxRate]
+  );
+
+  // 배당 내역 + 매입금액 대비 배당율 (배당금 ÷ 해당 보유 주식 매입금액)
+  const positionDividendsWithYield = useMemo(() => {
+    return positionDividends.map((d) => {
+      const dateForCost = parseExDateFromNote(d.note) || d.date || "";
+      const costBasis = position ? getCostBasisAtDate(dateForCost) : 0;
+      const quantity = position ? getQuantityAtDate(dateForCost) : 0;
+      const yieldRate =
+        costBasis > 0 && d.amount > 0 ? (d.amount / costBasis) * 100 : null;
+      const avgPrice = quantity > 0 ? costBasis / quantity : null;
+      const dividendPerShare = quantity > 0 ? d.amount / quantity : null;
+      return { entry: d, yieldRate, costBasis, quantity, avgPrice, dividendPerShare };
+    });
+  }, [positionDividends, position, getCostBasisAtDate, getQuantityAtDate]);
 
   // 배당 총액
   const totalDividend = useMemo(() => {
     return positionDividends.reduce((sum, d) => sum + d.amount, 0);
   }, [positionDividends]);
 
+  const displayFxRate = fxRate && fxRate > 0 ? fxRate : 0;
+  const isUsdTicker = selectedTickerCurrency === "USD";
+  const avgPriceKRW =
+    isUsdTicker && position.totalBuyAmountKRW != null && position.quantity > 0
+      ? position.totalBuyAmountKRW / position.quantity
+      : isUsdTicker && displayFxRate > 0
+        ? position.avgPrice * displayFxRate
+        : position.avgPrice;
+  const marketPriceKRW =
+    isUsdTicker && displayFxRate > 0 ? position.displayMarketPrice * displayFxRate : position.displayMarketPrice;
+  const totalBuyKRW =
+    isUsdTicker && position.totalBuyAmountKRW != null
+      ? position.totalBuyAmountKRW
+      : isUsdTicker && displayFxRate > 0
+        ? position.totalBuyAmount * displayFxRate
+        : position.totalBuyAmount;
+
+  // 주당배당금 × 보유주식수 = 총 배당금 자동 계산
+  const calculatedAmount = useMemo(() => {
+    const qty = Number(dividendForm.quantity);
+    const dps = Number(dividendForm.dividendPerShare);
+    if (!qty || !dps || qty <= 0 || dps <= 0) return null;
+    return qty * dps;
+  }, [dividendForm.quantity, dividendForm.dividendPerShare]);
+
   // 배당율 계산
   const dividendYield = useMemo(() => {
-    if (!dividendForm.amount || !position) return null;
-    let amount = Number(dividendForm.amount);
+    if (calculatedAmount == null || !position) return null;
+    let amount = calculatedAmount;
     const tax = dividendForm.tax ? Number(dividendForm.tax) : 0;
     const fee = dividendForm.fee ? Number(dividendForm.fee) : 0;
-    
+
     if (amount <= 0 || position.avgPrice <= 0 || position.quantity <= 0) return null;
-    
+
     if (selectedTickerCurrency === "USD" && showUSD && fxRate) {
       amount = amount * fxRate;
       if (tax > 0) {
@@ -163,21 +263,24 @@ export const StockDetailModal: React.FC<Props> = ({
     } else {
       amount = amount - tax - fee;
     }
-    
+
     const totalCost = position.avgPrice * position.quantity;
     return (amount / totalCost) * 100;
-  }, [dividendForm.amount, dividendForm.tax, dividendForm.fee, position, selectedTickerCurrency, showUSD, fxRate]);
+  }, [calculatedAmount, dividendForm.tax, dividendForm.fee, position, selectedTickerCurrency, showUSD, fxRate]);
 
   // 배당 입력 처리
   const handleDividendSubmit = (e: React.FormEvent) => {
     e.preventDefault();
-    let amount = Number(dividendForm.amount);
+    const qty = Number(dividendForm.quantity);
+    const dps = Number(dividendForm.dividendPerShare);
     const tax = dividendForm.tax ? Number(dividendForm.tax) : 0;
     const fee = dividendForm.fee ? Number(dividendForm.fee) : 0;
-    
-    if (!dividendForm.date || !dividendForm.accountId || !amount || amount <= 0) {
+
+    if (!dividendForm.date || !dividendForm.accountId || !qty || qty <= 0 || !dps || dps <= 0) {
       return;
     }
+
+    let amount = qty * dps;
 
     if (selectedTickerCurrency === "USD" && showUSD && fxRate) {
       amount = amount * fxRate;
@@ -195,6 +298,7 @@ export const StockDetailModal: React.FC<Props> = ({
 
     const netAmount = amount;
     const description = `${position.ticker}${position.name ? ` - ${position.name}` : ""} 배당${tax > 0 ? `, 세금: ${Math.round(tax).toLocaleString()}원` : ""}${fee > 0 ? `, 수수료: ${Math.round(fee).toLocaleString()}원` : ""}`;
+    const note = buildDividendNote(qty, dividendForm.exDate?.trim() || undefined);
     const entry: LedgerEntry = {
       id: `D${Date.now()}`,
       date: dividendForm.date,
@@ -203,17 +307,19 @@ export const StockDetailModal: React.FC<Props> = ({
       subCategory: "배당",
       description: description,
       toAccountId: dividendForm.accountId,
-      amount: netAmount
+      amount: netAmount,
+      note
     };
 
     const newLedger = [entry, ...ledger];
     onChangeLedger(newLedger);
 
-    // 폼 초기화
     setDividendForm({
       date: new Date().toISOString().slice(0, 10),
+      exDate: "",
       accountId: dividendForm.accountId,
-      amount: "",
+      quantity: position.quantity != null ? String(position.quantity) : "",
+      dividendPerShare: "",
       tax: "",
       fee: ""
     });
@@ -306,7 +412,7 @@ export const StockDetailModal: React.FC<Props> = ({
                 <div style={{ fontSize: 16, fontWeight: 600 }}>
                   {selectedTickerCurrency === "USD" && showUSD
                     ? `$${formatNumber(position.avgPrice)}`
-                    : formatKRW(Math.round(position.avgPrice))}
+                    : formatKRW(Math.round(avgPriceKRW))}
                 </div>
               </div>
               <div>
@@ -314,7 +420,7 @@ export const StockDetailModal: React.FC<Props> = ({
                 <div style={{ fontSize: 16, fontWeight: 600 }}>
                   {selectedTickerCurrency === "USD" && showUSD
                     ? `$${formatNumber(position.displayMarketPrice)}`
-                    : formatKRW(Math.round(position.displayMarketPrice))}
+                    : formatKRW(Math.round(marketPriceKRW))}
                 </div>
               </div>
               <div>
@@ -322,7 +428,7 @@ export const StockDetailModal: React.FC<Props> = ({
                 <div style={{ fontSize: 16, fontWeight: 600 }}>
                   {selectedTickerCurrency === "USD" && showUSD
                     ? `$${formatNumber(position.totalBuyAmount)}`
-                    : formatKRW(Math.round(position.totalBuyAmount))}
+                    : formatKRW(Math.round(totalBuyKRW))}
                 </div>
               </div>
               <div>
@@ -385,13 +491,17 @@ export const StockDetailModal: React.FC<Props> = ({
                         <td className="number">
                           {selectedTickerCurrency === "USD" && showUSD
                             ? `$${formatNumber(trade.price)}`
-                            : formatKRW(Math.round(trade.price))}
+                            : formatKRW(Math.round((trade.fxRateAtTrade && trade.fxRateAtTrade > 0 ? trade.price * trade.fxRateAtTrade : displayFxRate > 0 ? trade.price * displayFxRate : trade.price)))}
                         </td>
-                        <td className="number">{formatKRW(Math.round(trade.fee))}</td>
+                        <td className="number">
+                          {selectedTickerCurrency === "USD" && showUSD
+                            ? `$${formatNumber(trade.fee)}`
+                            : formatKRW(Math.round((trade.fxRateAtTrade && trade.fxRateAtTrade > 0 ? trade.fee * trade.fxRateAtTrade : displayFxRate > 0 ? trade.fee * displayFxRate : trade.fee)))}
+                        </td>
                         <td className="number" style={{ fontWeight: 600 }}>
                           {selectedTickerCurrency === "USD" && showUSD
                             ? `$${formatNumber(trade.totalAmount)}`
-                            : formatKRW(Math.round(trade.totalAmount))}
+                            : formatKRW(Math.round((trade.fxRateAtTrade && trade.fxRateAtTrade > 0 ? trade.totalAmount * trade.fxRateAtTrade : displayFxRate > 0 ? trade.totalAmount * displayFxRate : trade.totalAmount)))}
                         </td>
                       </tr>
                     ))}
@@ -423,13 +533,22 @@ export const StockDetailModal: React.FC<Props> = ({
                 <form onSubmit={handleDividendSubmit}>
                   <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(200px, 1fr))", gap: "10px 12px" }}>
                     <label style={{ display: "flex", flexDirection: "column", gap: 4 }}>
-                      <span style={{ fontSize: 13, fontWeight: 500 }}>날짜</span>
+                      <span style={{ fontSize: 13, fontWeight: 500 }}>날짜 (수령일)</span>
                       <input
                         type="date"
                         value={dividendForm.date}
                         onChange={(e) => setDividendForm({ ...dividendForm, date: e.target.value })}
                         style={{ padding: "6px 8px", fontSize: 14 }}
                         required
+                      />
+                    </label>
+                    <label style={{ display: "flex", flexDirection: "column", gap: 4 }}>
+                      <span style={{ fontSize: 13, fontWeight: 500 }}>배당락일 <span style={{ fontWeight: 400, color: "var(--text-muted)" }}>(선택)</span></span>
+                      <input
+                        type="date"
+                        value={dividendForm.exDate}
+                        onChange={(e) => setDividendForm({ ...dividendForm, exDate: e.target.value })}
+                        style={{ padding: "6px 8px", fontSize: 14 }}
                       />
                     </label>
                     <label style={{ display: "flex", flexDirection: "column", gap: 4 }}>
@@ -449,27 +568,55 @@ export const StockDetailModal: React.FC<Props> = ({
                       </select>
                     </label>
                     <label style={{ display: "flex", flexDirection: "column", gap: 4 }}>
+                      <span style={{ fontSize: 13, fontWeight: 500 }}>보유주식수</span>
+                      <input
+                        type="number"
+                        min={0}
+                        step={1}
+                        value={dividendForm.quantity}
+                        onChange={(e) => setDividendForm({ ...dividendForm, quantity: e.target.value })}
+                        placeholder="주식 수"
+                        style={{ padding: "6px 8px", fontSize: 14 }}
+                        required
+                      />
+                    </label>
+                    <label style={{ display: "flex", flexDirection: "column", gap: 4 }}>
                       <span style={{ fontSize: 13, fontWeight: 500 }}>
-                        배당 금액
+                        주당배당금
                         {selectedTickerCurrency === "USD" && showUSD && " (USD)"}
                         {selectedTickerCurrency === "USD" && !showUSD && " (원화)"}
-                        {selectedTickerCurrency === "USD" && showUSD && fxRate && dividendForm.amount && (
-                          <span style={{ fontSize: 11, color: "#666", marginLeft: 4 }}>
-                            ≈ {formatKRW(Math.round(Number(dividendForm.amount) * fxRate))}
-                          </span>
-                        )}
                       </span>
                       <input
                         type="number"
                         min={0}
                         step={0.01}
-                        value={dividendForm.amount}
-                        onChange={(e) => setDividendForm({ ...dividendForm, amount: e.target.value })}
+                        value={dividendForm.dividendPerShare}
+                        onChange={(e) => setDividendForm({ ...dividendForm, dividendPerShare: e.target.value })}
                         placeholder={selectedTickerCurrency === "USD" && showUSD ? "USD로 입력" : "원화로 입력"}
                         style={{ padding: "6px 8px", fontSize: 14 }}
                         required
                       />
                     </label>
+                    {calculatedAmount != null && (
+                      <label style={{ display: "flex", flexDirection: "column", gap: 4 }}>
+                        <span style={{ fontSize: 13, fontWeight: 500 }}>
+                          총 배당금
+                          {selectedTickerCurrency === "USD" && showUSD && fxRate && (
+                            <span style={{ fontSize: 11, color: "#666", marginLeft: 4 }}>
+                              ≈ {formatKRW(Math.round(calculatedAmount * fxRate))}
+                            </span>
+                          )}
+                        </span>
+                        <input
+                          type="text"
+                          value={selectedTickerCurrency === "USD" && showUSD
+                            ? `$${formatNumber(calculatedAmount)}`
+                            : formatKRW(Math.round(calculatedAmount))}
+                          disabled
+                          style={{ padding: "6px 8px", fontSize: 14, backgroundColor: "#f5f5f5", fontWeight: 600, color: "#10b981" }}
+                        />
+                      </label>
+                    )}
                     <label style={{ display: "flex", flexDirection: "column", gap: 4 }}>
                       <span style={{ fontSize: 13, fontWeight: 500 }}>
                         세금
@@ -524,7 +671,7 @@ export const StockDetailModal: React.FC<Props> = ({
 
               {/* 배당 내역 */}
               <h3 style={{ marginTop: 16 }}>배당 내역</h3>
-              {positionDividends.length === 0 ? (
+              {positionDividendsWithYield.length === 0 ? (
                 <p className="hint" style={{ textAlign: "center", padding: 20 }}>
                   배당 내역이 없습니다.
                 </p>
@@ -534,13 +681,14 @@ export const StockDetailModal: React.FC<Props> = ({
                     <tr>
                       <th>날짜</th>
                       <th>금액</th>
+                      <th style={{ width: "10%" }}>배당율(매입대비)</th>
                       <th>계좌</th>
                       <th>설명</th>
                       <th>작업</th>
                     </tr>
                   </thead>
                   <tbody>
-                    {positionDividends.map((dividend) => {
+                    {positionDividendsWithYield.map(({ entry: dividend, yieldRate, costBasis, quantity, avgPrice, dividendPerShare }) => {
                       const isEditing = dividend.id === editingDividendId;
                       return (
                         <tr key={dividend.id}>
@@ -573,6 +721,18 @@ export const StockDetailModal: React.FC<Props> = ({
                             ) : (
                               formatKRW(Math.round(dividend.amount))
                             )}
+                          </td>
+                          <td className="number" style={{ fontSize: 13, color: "var(--primary)" }}>
+                            {yieldRate != null ? (
+                              <span title={costBasis > 0 ? `매입 ${formatKRW(Math.round(costBasis))}, 주당 ${dividendPerShare != null ? formatKRW(Math.round(dividendPerShare)) : "-"}` : ""}>
+                                <span style={{ fontWeight: 600 }}>{yieldRate.toFixed(2)}%</span>
+                                {costBasis > 0 && quantity > 0 && (
+                                  <div className="hint" style={{ fontSize: 10, marginTop: 2 }}>
+                                    평단 {formatKRW(Math.round(avgPrice!))} · 주당 {formatKRW(Math.round(dividendPerShare!))}
+                                  </div>
+                                )}
+                              </span>
+                            ) : "-"}
                           </td>
                           <td>
                             {isEditing ? (

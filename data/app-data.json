@@ -1866,7 +1866,7 @@
       "kind": "expense",
       "category": "유류교통비",
       "subCategory": "주차비",
-      "description": "건대 장례식장",
+      "description": "건대 장례시장",
       "amount": 9000,
       "fromAccountId": "체크카드"
     },
@@ -3396,7 +3396,7 @@
       "kind": "expense",
       "category": "데이트비",
       "subCategory": "식사",
-      "description": "농협 장",
+      "description": "농농농협 장",
       "amount": 70660,
       "fromAccountId": "신용카드"
     },
@@ -6286,7 +6286,7 @@
     },
     {
       "ticker": "001620",
-      "name": "케이비아이동국실업",
+      "name": "케데이트비아이동국실업",
       "market": "KR"
     },
     {
@@ -10531,7 +10531,7 @@
     },
     {
       "ticker": "208850",
-      "name": "이비테크",
+      "name": "데이트비테크",
       "market": "KR"
     },
     {
@@ -14624,19 +14624,19 @@
       "exchange": "NYSE"
     },
     {
-      "ticker": "ABR^D",
+      "ticker": "ABRD",
       "name": "ABR^D",
       "market": "US",
       "exchange": "NYSE"
     },
     {
-      "ticker": "ABR^E",
+      "ticker": "ABRE",
       "name": "ABR^E",
       "market": "US",
       "exchange": "NYSE"
     },
     {
-      "ticker": "ABR^F",
+      "ticker": "ABRF",
       "name": "ABR^F",
       "market": "US",
       "exchange": "NYSE"
@@ -14876,7 +14876,7 @@
       "exchange": "NYSE"
     },
     {
-      "ticker": "ACP^A",
+      "ticker": "ACPA",
       "name": "ACP^A",
       "market": "US",
       "exchange": "NYSE"
@@ -14888,13 +14888,13 @@
       "exchange": "NYSE"
     },
     {
-      "ticker": "ACR^C",
+      "ticker": "ACRC",
       "name": "ACR^C",
       "market": "US",
       "exchange": "NYSE"
     },
     {
-      "ticker": "ACR^D",
+      "ticker": "ACRD",
       "name": "ACR^D",
       "market": "US",
       "exchange": "NYSE"
@@ -15050,7 +15050,7 @@
       "exchange": "NYSE"
     },
     {
-      "ticker": "ADC^A",
+      "ticker": "ADCA",
       "name": "ADC^A",
       "market": "US",
       "exchange": "NYSE"
@@ -15536,31 +15536,31 @@
       "exchange": "NYSE"
     },
     {
-      "ticker": "AGM^D",
+      "ticker": "AGMD",
       "name": "AGM^D",
       "market": "US",
       "exchange": "NYSE"
     },
     {
-      "ticker": "AGM^E",
+      "ticker": "AGME",
       "name": "AGM^E",
       "market": "US",
       "exchange": "NYSE"
     },
     {
-      "ticker": "AGM^F",
+      "ticker": "AGMF",
       "name": "AGM^F",
       "market": "US",
       "exchange": "NYSE"
     },
     {
-      "ticker": "AGM^G",
+      "ticker": "AGMG",
       "name": "AGM^G",
       "market": "US",
       "exchange": "NYSE"
     },
     {
-      "ticker": "AGM^H",
+      "ticker": "AGMH",
       "name": "AGM^H",
       "market": "US",
       "exchange": "NYSE"
@@ -15680,7 +15680,7 @@
       "exchange": "NYSE"
     },
     {
-      "ticker": "AHH^A",
+      "ticker": "AHHA",
       "name": "AHH^A",
       "market": "US",
       "exchange": "NYSE"
@@ -15692,19 +15692,19 @@
       "exchange": "NYSE"
     },
     {
-      "ticker": "AHL^D",
+      "ticker": "AHLD",
       "name": "AHL^D",
       "market": "US",
       "exchange": "NYSE"
     },
     {
-      "ticker": "AHL^E",
+      "ticker": "AHLE",
       "name": "AHL^E",
       "market": "US",
       "exchange": "NYSE"
     },
     {
-      "ticker": "AHL^F",
+      "ticker": "AHLF",
       "name": "AHL^F",
       "market": "US",
       "exchange": "NYSE"
@@ -15722,31 +15722,31 @@
       "exchange": "NYSE"
     },
     {
-      "ticker": "AHT^D",
+      "ticker": "AHTD",
       "name": "AHT^D",
       "market": "US",
       "exchange": "NYSE"
     },
     {
-      "ticker": "AHT^F",
+      "ticker": "AHTF",
       "name": "AHT^F",
       "market": "US",
       "exchange": "NYSE"
     },
     {
-      "ticker": "AHT^G",
+      "ticker": "AHTG",
       "name": "AHT^G",
       "market": "US",
       "exchange": "NYSE"
     },
     {
-      "ticker": "AHT^H",
+      "ticker": "AHTH",
       "name": "AHT^H",
       "market": "US",
       "exchange": "NYSE"
     },
     {
-      "ticker": "AHT^I",
+      "ticker": "AHTI",
       "name": "AHT^I",
       "market": "US",
       "exchange": "NYSE"
@@ -15992,13 +15992,13 @@
       "exchange": "NYSE"
     },
     {
-      "ticker": "AKO/A",
+      "ticker": "AKOA",
       "name": "AKO/A",
       "market": "US",
       "exchange": "NYSE"
     },
     {
-      "ticker": "AKO/B",
+      "ticker": "AKOB",
       "name": "AKO/B",
       "market": "US",
       "exchange": "NYSE"
@@ -16046,7 +16046,7 @@
       "exchange": "NYSE"
     },
     {
-      "ticker": "ALB^A",
+      "ticker": "ALBA",
       "name": "ALB^A",
       "market": "US",
       "exchange": "NYSE"
@@ -16208,25 +16208,25 @@
       "exchange": "NYSE"
     },
     {
-      "ticker": "ALL^B",
+      "ticker": "ALLB",
       "name": "ALL^B",
       "market": "US",
       "exchange": "NYSE"
     },
     {
-      "ticker": "ALL^H",
+      "ticker": "ALLH",
       "name": "ALL^H",
       "market": "US",
       "exchange": "NYSE"
     },
     {
-      "ticker": "ALL^I",
+      "ticker": "ALLI",
       "name": "ALL^I",
       "market": "US",
       "exchange": "NYSE"
     },
     {
-      "ticker": "ALL^J",
+      "ticker": "ALLJ",
       "name": "ALL^J",
       "market": "US",
       "exchange": "NYSE"
@@ -16328,7 +16328,7 @@
       "exchange": "NYSE"
     },
     {
-      "ticker": "ALTG^A",
+      "ticker": "ALTGA",
       "name": "ALTG^A",
       "market": "US",
       "exchange": "NYSE"
@@ -16502,13 +16502,13 @@
       "exchange": "NYSE"
     },
     {
-      "ticker": "AMH^G",
+      "ticker": "AMHG",
       "name": "AMH^G",
       "market": "US",
       "exchange": "NYSE"
     },
     {
-      "ticker": "AMH^H",
+      "ticker": "AMHH",
       "name": "AMH^H",
       "market": "US",
       "exchange": "NYSE"
@@ -16754,7 +16754,7 @@
       "exchange": "NYSE"
     },
     {
-      "ticker": "ANG^D",
+      "ticker": "ANGD",
       "name": "ANG^D",
       "market": "US",
       "exchange": "NYSE"
@@ -17078,7 +17078,7 @@
       "exchange": "NYSE"
     },
     {
-      "ticker": "APO^A",
+      "ticker": "APOA",
       "name": "APO^A",
       "market": "US",
       "exchange": "NYSE"
@@ -17318,7 +17318,7 @@
       "exchange": "NYSE"
     },
     {
-      "ticker": "ARES^B",
+      "ticker": "ARESB",
       "name": "ARES^B",
       "market": "US",
       "exchange": "NYSE"
@@ -17474,7 +17474,7 @@
       "exchange": "NYSE"
     },
     {
-      "ticker": "ARR^C",
+      "ticker": "ARRC",
       "name": "ARR^C",
       "market": "US",
       "exchange": "NYSE"
@@ -17558,13 +17558,13 @@
       "exchange": "NYSE"
     },
     {
-      "ticker": "ASB^E",
+      "ticker": "ASBE",
       "name": "ASB^E",
       "market": "US",
       "exchange": "NYSE"
     },
     {
-      "ticker": "ASB^F",
+      "ticker": "ASBF",
       "name": "ASB^F",
       "market": "US",
       "exchange": "NYSE"
@@ -17840,7 +17840,7 @@
       "exchange": "NYSE"
     },
     {
-      "ticker": "ATCO^H",
+      "ticker": "ATCOH",
       "name": "ATCO^H",
       "market": "US",
       "exchange": "NYSE"
@@ -17882,25 +17882,25 @@
       "exchange": "NYSE"
     },
     {
-      "ticker": "ATH^A",
+      "ticker": "ATHA",
       "name": "ATH^A",
       "market": "US",
       "exchange": "NYSE"
     },
     {
-      "ticker": "ATH^B",
+      "ticker": "ATHB",
       "name": "ATH^B",
       "market": "US",
       "exchange": "NYSE"
     },
     {
-      "ticker": "ATH^D",
+      "ticker": "ATHD",
       "name": "ATH^D",
       "market": "US",
       "exchange": "NYSE"
     },
     {
-      "ticker": "ATH^E",
+      "ticker": "ATHE",
       "name": "ATH^E",
       "market": "US",
       "exchange": "NYSE"
@@ -18164,7 +18164,7 @@
       "exchange": "NYSE"
     },
     {
-      "ticker": "AUB^A",
+      "ticker": "AUBA",
       "name": "AUB^A",
       "market": "US",
       "exchange": "NYSE"
@@ -18506,7 +18506,7 @@
       "exchange": "NYSE"
     },
     {
-      "ticker": "AXS^E",
+      "ticker": "AXSE",
       "name": "AXS^E",
       "market": "US",
       "exchange": "NYSE"
@@ -18596,7 +18596,7 @@
       "exchange": "NYSE"
     },
     {
-      "ticker": "BA^A",
+      "ticker": "BAA",
       "name": "BA^A",
       "market": "US",
       "exchange": "NYSE"
@@ -18620,61 +18620,61 @@
       "exchange": "NYSE"
     },
     {
-      "ticker": "BAC^B",
+      "ticker": "BACB",
       "name": "BAC^B",
       "market": "US",
       "exchange": "NYSE"
     },
     {
-      "ticker": "BAC^E",
+      "ticker": "BACE",
       "name": "BAC^E",
       "market": "US",
       "exchange": "NYSE"
     },
     {
-      "ticker": "BAC^K",
+      "ticker": "BACK",
       "name": "BAC^K",
       "market": "US",
       "exchange": "NYSE"
     },
     {
-      "ticker": "BAC^L",
+      "ticker": "BACL",
       "name": "BAC^L",
       "market": "US",
       "exchange": "NYSE"
     },
     {
-      "ticker": "BAC^M",
+      "ticker": "BACM",
       "name": "BAC^M",
       "market": "US",
       "exchange": "NYSE"
     },
     {
-      "ticker": "BAC^N",
+      "ticker": "BACN",
       "name": "BAC^N",
       "market": "US",
       "exchange": "NYSE"
     },
     {
-      "ticker": "BAC^O",
+      "ticker": "BACO",
       "name": "BAC^O",
       "market": "US",
       "exchange": "NYSE"
     },
     {
-      "ticker": "BAC^P",
+      "ticker": "BACP",
       "name": "BAC^P",
       "market": "US",
       "exchange": "NYSE"
     },
     {
-      "ticker": "BAC^Q",
+      "ticker": "BACQ",
       "name": "BAC^Q",
       "market": "US",
       "exchange": "NYSE"
     },
     {
-      "ticker": "BAC^S",
+      "ticker": "BACS",
       "name": "BAC^S",
       "market": "US",
       "exchange": "NYSE"
@@ -18764,7 +18764,7 @@
       "exchange": "NYSE"
     },
     {
-      "ticker": "BANC^F",
+      "ticker": "BANCF",
       "name": "BANC^F",
       "market": "US",
       "exchange": "NYSE"
@@ -19004,13 +19004,13 @@
       "exchange": "NYSE"
     },
     {
-      "ticker": "BC^A",
+      "ticker": "BCA",
       "name": "BC^A",
       "market": "US",
       "exchange": "NYSE"
     },
     {
-      "ticker": "BC^C",
+      "ticker": "BCC",
       "name": "BC^C",
       "market": "US",
       "exchange": "NYSE"
@@ -19178,7 +19178,7 @@
       "exchange": "NYSE"
     },
     {
-      "ticker": "BCV^A",
+      "ticker": "BCVA",
       "name": "BCV^A",
       "market": "US",
       "exchange": "NYSE"
@@ -19370,7 +19370,7 @@
       "exchange": "NYSE"
     },
     {
-      "ticker": "BEP^A",
+      "ticker": "BEPA",
       "name": "BEP^A",
       "market": "US",
       "exchange": "NYSE"
@@ -19412,13 +19412,13 @@
       "exchange": "NYSE"
     },
     {
-      "ticker": "BF/A",
+      "ticker": "BFA",
       "name": "BF/A",
       "market": "US",
       "exchange": "NYSE"
     },
     {
-      "ticker": "BF/B",
+      "ticker": "BFB",
       "name": "BF/B",
       "market": "US",
       "exchange": "NYSE"
@@ -19496,13 +19496,13 @@
       "exchange": "NYSE"
     },
     {
-      "ticker": "BFS^D",
+      "ticker": "BFSD",
       "name": "BFS^D",
       "market": "US",
       "exchange": "NYSE"
     },
     {
-      "ticker": "BFS^E",
+      "ticker": "BFSE",
       "name": "BFS^E",
       "market": "US",
       "exchange": "NYSE"
@@ -19712,13 +19712,13 @@
       "exchange": "NYSE"
     },
     {
-      "ticker": "BHR^B",
+      "ticker": "BHRB",
       "name": "BHR^B",
       "market": "US",
       "exchange": "NYSE"
     },
     {
-      "ticker": "BHR^D",
+      "ticker": "BHRD",
       "name": "BHR^D",
       "market": "US",
       "exchange": "NYSE"
@@ -19796,7 +19796,7 @@
       "exchange": "NYSE"
     },
     {
-      "ticker": "BIO/B",
+      "ticker": "BIOB",
       "name": "BIO/B",
       "market": "US",
       "exchange": "NYSE"
@@ -19820,13 +19820,13 @@
       "exchange": "NYSE"
     },
     {
-      "ticker": "BIP^A",
+      "ticker": "BIPA",
       "name": "BIP^A",
       "market": "US",
       "exchange": "NYSE"
     },
     {
-      "ticker": "BIP^B",
+      "ticker": "BIPB",
       "name": "BIP^B",
       "market": "US",
       "exchange": "NYSE"
@@ -19881,7 +19881,7 @@
     },
     {
       "ticker": "BITX",
-      "name": "BITX",
+      "name": "Volatility Shares 2x Bitcoin Strategy ETF",
       "market": "US",
       "exchange": "NYSE"
     },
@@ -19940,7 +19940,7 @@
       "exchange": "NYSE"
     },
     {
-      "ticker": "BK^K",
+      "ticker": "BKK",
       "name": "BK^K",
       "market": "US",
       "exchange": "NYSE"
@@ -20282,25 +20282,25 @@
       "exchange": "NYSE"
     },
     {
-      "ticker": "BML^G",
+      "ticker": "BMLG",
       "name": "BML^G",
       "market": "US",
       "exchange": "NYSE"
     },
     {
-      "ticker": "BML^H",
+      "ticker": "BMLH",
       "name": "BML^H",
       "market": "US",
       "exchange": "NYSE"
     },
     {
-      "ticker": "BML^J",
+      "ticker": "BMLJ",
       "name": "BML^J",
       "market": "US",
       "exchange": "NYSE"
     },
     {
-      "ticker": "BML^L",
+      "ticker": "BMLL",
       "name": "BML^L",
       "market": "US",
       "exchange": "NYSE"
@@ -20534,13 +20534,13 @@
       "exchange": "NYSE"
     },
     {
-      "ticker": "BOH^A",
+      "ticker": "BOHA",
       "name": "BOH^A",
       "market": "US",
       "exchange": "NYSE"
     },
     {
-      "ticker": "BOH^B",
+      "ticker": "BOHB",
       "name": "BOH^B",
       "market": "US",
       "exchange": "NYSE"
@@ -21248,7 +21248,7 @@
       "exchange": "NYSE"
     },
     {
-      "ticker": "BW^A",
+      "ticker": "BWA",
       "name": "BW^A",
       "market": "US",
       "exchange": "NYSE"
@@ -21488,7 +21488,7 @@
       "exchange": "NYSE"
     },
     {
-      "ticker": "C^N",
+      "ticker": "CN",
       "name": "C^N",
       "market": "US",
       "exchange": "NYSE"
@@ -21542,7 +21542,7 @@
       "exchange": "NYSE"
     },
     {
-      "ticker": "CADE^A",
+      "ticker": "CADEA",
       "name": "CADE^A",
       "market": "US",
       "exchange": "NYSE"
@@ -22202,13 +22202,13 @@
       "exchange": "NYSE"
     },
     {
-      "ticker": "CDR^B",
+      "ticker": "CDRB",
       "name": "CDR^B",
       "market": "US",
       "exchange": "NYSE"
     },
     {
-      "ticker": "CDR^C",
+      "ticker": "CDRC",
       "name": "CDR^C",
       "market": "US",
       "exchange": "NYSE"
@@ -22490,19 +22490,19 @@
       "exchange": "NYSE"
     },
     {
-      "ticker": "CFG^E",
+      "ticker": "CFGE",
       "name": "CFG^E",
       "market": "US",
       "exchange": "NYSE"
     },
     {
-      "ticker": "CFG^H",
+      "ticker": "CFGH",
       "name": "CFG^H",
       "market": "US",
       "exchange": "NYSE"
     },
     {
-      "ticker": "CFG^I",
+      "ticker": "CFGI",
       "name": "CFG^I",
       "market": "US",
       "exchange": "NYSE"
@@ -22526,7 +22526,7 @@
       "exchange": "NYSE"
     },
     {
-      "ticker": "CFR^B",
+      "ticker": "CFRB",
       "name": "CFR^B",
       "market": "US",
       "exchange": "NYSE"
@@ -22766,13 +22766,13 @@
       "exchange": "NYSE"
     },
     {
-      "ticker": "CHMI^A",
+      "ticker": "CHMIA",
       "name": "CHMI^A",
       "market": "US",
       "exchange": "NYSE"
     },
     {
-      "ticker": "CHMI^B",
+      "ticker": "CHMIB",
       "name": "CHMI^B",
       "market": "US",
       "exchange": "NYSE"
@@ -23006,25 +23006,25 @@
       "exchange": "NYSE"
     },
     {
-      "ticker": "CIM^A",
+      "ticker": "CIMA",
       "name": "CIM^A",
       "market": "US",
       "exchange": "NYSE"
     },
     {
-      "ticker": "CIM^B",
+      "ticker": "CIMB",
       "name": "CIM^B",
       "market": "US",
       "exchange": "NYSE"
     },
     {
-      "ticker": "CIM^C",
+      "ticker": "CIMC",
       "name": "CIM^C",
       "market": "US",
       "exchange": "NYSE"
     },
     {
-      "ticker": "CIM^D",
+      "ticker": "CIMD",
       "name": "CIM^D",
       "market": "US",
       "exchange": "NYSE"
@@ -23078,7 +23078,7 @@
       "exchange": "NYSE"
     },
     {
-      "ticker": "CIO^A",
+      "ticker": "CIOA",
       "name": "CIO^A",
       "market": "US",
       "exchange": "NYSE"
@@ -23186,7 +23186,7 @@
       "exchange": "NYSE"
     },
     {
-      "ticker": "CLDT^A",
+      "ticker": "CLDTA",
       "name": "CLDT^A",
       "market": "US",
       "exchange": "NYSE"
@@ -23384,7 +23384,7 @@
       "exchange": "NYSE"
     },
     {
-      "ticker": "CMA^B",
+      "ticker": "CMAB",
       "name": "CMA^B",
       "market": "US",
       "exchange": "NYSE"
@@ -23534,19 +23534,19 @@
       "exchange": "NYSE"
     },
     {
-      "ticker": "CMRE^B",
+      "ticker": "CMREB",
       "name": "CMRE^B",
       "market": "US",
       "exchange": "NYSE"
     },
     {
-      "ticker": "CMRE^C",
+      "ticker": "CMREC",
       "name": "CMRE^C",
       "market": "US",
       "exchange": "NYSE"
     },
     {
-      "ticker": "CMRE^D",
+      "ticker": "CMRED",
       "name": "CMRE^D",
       "market": "US",
       "exchange": "NYSE"
@@ -23558,13 +23558,13 @@
       "exchange": "NYSE"
     },
     {
-      "ticker": "CMS^B",
+      "ticker": "CMSB",
       "name": "CMS^B",
       "market": "US",
       "exchange": "NYSE"
     },
     {
-      "ticker": "CMS^C",
+      "ticker": "CMSC",
       "name": "CMS^C",
       "market": "US",
       "exchange": "NYSE"
@@ -23708,7 +23708,7 @@
       "exchange": "NYSE"
     },
     {
-      "ticker": "CNO^A",
+      "ticker": "CNOA",
       "name": "CNO^A",
       "market": "US",
       "exchange": "NYSE"
@@ -23852,19 +23852,19 @@
       "exchange": "NYSE"
     },
     {
-      "ticker": "CODI^A",
+      "ticker": "CODIA",
       "name": "CODI^A",
       "market": "US",
       "exchange": "NYSE"
     },
     {
-      "ticker": "CODI^B",
+      "ticker": "CODIB",
       "name": "CODI^B",
       "market": "US",
       "exchange": "NYSE"
     },
     {
-      "ticker": "CODI^C",
+      "ticker": "CODIC",
       "name": "CODI^C",
       "market": "US",
       "exchange": "NYSE"
@@ -23900,31 +23900,31 @@
       "exchange": "NYSE"
     },
     {
-      "ticker": "COF^I",
+      "ticker": "COFI",
       "name": "COF^I",
       "market": "US",
       "exchange": "NYSE"
     },
     {
-      "ticker": "COF^J",
+      "ticker": "COFJ",
       "name": "COF^J",
       "market": "US",
       "exchange": "NYSE"
     },
     {
-      "ticker": "COF^K",
+      "ticker": "COFK",
       "name": "COF^K",
       "market": "US",
       "exchange": "NYSE"
     },
     {
-      "ticker": "COF^L",
+      "ticker": "COFL",
       "name": "COF^L",
       "market": "US",
       "exchange": "NYSE"
     },
     {
-      "ticker": "COF^N",
+      "ticker": "COFN",
       "name": "COF^N",
       "market": "US",
       "exchange": "NYSE"
@@ -24392,13 +24392,13 @@
       "exchange": "NYSE"
     },
     {
-      "ticker": "CRD/A",
+      "ticker": "CRDA",
       "name": "CRD/A",
       "market": "US",
       "exchange": "NYSE"
     },
     {
-      "ticker": "CRD/B",
+      "ticker": "CRDB",
       "name": "CRD/B",
       "market": "US",
       "exchange": "NYSE"
@@ -24770,13 +24770,13 @@
       "exchange": "NYSE"
     },
     {
-      "ticker": "CTA^A",
+      "ticker": "CTAA",
       "name": "CTA^A",
       "market": "US",
       "exchange": "NYSE"
     },
     {
-      "ticker": "CTA^B",
+      "ticker": "CTAB",
       "name": "CTA^B",
       "market": "US",
       "exchange": "NYSE"
@@ -24860,7 +24860,7 @@
       "exchange": "NYSE"
     },
     {
-      "ticker": "CTO^A",
+      "ticker": "CTOA",
       "name": "CTO^A",
       "market": "US",
       "exchange": "NYSE"
@@ -24968,7 +24968,7 @@
       "exchange": "NYSE"
     },
     {
-      "ticker": "CUBI^F",
+      "ticker": "CUBIF",
       "name": "CUBI^F",
       "market": "US",
       "exchange": "NYSE"
@@ -25634,19 +25634,19 @@
       "exchange": "NYSE"
     },
     {
-      "ticker": "DBRG^H",
+      "ticker": "DBRGH",
       "name": "DBRG^H",
       "market": "US",
       "exchange": "NYSE"
     },
     {
-      "ticker": "DBRG^I",
+      "ticker": "DBRGI",
       "name": "DBRG^I",
       "market": "US",
       "exchange": "NYSE"
     },
     {
-      "ticker": "DBRG^J",
+      "ticker": "DBRGJ",
       "name": "DBRG^J",
       "market": "US",
       "exchange": "NYSE"
@@ -26276,7 +26276,7 @@
       "exchange": "NYSE"
     },
     {
-      "ticker": "DLNG^A",
+      "ticker": "DLNGA",
       "name": "DLNG^A",
       "market": "US",
       "exchange": "NYSE"
@@ -26300,19 +26300,19 @@
       "exchange": "NYSE"
     },
     {
-      "ticker": "DLR^J",
+      "ticker": "DLRJ",
       "name": "DLR^J",
       "market": "US",
       "exchange": "NYSE"
     },
     {
-      "ticker": "DLR^K",
+      "ticker": "DLRK",
       "name": "DLR^K",
       "market": "US",
       "exchange": "NYSE"
     },
     {
-      "ticker": "DLR^L",
+      "ticker": "DLRL",
       "name": "DLR^L",
       "market": "US",
       "exchange": "NYSE"
@@ -26630,7 +26630,7 @@
       "exchange": "NYSE"
     },
     {
-      "ticker": "DRH^A",
+      "ticker": "DRHA",
       "name": "DRH^A",
       "market": "US",
       "exchange": "NYSE"
@@ -26774,7 +26774,7 @@
       "exchange": "NYSE"
     },
     {
-      "ticker": "DSX^B",
+      "ticker": "DSXB",
       "name": "DSX^B",
       "market": "US",
       "exchange": "NYSE"
@@ -26918,7 +26918,7 @@
       "exchange": "NYSE"
     },
     {
-      "ticker": "DUK^A",
+      "ticker": "DUKA",
       "name": "DUK^A",
       "market": "US",
       "exchange": "NYSE"
@@ -27044,7 +27044,7 @@
       "exchange": "NYSE"
     },
     {
-      "ticker": "DX^C",
+      "ticker": "DXC",
       "name": "DX^C",
       "market": "US",
       "exchange": "NYSE"
@@ -27260,7 +27260,7 @@
       "exchange": "NYSE"
     },
     {
-      "ticker": "ECC^D",
+      "ticker": "ECCD",
       "name": "ECC^D",
       "market": "US",
       "exchange": "NYSE"
@@ -27320,7 +27320,7 @@
       "exchange": "NYSE"
     },
     {
-      "ticker": "ECF^A",
+      "ticker": "ECFA",
       "name": "ECF^A",
       "market": "US",
       "exchange": "NYSE"
@@ -27620,25 +27620,25 @@
       "exchange": "NYSE"
     },
     {
-      "ticker": "EFC^A",
+      "ticker": "EFCA",
       "name": "EFC^A",
       "market": "US",
       "exchange": "NYSE"
     },
     {
-      "ticker": "EFC^B",
+      "ticker": "EFCB",
       "name": "EFC^B",
       "market": "US",
       "exchange": "NYSE"
     },
     {
-      "ticker": "EFC^C",
+      "ticker": "EFCC",
       "name": "EFC^C",
       "market": "US",
       "exchange": "NYSE"
     },
     {
-      "ticker": "EFC^D",
+      "ticker": "EFCD",
       "name": "EFC^D",
       "market": "US",
       "exchange": "NYSE"
@@ -28394,7 +28394,7 @@
       "exchange": "NYSE"
     },
     {
-      "ticker": "EP^C",
+      "ticker": "EPC",
       "name": "EP^C",
       "market": "US",
       "exchange": "NYSE"
@@ -28466,19 +28466,19 @@
       "exchange": "NYSE"
     },
     {
-      "ticker": "EPR^C",
+      "ticker": "EPRC",
       "name": "EPR^C",
       "market": "US",
       "exchange": "NYSE"
     },
     {
-      "ticker": "EPR^E",
+      "ticker": "EPRE",
       "name": "EPR^E",
       "market": "US",
       "exchange": "NYSE"
     },
     {
-      "ticker": "EPR^G",
+      "ticker": "EPRG",
       "name": "EPR^G",
       "market": "US",
       "exchange": "NYSE"
@@ -28562,13 +28562,13 @@
       "exchange": "NYSE"
     },
     {
-      "ticker": "EQH^A",
+      "ticker": "EQHA",
       "name": "EQH^A",
       "market": "US",
       "exchange": "NYSE"
     },
     {
-      "ticker": "EQH^C",
+      "ticker": "EQHC",
       "name": "EQH^C",
       "market": "US",
       "exchange": "NYSE"
@@ -28838,7 +28838,7 @@
       "exchange": "NYSE"
     },
     {
-      "ticker": "ET^I",
+      "ticker": "ETI",
       "name": "ET^I",
       "market": "US",
       "exchange": "NYSE"
@@ -28904,7 +28904,7 @@
       "exchange": "NYSE"
     },
     {
-      "ticker": "ETI^",
+      "ticker": "ETI",
       "name": "ETI^",
       "market": "US",
       "exchange": "NYSE"
@@ -29546,19 +29546,19 @@
       "exchange": "NYSE"
     },
     {
-      "ticker": "F^B",
+      "ticker": "FB",
       "name": "F^B",
       "market": "US",
       "exchange": "NYSE"
     },
     {
-      "ticker": "F^C",
+      "ticker": "FC",
       "name": "F^C",
       "market": "US",
       "exchange": "NYSE"
     },
     {
-      "ticker": "F^D",
+      "ticker": "FD",
       "name": "F^D",
       "market": "US",
       "exchange": "NYSE"
@@ -29738,7 +29738,7 @@
       "exchange": "NYSE"
     },
     {
-      "ticker": "FBRT^E",
+      "ticker": "FBRTE",
       "name": "FBRT^E",
       "market": "US",
       "exchange": "NYSE"
@@ -30260,19 +30260,19 @@
       "exchange": "NYSE"
     },
     {
-      "ticker": "FHN^C",
+      "ticker": "FHNC",
       "name": "FHN^C",
       "market": "US",
       "exchange": "NYSE"
     },
     {
-      "ticker": "FHN^E",
+      "ticker": "FHNE",
       "name": "FHN^E",
       "market": "US",
       "exchange": "NYSE"
     },
     {
-      "ticker": "FHN^F",
+      "ticker": "FHNF",
       "name": "FHN^F",
       "market": "US",
       "exchange": "NYSE"
@@ -30494,13 +30494,13 @@
       "exchange": "NYSE"
     },
     {
-      "ticker": "FLG^A",
+      "ticker": "FLGA",
       "name": "FLG^A",
       "market": "US",
       "exchange": "NYSE"
     },
     {
-      "ticker": "FLG^U",
+      "ticker": "FLGU",
       "name": "FLG^U",
       "market": "US",
       "exchange": "NYSE"
@@ -30920,7 +30920,7 @@
       "exchange": "NYSE"
     },
     {
-      "ticker": "FOUR^A",
+      "ticker": "FOURA",
       "name": "FOUR^A",
       "market": "US",
       "exchange": "NYSE"
@@ -31124,7 +31124,7 @@
       "exchange": "NYSE"
     },
     {
-      "ticker": "FRT^C",
+      "ticker": "FRTC",
       "name": "FRT^C",
       "market": "US",
       "exchange": "NYSE"
@@ -31658,19 +31658,19 @@
       "exchange": "NYSE"
     },
     {
-      "ticker": "GAB^G",
+      "ticker": "GABG",
       "name": "GAB^G",
       "market": "US",
       "exchange": "NYSE"
     },
     {
-      "ticker": "GAB^H",
+      "ticker": "GABH",
       "name": "GAB^H",
       "market": "US",
       "exchange": "NYSE"
     },
     {
-      "ticker": "GAB^K",
+      "ticker": "GABK",
       "name": "GAB^K",
       "market": "US",
       "exchange": "NYSE"
@@ -31736,7 +31736,7 @@
       "exchange": "NYSE"
     },
     {
-      "ticker": "GAM^B",
+      "ticker": "GAMB",
       "name": "GAM^B",
       "market": "US",
       "exchange": "NYSE"
@@ -32018,13 +32018,13 @@
       "exchange": "NYSE"
     },
     {
-      "ticker": "GDV^H",
+      "ticker": "GDVH",
       "name": "GDV^H",
       "market": "US",
       "exchange": "NYSE"
     },
     {
-      "ticker": "GDV^K",
+      "ticker": "GDVK",
       "name": "GDV^K",
       "market": "US",
       "exchange": "NYSE"
@@ -32276,7 +32276,7 @@
       "exchange": "NYSE"
     },
     {
-      "ticker": "GGN^B",
+      "ticker": "GGNB",
       "name": "GGN^B",
       "market": "US",
       "exchange": "NYSE"
@@ -32300,13 +32300,13 @@
       "exchange": "NYSE"
     },
     {
-      "ticker": "GGT^E",
+      "ticker": "GGTE",
       "name": "GGT^E",
       "market": "US",
       "exchange": "NYSE"
     },
     {
-      "ticker": "GGT^G",
+      "ticker": "GGTG",
       "name": "GGT^G",
       "market": "US",
       "exchange": "NYSE"
@@ -32528,7 +32528,7 @@
       "exchange": "NYSE"
     },
     {
-      "ticker": "GL^D",
+      "ticker": "GLD",
       "name": "GL^D",
       "market": "US",
       "exchange": "NYSE"
@@ -32642,19 +32642,19 @@
       "exchange": "NYSE"
     },
     {
-      "ticker": "GLOP^A",
+      "ticker": "GLOPA",
       "name": "GLOP^A",
       "market": "US",
       "exchange": "NYSE"
     },
     {
-      "ticker": "GLOP^B",
+      "ticker": "GLOPB",
       "name": "GLOP^B",
       "market": "US",
       "exchange": "NYSE"
     },
     {
-      "ticker": "GLOP^C",
+      "ticker": "GLOPC",
       "name": "GLOP^C",
       "market": "US",
       "exchange": "NYSE"
@@ -32666,7 +32666,7 @@
       "exchange": "NYSE"
     },
     {
-      "ticker": "GLP^B",
+      "ticker": "GLPB",
       "name": "GLP^B",
       "market": "US",
       "exchange": "NYSE"
@@ -32720,7 +32720,7 @@
       "exchange": "NYSE"
     },
     {
-      "ticker": "GLU^B",
+      "ticker": "GLUB",
       "name": "GLU^B",
       "market": "US",
       "exchange": "NYSE"
@@ -32816,7 +32816,7 @@
       "exchange": "NYSE"
     },
     {
-      "ticker": "GMRE^A",
+      "ticker": "GMREA",
       "name": "GMRE^A",
       "market": "US",
       "exchange": "NYSE"
@@ -32846,25 +32846,25 @@
       "exchange": "NYSE"
     },
     {
-      "ticker": "GNL^A",
+      "ticker": "GNLA",
       "name": "GNL^A",
       "market": "US",
       "exchange": "NYSE"
     },
     {
-      "ticker": "GNL^B",
+      "ticker": "GNLB",
       "name": "GNL^B",
       "market": "US",
       "exchange": "NYSE"
     },
     {
-      "ticker": "GNL^D",
+      "ticker": "GNLD",
       "name": "GNL^D",
       "market": "US",
       "exchange": "NYSE"
     },
     {
-      "ticker": "GNL^E",
+      "ticker": "GNLE",
       "name": "GNL^E",
       "market": "US",
       "exchange": "NYSE"
@@ -32918,7 +32918,7 @@
       "exchange": "NYSE"
     },
     {
-      "ticker": "GNT^A",
+      "ticker": "GNTA",
       "name": "GNT^A",
       "market": "US",
       "exchange": "NYSE"
@@ -33104,7 +33104,7 @@
       "exchange": "NYSE"
     },
     {
-      "ticker": "GPMT^A",
+      "ticker": "GPMTA",
       "name": "GPMT^A",
       "market": "US",
       "exchange": "NYSE"
@@ -33146,7 +33146,7 @@
       "exchange": "NYSE"
     },
     {
-      "ticker": "GPUS^D",
+      "ticker": "GPUSD",
       "name": "GPUS^D",
       "market": "US",
       "exchange": "NYSE"
@@ -33194,7 +33194,7 @@
       "exchange": "NYSE"
     },
     {
-      "ticker": "GRBK^A",
+      "ticker": "GRBKA",
       "name": "GRBK^A",
       "market": "US",
       "exchange": "NYSE"
@@ -33356,19 +33356,19 @@
       "exchange": "NYSE"
     },
     {
-      "ticker": "GS^A",
+      "ticker": "GSA",
       "name": "GS^A",
       "market": "US",
       "exchange": "NYSE"
     },
     {
-      "ticker": "GS^C",
+      "ticker": "GSC",
       "name": "GS^C",
       "market": "US",
       "exchange": "NYSE"
     },
     {
-      "ticker": "GS^D",
+      "ticker": "GSD",
       "name": "GS^D",
       "market": "US",
       "exchange": "NYSE"
@@ -33452,7 +33452,7 @@
       "exchange": "NYSE"
     },
     {
-      "ticker": "GSL^B",
+      "ticker": "GSLB",
       "name": "GSL^B",
       "market": "US",
       "exchange": "NYSE"
@@ -33584,7 +33584,7 @@
       "exchange": "NYSE"
     },
     {
-      "ticker": "GTLS^B",
+      "ticker": "GTLSB",
       "name": "GTLS^B",
       "market": "US",
       "exchange": "NYSE"
@@ -33656,7 +33656,7 @@
       "exchange": "NYSE"
     },
     {
-      "ticker": "GUT^C",
+      "ticker": "GUTC",
       "name": "GUT^C",
       "market": "US",
       "exchange": "NYSE"
@@ -34118,7 +34118,7 @@
       "exchange": "NYSE"
     },
     {
-      "ticker": "HEI/A",
+      "ticker": "HEIA",
       "name": "HEI/A",
       "market": "US",
       "exchange": "NYSE"
@@ -34184,13 +34184,13 @@
       "exchange": "NYSE"
     },
     {
-      "ticker": "HFRO^A",
+      "ticker": "HFROA",
       "name": "HFRO^A",
       "market": "US",
       "exchange": "NYSE"
     },
     {
-      "ticker": "HFRO^B",
+      "ticker": "HFROB",
       "name": "HFRO^B",
       "market": "US",
       "exchange": "NYSE"
@@ -34268,7 +34268,7 @@
       "exchange": "NYSE"
     },
     {
-      "ticker": "HIG^G",
+      "ticker": "HIGG",
       "name": "HIG^G",
       "market": "US",
       "exchange": "NYSE"
@@ -34370,7 +34370,7 @@
       "exchange": "NYSE"
     },
     {
-      "ticker": "HL^B",
+      "ticker": "HLB",
       "name": "HL^B",
       "market": "US",
       "exchange": "NYSE"
@@ -34658,7 +34658,7 @@
       "exchange": "NYSE"
     },
     {
-      "ticker": "HPE^C",
+      "ticker": "HPEC",
       "name": "HPE^C",
       "market": "US",
       "exchange": "NYSE"
@@ -34688,7 +34688,7 @@
       "exchange": "NYSE"
     },
     {
-      "ticker": "HPP^C",
+      "ticker": "HPPC",
       "name": "HPP^C",
       "market": "US",
       "exchange": "NYSE"
@@ -35162,7 +35162,7 @@
       "exchange": "NYSE"
     },
     {
-      "ticker": "HVT/A",
+      "ticker": "HVTA",
       "name": "HVT/A",
       "market": "US",
       "exchange": "NYSE"
@@ -35204,7 +35204,7 @@
       "exchange": "NYSE"
     },
     {
-      "ticker": "HWM^",
+      "ticker": "HWM",
       "name": "HWM^",
       "market": "US",
       "exchange": "NYSE"
@@ -35594,7 +35594,7 @@
       "exchange": "NYSE"
     },
     {
-      "ticker": "ICR^A",
+      "ticker": "ICRA",
       "name": "ICR^A",
       "market": "US",
       "exchange": "NYSE"
@@ -36026,7 +36026,7 @@
       "exchange": "NYSE"
     },
     {
-      "ticker": "IIPR^A",
+      "ticker": "IIPRA",
       "name": "IIPR^A",
       "market": "US",
       "exchange": "NYSE"
@@ -36512,13 +36512,13 @@
       "exchange": "NYSE"
     },
     {
-      "ticker": "INN^E",
+      "ticker": "INNE",
       "name": "INN^E",
       "market": "US",
       "exchange": "NYSE"
     },
     {
-      "ticker": "INN^F",
+      "ticker": "INNF",
       "name": "INN^F",
       "market": "US",
       "exchange": "NYSE"
@@ -37274,7 +37274,7 @@
       "exchange": "NYSE"
     },
     {
-      "ticker": "IVR^C",
+      "ticker": "IVRC",
       "name": "IVR^C",
       "market": "US",
       "exchange": "NYSE"
@@ -37964,37 +37964,37 @@
       "exchange": "NYSE"
     },
     {
-      "ticker": "JPM^C",
+      "ticker": "JPMC",
       "name": "JPM^C",
       "market": "US",
       "exchange": "NYSE"
     },
     {
-      "ticker": "JPM^D",
+      "ticker": "JPMD",
       "name": "JPM^D",
       "market": "US",
       "exchange": "NYSE"
     },
     {
-      "ticker": "JPM^J",
+      "ticker": "JPMJ",
       "name": "JPM^J",
       "market": "US",
       "exchange": "NYSE"
     },
     {
-      "ticker": "JPM^K",
+      "ticker": "JPMK",
       "name": "JPM^K",
       "market": "US",
       "exchange": "NYSE"
     },
     {
-      "ticker": "JPM^L",
+      "ticker": "JPML",
       "name": "JPM^L",
       "market": "US",
       "exchange": "NYSE"
     },
     {
-      "ticker": "JPM^M",
+      "ticker": "JPMM",
       "name": "JPM^M",
       "market": "US",
       "exchange": "NYSE"
@@ -38114,7 +38114,7 @@
       "exchange": "NYSE"
     },
     {
-      "ticker": "JXN^A",
+      "ticker": "JXNA",
       "name": "JXN^A",
       "market": "US",
       "exchange": "NYSE"
@@ -38342,25 +38342,25 @@
       "exchange": "NYSE"
     },
     {
-      "ticker": "KEY^I",
+      "ticker": "KEYI",
       "name": "KEY^I",
       "market": "US",
       "exchange": "NYSE"
     },
     {
-      "ticker": "KEY^J",
+      "ticker": "KEYJ",
       "name": "KEY^J",
       "market": "US",
       "exchange": "NYSE"
     },
     {
-      "ticker": "KEY^K",
+      "ticker": "KEYK",
       "name": "KEY^K",
       "market": "US",
       "exchange": "NYSE"
     },
     {
-      "ticker": "KEY^L",
+      "ticker": "KEYL",
       "name": "KEY^L",
       "market": "US",
       "exchange": "NYSE"
@@ -38474,19 +38474,19 @@
       "exchange": "NYSE"
     },
     {
-      "ticker": "KIM^L",
+      "ticker": "KIML",
       "name": "KIM^L",
       "market": "US",
       "exchange": "NYSE"
     },
     {
-      "ticker": "KIM^M",
+      "ticker": "KIMM",
       "name": "KIM^M",
       "market": "US",
       "exchange": "NYSE"
     },
     {
-      "ticker": "KIM^N",
+      "ticker": "KIMN",
       "name": "KIM^N",
       "market": "US",
       "exchange": "NYSE"
@@ -38522,7 +38522,7 @@
       "exchange": "NYSE"
     },
     {
-      "ticker": "KKR^D",
+      "ticker": "KKRD",
       "name": "KKR^D",
       "market": "US",
       "exchange": "NYSE"
@@ -38840,7 +38840,7 @@
       "exchange": "NYSE"
     },
     {
-      "ticker": "KREF^A",
+      "ticker": "KREFA",
       "name": "KREF^A",
       "market": "US",
       "exchange": "NYSE"
@@ -39584,7 +39584,7 @@
       "exchange": "NYSE"
     },
     {
-      "ticker": "LFT^A",
+      "ticker": "LFTA",
       "name": "LFT^A",
       "market": "US",
       "exchange": "NYSE"
@@ -39962,7 +39962,7 @@
       "exchange": "NYSE"
     },
     {
-      "ticker": "LNC^D",
+      "ticker": "LNCD",
       "name": "LNC^D",
       "market": "US",
       "exchange": "NYSE"
@@ -40052,7 +40052,7 @@
       "exchange": "NYSE"
     },
     {
-      "ticker": "LOB^A",
+      "ticker": "LOBA",
       "name": "LOB^A",
       "market": "US",
       "exchange": "NYSE"
@@ -40550,7 +40550,7 @@
       "exchange": "NYSE"
     },
     {
-      "ticker": "LXP^C",
+      "ticker": "LXPC",
       "name": "LXP^C",
       "market": "US",
       "exchange": "NYSE"
@@ -40652,7 +40652,7 @@
       "exchange": "NYSE"
     },
     {
-      "ticker": "MAA^I",
+      "ticker": "MAAI",
       "name": "MAA^I",
       "market": "US",
       "exchange": "NYSE"
@@ -41216,7 +41216,7 @@
       "exchange": "NYSE"
     },
     {
-      "ticker": "MDV^A",
+      "ticker": "MDVA",
       "name": "MDV^A",
       "market": "US",
       "exchange": "NYSE"
@@ -41324,7 +41324,7 @@
       "exchange": "NYSE"
     },
     {
-      "ticker": "MER^K",
+      "ticker": "MERK",
       "name": "MER^K",
       "market": "US",
       "exchange": "NYSE"
@@ -41354,19 +41354,19 @@
       "exchange": "NYSE"
     },
     {
-      "ticker": "MET^A",
+      "ticker": "META",
       "name": "MET^A",
       "market": "US",
       "exchange": "NYSE"
     },
     {
-      "ticker": "MET^E",
+      "ticker": "METE",
       "name": "MET^E",
       "market": "US",
       "exchange": "NYSE"
     },
     {
-      "ticker": "MET^F",
+      "ticker": "METF",
       "name": "MET^F",
       "market": "US",
       "exchange": "NYSE"
@@ -41414,13 +41414,13 @@
       "exchange": "NYSE"
     },
     {
-      "ticker": "MFA^B",
+      "ticker": "MFAB",
       "name": "MFA^B",
       "market": "US",
       "exchange": "NYSE"
     },
     {
-      "ticker": "MFA^C",
+      "ticker": "MFAC",
       "name": "MFA^C",
       "market": "US",
       "exchange": "NYSE"
@@ -41810,19 +41810,19 @@
       "exchange": "NYSE"
     },
     {
-      "ticker": "MITT^A",
+      "ticker": "MITTA",
       "name": "MITT^A",
       "market": "US",
       "exchange": "NYSE"
     },
     {
-      "ticker": "MITT^B",
+      "ticker": "MITTB",
       "name": "MITT^B",
       "market": "US",
       "exchange": "NYSE"
     },
     {
-      "ticker": "MITT^C",
+      "ticker": "MITTC",
       "name": "MITT^C",
       "market": "US",
       "exchange": "NYSE"
@@ -42578,55 +42578,55 @@
       "exchange": "NYSE"
     },
     {
-      "ticker": "MS^A",
+      "ticker": "MSA",
       "name": "MS^A",
       "market": "US",
       "exchange": "NYSE"
     },
     {
-      "ticker": "MS^E",
+      "ticker": "MSE",
       "name": "MS^E",
       "market": "US",
       "exchange": "NYSE"
     },
     {
-      "ticker": "MS^F",
+      "ticker": "MSF",
       "name": "MS^F",
       "market": "US",
       "exchange": "NYSE"
     },
     {
-      "ticker": "MS^I",
+      "ticker": "MSI",
       "name": "MS^I",
       "market": "US",
       "exchange": "NYSE"
     },
     {
-      "ticker": "MS^K",
+      "ticker": "MSK",
       "name": "MS^K",
       "market": "US",
       "exchange": "NYSE"
     },
     {
-      "ticker": "MS^L",
+      "ticker": "MSL",
       "name": "MS^L",
       "market": "US",
       "exchange": "NYSE"
     },
     {
-      "ticker": "MS^O",
+      "ticker": "MSO",
       "name": "MS^O",
       "market": "US",
       "exchange": "NYSE"
     },
     {
-      "ticker": "MS^P",
+      "ticker": "MSP",
       "name": "MS^P",
       "market": "US",
       "exchange": "NYSE"
     },
     {
-      "ticker": "MS^Q",
+      "ticker": "MSQ",
       "name": "MS^Q",
       "market": "US",
       "exchange": "NYSE"
@@ -42800,13 +42800,13 @@
       "exchange": "NYSE"
     },
     {
-      "ticker": "MTB^H",
+      "ticker": "MTBH",
       "name": "MTB^H",
       "market": "US",
       "exchange": "NYSE"
     },
     {
-      "ticker": "MTB^J",
+      "ticker": "MTBJ",
       "name": "MTB^J",
       "market": "US",
       "exchange": "NYSE"
@@ -43580,7 +43580,7 @@
       "exchange": "NYSE"
     },
     {
-      "ticker": "NCV^A",
+      "ticker": "NCVA",
       "name": "NCV^A",
       "market": "US",
       "exchange": "NYSE"
@@ -43592,7 +43592,7 @@
       "exchange": "NYSE"
     },
     {
-      "ticker": "NCZ^A",
+      "ticker": "NCZA",
       "name": "NCZ^A",
       "market": "US",
       "exchange": "NYSE"
@@ -43658,25 +43658,25 @@
       "exchange": "NYSE"
     },
     {
-      "ticker": "NEE^N",
+      "ticker": "NEEN",
       "name": "NEE^N",
       "market": "US",
       "exchange": "NYSE"
     },
     {
-      "ticker": "NEE^S",
+      "ticker": "NEES",
       "name": "NEE^S",
       "market": "US",
       "exchange": "NYSE"
     },
     {
-      "ticker": "NEE^T",
+      "ticker": "NEET",
       "name": "NEE^T",
       "market": "US",
       "exchange": "NYSE"
     },
     {
-      "ticker": "NEE^U",
+      "ticker": "NEEU",
       "name": "NEE^U",
       "market": "US",
       "exchange": "NYSE"
@@ -43916,13 +43916,13 @@
       "exchange": "NYSE"
     },
     {
-      "ticker": "NGL^B",
+      "ticker": "NGLB",
       "name": "NGL^B",
       "market": "US",
       "exchange": "NYSE"
     },
     {
-      "ticker": "NGL^C",
+      "ticker": "NGLC",
       "name": "NGL^C",
       "market": "US",
       "exchange": "NYSE"
@@ -44186,25 +44186,25 @@
       "exchange": "NYSE"
     },
     {
-      "ticker": "NLY^F",
+      "ticker": "NLYF",
       "name": "NLY^F",
       "market": "US",
       "exchange": "NYSE"
     },
     {
-      "ticker": "NLY^G",
+      "ticker": "NLYG",
       "name": "NLY^G",
       "market": "US",
       "exchange": "NYSE"
     },
     {
-      "ticker": "NLY^I",
+      "ticker": "NLYI",
       "name": "NLY^I",
       "market": "US",
       "exchange": "NYSE"
     },
     {
-      "ticker": "NLY^J",
+      "ticker": "NLYJ",
       "name": "NLY^J",
       "market": "US",
       "exchange": "NYSE"
@@ -44606,7 +44606,7 @@
       "exchange": "NYSE"
     },
     {
-      "ticker": "NREF^A",
+      "ticker": "NREFA",
       "name": "NREF^A",
       "market": "US",
       "exchange": "NYSE"
@@ -44702,13 +44702,13 @@
       "exchange": "NYSE"
     },
     {
-      "ticker": "NSA^A",
+      "ticker": "NSAA",
       "name": "NSA^A",
       "market": "US",
       "exchange": "NYSE"
     },
     {
-      "ticker": "NSA^B",
+      "ticker": "NSAB",
       "name": "NSA^B",
       "market": "US",
       "exchange": "NYSE"
@@ -45230,7 +45230,7 @@
       "exchange": "NYSE"
     },
     {
-      "ticker": "NXDT^A",
+      "ticker": "NXDTA",
       "name": "NXDT^A",
       "market": "US",
       "exchange": "NYSE"
@@ -45398,13 +45398,13 @@
       "exchange": "NYSE"
     },
     {
-      "ticker": "OAK^A",
+      "ticker": "OAKA",
       "name": "OAK^A",
       "market": "US",
       "exchange": "NYSE"
     },
     {
-      "ticker": "OAK^B",
+      "ticker": "OAKB",
       "name": "OAK^B",
       "market": "US",
       "exchange": "NYSE"
@@ -46076,19 +46076,19 @@
       "exchange": "NYSE"
     },
     {
-      "ticker": "OPP^A",
+      "ticker": "OPPA",
       "name": "OPP^A",
       "market": "US",
       "exchange": "NYSE"
     },
     {
-      "ticker": "OPP^B",
+      "ticker": "OPPB",
       "name": "OPP^B",
       "market": "US",
       "exchange": "NYSE"
     },
     {
-      "ticker": "OPP^C",
+      "ticker": "OPPC",
       "name": "OPP^C",
       "market": "US",
       "exchange": "NYSE"
@@ -46862,7 +46862,7 @@
       "exchange": "NYSE"
     },
     {
-      "ticker": "PBI^B",
+      "ticker": "PBIB",
       "name": "PBI^B",
       "market": "US",
       "exchange": "NYSE"
@@ -46976,55 +46976,55 @@
       "exchange": "NYSE"
     },
     {
-      "ticker": "PCG^A",
+      "ticker": "PCGA",
       "name": "PCG^A",
       "market": "US",
       "exchange": "NYSE"
     },
     {
-      "ticker": "PCG^B",
+      "ticker": "PCGB",
       "name": "PCG^B",
       "market": "US",
       "exchange": "NYSE"
     },
     {
-      "ticker": "PCG^C",
+      "ticker": "PCGC",
       "name": "PCG^C",
       "market": "US",
       "exchange": "NYSE"
     },
     {
-      "ticker": "PCG^D",
+      "ticker": "PCGD",
       "name": "PCG^D",
       "market": "US",
       "exchange": "NYSE"
     },
     {
-      "ticker": "PCG^E",
+      "ticker": "PCGE",
       "name": "PCG^E",
       "market": "US",
       "exchange": "NYSE"
     },
     {
-      "ticker": "PCG^G",
+      "ticker": "PCGG",
       "name": "PCG^G",
       "market": "US",
       "exchange": "NYSE"
     },
     {
-      "ticker": "PCG^H",
+      "ticker": "PCGH",
       "name": "PCG^H",
       "market": "US",
       "exchange": "NYSE"
     },
     {
-      "ticker": "PCG^I",
+      "ticker": "PCGI",
       "name": "PCG^I",
       "market": "US",
       "exchange": "NYSE"
     },
     {
-      "ticker": "PCG^X",
+      "ticker": "PCGX",
       "name": "PCG^X",
       "market": "US",
       "exchange": "NYSE"
@@ -47228,25 +47228,25 @@
       "exchange": "NYSE"
     },
     {
-      "ticker": "PEB^E",
+      "ticker": "PEBE",
       "name": "PEB^E",
       "market": "US",
       "exchange": "NYSE"
     },
     {
-      "ticker": "PEB^F",
+      "ticker": "PEBF",
       "name": "PEB^F",
       "market": "US",
       "exchange": "NYSE"
     },
     {
-      "ticker": "PEB^G",
+      "ticker": "PEBG",
       "name": "PEB^G",
       "market": "US",
       "exchange": "NYSE"
     },
     {
-      "ticker": "PEB^H",
+      "ticker": "PEBH",
       "name": "PEB^H",
       "market": "US",
       "exchange": "NYSE"
@@ -47696,7 +47696,7 @@
       "exchange": "NYSE"
     },
     {
-      "ticker": "PHXE^",
+      "ticker": "PHXE",
       "name": "PHXE^",
       "market": "US",
       "exchange": "NYSE"
@@ -48074,19 +48074,19 @@
       "exchange": "NYSE"
     },
     {
-      "ticker": "PMT^A",
+      "ticker": "PMTA",
       "name": "PMT^A",
       "market": "US",
       "exchange": "NYSE"
     },
     {
-      "ticker": "PMT^B",
+      "ticker": "PMTB",
       "name": "PMT^B",
       "market": "US",
       "exchange": "NYSE"
     },
     {
-      "ticker": "PMT^C",
+      "ticker": "PMTC",
       "name": "PMT^C",
       "market": "US",
       "exchange": "NYSE"
@@ -48488,25 +48488,25 @@
       "exchange": "NYSE"
     },
     {
-      "ticker": "PRIF^D",
+      "ticker": "PRIFD",
       "name": "PRIF^D",
       "market": "US",
       "exchange": "NYSE"
     },
     {
-      "ticker": "PRIF^J",
+      "ticker": "PRIFJ",
       "name": "PRIF^J",
       "market": "US",
       "exchange": "NYSE"
     },
     {
-      "ticker": "PRIF^K",
+      "ticker": "PRIFK",
       "name": "PRIF^K",
       "market": "US",
       "exchange": "NYSE"
     },
     {
-      "ticker": "PRIF^L",
+      "ticker": "PRIFL",
       "name": "PRIF^L",
       "market": "US",
       "exchange": "NYSE"
@@ -48692,85 +48692,85 @@
       "exchange": "NYSE"
     },
     {
-      "ticker": "PSA^F",
+      "ticker": "PSAF",
       "name": "PSA^F",
       "market": "US",
       "exchange": "NYSE"
     },
     {
-      "ticker": "PSA^G",
+      "ticker": "PSAG",
       "name": "PSA^G",
       "market": "US",
       "exchange": "NYSE"
     },
     {
-      "ticker": "PSA^H",
+      "ticker": "PSAH",
       "name": "PSA^H",
       "market": "US",
       "exchange": "NYSE"
     },
     {
-      "ticker": "PSA^I",
+      "ticker": "PSAI",
       "name": "PSA^I",
       "market": "US",
       "exchange": "NYSE"
     },
     {
-      "ticker": "PSA^J",
+      "ticker": "PSAJ",
       "name": "PSA^J",
       "market": "US",
       "exchange": "NYSE"
     },
     {
-      "ticker": "PSA^K",
+      "ticker": "PSAK",
       "name": "PSA^K",
       "market": "US",
       "exchange": "NYSE"
     },
     {
-      "ticker": "PSA^L",
+      "ticker": "PSAL",
       "name": "PSA^L",
       "market": "US",
       "exchange": "NYSE"
     },
     {
-      "ticker": "PSA^M",
+      "ticker": "PSAM",
       "name": "PSA^M",
       "market": "US",
       "exchange": "NYSE"
     },
     {
-      "ticker": "PSA^N",
+      "ticker": "PSAN",
       "name": "PSA^N",
       "market": "US",
       "exchange": "NYSE"
     },
     {
-      "ticker": "PSA^O",
+      "ticker": "PSAO",
       "name": "PSA^O",
       "market": "US",
       "exchange": "NYSE"
     },
     {
-      "ticker": "PSA^P",
+      "ticker": "PSAP",
       "name": "PSA^P",
       "market": "US",
       "exchange": "NYSE"
     },
     {
-      "ticker": "PSA^Q",
+      "ticker": "PSAQ",
       "name": "PSA^Q",
       "market": "US",
       "exchange": "NYSE"
     },
     {
-      "ticker": "PSA^R",
+      "ticker": "PSAR",
       "name": "PSA^R",
       "market": "US",
       "exchange": "NYSE"
     },
     {
-      "ticker": "PSA^S",
+      "ticker": "PSAS",
       "name": "PSA^S",
       "market": "US",
       "exchange": "NYSE"
@@ -48788,7 +48788,7 @@
       "exchange": "NYSE"
     },
     {
-      "ticker": "PSEC^A",
+      "ticker": "PSECA",
       "name": "PSEC^A",
       "market": "US",
       "exchange": "NYSE"
@@ -49100,7 +49100,7 @@
       "exchange": "NYSE"
     },
     {
-      "ticker": "PW^A",
+      "ticker": "PWA",
       "name": "PW^A",
       "market": "US",
       "exchange": "NYSE"
@@ -49574,7 +49574,7 @@
       "exchange": "NYSE"
     },
     {
-      "ticker": "QXO^B",
+      "ticker": "QXOB",
       "name": "QXO^B",
       "market": "US",
       "exchange": "NYSE"
@@ -49784,13 +49784,13 @@
       "exchange": "NYSE"
     },
     {
-      "ticker": "RC^C",
+      "ticker": "RCC",
       "name": "RC^C",
       "market": "US",
       "exchange": "NYSE"
     },
     {
-      "ticker": "RC^E",
+      "ticker": "RCE",
       "name": "RC^E",
       "market": "US",
       "exchange": "NYSE"
@@ -50246,13 +50246,13 @@
       "exchange": "NYSE"
     },
     {
-      "ticker": "REXR^B",
+      "ticker": "REXRB",
       "name": "REXR^B",
       "market": "US",
       "exchange": "NYSE"
     },
     {
-      "ticker": "REXR^C",
+      "ticker": "REXRC",
       "name": "REXR^C",
       "market": "US",
       "exchange": "NYSE"
@@ -50282,19 +50282,19 @@
       "exchange": "NYSE"
     },
     {
-      "ticker": "RF^C",
+      "ticker": "RFC",
       "name": "RF^C",
       "market": "US",
       "exchange": "NYSE"
     },
     {
-      "ticker": "RF^E",
+      "ticker": "RFE",
       "name": "RF^E",
       "market": "US",
       "exchange": "NYSE"
     },
     {
-      "ticker": "RF^F",
+      "ticker": "RFF",
       "name": "RF^F",
       "market": "US",
       "exchange": "NYSE"
@@ -50576,31 +50576,31 @@
       "exchange": "NYSE"
     },
     {
-      "ticker": "RITM^A",
+      "ticker": "RITMA",
       "name": "RITM^A",
       "market": "US",
       "exchange": "NYSE"
     },
     {
-      "ticker": "RITM^B",
+      "ticker": "RITMB",
       "name": "RITM^B",
       "market": "US",
       "exchange": "NYSE"
     },
     {
-      "ticker": "RITM^C",
+      "ticker": "RITMC",
       "name": "RITM^C",
       "market": "US",
       "exchange": "NYSE"
     },
     {
-      "ticker": "RITM^D",
+      "ticker": "RITMD",
       "name": "RITM^D",
       "market": "US",
       "exchange": "NYSE"
     },
     {
-      "ticker": "RITM^E",
+      "ticker": "RITME",
       "name": "RITM^E",
       "market": "US",
       "exchange": "NYSE"
@@ -50618,7 +50618,7 @@
       "exchange": "NYSE"
     },
     {
-      "ticker": "RIV^A",
+      "ticker": "RIVA",
       "name": "RIV^A",
       "market": "US",
       "exchange": "NYSE"
@@ -50636,7 +50636,7 @@
       "exchange": "NYSE"
     },
     {
-      "ticker": "RJF^B",
+      "ticker": "RJFB",
       "name": "RJF^B",
       "market": "US",
       "exchange": "NYSE"
@@ -50690,7 +50690,7 @@
       "exchange": "NYSE"
     },
     {
-      "ticker": "RLJ^A",
+      "ticker": "RLJA",
       "name": "RLJ^A",
       "market": "US",
       "exchange": "NYSE"
@@ -50876,13 +50876,13 @@
       "exchange": "NYSE"
     },
     {
-      "ticker": "RNR^F",
+      "ticker": "RNRF",
       "name": "RNR^F",
       "market": "US",
       "exchange": "NYSE"
     },
     {
-      "ticker": "RNR^G",
+      "ticker": "RNRG",
       "name": "RNR^G",
       "market": "US",
       "exchange": "NYSE"
@@ -51068,7 +51068,7 @@
       "exchange": "NYSE"
     },
     {
-      "ticker": "RPT^C",
+      "ticker": "RPTC",
       "name": "RPT^C",
       "market": "US",
       "exchange": "NYSE"
@@ -51446,7 +51446,7 @@
       "exchange": "NYSE"
     },
     {
-      "ticker": "RWT^A",
+      "ticker": "RWTA",
       "name": "RWT^A",
       "market": "US",
       "exchange": "NYSE"
@@ -51674,7 +51674,7 @@
       "exchange": "NYSE"
     },
     {
-      "ticker": "SACH^A",
+      "ticker": "SACHA",
       "name": "SACH^A",
       "market": "US",
       "exchange": "NYSE"
@@ -51854,13 +51854,13 @@
       "exchange": "NYSE"
     },
     {
-      "ticker": "SB^C",
+      "ticker": "SBC",
       "name": "SB^C",
       "market": "US",
       "exchange": "NYSE"
     },
     {
-      "ticker": "SB^D",
+      "ticker": "SBD",
       "name": "SB^D",
       "market": "US",
       "exchange": "NYSE"
@@ -52058,37 +52058,37 @@
       "exchange": "NYSE"
     },
     {
-      "ticker": "SCE^G",
+      "ticker": "SCEG",
       "name": "SCE^G",
       "market": "US",
       "exchange": "NYSE"
     },
     {
-      "ticker": "SCE^J",
+      "ticker": "SCEJ",
       "name": "SCE^J",
       "market": "US",
       "exchange": "NYSE"
     },
     {
-      "ticker": "SCE^K",
+      "ticker": "SCEK",
       "name": "SCE^K",
       "market": "US",
       "exchange": "NYSE"
     },
     {
-      "ticker": "SCE^L",
+      "ticker": "SCEL",
       "name": "SCE^L",
       "market": "US",
       "exchange": "NYSE"
     },
     {
-      "ticker": "SCE^M",
+      "ticker": "SCEM",
       "name": "SCE^M",
       "market": "US",
       "exchange": "NYSE"
     },
     {
-      "ticker": "SCE^N",
+      "ticker": "SCEN",
       "name": "SCE^N",
       "market": "US",
       "exchange": "NYSE"
@@ -52184,13 +52184,13 @@
       "exchange": "NYSE"
     },
     {
-      "ticker": "SCHW^D",
+      "ticker": "SCHWD",
       "name": "SCHW^D",
       "market": "US",
       "exchange": "NYSE"
     },
     {
-      "ticker": "SCHW^J",
+      "ticker": "SCHWJ",
       "name": "SCHW^J",
       "market": "US",
       "exchange": "NYSE"
@@ -52430,13 +52430,13 @@
       "exchange": "NYSE"
     },
     {
-      "ticker": "SEAL^A",
+      "ticker": "SEALA",
       "name": "SEAL^A",
       "market": "US",
       "exchange": "NYSE"
     },
     {
-      "ticker": "SEAL^B",
+      "ticker": "SEALB",
       "name": "SEAL^B",
       "market": "US",
       "exchange": "NYSE"
@@ -52604,19 +52604,19 @@
       "exchange": "NYSE"
     },
     {
-      "ticker": "SF^B",
+      "ticker": "SFB",
       "name": "SF^B",
       "market": "US",
       "exchange": "NYSE"
     },
     {
-      "ticker": "SF^C",
+      "ticker": "SFC",
       "name": "SF^C",
       "market": "US",
       "exchange": "NYSE"
     },
     {
-      "ticker": "SF^D",
+      "ticker": "SFD",
       "name": "SF^D",
       "market": "US",
       "exchange": "NYSE"
@@ -52904,13 +52904,13 @@
       "exchange": "NYSE"
     },
     {
-      "ticker": "SHO^H",
+      "ticker": "SHOH",
       "name": "SHO^H",
       "market": "US",
       "exchange": "NYSE"
     },
     {
-      "ticker": "SHO^I",
+      "ticker": "SHOI",
       "name": "SHO^I",
       "market": "US",
       "exchange": "NYSE"
@@ -53318,7 +53318,7 @@
       "exchange": "NYSE"
     },
     {
-      "ticker": "SLG^I",
+      "ticker": "SLGI",
       "name": "SLG^I",
       "market": "US",
       "exchange": "NYSE"
@@ -53858,13 +53858,13 @@
       "exchange": "NYSE"
     },
     {
-      "ticker": "SNV^D",
+      "ticker": "SNVD",
       "name": "SNV^D",
       "market": "US",
       "exchange": "NYSE"
     },
     {
-      "ticker": "SNV^E",
+      "ticker": "SNVE",
       "name": "SNV^E",
       "market": "US",
       "exchange": "NYSE"
@@ -54188,7 +54188,7 @@
       "exchange": "NYSE"
     },
     {
-      "ticker": "SPE^C",
+      "ticker": "SPEC",
       "name": "SPE^C",
       "market": "US",
       "exchange": "NYSE"
@@ -54242,7 +54242,7 @@
       "exchange": "NYSE"
     },
     {
-      "ticker": "SPG^J",
+      "ticker": "SPGJ",
       "name": "SPG^J",
       "market": "US",
       "exchange": "NYSE"
@@ -54404,7 +54404,7 @@
       "exchange": "NYSE"
     },
     {
-      "ticker": "SPNT^B",
+      "ticker": "SPNTB",
       "name": "SPNT^B",
       "market": "US",
       "exchange": "NYSE"
@@ -54674,7 +54674,7 @@
       "exchange": "NYSE"
     },
     {
-      "ticker": "SR^A",
+      "ticker": "SRA",
       "name": "SR^A",
       "market": "US",
       "exchange": "NYSE"
@@ -54728,7 +54728,7 @@
       "exchange": "NYSE"
     },
     {
-      "ticker": "SRG^A",
+      "ticker": "SRGA",
       "name": "SRG^A",
       "market": "US",
       "exchange": "NYSE"
@@ -55238,7 +55238,7 @@
       "exchange": "NYSE"
     },
     {
-      "ticker": "STT^G",
+      "ticker": "STTG",
       "name": "STT^G",
       "market": "US",
       "exchange": "NYSE"
@@ -55616,13 +55616,13 @@
       "exchange": "NYSE"
     },
     {
-      "ticker": "SYF^A",
+      "ticker": "SYFA",
       "name": "SYF^A",
       "market": "US",
       "exchange": "NYSE"
     },
     {
-      "ticker": "SYF^B",
+      "ticker": "SYFB",
       "name": "SYF^B",
       "market": "US",
       "exchange": "NYSE"
@@ -55700,13 +55700,13 @@
       "exchange": "NYSE"
     },
     {
-      "ticker": "T^A",
+      "ticker": "TA",
       "name": "T^A",
       "market": "US",
       "exchange": "NYSE"
     },
     {
-      "ticker": "T^C",
+      "ticker": "TC",
       "name": "T^C",
       "market": "US",
       "exchange": "NYSE"
@@ -56132,13 +56132,13 @@
       "exchange": "NYSE"
     },
     {
-      "ticker": "TDS^U",
+      "ticker": "TDSU",
       "name": "TDS^U",
       "market": "US",
       "exchange": "NYSE"
     },
     {
-      "ticker": "TDS^V",
+      "ticker": "TDSV",
       "name": "TDS^V",
       "market": "US",
       "exchange": "NYSE"
@@ -56282,13 +56282,13 @@
       "exchange": "NYSE"
     },
     {
-      "ticker": "TEN^E",
+      "ticker": "TENE",
       "name": "TEN^E",
       "market": "US",
       "exchange": "NYSE"
     },
     {
-      "ticker": "TEN^F",
+      "ticker": "TENF",
       "name": "TEN^F",
       "market": "US",
       "exchange": "NYSE"
@@ -56342,19 +56342,19 @@
       "exchange": "NYSE"
     },
     {
-      "ticker": "TFC^I",
+      "ticker": "TFCI",
       "name": "TFC^I",
       "market": "US",
       "exchange": "NYSE"
     },
     {
-      "ticker": "TFC^O",
+      "ticker": "TFCO",
       "name": "TFC^O",
       "market": "US",
       "exchange": "NYSE"
     },
     {
-      "ticker": "TFC^R",
+      "ticker": "TFCR",
       "name": "TFC^R",
       "market": "US",
       "exchange": "NYSE"
@@ -56378,7 +56378,7 @@
       "exchange": "NYSE"
     },
     {
-      "ticker": "TFIN^",
+      "ticker": "TFIN",
       "name": "TFIN^",
       "market": "US",
       "exchange": "NYSE"
@@ -57374,37 +57374,37 @@
       "exchange": "NYSE"
     },
     {
-      "ticker": "TRTN^A",
+      "ticker": "TRTNA",
       "name": "TRTN^A",
       "market": "US",
       "exchange": "NYSE"
     },
     {
-      "ticker": "TRTN^B",
+      "ticker": "TRTNB",
       "name": "TRTN^B",
       "market": "US",
       "exchange": "NYSE"
     },
     {
-      "ticker": "TRTN^C",
+      "ticker": "TRTNC",
       "name": "TRTN^C",
       "market": "US",
       "exchange": "NYSE"
     },
     {
-      "ticker": "TRTN^D",
+      "ticker": "TRTND",
       "name": "TRTN^D",
       "market": "US",
       "exchange": "NYSE"
     },
     {
-      "ticker": "TRTN^E",
+      "ticker": "TRTNE",
       "name": "TRTN^E",
       "market": "US",
       "exchange": "NYSE"
     },
     {
-      "ticker": "TRTN^F",
+      "ticker": "TRTNF",
       "name": "TRTN^F",
       "market": "US",
       "exchange": "NYSE"
@@ -57416,7 +57416,7 @@
       "exchange": "NYSE"
     },
     {
-      "ticker": "TRTX^C",
+      "ticker": "TRTXC",
       "name": "TRTX^C",
       "market": "US",
       "exchange": "NYSE"
@@ -57806,19 +57806,19 @@
       "exchange": "NYSE"
     },
     {
-      "ticker": "TWO^A",
+      "ticker": "TWOA",
       "name": "TWO^A",
       "market": "US",
       "exchange": "NYSE"
     },
     {
-      "ticker": "TWO^B",
+      "ticker": "TWOB",
       "name": "TWO^B",
       "market": "US",
       "exchange": "NYSE"
     },
     {
-      "ticker": "TWO^C",
+      "ticker": "TWOC",
       "name": "TWO^C",
       "market": "US",
       "exchange": "NYSE"
@@ -57890,7 +57890,7 @@
       "exchange": "NYSE"
     },
     {
-      "ticker": "TY^",
+      "ticker": "TY",
       "name": "TY^",
       "market": "US",
       "exchange": "NYSE"
@@ -58346,7 +58346,7 @@
       "exchange": "NYSE"
     },
     {
-      "ticker": "UMH^D",
+      "ticker": "UMHD",
       "name": "UMH^D",
       "market": "US",
       "exchange": "NYSE"
@@ -58616,37 +58616,37 @@
       "exchange": "NYSE"
     },
     {
-      "ticker": "USB^A",
+      "ticker": "USBA",
       "name": "USB^A",
       "market": "US",
       "exchange": "NYSE"
     },
     {
-      "ticker": "USB^H",
+      "ticker": "USBH",
       "name": "USB^H",
       "market": "US",
       "exchange": "NYSE"
     },
     {
-      "ticker": "USB^P",
+      "ticker": "USBP",
       "name": "USB^P",
       "market": "US",
       "exchange": "NYSE"
     },
     {
-      "ticker": "USB^Q",
+      "ticker": "USBQ",
       "name": "USB^Q",
       "market": "US",
       "exchange": "NYSE"
     },
     {
-      "ticker": "USB^R",
+      "ticker": "USBR",
       "name": "USB^R",
       "market": "US",
       "exchange": "NYSE"
     },
     {
-      "ticker": "USB^S",
+      "ticker": "USBS",
       "name": "USB^S",
       "market": "US",
       "exchange": "NYSE"
@@ -59672,25 +59672,25 @@
       "exchange": "NYSE"
     },
     {
-      "ticker": "VNO^L",
+      "ticker": "VNOL",
       "name": "VNO^L",
       "market": "US",
       "exchange": "NYSE"
     },
     {
-      "ticker": "VNO^M",
+      "ticker": "VNOM",
       "name": "VNO^M",
       "market": "US",
       "exchange": "NYSE"
     },
     {
-      "ticker": "VNO^N",
+      "ticker": "VNON",
       "name": "VNO^N",
       "market": "US",
       "exchange": "NYSE"
     },
     {
-      "ticker": "VNO^O",
+      "ticker": "VNOO",
       "name": "VNO^O",
       "market": "US",
       "exchange": "NYSE"
@@ -59798,7 +59798,7 @@
       "exchange": "NYSE"
     },
     {
-      "ticker": "VOYA^B",
+      "ticker": "VOYAB",
       "name": "VOYA^B",
       "market": "US",
       "exchange": "NYSE"
@@ -60290,7 +60290,7 @@
       "exchange": "NYSE"
     },
     {
-      "ticker": "WAL^A",
+      "ticker": "WALA",
       "name": "WAL^A",
       "market": "US",
       "exchange": "NYSE"
@@ -60386,13 +60386,13 @@
       "exchange": "NYSE"
     },
     {
-      "ticker": "WBS^F",
+      "ticker": "WBSF",
       "name": "WBS^F",
       "market": "US",
       "exchange": "NYSE"
     },
     {
-      "ticker": "WBS^G",
+      "ticker": "WBSG",
       "name": "WBS^G",
       "market": "US",
       "exchange": "NYSE"
@@ -60590,37 +60590,37 @@
       "exchange": "NYSE"
     },
     {
-      "ticker": "WFC^A",
+      "ticker": "WFCA",
       "name": "WFC^A",
       "market": "US",
       "exchange": "NYSE"
     },
     {
-      "ticker": "WFC^C",
+      "ticker": "WFCC",
       "name": "WFC^C",
       "market": "US",
       "exchange": "NYSE"
     },
     {
-      "ticker": "WFC^D",
+      "ticker": "WFCD",
       "name": "WFC^D",
       "market": "US",
       "exchange": "NYSE"
     },
     {
-      "ticker": "WFC^L",
+      "ticker": "WFCL",
       "name": "WFC^L",
       "market": "US",
       "exchange": "NYSE"
     },
     {
-      "ticker": "WFC^Y",
+      "ticker": "WFCY",
       "name": "WFC^Y",
       "market": "US",
       "exchange": "NYSE"
     },
     {
-      "ticker": "WFC^Z",
+      "ticker": "WFCZ",
       "name": "WFC^Z",
       "market": "US",
       "exchange": "NYSE"
@@ -61016,25 +61016,25 @@
       "exchange": "NYSE"
     },
     {
-      "ticker": "WRB^E",
+      "ticker": "WRBE",
       "name": "WRB^E",
       "market": "US",
       "exchange": "NYSE"
     },
     {
-      "ticker": "WRB^F",
+      "ticker": "WRBF",
       "name": "WRB^F",
       "market": "US",
       "exchange": "NYSE"
     },
     {
-      "ticker": "WRB^G",
+      "ticker": "WRBG",
       "name": "WRB^G",
       "market": "US",
       "exchange": "NYSE"
     },
     {
-      "ticker": "WRB^H",
+      "ticker": "WRBH",
       "name": "WRB^H",
       "market": "US",
       "exchange": "NYSE"
@@ -61124,7 +61124,7 @@
       "exchange": "NYSE"
     },
     {
-      "ticker": "WSO/B",
+      "ticker": "WSOB",
       "name": "WSO/B",
       "market": "US",
       "exchange": "NYSE"
@@ -61436,7 +61436,7 @@
       "exchange": "NYSE"
     },
     {
-      "ticker": "XFLT^A",
+      "ticker": "XFLTA",
       "name": "XFLT^A",
       "market": "US",
       "exchange": "NYSE"

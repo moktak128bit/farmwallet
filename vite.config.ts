@@ -16,6 +16,38 @@ function backupApiPlugin(): Plugin {
       const backupRoot = path.resolve(backupsDir);
       const backupRootPrefix = `${backupRoot.toLowerCase()}${path.sep}`;
       const MAX_BACKUP_BODY_BYTES = 20 * 1024 * 1024;
+      const BACKUP_RETENTION_DAY_SLOTS = 4;
+
+      const seoulDayKeyFormatter = new Intl.DateTimeFormat("en-CA", {
+        timeZone: "Asia/Seoul",
+        year: "numeric",
+        month: "2-digit",
+        day: "2-digit"
+      });
+
+      const seoulDateTimePartsFormatter = new Intl.DateTimeFormat("en-CA", {
+        timeZone: "Asia/Seoul",
+        year: "numeric",
+        month: "2-digit",
+        day: "2-digit",
+        hour: "2-digit",
+        minute: "2-digit",
+        second: "2-digit",
+        hourCycle: "h23"
+      });
+
+      function formatSeoulTimestampForFile(nowMs: number): string {
+        const parts = seoulDateTimePartsFormatter.formatToParts(new Date(nowMs));
+        const y = parts.find((p) => p.type === "year")?.value ?? "1970";
+        const m = parts.find((p) => p.type === "month")?.value ?? "01";
+        const d = parts.find((p) => p.type === "day")?.value ?? "01";
+        const hh = parts.find((p) => p.type === "hour")?.value ?? "00";
+        const mm = parts.find((p) => p.type === "minute")?.value ?? "00";
+        const ss = parts.find((p) => p.type === "second")?.value ?? "00";
+        const ms = String(Math.abs(nowMs) % 1000).padStart(3, "0");
+        // 파일명은 ":" "." 를 쓰지 않기 위해 "-"로 대체하고, KST임을 명시
+        return `${y}-${m}-${d}T${hh}-${mm}-${ss}-${ms}KST`;
+      }
 
       const resolveSafeBackupPath = (inputPath: string): string | null => {
         const normalized = path.posix.normalize(inputPath.replace(/\\/g, "/")).replace(/^\/+/, "");
@@ -30,12 +62,153 @@ function backupApiPlugin(): Plugin {
       };
 
       const parseCreatedAtFromBackupFileName = (fileName: string): string => {
-        const match = /^backup-(\d{4}-\d{2}-\d{2})T(\d{2})-(\d{2})-(\d{2})-(\d{3})Z\.json$/i.exec(
+        // Legacy (UTC): backup-2026-03-25T12-49-50-266Z.json
+        const utc = /^backup-(\d{4}-\d{2}-\d{2})T(\d{2})-(\d{2})-(\d{2})-(\d{3})Z\.json$/i.exec(
           fileName
         );
-        if (!match) return new Date(0).toISOString();
-        return `${match[1]}T${match[2]}:${match[3]}:${match[4]}.${match[5]}Z`;
+        if (utc) {
+          return `${utc[1]}T${utc[2]}:${utc[3]}:${utc[4]}.${utc[5]}Z`;
+        }
+        // New (KST): backup-2026-03-25T21-49-50-266KST.json
+        const kst = /^backup-(\d{4}-\d{2}-\d{2})T(\d{2})-(\d{2})-(\d{2})-(\d{3})KST\.json$/i.exec(
+          fileName
+        );
+        if (kst) {
+          // Interpret as Asia/Seoul time and convert to UTC ISO for internal sorting.
+          // Note: offset is constant +09:00 for KST (no DST).
+          const isoLike = `${kst[1]}T${kst[2]}:${kst[3]}:${kst[4]}.${kst[5]}+09:00`;
+          const ms = Date.parse(isoLike);
+          return Number.isFinite(ms) ? new Date(ms).toISOString() : new Date(0).toISOString();
+        }
+        return new Date(0).toISOString();
       };
+
+      function getSeoulDayKeyFromUtcMs(ms: number): string {
+        if (!Number.isFinite(ms)) return "unknown";
+        const parts = seoulDayKeyFormatter.formatToParts(new Date(ms));
+        const y = parts.find((p) => p.type === "year")?.value;
+        const m = parts.find((p) => p.type === "month")?.value;
+        const d = parts.find((p) => p.type === "day")?.value;
+        if (!y || !m || !d) return "unknown";
+        return `${y}-${m}-${d}`;
+      }
+
+      type BackupFileRecord = {
+        fullPath: string;
+        relativePath: string;
+        createdAt: string;
+        createdAtMs: number;
+        dayKey: string;
+      };
+
+      async function collectBackupFileRecords(): Promise<BackupFileRecord[]> {
+        const records: BackupFileRecord[] = [];
+        try {
+          await fs.promises.access(backupsDir, fs.constants.F_OK);
+        } catch {
+          return records;
+        }
+
+        const stack: Array<{ dir: string; basePath: string }> = [{ dir: backupsDir, basePath: "" }];
+
+        while (stack.length > 0) {
+          const current = stack.pop();
+          if (!current) continue;
+          const entries = await fs.promises.readdir(current.dir, { withFileTypes: true });
+
+          for (const entry of entries) {
+            const fullPath = path.join(current.dir, entry.name);
+            const relativePath = current.basePath ? `${current.basePath}/${entry.name}` : entry.name;
+
+            if (entry.isDirectory()) {
+              stack.push({ dir: fullPath, basePath: relativePath });
+              continue;
+            }
+            if (!entry.isFile()) continue;
+            if (!entry.name.startsWith("backup-") || !entry.name.endsWith(".json")) continue;
+
+            const createdAt = parseCreatedAtFromBackupFileName(entry.name);
+            const createdAtMs = Date.parse(createdAt);
+            const dayKey = Number.isFinite(createdAtMs) ? getSeoulDayKeyFromUtcMs(createdAtMs) : "unknown";
+
+            records.push({ fullPath, relativePath, createdAt, createdAtMs, dayKey });
+          }
+        }
+        return records;
+      }
+
+      async function removeEmptyDirsUnderBackups(): Promise<void> {
+        try {
+          await fs.promises.access(backupsDir, fs.constants.F_OK);
+        } catch {
+          return;
+        }
+
+        const tryRemoveIfEmpty = async (dirAbs: string): Promise<void> => {
+          let entries: fs.Dirent[];
+          try {
+            entries = await fs.promises.readdir(dirAbs, { withFileTypes: true });
+          } catch {
+            return;
+          }
+
+          for (const entry of entries) {
+            if (!entry.isDirectory()) continue;
+            await tryRemoveIfEmpty(path.join(dirAbs, entry.name));
+          }
+
+          let names: string[];
+          try {
+            names = await fs.promises.readdir(dirAbs);
+          } catch {
+            return;
+          }
+
+          if (names.length === 0 && dirAbs !== backupRoot) {
+            try {
+              await fs.promises.rmdir(dirAbs);
+            } catch {
+              // ignore
+            }
+          }
+        };
+
+        await tryRemoveIfEmpty(backupRoot);
+      }
+
+      async function pruneBackupFilesToRetentionPolicy(): Promise<void> {
+        const records = await collectBackupFileRecords();
+        if (records.length === 0) return;
+
+        const bestByDay = new Map<string, BackupFileRecord>();
+        for (const rec of records) {
+          if (rec.dayKey === "unknown") continue;
+          const prev = bestByDay.get(rec.dayKey);
+          if (!prev || rec.createdAtMs > prev.createdAtMs) {
+            bestByDay.set(rec.dayKey, rec);
+          }
+        }
+
+        const candidates = [...bestByDay.values()].sort((a, b) => b.createdAtMs - a.createdAtMs);
+        const keepDayKeys = new Set(candidates.slice(0, BACKUP_RETENTION_DAY_SLOTS).map((c) => c.dayKey));
+
+        const pathsToKeep = new Set<string>();
+        for (const dayKey of keepDayKeys) {
+          const best = bestByDay.get(dayKey);
+          if (best) pathsToKeep.add(best.fullPath);
+        }
+
+        for (const rec of records) {
+          if (pathsToKeep.has(rec.fullPath)) continue;
+          try {
+            await fs.promises.unlink(rec.fullPath);
+          } catch {
+            // ignore
+          }
+        }
+
+        await removeEmptyDirsUnderBackups();
+      }
 
       server.middlewares.use("/api/backup", (req: IncomingMessage, res: ServerResponse, next) => {
         if (req.method === "POST") {
@@ -61,16 +234,23 @@ function backupApiPlugin(): Plugin {
             void (async () => {
               try {
                 JSON.parse(body);
-                const nowIso = new Date().toISOString();
-                const timestamp = nowIso.replace(/[:.]/g, "-");
-                const dateFolder = nowIso.slice(0, 10);
+                const nowMs = Date.now();
+                const nowIso = new Date(nowMs).toISOString();
+                const dateFolder = getSeoulDayKeyFromUtcMs(nowMs);
                 const dateDir = path.join(backupsDir, dateFolder);
                 await fs.promises.mkdir(dateDir, { recursive: true });
 
+                const timestamp = formatSeoulTimestampForFile(nowMs);
                 const fileName = `backup-${timestamp}.json`;
                 const fullPath = path.join(dateDir, fileName);
                 const relativePath = `${dateFolder}/${fileName}`;
                 await fs.promises.writeFile(fullPath, body, "utf-8");
+
+                try {
+                  await pruneBackupFilesToRetentionPolicy();
+                } catch (pruneErr) {
+                  console.warn("[backup-api] prune failed", pruneErr);
+                }
 
                 res.setHeader("Content-Type", "application/json");
                 res.end(JSON.stringify({ fileName: relativePath, createdAt: nowIso }));
@@ -218,6 +398,67 @@ function backupApiPlugin(): Plugin {
               res.statusCode = 500;
               res.setHeader("Content-Type", "application/json");
               res.end(JSON.stringify({ error: "Failed to save data" }));
+            }
+          });
+          return;
+        }
+
+        next();
+      });
+
+      // 테이블 형태 앱 데이터 백업 (GET/POST) — data/app-data-tables.json
+      const tableBackupFile = path.join(dataDir, "app-data-tables.json");
+      const MAX_TABLE_BACKUP_BYTES = 25 * 1024 * 1024;
+
+      server.middlewares.use("/api/app-data-tables", (req: IncomingMessage, res: ServerResponse, next) => {
+        if (req.method === "GET") {
+          try {
+            if (!fs.existsSync(tableBackupFile)) {
+              res.setHeader("Content-Type", "application/json");
+              res.end("{}");
+              return;
+            }
+            const raw = fs.readFileSync(tableBackupFile, "utf-8");
+            res.setHeader("Content-Type", "application/json");
+            res.end(raw);
+          } catch {
+            res.statusCode = 500;
+            res.setHeader("Content-Type", "application/json");
+            res.end(JSON.stringify({ error: "Failed to read table backup" }));
+          }
+          return;
+        }
+
+        if (req.method === "POST") {
+          let body = "";
+          let tbBytes = 0;
+          let tbTooLarge = false;
+          req.on("data", (chunk: Buffer) => {
+            if (tbTooLarge) return;
+            tbBytes += chunk.length;
+            if (tbBytes > MAX_TABLE_BACKUP_BYTES) {
+              tbTooLarge = true;
+              res.statusCode = 413;
+              res.setHeader("Content-Type", "application/json");
+              res.end(JSON.stringify({ error: "Table backup payload is too large" }));
+              return;
+            }
+            body += chunk.toString("utf-8");
+          });
+          req.on("end", () => {
+            if (tbTooLarge) return;
+            try {
+              JSON.parse(body);
+              if (!fs.existsSync(dataDir)) {
+                fs.mkdirSync(dataDir, { recursive: true });
+              }
+              fs.writeFileSync(tableBackupFile, body, "utf-8");
+              res.setHeader("Content-Type", "application/json");
+              res.end(JSON.stringify({ ok: true, savedAt: new Date().toISOString() }));
+            } catch {
+              res.statusCode = 500;
+              res.setHeader("Content-Type", "application/json");
+              res.end(JSON.stringify({ error: "Failed to save table backup" }));
             }
           });
           return;
@@ -408,7 +649,7 @@ function backupApiPlugin(): Plugin {
 
           (async () => {
             try {
-              const url = new URL(req.url, "http://localhost");
+              const url = new URL(req.url!, "http://localhost");
               const symbols = url.searchParams.get("symbols");
               if (!symbols) {
                 res.statusCode = 400;
@@ -598,9 +839,8 @@ export default defineConfig({
     rollupOptions: {
       output: {
         manualChunks(id) {
-          if (id.includes("node_modules/recharts")) {
-            return "recharts";
-          }
+          if (id.includes("node_modules/recharts")) return "recharts";
+          if (id.includes("node_modules/lucide-react")) return "lucide";
           return undefined;
         }
       }

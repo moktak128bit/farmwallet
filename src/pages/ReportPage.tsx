@@ -1,38 +1,104 @@
 import React, { useMemo, useState } from "react";
 import {
-  BarChart,
   Bar,
-  LineChart,
-  Line,
-  XAxis,
-  YAxis,
+  BarChart,
   CartesianGrid,
-  Tooltip,
   Legend,
-  ResponsiveContainer
+  Line,
+  LineChart,
+  Tooltip,
+  XAxis,
+  YAxis
 } from "recharts";
-import type { Account, LedgerEntry, StockTrade, StockPrice } from "../types";
+import { DeferredResponsiveContainer as ResponsiveContainer } from "../components/charts/DeferredResponsiveContainer";
+import type { Account, LedgerEntry, StockPrice, StockTrade } from "../types";
 import {
-  generateMonthlyReport,
-  generateYearlyReport,
-  generateCategoryReport,
-  generateStockPerformanceReport,
-  generateAccountReport,
-  generateMonthlyIncomeDetail,
-  generateDailyReport,
   reportToCSV,
-  type MonthlyReport,
-  type CategoryReport,
-  type StockPerformanceReport,
-  type AccountReport,
-  type MonthlyIncomeDetail,
-  type DailyReport
+  type ComprehensiveMonthlyRow
 } from "../utils/reportGenerator";
 import { formatKRW } from "../utils/formatter";
 import { toast } from "react-hot-toast";
 import { ERROR_MESSAGES } from "../constants/errorMessages";
-import { useFxRate } from "../hooks/useFxRate";
+import { useFxRateValue } from "../context/FxRateContext";
+import { useReportWorker } from "../hooks/useReportWorker";
 import { isSavingsExpenseEntry } from "../utils/category";
+
+/** 카테고리별 집계 행 */
+interface CategoryBreakdownRow {
+  category: string;
+  subCategory: string;
+  amount: number;
+  count: number;
+}
+
+/** 월 내 카테고리별 상세 (수입/지출/이체별) */
+interface MonthCategoryDetail {
+  incomeRows: CategoryBreakdownRow[];
+  livingRows: CategoryBreakdownRow[];
+  savingsRows: CategoryBreakdownRow[];
+  creditRows: CategoryBreakdownRow[];
+  transferRows: CategoryBreakdownRow[];
+}
+
+function buildMonthCategoryDetail(
+  ledger: LedgerEntry[],
+  accounts: Account[],
+  month: string,
+  fxRate: number | null
+): MonthCategoryDetail {
+  const toKrw = (e: LedgerEntry) =>
+    e.currency === "USD" && fxRate ? e.amount * fxRate : e.amount;
+
+  const incomeMap = new Map<string, { amount: number; count: number }>();
+  const livingMap = new Map<string, { amount: number; count: number }>();
+  const savingsMap = new Map<string, { amount: number; count: number }>();
+  const creditMap = new Map<string, { amount: number; count: number }>();
+  const transferMap = new Map<string, { amount: number; count: number }>();
+
+  const add = (map: Map<string, { amount: number; count: number }>, key: string, amount: number) => {
+    const row = map.get(key);
+    if (row) { row.amount += amount; row.count += 1; }
+    else map.set(key, { amount, count: 1 });
+  };
+
+  for (const entry of ledger) {
+    if (!entry.date.startsWith(month)) continue;
+    const amount = toKrw(entry);
+    const cat = entry.category ?? "";
+    const sub = entry.subCategory ?? "";
+    const key = sub ? `${cat}::${sub}` : cat;
+
+    if (entry.kind === "income") {
+      add(incomeMap, key, amount);
+    } else if (entry.kind === "expense") {
+      if (isSavingsExpenseEntry(entry, accounts)) {
+        add(savingsMap, key, amount);
+      } else if (cat === "신용결제" || cat === "신용카드") {
+        add(creditMap, key, amount);
+      } else {
+        add(livingMap, key, amount);
+      }
+    } else if (entry.kind === "transfer") {
+      add(transferMap, key, amount);
+    }
+  }
+
+  const toRows = (map: Map<string, { amount: number; count: number }>): CategoryBreakdownRow[] =>
+    Array.from(map.entries())
+      .map(([key, val]) => {
+        const [category, subCategory = ""] = key.split("::");
+        return { category, subCategory, amount: val.amount, count: val.count };
+      })
+      .sort((a, b) => b.amount - a.amount);
+
+  return {
+    incomeRows: toRows(incomeMap),
+    livingRows: toRows(livingMap),
+    savingsRows: toRows(savingsMap),
+    creditRows: toRows(creditMap),
+    transferRows: toRows(transferMap)
+  };
+}
 
 interface Props {
   accounts: Account[];
@@ -41,11 +107,37 @@ interface Props {
   prices: StockPrice[];
 }
 
-type ReportType = "monthly" | "yearly" | "category" | "stock" | "account" | "daily" | "periodCompare";
+type ReportType =
+  | "comprehensive"
+  | "monthly"
+  | "yearly"
+  | "category"
+  | "stock"
+  | "account"
+  | "daily"
+  | "periodCompare"
+  | "closing"
+  | "performanceAdvanced";
+
+function toPercent(rate?: number | null): string {
+  if (rate == null || !Number.isFinite(rate)) return "-";
+  return `${(rate * 100).toFixed(2)}%`;
+}
+
+function signedKRW(value: number): string {
+  return `${value > 0 ? "+" : ""}${formatKRW(value)}`;
+}
+
+/** 월 이동 헬퍼 */
+function shiftMonthKey(monthKey: string, offset: number): string {
+  const [y, m] = monthKey.split("-").map(Number);
+  const d = new Date(y, m - 1 + offset, 1);
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`;
+}
 
 export const ReportView: React.FC<Props> = ({ accounts, ledger, trades, prices }) => {
-  const fxRate = useFxRate();
-  const [reportType, setReportType] = useState<ReportType>("monthly");
+  const fxRate = useFxRateValue();
+  const [reportType, setReportType] = useState<ReportType>("comprehensive");
   const [startDate, setStartDate] = useState<string>(() => {
     const date = new Date();
     date.setMonth(date.getMonth() - 11);
@@ -53,772 +145,882 @@ export const ReportView: React.FC<Props> = ({ accounts, ledger, trades, prices }
   });
   const [endDate, setEndDate] = useState<string>(() => new Date().toISOString().slice(0, 10));
 
-  const monthlyReport = useMemo(() => {
-    return generateMonthlyReport(ledger, startDate.slice(0, 7), endDate.slice(0, 7));
-  }, [ledger, startDate, endDate]);
-
-  const monthlyIncomeDetail = useMemo(() => {
-    return generateMonthlyIncomeDetail(ledger, accounts, startDate.slice(0, 7), endDate.slice(0, 7));
-  }, [ledger, accounts, startDate, endDate]);
-
-  const yearlyReport = useMemo(() => {
-    return generateYearlyReport(ledger);
-  }, [ledger]);
-
-  const categoryReport = useMemo(() => {
-    return generateCategoryReport(ledger, startDate, endDate);
-  }, [ledger, startDate, endDate]);
-
-  const stockReport = useMemo(() => {
-    return generateStockPerformanceReport(trades, prices, accounts);
-  }, [trades, prices, accounts]);
-
-  const accountReport = useMemo(() => {
-    return generateAccountReport(accounts, ledger, trades);
-  }, [accounts, ledger, trades]);
-
-  const dailyReport = useMemo(() => {
-    return generateDailyReport(accounts, ledger, trades, prices, startDate, endDate, fxRate || undefined);
-  }, [accounts, ledger, trades, prices, startDate, endDate, fxRate]);
-
-  const periodCompareData = useMemo(() => {
+  /** 종합 월간 보고서: 단일 월 선택 */
+  const [selectedMonth, setSelectedMonth] = useState<string>(() => {
     const now = new Date();
-    const year = now.getFullYear();
-    const month = now.getMonth() + 1;
-    const thisMonthKey = `${year}-${String(month).padStart(2, "0")}`;
-    const lastMonthKey =
-      month === 1 ? `${year - 1}-12` : `${year}-${String(month - 1).padStart(2, "0")}`;
-    const lastYearSameMonthKey = `${year - 1}-${String(month).padStart(2, "0")}`;
-    const sum = (entries: LedgerEntry[]) => {
-      let income = 0;
-      let expense = 0;
-      let savings = 0;
-      let transfer = 0;
-      entries.forEach((l) => {
-        if (l.kind === "income") income += l.amount;
-        else if (isSavingsExpenseEntry(l, accounts)) savings += l.amount;
-        else if (l.kind === "transfer") transfer += l.amount;
-        else expense += l.amount;
-      });
-      return { income, expense, savings, transfer, net: income - expense - savings };
-    };
-    const thisMonthLedger = ledger.filter((l) => l.date.startsWith(thisMonthKey));
-    const lastMonthLedger = ledger.filter((l) => l.date.startsWith(lastMonthKey));
-    const lastYearSameMonthLedger = ledger.filter((l) => l.date.startsWith(lastYearSameMonthKey));
-    return {
-      thisMonthKey,
-      lastMonthKey,
-      lastYearSameMonthKey,
-      thisMonth: sum(thisMonthLedger),
-      lastMonth: sum(lastMonthLedger),
-      lastYearSameMonth: sum(lastYearSameMonthLedger)
-    };
-  }, [ledger, accounts]);
+    return `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}`;
+  });
 
-  const handleExportCSV = () => {
-    let csvContent = "";
+  const {
+    monthlyReport,
+    monthlyIncomeDetail,
+    yearlyReport,
+    categoryReport,
+    stockReport,
+    accountReport,
+    dailyReport,
+    closingReport,
+    accountPerformance,
+    consumptionImpact,
+    periodCompare,
+    comprehensiveMonthly
+  } = useReportWorker({
+    accounts,
+    ledger,
+    trades,
+    prices,
+    startDate,
+    endDate,
+    fxRate
+  });
+
+  /** 선택 월 데이터 */
+  const selectedRow: ComprehensiveMonthlyRow | undefined = useMemo(
+    () => comprehensiveMonthly.find((r) => r.month === selectedMonth),
+    [comprehensiveMonthly, selectedMonth]
+  );
+
+  /** 전월 데이터 (MoM 비교용) */
+  const prevMonth = shiftMonthKey(selectedMonth, -1);
+  const prevRow: ComprehensiveMonthlyRow | undefined = useMemo(
+    () => comprehensiveMonthly.find((r) => r.month === prevMonth),
+    [comprehensiveMonthly, prevMonth]
+  );
+
+  /** 선택 월 카테고리별 상세 */
+  const catDetail = useMemo(
+    () => buildMonthCategoryDetail(ledger, accounts, selectedMonth, fxRate),
+    [ledger, accounts, selectedMonth, fxRate]
+  );
+
+  /** 카테고리 상세 테이블 렌더 */
+  const renderCatTable = (rows: CategoryBreakdownRow[], totalLabel: string) => {
+    if (rows.length === 0) return <p style={{ color: "var(--text-muted)", margin: "4px 0" }}>내역 없음</p>;
+    const total = rows.reduce((s, r) => s + r.amount, 0);
+    const totalCount = rows.reduce((s, r) => s + r.count, 0);
+    return (
+      <table className="data-table" style={{ width: "100%", marginTop: 4 }}>
+        <thead>
+          <tr>
+            <th>대분류</th>
+            <th>중분류</th>
+            <th className="number">금액</th>
+            <th className="number">건수</th>
+          </tr>
+        </thead>
+        <tbody>
+          {rows.map((row, i) => (
+            <tr key={`${row.category}-${row.subCategory}-${i}`}>
+              <td>{row.category}</td>
+              <td>{row.subCategory || "-"}</td>
+              <td className="number">{formatKRW(row.amount)}</td>
+              <td className="number">{row.count}</td>
+            </tr>
+          ))}
+          <tr style={{ fontWeight: 700, borderTop: "2px solid var(--border)" }}>
+            <td colSpan={2}>{totalLabel}</td>
+            <td className="number">{formatKRW(total)}</td>
+            <td className="number">{totalCount}</td>
+          </tr>
+        </tbody>
+      </table>
+    );
+  };
+
+  const exportCurrentCsv = () => {
     let filename = "";
-
+    let csv = "";
     switch (reportType) {
       case "monthly":
-        // 월별 리포트와 배당/이자 상세를 함께 내보내기
-        const monthlyReportCSV = reportToCSV(monthlyReport);
-        const monthlyIncomeDetailCSV = reportToCSV(monthlyIncomeDetail);
-        csvContent = monthlyReportCSV + (monthlyIncomeDetailCSV ? "\n\n" + monthlyIncomeDetailCSV : "");
-        filename = `월별_리포트_${new Date().toISOString().slice(0, 10)}.csv`;
+        csv = reportToCSV(monthlyReport) + (monthlyIncomeDetail.length ? `\n\n${reportToCSV(monthlyIncomeDetail)}` : "");
+        filename = "월별_수입지출";
         break;
       case "yearly":
-        csvContent = reportToCSV(yearlyReport);
-        filename = `연도별_리포트_${new Date().toISOString().slice(0, 10)}.csv`;
+        csv = reportToCSV(yearlyReport);
+        filename = "연간_요약";
         break;
       case "category":
-        csvContent = reportToCSV(categoryReport);
-        filename = `카테고리별_리포트_${new Date().toISOString().slice(0, 10)}.csv`;
+        csv = reportToCSV(categoryReport);
+        filename = "카테고리별_지출";
         break;
       case "stock":
-        csvContent = reportToCSV(stockReport);
-        filename = `주식_성과_리포트_${new Date().toISOString().slice(0, 10)}.csv`;
+        csv = reportToCSV(stockReport);
+        filename = "주식_성과";
         break;
       case "account":
-        csvContent = reportToCSV(accountReport);
-        filename = `계좌_리포트_${new Date().toISOString().slice(0, 10)}.csv`;
+        csv = reportToCSV(accountReport);
+        filename = "계좌_요약";
         break;
       case "daily":
-        csvContent = reportToCSV(dailyReport);
-        filename = `일별_리포트_${new Date().toISOString().slice(0, 10)}.csv`;
+        csv = reportToCSV(dailyReport);
+        filename = "일별_스냅샷";
         break;
-      case "periodCompare": {
-        const { thisMonthKey, lastMonthKey, thisMonth, lastMonth } = periodCompareData;
-        const fmt = (n: number) => String(n);
-        csvContent = [
-          ["항목", thisMonthKey, lastMonthKey, "차이"].join(","),
-          ["수입", fmt(thisMonth.income), fmt(lastMonth.income), fmt(thisMonth.income - lastMonth.income)].join(","),
-          ["지출", fmt(thisMonth.expense), fmt(lastMonth.expense), fmt(thisMonth.expense - lastMonth.expense)].join(","),
-          ["저축성지출", fmt(thisMonth.savings), fmt(lastMonth.savings), fmt(thisMonth.savings - lastMonth.savings)].join(","),
-          ["이체", fmt(thisMonth.transfer), fmt(lastMonth.transfer), fmt(thisMonth.transfer - lastMonth.transfer)].join(","),
-          ["순수입", fmt(thisMonth.net), fmt(lastMonth.net), fmt(thisMonth.net - lastMonth.net)].join(",")
-        ].join("\n");
-        filename = `기간비교_${thisMonthKey}_${lastMonthKey}.csv`;
+      case "periodCompare":
+        csv = reportToCSV([
+          { 항목: "수입", 이번달: periodCompare.thisMonth.income, 지난달: periodCompare.lastMonth.income },
+          { 항목: "지출", 이번달: periodCompare.thisMonth.expense, 지난달: periodCompare.lastMonth.expense },
+          { 항목: "저축성지출", 이번달: periodCompare.thisMonth.savings, 지난달: periodCompare.lastMonth.savings },
+          { 항목: "투자순액", 이번달: periodCompare.thisMonth.investingNet, 지난달: periodCompare.lastMonth.investingNet },
+          { 항목: "순수입", 이번달: periodCompare.thisMonth.net, 지난달: periodCompare.lastMonth.net }
+        ]);
+        filename = "기간_비교";
         break;
-      }
+      case "closing":
+        csv = `${reportToCSV(closingReport.monthlySnapshots)}\n\n${reportToCSV(closingReport.weeklySnapshots)}`;
+        filename = "정산_보고서";
+        break;
+      case "performanceAdvanced":
+        csv = `${reportToCSV(accountPerformance)}\n\n${reportToCSV(consumptionImpact)}`;
+        filename = "성과_분석";
+        break;
+      case "comprehensive":
+        csv = reportToCSV(comprehensiveMonthly);
+        filename = "종합_월간";
+        break;
     }
 
-    if (!csvContent) {
+    if (!csv) {
       toast.error(ERROR_MESSAGES.NO_DATA_TO_EXPORT);
       return;
     }
-
-    const blob = new Blob(["\uFEFF" + csvContent], { type: "text/csv;charset=utf-8;" });
+    const fileDate = new Date().toISOString().slice(0, 10);
+    const blob = new Blob(["\uFEFF" + csv], { type: "text/csv;charset=utf-8;" });
     const link = document.createElement("a");
     const url = URL.createObjectURL(blob);
     link.setAttribute("href", url);
-    link.setAttribute("download", filename);
+    link.setAttribute("download", `${filename}_${fileDate}.csv`);
     link.style.visibility = "hidden";
     document.body.appendChild(link);
     link.click();
     document.body.removeChild(link);
-    toast.success("CSV 파일로 내보냈습니다");
+    toast.success("CSV 내보내기 완료");
+  };
+
+  const renderMonthRange = () => (
+    <label style={{ display: "flex", gap: 8, alignItems: "center", marginBottom: 12, flexWrap: "wrap" }}>
+      <span>시작</span>
+      <input type="month" value={startDate.slice(0, 7)} onChange={(e) => setStartDate(`${e.target.value}-01`)} />
+      <span>종료</span>
+      <input
+        type="month"
+        value={endDate.slice(0, 7)}
+        onChange={(e) => {
+          const [year, month] = e.target.value.split("-").map(Number);
+          const lastDay = new Date(year, month, 0).getDate();
+          setEndDate(`${e.target.value}-${String(lastDay).padStart(2, "0")}`);
+        }}
+      />
+    </label>
+  );
+
+  const renderDateRange = () => (
+    <label style={{ display: "flex", gap: 8, alignItems: "center", marginBottom: 12, flexWrap: "wrap" }}>
+      <span>시작</span>
+      <input type="date" value={startDate} onChange={(e) => setStartDate(e.target.value)} />
+      <span>종료</span>
+      <input type="date" value={endDate} onChange={(e) => setEndDate(e.target.value)} />
+    </label>
+  );
+
+  /** delta 표시 헬퍼 */
+  const delta = (cur: number, prev: number | undefined) => {
+    if (prev == null) return null;
+    const d = cur - prev;
+    if (d === 0) return null;
+    return (
+      <span style={{ fontSize: 12, marginLeft: 6, color: d > 0 ? "var(--positive)" : "var(--negative)" }}>
+        {d > 0 ? "+" : ""}{formatKRW(d)}
+      </span>
+    );
   };
 
   const renderReport = () => {
-    switch (reportType) {
-      case "monthly":
-        return (
-          <div>
-            <h3>월별 수입/지출 리포트</h3>
-            <div style={{ marginBottom: 16 }}>
-              <label style={{ display: "flex", gap: 8, alignItems: "center" }}>
-                <span>시작 월:</span>
-                <input
-                  type="month"
-                  value={startDate.slice(0, 7)}
-                  onChange={(e) => setStartDate(e.target.value + "-01")}
-                />
-                <span>종료 월:</span>
-                <input
-                  type="month"
-                  value={endDate.slice(0, 7)}
-                  onChange={(e) => {
-                    const lastDay = new Date(e.target.value + "-01");
-                    lastDay.setMonth(lastDay.getMonth() + 1);
-                    lastDay.setDate(0);
-                    setEndDate(lastDay.toISOString().slice(0, 10));
-                  }}
-                />
-              </label>
-            </div>
-            <ResponsiveContainer width="100%" height={400}>
-              <BarChart data={monthlyReport}>
-                <CartesianGrid strokeDasharray="3 3" />
-                <XAxis dataKey="month" />
-                <YAxis />
-                <Tooltip formatter={(value: number | undefined) => formatKRW(value ?? 0)} />
-                <Legend />
-                <Bar dataKey="income" fill="#10b981" name="수입" />
-                <Bar dataKey="expense" fill="#f43f5e" name="지출" />
-                <Bar dataKey="net" fill="#6366f1" name="순수입" />
-              </BarChart>
-            </ResponsiveContainer>
-            <div style={{ marginTop: 24 }}>
-              <h4 style={{ marginBottom: 12 }}>월별 수입/지출 추이</h4>
-              <ResponsiveContainer width="100%" height={280}>
-                <LineChart data={monthlyReport} margin={{ top: 10, right: 30, left: 0, bottom: 0 }}>
-                  <CartesianGrid strokeDasharray="3 3" />
-                  <XAxis dataKey="month" />
-                  <YAxis tickFormatter={(v) => (Math.abs(v) >= 10000 ? `${(v / 10000).toFixed(0)}만` : String(v))} />
-                  <Tooltip formatter={(value: number | undefined) => formatKRW(value ?? 0)} />
-                  <Legend />
-                  <Line type="monotone" dataKey="income" stroke="#10b981" name="수입" strokeWidth={2} dot={{ r: 3 }} />
-                  <Line type="monotone" dataKey="expense" stroke="#f43f5e" name="지출" strokeWidth={2} dot={{ r: 3 }} />
-                  <Line type="monotone" dataKey="net" stroke="#6366f1" name="순수입" strokeWidth={2} dot={{ r: 3 }} />
-                </LineChart>
-              </ResponsiveContainer>
-            </div>
-            <div style={{ overflowX: "auto", width: "100%" }}>
-              <table className="data-table" style={{ marginTop: 24, width: "100%", minWidth: "800px" }}>
-                <thead>
-                  <tr>
-                    <th style={{ minWidth: "100px" }}>월</th>
-                    <th className="number" style={{ minWidth: "120px" }}>수입</th>
-                    <th className="number" style={{ minWidth: "120px" }}>지출</th>
-                    <th className="number" style={{ minWidth: "120px" }}>이체</th>
-                    <th className="number" style={{ minWidth: "120px" }}>순수입</th>
-                    <th className="number" style={{ minWidth: "120px" }}>전월 대비(순수입)</th>
-                    <th className="number" style={{ minWidth: "120px" }}>전년 동월 대비(순수입)</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {(() => {
-                    const byMonth = new Map(monthlyReport.map((r) => [r.month, r]));
-                    const prevMonth = (m: string) => {
-                      const [y, mo] = m.split("-").map(Number);
-                      if (mo === 1) return `${y - 1}-12`;
-                      return `${y}-${String(mo - 1).padStart(2, "0")}`;
-                    };
-                    const lastYearMonth = (m: string) => {
-                      const [y, mo] = m.split("-").map(Number);
-                      return `${y - 1}-${String(mo).padStart(2, "0")}`;
-                    };
-                    return monthlyReport.map((r) => {
-                      const prev = byMonth.get(prevMonth(r.month));
-                      const lastYear = byMonth.get(lastYearMonth(r.month));
-                      const diffPrev = prev != null ? r.net - prev.net : null;
-                      const diffLastYear = lastYear != null ? r.net - lastYear.net : null;
-                      return (
-                        <tr key={r.month}>
-                          <td>{r.month}</td>
-                          <td className="number positive">{formatKRW(r.income)}</td>
-                          <td className="number negative">{formatKRW(r.expense)}</td>
-                          <td className="number">{formatKRW(r.transfer)}</td>
-                          <td className={`number ${r.net >= 0 ? "positive" : "negative"}`}>
-                            {formatKRW(r.net)}
-                          </td>
-                          <td className={`number ${diffPrev != null ? (diffPrev >= 0 ? "positive" : "negative") : ""}`}>
-                            {diffPrev != null ? (diffPrev >= 0 ? "+" : "") + formatKRW(diffPrev) : "-"}
-                          </td>
-                          <td className={`number ${diffLastYear != null ? (diffLastYear >= 0 ? "positive" : "negative") : ""}`}>
-                            {diffLastYear != null ? (diffLastYear >= 0 ? "+" : "") + formatKRW(diffLastYear) : "-"}
-                          </td>
-                        </tr>
-                      );
-                    });
-                  })()}
-                </tbody>
-              </table>
-            </div>
-            
-            {/* 배당/이자 수입 상세 테이블 */}
-            {monthlyIncomeDetail.length > 0 && (
-              <div style={{ marginTop: 32 }}>
-                <h4 style={{ marginBottom: 16 }}>배당/이자 수입 상세 (월별)</h4>
-                <div style={{ overflowX: "auto", width: "100%" }}>
-                  <table className="data-table" style={{ width: "100%", minWidth: "800px" }}>
-                    <thead>
-                      <tr>
-                        <th style={{ minWidth: "80px" }}>월</th>
-                        <th style={{ minWidth: "100px" }}>날짜</th>
-                        <th style={{ minWidth: "100px" }}>카테고리</th>
-                        <th style={{ minWidth: "100px" }}>세부 항목</th>
-                        <th style={{ minWidth: "150px" }}>설명</th>
-                        <th style={{ minWidth: "120px" }}>계좌</th>
-                        <th className="number" style={{ minWidth: "120px" }}>금액</th>
-                      </tr>
-                    </thead>
+    // ─── 종합 월간 보고서 ───
+    if (reportType === "comprehensive") {
+      const r = selectedRow;
+
+      return (
+        <div>
+          <h3>{selectedMonth} 종합 월간 보고서</h3>
+
+          {/* 월 네비게이션 */}
+          <div style={{ display: "flex", gap: 8, alignItems: "center", marginBottom: 16, flexWrap: "wrap" }}>
+            <button type="button" onClick={() => setSelectedMonth(shiftMonthKey(selectedMonth, -1))}>◀ 이전 월</button>
+            <input
+              type="month"
+              value={selectedMonth}
+              onChange={(e) => setSelectedMonth(e.target.value)}
+              style={{ fontSize: 15, fontWeight: 600 }}
+            />
+            <button type="button" onClick={() => setSelectedMonth(shiftMonthKey(selectedMonth, 1))}>다음 월 ▶</button>
+          </div>
+
+          {!r ? (
+            <p style={{ color: "var(--text-muted)", padding: 24 }}>{selectedMonth}에 해당하는 데이터가 없습니다.</p>
+          ) : (
+            <>
+              {/* ── 1. 수입 ── */}
+              <div className="card" style={{ padding: 16, marginBottom: 12 }}>
+                <h4 style={{ margin: "0 0 12px" }}>수입</h4>
+                <table className="data-table" style={{ width: "100%" }}>
+                  <thead>
+                    <tr>
+                      <th>구분</th>
+                      <th className="number">금액</th>
+                      <th className="number">전월 비교</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    <tr>
+                      <td><strong>근로소득</strong> <span style={{ fontSize: 12, color: "var(--text-muted)" }}>(급여/수당/상여/부수익)</span></td>
+                      <td className="number positive">{formatKRW(r.earnedIncome)}</td>
+                      <td className="number">{delta(r.earnedIncome, prevRow?.earnedIncome)}</td>
+                    </tr>
+                    <tr>
+                      <td><strong>자본소득</strong> <span style={{ fontSize: 12, color: "var(--text-muted)" }}>(배당/이자/투자수익)</span></td>
+                      <td className="number">{formatKRW(r.capitalIncome)}</td>
+                      <td className="number">{delta(r.capitalIncome, prevRow?.capitalIncome)}</td>
+                    </tr>
+                    <tr style={{ color: "var(--text-muted)" }}>
+                      <td>허수 수입 <span style={{ fontSize: 12 }}>(정산/용돈/이월/대출/처분소득/지원)</span></td>
+                      <td className="number">{formatKRW(r.nonRealIncome)}</td>
+                      <td className="number">{delta(r.nonRealIncome, prevRow?.nonRealIncome)}</td>
+                    </tr>
+                    <tr style={{ fontWeight: 700, borderTop: "2px solid var(--border)" }}>
+                      <td>전체 수입 (장부)</td>
+                      <td className="number">{formatKRW(r.totalIncome)}</td>
+                      <td className="number">{delta(r.totalIncome, prevRow?.totalIncome)}</td>
+                    </tr>
+                  </tbody>
+                </table>
+              </div>
+
+              {/* ── 2. 지출 ── */}
+              <div className="card" style={{ padding: 16, marginBottom: 12 }}>
+                <h4 style={{ margin: "0 0 12px" }}>지출</h4>
+                <table className="data-table" style={{ width: "100%" }}>
+                  <thead>
+                    <tr>
+                      <th>구분</th>
+                      <th className="number">금액</th>
+                      <th className="number">전월 비교</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    <tr>
+                      <td><strong>생활소비</strong> <span style={{ fontSize: 12, color: "var(--text-muted)" }}>(식비/교통/주거/의료 등)</span></td>
+                      <td className="number negative">{formatKRW(r.livingExpense)}</td>
+                      <td className="number">{delta(r.livingExpense, prevRow?.livingExpense)}</td>
+                    </tr>
+                    <tr>
+                      <td><strong>저축성 지출</strong> <span style={{ fontSize: 12, color: "var(--text-muted)" }}>(재테크/투자)</span></td>
+                      <td className="number">{formatKRW(r.savingsExpense)}</td>
+                      <td className="number">{delta(r.savingsExpense, prevRow?.savingsExpense)}</td>
+                    </tr>
+                    <tr>
+                      <td>대출상환 {r.loanInterest > 0 && <span style={{ fontSize: 12, color: "var(--text-muted)" }}>(이자 {formatKRW(r.loanInterest)})</span>}</td>
+                      <td className="number">{formatKRW(r.loanRepayment)}</td>
+                      <td className="number">{delta(r.loanRepayment, prevRow?.loanRepayment)}</td>
+                    </tr>
+                    <tr style={{ color: "var(--text-muted)" }}>
+                      <td>신용결제 <span style={{ fontSize: 12 }}>(이중계산 제외)</span></td>
+                      <td className="number">{formatKRW(r.creditPayment)}</td>
+                      <td className="number">{delta(r.creditPayment, prevRow?.creditPayment)}</td>
+                    </tr>
+                    <tr style={{ fontWeight: 700, borderTop: "2px solid var(--border)" }}>
+                      <td>전체 지출 (장부)</td>
+                      <td className="number">{formatKRW(r.totalExpense)}</td>
+                      <td className="number">{delta(r.totalExpense, prevRow?.totalExpense)}</td>
+                    </tr>
+                  </tbody>
+                </table>
+              </div>
+
+              {/* ── 3. 투자 활동 ── */}
+              <div className="card" style={{ padding: 16, marginBottom: 12 }}>
+                <h4 style={{ margin: "0 0 12px" }}>투자 활동</h4>
+                <table className="data-table" style={{ width: "100%" }}>
+                  <thead>
+                    <tr>
+                      <th>구분</th>
+                      <th className="number">금액</th>
+                      <th className="number">전월 비교</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    <tr>
+                      <td>매수 총액</td>
+                      <td className="number">{formatKRW(r.buyAmount)}</td>
+                      <td className="number">{delta(r.buyAmount, prevRow?.buyAmount)}</td>
+                    </tr>
+                    <tr>
+                      <td>매도 총액</td>
+                      <td className="number">{formatKRW(r.sellAmount)}</td>
+                      <td className="number">{delta(r.sellAmount, prevRow?.sellAmount)}</td>
+                    </tr>
+                    <tr>
+                      <td><strong>실현 손익</strong></td>
+                      <td className={`number ${r.realizedPnl >= 0 ? "positive" : "negative"}`}>{signedKRW(r.realizedPnl)}</td>
+                      <td className="number">{delta(r.realizedPnl, prevRow?.realizedPnl)}</td>
+                    </tr>
+                    <tr>
+                      <td>배당 수입</td>
+                      <td className="number positive">{formatKRW(r.dividendIncome)}</td>
+                      <td className="number">{delta(r.dividendIncome, prevRow?.dividendIncome)}</td>
+                    </tr>
+                    <tr>
+                      <td>매매 건수</td>
+                      <td className="number">{r.tradeCount}건</td>
+                      <td className="number">{prevRow != null && r.tradeCount !== prevRow.tradeCount ? (
+                        <span style={{ fontSize: 12, color: r.tradeCount > prevRow.tradeCount ? "var(--positive)" : "var(--negative)" }}>
+                          {r.tradeCount > prevRow.tradeCount ? "+" : ""}{r.tradeCount - prevRow.tradeCount}건
+                        </span>
+                      ) : null}</td>
+                    </tr>
+                    <tr style={{ borderTop: "1px solid var(--border)" }}>
+                      <td>투자 이체 (입금)</td>
+                      <td className="number">{formatKRW(r.investingIn)}</td>
+                      <td className="number">{delta(r.investingIn, prevRow?.investingIn)}</td>
+                    </tr>
+                    <tr>
+                      <td>투자 출금</td>
+                      <td className="number">{formatKRW(r.investingOut)}</td>
+                      <td className="number">{delta(r.investingOut, prevRow?.investingOut)}</td>
+                    </tr>
+                  </tbody>
+                </table>
+              </div>
+
+              {/* ── 4. 이체 ── */}
+              {r.transferTotal > 0 && (
+                <div className="card" style={{ padding: 16, marginBottom: 12 }}>
+                  <h4 style={{ margin: "0 0 12px" }}>이체</h4>
+                  <table className="data-table" style={{ width: "100%" }}>
                     <tbody>
-                      {monthlyIncomeDetail.map((detail, idx) => (
-                        <tr key={idx}>
-                          <td>{detail.month}</td>
-                          <td>{detail.date}</td>
-                          <td>{detail.category || "-"}</td>
-                          <td>{detail.subCategory || "-"}</td>
-                          <td style={{ whiteSpace: "normal", wordBreak: "break-word" }}>{detail.description || "-"}</td>
-                          <td>{detail.accountName || detail.accountId || "-"}</td>
-                          <td className="number positive">{formatKRW(detail.amount)}</td>
-                        </tr>
-                      ))}
+                      <tr>
+                        <td>이체 총액</td>
+                        <td className="number">{formatKRW(r.transferTotal)}</td>
+                        <td className="number">{delta(r.transferTotal, prevRow?.transferTotal)}</td>
+                      </tr>
                     </tbody>
                   </table>
                 </div>
-              </div>
-            )}
-          </div>
-        );
+              )}
 
-      case "yearly":
-        return (
-          <div>
-            <h3>연도별 수입/지출 리포트</h3>
-            <ResponsiveContainer width="100%" height={400}>
-              <BarChart data={yearlyReport}>
-                <CartesianGrid strokeDasharray="3 3" />
-                <XAxis dataKey="month" />
-                <YAxis />
-                <Tooltip formatter={(value: number | undefined) => formatKRW(value ?? 0)} />
-                <Legend />
-                <Bar dataKey="income" fill="#10b981" name="수입" />
-                <Bar dataKey="expense" fill="#f43f5e" name="지출" />
-                <Bar dataKey="net" fill="#6366f1" name="순수입" />
-              </BarChart>
-            </ResponsiveContainer>
-            <div style={{ overflowX: "auto", width: "100%" }}>
-              <table className="data-table" style={{ marginTop: 24, width: "100%", minWidth: "600px" }}>
-                <thead>
-                  <tr>
-                    <th style={{ minWidth: "100px" }}>연도</th>
-                    <th className="number" style={{ minWidth: "120px" }}>수입</th>
-                    <th className="number" style={{ minWidth: "120px" }}>지출</th>
-                    <th className="number" style={{ minWidth: "120px" }}>이체</th>
-                    <th className="number" style={{ minWidth: "120px" }}>순수입</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {yearlyReport.map((r) => (
-                    <tr key={r.month}>
-                      <td>{r.month}</td>
-                      <td className="number positive">{formatKRW(r.income)}</td>
-                      <td className="number negative">{formatKRW(r.expense)}</td>
-                      <td className="number">{formatKRW(r.transfer)}</td>
-                      <td className={`number ${r.net >= 0 ? "positive" : "negative"}`}>
-                        {formatKRW(r.net)}
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
-          </div>
-        );
-
-      case "category": {
-        const topCategories = categoryReport.slice(0, 10);
-        const categoryTotalSum = categoryReport.reduce((s, r) => s + r.total, 0);
-        const topWithShare = topCategories.map((r) => ({
-          ...r,
-          sharePct: categoryTotalSum > 0 ? (r.total / categoryTotalSum) * 100 : 0
-        }));
-        return (
-          <div>
-            <h3>카테고리별 지출 리포트</h3>
-            <div style={{ marginBottom: 16 }}>
-              <label style={{ display: "flex", gap: 8, alignItems: "center" }}>
-                <span>시작일:</span>
-                <input type="date" value={startDate} onChange={(e) => setStartDate(e.target.value)} />
-                <span>종료일:</span>
-                <input type="date" value={endDate} onChange={(e) => setEndDate(e.target.value)} />
-              </label>
-            </div>
-            <ResponsiveContainer width="100%" height={400}>
-              <BarChart data={topWithShare} layout="vertical">
-                <CartesianGrid strokeDasharray="3 3" />
-                <XAxis type="number" tickFormatter={(v) => (v >= 10000 ? `${(v / 10000).toFixed(0)}만` : String(v))} />
-                <YAxis dataKey="category" type="category" width={150} />
-                <Tooltip formatter={(value: number | undefined) => formatKRW(value ?? 0)} />
-                <Bar dataKey="total" fill="#6366f1" name="총액" />
-              </BarChart>
-            </ResponsiveContainer>
-            <h4 style={{ marginTop: 24, marginBottom: 12 }}>카테고리별 비중</h4>
-            <ResponsiveContainer width="100%" height={300}>
-              <BarChart data={topWithShare} layout="vertical" margin={{ left: 80, right: 20 }}>
-                <CartesianGrid strokeDasharray="3 3" />
-                <XAxis type="number" domain={[0, 100]} unit="%" tickFormatter={(v) => `${v}%`} />
-                <YAxis dataKey="category" type="category" width={150} />
-                <Tooltip formatter={(value: number | undefined) => [`${(value ?? 0).toFixed(1)}%`, "비중"]} />
-                <Bar dataKey="sharePct" fill="#8b5cf6" name="비중(%)" />
-              </BarChart>
-            </ResponsiveContainer>
-            <div style={{ overflowX: "auto", width: "100%" }}>
-              <table className="data-table" style={{ marginTop: 24, width: "100%", minWidth: "600px" }}>
-                <thead>
-                  <tr>
-                    <th style={{ minWidth: "120px" }}>카테고리</th>
-                    <th style={{ minWidth: "120px" }}>세부 항목</th>
-                    <th className="number" style={{ minWidth: "120px" }}>총액</th>
-                    <th className="number" style={{ minWidth: "80px" }}>비중(%)</th>
-                    <th className="number" style={{ minWidth: "80px" }}>건수</th>
-                    <th className="number" style={{ minWidth: "120px" }}>평균</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {categoryReport.map((r, idx) => {
-                    const sharePct = categoryTotalSum > 0 ? (r.total / categoryTotalSum) * 100 : 0;
-                    return (
-                      <tr key={idx}>
-                        <td>{r.category}</td>
-                        <td>{r.subCategory || "-"}</td>
-                        <td className="number">{formatKRW(r.total)}</td>
-                        <td className="number">{sharePct.toFixed(1)}%</td>
-                        <td className="number">{r.count}</td>
-                        <td className="number">{formatKRW(r.average)}</td>
-                      </tr>
-                    );
-                  })}
-                </tbody>
-              </table>
-            </div>
-          </div>
-        );
-      }
-
-      case "stock":
-        return (
-          <div>
-            <h3>주식 포트폴리오 성과 리포트</h3>
-            <div style={{ overflowX: "auto", width: "100%" }}>
-              <table className="data-table" style={{ width: "100%", minWidth: "900px" }}>
-                <thead>
-                  <tr>
-                    <th style={{ minWidth: "80px" }}>티커</th>
-                    <th style={{ minWidth: "150px" }}>종목명</th>
-                    <th className="number" style={{ minWidth: "130px" }}>총매입금액</th>
-                    <th className="number" style={{ minWidth: "130px" }}>현재가치</th>
-                    <th className="number" style={{ minWidth: "130px" }}>손익</th>
-                    <th className="number" style={{ minWidth: "100px" }}>수익률</th>
-                    <th className="number" style={{ minWidth: "90px" }}>IRR(연)</th>
-                    <th className="number" style={{ minWidth: "100px" }}>보유수량</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {stockReport.map((r) => (
-                    <tr key={`${r.accountId}-${r.ticker}`}>
-                      <td>{r.ticker}</td>
-                      <td>{r.name}</td>
-                      <td className="number">{formatKRW(r.totalBuyAmount)}</td>
-                      <td className="number">{formatKRW(r.currentValue)}</td>
-                      <td className={`number ${r.pnl >= 0 ? "positive" : "negative"}`}>
-                        {formatKRW(r.pnl)}
-                      </td>
-                      <td className={`number ${r.pnlRate >= 0 ? "positive" : "negative"}`}>
-                        {r.pnlRate.toFixed(2)}%
-                      </td>
-                      <td className={`number ${r.irr != null ? (r.irr >= 0 ? "positive" : "negative") : ""}`} title="연간 수익률 (XIRR)">
-                        {r.irr != null ? `${(r.irr * 100).toFixed(2)}%` : "-"}
-                      </td>
-                      <td className="number">{r.quantity}</td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
-          </div>
-        );
-
-      case "account":
-        return (
-          <div>
-            <h3>계좌별 자산 리포트</h3>
-            <div style={{ overflowX: "auto", width: "100%" }}>
-              <table className="data-table" style={{ width: "100%", minWidth: "800px" }}>
-                <thead>
-                  <tr>
-                    <th style={{ minWidth: "120px" }}>계좌 ID</th>
-                    <th style={{ minWidth: "150px" }}>계좌명</th>
-                    <th className="number" style={{ minWidth: "130px" }}>초기 잔액</th>
-                    <th className="number" style={{ minWidth: "130px" }}>현재 잔액</th>
-                    <th className="number" style={{ minWidth: "130px" }}>변화액</th>
-                    <th className="number" style={{ minWidth: "100px" }}>변화율</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {accountReport.map((r) => (
-                    <tr key={r.accountId}>
-                      <td>{r.accountId}</td>
-                      <td>{r.accountName}</td>
-                      <td className="number">{formatKRW(r.initialBalance)}</td>
-                      <td className="number">{formatKRW(r.currentBalance)}</td>
-                      <td className={`number ${r.change >= 0 ? "positive" : "negative"}`}>
-                        {formatKRW(r.change)}
-                      </td>
-                      <td className={`number ${r.changeRate >= 0 ? "positive" : "negative"}`}>
-                        {r.changeRate.toFixed(2)}%
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
-          </div>
-        );
-
-      case "daily":
-        return (
-          <div>
-            <h3>일별 리포트</h3>
-            <div style={{ marginBottom: 16 }}>
-              <label style={{ display: "flex", gap: 8, alignItems: "center" }}>
-                <span>시작일:</span>
-                <input type="date" value={startDate} onChange={(e) => setStartDate(e.target.value)} />
-                <span>종료일:</span>
-                <input type="date" value={endDate} onChange={(e) => setEndDate(e.target.value)} />
-              </label>
-            </div>
-            
-            {/* 일별 자산 변화 그래프 */}
-            {dailyReport.length > 0 && (
-              <div style={{ marginBottom: 32 }}>
-                <h4 style={{ marginBottom: 16 }}>일별 자산 변화</h4>
-                <div style={{ width: "100%", height: 400, minHeight: 400, minWidth: 0, display: "block" }}>
-                  <ResponsiveContainer width="100%" height={400} minHeight={400} minWidth={0}>
-                    <LineChart data={dailyReport} margin={{ top: 10, right: 30, left: 0, bottom: 0 }}>
-                      <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="var(--border)" />
-                      <XAxis 
-                        dataKey="date" 
-                        fontSize={11} 
-                        tickFormatter={(v) => {
-                          const date = new Date(v);
-                          return `${date.getMonth() + 1}/${date.getDate()}`;
-                        }}
-                        tickMargin={10}
-                        axisLine={false}
-                        tickLine={false}
-                        angle={-45}
-                        textAnchor="end"
-                        height={80}
-                      />
-                      <YAxis 
-                        fontSize={11} 
-                        tickFormatter={(v) => {
-                          if (Math.abs(v) >= 100000000) return `${(v / 100000000).toFixed(1)}억`;
-                          if (Math.abs(v) >= 10000) return `${(v / 10000).toFixed(0)}만`;
-                          return `${Math.round(v).toLocaleString()}`;
-                        }} 
-                        width={60}
-                        axisLine={false}
-                        tickLine={false}
-                      />
-                      <Tooltip 
-                        formatter={(value: any) => formatKRW(value)}
-                        labelFormatter={(label) => {
-                          const date = new Date(label);
-                          return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')}`;
-                        }}
-                        contentStyle={{ borderRadius: "8px", border: "none", boxShadow: "0 4px 12px rgba(0,0,0,0.1)" }}
-                      />
-                      <Legend 
-                        verticalAlign="top" 
-                        height={36} 
-                        iconType="line"
-                        wrapperStyle={{ fontSize: "11px" }}
-                      />
-                      <Line 
-                        type="monotone" 
-                        dataKey="totalAsset" 
-                        name="전체 자산"
-                        stroke="#6366f1" 
-                        strokeWidth={2.5}
-                        dot={{ r: 3 }}
-                        activeDot={{ r: 5 }}
-                      />
-                      <Line 
-                        type="monotone" 
-                        dataKey="netWorth" 
-                        name="순자산"
-                        stroke="#10b981" 
-                        strokeWidth={2.5}
-                        dot={{ r: 3 }}
-                        activeDot={{ r: 5 }}
-                      />
-                      <Line 
-                        type="monotone" 
-                        dataKey="stockValue" 
-                        name="주식 평가액"
-                        stroke="#0ea5e9" 
-                        strokeWidth={2}
-                        dot={{ r: 2 }}
-                        activeDot={{ r: 4 }}
-                        strokeDasharray="5 5"
-                        opacity={0.7}
-                      />
-                      <Line 
-                        type="monotone" 
-                        dataKey="cashValue" 
-                        name="현금"
-                        stroke="#f59e0b" 
-                        strokeWidth={2}
-                        dot={{ r: 2 }}
-                        activeDot={{ r: 4 }}
-                        strokeDasharray="5 5"
-                        opacity={0.7}
-                      />
-                    </LineChart>
-                  </ResponsiveContainer>
+              {/* ── 5. 핵심 지표 요약 ── */}
+              <div className="card" style={{ padding: 16, marginBottom: 12, background: "var(--bg-secondary, var(--bg))" }}>
+                <h4 style={{ margin: "0 0 12px" }}>핵심 지표</h4>
+                <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(200px, 1fr))", gap: 16 }}>
+                  <div>
+                    <div style={{ fontSize: 13, color: "var(--text-muted)" }}>진짜 순수입</div>
+                    <div style={{ fontSize: 22, fontWeight: 700, color: r.realNet >= 0 ? "var(--positive)" : "var(--negative)" }}>
+                      {signedKRW(r.realNet)}
+                    </div>
+                    <div style={{ fontSize: 12, color: "var(--text-muted)" }}>근로소득 - 생활소비</div>
+                  </div>
+                  <div>
+                    <div style={{ fontSize: 13, color: "var(--text-muted)" }}>진짜 저축률</div>
+                    <div style={{ fontSize: 22, fontWeight: 700 }}>
+                      {r.realSavingsRate != null ? `${r.realSavingsRate.toFixed(1)}%` : "-"}
+                    </div>
+                    <div style={{ fontSize: 12, color: "var(--text-muted)" }}>진짜 순수입 / 근로소득</div>
+                  </div>
+                  <div>
+                    <div style={{ fontSize: 13, color: "var(--text-muted)" }}>장부 순수입</div>
+                    <div style={{ fontSize: 22, fontWeight: 700, color: r.totalNet >= 0 ? "var(--positive)" : "var(--negative)" }}>
+                      {signedKRW(r.totalNet)}
+                    </div>
+                    <div style={{ fontSize: 12, color: "var(--text-muted)" }}>전체 수입 - 전체 지출</div>
+                  </div>
                 </div>
               </div>
-            )}
-            
-            <div style={{ 
-              overflowX: "auto", 
-              overflowY: "auto",
-              maxHeight: "600px",
-              width: "100%",
-              border: "1px solid var(--border)",
-              borderRadius: "8px"
-            }}>
-              <table className="data-table compact" style={{ 
-                fontSize: 12,
-                minWidth: "1200px",
-                width: "100%",
-                tableLayout: "auto"
-              }}>
-                <thead style={{ position: "sticky", top: 0, backgroundColor: "var(--surface)", zIndex: 10 }}>
-                  <tr>
-                    <th style={{ minWidth: "100px", width: "10%" }}>날짜</th>
-                    <th className="number" style={{ minWidth: "110px", width: "10%" }}>수입</th>
-                    <th className="number" style={{ minWidth: "110px", width: "10%" }}>지출</th>
-                    <th className="number" style={{ minWidth: "110px", width: "10%" }}>저축</th>
-                    <th className="number" style={{ minWidth: "110px", width: "10%" }}>이체</th>
-                    <th className="number" style={{ minWidth: "130px", width: "12%" }}>주식 평가액</th>
-                    <th className="number" style={{ minWidth: "130px", width: "12%" }}>현금</th>
-                    <th className="number" style={{ minWidth: "130px", width: "12%" }}>저축</th>
-                    <th className="number" style={{ minWidth: "140px", width: "12%" }}>전체 자산</th>
-                    <th className="number" style={{ minWidth: "140px", width: "12%" }}>순자산</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {dailyReport.map((r) => (
-                    <tr key={r.date}>
-                      <td style={{ whiteSpace: "nowrap" }}>{r.date}</td>
-                      <td className="number positive" style={{ whiteSpace: "nowrap" }}>{formatKRW(r.income)}</td>
-                      <td className="number negative" style={{ whiteSpace: "nowrap" }}>{formatKRW(r.expense)}</td>
-                      <td className="number" style={{ whiteSpace: "nowrap" }}>{formatKRW(r.savingsExpense)}</td>
-                      <td className="number" style={{ whiteSpace: "nowrap" }}>{formatKRW(r.transfer)}</td>
-                      <td className="number" style={{ whiteSpace: "nowrap" }}>{formatKRW(r.stockValue)}</td>
-                      <td className="number" style={{ whiteSpace: "nowrap" }}>{formatKRW(r.cashValue)}</td>
-                      <td className="number" style={{ whiteSpace: "nowrap" }}>{formatKRW(r.savingsValue)}</td>
-                      <td className="number" style={{ fontWeight: 600, whiteSpace: "nowrap" }}>{formatKRW(r.totalAsset)}</td>
-                      <td className={`number ${r.netWorth >= 0 ? "positive" : "negative"}`} style={{ fontWeight: 600, whiteSpace: "nowrap" }}>
-                        {formatKRW(r.netWorth)}
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
-          </div>
-        );
 
-      case "periodCompare": {
-        const { thisMonthKey, lastMonthKey, lastYearSameMonthKey, thisMonth, lastMonth, lastYearSameMonth } = periodCompareData;
-        const diff = (a: typeof thisMonth, b: typeof thisMonth) => (key: keyof typeof thisMonth) => a[key] - b[key];
-        const rowClass = (label: string, val: number) =>
-          label === "순수입" ? (val >= 0 ? "positive" : "negative") : label === "수입" ? "positive" : label === "지출" || label === "저축성지출" ? "negative" : "";
-        const rowsPrev: { label: string; thisVal: number; otherVal: number; diffVal: number }[] = [
-          { label: "수입", thisVal: thisMonth.income, otherVal: lastMonth.income, diffVal: diff(thisMonth, lastMonth)("income") },
-          { label: "지출", thisVal: thisMonth.expense, otherVal: lastMonth.expense, diffVal: diff(thisMonth, lastMonth)("expense") },
-          { label: "저축성지출", thisVal: thisMonth.savings, otherVal: lastMonth.savings, diffVal: diff(thisMonth, lastMonth)("savings") },
-          { label: "이체", thisVal: thisMonth.transfer, otherVal: lastMonth.transfer, diffVal: diff(thisMonth, lastMonth)("transfer") },
-          { label: "순수입", thisVal: thisMonth.net, otherVal: lastMonth.net, diffVal: diff(thisMonth, lastMonth)("net") }
-        ];
-        const rowsLastYear: { label: string; thisVal: number; otherVal: number; diffVal: number }[] = [
-          { label: "수입", thisVal: thisMonth.income, otherVal: lastYearSameMonth.income, diffVal: diff(thisMonth, lastYearSameMonth)("income") },
-          { label: "지출", thisVal: thisMonth.expense, otherVal: lastYearSameMonth.expense, diffVal: diff(thisMonth, lastYearSameMonth)("expense") },
-          { label: "저축성지출", thisVal: thisMonth.savings, otherVal: lastYearSameMonth.savings, diffVal: diff(thisMonth, lastYearSameMonth)("savings") },
-          { label: "이체", thisVal: thisMonth.transfer, otherVal: lastYearSameMonth.transfer, diffVal: diff(thisMonth, lastYearSameMonth)("transfer") },
-          { label: "순수입", thisVal: thisMonth.net, otherVal: lastYearSameMonth.net, diffVal: diff(thisMonth, lastYearSameMonth)("net") }
-        ];
-        return (
-          <div>
-            <h3>기간 비교</h3>
-            <h4 style={{ marginTop: 16, marginBottom: 8 }}>이번 달 vs 전월</h4>
-            <p style={{ marginBottom: 12, color: "var(--text-secondary)", fontSize: 14 }}>
-              {thisMonthKey} (이번 달) · {lastMonthKey} (지난달)
-            </p>
-            <div style={{ overflowX: "auto", width: "100%", marginBottom: 32 }}>
-              <table className="data-table" style={{ width: "100%", minWidth: "480px" }}>
-                <thead>
-                  <tr>
-                    <th style={{ width: "120px" }}>항목</th>
-                    <th className="number" style={{ minWidth: "120px" }}>{thisMonthKey}</th>
-                    <th className="number" style={{ minWidth: "120px" }}>{lastMonthKey}</th>
-                    <th className="number" style={{ minWidth: "120px" }}>차이</th>
+              {/* ── 6. 추이 차트 (최근 6개월) ── */}
+              <div className="card" style={{ padding: 16 }}>
+                <h4 style={{ margin: "0 0 12px" }}>최근 추이</h4>
+                <ResponsiveContainer width="100%" height={280}>
+                  <BarChart data={comprehensiveMonthly.slice(-6)}>
+                    <CartesianGrid strokeDasharray="3 3" />
+                    <XAxis dataKey="month" />
+                    <YAxis />
+                    <Tooltip formatter={(value: number | undefined) => formatKRW(value ?? 0)} />
+                    <Legend />
+                    <Bar dataKey="earnedIncome" fill="#10b981" name="근로소득" />
+                    <Bar dataKey="livingExpense" fill="#f43f5e" name="생활소비" />
+                    <Bar dataKey="realNet" fill="#6366f1" name="진짜 순수입" />
+                  </BarChart>
+                </ResponsiveContainer>
+              </div>
+            </>
+          )}
+        </div>
+      );
+    }
+
+    // ─── 월별 수입/지출 ───
+    if (reportType === "monthly") {
+      return (
+        <div>
+          <h3>월별 수입 / 지출</h3>
+          {renderMonthRange()}
+          <ResponsiveContainer width="100%" height={300}>
+            <BarChart data={monthlyReport}>
+              <CartesianGrid strokeDasharray="3 3" />
+              <XAxis dataKey="month" />
+              <YAxis />
+              <Tooltip formatter={(value: number | undefined) => formatKRW(value ?? 0)} />
+              <Legend />
+              <Bar dataKey="income" fill="#10b981" name="수입" />
+              <Bar dataKey="expense" fill="#f43f5e" name="지출" />
+              <Bar dataKey="net" fill="#6366f1" name="순수입" />
+            </BarChart>
+          </ResponsiveContainer>
+          <div style={{ overflowX: "auto", width: "100%", marginTop: 14 }}>
+            <table className="data-table" style={{ width: "100%", minWidth: 700 }}>
+              <thead>
+                <tr>
+                  <th>월</th>
+                  <th className="number">수입</th>
+                  <th className="number">지출</th>
+                  <th className="number">순수입</th>
+                </tr>
+              </thead>
+              <tbody>
+                {monthlyReport.map((row) => (
+                  <tr key={row.month}>
+                    <td>{row.month}</td>
+                    <td className="number positive">{formatKRW(row.income)}</td>
+                    <td className="number negative">{formatKRW(row.expense)}</td>
+                    <td className={`number ${row.net >= 0 ? "positive" : "negative"}`}>{formatKRW(row.net)}</td>
                   </tr>
-                </thead>
-                <tbody>
-                  {rowsPrev.map((r) => (
-                    <tr key={r.label}>
-                      <td>{r.label}</td>
-                      <td className={`number ${rowClass(r.label, r.thisVal)}`}>{formatKRW(r.thisVal)}</td>
-                      <td className={`number ${rowClass(r.label, r.otherVal)}`}>{formatKRW(r.otherVal)}</td>
-                      <td className={`number ${r.diffVal >= 0 ? "positive" : "negative"}`}>
-                        {r.diffVal >= 0 ? "+" : ""}{formatKRW(r.diffVal)}
-                      </td>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      );
+    }
+
+    // ─── 연간 요약 ───
+    if (reportType === "yearly") {
+      return (
+        <div>
+          <h3>연간 요약</h3>
+          <div style={{ overflowX: "auto", width: "100%" }}>
+            <table className="data-table" style={{ width: "100%", minWidth: 620 }}>
+              <thead>
+                <tr>
+                  <th>연도</th>
+                  <th className="number">수입</th>
+                  <th className="number">지출</th>
+                  <th className="number">순수입</th>
+                </tr>
+              </thead>
+              <tbody>
+                {yearlyReport.map((row) => (
+                  <tr key={row.month}>
+                    <td>{row.month}</td>
+                    <td className="number positive">{formatKRW(row.income)}</td>
+                    <td className="number negative">{formatKRW(row.expense)}</td>
+                    <td className={`number ${row.net >= 0 ? "positive" : "negative"}`}>{formatKRW(row.net)}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      );
+    }
+
+    // ─── 카테고리별 지출 ───
+    if (reportType === "category") {
+      return (
+        <div>
+          <h3>카테고리별 지출</h3>
+          {renderDateRange()}
+          <div style={{ overflowX: "auto", width: "100%" }}>
+            <table className="data-table" style={{ width: "100%", minWidth: 700 }}>
+              <thead>
+                <tr>
+                  <th>대분류</th>
+                  <th>중분류</th>
+                  <th className="number">합계</th>
+                  <th className="number">건수</th>
+                </tr>
+              </thead>
+              <tbody>
+                {categoryReport.map((row, idx) => (
+                  <tr key={`${row.category}-${idx}`}>
+                    <td>{row.category}</td>
+                    <td>{row.subCategory || "-"}</td>
+                    <td className="number">{formatKRW(row.total)}</td>
+                    <td className="number">{row.count}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      );
+    }
+
+    // ─── 주식 성과 ───
+    if (reportType === "stock") {
+      return (
+        <div>
+          <h3>주식 성과</h3>
+          <div style={{ overflowX: "auto", width: "100%" }}>
+            <table className="data-table" style={{ width: "100%", minWidth: 960 }}>
+              <thead>
+                <tr>
+                  <th>종목코드</th>
+                  <th>종목명</th>
+                  <th className="number">현재가치</th>
+                  <th className="number">손익</th>
+                  <th className="number">IRR</th>
+                </tr>
+              </thead>
+              <tbody>
+                {stockReport.map((row) => (
+                  <tr key={`${row.accountId}-${row.ticker}`}>
+                    <td>{row.ticker}</td>
+                    <td>{row.name}</td>
+                    <td className="number">{formatKRW(row.currentValue)}</td>
+                    <td className={`number ${row.pnl >= 0 ? "positive" : "negative"}`}>{formatKRW(row.pnl)}</td>
+                    <td className={`number ${row.irr != null && row.irr >= 0 ? "positive" : "negative"}`}>{toPercent(row.irr)}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      );
+    }
+
+    // ─── 계좌 요약 ───
+    if (reportType === "account") {
+      return (
+        <div>
+          <h3>계좌 요약</h3>
+          <div style={{ overflowX: "auto", width: "100%" }}>
+            <table className="data-table" style={{ width: "100%", minWidth: 860 }}>
+              <thead>
+                <tr>
+                  <th>계좌명</th>
+                  <th className="number">초기잔액</th>
+                  <th className="number">현재잔액</th>
+                  <th className="number">변동</th>
+                  <th className="number">변동률</th>
+                </tr>
+              </thead>
+              <tbody>
+                {accountReport.map((row) => (
+                  <tr key={row.accountId}>
+                    <td>{row.accountName}</td>
+                    <td className="number">{formatKRW(row.initialBalance)}</td>
+                    <td className="number">{formatKRW(row.currentBalance)}</td>
+                    <td className={`number ${row.change >= 0 ? "positive" : "negative"}`}>{formatKRW(row.change)}</td>
+                    <td className={`number ${row.changeRate >= 0 ? "positive" : "negative"}`}>{row.changeRate.toFixed(2)}%</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      );
+    }
+
+    // ─── 일별 스냅샷 ───
+    if (reportType === "daily") {
+      return (
+        <div>
+          <h3>일별 자산 스냅샷</h3>
+          {renderDateRange()}
+          <ResponsiveContainer width="100%" height={300}>
+            <LineChart data={dailyReport}>
+              <CartesianGrid strokeDasharray="3 3" />
+              <XAxis dataKey="date" />
+              <YAxis />
+              <Tooltip formatter={(value: number | undefined) => formatKRW(value ?? 0)} />
+              <Legend />
+              <Line type="monotone" dataKey="totalAsset" name="총 자산" stroke="#6366f1" />
+              <Line type="monotone" dataKey="netWorth" name="순자산" stroke="#10b981" />
+            </LineChart>
+          </ResponsiveContainer>
+        </div>
+      );
+    }
+
+    // ─── 기간 비교 ───
+    if (reportType === "periodCompare") {
+      const rows = [
+        { label: "수입", a: periodCompare.thisMonth.income, b: periodCompare.lastMonth.income },
+        { label: "지출", a: periodCompare.thisMonth.expense, b: periodCompare.lastMonth.expense },
+        { label: "저축성 지출", a: periodCompare.thisMonth.savings, b: periodCompare.lastMonth.savings },
+        { label: "투자 순액", a: periodCompare.thisMonth.investingNet, b: periodCompare.lastMonth.investingNet },
+        { label: "순수입", a: periodCompare.thisMonth.net, b: periodCompare.lastMonth.net }
+      ];
+      return (
+        <div>
+          <h3>기간 비교 ({periodCompare.thisMonthKey} vs {periodCompare.lastMonthKey})</h3>
+          <div style={{ overflowX: "auto", width: "100%" }}>
+            <table className="data-table" style={{ width: "100%", minWidth: 700 }}>
+              <thead>
+                <tr>
+                  <th>항목</th>
+                  <th className="number">{periodCompare.thisMonthKey}</th>
+                  <th className="number">{periodCompare.lastMonthKey}</th>
+                  <th className="number">차이</th>
+                </tr>
+              </thead>
+              <tbody>
+                {rows.map((row) => {
+                  const d = row.a - row.b;
+                  return (
+                    <tr key={row.label}>
+                      <td>{row.label}</td>
+                      <td className="number">{formatKRW(row.a)}</td>
+                      <td className="number">{formatKRW(row.b)}</td>
+                      <td className={`number ${d >= 0 ? "positive" : "negative"}`}>{signedKRW(d)}</td>
                     </tr>
-                  ))}
-                </tbody>
-              </table>
+                  );
+                })}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      );
+    }
+
+    // ─── 주간/월간 정산 ───
+    if (reportType === "closing") {
+      const monthly = closingReport.monthlySnapshots;
+      const weekly = closingReport.weeklySnapshots;
+      const status = closingReport.monthlyStatus;
+      return (
+        <div>
+          <h3>주간 / 월간 정산</h3>
+          <div className="card" style={{ padding: 16, marginBottom: 16 }}>
+            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 12, flexWrap: "wrap" }}>
+              <div>
+                <strong>이번 달 정산 완료율</strong>
+                <p style={{ margin: "6px 0 0", fontSize: 13, color: "var(--text-muted)" }}>
+                  {status.month}: {status.completedClosings}/{status.expectedClosings}
+                  {status.coveredUntil ? `, ${status.coveredUntil}까지 기록됨` : ""}
+                </p>
+              </div>
+              <div style={{ fontWeight: 700, fontSize: 24 }}>{status.completionRate.toFixed(1)}%</div>
             </div>
-            <h4 style={{ marginTop: 24, marginBottom: 8 }}>이번 달 vs 전년 동월</h4>
-            <p style={{ marginBottom: 12, color: "var(--text-secondary)", fontSize: 14 }}>
-              {thisMonthKey} (이번 달) · {lastYearSameMonthKey} (전년 동월)
-            </p>
-            <div style={{ overflowX: "auto", width: "100%" }}>
-              <table className="data-table" style={{ width: "100%", minWidth: "480px" }}>
-                <thead>
-                  <tr>
-                    <th style={{ width: "120px" }}>항목</th>
-                    <th className="number" style={{ minWidth: "120px" }}>{thisMonthKey}</th>
-                    <th className="number" style={{ minWidth: "120px" }}>{lastYearSameMonthKey}</th>
-                    <th className="number" style={{ minWidth: "120px" }}>차이</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {rowsLastYear.map((r) => (
-                    <tr key={r.label}>
-                      <td>{r.label}</td>
-                      <td className={`number ${rowClass(r.label, r.thisVal)}`}>{formatKRW(r.thisVal)}</td>
-                      <td className={`number ${rowClass(r.label, r.otherVal)}`}>{formatKRW(r.otherVal)}</td>
-                      <td className={`number ${r.diffVal >= 0 ? "positive" : "negative"}`}>
-                        {r.diffVal >= 0 ? "+" : ""}{formatKRW(r.diffVal)}
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
+            <div style={{ marginTop: 12, width: "100%", height: 10, borderRadius: 999, background: "var(--border)" }}>
+              <div
+                style={{
+                  width: `${Math.max(0, Math.min(100, status.completionRate))}%`,
+                  height: "100%",
+                  borderRadius: 999,
+                  background: "linear-gradient(90deg, #22c55e, #3b82f6)"
+                }}
+              />
             </div>
           </div>
-        );
-      }
+
+          {closingReport.latestComment && (
+            <div className="card" style={{ padding: 16, marginBottom: 16 }}>
+              <h4 style={{ marginBottom: 8 }}>전월 대비 자동 코멘트</h4>
+              <p style={{ margin: 0, color: "var(--text-secondary)" }}>{closingReport.latestComment.summary}</p>
+              <div style={{ marginTop: 8, display: "flex", gap: 14, flexWrap: "wrap" }}>
+                <span>자산: {signedKRW(closingReport.latestComment.assetDelta)}</span>
+                <span>순자산: {signedKRW(closingReport.latestComment.netWorthDelta)}</span>
+                <span>현금흐름: {signedKRW(closingReport.latestComment.cashflowDelta)}</span>
+              </div>
+            </div>
+          )}
+
+          <ResponsiveContainer width="100%" height={300}>
+            <LineChart data={monthly}>
+              <CartesianGrid strokeDasharray="3 3" />
+              <XAxis dataKey="periodKey" />
+              <YAxis />
+              <Tooltip formatter={(value: number | undefined) => formatKRW(value ?? 0)} />
+              <Legend />
+              <Line type="monotone" dataKey="asset" name="자산" stroke="#3b82f6" />
+              <Line type="monotone" dataKey="debt" name="부채" stroke="#f97316" />
+              <Line type="monotone" dataKey="netWorth" name="순자산" stroke="#10b981" />
+            </LineChart>
+          </ResponsiveContainer>
+
+          <div style={{ overflowX: "auto", width: "100%", marginTop: 14 }}>
+            <table className="data-table" style={{ width: "100%", minWidth: 980 }}>
+              <thead>
+                <tr>
+                  <th>월</th>
+                  <th>기간</th>
+                  <th className="number">자산</th>
+                  <th className="number">부채</th>
+                  <th className="number">순자산</th>
+                  <th className="number">현금흐름</th>
+                </tr>
+              </thead>
+              <tbody>
+                {monthly.map((row) => (
+                  <tr key={`${row.periodKey}-${row.endDate}`}>
+                    <td>{row.periodKey}</td>
+                    <td>{row.startDate} ~ {row.endDate}</td>
+                    <td className="number">{formatKRW(row.asset)}</td>
+                    <td className="number">{formatKRW(row.debt)}</td>
+                    <td className="number">{formatKRW(row.netWorth)}</td>
+                    <td className={`number ${row.cashflow >= 0 ? "positive" : "negative"}`}>{formatKRW(row.cashflow)}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+
+          <div style={{ overflowX: "auto", width: "100%", marginTop: 14 }}>
+            <table className="data-table" style={{ width: "100%", minWidth: 940 }}>
+              <thead>
+                <tr>
+                  <th>주</th>
+                  <th>기간</th>
+                  <th className="number">자산</th>
+                  <th className="number">부채</th>
+                  <th className="number">순자산</th>
+                  <th className="number">현금흐름</th>
+                </tr>
+              </thead>
+              <tbody>
+                {weekly.map((row) => (
+                  <tr key={`${row.periodKey}-${row.endDate}`}>
+                    <td>{row.periodKey}</td>
+                    <td>{row.startDate} ~ {row.endDate}</td>
+                    <td className="number">{formatKRW(row.asset)}</td>
+                    <td className="number">{formatKRW(row.debt)}</td>
+                    <td className="number">{formatKRW(row.netWorth)}</td>
+                    <td className={`number ${row.cashflow >= 0 ? "positive" : "negative"}`}>{formatKRW(row.cashflow)}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      );
     }
+
+    // ─── 성과 분석 (고급) ───
+    return (
+      <div>
+        <h3>성과 분석 (고급)</h3>
+        {renderDateRange()}
+
+        <div style={{ overflowX: "auto", width: "100%", marginBottom: 16 }}>
+          <table className="data-table" style={{ width: "100%", minWidth: 1080 }}>
+            <thead>
+              <tr>
+                <th>계좌</th>
+                <th className="number">현재가치</th>
+                <th className="number">IRR</th>
+                <th className="number">TTWR</th>
+                <th className="number">실현손익</th>
+                <th className="number">미실현손익</th>
+                <th className="number">배당</th>
+                <th className="number">합계</th>
+              </tr>
+            </thead>
+            <tbody>
+              {accountPerformance.map((row) => (
+                <tr key={row.accountId}>
+                  <td>{row.accountName}</td>
+                  <td className="number">{formatKRW(row.currentValue)}</td>
+                  <td className={`number ${row.irr != null && row.irr >= 0 ? "positive" : "negative"}`}>{toPercent(row.irr)}</td>
+                  <td className={`number ${row.ttwr != null && row.ttwr >= 0 ? "positive" : "negative"}`}>{toPercent(row.ttwr)}</td>
+                  <td className={`number ${row.realizedPnl >= 0 ? "positive" : "negative"}`}>{formatKRW(row.realizedPnl)}</td>
+                  <td className={`number ${row.unrealizedPnl >= 0 ? "positive" : "negative"}`}>{formatKRW(row.unrealizedPnl)}</td>
+                  <td className={`number ${row.dividendContribution >= 0 ? "positive" : "negative"}`}>{formatKRW(row.dividendContribution)}</td>
+                  <td className={`number ${row.totalContribution >= 0 ? "positive" : "negative"}`}>{formatKRW(row.totalContribution)}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+
+        <ResponsiveContainer width="100%" height={300}>
+          <BarChart data={accountPerformance.slice(0, 10)}>
+            <CartesianGrid strokeDasharray="3 3" />
+            <XAxis dataKey="accountName" interval={0} angle={-20} textAnchor="end" height={70} />
+            <YAxis />
+            <Tooltip formatter={(value: number | undefined) => formatKRW(value ?? 0)} />
+            <Legend />
+            <Bar dataKey="realizedPnl" stackId="p" fill="#0ea5e9" name="실현손익" />
+            <Bar dataKey="unrealizedPnl" stackId="p" fill="#8b5cf6" name="미실현손익" />
+            <Bar dataKey="dividendContribution" stackId="p" fill="#10b981" name="배당" />
+          </BarChart>
+        </ResponsiveContainer>
+
+        <h4 style={{ marginTop: 20, marginBottom: 10 }}>월별 소비가 투자여력에 미치는 영향</h4>
+        <ResponsiveContainer width="100%" height={300}>
+          <BarChart data={consumptionImpact}>
+            <CartesianGrid strokeDasharray="3 3" />
+            <XAxis dataKey="month" />
+            <YAxis />
+            <Tooltip formatter={(value: number | undefined) => formatKRW(value ?? 0)} />
+            <Legend />
+            <Bar dataKey="consumptionExpense" fill="#f43f5e" name="소비 지출" />
+            <Bar dataKey="investmentCapacity" fill="#6366f1" name="투자 여력" />
+            <Bar dataKey="actualInvested" fill="#10b981" name="실제 투자" />
+          </BarChart>
+        </ResponsiveContainer>
+
+        <div style={{ overflowX: "auto", width: "100%", marginTop: 14 }}>
+          <table className="data-table" style={{ width: "100%", minWidth: 940 }}>
+            <thead>
+              <tr>
+                <th>월</th>
+                <th className="number">수입</th>
+                <th className="number">소비 지출</th>
+                <th className="number">투자 여력</th>
+                <th className="number">실제 투자</th>
+                <th className="number">갭</th>
+                <th className="number">활용률</th>
+              </tr>
+            </thead>
+            <tbody>
+              {consumptionImpact.map((row) => (
+                <tr key={row.month}>
+                  <td>{row.month}</td>
+                  <td className="number positive">{formatKRW(row.income)}</td>
+                  <td className="number negative">{formatKRW(row.consumptionExpense)}</td>
+                  <td className={`number ${row.investmentCapacity >= 0 ? "positive" : "negative"}`}>{formatKRW(row.investmentCapacity)}</td>
+                  <td className={`number ${row.actualInvested >= 0 ? "positive" : "negative"}`}>{formatKRW(row.actualInvested)}</td>
+                  <td className={`number ${row.capacityGap >= 0 ? "positive" : "negative"}`}>{formatKRW(row.capacityGap)}</td>
+                  <td className="number">{row.capacityUtilizationRate != null ? `${row.capacityUtilizationRate.toFixed(1)}%` : "-"}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      </div>
+    );
   };
 
   return (
     <div>
       <div className="section-header">
-        <h2>리포트</h2>
-        <button type="button" className="primary" onClick={handleExportCSV}>
+        <h2>보고서</h2>
+        <button type="button" className="primary" onClick={exportCurrentCsv}>
           CSV 내보내기
         </button>
       </div>
 
       <div style={{ display: "flex", gap: 8, marginBottom: 16, flexWrap: "wrap" }}>
-        <button
-          type="button"
-          className={reportType === "monthly" ? "primary" : ""}
-          onClick={() => setReportType("monthly")}
-        >
-          월별 리포트
-        </button>
-        <button
-          type="button"
-          className={reportType === "yearly" ? "primary" : ""}
-          onClick={() => setReportType("yearly")}
-        >
-          연도별 리포트
-        </button>
-        <button
-          type="button"
-          className={reportType === "category" ? "primary" : ""}
-          onClick={() => setReportType("category")}
-        >
-          카테고리별 리포트
-        </button>
-        <button
-          type="button"
-          className={reportType === "stock" ? "primary" : ""}
-          onClick={() => setReportType("stock")}
-        >
-          주식 성과 리포트
-        </button>
-        <button
-          type="button"
-          className={reportType === "account" ? "primary" : ""}
-          onClick={() => setReportType("account")}
-        >
-          계좌 리포트
-        </button>
-        <button
-          type="button"
-          className={reportType === "daily" ? "primary" : ""}
-          onClick={() => setReportType("daily")}
-        >
-          일별 리포트
-        </button>
-        <button
-          type="button"
-          className={reportType === "periodCompare" ? "primary" : ""}
-          onClick={() => setReportType("periodCompare")}
-        >
-          기간 비교 (이번 달 vs 지난달)
-        </button>
+        <button type="button" className={reportType === "comprehensive" ? "primary" : ""} onClick={() => setReportType("comprehensive")}>종합 월간</button>
+        <button type="button" className={reportType === "monthly" ? "primary" : ""} onClick={() => setReportType("monthly")}>월별</button>
+        <button type="button" className={reportType === "yearly" ? "primary" : ""} onClick={() => setReportType("yearly")}>연간</button>
+        <button type="button" className={reportType === "category" ? "primary" : ""} onClick={() => setReportType("category")}>카테고리별</button>
+        <button type="button" className={reportType === "stock" ? "primary" : ""} onClick={() => setReportType("stock")}>주식 성과</button>
+        <button type="button" className={reportType === "account" ? "primary" : ""} onClick={() => setReportType("account")}>계좌별</button>
+        <button type="button" className={reportType === "daily" ? "primary" : ""} onClick={() => setReportType("daily")}>일별</button>
+        <button type="button" className={reportType === "periodCompare" ? "primary" : ""} onClick={() => setReportType("periodCompare")}>기간 비교</button>
+        <button type="button" className={reportType === "closing" ? "primary" : ""} onClick={() => setReportType("closing")}>주간/월간 정산</button>
+        <button type="button" className={reportType === "performanceAdvanced" ? "primary" : ""} onClick={() => setReportType("performanceAdvanced")}>성과 분석</button>
       </div>
 
       <div className="card">{renderReport()}</div>

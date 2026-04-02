@@ -1,6 +1,6 @@
 {
   "name": "farmwallet-web",
-  "version": "3.8.1",
+  "version": "3.9.0",
   "private": true,
   "scripts": {
     "predev": "npm run -s check-text && node scripts/generate-kr-names.mjs",

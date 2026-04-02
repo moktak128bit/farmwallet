@@ -50,9 +50,34 @@ export function useBackup(data: AppData, options?: UseBackupOptions) {
       lastAutoBackupAtRef.current = latestMs;
     }
 
-    const integrity = await getLatestLocalBackupIntegrity();
-    setBackupIntegrity(integrity);
-    setBackupVersion(Date.now());
+    /** JSON.stringify+해시는 메인 스레드 부담 → idle 시점으로 미룸 */
+    const runIntegrity = () => {
+      void getLatestLocalBackupIntegrity()
+        .then((integrity) => {
+          setBackupIntegrity(integrity);
+          setBackupVersion(Date.now());
+        })
+        .catch(() => {
+          setBackupIntegrity({ createdAt: null, status: "none" });
+          setBackupVersion(Date.now());
+        });
+    };
+
+    if (typeof window === "undefined") {
+      runIntegrity();
+      return;
+    }
+
+    const win = window as Window & {
+      requestIdleCallback?: (cb: IdleRequestCallback, opts?: IdleRequestOptions) => number;
+      cancelIdleCallback?: (id: number) => void;
+    };
+
+    if (typeof win.requestIdleCallback === "function") {
+      win.requestIdleCallback(() => runIntegrity(), { timeout: 4000 });
+    } else {
+      window.setTimeout(runIntegrity, 0);
+    }
   }, []);
 
   useEffect(() => {

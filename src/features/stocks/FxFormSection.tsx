@@ -1,10 +1,11 @@
-import React, { useMemo, useState } from "react";
+import React, { useMemo, useState, useEffect } from "react";
 import { toast } from "react-hot-toast";
 import type { Account, LedgerEntry } from "../../types";
 import { fetchYahooQuotes } from "../../yahooFinanceApi";
 import { formatKRW, formatUSD } from "../../utils/formatter";
-import { validateTransfer } from "../../utils/validation";
 import { ERROR_MESSAGES } from "../../constants/errorMessages";
+
+type FxCurrency = "KRW" | "USD";
 
 interface FxFormSectionProps {
   accounts: Account[];
@@ -18,12 +19,20 @@ export const FxFormSection: React.FC<FxFormSectionProps> = ({ accounts, ledger, 
     date: new Date().toISOString().slice(0, 10),
     fromAccountId: "",
     toAccountId: "",
+    fromCurrency: "KRW" as FxCurrency,
+    toCurrency: "USD" as FxCurrency,
     fromAmount: "",
     toAmount: "",
     rate: fxRate ? String(Math.round(fxRate * 100) / 100) : "",
     description: ""
   });
   const [loadingRate, setLoadingRate] = useState(false);
+
+  useEffect(() => {
+    if (fxRate != null && !form.rate) {
+      setForm((prev) => ({ ...prev, rate: String(Math.round(fxRate * 100) / 100) }));
+    }
+  }, [fxRate]);
 
   const krwAccounts = useMemo(() => {
     return accounts.filter((a) => {
@@ -39,13 +48,46 @@ export const FxFormSection: React.FC<FxFormSectionProps> = ({ accounts, ledger, 
     });
   }, [accounts]);
 
+  const isSameAccount = form.fromAccountId && form.fromAccountId === form.toAccountId;
+
+  // 출발/도착 통화: 같은 계좌면 폼 값, 다른 계좌면 계좌 유형으로 고정
+  const fromCurrency: FxCurrency = isSameAccount
+    ? form.fromCurrency
+    : krwAccounts.some((a) => a.id === form.fromAccountId)
+      ? "KRW"
+      : "USD";
+  const toCurrency: FxCurrency = isSameAccount
+    ? form.toCurrency
+    : krwAccounts.some((a) => a.id === form.toAccountId)
+      ? "KRW"
+      : "USD";
+
+  // 환율: 1 USD = rate KRW
+  const rateNum = parseFloat(form.rate) || 0;
+  const computeToFromFrom = (fromAmt: number) =>
+    fromCurrency === "KRW" && toCurrency === "USD"
+      ? fromAmt / rateNum
+      : fromCurrency === "USD" && toCurrency === "KRW"
+        ? fromAmt * rateNum
+        : fromAmt;
+  const computeFromFromTo = (toAmt: number) =>
+    toCurrency === "USD" && fromCurrency === "KRW"
+      ? toAmt * rateNum
+      : toCurrency === "KRW" && fromCurrency === "USD"
+        ? toAmt / rateNum
+        : toAmt;
+
   const handleRateChange = (newRate: string) => {
     const rate = parseFloat(newRate) || 0;
     setForm((prev) => {
       if (prev.fromAmount && rate > 0) {
         const fromAmount = parseFloat(prev.fromAmount) || 0;
-        const toAmount = fromAmount * rate;
-        return { ...prev, rate: newRate, toAmount: String(Math.round(toAmount * 100) / 100) };
+        const toAmount = computeToFromFrom(fromAmount);
+        return {
+          ...prev,
+          rate: newRate,
+          toAmount: toCurrency === "USD" ? String(Math.round(toAmount * 100) / 100) : String(Math.round(toAmount))
+        };
       }
       return { ...prev, rate: newRate };
     });
@@ -53,21 +95,29 @@ export const FxFormSection: React.FC<FxFormSectionProps> = ({ accounts, ledger, 
 
   const handleFromAmountChange = (value: string) => {
     const amount = parseFloat(value) || 0;
-    const rate = parseFloat(form.rate) || 0;
     setForm((prev) => ({
       ...prev,
       fromAmount: value,
-      toAmount: rate > 0 ? String(Math.round(amount * rate * 100) / 100) : prev.toAmount
+      toAmount:
+        rateNum > 0
+          ? toCurrency === "USD"
+            ? String(Math.round(computeToFromFrom(amount) * 100) / 100)
+            : String(Math.round(computeToFromFrom(amount)))
+          : prev.toAmount
     }));
   };
 
   const handleToAmountChange = (value: string) => {
     const amount = parseFloat(value) || 0;
-    const rate = parseFloat(form.rate) || 0;
     setForm((prev) => ({
       ...prev,
       toAmount: value,
-      fromAmount: rate > 0 ? String(Math.round((amount / rate) * 100) / 100) : prev.fromAmount
+      fromAmount:
+        rateNum > 0
+          ? fromCurrency === "USD"
+            ? String(Math.round(computeFromFromTo(amount) * 100) / 100)
+            : String(Math.round(computeFromFromTo(amount)))
+          : prev.fromAmount
     }));
   };
 
@@ -76,11 +126,6 @@ export const FxFormSection: React.FC<FxFormSectionProps> = ({ accounts, ledger, 
 
     if (!form.fromAccountId || !form.toAccountId) {
       toast.error(ERROR_MESSAGES.FX_ACCOUNTS_REQUIRED);
-      return;
-    }
-    const transferValidation = validateTransfer(form.fromAccountId, form.toAccountId, { from: "출발", to: "도착" });
-    if (!transferValidation.valid) {
-      toast.error(transferValidation.error ?? ERROR_MESSAGES.FX_SAME_ACCOUNT);
       return;
     }
 
@@ -93,38 +138,63 @@ export const FxFormSection: React.FC<FxFormSectionProps> = ({ accounts, ledger, 
       return;
     }
 
-    const isKrwToUsd = krwAccounts.some((a) => a.id === form.fromAccountId) && 
-                       usdAccounts.some((a) => a.id === form.toAccountId);
-    const isUsdToKrw = usdAccounts.some((a) => a.id === form.fromAccountId) && 
-                       krwAccounts.some((a) => a.id === form.toAccountId);
-
-    if (!isKrwToUsd && !isUsdToKrw) {
-      toast.error(ERROR_MESSAGES.FX_KRW_USD_ONLY);
+    if (fromCurrency === toCurrency) {
+      toast.error(isSameAccount ? "출발 통화와 도착 통화가 달라야 합니다. (KRW↔USD)" : ERROR_MESSAGES.FX_KRW_USD_ONLY);
       return;
     }
 
-    const description = form.description || 
-      (isKrwToUsd 
-        ? `환전: ${formatKRW(fromAmount)} → ${formatUSD(toAmount)} (환율: ${rate.toFixed(2)})`
-        : `환전: ${formatUSD(fromAmount)} → ${formatKRW(toAmount)} (환율: ${rate.toFixed(2)})`);
+    const desc =
+      form.description ||
+      `환전: ${fromCurrency === "KRW" ? formatKRW(fromAmount) : formatUSD(fromAmount)} → ${toCurrency === "KRW" ? formatKRW(toAmount) : formatUSD(toAmount)} (환율: ${rate.toFixed(2)})`;
 
-    const newEntry: LedgerEntry = {
-      id: `fx-${Date.now()}`,
-      date: form.date,
-      kind: "transfer",
-      category: "환전",
-      description: description,
-      fromAccountId: form.fromAccountId,
-      toAccountId: form.toAccountId,
-      amount: fromAmount
-    };
+    const baseId = `fx-${Date.now()}`;
+    const entries: LedgerEntry[] = [
+      {
+        id: `${baseId}-from`,
+        date: form.date,
+        kind: "transfer",
+        category: "환전",
+        description: desc,
+        fromAccountId: form.fromAccountId,
+        toAccountId: undefined,
+        amount: fromAmount,
+        currency: fromCurrency
+      },
+      {
+        id: `${baseId}-to`,
+        date: form.date,
+        kind: "transfer",
+        category: "환전",
+        description: desc,
+        fromAccountId: undefined,
+        toAccountId: form.toAccountId,
+        amount: toAmount,
+        currency: toCurrency
+      }
+    ];
 
-    onChangeLedger([...ledger, newEntry]);
+    onChangeLedger([...ledger, ...entries]);
     toast.success("환전 거래가 추가되었습니다");
     setForm({
       date: new Date().toISOString().slice(0, 10),
       fromAccountId: "",
       toAccountId: "",
+      fromCurrency: "KRW",
+      toCurrency: "USD",
+      fromAmount: "",
+      toAmount: "",
+      rate: fxRate ? String(Math.round(fxRate * 100) / 100) : "",
+      description: ""
+    });
+  };
+
+  const resetForm = () => {
+    setForm({
+      date: new Date().toISOString().slice(0, 10),
+      fromAccountId: "",
+      toAccountId: "",
+      fromCurrency: "KRW",
+      toCurrency: "USD",
       fromAmount: "",
       toAmount: "",
       rate: fxRate ? String(Math.round(fxRate * 100) / 100) : "",
@@ -150,7 +220,13 @@ export const FxFormSection: React.FC<FxFormSectionProps> = ({ accounts, ledger, 
           <span style={{ fontSize: 13, fontWeight: 500 }}>출발 계좌</span>
           <select
             value={form.fromAccountId}
-            onChange={(e) => setForm({ ...form, fromAccountId: e.target.value })}
+            onChange={(e) =>
+              setForm((prev) => ({
+                ...prev,
+                fromAccountId: e.target.value,
+                toAccountId: prev.toAccountId === prev.fromAccountId ? e.target.value : prev.toAccountId
+              }))
+            }
             style={{ padding: "6px 8px", fontSize: 14 }}
             required
           >
@@ -180,14 +256,57 @@ export const FxFormSection: React.FC<FxFormSectionProps> = ({ accounts, ledger, 
           </select>
         </label>
 
+        {isSameAccount && (
+          <>
+            <label style={{ display: "flex", flexDirection: "column", gap: 4 }}>
+              <span style={{ fontSize: 13, fontWeight: 500 }}>출발 통화</span>
+              <select
+                value={form.fromCurrency}
+                onChange={(e) => {
+                  const next: FxCurrency = e.target.value as FxCurrency;
+                  setForm((prev) => ({
+                    ...prev,
+                    fromCurrency: next,
+                    toCurrency: next === "KRW" ? "USD" : "KRW",
+                    fromAmount: "",
+                    toAmount: ""
+                  }));
+                }}
+                style={{ padding: "6px 8px", fontSize: 14 }}
+              >
+                <option value="KRW">KRW (원)</option>
+                <option value="USD">USD (달러)</option>
+              </select>
+            </label>
+            <label style={{ display: "flex", flexDirection: "column", gap: 4 }}>
+              <span style={{ fontSize: 13, fontWeight: 500 }}>도착 통화</span>
+              <select
+                value={form.toCurrency}
+                onChange={(e) => {
+                  const next: FxCurrency = e.target.value as FxCurrency;
+                  setForm((prev) => ({
+                    ...prev,
+                    toCurrency: next,
+                    fromCurrency: next === "KRW" ? "USD" : "KRW",
+                    fromAmount: "",
+                    toAmount: ""
+                  }));
+                }}
+                style={{ padding: "6px 8px", fontSize: 14 }}
+              >
+                <option value="KRW">KRW (원)</option>
+                <option value="USD">USD (달러)</option>
+              </select>
+            </label>
+          </>
+        )}
+
         <label style={{ display: "flex", flexDirection: "column", gap: 4 }}>
-          <span style={{ fontSize: 13, fontWeight: 500 }}>
-            출발 금액 {krwAccounts.some((a) => a.id === form.fromAccountId) ? "(KRW)" : usdAccounts.some((a) => a.id === form.fromAccountId) ? "(USD)" : ""}
-          </span>
+          <span style={{ fontSize: 13, fontWeight: 500 }}>출발 금액 ({fromCurrency})</span>
           <input
             type="number"
             min={0}
-            step="0.01"
+            step={fromCurrency === "USD" ? "0.01" : "1"}
             value={form.fromAmount}
             onChange={(e) => handleFromAmountChange(e.target.value)}
             style={{ padding: "6px 8px", fontSize: 14 }}
@@ -196,7 +315,7 @@ export const FxFormSection: React.FC<FxFormSectionProps> = ({ accounts, ledger, 
         </label>
 
         <label style={{ display: "flex", flexDirection: "column", gap: 4 }}>
-          <span style={{ fontSize: 13, fontWeight: 500 }}>환율 (USD/KRW)</span>
+          <span style={{ fontSize: 13, fontWeight: 500 }}>환율 (1 USD = ? KRW)</span>
           <div style={{ display: "flex", gap: 4 }}>
             <input
               type="number"
@@ -239,13 +358,11 @@ export const FxFormSection: React.FC<FxFormSectionProps> = ({ accounts, ledger, 
         </label>
 
         <label style={{ display: "flex", flexDirection: "column", gap: 4 }}>
-          <span style={{ fontSize: 13, fontWeight: 500 }}>
-            도착 금액 {krwAccounts.some((a) => a.id === form.toAccountId) ? "(KRW)" : usdAccounts.some((a) => a.id === form.toAccountId) ? "(USD)" : ""}
-          </span>
+          <span style={{ fontSize: 13, fontWeight: 500 }}>도착 금액 ({toCurrency})</span>
           <input
             type="number"
             min={0}
-            step="0.01"
+            step={toCurrency === "USD" ? "0.01" : "1"}
             value={form.toAmount}
             onChange={(e) => handleToAmountChange(e.target.value)}
             style={{ padding: "6px 8px", fontSize: 14 }}
@@ -266,20 +383,7 @@ export const FxFormSection: React.FC<FxFormSectionProps> = ({ accounts, ledger, 
       </div>
 
       <div style={{ display: "flex", gap: 8, marginTop: 16, justifyContent: "flex-end" }}>
-        <button
-          type="button"
-          onClick={() => setForm({
-            date: new Date().toISOString().slice(0, 10),
-            fromAccountId: "",
-            toAccountId: "",
-            fromAmount: "",
-            toAmount: "",
-            rate: fxRate ? String(Math.round(fxRate * 100) / 100) : "",
-            description: ""
-          })}
-          className="secondary"
-          style={{ padding: "8px 16px", fontSize: 14 }}
-        >
+        <button type="button" onClick={resetForm} className="secondary" style={{ padding: "8px 16px", fontSize: 14 }}>
           초기화
         </button>
         <button type="submit" className="primary" style={{ padding: "8px 16px", fontSize: 14 }}>

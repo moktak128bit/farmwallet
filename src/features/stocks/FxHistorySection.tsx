@@ -1,6 +1,6 @@
 import React, { useMemo } from "react";
 import type { LedgerEntry } from "../../types";
-import { formatKRW, formatShortDate } from "../../utils/formatter";
+import { formatKRW, formatUSD, formatShortDate } from "../../utils/formatter";
 
 interface FxHistorySectionProps {
   ledger: LedgerEntry[];
@@ -44,7 +44,9 @@ export const FxHistorySection: React.FC<FxHistorySectionProps> = ({ ledger }) =>
                 <td>{formatShortDate(entry.date)}</td>
                 <td>{entry.fromAccountId || "-"}</td>
                 <td>{entry.toAccountId || "-"}</td>
-                <td className="number">{formatKRW(entry.amount)}</td>
+                <td className="number">
+                  {entry.currency === "USD" ? formatUSD(entry.amount) : formatKRW(entry.amount)}
+                </td>
                 <td>{entry.description}</td>
               </tr>
             ))}

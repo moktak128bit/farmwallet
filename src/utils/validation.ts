@@ -29,31 +29,32 @@ export function validateAmount(
     return { valid: false, error: "금액을 입력해주세요" };
   }
 
-  // 소수점 허용 여부에 따라 숫자 추출
+  // allowNegative 여부에 따라 정규식에 '-' 포함, 쉼표는 항상 제거
   let numeric: string;
   if (allowDecimal) {
-    // 소수점을 포함하여 숫자와 소수점만 추출 (쉼표는 제거)
-    numeric = value.replace(/[^\d.]/g, "");
-    
-    // 소수점이 여러 개인 경우 검증 실패
+    const regex = allowNegative ? /[^\d.-]/g : /[^\d.]/g;
+    numeric = value.replace(regex, "");
+
     const dotCount = (numeric.match(/\./g) || []).length;
     if (dotCount > 1) {
       return { valid: false, error: "올바른 숫자 형식이 아닙니다 (소수점은 하나만 허용)" };
     }
-    
-    // 소수점으로 시작하거나 끝나는 경우 검증 실패
-    if (numeric.startsWith(".") || numeric.endsWith(".")) {
+    if (numeric.startsWith(".") || numeric.endsWith(".") || numeric.startsWith("-.")) {
       return { valid: false, error: "올바른 숫자 형식이 아닙니다" };
     }
   } else {
-    // 소수점 미허용: 쉼표 등 숫자가 아닌 문자 제거
-    numeric = value.replace(/[^\d]/g, "");
+    const regex = allowNegative ? /[^\d-]/g : /[^\d]/g;
+    numeric = value.replace(regex, "");
   }
-  
-  if (!numeric) {
+
+  // 마이너스 기호는 맨 앞 한 개만 허용
+  if (numeric.indexOf("-") > 0 || (numeric.match(/-/g) || []).length > 1) {
+    return { valid: false, error: "올바른 숫자 형식이 아닙니다" };
+  }
+  if (!numeric || numeric === "-") {
     return { valid: false, error: "금액을 입력해주세요" };
   }
-  
+
   const numValue = Number(numeric);
   
   if (isNaN(numValue)) {
@@ -211,7 +212,8 @@ export function validateQuantity(
     return { valid: false, error: "수량을 입력해주세요" };
   }
 
-  const numValue = Number(quantity);
+  const cleanQuantity = quantity.replace(/,/g, "");
+  const numValue = Number(cleanQuantity);
   
   if (isNaN(numValue)) {
     return { valid: false, error: "올바른 숫자를 입력해주세요" };
@@ -225,6 +227,33 @@ export function validateQuantity(
     return { valid: false, error: "수량은 정수만 입력할 수 있습니다" };
   }
 
+  // 소수 허용 시 최대 8자리까지 (암호화폐 등)
+  if (allowDecimal) {
+    const parts = cleanQuantity.split(".");
+    if (parts.length === 2 && parts[1].length > 8) {
+      return { valid: false, error: "수량은 소수점 8자리까지 입력할 수 있습니다" };
+    }
+  }
+
+  return { valid: true };
+}
+
+/**
+ * 계좌 ID가 목록에 존재하는지 검증 (가계부 등에서 사용)
+ * @param accountId 검사할 계좌 ID
+ * @param accounts 계좌 목록 (id 포함)
+ */
+export function validateAccountExists(
+  accountId: string | undefined,
+  accounts: { id: string }[]
+): ValidationResult {
+  if (!accountId || accountId.trim() === "") {
+    return { valid: true };
+  }
+  const exists = accounts.some((a) => a.id === accountId);
+  if (!exists) {
+    return { valid: false, error: "선택한 계좌가 더 이상 없습니다. 계좌 목록을 확인해 주세요." };
+  }
   return { valid: true };
 }
 
@@ -252,7 +281,7 @@ export function validateAccountTickerCurrency(
   ticker: string,
   priceInfo?: { currency?: string } | null
 ): ValidationResult {
-  if (account.type === "securities") return { valid: true };
+  if (account.type === "securities" || account.type === "crypto") return { valid: true };
   const accountCurrency = account.currency || "KRW";
   const isUSD = isUSDStock(ticker);
   const currency = priceInfo?.currency || (isUSD ? "USD" : "KRW");

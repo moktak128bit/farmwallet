@@ -10,7 +10,8 @@ import {
   Settings,
   CreditCard,
   FileText,
-  Dumbbell
+  Dumbbell,
+  ShoppingCart
 } from "lucide-react";
 
 export type TabId =
@@ -20,6 +21,7 @@ export type TabId =
   | "dashboard"
   | "dividends"
   | "debt"
+  | "spend"
   | "budget"
   | "categories"
   | "settings"
@@ -39,6 +41,7 @@ const TABS: TabItem[] = [
   { id: "stocks", label: "주식", icon: <TrendingUp size={18} /> },
   { id: "dividends", label: "배당/이자", icon: <CircleDollarSign size={18} /> },
   { id: "debt", label: "부채", icon: <CreditCard size={18} /> },
+  { id: "spend", label: "소비", icon: <ShoppingCart size={18} /> },
   { id: "budget", label: "예산/반복", icon: <PiggyBank size={18} /> },
   { id: "workout", label: "운동", icon: <Dumbbell size={18} /> },
   { id: "categories", label: "카테고리", icon: <Tags size={18} /> },
@@ -49,6 +52,7 @@ const TABS: TabItem[] = [
 interface Props {
   active: TabId;
   onChange: (id: TabId) => void;
+  onPrefetch?: (id: TabId) => void;
   tabBadges?: Partial<Record<TabId, string>>;
 }
 
@@ -56,12 +60,12 @@ const TAB_GROUPS: TabId[][] = [
   ["dashboard"],
   ["accounts", "ledger"],
   ["stocks", "dividends"],
-  ["debt", "budget"],
+  ["debt", "spend", "budget"],
   ["workout"],
   ["categories", "reports", "settings"]
 ];
 
-export const Tabs: React.FC<Props> = ({ active, onChange, tabBadges }) => {
+export const Tabs: React.FC<Props> = ({ active, onChange, onPrefetch, tabBadges }) => {
   return (
     <div className="tabs">
       {TAB_GROUPS.map((group, groupIdx) => (
@@ -87,6 +91,9 @@ export const Tabs: React.FC<Props> = ({ active, onChange, tabBadges }) => {
                 key={tab.id}
                 className={`tab-button ${active === tab.id ? "active" : ""}`}
                 onClick={() => onChange(tab.id)}
+                onMouseEnter={() => onPrefetch?.(tab.id)}
+                onFocus={() => onPrefetch?.(tab.id)}
+                onTouchStart={() => onPrefetch?.(tab.id)}
                 type="button"
                 aria-label={tab.label}
                 aria-current={active === tab.id ? "true" : undefined}

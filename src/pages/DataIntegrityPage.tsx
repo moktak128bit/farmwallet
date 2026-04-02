@@ -1,4 +1,4 @@
-﻿import React, { useMemo, useState } from "react";
+import React, { useMemo, useState } from "react";
 import type { AppData, LedgerEntry, StockTrade } from "../types";
 import {
   runIntegrityCheck,
@@ -184,7 +184,7 @@ export const DataIntegrityView: React.FC<Props> = ({
       }
       case "category_mismatch": {
         const data = issue.data as { entryId?: string };
-        return data.entryId ? [buildLedgerGuide(data.entryId, "카테고리/세부항목 수정 필요")] : [];
+        return data.entryId ? [buildLedgerGuide(data.entryId, "카테고리/중분류 수정 필요")] : [];
       }
       case "transfer_invalid_reference": {
         const data = issue.data as { entryId?: string };

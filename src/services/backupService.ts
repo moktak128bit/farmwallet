@@ -22,8 +22,107 @@ export interface BackupEntry extends BackupMeta {
   fileName?: string;
 }
 
-async function computeBackupHash(data: AppData): Promise<string> {
-  const text = JSON.stringify(data);
+/** KST 기준, 백업이 있는 서로 다른 날짜 최대 개수(오늘 포함 4일치) */
+const BACKUP_RETENTION_DAY_SLOTS = 4;
+
+const seoulDayKeyFormatter = new Intl.DateTimeFormat("en-CA", {
+  timeZone: "Asia/Seoul",
+  year: "numeric",
+  month: "2-digit",
+  day: "2-digit"
+});
+
+function toErrorMessage(error: unknown): string {
+  if (error instanceof Error) return error.message;
+  return String(error);
+}
+
+function parseCreatedAtMs(createdAt: string): number | null {
+  const ms = Date.parse(createdAt);
+  return Number.isFinite(ms) ? ms : null;
+}
+
+function sortBackupsNewestFirst(backups: StoredBackup[]): StoredBackup[] {
+  return [...backups].sort((a, b) => {
+    const aMs = parseCreatedAtMs(a.createdAt);
+    const bMs = parseCreatedAtMs(b.createdAt);
+    if (aMs == null && bMs == null) return b.createdAt.localeCompare(a.createdAt);
+    if (aMs == null) return 1;
+    if (bMs == null) return -1;
+    if (aMs === bMs) return b.createdAt.localeCompare(a.createdAt);
+    return bMs - aMs;
+  });
+}
+
+function getSeoulDayKeyFromCreatedAt(createdAt: string): string {
+  const ms = parseCreatedAtMs(createdAt);
+  if (ms == null) return "unknown";
+  const parts = seoulDayKeyFormatter.formatToParts(new Date(ms));
+  const y = parts.find((p) => p.type === "year")?.value;
+  const m = parts.find((p) => p.type === "month")?.value;
+  const d = parts.find((p) => p.type === "day")?.value;
+  if (!y || !m || !d) return "unknown";
+  return `${y}-${m}-${d}`;
+}
+
+/**
+ * KST 날짜 기준: 백업이 실제로 있는 날만 세어 최근 BACKUP_RETENTION_DAY_SLOTS개 날짜만 유지.
+ * 같은 KST 날에는 createdAt이 가장 최신인 항목 1개만 남김.
+ */
+function applyBackupRetentionPolicy(backups: StoredBackup[]): StoredBackup[] {
+  const bestByDay = new Map<string, StoredBackup>();
+
+  for (const backup of backups) {
+    const dayKey = getSeoulDayKeyFromCreatedAt(backup.createdAt);
+    if (dayKey === "unknown") continue;
+    const prev = bestByDay.get(dayKey);
+    const bMs = parseCreatedAtMs(backup.createdAt) ?? 0;
+    const pMs = prev ? (parseCreatedAtMs(prev.createdAt) ?? 0) : -Infinity;
+    if (!prev || bMs > pMs) {
+      bestByDay.set(dayKey, backup);
+    }
+  }
+
+  const representatives = [...bestByDay.values()].sort((a, b) => {
+    const am = parseCreatedAtMs(a.createdAt) ?? 0;
+    const bm = parseCreatedAtMs(b.createdAt) ?? 0;
+    if (bm !== am) return bm - am;
+    return b.createdAt.localeCompare(a.createdAt);
+  });
+
+  const kept = representatives.slice(0, BACKUP_RETENTION_DAY_SLOTS);
+
+  if (kept.length === 0 && backups.length > 0) {
+    return sortBackupsNewestFirst(backups).slice(0, 1);
+  }
+
+  return kept;
+}
+
+function keepRecentBackups(backups: StoredBackup[]): StoredBackup[] {
+  return applyBackupRetentionPolicy(backups);
+}
+
+function capBackups(backups: StoredBackup[]): StoredBackup[] {
+  const maxCount = Math.max(1, BACKUP_CONFIG.MAX_LOCAL_BACKUPS);
+  return backups.slice(0, maxCount);
+}
+
+function readStoredBackups(): StoredBackup[] {
+  if (typeof window === "undefined") return [];
+  const raw = window.localStorage.getItem(STORAGE_KEYS.BACKUPS);
+  if (!raw) return [];
+  const parsed = JSON.parse(raw);
+  if (!Array.isArray(parsed)) return [];
+  return parsed as StoredBackup[];
+}
+
+function writeStoredBackups(backups: StoredBackup[]): void {
+  if (typeof window === "undefined") return;
+  window.localStorage.setItem(STORAGE_KEYS.BACKUPS, JSON.stringify(backups));
+}
+
+async function computeBackupHashFromText(text: string): Promise<string> {
   const encoder = new TextEncoder();
   const bytes = encoder.encode(text);
   const digest = await crypto.subtle.digest("SHA-256", bytes);
@@ -32,80 +131,145 @@ async function computeBackupHash(data: AppData): Promise<string> {
     .join("");
 }
 
-export async function saveBackupSnapshot(
-  data: AppData,
-  options?: { skipHash?: boolean; folder?: string }
-): Promise<void> {
-  if (typeof window === "undefined") return;
+export interface SaveBackupOptions {
+  skipHash?: boolean;
+  folder?: string;
+  timeoutMs?: number;
+  dataJson?: string;
+}
+
+export interface SaveBackupResult {
+  fileSaved: boolean;
+  localSaved: boolean;
+  fileError?: string;
+  localError?: string;
+}
+
+async function saveFileBackup(payload: string, timeoutMs: number): Promise<{ saved: boolean; error?: string }> {
+  const controller = typeof AbortController !== "undefined" ? new AbortController() : undefined;
+  const timeoutId =
+    controller && timeoutMs > 0
+      ? window.setTimeout(() => controller.abort(), timeoutMs)
+      : null;
+
   try {
-    const raw = window.localStorage.getItem(STORAGE_KEYS.BACKUPS);
-    const current: StoredBackup[] = raw ? (JSON.parse(raw) as StoredBackup[]) : [];
+    const res = await fetch(BACKUP_CONFIG.API_PATH, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: payload,
+      signal: controller?.signal
+    });
+    if (res.ok) {
+      return { saved: true };
+    }
+
+    const errBody = await res.text();
+    const error = `HTTP ${res.status}${errBody ? `: ${errBody}` : ""}`;
+    console.warn("[backupService] file backup failed", error);
+    return { saved: false, error };
+  } catch (error) {
+    const isAbortError = error instanceof DOMException && error.name === "AbortError";
+    const message = isAbortError
+      ? `request timeout (${timeoutMs}ms)`
+      : toErrorMessage(error);
+    console.warn("[backupService] file backup request failed", error);
+    return { saved: false, error: message };
+  } finally {
+    if (timeoutId != null) {
+      window.clearTimeout(timeoutId);
+    }
+  }
+}
+
+async function saveLocalBackup(
+  data: AppData,
+  payload: string,
+  skipHash?: boolean
+): Promise<{ saved: boolean; error?: string }> {
+  try {
+    const current = readStoredBackups();
     const koreaTime = getKoreaTime();
     const nowISO = koreaTime.toISOString();
-    const hash = options?.skipHash ? undefined : await computeBackupHash(data);
-
+    const hash = skipHash ? undefined : await computeBackupHashFromText(payload);
     const backup: StoredBackup = {
-      id: `B${Date.now()}`,
+      id: `B${Date.now()}-${Math.floor(Math.random() * 1000)}`,
       createdAt: nowISO,
       data,
       hash
     };
 
-    // localStorage 용량 제한을 고려하여 최근 5개만 보관
-    const next = [backup, ...current].slice(0, 5);
+    const merged = [backup, ...current];
+    const retained = capBackups(applyBackupRetentionPolicy(merged));
+
     try {
-      window.localStorage.setItem(STORAGE_KEYS.BACKUPS, JSON.stringify(next, null, 2));
-    } catch (quotaErr) {
-      // 용량 초과 시 기존 백업을 더 줄이고 재시도
-      const reduced = [backup, ...current].slice(0, 3);
+      writeStoredBackups(retained);
+      return { saved: true };
+    } catch (quotaError) {
+      const recentOnly = capBackups(keepRecentBackups(merged));
       try {
-        window.localStorage.setItem(STORAGE_KEYS.BACKUPS, JSON.stringify(reduced, null, 2));
-      } catch (retryErr) {
-        // 그래도 실패하면 최신 1개만 저장 시도
+        writeStoredBackups(recentOnly);
+        return { saved: true, error: "storage quota reached, old backups were pruned" };
+      } catch (retryError) {
         try {
-          window.localStorage.setItem(STORAGE_KEYS.BACKUPS, JSON.stringify([backup], null, 2));
-        } catch (finalErr) {
-          // 최종 실패 시 localStorage 백업은 포기
+          writeStoredBackups([backup]);
+          return { saved: true, error: "storage quota reached, only latest backup was retained" };
+        } catch (finalError) {
+          console.warn("[backupService] local backup write failed", quotaError, retryError, finalError);
+          return { saved: false, error: toErrorMessage(finalError) };
         }
       }
     }
-  } catch (err) {
-    // 백업은 실패해도 앱 동작에 영향을 주지 않도록 조용히 무시
-  }
-
-  // 로컬 파일에도 동일한 스냅샷을 남겨 브라우저를 바꿔도 복원 가능하도록 저장
-  try {
-    await saveServerBackup(data);
-  } catch (err) {
-    // 서버 저장 실패도 무시
+  } catch (error) {
+    console.warn("[backupService] local backup failed", error);
+    return { saved: false, error: toErrorMessage(error) };
   }
 }
 
-async function saveServerBackup(data: AppData): Promise<void> {
-  if (typeof window === "undefined") return;
-  try {
-    const res = await fetch(BACKUP_CONFIG.API_PATH, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(data)
-    });
-    if (!res.ok) {
-      throw new Error("Backup save failed");
-    }
-  } catch (e) {
-    console.warn("[backupService] 백업 저장 실패", e);
+export async function saveBackupSnapshot(
+  data: AppData,
+  options?: SaveBackupOptions
+): Promise<SaveBackupResult> {
+  if (typeof window === "undefined") {
+    return {
+      fileSaved: false,
+      localSaved: false,
+      fileError: "window is not available"
+    };
   }
+
+  const payload = options?.dataJson ?? JSON.stringify(data);
+  const payloadBytes = new TextEncoder().encode(payload).length;
+  if (payloadBytes > BACKUP_CONFIG.MAX_BACKUP_PAYLOAD_BYTES) {
+    const reason = `payload too large (${payloadBytes} bytes)`;
+    return {
+      fileSaved: false,
+      localSaved: false,
+      fileError: reason,
+      localError: reason
+    };
+  }
+
+  const timeoutMs = options?.timeoutMs ?? BACKUP_CONFIG.API_TIMEOUT_MS;
+  const [fileResult, localResult] = await Promise.all([
+    saveFileBackup(payload, timeoutMs),
+    saveLocalBackup(data, payload, options?.skipHash)
+  ]);
+
+  return {
+    fileSaved: fileResult.saved,
+    localSaved: localResult.saved,
+    fileError: fileResult.error,
+    localError: localResult.error
+  };
 }
 
 export function getBackupList(): BackupMeta[] {
   if (typeof window === "undefined") return [];
   try {
-    const raw = window.localStorage.getItem(STORAGE_KEYS.BACKUPS);
-    if (!raw) return [];
-    const current = JSON.parse(raw) as StoredBackup[];
+    const current = sortBackupsNewestFirst(readStoredBackups());
     return current.map((b) => ({ id: b.id, createdAt: b.createdAt, hash: b.hash }));
-  } catch (e) {
-    console.warn("[backupService] 백업 목록 로드 실패", e);
+  } catch (error) {
+    console.warn("[backupService] failed to load backup list", error);
     return [];
   }
 }
@@ -113,13 +277,11 @@ export function getBackupList(): BackupMeta[] {
 export function loadBackupData(id: string): AppData | null {
   if (typeof window === "undefined") return null;
   try {
-    const raw = window.localStorage.getItem(STORAGE_KEYS.BACKUPS);
-    if (!raw) return null;
-    const current = JSON.parse(raw) as StoredBackup[];
+    const current = readStoredBackups();
     const found = current.find((b) => b.id === id);
     return found ? found.data : null;
-  } catch (e) {
-    console.warn("[backupService] 백업 데이터 로드 실패", e);
+  } catch (error) {
+    console.warn("[backupService] failed to load backup data", error);
     return null;
   }
 }
@@ -129,18 +291,19 @@ export async function getLatestLocalBackupIntegrity(): Promise<{
   status: "valid" | "missing-hash" | "mismatch" | "none";
 }> {
   if (typeof window === "undefined") return { createdAt: null, status: "none" };
+
   try {
-    const raw = window.localStorage.getItem(STORAGE_KEYS.BACKUPS);
-    if (!raw) return { createdAt: null, status: "none" };
-    const current = JSON.parse(raw) as StoredBackup[];
+    const current = sortBackupsNewestFirst(readStoredBackups());
     const latest = current[0];
     if (!latest) return { createdAt: null, status: "none" };
     if (!latest.hash) return { createdAt: latest.createdAt, status: "missing-hash" };
-    const hash = await computeBackupHash(latest.data);
+
+    const text = JSON.stringify(latest.data);
+    const hash = await computeBackupHashFromText(text);
     const status = hash === latest.hash ? "valid" : "mismatch";
     return { createdAt: latest.createdAt, status };
-  } catch (e) {
-    console.warn("[backupService] 백업 무결성 조회 실패", e);
+  } catch (error) {
+    console.warn("[backupService] failed to check backup integrity", error);
     return { createdAt: null, status: "none" };
   }
 }
@@ -150,9 +313,21 @@ export async function getAllBackupList(): Promise<BackupEntry[]> {
     ...b,
     source: "browser" as const
   }));
-  return browserBackups.sort((a, b) =>
-    b.createdAt.localeCompare(a.createdAt)
-  );
+  return browserBackups.sort((a, b) => b.createdAt.localeCompare(a.createdAt));
+}
+
+export function clearOldBackups(keepCount: number = 1): number {
+  if (typeof window === "undefined") return 0;
+  try {
+    const current = sortBackupsNewestFirst(readStoredBackups());
+    if (current.length <= keepCount) return 0;
+    const kept = current.slice(0, keepCount);
+    writeStoredBackups(kept);
+    return current.length - kept.length;
+  } catch (error) {
+    console.warn("[backupService] failed to clear old backups", error);
+    return 0;
+  }
 }
 
 export async function loadServerBackupData(fileName: string): Promise<AppData | null> {
@@ -160,12 +335,23 @@ export async function loadServerBackupData(fileName: string): Promise<AppData | 
   try {
     const params = new URLSearchParams({ fileName });
     const url = `${BACKUP_CONFIG.API_PATH}?${params.toString()}`;
-    const res = await fetch(url);
-    if (!res.ok) return null;
-    const data = (await res.json()) as AppData;
-    return data;
-  } catch (e) {
-    console.warn("[backupService] 서버 백업 로드 실패", e);
+    const controller = typeof AbortController !== "undefined" ? new AbortController() : undefined;
+    const timeoutId =
+      controller && BACKUP_CONFIG.API_TIMEOUT_MS > 0
+        ? window.setTimeout(() => controller.abort(), BACKUP_CONFIG.API_TIMEOUT_MS)
+        : null;
+
+    try {
+      const res = await fetch(url, { signal: controller?.signal });
+      if (!res.ok) return null;
+      return (await res.json()) as AppData;
+    } finally {
+      if (timeoutId != null) {
+        window.clearTimeout(timeoutId);
+      }
+    }
+  } catch (error) {
+    console.warn("[backupService] failed to load server backup", error);
     return null;
   }
 }

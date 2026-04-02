@@ -1,4 +1,4 @@
-import React, { useEffect } from "react";
+import React, { useEffect, useState } from "react";
 import type { SearchQuery, SavedFilter } from "../hooks/useSearch";
 
 interface SearchModalProps {
@@ -13,6 +13,7 @@ interface SearchModalProps {
     date: string;
     title: string;
     amount: number;
+    currency?: "KRW" | "USD" | string;
     accounts: string;
     accountId: string;
   }>;
@@ -20,6 +21,8 @@ interface SearchModalProps {
   onApplyFilter: (id: string) => void;
   onDeleteFilter: (id: string) => void;
   onNavigate?: (payload: { type: "ledger" | "trade"; id: string }) => void;
+  /** USD→원 환산용 (원화로 보기 시 사용) */
+  fxRate?: number | null;
 }
 
 export const SearchModal: React.FC<SearchModalProps> = ({
@@ -32,8 +35,18 @@ export const SearchModal: React.FC<SearchModalProps> = ({
   onSaveFilter,
   onApplyFilter,
   onDeleteFilter,
-  onNavigate
+  onNavigate,
+  fxRate
 }) => {
+  const [showAmountInKRW, setShowAmountInKRW] = useState(true);
+  const displayAmount = (r: (typeof filteredResults)[0]) => {
+    const amount = r.amount;
+    const currency = r.currency ?? "KRW";
+    if (showAmountInKRW && currency === "USD" && fxRate != null && fxRate > 0) {
+      return { value: Math.round(amount * fxRate), unit: "원" };
+    }
+    return { value: Math.round(amount), unit: currency === "USD" ? "USD" : "원" };
+  };
   useEffect(() => {
     if (!isOpen) return;
     const handleKeyDown = (e: KeyboardEvent) => {
@@ -109,6 +122,23 @@ export const SearchModal: React.FC<SearchModalProps> = ({
               />
               <span>주식 거래 포함</span>
             </label>
+            <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
+              <span style={{ fontSize: 13, color: "var(--muted)" }}>금액 표시:</span>
+              <button
+                type="button"
+                className={showAmountInKRW ? "primary" : "secondary"}
+                onClick={() => setShowAmountInKRW(true)}
+              >
+                원화
+              </button>
+              <button
+                type="button"
+                className={!showAmountInKRW ? "primary" : "secondary"}
+                onClick={() => setShowAmountInKRW(false)}
+              >
+                통화 그대로
+              </button>
+            </div>
           </div>
 
           <div style={{ display: "flex", gap: 8, alignItems: "center", margin: "8px 0" }}>
@@ -183,7 +213,7 @@ export const SearchModal: React.FC<SearchModalProps> = ({
                 <div className="search-row-meta">
                   <span>{r.date}</span>
                   <span>{r.accounts || r.accountId}</span>
-                  <span>{Math.round(r.amount).toLocaleString()} 원</span>
+                  <span>{displayAmount(r).value.toLocaleString()} {displayAmount(r).unit}</span>
                 </div>
               </div>
             ))}

@@ -1,19 +1,21 @@
-import React, { useEffect, useMemo, useState, useRef, useCallback } from "react";
-import { Autocomplete } from "./Autocomplete";
-import type { Account, CategoryPresets, ExpenseDetailGroup, LedgerEntry, LedgerKind } from "../types";
+import React, { useEffect, useMemo, useState, useRef, useCallback, useDeferredValue } from "react";
+import { Autocomplete } from "../components/ui/Autocomplete";
+import type { Account, AccountBalanceRow, CategoryPresets, ExpenseDetailGroup, LedgerEntry, LedgerKind, StockTrade } from "../types";
 import { formatShortDate, formatUSD, formatKRW } from "../utils/formatter";
 import { shortcutManager, type ShortcutAction } from "../utils/shortcuts";
-import { parseCSV, convertToLedgerEntries } from "../utils/csvParser";
-import * as XLSX from "xlsx";
-import { validateDate, validateRequired, validateTransfer } from "../utils/validation";
+import { validateDate, validateRequired, validateTransfer, validateAccountExists } from "../utils/validation";
 import { isSavingsExpenseEntry } from "../utils/category";
 import { getKoreaTime, getTodayKST, getThisMonthKST } from "../utils/date";
 import { toast } from "react-hot-toast";
 import { ERROR_MESSAGES } from "../constants/errorMessages";
+import { computeRealizedPnlByTradeId } from "../calculations";
+import { isUSDStock } from "../utils/finance";
 
 interface Props {
   accounts: Account[];
   ledger: LedgerEntry[];
+  balances?: AccountBalanceRow[];
+  trades?: StockTrade[];
   categoryPresets: CategoryPresets;
   onChangeLedger: (next: LedgerEntry[]) => void;
   copyRequest?: LedgerEntry | null;
@@ -29,6 +31,58 @@ const KIND_LABEL: Record<LedgerKind, string> = {
 };
 
 type LedgerTab = "all" | "income" | "expense" | "savingsExpense" | "transfer" | "creditPayment";
+const AUTO_COPIED_FIXED_MONTHS_KEY = "fw-ledger-auto-copied-fixed-months";
+
+/** 기록표: 수입·지출은 할인 전 금액 = 순액 + 할인. 이체 등은 amount만. */
+function ledgerEntryGross(l: Pick<LedgerEntry, "kind" | "amount" | "discountAmount">): number {
+  if (l.kind === "income" || l.kind === "expense") {
+    return l.amount + (l.discountAmount ?? 0);
+  }
+  return l.amount;
+}
+
+/** 가계부에 표시하는 한 행: ledger 항목 또는 주식 거래를 ledger 형태로 만든 것 */
+export type LedgerDisplayRow = LedgerEntry & { _tradeId?: string };
+
+function tradeToLedgerRow(t: StockTrade, realizedPnlByTradeId: Map<string, number>): LedgerDisplayRow {
+  const isSell = t.side === "sell";
+  const isUsd = isUSDStock(t.ticker);
+  const priceStr = isUsd ? `${formatUSD(t.price)}` : `${formatKRW(Math.round(t.price))}`;
+  const qty = t.quantity % 1 === 0 ? String(t.quantity) : t.quantity.toFixed(2);
+  const label = t.name ? `${t.ticker} ${t.name}` : t.ticker;
+  const action = isSell ? "매도" : "매수";
+  const description = `${label} ${qty}주 ${priceStr}에 ${action}`;
+  const rawPnl = isSell ? (realizedPnlByTradeId.get(t.id) ?? t.totalAmount) : t.totalAmount;
+  if (isSell) {
+    const isProfit = rawPnl >= 0;
+    return {
+      id: `trade-${t.id}`,
+      date: t.date,
+      kind: "expense",
+      category: "재테크",
+      subCategory: isProfit ? "투자수익" : "투자손실",
+      description,
+      amount: Math.abs(rawPnl),
+      toAccountId: isProfit ? t.accountId : undefined,
+      fromAccountId: isProfit ? undefined : t.accountId,
+      currency: isUsd ? "USD" : "KRW",
+      _tradeId: t.id
+    };
+  }
+  return {
+    id: `trade-${t.id}`,
+    date: t.date,
+    kind: "expense",
+    category: "재테크",
+    subCategory: "주식매수",
+    description,
+    amount: Math.abs(rawPnl),
+    fromAccountId: t.accountId,
+    toAccountId: undefined,
+    currency: isUsd ? "USD" : "KRW",
+    _tradeId: t.id
+  };
+}
 
 function createDefaultForm(): {
   id?: string;
@@ -65,6 +119,8 @@ function createDefaultForm(): {
 export const LedgerView: React.FC<Props> = ({
   accounts,
   ledger,
+  balances = [],
+  trades = [],
   categoryPresets,
   onChangeLedger,
   copyRequest,
@@ -72,6 +128,8 @@ export const LedgerView: React.FC<Props> = ({
   highlightLedgerId,
   onClearHighlightLedger
 }) => {
+  const deferredLedger = useDeferredValue(ledger);
+  const deferredTrades = useDeferredValue(trades);
   const [form, setForm] = useState(createDefaultForm);
   // 기본값을 월별 보기로 설정하여 성능 최적화
   const [viewMode, setViewMode] = useState<"all" | "monthly">("monthly");
@@ -93,6 +151,8 @@ export const LedgerView: React.FC<Props> = ({
     [effectiveFormKind]
   );
   const isCopyingRef = useRef(false);
+  /** 해당 월에 자동복사를 이미 수행했거나, 원래 고정지출이 있었음을 기록. 사용자가 삭제한 뒤 재복사 방지 */
+  const autoCopiedFixedMonthsRef = useRef<Set<string>>(new Set());
   const [selectedMonths, setSelectedMonths] = useState<Set<string>>(() => new Set([getThisMonthKST()]));
   const [currentYear, setCurrentYear] = useState(() => String(getKoreaTime().getFullYear()));
   const [draggingId, setDraggingId] = useState<string | null>(null);
@@ -106,36 +166,49 @@ export const LedgerView: React.FC<Props> = ({
   const [filterAmountMax, setFilterAmountMax] = useState<number | undefined>();
   const [filterTagsInput, setFilterTagsInput] = useState<string>("");
   // 정렬 상태
-  type LedgerSortKey = "date" | "category" | "subCategory" | "description" | "fromAccountId" | "toAccountId" | "amount";
+  type LedgerSortKey =
+    | "date"
+    | "category"
+    | "subCategory"
+    | "description"
+    | "fromAccountId"
+    | "toAccountId"
+    | "amount"
+    | "grossAmount"
+    | "discountAmount";
   const [ledgerSort, setLedgerSort] = useState<{ key: LedgerSortKey; direction: "asc" | "desc" }>({
     key: "date",
     direction: "desc"
   });
   const [lastAddedEntryId, setLastAddedEntryId] = useState<string | null>(null);
   
-  // 컬럼 너비 상태 (localStorage에서 로드, 순서/구분 컬럼 제거로 8개)
+  // 컬럼 너비 상태 (localStorage에서 로드; 10개 = 데이터 9 + 작업 1: 할인 전·할인·최종)
   const [columnWidths, setColumnWidths] = useState<number[]>(() => {
     if (typeof window !== "undefined") {
       const saved = localStorage.getItem("ledger-column-widths");
       if (saved) {
         try {
           const parsed = JSON.parse(saved);
-          if (Array.isArray(parsed)) {
-            // 기존 10개 배열이면 첫 번째(순서), 두 번째(구분) 제거하고 8개로 변환
-            if (parsed.length === 10) {
-              const newWidths = parsed.slice(2); // 첫 번째, 두 번째 컬럼 제거
-              const total = newWidths.reduce((sum, w) => sum + w, 0);
-              return newWidths.map(w => w * (100 / total)); // 100%로 재조정
+          if (Array.isArray(parsed) && parsed.length > 0) {
+            const normalize = (arr: number[]) => {
+              const t = arr.reduce((sum, w) => sum + w, 0);
+              return t > 0 ? arr.map((w) => w * (100 / t)) : arr;
+            };
+            let w = [...parsed];
+            // 아주 옛 10열(앞 2칸 순서·구분)만 제거
+            if (w.length === 10 && w[0] < 6 && w[1] < 6) {
+              w = w.slice(2);
             }
-            // 기존 9개 배열이면 두 번째(구분) 제거하고 8개로 변환
-            if (parsed.length === 9) {
-              const newWidths = [...parsed.slice(0, 1), ...parsed.slice(2)]; // 두 번째 컬럼 제거
-              const total = newWidths.reduce((sum, w) => sum + w, 0);
-              return newWidths.map(w => w * (100 / total)); // 100%로 재조정
+            if (w.length === 8) {
+              w = [...w.slice(0, 7), 6, w[7]];
+              w = normalize(w);
             }
-            // 이미 8개면 그대로 사용
-            if (parsed.length === 8) {
-              return parsed;
+            if (w.length === 9) {
+              w = [...w.slice(0, 8), 9, w[8]];
+              w = normalize(w);
+            }
+            if (w.length === 10) {
+              return normalize(w);
             }
           }
         } catch (e) {
@@ -143,14 +216,15 @@ export const LedgerView: React.FC<Props> = ({
         }
       }
     }
-    // 날짜, 대분류, 항목, 상세내역, 출금, 입금, 금액, 작업 — 맨 오른쪽 복사/삭제가 보이도록 작업 컬럼 확보
-    return [9, 11, 11, 24, 10, 10, 12, 9];
+    // 날짜, 대분류, 중분류, 상세내역, 출금, 입금, 할인 전, 할인, 최종, 작업
+    return [9, 11, 11, 22, 10, 10, 10, 5, 9, 9];
   });
   const [resizingColumn, setResizingColumn] = useState<number | null>(null);
   const [liveColumnWidths, setLiveColumnWidths] = useState<number[] | null>(null);
   const resizeStartRef = useRef<{ x: number; width: number; widths: number[] }>({ x: 0, width: 0, widths: [] });
 
-  const widthsForRender = (resizingColumn !== null && liveColumnWidths && liveColumnWidths.length === 8) ? liveColumnWidths : columnWidths;
+  const widthsForRender =
+    resizingColumn !== null && liveColumnWidths && liveColumnWidths.length === 10 ? liveColumnWidths : columnWidths;
 
   // 폼 검증 오류는 validateForm useMemo에서 직접 계산됨
   
@@ -336,7 +410,7 @@ export const LedgerView: React.FC<Props> = ({
     setFilterToAccountId(undefined);
   }, [ledgerTab]);
 
-  // 이체 탭일 때 form.mainCategory를 "이체"로 설정 (항목 목록 표시용)
+  // 이체 탭일 때 form.mainCategory를 "이체"로 설정 (중분류 목록 표시용)
   useEffect(() => {
     if (ledgerTab === "transfer" && form.mainCategory !== "이체") {
       setForm((prev) => ({ ...prev, mainCategory: "이체" }));
@@ -350,29 +424,55 @@ export const LedgerView: React.FC<Props> = ({
     }
   }, [ledgerTab]);
   
-  // 고정지출 자동 생성: 이전 달의 고정지출을 현재 달로 복사
+  // 고정지출 자동 생성: 이전 달의 고정지출을 현재 달로 복사 (해당 월에 이미 있었거나 한 번 복사한 적 있으면 재복사하지 않음)
+  // Load the months where fixed-expense auto copy was already handled.
   useEffect(() => {
-    // 한국 시간 기준으로 계산
+    if (typeof window === "undefined") return;
+    try {
+      const raw = window.localStorage.getItem(AUTO_COPIED_FIXED_MONTHS_KEY);
+      if (!raw) return;
+      const parsed = JSON.parse(raw);
+      if (!Array.isArray(parsed)) return;
+      autoCopiedFixedMonthsRef.current = new Set(
+        parsed.filter((month): month is string => typeof month === "string")
+      );
+    } catch {
+      // ignore parse failure and continue with an empty set
+    }
+  }, []);
+
+  const markAutoCopyHandled = useCallback((month: string) => {
+    if (autoCopiedFixedMonthsRef.current.has(month)) return;
+    autoCopiedFixedMonthsRef.current.add(month);
+    if (typeof window === "undefined") return;
+    try {
+      window.localStorage.setItem(
+        AUTO_COPIED_FIXED_MONTHS_KEY,
+        JSON.stringify(Array.from(autoCopiedFixedMonthsRef.current))
+      );
+    } catch {
+      // localStorage write failure should not block ledger behavior
+    }
+  }, []);
+
+  // Copy previous month's fixed expenses only once per month.
+  useEffect(() => {
     const koreaTime = getKoreaTime();
     const currentMonth = `${koreaTime.getFullYear()}-${String(koreaTime.getMonth() + 1).padStart(2, "0")}`;
-    const currentDay = String(koreaTime.getDate()).padStart(2, "0");
-    
-    // 이전 달 계산
     const prevMonthDate = new Date(koreaTime.getFullYear(), koreaTime.getMonth() - 1, 1);
     const prevMonth = `${prevMonthDate.getFullYear()}-${String(prevMonthDate.getMonth() + 1).padStart(2, "0")}`;
+    const currentMonthFixed = ledger.filter((l) => l.isFixedExpense && l.date.startsWith(currentMonth));
+    const prevMonthFixed = ledger.filter((l) => l.isFixedExpense && l.date.startsWith(prevMonth));
+    if (currentMonthFixed.length > 0) {
+      markAutoCopyHandled(currentMonth);
+      return;
+    }
+    const alreadyHandled = autoCopiedFixedMonthsRef.current.has(currentMonth);
+    const wouldCopy = prevMonthFixed.length > 0 && currentMonthFixed.length === 0 && !alreadyHandled;
     
-    // 현재 달의 고정지출 확인
-    const currentMonthFixed = ledger.filter(
-      (l) => l.isFixedExpense && l.date.startsWith(currentMonth)
-    );
-    
-    // 이전 달의 고정지출 확인
-    const prevMonthFixed = ledger.filter(
-      (l) => l.isFixedExpense && l.date.startsWith(prevMonth)
-    );
-    
-    // 이전 달의 고정지출이 있고, 현재 달에 해당하는 항목이 없으면 생성
-    if (prevMonthFixed.length > 0 && currentMonthFixed.length === 0) {
+    // 이전 달의 고정지출이 있고, 현재 달에 해당하는 항목이 없고, 해당 월에 이미 처리한 적 없을 때만 생성 (삭제 후 재복사 방지)
+    if (wouldCopy) {
+      markAutoCopyHandled(currentMonth);
       const newEntries: LedgerEntry[] = prevMonthFixed.map((prev) => {
         // 날짜를 현재 달의 같은 날짜로 변경 (한국 시간 기준)
         const prevDate = new Date(prev.date);
@@ -406,7 +506,7 @@ export const LedgerView: React.FC<Props> = ({
         onChangeLedger([...newEntries, ...ledger]);
       }
     }
-  }, [ledger, onChangeLedger]);
+  }, [ledger, onChangeLedger, markAutoCopyHandled]);
   
   // 최근 사용한 대분류 추적
   const recentMainCategories = useMemo(() => {
@@ -432,7 +532,7 @@ export const LedgerView: React.FC<Props> = ({
       .map(([key]) => key);
   }, [ledger]);
 
-  // 최근 사용한 세부 항목 추적 (대분류별)
+  // 최근 사용한 중분류 추적 (대분류별)
   const recentSubCategories = useMemo(() => {
     if (!form.mainCategory && effectiveFormKind !== "transfer") return [];
     const items = new Map<string, { count: number; lastUsed: string }>();
@@ -473,7 +573,7 @@ export const LedgerView: React.FC<Props> = ({
       .map(([key]) => key);
   }, [ledger, form.mainCategory, effectiveFormKind]);
 
-  // 최근 사용한 수입 항목 추적
+  // 최근 사용한 수입 중분류 추적
   const recentIncomeCategories = useMemo(() => {
     const items = new Map<string, { count: number; lastUsed: string }>();
     ledger
@@ -528,11 +628,13 @@ export const LedgerView: React.FC<Props> = ({
   }, [ledger]);
 
   const expenseSubSuggestions = useMemo(() => {
-    // 재테크 탭: 저축, 투자 2개만
+    // 재테크 탭: categoryPresets.expenseDetails의 재테크 그룹 사용 (저축, 투자, 투자수익, 투자손실 등)
     if (effectiveFormKind === "savingsExpense") {
-      return ["저축", "투자"];
+      if (!categoryPresets?.expenseDetails) return ["저축", "투자", "투자수익", "투자손실"];
+      const recheck = categoryPresets.expenseDetails.find((g) => g.main === "재테크");
+      return (recheck?.subs && recheck.subs.length > 0) ? [...recheck.subs] : ["저축", "투자", "투자수익", "투자손실"];
     }
-    // 이체 탭일 때는 transfer 카테고리를 세부 항목으로 사용 (카테고리 탭 순서 그대로)
+    // 이체 탭일 때는 transfer 카테고리를 중분류로 사용 (카테고리 탭 순서 그대로)
     if (effectiveFormKind === "transfer" && form.mainCategory === "이체") {
       return categoryPresets.transfer || [];
     }
@@ -552,12 +654,12 @@ export const LedgerView: React.FC<Props> = ({
       // 대분류에 해당하는 그룹 찾기 (정확히 일치하는 것만)
       const g = groups.find((x) => x.main === form.mainCategory);
       if (g && g.subs && Array.isArray(g.subs) && g.subs.length > 0) {
-        // 해당 대분류의 세부 항목을 카테고리 탭 입력 순서 그대로 사용
+        // 해당 대분류의 중분류를 카테고리 탭 입력 순서 그대로 사용
         suggestions = [...g.subs];
       } else {
         suggestions = [];
         if (import.meta.env.DEV) {
-          console.warn(`[LedgerView] 대분류 "${form.mainCategory}"에 해당하는 세부 항목 그룹을 찾을 수 없습니다.`, {
+          console.warn(`[LedgerView] 대분류 "${form.mainCategory}"에 해당하는 중분류 그룹을 찾을 수 없습니다.`, {
             availableGroups: groups.map((g) => g.main),
             totalGroups: groups.length,
             categoryPresetsExpenseDetails: categoryPresets.expenseDetails
@@ -593,7 +695,7 @@ export const LedgerView: React.FC<Props> = ({
       : list;
   }, [effectiveFormKind, categoryPresets, categoryPresets?.expense]);
 
-  // 수입 항목 옵션 (카테고리 탭에서 입력한 순서 그대로)
+  // 수입 중분류 옵션 (카테고리 탭에서 입력한 순서 그대로)
   const incomeCategoryOptions = useMemo(() => {
     return categoryPresets?.income ?? [];
   }, [categoryPresets?.income]);
@@ -669,42 +771,73 @@ export const LedgerView: React.FC<Props> = ({
       }
     }
     
-    // 계좌 검증
-    if (kindForTab === "expense" || kindForTab === "transfer" || effectiveFormKind === "creditPayment") {
+    // 계좌 검증 (재테크: 투자손실=출금만, 투자수익=입금만, 저축·투자=둘 다)
+    // 주의: savingsExpense도 저장 kind는 "expense"라 kindForTab===expense가 항상 참이면 안 됨 → 재테크는 effectiveFormKind로 구분
+    const isRecheckLoss = effectiveFormKind === "savingsExpense" && form.subCategory === "투자손실";
+    const requireFromAccount =
+      kindForTab === "transfer" ||
+      effectiveFormKind === "creditPayment" ||
+      (kindForTab === "expense" && effectiveFormKind !== "savingsExpense") ||
+      (effectiveFormKind === "savingsExpense" && form.subCategory !== "투자수익");
+    const requireToAccount = (kindForTab === "income" || kindForTab === "transfer" || effectiveFormKind === "creditPayment") || (effectiveFormKind === "savingsExpense" && !isRecheckLoss);
+
+    if (requireFromAccount) {
       const fromAccountValidation = validateRequired(form.fromAccountId, "출금 계좌");
       if (!fromAccountValidation.valid) {
         errors.fromAccountId = fromAccountValidation.error || "";
+      } else {
+        const fromExists = validateAccountExists(form.fromAccountId, accounts);
+        if (!fromExists.valid) {
+          errors.fromAccountId = fromExists.error || "";
+        }
       }
     }
-    
-    if (kindForTab === "income" || kindForTab === "transfer" || effectiveFormKind === "savingsExpense" || effectiveFormKind === "creditPayment") {
+
+    if (requireToAccount) {
       const toAccountValidation = validateRequired(form.toAccountId, effectiveFormKind === "creditPayment" ? "카드" : "입금 계좌");
       if (!toAccountValidation.valid) {
         errors.toAccountId = toAccountValidation.error || "";
+      } else {
+        const toExists = validateAccountExists(form.toAccountId, accounts);
+        if (!toExists.valid) {
+          errors.toAccountId = toExists.error || "";
+        }
       }
     }
     
-    // 이체/재테크/신용결제 검증 (출금계좌와 입금계좌가 다른지)
-    if (kindForTab === "transfer" || effectiveFormKind === "savingsExpense" || effectiveFormKind === "creditPayment") {
+    // 이체/신용결제 검증 (출금계좌와 입금계좌가 다른지). 재테크는 같은 계좌 허용
+    if (kindForTab === "transfer" || effectiveFormKind === "creditPayment") {
       const transferValidation = validateTransfer(form.fromAccountId, form.toAccountId);
       if (!transferValidation.valid) {
         errors.transfer = transferValidation.error || "";
       }
     }
     
-    // 할인금액 검증 (신용결제 시, 0 이상이어야 함)
-    if (effectiveFormKind === "creditPayment" && form.discountAmount?.trim()) {
+    // 할인 검증 (수입·지출·재테크·신용결제: 금액=할인 전, 저장 시 amount=금액−할인)
+    const allowLedgerDiscount =
+      effectiveFormKind === "income" ||
+      effectiveFormKind === "expense" ||
+      effectiveFormKind === "savingsExpense" ||
+      effectiveFormKind === "creditPayment";
+    if (allowLedgerDiscount && form.discountAmount?.trim()) {
       const discount = parseAmount(form.discountAmount, false);
       if (discount < 0) {
         errors.discountAmount = "할인금액은 0 이상이어야 합니다";
+      } else if (effectiveFormKind === "income") {
+        if (discount > parsedAmount) {
+          errors.discountAmount = "할인은 금액(할인 전)을 넘을 수 없습니다";
+        } else if (parsedAmount - discount <= 0) {
+          errors.amount = "할인 후 실제 수입액은 0보다 커야 합니다";
+        }
       }
+      // 지출·재테크·신용결제: 순액 0/음수·할인이 금액 초과 허용(환급·전액 할인 등)
     }
     
-    // 대분류/세부 항목/상세내역 검증 (신용결제는 제외)
+    // 대분류/중분류/상세내역 검증 (신용결제는 제외)
     if (effectiveFormKind === "creditPayment") {
       // 신용결제는 mainCategory/subCategory 검증 없음
     } else if (kindForTab === "income") {
-      const subCategoryValidation = validateRequired(form.subCategory, "수입 항목");
+      const subCategoryValidation = validateRequired(form.subCategory, "수입 중분류");
       if (!subCategoryValidation.valid) {
         errors.subCategory = subCategoryValidation.error || "";
       }
@@ -713,7 +846,7 @@ export const LedgerView: React.FC<Props> = ({
       if (!mainCategoryValidation.valid) {
         errors.mainCategory = mainCategoryValidation.error || "";
       }
-      const subCategoryValidation = validateRequired(form.subCategory, "세부 항목");
+      const subCategoryValidation = validateRequired(form.subCategory, "중분류");
       if (!subCategoryValidation.valid) {
         errors.subCategory = subCategoryValidation.error || "";
       }
@@ -721,7 +854,7 @@ export const LedgerView: React.FC<Props> = ({
     // 상세내역은 선택사항이므로 검증하지 않음
     
     return errors;
-  }, [form, effectiveFormKind, parseAmount]);
+  }, [form, effectiveFormKind, parseAmount, accounts]);
   
   // formErrors를 직접 사용 (useEffect 제거로 성능 개선)
   const formErrors = validateForm;
@@ -737,8 +870,27 @@ export const LedgerView: React.FC<Props> = ({
       return;
     }
     const allowDecimal = kindForTab === "transfer" && form.currency === "USD";
-    const amount = parseAmount(form.amount, allowDecimal);
-    if (!form.date || !amount || amount <= 0) return;
+    const gross = parseAmount(form.amount, allowDecimal);
+    const allowLedgerDiscount =
+      effectiveFormKind === "income" ||
+      effectiveFormKind === "expense" ||
+      effectiveFormKind === "savingsExpense" ||
+      effectiveFormKind === "creditPayment";
+    const discountParsed =
+      allowLedgerDiscount && form.discountAmount?.trim()
+        ? parseAmount(form.discountAmount, false)
+        : 0;
+    const amount = discountParsed > 0 ? gross - discountParsed : gross;
+    if (!form.date) return;
+    const expenseLikeSubmit =
+      effectiveFormKind === "expense" ||
+      effectiveFormKind === "savingsExpense" ||
+      effectiveFormKind === "creditPayment";
+    if (discountParsed > 0 && expenseLikeSubmit) {
+      if (!Number.isFinite(amount)) return;
+    } else if (!amount || amount <= 0) {
+      return;
+    }
 
     const isFixed = false;
 
@@ -765,15 +917,19 @@ export const LedgerView: React.FC<Props> = ({
       description: form.description?.trim() || "",
       amount,
       fromAccountId:
-        kindForTab === "expense" || kindForTab === "transfer" || effectiveFormKind === "creditPayment"
-          ? (form.fromAccountId?.trim() || undefined)
-          : undefined,
+        effectiveFormKind === "savingsExpense" && normalizedSubCategory === "투자수익"
+          ? undefined
+          : (kindForTab === "expense" || kindForTab === "transfer" || effectiveFormKind === "creditPayment" || (effectiveFormKind === "savingsExpense" && normalizedSubCategory === "투자손실"))
+            ? (form.fromAccountId?.trim() || undefined)
+            : undefined,
       toAccountId:
-        kindForTab === "income" || kindForTab === "transfer" || effectiveFormKind === "savingsExpense" || effectiveFormKind === "creditPayment"
-          ? (form.toAccountId?.trim() || undefined)
-          : undefined,
-      ...(effectiveFormKind === "creditPayment" && form.discountAmount?.trim()
-        ? { discountAmount: parseAmount(form.discountAmount, false) }
+        effectiveFormKind === "savingsExpense" && normalizedSubCategory === "투자손실"
+          ? undefined
+          : (kindForTab === "income" || kindForTab === "transfer" || effectiveFormKind === "savingsExpense" || effectiveFormKind === "creditPayment")
+            ? (form.toAccountId?.trim() || undefined)
+            : undefined,
+      ...(allowLedgerDiscount
+        ? { discountAmount: discountParsed > 0 ? discountParsed : undefined }
         : {}),
       ...(kindForTab === "transfer" && form.currency === "USD" ? { currency: "USD" as const } : {})
     };
@@ -786,7 +942,7 @@ export const LedgerView: React.FC<Props> = ({
       const entry: LedgerEntry = { id, ...base };
       onChangeLedger([entry, ...ledger]);
       setLastAddedEntryId(id);
-      // 새 항목 추가 시 기존 필터 초기화
+      // 새 내역 추가 시 기존 필터 초기화
       setFilterMainCategory(undefined);
       setFilterSubCategory(undefined);
       setFilterFromAccountId(undefined);
@@ -824,7 +980,7 @@ export const LedgerView: React.FC<Props> = ({
           fromAccountId: form.fromAccountId,
           toAccountId: form.toAccountId,
           amount: "",
-          ...(effectiveFormKind === "creditPayment" ? { discountAmount: "" } : {})
+          ...(allowLedgerDiscount ? { discountAmount: "" } : {})
         };
       }
       return {
@@ -853,7 +1009,20 @@ export const LedgerView: React.FC<Props> = ({
       description: entry.description,
       fromAccountId: entry.fromAccountId ?? "",
       toAccountId: entry.toAccountId ?? "",
-      amount: entry.currency === "USD" ? String(entry.amount) : String(Math.round(entry.amount)),
+      amount:
+        entry.currency === "USD"
+          ? String(
+              (entry.kind === "expense" || entry.kind === "income") && (entry.discountAmount ?? 0) > 0
+                ? entry.amount + (entry.discountAmount ?? 0)
+                : entry.amount
+            )
+          : String(
+              Math.round(
+                (entry.kind === "expense" || entry.kind === "income") && (entry.discountAmount ?? 0) > 0
+                  ? entry.amount + (entry.discountAmount ?? 0)
+                  : entry.amount
+              )
+            ),
       discountAmount: entry.discountAmount != null ? String(Math.round(entry.discountAmount)) : "",
       currency: entry.currency ?? "KRW",
       tags: entry.tags || []
@@ -942,6 +1111,10 @@ export const LedgerView: React.FC<Props> = ({
   };
 
   const startEditField = (id: string, field: string, currentValue: string | number) => {
+    if (id.startsWith("trade-")) {
+      toast("주식 거래는 주식 탭에서 수정하세요.");
+      return;
+    }
     setEditingField({ id, field });
     setEditingValue(String(currentValue));
   };
@@ -965,19 +1138,73 @@ export const LedgerView: React.FC<Props> = ({
       updated.fromAccountId = editingValue || undefined;
     } else if (field === "toAccountId") {
       updated.toAccountId = editingValue || undefined;
+    } else if (field === "grossAmount") {
+      const isUSD = entry.currency === "USD";
+      const gross = isUSD
+        ? parseFloat(editingValue.replace(/[^\d.]/g, ""))
+        : Number(editingValue.replace(/[^\d]/g, ""));
+      if (!Number.isFinite(gross) || isNaN(gross)) {
+        setEditingField(null);
+        setEditingValue("");
+        return;
+      }
+      const disc = entry.discountAmount ?? 0;
+      updated.amount = gross - disc;
     } else if (field === "amount") {
       const isUSD = entry.currency === "USD";
       const amount = isUSD
         ? parseFloat(editingValue.replace(/[^\d.]/g, ""))
         : Number(editingValue.replace(/[^\d]/g, ""));
-      if (amount > 0 && !isNaN(amount)) {
+      if (Number.isFinite(amount) && !isNaN(amount)) {
         updated.amount = amount;
+        if ((entry.kind === "expense" || entry.kind === "income") && (entry.discountAmount ?? 0) > 0) {
+          updated.discountAmount = undefined;
+        }
       } else {
-        // 금액이 0 이하면 저장하지 않음
         setEditingField(null);
         setEditingValue("");
         return;
       }
+    } else if (field === "discountAmount") {
+      if (entry.kind !== "income" && entry.kind !== "expense") {
+        setEditingField(null);
+        setEditingValue("");
+        return;
+      }
+      const isUSD = entry.currency === "USD";
+      const trimmed = editingValue.trim();
+      const disc =
+        trimmed === ""
+          ? 0
+          : isUSD
+            ? parseFloat(editingValue.replace(/[^\d.]/g, ""))
+            : Number(editingValue.replace(/[^\d]/g, ""));
+      if (trimmed !== "" && (isNaN(disc) || disc < 0)) {
+        toast.error("할인은 0 이상이어야 합니다");
+        setEditingField(null);
+        setEditingValue("");
+        return;
+      }
+      const gross = entry.amount + (entry.discountAmount ?? 0);
+      if (entry.kind === "income") {
+        if (disc > gross) {
+          toast.error("할인은 금액(할인 전)을 넘을 수 없습니다");
+          setEditingField(null);
+          setEditingValue("");
+          return;
+        }
+        const net = gross - disc;
+        if (net <= 0) {
+          toast.error("할인 후 실제 수입액은 0보다 커야 합니다");
+          setEditingField(null);
+          setEditingValue("");
+          return;
+        }
+        updated.amount = net;
+      } else {
+        updated.amount = gross - disc;
+      }
+      updated.discountAmount = disc > 0 ? disc : undefined;
     }
 
     onChangeLedger(ledger.map((l) => (l.id === id ? updated : l)));
@@ -1114,9 +1341,24 @@ export const LedgerView: React.FC<Props> = ({
     };
   }, [form]);
 
-  // 탭별 필터링된 거래 목록
+  const realizedPnlByTradeId = useMemo(
+    () => computeRealizedPnlByTradeId(deferredTrades),
+    [deferredTrades]
+  );
+  const tradesAsLedgerRows = useMemo(
+    (): LedgerDisplayRow[] =>
+      deferredTrades.filter((t) => t.side === "sell").map((t) => tradeToLedgerRow(t, realizedPnlByTradeId)),
+    [deferredTrades, realizedPnlByTradeId]
+  );
+  const combinedLedger = useMemo(
+    (): LedgerDisplayRow[] =>
+      [...deferredLedger.map((l) => ({ ...l, _tradeId: undefined })), ...tradesAsLedgerRows],
+    [deferredLedger, tradesAsLedgerRows]
+  );
+
+  // 탭별 필터링된 거래 목록 (가계부 + 주식 매수/매도)
   const ledgerByTab = useMemo(() => {
-    return ledger.filter((l) => {
+    return combinedLedger.filter((l) => {
       if (ledgerTab === "all") return true;
       if (ledgerTab === "income") return l.kind === "income";
       if (ledgerTab === "transfer") return l.kind === "transfer";
@@ -1124,7 +1366,7 @@ export const LedgerView: React.FC<Props> = ({
       if (ledgerTab === "creditPayment") return isCreditPaymentEntry(l);
       return l.kind === "expense" && !isSavingsExpenseEntry(l, accounts, categoryPresets) && !isCreditPaymentEntry(l) && !(l.isFixedExpense ?? false);
     });
-  }, [ledger, ledgerTab, accounts, categoryPresets]);
+  }, [combinedLedger, ledgerTab, accounts, categoryPresets]);
 
   const filteredLedger = useMemo(() => {
     const base = ledgerByTab;
@@ -1146,12 +1388,12 @@ export const LedgerView: React.FC<Props> = ({
       });
     }
 
-    // 대분류/항목 필터
+    // 대분류/중분류 필터
     if (filterMainCategory || filterSubCategory) {
       filtered = filtered.filter((l) => {
         if (filterMainCategory) {
           if (ledgerTab === "savingsExpense" && filterMainCategory === "재테크") {
-            // 재테크 탭에서 재테크 필터: 대분류 필터 생략 (전체 재테크/저축 항목 표시)
+            // 재테크 탭에서 재테크 필터: 대분류 필터 생략 (전체 재테크/저축 중분류 표시)
           } else if (l.category !== filterMainCategory) {
             return false;
           }
@@ -1198,6 +1440,10 @@ export const LedgerView: React.FC<Props> = ({
         return (a.date < b.date ? -1 : a.date > b.date ? 1 : 0) * dir;
       } else if (key === "amount") {
         return ((a.amount ?? 0) - (b.amount ?? 0)) * dir;
+      } else if (key === "grossAmount") {
+        return (ledgerEntryGross(a) - ledgerEntryGross(b)) * dir;
+      } else if (key === "discountAmount") {
+        return ((a.discountAmount ?? 0) - (b.discountAmount ?? 0)) * dir;
       } else if (key === "category") {
         return ((a.category || "") < (b.category || "") ? -1 : (a.category || "") > (b.category || "") ? 1 : 0) * dir;
       } else if (key === "subCategory") {
@@ -1253,7 +1499,59 @@ export const LedgerView: React.FC<Props> = ({
     return { expenseAmount, savingsAmount, incomeAmount, total };
   }, [filteredLedger, accounts, categoryPresets]);
 
-  const filteredLedgerRef = useRef<LedgerEntry[]>([]);
+  // 출금/입금 셀에 표시할 계좌별 금액·잔액 (ledger + trades 혼합, 날짜순 역산)
+  const balanceAfterByLedgerId = useMemo(() => {
+    const result = new Map<
+      string,
+      { from?: { amount: number; balance: number }; to?: { amount: number; balance: number } }
+    >();
+    const balanceById = new Map<string, number>();
+    for (const row of balances) {
+      balanceById.set(row.account.id, row.currentBalance);
+    }
+    type Event = { type: "ledger"; id: string; date: string; l: LedgerEntry } | { type: "trade"; id: string; date: string; t: StockTrade };
+    const events: Event[] = [
+      ...deferredLedger.map((l) => ({ type: "ledger" as const, id: l.id, date: l.date, l })),
+      ...deferredTrades.map((t) => ({ type: "trade" as const, id: t.id, date: t.date, t }))
+    ].sort((a, b) => (a.date !== b.date ? a.date.localeCompare(b.date) : a.id.localeCompare(b.id)));
+    const futureImpact = new Map<string, number>();
+    const addImpact = (accId: string, delta: number) =>
+      futureImpact.set(accId, (futureImpact.get(accId) ?? 0) + delta);
+    for (let i = events.length - 1; i >= 0; i--) {
+      const e = events[i];
+      if (e.type === "ledger") {
+        const l = e.l;
+        let fromImpact = 0;
+        let toImpact = 0;
+        if (l.kind === "income" && l.toAccountId) toImpact = l.amount;
+        else if (l.kind === "expense") {
+          if (l.fromAccountId) fromImpact = -l.amount;
+          if (l.toAccountId) toImpact = l.amount;
+        } else if (l.kind === "transfer") {
+          if (l.fromAccountId) fromImpact = -l.amount;
+          if (l.toAccountId) toImpact = l.amount;
+        }
+        const fromBalance = l.fromAccountId
+          ? (balanceById.get(l.fromAccountId) ?? 0) - (futureImpact.get(l.fromAccountId) ?? 0)
+          : 0;
+        const toBalance = l.toAccountId
+          ? (balanceById.get(l.toAccountId) ?? 0) - (futureImpact.get(l.toAccountId) ?? 0)
+          : 0;
+        result.set(e.id, {
+          from: l.fromAccountId ? { amount: fromImpact, balance: fromBalance } : undefined,
+          to: l.toAccountId ? { amount: toImpact, balance: toBalance } : undefined
+        });
+        if (l.fromAccountId) addImpact(l.fromAccountId, fromImpact);
+        if (l.toAccountId) addImpact(l.toAccountId, toImpact);
+      } else {
+        const t = e.t;
+        addImpact(t.accountId, t.cashImpact);
+      }
+    }
+    return result;
+  }, [deferredLedger, deferredTrades, balances]);
+
+  const filteredLedgerRef = useRef<LedgerDisplayRow[]>([]);
   useEffect(() => {
     filteredLedgerRef.current = filteredLedger;
   }, [filteredLedger]);
@@ -1291,9 +1589,9 @@ export const LedgerView: React.FC<Props> = ({
   const ledgerColumnWidthStyles = useMemo(() => {
     const workColPx = 168;
     return widthsForRender.map((width, index) => {
-      if (index === 7) return `${workColPx}px`;
-      const sumFirst7 = widthsForRender.slice(0, 7).reduce((s, w) => s + w, 0);
-      const pct = sumFirst7 > 0 ? (width / sumFirst7) * 100 : 100 / 7;
+      if (index === 9) return `${workColPx}px`;
+      const sumFirst9 = widthsForRender.slice(0, 9).reduce((s, w) => s + w, 0);
+      const pct = sumFirst9 > 0 ? (width / sumFirst9) * 100 : 100 / 9;
       return `calc((100% - ${workColPx}px) * ${pct / 100})`;
     });
   }, [widthsForRender]);
@@ -1489,8 +1787,15 @@ export const LedgerView: React.FC<Props> = ({
       setDragSumStartIndex(null);
       setDragSumEndIndex(null);
       if (slice.length > 0) {
-        setSelectedLedgerIdsForSum(new Set(slice.map((e) => e.id)));
-        toast.success("선택한 구간 합계를 아래에 표시했습니다.", { duration: 2000 });
+        setSelectedLedgerIdsForSum((prev) => {
+          const next = new Set(prev);
+          for (const row of slice) {
+            if (next.has(row.id)) next.delete(row.id);
+            else next.add(row.id);
+          }
+          return next;
+        });
+        toast.success("구간 선택을 토글했습니다.", { duration: 2000 });
       }
     };
     document.addEventListener("mousemove", onMove);
@@ -1840,6 +2145,7 @@ export const LedgerView: React.FC<Props> = ({
                   <button
                     key={k}
                     type="button"
+                    tabIndex={-1}
                     className={formKindWhenAll === k ? "primary" : "secondary"}
                     onClick={() => setFormKindWhenAll(k)}
                     style={{ fontSize: 13, padding: "6px 12px" }}
@@ -1878,10 +2184,18 @@ export const LedgerView: React.FC<Props> = ({
               {/* 금액 */}
               <label style={{ margin: 0 }}>
                 <span style={{ fontSize: 11, marginBottom: 4, display: "block", color: "var(--text-muted)" }}>
-                  금액 * {effectiveFormKind === "transfer" && (
+                  금액 *{" "}
+                  {(effectiveFormKind === "income" ||
+                    effectiveFormKind === "expense" ||
+                    effectiveFormKind === "savingsExpense" ||
+                    effectiveFormKind === "creditPayment") && (
+                    <span style={{ fontWeight: 400, color: "var(--text-muted)" }}>(할인 전) </span>
+                  )}
+                  {effectiveFormKind === "transfer" && (
                     <span style={{ marginLeft: 8 }}>
                       <button
                         type="button"
+                        tabIndex={-1}
                         className={form.currency === "KRW" ? "primary" : "secondary"}
                         onClick={() => setForm((prev) => ({ ...prev, currency: "KRW" }))}
                         style={{ fontSize: 11, padding: "2px 8px" }}
@@ -1890,6 +2204,7 @@ export const LedgerView: React.FC<Props> = ({
                       </button>
                       <button
                         type="button"
+                        tabIndex={-1}
                         className={form.currency === "USD" ? "primary" : "secondary"}
                         onClick={() => setForm((prev) => ({ ...prev, currency: "USD" }))}
                         style={{ fontSize: 11, padding: "2px 8px", marginLeft: 4 }}
@@ -1933,13 +2248,30 @@ export const LedgerView: React.FC<Props> = ({
                     {formErrors.amount}
                   </span>
                 )}
+                {(effectiveFormKind === "income" ||
+                  effectiveFormKind === "expense" ||
+                  effectiveFormKind === "savingsExpense" ||
+                  effectiveFormKind === "creditPayment") &&
+                  form.discountAmount?.trim() &&
+                  parseAmount(form.discountAmount, false) > 0 &&
+                  parseAmount(form.amount, false) > 0 && (
+                    <span style={{ fontSize: 10, color: "var(--text-muted)", display: "block", marginTop: 4 }}>
+                      {effectiveFormKind === "income" ? "실제 수입액" : "실제 지출액"}:{" "}
+                      <strong style={{ color: "var(--text)" }}>
+                        {(
+                          parseAmount(form.amount, false) - parseAmount(form.discountAmount, false)
+                        ).toLocaleString()}
+                        원
+                      </strong>
+                    </span>
+                  )}
               </label>
             </div>
 
-            {/* 2. 대분류 (지출/이체만) 또는 수입 항목 */}
+            {/* 2. 대분류 (지출/이체만) 또는 수입 중분류 */}
             {form.kind === "income" ? (
               <label>
-                <span style={{ fontSize: 14, marginBottom: 8, display: "block", fontWeight: 600 }}>수입 항목 *</span>
+                <span style={{ fontSize: 14, marginBottom: 8, display: "block", fontWeight: 600 }}>수입 중분류 *</span>
                 <div style={{ borderColor: formErrors.subCategory ? "var(--danger)" : undefined, border: formErrors.subCategory ? "1px solid var(--danger)" : "1px solid var(--border)" }}>
                   <Autocomplete
                     value={form.subCategory}
@@ -1962,6 +2294,7 @@ export const LedgerView: React.FC<Props> = ({
                       <button
                         key={c}
                         type="button"
+                        tabIndex={-1}
                         className={`category-chip ${form.subCategory === c ? "active" : ""}`}
                         onClick={() => {
                           if (form.subCategory === c) {
@@ -1992,7 +2325,7 @@ export const LedgerView: React.FC<Props> = ({
                 </div>
               </label>
             ) : effectiveFormKind === "creditPayment" ? (
-              /* 신용결제: 대분류/항목 없음, 출금·카드·할인금액은 아래 계좌 영역에서 표시 */
+              /* 신용결제: 대분류/중분류 없음, 출금·카드·할인금액은 아래 계좌 영역에서 표시 */
               <div style={{ marginBottom: 8 }}>
                 <span style={{ fontSize: 12, fontWeight: 600, color: "var(--primary)" }}>신용결제</span>
               </div>
@@ -2033,6 +2366,7 @@ export const LedgerView: React.FC<Props> = ({
                       <button
                         key={c}
                         type="button"
+                        tabIndex={-1}
                         onClick={() => {
                           if (form.mainCategory === c) {
                             if (effectiveFormKind === "savingsExpense") {
@@ -2069,18 +2403,18 @@ export const LedgerView: React.FC<Props> = ({
                 </label>
                 )}
 
-                {/* 3. 항목 (세부 항목) - 대분류 선택 시에만 표시 (이체 탭일 때는 항상 표시) */}
+                {/* 3. 중분류 - 대분류 선택 시에만 표시 (이체 탭일 때는 항상 표시) */}
                 {(form.mainCategory || ledgerTab === "transfer") ? (
                   <label>
                     <span style={{ fontSize: 12, marginBottom: 8, display: "block" }}>
-                      항목 * <span style={{ fontSize: 11, color: "var(--text-muted)", fontWeight: 400 }}>({ledgerTab === "transfer" ? "이체" : form.mainCategory}의 세부 항목)</span>
+                      중분류 * <span style={{ fontSize: 11, color: "var(--text-muted)", fontWeight: 400 }}>({ledgerTab === "transfer" ? "이체" : form.mainCategory}의 중분류)</span>
                     </span>
                     {formErrors.subCategory && (
                       <span style={{ fontSize: 11, color: "var(--danger)", display: "block", marginBottom: 4 }}>
                         {formErrors.subCategory}
                       </span>
                     )}
-                    {/* 세부 항목 버튼 그리드 - 선택된 대분류에 해당하는 항목만 표시 */}
+                    {/* 중분류 버튼 그리드 - 선택된 대분류에 해당하는 항목만 표시 */}
                     <div style={{ 
                       display: "grid", 
                       gridTemplateColumns: "repeat(auto-fill, minmax(100px, 1fr))", 
@@ -2092,6 +2426,7 @@ export const LedgerView: React.FC<Props> = ({
                           <button
                             key={c}
                             type="button"
+                            tabIndex={-1}
                             onClick={() => {
                               if (form.subCategory === c) {
                                 setForm((prev) => ({ ...prev, subCategory: "" }));
@@ -2157,10 +2492,15 @@ export const LedgerView: React.FC<Props> = ({
               />
             </label>
 
-            {/* 할인금액 (신용결제만, 선택) */}
-            {effectiveFormKind === "creditPayment" && (
+            {/* 할인 (수입·지출·재테크·신용결제, 선택) — 저장 시 금액−할인이 실제 반영액 */}
+            {(effectiveFormKind === "income" ||
+              effectiveFormKind === "expense" ||
+              effectiveFormKind === "savingsExpense" ||
+              effectiveFormKind === "creditPayment") && (
               <label style={{ margin: 0 }}>
-                <span style={{ fontSize: 10, marginBottom: 4, display: "block", color: "var(--text-muted)" }}>할인금액 (선택)</span>
+                <span style={{ fontSize: 10, marginBottom: 4, display: "block", color: "var(--text-muted)" }}>
+                  할인 (선택)
+                </span>
                 <input
                   type="text"
                   inputMode="numeric"
@@ -2184,8 +2524,11 @@ export const LedgerView: React.FC<Props> = ({
               </label>
             )}
 
-            {/* 5. 출금계좌 (지출/이체/신용결제) - 버튼 그리드 */}
-            {(form.kind === "expense" || form.kind === "transfer" || effectiveFormKind === "creditPayment") && (
+            {/* 5. 출금계좌 (지출/이체/신용결제, 재테크는 투자수익 제외) - 재테크도 kind는 expense라 savingsExpense일 때 일반 지출과 분리 */}
+            {(form.kind === "transfer" ||
+              effectiveFormKind === "creditPayment" ||
+              (form.kind === "expense" && effectiveFormKind !== "savingsExpense") ||
+              (effectiveFormKind === "savingsExpense" && form.subCategory !== "투자수익")) && (
               <div>
                 <div style={{ fontSize: 11, marginBottom: 8, color: "var(--text-muted)", display: "flex", alignItems: "center", gap: 4 }}>
                   <span>출금계좌 *</span>
@@ -2196,14 +2539,15 @@ export const LedgerView: React.FC<Props> = ({
                 <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(120px, 1fr))", gap: 8 }}>
                   {accounts.map((a) => {
                       const accountName = (a.name + a.id).toLowerCase();
-                      const isUSD = a.currency === "USD" || 
-                                   accountName.includes("usd") || 
-                                   accountName.includes("dollar") || 
+                      const isUSD = a.currency === "USD" ||
+                                   accountName.includes("usd") ||
+                                   accountName.includes("dollar") ||
                                    accountName.includes("달러");
                       return (
                         <button
                           key={a.id}
                           type="button"
+                          tabIndex={-1}
                           onClick={() => {
                             if (form.fromAccountId === a.id) {
                               setForm((prev) => ({ ...prev, fromAccountId: "" }));
@@ -2234,8 +2578,8 @@ export const LedgerView: React.FC<Props> = ({
               </div>
             )}
 
-            {/* 입금계좌/카드 (수입/이체/재테크/신용결제) - 버튼 그리드 */}
-            {(form.kind === "income" || form.kind === "transfer" || effectiveFormKind === "savingsExpense" || effectiveFormKind === "creditPayment") && (
+            {/* 입금계좌/카드 (수입/이체/재테크 투자수익·저축·투자/신용결제) - 버튼 그리드. 재테크 투자손실일 땐 미표시 */}
+            {(form.kind === "income" || form.kind === "transfer" || effectiveFormKind === "creditPayment" || (effectiveFormKind === "savingsExpense" && form.subCategory !== "투자손실")) && (
               <div>
                 <div style={{ fontSize: 11, marginBottom: 8, color: "var(--text-muted)", display: "flex", alignItems: "center", gap: 4 }}>
                   <span>{effectiveFormKind === "creditPayment" ? "카드 *" : ledgerTab === "savingsExpense" ? "저축계좌 (증권/저축) *" : "입금계좌 *"}</span>
@@ -2252,14 +2596,15 @@ export const LedgerView: React.FC<Props> = ({
                         : accounts;
                     return targetAccounts.map((a) => {
                             const accountName = (a.name + a.id).toLowerCase();
-                            const isUSD = a.currency === "USD" || 
-                                         accountName.includes("usd") || 
-                                         accountName.includes("dollar") || 
+                            const isUSD = a.currency === "USD" ||
+                                         accountName.includes("usd") ||
+                                         accountName.includes("dollar") ||
                                          accountName.includes("달러");
                             return (
                               <button
                                 key={a.id}
                                 type="button"
+                                tabIndex={-1}
                                 onClick={() => {
                               if (form.toAccountId === a.id) {
                                 setForm((prev) => ({ ...prev, toAccountId: "" }));
@@ -2295,6 +2640,7 @@ export const LedgerView: React.FC<Props> = ({
             <div style={{ display: "flex", gap: 8, marginTop: 8 }}>
               <button 
                 type="submit" 
+                tabIndex={-1}
                 className="primary" 
                 style={{ 
                   padding: "14px 24px", 
@@ -2410,7 +2756,7 @@ export const LedgerView: React.FC<Props> = ({
             setFilterSubCategory(undefined);
           }}
           style={{ fontSize: 12, padding: "6px 12px" }}
-          title="재테크 탭에서 저축성지출만 보기 (바꿀 항목 찾기)"
+          title="재테크 탭에서 저축성지출만 보기 (바꿀 내역 찾기)"
         >
           저축성지출만
         </button>
@@ -2527,7 +2873,19 @@ export const LedgerView: React.FC<Props> = ({
               type="button"
               className="secondary"
               onClick={() => {
-                const headers = ["date", "kind", "category", "subCategory", "description", "tags", "fromAccount", "toAccount", "amount"];
+                const headers = [
+                  "date",
+                  "kind",
+                  "category",
+                  "subCategory",
+                  "description",
+                  "tags",
+                  "fromAccount",
+                  "toAccount",
+                  "grossAmount",
+                  "discountAmount",
+                  "amount"
+                ];
                 const rows = filteredLedger.map((l) => {
                   const exportKind =
                     l.kind === "income"
@@ -2546,6 +2904,8 @@ export const LedgerView: React.FC<Props> = ({
                     Array.isArray(l.tags) ? l.tags.join(",") : "",
                     l.fromAccountId || "",
                     l.toAccountId || "",
+                    String(ledgerEntryGross(l)),
+                    l.discountAmount != null && l.discountAmount > 0 ? String(l.discountAmount) : "",
                     l.amount.toString()
                   ];
                 });
@@ -2647,7 +3007,7 @@ export const LedgerView: React.FC<Props> = ({
 
       {viewMode === "all" && !isBatchEditMode && (
         <p style={{ fontSize: 12, color: "var(--text-muted)", marginBottom: 8 }}>
-          <strong>Ctrl+드래그</strong>로 구간 쭉 선택, <strong>Shift+클릭</strong>으로 행 추가/제거. 합계는 아래에 고정 표시됩니다.
+          <strong>Shift+드래그</strong>로 구간 토글(선택된 건 해제), <strong>Shift+클릭</strong>으로 1건 토글. 합계는 아래에 고정 표시됩니다.
         </p>
       )}
       {dragSumStartIndex != null && (
@@ -2664,7 +3024,7 @@ export const LedgerView: React.FC<Props> = ({
           }}
         >
           선택 중: {Math.min(dragSumStartIndex, dragSumEndIndex ?? dragSumStartIndex) + 1}행 ~ {Math.max(dragSumStartIndex, dragSumEndIndex ?? dragSumStartIndex) + 1}행 (
-          {Math.abs((dragSumEndIndex ?? dragSumStartIndex) - dragSumStartIndex) + 1}건) — 마우스를 놓으면 합계가 아래 상자에 고정됩니다
+          {Math.abs((dragSumEndIndex ?? dragSumStartIndex) - dragSumStartIndex) + 1}건) — 마우스를 놓으면 구간 선택/해제(토글)
         </div>
       )}
       {sumResultFromSelection != null && (
@@ -2727,11 +3087,11 @@ export const LedgerView: React.FC<Props> = ({
             {isBatchEditMode && <col key="cb" style={{ width: "40px" }} />}
             {widthsForRender.map((width, index) => {
               const workColPx = 168;
-              if (index === 7) {
+              if (index === 9) {
                 return <col key={index} style={{ width: `${workColPx}px` }} />;
               }
-              const sumFirst7 = widthsForRender.slice(0, 7).reduce((s, w) => s + w, 0);
-              const pct = sumFirst7 > 0 ? (width / sumFirst7) * 100 : 100 / 7;
+              const sumFirst9 = widthsForRender.slice(0, 9).reduce((s, w) => s + w, 0);
+              const pct = sumFirst9 > 0 ? (width / sumFirst9) * 100 : 100 / 9;
               return <col key={index} style={{ width: `calc((100% - ${workColPx}px) * ${pct / 100})` }} />;
             })}
           </colgroup>
@@ -2777,7 +3137,7 @@ export const LedgerView: React.FC<Props> = ({
             </th>
             <th style={{ position: "relative", width: ledgerColumnWidthStyles[2] }}>
               <button type="button" className="sort-header" onClick={() => toggleLedgerSort("subCategory")}>
-                항목 <span className="arrow">{sortIndicator(ledgerSort.key, "subCategory", ledgerSort.direction)}</span>
+                중분류 <span className="arrow">{sortIndicator(ledgerSort.key, "subCategory", ledgerSort.direction)}</span>
               </button>
               <div
                 className="resize-handle"
@@ -2820,8 +3180,8 @@ export const LedgerView: React.FC<Props> = ({
               />
             </th>
             <th style={{ position: "relative", width: ledgerColumnWidthStyles[6] }}>
-              <button type="button" className="sort-header" onClick={() => toggleLedgerSort("amount")}>
-                금액 <span className="arrow">{sortIndicator(ledgerSort.key, "amount", ledgerSort.direction)}</span>
+              <button type="button" className="sort-header" onClick={() => toggleLedgerSort("grossAmount")}>
+                할인 전 <span className="arrow">{sortIndicator(ledgerSort.key, "grossAmount", ledgerSort.direction)}</span>
               </button>
               <div
                 className="resize-handle"
@@ -2831,6 +3191,28 @@ export const LedgerView: React.FC<Props> = ({
               />
             </th>
             <th style={{ position: "relative", width: ledgerColumnWidthStyles[7] }}>
+              <button type="button" className="sort-header" onClick={() => toggleLedgerSort("discountAmount")}>
+                할인 <span className="arrow">{sortIndicator(ledgerSort.key, "discountAmount", ledgerSort.direction)}</span>
+              </button>
+              <div
+                className="resize-handle"
+                onMouseDown={(e) => handleResizeStart(e, 7)}
+                onPointerDown={(e) => handleResizeStart(e, 7)}
+                title="컬럼 너비 조절"
+              />
+            </th>
+            <th style={{ position: "relative", width: ledgerColumnWidthStyles[8] }}>
+              <button type="button" className="sort-header" onClick={() => toggleLedgerSort("amount")}>
+                최종 <span className="arrow">{sortIndicator(ledgerSort.key, "amount", ledgerSort.direction)}</span>
+              </button>
+              <div
+                className="resize-handle"
+                onMouseDown={(e) => handleResizeStart(e, 8)}
+                onPointerDown={(e) => handleResizeStart(e, 8)}
+                title="컬럼 너비 조절"
+              />
+            </th>
+            <th style={{ position: "relative", width: ledgerColumnWidthStyles[9] }}>
               작업
             </th>
           </tr>
@@ -2843,13 +3225,14 @@ export const LedgerView: React.FC<Props> = ({
               index <= Math.max(dragSumStartIndex, dragSumEndIndex ?? dragSumStartIndex);
             const isInSumSelection = selectedLedgerIdsForSum.has(l.id);
             const isInDragSumRange = isDraggingRange || isInSumSelection;
+            const balanceKey = (l as LedgerDisplayRow)._tradeId ?? l.id;
             return (
             <tr
               key={l.id}
               data-ledger-id={l.id}
-              draggable={viewMode === "all" && !isBatchEditMode}
+              draggable={viewMode === "all" && !isBatchEditMode && !(l as LedgerDisplayRow)._tradeId}
               onMouseDown={(e) => {
-                if (e.ctrlKey && viewMode === "all" && !isBatchEditMode) {
+                if (e.shiftKey && viewMode === "all" && !isBatchEditMode) {
                   e.preventDefault();
                   e.stopPropagation();
                   handleDragSumStart(index);
@@ -2868,7 +3251,7 @@ export const LedgerView: React.FC<Props> = ({
                 }
               }}
               onDragStart={(e) => {
-                if (e.ctrlKey) {
+                if (e.shiftKey) {
                   e.preventDefault();
                   return;
                 }
@@ -2882,7 +3265,7 @@ export const LedgerView: React.FC<Props> = ({
               onDrop={(e) => {
                 if (viewMode !== "all") return;
                 e.preventDefault();
-                if (draggingId && draggingId !== l.id) {
+                if (draggingId && draggingId !== l.id && !(l as LedgerDisplayRow)._tradeId) {
                   const targetLedgerIndex = ledger.findIndex((x) => x.id === l.id);
                   if (targetLedgerIndex >= 0) handleReorder(draggingId, targetLedgerIndex);
                 }
@@ -2901,19 +3284,23 @@ export const LedgerView: React.FC<Props> = ({
             >
               {isBatchEditMode && (
                 <td style={{ width: "40px", minWidth: "40px" }}>
-                  <input
-                    type="checkbox"
-                    checked={selectedLedgerIds.has(l.id)}
-                    onChange={(e) => {
-                      const newSet = new Set(selectedLedgerIds);
-                      if (e.target.checked) {
-                        newSet.add(l.id);
-                      } else {
-                        newSet.delete(l.id);
-                      }
-                      setSelectedLedgerIds(newSet);
-                    }}
-                  />
+                  {(l as LedgerDisplayRow)._tradeId ? (
+                    <span style={{ color: "var(--text-muted)", fontSize: 11 }}>주식</span>
+                  ) : (
+                    <input
+                      type="checkbox"
+                      checked={selectedLedgerIds.has(l.id)}
+                      onChange={(e) => {
+                        const newSet = new Set(selectedLedgerIds);
+                        if (e.target.checked) {
+                          newSet.add(l.id);
+                        } else {
+                          newSet.delete(l.id);
+                        }
+                        setSelectedLedgerIds(newSet);
+                      }}
+                    />
+                  )}
                 </td>
               )}
               <td
@@ -3134,7 +3521,26 @@ export const LedgerView: React.FC<Props> = ({
                     ))}
                   </select>
                 ) : (
-                  l.fromAccountId ?? "-"
+                  <>
+                    <div>{l.fromAccountId ?? "-"}</div>
+                    {l.fromAccountId && balanceAfterByLedgerId.get(balanceKey)?.from && (() => {
+                      const fromAcc = accounts.find((a) => a.id === l.fromAccountId);
+                      const isUsd = l.currency === "USD" || fromAcc?.currency === "USD";
+                      const fmt = (n: number) => isUsd ? formatUSD(n) : formatKRW(Math.round(n));
+                      const info = balanceAfterByLedgerId.get(balanceKey)!.from!;
+                      return (
+                        <div
+                          style={{
+                            fontSize: 10,
+                            color: info.amount >= 0 ? "var(--danger)" : "var(--primary)",
+                            marginTop: 2
+                          }}
+                        >
+                          {info.amount >= 0 ? "+" : ""}{fmt(info.amount)} · {fmt(info.balance)}
+                        </div>
+                      );
+                    })()}
+                  </>
                 )}
               </td>
               <td
@@ -3170,7 +3576,112 @@ export const LedgerView: React.FC<Props> = ({
                     ))}
                   </select>
                 ) : (
-                  l.toAccountId ?? "-"
+                  <>
+                    <div>{l.toAccountId ?? "-"}</div>
+                    {l.toAccountId && balanceAfterByLedgerId.get(balanceKey)?.to && (() => {
+                      const toAcc = accounts.find((a) => a.id === l.toAccountId);
+                      const isUsd = l.currency === "USD" || toAcc?.currency === "USD";
+                      const fmt = (n: number) => isUsd ? formatUSD(n) : formatKRW(Math.round(n));
+                      const info = balanceAfterByLedgerId.get(balanceKey)!.to!;
+                      return (
+                        <div
+                          style={{
+                            fontSize: 10,
+                            color: info.amount >= 0 ? "var(--danger)" : "var(--primary)",
+                            marginTop: 2
+                          }}
+                        >
+                          {info.amount >= 0 ? "+" : ""}{fmt(info.amount)} · {fmt(info.balance)}
+                        </div>
+                      );
+                    })()}
+                  </>
+                )}
+              </td>
+              <td
+                className="number"
+                onDoubleClick={(e) => {
+                  e.stopPropagation();
+                  if ((l as LedgerDisplayRow)._tradeId) {
+                    toast("주식 거래는 주식 탭에서 수정하세요.");
+                    return;
+                  }
+                  startEditField(l.id, "grossAmount", ledgerEntryGross(l));
+                }}
+                style={{ cursor: "pointer", width: ledgerColumnWidthStyles[6] }}
+                title="할인 적용 전 금액 · 더블클릭하여 수정"
+              >
+                {editingField?.id === l.id && editingField.field === "grossAmount" ? (
+                  <input
+                    type="text"
+                    inputMode={l.currency === "USD" ? "decimal" : "numeric"}
+                    value={editingValue}
+                    onChange={(e) => {
+                      const re = l.currency === "USD" ? /[^\d.]/g : /[^\d]/g;
+                      setEditingValue(e.target.value.replace(re, ""));
+                    }}
+                    onBlur={saveEditField}
+                    onKeyDown={(e) => {
+                      if (e.key === "Enter") saveEditField();
+                      if (e.key === "Escape") cancelEditField();
+                    }}
+                    autoFocus
+                    style={{ width: "100%", padding: "4px", fontSize: 14 }}
+                  />
+                ) : l.currency === "USD" ? (
+                  formatUSD(ledgerEntryGross(l))
+                ) : (
+                  Math.round(ledgerEntryGross(l)).toLocaleString()
+                )}
+              </td>
+              <td
+                className="number"
+                onDoubleClick={(e) => {
+                  e.stopPropagation();
+                  if ((l as LedgerDisplayRow)._tradeId) {
+                    toast("주식 거래는 주식 탭에서 수정하세요.");
+                    return;
+                  }
+                  if (l.kind !== "income" && l.kind !== "expense") {
+                    toast("할인은 수입·지출만 수정할 수 있습니다.");
+                    return;
+                  }
+                  const cur =
+                    (l.discountAmount ?? 0) > 0
+                      ? l.currency === "USD"
+                        ? String(l.discountAmount)
+                        : String(Math.round(l.discountAmount!))
+                      : "";
+                  startEditField(l.id, "discountAmount", cur);
+                }}
+                style={{ cursor: "pointer", width: ledgerColumnWidthStyles[7], color: "var(--text-muted)" }}
+                title="할인액 · 더블클릭하여 수정"
+              >
+                {editingField?.id === l.id && editingField.field === "discountAmount" ? (
+                  <input
+                    type="text"
+                    inputMode={l.currency === "USD" ? "decimal" : "numeric"}
+                    value={editingValue}
+                    onChange={(e) => {
+                      const re = l.currency === "USD" ? /[^\d.]/g : /[^\d]/g;
+                      setEditingValue(e.target.value.replace(re, ""));
+                    }}
+                    onBlur={saveEditField}
+                    onKeyDown={(e) => {
+                      if (e.key === "Enter") saveEditField();
+                      if (e.key === "Escape") cancelEditField();
+                    }}
+                    autoFocus
+                    style={{ width: "100%", padding: "4px", fontSize: 14 }}
+                  />
+                ) : (l.discountAmount ?? 0) > 0 ? (
+                  l.currency === "USD" ? (
+                    formatUSD(l.discountAmount!)
+                  ) : (
+                    Math.round(l.discountAmount!).toLocaleString()
+                  )
+                ) : (
+                  "—"
                 )}
               </td>
               <td
@@ -3179,8 +3690,8 @@ export const LedgerView: React.FC<Props> = ({
                   e.stopPropagation();
                   startEditField(l.id, "amount", l.amount);
                 }}
-                style={{ cursor: "pointer", width: ledgerColumnWidthStyles[6] }}
-                title="더블클릭하여 수정"
+                style={{ cursor: "pointer", width: ledgerColumnWidthStyles[8], fontWeight: 600 }}
+                title="할인 반영 후 금액 · 더블클릭하여 수정"
               >
                 {editingField?.id === l.id && editingField.field === "amount" ? (
                   <input
@@ -3205,10 +3716,14 @@ export const LedgerView: React.FC<Props> = ({
                     : Math.round(l.amount).toLocaleString()
                 )}
               </td>
-              <td style={{ width: ledgerColumnWidthStyles[7] }}>
+              <td style={{ width: ledgerColumnWidthStyles[9] }}>
                 <div style={{ display: "flex", gap: 8 }}>
                   <button type="button" onClick={(e) => {
                     e.stopPropagation();
+                    if ((l as LedgerDisplayRow)._tradeId) {
+                      toast("주식 거래는 복사할 수 없습니다.");
+                      return;
+                    }
                     startCopy(l);
                   }}>
                     복사
@@ -3218,6 +3733,10 @@ export const LedgerView: React.FC<Props> = ({
                     className="danger"
                     onClick={(e) => {
                       e.stopPropagation();
+                      if ((l as LedgerDisplayRow)._tradeId) {
+                        toast("주식 거래는 주식 탭에서 삭제하세요.");
+                        return;
+                      }
                       if (confirm("이 항목을 삭제하시겠습니까?")) {
                         onChangeLedger(ledger.filter((entry) => entry.id !== l.id));
                       }

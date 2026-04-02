@@ -1,8 +1,10 @@
 import React from "react";
-import { formatKRW } from "../../utils/formatter";
+import { formatKRW, formatUSD } from "../../utils/formatter";
 
 interface StockStatsCardProps {
   totalMarketValue: number;
+  totalMarketValueUSD?: number;
+  fxRate?: number | null;
   dayPnl: number;
   totalPnl: number;
   totalCost: number;
@@ -12,6 +14,8 @@ interface StockStatsCardProps {
 
 export const StockStatsCard: React.FC<StockStatsCardProps> = ({
   totalMarketValue,
+  totalMarketValueUSD,
+  fxRate,
   dayPnl,
   totalPnl,
   totalCost,
@@ -34,6 +38,9 @@ export const StockStatsCard: React.FC<StockStatsCardProps> = ({
         >
           <div style={{ color: "#475569", fontSize: 14, fontWeight: 600, marginBottom: 4 }}>원금</div>
           <div style={{ fontSize: 24, fontWeight: 700, color: "#0f172a" }}>{formatKRW(totalCost)}</div>
+          {fxRate != null && fxRate > 0 && (
+            <div style={{ fontSize: 12, color: "#64748b", marginTop: 2 }}>≈ {formatUSD(totalCost / fxRate)}</div>
+          )}
         </div>
 
         <div
@@ -47,6 +54,9 @@ export const StockStatsCard: React.FC<StockStatsCardProps> = ({
         >
           <div style={{ color: "#475569", fontSize: 14, fontWeight: 600, marginBottom: 4 }}>평가금</div>
           <div style={{ fontSize: 24, fontWeight: 700, color: valueColor(totalMarketValue) }}>{formatKRW(totalMarketValue)}</div>
+          {fxRate != null && fxRate > 0 && totalMarketValueUSD != null && totalMarketValueUSD > 0 && (
+            <div style={{ fontSize: 12, color: "#64748b", marginTop: 2 }}>≈ {formatUSD(totalMarketValueUSD)}</div>
+          )}
         </div>
 
         <div

@@ -1,4 +1,4 @@
-import type { TabId } from "../components/Tabs";
+import type { TabId } from "../components/ui/Tabs";
 
 export const TAB_ORDER: TabId[] = [
   "dashboard",
@@ -7,6 +7,7 @@ export const TAB_ORDER: TabId[] = [
   "stocks",
   "dividends",
   "debt",
+  "spend",
   "budget",
   "workout",
   "categories",
@@ -21,6 +22,7 @@ export const TAB_NAMES: Record<TabId, string> = {
   stocks: "주식",
   dividends: "배당",
   debt: "대출",
+  spend: "소비",
   budget: "예산",
   workout: "운동",
   categories: "카테고리",

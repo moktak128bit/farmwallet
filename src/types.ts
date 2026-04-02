@@ -1,6 +1,6 @@
 // --- Models ---
 
-export type AccountType = "checking" | "savings" | "card" | "securities" | "other";
+export type AccountType = "checking" | "savings" | "card" | "securities" | "crypto" | "other";
 
 export interface Account {
   id: string;
@@ -16,6 +16,10 @@ export interface Account {
   usdBalance?: number; // 증권계좌의 달러 보유량
   krwBalance?: number; // 증권계좌의 원화 보유량
   note?: string;
+  /** 신용카드 청구주기 시작일 (1~31, 예: 13 = 매월 13일~익월 12일 구간) */
+  billingCycleStart?: number;
+  /** 신용카드 결제일 (1~31, 예: 25 = 매월 25일 결제) */
+  paymentDay?: number;
 }
 
 export type LedgerKind = "income" | "expense" | "transfer";
@@ -32,7 +36,7 @@ export interface LedgerEntry {
   toAccountId?: string;
   amount: number;
   currency?: "KRW" | "USD"; // 기본 KRW. 이체 시 달러 선택 가능
-  /** 할인금액 (신용결제 시 선택, 원금 대비 할인된 금액) */
+  /** 할인액(선택). amount는 항상 실제 반영 순액(금액−할인): 지출·수입 모두 동일. */
   discountAmount?: number;
   note?: string;
   tags?: string[]; // 태그 시스템
@@ -50,8 +54,10 @@ export interface StockTrade {
   quantity: number;
   price: number;
   fee: number;
-  totalAmount: number; // quantity * price + fee
+  totalAmount: number; // quantity * price + fee (USD for US stocks)
   cashImpact: number; // buy: -totalAmount, sell: +totalAmount
+  /** 매입 당시 환율 (USD 종목만, 매입가 원화 계산용) */
+  fxRateAtTrade?: number;
 }
 
 export interface StockPrice {
@@ -62,6 +68,18 @@ export interface StockPrice {
   change?: number;
   changePercent?: number;
   updatedAt?: string;
+  /** Yahoo Finance sector (e.g. Technology, Financial Services) */
+  sector?: string;
+  /** Yahoo Finance industry */
+  industry?: string;
+}
+
+/** 종목별 일별 종가 (매입 시점부터 자동 수집/저장) */
+export interface HistoricalDailyClose {
+  ticker: string;
+  date: string; // yyyy-mm-dd
+  close: number;
+  currency?: string;
 }
 
 export type Recurrence = "monthly" | "weekly" | "yearly";
@@ -110,7 +128,7 @@ export interface CategoryPresets {
 export interface TickerInfo {
   ticker: string;
   name: string;
-  market: "KR" | "US";
+  market: "KR" | "US" | "CRYPTO";
   exchange?: string; // 'KOSPI' | 'KOSDAQ' | 'NYSE' | 'NASDAQ' 등
   lastUpdated?: string; // 마지막 업데이트 날짜
 }
@@ -163,7 +181,7 @@ export interface Loan {
   id: string;
   institution: string; // 기관명
   loanName: string; // 대출명
-  /** 세부 항목 (학자금대출, 주담대원금, 주담대이자, 개인대출, 기타대출상환 등) */
+  /** 중분류 (학자금대출, 주담대원금, 주담대이자, 개인대출, 기타대출상환 등) */
   subCategory?: string;
   loanAmount: number; // 대출금액
   annualInterestRate: number; // 연이자율 (%)
@@ -209,6 +227,7 @@ export interface AccountBalanceRow {
   incomeSum: number;
   expenseSum: number;
   transferNet: number;
+  /** 이체로 인한 USD 순증액 (증권계좌 전용, currency=USD인 ledger 반영) */
   usdTransferNet: number;
   tradeCashImpact: number;
   currentBalance: number;
@@ -222,8 +241,12 @@ export interface PositionRow {
   quantity: number;
   avgPrice: number;
   totalBuyAmount: number;
+  /** USD 종목 매입가 원화 (매입 당시 달러 × 매입 당시 환율). 없으면 표시 시 현재 환율로 환산 */
+  totalBuyAmountKRW?: number;
   marketPrice: number;
   marketValue: number;
+  /** marketPrice/marketValue가 계산된 통화 (USD면 화면에서 환산 필요) */
+  marketCurrency?: "KRW" | "USD";
   pnl: number;
   pnlRate: number;
 }
@@ -239,6 +262,31 @@ export interface IsaPortfolioItem {
   name: string;
   weight: number;
   label: string;
+}
+
+/** Per-account breakdown stored with an asset snapshot point. */
+export interface AssetSnapshotAccountBreakdown {
+  accountId: string;
+  accountName: string;
+  buyAmount: number;
+  evaluationAmount: number;
+}
+
+/** Half-month/daily asset snapshot row. */
+export interface AssetSnapshotPoint {
+  date: string; // yyyy-mm-dd
+  installmentSavings?: number | null;
+  termDeposit?: number | null;
+  pensionPrincipal?: number | null;
+  pensionEvaluation?: number | null;
+  investmentBuyAmount?: number | null;
+  investmentEvaluationAmount?: number | null;
+  cryptoAssets?: number | null;
+  dividendInterestCumulative?: number | null;
+  totalAssetBuyAmount?: number | null;
+  totalAssetEvaluationAmount?: number | null;
+  investmentPerformance?: number | null;
+  accountBreakdown?: AssetSnapshotAccountBreakdown[];
 }
 
 export interface AppData {
@@ -259,6 +307,10 @@ export interface AppData {
   workoutWeeks?: WorkoutWeek[];
   /** 목표 자산 곡선 (날짜별 목표 금액). 비어 있으면 date < CALC_START_DATE 구간은 0 표시 */
   targetNetWorthCurve?: Record<string, number>;
+  /** 반월/일별 자산 스냅샷 시계열 */
+  assetSnapshots?: AssetSnapshotPoint[];
+  /** 종목별 일별 종가 (매입 시점부터 자동 수집/저장) */
+  historicalDailyCloses?: HistoricalDailyClose[];
   /** 배당 추적 위젯에 표시할 티커. 비어 있으면 위젯 비활성화 또는 티커 선택 프롬프트 */
   dividendTrackingTicker?: string;
   /** ISA 목표 포트폴리오. 비어 있으면 config 기본값 사용 */

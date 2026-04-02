@@ -209,6 +209,10 @@
       "name": "PLUS 글로벌원자력밸류체인"
     },
     {
+      "ticker": "0007J0",
+      "name": "0007J0"
+    },
+    {
       "ticker": "0007N0",
       "name": "아이엠에셋 200"
     },
@@ -394,7 +398,7 @@
     },
     {
       "ticker": "0015K0",
-      "name": "TIGER 미국소비트렌드액티브"
+      "name": "Mirae Asset Tiger US AI Big Tech 10 ETF"
     },
     {
       "ticker": "001620",
@@ -526,7 +530,7 @@
     },
     {
       "ticker": "0023A0",
-      "name": "Shinhan Sol US Quantum Computing Top10 ETF"
+      "name": "SOL 미국양자컴퓨팅TOP10"
     },
     {
       "ticker": "0023B0",
@@ -942,7 +946,7 @@
     },
     {
       "ticker": "0047A0",
-      "name": "Mirae Asset Global Investments - Mirae Asset Tiger China Tech Top 10 ETF"
+      "name": "TIGER 차이나테크TOP10"
     },
     {
       "ticker": "0047N0",
@@ -978,7 +982,7 @@
     },
     {
       "ticker": "0048J0",
-      "name": "Samsung Kodex US Money Market Active ETF"
+      "name": "KODEX 미국머니마켓액티브"
     },
     {
       "ticker": "0048K0",
@@ -1070,7 +1074,7 @@
     },
     {
       "ticker": "0053L0",
-      "name": "TIGER CHINA HUMANOID ROBOT"
+      "name": "TIGER 차이나휴머노이드로봇"
     },
     {
       "ticker": "0053L0",
@@ -1934,7 +1938,7 @@
     },
     {
       "ticker": "0131V0",
-      "name": "Hana 1Q U.S. Aerospace Tech ETF"
+      "name": "1Q 미국우주항공테크"
     },
     {
       "ticker": "013360",
@@ -1982,7 +1986,7 @@
     },
     {
       "ticker": "0144L0",
-      "name": "Samsung Kodex Us Growth Covered Call Active Etf"
+      "name": "KODEX 미국성장커버드콜액티브"
     },
     {
       "ticker": "014530",
@@ -2087,6 +2091,14 @@
     {
       "ticker": "016740",
       "name": "두올"
+    },
+    {
+      "ticker": "0167B0",
+      "name": "SOL 200타겟위클리커버드콜"
+    },
+    {
+      "ticker": "0167Z0",
+      "name": "Samsung Kodex Us Aerospace Etf"
     },
     {
       "ticker": "016800",
@@ -3358,7 +3370,7 @@
     },
     {
       "ticker": "136490",
-      "name": "Sunjin Co.,Ltd."
+      "name": "선진"
     },
     {
       "ticker": "136660",
@@ -4525,6 +4537,10 @@
       "name": "KODEX 최소변동성"
     },
     {
+      "ticker": "279570",
+      "name": "Kbank"
+    },
+    {
       "ticker": "280320",
       "name": "ACE 미국IT인터넷(합성 H)"
     },
@@ -4814,7 +4830,7 @@
     },
     {
       "ticker": "308620",
-      "name": "Samsung KODEX Energy & chemicals Securities ETF-Kodex Treasury Note Futures Fund"
+      "name": "KODEX 미국10년국채선물"
     },
     {
       "ticker": "308700",
@@ -5282,11 +5298,11 @@
     },
     {
       "ticker": "379800",
-      "name": "Samsung KODEX S&P500 ETF"
+      "name": "KODEX 미국S&P500"
     },
     {
       "ticker": "379810",
-      "name": "Samsung KODEX US Nasdaq100 ETF"
+      "name": "KODEX 미국나스닥100"
     },
     {
       "ticker": "380340",
@@ -5651,6 +5667,10 @@
     {
       "ticker": "422420",
       "name": "RISE 2차전지액티브"
+    },
+    {
+      "ticker": "423160",
+      "name": "Samsung Kodex Kofr Active ETF"
     },
     {
       "ticker": "423170",
@@ -6070,7 +6090,7 @@
     },
     {
       "ticker": "458730",
-      "name": "Mirae Asset Tiger U.S. Dividend Equity Etf"
+      "name": "TIGER 미국배당다우존스"
     },
     {
       "ticker": "458750",
@@ -6542,7 +6562,7 @@
     },
     {
       "ticker": "485540",
-      "name": "Samsung Kodex Us Ai Tech Top10 Etf"
+      "name": "KODEX 미국AI테크TOP10"
     },
     {
       "ticker": "485690",
@@ -16535,6 +16555,10 @@
       "name": "ETHA"
     },
     {
+      "ticker": "ETHEREUM",
+      "name": "ETH"
+    },
+    {
       "ticker": "ETHM",
       "name": "ETHM"
     },
@@ -21920,7 +21944,7 @@
     },
     {
       "ticker": "IREN",
-      "name": "IREN Limited"
+      "name": "IREN"
     },
     {
       "ticker": "IRIX",
@@ -25756,7 +25780,7 @@
     },
     {
       "ticker": "MSFT",
-      "name": "Microsoft Corporation"
+      "name": "MSFT"
     },
     {
       "ticker": "MSGE",
@@ -31056,7 +31080,7 @@
     },
     {
       "ticker": "RKLB",
-      "name": "Rocket Lab Corporation"
+      "name": "RKLB"
     },
     {
       "ticker": "RKT",
@@ -33292,6 +33316,10 @@
     },
     {
       "ticker": "SOL",
+      "name": "SOL"
+    },
+    {
+      "ticker": "SOLANA",
       "name": "SOL"
     },
     {
@@ -35648,7 +35676,7 @@
     },
     {
       "ticker": "TSN",
-      "name": "Tyson Foods, Inc."
+      "name": "TSN"
     },
     {
       "ticker": "TSQ",
@@ -36212,7 +36240,7 @@
     },
     {
       "ticker": "UNH",
-      "name": "UnitedHealth Group Incorporated"
+      "name": "UNH"
     },
     {
       "ticker": "UNIT",
@@ -38408,7 +38436,7 @@
     },
     {
       "ticker": "XOVR",
-      "name": "ERShares Private-Public Crossover ETF"
+      "name": "XOVR"
     },
     {
       "ticker": "XP",

@@ -365,20 +365,32 @@ export function validateUsdSecuritiesConsistency(
   const issues: IntegrityIssue[] = [];
   const balances = computeAccountBalances(accounts, ledger, trades);
 
-  const securitiesAccounts = accounts.filter((a) => a.type === "securities");
+  const securitiesAccounts = accounts.filter((a) => a.type === "securities" || a.type === "crypto");
   securitiesAccounts.forEach((account) => {
     const accountTrades = trades.filter(
       (t) => t.accountId === account.id && isUSDStock(t.ticker)
     );
+    if (accountTrades.length === 0) return;
+
+    const balanceRow = balances.find((b) => b.account.id === account.id);
+    const usdTransferNet = balanceRow?.usdTransferNet ?? 0;
+    const reportedUsd =
+      (account.usdBalance ?? 0) + usdTransferNet;
+
+    // Skip strict USD-ledger consistency checks for KRW-booked USD ticker trades
+    // (all USD trades have non-zero cashImpact and no USD balance ledger).
+    const hasUsdLedger = Math.abs(reportedUsd) >= 0.01;
+    const hasZeroCashImpactTrade = accountTrades.some((t) => Math.abs(t.cashImpact) < 0.000001);
+    if (!hasUsdLedger && !hasZeroCashImpactTrade) {
+      return;
+    }
+
     const tradeUsdNet = accountTrades.reduce(
       (sum, t) => sum + (t.side === "sell" ? t.totalAmount : -t.totalAmount),
       0
     );
-    const balanceRow = balances.find((b) => b.account.id === account.id);
-    const reportedUsd =
-      (account.usdBalance ?? 0) + (balanceRow?.usdTransferNet ?? 0);
 
-    if (accountTrades.length > 0 && Math.abs(tradeUsdNet) >= 0.01) {
+    if (Math.abs(tradeUsdNet) >= 0.01 || hasUsdLedger) {
       const diff = Math.abs(reportedUsd - tradeUsdNet);
       if (diff >= 1) {
         issues.push({
@@ -443,7 +455,7 @@ export function checkCategoryConsistency(
         issues.push({
           type: "category_mismatch",
           severity: "warning",
-          message: `가계부 항목 ${entry.id}: 수입 항목 "${candidate || main || sub || "(빈값)"}"이(가) 수입 프리셋에 없습니다`,
+          message: `가계부 항목 ${entry.id}: 수입 중분류 "${candidate || main || sub || "(빈값)"}"이(가) 수입 프리셋에 없습니다`,
           data: {
             entryId: entry.id,
             kind: "income",
@@ -520,7 +532,7 @@ export function checkCategoryConsistency(
         issues.push({
           type: "category_mismatch",
           severity: "warning",
-          message: `가계부 항목 ${entry.id}: 지출 세부분류 "${main} > ${sub}"이(가) 프리셋에 없습니다`,
+          message: `가계부 항목 ${entry.id}: 지출 중분류 "${main} > ${sub}"이(가) 프리셋에 없습니다`,
           data: {
             entryId: entry.id,
             kind: "expense",
@@ -634,8 +646,6 @@ export function mergeDuplicates(
     trades: tradesToRemove
   };
 }
-
-
 
 
 

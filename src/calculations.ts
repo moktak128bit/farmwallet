@@ -1,50 +1,22 @@
 import type {
   Account,
+  AccountBalanceRow,
   CategoryPresets,
   LedgerEntry,
+  MonthlyNetWorthRow,
+  PositionRow,
   StockPrice,
   StockTrade
 } from "./types";
-import { isUSDStock, canonicalTickerForMatch } from "./utils/finance";
+import { isKRWStock, isUSDStock, canonicalTickerForMatch } from "./utils/finance";
 import {
   getCategoryType,
   getSavingsCategories,
   isSavingsExpenseEntry
 } from "./utils/category";
 
-// ---------------------------------------------------------------------------
-// Types (unchanged for callers)
-// ---------------------------------------------------------------------------
-
-export interface AccountBalanceRow {
-  account: Account;
-  incomeSum: number;
-  expenseSum: number;
-  transferNet: number;
-  /** 이체로 인한 USD 순증액 (증권계좌 전용, currency=USD인 ledger 반영) */
-  usdTransferNet: number;
-  tradeCashImpact: number;
-  currentBalance: number;
-}
-
-export interface PositionRow {
-  accountId: string;
-  accountName: string;
-  ticker: string;
-  name: string;
-  quantity: number;
-  avgPrice: number;
-  totalBuyAmount: number;
-  marketPrice: number;
-  marketValue: number;
-  pnl: number;
-  pnlRate: number;
-}
-
-export interface MonthlyNetWorthRow {
-  month: string; // yyyy-mm
-  netWorth: number;
-}
+// Re-export calculation result types from single source (types.ts)
+export type { AccountBalanceRow, PositionRow, MonthlyNetWorthRow } from "./types";
 
 // ---------------------------------------------------------------------------
 // Helpers (pure, used only inside this module)
@@ -80,13 +52,15 @@ function groupTradesByAccountTicker(
   return map;
 }
 
-/** FIFO로 매도 건별 실현손익 계산. 반환: 매도 거래 id -> 실현손익 (동일 통화) */
-function fifoRealizedPnlBySell(
+/** 매도 건별 FIFO 실현손익 상세: 실현손익, 매수원가(평균단가×수량), 수량 (동일 통화) */
+export type RealizedPnlDetail = { pnl: number; costBasis: number; quantity: number };
+
+function fifoRealizedPnlDetailBySell(
   sortedTrades: StockTrade[],
   toKrw?: (amount: number) => number
-): Map<string, number> {
+): Map<string, RealizedPnlDetail> {
   type Lot = { qty: number; totalAmount: number };
-  const result = new Map<string, number>();
+  const result = new Map<string, RealizedPnlDetail>();
   const queue: Lot[] = [];
   const convert = toKrw ?? ((x: number) => x);
 
@@ -99,23 +73,39 @@ function fifoRealizedPnlBySell(
       while (remaining > 0 && queue.length > 0) {
         const lot = queue[0];
         const use = Math.min(remaining, lot.qty);
-        const cost = (lot.totalAmount / lot.qty) * use;
+        const unitCost = lot.totalAmount / lot.qty;
+        const cost = unitCost * use;
         costBasis += cost;
         remaining -= use;
         lot.qty -= use;
-        lot.totalAmount -= cost;
+        lot.totalAmount = unitCost * lot.qty;
         if (lot.qty <= 0) queue.shift();
       }
       const realizedPnl = t.totalAmount - costBasis;
-      result.set(t.id, convert(realizedPnl));
+      result.set(t.id, {
+        pnl: convert(realizedPnl),
+        costBasis: convert(costBasis),
+        quantity: t.quantity
+      });
     }
   }
   return result;
 }
 
+/** FIFO로 매도 건별 실현손익 계산. 반환: 매도 거래 id -> 실현손익 (동일 통화) */
+function fifoRealizedPnlBySell(
+  sortedTrades: StockTrade[],
+  toKrw?: (amount: number) => number
+): Map<string, number> {
+  const detail = fifoRealizedPnlDetailBySell(sortedTrades, toKrw);
+  const result = new Map<string, number>();
+  detail.forEach((d, id) => result.set(id, d.pnl));
+  return result;
+}
+
 // ---------------------------------------------------------------------------
 // computeAccountBalances
-// 규칙: 수입(toAccountId)·지출(fromAccountId)·저축성지출(toAccountId)·이체(KRW/USD 구분)·주식 cashImpact·초기잔액·cashAdjustment·savings → currentBalance
+// 규칙: 수입·지출·저축성지출·이체(KRW/USD 구분)·주식 매수/매도(cashImpact 합계)·초기잔액·cashAdjustment·savings → currentBalance. 증권계좌 포함 모든 계좌에 tradeCashImpact 반영.
 // 최적화: ledger/trades 1회 순회 후 Map으로 O(1) 조회
 // ---------------------------------------------------------------------------
 
@@ -169,11 +159,12 @@ export function computeAccountBalances(
   trades: StockTrade[]
 ): AccountBalanceRow[] {
   const idx = buildLedgerIndex(ledger);
-  const securitiesIds = new Set(accounts.filter((a) => a.type === "securities").map((a) => a.id));
   const tradeCashByAccount = new Map<string, number>();
   for (const t of trades) {
-    if (securitiesIds.has(t.accountId) && isUSDStock(t.ticker)) continue;
-    tradeCashByAccount.set(t.accountId, (tradeCashByAccount.get(t.accountId) ?? 0) + t.cashImpact);
+    if (!t?.accountId) continue;
+    const impact = Number(t.cashImpact);
+    const add = Number.isFinite(impact) ? impact : 0;
+    tradeCashByAccount.set(t.accountId, (tradeCashByAccount.get(t.accountId) ?? 0) + add);
   }
 
   return accounts.map((account) => {
@@ -192,7 +183,7 @@ export function computeAccountBalances(
     const tradeCashImpact = tradeCashByAccount.get(account.id) ?? 0;
 
     const baseBalance =
-      account.type === "securities"
+      account.type === "securities" || account.type === "crypto"
         ? (account.initialCashBalance ?? account.initialBalance)
         : account.initialBalance;
     const cashAdjustment = account.cashAdjustment ?? 0;
@@ -266,25 +257,33 @@ export function computePositions(
 
   const rows: PositionRow[] = [];
 
+  const currentFx = options?.fxRate ?? undefined;
+  const isUsdTicker = (ticker: string) => isUSDStock(ticker);
+
   for (const [key, ts] of byKey.entries()) {
     const [accountId, tickerNorm] = key.split("::");
     const accountName = accountNameById.get(accountId) ?? accountId;
 
     // Keep unrealized basis consistent with FIFO realized PnL calculation.
-    type Lot = { qty: number; totalAmount: number };
+    // USD 종목: lot에 매입 당시 환율 저장 → 매입가 원화 = sum(달러 × 당시 환율)
+    type Lot = { qty: number; totalAmount: number; fxRateAtTrade?: number };
     const queue: Lot[] = [];
     for (const t of ts) {
       if (t.side === "buy") {
-        queue.push({ qty: t.quantity, totalAmount: t.totalAmount });
+        queue.push({
+          qty: t.quantity,
+          totalAmount: t.totalAmount,
+          fxRateAtTrade: t.fxRateAtTrade
+        });
         continue;
       }
       let remaining = t.quantity;
       while (remaining > 0 && queue.length > 0) {
         const lot = queue[0];
         const use = Math.min(remaining, lot.qty);
-        const cost = (lot.totalAmount / lot.qty) * use;
+        const unitCost = lot.totalAmount / lot.qty;
         lot.qty -= use;
-        lot.totalAmount -= cost;
+        lot.totalAmount = unitCost * lot.qty;
         remaining -= use;
         if (lot.qty <= 0) queue.shift();
       }
@@ -293,6 +292,15 @@ export function computePositions(
     if (quantity <= 0) continue;
     const remainingCostBasis = queue.reduce((s, lot) => s + lot.totalAmount, 0);
     const avgPrice = quantity > 0 ? remainingCostBasis / quantity : 0;
+    // USD 종목: 매입가 원화 = 잔여 매입 달러 × 매입 당시 환율 (없으면 현재 환율)
+    const remainingCostBasisKRW =
+      isUsdTicker(tickerNorm) && quantity > 0 && currentFx != null
+        ? queue.reduce(
+            (s, lot) =>
+              s + lot.totalAmount * (lot.fxRateAtTrade ?? currentFx),
+            0
+          )
+        : undefined;
 
     const priceInfo = latestPriceByTicker.get(tickerNorm);
     const hasMarketPrice =
@@ -302,9 +310,21 @@ export function computePositions(
       : options?.priceFallback === "cost"
         ? avgPrice
         : 0;
+    // 시세 API에 currency가 없을 때 티커 규칙으로 보완 (미국 주식이 원화로 잘못 합산되는 것 방지)
+    const marketCurrency: "KRW" | "USD" | undefined =
+      priceInfo?.currency === "USD"
+        ? "USD"
+        : priceInfo?.currency === "KRW"
+          ? "KRW"
+          : isUsdTicker(tickerNorm)
+            ? "USD"
+            : isKRWStock(tickerNorm)
+              ? "KRW"
+              : undefined;
     const firstTrade = ts[0];
-    const canonicalTicker = priceInfo?.ticker ?? firstTrade?.ticker ?? tickerNorm;
-    const name = priceInfo?.name ?? firstTrade?.name ?? canonicalTicker;
+    // 포지션 티커는 항상 tickerNorm(대문자 정규형)만 사용 — prices에 'bitx'로 들어 있어도 표시는 'BITX'
+    const rowTicker = tickerNorm;
+    const name = priceInfo?.name ?? firstTrade?.name ?? rowTicker;
 
     const marketValue = marketPrice * quantity;
     const pnl = marketValue - remainingCostBasis;
@@ -313,13 +333,15 @@ export function computePositions(
     rows.push({
       accountId,
       accountName,
-      ticker: canonicalTicker,
+      ticker: rowTicker,
       name,
       quantity,
       avgPrice,
       totalBuyAmount: remainingCostBasis,
+      totalBuyAmountKRW: remainingCostBasisKRW,
       marketPrice,
       marketValue,
+      marketCurrency,
       pnl,
       pnlRate
     });
@@ -344,7 +366,13 @@ export function computeRealizedGainInPeriod(
   let totalGain = 0;
 
   for (const [, list] of byKey.entries()) {
-    const sorted = [...list].sort((a, b) => a.date.localeCompare(b.date));
+    const sorted = [...list].sort((a, b) => {
+      const d = a.date.localeCompare(b.date);
+      if (d !== 0) return d;
+      if (a.side === "buy" && b.side === "sell") return -1;
+      if (a.side === "sell" && b.side === "buy") return 1;
+      return 0;
+    });
     const account = options?.accounts?.find((a) => a.id === list[0].accountId);
     const isUsd = account?.currency === "USD" && options?.fxRate;
     const toKrw = (x: number) => (isUsd ? x * options!.fxRate! : x);
@@ -362,8 +390,8 @@ export function computeRealizedGainInPeriod(
 }
 
 // ---------------------------------------------------------------------------
-// computeRealizedPnlByTradeId
-// 규칙: 매도 건별 FIFO 실현손익 (동일 통화)
+// computeRealizedPnlByTradeId / computeRealizedPnlDetailByTradeId
+// 규칙: 매도 건별 FIFO 실현손익 (동일 통화). Detail은 평균단가 대비 수익률 표시용.
 // ---------------------------------------------------------------------------
 
 export function computeRealizedPnlByTradeId(
@@ -373,9 +401,38 @@ export function computeRealizedPnlByTradeId(
   const result = new Map<string, number>();
 
   for (const [, list] of byKey.entries()) {
-    const sorted = [...list].sort((a, b) => a.date.localeCompare(b.date));
+    const sorted = [...list].sort((a, b) => {
+      const d = a.date.localeCompare(b.date);
+      if (d !== 0) return d;
+      // 같은 날짜: 매수 먼저, 매도 나중에 (FIFO 올바른 계산을 위해)
+      if (a.side === "buy" && b.side === "sell") return -1;
+      if (a.side === "sell" && b.side === "buy") return 1;
+      return 0;
+    });
     const bySell = fifoRealizedPnlBySell(sorted);
     bySell.forEach((pnl, id) => result.set(id, pnl));
+  }
+
+  return result;
+}
+
+/** 매도 건별 실현손익 + 매수원가(평균단가×수량) + 수량. 평균단가 = costBasis/quantity, 수익률 = pnl/costBasis */
+export function computeRealizedPnlDetailByTradeId(
+  trades: StockTrade[]
+): Map<string, RealizedPnlDetail> {
+  const byKey = groupTradesByAccountTicker(trades);
+  const result = new Map<string, RealizedPnlDetail>();
+
+  for (const [, list] of byKey.entries()) {
+    const sorted = [...list].sort((a, b) => {
+      const d = a.date.localeCompare(b.date);
+      if (d !== 0) return d;
+      if (a.side === "buy" && b.side === "sell") return -1;
+      if (a.side === "sell" && b.side === "buy") return 1;
+      return 0;
+    });
+    const bySell = fifoRealizedPnlDetailBySell(sorted);
+    bySell.forEach((detail, id) => result.set(id, detail));
   }
 
   return result;
@@ -434,7 +491,27 @@ export function computeMonthlyNetWorth(
 // ---------------------------------------------------------------------------
 
 export type AccountBalanceRowLike = { account: Account; currentBalance: number; usdTransferNet?: number };
-export type PositionRowLike = { accountId: string; marketValue: number; totalBuyAmount?: number; pnl?: number };
+export type PositionRowLike = {
+  accountId: string;
+  marketValue: number;
+  totalBuyAmount?: number;
+  pnl?: number;
+  marketCurrency?: "KRW" | "USD";
+  ticker?: string;
+};
+
+/** 포지션 평가액을 원화로 환산 (순자산·계좌 합계용). currency 누락 시 티커로 USD 여부 추정. */
+export function positionMarketValueKRW(
+  p: Pick<PositionRow, "marketValue" | "marketCurrency"> & { ticker?: string },
+  fxRate?: number | null
+): number {
+  const rate = fxRate ?? 0;
+  const isUsd =
+    p.marketCurrency === "USD" ||
+    (p.marketCurrency !== "KRW" && Boolean(p.ticker && isUSDStock(p.ticker)));
+  if (isUsd) return rate > 0 ? p.marketValue * rate : 0;
+  return p.marketValue;
+}
 
 /** 전체 순자산: 현금(KRW+USD환산) + 주식 평가액 + 부채(음수) */
 export function computeTotalNetWorth(
@@ -444,14 +521,14 @@ export function computeTotalNetWorth(
 ): number {
   const stockMap = new Map<string, number>();
   positions.forEach((p) => {
-    stockMap.set(p.accountId, (stockMap.get(p.accountId) ?? 0) + p.marketValue);
+    stockMap.set(p.accountId, (stockMap.get(p.accountId) ?? 0) + positionMarketValueKRW(p, fxRate));
   });
   return balances.reduce((sum, row) => {
     const krwCash = row.currentBalance;
     const stockAsset = stockMap.get(row.account.id) ?? 0;
     const debt = row.account.debt ?? 0;
     const usdCash =
-      row.account.type === "securities"
+      row.account.type === "securities" || row.account.type === "crypto"
         ? (row.account.usdBalance ?? 0) + (row.usdTransferNet ?? 0)
         : 0;
     const usdToKrw = fxRate && usdCash !== 0 ? usdCash * fxRate : 0;
@@ -463,8 +540,8 @@ export function computeTotalStockPnl(positions: PositionRowLike[]): number {
   return positions.reduce((s, p) => s + (p.pnl ?? 0), 0);
 }
 
-export function computeTotalStockValue(positions: PositionRowLike[]): number {
-  return positions.reduce((s, p) => s + p.marketValue, 0);
+export function computeTotalStockValue(positions: PositionRowLike[], fxRate?: number | null): number {
+  return positions.reduce((s, p) => s + positionMarketValueKRW(p, fxRate), 0);
 }
 
 /** 누적 실현손익 원화: 매도 건별 FIFO 실현손익 합계, USD 계좌는 fxRate 환산 */
@@ -494,26 +571,30 @@ export function computeBalanceAtDateForAccounts(
   dateStr: string,
   accountIds: Set<string>,
   prices: StockPrice[],
-  options?: { fxRate?: number | null }
+  options?: { fxRate?: number | null; priceFallback?: "cost" | "zero" }
 ): number {
   const filteredLedger = ledger.filter((l) => l.date && l.date <= dateStr);
   const filteredTrades = trades.filter((t) => t.date && t.date <= dateStr);
   const bal = computeAccountBalances(accounts, filteredLedger, filteredTrades);
   const pos = computePositions(filteredTrades, prices, accounts, {
-    fxRate: options?.fxRate ?? undefined
+    fxRate: options?.fxRate ?? undefined,
+    priceFallback: options?.priceFallback
   });
   const stockMap = new Map<string, number>();
+  const fxRate = options?.fxRate;
   pos.forEach((p) => {
     if (!accountIds.has(p.accountId)) return;
-    stockMap.set(p.accountId, (stockMap.get(p.accountId) ?? 0) + p.marketValue);
+    stockMap.set(
+      p.accountId,
+      (stockMap.get(p.accountId) ?? 0) + positionMarketValueKRW(p, fxRate)
+    );
   });
-  const fxRate = options?.fxRate;
   return bal.reduce((sum, row) => {
     if (!accountIds.has(row.account.id)) return sum;
     const cash = row.currentBalance;
     const stock = stockMap.get(row.account.id) ?? 0;
     const usd =
-      row.account.type === "securities"
+      row.account.type === "securities" || row.account.type === "crypto"
         ? (row.account.usdBalance ?? 0) + (row.usdTransferNet ?? 0)
         : 0;
     const usdKrw = fxRate && usd ? usd * fxRate : 0;
@@ -549,12 +630,13 @@ export function computeTotalCashValue(
       (b) =>
         b.account.type === "checking" ||
         b.account.type === "securities" ||
+        b.account.type === "crypto" ||
         b.account.type === "other"
     )
     .reduce((s, b) => {
       const krw = b.currentBalance;
       const usd =
-        b.account.type === "securities"
+        b.account.type === "securities" || b.account.type === "crypto"
           ? (b.account.usdBalance ?? 0) + (b.usdTransferNet ?? 0)
           : 0;
       return s + krw + (fxRate && usd ? usd * fxRate : 0);

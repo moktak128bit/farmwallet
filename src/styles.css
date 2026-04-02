@@ -166,7 +166,7 @@ a:hover {
   border-bottom: 1px solid var(--border);
 }
 
-/* FarmWallet v3.7.2 옆 로그 패널 */
+/* FarmWallet 옆 로그 패널 - 휠로 전체 스크롤 */
 .app-log-panel {
   flex: 0 1 320px;
   max-width: 360px;
@@ -177,7 +177,7 @@ a:hover {
   border: 1px solid var(--border);
   border-radius: 8px;
   font-size: 12px;
-  max-height: 140px;
+  max-height: 320px;
   display: flex;
   flex-direction: column;
   overflow: hidden;
@@ -190,8 +190,10 @@ a:hover {
 }
 .app-log-panel-list {
   overflow-y: auto;
+  overflow-x: hidden;
   flex: 1;
   min-height: 0;
+  overscroll-behavior: contain;
 }
 .app-log-panel-empty {
   color: var(--text-muted);

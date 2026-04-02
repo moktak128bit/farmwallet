@@ -20,6 +20,7 @@ export const ERROR_MESSAGES = {
   BACKUP_REFRESH_FAILED: "백업 목록 새로고침 실패. 다시 시도해 보세요.",
   SERVER_BACKUP_DISABLED: "서버 백업 복원은 비활성화되어 있습니다. 로컬 백업만 사용할 수 있습니다.",
   BACKUP_FILE_INVALID: "백업 파일 형식이 올바르지 않습니다. JSON 파일인지 확인해 보세요.",
+  TABLE_BACKUP_FILE_INVALID: "테이블 백업 파일 형식이 올바르지 않습니다. farmwallet-table-backup-v1 JSON인지 확인해 보세요.",
   BACKUP_SELECTED_NOT_FOUND: "선택한 백업을 불러올 수 없습니다.",
   BACKUP_RESTORE_FAILED: "백업을 불러오는 중 문제가 발생했습니다. 다시 시도해 보세요.",
   JSON_FORMAT_INVALID: "JSON 형식이 올바르지 않습니다. 중괄호/쉼표를 다시 확인해 주세요.",

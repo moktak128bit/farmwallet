@@ -1,8 +1,9 @@
 import React, { useState, useMemo, useEffect, useRef } from "react";
 import { toast } from "react-hot-toast";
-import type { Account, StockPrice, StockTrade, TradeSide } from "../../types";
-import { computeRealizedPnlByTradeId } from "../../calculations";
+import type { Account, AccountBalanceRow, StockPrice, StockTrade, TradeSide } from "../../types";
+import { computeRealizedPnlByTradeId, computeRealizedPnlDetailByTradeId } from "../../calculations";
 import { isUSDStock, canonicalTickerForMatch } from "../../utils/finance";
+import { computeTradeCashImpact } from "../../utils/tradeCashImpact";
 import { validateAccountTickerCurrency } from "../../utils/validation";
 import { ERROR_MESSAGES } from "../../constants/errorMessages";
 import { formatNumber, formatKRW, formatUSD, formatShortDate } from "../../utils/formatter";
@@ -12,11 +13,16 @@ const sideLabel: Record<TradeSide, string> = {
   sell: "매도"
 };
 
+const TRADE_ROW_HEIGHT = 52;
+const TRADE_OVERSCAN = 10;
+const TRADE_VIRTUALIZE_THRESHOLD = 200;
+
 type TradeSortKey = "date" | "accountId" | "ticker" | "name" | "side" | "quantity" | "price" | "fee" | "totalAmount";
 
 interface TradeHistorySectionProps {
   trades: StockTrade[];
   accounts: Account[];
+  balances?: AccountBalanceRow[];
   prices: StockPrice[];
   fxRate: number | null;
   onChangeTrades: (next: StockTrade[] | ((prev: StockTrade[]) => StockTrade[])) => void;
@@ -27,6 +33,13 @@ interface TradeHistorySectionProps {
   onClearHighlightTrade?: () => void;
 }
 
+const inferTradeCurrency = (trade: StockTrade, priceCurrency?: string): "USD" | "KRW" =>
+  trade.fxRateAtTrade && trade.fxRateAtTrade > 0
+    ? "USD"
+    : priceCurrency === "USD" || isUSDStock(trade.ticker)
+      ? "USD"
+      : "KRW";
+
 const formatPriceWithCurrency = (value: number, currency?: string, ticker?: string) => {
   const isUSD = currency === "USD" || isUSDStock(ticker);
   if (isUSD) {
@@ -36,13 +49,14 @@ const formatPriceWithCurrency = (value: number, currency?: string, ticker?: stri
 };
 
 const sortIndicator = (activeKey: string, key: string, direction: "asc" | "desc") => {
-  if (activeKey !== key) return "↕";
-  return direction === "asc" ? "↑" : "↓";
+  if (activeKey !== key) return "";
+  return direction === "asc" ? "^" : "v";
 };
 
 export const TradeHistorySection: React.FC<TradeHistorySectionProps> = ({
   trades,
   accounts,
+  balances = [],
   prices,
   fxRate,
   onChangeTrades,
@@ -56,26 +70,30 @@ export const TradeHistorySection: React.FC<TradeHistorySectionProps> = ({
     key: "date",
     direction: "desc"
   });
-  const [tradeCurrentPage, setTradeCurrentPage] = useState(1);
-  const [tradePageSize] = useState(50);
+  const tradeViewportRef = useRef<HTMLDivElement | null>(null);
+  const [tradeScrollTop, setTradeScrollTop] = useState(0);
+  const [tradeViewportHeight, setTradeViewportHeight] = useState(560);
 
-  // 컬럼 너비 (퍼센트, 합계 100). 순서, 날짜, 계좌, 티커, 종목명, 매매, 수량, 단가, 수수료, 총금액, 실현손익, 초기보유, 작업
+  // Column width ratios (sum to 100): index, date, account, ticker, name, side, quantity, price, fee, total, realized PnL, actions.
   const [columnWidths, setColumnWidths] = useState<number[]>(() => {
     if (typeof window !== "undefined") {
       try {
         const saved = localStorage.getItem("trades-column-widths");
         if (saved) {
           const parsed = JSON.parse(saved);
-          if (Array.isArray(parsed) && parsed.length === 13) {
-            const total = parsed.reduce((s: number, w: number) => s + w, 0);
-            if (total > 0) return parsed.map((w: number) => (w / total) * 100);
+          if (Array.isArray(parsed)) {
+            const arr = parsed.length === 13 ? [...parsed.slice(0, 11), parsed[12]] : parsed;
+            if (arr.length === 12) {
+              const total = arr.reduce((s: number, w: number) => s + w, 0);
+              if (total > 0) return arr.map((w: number) => (w / total) * 100);
+            }
           }
         }
       } catch (e) {
-        console.warn("[TradeHistorySection] 로컬 저장 로드 실패", e);
+        console.warn("[TradeHistorySection] Failed to load saved column widths", e);
       }
     }
-    return [3, 7, 6, 6, 14, 5, 6, 9, 8, 11, 10, 5, 6];
+    return [3, 7, 6, 6, 14, 5, 6, 9, 8, 11, 11, 6];
   });
   const [resizingColumn, setResizingColumn] = useState<number | null>(null);
   const [resizeStartX, setResizeStartX] = useState(0);
@@ -93,12 +111,64 @@ export const TradeHistorySection: React.FC<TradeHistorySectionProps> = ({
     fee: string;
   } | null>(null);
   const [inlineEditField, setInlineEditField] = useState<"date" | "accountId" | "quantity" | "price" | "fee" | "totalAmount" | null>(null);
+  /** 계좌별 보기: null = 전체, 값 있으면 해당 계좌만 */
+  const [filterAccountId, setFilterAccountId] = useState<string | null>(null);
+
+  const tradesFiltered = useMemo(() => {
+    if (!filterAccountId) return trades;
+    return trades.filter((t) => t.accountId === filterAccountId);
+  }, [trades, filterAccountId]);
+
+  const accountIdsWithTrades = useMemo(() => {
+    const ids = new Set(trades.map((t) => t.accountId));
+    return accounts.filter((a) => ids.has(a.id));
+  }, [trades, accounts]);
+
+  // canonical 티커별 최신 시세 (updatedAt 기준)
+  const latestPriceByCanonicalTicker = useMemo(() => {
+    const map = new Map<string, StockPrice>();
+    for (const price of prices) {
+      const key = canonicalTickerForMatch(price.ticker);
+      if (!key) continue;
+      const prev = map.get(key);
+      if (!prev) {
+        map.set(key, price);
+        continue;
+      }
+      const prevUpdated = prev.updatedAt ?? "";
+      const nextUpdated = price.updatedAt ?? "";
+      if (nextUpdated >= prevUpdated) {
+        map.set(key, price);
+      }
+    }
+    return map;
+  }, [prices]);
 
   const realizedPnlByTradeId = useMemo(() => computeRealizedPnlByTradeId(trades), [trades]);
+  const realizedPnlDetailByTradeId = useMemo(() => computeRealizedPnlDetailByTradeId(trades), [trades]);
+
+  const balanceAfterByTradeId = useMemo(() => {
+    const result = new Map<string, { amount: number; balance: number }>();
+    const balanceById = new Map<string, number>();
+    for (const row of balances) {
+      balanceById.set(row.account.id, row.currentBalance);
+    }
+    const sorted = [...trades].sort((a, b) =>
+      a.date !== b.date ? a.date.localeCompare(b.date) : a.id.localeCompare(b.id)
+    );
+    const futureImpact = new Map<string, number>();
+    for (let i = sorted.length - 1; i >= 0; i--) {
+      const t = sorted[i];
+      const bal = (balanceById.get(t.accountId) ?? 0) - (futureImpact.get(t.accountId) ?? 0);
+      result.set(t.id, { amount: t.cashImpact, balance: bal });
+      futureImpact.set(t.accountId, (futureImpact.get(t.accountId) ?? 0) + t.cashImpact);
+    }
+    return result;
+  }, [trades, balances]);
 
   const sortedTrades = useMemo(() => {
     const dir = tradeSort.direction === "asc" ? 1 : -1;
-    return [...trades].sort((a, b) => {
+    return [...tradesFiltered].sort((a, b) => {
       const key = tradeSort.key;
       const va = (a as any)[key];
       const vb = (b as any)[key];
@@ -110,30 +180,70 @@ export const TradeHistorySection: React.FC<TradeHistorySectionProps> = ({
       }
       return ((va ?? 0) - (vb ?? 0)) * dir;
     });
-  }, [trades, tradeSort]);
+  }, [tradesFiltered, tradeSort]);
 
-  const paginatedTrades = useMemo(() => {
-    const startIndex = (tradeCurrentPage - 1) * tradePageSize;
-    const endIndex = startIndex + tradePageSize;
-    return sortedTrades.slice(startIndex, endIndex);
-  }, [sortedTrades, tradeCurrentPage, tradePageSize]);
+  const tradeIndexById = useMemo(() => {
+    const map = new Map<string, number>();
+    sortedTrades.forEach((trade, index) => {
+      map.set(trade.id, index);
+    });
+    return map;
+  }, [sortedTrades]);
 
-  const tradeTotalPages = useMemo(() => {
-    return Math.ceil(sortedTrades.length / tradePageSize);
-  }, [sortedTrades.length, tradePageSize]);
+  const isTradeVirtualized = sortedTrades.length >= TRADE_VIRTUALIZE_THRESHOLD;
+  const tradeWindow = useMemo(() => {
+    if (!isTradeVirtualized) {
+      return { start: 0, end: sortedTrades.length };
+    }
+    const start = Math.max(0, Math.floor(tradeScrollTop / TRADE_ROW_HEIGHT) - TRADE_OVERSCAN);
+    const end = Math.min(
+      sortedTrades.length,
+      Math.ceil((tradeScrollTop + tradeViewportHeight) / TRADE_ROW_HEIGHT) + TRADE_OVERSCAN
+    );
+    return { start, end };
+  }, [isTradeVirtualized, sortedTrades.length, tradeScrollTop, tradeViewportHeight]);
 
-  // 검색에서 이동: 해당 거래가 있는 페이지로 전환
+  const visibleTrades = useMemo(
+    () => sortedTrades.slice(tradeWindow.start, tradeWindow.end),
+    [sortedTrades, tradeWindow]
+  );
+
+  const topSpacerHeight = isTradeVirtualized ? tradeWindow.start * TRADE_ROW_HEIGHT : 0;
+  const bottomSpacerHeight = isTradeVirtualized
+    ? Math.max(0, (sortedTrades.length - tradeWindow.end) * TRADE_ROW_HEIGHT)
+    : 0;
+
+  // Keep viewport size synced and scroll highlighted rows into view.
   useEffect(() => {
-    if (!highlightTradeId) return;
-    const idx = sortedTrades.findIndex((t) => t.id === highlightTradeId);
-    if (idx === -1) return;
-    const page = Math.max(1, Math.ceil((idx + 1) / tradePageSize));
-    if (page !== tradeCurrentPage) setTradeCurrentPage(page);
-  }, [highlightTradeId, sortedTrades, tradePageSize, tradeCurrentPage]);
+    const viewport = tradeViewportRef.current;
+    if (!viewport) return;
+    setTradeViewportHeight(viewport.clientHeight || 560);
+    if (typeof ResizeObserver === "undefined") return;
+    const observer = new ResizeObserver((entries) => {
+      const entry = entries[0];
+      if (!entry) return;
+      setTradeViewportHeight(entry.contentRect.height);
+    });
+    observer.observe(viewport);
+    return () => observer.disconnect();
+  }, []);
 
   const highlightClearTimerRef = useRef<number | null>(null);
   useEffect(() => {
     if (!highlightTradeId || !onClearHighlightTrade) return;
+
+    const highlightIndex = tradeIndexById.get(highlightTradeId);
+    if (highlightIndex != null && isTradeVirtualized) {
+      const viewport = tradeViewportRef.current;
+      if (viewport) {
+        const targetTop = Math.max(
+          0,
+          highlightIndex * TRADE_ROW_HEIGHT - viewport.clientHeight / 2 + TRADE_ROW_HEIGHT / 2
+        );
+        viewport.scrollTo({ top: targetTop, behavior: "smooth" });
+      }
+    }
+
     const t1 = window.setTimeout(() => {
       const el = document.querySelector(`tr[data-trade-id="${highlightTradeId}"]`);
       if (!el) return;
@@ -152,20 +262,16 @@ export const TradeHistorySection: React.FC<TradeHistorySectionProps> = ({
         highlightClearTimerRef.current = null;
       }
     };
-  }, [highlightTradeId, onClearHighlightTrade]);
+  }, [highlightTradeId, onClearHighlightTrade, tradeIndexById, isTradeVirtualized]);
 
-  useEffect(() => {
-    setTradeCurrentPage(1);
-  }, [tradeSort.key, tradeSort.direction]);
-
-  // 컬럼 너비 변경 시 localStorage에 저장
+  // Persist column width preferences.
   useEffect(() => {
     if (typeof window !== "undefined") {
       localStorage.setItem("trades-column-widths", JSON.stringify(columnWidths));
     }
   }, [columnWidths]);
 
-  // 컬럼 리사이즈 핸들러
+  // Start column resizing.
   const handleResizeStart = (e: React.MouseEvent, columnIndex: number) => {
     e.preventDefault();
     setResizingColumn(columnIndex);
@@ -259,10 +365,10 @@ export const TradeHistorySection: React.FC<TradeHistorySectionProps> = ({
       toast.error(ERROR_MESSAGES.ACCOUNT_REQUIRED);
       return;
     }
-    const priceInfo = prices.find((p) => canonicalTickerForMatch(p.ticker) === canonicalTickerForMatch(inlineEdit.ticker));
-    const currencyValidation = validateAccountTickerCurrency(selectedAccount, inlineEdit.ticker, priceInfo);
+    const priceInfo = latestPriceByCanonicalTicker.get(canonicalTickerForMatch(inlineEdit.ticker));
+    const currencyValidation = validateAccountTickerCurrency(selectedAccount, inlineEdit.ticker, priceInfo ?? undefined);
     if (!currencyValidation.valid) {
-      toast.error(currencyValidation.error ?? "계좌와 종목 통화가 일치하지 않습니다.");
+      toast.error(currencyValidation.error ?? "계좌 통화와 종목 통화가 일치하지 않습니다.");
       return;
     }
     const isUSDCurrency = priceInfo?.currency === "USD" || isUSDStock(inlineEdit.ticker);
@@ -271,7 +377,12 @@ export const TradeHistorySection: React.FC<TradeHistorySectionProps> = ({
       ? quantity * price + fee 
       : quantity * price - fee;
     const totalAmountKRW = totalAmount * exchangeRate;
-    const cashImpact = side === "buy" ? -totalAmountKRW : totalAmountKRW;
+    const existingTrade = trades.find((t) => t.id === inlineEdit.id);
+    const useUsdBalanceMode =
+      (selectedAccount.type === "securities" || selectedAccount.type === "crypto") &&
+      isUSDCurrency &&
+      Math.abs(existingTrade?.cashImpact ?? 0) < 0.000001;
+    const cashImpact = computeTradeCashImpact(side, totalAmountKRW, useUsdBalanceMode);
     const updated = trades.map((t) =>
       t.id === inlineEdit.id
         ? {
@@ -285,11 +396,30 @@ export const TradeHistorySection: React.FC<TradeHistorySectionProps> = ({
             price,
             fee,
             totalAmount,
-            cashImpact
+            cashImpact,
+            fxRateAtTrade: isUSDCurrency && exchangeRate > 0 ? exchangeRate : t.fxRateAtTrade
           }
         : t
     );
     onChangeTrades(updated);
+
+    if (useUsdBalanceMode && onChangeAccounts && existingTrade) {
+      const prevUsdImpact =
+        existingTrade.side === "buy" ? -existingTrade.totalAmount : existingTrade.totalAmount;
+      const nextUsdImpact = side === "buy" ? -totalAmount : totalAmount;
+      const delta = nextUsdImpact - prevUsdImpact;
+      if (delta !== 0) {
+        const updatedAccounts = accounts.map((a) =>
+          a.id === inlineEdit.accountId
+            ? { ...a, usdBalance: (a.usdBalance ?? 0) + delta }
+            : a
+        );
+        setTimeout(() => {
+          onChangeAccounts(updatedAccounts);
+        }, 0);
+      }
+    }
+
     setInlineEdit(null);
     setInlineEditField(null);
   };
@@ -300,11 +430,12 @@ export const TradeHistorySection: React.FC<TradeHistorySectionProps> = ({
     
     let updatedAccounts = accounts;
     const account = accounts.find((a) => a.id === tradeToDelete.accountId);
-    if (account?.type === "securities" && onChangeAccounts) {
-      const priceInfo = prices.find((p) => canonicalTickerForMatch(p.ticker) === canonicalTickerForMatch(tradeToDelete.ticker));
+    if ((account?.type === "securities" || account?.type === "crypto") && onChangeAccounts) {
+      const priceInfo = latestPriceByCanonicalTicker.get(canonicalTickerForMatch(tradeToDelete.ticker));
       const isUSD = priceInfo?.currency === "USD" || isUSDStock(tradeToDelete.ticker);
       
-      if (isUSD) {
+      const usesUsdBalanceMode = Math.abs(tradeToDelete.cashImpact ?? 0) < 0.000001;
+      if (isUSD && usesUsdBalanceMode) {
         const usdImpact = tradeToDelete.side === "buy" ? tradeToDelete.totalAmount : -tradeToDelete.totalAmount;
         updatedAccounts = accounts.map((a) => {
           if (a.id === tradeToDelete.accountId) {
@@ -319,7 +450,7 @@ export const TradeHistorySection: React.FC<TradeHistorySectionProps> = ({
     
     onChangeTrades((prevTrades) => prevTrades.filter((t) => t.id !== id));
     
-    if (account?.type === "securities" && onChangeAccounts && updatedAccounts !== accounts) {
+    if ((account?.type === "securities" || account?.type === "crypto") && onChangeAccounts && updatedAccounts !== accounts) {
       setTimeout(() => {
         onChangeAccounts(updatedAccounts);
       }, 0);
@@ -333,39 +464,34 @@ export const TradeHistorySection: React.FC<TradeHistorySectionProps> = ({
   };
 
   const handleReorderTrade = (id: string, newIndex: number) => {
-    const currentIndex = trades.findIndex((t) => t.id === id);
-    if (currentIndex === -1) return;
-    const clamped = Math.max(0, Math.min(trades.length - 1, newIndex));
+    const currentIndex = tradeIndexById.get(id);
+    if (currentIndex == null) return;
+    const clamped = Math.max(0, Math.min(sortedTrades.length - 1, newIndex));
     if (clamped === currentIndex) return;
-    const next = [...trades];
-    const [item] = next.splice(currentIndex, 1);
-    next.splice(clamped, 0, item);
-    onChangeTrades(next);
+    const dir = tradeSort.direction === "asc" ? 1 : -1;
+    const comparator = (a: StockTrade, b: StockTrade) => {
+      const key = tradeSort.key;
+      const va = (a as any)[key];
+      const vb = (b as any)[key];
+      if (key === "date") return (va < vb ? -1 : va > vb ? 1 : 0) * dir;
+      if (typeof va === "string" || typeof vb === "string") return String(va ?? "").localeCompare(String(vb ?? "")) * dir;
+      return ((va ?? 0) - (vb ?? 0)) * dir;
+    };
+    const fullSorted = [...trades].sort(comparator);
+    const currentInFull = fullSorted.findIndex((t) => t.id === id);
+    if (currentInFull === -1) return;
+    const [item] = fullSorted.splice(currentInFull, 1);
+    const filteredIndices = fullSorted
+      .map((t, i) => ({ t, i }))
+      .filter(({ t }) => !filterAccountId || t.accountId === filterAccountId);
+    const insertAt = clamped >= filteredIndices.length ? fullSorted.length : filteredIndices[clamped].i;
+    fullSorted.splice(insertAt, 0, item);
+    onChangeTrades(fullSorted);
   };
 
-  const toggleInitialHolding = (trade: StockTrade) => {
-    if (trade.side !== "buy") return;
-    const isCurrentlyInitial = trade.cashImpact === 0;
-    const priceInfo = prices.find((p) => p.ticker === trade.ticker);
-    const currency = priceInfo?.currency;
-    const isUSD = currency === "USD" || isUSDStock(trade.ticker);
-    const exchangeRate = isUSD && fxRate ? fxRate : 1;
-    const totalAmountKRW = trade.totalAmount * exchangeRate;
-    
-    const updated = trades.map((t) =>
-      t.id === trade.id
-        ? {
-            ...t,
-            cashImpact: isCurrentlyInitial ? -totalAmountKRW : 0
-          }
-        : t
-    );
-    onChangeTrades(updated);
-  };
-
-  // 통화별로 합계 계산
-  const krwTrades = trades.filter(t => !isUSDStock(t.ticker));
-  const usdTrades = trades.filter(t => isUSDStock(t.ticker));
+  // Aggregate summary by currency (filtered by selected account).
+  const krwTrades = tradesFiltered.filter(t => !isUSDStock(t.ticker));
+  const usdTrades = tradesFiltered.filter(t => isUSDStock(t.ticker));
   
   const krwBuyAmount = krwTrades.filter(t => t.side === "buy").reduce((sum, t) => sum + t.totalAmount, 0);
   const krwSellAmount = krwTrades.filter(t => t.side === "sell").reduce((sum, t) => sum + t.totalAmount, 0);
@@ -383,25 +509,48 @@ export const TradeHistorySection: React.FC<TradeHistorySectionProps> = ({
 
   return (
     <>
-      <h3>거래 내역</h3>
+      <h3>매매 내역</h3>
+      <div style={{ marginBottom: 12, display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
+        <span style={{ color: "var(--muted)", fontSize: 14 }}>계좌별 보기:</span>
+        <select
+          value={filterAccountId ?? ""}
+          onChange={(e) => setFilterAccountId(e.target.value === "" ? null : e.target.value)}
+          style={{ padding: "6px 10px", fontSize: 14, borderRadius: 6, minWidth: 160 }}
+        >
+          <option value="">전체 ({trades.length}건)</option>
+          {accountIdsWithTrades.map((acc) => {
+            const count = trades.filter((t) => t.accountId === acc.id).length;
+            return (
+              <option key={acc.id} value={acc.id}>
+                {acc.name} ({count}건)
+              </option>
+            );
+          })}
+        </select>
+        {filterAccountId && (
+          <span className="hint" style={{ fontSize: 13 }}>
+            {accounts.find((a) => a.id === filterAccountId)?.name ?? filterAccountId} · {tradesFiltered.length}건
+          </span>
+        )}
+      </div>
       <div className="card" style={{ marginBottom: 16, padding: 12 }}>
         <div style={{ display: "flex", gap: 24, flexWrap: "wrap", fontSize: 14 }}>
           {krwBuyAmount + krwSellAmount + krwFee > 0 && (
             <>
               <div>
-                <span style={{ color: "var(--muted)", marginRight: 8 }}>총 매수 (KRW):</span>
+                <span style={{ color: "var(--muted)", marginRight: 8 }}>총 매수 (원):</span>
                 <span className="negative">{formatKRW(Math.round(krwBuyAmount))}</span>
               </div>
               <div>
-                <span style={{ color: "var(--muted)", marginRight: 8 }}>총 매도 (KRW):</span>
+                <span style={{ color: "var(--muted)", marginRight: 8 }}>총 매도 (원):</span>
                 <span className="positive">{formatKRW(Math.round(krwSellAmount))}</span>
               </div>
               <div>
-                <span style={{ color: "var(--muted)", marginRight: 8 }}>총 수수료 (KRW):</span>
+                <span style={{ color: "var(--muted)", marginRight: 8 }}>총 수수료 (원):</span>
                 <span className="negative">{formatKRW(Math.round(krwFee))}</span>
               </div>
               <div>
-                <span style={{ color: "var(--muted)", marginRight: 8 }}>총 실현손익 (KRW):</span>
+                <span style={{ color: "var(--muted)", marginRight: 8 }}>실현 손익 (원):</span>
                 <span className={krwRealizedPnl >= 0 ? "positive" : "negative"}>
                   {krwRealizedPnl >= 0 ? "+" : ""}{formatKRW(Math.round(krwRealizedPnl))}
                 </span>
@@ -411,19 +560,19 @@ export const TradeHistorySection: React.FC<TradeHistorySectionProps> = ({
           {usdBuyAmount + usdSellAmount + usdFee > 0 && (
             <>
               <div>
-                <span style={{ color: "var(--muted)", marginRight: 8 }}>총 매수 (USD):</span>
+                <span style={{ color: "var(--muted)", marginRight: 8 }}>총 매수 (달러):</span>
                 <span className="negative">{formatUSD(usdBuyAmount)}</span>
               </div>
               <div>
-                <span style={{ color: "var(--muted)", marginRight: 8 }}>총 매도 (USD):</span>
+                <span style={{ color: "var(--muted)", marginRight: 8 }}>총 매도 (달러):</span>
                 <span className="positive">{formatUSD(usdSellAmount)}</span>
               </div>
               <div>
-                <span style={{ color: "var(--muted)", marginRight: 8 }}>총 수수료 (USD):</span>
+                <span style={{ color: "var(--muted)", marginRight: 8 }}>총 수수료 (달러):</span>
                 <span className="negative">{formatUSD(usdFee)}</span>
               </div>
               <div>
-                <span style={{ color: "var(--muted)", marginRight: 8 }}>총 실현손익 (USD):</span>
+                <span style={{ color: "var(--muted)", marginRight: 8 }}>실현 손익 (달러):</span>
                 <span className={usdRealizedPnl >= 0 ? "positive" : "negative"}>
                   {usdRealizedPnl >= 0 ? "+" : ""}{formatUSD(usdRealizedPnl)}
                 </span>
@@ -433,6 +582,15 @@ export const TradeHistorySection: React.FC<TradeHistorySectionProps> = ({
         </div>
       </div>
       <div className="card" style={{ padding: 0 }}>
+        <div
+          ref={tradeViewportRef}
+          onScroll={(e) => setTradeScrollTop((e.currentTarget as HTMLDivElement).scrollTop)}
+          style={{
+            maxHeight: isTradeVirtualized ? "68vh" : undefined,
+            overflowY: isTradeVirtualized ? "auto" : "visible",
+            overflowX: "auto"
+          }}
+        >
         <table className="data-table trades-table" style={{ width: "100%", tableLayout: "fixed" }}>
           <colgroup>
             {columnWidths.map((w, i) => (
@@ -442,7 +600,7 @@ export const TradeHistorySection: React.FC<TradeHistorySectionProps> = ({
           <thead>
             <tr>
               <th style={{ position: "relative" }}>
-                순서
+                #
                 <div className="resize-handle" onMouseDown={(e) => handleResizeStart(e, 0)} />
               </th>
               <th style={{ position: "relative" }}>
@@ -471,7 +629,7 @@ export const TradeHistorySection: React.FC<TradeHistorySectionProps> = ({
               </th>
               <th style={{ position: "relative" }}>
                 <button type="button" className="sort-header" onClick={() => toggleTradeSort("side")}>
-                  매매 <span className="arrow">{sortIndicator(tradeSort.key, "side", tradeSort.direction)}</span>
+                  구분 <span className="arrow">{sortIndicator(tradeSort.key, "side", tradeSort.direction)}</span>
                 </button>
                 <div className="resize-handle" onMouseDown={(e) => handleResizeStart(e, 5)} />
               </th>
@@ -495,24 +653,25 @@ export const TradeHistorySection: React.FC<TradeHistorySectionProps> = ({
               </th>
               <th style={{ position: "relative" }}>
                 <button type="button" className="sort-header" onClick={() => toggleTradeSort("totalAmount")}>
-                  총금액 <span className="arrow">{sortIndicator(tradeSort.key, "totalAmount", tradeSort.direction)}</span>
+                  합계 <span className="arrow">{sortIndicator(tradeSort.key, "totalAmount", tradeSort.direction)}</span>
                 </button>
                 <div className="resize-handle" onMouseDown={(e) => handleResizeStart(e, 9)} />
               </th>
-              <th style={{ position: "relative" }} title="매도 건당 FIFO 기준 실현손익">
-                실현손익
+              <th style={{ position: "relative" }} title="거래별 실현 손익 (선입선출)">
+                실현 손익
                 <div className="resize-handle" onMouseDown={(e) => handleResizeStart(e, 10)} />
-              </th>
-              <th style={{ position: "relative" }}>
-                초기보유
-                <div className="resize-handle" onMouseDown={(e) => handleResizeStart(e, 11)} />
               </th>
               <th>작업</th>
             </tr>
           </thead>
           <tbody>
-            {paginatedTrades.map((t, index) => {
-              const actualIndex = (tradeCurrentPage - 1) * tradePageSize + index;
+            {topSpacerHeight > 0 && (
+              <tr aria-hidden>
+                <td colSpan={12} style={{ height: `${topSpacerHeight}px`, padding: 0, border: 0 }} />
+              </tr>
+            )}
+            {visibleTrades.map((t, index) => {
+              const actualIndex = tradeWindow.start + index;
               return (
                 <tr
                   key={t.id}
@@ -525,14 +684,16 @@ export const TradeHistorySection: React.FC<TradeHistorySectionProps> = ({
                   onDrop={(e) => {
                     if (!draggingTradeId) return;
                     e.preventDefault();
-                    handleReorderTrade(draggingTradeId, index);
+                    handleReorderTrade(draggingTradeId, actualIndex);
                     setDraggingTradeId(null);
                   }}
                   onDragStart={() => setDraggingTradeId(t.id)}
                   onDragEnd={() => setDraggingTradeId(null)}
                 >
                   <td className="drag-cell">
-                    <span className="drag-handle" title="잡고 위/아래로 끌어서 순서 변경">☰</span>
+                    <span className="drag-handle" title="드래그하여 순서 변경">
+                      ::
+                    </span>
                   </td>
                   <td 
                     onDoubleClick={() => startInlineEdit(t, "date")}
@@ -573,9 +734,9 @@ export const TradeHistorySection: React.FC<TradeHistorySectionProps> = ({
                         autoFocus
                         style={{ padding: "2px 4px", fontSize: 13 }}
                       >
-                        <option value="">선택</option>
+                        <option value="">Select</option>
                         {accounts
-                          .filter((a) => a.type === "securities")
+                          .filter((a) => a.type === "securities" || a.type === "crypto")
                           .map((a) => (
                             <option key={a.id} value={a.id}>
                               {a.id} - {a.name}
@@ -583,13 +744,29 @@ export const TradeHistorySection: React.FC<TradeHistorySectionProps> = ({
                           ))}
                       </select>
                     ) : (
-                      t.accountId
+                      <>
+                        <div>{t.accountId}</div>
+                        {balanceAfterByTradeId.get(t.id) && (
+                          <div
+                            style={{
+                              fontSize: 10,
+                              color: balanceAfterByTradeId.get(t.id)!.amount >= 0 ? "var(--danger)" : "var(--primary)",
+                              marginTop: 2
+                            }}
+                          >
+                            {balanceAfterByTradeId.get(t.id)!.amount >= 0 ? "+" : ""}
+                            {formatKRW(Math.round(balanceAfterByTradeId.get(t.id)!.amount))}
+                            {" / "}
+                            {formatKRW(Math.round(balanceAfterByTradeId.get(t.id)!.balance))}
+                          </div>
+                        )}
+                      </>
                     )}
                   </td>
                   <td 
                     onClick={() => onStartEditTrade(t)}
                     style={{ cursor: "pointer", textDecoration: "underline", color: "var(--primary)" }}
-                    title="클릭하여 편집하기"
+                    title="클릭하여 수정"
                   >
                     {t.ticker}
                   </td>
@@ -605,9 +782,15 @@ export const TradeHistorySection: React.FC<TradeHistorySectionProps> = ({
                       overflow: "hidden",
                       textOverflow: "ellipsis"
                     }}
-                    title={t.name}
+                    title={
+                      (t.name && t.name !== t.ticker
+                        ? t.name
+                        : latestPriceByCanonicalTicker.get(canonicalTickerForMatch(t.ticker))?.name || t.name || t.ticker) ?? t.ticker
+                    }
                   >
-                    {t.name}
+                    {t.name && t.name !== t.ticker
+                      ? t.name
+                      : latestPriceByCanonicalTicker.get(canonicalTickerForMatch(t.ticker))?.name || t.name || t.ticker}
                   </td>
                   <td>{sideLabel[t.side]}</td>
                   <td 
@@ -619,6 +802,8 @@ export const TradeHistorySection: React.FC<TradeHistorySectionProps> = ({
                     {inlineEdit?.id === t.id ? (
                       <input
                         type="number"
+                        min={0}
+                        step="any"
                         value={inlineEdit.quantity}
                         onChange={(e) => setInlineEdit({ ...inlineEdit, quantity: e.target.value })}
                         onBlur={saveInlineEdit}
@@ -655,7 +840,7 @@ export const TradeHistorySection: React.FC<TradeHistorySectionProps> = ({
                     ) : (
                       (() => {
                         const priceInfo = prices.find((p) => p.ticker === t.ticker);
-                        const currency = priceInfo?.currency;
+                        const currency = inferTradeCurrency(t, priceInfo?.currency);
                         return formatPriceWithCurrency(t.price, currency, t.ticker);
                       })()
                     )}
@@ -682,7 +867,7 @@ export const TradeHistorySection: React.FC<TradeHistorySectionProps> = ({
                     ) : (
                       (() => {
                         const priceInfo = prices.find((p) => p.ticker === t.ticker);
-                        const currency = priceInfo?.currency;
+                        const currency = inferTradeCurrency(t, priceInfo?.currency);
                         return formatPriceWithCurrency(t.fee, currency, t.ticker);
                       })()
                     )}
@@ -717,37 +902,37 @@ export const TradeHistorySection: React.FC<TradeHistorySectionProps> = ({
                     ) : (
                       (() => {
                         const priceInfo = prices.find((p) => p.ticker === t.ticker);
-                        const currency = priceInfo?.currency;
+                        const currency = inferTradeCurrency(t, priceInfo?.currency);
                         return formatPriceWithCurrency(t.totalAmount, currency, t.ticker);
                       })()
                     )}
                   </td>
                   <td
                     className="number"
-                    title={t.side === "sell" ? "매도 건당 실현손익 (FIFO)" : "매수 건은 해당 없음"}
+                    title={t.side === "sell" ? "매도 거래 실현 손익 (선입선출)" : "매수 거래에는 해당 없음"}
                   >
                     {t.side === "sell" ? (() => {
-                      const pnl = realizedPnlByTradeId.get(t.id);
-                      if (pnl === undefined) return "-";
+                      const detail = realizedPnlDetailByTradeId.get(t.id);
+                      if (detail === undefined) return "-";
                       const priceInfo = prices.find((p) => p.ticker === t.ticker);
-                      const currency = priceInfo?.currency;
-                      const fmt = formatPriceWithCurrency(pnl, currency, t.ticker);
+                      const currency = inferTradeCurrency(t, priceInfo?.currency);
+                      const fmt = formatPriceWithCurrency(detail.pnl, currency, t.ticker);
+                      const avgPrice = detail.quantity > 0 ? detail.costBasis / detail.quantity : 0;
+                      const rate = detail.costBasis > 0 ? (detail.pnl / detail.costBasis) * 100 : 0;
+                      const avgFmt = formatPriceWithCurrency(avgPrice, currency, t.ticker);
                       return (
-                        <span className={pnl >= 0 ? "positive" : "negative"}>
-                          {pnl >= 0 ? "+" : ""}{fmt}
+                        <span style={{ display: "flex", flexDirection: "column", alignItems: "flex-end", gap: 2 }}>
+                          <span className={detail.pnl >= 0 ? "positive" : "negative"}>
+                            {detail.pnl >= 0 ? "+" : ""}{fmt}
+                          </span>
+                          {detail.costBasis > 0 && (
+                            <span style={{ fontSize: 11, color: "var(--text-muted)" }} title={`평균 매수가 ${avgFmt} 대비`}>
+                              평균 {avgFmt} {rate >= 0 ? "+" : ""}{rate.toFixed(2)}%
+                            </span>
+                          )}
                         </span>
                       );
                     })() : "-"}
-                  </td>
-                  <td style={{ textAlign: "center" }}>
-                    {t.side === "buy" && (
-                      <input
-                        type="checkbox"
-                        checked={t.cashImpact === 0}
-                        onChange={() => toggleInitialHolding(t)}
-                        title="체크 시 현금 차감 안 함 (초기 보유)"
-                      />
-                    )}
                   </td>
                   <td style={{ padding: "4px" }}>
                     <button 
@@ -762,49 +947,19 @@ export const TradeHistorySection: React.FC<TradeHistorySectionProps> = ({
                 </tr>
               );
             })}
+            {bottomSpacerHeight > 0 && (
+              <tr aria-hidden>
+                <td colSpan={12} style={{ height: `${bottomSpacerHeight}px`, padding: 0, border: 0 }} />
+              </tr>
+            )}
           </tbody>
         </table>
-        {sortedTrades.length > 0 && tradeTotalPages > 1 && (
-          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginTop: "16px", padding: "12px", background: "var(--surface)", borderRadius: "8px" }}>
+        </div>
+        {sortedTrades.length > 0 && (
+          <div style={{ marginTop: "12px", padding: "12px", background: "var(--surface)", borderRadius: "8px" }}>
             <div style={{ fontSize: "14px", color: "var(--text-muted)" }}>
-              총 {sortedTrades.length}건 중 {((tradeCurrentPage - 1) * tradePageSize) + 1}-{Math.min(tradeCurrentPage * tradePageSize, sortedTrades.length)}건 표시
-            </div>
-            <div style={{ display: "flex", gap: "8px", alignItems: "center" }}>
-              <button
-                type="button"
-                className="secondary"
-                onClick={() => setTradeCurrentPage(1)}
-                disabled={tradeCurrentPage === 1}
-              >
-                처음
-              </button>
-              <button
-                type="button"
-                className="secondary"
-                onClick={() => setTradeCurrentPage(prev => Math.max(1, prev - 1))}
-                disabled={tradeCurrentPage === 1}
-              >
-                이전
-              </button>
-              <span style={{ padding: "0 12px", fontSize: "14px" }}>
-                {tradeCurrentPage} / {tradeTotalPages}
-              </span>
-              <button
-                type="button"
-                className="secondary"
-                onClick={() => setTradeCurrentPage(prev => Math.min(tradeTotalPages, prev + 1))}
-                disabled={tradeCurrentPage === tradeTotalPages}
-              >
-                다음
-              </button>
-              <button
-                type="button"
-                className="secondary"
-                onClick={() => setTradeCurrentPage(tradeTotalPages)}
-                disabled={tradeCurrentPage === tradeTotalPages}
-              >
-                마지막
-              </button>
+              총 {sortedTrades.length}건, {Math.min(sortedTrades.length, visibleTrades.length)}행 표시 중
+              {isTradeVirtualized ? " (가상 스크롤)" : ""}
             </div>
           </div>
         )}
@@ -812,3 +967,4 @@ export const TradeHistorySection: React.FC<TradeHistorySectionProps> = ({
     </>
   );
 };
+

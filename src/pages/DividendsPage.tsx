@@ -65,6 +65,7 @@ export const DividendsView: React.FC<Props> = ({ accounts, ledger, trades, price
     accountId: "",
     ticker: "",
     name: "",
+    dividendPerShare: "",
     amount: "",
     quantity: "",
     tax: "",
@@ -218,11 +219,12 @@ export const DividendsView: React.FC<Props> = ({ accounts, ledger, trades, price
 
   // 배당율 계산 (주식 탭과 동일: 항상 원화 기준, 순 배당금 기준. 수량은 폼 값 우선)
   const dividendYield = useMemo(() => {
-    if (!dividendForm.amount || !selectedPosition) return null;
-    let amount = Number(dividendForm.amount);
+    if (!selectedPosition) return null;
+    const quantity = dividendForm.quantity !== "" ? Number(dividendForm.quantity) || 0 : selectedPosition.quantity;
+    const dividendPerShare = dividendForm.dividendPerShare ? Number(dividendForm.dividendPerShare) : 0;
+    let amount = dividendPerShare > 0 && quantity > 0 ? dividendPerShare * quantity : 0;
     const tax = dividendForm.tax ? Number(dividendForm.tax) : 0;
     const fee = dividendForm.fee ? Number(dividendForm.fee) : 0;
-    const quantity = dividendForm.quantity !== "" ? Number(dividendForm.quantity) || 0 : selectedPosition.quantity;
 
     if (amount <= 0 || selectedPosition.avgPrice <= 0 || quantity <= 0) return null;
 
@@ -243,7 +245,7 @@ export const DividendsView: React.FC<Props> = ({ accounts, ledger, trades, price
 
     const totalCost = selectedPosition.avgPrice * quantity;
     return (amount / totalCost) * 100;
-  }, [dividendForm.amount, dividendForm.tax, dividendForm.fee, dividendForm.quantity, selectedPosition, selectedTickerCurrency, showUSD, fxRate]);
+  }, [dividendForm.dividendPerShare, dividendForm.tax, dividendForm.fee, dividendForm.quantity, selectedPosition, selectedTickerCurrency, showUSD, fxRate]);
 
   // 이전 배당 입력 내역 (빠른 재입력용)
   const recentDividends = useMemo(() => {
@@ -293,13 +295,17 @@ export const DividendsView: React.FC<Props> = ({ accounts, ledger, trades, price
 
   // 빠른 입력: 이전 배당 내역 적용 (수정 가능)
   const applyRecentDividend = (recent: { ticker: string; name: string; amount: number; accountId: string }) => {
+    const matchedPosition = positions.find((p) => canonicalTickerForMatch(p.ticker) === canonicalTickerForMatch(recent.ticker) && p.quantity > 0);
+    const quantity = matchedPosition?.quantity ?? 0;
+    const dividendPerShare = quantity > 0 ? String(Math.round((recent.amount / quantity) * 100) / 100) : "";
     setDividendForm({
       date: new Date().toISOString().slice(0, 10),
       exDate: "",
       accountId: recent.accountId || dividendForm.accountId,
       ticker: recent.ticker,
       name: recent.name,
-      amount: recent.amount.toString(),
+      dividendPerShare,
+      amount: "",
       quantity: "",
       tax: "",
       fee: ""
@@ -312,7 +318,7 @@ export const DividendsView: React.FC<Props> = ({ accounts, ledger, trades, price
     const tax = dividendForm.tax ? Number(dividendForm.tax) : 0;
     const fee = dividendForm.fee ? Number(dividendForm.fee) : 0;
     
-    if (!dividendForm.date || !dividendForm.accountId || !amount || amount <= 0) {
+    if (!dividendForm.date || !dividendForm.accountId) {
       return;
     }
 
@@ -320,6 +326,7 @@ export const DividendsView: React.FC<Props> = ({ accounts, ledger, trades, price
     
     // 티커가 비어 있거나 "이자"로 입력하면 이자(은행이자)로 저장
     if (!tickerTrimmed || tickerTrimmed === "이자") {
+      if (!amount || amount <= 0) return;
       const netAmount = amount - tax - fee;
       const description = `이자${tax > 0 ? `, 세금: ${Math.round(tax).toLocaleString()}원` : ""}${fee > 0 ? `, 수수료: ${Math.round(fee).toLocaleString()}원` : ""}`;
       const entry: LedgerEntry = {
@@ -338,6 +345,7 @@ export const DividendsView: React.FC<Props> = ({ accounts, ledger, trades, price
         accountId: dividendForm.accountId,
         ticker: "",
         name: "",
+        dividendPerShare: "",
         amount: "",
         quantity: "",
         tax: "",
@@ -345,6 +353,12 @@ export const DividendsView: React.FC<Props> = ({ accounts, ledger, trades, price
       });
       return;
     }
+    const quantityForCalc = dividendForm.quantity !== "" ? Number(dividendForm.quantity) || 0 : selectedPosition?.quantity ?? 0;
+    const dividendPerShare = dividendForm.dividendPerShare ? Number(dividendForm.dividendPerShare) : 0;
+    if (quantityForCalc <= 0 || dividendPerShare <= 0) {
+      return;
+    }
+    amount = dividendPerShare * quantityForCalc;
 
     // 주식 탭과 동일: 항상 원화(KRW) 기준으로 저장
     // USD 종목이고 USD로 입력받았으면 원화로 변환
@@ -392,6 +406,7 @@ export const DividendsView: React.FC<Props> = ({ accounts, ledger, trades, price
       accountId: dividendForm.accountId,
       ticker: dividendForm.ticker,
       name: dividendForm.name ?? "",
+      dividendPerShare: "",
       amount: "",
       quantity: dividendForm.quantity,
       tax: "",
@@ -824,7 +839,7 @@ export const DividendsView: React.FC<Props> = ({ accounts, ledger, trades, price
               )}
             </div>
             <p className="hint" style={{ marginBottom: 12 }}>
-              받은 배당금을 입력하세요. 보유 종목의 평균 단가와 수량이 자동으로 표시됩니다. <strong>티커를 비우면 이자(은행이자)로 등록됩니다.</strong>
+              받은 배당금을 입력하세요. 주식 배당은 <strong>주당배당금과 보유주식수</strong>를 입력하면 총 배당금이 자동 계산됩니다. <strong>티커를 비우면 이자(은행이자)로 등록됩니다.</strong>
             </p>
             <form onSubmit={handleDividendSubmit}>
             <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(200px, 1fr))", gap: "10px 12px" }}>
@@ -867,14 +882,16 @@ export const DividendsView: React.FC<Props> = ({ accounts, ledger, trades, price
                 <span style={{ fontSize: 13, fontWeight: 500 }}>티커 <span style={{ fontWeight: 400, color: "var(--text-muted)" }}>(비우거나 '이자' 입력 시 이자)</span></span>
                 <Autocomplete
                   value={dividendForm.ticker}
-                  onChange={(val) => setDividendForm({ ...dividendForm, ticker: val.toUpperCase(), name: "" })}
+                  onChange={(val) => setDividendForm({ ...dividendForm, ticker: val.toUpperCase(), name: "", dividendPerShare: "", amount: "" })}
                   options={tickerOptions}
                   onSelect={(option) => {
                     const isInterest = option.value === "" || option.value === "이자";
                     setDividendForm({
                       ...dividendForm,
                       ticker: option.value,
-                      name: isInterest ? "" : (option.label || "")
+                      name: isInterest ? "" : (option.label || ""),
+                      dividendPerShare: "",
+                      amount: ""
                     });
                   }}
                   placeholder="티커 입력 / 비우기 또는 '이자' = 이자로 저장"
@@ -914,28 +931,63 @@ export const DividendsView: React.FC<Props> = ({ accounts, ledger, trades, price
                   </label>
                 </>
               )}
-              <label style={{ display: "flex", flexDirection: "column", gap: 4 }}>
-                <span style={{ fontSize: 13, fontWeight: 500 }}>
-                  배당 금액
-                  {selectedTickerCurrency === "USD" && showUSD && " (USD)"}
-                  {selectedTickerCurrency === "USD" && !showUSD && " (원화)"}
-                  {selectedTickerCurrency === "USD" && showUSD && fxRate && dividendForm.amount && (
-                    <span style={{ fontSize: 11, color: "#666", marginLeft: 4 }}>
-                      ≈ {formatKRW(Math.round(Number(dividendForm.amount) * fxRate))}
+              {dividendForm.ticker && dividendForm.ticker !== "이자" ? (
+                <>
+                  <label style={{ display: "flex", flexDirection: "column", gap: 4 }}>
+                    <span style={{ fontSize: 13, fontWeight: 500 }}>
+                      주당 배당금
+                      {selectedTickerCurrency === "USD" && showUSD && " (USD)"}
+                      {selectedTickerCurrency === "USD" && !showUSD && " (원화)"}
                     </span>
-                  )}
-                </span>
-                <input
-                  type="number"
-                  min={0}
-                  step={0.01}
-                  value={dividendForm.amount}
-                  onChange={(e) => setDividendForm({ ...dividendForm, amount: e.target.value })}
-                  placeholder={selectedTickerCurrency === "USD" && showUSD ? "USD로 입력" : "원화로 입력"}
-                  style={{ padding: "6px 8px", fontSize: 14 }}
-                  required
-                />
-              </label>
+                    <input
+                      type="number"
+                      min={0}
+                      step={0.0001}
+                      value={dividendForm.dividendPerShare}
+                      onChange={(e) => setDividendForm({ ...dividendForm, dividendPerShare: e.target.value })}
+                      placeholder={selectedTickerCurrency === "USD" && showUSD ? "USD로 입력" : "원화로 입력"}
+                      style={{ padding: "6px 8px", fontSize: 14 }}
+                      required
+                    />
+                  </label>
+                  <label style={{ display: "flex", flexDirection: "column", gap: 4 }}>
+                    <span style={{ fontSize: 13, fontWeight: 500 }}>총 배당금 (자동 계산)</span>
+                    <input
+                      type="text"
+                      value={(() => {
+                        const q = dividendForm.quantity !== "" ? Number(dividendForm.quantity) || 0 : selectedPosition?.quantity ?? 0;
+                        const dps = dividendForm.dividendPerShare ? Number(dividendForm.dividendPerShare) : 0;
+                        const total = q > 0 && dps > 0 ? q * dps : 0;
+                        if (total <= 0) return "-";
+                        if (selectedTickerCurrency === "USD" && showUSD) {
+                          return `${formatUSD(total)} USD${fxRate ? ` (약 ${formatKRW(Math.round(total * fxRate))})` : ""}`;
+                        }
+                        return formatKRW(Math.round(total));
+                      })()}
+                      disabled
+                      style={{ padding: "6px 8px", fontSize: 14, backgroundColor: "#f5f5f5" }}
+                    />
+                  </label>
+                </>
+              ) : (
+                <label style={{ display: "flex", flexDirection: "column", gap: 4 }}>
+                  <span style={{ fontSize: 13, fontWeight: 500 }}>
+                    이자 금액
+                    {selectedTickerCurrency === "USD" && showUSD && " (USD)"}
+                    {selectedTickerCurrency === "USD" && !showUSD && " (원화)"}
+                  </span>
+                  <input
+                    type="number"
+                    min={0}
+                    step={0.01}
+                    value={dividendForm.amount}
+                    onChange={(e) => setDividendForm({ ...dividendForm, amount: e.target.value })}
+                    placeholder={selectedTickerCurrency === "USD" && showUSD ? "USD로 입력" : "원화로 입력"}
+                    style={{ padding: "6px 8px", fontSize: 14 }}
+                    required
+                  />
+                </label>
+              )}
               <label style={{ display: "flex", flexDirection: "column", gap: 4 }}>
                 <span style={{ fontSize: 13, fontWeight: 500 }}>
                   세금

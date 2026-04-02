@@ -1,5 +1,13 @@
 // Re-export from services for backward compatibility
-export { loadData, saveData, getEmptyData } from "./services/dataService";
+export {
+  loadData,
+  saveData,
+  saveDataSerialized,
+  normalizeImportedData,
+  getEmptyData,
+  preloadKrNames,
+  getKrNames
+} from "./services/dataService";
 export {
   saveBackupSnapshot,
   getBackupList,
@@ -7,9 +15,11 @@ export {
   getLatestLocalBackupIntegrity,
   getAllBackupList,
   loadServerBackupData,
+  clearOldBackups,
   type BackupMeta,
   type BackupEntry,
-  type BackupSource
+  type BackupSource,
+  type SaveBackupResult
 } from "./services/backupService";
 export {
   loadTickerDatabaseFromBackup,

@@ -674,20 +674,23 @@ export const DividendCoverageInsightWidget: React.FC<InsightWidgetProps> = ({
     }, 0);
     const monthlyDiv = divTotal / 3;
 
-    // Fixed expenses: unique sub-categories
+    // Fixed expenses: unique sub-categories, average by months where they appear
     const fixedEntries = ledger.filter(
       (e) =>
         e.kind === "expense" &&
         e.isFixedExpense === true &&
         last3.includes(monthOf(e.date)),
     );
-    const fixedMap = new Map<string, number>();
+    const fixedMap = new Map<string, { total: number; months: Set<string> }>();
     for (const e of fixedEntries) {
       const key = e.subCategory || e.category;
-      fixedMap.set(key, (fixedMap.get(key) || 0) + e.amount);
+      const prev = fixedMap.get(key) || { total: 0, months: new Set<string>() };
+      prev.total += e.amount;
+      prev.months.add(monthOf(e.date));
+      fixedMap.set(key, prev);
     }
     const fixedItems = [...fixedMap.entries()]
-      .map(([name, total]) => ({ name, monthlyAvg: total / 3 }))
+      .map(([name, { total, months }]) => ({ name, monthlyAvg: total / months.size }))
       .sort((a, b) => a.monthlyAvg - b.monthlyAvg);
 
     // Greedy cover

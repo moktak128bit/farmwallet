@@ -100,10 +100,19 @@ export async function loadFromGist(): Promise<{ dataJson: string; updatedAt: str
   }
   const data = await res.json();
   const file = data.files?.[GIST_FILE_NAME];
-  if (!file?.content) {
+  if (!file) {
     throw new Error("Gist에 FarmWallet 데이터가 없습니다.");
   }
-  return { dataJson: file.content, updatedAt: data.updated_at };
+  let content: string;
+  if (file.raw_url) {
+    // raw_url은 잘림 여부와 관계없이 항상 완전한 파일 내용을 반환
+    const rawRes = await fetch(file.raw_url);
+    if (!rawRes.ok) throw new Error(`Gist 원본 불러오기 실패 (${rawRes.status})`);
+    content = await rawRes.text();
+  } else {
+    content = file.content;
+  }
+  return { dataJson: content, updatedAt: data.updated_at };
 }
 
 /** 토큰 유효성 확인 */
@@ -116,4 +125,31 @@ export async function validateToken(token: string): Promise<boolean> {
   } catch {
     return false;
   }
+}
+
+/** 자동 동기화 ON/OFF */
+export function getGistAutoSync(): boolean {
+  try { return localStorage.getItem(STORAGE_KEYS.GIST_AUTO_SYNC) === "true"; } catch { return false; }
+}
+
+export function setGistAutoSync(enabled: boolean): void {
+  try { localStorage.setItem(STORAGE_KEYS.GIST_AUTO_SYNC, enabled ? "true" : "false"); } catch { /* */ }
+}
+
+/** 마지막 자동 저장 시각 */
+export function getGistLastPushAt(): string {
+  try { return localStorage.getItem(STORAGE_KEYS.GIST_LAST_PUSH_AT) ?? ""; } catch { return ""; }
+}
+
+export function setGistLastPushAt(iso: string): void {
+  try { localStorage.setItem(STORAGE_KEYS.GIST_LAST_PUSH_AT, iso); } catch { /* */ }
+}
+
+/** 마지막 자동 불러오기 시각 */
+export function getGistLastPullAt(): string {
+  try { return localStorage.getItem(STORAGE_KEYS.GIST_LAST_PULL_AT) ?? ""; } catch { return ""; }
+}
+
+export function setGistLastPullAt(iso: string): void {
+  try { localStorage.setItem(STORAGE_KEYS.GIST_LAST_PULL_AT, iso); } catch { /* */ }
 }

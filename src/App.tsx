@@ -334,7 +334,7 @@ export const App: React.FC = () => {
             </div>
           </div>
         </div>
-        <div style={{ display: "flex", flexDirection: "column", alignItems: "flex-end", gap: 6 }}>
+        <div className="app-header-right" style={{ display: "flex", flexDirection: "column", alignItems: "flex-end", gap: 6 }}>
           <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
             <button
               onClick={toggleTheme}
@@ -371,7 +371,7 @@ export const App: React.FC = () => {
           {backupIntegrity.status === "mismatch" && (
             <div className="pill danger">최근 로컬 백업 해시 불일치. 백업을 다시 생성하세요.</div>
           )}
-          <div style={{ display: 'flex', gap: 6 }}>
+          <div className="app-header-actions" style={{ display: 'flex', gap: 6 }}>
             <button
               type="button"
               className="primary"

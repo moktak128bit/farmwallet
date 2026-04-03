@@ -68,6 +68,7 @@ const APP_LOG_MAX = 200;
 
 export const App: React.FC = () => {
   const [tab, setTab] = useState<TabId>("dashboard");
+  const [isPushingToGit, setIsPushingToGit] = useState(false);
   const [showShortcutsHelp, setShowShortcutsHelp] = useState(false);
   const [copyRequest, setCopyRequest] = useState<import("./types").LedgerEntry | null>(null);
   const [highlightLedgerId, setHighlightLedgerId] = useState<string | null>(null);
@@ -422,6 +423,32 @@ export const App: React.FC = () => {
                   </button>
                 )}
               </>
+            )}
+            {import.meta.env.DEV && (
+              <button
+                type="button"
+                className="primary"
+                style={{ background: "var(--success, #22c55e)" }}
+                disabled={isPushingToGit}
+                onClick={async () => {
+                  setIsPushingToGit(true);
+                  addAppLog("GitHub 배포 중...", "info");
+                  try {
+                    const res = await fetch("/api/git-push", { method: "POST" });
+                    const json = await res.json();
+                    if (!res.ok) throw new Error(json.error ?? "배포 실패");
+                    addAppLog("GitHub 배포 완료 (약 2분 후 반영)", "success");
+                    toast.success("GitHub에 배포 완료");
+                  } catch (e: any) {
+                    addAppLog(`GitHub 배포 실패: ${e.message}`, "error");
+                    toast.error(e.message ?? "GitHub 배포 실패");
+                  } finally {
+                    setIsPushingToGit(false);
+                  }
+                }}
+              >
+                {isPushingToGit ? "배포 중..." : "배포"}
+              </button>
             )}
             <button
               type="button"

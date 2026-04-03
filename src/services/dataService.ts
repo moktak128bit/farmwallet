@@ -54,7 +54,7 @@ function shouldApplyKrName(map: Record<string, string>, key: string): boolean {
 }
 
 /** 한국 종목의 영문 이름을 한글로 교체 (trades, prices, tickerDatabase, ledger 배당). { data, changed } 반환 */
-function applyKoreanStockNames(data: AppData): { data: AppData; changed: boolean } {
+export function applyKoreanStockNames(data: AppData): { data: AppData; changed: boolean } {
   const map = _krNames;
   let changed = false;
 
@@ -962,6 +962,8 @@ export function loadData(): AppData {
       }
       : dataAfterKrwCashImpact;
 
+    // krNames는 idle 시간에 비동기 로드되므로, 여기서는 빈 맵일 수 있음.
+    // 실제 한글명 적용은 useAppData의 idle 콜백에서 수행.
     const { data: dataWithKrNames, changed: krNamesChanged } = applyKoreanStockNames(parsedDataNormalized);
     const accounts = dataWithKrNames.accounts;
 

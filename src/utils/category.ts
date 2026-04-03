@@ -29,25 +29,3 @@ export {
   applyAutoCategorization
 };
 
-export const CategoryNormalizer = {
-  normalizeCategory,
-  normalizeSubCategory
-};
-
-export const CategoryClassifier = {
-  getCategoryType,
-  getSavingsCategories,
-  isSavingsExpenseEntry
-};
-
-export const CategoryRecommendation = {
-  recommendCategory
-};
-
-export const CategoryAutomation = {
-  autoCategorize,
-  learnFromEntry,
-  loadSavedRules,
-  saveRules,
-  applyAutoCategorization
-};

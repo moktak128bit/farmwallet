@@ -1,13 +1,15 @@
-import React, { useMemo, useState, useEffect, useRef } from "react";
+import React, { useMemo, useState, useEffect, useRef, useCallback } from "react";
 import type { Account, AccountType, LedgerEntry, AccountBalanceRow, PositionRow, StockTrade } from "../types";
 import { formatNumber, formatShortDate, formatKRW, formatUSD } from "../utils/formatter";
 import { isUSDStock } from "../utils/finance";
 import { fetchYahooQuotes } from "../yahooFinanceApi";
 import { EmptyState } from "../components/ui/EmptyState";
-import { Wallet } from "lucide-react";
+import { Wallet, Download } from "lucide-react";
 import { toast } from "react-hot-toast";
 import { computeRealizedPnlByTradeId, positionMarketValueKRW } from "../calculations";
 import { shouldUseUsdBalanceMode } from "../utils/tradeCashImpact";
+import { useAppStore } from "../store/appStore";
+import { buildUnifiedCsv } from "../utils/unifiedCsvExport";
 
 interface Props {
   accounts: Account[];
@@ -147,9 +149,22 @@ export const AccountsView: React.FC<Props> = ({
   onChangeLedger,
   onRenameAccountId
 }) => {
+  const storeData = useAppStore((s) => s.data);
   const safeAccounts = accounts ?? [];
   const safeBalances = balances ?? [];
   const safePositions = positions ?? [];
+
+  const handleExportAllCsv = useCallback(() => {
+    const unified = buildUnifiedCsv(storeData.ledger, storeData.trades, storeData.accounts, storeData.categoryPresets);
+    const bom = "\uFEFF";
+    const blob = new Blob([bom + unified], { type: "text/csv;charset=utf-8" });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    const today = new Date().toISOString().slice(0, 10);
+    a.href = url; a.download = `farmwallet-all-${today}.csv`; a.click();
+    URL.revokeObjectURL(url);
+    toast.success("전체 데이터 CSV 다운로드 완료");
+  }, [storeData]);
   const [showForm, setShowForm] = useState(false);
   const [editingNumber, setEditingNumber] = useState<{
     id: string;
@@ -944,6 +959,13 @@ export const AccountsView: React.FC<Props> = ({
 
   return (
     <div>
+      <div className="card" style={{ padding: "12px 16px", marginBottom: 16, display: "flex", alignItems: "center", gap: 12, flexWrap: "wrap" }}>
+        <button type="button" className="primary" onClick={handleExportAllCsv} style={{ display: "flex", alignItems: "center", gap: 6 }}>
+          <Download size={16} /> 전체 데이터 CSV 내보내기
+        </button>
+        <span style={{ fontSize: 12, color: "var(--text-muted)" }}>가계부 + 주식거래 통합 CSV 1개 파일</span>
+      </div>
+
       <div className="section-header">
         <h2>계좌</h2>
         <button type="button" className="primary" onClick={() => setShowForm((v) => !v)}>

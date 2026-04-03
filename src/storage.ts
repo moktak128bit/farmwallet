@@ -6,7 +6,8 @@ export {
   normalizeImportedData,
   getEmptyData,
   preloadKrNames,
-  getKrNames
+  getKrNames,
+  applyKoreanStockNames
 } from "./services/dataService";
 export {
   saveBackupSnapshot,

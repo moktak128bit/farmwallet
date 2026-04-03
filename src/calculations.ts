@@ -1,22 +1,15 @@
 import type {
   Account,
   AccountBalanceRow,
-  CategoryPresets,
   LedgerEntry,
-  MonthlyNetWorthRow,
   PositionRow,
   StockPrice,
   StockTrade
 } from "./types";
 import { isKRWStock, isUSDStock, canonicalTickerForMatch } from "./utils/finance";
-import {
-  getCategoryType,
-  getSavingsCategories,
-  isSavingsExpenseEntry
-} from "./utils/category";
 
 // Re-export calculation result types from single source (types.ts)
-export type { AccountBalanceRow, PositionRow, MonthlyNetWorthRow } from "./types";
+export type { AccountBalanceRow, PositionRow } from "./types";
 
 // ---------------------------------------------------------------------------
 // Helpers (pure, used only inside this module)
@@ -351,45 +344,6 @@ export function computePositions(
 }
 
 // ---------------------------------------------------------------------------
-// computeRealizedGainInPeriod
-// 규칙: FIFO 매도 실현손익, 기간 내 매도만 합산, USD 계좌는 fxRate 원화
-// ---------------------------------------------------------------------------
-
-export function computeRealizedGainInPeriod(
-  trades: StockTrade[],
-  startDate: string,
-  endDate: string,
-  accountIds: Set<string>,
-  options?: { accounts: Account[]; fxRate?: number }
-): number {
-  const byKey = groupTradesByAccountTicker(trades, (id) => accountIds.has(id));
-  let totalGain = 0;
-
-  for (const [, list] of byKey.entries()) {
-    const sorted = [...list].sort((a, b) => {
-      const d = a.date.localeCompare(b.date);
-      if (d !== 0) return d;
-      if (a.side === "buy" && b.side === "sell") return -1;
-      if (a.side === "sell" && b.side === "buy") return 1;
-      return 0;
-    });
-    const account = options?.accounts?.find((a) => a.id === list[0].accountId);
-    const isUsd = account?.currency === "USD" && options?.fxRate;
-    const toKrw = (x: number) => (isUsd ? x * options!.fxRate! : x);
-
-    const bySell = fifoRealizedPnlBySell(sorted, toKrw);
-    for (const t of sorted) {
-      if (t.side !== "sell") continue;
-      if (t.date >= startDate && t.date <= endDate) {
-        totalGain += bySell.get(t.id) ?? 0;
-      }
-    }
-  }
-
-  return totalGain;
-}
-
-// ---------------------------------------------------------------------------
 // computeRealizedPnlByTradeId / computeRealizedPnlDetailByTradeId
 // 규칙: 매도 건별 FIFO 실현손익 (동일 통화). Detail은 평균단가 대비 수익률 표시용.
 // ---------------------------------------------------------------------------
@@ -436,54 +390,6 @@ export function computeRealizedPnlDetailByTradeId(
   }
 
   return result;
-}
-
-/**
- * 특정 월·카테고리(선택) 기준 지출 합계.
- * 예산 모니터 등에서 사용.
- */
-export function computeExpenseSumForMonthAndCategory(
-  ledger: LedgerEntry[],
-  month: string,
-  category?: string
-): number {
-  return ledger
-    .filter((l) => l.kind === "expense" && l.date.startsWith(month))
-    .filter((l) => {
-      if (category == null) return true;
-      return l.category === category || l.subCategory === category;
-    })
-    .reduce((s, l) => s + l.amount, 0);
-}
-
-// ---------------------------------------------------------------------------
-// computeMonthlyNetWorth
-// 규칙: 월별로 ledger/trades 자르고 computeAccountBalances 잔액 합계 → netWorth
-// 주의: 주식 미포함. 현금·저축·증권계좌 KRW 잔액만 합산 (현금성 자산만)
-// ---------------------------------------------------------------------------
-
-export function computeMonthlyNetWorth(
-  accounts: Account[],
-  ledger: LedgerEntry[],
-  trades: StockTrade[]
-): MonthlyNetWorthRow[] {
-  const monthSet = new Set<string>();
-  ledger.forEach((l) => l.date && monthSet.add(l.date.slice(0, 7)));
-  trades.forEach((t) => t.date && monthSet.add(t.date.slice(0, 7)));
-  const months = Array.from(monthSet).sort();
-  if (months.length === 0) return [];
-
-  return months.map((month) => {
-    const filteredLedger = ledger.filter((l) => l.date.slice(0, 7) <= month);
-    const filteredTrades = trades.filter((t) => t.date.slice(0, 7) <= month);
-    const balances = computeAccountBalances(
-      accounts,
-      filteredLedger,
-      filteredTrades
-    );
-    const netWorth = balances.reduce((sum, b) => sum + b.currentBalance, 0);
-    return { month, netWorth };
-  });
 }
 
 // ---------------------------------------------------------------------------
@@ -536,32 +442,7 @@ export function computeTotalNetWorth(
   }, 0);
 }
 
-export function computeTotalStockPnl(positions: PositionRowLike[]): number {
-  return positions.reduce((s, p) => s + (p.pnl ?? 0), 0);
-}
 
-export function computeTotalStockValue(positions: PositionRowLike[], fxRate?: number | null): number {
-  return positions.reduce((s, p) => s + positionMarketValueKRW(p, fxRate), 0);
-}
-
-/** 누적 실현손익 원화: 매도 건별 FIFO 실현손익 합계, USD 계좌는 fxRate 환산 */
-export function computeTotalRealizedPnlKRW(
-  trades: StockTrade[],
-  accounts: Account[],
-  fxRate?: number | null
-): number {
-  const byId = computeRealizedPnlByTradeId(trades);
-  let krw = 0;
-  trades.forEach((t) => {
-    if (t.side !== "sell") return;
-    const pnl = byId.get(t.id) ?? 0;
-    const account = accounts.find((a) => a.id === t.accountId);
-    if (account?.currency === "USD" && fxRate) krw += pnl * fxRate;
-    else if (isUSDStock(t.ticker) && fxRate) krw += pnl * fxRate;
-    else krw += pnl;
-  });
-  return krw;
-}
 
 /** 특정 일자·계좌 집합 기준 잔액: 현금 + 주식평가액 + USD환산 (저축·증권 합계용) */
 export function computeBalanceAtDateForAccounts(
@@ -602,46 +483,7 @@ export function computeBalanceAtDateForAccounts(
   }, 0);
 }
 
-/** 특정 일자·계좌 집합 기준 보유 포지션 매입원가 합계 */
-export function computeCostBasisAtDateForAccounts(
-  trades: StockTrade[],
-  dateStr: string,
-  accountIds: Set<string>,
-  prices: StockPrice[],
-  accounts: Account[],
-  options?: { fxRate?: number | null }
-): number {
-  const filteredTrades = trades.filter((t) => t.date && t.date <= dateStr);
-  const pos = computePositions(filteredTrades, prices, accounts, {
-    fxRate: options?.fxRate ?? undefined
-  });
-  return pos
-    .filter((p) => accountIds.has(p.accountId))
-    .reduce((sum, p) => sum + (p.totalBuyAmount ?? 0), 0);
-}
 
-/** 현금 잔액 합계: 입출금/증권/기타 계좌, 증권 USD는 fxRate 환산. currentBalance 그대로 사용 (account.savings 차감 없음) */
-export function computeTotalCashValue(
-  balances: AccountBalanceRowLike[],
-  fxRate?: number | null
-): number {
-  return balances
-    .filter(
-      (b) =>
-        b.account.type === "checking" ||
-        b.account.type === "securities" ||
-        b.account.type === "crypto" ||
-        b.account.type === "other"
-    )
-    .reduce((s, b) => {
-      const krw = b.currentBalance;
-      const usd =
-        b.account.type === "securities" || b.account.type === "crypto"
-          ? (b.account.usdBalance ?? 0) + (b.usdTransferNet ?? 0)
-          : 0;
-      return s + krw + (fxRate && usd ? usd * fxRate : 0);
-    }, 0);
-}
 
 /** 저축 합계: savings 타입 계좌 잔액만 (account.savings는 currentBalance에 이미 포함되어 있어 별도 합산 시 이중 집계됨) */
 export function computeTotalSavings(
@@ -658,283 +500,5 @@ export function computeTotalDebt(accounts: Account[]): number {
   return accounts.reduce((s, a) => s + (a.debt ?? 0), 0);
 }
 
-export type InvestmentYearReturn = {
-  invested: number;
-  profit: number;
-  pct: number | null;
-  endValue: number;
-  endLabel: string;
-};
 
-export function computeInvestmentReturnForYear(
-  accounts: Account[],
-  ledger: LedgerEntry[],
-  trades: StockTrade[],
-  prices: StockPrice[],
-  accountIds: Set<string>,
-  year: number,
-  options?: { fxRate?: number | null; investingCategory?: string }
-): InvestmentYearReturn | null {
-  const fxRate = options?.fxRate ?? undefined;
-  const investingCategory = options?.investingCategory ?? "재테크";
-  const startDate = `${year}-01-01`;
-  const endDate = `${year}-12-31`;
-  const prevYearEnd = `${year - 1}-12-31`;
-  const now = new Date();
-  const today = now.toISOString().slice(0, 10);
-  const inYear = (l: LedgerEntry) => l.date >= startDate && l.date <= endDate;
-  const toKrw = (l: LedgerEntry) => (l.currency === "USD" && fxRate ? l.amount * fxRate : l.amount);
 
-  const startBalance = computeBalanceAtDateForAccounts(
-    accounts,
-    ledger,
-    trades,
-    prevYearEnd,
-    accountIds,
-    prices,
-    { fxRate }
-  );
-  const endBalance = computeBalanceAtDateForAccounts(
-    accounts,
-    ledger,
-    trades,
-    endDate,
-    accountIds,
-    prices,
-    { fxRate }
-  );
-  const endValue = now.getFullYear() === year
-    ? computeBalanceAtDateForAccounts(
-      accounts,
-      ledger,
-      trades,
-      today,
-      accountIds,
-      prices,
-      { fxRate }
-    )
-    : endBalance;
-  const principalIn =
-    ledger
-      .filter((l) => l.kind === "expense" && inYear(l) && l.category === investingCategory)
-      .reduce((s, l) => s + toKrw(l), 0) +
-    ledger
-      .filter((l) => l.kind === "transfer" && inYear(l) && l.toAccountId && accountIds.has(l.toAccountId))
-      .reduce((s, l) => s + toKrw(l), 0);
-  const principalOut = ledger
-    .filter((l) => l.kind === "transfer" && inYear(l) && l.fromAccountId && accountIds.has(l.fromAccountId))
-    .reduce((s, l) => s + toKrw(l), 0);
-  const invested = startBalance + (principalIn - principalOut);
-  if (invested <= 0 && endValue <= 0) return null;
-  const profit = endValue - invested;
-  const pct = invested > 0 ? (profit / invested) * 100 : null;
-  return {
-    invested,
-    profit,
-    pct,
-    endValue,
-    endLabel: now.getFullYear() === year ? "현재" : `${year}-12`
-  };
-}
-
-export type SavingsFlowPeriodType = "month" | "quarter" | "year";
-export type SavingsFlowPeriodRow = {
-  label: string;
-  startDate: string;
-  endDate: string;
-  principal: number;
-  outflows: number;
-  cumulativePrincipal: number;
-  realizedGain: number;
-  valuationGain: number;
-  interest: number;
-  dividend: number;
-  profit: number;
-  endBalance: number;
-  returnRate: number | null;
-};
-
-export function computeSavingsFlowByPeriod(
-  accounts: Account[],
-  ledger: LedgerEntry[],
-  trades: StockTrade[],
-  prices: StockPrice[],
-  categoryPresets: CategoryPresets,
-  accountIds: Set<string>,
-  periodType: SavingsFlowPeriodType,
-  options?: { fxRate?: number | null }
-): SavingsFlowPeriodRow[] {
-  const fxRate = options?.fxRate ?? undefined;
-  const now = new Date();
-  const savingsCategories = getSavingsCategories(categoryPresets);
-  const toKrw = (l: LedgerEntry) => (l.currency === "USD" && fxRate ? l.amount * fxRate : l.amount);
-  const dayBefore = (dateStr: string) => {
-    const [y, m, d] = dateStr.split("-").map(Number);
-    return new Date(y, m - 1, d - 1).toISOString().slice(0, 10);
-  };
-
-  const ledgerDates = ledger
-    .filter(
-      (l) =>
-        (l.kind === "expense" && l.date && savingsCategories.includes(l.category)) ||
-        (l.kind === "transfer" && l.date && ((l.toAccountId && accountIds.has(l.toAccountId)) || (l.fromAccountId && accountIds.has(l.fromAccountId))))
-    )
-    .map((l) => l.date);
-  const tradeDates = trades.filter((t) => accountIds.has(t.accountId)).map((t) => t.date);
-  const allDates = [...ledgerDates, ...tradeDates];
-  const earliestDate = allDates.length > 0 ? allDates.reduce((a, b) => (a < b ? a : b)) : now.toISOString().slice(0, 10);
-  const earliestMonth = earliestDate.slice(0, 7);
-
-  const periods: Array<{ label: string; startDate: string; endDate: string }> = [];
-  if (periodType === "month") {
-    const [startYear, startMonth] = earliestMonth.split("-").map(Number);
-    const endYear = now.getFullYear();
-    const endMonth = now.getMonth() + 1;
-    for (let y = startYear; y <= endYear; y += 1) {
-      const mStart = y === startYear ? startMonth : 1;
-      const mEnd = y === endYear ? endMonth : 12;
-      for (let m = mStart; m <= mEnd; m += 1) {
-        const startDate = `${y}-${String(m).padStart(2, "0")}-01`;
-        const lastDay = new Date(y, m, 0).getDate();
-        const endDate = `${y}-${String(m).padStart(2, "0")}-${String(lastDay).padStart(2, "0")}`;
-        periods.push({ label: `${y}-${String(m).padStart(2, "0")}`, startDate, endDate });
-      }
-    }
-  } else if (periodType === "quarter") {
-    const [startYear] = earliestMonth.split("-").map(Number);
-    const endYear = now.getFullYear();
-    const currentQ = Math.floor(now.getMonth() / 3) + 1;
-    for (let y = startYear; y <= endYear; y += 1) {
-      const qEnd = y === endYear ? currentQ : 4;
-      for (let q = 1; q <= qEnd; q += 1) {
-        const startMonth = (q - 1) * 3 + 1;
-        const endMonth = q * 3;
-        periods.push({
-          label: `${y}-Q${q}`,
-          startDate: `${y}-${String(startMonth).padStart(2, "0")}-01`,
-          endDate: `${y}-${String(endMonth).padStart(2, "0")}-${String(new Date(y, endMonth, 0).getDate()).padStart(2, "0")}`
-        });
-      }
-    }
-  } else {
-    const [startYear] = earliestMonth.split("-").map(Number);
-    const endYear = now.getFullYear();
-    for (let y = startYear; y <= endYear; y += 1) {
-      periods.push({ label: String(y), startDate: `${y}-01-01`, endDate: `${y}-12-31` });
-    }
-  }
-
-  const rows: SavingsFlowPeriodRow[] = [];
-  let cumulativePrincipal = 0;
-  for (const { label, startDate, endDate } of periods) {
-    const inPeriod = (l: LedgerEntry) => l.date >= startDate && l.date <= endDate;
-    const savingsExpenseAmount = ledger
-      .filter((l) => l.kind === "expense" && inPeriod(l) && savingsCategories.includes(l.category))
-      .reduce((s, l) => s + toKrw(l), 0);
-    const transferIn = ledger
-      .filter((l) => l.kind === "transfer" && inPeriod(l) && l.toAccountId && accountIds.has(l.toAccountId))
-      .reduce((s, l) => s + toKrw(l), 0);
-    const outflows = ledger
-      .filter((l) => l.kind === "transfer" && inPeriod(l) && l.fromAccountId && accountIds.has(l.fromAccountId))
-      .reduce((s, l) => s + toKrw(l), 0);
-    const principal = savingsExpenseAmount + transferIn - outflows;
-    cumulativePrincipal += principal;
-
-    const startBalance = computeBalanceAtDateForAccounts(accounts, ledger, trades, dayBefore(startDate), accountIds, prices, { fxRate });
-    const endBalance = computeBalanceAtDateForAccounts(accounts, ledger, trades, endDate, accountIds, prices, { fxRate });
-    const startCostBasis = computeCostBasisAtDateForAccounts(trades, dayBefore(startDate), accountIds, prices, accounts, { fxRate });
-    const endCostBasis = computeCostBasisAtDateForAccounts(trades, endDate, accountIds, prices, accounts, { fxRate });
-    const realizedGain = computeRealizedGainInPeriod(trades, startDate, endDate, accountIds, { accounts, fxRate });
-    const valuationGain = (endBalance - endCostBasis) - (startBalance - startCostBasis);
-    const interest = ledger
-      .filter(
-        (l) =>
-          l.kind === "income" &&
-          inPeriod(l) &&
-          ((l.category ?? "").includes("이자") ||
-            (l.subCategory ?? "").includes("이자") ||
-            (l.description ?? "").includes("이자"))
-      )
-      .reduce((s, l) => s + toKrw(l), 0);
-    const dividend = ledger
-      .filter(
-        (l) =>
-          l.kind === "income" &&
-          inPeriod(l) &&
-          ((l.category ?? "").includes("배당") ||
-            (l.subCategory ?? "").includes("배당") ||
-            (l.description ?? "").includes("배당"))
-      )
-      .reduce((s, l) => s + toKrw(l), 0);
-    const profit = realizedGain + valuationGain + interest + dividend;
-    let returnRate: number | null = principal > 0 ? profit / principal : null;
-    if (returnRate != null && (returnRate > 10 || returnRate < -1)) returnRate = null;
-
-    rows.push({
-      label,
-      startDate,
-      endDate,
-      principal,
-      outflows,
-      cumulativePrincipal,
-      realizedGain,
-      valuationGain,
-      interest,
-      dividend,
-      profit,
-      endBalance,
-      returnRate
-    });
-  }
-
-  const take = periodType === "month" ? 12 : periodType === "quarter" ? 8 : 5;
-  return rows.slice(-take);
-}
-
-export type FixedVariableExpenseSummary = {
-  fixedExpense: number;
-  variableExpense: number;
-  total: number;
-  fixedRatio: number;
-  variableRatio: number;
-};
-
-export function computeMonthlyFixedVariableExpense(
-  ledger: LedgerEntry[],
-  month: string,
-  accounts: Account[],
-  categoryPresets: CategoryPresets
-): FixedVariableExpenseSummary {
-  let fixedExpense = 0;
-  let variableExpense = 0;
-  ledger
-    .filter(
-      (l) =>
-        l.kind === "expense" &&
-        l.date.startsWith(month) &&
-        !isSavingsExpenseEntry(l, accounts, categoryPresets)
-    )
-    .forEach((l) => {
-      const categoryType = getCategoryType(
-        l.category,
-        l.subCategory,
-        l.kind,
-        categoryPresets,
-        l,
-        accounts
-      );
-      if (categoryType === "fixed") fixedExpense += l.amount;
-      else if (categoryType === "variable") variableExpense += l.amount;
-      else if (l.isFixedExpense) fixedExpense += l.amount;
-      else variableExpense += l.amount;
-    });
-
-  const total = fixedExpense + variableExpense;
-  return {
-    fixedExpense,
-    variableExpense,
-    total,
-    fixedRatio: total > 0 ? (fixedExpense / total) * 100 : 0,
-    variableRatio: total > 0 ? (variableExpense / total) * 100 : 0
-  };
-}

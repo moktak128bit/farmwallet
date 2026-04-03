@@ -80,13 +80,3 @@ export function extractTickerFromText(text: string): string | null {
   return m ? m[1] : null;
 }
 
-export const TickerUtils = {
-  cleanTicker,
-  canonicalTickerForMatch,
-  getUniqueTickersFromTrades,
-  isLikelyKoreanSixCharCode,
-  isUSDStock,
-  isKRWStock,
-  isCryptoStock,
-  extractTickerFromText
-};

@@ -8,6 +8,7 @@ import { isSavingsExpenseEntry } from "../utils/category";
 import { getKoreaTime, getTodayKST, getThisMonthKST } from "../utils/date";
 import { toast } from "react-hot-toast";
 import { ERROR_MESSAGES } from "../constants/errorMessages";
+import { STORAGE_KEYS } from "../constants/config";
 import { computeRealizedPnlByTradeId } from "../calculations";
 import { isUSDStock } from "../utils/finance";
 
@@ -165,6 +166,10 @@ export const LedgerView: React.FC<Props> = ({
   const [filterAmountMin, setFilterAmountMin] = useState<number | undefined>();
   const [filterAmountMax, setFilterAmountMax] = useState<number | undefined>();
   const [filterTagsInput, setFilterTagsInput] = useState<string>("");
+  // 폼 확장/축소 상태 (progressive disclosure)
+  const [formExpanded, setFormExpanded] = useState<boolean>(() => {
+    try { return localStorage.getItem("fw-ledger-form-expanded") === "true"; } catch { return false; }
+  });
   // 정렬 상태
   type LedgerSortKey =
     | "date"
@@ -318,6 +323,11 @@ export const LedgerView: React.FC<Props> = ({
       localStorage.setItem("ledger-column-widths", JSON.stringify(columnWidths));
     }
   }, [columnWidths]);
+
+  // 폼 확장 상태 localStorage 동기화
+  useEffect(() => {
+    try { localStorage.setItem("fw-ledger-form-expanded", String(formExpanded)); } catch {}
+  }, [formExpanded]);
   
   // 정렬 함수
   const toggleLedgerSort = (key: LedgerSortKey) => {
@@ -457,6 +467,10 @@ export const LedgerView: React.FC<Props> = ({
 
   // Copy previous month's fixed expenses only once per month.
   useEffect(() => {
+    // 설정에서 자동복사가 꺼져 있으면 스킵
+    try {
+      if (localStorage.getItem(STORAGE_KEYS.AUTO_COPY_FIXED) === "false") return;
+    } catch { /* ignore */ }
     const koreaTime = getKoreaTime();
     const currentMonth = `${koreaTime.getFullYear()}-${String(koreaTime.getMonth() + 1).padStart(2, "0")}`;
     const prevMonthDate = new Date(koreaTime.getFullYear(), koreaTime.getMonth() - 1, 1);
@@ -2492,6 +2506,8 @@ export const LedgerView: React.FC<Props> = ({
               />
             </label>
 
+            {/* 확장 영역: 할인 · 출금계좌 · 입금계좌 */}
+            {(formExpanded || !!form.id) && (<>
             {/* 할인 (수입·지출·재테크·신용결제, 선택) — 저장 시 금액−할인이 실제 반영액 */}
             {(effectiveFormKind === "income" ||
               effectiveFormKind === "expense" ||
@@ -2635,11 +2651,30 @@ export const LedgerView: React.FC<Props> = ({
                 </div>
               </div>
             )}
+            </>)}
+
+            {/* 폼 확장/축소 토글 */}
+            <button
+              type="button"
+              onClick={() => setFormExpanded(prev => !prev)}
+              style={{
+                width: "100%",
+                padding: "8px",
+                fontSize: 13,
+                color: "var(--primary)",
+                background: "transparent",
+                border: "1px dashed var(--border)",
+                borderRadius: "6px",
+                cursor: "pointer"
+              }}
+            >
+              {formExpanded ? "\u25B2 간단히 보기" : "\u25BC 계좌 \u00B7 할인 \u00B7 상세 옵션"}
+            </button>
 
             {/* 제출 버튼 */}
             <div style={{ display: "flex", gap: 8, marginTop: 8 }}>
-              <button 
-                type="submit" 
+              <button
+                type="submit"
                 tabIndex={-1}
                 className="primary" 
                 style={{ 

@@ -22,6 +22,7 @@ const SavingsMigrationView = lazy(() => import("./SavingsMigrationPage").then((m
 const ThemeCustomizer = lazy(() => import("../components/ThemeCustomizer").then((m) => ({ default: m.ThemeCustomizer })));
 import { usePWAInstall } from "../hooks/usePWAInstall";
 import { STORAGE_KEYS, ISA_PORTFOLIO } from "../constants/config";
+import * as gistSyncModule from "../services/gistSync";
 import { ERROR_MESSAGES } from "../constants/errorMessages";
 import { appDataFromTableBackupPayload, buildTableBackupFile } from "../utils/tableDataBackup";
 
@@ -45,7 +46,7 @@ function migrateWidgetId(id: string): string {
   return id === "458730" ? WIDGET_ID_DIVIDEND_TRACKING : id;
 }
 
-const DASHBOARD_WIDGET_ORDER = ["summary", "assets", "income", "savingsFlow", "budget", "stocks", "portfolio", "targetPortfolio", WIDGET_ID_DIVIDEND_TRACKING, "isa"];
+const DASHBOARD_WIDGET_ORDER = ["summary", "assets", "income", "savingsFlow", "budget", "stocks", "portfolio", "targetPortfolio", WIDGET_ID_DIVIDEND_TRACKING, "isa", "realReturn", "goalPlanner", "investCapacity", "tradeVsSpend", "dividendCoverage", "concentration"];
 
 type SnapshotNumericField = Exclude<keyof Omit<AssetSnapshotPoint, "date">, "accountBreakdown">;
 
@@ -289,7 +290,13 @@ function getDashboardWidgetNames(dividendTicker?: string): Record<string, string
     portfolio: "포트폴리오",
     targetPortfolio: "목표 포트폴리오",
     [WIDGET_ID_DIVIDEND_TRACKING]: dividendTicker ? `배당 추적 (${dividendTicker})` : "배당 추적 (티커 선택)",
-    isa: "ISA 포트폴리오"
+    isa: "ISA 포트폴리오",
+    realReturn: "연간 진짜 수익률",
+    goalPlanner: "목표 역산 플래너",
+    investCapacity: "투자 여력 스코어",
+    tradeVsSpend: "매매 vs 소비 패턴",
+    dividendCoverage: "배당 vs 고정지출",
+    concentration: "집중도 vs 다양성"
   };
 }
 
@@ -318,6 +325,26 @@ export const SettingsView: React.FC<Props> = ({
   const [priceApiEnabled, setPriceApiEnabled] = useState(() => {
     if (typeof window === "undefined") return false;
     return localStorage.getItem(STORAGE_KEYS.PRICE_API_ENABLED) === "true";
+  });
+
+  const [autoCopyFixed, setAutoCopyFixed] = useState(() => {
+    if (typeof window === "undefined") return true;
+    return localStorage.getItem(STORAGE_KEYS.AUTO_COPY_FIXED) !== "false";
+  });
+
+  const [gistToken, setGistToken] = useState(() => gistSyncModule.getGistToken());
+  const [gistId, setGistIdState] = useState(() => gistSyncModule.getGistId());
+  const [gistSyncing, setGistSyncing] = useState(false);
+  const [gistLastSync, setGistLastSync] = useState<string | null>(null);
+
+  const [dateAccountId, setDateAccountId] = useState(() => {
+    if (typeof window === "undefined") return "";
+    return localStorage.getItem(STORAGE_KEYS.DATE_ACCOUNT_ID) ?? "";
+  });
+  const [dateAccountRatio, setDateAccountRatio] = useState(() => {
+    if (typeof window === "undefined") return 50;
+    const v = Number(localStorage.getItem(STORAGE_KEYS.DATE_ACCOUNT_RATIO));
+    return Number.isFinite(v) ? v : 50;
   });
 
   const [dashboardVisibleWidgets, setDashboardVisibleWidgets] = useState<Set<string>>(() => {
@@ -909,6 +936,144 @@ export const SettingsView: React.FC<Props> = ({
           </label>
           <p className="hint" style={{ marginTop: 4 }}>
             켜면 티커 백업 로드 후 선택한 제공자의 API로 가격을 배치 갱신할 수 있습니다. 실제 API 연동은 추후 제공 예정입니다.
+          </p>
+        </div>
+        <div className="card">
+          <div className="card-title">고정지출 자동복사</div>
+          <label style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 8 }}>
+            <input
+              type="checkbox"
+              checked={autoCopyFixed}
+              onChange={(e) => {
+                const v = e.target.checked;
+                setAutoCopyFixed(v);
+                if (typeof window !== "undefined") {
+                  localStorage.setItem(STORAGE_KEYS.AUTO_COPY_FIXED, v ? "true" : "false");
+                  toast.success(v ? "고정지출 자동복사를 켰습니다." : "고정지출 자동복사를 껐습니다.");
+                }
+              }}
+            />
+            <span>매월 이전 달의 고정지출을 자동으로 복사</span>
+          </label>
+          <p className="hint" style={{ marginTop: 4 }}>
+            끄면 가계부에서 고정지출이 자동으로 생성되지 않습니다. 수동으로 입력해야 합니다.
+          </p>
+        </div>
+        <div className="card">
+          <div className="card-title">클라우드 동기화 (GitHub Gist)</div>
+          <p className="hint" style={{ marginBottom: 12 }}>
+            GitHub Personal Access Token (gist 권한)으로 데이터를 Private Gist에 저장/불러옵니다.
+            <br />다른 기기에서도 동일한 토큰 + Gist ID로 데이터를 공유할 수 있습니다.
+          </p>
+          <label style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 10 }}>
+            <span style={{ minWidth: 80 }}>Token</span>
+            <input
+              type="password"
+              value={gistToken}
+              onChange={(e) => { setGistToken(e.target.value); gistSyncModule.setGistToken(e.target.value); }}
+              placeholder="ghp_xxxxxxxxxxxx"
+              style={{ flex: 1, padding: "6px 10px", borderRadius: 6, fontFamily: "monospace", fontSize: 12 }}
+            />
+          </label>
+          <label style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 12 }}>
+            <span style={{ minWidth: 80 }}>Gist ID</span>
+            <input
+              type="text"
+              value={gistId}
+              onChange={(e) => { setGistIdState(e.target.value); gistSyncModule.setGistId(e.target.value); }}
+              placeholder="자동 생성됨 (첫 저장 시)"
+              style={{ flex: 1, padding: "6px 10px", borderRadius: 6, fontFamily: "monospace", fontSize: 12 }}
+              readOnly={false}
+            />
+          </label>
+          <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+            <button
+              type="button"
+              className="primary"
+              disabled={gistSyncing || !gistToken}
+              onClick={async () => {
+                setGistSyncing(true);
+                try {
+                  const jsonStr = JSON.stringify(data);
+                  const result = await gistSyncModule.saveToGist(jsonStr);
+                  setGistIdState(result.gistId);
+                  setGistLastSync(result.updatedAt);
+                  toast.success("Gist에 저장 완료");
+                } catch (e: any) {
+                  toast.error(e.message ?? "Gist 저장 실패");
+                } finally {
+                  setGistSyncing(false);
+                }
+              }}
+            >
+              {gistSyncing ? "동기화 중..." : "Gist에 저장"}
+            </button>
+            <button
+              type="button"
+              className="secondary"
+              disabled={gistSyncing || !gistToken || !gistId}
+              onClick={async () => {
+                setGistSyncing(true);
+                try {
+                  const result = await gistSyncModule.loadFromGist();
+                  const parsed = JSON.parse(result.dataJson);
+                  onChangeData(parsed);
+                  setGistLastSync(result.updatedAt);
+                  toast.success("Gist에서 불러오기 완료");
+                } catch (e: any) {
+                  toast.error(e.message ?? "Gist 불러오기 실패");
+                } finally {
+                  setGistSyncing(false);
+                }
+              }}
+            >
+              Gist에서 불러오기
+            </button>
+          </div>
+          {gistLastSync && (
+            <p className="hint" style={{ marginTop: 8 }}>
+              마지막 동기화: {new Date(gistLastSync).toLocaleString("ko-KR")}
+            </p>
+          )}
+        </div>
+        <div className="card">
+          <div className="card-title">데이트통장 설정</div>
+          <label style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 10 }}>
+            <span style={{ minWidth: 80 }}>데이트통장</span>
+            <select
+              value={dateAccountId}
+              onChange={(e) => {
+                const v = e.target.value;
+                setDateAccountId(v);
+                localStorage.setItem(STORAGE_KEYS.DATE_ACCOUNT_ID, v);
+                toast.success(v ? `데이트통장: ${v}` : "데이트통장 해제");
+              }}
+              style={{ flex: 1, padding: "6px 10px", borderRadius: 6 }}
+            >
+              <option value="">선택 안 함</option>
+              {data.accounts.map((a) => (
+                <option key={a.id} value={a.id}>{a.id} ({a.name})</option>
+              ))}
+            </select>
+          </label>
+          <label style={{ display: "flex", alignItems: "center", gap: 8 }}>
+            <span style={{ minWidth: 80 }}>본인 부담</span>
+            <input
+              type="number"
+              min={0}
+              max={100}
+              value={dateAccountRatio}
+              onChange={(e) => {
+                const v = Math.min(100, Math.max(0, Number(e.target.value) || 0));
+                setDateAccountRatio(v);
+                localStorage.setItem(STORAGE_KEYS.DATE_ACCOUNT_RATIO, String(v));
+              }}
+              style={{ width: 70, padding: "6px 10px", borderRadius: 6, textAlign: "right" }}
+            />
+            <span>%</span>
+          </label>
+          <p className="hint" style={{ marginTop: 8 }}>
+            데이트통장에서 나간 지출은 설정 비율만 본인 부담으로 계산합니다. (기본 50%)
           </p>
         </div>
       </div>

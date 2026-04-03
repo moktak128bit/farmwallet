@@ -18,6 +18,7 @@ const loadBudget = () => import("./components/BudgetRecurringView").then((m) => 
 const loadReport = () => import("./pages/ReportPage").then((m) => ({ default: m.ReportView }));
 const loadSettings = () => import("./pages/SettingsPage").then((m) => ({ default: m.SettingsView }));
 const loadWorkout = () => import("./pages/WorkoutPage").then((m) => ({ default: m.WorkoutView }));
+const loadInsights = () => import("./pages/InsightsPage").then((m) => ({ default: m.InsightsView }));
 
 const DashboardView = lazy(loadDashboard);
 const AccountsView = lazy(loadAccounts);
@@ -31,6 +32,7 @@ const BudgetRecurringView = lazy(loadBudget);
 const ReportView = lazy(loadReport);
 const SettingsView = lazy(loadSettings);
 const WorkoutView = lazy(loadWorkout);
+const InsightsView = lazy(loadInsights);
 
 const TAB_PREFETCH: Record<TabId, () => Promise<{ default: React.ComponentType<any> }>> = {
   dashboard: loadDashboard,
@@ -44,7 +46,8 @@ const TAB_PREFETCH: Record<TabId, () => Promise<{ default: React.ComponentType<a
   budget: loadBudget,
   reports: loadReport,
   settings: loadSettings,
-  workout: loadWorkout
+  workout: loadWorkout,
+  insights: loadInsights
 };
 import { useAppData } from "./hooks/useAppData";
 import { useUndoRedo } from "./hooks/useUndoRedo";
@@ -97,7 +100,7 @@ export const App: React.FC = () => {
     // 1단계: 가벼운 탭은 idle 시 즉시 (100ms 이내)
     const lightTabs: TabId[] = ["ledger", "categories", "accounts", "dividends", "debt", "budget", "workout"];
     // 2단계: 무거운 탭은 1단계 이후 750ms 뒤 (초기 렌더와 경합 방지)
-    const heavyTabs: TabId[] = ["stocks", "reports", "spend"];
+    const heavyTabs: TabId[] = ["stocks", "reports", "spend", "insights"];
 
     const win = window as Window & {
       requestIdleCallback?: (callback: IdleRequestCallback, options?: IdleRequestOptions) => number;
@@ -491,6 +494,17 @@ export const App: React.FC = () => {
               accounts={data.accounts}
               ledger={data.ledger}
               categoryPresets={data.categoryPresets}
+            />
+          )}
+          {tab === "insights" && (
+            <InsightsView
+              accounts={data.accounts}
+              ledger={data.ledger}
+              trades={data.trades}
+              prices={data.prices}
+              fxRate={fxRate ?? undefined}
+              categoryPresets={data.categoryPresets}
+              budgetGoals={data.budgetGoals}
             />
           )}
           {tab === "budget" && (

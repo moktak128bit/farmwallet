@@ -337,11 +337,6 @@ export const SettingsView: React.FC<Props> = ({
     return localStorage.getItem(STORAGE_KEYS.PRICE_API_ENABLED) === "true";
   });
 
-  const [autoCopyFixed, setAutoCopyFixed] = useState(() => {
-    if (typeof window === "undefined") return true;
-    return localStorage.getItem(STORAGE_KEYS.AUTO_COPY_FIXED) !== "false";
-  });
-
   const [gistToken, setGistToken] = useState(() => gistSyncModule.getGistToken());
   const [gistId, setGistIdState] = useState(() => gistSyncModule.getGistId());
   const [gistSyncing, setGistSyncing] = useState(false);
@@ -946,27 +941,6 @@ export const SettingsView: React.FC<Props> = ({
           </label>
           <p className="hint" style={{ marginTop: 4 }}>
             켜면 티커 백업 로드 후 선택한 제공자의 API로 가격을 배치 갱신할 수 있습니다. 실제 API 연동은 추후 제공 예정입니다.
-          </p>
-        </div>
-        <div className="card">
-          <div className="card-title">고정지출 자동복사</div>
-          <label style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 8 }}>
-            <input
-              type="checkbox"
-              checked={autoCopyFixed}
-              onChange={(e) => {
-                const v = e.target.checked;
-                setAutoCopyFixed(v);
-                if (typeof window !== "undefined") {
-                  localStorage.setItem(STORAGE_KEYS.AUTO_COPY_FIXED, v ? "true" : "false");
-                  toast.success(v ? "고정지출 자동복사를 켰습니다." : "고정지출 자동복사를 껐습니다.");
-                }
-              }}
-            />
-            <span>매월 이전 달의 고정지출을 자동으로 복사</span>
-          </label>
-          <p className="hint" style={{ marginTop: 4 }}>
-            끄면 가계부에서 고정지출이 자동으로 생성되지 않습니다. 수동으로 입력해야 합니다.
           </p>
         </div>
         <div className="card">

@@ -3,6 +3,7 @@ import react from "@vitejs/plugin-react-swc";
 import fs from "fs";
 import path from "path";
 import https from "https";
+import { exec } from "child_process";
 import type { IncomingMessage, ServerResponse } from "http";
 
 function backupApiPlugin(): Plugin {
@@ -822,6 +823,28 @@ function backupApiPlugin(): Plugin {
         }
         
         next();
+      });
+
+      // Git push API (로컬 개발 전용)
+      server.middlewares.use("/api/git-push", (req: IncomingMessage, res: ServerResponse, next) => {
+        if (req.method !== "POST") { next(); return; }
+        const cwd = process.cwd();
+        const timestamp = new Date().toLocaleString("ko-KR", { timeZone: "Asia/Seoul" });
+        const msg = `save: ${timestamp}`;
+        exec("git add -A", { cwd }, () => {
+          exec(`git commit -m "${msg}"`, { cwd }, () => {
+            // commit 실패(변경사항 없음)해도 push는 계속 진행
+            exec("git push", { cwd }, (err, _stdout, stderr) => {
+              res.setHeader("Content-Type", "application/json");
+              if (err) {
+                res.statusCode = 500;
+                res.end(JSON.stringify({ error: stderr || err.message }));
+                return;
+              }
+              res.end(JSON.stringify({ ok: true }));
+            });
+          });
+        });
       });
     }
   };

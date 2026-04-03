@@ -32,7 +32,6 @@ const KIND_LABEL: Record<LedgerKind, string> = {
 };
 
 type LedgerTab = "all" | "income" | "expense" | "savingsExpense" | "transfer" | "creditPayment";
-const AUTO_COPIED_FIXED_MONTHS_KEY = "fw-ledger-auto-copied-fixed-months";
 
 /** 기록표: 수입·지출은 할인 전 금액 = 순액 + 할인. 이체 등은 amount만. */
 function ledgerEntryGross(l: Pick<LedgerEntry, "kind" | "amount" | "discountAmount">): number {
@@ -152,8 +151,6 @@ export const LedgerView: React.FC<Props> = ({
     [effectiveFormKind]
   );
   const isCopyingRef = useRef(false);
-  /** 해당 월에 자동복사를 이미 수행했거나, 원래 고정지출이 있었음을 기록. 사용자가 삭제한 뒤 재복사 방지 */
-  const autoCopiedFixedMonthsRef = useRef<Set<string>>(new Set());
   const [selectedMonths, setSelectedMonths] = useState<Set<string>>(() => new Set([getThisMonthKST()]));
   const [currentYear, setCurrentYear] = useState(() => String(getKoreaTime().getFullYear()));
   const [draggingId, setDraggingId] = useState<string | null>(null);
@@ -434,93 +431,6 @@ export const LedgerView: React.FC<Props> = ({
     }
   }, [ledgerTab]);
   
-  // 고정지출 자동 생성: 이전 달의 고정지출을 현재 달로 복사 (해당 월에 이미 있었거나 한 번 복사한 적 있으면 재복사하지 않음)
-  // Load the months where fixed-expense auto copy was already handled.
-  useEffect(() => {
-    if (typeof window === "undefined") return;
-    try {
-      const raw = window.localStorage.getItem(AUTO_COPIED_FIXED_MONTHS_KEY);
-      if (!raw) return;
-      const parsed = JSON.parse(raw);
-      if (!Array.isArray(parsed)) return;
-      autoCopiedFixedMonthsRef.current = new Set(
-        parsed.filter((month): month is string => typeof month === "string")
-      );
-    } catch {
-      // ignore parse failure and continue with an empty set
-    }
-  }, []);
-
-  const markAutoCopyHandled = useCallback((month: string) => {
-    if (autoCopiedFixedMonthsRef.current.has(month)) return;
-    autoCopiedFixedMonthsRef.current.add(month);
-    if (typeof window === "undefined") return;
-    try {
-      window.localStorage.setItem(
-        AUTO_COPIED_FIXED_MONTHS_KEY,
-        JSON.stringify(Array.from(autoCopiedFixedMonthsRef.current))
-      );
-    } catch {
-      // localStorage write failure should not block ledger behavior
-    }
-  }, []);
-
-  // Copy previous month's fixed expenses only once per month.
-  useEffect(() => {
-    // 설정에서 자동복사가 꺼져 있으면 스킵
-    try {
-      if (localStorage.getItem(STORAGE_KEYS.AUTO_COPY_FIXED) === "false") return;
-    } catch { /* ignore */ }
-    const koreaTime = getKoreaTime();
-    const currentMonth = `${koreaTime.getFullYear()}-${String(koreaTime.getMonth() + 1).padStart(2, "0")}`;
-    const prevMonthDate = new Date(koreaTime.getFullYear(), koreaTime.getMonth() - 1, 1);
-    const prevMonth = `${prevMonthDate.getFullYear()}-${String(prevMonthDate.getMonth() + 1).padStart(2, "0")}`;
-    const currentMonthFixed = ledger.filter((l) => l.isFixedExpense && l.date.startsWith(currentMonth));
-    const prevMonthFixed = ledger.filter((l) => l.isFixedExpense && l.date.startsWith(prevMonth));
-    if (currentMonthFixed.length > 0) {
-      markAutoCopyHandled(currentMonth);
-      return;
-    }
-    const alreadyHandled = autoCopiedFixedMonthsRef.current.has(currentMonth);
-    const wouldCopy = prevMonthFixed.length > 0 && currentMonthFixed.length === 0 && !alreadyHandled;
-    
-    // 이전 달의 고정지출이 있고, 현재 달에 해당하는 항목이 없고, 해당 월에 이미 처리한 적 없을 때만 생성 (삭제 후 재복사 방지)
-    if (wouldCopy) {
-      markAutoCopyHandled(currentMonth);
-      const newEntries: LedgerEntry[] = prevMonthFixed.map((prev) => {
-        // 날짜를 현재 달의 같은 날짜로 변경 (한국 시간 기준)
-        const prevDate = new Date(prev.date);
-        const newDate = new Date(koreaTime.getFullYear(), koreaTime.getMonth(), prevDate.getDate());
-        const year = newDate.getFullYear();
-        const month = String(newDate.getMonth() + 1).padStart(2, "0");
-        const day = String(newDate.getDate()).padStart(2, "0");
-        const newDateStr = `${year}-${month}-${day}`;
-        
-        // 같은 내용의 항목이 이미 있는지 확인 (날짜, 카테고리, 금액, 계좌)
-        const exists = ledger.some(
-          (l) =>
-            l.date === newDateStr &&
-            l.category === prev.category &&
-            l.subCategory === prev.subCategory &&
-            l.amount === prev.amount &&
-            l.fromAccountId === prev.fromAccountId &&
-            l.toAccountId === prev.toAccountId
-        );
-        
-        if (exists) return null;
-        
-        return {
-          ...prev,
-          id: `L${Date.now()}-${Math.random().toString(36).substr(2, 9)}`,
-          date: newDateStr
-        };
-      }).filter((e): e is LedgerEntry => e !== null);
-      
-      if (newEntries.length > 0) {
-        onChangeLedger([...newEntries, ...ledger]);
-      }
-    }
-  }, [ledger, onChangeLedger, markAutoCopyHandled]);
   
   // 최근 사용한 대분류 추적
   const recentMainCategories = useMemo(() => {

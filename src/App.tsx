@@ -59,7 +59,8 @@ import { useTickerDatabase } from "./hooks/useTickerDatabase";
 import { useKeyboardShortcuts } from "./hooks/useKeyboardShortcuts";
 import { usePortfolioWorker } from "./hooks/usePortfolioWorker";
 import { APP_VERSION, STORAGE_KEYS } from "./constants/config";
-import { saveToGist, loadFromGist, getGistToken, getGistId } from "./services/gistSync";
+import { saveToGist, loadFromGist, getGistToken, getGistId, setGistLastPushAt } from "./services/gistSync";
+import { useGistSync } from "./hooks/useGistSync";
 import { runIntegrityCheck } from "./utils/dataIntegrity";
 
 export type AppLogEntry = { id: number; message: string; type: "success" | "error" | "info"; time: string };
@@ -155,6 +156,23 @@ export const App: React.FC = () => {
     handleManualBackup,
     backupWarning
   } = useBackup(data, { onLog: addAppLog });
+
+  const handleGistAutoPull = useCallback((dataJson: string, remoteUpdatedAt: string) => {
+    try {
+      const parsed = JSON.parse(dataJson);
+      setDataWithHistory(() => parsed);
+      addAppLog(`Gist 자동 불러오기 완료 (${new Date(remoteUpdatedAt).toLocaleString("ko-KR")})`, "success");
+    } catch {
+      addAppLog("Gist 자동 불러오기 실패: 데이터 파싱 오류", "error");
+    }
+  }, [setDataWithHistory, addAppLog]);
+
+  const { autoSyncEnabled, setAutoSyncEnabled, lastPushAt, lastPullAt } = useGistSync(
+    data,
+    handleGistAutoPull,
+    { onLog: addAppLog }
+  );
+
   const { isLoadingTickerDatabase, handleLoadInitialTickers } = useTickerDatabase(data, setDataWithHistory, { onLog: addAppLog });
 
   // keyboard shortcuts
@@ -370,6 +388,7 @@ export const App: React.FC = () => {
                     try {
                       await handleManualBackup();
                       const result = await saveToGist(JSON.stringify(data));
+                      setGistLastPushAt(result.updatedAt);
                       addAppLog(`Gist 저장 완료 (${new Date(result.updatedAt).toLocaleString("ko-KR")})`, "success");
                       toast.success("백업 + Gist 저장 완료");
                     } catch (e: any) {
@@ -584,6 +603,10 @@ export const App: React.FC = () => {
               data={data}
               backupVersion={backupVersion}
               onBackupRestored={clearLoadFailed}
+              autoSyncEnabled={autoSyncEnabled}
+              onAutoSyncChange={setAutoSyncEnabled}
+              gistLastPushAt={lastPushAt}
+              gistLastPullAt={lastPullAt}
               onNavigateToRecord={({ type, id }) => {
                 if (type === "ledger") {
                   setTab("ledger");

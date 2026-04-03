@@ -36,6 +36,12 @@ interface Props {
   onBackupsChanged?: () => void | Promise<void>;
   onNavigateToRecord?: (payload: { type: "ledger" | "trade"; id: string }) => void;
   onNavigateToTab?: (tab: "accounts" | "ledger" | "stocks") => void;
+  /** 자동 Gist 동기화 ON/OFF */
+  autoSyncEnabled?: boolean;
+  onAutoSyncChange?: (enabled: boolean) => void;
+  /** 마지막 자동 저장/불러오기 시각 */
+  gistLastPushAt?: string | null;
+  gistLastPullAt?: string | null;
 }
 
 type SettingsTab = "backup" | "integrity" | "theme" | "accessibility" | "dashboard" | "savingsMigration";
@@ -307,7 +313,11 @@ export const SettingsView: React.FC<Props> = ({
   onBackupRestored,
   onBackupsChanged,
   onNavigateToRecord,
-  onNavigateToTab
+  onNavigateToTab,
+  autoSyncEnabled = false,
+  onAutoSyncChange,
+  gistLastPushAt,
+  gistLastPullAt
 }) => {
   const [activeTab, setActiveTab] = useState<SettingsTab>("backup");
   const [showThemeCustomizer, setShowThemeCustomizer] = useState(false);
@@ -1035,6 +1045,34 @@ export const SettingsView: React.FC<Props> = ({
               마지막 동기화: {new Date(gistLastSync).toLocaleString("ko-KR")}
             </p>
           )}
+          <div style={{ marginTop: 16, borderTop: "1px solid var(--border)", paddingTop: 12 }}>
+            <div className="card-title" style={{ fontSize: 13, marginBottom: 8 }}>자동 동기화</div>
+            <label style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 6, cursor: (!gistToken || !gistId) ? "not-allowed" : "pointer" }}>
+              <input
+                type="checkbox"
+                checked={autoSyncEnabled}
+                disabled={!gistToken || !gistId}
+                onChange={(e) => {
+                  onAutoSyncChange?.(e.target.checked);
+                  toast.success(e.target.checked ? "자동 동기화를 켰습니다." : "자동 동기화를 껐습니다.");
+                }}
+              />
+              <span style={{ fontSize: 13 }}>자동 동기화 사용 (데이터 변경 후 5분 뒤 자동 저장 · 앱 시작 시 자동 불러오기)</span>
+            </label>
+            {(!gistToken || !gistId) && (
+              <p className="hint">Token과 Gist ID를 먼저 설정해야 자동 동기화를 사용할 수 있습니다.</p>
+            )}
+            {gistLastPushAt && (
+              <p className="hint" style={{ marginTop: 4 }}>
+                마지막 자동 저장: {new Date(gistLastPushAt).toLocaleString("ko-KR")}
+              </p>
+            )}
+            {gistLastPullAt && (
+              <p className="hint" style={{ marginTop: 2 }}>
+                마지막 자동 불러오기: {new Date(gistLastPullAt).toLocaleString("ko-KR")}
+              </p>
+            )}
+          </div>
         </div>
         <div className="card">
           <div className="card-title">데이트통장 설정</div>

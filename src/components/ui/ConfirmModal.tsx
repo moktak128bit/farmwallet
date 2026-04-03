@@ -21,13 +21,22 @@ export const ConfirmModal: React.FC<ConfirmModalProps> = ({
   onCancel,
 }) => {
   const confirmBtnRef = useRef<HTMLButtonElement>(null);
+  const cancelBtnRef = useRef<HTMLButtonElement>(null);
+  const isDanger = confirmStyle === "danger";
 
   useEffect(() => {
     if (!isOpen) return;
-    // 열리면 확인 버튼에 포커스
-    const id = setTimeout(() => confirmBtnRef.current?.focus(), 50);
+    // 위험 작업은 취소 버튼에 포커스 → 실수로 Enter 눌러도 안전
+    // 일반 작업은 확인 버튼에 포커스
+    const id = setTimeout(() => {
+      if (isDanger) {
+        cancelBtnRef.current?.focus();
+      } else {
+        confirmBtnRef.current?.focus();
+      }
+    }, 50);
     return () => clearTimeout(id);
-  }, [isOpen]);
+  }, [isOpen, isDanger]);
 
   useEffect(() => {
     if (!isOpen) return;
@@ -39,8 +48,6 @@ export const ConfirmModal: React.FC<ConfirmModalProps> = ({
   }, [isOpen, onCancel]);
 
   if (!isOpen) return null;
-
-  const isDanger = confirmStyle === "danger";
 
   return (
     <div
@@ -82,7 +89,7 @@ export const ConfirmModal: React.FC<ConfirmModalProps> = ({
         </div>
 
         <div style={{ display: "flex", gap: 8, justifyContent: "flex-end", marginTop: 24 }}>
-          <button type="button" className="secondary" onClick={onCancel}>
+          <button ref={cancelBtnRef} type="button" className="secondary" onClick={onCancel}>
             취소
           </button>
           <button

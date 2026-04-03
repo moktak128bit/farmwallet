@@ -4,6 +4,7 @@ import { Moon, Sun, Menu } from "lucide-react";
 import { Tabs, type TabId } from "./components/ui/Tabs";
 import { ShortcutsHelp } from "./components/ShortcutsHelp";
 import { SearchModal } from "./components/SearchModal";
+import { ConfirmModal } from "./components/ui/ConfirmModal";
 
 // 동일 로더를 lazy와 프리페치에서 공유해 탭 호버 시 청크 미리 로드
 const loadDashboard = () => import("./pages/DashboardPage").then((m) => ({ default: m.DashboardView }));
@@ -60,6 +61,7 @@ import { useKeyboardShortcuts } from "./hooks/useKeyboardShortcuts";
 import { usePortfolioWorker } from "./hooks/usePortfolioWorker";
 import { APP_VERSION, STORAGE_KEYS } from "./constants/config";
 import { saveToGist, loadFromGist, getGistToken, getGistId, setGistLastPushAt } from "./services/gistSync";
+import { toUserDataJson } from "./services/dataService";
 import { useGistSync } from "./hooks/useGistSync";
 import { runIntegrityCheck } from "./utils/dataIntegrity";
 
@@ -70,6 +72,26 @@ export const App: React.FC = () => {
   const [tab, setTab] = useState<TabId>("dashboard");
   const [isPushingToGit, setIsPushingToGit] = useState(false);
   const [isPullingFromGit, setIsPullingFromGit] = useState(false);
+  const [pendingAction, setPendingAction] = useState<{
+    title: string;
+    message: string;
+    confirmLabel: string;
+    confirmStyle: "primary" | "danger";
+    onConfirm: () => void;
+  } | null>(null);
+
+  const withConfirm = (opts: {
+    title: string;
+    message: string;
+    confirmLabel: string;
+    confirmStyle?: "primary" | "danger";
+    onConfirm: () => void;
+  }) => {
+    setPendingAction({
+      confirmStyle: "primary",
+      ...opts,
+    });
+  };
   const [showShortcutsHelp, setShowShortcutsHelp] = useState(false);
   const [copyRequest, setCopyRequest] = useState<import("./types").LedgerEntry | null>(null);
   const [highlightLedgerId, setHighlightLedgerId] = useState<string | null>(null);
@@ -162,7 +184,13 @@ export const App: React.FC = () => {
   const handleGistAutoPull = useCallback((dataJson: string, remoteUpdatedAt: string) => {
     try {
       const parsed = JSON.parse(dataJson);
-      setDataWithHistory(() => parsed);
+      // Gist에는 API 캐시가 없으므로, 현재 메모리의 캐시를 그대로 유지
+      setDataWithHistory((prev) => ({
+        ...parsed,
+        prices: parsed.prices?.length > 0 ? parsed.prices : prev.prices,
+        tickerDatabase: parsed.tickerDatabase?.length > 0 ? parsed.tickerDatabase : prev.tickerDatabase,
+        historicalDailyCloses: parsed.historicalDailyCloses?.length > 0 ? parsed.historicalDailyCloses : prev.historicalDailyCloses,
+      }));
       addAppLog(`Gist 자동 불러오기 완료 (${new Date(remoteUpdatedAt).toLocaleString("ko-KR")})`, "success");
     } catch {
       addAppLog("Gist 자동 불러오기 실패: 데이터 파싱 오류", "error");
@@ -375,7 +403,12 @@ export const App: React.FC = () => {
             <button
               type="button"
               className="primary"
-              onClick={handleManualBackup}
+              onClick={() => withConfirm({
+                title: "로컬 백업",
+                message: "현재 데이터를 백업 파일로 저장합니다.",
+                confirmLabel: "백업",
+                onConfirm: () => { void handleManualBackup(); },
+              })}
             >
               백업
             </button>
@@ -385,19 +418,24 @@ export const App: React.FC = () => {
                   type="button"
                   className="primary"
                   style={{ background: "var(--chart-primary)" }}
-                  onClick={async () => {
-                    addAppLog("백업 + Gist 저장 시작...", "info");
-                    try {
-                      await handleManualBackup();
-                      const result = await saveToGist(JSON.stringify(data));
-                      setGistLastPushAt(result.updatedAt);
-                      addAppLog(`Gist 저장 완료 (${new Date(result.updatedAt).toLocaleString("ko-KR")})`, "success");
-                      toast.success("백업 + Gist 저장 완료");
-                    } catch (e: any) {
-                      addAppLog(`Gist 저장 실패: ${e.message}`, "error");
-                      toast.error(e.message ?? "Gist 저장 실패");
-                    }
-                  }}
+                  onClick={() => withConfirm({
+                    title: "Gist 저장",
+                    message: "현재 데이터를 GitHub Gist에 저장합니다. 기존 Gist 데이터가 덮어씌워집니다.",
+                    confirmLabel: "저장",
+                    onConfirm: async () => {
+                      addAppLog("백업 + Gist 저장 시작...", "info");
+                      try {
+                        await handleManualBackup();
+                        const result = await saveToGist(toUserDataJson(data));
+                        setGistLastPushAt(result.updatedAt);
+                        addAppLog(`Gist 저장 완료 (${new Date(result.updatedAt).toLocaleString("ko-KR")})`, "success");
+                        toast.success("백업 + Gist 저장 완료");
+                      } catch (e: any) {
+                        addAppLog(`Gist 저장 실패: ${e.message}`, "error");
+                        toast.error(e.message ?? "Gist 저장 실패");
+                      }
+                    },
+                  })}
                 >
                   Gist 저장
                 </button>
@@ -406,19 +444,30 @@ export const App: React.FC = () => {
                     type="button"
                     className="secondary"
                     style={{ borderColor: "var(--chart-primary)", color: "var(--chart-primary)" }}
-                    onClick={async () => {
-                      addAppLog("Gist 불러오기 시작...", "info");
-                      try {
-                        const result = await loadFromGist();
-                        const parsed = JSON.parse(result.dataJson);
-                        setDataWithHistory(() => parsed);
-                        addAppLog(`Gist 불러오기 완료 (${new Date(result.updatedAt).toLocaleString("ko-KR")})`, "success");
-                        toast.success("Gist에서 불러오기 완료");
-                      } catch (e: any) {
-                        addAppLog(`Gist 불러오기 실패: ${e.message}`, "error");
-                        toast.error(e.message ?? "Gist 불러오기 실패");
-                      }
-                    }}
+                    onClick={() => withConfirm({
+                      title: "Gist 불러오기",
+                      message: "Gist에서 데이터를 불러옵니다. 현재 앱 데이터가 Gist 데이터로 교체됩니다. 이 작업은 실행 취소할 수 없습니다.",
+                      confirmLabel: "불러오기",
+                      confirmStyle: "danger",
+                      onConfirm: async () => {
+                        addAppLog("Gist 불러오기 시작...", "info");
+                        try {
+                          const result = await loadFromGist();
+                          const parsed = JSON.parse(result.dataJson);
+                          setDataWithHistory((prev) => ({
+                            ...parsed,
+                            prices: parsed.prices?.length > 0 ? parsed.prices : prev.prices,
+                            tickerDatabase: parsed.tickerDatabase?.length > 0 ? parsed.tickerDatabase : prev.tickerDatabase,
+                            historicalDailyCloses: parsed.historicalDailyCloses?.length > 0 ? parsed.historicalDailyCloses : prev.historicalDailyCloses,
+                          }));
+                          addAppLog(`Gist 불러오기 완료 (${new Date(result.updatedAt).toLocaleString("ko-KR")})`, "success");
+                          toast.success("Gist에서 불러오기 완료");
+                        } catch (e: any) {
+                          addAppLog(`Gist 불러오기 실패: ${e.message}`, "error");
+                          toast.error(e.message ?? "Gist 불러오기 실패");
+                        }
+                      },
+                    })}
                   >
                     Gist 불러오기
                   </button>
@@ -431,22 +480,27 @@ export const App: React.FC = () => {
                   type="button"
                   className="secondary"
                   disabled={isPullingFromGit}
-                  onClick={async () => {
-                    setIsPullingFromGit(true);
-                    addAppLog("원격 업데이트 가져오는 중...", "info");
-                    try {
-                      const res = await fetch("/api/git-pull", { method: "POST" });
-                      const json = await res.json();
-                      if (!res.ok) throw new Error(json.error ?? "업데이트 실패");
-                      addAppLog("업데이트 완료. F5로 새로고침하세요.", "success");
-                      toast.success("업데이트 완료 — F5로 새로고침");
-                    } catch (e: any) {
-                      addAppLog(`업데이트 실패: ${e.message}`, "error");
-                      toast.error(e.message ?? "업데이트 실패");
-                    } finally {
-                      setIsPullingFromGit(false);
-                    }
-                  }}
+                  onClick={() => withConfirm({
+                    title: "업데이트",
+                    message: "원격에서 최신 코드를 내려받습니다. 완료 후 F5로 새로고침이 필요합니다.",
+                    confirmLabel: "업데이트",
+                    onConfirm: async () => {
+                      setIsPullingFromGit(true);
+                      addAppLog("원격 업데이트 가져오는 중...", "info");
+                      try {
+                        const res = await fetch("/api/git-pull", { method: "POST" });
+                        const json = await res.json();
+                        if (!res.ok) throw new Error(json.error ?? "업데이트 실패");
+                        addAppLog("업데이트 완료. F5로 새로고침하세요.", "success");
+                        toast.success("업데이트 완료 — F5로 새로고침");
+                      } catch (e: any) {
+                        addAppLog(`업데이트 실패: ${e.message}`, "error");
+                        toast.error(e.message ?? "업데이트 실패");
+                      } finally {
+                        setIsPullingFromGit(false);
+                      }
+                    },
+                  })}
                 >
                   {isPullingFromGit ? "업데이트 중..." : "업데이트"}
                 </button>
@@ -455,22 +509,28 @@ export const App: React.FC = () => {
                   className="primary"
                   style={{ background: "var(--success, #22c55e)" }}
                   disabled={isPushingToGit}
-                  onClick={async () => {
-                    setIsPushingToGit(true);
-                    addAppLog("GitHub 배포 중...", "info");
-                    try {
-                      const res = await fetch("/api/git-push", { method: "POST" });
-                      const json = await res.json();
-                      if (!res.ok) throw new Error(json.error ?? "배포 실패");
-                      addAppLog("GitHub 배포 완료 (약 2분 후 반영)", "success");
-                      toast.success("GitHub에 배포 완료");
-                    } catch (e: any) {
-                      addAppLog(`GitHub 배포 실패: ${e.message}`, "error");
-                      toast.error(e.message ?? "GitHub 배포 실패");
-                    } finally {
-                      setIsPushingToGit(false);
-                    }
-                  }}
+                  onClick={() => withConfirm({
+                    title: "GitHub 배포",
+                    message: "현재 코드와 데이터를 GitHub에 push합니다. 약 2분 후 반영됩니다.",
+                    confirmLabel: "배포",
+                    confirmStyle: "danger",
+                    onConfirm: async () => {
+                      setIsPushingToGit(true);
+                      addAppLog("GitHub 배포 중...", "info");
+                      try {
+                        const res = await fetch("/api/git-push", { method: "POST" });
+                        const json = await res.json();
+                        if (!res.ok) throw new Error(json.error ?? "배포 실패");
+                        addAppLog("GitHub 배포 완료 (약 2분 후 반영)", "success");
+                        toast.success("GitHub에 배포 완료");
+                      } catch (e: any) {
+                        addAppLog(`GitHub 배포 실패: ${e.message}`, "error");
+                        toast.error(e.message ?? "GitHub 배포 실패");
+                      } finally {
+                        setIsPushingToGit(false);
+                      }
+                    },
+                  })}
                 >
                   {isPushingToGit ? "배포 중..." : "배포"}
                 </button>
@@ -711,6 +771,20 @@ export const App: React.FC = () => {
       />
 
       <ShortcutsHelp isOpen={showShortcutsHelp} onClose={() => setShowShortcutsHelp(false)} />
+
+      <ConfirmModal
+        isOpen={pendingAction !== null}
+        title={pendingAction?.title ?? ""}
+        message={pendingAction?.message ?? ""}
+        confirmLabel={pendingAction?.confirmLabel ?? "확인"}
+        confirmStyle={pendingAction?.confirmStyle ?? "primary"}
+        onConfirm={() => {
+          const action = pendingAction;
+          setPendingAction(null);
+          action?.onConfirm();
+        }}
+        onCancel={() => setPendingAction(null)}
+      />
     </div>
   );
 };

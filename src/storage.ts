@@ -7,7 +7,8 @@ export {
   getEmptyData,
   preloadKrNames,
   getKrNames,
-  applyKoreanStockNames
+  applyKoreanStockNames,
+  toUserDataJson
 } from "./services/dataService";
 export {
   saveBackupSnapshot,

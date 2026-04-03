@@ -883,16 +883,29 @@ export function loadData(): AppData {
     const parsedAccounts = asArray(parsed.accounts) as AppData["accounts"];
     const parsedLedger = asArray(parsed.ledger) as AppData["ledger"];
     const parsedTrades = asArray(parsed.trades) as AppData["trades"];
-    const parsedPrices = asArray(parsed.prices) as AppData["prices"];
     const parsedRecurring = asArray(parsed.recurringExpenses) as AppData["recurringExpenses"];
     const parsedBudgetGoals = asArray(parsed.budgetGoals) as AppData["budgetGoals"];
     const parsedCustomSymbols = asArray(parsed.customSymbols) as AppData["customSymbols"];
-    const parsedTickerDatabase = asArray(parsed.tickerDatabase) as NonNullable<AppData["tickerDatabase"]>;
     const parsedLedgerTemplates = asArray(parsed.ledgerTemplates) as NonNullable<AppData["ledgerTemplates"]>;
     const parsedStockPresets = asArray(parsed.stockPresets) as NonNullable<AppData["stockPresets"]>;
     const parsedTargetPortfolios = asArray(parsed.targetPortfolios) as NonNullable<AppData["targetPortfolios"]>;
     const parsedWorkoutWeeks = asArray(parsed.workoutWeeks) as NonNullable<AppData["workoutWeeks"]>;
     const parsedIsaPortfolio = asArray(parsed.isaPortfolio) as NonNullable<AppData["isaPortfolio"]>;
+
+    // 캐시 분리 키에서 로드, 없으면 메인 키의 값으로 마이그레이션
+    const cache = loadCacheData();
+    const mainPrices = asArray(parsed.prices) as AppData["prices"];
+    const mainTickerDb = asArray(parsed.tickerDatabase) as NonNullable<AppData["tickerDatabase"]>;
+    const mainHistorical = asArray(parsed.historicalDailyCloses);
+    // 캐시 키가 비어 있고 메인 키에 데이터가 있으면 마이그레이션 필요
+    const needsCacheMigration =
+      cache.prices.length === 0 && cache.tickerDatabase.length === 0 && cache.historicalDailyCloses.length === 0 &&
+      (mainPrices.length > 0 || mainTickerDb.length > 0 || mainHistorical.length > 0);
+    const effectivePrices = cache.prices.length > 0 ? cache.prices : mainPrices;
+    const effectiveTickerDatabase = cache.tickerDatabase.length > 0 ? cache.tickerDatabase : mainTickerDb;
+    const effectiveHistoricalDailyCloses = cache.historicalDailyCloses.length > 0
+      ? cache.historicalDailyCloses
+      : normalizeHistoricalDailyCloses(mainHistorical);
     const normalizedTargetCurveRaw = asObject(parsed.targetNetWorthCurve);
     const normalizedTargetCurve: Record<string, number> = {};
     for (const [date, value] of Object.entries(normalizedTargetCurveRaw)) {
@@ -912,20 +925,20 @@ export function loadData(): AppData {
       }),
       ledger: parsedLedger,
       trades: parsedTrades,
-      prices: parsedPrices,
+      prices: effectivePrices,
       categoryPresets: mergeCategoryPresets(parsed.categoryPresets, defaults),
       recurringExpenses: parsedRecurring,
       budgetGoals: parsedBudgetGoals,
       customSymbols: parsedCustomSymbols,
       usTickers: asArray<string>(parsed.usTickers).length > 0 ? [...asArray<string>(parsed.usTickers)] : [...DEFAULT_US_TICKERS],
-      tickerDatabase: parsedTickerDatabase,
+      tickerDatabase: effectiveTickerDatabase,
       ledgerTemplates: parsedLedgerTemplates,
       stockPresets: parsedStockPresets,
       targetPortfolios: parsedTargetPortfolios,
       workoutWeeks: parsedWorkoutWeeks,
       targetNetWorthCurve: normalizedTargetCurve,
       assetSnapshots: normalizeAssetSnapshots(parsed.assetSnapshots),
-      historicalDailyCloses: normalizeHistoricalDailyCloses(parsed.historicalDailyCloses),
+      historicalDailyCloses: effectiveHistoricalDailyCloses,
       dividendTrackingTicker: parsed.dividendTrackingTicker !== undefined && parsed.dividendTrackingTicker !== null ? String(parsed.dividendTrackingTicker) : "458730",
       isaPortfolio: parsedIsaPortfolio.length > 0 ? parsedIsaPortfolio : getDefaultIsaPortfolio()
     };
@@ -1004,7 +1017,8 @@ export function loadData(): AppData {
       krNamesChanged ||
       normalizedSecurities.changed ||
       normalizedUsdCashImpact.changed ||
-      normalizedKrwCashImpact.changed
+      normalizedKrwCashImpact.changed ||
+      needsCacheMigration
     ) {
       try {
         saveData(finalData);
@@ -1021,18 +1035,90 @@ export function loadData(): AppData {
   }
 }
 
+// =========================================
+//  API 캐시 분리 저장 (prices, tickerDatabase, historicalDailyCloses)
+// =========================================
+
+interface CacheData {
+  prices: AppData["prices"];
+  tickerDatabase: NonNullable<AppData["tickerDatabase"]>;
+  historicalDailyCloses: NonNullable<AppData["historicalDailyCloses"]>;
+}
+
+function loadCacheData(): CacheData {
+  const empty: CacheData = { prices: [], tickerDatabase: [], historicalDailyCloses: [] };
+  if (typeof window === "undefined") return empty;
+  try {
+    const raw = window.localStorage.getItem(STORAGE_KEYS.CACHE);
+    if (!raw) return empty;
+    const parsed = JSON.parse(raw) as Partial<CacheData>;
+    return {
+      prices: Array.isArray(parsed.prices) ? (parsed.prices as AppData["prices"]) : [],
+      tickerDatabase: Array.isArray(parsed.tickerDatabase) ? (parsed.tickerDatabase as NonNullable<AppData["tickerDatabase"]>) : [],
+      historicalDailyCloses: Array.isArray(parsed.historicalDailyCloses) ? (parsed.historicalDailyCloses as NonNullable<AppData["historicalDailyCloses"]>) : [],
+    };
+  } catch {
+    return empty;
+  }
+}
+
+function saveCacheData(cache: CacheData): void {
+  if (typeof window === "undefined") return;
+  try {
+    window.localStorage.setItem(STORAGE_KEYS.CACHE, JSON.stringify(cache));
+  } catch (e) {
+    console.warn("[FarmWallet] cache save failed", e);
+  }
+}
+
+/**
+ * Gist 저장 전용: prices, tickerDatabase, historicalDailyCloses 제외한 사용자 데이터만 JSON으로 반환.
+ * API로 재수집 가능한 캐시는 Gist에 포함하지 않아 동기화 속도를 높이고 용량을 줄임.
+ */
+export function toUserDataJson(data: AppData): string {
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars
+  const { prices: _p, tickerDatabase: _t, historicalDailyCloses: _h, ...userData } = data;
+  return JSON.stringify(userData);
+}
+
 const SAVE_RETRY_COUNT = 2;
 
 export function saveDataSerialized(serialized: string): void {
   if (typeof window === "undefined") return;
+
+  // 전체 데이터를 user 데이터와 API 캐시로 분리
+  let fullData: AppData;
+  let userDataStr: string;
+  let cacheToSave: CacheData;
+  try {
+    fullData = JSON.parse(serialized) as AppData;
+    const { prices, tickerDatabase, historicalDailyCloses, ...userFields } = fullData;
+    userDataStr = JSON.stringify(userFields);
+    cacheToSave = {
+      prices: Array.isArray(prices) ? prices : [],
+      tickerDatabase: Array.isArray(tickerDatabase) ? tickerDatabase : [],
+      historicalDailyCloses: Array.isArray(historicalDailyCloses) ? historicalDailyCloses : [],
+    };
+  } catch {
+    // 파싱 실패 시 원본 그대로 저장 (안전 폴백)
+    userDataStr = serialized;
+    fullData = {} as AppData;
+    cacheToSave = { prices: [], tickerDatabase: [], historicalDailyCloses: [] };
+  }
+
   let lastErr: unknown;
   for (let attempt = 0; attempt <= SAVE_RETRY_COUNT; attempt++) {
     try {
-      window.localStorage.setItem(STORAGE_KEYS.DATA, serialized);
+      // 사용자 데이터만 메인 키에 저장 (캐시 제외 → 용량 절감)
+      window.localStorage.setItem(STORAGE_KEYS.DATA, userDataStr);
       writeStoredSchemaVersion(DATA_SCHEMA_VERSION);
+
+      // API 캐시는 별도 키에 저장 (실패해도 앱 동작에 영향 없음)
+      saveCacheData(cacheToSave);
+
+      // 테이블 백업은 전체 데이터(캐시 포함)로 생성
       try {
-        const parsedData = JSON.parse(serialized) as AppData;
-        const tableFile = buildTableBackupFile(parsedData);
+        const tableFile = buildTableBackupFile(fullData);
         const tableStr = JSON.stringify(tableFile);
         try {
           window.localStorage.setItem(STORAGE_KEYS.DATA_TABLE_BACKUP, tableStr);

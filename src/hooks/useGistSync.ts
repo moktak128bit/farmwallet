@@ -13,6 +13,7 @@ import {
   getGistLastPullAt,
   setGistLastPullAt
 } from "../services/gistSync";
+import { toUserDataJson } from "../services/dataService";
 import { GIST_AUTO_PUSH_DEBOUNCE_MS } from "../constants/config";
 
 export interface UseGistSyncOptions {
@@ -104,7 +105,8 @@ export function useGistSync(
       if (!getGistToken() || !getGistId()) return;
       if (isPushingRef.current) return;
 
-      const payload = JSON.stringify(data);
+      // API 캐시(prices, tickerDatabase, historicalDailyCloses) 제외한 사용자 데이터만 Gist에 저장
+      const payload = toUserDataJson(data);
       if (!payload || payload === lastPushedPayloadRef.current) return;
 
       isPushingRef.current = true;

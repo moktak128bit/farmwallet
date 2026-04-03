@@ -539,24 +539,49 @@ export const PortfolioBreakdownWidget: React.FC<InsightWidgetProps> = ({
       }
 
       let currentValue = 0;
-      const holdings: { ticker: string; name: string; value: number; pnl: number }[] = [];
+      const holdings: { ticker: string; name: string; value: number; pnl: number; label: string }[] = [];
+
+      // 실현 손익 (매도 완료 종목)
+      const soldMap = new Map<string, { sellAmt: number; buyAmt: number; name: string }>();
+      for (const t of accTrades) {
+        if (t.side !== "sell") continue;
+        const prev = soldMap.get(t.ticker) || { sellAmt: 0, buyAmt: 0, name: t.name };
+        prev.sellAmt += t.totalAmount * (isUSDStock(t.ticker) ? (t.fxRateAtTrade || fxRate) : 1);
+        soldMap.set(t.ticker, prev);
+      }
+      for (const t of accTrades) {
+        if (t.side !== "buy" || !soldMap.has(t.ticker)) continue;
+        const entry = soldMap.get(t.ticker)!;
+        entry.buyAmt += t.totalAmount * (isUSDStock(t.ticker) ? (t.fxRateAtTrade || fxRate) : 1);
+        if (t.name) entry.name = t.name;
+      }
 
       holdMap.forEach((h, ticker) => {
-        if (h.qty <= 0) return;
+        if (h.qty <= 0.0001) {
+          // 매도 완료 종목 → 실현 손익
+          const sold = soldMap.get(ticker);
+          if (sold && sold.sellAmt > 0) {
+            const realized = sold.sellAmt - sold.buyAmt;
+            if (Math.abs(realized) > 1) {
+              holdings.push({ ticker, name: sold.name, value: 0, pnl: realized, label: "매도완료" });
+            }
+          }
+          return;
+        }
         const sp = priceMap.get(ticker);
         const mp = sp?.price ?? 0;
         const usd = isUSDStock(ticker);
         const val = h.qty * mp * (usd ? fxRate : 1);
         const pnl = val - h.buyAmt;
         currentValue += val;
-        holdings.push({ ticker, name: h.name, value: val, pnl });
+        holdings.push({ ticker, name: h.name, value: val, pnl, label: "보유중" });
       });
 
       holdings.sort((a, b) => Math.abs(b.pnl) - Math.abs(a.pnl));
 
       const pnl = currentValue + totalSell - totalBuy;
 
-      return { accId, accName, totalBuy, totalSell, currentValue, pnl, holdings: holdings.slice(0, 5) };
+      return { accId, accName, totalBuy, totalSell, currentValue, pnl, holdings: holdings.slice(0, 8) };
     });
   }, [accounts, trades, prices, fxRate]);
 
@@ -627,13 +652,15 @@ export const PortfolioBreakdownWidget: React.FC<InsightWidgetProps> = ({
                         justifyContent: "space-between",
                         fontSize: 12,
                         padding: "2px 0",
-                        color: h.pnl >= 0 ? "var(--success)" : "var(--danger)",
                       }}
                     >
                       <span style={{ color: "var(--text)" }}>
                         {h.name || h.ticker}
+                        {h.label === "매도완료" && (
+                          <span style={{ fontSize: 10, color: "var(--text-muted)", marginLeft: 4 }}>(매도완료)</span>
+                        )}
                       </span>
-                      <span>
+                      <span style={{ color: h.pnl >= 0 ? "var(--success)" : "var(--danger)", fontWeight: 500 }}>
                         {h.pnl >= 0 ? "+" : ""}
                         {formatKRW(h.pnl)}
                       </span>

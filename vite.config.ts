@@ -449,11 +449,40 @@ function backupApiPlugin(): Plugin {
           req.on("end", () => {
             if (tbTooLarge) return;
             try {
-              JSON.parse(body);
+              const parsed = JSON.parse(body) as { tables?: Record<string, unknown[]> };
               if (!fs.existsSync(dataDir)) {
                 fs.mkdirSync(dataDir, { recursive: true });
               }
               fs.writeFileSync(tableBackupFile, body, "utf-8");
+
+              // 가독성을 위해 데이터 성격별로 별도 파일로 분리 저장
+              const tables = parsed?.tables ?? {};
+
+              // ── 사용자 입력 데이터 ──
+              if (Array.isArray(tables.accounts)) {
+                fs.writeFileSync(path.join(dataDir, "accounts.json"), JSON.stringify(tables.accounts, null, 2), "utf-8");
+              }
+              if (Array.isArray(tables.loans)) {
+                fs.writeFileSync(path.join(dataDir, "loans.json"), JSON.stringify(tables.loans, null, 2), "utf-8");
+              }
+              if (Array.isArray(tables.ledger_entries)) {
+                fs.writeFileSync(path.join(dataDir, "ledger.json"), JSON.stringify(tables.ledger_entries, null, 2), "utf-8");
+              }
+              if (Array.isArray(tables.stock_trades)) {
+                fs.writeFileSync(path.join(dataDir, "trades.json"), JSON.stringify(tables.stock_trades, null, 2), "utf-8");
+              }
+
+              // ── API 캐시 데이터 (재수집 가능) ──
+              if (Array.isArray(tables.stock_prices)) {
+                fs.writeFileSync(path.join(dataDir, "prices.json"), JSON.stringify(tables.stock_prices, null, 2), "utf-8");
+              }
+              if (Array.isArray(tables.ticker_database) && tables.ticker_database.length > 0) {
+                fs.writeFileSync(path.join(dataDir, "ticker-database.json"), JSON.stringify(tables.ticker_database, null, 2), "utf-8");
+              }
+              if (Array.isArray(tables.historical_daily_closes) && tables.historical_daily_closes.length > 0) {
+                fs.writeFileSync(path.join(dataDir, "historical-closes.json"), JSON.stringify(tables.historical_daily_closes, null, 2), "utf-8");
+              }
+
               res.setHeader("Content-Type", "application/json");
               res.end(JSON.stringify({ ok: true, savedAt: new Date().toISOString() }));
             } catch {

@@ -366,11 +366,12 @@ export const App: React.FC = () => {
                   className="primary"
                   style={{ background: "var(--chart-primary)" }}
                   onClick={async () => {
-                    addAppLog("Gist 저장 시작...", "info");
+                    addAppLog("백업 + Gist 저장 시작...", "info");
                     try {
+                      await handleManualBackup();
                       const result = await saveToGist(JSON.stringify(data));
                       addAppLog(`Gist 저장 완료 (${new Date(result.updatedAt).toLocaleString("ko-KR")})`, "success");
-                      toast.success("Gist 동기화 완료");
+                      toast.success("백업 + Gist 저장 완료");
                     } catch (e: any) {
                       addAppLog(`Gist 저장 실패: ${e.message}`, "error");
                       toast.error(e.message ?? "Gist 저장 실패");

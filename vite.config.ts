@@ -833,15 +833,23 @@ function backupApiPlugin(): Plugin {
         const msg = `save: ${timestamp}`;
         exec("git add -A", { cwd }, () => {
           exec(`git commit -m "${msg}"`, { cwd }, () => {
-            // commit 실패(변경사항 없음)해도 push는 계속 진행
-            exec("git push", { cwd }, (err, _stdout, stderr) => {
-              res.setHeader("Content-Type", "application/json");
-              if (err) {
+            // commit 실패(변경사항 없음)해도 계속 진행
+            exec("git pull --rebase", { cwd }, (pullErr, _pullOut, pullStderr) => {
+              if (pullErr) {
                 res.statusCode = 500;
-                res.end(JSON.stringify({ error: stderr || err.message }));
+                res.setHeader("Content-Type", "application/json");
+                res.end(JSON.stringify({ error: pullStderr || pullErr.message }));
                 return;
               }
-              res.end(JSON.stringify({ ok: true }));
+              exec("git push", { cwd }, (pushErr, _pushOut, pushStderr) => {
+                res.setHeader("Content-Type", "application/json");
+                if (pushErr) {
+                  res.statusCode = 500;
+                  res.end(JSON.stringify({ error: pushStderr || pushErr.message }));
+                  return;
+                }
+                res.end(JSON.stringify({ ok: true }));
+              });
             });
           });
         });

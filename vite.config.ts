@@ -825,31 +825,27 @@ function backupApiPlugin(): Plugin {
         next();
       });
 
-      // Git push API (로컬 개발 전용)
+      // 업데이트 (git pull) — 로컬 개발 전용
+      server.middlewares.use("/api/git-pull", (req: IncomingMessage, res: ServerResponse, next) => {
+        if (req.method !== "POST") { next(); return; }
+        exec("git pull origin main --no-rebase", { cwd: process.cwd() }, (err, _o, stderr) => {
+          res.setHeader("Content-Type", "application/json");
+          if (err) { res.statusCode = 500; res.end(JSON.stringify({ error: stderr || err.message })); return; }
+          res.end(JSON.stringify({ ok: true }));
+        });
+      });
+
+      // 배포 (git push) — 로컬 개발 전용
       server.middlewares.use("/api/git-push", (req: IncomingMessage, res: ServerResponse, next) => {
         if (req.method !== "POST") { next(); return; }
         const cwd = process.cwd();
-        const timestamp = new Date().toLocaleString("ko-KR", { timeZone: "Asia/Seoul" });
-        const msg = `save: ${timestamp}`;
+        const msg = `save: ${new Date().toLocaleString("ko-KR", { timeZone: "Asia/Seoul" })}`;
         exec("git add -A", { cwd }, () => {
-          exec(`git commit -m "${msg}"`, { cwd }, () => {
-            // commit 실패(변경사항 없음)해도 계속 진행
-            exec("git pull --rebase", { cwd }, (pullErr, _pullOut, pullStderr) => {
-              if (pullErr) {
-                res.statusCode = 500;
-                res.setHeader("Content-Type", "application/json");
-                res.end(JSON.stringify({ error: pullStderr || pullErr.message }));
-                return;
-              }
-              exec("git push", { cwd }, (pushErr, _pushOut, pushStderr) => {
-                res.setHeader("Content-Type", "application/json");
-                if (pushErr) {
-                  res.statusCode = 500;
-                  res.end(JSON.stringify({ error: pushStderr || pushErr.message }));
-                  return;
-                }
-                res.end(JSON.stringify({ ok: true }));
-              });
+          exec(`git commit -m "${msg}" --allow-empty`, { cwd }, () => {
+            exec("git push origin main --force", { cwd }, (err, _o, stderr) => {
+              res.setHeader("Content-Type", "application/json");
+              if (err) { res.statusCode = 500; res.end(JSON.stringify({ error: stderr || err.message })); return; }
+              res.end(JSON.stringify({ ok: true }));
             });
           });
         });

@@ -9,14 +9,14 @@ import type {
 import { formatKRW, formatNumber } from "../../utils/formatter";
 import { isUSDStock } from "../../utils/finance";
 
-/** 표시용 종목명: 긴 영문명은 티커로 대체, 한글명 우선 */
+/** 표시용 종목명: 한글명은 그대로, 미국 주식은 "티커 종목명" 형태 */
 function displayName(ticker: string, name: string): string {
   if (!name || name === ticker) return ticker;
-  // 한글이 포함되면 그대로 사용
+  // 한글이 포함되면 그대로
   if (/[가-힣]/.test(name)) return name;
-  // 영문명이 20자 이상이면 티커로 대체
-  if (name.length > 20) return ticker;
-  return name;
+  // 영문 종목: "RKLB Rocket Lab Corporation" 형태
+  if (name !== ticker) return `${ticker} ${name}`;
+  return ticker;
 }
 
 // ---------------------------------------------------------------------------

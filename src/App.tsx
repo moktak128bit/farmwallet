@@ -484,6 +484,7 @@ export const App: React.FC = () => {
                     title: "업데이트",
                     message: "원격에서 최신 코드를 내려받습니다. 완료 후 F5로 새로고침이 필요합니다.",
                     confirmLabel: "업데이트",
+                    confirmStyle: "danger",
                     onConfirm: async () => {
                       setIsPullingFromGit(true);
                       addAppLog("원격 업데이트 가져오는 중...", "info");

@@ -905,17 +905,19 @@ export const DividendCoverageWidget: React.FC<AdvancedWidgetProps> = ({
       (e) => e.kind === "expense" && e.isFixedExpense === true,
     );
 
-    const fixedMap = new Map<string, number[]>();
+    const fixedMap = new Map<string, { total: number; monthSet: Set<string> }>();
     fixedEntries.forEach((e) => {
       const key = e.category + (e.subCategory ? ` > ${e.subCategory}` : "");
-      if (!fixedMap.has(key)) fixedMap.set(key, []);
-      fixedMap.get(key)!.push(e.amount);
+      const prev = fixedMap.get(key) || { total: 0, monthSet: new Set<string>() };
+      prev.total += e.amount;
+      prev.monthSet.add((e.date || "").slice(0, 7));
+      fixedMap.set(key, prev);
     });
 
     const fixedItems = Array.from(fixedMap.entries())
-      .map(([name, amounts]) => ({
+      .map(([name, { total, monthSet }]) => ({
         name,
-        avgAmount: amounts.reduce((a, b) => a + b, 0) / Math.max(months.length, 1),
+        avgAmount: total / Math.max(monthSet.size, 1),
       }))
       .sort((a, b) => a.avgAmount - b.avgAmount);
 

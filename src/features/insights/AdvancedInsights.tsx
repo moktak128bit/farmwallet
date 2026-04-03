@@ -743,7 +743,7 @@ export const DividendCoverageInsightWidget: React.FC<InsightWidgetProps> = ({
               }}
             >
               <span>
-                {item.covered ? "✅" : "❌"} {item.name}
+                {item.covered ? "[O]" : "[X]"} {item.name}
               </span>
               <span style={{ color: "var(--text-muted)" }}>
                 {formatKRW(item.amount)}

@@ -58,7 +58,8 @@ import { useFxRateValue } from "./context/FxRateContext";
 import { useTickerDatabase } from "./hooks/useTickerDatabase";
 import { useKeyboardShortcuts } from "./hooks/useKeyboardShortcuts";
 import { usePortfolioWorker } from "./hooks/usePortfolioWorker";
-import { APP_VERSION } from "./constants/config";
+import { APP_VERSION, STORAGE_KEYS } from "./constants/config";
+import { saveToGist, getGistToken } from "./services/gistSync";
 import { runIntegrityCheck } from "./utils/dataIntegrity";
 
 export type AppLogEntry = { id: number; message: string; type: "success" | "error" | "info"; time: string };
@@ -358,6 +359,23 @@ export const App: React.FC = () => {
             >
               백업
             </button>
+            {getGistToken() && (
+              <button
+                type="button"
+                className="primary"
+                style={{ background: "var(--chart-primary)" }}
+                onClick={async () => {
+                  try {
+                    await saveToGist(JSON.stringify(data));
+                    toast.success("Gist 동기화 완료");
+                  } catch (e: any) {
+                    toast.error(e.message ?? "Gist 저장 실패");
+                  }
+                }}
+              >
+                Gist 동기화
+              </button>
+            )}
             <button
               type="button"
               className="secondary"

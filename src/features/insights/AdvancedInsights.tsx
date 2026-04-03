@@ -9,6 +9,16 @@ import type {
 import { formatKRW, formatNumber } from "../../utils/formatter";
 import { isUSDStock } from "../../utils/finance";
 
+/** 표시용 종목명: 긴 영문명은 티커로 대체, 한글명 우선 */
+function displayName(ticker: string, name: string): string {
+  if (!name || name === ticker) return ticker;
+  // 한글이 포함되면 그대로 사용
+  if (/[가-힣]/.test(name)) return name;
+  // 영문명이 20자 이상이면 티커로 대체
+  if (name.length > 20) return ticker;
+  return name;
+}
+
 // ---------------------------------------------------------------------------
 // Shared props
 // ---------------------------------------------------------------------------
@@ -563,7 +573,7 @@ export const PortfolioBreakdownWidget: React.FC<InsightWidgetProps> = ({
           if (sold && sold.sellAmt > 0) {
             const realized = sold.sellAmt - sold.buyAmt;
             if (Math.abs(realized) > 1) {
-              holdings.push({ ticker, name: sold.name, value: 0, pnl: realized, label: "매도완료" });
+              holdings.push({ ticker, name: displayName(ticker, sold.name), value: 0, pnl: realized, label: "매도완료" });
             }
           }
           return;
@@ -574,7 +584,7 @@ export const PortfolioBreakdownWidget: React.FC<InsightWidgetProps> = ({
         const val = h.qty * mp * (usd ? fxRate : 1);
         const pnl = val - h.buyAmt;
         currentValue += val;
-        holdings.push({ ticker, name: h.name, value: val, pnl, label: "보유중" });
+        holdings.push({ ticker, name: displayName(ticker, h.name), value: val, pnl, label: "보유중" });
       });
 
       holdings.sort((a, b) => Math.abs(b.pnl) - Math.abs(a.pnl));

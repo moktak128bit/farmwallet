@@ -1021,7 +1021,7 @@ export const DividendCoverageWidget: React.FC<AdvancedWidgetProps> = ({
   );
 };
 
-// ─── Widget 6: ConcentrationWidget — "집중도 vs 다양성 (HHI)" ───────────────
+// ─── Widget 6: ConcentrationWidget — "투자 집중도 vs 소비 다양성" ───────────────
 
 export const ConcentrationWidget: React.FC<AdvancedWidgetProps> = ({
   ledger,
@@ -1137,7 +1137,7 @@ export const ConcentrationWidget: React.FC<AdvancedWidgetProps> = ({
 
   return (
     <div className="card">
-      <div className="card-title">집중도 vs 다양성 (HHI)</div>
+      <div className="card-title">투자 집중도 vs 소비 다양성</div>
 
       {/* 두 게이지 나란히 */}
       <div
@@ -1181,7 +1181,7 @@ export const ConcentrationWidget: React.FC<AdvancedWidgetProps> = ({
               {data.portLabel}
             </span>
             <span style={{ color: "var(--text-muted)" }}>
-              HHI {formatNumber(Math.round(data.portfolioHHI))}
+              {data.portLabel}
             </span>
           </div>
         </div>
@@ -1219,7 +1219,7 @@ export const ConcentrationWidget: React.FC<AdvancedWidgetProps> = ({
               {data.spendLabel}
             </span>
             <span style={{ color: "var(--text-muted)" }}>
-              HHI {formatNumber(Math.round(data.spendHHI))}
+              {data.spendLabel}
             </span>
           </div>
         </div>

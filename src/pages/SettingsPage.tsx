@@ -296,7 +296,7 @@ function getDashboardWidgetNames(dividendTicker?: string): Record<string, string
     investCapacity: "투자 여력 스코어",
     tradeVsSpend: "매매 vs 소비 패턴",
     dividendCoverage: "배당 vs 고정지출",
-    concentration: "집중도 vs 다양성"
+    concentration: "투자 집중도 vs 소비 다양성"
   };
 }
 

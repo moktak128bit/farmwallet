@@ -12,14 +12,6 @@ export function parseQuantityFromNote(note: string | undefined): number | null {
   return m ? parseInt(m[1], 10) : null;
 }
 
-/** note에 배당락일 문자열 추가. 기존 note가 있으면 이어붙임 */
-export function noteWithExDate(note: string | undefined, exDate: string): string {
-  const line = `배당락일:${exDate}`;
-  if (!note?.trim()) return line;
-  if (note.includes("배당락일:")) return note.replace(/배당락일\s*:\s*\d{4}-\d{2}-\d{2}/, line);
-  return `${note}\n${line}`.trim();
-}
-
 /** 배당 입력 시 note 생성: 보유주식(입력값) + 배당락일 */
 export function buildDividendNote(quantity?: number, exDate?: string): string | undefined {
   const parts: string[] = [];

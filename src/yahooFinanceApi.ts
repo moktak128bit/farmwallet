@@ -60,62 +60,6 @@ interface YahooQuoteApiResponse {
   };
 }
 
-export async function fetchYahooBatchQuotes(symbols: string[]): Promise<YahooQuoteResult[]> {
-  const uniq = Array.from(new Set(symbols.map((s) => s.trim()).filter(Boolean)));
-  if (!uniq.length) return [];
-
-  const chunkSize = 30;
-  const chunks: string[][] = [];
-  for (let i = 0; i < uniq.length; i += chunkSize) {
-    chunks.push(uniq.slice(i, i + chunkSize));
-  }
-
-  const results: YahooQuoteResult[] = [];
-
-  for (const chunk of chunks) {
-    const qs = new URLSearchParams({ symbols: chunk.join(",") });
-    try {
-      const res = await fetch(`/api/yahoo-quote?${qs.toString()}`);
-      if (!res.ok) continue;
-      const data = (await res.json()) as YahooQuoteApiResponse;
-      const list = data.quoteResponse?.result ?? [];
-      list.forEach((item) => {
-        if (!item.symbol || typeof item.regularMarketPrice !== "number") return;
-        let change: number | undefined;
-        let changePercent: number | undefined;
-        if (typeof item.regularMarketPreviousClose === "number") {
-          change = item.regularMarketPrice - item.regularMarketPreviousClose;
-          if (item.regularMarketPreviousClose !== 0) {
-            changePercent = (change / item.regularMarketPreviousClose) * 100;
-          }
-        }
-        const updatedAt =
-          typeof item.regularMarketTime === "number"
-            ? new Date(item.regularMarketTime * 1000).toISOString()
-            : undefined;
-
-        results.push({
-          ticker: item.symbol.toUpperCase(),
-          name: item.longName || item.shortName || item.symbol,
-          price: item.regularMarketPrice,
-          currency: item.currency,
-          change,
-          changePercent,
-          updatedAt,
-          sector: item.sector,
-          industry: item.industry
-        });
-      });
-    } catch (err) {
-      console.warn("batch quote chunk failed", chunk.slice(0, 3), err);
-    }
-    // 가벼운 딜레이로 서버 부담 완화 (429 방지)
-    await new Promise((r) => setTimeout(r, 400));
-  }
-
-  return results;
-}
-
 /**
  * 한국 코스피/코스닥 주요 종목 목록 가져오기
  * 야후 파이낸스 검색 API를 사용하여 주요 종목들 검색

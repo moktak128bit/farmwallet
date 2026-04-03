@@ -131,46 +131,6 @@ export function validateDate(
 }
 
 /**
- * 계좌 ID 검증
- * @param id 계좌 ID
- * @param existingIds 기존 계좌 ID 목록 (중복 검사용)
- * @param excludeId 제외할 ID (수정 시 사용)
- */
-export function validateAccountId(
-  id: string,
-  existingIds: string[],
-  excludeId?: string
-): ValidationResult {
-  if (!id || id.trim() === "") {
-    return { valid: false, error: "계좌 ID를 입력해주세요" };
-  }
-
-  const trimmedId = id.trim();
-  
-  // 공백 포함 여부 확인
-  if (id !== trimmedId) {
-    return { valid: false, error: "계좌 ID에는 앞뒤 공백을 사용할 수 없습니다" };
-  }
-
-  // 특수문자 제한 (영문, 숫자, 언더스코어, 하이픈만 허용)
-  const idRegex = /^[a-zA-Z0-9_-]+$/;
-  if (!idRegex.test(trimmedId)) {
-    return { valid: false, error: "계좌 ID는 영문, 숫자, 언더스코어(_), 하이픈(-)만 사용할 수 있습니다" };
-  }
-
-  // 중복 검사
-  const filteredIds = excludeId 
-    ? existingIds.filter(existingId => existingId !== excludeId)
-    : existingIds;
-  
-  if (filteredIds.includes(trimmedId)) {
-    return { valid: false, error: "이미 사용 중인 계좌 ID입니다" };
-  }
-
-  return { valid: true };
-}
-
-/**
  * 티커 검증
  * @param ticker 티커 심볼
  */

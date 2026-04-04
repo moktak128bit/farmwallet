@@ -115,6 +115,63 @@ export async function loadFromGist(): Promise<{ dataJson: string; updatedAt: str
   return { dataJson: content, updatedAt: data.updated_at };
 }
 
+export interface GistVersion {
+  sha: string;
+  committedAt: string;
+  /** 이 버전 데이터를 가져오는 API URL */
+  url: string;
+}
+
+/** 최근 N개의 Gist 버전 목록 반환 (PATCH할 때마다 자동으로 쌓임) */
+export async function getGistVersions(maxCount = 5): Promise<GistVersion[]> {
+  const token = getGistToken();
+  const gistId = getGistId();
+  if (!token || !gistId) throw new Error("토큰 또는 Gist ID가 없습니다.");
+
+  const res = await fetch(`${API_BASE}/gists/${gistId}/commits?per_page=${maxCount}`, {
+    headers: headers(token)
+  });
+  if (!res.ok) {
+    const err = await res.text();
+    throw new Error(`버전 목록 조회 실패 (${res.status}): ${err}`);
+  }
+  const commits = await res.json() as Array<{
+    version: string;
+    committed_at: string;
+    url: string;
+  }>;
+  return commits.slice(0, maxCount).map((c) => ({
+    sha: c.version,
+    committedAt: c.committed_at,
+    url: c.url,
+  }));
+}
+
+/** 특정 버전의 Gist 데이터 불러오기 (버전 url 사용) */
+export async function loadFromGistVersion(versionUrl: string): Promise<{ dataJson: string; committedAt: string }> {
+  const token = getGistToken();
+  if (!token) throw new Error("GitHub 토큰이 설정되지 않았습니다.");
+
+  const res = await fetch(versionUrl, { headers: headers(token) });
+  if (!res.ok) {
+    const err = await res.text();
+    throw new Error(`버전 불러오기 실패 (${res.status}): ${err}`);
+  }
+  const data = await res.json();
+  const file = data.files?.[GIST_FILE_NAME];
+  if (!file) throw new Error("해당 버전에 FarmWallet 데이터가 없습니다.");
+
+  let content: string;
+  if (file.raw_url) {
+    const rawRes = await fetch(file.raw_url);
+    if (!rawRes.ok) throw new Error(`버전 원본 불러오기 실패 (${rawRes.status})`);
+    content = await rawRes.text();
+  } else {
+    content = file.content;
+  }
+  return { dataJson: content, committedAt: data.updated_at ?? versionUrl };
+}
+
 /** 토큰 유효성 확인 */
 export async function validateToken(token: string): Promise<boolean> {
   try {

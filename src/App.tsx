@@ -5,6 +5,7 @@ import { Tabs, type TabId } from "./components/ui/Tabs";
 import { ShortcutsHelp } from "./components/ShortcutsHelp";
 import { SearchModal } from "./components/SearchModal";
 import { ConfirmModal } from "./components/ui/ConfirmModal";
+import { GistVersionModal } from "./components/GistVersionModal";
 
 // 동일 로더를 lazy와 프리페치에서 공유해 탭 호버 시 청크 미리 로드
 const loadDashboard = () => import("./pages/DashboardPage").then((m) => ({ default: m.DashboardView }));
@@ -59,8 +60,8 @@ import { useFxRateValue } from "./context/FxRateContext";
 import { useTickerDatabase } from "./hooks/useTickerDatabase";
 import { useKeyboardShortcuts } from "./hooks/useKeyboardShortcuts";
 import { usePortfolioWorker } from "./hooks/usePortfolioWorker";
-import { APP_VERSION, STORAGE_KEYS } from "./constants/config";
-import { saveToGist, loadFromGist, getGistToken, getGistId, setGistLastPushAt } from "./services/gistSync";
+import { APP_VERSION } from "./constants/config";
+import { saveToGist, getGistToken, getGistId, setGistLastPushAt } from "./services/gistSync";
 import { toUserDataJson } from "./services/dataService";
 import { useGistSync } from "./hooks/useGistSync";
 import { runIntegrityCheck } from "./utils/dataIntegrity";
@@ -72,6 +73,8 @@ export const App: React.FC = () => {
   const [tab, setTab] = useState<TabId>("dashboard");
   const [isPushingToGit, setIsPushingToGit] = useState(false);
   const [isPullingFromGit, setIsPullingFromGit] = useState(false);
+  const [showGistVersionModal, setShowGistVersionModal] = useState(false);
+
   const [pendingAction, setPendingAction] = useState<{
     title: string;
     message: string;
@@ -180,6 +183,22 @@ export const App: React.FC = () => {
     handleManualBackup,
     backupWarning
   } = useBackup(data, { onLog: addAppLog });
+
+  const handleGistVersionLoad = useCallback((dataJson: string, committedAt: string) => {
+    try {
+      const parsed = JSON.parse(dataJson);
+      setDataWithHistory((prev) => ({
+        ...parsed,
+        prices: parsed.prices?.length > 0 ? parsed.prices : prev.prices,
+        tickerDatabase: parsed.tickerDatabase?.length > 0 ? parsed.tickerDatabase : prev.tickerDatabase,
+        historicalDailyCloses: parsed.historicalDailyCloses?.length > 0 ? parsed.historicalDailyCloses : prev.historicalDailyCloses,
+      }));
+      toast.success(`Gist 버전 불러오기 완료 (${new Date(committedAt).toLocaleString("ko-KR")})`);
+    } catch {
+      addAppLog("Gist 버전 불러오기 실패: 데이터 파싱 오류", "error");
+      toast.error("Gist 버전 불러오기 실패");
+    }
+  }, [setDataWithHistory, addAppLog]);
 
   const handleGistAutoPull = useCallback((dataJson: string, remoteUpdatedAt: string) => {
     try {
@@ -444,30 +463,7 @@ export const App: React.FC = () => {
                     type="button"
                     className="secondary"
                     style={{ borderColor: "var(--chart-primary)", color: "var(--chart-primary)" }}
-                    onClick={() => withConfirm({
-                      title: "Gist 불러오기",
-                      message: "Gist에서 데이터를 불러옵니다. 현재 앱 데이터가 Gist 데이터로 교체됩니다. 이 작업은 실행 취소할 수 없습니다.",
-                      confirmLabel: "불러오기",
-                      confirmStyle: "danger",
-                      onConfirm: async () => {
-                        addAppLog("Gist 불러오기 시작...", "info");
-                        try {
-                          const result = await loadFromGist();
-                          const parsed = JSON.parse(result.dataJson);
-                          setDataWithHistory((prev) => ({
-                            ...parsed,
-                            prices: parsed.prices?.length > 0 ? parsed.prices : prev.prices,
-                            tickerDatabase: parsed.tickerDatabase?.length > 0 ? parsed.tickerDatabase : prev.tickerDatabase,
-                            historicalDailyCloses: parsed.historicalDailyCloses?.length > 0 ? parsed.historicalDailyCloses : prev.historicalDailyCloses,
-                          }));
-                          addAppLog(`Gist 불러오기 완료 (${new Date(result.updatedAt).toLocaleString("ko-KR")})`, "success");
-                          toast.success("Gist에서 불러오기 완료");
-                        } catch (e: any) {
-                          addAppLog(`Gist 불러오기 실패: ${e.message}`, "error");
-                          toast.error(e.message ?? "Gist 불러오기 실패");
-                        }
-                      },
-                    })}
+                    onClick={() => setShowGistVersionModal(true)}
                   >
                     Gist 불러오기
                   </button>
@@ -772,6 +768,13 @@ export const App: React.FC = () => {
       />
 
       <ShortcutsHelp isOpen={showShortcutsHelp} onClose={() => setShowShortcutsHelp(false)} />
+
+      <GistVersionModal
+        isOpen={showGistVersionModal}
+        onClose={() => setShowGistVersionModal(false)}
+        onLoad={handleGistVersionLoad}
+        onLog={addAppLog}
+      />
 
       <ConfirmModal
         isOpen={pendingAction !== null}

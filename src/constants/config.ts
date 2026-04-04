@@ -34,8 +34,6 @@ export const STORAGE_KEYS = {
   DATA_TABLE_BACKUP: "farmwallet-data-tables-v1",
   /** 마지막으로 성공한 USD/KRW 환율 캐시 */
   LAST_FX_RATE: "fw-last-fx-rate",
-  /** 고정지출 자동복사 ON/OFF (기본: true) */
-  AUTO_COPY_FIXED: "fw-auto-copy-fixed",
   /** 데이트통장 계좌 ID (해당 계좌 지출은 설정 비율만 본인 부담) */
   DATE_ACCOUNT_ID: "fw-date-account-id",
   /** 데이트통장 본인 부담 비율 (0~100, 기본 50) */

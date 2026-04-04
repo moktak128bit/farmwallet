@@ -1,4 +1,4 @@
-import { useEffect, useState, useCallback } from "react";
+import { useEffect, useState, useCallback, useRef } from "react";
 import { loadData, preloadKrNames, applyKoreanStockNames, saveData } from "../storage";
 import { useAppStore } from "../store/appStore";
 
@@ -25,6 +25,54 @@ export function useAppData() {
     }, 0);
     return () => clearTimeout(id);
   }, []);
+
+  // localStorage가 비어 있으면 최신 백업 파일에서 전체 데이터 복원
+  const dataRecoveryDone = useRef(false);
+  useEffect(() => {
+    if (isLoading || dataRecoveryDone.current) return;
+    const currentData = useAppStore.getState().data;
+    // ledger가 있으면 데이터 정상 — 복원 불필요
+    if (currentData?.ledger && currentData.ledger.length > 0) return;
+    dataRecoveryDone.current = true;
+    fetch("/api/restore-latest-backup")
+      .then((r) => r.json())
+      .then((backup: Record<string, unknown> | null) => {
+        if (!backup || typeof backup !== "object") return;
+        const ledger = backup.ledger;
+        if (!Array.isArray(ledger) || ledger.length === 0) return;
+        // 백업 데이터를 localStorage에 저장 후 loadData로 재로드
+        try {
+          saveData(backup as unknown as Parameters<typeof saveData>[0]);
+          const reloaded = loadData();
+          useAppStore.setState({ data: reloaded });
+          setLoadFailed(false);
+        } catch (e) {
+          console.error("[FarmWallet] 백업 복원 실패", e);
+        }
+      })
+      .catch(() => { /* 백업 복원 실패 시 무시 */ });
+  }, [isLoading]);
+
+  // prices가 비어 있으면 서버 백업에서 복원
+  const priceRecoveryDone = useRef(false);
+  useEffect(() => {
+    if (isLoading || loadFailed || priceRecoveryDone.current) return;
+    const currentData = useAppStore.getState().data;
+    if (currentData?.prices && currentData.prices.length > 0) return;
+    priceRecoveryDone.current = true;
+    fetch("/api/app-data-tables")
+      .then((r) => r.json())
+      .then((backup: { tables?: { stock_prices?: unknown[] } }) => {
+        const prices = backup?.tables?.stock_prices;
+        if (!Array.isArray(prices) || prices.length === 0) return;
+        const latest = useAppStore.getState().data;
+        if (!latest || (latest.prices && latest.prices.length > 0)) return;
+        const updated = { ...latest, prices: prices as typeof latest.prices };
+        useAppStore.setState({ data: updated });
+        try { saveData(updated); } catch { /* quota 등 무시 */ }
+      })
+      .catch(() => { /* 실패 시 무시 — priceFallback: cost로 대체 */ });
+  }, [isLoading, loadFailed]);
 
   // krNames.json 로드 → 완료 후 한글 종목명 적용 (초기 로딩 직후 즉시 실행)
   useEffect(() => {

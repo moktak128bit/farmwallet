@@ -79,7 +79,13 @@ function buildMonthCategoryDetail(
         add(livingMap, key, amount);
       }
     } else if (entry.kind === "transfer") {
-      add(transferMap, key, amount);
+      // 카드 계좌로의 이체 = 신용결제 (카드 대금 납부)
+      const toAcc = entry.toAccountId ? accounts.find(a => a.id === entry.toAccountId) : undefined;
+      if (toAcc && toAcc.type === "card") {
+        add(creditMap, key, amount);
+      } else {
+        add(transferMap, key, amount);
+      }
     }
   }
 

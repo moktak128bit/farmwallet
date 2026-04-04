@@ -927,7 +927,7 @@ export const AccountsView: React.FC<Props> = ({
                 setEditKrwBalance("");
               }
             }}
-            style={{ fontSize: "13px", padding: "6px 12px" }}
+            style={{ fontSize: "14px", padding: "8px 16px" }}
           >
             수정
           </button>
@@ -948,7 +948,7 @@ export const AccountsView: React.FC<Props> = ({
                 handleDeleteAccount(accountId);
               }
             }}
-            style={{ fontSize: "13px", padding: "6px 12px" }}
+            style={{ fontSize: "14px", padding: "8px 16px" }}
           >
             삭제
           </button>
@@ -1238,7 +1238,7 @@ export const AccountsView: React.FC<Props> = ({
               type="button"
               className="secondary"
               onClick={fillActualCurrentFromComputed}
-              style={{ padding: "8px 16px", fontSize: 13 }}
+              style={{ padding: "10px 20px", fontSize: 14, fontWeight: 600 }}
             >
               실제값으로 채우기
             </button>
@@ -1246,7 +1246,7 @@ export const AccountsView: React.FC<Props> = ({
               type="button"
               className="primary"
               onClick={applyReversedInitial}
-              style={{ padding: "8px 16px", fontSize: 13 }}
+              style={{ padding: "10px 20px", fontSize: 14, fontWeight: 600 }}
             >
               계좌 초기 금액 역산을 계좌에 적용
             </button>

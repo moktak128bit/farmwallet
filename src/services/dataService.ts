@@ -441,6 +441,116 @@ function normalizeExpenseSourceAccounts(
   });
 }
 
+/**
+ * 재테크 expense와 중복되는 transfer 항목 제거.
+ * 같은 날짜·금액·계좌가 재테크 expense와 transfer에 모두 있으면 transfer를 삭제.
+ */
+function deduplicateInvestmentTransfers(
+  ledger: AppData["ledger"]
+): { ledger: AppData["ledger"]; changed: boolean } {
+  const investments = ledger.filter(
+    (e) => e.kind === "expense" && e.category === "\uC7AC\uD14C\uD06C" // 재테크
+  );
+  if (investments.length === 0) return { ledger, changed: false };
+
+  const dupIds = new Set<string>();
+  for (const exp of investments) {
+    for (const t of ledger) {
+      if (t.kind !== "transfer" || t.date !== exp.date) continue;
+      if (Math.abs((t.amount ?? 0) - (exp.amount ?? 0)) >= 1) continue;
+      if (t.toAccountId === exp.toAccountId || t.fromAccountId === exp.fromAccountId) {
+        dupIds.add(t.id);
+      }
+    }
+  }
+  if (dupIds.size === 0) return { ledger, changed: false };
+  return { ledger: ledger.filter((e) => !dupIds.has(e.id)), changed: true };
+}
+
+/**
+ * 계좌 cashAdjustment 동적 보정.
+ * CSV 은행 최종잔액(csvTargetBalance)과 computeAccountBalances 공식을 비교해서
+ * cashAdjustment = csvTarget - (공식상 잔액 with cashAdj=0) 으로 자동 계산.
+ * → 데이터 상태(중복 이체 유무, 거래 추가/삭제)에 무관하게 항상 CSV 잔액에 수렴.
+ */
+function normalizeCashAdjustment(
+  accounts: AppData["accounts"],
+  ledger: AppData["ledger"],
+  trades: AppData["trades"]
+): { accounts: AppData["accounts"]; changed: boolean } {
+  // CSV 최종 잔액 (전체계좌.csv 대조, 각 계좌 가장 최근 거래의 BalanceAfter)
+  // 증권 계좌는 현금 잔액만 (주식 평가는 별도)
+  const csvTargetBalance: Record<string, number> = {
+    "청년도약": 7700000,
+    "ISA": 1171198,
+    "CMA": 4,
+    "삼성증권": 136490,
+    "토스": 10,
+    "키움": 0,
+    "주택청약": 1920000,
+    "저축은행": 1952,
+    "농협": 213658,
+    "농협2호": 0,
+    "청년사다리": 101,
+    "나라사랑": 2,
+  };
+
+  // computeAccountBalances 공식과 동일하게 ledger index 구축
+  const incomeByTo = new Map<string, number>();
+  const expenseByFrom = new Map<string, number>();
+  const expenseByTo = new Map<string, number>();
+  const transferOutKrw = new Map<string, number>();
+  const transferInKrw = new Map<string, number>();
+  const addMap = (m: Map<string, number>, k: string, v: number) => m.set(k, (m.get(k) ?? 0) + v);
+
+  for (const l of ledger) {
+    if (l.kind === "income" && l.toAccountId) addMap(incomeByTo, l.toAccountId, l.amount);
+    else if (l.kind === "expense") {
+      if (l.fromAccountId) addMap(expenseByFrom, l.fromAccountId, l.amount);
+      if (l.toAccountId) addMap(expenseByTo, l.toAccountId, l.amount);
+    } else if (l.kind === "transfer" && l.currency !== "USD") {
+      if (l.fromAccountId) addMap(transferOutKrw, l.fromAccountId, l.amount);
+      if (l.toAccountId) addMap(transferInKrw, l.toAccountId, l.amount);
+    }
+  }
+
+  const tradeCashByAccount = new Map<string, number>();
+  for (const t of trades) {
+    if (!t?.accountId) continue;
+    const impact = Number(t.cashImpact);
+    const add = Number.isFinite(impact) ? impact : 0;
+    tradeCashByAccount.set(t.accountId, (tradeCashByAccount.get(t.accountId) ?? 0) + add);
+  }
+
+  let changed = false;
+  const fixed = accounts.map((acc) => {
+    const target = csvTargetBalance[acc.id];
+    if (target === undefined) return acc;
+
+    const baseBalance =
+      acc.type === "securities" || acc.type === "crypto"
+        ? (acc.initialCashBalance ?? acc.initialBalance)
+        : acc.initialBalance;
+    const incomeSum = incomeByTo.get(acc.id) ?? 0;
+    const expenseSum = expenseByFrom.get(acc.id) ?? 0;
+    const savingsExpenseIn = expenseByTo.get(acc.id) ?? 0;
+    const transferNet = (transferInKrw.get(acc.id) ?? 0) - (transferOutKrw.get(acc.id) ?? 0);
+    const tradeCashImpact = tradeCashByAccount.get(acc.id) ?? 0;
+    const savings = acc.savings ?? 0;
+
+    // 공식: balance = base + income - expense + savingsExpIn + transferNet + tradeCash + cashAdj + savings
+    // → cashAdj = target - (base + income - expense + savingsExpIn + transferNet + tradeCash + savings)
+    const balanceWithoutCashAdj =
+      baseBalance + incomeSum - expenseSum + savingsExpenseIn + transferNet + tradeCashImpact + savings;
+    const neededCashAdj = Math.round(target - balanceWithoutCashAdj);
+
+    if (acc.cashAdjustment === neededCashAdj) return acc;
+    changed = true;
+    return { ...acc, cashAdjustment: neededCashAdj };
+  });
+  return { accounts: fixed, changed };
+}
+
 function getDefaultIsaPortfolio(): IsaPortfolioItem[] {
   return ISA_PORTFOLIO.map((item) => ({
     ticker: item.ticker,
@@ -1005,19 +1115,32 @@ export function loadData(): AppData {
         );
       });
 
+    // 재테크 expense와 중복되는 transfer 제거
+    const deduped = deduplicateInvestmentTransfers(normalizedLedger);
+    const finalLedger = deduped.changed ? deduped.ledger : normalizedLedger;
+
+    // 계좌 cashAdjustment 동적 보정 — 중복 이체가 제거되었을 때만 CSV 기준 재보정
+    // (dedup 후 잔액 공식이 바뀌므로 cashAdj 재계산 필요. 평소에는 건드리지 않음)
+    const normalizedCash = deduped.changed
+      ? normalizeCashAdjustment(accounts, finalLedger, dataWithKrNames.trades)
+      : { accounts, changed: false };
+    const finalAccounts = normalizedCash.changed ? normalizedCash.accounts : accounts;
+
     const finalData: AppData = {
       ...dataWithKrNames,
-      accounts,
-      ledger: normalizedLedger
+      accounts: finalAccounts,
+      ledger: finalLedger
     };
 
     if (
       schemaVersionChanged ||
       hasLedgerChanges ||
+      deduped.changed ||
       krNamesChanged ||
       normalizedSecurities.changed ||
       normalizedUsdCashImpact.changed ||
       normalizedKrwCashImpact.changed ||
+      normalizedCash.changed ||
       needsCacheMigration
     ) {
       try {

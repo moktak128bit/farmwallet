@@ -1,6 +1,6 @@
 import React, { useEffect, useMemo, useState, useRef, useCallback, useDeferredValue } from "react";
 import { Autocomplete } from "../components/ui/Autocomplete";
-import type { Account, AccountBalanceRow, CategoryPresets, ExpenseDetailGroup, LedgerEntry, LedgerKind, StockTrade } from "../types";
+import type { Account, AccountBalanceRow, CategoryPresets, ExpenseDetailGroup, LedgerEntry, LedgerKind, LedgerTemplate, StockTrade } from "../types";
 import { formatShortDate, formatUSD, formatKRW } from "../utils/formatter";
 import { shortcutManager, type ShortcutAction } from "../utils/shortcuts";
 import { validateDate, validateRequired, validateTransfer, validateAccountExists } from "../utils/validation";
@@ -18,7 +18,9 @@ interface Props {
   balances?: AccountBalanceRow[];
   trades?: StockTrade[];
   categoryPresets: CategoryPresets;
+  ledgerTemplates?: LedgerTemplate[];
   onChangeLedger: (next: LedgerEntry[]) => void;
+  onChangeTemplates?: (next: LedgerTemplate[]) => void;
   copyRequest?: LedgerEntry | null;
   onCopyComplete?: () => void;
   highlightLedgerId?: string | null;
@@ -122,7 +124,9 @@ export const LedgerView: React.FC<Props> = ({
   balances = [],
   trades = [],
   categoryPresets,
+  ledgerTemplates = [],
   onChangeLedger,
+  onChangeTemplates,
   copyRequest,
   onCopyComplete,
   highlightLedgerId,
@@ -165,6 +169,10 @@ export const LedgerView: React.FC<Props> = ({
   const [filterAmountMin, setFilterAmountMin] = useState<number | undefined>();
   const [filterAmountMax, setFilterAmountMax] = useState<number | undefined>();
   const [filterTagsInput, setFilterTagsInput] = useState<string>("");
+  const [searchQuery, setSearchQuery] = useState<string>("");
+  // 페이지네이션 상태
+  const [listPage, setListPage] = useState(0);
+  const PAGE_SIZE = 50;
   // 폼 확장/축소 상태 (progressive disclosure)
   const [formExpanded, setFormExpanded] = useState<boolean>(() => {
     try { return localStorage.getItem("fw-ledger-form-expanded") === "true"; } catch { return false; }
@@ -1037,6 +1045,70 @@ export const LedgerView: React.FC<Props> = ({
     });
   };
 
+  // 템플릿 적용: 클릭 시 해당 템플릿 값으로 폼 채우기
+  const applyTemplate = (tpl: LedgerTemplate) => {
+    // 탭 전환이 필요하면 먼저 탭 변경
+    const tplKind = tpl.kind;
+    const nextTab: typeof ledgerTab =
+      tplKind === "income" ? "income" :
+      tplKind === "transfer" ? "transfer" :
+      "expense";
+    setLedgerTab(nextTab);
+    if (ledgerTab === "all") {
+      const fk: typeof formKindWhenAll =
+        tplKind === "income" ? "income" :
+        tplKind === "transfer" ? "transfer" :
+        "expense";
+      setFormKindWhenAll(fk);
+    }
+    setForm((prev) => ({
+      ...prev,
+      kind: tplKind,
+      mainCategory: tpl.mainCategory ?? "",
+      subCategory: tpl.subCategory ?? "",
+      description: tpl.description ?? "",
+      fromAccountId: tpl.fromAccountId ?? "",
+      toAccountId: tpl.toAccountId ?? "",
+      amount: tpl.amount ? String(tpl.amount) : "",
+    }));
+    // lastUsed 업데이트
+    if (onChangeTemplates) {
+      const updated = ledgerTemplates.map((t) =>
+        t.id === tpl.id ? { ...t, lastUsed: getTodayKST() } : t
+      );
+      onChangeTemplates(updated);
+    }
+    toast.success(`템플릿 "${tpl.name}" 적용됨`);
+  };
+
+  // 현재 폼을 템플릿으로 저장
+  const saveFormAsTemplate = () => {
+    const tplName = prompt("템플릿 이름을 입력하세요:");
+    if (!tplName || !tplName.trim()) return;
+    const newTpl: LedgerTemplate = {
+      id: `T${Date.now()}`,
+      name: tplName.trim(),
+      kind: kindForTab,
+      mainCategory: form.mainCategory || undefined,
+      subCategory: form.subCategory || undefined,
+      description: form.description || undefined,
+      fromAccountId: form.fromAccountId || undefined,
+      toAccountId: form.toAccountId || undefined,
+      amount: form.amount ? Number(form.amount.replace(/[^\d.]/g, "")) || undefined : undefined,
+      lastUsed: getTodayKST(),
+    };
+    if (onChangeTemplates) {
+      onChangeTemplates([...ledgerTemplates, newTpl]);
+    }
+    toast.success(`템플릿 "${newTpl.name}" 저장됨`);
+  };
+
+  // 템플릿 삭제
+  const deleteTemplate = (tplId: string) => {
+    if (!onChangeTemplates) return;
+    onChangeTemplates(ledgerTemplates.filter((t) => t.id !== tplId));
+  };
+
   const startEditField = (id: string, field: string, currentValue: string | number) => {
     if (id.startsWith("trade-")) {
       toast("주식 거래는 주식 탭에서 수정하세요.");
@@ -1246,6 +1318,7 @@ export const LedgerView: React.FC<Props> = ({
     setFilterAmountMin(undefined);
     setFilterAmountMax(undefined);
     setFilterTagsInput("");
+    setSearchQuery("");
     setDateFilter({});
     setForm((p) => ({ ...p, mainCategory: "", subCategory: "", fromAccountId: "", toAccountId: "" }));
   };
@@ -1366,6 +1439,22 @@ export const LedgerView: React.FC<Props> = ({
       });
     }
 
+    // 전문 검색 필터
+    if (searchQuery.trim()) {
+      const q = searchQuery.trim().toLowerCase();
+      filtered = filtered.filter((l) => {
+        return (
+          (l.date || "").toLowerCase().includes(q) ||
+          (l.category || "").toLowerCase().includes(q) ||
+          (l.subCategory || "").toLowerCase().includes(q) ||
+          (l.description || "").toLowerCase().includes(q) ||
+          (l.fromAccountId || "").toLowerCase().includes(q) ||
+          (l.toAccountId || "").toLowerCase().includes(q) ||
+          (l.tags ?? []).some((t) => t.toLowerCase().includes(q))
+        );
+      });
+    }
+
     // 정렬 적용
     const sorted = [...filtered].sort((a, b) => {
       const dir = ledgerSort.direction === "asc" ? 1 : -1;
@@ -1394,7 +1483,12 @@ export const LedgerView: React.FC<Props> = ({
     });
     
     return sorted;
-  }, [ledgerByTab, ledgerTab, viewMode, selectedMonths, dateFilter, filterMainCategory, filterSubCategory, filterAccountId, filterFromAccountId, filterToAccountId, filterAmountMin, filterAmountMax, filterTagsInput, ledgerSort]);
+  }, [ledgerByTab, ledgerTab, viewMode, selectedMonths, dateFilter, filterMainCategory, filterSubCategory, filterAccountId, filterFromAccountId, filterToAccountId, filterAmountMin, filterAmountMax, filterTagsInput, searchQuery, ledgerSort]);
+
+  // 필터 변경 시 페이지 초기화
+  useEffect(() => {
+    setListPage(0);
+  }, [filteredLedger.length]);
 
   const tabLabel: Record<LedgerTab, string> = {
     all: "전체",
@@ -1753,7 +1847,7 @@ export const LedgerView: React.FC<Props> = ({
   const hasDateFilter = !!(dateFilter.startDate || dateFilter.endDate);
   const hasAmountFilter = filterAmountMin != null || filterAmountMax != null;
   const hasTagFilter = filterTagsInput.trim() !== "";
-  const hasFilter = hasCategoryFilter || hasDateFilter || hasAmountFilter || hasTagFilter || !!filterAccountId;
+  const hasFilter = hasCategoryFilter || hasDateFilter || hasAmountFilter || hasTagFilter || !!filterAccountId || searchQuery.trim() !== "";
 
   // 현재 탭 기준 계좌 버튼 목록 (ledgerByTab에 등장하는 계좌만)
   const accountsWithLedger = useMemo(() => {
@@ -1764,6 +1858,33 @@ export const LedgerView: React.FC<Props> = ({
     }
     return accounts.filter((a) => ids.has(a.id));
   }, [ledgerByTab, accounts]);
+
+  // 현재 탭 기준 대분류 목록 (ledgerByTab에 등장하는 category만, 등장 빈도순)
+  const categoriesInTab = useMemo(() => {
+    const counts = new Map<string, number>();
+    for (const l of ledgerByTab) {
+      const cat = l.category?.trim();
+      if (cat) counts.set(cat, (counts.get(cat) || 0) + 1);
+    }
+    return [...counts.entries()]
+      .sort((a, b) => b[1] - a[1])
+      .map(([cat]) => cat);
+  }, [ledgerByTab]);
+
+  // 대분류 선택 시 해당 대분류의 중분류 목록 (빈도순)
+  const subCategoriesInTab = useMemo(() => {
+    if (!filterMainCategory) return [];
+    const counts = new Map<string, number>();
+    for (const l of ledgerByTab) {
+      if (l.category !== filterMainCategory) continue;
+      const sub = l.subCategory?.trim();
+      if (sub) counts.set(sub, (counts.get(sub) || 0) + 1);
+    }
+    return [...counts.entries()]
+      .sort((a, b) => b[1] - a[1])
+      .map(([sub]) => sub);
+  }, [ledgerByTab, filterMainCategory]);
+
   const filterFromAccount = filterFromAccountId ? accounts.find((a) => a.id === filterFromAccountId) : null;
   const filterFromAccountName = filterFromAccountId ? (filterFromAccount?.name || filterFromAccount?.id || filterFromAccountId) : null;
   const filterToAccount = filterToAccountId ? accounts.find((a) => a.id === filterToAccountId) : null;
@@ -2081,25 +2202,83 @@ export const LedgerView: React.FC<Props> = ({
         );
       })()}
 
+      {/* 빠른 입력 템플릿 */}
+      {ledgerTemplates.length > 0 && (
+        <div className="card" style={{ padding: "12px 16px", marginBottom: 12 }}>
+          <div style={{ fontSize: 11, fontWeight: 600, color: "var(--text-muted)", marginBottom: 8 }}>빠른 입력</div>
+          <div style={{ display: "flex", gap: 8, overflowX: "auto", paddingBottom: 4 }}>
+            {ledgerTemplates.map((tpl) => (
+              <div key={tpl.id} style={{ position: "relative", flexShrink: 0 }}>
+                <button
+                  type="button"
+                  onClick={() => applyTemplate(tpl)}
+                  style={{
+                    padding: "8px 14px",
+                    fontSize: 13,
+                    fontWeight: 500,
+                    borderRadius: 8,
+                    border: "1px solid var(--border)",
+                    background: "var(--surface)",
+                    color: "var(--text)",
+                    cursor: "pointer",
+                    whiteSpace: "nowrap",
+                    paddingRight: 28,
+                  }}
+                >
+                  {tpl.name}
+                  {tpl.mainCategory && (
+                    <span style={{ marginLeft: 6, fontSize: 11, color: "var(--text-muted)" }}>
+                      {tpl.mainCategory}{tpl.subCategory ? ` / ${tpl.subCategory}` : ""}
+                    </span>
+                  )}
+                </button>
+                <button
+                  type="button"
+                  onClick={() => deleteTemplate(tpl.id)}
+                  title="템플릿 삭제"
+                  style={{
+                    position: "absolute",
+                    top: 2,
+                    right: 4,
+                    background: "none",
+                    border: "none",
+                    cursor: "pointer",
+                    fontSize: 12,
+                    color: "var(--text-muted)",
+                    lineHeight: 1,
+                    padding: "2px 3px",
+                  }}
+                >
+                  ×
+                </button>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+
       {/* 입력 폼 */}
       <form className="card" onSubmit={handleSubmit} style={{ padding: 16, marginBottom: 16 }}>
           <div style={{ display: "flex", flexDirection: "column", gap: "16px" }}>
-            {ledgerTab === "all" && (
-              <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
-                {(["income", "savingsExpense", "expense", "transfer", "creditPayment"] as const).map((k) => (
-                  <button
-                    key={k}
-                    type="button"
-                    tabIndex={-1}
-                    className={formKindWhenAll === k ? "primary" : "secondary"}
-                    onClick={() => setFormKindWhenAll(k)}
-                    style={{ fontSize: 13, padding: "6px 12px" }}
-                  >
-                    {tabLabel[k]}
-                  </button>
-                ))}
-              </div>
-            )}
+            {/* 수입/지출/이체 구분 선택 — 항상 표시 */}
+            <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+              {(["income", "savingsExpense", "expense", "transfer", "creditPayment"] as const).map((k) => (
+                <button
+                  key={k}
+                  type="button"
+                  tabIndex={-1}
+                  className={effectiveFormKind === k ? "primary" : "secondary"}
+                  onClick={() => {
+                    setFormKindWhenAll(k);
+                    // 특정 탭이 선택된 상태라면 "전체" 탭으로 전환하여 kind 선택이 반영되도록
+                    if (ledgerTab !== "all") setLedgerTab("all");
+                  }}
+                  style={{ fontSize: 13, padding: "6px 12px" }}
+                >
+                  {tabLabel[k]}
+                </button>
+              ))}
+            </div>
             {/* 상단: 날짜와 금액을 한 줄에 */}
             <div style={{ display: "grid", gridTemplateColumns: "1fr 2fr", gap: "12px", alignItems: "start" }}>
               {/* 날짜 */}
@@ -2119,11 +2298,9 @@ export const LedgerView: React.FC<Props> = ({
                   aria-invalid={!!formErrors.date}
                   aria-describedby={formErrors.date ? "date-error" : undefined}
                 />
-                {formErrors.date && (
-                  <span id="date-error" style={{ fontSize: 10, color: "var(--danger)", display: "block", marginTop: 4 }}>
-                    {formErrors.date}
-                  </span>
-                )}
+                <span id="date-error" style={{ fontSize: 10, color: "var(--danger)", display: "block", marginTop: 4, visibility: formErrors.date ? "visible" : "hidden" }}>
+                  {formErrors.date || "\u00A0"}
+                </span>
               </label>
               
               {/* 금액 */}
@@ -2188,11 +2365,9 @@ export const LedgerView: React.FC<Props> = ({
                   aria-invalid={!!formErrors.amount}
                   aria-describedby={formErrors.amount ? "amount-error" : undefined}
                 />
-                {formErrors.amount && (
-                  <span id="amount-error" style={{ fontSize: 10, color: "var(--danger)", display: "block", marginTop: 4 }}>
-                    {formErrors.amount}
-                  </span>
-                )}
+                <span id="amount-error" style={{ fontSize: 10, color: "var(--danger)", display: "block", marginTop: 4, visibility: formErrors.amount ? "visible" : "hidden" }}>
+                  {formErrors.amount || "\u00A0"}
+                </span>
                 {(effectiveFormKind === "income" ||
                   effectiveFormKind === "expense" ||
                   effectiveFormKind === "savingsExpense" ||
@@ -2229,11 +2404,9 @@ export const LedgerView: React.FC<Props> = ({
                     placeholder="급여, 배당 등"
                   />
                 </div>
-                {formErrors.subCategory && (
-                  <span style={{ fontSize: 11, color: "var(--danger)", display: "block", marginTop: 4 }}>
-                    {formErrors.subCategory}
-                  </span>
-                )}
+                <span style={{ fontSize: 11, color: "var(--danger)", display: "block", marginTop: 4, visibility: formErrors.subCategory ? "visible" : "hidden" }}>
+                  {formErrors.subCategory || "\u00A0"}
+                </span>
                 <div className="category-chip-row" style={{ marginTop: 12, display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(120px, 1fr))", gap: 10 }}>
                   {incomeCategoryOptions.map((c) => (
                       <button
@@ -2244,16 +2417,12 @@ export const LedgerView: React.FC<Props> = ({
                         onClick={() => {
                           if (form.subCategory === c) {
                             setForm((prev) => ({ ...prev, subCategory: "" }));
-                            setFilterMainCategory(undefined);
-                            setFilterSubCategory(undefined);
                           } else {
                             setForm((prev) => ({ ...prev, subCategory: c || "" }));
-                            setFilterMainCategory("수입");
-                            setFilterSubCategory(c);
                           }
                         }}
-                        style={{ 
-                          fontSize: 15, 
+                        style={{
+                          fontSize: 15,
                           fontWeight: form.subCategory === c ? 600 : 500,
                           padding: "12px 16px",
                           border: form.subCategory === c ? "2px solid var(--primary)" : "1px solid var(--border)",
@@ -2295,11 +2464,9 @@ export const LedgerView: React.FC<Props> = ({
                 ) : (
                   <label>
                     <span style={{ fontSize: 12, marginBottom: 8, display: "block" }}>대분류 *</span>
-                    {formErrors.mainCategory && (
-                      <span style={{ fontSize: 11, color: "var(--danger)", display: "block", marginBottom: 4 }}>
-                        {formErrors.mainCategory}
-                      </span>
-                    )}
+                    <span style={{ fontSize: 11, color: "var(--danger)", display: "block", marginBottom: 4, visibility: formErrors.mainCategory ? "visible" : "hidden" }}>
+                      {formErrors.mainCategory || "\u00A0"}
+                    </span>
                     {/* 대분류 버튼 그리드 - 모든 대분류 표시 */}
                     <div style={{ 
                       display: "grid", 
@@ -2315,17 +2482,12 @@ export const LedgerView: React.FC<Props> = ({
                         onClick={() => {
                           if (form.mainCategory === c) {
                             if (effectiveFormKind === "savingsExpense") {
-                              setFilterMainCategory(undefined);
-                              setFilterSubCategory(undefined);
+                              // savingsExpense: mainCategory stays "재테크", just clear subCategory
                             } else {
                               setForm((prev) => ({ ...prev, mainCategory: "", subCategory: "" }));
-                              setFilterMainCategory(undefined);
-                              setFilterSubCategory(undefined);
                             }
                           } else {
                             setForm((prev) => ({ ...prev, mainCategory: c || "", subCategory: "" }));
-                            setFilterMainCategory(c);
-                            setFilterSubCategory(undefined);
                           }
                         }}
                         style={{
@@ -2354,11 +2516,9 @@ export const LedgerView: React.FC<Props> = ({
                     <span style={{ fontSize: 12, marginBottom: 8, display: "block" }}>
                       중분류 * <span style={{ fontSize: 11, color: "var(--text-muted)", fontWeight: 400 }}>({ledgerTab === "transfer" ? "이체" : form.mainCategory}의 중분류)</span>
                     </span>
-                    {formErrors.subCategory && (
-                      <span style={{ fontSize: 11, color: "var(--danger)", display: "block", marginBottom: 4 }}>
-                        {formErrors.subCategory}
-                      </span>
-                    )}
+                    <span style={{ fontSize: 11, color: "var(--danger)", display: "block", marginBottom: 4, visibility: formErrors.subCategory ? "visible" : "hidden" }}>
+                      {formErrors.subCategory || "\u00A0"}
+                    </span>
                     {/* 중분류 버튼 그리드 - 선택된 대분류에 해당하는 항목만 표시 */}
                     <div style={{ 
                       display: "grid", 
@@ -2375,13 +2535,8 @@ export const LedgerView: React.FC<Props> = ({
                             onClick={() => {
                               if (form.subCategory === c) {
                                 setForm((prev) => ({ ...prev, subCategory: "" }));
-                                setFilterSubCategory(undefined);
-                                if (effectiveFormKind === "transfer") setFilterMainCategory(undefined);
                               } else {
                                 setForm((prev) => ({ ...prev, subCategory: c || "" }));
-                                setFilterSubCategory(c);
-                                if (effectiveFormKind === "transfer") setFilterMainCategory("이체");
-                                if (effectiveFormKind === "savingsExpense") setFilterMainCategory("재테크");
                               }
                             }}
                             style={{
@@ -2438,7 +2593,7 @@ export const LedgerView: React.FC<Props> = ({
             </label>
 
             {/* 확장 영역: 할인 · 출금계좌 · 입금계좌 */}
-            {(formExpanded || !!form.id) && (<>
+            {(<>
             {/* 할인 (수입·지출·재테크·신용결제, 선택) — 저장 시 금액−할인이 실제 반영액 */}
             {(effectiveFormKind === "income" ||
               effectiveFormKind === "expense" ||
@@ -2465,9 +2620,7 @@ export const LedgerView: React.FC<Props> = ({
                     borderRadius: "6px"
                   }}
                 />
-                {formErrors.discountAmount && (
-                  <span style={{ fontSize: 10, color: "var(--danger)", display: "block", marginTop: 4 }}>{formErrors.discountAmount}</span>
-                )}
+                <span style={{ fontSize: 10, color: "var(--danger)", display: "block", marginTop: 4, visibility: formErrors.discountAmount ? "visible" : "hidden" }}>{formErrors.discountAmount || "\u00A0"}</span>
               </label>
             )}
 
@@ -2498,10 +2651,8 @@ export const LedgerView: React.FC<Props> = ({
                           onClick={() => {
                             if (form.fromAccountId === a.id) {
                               setForm((prev) => ({ ...prev, fromAccountId: "" }));
-                              setFilterFromAccountId(undefined);
                             } else {
                               setForm((prev) => ({ ...prev, fromAccountId: a.id || "" }));
-                              setFilterFromAccountId(a.id);
                             }
                           }}
                           style={{
@@ -2555,10 +2706,8 @@ export const LedgerView: React.FC<Props> = ({
                                 onClick={() => {
                               if (form.toAccountId === a.id) {
                                 setForm((prev) => ({ ...prev, toAccountId: "" }));
-                                setFilterToAccountId(undefined);
                               } else {
                                 setForm((prev) => ({ ...prev, toAccountId: a.id || "" }));
-                                setFilterToAccountId(a.id);
                               }
                             }}
                                 style={{
@@ -2584,33 +2733,15 @@ export const LedgerView: React.FC<Props> = ({
             )}
             </>)}
 
-            {/* 폼 확장/축소 토글 */}
-            <button
-              type="button"
-              onClick={() => setFormExpanded(prev => !prev)}
-              style={{
-                width: "100%",
-                padding: "8px",
-                fontSize: 13,
-                color: "var(--primary)",
-                background: "transparent",
-                border: "1px dashed var(--border)",
-                borderRadius: "6px",
-                cursor: "pointer"
-              }}
-            >
-              {formExpanded ? "\u25B2 간단히 보기" : "\u25BC 계좌 \u00B7 할인 \u00B7 상세 옵션"}
-            </button>
-
             {/* 제출 버튼 */}
             <div style={{ display: "flex", gap: 8, marginTop: 8 }}>
               <button
                 type="submit"
                 tabIndex={-1}
-                className="primary" 
-                style={{ 
-                  padding: "14px 24px", 
-                  fontSize: 16, 
+                className="primary"
+                style={{
+                  padding: "14px 24px",
+                  fontSize: 16,
                   fontWeight: 600,
                   flex: 1,
                   borderRadius: "8px"
@@ -2620,249 +2751,298 @@ export const LedgerView: React.FC<Props> = ({
               >
                 추가
               </button>
+              {onChangeTemplates && (
+                <button
+                  type="button"
+                  tabIndex={-1}
+                  onClick={saveFormAsTemplate}
+                  title="현재 폼을 템플릿으로 저장"
+                  style={{
+                    padding: "14px 16px",
+                    fontSize: 13,
+                    fontWeight: 500,
+                    borderRadius: "8px",
+                    border: "1px solid var(--border)",
+                    background: "var(--surface)",
+                    color: "var(--text-muted)",
+                    cursor: "pointer",
+                    whiteSpace: "nowrap",
+                  }}
+                >
+                  템플릿 저장
+                </button>
+              )}
             </div>
           </div>
         </form>
 
-      {/* 필터: 가계부 입력칸과 목록 사이 */}
-      <div style={{ marginBottom: "12px", display: "flex", gap: "8px", flexWrap: "wrap", alignItems: "center" }}>
-        <button
-          type="button"
-          className={ledgerTab === "all" ? "primary" : ""}
-          onClick={() => setLedgerTab("all")}
-        >
-          전체
-        </button>
-        <button
-          type="button"
-          className={ledgerTab === "income" ? "primary" : ""}
-          onClick={() => setLedgerTab("income")}
-        >
-          수입
-        </button>
-        <button
-          type="button"
-          className={ledgerTab === "savingsExpense" ? "primary" : ""}
-          onClick={() => setLedgerTab("savingsExpense")}
-        >
-          재테크
-        </button>
-        <button
-          type="button"
-          className={ledgerTab === "expense" ? "primary" : ""}
-          onClick={() => setLedgerTab("expense")}
-        >
-          지출
-        </button>
-        <button
-          type="button"
-          className={ledgerTab === "transfer" ? "primary" : ""}
-          onClick={() => setLedgerTab("transfer")}
-        >
-          이체
-        </button>
-        <button
-          type="button"
-          className={ledgerTab === "creditPayment" ? "primary" : ""}
-          onClick={() => setLedgerTab("creditPayment")}
-        >
-          신용결제
-        </button>
-        <div style={{ marginLeft: "auto", display: "flex", gap: "8px", alignItems: "center" }}>
-        </div>
-      </div>
-
-      {accountsWithLedger.length > 1 && (
-        <div style={{ marginBottom: 10, display: "flex", gap: 6, alignItems: "center", flexWrap: "wrap" }}>
-          <button
-            type="button"
-            className={filterAccountId === null ? "primary" : "secondary"}
-            style={{ fontSize: 12, padding: "4px 12px" }}
-            onClick={() => setFilterAccountId(null)}
-          >
-            전체
-          </button>
-          {accountsWithLedger.map((acc) => {
-            const count = ledgerByTab.filter(
-              (l) => l.fromAccountId === acc.id || l.toAccountId === acc.id
-            ).length;
-            return (
-              <button
-                key={acc.id}
-                type="button"
-                className={filterAccountId === acc.id ? "primary" : "secondary"}
-                style={{ fontSize: 12, padding: "4px 12px" }}
-                onClick={() => setFilterAccountId(filterAccountId === acc.id ? null : acc.id)}
-              >
-                {acc.name} <span style={{ opacity: 0.7 }}>({count})</span>
-              </button>
-            );
-          })}
-        </div>
-      )}
-
-      <div style={{ marginBottom: "12px", display: "flex", gap: "12px", alignItems: "center", flexWrap: "wrap" }}>
-        <button
-          type="button"
-          className={viewMode === "monthly" ? "primary" : ""}
-          onClick={() => {
-            setViewMode("monthly");
-            clearDateFilter();
-          }}
-        >
-          월별 보기
-        </button>
-        <button
-          type="button"
-          className={viewMode === "all" && !dateFilter.startDate ? "primary" : ""}
-          onClick={() => {
-            setViewMode("all");
-            clearDateFilter();
-          }}
-        >
-          전체 보기
-        </button>
-        {(dateFilter.startDate || dateFilter.endDate) && (
-          <button
-            type="button"
-            className="secondary"
-            onClick={clearDateFilter}
-            style={{ fontSize: 12, padding: "6px 12px" }}
-          >
-            날짜 필터 해제
-          </button>
-        )}
-        {hasFilter && (
-          <button
-            type="button"
-            className="secondary"
-            onClick={clearAllFilters}
-            style={{ fontSize: 12, padding: "6px 12px" }}
-          >
-            필터 한번에 지우기
-          </button>
-        )}
-        <button
-          type="button"
-          className={ledgerTab === "savingsExpense" && filterMainCategory === "저축성지출" ? "primary" : "secondary"}
-          onClick={() => {
-            setLedgerTab("savingsExpense");
-            setFilterMainCategory("저축성지출");
-            setFilterSubCategory(undefined);
-          }}
-          style={{ fontSize: 12, padding: "6px 12px" }}
-          title="재테크 탭에서 저축성지출만 보기 (바꿀 내역 찾기)"
-        >
-          저축성지출만
-        </button>
-        <div style={{ marginLeft: "auto", display: "flex", gap: "6px", flexWrap: "wrap" }}>
-          <button
-            type="button"
-            className={(() => {
-              const koreaTime = getKoreaTime();
-              const thisMonthStart = `${koreaTime.getFullYear()}-${String(koreaTime.getMonth() + 1).padStart(2, "0")}-01`;
-              return dateFilter.startDate === thisMonthStart && !dateFilter.endDate ? "primary" : "secondary";
-            })()}
-            onClick={() => applyQuickFilter("thisMonth")}
-            style={{ fontSize: 12, padding: "6px 12px" }}
-          >
-            이번 달
-          </button>
-          <button
-            type="button"
-            className="secondary"
-            onClick={() => applyQuickFilter("lastMonth")}
-            style={{ fontSize: 12, padding: "6px 12px" }}
-          >
-            지난 달
-          </button>
-          <button
-            type="button"
-            className="secondary"
-            onClick={() => applyQuickFilter("thisYear")}
-            style={{ fontSize: 12, padding: "6px 12px" }}
-          >
-            올해
-          </button>
-          <button
-            type="button"
-            className="secondary"
-            onClick={() => applyQuickFilter("last3Months")}
-            style={{ fontSize: 12, padding: "6px 12px" }}
-          >
-            지난 3개월
-          </button>
-          <button
-            type="button"
-            className="secondary"
-            onClick={() => applyQuickFilter("last6Months")}
-            style={{ fontSize: 12, padding: "6px 12px" }}
-          >
-            지난 6개월
-          </button>
-          <button
-            type="button"
-            className="secondary"
-            onClick={() => applyQuickFilter("lastYear")}
-            style={{ fontSize: 12, padding: "6px 12px" }}
-          >
-            지난 1년
-          </button>
-          <span style={{ marginLeft: 8, marginRight: 4, fontSize: 12, color: "var(--text-muted)" }}>날짜</span>
-          <input
-            type="date"
-            value={dateFilter.startDate || ""}
-            onChange={(e) => {
-              setDateFilter((prev) => ({ ...prev, startDate: e.target.value || undefined }));
-              setViewMode("all");
-            }}
-            style={{ padding: "6px 8px", fontSize: 12, borderRadius: 6, border: "1px solid var(--border)", width: 120, boxSizing: "border-box" }}
-            title="시작일"
-          />
-          <span style={{ margin: "0 2px", fontSize: 12, color: "var(--text-muted)" }}>~</span>
-          <input
-            type="date"
-            value={dateFilter.endDate || ""}
-            onChange={(e) => {
-              setDateFilter((prev) => ({ ...prev, endDate: e.target.value || undefined }));
-              setViewMode("all");
-            }}
-            style={{ padding: "6px 8px", fontSize: 12, borderRadius: 6, border: "1px solid var(--border)", width: 120, boxSizing: "border-box" }}
-            title="종료일"
-          />
-          <span style={{ marginLeft: 12, marginRight: 4, fontSize: 12, color: "var(--text-muted)" }}>금액</span>
-          <input
-            type="number"
-            value={filterAmountMin ?? ""}
-            onChange={(e) => {
-              const v = e.target.value;
-              setFilterAmountMin(v === "" ? undefined : Number(v) || undefined);
-            }}
-            placeholder="최소"
-            style={{ padding: "6px 8px", fontSize: 12, borderRadius: 6, border: "1px solid var(--border)", width: 80, boxSizing: "border-box" }}
-            title="최소 금액"
-          />
-          <span style={{ margin: "0 2px", fontSize: 12, color: "var(--text-muted)" }}>~</span>
-          <input
-            type="number"
-            value={filterAmountMax ?? ""}
-            onChange={(e) => {
-              const v = e.target.value;
-              setFilterAmountMax(v === "" ? undefined : Number(v) || undefined);
-            }}
-            placeholder="최대"
-            style={{ padding: "6px 8px", fontSize: 12, borderRadius: 6, border: "1px solid var(--border)", width: 80, boxSizing: "border-box" }}
-            title="최대 금액"
-          />
-          <span style={{ marginLeft: 12, marginRight: 4, fontSize: 12, color: "var(--text-muted)" }}>태그</span>
+      {/* ── 필터 영역 ── */}
+      <div className="card" style={{ padding: 16, marginBottom: 16 }}>
+        {/* 검색 입력 */}
+        <div style={{ position: "relative", marginBottom: 14 }}>
           <input
             type="text"
-            value={filterTagsInput}
-            onChange={(e) => setFilterTagsInput(e.target.value)}
-            placeholder="쉼표 구분 (예: A, B)"
-            style={{ padding: "6px 8px", fontSize: 12, borderRadius: 6, border: "1px solid var(--border)", width: 140, boxSizing: "border-box" }}
-            title="포함할 태그 (모두 포함된 항목만)"
+            value={searchQuery}
+            onChange={(e) => setSearchQuery(e.target.value)}
+            placeholder="거래 검색 (날짜, 카테고리, 내용, 계좌...)"
+            style={{
+              width: "100%",
+              padding: "12px 16px",
+              paddingRight: searchQuery ? 40 : 16,
+              fontSize: 15,
+              borderRadius: 10,
+              border: "2px solid var(--border)",
+              background: "var(--surface)",
+              color: "var(--text)",
+              boxSizing: "border-box",
+              outline: "none",
+            }}
           />
+          {searchQuery && (
+            <button
+              type="button"
+              onClick={() => setSearchQuery("")}
+              style={{
+                position: "absolute",
+                right: 10,
+                top: "50%",
+                transform: "translateY(-50%)",
+                background: "none",
+                border: "none",
+                cursor: "pointer",
+                fontSize: 18,
+                color: "var(--text-muted)",
+                lineHeight: 1,
+                padding: "0 4px",
+              }}
+              aria-label="검색어 지우기"
+            >
+              ×
+            </button>
+          )}
+        </div>
+
+        {/* 종류 필터 — 큰 버튼 */}
+        <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(100px, 1fr))", gap: 8, marginBottom: 14 }}>
+          {([
+            ["all", "전체"],
+            ["income", "수입"],
+            ["expense", "지출"],
+            ["savingsExpense", "재테크"],
+            ["transfer", "이체"],
+            ["creditPayment", "신용결제"],
+          ] as const).map(([tab, label]) => (
+            <button
+              key={tab}
+              type="button"
+              onClick={() => setLedgerTab(tab)}
+              style={{
+                padding: "12px 8px",
+                fontSize: 15,
+                fontWeight: 700,
+                borderRadius: 10,
+                border: ledgerTab === tab ? "2px solid var(--primary)" : "2px solid var(--border)",
+                background: ledgerTab === tab ? "var(--primary)" : "var(--surface)",
+                color: ledgerTab === tab ? "white" : "var(--text)",
+                cursor: "pointer",
+                transition: "all 0.15s",
+              }}
+            >
+              {label}
+            </button>
+          ))}
+        </div>
+
+        {/* 대분류 필터 — 종류 탭이 전체가 아닐 때, 또는 전체 탭이지만 카테고리가 2개 이상일 때 */}
+        {categoriesInTab.length > 1 && (
+          <div style={{ marginBottom: 12 }}>
+            <div style={{ fontSize: 12, fontWeight: 600, color: "var(--text-muted)", marginBottom: 6 }}>대분류</div>
+            <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
+              <button
+                type="button"
+                onClick={() => { setFilterMainCategory(undefined); setFilterSubCategory(undefined); }}
+                style={{
+                  padding: "8px 16px",
+                  fontSize: 13,
+                  fontWeight: 600,
+                  borderRadius: 8,
+                  border: !filterMainCategory ? "2px solid var(--primary)" : "1px solid var(--border)",
+                  background: !filterMainCategory ? "var(--primary)" : "var(--surface)",
+                  color: !filterMainCategory ? "white" : "var(--text)",
+                  cursor: "pointer",
+                }}
+              >
+                전체
+              </button>
+              {categoriesInTab.map((cat) => (
+                <button
+                  key={cat}
+                  type="button"
+                  onClick={() => {
+                    if (filterMainCategory === cat) {
+                      setFilterMainCategory(undefined);
+                      setFilterSubCategory(undefined);
+                    } else {
+                      setFilterMainCategory(cat);
+                      setFilterSubCategory(undefined);
+                    }
+                  }}
+                  style={{
+                    padding: "8px 16px",
+                    fontSize: 13,
+                    fontWeight: 600,
+                    borderRadius: 8,
+                    border: filterMainCategory === cat ? "2px solid var(--primary)" : "1px solid var(--border)",
+                    background: filterMainCategory === cat ? "var(--primary)" : "var(--surface)",
+                    color: filterMainCategory === cat ? "white" : "var(--text)",
+                    cursor: "pointer",
+                  }}
+                >
+                  {cat}
+                </button>
+              ))}
+            </div>
+          </div>
+        )}
+
+        {/* 중분류 필터 — 대분류 선택 시 해당 중분류 표시 */}
+        {filterMainCategory && subCategoriesInTab.length > 1 && (
+          <div style={{ marginBottom: 12 }}>
+            <div style={{ fontSize: 12, fontWeight: 600, color: "var(--text-muted)", marginBottom: 6 }}>중분류 ({filterMainCategory})</div>
+            <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
+              <button
+                type="button"
+                onClick={() => setFilterSubCategory(undefined)}
+                style={{
+                  padding: "8px 16px",
+                  fontSize: 13,
+                  fontWeight: 600,
+                  borderRadius: 8,
+                  border: !filterSubCategory ? "2px solid var(--primary)" : "1px solid var(--border)",
+                  background: !filterSubCategory ? "var(--primary)" : "var(--surface)",
+                  color: !filterSubCategory ? "white" : "var(--text)",
+                  cursor: "pointer",
+                }}
+              >
+                전체
+              </button>
+              {subCategoriesInTab.map((sub) => (
+                <button
+                  key={sub}
+                  type="button"
+                  onClick={() => setFilterSubCategory(filterSubCategory === sub ? undefined : sub)}
+                  style={{
+                    padding: "8px 16px",
+                    fontSize: 13,
+                    fontWeight: 600,
+                    borderRadius: 8,
+                    border: filterSubCategory === sub ? "2px solid var(--primary)" : "1px solid var(--border)",
+                    background: filterSubCategory === sub ? "var(--primary)" : "var(--surface)",
+                    color: filterSubCategory === sub ? "white" : "var(--text)",
+                    cursor: "pointer",
+                  }}
+                >
+                  {sub}
+                </button>
+              ))}
+            </div>
+          </div>
+        )}
+
+        {/* 계좌 필터 */}
+        {accountsWithLedger.length > 1 && (
+          <div style={{ marginBottom: 12 }}>
+            <div style={{ fontSize: 12, fontWeight: 600, color: "var(--text-muted)", marginBottom: 6 }}>계좌</div>
+            <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
+              <button
+                type="button"
+                onClick={() => setFilterAccountId(null)}
+                style={{
+                  padding: "8px 16px",
+                  fontSize: 13,
+                  fontWeight: 600,
+                  borderRadius: 8,
+                  border: filterAccountId === null ? "2px solid var(--primary)" : "1px solid var(--border)",
+                  background: filterAccountId === null ? "var(--primary)" : "var(--surface)",
+                  color: filterAccountId === null ? "white" : "var(--text)",
+                  cursor: "pointer",
+                }}
+              >
+                전체
+              </button>
+              {accountsWithLedger.map((acc) => (
+                <button
+                  key={acc.id}
+                  type="button"
+                  onClick={() => setFilterAccountId(filterAccountId === acc.id ? null : acc.id)}
+                  style={{
+                    padding: "8px 16px",
+                    fontSize: 13,
+                    fontWeight: 600,
+                    borderRadius: 8,
+                    border: filterAccountId === acc.id ? "2px solid var(--primary)" : "1px solid var(--border)",
+                    background: filterAccountId === acc.id ? "var(--primary)" : "var(--surface)",
+                    color: filterAccountId === acc.id ? "white" : "var(--text)",
+                    cursor: "pointer",
+                  }}
+                >
+                  {acc.name}
+                </button>
+              ))}
+            </div>
+          </div>
+        )}
+
+        {/* 기간 필터 */}
+        <div style={{ marginBottom: 12 }}>
+          <div style={{ fontSize: 12, fontWeight: 600, color: "var(--text-muted)", marginBottom: 6 }}>기간</div>
+          <div style={{ display: "flex", gap: 6, flexWrap: "wrap", alignItems: "center" }}>
+            <button type="button" onClick={() => { setViewMode("monthly"); clearDateFilter(); }}
+              style={{ padding: "8px 16px", fontSize: 13, fontWeight: 600, borderRadius: 8, border: viewMode === "monthly" ? "2px solid var(--primary)" : "1px solid var(--border)", background: viewMode === "monthly" ? "var(--primary)" : "var(--surface)", color: viewMode === "monthly" ? "white" : "var(--text)", cursor: "pointer" }}>
+              월별
+            </button>
+            <button type="button" onClick={() => { setViewMode("all"); clearDateFilter(); }}
+              style={{ padding: "8px 16px", fontSize: 13, fontWeight: 600, borderRadius: 8, border: viewMode === "all" && !dateFilter.startDate ? "2px solid var(--primary)" : "1px solid var(--border)", background: viewMode === "all" && !dateFilter.startDate ? "var(--primary)" : "var(--surface)", color: viewMode === "all" && !dateFilter.startDate ? "white" : "var(--text)", cursor: "pointer" }}>
+              전체
+            </button>
+            <span style={{ width: 1, height: 24, background: "var(--border)", margin: "0 4px" }} />
+            {([
+              ["thisMonth", "이번 달"],
+              ["lastMonth", "지난 달"],
+              ["thisYear", "올해"],
+              ["last3Months", "3개월"],
+              ["last6Months", "6개월"],
+              ["lastYear", "1년"],
+            ] as const).map(([key, label]) => (
+              <button key={key} type="button" onClick={() => applyQuickFilter(key)}
+                style={{ padding: "8px 12px", fontSize: 12, fontWeight: 600, borderRadius: 8, border: "1px solid var(--border)", background: "var(--surface)", color: "var(--text)", cursor: "pointer" }}>
+                {label}
+              </button>
+            ))}
+            <span style={{ width: 1, height: 24, background: "var(--border)", margin: "0 4px" }} />
+            <input type="date" value={dateFilter.startDate || ""} onChange={(e) => { setDateFilter((prev) => ({ ...prev, startDate: e.target.value || undefined })); setViewMode("all"); }}
+              style={{ padding: "8px 10px", fontSize: 12, borderRadius: 8, border: "1px solid var(--border)", background: "var(--surface)", color: "var(--text)" }} title="시작일" />
+            <span style={{ fontSize: 12, color: "var(--text-muted)" }}>~</span>
+            <input type="date" value={dateFilter.endDate || ""} onChange={(e) => { setDateFilter((prev) => ({ ...prev, endDate: e.target.value || undefined })); setViewMode("all"); }}
+              style={{ padding: "8px 10px", fontSize: 12, borderRadius: 8, border: "1px solid var(--border)", background: "var(--surface)", color: "var(--text)" }} title="종료일" />
+          </div>
+        </div>
+
+        {/* 상세 필터 + 액션 */}
+        <div style={{ display: "flex", gap: 8, flexWrap: "wrap", alignItems: "center" }}>
+          <input type="number" value={filterAmountMin ?? ""} onChange={(e) => { const v = e.target.value; setFilterAmountMin(v === "" ? undefined : Number(v) || undefined); }}
+            placeholder="최소 금액" style={{ padding: "8px 10px", fontSize: 12, borderRadius: 8, border: "1px solid var(--border)", width: 100, background: "var(--surface)", color: "var(--text)" }} />
+          <span style={{ fontSize: 12, color: "var(--text-muted)" }}>~</span>
+          <input type="number" value={filterAmountMax ?? ""} onChange={(e) => { const v = e.target.value; setFilterAmountMax(v === "" ? undefined : Number(v) || undefined); }}
+            placeholder="최대 금액" style={{ padding: "8px 10px", fontSize: 12, borderRadius: 8, border: "1px solid var(--border)", width: 100, background: "var(--surface)", color: "var(--text)" }} />
+          <input type="text" value={filterTagsInput} onChange={(e) => setFilterTagsInput(e.target.value)}
+            placeholder="태그 (쉼표 구분)" style={{ padding: "8px 10px", fontSize: 12, borderRadius: 8, border: "1px solid var(--border)", width: 150, background: "var(--surface)", color: "var(--text)" }} />
+          {hasFilter && (
+            <button type="button" onClick={clearAllFilters}
+              style={{ padding: "8px 16px", fontSize: 13, fontWeight: 700, borderRadius: 8, border: "2px solid var(--danger)", background: "transparent", color: "var(--danger)", cursor: "pointer" }}>
+              필터 초기화
+            </button>
+          )}
           {filteredLedger.length > 0 && (
             <button
               type="button"
@@ -2926,7 +3106,8 @@ export const LedgerView: React.FC<Props> = ({
             </button>
           )}
         </div>
-        {viewMode === "monthly" && (
+      </div>
+      {viewMode === "monthly" && (
           <>
             <button
               type="button"
@@ -2998,7 +3179,6 @@ export const LedgerView: React.FC<Props> = ({
             )}
           </>
         )}
-      </div>
 
       {viewMode === "all" && !isBatchEditMode && (
         <p style={{ fontSize: 12, color: "var(--text-muted)", marginBottom: 8 }}>
@@ -3213,7 +3393,7 @@ export const LedgerView: React.FC<Props> = ({
           </tr>
         </thead>
         <tbody>
-          {filteredLedger.map((l, index) => {
+          {filteredLedger.slice(listPage * PAGE_SIZE, (listPage + 1) * PAGE_SIZE).map((l, index) => {
             const isDraggingRange =
               dragSumStartIndex != null &&
               index >= Math.min(dragSumStartIndex, dragSumEndIndex ?? dragSumStartIndex) &&
@@ -3758,6 +3938,19 @@ export const LedgerView: React.FC<Props> = ({
       {filteredLedger.length > 0 && (
         <div style={{ marginTop: "8px", fontSize: "14px", color: "var(--text-muted)" }}>
           총 {filteredLedger.length}건
+        </div>
+      )}
+      {filteredLedger.length > PAGE_SIZE && (
+        <div style={{ display: "flex", justifyContent: "center", gap: 8, marginTop: 12 }}>
+          <button type="button" className="secondary" disabled={listPage === 0} onClick={() => setListPage(p => p - 1)} style={{ padding: "6px 16px" }}>
+            ← 이전
+          </button>
+          <span style={{ padding: "6px 12px", fontSize: 13 }}>
+            {listPage + 1} / {Math.ceil(filteredLedger.length / PAGE_SIZE)} 페이지
+          </span>
+          <button type="button" className="secondary" disabled={(listPage + 1) * PAGE_SIZE >= filteredLedger.length} onClick={() => setListPage(p => p + 1)} style={{ padding: "6px 16px" }}>
+            다음 →
+          </button>
         </div>
       )}
 

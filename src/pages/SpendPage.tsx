@@ -119,13 +119,37 @@ export const SpendView: React.FC<{
 
       <div className="card" style={{ padding: 12, display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap" }}>
         <span style={{ color: "var(--muted)" }}>기간:</span>
-        <select value={month} onChange={(e) => setMonth(e.target.value)} style={{ padding: "6px 10px", borderRadius: 6 }}>
+        <button
+          type="button"
+          className="secondary"
+          style={{ fontSize: 13, padding: "6px 12px" }}
+          disabled={monthOptions.indexOf(month) >= monthOptions.length - 1}
+          onClick={() => {
+            const idx = monthOptions.indexOf(month);
+            if (idx < monthOptions.length - 1) setMonth(monthOptions[idx + 1]);
+          }}
+        >
+          ◀ 이전
+        </button>
+        <select value={month} onChange={(e) => setMonth(e.target.value)} style={{ padding: "6px 10px", borderRadius: 6, fontWeight: 700 }}>
           {monthOptions.map((m) => (
             <option key={m} value={m}>
               {m}
             </option>
           ))}
         </select>
+        <button
+          type="button"
+          className="secondary"
+          style={{ fontSize: 13, padding: "6px 12px" }}
+          disabled={monthOptions.indexOf(month) <= 0}
+          onClick={() => {
+            const idx = monthOptions.indexOf(month);
+            if (idx > 0) setMonth(monthOptions[idx - 1]);
+          }}
+        >
+          다음 ▶
+        </button>
         <span style={{ marginLeft: "auto", fontWeight: 700 }}>
           총지출: <span className="negative">{formatKRW(Math.round(totalSpend))}</span>
         </span>

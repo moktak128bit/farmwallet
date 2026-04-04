@@ -10,11 +10,28 @@ dist/
 *.swo
 *~
 tmp_*
+
+# Excel lock files
+.~lock.*
+
+# Excel working files (keep originals but ignore locks)
+*.xlsx
+
+# Scripts output
 scripts/text-integrity-report.json
+
+# Backups
 backups/**
+
+# Generated/temp data
 data/app-data.json
 data/app-data-tables.json
 data/ticker-backup.json
+data/farmwallet-import.json
+data/ledger-backup-*.json
+data/ledger-new.json
+
+# Generated source data
 src/data/krNames.json
 
 

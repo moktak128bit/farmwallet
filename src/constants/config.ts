@@ -1,7 +1,7 @@
 // 앱 버전은 vite.config.ts에서 __APP_VERSION__으로 주입됨
 declare const __APP_VERSION__: string;
 export const APP_VERSION = __APP_VERSION__;
-export const DATA_SCHEMA_VERSION = 3;
+export const DATA_SCHEMA_VERSION = 4;
 
 /** 저축 목표: 월급의 비율 (%) */
 export const SAVINGS_RATE_GOAL = 70;

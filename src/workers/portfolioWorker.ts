@@ -61,7 +61,7 @@ workerScope.onmessage = (event: MessageEvent<PortfolioWorkerRequest>) => {
           payload.trades,
           adjustPrices(payload.prices, payload.fxRate),
           payload.accounts,
-          { fxRate: payload.fxRate ?? undefined }
+          { fxRate: payload.fxRate ?? undefined, priceFallback: "cost" }
         )
       : [];
 

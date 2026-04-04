@@ -1086,6 +1086,10 @@ export function generateComprehensiveMonthlyReport(
       row.transferTotal += amount;
       const fromAccount = entry.fromAccountId ? accountById.get(entry.fromAccountId) : undefined;
       const toAccount = entry.toAccountId ? accountById.get(entry.toAccountId) : undefined;
+      // 카드 계좌로의 이체 = 신용결제 (카드 대금 납부)
+      if (toAccount && toAccount.type === "card") {
+        row.creditPayment += amount;
+      }
       const fromInvesting = !!fromAccount && INVESTING_ACCOUNT_TYPES.has(fromAccount.type);
       const toInvesting = !!toAccount && INVESTING_ACCOUNT_TYPES.has(toAccount.type);
       if (!fromInvesting && toInvesting) row.investingIn += amount;

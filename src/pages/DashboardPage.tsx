@@ -1693,6 +1693,46 @@ export const DashboardView: React.FC<Props> = (props) => {
     return { monthlyDividend, monthlyExpense, fireRate };
   }, [ledger, fxRate, accounts, categoryPresets, currentMonth]);
 
+  const topCategoriesThisMonth = useMemo(() => {
+    const toKrw = (entry: LedgerEntry) =>
+      entry.currency === "USD" && fxRate ? entry.amount * fxRate : entry.amount;
+    const catMap = new Map<string, number>();
+    ledger.forEach((entry) => {
+      if (!entry.date?.startsWith(currentMonth)) return;
+      if (entry.kind !== "expense") return;
+      if (isSavingsExpenseEntry(entry, accounts, categoryPresets)) return;
+      const cat = entry.category || "기타";
+      catMap.set(cat, (catMap.get(cat) ?? 0) + toKrw(entry));
+    });
+    return Array.from(catMap.entries())
+      .sort((a, b) => b[1] - a[1])
+      .slice(0, 5);
+  }, [ledger, currentMonth, fxRate, accounts, categoryPresets]);
+
+  const monthlyTrendData = useMemo(() => {
+    const toKrw = (entry: LedgerEntry) =>
+      entry.currency === "USD" && fxRate ? entry.amount * fxRate : entry.amount;
+    const map = new Map<string, { income: number; expense: number; investing: number }>();
+    ledger.forEach((entry) => {
+      if (!entry.date) return;
+      const m = entry.date.slice(0, 7);
+      if (!map.has(m)) map.set(m, { income: 0, expense: 0, investing: 0 });
+      const row = map.get(m)!;
+      if (entry.kind === "income") row.income += toKrw(entry);
+      else if (entry.kind === "expense") {
+        if (isSavingsExpenseEntry(entry, accounts, categoryPresets)) row.investing += toKrw(entry);
+        else row.expense += toKrw(entry);
+      }
+    });
+    return Array.from(map.entries())
+      .sort((a, b) => a[0].localeCompare(b[0]))
+      .slice(-6)
+      .map(([month, data]) => ({
+        month: month.slice(5),
+        ...data
+      }));
+  }, [ledger, fxRate, accounts, categoryPresets]);
+
   return (
     <div>
       <div className="section-header">
@@ -1708,29 +1748,83 @@ export const DashboardView: React.FC<Props> = (props) => {
           }}
         >
           <div className="card" style={{ minHeight: 124, borderLeft: "4px solid var(--chart-expense)" }}>
-            <div className="card-title">전체 지출 (전체 기간)</div>
+            <div className="card-title">이번 달 지출</div>
             <div className="card-value" style={{ color: "var(--chart-expense)", fontSize: 24 }}>
-              {formatKRW(Math.round(allTimeSummary.expense))}
+              {formatKRW(Math.round(monthlySummary.expense))}
             </div>
             <div className="hint" style={{ marginTop: 8 }}>
-              일반 지출만 (재테크·저축 제외)
+              전체 기간: {formatKRW(allTimeSummary.expense)}
             </div>
           </div>
 
           <div className="card" style={{ minHeight: 124, borderLeft: "4px solid var(--chart-income)" }}>
-            <div className="card-title">전체 수입 (전체 기간)</div>
+            <div className="card-title">이번 달 수입</div>
             <div className="card-value" style={{ color: "var(--chart-income)", fontSize: 24 }}>
-              {formatKRW(Math.round(allTimeSummary.income))}
+              {formatKRW(Math.round(monthlySummary.income))}
             </div>
-            <div className="hint" style={{ marginTop: 8 }}>전체 기간 수입 합계</div>
+            <div className="hint" style={{ marginTop: 8 }}>전체 기간: {formatKRW(allTimeSummary.income)}</div>
           </div>
 
           <div className="card" style={{ minHeight: 124, borderLeft: "4px solid var(--chart-primary)" }}>
-            <div className="card-title">전체 재테크 (전체 기간)</div>
+            <div className="card-title">이번 달 재테크</div>
             <div className="card-value" style={{ color: "var(--chart-primary)", fontSize: 24 }}>
-              {formatKRW(Math.round(allTimeSummary.investing))}
+              {formatKRW(Math.round(monthlySummary.investing))}
             </div>
-            <div className="hint" style={{ marginTop: 8 }}>재테크·저축성 지출 합계</div>
+            <div className="hint" style={{ marginTop: 8 }}>전체 기간: {formatKRW(allTimeSummary.investing)}</div>
+          </div>
+        </div>
+
+        <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 16 }}>
+          <div className="card">
+            <div className="card-title">이번 달 지출 Top 5 ({currentMonth})</div>
+            <div style={{ marginTop: 12, display: "flex", flexDirection: "column", gap: 8 }}>
+              {topCategoriesThisMonth.length === 0 && (
+                <div className="hint">이번 달 지출 데이터가 없습니다.</div>
+              )}
+              {topCategoriesThisMonth.map(([cat, amount], i) => {
+                const maxAmt = topCategoriesThisMonth[0]?.[1] ?? 1;
+                const pct = (amount / maxAmt) * 100;
+                return (
+                  <div key={cat}>
+                    <div style={{ display: "flex", justifyContent: "space-between", fontSize: 13, marginBottom: 2 }}>
+                      <span style={{ fontWeight: 600 }}>{i + 1}. {cat}</span>
+                      <span style={{ fontWeight: 700, color: "var(--chart-expense)" }}>{formatKRW(Math.round(amount))}</span>
+                    </div>
+                    <div style={{ height: 6, background: "var(--border)", borderRadius: 3 }}>
+                      <div style={{ height: "100%", width: `${pct}%`, background: "var(--chart-expense)", borderRadius: 3, opacity: 1 - i * 0.15 }} />
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          </div>
+
+          <div className="card">
+            <div className="card-title">월별 추이 (최근 6개월)</div>
+            <div style={{ marginTop: 12, display: "flex", flexDirection: "column", gap: 6 }}>
+              {monthlyTrendData.map((row) => {
+                const maxVal = Math.max(...monthlyTrendData.map(r => Math.max(r.income, r.expense + r.investing)));
+                const incPct = maxVal > 0 ? (row.income / maxVal) * 100 : 0;
+                const expPct = maxVal > 0 ? (row.expense / maxVal) * 100 : 0;
+                const invPct = maxVal > 0 ? (row.investing / maxVal) * 100 : 0;
+                return (
+                  <div key={row.month}>
+                    <div style={{ display: "flex", justifyContent: "space-between", fontSize: 12, marginBottom: 2 }}>
+                      <span style={{ fontWeight: 600 }}>{row.month}</span>
+                      <span className="hint">{formatKRW(Math.round(row.income))} / {formatKRW(Math.round(row.expense))}</span>
+                    </div>
+                    <div style={{ display: "flex", gap: 2, height: 8 }}>
+                      <div style={{ width: `${incPct}%`, background: "var(--chart-income)", borderRadius: 3, minWidth: row.income > 0 ? 2 : 0 }} />
+                      <div style={{ width: `${expPct}%`, background: "var(--chart-expense)", borderRadius: 3, minWidth: row.expense > 0 ? 2 : 0 }} />
+                      <div style={{ width: `${invPct}%`, background: "var(--chart-primary)", borderRadius: 3, minWidth: row.investing > 0 ? 2 : 0 }} />
+                    </div>
+                  </div>
+                );
+              })}
+              <div className="hint" style={{ fontSize: 11, marginTop: 4 }}>
+                <span style={{ color: "var(--chart-income)" }}>■</span> 수입 <span style={{ color: "var(--chart-expense)" }}>■</span> 지출 <span style={{ color: "var(--chart-primary)" }}>■</span> 재테크
+              </div>
+            </div>
           </div>
         </div>
 
@@ -1766,6 +1860,81 @@ export const DashboardView: React.FC<Props> = (props) => {
           </div>
         </div>
 
+        {/* ── Widget: 이번 달 페이스 예측 ───────────────────────────────── */}
+        <div className="card">
+          <div className="card-title" style={{ marginBottom: 12 }}>이번 달 페이스 예측 ({currentMonth})</div>
+          <div
+            style={{
+              display: "grid",
+              gridTemplateColumns: "repeat(auto-fit, minmax(130px, 1fr))",
+              gap: 12,
+              marginBottom: 16
+            }}
+          >
+            <div style={{ padding: "10px 12px", background: "var(--surface)", borderRadius: 8 }}>
+              <div className="hint" style={{ fontSize: 12 }}>현재 지출</div>
+              <div style={{ fontWeight: 700, fontSize: 18 }}>{formatKRW(Math.round(monthPaceData.currentExpense))}</div>
+              <div className="hint" style={{ fontSize: 11 }}>{monthPaceData.elapsed}일 / {monthPaceData.totalDays}일</div>
+            </div>
+            <div style={{ padding: "10px 12px", background: "var(--surface)", borderRadius: 8 }}>
+              <div className="hint" style={{ fontSize: 12 }}>이달 예상 (페이스)</div>
+              <div
+                style={{
+                  fontWeight: 700,
+                  fontSize: 18,
+                  color: monthPaceData.pace != null && monthPaceData.pace > 110 ? "var(--chart-expense)" : "var(--text)"
+                }}
+              >
+                {formatKRW(Math.round(monthPaceData.projectedExpense))}
+              </div>
+              {monthPaceData.pace != null && (
+                <div
+                  className="hint"
+                  style={{ fontSize: 11, color: monthPaceData.pace > 100 ? "var(--chart-expense)" : "var(--chart-income)" }}
+                >
+                  평균 대비 {monthPaceData.pace > 100 ? "+" : ""}{(monthPaceData.pace - 100).toFixed(1)}%
+                </div>
+              )}
+            </div>
+            <div style={{ padding: "10px 12px", background: "var(--surface)", borderRadius: 8 }}>
+              <div className="hint" style={{ fontSize: 12 }}>최근 3달 평균</div>
+              <div style={{ fontWeight: 700, fontSize: 18 }}>{formatKRW(Math.round(monthPaceData.avgPrev3))}</div>
+            </div>
+          </div>
+          {monthPaceData.avgPrev3 > 0 && (() => {
+            const barMax = monthPaceData.avgPrev3 * 1.5;
+            const projPct = Math.min(100, (monthPaceData.projectedExpense / barMax) * 100);
+            const avgPct = (monthPaceData.avgPrev3 / barMax) * 100;
+            return (
+              <div>
+                <div style={{ position: "relative", height: 12, background: "var(--border)", borderRadius: 6, overflow: "hidden" }}>
+                  <div
+                    style={{
+                      height: "100%",
+                      width: `${projPct}%`,
+                      background: projPct > avgPct ? "var(--chart-expense)" : "var(--chart-income)",
+                      borderRadius: 6,
+                    }}
+                  />
+                  <div
+                    style={{
+                      position: "absolute",
+                      left: `${avgPct}%`,
+                      top: 0,
+                      bottom: 0,
+                      width: 2,
+                      background: "var(--text-muted)",
+                    }}
+                  />
+                </div>
+                <div className="hint" style={{ marginTop: 4, fontSize: 11 }}>
+                  세로선 = 3달 평균. 막대 최대 = 평균 × 1.5
+                </div>
+              </div>
+            );
+          })()}
+        </div>
+
         <Suspense
           fallback={
             <div className="card" style={{ padding: 24, textAlign: "center", color: "var(--text-muted)", minHeight: 120 }}>
@@ -1784,7 +1953,7 @@ export const DashboardView: React.FC<Props> = (props) => {
         <div
           style={{
             display: "grid",
-            gridTemplateColumns: "repeat(auto-fit, minmax(220px, 1fr))",
+            gridTemplateColumns: "repeat(auto-fit, minmax(280px, 1fr))",
             gap: 16,
             alignItems: "stretch"
           }}
@@ -1910,19 +2079,6 @@ export const DashboardView: React.FC<Props> = (props) => {
                 커버리지 {dividendCoverage.coverageRate == null ? "-" : `${dividendCoverage.coverageRate.toFixed(1)}%`}
               </span>
             </div>
-          </div>
-
-          <div className="card" style={{ minHeight: 240 }}>
-            <div className="card-title">주말 지출 대비 평일 지출(최근 30일)</div>
-            <div className="card-value" style={{ fontSize: 20 }}>{weekendWeekdayStats.weekendRatio.toFixed(1)}%</div>
-            <div className="hint" style={{ marginTop: 8 }}>
-              주말 {formatKRW(Math.round(weekendWeekdayStats.weekendSpend))}
-              {" / 평일 "}
-              {formatKRW(Math.round(weekendWeekdayStats.weekdaySpend))}
-            </div>
-            <Suspense fallback={<div style={{ height: 140, marginTop: 12 }} />}>
-              <LazyWeekendChart rows={weekendWeekdayMiniRows} />
-            </Suspense>
           </div>
         </div>
 
@@ -2273,87 +2429,6 @@ export const DashboardView: React.FC<Props> = (props) => {
             </table>
           </div>
         </div>
-
-
-
-
-
-
-        {/* ── Widget 6: 이번 달 페이스 예측 ───────────────────────────────── */}
-        <div className="card">
-          <div className="card-title" style={{ marginBottom: 12 }}>이번 달 페이스 예측 ({currentMonth})</div>
-          <div
-            style={{
-              display: "grid",
-              gridTemplateColumns: "repeat(auto-fit, minmax(130px, 1fr))",
-              gap: 12,
-              marginBottom: 16
-            }}
-          >
-            <div style={{ padding: "10px 12px", background: "var(--surface)", borderRadius: 8 }}>
-              <div className="hint" style={{ fontSize: 12 }}>현재 지출</div>
-              <div style={{ fontWeight: 700, fontSize: 18 }}>{formatKRW(Math.round(monthPaceData.currentExpense))}</div>
-              <div className="hint" style={{ fontSize: 11 }}>{monthPaceData.elapsed}일 / {monthPaceData.totalDays}일</div>
-            </div>
-            <div style={{ padding: "10px 12px", background: "var(--surface)", borderRadius: 8 }}>
-              <div className="hint" style={{ fontSize: 12 }}>이달 예상 (페이스)</div>
-              <div
-                style={{
-                  fontWeight: 700,
-                  fontSize: 18,
-                  color: monthPaceData.pace != null && monthPaceData.pace > 110 ? "var(--chart-expense)" : "var(--text)"
-                }}
-              >
-                {formatKRW(Math.round(monthPaceData.projectedExpense))}
-              </div>
-              {monthPaceData.pace != null && (
-                <div
-                  className="hint"
-                  style={{ fontSize: 11, color: monthPaceData.pace > 100 ? "var(--chart-expense)" : "var(--chart-income)" }}
-                >
-                  평균 대비 {monthPaceData.pace > 100 ? "+" : ""}{(monthPaceData.pace - 100).toFixed(1)}%
-                </div>
-              )}
-            </div>
-            <div style={{ padding: "10px 12px", background: "var(--surface)", borderRadius: 8 }}>
-              <div className="hint" style={{ fontSize: 12 }}>최근 3달 평균</div>
-              <div style={{ fontWeight: 700, fontSize: 18 }}>{formatKRW(Math.round(monthPaceData.avgPrev3))}</div>
-            </div>
-          </div>
-          {monthPaceData.avgPrev3 > 0 && (() => {
-            const barMax = monthPaceData.avgPrev3 * 1.5;
-            const projPct = Math.min(100, (monthPaceData.projectedExpense / barMax) * 100);
-            const avgPct = (monthPaceData.avgPrev3 / barMax) * 100;
-            return (
-              <div>
-                <div style={{ position: "relative", height: 12, background: "var(--border)", borderRadius: 6, overflow: "hidden" }}>
-                  <div
-                    style={{
-                      height: "100%",
-                      width: `${projPct}%`,
-                      background: projPct > avgPct ? "var(--chart-expense)" : "var(--chart-income)",
-                      borderRadius: 6,
-                    }}
-                  />
-                  <div
-                    style={{
-                      position: "absolute",
-                      left: `${avgPct}%`,
-                      top: 0,
-                      bottom: 0,
-                      width: 2,
-                      background: "var(--text-muted)",
-                    }}
-                  />
-                </div>
-                <div className="hint" style={{ marginTop: 4, fontSize: 11 }}>
-                  세로선 = 3달 평균. 막대 최대 = 평균 × 1.5
-                </div>
-              </div>
-            );
-          })()}
-        </div>
-
 
 
       </div>

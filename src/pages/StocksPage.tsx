@@ -3000,7 +3000,7 @@ export const StocksView: React.FC<Props> = ({
                                 applyPreset(preset);
                                 setShowPresetModal(false);
                               }}
-                              style={{ marginRight: 4, fontSize: 11, padding: "4px 8px" }}
+                              style={{ marginRight: 6, fontSize: 13, padding: "6px 12px" }}
                             >
                               적용
                             </button>
@@ -3008,7 +3008,7 @@ export const StocksView: React.FC<Props> = ({
                               type="button"
                               className="danger"
                               onClick={() => deletePreset(preset.id)}
-                              style={{ fontSize: 11, padding: "4px 8px" }}
+                              style={{ fontSize: 13, padding: "6px 12px" }}
                             >
                               삭제
                             </button>

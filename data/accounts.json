@@ -11,7 +11,7 @@
     "currency": "KRW",
     "usdBalance": 516,
     "krwBalance": 0,
-    "cashAdjustment": -323726
+    "cashAdjustment": -500369
   },
   {
     "id": "ISA",
@@ -24,7 +24,7 @@
     "initialCashBalance": 0,
     "usdBalance": 0,
     "krwBalance": 0,
-    "cashAdjustment": -3706479
+    "cashAdjustment": -1736896
   },
   {
     "id": "연금저축",
@@ -45,7 +45,8 @@
     "type": "checking",
     "initialBalance": 16153131,
     "debt": 0,
-    "savings": 0
+    "savings": 0,
+    "cashAdjustment": -6052000
   },
   {
     "id": "나라사랑",
@@ -54,7 +55,8 @@
     "type": "checking",
     "initialBalance": 1703,
     "debt": 0,
-    "savings": 0
+    "savings": 0,
+    "cashAdjustment": 0
   },
   {
     "id": "삼성페이카드",
@@ -69,7 +71,7 @@
     "id": "카카오페이",
     "name": "카카오페이",
     "institution": "카카오",
-    "type": "savings",
+    "type": "checking",
     "initialBalance": 0,
     "debt": 0,
     "savings": 0
@@ -81,7 +83,8 @@
     "type": "savings",
     "initialBalance": 7700000,
     "debt": 0,
-    "savings": 0
+    "savings": 0,
+    "cashAdjustment": -7700000
   },
   {
     "id": "주택청약",
@@ -90,7 +93,8 @@
     "type": "savings",
     "initialBalance": 1520000,
     "debt": 0,
-    "savings": 0
+    "savings": 0,
+    "cashAdjustment": -200000
   },
   {
     "id": "저축은행",
@@ -99,7 +103,8 @@
     "type": "savings",
     "initialBalance": 483639,
     "debt": 0,
-    "savings": 0
+    "savings": 0,
+    "cashAdjustment": -500000
   },
   {
     "id": "키움",
@@ -109,7 +114,7 @@
     "initialBalance": 195478,
     "debt": 0,
     "savings": 0,
-    "cashAdjustment": 53477,
+    "cashAdjustment": 177955,
     "krwBalance": 50000,
     "usdBalance": 0,
     "initialCashBalance": 0
@@ -131,7 +136,7 @@
     "initialBalance": 2857236,
     "debt": 0,
     "savings": 0,
-    "cashAdjustment": -208834,
+    "cashAdjustment": 5118735,
     "usdBalance": -1272.24654207,
     "krwBalance": 0,
     "initialCashBalance": 0.44120000023394823
@@ -152,7 +157,8 @@
     "type": "checking",
     "initialBalance": 700000,
     "debt": 0,
-    "savings": 0
+    "savings": 0,
+    "cashAdjustment": -700000
   },
   {
     "id": "청년사다리",
@@ -161,7 +167,8 @@
     "type": "checking",
     "initialBalance": -2599999,
     "debt": 0,
-    "savings": 0
+    "savings": 0,
+    "cashAdjustment": 100000
   },
   {
     "id": "지역페이",
@@ -190,7 +197,7 @@
     "initialBalance": 142301,
     "debt": 0,
     "savings": 0,
-    "cashAdjustment": 0
+    "cashAdjustment": -168175
   },
   {
     "id": "데이트저축",

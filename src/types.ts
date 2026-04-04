@@ -197,9 +197,12 @@ export interface WorkoutSet {
   reps: number;
 }
 
+export type WorkoutBodyPart = "가슴" | "등" | "어깨" | "팔" | "하체" | "코어" | "유산소" | "기타";
+
 export interface WorkoutExercise {
   id: string;
   name: string; // 벤치프레스, 스쿼트, RDL 등
+  bodyPart?: WorkoutBodyPart;
   sets: WorkoutSet[];
   note?: string; // 상태, 실패 여부 등
 }

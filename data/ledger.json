@@ -11,17 +11,6 @@
     "fromAccountId": "키움"
   },
   {
-    "id": "L1775292344733fnx9",
-    "date": "2026-04-03",
-    "kind": "transfer",
-    "isFixedExpense": false,
-    "category": "이체",
-    "subCategory": "계좌이체",
-    "description": "본인 이체",
-    "amount": 100000,
-    "toAccountId": "주택청약"
-  },
-  {
     "id": "L1775178644599",
     "date": "2026-04-03",
     "kind": "expense",
@@ -120,17 +109,6 @@
     "toAccountId": "ISA",
     "amount": 4650,
     "note": "배당락일:2026-03-30"
-  },
-  {
-    "id": "L1775292344725oje6",
-    "date": "2026-04-01",
-    "kind": "transfer",
-    "isFixedExpense": false,
-    "category": "이체",
-    "subCategory": "계좌이체",
-    "description": "실시간이체",
-    "amount": 700000,
-    "fromAccountId": "농협"
   },
   {
     "id": "L1775219538605",
@@ -241,28 +219,6 @@
     "currency": "KRW"
   },
   {
-    "id": "L1775292344725qhzp",
-    "date": "2026-03-31",
-    "kind": "transfer",
-    "isFixedExpense": false,
-    "category": "이체",
-    "subCategory": "계좌이체",
-    "description": "실시간이체",
-    "amount": 1100000,
-    "fromAccountId": "농협"
-  },
-  {
-    "id": "L1775292344725ehbj",
-    "date": "2026-03-31",
-    "kind": "transfer",
-    "isFixedExpense": false,
-    "category": "이체",
-    "subCategory": "계좌이체",
-    "description": "실시간이체",
-    "amount": 2000000,
-    "fromAccountId": "농협"
-  },
-  {
     "id": "L1775292344720rci3",
     "date": "2026-03-31",
     "kind": "income",
@@ -338,17 +294,6 @@
     "subCategory": "간식",
     "description": "와플대학",
     "amount": 9900,
-    "fromAccountId": "삼성페이카드"
-  },
-  {
-    "id": "L17752923447351qm1",
-    "date": "2026-03-29",
-    "kind": "expense",
-    "isFixedExpense": false,
-    "category": "유류교통비",
-    "subCategory": "주유",
-    "description": "에이치디현대오일뱅크(주)직영 장호셀프주유소",
-    "amount": 150000,
     "fromAccountId": "삼성페이카드"
   },
   {
@@ -809,17 +754,6 @@
     "fromAccountId": "삼성페이카드"
   },
   {
-    "id": "L177529234472690cd",
-    "date": "2026-03-24",
-    "kind": "transfer",
-    "isFixedExpense": false,
-    "category": "이체",
-    "subCategory": "계좌이체",
-    "description": "실시간이체",
-    "amount": 200000,
-    "fromAccountId": "농협"
-  },
-  {
     "id": "L1775292344720gako",
     "date": "2026-03-24",
     "kind": "transfer",
@@ -886,17 +820,6 @@
     "amount": 200000,
     "fromAccountId": "농협",
     "toAccountId": "토스"
-  },
-  {
-    "id": "L17752923447379l6u",
-    "date": "2026-03-23",
-    "kind": "expense",
-    "isFixedExpense": false,
-    "category": "유류교통비",
-    "subCategory": "주유",
-    "description": "동림셀프주유소",
-    "amount": 150000,
-    "fromAccountId": "삼성페이카드"
   },
   {
     "id": "L1775292344726l8wz",
@@ -986,18 +909,6 @@
     "description": "",
     "amount": 13000,
     "fromAccountId": "삼성페이카드"
-  },
-  {
-    "id": "L1774232044022",
-    "date": "2026-03-23",
-    "kind": "transfer",
-    "isFixedExpense": false,
-    "category": "이체",
-    "subCategory": "계좌이체",
-    "description": "",
-    "amount": 100000,
-    "fromAccountId": "CMA",
-    "toAccountId": "청년사다리"
   },
   {
     "id": "L1774231619718",
@@ -1164,17 +1075,6 @@
     "description": "",
     "amount": 100000,
     "fromAccountId": "청년사다리"
-  },
-  {
-    "id": "L1775292344737c76q",
-    "date": "2026-03-20",
-    "kind": "expense",
-    "isFixedExpense": false,
-    "category": "유류교통비",
-    "subCategory": "주유",
-    "description": "오일스타(주)경기남부지점",
-    "amount": 150000,
-    "fromAccountId": "삼성페이카드"
   },
   {
     "id": "L1775292344721fh9g",
@@ -1512,17 +1412,6 @@
     "toAccountId": "농협"
   },
   {
-    "id": "L1775292344727gawh",
-    "date": "2026-03-16",
-    "kind": "transfer",
-    "isFixedExpense": false,
-    "category": "이체",
-    "subCategory": "계좌이체",
-    "description": "실시간이체",
-    "amount": 250000,
-    "fromAccountId": "농협"
-  },
-  {
     "id": "L17752923447272mj5",
     "date": "2026-03-16",
     "kind": "transfer",
@@ -1798,17 +1687,6 @@
     "description": "쿠팡",
     "amount": 22000,
     "fromAccountId": "삼성페이카드"
-  },
-  {
-    "id": "L1775292344732w0q7",
-    "date": "2026-03-12",
-    "kind": "transfer",
-    "isFixedExpense": false,
-    "category": "이체",
-    "subCategory": "계좌이체",
-    "description": "저축은행→청년사다리",
-    "amount": 500000,
-    "toAccountId": "저축은행"
   },
   {
     "id": "L1773363263864",
@@ -2107,39 +1985,6 @@
     "fromAccountId": "삼성페이카드"
   },
   {
-    "id": "L1775292344728apt7",
-    "date": "2026-03-09",
-    "kind": "transfer",
-    "isFixedExpense": false,
-    "category": "이체",
-    "subCategory": "계좌이체",
-    "description": "실시간이체",
-    "amount": 2000,
-    "fromAccountId": "농협"
-  },
-  {
-    "id": "L1775292344721b31i",
-    "date": "2026-03-09",
-    "kind": "transfer",
-    "isFixedExpense": false,
-    "category": "이체",
-    "subCategory": "계좌이체",
-    "description": "김성우",
-    "amount": 5361,
-    "toAccountId": "토스"
-  },
-  {
-    "id": "L17752923447211mqw",
-    "date": "2026-03-09",
-    "kind": "transfer",
-    "isFixedExpense": false,
-    "category": "이체",
-    "subCategory": "계좌이체",
-    "description": "김성우",
-    "amount": 146915,
-    "toAccountId": "토스"
-  },
-  {
     "id": "L1773152099040",
     "date": "2026-03-09",
     "kind": "expense",
@@ -2380,7 +2225,7 @@
     "kind": "expense",
     "isFixedExpense": false,
     "category": "유류교통비",
-    "subCategory": "주유",
+    "subCategory": "유류비/충전비",
     "description": "동림셀프주유소",
     "amount": 30000,
     "fromAccountId": "삼성페이카드"
@@ -2426,28 +2271,6 @@
     "description": "25년_2학기_학자금_등록금 상환",
     "fromAccountId": "농협",
     "amount": 3928
-  },
-  {
-    "id": "L177529234473480fd",
-    "date": "2026-03-03",
-    "kind": "transfer",
-    "isFixedExpense": false,
-    "category": "이체",
-    "subCategory": "계좌이체",
-    "description": "본인 이체",
-    "amount": 100000,
-    "toAccountId": "주택청약"
-  },
-  {
-    "id": "L177529234471815wz",
-    "date": "2026-03-03",
-    "kind": "transfer",
-    "isFixedExpense": false,
-    "category": "이체",
-    "subCategory": "계좌이체",
-    "description": "토스 김성우",
-    "amount": 700000,
-    "fromAccountId": "CMA"
   },
   {
     "id": "L1772549163372",
@@ -2945,17 +2768,6 @@
     "toAccountId": "ISA"
   },
   {
-    "id": "L17752923447394ime",
-    "date": "2026-02-24",
-    "kind": "expense",
-    "isFixedExpense": false,
-    "category": "유류교통비",
-    "subCategory": "주유",
-    "description": "동림셀프주유소",
-    "amount": 150000,
-    "fromAccountId": "삼성페이카드"
-  },
-  {
     "id": "L1775292344732fvyl",
     "date": "2026-02-24",
     "kind": "transfer",
@@ -3188,17 +3000,6 @@
     "toAccountId": "키움"
   },
   {
-    "id": "L17752923447284nld",
-    "date": "2026-02-20",
-    "kind": "transfer",
-    "isFixedExpense": false,
-    "category": "이체",
-    "subCategory": "계좌이체",
-    "description": "실시간이체",
-    "amount": 300000,
-    "fromAccountId": "농협"
-  },
-  {
     "id": "L17752923447155swo",
     "date": "2026-02-20",
     "kind": "transfer",
@@ -3273,17 +3074,6 @@
     "description": "증권 출���",
     "amount": 16620,
     "fromAccountId": "키움"
-  },
-  {
-    "id": "L1775292344732a73n",
-    "date": "2026-02-19",
-    "kind": "transfer",
-    "isFixedExpense": false,
-    "category": "이체",
-    "subCategory": "계좌이체",
-    "description": "저축은행→청년사다리",
-    "amount": 500000,
-    "toAccountId": "저축은행"
   },
   {
     "id": "L1771939941503",
@@ -3710,17 +3500,6 @@
     "fromAccountId": "삼성페이카드"
   },
   {
-    "id": "L177529234474117sq",
-    "date": "2026-02-14",
-    "kind": "expense",
-    "isFixedExpense": false,
-    "category": "유류교통비",
-    "subCategory": "주유",
-    "description": "SK에너지(주)기쁨주유소",
-    "amount": 150000,
-    "fromAccountId": "삼성페이카드"
-  },
-  {
     "id": "L1775292344733txg7",
     "date": "2026-02-14",
     "kind": "transfer",
@@ -3895,17 +3674,6 @@
     "description": "증권 출금",
     "amount": 16620,
     "fromAccountId": "키움"
-  },
-  {
-    "id": "L1775292344729xkoq",
-    "date": "2026-02-12",
-    "kind": "transfer",
-    "isFixedExpense": false,
-    "category": "이체",
-    "subCategory": "계좌이체",
-    "description": "실시간이체",
-    "amount": 600000,
-    "fromAccountId": "농협"
   },
   {
     "id": "L1770881934012",
@@ -4143,17 +3911,6 @@
     "toAccountId": "업비트"
   },
   {
-    "id": "L1775292344741wh3n",
-    "date": "2026-02-05",
-    "kind": "expense",
-    "isFixedExpense": false,
-    "category": "유류교통비",
-    "subCategory": "주유",
-    "description": "양지고속주유소",
-    "amount": 100000,
-    "fromAccountId": "삼성페이카드"
-  },
-  {
     "id": "L1775292344729yj8y",
     "date": "2026-02-05",
     "kind": "transfer",
@@ -4165,17 +3922,6 @@
     "toAccountId": "농협"
   },
   {
-    "id": "L1775292344729wmlm",
-    "date": "2026-02-05",
-    "kind": "transfer",
-    "isFixedExpense": false,
-    "category": "이체",
-    "subCategory": "계좌이체",
-    "description": "실시간이체",
-    "amount": 100000,
-    "fromAccountId": "농협"
-  },
-  {
     "id": "L1775292344729pv2q",
     "date": "2026-02-05",
     "kind": "transfer",
@@ -4185,17 +3931,6 @@
     "description": "NH올원뱅크",
     "amount": 8348,
     "toAccountId": "농협"
-  },
-  {
-    "id": "L1775292344729hctn",
-    "date": "2026-02-05",
-    "kind": "transfer",
-    "isFixedExpense": false,
-    "category": "이체",
-    "subCategory": "계좌이체",
-    "description": "NH투자김성우",
-    "amount": 100000,
-    "fromAccountId": "농협"
   },
   {
     "id": "L17752923447291pi5",
@@ -4542,17 +4277,6 @@
     "fromAccountId": "삼성페이카드"
   },
   {
-    "id": "L1775292344734oktb",
-    "date": "2026-02-01",
-    "kind": "transfer",
-    "isFixedExpense": false,
-    "category": "이체",
-    "subCategory": "계좌이체",
-    "description": "본인 이체",
-    "amount": 100000,
-    "toAccountId": "주택청약"
-  },
-  {
     "id": "L1775292344730sio4",
     "date": "2026-02-01",
     "kind": "transfer",
@@ -4573,17 +4297,6 @@
     "description": "PC하나은행",
     "amount": 300000,
     "toAccountId": "농협"
-  },
-  {
-    "id": "L17752923447237yeb",
-    "date": "2026-02-01",
-    "kind": "transfer",
-    "isFixedExpense": false,
-    "category": "이체",
-    "subCategory": "계좌이체",
-    "description": "실시간이체",
-    "amount": 700000,
-    "fromAccountId": "농협2호"
   },
   {
     "id": "L1770037946285",
@@ -4653,17 +4366,6 @@
     "amount": 700000,
     "fromAccountId": "농협2호",
     "toAccountId": "청년도약"
-  },
-  {
-    "id": "L177529234474274cf",
-    "date": "2026-01-31",
-    "kind": "expense",
-    "isFixedExpense": false,
-    "category": "유류교통비",
-    "subCategory": "주유",
-    "description": "청정에너지",
-    "amount": 150000,
-    "fromAccountId": "삼성페이카드"
   },
   {
     "id": "L1770037845519",
@@ -4889,17 +4591,6 @@
     "fromAccountId": "삼성페이카드"
   },
   {
-    "id": "L1775292344742kvc4",
-    "date": "2026-01-25",
-    "kind": "expense",
-    "isFixedExpense": false,
-    "category": "유류교통비",
-    "subCategory": "주유",
-    "description": "미키주유소",
-    "amount": 140000,
-    "fromAccountId": "삼성페이카드"
-  },
-  {
     "id": "L1775292344722s6l0",
     "date": "2026-01-25",
     "kind": "transfer",
@@ -4974,7 +4665,7 @@
     "subCategory": "네이버",
     "description": "네이버플러스",
     "amount": 3531,
-    "fromAccountId": "삼성페이카��"
+    "fromAccountId": "삼성페이카드"
   },
   {
     "id": "L1769348149715",
@@ -5239,17 +4930,6 @@
     "description": "25년_2학기_학자금_생활비 상환",
     "fromAccountId": "농협",
     "amount": 2887
-  },
-  {
-    "id": "L1775292344743jl1v",
-    "date": "2026-01-19",
-    "kind": "expense",
-    "isFixedExpense": false,
-    "category": "유류교통비",
-    "subCategory": "주유",
-    "description": "오일스타(주)경기남부지점",
-    "amount": 150000,
-    "fromAccountId": "삼성페이카드"
   },
   {
     "id": "L1775292344724hbdn",
@@ -5892,17 +5572,6 @@
     "fromAccountId": "삼성페이카드"
   },
   {
-    "id": "L1775292344743htiq",
-    "date": "2026-01-10",
-    "kind": "expense",
-    "isFixedExpense": false,
-    "category": "유류교통비",
-    "subCategory": "주유",
-    "description": "미키주유소",
-    "amount": 140000,
-    "fromAccountId": "삼성페이카드"
-  },
-  {
     "id": "L1775292344731000z",
     "date": "2026-01-10",
     "kind": "transfer",
@@ -6042,17 +5711,6 @@
     "subCategory": "외식/배달",
     "description": "뿌링클치킨",
     "amount": 3000,
-    "fromAccountId": "삼성페이카드"
-  },
-  {
-    "id": "L1775292344744mzxa",
-    "date": "2026-01-05",
-    "kind": "expense",
-    "isFixedExpense": false,
-    "category": "유류교통비",
-    "subCategory": "주유",
-    "description": "동림셀프주유소",
-    "amount": 150000,
     "fromAccountId": "삼성페이카드"
   },
   {
@@ -6371,28 +6029,6 @@
     "description": "신재형 박사님",
     "amount": 39000,
     "fromAccountId": "삼성페이카드"
-  },
-  {
-    "id": "L1775292344734jz10",
-    "date": "2026-01-01",
-    "kind": "transfer",
-    "isFixedExpense": false,
-    "category": "이체",
-    "subCategory": "계좌이체",
-    "description": "본인 이체",
-    "amount": 100000,
-    "toAccountId": "주택청약"
-  },
-  {
-    "id": "L1775292344731cjo0",
-    "date": "2026-01-01",
-    "kind": "transfer",
-    "isFixedExpense": false,
-    "category": "이체",
-    "subCategory": "계좌이체",
-    "description": "실시간이체",
-    "amount": 700000,
-    "fromAccountId": "농협"
   },
   {
     "id": "L1775292344722powz",
@@ -6871,7 +6507,7 @@
     "kind": "expense",
     "isFixedExpense": false,
     "category": "유류교통비",
-    "subCategory": "유류교통비",
+    "subCategory": "유류비/충전비",
     "description": "유류비/충전비",
     "amount": 48000,
     "note": "휘발유",
@@ -6955,7 +6591,7 @@
     "kind": "expense",
     "isFixedExpense": false,
     "category": "유류교통비",
-    "subCategory": "유류교통비",
+    "subCategory": "택시",
     "description": "택시",
     "amount": 66300,
     "fromAccountId": "삼성페이카드"
@@ -7068,7 +6704,7 @@
     "kind": "expense",
     "isFixedExpense": false,
     "category": "유류교통비",
-    "subCategory": "유류교통비",
+    "subCategory": "유류비/충전비",
     "description": "유류비/충전비",
     "amount": 50970,
     "note": "휘발유",
@@ -7147,7 +6783,7 @@
     "kind": "expense",
     "isFixedExpense": false,
     "category": "유류교통비",
-    "subCategory": "(미분류)",
+    "subCategory": "택시",
     "description": "택시",
     "amount": 25600,
     "fromAccountId": "삼성페이카드"
@@ -7178,7 +6814,7 @@
     "kind": "expense",
     "isFixedExpense": false,
     "category": "유류교통비",
-    "subCategory": "유류교통비",
+    "subCategory": "유류비/충전비",
     "description": "휘발유",
     "amount": 47000,
     "fromAccountId": "삼성페이카드"
@@ -7278,7 +6914,7 @@
     "kind": "expense",
     "isFixedExpense": false,
     "category": "유류교통비",
-    "subCategory": "유류교통비",
+    "subCategory": "유류비/충전비",
     "description": "휘발유",
     "amount": 44000,
     "fromAccountId": "삼성페이카드"
@@ -8306,7 +7942,7 @@
     "subCategory": "간식",
     "description": "소금빵",
     "amount": 3000,
-    "fromAccountId": "���성페이카드"
+    "fromAccountId": "삼성페이카드"
   },
   {
     "id": "L1766467634214-306-q2axnwx16",

@@ -49,7 +49,7 @@ function computeSynchronously(params: UsePortfolioWorkerParams): Omit<PortfolioS
         params.trades,
         adjustPrices(params.prices, params.fxRate),
         params.accounts,
-        { fxRate: params.fxRate ?? undefined }
+        { fxRate: params.fxRate ?? undefined, priceFallback: "cost" }
       )
     : [];
 

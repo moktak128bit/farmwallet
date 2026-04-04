@@ -382,12 +382,12 @@ export const CategoriesView: React.FC<Props> = ({ presets, onChangePresets, ledg
       <div className="card" style={{ marginTop: 12 }}>
         <div className="section-header">
           <h3>항목 매트릭스</h3>
-          <div>
-            <button type="button" onClick={addColumn} style={{ marginRight: 8 }}>
-              대분류 추가
+          <div style={{ display: "flex", gap: 8 }}>
+            <button type="button" className="primary" onClick={addColumn} style={{ padding: "8px 16px", fontSize: 14, fontWeight: 600 }}>
+              + 대분류 추가
             </button>
-            <button type="button" onClick={addRow}>
-              행 추가
+            <button type="button" className="secondary" onClick={addRow} style={{ padding: "8px 16px", fontSize: 14, fontWeight: 600 }}>
+              + 행 추가
             </button>
           </div>
         </div>

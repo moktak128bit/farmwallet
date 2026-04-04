@@ -1263,3 +1263,25 @@ label {
   50% { transform: translateX(100%); width: 40%; }
   100% { transform: translateX(-100%); width: 40%; }
 }
+
+/* ── Print styles ── */
+@media print {
+  body { background: white !important; color: black !important; font-size: 12px; }
+  .app-header, .sidebar, .mobile-menu-btn, .drawer-overlay, .drawer-panel,
+  button, .toast-container { display: none !important; }
+  .app-layout { display: block !important; }
+  main { padding: 0 !important; max-width: 100% !important; }
+  .card { break-inside: avoid; border: 1px solid #ddd !important; box-shadow: none !important; margin-bottom: 12px; }
+  table { font-size: 10px; }
+  .data-table th, .data-table td { padding: 4px 6px; }
+}
+
+/* ── Reduced motion ── */
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
+}

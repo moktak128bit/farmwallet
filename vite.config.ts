@@ -353,6 +353,43 @@ function backupApiPlugin(): Plugin {
 
         next();
       });
+      // 최신 백업 파일에서 복원 (GET) — localStorage가 비어있을 때 자동 복원용
+      server.middlewares.use("/api/restore-latest-backup", (req: IncomingMessage, res: ServerResponse, next) => {
+        if (req.method !== "GET") { next(); return; }
+        try {
+          if (!fs.existsSync(backupsDir)) {
+            res.setHeader("Content-Type", "application/json");
+            res.end("null");
+            return;
+          }
+          // 가장 최근 날짜 폴더 → 그 안의 가장 최근 파일
+          const dateDirs = fs.readdirSync(backupsDir)
+            .filter((d: string) => /^\d{4}-\d{2}-\d{2}$/.test(d))
+            .sort()
+            .reverse();
+          for (const dir of dateDirs) {
+            const dirPath = path.join(backupsDir, dir);
+            const files = fs.readdirSync(dirPath)
+              .filter((f: string) => f.endsWith(".json"))
+              .sort()
+              .reverse();
+            if (files.length > 0) {
+              const raw = fs.readFileSync(path.join(dirPath, files[0]), "utf-8");
+              res.setHeader("Content-Type", "application/json");
+              res.end(raw);
+              return;
+            }
+          }
+          res.setHeader("Content-Type", "application/json");
+          res.end("null");
+        } catch (e) {
+          console.error("[backup-api] restore-latest-backup failed", e);
+          res.statusCode = 500;
+          res.setHeader("Content-Type", "application/json");
+          res.end("null");
+        }
+      });
+
       // 테이블 형태 앱 데이터 백업 (GET/POST) — data/app-data-tables.json
       const tableBackupFile = path.join(dataDir, "app-data-tables.json");
       const MAX_TABLE_BACKUP_BYTES = 25 * 1024 * 1024;

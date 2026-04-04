@@ -741,49 +741,25 @@ export const SettingsView: React.FC<Props> = ({
     <div>
       <h2>백업 / 복원 / 설정</h2>
       
-      <div style={{ display: "flex", gap: 8, marginBottom: 16 }}>
-        <button
-          type="button"
-          className={activeTab === "backup" ? "primary" : ""}
-          onClick={() => setActiveTab("backup")}
-        >
-          백업/복원
-        </button>
-        <button
-          type="button"
-          className={activeTab === "integrity" ? "primary" : ""}
-          onClick={() => setActiveTab("integrity")}
-        >
-          데이터 무결성
-        </button>
-        <button
-          type="button"
-          className={activeTab === "theme" ? "primary" : ""}
-          onClick={() => setActiveTab("theme")}
-        >
-          테마 설정
-        </button>
-        <button
-          type="button"
-          className={activeTab === "accessibility" ? "primary" : ""}
-          onClick={() => setActiveTab("accessibility")}
-        >
-          접근성
-        </button>
-        <button
-          type="button"
-          className={activeTab === "dashboard" ? "primary" : ""}
-          onClick={() => setActiveTab("dashboard")}
-        >
-          대시보드 위젯
-        </button>
-        <button
-          type="button"
-          className={activeTab === "savingsMigration" ? "primary" : ""}
-          onClick={() => setActiveTab("savingsMigration")}
-        >
-          저축성지출 수정
-        </button>
+      <div style={{ display: "flex", gap: 8, marginBottom: 16, flexWrap: "wrap" }}>
+        {([
+          ["backup", "백업/복원"],
+          ["integrity", "데이터 무결성"],
+          ["theme", "테마 설정"],
+          ["accessibility", "접근성"],
+          ["dashboard", "대시보드 위젯"],
+          ["savingsMigration", "저축성지출 수정"],
+        ] as const).map(([tab, label]) => (
+          <button
+            key={tab}
+            type="button"
+            className={activeTab === tab ? "primary" : ""}
+            onClick={() => setActiveTab(tab)}
+            style={{ padding: "8px 16px", fontSize: 14, fontWeight: 600, borderRadius: 8 }}
+          >
+            {label}
+          </button>
+        ))}
       </div>
 
       {activeTab === "backup" && (
@@ -825,22 +801,32 @@ export const SettingsView: React.FC<Props> = ({
             <strong>테이블 백업 파일만</strong>으로도 복구할 수 있습니다. 데이터를 저장할 때마다 브라우저에 사본이 갱신되고,{" "}
             <code>npm run dev</code>일 때는 프로젝트 <code>data/app-data-tables.json</code>에도 기록됩니다.
           </p>
-          <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
-            <button type="button" onClick={handleExport}>
-              현재 데이터 다시 불러오기
-            </button>
-            <button type="button" className="primary" onClick={handleDownloadBackup}>
-              백업 파일 다운로드
-            </button>
-            <button type="button" className="secondary" onClick={handleUploadBackup}>
-              백업 파일 불러오기
-            </button>
-            <button type="button" className="secondary" onClick={handleDownloadTableBackup}>
-              테이블 백업 다운로드
-            </button>
-            <button type="button" className="secondary" onClick={handleUploadTableBackup}>
-              테이블 백업에서 복구
-            </button>
+          <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
+            <div>
+              <div style={{ fontSize: 12, fontWeight: 700, color: "var(--chart-income)", marginBottom: 6 }}>💾 내보내기 (안전)</div>
+              <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+                <button type="button" className="primary" onClick={handleDownloadBackup} style={{ background: "var(--chart-income)", border: "none", color: "white" }}>
+                  백업 파일 다운로드
+                </button>
+                <button type="button" onClick={handleDownloadTableBackup} style={{ background: "var(--surface)", border: "1px solid var(--chart-income)", color: "var(--chart-income)" }}>
+                  테이블 백업 다운로드
+                </button>
+              </div>
+            </div>
+            <div>
+              <div style={{ fontSize: 12, fontWeight: 700, color: "var(--warning, orange)", marginBottom: 6 }}>⚠️ 불러오기 (현재 데이터 덮어쓰기)</div>
+              <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+                <button type="button" onClick={handleUploadBackup} style={{ background: "var(--surface)", border: "2px solid orange", color: "var(--text)" }}>
+                  백업 파일에서 복원
+                </button>
+                <button type="button" onClick={handleUploadTableBackup} style={{ background: "var(--surface)", border: "2px solid orange", color: "var(--text)" }}>
+                  테이블 백업에서 복원
+                </button>
+                <button type="button" onClick={handleExport} style={{ background: "var(--surface)", border: "1px solid var(--border)", color: "var(--text-muted)", fontSize: 12 }}>
+                  현재 데이터 새로고침
+                </button>
+              </div>
+            </div>
           </div>
         </div>
         <div className="card">
@@ -871,9 +857,9 @@ export const SettingsView: React.FC<Props> = ({
           <button
             type="button"
             onClick={handleResetAllData}
-            style={{ background: "var(--danger)", color: "white", border: "none" }}
+            style={{ background: "var(--danger)", color: "white", border: "none", fontWeight: 700, padding: "10px 20px", fontSize: 14 }}
           >
-            모든 데이터 초기화하고 처음부터 다시 하기
+            🗑️ 모든 데이터 초기화하고 처음부터 다시 하기
           </button>
         </div>
         <div className="card">
@@ -970,49 +956,55 @@ export const SettingsView: React.FC<Props> = ({
               readOnly={false}
             />
           </label>
-          <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
-            <button
-              type="button"
-              className="primary"
-              disabled={gistSyncing || !gistToken}
-              onClick={async () => {
-                setGistSyncing(true);
-                try {
-                  const jsonStr = JSON.stringify(data);
-                  const result = await gistSyncModule.saveToGist(jsonStr);
-                  setGistIdState(result.gistId);
-                  setGistLastSync(result.updatedAt);
-                  toast.success("Gist에 저장 완료");
-                } catch (e: any) {
-                  toast.error(e.message ?? "Gist 저장 실패");
-                } finally {
-                  setGistSyncing(false);
-                }
-              }}
-            >
-              {gistSyncing ? "동기화 중..." : "Gist에 저장"}
-            </button>
-            <button
-              type="button"
-              className="secondary"
-              disabled={gistSyncing || !gistToken || !gistId}
-              onClick={async () => {
-                setGistSyncing(true);
-                try {
-                  const result = await gistSyncModule.loadFromGist();
-                  const parsed = JSON.parse(result.dataJson);
-                  onChangeData(parsed);
-                  setGistLastSync(result.updatedAt);
-                  toast.success("Gist에서 불러오기 완료");
-                } catch (e: any) {
-                  toast.error(e.message ?? "Gist 불러오기 실패");
-                } finally {
-                  setGistSyncing(false);
-                }
-              }}
-            >
-              Gist에서 불러오기
-            </button>
+          <div style={{ display: "flex", flexDirection: "column", gap: 12, marginTop: 12 }}>
+            <div>
+              <div style={{ fontSize: 12, fontWeight: 700, color: "var(--chart-income)", marginBottom: 6 }}>💾 Gist에 저장 (안전 — 현재 데이터를 백업)</div>
+              <button
+                type="button"
+                disabled={gistSyncing || !gistToken}
+                onClick={async () => {
+                  setGistSyncing(true);
+                  try {
+                    const jsonStr = JSON.stringify(data);
+                    const result = await gistSyncModule.saveToGist(jsonStr);
+                    setGistIdState(result.gistId);
+                    setGistLastSync(result.updatedAt);
+                    toast.success("Gist에 저장 완료");
+                  } catch (e: any) {
+                    toast.error(e.message ?? "Gist 저장 실패");
+                  } finally {
+                    setGistSyncing(false);
+                  }
+                }}
+                style={{ background: "var(--chart-income)", border: "none", color: "white", padding: "8px 20px", borderRadius: 8, fontWeight: 600 }}
+              >
+                {gistSyncing ? "동기화 중..." : "Gist에 저장"}
+              </button>
+            </div>
+            <div>
+              <div style={{ fontSize: 12, fontWeight: 700, color: "var(--warning, orange)", marginBottom: 6 }}>⚠️ Gist에서 불러오기 (현재 데이터 덮어쓰기)</div>
+              <button
+                type="button"
+                disabled={gistSyncing || !gistToken || !gistId}
+                onClick={async () => {
+                  setGistSyncing(true);
+                  try {
+                    const result = await gistSyncModule.loadFromGist();
+                    const parsed = JSON.parse(result.dataJson);
+                    onChangeData(parsed);
+                    setGistLastSync(result.updatedAt);
+                    toast.success("Gist에서 불러오기 완료");
+                  } catch (e: any) {
+                    toast.error(e.message ?? "Gist 불러오기 실패");
+                  } finally {
+                    setGistSyncing(false);
+                  }
+                }}
+                style={{ background: "var(--surface)", border: "2px solid orange", color: "var(--text)", padding: "8px 20px", borderRadius: 8, fontWeight: 600 }}
+              >
+                Gist에서 불러오기
+              </button>
+            </div>
           </div>
           {gistLastSync && (
             <p className="hint" style={{ marginTop: 8 }}>

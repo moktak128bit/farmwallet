@@ -1407,6 +1407,15 @@ export const DashboardView: React.FC<Props> = (props) => {
     });
   }, [accountTimelineRows]);
 
+  /** 순자산 추이: accountTimelineRows에서 month, total 추출 (만원 단위) */
+  const netWorthTrendData = useMemo(() => {
+    if (accountTimelineRows.length === 0) return [] as Array<{ month: string; value: number }>;
+    return accountTimelineRows.map((row) => ({
+      month: String(row.month),
+      value: Math.round(Number(row.total) / 10000)
+    }));
+  }, [accountTimelineRows]);
+
   const calendarWindowStart = useMemo(() => addDaysToIso(today, -365), [today]);
   const calendarWindowEnd = useMemo(() => addDaysToIso(today, 89), [today]);
 
@@ -1773,6 +1782,144 @@ export const DashboardView: React.FC<Props> = (props) => {
             <div className="hint" style={{ marginTop: 8 }}>전체 기간: {formatKRW(allTimeSummary.investing)}</div>
           </div>
         </div>
+
+        {/* ── 순자산 추이 ─────────────────────────────────────────────────────── */}
+        {netWorthTrendData.length >= 2 && (() => {
+          const values = netWorthTrendData.map((d) => d.value);
+          const minVal = Math.min(...values);
+          const maxVal = Math.max(...values);
+          const range = maxVal - minVal || 1;
+          const PAD_L = 56;
+          const PAD_R = 16;
+          const PAD_T = 16;
+          const PAD_B = 28;
+          const W = 600;
+          const H = 160;
+          const chartW = W - PAD_L - PAD_R;
+          const chartH = H - PAD_T - PAD_B;
+          const n = netWorthTrendData.length;
+
+          const toX = (i: number) => PAD_L + (i / (n - 1)) * chartW;
+          const toY = (v: number) => PAD_T + chartH - ((v - minVal) / range) * chartH;
+
+          const pts = netWorthTrendData.map((d, i) => ({ x: toX(i), y: toY(d.value), ...d }));
+          const polyline = pts.map((p) => `${p.x},${p.y}`).join(" ");
+          const areaPath =
+            `M${pts[0].x},${PAD_T + chartH} ` +
+            pts.map((p) => `L${p.x},${p.y}`).join(" ") +
+            ` L${pts[pts.length - 1].x},${PAD_T + chartH} Z`;
+
+          const currentPt = pts[pts.length - 1];
+          const currentWorth = netWorthTrendData[netWorthTrendData.length - 1].value;
+
+          // Y axis ticks (3 ticks)
+          const yTicks = [minVal, Math.round((minVal + maxVal) / 2), maxVal];
+
+          // X axis: show label every N months to avoid crowding
+          const labelStep = n <= 12 ? 1 : n <= 24 ? 2 : n <= 36 ? 3 : 6;
+          const xLabels = pts.filter((_, i) => i % labelStep === 0 || i === n - 1);
+
+          const gradId = "nwt-grad";
+
+          return (
+            <div className="card" style={{ padding: 20 }}>
+              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginBottom: 12, flexWrap: "wrap", gap: 8 }}>
+                <div className="card-title" style={{ margin: 0 }}>순자산 추이</div>
+                <div style={{ textAlign: "right" }}>
+                  <div style={{ fontWeight: 700, fontSize: 20, color: "var(--primary)" }}>
+                    {currentWorth >= 0 ? "" : "-"}{Math.abs(currentWorth).toLocaleString()}만원
+                  </div>
+                  <div className="hint" style={{ fontSize: 12 }}>현재 순자산</div>
+                </div>
+              </div>
+              <div style={{ width: "100%", overflowX: "auto" }}>
+                <svg
+                  viewBox={`0 0 ${W} ${H}`}
+                  width="100%"
+                  style={{ display: "block", minWidth: 280, maxHeight: 180 }}
+                  aria-label="순자산 추이 차트"
+                >
+                  <defs>
+                    <linearGradient id={gradId} x1="0" y1="0" x2="0" y2="1">
+                      <stop offset="0%" stopColor="var(--primary, #2563eb)" stopOpacity="0.28" />
+                      <stop offset="100%" stopColor="var(--primary, #2563eb)" stopOpacity="0.02" />
+                    </linearGradient>
+                  </defs>
+
+                  {/* Y grid lines + labels */}
+                  {yTicks.map((tick) => {
+                    const y = toY(tick);
+                    const label = tick >= 0
+                      ? `${tick.toLocaleString()}`
+                      : `-${Math.abs(tick).toLocaleString()}`;
+                    return (
+                      <g key={tick}>
+                        <line
+                          x1={PAD_L} y1={y} x2={W - PAD_R} y2={y}
+                          stroke="var(--border, #e5e7eb)" strokeWidth={1} strokeDasharray="3 3"
+                        />
+                        <text
+                          x={PAD_L - 4} y={y + 4}
+                          textAnchor="end"
+                          fontSize={10}
+                          fill="var(--text-muted, #9ca3af)"
+                        >
+                          {label}
+                        </text>
+                      </g>
+                    );
+                  })}
+
+                  {/* Gradient fill area */}
+                  <path d={areaPath} fill={`url(#${gradId})`} />
+
+                  {/* Line */}
+                  <polyline
+                    points={polyline}
+                    fill="none"
+                    stroke="var(--primary, #2563eb)"
+                    strokeWidth={2}
+                    strokeLinejoin="round"
+                    strokeLinecap="round"
+                  />
+
+                  {/* Data points (small) */}
+                  {pts.map((p, i) => (
+                    <circle
+                      key={i}
+                      cx={p.x} cy={p.y} r={2.5}
+                      fill="var(--primary, #2563eb)"
+                      opacity={0.6}
+                    />
+                  ))}
+
+                  {/* Current point highlight */}
+                  <circle
+                    cx={currentPt.x} cy={currentPt.y} r={5}
+                    fill="var(--primary, #2563eb)"
+                    stroke="var(--bg, #fff)" strokeWidth={2}
+                  />
+
+                  {/* X axis labels */}
+                  {xLabels.map((p) => (
+                    <text
+                      key={p.month}
+                      x={p.x} y={H - 6}
+                      textAnchor="middle"
+                      fontSize={9.5}
+                      fill="var(--text-muted, #9ca3af)"
+                    >
+                      {p.month.slice(2)}
+                    </text>
+                  ))}
+                </svg>
+              </div>
+              <div className="hint" style={{ fontSize: 11, marginTop: 4, textAlign: "right" }}>
+                단위: 만원 · {netWorthTrendData[0]?.month} ~ {netWorthTrendData[netWorthTrendData.length - 1]?.month}
+              </div>
+            </div>
+          );
+        })()}
 
         <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 16 }}>
           <div className="card">
@@ -2282,19 +2429,19 @@ export const DashboardView: React.FC<Props> = (props) => {
               <button
                 type="button"
                 className="secondary"
-                style={{ fontSize: 12, padding: "4px 10px" }}
+                style={{ fontSize: 14, padding: "6px 14px", fontWeight: 600 }}
                 onClick={() => setCashflowMonth((prev) => shiftMonth(prev, -1))}
               >
-                이전달
+                ◀ 이전달
               </button>
-              <strong style={{ minWidth: 70, textAlign: "center" }}>{cashflowMonth}</strong>
+              <strong style={{ minWidth: 80, textAlign: "center", fontSize: 15 }}>{cashflowMonth}</strong>
               <button
                 type="button"
                 className="secondary"
-                style={{ fontSize: 12, padding: "4px 10px" }}
+                style={{ fontSize: 14, padding: "6px 14px", fontWeight: 600 }}
                 onClick={() => setCashflowMonth((prev) => shiftMonth(prev, 1))}
               >
-                다음달
+                다음달 ▶
               </button>
             </div>
           </div>

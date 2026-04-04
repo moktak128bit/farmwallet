@@ -515,7 +515,7 @@ export const TradeHistorySection: React.FC<TradeHistorySectionProps> = ({
           <button
             type="button"
             className={filterAccountId === null ? "primary" : "secondary"}
-            style={{ fontSize: 12, padding: "4px 12px" }}
+            style={{ fontSize: 13, padding: "8px 16px" }}
             onClick={() => setFilterAccountId(null)}
           >
             전체 <span style={{ opacity: 0.7 }}>({trades.length})</span>
@@ -527,7 +527,7 @@ export const TradeHistorySection: React.FC<TradeHistorySectionProps> = ({
                 key={acc.id}
                 type="button"
                 className={filterAccountId === acc.id ? "primary" : "secondary"}
-                style={{ fontSize: 12, padding: "4px 12px" }}
+                style={{ fontSize: 13, padding: "8px 16px" }}
                 onClick={() => setFilterAccountId(filterAccountId === acc.id ? null : acc.id)}
               >
                 {acc.name} <span style={{ opacity: 0.7 }}>({count})</span>
@@ -938,11 +938,11 @@ export const TradeHistorySection: React.FC<TradeHistorySectionProps> = ({
                     })() : "-"}
                   </td>
                   <td style={{ padding: "4px" }}>
-                    <button 
-                      type="button" 
-                      className="danger" 
+                    <button
+                      type="button"
+                      className="danger"
                       onClick={() => handleDeleteTrade(t.id)}
-                      style={{ padding: "4px 8px", fontSize: 12 }}
+                      style={{ padding: "6px 12px", fontSize: 13 }}
                     >
                       삭제
                     </button>

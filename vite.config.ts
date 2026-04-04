@@ -12,8 +12,6 @@ function backupApiPlugin(): Plugin {
     configureServer(server) {
       const backupsDir = path.join(process.cwd(), "backups");
       const dataDir = path.join(process.cwd(), "data");
-      const dataFile = path.join(dataDir, "app-data.json");
-
       const backupRoot = path.resolve(backupsDir);
       const backupRootPrefix = `${backupRoot.toLowerCase()}${path.sep}`;
       const MAX_BACKUP_BODY_BYTES = 20 * 1024 * 1024;
@@ -355,58 +353,6 @@ function backupApiPlugin(): Plugin {
 
         next();
       });
-      // App data read/write API (local file)
-      server.middlewares.use("/api/data-store", (req: IncomingMessage, res: ServerResponse, next) => {
-        try {
-          if (!fs.existsSync(dataDir)) {
-            fs.mkdirSync(dataDir, { recursive: true });
-          }
-        } catch {
-          // ignore dir creation errors
-        }
-
-        if (req.method === "GET") {
-          try {
-            if (!fs.existsSync(dataFile)) {
-              res.setHeader("Content-Type", "application/json");
-              res.end("{}");
-              return;
-            }
-            const raw = fs.readFileSync(dataFile, "utf-8");
-            res.setHeader("Content-Type", "application/json");
-            res.end(raw);
-          } catch {
-            res.statusCode = 500;
-            res.setHeader("Content-Type", "application/json");
-            res.end(JSON.stringify({ error: "Failed to read data" }));
-          }
-          return;
-        }
-
-        if (req.method === "POST") {
-          let body = "";
-          req.on("data", (chunk: Buffer) => (body += chunk.toString()));
-          req.on("end", () => {
-            try {
-              JSON.parse(body);
-              if (!fs.existsSync(dataDir)) {
-                fs.mkdirSync(dataDir, { recursive: true });
-              }
-              fs.writeFileSync(dataFile, body, "utf-8");
-              res.setHeader("Content-Type", "application/json");
-              res.end(JSON.stringify({ ok: true, savedAt: new Date().toISOString() }));
-            } catch {
-              res.statusCode = 500;
-              res.setHeader("Content-Type", "application/json");
-              res.end(JSON.stringify({ error: "Failed to save data" }));
-            }
-          });
-          return;
-        }
-
-        next();
-      });
-
       // 테이블 형태 앱 데이터 백업 (GET/POST) — data/app-data-tables.json
       const tableBackupFile = path.join(dataDir, "app-data-tables.json");
       const MAX_TABLE_BACKUP_BYTES = 25 * 1024 * 1024;

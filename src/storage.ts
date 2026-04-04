@@ -29,9 +29,3 @@ export {
   saveTickerToJson
 } from "./services/tickerService";
 
-import { DEFAULT_US_TICKERS } from "./constants/config";
-
-// Legacy exports for backward compatibility
-export function getDefaultUsTickers(): string[] {
-  return [...DEFAULT_US_TICKERS];
-}

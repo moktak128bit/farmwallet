@@ -510,29 +510,32 @@ export const TradeHistorySection: React.FC<TradeHistorySectionProps> = ({
   return (
     <>
       <h3>매매 내역</h3>
-      <div style={{ marginBottom: 12, display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
-        <span style={{ color: "var(--muted)", fontSize: 14 }}>계좌별 보기:</span>
-        <select
-          value={filterAccountId ?? ""}
-          onChange={(e) => setFilterAccountId(e.target.value === "" ? null : e.target.value)}
-          style={{ padding: "6px 10px", fontSize: 14, borderRadius: 6, minWidth: 160 }}
-        >
-          <option value="">전체 ({trades.length}건)</option>
+      {accountIdsWithTrades.length > 1 && (
+        <div style={{ marginBottom: 12, display: "flex", gap: 6, alignItems: "center", flexWrap: "wrap" }}>
+          <button
+            type="button"
+            className={filterAccountId === null ? "primary" : "secondary"}
+            style={{ fontSize: 12, padding: "4px 12px" }}
+            onClick={() => setFilterAccountId(null)}
+          >
+            전체 <span style={{ opacity: 0.7 }}>({trades.length})</span>
+          </button>
           {accountIdsWithTrades.map((acc) => {
             const count = trades.filter((t) => t.accountId === acc.id).length;
             return (
-              <option key={acc.id} value={acc.id}>
-                {acc.name} ({count}건)
-              </option>
+              <button
+                key={acc.id}
+                type="button"
+                className={filterAccountId === acc.id ? "primary" : "secondary"}
+                style={{ fontSize: 12, padding: "4px 12px" }}
+                onClick={() => setFilterAccountId(filterAccountId === acc.id ? null : acc.id)}
+              >
+                {acc.name} <span style={{ opacity: 0.7 }}>({count})</span>
+              </button>
             );
           })}
-        </select>
-        {filterAccountId && (
-          <span className="hint" style={{ fontSize: 13 }}>
-            {accounts.find((a) => a.id === filterAccountId)?.name ?? filterAccountId} · {tradesFiltered.length}건
-          </span>
-        )}
-      </div>
+        </div>
+      )}
       <div className="card" style={{ marginBottom: 16, padding: 12 }}>
         <div style={{ display: "flex", gap: 24, flexWrap: "wrap", fontSize: 14 }}>
           {krwBuyAmount + krwSellAmount + krwFee > 0 && (

@@ -160,6 +160,8 @@ export const LedgerView: React.FC<Props> = ({
   const [filterSubCategory, setFilterSubCategory] = useState<string | undefined>();
   const [filterFromAccountId, setFilterFromAccountId] = useState<string | undefined>();
   const [filterToAccountId, setFilterToAccountId] = useState<string | undefined>();
+  /** 계좌별 보기: null = 전체, 값 있으면 from/to 중 하나라도 해당 계좌인 항목만 */
+  const [filterAccountId, setFilterAccountId] = useState<string | null>(null);
   const [filterAmountMin, setFilterAmountMin] = useState<number | undefined>();
   const [filterAmountMax, setFilterAmountMax] = useState<number | undefined>();
   const [filterTagsInput, setFilterTagsInput] = useState<string>("");
@@ -415,6 +417,7 @@ export const LedgerView: React.FC<Props> = ({
     setFilterSubCategory(undefined);
     setFilterFromAccountId(undefined);
     setFilterToAccountId(undefined);
+    setFilterAccountId(null);
   }, [ledgerTab]);
 
   // 이체 탭일 때 form.mainCategory를 "이체"로 설정 (중분류 목록 표시용)
@@ -1239,6 +1242,7 @@ export const LedgerView: React.FC<Props> = ({
     setFilterSubCategory(undefined);
     setFilterFromAccountId(undefined);
     setFilterToAccountId(undefined);
+    setFilterAccountId(null);
     setFilterAmountMin(undefined);
     setFilterAmountMax(undefined);
     setFilterTagsInput("");
@@ -1327,6 +1331,13 @@ export const LedgerView: React.FC<Props> = ({
       });
     }
 
+    // 계좌별 보기 (from 또는 to 중 하나라도 해당 계좌)
+    if (filterAccountId) {
+      filtered = filtered.filter(
+        (l) => l.fromAccountId === filterAccountId || l.toAccountId === filterAccountId
+      );
+    }
+
     // 출금계좌 필터
     if (filterFromAccountId) {
       filtered = filtered.filter((l) => l.fromAccountId === filterFromAccountId);
@@ -1383,7 +1394,7 @@ export const LedgerView: React.FC<Props> = ({
     });
     
     return sorted;
-  }, [ledgerByTab, ledgerTab, viewMode, selectedMonths, dateFilter, filterMainCategory, filterSubCategory, filterFromAccountId, filterToAccountId, filterAmountMin, filterAmountMax, filterTagsInput, ledgerSort]);
+  }, [ledgerByTab, ledgerTab, viewMode, selectedMonths, dateFilter, filterMainCategory, filterSubCategory, filterAccountId, filterFromAccountId, filterToAccountId, filterAmountMin, filterAmountMax, filterTagsInput, ledgerSort]);
 
   const tabLabel: Record<LedgerTab, string> = {
     all: "전체",
@@ -1742,7 +1753,17 @@ export const LedgerView: React.FC<Props> = ({
   const hasDateFilter = !!(dateFilter.startDate || dateFilter.endDate);
   const hasAmountFilter = filterAmountMin != null || filterAmountMax != null;
   const hasTagFilter = filterTagsInput.trim() !== "";
-  const hasFilter = hasCategoryFilter || hasDateFilter || hasAmountFilter || hasTagFilter;
+  const hasFilter = hasCategoryFilter || hasDateFilter || hasAmountFilter || hasTagFilter || !!filterAccountId;
+
+  // 현재 탭 기준 계좌 버튼 목록 (ledgerByTab에 등장하는 계좌만)
+  const accountsWithLedger = useMemo(() => {
+    const ids = new Set<string>();
+    for (const l of ledgerByTab) {
+      if (l.fromAccountId) ids.add(l.fromAccountId);
+      if (l.toAccountId) ids.add(l.toAccountId);
+    }
+    return accounts.filter((a) => ids.has(a.id));
+  }, [ledgerByTab, accounts]);
   const filterFromAccount = filterFromAccountId ? accounts.find((a) => a.id === filterFromAccountId) : null;
   const filterFromAccountName = filterFromAccountId ? (filterFromAccount?.name || filterFromAccount?.id || filterFromAccountId) : null;
   const filterToAccount = filterToAccountId ? accounts.find((a) => a.id === filterToAccountId) : null;
@@ -2650,6 +2671,35 @@ export const LedgerView: React.FC<Props> = ({
         <div style={{ marginLeft: "auto", display: "flex", gap: "8px", alignItems: "center" }}>
         </div>
       </div>
+
+      {accountsWithLedger.length > 1 && (
+        <div style={{ marginBottom: 10, display: "flex", gap: 6, alignItems: "center", flexWrap: "wrap" }}>
+          <button
+            type="button"
+            className={filterAccountId === null ? "primary" : "secondary"}
+            style={{ fontSize: 12, padding: "4px 12px" }}
+            onClick={() => setFilterAccountId(null)}
+          >
+            전체
+          </button>
+          {accountsWithLedger.map((acc) => {
+            const count = ledgerByTab.filter(
+              (l) => l.fromAccountId === acc.id || l.toAccountId === acc.id
+            ).length;
+            return (
+              <button
+                key={acc.id}
+                type="button"
+                className={filterAccountId === acc.id ? "primary" : "secondary"}
+                style={{ fontSize: 12, padding: "4px 12px" }}
+                onClick={() => setFilterAccountId(filterAccountId === acc.id ? null : acc.id)}
+              >
+                {acc.name} <span style={{ opacity: 0.7 }}>({count})</span>
+              </button>
+            );
+          })}
+        </div>
+      )}
 
       <div style={{ marginBottom: "12px", display: "flex", gap: "12px", alignItems: "center", flexWrap: "wrap" }}>
         <button

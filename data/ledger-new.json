@@ -776,10 +776,10 @@
   {
     "id": "L1774438831391",
     "date": "2026-03-25",
-    "kind": "transfer",
+    "kind": "expense",
     "isFixedExpense": false,
-    "category": "이체",
-    "subCategory": "카드결제이체",
+    "category": "신용결제",
+    "subCategory": "신용결제",
     "description": "",
     "amount": 1516481,
     "fromAccountId": "농협",
@@ -2823,14 +2823,13 @@
   {
     "id": "L1775292344728xw7j",
     "date": "2026-02-25",
-    "kind": "transfer",
+    "kind": "expense",
     "isFixedExpense": false,
-    "category": "이체",
-    "subCategory": "카드결제이체",
+    "category": "신용결제",
+    "subCategory": "신용결제",
     "description": "삼성카드 결제",
     "amount": 694090,
-    "fromAccountId": "농협",
-    "toAccountId": "삼성페이카드"
+    "fromAccountId": "농협"
   },
   {
     "id": "L1775292344715pmmz",
@@ -2890,10 +2889,10 @@
   {
     "id": "L1772019367369",
     "date": "2026-02-25",
-    "kind": "transfer",
+    "kind": "expense",
     "isFixedExpense": false,
-    "category": "이체",
-    "subCategory": "카드결제이체",
+    "category": "신용결제",
+    "subCategory": "신용결제",
     "description": "",
     "amount": 649090,
     "fromAccountId": "농협",
@@ -3270,7 +3269,7 @@
     "isFixedExpense": false,
     "category": "이체",
     "subCategory": "계좌이체",
-    "description": "증권 출���",
+    "description": "증권 출금",
     "amount": 16620,
     "fromAccountId": "키움"
   },
@@ -4833,14 +4832,13 @@
   {
     "id": "L1775292344730g1v7",
     "date": "2026-01-26",
-    "kind": "transfer",
+    "kind": "expense",
     "isFixedExpense": false,
-    "category": "이체",
-    "subCategory": "카드결제이체",
+    "category": "신용결제",
+    "subCategory": "신용결제",
     "description": "삼성카드 결제",
     "amount": 1359334,
-    "fromAccountId": "농협",
-    "toAccountId": "삼성페이카드"
+    "fromAccountId": "농협"
   },
   {
     "id": "L1772019462904",
@@ -4856,10 +4854,10 @@
   {
     "id": "L1772019443874",
     "date": "2026-01-26",
-    "kind": "transfer",
+    "kind": "expense",
     "isFixedExpense": false,
-    "category": "이체",
-    "subCategory": "카드결제이체",
+    "category": "신용결제",
+    "subCategory": "신용결제",
     "description": "",
     "amount": 1312484,
     "fromAccountId": "농협",
@@ -4974,7 +4972,7 @@
     "subCategory": "네이버",
     "description": "네이버플러스",
     "amount": 3531,
-    "fromAccountId": "삼성페이카��"
+    "fromAccountId": "삼성페이카드"
   },
   {
     "id": "L1769348149715",
@@ -6630,10 +6628,10 @@
   {
     "id": "L1772696483391",
     "date": "2025-12-26",
-    "kind": "transfer",
+    "kind": "expense",
     "isFixedExpense": false,
-    "category": "이체",
-    "subCategory": "카드결제이체",
+    "category": "신용결제",
+    "subCategory": "신용결제",
     "description": "",
     "amount": 418135,
     "fromAccountId": "농협",
@@ -7444,10 +7442,10 @@
   {
     "id": "L1772696715368",
     "date": "2025-11-25",
-    "kind": "transfer",
+    "kind": "expense",
     "isFixedExpense": false,
-    "category": "이체",
-    "subCategory": "카드결제이체",
+    "category": "신용결제",
+    "subCategory": "신용결제",
     "description": "",
     "amount": 5051771,
     "fromAccountId": "농협",
@@ -8306,7 +8304,7 @@
     "subCategory": "간식",
     "description": "소금빵",
     "amount": 3000,
-    "fromAccountId": "���성페이카드"
+    "fromAccountId": "삼성페이카드"
   },
   {
     "id": "L1766467634214-306-q2axnwx16",
@@ -8341,10 +8339,10 @@
   {
     "id": "L1772696745441",
     "date": "2025-10-25",
-    "kind": "transfer",
+    "kind": "expense",
     "isFixedExpense": false,
-    "category": "이체",
-    "subCategory": "카드결제이체",
+    "category": "신용결제",
+    "subCategory": "신용결제",
     "description": "",
     "amount": 2317704,
     "fromAccountId": "농협",
@@ -9284,10 +9282,10 @@
   {
     "id": "L1772696787996",
     "date": "2025-09-25",
-    "kind": "transfer",
+    "kind": "expense",
     "isFixedExpense": false,
-    "category": "이체",
-    "subCategory": "카드결제이체",
+    "category": "신용결제",
+    "subCategory": "신용결제",
     "description": "",
     "amount": 871798,
     "fromAccountId": "농협",
@@ -9957,7 +9955,7 @@
     "kind": "expense",
     "category": "데이트비",
     "subCategory": "간식",
-    "description": "팝���",
+    "description": "팝콘",
     "amount": 13500,
     "fromAccountId": "삼성페이카드"
   },
@@ -11121,10 +11119,10 @@
   {
     "id": "L1772696839488",
     "date": "2025-07-25",
-    "kind": "transfer",
+    "kind": "expense",
     "isFixedExpense": false,
-    "category": "이체",
-    "subCategory": "카드결제이체",
+    "category": "신용결제",
+    "subCategory": "신용결제",
     "description": "",
     "amount": 597866,
     "fromAccountId": "농협",
@@ -11873,5 +11871,136 @@
     "amount": 5121046,
     "fromAccountId": "농협",
     "toAccountId": "ISA"
+  },
+  {
+    "id": "L1772375691811",
+    "date": "2025-06-01",
+    "kind": "income",
+    "isFixedExpense": false,
+    "category": "수입",
+    "subCategory": "이월",
+    "description": "",
+    "amount": 10750447,
+    "toAccountId": "농협"
+  },
+  {
+    "id": "L1772374066057",
+    "date": "2025-06-01",
+    "kind": "transfer",
+    "isFixedExpense": false,
+    "category": "이체",
+    "subCategory": "이월이체",
+    "description": "",
+    "amount": 2361550,
+    "fromAccountId": "농협",
+    "toAccountId": "ISA"
+  },
+  {
+    "id": "L1772244742591",
+    "date": "2025-06-01",
+    "kind": "transfer",
+    "isFixedExpense": false,
+    "category": "이체",
+    "subCategory": "이월이체",
+    "description": "",
+    "amount": 37579,
+    "fromAccountId": "카카오페이",
+    "toAccountId": "농협"
+  },
+  {
+    "id": "L1772244714752",
+    "date": "2025-06-01",
+    "kind": "transfer",
+    "isFixedExpense": false,
+    "category": "이체",
+    "subCategory": "이월이체",
+    "description": "",
+    "amount": 581103,
+    "fromAccountId": "CMA",
+    "toAccountId": "농협"
+  },
+  {
+    "id": "L1772244654810",
+    "date": "2025-06-01",
+    "kind": "transfer",
+    "isFixedExpense": false,
+    "category": "이체",
+    "subCategory": "이월이체",
+    "description": "",
+    "amount": 16782,
+    "fromAccountId": "저축은행",
+    "toAccountId": "카카오페이"
+  },
+  {
+    "id": "L1772244284764",
+    "date": "2025-06-01",
+    "kind": "transfer",
+    "isFixedExpense": false,
+    "category": "이체",
+    "subCategory": "이월이체",
+    "description": "",
+    "amount": 7010,
+    "fromAccountId": "농협",
+    "toAccountId": "연금저축"
+  },
+  {
+    "id": "L1772244244923",
+    "date": "2025-06-01",
+    "kind": "transfer",
+    "isFixedExpense": false,
+    "category": "이체",
+    "subCategory": "이월이체",
+    "description": "",
+    "amount": 15392,
+    "fromAccountId": "농협",
+    "toAccountId": "ISA"
+  },
+  {
+    "id": "L1772244123510",
+    "date": "2025-06-01",
+    "kind": "transfer",
+    "isFixedExpense": false,
+    "category": "이체",
+    "subCategory": "이월이체",
+    "description": "",
+    "amount": 325400,
+    "fromAccountId": "농협",
+    "toAccountId": "지역페이"
+  },
+  {
+    "id": "L1772243679531",
+    "date": "2025-06-01",
+    "kind": "transfer",
+    "isFixedExpense": false,
+    "category": "이체",
+    "subCategory": "이월이체",
+    "description": "",
+    "amount": 1320000,
+    "fromAccountId": "농협",
+    "toAccountId": "주택청약"
+  },
+  {
+    "id": "L1772243408347",
+    "date": "2025-06-01",
+    "kind": "transfer",
+    "isFixedExpense": false,
+    "category": "이체",
+    "subCategory": "이월이체",
+    "description": "",
+    "amount": 850,
+    "fromAccountId": "농협",
+    "toAccountId": "나라사랑"
+  },
+  {
+    "id": "L1772243217154",
+    "date": "2025-06-01",
+    "kind": "transfer",
+    "isFixedExpense": false,
+    "category": "이체",
+    "subCategory": "이월이체",
+    "description": "",
+    "amount": 3939699,
+    "fromAccountId": "농협",
+    "toAccountId": "토스"
   }
 ]

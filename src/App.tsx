@@ -418,21 +418,22 @@ export const App: React.FC = () => {
           {backupIntegrity.status === "mismatch" && (
             <div className="pill danger">최근 로컬 백업 해시 불일치. 백업을 다시 생성하세요.</div>
           )}
-          <div className="app-header-actions" style={{ display: 'flex', gap: 6 }}>
-            <button
-              type="button"
-              className="primary"
-              onClick={() => withConfirm({
-                title: "로컬 백업",
-                message: "현재 데이터를 백업 파일로 저장합니다.",
-                confirmLabel: "백업",
-                onConfirm: () => { void handleManualBackup(); },
-              })}
-            >
-              백업
-            </button>
-            {getGistToken() && (
-              <>
+          <div className="app-header-actions" style={{ display: 'flex', gap: 12 }}>
+            {/* 그룹 1: 백업 · 저장 · 배포 */}
+            <div style={{ display: 'flex', gap: 4, alignItems: 'center', background: 'var(--surface)', borderRadius: 8, padding: '2px 4px' }}>
+              <button
+                type="button"
+                className="primary"
+                onClick={() => withConfirm({
+                  title: "로컬 백업",
+                  message: "현재 데이터를 백업 파일로 저장합니다.",
+                  confirmLabel: "백업",
+                  onConfirm: () => { void handleManualBackup(); },
+                })}
+              >
+                백업
+              </button>
+              {getGistToken() && (
                 <button
                   type="button"
                   className="primary"
@@ -458,49 +459,8 @@ export const App: React.FC = () => {
                 >
                   Gist 저장
                 </button>
-                {getGistId() && (
-                  <button
-                    type="button"
-                    className="secondary"
-                    style={{ borderColor: "var(--chart-primary)", color: "var(--chart-primary)" }}
-                    onClick={() => setShowGistVersionModal(true)}
-                  >
-                    Gist 불러오기
-                  </button>
-                )}
-              </>
-            )}
-            {import.meta.env.DEV && (
-              <>
-                <button
-                  type="button"
-                  className="secondary"
-                  disabled={isPullingFromGit}
-                  onClick={() => withConfirm({
-                    title: "업데이트",
-                    message: "원격에서 최신 코드를 내려받습니다. 완료 후 F5로 새로고침이 필요합니다.",
-                    confirmLabel: "업데이트",
-                    confirmStyle: "danger",
-                    onConfirm: async () => {
-                      setIsPullingFromGit(true);
-                      addAppLog("원격 업데이트 가져오는 중...", "info");
-                      try {
-                        const res = await fetch("/api/git-pull", { method: "POST" });
-                        const json = await res.json();
-                        if (!res.ok) throw new Error(json.error ?? "업데이트 실패");
-                        addAppLog("업데이트 완료. F5로 새로고침하세요.", "success");
-                        toast.success("업데이트 완료 — F5로 새로고침");
-                      } catch (e: any) {
-                        addAppLog(`업데이트 실패: ${e.message}`, "error");
-                        toast.error(e.message ?? "업데이트 실패");
-                      } finally {
-                        setIsPullingFromGit(false);
-                      }
-                    },
-                  })}
-                >
-                  {isPullingFromGit ? "업데이트 중..." : "업데이트"}
-                </button>
+              )}
+              {import.meta.env.DEV && (
                 <button
                   type="button"
                   className="primary"
@@ -531,8 +491,52 @@ export const App: React.FC = () => {
                 >
                   {isPushingToGit ? "배포 중..." : "배포"}
                 </button>
-              </>
-            )}
+              )}
+            </div>
+            {/* 그룹 2: 불러오기 · 업데이트 */}
+            <div style={{ display: 'flex', gap: 4, alignItems: 'center', background: 'var(--surface)', borderRadius: 8, padding: '2px 4px' }}>
+              {getGistToken() && getGistId() && (
+                <button
+                  type="button"
+                  className="secondary"
+                  style={{ borderColor: "var(--chart-primary)", color: "var(--chart-primary)" }}
+                  onClick={() => setShowGistVersionModal(true)}
+                >
+                  Gist 불러오기
+                </button>
+              )}
+              {import.meta.env.DEV && (
+                <button
+                  type="button"
+                  className="secondary"
+                  disabled={isPullingFromGit}
+                  onClick={() => withConfirm({
+                    title: "업데이트",
+                    message: "원격에서 최신 코드를 내려받습니다. 완료 후 F5로 새로고침이 필요합니다.",
+                    confirmLabel: "업데이트",
+                    confirmStyle: "danger",
+                    onConfirm: async () => {
+                      setIsPullingFromGit(true);
+                      addAppLog("원격 업데이트 가져오는 중...", "info");
+                      try {
+                        const res = await fetch("/api/git-pull", { method: "POST" });
+                        const json = await res.json();
+                        if (!res.ok) throw new Error(json.error ?? "업데이트 실패");
+                        addAppLog("업데이트 완료. F5로 새로고침하세요.", "success");
+                        toast.success("업데이트 완료 — F5로 새로고침");
+                      } catch (e: any) {
+                        addAppLog(`업데이트 실패: ${e.message}`, "error");
+                        toast.error(e.message ?? "업데이트 실패");
+                      } finally {
+                        setIsPullingFromGit(false);
+                      }
+                    },
+                  })}
+                >
+                  {isPullingFromGit ? "업데이트 중..." : "업데이트"}
+                </button>
+              )}
+            </div>
             <button
               type="button"
               className="secondary"

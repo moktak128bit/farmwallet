@@ -30,6 +30,7 @@ export interface LedgerEntry {
   kind: LedgerKind;
   category: string;
   subCategory?: string;
+  detailCategory?: string; // 소분류
   description: string;
   isFixedExpense?: boolean;
   fromAccountId?: string;

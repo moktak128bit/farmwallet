@@ -4,27 +4,27 @@
     "name": "농협CMA",
     "institution": "나무증권",
     "type": "securities",
-    "initialBalance": 1539574,
+    "initialBalance": -16154,
     "debt": 0,
     "savings": 0,
-    "initialCashBalance": 0.47499999962747097,
+    "initialCashBalance": -600190,
     "currency": "KRW",
     "usdBalance": 516,
     "krwBalance": 0,
-    "cashAdjustment": -500369
+    "cashAdjustment": 0
   },
   {
     "id": "ISA",
     "name": "ISA농협",
     "institution": "나무증권",
     "type": "securities",
-    "initialBalance": -1362531,
+    "initialBalance": -12679276,
     "debt": 0,
     "savings": 0,
-    "initialCashBalance": 0,
+    "initialCashBalance": -1414162,
     "usdBalance": 0,
     "krwBalance": 0,
-    "cashAdjustment": -1736896
+    "cashAdjustment": 0
   },
   {
     "id": "연금저축",
@@ -34,26 +34,26 @@
     "initialBalance": 0,
     "debt": 0,
     "savings": 0,
-    "initialCashBalance": 0,
+    "initialCashBalance": 2136,
     "usdBalance": 0,
-    "cashAdjustment": -1305
+    "cashAdjustment": 0
   },
   {
     "id": "농협",
     "name": "농협입출금계좌",
     "institution": "지역농축협",
     "type": "checking",
-    "initialBalance": 16153131,
+    "initialBalance": 1586014,
     "debt": 0,
     "savings": 0,
-    "cashAdjustment": -6052000
+    "cashAdjustment": 0
   },
   {
     "id": "나라사랑",
     "name": "KB나라사랑은행",
     "institution": "국민은행",
     "type": "checking",
-    "initialBalance": 1703,
+    "initialBalance": -99150,
     "debt": 0,
     "savings": 0,
     "cashAdjustment": 0
@@ -71,10 +71,11 @@
     "id": "카카오페이",
     "name": "카카오페이",
     "institution": "카카오",
-    "type": "checking",
-    "initialBalance": 0,
+    "type": "savings",
+    "initialBalance": -405495,
     "debt": 0,
-    "savings": 0
+    "savings": 0,
+    "cashAdjustment": 0
   },
   {
     "id": "청년도약",
@@ -101,10 +102,10 @@
     "name": "OK짠테크통장",
     "institution": "OK저축은행",
     "type": "savings",
-    "initialBalance": 483639,
+    "initialBalance": -515138,
     "debt": 0,
     "savings": 0,
-    "cashAdjustment": -500000
+    "cashAdjustment": 0
   },
   {
     "id": "키움",
@@ -114,14 +115,14 @@
     "initialBalance": 195478,
     "debt": 0,
     "savings": 0,
-    "cashAdjustment": 177955,
+    "cashAdjustment": 228129,
     "krwBalance": 50000,
     "usdBalance": 0,
     "initialCashBalance": 0
   },
   {
     "id": "유진성우",
-    "name": "모임통장",
+    "name": "유진성우모임통장",
     "institution": "토스뱅크",
     "type": "checking",
     "initialBalance": -622754,
@@ -133,32 +134,33 @@
     "name": "토스증권",
     "institution": "토스증권",
     "type": "securities",
-    "initialBalance": 2857236,
+    "initialBalance": -188866,
     "debt": 0,
     "savings": 0,
-    "cashAdjustment": 5118735,
+    "cashAdjustment": 0,
     "usdBalance": -1272.24654207,
     "krwBalance": 0,
-    "initialCashBalance": 0.44120000023394823
+    "initialCashBalance": 3752134
   },
   {
     "id": "현금",
     "name": "현금",
     "institution": "현금",
     "type": "checking",
-    "initialBalance": 0,
+    "initialBalance": 80300,
     "debt": 0,
-    "savings": 0
+    "savings": 0,
+    "cashAdjustment": 0
   },
   {
     "id": "농협2호",
-    "name": "농협",
+    "name": "농협2호",
     "institution": "인터넷농협농협",
     "type": "checking",
-    "initialBalance": 700000,
+    "initialBalance": -1646524,
     "debt": 0,
     "savings": 0,
-    "cashAdjustment": -700000
+    "cashAdjustment": 0
   },
   {
     "id": "청년사다리",
@@ -168,7 +170,7 @@
     "initialBalance": -2599999,
     "debt": 0,
     "savings": 0,
-    "cashAdjustment": 100000
+    "cashAdjustment": 99900
   },
   {
     "id": "지역페이",
@@ -184,10 +186,11 @@
     "name": "업비트",
     "institution": "업비트",
     "type": "crypto",
-    "initialBalance": 0,
+    "initialBalance": -7313701,
     "debt": 0,
     "savings": 0,
-    "cashAdjustment": 0
+    "cashAdjustment": 0,
+    "initialCashBalance": -130206
   },
   {
     "id": "삼성증권",
@@ -197,7 +200,8 @@
     "initialBalance": 142301,
     "debt": 0,
     "savings": 0,
-    "cashAdjustment": -168175
+    "cashAdjustment": 0,
+    "initialCashBalance": 7
   },
   {
     "id": "데이트저축",

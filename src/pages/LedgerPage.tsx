@@ -182,6 +182,7 @@ export const LedgerView: React.FC<Props> = ({
     | "date"
     | "category"
     | "subCategory"
+    | "detailCategory"
     | "description"
     | "fromAccountId"
     | "toAccountId"
@@ -219,7 +220,12 @@ export const LedgerView: React.FC<Props> = ({
               w = [...w.slice(0, 8), 9, w[8]];
               w = normalize(w);
             }
+            // 10열(소분류 없음) → 11열(소분류 추가)
             if (w.length === 10) {
+              w = [...w.slice(0, 3), w[2], ...w.slice(3)];
+              w = normalize(w);
+            }
+            if (w.length === 11) {
               return normalize(w);
             }
           }
@@ -228,15 +234,15 @@ export const LedgerView: React.FC<Props> = ({
         }
       }
     }
-    // 날짜, 대분류, 중분류, 상세내역, 출금, 입금, 할인 전, 할인, 최종, 작업
-    return [9, 11, 11, 22, 10, 10, 10, 5, 9, 9];
+    // 날짜, 대분류, 중분류, 소분류, 상세내역, 출금, 입금, 할인 전, 할인, 최종, 작업
+    return [8, 9, 9, 9, 19, 9, 9, 9, 5, 8, 9];
   });
   const [resizingColumn, setResizingColumn] = useState<number | null>(null);
   const [liveColumnWidths, setLiveColumnWidths] = useState<number[] | null>(null);
   const resizeStartRef = useRef<{ x: number; width: number; widths: number[] }>({ x: 0, width: 0, widths: [] });
 
   const widthsForRender =
-    resizingColumn !== null && liveColumnWidths && liveColumnWidths.length === 10 ? liveColumnWidths : columnWidths;
+    resizingColumn !== null && liveColumnWidths && liveColumnWidths.length === 11 ? liveColumnWidths : columnWidths;
 
   // 폼 검증 오류는 validateForm useMemo에서 직접 계산됨
   
@@ -1131,6 +1137,8 @@ export const LedgerView: React.FC<Props> = ({
       updated.category = editingValue;
     } else if (field === "subCategory") {
       updated.subCategory = editingValue || undefined;
+    } else if (field === "detailCategory") {
+      updated.detailCategory = editingValue || undefined;
     } else if (field === "description") {
       updated.description = editingValue;
     } else if (field === "fromAccountId") {
@@ -1472,6 +1480,8 @@ export const LedgerView: React.FC<Props> = ({
         return ((a.category || "") < (b.category || "") ? -1 : (a.category || "") > (b.category || "") ? 1 : 0) * dir;
       } else if (key === "subCategory") {
         return ((a.subCategory || "") < (b.subCategory || "") ? -1 : (a.subCategory || "") > (b.subCategory || "") ? 1 : 0) * dir;
+      } else if (key === "detailCategory") {
+        return ((a.detailCategory || "") < (b.detailCategory || "") ? -1 : (a.detailCategory || "") > (b.detailCategory || "") ? 1 : 0) * dir;
       } else if (key === "description") {
         return ((a.description || "") < (b.description || "") ? -1 : (a.description || "") > (b.description || "") ? 1 : 0) * dir;
       } else if (key === "fromAccountId") {
@@ -1618,9 +1628,9 @@ export const LedgerView: React.FC<Props> = ({
   const ledgerColumnWidthStyles = useMemo(() => {
     const workColPx = 168;
     return widthsForRender.map((width, index) => {
-      if (index === 9) return `${workColPx}px`;
-      const sumFirst9 = widthsForRender.slice(0, 9).reduce((s, w) => s + w, 0);
-      const pct = sumFirst9 > 0 ? (width / sumFirst9) * 100 : 100 / 9;
+      if (index === 10) return `${workColPx}px`;
+      const sumFirst10 = widthsForRender.slice(0, 10).reduce((s, w) => s + w, 0);
+      const pct = sumFirst10 > 0 ? (width / sumFirst10) * 100 : 100 / 10;
       return `calc((100% - ${workColPx}px) * ${pct / 100})`;
     });
   }, [widthsForRender]);
@@ -3262,11 +3272,11 @@ export const LedgerView: React.FC<Props> = ({
             {isBatchEditMode && <col key="cb" style={{ width: "40px" }} />}
             {widthsForRender.map((width, index) => {
               const workColPx = 168;
-              if (index === 9) {
+              if (index === 10) {
                 return <col key={index} style={{ width: `${workColPx}px` }} />;
               }
-              const sumFirst9 = widthsForRender.slice(0, 9).reduce((s, w) => s + w, 0);
-              const pct = sumFirst9 > 0 ? (width / sumFirst9) * 100 : 100 / 9;
+              const sumFirst10 = widthsForRender.slice(0, 10).reduce((s, w) => s + w, 0);
+              const pct = sumFirst10 > 0 ? (width / sumFirst10) * 100 : 100 / 10;
               return <col key={index} style={{ width: `calc((100% - ${workColPx}px) * ${pct / 100})` }} />;
             })}
           </colgroup>
@@ -3322,8 +3332,8 @@ export const LedgerView: React.FC<Props> = ({
               />
             </th>
             <th style={{ position: "relative", width: ledgerColumnWidthStyles[3] }}>
-              <button type="button" className="sort-header" onClick={() => toggleLedgerSort("description")}>
-                상세내역 <span className="arrow">{sortIndicator(ledgerSort.key, "description", ledgerSort.direction)}</span>
+              <button type="button" className="sort-header" onClick={() => toggleLedgerSort("detailCategory")}>
+                소분류 <span className="arrow">{sortIndicator(ledgerSort.key, "detailCategory", ledgerSort.direction)}</span>
               </button>
               <div
                 className="resize-handle"
@@ -3333,8 +3343,8 @@ export const LedgerView: React.FC<Props> = ({
               />
             </th>
             <th style={{ position: "relative", width: ledgerColumnWidthStyles[4] }}>
-              <button type="button" className="sort-header" onClick={() => toggleLedgerSort("fromAccountId")}>
-                출금 <span className="arrow">{sortIndicator(ledgerSort.key, "fromAccountId", ledgerSort.direction)}</span>
+              <button type="button" className="sort-header" onClick={() => toggleLedgerSort("description")}>
+                상세내역 <span className="arrow">{sortIndicator(ledgerSort.key, "description", ledgerSort.direction)}</span>
               </button>
               <div
                 className="resize-handle"
@@ -3344,8 +3354,8 @@ export const LedgerView: React.FC<Props> = ({
               />
             </th>
             <th style={{ position: "relative", width: ledgerColumnWidthStyles[5] }}>
-              <button type="button" className="sort-header" onClick={() => toggleLedgerSort("toAccountId")}>
-                입금 <span className="arrow">{sortIndicator(ledgerSort.key, "toAccountId", ledgerSort.direction)}</span>
+              <button type="button" className="sort-header" onClick={() => toggleLedgerSort("fromAccountId")}>
+                출금 <span className="arrow">{sortIndicator(ledgerSort.key, "fromAccountId", ledgerSort.direction)}</span>
               </button>
               <div
                 className="resize-handle"
@@ -3355,8 +3365,8 @@ export const LedgerView: React.FC<Props> = ({
               />
             </th>
             <th style={{ position: "relative", width: ledgerColumnWidthStyles[6] }}>
-              <button type="button" className="sort-header" onClick={() => toggleLedgerSort("grossAmount")}>
-                할인 전 <span className="arrow">{sortIndicator(ledgerSort.key, "grossAmount", ledgerSort.direction)}</span>
+              <button type="button" className="sort-header" onClick={() => toggleLedgerSort("toAccountId")}>
+                입금 <span className="arrow">{sortIndicator(ledgerSort.key, "toAccountId", ledgerSort.direction)}</span>
               </button>
               <div
                 className="resize-handle"
@@ -3366,8 +3376,8 @@ export const LedgerView: React.FC<Props> = ({
               />
             </th>
             <th style={{ position: "relative", width: ledgerColumnWidthStyles[7] }}>
-              <button type="button" className="sort-header" onClick={() => toggleLedgerSort("discountAmount")}>
-                할인 <span className="arrow">{sortIndicator(ledgerSort.key, "discountAmount", ledgerSort.direction)}</span>
+              <button type="button" className="sort-header" onClick={() => toggleLedgerSort("grossAmount")}>
+                할인 전 <span className="arrow">{sortIndicator(ledgerSort.key, "grossAmount", ledgerSort.direction)}</span>
               </button>
               <div
                 className="resize-handle"
@@ -3377,8 +3387,8 @@ export const LedgerView: React.FC<Props> = ({
               />
             </th>
             <th style={{ position: "relative", width: ledgerColumnWidthStyles[8] }}>
-              <button type="button" className="sort-header" onClick={() => toggleLedgerSort("amount")}>
-                최종 <span className="arrow">{sortIndicator(ledgerSort.key, "amount", ledgerSort.direction)}</span>
+              <button type="button" className="sort-header" onClick={() => toggleLedgerSort("discountAmount")}>
+                할인 <span className="arrow">{sortIndicator(ledgerSort.key, "discountAmount", ledgerSort.direction)}</span>
               </button>
               <div
                 className="resize-handle"
@@ -3388,6 +3398,17 @@ export const LedgerView: React.FC<Props> = ({
               />
             </th>
             <th style={{ position: "relative", width: ledgerColumnWidthStyles[9] }}>
+              <button type="button" className="sort-header" onClick={() => toggleLedgerSort("amount")}>
+                최종 <span className="arrow">{sortIndicator(ledgerSort.key, "amount", ledgerSort.direction)}</span>
+              </button>
+              <div
+                className="resize-handle"
+                onMouseDown={(e) => handleResizeStart(e, 9)}
+                onPointerDown={(e) => handleResizeStart(e, 9)}
+                title="컬럼 너비 조절"
+              />
+            </th>
+            <th style={{ position: "relative", width: ledgerColumnWidthStyles[10] }}>
               작업
             </th>
           </tr>
@@ -3530,17 +3551,18 @@ export const LedgerView: React.FC<Props> = ({
                     value={editingValue}
                     onChange={(e) => {
                       const v = e.target.value;
-                      let updated: LedgerEntry = { ...l, category: v };
-                      if (l.kind === "expense") {
-                        const g = (categoryPresets?.expenseDetails ?? []).find((x) => x.main === v);
-                        const subs = g?.subs ?? [];
-                        const currentSub = (l.subCategory ?? "").trim();
-                        if (currentSub && !subs.includes(currentSub)) {
-                          updated = { ...updated, subCategory: undefined };
-                        }
+                      let updated: LedgerEntry = { ...l, category: v, subCategory: undefined };
+                      // 대분류에 따라 kind 자동 변경
+                      if (v === "이체") {
+                        updated = { ...updated, kind: "transfer" };
+                      } else if (v === "수입") {
+                        updated = { ...updated, kind: "income" };
+                      } else {
+                        updated = { ...updated, kind: "expense" };
                       }
                       onChangeLedger(ledger.map((x) => (x.id === l.id ? updated : x)));
-                      setEditingField(null);
+                      // 대분류 변경 후 바로 중분류 편집으로 이동
+                      startEditField(l.id, "subCategory", "");
                       setEditingValue("");
                     }}
                     onKeyDown={(e) => {
@@ -3549,19 +3571,15 @@ export const LedgerView: React.FC<Props> = ({
                     autoFocus
                     style={{ width: "100%" }}
                   >
-                    {l.kind === "income"
-                      ? [<option key="수입" value="수입">수입</option>]
-                      : l.kind === "transfer"
-                        ? [<option key="이체" value="이체">이체</option>]
-                        : (() => {
-                            const expenseCats = categoryPresets?.expense ?? [];
-                            const current = l.category?.trim();
-                            const hasCurrent = current && !expenseCats.includes(current);
-                            const options = hasCurrent ? [current, ...expenseCats] : expenseCats;
-                            return options.map((c) => (
-                              <option key={c} value={c}>{c}</option>
-                            ));
-                          })()}
+                    {(() => {
+                      const mainCats = ["수입", "지출", "재테크", "이체", "신용결제"];
+                      const current = l.category?.trim();
+                      const hasCurrent = current && !mainCats.includes(current);
+                      const options = hasCurrent ? [current, ...mainCats] : mainCats;
+                      return options.map((c) => (
+                        <option key={c} value={c}>{c}</option>
+                      ));
+                    })()}
                   </select>
                 ) : (
                   l.category
@@ -3593,46 +3611,30 @@ export const LedgerView: React.FC<Props> = ({
                     style={{ width: "100%" }}
                   >
                     <option value="">-</option>
-                    {l.kind === "income" || l.category === "수입"
-                      ? (() => {
-                          const incomeCats = categoryPresets?.income ?? [];
-                          const current = (l.subCategory || l.category)?.trim();
-                          const hasCurrent = current && !incomeCats.includes(current);
-                          const options = hasCurrent ? [current, ...incomeCats] : incomeCats;
-                          return options.map((c) => (
-                            <option key={c} value={c}>{c}</option>
-                          ));
-                        })()
-                      : (l.kind === "transfer" && l.category === "이체")
-                        ? (() => {
-                            const transferCats = categoryPresets?.transfer ?? [];
-                            const current = l.subCategory?.trim();
-                            const hasCurrent = current && !transferCats.includes(current);
-                            const options = hasCurrent ? [current, ...transferCats] : transferCats;
-                            return options.map((c) => (
-                              <option key={c} value={c}>{c}</option>
-                            ));
-                          })()
-                        : (() => {
-                            const g = (categoryPresets?.expenseDetails ?? []).find((x) => x.main === l.category);
-                            const subs = g?.subs ?? [];
-                            if (!l.category?.trim() || !g) {
-                              const current = l.subCategory?.trim();
-                              const hint = l.category?.trim() ? "(해당 대분류 없음)" : "대분류를 먼저 선택하세요";
-                              return (
-                                <>
-                                  {current ? <option value={current}>{current}</option> : null}
-                                  <option value="">{hint}</option>
-                                </>
-                              );
-                            }
-                            const current = l.subCategory?.trim();
-                            const hasCurrent = current && !subs.includes(current);
-                            const options = hasCurrent ? [current, ...subs] : subs;
-                            return options.map((c) => (
-                              <option key={c} value={c}>{c}</option>
-                            ));
-                          })()}
+                    {(() => {
+                      const cat = l.category?.trim();
+                      let subs: string[] = [];
+                      if (cat === "수입") {
+                        subs = categoryPresets?.income ?? [];
+                      } else if (cat === "이체") {
+                        subs = categoryPresets?.transfer ?? [];
+                      } else if (cat === "지출") {
+                        // 지출 대분류 → 중분류 = 지출 세부 카테고리 전체
+                        subs = (categoryPresets?.expenseDetails ?? []).map((g) => g.main);
+                      } else if (cat === "신용결제") {
+                        subs = ["카드대금", "할부금"];
+                      } else {
+                        // 재테크 등 expenseDetails에서 직접 매칭
+                        const g = (categoryPresets?.expenseDetails ?? []).find((x) => x.main === cat);
+                        subs = g?.subs ?? [];
+                      }
+                      const current = l.subCategory?.trim();
+                      const hasCurrent = current && !subs.includes(current);
+                      const options = hasCurrent ? [current, ...subs] : subs;
+                      return options.map((c) => (
+                        <option key={c} value={c}>{c}</option>
+                      ));
+                    })()}
                   </select>
                 ) : (
                   l.subCategory ?? "-"
@@ -3641,9 +3643,52 @@ export const LedgerView: React.FC<Props> = ({
               <td
                 onDoubleClick={(e) => {
                   e.stopPropagation();
+                  startEditField(l.id, "detailCategory", l.detailCategory || "");
+                }}
+                style={{ cursor: "pointer", width: ledgerColumnWidthStyles[3] }}
+                title={l.detailCategory ? l.detailCategory + " (더블클릭하여 수정)" : "더블클릭하여 수정"}
+              >
+                {editingField?.id === l.id && editingField.field === "detailCategory" ? (
+                  <select
+                    className="ledger-cell-select"
+                    value={editingValue}
+                    onChange={(e) => {
+                      const v = e.target.value;
+                      const updated = { ...l, detailCategory: v || undefined };
+                      onChangeLedger(ledger.map((x) => (x.id === l.id ? updated : x)));
+                      setEditingField(null);
+                      setEditingValue("");
+                    }}
+                    onKeyDown={(e) => {
+                      if (e.key === "Escape") cancelEditField();
+                    }}
+                    autoFocus
+                    style={{ width: "100%" }}
+                  >
+                    <option value="">-</option>
+                    {(() => {
+                      const sub = l.subCategory?.trim();
+                      // 중분류에 해당하는 소분류 목록 (expenseDetails에서 검색)
+                      const g = (categoryPresets?.expenseDetails ?? []).find((x) => x.main === sub);
+                      const subs = g?.subs ?? [];
+                      const current = l.detailCategory?.trim();
+                      const hasCurrent = current && !subs.includes(current);
+                      const options = hasCurrent ? [current, ...subs] : subs;
+                      return options.map((c) => (
+                        <option key={c} value={c}>{c}</option>
+                      ));
+                    })()}
+                  </select>
+                ) : (
+                  l.detailCategory ?? "-"
+                )}
+              </td>
+              <td
+                onDoubleClick={(e) => {
+                  e.stopPropagation();
                   startEditField(l.id, "description", l.description || "");
                 }}
-                style={{ cursor: "pointer", whiteSpace: "normal", wordBreak: "break-word", width: ledgerColumnWidthStyles[3] }}
+                style={{ cursor: "pointer", whiteSpace: "normal", wordBreak: "break-word", width: ledgerColumnWidthStyles[4] }}
                 title={l.description ? l.description + " (더블클릭하여 수정)" : "더블클릭하여 수정"}
               >
                 {editingField?.id === l.id && editingField.field === "description" ? (
@@ -3668,7 +3713,7 @@ export const LedgerView: React.FC<Props> = ({
                   e.stopPropagation();
                   startEditField(l.id, "fromAccountId", l.fromAccountId || "");
                 }}
-                style={{ cursor: "pointer", width: ledgerColumnWidthStyles[4] }}
+                style={{ cursor: "pointer", width: ledgerColumnWidthStyles[5] }}
                 title={l.fromAccountId ? l.fromAccountId + " (더블클릭하여 수정)" : "더블클릭하여 수정"}
               >
                 {editingField?.id === l.id && editingField.field === "fromAccountId" ? (
@@ -3723,7 +3768,7 @@ export const LedgerView: React.FC<Props> = ({
                   e.stopPropagation();
                   startEditField(l.id, "toAccountId", l.toAccountId || "");
                 }}
-                style={{ cursor: "pointer", width: ledgerColumnWidthStyles[5] }}
+                style={{ cursor: "pointer", width: ledgerColumnWidthStyles[6] }}
                 title={l.toAccountId ? l.toAccountId + " (더블클릭하여 수정)" : "더블클릭하여 수정"}
               >
                 {editingField?.id === l.id && editingField.field === "toAccountId" ? (
@@ -3783,7 +3828,7 @@ export const LedgerView: React.FC<Props> = ({
                   }
                   startEditField(l.id, "grossAmount", ledgerEntryGross(l));
                 }}
-                style={{ cursor: "pointer", width: ledgerColumnWidthStyles[6] }}
+                style={{ cursor: "pointer", width: ledgerColumnWidthStyles[7] }}
                 title="할인 적용 전 금액 · 더블클릭하여 수정"
               >
                 {editingField?.id === l.id && editingField.field === "grossAmount" ? (
@@ -3829,7 +3874,7 @@ export const LedgerView: React.FC<Props> = ({
                       : "";
                   startEditField(l.id, "discountAmount", cur);
                 }}
-                style={{ cursor: "pointer", width: ledgerColumnWidthStyles[7], color: "var(--text-muted)" }}
+                style={{ cursor: "pointer", width: ledgerColumnWidthStyles[8], color: "var(--text-muted)" }}
                 title="할인액 · 더블클릭하여 수정"
               >
                 {editingField?.id === l.id && editingField.field === "discountAmount" ? (
@@ -3865,7 +3910,7 @@ export const LedgerView: React.FC<Props> = ({
                   e.stopPropagation();
                   startEditField(l.id, "amount", l.amount);
                 }}
-                style={{ cursor: "pointer", width: ledgerColumnWidthStyles[8], fontWeight: 600 }}
+                style={{ cursor: "pointer", width: ledgerColumnWidthStyles[9], fontWeight: 600 }}
                 title="할인 반영 후 금액 · 더블클릭하여 수정"
               >
                 {editingField?.id === l.id && editingField.field === "amount" ? (
@@ -3891,7 +3936,7 @@ export const LedgerView: React.FC<Props> = ({
                     : Math.round(l.amount).toLocaleString()
                 )}
               </td>
-              <td style={{ width: ledgerColumnWidthStyles[9] }}>
+              <td style={{ width: ledgerColumnWidthStyles[10] }}>
                 <div style={{ display: "flex", gap: 8 }}>
                   <button type="button" onClick={(e) => {
                     e.stopPropagation();

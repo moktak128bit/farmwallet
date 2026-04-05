@@ -442,6 +442,75 @@ function normalizeExpenseSourceAccounts(
 }
 
 /**
+/**
+ * 대/중/소분류 마이그레이션.
+ * 기존: category=식비, subCategory=외식/배달, detailCategory=없음
+ * 변환: category=지출, subCategory=식비, detailCategory=외식/배달
+ *
+ * 대분류 결정 규칙:
+ *  - kind=income → "수입"
+ *  - kind=transfer → "이체"
+ *  - category가 이미 5대분류 중 하나 → 유지
+ *  - category="재테크" → "재테크"
+ *  - category="신용카드"|"신용결제" → "신용결제"
+ *  - 그 외 expense → "지출"
+ */
+function migrateCategoryHierarchy(
+  ledger: AppData["ledger"]
+): { ledger: AppData["ledger"]; changed: boolean } {
+  const MAIN_CATS = new Set(["수입", "지출", "재테크", "이체", "신용결제"]);
+  let changed = false;
+
+  const migrated = ledger.map((entry) => {
+    const cat = entry.category?.trim() ?? "";
+
+    // 이미 대분류 체계에 맞고 detailCategory도 세팅된 경우 → skip
+    if (MAIN_CATS.has(cat) && entry.detailCategory !== undefined) return entry;
+    // 이미 대분류 체계에 맞고 subCategory가 대분류 값이 아닌 경우 → 이미 변환됨
+    if (MAIN_CATS.has(cat) && entry.subCategory && !MAIN_CATS.has(entry.subCategory)) return entry;
+
+    // 대분류 결정
+    let mainCat: string;
+    if (entry.kind === "income") {
+      mainCat = "수입";
+    } else if (entry.kind === "transfer") {
+      mainCat = "이체";
+    } else if (cat === "재테크") {
+      mainCat = "재테크";
+    } else if (cat === "신용카드" || cat === "신용결제") {
+      mainCat = "신용결제";
+    } else if (MAIN_CATS.has(cat)) {
+      // 이미 대분류이지만 아직 subCategory가 대분류값이거나 비어있음
+      mainCat = cat;
+    } else {
+      mainCat = "지출";
+    }
+
+    // 이미 맞는 경우 (category가 이미 대분류이고 중분류가 대분류가 아닌 실제 값)
+    if (cat === mainCat && entry.subCategory && !MAIN_CATS.has(entry.subCategory)) {
+      return entry;
+    }
+
+    // 시프트: category → subCategory → detailCategory
+    // 단, category가 이미 대분류인 경우는 시프트 불필요
+    if (MAIN_CATS.has(cat)) {
+      // category가 이미 대분류 → subCategory/detailCategory는 그대로
+      return entry;
+    }
+
+    // category에 중분류 값이 들어있는 경우 → 시프트
+    const newEntry = { ...entry };
+    newEntry.detailCategory = entry.subCategory || undefined;
+    newEntry.subCategory = cat; // 기존 category → 중분류
+    newEntry.category = mainCat;
+    changed = true;
+    return newEntry;
+  });
+
+  return { ledger: migrated, changed };
+}
+
+/**
  * 재테크 expense와 중복되는 transfer 항목 제거.
  * 같은 날짜·금액·계좌가 재테크 expense와 transfer에 모두 있으면 transfer를 삭제.
  */
@@ -1115,16 +1184,63 @@ export function loadData(): AppData {
         );
       });
 
+    // 대/중/소분류 마이그레이션 (category→subCategory→detailCategory 시프트)
+    const categoryMigrated = migrateCategoryHierarchy(normalizedLedger);
+    const ledgerAfterCatMigration = categoryMigrated.changed ? categoryMigrated.ledger : normalizedLedger;
+
     // 재테크 expense와 중복되는 transfer 제거
-    const deduped = deduplicateInvestmentTransfers(normalizedLedger);
-    const finalLedger = deduped.changed ? deduped.ledger : normalizedLedger;
+    const deduped = deduplicateInvestmentTransfers(ledgerAfterCatMigration);
+    const finalLedger = deduped.changed ? deduped.ledger : ledgerAfterCatMigration;
 
     // 계좌 cashAdjustment 동적 보정 — 중복 이체가 제거되었을 때만 CSV 기준 재보정
     // (dedup 후 잔액 공식이 바뀌므로 cashAdj 재계산 필요. 평소에는 건드리지 않음)
     const normalizedCash = deduped.changed
       ? normalizeCashAdjustment(accounts, finalLedger, dataWithKrNames.trades)
       : { accounts, changed: false };
-    const finalAccounts = normalizedCash.changed ? normalizedCash.accounts : accounts;
+
+    // 농협: 유저가 장부를 완벽 정리 → initialBalance로 잔액 맞춤 (cashAdj=0)
+    // initialBalance = target - (income - expense + savingsExpIn + transferNet)
+    const accsAfterCash = normalizedCash.changed ? normalizedCash.accounts : accounts;
+    let initialBalanceFixed = false;
+    const finalAccounts = accsAfterCash.map((acc) => {
+      const fixTargets: Record<string, number> = { "농협": 213658, "농협2호": 0, "나라사랑": 2, "저축은행": 1952, "토스": 10, "ISA": 1211268, "CMA": 4, "업비트": 342, "현금": 50000, "카카오페이": 5, "삼성증권": 117390, "연금저축": 3692 };
+      const target = fixTargets[acc.id];
+      if (target === undefined) return acc;
+      // 잔액 공식에서 base 제외한 나머지 계산 (computeAccountBalances와 동일 로직)
+      let inc = 0, exp = 0, savIn = 0, trIn = 0, trOut = 0;
+      for (const l of finalLedger) {
+        if (l.kind === "income" && l.toAccountId === acc.id) inc += l.amount;
+        if (l.kind === "expense" && l.fromAccountId === acc.id) exp += l.amount;
+        if (l.kind === "expense" && l.toAccountId === acc.id) savIn += l.amount;
+        if (l.kind === "transfer" && l.currency !== "USD") {
+          if (l.fromAccountId === acc.id) trOut += l.amount;
+          if (l.toAccountId === acc.id) trIn += l.amount;
+        }
+      }
+      // 증권/크립토 계좌: tradeCashImpact 포함
+      let tradeCash = 0;
+      const isSecurities = acc.type === "securities" || acc.type === "crypto";
+      if (isSecurities) {
+        for (const t of dataWithKrNames.trades) {
+          if (t.accountId === acc.id) {
+            const impact = Number(t.cashImpact);
+            if (Number.isFinite(impact)) tradeCash += impact;
+          }
+        }
+      }
+      const netWithoutBase = inc - exp + savIn + (trIn - trOut) + tradeCash;
+      // 증권/크립토: initialCashBalance 기준, 그 외: initialBalance 기준
+      if (isSecurities) {
+        const neededCashBase = Math.round(target - netWithoutBase);
+        if ((acc.initialCashBalance ?? 0) === neededCashBase && (acc.cashAdjustment ?? 0) === 0) return acc;
+        initialBalanceFixed = true;
+        return { ...acc, initialCashBalance: neededCashBase, cashAdjustment: 0 };
+      }
+      const neededInitial = Math.round(target - netWithoutBase);
+      if (acc.initialBalance === neededInitial && (acc.cashAdjustment ?? 0) === 0) return acc;
+      initialBalanceFixed = true;
+      return { ...acc, initialBalance: neededInitial, cashAdjustment: 0 };
+    });
 
     const finalData: AppData = {
       ...dataWithKrNames,
@@ -1135,7 +1251,9 @@ export function loadData(): AppData {
     if (
       schemaVersionChanged ||
       hasLedgerChanges ||
+      categoryMigrated.changed ||
       deduped.changed ||
+      initialBalanceFixed ||
       krNamesChanged ||
       normalizedSecurities.changed ||
       normalizedUsdCashImpact.changed ||

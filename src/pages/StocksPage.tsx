@@ -2630,7 +2630,7 @@ export const StocksView: React.FC<Props> = ({
             <input
               type="number"
               min={0}
-              step={isCryptoStock(tradeForm.ticker ?? "") ? "0.00000001" : isUSDStock(tradeForm.ticker ?? "") ? "0.000001" : "1"}
+              step="any"
               value={tradeForm.quantity}
               onChange={(e) => setTradeForm({ ...tradeForm, quantity: e.target.value })}
                 style={{ 
@@ -2654,7 +2654,7 @@ export const StocksView: React.FC<Props> = ({
                   <input
                     type="number"
                     min={0}
-                    step="0.01"
+                    step="any"
                     value={tradeForm.price}
                     onChange={(e) => setTradeForm({ ...tradeForm, price: e.target.value })}
                     style={{
@@ -2697,7 +2697,7 @@ export const StocksView: React.FC<Props> = ({
                   <input
                     type="number"
                     min={0}
-                    step="0.01"
+                    step="any"
                     value={tradeForm.fee}
                     onChange={(e) => setTradeForm({ ...tradeForm, fee: e.target.value })}
                     style={{ padding: "6px 8px", fontSize: 14 }}
@@ -2732,7 +2732,7 @@ export const StocksView: React.FC<Props> = ({
                   <input
                     type="number"
                     min={0}
-                    step="0.01"
+                    step="any"
                     value={tradeForm.price}
                     onChange={(e) => setTradeForm({ ...tradeForm, price: e.target.value })}
                     style={{
@@ -2753,7 +2753,7 @@ export const StocksView: React.FC<Props> = ({
                   <input
                     type="number"
                     min={0}
-                    step="0.01"
+                    step="any"
                     value={tradeForm.fee}
                     onChange={(e) => setTradeForm({ ...tradeForm, fee: e.target.value })}
                     style={{ padding: "6px 8px", fontSize: 14 }}

@@ -830,6 +830,8 @@ export const TradeHistorySection: React.FC<TradeHistorySectionProps> = ({
                     {inlineEdit?.id === t.id ? (
                       <input
                         type="number"
+                        min={0}
+                        step="any"
                         value={inlineEdit.price}
                         onChange={(e) => setInlineEdit({ ...inlineEdit, price: e.target.value })}
                         onBlur={saveInlineEdit}
@@ -857,6 +859,8 @@ export const TradeHistorySection: React.FC<TradeHistorySectionProps> = ({
                     {inlineEdit?.id === t.id ? (
                       <input
                         type="number"
+                        min={0}
+                        step="any"
                         value={inlineEdit.fee}
                         onChange={(e) => setInlineEdit({ ...inlineEdit, fee: e.target.value })}
                         onBlur={saveInlineEdit}

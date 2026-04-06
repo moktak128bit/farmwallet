@@ -1,5 +1,19 @@
 [
   {
+    "id": "T1775484786142",
+    "date": "2026-04-06",
+    "accountId": "토스",
+    "ticker": "MSFT",
+    "name": "MSFT",
+    "side": "buy",
+    "quantity": 0.158928,
+    "price": 372.63,
+    "fee": 0,
+    "totalAmount": 59.22134064,
+    "cashImpact": 0,
+    "fxRateAtTrade": 1503.67
+  },
+  {
     "id": "T1775477312556",
     "date": "2026-04-06",
     "accountId": "삼성증권",

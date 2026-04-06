@@ -61,7 +61,7 @@ import { useTickerDatabase } from "./hooks/useTickerDatabase";
 import { useKeyboardShortcuts } from "./hooks/useKeyboardShortcuts";
 import { usePortfolioWorker } from "./hooks/usePortfolioWorker";
 import { APP_VERSION } from "./constants/config";
-import { saveToGist, getGistToken, getGistId, setGistLastPushAt } from "./services/gistSync";
+import { saveToGist, getGistToken, getGistId, setGistLastPushAt, isGistConfigured, GIST_CONFIG_CHANGE_EVENT } from "./services/gistSync";
 import { toUserDataJson } from "./services/dataService";
 import { useGistSync } from "./hooks/useGistSync";
 import { runIntegrityCheck } from "./utils/dataIntegrity";
@@ -74,6 +74,19 @@ export const App: React.FC = () => {
   const [isPushingToGit, setIsPushingToGit] = useState(false);
   const [isPullingFromGit, setIsPullingFromGit] = useState(false);
   const [showGistVersionModal, setShowGistVersionModal] = useState(false);
+
+  // Gist 설정 반응형 상태 — Settings에서 변경 시 헤더 버튼 즉시 갱신
+  const [hasGistToken, setHasGistToken] = useState(() => !!getGistToken());
+  const [gistReady, setGistReady] = useState(() => isGistConfigured());
+
+  useEffect(() => {
+    const handler = () => {
+      setHasGistToken(!!getGistToken());
+      setGistReady(isGistConfigured());
+    };
+    window.addEventListener(GIST_CONFIG_CHANGE_EVENT, handler);
+    return () => window.removeEventListener(GIST_CONFIG_CHANGE_EVENT, handler);
+  }, []);
 
   const [pendingAction, setPendingAction] = useState<{
     title: string;
@@ -433,33 +446,33 @@ export const App: React.FC = () => {
               >
                 백업
               </button>
-              {getGistToken() && (
-                <button
-                  type="button"
-                  className="primary"
-                  style={{ background: "var(--chart-primary)" }}
-                  onClick={() => withConfirm({
-                    title: "Gist 저장",
-                    message: "현재 데이터를 GitHub Gist에 저장합니다. 기존 Gist 데이터가 덮어씌워집니다.",
-                    confirmLabel: "저장",
-                    onConfirm: async () => {
-                      addAppLog("백업 + Gist 저장 시작...", "info");
-                      try {
-                        await handleManualBackup();
-                        const result = await saveToGist(toUserDataJson(data));
-                        setGistLastPushAt(result.updatedAt);
-                        addAppLog(`Gist 저장 완료 (${new Date(result.updatedAt).toLocaleString("ko-KR")})`, "success");
-                        toast.success("백업 + Gist 저장 완료");
-                      } catch (e: any) {
-                        addAppLog(`Gist 저장 실패: ${e.message}`, "error");
-                        toast.error(e.message ?? "Gist 저장 실패");
-                      }
-                    },
-                  })}
-                >
-                  Gist 저장
-                </button>
-              )}
+              <button
+                type="button"
+                className="primary"
+                style={{ background: hasGistToken ? "var(--chart-primary)" : undefined, opacity: hasGistToken ? 1 : 0.5 }}
+                disabled={!hasGistToken}
+                title={!hasGistToken ? "설정 → 클라우드 동기화에서 GitHub 토큰을 먼저 입력하세요" : "현재 데이터를 Gist에 저장"}
+                onClick={() => withConfirm({
+                  title: "Gist 저장",
+                  message: "현재 데이터를 GitHub Gist에 저장합니다. 기존 Gist 데이터가 덮어씌워집니다.",
+                  confirmLabel: "저장",
+                  onConfirm: async () => {
+                    addAppLog("백업 + Gist 저장 시작...", "info");
+                    try {
+                      await handleManualBackup();
+                      const result = await saveToGist(toUserDataJson(data));
+                      setGistLastPushAt(result.updatedAt);
+                      addAppLog(`Gist 저장 완료 (${new Date(result.updatedAt).toLocaleString("ko-KR")})`, "success");
+                      toast.success("백업 + Gist 저장 완료");
+                    } catch (e: any) {
+                      addAppLog(`Gist 저장 실패: ${e.message}`, "error");
+                      toast.error(e.message ?? "Gist 저장 실패");
+                    }
+                  },
+                })}
+              >
+                Gist 저장
+              </button>
               {import.meta.env.DEV && (
                 <button
                   type="button"
@@ -495,16 +508,19 @@ export const App: React.FC = () => {
             </div>
             {/* 그룹 2: 불러오기 · 업데이트 */}
             <div style={{ display: 'flex', gap: 4, alignItems: 'center', background: 'var(--surface)', borderRadius: 8, padding: '2px 4px' }}>
-              {getGistToken() && getGistId() && (
-                <button
-                  type="button"
-                  className="secondary"
-                  style={{ borderColor: "var(--chart-primary)", color: "var(--chart-primary)" }}
-                  onClick={() => setShowGistVersionModal(true)}
-                >
-                  Gist 불러오기
-                </button>
-              )}
+              <button
+                type="button"
+                className="secondary"
+                style={gistReady
+                  ? { borderColor: "var(--chart-primary)", color: "var(--chart-primary)" }
+                  : { opacity: 0.45 }
+                }
+                disabled={!gistReady}
+                title={!hasGistToken ? "설정 → 클라우드 동기화에서 GitHub 토큰을 먼저 입력하세요" : !gistReady ? "Gist에 먼저 저장해야 불러올 수 있습니다" : "저장된 Gist 버전에서 불러오기"}
+                onClick={() => setShowGistVersionModal(true)}
+              >
+                Gist 불러오기
+              </button>
               {import.meta.env.DEV && (
                 <button
                   type="button"

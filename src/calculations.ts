@@ -432,13 +432,13 @@ export function computeTotalNetWorth(
   return balances.reduce((sum, row) => {
     const krwCash = row.currentBalance;
     const stockAsset = stockMap.get(row.account.id) ?? 0;
-    const debt = row.account.debt ?? 0;
+    const debt = Math.abs(row.account.debt ?? 0);
     const usdCash =
       row.account.type === "securities" || row.account.type === "crypto"
         ? (row.account.usdBalance ?? 0) + (row.usdTransferNet ?? 0)
         : 0;
     const usdToKrw = fxRate && usdCash !== 0 ? usdCash * fxRate : 0;
-    return sum + krwCash + usdToKrw + stockAsset + debt;
+    return sum + krwCash + usdToKrw + stockAsset - debt;
   }, 0);
 }
 
@@ -497,7 +497,7 @@ export function computeTotalSavings(
 
 /** 부채 합계 (음수=부채, 양수=선결제/환급) */
 export function computeTotalDebt(accounts: Account[]): number {
-  return accounts.reduce((s, a) => s + (a.debt ?? 0), 0);
+  return -accounts.reduce((s, a) => s + Math.abs(a.debt ?? 0), 0);
 }
 
 

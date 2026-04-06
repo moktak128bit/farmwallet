@@ -545,9 +545,9 @@ export function generateDailyReport(
         .filter((account) => account.type !== "savings")
         .reduce((sum, account) => sum + (account.savings ?? 0), 0);
 
-    const debt = accounts.reduce((sum, account) => sum + (account.debt ?? 0), 0);
+    const debt = accounts.reduce((sum, account) => sum + Math.abs(account.debt ?? 0), 0);
     const totalAsset = stockValue + cashValue + savingsValue;
-    const netWorth = totalAsset + debt;
+    const netWorth = totalAsset - debt;
 
     reports.push({
       date,

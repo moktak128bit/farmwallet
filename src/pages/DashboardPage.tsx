@@ -743,14 +743,14 @@ export const DashboardView: React.FC<Props> = (props) => {
             : 0;
         const usdToKrw = fxRate && usdCash !== 0 ? usdCash * fxRate : 0;
         const stock = stockByAccount.get(account.id) ?? 0;
-        const debt = account.debt ?? 0;
-        const accountValue = cash + usdToKrw + stock + debt;
+        const debt = Math.abs(account.debt ?? 0);
+        const accountValue = cash + usdToKrw + stock - debt;
         totalValue += accountValue;
 
         if (account.type === "securities" || account.type === "crypto") {
           totalStockValue += stock;
         } else if (account.type === "savings") {
-          totalSavingsValue += cash + debt;
+          totalSavingsValue += cash - debt;
         }
       });
 
@@ -1921,7 +1921,7 @@ export const DashboardView: React.FC<Props> = (props) => {
           );
         })()}
 
-        <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 16 }}>
+        <div className="dashboard-two-col" style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 16 }}>
           <div className="card">
             <div className="card-title">이번 달 지출 Top 5 ({currentMonth})</div>
             <div style={{ marginTop: 12, display: "flex", flexDirection: "column", gap: 8 }}>
@@ -1978,6 +1978,7 @@ export const DashboardView: React.FC<Props> = (props) => {
         <div className="card" style={{ marginTop: 0 }}>
           <div className="card-title">이번 달 재테크 세부 ({monthlySummary.month})</div>
           <div
+            className="dashboard-four-col"
             style={{
               display: "grid",
               gridTemplateColumns: "repeat(4, 1fr)",
@@ -2293,6 +2294,7 @@ export const DashboardView: React.FC<Props> = (props) => {
           <div className="card" style={{ minHeight: 320 }}>
             <div className="card-title" style={{ marginBottom: 12 }}>{trackedTickerName} 해당금액 변동 (전체 기준)</div>
             <div
+              className="dashboard-two-col"
               style={{
                 display: "grid",
                 gridTemplateColumns: "minmax(200px, 280px) 1fr",
@@ -2349,6 +2351,7 @@ export const DashboardView: React.FC<Props> = (props) => {
           <div className="card" style={{ minHeight: 320 }}>
             <div className="card-title" style={{ marginBottom: 12 }}>{rise200CardTitle}</div>
             <div
+              className="dashboard-two-col"
               style={{
                 display: "grid",
                 gridTemplateColumns: "minmax(200px, 280px) 1fr",

@@ -20,35 +20,35 @@
   {
     "ticker": "485540",
     "name": "KODEX 미국AI테크TOP10",
-    "price": 13750,
+    "price": 13800,
     "currency": "KRW",
-    "change": 155,
-    "changePercent": 1.140125045972784,
-    "updatedAt": "2026-04-03T06:30:20.000Z"
+    "change": 50,
+    "changePercent": 0.36363636363636365,
+    "updatedAt": "2026-04-06T06:30:02.000Z"
   },
   {
     "ticker": "0053L0",
     "name": "TIGER 차이나휴머노이드로봇",
-    "price": 11910,
+    "price": 11880,
     "currency": "KRW",
-    "change": -120,
-    "changePercent": -0.997506234413965,
-    "updatedAt": "2026-04-03T06:30:30.000Z"
+    "change": -30,
+    "changePercent": -0.2518891687657431,
+    "updatedAt": "2026-04-06T06:30:26.000Z"
   },
   {
     "ticker": "UNH",
     "name": "UNH",
     "price": 277.26,
-    "updatedAt": "2026-04-03T07:59:48.832Z"
+    "updatedAt": "2026-04-06T12:15:49.847Z"
   },
   {
     "ticker": "458730",
     "name": "TIGER 미국배당다우존스",
-    "price": 14620,
+    "price": 14640,
     "currency": "KRW",
-    "change": -10,
-    "changePercent": -0.0683526999316473,
-    "updatedAt": "2026-04-03T06:30:05.000Z"
+    "change": 20,
+    "changePercent": 0.13679890560875513,
+    "updatedAt": "2026-04-06T06:30:20.000Z"
   },
   {
     "ticker": "BRK-B",
@@ -71,62 +71,62 @@
   {
     "ticker": "136490",
     "name": "선진",
-    "price": 9990,
+    "price": 9950,
     "currency": "KRW",
-    "change": 100,
-    "changePercent": 1.0111223458038423,
-    "updatedAt": "2026-04-03T06:30:30.000Z"
+    "change": -40,
+    "changePercent": -0.40040040040040037,
+    "updatedAt": "2026-04-06T06:30:30.000Z"
   },
   {
     "ticker": "RKLB",
     "name": "RKLB",
     "price": 67.73,
-    "updatedAt": "2026-04-03T07:59:48.364Z"
+    "updatedAt": "2026-04-06T12:15:49.322Z"
   },
   {
     "ticker": "0047A0",
     "name": "TIGER 차이나테크TOP10",
-    "price": 11475,
+    "price": 11450,
     "currency": "KRW",
-    "change": -125,
-    "changePercent": -1.0775862068965518,
-    "updatedAt": "2026-04-03T06:30:30.000Z"
+    "change": -25,
+    "changePercent": -0.2178649237472767,
+    "updatedAt": "2026-04-06T06:30:30.000Z"
   },
   {
     "ticker": "0048J0",
     "name": "KODEX 미국머니마켓액티브",
-    "price": 15080,
+    "price": 15065,
     "currency": "KRW",
-    "change": -115,
-    "changePercent": -0.7568279039157618,
-    "updatedAt": "2026-04-03T00:07:19.000Z"
+    "change": 5,
+    "changePercent": 0.033200531208499334,
+    "updatedAt": "2026-04-06T06:30:21.000Z"
   },
   {
     "ticker": "308620",
     "name": "KODEX 미국10년국채선물",
-    "price": 12715,
+    "price": 12700,
     "currency": "KRW",
-    "change": -80,
-    "changePercent": -0.6252442360296991,
-    "updatedAt": "2026-04-03T06:30:30.000Z"
+    "change": -15,
+    "changePercent": -0.11797090051120723,
+    "updatedAt": "2026-04-06T06:30:07.000Z"
   },
   {
     "ticker": "379810",
     "name": "KODEX 미국나스닥100",
-    "price": 23995,
+    "price": 24065,
     "currency": "KRW",
-    "change": 160,
-    "changePercent": 0.671281728550451,
-    "updatedAt": "2026-04-03T06:30:19.000Z"
+    "change": 70,
+    "changePercent": 0.29172744321733696,
+    "updatedAt": "2026-04-06T06:30:10.000Z"
   },
   {
     "ticker": "379800",
     "name": "KODEX 미국S&P500",
-    "price": 22455,
+    "price": 22490,
     "currency": "KRW",
-    "change": 90,
-    "changePercent": 0.4024144869215292,
-    "updatedAt": "2026-04-03T06:30:07.000Z"
+    "change": 35,
+    "changePercent": 0.15586729013582723,
+    "updatedAt": "2026-04-06T06:30:03.000Z"
   },
   {
     "ticker": "IONQ",
@@ -158,17 +158,17 @@
   {
     "ticker": "0144L0",
     "name": "KODEX 미국성장커버드콜액티브",
-    "price": 9305,
+    "price": 9280,
     "currency": "KRW",
-    "change": 95,
-    "changePercent": 1.0314875135722041,
-    "updatedAt": "2026-04-03T00:07:18.000Z"
+    "change": 10,
+    "changePercent": 0.10787486515641855,
+    "updatedAt": "2026-04-06T06:30:29.000Z"
   },
   {
     "ticker": "IREN",
     "name": "IREN",
     "price": 34.77,
-    "updatedAt": "2026-04-03T07:59:47.892Z"
+    "updatedAt": "2026-04-06T12:15:48.798Z"
   },
   {
     "ticker": "AAPL",
@@ -183,31 +183,31 @@
     "ticker": "XOVR",
     "name": "XOVR",
     "price": 17,
-    "updatedAt": "2026-04-03T07:59:49.067Z"
+    "updatedAt": "2026-04-06T12:15:50.117Z"
   },
   {
     "ticker": "TSN",
     "name": "TSN",
     "price": 64.63,
-    "updatedAt": "2026-04-03T07:59:48.597Z"
+    "updatedAt": "2026-04-06T12:15:49.591Z"
   },
   {
     "ticker": "0131V0",
     "name": "1Q 미국우주항공테크",
-    "price": 12500,
+    "price": 12525,
     "currency": "KRW",
-    "change": 820,
-    "changePercent": 7.02054794520548,
-    "updatedAt": "2026-04-03T06:30:06.000Z"
+    "change": 25,
+    "changePercent": 0.2,
+    "updatedAt": "2026-04-06T06:30:21.000Z"
   },
   {
     "ticker": "0023A0",
     "name": "SOL 미국양자컴퓨팅TOP10",
-    "price": 21850,
+    "price": 21875,
     "currency": "KRW",
-    "change": 1100,
-    "changePercent": 5.301204819277109,
-    "updatedAt": "2026-04-03T00:07:16.000Z"
+    "change": 75,
+    "changePercent": 0.34403669724770647,
+    "updatedAt": "2026-04-06T06:30:09.000Z"
   },
   {
     "ticker": "0015K0",
@@ -221,69 +221,69 @@
   {
     "ticker": "0104N0",
     "name": "TIGER 200타겟위클리커버드콜",
-    "price": 16130,
+    "price": 16325,
     "currency": "KRW",
-    "change": 520,
-    "changePercent": 3.3311979500320303,
-    "updatedAt": "2026-04-03T00:07:05.000Z"
+    "change": 275,
+    "changePercent": 1.7133956386292832,
+    "updatedAt": "2026-04-06T06:30:22.000Z"
   },
   {
     "ticker": "498400",
     "name": "KODEX 200타겟위클리커버드콜",
-    "price": 16810,
+    "price": 17060,
     "currency": "KRW",
-    "change": 465,
-    "changePercent": 2.844906699296421,
-    "updatedAt": "2026-04-03T06:30:17.000Z"
+    "change": 250,
+    "changePercent": 1.48720999405116,
+    "updatedAt": "2026-04-06T06:30:20.000Z"
   },
   {
     "ticker": "279570",
     "name": "Kbank",
-    "price": 5880,
+    "price": 6180,
     "currency": null,
-    "change": 90,
-    "changePercent": 1.5544041450777202,
-    "updatedAt": "2026-04-03T06:30:29.000Z"
+    "change": 300,
+    "changePercent": 5.1020408163265305,
+    "updatedAt": "2026-04-06T06:30:13.000Z"
   },
   {
     "ticker": "423160",
     "name": "Samsung Kodex Kofr Active ETF",
-    "price": 110685,
+    "price": 110690,
     "currency": "KRW",
-    "change": 25,
-    "changePercent": 0.022591722392915237,
-    "updatedAt": "2026-04-03T06:30:15.000Z"
+    "change": 5,
+    "changePercent": 0.004517323937299544,
+    "updatedAt": "2026-04-06T06:30:14.000Z"
   },
   {
     "ticker": "ethereum",
     "name": "ETH",
-    "price": 3116431,
+    "price": 3232353,
     "currency": "KRW",
-    "changePercent": 0.2826014993393142,
-    "updatedAt": "2026-04-03T08:02:12.000Z"
+    "changePercent": 4.892491690800572,
+    "updatedAt": "2026-04-06T12:15:46.000Z"
   },
   {
     "ticker": "solana",
     "name": "SOL",
-    "price": 120516,
+    "price": 123826,
     "currency": "KRW",
-    "changePercent": 0.03720493345757292,
-    "updatedAt": "2026-04-03T08:02:18.000Z"
+    "changePercent": 2.71833794742737,
+    "updatedAt": "2026-04-06T12:15:46.000Z"
   },
   {
     "ticker": "252670",
     "name": "KODEX 200선물인버스2X",
-    "price": 271,
+    "price": 263,
     "currency": "KRW",
-    "change": -18,
-    "changePercent": -6.228373702422145,
-    "updatedAt": "2026-04-03T06:30:03.000Z"
+    "change": -8,
+    "changePercent": -2.952029520295203,
+    "updatedAt": "2026-04-06T06:30:23.000Z"
   },
   {
     "ticker": "BITX",
     "name": "BITX",
     "price": 14.39,
-    "updatedAt": "2026-04-03T07:59:47.655Z"
+    "updatedAt": "2026-04-06T12:15:48.543Z"
   },
   {
     "ticker": "BITX",
@@ -294,34 +294,43 @@
   {
     "ticker": "475720",
     "name": "RISE 200위클리커버드콜",
-    "price": 11970,
+    "price": 12075,
     "currency": "KRW",
-    "change": 220,
-    "changePercent": 1.872340425531915,
-    "updatedAt": "2026-04-03T06:30:29.000Z"
+    "change": 105,
+    "changePercent": 0.8771929824561403,
+    "updatedAt": "2026-04-06T06:30:02.000Z"
   },
   {
     "ticker": "0167B0",
     "name": "SOL 200타겟위클리커버드콜",
-    "price": 9655,
+    "price": 9780,
     "currency": null,
-    "change": 275,
-    "changePercent": 2.931769722814499,
-    "updatedAt": "2026-04-03T06:30:05.000Z"
+    "change": 125,
+    "changePercent": 1.294665976178146,
+    "updatedAt": "2026-04-06T06:30:01.000Z"
   },
   {
     "ticker": "0167Z0",
-    "name": "KODEX 미국항공우주산업",
-    "price": 10675,
+    "name": "Samsung Kodex Us Aerospace Etf",
+    "price": 10605,
     "currency": null,
-    "change": 825,
-    "changePercent": 8.375634517766498,
-    "updatedAt": "2026-04-03T00:07:24.000Z"
+    "change": -25,
+    "changePercent": -0.23518344308560676,
+    "updatedAt": "2026-04-06T06:30:01.000Z"
   },
   {
     "ticker": "MSFT",
     "name": "MSFT",
     "price": 373.46,
-    "updatedAt": "2026-04-03T07:59:48.130Z"
+    "updatedAt": "2026-04-06T12:15:49.069Z"
+  },
+  {
+    "ticker": "0007J0",
+    "name": "Inventera",
+    "price": 30150,
+    "currency": null,
+    "change": -2700,
+    "changePercent": -8.21917808219178,
+    "updatedAt": "2026-04-06T06:30:24.000Z"
   }
 ]

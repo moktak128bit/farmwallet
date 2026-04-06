@@ -23,6 +23,7 @@ const ThemeCustomizer = lazy(() => import("../components/ThemeCustomizer").then(
 import { usePWAInstall } from "../hooks/usePWAInstall";
 import { STORAGE_KEYS, ISA_PORTFOLIO } from "../constants/config";
 import * as gistSyncModule from "../services/gistSync";
+import { toUserDataJson } from "../services/dataService";
 import { ERROR_MESSAGES } from "../constants/errorMessages";
 import { appDataFromTableBackupPayload, buildTableBackupFile } from "../utils/tableDataBackup";
 
@@ -965,7 +966,7 @@ export const SettingsView: React.FC<Props> = ({
                 onClick={async () => {
                   setGistSyncing(true);
                   try {
-                    const jsonStr = JSON.stringify(data);
+                    const jsonStr = toUserDataJson(data);
                     const result = await gistSyncModule.saveToGist(jsonStr);
                     setGistIdState(result.gistId);
                     setGistLastSync(result.updatedAt);
@@ -991,7 +992,13 @@ export const SettingsView: React.FC<Props> = ({
                   try {
                     const result = await gistSyncModule.loadFromGist();
                     const parsed = JSON.parse(result.dataJson);
-                    onChangeData(parsed);
+                    // Gist에 없는 API 캐시 데이터는 현재 메모리의 것을 유지
+                    onChangeData({
+                      ...parsed,
+                      prices: parsed.prices?.length > 0 ? parsed.prices : data.prices,
+                      tickerDatabase: parsed.tickerDatabase?.length > 0 ? parsed.tickerDatabase : data.tickerDatabase,
+                      historicalDailyCloses: parsed.historicalDailyCloses?.length > 0 ? parsed.historicalDailyCloses : data.historicalDailyCloses,
+                    });
                     setGistLastSync(result.updatedAt);
                     toast.success("Gist에서 불러오기 완료");
                   } catch (e: any) {

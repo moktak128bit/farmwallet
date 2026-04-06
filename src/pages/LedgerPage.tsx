@@ -162,6 +162,7 @@ export const LedgerView: React.FC<Props> = ({
   const [editingValue, setEditingValue] = useState<string>("");
   const [filterMainCategory, setFilterMainCategory] = useState<string | undefined>();
   const [filterSubCategory, setFilterSubCategory] = useState<string | undefined>();
+  const [filterDetailCategory, setFilterDetailCategory] = useState<string | undefined>();
   const [filterFromAccountId, setFilterFromAccountId] = useState<string | undefined>();
   const [filterToAccountId, setFilterToAccountId] = useState<string | undefined>();
   /** 계좌별 보기: null = 전체, 값 있으면 from/to 중 하나라도 해당 계좌인 항목만 */
@@ -1397,8 +1398,8 @@ export const LedgerView: React.FC<Props> = ({
       });
     }
 
-    // 대분류/중분류 필터
-    if (filterMainCategory || filterSubCategory) {
+    // 대분류/중분류/소분류 필터
+    if (filterMainCategory || filterSubCategory || filterDetailCategory) {
       filtered = filtered.filter((l) => {
         if (filterMainCategory) {
           if (ledgerTab === "savingsExpense" && filterMainCategory === "재테크") {
@@ -1408,6 +1409,7 @@ export const LedgerView: React.FC<Props> = ({
           }
         }
         if (filterSubCategory && l.subCategory !== filterSubCategory) return false;
+        if (filterDetailCategory && l.detailCategory !== filterDetailCategory) return false;
         return true;
       });
     }
@@ -1894,6 +1896,20 @@ export const LedgerView: React.FC<Props> = ({
       .sort((a, b) => b[1] - a[1])
       .map(([sub]) => sub);
   }, [ledgerByTab, filterMainCategory]);
+
+  // 중분류 선택 시 해당 중분류의 소분류 목록 (빈도순)
+  const detailCategoriesInTab = useMemo(() => {
+    if (!filterMainCategory || !filterSubCategory) return [];
+    const counts = new Map<string, number>();
+    for (const l of ledgerByTab) {
+      if (l.category !== filterMainCategory || l.subCategory !== filterSubCategory) continue;
+      const det = l.detailCategory?.trim();
+      if (det) counts.set(det, (counts.get(det) || 0) + 1);
+    }
+    return [...counts.entries()]
+      .sort((a, b) => b[1] - a[1])
+      .map(([det]) => det);
+  }, [ledgerByTab, filterMainCategory, filterSubCategory]);
 
   const filterFromAccount = filterFromAccountId ? accounts.find((a) => a.id === filterFromAccountId) : null;
   const filterFromAccountName = filterFromAccountId ? (filterFromAccount?.name || filterFromAccount?.id || filterFromAccountId) : null;
@@ -2870,7 +2886,7 @@ export const LedgerView: React.FC<Props> = ({
             <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
               <button
                 type="button"
-                onClick={() => { setFilterMainCategory(undefined); setFilterSubCategory(undefined); }}
+                onClick={() => { setFilterMainCategory(undefined); setFilterSubCategory(undefined); setFilterDetailCategory(undefined); }}
                 style={{
                   padding: "8px 16px",
                   fontSize: 13,
@@ -2892,9 +2908,11 @@ export const LedgerView: React.FC<Props> = ({
                     if (filterMainCategory === cat) {
                       setFilterMainCategory(undefined);
                       setFilterSubCategory(undefined);
+                      setFilterDetailCategory(undefined);
                     } else {
                       setFilterMainCategory(cat);
                       setFilterSubCategory(undefined);
+                      setFilterDetailCategory(undefined);
                     }
                   }}
                   style={{
@@ -2922,7 +2940,7 @@ export const LedgerView: React.FC<Props> = ({
             <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
               <button
                 type="button"
-                onClick={() => setFilterSubCategory(undefined)}
+                onClick={() => { setFilterSubCategory(undefined); setFilterDetailCategory(undefined); }}
                 style={{
                   padding: "8px 16px",
                   fontSize: 13,
@@ -2940,7 +2958,7 @@ export const LedgerView: React.FC<Props> = ({
                 <button
                   key={sub}
                   type="button"
-                  onClick={() => setFilterSubCategory(filterSubCategory === sub ? undefined : sub)}
+                  onClick={() => { setFilterSubCategory(filterSubCategory === sub ? undefined : sub); setFilterDetailCategory(undefined); }}
                   style={{
                     padding: "8px 16px",
                     fontSize: 13,
@@ -2953,6 +2971,50 @@ export const LedgerView: React.FC<Props> = ({
                   }}
                 >
                   {sub}
+                </button>
+              ))}
+            </div>
+          </div>
+        )}
+
+        {/* 소분류 필터 — 중분류 선택 시 해당 소분류 표시 */}
+        {filterSubCategory && detailCategoriesInTab.length > 1 && (
+          <div style={{ marginBottom: 12 }}>
+            <div style={{ fontSize: 12, fontWeight: 600, color: "var(--text-muted)", marginBottom: 6 }}>소분류 ({filterSubCategory})</div>
+            <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
+              <button
+                type="button"
+                onClick={() => setFilterDetailCategory(undefined)}
+                style={{
+                  padding: "8px 16px",
+                  fontSize: 13,
+                  fontWeight: 600,
+                  borderRadius: 8,
+                  border: !filterDetailCategory ? "2px solid var(--primary)" : "1px solid var(--border)",
+                  background: !filterDetailCategory ? "var(--primary)" : "var(--surface)",
+                  color: !filterDetailCategory ? "white" : "var(--text)",
+                  cursor: "pointer",
+                }}
+              >
+                전체
+              </button>
+              {detailCategoriesInTab.map((det) => (
+                <button
+                  key={det}
+                  type="button"
+                  onClick={() => setFilterDetailCategory(filterDetailCategory === det ? undefined : det)}
+                  style={{
+                    padding: "8px 16px",
+                    fontSize: 13,
+                    fontWeight: 600,
+                    borderRadius: 8,
+                    border: filterDetailCategory === det ? "2px solid var(--primary)" : "1px solid var(--border)",
+                    background: filterDetailCategory === det ? "var(--primary)" : "var(--surface)",
+                    color: filterDetailCategory === det ? "white" : "var(--text)",
+                    cursor: "pointer",
+                  }}
+                >
+                  {det}
                 </button>
               ))}
             </div>

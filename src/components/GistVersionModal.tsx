@@ -14,17 +14,22 @@ export const GistVersionModal: React.FC<Props> = ({ isOpen, onClose, onLoad, onL
   const [isFetching, setIsFetching] = useState(false);
   const [loadingIndex, setLoadingIndex] = useState<number | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [fetchCount, setFetchCount] = useState(0);
 
-  useEffect(() => {
-    if (!isOpen) return;
+  const fetchVersions = React.useCallback(() => {
     setVersions([]);
     setError(null);
     setIsFetching(true);
-    getGistVersions(5)
+    getGistVersions(10)
       .then(setVersions)
       .catch((e) => setError(e instanceof Error ? e.message : "버전 목록 조회 실패"))
       .finally(() => setIsFetching(false));
-  }, [isOpen]);
+  }, []);
+
+  useEffect(() => {
+    if (!isOpen) return;
+    fetchVersions();
+  }, [isOpen, fetchCount, fetchVersions]);
 
   useEffect(() => {
     if (!isOpen) return;
@@ -87,12 +92,25 @@ export const GistVersionModal: React.FC<Props> = ({ isOpen, onClose, onLoad, onL
         )}
 
         {error && (
-          <div style={{ color: "var(--danger)", fontSize: 13, padding: "8px 0" }}>{error}</div>
+          <div style={{ color: "var(--danger)", fontSize: 13, padding: "8px 0" }}>
+            <div>{error}</div>
+            <button
+              type="button"
+              className="secondary"
+              style={{ marginTop: 8, fontSize: 12, padding: "4px 14px" }}
+              onClick={() => setFetchCount((c) => c + 1)}
+            >
+              다시 시도
+            </button>
+          </div>
         )}
 
         {!isFetching && !error && versions.length === 0 && (
           <div style={{ textAlign: "center", padding: "24px 0", color: "var(--text-muted)", fontSize: 14 }}>
             저장된 버전이 없습니다.
+            <div style={{ fontSize: 12, marginTop: 4 }}>
+              먼저 "Gist 저장" 버튼으로 데이터를 저장하세요.
+            </div>
           </div>
         )}
 

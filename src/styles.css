@@ -1153,6 +1153,14 @@ label {
   .cards-row {
     grid-template-columns: 1fr;
   }
+
+  .dashboard-two-col {
+    grid-template-columns: 1fr !important;
+  }
+
+  .dashboard-four-col {
+    grid-template-columns: repeat(2, 1fr) !important;
+  }
 }
 
 /* =========================================

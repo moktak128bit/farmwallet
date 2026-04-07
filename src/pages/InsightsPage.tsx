@@ -906,7 +906,7 @@ function useD(ledger: LedgerEntry[], rawTrades: StockTrade[], accounts: Account[
 /*  Tab: 종합 대시보드                                                  */
 /* ================================================================== */
 
-function OverviewTab({ d }: { d: D }) {
+const OverviewTab = React.memo(function OverviewTab({ d }: { d: D }) {
   const totals = d.months.reduce((a, m) => { a.i += d.monthly[m].income; a.e += d.monthly[m].expense; a.v += d.monthly[m].investment; return a; }, { i: 0, e: 0, v: 0 });
   const barData = d.months.map(m => ({ name: d.ml[m], 수입: d.monthly[m].income, 지출: d.monthly[m].expense, 투자: d.monthly[m].investment }));
   const flowData = d.months.slice(0, -1).map(m => ({ name: d.ml[m], 순현금흐름: d.monthly[m].income - d.monthly[m].expense - d.monthly[m].investment }));
@@ -1161,13 +1161,13 @@ function OverviewTab({ d }: { d: D }) {
       )}
     </div>
   );
-}
+});
 
 /* ================================================================== */
 /*  Tab: 지출 분석                                                      */
 /* ================================================================== */
 
-function ExpenseTab({ d }: { d: D }) {
+const ExpenseTab = React.memo(function ExpenseTab({ d }: { d: D }) {
   /* 중분류 (subCategory) 기준 — 핵심 분석 단위 */
   const subs = d.expBySub.filter(s => s.sub !== "신용결제" && s.cat !== "신용결제");
   const subPie = subs.slice(0, 10).map(s => ({ name: s.sub, value: s.amount }));
@@ -1384,13 +1384,13 @@ function ExpenseTab({ d }: { d: D }) {
       )}
     </div>
   );
-}
+});
 
 /* ================================================================== */
 /*  Tab: 수입 구조                                                      */
 /* ================================================================== */
 
-function IncomeTab({ d }: { d: D }) {
+const IncomeTab = React.memo(function IncomeTab({ d }: { d: D }) {
   const incData = d.incByCat.map(([name, value]) => ({ name, value }));
   const totalIncome = incData.reduce((s, x) => s + x.value, 0);
   const salary = d.incByCat.find(([c]) => c === "급여")?.[1] ?? 0;
@@ -1535,13 +1535,13 @@ function IncomeTab({ d }: { d: D }) {
       )}
     </div>
   );
-}
+});
 
 /* ================================================================== */
 /*  Tab: 데이트 분석                                                    */
 /* ================================================================== */
 
-function DateTab({ d }: { d: D }) {
+const DateTab = React.memo(function DateTab({ d }: { d: D }) {
   const allMonthData = d.months.map(m => ({ name: d.ml[m], 금액: d.dateExpMonthly[m] ?? 0 }));
   const total = Object.values(d.dateExpMonthly).reduce((a, b) => a + b, 0);
   const monthsWithData = Object.values(d.dateExpMonthly).filter(v => v > 0).length;
@@ -1744,13 +1744,13 @@ function DateTab({ d }: { d: D }) {
       </>}
     </div>
   );
-}
+});
 
 /* ================================================================== */
 /*  Tab: 투자 포트폴리오                                                */
 /* ================================================================== */
 
-function InvestTab({ d }: { d: D }) {
+const InvestTab = React.memo(function InvestTab({ d }: { d: D }) {
   const holdings = d.trades.map(v => ({
     name: v.name.length > 20 ? v.name.slice(0, 20) + "…" : v.name, fullName: v.name,
     매수: v.buyTotal, 매도: v.sellTotal, 보유수량: v.buyCount - v.sellCount,
@@ -1941,13 +1941,13 @@ function InvestTab({ d }: { d: D }) {
       )}
     </div>
   );
-}
+});
 
 /* ================================================================== */
 /*  Tab: 구독 관리                                                      */
 /* ================================================================== */
 
-function SubTab({ d }: { d: D }) {
+const SubTab = React.memo(function SubTab({ d }: { d: D }) {
   const subs = d.subs;
   const totalMonthly = subs.reduce((a, s) => a + s.avg, 0);
   const totalAnnual = totalMonthly * 12;
@@ -2017,13 +2017,13 @@ function SubTab({ d }: { d: D }) {
       </Card>
     </div>
   );
-}
+});
 
 /* ================================================================== */
 /*  Tab: 소비 패턴                                                      */
 /* ================================================================== */
 
-function PatternTab({ d }: { d: D }) {
+const PatternTab = React.memo(function PatternTab({ d }: { d: D }) {
   const wdData = WDN.map((name, i) => ({ name, total: d.wdSpend[i].total, avg: d.wdSpend[i].count > 0 ? Math.round(d.wdSpend[i].total / d.wdSpend[i].count) : 0, count: d.wdSpend[i].count }));
   const subFreqPie = d.expBySub.filter(s => s.sub !== "신용결제" && s.cat !== "신용결제" && s.count > 0).slice(0, 8).map(s => ({ name: s.sub, value: s.count }));
   const sorted = [...wdData].sort((a, b) => b.avg - a.avg);
@@ -2166,13 +2166,13 @@ function PatternTab({ d }: { d: D }) {
       )}
     </div>
   );
-}
+});
 
 /* ================================================================== */
 /*  Tab: 지출 속도                                                      */
 /* ================================================================== */
 
-function VelocityTab({ d }: { d: D }) {
+const VelocityTab = React.memo(function VelocityTab({ d }: { d: D }) {
   const validMonths = d.months.filter(m => { const c = d.cumSpend[m]; return c && c[30] > 0; });
   const days = Array.from({ length: 31 }, (_, i) => i + 1);
   const lineData = days.map(day => { const o: Record<string, number> = { day }; validMonths.forEach(m => { o[d.ml[m]] = d.cumSpend[m]?.[day - 1] ?? 0; }); return o; });
@@ -2305,7 +2305,7 @@ function VelocityTab({ d }: { d: D }) {
       )}
     </div>
   );
-}
+});
 
 /* ================================================================== */
 /*  Main Component                                                     */

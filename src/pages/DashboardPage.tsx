@@ -1,5 +1,6 @@
 import React, { lazy, Suspense, useMemo, useState } from "react";
 import { DeferredResponsiveContainer as ResponsiveContainer } from "../components/charts/DeferredResponsiveContainer";
+import { BudgetAlertWidget } from "../features/dashboard/AdvancedWidgets";
 import type {
   Account,
   LedgerEntry,
@@ -2581,6 +2582,16 @@ export const DashboardView: React.FC<Props> = (props) => {
         </div>
 
 
+        {/* 예산 초과 알림 */}
+        <BudgetAlertWidget
+          accounts={accounts}
+          ledger={ledger}
+          trades={trades}
+          prices={prices}
+          fxRate={fxRate ?? 1300}
+          categoryPresets={categoryPresets}
+          budgetGoals={storeData.budgetGoals}
+        />
       </div>
     </div>
   );

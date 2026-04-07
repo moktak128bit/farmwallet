@@ -1,5 +1,6 @@
 import { defineConfig, type Plugin } from "vite";
 import react from "@vitejs/plugin-react-swc";
+import { VitePWA } from "vite-plugin-pwa";
 import fs from "fs";
 import path from "path";
 import https from "https";
@@ -895,7 +896,47 @@ function buildMetaPlugin(hash: string): Plugin {
 }
 
 export default defineConfig({
-  plugins: [react(), backupApiPlugin(), buildMetaPlugin(buildHash)],
+  plugins: [
+    react(),
+    backupApiPlugin(),
+    buildMetaPlugin(buildHash),
+    VitePWA({
+      registerType: "autoUpdate",
+      workbox: {
+        globPatterns: ["**/*.{js,css,html,svg,png,woff2}"],
+        runtimeCaching: [
+          {
+            urlPattern: /^https:\/\/cdn\.jsdelivr\.net\/.*/i,
+            handler: "CacheFirst",
+            options: { cacheName: "cdn-cache", expiration: { maxEntries: 20, maxAgeSeconds: 60 * 60 * 24 * 30 } },
+          },
+          {
+            urlPattern: /^https:\/\/fonts\.googleapis\.com\/.*/i,
+            handler: "StaleWhileRevalidate",
+            options: { cacheName: "google-fonts-cache", expiration: { maxEntries: 10, maxAgeSeconds: 60 * 60 * 24 * 365 } },
+          },
+        ],
+        navigateFallback: "index.html",
+        navigateFallbackDenylist: [/^\/api\//],
+      },
+      manifest: {
+        name: "FarmWallet",
+        short_name: "FarmWallet",
+        description: "자산 · 주식 · 가계부 관리",
+        start_url: "/farmwallet/",
+        scope: "/farmwallet/",
+        display: "standalone",
+        background_color: "#ffffff",
+        theme_color: "#0d9488",
+        orientation: "portrait-primary",
+        lang: "ko",
+        icons: [
+          { src: "icons/icon.svg", sizes: "any", type: "image/svg+xml", purpose: "any" },
+          { src: "icons/icon.svg", sizes: "any", type: "image/svg+xml", purpose: "maskable" },
+        ],
+      },
+    }),
+  ],
   base: "/farmwallet/",
   define: {
     __APP_VERSION__: JSON.stringify(packageJson.version),

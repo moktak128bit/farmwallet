@@ -1293,3 +1293,98 @@ export const ConcentrationWidget: React.FC<AdvancedWidgetProps> = ({
     </div>
   );
 };
+
+// ─── Widget 7: BudgetAlertWidget — "예산 초과 알림" ────────────────────────
+
+export const BudgetAlertWidget: React.FC<AdvancedWidgetProps> = ({
+  ledger,
+  budgetGoals,
+}) => {
+  const { currentMonth } = useMemo(() => getNow(), []);
+
+  const alerts = useMemo(() => {
+    if (!budgetGoals || budgetGoals.length === 0) return [];
+    // 이번 달 카테고리별 지출 합계
+    const catSpend = new Map<string, number>();
+    for (const l of ledger) {
+      if (l.kind !== "expense" || monthOf(l.date) !== currentMonth) continue;
+      const cat = l.subCategory || l.category || "";
+      if (cat) catSpend.set(cat, (catSpend.get(cat) ?? 0) + Number(l.amount));
+      // 대분류도 합산
+      if (l.category && l.category !== cat) {
+        catSpend.set(l.category, (catSpend.get(l.category) ?? 0) + Number(l.amount));
+      }
+    }
+    return budgetGoals
+      .map((g) => {
+        const spent = catSpend.get(g.category) ?? 0;
+        const pct = g.monthlyLimit > 0 ? (spent / g.monthlyLimit) * 100 : 0;
+        return { ...g, spent, pct };
+      })
+      .sort((a, b) => b.pct - a.pct);
+  }, [ledger, budgetGoals, currentMonth]);
+
+  if (alerts.length === 0) {
+    return (
+      <div className="card" style={{ padding: 20 }}>
+        <h3 style={{ margin: "0 0 8px", fontSize: 16 }}>예산 관리</h3>
+        <p style={{ color: "var(--text-muted)", fontSize: 14 }}>
+          예산 목표를 설정하면 초과 알림을 받을 수 있습니다.
+        </p>
+      </div>
+    );
+  }
+
+  const overBudget = alerts.filter((a) => a.pct >= 100);
+  const nearBudget = alerts.filter((a) => a.pct >= 80 && a.pct < 100);
+
+  return (
+    <div className="card" style={{ padding: 20 }}>
+      <h3 style={{ margin: "0 0 12px", fontSize: 16, display: "flex", alignItems: "center", gap: 8 }}>
+        예산 관리
+        {overBudget.length > 0 && (
+          <span style={{ fontSize: 12, background: "#ef4444", color: "#fff", borderRadius: 10, padding: "2px 8px" }}>
+            {overBudget.length}건 초과
+          </span>
+        )}
+      </h3>
+      <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
+        {alerts.slice(0, 8).map((a) => {
+          const color = a.pct >= 100 ? "#ef4444" : a.pct >= 80 ? "#f59e0b" : "#22c55e";
+          return (
+            <div key={a.id}>
+              <div style={{ display: "flex", justifyContent: "space-between", fontSize: 13, marginBottom: 4 }}>
+                <span style={{ fontWeight: 600 }}>{a.category}</span>
+                <span style={{ color }}>
+                  {formatNumber(a.spent)} / {formatNumber(a.monthlyLimit)}
+                  <span style={{ marginLeft: 4, fontSize: 11 }}>({Math.round(a.pct)}%)</span>
+                </span>
+              </div>
+              <div style={{ height: 8, background: "var(--border)", borderRadius: 4, overflow: "hidden" }}>
+                <div style={barStyle(a.pct, color, 8)} />
+              </div>
+            </div>
+          );
+        })}
+      </div>
+      {(overBudget.length > 0 || nearBudget.length > 0) && (
+        <div
+          role="alert"
+          style={{
+            marginTop: 12,
+            padding: "8px 12px",
+            borderRadius: 6,
+            fontSize: 13,
+            background: overBudget.length > 0 ? "#fef2f2" : "#fffbeb",
+            color: overBudget.length > 0 ? "#b91c1c" : "#92400e",
+            border: `1px solid ${overBudget.length > 0 ? "#fecaca" : "#fde68a"}`,
+          }}
+        >
+          {overBudget.length > 0
+            ? `${overBudget.map((a) => a.category).join(", ")} 예산을 초과했습니다!`
+            : `${nearBudget.map((a) => a.category).join(", ")} 예산의 80%를 넘었습니다.`}
+        </div>
+      )}
+    </div>
+  );
+};

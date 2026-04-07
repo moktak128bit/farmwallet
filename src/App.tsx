@@ -4,6 +4,8 @@ import { Moon, Sun, Menu } from "lucide-react";
 import { Tabs, type TabId } from "./components/ui/Tabs";
 import { ShortcutsHelp } from "./components/ShortcutsHelp";
 import { SearchModal } from "./components/SearchModal";
+import { PWAStatus } from "./components/PWAStatus";
+import { useSwipe } from "./hooks/useSwipe";
 import { ConfirmModal } from "./components/ui/ConfirmModal";
 import { GistVersionModal } from "./components/GistVersionModal";
 
@@ -68,6 +70,8 @@ import { runIntegrityCheck } from "./utils/dataIntegrity";
 
 export type AppLogEntry = { id: number; message: string; type: "success" | "error" | "info"; time: string };
 const APP_LOG_MAX = 200;
+
+const TAB_ORDER: TabId[] = ["dashboard", "accounts", "ledger", "categories", "stocks", "dividends", "debt", "spend", "budget", "reports", "insights", "workout", "settings"];
 
 export const App: React.FC = () => {
   const [tab, setTab] = useState<TabId>("dashboard");
@@ -196,6 +200,12 @@ export const App: React.FC = () => {
   const { data, setData, isLoading, loadFailed, clearLoadFailed } = useAppData();
   const { setDataWithHistory, handleUndo, handleRedo } = useUndoRedo(data, setData);
   const { theme, toggleTheme } = useTheme();
+
+  // 모바일 좌/우 스와이프로 탭 이동
+  const swipeHandlers = useSwipe(
+    () => { const i = TAB_ORDER.indexOf(tab); if (i < TAB_ORDER.length - 1) setTab(TAB_ORDER[i + 1]); },
+    () => { const i = TAB_ORDER.indexOf(tab); if (i > 0) setTab(TAB_ORDER[i - 1]); },
+  );
   const fxRate = useFxRateValue();
   const {
     isSearchOpen,
@@ -369,6 +379,7 @@ export const App: React.FC = () => {
 
   return (
     <div className="app-root">
+      <a href="#main-content" className="skip-link">본문으로 건너뛰기</a>
       <Toaster
         position="top-center"
         toastOptions={{
@@ -383,6 +394,7 @@ export const App: React.FC = () => {
         }}
         containerStyle={{ top: 12, zIndex: 9999 }}
       />
+      <PWAStatus />
       <header className="app-header">
         <div style={{ display: "flex", alignItems: "center", gap: 12, flex: 1, minWidth: 0 }}>
           <button
@@ -618,7 +630,7 @@ export const App: React.FC = () => {
                 </div>
               </>
             )}
-            <main className="app-main" role="main">
+            <main id="main-content" className="app-main" role="main" {...swipeHandlers}>
           <Suspense fallback={<div className="card" style={{ padding: 24, textAlign: "center", color: "var(--text-muted)" }}>로딩 중...</div>}>
           {tab === "dashboard" && <DashboardView />}
           {tab === "accounts" && (

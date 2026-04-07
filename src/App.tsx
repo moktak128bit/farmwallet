@@ -60,7 +60,7 @@ import { useFxRateValue } from "./context/FxRateContext";
 import { useTickerDatabase } from "./hooks/useTickerDatabase";
 import { useKeyboardShortcuts } from "./hooks/useKeyboardShortcuts";
 import { usePortfolioWorker } from "./hooks/usePortfolioWorker";
-import { APP_VERSION } from "./constants/config";
+import { APP_VERSION, BUILD_HASH } from "./constants/config";
 import { saveToGist, getGistToken, getGistId, setGistLastPushAt, isGistConfigured, GIST_CONFIG_CHANGE_EVENT } from "./services/gistSync";
 import { toUserDataJson } from "./services/dataService";
 import { useGistSync } from "./hooks/useGistSync";
@@ -74,6 +74,7 @@ export const App: React.FC = () => {
   const [isPushingToGit, setIsPushingToGit] = useState(false);
   const [isPullingFromGit, setIsPullingFromGit] = useState(false);
   const [showGistVersionModal, setShowGistVersionModal] = useState(false);
+  const [newVersionAvailable, setNewVersionAvailable] = useState(false);
 
   // Gist 설정 반응형 상태 — Settings에서 변경 시 헤더 버튼 즉시 갱신
   const [hasGistToken, setHasGistToken] = useState(() => !!getGistToken());
@@ -86,6 +87,24 @@ export const App: React.FC = () => {
     };
     window.addEventListener(GIST_CONFIG_CHANGE_EVENT, handler);
     return () => window.removeEventListener(GIST_CONFIG_CHANGE_EVENT, handler);
+  }, []);
+
+  // 프로덕션 자동 버전 감지 — 5분마다 build-meta.json 확인
+  useEffect(() => {
+    if (import.meta.env.DEV) return;
+    const checkForUpdate = async () => {
+      try {
+        const res = await fetch(`${import.meta.env.BASE_URL}build-meta.json`, { cache: "no-store" });
+        if (!res.ok) return;
+        const meta = await res.json() as { hash?: string };
+        if (meta.hash && meta.hash !== BUILD_HASH) {
+          setNewVersionAvailable(true);
+        }
+      } catch { /* ignore */ }
+    };
+    const tid = setTimeout(checkForUpdate, 30_000);
+    const iid = setInterval(checkForUpdate, 5 * 60_000);
+    return () => { clearTimeout(tid); clearInterval(iid); };
   }, []);
 
   const [pendingAction, setPendingAction] = useState<{
@@ -419,6 +438,11 @@ export const App: React.FC = () => {
               <div className="pill muted">백업 기록 없음</div>
             )}
           </div>
+          {newVersionAvailable && (
+            <div className="pill success" style={{ cursor: "pointer", fontWeight: 600 }} onClick={() => window.location.reload()}>
+              새 버전이 배포되었습니다 — 클릭하여 적용
+            </div>
+          )}
           {backupWarning && (
             <div className={`pill ${backupWarning.type === "critical" ? "warning" : "muted"}`}>
               {backupWarning.message}
@@ -521,37 +545,43 @@ export const App: React.FC = () => {
               >
                 Gist 불러오기
               </button>
-              {import.meta.env.DEV && (
-                <button
-                  type="button"
-                  className="secondary"
-                  disabled={isPullingFromGit}
-                  onClick={() => withConfirm({
-                    title: "업데이트",
-                    message: "원격에서 최신 코드를 내려받습니다. 완료 후 F5로 새로고침이 필요합니다.",
-                    confirmLabel: "업데이트",
-                    confirmStyle: "danger",
-                    onConfirm: async () => {
-                      setIsPullingFromGit(true);
-                      addAppLog("원격 업데이트 가져오는 중...", "info");
-                      try {
-                        const res = await fetch("/api/git-pull", { method: "POST" });
-                        const json = await res.json();
-                        if (!res.ok) throw new Error(json.error ?? "업데이트 실패");
-                        addAppLog("업데이트 완료. F5로 새로고침하세요.", "success");
-                        toast.success("업데이트 완료 — F5로 새로고침");
-                      } catch (e: any) {
-                        addAppLog(`업데이트 실패: ${e.message}`, "error");
-                        toast.error(e.message ?? "업데이트 실패");
-                      } finally {
-                        setIsPullingFromGit(false);
-                      }
-                    },
-                  })}
-                >
-                  {isPullingFromGit ? "업데이트 중..." : "업데이트"}
-                </button>
-              )}
+              <button
+                type="button"
+                className="secondary"
+                style={newVersionAvailable ? { borderColor: "var(--success, #22c55e)", color: "var(--success, #22c55e)", fontWeight: 600 } : undefined}
+                disabled={isPullingFromGit}
+                onClick={() => {
+                  if (import.meta.env.DEV) {
+                    withConfirm({
+                      title: "업데이트",
+                      message: "원격에서 최신 코드를 내려받습니다. 완료 후 F5로 새로고침이 필요합니다.",
+                      confirmLabel: "업데이트",
+                      confirmStyle: "danger",
+                      onConfirm: async () => {
+                        setIsPullingFromGit(true);
+                        addAppLog("원격 업데이트 가져오는 중...", "info");
+                        try {
+                          const res = await fetch("/api/git-pull", { method: "POST" });
+                          const json = await res.json();
+                          if (!res.ok) throw new Error(json.error ?? "업데이트 실패");
+                          addAppLog("업데이트 완료. F5로 새로고침하세요.", "success");
+                          toast.success("업데이트 완료 — F5로 새로고침");
+                        } catch (e: any) {
+                          addAppLog(`업데이트 실패: ${e.message}`, "error");
+                          toast.error(e.message ?? "업데이트 실패");
+                        } finally {
+                          setIsPullingFromGit(false);
+                        }
+                      },
+                    });
+                  } else {
+                    // 프로덕션: 새 배포 버전으로 페이지 새로고침
+                    window.location.reload();
+                  }
+                }}
+              >
+                {isPullingFromGit ? "업데이트 중..." : newVersionAvailable ? "새 버전 적용" : "업데이트"}
+              </button>
             </div>
             <button
               type="button"

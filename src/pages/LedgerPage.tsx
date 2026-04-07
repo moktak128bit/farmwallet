@@ -1883,12 +1883,11 @@ export const LedgerView: React.FC<Props> = ({
       .map(([cat]) => cat);
   }, [ledgerByTab]);
 
-  // 대분류 선택 시 해당 대분류의 중분류 목록 (빈도순)
+  // 중분류 목록 (빈도순) — 대분류 선택 시 해당 대분류만, 미선택 시 전체
   const subCategoriesInTab = useMemo(() => {
-    if (!filterMainCategory) return [];
     const counts = new Map<string, number>();
     for (const l of ledgerByTab) {
-      if (l.category !== filterMainCategory) continue;
+      if (filterMainCategory && l.category !== filterMainCategory) continue;
       const sub = l.subCategory?.trim();
       if (sub) counts.set(sub, (counts.get(sub) || 0) + 1);
     }
@@ -1897,12 +1896,12 @@ export const LedgerView: React.FC<Props> = ({
       .map(([sub]) => sub);
   }, [ledgerByTab, filterMainCategory]);
 
-  // 중분류 선택 시 해당 중분류의 소분류 목록 (빈도순)
+  // 소분류 목록 (빈도순) — 중분류 선택 시 해당 중분류만, 미선택 시 전체
   const detailCategoriesInTab = useMemo(() => {
-    if (!filterMainCategory || !filterSubCategory) return [];
     const counts = new Map<string, number>();
     for (const l of ledgerByTab) {
-      if (l.category !== filterMainCategory || l.subCategory !== filterSubCategory) continue;
+      if (filterMainCategory && l.category !== filterMainCategory) continue;
+      if (filterSubCategory && l.subCategory !== filterSubCategory) continue;
       const det = l.detailCategory?.trim();
       if (det) counts.set(det, (counts.get(det) || 0) + 1);
     }
@@ -2933,10 +2932,10 @@ export const LedgerView: React.FC<Props> = ({
           </div>
         )}
 
-        {/* 중분류 필터 — 대분류 선택 시 해당 중분류 표시 */}
+        {/* 중분류 필터 — 대분류 선택 시 표시 */}
         {filterMainCategory && subCategoriesInTab.length > 1 && (
           <div style={{ marginBottom: 12 }}>
-            <div style={{ fontSize: 12, fontWeight: 600, color: "var(--text-muted)", marginBottom: 6 }}>중분류 ({filterMainCategory})</div>
+            <div style={{ fontSize: 12, fontWeight: 600, color: "var(--text-muted)", marginBottom: 6 }}>중분류{filterMainCategory ? ` (${filterMainCategory})` : ""}</div>
             <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
               <button
                 type="button"
@@ -2977,10 +2976,10 @@ export const LedgerView: React.FC<Props> = ({
           </div>
         )}
 
-        {/* 소분류 필터 — 중분류 선택 시 해당 소분류 표시 */}
+        {/* 소분류 필터 — 중분류 선택 시 표시 */}
         {filterSubCategory && detailCategoriesInTab.length > 1 && (
           <div style={{ marginBottom: 12 }}>
-            <div style={{ fontSize: 12, fontWeight: 600, color: "var(--text-muted)", marginBottom: 6 }}>소분류 ({filterSubCategory})</div>
+            <div style={{ fontSize: 12, fontWeight: 600, color: "var(--text-muted)", marginBottom: 6 }}>소분류{filterSubCategory ? ` (${filterSubCategory})` : ""}</div>
             <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
               <button
                 type="button"
@@ -3181,38 +3180,73 @@ export const LedgerView: React.FC<Props> = ({
       </div>
       {viewMode === "monthly" && (
           <>
-            <button
-              type="button"
-              className="secondary"
-              onClick={() => {
-                const k = getKoreaTime();
-                const yyyy = k.getFullYear();
-                const mm = String(k.getMonth() + 1).padStart(2, "0");
-                setSelectedMonths(new Set([`${yyyy}-${mm}`]));
-                setCurrentYear(String(yyyy));
-              }}
-              style={{ padding: "6px 10px", fontSize: 13 }}
-            >
-              이번 달
-            </button>
-            <select
-              value={currentYear}
-              onChange={(e) => setCurrentYear(e.target.value)}
-              style={{
-                padding: "8px 12px",
-                borderRadius: "8px",
-                border: "1px solid var(--border)"
-              }}
-            >
-              {availableYears.map((year) => {
-                const monthCount = availableMonthsByYear.get(year)?.length || 0;
-                return (
-                  <option key={year} value={year}>
-                    {year}년 {monthCount > 0 ? `(${monthCount}개월)` : ""}
-                  </option>
-                );
-              })}
-            </select>
+            {/* 년/월 화살표 네비게이션 */}
+            <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+              <button
+                type="button"
+                className="secondary"
+                onClick={() => {
+                  const k = getKoreaTime();
+                  const yyyy = k.getFullYear();
+                  const mm = String(k.getMonth() + 1).padStart(2, "0");
+                  setSelectedMonths(new Set([`${yyyy}-${mm}`]));
+                  setCurrentYear(String(yyyy));
+                }}
+                style={{ padding: "6px 10px", fontSize: 13 }}
+              >
+                이번 달
+              </button>
+              <button
+                type="button"
+                className="icon-button"
+                style={{ width: 32, height: 32, border: "1px solid var(--border)", borderRadius: 8, fontSize: 16, cursor: "pointer" }}
+                onClick={() => {
+                  let y = Number(currentYear);
+                  // 현재 선택된 월 중 가장 이른 월을 기준으로 이전 달로 이동
+                  const sorted = [...selectedMonths].sort();
+                  if (sorted.length > 0) {
+                    const [sy, sm] = sorted[0].split("-").map(Number);
+                    const prev = sm === 1 ? `${sy - 1}-12` : `${sy}-${String(sm - 1).padStart(2, "0")}`;
+                    const prevYear = sm === 1 ? String(sy - 1) : String(sy);
+                    setCurrentYear(prevYear);
+                    setSelectedMonths(new Set([prev]));
+                  } else {
+                    const m = 1;
+                    y -= 1;
+                    setCurrentYear(String(y));
+                    setSelectedMonths(new Set([`${y}-${String(m).padStart(2, "0")}`]));
+                  }
+                }}
+              >
+                ◀
+              </button>
+              <span style={{ fontWeight: 700, fontSize: 15, minWidth: 100, textAlign: "center" }}>
+                {currentYear}년
+              </span>
+              <button
+                type="button"
+                className="icon-button"
+                style={{ width: 32, height: 32, border: "1px solid var(--border)", borderRadius: 8, fontSize: 16, cursor: "pointer" }}
+                onClick={() => {
+                  let y = Number(currentYear);
+                  const sorted = [...selectedMonths].sort();
+                  if (sorted.length > 0) {
+                    const [sy, sm] = sorted[sorted.length - 1].split("-").map(Number);
+                    const next = sm === 12 ? `${sy + 1}-01` : `${sy}-${String(sm + 1).padStart(2, "0")}`;
+                    const nextYear = sm === 12 ? String(sy + 1) : String(sy);
+                    setCurrentYear(nextYear);
+                    setSelectedMonths(new Set([next]));
+                  } else {
+                    y += 1;
+                    setCurrentYear(String(y));
+                    setSelectedMonths(new Set([`${y}-01`]));
+                  }
+                }}
+              >
+                ▶
+              </button>
+            </div>
+            {/* 월 선택 그리드 */}
             <div className="month-tabs">
               {Array.from({ length: 12 }).map((_, idx) => {
                 const monthNum = idx + 1;

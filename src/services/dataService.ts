@@ -142,7 +142,7 @@ function getDefaultCategoryPresets(): CategoryPresets {
     },
     {
       main: "식비",
-      subs: ["시장/마트", "외식/배달", "간식", "술/회식", "커피숍", "편의점", "기타식비"]
+      subs: ["시장/마트", "외식/배달", "간식", "술/회식", "카페", "편의점", "기타식비"]
     },
     {
       main: "유류교통비",
@@ -328,6 +328,12 @@ function mergeCategoryPresets(
     savings: savingsList,
     fixed: fixedList
   };
+
+  // 중분류 이름 변경: 커피숍 → 카페
+  expenseDetails = expenseDetails.map((g) => ({
+    ...g,
+    subs: g.subs.map((s) => (s === "커피숍" ? "카페" : s))
+  }));
 
   return {
     income,
@@ -1188,8 +1194,13 @@ export function loadData(): AppData {
     const categoryMigrated = migrateCategoryHierarchy(normalizedLedger);
     const ledgerAfterCatMigration = categoryMigrated.changed ? categoryMigrated.ledger : normalizedLedger;
 
+    // 중분류 이름 변경: 커피숍 → 카페
+    const ledgerAfterSubRename = ledgerAfterCatMigration.map((l) =>
+      l.subCategory === "커피숍" ? { ...l, subCategory: "카페" } : l
+    );
+
     // 재테크 expense와 중복되는 transfer 제거
-    const deduped = deduplicateInvestmentTransfers(ledgerAfterCatMigration);
+    const deduped = deduplicateInvestmentTransfers(ledgerAfterSubRename);
     const finalLedger = deduped.changed ? deduped.ledger : ledgerAfterCatMigration;
 
     // 계좌 cashAdjustment 동적 보정 — 중복 이체가 제거되었을 때만 CSV 기준 재보정

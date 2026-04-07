@@ -211,7 +211,7 @@ function backupApiPlugin(): Plugin {
 
       server.middlewares.use("/api/backup", (req: IncomingMessage, res: ServerResponse, next) => {
         if (req.method === "POST") {
-          let body = "";
+          const chunks: Buffer[] = [];
           let bodyBytes = 0;
           let tooLarge = false;
 
@@ -225,11 +225,12 @@ function backupApiPlugin(): Plugin {
               res.end(JSON.stringify({ error: "Backup payload is too large" }));
               return;
             }
-            body += chunk.toString("utf-8");
+            chunks.push(chunk);
           });
 
           req.on("end", () => {
             if (tooLarge) return;
+            const body = Buffer.concat(chunks).toString("utf-8");
             void (async () => {
               try {
                 JSON.parse(body);
@@ -414,7 +415,7 @@ function backupApiPlugin(): Plugin {
         }
 
         if (req.method === "POST") {
-          let body = "";
+          const tbChunks: Buffer[] = [];
           let tbBytes = 0;
           let tbTooLarge = false;
           req.on("data", (chunk: Buffer) => {
@@ -427,10 +428,11 @@ function backupApiPlugin(): Plugin {
               res.end(JSON.stringify({ error: "Table backup payload is too large" }));
               return;
             }
-            body += chunk.toString("utf-8");
+            tbChunks.push(chunk);
           });
           req.on("end", () => {
             if (tbTooLarge) return;
+            const body = Buffer.concat(tbChunks).toString("utf-8");
             try {
               const parsed = JSON.parse(body) as { tables?: Record<string, unknown[]> };
               if (!fs.existsSync(dataDir)) {
@@ -731,9 +733,10 @@ function backupApiPlugin(): Plugin {
           return;
         }
         if (req.method === "POST") {
-          let body = "";
-          req.on("data", (chunk: Buffer) => { body += chunk.toString(); });
+          const tbkChunks: Buffer[] = [];
+          req.on("data", (chunk: Buffer) => { tbkChunks.push(chunk); });
           req.on("end", () => {
+            const body = Buffer.concat(tbkChunks).toString("utf-8");
             try {
               const parsed = JSON.parse(body) as { tickers?: unknown[] };
               const tickers = Array.isArray(parsed.tickers) ? parsed.tickers : Array.isArray(parsed) ? parsed : [];
@@ -758,11 +761,12 @@ function backupApiPlugin(): Plugin {
       const tickerJsonFile = path.join(process.cwd(), "data", "ticker.json");
       server.middlewares.use("/api/ticker-json", (req: IncomingMessage, res: ServerResponse, next) => {
         if (req.method === "POST") {
-          let body = "";
+          const tjChunks: Buffer[] = [];
           req.on("data", (chunk: Buffer) => {
-            body += chunk.toString();
+            tjChunks.push(chunk);
           });
           req.on("end", () => {
+            const body = Buffer.concat(tjChunks).toString("utf-8");
             try {
               const { ticker, name, market } = JSON.parse(body);
               
@@ -866,13 +870,36 @@ function backupApiPlugin(): Plugin {
   };
 }
 
+import { execSync } from "child_process";
 import packageJson from "./package.json";
 
+const buildHash = (() => {
+  try {
+    return execSync("git rev-parse --short HEAD").toString().trim();
+  } catch {
+    return Date.now().toString(36);
+  }
+})();
+
+function buildMetaPlugin(hash: string): Plugin {
+  return {
+    name: "build-meta",
+    writeBundle(options) {
+      const outDir = options.dir ?? path.join(process.cwd(), "dist");
+      fs.writeFileSync(
+        path.join(outDir, "build-meta.json"),
+        JSON.stringify({ hash, builtAt: new Date().toISOString() })
+      );
+    }
+  };
+}
+
 export default defineConfig({
-  plugins: [react(), backupApiPlugin()],
+  plugins: [react(), backupApiPlugin(), buildMetaPlugin(buildHash)],
   base: "/farmwallet/",
   define: {
-    __APP_VERSION__: JSON.stringify(packageJson.version)
+    __APP_VERSION__: JSON.stringify(packageJson.version),
+    __BUILD_HASH__: JSON.stringify(buildHash)
   },
   build: {
     chunkSizeWarningLimit: 600,

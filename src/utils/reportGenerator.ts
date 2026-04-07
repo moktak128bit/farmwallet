@@ -946,7 +946,7 @@ export function generateConsumptionImpactMonthlyReport(
 // 종합 월간 보고서 (Comprehensive Monthly Summary)
 // ---------------------------------------------------------------------------
 
-/** 수입 카테고리 분류: 허수(정산/용돈/이월/대출/처분소득/지원)를 걸러낸 진짜 수입 */
+/** 수입 카테고리 분류: 허수(정산/용돈/원래 보유 자산/대출/처분소득/지원)를 걸러낸 진짜 수입 */
 const NON_REAL_INCOME_CATEGORIES = new Set([
   "정산", "용돈", "이월", "대출", "처분소득", "지원"
 ]);
@@ -963,7 +963,7 @@ export interface ComprehensiveMonthlyRow {
   totalIncome: number;          // 전체 수입 (장부 기준)
   earnedIncome: number;         // 근로소득 (급여/수당/상여/부수익/기타수입)
   capitalIncome: number;        // 자본소득 (배당/이자/투자수익)
-  nonRealIncome: number;        // 허수 수입 (정산/용돈/이월/대출/처분소득/지원)
+  nonRealIncome: number;        // 허수 수입 (정산/용돈/원래 보유 자산/대출/처분소득/지원)
 
   // ── 지출 ──
   totalExpense: number;         // 전체 지출 (장부 기준)

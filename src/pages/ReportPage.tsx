@@ -388,7 +388,7 @@ export const ReportView: React.FC<Props> = ({ accounts, ledger, trades, prices }
                       <td className="number">{delta(r.capitalIncome, prevRow?.capitalIncome)}</td>
                     </tr>
                     <tr style={{ color: "var(--text-muted)" }}>
-                      <td>허수 수입 <span style={{ fontSize: 12 }}>(정산/용돈/이월/대출/처분소득/지원)</span></td>
+                      <td>허수 수입 <span style={{ fontSize: 12 }}>(정산/용돈/보유자산/대출/처분소득/지원)</span></td>
                       <td className="number">{formatKRW(r.nonRealIncome)}</td>
                       <td className="number">{delta(r.nonRealIncome, prevRow?.nonRealIncome)}</td>
                     </tr>

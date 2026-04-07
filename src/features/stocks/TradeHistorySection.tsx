@@ -13,9 +13,7 @@ const sideLabel: Record<TradeSide, string> = {
   sell: "매도"
 };
 
-const TRADE_ROW_HEIGHT = 52;
-const TRADE_OVERSCAN = 10;
-const TRADE_VIRTUALIZE_THRESHOLD = 200;
+const TRADE_PAGE_SIZE = 50;
 
 type TradeSortKey = "date" | "accountId" | "ticker" | "name" | "side" | "quantity" | "price" | "fee" | "totalAmount";
 
@@ -71,8 +69,7 @@ export const TradeHistorySection: React.FC<TradeHistorySectionProps> = ({
     direction: "desc"
   });
   const tradeViewportRef = useRef<HTMLDivElement | null>(null);
-  const [tradeScrollTop, setTradeScrollTop] = useState(0);
-  const [tradeViewportHeight, setTradeViewportHeight] = useState(560);
+  const [visibleCount, setVisibleCount] = useState(TRADE_PAGE_SIZE);
 
   // Column width ratios (sum to 100): index, date, account, ticker, name, side, quantity, price, fee, total, realized PnL, actions.
   const [columnWidths, setColumnWidths] = useState<number[]>(() => {
@@ -190,58 +187,23 @@ export const TradeHistorySection: React.FC<TradeHistorySectionProps> = ({
     return map;
   }, [sortedTrades]);
 
-  const isTradeVirtualized = sortedTrades.length >= TRADE_VIRTUALIZE_THRESHOLD;
-  const tradeWindow = useMemo(() => {
-    if (!isTradeVirtualized) {
-      return { start: 0, end: sortedTrades.length };
-    }
-    const start = Math.max(0, Math.floor(tradeScrollTop / TRADE_ROW_HEIGHT) - TRADE_OVERSCAN);
-    const end = Math.min(
-      sortedTrades.length,
-      Math.ceil((tradeScrollTop + tradeViewportHeight) / TRADE_ROW_HEIGHT) + TRADE_OVERSCAN
-    );
-    return { start, end };
-  }, [isTradeVirtualized, sortedTrades.length, tradeScrollTop, tradeViewportHeight]);
-
   const visibleTrades = useMemo(
-    () => sortedTrades.slice(tradeWindow.start, tradeWindow.end),
-    [sortedTrades, tradeWindow]
+    () => sortedTrades.slice(0, visibleCount),
+    [sortedTrades, visibleCount]
   );
+  const hasMore = visibleCount < sortedTrades.length;
 
-  const topSpacerHeight = isTradeVirtualized ? tradeWindow.start * TRADE_ROW_HEIGHT : 0;
-  const bottomSpacerHeight = isTradeVirtualized
-    ? Math.max(0, (sortedTrades.length - tradeWindow.end) * TRADE_ROW_HEIGHT)
-    : 0;
-
-  // Keep viewport size synced and scroll highlighted rows into view.
-  useEffect(() => {
-    const viewport = tradeViewportRef.current;
-    if (!viewport) return;
-    setTradeViewportHeight(viewport.clientHeight || 560);
-    if (typeof ResizeObserver === "undefined") return;
-    const observer = new ResizeObserver((entries) => {
-      const entry = entries[0];
-      if (!entry) return;
-      setTradeViewportHeight(entry.contentRect.height);
-    });
-    observer.observe(viewport);
-    return () => observer.disconnect();
-  }, []);
+  // 정렬·필터 변경 시 표시 개수 리셋
+  useEffect(() => { setVisibleCount(TRADE_PAGE_SIZE); }, [tradeSort, filterAccountId]);
 
   const highlightClearTimerRef = useRef<number | null>(null);
   useEffect(() => {
     if (!highlightTradeId || !onClearHighlightTrade) return;
 
+    // 하이라이트 대상이 현재 표시 범위 밖이면 확장
     const highlightIndex = tradeIndexById.get(highlightTradeId);
-    if (highlightIndex != null && isTradeVirtualized) {
-      const viewport = tradeViewportRef.current;
-      if (viewport) {
-        const targetTop = Math.max(
-          0,
-          highlightIndex * TRADE_ROW_HEIGHT - viewport.clientHeight / 2 + TRADE_ROW_HEIGHT / 2
-        );
-        viewport.scrollTo({ top: targetTop, behavior: "smooth" });
-      }
+    if (highlightIndex != null && highlightIndex >= visibleCount) {
+      setVisibleCount(highlightIndex + TRADE_PAGE_SIZE);
     }
 
     const t1 = window.setTimeout(() => {
@@ -262,7 +224,7 @@ export const TradeHistorySection: React.FC<TradeHistorySectionProps> = ({
         highlightClearTimerRef.current = null;
       }
     };
-  }, [highlightTradeId, onClearHighlightTrade, tradeIndexById, isTradeVirtualized]);
+  }, [highlightTradeId, onClearHighlightTrade, tradeIndexById, visibleCount]);
 
   // Persist column width preferences.
   useEffect(() => {
@@ -587,12 +549,7 @@ export const TradeHistorySection: React.FC<TradeHistorySectionProps> = ({
       <div className="card" style={{ padding: 0 }}>
         <div
           ref={tradeViewportRef}
-          onScroll={(e) => setTradeScrollTop((e.currentTarget as HTMLDivElement).scrollTop)}
-          style={{
-            maxHeight: isTradeVirtualized ? "68vh" : undefined,
-            overflowY: isTradeVirtualized ? "auto" : "visible",
-            overflowX: "auto"
-          }}
+          style={{ overflowX: "auto" }}
         >
         <table className="data-table trades-table" style={{ width: "100%", tableLayout: "fixed" }}>
           <colgroup>
@@ -668,13 +625,8 @@ export const TradeHistorySection: React.FC<TradeHistorySectionProps> = ({
             </tr>
           </thead>
           <tbody>
-            {topSpacerHeight > 0 && (
-              <tr aria-hidden>
-                <td colSpan={12} style={{ height: `${topSpacerHeight}px`, padding: 0, border: 0 }} />
-              </tr>
-            )}
             {visibleTrades.map((t, index) => {
-              const actualIndex = tradeWindow.start + index;
+              const actualIndex = index;
               return (
                 <tr
                   key={t.id}
@@ -954,20 +906,22 @@ export const TradeHistorySection: React.FC<TradeHistorySectionProps> = ({
                 </tr>
               );
             })}
-            {bottomSpacerHeight > 0 && (
-              <tr aria-hidden>
-                <td colSpan={12} style={{ height: `${bottomSpacerHeight}px`, padding: 0, border: 0 }} />
-              </tr>
-            )}
           </tbody>
         </table>
         </div>
         {sortedTrades.length > 0 && (
-          <div style={{ marginTop: "12px", padding: "12px", background: "var(--surface)", borderRadius: "8px" }}>
+          <div style={{ marginTop: "12px", padding: "12px", background: "var(--surface)", borderRadius: "8px", display: "flex", justifyContent: "space-between", alignItems: "center" }}>
             <div style={{ fontSize: "14px", color: "var(--text-muted)" }}>
-              총 {sortedTrades.length}건, {Math.min(sortedTrades.length, visibleTrades.length)}행 표시 중
-              {isTradeVirtualized ? " (가상 스크롤)" : ""}
+              총 {sortedTrades.length}건 중 {visibleTrades.length}건 표시
             </div>
+            {hasMore && (
+              <button
+                onClick={() => setVisibleCount(v => Math.min(v + TRADE_PAGE_SIZE, sortedTrades.length))}
+                style={{ padding: "6px 16px", borderRadius: 6, border: "1px solid var(--border)", background: "var(--surface)", color: "var(--text)", cursor: "pointer", fontSize: 13 }}
+              >
+                더보기 ({Math.min(TRADE_PAGE_SIZE, sortedTrades.length - visibleCount)}건)
+              </button>
+            )}
           </div>
         )}
       </div>

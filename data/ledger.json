@@ -1,5 +1,29 @@
 [
   {
+    "id": "L1775566748017",
+    "date": "2026-04-07",
+    "kind": "expense",
+    "isFixedExpense": false,
+    "category": "지출",
+    "subCategory": "의류미용비",
+    "description": "헤어스프레이",
+    "amount": 10480,
+    "fromAccountId": "삼성페이카드",
+    "detailCategory": "화장품"
+  },
+  {
+    "id": "L1775566729619",
+    "date": "2026-04-07",
+    "kind": "expense",
+    "isFixedExpense": false,
+    "category": "지출",
+    "subCategory": "식비",
+    "description": "스타벅스 구매",
+    "amount": 49800,
+    "fromAccountId": "삼성페이카드",
+    "detailCategory": "카페"
+  },
+  {
     "id": "L1775478579580",
     "date": "2025-11-27",
     "kind": "income",
@@ -4929,7 +4953,7 @@
     "subCategory": "구독비",
     "description": "쿠팡",
     "amount": 7890,
-    "fromAccountId": "삼성페이카���",
+    "fromAccountId": "삼성페이카드",
     "detailCategory": "쿠팡"
   },
   {

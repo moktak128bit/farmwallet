@@ -1180,6 +1180,77 @@ label {
   .dashboard-four-col {
     grid-template-columns: repeat(2, 1fr) !important;
   }
+
+  .form-grid {
+    grid-template-columns: 1fr;
+    gap: 14px;
+  }
+
+  .modal {
+    padding: 20px;
+    margin: 8px;
+    max-width: calc(100vw - 16px);
+    border-radius: 12px;
+  }
+
+  .modal-header {
+    margin-bottom: 16px;
+  }
+
+  .card {
+    padding: 16px;
+  }
+
+  h1 { font-size: 22px; }
+  h2 { font-size: 18px; }
+  h3 { font-size: 15px; }
+
+  .recurring-table {
+    min-width: auto !important;
+  }
+}
+
+/* ===== 인사이트/대시보드 반응형 그리드 ===== */
+.grid-4 { display: grid; grid-template-columns: repeat(4,1fr); gap: 16px; }
+.grid-2 { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; }
+
+@media (max-width: 768px) {
+  .grid-4 { grid-template-columns: repeat(2, 1fr); gap: 10px; }
+  .grid-2 { gap: 10px; }
+}
+
+/* ===== 480px 이하: 소형 모바일 ===== */
+@media (max-width: 480px) {
+  .app-root {
+    padding: 10px;
+  }
+
+  .card {
+    padding: 12px;
+    border-radius: 10px;
+  }
+
+  .modal {
+    padding: 16px;
+    margin: 4px;
+    border-radius: 10px;
+  }
+
+  .dashboard-four-col {
+    grid-template-columns: 1fr !important;
+  }
+
+  .grid-4 { grid-template-columns: 1fr !important; }
+  .grid-2 { grid-template-columns: 1fr !important; }
+
+  .app-header {
+    padding-bottom: 10px;
+    margin-bottom: 10px;
+  }
+
+  h1 { font-size: 20px; }
+  h2 { font-size: 16px; }
+  h3 { font-size: 14px; }
 }
 
 /* =========================================

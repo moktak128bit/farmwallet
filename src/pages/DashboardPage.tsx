@@ -2474,8 +2474,10 @@ export const DashboardView: React.FC<Props> = (props) => {
           <div
             style={{
               display: "grid",
-              gridTemplateColumns: "repeat(7, minmax(0, 1fr))",
-              gap: 6
+              gridTemplateColumns: "repeat(7, minmax(36px, 1fr))",
+              gap: 4,
+              overflowX: "auto",
+              minWidth: 0,
             }}
           >
             {DAY_LABELS.map((day) => (

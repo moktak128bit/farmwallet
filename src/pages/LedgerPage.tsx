@@ -1404,11 +1404,20 @@ export const LedgerView: React.FC<Props> = ({
         if (filterMainCategory) {
           if (ledgerTab === "savingsExpense" && filterMainCategory === "재테크") {
             // 재테크 탭에서 재테크 필터: 대분류 필터 생략 (전체 재테크/저축 중분류 표시)
+          } else if (ledgerTab === "income") {
+            // 수입: 대분류 = 수입 유형 (subCategory 또는 category)
+            const incomeType = (l.category === "수입" ? l.subCategory : l.category)?.trim();
+            if (incomeType !== filterMainCategory) return false;
           } else if (l.category !== filterMainCategory) {
             return false;
           }
         }
-        if (filterSubCategory && l.subCategory !== filterSubCategory) return false;
+        if (filterSubCategory) {
+          if (ledgerTab === "income") {
+            // 수입: 중분류 = description
+            if ((l.description?.trim() || "") !== filterSubCategory) return false;
+          } else if (l.subCategory !== filterSubCategory) return false;
+        }
         if (filterDetailCategory && l.detailCategory !== filterDetailCategory) return false;
         return true;
       });
@@ -1872,32 +1881,50 @@ export const LedgerView: React.FC<Props> = ({
   }, [ledgerByTab, accounts]);
 
   // 현재 탭 기준 대분류 목록 (ledgerByTab에 등장하는 category만, 등장 빈도순)
+  // 수입 탭: category가 "수입"이면 subCategory에서, 아니면 category에서 수입 유형 추출
   const categoriesInTab = useMemo(() => {
     const counts = new Map<string, number>();
     for (const l of ledgerByTab) {
-      const cat = l.category?.trim();
+      let cat: string | undefined;
+      if (ledgerTab === "income") {
+        cat = (l.category === "수입" ? l.subCategory : l.category)?.trim();
+      } else {
+        cat = l.category?.trim();
+      }
       if (cat) counts.set(cat, (counts.get(cat) || 0) + 1);
     }
     return [...counts.entries()]
       .sort((a, b) => b[1] - a[1])
       .map(([cat]) => cat);
-  }, [ledgerByTab]);
+  }, [ledgerByTab, ledgerTab]);
 
   // 중분류 목록 (빈도순) — 대분류 선택 시 해당 대분류만, 미선택 시 전체
+  // 수입 탭: 대분류=수입유형이므로 중분류는 description 기반
   const subCategoriesInTab = useMemo(() => {
     const counts = new Map<string, number>();
     for (const l of ledgerByTab) {
-      if (filterMainCategory && l.category !== filterMainCategory) continue;
-      const sub = l.subCategory?.trim();
-      if (sub) counts.set(sub, (counts.get(sub) || 0) + 1);
+      if (ledgerTab === "income") {
+        if (filterMainCategory) {
+          const incomeType = (l.category === "수입" ? l.subCategory : l.category)?.trim();
+          if (incomeType !== filterMainCategory) continue;
+        }
+        const sub = l.description?.trim();
+        if (sub) counts.set(sub, (counts.get(sub) || 0) + 1);
+      } else {
+        if (filterMainCategory && l.category !== filterMainCategory) continue;
+        const sub = l.subCategory?.trim();
+        if (sub) counts.set(sub, (counts.get(sub) || 0) + 1);
+      }
     }
     return [...counts.entries()]
       .sort((a, b) => b[1] - a[1])
       .map(([sub]) => sub);
-  }, [ledgerByTab, filterMainCategory]);
+  }, [ledgerByTab, filterMainCategory, ledgerTab]);
 
   // 소분류 목록 (빈도순) — 중분류 선택 시 해당 중분류만, 미선택 시 전체
+  // 수입 탭: 소분류 없음 (수입은 대분류=수입유형, 중분류=메모)
   const detailCategoriesInTab = useMemo(() => {
+    if (ledgerTab === "income") return [];
     const counts = new Map<string, number>();
     for (const l of ledgerByTab) {
       if (filterMainCategory && l.category !== filterMainCategory) continue;
@@ -1908,7 +1935,7 @@ export const LedgerView: React.FC<Props> = ({
     return [...counts.entries()]
       .sort((a, b) => b[1] - a[1])
       .map(([det]) => det);
-  }, [ledgerByTab, filterMainCategory, filterSubCategory]);
+  }, [ledgerByTab, filterMainCategory, filterSubCategory, ledgerTab]);
 
   const filterFromAccount = filterFromAccountId ? accounts.find((a) => a.id === filterFromAccountId) : null;
   const filterFromAccountName = filterFromAccountId ? (filterFromAccount?.name || filterFromAccount?.id || filterFromAccountId) : null;
@@ -2932,10 +2959,10 @@ export const LedgerView: React.FC<Props> = ({
           </div>
         )}
 
-        {/* 중분류 필터 — 대분류 선택 시 표시 */}
+        {/* 중분류 필터 — 대분류 선택 시 표시 (수입 탭: 메모 기준) */}
         {filterMainCategory && subCategoriesInTab.length > 1 && (
           <div style={{ marginBottom: 12 }}>
-            <div style={{ fontSize: 12, fontWeight: 600, color: "var(--text-muted)", marginBottom: 6 }}>중분류{filterMainCategory ? ` (${filterMainCategory})` : ""}</div>
+            <div style={{ fontSize: 12, fontWeight: 600, color: "var(--text-muted)", marginBottom: 6 }}>{ledgerTab === "income" ? "메모" : "중분류"}{filterMainCategory ? ` (${filterMainCategory})` : ""}</div>
             <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
               <button
                 type="button"

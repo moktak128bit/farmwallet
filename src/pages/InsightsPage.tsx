@@ -840,7 +840,7 @@ function useD(ledger: LedgerEntry[], rawTrades: StockTrade[], accounts: Account[
     for (const l of fInc) {
       const sub = (l.subCategory || l.category || "").trim();
       if (sub === "정산" || sub.includes("정산")) settlementTotal += Number(l.amount);
-      if (sub === "이월" || sub.includes("이월")) originalAssetsFromLedger += Number(l.amount);
+      if (sub === "이월" || sub.includes("이월") || sub === "원래 보유 자산" || sub.includes("보유 자산")) originalAssetsFromLedger += Number(l.amount);
     }
     // 원래 보유 자산: Account.initialBalance 기반 (계좌별 역산)
     const originalAssetsByAcct = accounts
@@ -918,7 +918,7 @@ const OverviewTab = React.memo(function OverviewTab({ d }: { d: D }) {
   const pieCols = ["#f0c040", "#e94560", "#48c9b0"];
 
   return (
-    <div style={{ display: "grid", gridTemplateColumns: "repeat(4,1fr)", gap: 16 }}>
+    <div className="grid-4">
       <Card accent><Kpi label="총 수입" value={F(d.pIncome)} badge={incBadge} color="#f0c040" /></Card>
       <Card accent><Kpi label="총 지출" value={F(d.pExpense)} badge={expBadge} color="#e94560" /></Card>
       <Card accent><Kpi label="총 투자" value={F(d.pInvest)} color="#48c9b0" /></Card>
@@ -926,7 +926,7 @@ const OverviewTab = React.memo(function OverviewTab({ d }: { d: D }) {
 
       {(d.settlementTotal > 0 || d.originalAssets > 0) && (
         <Card title="실질 수입/지출 (정산·원래 보유 자산 제외)" span={4}>
-          <div style={{ display: "grid", gridTemplateColumns: "repeat(4,1fr)", gap: 12, fontSize: 13 }}>
+          <div className="grid-4" style={{ gap: 12, fontSize: 13 }}>
             <div style={{ padding: "12px 14px", background: "#f0fdf4", borderRadius: 10, border: "1px solid #86efac" }}>
               <div style={{ fontSize: 11, color: "#666", marginBottom: 4 }}>실질 수입</div>
               <div style={{ fontSize: 20, fontWeight: 800, color: "#059669" }}>{F(d.realIncome)}</div>
@@ -1075,7 +1075,7 @@ const OverviewTab = React.memo(function OverviewTab({ d }: { d: D }) {
       </Card>
 
       <Card title="종합 인사이트" span={4}>
-        <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12 }}>
+        <div className="grid-2" style={{ gap: 12 }}>
           <Insight title="저축률 분석" color="#059669" bg="#d4edda">
             {d.pSavRate >= 30
               ? `저축률 ${d.pSavRate.toFixed(0)}%로 매우 건강한 수준입니다. 수입 ${F(d.pIncome)} 중 ${F(Math.round(d.pIncome * d.pSavRate / 100))}을 저축하고 있습니다. 이 속도라면 연간 약 ${F(Math.round(d.pIncome * d.pSavRate / 100 * 12 / Math.max(d.months.length, 1)))} 이상 자산 증가가 가능합니다.`
@@ -1195,7 +1195,7 @@ const ExpenseTab = React.memo(function ExpenseTab({ d }: { d: D }) {
   const subAvg = subs.slice(0, 10).map(s => ({ name: s.sub, avg: Math.round(SD(s.amount, d.months.length)) }));
 
   return (
-    <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 16 }}>
+    <div className="grid-2">
       {/* 중분류 파이차트 */}
       <Card title="중분류별 지출 비중">
         <ResponsiveContainer width="100%" height={320}>
@@ -1329,7 +1329,7 @@ const ExpenseTab = React.memo(function ExpenseTab({ d }: { d: D }) {
 
       {/* 인사이트 */}
       <Card title="지출 분석 인사이트" span={2}>
-        <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10 }}>
+        <div className="grid-2" style={{ gap: 10 }}>
           <Insight title="최다 지출 중분류" color="#e94560" bg="#fff5f5">
             {topSub ? `${topSub.sub}에 총 ${F(topSub.amount)} (${topSub.count}건, 건당 평균 ${F(Math.round(SD(topSub.amount, topSub.count)))}). ${d.pExpense > 0 ? `전체 지출의 ${Math.round(SD(topSub.amount, d.pExpense) * 100)}%를 차지합니다.` : ""} ${topSub.count > 10 ? "잦은 소비가 누적되고 있습니다. 건수를 줄이는 것만으로도 효과적입니다." : "고단가 지출이 비중을 높이고 있습니다."}` : "데이터 없음"}
           </Insight>
@@ -1351,7 +1351,7 @@ const ExpenseTab = React.memo(function ExpenseTab({ d }: { d: D }) {
 
       {d.subInsights.length > 0 && (
         <Card title="중분류별 세부 인사이트" span={2}>
-          <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10 }}>
+          <div className="grid-2" style={{ gap: 10 }}>
             {d.subInsights.map((s, i) => (
               <div key={s.sub} style={{ padding: "12px 14px", borderRadius: 10, background: s.monthTrend === "up" ? "#fff5f5" : s.monthTrend === "down" ? "#f0fdf4" : "#f8f9fa", border: `1px solid ${s.monthTrend === "up" ? "#fcc" : s.monthTrend === "down" ? "#86efac" : "#eee"}`, fontSize: 12 }}>
                 <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 6 }}>
@@ -1406,7 +1406,7 @@ const IncomeTab = React.memo(function IncomeTab({ d }: { d: D }) {
   })();
 
   return (
-    <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 16 }}>
+    <div className="grid-2">
       <Card accent><Kpi label="급여 의존도" value={salaryPct.toFixed(1) + "%"} sub="급여가 전체 수입에서 차지하는 비율" color="#f0c040" /></Card>
       <Card accent><Kpi label="비급여 수입" value={F(totalIncome - salary)} sub={`패시브: ${F(passive)} | 기타: ${F(totalIncome - salary - passive)}`} color="#48c9b0" /></Card>
 
@@ -1505,7 +1505,7 @@ const IncomeTab = React.memo(function IncomeTab({ d }: { d: D }) {
 
       {d.incSubInsights.length > 0 && (
         <Card title="수입원별 세부 인사이트" span={2}>
-          <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10 }}>
+          <div className="grid-2" style={{ gap: 10 }}>
             {d.incSubInsights.map((s, i) => (
               <div key={s.sub} style={{ padding: "12px 14px", borderRadius: 10, background: s.monthTrend === "up" ? "#f0fdf4" : s.monthTrend === "down" ? "#fff5f5" : "#f8f9fa", border: `1px solid ${s.monthTrend === "up" ? "#86efac" : s.monthTrend === "down" ? "#fcc" : "#eee"}`, fontSize: 12 }}>
                 <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 6 }}>
@@ -1698,7 +1698,7 @@ const DateTab = React.memo(function DateTab({ d }: { d: D }) {
         </Card>
 
         <Card title="데이트비 종합 인사이트" span={3}>
-          <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12 }}>
+          <div className="grid-2" style={{ gap: 12 }}>
             <Insight title="지출처 분석" color="#e94560" bg="#fff5f5">
               {d.dateTop.length > 0 ? `최다 지출처: ${d.dateTop[0][0]}에 총 ${F(d.dateTop[0][1])} (전체의 ${total > 0 ? Math.round(d.dateTop[0][1] / total * 100) : 0}%).` : "데이터 없음"}
               {d.dateTop.length > 1 ? ` 2위 ${d.dateTop[1][0]}(${F(d.dateTop[1][1])}), ${d.dateTop.length > 2 ? `3위 ${d.dateTop[2][0]}(${F(d.dateTop[2][1])}).` : "."}` : ""}
@@ -1718,7 +1718,7 @@ const DateTab = React.memo(function DateTab({ d }: { d: D }) {
 
         {d.dateSubInsights.length > 0 && (
           <Card title="중분류별 데이트 상세 인사이트" span={3}>
-            <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10 }}>
+            <div className="grid-2" style={{ gap: 10 }}>
               {d.dateSubInsights.map((s, i) => (
                 <div key={s.sub} style={{ padding: "12px 14px", borderRadius: 10, background: "#fff5f5", border: "1px solid #fcc", fontSize: 12 }}>
                   <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 6 }}>
@@ -1763,7 +1763,7 @@ const InvestTab = React.memo(function InvestTab({ d }: { d: D }) {
   const totalDiv = d.divTrend.reduce((s, m) => s + m.amount, 0);
 
   return (
-    <div style={{ display: "grid", gridTemplateColumns: "repeat(4,1fr)", gap: 16 }}>
+    <div className="grid-4">
       <Card accent><Kpi label="총 매수금액" value={F(totalInvested)} color="#f0c040" /></Card>
       <Card accent><Kpi label="실현 손익" value={F(Math.round(d.realPL.total))} sub={d.investReturnRate !== 0 ? `수익률 ${d.investReturnRate.toFixed(1)}%` : undefined} color={d.realPL.total >= 0 ? "#48c9b0" : "#e94560"} /></Card>
       <Card accent><Kpi label="배당/이자 수입" value={F(totalDiv)} sub={totalInvested > 0 ? `배당률 ${(SD(totalDiv, totalInvested) * 100).toFixed(1)}%` : undefined} color="#48c9b0" /></Card>
@@ -1887,7 +1887,7 @@ const InvestTab = React.memo(function InvestTab({ d }: { d: D }) {
       ))}
 
       <Card title="투자 종합 인사이트" span={4}>
-        <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12 }}>
+        <div className="grid-2" style={{ gap: 12 }}>
           {holdOnly[0] && <Insight title="최대 보유 종목 분석" color="#0f3460" bg="#f0f8ff">
             {holdOnly[0].fullName} — 총 매수금액 {F(holdOnly[0].매수)}. 포트폴리오 비중 {totalInvested > 0 ? Math.round(holdOnly[0].매수 / totalInvested * 100) : 0}%.
             {holdOnly[0].매도 > 0 ? ` 일부 매도(${F(holdOnly[0].매도)}) 실행. 실현손익 ${holdOnly[0].실현손익 >= 0 ? "+" : ""}${F(Math.round(holdOnly[0].실현손익))}.` : " 매도 없이 보유 중입니다."}
@@ -1912,7 +1912,7 @@ const InvestTab = React.memo(function InvestTab({ d }: { d: D }) {
 
       {d.investSubInsights.length > 0 && (
         <Card title="재테크 중분류별 상세 인사이트" span={4}>
-          <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10 }}>
+          <div className="grid-2" style={{ gap: 10 }}>
             {d.investSubInsights.map((v, i) => (
               <div key={v.sub} style={{ padding: "12px 14px", borderRadius: 10, background: v.monthTrend === "up" ? "#f0fdf4" : v.monthTrend === "down" ? "#fff5f5" : "#f0f8ff", border: `1px solid ${v.monthTrend === "up" ? "#86efac" : v.monthTrend === "down" ? "#fcc" : "#cce5ff"}`, fontSize: 12 }}>
                 <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 6 }}>
@@ -2037,7 +2037,7 @@ const PatternTab = React.memo(function PatternTab({ d }: { d: D }) {
   const thirdData = [{ name: "상순(1~10)", 지출: byThird[0] }, { name: "중순(11~20)", 지출: byThird[1] }, { name: "하순(21~31)", 지출: byThird[2] }];
 
   return (
-    <div style={{ display: "grid", gridTemplateColumns: "repeat(4,1fr)", gap: 16 }}>
+    <div className="grid-4">
       <Card accent><Kpi label="무지출 일수" value={`${d.zeroDays}일`} sub={`${d.totalDays}일 중`} color="#48c9b0" /></Card>
       <Card accent><Kpi label="일 평균 지출" value={F(avgDaily)} color="#f0c040" /></Card>
       <Card accent><Kpi label="주말 지출 비중" value={weekendPct + "%"} sub={`주말 ${F(d.weekendTot)} / 주중 ${F(d.weekdayTot)}`} color="#e94560" /></Card>
@@ -2110,7 +2110,7 @@ const PatternTab = React.memo(function PatternTab({ d }: { d: D }) {
       </Card>
 
       <Card title="소비 패턴 종합 분석" span={4}>
-        <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12 }}>
+        <div className="grid-2" style={{ gap: 12 }}>
           <Insight title="요일별 소비 패턴" color="#e94560" bg="#f8d7da">
             건당 평균이 가장 높은 요일: {sorted.slice(0, 2).map(w => `${w.name}(${F(w.avg)}, ${w.count}건)`).join(", ")}.
             건당 평균이 가장 낮은 요일: {sorted.slice(-1).map(w => `${w.name}(${F(w.avg)}, ${w.count}건)`).join("")}.
@@ -2134,7 +2134,7 @@ const PatternTab = React.memo(function PatternTab({ d }: { d: D }) {
 
       {d.subInsights.length > 0 && (
         <Card title="중분류별 소비 패턴 상세" span={4}>
-          <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10 }}>
+          <div className="grid-2" style={{ gap: 10 }}>
             {d.subInsights.slice(0, 12).map((s, i) => (
               <div key={s.sub} style={{ padding: "12px 14px", borderRadius: 10, background: s.monthTrend === "up" ? "#fff5f5" : s.monthTrend === "down" ? "#f0fdf4" : "#f8f9fa", border: `1px solid ${s.monthTrend === "up" ? "#fcc" : s.monthTrend === "down" ? "#86efac" : "#eee"}`, fontSize: 12 }}>
                 <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 6 }}>
@@ -2243,7 +2243,7 @@ const VelocityTab = React.memo(function VelocityTab({ d }: { d: D }) {
       </Card>
 
       <Card title="지출 속도 종합 인사이트" span={3}>
-        <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12 }}>
+        <div className="grid-2" style={{ gap: 12 }}>
           {spikeMonth && <Insight title="최고 지출 월 분석" color="#e94560" bg="#f8d7da">
             {d.ml[spikeMonth.m]} — 총 {F(spikeMonth.val)}.
             {avgMonthlySpend > 0 ? ` 평균 대비 ${Math.round(spikeMonth.val / avgMonthlySpend * 100)}% 수준으로 ` : " "}
@@ -2275,7 +2275,7 @@ const VelocityTab = React.memo(function VelocityTab({ d }: { d: D }) {
 
       {d.subInsights.length > 0 && (
         <Card title="중분류별 지출 추세 상세" span={3}>
-          <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10 }}>
+          <div className="grid-2" style={{ gap: 10 }}>
             {d.subInsights.filter(s => s.monthTrend !== "flat").slice(0, 10).map((s, i) => (
               <div key={s.sub} style={{ padding: "12px 14px", borderRadius: 10, background: s.monthTrend === "up" ? "#fff5f5" : "#f0fdf4", border: `1px solid ${s.monthTrend === "up" ? "#fcc" : "#86efac"}`, fontSize: 12 }}>
                 <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 6 }}>

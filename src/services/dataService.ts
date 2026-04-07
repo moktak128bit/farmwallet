@@ -252,7 +252,7 @@ function getDefaultCategoryPresets(): CategoryPresets {
 
   return {
     income: [
-      "이월",
+      "원래 보유 자산",
       "급여",
       "수당",
       "배당",
@@ -335,8 +335,11 @@ function mergeCategoryPresets(
     subs: g.subs.map((s) => (s === "커피숍" ? "카페" : s))
   }));
 
+  // 수입 카테고리 이름 변경: 이월 → 원래 보유 자산
+  const migratedIncome = income.map((c) => (c === "이월" ? "원래 보유 자산" : c));
+
   return {
-    income,
+    income: migratedIncome,
     expense,
     expenseDetails,
     transfer,
@@ -1194,10 +1197,15 @@ export function loadData(): AppData {
     const categoryMigrated = migrateCategoryHierarchy(normalizedLedger);
     const ledgerAfterCatMigration = categoryMigrated.changed ? categoryMigrated.ledger : normalizedLedger;
 
-    // 중분류 이름 변경: 커피숍 → 카페
-    const ledgerAfterSubRename = ledgerAfterCatMigration.map((l) =>
-      l.subCategory === "커피숍" ? { ...l, subCategory: "카페" } : l
-    );
+    // 중분류 이름 변경: 커피숍 → 카페, 이월 → 원래 보유 자산
+    const ledgerAfterSubRename = ledgerAfterCatMigration.map((l) => {
+      let entry = l;
+      if (entry.subCategory === "커피숍") entry = { ...entry, subCategory: "카페" };
+      if (entry.kind === "income" && (entry.category === "이월" || entry.subCategory === "이월")) {
+        entry = { ...entry, category: entry.category === "이월" ? "원래 보유 자산" : entry.category, subCategory: entry.subCategory === "이월" ? "원래 보유 자산" : entry.subCategory };
+      }
+      return entry;
+    });
 
     // 재테크 expense와 중복되는 transfer 제거
     const deduped = deduplicateInvestmentTransfers(ledgerAfterSubRename);

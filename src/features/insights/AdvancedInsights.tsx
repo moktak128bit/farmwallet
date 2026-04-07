@@ -97,12 +97,14 @@ export const WaterfallWidget: React.FC<InsightWidgetProps> = ({
     const salary = ml
       .filter((e) => e.kind === "income" && e.subCategory === "급여")
       .reduce((s, e) => s + e.amount, 0);
+    const isCarryOver = (s: string) => s === "이월" || s.includes("이월") || s === "원래 보유 자산" || s.includes("보유 자산");
     const otherIncome = ml
       .filter(
         (e) =>
           e.kind === "income" &&
           e.subCategory !== "급여" &&
-          e.subCategory !== "이월",
+          !isCarryOver(e.subCategory || "") &&
+          !isCarryOver(e.category || ""),
       )
       .reduce((s, e) => s + e.amount, 0);
     const fixedExp = ml

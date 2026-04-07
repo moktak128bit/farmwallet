@@ -948,7 +948,7 @@ export function generateConsumptionImpactMonthlyReport(
 
 /** 수입 카테고리 분류: 허수(정산/용돈/원래 보유 자산/대출/처분소득/지원)를 걸러낸 진짜 수입 */
 const NON_REAL_INCOME_CATEGORIES = new Set([
-  "정산", "용돈", "이월", "대출", "처분소득", "지원"
+  "정산", "용돈", "이월", "원래 보유 자산", "대출", "처분소득", "지원"
 ]);
 
 /** 자본소득 카테고리 (근로소득과 분리) */

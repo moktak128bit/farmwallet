@@ -150,6 +150,25 @@ a:hover {
    Layout & Containers
    ========================================= */
 
+/* 접근성: 본문 건너뛰기 링크 */
+.skip-link {
+  position: absolute;
+  top: -100%;
+  left: 16px;
+  z-index: 10000;
+  padding: 8px 16px;
+  background: var(--primary, #0d9488);
+  color: #fff;
+  border-radius: 0 0 8px 8px;
+  font-weight: 600;
+  font-size: 14px;
+  text-decoration: none;
+  transition: top 0.2s;
+}
+.skip-link:focus {
+  top: 0;
+}
+
 .app-root {
   max-width: 1600px;
   margin: 0 auto;

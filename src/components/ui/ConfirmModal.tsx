@@ -1,5 +1,6 @@
 import React, { useEffect, useRef } from "react";
 import { AlertTriangle, Info } from "lucide-react";
+import { useFocusTrap } from "../../hooks/useFocusTrap";
 
 interface ConfirmModalProps {
   isOpen: boolean;
@@ -23,6 +24,7 @@ export const ConfirmModal: React.FC<ConfirmModalProps> = ({
   const confirmBtnRef = useRef<HTMLButtonElement>(null);
   const cancelBtnRef = useRef<HTMLButtonElement>(null);
   const isDanger = confirmStyle === "danger";
+  const trapRef = useFocusTrap<HTMLDivElement>(isOpen);
 
   useEffect(() => {
     if (!isOpen) return;
@@ -57,6 +59,7 @@ export const ConfirmModal: React.FC<ConfirmModalProps> = ({
       onClick={(e) => { if (e.target === e.currentTarget) onCancel(); }}
     >
       <div
+        ref={trapRef}
         className="modal"
         role="alertdialog"
         aria-modal="true"

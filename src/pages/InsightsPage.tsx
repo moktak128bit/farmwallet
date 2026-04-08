@@ -500,7 +500,7 @@ function useD(ledger: LedgerEntry[], rawTrades: StockTrade[], accounts: Account[
         if (l.kind !== "income" || l.date?.slice(0, 7) !== m || Number(l.amount) <= 0) continue;
         const sub = l.subCategory || l.category || "";
         if (isCarryOver(sub)) continue;
-        if (salaryKeys.has(l.subCategory || "")) sal += Number(l.amount); else non += Number(l.amount);
+        if (salaryKeys.has(sub)) sal += Number(l.amount); else non += Number(l.amount);
       }
       return { l: ml[m], salary: sal, nonSalary: non };
     });

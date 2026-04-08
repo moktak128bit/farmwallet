@@ -527,7 +527,7 @@ function deduplicateInvestmentTransfers(
   ledger: AppData["ledger"]
 ): { ledger: AppData["ledger"]; changed: boolean } {
   const investments = ledger.filter(
-    (e) => e.kind === "expense" && e.category === "\uC7AC\uD14C\uD06C" // 재테크
+    (e) => e.kind === "expense" && e.category === "재테크"
   );
   if (investments.length === 0) return { ledger, changed: false };
 

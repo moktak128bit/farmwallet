@@ -867,7 +867,7 @@ function useD(ledger: LedgerEntry[], rawTrades: StockTrade[], accounts: Account[
     });
 
     /* ===== 실질 수입/지출 (정산·일시소득 제외) ===== */
-    const NON_REAL_INCOME = new Set(["정산", "용돈", "대출", "처분소득", "지원"]);
+    const NON_REAL_INCOME = new Set(["정산", "용돈", "이월", "원래 보유 자산", "대출", "처분소득", "지원"]);
     let settlementTotal = 0, tempIncomeTotal = 0;
     for (const l of fInc) {
       const sub = (l.subCategory || l.category || "").trim();

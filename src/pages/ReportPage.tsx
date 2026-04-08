@@ -439,11 +439,11 @@ export const ReportView: React.FC<Props> = ({ accounts, ledger, trades, prices }
                       <td className="number">{delta(r.totalExpense, prevRow?.totalExpense)}</td>
                     </tr>
                     {r.nonRealIncome > 0 && (() => {
-                      const realExp = r.livingExpense - (r.nonRealIncome > 0 ? Math.min(r.nonRealIncome, r.livingExpense) * 0 : 0);
+                      const realExp = r.livingExpense - Math.min(r.nonRealIncome, r.livingExpense);
                       return (
                         <tr style={{ fontWeight: 700, color: "var(--chart-expense)" }}>
-                          <td>실질 생활 지출 <span style={{ fontSize: 12, fontWeight: 400, color: "var(--text-muted)" }}>(정산분 차감)</span></td>
-                          <td className="number">{formatKRW(r.livingExpense)}</td>
+                          <td>실질 생활 지출 <span style={{ fontSize: 12, fontWeight: 400, color: "var(--text-muted)" }}>(비실질 수입분 차감)</span></td>
+                          <td className="number">{formatKRW(realExp)}</td>
                           <td className="number"></td>
                         </tr>
                       );

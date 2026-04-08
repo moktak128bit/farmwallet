@@ -388,7 +388,7 @@ export const ReportView: React.FC<Props> = ({ accounts, ledger, trades, prices }
                       <td className="number">{delta(r.capitalIncome, prevRow?.capitalIncome)}</td>
                     </tr>
                     <tr style={{ color: "var(--text-muted)" }}>
-                      <td>허수 수입 <span style={{ fontSize: 12 }}>(정산/용돈/보유자산/대출/처분소득/지원)</span></td>
+                      <td>일시·비실질 수입 <span style={{ fontSize: 12 }}>(정산/용돈/지원/대출/처분소득)</span></td>
                       <td className="number">{formatKRW(r.nonRealIncome)}</td>
                       <td className="number">{delta(r.nonRealIncome, prevRow?.nonRealIncome)}</td>
                     </tr>
@@ -438,6 +438,16 @@ export const ReportView: React.FC<Props> = ({ accounts, ledger, trades, prices }
                       <td className="number">{formatKRW(r.totalExpense)}</td>
                       <td className="number">{delta(r.totalExpense, prevRow?.totalExpense)}</td>
                     </tr>
+                    {r.nonRealIncome > 0 && (() => {
+                      const realExp = r.livingExpense - (r.nonRealIncome > 0 ? Math.min(r.nonRealIncome, r.livingExpense) * 0 : 0);
+                      return (
+                        <tr style={{ fontWeight: 700, color: "var(--chart-expense)" }}>
+                          <td>실질 생활 지출 <span style={{ fontSize: 12, fontWeight: 400, color: "var(--text-muted)" }}>(정산분 차감)</span></td>
+                          <td className="number">{formatKRW(r.livingExpense)}</td>
+                          <td className="number"></td>
+                        </tr>
+                      );
+                    })()}
                   </tbody>
                 </table>
               </div>
@@ -518,18 +528,18 @@ export const ReportView: React.FC<Props> = ({ accounts, ledger, trades, prices }
                 <h4 style={{ margin: "0 0 12px" }}>핵심 지표</h4>
                 <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(200px, 1fr))", gap: 16 }}>
                   <div>
-                    <div style={{ fontSize: 13, color: "var(--text-muted)" }}>진짜 순수입</div>
+                    <div style={{ fontSize: 13, color: "var(--text-muted)" }}>실질 순수입</div>
                     <div style={{ fontSize: 22, fontWeight: 700, color: r.realNet >= 0 ? "var(--positive)" : "var(--negative)" }}>
                       {signedKRW(r.realNet)}
                     </div>
-                    <div style={{ fontSize: 12, color: "var(--text-muted)" }}>근로소득 - 생활소비</div>
+                    <div style={{ fontSize: 12, color: "var(--text-muted)" }}>근로소득 − 생활소비 (정산 차감)</div>
                   </div>
                   <div>
-                    <div style={{ fontSize: 13, color: "var(--text-muted)" }}>진짜 저축률</div>
+                    <div style={{ fontSize: 13, color: "var(--text-muted)" }}>실질 저축률</div>
                     <div style={{ fontSize: 22, fontWeight: 700 }}>
                       {r.realSavingsRate != null ? `${r.realSavingsRate.toFixed(1)}%` : "-"}
                     </div>
-                    <div style={{ fontSize: 12, color: "var(--text-muted)" }}>진짜 순수입 / 근로소득</div>
+                    <div style={{ fontSize: 12, color: "var(--text-muted)" }}>실질 순수입 / 근로소득</div>
                   </div>
                   <div>
                     <div style={{ fontSize: 13, color: "var(--text-muted)" }}>장부 순수입</div>

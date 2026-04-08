@@ -198,6 +198,7 @@ interface D {
   settlementTotal: number;
   originalAssets: number;
   originalAssetsByAcct: { name: string; amount: number }[];
+  tempIncomeTotal: number;
   /* ---- 계산 지표 ---- */
   netProfit: number;
   realSavRate: number;
@@ -860,11 +861,13 @@ function useD(ledger: LedgerEntry[], rawTrades: StockTrade[], accounts: Account[
       return { sub: v.sub, amount: v.amount, count: v.count, avg, share, monthAvg, monthTrend: ivTrend, mom: ivMom, comment: cs.join(" ") };
     });
 
-    /* ===== 정산 제외 실질 수입/지출 + 원래 보유 자산 ===== */
-    let settlementTotal = 0;
+    /* ===== 실질 수입/지출 (정산·일시소득 제외) ===== */
+    const NON_REAL_INCOME = new Set(["정산", "용돈", "대출", "처분소득", "지원"]);
+    let settlementTotal = 0, tempIncomeTotal = 0;
     for (const l of fInc) {
       const sub = (l.subCategory || l.category || "").trim();
       if (sub === "정산" || sub.includes("정산")) settlementTotal += Number(l.amount);
+      else if (NON_REAL_INCOME.has(sub)) tempIncomeTotal += Number(l.amount);
     }
     // 원래 보유 자산: Account.initialBalance 기반 (계좌별)
     const originalAssetsByAcct = accounts
@@ -872,8 +875,9 @@ function useD(ledger: LedgerEntry[], rawTrades: StockTrade[], accounts: Account[
       .map(a => ({ name: a.name, amount: a.initialBalance ?? 0 }))
       .sort((a, b) => b.amount - a.amount);
     const originalAssets = originalAssetsByAcct.reduce((s, a) => s + a.amount, 0);
-    // 실질 수입: 정산(비용 분담 회수) 제외 (이월은 마이그레이션에서 계좌 초기잔액으로 이동됨)
-    const realIncome = pIncome - settlementTotal;
+    // 실질 수입: 정산 + 일시소득(용돈/지원 등) 제외 → 진짜 내 힘으로 번 돈
+    const realIncome = pIncome - settlementTotal - tempIncomeTotal;
+    // 실질 지출: 정산분 차감 → 실제 부담한 금액
     const realExpense = pExpense - settlementTotal;
 
     /* ===== 추가 계산 지표 ===== */
@@ -1015,7 +1019,7 @@ function useD(ledger: LedgerEntry[], rawTrades: StockTrade[], accounts: Account[
       score: { total: scorePts, grade, comment: comments[grade] || "" }, prev, avgMonthExp,
       incByGroup, investBySub, dateByDetail, stockTrends,
       subInsights, incSubInsights, dateSubInsights, investSubInsights,
-      realIncome, realExpense, settlementTotal, originalAssets, originalAssetsByAcct,
+      realIncome, realExpense, settlementTotal, tempIncomeTotal, originalAssets, originalAssetsByAcct,
       netProfit, realSavRate, passiveIncome, expToIncRatio, dailyAvgExp, netCashFlow,
       incomeStability, investReturnRate, subTotal, fixedExpense, variableExpense,
       netWorthByMonth, accountBalances, assetAllocation, funStats,
@@ -1040,51 +1044,42 @@ const OverviewTab = React.memo(function OverviewTab({ d }: { d: D }) {
 
   return (
     <div className="grid-4">
-      <Card accent><Kpi label="총 수입" value={F(d.pIncome)} badge={incBadge} color="#f0c040" /></Card>
-      <Card accent><Kpi label="총 지출" value={F(d.pExpense)} badge={expBadge} color="#e94560" /></Card>
-      <Card accent><Kpi label="총 투자" value={F(d.pInvest)} color="#48c9b0" /></Card>
-      <Card accent><Kpi label="저축률" value={d.pSavRate.toFixed(1) + "%"} sub={`월평균 지출 ${F(Math.round(d.avgMonthExp))}`} color="#fff" /></Card>
+      {/* 실질 기준 KPI (정산/일시소득 제외) */}
+      <Card accent><Kpi label="실질 수입" value={F(d.realIncome)} sub={d.settlementTotal > 0 ? `정산 ${F(d.settlementTotal)} 제외` : "근로+투자 소득"} color="#f0c040" /></Card>
+      <Card accent><Kpi label="실질 지출" value={F(d.realExpense)} sub={d.settlementTotal > 0 ? `정산분 차감 반영` : ""} badge={expBadge} color="#e94560" /></Card>
+      <Card accent><Kpi label="실질 순수익" value={F(d.netProfit)} sub="실질수입 − 실질지출" color={d.netProfit >= 0 ? "#48c9b0" : "#e94560"} /></Card>
+      <Card accent><Kpi label="실질 저축률" value={d.realSavRate.toFixed(1) + "%"} sub={`월평균 지출 ${F(Math.round(d.avgMonthExp))}`} color="#fff" /></Card>
 
-      {(d.settlementTotal > 0 || d.originalAssets > 0) && (
-        <Card title="실질 수입/지출 (정산·원래 보유 자산 제외)" span={4}>
-          <div className="grid-4" style={{ gap: 12, fontSize: 13 }}>
-            <div style={{ padding: "12px 14px", background: "#f0fdf4", borderRadius: 10, border: "1px solid #86efac" }}>
-              <div style={{ fontSize: 11, color: "#666", marginBottom: 4 }}>실질 수입</div>
-              <div style={{ fontSize: 20, fontWeight: 800, color: "#059669" }}>{F(d.realIncome)}</div>
-              <div style={{ fontSize: 11, color: "#999", marginTop: 4 }}>정산({F(d.settlementTotal)}), 보유자산({F(d.originalAssets)}) 제외</div>
-            </div>
-            <div style={{ padding: "12px 14px", background: "#fff5f5", borderRadius: 10, border: "1px solid #fcc" }}>
-              <div style={{ fontSize: 11, color: "#666", marginBottom: 4 }}>실질 지출</div>
-              <div style={{ fontSize: 20, fontWeight: 800, color: "#e94560" }}>{F(d.realExpense)}</div>
-              <div style={{ fontSize: 11, color: "#999", marginTop: 4 }}>정산분({F(d.settlementTotal)}) 차감 반영</div>
-            </div>
-            <div style={{ padding: "12px 14px", background: "#f0f8ff", borderRadius: 10, border: "1px solid #bde" }}>
-              <div style={{ fontSize: 11, color: "#666", marginBottom: 4 }}>실질 저축률</div>
-              <div style={{ fontSize: 20, fontWeight: 800, color: "#2563eb" }}>{d.realIncome > 0 ? ((d.realIncome - d.realExpense) / d.realIncome * 100).toFixed(1) : "0"}%</div>
-              <div style={{ fontSize: 11, color: "#999", marginTop: 4 }}>원래 보유 자산은 수입이 아니므로 제외</div>
-            </div>
-            <div style={{ padding: "12px 14px", background: "#fdf5e6", borderRadius: 10, border: "1px solid #f0c040" }}>
-              <div style={{ fontSize: 11, color: "#666", marginBottom: 4 }}>실질 순수익</div>
-              <div style={{ fontSize: 20, fontWeight: 800, color: d.realIncome - d.realExpense >= 0 ? "#059669" : "#e94560" }}>{F(d.realIncome - d.realExpense)}</div>
-              <div style={{ fontSize: 11, color: "#999", marginTop: 4 }}>정산 차감, 보유자산 제외 기준</div>
-            </div>
+      {/* 장부 vs 실질 비교 */}
+      <Card title="장부 vs 실질 비교 (왜 다른가?)" span={4}>
+        <div className="grid-4" style={{ gap: 12, fontSize: 13 }}>
+          <div style={{ padding: "12px 14px", background: "#f0fdf4", borderRadius: 10, border: "1px solid #86efac" }}>
+            <div style={{ fontSize: 11, color: "#666", marginBottom: 4 }}>장부 수입 (전체)</div>
+            <div style={{ fontSize: 18, fontWeight: 700, color: "#059669" }}>{F(d.pIncome)}</div>
+            <div style={{ fontSize: 11, color: "#666", marginTop: 4 }}>→ 실질 수입: {F(d.realIncome)}</div>
           </div>
-          {d.originalAssetsByAcct.length > 0 && (
-            <div style={{ marginTop: 12, padding: "12px 16px", background: "#f8f9fa", borderRadius: 10, border: "1px solid #eee" }}>
-              <div style={{ fontSize: 12, fontWeight: 700, color: "#555", marginBottom: 8 }}>계좌별 원래 보유 자산 (가계부 시작 시점 잔액)</div>
-              <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(180px, 1fr))", gap: 8 }}>
-                {d.originalAssetsByAcct.map(a => (
-                  <div key={a.name} style={{ display: "flex", justifyContent: "space-between", padding: "6px 10px", background: "#fff", borderRadius: 6, border: "1px solid #eee", fontSize: 12 }}>
-                    <span style={{ color: "#666" }}>{a.name}</span>
-                    <span style={{ fontWeight: 700, color: "#0f3460" }}>{F(a.amount)}</span>
-                  </div>
-                ))}
-              </div>
-              <div style={{ fontSize: 11, color: "#999", marginTop: 6 }}>합계: {W(d.originalAssets)} — 이 금액은 새로 번 소득이 아니라 기존에 보유하고 있던 자산입니다</div>
+          <div style={{ padding: "12px 14px", background: "#fff5f5", borderRadius: 10, border: "1px solid #fcc" }}>
+            <div style={{ fontSize: 11, color: "#666", marginBottom: 4 }}>장부 지출 (전체)</div>
+            <div style={{ fontSize: 18, fontWeight: 700, color: "#e94560" }}>{F(d.pExpense)}</div>
+            <div style={{ fontSize: 11, color: "#666", marginTop: 4 }}>→ 실질 지출: {F(d.realExpense)}</div>
+          </div>
+          {d.settlementTotal > 0 && (
+            <div style={{ padding: "12px 14px", background: "#fdf5e6", borderRadius: 10, border: "1px solid #f0c040" }}>
+              <div style={{ fontSize: 11, color: "#666", marginBottom: 4 }}>정산 (비용분담 회수)</div>
+              <div style={{ fontSize: 18, fontWeight: 700, color: "#d97706" }}>{F(d.settlementTotal)}</div>
+              <div style={{ fontSize: 11, color: "#666", marginTop: 4 }}>수입·지출 양쪽에서 차감</div>
             </div>
           )}
-        </Card>
-      )}
+          <div style={{ padding: "12px 14px", background: "#f0f8ff", borderRadius: 10, border: "1px solid #bde" }}>
+            <div style={{ fontSize: 11, color: "#666", marginBottom: 4 }}>패시브 수입</div>
+            <div style={{ fontSize: 18, fontWeight: 700, color: "#2563eb" }}>{F(d.passiveIncome)}</div>
+            <div style={{ fontSize: 11, color: "#666", marginTop: 4 }}>배당·이자 등 투자수익</div>
+          </div>
+        </div>
+        <div style={{ marginTop: 10, fontSize: 11, color: "#999", lineHeight: 1.6, padding: "8px 12px", background: "#f8f9fa", borderRadius: 8 }}>
+          실질 수입 = 장부 수입 − 정산 − 일시소득(용돈·지원 등). 실질 지출 = 장부 지출 − 정산분. 저축률은 실질 기준으로 계산해야 진짜 재산 형성 능력을 알 수 있습니다.
+        </div>
+      </Card>
 
       <Card title="핵심 재무 지표" span={4}>
         <div style={{ display: "grid", gridTemplateColumns: "repeat(5,1fr)", gap: 10 }}>
@@ -1615,12 +1610,12 @@ const IncomeTab = React.memo(function IncomeTab({ d }: { d: D }) {
           <Insight title="수입 다각화 점검" color="#b45309" bg="#fff3cd">
             {d.incByCat.length}개 수입원 보유. {salaryPct > 80 ? `급여 의존도 ${salaryPct.toFixed(0)}%로 매우 높습니다. 급여 외 수입이 ${F(totalIncome - salary)}에 불과합니다. 부업, 투자 수입, 프리랜서 활동 등으로 다각화하면 경제적 안정성이 높아집니다.` : salaryPct > 50 ? `급여 비중 ${salaryPct.toFixed(0)}%로 적정 수준입니다. 비급여 수입(${F(totalIncome - salary)})이 있어 좋은 구조입니다.` : `급여 의존도 ${salaryPct.toFixed(0)}%로 매우 낮습니다. 훌륭한 수입 다각화! 여러 수입원에서 골고루 수입이 발생하고 있습니다.`}
           </Insight>
-          {(d.settlementTotal > 0 || d.originalAssets > 0) && (
-            <Insight title="실질 수입 (정산·보유자산 제외)" color="#7c3aed" bg="rgba(139,92,246,0.08)">
-              실질 수입 {F(d.realIncome)} (정산 {F(d.settlementTotal)}, 원래 보유 자산 {F(d.originalAssets)} 제외). 원래 보유 자산은 가계부 시작 시점에 이미 갖고 있던 돈이므로 새로운 수입이 아닙니다. 정산은 비용 분담금 회수이므로 실질 소비에서도 차감됩니다.
-              {d.originalAssetsByAcct.length > 0 && ` 계좌별: ${d.originalAssetsByAcct.slice(0, 3).map(a => `${a.name}(${F(a.amount)})`).join(", ")}${d.originalAssetsByAcct.length > 3 ? ` 외 ${d.originalAssetsByAcct.length - 3}개` : ""}.`}
-            </Insight>
-          )}
+          <Insight title="실질 수입 분석 (진짜 내 힘으로 번 돈)" color="#7c3aed" bg="rgba(139,92,246,0.08)">
+            실질 수입 {F(d.realIncome)} = 장부 수입 {F(d.pIncome)}{d.settlementTotal > 0 ? ` − 정산 ${F(d.settlementTotal)}` : ""}{d.tempIncomeTotal > 0 ? ` − 일시소득 ${F(d.tempIncomeTotal)}` : ""}.
+            {" "}급여·수당 등 규칙적인 근로소득이 재산을 형성하는 진짜 소득입니다.
+            {d.passiveIncome > 0 && ` 패시브 수입(배당·이자) ${F(d.passiveIncome)}은 투자가 벌어다 주는 돈입니다.`}
+            {" "}실질 저축률 {d.realSavRate.toFixed(1)}% (실질수입 − 실질지출 기준).
+          </Insight>
         </div>
       </Card>
 

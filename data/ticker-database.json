@@ -30,11 +30,6 @@
     "market": "KR"
   },
   {
-    "ticker": "000050",
-    "name": "PLUS 미국AI에이전트",
-    "market": "KR"
-  },
-  {
     "ticker": "000070",
     "name": "삼양홀딩스",
     "market": "KR"
@@ -257,6 +252,11 @@
   {
     "ticker": "0007G0",
     "name": "PLUS 글로벌원자력밸류체인",
+    "market": "KR"
+  },
+  {
+    "ticker": "0007J0",
+    "name": "Inventera",
     "market": "KR"
   },
   {
@@ -1333,11 +1333,6 @@
   {
     "ticker": "005380",
     "name": "현대자동차",
-    "market": "KR"
-  },
-  {
-    "ticker": "0053L0",
-    "name": "TIGER 차이나휴머노이드로봇",
     "market": "KR"
   },
   {
@@ -2613,14 +2608,14 @@
     "market": "KR"
   },
   {
-    "ticker": "0167b0",
+    "ticker": "0167B0",
     "name": "SOL 200타겟위클리커버드콜",
     "market": "KR",
     "exchange": "KOSPI"
   },
   {
-    "ticker": "0167z0",
-    "name": "0167z0",
+    "ticker": "0167Z0",
+    "name": "Samsung Kodex Us Aerospace Etf",
     "market": "KR",
     "exchange": "KOSPI"
   },
@@ -23115,11 +23110,6 @@
     "market": "CRYPTO"
   },
   {
-    "ticker": "ETHEREUM",
-    "name": "ETH",
-    "market": "CRYPTO"
-  },
-  {
     "ticker": "ETHM",
     "name": "ETHM",
     "market": "US",
@@ -36951,7 +36941,7 @@
   },
   {
     "ticker": "MSFT",
-    "name": "Microsoft Corporation",
+    "name": "MSFT",
     "market": "US",
     "exchange": "NYSE"
   },
@@ -48261,11 +48251,6 @@
   },
   {
     "ticker": "solana",
-    "name": "SOL",
-    "market": "CRYPTO"
-  },
-  {
-    "ticker": "SOLANA",
     "name": "SOL",
     "market": "CRYPTO"
   },

@@ -4,10 +4,10 @@
     "name": "농협CMA",
     "institution": "나무증권",
     "type": "securities",
-    "initialBalance": 83667,
+    "initialBalance": 0,
     "debt": 0,
     "savings": 0,
-    "initialCashBalance": -500369,
+    "initialCashBalance": -322928,
     "currency": "KRW",
     "usdBalance": 516,
     "krwBalance": 0,
@@ -18,10 +18,10 @@
     "name": "ISA농협",
     "institution": "나무증권",
     "type": "securities",
-    "initialBalance": -12961940,
+    "initialBalance": 0,
     "debt": 0,
     "savings": 0,
-    "initialCashBalance": -1696826,
+    "initialCashBalance": -3791968,
     "usdBalance": 0,
     "krwBalance": 0,
     "cashAdjustment": 0
@@ -34,7 +34,7 @@
     "initialBalance": 0,
     "debt": 0,
     "savings": 0,
-    "initialCashBalance": 2136,
+    "initialCashBalance": -4874,
     "usdBalance": 0,
     "cashAdjustment": 0
   },
@@ -43,7 +43,7 @@
     "name": "농협입출금계좌",
     "institution": "지역농축협",
     "type": "checking",
-    "initialBalance": 10101131,
+    "initialBalance": 10412918,
     "debt": 0,
     "savings": 0,
     "cashAdjustment": 0
@@ -53,7 +53,7 @@
     "name": "KB나라사랑은행",
     "institution": "국민은행",
     "type": "checking",
-    "initialBalance": 1703,
+    "initialBalance": 2,
     "debt": 0,
     "savings": 0,
     "cashAdjustment": 0
@@ -71,8 +71,8 @@
     "id": "카카오페이",
     "name": "카카오페이",
     "institution": "카카오",
-    "type": "checking",
-    "initialBalance": -20792,
+    "type": "savings",
+    "initialBalance": 5,
     "debt": 0,
     "savings": 0,
     "cashAdjustment": 0
@@ -82,27 +82,25 @@
     "name": "청년도약계좌",
     "institution": "농협은행",
     "type": "savings",
-    "initialBalance": 7700000,
+    "initialBalance": 0,
     "debt": 0,
-    "savings": 0,
-    "cashAdjustment": -7700000
+    "savings": 0
   },
   {
     "id": "주택청약",
     "name": "청년드림주택청약",
     "institution": "국민은행",
     "type": "savings",
-    "initialBalance": 1520000,
+    "initialBalance": 0,
     "debt": 0,
-    "savings": 0,
-    "cashAdjustment": -200000
+    "savings": 0
   },
   {
     "id": "저축은행",
     "name": "OK짠테크통장",
     "institution": "OK저축은행",
     "type": "savings",
-    "initialBalance": -16361,
+    "initialBalance": 1952,
     "debt": 0,
     "savings": 0,
     "cashAdjustment": 0
@@ -112,10 +110,10 @@
     "name": "키움증권",
     "institution": "키움증권",
     "type": "securities",
-    "initialBalance": 195478,
+    "initialBalance": 0,
     "debt": 0,
     "savings": 0,
-    "cashAdjustment": 177955,
+    "cashAdjustment": 53477,
     "krwBalance": 50000,
     "usdBalance": 0,
     "initialCashBalance": 0
@@ -125,7 +123,7 @@
     "name": "모임통장",
     "institution": "토스뱅크",
     "type": "checking",
-    "initialBalance": -622754,
+    "initialBalance": 0,
     "debt": 0,
     "savings": 0
   },
@@ -134,13 +132,13 @@
     "name": "토스증권",
     "institution": "토스증권",
     "type": "securities",
-    "initialBalance": 1177735,
+    "initialBalance": 0,
     "debt": 0,
     "savings": 0,
     "cashAdjustment": 0,
-    "usdBalance": -1272.24654207,
+    "usdBalance": -1331.4678827100001,
     "krwBalance": 0,
-    "initialCashBalance": 5118735
+    "initialCashBalance": -208833
   },
   {
     "id": "현금",
@@ -159,25 +157,23 @@
     "type": "checking",
     "initialBalance": 0,
     "debt": 0,
-    "savings": 0,
-    "cashAdjustment": 0
+    "savings": 0
   },
   {
     "id": "청년사다리",
     "name": "청년사다리금융",
     "institution": "하나은행",
     "type": "checking",
-    "initialBalance": -2599999,
+    "initialBalance": 0,
     "debt": 0,
-    "savings": 0,
-    "cashAdjustment": 100000
+    "savings": 0
   },
   {
     "id": "지역페이",
     "name": "경기지역",
     "institution": "경기도",
     "type": "checking",
-    "initialBalance": 325400,
+    "initialBalance": 0,
     "debt": 0,
     "savings": 0
   },
@@ -186,36 +182,27 @@
     "name": "업비트",
     "institution": "업비트",
     "type": "crypto",
-    "initialBalance": -10037248,
+    "initialBalance": 0,
     "debt": 0,
     "savings": 0,
     "cashAdjustment": 0,
-    "initialCashBalance": -2853753
+    "initialCashBalance": -250
   },
   {
     "id": "삼성증권",
     "name": "삼성증권",
     "institution": "삼성증권",
     "type": "securities",
-    "initialBalance": 142301,
+    "initialBalance": 0,
     "debt": 0,
     "savings": 0,
     "cashAdjustment": 0,
-    "initialCashBalance": -44974
+    "initialCashBalance": 323648
   },
   {
     "id": "데이트저축",
     "name": "데이트금고",
     "institution": "토스",
-    "type": "savings",
-    "initialBalance": 0,
-    "debt": 0,
-    "savings": 0
-  },
-  {
-    "id": "카카오뱅크",
-    "name": "카카오뱅크",
-    "institution": "카카오뱅크",
     "type": "checking",
     "initialBalance": 0,
     "debt": 0,

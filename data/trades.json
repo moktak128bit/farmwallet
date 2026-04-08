@@ -1,5 +1,45 @@
 [
   {
+    "id": "T1775655133287",
+    "date": "2026-04-08",
+    "accountId": "삼성증권",
+    "ticker": "0167B0",
+    "name": "SOL 200타겟위클리커버드콜",
+    "side": "buy",
+    "quantity": 1,
+    "price": 10460,
+    "fee": 0,
+    "totalAmount": 10460,
+    "cashImpact": -10460
+  },
+  {
+    "id": "T1775484786142",
+    "date": "2026-04-06",
+    "accountId": "토스",
+    "ticker": "MSFT",
+    "name": "MSFT",
+    "side": "buy",
+    "quantity": 0.158928,
+    "price": 372.63,
+    "fee": 0,
+    "totalAmount": 59.22134064,
+    "cashImpact": 0,
+    "fxRateAtTrade": 1503.67
+  },
+  {
+    "id": "T1775477312556",
+    "date": "2026-04-06",
+    "accountId": "삼성증권",
+    "ticker": "0167B0",
+    "name": "SOL 200타겟위클리커버드콜",
+    "side": "buy",
+    "quantity": 1,
+    "price": 9745,
+    "fee": 0,
+    "totalAmount": 9745,
+    "cashImpact": -9745
+  },
+  {
     "id": "T1775202378894",
     "date": "2026-04-03",
     "accountId": "삼성증권",

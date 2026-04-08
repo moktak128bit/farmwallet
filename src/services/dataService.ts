@@ -5,7 +5,8 @@ import type {
   CategoryPresets,
   ExpenseDetailGroup,
   HistoricalDailyClose,
-  IsaPortfolioItem
+  IsaPortfolioItem,
+  LedgerEntry
 } from "../types";
 import { STORAGE_KEYS, DEFAULT_US_TICKERS, ISA_PORTFOLIO, DATA_SCHEMA_VERSION } from "../constants/config";
 import { normalizeCategory, normalizeSubCategory } from "../utils/category";

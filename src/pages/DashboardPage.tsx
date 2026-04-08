@@ -1711,7 +1711,7 @@ export const DashboardView: React.FC<Props> = (props) => {
       if (!entry.date?.startsWith(currentMonth)) return;
       if (entry.kind !== "expense") return;
       if (isSavingsExpenseEntry(entry, accounts, categoryPresets)) return;
-      const cat = entry.category || "기타";
+      const cat = entry.subCategory || entry.category || "기타";
       catMap.set(cat, (catMap.get(cat) ?? 0) + toKrw(entry));
     });
     return Array.from(catMap.entries())

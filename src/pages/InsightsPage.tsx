@@ -843,20 +843,18 @@ function useD(ledger: LedgerEntry[], rawTrades: StockTrade[], accounts: Account[
 
     /* ===== 정산 제외 실질 수입/지출 + 원래 보유 자산 ===== */
     let settlementTotal = 0;
-    let originalAssetsFromLedger = 0;
     for (const l of fInc) {
       const sub = (l.subCategory || l.category || "").trim();
       if (sub === "정산" || sub.includes("정산")) settlementTotal += Number(l.amount);
-      if (sub === "이월" || sub.includes("이월") || sub === "원래 보유 자산" || sub.includes("보유 자산")) originalAssetsFromLedger += Number(l.amount);
     }
-    // 원래 보유 자산: Account.initialBalance 기반 (계좌별 역산)
+    // 원래 보유 자산: Account.initialBalance 기반 (계좌별)
     const originalAssetsByAcct = accounts
       .filter(a => (a.initialBalance ?? 0) > 0)
       .map(a => ({ name: a.name, amount: a.initialBalance ?? 0 }))
       .sort((a, b) => b.amount - a.amount);
     const originalAssets = originalAssetsByAcct.reduce((s, a) => s + a.amount, 0);
-    // 실질 수입: 원래 보유 자산(수입이 아님)과 정산(비용 분담 회수) 제외
-    const realIncome = pIncome - settlementTotal - originalAssetsFromLedger;
+    // 실질 수입: 정산(비용 분담 회수) 제외 (이월은 마이그레이션에서 계좌 초기잔액으로 이동됨)
+    const realIncome = pIncome - settlementTotal;
     const realExpense = pExpense - settlementTotal;
 
     /* ===== 추가 계산 지표 ===== */

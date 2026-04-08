@@ -252,7 +252,6 @@ function getDefaultCategoryPresets(): CategoryPresets {
 
   return {
     income: [
-      "원래 보유 자산",
       "급여",
       "수당",
       "배당",
@@ -335,11 +334,11 @@ function mergeCategoryPresets(
     subs: g.subs.map((s) => (s === "커피숍" ? "카페" : s))
   }));
 
-  // 수입 카테고리 이름 변경: 이월 → 원래 보유 자산
-  const migratedIncome = income.map((c) => (c === "이월" ? "원래 보유 자산" : c));
+  // 이월/원래 보유 자산은 수입이 아니므로 카테고리에서 제거
+  const cleanedIncome = income.filter((c) => c !== "이월" && c !== "원래 보유 자산");
 
   return {
-    income: migratedIncome,
+    income: cleanedIncome,
     expense,
     expenseDetails,
     transfer,
@@ -1166,7 +1165,7 @@ export function loadData(): AppData {
     // krNames는 idle 시간에 비동기 로드되므로, 여기서는 빈 맵일 수 있음.
     // 실제 한글명 적용은 useAppData의 idle 콜백에서 수행.
     const { data: dataWithKrNames, changed: krNamesChanged } = applyKoreanStockNames(parsedDataNormalized);
-    const accounts = dataWithKrNames.accounts;
+    let accounts = dataWithKrNames.accounts;
 
     // 깨진 카테고리 이름 수정
     const originalLedger = dataWithKrNames.ledger;
@@ -1197,19 +1196,47 @@ export function loadData(): AppData {
     const categoryMigrated = migrateCategoryHierarchy(normalizedLedger);
     const ledgerAfterCatMigration = categoryMigrated.changed ? categoryMigrated.ledger : normalizedLedger;
 
-    // 중분류 이름 변경: 커피숍 → 카페, 이월 → 원래 보유 자산
+    // 중분류 이름 변경: 커피숍 → 카페
     const ledgerAfterSubRename = ledgerAfterCatMigration.map((l) => {
-      let entry = l;
-      if (entry.subCategory === "커피숍") entry = { ...entry, subCategory: "카페" };
-      if (entry.kind === "income" && (entry.category === "이월" || entry.subCategory === "이월")) {
-        entry = { ...entry, category: entry.category === "이월" ? "원래 보유 자산" : entry.category, subCategory: entry.subCategory === "이월" ? "원래 보유 자산" : entry.subCategory };
-      }
-      return entry;
+      if (l.subCategory === "커피숍") return { ...l, subCategory: "카페" };
+      return l;
     });
 
+    // 이월/원래 보유 자산 수입 → 계좌 초기 잔액으로 전환 후 가계부에서 제거
+    const isCarryOverEntry = (l: LedgerEntry) =>
+      l.kind === "income" && (
+        l.category === "이월" || l.category === "원래 보유 자산" ||
+        l.subCategory === "이월" || l.subCategory === "원래 보유 자산" ||
+        (l.category || "").includes("이월") || (l.subCategory || "").includes("이월") ||
+        (l.category || "").includes("보유 자산") || (l.subCategory || "").includes("보유 자산")
+      );
+    const carryOverEntries = ledgerAfterSubRename.filter(isCarryOverEntry);
+    let carryOverMigrated = false;
+    if (carryOverEntries.length > 0) {
+      carryOverMigrated = true;
+      // 계좌별 이월 금액 합산
+      const carryOverByAccount = new Map<string, number>();
+      for (const l of carryOverEntries) {
+        const acctId = l.toAccountId || l.fromAccountId;
+        if (acctId) {
+          carryOverByAccount.set(acctId, (carryOverByAccount.get(acctId) ?? 0) + l.amount);
+        }
+      }
+      // 해당 계좌의 initialBalance에 추가
+      accounts = accounts.map((acc) => {
+        const extra = carryOverByAccount.get(acc.id);
+        if (!extra) return acc;
+        return { ...acc, initialBalance: (acc.initialBalance ?? 0) + extra };
+      });
+    }
+    // 이월 항목 제거
+    const ledgerWithoutCarryOver = carryOverMigrated
+      ? ledgerAfterSubRename.filter((l) => !isCarryOverEntry(l))
+      : ledgerAfterSubRename;
+
     // 재테크 expense와 중복되는 transfer 제거
-    const deduped = deduplicateInvestmentTransfers(ledgerAfterSubRename);
-    const finalLedger = deduped.changed ? deduped.ledger : ledgerAfterCatMigration;
+    const deduped = deduplicateInvestmentTransfers(ledgerWithoutCarryOver);
+    const finalLedger = deduped.changed ? deduped.ledger : ledgerWithoutCarryOver;
 
     // 계좌 cashAdjustment 동적 보정 — 중복 이체가 제거되었을 때만 CSV 기준 재보정
     // (dedup 후 잔액 공식이 바뀌므로 cashAdj 재계산 필요. 평소에는 건드리지 않음)
@@ -1272,6 +1299,7 @@ export function loadData(): AppData {
       hasLedgerChanges ||
       categoryMigrated.changed ||
       deduped.changed ||
+      carryOverMigrated ||
       initialBalanceFixed ||
       krNamesChanged ||
       normalizedSecurities.changed ||

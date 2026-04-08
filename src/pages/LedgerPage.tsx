@@ -11,6 +11,7 @@ import { ERROR_MESSAGES } from "../constants/errorMessages";
 import { STORAGE_KEYS } from "../constants/config";
 import { computeRealizedPnlByTradeId } from "../calculations";
 import { isUSDStock } from "../utils/finance";
+import { exportLedgerCsv } from "../utils/csvExport";
 
 interface Props {
   accounts: Account[];
@@ -1546,8 +1547,16 @@ export const LedgerView: React.FC<Props> = ({
       .filter((l) => l.kind === "income")
       .reduce((s, l) => s + l.amount, 0);
     const total = incomeAmount - expenseAmount;
-    return { expenseAmount, savingsAmount, incomeAmount, total };
-  }, [filteredLedger, accounts, categoryPresets]);
+    // 전월 대비 비교 (현재 월 기준)
+    const thisMonth = getThisMonthKST();
+    const [ty, tm] = thisMonth.split("-").map(Number);
+    const prevMonth = `${tm === 1 ? ty - 1 : ty}-${String(tm === 1 ? 12 : tm - 1).padStart(2, "0")}`;
+    const prevEntries = ledger.filter(l => l.date?.startsWith(prevMonth));
+    const prevExpense = prevEntries.filter(l => l.kind === "expense" && !isSavingsExpenseEntry(l, accounts, categoryPresets)).reduce((s, l) => s + l.amount, 0);
+    const prevIncome = prevEntries.filter(l => l.kind === "income").reduce((s, l) => s + l.amount, 0);
+    const hasPrev = prevEntries.length > 0;
+    return { expenseAmount, savingsAmount, incomeAmount, total, prevExpense, prevIncome, hasPrev, prevMonth };
+  }, [filteredLedger, accounts, categoryPresets, ledger]);
 
   // 출금/입금 셀에 표시할 계좌별 금액·잔액 (ledger + trades 혼합, 날짜순 역산)
   const balanceAfterByLedgerId = useMemo(() => {
@@ -1944,8 +1953,20 @@ export const LedgerView: React.FC<Props> = ({
 
   return (
     <div>
-      <div className="section-header">
+      <div className="section-header" style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
         <h2>가계부 (거래 입력)</h2>
+        <button
+          type="button"
+          className="secondary"
+          style={{ fontSize: 12, padding: "6px 12px" }}
+          onClick={() => {
+            const entries = filteredLedger.filter((l): l is LedgerEntry => "id" in l);
+            exportLedgerCsv(entries, accounts);
+            toast.success(`${entries.length}건 CSV 내보내기 완료`);
+          }}
+        >
+          CSV 내보내기
+        </button>
       </div>
 
       {/* 요약 카드: 항상 표시, 필터 적용 시 해당 결과 합계 */}
@@ -2031,6 +2052,28 @@ export const LedgerView: React.FC<Props> = ({
               </span>
             </div>
           </div>
+          {/* 전월 대비 비교 */}
+          {filteredSummary.hasPrev && !hasFilter && (
+            <div style={{
+              display: "flex", gap: 16, fontSize: 12, color: "var(--text-muted)",
+              paddingTop: 8, borderTop: "1px solid var(--border)", justifyContent: "center"
+            }}>
+              <span>전월 대비 지출: <span style={{
+                fontWeight: 700,
+                color: filteredSummary.expenseAmount > filteredSummary.prevExpense ? "var(--danger)" : "var(--success)"
+              }}>
+                {filteredSummary.expenseAmount > filteredSummary.prevExpense ? "+" : ""}
+                {formatKRW(filteredSummary.expenseAmount - filteredSummary.prevExpense)}
+              </span></span>
+              <span>전월 대비 수입: <span style={{
+                fontWeight: 700,
+                color: filteredSummary.incomeAmount >= filteredSummary.prevIncome ? "var(--success)" : "var(--danger)"
+              }}>
+                {filteredSummary.incomeAmount >= filteredSummary.prevIncome ? "+" : ""}
+                {formatKRW(filteredSummary.incomeAmount - filteredSummary.prevIncome)}
+              </span></span>
+            </div>
+          )}
           {/* 필터 칩: 적용된 조건 한 줄에 표시 */}
           {hasFilter && (
             <div style={{

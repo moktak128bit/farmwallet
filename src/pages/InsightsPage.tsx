@@ -137,7 +137,7 @@ interface D {
 
   /* ---- trend (always full period) ---- */
   monthly: Record<string, { income: number; expense: number; investment: number }>;
-  savRateTrend: { l: string; rate: number; sav: number }[];
+  savRateTrend: { l: string; rate: number; cumRate: number; sav: number }[];
   salaryTrend: { l: string; salary: number; nonSalary: number }[];
   cumIE: { l: string; 누적수입: number; 누적지출: number }[];
   investTrend: { l: string; amount: number }[];
@@ -485,10 +485,15 @@ function useD(ledger: LedgerEntry[], rawTrades: StockTrade[], accounts: Account[
     }
 
     /* ===== trend data (full period) ===== */
-    const savRateTrend = months.map(m => {
-      const i = monthly[m].income, e = monthly[m].expense;
-      return { l: ml[m], rate: SD(i - e, i) * 100, sav: i - e };
-    });
+    const savRateTrend: D["savRateTrend"] = [];
+    {
+      let cumInc = 0, cumExp = 0;
+      for (const m of months) {
+        const i = monthly[m].income, e = monthly[m].expense;
+        cumInc += i; cumExp += e;
+        savRateTrend.push({ l: ml[m], rate: SD(i - e, i) * 100, cumRate: SD(cumInc - cumExp, cumInc) * 100, sav: i - e });
+      }
+    }
     const salaryTrend = months.map(m => {
       let sal = 0, non = 0;
       for (const l of ledger) {
@@ -1131,13 +1136,15 @@ const OverviewTab = React.memo(function OverviewTab({ d }: { d: D }) {
         </ResponsiveContainer>
       </Card>
 
-      <Card title="월별 저축률 추이" span={2}>
-        <ResponsiveContainer width="100%" height={220}>
-          <BarChart data={d.savRateTrend}><CartesianGrid strokeDasharray="3 3" stroke="#eee" /><XAxis dataKey="l" tick={{ fontSize: 12 }} /><YAxis tickFormatter={(v: number) => v + "%"} tick={{ fontSize: 11 }} /><Tooltip formatter={(v: any) => v.toFixed(1) + "%"} />
-            <Bar dataKey="rate" name="저축률" radius={[4, 4, 0, 0]}>
+      <Card title="누적 저축률 추이" span={2}>
+        <p style={{ fontSize: 11, color: "#999", margin: "0 0 4px", textAlign: "right" }}>월급이 월말 지급이므로 월별 저축률 대신 누적 기준 표시</p>
+        <ResponsiveContainer width="100%" height={210}>
+          <ComposedChart data={d.savRateTrend}><CartesianGrid strokeDasharray="3 3" stroke="#eee" /><XAxis dataKey="l" tick={{ fontSize: 12 }} /><YAxis tickFormatter={(v: number) => v + "%"} tick={{ fontSize: 11 }} /><Tooltip formatter={(v: any) => v.toFixed(1) + "%"} />
+            <Bar dataKey="rate" name="월별" radius={[4, 4, 0, 0]} opacity={0.35}>
               {d.savRateTrend.map((e, i) => <Cell key={i} fill={e.rate >= 30 ? "#48c9b0" : e.rate >= 0 ? "#f0c040" : "#e94560"} />)}
             </Bar>
-          </BarChart>
+            <Line dataKey="cumRate" name="누적" stroke="#0f3460" strokeWidth={2.5} dot={false} />
+          </ComposedChart>
         </ResponsiveContainer>
       </Card>
 

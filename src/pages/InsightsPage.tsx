@@ -413,11 +413,12 @@ function useD(ledger: LedgerEntry[], rawTrades: StockTrade[], accounts: Account[
     const dateSubCats = Array.from(dateSubCatM.entries()).sort((a, b) => b[1] - a[1]).slice(0, 10);
 
     /* incomeByCategory — 원래 보유 자산(이월)은 실질 수입이 아니므로 제외 */
-    const isCarryOver = (s: string) => s === "이월" || s.includes("이월") || s === "원래 보유 자산" || s.includes("보유 자산");
+    const isCarryOverStr = (s: string) => s === "이월" || s.includes("이월") || s === "원래 보유 자산" || s.includes("보유 자산");
+    const isCarryOver = (l: LedgerEntry) => isCarryOverStr(l.category || "") || isCarryOverStr(l.subCategory || "");
     const icM = new Map<string, number>();
     for (const l of fInc) {
       const c = l.subCategory || l.category || "기타";
-      if (isCarryOver(c)) continue;
+      if (isCarryOver(l)) continue;
       icM.set(c, (icM.get(c) ?? 0) + Number(l.amount));
     }
     const incByCat = Array.from(icM.entries()).sort((a, b) => b[1] - a[1]);
@@ -468,7 +469,7 @@ function useD(ledger: LedgerEntry[], rawTrades: StockTrade[], accounts: Account[
     for (const l of ledger) {
       if (l.kind !== "income" || Number(l.amount) <= 0) continue;
       const m = l.date?.slice(0, 7); const sub = l.subCategory || l.category || "";
-      if (!m || !sub || isCarryOver(sub)) continue;
+      if (!m || !sub || isCarryOver(l)) continue;
       if (!incSubMonths.has(sub)) incSubMonths.set(sub, new Set());
       incSubMonths.get(sub)!.add(m);
     }
@@ -499,7 +500,7 @@ function useD(ledger: LedgerEntry[], rawTrades: StockTrade[], accounts: Account[
       for (const l of ledger) {
         if (l.kind !== "income" || l.date?.slice(0, 7) !== m || Number(l.amount) <= 0) continue;
         const sub = l.subCategory || l.category || "";
-        if (isCarryOver(sub)) continue;
+        if (isCarryOver(l)) continue;
         if (salaryKeys.has(sub)) sal += Number(l.amount); else non += Number(l.amount);
       }
       return { l: ml[m], salary: sal, nonSalary: non };

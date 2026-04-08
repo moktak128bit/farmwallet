@@ -438,7 +438,18 @@ export const DashboardView: React.FC<Props> = (props) => {
     const toKrw = (entry: LedgerEntry) =>
       entry.currency === "USD" && fxRate ? entry.amount * fxRate : entry.amount;
 
-    let income = 0;
+    // 허수 수입 (실질 소득 아님)
+    const NON_REAL = new Set(["정산", "용돈", "이월", "원래 보유 자산", "대출", "처분소득", "지원"]);
+    const isNonReal = (e: LedgerEntry) => {
+      const cat = (e.subCategory || e.category || "").trim();
+      return NON_REAL.has(cat) || NON_REAL.has(e.category || "");
+    };
+    const isSettlement = (e: LedgerEntry) => {
+      const cat = (e.subCategory || e.category || "").trim();
+      return cat === "정산" || cat.includes("정산");
+    };
+
+    let income = 0, earnedIncome = 0, settlement = 0;
     let expense = 0;
     let investing = 0;
 
@@ -446,7 +457,10 @@ export const DashboardView: React.FC<Props> = (props) => {
       if (!entry.date || !entry.date.startsWith(currentMonth)) return;
 
       if (entry.kind === "income") {
-        income += toKrw(entry);
+        const a = toKrw(entry);
+        income += a;
+        if (isSettlement(entry)) settlement += a;
+        else if (!isNonReal(entry)) earnedIncome += a;
         return;
       }
 
@@ -459,11 +473,18 @@ export const DashboardView: React.FC<Props> = (props) => {
       }
     });
 
+    const realExpense = expense - settlement; // 정산 차감한 실질 지출
+    const realSavingsRate = earnedIncome > 0 ? Math.round((earnedIncome - realExpense) / earnedIncome * 100) : 0;
+
     return {
       month: currentMonth,
       income,
+      earnedIncome,
       expense,
-      investing
+      realExpense,
+      settlement,
+      investing,
+      realSavingsRate,
     };
   }, [ledger, currentMonth, fxRate, accounts, categoryPresets]);
 
@@ -1758,21 +1779,23 @@ export const DashboardView: React.FC<Props> = (props) => {
           }}
         >
           <div className="card" style={{ minHeight: 124, borderLeft: "4px solid var(--chart-expense)" }}>
-            <div className="card-title">이번 달 지출</div>
+            <div className="card-title">이번 달 실질 지출</div>
             <div className="card-value" style={{ color: "var(--chart-expense)", fontSize: 24 }}>
-              {formatKRW(Math.round(monthlySummary.expense))}
+              {formatKRW(Math.round(monthlySummary.realExpense))}
             </div>
             <div className="hint" style={{ marginTop: 8 }}>
-              전체 기간: {formatKRW(allTimeSummary.expense)}
+              {monthlySummary.settlement > 0 ? `장부 ${formatKRW(monthlySummary.expense)} − 정산 ${formatKRW(monthlySummary.settlement)}` : `전체 기간: ${formatKRW(allTimeSummary.expense)}`}
             </div>
           </div>
 
           <div className="card" style={{ minHeight: 124, borderLeft: "4px solid var(--chart-income)" }}>
-            <div className="card-title">이번 달 수입</div>
+            <div className="card-title">이번 달 근로소득</div>
             <div className="card-value" style={{ color: "var(--chart-income)", fontSize: 24 }}>
-              {formatKRW(Math.round(monthlySummary.income))}
+              {formatKRW(Math.round(monthlySummary.earnedIncome))}
             </div>
-            <div className="hint" style={{ marginTop: 8 }}>전체 기간: {formatKRW(allTimeSummary.income)}</div>
+            <div className="hint" style={{ marginTop: 8 }}>
+              {monthlySummary.income !== monthlySummary.earnedIncome ? `장부 수입 ${formatKRW(monthlySummary.income)} (일시소득 포함)` : `전체 기간: ${formatKRW(allTimeSummary.income)}`}
+            </div>
           </div>
 
           <div className="card" style={{ minHeight: 124, borderLeft: "4px solid var(--chart-primary)" }}>
@@ -1782,6 +1805,18 @@ export const DashboardView: React.FC<Props> = (props) => {
             </div>
             <div className="hint" style={{ marginTop: 8 }}>전체 기간: {formatKRW(allTimeSummary.investing)}</div>
           </div>
+
+          {monthlySummary.earnedIncome > 0 && (
+            <div className="card" style={{ minHeight: 124, borderLeft: `4px solid ${monthlySummary.realSavingsRate >= 0 ? "var(--success)" : "var(--danger)"}` }}>
+              <div className="card-title">실질 저축률</div>
+              <div className="card-value" style={{ color: monthlySummary.realSavingsRate >= 0 ? "var(--success)" : "var(--danger)", fontSize: 24 }}>
+                {monthlySummary.realSavingsRate}%
+              </div>
+              <div className="hint" style={{ marginTop: 8 }}>
+                (근로소득 − 실질지출) ÷ 근로소득
+              </div>
+            </div>
+          )}
         </div>
 
         {/* ── 순자산 추이 ─────────────────────────────────────────────────────── */}

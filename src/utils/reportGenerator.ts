@@ -1039,10 +1039,11 @@ export function generateComprehensiveMonthlyReport(
     if (entry.kind === "income") {
       row.totalIncome += amount;
       const cat = entry.category ?? "";
+      const sub = entry.subCategory ?? "";
 
-      if (NON_REAL_INCOME_CATEGORIES.has(cat)) {
+      if (NON_REAL_INCOME_CATEGORIES.has(cat) || NON_REAL_INCOME_CATEGORIES.has(sub)) {
         row.nonRealIncome += amount;
-      } else if (CAPITAL_INCOME_CATEGORIES.has(cat)) {
+      } else if (CAPITAL_INCOME_CATEGORIES.has(cat) || CAPITAL_INCOME_CATEGORIES.has(sub)) {
         row.capitalIncome += amount;
         // 배당 수입 별도 집계
         if (cat === "배당" || isDividendIncomeEntry(entry)) {

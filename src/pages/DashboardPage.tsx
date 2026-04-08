@@ -22,7 +22,7 @@ import { formatKRW } from "../utils/formatter";
 import { useFxRateValue } from "../context/FxRateContext";
 import { useAppStore } from "../store/appStore";
 import { getThisMonthKST, getTodayKST } from "../utils/date";
-import { getCategoryType, getSavingsCategories, isSavingsExpenseEntry } from "../utils/category";
+import { getCategoryType, isSavingsExpenseEntry } from "../utils/category";
 import { canonicalTickerForMatch, extractTickerFromText, isUSDStock } from "../utils/finance";
 import { parseQuantityFromNote } from "../utils/dividend";
 import { ISA_PORTFOLIO } from "../constants/config";
@@ -1114,7 +1114,7 @@ export const DashboardView: React.FC<Props> = (props) => {
     const dividendByMonth = new Map<string, number>();
     const dividendEntriesByDate: { date: string; amount: number; quantityFromNote?: number; toAccountId?: string }[] = [];
     const tickerTrades = trades
-      .filter((trade) => canonicalTickerForMatch(trade.ticker) === RISE_200_TICKER)
+      .filter((trade) => canonicalTickerForMatch(trade.ticker) === rise200Canonical)
       .sort((a, b) => a.date.localeCompare(b.date));
     const monthSet = new Set<string>();
     ledger.forEach((entry) => {
@@ -1125,7 +1125,7 @@ export const DashboardView: React.FC<Props> = (props) => {
         extractTickerFromText(entry.category ?? "")
       )?.toUpperCase();
       if (!sourceTicker) return;
-      if (canonicalTickerForMatch(sourceTicker) !== RISE_200_TICKER) return;
+      if (canonicalTickerForMatch(sourceTicker) !== rise200Canonical) return;
       const date = entry.date?.slice(0, 10);
       const month = entry.date?.slice(0, 7);
       if (!date || !month) return;
@@ -1422,7 +1422,6 @@ export const DashboardView: React.FC<Props> = (props) => {
 
   const spendingCalendarRows = useMemo(() => {
     const rows: SpendingCalendarRow[] = [];
-    const savingsCategories = getSavingsCategories(categoryPresets);
     const toKrw = (entry: LedgerEntry) =>
       entry.currency === "USD" && fxRate ? entry.amount * fxRate : entry.amount;
 
@@ -1453,7 +1452,7 @@ export const DashboardView: React.FC<Props> = (props) => {
 
       if (entry.kind === "expense") {
         if (!entry.fromAccountId) return;
-        const isSavings = savingsCategories.includes(entry.category ?? "");
+        const isSavings = isSavingsExpenseEntry(entry, accounts, categoryPresets);
         rows.push({
           id: entry.id,
           date: entry.date,

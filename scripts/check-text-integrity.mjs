@@ -22,7 +22,7 @@ const textExtensions = new Set([
 ]);
 
 const excludeDirs = new Set(["node_modules", ".git", "dist", "backups"]);
-const excludeFiles = new Set(["data/ticker-backup.json", "data/app-data-tables.json"]);
+const excludeFiles = new Set(["data/ticker-backup.json", "data/app-data-tables.json", "data/farmwallet-data.json"]);
 const scanTargets = ["src", "public", "data", "index.html", "vite.config.ts"];
 
 const suspiciousPatterns = [

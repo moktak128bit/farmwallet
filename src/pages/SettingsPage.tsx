@@ -800,7 +800,7 @@ export const SettingsView: React.FC<Props> = ({
             <br />
             <strong>테이블 백업:</strong> 같은 데이터를 <code>tables</code> 아래 행 배열로도 저장합니다. 일반 백업 JSON 없이{" "}
             <strong>테이블 백업 파일만</strong>으로도 복구할 수 있습니다. 데이터를 저장할 때마다 브라우저에 사본이 갱신되고,{" "}
-            <code>npm run dev</code>일 때는 프로젝트 <code>data/app-data-tables.json</code>에도 기록됩니다.
+            <code>npm run dev</code>일 때는 프로젝트 <code>data/farmwallet-data.json</code>에도 기록됩니다.
           </p>
           <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
             <div>

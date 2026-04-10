@@ -53,26 +53,8 @@ export function useAppData() {
       .catch(() => { /* 백업 복원 실패 시 무시 */ });
   }, [isLoading]);
 
-  // prices가 비어 있으면 서버 백업에서 복원
-  const priceRecoveryDone = useRef(false);
-  useEffect(() => {
-    if (isLoading || loadFailed || priceRecoveryDone.current) return;
-    const currentData = useAppStore.getState().data;
-    if (currentData?.prices && currentData.prices.length > 0) return;
-    priceRecoveryDone.current = true;
-    fetch("/api/app-data-tables")
-      .then((r) => r.json())
-      .then((backup: { tables?: { stock_prices?: unknown[] } }) => {
-        const prices = backup?.tables?.stock_prices;
-        if (!Array.isArray(prices) || prices.length === 0) return;
-        const latest = useAppStore.getState().data;
-        if (!latest || (latest.prices && latest.prices.length > 0)) return;
-        const updated = { ...latest, prices: prices as typeof latest.prices };
-        useAppStore.setState({ data: updated });
-        try { saveData(updated); } catch { /* quota 등 무시 */ }
-      })
-      .catch(() => { /* 실패 시 무시 — priceFallback: cost로 대체 */ });
-  }, [isLoading, loadFailed]);
+  // prices 복원 로직 제거 — 캐시는 이제 파일/클라우드 sync에 포함되지 않음.
+  // 비어 있으면 앱이 자동으로 API에서 재수집함.
 
   // krNames.json 로드 → 완료 후 한글 종목명 적용 (초기 로딩 직후 즉시 실행)
   useEffect(() => {

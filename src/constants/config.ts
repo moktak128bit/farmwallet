@@ -40,12 +40,6 @@ export const STORAGE_KEYS = {
   DATE_ACCOUNT_ID: "fw-date-account-id",
   /** 데이트통장 본인 부담 비율 (0~100, 기본 50) */
   DATE_ACCOUNT_RATIO: "fw-date-account-ratio",
-  /** 자동 Repo 동기화 ON/OFF (기본: false) */
-  REPO_AUTO_SYNC: "fw-repo-auto-sync",
-  /** 마지막 Repo 저장 성공 시각 (ISO 8601) */
-  REPO_LAST_PUSH_AT: "fw-repo-last-push-at",
-  /** 마지막 Repo 불러오기 성공 시각 (ISO 8601) */
-  REPO_LAST_PULL_AT: "fw-repo-last-pull-at",
   /** API로 수집한 캐시 데이터 (prices, tickerDatabase, historicalDailyCloses) */
   CACHE: "farmwallet-cache-v1"
 } as const;
@@ -83,6 +77,3 @@ export const BACKUP_WARNING_HOURS = {
 
 // 자동 백업 간격 (밀리초, 30분)
 export const AUTO_BACKUP_INTERVAL_MS = 30 * 60 * 1000;
-
-// 자동 Repo 저장 디바운스 (밀리초, 5분)
-export const REPO_AUTO_PUSH_DEBOUNCE_MS = 5 * 60 * 1000;

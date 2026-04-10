@@ -22,8 +22,6 @@ const SavingsMigrationView = lazy(() => import("./SavingsMigrationPage").then((m
 const ThemeCustomizer = lazy(() => import("../components/ThemeCustomizer").then((m) => ({ default: m.ThemeCustomizer })));
 import { usePWAInstall } from "../hooks/usePWAInstall";
 import { STORAGE_KEYS, ISA_PORTFOLIO } from "../constants/config";
-import * as repoSyncModule from "../services/repoSync";
-import { toUserDataJson } from "../services/dataService";
 import { ERROR_MESSAGES } from "../constants/errorMessages";
 import { appDataFromTableBackupPayload, buildTableBackupFile } from "../utils/tableDataBackup";
 
@@ -37,12 +35,6 @@ interface Props {
   onBackupsChanged?: () => void | Promise<void>;
   onNavigateToRecord?: (payload: { type: "ledger" | "trade"; id: string }) => void;
   onNavigateToTab?: (tab: "accounts" | "ledger" | "stocks") => void;
-  /** 자동 Repo 동기화 ON/OFF */
-  autoSyncEnabled?: boolean;
-  onAutoSyncChange?: (enabled: boolean) => void;
-  /** 마지막 저장/불러오기 시각 */
-  repoLastPushAt?: string | null;
-  repoLastPullAt?: string | null;
 }
 
 type SettingsTab = "backup" | "integrity" | "theme" | "accessibility" | "dashboard" | "savingsMigration";
@@ -314,11 +306,7 @@ export const SettingsView: React.FC<Props> = ({
   onBackupRestored,
   onBackupsChanged,
   onNavigateToRecord,
-  onNavigateToTab,
-  autoSyncEnabled = false,
-  onAutoSyncChange,
-  repoLastPushAt,
-  repoLastPullAt
+  onNavigateToTab
 }) => {
   const [activeTab, setActiveTab] = useState<SettingsTab>("backup");
   const [showThemeCustomizer, setShowThemeCustomizer] = useState(false);
@@ -337,14 +325,6 @@ export const SettingsView: React.FC<Props> = ({
     if (typeof window === "undefined") return false;
     return localStorage.getItem(STORAGE_KEYS.PRICE_API_ENABLED) === "true";
   });
-
-  const [repoToken, setRepoTokenState] = useState(() => repoSyncModule.getRepoToken());
-  const [repoOwner, setRepoOwnerState] = useState(() => repoSyncModule.getRepoOwner());
-  const [repoName, setRepoNameState] = useState(() => repoSyncModule.getRepoName());
-  const [repoBranch, setRepoBranchState] = useState(() => repoSyncModule.getRepoBranch());
-  const [repoPath, setRepoPathState] = useState(() => repoSyncModule.getRepoPath());
-  const [repoSyncing, setRepoSyncing] = useState(false);
-  const [repoLastSync, setRepoLastSync] = useState<string | null>(null);
 
   const [dateAccountId, setDateAccountId] = useState(() => {
     if (typeof window === "undefined") return "";
@@ -934,152 +914,12 @@ export const SettingsView: React.FC<Props> = ({
           </p>
         </div>
         <div className="card">
-          <div className="card-title">클라우드 동기화 (Private Repo)</div>
-          <p className="hint" style={{ marginBottom: 12 }}>
-            GitHub Personal Access Token (Contents Read/Write 권한)으로 데이터를 Private Repo에 저장/불러옵니다.
-            <br />다른 기기에서도 동일한 토큰 + owner/repo/path 설정으로 데이터를 공유할 수 있습니다.
-            <br />저장 시 커밋 메시지에 한국 시각이 기록됩니다.
+          <div className="card-title">클라우드 동기화</div>
+          <p className="hint" style={{ marginBottom: 8 }}>
+            헤더 상단의 <b>배포</b> 버튼으로 현재 데이터를 GitHub에 저장(push)하고,
+            <b> 업데이트</b> 버튼으로 원격의 최신 데이터를 불러옵니다(pull).
+            <br />저장 시 커밋 메시지에 한국 시각이 자동 기록됩니다. (dev 서버 실행 중에만 작동)
           </p>
-          <label style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 10 }}>
-            <span style={{ minWidth: 80 }}>Token</span>
-            <input
-              type="password"
-              value={repoToken}
-              onChange={(e) => { setRepoTokenState(e.target.value); repoSyncModule.setRepoToken(e.target.value); }}
-              placeholder="github_pat_xxxxxxxxxxxx"
-              style={{ flex: 1, padding: "6px 10px", borderRadius: 6, fontFamily: "monospace", fontSize: 12 }}
-            />
-          </label>
-          <label style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 10 }}>
-            <span style={{ minWidth: 80 }}>Owner</span>
-            <input
-              type="text"
-              value={repoOwner}
-              onChange={(e) => { setRepoOwnerState(e.target.value); repoSyncModule.setRepoOwner(e.target.value); }}
-              placeholder="GitHub 사용자 이름"
-              style={{ flex: 1, padding: "6px 10px", borderRadius: 6, fontFamily: "monospace", fontSize: 12 }}
-            />
-          </label>
-          <label style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 10 }}>
-            <span style={{ minWidth: 80 }}>Repo</span>
-            <input
-              type="text"
-              value={repoName}
-              onChange={(e) => { setRepoNameState(e.target.value); repoSyncModule.setRepoName(e.target.value); }}
-              placeholder="repo 이름"
-              style={{ flex: 1, padding: "6px 10px", borderRadius: 6, fontFamily: "monospace", fontSize: 12 }}
-            />
-          </label>
-          <label style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 10 }}>
-            <span style={{ minWidth: 80 }}>Branch</span>
-            <input
-              type="text"
-              value={repoBranch}
-              onChange={(e) => { setRepoBranchState(e.target.value); repoSyncModule.setRepoBranch(e.target.value); }}
-              placeholder="main"
-              style={{ flex: 1, padding: "6px 10px", borderRadius: 6, fontFamily: "monospace", fontSize: 12 }}
-            />
-          </label>
-          <label style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 12 }}>
-            <span style={{ minWidth: 80 }}>Path</span>
-            <input
-              type="text"
-              value={repoPath}
-              onChange={(e) => { setRepoPathState(e.target.value); repoSyncModule.setRepoPath(e.target.value); }}
-              placeholder="data/farmwallet-data.json"
-              style={{ flex: 1, padding: "6px 10px", borderRadius: 6, fontFamily: "monospace", fontSize: 12 }}
-            />
-          </label>
-          <div style={{ display: "flex", flexDirection: "column", gap: 12, marginTop: 12 }}>
-            <div>
-              <div style={{ fontSize: 12, fontWeight: 700, color: "var(--chart-income)", marginBottom: 6 }}>💾 Repo에 저장 (안전 — 현재 데이터를 백업)</div>
-              <button
-                type="button"
-                disabled={repoSyncing || !repoToken || !repoOwner || !repoName}
-                onClick={async () => {
-                  setRepoSyncing(true);
-                  try {
-                    const jsonStr = toUserDataJson(data);
-                    const result = await repoSyncModule.saveToRepo(jsonStr);
-                    setRepoLastSync(result.updatedAt);
-                    repoSyncModule.setRepoLastPushAt(result.updatedAt);
-                    toast.success("Repo에 저장 완료");
-                  } catch (e: any) {
-                    toast.error(e.message ?? "Repo 저장 실패");
-                  } finally {
-                    setRepoSyncing(false);
-                  }
-                }}
-                style={{ background: "var(--chart-income)", border: "none", color: "white", padding: "8px 20px", borderRadius: 8, fontWeight: 600 }}
-              >
-                {repoSyncing ? "동기화 중..." : "Repo에 저장"}
-              </button>
-            </div>
-            <div>
-              <div style={{ fontSize: 12, fontWeight: 700, color: "var(--warning, orange)", marginBottom: 6 }}>⚠️ Repo에서 불러오기 (현재 데이터 덮어쓰기)</div>
-              <button
-                type="button"
-                disabled={repoSyncing || !repoToken || !repoOwner || !repoName}
-                onClick={async () => {
-                  setRepoSyncing(true);
-                  try {
-                    const result = await repoSyncModule.loadFromRepo();
-                    const parsed = JSON.parse(result.dataJson);
-                    // Repo에 없는 API 캐시 데이터는 현재 메모리의 것을 유지
-                    onChangeData({
-                      ...parsed,
-                      prices: parsed.prices?.length > 0 ? parsed.prices : data.prices,
-                      tickerDatabase: parsed.tickerDatabase?.length > 0 ? parsed.tickerDatabase : data.tickerDatabase,
-                      historicalDailyCloses: parsed.historicalDailyCloses?.length > 0 ? parsed.historicalDailyCloses : data.historicalDailyCloses,
-                    });
-                    setRepoLastSync(result.updatedAt);
-                    repoSyncModule.setRepoLastPullAt(result.updatedAt);
-                    toast.success("Repo에서 불러오기 완료");
-                  } catch (e: any) {
-                    toast.error(e.message ?? "Repo 불러오기 실패");
-                  } finally {
-                    setRepoSyncing(false);
-                  }
-                }}
-                style={{ background: "var(--surface)", border: "2px solid orange", color: "var(--text)", padding: "8px 20px", borderRadius: 8, fontWeight: 600 }}
-              >
-                Repo에서 불러오기
-              </button>
-            </div>
-          </div>
-          {repoLastSync && (
-            <p className="hint" style={{ marginTop: 8 }}>
-              마지막 동기화: {new Date(repoLastSync).toLocaleString("ko-KR")}
-            </p>
-          )}
-          <div style={{ marginTop: 16, borderTop: "1px solid var(--border)", paddingTop: 12 }}>
-            <div className="card-title" style={{ fontSize: 13, marginBottom: 8 }}>자동 동기화</div>
-            <label style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 6, cursor: (!repoToken || !repoOwner || !repoName) ? "not-allowed" : "pointer" }}>
-              <input
-                type="checkbox"
-                checked={autoSyncEnabled}
-                disabled={!repoToken || !repoOwner || !repoName}
-                onChange={(e) => {
-                  onAutoSyncChange?.(e.target.checked);
-                  toast.success(e.target.checked ? "자동 동기화를 켰습니다." : "자동 동기화를 껐습니다.");
-                }}
-              />
-              <span style={{ fontSize: 13 }}>자동 동기화 사용 (데이터 변경 후 5분 뒤 자동 저장 · 앱 시작 시 자동 불러오기)</span>
-            </label>
-            {(!repoToken || !repoOwner || !repoName) && (
-              <p className="hint">Token과 Owner/Repo를 먼저 설정해야 자동 동기화를 사용할 수 있습니다.</p>
-            )}
-            {repoLastPushAt && (
-              <p className="hint" style={{ marginTop: 4 }}>
-                마지막 자동 저장: {new Date(repoLastPushAt).toLocaleString("ko-KR")}
-              </p>
-            )}
-            {repoLastPullAt && (
-              <p className="hint" style={{ marginTop: 2 }}>
-                마지막 자동 불러오기: {new Date(repoLastPullAt).toLocaleString("ko-KR")}
-              </p>
-            )}
-          </div>
         </div>
         <div className="card">
           <div className="card-title">데이트통장 설정</div>

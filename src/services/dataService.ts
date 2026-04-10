@@ -1405,7 +1405,7 @@ export function saveDataSerialized(serialized: string): void {
       // API 캐시는 별도 키에 저장 (실패해도 앱 동작에 영향 없음)
       saveCacheData(cacheToSave);
 
-      // 테이블 백업은 전체 데이터(캐시 포함)로 생성
+      // 테이블 백업은 localStorage용으로만 유지 (내보내기/가져오기 기능에서 사용)
       try {
         const tableFile = buildTableBackupFile(fullData);
         const tableStr = JSON.stringify(tableFile);
@@ -1414,13 +1414,21 @@ export function saveDataSerialized(serialized: string): void {
         } catch (lsErr) {
           console.warn("[FarmWallet] table backup localStorage skipped", lsErr);
         }
-        void fetch("/api/app-data-tables", {
+      } catch (tableErr) {
+        console.warn("[FarmWallet] table backup build failed", tableErr);
+      }
+
+      // 통합 사용자 데이터 파일 동기화 (dev 서버: data/farmwallet-data.json에 기록)
+      // 캐시(prices/tickerDatabase/historicalDailyCloses)는 제외, _exportedAt 포함
+      try {
+        const userFieldsWithMeta = { ...JSON.parse(userDataStr), _exportedAt: new Date().toISOString() };
+        void fetch("/api/farmwallet-data", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
-          body: tableStr
+          body: JSON.stringify(userFieldsWithMeta)
         }).catch(() => {});
-      } catch (tableErr) {
-        console.warn("[FarmWallet] table backup build/sync failed", tableErr);
+      } catch (syncErr) {
+        console.warn("[FarmWallet] farmwallet-data sync failed", syncErr);
       }
       return;
     } catch (e) {

@@ -392,89 +392,66 @@ function backupApiPlugin(): Plugin {
         }
       });
 
-      // 테이블 형태 앱 데이터 백업 (GET/POST) — data/app-data-tables.json
-      const tableBackupFile = path.join(dataDir, "app-data-tables.json");
-      const MAX_TABLE_BACKUP_BYTES = 25 * 1024 * 1024;
+      // 통합 앱 데이터 파일 (GET/POST) — data/farmwallet-data.json
+      // 포맷: toUserDataJson()과 동일한 사용자 데이터 JSON (캐시 제외)
+      // 최상위에 _exportedAt(ISO 문자열)이 포함되어 저장 시각을 알 수 있음
+      const unifiedDataFile = path.join(dataDir, "farmwallet-data.json");
+      const MAX_UNIFIED_BYTES = 25 * 1024 * 1024;
 
-      server.middlewares.use("/api/app-data-tables", (req: IncomingMessage, res: ServerResponse, next) => {
+      server.middlewares.use("/api/farmwallet-data", (req: IncomingMessage, res: ServerResponse, next) => {
         if (req.method === "GET") {
           try {
-            if (!fs.existsSync(tableBackupFile)) {
+            if (!fs.existsSync(unifiedDataFile)) {
               res.setHeader("Content-Type", "application/json");
-              res.end("{}");
+              res.end("null");
               return;
             }
-            const raw = fs.readFileSync(tableBackupFile, "utf-8");
+            const raw = fs.readFileSync(unifiedDataFile, "utf-8");
             res.setHeader("Content-Type", "application/json");
             res.end(raw);
           } catch {
             res.statusCode = 500;
             res.setHeader("Content-Type", "application/json");
-            res.end(JSON.stringify({ error: "Failed to read table backup" }));
+            res.end(JSON.stringify({ error: "Failed to read farmwallet data" }));
           }
           return;
         }
 
         if (req.method === "POST") {
-          const tbChunks: Buffer[] = [];
-          let tbBytes = 0;
-          let tbTooLarge = false;
+          const chunks: Buffer[] = [];
+          let bytes = 0;
+          let tooLarge = false;
           req.on("data", (chunk: Buffer) => {
-            if (tbTooLarge) return;
-            tbBytes += chunk.length;
-            if (tbBytes > MAX_TABLE_BACKUP_BYTES) {
-              tbTooLarge = true;
+            if (tooLarge) return;
+            bytes += chunk.length;
+            if (bytes > MAX_UNIFIED_BYTES) {
+              tooLarge = true;
               res.statusCode = 413;
               res.setHeader("Content-Type", "application/json");
-              res.end(JSON.stringify({ error: "Table backup payload is too large" }));
+              res.end(JSON.stringify({ error: "Payload is too large" }));
               return;
             }
-            tbChunks.push(chunk);
+            chunks.push(chunk);
           });
           req.on("end", () => {
-            if (tbTooLarge) return;
-            const body = Buffer.concat(tbChunks).toString("utf-8");
+            if (tooLarge) return;
+            const body = Buffer.concat(chunks).toString("utf-8");
             try {
-              const parsed = JSON.parse(body) as { tables?: Record<string, unknown[]> };
+              // JSON 유효성 검사만 수행 (형식은 클라이언트가 책임)
+              JSON.parse(body);
               if (!fs.existsSync(dataDir)) {
                 fs.mkdirSync(dataDir, { recursive: true });
               }
-              fs.writeFileSync(tableBackupFile, body, "utf-8");
-
-              // 가독성을 위해 데이터 성격별로 별도 파일로 분리 저장
-              const tables = parsed?.tables ?? {};
-
-              // ── 사용자 입력 데이터 ──
-              if (Array.isArray(tables.accounts)) {
-                fs.writeFileSync(path.join(dataDir, "accounts.json"), JSON.stringify(tables.accounts, null, 2), "utf-8");
-              }
-              if (Array.isArray(tables.loans)) {
-                fs.writeFileSync(path.join(dataDir, "loans.json"), JSON.stringify(tables.loans, null, 2), "utf-8");
-              }
-              if (Array.isArray(tables.ledger_entries)) {
-                fs.writeFileSync(path.join(dataDir, "ledger.json"), JSON.stringify(tables.ledger_entries, null, 2), "utf-8");
-              }
-              if (Array.isArray(tables.stock_trades)) {
-                fs.writeFileSync(path.join(dataDir, "trades.json"), JSON.stringify(tables.stock_trades, null, 2), "utf-8");
-              }
-
-              // ── API 캐시 데이터 (재수집 가능) ──
-              if (Array.isArray(tables.stock_prices)) {
-                fs.writeFileSync(path.join(dataDir, "prices.json"), JSON.stringify(tables.stock_prices, null, 2), "utf-8");
-              }
-              if (Array.isArray(tables.ticker_database) && tables.ticker_database.length > 0) {
-                fs.writeFileSync(path.join(dataDir, "ticker-database.json"), JSON.stringify(tables.ticker_database, null, 2), "utf-8");
-              }
-              if (Array.isArray(tables.historical_daily_closes) && tables.historical_daily_closes.length > 0) {
-                fs.writeFileSync(path.join(dataDir, "historical-closes.json"), JSON.stringify(tables.historical_daily_closes, null, 2), "utf-8");
-              }
+              // 사람이 읽기 좋게 포맷팅해서 저장 (git diff 가독성)
+              const formatted = JSON.stringify(JSON.parse(body), null, 2);
+              fs.writeFileSync(unifiedDataFile, formatted, "utf-8");
 
               res.setHeader("Content-Type", "application/json");
               res.end(JSON.stringify({ ok: true, savedAt: new Date().toISOString() }));
             } catch {
               res.statusCode = 500;
               res.setHeader("Content-Type", "application/json");
-              res.end(JSON.stringify({ error: "Failed to save table backup" }));
+              res.end(JSON.stringify({ error: "Failed to save farmwallet data" }));
             }
           });
           return;

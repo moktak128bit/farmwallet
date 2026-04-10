@@ -24,6 +24,7 @@ scripts/text-integrity-report.json
 backups/**
 
 # Generated/temp data
+# NOTE: data/farmwallet-data.json 은 git에 tracked (클라우드 sync 대상)
 data/app-data.json
 data/app-data-tables.json
 data/ticker-backup.json

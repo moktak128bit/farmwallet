@@ -1,6 +1,6 @@
 import React, { useEffect, useState } from "react";
 import { History, X } from "lucide-react";
-import { getGistVersions, loadFromGistVersion, type GistVersion } from "../services/gistSync";
+import { getRepoVersions, loadFromRepoVersion, type RepoVersion } from "../services/repoSync";
 
 interface Props {
   isOpen: boolean;
@@ -10,7 +10,7 @@ interface Props {
 }
 
 export const GistVersionModal: React.FC<Props> = ({ isOpen, onClose, onLoad, onLog }) => {
-  const [versions, setVersions] = useState<GistVersion[]>([]);
+  const [versions, setVersions] = useState<RepoVersion[]>([]);
   const [isFetching, setIsFetching] = useState(false);
   const [loadingIndex, setLoadingIndex] = useState<number | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -20,7 +20,7 @@ export const GistVersionModal: React.FC<Props> = ({ isOpen, onClose, onLoad, onL
     setVersions([]);
     setError(null);
     setIsFetching(true);
-    getGistVersions(10)
+    getRepoVersions(10)
       .then(setVersions)
       .catch((e) => setError(e instanceof Error ? e.message : "버전 목록 조회 실패"))
       .finally(() => setIsFetching(false));
@@ -40,17 +40,17 @@ export const GistVersionModal: React.FC<Props> = ({ isOpen, onClose, onLoad, onL
 
   if (!isOpen) return null;
 
-  const handleLoad = async (version: GistVersion, index: number) => {
+  const handleLoad = async (version: RepoVersion, index: number) => {
     setLoadingIndex(index);
-    onLog("Gist 버전 불러오는 중...", "info");
+    onLog("Repo 버전 불러오는 중...", "info");
     try {
-      const result = await loadFromGistVersion(version.url);
-      onLog(`Gist 버전 불러오기 완료 (${new Date(version.committedAt).toLocaleString("ko-KR")})`, "success");
+      const result = await loadFromRepoVersion(version.sha);
+      onLog(`Repo 버전 불러오기 완료 (${new Date(version.committedAt).toLocaleString("ko-KR")})`, "success");
       onLoad(result.dataJson, result.committedAt);
       onClose();
     } catch (e) {
       const msg = e instanceof Error ? e.message : "불러오기 실패";
-      onLog(`Gist 버전 불러오기 실패: ${msg}`, "error");
+      onLog(`Repo 버전 불러오기 실패: ${msg}`, "error");
       setError(msg);
     } finally {
       setLoadingIndex(null);
@@ -68,13 +68,13 @@ export const GistVersionModal: React.FC<Props> = ({ isOpen, onClose, onLoad, onL
         className="modal"
         role="dialog"
         aria-modal="true"
-        aria-label="Gist 버전 선택"
+        aria-label="Repo 버전 선택"
         style={{ maxWidth: 460, padding: "24px 28px" }}
       >
         <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 16 }}>
           <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
             <History size={18} style={{ color: "var(--accent)" }} />
-            <h3 style={{ margin: 0, fontSize: 16, fontWeight: 700 }}>Gist 버전 선택</h3>
+            <h3 style={{ margin: 0, fontSize: 16, fontWeight: 700 }}>Repo 버전 선택</h3>
           </div>
           <button type="button" className="icon-button" onClick={onClose} aria-label="닫기">
             <X size={18} />
@@ -109,7 +109,7 @@ export const GistVersionModal: React.FC<Props> = ({ isOpen, onClose, onLoad, onL
           <div style={{ textAlign: "center", padding: "24px 0", color: "var(--text-muted)", fontSize: 14 }}>
             저장된 버전이 없습니다.
             <div style={{ fontSize: 12, marginTop: 4 }}>
-              먼저 "Gist 저장" 버튼으로 데이터를 저장하세요.
+              먼저 "Repo 저장" 버튼으로 데이터를 저장하세요.
             </div>
           </div>
         )}

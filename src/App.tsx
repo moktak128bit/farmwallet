@@ -63,7 +63,7 @@ import { useTickerDatabase } from "./hooks/useTickerDatabase";
 import { useKeyboardShortcuts } from "./hooks/useKeyboardShortcuts";
 import { usePortfolioWorker } from "./hooks/usePortfolioWorker";
 import { APP_VERSION, BUILD_HASH } from "./constants/config";
-import { saveToGist, getGistToken, getGistId, setGistLastPushAt, isGistConfigured, GIST_CONFIG_CHANGE_EVENT } from "./services/gistSync";
+import { saveToRepo, getRepoToken, setRepoLastPushAt, isRepoConfigured, REPO_CONFIG_CHANGE_EVENT } from "./services/repoSync";
 import { toUserDataJson } from "./services/dataService";
 import { useGistSync } from "./hooks/useGistSync";
 import { runIntegrityCheck } from "./utils/dataIntegrity";
@@ -80,17 +80,17 @@ export const App: React.FC = () => {
   const [showGistVersionModal, setShowGistVersionModal] = useState(false);
   const [newVersionAvailable, setNewVersionAvailable] = useState(false);
 
-  // Gist 설정 반응형 상태 — Settings에서 변경 시 헤더 버튼 즉시 갱신
-  const [hasGistToken, setHasGistToken] = useState(() => !!getGistToken());
-  const [gistReady, setGistReady] = useState(() => isGistConfigured());
+  // Repo 설정 반응형 상태 — Settings에서 변경 시 헤더 버튼 즉시 갱신
+  const [hasRepoToken, setHasRepoToken] = useState(() => !!getRepoToken());
+  const [repoReady, setRepoReady] = useState(() => isRepoConfigured());
 
   useEffect(() => {
     const handler = () => {
-      setHasGistToken(!!getGistToken());
-      setGistReady(isGistConfigured());
+      setHasRepoToken(!!getRepoToken());
+      setRepoReady(isRepoConfigured());
     };
-    window.addEventListener(GIST_CONFIG_CHANGE_EVENT, handler);
-    return () => window.removeEventListener(GIST_CONFIG_CHANGE_EVENT, handler);
+    window.addEventListener(REPO_CONFIG_CHANGE_EVENT, handler);
+    return () => window.removeEventListener(REPO_CONFIG_CHANGE_EVENT, handler);
   }, []);
 
   // 프로덕션 자동 버전 감지 — 5분마다 build-meta.json 확인
@@ -235,32 +235,32 @@ export const App: React.FC = () => {
         tickerDatabase: parsed.tickerDatabase?.length > 0 ? parsed.tickerDatabase : prev.tickerDatabase,
         historicalDailyCloses: parsed.historicalDailyCloses?.length > 0 ? parsed.historicalDailyCloses : prev.historicalDailyCloses,
       }));
-      toast.success(`Gist 버전 불러오기 완료 (${new Date(committedAt).toLocaleString("ko-KR")})`);
+      toast.success(`Repo 버전 불러오기 완료 (${new Date(committedAt).toLocaleString("ko-KR")})`);
     } catch {
-      addAppLog("Gist 버전 불러오기 실패: 데이터 파싱 오류", "error");
-      toast.error("Gist 버전 불러오기 실패");
+      addAppLog("Repo 버전 불러오기 실패: 데이터 파싱 오류", "error");
+      toast.error("Repo 버전 불러오기 실패");
     }
   }, [setDataWithHistory, addAppLog]);
 
-  const handleGistAutoPull = useCallback((dataJson: string, remoteUpdatedAt: string) => {
+  const handleRepoAutoPull = useCallback((dataJson: string, remoteUpdatedAt: string) => {
     try {
       const parsed = JSON.parse(dataJson);
-      // Gist에는 API 캐시가 없으므로, 현재 메모리의 캐시를 그대로 유지
+      // Repo 파일에는 API 캐시가 없으므로, 현재 메모리의 캐시를 그대로 유지
       setDataWithHistory((prev) => ({
         ...parsed,
         prices: parsed.prices?.length > 0 ? parsed.prices : prev.prices,
         tickerDatabase: parsed.tickerDatabase?.length > 0 ? parsed.tickerDatabase : prev.tickerDatabase,
         historicalDailyCloses: parsed.historicalDailyCloses?.length > 0 ? parsed.historicalDailyCloses : prev.historicalDailyCloses,
       }));
-      addAppLog(`Gist 자동 불러오기 완료 (${new Date(remoteUpdatedAt).toLocaleString("ko-KR")})`, "success");
+      addAppLog(`Repo 자동 불러오기 완료 (${new Date(remoteUpdatedAt).toLocaleString("ko-KR")})`, "success");
     } catch {
-      addAppLog("Gist 자동 불러오기 실패: 데이터 파싱 오류", "error");
+      addAppLog("Repo 자동 불러오기 실패: 데이터 파싱 오류", "error");
     }
   }, [setDataWithHistory, addAppLog]);
 
   const { autoSyncEnabled, setAutoSyncEnabled, lastPushAt, lastPullAt } = useGistSync(
     data,
-    handleGistAutoPull,
+    handleRepoAutoPull,
     { onLog: addAppLog }
   );
 
@@ -485,29 +485,29 @@ export const App: React.FC = () => {
               <button
                 type="button"
                 className="primary"
-                style={{ background: hasGistToken ? "var(--chart-primary)" : undefined, opacity: hasGistToken ? 1 : 0.5 }}
-                disabled={!hasGistToken}
-                title={!hasGistToken ? "설정 → 클라우드 동기화에서 GitHub 토큰을 먼저 입력하세요" : "현재 데이터를 Gist에 저장"}
+                style={{ background: hasRepoToken ? "var(--chart-primary)" : undefined, opacity: hasRepoToken ? 1 : 0.5 }}
+                disabled={!hasRepoToken}
+                title={!hasRepoToken ? "설정 → 클라우드 동기화에서 GitHub 토큰을 먼저 입력하세요" : "현재 데이터를 Private Repo에 저장"}
                 onClick={() => withConfirm({
-                  title: "Gist 저장",
-                  message: "현재 데이터를 GitHub Gist에 저장합니다. 기존 Gist 데이터가 덮어씌워집니다.",
+                  title: "Repo 저장",
+                  message: "현재 데이터를 GitHub Private Repo에 저장(커밋)합니다. 기존 파일이 덮어씌워집니다.",
                   confirmLabel: "저장",
                   onConfirm: async () => {
-                    addAppLog("백업 + Gist 저장 시작...", "info");
+                    addAppLog("백업 + Repo 저장 시작...", "info");
                     try {
                       await handleManualBackup();
-                      const result = await saveToGist(toUserDataJson(data));
-                      setGistLastPushAt(result.updatedAt);
-                      addAppLog(`Gist 저장 완료 (${new Date(result.updatedAt).toLocaleString("ko-KR")})`, "success");
-                      toast.success("백업 + Gist 저장 완료");
+                      const result = await saveToRepo(toUserDataJson(data));
+                      setRepoLastPushAt(result.updatedAt);
+                      addAppLog(`Repo 저장 완료 (${new Date(result.updatedAt).toLocaleString("ko-KR")})`, "success");
+                      toast.success("백업 + Repo 저장 완료");
                     } catch (e: any) {
-                      addAppLog(`Gist 저장 실패: ${e.message}`, "error");
-                      toast.error(e.message ?? "Gist 저장 실패");
+                      addAppLog(`Repo 저장 실패: ${e.message}`, "error");
+                      toast.error(e.message ?? "Repo 저장 실패");
                     }
                   },
                 })}
               >
-                Gist 저장
+                Repo 저장
               </button>
               {import.meta.env.DEV && (
                 <button
@@ -547,15 +547,15 @@ export const App: React.FC = () => {
               <button
                 type="button"
                 className="secondary"
-                style={gistReady
+                style={repoReady
                   ? { borderColor: "var(--chart-primary)", color: "var(--chart-primary)" }
                   : { opacity: 0.45 }
                 }
-                disabled={!gistReady}
-                title={!hasGistToken ? "설정 → 클라우드 동기화에서 GitHub 토큰을 먼저 입력하세요" : !gistReady ? "Gist에 먼저 저장해야 불러올 수 있습니다" : "저장된 Gist 버전에서 불러오기"}
+                disabled={!repoReady}
+                title={!hasRepoToken ? "설정 → 클라우드 동기화에서 GitHub 토큰을 먼저 입력하세요" : !repoReady ? "Repo에 먼저 저장해야 불러올 수 있습니다" : "저장된 Repo 버전에서 불러오기"}
                 onClick={() => setShowGistVersionModal(true)}
               >
-                Gist 불러오기
+                Repo 불러오기
               </button>
               <button
                 type="button"
@@ -779,8 +779,8 @@ export const App: React.FC = () => {
               onBackupRestored={clearLoadFailed}
               autoSyncEnabled={autoSyncEnabled}
               onAutoSyncChange={setAutoSyncEnabled}
-              gistLastPushAt={lastPushAt}
-              gistLastPullAt={lastPullAt}
+              repoLastPushAt={lastPushAt}
+              repoLastPullAt={lastPullAt}
               onNavigateToRecord={({ type, id }) => {
                 if (type === "ledger") {
                   setTab("ledger");

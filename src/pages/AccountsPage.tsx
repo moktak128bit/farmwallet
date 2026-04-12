@@ -4,7 +4,7 @@ import { formatNumber, formatShortDate, formatKRW, formatUSD } from "../utils/fo
 import { isUSDStock } from "../utils/finance";
 import { fetchYahooQuotes } from "../yahooFinanceApi";
 import { EmptyState } from "../components/ui/EmptyState";
-import { Wallet, Download } from "lucide-react";
+import { Wallet, Download, ChevronDown, ChevronRight } from "lucide-react";
 import { toast } from "react-hot-toast";
 import { computeRealizedPnlByTradeId, positionMarketValueKRW } from "../calculations";
 import { shouldUseUsdBalanceMode } from "../utils/tradeCashImpact";
@@ -166,6 +166,7 @@ export const AccountsView: React.FC<Props> = ({
     toast.success("전체 데이터 CSV 다운로드 완료");
   }, [storeData]);
   const [showForm, setShowForm] = useState(false);
+  const [showBalanceBreakdown, setShowBalanceBreakdown] = useState(false);
   const [editingNumber, setEditingNumber] = useState<{
     id: string;
     field: "initialBalance" | "debt" | "savings" | "cashAdjustment" | "initialCashBalance";
@@ -1181,6 +1182,183 @@ export const AccountsView: React.FC<Props> = ({
           </div>
         );
       })}
+
+      {/* 계좌별 잔액 구성 상세 */}
+      {safeBalances.length > 0 && (
+        <div className="card" style={{ marginTop: 24, padding: 0, overflow: "hidden" }}>
+          <button
+            type="button"
+            onClick={() => setShowBalanceBreakdown((v) => !v)}
+            style={{
+              width: "100%",
+              display: "flex",
+              alignItems: "center",
+              gap: 8,
+              padding: "16px 20px",
+              background: "none",
+              border: "none",
+              cursor: "pointer",
+              fontSize: 16,
+              fontWeight: 600,
+              color: "var(--text)",
+              textAlign: "left"
+            }}
+          >
+            {showBalanceBreakdown ? <ChevronDown size={18} /> : <ChevronRight size={18} />}
+            계좌별 잔액 구성
+          </button>
+          {showBalanceBreakdown && (
+            <div style={{ padding: "0 20px 20px" }}>
+              <p style={{ margin: "0 0 16px", fontSize: 13, color: "var(--text-muted)" }}>
+                각 계좌의 현재 잔액이 어떻게 구성되었는지 항목별로 보여줍니다.
+              </p>
+              <div style={{ overflowX: "auto" }}>
+                <table className="data-table" style={{ fontSize: 13, whiteSpace: "nowrap" }}>
+                  <thead>
+                    <tr>
+                      <th style={{ textAlign: "left", position: "sticky", left: 0, background: "var(--surface)", zIndex: 1 }}>계좌</th>
+                      <th style={{ textAlign: "right" }}>시작금액</th>
+                      <th style={{ textAlign: "right" }}>보정금액</th>
+                      <th style={{ textAlign: "right" }}>수입</th>
+                      <th style={{ textAlign: "right" }}>지출</th>
+                      <th style={{ textAlign: "right" }}>이체 순액</th>
+                      <th style={{ textAlign: "right" }}>매매 영향</th>
+                      <th style={{ textAlign: "right" }}>저축</th>
+                      <th style={{
+                        textAlign: "right",
+                        borderLeft: "2px solid var(--border)",
+                        paddingLeft: 12,
+                        fontWeight: 700
+                      }}>현재 잔액</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {safeBalances
+                      .filter((row) => row.account.type !== "card")
+                      .map((row) => {
+                        const account = row.account;
+                        const baseBalance =
+                          account.type === "securities" || account.type === "crypto"
+                            ? (account.initialCashBalance ?? account.initialBalance ?? 0)
+                            : (account.initialBalance ?? 0);
+                        const cashAdj = account.cashAdjustment ?? 0;
+                        const savings = account.savings ?? 0;
+                        const { incomeSum, expenseSum, transferNet, tradeCashImpact, currentBalance } = row;
+
+                        const numCell = (value: number, opts?: { highlight?: boolean; muted?: boolean }) => {
+                          const isZero = value === 0;
+                          const color = opts?.highlight
+                            ? (value >= 0 ? "var(--primary)" : "var(--danger)")
+                            : isZero
+                              ? "var(--text-muted)"
+                              : value > 0
+                                ? "var(--chart-income)"
+                                : "var(--chart-expense)";
+                          return (
+                            <td style={{
+                              textAlign: "right",
+                              fontWeight: opts?.highlight ? 700 : (isZero ? 400 : 500),
+                              color,
+                              ...(opts?.highlight ? { borderLeft: "2px solid var(--border)", paddingLeft: 12 } : {})
+                            }}>
+                              {isZero && !opts?.highlight ? "-" : formatKRW(Math.round(value))}
+                            </td>
+                          );
+                        };
+
+                        return (
+                          <tr key={account.id}>
+                            <td style={{
+                              position: "sticky",
+                              left: 0,
+                              background: "var(--surface)",
+                              zIndex: 1,
+                              fontWeight: 500
+                            }}>
+                              <div>{account.name}</div>
+                              <div style={{ fontSize: 11, color: "var(--text-muted)", marginTop: 1 }}>
+                                {account.institution || account.id}
+                              </div>
+                            </td>
+                            {numCell(baseBalance)}
+                            {numCell(cashAdj)}
+                            {numCell(incomeSum)}
+                            {numCell(expenseSum)}
+                            {numCell(transferNet)}
+                            {numCell(tradeCashImpact)}
+                            {numCell(savings)}
+                            {numCell(currentBalance, { highlight: true })}
+                          </tr>
+                        );
+                      })}
+                    {/* 합계 행 */}
+                    {(() => {
+                      const rows = safeBalances.filter((r) => r.account.type !== "card");
+                      const totals = rows.reduce(
+                        (acc, row) => {
+                          const account = row.account;
+                          const base =
+                            account.type === "securities" || account.type === "crypto"
+                              ? (account.initialCashBalance ?? account.initialBalance ?? 0)
+                              : (account.initialBalance ?? 0);
+                          return {
+                            base: acc.base + base,
+                            cashAdj: acc.cashAdj + (account.cashAdjustment ?? 0),
+                            income: acc.income + row.incomeSum,
+                            expense: acc.expense + row.expenseSum,
+                            transfer: acc.transfer + row.transferNet,
+                            trade: acc.trade + row.tradeCashImpact,
+                            savings: acc.savings + (account.savings ?? 0),
+                            balance: acc.balance + row.currentBalance
+                          };
+                        },
+                        { base: 0, cashAdj: 0, income: 0, expense: 0, transfer: 0, trade: 0, savings: 0, balance: 0 }
+                      );
+
+                      const totalCell = (value: number, opts?: { highlight?: boolean }) => (
+                        <td style={{
+                          textAlign: "right",
+                          fontWeight: 700,
+                          color: opts?.highlight
+                            ? (value >= 0 ? "var(--primary)" : "var(--danger)")
+                            : value === 0
+                              ? "var(--text-muted)"
+                              : "var(--text)",
+                          ...(opts?.highlight ? { borderLeft: "2px solid var(--border)", paddingLeft: 12 } : {})
+                        }}>
+                          {value === 0 && !opts?.highlight ? "-" : formatKRW(Math.round(value))}
+                        </td>
+                      );
+
+                      return (
+                        <tr style={{ borderTop: "2px solid var(--border)", background: "var(--bg)" }}>
+                          <td style={{
+                            position: "sticky",
+                            left: 0,
+                            background: "var(--bg)",
+                            zIndex: 1,
+                            fontWeight: 700,
+                            textAlign: "right",
+                            paddingRight: 12
+                          }}>합계</td>
+                          {totalCell(totals.base)}
+                          {totalCell(totals.cashAdj)}
+                          {totalCell(totals.income)}
+                          {totalCell(totals.expense)}
+                          {totalCell(totals.transfer)}
+                          {totalCell(totals.trade)}
+                          {totalCell(totals.savings)}
+                          {totalCell(totals.balance, { highlight: true })}
+                        </tr>
+                      );
+                    })()}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          )}
+        </div>
+      )}
 
       {/* 계좌 초기 금액 역산: 현재 보유금액이 맞지 않을 때 역산하여 초기 금액 적용 */}
       {orderedRowsForInitialReverse.length > 0 && (

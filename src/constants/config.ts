@@ -40,6 +40,12 @@ export const STORAGE_KEYS = {
   DATE_ACCOUNT_ID: "fw-date-account-id",
   /** 데이트통장 본인 부담 비율 (0~100, 기본 50) */
   DATE_ACCOUNT_RATIO: "fw-date-account-ratio",
+  /** 자동 Gist 동기화 ON/OFF (기본: false) */
+  GIST_AUTO_SYNC: "fw-gist-auto-sync",
+  /** 마지막 자동 Gist 저장 성공 시각 (ISO 8601) */
+  GIST_LAST_PUSH_AT: "fw-gist-last-push-at",
+  /** 마지막 자동 Gist 불러오기 성공 시각 (ISO 8601) */
+  GIST_LAST_PULL_AT: "fw-gist-last-pull-at",
   /** API로 수집한 캐시 데이터 (prices, tickerDatabase, historicalDailyCloses) */
   CACHE: "farmwallet-cache-v1"
 } as const;
@@ -77,3 +83,6 @@ export const BACKUP_WARNING_HOURS = {
 
 // 자동 백업 간격 (밀리초, 30분)
 export const AUTO_BACKUP_INTERVAL_MS = 30 * 60 * 1000;
+
+// 자동 Gist 저장 디바운스 (밀리초, 5분)
+export const GIST_AUTO_PUSH_DEBOUNCE_MS = 5 * 60 * 1000;

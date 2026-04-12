@@ -24,13 +24,7 @@ scripts/text-integrity-report.json
 backups/**
 
 # Generated/temp data
-# NOTE: data/farmwallet-data.json 은 git에 tracked (클라우드 sync 대상)
-data/app-data.json
-data/app-data-tables.json
-data/ticker-backup.json
-data/farmwallet-import.json
-data/ledger-backup-*.json
-data/ledger-new.json
+# NOTE: data/ 폴더의 파일들은 git에 tracked (배포 시 함께 업로드)
 
 # Generated source data
 src/data/krNames.json

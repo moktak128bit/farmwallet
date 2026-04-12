@@ -12,6 +12,7 @@ import { STORAGE_KEYS } from "../constants/config";
 import { computeRealizedPnlByTradeId } from "../calculations";
 import { isUSDStock } from "../utils/finance";
 import { exportLedgerCsv } from "../utils/csvExport";
+import { useFocusTrap } from "../hooks/useFocusTrap";
 
 interface Props {
   accounts: Account[];
@@ -156,6 +157,8 @@ export const LedgerView: React.FC<Props> = ({
     [effectiveFormKind]
   );
   const isCopyingRef = useRef(false);
+  const [quickCopyEntry, setQuickCopyEntry] = useState<LedgerEntry | null>(null);
+  const [quickCopyAmount, setQuickCopyAmount] = useState("");
   const [selectedMonths, setSelectedMonths] = useState<Set<string>>(() => new Set([getThisMonthKST()]));
   const [currentYear, setCurrentYear] = useState(() => String(getKoreaTime().getFullYear()));
   const [draggingId, setDraggingId] = useState<string | null>(null);
@@ -178,6 +181,9 @@ export const LedgerView: React.FC<Props> = ({
   // 폼 확장/축소 상태 (progressive disclosure)
   const [formExpanded, setFormExpanded] = useState<boolean>(() => {
     try { return localStorage.getItem("fw-ledger-form-expanded") === "true"; } catch { return false; }
+  });
+  const [showDailySummary, setShowDailySummary] = useState<boolean>(() => {
+    try { return localStorage.getItem("fw-daily-summary") !== "false"; } catch { return true; }
   });
   // 정렬 상태
   type LedgerSortKey =
@@ -937,6 +943,37 @@ export const LedgerView: React.FC<Props> = ({
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
     submitForm(false);
+  };
+
+  const submitQuickCopy = () => {
+    if (!quickCopyEntry) return;
+    const parsed = Number(quickCopyAmount.replace(/,/g, "")) || 0;
+    if (parsed <= 0) {
+      toast.error("금액을 입력해주세요.");
+      return;
+    }
+    const id = `L${Date.now()}`;
+    const entry: LedgerEntry = {
+      ...quickCopyEntry,
+      id,
+      amount: parsed,
+      discountAmount: undefined,
+    };
+    onChangeLedger([entry, ...ledger]);
+    setLastAddedEntryId(id);
+    setFilterMainCategory(undefined);
+    setFilterSubCategory(undefined);
+    setFilterFromAccountId(undefined);
+    setFilterToAccountId(undefined);
+    setFilterAmountMin(undefined);
+    setFilterAmountMax(undefined);
+    setDateFilter({});
+    const amountStr = quickCopyEntry.currency === "USD"
+      ? `${parsed.toLocaleString()} USD`
+      : `${parsed.toLocaleString()}원`;
+    toast.success(`${quickCopyEntry.category || "항목"} ${amountStr} 복사 추가`);
+    setQuickCopyEntry(null);
+    setQuickCopyAmount("");
   };
 
   const isCreditPaymentEntry = (l: LedgerEntry) => l.kind === "expense" && l.category === "신용결제";
@@ -3580,7 +3617,46 @@ export const LedgerView: React.FC<Props> = ({
           </tr>
         </thead>
         <tbody>
-          {filteredLedger.slice(listPage * PAGE_SIZE, (listPage + 1) * PAGE_SIZE).map((l, index) => {
+          {(() => {
+            const pageItems = filteredLedger.slice(listPage * PAGE_SIZE, (listPage + 1) * PAGE_SIZE);
+            const enableDaySummary = showDailySummary && ledgerSort.key === "date";
+            const rows: React.ReactNode[] = [];
+            let prevDate: string | null = null;
+            let dayIncome = 0, dayExpense = 0, dayCount = 0, dayDate = "";
+
+            const flushDaySummary = () => {
+              if (!enableDaySummary || !dayDate || dayCount === 0) return;
+              const net = dayIncome - dayExpense;
+              rows.push(
+                <tr key={`ds-${dayDate}`} style={{ background: "var(--bg)", borderTop: "1px solid var(--border)" }}>
+                  <td colSpan={11} style={{ padding: "5px 12px", fontSize: 12 }}>
+                    <div style={{ display: "flex", alignItems: "center", gap: 12, flexWrap: "wrap" }}>
+                      <span style={{ fontWeight: 600, color: "var(--text)" }}>{formatShortDate(dayDate)}</span>
+                      <span style={{ color: "var(--text-muted)" }}>{dayCount}건</span>
+                      {dayIncome > 0 && <span style={{ color: "var(--chart-income)", fontWeight: 500 }}>+{formatKRW(dayIncome)}</span>}
+                      {dayExpense > 0 && <span style={{ color: "var(--chart-expense)", fontWeight: 500 }}>-{formatKRW(dayExpense)}</span>}
+                      <span style={{ fontWeight: 600, color: net >= 0 ? "var(--chart-income)" : "var(--chart-expense)" }}>
+                        = {net >= 0 ? "+" : ""}{formatKRW(net)}
+                      </span>
+                    </div>
+                  </td>
+                </tr>
+              );
+            };
+
+            pageItems.forEach((l, index) => {
+            if (enableDaySummary && prevDate !== null && l.date !== prevDate) {
+              flushDaySummary();
+              dayIncome = 0; dayExpense = 0; dayCount = 0;
+            }
+            if (enableDaySummary) {
+              dayDate = l.date;
+              dayCount++;
+              if (l.kind === "income") dayIncome += l.amount;
+              else if (l.kind === "expense") dayExpense += l.amount;
+            }
+            prevDate = l.date;
+
             const isDraggingRange =
               dragSumStartIndex != null &&
               index >= Math.min(dragSumStartIndex, dragSumEndIndex ?? dragSumStartIndex) &&
@@ -3588,7 +3664,7 @@ export const LedgerView: React.FC<Props> = ({
             const isInSumSelection = selectedLedgerIdsForSum.has(l.id);
             const isInDragSumRange = isDraggingRange || isInSumSelection;
             const balanceKey = (l as LedgerDisplayRow)._tradeId ?? l.id;
-            return (
+            const row = (
             <tr
               key={l.id}
               data-ledger-id={l.id}
@@ -4110,7 +4186,8 @@ export const LedgerView: React.FC<Props> = ({
                       toast("주식 거래는 복사할 수 없습니다.");
                       return;
                     }
-                    startCopy(l);
+                    setQuickCopyEntry(l as LedgerEntry);
+                    setQuickCopyAmount("");
                   }}>
                     복사
                   </button>
@@ -4134,7 +4211,12 @@ export const LedgerView: React.FC<Props> = ({
               </td>
             </tr>
             );
-          })}
+            rows.push(row);
+            });
+            // flush last day group
+            flushDaySummary();
+            return rows;
+          })()}
         </tbody>
         </table>
         </div>
@@ -4147,8 +4229,19 @@ export const LedgerView: React.FC<Props> = ({
         </p>
       )}
       {filteredLedger.length > 0 && (
-        <div style={{ marginTop: "8px", fontSize: "14px", color: "var(--text-muted)" }}>
-          총 {filteredLedger.length}건
+        <div style={{ marginTop: "8px", fontSize: "14px", color: "var(--text-muted)", display: "flex", alignItems: "center", gap: 16 }}>
+          <span>총 {filteredLedger.length}건</span>
+          <label style={{ display: "flex", alignItems: "center", gap: 4, cursor: "pointer", fontSize: 13 }}>
+            <input
+              type="checkbox"
+              checked={showDailySummary}
+              onChange={(e) => {
+                setShowDailySummary(e.target.checked);
+                try { localStorage.setItem("fw-daily-summary", String(e.target.checked)); } catch {}
+              }}
+            />
+            일별 소계
+          </label>
         </div>
       )}
       {filteredLedger.length > PAGE_SIZE && (
@@ -4165,6 +4258,151 @@ export const LedgerView: React.FC<Props> = ({
         </div>
       )}
 
+      {/* 빠른 복사 모달 */}
+      {quickCopyEntry && (() => {
+        const qe = quickCopyEntry;
+        const fromName = accounts.find((a) => a.id === qe.fromAccountId)?.name ?? qe.fromAccountId;
+        const toName = accounts.find((a) => a.id === qe.toAccountId)?.name ?? qe.toAccountId;
+        const categoryLabel = [qe.category, qe.subCategory, qe.detailCategory].filter(Boolean).join(" > ");
+        const kindLabel = qe.kind === "income" ? "수입" : qe.kind === "transfer" ? "이체" : "지출";
+        return (
+          <QuickCopyModal
+            kindLabel={kindLabel}
+            date={qe.date}
+            categoryLabel={categoryLabel}
+            description={qe.description}
+            fromName={fromName}
+            toName={toName}
+            amount={quickCopyAmount}
+            onAmountChange={setQuickCopyAmount}
+            onSubmit={submitQuickCopy}
+            onEditInForm={() => {
+              startCopy(quickCopyEntry);
+              setQuickCopyEntry(null);
+              setQuickCopyAmount("");
+            }}
+            onClose={() => { setQuickCopyEntry(null); setQuickCopyAmount(""); }}
+          />
+        );
+      })()}
+    </div>
+  );
+};
+
+/* ─── 빠른 복사 모달 컴포넌트 ─── */
+const QuickCopyModal: React.FC<{
+  kindLabel: string;
+  date: string;
+  categoryLabel: string;
+  description: string;
+  fromName?: string;
+  toName?: string;
+  amount: string;
+  onAmountChange: (v: string) => void;
+  onSubmit: () => void;
+  onEditInForm: () => void;
+  onClose: () => void;
+}> = ({ kindLabel, date, categoryLabel, description, fromName, toName, amount, onAmountChange, onSubmit, onEditInForm, onClose }) => {
+  const trapRef = useFocusTrap<HTMLDivElement>(true);
+  const inputRef = useRef<HTMLInputElement>(null);
+
+  useEffect(() => {
+    const id = setTimeout(() => inputRef.current?.focus(), 50);
+    return () => clearTimeout(id);
+  }, []);
+
+  useEffect(() => {
+    const handler = (e: KeyboardEvent) => { if (e.key === "Escape") onClose(); };
+    window.addEventListener("keydown", handler);
+    return () => window.removeEventListener("keydown", handler);
+  }, [onClose]);
+
+  const infoRow = (label: string, value?: string) =>
+    value ? (
+      <div style={{ display: "flex", gap: 8, fontSize: 13, lineHeight: 1.6 }}>
+        <span style={{ color: "var(--text-muted)", minWidth: 48, flexShrink: 0 }}>{label}</span>
+        <span style={{ fontWeight: 500 }}>{value}</span>
+      </div>
+    ) : null;
+
+  return (
+    <div
+      className="modal-backdrop"
+      style={{ zIndex: 2000 }}
+      role="presentation"
+      onClick={(e) => { if (e.target === e.currentTarget) onClose(); }}
+    >
+      <div
+        ref={trapRef}
+        className="modal"
+        role="dialog"
+        aria-modal="true"
+        style={{ maxWidth: 440, padding: "24px 28px" }}
+      >
+        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 16 }}>
+          <h3 style={{ margin: 0, fontSize: 17, fontWeight: 700 }}>복사 추가</h3>
+          <button
+            type="button"
+            onClick={onClose}
+            style={{ background: "transparent", border: "none", fontSize: 20, cursor: "pointer", padding: 0, width: 24, height: 24, color: "var(--text-muted)" }}
+          >
+            &times;
+          </button>
+        </div>
+
+        <div style={{
+          padding: "12px 14px",
+          background: "var(--bg)",
+          borderRadius: 8,
+          border: "1px solid var(--border)",
+          marginBottom: 16,
+          display: "flex",
+          flexDirection: "column",
+          gap: 2
+        }}>
+          {infoRow("구분", kindLabel)}
+          {infoRow("날짜", formatShortDate(date))}
+          {infoRow("분류", categoryLabel)}
+          {infoRow("내역", description)}
+          {infoRow("출금", fromName)}
+          {infoRow("입금", toName)}
+        </div>
+
+        <div style={{ marginBottom: 20 }}>
+          <label style={{ display: "block", fontSize: 13, fontWeight: 600, marginBottom: 6 }}>금액</label>
+          <input
+            ref={inputRef}
+            type="text"
+            inputMode="numeric"
+            placeholder="금액 입력"
+            value={amount}
+            onChange={(e) => onAmountChange(e.target.value.replace(/[^0-9,]/g, ""))}
+            onKeyDown={(e) => { if (e.key === "Enter") onSubmit(); }}
+            style={{
+              width: "100%",
+              padding: "10px 12px",
+              fontSize: 16,
+              fontWeight: 600,
+              borderRadius: 8,
+              border: "1px solid var(--border)",
+              textAlign: "right",
+              boxSizing: "border-box"
+            }}
+          />
+        </div>
+
+        <div style={{ display: "flex", gap: 8, justifyContent: "flex-end" }}>
+          <button type="button" className="secondary" onClick={onEditInForm} style={{ fontSize: 13 }}>
+            폼에서 편집
+          </button>
+          <button type="button" className="secondary" onClick={onClose}>
+            취소
+          </button>
+          <button type="button" className="primary" onClick={onSubmit}>
+            추가
+          </button>
+        </div>
+      </div>
     </div>
   );
 };

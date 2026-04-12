@@ -63,6 +63,10 @@ import { useKeyboardShortcuts } from "./hooks/useKeyboardShortcuts";
 import { usePortfolioWorker } from "./hooks/usePortfolioWorker";
 import { APP_VERSION, BUILD_HASH } from "./constants/config";
 import { runIntegrityCheck } from "./utils/dataIntegrity";
+import { useGistSync } from "./hooks/useGistSync";
+import { GistVersionModal } from "./components/GistVersionModal";
+import { isGistConfigured, saveToGist, loadFromGist } from "./services/gistSync";
+import { toUserDataJson } from "./services/dataService";
 
 export type AppLogEntry = { id: number; message: string; type: "success" | "error" | "info"; time: string };
 const APP_LOG_MAX = 200;
@@ -74,6 +78,10 @@ export const App: React.FC = () => {
   const [isPushingToGit, setIsPushingToGit] = useState(false);
   const [isPullingFromGit, setIsPullingFromGit] = useState(false);
   const [newVersionAvailable, setNewVersionAvailable] = useState(false);
+  const [isGistSaving, setIsGistSaving] = useState(false);
+  const [isGistLoading, setIsGistLoading] = useState(false);
+  const [showGistVersionModal, setShowGistVersionModal] = useState(false);
+  const [gistConfigured, setGistConfigured] = useState(() => isGistConfigured());
 
   // 프로덕션 자동 버전 감지 — 5분마다 build-meta.json 확인
   useEffect(() => {
@@ -178,6 +186,13 @@ export const App: React.FC = () => {
     return () => { window.clearTimeout(t1); window.clearTimeout(t2); };
   }, []);
 
+  // Gist 설정 변경 이벤트 구독
+  useEffect(() => {
+    const handler = () => setGistConfigured(isGistConfigured());
+    window.addEventListener("farmwallet:gist-config-change", handler);
+    return () => window.removeEventListener("farmwallet:gist-config-change", handler);
+  }, []);
+
   // Zustand store 사용
   const { data, setData, isLoading, loadFailed, clearLoadFailed } = useAppData();
   const { setDataWithHistory, handleUndo, handleRedo } = useUndoRedo(data, setData);
@@ -209,6 +224,32 @@ export const App: React.FC = () => {
   } = useBackup(data, { onLog: addAppLog });
 
   const { isLoadingTickerDatabase, handleLoadInitialTickers } = useTickerDatabase(data, setDataWithHistory, { onLog: addAppLog });
+
+  // Gist 동기화 훅
+  const handleGistPulledData = useCallback((dataJson: string, _remoteUpdatedAt: string) => {
+    try {
+      const parsed = JSON.parse(dataJson);
+      setDataWithHistory({
+        ...parsed,
+        prices: parsed.prices?.length > 0 ? parsed.prices : data.prices,
+        tickerDatabase: parsed.tickerDatabase?.length > 0 ? parsed.tickerDatabase : data.tickerDatabase,
+        historicalDailyCloses: parsed.historicalDailyCloses?.length > 0 ? parsed.historicalDailyCloses : data.historicalDailyCloses,
+      });
+      addAppLog("Gist에서 데이터 불러오기 완료", "success");
+    } catch {
+      addAppLog("Gist 데이터 파싱 실패", "error");
+    }
+  }, [data.prices, data.tickerDatabase, data.historicalDailyCloses, setDataWithHistory, addAppLog]);
+
+  const { autoSyncEnabled, setAutoSyncEnabled, lastPushAt: gistLastPushAt, lastPullAt: gistLastPullAt } = useGistSync(
+    data,
+    handleGistPulledData,
+    { onLog: addAppLog }
+  );
+
+  const handleGistVersionLoad = useCallback((dataJson: string, _committedAt: string) => {
+    handleGistPulledData(dataJson, _committedAt);
+  }, [handleGistPulledData]);
 
   // keyboard shortcuts
   useKeyboardShortcuts({
@@ -459,7 +500,76 @@ export const App: React.FC = () => {
                 </button>
               )}
             </div>
-            {/* 그룹 2: 업데이트 */}
+            {/* 그룹 2: Gist 동기화 */}
+            {gistConfigured && (
+              <div style={{ display: 'flex', gap: 4, alignItems: 'center', background: 'var(--surface)', borderRadius: 8, padding: '2px 4px' }}>
+                <button
+                  type="button"
+                  className="primary"
+                  style={{ background: "var(--chart-income)", fontSize: 13 }}
+                  disabled={isGistSaving}
+                  onClick={() => withConfirm({
+                    title: "Gist 저장",
+                    message: "현재 데이터를 Gist에 저장합니다.",
+                    confirmLabel: "저장",
+                    onConfirm: async () => {
+                      setIsGistSaving(true);
+                      addAppLog("Gist에 저장 중...", "info");
+                      try {
+                        const jsonStr = toUserDataJson(data);
+                        await saveToGist(jsonStr);
+                        addAppLog("Gist 저장 완료", "success");
+                        toast.success("Gist에 저장 완료");
+                      } catch (e: any) {
+                        addAppLog(`Gist 저장 실패: ${e.message}`, "error");
+                        toast.error(e.message ?? "Gist 저장 실패");
+                      } finally {
+                        setIsGistSaving(false);
+                      }
+                    },
+                  })}
+                >
+                  {isGistSaving ? "저장 중..." : "Gist 저장"}
+                </button>
+                <button
+                  type="button"
+                  className="secondary"
+                  style={{ fontSize: 13 }}
+                  disabled={isGistLoading}
+                  onClick={() => withConfirm({
+                    title: "Gist 불러오기",
+                    message: "Gist에서 데이터를 불러옵니다. 현재 데이터가 덮어씌워집니다.",
+                    confirmLabel: "불러오기",
+                    confirmStyle: "danger",
+                    onConfirm: async () => {
+                      setIsGistLoading(true);
+                      addAppLog("Gist에서 불러오는 중...", "info");
+                      try {
+                        const result = await loadFromGist();
+                        handleGistPulledData(result.dataJson, result.updatedAt);
+                        toast.success("Gist에서 불러오기 완료");
+                      } catch (e: any) {
+                        addAppLog(`Gist 불러오기 실패: ${e.message}`, "error");
+                        toast.error(e.message ?? "Gist 불러오기 실패");
+                      } finally {
+                        setIsGistLoading(false);
+                      }
+                    },
+                  })}
+                >
+                  {isGistLoading ? "불러오는 중..." : "Gist 불러오기"}
+                </button>
+                <button
+                  type="button"
+                  className="secondary"
+                  style={{ fontSize: 13 }}
+                  onClick={() => setShowGistVersionModal(true)}
+                >
+                  버전
+                </button>
+              </div>
+            )}
+            {/* 그룹 3: 업데이트 */}
             <div style={{ display: 'flex', gap: 4, alignItems: 'center', background: 'var(--surface)', borderRadius: 8, padding: '2px 4px' }}>
               <button
                 type="button"
@@ -469,9 +579,9 @@ export const App: React.FC = () => {
                 onClick={() => {
                   if (import.meta.env.DEV) {
                     withConfirm({
-                      title: "업데이트",
+                      title: "업데이트받기",
                       message: "원격에서 최신 코드를 내려받습니다. 완료 후 F5로 새로고침이 필요합니다.",
-                      confirmLabel: "업데이트",
+                      confirmLabel: "업데이트받기",
                       confirmStyle: "danger",
                       onConfirm: async () => {
                         setIsPullingFromGit(true);
@@ -496,7 +606,7 @@ export const App: React.FC = () => {
                   }
                 }}
               >
-                {isPullingFromGit ? "업데이트 중..." : newVersionAvailable ? "새 버전 적용" : "업데이트"}
+                {isPullingFromGit ? "업데이트받는 중..." : newVersionAvailable ? "새 버전 적용" : "업데이트받기"}
               </button>
             </div>
             <button
@@ -701,6 +811,10 @@ export const App: React.FC = () => {
                 setDataWithHistory(next);
                 addAppLog("저장 완료: 거래·시세·종목 등 데이터가 저장되었습니다.", "success");
               }}
+              autoSyncEnabled={autoSyncEnabled}
+              onAutoSyncChange={setAutoSyncEnabled}
+              gistLastPushAt={gistLastPushAt}
+              gistLastPullAt={gistLastPullAt}
             />
           )}
           </Suspense>
@@ -732,6 +846,13 @@ export const App: React.FC = () => {
       />
 
       <ShortcutsHelp isOpen={showShortcutsHelp} onClose={() => setShowShortcutsHelp(false)} />
+
+      <GistVersionModal
+        isOpen={showGistVersionModal}
+        onClose={() => setShowGistVersionModal(false)}
+        onLoad={handleGistVersionLoad}
+        onLog={addAppLog}
+      />
 
       <ConfirmModal
         isOpen={pendingAction !== null}

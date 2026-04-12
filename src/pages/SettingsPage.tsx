@@ -22,6 +22,8 @@ const SavingsMigrationView = lazy(() => import("./SavingsMigrationPage").then((m
 const ThemeCustomizer = lazy(() => import("../components/ThemeCustomizer").then((m) => ({ default: m.ThemeCustomizer })));
 import { usePWAInstall } from "../hooks/usePWAInstall";
 import { STORAGE_KEYS, ISA_PORTFOLIO } from "../constants/config";
+import * as gistSyncModule from "../services/gistSync";
+import { toUserDataJson } from "../services/dataService";
 import { ERROR_MESSAGES } from "../constants/errorMessages";
 import { appDataFromTableBackupPayload, buildTableBackupFile } from "../utils/tableDataBackup";
 
@@ -35,6 +37,12 @@ interface Props {
   onBackupsChanged?: () => void | Promise<void>;
   onNavigateToRecord?: (payload: { type: "ledger" | "trade"; id: string }) => void;
   onNavigateToTab?: (tab: "accounts" | "ledger" | "stocks") => void;
+  /** 자동 Gist 동기화 ON/OFF */
+  autoSyncEnabled?: boolean;
+  onAutoSyncChange?: (enabled: boolean) => void;
+  /** 마지막 자동 저장/불러오기 시각 */
+  gistLastPushAt?: string | null;
+  gistLastPullAt?: string | null;
 }
 
 type SettingsTab = "backup" | "integrity" | "theme" | "accessibility" | "dashboard" | "savingsMigration";
@@ -306,7 +314,11 @@ export const SettingsView: React.FC<Props> = ({
   onBackupRestored,
   onBackupsChanged,
   onNavigateToRecord,
-  onNavigateToTab
+  onNavigateToTab,
+  autoSyncEnabled = false,
+  onAutoSyncChange,
+  gistLastPushAt,
+  gistLastPullAt
 }) => {
   const [activeTab, setActiveTab] = useState<SettingsTab>("backup");
   const [showThemeCustomizer, setShowThemeCustomizer] = useState(false);
@@ -325,6 +337,11 @@ export const SettingsView: React.FC<Props> = ({
     if (typeof window === "undefined") return false;
     return localStorage.getItem(STORAGE_KEYS.PRICE_API_ENABLED) === "true";
   });
+
+  const [gistToken, setGistToken] = useState(() => gistSyncModule.getGistToken());
+  const [gistId, setGistIdState] = useState(() => gistSyncModule.getGistId());
+  const [gistSyncing, setGistSyncing] = useState(false);
+  const [gistLastSync, setGistLastSync] = useState<string | null>(null);
 
   const [dateAccountId, setDateAccountId] = useState(() => {
     if (typeof window === "undefined") return "";
@@ -914,12 +931,121 @@ export const SettingsView: React.FC<Props> = ({
           </p>
         </div>
         <div className="card">
-          <div className="card-title">클라우드 동기화</div>
-          <p className="hint" style={{ marginBottom: 8 }}>
-            헤더 상단의 <b>배포</b> 버튼으로 현재 데이터를 GitHub에 저장(push)하고,
-            <b> 업데이트</b> 버튼으로 원격의 최신 데이터를 불러옵니다(pull).
-            <br />저장 시 커밋 메시지에 한국 시각이 자동 기록됩니다. (dev 서버 실행 중에만 작동)
+          <div className="card-title">클라우드 동기화 (GitHub Gist)</div>
+          <p className="hint" style={{ marginBottom: 12 }}>
+            GitHub Personal Access Token (gist 권한)으로 데이터를 Private Gist에 저장/불러옵니다.
+            <br />다른 기기에서도 동일한 토큰 + Gist ID로 데이터를 공유할 수 있습니다.
           </p>
+          <label style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 10 }}>
+            <span style={{ minWidth: 80 }}>Token</span>
+            <input
+              type="password"
+              value={gistToken}
+              onChange={(e) => { setGistToken(e.target.value); gistSyncModule.setGistToken(e.target.value); }}
+              placeholder="ghp_xxxxxxxxxxxx"
+              style={{ flex: 1, padding: "6px 10px", borderRadius: 6, fontFamily: "monospace", fontSize: 12 }}
+            />
+          </label>
+          <label style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 12 }}>
+            <span style={{ minWidth: 80 }}>Gist ID</span>
+            <input
+              type="text"
+              value={gistId}
+              onChange={(e) => { setGistIdState(e.target.value); gistSyncModule.setGistId(e.target.value); }}
+              placeholder="자동 생성됨 (첫 저장 시)"
+              style={{ flex: 1, padding: "6px 10px", borderRadius: 6, fontFamily: "monospace", fontSize: 12 }}
+              readOnly={false}
+            />
+          </label>
+          <div style={{ display: "flex", flexDirection: "column", gap: 12, marginTop: 12 }}>
+            <div>
+              <div style={{ fontSize: 12, fontWeight: 700, color: "var(--chart-income)", marginBottom: 6 }}>Gist에 저장 (안전 — 현재 데이터를 백업)</div>
+              <button
+                type="button"
+                disabled={gistSyncing || !gistToken}
+                onClick={async () => {
+                  setGistSyncing(true);
+                  try {
+                    const jsonStr = toUserDataJson(data);
+                    const result = await gistSyncModule.saveToGist(jsonStr);
+                    setGistIdState(result.gistId);
+                    setGistLastSync(result.updatedAt);
+                    toast.success("Gist에 저장 완료");
+                  } catch (e: any) {
+                    toast.error(e.message ?? "Gist 저장 실패");
+                  } finally {
+                    setGistSyncing(false);
+                  }
+                }}
+                style={{ background: "var(--chart-income)", border: "none", color: "white", padding: "8px 20px", borderRadius: 8, fontWeight: 600 }}
+              >
+                {gistSyncing ? "동기화 중..." : "Gist에 저장"}
+              </button>
+            </div>
+            <div>
+              <div style={{ fontSize: 12, fontWeight: 700, color: "var(--warning, orange)", marginBottom: 6 }}>Gist에서 불러오기 (현재 데이터 덮어쓰기)</div>
+              <button
+                type="button"
+                disabled={gistSyncing || !gistToken || !gistId}
+                onClick={async () => {
+                  setGistSyncing(true);
+                  try {
+                    const result = await gistSyncModule.loadFromGist();
+                    const parsed = JSON.parse(result.dataJson);
+                    // Gist에 없는 API 캐시 데이터는 현재 메모리의 것을 유지
+                    onChangeData({
+                      ...parsed,
+                      prices: parsed.prices?.length > 0 ? parsed.prices : data.prices,
+                      tickerDatabase: parsed.tickerDatabase?.length > 0 ? parsed.tickerDatabase : data.tickerDatabase,
+                      historicalDailyCloses: parsed.historicalDailyCloses?.length > 0 ? parsed.historicalDailyCloses : data.historicalDailyCloses,
+                    });
+                    setGistLastSync(result.updatedAt);
+                    toast.success("Gist에서 불러오기 완료");
+                  } catch (e: any) {
+                    toast.error(e.message ?? "Gist 불러오기 실패");
+                  } finally {
+                    setGistSyncing(false);
+                  }
+                }}
+                style={{ background: "var(--surface)", border: "2px solid orange", color: "var(--text)", padding: "8px 20px", borderRadius: 8, fontWeight: 600 }}
+              >
+                Gist에서 불러오기
+              </button>
+            </div>
+          </div>
+          {gistLastSync && (
+            <p className="hint" style={{ marginTop: 8 }}>
+              마지막 동기화: {new Date(gistLastSync).toLocaleString("ko-KR")}
+            </p>
+          )}
+          <div style={{ marginTop: 16, borderTop: "1px solid var(--border)", paddingTop: 12 }}>
+            <div className="card-title" style={{ fontSize: 13, marginBottom: 8 }}>자동 동기화</div>
+            <label style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 6, cursor: (!gistToken || !gistId) ? "not-allowed" : "pointer" }}>
+              <input
+                type="checkbox"
+                checked={autoSyncEnabled}
+                disabled={!gistToken || !gistId}
+                onChange={(e) => {
+                  onAutoSyncChange?.(e.target.checked);
+                  toast.success(e.target.checked ? "자동 동기화를 켰습니다." : "자동 동기화를 껐습니다.");
+                }}
+              />
+              <span style={{ fontSize: 13 }}>자동 동기화 사용 (데이터 변경 후 5분 뒤 자동 저장 · 앱 시작 시 자동 불러오기)</span>
+            </label>
+            {(!gistToken || !gistId) && (
+              <p className="hint">Token과 Gist ID를 먼저 설정해야 자동 동기화를 사용할 수 있습니다.</p>
+            )}
+            {gistLastPushAt && (
+              <p className="hint" style={{ marginTop: 4 }}>
+                마지막 자동 저장: {new Date(gistLastPushAt).toLocaleString("ko-KR")}
+              </p>
+            )}
+            {gistLastPullAt && (
+              <p className="hint" style={{ marginTop: 2 }}>
+                마지막 자동 불러오기: {new Date(gistLastPullAt).toLocaleString("ko-KR")}
+              </p>
+            )}
+          </div>
         </div>
         <div className="card">
           <div className="card-title">데이트통장 설정</div>

@@ -33,6 +33,7 @@ import { getKrNames } from "../storage";
 import { toast } from "react-hot-toast";
 import { validateDate, validateTicker, validateRequired, validateQuantity, validateAmount, validateAccountTickerCurrency } from "../utils/validation";
 import { ERROR_MESSAGES } from "../constants/errorMessages";
+import { usePriceAutoRefresh } from "../hooks/usePriceAutoRefresh";
 
 /** 환율 미로드 시 미국 주식 저장에 사용하는 기본 환율 (저장 차단 대신 사용) */
 const DEFAULT_FX_RATE = 1400;
@@ -1042,6 +1043,20 @@ export const StocksView: React.FC<Props> = ({
       logLabel: "보유 종목"
     });
   }, [runQuoteRefresh, uniqueStockTickers, uniqueCryptoTickers]);
+
+  usePriceAutoRefresh({
+    onRefresh: async () => {
+      if (uniqueStockTickers.length === 0 && uniqueCryptoTickers.length === 0) return;
+      await runQuoteRefresh({
+        mode: "holdings",
+        stockTickers: uniqueStockTickers,
+        cryptoTickers: uniqueCryptoTickers,
+        updateTickerDatabase: false,
+        persistToTickerJson: false,
+        logLabel: "자동 갱신"
+      });
+    }
+  });
 
   const handleRefreshQuotesFull = useCallback(async () => {
     const rows = await fetchTickersFromFile();

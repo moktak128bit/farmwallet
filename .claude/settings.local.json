@@ -1,7 +1,14 @@
 {
   "permissions": {
     "allow": [
-      "Bash(npx tsc:*)"
+      "Bash(npx tsc:*)",
+      "Bash(find /c/Users/Atom/farmwallet/src/pages -name \"*.tsx\" -exec wc -l {} +)",
+      "Bash(find /c/Users/Atom/farmwallet/README* -o -find /c/Users/Atom/farmwallet/docs -type f)",
+      "Bash(npm run:*)",
+      "Bash(grep -nA2 \"warning\\\\|error\" /tmp/lint.log)",
+      "Bash(npx vitest:*)",
+      "Bash(node -e \"const d=require\\('./data/farmwallet-data.json'\\); const accs=d.accounts||[]; for\\(const a of accs\\){ if\\(/CMA|농협입출금|ISA/.test\\(a.name+a.id+\\(a.institution||''\\)\\)\\) console.log\\(JSON.stringify\\({id:a.id,name:a.name,type:a.type,initialBalance:a.initialBalance,initialCashBalance:a.initialCashBalance,cashAdjustment:a.cashAdjustment,savings:a.savings}\\)\\);}\")",
+      "Bash(npx vite:*)"
     ]
   }
 }

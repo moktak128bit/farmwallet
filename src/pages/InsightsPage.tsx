@@ -1,10 +1,12 @@
 import React, { useMemo, useState } from "react";
-import type { Account, LedgerEntry, StockTrade, StockPrice, CategoryPresets, BudgetGoal } from "../types";
+import type { Account, LedgerEntry, StockTrade, StockPrice, CategoryPresets, BudgetGoal, RecurringExpense } from "../types";
 import {
   BarChart, Bar, LineChart, Line, PieChart, Pie, Cell,
   XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer,
   AreaChart, Area, ComposedChart,
 } from "recharts";
+import { ForecastView } from "../features/insights/ForecastView";
+import { SettlementView } from "../features/dating/SettlementView";
 
 /* ================================================================== */
 /*  Constants                                                          */
@@ -19,13 +21,15 @@ const TABS: { id: TabId; label: string; icon: string }[] = [
   { id: "income", label: "수입 구조", icon: "💰" },
   { id: "asset", label: "자산 분석", icon: "🏦" },
   { id: "date", label: "데이트 분석", icon: "💕" },
+  { id: "settle", label: "데이트 정산", icon: "🤝" },
   { id: "invest", label: "투자 포트폴리오", icon: "📈" },
   { id: "sub", label: "구독 관리", icon: "🔄" },
   { id: "pattern", label: "소비 패턴", icon: "🔍" },
   { id: "velocity", label: "지출 속도", icon: "⚡" },
+  { id: "forecast", label: "다음 달 예측", icon: "🔮" },
   { id: "fun", label: "재미 통계", icon: "🎯" },
 ];
-type TabId = "overview" | "expense" | "income" | "asset" | "date" | "invest" | "sub" | "pattern" | "velocity" | "fun";
+type TabId = "overview" | "expense" | "income" | "asset" | "date" | "settle" | "invest" | "sub" | "pattern" | "velocity" | "forecast" | "fun";
 
 /* ================================================================== */
 /*  Formatters                                                         */
@@ -2671,15 +2675,17 @@ interface Props {
   fxRate?: number;
   categoryPresets: CategoryPresets;
   budgetGoals?: BudgetGoal[];
+  recurringExpenses?: RecurringExpense[];
+  onAddLedger?: (entry: LedgerEntry) => void;
 }
 
-export const InsightsView: React.FC<Props> = ({ accounts, ledger, trades = [], prices: _p, fxRate: _f, categoryPresets, budgetGoals: _b }) => {
+export const InsightsView: React.FC<Props> = ({ accounts, ledger, trades = [], prices: _p, fxRate: _f, categoryPresets, budgetGoals: _b, recurringExpenses = [], onAddLedger }) => {
   const [tab, setTab] = useState<TabId>("overview");
   const [selMonth, setSelMonth] = useState<string | null>(null);
   const d = useD(ledger, trades, accounts, selMonth, categoryPresets);
 
   const dateRange = d.months.length > 0 ? `${d.months[0].replace("-", ".")} ~ ${d.months[d.months.length - 1].replace("-", ".")}` : "";
-  const TabMap: Record<TabId, React.FC<{ d: D }>> = { overview: OverviewTab, expense: ExpenseTab, income: IncomeTab, asset: AssetTab, date: DateTab, invest: InvestTab, sub: SubTab, pattern: PatternTab, velocity: VelocityTab, fun: FunTab };
+  const TabMap: Record<TabId, React.FC<{ d: D }>> = { overview: OverviewTab, expense: ExpenseTab, income: IncomeTab, asset: AssetTab, date: DateTab, invest: InvestTab, sub: SubTab, pattern: PatternTab, velocity: VelocityTab, fun: FunTab, settle: () => null, forecast: () => null };
   const ActiveTab = TabMap[tab];
 
   return (
@@ -2716,7 +2722,17 @@ export const InsightsView: React.FC<Props> = ({ accounts, ledger, trades = [], p
 
       {/* Content */}
       <div style={{ padding: "20px 24px", maxWidth: 1200, margin: "0 auto", width: "100%", boxSizing: "border-box" }}>
-        <ActiveTab d={d} />
+        {tab === "forecast" ? (
+          <ForecastView ledger={ledger} recurring={recurringExpenses} formatNumber={W} />
+        ) : tab === "settle" ? (
+          <SettlementView
+            data={{ accounts, ledger, trades, prices: [], categoryPresets, recurringExpenses, budgetGoals: _b ?? [], customSymbols: [] }}
+            onSettle={(entry) => onAddLedger?.(entry)}
+            formatNumber={W}
+          />
+        ) : (
+          <ActiveTab d={d} />
+        )}
       </div>
     </div>
   );

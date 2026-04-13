@@ -31,11 +31,11 @@
       "initialBalance": 0,
       "debt": 0,
       "savings": 0,
-      "initialCashBalance": -322928,
+      "initialCashBalance": -327452,
       "currency": "KRW",
       "usdBalance": 516,
       "krwBalance": 0,
-      "cashAdjustment": 0
+      "cashAdjustment": 4555.4749999996275
     },
     {
       "id": "ISA",
@@ -45,10 +45,10 @@
       "initialBalance": 0,
       "debt": 0,
       "savings": 0,
-      "initialCashBalance": -3791968,
+      "initialCashBalance": -2681568,
       "usdBalance": 0,
       "krwBalance": 0,
-      "cashAdjustment": 0
+      "cashAdjustment": -1109825
     },
     {
       "id": "연금저축",
@@ -67,7 +67,7 @@
       "name": "농협입출금계좌",
       "institution": "지역농축협",
       "type": "checking",
-      "initialBalance": 10466691,
+      "initialBalance": 10457918,
       "debt": 0,
       "savings": 0,
       "cashAdjustment": 0
@@ -162,7 +162,7 @@
       "cashAdjustment": 0,
       "usdBalance": -1331.4678827100001,
       "krwBalance": 0,
-      "initialCashBalance": -208833
+      "initialCashBalance": -208829
     },
     {
       "id": "현금",
@@ -221,7 +221,7 @@
       "debt": 0,
       "savings": 0,
       "cashAdjustment": 0,
-      "initialCashBalance": 226583
+      "initialCashBalance": 313913
     },
     {
       "id": "데이트저축",
@@ -234,6 +234,54 @@
     }
   ],
   "ledger": [
+    {
+      "id": "L1776085102310",
+      "date": "2026-04-13",
+      "kind": "transfer",
+      "isFixedExpense": false,
+      "category": "이체",
+      "subCategory": "계좌이체",
+      "description": "",
+      "amount": 87330,
+      "fromAccountId": "삼성증권",
+      "toAccountId": "농협"
+    },
+    {
+      "id": "L1776084983613",
+      "date": "2026-04-13",
+      "kind": "transfer",
+      "isFixedExpense": false,
+      "category": "이체",
+      "subCategory": "계좌이체",
+      "description": "",
+      "amount": 15004,
+      "fromAccountId": "토스",
+      "toAccountId": "CMA"
+    },
+    {
+      "id": "L1776084956014",
+      "date": "2026-04-12",
+      "kind": "transfer",
+      "isFixedExpense": false,
+      "category": "이체",
+      "subCategory": "계좌이체",
+      "description": "",
+      "amount": 15000,
+      "fromAccountId": "농협",
+      "toAccountId": "토스"
+    },
+    {
+      "id": "L1776084143648",
+      "date": "2026-04-13",
+      "kind": "expense",
+      "isFixedExpense": false,
+      "category": "지출",
+      "subCategory": "경조사비",
+      "description": "양산",
+      "amount": 9930,
+      "fromAccountId": "삼성페이카드",
+      "detailCategory": "생일"
+    },
     {
       "id": "L1775978665855",
       "date": "2026-04-11",
@@ -10804,6 +10852,32 @@
   ],
   "trades": [
     {
+      "id": "T1776084501769",
+      "date": "2026-04-13",
+      "accountId": "CMA",
+      "ticker": "0167B0",
+      "name": "SOL 200타겟위클리커버드콜",
+      "side": "buy",
+      "quantity": 1,
+      "price": 10480,
+      "fee": 0,
+      "totalAmount": 10480,
+      "cashImpact": -10480
+    },
+    {
+      "id": "T1776084473567",
+      "date": "2026-04-13",
+      "accountId": "ISA",
+      "ticker": "005935",
+      "name": "005935",
+      "side": "buy",
+      "quantity": 8,
+      "price": 138800,
+      "fee": 0,
+      "totalAmount": 1110400,
+      "cashImpact": -1110400
+    },
+    {
       "id": "T1775835224499",
       "date": "2026-04-10",
       "accountId": "삼성증권",
@@ -12999,5 +13073,5 @@
       "label": "달러"
     }
   ],
-  "_exportedAt": "2026-04-12T14:02:25.176Z"
+  "_exportedAt": "2026-04-13T13:11:17.342Z"
 }

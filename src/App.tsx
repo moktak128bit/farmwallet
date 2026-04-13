@@ -7,6 +7,8 @@ import { SearchModal } from "./components/SearchModal";
 import { PWAStatus } from "./components/PWAStatus";
 import { useSwipe } from "./hooks/useSwipe";
 import { ConfirmModal } from "./components/ui/ConfirmModal";
+import { QuickEntryModal } from "./components/QuickEntryModal";
+import { RecurringDueBadge } from "./components/RecurringDueBadge";
 
 // 동일 로더를 lazy와 프리페치에서 공유해 탭 호버 시 청크 미리 로드
 const loadDashboard = () => import("./pages/DashboardPage").then((m) => ({ default: m.DashboardView }));
@@ -122,6 +124,7 @@ export const App: React.FC = () => {
     });
   };
   const [showShortcutsHelp, setShowShortcutsHelp] = useState(false);
+  const [showQuickEntry, setShowQuickEntry] = useState(false);
   const [copyRequest, setCopyRequest] = useState<import("./types").LedgerEntry | null>(null);
   const [highlightLedgerId, setHighlightLedgerId] = useState<string | null>(null);
   const [highlightTradeId, setHighlightTradeId] = useState<string | null>(null);
@@ -273,8 +276,14 @@ export const App: React.FC = () => {
     onAddLedger: () => {
       setTab("ledger");
       window.dispatchEvent(new CustomEvent("farmwallet:focus-ledger-form"));
-    }
+    },
+    onQuickEntry: () => setShowQuickEntry(true)
   });
+
+  const handleQuickEntryAdd = useCallback((entry: import("./types").LedgerEntry) => {
+    setDataWithHistory((prev) => ({ ...prev, ledger: [...prev.ledger, entry] }));
+    toast.success(`가계부에 추가됨: ${entry.description}`);
+  }, [setDataWithHistory]);
 
 
   const needsPortfolioAggregation = tab === "accounts" || tab === "stocks";
@@ -412,6 +421,19 @@ export const App: React.FC = () => {
         </div>
         <div className="app-header-right" style={{ display: "flex", flexDirection: "column", alignItems: "flex-end", gap: 6 }}>
           <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
+            <RecurringDueBadge
+              recurring={data.recurringExpenses}
+              ledger={data.ledger}
+              onClick={() => setTab("budget")}
+            />
+            <button
+              type="button"
+              onClick={() => setShowQuickEntry(true)}
+              title="빠른 입력 (Ctrl+Shift+K)"
+              style={{ fontSize: 12, padding: "4px 10px", border: "1px solid var(--border)", borderRadius: 6, background: "var(--surface)", cursor: "pointer" }}
+            >
+              ＋ 빠른 입력
+            </button>
             <button
               onClick={toggleTheme}
               className="icon-button"
@@ -758,6 +780,8 @@ export const App: React.FC = () => {
               fxRate={fxRate ?? undefined}
               categoryPresets={data.categoryPresets}
               budgetGoals={data.budgetGoals}
+              recurringExpenses={data.recurringExpenses}
+              onAddLedger={(entry) => setDataWithHistory((prev) => ({ ...prev, ledger: [...prev.ledger, entry] }))}
             />
           )}
           {tab === "budget" && (
@@ -846,6 +870,13 @@ export const App: React.FC = () => {
       />
 
       <ShortcutsHelp isOpen={showShortcutsHelp} onClose={() => setShowShortcutsHelp(false)} />
+
+      <QuickEntryModal
+        open={showQuickEntry}
+        onClose={() => setShowQuickEntry(false)}
+        data={data}
+        onAdd={handleQuickEntryAdd}
+      />
 
       <GistVersionModal
         isOpen={showGistVersionModal}

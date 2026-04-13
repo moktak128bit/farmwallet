@@ -11,6 +11,7 @@ interface UseKeyboardShortcutsOptions {
   onShortcutsHelp: () => void;
   onSave?: () => void;
   onAddLedger?: () => void;
+  onQuickEntry?: () => void;
 }
 
 export function useKeyboardShortcuts({
@@ -21,7 +22,8 @@ export function useKeyboardShortcuts({
   onSearch,
   onShortcutsHelp,
   onSave,
-  onAddLedger
+  onAddLedger,
+  onQuickEntry
 }: UseKeyboardShortcutsOptions) {
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
@@ -74,9 +76,16 @@ export function useKeyboardShortcuts({
       }
       
       // Ctrl+K (전역 검색)
-      if ((e.ctrlKey || e.metaKey) && e.key === "k") {
+      if ((e.ctrlKey || e.metaKey) && !e.shiftKey && e.key === "k") {
         e.preventDefault();
         onSearch();
+        return;
+      }
+
+      // Ctrl+Shift+K (빠른 가계부 입력)
+      if ((e.ctrlKey || e.metaKey) && e.shiftKey && (e.key === "K" || e.key === "k")) {
+        e.preventDefault();
+        onQuickEntry?.();
         return;
       }
       
@@ -115,5 +124,5 @@ export function useKeyboardShortcuts({
     return () => {
       window.removeEventListener("keydown", handleKeyDown);
     };
-  }, [tab, setTab, onUndo, onRedo, onSearch, onShortcutsHelp, onSave, onAddLedger]);
+  }, [tab, setTab, onUndo, onRedo, onSearch, onShortcutsHelp, onSave, onAddLedger, onQuickEntry]);
 }

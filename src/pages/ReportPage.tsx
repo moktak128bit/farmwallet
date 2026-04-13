@@ -22,6 +22,9 @@ import { ERROR_MESSAGES } from "../constants/errorMessages";
 import { useFxRateValue } from "../context/FxRateContext";
 import { useReportWorker } from "../hooks/useReportWorker";
 import { isSavingsExpenseEntry } from "../utils/category";
+import { summarizeTaxYear, COMPREHENSIVE_TAX_THRESHOLD } from "../utils/taxCalculator";
+import { downloadAsExcel, type SheetData } from "../utils/excelExport";
+import { openPrintWindow } from "../utils/pdfExport";
 
 /** 카테고리별 집계 행 */
 interface CategoryBreakdownRow {
@@ -123,7 +126,8 @@ type ReportType =
   | "daily"
   | "periodCompare"
   | "closing"
-  | "performanceAdvanced";
+  | "performanceAdvanced"
+  | "tax";
 
 function toPercent(rate?: number | null): string {
   if (rate == null || !Number.isFinite(rate)) return "-";
@@ -1017,13 +1021,115 @@ export const ReportView: React.FC<Props> = ({ accounts, ledger, trades, prices }
     );
   };
 
+  const taxYear = useMemo(() => Number(selectedMonth.slice(0, 4)), [selectedMonth]);
+  const taxSummary = useMemo(() => summarizeTaxYear(ledger, taxYear), [ledger, taxYear]);
+
+  const exportCurrentExcel = () => {
+    const sheets: SheetData[] = [];
+    if (reportType === "tax") {
+      sheets.push({
+        name: `세금 ${taxYear}`,
+        rows: [
+          ["항목", "금액(원)"],
+          ["배당 (총)", taxSummary.dividendGross],
+          ["이자 (총)", taxSummary.interestGross],
+          ["합계", taxSummary.totalGross],
+          ["분리과세 (15.4%)", taxSummary.separateTax],
+          ["실수령액", taxSummary.netIncome],
+          ["종합과세 기준 초과액", taxSummary.amountOverThreshold],
+          ["종합과세 시 추가 세부담(추정)", taxSummary.estimatedAdditionalTaxIfComprehensive]
+        ]
+      });
+    } else if (reportType === "comprehensive" && comprehensiveMonthly.length > 0) {
+      sheets.push({
+        name: "종합 월간",
+        rows: [
+          ["월", "수입", "지출", "저축", "이체", "신용결제"],
+          ...comprehensiveMonthly.map((r: any) => [
+            r.month,
+            r.income ?? 0,
+            r.living ?? 0,
+            r.savings ?? 0,
+            r.transfer ?? 0,
+            r.credit ?? 0
+          ])
+        ]
+      });
+    } else {
+      sheets.push({ name: reportType, rows: [["보고서 데이터를 Excel로 내보냅니다."], ["현재 화면 데이터를 참고해주세요."]] });
+    }
+    downloadAsExcel(`farmwallet-${reportType}-${new Date().toISOString().slice(0, 10)}`, sheets);
+  };
+
+  const exportCurrentPdf = () => {
+    let bodyHtml = "";
+    if (reportType === "tax") {
+      bodyHtml = `<table>
+<tr><th>항목</th><th>금액</th></tr>
+<tr><td>배당 (총)</td><td class="num">${taxSummary.dividendGross.toLocaleString()}원</td></tr>
+<tr><td>이자 (총)</td><td class="num">${taxSummary.interestGross.toLocaleString()}원</td></tr>
+<tr><td><b>합계</b></td><td class="num"><b>${taxSummary.totalGross.toLocaleString()}원</b></td></tr>
+<tr><td>분리과세 (15.4%)</td><td class="num">${Math.round(taxSummary.separateTax).toLocaleString()}원</td></tr>
+<tr><td>실수령액</td><td class="num">${Math.round(taxSummary.netIncome).toLocaleString()}원</td></tr>
+${taxSummary.exceedsThreshold ? `<tr><td>종합과세 추가세 (추정)</td><td class="num">${Math.round(taxSummary.estimatedAdditionalTaxIfComprehensive).toLocaleString()}원</td></tr>` : ""}
+</table>`;
+    } else {
+      bodyHtml = `<p>리포트: ${reportType}. 화면의 표를 인쇄하시려면 브라우저 인쇄 기능을 사용해주세요.</p>`;
+    }
+    openPrintWindow({ title: `리포트 — ${reportType}`, subtitle: `${startDate} ~ ${endDate}`, bodyHtml });
+  };
+
+  const renderTaxReport = () => (
+    <div>
+      <div style={{ display: "flex", gap: 12, alignItems: "center", marginBottom: 16 }}>
+        <label>연도:</label>
+        <select value={taxYear} onChange={(e) => {
+          const y = e.target.value;
+          setSelectedMonth(`${y}-${selectedMonth.slice(5)}`);
+        }}>
+          {Array.from({ length: 6 }).map((_, i) => {
+            const y = new Date().getFullYear() - i;
+            return <option key={y} value={y}>{y}년</option>;
+          })}
+        </select>
+      </div>
+      <h3>세금 시뮬레이션 — {taxYear}년 (한국 세법 기준)</h3>
+      <table style={{ width: "100%", borderCollapse: "collapse" }}>
+        <tbody>
+          <tr><td style={{ padding: 6 }}>배당 (총)</td><td style={{ textAlign: "right", padding: 6 }}>{formatKRW(taxSummary.dividendGross)}</td></tr>
+          <tr><td style={{ padding: 6 }}>이자 (총)</td><td style={{ textAlign: "right", padding: 6 }}>{formatKRW(taxSummary.interestGross)}</td></tr>
+          <tr style={{ borderTop: "1px solid var(--border)" }}><td style={{ padding: 6, fontWeight: 700 }}>합계</td><td style={{ textAlign: "right", padding: 6, fontWeight: 700 }}>{formatKRW(taxSummary.totalGross)}</td></tr>
+          <tr><td style={{ padding: 6 }}>분리과세 (15.4%)</td><td style={{ textAlign: "right", padding: 6 }}>−{formatKRW(Math.round(taxSummary.separateTax))}</td></tr>
+          <tr style={{ borderTop: "1px solid var(--border)" }}><td style={{ padding: 6, fontWeight: 700 }}>실수령액 (분리과세 후)</td><td style={{ textAlign: "right", padding: 6, fontWeight: 700, color: "var(--success)" }}>{formatKRW(Math.round(taxSummary.netIncome))}</td></tr>
+        </tbody>
+      </table>
+      {taxSummary.exceedsThreshold && (
+        <div style={{ marginTop: 16, padding: 12, background: "var(--warning-bg, #fef3c7)", borderLeft: "4px solid var(--warning, #f59e0b)", borderRadius: 6 }}>
+          <strong>⚠ 종합과세 대상 가능</strong>
+          <p style={{ fontSize: 13, margin: "8px 0 4px" }}>
+            배당+이자 합계가 {COMPREHENSIVE_TAX_THRESHOLD.toLocaleString()}원을 초과합니다.
+            초과액 {formatKRW(taxSummary.amountOverThreshold)}에 대해 종합소득세 신고가 필요할 수 있으며,
+            추정 추가세부담은 약 <strong>{formatKRW(Math.round(taxSummary.estimatedAdditionalTaxIfComprehensive))}</strong>입니다 (24% 누진구간 가정).
+          </p>
+          <p style={{ fontSize: 11, color: "var(--text-muted)", margin: 0 }}>
+            ※ 정확한 금액은 다른 종합소득(근로/사업) 합산에 따라 달라집니다. 본 수치는 참고용입니다.
+          </p>
+        </div>
+      )}
+    </div>
+  );
+
   return (
     <div>
       <div className="section-header">
         <h2>보고서</h2>
-        <button type="button" className="primary" onClick={exportCurrentCsv}>
-          CSV 내보내기
-        </button>
+        <div style={{ display: "flex", gap: 8 }}>
+          <button type="button" onClick={exportCurrentExcel}>Excel</button>
+          <button type="button" onClick={exportCurrentPdf}>PDF/인쇄</button>
+          <button type="button" className="primary" onClick={exportCurrentCsv}>
+            CSV 내보내기
+          </button>
+        </div>
       </div>
 
       <div style={{ display: "flex", gap: 8, marginBottom: 16, flexWrap: "wrap" }}>
@@ -1037,9 +1143,10 @@ export const ReportView: React.FC<Props> = ({ accounts, ledger, trades, prices }
         <button type="button" className={reportType === "periodCompare" ? "primary" : ""} onClick={() => setReportType("periodCompare")}>기간 비교</button>
         <button type="button" className={reportType === "closing" ? "primary" : ""} onClick={() => setReportType("closing")}>주간/월간 정산</button>
         <button type="button" className={reportType === "performanceAdvanced" ? "primary" : ""} onClick={() => setReportType("performanceAdvanced")}>성과 분석</button>
+        <button type="button" className={reportType === "tax" ? "primary" : ""} onClick={() => setReportType("tax")}>세금 (한국)</button>
       </div>
 
-      <div className="card">{renderReport()}</div>
+      <div className="card">{reportType === "tax" ? renderTaxReport() : renderReport()}</div>
     </div>
   );
 };

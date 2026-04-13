@@ -1266,6 +1266,12 @@ export const AccountsView: React.FC<Props> = ({
                           );
                         };
 
+                        const baseField: "initialBalance" | "initialCashBalance" =
+                          account.type === "securities" || account.type === "crypto"
+                            ? "initialCashBalance"
+                            : "initialBalance";
+                        const isEditingBase =
+                          editingNumber?.id === account.id && editingNumber.field === baseField;
                         return (
                           <tr key={account.id}>
                             <td style={{
@@ -1280,7 +1286,49 @@ export const AccountsView: React.FC<Props> = ({
                                 {account.institution || account.id}
                               </div>
                             </td>
-                            {numCell(baseBalance)}
+                            {isEditingBase ? (
+                              <td style={{ textAlign: "right" }}>
+                                <input
+                                  type="text"
+                                  inputMode="numeric"
+                                  value={editValue}
+                                  autoFocus
+                                  onChange={(e) => setEditValue(e.target.value)}
+                                  onBlur={saveNumber}
+                                  onKeyDown={(e) => {
+                                    if (e.key === "Enter") saveNumber();
+                                    else if (e.key === "Escape") cancelEditNumber();
+                                  }}
+                                  style={{
+                                    width: 100,
+                                    padding: "4px 6px",
+                                    borderRadius: 4,
+                                    textAlign: "right",
+                                    fontSize: 13
+                                  }}
+                                />
+                              </td>
+                            ) : (
+                              <td
+                                onClick={() => startEditNumber(account.id, baseField, baseBalance)}
+                                title="클릭하여 시작금액 수정"
+                                style={{
+                                  textAlign: "right",
+                                  fontWeight: baseBalance === 0 ? 400 : 500,
+                                  color:
+                                    baseBalance === 0
+                                      ? "var(--text-muted)"
+                                      : baseBalance > 0
+                                        ? "var(--chart-income)"
+                                        : "var(--chart-expense)",
+                                  cursor: "pointer",
+                                  textDecoration: "underline dotted",
+                                  textUnderlineOffset: 3
+                                }}
+                              >
+                                {baseBalance === 0 ? "-" : formatKRW(Math.round(baseBalance))}
+                              </td>
+                            )}
                             {numCell(cashAdj)}
                             {numCell(incomeSum)}
                             {numCell(expenseSum)}

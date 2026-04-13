@@ -3,6 +3,9 @@ import type { Account, CategoryPresets, LedgerEntry } from "../types";
 import { formatKRW } from "../utils/formatter";
 import { Bar, BarChart, CartesianGrid, Cell, Legend, Pie, PieChart, Tooltip, XAxis, YAxis } from "recharts";
 import { DeferredResponsiveContainer as ResponsiveContainer } from "../components/charts/DeferredResponsiveContainer";
+import { compareMonths } from "../utils/monthComparison";
+import { detectSpendAnomalies } from "../utils/anomaly";
+import { MonthComparisonCard } from "../components/MonthComparisonCard";
 
 type SpendRow = { category: string; amount: number };
 type SpendMidRow = { main: string; mid: string; amount: number };
@@ -113,6 +116,10 @@ export const SpendView: React.FC<{
 
   const colors = ["#0ea5e9", "#6366f1", "#f43f5e", "#10b981", "#f59e0b", "#8b5cf6", "#ec4899", "#14b8a6", "#64748b"];
 
+  const expenseComparison = useMemo(() => compareMonths(ledger, month, "expense"), [ledger, month]);
+  const incomeComparison = useMemo(() => compareMonths(ledger, month, "income"), [ledger, month]);
+  const anomalies = useMemo(() => detectSpendAnomalies(ledger, month, 6), [ledger, month]);
+
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
       <h2 style={{ margin: "0 0 4px 0" }}>소비</h2>
@@ -154,6 +161,38 @@ export const SpendView: React.FC<{
           총지출: <span className="negative">{formatKRW(Math.round(totalSpend))}</span>
         </span>
       </div>
+
+      <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(220px, 1fr))", gap: 12 }}>
+        <MonthComparisonCard
+          title={`${month} 지출`}
+          comparison={expenseComparison}
+          formatNumber={(n) => formatKRW(Math.round(n))}
+          kind="expense"
+        />
+        <MonthComparisonCard
+          title={`${month} 수입`}
+          comparison={incomeComparison}
+          formatNumber={(n) => formatKRW(Math.round(n))}
+          kind="income"
+        />
+      </div>
+
+      {anomalies.some((a) => a.isAnomaly) && (
+        <div className="card" style={{ padding: 12, borderLeft: "4px solid var(--danger)" }}>
+          <h3 style={{ margin: "0 0 8px 0", fontSize: 14 }}>이상치 감지 (z-score ≥ 2)</h3>
+          <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+            {anomalies.filter((a) => a.isAnomaly).map((a) => (
+              <span key={a.category} style={{
+                padding: "4px 10px",
+                background: a.severity === "extreme" ? "var(--danger)" : "var(--warning, #f59e0b)",
+                color: "white", borderRadius: 12, fontSize: 12, fontWeight: 600
+              }}>
+                {a.category}: {a.percentChange > 0 ? "+" : ""}{a.percentChange.toFixed(0)}% (평균 {formatKRW(Math.round(a.averageAmount))})
+              </span>
+            ))}
+          </div>
+        </div>
+      )}
 
       <div className="card" style={{ padding: 12 }}>
         <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 12, flexWrap: "wrap" }}>

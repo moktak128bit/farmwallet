@@ -13,6 +13,9 @@ import { computeRealizedPnlByTradeId } from "../calculations";
 import { isUSDStock } from "../utils/finance";
 import { exportLedgerCsv } from "../utils/csvExport";
 import { useFocusTrap } from "../hooks/useFocusTrap";
+import { recommendCategory } from "../utils/categoryRecommendation";
+import { ReceiptScanner, type OcrResult } from "../features/ocr/ReceiptScanner";
+import { CategoryClassifier } from "../features/ml/CategoryClassifier";
 
 interface Props {
   accounts: Account[];
@@ -159,6 +162,7 @@ export const LedgerView: React.FC<Props> = ({
   const isCopyingRef = useRef(false);
   const [quickCopyEntry, setQuickCopyEntry] = useState<LedgerEntry | null>(null);
   const [quickCopyAmount, setQuickCopyAmount] = useState("");
+  const [showReceiptScanner, setShowReceiptScanner] = useState(false);
   const [selectedMonths, setSelectedMonths] = useState<Set<string>>(() => new Set([getThisMonthKST()]));
   const [currentYear, setCurrentYear] = useState(() => String(getKoreaTime().getFullYear()));
   const [draggingId, setDraggingId] = useState<string | null>(null);
@@ -890,6 +894,11 @@ export const LedgerView: React.FC<Props> = ({
       const id = `L${Date.now()}`;
       const entry: LedgerEntry = { id, ...base };
       onChangeLedger([entry, ...ledger]);
+      if (base.description && base.category) {
+        const classifier = CategoryClassifier.load();
+        classifier.observe(base.description, base.category, base.subCategory);
+        classifier.save();
+      }
       setLastAddedEntryId(id);
       // 새 내역 추가 시 기존 필터 초기화
       setFilterMainCategory(undefined);
@@ -1840,11 +1849,14 @@ export const LedgerView: React.FC<Props> = ({
   }, [availableMonthsByYear, currentYear]);
 
   const handleReorder = (id: string, newPosition: number) => {
-    if (viewMode !== "all") return;
     const currentIndex = ledger.findIndex((l) => l.id === id);
     if (currentIndex === -1) return;
     const clamped = Math.max(0, Math.min(ledger.length - 1, newPosition));
     if (clamped === currentIndex) return;
+    // 같은 날짜 안에서만 순서 변경을 허용한다.
+    // 날짜 정렬(stable sort) 기준으로 같은 날짜 항목들의 표시 순서는
+    // 기본 배열 순서를 따르므로, 타깃과 날짜가 다르면 이동해도 UI상 되돌아온다.
+    if (ledger[currentIndex].date !== ledger[clamped].date) return;
     const next = [...ledger];
     const [item] = next.splice(currentIndex, 1);
     next.splice(clamped, 0, item);
@@ -2708,20 +2720,107 @@ export const LedgerView: React.FC<Props> = ({
 
             {/* 4. 상세내역 (선택) - 작게 */}
             <label style={{ margin: 0 }}>
-              <span style={{ fontSize: 10, marginBottom: 4, display: "block", color: "var(--text-muted)" }}>상세내역 (선택)</span>
+              <span style={{ fontSize: 10, marginBottom: 4, display: "flex", alignItems: "center", justifyContent: "space-between", color: "var(--text-muted)" }}>
+                <span>상세내역 (선택)</span>
+                <button
+                  type="button"
+                  onClick={(e) => { e.preventDefault(); setShowReceiptScanner(true); }}
+                  style={{ fontSize: 10, padding: "2px 8px", border: "1px solid var(--border)", borderRadius: 10, background: "var(--surface)", cursor: "pointer" }}
+                  title="영수증 사진을 OCR로 자동 인식"
+                >
+                  📷 영수증 스캔
+                </button>
+              </span>
               <input
                 type="text"
                 value={form.description}
                 onChange={(e) => setForm({ ...form, description: e.target.value })}
                 placeholder="예: 김밥천국, 아파트 관리비 등"
-                style={{ 
-                  padding: "8px", 
+                style={{
+                  padding: "8px",
                   fontSize: 13,
                   width: "100%",
                   border: "1px solid var(--border)",
                   borderRadius: "6px"
                 }}
               />
+              {(() => {
+                if (form.id || !form.description || form.description.length < 2) return null;
+                const amt = Number(String(form.amount).replace(/,/g, "")) || 0;
+                const recs = recommendCategory(form.description, amt, form.kind, ledger).slice(0, 3);
+                const mlPredictions = (() => {
+                  try {
+                    const classifier = CategoryClassifier.load();
+                    if (classifier.getStats().totalDocs < 5) return [];
+                    const preds = classifier.predict(form.description, 3);
+                    return preds.filter((p) => {
+                      const has = recs.some((r) => r.category === p.category && (r.subCategory ?? "") === (p.subCategory ?? ""));
+                      return !has;
+                    });
+                  } catch { return []; }
+                })();
+                if (recs.length === 0 && mlPredictions.length === 0) return null;
+                return (
+                  <div style={{ display: "flex", gap: 6, flexWrap: "wrap", marginTop: 6 }}>
+                    {recs.map((r, idx) => {
+                      const label = [r.category, r.subCategory].filter(Boolean).join(" › ");
+                      if (!label) return null;
+                      return (
+                        <button
+                          key={`${label}-${idx}`}
+                          type="button"
+                          onClick={() => {
+                            try { CategoryClassifier.load().recordEvaluation(true); } catch { /* */ }
+                            setForm({
+                              ...form,
+                              mainCategory: r.category ?? form.mainCategory,
+                              subCategory: r.subCategory ?? form.subCategory,
+                              fromAccountId: r.fromAccountId ?? form.fromAccountId,
+                              toAccountId: r.toAccountId ?? form.toAccountId
+                            });
+                          }}
+                          style={{
+                            fontSize: 11, padding: "2px 8px",
+                            border: "1px solid var(--border)", borderRadius: 12,
+                            background: "var(--surface)", color: "var(--text-muted)",
+                            cursor: "pointer"
+                          }}
+                          title="클릭해서 카테고리·계좌 자동 적용"
+                        >
+                          {label}
+                        </button>
+                      );
+                    })}
+                    {mlPredictions.map((p, idx) => {
+                      const label = [p.category, p.subCategory].filter(Boolean).join(" › ");
+                      if (!label) return null;
+                      return (
+                        <button
+                          key={`ml-${label}-${idx}`}
+                          type="button"
+                          onClick={() => {
+                            try { CategoryClassifier.load().recordEvaluation(true); } catch { /* */ }
+                            setForm({
+                              ...form,
+                              mainCategory: p.category ?? form.mainCategory,
+                              subCategory: p.subCategory ?? form.subCategory
+                            });
+                          }}
+                          style={{
+                            fontSize: 11, padding: "2px 8px",
+                            border: "1px dashed var(--accent, var(--border))", borderRadius: 12,
+                            background: "var(--surface)", color: "var(--accent, var(--text-muted))",
+                            cursor: "pointer"
+                          }}
+                          title="ML 분류기 추천 (Naive Bayes)"
+                        >
+                          🤖 {label}
+                        </button>
+                      );
+                    })}
+                  </div>
+                );
+              })()}
             </label>
 
             {/* 확장 영역: 할인 · 출금계좌 · 입금계좌 */}
@@ -3668,16 +3767,16 @@ export const LedgerView: React.FC<Props> = ({
             <tr
               key={l.id}
               data-ledger-id={l.id}
-              draggable={viewMode === "all" && !isBatchEditMode && !(l as LedgerDisplayRow)._tradeId}
+              draggable={ledgerSort.key === "date" && !isBatchEditMode && !(l as LedgerDisplayRow)._tradeId}
               onMouseDown={(e) => {
-                if (e.shiftKey && viewMode === "all" && !isBatchEditMode) {
+                if (e.shiftKey && !isBatchEditMode) {
                   e.preventDefault();
                   e.stopPropagation();
                   handleDragSumStart(index);
                 }
               }}
               onClick={(e) => {
-                if (e.shiftKey && viewMode === "all" && !isBatchEditMode) {
+                if (e.shiftKey && !isBatchEditMode) {
                   e.preventDefault();
                   e.stopPropagation();
                   setSelectedLedgerIdsForSum((prev) => {
@@ -3693,19 +3792,24 @@ export const LedgerView: React.FC<Props> = ({
                   e.preventDefault();
                   return;
                 }
-                if (viewMode !== "all" || isBatchEditMode) return;
+                if (ledgerSort.key !== "date" || isBatchEditMode) return;
                 setDraggingId(l.id);
               }}
               onDragOver={(e) => {
-                if (viewMode !== "all") return;
-                e.preventDefault();
+                if (ledgerSort.key !== "date") return;
+                // 같은 날짜 항목 위에서만 드롭을 허용 (커서로 피드백)
+                const src = draggingId ? ledger.find((x) => x.id === draggingId) : null;
+                if (src && src.date === l.date) e.preventDefault();
               }}
               onDrop={(e) => {
-                if (viewMode !== "all") return;
+                if (ledgerSort.key !== "date") return;
                 e.preventDefault();
                 if (draggingId && draggingId !== l.id && !(l as LedgerDisplayRow)._tradeId) {
-                  const targetLedgerIndex = ledger.findIndex((x) => x.id === l.id);
-                  if (targetLedgerIndex >= 0) handleReorder(draggingId, targetLedgerIndex);
+                  const src = ledger.find((x) => x.id === draggingId);
+                  if (src && src.date === l.date) {
+                    const targetLedgerIndex = ledger.findIndex((x) => x.id === l.id);
+                    if (targetLedgerIndex >= 0) handleReorder(draggingId, targetLedgerIndex);
+                  }
                 }
                 setDraggingId(null);
               }}
@@ -4285,6 +4389,19 @@ export const LedgerView: React.FC<Props> = ({
           />
         );
       })()}
+      <ReceiptScanner
+        open={showReceiptScanner}
+        onClose={() => setShowReceiptScanner(false)}
+        onParsed={(result: OcrResult) => {
+          setForm((prev) => ({
+            ...prev,
+            description: result.merchant ?? prev.description,
+            amount: result.amount != null ? String(result.amount) : prev.amount,
+            date: result.date ?? prev.date
+          }));
+          toast.success("영수증 인식 완료 — 폼에 채워졌습니다.");
+        }}
+      />
     </div>
   );
 };

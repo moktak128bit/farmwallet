@@ -4,6 +4,7 @@ import { Autocomplete } from "./ui/Autocomplete";
 import { formatKRW, formatNumber } from "../utils/formatter";
 import { isKRWStock, isUSDStock, extractTickerFromText } from "../utils/finance";
 import { parseExDateFromNote, buildDividendNote } from "../utils/dividend";
+import { parseAmount } from "../utils/parseAmount";
 import { findStoredCloseAtOrBefore } from "../hooks/useAutoFetchHistoricalCloses";
 import { toast } from "react-hot-toast";
 import { ERROR_MESSAGES } from "../constants/errorMessages";
@@ -361,7 +362,7 @@ export const StockDetailModal: React.FC<Props> = ({
       return;
     }
 
-    const amountNumber = Number(editingDividendValues.amount.replace(/,/g, "").trim());
+    const amountNumber = parseAmount(editingDividendValues.amount, { allowDecimal: true });
     if (!editingDividendValues.date || !amountNumber || amountNumber <= 0) {
       toast.error(ERROR_MESSAGES.DATE_AMOUNT_REQUIRED);
       return;

@@ -452,22 +452,33 @@ export const TradeHistorySection: React.FC<TradeHistorySectionProps> = ({
   };
 
   // Aggregate summary by currency (filtered by selected account).
-  const krwTrades = tradesFiltered.filter(t => !isUSDStock(t.ticker));
-  const usdTrades = tradesFiltered.filter(t => isUSDStock(t.ticker));
-  
-  const krwBuyAmount = krwTrades.filter(t => t.side === "buy").reduce((sum, t) => sum + t.totalAmount, 0);
-  const krwSellAmount = krwTrades.filter(t => t.side === "sell").reduce((sum, t) => sum + t.totalAmount, 0);
-  const krwFee = krwTrades.reduce((sum, t) => sum + t.fee, 0);
-  const krwRealizedPnl = krwTrades
-    .filter(t => t.side === "sell")
-    .reduce((sum, t) => sum + (realizedPnlByTradeId.get(t.id) ?? 0), 0);
-
-  const usdBuyAmount = usdTrades.filter(t => t.side === "buy").reduce((sum, t) => sum + t.totalAmount, 0);
-  const usdSellAmount = usdTrades.filter(t => t.side === "sell").reduce((sum, t) => sum + t.totalAmount, 0);
-  const usdFee = usdTrades.reduce((sum, t) => sum + t.fee, 0);
-  const usdRealizedPnl = usdTrades
-    .filter(t => t.side === "sell")
-    .reduce((sum, t) => sum + (realizedPnlByTradeId.get(t.id) ?? 0), 0);
+  // 성능: 기존엔 8회 filter+reduce로 배열 순회. 단일 for 루프로 통합.
+  let krwBuyAmount = 0;
+  let krwSellAmount = 0;
+  let krwFee = 0;
+  let krwRealizedPnl = 0;
+  let usdBuyAmount = 0;
+  let usdSellAmount = 0;
+  let usdFee = 0;
+  let usdRealizedPnl = 0;
+  for (const t of tradesFiltered) {
+    const isUsd = isUSDStock(t.ticker);
+    if (isUsd) {
+      usdFee += t.fee;
+      if (t.side === "buy") usdBuyAmount += t.totalAmount;
+      else {
+        usdSellAmount += t.totalAmount;
+        usdRealizedPnl += realizedPnlByTradeId.get(t.id) ?? 0;
+      }
+    } else {
+      krwFee += t.fee;
+      if (t.side === "buy") krwBuyAmount += t.totalAmount;
+      else {
+        krwSellAmount += t.totalAmount;
+        krwRealizedPnl += realizedPnlByTradeId.get(t.id) ?? 0;
+      }
+    }
+  }
 
   return (
     <>

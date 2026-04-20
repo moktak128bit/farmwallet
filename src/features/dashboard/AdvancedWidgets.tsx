@@ -30,6 +30,9 @@ export interface AdvancedWidgetProps {
 
 const monthOf = (d: string) => (d || "").slice(0, 7);
 
+// 고정 상수 — 매 렌더마다 배열 재생성 방지
+const DAY_LABELS_KR: readonly string[] = ["일", "월", "화", "수", "목", "금", "토"];
+
 const getNow = () => {
   const now = new Date();
   const currentMonth =
@@ -686,7 +689,7 @@ export const TradeVsSpendWidget: React.FC<AdvancedWidgetProps> = ({
       months.includes(monthOf(e.date)),
     );
 
-    const dayLabels = ["일", "월", "화", "수", "목", "금", "토"];
+    const dayLabels = DAY_LABELS_KR;
 
     // 요일별 매매 건수
     const tradesByDay = Array(7).fill(0) as number[];

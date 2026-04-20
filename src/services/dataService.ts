@@ -11,6 +11,7 @@ import type {
 import { STORAGE_KEYS, DEFAULT_US_TICKERS, ISA_PORTFOLIO, DATA_SCHEMA_VERSION } from "../constants/config";
 import { normalizeCategory, normalizeSubCategory } from "../utils/category";
 import { buildTableBackupFile } from "../utils/tableDataBackup";
+import { saveCacheToDB } from "./cacheStore";
 // krNames는 첫 loadData 호출 전에 preloadKrNames()로 미리 로드됨
 let _krNames: Record<string, string> = {};
 
@@ -1353,10 +1354,24 @@ function loadCacheData(): CacheData {
 
 function saveCacheData(cache: CacheData): void {
   if (typeof window === "undefined") return;
+  // IndexedDB에 비동기 저장 (quota 여유 있음). 실패 시 localStorage fallback.
+  // Fire-and-forget — 저장 지연이 UI를 막지 않도록.
+  void saveCacheToDB(cache);
   try {
+    // localStorage에도 작성 (기존 데이터 호환 + IndexedDB 미지원 브라우저 대비)
+    // quota 초과 시 silently 무시 — IndexedDB가 소스 오브 트루스.
     window.localStorage.setItem(STORAGE_KEYS.CACHE, JSON.stringify(cache));
   } catch (e) {
-    console.warn("[FarmWallet] cache save failed", e);
+    if (e instanceof DOMException && e.name === "QuotaExceededError") {
+      // quota 초과는 예상된 상황 — IndexedDB가 있으니 조용히 skip
+      try {
+        window.localStorage.removeItem(STORAGE_KEYS.CACHE);
+      } catch {
+        /* ignore */
+      }
+    } else {
+      console.warn("[FarmWallet] cache save to localStorage failed", e);
+    }
   }
 }
 

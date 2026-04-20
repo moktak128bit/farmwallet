@@ -1,4 +1,4 @@
-import React, { lazy, Suspense, useMemo, useState } from "react";
+import React, { lazy, Suspense, useCallback, useMemo, useState } from "react";
 import { DeferredResponsiveContainer as ResponsiveContainer } from "../components/charts/DeferredResponsiveContainer";
 import { BudgetAlertWidget } from "../features/dashboard/AdvancedWidgets";
 import type {
@@ -364,62 +364,42 @@ export const DashboardView: React.FC<Props> = (props) => {
     });
   }, [balanceSnapshotDates, accounts, ledger, trades, adjustedPrices, fxRate]);
 
+  /**
+   * 공통: 월 prefix(또는 null=전체) 기준으로 수입/지출/재테크 합계 계산.
+   * 메모이즈된 isSavingsExpenseEntry와 함께 단일 루프로 처리.
+   */
+  const computeSummary = useCallback(
+    (monthPrefix: string | null) => {
+      const toKrw = (entry: LedgerEntry) =>
+        entry.currency === "USD" && fxRate ? entry.amount * fxRate : entry.amount;
+      let income = 0;
+      let expense = 0;
+      let investing = 0;
+      for (const entry of ledger) {
+        if (!entry.date) continue;
+        if (monthPrefix && !entry.date.startsWith(monthPrefix)) continue;
+        if (entry.kind === "income") {
+          income += toKrw(entry);
+        } else if (entry.kind === "expense") {
+          if (isSavingsExpenseEntry(entry, accounts, categoryPresets)) {
+            investing += toKrw(entry);
+          } else {
+            expense += toKrw(entry);
+          }
+        }
+      }
+      return { income, expense, investing };
+    },
+    [ledger, fxRate, accounts, categoryPresets]
+  );
+
   /** 전체 기간 합계: 수입, 일반 지출, 재테크 지출 */
-  const allTimeSummary = useMemo(() => {
-    const toKrw = (entry: LedgerEntry) =>
-      entry.currency === "USD" && fxRate ? entry.amount * fxRate : entry.amount;
-    let income = 0;
-    let expense = 0;
-    let investing = 0;
-    ledger.forEach((entry) => {
-      if (!entry.date) return;
-      if (entry.kind === "income") {
-        income += toKrw(entry);
-        return;
-      }
-      if (entry.kind === "expense") {
-        if (isSavingsExpenseEntry(entry, accounts, categoryPresets)) {
-          investing += toKrw(entry);
-        } else {
-          expense += toKrw(entry);
-        }
-      }
-    });
-    return { income, expense, investing };
-  }, [ledger, fxRate, accounts, categoryPresets]);
+  const allTimeSummary = useMemo(() => computeSummary(null), [computeSummary]);
 
-  const monthlySummary = useMemo(() => {
-    const toKrw = (entry: LedgerEntry) =>
-      entry.currency === "USD" && fxRate ? entry.amount * fxRate : entry.amount;
-
-    let income = 0;
-    let expense = 0;
-    let investing = 0;
-
-    ledger.forEach((entry) => {
-      if (!entry.date || !entry.date.startsWith(currentMonth)) return;
-
-      if (entry.kind === "income") {
-        income += toKrw(entry);
-        return;
-      }
-
-      if (entry.kind === "expense") {
-        if (isSavingsExpenseEntry(entry, accounts, categoryPresets)) {
-          investing += toKrw(entry);
-        } else {
-          expense += toKrw(entry);
-        }
-      }
-    });
-
-    return {
-      month: currentMonth,
-      income,
-      expense,
-      investing,
-    };
-  }, [ledger, currentMonth, fxRate, accounts, categoryPresets]);
+  const monthlySummary = useMemo(() => ({
+    month: currentMonth,
+    ...computeSummary(currentMonth),
+  }), [computeSummary, currentMonth]);
 
   /** 이번 달 재테크 세부: 저축, 투자, 투자수익, 투자손실 (가계부 category=재테크 기준) */
   const monthlyRecheckBreakdown = useMemo(() => {
@@ -439,28 +419,10 @@ export const DashboardView: React.FC<Props> = (props) => {
   const lastMonth = useMemo(() => shiftMonth(currentMonth, -1), [currentMonth]);
 
   /** 저번달 요약 (저축 대비 비교 위젯용) */
-  const lastMonthSummary = useMemo(() => {
-    const toKrw = (entry: LedgerEntry) =>
-      entry.currency === "USD" && fxRate ? entry.amount * fxRate : entry.amount;
-    let income = 0;
-    let expense = 0;
-    let investing = 0;
-    ledger.forEach((entry) => {
-      if (!entry.date || !entry.date.startsWith(lastMonth)) return;
-      if (entry.kind === "income") {
-        income += toKrw(entry);
-        return;
-      }
-      if (entry.kind === "expense") {
-        if (isSavingsExpenseEntry(entry, accounts, categoryPresets)) {
-          investing += toKrw(entry);
-        } else {
-          expense += toKrw(entry);
-        }
-      }
-    });
-    return { month: lastMonth, income, expense, investing };
-  }, [ledger, lastMonth, fxRate, accounts, categoryPresets]);
+  const lastMonthSummary = useMemo(() => ({
+    month: lastMonth,
+    ...computeSummary(lastMonth),
+  }), [computeSummary, lastMonth]);
 
   /** 저번달 재테크 세부 (저축 대비 비교 위젯용) */
   const lastMonthRecheckBreakdown = useMemo(() => {

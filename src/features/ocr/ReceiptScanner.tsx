@@ -1,4 +1,5 @@
 import React, { useState } from "react";
+import { parseAmount } from "../../utils/parseAmount";
 
 export interface OcrResult {
   rawText: string;
@@ -18,8 +19,8 @@ const parseAmountFromOcrText = (text: string): number | undefined => {
   const re = /(\d{1,3}(?:,\d{3})+|\d{3,8})\s*원?/g;
   let m: RegExpExecArray | null;
   while ((m = re.exec(text))) {
-    const n = Number(m[1].replace(/,/g, ""));
-    if (Number.isFinite(n) && n >= 100 && n < 10_000_000) candidates.push(n);
+    const n = parseAmount(m[1]);
+    if (n >= 100 && n < 10_000_000) candidates.push(n);
   }
   if (candidates.length === 0) return undefined;
   return Math.max(...candidates);

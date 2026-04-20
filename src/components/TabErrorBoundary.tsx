@@ -40,9 +40,9 @@ export class TabErrorBoundary extends React.Component<TabErrorBoundaryProps, Tab
       <div
         className="card"
         role="alert"
-        style={{ padding: 20, border: "1px solid var(--danger)" }}
+        style={{ padding: "var(--space-8)", border: "1px solid var(--danger)" }}
       >
-        <h3 style={{ marginTop: 0, marginBottom: 8, color: "var(--danger)" }}>
+        <h3 style={{ marginTop: 0, marginBottom: "var(--space-2)", color: "var(--danger)" }}>
           {this.props.tabName} 탭 렌더 오류
         </h3>
         <p style={{ marginTop: 0, color: "var(--text-muted)", fontSize: 14 }}>
@@ -50,9 +50,9 @@ export class TabErrorBoundary extends React.Component<TabErrorBoundaryProps, Tab
         </p>
         <pre
           style={{
-            margin: "12px 0",
-            padding: 10,
-            borderRadius: 6,
+            margin: "var(--space-4) 0",
+            padding: "var(--space-3)",
+            borderRadius: "var(--radius-sm)",
             background: "var(--bg)",
             border: "1px solid var(--border)",
             fontSize: 12,
@@ -64,15 +64,15 @@ export class TabErrorBoundary extends React.Component<TabErrorBoundaryProps, Tab
           {error.message}
         </pre>
         {componentStack && (
-          <details style={{ marginBottom: 12 }}>
+          <details style={{ marginBottom: "var(--space-4)" }}>
             <summary style={{ cursor: "pointer", fontSize: 12, color: "var(--text-muted)" }}>
               컴포넌트 스택 (디버깅용)
             </summary>
             <pre
               style={{
-                margin: "8px 0 0 0",
-                padding: 10,
-                borderRadius: 6,
+                margin: "var(--space-2) 0 0 0",
+                padding: "var(--space-3)",
+                borderRadius: "var(--radius-sm)",
                 background: "var(--bg)",
                 border: "1px solid var(--border)",
                 fontSize: 11,
@@ -85,7 +85,7 @@ export class TabErrorBoundary extends React.Component<TabErrorBoundaryProps, Tab
             </pre>
           </details>
         )}
-        <div style={{ display: "flex", gap: 8 }}>
+        <div style={{ display: "flex", gap: "var(--space-2)" }}>
           <button type="button" className="primary" onClick={this.handleRetry}>
             다시 시도
           </button>

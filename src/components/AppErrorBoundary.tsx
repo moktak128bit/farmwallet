@@ -98,7 +98,7 @@ export class AppErrorBoundary extends React.Component<AppErrorBoundaryProps, App
           display: "flex",
           alignItems: "center",
           justifyContent: "center",
-          padding: 20,
+          padding: "var(--space-8)",
           background: "var(--bg)",
           color: "var(--text)"
         }}
@@ -108,20 +108,20 @@ export class AppErrorBoundary extends React.Component<AppErrorBoundaryProps, App
             width: "100%",
             maxWidth: 760,
             border: "1px solid var(--border)",
-            borderRadius: 12,
+            borderRadius: "var(--radius-xl)",
             background: "var(--surface)",
-            padding: 20
+            padding: "var(--space-8)"
           }}
         >
-          <h2 style={{ marginTop: 0, marginBottom: 10 }}>앱 오류가 발생했습니다.</h2>
+          <h2 style={{ marginTop: 0, marginBottom: "var(--space-3)" }}>앱 오류가 발생했습니다.</h2>
           <p style={{ marginTop: 0, color: "var(--text-muted)" }}>
             렌더링 중 예외가 발생해 안전 모드로 전환했습니다. 아래 복구 동작을 선택할 수 있습니다.
           </p>
           <pre
             style={{
-              margin: "14px 0",
-              padding: 12,
-              borderRadius: 8,
+              margin: "var(--space-5) 0",
+              padding: "var(--space-4)",
+              borderRadius: "var(--radius-md)",
               background: "var(--bg)",
               border: "1px solid var(--border)",
               fontSize: 12,
@@ -133,15 +133,15 @@ export class AppErrorBoundary extends React.Component<AppErrorBoundaryProps, App
             {error.message}
           </pre>
           {componentStack && (
-            <details style={{ marginBottom: 14 }}>
+            <details style={{ marginBottom: "var(--space-5)" }}>
               <summary style={{ cursor: "pointer", fontSize: 12, color: "var(--text-muted)" }}>
                 컴포넌트 스택 (디버깅용)
               </summary>
               <pre
                 style={{
-                  margin: "8px 0 0 0",
-                  padding: 12,
-                  borderRadius: 8,
+                  margin: "var(--space-2) 0 0 0",
+                  padding: "var(--space-4)",
+                  borderRadius: "var(--radius-md)",
                   background: "var(--bg)",
                   border: "1px solid var(--border)",
                   fontSize: 11,
@@ -155,9 +155,9 @@ export class AppErrorBoundary extends React.Component<AppErrorBoundaryProps, App
             </details>
           )}
           {recoveryMessage && (
-            <p style={{ marginTop: 0, marginBottom: 14, color: "var(--text-muted)" }}>{recoveryMessage}</p>
+            <p style={{ marginTop: 0, marginBottom: "var(--space-5)", color: "var(--text-muted)" }}>{recoveryMessage}</p>
           )}
-          <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+          <div style={{ display: "flex", gap: "var(--space-2)", flexWrap: "wrap" }}>
             <button type="button" className="primary" disabled={isRecovering} onClick={this.handleRetry}>
               다시 시도
             </button>

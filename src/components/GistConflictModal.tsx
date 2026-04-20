@@ -61,9 +61,9 @@ export const GistConflictModal: React.FC<GistConflictModalProps> = ({ conflict, 
         display: "flex",
         alignItems: "center",
         justifyContent: "center",
-        background: "rgba(0,0,0,0.45)",
-        zIndex: 9998,
-        padding: 20,
+        background: "var(--overlay-bg)",
+        zIndex: "var(--z-modal)" as unknown as number,
+        padding: "var(--space-8)",
       }}
     >
       <div
@@ -73,11 +73,11 @@ export const GistConflictModal: React.FC<GistConflictModalProps> = ({ conflict, 
           maxWidth: 560,
           background: "var(--surface)",
           border: "1px solid var(--border)",
-          borderRadius: 12,
-          padding: 20,
+          borderRadius: "var(--radius-xl)",
+          padding: "var(--space-8)",
         }}
       >
-        <h3 id="gist-conflict-title" style={{ marginTop: 0, marginBottom: 8 }}>
+        <h3 id="gist-conflict-title" style={{ marginTop: 0, marginBottom: "var(--space-2)" }}>
           Gist 동기화 충돌
         </h3>
         <p style={{ marginTop: 0, color: "var(--text-muted)" }}>
@@ -88,20 +88,20 @@ export const GistConflictModal: React.FC<GistConflictModalProps> = ({ conflict, 
           style={{
             display: "grid",
             gridTemplateColumns: "1fr 1fr",
-            gap: 12,
-            margin: "16px 0",
+            gap: "var(--space-4)",
+            margin: "var(--space-6) 0",
           }}
         >
           <div
             style={{
               border: "1px solid var(--border)",
-              borderRadius: 8,
-              padding: 12,
+              borderRadius: "var(--radius-md)",
+              padding: "var(--space-4)",
               background: "var(--bg)",
             }}
           >
-            <div style={{ fontWeight: 600, fontSize: 13, marginBottom: 6 }}>원격 (Gist)</div>
-            <div style={{ fontSize: 12, color: "var(--text-muted)", marginBottom: 6 }}>
+            <div style={{ fontWeight: 600, fontSize: 13, marginBottom: "var(--space-1)" }}>원격 (Gist)</div>
+            <div style={{ fontSize: 12, color: "var(--text-muted)", marginBottom: "var(--space-1)" }}>
               {new Date(conflict.remoteUpdatedAt).toLocaleString("ko-KR")}
             </div>
             <ul style={{ margin: 0, paddingLeft: 18, fontSize: 13 }}>
@@ -113,13 +113,13 @@ export const GistConflictModal: React.FC<GistConflictModalProps> = ({ conflict, 
           <div
             style={{
               border: "1px solid var(--border)",
-              borderRadius: 8,
-              padding: 12,
+              borderRadius: "var(--radius-md)",
+              padding: "var(--space-4)",
               background: "var(--bg)",
             }}
           >
-            <div style={{ fontWeight: 600, fontSize: 13, marginBottom: 6 }}>로컬 (이 기기)</div>
-            <div style={{ fontSize: 12, color: "var(--text-muted)", marginBottom: 6 }}>
+            <div style={{ fontWeight: 600, fontSize: 13, marginBottom: "var(--space-1)" }}>로컬 (이 기기)</div>
+            <div style={{ fontSize: 12, color: "var(--text-muted)", marginBottom: "var(--space-1)" }}>
               push 대기 중
             </div>
             <ul style={{ margin: 0, paddingLeft: 18, fontSize: 13 }}>
@@ -130,13 +130,13 @@ export const GistConflictModal: React.FC<GistConflictModalProps> = ({ conflict, 
           </div>
         </div>
 
-        <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+        <div style={{ display: "flex", flexDirection: "column", gap: "var(--space-2)" }}>
           <button
             type="button"
             className="primary"
             disabled={busy !== null}
             onClick={() => void handle("apply-remote")}
-            style={{ textAlign: "left", padding: "10px 12px" }}
+            style={{ textAlign: "left", padding: "var(--space-3) var(--space-4)" }}
           >
             <div style={{ fontWeight: 600 }}>원격 적용 (권장)</div>
             <div style={{ fontSize: 12, opacity: 0.85, marginTop: 2 }}>
@@ -148,7 +148,7 @@ export const GistConflictModal: React.FC<GistConflictModalProps> = ({ conflict, 
             className="secondary"
             disabled={busy !== null}
             onClick={() => void handle("force-push-local")}
-            style={{ textAlign: "left", padding: "10px 12px", borderColor: "var(--danger)" }}
+            style={{ textAlign: "left", padding: "var(--space-3) var(--space-4)", borderColor: "var(--danger)" }}
           >
             <div style={{ fontWeight: 600, color: "var(--danger)" }}>로컬 강제 푸시 (주의)</div>
             <div style={{ fontSize: 12, opacity: 0.85, marginTop: 2 }}>
@@ -160,7 +160,7 @@ export const GistConflictModal: React.FC<GistConflictModalProps> = ({ conflict, 
             className="secondary"
             disabled={busy !== null}
             onClick={() => void handle("cancel")}
-            style={{ textAlign: "left", padding: "10px 12px" }}
+            style={{ textAlign: "left", padding: "var(--space-3) var(--space-4)" }}
           >
             <div style={{ fontWeight: 600 }}>취소</div>
             <div style={{ fontSize: 12, opacity: 0.85, marginTop: 2 }}>

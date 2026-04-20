@@ -1,4 +1,4 @@
-import React, { useMemo, useState, useCallback } from "react";
+import React, { useMemo, useState, useCallback, useEffect } from "react";
 import { toast } from "react-hot-toast";
 import type { WorkoutWeek, WorkoutDayEntry, WorkoutExercise, WorkoutSet, WorkoutBodyPart, WorkoutRoutine, WorkoutRoutineExercise } from "../types";
 import { formatNumber } from "../utils/formatter";
@@ -98,12 +98,89 @@ function makeId(prefix: string): string {
   return `${prefix}-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
 }
 
-function computeExerciseVolume(exercises: WorkoutExercise[]): number {
-  return exercises.reduce(
-    (sum, exercise) =>
-      sum + exercise.sets.reduce((setSum, set) => setSum + set.weightKg * set.reps, 0),
-    0
+function nowIso(): string {
+  return new Date().toISOString();
+}
+
+/** 밀리초를 "Mm Ss" 또는 "Hh Mm" 으로 포맷. 0 이하면 빈 문자열. */
+function formatDuration(ms: number): string {
+  if (!Number.isFinite(ms) || ms <= 0) return "";
+  const totalSec = Math.round(ms / 1000);
+  const h = Math.floor(totalSec / 3600);
+  const m = Math.floor((totalSec % 3600) / 60);
+  const s = totalSec % 60;
+  if (h > 0) return `${h}시간 ${m}분`;
+  if (m > 0) return `${m}분 ${s}초`;
+  return `${s}초`;
+}
+
+/** ISO 문자열 → "HH:MM" (실패 시 빈 문자열) */
+function formatClockTime(iso?: string): string {
+  if (!iso) return "";
+  const d = new Date(iso);
+  if (Number.isNaN(d.getTime())) return "";
+  return `${String(d.getHours()).padStart(2, "0")}:${String(d.getMinutes()).padStart(2, "0")}`;
+}
+
+/** 모바일 친화 ± 스테퍼. 현재값 탭 시 수동 입력 가능(prompt). */
+const Stepper: React.FC<{
+  value: number;
+  step: number;
+  min?: number;
+  max?: number;
+  unit: string;
+  onChange: (v: number) => void;
+}> = ({ value, step, min = 0, max = 9999, unit, onChange }) => {
+  const clamp = (v: number) => Math.max(min, Math.min(max, v));
+  const dec = () => onChange(clamp(Number((value - step).toFixed(2))));
+  const inc = () => onChange(clamp(Number((value + step).toFixed(2))));
+  const edit = () => {
+    const raw = window.prompt(`${unit} 값 직접 입력`, String(value));
+    if (raw == null) return;
+    const n = parseFloat(raw);
+    if (!Number.isFinite(n) || n < min || n > max) {
+      toast.error(`${min}~${max} 범위의 숫자로 입력하세요`);
+      return;
+    }
+    onChange(n);
+  };
+  const btnBase: React.CSSProperties = {
+    width: 40, height: 40, borderRadius: 8, fontSize: 22, fontWeight: 900,
+    border: "1px solid var(--border)", background: "var(--surface)",
+    color: "var(--text)", cursor: "pointer",
+    display: "flex", alignItems: "center", justifyContent: "center",
+    userSelect: "none", flexShrink: 0,
+  };
+  return (
+    <div style={{ display: "inline-flex", alignItems: "center", gap: 4 }}>
+      <button type="button" onClick={dec} aria-label={`${unit} 감소`} style={btnBase}>−</button>
+      <button
+        type="button"
+        onClick={edit}
+        aria-label={`${unit} 값 수정`}
+        style={{
+          minWidth: 76, height: 40, padding: "0 10px", borderRadius: 8,
+          border: "1px solid var(--border)", background: "var(--surface)",
+          fontSize: 15, fontWeight: 700, cursor: "pointer",
+        }}
+      >
+        {value}{unit === "kg" ? "" : ""} <span style={{ fontSize: 12, color: "var(--text-muted)", marginLeft: 2 }}>{unit}</span>
+      </button>
+      <button type="button" onClick={inc} aria-label={`${unit} 증가`} style={btnBase}>+</button>
+    </div>
   );
+};
+
+function computeExerciseVolume(exercises: WorkoutExercise[]): number {
+  // 유산소 종목은 볼륨(kg) 계산에서 제외 (중량 × 반복 개념이 없음).
+  return exercises.reduce((sum, exercise) => {
+    if (exercise.bodyPart === "유산소") return sum;
+    return sum + exercise.sets.reduce((setSum, set) => setSum + set.weightKg * set.reps, 0);
+  }, 0);
+}
+
+function isCardioExercise(ex: { bodyPart?: WorkoutBodyPart }): boolean {
+  return ex.bodyPart === "유산소";
 }
 
 /** 부위별 색상 도트 */
@@ -126,8 +203,14 @@ export const WorkoutView: React.FC<Props> = ({
   const [selectedDate, setSelectedDate] = useState<string>(today);
   const [selectedBodyPart, setSelectedBodyPart] = useState<WorkoutBodyPart | null>(null);
   const [customExerciseName, setCustomExerciseName] = useState("");
-  // 빠른 세트 추가 상태: exerciseId별
-  const [quickSetState, setQuickSetState] = useState<Record<string, { weight: string; reps: string; sets: string }>>({});
+  // 진행 중 운동의 경과 시간을 1분 단위로 갱신 (배터리 고려해 60초).
+  // selectedEntry.endedAt 가 설정되면 tick 은 무시되고 고정 경과가 표시됨.
+  const [nowTick, setNowTick] = useState(() => Date.now());
+  useEffect(() => {
+    const id = window.setInterval(() => setNowTick(Date.now()), 60_000);
+    return () => window.clearInterval(id);
+  }, []);
+
   // 루틴 관리 섹션 펼침/편집 상태
   const [routinesExpanded, setRoutinesExpanded] = useState(false);
   const [editingRoutineId, setEditingRoutineId] = useState<string | null>(null);
@@ -310,22 +393,29 @@ export const WorkoutView: React.FC<Props> = ({
     }));
   };
 
-  const addSet = (exerciseId: string, weightKg: number, reps: number) => {
-    // 빠른 추가는 "방금 수행" 의미라 done=true. 계획 세트(applyRoutine)는 false.
+  const addSet = (exerciseId: string, partial: Partial<WorkoutSet>) => {
+    // 빠른 추가는 "방금 수행" 의미라 done=true 로 저장하며 완료 시각도 기록.
+    const ts = nowIso();
     upsertEntry(selectedDate, (entry) => ({
       ...entry,
+      startedAt: entry.startedAt ?? ts,
       exercises: (entry.exercises ?? []).map((ex) =>
-        ex.id === exerciseId ? { ...ex, sets: [...ex.sets, { weightKg, reps, done: true }] } : ex
-      )
-    }));
-  };
-
-  const addMultipleSets = (exerciseId: string, weightKg: number, reps: number, count: number) => {
-    const newSets: WorkoutSet[] = Array.from({ length: count }, () => ({ weightKg, reps, done: true }));
-    upsertEntry(selectedDate, (entry) => ({
-      ...entry,
-      exercises: (entry.exercises ?? []).map((ex) =>
-        ex.id === exerciseId ? { ...ex, sets: [...ex.sets, ...newSets] } : ex
+        ex.id === exerciseId
+          ? {
+              ...ex,
+              sets: [
+                ...ex.sets,
+                {
+                  weightKg: partial.weightKg ?? 0,
+                  reps: partial.reps ?? 0,
+                  durationMin: partial.durationMin,
+                  distanceKm: partial.distanceKm,
+                  done: true,
+                  completedAt: ts,
+                },
+              ],
+            }
+          : ex
       )
     }));
   };
@@ -354,22 +444,36 @@ export const WorkoutView: React.FC<Props> = ({
   };
 
   const toggleSetDone = (exerciseId: string, setIndex: number) => {
-    upsertEntry(selectedDate, (entry) => ({
-      ...entry,
-      exercises: (entry.exercises ?? []).map((ex) =>
+    const ts = nowIso();
+    upsertEntry(selectedDate, (entry) => {
+      const nextExercises = (entry.exercises ?? []).map((ex) =>
         ex.id === exerciseId
           ? {
               ...ex,
-              sets: ex.sets.map((s, i) => (i === setIndex ? { ...s, done: !s.done } : s)),
+              // done=true 로 전환할 때만 completedAt 기록. 해제 시 지움.
+              sets: ex.sets.map((s, i) => {
+                if (i !== setIndex) return s;
+                const nextDone = !s.done;
+                return {
+                  ...s,
+                  done: nextDone,
+                  completedAt: nextDone ? ts : undefined,
+                };
+              }),
             }
           : ex
-      )
-    }));
-  };
-
-  const getQuickSet = (exId: string) => quickSetState[exId] ?? { weight: "", reps: "", sets: "1" };
-  const setQuickSet = (exId: string, field: string, value: string) => {
-    setQuickSetState((prev) => ({ ...prev, [exId]: { ...getQuickSet(exId), [field]: value } }));
+      );
+      // 모든 세트가 done 이면 endedAt 자동 기록 (없을 때만). 한 개라도 undone 이면 endedAt 유지.
+      const allDone =
+        nextExercises.length > 0 &&
+        nextExercises.every((ex) => ex.sets.length > 0 && ex.sets.every((s) => s.done));
+      return {
+        ...entry,
+        exercises: nextExercises,
+        startedAt: entry.startedAt ?? ts,
+        endedAt: allDone ? (entry.endedAt ?? ts) : entry.endedAt,
+      };
+    });
   };
 
   // 최근 사용한 운동 이름 (부위별)
@@ -394,15 +498,30 @@ export const WorkoutView: React.FC<Props> = ({
     return result;
   }, [workoutWeeks]);
 
-  // 운동 시작 (날짜에 기록 없을 때)
+  // 운동 시작 (날짜에 기록 없을 때). 첫 시작 시각 기록.
   const startWorkout = () => {
+    const ts = nowIso();
     upsertEntry(selectedDate, (entry) => ({
       ...entry,
       type: "workout",
       dayLabel: entry.dayLabel ?? "",
       exercises: entry.exercises ?? [],
-      cardio: entry.cardio ?? ""
+      cardio: entry.cardio ?? "",
+      startedAt: entry.startedAt ?? ts,
     }));
+  };
+
+  const endWorkout = () => {
+    const ts = nowIso();
+    upsertEntry(selectedDate, (entry) => ({
+      ...entry,
+      startedAt: entry.startedAt ?? ts,
+      endedAt: ts,
+    }));
+  };
+
+  const resumeWorkout = () => {
+    upsertEntry(selectedDate, (entry) => ({ ...entry, endedAt: undefined }));
   };
 
   const startRest = () => {
@@ -533,6 +652,7 @@ export const WorkoutView: React.FC<Props> = ({
         dayLabel: entry.dayLabel || routine.name,
         exercises: [...(entry.exercises ?? []), ...generated],
         cardio: nextCardio,
+        startedAt: entry.startedAt ?? nowIso(),
       };
     });
     toast.success(`"${routine.name}" 루틴 불러옴`);
@@ -994,21 +1114,107 @@ export const WorkoutView: React.FC<Props> = ({
               )}
             </div>
 
-            {/* 유산소 입력 */}
-            <div style={{ marginBottom: 16 }}>
+            {/* 총 운동 시간 + 시작/끝 시각 + 끝내기 버튼 */}
+            {(() => {
+              const startedAt = selectedEntry.startedAt;
+              const endedAt = selectedEntry.endedAt;
+              const endMs = endedAt ? new Date(endedAt).getTime() : nowTick;
+              const startMs = startedAt ? new Date(startedAt).getTime() : 0;
+              const totalMs = startedAt ? Math.max(0, endMs - startMs) : 0;
+              const totalLabel = formatDuration(totalMs);
+              return (
+                <div style={{
+                  marginBottom: 12, padding: "10px 12px", borderRadius: 10,
+                  background: endedAt ? "rgba(100,116,139,0.10)" : "rgba(16,185,129,0.10)",
+                  border: `1px solid ${endedAt ? "var(--border)" : "#10b98140"}`,
+                  display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap",
+                }}>
+                  <span style={{ fontSize: 12, fontWeight: 700, color: endedAt ? "var(--text-muted)" : "#10b981" }}>
+                    {endedAt ? "완료" : "진행 중"}
+                  </span>
+                  <span style={{ fontSize: 14, fontWeight: 700 }}>
+                    {startedAt ? `총 ${totalLabel || "0초"}` : "시작 전"}
+                  </span>
+                  {startedAt && (
+                    <span style={{ fontSize: 12, color: "var(--text-muted)" }}>
+                      {formatClockTime(startedAt)}{endedAt ? ` → ${formatClockTime(endedAt)}` : " ~ 지금"}
+                    </span>
+                  )}
+                  <div style={{ marginLeft: "auto", display: "flex", gap: 6 }}>
+                    {!startedAt && (
+                      <button type="button" className="primary"
+                        style={{ padding: "6px 14px", fontSize: 13, fontWeight: 700 }}
+                        onClick={startWorkout}>
+                        시작
+                      </button>
+                    )}
+                    {startedAt && !endedAt && (
+                      <button type="button" className="secondary"
+                        style={{ padding: "6px 14px", fontSize: 13, fontWeight: 700 }}
+                        onClick={endWorkout}>
+                        운동 끝내기
+                      </button>
+                    )}
+                    {endedAt && (
+                      <button type="button" className="secondary"
+                        style={{ padding: "6px 14px", fontSize: 13, fontWeight: 700 }}
+                        onClick={resumeWorkout}>
+                        재개
+                      </button>
+                    )}
+                  </div>
+                </div>
+              );
+            })()}
+
+            {/* 유산소 입력 — 시간(분) / 거리(km) 스테퍼 + 자유 메모 */}
+            <div style={{
+              marginBottom: 16, padding: 12, borderRadius: 10,
+              background: "rgba(6,182,212,0.08)", border: "1px solid rgba(6,182,212,0.3)",
+            }}>
+              <div style={{ fontSize: 13, fontWeight: 700, color: "#0891b2", marginBottom: 8 }}>
+                유산소
+              </div>
+              <div style={{ display: "flex", gap: 10, flexWrap: "wrap", alignItems: "center", marginBottom: 8 }}>
+                <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
+                  <span style={{ fontSize: 12, color: "var(--text-muted)", minWidth: 28 }}>시간</span>
+                  <Stepper
+                    value={selectedEntry.cardioMinutes ?? 0}
+                    unit="분"
+                    step={5}
+                    min={0}
+                    max={600}
+                    onChange={(v) =>
+                      upsertEntry(selectedDate, (entry) => ({ ...entry, cardioMinutes: v }))
+                    }
+                  />
+                </div>
+                <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
+                  <span style={{ fontSize: 12, color: "var(--text-muted)", minWidth: 28 }}>거리</span>
+                  <Stepper
+                    value={selectedEntry.cardioDistanceKm ?? 0}
+                    unit="km"
+                    step={0.5}
+                    min={0}
+                    max={100}
+                    onChange={(v) =>
+                      upsertEntry(selectedDate, (entry) => ({ ...entry, cardioDistanceKm: v }))
+                    }
+                  />
+                </div>
+              </div>
               <input
                 type="text"
                 value={selectedEntry.cardio ?? ""}
                 onChange={(e) => upsertEntry(selectedDate, (entry) => ({ ...entry, cardio: e.target.value }))}
-                placeholder="유산소 (예: 러닝 3km, 트레드밀 10분)"
-                style={{ width: "100%", padding: "10px 12px", borderRadius: 8, fontSize: 14 }}
+                placeholder="유산소 메모 (예: 트레드밀 경사 5%, 사이클)"
+                style={{ width: "100%", padding: "8px 12px", borderRadius: 8, fontSize: 13 }}
               />
             </div>
 
             {/* 기록된 운동들 */}
             {(selectedEntry.exercises ?? []).map((exercise) => {
               const volume = computeExerciseVolume([exercise]);
-              const qs = getQuickSet(exercise.id);
               const partColor = exercise.bodyPart ? BODY_PART_COLORS[exercise.bodyPart] : "#64748b";
               const doneCount = exercise.sets.filter((s) => s.done).length;
               const totalCount = exercise.sets.length;
@@ -1084,153 +1290,186 @@ export const WorkoutView: React.FC<Props> = ({
                     </div>
                   )}
 
-                  {/* 세트 목록 — 따라하기 레이아웃: [✓] 세트N | 중량입력 × 반복입력 | 목표표시 | 삭제 */}
+                  {/* 세트 목록 — 모바일: 각 줄에 [✓] + 중량 스테퍼 + 반복 스테퍼 + 삭제 */}
                   {exercise.sets.length > 0 && (
-                    <div style={{ marginBottom: 10, display: "flex", flexDirection: "column", gap: 6 }}>
+                    <div style={{ marginBottom: 10, display: "flex", flexDirection: "column", gap: 8 }}>
                       {exercise.sets.map((set, idx) => {
                         const hasTarget = set.targetWeightKg !== undefined || set.targetReps !== undefined;
                         const targetLabel = hasTarget
                           ? `목표 ${set.targetWeightKg ?? 0}kg × ${set.targetRepsRange ?? set.targetReps ?? 0}회`
                           : null;
+                        // 세트 소요 시간: 직전 완료 세트(같은 운동 내)로부터 경과.
+                        // 첫 세트는 운동 시작 시각 기준. 둘 다 없으면 표시 안 함.
+                        const prevCompletedAt = idx > 0 ? exercise.sets[idx - 1]?.completedAt : selectedEntry?.startedAt;
+                        const gapMs =
+                          set.completedAt && prevCompletedAt
+                            ? new Date(set.completedAt).getTime() - new Date(prevCompletedAt).getTime()
+                            : 0;
+                        const gapLabel = formatDuration(gapMs);
+                        const completedClock = formatClockTime(set.completedAt);
                         return (
                           <div key={idx} style={{
-                            display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap",
-                            padding: "8px 10px", borderRadius: 8,
-                            background: set.done ? "rgba(16,185,129,0.12)" : "var(--surface)",
-                            border: `1px solid ${set.done ? "#10b98150" : "var(--border)"}`,
-                            opacity: 1,
+                            display: "flex", flexDirection: "column", gap: 6,
+                            padding: "10px 10px", borderRadius: 10,
+                            background: set.done ? "rgba(16,185,129,0.14)" : "var(--surface)",
+                            border: `1px solid ${set.done ? "#10b98160" : "var(--border)"}`,
                           }}>
+                          <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
+                            {/* 완료 체크 (큰 터치타겟) */}
                             <button
                               type="button"
                               onClick={() => toggleSetDone(exercise.id, idx)}
                               aria-label={set.done ? "완료 해제" : "완료로 표시"}
-                              title={set.done ? "완료 해제" : "완료로 표시"}
                               style={{
-                                width: 28, height: 28, borderRadius: 8,
+                                width: 44, height: 44, borderRadius: 10,
                                 border: `2px solid ${set.done ? "#10b981" : "var(--border)"}`,
                                 background: set.done ? "#10b981" : "var(--surface)",
                                 color: set.done ? "#fff" : "transparent",
-                                cursor: "pointer", fontSize: 16, fontWeight: 900,
+                                cursor: "pointer", fontSize: 22, fontWeight: 900,
                                 display: "flex", alignItems: "center", justifyContent: "center",
                                 flexShrink: 0,
                               }}
                             >
                               ✓
                             </button>
-                            <span style={{ fontSize: 12, color: "var(--text-muted)", fontWeight: 600, minWidth: 40 }}>
-                              세트 {idx + 1}
+                            <span style={{ fontSize: 12, color: "var(--text-muted)", fontWeight: 700, minWidth: 38 }}>
+                              #{idx + 1}
                             </span>
-                            <input
-                              type="number"
-                              min={0}
-                              step={0.5}
-                              value={set.weightKg}
-                              onChange={(e) => {
-                                const v = parseFloat(e.target.value);
-                                updateSet(exercise.id, idx, { weightKg: Number.isFinite(v) ? v : 0 });
-                              }}
-                              style={{
-                                width: 72, padding: "6px 8px", borderRadius: 6, fontSize: 14,
-                                textAlign: "center", fontWeight: 600,
-                              }}
-                              aria-label="중량(kg)"
-                            />
-                            <span style={{ fontSize: 13, color: "var(--text-muted)" }}>kg ×</span>
-                            <input
-                              type="number"
-                              min={0}
-                              value={set.reps}
-                              onChange={(e) => {
-                                const v = parseInt(e.target.value, 10);
-                                updateSet(exercise.id, idx, { reps: Number.isFinite(v) ? v : 0 });
-                              }}
-                              style={{
-                                width: 58, padding: "6px 8px", borderRadius: 6, fontSize: 14,
-                                textAlign: "center", fontWeight: 600,
-                              }}
-                              aria-label="횟수"
-                            />
-                            <span style={{ fontSize: 13, color: "var(--text-muted)" }}>회</span>
-                            {targetLabel && (
-                              <span style={{ fontSize: 11, color: "var(--text-muted)", marginLeft: 4 }}>
+
+                            {/* 유산소: 시간/거리, 근력: 중량/반복 */}
+                            {isCardioExercise(exercise) ? (
+                              <>
+                                <Stepper
+                                  value={set.durationMin ?? 0}
+                                  unit="분"
+                                  step={5}
+                                  min={0}
+                                  max={600}
+                                  onChange={(v) => updateSet(exercise.id, idx, { durationMin: v })}
+                                />
+                                <Stepper
+                                  value={set.distanceKm ?? 0}
+                                  unit="km"
+                                  step={0.5}
+                                  min={0}
+                                  max={100}
+                                  onChange={(v) => updateSet(exercise.id, idx, { distanceKm: v })}
+                                />
+                              </>
+                            ) : (
+                              <>
+                                <Stepper
+                                  value={set.weightKg}
+                                  unit="kg"
+                                  step={2.5}
+                                  min={0}
+                                  onChange={(v) => updateSet(exercise.id, idx, { weightKg: v })}
+                                />
+                                <Stepper
+                                  value={set.reps}
+                                  unit="회"
+                                  step={1}
+                                  min={0}
+                                  onChange={(v) => updateSet(exercise.id, idx, { reps: Math.round(v) })}
+                                />
+                              </>
+                            )}
+
+                            {!isCardioExercise(exercise) && targetLabel && (
+                              <span style={{
+                                fontSize: 11, color: "var(--text-muted)",
+                                padding: "4px 8px", borderRadius: 6, background: "var(--surface)",
+                                border: "1px solid var(--border)",
+                              }}>
                                 {targetLabel}
                               </span>
                             )}
+
                             <button
                               type="button"
                               onClick={() => removeSet(exercise.id, idx)}
                               style={{
                                 marginLeft: "auto",
-                                background: "none", border: "none", cursor: "pointer",
-                                color: "var(--text-muted)", fontSize: 18, padding: "0 4px",
+                                width: 36, height: 36, borderRadius: 8,
+                                background: "var(--surface)", border: "1px solid var(--border)",
+                                cursor: "pointer", color: "var(--text-muted)", fontSize: 20,
+                                display: "flex", alignItems: "center", justifyContent: "center",
                               }}
                               title="세트 삭제"
+                              aria-label="세트 삭제"
                             >
                               ×
                             </button>
+                          </div>
+
+                          {/* 세트 타이밍 (완료 시각 + 소요) + 특이사항 */}
+                          <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
+                            {set.done && completedClock && (
+                              <span style={{
+                                fontSize: 11, fontWeight: 700, color: "#10b981",
+                                padding: "2px 8px", borderRadius: 6,
+                                background: "rgba(16,185,129,0.10)",
+                              }}>
+                                {completedClock}{gapLabel ? ` (+${gapLabel})` : ""}
+                              </span>
+                            )}
+                            <input
+                              type="text"
+                              value={set.note ?? ""}
+                              onChange={(e) =>
+                                updateSet(exercise.id, idx, {
+                                  note: e.target.value,
+                                  noteUpdatedAt: nowIso(),
+                                })
+                              }
+                              placeholder="특이사항 (예: 오른쪽 어깨 시큰함)"
+                              style={{
+                                flex: 1, minWidth: 140, padding: "6px 10px",
+                                borderRadius: 6, fontSize: 13,
+                                background: "var(--surface)", border: "1px solid var(--border)",
+                              }}
+                            />
+                            {set.noteUpdatedAt && set.note && (
+                              <span style={{ fontSize: 10, color: "var(--text-muted)", whiteSpace: "nowrap" }}>
+                                {formatClockTime(set.noteUpdatedAt)} 저장
+                              </span>
+                            )}
+                          </div>
                           </div>
                         );
                       })}
                     </div>
                   )}
 
-                  {/* 빠른 세트 추가 */}
-                  <div style={{ display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap" }}>
-                    <input
-                      type="number"
-                      min={0}
-                      step={0.5}
-                      value={qs.weight}
-                      onChange={(e) => setQuickSet(exercise.id, "weight", e.target.value)}
-                      placeholder="중량(kg)"
-                      style={{ width: 90, padding: "8px 10px", borderRadius: 8, fontSize: 14, textAlign: "center" }}
-                    />
-                    <span style={{ fontWeight: 700 }}>×</span>
-                    <input
-                      type="number"
-                      min={1}
-                      value={qs.reps}
-                      onChange={(e) => setQuickSet(exercise.id, "reps", e.target.value)}
-                      placeholder="횟수"
-                      style={{ width: 70, padding: "8px 10px", borderRadius: 8, fontSize: 14, textAlign: "center" }}
-                    />
-                    <span style={{ fontWeight: 700 }}>×</span>
-                    <input
-                      type="number"
-                      min={1}
-                      value={qs.sets}
-                      onChange={(e) => setQuickSet(exercise.id, "sets", e.target.value)}
-                      placeholder="세트"
-                      style={{ width: 60, padding: "8px 10px", borderRadius: 8, fontSize: 14, textAlign: "center" }}
-                    />
-                    <span style={{ fontSize: 13, color: "var(--text-muted)" }}>세트</span>
-                    <button
-                      type="button"
-                      className="primary"
-                      style={{ padding: "8px 16px", fontSize: 14, fontWeight: 600, borderRadius: 8 }}
-                      onClick={() => {
-                        // 파싱 + 엣지 방어: NaN/Infinity/음수/0 모두 차단 + 사용자 피드백
-                        const w = parseFloat(qs.weight);
-                        const r = parseInt(qs.reps, 10);
-                        const s = Math.max(1, Math.min(100, parseInt(qs.sets, 10) || 1));
-                        if (!Number.isFinite(w) || w <= 0) {
-                          toast.error("중량을 0보다 큰 숫자로 입력하세요");
-                          return;
-                        }
-                        if (!Number.isFinite(r) || r <= 0) {
-                          toast.error("횟수를 1 이상으로 입력하세요");
-                          return;
-                        }
-                        if (s === 1) addSet(exercise.id, w, r);
-                        else addMultipleSets(exercise.id, w, r, s);
-                        // 입력 리셋 정책: 동일 무게로 연속 세트 추가하는 워크플로우가 많아
-                        // weight/reps는 유지하되 sets 개수는 기본 "1"로 되돌려 실수 방지
-                        setQuickSet(exercise.id, "sets", "1");
-                      }}
-                    >
-                      추가
-                    </button>
-                  </div>
+                  {/* + 세트 추가 버튼 — 마지막 세트(또는 목표) 값을 복제하고 done=true 로 추가 */}
+                  <button
+                    type="button"
+                    className="primary"
+                    style={{
+                      width: "100%", padding: "12px 16px", fontSize: 15, fontWeight: 700,
+                      borderRadius: 10, marginTop: 4,
+                    }}
+                    onClick={() => {
+                      const last = exercise.sets[exercise.sets.length - 1];
+                      if (isCardioExercise(exercise)) {
+                        // 유산소: 시간/거리 복제. 기본값 20분, 0km.
+                        addSet(exercise.id, {
+                          durationMin: last?.durationMin ?? 20,
+                          distanceKm: last?.distanceKm ?? 0,
+                        });
+                      } else {
+                        const w = last?.weightKg ?? last?.targetWeightKg ?? exercise.sets[0]?.targetWeightKg ?? 0;
+                        const r = last?.reps ?? last?.targetReps ?? exercise.sets[0]?.targetReps ?? 0;
+                        addSet(exercise.id, { weightKg: w, reps: r });
+                      }
+                    }}
+                  >
+                    + 세트 추가 {exercise.sets.length > 0 && (
+                      <span style={{ fontSize: 12, fontWeight: 500, opacity: 0.85 }}>
+                        (마지막과 동일)
+                      </span>
+                    )}
+                  </button>
 
                   {/* 메모 */}
                   <input

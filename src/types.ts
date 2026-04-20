@@ -205,6 +205,18 @@ export interface Loan {
 export interface WorkoutSet {
   weightKg: number;
   reps: number;
+  /** 세트 완료 여부 — 계획 복사 시 false 로 시작, 사용자가 수행 후 체크 */
+  done?: boolean;
+  /** 이 세트의 계획상 목표 중량 (kg). 실측 weightKg 와 비교·표시용 */
+  targetWeightKg?: number;
+  /** 이 세트의 계획상 목표 반복수 (단일) */
+  targetReps?: number;
+  /** 이 세트의 계획상 목표 반복수 범위 (예: "8~10"). 표시 우선 */
+  targetRepsRange?: string;
+  /** 세트 간 휴식 시간 (초). 타이머 표시용 */
+  restSec?: number;
+  /** 세트별 메모 (예: "워밍업", "드롭세트") */
+  note?: string;
 }
 
 export type WorkoutBodyPart = "가슴" | "등" | "어깨" | "팔" | "하체" | "코어" | "유산소" | "기타";
@@ -215,6 +227,10 @@ export interface WorkoutExercise {
   bodyPart?: WorkoutBodyPart;
   sets: WorkoutSet[];
   note?: string; // 상태, 실패 여부 등
+  /** 계획에서 복사된 워밍업 지침 (예: "빈 바 × 10 → 40kg × 5") */
+  warmupNote?: string;
+  /** 계획에서 복사된 자극 포인트 / 수행 큐 */
+  cueNote?: string;
 }
 
 export interface WorkoutDayEntry {
@@ -231,6 +247,37 @@ export interface WorkoutWeek {
   id: string;
   weekStart: string; // 해당 주 일요일 yyyy-mm-dd
   entries: WorkoutDayEntry[];
+}
+
+export interface WorkoutRoutineExercise {
+  id: string;
+  name: string;
+  bodyPart: WorkoutBodyPart;
+  targetSets: number;
+  targetReps: number;
+  targetWeightKg: number;
+  /** "8~10" 처럼 레이블 표시용 반복수 범위 */
+  targetRepsRange?: string;
+  /** 세트 간 권장 휴식 (초) */
+  restSec?: number;
+  /** 워밍업 지침 (예: "빈 바 × 10 → 30kg × 8") */
+  warmupNote?: string;
+  /** 자극 포인트 / 수행 큐 */
+  cueNote?: string;
+}
+
+export interface WorkoutRoutine {
+  id: string;
+  name: string; // "푸시 데이", "상체 A" 등
+  exercises: WorkoutRoutineExercise[];
+  /** 유산소/마무리 메모 (예: "트레드밀 15분") */
+  cardioNote?: string;
+  /** 추천 요일 (0=일, 6=토). UI 정렬/필터용 */
+  weekday?: number;
+  /** 휴식 권장 루틴 (운동 금지/가벼운 산책 등). true면 적용 시 rest로 처리 */
+  restDay?: boolean;
+  /** 루틴 전반 주석 (휴식 권장 텍스트 등) */
+  note?: string;
 }
 
 // --- Calculation Results ---
@@ -318,6 +365,7 @@ export interface AppData {
   targetPortfolios?: TargetPortfolio[];
   loans?: Loan[]; // 대출 목록
   workoutWeeks?: WorkoutWeek[];
+  workoutRoutines?: WorkoutRoutine[];
   /** 목표 자산 곡선 (날짜별 목표 금액). 비어 있으면 date < CALC_START_DATE 구간은 0 표시 */
   targetNetWorthCurve?: Record<string, number>;
   /** 반월/일별 자산 스냅샷 시계열 */

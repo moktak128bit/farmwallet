@@ -58,6 +58,8 @@ interface PositionListSectionProps {
   onPositionClick: (position: PositionWithPrice) => void;
   onQuickSell: (position: PositionWithPrice, e: React.MouseEvent) => void;
   onQuickBuy: (position: PositionWithPrice, e: React.MouseEvent) => void;
+  /** 한글명이 없거나 영문으로 표시되는 종목의 이름을 인라인 편집. trades/prices/tickerDatabase 전부 업데이트. */
+  onRenameTicker: (ticker: string, newName: string) => void;
 }
 
 const STORAGE_KEY_PREFIX = "fw-position-display-currency-";
@@ -99,6 +101,7 @@ export const PositionListSection: React.FC<PositionListSectionProps> = ({
   prices,
   tickerDatabase,
   onChangeTickerDatabase,
+  onRenameTicker,
   fxRate,
   accountOrder,
   onAccountReorder,
@@ -111,6 +114,16 @@ export const PositionListSection: React.FC<PositionListSectionProps> = ({
     key: "marketValue",
     direction: "desc"
   });
+  // 종목명 인라인 편집 상태 (더블클릭으로 활성화)
+  const [editingNameTicker, setEditingNameTicker] = useState<string | null>(null);
+  const [editingNameValue, setEditingNameValue] = useState("");
+
+  const commitRename = (ticker: string) => {
+    const next = editingNameValue.trim();
+    setEditingNameTicker(null);
+    setEditingNameValue("");
+    if (next) onRenameTicker(ticker, next);
+  };
   const [accountDisplayCurrency, setAccountDisplayCurrency] = useState<Record<string, "USD" | "KRW">>({});
   useEffect(() => {
     try {
@@ -474,17 +487,50 @@ export const PositionListSection: React.FC<PositionListSectionProps> = ({
                         <td className="ticker-cell" style={{ color: "var(--primary)", fontWeight: 500 }}>
                           {p.ticker}
                         </td>
-                        <td 
-                          style={{ 
+                        <td
+                          style={{
                             fontSize: "12px",
                             whiteSpace: "nowrap",
                             overflow: "hidden",
                             textOverflow: "ellipsis",
-                            maxWidth: "170px"
+                            maxWidth: "170px",
+                            cursor: "text"
                           }}
-                          title={p.name}
+                          title={`${p.name}\n(더블클릭해서 이름 수정)`}
+                          onDoubleClick={(e) => {
+                            e.stopPropagation();
+                            setEditingNameTicker(p.ticker);
+                            setEditingNameValue(p.name ?? "");
+                          }}
                         >
-                          {p.name}
+                          {editingNameTicker === p.ticker ? (
+                            <input
+                              type="text"
+                              autoFocus
+                              value={editingNameValue}
+                              onChange={(e) => setEditingNameValue(e.target.value)}
+                              onBlur={() => commitRename(p.ticker)}
+                              onKeyDown={(e) => {
+                                if (e.key === "Enter") commitRename(p.ticker);
+                                else if (e.key === "Escape") {
+                                  setEditingNameTicker(null);
+                                  setEditingNameValue("");
+                                }
+                              }}
+                              onClick={(e) => e.stopPropagation()}
+                              style={{
+                                width: "100%",
+                                fontSize: "12px",
+                                padding: "2px 4px",
+                                border: "1px solid var(--primary)",
+                                borderRadius: 4,
+                                background: "var(--surface)",
+                                color: "var(--text)"
+                              }}
+                            />
+                          ) : (
+                            p.name
+                          )}
                         </td>
                         <td onClick={(e) => e.stopPropagation()} style={{ padding: "4px 6px" }}>
                           <select

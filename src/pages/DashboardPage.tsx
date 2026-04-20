@@ -21,7 +21,17 @@ import {
 import { formatKRW } from "../utils/formatter";
 import { useFxRateValue } from "../context/FxRateContext";
 import { useAppStore } from "../store/appStore";
-import { getThisMonthKST, getTodayKST } from "../utils/date";
+import {
+  getThisMonthKST,
+  getTodayKST,
+  getLastDayOfMonth,
+  parseIsoLocal,
+  formatIsoLocal,
+  addDaysToIso,
+  shiftMonth,
+  getMonthEndDate,
+  buildMonthRange,
+} from "../utils/date";
 import { getCategoryType, isSavingsExpenseEntry } from "../utils/category";
 import { canonicalTickerForMatch, extractTickerFromText, isUSDStock } from "../utils/finance";
 import { parseQuantityFromNote } from "../utils/dividend";
@@ -91,62 +101,6 @@ type CalendarCell = {
 
 const DAY_LABELS = ["일", "월", "화", "수", "목", "금", "토"];
 
-function getLastDayOfMonth(year: number, month: number): number {
-  return new Date(year, month, 0).getDate();
-}
-
-function parseIsoLocal(date: string): Date | null {
-  if (!date) return null;
-  const [y, m, d] = date.split("-").map(Number);
-  if (!y || !m || !d) return null;
-  const parsed = new Date(y, m - 1, d);
-  if (Number.isNaN(parsed.getTime())) return null;
-  return parsed;
-}
-
-function formatIsoLocal(date: Date): string {
-  const y = date.getFullYear();
-  const m = String(date.getMonth() + 1).padStart(2, "0");
-  const d = String(date.getDate()).padStart(2, "0");
-  return `${y}-${m}-${d}`;
-}
-
-function addDaysToIso(date: string, days: number): string {
-  const parsed = parseIsoLocal(date);
-  if (!parsed) return date;
-  parsed.setDate(parsed.getDate() + days);
-  return formatIsoLocal(parsed);
-}
-
-function shiftMonth(month: string, offset: number): string {
-  const [y, m] = month.split("-").map(Number);
-  if (!y || !m) return month;
-  const shifted = new Date(y, m - 1 + offset, 1);
-  return `${shifted.getFullYear()}-${String(shifted.getMonth() + 1).padStart(2, "0")}`;
-}
-
-function getMonthEndDate(month: string): string {
-  const [year, monthNum] = month.split("-").map(Number);
-  const lastDay = new Date(year, monthNum, 0).getDate();
-  return `${month}-${String(lastDay).padStart(2, "0")}`;
-}
-
-function buildMonthRange(startMonth: string, endMonth: string): string[] {
-  const result: string[] = [];
-  let [year, month] = startMonth.split("-").map(Number);
-  const [endYear, endMonthNum] = endMonth.split("-").map(Number);
-
-  while (year < endYear || (year === endYear && month <= endMonthNum)) {
-    result.push(`${year}-${String(month).padStart(2, "0")}`);
-    month += 1;
-    if (month > 12) {
-      month = 1;
-      year += 1;
-    }
-  }
-
-  return result;
-}
 
 function isDividendIncome(entry: LedgerEntry): boolean {
   if (entry.kind !== "income") return false;

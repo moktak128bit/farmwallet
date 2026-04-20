@@ -7,6 +7,7 @@ import {
 } from "recharts";
 import { ForecastView } from "../features/insights/ForecastView";
 import { SettlementView } from "../features/dating/SettlementView";
+import { calcTrend, mTotalsFor } from "../utils/insightsHelpers";
 
 /* ================================================================== */
 /*  Constants                                                          */
@@ -46,25 +47,6 @@ const W = (n: number) => n.toLocaleString() + "원";
 const Pct = (n: number) => (n >= 0 ? "+" : "") + n.toFixed(1) + "%";
 const SD = (a: number, b: number, f = 0): number => b !== 0 ? a / b : f;
 
-function calcTrend(mt: number[]) {
-  const nz = mt.filter(v => v > 0);
-  const l2 = mt.slice(-2);
-  const mom = l2.length === 2 && l2[0] > 0 ? Math.round((l2[1] - l2[0]) / l2[0] * 100) : 0;
-  const tr: "up" | "down" | "flat" = mom > 10 ? "up" : mom < -10 ? "down" : "flat";
-  const avg = nz.length > 0 ? Math.round(nz.reduce((a, b) => a + b, 0) / nz.length) : 0;
-  return { monthTrend: tr, mom, nonZero: nz, monthAvg: avg };
-}
-
-function mTotalsFor(months: string[], ledger: LedgerEntry[], match: (l: LedgerEntry) => boolean): number[] {
-  return months.map(m => {
-    let t = 0;
-    for (const l of ledger) {
-      if (l.date?.slice(0, 7) !== m || !match(l)) continue;
-      t += Number(l.amount);
-    }
-    return t;
-  });
-}
 
 /* ================================================================== */
 /*  Shared UI                                                          */

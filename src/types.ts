@@ -215,8 +215,16 @@ export interface WorkoutSet {
   targetRepsRange?: string;
   /** 세트 간 휴식 시간 (초). 타이머 표시용 */
   restSec?: number;
-  /** 세트별 메모 (예: "워밍업", "드롭세트") */
+  /** 세트별 메모 (예: "워밍업", "드롭세트", "오른쪽 어깨 시큰함") */
   note?: string;
+  /** 메모 마지막 수정 ISO 시각 */
+  noteUpdatedAt?: string;
+  /** 세트 완료(done=true 로 전환) ISO 시각. 세트간 소요 계산용 */
+  completedAt?: string;
+  /** 유산소 종목 전용: 시간(분) */
+  durationMin?: number;
+  /** 유산소 종목 전용: 거리(km) */
+  distanceKm?: number;
 }
 
 export type WorkoutBodyPart = "가슴" | "등" | "어깨" | "팔" | "하체" | "코어" | "유산소" | "기타";
@@ -239,8 +247,16 @@ export interface WorkoutDayEntry {
   type: "workout" | "rest";
   dayLabel?: string; // "Day 1 (상체)", "Day 2 (하체)", "휴식"
   exercises?: WorkoutExercise[];
-  cardio?: string; // "러닝 3km", "트레드밀 10분"
+  cardio?: string; // 유산소 자유 메모 (예: "트레드밀 경사 5%")
+  /** 유산소 시간 (분) */
+  cardioMinutes?: number;
+  /** 유산소 거리 (km) */
+  cardioDistanceKm?: number;
   restNotes?: string; // 휴식일: 수면, 근육통, 컨디션
+  /** 운동 시작 ISO 시각 ("운동 기록 시작" 또는 루틴 적용 시 자동 설정) */
+  startedAt?: string;
+  /** 운동 종료 ISO 시각 ("운동 끝내기" 버튼 또는 전 세트 완료 시 설정) */
+  endedAt?: string;
 }
 
 export interface WorkoutWeek {

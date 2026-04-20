@@ -68,6 +68,7 @@ import { APP_VERSION, BUILD_HASH } from "./constants/config";
 import { runIntegrityCheck } from "./utils/dataIntegrity";
 import { useGistSync } from "./hooks/useGistSync";
 import { GistVersionModal } from "./components/GistVersionModal";
+import { GistConflictModal } from "./components/GistConflictModal";
 import { isGistConfigured, saveToGist, loadFromGist } from "./services/gistSync";
 import { toUserDataJson } from "./services/dataService";
 import { useUIStore, type PendingAction } from "./store/uiStore";
@@ -242,11 +243,13 @@ export const App: React.FC = () => {
     }
   }, [data.prices, data.tickerDatabase, data.historicalDailyCloses, setDataWithHistory, addAppLog]);
 
-  const { autoSyncEnabled, setAutoSyncEnabled, lastPushAt: gistLastPushAt, lastPullAt: gistLastPullAt } = useGistSync(
+  const { autoSyncEnabled, setAutoSyncEnabled, lastPushAt: gistLastPushAt, lastPullAt: gistLastPullAt, resolveGistConflict } = useGistSync(
     data,
     handleGistPulledData,
     { onLog: addAppLog }
   );
+
+  const gistConflict = useUIStore((s) => s.gistConflict);
 
   const handleGistVersionLoad = useCallback((dataJson: string, _committedAt: string) => {
     handleGistPulledData(dataJson, _committedAt);
@@ -922,6 +925,8 @@ export const App: React.FC = () => {
         }}
         onCancel={() => setPendingAction(null)}
       />
+
+      <GistConflictModal conflict={gistConflict} onResolve={(r) => void resolveGistConflict(r)} />
     </div>
   );
 };

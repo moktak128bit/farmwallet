@@ -148,6 +148,21 @@ export interface GistVersion {
   url: string;
 }
 
+/**
+ * push 직전 원격 commit 시각이 마지막으로 알고 있던 시점보다 새로우면 true.
+ * 순수 함수 — 단위 테스트 용이.
+ */
+export function detectConflict(
+  latestRemoteCommittedAt: string | null | undefined,
+  knownRemoteAt: string | null | undefined
+): boolean {
+  if (!latestRemoteCommittedAt || !knownRemoteAt) return false;
+  const latestMs = new Date(latestRemoteCommittedAt).getTime();
+  const knownMs = new Date(knownRemoteAt).getTime();
+  if (!Number.isFinite(latestMs) || !Number.isFinite(knownMs)) return false;
+  return latestMs > knownMs;
+}
+
 /** 최근 N개의 Gist 버전 목록 반환 (PATCH할 때마다 자동으로 쌓임) */
 export async function getGistVersions(maxCount = 5): Promise<GistVersion[]> {
   const token = getGistToken();

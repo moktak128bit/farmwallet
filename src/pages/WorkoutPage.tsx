@@ -1,11 +1,13 @@
 import React, { useMemo, useState, useCallback } from "react";
 import { toast } from "react-hot-toast";
-import type { WorkoutWeek, WorkoutDayEntry, WorkoutExercise, WorkoutSet, WorkoutBodyPart } from "../types";
+import type { WorkoutWeek, WorkoutDayEntry, WorkoutExercise, WorkoutSet, WorkoutBodyPart, WorkoutRoutine, WorkoutRoutineExercise } from "../types";
 import { formatNumber } from "../utils/formatter";
 
 interface Props {
   workoutWeeks?: WorkoutWeek[];
   onChangeWorkoutWeeks: (weeks: WorkoutWeek[]) => void;
+  workoutRoutines?: WorkoutRoutine[];
+  onChangeWorkoutRoutines: (routines: WorkoutRoutine[]) => void;
 }
 
 interface CalendarCell {
@@ -113,7 +115,12 @@ function getEntryBodyParts(entry: WorkoutDayEntry): WorkoutBodyPart[] {
   return [...parts];
 }
 
-export const WorkoutView: React.FC<Props> = ({ workoutWeeks = [], onChangeWorkoutWeeks }) => {
+export const WorkoutView: React.FC<Props> = ({
+  workoutWeeks = [],
+  onChangeWorkoutWeeks,
+  workoutRoutines = [],
+  onChangeWorkoutRoutines,
+}) => {
   const today = toDateString(new Date());
   const [currentMonth, setCurrentMonth] = useState<string>(() => getMonthStart(today));
   const [selectedDate, setSelectedDate] = useState<string>(today);
@@ -121,10 +128,42 @@ export const WorkoutView: React.FC<Props> = ({ workoutWeeks = [], onChangeWorkou
   const [customExerciseName, setCustomExerciseName] = useState("");
   // 빠른 세트 추가 상태: exerciseId별
   const [quickSetState, setQuickSetState] = useState<Record<string, { weight: string; reps: string; sets: string }>>({});
+  // 루틴 관리 섹션 펼침/편집 상태
+  const [routinesExpanded, setRoutinesExpanded] = useState(false);
+  const [editingRoutineId, setEditingRoutineId] = useState<string | null>(null);
+  const [newRoutineName, setNewRoutineName] = useState("");
+  const [routineExerciseDraft, setRoutineExerciseDraft] = useState<{
+    name: string;
+    bodyPart: WorkoutBodyPart;
+    sets: string;
+    reps: string;
+    weight: string;
+  }>({ name: "", bodyPart: "가슴", sets: "3", reps: "10", weight: "20" });
 
   const sortedWeeks = useMemo(
     () => [...workoutWeeks].sort((a, b) => b.weekStart.localeCompare(a.weekStart)),
     [workoutWeeks]
+  );
+
+  // 루틴 정렬: weekday 가 지정된 것부터 요일 순, 그 다음 생성 순서.
+  const sortedRoutines = useMemo(() => {
+    return [...workoutRoutines].sort((a, b) => {
+      const aw = typeof a.weekday === "number" ? a.weekday : 99;
+      const bw = typeof b.weekday === "number" ? b.weekday : 99;
+      if (aw !== bw) return aw - bw;
+      return 0;
+    });
+  }, [workoutRoutines]);
+
+  // 선택된 날짜의 요일과 매칭되는 추천 루틴 id (버튼이 현재 보고 있는 날짜에 작동해야 자연스러움)
+  const selectedWeekday = useMemo(() => parseDate(selectedDate).getDay(), [selectedDate]);
+  const suggestedRoutineId = useMemo(
+    () => sortedRoutines.find((r) => r.weekday === selectedWeekday)?.id ?? null,
+    [sortedRoutines, selectedWeekday]
+  );
+  const suggestedRoutineName = useMemo(
+    () => sortedRoutines.find((r) => r.id === suggestedRoutineId)?.name ?? null,
+    [sortedRoutines, suggestedRoutineId]
   );
 
   const entryByDate = useMemo(() => {
@@ -272,16 +311,17 @@ export const WorkoutView: React.FC<Props> = ({ workoutWeeks = [], onChangeWorkou
   };
 
   const addSet = (exerciseId: string, weightKg: number, reps: number) => {
+    // 빠른 추가는 "방금 수행" 의미라 done=true. 계획 세트(applyRoutine)는 false.
     upsertEntry(selectedDate, (entry) => ({
       ...entry,
       exercises: (entry.exercises ?? []).map((ex) =>
-        ex.id === exerciseId ? { ...ex, sets: [...ex.sets, { weightKg, reps }] } : ex
+        ex.id === exerciseId ? { ...ex, sets: [...ex.sets, { weightKg, reps, done: true }] } : ex
       )
     }));
   };
 
   const addMultipleSets = (exerciseId: string, weightKg: number, reps: number, count: number) => {
-    const newSets: WorkoutSet[] = Array.from({ length: count }, () => ({ weightKg, reps }));
+    const newSets: WorkoutSet[] = Array.from({ length: count }, () => ({ weightKg, reps, done: true }));
     upsertEntry(selectedDate, (entry) => ({
       ...entry,
       exercises: (entry.exercises ?? []).map((ex) =>
@@ -295,6 +335,34 @@ export const WorkoutView: React.FC<Props> = ({ workoutWeeks = [], onChangeWorkou
       ...entry,
       exercises: (entry.exercises ?? []).map((ex) =>
         ex.id === exerciseId ? { ...ex, sets: ex.sets.filter((_, i) => i !== setIndex) } : ex
+      )
+    }));
+  };
+
+  const updateSet = (exerciseId: string, setIndex: number, patch: Partial<WorkoutSet>) => {
+    upsertEntry(selectedDate, (entry) => ({
+      ...entry,
+      exercises: (entry.exercises ?? []).map((ex) =>
+        ex.id === exerciseId
+          ? {
+              ...ex,
+              sets: ex.sets.map((s, i) => (i === setIndex ? { ...s, ...patch } : s)),
+            }
+          : ex
+      )
+    }));
+  };
+
+  const toggleSetDone = (exerciseId: string, setIndex: number) => {
+    upsertEntry(selectedDate, (entry) => ({
+      ...entry,
+      exercises: (entry.exercises ?? []).map((ex) =>
+        ex.id === exerciseId
+          ? {
+              ...ex,
+              sets: ex.sets.map((s, i) => (i === setIndex ? { ...s, done: !s.done } : s)),
+            }
+          : ex
       )
     }));
   };
@@ -347,6 +415,129 @@ export const WorkoutView: React.FC<Props> = ({ workoutWeeks = [], onChangeWorkou
     }));
   };
 
+  // ---- 루틴 관리 ----
+  const createRoutine = () => {
+    const name = newRoutineName.trim();
+    if (!name) {
+      toast.error("루틴 이름을 입력하세요");
+      return;
+    }
+    const routine: WorkoutRoutine = {
+      id: makeId("routine"),
+      name,
+      exercises: [],
+    };
+    onChangeWorkoutRoutines([...workoutRoutines, routine]);
+    setNewRoutineName("");
+    setEditingRoutineId(routine.id);
+  };
+
+  const renameRoutine = (routineId: string, name: string) => {
+    onChangeWorkoutRoutines(
+      workoutRoutines.map((r) => (r.id === routineId ? { ...r, name } : r))
+    );
+  };
+
+  const deleteRoutine = (routineId: string) => {
+    onChangeWorkoutRoutines(workoutRoutines.filter((r) => r.id !== routineId));
+    if (editingRoutineId === routineId) setEditingRoutineId(null);
+  };
+
+  const addRoutineExercise = (routineId: string) => {
+    const name = routineExerciseDraft.name.trim();
+    const sets = parseInt(routineExerciseDraft.sets, 10);
+    const reps = parseInt(routineExerciseDraft.reps, 10);
+    const weight = parseFloat(routineExerciseDraft.weight);
+    if (!name) { toast.error("운동 이름을 입력하세요"); return; }
+    if (!Number.isFinite(sets) || sets < 1) { toast.error("세트 수는 1 이상"); return; }
+    if (!Number.isFinite(reps) || reps < 1) { toast.error("횟수는 1 이상"); return; }
+    if (!Number.isFinite(weight) || weight < 0) { toast.error("중량은 0 이상"); return; }
+
+    const newEx: WorkoutRoutineExercise = {
+      id: makeId("rex"),
+      name,
+      bodyPart: routineExerciseDraft.bodyPart,
+      targetSets: Math.min(100, sets),
+      targetReps: reps,
+      targetWeightKg: weight,
+    };
+    onChangeWorkoutRoutines(
+      workoutRoutines.map((r) =>
+        r.id === routineId ? { ...r, exercises: [...r.exercises, newEx] } : r
+      )
+    );
+    setRoutineExerciseDraft((d) => ({ ...d, name: "" }));
+  };
+
+  const removeRoutineExercise = (routineId: string, exerciseId: string) => {
+    onChangeWorkoutRoutines(
+      workoutRoutines.map((r) =>
+        r.id === routineId
+          ? { ...r, exercises: r.exercises.filter((ex) => ex.id !== exerciseId) }
+          : r
+      )
+    );
+  };
+
+  // 루틴 따라하기: 선택 날짜 기록에 루틴 운동 + 목표 세트 일괄 삽입.
+  // 휴식 권장 루틴(restDay)은 휴식 기록으로 전환.
+  const applyRoutine = (routineId: string) => {
+    const routine = workoutRoutines.find((r) => r.id === routineId);
+    if (!routine) return;
+
+    if (routine.restDay) {
+      upsertEntry(selectedDate, (entry) => ({
+        ...entry,
+        type: "rest",
+        dayLabel: entry.dayLabel || routine.name,
+        exercises: undefined,
+        restNotes: [entry.restNotes, routine.note].filter(Boolean).join("\n") || routine.note || "",
+      }));
+      toast.success(`"${routine.name}" 적용`);
+      return;
+    }
+
+    if (routine.exercises.length === 0) {
+      toast.error("루틴에 운동이 없습니다");
+      return;
+    }
+    upsertEntry(selectedDate, (entry) => {
+      const generated: WorkoutExercise[] = routine.exercises.map((rex) => {
+        // 계획 세트: 중량/반복을 목표치로 미리 채워 두고 done=false.
+        // 사용자는 실제 수행 후 [✓] 체크 + 필요시 값 인라인 수정.
+        const sets: WorkoutSet[] = Array.from({ length: rex.targetSets }, () => ({
+          weightKg: rex.targetWeightKg,
+          reps: rex.targetReps,
+          done: false,
+          targetWeightKg: rex.targetWeightKg,
+          targetReps: rex.targetReps,
+          targetRepsRange: rex.targetRepsRange,
+          restSec: rex.restSec,
+        }));
+        return {
+          id: makeId("ex"),
+          name: rex.name,
+          bodyPart: rex.bodyPart,
+          sets,
+          warmupNote: rex.warmupNote,
+          cueNote: rex.cueNote,
+        };
+      });
+      // 유산소 메모는 기존 값과 합치지 않고 루틴의 것으로 덮어쓴다 (비어 있을 때만).
+      const nextCardio = entry.cardio && entry.cardio.trim().length > 0
+        ? entry.cardio
+        : (routine.cardioNote ?? "");
+      return {
+        ...entry,
+        type: "workout",
+        dayLabel: entry.dayLabel || routine.name,
+        exercises: [...(entry.exercises ?? []), ...generated],
+        cardio: nextCardio,
+      };
+    });
+    toast.success(`"${routine.name}" 루틴 불러옴`);
+  };
+
   return (
     <div>
       <div className="section-header">
@@ -354,6 +545,212 @@ export const WorkoutView: React.FC<Props> = ({ workoutWeeks = [], onChangeWorkou
         <button type="button" className="primary" onClick={goToday} style={{ padding: "8px 16px", fontSize: 14, fontWeight: 600 }}>
           오늘로 이동
         </button>
+      </div>
+
+      {/* 루틴 관리 (펼침/접힘) */}
+      <div className="card" style={{ padding: 16, marginBottom: 16 }}>
+        <button
+          type="button"
+          onClick={() => setRoutinesExpanded((v) => !v)}
+          style={{
+            width: "100%", background: "none", border: "none", cursor: "pointer",
+            display: "flex", justifyContent: "space-between", alignItems: "center",
+            padding: 0, fontSize: 16, fontWeight: 700, color: "var(--text)",
+          }}
+        >
+          <span>운동 루틴 ({workoutRoutines.length})</span>
+          <span style={{ fontSize: 14, color: "var(--text-muted)" }}>
+            {routinesExpanded ? "▲ 접기" : "▼ 펼치기"}
+          </span>
+        </button>
+
+        {routinesExpanded && (
+          <div style={{ marginTop: 14 }}>
+            {/* 루틴 생성 */}
+            <div style={{ display: "flex", gap: 8, marginBottom: 12 }}>
+              <input
+                type="text"
+                value={newRoutineName}
+                onChange={(e) => setNewRoutineName(e.target.value)}
+                onKeyDown={(e) => { if (e.key === "Enter") createRoutine(); }}
+                placeholder="새 루틴 이름 (예: 푸시 데이)"
+                style={{ flex: 1, padding: "8px 12px", borderRadius: 8, fontSize: 14 }}
+              />
+              <button
+                type="button"
+                className="primary"
+                onClick={createRoutine}
+                style={{ padding: "8px 16px", fontSize: 14, fontWeight: 600 }}
+              >
+                루틴 추가
+              </button>
+            </div>
+
+            {/* 루틴 목록 */}
+            {workoutRoutines.length === 0 ? (
+              <div style={{ padding: 20, textAlign: "center", color: "var(--text-muted)", fontSize: 13 }}>
+                아직 루틴이 없습니다. 이름을 입력하고 추가하세요.
+              </div>
+            ) : (
+              sortedRoutines.map((routine) => {
+                const isEditing = editingRoutineId === routine.id;
+                return (
+                  <div key={routine.id} style={{
+                    marginBottom: 10, padding: 12, borderRadius: 10,
+                    border: "1px solid var(--border)", background: "var(--surface)",
+                  }}>
+                    <div style={{ display: "flex", gap: 8, alignItems: "center", marginBottom: isEditing ? 10 : 0 }}>
+                      <input
+                        type="text"
+                        value={routine.name}
+                        onChange={(e) => renameRoutine(routine.id, e.target.value)}
+                        style={{ flex: 1, padding: "6px 10px", borderRadius: 6, fontSize: 14, fontWeight: 600 }}
+                      />
+                      <span style={{ fontSize: 12, color: "var(--text-muted)" }}>
+                        {routine.exercises.length}종목
+                      </span>
+                      <button
+                        type="button"
+                        className="secondary"
+                        style={{ padding: "6px 12px", fontSize: 13 }}
+                        onClick={() => setEditingRoutineId(isEditing ? null : routine.id)}
+                      >
+                        {isEditing ? "닫기" : "편집"}
+                      </button>
+                      <button
+                        type="button"
+                        className="danger"
+                        style={{ padding: "6px 12px", fontSize: 13 }}
+                        onClick={() => {
+                          if (window.confirm(`"${routine.name}" 루틴을 삭제하시겠습니까?`)) deleteRoutine(routine.id);
+                        }}
+                      >
+                        삭제
+                      </button>
+                    </div>
+
+                    {isEditing && (
+                      <div>
+                        {/* 루틴 내 운동 목록 */}
+                        {routine.exercises.length > 0 && (
+                          <div style={{ marginBottom: 10 }}>
+                            {routine.exercises.map((rex) => {
+                              const color = BODY_PART_COLORS[rex.bodyPart];
+                              return (
+                                <div key={rex.id} style={{
+                                  display: "flex", alignItems: "center", gap: 8,
+                                  padding: "6px 10px", marginBottom: 4, borderRadius: 6,
+                                  background: color + "10", border: `1px solid ${color}30`,
+                                }}>
+                                  <span style={{
+                                    padding: "2px 6px", fontSize: 11, fontWeight: 700, borderRadius: 4,
+                                    background: color + "20", color,
+                                  }}>
+                                    {rex.bodyPart}
+                                  </span>
+                                  <strong style={{ fontSize: 14, flex: 1 }}>{rex.name}</strong>
+                                  <span style={{ fontSize: 13, color: "var(--text-muted)" }}>
+                                    {rex.targetSets}세트 × {rex.targetReps}회 × {rex.targetWeightKg}kg
+                                  </span>
+                                  <button
+                                    type="button"
+                                    onClick={() => removeRoutineExercise(routine.id, rex.id)}
+                                    style={{
+                                      background: "none", border: "none", cursor: "pointer",
+                                      color: "var(--text-muted)", fontSize: 16,
+                                    }}
+                                    title="운동 삭제"
+                                  >
+                                    ×
+                                  </button>
+                                </div>
+                              );
+                            })}
+                          </div>
+                        )}
+
+                        {/* 운동 추가 입력 */}
+                        <div style={{
+                          padding: 10, borderRadius: 8, background: "var(--bg, transparent)",
+                          border: "1px dashed var(--border)",
+                        }}>
+                          <div style={{ display: "flex", gap: 6, flexWrap: "wrap", marginBottom: 8 }}>
+                            {BODY_PARTS.map((part) => (
+                              <button
+                                key={part}
+                                type="button"
+                                onClick={() => setRoutineExerciseDraft((d) => ({ ...d, bodyPart: part }))}
+                                style={{
+                                  padding: "5px 10px", fontSize: 12, fontWeight: 600, borderRadius: 6,
+                                  border: routineExerciseDraft.bodyPart === part
+                                    ? `2px solid ${BODY_PART_COLORS[part]}`
+                                    : "1px solid var(--border)",
+                                  background: routineExerciseDraft.bodyPart === part
+                                    ? BODY_PART_COLORS[part] + "18"
+                                    : "var(--surface)",
+                                  color: routineExerciseDraft.bodyPart === part
+                                    ? BODY_PART_COLORS[part]
+                                    : "var(--text)",
+                                  cursor: "pointer",
+                                }}
+                              >
+                                {part}
+                              </button>
+                            ))}
+                          </div>
+                          <div style={{ display: "flex", gap: 6, alignItems: "center", flexWrap: "wrap" }}>
+                            <input
+                              type="text"
+                              value={routineExerciseDraft.name}
+                              onChange={(e) => setRoutineExerciseDraft((d) => ({ ...d, name: e.target.value }))}
+                              placeholder="운동 이름"
+                              style={{ flex: 1, minWidth: 140, padding: "6px 10px", borderRadius: 6, fontSize: 13 }}
+                            />
+                            <input
+                              type="number"
+                              min={1}
+                              value={routineExerciseDraft.sets}
+                              onChange={(e) => setRoutineExerciseDraft((d) => ({ ...d, sets: e.target.value }))}
+                              placeholder="세트"
+                              style={{ width: 56, padding: "6px 8px", borderRadius: 6, fontSize: 13, textAlign: "center" }}
+                            />
+                            <span style={{ fontSize: 13 }}>×</span>
+                            <input
+                              type="number"
+                              min={1}
+                              value={routineExerciseDraft.reps}
+                              onChange={(e) => setRoutineExerciseDraft((d) => ({ ...d, reps: e.target.value }))}
+                              placeholder="횟수"
+                              style={{ width: 56, padding: "6px 8px", borderRadius: 6, fontSize: 13, textAlign: "center" }}
+                            />
+                            <span style={{ fontSize: 13 }}>×</span>
+                            <input
+                              type="number"
+                              min={0}
+                              step={0.5}
+                              value={routineExerciseDraft.weight}
+                              onChange={(e) => setRoutineExerciseDraft((d) => ({ ...d, weight: e.target.value }))}
+                              placeholder="kg"
+                              style={{ width: 70, padding: "6px 8px", borderRadius: 6, fontSize: 13, textAlign: "center" }}
+                            />
+                            <button
+                              type="button"
+                              className="primary"
+                              onClick={() => addRoutineExercise(routine.id)}
+                              style={{ padding: "6px 14px", fontSize: 13, fontWeight: 600 }}
+                            >
+                              추가
+                            </button>
+                          </div>
+                        </div>
+                      </div>
+                    )}
+                  </div>
+                );
+              })
+            )}
+          </div>
+        )}
       </div>
 
       {/* 캘린더 */}
@@ -495,15 +892,49 @@ export const WorkoutView: React.FC<Props> = ({ workoutWeeks = [], onChangeWorkou
         </div>
 
         {!selectedEntry ? (
-          <div style={{ display: "flex", gap: 12, flexWrap: "wrap" }}>
-            <button type="button" className="primary" onClick={startWorkout}
-              style={{ padding: "14px 28px", fontSize: 16, fontWeight: 700, borderRadius: 12, flex: 1, minWidth: 140 }}>
-              운동 기록 시작
-            </button>
-            <button type="button" className="secondary" onClick={startRest}
-              style={{ padding: "14px 28px", fontSize: 16, fontWeight: 700, borderRadius: 12, flex: 1, minWidth: 140 }}>
-              휴식 기록
-            </button>
+          <div>
+            <div style={{ display: "flex", gap: 12, flexWrap: "wrap", marginBottom: workoutRoutines.length > 0 ? 12 : 0 }}>
+              <button type="button" className="primary" onClick={startWorkout}
+                style={{ padding: "14px 28px", fontSize: 16, fontWeight: 700, borderRadius: 12, flex: 1, minWidth: 140 }}>
+                운동 기록 시작
+              </button>
+              <button type="button" className="secondary" onClick={startRest}
+                style={{ padding: "14px 28px", fontSize: 16, fontWeight: 700, borderRadius: 12, flex: 1, minWidth: 140 }}>
+                휴식 기록
+              </button>
+            </div>
+            {workoutRoutines.length > 0 && (
+              <div style={{
+                display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap",
+                padding: 12, borderRadius: 10, border: "1px dashed var(--border)",
+                background: "var(--surface)",
+              }}>
+                <span style={{ fontSize: 13, fontWeight: 600 }}>루틴 따라하기:</span>
+                <select
+                  value=""
+                  onChange={(e) => { if (e.target.value) applyRoutine(e.target.value); }}
+                  style={{ flex: 1, minWidth: 180, padding: "8px 12px", borderRadius: 8, fontSize: 14 }}
+                >
+                  <option value="">루틴 선택...</option>
+                  {sortedRoutines.map((r) => (
+                    <option key={r.id} value={r.id}>
+                      {r.name}{r.restDay ? " · 휴식" : ` (${r.exercises.length}종목)`}
+                    </option>
+                  ))}
+                </select>
+                {suggestedRoutineId && (
+                  <button
+                    type="button"
+                    className="primary"
+                    onClick={() => applyRoutine(suggestedRoutineId)}
+                    style={{ padding: "8px 14px", fontSize: 13, fontWeight: 700 }}
+                    title={suggestedRoutineName ? `${suggestedRoutineName} 적용` : "요일 루틴 적용"}
+                  >
+                    이 요일 계획 적용
+                  </button>
+                )}
+              </div>
+            )}
           </div>
         ) : selectedEntry.type === "rest" ? (
           <div>
@@ -546,6 +977,21 @@ export const WorkoutView: React.FC<Props> = ({ workoutWeeks = [], onChangeWorkou
                 placeholder="라벨 (예: 상체, 등+이두)"
                 style={{ padding: "8px 12px", borderRadius: 8, fontSize: 14, flex: 1, minWidth: 140 }}
               />
+              {workoutRoutines.length > 0 && (
+                <select
+                  value=""
+                  onChange={(e) => { if (e.target.value) applyRoutine(e.target.value); }}
+                  style={{ padding: "8px 12px", borderRadius: 8, fontSize: 14, minWidth: 140 }}
+                  title="루틴의 운동을 현재 기록에 추가합니다"
+                >
+                  <option value="">루틴 불러오기...</option>
+                  {sortedRoutines.map((r) => (
+                    <option key={r.id} value={r.id}>
+                      {r.name}{r.restDay ? " · 휴식" : ` (${r.exercises.length}종목)`}
+                    </option>
+                  ))}
+                </select>
+              )}
             </div>
 
             {/* 유산소 입력 */}
@@ -564,6 +1010,9 @@ export const WorkoutView: React.FC<Props> = ({ workoutWeeks = [], onChangeWorkou
               const volume = computeExerciseVolume([exercise]);
               const qs = getQuickSet(exercise.id);
               const partColor = exercise.bodyPart ? BODY_PART_COLORS[exercise.bodyPart] : "#64748b";
+              const doneCount = exercise.sets.filter((s) => s.done).length;
+              const totalCount = exercise.sets.length;
+              const isAllDone = totalCount > 0 && doneCount === totalCount;
 
               return (
                 <div key={exercise.id} style={{
@@ -574,8 +1023,8 @@ export const WorkoutView: React.FC<Props> = ({ workoutWeeks = [], onChangeWorkou
                   background: `${partColor}08`,
                 }}>
                   {/* 운동 헤더 */}
-                  <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 10 }}>
-                    <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                  <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 10, gap: 8, flexWrap: "wrap" }}>
+                    <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
                       {exercise.bodyPart && (
                         <span style={{
                           padding: "3px 8px", fontSize: 11, fontWeight: 700, borderRadius: 6,
@@ -585,6 +1034,16 @@ export const WorkoutView: React.FC<Props> = ({ workoutWeeks = [], onChangeWorkou
                         </span>
                       )}
                       <strong style={{ fontSize: 15 }}>{exercise.name}</strong>
+                      {totalCount > 0 && (
+                        <span style={{
+                          fontSize: 12, fontWeight: 700, padding: "3px 10px", borderRadius: 999,
+                          background: isAllDone ? "rgba(16,185,129,0.18)" : "var(--surface)",
+                          color: isAllDone ? "#10b981" : "var(--text-muted)",
+                          border: `1px solid ${isAllDone ? "#10b981" : "var(--border)"}`,
+                        }}>
+                          {doneCount}/{totalCount} 완료{isAllDone ? " ✓" : ""}
+                        </span>
+                      )}
                       {volume > 0 && (
                         <span style={{ fontSize: 12, color: "var(--text-muted)" }}>
                           볼륨 {formatNumber(volume)}kg
@@ -601,30 +1060,117 @@ export const WorkoutView: React.FC<Props> = ({ workoutWeeks = [], onChangeWorkou
                     </button>
                   </div>
 
-                  {/* 세트 목록 */}
+                  {/* 워밍업 지침 */}
+                  {exercise.warmupNote && (
+                    <div style={{
+                      padding: "8px 12px", marginBottom: 8, borderRadius: 8,
+                      background: "rgba(251,191,36,0.12)", border: "1px solid rgba(251,191,36,0.4)",
+                      fontSize: 13, color: "var(--text)",
+                    }}>
+                      <span style={{ fontWeight: 700, color: "#b45309", marginRight: 6 }}>워밍업</span>
+                      {exercise.warmupNote}
+                    </div>
+                  )}
+
+                  {/* 자극 포인트 / 수행 큐 */}
+                  {exercise.cueNote && (
+                    <div style={{
+                      padding: "8px 12px", marginBottom: 10, borderRadius: 8,
+                      background: `${partColor}14`, border: `1px solid ${partColor}40`,
+                      fontSize: 13, lineHeight: 1.55, color: "var(--text)",
+                    }}>
+                      <span style={{ fontWeight: 700, color: partColor, marginRight: 6 }}>자극</span>
+                      {exercise.cueNote}
+                    </div>
+                  )}
+
+                  {/* 세트 목록 — 따라하기 레이아웃: [✓] 세트N | 중량입력 × 반복입력 | 목표표시 | 삭제 */}
                   {exercise.sets.length > 0 && (
-                    <div style={{ marginBottom: 10 }}>
-                      {exercise.sets.map((set, idx) => (
-                        <div key={idx} style={{
-                          display: "inline-flex", alignItems: "center", gap: 4,
-                          padding: "6px 12px", margin: "0 6px 6px 0",
-                          background: "var(--surface)", borderRadius: 8,
-                          border: "1px solid var(--border)", fontSize: 14, fontWeight: 600,
-                        }}>
-                          <span>{set.weightKg}kg × {set.reps}회</span>
-                          <button
-                            type="button"
-                            onClick={() => removeSet(exercise.id, idx)}
-                            style={{
-                              background: "none", border: "none", cursor: "pointer",
-                              color: "var(--text-muted)", fontSize: 14, padding: "0 2px", marginLeft: 4,
-                            }}
-                            title="세트 삭제"
-                          >
-                            ×
-                          </button>
-                        </div>
-                      ))}
+                    <div style={{ marginBottom: 10, display: "flex", flexDirection: "column", gap: 6 }}>
+                      {exercise.sets.map((set, idx) => {
+                        const hasTarget = set.targetWeightKg !== undefined || set.targetReps !== undefined;
+                        const targetLabel = hasTarget
+                          ? `목표 ${set.targetWeightKg ?? 0}kg × ${set.targetRepsRange ?? set.targetReps ?? 0}회`
+                          : null;
+                        return (
+                          <div key={idx} style={{
+                            display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap",
+                            padding: "8px 10px", borderRadius: 8,
+                            background: set.done ? "rgba(16,185,129,0.12)" : "var(--surface)",
+                            border: `1px solid ${set.done ? "#10b98150" : "var(--border)"}`,
+                            opacity: 1,
+                          }}>
+                            <button
+                              type="button"
+                              onClick={() => toggleSetDone(exercise.id, idx)}
+                              aria-label={set.done ? "완료 해제" : "완료로 표시"}
+                              title={set.done ? "완료 해제" : "완료로 표시"}
+                              style={{
+                                width: 28, height: 28, borderRadius: 8,
+                                border: `2px solid ${set.done ? "#10b981" : "var(--border)"}`,
+                                background: set.done ? "#10b981" : "var(--surface)",
+                                color: set.done ? "#fff" : "transparent",
+                                cursor: "pointer", fontSize: 16, fontWeight: 900,
+                                display: "flex", alignItems: "center", justifyContent: "center",
+                                flexShrink: 0,
+                              }}
+                            >
+                              ✓
+                            </button>
+                            <span style={{ fontSize: 12, color: "var(--text-muted)", fontWeight: 600, minWidth: 40 }}>
+                              세트 {idx + 1}
+                            </span>
+                            <input
+                              type="number"
+                              min={0}
+                              step={0.5}
+                              value={set.weightKg}
+                              onChange={(e) => {
+                                const v = parseFloat(e.target.value);
+                                updateSet(exercise.id, idx, { weightKg: Number.isFinite(v) ? v : 0 });
+                              }}
+                              style={{
+                                width: 72, padding: "6px 8px", borderRadius: 6, fontSize: 14,
+                                textAlign: "center", fontWeight: 600,
+                              }}
+                              aria-label="중량(kg)"
+                            />
+                            <span style={{ fontSize: 13, color: "var(--text-muted)" }}>kg ×</span>
+                            <input
+                              type="number"
+                              min={0}
+                              value={set.reps}
+                              onChange={(e) => {
+                                const v = parseInt(e.target.value, 10);
+                                updateSet(exercise.id, idx, { reps: Number.isFinite(v) ? v : 0 });
+                              }}
+                              style={{
+                                width: 58, padding: "6px 8px", borderRadius: 6, fontSize: 14,
+                                textAlign: "center", fontWeight: 600,
+                              }}
+                              aria-label="횟수"
+                            />
+                            <span style={{ fontSize: 13, color: "var(--text-muted)" }}>회</span>
+                            {targetLabel && (
+                              <span style={{ fontSize: 11, color: "var(--text-muted)", marginLeft: 4 }}>
+                                {targetLabel}
+                              </span>
+                            )}
+                            <button
+                              type="button"
+                              onClick={() => removeSet(exercise.id, idx)}
+                              style={{
+                                marginLeft: "auto",
+                                background: "none", border: "none", cursor: "pointer",
+                                color: "var(--text-muted)", fontSize: 18, padding: "0 4px",
+                              }}
+                              title="세트 삭제"
+                            >
+                              ×
+                            </button>
+                          </div>
+                        );
+                      })}
                     </div>
                   )}
 

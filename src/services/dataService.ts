@@ -9,6 +9,7 @@ import type {
   LedgerEntry
 } from "../types";
 import { STORAGE_KEYS, DEFAULT_US_TICKERS, ISA_PORTFOLIO, DATA_SCHEMA_VERSION } from "../constants/config";
+import { DEFAULT_WORKOUT_ROUTINES } from "../data/defaultWorkoutRoutines";
 import { normalizeCategory, normalizeSubCategory } from "../utils/category";
 import { buildTableBackupFile } from "../utils/tableDataBackup";
 import { saveCacheToDB } from "./cacheStore";
@@ -941,6 +942,7 @@ export function getEmptyData(): AppData {
     stockPresets: [],
     targetPortfolios: [],
     workoutWeeks: [],
+    workoutRoutines: [...DEFAULT_WORKOUT_ROUTINES],
     targetNetWorthCurve: {},
     assetSnapshots: [],
     historicalDailyCloses: [],
@@ -1086,6 +1088,11 @@ export function loadData(): AppData {
     const parsedStockPresets = asArray(parsed.stockPresets) as NonNullable<AppData["stockPresets"]>;
     const parsedTargetPortfolios = asArray(parsed.targetPortfolios) as NonNullable<AppData["targetPortfolios"]>;
     const parsedWorkoutWeeks = asArray(parsed.workoutWeeks) as NonNullable<AppData["workoutWeeks"]>;
+    const parsedWorkoutRoutinesRaw = asArray(parsed.workoutRoutines) as NonNullable<AppData["workoutRoutines"]>;
+    // 시드 주입 정책: 기존 사용자의 편집을 절대 덮어쓰지 않는다.
+    // 저장값이 비어 있을 때만 DEFAULT_WORKOUT_ROUTINES 를 주입.
+    const parsedWorkoutRoutines =
+      parsedWorkoutRoutinesRaw.length > 0 ? parsedWorkoutRoutinesRaw : [...DEFAULT_WORKOUT_ROUTINES];
     const parsedIsaPortfolio = asArray(parsed.isaPortfolio) as NonNullable<AppData["isaPortfolio"]>;
 
     // 캐시 분리 키에서 로드, 없으면 메인 키의 값으로 마이그레이션
@@ -1132,6 +1139,7 @@ export function loadData(): AppData {
       stockPresets: parsedStockPresets,
       targetPortfolios: parsedTargetPortfolios,
       workoutWeeks: parsedWorkoutWeeks,
+      workoutRoutines: parsedWorkoutRoutines,
       targetNetWorthCurve: normalizedTargetCurve,
       assetSnapshots: normalizeAssetSnapshots(parsed.assetSnapshots),
       historicalDailyCloses: effectiveHistoricalDailyCloses,

@@ -792,6 +792,8 @@ export const App: React.FC = () => {
             <WorkoutView
               workoutWeeks={data.workoutWeeks ?? []}
               onChangeWorkoutWeeks={(workoutWeeks) => setDataWithHistory((prev) => ({ ...prev, workoutWeeks }))}
+              workoutRoutines={data.workoutRoutines ?? []}
+              onChangeWorkoutRoutines={(workoutRoutines) => setDataWithHistory((prev) => ({ ...prev, workoutRoutines }))}
             />
             </TabErrorBoundary>
           )}

@@ -1,6 +1,7 @@
 import React, { useEffect, useMemo, useRef, useState } from "react";
 import type { Account, AppData, LedgerEntry, LedgerKind } from "../types";
 import { recommendCategory } from "../utils/categoryRecommendation";
+import { parseAmount } from "../utils/parseAmount";
 
 interface Props {
   open: boolean;
@@ -17,10 +18,9 @@ const parseQuickInput = (text: string): { description: string; amount: number; k
   else if (/^이체\s+/.test(trimmed)) { kind = "transfer"; body = trimmed.replace(/^이체\s+/, ""); }
   else if (/^지출\s+/.test(trimmed)) { kind = "expense"; body = trimmed.replace(/^지출\s+/, ""); }
 
-  // 금액 파싱: 양수만 허용 (kind로 수입/지출 구분하므로 음수 필요 없음).
+  // 금액 파싱: 공용 parseAmount 사용 (양수만 허용, NaN/과학표기 방어)
   const amountMatch = body.match(/(\d{1,3}(?:,\d{3})*|\d+)(?:\s*원)?/);
-  const rawAmount = amountMatch ? Number(amountMatch[1].replace(/,/g, "")) : 0;
-  const amount = Number.isFinite(rawAmount) && rawAmount > 0 ? rawAmount : 0;
+  const amount = amountMatch ? parseAmount(amountMatch[1]) : 0;
   const description = amountMatch
     ? body.replace(amountMatch[0], "").trim()
     : body.trim();

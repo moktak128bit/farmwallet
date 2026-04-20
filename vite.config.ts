@@ -867,14 +867,46 @@ function backupApiPlugin(): Plugin {
         });
       });
 
+      /**
+       * child_process.exec를 Promise로 래핑. spawn EPERM 같은 Windows 예외 포함 모든 오류를
+       * catch하여 dev 서버 크래시 방지. 성공 시 stdout 반환, 실패 시 stderr 우선 err.message.
+       */
+      const execAsync = (cmd: string, cwd: string) =>
+        new Promise<{ stdout: string; stderr: string }>((resolve, reject) => {
+          try {
+            const child = exec(cmd, { cwd }, (err, stdout, stderr) => {
+              if (err) reject(new Error(stderr || err.message));
+              else resolve({ stdout, stderr });
+            });
+            // spawn 단계 오류(EPERM, ENOENT 등)는 exec 콜백 err로 전달되지 않고 별도 event로
+            // 발생할 수 있어 'error' 리스너로 추가 포획 필요.
+            child.on("error", (err) => reject(err));
+          } catch (syncErr) {
+            reject(syncErr instanceof Error ? syncErr : new Error(String(syncErr)));
+          }
+        });
+
+      const sendErrorJson = (res: ServerResponse, stage: string, err: unknown) => {
+        if (res.writableEnded) return;
+        const msg = err instanceof Error ? err.message : String(err);
+        console.warn(`[${stage}] 실패`, msg);
+        res.statusCode = 500;
+        res.setHeader("Content-Type", "application/json");
+        res.end(JSON.stringify({ error: `${stage} 실패: ${msg}` }));
+      };
+
       // 업데이트 (git pull) — 로컬 개발 전용
       server.middlewares.use("/api/git-pull", (req: IncomingMessage, res: ServerResponse, next) => {
         if (req.method !== "POST") { next(); return; }
-        exec("git pull origin main --no-rebase", { cwd: process.cwd() }, (err, _o, stderr) => {
-          res.setHeader("Content-Type", "application/json");
-          if (err) { res.statusCode = 500; res.end(JSON.stringify({ error: stderr || err.message })); return; }
-          res.end(JSON.stringify({ ok: true }));
-        });
+        void (async () => {
+          try {
+            await execAsync("git pull origin main --no-rebase", process.cwd());
+            res.setHeader("Content-Type", "application/json");
+            res.end(JSON.stringify({ ok: true }));
+          } catch (err) {
+            sendErrorJson(res, "git pull", err);
+          }
+        })();
       });
 
       // 배포 (git push) — 로컬 개발 전용
@@ -882,15 +914,20 @@ function backupApiPlugin(): Plugin {
         if (req.method !== "POST") { next(); return; }
         const cwd = process.cwd();
         const msg = `save: ${new Date().toLocaleString("ko-KR", { timeZone: "Asia/Seoul" })}`;
-        exec("git add -A", { cwd }, () => {
-          exec(`git commit -m "${msg}" --allow-empty`, { cwd }, () => {
-            exec("git push origin main --force", { cwd }, (err, _o, stderr) => {
-              res.setHeader("Content-Type", "application/json");
-              if (err) { res.statusCode = 500; res.end(JSON.stringify({ error: stderr || err.message })); return; }
-              res.end(JSON.stringify({ ok: true }));
-            });
-          });
-        });
+        void (async () => {
+          try {
+            await execAsync("git add -A", cwd);
+          } catch (err) { return sendErrorJson(res, "git add", err); }
+          try {
+            // --allow-empty로 staged 변경 없어도 성공. 메시지에 인용부호가 들어가지 않도록 주의.
+            await execAsync(`git commit -m "${msg.replace(/"/g, "'")}" --allow-empty`, cwd);
+          } catch (err) { return sendErrorJson(res, "git commit", err); }
+          try {
+            await execAsync("git push origin main --force", cwd);
+            res.setHeader("Content-Type", "application/json");
+            res.end(JSON.stringify({ ok: true }));
+          } catch (err) { sendErrorJson(res, "git push", err); }
+        })();
       });
     }
   };

@@ -1,10 +1,10 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
-import { renderHook } from "@testing-library/react";
+import { renderHook, act } from "@testing-library/react";
 import { useGistSync } from "../hooks/useGistSync";
 import * as gistSync from "../services/gistSync";
 import { GIST_AUTO_PUSH_DEBOUNCE_MS } from "../constants/config";
-import { toast } from "react-hot-toast";
 import type { AppData } from "../types";
+import { useUIStore } from "../store/uiStore";
 
 vi.mock("../services/gistSync", async () => {
   const actual = await vi.importActual<typeof gistSync>("../services/gistSync");
@@ -24,9 +24,6 @@ vi.mock("../services/gistSync", async () => {
   };
 });
 
-vi.mock("react-hot-toast", () => ({
-  toast: { error: vi.fn(), success: vi.fn() },
-}));
 
 const mocked = vi.mocked(gistSync);
 
@@ -55,6 +52,7 @@ describe("useGistSync", () => {
   beforeEach(() => {
     vi.useFakeTimers();
     vi.clearAllMocks();
+    useUIStore.getState().setGistConflict(null);
     mocked.getGistAutoSync.mockReturnValue(true);
     mocked.getGistToken.mockReturnValue("test-token");
     mocked.getGistId.mockReturnValue("test-gist-id");
@@ -67,6 +65,7 @@ describe("useGistSync", () => {
 
   afterEach(() => {
     vi.useRealTimers();
+    useUIStore.getState().setGistConflict(null);
   });
 
   it("초기 마운트 시 원격이 더 새로우면 자동 pull", async () => {
@@ -154,11 +153,15 @@ describe("useGistSync", () => {
     expect(JSON.parse(lastPushedJson).ledger[0].amount).toBe(3);
   });
 
-  it("push 직전 원격이 새로 변경되어 있으면 충돌로 보류 + toast.error", async () => {
+  it("push 직전 원격이 새로 변경되어 있으면 충돌 감지 → 자동 pull 후 uiStore에 conflict 설정", async () => {
     mocked.getGistVersions.mockResolvedValue([
       { sha: "remote-new", committedAt: "2026-04-20T05:00:00Z", url: "u" },
     ]);
     mocked.getGistLastPullAt.mockReturnValue("2026-04-20T03:00:00Z");
+    mocked.loadFromGist.mockResolvedValue({
+      dataJson: '{"accounts":[],"ledger":[{"id":"R1"}]}',
+      updatedAt: "2026-04-20T05:00:00Z",
+    });
 
     const { rerender } = renderHook(({ d }: { d: AppData }) => useGistSync(d, vi.fn()), {
       initialProps: { d: makeData(0) },
@@ -166,18 +169,115 @@ describe("useGistSync", () => {
     // 초기 effect 처리 (원격이 더 새로 자동 pull됨, knownRemoteCommitRef = 5시)
     await flush();
     mocked.saveToGist.mockClear();
-    vi.mocked(toast.error).mockClear();
+    mocked.loadFromGist.mockClear();
 
     // 원격이 다시 더 새로워짐 (6시)
     mocked.getGistVersions.mockResolvedValue([
       { sha: "remote-newer", committedAt: "2026-04-20T06:00:00Z", url: "u" },
     ]);
+    mocked.loadFromGist.mockResolvedValue({
+      dataJson: '{"accounts":[],"ledger":[{"id":"R2"}]}',
+      updatedAt: "2026-04-20T06:00:00Z",
+    });
 
     rerender({ d: makeData(1) });
     await vi.advanceTimersByTimeAsync(GIST_AUTO_PUSH_DEBOUNCE_MS + 1000);
     await flush();
 
-    expect(toast.error).toHaveBeenCalled();
     expect(mocked.saveToGist).not.toHaveBeenCalled();
+    const conflict = useUIStore.getState().gistConflict;
+    expect(conflict).not.toBeNull();
+    expect(conflict?.remoteUpdatedAt).toBe("2026-04-20T06:00:00Z");
+    expect(conflict?.pendingLocalDataJson).toContain('"amount":1');
+  });
+
+  it("resolveGistConflict('apply-remote'): onApplyPulledData 호출 + 충돌 클리어", async () => {
+    const onApply = vi.fn();
+    const { result } = renderHook(() => useGistSync(makeData(0), onApply));
+    await flush();
+    mocked.saveToGist.mockClear();
+    onApply.mockClear();
+
+    // 충돌 상태를 직접 set
+    useUIStore.getState().setGistConflict({
+      remoteDataJson: '{"x":1}',
+      remoteUpdatedAt: "2026-04-20T07:00:00Z",
+      pendingLocalDataJson: '{"y":2}',
+    });
+
+    await act(async () => {
+      await result.current.resolveGistConflict("apply-remote");
+    });
+
+    expect(onApply).toHaveBeenCalledWith('{"x":1}', "2026-04-20T07:00:00Z");
+    expect(useUIStore.getState().gistConflict).toBeNull();
+    expect(mocked.saveToGist).not.toHaveBeenCalled();
+  });
+
+  it("resolveGistConflict('force-push-local'): saveToGist 호출 + 충돌 클리어", async () => {
+    const { result } = renderHook(() => useGistSync(makeData(0), vi.fn()));
+    await flush();
+    mocked.saveToGist.mockClear();
+
+    useUIStore.getState().setGistConflict({
+      remoteDataJson: '{"x":1}',
+      remoteUpdatedAt: "2026-04-20T07:00:00Z",
+      pendingLocalDataJson: '{"y":2}',
+    });
+
+    await act(async () => {
+      await result.current.resolveGistConflict("force-push-local");
+    });
+
+    expect(mocked.saveToGist).toHaveBeenCalledWith('{"y":2}');
+    expect(useUIStore.getState().gistConflict).toBeNull();
+  });
+
+  it("resolveGistConflict('cancel'): 어떤 호출도 없음 + 충돌 클리어", async () => {
+    const onApply = vi.fn();
+    const { result } = renderHook(() => useGistSync(makeData(0), onApply));
+    await flush();
+    mocked.saveToGist.mockClear();
+    onApply.mockClear();
+
+    useUIStore.getState().setGistConflict({
+      remoteDataJson: '{"x":1}',
+      remoteUpdatedAt: "2026-04-20T07:00:00Z",
+      pendingLocalDataJson: '{"y":2}',
+    });
+
+    await act(async () => {
+      await result.current.resolveGistConflict("cancel");
+    });
+
+    expect(onApply).not.toHaveBeenCalled();
+    expect(mocked.saveToGist).not.toHaveBeenCalled();
+    expect(useUIStore.getState().gistConflict).toBeNull();
+  });
+});
+
+describe("detectConflict", () => {
+  it("known/latest 둘 중 하나라도 비어 있으면 false", async () => {
+    const { detectConflict } = await import("../services/gistSync");
+    expect(detectConflict("", "2026-04-20T00:00:00Z")).toBe(false);
+    expect(detectConflict("2026-04-20T00:00:00Z", "")).toBe(false);
+    expect(detectConflict(null, "2026-04-20T00:00:00Z")).toBe(false);
+    expect(detectConflict(undefined, undefined)).toBe(false);
+  });
+
+  it("latest > known이면 true", async () => {
+    const { detectConflict } = await import("../services/gistSync");
+    expect(detectConflict("2026-04-20T05:00:00Z", "2026-04-20T03:00:00Z")).toBe(true);
+  });
+
+  it("latest <= known이면 false", async () => {
+    const { detectConflict } = await import("../services/gistSync");
+    expect(detectConflict("2026-04-20T03:00:00Z", "2026-04-20T05:00:00Z")).toBe(false);
+    expect(detectConflict("2026-04-20T03:00:00Z", "2026-04-20T03:00:00Z")).toBe(false);
+  });
+
+  it("ISO 파싱 실패 시 false", async () => {
+    const { detectConflict } = await import("../services/gistSync");
+    expect(detectConflict("not-a-date", "2026-04-20T03:00:00Z")).toBe(false);
   });
 });

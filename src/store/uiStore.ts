@@ -23,6 +23,19 @@ export interface IntegritySummary {
   warning: number;
 }
 
+/**
+ * Gist 자동 push 중 원격 변경이 감지된 경우의 충돌 정보.
+ * 모달이 표시되며 사용자가 원격 적용/로컬 강제 푸시/취소를 선택.
+ */
+export interface GistConflict {
+  /** 원격에서 새로 fetch한 Gist 데이터 JSON 문자열 */
+  remoteDataJson: string;
+  /** 원격 커밋 시각 (ISO) */
+  remoteUpdatedAt: string;
+  /** push하려고 시도했던 로컬 데이터 JSON */
+  pendingLocalDataJson: string;
+}
+
 const APP_LOG_MAX = 200;
 let appLogIdCounter = 0;
 
@@ -42,6 +55,10 @@ interface UIStore {
   setShowQuickEntry: (show: boolean) => void;
   showGistVersionModal: boolean;
   setShowGistVersionModal: (show: boolean) => void;
+
+  // Gist 충돌
+  gistConflict: GistConflict | null;
+  setGistConflict: (conflict: GistConflict | null) => void;
 
   // Cross-page navigation
   copyRequest: LedgerEntry | null;
@@ -91,6 +108,9 @@ export const useUIStore = create<UIStore>((set) => ({
   setShowQuickEntry: (showQuickEntry) => set({ showQuickEntry }),
   showGistVersionModal: false,
   setShowGistVersionModal: (showGistVersionModal) => set({ showGistVersionModal }),
+
+  gistConflict: null,
+  setGistConflict: (gistConflict) => set({ gistConflict }),
 
   copyRequest: null,
   setCopyRequest: (copyRequest) => set({ copyRequest }),

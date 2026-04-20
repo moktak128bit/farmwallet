@@ -33,6 +33,7 @@ import { getKrNames } from "../storage";
 import { toast } from "react-hot-toast";
 import { validateDate, validateTicker, validateRequired, validateQuantity, validateAmount, validateAccountTickerCurrency } from "../utils/validation";
 import { ERROR_MESSAGES } from "../constants/errorMessages";
+import { displayNameForTicker, createDefaultTradeForm } from "../utils/stockHelpers";
 import { usePriceAutoRefresh } from "../hooks/usePriceAutoRefresh";
 
 /** 환율 미로드 시 미국 주식 저장에 사용하는 기본 환율 (저장 차단 대신 사용) */
@@ -70,16 +71,6 @@ const sideLabel: Record<TradeSide, string> = {
   sell: "매도"
 };
 
-/** 한국 종목은 krNames 한글명 우선, 그 외는 apiName 그대로 */
-function displayNameForTicker(ticker: string, apiName?: string): string {
-  const key = canonicalTickerForMatch(ticker);
-  if (!key) return apiName ?? ticker ?? "";
-  if (isKRWStock(ticker)) {
-    const krName = getKrNames()[key];
-    if (krName) return krName;
-  }
-  return apiName ?? ticker ?? "";
-}
 
 type PositionSortKey =
   | "ticker"
@@ -105,26 +96,6 @@ type TradeSortKey =
   | "totalAmount"
   | "cashImpact";
 
-function createDefaultTradeForm() {
-  return {
-    id: undefined as string | undefined,
-    date: new Date().toISOString().slice(0, 10),
-    accountId: "",
-    ticker: "",
-    name: "",
-    /** 시장: 코스피/코스닥/미장/코인 직접 선택 */
-    market: undefined as "KR" | "US" | "CRYPTO" | undefined,
-    exchange: undefined as string | undefined,
-    side: "buy" as TradeSide,
-    quantity: "",
-    price: "",
-    fee: "0",
-    /** 미국 주식용: 단가(원). USD와 원화 둘 다 입력 시 환율 없이 저장 가능 */
-    priceKRW: "",
-    /** 미국 주식용: 수수료(원) */
-    feeKRW: ""
-  };
-}
 
 export const StocksView: React.FC<Props> = ({
   accounts,

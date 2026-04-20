@@ -154,4 +154,39 @@ describe("useAppData", () => {
     );
     expect(mocked.saveData).toHaveBeenCalledWith(updated);
   });
+
+  it("data.prices 변경 시 applyKoreanStockNames 재실행 (시세 갱신 후 한글명 교체 보장)", async () => {
+    const initial = makeData({
+      ledger: [{ id: "L1", date: "2026-01-01", kind: "expense", category: "x", description: "n", amount: 1 }],
+    });
+    mocked.loadData.mockReturnValue(initial);
+    // 기본: 변경 없음 (데이터에 영문 종목명이 없음)
+    mocked.applyKoreanStockNames.mockReturnValue({ data: initial, changed: false });
+
+    renderHook(() => useAppData());
+    // 마운트 + 플래그 진입으로 applyKoreanStockNames가 한 번 이상 호출됨
+    await waitFor(() => expect(mocked.applyKoreanStockNames.mock.calls.length).toBeGreaterThanOrEqual(1));
+    const callsBeforePriceChange = mocked.applyKoreanStockNames.mock.calls.length;
+
+    // 새 시세 fetch 시뮬레이션: store.prices 갱신
+    const withNewPrices = {
+      ...initial,
+      prices: [{ ticker: "005930", name: "Samsung Electronics", price: 70000 }],
+    };
+    // 한글명 적용 결과 준비
+    const withKorean = {
+      ...withNewPrices,
+      prices: [{ ticker: "005930", name: "삼성전자", price: 70000 }],
+    };
+    mocked.applyKoreanStockNames.mockReturnValue({ data: withKorean, changed: true });
+    useAppStore.setState({ data: withNewPrices });
+
+    // prices 변경으로 effect 재발화 → applyKoreanStockNames 추가 호출
+    await waitFor(() =>
+      expect(mocked.applyKoreanStockNames.mock.calls.length).toBeGreaterThan(callsBeforePriceChange)
+    );
+    await waitFor(() =>
+      expect(useAppStore.getState().data.prices[0].name).toBe("삼성전자")
+    );
+  });
 });

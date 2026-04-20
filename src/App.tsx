@@ -9,6 +9,7 @@ import { useSwipe } from "./hooks/useSwipe";
 import { ConfirmModal } from "./components/ui/ConfirmModal";
 import { QuickEntryModal } from "./components/QuickEntryModal";
 import { RecurringDueBadge } from "./components/RecurringDueBadge";
+import { TabErrorBoundary } from "./components/TabErrorBoundary";
 
 // 동일 로더를 lazy와 프리페치에서 공유해 탭 호버 시 청크 미리 로드
 const loadDashboard = () => import("./pages/DashboardPage").then((m) => ({ default: m.DashboardView }));
@@ -665,8 +666,11 @@ export const App: React.FC = () => {
             )}
             <main id="main-content" className="app-main" role="main" {...swipeHandlers}>
           <Suspense fallback={<div className="card" style={{ padding: 24, textAlign: "center", color: "var(--text-muted)" }}>로딩 중...</div>}>
-          {tab === "dashboard" && <DashboardView />}
+          {tab === "dashboard" && (
+            <TabErrorBoundary tabName="대시보드"><DashboardView /></TabErrorBoundary>
+          )}
           {tab === "accounts" && (
+            <TabErrorBoundary tabName="계좌">
             <AccountsView
               accounts={data.accounts}
               balances={balances}
@@ -678,8 +682,10 @@ export const App: React.FC = () => {
               onChangeLedger={(ledger) => setDataWithHistory((prev) => ({ ...prev, ledger }))}
               onRenameAccountId={handleRenameAccountId}
             />
+            </TabErrorBoundary>
           )}
           {tab === "ledger" && (
+            <TabErrorBoundary tabName="가계부">
             <LedgerView
               accounts={data.accounts}
               ledger={data.ledger}
@@ -694,15 +700,19 @@ export const App: React.FC = () => {
               highlightLedgerId={highlightLedgerId}
               onClearHighlightLedger={() => setHighlightLedgerId(null)}
             />
+            </TabErrorBoundary>
           )}
           {tab === "categories" && (
+            <TabErrorBoundary tabName="카테고리">
             <CategoriesView
               presets={data.categoryPresets}
               onChangePresets={(categoryPresets) => setDataWithHistory((prev) => ({ ...prev, categoryPresets }))}
               ledger={data.ledger}
             />
+            </TabErrorBoundary>
           )}
           {tab === "stocks" && (
+            <TabErrorBoundary tabName="주식">
             <StocksView
               accounts={data.accounts}
               balances={balances}
@@ -738,8 +748,10 @@ export const App: React.FC = () => {
               targetPortfolios={data.targetPortfolios ?? []}
               onChangeTargetPortfolios={(targetPortfolios) => setDataWithHistory((prev) => ({ ...prev, targetPortfolios }))}
             />
+            </TabErrorBoundary>
           )}
           {tab === "dividends" && (
+            <TabErrorBoundary tabName="배당">
             <DividendsView
               accounts={data.accounts}
               ledger={data.ledger}
@@ -750,8 +762,10 @@ export const App: React.FC = () => {
               onChangeLedger={(ledger) => setDataWithHistory((prev) => ({ ...prev, ledger }))}
               fxRate={fxRate}
             />
+            </TabErrorBoundary>
           )}
           {tab === "debt" && (
+            <TabErrorBoundary tabName="대출">
             <DebtView
               loans={data.loans}
               ledger={data.ledger}
@@ -760,15 +774,19 @@ export const App: React.FC = () => {
               onChangeLoans={(loans) => setDataWithHistory((prev) => ({ ...prev, loans }))}
               onChangeLedger={(ledger) => setDataWithHistory((prev) => ({ ...prev, ledger }))}
             />
+            </TabErrorBoundary>
           )}
           {tab === "spend" && (
+            <TabErrorBoundary tabName="지출 분석">
             <SpendView
               accounts={data.accounts}
               ledger={data.ledger}
               categoryPresets={data.categoryPresets}
             />
+            </TabErrorBoundary>
           )}
           {tab === "insights" && (
+            <TabErrorBoundary tabName="인사이트">
             <InsightsView
               accounts={data.accounts}
               ledger={data.ledger}
@@ -780,8 +798,10 @@ export const App: React.FC = () => {
               recurringExpenses={data.recurringExpenses}
               onAddLedger={(entry) => setDataWithHistory((prev) => ({ ...prev, ledger: [...prev.ledger, entry] }))}
             />
+            </TabErrorBoundary>
           )}
           {tab === "budget" && (
+            <TabErrorBoundary tabName="예산·반복지출">
             <BudgetRecurringView
               accounts={data.accounts}
               recurring={data.recurringExpenses}
@@ -792,22 +812,28 @@ export const App: React.FC = () => {
               onChangeBudgets={(budgetGoals) => setDataWithHistory((prev) => ({ ...prev, budgetGoals }))}
               onChangeLedger={(ledger) => setDataWithHistory((prev) => ({ ...prev, ledger }))}
             />
+            </TabErrorBoundary>
           )}
           {tab === "reports" && (
+            <TabErrorBoundary tabName="리포트">
             <ReportView
               accounts={data.accounts}
               ledger={data.ledger}
               trades={data.trades}
               prices={data.prices}
             />
+            </TabErrorBoundary>
           )}
           {tab === "workout" && (
+            <TabErrorBoundary tabName="운동">
             <WorkoutView
               workoutWeeks={data.workoutWeeks ?? []}
               onChangeWorkoutWeeks={(workoutWeeks) => setDataWithHistory((prev) => ({ ...prev, workoutWeeks }))}
             />
+            </TabErrorBoundary>
           )}
           {tab === "settings" && (
+            <TabErrorBoundary tabName="설정">
             <SettingsView
               data={data}
               backupVersion={backupVersion}
@@ -837,6 +863,7 @@ export const App: React.FC = () => {
               gistLastPushAt={gistLastPushAt}
               gistLastPullAt={gistLastPullAt}
             />
+            </TabErrorBoundary>
           )}
           </Suspense>
         </main>

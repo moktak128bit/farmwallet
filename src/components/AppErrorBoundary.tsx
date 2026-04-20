@@ -8,6 +8,7 @@ interface AppErrorBoundaryProps {
 
 interface AppErrorBoundaryState {
   error: Error | null;
+  componentStack: string | null;
   isRecovering: boolean;
   recoveryMessage: string | null;
 }
@@ -15,6 +16,7 @@ interface AppErrorBoundaryState {
 export class AppErrorBoundary extends React.Component<AppErrorBoundaryProps, AppErrorBoundaryState> {
   state: AppErrorBoundaryState = {
     error: null,
+    componentStack: null,
     isRecovering: false,
     recoveryMessage: null
   };
@@ -25,11 +27,13 @@ export class AppErrorBoundary extends React.Component<AppErrorBoundaryProps, App
 
   componentDidCatch(error: Error, errorInfo: React.ErrorInfo): void {
     console.error("[AppErrorBoundary] uncaught render error", error, errorInfo);
+    this.setState({ componentStack: errorInfo.componentStack ?? null });
   }
 
   private handleRetry = (): void => {
     this.setState({
       error: null,
+      componentStack: null,
       recoveryMessage: null
     });
   };
@@ -83,7 +87,7 @@ export class AppErrorBoundary extends React.Component<AppErrorBoundaryProps, App
   };
 
   render() {
-    const { error, isRecovering, recoveryMessage } = this.state;
+    const { error, componentStack, isRecovering, recoveryMessage } = this.state;
 
     if (!error) return this.props.children;
 
@@ -128,6 +132,28 @@ export class AppErrorBoundary extends React.Component<AppErrorBoundaryProps, App
           >
             {error.message}
           </pre>
+          {componentStack && (
+            <details style={{ marginBottom: 14 }}>
+              <summary style={{ cursor: "pointer", fontSize: 12, color: "var(--text-muted)" }}>
+                컴포넌트 스택 (디버깅용)
+              </summary>
+              <pre
+                style={{
+                  margin: "8px 0 0 0",
+                  padding: 12,
+                  borderRadius: 8,
+                  background: "var(--bg)",
+                  border: "1px solid var(--border)",
+                  fontSize: 11,
+                  maxHeight: 240,
+                  overflow: "auto",
+                  whiteSpace: "pre-wrap"
+                }}
+              >
+                {componentStack}
+              </pre>
+            </details>
+          )}
           {recoveryMessage && (
             <p style={{ marginTop: 0, marginBottom: 14, color: "var(--text-muted)" }}>{recoveryMessage}</p>
           )}

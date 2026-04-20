@@ -16,6 +16,13 @@ import { useFocusTrap } from "../hooks/useFocusTrap";
 import { recommendCategory } from "../utils/categoryRecommendation";
 import { ReceiptScanner, type OcrResult } from "../features/ocr/ReceiptScanner";
 import { CategoryClassifier } from "../features/ml/CategoryClassifier";
+import {
+  ledgerEntryGross,
+  tradeToLedgerRow,
+  createDefaultLedgerForm as createDefaultForm,
+  type LedgerDisplayRow,
+} from "../utils/ledgerHelpers";
+import { MonthNavigator } from "../components/ledger/MonthNavigator";
 
 interface Props {
   accounts: Account[];
@@ -40,88 +47,7 @@ const KIND_LABEL: Record<LedgerKind, string> = {
 
 type LedgerTab = "all" | "income" | "expense" | "savingsExpense" | "transfer" | "creditPayment";
 
-/** 기록표: 수입·지출은 할인 전 금액 = 순액 + 할인. 이체 등은 amount만. */
-function ledgerEntryGross(l: Pick<LedgerEntry, "kind" | "amount" | "discountAmount">): number {
-  if (l.kind === "income" || l.kind === "expense") {
-    return l.amount + (l.discountAmount ?? 0);
-  }
-  return l.amount;
-}
-
-/** 가계부에 표시하는 한 행: ledger 항목 또는 주식 거래를 ledger 형태로 만든 것 */
-export type LedgerDisplayRow = LedgerEntry & { _tradeId?: string };
-
-function tradeToLedgerRow(t: StockTrade, realizedPnlByTradeId: Map<string, number>): LedgerDisplayRow {
-  const isSell = t.side === "sell";
-  const isUsd = isUSDStock(t.ticker);
-  const priceStr = isUsd ? `${formatUSD(t.price)}` : `${formatKRW(Math.round(t.price))}`;
-  const qty = t.quantity % 1 === 0 ? String(t.quantity) : t.quantity.toFixed(2);
-  const label = t.name ? `${t.ticker} ${t.name}` : t.ticker;
-  const action = isSell ? "매도" : "매수";
-  const description = `${label} ${qty}주 ${priceStr}에 ${action}`;
-  const rawPnl = isSell ? (realizedPnlByTradeId.get(t.id) ?? t.totalAmount) : t.totalAmount;
-  if (isSell) {
-    const isProfit = rawPnl >= 0;
-    return {
-      id: `trade-${t.id}`,
-      date: t.date,
-      kind: "expense",
-      category: "재테크",
-      subCategory: isProfit ? "투자수익" : "투자손실",
-      description,
-      amount: Math.abs(rawPnl),
-      toAccountId: isProfit ? t.accountId : undefined,
-      fromAccountId: isProfit ? undefined : t.accountId,
-      currency: isUsd ? "USD" : "KRW",
-      _tradeId: t.id
-    };
-  }
-  return {
-    id: `trade-${t.id}`,
-    date: t.date,
-    kind: "expense",
-    category: "재테크",
-    subCategory: "주식매수",
-    description,
-    amount: Math.abs(rawPnl),
-    fromAccountId: t.accountId,
-    toAccountId: undefined,
-    currency: isUsd ? "USD" : "KRW",
-    _tradeId: t.id
-  };
-}
-
-function createDefaultForm(): {
-  id?: string;
-  date: string;
-  kind: LedgerKind;
-  isFixedExpense: boolean;
-  mainCategory: string;
-  subCategory: string;
-  description: string;
-  fromAccountId: string;
-  toAccountId: string;
-  amount: string;
-  discountAmount: string;
-  currency: "KRW" | "USD";
-  tags: string[];
-} {
-  return {
-    id: undefined,
-    date: getTodayKST(),
-    kind: "income",
-    isFixedExpense: false,
-    mainCategory: "",
-    subCategory: "",
-    description: "",
-    fromAccountId: "",
-    toAccountId: "",
-    amount: "",
-    discountAmount: "",
-    currency: "KRW",
-    tags: []
-  };
-}
+export type { LedgerDisplayRow };
 
 export const LedgerView: React.FC<Props> = ({
   accounts,
@@ -3385,111 +3311,13 @@ export const LedgerView: React.FC<Props> = ({
         </div>
       </div>
       {viewMode === "monthly" && (
-          <>
-            {/* 년/월 화살표 네비게이션 */}
-            <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-              <button
-                type="button"
-                className="secondary"
-                onClick={() => {
-                  const k = getKoreaTime();
-                  const yyyy = k.getFullYear();
-                  const mm = String(k.getMonth() + 1).padStart(2, "0");
-                  setSelectedMonths(new Set([`${yyyy}-${mm}`]));
-                  setCurrentYear(String(yyyy));
-                }}
-                style={{ padding: "6px 10px", fontSize: 13 }}
-              >
-                이번 달
-              </button>
-              <button
-                type="button"
-                className="icon-button"
-                style={{ width: 32, height: 32, border: "1px solid var(--border)", borderRadius: 8, fontSize: 16, cursor: "pointer" }}
-                onClick={() => {
-                  let y = Number(currentYear);
-                  // 현재 선택된 월 중 가장 이른 월을 기준으로 이전 달로 이동
-                  const sorted = [...selectedMonths].sort();
-                  if (sorted.length > 0) {
-                    const [sy, sm] = sorted[0].split("-").map(Number);
-                    const prev = sm === 1 ? `${sy - 1}-12` : `${sy}-${String(sm - 1).padStart(2, "0")}`;
-                    const prevYear = sm === 1 ? String(sy - 1) : String(sy);
-                    setCurrentYear(prevYear);
-                    setSelectedMonths(new Set([prev]));
-                  } else {
-                    const m = 1;
-                    y -= 1;
-                    setCurrentYear(String(y));
-                    setSelectedMonths(new Set([`${y}-${String(m).padStart(2, "0")}`]));
-                  }
-                }}
-              >
-                ◀
-              </button>
-              <span style={{ fontWeight: 700, fontSize: 15, minWidth: 100, textAlign: "center" }}>
-                {currentYear}년
-              </span>
-              <button
-                type="button"
-                className="icon-button"
-                style={{ width: 32, height: 32, border: "1px solid var(--border)", borderRadius: 8, fontSize: 16, cursor: "pointer" }}
-                onClick={() => {
-                  let y = Number(currentYear);
-                  const sorted = [...selectedMonths].sort();
-                  if (sorted.length > 0) {
-                    const [sy, sm] = sorted[sorted.length - 1].split("-").map(Number);
-                    const next = sm === 12 ? `${sy + 1}-01` : `${sy}-${String(sm + 1).padStart(2, "0")}`;
-                    const nextYear = sm === 12 ? String(sy + 1) : String(sy);
-                    setCurrentYear(nextYear);
-                    setSelectedMonths(new Set([next]));
-                  } else {
-                    y += 1;
-                    setCurrentYear(String(y));
-                    setSelectedMonths(new Set([`${y}-01`]));
-                  }
-                }}
-              >
-                ▶
-              </button>
-            </div>
-            {/* 월 선택 그리드 */}
-            <div className="month-tabs">
-              {Array.from({ length: 12 }).map((_, idx) => {
-                const monthNum = idx + 1;
-                const monthPart = String(monthNum).padStart(2, "0");
-                const key = `${currentYear}-${monthPart}`;
-                const hasData = availableMonthsForCurrentYear.includes(key);
-                const isActive = selectedMonths.has(key);
-                return (
-                  <button
-                    key={key}
-                    type="button"
-                    className={`month-tab ${isActive ? "active" : ""} ${
-                      !hasData ? "empty" : ""
-                    }`}
-                    onClick={() => {
-                      setSelectedMonths((prev) => {
-                        const next = new Set(prev);
-                        if (next.has(key)) {
-                          next.delete(key);
-                        } else {
-                          next.add(key);
-                        }
-                        return next;
-                      });
-                    }}
-                  >
-                    {monthNum}월
-                  </button>
-                );
-              })}
-            </div>
-            {selectedMonths.size === 0 && (
-              <p style={{ fontSize: 12, color: "var(--text-muted)", marginTop: 8, marginBottom: 0 }}>
-                월을 선택하면 해당 월만 표시됩니다. 선택 없음 시 전체 기간이 표시됩니다.
-              </p>
-            )}
-          </>
+          <MonthNavigator
+            selectedMonths={selectedMonths}
+            onChangeSelectedMonths={setSelectedMonths}
+            currentYear={currentYear}
+            onChangeCurrentYear={setCurrentYear}
+            availableMonthsForCurrentYear={availableMonthsForCurrentYear}
+          />
         )}
 
       {viewMode === "all" && !isBatchEditMode && (

@@ -1961,30 +1961,33 @@ const InvestTab = React.memo(function InvestTab({ d }: { d: D }) {
         </div>
       </Card>
 
-      {d.investBySub.length > 0 && (
+      {d.investBySub.length > 0 && (() => {
+        // 성능: total과 pieData를 렌더 루프 밖에서 한 번만 계산
+        // (기존: d.investBySub.reduce가 map 콜백마다 실행되어 O(n²))
+        const pieData = d.investBySub.map((v) => ({ name: v.sub, value: v.amount }));
+        const investSubTotal = d.investBySub.reduce((s, x) => s + x.amount, 0);
+        return (
         <Card title="재테크 중분류별 분류" span={2}>
           <div style={{ display: "flex", gap: 16, alignItems: "center", flexWrap: "wrap" }}>
             <ResponsiveContainer width="45%" height={200}>
-              <PieChart><Pie data={d.investBySub.map(v => ({ name: v.sub, value: v.amount }))} dataKey="value" cx="50%" cy="50%" outerRadius={80} innerRadius={35} label={pieLabel} labelLine={false} style={{ fontSize: 10 }}>
+              <PieChart><Pie data={pieData} dataKey="value" cx="50%" cy="50%" outerRadius={80} innerRadius={35} label={pieLabel} labelLine={false} style={{ fontSize: 10 }}>
                 {d.investBySub.map((_, i) => <Cell key={i} fill={C[i]} />)}
               </Pie><Tooltip formatter={(v: any) => W(v)} /></PieChart>
             </ResponsiveContainer>
             <div style={{ flex: 1 }}>
-              {d.investBySub.map((v, i) => {
-                const total = d.investBySub.reduce((s, x) => s + x.amount, 0);
-                return (
-                  <div key={v.sub} style={{ display: "flex", justifyContent: "space-between", padding: "6px 0", borderBottom: "1px solid #f5f5f5", fontSize: 13 }}>
-                    <span style={{ display: "flex", alignItems: "center", gap: 8 }}>
-                      <span style={{ width: 10, height: 10, borderRadius: 5, background: C[i], display: "inline-block" }} />{v.sub} ({v.count}건)
-                    </span>
-                    <span style={{ fontWeight: 700 }}>{F(v.amount)} <span style={{ fontSize: 10, color: "#999" }}>({total > 0 ? Math.round(v.amount / total * 100) : 0}%)</span></span>
-                  </div>
-                );
-              })}
+              {d.investBySub.map((v, i) => (
+                <div key={v.sub} style={{ display: "flex", justifyContent: "space-between", padding: "6px 0", borderBottom: "1px solid #f5f5f5", fontSize: 13 }}>
+                  <span style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                    <span style={{ width: 10, height: 10, borderRadius: 5, background: C[i], display: "inline-block" }} />{v.sub} ({v.count}건)
+                  </span>
+                  <span style={{ fontWeight: 700 }}>{F(v.amount)} <span style={{ fontSize: 10, color: "#999" }}>({investSubTotal > 0 ? Math.round(v.amount / investSubTotal * 100) : 0}%)</span></span>
+                </div>
+              ))}
             </div>
           </div>
         </Card>
-      )}
+        );
+      })()}
 
       {d.stockTrends.map(st => (
         <Card key={st.name} title={`${st.name} 누적 매수금액 변동`} span={2}>

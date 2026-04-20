@@ -4,7 +4,7 @@ import type { Account, AccountBalanceRow, CategoryPresets, ExpenseDetailGroup, L
 import { formatShortDate, formatUSD, formatKRW } from "../utils/formatter";
 import { shortcutManager, type ShortcutAction } from "../utils/shortcuts";
 import { validateDate, validateRequired, validateTransfer, validateAccountExists } from "../utils/validation";
-import { isSavingsExpenseEntry } from "../utils/category";
+import { isSavingsExpenseEntry, makeIsSavingsExpense } from "../utils/category";
 import { getKoreaTime, getTodayKST, getThisMonthKST } from "../utils/date";
 import { toast } from "react-hot-toast";
 import { ERROR_MESSAGES } from "../constants/errorMessages";
@@ -1504,31 +1504,52 @@ export const LedgerView: React.FC<Props> = ({
   );
 
   // 필터 적용 시 지출액/수입액/전체 요약 (지출 = 재테크·저축성지출 제외한 expense만)
+  // 성능: 5000건 기준 3회→1회 루프로 감소. makeIsSavingsExpense로 Set을 한 번만 생성.
   const filteredSummary = useMemo(() => {
-    const savingsAmount = filteredLedger
-      .filter((l) => isSavingsExpenseEntry(l, accounts, categoryPresets))
-      .reduce((s, l) => s + l.amount, 0);
-    const expenseAmount = filteredLedger
-      .filter(
-        (l) =>
-          l.kind === "expense" &&
-          !isSavingsExpenseEntry(l, accounts, categoryPresets)
-      )
-      .reduce((s, l) => s + l.amount, 0);
-    const incomeAmount = filteredLedger
-      .filter((l) => l.kind === "income")
-      .reduce((s, l) => s + l.amount, 0);
-    const total = incomeAmount - expenseAmount;
-    // 전월 대비 비교 (현재 월 기준)
     const thisMonth = getThisMonthKST();
     const [ty, tm] = thisMonth.split("-").map(Number);
     const prevMonth = `${tm === 1 ? ty - 1 : ty}-${String(tm === 1 ? 12 : tm - 1).padStart(2, "0")}`;
-    const prevEntries = ledger.filter(l => l.date?.startsWith(prevMonth));
-    const prevExpense = prevEntries.filter(l => l.kind === "expense" && !isSavingsExpenseEntry(l, accounts, categoryPresets)).reduce((s, l) => s + l.amount, 0);
-    const prevIncome = prevEntries.filter(l => l.kind === "income").reduce((s, l) => s + l.amount, 0);
-    const hasPrev = prevEntries.length > 0;
-    return { expenseAmount, savingsAmount, incomeAmount, total, prevExpense, prevIncome, hasPrev, prevMonth };
-  }, [filteredLedger, accounts, categoryPresets, ledger]);
+    const isSavings = makeIsSavingsExpense(categoryPresets);
+
+    let savingsAmount = 0;
+    let expenseAmount = 0;
+    let incomeAmount = 0;
+    for (const l of filteredLedger) {
+      if (isSavings(l)) {
+        savingsAmount += l.amount;
+      } else if (l.kind === "expense") {
+        expenseAmount += l.amount;
+      }
+      if (l.kind === "income") {
+        incomeAmount += l.amount;
+      }
+    }
+
+    // 전월 대비 비교 — ledger 전체 1회 순회로 prevEntries 통계 수집
+    let prevExpense = 0;
+    let prevIncome = 0;
+    let prevCount = 0;
+    for (const l of ledger) {
+      if (!l.date?.startsWith(prevMonth)) continue;
+      prevCount += 1;
+      if (l.kind === "income") {
+        prevIncome += l.amount;
+      } else if (l.kind === "expense" && !isSavings(l)) {
+        prevExpense += l.amount;
+      }
+    }
+
+    return {
+      expenseAmount,
+      savingsAmount,
+      incomeAmount,
+      total: incomeAmount - expenseAmount,
+      prevExpense,
+      prevIncome,
+      hasPrev: prevCount > 0,
+      prevMonth,
+    };
+  }, [filteredLedger, categoryPresets, ledger]);
 
   // 출금/입금 셀에 표시할 계좌별 금액·잔액 (ledger + trades 혼합, 날짜순 역산)
   const balanceAfterByLedgerId = useMemo(() => {

@@ -2,6 +2,7 @@ import {
   getCategoryType,
   getSavingsCategories,
   isSavingsExpenseEntry,
+  makeIsSavingsExpense,
   type CategoryType
 } from "./categoryUtils";
 import { normalizeCategory, normalizeSubCategory } from "./categoryNormalize";
@@ -19,6 +20,7 @@ export {
   getCategoryType,
   getSavingsCategories,
   isSavingsExpenseEntry,
+  makeIsSavingsExpense,
   normalizeCategory,
   normalizeSubCategory,
   recommendCategory,

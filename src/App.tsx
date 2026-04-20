@@ -393,7 +393,9 @@ export const App: React.FC = () => {
               {appLog.length === 0 ? (
                 <div className="app-log-panel-empty">저장·시세·종목 불러오기 시 여기에 표시됩니다.</div>
               ) : (
-                appLog.map((e) => (
+                // 성능: 200개까지 쌓이는 로그 중 최신 8개만 DOM에 렌더.
+                // 전체는 store(uiStore.appLog)에 유지되어 나중에 확장 UI로 열어볼 수 있음.
+                appLog.slice(-8).map((e) => (
                   <div key={e.id} className={`app-log-panel-item app-log-${e.type}`}>
                     <span className="app-log-time">{e.time}</span> {e.message}
                   </div>

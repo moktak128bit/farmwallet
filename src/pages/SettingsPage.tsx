@@ -973,8 +973,9 @@ export const SettingsView: React.FC<Props> = ({
                     setGistIdState(result.gistId);
                     setGistLastSync(result.updatedAt);
                     toast.success("Gist에 저장 완료");
-                  } catch (e: any) {
-                    toast.error(e.message ?? "Gist 저장 실패");
+                  } catch (e) {
+                    const msg = e instanceof Error ? e.message : String(e);
+                    toast.error(msg || "Gist 저장 실패");
                   } finally {
                     setGistSyncing(false);
                   }
@@ -1003,8 +1004,9 @@ export const SettingsView: React.FC<Props> = ({
                     });
                     setGistLastSync(result.updatedAt);
                     toast.success("Gist에서 불러오기 완료");
-                  } catch (e: any) {
-                    toast.error(e.message ?? "Gist 불러오기 실패");
+                  } catch (e) {
+                    const msg = e instanceof Error ? e.message : String(e);
+                    toast.error(msg || "Gist 불러오기 실패");
                   } finally {
                     setGistSyncing(false);
                   }

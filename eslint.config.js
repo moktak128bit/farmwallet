@@ -11,8 +11,8 @@ export default tseslint.config(
     plugins: { "react-hooks": reactHooks },
     rules: {
       ...reactHooks.configs.recommended.rules,
-      // 프로젝트 컨벤션에 맞게 완화
-      "@typescript-eslint/no-explicit-any": "off",
+      // 점진적 도입: 새 코드엔 명시 타입을 권장하지만 기존 any는 경고로 표시
+      "@typescript-eslint/no-explicit-any": "warn",
       "@typescript-eslint/no-unused-vars": ["warn", { argsIgnorePattern: "^_", varsIgnorePattern: "^_" }],
       "no-empty": ["error", { allowEmptyCatch: true }],
       "no-case-declarations": "off",

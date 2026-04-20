@@ -1,8 +1,10 @@
 import { useEffect, useState } from "react";
 import { useRegisterSW } from "virtual:pwa-register/react";
+import { useUIStore } from "../store/uiStore";
 
 export function PWAStatus() {
   const [offline, setOffline] = useState(!navigator.onLine);
+  const setNewVersionAvailable = useUIStore((s) => s.setNewVersionAvailable);
   const {
     needRefresh: [needRefresh, setNeedRefresh],
     updateServiceWorker,
@@ -14,6 +16,11 @@ export function PWAStatus() {
       }
     },
   });
+
+  // SW의 needRefresh 상태를 uiStore에 반영 — 헤더의 "새 버전 적용" 버튼이 반응
+  useEffect(() => {
+    setNewVersionAvailable(needRefresh);
+  }, [needRefresh, setNewVersionAvailable]);
 
   useEffect(() => {
     const on = () => setOffline(false);

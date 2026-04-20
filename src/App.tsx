@@ -64,7 +64,7 @@ import { useFxRateValue } from "./context/FxRateContext";
 import { useTickerDatabase } from "./hooks/useTickerDatabase";
 import { useKeyboardShortcuts } from "./hooks/useKeyboardShortcuts";
 import { usePortfolioWorker } from "./hooks/usePortfolioWorker";
-import { APP_VERSION, BUILD_HASH } from "./constants/config";
+import { APP_VERSION } from "./constants/config";
 import { runIntegrityCheck } from "./utils/dataIntegrity";
 import { useGistSync } from "./hooks/useGistSync";
 import { GistVersionModal } from "./components/GistVersionModal";
@@ -104,7 +104,6 @@ export const App: React.FC = () => {
   const isGistLoading = useUIStore((s) => s.isGistLoading);
   const setIsGistLoading = useUIStore((s) => s.setIsGistLoading);
   const newVersionAvailable = useUIStore((s) => s.newVersionAvailable);
-  const setNewVersionAvailable = useUIStore((s) => s.setNewVersionAvailable);
   const gistConfigured = useUIStore((s) => s.gistConfigured);
   const setGistConfigured = useUIStore((s) => s.setGistConfigured);
   const integritySummary = useUIStore((s) => s.integritySummary);
@@ -114,23 +113,8 @@ export const App: React.FC = () => {
 
   const appLogListRef = React.useRef<HTMLDivElement>(null);
 
-  // 프로덕션 자동 버전 감지 — 5분마다 build-meta.json 확인
-  useEffect(() => {
-    if (import.meta.env.DEV) return;
-    const checkForUpdate = async () => {
-      try {
-        const res = await fetch(`${import.meta.env.BASE_URL}build-meta.json`, { cache: "no-store" });
-        if (!res.ok) return;
-        const meta = await res.json() as { hash?: string };
-        if (meta.hash && meta.hash !== BUILD_HASH) {
-          setNewVersionAvailable(true);
-        }
-      } catch { /* ignore */ }
-    };
-    const tid = setTimeout(checkForUpdate, 30_000);
-    const iid = setInterval(checkForUpdate, 5 * 60_000);
-    return () => { clearTimeout(tid); clearInterval(iid); };
-  }, [setNewVersionAvailable]);
+  // 새 버전 알림은 <PWAStatus>의 useRegisterSW onNeedRefresh로 대체됨.
+  // 별도의 5분 build-meta.json fetch 폴링은 제거 (Service Worker가 hourly 갱신 체크).
 
   const withConfirm = useCallback((opts: Omit<PendingAction, "confirmStyle"> & { confirmStyle?: "primary" | "danger" }) => {
     setPendingAction({

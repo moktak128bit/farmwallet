@@ -2490,58 +2490,80 @@ export const DashboardView: React.FC<Props> = (props) => {
             {cashflowMonth} 소비 {formatKRW(Math.round(selectedMonthTotals.spending))} / 재테크 {formatKRW(Math.round(selectedMonthTotals.investing))} / 수입 {formatKRW(Math.round(selectedMonthTotals.income))} · {selectedMonthSpendingRows.length}건
           </p>
 
-          <div style={{ overflowX: "auto" }}>
-            <table className="table compact" style={{ width: "100%", fontSize: 12 }}>
-              <thead>
-                <tr>
-                  <th style={{ textAlign: "left" }}>일자</th>
-                  <th style={{ textAlign: "left" }}>분류</th>
-                  <th style={{ textAlign: "left" }}>내역</th>
-                  <th style={{ textAlign: "left" }}>계좌</th>
-                  <th style={{ textAlign: "right" }}>금액</th>
-                </tr>
-              </thead>
-              <tbody>
-                {selectedMonthSpendingRows.slice(0, 30).map((row) => (
-                  <tr key={`${row.id}:${row.date}`}>
-                    <td>{row.date}</td>
-                    <td>
-                      <span
+          <details style={{ marginTop: 4 }}>
+            <summary
+              style={{
+                cursor: "pointer",
+                padding: "8px 12px",
+                background: "var(--surface)",
+                border: "1px solid var(--border)",
+                borderRadius: "var(--radius-md)",
+                fontSize: 13,
+                fontWeight: 600,
+                color: "var(--text-secondary)",
+                userSelect: "none",
+              }}
+            >
+              일자별 상세 내역 보기 ({selectedMonthSpendingRows.length}건)
+            </summary>
+            <div style={{ overflowX: "auto", marginTop: 8 }}>
+              <table className="table compact" style={{ width: "100%", fontSize: 12 }}>
+                <thead>
+                  <tr>
+                    <th style={{ textAlign: "left" }}>일자</th>
+                    <th style={{ textAlign: "left" }}>분류</th>
+                    <th style={{ textAlign: "left" }}>내역</th>
+                    <th style={{ textAlign: "left" }}>계좌</th>
+                    <th style={{ textAlign: "right" }}>금액</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {selectedMonthSpendingRows.slice(0, 30).map((row) => (
+                    <tr key={`${row.id}:${row.date}`}>
+                      <td>{row.date}</td>
+                      <td>
+                        <span
+                          style={{
+                            color: row.type === "spending" ? "var(--chart-expense)" : row.type === "investing" ? "var(--chart-primary)" : "var(--chart-income)",
+                            fontWeight: 600
+                          }}
+                        >
+                          {row.type === "spending" ? "내가 쓴 소비" : row.type === "investing" ? "재테크" : "수입"}
+                        </span>
+                      </td>
+                      <td title={row.category}>
+                        {row.title}
+                        {row.category && <span style={{ color: "var(--text-muted)", marginLeft: 6 }}>({row.category})</span>}
+                      </td>
+                      <td>{row.type === "income" ? (row.toAccountName || row.toAccountId || "-") : (row.fromAccountName || row.fromAccountId || "-")}</td>
+                      <td
+                        className="number"
                         style={{
-                          color: row.type === "spending" ? "var(--chart-expense)" : row.type === "investing" ? "var(--chart-primary)" : "var(--chart-income)",
-                          fontWeight: 600
+                          textAlign: "right",
+                          color: row.type === "income" ? "var(--chart-income)" : "var(--chart-expense)",
+                          fontWeight: 700
                         }}
                       >
-                        {row.type === "spending" ? "내가 쓴 소비" : row.type === "investing" ? "재테크" : "수입"}
-                      </span>
-                    </td>
-                    <td title={row.category}>
-                      {row.title}
-                      {row.category && <span style={{ color: "var(--text-muted)", marginLeft: 6 }}>({row.category})</span>}
-                    </td>
-                    <td>{row.type === "income" ? (row.toAccountName || row.toAccountId || "-") : (row.fromAccountName || row.fromAccountId || "-")}</td>
-                    <td
-                      className="number"
-                      style={{
-                        textAlign: "right",
-                        color: row.type === "income" ? "var(--chart-income)" : "var(--chart-expense)",
-                        fontWeight: 700
-                      }}
-                    >
-                      {row.type === "income" ? "+" : "-"}{formatKRW(Math.round(row.amount))}
-                    </td>
-                  </tr>
-                ))}
-                {selectedMonthSpendingRows.length === 0 && (
-                  <tr>
-                    <td colSpan={5} style={{ textAlign: "center", color: "var(--text-muted)" }}>
-                      해당 기간 데이터가 없습니다.
-                    </td>
-                  </tr>
-                )}
-              </tbody>
-            </table>
-          </div>
+                        {row.type === "income" ? "+" : "-"}{formatKRW(Math.round(row.amount))}
+                      </td>
+                    </tr>
+                  ))}
+                  {selectedMonthSpendingRows.length === 0 && (
+                    <tr>
+                      <td colSpan={5} style={{ textAlign: "center", color: "var(--text-muted)" }}>
+                        해당 기간 데이터가 없습니다.
+                      </td>
+                    </tr>
+                  )}
+                </tbody>
+              </table>
+              {selectedMonthSpendingRows.length > 30 && (
+                <p className="hint" style={{ marginTop: 8, marginBottom: 0, textAlign: "right" }}>
+                  상위 30건만 표시 · 전체 {selectedMonthSpendingRows.length}건
+                </p>
+              )}
+            </div>
+          </details>
         </div>
 
 

@@ -23,8 +23,12 @@ scripts/text-integrity-report.json
 # Backups
 backups/**
 
-# Generated/temp data
-# NOTE: data/ 폴더의 파일들은 git에 tracked (배포 시 함께 업로드)
+# Personal user data — Gist sync가 데이터 채널을 담당하므로 git는 코드만 추적
+# ticker.json/ticker-backup.json/ticker.md는 공개 참조 데이터이므로 tracked 유지
+data/farmwallet-data.json
+data/app-data.json
+data/app-data-tables.json
+data/전체계좌.csv
 
 # Generated source data
 src/data/krNames.json

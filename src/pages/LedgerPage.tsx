@@ -580,15 +580,20 @@ export const LedgerView: React.FC<Props> = ({
   }, [categoryPresets?.income]);
 
   // parseAmount와 formatAmount (USD 이체 시 소수점 허용)
+  // 방어: 다중 소수점("1.2.3")이 들어와도 첫 소수점만 유지, NaN/Infinity는 0 반환.
   const parseAmount = useCallback((value: string, allowDecimal?: boolean): number => {
     if (allowDecimal) {
       const cleaned = value.replace(/[^\d.]/g, "");
-      const parsed = parseFloat(cleaned);
-      return isNaN(parsed) ? 0 : parsed;
+      // 다중 소수점 방어: 첫 번째 "."까지만 유지 (이후 나머지는 이어 붙임)
+      const parts = cleaned.split(".");
+      const safe = parts.length > 1 ? `${parts[0]}.${parts.slice(1).join("")}` : cleaned;
+      const parsed = parseFloat(safe);
+      return Number.isFinite(parsed) ? parsed : 0;
     }
     const numeric = value.replace(/[^\d]/g, "");
     if (!numeric) return 0;
-    return Number(numeric);
+    const n = Number(numeric);
+    return Number.isFinite(n) ? n : 0;
   }, []);
 
   const formatAmount = useCallback((value: string, allowDecimal?: boolean): string => {

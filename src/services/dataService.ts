@@ -12,6 +12,7 @@ import { STORAGE_KEYS, DEFAULT_US_TICKERS, ISA_PORTFOLIO, DATA_SCHEMA_VERSION } 
 import { normalizeCategory, normalizeSubCategory } from "../utils/category";
 import { buildTableBackupFile } from "../utils/tableDataBackup";
 import { saveCacheToDB } from "./cacheStore";
+import { getKoreanNameOverlay } from "./krNameResolver";
 // krNames는 첫 loadData 호출 전에 preloadKrNames()로 미리 로드됨
 let _krNames: Record<string, string> = {};
 
@@ -21,9 +22,14 @@ export async function preloadKrNames(): Promise<void> {
   _krNames = mod.default as Record<string, string>;
 }
 
-/** 현재 로드된 krNames 맵 반환. preloadKrNames() 완료 전엔 빈 객체. */
+/**
+ * 현재 로드된 krNames 맵 반환 (정적 krNames.json + 런타임 overlay 병합).
+ * overlay는 Naver 자동 조회/사용자 직접 입력 등으로 런타임에 발견된 한글명.
+ */
 export function getKrNames(): Record<string, string> {
-  return _krNames;
+  const overlay = getKoreanNameOverlay();
+  // overlay가 우선, 없으면 정적 krNames 사용
+  return Object.keys(overlay).length > 0 ? { ..._krNames, ...overlay } : _krNames;
 }
 
 function cleanTicker(raw: string): string {
@@ -57,7 +63,8 @@ function shouldApplyKrName(map: Record<string, string>, key: string): boolean {
 
 /** 한국 종목의 영문 이름을 한글로 교체 (trades, prices, tickerDatabase, ledger 배당). { data, changed } 반환 */
 export function applyKoreanStockNames(data: AppData): { data: AppData; changed: boolean } {
-  const map = _krNames;
+  // 런타임 오버레이(Naver 자동 조회 결과 등) + 정적 krNames.json 병합
+  const map = getKrNames();
   let changed = false;
 
   const fixLedger = (ledger: AppData["ledger"]) => {

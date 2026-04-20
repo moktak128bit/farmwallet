@@ -2,6 +2,11 @@ import { useEffect, useState, useCallback, useRef } from "react";
 import { loadData, preloadKrNames, applyKoreanStockNames, saveData } from "../storage";
 import { useAppStore } from "../store/appStore";
 import { loadCacheFromDB, mergeCacheIntoAppData } from "../services/cacheStore";
+import {
+  resolveMissingKoreanNames,
+  setKoreanNameOverlay,
+} from "../services/krNameResolver";
+import { canonicalTickerForMatch, isKRWStock } from "../utils/finance";
 
 export function useAppData() {
   const data = useAppStore((s) => s.data);
@@ -101,12 +106,85 @@ export function useAppData() {
     if (!krNamesReady || !cacheHydrated) return;
     const current = useAppStore.getState().data;
     if (!current) return;
+    // tickerDatabase에 Gist sync로 전파된 한글명을 런타임 오버레이에 주입 (이전 기기에서 발견한 것)
+    if (Array.isArray(current.tickerDatabase)) {
+      for (const t of current.tickerDatabase) {
+        if (t?.ticker && t?.name && /[가-힣]/.test(t.name)) {
+          setKoreanNameOverlay(t.ticker, t.name);
+        }
+      }
+    }
     const { data: updated, changed } = applyKoreanStockNames(current);
     if (changed) {
       useAppStore.setState({ data: updated });
       try { saveData(updated); } catch { /* quota 등 무시 */ }
     }
   }, [krNamesReady, cacheHydrated, data.prices, data.tickerDatabase, data.trades]);
+
+  // 한글명이 누락된 한국 종목은 Naver 금융에서 자동 조회 (DEV 전용).
+  // 조회된 이름은 tickerDatabase에 저장되어 Gist sync로 다른 기기에도 전파.
+  // applyKoreanStockNames가 최소 한 번 실행된 뒤(= 기존 한글명 반영 후) 실행해야
+  // 불필요한 네트워크 호출을 줄일 수 있음.
+  const naverLookupDone = useRef(false);
+  useEffect(() => {
+    if (!krNamesReady || !cacheHydrated || naverLookupDone.current) return;
+    const current = useAppStore.getState().data;
+    if (!current) return;
+    // 앱에서 실제 사용 중인 한국 티커만 대상
+    const tickersUsed = new Set<string>();
+    for (const t of current.trades ?? []) {
+      if (t?.ticker && isKRWStock(t.ticker)) {
+        tickersUsed.add(canonicalTickerForMatch(t.ticker));
+      }
+    }
+    if (tickersUsed.size === 0) {
+      naverLookupDone.current = true;
+      return;
+    }
+    // 이미 한글명 있는 티커는 제외
+    const haveKorean = new Set<string>();
+    const db = Array.isArray(current.tickerDatabase) ? current.tickerDatabase : [];
+    for (const t of db) {
+      if (t?.ticker && t?.name && /[가-힣]/.test(t.name)) {
+        haveKorean.add(canonicalTickerForMatch(t.ticker));
+      }
+    }
+    // trades에 한글명 있는 것도 포함
+    for (const t of current.trades ?? []) {
+      if (t?.ticker && t?.name && /[가-힣]/.test(t.name)) {
+        haveKorean.add(canonicalTickerForMatch(t.ticker));
+      }
+    }
+    naverLookupDone.current = true;
+    (async () => {
+      const discovered = await resolveMissingKoreanNames(tickersUsed, haveKorean);
+      const keys = Object.keys(discovered);
+      if (keys.length === 0) return;
+      // tickerDatabase upsert
+      const latest = useAppStore.getState().data;
+      if (!latest) return;
+      const existingDb = Array.isArray(latest.tickerDatabase) ? latest.tickerDatabase : [];
+      const byTicker = new Map(existingDb.map((t) => [canonicalTickerForMatch(t.ticker), t]));
+      for (const [ticker, name] of Object.entries(discovered)) {
+        const prev = byTicker.get(ticker);
+        if (prev) {
+          byTicker.set(ticker, { ...prev, name });
+        } else {
+          byTicker.set(ticker, { ticker, name, market: "KR" });
+        }
+      }
+      const nextDb = [...byTicker.values()];
+      // overlay에도 주입해 applyKoreanStockNames가 곧바로 활용
+      for (const [ticker, name] of Object.entries(discovered)) {
+        setKoreanNameOverlay(ticker, name);
+      }
+      // tickerDatabase 업데이트 → 다음 effect 사이클에서 applyKoreanStockNames 재실행
+      useAppStore.setState({
+        data: { ...latest, tickerDatabase: nextDb },
+      });
+      console.info(`[FarmWallet] Naver에서 ${keys.length}개 한국 종목 한글명 자동 조회`);
+    })().catch(() => { /* 실패 시 무시 */ });
+  }, [krNamesReady, cacheHydrated, data.trades]);
 
   /** 로드 실패 후 백업 복원했을 때 저장 허용용 */
   const clearLoadFailed = useCallback(() => {

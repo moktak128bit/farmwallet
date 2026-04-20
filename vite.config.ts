@@ -819,6 +819,54 @@ function backupApiPlugin(): Plugin {
         next();
       });
 
+      // Naver 금융에서 한국 종목 한글명 조회 — krNames.json/Yahoo에 없는 특수 종목용 fallback.
+      // 응답: { name: string | null }. 60초 캐시.
+      const naverNameCache = new Map<string, { expires: number; name: string | null }>();
+      const NAVER_NAME_CACHE_TTL_MS = 60 * 60 * 1000; // 1시간
+      server.middlewares.use("/api/naver-name", (req: IncomingMessage, res: ServerResponse, next) => {
+        if (req.method !== "GET" || !req.url) { next(); return; }
+        const url = new URL(req.url, "http://localhost");
+        const ticker = (url.searchParams.get("ticker") || "").trim().toUpperCase();
+        if (!ticker || !/^[0-9][0-9A-Z]{5}$/.test(ticker)) {
+          res.statusCode = 400;
+          res.setHeader("Content-Type", "application/json");
+          res.end(JSON.stringify({ error: "Korean 6-char ticker required" }));
+          return;
+        }
+        const now = Date.now();
+        const cached = naverNameCache.get(ticker);
+        if (cached && cached.expires > now) {
+          res.setHeader("Content-Type", "application/json");
+          res.end(JSON.stringify({ name: cached.name }));
+          return;
+        }
+        const naverUrl = `https://finance.naver.com/item/main.naver?code=${ticker}`;
+        https.get(naverUrl, { headers: { "User-Agent": "Mozilla/5.0" } }, (naverRes) => {
+          const chunks: Buffer[] = [];
+          naverRes.on("data", (chunk: Buffer) => chunks.push(chunk));
+          naverRes.on("end", () => {
+            const body = Buffer.concat(chunks).toString("utf-8");
+            const titleMatch = body.match(/<title>([^<]*?)\s*:\s*[^<]*<\/title>/);
+            let name: string | null = null;
+            if (titleMatch && titleMatch[1]) {
+              const raw = titleMatch[1].trim();
+              // 한글 1자 이상 포함하고 ticker 자체가 아니면 유효
+              if (/[가-힣]/.test(raw) && raw !== ticker) {
+                name = raw;
+              }
+            }
+            naverNameCache.set(ticker, { expires: now + NAVER_NAME_CACHE_TTL_MS, name });
+            res.setHeader("Content-Type", "application/json");
+            res.end(JSON.stringify({ name }));
+          });
+        }).on("error", (err) => {
+          console.warn("[api/naver-name] fetch failed", err.message);
+          res.statusCode = 502;
+          res.setHeader("Content-Type", "application/json");
+          res.end(JSON.stringify({ error: "Naver fetch failed" }));
+        });
+      });
+
       // 업데이트 (git pull) — 로컬 개발 전용
       server.middlewares.use("/api/git-pull", (req: IncomingMessage, res: ServerResponse, next) => {
         if (req.method !== "POST") { next(); return; }

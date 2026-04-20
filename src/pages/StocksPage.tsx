@@ -2865,6 +2865,35 @@ export const StocksView: React.FC<Props> = ({
         prices={prices}
         tickerDatabase={tickerDatabase}
         onChangeTickerDatabase={onChangeTickerDatabase}
+        onRenameTicker={(ticker, newName) => {
+          const key = canonicalTickerForMatch(ticker);
+          // 1. trades의 name 업데이트
+          onChangeTrades((prev) =>
+            prev.map((t) =>
+              canonicalTickerForMatch(t.ticker) === key ? { ...t, name: newName } : t
+            )
+          );
+          // 2. prices의 name 업데이트
+          onChangePrices(
+            prices.map((p) =>
+              canonicalTickerForMatch(p.ticker) === key ? { ...p, name: newName } : p
+            )
+          );
+          // 3. tickerDatabase upsert (없으면 추가, 있으면 name 교체)
+          onChangeTickerDatabase((prev) => {
+            const list = Array.isArray(prev) ? prev : [];
+            const idx = list.findIndex((t) => canonicalTickerForMatch(t.ticker) === key);
+            if (idx >= 0) {
+              const next = [...list];
+              next[idx] = { ...next[idx], name: newName };
+              return next;
+            }
+            // 처음 추가하는 경우: 한국 6자 코드면 KR로, 아니면 US로 기본 설정
+            const market = /^[0-9][0-9A-Z]{5}$/.test(key) ? "KR" : "US";
+            return [...list, { ticker: key, name: newName, market }];
+          });
+          toast.success(`${ticker} 종목명을 "${newName}"로 변경`);
+        }}
         fxRate={fxRate}
         accountOrder={accountOrder}
         onAccountReorder={handleAccountReorder}

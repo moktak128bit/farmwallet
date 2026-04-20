@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, useMemo, useState, lazy, Suspense } from "react";
+import React, { useCallback, useEffect, useMemo, lazy, Suspense } from "react";
 import { Toaster, toast } from "react-hot-toast";
 import { Moon, Sun, Menu } from "lucide-react";
 import { Tabs, type TabId } from "./components/ui/Tabs";
@@ -69,21 +69,48 @@ import { useGistSync } from "./hooks/useGistSync";
 import { GistVersionModal } from "./components/GistVersionModal";
 import { isGistConfigured, saveToGist, loadFromGist } from "./services/gistSync";
 import { toUserDataJson } from "./services/dataService";
-
-export type AppLogEntry = { id: number; message: string; type: "success" | "error" | "info"; time: string };
-const APP_LOG_MAX = 200;
+import { useUIStore, type PendingAction } from "./store/uiStore";
 
 const TAB_ORDER: TabId[] = ["dashboard", "accounts", "ledger", "categories", "stocks", "dividends", "debt", "spend", "budget", "reports", "insights", "workout", "settings"];
 
 export const App: React.FC = () => {
-  const [tab, setTab] = useState<TabId>("dashboard");
-  const [isPushingToGit, setIsPushingToGit] = useState(false);
-  const [isPullingFromGit, setIsPullingFromGit] = useState(false);
-  const [newVersionAvailable, setNewVersionAvailable] = useState(false);
-  const [isGistSaving, setIsGistSaving] = useState(false);
-  const [isGistLoading, setIsGistLoading] = useState(false);
-  const [showGistVersionModal, setShowGistVersionModal] = useState(false);
-  const [gistConfigured, setGistConfigured] = useState(() => isGistConfigured());
+  // UI 상태는 모두 uiStore에서 관리 (App.tsx에서 useState 17개를 슬라이스로 이전)
+  const tab = useUIStore((s) => s.tab);
+  const setTab = useUIStore((s) => s.setTab);
+  const mobileDrawerOpen = useUIStore((s) => s.mobileDrawerOpen);
+  const setMobileDrawerOpen = useUIStore((s) => s.setMobileDrawerOpen);
+  const pendingAction = useUIStore((s) => s.pendingAction);
+  const setPendingAction = useUIStore((s) => s.setPendingAction);
+  const showShortcutsHelp = useUIStore((s) => s.showShortcutsHelp);
+  const setShowShortcutsHelp = useUIStore((s) => s.setShowShortcutsHelp);
+  const showQuickEntry = useUIStore((s) => s.showQuickEntry);
+  const setShowQuickEntry = useUIStore((s) => s.setShowQuickEntry);
+  const showGistVersionModal = useUIStore((s) => s.showGistVersionModal);
+  const setShowGistVersionModal = useUIStore((s) => s.setShowGistVersionModal);
+  const copyRequest = useUIStore((s) => s.copyRequest);
+  const setCopyRequest = useUIStore((s) => s.setCopyRequest);
+  const highlightLedgerId = useUIStore((s) => s.highlightLedgerId);
+  const setHighlightLedgerId = useUIStore((s) => s.setHighlightLedgerId);
+  const highlightTradeId = useUIStore((s) => s.highlightTradeId);
+  const setHighlightTradeId = useUIStore((s) => s.setHighlightTradeId);
+  const isPushingToGit = useUIStore((s) => s.isPushingToGit);
+  const setIsPushingToGit = useUIStore((s) => s.setIsPushingToGit);
+  const isPullingFromGit = useUIStore((s) => s.isPullingFromGit);
+  const setIsPullingFromGit = useUIStore((s) => s.setIsPullingFromGit);
+  const isGistSaving = useUIStore((s) => s.isGistSaving);
+  const setIsGistSaving = useUIStore((s) => s.setIsGistSaving);
+  const isGistLoading = useUIStore((s) => s.isGistLoading);
+  const setIsGistLoading = useUIStore((s) => s.setIsGistLoading);
+  const newVersionAvailable = useUIStore((s) => s.newVersionAvailable);
+  const setNewVersionAvailable = useUIStore((s) => s.setNewVersionAvailable);
+  const gistConfigured = useUIStore((s) => s.gistConfigured);
+  const setGistConfigured = useUIStore((s) => s.setGistConfigured);
+  const integritySummary = useUIStore((s) => s.integritySummary);
+  const setIntegritySummary = useUIStore((s) => s.setIntegritySummary);
+  const appLog = useUIStore((s) => s.appLog);
+  const addAppLog = useUIStore((s) => s.addAppLog);
+
+  const appLogListRef = React.useRef<HTMLDivElement>(null);
 
   // 프로덕션 자동 버전 감지 — 5분마다 build-meta.json 확인
   useEffect(() => {
@@ -101,44 +128,14 @@ export const App: React.FC = () => {
     const tid = setTimeout(checkForUpdate, 30_000);
     const iid = setInterval(checkForUpdate, 5 * 60_000);
     return () => { clearTimeout(tid); clearInterval(iid); };
-  }, []);
+  }, [setNewVersionAvailable]);
 
-  const [pendingAction, setPendingAction] = useState<{
-    title: string;
-    message: string;
-    confirmLabel: string;
-    confirmStyle: "primary" | "danger";
-    onConfirm: () => void;
-  } | null>(null);
-
-  const withConfirm = (opts: {
-    title: string;
-    message: string;
-    confirmLabel: string;
-    confirmStyle?: "primary" | "danger";
-    onConfirm: () => void;
-  }) => {
+  const withConfirm = useCallback((opts: Omit<PendingAction, "confirmStyle"> & { confirmStyle?: "primary" | "danger" }) => {
     setPendingAction({
       confirmStyle: "primary",
       ...opts,
     });
-  };
-  const [showShortcutsHelp, setShowShortcutsHelp] = useState(false);
-  const [showQuickEntry, setShowQuickEntry] = useState(false);
-  const [copyRequest, setCopyRequest] = useState<import("./types").LedgerEntry | null>(null);
-  const [highlightLedgerId, setHighlightLedgerId] = useState<string | null>(null);
-  const [highlightTradeId, setHighlightTradeId] = useState<string | null>(null);
-  const [integritySummary, setIntegritySummary] = useState<{ error: number; warning: number } | null>(null);
-  const [mobileDrawerOpen, setMobileDrawerOpen] = useState(false);
-  const [appLog, setAppLog] = useState<AppLogEntry[]>([]);
-  const appLogIdRef = React.useRef(0);
-  const appLogListRef = React.useRef<HTMLDivElement>(null);
-
-  const addAppLog = useCallback((message: string, type: "success" | "error" | "info" = "success") => {
-    const id = ++appLogIdRef.current;
-    const time = new Date().toLocaleTimeString("ko-KR", { hour: "2-digit", minute: "2-digit", second: "2-digit" });
-    setAppLog((prev) => [...prev.slice(-(APP_LOG_MAX - 1)), { id, message, type, time }]);
-  }, []);
+  }, [setPendingAction]);
 
   React.useEffect(() => {
     if (appLogListRef.current) appLogListRef.current.scrollTop = appLogListRef.current.scrollHeight;
@@ -194,7 +191,7 @@ export const App: React.FC = () => {
     const handler = () => setGistConfigured(isGistConfigured());
     window.addEventListener("farmwallet:gist-config-change", handler);
     return () => window.removeEventListener("farmwallet:gist-config-change", handler);
-  }, []);
+  }, [setGistConfigured]);
 
   // Zustand store 사용
   const { data, setData, isLoading, loadFailed, clearLoadFailed } = useAppData();
@@ -319,7 +316,7 @@ export const App: React.FC = () => {
       if (!cancelled) setIntegritySummary(null);
     }
     return () => { cancelled = true; };
-  }, [tab, data.accounts, data.ledger, data.trades, data.categoryPresets]);
+  }, [tab, data.accounts, data.ledger, data.trades, data.categoryPresets, setIntegritySummary]);
 
   const settingsTabBadge = useMemo(() => {
     if (!integritySummary) return undefined;

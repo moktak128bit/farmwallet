@@ -17,8 +17,10 @@ const parseQuickInput = (text: string): { description: string; amount: number; k
   else if (/^이체\s+/.test(trimmed)) { kind = "transfer"; body = trimmed.replace(/^이체\s+/, ""); }
   else if (/^지출\s+/.test(trimmed)) { kind = "expense"; body = trimmed.replace(/^지출\s+/, ""); }
 
-  const amountMatch = body.match(/(-?\d{1,3}(?:,\d{3})*|\d+)(?:\s*원)?/);
-  const amount = amountMatch ? Number(amountMatch[1].replace(/,/g, "")) : 0;
+  // 금액 파싱: 양수만 허용 (kind로 수입/지출 구분하므로 음수 필요 없음).
+  const amountMatch = body.match(/(\d{1,3}(?:,\d{3})*|\d+)(?:\s*원)?/);
+  const rawAmount = amountMatch ? Number(amountMatch[1].replace(/,/g, "")) : 0;
+  const amount = Number.isFinite(rawAmount) && rawAmount > 0 ? rawAmount : 0;
   const description = amountMatch
     ? body.replace(amountMatch[0], "").trim()
     : body.trim();

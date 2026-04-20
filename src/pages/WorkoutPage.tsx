@@ -1,4 +1,5 @@
 import React, { useMemo, useState, useCallback } from "react";
+import { toast } from "react-hot-toast";
 import type { WorkoutWeek, WorkoutDayEntry, WorkoutExercise, WorkoutSet, WorkoutBodyPart } from "../types";
 import { formatNumber } from "../utils/formatter";
 
@@ -52,7 +53,16 @@ function toDateString(date: Date): string {
 }
 
 function parseDate(dateStr: string): Date {
-  return new Date(`${dateStr}T12:00:00`);
+  // 유효한 "YYYY-MM-DD"면 정오 기준 로컬 Date. 잘못된 입력은 Invalid Date 대신
+  // epoch 대체로 downstream에서 NaN 전파 차단.
+  const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(dateStr ?? "");
+  if (!m) return new Date(1970, 0, 1, 12, 0, 0);
+  const y = Number(m[1]);
+  const mo = Number(m[2]);
+  const d = Number(m[3]);
+  const dt = new Date(y, mo - 1, d, 12, 0, 0);
+  if (Number.isNaN(dt.getTime())) return new Date(1970, 0, 1, 12, 0, 0);
+  return dt;
 }
 
 function getWeekStart(dateLike: Date | string): string {
@@ -653,15 +663,23 @@ export const WorkoutView: React.FC<Props> = ({ workoutWeeks = [], onChangeWorkou
                       className="primary"
                       style={{ padding: "8px 16px", fontSize: 14, fontWeight: 600, borderRadius: 8 }}
                       onClick={() => {
-                        const w = Number(qs.weight);
-                        const r = Number(qs.reps);
-                        const s = Number(qs.sets) || 1;
-                        if (w > 0 && r > 0) {
-                          if (s === 1) addSet(exercise.id, w, r);
-                          else addMultipleSets(exercise.id, w, r, s);
-                          setQuickSet(exercise.id, "weight", qs.weight);
-                          setQuickSet(exercise.id, "reps", qs.reps);
+                        // 파싱 + 엣지 방어: NaN/Infinity/음수/0 모두 차단 + 사용자 피드백
+                        const w = parseFloat(qs.weight);
+                        const r = parseInt(qs.reps, 10);
+                        const s = Math.max(1, Math.min(100, parseInt(qs.sets, 10) || 1));
+                        if (!Number.isFinite(w) || w <= 0) {
+                          toast.error("중량을 0보다 큰 숫자로 입력하세요");
+                          return;
                         }
+                        if (!Number.isFinite(r) || r <= 0) {
+                          toast.error("횟수를 1 이상으로 입력하세요");
+                          return;
+                        }
+                        if (s === 1) addSet(exercise.id, w, r);
+                        else addMultipleSets(exercise.id, w, r, s);
+                        // 입력 리셋 정책: 동일 무게로 연속 세트 추가하는 워크플로우가 많아
+                        // weight/reps는 유지하되 sets 개수는 기본 "1"로 되돌려 실수 방지
+                        setQuickSet(exercise.id, "sets", "1");
                       }}
                     >
                       추가

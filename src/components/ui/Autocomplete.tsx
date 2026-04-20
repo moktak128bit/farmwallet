@@ -60,10 +60,13 @@ export const Autocomplete: React.FC<AutocompleteProps> = ({
     if (e.key === "ArrowDown") {
       e.preventDefault();
       setIsOpen(true);
+      // options 비어있으면 % 0 = NaN 방지
+      if (options.length === 0) return;
       setHighlightedIndex((prev) => (prev + 1) % options.length);
     } else if (e.key === "ArrowUp") {
       e.preventDefault();
       setIsOpen(true);
+      if (options.length === 0) return;
       setHighlightedIndex((prev) => (prev - 1 + options.length) % options.length);
     } else if (e.key === "Enter") {
       if (isOpen && highlightedIndex >= 0 && options[highlightedIndex]) {

@@ -2,6 +2,7 @@ import React, { useMemo, useState } from "react";
 import { toast } from "react-hot-toast";
 import { ERROR_MESSAGES } from "../constants/errorMessages";
 import type { Account, BudgetGoal, CategoryPresets, RecurringExpense, Recurrence, LedgerEntry } from "../types";
+import { BUDGET_ALL_CATEGORY } from "../types";
 
 interface Props {
   accounts: Account[];
@@ -343,9 +344,19 @@ export const BudgetRecurringView: React.FC<Props> = ({
 
   const budgetUsage = useMemo(() => {
     return budgets.map((b) => {
-      const spent = ledger
-        .filter((l) => l.kind === "expense" && l.category === b.category && l.date.startsWith(currentMonth))
-        .reduce((s, l) => s + l.amount, 0);
+      const isTotal = b.category === BUDGET_ALL_CATEGORY;
+      const excludeSet = new Set(b.excludeCategories ?? []);
+      let spent = 0;
+      for (const l of ledger) {
+        if (l.kind !== "expense") continue;
+        if (!l.date?.startsWith(currentMonth)) continue;
+        if (isTotal) {
+          if (excludeSet.has(l.category)) continue;
+          spent += l.amount;
+        } else {
+          if (l.category === b.category) spent += l.amount;
+        }
+      }
       const remain = b.monthlyLimit - spent;
       return { ...b, spent, remain };
     });
@@ -448,12 +459,83 @@ export const BudgetRecurringView: React.FC<Props> = ({
           <h3>예산/목표 추가</h3>
           <label>
             <span>카테고리</span>
-            <input
+            <select
               value={budForm.category}
-              onChange={(e) => setBudForm({ ...budForm, category: e.target.value })}
-              placeholder="식비"
-            />
+              onChange={(e) => {
+                const next = e.target.value;
+                setBudForm((prev) => ({
+                  ...prev,
+                  category: next,
+                  // 개별 카테고리 모드로 바뀌면 제외 목록 비움
+                  excludeCategories: next === BUDGET_ALL_CATEGORY ? (prev.excludeCategories ?? []) : undefined,
+                }));
+              }}
+              style={{ width: "100%" }}
+            >
+              <option value="">선택하세요</option>
+              <option value={BUDGET_ALL_CATEGORY}>⭐ 전체 (제외 카테고리 지정)</option>
+              {(categoryPresets?.expense ?? []).map((c) => (
+                <option key={c} value={c}>{c}</option>
+              ))}
+            </select>
           </label>
+          {budForm.category === BUDGET_ALL_CATEGORY && (
+            <label className="wide">
+              <span>제외 카테고리</span>
+              <div
+                style={{
+                  display: "flex",
+                  flexWrap: "wrap",
+                  gap: 6,
+                  padding: 8,
+                  border: "1px solid var(--border)",
+                  borderRadius: 6,
+                  background: "var(--bg)",
+                }}
+              >
+                {(categoryPresets?.expense ?? []).length === 0 && (
+                  <span className="hint">지출 카테고리 프리셋이 비어 있습니다.</span>
+                )}
+                {(categoryPresets?.expense ?? []).map((c) => {
+                  const checked = (budForm.excludeCategories ?? []).includes(c);
+                  return (
+                    <label
+                      key={c}
+                      style={{
+                        display: "inline-flex",
+                        alignItems: "center",
+                        gap: 4,
+                        padding: "4px 10px",
+                        borderRadius: 14,
+                        fontSize: 13,
+                        cursor: "pointer",
+                        border: "1px solid var(--border)",
+                        background: checked ? "var(--primary-light)" : "var(--surface)",
+                        color: checked ? "var(--primary)" : "var(--text)",
+                        fontWeight: checked ? 600 : 400,
+                      }}
+                    >
+                      <input
+                        type="checkbox"
+                        checked={checked}
+                        onChange={(e) => {
+                          const set = new Set(budForm.excludeCategories ?? []);
+                          if (e.target.checked) set.add(c);
+                          else set.delete(c);
+                          setBudForm({ ...budForm, excludeCategories: [...set] });
+                        }}
+                        style={{ margin: 0 }}
+                      />
+                      {c}
+                    </label>
+                  );
+                })}
+              </div>
+              <span className="hint" style={{ display: "block", marginTop: 4, fontSize: 11 }}>
+                체크한 카테고리의 지출은 이 예산 집계에서 제외됩니다. 예: 데이트비·재테크 제외 월 60만원.
+              </span>
+            </label>
+          )}
           <label>
             <span>월 예산</span>
             <input
@@ -954,8 +1036,15 @@ export const BudgetRecurringView: React.FC<Props> = ({
                             fontSize: 15,
                             color: accentColor,
                           }}
+                          title={
+                            b.category === BUDGET_ALL_CATEGORY && (b.excludeCategories ?? []).length > 0
+                              ? `제외: ${(b.excludeCategories ?? []).join(", ")}`
+                              : undefined
+                          }
                         >
-                          {b.category || "(미분류)"}
+                          {b.category === BUDGET_ALL_CATEGORY
+                            ? `전체${(b.excludeCategories ?? []).length > 0 ? ` (− ${(b.excludeCategories ?? []).join(", ")})` : ""}`
+                            : (b.category || "(미분류)")}
                         </span>
                         <span
                           style={{

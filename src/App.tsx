@@ -69,7 +69,7 @@ import { runIntegrityCheck } from "./utils/dataIntegrity";
 import { useGistSync } from "./hooks/useGistSync";
 import { GistVersionModal } from "./components/GistVersionModal";
 import { GistConflictModal } from "./components/GistConflictModal";
-import { isGistConfigured, saveToGist, loadFromGist } from "./services/gistSync";
+import { isGistConfigured, saveToGist } from "./services/gistSync";
 import { toUserDataJson } from "./services/dataService";
 import { useUIStore, type PendingAction } from "./store/uiStore";
 
@@ -101,8 +101,6 @@ export const App: React.FC = () => {
   const setIsPullingFromGit = useUIStore((s) => s.setIsPullingFromGit);
   const isGistSaving = useUIStore((s) => s.isGistSaving);
   const setIsGistSaving = useUIStore((s) => s.setIsGistSaving);
-  const isGistLoading = useUIStore((s) => s.isGistLoading);
-  const setIsGistLoading = useUIStore((s) => s.setIsGistLoading);
   const newVersionAvailable = useUIStore((s) => s.newVersionAvailable);
   const gistConfigured = useUIStore((s) => s.gistConfigured);
   const setGistConfigured = useUIStore((s) => s.setGistConfigured);
@@ -481,30 +479,30 @@ export const App: React.FC = () => {
                   style={{ background: "var(--success, #22c55e)" }}
                   disabled={isPushingToGit}
                   onClick={() => withConfirm({
-                    title: "GitHub 배포",
-                    message: "현재 코드와 데이터를 GitHub에 push합니다. 약 2분 후 반영됩니다.",
-                    confirmLabel: "배포",
+                    title: "git에 업로드",
+                    message: "현재 코드와 데이터를 git 원격에 push합니다. 약 2분 후 반영됩니다.",
+                    confirmLabel: "업로드",
                     confirmStyle: "danger",
                     onConfirm: async () => {
                       setIsPushingToGit(true);
-                      addAppLog("GitHub 배포 중...", "info");
+                      addAppLog("git에 업로드 중...", "info");
                       try {
                         const res = await fetch("/api/git-push", { method: "POST" });
                         const json = await res.json();
-                        if (!res.ok) throw new Error(json.error ?? "배포 실패");
-                        addAppLog("GitHub 배포 완료 (약 2분 후 반영)", "success");
-                        toast.success("GitHub에 배포 완료");
+                        if (!res.ok) throw new Error(json.error ?? "git 업로드 실패");
+                        addAppLog("git 업로드 완료 (약 2분 후 반영)", "success");
+                        toast.success("git에 업로드 완료");
                       } catch (e) {
                         const msg = e instanceof Error ? e.message : String(e);
-                        addAppLog(`GitHub 배포 실패: ${msg}`, "error");
-                        toast.error(msg || "GitHub 배포 실패");
+                        addAppLog(`git 업로드 실패: ${msg}`, "error");
+                        toast.error(msg || "git 업로드 실패");
                       } finally {
                         setIsPushingToGit(false);
                       }
                     },
                   })}
                 >
-                  {isPushingToGit ? "배포 중..." : "배포"}
+                  {isPushingToGit ? "업로드 중..." : "git에 업로드"}
                 </button>
               )}
             </div>
@@ -544,38 +542,10 @@ export const App: React.FC = () => {
                   type="button"
                   className="secondary"
                   style={{ fontSize: 13 }}
-                  disabled={isGistLoading}
-                  onClick={() => withConfirm({
-                    title: "Gist 불러오기",
-                    message: "Gist에서 데이터를 불러옵니다. 현재 데이터가 덮어씌워집니다.",
-                    confirmLabel: "불러오기",
-                    confirmStyle: "danger",
-                    onConfirm: async () => {
-                      setIsGistLoading(true);
-                      addAppLog("Gist에서 불러오는 중...", "info");
-                      try {
-                        const result = await loadFromGist();
-                        handleGistPulledData(result.dataJson, result.updatedAt);
-                        toast.success("Gist에서 불러오기 완료");
-                      } catch (e) {
-                        const msg = e instanceof Error ? e.message : String(e);
-                        addAppLog(`Gist 불러오기 실패: ${msg}`, "error");
-                        toast.error(msg || "Gist 불러오기 실패");
-                      } finally {
-                        setIsGistLoading(false);
-                      }
-                    },
-                  })}
-                >
-                  {isGistLoading ? "불러오는 중..." : "Gist 불러오기"}
-                </button>
-                <button
-                  type="button"
-                  className="secondary"
-                  style={{ fontSize: 13 }}
                   onClick={() => setShowGistVersionModal(true)}
+                  title="Gist 버전 목록에서 선택해서 불러오기"
                 >
-                  버전
+                  Gist 불러오기
                 </button>
               </div>
             )}
@@ -589,23 +559,23 @@ export const App: React.FC = () => {
                 onClick={() => {
                   if (import.meta.env.DEV) {
                     withConfirm({
-                      title: "업데이트받기",
-                      message: "원격에서 최신 코드를 내려받습니다. 완료 후 F5로 새로고침이 필요합니다.",
-                      confirmLabel: "업데이트받기",
+                      title: "git 내려받기",
+                      message: "git 원격에서 최신 코드를 pull 합니다. 완료 후 F5로 새로고침이 필요합니다.",
+                      confirmLabel: "내려받기",
                       confirmStyle: "danger",
                       onConfirm: async () => {
                         setIsPullingFromGit(true);
-                        addAppLog("원격 업데이트 가져오는 중...", "info");
+                        addAppLog("git에서 내려받는 중...", "info");
                         try {
                           const res = await fetch("/api/git-pull", { method: "POST" });
                           const json = await res.json();
-                          if (!res.ok) throw new Error(json.error ?? "업데이트 실패");
-                          addAppLog("업데이트 완료. F5로 새로고침하세요.", "success");
-                          toast.success("업데이트 완료 — F5로 새로고침");
+                          if (!res.ok) throw new Error(json.error ?? "git 내려받기 실패");
+                          addAppLog("git 내려받기 완료. F5로 새로고침하세요.", "success");
+                          toast.success("git 내려받기 완료 — F5로 새로고침");
                         } catch (e) {
                           const msg = e instanceof Error ? e.message : String(e);
-                          addAppLog(`업데이트 실패: ${msg}`, "error");
-                          toast.error(msg || "업데이트 실패");
+                          addAppLog(`git 내려받기 실패: ${msg}`, "error");
+                          toast.error(msg || "git 내려받기 실패");
                         } finally {
                           setIsPullingFromGit(false);
                         }
@@ -617,7 +587,7 @@ export const App: React.FC = () => {
                   }
                 }}
               >
-                {isPullingFromGit ? "업데이트받는 중..." : newVersionAvailable ? "새 버전 적용" : "업데이트받기"}
+                {isPullingFromGit ? "내려받는 중..." : newVersionAvailable ? "새 버전 적용" : "git 내려받기"}
               </button>
             </div>
             <button

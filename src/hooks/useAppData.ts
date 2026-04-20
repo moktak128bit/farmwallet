@@ -8,10 +8,14 @@ export function useAppData() {
   const setData = useAppStore((s) => s.setData);
   const [isLoading, setIsLoading] = useState(true);
   const [loadFailed, setLoadFailed] = useState(false);
+  // 한글명 적용이 안전한 시점인지 판별하는 두 플래그.
+  // 둘 다 true 된 뒤에야 applyKoreanStockNames를 실행해서 캐시 하이드레이션으로 들어온
+  // 영문명을 덮어쓸 수 있음 (레이스 방지).
+  const [krNamesReady, setKrNamesReady] = useState(false);
+  const [cacheHydrated, setCacheHydrated] = useState(false);
 
   // 초기 데이터 로드 (한 번만) → Zustand store에 반영
   // setTimeout(0): 로딩 화면이 먼저 페인트된 뒤 무거운 JSON 파싱·마이그레이션 실행
-  // krNames는 idle 시간에 비동기 로드하여 초기 렌더를 차단하지 않음
   useEffect(() => {
     const id = setTimeout(() => {
       try {
@@ -57,53 +61,52 @@ export function useAppData() {
   // 초기 로드 후 IndexedDB에서 캐시 하이드레이션.
   // localStorage 캐시가 비어 있어도 IndexedDB에 저장된 prices/tickerDatabase/
   // historicalDailyCloses를 병합해 API 재수집 없이 즉시 사용 가능.
-  const cacheHydrationDone = useRef(false);
+  const cacheHydrationStarted = useRef(false);
   useEffect(() => {
-    if (isLoading || loadFailed || cacheHydrationDone.current) return;
-    cacheHydrationDone.current = true;
+    if (isLoading || loadFailed || cacheHydrationStarted.current) return;
+    cacheHydrationStarted.current = true;
     (async () => {
-      const cache = await loadCacheFromDB();
-      const current = useAppStore.getState().data;
-      if (!current) return;
-      const merged = mergeCacheIntoAppData(current, cache);
-      // 실제 변경 있을 때만 store 업데이트 (불필요한 리렌더 방지)
-      const changed =
-        (cache.prices.length > 0 && current.prices !== merged.prices) ||
-        (cache.tickerDatabase.length > 0 && current.tickerDatabase !== merged.tickerDatabase) ||
-        (cache.historicalDailyCloses.length > 0 &&
-          current.historicalDailyCloses !== merged.historicalDailyCloses);
-      if (changed) {
-        useAppStore.setState({ data: merged });
+      try {
+        const cache = await loadCacheFromDB();
+        const current = useAppStore.getState().data;
+        if (!current) return;
+        if (
+          cache.prices.length > 0 ||
+          cache.tickerDatabase.length > 0 ||
+          cache.historicalDailyCloses.length > 0
+        ) {
+          useAppStore.setState({ data: mergeCacheIntoAppData(current, cache) });
+        }
+      } finally {
+        // 성공/실패와 무관하게 "하이드레이션 단계 종료"를 알림 (IDB 미지원·빈 캐시도 여기 도달)
+        setCacheHydrated(true);
       }
-    })().catch(() => {
-      /* IndexedDB 실패 시 무시 — API에서 재수집 */
-    });
+    })().catch(() => setCacheHydrated(true));
   }, [isLoading, loadFailed]);
 
-  // krNames.json 로드 → 완료 후 한글 종목명 적용 (초기 로딩 직후 즉시 실행)
+  // krNames.json 로드 — 완료 시 플래그만 세팅. 실제 적용은 아래 effect.
+  const krNamesLoadStarted = useRef(false);
   useEffect(() => {
-    if (isLoading || loadFailed) return;
-    let cancelled = false;
-
-    // 초기 렌더 후 바로 실행 (idle까지 기다리지 않음 — 한글명 깜빡임 방지)
-    const timerId = setTimeout(() => {
-      if (cancelled) return;
-      preloadKrNames()
-        .then(() => {
-          if (cancelled) return;
-          const currentData = useAppStore.getState().data;
-          if (!currentData) return;
-          const { data: updated, changed } = applyKoreanStockNames(currentData);
-          if (changed) {
-            useAppStore.setState({ data: updated });
-            try { saveData(updated); } catch { /* quota 등 무시 */ }
-          }
-        })
-        .catch(() => { /* 실패 시 한글명 없이 진행 */ });
-    }, 0);
-
-    return () => { cancelled = true; clearTimeout(timerId); };
+    if (isLoading || loadFailed || krNamesLoadStarted.current) return;
+    krNamesLoadStarted.current = true;
+    preloadKrNames()
+      .then(() => setKrNamesReady(true))
+      .catch(() => setKrNamesReady(true)); // 실패해도 진행은 허용 (한글명 없이 동작)
   }, [isLoading, loadFailed]);
+
+  // 한글 종목명 적용 — krNames와 캐시 하이드레이션 모두 완료된 뒤에만.
+  // data.prices/tickerDatabase/trades가 변경될 때마다 재적용 (새 시세 fetch 후에도 교체되도록).
+  // applyKoreanStockNames는 idempotent이고 changed=false면 아무것도 하지 않아 안전.
+  useEffect(() => {
+    if (!krNamesReady || !cacheHydrated) return;
+    const current = useAppStore.getState().data;
+    if (!current) return;
+    const { data: updated, changed } = applyKoreanStockNames(current);
+    if (changed) {
+      useAppStore.setState({ data: updated });
+      try { saveData(updated); } catch { /* quota 등 무시 */ }
+    }
+  }, [krNamesReady, cacheHydrated, data.prices, data.tickerDatabase, data.trades]);
 
   /** 로드 실패 후 백업 복원했을 때 저장 허용용 */
   const clearLoadFailed = useCallback(() => {

@@ -510,9 +510,10 @@ export const App: React.FC = () => {
                         if (!res.ok) throw new Error(json.error ?? "배포 실패");
                         addAppLog("GitHub 배포 완료 (약 2분 후 반영)", "success");
                         toast.success("GitHub에 배포 완료");
-                      } catch (e: any) {
-                        addAppLog(`GitHub 배포 실패: ${e.message}`, "error");
-                        toast.error(e.message ?? "GitHub 배포 실패");
+                      } catch (e) {
+                        const msg = e instanceof Error ? e.message : String(e);
+                        addAppLog(`GitHub 배포 실패: ${msg}`, "error");
+                        toast.error(msg || "GitHub 배포 실패");
                       } finally {
                         setIsPushingToGit(false);
                       }
@@ -543,9 +544,10 @@ export const App: React.FC = () => {
                         await saveToGist(jsonStr);
                         addAppLog("Gist 저장 완료", "success");
                         toast.success("Gist에 저장 완료");
-                      } catch (e: any) {
-                        addAppLog(`Gist 저장 실패: ${e.message}`, "error");
-                        toast.error(e.message ?? "Gist 저장 실패");
+                      } catch (e) {
+                        const msg = e instanceof Error ? e.message : String(e);
+                        addAppLog(`Gist 저장 실패: ${msg}`, "error");
+                        toast.error(msg || "Gist 저장 실패");
                       } finally {
                         setIsGistSaving(false);
                       }
@@ -571,9 +573,10 @@ export const App: React.FC = () => {
                         const result = await loadFromGist();
                         handleGistPulledData(result.dataJson, result.updatedAt);
                         toast.success("Gist에서 불러오기 완료");
-                      } catch (e: any) {
-                        addAppLog(`Gist 불러오기 실패: ${e.message}`, "error");
-                        toast.error(e.message ?? "Gist 불러오기 실패");
+                      } catch (e) {
+                        const msg = e instanceof Error ? e.message : String(e);
+                        addAppLog(`Gist 불러오기 실패: ${msg}`, "error");
+                        toast.error(msg || "Gist 불러오기 실패");
                       } finally {
                         setIsGistLoading(false);
                       }
@@ -615,9 +618,10 @@ export const App: React.FC = () => {
                           if (!res.ok) throw new Error(json.error ?? "업데이트 실패");
                           addAppLog("업데이트 완료. F5로 새로고침하세요.", "success");
                           toast.success("업데이트 완료 — F5로 새로고침");
-                        } catch (e: any) {
-                          addAppLog(`업데이트 실패: ${e.message}`, "error");
-                          toast.error(e.message ?? "업데이트 실패");
+                        } catch (e) {
+                          const msg = e instanceof Error ? e.message : String(e);
+                          addAppLog(`업데이트 실패: ${msg}`, "error");
+                          toast.error(msg || "업데이트 실패");
                         } finally {
                           setIsPullingFromGit(false);
                         }

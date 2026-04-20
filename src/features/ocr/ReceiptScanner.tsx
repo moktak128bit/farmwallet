@@ -70,8 +70,8 @@ export const ReceiptScanner: React.FC<Props> = ({ open, onClose, onParsed }) => 
       onParsed(result);
       setStatus("idle");
       onClose();
-    } catch (e: any) {
-      setError(e?.message ?? "OCR 처리 중 오류가 발생했습니다.");
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "OCR 처리 중 오류가 발생했습니다.");
       setStatus("error");
     }
   };

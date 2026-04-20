@@ -97,11 +97,20 @@ export interface RecurringExpense {
   toAccountId?: string; // 입금계좌 (저축성지출/이체용)
 }
 
+/** 예산 sentinel — category 필드에 이 값이 들어오면 "전체 지출 예산"으로 해석 */
+export const BUDGET_ALL_CATEGORY = "전체" as const;
+
 export interface BudgetGoal {
   id: string;
+  /** 개별 카테고리 이름. BUDGET_ALL_CATEGORY("전체")이면 excludeCategories 제외한 모든 지출 합산 */
   category: string;
   monthlyLimit: number;
   note?: string;
+  /**
+   * category="전체"일 때만 의미 있음. 여기 나열한 카테고리의 지출은 집계에서 제외.
+   * 예: ["데이트비", "재테크"] → "데이트비와 재테크 제외한 월 지출이 한도 이하"인지 판정.
+   */
+  excludeCategories?: string[];
 }
 
 export interface SymbolInfo {

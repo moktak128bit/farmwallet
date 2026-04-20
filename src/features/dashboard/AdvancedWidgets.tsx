@@ -11,6 +11,7 @@ import type {
   BudgetGoal,
   CategoryPresets,
 } from "../../types";
+import { BUDGET_ALL_CATEGORY } from "../../types";
 import { formatKRW, formatNumber } from "../../utils/formatter";
 import { isUSDStock } from "../../utils/finance";
 
@@ -1307,20 +1308,36 @@ export const BudgetAlertWidget: React.FC<AdvancedWidgetProps> = ({
 
   const alerts = useMemo(() => {
     if (!budgetGoals || budgetGoals.length === 0) return [];
-    // 이번 달 카테고리별 지출 합계
+    // 이번 달 카테고리별 지출 합계 + 전체 지출 합계 (전체 예산용)
     const catSpend = new Map<string, number>();
+    let totalExpense = 0;
+    const expenseByMainCat = new Map<string, number>();
     for (const l of ledger) {
       if (l.kind !== "expense" || monthOf(l.date) !== currentMonth) continue;
+      const amt = Number(l.amount);
       const cat = l.subCategory || l.category || "";
-      if (cat) catSpend.set(cat, (catSpend.get(cat) ?? 0) + Number(l.amount));
-      // 대분류도 합산
+      if (cat) catSpend.set(cat, (catSpend.get(cat) ?? 0) + amt);
       if (l.category && l.category !== cat) {
-        catSpend.set(l.category, (catSpend.get(l.category) ?? 0) + Number(l.amount));
+        catSpend.set(l.category, (catSpend.get(l.category) ?? 0) + amt);
+      }
+      totalExpense += amt;
+      if (l.category) {
+        expenseByMainCat.set(l.category, (expenseByMainCat.get(l.category) ?? 0) + amt);
       }
     }
     return budgetGoals
       .map((g) => {
-        const spent = catSpend.get(g.category) ?? 0;
+        let spent: number;
+        if (g.category === BUDGET_ALL_CATEGORY) {
+          // 전체 - 제외 카테고리 합
+          const excluded = (g.excludeCategories ?? []).reduce(
+            (s, c) => s + (expenseByMainCat.get(c) ?? 0),
+            0
+          );
+          spent = Math.max(0, totalExpense - excluded);
+        } else {
+          spent = catSpend.get(g.category) ?? 0;
+        }
         const pct = g.monthlyLimit > 0 ? (spent / g.monthlyLimit) * 100 : 0;
         return { ...g, spent, pct };
       })
@@ -1357,7 +1374,18 @@ export const BudgetAlertWidget: React.FC<AdvancedWidgetProps> = ({
           return (
             <div key={a.id}>
               <div style={{ display: "flex", justifyContent: "space-between", fontSize: 13, marginBottom: 4 }}>
-                <span style={{ fontWeight: 600 }}>{a.category}</span>
+                <span
+                  style={{ fontWeight: 600 }}
+                  title={
+                    a.category === BUDGET_ALL_CATEGORY && (a.excludeCategories ?? []).length > 0
+                      ? `제외: ${(a.excludeCategories ?? []).join(", ")}`
+                      : undefined
+                  }
+                >
+                  {a.category === BUDGET_ALL_CATEGORY
+                    ? `전체${(a.excludeCategories ?? []).length > 0 ? ` (− ${(a.excludeCategories ?? []).join(", ")})` : ""}`
+                    : a.category}
+                </span>
                 <span style={{ color }}>
                   {formatNumber(a.spent)} / {formatNumber(a.monthlyLimit)}
                   <span style={{ marginLeft: 4, fontSize: 11 }}>({Math.round(a.pct)}%)</span>

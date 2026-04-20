@@ -8,6 +8,7 @@ import { Wallet, Download, ChevronDown, ChevronRight } from "lucide-react";
 import { toast } from "react-hot-toast";
 import { computeRealizedPnlByTradeId, positionMarketValueKRW } from "../calculations";
 import { shouldUseUsdBalanceMode } from "../utils/tradeCashImpact";
+import { parseAmount } from "../utils/parseAmount";
 import { useAppStore } from "../store/appStore";
 import { buildUnifiedCsv } from "../utils/unifiedCsvExport";
 
@@ -42,7 +43,7 @@ function CardPaymentSection({
 
   const handlePay = () => {
     if (!fromAccountId) return;
-    const amount = payAmount.trim() ? Math.round(Number(String(payAmount).replace(/,/g, "")) || 0) : debtAmount;
+    const amount = payAmount.trim() ? Math.round(parseAmount(payAmount)) : debtAmount;
     if (amount <= 0) return;
     const today = new Date().toISOString().slice(0, 10);
     const entry: LedgerEntry = {
@@ -277,7 +278,7 @@ export const AccountsView: React.FC<Props> = ({
 
     let value = 0;
     if (isAdjustingUSD && adjustValueUSD) {
-      const usdValue = Number(adjustValueUSD.replace(/,/g, "")) || 0;
+      const usdValue = parseAmount(adjustValueUSD, { allowDecimal: true });
       if (usdValue === 0) {
         alert("0이 아닌 값을 입력해주세요.");
         return;
@@ -335,7 +336,7 @@ export const AccountsView: React.FC<Props> = ({
 
   const saveNumber = () => {
     if (!editingNumber) return;
-    const value = Number(editValue.replace(/,/g, "")) || 0;
+    const value = parseAmount(editValue);
     const updated = accounts.map((a) => {
       if (a.id === editingNumber.id) {
         if (editingNumber.field === "cashAdjustment") {
@@ -1644,7 +1645,7 @@ export const AccountsView: React.FC<Props> = ({
                       />
                       {editUsdBalance && fxRate && (
                         <div style={{ fontSize: "12px", color: "var(--text-muted)", marginTop: "8px" }}>
-                          원화 환산 약 {formatNumber(Number(editUsdBalance.replace(/,/g, "")) * fxRate)}원
+                          원화 환산 약 {formatNumber(parseAmount(editUsdBalance, { allowDecimal: true }) * fxRate)}원
                         </div>
                       )}
                     </label>
@@ -1976,12 +1977,12 @@ const AccountForm: React.FC<AccountFormProps> = ({ onAdd, existingIds }) => {
       alert("이미 존재하는 계좌 ID입니다.");
       return;
     }
-    const amount = Number(form.initialBalance.replace(/,/g, "")) || 0;
-    const rawDebt = Number(form.debt.replace(/,/g, "")) || 0;
+    const amount = parseAmount(form.initialBalance);
+    const rawDebt = parseAmount(form.debt);
     const debt = rawDebt;
-    const savings = Number(form.savings.replace(/,/g, "")) || 0;
-    const cashAdjustment = Number(form.cashAdjustment.replace(/,/g, "")) || 0;
-    const initialCashBalance = Number(form.initialCashBalance.replace(/,/g, "")) || 0;
+    const savings = parseAmount(form.savings);
+    const cashAdjustment = parseAmount(form.cashAdjustment);
+    const initialCashBalance = parseAmount(form.initialCashBalance);
     const account: Account = {
       id: form.id.trim(),
       name: form.name.trim(),

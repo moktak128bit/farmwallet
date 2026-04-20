@@ -2,6 +2,7 @@ import React, { useState, useMemo } from "react";
 import { ChevronDown, ChevronUp, Pencil, Trash2 } from "lucide-react";
 import type { Loan, RepaymentMethod, LedgerEntry, Account, CategoryPresets } from "../types";
 import { formatKRW } from "../utils/formatter";
+import { parseAmount } from "../utils/parseAmount";
 
 const DEFAULT_LOAN_REPAYMENT_SUBS = ["학자금대출", "주담대원금", "주담대이자", "개인대출", "기타대출상환"];
 
@@ -56,7 +57,7 @@ export const DebtView: React.FC<Props> = ({
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
-    const loanAmount = Number(form.loanAmount.replace(/,/g, "")) || 0;
+    const loanAmount = parseAmount(form.loanAmount);
     const annualInterestRate = Number(form.annualInterestRate) || 0;
     const gracePeriodYears = form.gracePeriodYears ? Number(form.gracePeriodYears) : undefined;
 
@@ -124,7 +125,7 @@ export const DebtView: React.FC<Props> = ({
 
   const handleRepaySubmit = () => {
     if (!repayingLoan || !onChangeLedger) return;
-    const amount = Number(repayAmount.replace(/,/g, "")) || 0;
+    const amount = parseAmount(repayAmount);
     if (amount <= 0) {
       alert("상환 금액을 입력해주세요.");
       return;

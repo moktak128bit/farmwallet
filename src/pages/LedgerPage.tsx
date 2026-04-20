@@ -5,6 +5,7 @@ import { formatShortDate, formatUSD, formatKRW } from "../utils/formatter";
 import { shortcutManager, type ShortcutAction } from "../utils/shortcuts";
 import { validateDate, validateRequired, validateTransfer, validateAccountExists } from "../utils/validation";
 import { isSavingsExpenseEntry, makeIsSavingsExpense } from "../utils/category";
+import { parseAmount as sharedParseAmount, formatAmount as sharedFormatAmount } from "../utils/parseAmount";
 import { getKoreaTime, getTodayKST, getThisMonthKST } from "../utils/date";
 import { toast } from "react-hot-toast";
 import { ERROR_MESSAGES } from "../constants/errorMessages";
@@ -579,36 +580,14 @@ export const LedgerView: React.FC<Props> = ({
     return categoryPresets?.income ?? [];
   }, [categoryPresets?.income]);
 
-  // parseAmount와 formatAmount (USD 이체 시 소수점 허용)
-  // 방어: 다중 소수점("1.2.3")이 들어와도 첫 소수점만 유지, NaN/Infinity는 0 반환.
+  // parseAmount/formatAmount는 src/utils/parseAmount.ts로 중앙화됨.
+  // 기존 (value, allowDecimal) 시그니처를 유지하기 위한 어댑터.
   const parseAmount = useCallback((value: string, allowDecimal?: boolean): number => {
-    if (allowDecimal) {
-      const cleaned = value.replace(/[^\d.]/g, "");
-      // 다중 소수점 방어: 첫 번째 "."까지만 유지 (이후 나머지는 이어 붙임)
-      const parts = cleaned.split(".");
-      const safe = parts.length > 1 ? `${parts[0]}.${parts.slice(1).join("")}` : cleaned;
-      const parsed = parseFloat(safe);
-      return Number.isFinite(parsed) ? parsed : 0;
-    }
-    const numeric = value.replace(/[^\d]/g, "");
-    if (!numeric) return 0;
-    const n = Number(numeric);
-    return Number.isFinite(n) ? n : 0;
+    return sharedParseAmount(value, { allowDecimal });
   }, []);
 
   const formatAmount = useCallback((value: string, allowDecimal?: boolean): string => {
-    if (allowDecimal) {
-      const cleaned = value.replace(/[^\d.]/g, "");
-      if (!cleaned) return "";
-      const parts = cleaned.split(".");
-      if (parts.length > 1) {
-        return parts[0].replace(/\B(?=(\d{3})+(?!\d))/g, ",") + "." + parts[1].slice(0, 2);
-      }
-      return parts[0].replace(/\B(?=(\d{3})+(?!\d))/g, ",");
-    }
-    const numeric = value.replace(/[^\d]/g, "");
-    if (!numeric) return "";
-    return Math.round(Number(numeric)).toLocaleString();
+    return sharedFormatAmount(value, { allowDecimal });
   }, []);
 
   useEffect(() => {
@@ -887,7 +866,7 @@ export const LedgerView: React.FC<Props> = ({
 
   const submitQuickCopy = () => {
     if (!quickCopyEntry) return;
-    const parsed = Number(quickCopyAmount.replace(/,/g, "")) || 0;
+    const parsed = sharedParseAmount(quickCopyAmount);
     if (parsed <= 0) {
       toast.error("금액을 입력해주세요.");
       return;
@@ -2698,7 +2677,7 @@ export const LedgerView: React.FC<Props> = ({
               />
               {(() => {
                 if (form.id || !form.description || form.description.length < 2) return null;
-                const amt = Number(String(form.amount).replace(/,/g, "")) || 0;
+                const amt = sharedParseAmount(form.amount);
                 const recs = recommendCategory(form.description, amt, form.kind, ledger).slice(0, 3);
                 const mlPredictions = (() => {
                   try {

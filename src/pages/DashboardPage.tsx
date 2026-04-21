@@ -1,10 +1,8 @@
 import React, { lazy, Suspense, useCallback, useMemo, useState } from "react";
-import { DeferredResponsiveContainer as ResponsiveContainer } from "../components/charts/DeferredResponsiveContainer";
 import { BudgetAlertWidget } from "../features/dashboard/AdvancedWidgets";
 import type {
   Account,
   LedgerEntry,
-  RecurringExpense,
   StockPrice,
   StockTrade
 } from "../types";
@@ -15,7 +13,6 @@ import {
   computeRealizedPnlByTradeId,
   computeTotalDebt,
   computeTotalNetWorth,
-  computeTotalSavings,
   positionMarketValueKRW
 } from "../calculations";
 import { formatKRW } from "../utils/formatter";
@@ -24,8 +21,6 @@ import { useAppStore } from "../store/appStore";
 import {
   getThisMonthKST,
   getTodayKST,
-  getLastDayOfMonth,
-  parseIsoLocal,
   formatIsoLocal,
   addDaysToIso,
   shiftMonth,
@@ -41,9 +36,6 @@ const LazyPortfolioDashboardCharts = lazy(() =>
 );
 
 // 인라인 차트 — recharts가 초기 번들에 포함되지 않도록 개별 lazy import
-const LazyWeekendChart = lazy(() =>
-  import("../features/dashboard/DashboardInlineCharts").then((m) => ({ default: m.WeekendChart }))
-);
 const LazyAssetTreemap = lazy(() =>
   import("../features/dashboard/DashboardInlineCharts").then((m) => ({ default: m.AssetTreemap }))
 );
@@ -75,17 +67,6 @@ type SpendingCalendarRow = {
   source: "ledger";
 };
 
-type UpcomingCashflowRow = {
-  id: string;
-  date: string;
-  title: string;
-  category: string;
-  amount: number;
-  fromAccountId?: string;
-  fromAccountName?: string;
-  source: "ledger" | "recurring";
-};
-
 type SpendingByDate = { spending: number; investing: number; income: number; count: number };
 
 type CalendarCell = {
@@ -109,129 +90,6 @@ function isDividendIncome(entry: LedgerEntry): boolean {
     (entry.subCategory ?? "").includes("배당") ||
     (entry.description ?? "").includes("배당")
   );
-}
-
-function makeCashflowKey(
-  date: string,
-  amount: number,
-  category: string,
-  title: string,
-  fromAccountId?: string,
-  toAccountId?: string
-): string {
-  return [
-    date,
-    amount.toFixed(2),
-    category,
-    title,
-    fromAccountId ?? "",
-    toAccountId ?? ""
-  ].join("|");
-}
-function generateRecurringOutflows(
-  recurring: RecurringExpense[],
-  windowStart: string,
-  windowEnd: string,
-  accountNameById: Map<string, string>,
-  existingKeys: Set<string>
-): UpcomingCashflowRow[] {
-  const rows: UpcomingCashflowRow[] = [];
-  const windowStartDate = parseIsoLocal(windowStart);
-  const windowEndDate = parseIsoLocal(windowEnd);
-  if (!windowStartDate || !windowEndDate) return rows;
-
-  for (const item of recurring) {
-    if (!item.startDate || item.amount <= 0) continue;
-    const startDate = parseIsoLocal(item.startDate);
-    if (!startDate) continue;
-    if (item.endDate && item.endDate < windowStart) continue;
-
-    const title = item.title || item.category || "반복 지출";
-    const category = item.toAccountId
-      ? `이체${item.category ? `/${item.category}` : ""}`
-      : (item.category || "고정지출");
-
-    const addOccurrence = (date: string) => {
-      if (date < windowStart || date > windowEnd) return;
-      if (date < item.startDate) return;
-      if (item.endDate && date > item.endDate) return;
-      const key = makeCashflowKey(
-        date,
-        item.amount,
-        category,
-        title,
-        item.fromAccountId,
-        item.toAccountId
-      );
-      if (existingKeys.has(key)) return;
-      existingKeys.add(key);
-      rows.push({
-        id: `${item.id}:${date}`,
-        date,
-        title,
-        category,
-        amount: item.amount,
-        fromAccountId: item.fromAccountId,
-        fromAccountName: item.fromAccountId
-          ? accountNameById.get(item.fromAccountId)
-          : undefined,
-        source: "recurring"
-      });
-    };
-
-    if (item.frequency === "weekly") {
-      const cursor = new Date(startDate);
-      if (cursor < windowStartDate) {
-        const diffMs = windowStartDate.getTime() - cursor.getTime();
-        const diffDays = Math.floor(diffMs / (24 * 60 * 60 * 1000));
-        const step = Math.ceil(diffDays / 7);
-        cursor.setDate(cursor.getDate() + step * 7);
-      }
-      while (cursor <= windowEndDate) {
-        const date = formatIsoLocal(cursor);
-        if (item.endDate && date > item.endDate) break;
-        addOccurrence(date);
-        cursor.setDate(cursor.getDate() + 7);
-      }
-      continue;
-    }
-
-    if (item.frequency === "monthly") {
-      const anchorDay = startDate.getDate();
-      let year = startDate.getFullYear();
-      let month = startDate.getMonth() + 1;
-      const endYear = windowEndDate.getFullYear();
-      const endMonth = windowEndDate.getMonth() + 1;
-
-      while (year < endYear || (year === endYear && month <= endMonth)) {
-        const day = Math.min(anchorDay, getLastDayOfMonth(year, month));
-        const date = `${year}-${String(month).padStart(2, "0")}-${String(day).padStart(2, "0")}`;
-        if (item.endDate && date > item.endDate) break;
-        addOccurrence(date);
-        month += 1;
-        if (month > 12) {
-          month = 1;
-          year += 1;
-        }
-      }
-      continue;
-    }
-
-    const anchorMonth = startDate.getMonth() + 1;
-    const anchorDay = startDate.getDate();
-    let year = startDate.getFullYear();
-    const endYear = windowEndDate.getFullYear();
-
-    while (year <= endYear) {
-      const day = Math.min(anchorDay, getLastDayOfMonth(year, anchorMonth));
-      const date = `${year}-${String(anchorMonth).padStart(2, "0")}-${String(day).padStart(2, "0")}`;
-      if (item.endDate && date > item.endDate) break;
-      addOccurrence(date);
-      year += 1;
-    }
-  }
-
-  return rows;
 }
 
 function buildCalendarCells(
@@ -272,7 +130,6 @@ export const DashboardView: React.FC<Props> = (props) => {
   const ledger = props.ledger ?? storeData.ledger;
   const trades = props.trades ?? storeData.trades;
   const prices = props.prices ?? storeData.prices;
-  const recurring = storeData.recurringExpenses ?? [];
   const categoryPresets = storeData.categoryPresets;
   const trackedTicker = canonicalTickerForMatch(
     (storeData.dividendTrackingTicker ?? "458730").trim() || "458730"
@@ -499,7 +356,8 @@ export const DashboardView: React.FC<Props> = (props) => {
   }, [positions, accounts]);
 
   const positionsByAccount = useMemo(() => {
-    const map = new Map<string, { accountId: string; accountName: string; rows: any[] }>();
+    type PositionRow = (typeof positionsWithPrice)[number];
+    const map = new Map<string, { accountId: string; accountName: string; rows: PositionRow[] }>();
     for (const p of positionsWithPrice) {
       const prev = map.get(p.accountId);
       if (prev) prev.rows.push(p);
@@ -508,14 +366,6 @@ export const DashboardView: React.FC<Props> = (props) => {
     return Array.from(map.values()).sort((a, b) => a.accountName.localeCompare(b.accountName));
   }, [positionsWithPrice]);
 
-  const totalSavings = useMemo(
-    () => computeTotalSavings(balances, accounts),
-    [balances, accounts]
-  );
-  const totalStock = useMemo(
-    () => positions.reduce((s, p) => s + positionMarketValueKRW(p, fxRate), 0),
-    [positions, fxRate]
-  );
   const totalDebt = useMemo(() => computeTotalDebt(accounts), [accounts]);
   const totalNetWorth = useMemo(
     () => computeTotalNetWorth(balances, positions, fxRate),
@@ -684,13 +534,6 @@ export const DashboardView: React.FC<Props> = (props) => {
     return rows;
   }, [monthRange, ledger, trades, adjustedPrices, accounts, fxRate, currentMonth]);
 
-  const savingsRate = useMemo(() => {
-    const { income, investing } = monthlySummary;
-    if (income <= 0) return null;
-    return (investing / income) * 100;
-  }, [monthlySummary]);
-
-
   const portfolioByType = useMemo(() => {
     let cashTotal = 0;
     let savingsTotal = 0;
@@ -734,15 +577,6 @@ export const DashboardView: React.FC<Props> = (props) => {
     if (children.length === 0) return [];
     return [{ name: "자산", children }];
   }, [portfolioByType]);
-
-  const investingSavingsRatio = useMemo(() => {
-    const investable = totalStock + totalSavings;
-    if (investable <= 0) return { stockPct: 0, savingsPct: 0 };
-    return {
-      stockPct: (totalStock / investable) * 100,
-      savingsPct: (totalSavings / investable) * 100
-    };
-  }, [totalStock, totalSavings]);
 
   const dividendCoverage = useMemo(() => {
     const months = [shiftMonth(currentMonth, -2), shiftMonth(currentMonth, -1), currentMonth];
@@ -1220,114 +1054,11 @@ export const DashboardView: React.FC<Props> = (props) => {
       changeRate: dividendChangeRate,
       yieldSumLast12Months
     };
-  }, [ledger, trades, fxRate]);
+  }, [ledger, trades, fxRate, rise200Canonical]);
 
-  const recentExpenseRows90 = useMemo(() => {
-    const startDate = addDaysToIso(today, -89);
-    return ledger.filter((entry) => {
-      if (entry.kind !== "expense") return false;
-      if (!entry.date || entry.date < startDate || entry.date > today) return false;
-      if (isSavingsExpenseEntry(entry, accounts, categoryPresets)) return false;
-      return true;
-    });
-  }, [ledger, today, accounts, categoryPresets]);
-
-  const recentExpenseRows30 = useMemo(() => {
-    const startDate = addDaysToIso(today, -29);
-    return recentExpenseRows90.filter((entry) => entry.date >= startDate);
-  }, [recentExpenseRows90, today]);
-
-  const weekendWeekdayStats = useMemo(() => {
-    const toKrw = (entry: LedgerEntry) =>
-      entry.currency === "USD" && fxRate ? entry.amount * fxRate : entry.amount;
-
-    let weekdaySpend = 0;
-    let weekendSpend = 0;
-    let weekdayCount = 0;
-    let weekendCount = 0;
-
-    recentExpenseRows30.forEach((entry) => {
-      const parsed = parseIsoLocal(entry.date);
-      if (!parsed) return;
-      const day = parsed.getDay();
-      const amount = toKrw(entry);
-      if (day === 0 || day === 6) {
-        weekendSpend += amount;
-        weekendCount += 1;
-      } else {
-        weekdaySpend += amount;
-        weekdayCount += 1;
-      }
-    });
-
-    const totalSpend = weekendSpend + weekdaySpend;
-    const weekendRatio = totalSpend > 0 ? (weekendSpend / totalSpend) * 100 : 0;
-
-    return {
-      weekdaySpend,
-      weekendSpend,
-      weekdayCount,
-      weekendCount,
-      totalSpend,
-      weekendRatio
-    };
-  }, [recentExpenseRows30, fxRate]);
-
-  const weekendWeekdayMiniRows = useMemo(
-    () => [
-      { label: "평일", amount: weekendWeekdayStats.weekdaySpend },
-      { label: "주말", amount: weekendWeekdayStats.weekendSpend }
-    ],
-    [weekendWeekdayStats]
-  );
-
-  const catalogSpendRows = useMemo(() => {
-    const toKrw = (entry: LedgerEntry) =>
-      entry.currency === "USD" && fxRate ? entry.amount * fxRate : entry.amount;
-    const map = new Map<string, number>();
-
-    recentExpenseRows90.forEach((entry) => {
-      const key =
-        entry.subCategory && entry.subCategory !== entry.category
-          ? `${entry.category} / ${entry.subCategory}`
-          : (entry.category || entry.subCategory || "(미분류)");
-      map.set(key, (map.get(key) ?? 0) + toKrw(entry));
-    });
-
-    const total = Array.from(map.values()).reduce((sum, value) => sum + value, 0);
-    return Array.from(map.entries())
-      .map(([catalog, amount]) => ({
-        catalog,
-        amount,
-        ratio: total > 0 ? (amount / total) * 100 : 0
-      }))
-      .sort((a, b) => b.amount - a.amount)
-      .slice(0, 8);
-  }, [recentExpenseRows90, fxRate]);
   const accountNameById = useMemo(() => {
     return new Map(accounts.map((account) => [account.id, account.name || account.id]));
   }, [accounts]);
-  const assetGrowthRows = useMemo(() => {
-    if (accountTimelineRows.length === 0) return [];
-    return accountTimelineRows.map((row, index) => {
-      const value = Number(row.total ?? 0);
-      const prev = index > 0 ? Number(accountTimelineRows[index - 1].total ?? 0) : 0;
-      const change = index > 0 ? value - prev : 0;
-      const changeRate =
-        index > 0 && prev !== 0 ? (change / Math.abs(prev)) * 100 : null;
-      const stock = Number(row.stock ?? 0);
-      const savings = Number(row.savings ?? 0);
-      return {
-        month: String(row.month),
-        value,
-        change,
-        changeRate,
-        stock,
-        savings
-      };
-    });
-  }, [accountTimelineRows]);
-
   /** 순자산 추이: accountTimelineRows에서 month, total 추출 (만원 단위) */
   const netWorthTrendData = useMemo(() => {
     if (accountTimelineRows.length === 0) return [] as Array<{ month: string; value: number }>;
@@ -1392,7 +1123,7 @@ export const DashboardView: React.FC<Props> = (props) => {
       if (byDate !== 0) return byDate;
       return b.amount - a.amount;
     });
-  }, [ledger, today, calendarWindowStart, calendarWindowEnd, fxRate, accountNameById, categoryPresets]);
+  }, [ledger, calendarWindowStart, calendarWindowEnd, fxRate, accountNameById, accounts, categoryPresets]);
 
   const filteredSpendingRows = useMemo(() => {
     if (!spendingFilterType) return spendingCalendarRows;
@@ -1437,72 +1168,6 @@ export const DashboardView: React.FC<Props> = (props) => {
 
   // ── Widget 1: 순자산 누적 곡선 — accountTimelineRows already has { month, total } ──
 
-  // ── Widget 2: 요일별 지출 패턴 (최근 90일) ────────────────────────────────
-  const dowPatternRows = useMemo(() => {
-    const toKrw = (entry: LedgerEntry) =>
-      entry.currency === "USD" && fxRate ? entry.amount * fxRate : entry.amount;
-    const totals = [0, 0, 0, 0, 0, 0, 0];
-    const counts = [0, 0, 0, 0, 0, 0, 0];
-    recentExpenseRows90.forEach((entry) => {
-      const parsed = parseIsoLocal(entry.date);
-      if (!parsed) return;
-      const day = parsed.getDay();
-      totals[day] += toKrw(entry);
-      counts[day] += 1;
-    });
-    const labels = ["일", "월", "화", "수", "목", "금", "토"];
-    return labels.map((label, i) => ({
-      label,
-      avg: counts[i] > 0 ? totals[i] / counts[i] : 0,
-    }));
-  }, [recentExpenseRows90, fxRate]);
-
-  // ── Widget 3: 월별 저축률 히스토리 ──────────────────────────────────────────
-  const monthlySavingsRateRows = useMemo(() => {
-    const toKrw = (entry: LedgerEntry) =>
-      entry.currency === "USD" && fxRate ? entry.amount * fxRate : entry.amount;
-    const byMonth = new Map<string, { income: number; investing: number }>();
-    ledger.forEach((entry) => {
-      if (!entry.date) return;
-      const month = entry.date.slice(0, 7);
-      const prev = byMonth.get(month) ?? { income: 0, investing: 0 };
-      if (entry.kind === "income") {
-        byMonth.set(month, { ...prev, income: prev.income + toKrw(entry) });
-      } else if (entry.kind === "expense" && isSavingsExpenseEntry(entry, accounts, categoryPresets)) {
-        byMonth.set(month, { ...prev, investing: prev.investing + toKrw(entry) });
-      }
-    });
-    return Array.from(byMonth.entries())
-      .sort(([a], [b]) => a.localeCompare(b))
-      .map(([month, { income, investing }]) => ({
-        month,
-        rate: income > 0 ? Math.round((investing / income) * 1000) / 10 : null,
-      }));
-  }, [ledger, fxRate, accounts, categoryPresets]);
-
-  // ── Widget 4: 누적 실현손익 곡선 ─────────────────────────────────────────────
-  const cumulativePnlRows = useMemo(() => {
-    if (trades.length === 0) return [] as Array<{ date: string; label: string; value: number }>;
-    const byId = computeRealizedPnlByTradeId(trades);
-    const sellTrades = trades
-      .filter((t) => t.side === "sell" && t.date)
-      .sort((a, b) => a.date.localeCompare(b.date));
-    if (sellTrades.length === 0) return [] as Array<{ date: string; label: string; value: number }>;
-    let cumulative = 0;
-    const rows: Array<{ date: string; label: string; value: number }> = [];
-    for (const t of sellTrades) {
-      const pnl = byId.get(t.id) ?? 0;
-      cumulative += isUSDStock(t.ticker) && fxRate ? pnl * fxRate : pnl;
-      const last = rows[rows.length - 1];
-      if (last && last.date === t.date) {
-        last.value = Math.round(cumulative);
-      } else {
-        rows.push({ date: t.date, label: t.date.slice(5), value: Math.round(cumulative) });
-      }
-    }
-    return rows;
-  }, [trades, fxRate]);
-
   // ── Widget 5: 이번 달 페이스 예측 ────────────────────────────────────────────
   const monthPaceData = useMemo(() => {
     const [year, monthNum] = currentMonth.split("-").map(Number);
@@ -1533,94 +1198,6 @@ export const DashboardView: React.FC<Props> = (props) => {
       pace: avgPrev3 > 0 ? (projectedExpense / avgPrev3) * 100 : null,
     };
   }, [currentMonth, today, monthlySummary.expense, ledger, fxRate, accounts, categoryPresets]);
-
-  // ── Widget 6: 지출 히트맵 데이터 (최근 52주) ────────────────────────────────
-  const spendingHeatmapData = useMemo(() => {
-    type HeatCell = { date: string; spending: number; inFuture: boolean };
-    const startDate = addDaysToIso(today, -363);
-    const startParsed = parseIsoLocal(startDate);
-    if (!startParsed) return { weeks: [] as HeatCell[][], q1: 0, q2: 0, q3: 0 };
-    const gridStart = new Date(startParsed.getTime());
-    gridStart.setDate(gridStart.getDate() - gridStart.getDay());
-    const amounts: number[] = [];
-    const weeks: HeatCell[][] = [];
-    const cursor = new Date(gridStart.getTime());
-    for (let w = 0; w < 54; w++) {
-      const weekStartStr = formatIsoLocal(cursor);
-      if (weekStartStr > addDaysToIso(today, 7)) break;
-      const week: HeatCell[] = [];
-      for (let d = 0; d < 7; d++) {
-        const dateStr = formatIsoLocal(cursor);
-        const spending = spendingByDate.get(dateStr)?.spending ?? 0;
-        const inFuture = dateStr > today;
-        week.push({ date: dateStr, spending, inFuture });
-        if (spending > 0 && !inFuture) amounts.push(spending);
-        cursor.setDate(cursor.getDate() + 1);
-      }
-      weeks.push(week);
-    }
-    const sorted = [...amounts].sort((a, b) => a - b);
-    const n = sorted.length;
-    const q1 = n > 0 ? (sorted[Math.floor(n * 0.33)] ?? 0) : 0;
-    const q2 = n > 0 ? (sorted[Math.floor(n * 0.66)] ?? 0) : 0;
-    const q3 = n > 0 ? (sorted[Math.floor(n * 0.9)] ?? 0) : 0;
-    return { weeks, q1, q2, q3 };
-  }, [today, spendingByDate]);
-
-  // ── Widget 7: 카테고리×월 히트맵 (최근 6개월) ────────────────────────────────
-  const categoryMonthHeatmap = useMemo(() => {
-    const toKrw = (entry: LedgerEntry) =>
-      entry.currency === "USD" && fxRate ? entry.amount * fxRate : entry.amount;
-    const recentMonths: string[] = [];
-    for (let i = 5; i >= 0; i--) recentMonths.push(shiftMonth(currentMonth, -i));
-    const monthSet = new Set(recentMonths);
-    const byKey = new Map<string, number>();
-    const catTotals = new Map<string, number>();
-    ledger.forEach((entry) => {
-      if (!entry.date) return;
-      const month = entry.date.slice(0, 7);
-      if (!monthSet.has(month)) return;
-      if (entry.kind !== "expense") return;
-      if (isSavingsExpenseEntry(entry, accounts, categoryPresets)) return;
-      const cat = entry.category || "(미분류)";
-      const amt = toKrw(entry);
-      byKey.set(`${month}:${cat}`, (byKey.get(`${month}:${cat}`) ?? 0) + amt);
-      catTotals.set(cat, (catTotals.get(cat) ?? 0) + amt);
-    });
-    const topCats = Array.from(catTotals.entries())
-      .sort(([, a], [, b]) => b - a)
-      .slice(0, 7)
-      .map(([cat]) => cat);
-    const maxVal = Math.max(...Array.from(byKey.values()), 1);
-    return { months: recentMonths, cats: topCats, data: byKey, maxVal };
-  }, [ledger, fxRate, accounts, categoryPresets, currentMonth]);
-
-  // ── Widget 8: FIRE 진행도 (최근 12개월 배당 vs 생활비) ───────────────────────
-  const fireProgress = useMemo(() => {
-    const toKrw = (entry: LedgerEntry) =>
-      entry.currency === "USD" && fxRate ? entry.amount * fxRate : entry.amount;
-    const months12: string[] = [];
-    for (let i = 11; i >= 0; i--) months12.push(shiftMonth(currentMonth, -i));
-    const monthSet = new Set(months12);
-    let totalDividend = 0;
-    let totalExpense = 0;
-    ledger.forEach((entry) => {
-      if (!entry.date) return;
-      const month = entry.date.slice(0, 7);
-      if (!monthSet.has(month)) return;
-      if (isDividendIncome(entry)) {
-        totalDividend += toKrw(entry);
-        return;
-      }
-      if (entry.kind !== "expense") return;
-      if (isSavingsExpenseEntry(entry, accounts, categoryPresets)) return;
-      totalExpense += toKrw(entry);
-    });
-    const monthlyDividend = totalDividend / 12;
-    const monthlyExpense = totalExpense / 12;
-    const fireRate = monthlyExpense > 0 ? (monthlyDividend / monthlyExpense) * 100 : 0;
-    return { monthlyDividend, monthlyExpense, fireRate };
-  }, [ledger, fxRate, accounts, categoryPresets, currentMonth]);
 
   const topCategoriesThisMonth = useMemo(() => {
     const toKrw = (entry: LedgerEntry) =>

@@ -2,7 +2,6 @@ import type { TabId } from "../components/ui/Tabs";
 
 export const TAB_ORDER: TabId[] = [
   "dashboard",
-  "investment-record",
   "accounts",
   "ledger",
   "stocks",
@@ -19,7 +18,6 @@ export const TAB_ORDER: TabId[] = [
 
 export const TAB_NAMES: Record<TabId, string> = {
   dashboard: "대시보드",
-  "investment-record": "투자기록",
   accounts: "계좌",
   ledger: "가계부",
   stocks: "주식",

@@ -416,4 +416,17 @@ export interface AppData {
   dividendTrackingTicker?: string;
   /** ISA 목표 포트폴리오. 비어 있으면 config 기본값 사용 */
   isaPortfolio?: IsaPortfolioItem[];
+  /** 대시보드 투자 요약 카드의 사용자 설정 목표 */
+  investmentGoals?: InvestmentGoals;
+}
+
+export interface InvestmentGoals {
+  /** 연간 입금액 목표 (KRW) */
+  annualDepositTarget?: number;
+  /** 최종 총자산 목표 (KRW) */
+  finalTotalAssetTarget?: number;
+  /** 은퇴 목표 시점 (YYYY-MM-DD) */
+  retirementDate?: string;
+  /** 투자 시작일 (YYYY-MM-DD). 미설정이면 첫 거래일 자동 사용 */
+  investmentStartDate?: string;
 }

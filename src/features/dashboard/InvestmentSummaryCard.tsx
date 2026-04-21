@@ -54,7 +54,8 @@ export const InvestmentSummaryCard: React.FC<Props> = ({
   fxRate,
 }) => {
   const setData = useAppStore((s) => s.setData);
-  const goals: InvestmentGoals = useAppStore((s) => s.data.investmentGoals ?? {});
+  const goalsRaw = useAppStore((s) => s.data.investmentGoals);
+  const goals: InvestmentGoals = useMemo(() => goalsRaw ?? {}, [goalsRaw]);
 
   const today = useMemo(() => getTodayKST(), []);
   const currentYear = today.slice(0, 4);

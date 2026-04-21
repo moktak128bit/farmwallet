@@ -9,9 +9,7 @@ import { parseAmount as sharedParseAmount, formatAmount as sharedFormatAmount } 
 import { getKoreaTime, getTodayKST, getThisMonthKST } from "../utils/date";
 import { toast } from "react-hot-toast";
 import { ERROR_MESSAGES } from "../constants/errorMessages";
-import { STORAGE_KEYS } from "../constants/config";
 import { computeRealizedPnlByTradeId } from "../calculations";
-import { isUSDStock } from "../utils/finance";
 import { exportLedgerCsv } from "../utils/csvExport";
 import { useFocusTrap } from "../hooks/useFocusTrap";
 import { recommendCategory } from "../utils/categoryRecommendation";
@@ -39,12 +37,6 @@ interface Props {
   highlightLedgerId?: string | null;
   onClearHighlightLedger?: () => void;
 }
-
-const KIND_LABEL: Record<LedgerKind, string> = {
-  income: "수입",
-  expense: "지출",
-  transfer: "이체"
-};
 
 type LedgerTab = "all" | "income" | "expense" | "savingsExpense" | "transfer" | "creditPayment";
 
@@ -110,7 +102,7 @@ export const LedgerView: React.FC<Props> = ({
   const [listPage, setListPage] = useState(0);
   const PAGE_SIZE = 50;
   // 폼 확장/축소 상태 (progressive disclosure)
-  const [formExpanded, setFormExpanded] = useState<boolean>(() => {
+  const [formExpanded] = useState<boolean>(() => {
     try { return localStorage.getItem("fw-ledger-form-expanded") === "true"; } catch { return false; }
   });
   const [showDailySummary, setShowDailySummary] = useState<boolean>(() => {
@@ -168,7 +160,7 @@ export const LedgerView: React.FC<Props> = ({
               return normalize(w);
             }
           }
-        } catch (e) {
+        } catch {
           // 파싱 실패 시 기본값 사용
         }
       }
@@ -184,82 +176,9 @@ export const LedgerView: React.FC<Props> = ({
     resizingColumn !== null && liveColumnWidths && liveColumnWidths.length === 11 ? liveColumnWidths : columnWidths;
 
   // 폼 검증 오류는 validateForm useMemo에서 직접 계산됨
-  
-  // 즐겨찾기 카테고리 상태
-  const [favoriteCategories, setFavoriteCategories] = useState<Set<string>>(() => {
-    if (typeof window !== "undefined") {
-      try {
-        const saved = localStorage.getItem("fw-favorite-categories");
-        if (saved) return new Set(JSON.parse(saved));
-      } catch (e) {
-        console.warn("[LedgerView] 즐겨찾기 카테고리 로드 실패", e);
-      }
-    }
-    return new Set();
-  });
-  
-  // 즐겨찾기 계좌 상태
-  const [favoriteAccounts, setFavoriteAccounts] = useState<Set<string>>(() => {
-    if (typeof window !== "undefined") {
-      try {
-        const saved = localStorage.getItem("fw-favorite-accounts");
-        if (saved) return new Set(JSON.parse(saved));
-      } catch (e) {
-        console.warn("[LedgerView] 즐겨찾기 계좌 로드 실패", e);
-      }
-    }
-    return new Set();
-  });
-  
-  // 즐겨찾기 카테고리 목록
-  const favoriteCategoryList = useMemo(() => {
-    const list = effectiveFormKind === "income"
-      ? (categoryPresets?.income ?? [])
-      : effectiveFormKind === "transfer"
-        ? (categoryPresets?.transfer ?? [])
-        : (categoryPresets?.expense ?? []);
-    return list.filter((c) => favoriteCategories.has(c));
-  }, [effectiveFormKind, categoryPresets, favoriteCategories]);
-  
-  // 즐겨찾기 계좌 목록
-  const favoriteAccountList = useMemo(() => {
-    return accounts.filter((a) => favoriteAccounts.has(a.id));
-  }, [accounts, favoriteAccounts]);
-  
-  // 즐겨찾기 카테고리 토글
-  const toggleFavoriteCategory = (category: string) => {
-    setFavoriteCategories((prev) => {
-      const next = new Set(prev);
-      if (next.has(category)) {
-        next.delete(category);
-      } else {
-        next.add(category);
-      }
-      if (typeof window !== "undefined") {
-        localStorage.setItem("fw-favorite-categories", JSON.stringify(Array.from(next)));
-      }
-      return next;
-    });
-  };
-  
-  // 즐겨찾기 계좌 토글
-  const toggleFavoriteAccount = (accountId: string) => {
-    setFavoriteAccounts((prev) => {
-      const next = new Set(prev);
-      if (next.has(accountId)) {
-        next.delete(accountId);
-      } else {
-        next.add(accountId);
-      }
-      if (typeof window !== "undefined") {
-        localStorage.setItem("fw-favorite-accounts", JSON.stringify(Array.from(next)));
-      }
-      return next;
-    });
-  };
-  
+
   // 배치 편집 모드 상태
-  const [isBatchEditMode, setIsBatchEditMode] = useState(false);
+  const [isBatchEditMode] = useState(false);
   const [selectedLedgerIds, setSelectedLedgerIds] = useState<Set<string>>(new Set());
   // Ctrl+드래그 구간 선택 / Shift+클릭 추가·제거
   const [selectedLedgerIdsForSum, setSelectedLedgerIdsForSum] = useState<Set<string>>(new Set());
@@ -378,135 +297,16 @@ export const LedgerView: React.FC<Props> = ({
     if (ledgerTab === "transfer" && form.mainCategory !== "이체") {
       setForm((prev) => ({ ...prev, mainCategory: "이체" }));
     }
-  }, [ledgerTab]);
+  }, [ledgerTab, form.mainCategory]);
 
   // 신용결제 탭일 때 mainCategory/subCategory 비우기 (고정값 사용)
   useEffect(() => {
     if (ledgerTab === "creditPayment" && (form.mainCategory || form.subCategory)) {
       setForm((prev) => ({ ...prev, mainCategory: "", subCategory: "" }));
     }
-  }, [ledgerTab]);
+  }, [ledgerTab, form.mainCategory, form.subCategory]);
   
   
-  // 최근 사용한 대분류 추적
-  const recentMainCategories = useMemo(() => {
-    const items = new Map<string, { count: number; lastUsed: string }>();
-    ledger
-      .filter((l) => l.kind === "expense" && l.category)
-      .forEach((l) => {
-        const key = l.category || "";
-        if (!key) return;
-        const existing = items.get(key);
-        if (existing) {
-          items.set(key, { count: existing.count + 1, lastUsed: l.date > existing.lastUsed ? l.date : existing.lastUsed });
-        } else {
-          items.set(key, { count: 1, lastUsed: l.date });
-        }
-      });
-    return Array.from(items.entries())
-      .sort((a, b) => {
-        if (a[1].lastUsed !== b[1].lastUsed) return b[1].lastUsed.localeCompare(a[1].lastUsed);
-        return b[1].count - a[1].count;
-      })
-      .slice(0, 10)
-      .map(([key]) => key);
-  }, [ledger]);
-
-  // 최근 사용한 중분류 추적 (대분류별)
-  const recentSubCategories = useMemo(() => {
-    if (!form.mainCategory && effectiveFormKind !== "transfer") return [];
-    const items = new Map<string, { count: number; lastUsed: string }>();
-    // 이체 탭일 때는 transfer kind의 항목도 포함
-    if (effectiveFormKind === "transfer") {
-      ledger
-        .filter((l) => l.kind === "transfer" && l.category === "이체" && l.subCategory)
-        .forEach((l) => {
-          const key = l.subCategory || "";
-          if (!key) return;
-          const existing = items.get(key);
-          if (existing) {
-            items.set(key, { count: existing.count + 1, lastUsed: l.date > existing.lastUsed ? l.date : existing.lastUsed });
-          } else {
-            items.set(key, { count: 1, lastUsed: l.date });
-          }
-        });
-    } else {
-      ledger
-        .filter((l) => l.kind === "expense" && l.category === form.mainCategory && l.subCategory)
-        .forEach((l) => {
-          const key = l.subCategory || "";
-          if (!key) return;
-          const existing = items.get(key);
-          if (existing) {
-            items.set(key, { count: existing.count + 1, lastUsed: l.date > existing.lastUsed ? l.date : existing.lastUsed });
-          } else {
-            items.set(key, { count: 1, lastUsed: l.date });
-          }
-        });
-    }
-    return Array.from(items.entries())
-      .sort((a, b) => {
-        if (a[1].lastUsed !== b[1].lastUsed) return b[1].lastUsed.localeCompare(a[1].lastUsed);
-        return b[1].count - a[1].count;
-      })
-      .slice(0, 10)
-      .map(([key]) => key);
-  }, [ledger, form.mainCategory, effectiveFormKind]);
-
-  // 최근 사용한 수입 중분류 추적
-  const recentIncomeCategories = useMemo(() => {
-    const items = new Map<string, { count: number; lastUsed: string }>();
-    ledger
-      .filter((l) => l.kind === "income" && (l.subCategory || l.category))
-      .forEach((l) => {
-        const key = l.subCategory || l.category || "";
-        if (!key) return;
-        const existing = items.get(key);
-        if (existing) {
-          items.set(key, { count: existing.count + 1, lastUsed: l.date > existing.lastUsed ? l.date : existing.lastUsed });
-        } else {
-          items.set(key, { count: 1, lastUsed: l.date });
-        }
-      });
-    return Array.from(items.entries())
-      .sort((a, b) => {
-        if (a[1].lastUsed !== b[1].lastUsed) return b[1].lastUsed.localeCompare(a[1].lastUsed);
-        return b[1].count - a[1].count;
-      })
-      .slice(0, 10)
-      .map(([key]) => key);
-  }, [ledger]);
-  
-  // 최근 사용한 계좌 추적
-  const recentAccounts = useMemo(() => {
-    const accountMap = new Map<string, { count: number; lastUsed: string }>();
-    ledger.forEach((l) => {
-      if (l.fromAccountId) {
-        const existing = accountMap.get(l.fromAccountId);
-        if (existing) {
-          accountMap.set(l.fromAccountId, { count: existing.count + 1, lastUsed: l.date > existing.lastUsed ? l.date : existing.lastUsed });
-        } else {
-          accountMap.set(l.fromAccountId, { count: 1, lastUsed: l.date });
-        }
-      }
-      if (l.toAccountId) {
-        const existing = accountMap.get(l.toAccountId);
-        if (existing) {
-          accountMap.set(l.toAccountId, { count: existing.count + 1, lastUsed: l.date > existing.lastUsed ? l.date : existing.lastUsed });
-        } else {
-          accountMap.set(l.toAccountId, { count: 1, lastUsed: l.date });
-        }
-      }
-    });
-    return Array.from(accountMap.entries())
-      .sort((a, b) => {
-        if (a[1].lastUsed !== b[1].lastUsed) return b[1].lastUsed.localeCompare(a[1].lastUsed);
-        return b[1].count - a[1].count;
-      })
-      .slice(0, 3)
-      .map(([id]) => id);
-  }, [ledger]);
-
   const expenseSubSuggestions = useMemo(() => {
     // 재테크 탭: categoryPresets.expenseDetails의 재테크 그룹 사용 (저축, 투자, 투자수익, 투자손실 등)
     if (effectiveFormKind === "savingsExpense") {
@@ -553,7 +353,7 @@ export const LedgerView: React.FC<Props> = ({
     // 중복 제거 (순서 유지)
     const seen = new Set<string>();
     return suggestions.filter((s) => s && s.trim().length > 0 && !seen.has(s) && (seen.add(s), true));
-  }, [effectiveFormKind, categoryPresets, categoryPresets?.expenseDetails, categoryPresets?.transfer, form.mainCategory]);
+  }, [effectiveFormKind, categoryPresets, form.mainCategory]);
 
   // 대분류 옵션 (카테고리 탭에서 입력한 순서 그대로)
   const mainCategoryOptions = useMemo(() => {
@@ -573,7 +373,7 @@ export const LedgerView: React.FC<Props> = ({
     return effectiveFormKind === "expense"
       ? list.filter((c) => c !== "재테크")
       : list;
-  }, [effectiveFormKind, categoryPresets, categoryPresets?.expense]);
+  }, [effectiveFormKind, categoryPresets]);
 
   // 수입 중분류 옵션 (카테고리 탭에서 입력한 순서 그대로)
   const incomeCategoryOptions = useMemo(() => {
@@ -717,13 +517,13 @@ export const LedgerView: React.FC<Props> = ({
     // 상세내역은 선택사항이므로 검증하지 않음
     
     return errors;
-  }, [form, effectiveFormKind, parseAmount, accounts]);
+  }, [form, effectiveFormKind, parseAmount, accounts, kindForTab]);
   
   // formErrors를 직접 사용 (useEffect 제거로 성능 개선)
   const formErrors = validateForm;
   const isFormValid = Object.keys(formErrors).length === 0;
 
-  const submitForm = (keepContext: boolean) => {
+  const submitForm = useCallback((keepContext: boolean) => {
     // 검증 실패 시 제출 방지
     if (!isFormValid) {
       const firstError = Object.values(validateForm)[0];
@@ -857,7 +657,7 @@ export const LedgerView: React.FC<Props> = ({
         isFixedExpense: false
       };
     });
-  };
+  }, [isFormValid, validateForm, kindForTab, form, parseAmount, effectiveFormKind, ledger, onChangeLedger]);
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
@@ -897,49 +697,7 @@ export const LedgerView: React.FC<Props> = ({
 
   const isCreditPaymentEntry = (l: LedgerEntry) => l.kind === "expense" && l.category === "신용결제";
 
-  const startEdit = (entry: LedgerEntry) => {
-    setForm({
-      id: entry.id,
-      date: entry.date,
-      kind: entry.kind,
-      isFixedExpense: entry.isFixedExpense ?? false,
-      mainCategory: isCreditPaymentEntry(entry) ? "" : (entry.kind === "income" ? "" : entry.category),
-      subCategory: isCreditPaymentEntry(entry) ? "" : (entry.subCategory ?? (entry.kind === "income" ? entry.category : "")),
-      description: entry.description,
-      fromAccountId: entry.fromAccountId ?? "",
-      toAccountId: entry.toAccountId ?? "",
-      amount:
-        entry.currency === "USD"
-          ? String(
-              (entry.kind === "expense" || entry.kind === "income") && (entry.discountAmount ?? 0) > 0
-                ? entry.amount + (entry.discountAmount ?? 0)
-                : entry.amount
-            )
-          : String(
-              Math.round(
-                (entry.kind === "expense" || entry.kind === "income") && (entry.discountAmount ?? 0) > 0
-                  ? entry.amount + (entry.discountAmount ?? 0)
-                  : entry.amount
-              )
-            ),
-      discountAmount: entry.discountAmount != null ? String(Math.round(entry.discountAmount)) : "",
-      currency: entry.currency ?? "KRW",
-      tags: entry.tags || []
-    });
-    const nextTab: LedgerTab =
-      entry.kind === "income"
-        ? "income"
-        : entry.kind === "transfer"
-          ? "transfer"
-          : isCreditPaymentEntry(entry)
-            ? "creditPayment"
-            : isSavingsExpenseEntry(entry, accounts, categoryPresets)
-              ? "savingsExpense"
-              : "expense";
-    setLedgerTab(nextTab);
-  };
-
-  const startCopy = (entry: LedgerEntry) => {
+  const startCopy = useCallback((entry: LedgerEntry) => {
     try {
       const isSavings = isSavingsExpenseEntry(entry, accounts, categoryPresets);
       const isCredit = isCreditPaymentEntry(entry);
@@ -991,7 +749,7 @@ export const LedgerView: React.FC<Props> = ({
       toast.error(ERROR_MESSAGES.COPY_FAILED);
       isCopyingRef.current = false;
     }
-  };
+  }, [accounts, categoryPresets]);
 
   // 외부에서 복사 요청이 들어온 경우 처리
   useEffect(() => {
@@ -999,15 +757,15 @@ export const LedgerView: React.FC<Props> = ({
       startCopy(copyRequest);
       onCopyComplete?.();
     }
-  }, [copyRequest, onCopyComplete]);
+  }, [copyRequest, onCopyComplete, startCopy]);
 
-  const resetForm = () => {
+  const resetForm = useCallback(() => {
     setForm({
       ...createDefaultForm(),
       kind: kindForTab,
       isFixedExpense: false
     });
-  };
+  }, [kindForTab]);
 
   // 템플릿 적용: 클릭 시 해당 템플릿 값으로 폼 채우기
   const applyTemplate = (tpl: LedgerTemplate) => {
@@ -1183,7 +941,6 @@ export const LedgerView: React.FC<Props> = ({
   };
 
   const isEditing = Boolean(form.id);
-  const formRef = useRef<HTMLFormElement>(null);
   const dateInputRef = useRef<HTMLInputElement>(null);
 
   // 키보드 단축키 처리
@@ -1219,7 +976,7 @@ export const LedgerView: React.FC<Props> = ({
     return () => {
       handlers.forEach(handler => shortcutManager.unregister(handler));
     };
-  }, [isEditing, form, editingField]);
+  }, [isEditing, form, editingField, effectiveFormKind, parseAmount, resetForm, submitForm]);
 
   // 빠른 필터 상태
   const [dateFilter, setDateFilter] = useState<{
@@ -1306,7 +1063,7 @@ export const LedgerView: React.FC<Props> = ({
     return () => {
       window.removeEventListener("keydown", handleKeyDown);
     };
-  }, [form]);
+  }, [form, effectiveFormKind, parseAmount, submitForm]);
 
   const realizedPnlByTradeId = useMemo(
     () => computeRealizedPnlByTradeId(deferredTrades),
@@ -1461,7 +1218,7 @@ export const LedgerView: React.FC<Props> = ({
     });
     
     return sorted;
-  }, [ledgerByTab, ledgerTab, viewMode, selectedMonths, dateFilter, filterMainCategory, filterSubCategory, filterAccountId, filterFromAccountId, filterToAccountId, filterAmountMin, filterAmountMax, filterTagsInput, searchQuery, ledgerSort]);
+  }, [ledgerByTab, ledgerTab, viewMode, selectedMonths, dateFilter, filterMainCategory, filterSubCategory, filterDetailCategory, filterAccountId, filterFromAccountId, filterToAccountId, filterAmountMin, filterAmountMax, filterTagsInput, searchQuery, ledgerSort]);
 
   // 필터 변경 시 페이지 초기화
   useEffect(() => {
@@ -1477,15 +1234,6 @@ export const LedgerView: React.FC<Props> = ({
     creditPayment: "신용결제"
   };
   const summaryTabLabel = ledgerTab === "all" ? "거래" : tabLabel[ledgerTab];
-
-  const totalByTab = useMemo(
-    () => ledgerByTab.reduce((s, l) => s + l.amount, 0),
-    [ledgerByTab]
-  );
-  const monthlyTotalByTab = useMemo(
-    () => filteredLedger.reduce((s, l) => s + l.amount, 0),
-    [filteredLedger]
-  );
 
   // 필터 적용 시 지출액/수입액/전체 요약 (지출 = 재테크·저축성지출 제외한 expense만)
   // 성능: 5000건 기준 3회→1회 루프로 감소. makeIsSavingsExpense로 Set을 한 번만 생성.
@@ -1704,7 +1452,7 @@ export const LedgerView: React.FC<Props> = ({
       transferSum,
       net: incomeSum - expenseSum - transferSum
     };
-  }, [filteredLedger, selectedLedgerIdsForSum, accounts]);
+  }, [filteredLedger, selectedLedgerIdsForSum, accounts, categoryPresets]);
 
   // 사용 가능한 월 목록 (거래가 있는 월들) - 년도별로 정리
   const availableMonths = useMemo(() => {
@@ -1733,7 +1481,7 @@ export const LedgerView: React.FC<Props> = ({
       monthsByYear.get(year)!.push(month);
     });
     // 각 년도의 월을 정렬 (최신순)
-    monthsByYear.forEach((months, year) => {
+    monthsByYear.forEach((months) => {
       months.sort().reverse();
     });
     return monthsByYear;
@@ -1745,35 +1493,6 @@ export const LedgerView: React.FC<Props> = ({
     return Array.from(selectedMonths).sort().join(", ");
   }, [selectedMonths]);
 
-  const availableYears = useMemo(() => {
-    const years = new Set<string>();
-    ledgerByTab.forEach((l) => {
-      if (l.date && l.date.length >= 4) {
-        const year = l.date.slice(0, 4);
-        // 유효한 년도인지 확인 (4자리 숫자)
-        if (/^\d{4}$/.test(year)) {
-          years.add(year);
-        }
-      }
-    });
-    // 선택된 월들의 년도 포함
-    selectedMonths.forEach((m) => {
-      if (m.length >= 4) {
-        const y = m.slice(0, 4);
-        if (/^\d{4}$/.test(y)) years.add(y);
-      }
-    });
-    // 현재 년도와 다음 년도도 항상 포함 (입력 편의를 위해)
-    const koreaTime = getKoreaTime();
-    const currentYear = String(koreaTime.getFullYear());
-    const nextYear = String(koreaTime.getFullYear() + 1);
-    years.add(currentYear);
-    years.add(nextYear);
-    
-    return Array.from(years).sort((a, b) => b.localeCompare(a)); // 최신순 (내림차순)
-  }, [ledgerByTab, selectedMonths]);
-
-  
   // 현재 선택된 년도에 해당하는 월만 필터링
   const availableMonthsForCurrentYear = useMemo(() => {
     return availableMonthsByYear.get(currentYear) || [];
@@ -1840,7 +1559,7 @@ export const LedgerView: React.FC<Props> = ({
     document.addEventListener("mousemove", onMove);
     document.addEventListener("mouseup", onUp);
     dragSumListenersRef.current = { move: onMove, up: onUp };
-  }, [accounts]);
+  }, []);
 
   useEffect(() => {
     if (!lastAddedEntryId) return;

@@ -158,10 +158,18 @@ export const DebtView: React.FC<Props> = ({
     setRepayDate(new Date().toISOString().slice(0, 10));
   };
 
-  // 지금까지 갚은 내역 (가계부 지출 - 대출상환 또는 기존 대출/빚)
+  // 지금까지 갚은 내역.
+  // 카테고리 구조 3세대 모두 매칭:
+  //  - 최초: (category="대출", subCategory="빚")
+  //  - 구버전: (category="대출상환") 플랫 메인
+  //  - 현재: (category="지출", subCategory="대출상환") 중첩
   const isLoanRepaymentEntry = (l: LedgerEntry) =>
     l.kind === "expense" &&
-    ((l.category === "대출" && l.subCategory === "빚") || l.category === "대출상환");
+    (
+      (l.category === "대출" && l.subCategory === "빚") ||
+      l.category === "대출상환" ||
+      (l.category === "지출" && l.subCategory === "대출상환")
+    );
 
   const repaymentEntries = useMemo(() => {
     return ledger

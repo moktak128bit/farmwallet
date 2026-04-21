@@ -13,7 +13,6 @@ import { TabErrorBoundary } from "./components/TabErrorBoundary";
 
 // 동일 로더를 lazy와 프리페치에서 공유해 탭 호버 시 청크 미리 로드
 const loadDashboard = () => import("./pages/DashboardPage").then((m) => ({ default: m.DashboardView }));
-const loadInvestmentRecord = () => import("./pages/InvestmentRecordPage").then((m) => ({ default: m.InvestmentRecordView }));
 const loadAccounts = () => import("./pages/AccountsPage").then((m) => ({ default: m.AccountsView }));
 const loadLedger = () => import("./pages/LedgerPage").then((m) => ({ default: m.LedgerView }));
 const loadCategories = () => import("./pages/CategoriesPage").then((m) => ({ default: m.CategoriesView }));
@@ -28,7 +27,6 @@ const loadWorkout = () => import("./pages/WorkoutPage").then((m) => ({ default: 
 const loadInsights = () => import("./pages/InsightsPage").then((m) => ({ default: m.InsightsView }));
 
 const DashboardView = lazy(loadDashboard);
-const InvestmentRecordView = lazy(loadInvestmentRecord);
 const AccountsView = lazy(loadAccounts);
 const LedgerView = lazy(loadLedger);
 const CategoriesView = lazy(loadCategories);
@@ -45,7 +43,6 @@ const InsightsView = lazy(loadInsights);
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 const TAB_PREFETCH: Record<TabId, () => Promise<{ default: React.ComponentType<any> }>> = {
   dashboard: loadDashboard,
-  "investment-record": loadInvestmentRecord,
   accounts: loadAccounts,
   ledger: loadLedger,
   categories: loadCategories,
@@ -77,7 +74,7 @@ import { isGistConfigured, saveToGist } from "./services/gistSync";
 import { toUserDataJson } from "./services/dataService";
 import { useUIStore, type PendingAction } from "./store/uiStore";
 
-const TAB_ORDER: TabId[] = ["dashboard", "investment-record", "accounts", "ledger", "categories", "stocks", "dividends", "debt", "spend", "budget", "reports", "insights", "workout", "settings"];
+const TAB_ORDER: TabId[] = ["dashboard", "accounts", "ledger", "categories", "stocks", "dividends", "debt", "spend", "budget", "reports", "insights", "workout", "settings"];
 
 export const App: React.FC = () => {
   // UI 상태는 모두 uiStore에서 관리 (App.tsx에서 useState 17개를 슬라이스로 이전)
@@ -273,7 +270,7 @@ export const App: React.FC = () => {
   }, [setDataWithHistory]);
 
 
-  const needsPortfolioAggregation = tab === "accounts" || tab === "stocks" || tab === "investment-record";
+  const needsPortfolioAggregation = tab === "accounts" || tab === "stocks";
   const needsBalances = tab === "accounts" || tab === "ledger" || tab === "stocks";
 
   const { balances, positions } = usePortfolioWorker({
@@ -635,16 +632,6 @@ export const App: React.FC = () => {
           <Suspense fallback={<div className="card" style={{ padding: 24, textAlign: "center", color: "var(--text-muted)" }}>로딩 중...</div>}>
           {tab === "dashboard" && (
             <TabErrorBoundary tabName="대시보드"><DashboardView /></TabErrorBoundary>
-          )}
-          {tab === "investment-record" && (
-            <TabErrorBoundary tabName="투자기록">
-            <InvestmentRecordView
-              accounts={data.accounts}
-              trades={data.trades}
-              positions={positions}
-              fxRate={fxRate}
-            />
-            </TabErrorBoundary>
           )}
           {tab === "accounts" && (
             <TabErrorBoundary tabName="계좌">

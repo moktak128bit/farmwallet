@@ -1,5 +1,6 @@
 import React, { lazy, Suspense, useCallback, useMemo, useState } from "react";
 import { BudgetAlertWidget } from "../features/dashboard/AdvancedWidgets";
+import { InvestmentSummaryCard } from "../features/dashboard/InvestmentSummaryCard";
 import type {
   Account,
   LedgerEntry,
@@ -1246,6 +1247,14 @@ export const DashboardView: React.FC<Props> = (props) => {
       </div>
 
       <div style={{ display: "flex", flexDirection: "column", gap: 28 }}>
+        <InvestmentSummaryCard
+          accounts={accounts}
+          ledger={ledger}
+          trades={trades}
+          prices={adjustedPrices}
+          fxRate={fxRate ?? null}
+        />
+
         <div
           style={{
             display: "grid",

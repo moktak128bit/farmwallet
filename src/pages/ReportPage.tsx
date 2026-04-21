@@ -21,93 +21,9 @@ import { toast } from "react-hot-toast";
 import { ERROR_MESSAGES } from "../constants/errorMessages";
 import { useFxRateValue } from "../context/FxRateContext";
 import { useReportWorker } from "../hooks/useReportWorker";
-import { isSavingsExpenseEntry } from "../utils/category";
 import { summarizeTaxYear, COMPREHENSIVE_TAX_THRESHOLD } from "../utils/taxCalculator";
 import { downloadAsExcel, type SheetData } from "../utils/excelExport";
 import { openPrintWindow } from "../utils/pdfExport";
-
-/** 카테고리별 집계 행 */
-interface CategoryBreakdownRow {
-  category: string;
-  subCategory: string;
-  amount: number;
-  count: number;
-}
-
-/** 월 내 카테고리별 상세 (수입/지출/이체별) */
-interface MonthCategoryDetail {
-  incomeRows: CategoryBreakdownRow[];
-  livingRows: CategoryBreakdownRow[];
-  savingsRows: CategoryBreakdownRow[];
-  creditRows: CategoryBreakdownRow[];
-  transferRows: CategoryBreakdownRow[];
-}
-
-function buildMonthCategoryDetail(
-  ledger: LedgerEntry[],
-  accounts: Account[],
-  month: string,
-  fxRate: number | null
-): MonthCategoryDetail {
-  const toKrw = (e: LedgerEntry) =>
-    e.currency === "USD" && fxRate ? e.amount * fxRate : e.amount;
-
-  const incomeMap = new Map<string, { amount: number; count: number }>();
-  const livingMap = new Map<string, { amount: number; count: number }>();
-  const savingsMap = new Map<string, { amount: number; count: number }>();
-  const creditMap = new Map<string, { amount: number; count: number }>();
-  const transferMap = new Map<string, { amount: number; count: number }>();
-
-  const add = (map: Map<string, { amount: number; count: number }>, key: string, amount: number) => {
-    const row = map.get(key);
-    if (row) { row.amount += amount; row.count += 1; }
-    else map.set(key, { amount, count: 1 });
-  };
-
-  for (const entry of ledger) {
-    if (!entry.date.startsWith(month)) continue;
-    const amount = toKrw(entry);
-    const cat = entry.category ?? "";
-    const sub = entry.subCategory ?? "";
-    const key = sub ? `${cat}::${sub}` : cat;
-
-    if (entry.kind === "income") {
-      add(incomeMap, key, amount);
-    } else if (entry.kind === "expense") {
-      if (isSavingsExpenseEntry(entry, accounts)) {
-        add(savingsMap, key, amount);
-      } else if (cat === "신용결제" || cat === "신용카드") {
-        add(creditMap, key, amount);
-      } else {
-        add(livingMap, key, amount);
-      }
-    } else if (entry.kind === "transfer") {
-      // 카드 계좌로의 이체 = 신용결제 (카드 대금 납부)
-      const toAcc = entry.toAccountId ? accounts.find(a => a.id === entry.toAccountId) : undefined;
-      if (toAcc && toAcc.type === "card") {
-        add(creditMap, key, amount);
-      } else {
-        add(transferMap, key, amount);
-      }
-    }
-  }
-
-  const toRows = (map: Map<string, { amount: number; count: number }>): CategoryBreakdownRow[] =>
-    Array.from(map.entries())
-      .map(([key, val]) => {
-        const [category, subCategory = ""] = key.split("::");
-        return { category, subCategory, amount: val.amount, count: val.count };
-      })
-      .sort((a, b) => b.amount - a.amount);
-
-  return {
-    incomeRows: toRows(incomeMap),
-    livingRows: toRows(livingMap),
-    savingsRows: toRows(savingsMap),
-    creditRows: toRows(creditMap),
-    transferRows: toRows(transferMap)
-  };
-}
 
 interface Props {
   accounts: Account[];
@@ -196,46 +112,6 @@ export const ReportView: React.FC<Props> = ({ accounts, ledger, trades, prices }
     () => comprehensiveMonthly.find((r) => r.month === prevMonth),
     [comprehensiveMonthly, prevMonth]
   );
-
-  /** 선택 월 카테고리별 상세 */
-  const catDetail = useMemo(
-    () => buildMonthCategoryDetail(ledger, accounts, selectedMonth, fxRate),
-    [ledger, accounts, selectedMonth, fxRate]
-  );
-
-  /** 카테고리 상세 테이블 렌더 */
-  const renderCatTable = (rows: CategoryBreakdownRow[], totalLabel: string) => {
-    if (rows.length === 0) return <p style={{ color: "var(--text-muted)", margin: "4px 0" }}>내역 없음</p>;
-    const total = rows.reduce((s, r) => s + r.amount, 0);
-    const totalCount = rows.reduce((s, r) => s + r.count, 0);
-    return (
-      <table className="data-table" style={{ width: "100%", marginTop: 4 }}>
-        <thead>
-          <tr>
-            <th>대분류</th>
-            <th>중분류</th>
-            <th className="number">금액</th>
-            <th className="number">건수</th>
-          </tr>
-        </thead>
-        <tbody>
-          {rows.map((row, i) => (
-            <tr key={`${row.category}-${row.subCategory}-${i}`}>
-              <td>{row.category}</td>
-              <td>{row.subCategory || "-"}</td>
-              <td className="number">{formatKRW(row.amount)}</td>
-              <td className="number">{row.count}</td>
-            </tr>
-          ))}
-          <tr style={{ fontWeight: 700, borderTop: "2px solid var(--border)" }}>
-            <td colSpan={2}>{totalLabel}</td>
-            <td className="number">{formatKRW(total)}</td>
-            <td className="number">{totalCount}</td>
-          </tr>
-        </tbody>
-      </table>
-    );
-  };
 
   const exportCurrentCsv = () => {
     let filename = "";
@@ -1045,13 +921,13 @@ export const ReportView: React.FC<Props> = ({ accounts, ledger, trades, prices }
         name: "종합 월간",
         rows: [
           ["월", "수입", "지출", "저축", "이체", "신용결제"],
-          ...comprehensiveMonthly.map((r: any) => [
+          ...comprehensiveMonthly.map((r: ComprehensiveMonthlyRow) => [
             r.month,
-            r.income ?? 0,
-            r.living ?? 0,
-            r.savings ?? 0,
-            r.transfer ?? 0,
-            r.credit ?? 0
+            r.totalIncome ?? 0,
+            r.livingExpense ?? 0,
+            r.savingsExpense ?? 0,
+            r.transferTotal ?? 0,
+            r.creditPayment ?? 0
           ])
         ]
       });

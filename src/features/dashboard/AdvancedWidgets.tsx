@@ -374,7 +374,7 @@ export const GoalPlannerWidget: React.FC<AdvancedWidgetProps> = ({
       scenario2Months,
       progressPct,
     };
-  }, [accounts, ledger, trades, currentMonth]);
+  }, [accounts, ledger, trades, currentMonth, targetAmount]);
 
   const fmtMonths = (m: number) =>
     Number.isFinite(m) && m > 0

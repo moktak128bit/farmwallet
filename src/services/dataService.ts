@@ -472,7 +472,7 @@ function migrateBySchema(
   fromVersion: number
 ): { data: Record<string, unknown>; migrated: boolean } {
   let migrated = false;
-  let next = { ...source };
+  const next = { ...source };
 
   if (fromVersion < 2) {
     const recurringExpenses = asArray(next.recurringExpenses);
@@ -724,7 +724,6 @@ function saveCacheData(cache: CacheData): void {
  * API로 재수집 가능한 캐시는 Gist에 포함하지 않아 동기화 속도를 높이고 용량을 줄임.
  */
 export function toUserDataJson(data: AppData): string {
-  // eslint-disable-next-line @typescript-eslint/no-unused-vars
   const { prices: _p, tickerDatabase: _t, historicalDailyCloses: _h, ...userData } = data;
   return JSON.stringify(userData);
 }

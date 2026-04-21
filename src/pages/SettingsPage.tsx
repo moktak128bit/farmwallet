@@ -8,7 +8,6 @@ import type {
 import {
   getAllBackupList,
   loadBackupData,
-  loadServerBackupData,
   clearOldBackups,
   getEmptyData,
   normalizeImportedData,
@@ -194,7 +193,7 @@ function AssetSnapshotEditor({
 
   useEffect(() => {
     setRaw(JSON.stringify(value, null, 2));
-  }, [valueKey]);
+  }, [valueKey, value]);
 
   const handleChange = (text: string) => {
     setRaw(text);
@@ -255,7 +254,7 @@ function TargetNetWorthCurveEditor({
 
   useEffect(() => {
     setRaw(JSON.stringify(value, null, 2));
-  }, [valueKey]);
+  }, [valueKey, value]);
 
   const handleChange = (text: string) => {
     setRaw(text);
@@ -614,7 +613,7 @@ export const SettingsView: React.FC<Props> = ({
     try {
       const list = await loadBackupList();
       toast.success(`백업 목록을 새로고침했습니다. (${list.length}개)`, { id: toastId });
-    } catch (error) {
+    } catch {
       toast.error(ERROR_MESSAGES.BACKUP_REFRESH_FAILED, { id: toastId });
     }
   }, [loadBackupList]);

@@ -62,14 +62,6 @@ interface PositionListSectionProps {
 
 const STORAGE_KEY_PREFIX = "fw-position-display-currency-";
 
-const formatPriceWithCurrency = (value: number, currency?: string, ticker?: string) => {
-  const isUSD = currency === "USD" || isUSDStock(ticker);
-  if (isUSD) {
-    return formatUSD(value);
-  }
-  return formatKRW(value);
-};
-
 /** 포지션 금액을 표시 통화로 변환. 달러→원화: ×환율, 원화→달러: ÷환율. 환율 없으면 변환 불가(0 반환). */
 const toDisplayValue = (
   value: number,
@@ -96,7 +88,7 @@ export const PositionListSection: React.FC<PositionListSectionProps> = ({
   positionsByAccount,
   balances,
   accounts,
-  prices,
+  prices: _prices,
   tickerDatabase,
   onChangeTickerDatabase,
   fxRate,
@@ -112,6 +104,10 @@ export const PositionListSection: React.FC<PositionListSectionProps> = ({
     direction: "desc"
   });
   const [accountDisplayCurrency, setAccountDisplayCurrency] = useState<Record<string, "USD" | "KRW">>({});
+  const accountIdsKey = useMemo(
+    () => positionsByAccount.map((g) => g.accountId).join(","),
+    [positionsByAccount]
+  );
   useEffect(() => {
     try {
       const next: Record<string, "USD" | "KRW"> = {};
@@ -135,7 +131,8 @@ export const PositionListSection: React.FC<PositionListSectionProps> = ({
     } catch {
       //
     }
-  }, [positionsByAccount.map((g) => g.accountId).join(",")]);
+    // positionsByAccount is represented by accountIdsKey for reference stability
+  }, [accountIdsKey, positionsByAccount]);
   const getAccountDisplayCurrency = (accountId: string): "USD" | "KRW" =>
     accountDisplayCurrency[accountId] ?? "KRW";
   const setAccountDisplayCurrencyFor = (accountId: string, currency: "USD" | "KRW") => {
@@ -159,18 +156,18 @@ export const PositionListSection: React.FC<PositionListSectionProps> = ({
     }
   });
 
-  const sortPositions = (rows: PositionWithPrice[]) => {
+  const sortPositions = React.useCallback((rows: PositionWithPrice[]) => {
     const dir = positionSort.direction === "asc" ? 1 : -1;
     return [...rows].sort((a, b) => {
-      const key = positionSort.key;
-      const va = (a as any)[key] ?? 0;
-      const vb = (b as any)[key] ?? 0;
+      const key = positionSort.key as keyof PositionWithPrice;
+      const va = (a[key] as unknown) ?? 0;
+      const vb = (b[key] as unknown) ?? 0;
       if (typeof va === "string" || typeof vb === "string") {
         return String(va).localeCompare(String(vb)) * dir;
       }
-      return (va - vb) * dir;
+      return ((va as number) - (vb as number)) * dir;
     });
-  };
+  }, [positionSort]);
 
   const togglePositionSort = (key: PositionSortKey) => {
     setPositionSort((prev) => ({
@@ -197,7 +194,7 @@ export const PositionListSection: React.FC<PositionListSectionProps> = ({
       ...group,
       rows: sortPositions(group.rows)
     }));
-  }, [positionsByAccount, positionSort]);
+  }, [positionsByAccount, sortPositions]);
 
   const inferFxFromRows = (rows: PositionWithPrice[]): number => {
     for (const row of rows) {

@@ -65,16 +65,7 @@ export function usePortfolioWorker(params: UsePortfolioWorkerParams): PortfolioS
   const syncResult = useMemo(() => {
     if (supportsWorker) return null;
     return computeSynchronously(params);
-  }, [
-    supportsWorker,
-    params.accounts,
-    params.ledger,
-    params.trades,
-    params.prices,
-    params.fxRate,
-    params.needsBalances,
-    params.needsPortfolioAggregation
-  ]);
+  }, [supportsWorker, params]);
 
   const [state, setState] = useState<PortfolioState>(() => {
     if (syncResult) {

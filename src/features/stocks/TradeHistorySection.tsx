@@ -166,16 +166,16 @@ export const TradeHistorySection: React.FC<TradeHistorySectionProps> = ({
   const sortedTrades = useMemo(() => {
     const dir = tradeSort.direction === "asc" ? 1 : -1;
     return [...tradesFiltered].sort((a, b) => {
-      const key = tradeSort.key;
-      const va = (a as any)[key];
-      const vb = (b as any)[key];
+      const key = tradeSort.key as keyof StockTrade;
+      const va = a[key] as unknown;
+      const vb = b[key] as unknown;
       if (key === "date") {
-        return (va < vb ? -1 : va > vb ? 1 : 0) * dir;
+        return ((va as string) < (vb as string) ? -1 : (va as string) > (vb as string) ? 1 : 0) * dir;
       }
       if (typeof va === "string" || typeof vb === "string") {
         return String(va ?? "").localeCompare(String(vb ?? "")) * dir;
       }
-      return ((va ?? 0) - (vb ?? 0)) * dir;
+      return (((va as number) ?? 0) - ((vb as number) ?? 0)) * dir;
     });
   }, [tradesFiltered, tradeSort]);
 
@@ -432,12 +432,12 @@ export const TradeHistorySection: React.FC<TradeHistorySectionProps> = ({
     if (clamped === currentIndex) return;
     const dir = tradeSort.direction === "asc" ? 1 : -1;
     const comparator = (a: StockTrade, b: StockTrade) => {
-      const key = tradeSort.key;
-      const va = (a as any)[key];
-      const vb = (b as any)[key];
-      if (key === "date") return (va < vb ? -1 : va > vb ? 1 : 0) * dir;
+      const key = tradeSort.key as keyof StockTrade;
+      const va = a[key] as unknown;
+      const vb = b[key] as unknown;
+      if (key === "date") return ((va as string) < (vb as string) ? -1 : (va as string) > (vb as string) ? 1 : 0) * dir;
       if (typeof va === "string" || typeof vb === "string") return String(va ?? "").localeCompare(String(vb ?? "")) * dir;
-      return ((va ?? 0) - (vb ?? 0)) * dir;
+      return (((va as number) ?? 0) - ((vb as number) ?? 0)) * dir;
     };
     const fullSorted = [...trades].sort(comparator);
     const currentInFull = fullSorted.findIndex((t) => t.id === id);

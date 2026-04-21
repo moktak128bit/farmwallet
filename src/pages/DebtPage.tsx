@@ -1,4 +1,4 @@
-import React, { useState, useMemo } from "react";
+import React, { useState, useMemo, useCallback } from "react";
 import { ChevronDown, ChevronUp, Pencil, Trash2 } from "lucide-react";
 import type { Loan, RepaymentMethod, LedgerEntry, Account, CategoryPresets } from "../types";
 import { formatKRW } from "../utils/formatter";
@@ -181,10 +181,10 @@ export const DebtView: React.FC<Props> = ({
 
   const [repaymentFilterDebtId, setRepaymentFilterDebtId] = useState<string>("");
 
-  const matchRepaymentLoan = (entry: LedgerEntry): Loan | null => {
+  const matchRepaymentLoan = useCallback((entry: LedgerEntry): Loan | null => {
     const description = entry.description || "";
     return loans.find((loan) => description.includes(loan.loanName)) ?? null;
-  };
+  }, [loans]);
 
   const repaymentByDebt = useMemo(() => {
     const map = new Map<string, { label: string; entries: LedgerEntry[]; total: number }>();
@@ -204,7 +204,7 @@ export const DebtView: React.FC<Props> = ({
     });
 
     return map;
-  }, [repaymentEntries, loans]);
+  }, [repaymentEntries, loans, matchRepaymentLoan]);
 
   const debtFilterOptions = useMemo(() => {
     const all = Array.from(repaymentByDebt.entries()).map(([id, group]) => ({
@@ -312,7 +312,7 @@ export const DebtView: React.FC<Props> = ({
         }
       });
     return repayments;
-  }, [ledger, loans]);
+  }, [ledger, matchRepaymentLoan]);
 
   const daysBetween = (date1: string, date2: string): number => {
     const d1 = new Date(date1);
@@ -361,10 +361,6 @@ export const DebtView: React.FC<Props> = ({
     } else {
       return loan.loanAmount * (loan.annualInterestRate / 100) * repaymentYears;
     }
-  };
-
-  const calculateTotalRepayment = (loan: Loan): number => {
-    return loan.loanAmount + calculateTotalInterest(loan);
   };
 
   const repaymentMethodLabel: Record<RepaymentMethod, string> = {
@@ -544,10 +540,8 @@ export const DebtView: React.FC<Props> = ({
         >
           {loans.map((loan) => {
             const today = new Date().toISOString().slice(0, 10);
-            const totalPeriod = daysBetween(loan.loanDate, loan.maturityDate);
             const remainingPeriod = daysBetween(today, loan.maturityDate);
             const totalInterest = calculateTotalInterest(loan);
-            const totalRepayment = calculateTotalRepayment(loan);
             const accumulatedRepayment = loanRepayments.get(loan.id) || 0;
             const currentBalance = loan.loanAmount - accumulatedRepayment;
 

@@ -676,7 +676,7 @@ export const CategoriesView: React.FC<Props> = ({ presets, onChangePresets, ledg
               .sort((a, b) => b[1] - a[1])
               .slice(0, 20)
               .map(([key, count]) => {
-                const [, type, ...parts] = key.split(":");
+                const [, , ...parts] = key.split(":");
                 const name = parts.join(" > ");
                 return (
                   <div
@@ -826,7 +826,7 @@ export const CategoriesView: React.FC<Props> = ({ presets, onChangePresets, ledg
                 }
                 
                 const [fromType, fromIdx, fromName] = fromValue.split(":");
-                const [toType, toIdx, toName] = toValue.split(":");
+                const [toType, , toName] = toValue.split(":");
                 
                 if (fromType !== toType) {
                   alert("같은 유형의 카테고리만 통합할 수 있습니다.");

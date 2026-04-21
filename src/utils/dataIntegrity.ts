@@ -39,7 +39,7 @@ export interface IntegrityIssue {
   type: "duplicate" | "balance_mismatch" | "missing_reference" | "date_order" | "amount_consistency" | "category_mismatch" | "transfer_pair_mismatch" | "transfer_invalid_reference" | "usd_securities_mismatch";
   severity: "error" | "warning" | "info";
   message: string;
-  data: DuplicateTrade | BalanceMismatch | MissingReference | CategoryMismatch | any;
+  data: DuplicateTrade | BalanceMismatch | MissingReference | CategoryMismatch | unknown;
 }
 
 function isCardPaymentTransfer(l: LedgerEntry): boolean {
@@ -60,7 +60,7 @@ function isUsdEntry(l: LedgerEntry): boolean {
 export function detectDuplicateTrades(
   ledger: LedgerEntry[],
   trades: StockTrade[],
-  threshold: number = 0.95
+  _threshold: number = 0.95
 ): DuplicateTrade[] {
   const duplicates: DuplicateTrade[] = [];
 

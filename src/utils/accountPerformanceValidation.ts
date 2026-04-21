@@ -123,9 +123,9 @@ export function calculateAccountPerformance(
  * 계산 결과를 콘솔에 출력합니다 (디버깅용)
  */
 export function logAccountPerformance(
-  accountName: string,
-  result: AccountPerformanceResult,
-  details?: {
+  _accountName: string,
+  _result: AccountPerformanceResult,
+  _details?: {
     actualBuyAmount: number;
     initialCash: number;
     stockValue: number;

@@ -22,6 +22,7 @@ import {
 import { DeferredResponsiveContainer as ResponsiveContainer } from "../../components/charts/DeferredResponsiveContainer";
 import { formatKRW } from "../../utils/formatter";
 import type { Account } from "../../types";
+import type { ValueType, NameType } from "recharts/types/component/DefaultTooltipContent";
 
 // ─── 공통 상수 ──────────────────────────────────────────────────────────────
 
@@ -83,7 +84,7 @@ export function WeekendChart({ rows }: WeekendChartProps) {
           <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="var(--border)" />
           <XAxis dataKey="label" fontSize={12} axisLine={false} tickLine={false} tick={{ fontWeight: 600 }} />
           <YAxis hide />
-          <Tooltip formatter={(val: any) => [formatKRW(Math.round(Number(val ?? 0))), "지출"]} contentStyle={{ fontSize: 14, fontWeight: 600 }} />
+          <Tooltip formatter={(val: ValueType | undefined) => [formatKRW(Math.round(Number(val ?? 0))), "지출"]} contentStyle={{ fontSize: 14, fontWeight: 600 }} />
           <Bar dataKey="amount" name="지출" maxBarSize={48} radius={[6, 6, 0, 0]}>
             {rows.map((_, index) => (
               <Cell key={index} fill={index === 0 ? "var(--chart-series-a)" : "var(--chart-series-b)"} />
@@ -123,7 +124,7 @@ export function AssetTreemap({ portfolioTreemapData, portfolioByType }: AssetTre
         dataKey="value"
         nameKey="name"
         stroke="var(--surface)"
-        content={(props: any) => {
+        content={(props: Parameters<typeof AssetTreemapContent>[0]) => {
           const total = portfolioByType.cashTotal + portfolioByType.savingsTotal + portfolioByType.stockTotal;
           const pct = total > 0 && props.value != null ? (Number(props.value) / total) * 100 : 0;
           return <AssetTreemapContent {...props} percent={pct} />;
@@ -203,7 +204,7 @@ export function DividendTrendChart({ rows }: DividendTrendChartProps) {
         <YAxis yAxisId="yield" orientation="right" hide />
         <Legend wrapperStyle={{ fontSize: 12 }} iconSize={8} iconType="circle" />
         <Tooltip
-          formatter={(val: any, name?: string) => {
+          formatter={(val: ValueType | undefined, name?: NameType) => {
             if (name === "주수") return [`${Number(val).toLocaleString()}주`, name];
             if (name === "배당률") return [val == null ? "-" : `${Number(val).toFixed(2)}%`, name];
             return [formatKRW(Math.round(Number(val ?? 0))), name ?? ""];
@@ -299,7 +300,7 @@ export function CategorySpendBarChart({ rows }: CategorySpendBarChartProps) {
         <XAxis type="number" tickFormatter={(v) => `${Math.round(v / 10000)}만`} fontSize={12} axisLine={false} tickLine={false} />
         <YAxis type="category" dataKey="catalog" width={120} fontSize={12} axisLine={false} tickLine={false} tick={{ fontSize: 11 }} />
         <Tooltip
-          formatter={(val: any) => [formatKRW(Math.round(Number(val ?? 0))), "금액"]}
+          formatter={(val: ValueType | undefined) => [formatKRW(Math.round(Number(val ?? 0))), "금액"]}
           contentStyle={{ fontSize: 13, fontWeight: 600, borderRadius: 8, border: "none", boxShadow: "0 4px 12px rgba(0,0,0,0.1)" }}
         />
         <Bar dataKey="amount" name="지출" fill="var(--chart-expense)" maxBarSize={28} radius={[0, 6, 6, 0]} />
@@ -351,7 +352,7 @@ export function DowPatternChart({ rows }: DowPatternChartProps) {
         <XAxis dataKey="label" fontSize={12} axisLine={false} tickLine={false} />
         <YAxis fontSize={12} tickFormatter={(v) => `${Math.round(Number(v) / 1000)}천`} axisLine={false} tickLine={false} width={44} />
         <Tooltip
-          formatter={(val: any) => [formatKRW(Math.round(Number(val ?? 0))), "평균 지출"]}
+          formatter={(val: ValueType | undefined) => [formatKRW(Math.round(Number(val ?? 0))), "평균 지출"]}
           contentStyle={{ fontSize: 13, fontWeight: 600 }}
         />
         <Bar dataKey="avg" name="평균 지출" maxBarSize={44} radius={[6, 6, 0, 0]}>
@@ -384,7 +385,7 @@ export function MonthlySavingsRateChart({ rows }: MonthlySavingsRateChartProps) 
         <YAxis fontSize={12} tickFormatter={(v) => `${Number(v).toFixed(0)}%`} axisLine={false} tickLine={false} width={40} />
         <ReferenceLine y={30} stroke="var(--chart-warning)" strokeDasharray="4 4" strokeWidth={1.5} label={{ value: "30%", fontSize: 10, fill: "var(--chart-warning)", position: "insideTopRight" }} />
         <Tooltip
-          formatter={(val: any) => [val == null ? "-" : `${Number(val).toFixed(1)}%`, "저축률"]}
+          formatter={(val: ValueType | undefined) => [val == null ? "-" : `${Number(val).toFixed(1)}%`, "저축률"]}
           contentStyle={{ fontSize: 13, fontWeight: 600 }}
           labelFormatter={(v) => String(v)}
         />

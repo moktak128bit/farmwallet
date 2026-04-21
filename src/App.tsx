@@ -40,6 +40,7 @@ const SettingsView = lazy(loadSettings);
 const WorkoutView = lazy(loadWorkout);
 const InsightsView = lazy(loadInsights);
 
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
 const TAB_PREFETCH: Record<TabId, () => Promise<{ default: React.ComponentType<any> }>> = {
   dashboard: loadDashboard,
   accounts: loadAccounts,

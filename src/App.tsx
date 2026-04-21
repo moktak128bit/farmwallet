@@ -681,17 +681,14 @@ export const App: React.FC = () => {
               balances={balances}
               trades={data.trades}
               prices={data.prices}
-              customSymbols={data.customSymbols ?? []}
               tickerDatabase={Array.isArray(data.tickerDatabase) ? data.tickerDatabase : []}
-              historicalDailyCloses={data.historicalDailyCloses ?? []}
               highlightTradeId={highlightTradeId}
               onClearHighlightTrade={() => setHighlightTradeId(null)}
-              onChangeTrades={(trades) => setDataWithHistory((prev) => ({ 
-                ...prev, 
-                trades: typeof trades === "function" ? trades(prev.trades) : trades 
+              onChangeTrades={(trades) => setDataWithHistory((prev) => ({
+                ...prev,
+                trades: typeof trades === "function" ? trades(prev.trades) : trades
               }))}
               onChangePrices={(prices) => setDataWithHistory((prev) => ({ ...prev, prices }))}
-              onChangeCustomSymbols={(customSymbols) => setDataWithHistory((prev) => ({ ...prev, customSymbols }))}
               onChangeTickerDatabase={(next) =>
                 setDataWithHistory((prev) => {
                   const current = Array.isArray(prev.tickerDatabase) ? prev.tickerDatabase : [];

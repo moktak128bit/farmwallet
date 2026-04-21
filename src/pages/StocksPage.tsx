@@ -1,5 +1,5 @@
 import React, { lazy, Suspense, useMemo, useState, useCallback, useEffect, useRef } from "react";
-import { Autocomplete, type AutocompleteOption } from "../components/ui/Autocomplete";
+import { Autocomplete } from "../components/ui/Autocomplete";
 import { StockDetailModal } from "../components/StockDetailModal";
 import { FxFormSection } from "../features/stocks/FxFormSection";
 import { FxHistorySection } from "../features/stocks/FxHistorySection";
@@ -15,12 +15,12 @@ const LazyPortfolioChartsSection = lazy(() =>
 const LazyTargetPortfolioSection = lazy(() =>
   import("../features/stocks/TargetPortfolioSection").then((m) => ({ default: m.TargetPortfolioSection }))
 );
-import type { Account, StockPrice, StockTrade, TradeSide, SymbolInfo, TickerInfo, StockPreset, LedgerEntry, TargetPortfolio, AccountBalanceRow, HistoricalDailyClose } from "../types";
+import type { Account, StockPrice, StockTrade, TickerInfo, StockPreset, LedgerEntry, TargetPortfolio, AccountBalanceRow } from "../types";
 import { computePositions } from "../calculations";
-import { fetchYahooQuotes, fetchTickersFromFile, searchYahooSymbol, type YahooQuoteResult } from "../yahooFinanceApi";
+import { fetchYahooQuotes, fetchTickersFromFile } from "../yahooFinanceApi";
 import { fetchCryptoQuotes } from "../coinGeckoApi";
 import { saveTickerToJson } from "../storage";
-import { formatNumber, formatKRW, formatUSD, formatShortDate } from "../utils/formatter";
+import { formatNumber, formatKRW, formatUSD } from "../utils/formatter";
 import {
   isUSDStock,
   isKRWStock,
@@ -29,7 +29,6 @@ import {
   getUniqueTickersFromTrades
 } from "../utils/finance";
 import { shouldUseUsdBalanceMode as shouldUseUsdBalanceModeUtil, computeTradeCashImpact } from "../utils/tradeCashImpact";
-import { getKrNames } from "../storage";
 import { toast } from "react-hot-toast";
 import { validateDate, validateTicker, validateRequired, validateQuantity, validateAmount, validateAccountTickerCurrency } from "../utils/validation";
 import { ERROR_MESSAGES } from "../constants/errorMessages";
@@ -44,12 +43,9 @@ interface Props {
   balances: AccountBalanceRow[];
   trades: StockTrade[];
   prices: StockPrice[];
-  customSymbols: SymbolInfo[];
   tickerDatabase: TickerInfo[];
-  historicalDailyCloses?: HistoricalDailyClose[];
   onChangeTrades: (next: StockTrade[] | ((prev: StockTrade[]) => StockTrade[])) => void;
   onChangePrices: (next: StockPrice[]) => void;
-  onChangeCustomSymbols: (next: SymbolInfo[]) => void;
   onChangeTickerDatabase: (next: TickerInfo[] | ((prev: TickerInfo[]) => TickerInfo[])) => void;
   onLoadInitialTickers: () => Promise<void>;
   isLoadingTickerDatabase: boolean;
@@ -66,48 +62,14 @@ interface Props {
   onClearHighlightTrade?: () => void;
 }
 
-const sideLabel: Record<TradeSide, string> = {
-  buy: "매수",
-  sell: "매도"
-};
-
-
-type PositionSortKey =
-  | "ticker"
-  | "name"
-  | "quantity"
-  | "avgPrice"
-  | "marketPrice"
-  | "diff"
-  | "marketValue"
-  | "totalBuyAmount"
-  | "pnl"
-  | "pnlRate";
-
-type TradeSortKey =
-  | "date"
-  | "accountId"
-  | "ticker"
-  | "name"
-  | "side"
-  | "quantity"
-  | "price"
-  | "fee"
-  | "totalAmount"
-  | "cashImpact";
-
-
 export const StocksView: React.FC<Props> = ({
   accounts,
   balances,
   trades,
   prices,
-  customSymbols,
   tickerDatabase,
-  historicalDailyCloses = [],
   onChangeTrades,
   onChangePrices,
-  onChangeCustomSymbols,
   onChangeTickerDatabase,
   onLoadInitialTickers,
   isLoadingTickerDatabase,
@@ -125,7 +87,6 @@ export const StocksView: React.FC<Props> = ({
 }) => {
   const [tradeForm, setTradeForm] = useState(createDefaultTradeForm);
   const [showPresetModal, setShowPresetModal] = useState(false);
-  const [showAdvancedOptions, setShowAdvancedOptions] = useState(false);
   const [isLoadingQuotes, setIsLoadingQuotes] = useState(false);
   /** 에러 시 「다시 시도」에 사용 */
   const lastQuoteRefreshModeRef = useRef<"holdings" | "full" | null>(null);
@@ -151,38 +112,8 @@ export const StocksView: React.FC<Props> = ({
   }, [propFxRate]);
   // 탭 관리
   const [activeTab, setActiveTab] = useState<"stocks" | "portfolio" | "fx">("stocks");
-  const [activeQuoteMarket, setActiveQuoteMarket] = useState<"korea" | "us">("korea");
-  const [recentTickers, setRecentTickers] = useState<Array<{ ticker: string; name?: string }>>([]);
-  const [favoriteTickers, setFavoriteTickers] = useState<Array<{ ticker: string; name?: string }>>([]);
-  const [symbolForm, setSymbolForm] = useState<{ ticker: string; name: string }>({ ticker: "", name: "" });
-  const [isUpdatingLibrary, setIsUpdatingLibrary] = useState(false);
-  const [dcaForm, setDcaForm] = useState<{ accountId: string; ticker: string; amount: string }>({
-    accountId: "",
-    ticker: "",
-    amount: ""
-  });
-  const [isLoadingDca, setIsLoadingDca] = useState(false);
-  const [dcaMessage, setDcaMessage] = useState<string | null>(null);
-  const [buyingPlanId, setBuyingPlanId] = useState<string | null>(null);
-  const [isBuyingAll, setIsBuyingAll] = useState(false);
   const [tickerSuggestions, setTickerSuggestions] = useState<TickerInfo[]>([]);
   // showTickerSuggestions 상태 제거 (Autocomplete 내부에서 처리)
-  const [positionSort, setPositionSort] = useState<{ key: PositionSortKey; direction: "asc" | "desc" }>({
-    key: "ticker",
-    direction: "asc"
-  });
-  const [dcaPlans, setDcaPlans] = useState<
-    Array<{
-      id: string;
-      accountId: string;
-      ticker: string;
-      amount: number;
-      fee?: number;
-      startDate: string;
-      lastRunDate?: string;
-      active: boolean;
-    }>
-  >([]);
   const [tickerInfo, setTickerInfo] = useState<{
     ticker: string;
     name?: string;
@@ -193,10 +124,6 @@ export const StocksView: React.FC<Props> = ({
   const [quoteSearchSuggestions, setQuoteSearchSuggestions] = useState<TickerInfo[]>([]);
   // showQuoteSearchSuggestions 상태 제거 (Autocomplete 내부에서 처리)
   const [isSearchingQuote, setIsSearchingQuote] = useState(false);
-  const [isSearchingTradeFormQuote, setIsSearchingTradeFormQuote] = useState(false);
-  const [quickFilter, setQuickFilter] = useState<"pnl" | "volatility" | "sector">("pnl");
-  const [simpleSearch, setSimpleSearch] = useState("");
-  const [justUpdatedTickers, setJustUpdatedTickers] = useState<string[]>([]);
   const [selectedPosition, setSelectedPosition] = useState<PositionWithPrice | null>(null);
 
   // 티커 검색 함수
@@ -240,9 +167,8 @@ export const StocksView: React.FC<Props> = ({
     // debounce: 500ms 후에 시세 조회
     const timer = setTimeout(async () => {
       // 제안 목록이 비어있을 때만 자동 조회 (사용자가 타이핑 중이 아닐 때)
-      if (tickerSuggestions.length > 0) return; 
-      
-      setIsSearchingTradeFormQuote(true);
+      if (tickerSuggestions.length > 0) return;
+
       try {
         const exchangeMap =
           tradeForm.exchange && (tradeForm.exchange === "KOSPI" || tradeForm.exchange === "KOSDAQ")
@@ -269,8 +195,6 @@ export const StocksView: React.FC<Props> = ({
         }
       } catch (err) {
         console.warn("거래 입력 폼 시세 자동 조회 실패:", err);
-      } finally {
-        setIsSearchingTradeFormQuote(false);
       }
     }, 500);
 
@@ -390,103 +314,6 @@ export const StocksView: React.FC<Props> = ({
     };
   }, [positionsWithPrice, latestPriceByCanonicalTicker, fxRate]);
 
-  const getPriceInfoForDca = useCallback(
-    (ticker: string) => {
-      const symbol = canonicalTickerForMatch(ticker);
-      const original = latestPriceByCanonicalTicker.get(symbol ?? "");
-      const priceKRW =
-        original?.price != null
-          ? original.currency === "USD" && fxRate ? original.price * fxRate : original.price
-          : 0;
-      const name =
-        (original?.name ||
-          trades.find((t) => canonicalTickerForMatch(t.ticker) === symbol)?.name ||
-          symbol) ?? "";
-      return {
-        priceKRW,
-        name,
-        currency: original?.currency,
-        originalPrice: original?.price ?? 0
-      };
-    },
-    [latestPriceByCanonicalTicker, fxRate, trades]
-  );
-
-  const dcaCalc = useMemo(() => {
-    try {
-      const amount = Number(dcaForm.amount);
-      const symbol = canonicalTickerForMatch(dcaForm.ticker.trim());
-      if (!amount || amount <= 0 || !symbol) return null;
-      const info = getPriceInfoForDca(symbol);
-      const price = info.priceKRW;
-      const market = getMarketStatus(symbol, info.currency);
-      if (!price || price <= 0) {
-        return { symbol, ...info, price: 0, amount, shares: 0, estimatedCost: 0, remainder: amount, market };
-      }
-      const shares = amount / price;
-      const estimatedCost = shares * price;
-      const remainder = amount - estimatedCost;
-      return {
-        symbol,
-        ...info,
-        price,
-        amount,
-        shares,
-        estimatedCost,
-        remainder,
-        market
-      };
-    } catch (err) {
-      console.error("DCA 계산 오류:", err);
-      return null;
-    }
-  }, [dcaForm, getPriceInfoForDca]);
-
-  const persistDcaPlans = (next: typeof dcaPlans) => {
-    setDcaPlans(next);
-    try {
-      localStorage.setItem("fw-dca-plans", JSON.stringify(next));
-    } catch {
-      //
-    }
-  };
-
-  const toggleDcaPlan = (id: string) => {
-    const next = dcaPlans.map((p) => (p.id === id ? { ...p, active: !p.active } : p));
-    persistDcaPlans(next);
-  };
-
-  const deleteDcaPlan = (id: string) => {
-    const next = dcaPlans.filter((p) => p.id !== id);
-    persistDcaPlans(next);
-  };
-
-  const topHoldings = useMemo(
-    () => [...positionsWithPrice].sort((a, b) => b.marketValue - a.marketValue).slice(0, 3),
-    [positionsWithPrice]
-  );
-
-  const getVolatilityScore = (ticker: string) => {
-    const priceInfo = prices.find((p) => p.ticker === ticker);
-    return Math.abs(priceInfo?.changePercent ?? 0);
-  };
-
-  const filteredPositions = useMemo(() => {
-    const q = simpleSearch.trim().toLowerCase();
-    const sorted = [...positionsWithPrice].sort((a, b) => {
-      if (quickFilter === "pnl") return b.pnlRate - a.pnlRate;
-      if (quickFilter === "volatility") return getVolatilityScore(b.ticker) - getVolatilityScore(a.ticker);
-      return String(a.currency ?? "").localeCompare(String(b.currency ?? "")) || a.ticker.localeCompare(b.ticker);
-    });
-    const filtered = q
-      ? sorted.filter((p) => {
-          const name = (p.name || "").toLowerCase();
-          return p.ticker.toLowerCase().includes(q) || name.includes(q);
-        })
-      : sorted;
-    return filtered.slice(0, 8);
-  }, [positionsWithPrice, quickFilter, simpleSearch, prices]);
-
   const totalReturnRate = useMemo(
     () => (totals.totalCost ? totals.totalPnl / totals.totalCost : 0),
     [totals]
@@ -503,56 +330,8 @@ export const StocksView: React.FC<Props> = ({
     return ledger.filter(isDividend).reduce((s, l) => s + toKrw(l), 0);
   }, [ledger, fxRate]);
 
-  type PositionSortKey =
-    | "ticker"
-    | "name"
-    | "quantity"
-    | "avgPrice"
-    | "marketPrice"
-    | "diff"
-    | "marketValue"
-    | "totalBuyAmount"
-    | "pnl"
-    | "pnlRate";
 
-  type TradeSortKey =
-    | "date"
-    | "accountId"
-    | "ticker"
-    | "name"
-    | "side"
-    | "quantity"
-    | "price"
-    | "fee"
-    | "totalAmount"
-    | "cashImpact";
-
-  const sortPositions = (rows: PositionWithPrice[]) => {
-    const dir = positionSort.direction === "asc" ? 1 : -1;
-    return [...rows].sort((a, b) => {
-      const key = positionSort.key;
-      const va = (a as any)[key] ?? 0;
-      const vb = (b as any)[key] ?? 0;
-      if (typeof va === "string" || typeof vb === "string") {
-        return String(va).localeCompare(String(vb)) * dir;
-      }
-      return (va - vb) * dir;
-    });
-  };
-
-  const togglePositionSort = (key: PositionSortKey) => {
-    setPositionSort((prev) => ({
-      key,
-      direction: prev.key === key && prev.direction === "asc" ? "desc" : "asc"
-    }));
-  };
-
-  const sortIndicator = (activeKey: string, key: string, direction: "asc" | "desc") => {
-    if (activeKey !== key) return "↕";
-    return direction === "asc" ? "↑" : "↓";
-  };
-
-  const updateFxRate = async () => {
+  const updateFxRate = useCallback(async () => {
     try {
       const res = await fetchYahooQuotes(["USDKRW=X"]);
       const r = res[0];
@@ -563,7 +342,7 @@ export const StocksView: React.FC<Props> = ({
     } catch (err) {
       console.warn("환율 조회 실패", err);
     }
-  };
+  }, []);
 
   // (removed) "기존 달러 거래 cashImpact 원화 재계산" 자동 effect.
   // 현재 환율(fxRate)로 과거 거래를 재계산해 사용자의 역사적 환율 기록(fxRateAtTrade)을
@@ -573,20 +352,7 @@ export const StocksView: React.FC<Props> = ({
     updateFxRate().catch((err) => {
       console.warn("환율 갱신 실패:", err);
     });
-    try {
-      const recentRaw = localStorage.getItem("fw-recent-tickers");
-      if (recentRaw) setRecentTickers(JSON.parse(recentRaw));
-      const favRaw = localStorage.getItem("fw-fav-tickers");
-      if (favRaw) setFavoriteTickers(JSON.parse(favRaw));
-      const plansRaw = localStorage.getItem("fw-dca-plans");
-      if (plansRaw) {
-        const parsed = JSON.parse(plansRaw) as typeof dcaPlans;
-        setDcaPlans(parsed);
-      }
-    } catch {
-      // ignore
-    }
-  }, []);
+  }, [updateFxRate]);
 
 
   const formatPriceWithCurrency = (value: number, currency?: string, ticker?: string) => {
@@ -598,32 +364,6 @@ export const StocksView: React.FC<Props> = ({
     }
     // 한국 종목은 원화로 표시
     return formatKRW(value);
-  };
-
-  const getMarketStatus = (ticker: string, currency?: string) => {
-    const isKorea = ticker ? isKRWStock(ticker) : (currency === "KRW");
-    const zone = isKorea ? "Asia/Seoul" : "America/New_York";
-    const label = isKorea ? "한국장" : "미국장";
-    const now = new Date();
-    const zoned = new Date(now.toLocaleString("en-US", { timeZone: zone }));
-    const day = zoned.getDay(); // 0=일,6=토
-    const hour = zoned.getHours();
-    const minute = zoned.getMinutes();
-    const isWeekend = day === 0 || day === 6;
-    let isOpen = false;
-    if (!isWeekend) {
-      if (isKorea) {
-        // 09:00~15:30 KST
-        isOpen = (hour > 9 || (hour === 9 && minute >= 0)) && (hour < 15 || (hour === 15 && minute <= 30));
-      } else {
-        // 09:30~16:00 ET
-        isOpen =
-          (hour > 9 || (hour === 9 && minute >= 30)) &&
-          (hour < 16);
-      }
-    }
-    const session = isKorea ? "09:00~15:30 KST" : "09:30~16:00 ET";
-    return { isOpen, label: `${label} ${isOpen ? "개장" : "폐장"}`, session };
   };
 
   // 시세 갱신 대상: 거래 내역(trades)에 실제로 등장한 티커만 (중복 제거·정규화)
@@ -648,66 +388,6 @@ export const StocksView: React.FC<Props> = ({
     };
     return uniqueTickers.filter((t) => isHoldingsCrypto(t)).map((t) => t.toLowerCase());
   }, [uniqueTickers, tickerDatabase]);
-
-  const koreanQuotes = useMemo(
-    () => prices.filter((p) => p.currency === "KRW" && !isCryptoStock(p.ticker)),
-    [prices]
-  );
-  const usQuotes = useMemo(() => prices.filter((p) => p.currency === "USD"), [prices]);
-  const cryptoQuotes = useMemo(() => prices.filter((p) => isCryptoStock(p.ticker)), [prices]);
-
-  const renderQuoteTable = (items: StockPrice[], marketLabel: string) => (
-    <table className="data-table">
-      <colgroup>
-        <col style={{ width: "12%" }} />
-        <col style={{ width: "18%" }} />
-        <col style={{ width: "15%" }} />
-        <col style={{ width: "15%" }} />
-        <col style={{ width: "12%" }} />
-        <col style={{ width: "18%" }} />
-      </colgroup>
-      <thead>
-        <tr>
-          <th>티커</th>
-          <th>종목명</th>
-          <th>현재가</th>
-          <th>변동</th>
-          <th>변동률</th>
-          <th>업데이트</th>
-        </tr>
-      </thead>
-      <tbody>
-        {items.length === 0 ? (
-          <tr>
-            <td colSpan={6} style={{ textAlign: "center" }}>
-              {marketLabel} 시세가 없습니다. 티커를 등록하고 시세 갱신 버튼을 눌러보세요.
-            </td>
-          </tr>
-        ) : (
-          items.map((item) => {
-            const changeClass =
-              item.change == null ? "" : item.change >= 0 ? "positive" : "negative";
-            const changePercentClass =
-              item.changePercent == null ? "" : item.changePercent >= 0 ? "positive" : "negative";
-            return (
-              <tr key={item.ticker}>
-                <td>{item.ticker}</td>
-                <td>{item.name ?? "-"}</td>
-                <td className="number">{formatPriceWithCurrency(item.price ?? 0, item.currency, item.ticker)}</td>
-                <td className={`number ${changeClass}`}>
-                  {item.change != null ? formatPriceWithCurrency(item.change, item.currency, item.ticker) : "-"}
-                </td>
-                <td className={`number ${changePercentClass}`}>
-                  {item.changePercent != null ? `${item.changePercent.toFixed(2)}%` : "-"}
-                </td>
-                <td>{item.updatedAt ? new Date(item.updatedAt).toLocaleString("ko-KR") : "-"}</td>
-              </tr>
-            );
-          })
-        )}
-      </tbody>
-    </table>
-  );
 
   const mergeQuoteResultsIntoPrices = useCallback(
     (
@@ -795,7 +475,7 @@ export const StocksView: React.FC<Props> = ({
         onLog?.(`[시작] ${logLabel} — ${totalSymbols}개 티커`, "info");
 
         const allResults: StockPrice[] = [];
-        let failedTickers: string[] = [];
+        const failedTickers: string[] = [];
 
         const exchangeMap: Record<string, string> = {};
         for (const t of tickerDatabase) {
@@ -904,12 +584,6 @@ export const StocksView: React.FC<Props> = ({
             .sort()
             .at(-1) ?? new Date().toISOString();
         setYahooUpdatedAt(latestUpdatedAt);
-        if (mode === "holdings") {
-          setJustUpdatedTickers(allResults.map((r) => r.ticker));
-          if (typeof window !== "undefined") {
-            window.setTimeout(() => setJustUpdatedTickers([]), 500);
-          }
-        }
 
         const successCount = allResults.filter((r) => r.price != null && Number.isFinite(r.price)).length;
         const successMsg =
@@ -935,6 +609,7 @@ export const StocksView: React.FC<Props> = ({
       onLog,
       prices,
       tickerDatabase,
+      fxRate,
       updateFxRate
     ]
   );
@@ -1084,45 +759,6 @@ export const StocksView: React.FC<Props> = ({
     }
   };
 
-  const addRecentTicker = (ticker: string, name?: string) => {
-    setRecentTickers((prev) => {
-      const filtered = prev.filter((i) => i.ticker !== ticker);
-      const next = [{ ticker, name }, ...filtered].slice(0, 8);
-      try {
-        localStorage.setItem("fw-recent-tickers", JSON.stringify(next));
-      } catch {
-        //
-      }
-      return next;
-    });
-  };
-
-  const toggleFavorite = (ticker: string, name?: string) => {
-    setFavoriteTickers((prev) => {
-      const exists = prev.some((i) => i.ticker === ticker);
-      const next = exists ? prev.filter((i) => i.ticker !== ticker) : [{ ticker, name }, ...prev].slice(0, 12);
-      try {
-        localStorage.setItem("fw-fav-tickers", JSON.stringify(next));
-      } catch {
-        //
-      }
-      return next;
-    });
-  };
-
-  const quickPrefillTrade = (ticker: string, name?: string, side: TradeSide = "buy") => {
-    // 탭 기능 제거됨
-    setTradeForm((prev) => ({
-      ...prev,
-      ticker,
-      name: name || prev.name || ticker,
-      side,
-      quantity: "",
-      price: "",
-      fee: prev.fee
-    }));
-  };
-
   const handlePositionClick = (p: PositionWithPrice) => {
     // 보유 종목 클릭 시 종목 상세 모달 열기
     setSelectedPosition(p);
@@ -1206,89 +842,6 @@ export const StocksView: React.FC<Props> = ({
     }, 100);
   };
 
-  const handleRefreshSymbolLibrary = async () => {
-    const tradeTickers = getUniqueTickersFromTrades(trades);
-    if (tradeTickers.length === 0) {
-      setQuoteError("거래 내역에 티커가 없습니다. 먼저 거래를 추가하세요.");
-      return;
-    }
-    const stockSymbols = tradeTickers.filter((t) => !isCryptoStock(t)).map((t) => t.toUpperCase());
-    const cryptoSymbols = tradeTickers.filter((t) => isCryptoStock(t)).map((t) => t.toLowerCase());
-    try {
-      setIsUpdatingLibrary(true);
-      setQuoteError(null);
-
-      const exchangeMap: Record<string, string> = {};
-      for (const t of tickerDatabase) {
-        const key = canonicalTickerForMatch(t.ticker);
-        if (key && (t.exchange === "KOSPI" || t.exchange === "KOSDAQ")) exchangeMap[key] = t.exchange;
-      }
-
-      const allResults: YahooQuoteResult[] = [];
-
-      if (stockSymbols.length > 0) {
-        const stockRes = await fetchYahooQuotes(stockSymbols, {
-          exchangeMap: Object.keys(exchangeMap).length ? exchangeMap : undefined
-        });
-        allResults.push(...stockRes);
-      }
-      if (cryptoSymbols.length > 0) {
-        const cryptoRes = await fetchCryptoQuotes(cryptoSymbols, fxRate ?? undefined);
-        for (const c of cryptoRes) {
-          allResults.push({
-            ticker: c.ticker,
-            name: c.symbol,
-            price: c.priceKrw,
-            currency: "KRW",
-            changePercent: c.changePercent24h,
-            updatedAt: c.updatedAt
-          });
-        }
-      }
-
-      const updatedPrices: StockPrice[] = [...prices];
-      let updatedCustom = [...customSymbols];
-
-      for (const r of allResults) {
-        if (r.ticker === "USDKRW=X") continue;
-        const name = displayNameForTicker(r.ticker, r.name ?? undefined) || r.name || r.ticker;
-        const key = canonicalTickerForMatch(r.ticker);
-        const idx = updatedPrices.findIndex((p) => canonicalTickerForMatch(p.ticker) === key);
-        const item: StockPrice = {
-          ticker: r.ticker,
-          name,
-          price: r.price,
-          currency: r.currency,
-          change: r.change,
-          changePercent: r.changePercent,
-          updatedAt: r.updatedAt
-        };
-        if (idx >= 0) {
-          updatedPrices[idx] = { ...updatedPrices[idx], ...item };
-        } else {
-          updatedPrices.push(item);
-        }
-
-        const customKey = (x: string) => canonicalTickerForMatch(x);
-        if (!updatedCustom.some((c) => customKey(c.ticker) === key)) {
-          updatedCustom = [{ ticker: r.ticker, name }, ...updatedCustom].slice(0, 150);
-        } else {
-          updatedCustom = updatedCustom.map((c) =>
-            customKey(c.ticker) === key ? { ...c, name: c.name || name || c.ticker } : c
-          );
-        }
-      }
-      onChangePrices(updatedPrices);
-      onChangeCustomSymbols(updatedCustom);
-    } catch (err) {
-      console.error(err);
-      setQuoteError("심볼 라이브러리 업데이트 중 오류가 발생했습니다.");
-    } finally {
-      setIsUpdatingLibrary(false);
-    }
-  };
-
-
   const positionsByAccount = useMemo(() => {
     const map = new Map<
       string,
@@ -1348,11 +901,6 @@ export const StocksView: React.FC<Props> = ({
     localStorage.setItem("fw-account-order", JSON.stringify(next));
   };
 
-
-  const recentTrades = useMemo(
-    () => [...trades].sort((a, b) => (a.date < b.date ? 1 : -1)).slice(0, 4),
-    [trades]
-  );
 
   // 거래 폼 검증
   const tradeFormValidation = useMemo(() => {
@@ -1463,8 +1011,8 @@ export const StocksView: React.FC<Props> = ({
     let fee = Number(tradeForm.fee || "0");
     const priceKRWEarly = Number(tradeForm.priceKRW ?? 0);
     const isUSDTicker = isUSDStock(tickerClean);
-    let accountId = tradeForm.accountId || (trades.length > 0 ? trades[trades.length - 1].accountId : accounts.filter((a) => a.type === "securities" || a.type === "crypto")[0]?.id || "");
-    let date = tradeForm.date || new Date().toISOString().slice(0, 10);
+    const accountId = tradeForm.accountId || (trades.length > 0 ? trades[trades.length - 1].accountId : accounts.filter((a) => a.type === "securities" || a.type === "crypto")[0]?.id || "");
+    const date = tradeForm.date || new Date().toISOString().slice(0, 10);
     const hasAnyPrice = price > 0 || (isUSDTicker && priceKRWEarly > 0);
     if (!date || !accountId || !tickerClean || !quantity || !hasAnyPrice) {
       if (!hasAnyPrice) toast.error(ERROR_MESSAGES.QUOTE_UNAVAILABLE);
@@ -1638,434 +1186,22 @@ export const StocksView: React.FC<Props> = ({
     tradeForm,
     trades,
     accounts,
-    prices,
     fxRate,
     tickerDatabase,
     isTradeFormValid,
     tradeFormValidation,
     shouldUseUsdBalanceMode,
+    latestPriceByCanonicalTicker,
     onChangeTrades,
     onChangeAccounts,
     onChangeTickerDatabase,
-    onLog,
-    createDefaultTradeForm
+    onLog
   ]);
 
   const handleTradeSubmit = (e: React.FormEvent) => {
     e.preventDefault();
     submitTradeFromForm();
   };
-
-  const handleDcaFetchPrice = async () => {
-    const symbol = canonicalTickerForMatch(dcaForm.ticker.trim().toUpperCase());
-    if (!symbol) return;
-    try {
-      setIsLoadingDca(true);
-      setDcaMessage(null);
-      // 티커와 환율을 함께 조회
-      const results = await fetchYahooQuotes([symbol, "USDKRW=X"]);
-      if (!results.length) {
-        setDcaMessage("해당 티커로 시세를 찾지 못했습니다.");
-        return;
-      }
-      
-      // 환율 업데이트
-      const fxQuote = results.find((q) => q.ticker === "USDKRW=X");
-      if (fxQuote) {
-        setFxRate(fxQuote.price);
-      }
-      
-      // 티커 시세 찾기
-      const r = results.find((q) => q.ticker === symbol);
-      if (!r) {
-        setDcaMessage("해당 티커로 시세를 찾지 못했습니다.");
-        return;
-      }
-      
-      const preferredName = displayNameForTicker(
-        symbol,
-        r.name || trades.find((t) => t.ticker === symbol)?.name || undefined
-      ) || symbol;
-      const next: StockPrice[] = [...prices];
-      const idx = next.findIndex((p) => p.ticker === symbol);
-      const item: StockPrice = {
-        ticker: symbol,
-        name: preferredName,
-        price: r.price,
-        currency: r.currency,
-        change: r.change,
-        changePercent: r.changePercent,
-        updatedAt: r.updatedAt
-      };
-      if (idx >= 0) {
-        next[idx] = { ...next[idx], ...item };
-      } else {
-        next.push(item);
-      }
-      onChangePrices(next);
-      setDcaForm((prev) => ({ ...prev, ticker: symbol }));
-      // 시세 불러오기 성공 메시지
-      const priceDisplay = r.currency === "USD" 
-        ? `${formatUSD(r.price)} USD${fxQuote ? ` (약 ${formatKRW(Math.round(r.price * fxQuote.price))})` : ""}`
-        : formatKRW(Math.round(r.price));
-      setDcaMessage(`시세 불러오기 완료: ${priceDisplay}`);
-      
-      // 약간의 지연 후 메시지 제거 (시세가 표시되는지 확인할 수 있도록)
-      setTimeout(() => {
-        setDcaMessage(null);
-      }, 2000);
-    } catch (err) {
-      console.error("DCA 시세 조회 오류:", err);
-      setDcaMessage("DCA용 시세 조회 중 오류가 발생했습니다.");
-    } finally {
-      setIsLoadingDca(false);
-    }
-  };
-
-  const handleDcaSubmit = () => {
-    const symbol = canonicalTickerForMatch(dcaForm.ticker.trim().toUpperCase());
-    const amount = Number(dcaForm.amount);
-    if (!symbol || !amount || amount <= 0 || !dcaForm.accountId) {
-      setDcaMessage("계좌, 티커, 금액을 모두 입력하세요.");
-      return;
-    }
-
-    // 다음날 날짜 계산
-    const tomorrow = new Date();
-    tomorrow.setDate(tomorrow.getDate() + 1);
-    const startDate = tomorrow.toISOString().slice(0, 10);
-
-    // DCA 플랜 생성 (다음날부터 자동 실행)
-    const plan = {
-      id: `PLAN-${Date.now()}`,
-      accountId: dcaForm.accountId,
-      ticker: symbol,
-      amount,
-      fee: 0,
-      startDate,
-      active: true,
-      lastRunDate: undefined
-    };
-    const nextPlans = [plan, ...dcaPlans];
-    persistDcaPlans(nextPlans);
-    
-    const isUSD = isUSDStock(symbol);
-    setDcaMessage(`DCA 플랜 등록 완료: ${symbol} 매일 ${isUSD ? formatUSD(amount) : formatKRW(Math.round(amount))} (${startDate}부터 시작)`);
-    setDcaForm((prev) => ({
-      accountId: prev.accountId,
-      ticker: "",
-      amount: ""
-    }));
-  };
-
-  // DCA 플랜으로 지금 매수
-  const handleDcaBuyNow = async (plan: typeof dcaPlans[0]) => {
-    const today = new Date().toISOString().slice(0, 10);
-    setBuyingPlanId(plan.id);
-    setDcaMessage(null);
-
-    try {
-      // API로 현재 가격과 환율 조회
-      const quotes = await fetchYahooQuotes([plan.ticker, "USDKRW=X"]);
-      const fx = quotes.find((q) => q.ticker === "USDKRW=X")?.price;
-      if (fx) setFxRate(fx);
-      
-      const quote = quotes.find((q) => q.ticker.toUpperCase() === plan.ticker.toUpperCase());
-      if (!quote || !quote.price || quote.price <= 0) {
-        setDcaMessage("시세를 조회할 수 없습니다. 티커를 확인해주세요.");
-        setBuyingPlanId(null);
-        return;
-      }
-
-      // 선택된 계좌 확인
-      const selectedAccount = accounts.find((a) => a.id === plan.accountId);
-      if (!selectedAccount) {
-        setDcaMessage(ERROR_MESSAGES.ACCOUNT_NOT_FOUND);
-        setBuyingPlanId(null);
-        return;
-      }
-
-      const currencyValidation = validateAccountTickerCurrency(selectedAccount, plan.ticker, quote);
-      if (!currencyValidation.valid) {
-        setDcaMessage(currencyValidation.error ?? "");
-        setBuyingPlanId(null);
-        return;
-      }
-      const tickerIsUSD = isUSDStock(plan.ticker);
-      const currency = quote.currency || (tickerIsUSD ? "USD" : "KRW");
-
-      const effectiveFx = fx && fx > 0 ? fx : (fxRate && fxRate > 0 ? fxRate : DEFAULT_FX_RATE);
-      const quotePrice = quote.price;
-      const priceInPlanCurrency = currency === "USD" ? quotePrice * effectiveFx : quotePrice;
-
-      // 매수 수량 계산 (plan.amount는 KRW 예산)
-      const shares = plan.amount / priceInPlanCurrency;
-      const quantity = Number(shares.toFixed(6));
-      const feeInput = plan.fee ?? 0;
-      const feeInTradeCurrency = currency === "USD" ? feeInput / effectiveFx : feeInput;
-      const totalAmount = quantity * quotePrice;
-      const finalAmount = totalAmount + feeInTradeCurrency;
-      const totalAmountKRW = currency === "USD" ? finalAmount * effectiveFx : finalAmount;
-      const useUsdBalanceMode = shouldUseUsdBalanceMode(
-        plan.accountId,
-        selectedAccount.type === "securities" || selectedAccount.type === "crypto",
-        currency === "USD"
-      );
-      const cashImpact = computeTradeCashImpact("buy", totalAmountKRW, useUsdBalanceMode);
-
-      // 매수 기록 생성
-      const trade: StockTrade = {
-        id: `DCA-${plan.id}-${today}-${Math.random().toString(36).substr(2, 9)}`,
-        date: today,
-        accountId: plan.accountId,
-        ticker: plan.ticker,
-        name: quote.name ?? plan.ticker,
-        side: "buy",
-        quantity,
-        price: quotePrice,
-        fee: feeInTradeCurrency,
-        totalAmount: finalAmount,
-        cashImpact,
-        fxRateAtTrade: currency === "USD" ? effectiveFx : undefined
-      };
-
-      // 거래 기록 추가
-      onChangeTrades([trade, ...trades]);
-
-      // 평가액 계산 (현재 가격 기준)
-      const marketValue = quantity * quotePrice;
-      const profit = marketValue - finalAmount;
-      const profitRate = finalAmount > 0 ? (profit / finalAmount) * 100 : 0;
-      
-      const tickerIsUSDForFormat = isUSDStock(plan.ticker);
-      const formatAmount = tickerIsUSDForFormat ? (v: number) => formatUSD(v) : (v: number) => formatKRW(Math.round(v));
-
-      setDcaMessage(
-        `매수 완료: ${quantity.toFixed(6)}주, 매수액 ${formatAmount(finalAmount)}, ` +
-        `평가액 ${formatAmount(marketValue)} ` +
-        `(${profit >= 0 ? '+' : ''}${formatAmount(profit)}, ${profitRate >= 0 ? '+' : ''}${profitRate.toFixed(2)}%)`
-      );
-
-      // 플랜의 마지막 실행 날짜 업데이트
-      const updatedPlans = dcaPlans.map((p) =>
-        p.id === plan.id ? { ...p, lastRunDate: today } : p
-      );
-      persistDcaPlans(updatedPlans);
-    } catch (err) {
-      console.error("DCA 지금 매수 오류:", err);
-      setDcaMessage("DCA 지금 매수 중 오류가 발생했습니다.");
-    } finally {
-      setBuyingPlanId(null);
-    }
-  };
-
-  // 모든 활성화된 DCA 플랜 전체 매수
-  const handleDcaBuyAll = async () => {
-    const today = new Date().toISOString().slice(0, 10);
-    const activePlans = dcaPlans.filter((p) => p.active);
-    
-    if (activePlans.length === 0) {
-      setDcaMessage("활성화된 DCA 플랜이 없습니다.");
-      return;
-    }
-
-    setIsBuyingAll(true);
-    setDcaMessage(null);
-
-    try {
-      // 모든 티커의 가격과 환율 조회
-      const tickers = Array.from(new Set(activePlans.map((p) => p.ticker.toUpperCase())));
-      const quotes = await fetchYahooQuotes([...tickers, "USDKRW=X"]);
-      const fx = quotes.find((q) => q.ticker === "USDKRW=X")?.price;
-      if (fx) setFxRate(fx);
-
-      const quoteMap = new Map(quotes.map((q) => [q.ticker.toUpperCase(), q]));
-      const newTrades: StockTrade[] = [];
-      const updatedPlans = [...dcaPlans];
-      let successCount = 0;
-      let failCount = 0;
-      const failMessages: string[] = [];
-
-      for (const plan of activePlans) {
-        try {
-          const q = quoteMap.get(plan.ticker.toUpperCase());
-          if (!q || !q.price || q.price <= 0) {
-            failCount++;
-            failMessages.push(`${plan.ticker}: 시세 조회 실패`);
-            continue;
-          }
-
-          // 선택된 계좌 확인
-          const selectedAccount = accounts.find((a) => a.id === plan.accountId);
-          if (!selectedAccount) {
-            failCount++;
-            failMessages.push(`${plan.ticker}: ${ERROR_MESSAGES.ACCOUNT_NOT_FOUND}`);
-            continue;
-          }
-
-          const currencyValidation = validateAccountTickerCurrency(selectedAccount, plan.ticker, q);
-          if (!currencyValidation.valid) {
-            failCount++;
-            failMessages.push(`${plan.ticker}: ${currencyValidation.error ?? ""}`);
-            continue;
-          }
-          const isUSD = isUSDStock(plan.ticker);
-          const currency = q.currency || (isUSD ? "USD" : "KRW");
-
-      const effectiveFx = fx && fx > 0 ? fx : (fxRate && fxRate > 0 ? fxRate : DEFAULT_FX_RATE);
-      const quotePrice = q.price;
-      const priceInPlanCurrency = currency === "USD" ? quotePrice * effectiveFx : quotePrice;
-
-      // 매수 수량 계산 (plan.amount는 KRW 예산)
-      const shares = plan.amount / priceInPlanCurrency;
-          const quantity = Number(shares.toFixed(6));
-      const feeInput = plan.fee ?? 0;
-      const feeInTradeCurrency = currency === "USD" ? feeInput / effectiveFx : feeInput;
-      const totalAmount = quantity * quotePrice;
-      const finalAmount = totalAmount + feeInTradeCurrency;
-      const totalAmountKRW = currency === "USD" ? finalAmount * effectiveFx : finalAmount;
-      const useUsdBalanceMode = shouldUseUsdBalanceMode(
-        plan.accountId,
-        selectedAccount.type === "securities" || selectedAccount.type === "crypto",
-        currency === "USD"
-      );
-      const cashImpact = computeTradeCashImpact("buy", totalAmountKRW, useUsdBalanceMode);
-
-          // 매수 기록 생성
-          const trade: StockTrade = {
-            id: `DCA-${plan.id}-${today}-${Math.random().toString(36).substr(2, 9)}`,
-            date: today,
-            accountId: plan.accountId,
-            ticker: plan.ticker,
-            name: q.name ?? plan.ticker,
-            side: "buy",
-            quantity,
-            price: quotePrice,
-            fee: feeInTradeCurrency,
-            totalAmount: finalAmount,
-            cashImpact,
-            fxRateAtTrade: currency === "USD" ? effectiveFx : undefined
-          };
-
-          newTrades.push(trade);
-          successCount++;
-
-          // 플랜의 마지막 실행 날짜 업데이트
-          const planIndex = updatedPlans.findIndex((p) => p.id === plan.id);
-          if (planIndex >= 0) {
-            updatedPlans[planIndex] = { ...updatedPlans[planIndex], lastRunDate: today };
-          }
-        } catch (err) {
-          console.error(`DCA 플랜 ${plan.id} 매수 오류:`, err);
-          failCount++;
-          failMessages.push(`${plan.ticker}: 오류 발생`);
-        }
-      }
-
-      // 거래 기록 추가
-      if (newTrades.length > 0) {
-        onChangeTrades([...newTrades, ...trades]);
-        persistDcaPlans(updatedPlans);
-      }
-
-      // 결과 메시지
-      let message = `전체 매수 완료: ${successCount}개 성공`;
-      if (failCount > 0) {
-        message += `, ${failCount}개 실패`;
-        if (failMessages.length > 0) {
-          message += ` (${failMessages.slice(0, 3).join(", ")}${failMessages.length > 3 ? "..." : ""})`;
-        }
-      }
-      setDcaMessage(message);
-    } catch (err) {
-      console.error("DCA 전체 매수 오류:", err);
-      setDcaMessage("DCA 전체 매수 중 오류가 발생했습니다.");
-    } finally {
-      setIsBuyingAll(false);
-    }
-  };
-
-  // 매일 10:30에 자동 실행
-  React.useEffect(() => {
-    const timer = setInterval(async () => {
-      const now = new Date();
-      const hh = now.getHours();
-      const mm = now.getMinutes();
-      const today = now.toISOString().slice(0, 10);
-      if (!(hh > 10 || (hh === 10 && mm >= 30))) return;
-      let changed = false;
-
-      // 실행 대상 플랜
-      const targets = dcaPlans.filter((p) => p.active && p.startDate <= today && p.lastRunDate !== today);
-      if (!targets.length) return;
-
-      // 가격/환율 조회
-      const tickers = Array.from(new Set(targets.map((p) => p.ticker.toUpperCase())));
-      try {
-        const quotes = await fetchYahooQuotes([...tickers, "USDKRW=X"]);
-        const fx = quotes.find((q) => q.ticker === "USDKRW=X")?.price;
-        if (fx) setFxRate(fx);
-
-        const quoteMap = new Map(quotes.map((q) => [q.ticker.toUpperCase(), q]));
-        const newTrades: StockTrade[] = [];
-        const updatedPlans = dcaPlans.map((p) => {
-          if (!targets.find((t) => t.id === p.id)) return p;
-          const q = quoteMap.get(p.ticker.toUpperCase());
-          const price = q?.price;
-          const currency = q?.currency;
-          const selectedAccount = accounts.find((a) => a.id === p.accountId);
-          if (!selectedAccount) return p;
-          if (!price || price <= 0) return p;
-          const effectiveFx = fx && fx > 0 ? fx : (fxRate && fxRate > 0 ? fxRate : DEFAULT_FX_RATE);
-          const priceInPlanCurrency = currency === "USD" ? price * effectiveFx : price;
-          if (!priceInPlanCurrency || priceInPlanCurrency <= 0) return p;
-          
-          // 장 개장 여부 확인
-          const market = getMarketStatus(p.ticker, currency);
-          if (!market.isOpen) return p; // 장이 닫혀있으면 실행하지 않음
-          
-          const shares = p.amount / priceInPlanCurrency;
-          const quantity = Number(shares.toFixed(6));
-          const feeInput = p.fee ?? 0;
-          const feeInTradeCurrency = currency === "USD" ? feeInput / effectiveFx : feeInput;
-          const totalAmount = quantity * price + feeInTradeCurrency;
-          const useUsdBalanceMode = shouldUseUsdBalanceMode(
-            p.accountId,
-            selectedAccount.type === "securities" || selectedAccount.type === "crypto",
-            currency === "USD"
-          );
-          const totalAmountKRW = currency === "USD" ? totalAmount * effectiveFx : totalAmount;
-          const cashImpact = computeTradeCashImpact("buy", totalAmountKRW, useUsdBalanceMode);
-          const trade: StockTrade = {
-            id: `DCA-${p.id}-${today}`,
-            date: today,
-            accountId: p.accountId,
-            ticker: p.ticker,
-            name: q?.name ?? p.ticker,
-            side: "buy",
-            quantity,
-            price,
-            fee: feeInTradeCurrency,
-            totalAmount,
-            cashImpact,
-            fxRateAtTrade: currency === "USD" ? effectiveFx : undefined
-          };
-          newTrades.push(trade);
-          changed = true;
-          return { ...p, lastRunDate: today };
-        });
-
-        if (changed) {
-          onChangeTrades([...newTrades, ...trades]);
-          persistDcaPlans(updatedPlans);
-          setDcaMessage(`DCA 자동 실행 완료 (${today})`);
-        }
-      } catch (err) {
-        console.error("DCA 자동 실행 실패:", err);
-      }
-    }, 60 * 1000);
-    return () => clearInterval(timer);
-  }, [dcaPlans, trades, onChangeTrades]);
 
   const startEditTrade = (t: StockTrade) => {
     const isUSD = isUSDStock(t.ticker);
@@ -2074,27 +1210,6 @@ export const StocksView: React.FC<Props> = ({
     setTradeForm({
       id: t.id,
       date: t.date,
-      accountId: t.accountId,
-      ticker: t.ticker,
-      name: t.name,
-      market: db?.market,
-      exchange: db?.exchange,
-      side: t.side,
-      quantity: String(t.quantity),
-      price: String(t.price),
-      fee: String(t.fee),
-      priceKRW: isUSD && rate > 0 ? String(Math.round(t.price * rate)) : "",
-      feeKRW: isUSD && rate > 0 ? String(Math.round(t.fee * rate)) : ""
-    });
-  };
-
-  const startCopyTrade = (t: StockTrade) => {
-    const isUSD = isUSDStock(t.ticker);
-    const rate = t.fxRateAtTrade ?? fxRate ?? 0;
-    const db = tickerDatabase.find((x) => canonicalTickerForMatch(x.ticker) === canonicalTickerForMatch(t.ticker));
-    setTradeForm({
-      id: undefined,
-      date: new Date().toISOString().slice(0, 10),
       accountId: t.accountId,
       ticker: t.ticker,
       name: t.name,
@@ -2118,7 +1233,7 @@ export const StocksView: React.FC<Props> = ({
   };
 
   // 프리셋 관련 함수들
-  const applyPreset = (preset: StockPreset) => {
+  const applyPreset = useCallback((preset: StockPreset) => {
     setTradeForm((prev) => ({
       ...prev,
       accountId: preset.accountId || prev.accountId,
@@ -2135,7 +1250,7 @@ export const StocksView: React.FC<Props> = ({
       );
       onChangePresets(updated);
     }
-  };
+  }, [onChangePresets, presets]);
 
   const saveCurrentAsPreset = () => {
     const presetName = prompt("프리셋 이름을 입력하세요:");

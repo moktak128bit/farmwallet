@@ -5,12 +5,10 @@ import type {
   CategoryPresets,
   ExpenseDetailGroup,
   HistoricalDailyClose,
-  IsaPortfolioItem,
-  LedgerEntry
+  IsaPortfolioItem
 } from "../types";
 import { STORAGE_KEYS, DEFAULT_US_TICKERS, ISA_PORTFOLIO, DATA_SCHEMA_VERSION } from "../constants/config";
 import { DEFAULT_WORKOUT_ROUTINES } from "../data/defaultWorkoutRoutines";
-import { normalizeCategory, normalizeSubCategory } from "../utils/category";
 import { buildTableBackupFile } from "../utils/tableDataBackup";
 import { saveCacheToDB } from "./cacheStore";
 import { getKoreanNameOverlay } from "./krNameResolver";
@@ -96,6 +94,10 @@ export function applyKoreanStockNames(data: AppData): { data: AppData; changed: 
     });
   };
 
+  // 사용자가 이미 한글명을 편집·저장한 경우 보존 (한글 문자가 포함돼 있으면 덮어쓰지 않음)
+  const hasKoreanChars = (s: string | undefined | null): boolean =>
+    !!s && /[가-힣]/.test(s);
+
   const fixTrades = (trades: AppData["trades"]) => {
     if (!Array.isArray(trades)) return trades;
     return trades.map((t) => {
@@ -104,6 +106,7 @@ export function applyKoreanStockNames(data: AppData): { data: AppData; changed: 
       if (!shouldApplyKrName(map, key)) return t;
       const krName = getKrName(map, key);
       if (!krName || t.name === krName) return t;
+      if (hasKoreanChars(t.name)) return t; // 사용자 커스텀 한글명 보존
       changed = true;
       return { ...t, name: krName };
     });
@@ -117,6 +120,7 @@ export function applyKoreanStockNames(data: AppData): { data: AppData; changed: 
       if (!shouldApplyKrName(map, key)) return p;
       const krName = getKrName(map, key);
       if (!krName || p.name === krName) return p;
+      if (hasKoreanChars(p.name)) return p;
       changed = true;
       return { ...p, name: krName };
     });
@@ -130,6 +134,7 @@ export function applyKoreanStockNames(data: AppData): { data: AppData; changed: 
       if (!shouldApplyKrName(map, key)) return t;
       const krName = getKrName(map, key);
       if (!krName || t.name === krName) return t;
+      if (hasKoreanChars(t.name)) return t;
       changed = true;
       return { ...t, name: krName };
     });
@@ -293,349 +298,31 @@ function mergeCategoryPresets(
   defaults: CategoryPresets
 ): CategoryPresets {
   if (!fromStorage) return defaults;
-  
-  const income = fromStorage.income && Array.isArray(fromStorage.income) && fromStorage.income.length > 0 
-    ? fromStorage.income 
+
+  const income = fromStorage.income && Array.isArray(fromStorage.income) && fromStorage.income.length > 0
+    ? fromStorage.income
     : defaults.income;
-  const transfer = fromStorage.transfer && Array.isArray(fromStorage.transfer) && fromStorage.transfer.length > 0 
-    ? fromStorage.transfer 
+  const transfer = fromStorage.transfer && Array.isArray(fromStorage.transfer) && fromStorage.transfer.length > 0
+    ? fromStorage.transfer
     : defaults.transfer;
-
-  let expenseDetails: ExpenseDetailGroup[];
-  if (fromStorage.expenseDetails && Array.isArray(fromStorage.expenseDetails) && fromStorage.expenseDetails.length > 0) {
-    expenseDetails = fromStorage.expenseDetails;
-  } else {
-    expenseDetails = defaults.expenseDetails ?? [];
-  }
-
-  // 항목 매트릭스: 저축성지출 제거, 재테크는 저축/투자/투자수익/투자손실로 전이
-  expenseDetails = expenseDetails.filter((g) => g.main !== "저축성지출");
-  const hasRecheck = expenseDetails.some((g) => g.main === "재테크");
-  const recheckSubsBase = ["저축", "투자", "투자수익", "투자손실"];
-  expenseDetails = expenseDetails.map((g) => {
-    if (g.main !== "재테크") return g;
-    const existing = g.subs ?? [];
-    const merged = [...new Set([...existing, "투자수익", "투자손실"])];
-    return { main: "재테크", subs: merged.sort((a, b) => recheckSubsBase.indexOf(a) - recheckSubsBase.indexOf(b) || a.localeCompare(b)) };
-  });
-  if (!hasRecheck) {
-    expenseDetails = [{ main: "재테크", subs: recheckSubsBase }, ...expenseDetails];
-  }
+  const expenseDetails: ExpenseDetailGroup[] =
+    fromStorage.expenseDetails && Array.isArray(fromStorage.expenseDetails) && fromStorage.expenseDetails.length > 0
+      ? fromStorage.expenseDetails
+      : (defaults.expenseDetails ?? []);
   const expense = expenseDetails.map((g) => g.main);
-
-  // categoryTypes 마이그레이션: 기존 데이터에 없으면 기본값 사용
-  let categoryTypes = fromStorage.categoryTypes || defaults.categoryTypes || {
-    fixed: ["주거비", "통신비", "구독비"],
-    savings: ["재테크", "저축성지출"],
+  const categoryTypes = fromStorage.categoryTypes ?? defaults.categoryTypes ?? {
+    fixed: [],
+    savings: [],
     transfer: defaults.transfer
   };
-  // 재테크는 항상 저축성지출(고정지출·변동지출 아님): savings에 포함, fixed에서 제외
-  const savingsList = [...new Set([...(categoryTypes.savings ?? []), "재테크"])];
-  const fixedList = (categoryTypes.fixed ?? []).filter((c) => c !== "재테크");
-  categoryTypes = {
-    ...categoryTypes,
-    savings: savingsList,
-    fixed: fixedList
-  };
-
-  // 중분류 이름 변경: 커피숍 → 카페
-  expenseDetails = expenseDetails.map((g) => ({
-    ...g,
-    subs: g.subs.map((s) => (s === "커피숍" ? "카페" : s))
-  }));
-
-  // 이월/원래 보유 자산은 수입이 아니므로 카테고리에서 제거
-  const cleanedIncome = income.filter((c) => c !== "이월" && c !== "원래 보유 자산");
 
   return {
-    income: cleanedIncome,
+    income,
     expense,
     expenseDetails,
     transfer,
     categoryTypes
   };
-}
-
-// 깨진 카테고리 이름을 올바른 이름으로 수정하는 함수
-function fixCorruptedCategoryNames(ledger: AppData["ledger"]): AppData["ledger"] {
-  return ledger.map((entry) => {
-    const fixedCategory = entry.category ? normalizeCategory(entry.category) : entry.category;
-    const fixedSubCategory = entry.subCategory ? normalizeSubCategory(entry.subCategory) : entry.subCategory;
-
-    // 변경사항이 있으면 새 객체 반환
-    if (fixedCategory !== entry.category || fixedSubCategory !== entry.subCategory) {
-      return {
-        ...entry,
-        category: fixedCategory,
-        subCategory: fixedSubCategory
-      };
-    }
-
-    return entry;
-  });
-}
-
-/**
- * 기존 대출/빚(category=대출, subCategory=빚) → 대출상환/중분류로 마이그레이션
- */
-function migrateLoanRepaymentTo대출상환(ledger: AppData["ledger"]): AppData["ledger"] {
-  return ledger.map((entry) => {
-    if (entry.kind !== "expense" || entry.category !== "대출" || entry.subCategory !== "빚") {
-      return entry;
-    }
-    const desc = (entry.description || "").toLowerCase();
-    let sub = "기타대출상환";
-    if (/학자금|등록금/.test(desc)) sub = "학자금대출";
-    else if (/주담대|주택담보|주택대출/.test(desc) && /이자|금리/.test(desc)) sub = "주담대이자";
-    else if (/주담대|주택담보|주택대출/.test(desc)) sub = "주담대원금";
-    else if (/개인|신용대출|신용 loan/i.test(desc)) sub = "개인대출";
-    return { ...entry, category: "대출상환", subCategory: sub };
-  });
-}
-
-/**
- * 이체(kind=transfer)로 잘못 저장된 저축성 지출 → 지출(expense)로 일괄 수정.
- * 저축성 지출 = 지출의 한 종류이므로 kind는 "expense"만 허용.
- */
-function migrateSavingsExpenseFromTransfer(
-  ledger: AppData["ledger"],
-  categoryPresets: CategoryPresets
-): AppData["ledger"] {
-  const savingsCategories = categoryPresets.categoryTypes?.savings ?? ["저축성지출"];
-  return ledger.map((entry) => {
-    if (entry.kind !== "transfer") return entry;
-    if (!entry.category || !savingsCategories.includes(entry.category)) return entry;
-    return {
-      ...entry,
-      kind: "expense" as const,
-      category: entry.category
-    };
-  });
-}
-
-/** ISA 포트폴리오 기본값 (config 기반) */
-function normalizeExpenseSourceAccounts(
-  ledger: AppData["ledger"],
-  accounts: AppData["accounts"]
-): AppData["ledger"] {
-  const samsungCardId = accounts.find(
-    (a) => a.id === "\uC0BC\uC131\uD398\uC774\uCE74\uB4DC" || a.name === "\uC0BC\uC131\uD398\uC774\uCE74\uB4DC"
-  )?.id;
-  const nhBankId = accounts.find(
-    (a) => a.id === "\uB18D\uD611" || a.name === "\uB18D\uD611"
-  )?.id;
-  const localPayId = accounts.find(
-    (a) => a.id === "\uC9C0\uC5ED\uD398\uC774" || a.name === "\uC9C0\uC5ED\uD398\uC774"
-  )?.id;
-  const kakaoPayId = accounts.find(
-    (a) => a.id === "\uCE74\uCE74\uC624\uD398\uC774" || a.name === "\uCE74\uCE74\uC624\uD398\uC774"
-  )?.id;
-  const regionalPayTargetId = localPayId ?? kakaoPayId;
-
-  if (!samsungCardId && !nhBankId && !regionalPayTargetId) return ledger;
-
-  return ledger.map((entry) => {
-    const source = (entry.fromAccountId ?? "").trim();
-    if (!source) return entry;
-
-    const normalizedSource = source.replace(/\ufffd/g, "");
-    const isCreditCardSource =
-      normalizedSource === "\uC2E0\uC6A9\uCE74\uB4DC" || normalizedSource === "\uC2E0\uCE74\uB4DC";
-    const isBankSource =
-      normalizedSource === "\uCCB4\uD06C\uCE74\uB4DC" || normalizedSource === "\uACC4\uC88C\uC774\uCCB4";
-    const isRegionalPaySource =
-      normalizedSource === "\uC9C0\uC5ED\uCE74\uB4DC" || normalizedSource.endsWith("\uC5ED\uCE74\uB4DC");
-
-    if (isCreditCardSource && samsungCardId && entry.fromAccountId !== samsungCardId) {
-      return { ...entry, fromAccountId: samsungCardId };
-    }
-    if (isBankSource && nhBankId && entry.fromAccountId !== nhBankId) {
-      return { ...entry, fromAccountId: nhBankId };
-    }
-    if (isRegionalPaySource && regionalPayTargetId && entry.fromAccountId !== regionalPayTargetId) {
-      return { ...entry, fromAccountId: regionalPayTargetId };
-    }
-    return entry;
-  });
-}
-
-/**
-/**
- * 대/중/소분류 마이그레이션.
- * 기존: category=식비, subCategory=외식/배달, detailCategory=없음
- * 변환: category=지출, subCategory=식비, detailCategory=외식/배달
- *
- * 대분류 결정 규칙:
- *  - kind=income → "수입"
- *  - kind=transfer → "이체"
- *  - category가 이미 5대분류 중 하나 → 유지
- *  - category="재테크" → "재테크"
- *  - category="신용카드"|"신용결제" → "신용결제"
- *  - 그 외 expense → "지출"
- */
-function migrateCategoryHierarchy(
-  ledger: AppData["ledger"]
-): { ledger: AppData["ledger"]; changed: boolean } {
-  const MAIN_CATS = new Set(["수입", "지출", "재테크", "이체", "신용결제"]);
-  let changed = false;
-
-  const migrated = ledger.map((entry) => {
-    const cat = entry.category?.trim() ?? "";
-
-    // 이미 대분류 체계에 맞고 detailCategory도 세팅된 경우 → skip
-    if (MAIN_CATS.has(cat) && entry.detailCategory !== undefined) return entry;
-    // 이미 대분류 체계에 맞고 subCategory가 대분류 값이 아닌 경우 → 이미 변환됨
-    if (MAIN_CATS.has(cat) && entry.subCategory && !MAIN_CATS.has(entry.subCategory)) return entry;
-
-    // 대분류 결정
-    let mainCat: string;
-    if (entry.kind === "income") {
-      mainCat = "수입";
-    } else if (entry.kind === "transfer") {
-      mainCat = "이체";
-    } else if (cat === "재테크") {
-      mainCat = "재테크";
-    } else if (cat === "신용카드" || cat === "신용결제") {
-      mainCat = "신용결제";
-    } else if (MAIN_CATS.has(cat)) {
-      // 이미 대분류이지만 아직 subCategory가 대분류값이거나 비어있음
-      mainCat = cat;
-    } else {
-      mainCat = "지출";
-    }
-
-    // 이미 맞는 경우 (category가 이미 대분류이고 중분류가 대분류가 아닌 실제 값)
-    if (cat === mainCat && entry.subCategory && !MAIN_CATS.has(entry.subCategory)) {
-      return entry;
-    }
-
-    // 시프트: category → subCategory → detailCategory
-    // 단, category가 이미 대분류인 경우는 시프트 불필요
-    if (MAIN_CATS.has(cat)) {
-      // category가 이미 대분류 → subCategory/detailCategory는 그대로
-      return entry;
-    }
-
-    // category에 중분류 값이 들어있는 경우 → 시프트
-    const newEntry = { ...entry };
-    newEntry.detailCategory = entry.subCategory || undefined;
-    newEntry.subCategory = cat; // 기존 category → 중분류
-    newEntry.category = mainCat;
-    changed = true;
-    return newEntry;
-  });
-
-  return { ledger: migrated, changed };
-}
-
-/**
- * 재테크 expense와 중복되는 transfer 항목 제거.
- * 같은 날짜·금액·계좌가 재테크 expense와 transfer에 모두 있으면 transfer를 삭제.
- */
-function deduplicateInvestmentTransfers(
-  ledger: AppData["ledger"]
-): { ledger: AppData["ledger"]; changed: boolean } {
-  const investments = ledger.filter(
-    (e) => e.kind === "expense" && e.category === "재테크"
-  );
-  if (investments.length === 0) return { ledger, changed: false };
-
-  const dupIds = new Set<string>();
-  for (const exp of investments) {
-    for (const t of ledger) {
-      if (t.kind !== "transfer" || t.date !== exp.date) continue;
-      if (Math.abs((t.amount ?? 0) - (exp.amount ?? 0)) >= 1) continue;
-      if (t.toAccountId === exp.toAccountId || t.fromAccountId === exp.fromAccountId) {
-        dupIds.add(t.id);
-      }
-    }
-  }
-  if (dupIds.size === 0) return { ledger, changed: false };
-  return { ledger: ledger.filter((e) => !dupIds.has(e.id)), changed: true };
-}
-
-/**
- * 계좌 cashAdjustment 동적 보정.
- * CSV 은행 최종잔액(csvTargetBalance)과 computeAccountBalances 공식을 비교해서
- * cashAdjustment = csvTarget - (공식상 잔액 with cashAdj=0) 으로 자동 계산.
- * → 데이터 상태(중복 이체 유무, 거래 추가/삭제)에 무관하게 항상 CSV 잔액에 수렴.
- */
-function normalizeCashAdjustment(
-  accounts: AppData["accounts"],
-  ledger: AppData["ledger"],
-  trades: AppData["trades"]
-): { accounts: AppData["accounts"]; changed: boolean } {
-  // CSV 최종 잔액 (전체계좌.csv 대조, 각 계좌 가장 최근 거래의 BalanceAfter)
-  // 증권 계좌는 현금 잔액만 (주식 평가는 별도)
-  const csvTargetBalance: Record<string, number> = {
-    "청년도약": 7700000,
-    "ISA": 1171198,
-    "CMA": 4,
-    "삼성증권": 136490,
-    "토스": 10,
-    "키움": 0,
-    "주택청약": 1920000,
-    "저축은행": 1952,
-    "농협": 213658,
-    "농협2호": 0,
-    "청년사다리": 101,
-    "나라사랑": 2,
-  };
-
-  // computeAccountBalances 공식과 동일하게 ledger index 구축
-  const incomeByTo = new Map<string, number>();
-  const expenseByFrom = new Map<string, number>();
-  const expenseByTo = new Map<string, number>();
-  const transferOutKrw = new Map<string, number>();
-  const transferInKrw = new Map<string, number>();
-  const addMap = (m: Map<string, number>, k: string, v: number) => m.set(k, (m.get(k) ?? 0) + v);
-
-  for (const l of ledger) {
-    if (l.kind === "income" && l.toAccountId) addMap(incomeByTo, l.toAccountId, l.amount);
-    else if (l.kind === "expense") {
-      if (l.fromAccountId) addMap(expenseByFrom, l.fromAccountId, l.amount);
-      if (l.toAccountId) addMap(expenseByTo, l.toAccountId, l.amount);
-    } else if (l.kind === "transfer" && l.currency !== "USD") {
-      if (l.fromAccountId) addMap(transferOutKrw, l.fromAccountId, l.amount);
-      if (l.toAccountId) addMap(transferInKrw, l.toAccountId, l.amount);
-    }
-  }
-
-  const tradeCashByAccount = new Map<string, number>();
-  for (const t of trades) {
-    if (!t?.accountId) continue;
-    const impact = Number(t.cashImpact);
-    const add = Number.isFinite(impact) ? impact : 0;
-    tradeCashByAccount.set(t.accountId, (tradeCashByAccount.get(t.accountId) ?? 0) + add);
-  }
-
-  let changed = false;
-  const fixed = accounts.map((acc) => {
-    const target = csvTargetBalance[acc.id];
-    if (target === undefined) return acc;
-
-    const baseBalance =
-      acc.type === "securities" || acc.type === "crypto"
-        ? (acc.initialCashBalance ?? acc.initialBalance)
-        : acc.initialBalance;
-    const incomeSum = incomeByTo.get(acc.id) ?? 0;
-    const expenseSum = expenseByFrom.get(acc.id) ?? 0;
-    const savingsExpenseIn = expenseByTo.get(acc.id) ?? 0;
-    const transferNet = (transferInKrw.get(acc.id) ?? 0) - (transferOutKrw.get(acc.id) ?? 0);
-    const tradeCashImpact = tradeCashByAccount.get(acc.id) ?? 0;
-    const savings = acc.savings ?? 0;
-
-    // 공식: balance = base + income - expense + savingsExpIn + transferNet + tradeCash + cashAdj + savings
-    // → cashAdj = target - (base + income - expense + savingsExpIn + transferNet + tradeCash + savings)
-    const balanceWithoutCashAdj =
-      baseBalance + incomeSum - expenseSum + savingsExpenseIn + transferNet + tradeCashImpact + savings;
-    const neededCashAdj = Math.round(target - balanceWithoutCashAdj);
-
-    if (acc.cashAdjustment === neededCashAdj) return acc;
-    changed = true;
-    return { ...acc, cashAdjustment: neededCashAdj };
-  });
-  return { accounts: fixed, changed };
 }
 
 function getDefaultIsaPortfolio(): IsaPortfolioItem[] {
@@ -727,200 +414,6 @@ function normalizeHistoricalDailyCloses(raw: unknown): HistoricalDailyClose[] {
     });
   }
   return rows;
-}
-
-function normalizeSecuritiesOpeningCashAndInitialBuys(
-  accounts: AppData["accounts"],
-  trades: AppData["trades"]
-): { accounts: AppData["accounts"]; trades: AppData["trades"]; changed: boolean } {
-  const EPS = 0.000001;
-  let changed = false;
-
-  const nextAccounts = [...accounts];
-  const nextTrades = [...trades];
-  const zeroCashBuyIndicesByAccount = new Map<string, number[]>();
-  const zeroCashBuyTotalByAccount = new Map<string, number>();
-  const hasUsdTickerTradeByAccount = new Map<string, boolean>();
-
-  for (let i = 0; i < nextTrades.length; i += 1) {
-    const trade = nextTrades[i];
-    if (!trade?.accountId) continue;
-
-    if (cleanTicker(trade.ticker ?? "").length <= 4) {
-      hasUsdTickerTradeByAccount.set(trade.accountId, true);
-    }
-
-    if (trade.side !== "buy") continue;
-    const cashImpact = Number(trade.cashImpact ?? 0);
-    if (!Number.isFinite(cashImpact) || Math.abs(cashImpact) > EPS) continue;
-
-    const totalAmount = Number(trade.totalAmount ?? 0);
-    if (!Number.isFinite(totalAmount) || totalAmount <= 0) continue;
-
-    const list = zeroCashBuyIndicesByAccount.get(trade.accountId) ?? [];
-    list.push(i);
-    zeroCashBuyIndicesByAccount.set(trade.accountId, list);
-    zeroCashBuyTotalByAccount.set(
-      trade.accountId,
-      (zeroCashBuyTotalByAccount.get(trade.accountId) ?? 0) + totalAmount
-    );
-  }
-
-  for (let accountIndex = 0; accountIndex < nextAccounts.length; accountIndex += 1) {
-    const account = nextAccounts[accountIndex];
-    if (account.type !== "securities" && account.type !== "crypto") continue;
-    if (hasUsdTickerTradeByAccount.get(account.id)) continue;
-
-    const openingCash = Number(
-      account.initialCashBalance ?? account.initialBalance ?? 0
-    );
-    if (!Number.isFinite(openingCash) || openingCash >= -EPS) continue;
-
-    const zeroCashBuyIndices = zeroCashBuyIndicesByAccount.get(account.id) ?? [];
-    if (zeroCashBuyIndices.length === 0) continue;
-
-    const zeroCashBuyTotal = zeroCashBuyTotalByAccount.get(account.id) ?? 0;
-    if (!Number.isFinite(zeroCashBuyTotal) || zeroCashBuyTotal <= 0) continue;
-
-    const absOpening = Math.abs(openingCash);
-    const coverage = absOpening > EPS ? zeroCashBuyTotal / absOpening : 0;
-    const nextOpeningCash = openingCash + zeroCashBuyTotal;
-    const isLikelyOffsetPattern =
-      coverage >= 0.8 &&
-      Math.abs(nextOpeningCash) <= Math.max(500000, absOpening * 0.25);
-    if (!isLikelyOffsetPattern) continue;
-
-    if ((account.initialCashBalance ?? account.initialBalance ?? 0) !== nextOpeningCash) {
-      nextAccounts[accountIndex] = {
-        ...account,
-        initialCashBalance: nextOpeningCash
-      };
-      changed = true;
-    }
-
-    for (const tradeIndex of zeroCashBuyIndices) {
-      const trade = nextTrades[tradeIndex];
-      if (!trade || trade.side !== "buy") continue;
-      const totalAmount = Number(trade.totalAmount ?? 0);
-      if (!Number.isFinite(totalAmount) || totalAmount <= 0) continue;
-      const nextCashImpact = -totalAmount;
-      if (trade.cashImpact !== nextCashImpact) {
-        nextTrades[tradeIndex] = {
-          ...trade,
-          cashImpact: nextCashImpact
-        };
-        changed = true;
-      }
-    }
-  }
-
-  return {
-    accounts: nextAccounts,
-    trades: nextTrades,
-    changed
-  };
-}
-
-/**
- * 증권계좌 KRW 거래의 cashImpact 보정 → 계좌 현금·자산에 매수/매도 반영.
- * - 매도: cashImpact = totalAmount (매도 대금)
- * - 매수: cashImpact = -totalAmount (매수 대금 차감)
- * cashImpact가 없거나 0인 KRW 건만 채움 (USD 종목은 cashImpact 0 유지).
- */
-function normalizeSecuritiesKrwTradeCashImpact(
-  accounts: AppData["accounts"],
-  trades: AppData["trades"]
-): { trades: AppData["trades"]; changed: boolean } {
-  const EPS = 0.000001;
-  const securitiesIds = new Set(
-    accounts.filter((a) => a.type === "securities" || a.type === "crypto").map((a) => a.id)
-  );
-  let changed = false;
-  const nextTrades = trades.map((t) => {
-    if (!t?.accountId || !securitiesIds.has(t.accountId)) return t;
-    if (!isKRWStock(t.ticker ?? "")) return t;
-    const impact = Number(t.cashImpact ?? 0);
-    if (Number.isFinite(impact) && Math.abs(impact) > EPS) return t;
-    const total = Number(t.totalAmount ?? 0);
-    if (!Number.isFinite(total)) return t;
-    const nextImpact = t.side === "sell" ? total : -total;
-    changed = true;
-    return { ...t, cashImpact: nextImpact };
-  });
-  return { trades: nextTrades, changed };
-}
-
-function normalizeUsdTradeCashImpactForKrwSecurities(
-  accounts: AppData["accounts"],
-  ledger: AppData["ledger"],
-  trades: AppData["trades"]
-): { accounts: AppData["accounts"]; trades: AppData["trades"]; changed: boolean } {
-  const EPS = 0.000001;
-  let changed = false;
-
-  const nextAccounts = [...accounts];
-  const nextTrades = [...trades];
-
-  const hasUsdTransferByAccount = new Set<string>();
-  for (const entry of ledger) {
-    if (entry.kind !== "transfer" || entry.currency !== "USD") continue;
-    if (entry.fromAccountId) hasUsdTransferByAccount.add(entry.fromAccountId);
-    if (entry.toAccountId) hasUsdTransferByAccount.add(entry.toAccountId);
-  }
-
-  for (const account of nextAccounts) {
-    if (account.type !== "securities" && account.type !== "crypto") continue;
-
-    const hasUsdLedgerMode =
-      account.currency === "USD" ||
-      hasUsdTransferByAccount.has(account.id);
-    if (hasUsdLedgerMode) continue;
-
-    const usdTradeIndices: number[] = [];
-    const nonZeroUsdTrades: Array<{ cashImpact: number; totalAmount: number }> = [];
-
-    for (let i = 0; i < nextTrades.length; i += 1) {
-      const trade = nextTrades[i];
-      if (trade.accountId !== account.id) continue;
-      if (cleanTicker(trade.ticker ?? "").length > 4) continue;
-      usdTradeIndices.push(i);
-
-      const cashImpact = Number(trade.cashImpact ?? 0);
-      const totalAmount = Number(trade.totalAmount ?? 0);
-      if (!Number.isFinite(cashImpact) || !Number.isFinite(totalAmount)) continue;
-      if (Math.abs(cashImpact) <= EPS) continue;
-      nonZeroUsdTrades.push({ cashImpact, totalAmount });
-    }
-
-    if (usdTradeIndices.length === 0) continue;
-    if (nonZeroUsdTrades.length === 0) continue;
-
-    const hasKrwLikeNonZero = nonZeroUsdTrades.some(({ cashImpact, totalAmount }) => {
-      const absCash = Math.abs(cashImpact);
-      const absTotal = Math.abs(totalAmount);
-      if (absTotal <= EPS) return false;
-      const diff = Math.abs(absCash - absTotal);
-      return diff <= Math.max(1, absTotal * 0.2);
-    });
-    if (!hasKrwLikeNonZero) continue;
-
-    for (const index of usdTradeIndices) {
-      const trade = nextTrades[index];
-      const cashImpact = Number(trade.cashImpact ?? 0);
-      if (!Number.isFinite(cashImpact) || Math.abs(cashImpact) > EPS) continue;
-      const totalAmount = Number(trade.totalAmount ?? 0);
-      if (!Number.isFinite(totalAmount) || totalAmount <= 0) continue;
-      const nextCashImpact = trade.side === "buy" ? -totalAmount : totalAmount;
-      nextTrades[index] = { ...trade, cashImpact: nextCashImpact };
-      changed = true;
-    }
-  }
-
-  return {
-    accounts: nextAccounts,
-    trades: nextTrades,
-    changed
-  };
 }
 
 /** 초기 로딩/빈 상태용 기본 데이터 (로딩 UI 표시 시 훅에 넘기기 위해 사용) */
@@ -1149,183 +642,16 @@ export function loadData(): AppData {
       dividendTrackingTicker: parsed.dividendTrackingTicker !== undefined && parsed.dividendTrackingTicker !== null ? String(parsed.dividendTrackingTicker) : "458730",
       isaPortfolio: parsedIsaPortfolio.length > 0 ? parsedIsaPortfolio : getDefaultIsaPortfolio()
     };
-    const normalizedUsdCashImpact = normalizeUsdTradeCashImpactForKrwSecurities(
-      parsedData.accounts,
-      parsedData.ledger,
-      parsedData.trades
-    );
-    const parsedDataAfterUsdCashImpact: AppData = normalizedUsdCashImpact.changed
-      ? {
-        ...parsedData,
-        accounts: normalizedUsdCashImpact.accounts,
-        trades: normalizedUsdCashImpact.trades
-      }
-      : parsedData;
-
-    const normalizedKrwCashImpact = normalizeSecuritiesKrwTradeCashImpact(
-      parsedDataAfterUsdCashImpact.accounts,
-      parsedDataAfterUsdCashImpact.trades
-    );
-    const dataAfterKrwCashImpact: AppData = normalizedKrwCashImpact.changed
-      ? { ...parsedDataAfterUsdCashImpact, trades: normalizedKrwCashImpact.trades }
-      : parsedDataAfterUsdCashImpact;
-
-    const normalizedSecurities = normalizeSecuritiesOpeningCashAndInitialBuys(
-      dataAfterKrwCashImpact.accounts,
-      dataAfterKrwCashImpact.trades
-    );
-    const parsedDataNormalized: AppData = normalizedSecurities.changed
-      ? {
-        ...dataAfterKrwCashImpact,
-        accounts: normalizedSecurities.accounts,
-        trades: normalizedSecurities.trades
-      }
-      : dataAfterKrwCashImpact;
-
     // krNames는 idle 시간에 비동기 로드되므로, 여기서는 빈 맵일 수 있음.
     // 실제 한글명 적용은 useAppData의 idle 콜백에서 수행.
-    const { data: dataWithKrNames, changed: krNamesChanged } = applyKoreanStockNames(parsedDataNormalized);
-    let accounts = dataWithKrNames.accounts;
+    const { data: dataWithKrNames, changed: krNamesChanged } = applyKoreanStockNames(parsedData);
 
-    // 깨진 카테고리 이름 수정
-    const originalLedger = dataWithKrNames.ledger;
-    const fixedLedger = fixCorruptedCategoryNames(originalLedger);
-    // 대출/빚 → 대출상환/중분류 마이그레이션
-    const afterLoanMigrate = migrateLoanRepaymentTo대출상환(fixedLedger);
-    // 이체로 저장된 저축성 지출 → 지출(expense)로 일괄 수정
-    const migratedLedger = migrateSavingsExpenseFromTransfer(afterLoanMigrate, dataWithKrNames.categoryPresets);
-    const normalizedLedger = normalizeExpenseSourceAccounts(
-      migratedLedger,
-      accounts
-    );
-
-    const hasLedgerChanges =
-      originalLedger.length !== normalizedLedger.length ||
-      originalLedger.some((entry, idx) => {
-        const m = normalizedLedger[idx];
-        if (!m) return true;
-        return (
-          entry.kind !== m.kind ||
-          entry.category !== m.category ||
-          entry.subCategory !== m.subCategory ||
-          entry.fromAccountId !== m.fromAccountId
-        );
-      });
-
-    // 대/중/소분류 마이그레이션 (category→subCategory→detailCategory 시프트)
-    const categoryMigrated = migrateCategoryHierarchy(normalizedLedger);
-    const ledgerAfterCatMigration = categoryMigrated.changed ? categoryMigrated.ledger : normalizedLedger;
-
-    // 중분류 이름 변경: 커피숍 → 카페
-    const ledgerAfterSubRename = ledgerAfterCatMigration.map((l) => {
-      if (l.subCategory === "커피숍") return { ...l, subCategory: "카페" };
-      return l;
-    });
-
-    // 이월/원래 보유 자산 수입 → 계좌 초기 잔액으로 전환 후 가계부에서 제거
-    const isCarryOverEntry = (l: LedgerEntry) =>
-      l.kind === "income" && (
-        l.category === "이월" || l.category === "원래 보유 자산" ||
-        l.subCategory === "이월" || l.subCategory === "원래 보유 자산" ||
-        (l.category || "").includes("이월") || (l.subCategory || "").includes("이월") ||
-        (l.category || "").includes("보유 자산") || (l.subCategory || "").includes("보유 자산")
-      );
-    const carryOverEntries = ledgerAfterSubRename.filter(isCarryOverEntry);
-    let carryOverMigrated = false;
-    if (carryOverEntries.length > 0) {
-      carryOverMigrated = true;
-      // 계좌별 이월 금액 합산
-      const carryOverByAccount = new Map<string, number>();
-      for (const l of carryOverEntries) {
-        const acctId = l.toAccountId || l.fromAccountId;
-        if (acctId) {
-          carryOverByAccount.set(acctId, (carryOverByAccount.get(acctId) ?? 0) + l.amount);
-        }
-      }
-      // 해당 계좌의 initialBalance에 추가
-      accounts = accounts.map((acc) => {
-        const extra = carryOverByAccount.get(acc.id);
-        if (!extra) return acc;
-        return { ...acc, initialBalance: (acc.initialBalance ?? 0) + extra };
-      });
-    }
-    // 이월 항목 제거
-    const ledgerWithoutCarryOver = carryOverMigrated
-      ? ledgerAfterSubRename.filter((l) => !isCarryOverEntry(l))
-      : ledgerAfterSubRename;
-
-    // 재테크 expense와 중복되는 transfer 제거
-    const deduped = deduplicateInvestmentTransfers(ledgerWithoutCarryOver);
-    const finalLedger = deduped.changed ? deduped.ledger : ledgerWithoutCarryOver;
-
-    // 계좌 cashAdjustment 동적 보정 — 중복 이체가 제거되었을 때만 CSV 기준 재보정
-    // (dedup 후 잔액 공식이 바뀌므로 cashAdj 재계산 필요. 평소에는 건드리지 않음)
-    const normalizedCash = deduped.changed
-      ? normalizeCashAdjustment(accounts, finalLedger, dataWithKrNames.trades)
-      : { accounts, changed: false };
-
-    // 농협: 유저가 장부를 완벽 정리 → initialBalance로 잔액 맞춤 (cashAdj=0)
-    // initialBalance = target - (income - expense + savingsExpIn + transferNet)
-    const accsAfterCash = normalizedCash.changed ? normalizedCash.accounts : accounts;
-    let initialBalanceFixed = false;
-    const finalAccounts = accsAfterCash.map((acc) => {
-      const fixTargets: Record<string, number> = { "농협": 213658, "농협2호": 0, "나라사랑": 2, "저축은행": 1952, "토스": 10, "ISA": 1211268, "CMA": 4, "업비트": 342, "현금": 50000, "카카오페이": 5, "삼성증권": 117390, "연금저축": 3692 };
-      const target = fixTargets[acc.id];
-      if (target === undefined) return acc;
-      // 잔액 공식에서 base 제외한 나머지 계산 (computeAccountBalances와 동일 로직)
-      let inc = 0, exp = 0, savIn = 0, trIn = 0, trOut = 0;
-      for (const l of finalLedger) {
-        if (l.kind === "income" && l.toAccountId === acc.id) inc += l.amount;
-        if (l.kind === "expense" && l.fromAccountId === acc.id) exp += l.amount;
-        if (l.kind === "expense" && l.toAccountId === acc.id) savIn += l.amount;
-        if (l.kind === "transfer" && l.currency !== "USD") {
-          if (l.fromAccountId === acc.id) trOut += l.amount;
-          if (l.toAccountId === acc.id) trIn += l.amount;
-        }
-      }
-      // 증권/크립토 계좌: tradeCashImpact 포함
-      let tradeCash = 0;
-      const isSecurities = acc.type === "securities" || acc.type === "crypto";
-      if (isSecurities) {
-        for (const t of dataWithKrNames.trades) {
-          if (t.accountId === acc.id) {
-            const impact = Number(t.cashImpact);
-            if (Number.isFinite(impact)) tradeCash += impact;
-          }
-        }
-      }
-      const netWithoutBase = inc - exp + savIn + (trIn - trOut) + tradeCash;
-      // 증권/크립토: initialCashBalance 기준, 그 외: initialBalance 기준
-      if (isSecurities) {
-        const neededCashBase = Math.round(target - netWithoutBase);
-        if ((acc.initialCashBalance ?? 0) === neededCashBase && (acc.cashAdjustment ?? 0) === 0) return acc;
-        initialBalanceFixed = true;
-        return { ...acc, initialCashBalance: neededCashBase, cashAdjustment: 0 };
-      }
-      const neededInitial = Math.round(target - netWithoutBase);
-      if (acc.initialBalance === neededInitial && (acc.cashAdjustment ?? 0) === 0) return acc;
-      initialBalanceFixed = true;
-      return { ...acc, initialBalance: neededInitial, cashAdjustment: 0 };
-    });
-
-    const finalData: AppData = {
-      ...dataWithKrNames,
-      accounts: finalAccounts,
-      ledger: finalLedger
-    };
+    // 사용자의 계좌·가계부·거래 원본을 그대로 보존. 임시/일회성 마이그레이션은 모두 제거됨.
+    const finalData: AppData = dataWithKrNames;
 
     if (
       schemaVersionChanged ||
-      hasLedgerChanges ||
-      categoryMigrated.changed ||
-      deduped.changed ||
-      carryOverMigrated ||
-      initialBalanceFixed ||
       krNamesChanged ||
-      normalizedSecurities.changed ||
-      normalizedUsdCashImpact.changed ||
-      normalizedKrwCashImpact.changed ||
-      normalizedCash.changed ||
       needsCacheMigration
     ) {
       try {

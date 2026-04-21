@@ -269,7 +269,14 @@ export const TopThreeBlocksWidget: React.FC<InsightWidgetProps> = ({
     const dateAccId = getDateAccountId();
     const ratio = getDateAccountRatio() / 100;
 
-    const dateEntries = ml.filter((e) => e.category === "데이트비");
+    // 카테고리는 대/중/소 3단계: 현재 데이터는 subCategory에 주요 분류가 저장됨.
+    // 구버전(category에 저장) 호환을 위해 둘 다 체크.
+    const matches = (e: typeof ml[number], name: string) =>
+      e.subCategory === name || e.category === name;
+    const matchesDetail = (e: typeof ml[number], name: string) =>
+      e.detailCategory === name || e.subCategory === name;
+
+    const dateEntries = ml.filter((e) => matches(e, "데이트비"));
     const dateExpense = dateEntries.reduce((s, e) => {
       const r = e.fromAccountId === dateAccId ? ratio : 1;
       return s + e.amount * r;
@@ -277,14 +284,14 @@ export const TopThreeBlocksWidget: React.FC<InsightWidgetProps> = ({
 
     const carEntries = ml.filter(
       (e) =>
-        e.category === "유류교통비" ||
-        (e.category === "데이트비" &&
-          (e.subCategory === "이동" || e.subCategory === "주차비")),
+        matches(e, "유류교통비") ||
+        (matches(e, "데이트비") &&
+          (matchesDetail(e, "이동") || matchesDetail(e, "주차비"))),
     );
     const carExpense = carEntries.reduce((s, e) => s + e.amount, 0);
 
     const foodExpense = ml
-      .filter((e) => e.category === "식비")
+      .filter((e) => matches(e, "식비"))
       .reduce((s, e) => s + e.amount, 0);
 
     const blockTotal = dateExpense + carExpense + foodExpense;
@@ -380,12 +387,16 @@ export const SubscriptionAlertWidget: React.FC<InsightWidgetProps> = ({
       AI_KEYWORDS.some((k) => (sub || "").toLowerCase().includes(k));
 
     const perMonth = months.map((m) => {
+      // 3단계 구조: (지출 > 구독비 > YouTube/Netflix). 구버전(category=구독비) 호환도 유지.
       const ml = ledger.filter(
-        (e) => monthOf(e.date) === m && e.category === "구독비",
+        (e) => monthOf(e.date) === m && (e.subCategory === "구독비" || e.category === "구독비"),
       );
-      const ai = ml.filter((e) => isAI(e.subCategory || "")).reduce((s, e) => s + e.amount, 0);
-      const other = ml.filter((e) => !isAI(e.subCategory || "")).reduce((s, e) => s + e.amount, 0);
-      const subs = new Set(ml.map((e) => e.subCategory || e.description));
+      // 세부 이름은 detailCategory (신) 또는 subCategory (구). 그 중 하나에서 AI 키워드 검사.
+      const subName = (e: typeof ledger[number]) =>
+        (e.category === "구독비" ? e.subCategory : e.detailCategory) || "";
+      const ai = ml.filter((e) => isAI(subName(e))).reduce((s, e) => s + e.amount, 0);
+      const other = ml.filter((e) => !isAI(subName(e))).reduce((s, e) => s + e.amount, 0);
+      const subs = new Set(ml.map((e) => subName(e) || e.description));
       return { month: m, ai, other, total: ai + other, subs };
     });
 

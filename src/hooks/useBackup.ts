@@ -84,6 +84,27 @@ export function useBackup(data: AppData, options?: UseBackupOptions) {
     void refreshLatestBackup();
   }, [refreshLatestBackup]);
 
+  // 탭 닫힘/새로고침 직전 pending 자동저장을 flush — 500ms 디바운스 중 F5 → 유실 방지
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    const flush = () => {
+      if (!autoSaveTimerRef.current) return;
+      window.clearTimeout(autoSaveTimerRef.current);
+      autoSaveTimerRef.current = null;
+      try {
+        const payload = JSON.stringify(data);
+        if (payload && payload !== lastSavedPayloadRef.current) {
+          saveDataSerialized(payload);
+          lastSavedPayloadRef.current = payload;
+        }
+      } catch {
+        /* quota 등 에러는 조용히 무시 — 다음 저장에서 재시도됨 */
+      }
+    };
+    window.addEventListener("beforeunload", flush);
+    return () => window.removeEventListener("beforeunload", flush);
+  }, [data]);
+
   useEffect(() => {
     if (typeof window === "undefined") return;
     if (!hasMountedRef.current) {

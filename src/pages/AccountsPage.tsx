@@ -117,17 +117,12 @@ const ACCOUNT_TYPE_LABEL: Record<AccountType, string> = {
   other: "기타"
 };
 
-function normalizeDebtValue(value: number): number {
-  if (!Number.isFinite(value)) return 0;
-  return value;
-}
-
 function sanitizeSignedNumericInput(raw: string): string {
   const cleaned = raw.replace(/[^0-9+\-.,]/g, "");
   if (!cleaned) return "";
   const first = cleaned[0];
   const sign = first === "+" || first === "-" ? first : "";
-  const body = (sign ? cleaned.slice(1) : cleaned).replace(/[+\-]/g, "");
+  const body = (sign ? cleaned.slice(1) : cleaned).replace(/[+-]/g, "");
   return `${sign}${body}`;
 }
 
@@ -152,8 +147,8 @@ export const AccountsView: React.FC<Props> = ({
 }) => {
   const storeData = useAppStore((s) => s.data);
   const safeAccounts = accounts ?? [];
-  const safeBalances = balances ?? [];
-  const safePositions = positions ?? [];
+  const safeBalances = useMemo(() => balances ?? [], [balances]);
+  const safePositions = useMemo(() => positions ?? [], [positions]);
 
   const handleExportAllCsv = useCallback(() => {
     const unified = buildUnifiedCsv(storeData.ledger, storeData.trades, storeData.accounts, storeData.categoryPresets);
@@ -562,55 +557,6 @@ export const AccountsView: React.FC<Props> = ({
     setActualCurrentInput(next);
   };
 
-  const totalSummary = useMemo(() => {
-    // 증권 계좌만
-    const securitiesAccounts = safeBalances.filter((row) => row.account.type === "securities" || row.account.type === "crypto");
-    
-    // USD 잔액 합계 (usdBalance + usdTransferNet)
-    const totalUsdBalance = securitiesAccounts.reduce((sum, row) => {
-      return sum + (row.account.usdBalance ?? 0) + (row.usdTransferNet ?? 0);
-    }, 0);
-    // KRW 잔액 합계 (ledger 기반 currentBalance)
-    const totalKrwBalance = securitiesAccounts.reduce((sum, row) => {
-      return sum + row.currentBalance;
-    }, 0);
-    
-    // 주식 평가금액 합계
-    const totalStock = securitiesAccounts.reduce((sum, row) => {
-      return sum + (stockMap.get(row.account.id) ?? 0);
-    }, 0);
-    
-    // 증권계좌 현금자산 = (USD*환율) + KRW
-    const securitiesCash = fxRate ? (totalUsdBalance * fxRate) + totalKrwBalance : totalKrwBalance;
-    
-    // 입출금·저축 계좌 잔액 합계
-    const checkingSavingsBalance = safeBalances
-      .filter((row) => row.account.type === "checking" || row.account.type === "savings")
-      .reduce((sum, row) => sum + row.currentBalance, 0);
-    
-    // 총 현금자산 = 증권 현금 + 입출금·저축 잔액
-    const totalCash = securitiesCash + checkingSavingsBalance;
-    
-    // 총 자산 = 주식 + 총 현금
-    const totalAsset = totalStock + totalCash;
-    
-    // USD 환산용
-    const totalStockUSD = fxRate ? totalStock / fxRate : null;
-    const totalCashUSD = fxRate ? totalCash / fxRate : null;
-    const totalAssetUSD = fxRate ? totalAsset / fxRate : null;
-    
-    return {
-      totalUsdBalance,
-      totalKrwBalance,
-      totalStock,
-      totalCash,
-      totalAsset,
-      totalStockUSD,
-      totalCashUSD,
-      totalAssetUSD
-    };
-  }, [safeBalances, stockMap, fxRate]);
-
   // Summary by account type
   const typeSummary = useMemo(() => {
     const checking = safeBalances
@@ -859,26 +805,25 @@ export const AccountsView: React.FC<Props> = ({
       )}
       {(() => {
         const accountName = (row.account.name + row.account.id).toLowerCase();
-        const isUSD = row.account.currency === "USD" || 
-                     accountName.includes("usd") || 
-                     accountName.includes("dollar") || 
+        const isUSD = row.account.currency === "USD" ||
+                     accountName.includes("usd") ||
+                     accountName.includes("dollar") ||
                      accountName.includes("달러");
-        const currency = isUSD ? "USD" : "KRW";
         const formatAmount = (value: number) => isUSD ? formatUSD(value) : formatKRW(value);
-        
+
         // Securities/crypto account is handled above.
         if (accountType === "securities" || accountType === "crypto") {
           return null;
         }
-        
+
         // 증권/카드 계좌는 별도 렌더링 (위에서 securities, 아래에서 card 처리)
         if (accountType === "card") {
           return null;
         }
-        
+
         // For checking/savings/other, display current balance.
         const cashAsset = row.currentBalance;
-        
+
         return (
           <td className={`number ${cashAsset >= 0 ? "positive" : "negative"}`}>
             {formatAmount(cashAsset)}
@@ -886,13 +831,6 @@ export const AccountsView: React.FC<Props> = ({
         );
       })()}
       {(() => {
-        const accountName = (row.account.name + row.account.id).toLowerCase();
-        const isUSD = row.account.currency === "USD" || 
-                     accountName.includes("usd") || 
-                     accountName.includes("dollar") || 
-                     accountName.includes("달러");
-        const formatAmount = (value: number) => isUSD ? formatUSD(value) : formatKRW(value);
-        
         if (accountType === "card") {
           const debtInfo = cardDebtMap.get(row.account.id) ?? { total: 0 };
           const debtDisplay = debtInfo.total < 0 ? Math.abs(debtInfo.total) : 0;
@@ -1819,7 +1757,6 @@ export const AccountsView: React.FC<Props> = ({
 
         const balanceRow = safeBalances.find((b) => b.account.id === selectedAccount.id);
         const krwBalance = balanceRow?.currentBalance ?? 0;
-        const usdBalance = (selectedAccount.type === "securities" || selectedAccount.type === "crypto") ? (selectedAccount.usdBalance ?? 0) : 0;
         const isSecuritiesAccount = selectedAccount.type === "securities" || selectedAccount.type === "crypto";
         /**
          * 증권/코인 계좌 거래내역 모달의 "잔액"은 예수금(현금)만 보여준다.

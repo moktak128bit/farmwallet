@@ -12,6 +12,8 @@ import {
   CartesianGrid,
   Label
 } from "recharts";
+import type { Payload, ValueType, NameType } from "recharts/types/component/DefaultTooltipContent";
+import type { LegendPayload } from "recharts/types/component/DefaultLegendContent";
 import { DeferredResponsiveContainer as ResponsiveContainer } from "../../components/charts/DeferredResponsiveContainer";
 import type { AccountBalanceRow } from "../../types";
 import { formatKRW, formatUSD } from "../../utils/formatter";
@@ -106,8 +108,8 @@ export const PortfolioChartsSection: React.FC<PortfolioChartsSectionProps> = ({
                       ))}
                     </Pie>
                     <Tooltip
-                      formatter={(value: any, name: any, item: any) => [
-                        formatWithUSD(value, rate || null),
+                      formatter={(value: ValueType | undefined, name: NameType | undefined, item: Payload<ValueType, NameType>) => [
+                        formatWithUSD(Number(value ?? 0), rate || null),
                         pieTooltipLabel(item) || name || "평가액"
                       ]}
                     />
@@ -170,14 +172,17 @@ export const PortfolioChartsSection: React.FC<PortfolioChartsSectionProps> = ({
                         <Cell key={`cell-${index}`} fill={colors[index % colors.length]} />
                       ))}
                     </Pie>
-                    <Tooltip 
-                      formatter={(value: any, name: any, item: any) => [
-                        formatWithUSD(value, rate || null),
+                    <Tooltip
+                      formatter={(value: ValueType | undefined, name: NameType | undefined, item: Payload<ValueType, NameType>) => [
+                        formatWithUSD(Number(value ?? 0), rate || null),
                         pieTooltipLabel(item) || name
                       ]}
                     />
-                    <Legend 
-                      formatter={(value: any, entry: any) => entry.payload?.fullName || value}
+                    <Legend
+                      formatter={(value: string, entry: LegendPayload) => {
+                        const inner = entry.payload as { fullName?: string } | undefined;
+                        return inner?.fullName || value;
+                      }}
                       wrapperStyle={{ fontSize: "11px" }}
                     />
                   </PieChart>
@@ -238,11 +243,11 @@ export const PortfolioChartsSection: React.FC<PortfolioChartsSectionProps> = ({
                       fill="var(--text)"
                       style={{ fontSize: "13px", fontWeight: "bold", textAlign: "center" }}
                     />
-                    <Tooltip 
-                      formatter={(value: any, name: any, item: any) => {
-                        const p = item?.payload;
+                    <Tooltip
+                      formatter={(value: ValueType | undefined, name: NameType | undefined, item: Payload<ValueType, NameType>) => {
+                        const p = item?.payload as { name?: string; stock?: number; cash?: number } | undefined;
                         return [
-                          formatWithUSD(value, rate || null),
+                          formatWithUSD(Number(value ?? 0), rate || null),
                           `${p?.name ?? name}\n주식: ${formatWithUSD(p?.stock || 0, rate || null)}\n현금: ${formatKRW(p?.cash || 0)}`
                         ];
                       }}
@@ -301,9 +306,9 @@ export const PortfolioChartsSection: React.FC<PortfolioChartsSectionProps> = ({
                       axisLine={false}
                       width={95}
                     />
-                    <Tooltip 
-                      formatter={(value: any, name: any, item: any) => [
-                        formatWithUSD(value, rate || null),
+                    <Tooltip
+                      formatter={(value: ValueType | undefined, name: NameType | undefined, item: Payload<ValueType, NameType>) => [
+                        formatWithUSD(Number(value ?? 0), rate || null),
                         pieTooltipLabel(item) || name
                       ]}
                       cursor={{fill: 'rgba(0,0,0,0.05)'}}

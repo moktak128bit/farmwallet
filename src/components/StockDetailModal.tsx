@@ -1,11 +1,9 @@
 import React, { useCallback, useMemo, useState, useEffect } from "react";
-import type { Account, HistoricalDailyClose, LedgerEntry, StockPrice, StockTrade, TickerInfo } from "../types";
-import { Autocomplete } from "./ui/Autocomplete";
+import type { Account, LedgerEntry, StockPrice, StockTrade, TickerInfo } from "../types";
 import { formatKRW, formatNumber } from "../utils/formatter";
 import { isKRWStock, isUSDStock, extractTickerFromText } from "../utils/finance";
 import { parseExDateFromNote, buildDividendNote } from "../utils/dividend";
 import { parseAmount } from "../utils/parseAmount";
-import { findStoredCloseAtOrBefore } from "../hooks/useAutoFetchHistoricalCloses";
 import { toast } from "react-hot-toast";
 import { ERROR_MESSAGES } from "../constants/errorMessages";
 
@@ -29,7 +27,6 @@ interface Props {
   prices: StockPrice[];
   ledger: LedgerEntry[];
   tickerDatabase: TickerInfo[];
-  historicalDailyCloses?: HistoricalDailyClose[];
   onClose: () => void;
   onChangeLedger: (ledger: LedgerEntry[]) => void;
   fxRate?: number | null;
@@ -42,7 +39,6 @@ export const StockDetailModal: React.FC<Props> = ({
   prices,
   ledger,
   tickerDatabase,
-  historicalDailyCloses = [],
   onClose,
   onChangeLedger,
   fxRate: propFxRate = null
@@ -93,17 +89,15 @@ export const StockDetailModal: React.FC<Props> = ({
     });
   }, [position?.ticker]);
 
-  if (!position) return null;
-
   // 선택한 티커의 통화 정보
   const selectedTickerCurrency = useMemo(() => {
-    if (!position.ticker) return undefined;
-    
+    if (!position?.ticker) return undefined;
+
     const originalPriceInfo = prices.find((p) => p.ticker === position.ticker);
     if (originalPriceInfo?.currency) {
       return originalPriceInfo.currency;
     }
-    
+
     const tickerInfo = tickerDatabase.find((t) => t.ticker === position.ticker);
     if (tickerInfo?.market === "US") {
       return "USD";
@@ -111,16 +105,17 @@ export const StockDetailModal: React.FC<Props> = ({
     if (tickerInfo?.market === "KR") {
       return "KRW";
     }
-    
+
     const ticker = position.ticker;
     if (isKRWStock(ticker)) return "KRW";
     if (isUSDStock(ticker)) return "USD";
-    
+
     return undefined;
-  }, [prices, tickerDatabase, position.ticker]);
+  }, [prices, tickerDatabase, position?.ticker]);
 
   // 해당 종목의 거래 내역
   const positionTrades = useMemo(() => {
+    if (!position) return [];
     return trades
       .filter((t) => t.ticker === position.ticker && t.accountId === position.accountId)
       .sort((a, b) => b.date.localeCompare(a.date));
@@ -128,6 +123,7 @@ export const StockDetailModal: React.FC<Props> = ({
 
   // 해당 종목의 배당 내역
   const positionDividends = useMemo(() => {
+    if (!position) return [];
     const isDividend = (l: LedgerEntry) => {
       if (l.kind !== "income") return false;
       const isDividendEntry = l.category === "배당" || (l.category === "수입" && l.subCategory === "배당") || (l.description ?? "").includes("배당");
@@ -217,23 +213,6 @@ export const StockDetailModal: React.FC<Props> = ({
     return positionDividends.reduce((sum, d) => sum + d.amount, 0);
   }, [positionDividends]);
 
-  const displayFxRate = fxRate && fxRate > 0 ? fxRate : 0;
-  const isUsdTicker = selectedTickerCurrency === "USD";
-  const avgPriceKRW =
-    isUsdTicker && position.totalBuyAmountKRW != null && position.quantity > 0
-      ? position.totalBuyAmountKRW / position.quantity
-      : isUsdTicker && displayFxRate > 0
-        ? position.avgPrice * displayFxRate
-        : position.avgPrice;
-  const marketPriceKRW =
-    isUsdTicker && displayFxRate > 0 ? position.displayMarketPrice * displayFxRate : position.displayMarketPrice;
-  const totalBuyKRW =
-    isUsdTicker && position.totalBuyAmountKRW != null
-      ? position.totalBuyAmountKRW
-      : isUsdTicker && displayFxRate > 0
-        ? position.totalBuyAmount * displayFxRate
-        : position.totalBuyAmount;
-
   // 주당배당금 × 보유주식수 = 총 배당금 자동 계산
   const calculatedAmount = useMemo(() => {
     const qty = Number(dividendForm.quantity);
@@ -277,6 +256,7 @@ export const StockDetailModal: React.FC<Props> = ({
     const tax = dividendForm.tax ? Number(dividendForm.tax) : 0;
     const fee = dividendForm.fee ? Number(dividendForm.fee) : 0;
 
+    if (!position) return;
     if (!dividendForm.date || !dividendForm.accountId || !qty || qty <= 0 || !dps || dps <= 0) {
       return;
     }
@@ -384,6 +364,25 @@ export const StockDetailModal: React.FC<Props> = ({
     toast.success("배당 기록을 수정했습니다.");
     handleCancelEditDividend();
   };
+
+  if (!position) return null;
+
+  const displayFxRate = fxRate && fxRate > 0 ? fxRate : 0;
+  const isUsdTicker = selectedTickerCurrency === "USD";
+  const avgPriceKRW =
+    isUsdTicker && position.totalBuyAmountKRW != null && position.quantity > 0
+      ? position.totalBuyAmountKRW / position.quantity
+      : isUsdTicker && displayFxRate > 0
+        ? position.avgPrice * displayFxRate
+        : position.avgPrice;
+  const marketPriceKRW =
+    isUsdTicker && displayFxRate > 0 ? position.displayMarketPrice * displayFxRate : position.displayMarketPrice;
+  const totalBuyKRW =
+    isUsdTicker && position.totalBuyAmountKRW != null
+      ? position.totalBuyAmountKRW
+      : isUsdTicker && displayFxRate > 0
+        ? position.totalBuyAmount * displayFxRate
+        : position.totalBuyAmount;
 
   return (
     <div className="modal-backdrop" onClick={onClose}>

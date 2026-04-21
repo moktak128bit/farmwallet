@@ -143,8 +143,9 @@ export const DebtView: React.FC<Props> = ({
       id: `LEDGER-${Date.now()}-${Math.random().toString(36).slice(2, 9)}`,
       date: repayDate,
       kind: "expense",
-      category: "대출상환",
-      subCategory: repaySubCategory,
+      category: "지출",
+      subCategory: "대출상환",
+      detailCategory: repaySubCategory,
       description: `${repayingLoan.loanName} 상환`,
       fromAccountId: repayFromAccountId,
       amount
@@ -246,7 +247,17 @@ export const DebtView: React.FC<Props> = ({
   const openEditRepayment = (entry: LedgerEntry) => {
     setEditingRepayment(entry);
     setEditAmount(String(Math.round(entry.amount)));
-    const sub = entry.subCategory || "기타대출상환";
+    // 세부 항목 위치 (신구 구조 모두 대응):
+    //  - 현재 구조: (category="지출", subCategory="대출상환", detailCategory=<세부>)
+    //  - 구버전:     (category="대출상환", subCategory=<세부>)
+    //  - 최초:       (category="대출", subCategory="빚") → 세부 없음
+    const detail =
+      entry.category === "지출" && entry.subCategory === "대출상환"
+        ? entry.detailCategory
+        : entry.category === "대출상환"
+          ? entry.subCategory
+          : undefined;
+    const sub = detail || "기타대출상환";
     setEditSubCategory(loanRepaymentSubOptions.includes(sub) ? sub : "기타대출상환");
     setEditFromAccountId(entry.fromAccountId || "");
     setEditDate(entry.date || new Date().toISOString().slice(0, 10));
@@ -273,8 +284,10 @@ export const DebtView: React.FC<Props> = ({
       date: editDate,
       amount,
       fromAccountId: editFromAccountId,
-      category: "대출상환",
-      subCategory: editSubCategory,
+      // 저장 시 현재 3단계 구조로 승격 (편집으로 자연 마이그레이션)
+      category: "지출",
+      subCategory: "대출상환",
+      detailCategory: editSubCategory,
       description: editDescription || editingRepayment.description
     };
     onChangeLedger(ledger.map((l) => (l.id === editingRepayment.id ? updated : l)));

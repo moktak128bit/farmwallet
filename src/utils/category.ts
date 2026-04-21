@@ -5,7 +5,6 @@ import {
   makeIsSavingsExpense,
   type CategoryType
 } from "./categoryUtils";
-import { normalizeCategory, normalizeSubCategory } from "./categoryNormalize";
 import { recommendCategory } from "./categoryRecommendation";
 import {
   autoCategorize,
@@ -21,8 +20,6 @@ export {
   getSavingsCategories,
   isSavingsExpenseEntry,
   makeIsSavingsExpense,
-  normalizeCategory,
-  normalizeSubCategory,
   recommendCategory,
   autoCategorize,
   learnFromEntry,

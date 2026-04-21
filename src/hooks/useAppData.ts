@@ -36,21 +36,25 @@ export function useAppData() {
     return () => clearTimeout(id);
   }, []);
 
-  // localStorage가 비어 있으면 최신 백업 파일에서 전체 데이터 복원
+  // "처음 방문"일 때만(localStorage 앱 키가 아예 없고 ledger도 비어있음) 최신 백업에서 복원.
+  // 사용자가 의도적으로 데이터를 지운 경우(localStorage에 빈 AppData를 저장)는 복원하지 않음.
   const dataRecoveryDone = useRef(false);
   useEffect(() => {
     if (isLoading || dataRecoveryDone.current) return;
-    const currentData = useAppStore.getState().data;
-    // ledger가 있으면 데이터 정상 — 복원 불필요
-    if (currentData?.ledger && currentData.ledger.length > 0) return;
     dataRecoveryDone.current = true;
+    const currentData = useAppStore.getState().data;
+    if (currentData?.ledger && currentData.ledger.length > 0) return;
+    if (typeof window !== "undefined") {
+      const STORAGE_KEY = "farmwallet-data-v1";
+      // 사용자가 한 번이라도 저장한 흔적이 있으면 자동 복원 안 함 (의도적 wipe 존중)
+      if (window.localStorage.getItem(STORAGE_KEY) !== null) return;
+    }
     fetch("/api/restore-latest-backup")
       .then((r) => r.json())
       .then((backup: Record<string, unknown> | null) => {
         if (!backup || typeof backup !== "object") return;
         const ledger = backup.ledger;
         if (!Array.isArray(ledger) || ledger.length === 0) return;
-        // 백업 데이터를 localStorage에 저장 후 loadData로 재로드
         try {
           saveData(backup as unknown as Parameters<typeof saveData>[0]);
           const reloaded = loadData();

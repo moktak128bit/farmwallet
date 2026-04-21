@@ -565,71 +565,9 @@ export const StocksView: React.FC<Props> = ({
     }
   };
 
-  // 기존 달러 종목 거래의 cashImpact를 원화로 재계산 (한 번만 실행)
-  const hasRecalculatedRef = React.useRef(false);
-  React.useEffect(() => {
-    if (!fxRate || trades.length === 0 || hasRecalculatedRef.current) return;
-
-    const hasUsdBalanceMode = (accountId: string): boolean => {
-      const account = accounts.find((a) => a.id === accountId);
-      if (!account || (account.type !== "securities" && account.type !== "crypto")) return false;
-      const hasUsdTransfers = ledger.some(
-        (entry) =>
-          entry.kind === "transfer" &&
-          entry.currency === "USD" &&
-          (entry.fromAccountId === accountId || entry.toAccountId === accountId)
-      );
-      return account.currency === "USD" || hasUsdTransfers;
-    };
-
-    const needsUpdate = trades.some(t => {
-      const isUSD = isUSDStock(t.ticker);
-      const priceInfo = latestPriceByCanonicalTicker.get(canonicalTickerForMatch(t.ticker));
-      const currency = priceInfo?.currency || (isUSD ? "USD" : "KRW");
-      if (currency !== "USD") return false;
-      if (hasUsdBalanceMode(t.accountId)) return false;
-      
-      // totalAmount가 달러로 저장되어 있고, cashImpact가 원화로 변환되지 않은 경우
-      // (cashImpact의 절댓값이 totalAmount와 비슷하면 원화 변환이 안 된 것으로 간주)
-      const expectedKRW = Math.abs(t.totalAmount * fxRate);
-      if (expectedKRW <= 0) return false;
-      const currentImpact = Math.abs(t.cashImpact);
-      // 10% 이상 차이나면 재계산 필요
-      return Math.abs(currentImpact - expectedKRW) / expectedKRW > 0.1;
-    });
-    
-    if (needsUpdate) {
-      const updated = trades.map(t => {
-        const isUSD = isUSDStock(t.ticker);
-        const priceInfo = latestPriceByCanonicalTicker.get(canonicalTickerForMatch(t.ticker));
-        const currency = priceInfo?.currency || (isUSD ? "USD" : "KRW");
-        
-        if (currency === "USD" && fxRate) {
-          if (hasUsdBalanceMode(t.accountId)) return t;
-          // totalAmount는 달러로 저장되어 있으므로 원화로 변환
-          const totalAmountKRW = t.totalAmount * fxRate;
-          const cashImpact = t.side === "buy" ? -totalAmountKRW : totalAmountKRW;
-          
-          // cashImpact가 이미 올바르게 계산되어 있으면 변경하지 않음
-          const currentImpact = Math.abs(t.cashImpact);
-          const expectedImpact = Math.abs(totalAmountKRW);
-          if (expectedImpact <= 0) return t;
-          if (Math.abs(currentImpact - expectedImpact) / expectedImpact > 0.1) {
-            return { ...t, cashImpact };
-          }
-        }
-        return t;
-      });
-      
-      // 변경사항이 있으면 업데이트
-      const hasChanges = updated.some((t, i) => t.cashImpact !== trades[i].cashImpact);
-      if (hasChanges) {
-        onChangeTrades(updated);
-        hasRecalculatedRef.current = true;
-        toast.success("달러 종목 거래의 계좌 잔액이 재계산되었습니다.");
-      }
-    }
-  }, [fxRate, trades, prices, accounts, ledger, onChangeTrades]);
+  // (removed) "기존 달러 거래 cashImpact 원화 재계산" 자동 effect.
+  // 현재 환율(fxRate)로 과거 거래를 재계산해 사용자의 역사적 환율 기록(fxRateAtTrade)을
+  // 덮어쓰던 코드. 새 거래는 submitTradeFromForm에서 올바른 cashImpact를 직접 저장.
 
   React.useEffect(() => {
     updateFxRate().catch((err) => {

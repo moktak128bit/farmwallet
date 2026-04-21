@@ -1,11 +1,16 @@
-import React, { memo } from "react";
+import React, { memo, useEffect, useMemo, useState } from "react";
 import type { WorkoutBodyPart, WorkoutDayEntry, WorkoutRoutine, WorkoutSet, WorkoutExercise } from "../../types";
 import { formatNumber } from "../../utils/formatter";
 import { TimerSummary } from "./TimerSummary";
-import { CardioInputs } from "./CardioInputs";
 import { SetDetailRow } from "./SetDetailRow";
 import { BODY_PART_COLORS } from "./constants";
-import { computeExerciseVolume, isCardioExercise } from "./helpers";
+import {
+  computeExerciseVolume,
+  computeExerciseTimings,
+  computeExercisePrevEnd,
+  formatDuration,
+  isCardioExercise,
+} from "./helpers";
 import { ExercisePicker } from "./ExercisePicker";
 import type { CustomExercise } from "../../types";
 
@@ -26,6 +31,7 @@ interface Props {
   onUpsertEntry: (date: string, updater: (e: WorkoutDayEntry) => WorkoutDayEntry) => void;
   onAddExercise: (name: string, bodyPart: WorkoutBodyPart) => void;
   onRemoveExercise: (exerciseId: string) => void;
+  onReorderExercise: (exerciseId: string, direction: "up" | "down") => void;
   onAddSet: (exerciseId: string, patch: Partial<WorkoutSet>) => void;
   onRemoveSet: (exerciseId: string, idx: number) => void;
   onToggleSetDone: (exerciseId: string, idx: number) => void;
@@ -40,10 +46,34 @@ const DayWorkoutEditorInner: React.FC<Props> = ({
   customExercises, recentExercises,
   onStartWorkout, onStartRest, onEndWorkout, onResumeWorkout,
   onApplyRoutine, onUpsertEntry,
-  onAddExercise, onRemoveExercise,
+  onAddExercise, onRemoveExercise, onReorderExercise,
   onAddSet, onRemoveSet, onToggleSetDone, onUpdateSet,
   onOpenHistory,
 }) => {
+  const [nowTick, setNowTick] = useState(() => Date.now());
+  const exercises = selectedEntry?.exercises ?? [];
+
+  const timings = useMemo(() => {
+    if (!selectedEntry) return new Map();
+    return computeExerciseTimings(selectedEntry, nowTick);
+  }, [selectedEntry, nowTick]);
+
+  const prevEndByExercise = useMemo(() => {
+    if (!selectedEntry) return new Map<string, string | undefined>();
+    return computeExercisePrevEnd(selectedEntry);
+  }, [selectedEntry]);
+
+  const hasLive = useMemo(() => {
+    for (const t of timings.values()) if (t.isLive) return true;
+    return false;
+  }, [timings]);
+
+  useEffect(() => {
+    if (!hasLive) return;
+    const id = window.setInterval(() => setNowTick(Date.now()), 60_000);
+    return () => window.clearInterval(id);
+  }, [hasLive]);
+
   if (!selectedEntry) {
     return (
       <div>
@@ -161,17 +191,17 @@ const DayWorkoutEditorInner: React.FC<Props> = ({
         onResume={onResumeWorkout}
       />
 
-      <CardioInputs
-        entry={selectedEntry}
-        onUpdateEntry={(updater) => onUpsertEntry(selectedDate, updater)}
-      />
-
-      {(selectedEntry.exercises ?? []).map((exercise: WorkoutExercise) => {
+      {exercises.map((exercise: WorkoutExercise, exerciseIdx: number) => {
         const volume = computeExerciseVolume([exercise]);
         const partColor = exercise.bodyPart ? BODY_PART_COLORS[exercise.bodyPart] : "#64748b";
         const doneCount = exercise.sets.filter((s) => s.done).length;
         const totalCount = exercise.sets.length;
         const isAllDone = totalCount > 0 && doneCount === totalCount;
+        const timing = timings.get(exercise.id);
+        const durLabel = timing?.durationMs != null ? formatDuration(timing.durationMs) : "";
+        const canMoveUp = exerciseIdx > 0;
+        const canMoveDown = exerciseIdx < exercises.length - 1;
+        const firstSetPrev = prevEndByExercise.get(exercise.id);
 
         return (
           <div key={exercise.id} style={{
@@ -183,6 +213,34 @@ const DayWorkoutEditorInner: React.FC<Props> = ({
           }}>
             <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 10, gap: 8, flexWrap: "wrap" }}>
               <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
+                <div style={{ display: "flex", flexDirection: "column", gap: 2 }}>
+                  <button
+                    type="button"
+                    onClick={() => onReorderExercise(exercise.id, "up")}
+                    disabled={!canMoveUp}
+                    aria-label="위로 이동"
+                    title="위로 이동"
+                    style={{
+                      width: 22, height: 18, padding: 0, fontSize: 10, lineHeight: 1,
+                      background: "var(--surface)", border: "1px solid var(--border)", borderRadius: 4,
+                      cursor: canMoveUp ? "pointer" : "not-allowed",
+                      opacity: canMoveUp ? 1 : 0.35, color: "var(--text-muted)",
+                    }}
+                  >▲</button>
+                  <button
+                    type="button"
+                    onClick={() => onReorderExercise(exercise.id, "down")}
+                    disabled={!canMoveDown}
+                    aria-label="아래로 이동"
+                    title="아래로 이동"
+                    style={{
+                      width: 22, height: 18, padding: 0, fontSize: 10, lineHeight: 1,
+                      background: "var(--surface)", border: "1px solid var(--border)", borderRadius: 4,
+                      cursor: canMoveDown ? "pointer" : "not-allowed",
+                      opacity: canMoveDown ? 1 : 0.35, color: "var(--text-muted)",
+                    }}
+                  >▼</button>
+                </div>
                 {exercise.bodyPart && (
                   <span style={{
                     padding: "3px 8px", fontSize: 11, fontWeight: 700, borderRadius: 6,
@@ -200,6 +258,19 @@ const DayWorkoutEditorInner: React.FC<Props> = ({
                     border: `1px solid ${isAllDone ? "#10b981" : "var(--border)"}`,
                   }}>
                     {doneCount}/{totalCount} 완료{isAllDone ? " ✓" : ""}
+                  </span>
+                )}
+                {durLabel && (
+                  <span
+                    style={{
+                      fontSize: 12, fontWeight: 700, padding: "3px 10px", borderRadius: 999,
+                      background: timing?.isLive ? "rgba(16,185,129,0.14)" : "var(--surface)",
+                      color: timing?.isLive ? "#10b981" : "var(--text-muted)",
+                      border: `1px solid ${timing?.isLive ? "#10b98160" : "var(--border)"}`,
+                    }}
+                    title={timing?.isLive ? "이 종목 경과 (진행 중)" : "이 종목 소요 시간"}
+                  >
+                    ⏱ {durLabel}
                   </span>
                 )}
                 {volume > 0 && (
@@ -261,7 +332,7 @@ const DayWorkoutEditorInner: React.FC<Props> = ({
                     set={set}
                     index={idx}
                     isCardio={isCardioExercise(exercise)}
-                    prevCompletedAt={idx > 0 ? exercise.sets[idx - 1]?.completedAt : selectedEntry?.startedAt}
+                    prevCompletedAt={idx > 0 ? exercise.sets[idx - 1]?.completedAt : firstSetPrev}
                     onToggleDone={() => onToggleSetDone(exercise.id, idx)}
                     onUpdate={(patch) => onUpdateSet(exercise.id, idx, patch)}
                     onRemove={() => onRemoveSet(exercise.id, idx)}
@@ -319,7 +390,7 @@ const DayWorkoutEditorInner: React.FC<Props> = ({
       <ExercisePicker
         customExercises={customExercises}
         recentExercises={recentExercises}
-        alreadyAddedNames={new Set((selectedEntry.exercises ?? []).map((ex) => ex.name))}
+        alreadyAddedNames={new Set(exercises.map((ex) => ex.name))}
         onAddExercise={onAddExercise}
       />
     </>

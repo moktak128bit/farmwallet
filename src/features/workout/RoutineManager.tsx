@@ -1,5 +1,5 @@
 import React, { memo } from "react";
-import type { WorkoutRoutine } from "../../types";
+import type { WorkoutRoutine, WorkoutRoutineExercise } from "../../types";
 import { BODY_PARTS, BODY_PART_COLORS } from "./constants";
 
 interface Props {
@@ -24,6 +24,8 @@ interface Props {
   onChangeRoutineExerciseDraft: (updater: (d: Props["routineExerciseDraft"]) => Props["routineExerciseDraft"]) => void;
   onAddRoutineExercise: (routineId: string) => void;
   onRemoveRoutineExercise: (routineId: string, exerciseId: string) => void;
+  onUpdateRoutineExercise: (routineId: string, exerciseId: string, patch: Partial<WorkoutRoutineExercise>) => void;
+  onReorderRoutineExercise: (routineId: string, exerciseId: string, direction: "up" | "down") => void;
 }
 
 const RoutineManagerInner: React.FC<Props> = ({
@@ -33,6 +35,7 @@ const RoutineManagerInner: React.FC<Props> = ({
   onRenameRoutine, onDeleteRoutine,
   routineExerciseDraft, onChangeRoutineExerciseDraft,
   onAddRoutineExercise, onRemoveRoutineExercise,
+  onUpdateRoutineExercise, onReorderRoutineExercise,
 }) => {
   return (
     <div className="card" style={{ padding: 16, marginBottom: 16 }}>
@@ -120,33 +123,129 @@ const RoutineManagerInner: React.FC<Props> = ({
                     <div>
                       {/* 루틴 내 운동 목록 */}
                       {routine.exercises.length > 0 && (
-                        <div style={{ marginBottom: 10 }}>
-                          {routine.exercises.map((rex) => {
+                        <div style={{ marginBottom: 10, display: "flex", flexDirection: "column", gap: 6 }}>
+                          {routine.exercises.map((rex, rexIdx) => {
                             const color = BODY_PART_COLORS[rex.bodyPart];
+                            const canUp = rexIdx > 0;
+                            const canDown = rexIdx < routine.exercises.length - 1;
                             return (
                               <div key={rex.id} style={{
-                                display: "flex", alignItems: "center", gap: 8,
-                                padding: "6px 10px", marginBottom: 4, borderRadius: 6,
+                                display: "flex", alignItems: "center", gap: 6,
+                                padding: "8px 10px", borderRadius: 6,
                                 background: color + "10", border: `1px solid ${color}30`,
+                                flexWrap: "wrap",
                               }}>
-                                <span style={{
-                                  padding: "2px 6px", fontSize: 11, fontWeight: 700, borderRadius: 4,
-                                  background: color + "20", color,
-                                }}>
-                                  {rex.bodyPart}
-                                </span>
-                                <strong style={{ fontSize: 14, flex: 1 }}>{rex.name}</strong>
-                                <span style={{ fontSize: 13, color: "var(--text-muted)" }}>
-                                  {rex.targetSets}세트 × {rex.targetReps}회 × {rex.targetWeightKg}kg
-                                </span>
+                                <div style={{ display: "flex", flexDirection: "column", gap: 2 }}>
+                                  <button
+                                    type="button"
+                                    onClick={() => onReorderRoutineExercise(routine.id, rex.id, "up")}
+                                    disabled={!canUp}
+                                    title="위로 이동"
+                                    aria-label="위로 이동"
+                                    style={{
+                                      width: 22, height: 18, padding: 0, fontSize: 10, lineHeight: 1,
+                                      background: "var(--surface)", border: "1px solid var(--border)", borderRadius: 4,
+                                      cursor: canUp ? "pointer" : "not-allowed",
+                                      opacity: canUp ? 1 : 0.35, color: "var(--text-muted)",
+                                    }}
+                                  >▲</button>
+                                  <button
+                                    type="button"
+                                    onClick={() => onReorderRoutineExercise(routine.id, rex.id, "down")}
+                                    disabled={!canDown}
+                                    title="아래로 이동"
+                                    aria-label="아래로 이동"
+                                    style={{
+                                      width: 22, height: 18, padding: 0, fontSize: 10, lineHeight: 1,
+                                      background: "var(--surface)", border: "1px solid var(--border)", borderRadius: 4,
+                                      cursor: canDown ? "pointer" : "not-allowed",
+                                      opacity: canDown ? 1 : 0.35, color: "var(--text-muted)",
+                                    }}
+                                  >▼</button>
+                                </div>
+                                <select
+                                  value={rex.bodyPart}
+                                  onChange={(e) =>
+                                    onUpdateRoutineExercise(routine.id, rex.id, {
+                                      bodyPart: e.target.value as typeof rex.bodyPart,
+                                    })
+                                  }
+                                  style={{
+                                    padding: "4px 6px", fontSize: 12, borderRadius: 4,
+                                    background: color + "20", color,
+                                    border: `1px solid ${color}40`, fontWeight: 700,
+                                  }}
+                                >
+                                  {BODY_PARTS.map((p) => (
+                                    <option key={p} value={p}>{p}</option>
+                                  ))}
+                                </select>
+                                <input
+                                  type="text"
+                                  value={rex.name}
+                                  onChange={(e) =>
+                                    onUpdateRoutineExercise(routine.id, rex.id, { name: e.target.value })
+                                  }
+                                  placeholder="운동 이름"
+                                  style={{
+                                    flex: 1, minWidth: 120, padding: "4px 8px",
+                                    borderRadius: 4, fontSize: 13, fontWeight: 600,
+                                  }}
+                                />
+                                <input
+                                  type="number"
+                                  min={1}
+                                  max={100}
+                                  value={rex.targetSets}
+                                  onChange={(e) => {
+                                    const v = parseInt(e.target.value, 10);
+                                    if (Number.isFinite(v) && v >= 1) {
+                                      onUpdateRoutineExercise(routine.id, rex.id, { targetSets: v });
+                                    }
+                                  }}
+                                  style={{ width: 48, padding: "4px 6px", borderRadius: 4, fontSize: 12, textAlign: "center" }}
+                                  title="세트"
+                                />
+                                <span style={{ fontSize: 11, color: "var(--text-muted)" }}>세트</span>
+                                <input
+                                  type="number"
+                                  min={1}
+                                  value={rex.targetReps}
+                                  onChange={(e) => {
+                                    const v = parseInt(e.target.value, 10);
+                                    if (Number.isFinite(v) && v >= 1) {
+                                      onUpdateRoutineExercise(routine.id, rex.id, { targetReps: v });
+                                    }
+                                  }}
+                                  style={{ width: 48, padding: "4px 6px", borderRadius: 4, fontSize: 12, textAlign: "center" }}
+                                  title="횟수"
+                                />
+                                <span style={{ fontSize: 11, color: "var(--text-muted)" }}>회</span>
+                                <input
+                                  type="number"
+                                  min={0}
+                                  step={0.5}
+                                  value={rex.targetWeightKg}
+                                  onChange={(e) => {
+                                    const v = parseFloat(e.target.value);
+                                    if (Number.isFinite(v) && v >= 0) {
+                                      onUpdateRoutineExercise(routine.id, rex.id, { targetWeightKg: v });
+                                    }
+                                  }}
+                                  style={{ width: 60, padding: "4px 6px", borderRadius: 4, fontSize: 12, textAlign: "center" }}
+                                  title="중량 (kg)"
+                                />
+                                <span style={{ fontSize: 11, color: "var(--text-muted)" }}>kg</span>
                                 <button
                                   type="button"
                                   onClick={() => onRemoveRoutineExercise(routine.id, rex.id)}
                                   style={{
                                     background: "none", border: "none", cursor: "pointer",
                                     color: "var(--text-muted)", fontSize: 16,
+                                    width: 24, height: 24,
                                   }}
                                   title="운동 삭제"
+                                  aria-label="운동 삭제"
                                 >
                                   ×
                                 </button>

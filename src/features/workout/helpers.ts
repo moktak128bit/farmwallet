@@ -65,6 +65,23 @@ export function isCardioExercise(ex: { bodyPart?: WorkoutBodyPart }): boolean {
   return ex.bodyPart === "유산소";
 }
 
+export type CardioKind = "distance" | "intensity" | "count" | "interval";
+
+/**
+ * 유산소 종목 이름으로 입력 타입 판별.
+ * - 인터벌: 강/약 속도 + 시간 + 횟수
+ * - 강도형: 시간 + 강도 레벨 (천국의 계단 등)
+ * - 횟수형: 시간 + 횟수 (줄넘기, 버피)
+ * - 거리형: 시간 + 거리 (러닝, 트레드밀, 사이클, 로잉)
+ */
+export function getCardioKind(exerciseName: string): CardioKind {
+  const name = exerciseName ?? "";
+  if (name.includes("인터벌")) return "interval";
+  if (name.includes("계단")) return "intensity";
+  if (name.includes("줄넘기") || name.includes("버피")) return "count";
+  return "distance";
+}
+
 /** 기록된 운동이 가진 부위 set */
 export function getEntryBodyParts(entry: WorkoutDayEntry): WorkoutBodyPart[] {
   const parts = new Set<WorkoutBodyPart>();

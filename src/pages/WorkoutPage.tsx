@@ -213,6 +213,18 @@ export const WorkoutView: React.FC<Props> = ({
     }));
   };
 
+  const reorderExercise = (exerciseId: string, direction: "up" | "down") => {
+    upsertEntry(selectedDate, (entry) => {
+      const list = [...(entry.exercises ?? [])];
+      const idx = list.findIndex((ex) => ex.id === exerciseId);
+      if (idx < 0) return entry;
+      const target = direction === "up" ? idx - 1 : idx + 1;
+      if (target < 0 || target >= list.length) return entry;
+      [list[idx], list[target]] = [list[target], list[idx]];
+      return { ...entry, exercises: list };
+    });
+  };
+
   const addSet = (exerciseId: string, partial: Partial<WorkoutSet>) => {
     // 빠른 추가는 "방금 수행" 의미라 done=true 로 저장하며 완료 시각도 기록.
     const ts = nowIso();
@@ -418,6 +430,44 @@ export const WorkoutView: React.FC<Props> = ({
     );
   };
 
+  const updateRoutineExercise = (
+    routineId: string,
+    exerciseId: string,
+    patch: Partial<WorkoutRoutineExercise>
+  ) => {
+    onChangeWorkoutRoutines(
+      workoutRoutines.map((r) =>
+        r.id === routineId
+          ? {
+              ...r,
+              exercises: r.exercises.map((ex) =>
+                ex.id === exerciseId ? { ...ex, ...patch } : ex
+              ),
+            }
+          : r
+      )
+    );
+  };
+
+  const reorderRoutineExercise = (
+    routineId: string,
+    exerciseId: string,
+    direction: "up" | "down"
+  ) => {
+    onChangeWorkoutRoutines(
+      workoutRoutines.map((r) => {
+        if (r.id !== routineId) return r;
+        const list = [...r.exercises];
+        const idx = list.findIndex((ex) => ex.id === exerciseId);
+        if (idx < 0) return r;
+        const target = direction === "up" ? idx - 1 : idx + 1;
+        if (target < 0 || target >= list.length) return r;
+        [list[idx], list[target]] = [list[target], list[idx]];
+        return { ...r, exercises: list };
+      })
+    );
+  };
+
   // 루틴 따라하기: 선택 날짜 기록에 루틴 운동 + 목표 세트 일괄 삽입.
   // 휴식 권장 루틴(restDay)은 휴식 기록으로 전환.
   const applyRoutine = (routineId: string) => {
@@ -503,6 +553,8 @@ export const WorkoutView: React.FC<Props> = ({
         onChangeRoutineExerciseDraft={setRoutineExerciseDraft}
         onAddRoutineExercise={addRoutineExercise}
         onRemoveRoutineExercise={removeRoutineExercise}
+        onUpdateRoutineExercise={updateRoutineExercise}
+        onReorderRoutineExercise={reorderRoutineExercise}
       />
 
       <MonthCalendar
@@ -554,6 +606,7 @@ export const WorkoutView: React.FC<Props> = ({
           onUpsertEntry={upsertEntry}
           onAddExercise={addExercise}
           onRemoveExercise={removeExercise}
+          onReorderExercise={reorderExercise}
           onAddSet={addSet}
           onRemoveSet={removeSet}
           onToggleSetDone={toggleSetDone}

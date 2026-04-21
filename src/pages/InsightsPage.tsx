@@ -5,6 +5,8 @@ import {
   XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer,
   AreaChart, Area, ComposedChart,
 } from "recharts";
+import type { Payload, ValueType, NameType } from "recharts/types/component/DefaultTooltipContent";
+import type { PieLabelRenderProps } from "recharts/types/polar/Pie";
 import { ForecastView } from "../features/insights/ForecastView";
 import { SettlementView } from "../features/dating/SettlementView";
 import { calcTrend, mTotalsFor } from "../utils/insightsHelpers";
@@ -92,24 +94,27 @@ function Insight({ title, color, bg, children }: { title: string; color: string;
   );
 }
 
-/* eslint-disable @typescript-eslint/no-explicit-any */
-const pieLabel = ({ name, percent }: any) => `${name ?? ""} ${((percent ?? 0) * 100).toFixed(0)}%`;
-function CT({ active, payload, label }: any) {
+const pieLabel = ({ name, percent }: PieLabelRenderProps) => `${name ?? ""} ${((percent ?? 0) * 100).toFixed(0)}%`;
+interface CTProps {
+  active?: boolean;
+  payload?: ReadonlyArray<Payload<ValueType, NameType>>;
+  label?: string | number;
+}
+function CT({ active, payload, label }: CTProps) {
   if (!active || !payload?.length) return null;
   return (
     <div style={{ background: "#1a1a2e", border: "1px solid #333", borderRadius: 10, padding: "10px 14px", color: "#fff", fontSize: 12, maxWidth: 280 }}>
       <div style={{ fontWeight: 700, marginBottom: 6, color: "#f0c040" }}>{label}</div>
-      {payload.map((p: any, i: number) => (
+      {payload.map((p, i) => (
         <div key={i} style={{ display: "flex", alignItems: "center", gap: 6, marginBottom: 2 }}>
           <div style={{ width: 8, height: 8, borderRadius: 4, background: p.color, flexShrink: 0 }} />
           <span style={{ color: "#aaa" }}>{p.name}:</span>
-          <span style={{ fontWeight: 600 }}>{W(Math.round(p.value))}</span>
+          <span style={{ fontWeight: 600 }}>{W(Math.round(Number(p.value)))}</span>
         </div>
       ))}
     </div>
   );
 }
-/* eslint-enable @typescript-eslint/no-explicit-any */
 
 /* ================================================================== */
 /*  InsightData type                                                   */
@@ -1126,7 +1131,7 @@ const OverviewTab = React.memo(function OverviewTab({ d }: { d: D }) {
       <Card title="누적 저축률 추이" span={2}>
         <p style={{ fontSize: 11, color: "#999", margin: "0 0 4px", textAlign: "right" }}>월급이 월말 지급이므로 월별 저축률 대신 누적 기준 표시</p>
         <ResponsiveContainer width="100%" height={210}>
-          <ComposedChart data={d.savRateTrend}><CartesianGrid strokeDasharray="3 3" stroke="#eee" /><XAxis dataKey="l" tick={{ fontSize: 12 }} /><YAxis tickFormatter={(v: number) => v + "%"} tick={{ fontSize: 11 }} /><Tooltip formatter={(v: any) => v.toFixed(1) + "%"} />
+          <ComposedChart data={d.savRateTrend}><CartesianGrid strokeDasharray="3 3" stroke="#eee" /><XAxis dataKey="l" tick={{ fontSize: 12 }} /><YAxis tickFormatter={(v: number) => v + "%"} tick={{ fontSize: 11 }} /><Tooltip formatter={(v: ValueType | undefined) => Number(v ?? 0).toFixed(1) + "%"} />
             <Bar dataKey="rate" name="월별" radius={[4, 4, 0, 0]} opacity={0.35}>
               {d.savRateTrend.map((e, i) => <Cell key={i} fill={e.rate >= 30 ? "#48c9b0" : e.rate >= 0 ? "#f0c040" : "#e94560"} />)}
             </Bar>
@@ -1151,7 +1156,7 @@ const OverviewTab = React.memo(function OverviewTab({ d }: { d: D }) {
         <ResponsiveContainer width="100%" height={180}>
           <PieChart><Pie data={pieData} dataKey="value" cx="50%" cy="50%" outerRadius={70} innerRadius={35} label={pieLabel} labelLine={false} style={{ fontSize: 10 }}>
             {pieData.map((_, i) => <Cell key={i} fill={pieCols[i]} />)}
-          </Pie><Tooltip formatter={(v: any) => W(v)} /></PieChart>
+          </Pie><Tooltip formatter={(v: ValueType | undefined) => W(Number(v ?? 0))} /></PieChart>
         </ResponsiveContainer>
       </Card>
 
@@ -1311,7 +1316,7 @@ const ExpenseTab = React.memo(function ExpenseTab({ d }: { d: D }) {
         <ResponsiveContainer width="100%" height={320}>
           <PieChart><Pie data={subPie} dataKey="value" cx="50%" cy="50%" outerRadius={120} innerRadius={55} label={pieLabel} labelLine={false} style={{ fontSize: 9 }}>
             {subPie.map((_, i) => <Cell key={i} fill={C[i]} />)}
-          </Pie><Tooltip formatter={(v: any) => W(v)} /></PieChart>
+          </Pie><Tooltip formatter={(v: ValueType | undefined) => W(Number(v ?? 0))} /></PieChart>
         </ResponsiveContainer>
       </Card>
 
@@ -1395,7 +1400,7 @@ const ExpenseTab = React.memo(function ExpenseTab({ d }: { d: D }) {
         <ResponsiveContainer width="100%" height={320}>
           <BarChart data={subAvg} layout="vertical"><CartesianGrid strokeDasharray="3 3" stroke="#eee" />
             <XAxis type="number" tickFormatter={F} tick={{ fontSize: 10 }} /><YAxis dataKey="name" type="category" width={90} tick={{ fontSize: 10 }} />
-            <Tooltip formatter={(v: any) => W(v)} /><Bar dataKey="avg" fill="#533483" radius={[0, 4, 4, 0]} name="월평균" />
+            <Tooltip formatter={(v: ValueType | undefined) => W(Number(v ?? 0))} /><Bar dataKey="avg" fill="#533483" radius={[0, 4, 4, 0]} name="월평균" />
           </BarChart>
         </ResponsiveContainer>
       </Card>
@@ -1524,7 +1529,7 @@ const IncomeTab = React.memo(function IncomeTab({ d }: { d: D }) {
         <ResponsiveContainer width="100%" height={280}>
           <PieChart><Pie data={d.incByGroup} dataKey="value" cx="50%" cy="50%" outerRadius={105} innerRadius={50} label={pieLabel} labelLine={false} style={{ fontSize: 10 }}>
             {d.incByGroup.map((_, i) => <Cell key={i} fill={["#f0c040", "#48c9b0", "#3498db"][i] ?? C[i]} />)}
-          </Pie><Tooltip formatter={(v: any) => W(v)} /></PieChart>
+          </Pie><Tooltip formatter={(v: ValueType | undefined) => W(Number(v ?? 0))} /></PieChart>
         </ResponsiveContainer>
       </Card>
 
@@ -1550,7 +1555,7 @@ const IncomeTab = React.memo(function IncomeTab({ d }: { d: D }) {
         <ResponsiveContainer width="100%" height={280}>
           <PieChart><Pie data={incData.slice(0, 7)} dataKey="value" cx="50%" cy="50%" outerRadius={105} innerRadius={50} label={pieLabel} labelLine={false} style={{ fontSize: 10 }}>
             {incData.slice(0, 7).map((_, i) => <Cell key={i} fill={C[i]} />)}
-          </Pie><Tooltip formatter={(v: any) => W(v)} /></PieChart>
+          </Pie><Tooltip formatter={(v: ValueType | undefined) => W(Number(v ?? 0))} /></PieChart>
         </ResponsiveContainer>
       </Card>
 
@@ -1711,7 +1716,7 @@ const DateTab = React.memo(function DateTab({ d }: { d: D }) {
             <ResponsiveContainer width="100%" height={260}>
               <PieChart><Pie data={subPie} dataKey="value" cx="50%" cy="50%" outerRadius={100} innerRadius={40} label={pieLabel} labelLine={false} style={{ fontSize: 9 }}>
                 {subPie.map((_, i) => <Cell key={i} fill={C[i]} />)}
-              </Pie><Tooltip formatter={(v: any) => W(v)} /></PieChart>
+              </Pie><Tooltip formatter={(v: ValueType | undefined) => W(Number(v ?? 0))} /></PieChart>
             </ResponsiveContainer>
           ) : <div style={{ textAlign: "center", padding: 40, color: "#999" }}>중분류 없음</div>}
         </Card>
@@ -1761,7 +1766,7 @@ const DateTab = React.memo(function DateTab({ d }: { d: D }) {
 
         <Card title="전체 지출 대비 데이트비 비율" span={1}>
           <ResponsiveContainer width="100%" height={220}>
-            <BarChart data={dateVsTotal}><CartesianGrid strokeDasharray="3 3" stroke="#eee" /><XAxis dataKey="name" tick={{ fontSize: 10 }} /><YAxis tickFormatter={(v: number) => v + "%"} tick={{ fontSize: 10 }} /><Tooltip formatter={(v: any) => v + "%"} />
+            <BarChart data={dateVsTotal}><CartesianGrid strokeDasharray="3 3" stroke="#eee" /><XAxis dataKey="name" tick={{ fontSize: 10 }} /><YAxis tickFormatter={(v: number) => v + "%"} tick={{ fontSize: 10 }} /><Tooltip formatter={(v: ValueType | undefined) => v + "%"} />
               <Bar dataKey="비율" fill="#e94560" radius={[4, 4, 0, 0]} name="비율" />
             </BarChart>
           </ResponsiveContainer>
@@ -1895,7 +1900,7 @@ const InvestTab = React.memo(function InvestTab({ d }: { d: D }) {
           <ResponsiveContainer width="100%" height={280}>
             <PieChart><Pie data={d.portfolio} dataKey="value" cx="50%" cy="50%" outerRadius={100} innerRadius={45} label={pieLabel} labelLine={false} style={{ fontSize: 10 }}>
               {d.portfolio.map((_, i) => <Cell key={i} fill={C[i]} />)}
-            </Pie><Tooltip formatter={(v: any) => W(v)} /></PieChart>
+            </Pie><Tooltip formatter={(v: ValueType | undefined) => W(Number(v ?? 0))} /></PieChart>
           </ResponsiveContainer>
         ) : <div style={{ textAlign: "center", padding: 40, color: "#999" }}>데이터 없음</div>}
       </Card>
@@ -1972,7 +1977,7 @@ const InvestTab = React.memo(function InvestTab({ d }: { d: D }) {
             <ResponsiveContainer width="45%" height={200}>
               <PieChart><Pie data={pieData} dataKey="value" cx="50%" cy="50%" outerRadius={80} innerRadius={35} label={pieLabel} labelLine={false} style={{ fontSize: 10 }}>
                 {d.investBySub.map((_, i) => <Cell key={i} fill={C[i]} />)}
-              </Pie><Tooltip formatter={(v: any) => W(v)} /></PieChart>
+              </Pie><Tooltip formatter={(v: ValueType | undefined) => W(Number(v ?? 0))} /></PieChart>
             </ResponsiveContainer>
             <div style={{ flex: 1 }}>
               {d.investBySub.map((v, i) => (
@@ -2170,7 +2175,7 @@ const PatternTab = React.memo(function PatternTab({ d }: { d: D }) {
           <ResponsiveContainer width="100%" height={260}>
             <PieChart><Pie data={subFreqPie} dataKey="value" cx="50%" cy="50%" outerRadius={95} innerRadius={40} label={pieLabel} labelLine={false} style={{ fontSize: 9 }}>
               {subFreqPie.map((_, i) => <Cell key={i} fill={C[i]} />)}
-            </Pie><Tooltip formatter={(v: any) => `${v}건`} /></PieChart>
+            </Pie><Tooltip formatter={(v: ValueType | undefined) => `${v}건`} /></PieChart>
           </ResponsiveContainer>
         ) : <div style={{ textAlign: "center", padding: 40, color: "#999" }}>데이터 없음</div>}
       </Card>
@@ -2445,7 +2450,7 @@ const AssetTab = React.memo(function AssetTab({ d }: { d: D }) {
               <CartesianGrid strokeDasharray="3 3" stroke="#eee" />
               <XAxis dataKey="label" tick={{ fontSize: 11 }} />
               <YAxis tickFormatter={F} tick={{ fontSize: 11 }} domain={[Math.max(0, minNW * 0.9), maxNW * 1.05]} />
-              <Tooltip formatter={(v: any) => W(v)} />
+              <Tooltip formatter={(v: ValueType | undefined) => W(Number(v ?? 0))} />
               <Area type="monotone" dataKey="total" stroke="#48c9b0" fill="url(#nwGrad)" strokeWidth={2} name="순자산" />
             </AreaChart>
           </ResponsiveContainer>
@@ -2459,7 +2464,7 @@ const AssetTab = React.memo(function AssetTab({ d }: { d: D }) {
               <CartesianGrid strokeDasharray="3 3" stroke="#eee" />
               <XAxis dataKey="label" tick={{ fontSize: 11 }} />
               <YAxis tickFormatter={F} tick={{ fontSize: 11 }} />
-              <Tooltip formatter={(v: any) => W(v)} />
+              <Tooltip formatter={(v: ValueType | undefined) => W(Number(v ?? 0))} />
               <Legend wrapperStyle={{ fontSize: 11 }} />
               <Bar dataKey="income" fill="#48c9b0" name="수입" radius={[4, 4, 0, 0]} />
               <Bar dataKey="expense" fill="#e94560" name="지출" radius={[4, 4, 0, 0]} />
@@ -2473,7 +2478,7 @@ const AssetTab = React.memo(function AssetTab({ d }: { d: D }) {
           <ResponsiveContainer width="100%" height={280}>
             <PieChart><Pie data={d.assetAllocation} dataKey="value" cx="50%" cy="50%" outerRadius={105} innerRadius={50} label={pieLabel} labelLine={false} style={{ fontSize: 10 }}>
               {d.assetAllocation.map((_, i) => <Cell key={i} fill={C[i % C.length]} />)}
-            </Pie><Tooltip formatter={(v: any) => W(v)} /></PieChart>
+            </Pie><Tooltip formatter={(v: ValueType | undefined) => W(Number(v ?? 0))} /></PieChart>
           </ResponsiveContainer>
         </Card>
       )}

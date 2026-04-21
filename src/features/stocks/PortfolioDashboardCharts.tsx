@@ -1,5 +1,7 @@
 import React from "react";
 import { Cell, Legend, Pie, PieChart, Tooltip } from "recharts";
+import type { Payload, ValueType, NameType } from "recharts/types/component/DefaultTooltipContent";
+import type { LegendPayload } from "recharts/types/component/DefaultLegendContent";
 import { DeferredResponsiveContainer as ResponsiveContainer } from "../../components/charts/DeferredResponsiveContainer";
 import type { AccountBalanceRow } from "../../types";
 import { formatKRW, formatUSD } from "../../utils/formatter";
@@ -112,13 +114,16 @@ export function PortfolioDashboardCharts(props: {
                   ))}
                 </Pie>
                 <Tooltip
-                  formatter={(value: any, name: any, item: any) => [
+                  formatter={(value: ValueType | undefined, name: NameType | undefined, item: Payload<ValueType, NameType>) => [
                     formatWithUSD(Number(value ?? 0)),
                     pieTooltipLabel(item) || name
                   ]}
                 />
                 <Legend
-                  formatter={(value: any, entry: any) => entry.payload?.fullName || value}
+                  formatter={(value: string, entry: LegendPayload) => {
+                    const inner = entry.payload as { fullName?: string } | undefined;
+                    return inner?.fullName || value;
+                  }}
                   wrapperStyle={{ fontSize: "11px" }}
                 />
               </PieChart>
@@ -151,8 +156,8 @@ export function PortfolioDashboardCharts(props: {
                   ))}
                 </Pie>
                 <Tooltip
-                  formatter={(value: any, name: any, item: any) => {
-                    const p = item?.payload as any;
+                  formatter={(value: ValueType | undefined, name: NameType | undefined, item: Payload<ValueType, NameType>) => {
+                    const p = item?.payload as { name?: string; cash?: number; savings?: number; stock?: number } | undefined;
                     const label = p?.name ?? name;
                     const cash = Number(p?.cash ?? 0);
                     const savings = Number(p?.savings ?? 0);

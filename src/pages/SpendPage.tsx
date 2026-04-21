@@ -2,6 +2,9 @@ import React, { useMemo, useState } from "react";
 import type { Account, CategoryPresets, LedgerEntry } from "../types";
 import { formatKRW } from "../utils/formatter";
 import { Bar, BarChart, CartesianGrid, Cell, Legend, Pie, PieChart, Tooltip, XAxis, YAxis } from "recharts";
+import type { Payload, ValueType, NameType } from "recharts/types/component/DefaultTooltipContent";
+import type { LegendPayload } from "recharts/types/component/DefaultLegendContent";
+import type { PieSectorDataItem } from "recharts/types/polar/Pie";
 import { DeferredResponsiveContainer as ResponsiveContainer } from "../components/charts/DeferredResponsiveContainer";
 import { compareMonths } from "../utils/monthComparison";
 import { detectSpendAnomalies } from "../utils/anomaly";
@@ -236,7 +239,7 @@ export const SpendView: React.FC<{
                       dataKey="value"
                       label={({ percent }) => (percent ? `${(percent * 100).toFixed(1)}%` : "0%")}
                       labelLine={false}
-                      onClick={(data: any) => {
+                      onClick={(data: PieSectorDataItem) => {
                         const name = String(data?.name ?? "");
                         if (!name) return;
                         setSelectedMain((prev) => (prev === name ? null : name));
@@ -247,13 +250,19 @@ export const SpendView: React.FC<{
                       ))}
                     </Pie>
                     <Tooltip
-                      formatter={(value: any, _name: any, item: any) => [
-                        formatKRW(Math.round(Number(value ?? 0))),
-                        item?.payload?.fullName ?? item?.payload?.name ?? "대분류"
-                      ]}
+                      formatter={(value: ValueType | undefined, _name: NameType | undefined, item: Payload<ValueType, NameType>) => {
+                        const p = item?.payload as { fullName?: string; name?: string } | undefined;
+                        return [
+                          formatKRW(Math.round(Number(value ?? 0))),
+                          p?.fullName ?? p?.name ?? "대분류"
+                        ];
+                      }}
                     />
                     <Legend
-                      formatter={(value: any, entry: any) => entry?.payload?.fullName ?? value}
+                      formatter={(value: string, entry: LegendPayload) => {
+                        const inner = entry?.payload as { fullName?: string } | undefined;
+                        return inner?.fullName ?? value;
+                      }}
                       wrapperStyle={{ fontSize: 11 }}
                     />
                   </PieChart>
@@ -287,10 +296,13 @@ export const SpendView: React.FC<{
                       width={42}
                     />
                     <Tooltip
-                      formatter={(value: any, _name: any, item: any) => [
-                        formatKRW(Math.round(Number(value ?? 0))),
-                        `${item?.payload?.main ?? ""} / ${item?.payload?.fullName ?? item?.payload?.name ?? "중분류"}`
-                      ]}
+                      formatter={(value: ValueType | undefined, _name: NameType | undefined, item: Payload<ValueType, NameType>) => {
+                        const p = item?.payload as { main?: string; fullName?: string; name?: string } | undefined;
+                        return [
+                          formatKRW(Math.round(Number(value ?? 0))),
+                          `${p?.main ?? ""} / ${p?.fullName ?? p?.name ?? "중분류"}`
+                        ];
+                      }}
                     />
                     <Bar dataKey="value" name="지출" radius={[6, 6, 0, 0]}>
                       {midBarData.map((_, index) => (

@@ -2950,7 +2950,6 @@ export const StocksView: React.FC<Props> = ({
           prices={prices}
           ledger={ledger}
           tickerDatabase={tickerDatabase}
-          historicalDailyCloses={historicalDailyCloses}
           onClose={() => setSelectedPosition(null)}
           onChangeLedger={onChangeLedger || (() => {})}
           fxRate={propFxRate}

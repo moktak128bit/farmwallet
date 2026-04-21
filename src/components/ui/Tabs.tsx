@@ -12,7 +12,8 @@ import {
   FileText,
   Dumbbell,
   ShoppingCart,
-  Lightbulb
+  Lightbulb,
+  LineChart
 } from "lucide-react";
 
 export type TabId =
@@ -20,6 +21,7 @@ export type TabId =
   | "ledger"
   | "stocks"
   | "dashboard"
+  | "investment-record"
   | "dividends"
   | "debt"
   | "spend"
@@ -38,6 +40,7 @@ interface TabItem {
 
 const TABS: TabItem[] = [
   { id: "dashboard", label: "대시보드", icon: <LayoutDashboard size={18} /> },
+  { id: "investment-record", label: "투자기록", icon: <LineChart size={18} /> },
   { id: "accounts", label: "계좌", icon: <Wallet size={18} /> },
   { id: "ledger", label: "가계부", icon: <BookOpen size={18} /> },
   { id: "stocks", label: "주식", icon: <TrendingUp size={18} /> },

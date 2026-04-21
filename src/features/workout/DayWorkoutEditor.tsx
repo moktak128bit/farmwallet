@@ -10,6 +10,7 @@ import {
   computeExercisePrevEnd,
   formatDuration,
   isCardioExercise,
+  getCardioKind,
 } from "./helpers";
 import { ExercisePicker } from "./ExercisePicker";
 import type { CustomExercise } from "../../types";
@@ -202,6 +203,8 @@ const DayWorkoutEditorInner: React.FC<Props> = ({
         const canMoveUp = exerciseIdx > 0;
         const canMoveDown = exerciseIdx < exercises.length - 1;
         const firstSetPrev = prevEndByExercise.get(exercise.id);
+        const isCardio = isCardioExercise(exercise);
+        const cardioKind = isCardio ? getCardioKind(exercise.name) : "distance";
 
         return (
           <div key={exercise.id} style={{
@@ -331,7 +334,8 @@ const DayWorkoutEditorInner: React.FC<Props> = ({
                     key={idx}
                     set={set}
                     index={idx}
-                    isCardio={isCardioExercise(exercise)}
+                    isCardio={isCardio}
+                    cardioKind={cardioKind}
                     prevCompletedAt={idx > 0 ? exercise.sets[idx - 1]?.completedAt : firstSetPrev}
                     onToggleDone={() => onToggleSetDone(exercise.id, idx)}
                     onUpdate={(patch) => onUpdateSet(exercise.id, idx, patch)}
@@ -350,11 +354,31 @@ const DayWorkoutEditorInner: React.FC<Props> = ({
               }}
               onClick={() => {
                 const last = exercise.sets[exercise.sets.length - 1];
-                if (isCardioExercise(exercise)) {
-                  onAddSet(exercise.id, {
-                    durationMin: last?.durationMin ?? 20,
-                    distanceKm: last?.distanceKm ?? 0,
-                  });
+                if (isCardio) {
+                  if (cardioKind === "interval") {
+                    onAddSet(exercise.id, {
+                      intervalStrongSpeed: last?.intervalStrongSpeed ?? 10,
+                      intervalStrongSec: last?.intervalStrongSec ?? 30,
+                      intervalWeakSpeed: last?.intervalWeakSpeed ?? 6,
+                      intervalWeakSec: last?.intervalWeakSec ?? 60,
+                      intervalReps: last?.intervalReps ?? 10,
+                    });
+                  } else if (cardioKind === "intensity") {
+                    onAddSet(exercise.id, {
+                      durationMin: last?.durationMin ?? 20,
+                      intensity: last?.intensity ?? 10,
+                    });
+                  } else if (cardioKind === "count") {
+                    onAddSet(exercise.id, {
+                      durationMin: last?.durationMin ?? 5,
+                      repsCount: last?.repsCount ?? 100,
+                    });
+                  } else {
+                    onAddSet(exercise.id, {
+                      durationMin: last?.durationMin ?? 20,
+                      distanceKm: last?.distanceKm ?? 0,
+                    });
+                  }
                 } else {
                   const w = last?.weightKg ?? last?.targetWeightKg ?? exercise.sets[0]?.targetWeightKg ?? 0;
                   const r = last?.reps ?? last?.targetReps ?? exercise.sets[0]?.targetReps ?? 0;

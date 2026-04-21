@@ -225,6 +225,20 @@ export interface WorkoutSet {
   durationMin?: number;
   /** 유산소 종목 전용: 거리(km) */
   distanceKm?: number;
+  /** 유산소(강도형): 강도 레벨 (예: 천국의 계단 1~20) */
+  intensity?: number;
+  /** 유산소(횟수형): 반복 횟수 (예: 줄넘기, 버피) */
+  repsCount?: number;
+  /** 유산소(인터벌): 강 구간 속도 (km/h, 트레드밀 기준) */
+  intervalStrongSpeed?: number;
+  /** 유산소(인터벌): 강 구간 지속 (초, 15초 단위) */
+  intervalStrongSec?: number;
+  /** 유산소(인터벌): 약 구간 속도 (km/h) */
+  intervalWeakSpeed?: number;
+  /** 유산소(인터벌): 약 구간 지속 (초, 15초 단위) */
+  intervalWeakSec?: number;
+  /** 유산소(인터벌): 강+약 반복 횟수 */
+  intervalReps?: number;
 }
 
 export type WorkoutBodyPart = "가슴" | "등" | "어깨" | "팔" | "하체" | "코어" | "유산소" | "기타";

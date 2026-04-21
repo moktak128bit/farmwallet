@@ -1,12 +1,14 @@
 import React, { memo } from "react";
 import type { WorkoutSet } from "../../types";
 import { Stepper } from "./Stepper";
-import { formatClockTime, formatDuration, nowIso } from "./helpers";
+import { formatClockTime, formatDuration, nowIso, type CardioKind } from "./helpers";
 
 interface Props {
   set: WorkoutSet;
   index: number;
   isCardio: boolean;
+  /** 유산소 입력 타입. isCardio=false 면 무시. */
+  cardioKind?: CardioKind;
   /** 직전 완료 세트 시각 (첫 세트는 운동 startedAt). 없으면 gap 미표시. */
   prevCompletedAt: string | undefined;
   onToggleDone: () => void;
@@ -15,7 +17,7 @@ interface Props {
 }
 
 const SetDetailRowInner: React.FC<Props> = ({
-  set, index, isCardio, prevCompletedAt, onToggleDone, onUpdate, onRemove
+  set, index, isCardio, cardioKind = "distance", prevCompletedAt, onToggleDone, onUpdate, onRemove
 }) => {
   const hasTarget = set.targetWeightKg !== undefined || set.targetReps !== undefined;
   const targetLabel = hasTarget
@@ -56,12 +58,58 @@ const SetDetailRowInner: React.FC<Props> = ({
         </span>
 
         {isCardio ? (
-          <>
-            <Stepper value={set.durationMin ?? 0} unit="분" step={5} min={0} max={600}
-              onChange={(v) => onUpdate({ durationMin: v })} />
-            <Stepper value={set.distanceKm ?? 0} unit="km" step={0.5} min={0} max={100}
-              onChange={(v) => onUpdate({ distanceKm: v })} />
-          </>
+          cardioKind === "interval" ? (
+            <div style={{ display: "flex", flexDirection: "column", gap: 6, flex: 1, minWidth: 240 }}>
+              <div style={{ display: "flex", alignItems: "center", gap: 6, flexWrap: "wrap" }}>
+                <span style={{
+                  fontSize: 11, fontWeight: 700, color: "#dc2626",
+                  padding: "2px 8px", borderRadius: 4, background: "rgba(220,38,38,0.12)",
+                  minWidth: 24, textAlign: "center",
+                }}>강</span>
+                <Stepper value={set.intervalStrongSpeed ?? 0} unit="km/h" step={0.5} min={0} max={30}
+                  onChange={(v) => onUpdate({ intervalStrongSpeed: v })} />
+                <Stepper value={set.intervalStrongSec ?? 0} unit="초" step={15} min={0} max={1800}
+                  onChange={(v) => onUpdate({ intervalStrongSec: v })} />
+              </div>
+              <div style={{ display: "flex", alignItems: "center", gap: 6, flexWrap: "wrap" }}>
+                <span style={{
+                  fontSize: 11, fontWeight: 700, color: "#2563eb",
+                  padding: "2px 8px", borderRadius: 4, background: "rgba(37,99,235,0.12)",
+                  minWidth: 24, textAlign: "center",
+                }}>약</span>
+                <Stepper value={set.intervalWeakSpeed ?? 0} unit="km/h" step={0.5} min={0} max={30}
+                  onChange={(v) => onUpdate({ intervalWeakSpeed: v })} />
+                <Stepper value={set.intervalWeakSec ?? 0} unit="초" step={15} min={0} max={1800}
+                  onChange={(v) => onUpdate({ intervalWeakSec: v })} />
+              </div>
+              <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
+                <span style={{ fontSize: 12, color: "var(--text-muted)", minWidth: 24 }}>반복</span>
+                <Stepper value={set.intervalReps ?? 0} unit="회" step={1} min={0} max={100}
+                  onChange={(v) => onUpdate({ intervalReps: Math.round(v) })} />
+              </div>
+            </div>
+          ) : cardioKind === "intensity" ? (
+            <>
+              <Stepper value={set.durationMin ?? 0} unit="분" step={5} min={0} max={600}
+                onChange={(v) => onUpdate({ durationMin: v })} />
+              <Stepper value={set.intensity ?? 0} unit="레벨" step={1} min={0} max={20}
+                onChange={(v) => onUpdate({ intensity: Math.round(v) })} />
+            </>
+          ) : cardioKind === "count" ? (
+            <>
+              <Stepper value={set.durationMin ?? 0} unit="분" step={1} min={0} max={600}
+                onChange={(v) => onUpdate({ durationMin: v })} />
+              <Stepper value={set.repsCount ?? 0} unit="회" step={10} min={0} max={100000}
+                onChange={(v) => onUpdate({ repsCount: Math.round(v) })} />
+            </>
+          ) : (
+            <>
+              <Stepper value={set.durationMin ?? 0} unit="분" step={5} min={0} max={600}
+                onChange={(v) => onUpdate({ durationMin: v })} />
+              <Stepper value={set.distanceKm ?? 0} unit="km" step={0.5} min={0} max={100}
+                onChange={(v) => onUpdate({ distanceKm: v })} />
+            </>
+          )
         ) : (
           <>
             <Stepper value={set.weightKg} unit="kg" step={2.5} min={0}

@@ -296,6 +296,14 @@ export interface WorkoutRoutine {
   note?: string;
 }
 
+/** 사용자가 직접 추가한 종목 (EXERCISE_PRESETS 바깥). 부위별로 picker에 영구 노출. */
+export interface CustomExercise {
+  name: string;
+  bodyPart: WorkoutBodyPart;
+  /** 최초 추가 ISO 시각 (정렬용) */
+  addedAt: string;
+}
+
 // --- Calculation Results ---
 
 export interface AccountBalanceRow {
@@ -382,6 +390,8 @@ export interface AppData {
   loans?: Loan[]; // 대출 목록
   workoutWeeks?: WorkoutWeek[];
   workoutRoutines?: WorkoutRoutine[];
+  /** 사용자 추가 운동 종목. picker에 프리셋과 합쳐 노출 */
+  customExercises?: CustomExercise[];
   /** 목표 자산 곡선 (날짜별 목표 금액). 비어 있으면 date < CALC_START_DATE 구간은 0 표시 */
   targetNetWorthCurve?: Record<string, number>;
   /** 반월/일별 자산 스냅샷 시계열 */

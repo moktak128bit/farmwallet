@@ -943,6 +943,7 @@ export function getEmptyData(): AppData {
     targetPortfolios: [],
     workoutWeeks: [],
     workoutRoutines: [...DEFAULT_WORKOUT_ROUTINES],
+    customExercises: [],
     targetNetWorthCurve: {},
     assetSnapshots: [],
     historicalDailyCloses: [],
@@ -1093,6 +1094,7 @@ export function loadData(): AppData {
     // 저장값이 비어 있을 때만 DEFAULT_WORKOUT_ROUTINES 를 주입.
     const parsedWorkoutRoutines =
       parsedWorkoutRoutinesRaw.length > 0 ? parsedWorkoutRoutinesRaw : [...DEFAULT_WORKOUT_ROUTINES];
+    const parsedCustomExercises = asArray(parsed.customExercises) as NonNullable<AppData["customExercises"]>;
     const parsedIsaPortfolio = asArray(parsed.isaPortfolio) as NonNullable<AppData["isaPortfolio"]>;
 
     // 캐시 분리 키에서 로드, 없으면 메인 키의 값으로 마이그레이션
@@ -1140,6 +1142,7 @@ export function loadData(): AppData {
       targetPortfolios: parsedTargetPortfolios,
       workoutWeeks: parsedWorkoutWeeks,
       workoutRoutines: parsedWorkoutRoutines,
+      customExercises: parsedCustomExercises,
       targetNetWorthCurve: normalizedTargetCurve,
       assetSnapshots: normalizeAssetSnapshots(parsed.assetSnapshots),
       historicalDailyCloses: effectiveHistoricalDailyCloses,

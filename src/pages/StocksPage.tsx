@@ -142,8 +142,6 @@ export const StocksView: React.FC<Props> = ({
   });
   const [fxRate, setFxRate] = useState<number | null>(propFxRate);
   const [fxUpdatedAt, setFxUpdatedAt] = useState<string | null>(null);
-  /** USD 종목일 때 단가·수수료를 원화로 입력할지 (true면 원화 입력, 기본값 true) */
-  const [tradeFormPriceInKRW, setTradeFormPriceInKRW] = useState(true);
 
   // props에서 전달받은 환율 업데이트
   useEffect(() => {
@@ -1570,12 +1568,6 @@ export const StocksView: React.FC<Props> = ({
         price = priceKRWNum / rate;
         fee = feeKRWNum / rate;
         exchangeRate = rate;
-      } else if (hasUSDInput && tradeFormPriceInKRW) {
-        // "원화로 입력" 토글 + 단가(USD) 필드에 원화 입력 → USD 변환 필요
-        const rate = (fxRate && fxRate > 0) ? fxRate : DEFAULT_FX_RATE;
-        price = price / rate;
-        fee = fee / rate;
-        exchangeRate = rate;
       } else if (hasUSDInput) {
         // 달러로만 매수/매도 → 계좌가 USD 잔액 모드면 환율 불필요(달러만 차감/증가)
         if (useUsdBalanceMode) {
@@ -1710,7 +1702,6 @@ export const StocksView: React.FC<Props> = ({
     accounts,
     prices,
     fxRate,
-    tradeFormPriceInKRW,
     tickerDatabase,
     isTradeFormValid,
     tradeFormValidation,
@@ -2449,27 +2440,6 @@ export const StocksView: React.FC<Props> = ({
               ? "미국 종목: 단가·수수료를 USD와 원화 중 하나 또는 둘 다 입력할 수 있습니다. 둘 다 입력하면 환율 없이 저장됩니다."
               : "한국 종목은 원화(KRW)로 입력합니다."}
           </p>
-          {isUSDStock(tradeForm.ticker ?? "") && (
-            <div style={{ display: "flex", alignItems: "center", gap: 12, marginBottom: 12, flexWrap: "wrap" }}>
-              <span style={{ fontSize: 13, color: "var(--text-muted)" }}>기본 입력 단위</span>
-              <button
-                type="button"
-                className={tradeFormPriceInKRW ? "primary" : "secondary"}
-                onClick={() => setTradeFormPriceInKRW(true)}
-                style={{ fontSize: 13, padding: "6px 14px" }}
-              >
-                원화
-              </button>
-              <button
-                type="button"
-                className={!tradeFormPriceInKRW ? "primary" : "secondary"}
-                onClick={() => setTradeFormPriceInKRW(false)}
-                style={{ fontSize: 13, padding: "6px 14px" }}
-              >
-                달러
-              </button>
-            </div>
-          )}
             {/* 전체 폼 */}
             <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(180px, 1fr))", gap: "10px 12px" }}>
             <label style={{ display: "flex", flexDirection: "column", gap: 4 }}>

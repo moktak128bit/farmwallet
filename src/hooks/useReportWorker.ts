@@ -254,16 +254,7 @@ export function useReportWorker(params: UseReportWorkerParams): UseReportWorkerR
   const fallback = useMemo(() => {
     if (supportsWorker) return null;
     return computeSynchronously(params);
-  }, [
-    supportsWorker,
-    params.accounts,
-    params.ledger,
-    params.trades,
-    params.prices,
-    params.startDate,
-    params.endDate,
-    params.fxRate
-  ]);
+  }, [supportsWorker, params]);
 
   const [state, setState] = useState<UseReportWorkerResult>(() => ({
     ...(fallback ?? createEmptyData()),

@@ -55,7 +55,13 @@ export const ReceiptScanner: React.FC<Props> = ({ open, onClose, onParsed }) => 
     setPreview(URL.createObjectURL(file));
     try {
       const tesseractUrl = "https://cdn.jsdelivr.net/npm/tesseract.js@5.1.1/+esm";
-      const Tesseract: any = await import(/* @vite-ignore */ tesseractUrl);
+      const Tesseract: {
+        recognize: (
+          file: File,
+          lang: string,
+          options: { logger: (m: { status: string; progress: number }) => void }
+        ) => Promise<{ data: { text: string } }>;
+      } = await import(/* @vite-ignore */ tesseractUrl);
       setStatus("processing");
       const { data: { text } } = await Tesseract.recognize(file, "kor+eng", {
         logger: (m: { status: string; progress: number }) => {

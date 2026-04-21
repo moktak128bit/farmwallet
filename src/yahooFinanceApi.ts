@@ -323,7 +323,6 @@ export async function buildInitialTickerDatabase(): Promise<Array<{
  * 야후 파이낸스에서 최신 상장 종목들을 검색하여 추가
  */
 const YAHOO_CHART_BASE = "https://query1.finance.yahoo.com/v8/finance/chart";
-const ALL_ORIGINS_PROXY = "https://api.allorigins.win/get?url=";
 const STOOQ_BASE = "https://stooq.pl/q/l/";
 
 const getEnv = (): Record<string, string | boolean | undefined> =>
@@ -378,9 +377,6 @@ class RateLimitError extends Error {
     this.name = "RateLimitError";
   }
 }
-
-// 429 쿨다운 비활성화 (요청: 레이트리밋 대기 제거)
-let globalRateLimitUntil = 0;
 
 /** 최근 시세 캐시 TTL (ms). TTL 이내면 재요청하지 않음 */
 const QUOTE_CACHE_TTL_MS = 2 * 60 * 1000; // 2분
@@ -483,7 +479,7 @@ const fetchFromYahooQuoteBatch = async (
         payloadStr = await res.text();
         if (payloadStr && !payloadStr.includes("Not Found")) break;
       }
-    } catch (e) {
+    } catch {
       // 조용히 다음 예비 프록시로
     } finally {
       clearTimeout(timeoutId);
@@ -579,7 +575,7 @@ const fetchFromYahooChart = async (
         payloadStr = await res.text();
         if (payloadStr && !payloadStr.includes("Not Found")) break;
       }
-    } catch (e) {
+    } catch {
     } finally {
       clearTimeout(timeoutId);
     }
@@ -744,14 +740,13 @@ export async function fetchYahooQuotes(
   const requestPromise = (async () => {
     try {
       const results: YahooQuoteResult[] = [];
-      const now = Date.now();
       // 429 쿨다운 제거(요청: 대기 없이 진행)
 
       // 1) 배치: 미국/기타 한 번에, 한국은 2종목씩 작은 청크로 요청(청크 간 1.5초 지연)해 429 회피.
       const requestedSymbols = uniq.map((s) => s.trim().toUpperCase());
       const krTickers = requestedSymbols.filter((s) => isKRWStock(s));
       const batchTickers = requestedSymbols.filter((s) => !isKRWStock(s));
-      let batchResults = new Map<string, YahooQuoteResult>();
+      const batchResults = new Map<string, YahooQuoteResult>();
       if (batchTickers.length > 0) {
         const lookupSymbols: string[] = [];
         const seen = new Set<string>();
@@ -921,7 +916,7 @@ export async function searchYahooSymbol(
             payloadStr = await res.text();
             if (payloadStr) break;
           }
-        } catch (e) {
+        } catch {
         } finally {
           clearTimeout(timeoutId);
         }

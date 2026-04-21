@@ -15,10 +15,6 @@ export type { AccountBalanceRow, PositionRow } from "./types";
 // Helpers (pure, used only inside this module)
 // ---------------------------------------------------------------------------
 
-function sumAmount(entries: { amount: number }[]): number {
-  return entries.reduce((s, e) => s + e.amount, 0);
-}
-
 function isUsdEntry(l: LedgerEntry): boolean {
   return l.currency === "USD";
 }

@@ -1,5 +1,5 @@
 import React, { useMemo, useState } from "react";
-import type { AppData, LedgerEntry, StockTrade } from "../types";
+import type { AppData, LedgerEntry } from "../types";
 import {
   runIntegrityCheck,
   mergeDuplicates,

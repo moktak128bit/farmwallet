@@ -2,10 +2,9 @@ import React, { useMemo, useState, useEffect, useDeferredValue } from "react";
 import { Autocomplete } from "../components/ui/Autocomplete";
 import type { Account, HistoricalDailyClose, LedgerEntry, StockPrice, StockTrade, TickerInfo } from "../types";
 import { computePositions } from "../calculations";
-import { formatNumber, formatKRW, formatShortDate } from "../utils/formatter";
+import { formatKRW, formatShortDate } from "../utils/formatter";
 import { isKRWStock, isUSDStock, canonicalTickerForMatch, extractTickerFromText } from "../utils/finance";
 import { parseExDateFromNote, parseQuantityFromNote, buildDividendNote } from "../utils/dividend";
-import { findStoredCloseAtOrBefore } from "../hooks/useAutoFetchHistoricalCloses";
 import { getKrNames } from "../storage";
 import { toast } from "react-hot-toast";
 
@@ -43,7 +42,7 @@ interface DividendRow {
 type TabType = "dividend" | "interest";
 type ViewMode = "all" | "dividend" | "interest";
 
-export const DividendsView: React.FC<Props> = ({ accounts, ledger, trades, prices, tickerDatabase, historicalDailyCloses = [], onChangeLedger, fxRate: propFxRate = null }) => {
+export const DividendsView: React.FC<Props> = ({ accounts, ledger, trades, prices, tickerDatabase, historicalDailyCloses: _historicalDailyCloses = [], onChangeLedger, fxRate: propFxRate = null }) => {
   const deferredLedger = useDeferredValue(ledger);
   const deferredTrades = useDeferredValue(trades);
   const [activeTab, setActiveTab] = useState<TabType>("dividend");
@@ -140,7 +139,7 @@ export const DividendsView: React.FC<Props> = ({ accounts, ledger, trades, price
     } else {
       setDividendForm((prev) => ({ ...prev, quantity: "" }));
     }
-  }, [selectedPosition?.ticker, selectedPosition?.quantity]);
+  }, [selectedPosition?.ticker, selectedPosition?.quantity, selectedPosition]);
 
   // canonical 티커별 최신 시세 (updatedAt 기준) — 평가/표시 일관성
   const latestPriceByCanonicalTicker = useMemo(() => {
@@ -197,25 +196,6 @@ export const DividendsView: React.FC<Props> = ({ accounts, ledger, trades, price
   }, [propFxRate]);
 
   const formatUSD = (value: number) => Math.round(value).toLocaleString("en-US");
-  const formatCurrency = (value: number, currency?: string, originalValue?: number) => {
-    // value는 이미 원화로 변환된 값 (adjustedPrices 사용)
-    // originalValue는 원본 USD 가격 (표시용)
-    if (currency === "USD" && showUSD && originalValue != null) {
-      const base = `${formatUSD(originalValue)} USD`;
-      if (fxRate) {
-        return `${base} (약 ${formatKRW(Math.round(originalValue * fxRate))})`;
-      }
-      return base;
-    }
-    if (currency === "USD" && fxRate && !showUSD) {
-      // 원화로 표시 (이미 원화로 변환된 값 사용)
-      return `${formatKRW(Math.round(value))}`;
-    }
-    if (currency && currency !== "KRW" && showUSD && originalValue != null) {
-      return `${Math.round(originalValue).toLocaleString("en-US")} ${currency}`;
-    }
-    return `${formatKRW(Math.round(value))}`;
-  };
 
   // 배당율 계산 (주식 탭과 동일: 항상 원화 기준, 순 배당금 기준. 수량은 폼 값 우선)
   const dividendYield = useMemo(() => {
@@ -460,18 +440,6 @@ export const DividendsView: React.FC<Props> = ({ accounts, ledger, trades, price
 
     const accountMap = new Map(accounts.map((a) => [a.id, a]));
 
-    // 배당락일(또는 수령일) 기준 주가 조회 → KRW 가격. 없으면 현재가 fallback
-    const getPriceKrwForYield = (ticker: string, dateForPrice: string): number | undefined => {
-      const ct = canonicalTickerForMatch(ticker);
-      const close = historicalDailyCloses.length > 0 ? findStoredCloseAtOrBefore(historicalDailyCloses, ticker, dateForPrice) : null;
-      if (close != null && close > 0) {
-        return isUSDStock(ticker) && fxRate ? close * fxRate : close;
-      }
-      const current = adjustedPrices.find((p) => canonicalTickerForMatch(p.ticker) === ct);
-      if (current && typeof current.price === "number" && current.price > 0) return current.price;
-      return undefined;
-    };
-
     const priceKrwByTicker = new Map<string, number>();
     adjustedPrices.forEach((p) => {
       const key = canonicalTickerForMatch(p.ticker);
@@ -600,7 +568,7 @@ export const DividendsView: React.FC<Props> = ({ accounts, ledger, trades, price
       });
     }
     return rows.sort((a, b) => b.date.localeCompare(a.date)); // 최신순
-  }, [deferredLedger, deferredTrades, prices, accounts, tickerDatabase, adjustedPrices, historicalDailyCloses, fxRate, latestPriceByCanonicalTicker]);
+  }, [deferredLedger, deferredTrades, trades, accounts, tickerDatabase, adjustedPrices, fxRate, latestPriceByCanonicalTicker]);
 
   const monthlyTotal = useMemo(() => {
     const map = new Map<string, number>();

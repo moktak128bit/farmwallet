@@ -1029,11 +1029,9 @@ function useD(ledger: LedgerEntry[], rawTrades: StockTrade[], accounts: Account[
 /* ================================================================== */
 
 const OverviewTab = React.memo(function OverviewTab({ d }: { d: D }) {
-  const totals = d.months.reduce((a, m) => { a.i += d.monthly[m].income; a.e += d.monthly[m].expense; a.v += d.monthly[m].investment; return a; }, { i: 0, e: 0, v: 0 });
   const barData = d.months.map(m => ({ name: d.ml[m], 수입: d.monthly[m].income, 지출: d.monthly[m].expense, 투자: d.monthly[m].investment }));
   const flowData = d.months.slice(0, -1).map(m => ({ name: d.ml[m], 순현금흐름: d.monthly[m].income - d.monthly[m].expense - d.monthly[m].investment }));
   const expBadge = d.prev ? Pct(SD(d.pExpense - d.prev.expense, d.prev.expense) * 100) + " vs 전월" : undefined;
-  const incBadge = d.prev ? Pct(SD(d.pIncome - d.prev.income, d.prev.income) * 100) + " vs 전월" : undefined;
   const top3Sub = d.expBySub.filter(s => s.sub !== "신용결제" && s.cat !== "신용결제").slice(0, 3);
   const top3pct = d.pExpense > 0 ? Math.round(top3Sub.reduce((s, x) => s + x.amount, 0) / d.pExpense * 100) : 0;
   const pieData = [{ name: "수입", value: d.pIncome }, { name: "지출", value: d.pExpense }, { name: "투자", value: d.pInvest }].filter(x => x.value > 0);

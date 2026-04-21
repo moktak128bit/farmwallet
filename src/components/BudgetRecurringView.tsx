@@ -90,11 +90,6 @@ export const BudgetRecurringView: React.FC<Props> = ({
     setRecForm(createRecurring());
   };
 
-  const editRecurring = (item: RecurringExpense) => {
-    setRecForm(item);
-    setEditingRecurringId(item.id);
-  };
-
   const cancelEdit = () => {
     setRecForm(createRecurring());
     setEditingRecurringId(null);

@@ -12,10 +12,10 @@ import {
   CartesianGrid
 } from "recharts";
 import { DeferredResponsiveContainer as ResponsiveContainer } from "../../components/charts/DeferredResponsiveContainer";
-import type { TargetPortfolio, TargetPortfolioItem, Account } from "../../types";
+import type { TargetPortfolio, Account } from "../../types";
 import type { StockPrice } from "../../types";
 import type { TickerInfo } from "../../types";
-import { formatKRW, formatUSD } from "../../utils/formatter";
+import { formatKRW } from "../../utils/formatter";
 import { isUSDStock, canonicalTickerForMatch } from "../../utils/finance";
 
 const CHART_COLORS = ["#0ea5e9", "#6366f1", "#f43f5e", "#10b981", "#f59e0b", "#8b5cf6", "#ec4899", "#14b8a6", "#64748b"];
@@ -49,7 +49,7 @@ function normTicker(t: string): string {
 
 export const TargetPortfolioSection: React.FC<TargetPortfolioSectionProps> = ({
   positionsWithPrice,
-  positionsByAccount,
+  positionsByAccount: _positionsByAccount,
   accounts,
   prices,
   tickerDatabase = [],

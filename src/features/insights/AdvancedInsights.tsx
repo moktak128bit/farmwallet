@@ -6,7 +6,7 @@ import type {
   StockPrice,
   CategoryPresets,
 } from "../../types";
-import { formatKRW, formatNumber } from "../../utils/formatter";
+import { formatKRW } from "../../utils/formatter";
 import { isUSDStock } from "../../utils/finance";
 
 /** 표시용 종목명: 한글명은 그대로, 미국 주식은 티커만 */
@@ -367,20 +367,20 @@ export const TopThreeBlocksWidget: React.FC<InsightWidgetProps> = ({
 // 3. SubscriptionAlertWidget — 구독비 추이 경고
 // ---------------------------------------------------------------------------
 
+const AI_KEYWORDS = [
+  "chatgpt",
+  "cursor",
+  "claude",
+  "grok",
+  "gemini",
+  "copilot",
+  "ai",
+];
+
 export const SubscriptionAlertWidget: React.FC<InsightWidgetProps> = ({
   ledger,
   month,
 }) => {
-  const AI_KEYWORDS = [
-    "chatgpt",
-    "cursor",
-    "claude",
-    "grok",
-    "gemini",
-    "copilot",
-    "ai",
-  ];
-
   const data = useMemo(() => {
     const months = lastNMonths(month, 6);
     const isAI = (sub: string) =>

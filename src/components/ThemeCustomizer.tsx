@@ -63,7 +63,7 @@ export const ThemeCustomizer: React.FC<Props> = ({ onClose }) => {
 
   const [fontSize, setFontSize] = useState<"small" | "medium" | "large">(() => {
     if (typeof window !== "undefined") {
-      return (localStorage.getItem("fw-font-size") as any) || "medium";
+      return (localStorage.getItem("fw-font-size") as "small" | "medium" | "large" | null) || "medium";
     }
     return "medium";
   });

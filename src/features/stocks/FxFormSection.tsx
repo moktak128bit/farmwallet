@@ -32,19 +32,12 @@ export const FxFormSection: React.FC<FxFormSectionProps> = ({ accounts, ledger, 
     if (fxRate != null && !form.rate) {
       setForm((prev) => ({ ...prev, rate: String(Math.round(fxRate * 100) / 100) }));
     }
-  }, [fxRate]);
+  }, [fxRate, form.rate]);
 
   const krwAccounts = useMemo(() => {
     return accounts.filter((a) => {
       const name = (a.name + a.id).toLowerCase();
       return !name.includes("usd") && !name.includes("dollar") && !name.includes("달러");
-    });
-  }, [accounts]);
-
-  const usdAccounts = useMemo(() => {
-    return accounts.filter((a) => {
-      const name = (a.name + a.id).toLowerCase();
-      return name.includes("usd") || name.includes("dollar") || name.includes("달러");
     });
   }, [accounts]);
 
@@ -342,7 +335,7 @@ export const FxFormSection: React.FC<FxFormSectionProps> = ({ accounts, ledger, 
                       handleRateChange(String(rate));
                       toast.success(`현재 환율: ${rate.toFixed(2)}`);
                     }
-                  } catch (err) {
+                  } catch {
                     toast.error(ERROR_MESSAGES.QUOTE_FETCH_FAILED);
                   } finally {
                     setLoadingRate(false);

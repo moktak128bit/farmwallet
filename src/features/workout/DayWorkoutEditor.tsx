@@ -2,7 +2,6 @@ import React, { memo } from "react";
 import type { WorkoutBodyPart, WorkoutDayEntry, WorkoutRoutine, WorkoutSet, WorkoutExercise } from "../../types";
 import { formatNumber } from "../../utils/formatter";
 import { TimerSummary } from "./TimerSummary";
-import { CardioInputs } from "./CardioInputs";
 import { SetDetailRow } from "./SetDetailRow";
 import { BODY_PART_COLORS } from "./constants";
 import { computeExerciseVolume, isCardioExercise } from "./helpers";
@@ -159,11 +158,6 @@ const DayWorkoutEditorInner: React.FC<Props> = ({
         onStart={onStartWorkout}
         onEnd={onEndWorkout}
         onResume={onResumeWorkout}
-      />
-
-      <CardioInputs
-        entry={selectedEntry}
-        onUpdateEntry={(updater) => onUpsertEntry(selectedDate, updater)}
       />
 
       {(selectedEntry.exercises ?? []).map((exercise: WorkoutExercise) => {

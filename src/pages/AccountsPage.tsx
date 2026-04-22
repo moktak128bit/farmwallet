@@ -200,7 +200,7 @@ export const AccountsView: React.FC<Props> = ({
   // 시작금액 → 이체 기록 변환 패널
   const [showSeedPanel, setShowSeedPanel] = useState(false);
   const [seedSourceId, setSeedSourceId] = useState<string>("");
-  const [seedDate, setSeedDate] = useState("2026-06-01");
+  const [seedDate, setSeedDate] = useState("2025-06-01");
   const realizedPnlByTradeId = useMemo(
     () => computeRealizedPnlByTradeId(trades ?? []),
     [trades]
@@ -238,15 +238,15 @@ export const AccountsView: React.FC<Props> = ({
       const balanceRow = safeBalances.find((b) => b.account.id === adjustingAccount.id);
       const account = safeAccounts.find((a) => a.id === adjustingAccount.id);
       if (!account || !balanceRow) return;
-      
+
       const inputUsd = Number(editUsdBalance.replace(/[^\d.-]/g, "")) || 0;
       const inputKrw = Number(editKrwBalance.replace(/[^\d.-]/g, "")) || 0;
-      
+
       let targetUsd: number;
       let targetKrw: number;
       const dispUsd = (account.usdBalance ?? 0) + (balanceRow.usdTransferNet ?? 0);
       const currentKrw = balanceRow.currentBalance ?? 0;
-      
+
       if (isSetDirectly) {
         targetUsd = inputUsd;
         targetKrw = inputKrw;
@@ -259,17 +259,27 @@ export const AccountsView: React.FC<Props> = ({
         targetUsd = dispUsd + inputUsd;
         targetKrw = currentKrw + inputKrw;
       }
-      
+
       const usdTransferNet = balanceRow.usdTransferNet ?? 0;
       const newUsdBalance = targetUsd - usdTransferNet;
+      // 옵션 B: initialCashBalance 만 조정, cashAdjustment 는 0 으로 평탄화
+      // newInitial = currentInitial + currentCashAdj + (targetKrw - currentKrw)
+      //   = currentBalance 공식 `base + activity + cashAdj = current` 에서
+      //     activity 보존, cashAdj 0 흡수, target 달성
+      const currentInitialCash = account.initialCashBalance ?? account.initialBalance ?? 0;
       const currentCashAdj = account.cashAdjustment ?? 0;
-      const baseWithoutAdj = balanceRow.currentBalance - currentCashAdj;
-      const newCashAdjustment = targetKrw - baseWithoutAdj;
-      
+      // 부동소수점 오차 방지 — KRW 시작금액은 정수 유지
+      const newInitialCashBalance = Math.round(currentInitialCash + currentCashAdj + (targetKrw - currentKrw));
+
       onChangeAccounts(
         safeAccounts.map((a) => {
           if (a.id !== adjustingAccount.id) return a;
-          return { ...a, usdBalance: newUsdBalance, cashAdjustment: newCashAdjustment };
+          return {
+            ...a,
+            usdBalance: newUsdBalance,
+            initialCashBalance: newInitialCashBalance,
+            cashAdjustment: 0
+          };
         })
       );
       setAdjustingAccount(null);
@@ -316,11 +326,15 @@ export const AccountsView: React.FC<Props> = ({
       if (adjustingAccount.type === "card") {
         return a;
       } else {
-        if (isSetDirectly) {
-          const delta = value - currentBalance;
-          return { ...a, initialBalance: (a.initialBalance ?? 0) + delta };
-        }
-        return { ...a, initialBalance: (a.initialBalance ?? 0) + value };
+        // 옵션 B: initialBalance 만 사용. 남아있을 수 있는 cashAdjustment 는 함께 병합
+        const pendingAdj = a.cashAdjustment ?? 0;
+        const baseShift = isSetDirectly ? (value - currentBalance) : value;
+        // 부동소수점 오차 방지 — KRW 시작금액은 정수 유지
+        return {
+          ...a,
+          initialBalance: Math.round((a.initialBalance ?? 0) + pendingAdj + baseShift),
+          cashAdjustment: 0
+        };
       }
     });
 
@@ -337,7 +351,10 @@ export const AccountsView: React.FC<Props> = ({
     currentValue: number
   ) => {
     setEditingNumber({ id: accountId, field });
-    setEditValue(String(currentValue));
+    // 소수점 쓰레기(부동소수점 오차) 가 있으면 정수로 반올림해 편집 입력에 넣는다.
+    // (parseAmount 기본값이 정수만 허용하므로, "123.45" 가 들어가면 소수점이 지워지며 12345로 저장되는 버그 방지)
+    const safe = Number.isFinite(currentValue) ? Math.round(currentValue) : 0;
+    setEditValue(String(safe));
   };
 
   const saveNumber = () => {
@@ -489,11 +506,11 @@ export const AccountsView: React.FC<Props> = ({
       if (a.type === "securities" || a.type === "crypto") {
         return {
           ...a,
-          initialCashBalance: (a.initialCashBalance ?? a.initialBalance ?? 0) + adj,
+          initialCashBalance: Math.round((a.initialCashBalance ?? a.initialBalance ?? 0) + adj),
           cashAdjustment: 0
         };
       }
-      return { ...a, initialBalance: (a.initialBalance ?? 0) + adj, cashAdjustment: 0 };
+      return { ...a, initialBalance: Math.round((a.initialBalance ?? 0) + adj), cashAdjustment: 0 };
     });
     onChangeAccounts(updated);
     toast.success(`${affected.length}개 계좌의 시작금액을 정리했습니다.`);
@@ -509,6 +526,130 @@ export const AccountsView: React.FC<Props> = ({
     );
     return nh?.id ?? checkings[0]?.id ?? "";
   }, [safeAccounts]);
+
+  /** 2025-06-01 이력 통합:
+   *  1) 최신 백업에서 2025-06-01 누락 기록 복구 (이전 cleanup 으로 삭제된 11건 원복)
+   *  2) 2026-06-01 자동생성 기록을 2025-06-01 로 이동
+   *  3) 2025-06-01 모든 transfer를 (from,to) 쌍별로 net 합산 → 한 건으로 집약
+   *  4) 잔액 보존 (총량 불변)
+   */
+  const consolidate20250601Transfers = async () => {
+    if (!onChangeLedger) {
+      toast.error("가계부 기록 수정 권한이 없습니다.");
+      return;
+    }
+    const TARGET_DATE = "2025-06-01";
+    const OLD_AUTO_DATE = "2026-06-01";
+    const AUTO_DESC = "시작금액 이체 (자동 생성)";
+
+    // 1) 백업에서 2025-06-01 누락 기록 확인
+    let backupEntries: LedgerEntry[] = [];
+    try {
+      const res = await fetch("/api/restore-latest-backup");
+      if (res.ok) {
+        const backup = (await res.json()) as { ledger?: LedgerEntry[] } | null;
+        if (backup && Array.isArray(backup.ledger)) {
+          backupEntries = backup.ledger.filter((l) => l.date === TARGET_DATE);
+        }
+      }
+    } catch {
+      // 백업 없어도 계속 진행 (1단계 스킵)
+    }
+
+    // 복구할 항목: 백업엔 있는데 현재엔 없는 id
+    const existingIds = new Set(ledger.map((l) => l.id));
+    const restoreEntries = backupEntries.filter((l) => !existingIds.has(l.id));
+
+    // 2) 2026-06-01 자동생성 기록을 2025-06-01 로 이동
+    const oldAutoCount = ledger.filter(
+      (l) => l.date === OLD_AUTO_DATE && l.description === AUTO_DESC
+    ).length;
+
+    // 복구 + 날짜 이동 적용한 가상 ledger
+    const workingLedger = [
+      ...ledger.map((l) =>
+        l.date === OLD_AUTO_DATE && l.description === AUTO_DESC
+          ? { ...l, date: TARGET_DATE }
+          : l
+      ),
+      ...restoreEntries
+    ];
+
+    // 3) 2025-06-01 transfer 만 추출해 (from, to) 쌍별 net 합산
+    const targetDateEntries = workingLedger.filter(
+      (l) => l.date === TARGET_DATE && l.kind === "transfer"
+    );
+    if (targetDateEntries.length === 0) {
+      toast(`${TARGET_DATE} 통합할 transfer 가 없습니다.`, { icon: "ℹ️" });
+      return;
+    }
+
+    // (from, to) → net 금액
+    const pairNet = new Map<string, number>();
+    for (const e of targetDateEntries) {
+      const from = e.fromAccountId ?? "";
+      const to = e.toAccountId ?? "";
+      if (!from || !to || from === to) continue;
+      const key = `${from}|${to}`;
+      pairNet.set(key, (pairNet.get(key) ?? 0) + (Number(e.amount) || 0));
+    }
+
+    // 양방향 존재 시 net out (두 쌍 중 하나만 남김)
+    const consolidated: LedgerEntry[] = [];
+    const processed = new Set<string>();
+    for (const [key, amt] of pairNet.entries()) {
+      if (processed.has(key)) continue;
+      const [from, to] = key.split("|");
+      const reverseKey = `${to}|${from}`;
+      const reverseAmt = pairNet.get(reverseKey) ?? 0;
+      processed.add(key);
+      processed.add(reverseKey);
+      const net = amt - reverseAmt;
+      if (Math.round(net) === 0) continue;
+      const [fromId, toId, amount] = net > 0 ? [from, to, net] : [to, from, -net];
+      consolidated.push({
+        id: `LEDGER-${Date.now()}-${Math.random().toString(36).slice(2, 9)}`,
+        date: TARGET_DATE,
+        kind: "transfer",
+        category: "이체",
+        subCategory: "계좌이체",
+        description: "시작금액 통합",
+        fromAccountId: fromId,
+        toAccountId: toId,
+        amount: Math.round(amount),
+        currency: "KRW"
+      });
+    }
+
+    // 건수 및 총 이체량 (미리보기용)
+    const beforeCount = workingLedger.filter(
+      (l) => l.date === TARGET_DATE && l.kind === "transfer"
+    ).length;
+
+    const ok = window.confirm(
+      `2025-06-01 이력 통합:\n\n` +
+        `· 백업에서 복구: ${restoreEntries.length}건\n` +
+        `· 2026-06-01 → 2025-06-01 이동: ${oldAutoCount}건\n` +
+        `· 기존 ${beforeCount}건 transfer 를 (계좌쌍 net 합산) 통합 → ${consolidated.length}건\n` +
+        `· 현재 잔액 변동 없음 (총 이체량 보존)\n\n` +
+        `계속하시겠습니까?`
+    );
+    if (!ok) return;
+
+    // 4) 최종 ledger: 2025-06-01 모든 transfer 제거 + 집약된 consolidated 추가
+    // 2026-06-01 자동생성 제거 + 복구 항목 합침은 workingLedger에서 이미 수행
+    const nextLedger = [
+      ...workingLedger.filter(
+        (l) => !(l.date === TARGET_DATE && l.kind === "transfer")
+      ),
+      ...consolidated
+    ];
+
+    onChangeLedger(nextLedger);
+    toast.success(
+      `통합 완료 — 2025-06-01: ${beforeCount}건 → ${consolidated.length}건`
+    );
+  };
 
   /** 시작금액 → 이체 기록 변환: 모든 non-source 계좌의 effectiveStart(baseBalance + cashAdjustment)를
    *  source와의 이체로 옮긴다. cashAdjustment도 함께 자동 병합. currentBalance 보존됨. */
@@ -582,7 +723,7 @@ export const AccountsView: React.FC<Props> = ({
     // 계좌 업데이트: 모든 계좌의 cashAdjustment=0 병합, target은 base=0, source는 전체 합계 흡수
     const updatedAccounts = safeAccounts.map((a) => {
       if (a.id === source.id) {
-        const sourceNewBase = effectiveStart(a) + totalNonSourceBase;
+        const sourceNewBase = Math.round(effectiveStart(a) + totalNonSourceBase);
         if (a.type === "securities" || a.type === "crypto") {
           return { ...a, initialCashBalance: sourceNewBase, cashAdjustment: 0 };
         }
@@ -592,7 +733,7 @@ export const AccountsView: React.FC<Props> = ({
       if (!isTarget) {
         // 비-target 이지만 cashAdjustment 잔여값은 정리해 병합
         if ((a.cashAdjustment ?? 0) === 0) return a;
-        const merged = effectiveStart(a);
+        const merged = Math.round(effectiveStart(a));
         if (a.type === "securities" || a.type === "crypto") {
           return { ...a, initialCashBalance: merged, cashAdjustment: 0 };
         }
@@ -1589,6 +1730,17 @@ export const AccountsView: React.FC<Props> = ({
                 style={{ fontSize: 12, padding: "6px 12px" }}
               >
                 시작금액 → 이체 기록 변환
+              </button>
+            )}
+            {onChangeLedger && (
+              <button
+                type="button"
+                className="secondary"
+                onClick={consolidate20250601Transfers}
+                title="백업 복구 + 2026-06-01 자동생성 이동 + 계좌쌍별 net 합산 → 2025-06-01 이체 기록을 깔끔하게 통합 (현재 잔액 보존)"
+                style={{ fontSize: 12, padding: "6px 12px", borderColor: "var(--primary)", color: "var(--primary)", fontWeight: 600 }}
+              >
+                🔗 2025-06-01 이력 통합
               </button>
             )}
           </div>

@@ -1008,6 +1008,10 @@ ${taxSummary.exceedsThreshold ? `<tr><td>종합과세 추가세 (추정)</td><td
         </div>
       </div>
 
+      <div className="hint" style={{ marginBottom: 8, fontSize: 12 }}>
+        실현 손익·승률·보유기간 중심 요약은 <strong>대시보드 → 투자 기록 카드</strong>에서 확인할 수 있습니다.
+      </div>
+
       <div style={{ display: "flex", gap: 8, marginBottom: 16, flexWrap: "wrap" }}>
         <button type="button" className={reportType === "comprehensive" ? "primary" : ""} onClick={() => setReportType("comprehensive")}>종합 월간</button>
         <button type="button" className={reportType === "monthly" ? "primary" : ""} onClick={() => setReportType("monthly")}>월별</button>

@@ -20,7 +20,11 @@ export const useAppStore = create<AppStore>((set) => ({
       data: typeof next === "function" ? next(state.data) : next
     })),
   syncLogs: [],
-  addSyncLog: (log) => set((state) => ({ syncLogs: [...state.syncLogs, log] })),
+  addSyncLog: (log) =>
+    set((state) => {
+      const next = [...state.syncLogs, log];
+      return { syncLogs: next.length > 200 ? next.slice(next.length - 200) : next };
+    }),
   clearSyncLogs: () => set({ syncLogs: [] }),
   isSyncing: false,
   setIsSyncing: (val) => set({ isSyncing: val })

@@ -1,6 +1,7 @@
 import React, { lazy, Suspense, useCallback, useMemo, useState } from "react";
 import { BudgetAlertWidget } from "../features/dashboard/AdvancedWidgets";
 import { InvestmentSummaryCard } from "../features/dashboard/InvestmentSummaryCard";
+import { InvestmentRecordCard } from "../features/dashboard/InvestmentRecordCard";
 import type {
   Account,
   LedgerEntry,
@@ -256,7 +257,7 @@ export const DashboardView: React.FC<Props> = (props) => {
       }
       return { income, expense, investing };
     },
-    [ledger, fxRate, accounts, categoryPresets]
+    [ledger, fxRate]
   );
 
   /** 전체 기간 합계: 수입, 일반 지출, 재테크 지출 */
@@ -1268,6 +1269,8 @@ export const DashboardView: React.FC<Props> = (props) => {
           fxRate={fxRate ?? null}
         />
 
+        <InvestmentRecordCard trades={trades} accounts={accounts} ledger={ledger} fxRate={fxRate ?? null} />
+
         <div
           style={{
             display: "grid",
@@ -1338,6 +1341,11 @@ export const DashboardView: React.FC<Props> = (props) => {
 
           const currentPt = pts[pts.length - 1];
           const currentWorth = netWorthTrendData[netWorthTrendData.length - 1].value;
+          const prevWorth = netWorthTrendData[netWorthTrendData.length - 2]?.value ?? currentWorth;
+          const nwDelta = currentWorth - prevWorth;
+          const nwDeltaPct = prevWorth !== 0 ? (nwDelta / Math.abs(prevWorth)) * 100 : 0;
+          const nwDeltaColor = nwDelta > 0 ? "var(--success)" : nwDelta < 0 ? "var(--danger)" : "var(--muted)";
+          const nwArrow = nwDelta > 0 ? "▲" : nwDelta < 0 ? "▼" : "–";
 
           // Y axis ticks (3 ticks)
           const yTicks = [minVal, Math.round((minVal + maxVal) / 2), maxVal];
@@ -1351,12 +1359,20 @@ export const DashboardView: React.FC<Props> = (props) => {
           return (
             <div className="card" style={{ padding: 20 }}>
               <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginBottom: 12, flexWrap: "wrap", gap: 8 }}>
-                <div className="card-title" style={{ margin: 0 }}>순자산 추이</div>
+                <div className="card-title" style={{ margin: 0 }}>순자산 추이 <span style={{ fontSize: 11, color: "var(--muted)", fontWeight: 400 }}>(전체 계좌 − 부채)</span></div>
                 <div style={{ textAlign: "right" }}>
-                  <div style={{ fontWeight: 700, fontSize: 20, color: "var(--primary)" }}>
+                  <div style={{ fontWeight: 700, fontSize: 24, color: "var(--primary)" }}>
                     {currentWorth >= 0 ? "" : "-"}{Math.abs(currentWorth).toLocaleString()}만원
                   </div>
-                  <div className="hint" style={{ fontSize: 12 }}>현재 순자산</div>
+                  <div style={{ display: "flex", gap: 6, alignItems: "center", justifyContent: "flex-end", marginTop: 2 }}>
+                    <span style={{ fontSize: 12, fontWeight: 700, color: nwDeltaColor }}>
+                      {nwArrow} {Math.abs(nwDelta).toLocaleString()}만원
+                    </span>
+                    <span style={{ fontSize: 11, color: nwDeltaColor }}>
+                      ({nwDelta >= 0 ? "+" : ""}{nwDeltaPct.toFixed(1)}%)
+                    </span>
+                  </div>
+                  <div className="hint" style={{ fontSize: 11 }}>현재 순자산 · 전월 대비</div>
                 </div>
               </div>
               <div style={{ width: "100%", overflowX: "auto" }}>
@@ -1774,10 +1790,28 @@ export const DashboardView: React.FC<Props> = (props) => {
           </div>
         </div>
 
-        {accountBalanceSnapshots.length > 0 && (
+        {accountBalanceSnapshots.length > 0 && (() => {
+          const lastSnap = accountBalanceSnapshots[accountBalanceSnapshots.length - 1];
+          const prevSnap = accountBalanceSnapshots[accountBalanceSnapshots.length - 3] ?? accountBalanceSnapshots[0];
+          const lastTotal = Number(lastSnap.total) || 0;
+          const prevTotal = Number(prevSnap.total) || 0;
+          const abDelta = lastTotal - prevTotal;
+          const abDeltaPct = prevTotal !== 0 ? (abDelta / Math.abs(prevTotal)) * 100 : 0;
+          const abColor = abDelta > 0 ? "var(--success)" : abDelta < 0 ? "var(--danger)" : "var(--muted)";
+          const abArrow = abDelta > 0 ? "▲" : abDelta < 0 ? "▼" : "–";
+          return (
           <div className="card" style={{ marginTop: 16, padding: 20 }}>
+            <div style={{ display: "flex", flexWrap: "wrap", alignItems: "center", justifyContent: "space-between", gap: 16, marginBottom: 12 }}>
+              <div className="card-title" style={{ margin: 0 }}>계좌별 잔액 추이 <span style={{ fontSize: 11, color: "var(--muted)", fontWeight: 400 }}>(매월 15·월말, 부채 미차감)</span></div>
+              <div style={{ textAlign: "right" }}>
+                <div style={{ fontWeight: 700, fontSize: 22, color: "var(--chart-primary)" }}>{formatKRW(Math.round(lastTotal))}</div>
+                <div style={{ fontSize: 12, fontWeight: 700, color: abColor }}>
+                  {abArrow} {formatKRW(Math.round(Math.abs(abDelta)))} ({abDelta >= 0 ? "+" : ""}{abDeltaPct.toFixed(1)}%)
+                </div>
+                <div className="hint" style={{ fontSize: 11 }}>현재 합계 · 지난달 대비</div>
+              </div>
+            </div>
             <div style={{ display: "flex", flexWrap: "wrap", alignItems: "center", gap: 16, marginBottom: 12 }}>
-              <div className="card-title" style={{ margin: 0 }}>계좌별 잔액 추이 (매월 15·월말 기준)</div>
               <select
                 value={accountBalanceChartView}
                 onChange={(e) => setAccountBalanceChartView(e.target.value)}
@@ -1808,7 +1842,8 @@ export const DashboardView: React.FC<Props> = (props) => {
               </Suspense>
             </div>
           </div>
-        )}
+          );
+        })()}
 
         <div
           style={{

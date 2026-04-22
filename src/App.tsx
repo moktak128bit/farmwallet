@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, useMemo, lazy, Suspense } from "react";
+import React, { useCallback, useEffect, useMemo, useState, lazy, Suspense } from "react";
 import { Toaster, toast } from "react-hot-toast";
 import { Moon, Sun, Menu } from "lucide-react";
 import { Tabs, type TabId } from "./components/ui/Tabs";
@@ -69,6 +69,7 @@ import { APP_VERSION } from "./constants/config";
 import { runIntegrityCheck } from "./utils/dataIntegrity";
 import { useGistSync } from "./hooks/useGistSync";
 import { GistVersionModal } from "./components/GistVersionModal";
+import { GitVersionModal } from "./components/GitVersionModal";
 import { GistConflictModal } from "./components/GistConflictModal";
 import { isGistConfigured, saveToGist } from "./services/gistSync";
 import { toUserDataJson } from "./services/dataService";
@@ -100,6 +101,20 @@ export const App: React.FC = () => {
   const setIsPushingToGit = useUIStore((s) => s.setIsPushingToGit);
   const isPullingFromGit = useUIStore((s) => s.isPullingFromGit);
   const setIsPullingFromGit = useUIStore((s) => s.setIsPullingFromGit);
+  const [showGitVersionModal, setShowGitVersionModal] = useState(false);
+  const [gitCurrentBranch, setGitCurrentBranch] = useState<string>("main");
+  const isOnRestoreBranch = gitCurrentBranch.startsWith("restore/");
+
+  // dev 환경에서 현재 git 브랜치 조회 (이전 버전 상태인지 감지)
+  useEffect(() => {
+    if (!import.meta.env.DEV) return;
+    fetch("/api/git-log")
+      .then((r) => (r.ok ? r.json() : null))
+      .then((data: { currentBranch?: string } | null) => {
+        if (data?.currentBranch) setGitCurrentBranch(data.currentBranch);
+      })
+      .catch(() => { /* dev server not running or endpoint missing */ });
+  }, []);
   const isGistSaving = useUIStore((s) => s.isGistSaving);
   const setIsGistSaving = useUIStore((s) => s.setIsGistSaving);
   const newVersionAvailable = useUIStore((s) => s.newVersionAvailable);
@@ -479,8 +494,14 @@ export const App: React.FC = () => {
                 <button
                   type="button"
                   className="primary"
-                  style={{ background: "var(--success, #22c55e)" }}
-                  disabled={isPushingToGit}
+                  style={{
+                    background: isOnRestoreBranch ? "var(--text-muted)" : "var(--success, #22c55e)",
+                    cursor: isOnRestoreBranch ? "not-allowed" : undefined
+                  }}
+                  disabled={isPushingToGit || isOnRestoreBranch}
+                  title={isOnRestoreBranch
+                    ? `이전 버전 상태(${gitCurrentBranch})에서는 업로드할 수 없습니다. 최신 main으로 돌아온 뒤 시도하세요.`
+                    : undefined}
                   onClick={() => withConfirm({
                     title: "git에 업로드",
                     message: "현재 코드와 데이터를 git 원격에 push합니다. 약 2분 후 반영됩니다.",
@@ -505,7 +526,7 @@ export const App: React.FC = () => {
                     },
                   })}
                 >
-                  {isPushingToGit ? "업로드 중..." : "git에 업로드"}
+                  {isPushingToGit ? "업로드 중..." : isOnRestoreBranch ? "⚠ 이전 버전 상태" : "git에 업로드"}
                 </button>
               )}
             </div>
@@ -557,40 +578,30 @@ export const App: React.FC = () => {
               <button
                 type="button"
                 className="secondary"
-                style={newVersionAvailable ? { borderColor: "var(--success, #22c55e)", color: "var(--success, #22c55e)", fontWeight: 600 } : undefined}
+                style={
+                  isOnRestoreBranch
+                    ? { borderColor: "var(--warning, #f59e0b)", color: "var(--warning, #b45309)", fontWeight: 600 }
+                    : newVersionAvailable
+                      ? { borderColor: "var(--success, #22c55e)", color: "var(--success, #22c55e)", fontWeight: 600 }
+                      : undefined
+                }
                 disabled={isPullingFromGit}
                 onClick={() => {
                   if (import.meta.env.DEV) {
-                    withConfirm({
-                      title: "git 내려받기",
-                      message: "git 원격에서 최신 코드를 pull 합니다. 완료 후 F5로 새로고침이 필요합니다.",
-                      confirmLabel: "내려받기",
-                      confirmStyle: "danger",
-                      onConfirm: async () => {
-                        setIsPullingFromGit(true);
-                        addAppLog("git에서 내려받는 중...", "info");
-                        try {
-                          const res = await fetch("/api/git-pull", { method: "POST" });
-                          const json = await res.json();
-                          if (!res.ok) throw new Error(json.error ?? "git 내려받기 실패");
-                          addAppLog("git 내려받기 완료. F5로 새로고침하세요.", "success");
-                          toast.success("git 내려받기 완료 — F5로 새로고침");
-                        } catch (e) {
-                          const msg = e instanceof Error ? e.message : String(e);
-                          addAppLog(`git 내려받기 실패: ${msg}`, "error");
-                          toast.error(msg || "git 내려받기 실패");
-                        } finally {
-                          setIsPullingFromGit(false);
-                        }
-                      },
-                    });
+                    setShowGitVersionModal(true);
                   } else {
                     // 프로덕션: 새 배포 버전으로 페이지 새로고침
                     window.location.reload();
                   }
                 }}
               >
-                {isPullingFromGit ? "내려받는 중..." : newVersionAvailable ? "새 버전 적용" : "git 내려받기"}
+                {isPullingFromGit
+                  ? "내려받는 중..."
+                  : isOnRestoreBranch
+                    ? `⚠ ${gitCurrentBranch.replace("restore/", "")}`
+                    : newVersionAvailable
+                      ? "새 버전 적용"
+                      : "git 내려받기"}
               </button>
             </div>
             <button
@@ -872,6 +883,38 @@ export const App: React.FC = () => {
         onClose={() => setShowGistVersionModal(false)}
         onLoad={handleGistVersionLoad}
         onLog={addAppLog}
+      />
+
+      <GitVersionModal
+        isOpen={showGitVersionModal}
+        onClose={() => setShowGitVersionModal(false)}
+        onLog={addAppLog}
+        onSelect={async (ref) => {
+          setIsPullingFromGit(true);
+          try {
+            const res = await fetch("/api/git-pull", {
+              method: "POST",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({ ref })
+            });
+            const json = await res.json();
+            if (!res.ok) throw new Error(json.error ?? "git 내려받기 실패");
+            const branch = json.branch ?? "main";
+            setGitCurrentBranch(branch);
+            const msg = ref === ""
+              ? "git 내려받기 완료 — main 최신. F5로 새로고침하세요."
+              : `git 내려받기 완료 — ${branch}. F5로 새로고침하세요.`;
+            addAppLog(msg, "success");
+            toast.success(msg);
+          } catch (e) {
+            const err = e instanceof Error ? e.message : String(e);
+            addAppLog(`git 내려받기 실패: ${err}`, "error");
+            toast.error(err || "git 내려받기 실패");
+            throw e;
+          } finally {
+            setIsPullingFromGit(false);
+          }
+        }}
       />
 
       <ConfirmModal

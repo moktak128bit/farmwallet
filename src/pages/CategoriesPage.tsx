@@ -24,25 +24,24 @@ export const CategoriesView: React.FC<Props> = ({ presets, onChangePresets, ledg
 
   const [expenseGroups, setExpenseGroups] = useState<ExpenseDetailGroup[]>(initialExpenseGroups);
 
-  // 카테고리 타입 상태 관리
+  // 카테고리 타입 상태 관리.
+  // 사용자가 비운 값은 비운 대로 존중 — 기본값 주입은 getDefaultCategoryPresets에서만.
+  // transfer는 데이터 성격상 최소 1개는 있어야 하므로 presets.transfer로 대체.
   const [categoryTypes, setCategoryTypes] = useState<{
     fixed: string[];
     savings: string[];
     transfer: string[];
-  }>(() => {
-    const defaults = {
-      fixed: presets.categoryTypes?.fixed ?? ["주거비", "통신비", "구독비"],
-      savings: presets.categoryTypes?.savings ?? ["저축성지출"],
-      transfer: presets.categoryTypes?.transfer ?? presets.transfer
-    };
-    return defaults;
-  });
+  }>(() => ({
+    fixed: presets.categoryTypes?.fixed ?? [],
+    savings: presets.categoryTypes?.savings ?? [],
+    transfer: presets.categoryTypes?.transfer ?? presets.transfer
+  }));
 
   // presets이 변경되면 categoryTypes도 업데이트
   useEffect(() => {
     setCategoryTypes({
-      fixed: presets.categoryTypes?.fixed ?? ["주거비", "통신비", "구독비"],
-      savings: presets.categoryTypes?.savings ?? ["저축성지출"],
+      fixed: presets.categoryTypes?.fixed ?? [],
+      savings: presets.categoryTypes?.savings ?? [],
       transfer: presets.categoryTypes?.transfer ?? presets.transfer
     });
   }, [presets]);
@@ -64,26 +63,12 @@ export const CategoriesView: React.FC<Props> = ({ presets, onChangePresets, ledg
         .map((v) => v.trim())
         .filter((v, idx, arr) => v && arr.indexOf(v) === idx);
 
-    let cleanedGroups: ExpenseDetailGroup[] = expenseGroups
+    const cleanedGroups: ExpenseDetailGroup[] = expenseGroups
       .map((g) => ({
         main: g.main.trim(),
         subs: g.subs.map((s) => s.trim()).filter((s, idx, arr) => s && arr.indexOf(s) === idx)
       }))
       .filter((g) => g.main);
-
-    // 항목 매트릭스: 저축성지출 제거, 재테크만 저축/투자로 유지
-    cleanedGroups = cleanedGroups.filter((g) => g.main !== "저축성지출");
-    const hasRecheck = cleanedGroups.some((g) => g.main === "재테크");
-    cleanedGroups = cleanedGroups.map((g) =>
-      g.main === "재테크" ? { main: "재테크", subs: ["저축", "투자"] } : g
-    );
-    if (!hasRecheck) {
-      cleanedGroups = [{ main: "재테크", subs: ["저축", "투자"] }, ...cleanedGroups];
-    }
-
-    // 재테크는 항상 저축성지출: savings에 포함, fixed에서 제외
-    const normalizedSavings = [...new Set([...categoryTypes.savings, "재테크"])];
-    const normalizedFixed = categoryTypes.fixed.filter((c) => c !== "재테크");
 
     onChangePresets({
       income: normalize(incomeRows),
@@ -91,8 +76,8 @@ export const CategoriesView: React.FC<Props> = ({ presets, onChangePresets, ledg
       expenseDetails: cleanedGroups,
       transfer: normalize(transferRows),
       categoryTypes: {
-        fixed: normalizedFixed,
-        savings: normalizedSavings,
+        fixed: categoryTypes.fixed,
+        savings: categoryTypes.savings,
         transfer: categoryTypes.transfer
       }
     });
@@ -443,21 +428,6 @@ export const CategoriesView: React.FC<Props> = ({ presets, onChangePresets, ledg
                         </button>
                       </div>
                       {g.main && (
-                        g.main === "재테크" ? (
-                          <span
-                            style={{
-                              fontSize: 11,
-                              padding: "2px 6px",
-                              border: "1px solid var(--border)",
-                              borderRadius: 4,
-                              backgroundColor: "var(--surface)",
-                              color: "var(--text-secondary)"
-                            }}
-                            title="재테크는 항상 저축성지출입니다."
-                          >
-                            저축성지출
-                          </span>
-                        ) : (
                           <select
                             value={
                               categoryTypes.savings.includes(g.main) ? "savings" :
@@ -494,7 +464,6 @@ export const CategoriesView: React.FC<Props> = ({ presets, onChangePresets, ledg
                             <option value="fixed">고정지출</option>
                             <option value="savings">저축성지출</option>
                           </select>
-                        )
                       )}
                     </div>
                   </th>

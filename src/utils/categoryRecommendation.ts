@@ -11,7 +11,7 @@ interface Recommendation {
 export function recommendCategory(
   description: string,
   amount: number,
-  kind: "income" | "expense" | "transfer",
+  kind: "income" | "expense" | "transfer" | "investment",
   ledger: LedgerEntry[]
 ): Recommendation[] {
   if (!description || description.length < 2) return [];

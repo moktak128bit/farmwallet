@@ -10,6 +10,7 @@ import type { PieLabelRenderProps } from "recharts/types/polar/Pie";
 import { ForecastView } from "../features/insights/ForecastView";
 import { SettlementView } from "../features/dating/SettlementView";
 import { calcTrend, mTotalsFor } from "../utils/insightsHelpers";
+import { isInvestmentEntry } from "../utils/category";
 
 /* ================================================================== */
 /*  Constants                                                          */
@@ -270,7 +271,8 @@ function useD(ledger: LedgerEntry[], rawTrades: StockTrade[], accounts: Account[
       const m = l.date?.slice(0, 7); if (!m) continue; em(m);
       const a = Number(l.amount); if (a <= 0) continue;
       if (l.kind === "income") monthly[m].income += a;
-      else if (l.kind === "expense") { if (l.category === "재테크") monthly[m].investment += a; else monthly[m].expense += a; }
+      else if (isInvestmentEntry(l)) monthly[m].investment += a; // 저축·투자 이체
+      else if (l.kind === "expense") monthly[m].expense += a;
       else if (l.kind === "transfer" && l.toAccountId && invIds.has(l.toAccountId)) monthly[m].investment += a;
     }
     const months = Object.keys(monthly).sort();
@@ -280,15 +282,20 @@ function useD(ledger: LedgerEntry[], rawTrades: StockTrade[], accounts: Account[
     /* ===== filter for period ===== */
     const fL = selMonth ? ledger.filter(l => l.date?.startsWith(selMonth)) : ledger;
     const fT = selMonth ? rawTrades.filter(t => t.date?.startsWith(selMonth)) : rawTrades;
+    // 일반 지출: expense kind 중 재테크/환전 제외 (투자손실은 category=재테크라 자동 제외)
     const fExp = fL.filter(l => l.kind === "expense" && Number(l.amount) > 0 && l.category !== "재테크" && l.category !== "환전");
+    // 수입 (투자수익도 kind=income으로 마이그레이션되어 자연 포함)
     const fInc = fL.filter(l => l.kind === "income" && Number(l.amount) > 0);
 
     /* period totals */
     const pIncome = fInc.reduce((s, l) => s + Number(l.amount), 0);
-    const pExpense = fExp.reduce((s, l) => s + Number(l.amount), 0);
+    // 투자손실은 지출 합계에 포함 (kind=expense, category=재테크, subCategory=투자손실)
+    const pExpense = fExp.reduce((s, l) => s + Number(l.amount), 0) +
+      fL.filter(l => l.kind === "expense" && l.category === "재테크" && l.subCategory === "투자손실" && Number(l.amount) > 0)
+        .reduce((s, l) => s + Number(l.amount), 0);
     let pInvest = 0;
     for (const l of fL) {
-      if (l.kind === "expense" && l.category === "재테크") pInvest += Number(l.amount);
+      if (isInvestmentEntry(l)) pInvest += Number(l.amount);
       else if (l.kind === "transfer" && l.toAccountId && invIds.has(l.toAccountId)) pInvest += Number(l.amount);
     }
     const pSavRate = SD(pIncome - pExpense, pIncome) * 100;
@@ -313,7 +320,7 @@ function useD(ledger: LedgerEntry[], rawTrades: StockTrade[], accounts: Account[
     /* monthlyCategoryTrend (full) */
     const monthlyCatTrend: Record<string, Record<string, number>> = {};
     for (const l of ledger) {
-      if (l.kind !== "expense" || Number(l.amount) <= 0 || l.category === "재테크" || l.category === "환전") continue;
+      if (l.kind !== "expense" || Number(l.amount) <= 0 || l.category === "환전" || isInvestmentEntry(l)) continue;
       const m = l.date?.slice(0, 7); if (!m) continue;
       const c = l.category || "기타"; if (!topCats.includes(c)) continue;
       if (!monthlyCatTrend[m]) monthlyCatTrend[m] = {};
@@ -517,7 +524,7 @@ function useD(ledger: LedgerEntry[], rawTrades: StockTrade[], accounts: Account[
       const [y, mo] = m.split("-").map(Number); const dim = new Date(y, mo, 0).getDate();
       const daily = new Array(31).fill(0);
       for (const l of ledger) {
-        if (l.kind !== "expense" || l.category === "재테크" || l.category === "환전" || l.date?.slice(0, 7) !== m) continue;
+        if (l.kind !== "expense" || l.category === "환전" || isInvestmentEntry(l) || l.date?.slice(0, 7) !== m) continue;
         const d = parseInt(l.date.slice(8, 10)) - 1; if (d >= 0 && d < 31) daily[d] += Number(l.amount);
       }
       const cum: number[] = []; let r = 0;
@@ -588,8 +595,10 @@ function useD(ledger: LedgerEntry[], rawTrades: StockTrade[], accounts: Account[
       let pi = 0, pe = 0;
       for (const l of ledger) {
         if (l.date?.slice(0, 7) !== pm) continue;
-        if (l.kind === "income") pi += Number(l.amount);
-        if (l.kind === "expense" && l.category !== "재테크" && l.category !== "환전") pe += Number(l.amount);
+        const a = Number(l.amount); if (a <= 0) continue;
+        if (l.kind === "income") pi += a;
+        // 지출: 일반 지출 + 투자손실(category=재테크). 환전은 제외.
+        else if (l.kind === "expense" && l.category !== "환전") pe += a;
       }
       if (pi > 0 || pe > 0) prev = { income: pi, expense: pe };
     }
@@ -835,7 +844,7 @@ function useD(ledger: LedgerEntry[], rawTrades: StockTrade[], accounts: Account[
       const avg = Math.round(SD(v.amount, v.count));
       // 월별 추이
       const ivMTotals = mTotalsFor(months, ledger, l =>
-        l.kind === "expense" && l.category === "재테크" && (l.subCategory || "기타") === v.sub
+        isInvestmentEntry(l) && (l.subCategory || "기타") === v.sub
       );
       const { monthTrend: ivTrend, mom: ivMom, nonZero: ivNonZero, monthAvg } = calcTrend(ivMTotals);
       const cs: string[] = [];

@@ -66,6 +66,8 @@ type SpendingCalendarRow = {
   date: string;
   title: string;
   category: string;
+  subCategory?: string;
+  description?: string;
   amount: number;
   type: "spending" | "investing" | "income";
   fromAccountId?: string;
@@ -1357,6 +1359,8 @@ export const DashboardView: React.FC<Props> = (props) => {
 
       const title = entry.subCategory || entry.description || entry.category || "미분류";
       const category = entry.category || "";
+      const subCategory = entry.subCategory || undefined;
+      const description = entry.description || undefined;
 
       if (entry.kind === "income") {
         rows.push({
@@ -1364,6 +1368,8 @@ export const DashboardView: React.FC<Props> = (props) => {
           date: entry.date,
           title,
           category,
+          subCategory,
+          description,
           amount,
           type: "income",
           toAccountId: entry.toAccountId,
@@ -1381,6 +1387,8 @@ export const DashboardView: React.FC<Props> = (props) => {
           date: entry.date,
           title,
           category,
+          subCategory,
+          description,
           amount,
           type: isSavings ? "investing" : "spending",
           fromAccountId: entry.fromAccountId,
@@ -2518,6 +2526,7 @@ export const DashboardView: React.FC<Props> = (props) => {
                     <thead>
                       <tr>
                         <th style={{ textAlign: "left" }}>분류</th>
+                        <th style={{ textAlign: "left" }}>카테고리 (대·중분류)</th>
                         <th style={{ textAlign: "left" }}>내역</th>
                         <th style={{ textAlign: "left" }}>계좌</th>
                         <th style={{ textAlign: "right" }}>금액</th>
@@ -2536,9 +2545,17 @@ export const DashboardView: React.FC<Props> = (props) => {
                               {row.type === "spending" ? "내가 쓴 소비" : row.type === "investing" ? "재테크" : "수입"}
                             </span>
                           </td>
-                          <td title={row.category}>
-                            {row.title}
-                            {row.category && <span style={{ color: "var(--text-muted)", marginLeft: 6 }}>({row.category})</span>}
+                          <td>
+                            <span style={{ fontWeight: 500 }}>{row.category || "-"}</span>
+                            {row.subCategory && (
+                              <>
+                                <span style={{ color: "var(--text-muted)", margin: "0 4px" }}>·</span>
+                                <span style={{ color: "var(--text)" }}>{row.subCategory}</span>
+                              </>
+                            )}
+                          </td>
+                          <td style={{ color: row.description ? "var(--text)" : "var(--text-muted)" }}>
+                            {row.description || "—"}
                           </td>
                           <td>{row.type === "income" ? (row.toAccountName || row.toAccountId || "-") : (row.fromAccountName || row.fromAccountId || "-")}</td>
                           <td
@@ -2555,7 +2572,7 @@ export const DashboardView: React.FC<Props> = (props) => {
                       ))}
                       {dayRows.length === 0 && (
                         <tr>
-                          <td colSpan={4} style={{ textAlign: "center", color: "var(--text-muted)" }}>
+                          <td colSpan={5} style={{ textAlign: "center", color: "var(--text-muted)" }}>
                             이 날짜에는 기록이 없습니다.
                           </td>
                         </tr>

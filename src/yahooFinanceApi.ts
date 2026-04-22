@@ -408,9 +408,12 @@ const fetchFromYahooQuoteBatch = async (
 
   // 개발 환경: /api/yahoo-quote 우선 사용(동일 서버에서 직접 Yahoo 호출, 429 캐시 없음)
   if (useCorsProxy()) {
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), 6000);
     try {
       const qs = new URLSearchParams({ symbols: lookupSymbols.join(",") });
-      const res = await fetch(`/api/yahoo-quote?${qs.toString()}`);
+      const res = await fetch(`/api/yahoo-quote?${qs.toString()}`, { signal: controller.signal });
+      clearTimeout(timeoutId);
       if (res.ok) {
         const data = (await res.json()) as YahooQuoteApiResponse;
         const list = data.quoteResponse?.result ?? [];
@@ -460,7 +463,9 @@ const fetchFromYahooQuoteBatch = async (
       }
       // 429 또는 기타 비정상 시 아래 proxy 경로로 폴백
     } catch {
-      // 네트워크 오류 등: 아래 proxy 경로로 폴백
+      // 네트워크 오류·timeout 등: 아래 proxy 경로로 폴백
+    } finally {
+      clearTimeout(timeoutId);
     }
   }
 
@@ -722,6 +727,8 @@ export type FetchYahooQuotesOptions = {
   onProgress?: (done: number, total: number, ticker?: string, status?: string) => void;
   /** 티커별 거래소(KOSPI/KOSDAQ). 지정 시 해당 티커는 .KS/.KQ 우선순위에 사용 */
   exchangeMap?: Record<string, string>;
+  /** 배치 단계별 상태 로그 (개별 fallback 들어가기 전 가시성용) */
+  onBatchPhase?: (phase: string) => void;
 };
 
 export async function fetchYahooQuotes(
@@ -738,6 +745,7 @@ export async function fetchYahooQuotes(
   }
 
   const onProgress = options?.onProgress;
+  const onBatchPhase = options?.onBatchPhase;
   const exchangeMap = options?.exchangeMap ?? {};
   const total = uniq.length;
 
@@ -753,6 +761,7 @@ export async function fetchYahooQuotes(
       const batchTickers = requestedSymbols.filter((s) => !isKRWStock(s));
       let batchResults = new Map<string, YahooQuoteResult>();
       if (batchTickers.length > 0) {
+        onBatchPhase?.(`배치 요청: 미국/기타 ${batchTickers.length}개`);
         const lookupSymbols: string[] = [];
         const seen = new Set<string>();
         for (const s of batchTickers) {
@@ -770,9 +779,11 @@ export async function fetchYahooQuotes(
             setCachedQuote(ticker, quote);
             results.push(quote);
           }
+          onBatchPhase?.(`배치 응답: 미국/기타 ${chunkMap.size}/${batchTickers.length} 성공`);
         } catch (err) {
           if (err instanceof RateLimitError) {
             console.warn("[시세] 배치 429. 종목별 chart 폴백 진행.");
+            onBatchPhase?.(`배치 실패 (429): 종목별 fallback`);
           } else throw err;
         }
       }
@@ -780,7 +791,11 @@ export async function fetchYahooQuotes(
       if (krTickers.length > 0) {
         await new Promise((r) => setTimeout(r, 500)); // 미국 배치 직후 429 회피
       }
+      if (krTickers.length > 0) {
+        onBatchPhase?.(`배치 요청: 한국 ${krTickers.length}개 (${Math.ceil(krTickers.length / KR_BATCH_CHUNK)}개 청크)`);
+      }
       // 한국: exchange가 있으면 suffix 1개만 요청, 없으면 KS/KQ 둘 다 요청 후 최신 regularMarketTime 기준으로 유령 티커 제거
+      let krSuccessCount = 0;
       for (let i = 0; i < krTickers.length; i += KR_BATCH_CHUNK) {
         const chunk = krTickers.slice(i, i + KR_BATCH_CHUNK);
         const chunkLookup = chunk.flatMap((s) => buildLookupCandidates(s, exchangeMap[s]));
@@ -792,9 +807,11 @@ export async function fetchYahooQuotes(
             setCachedQuote(ticker, quote);
             results.push(quote);
           }
+          krSuccessCount += chunkMap.size;
         } catch (err) {
           if (err instanceof RateLimitError) {
             console.warn("[시세] 한국 배치 청크 429. 나머지 한국 종목은 chart 폴백.");
+            onBatchPhase?.(`배치 실패 (429): 한국 청크, 종목별 fallback`);
             break;
           }
           // 네트워크 등 기타 오류 시 해당 청크만 스킵
@@ -802,6 +819,14 @@ export async function fetchYahooQuotes(
         if (i + KR_BATCH_CHUNK < krTickers.length) {
           await new Promise((r) => setTimeout(r, 500)); // 청크 간 0.5초 (429 발생 시 다시 늘릴 수 있음)
         }
+      }
+      if (krTickers.length > 0) {
+        onBatchPhase?.(`배치 응답: 한국 ${krSuccessCount}/${krTickers.length} 성공`);
+      }
+
+      const fallbackCount = uniq.filter((r) => !batchResults.has(r.trim().toUpperCase())).length;
+      if (fallbackCount > 0) {
+        onBatchPhase?.(`개별 fallback 시작: ${fallbackCount}종목 (종목당 200~300ms 지연)`);
       }
 
       for (let i = 0; i < uniq.length; i++) {

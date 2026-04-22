@@ -807,6 +807,8 @@ export const StocksView: React.FC<Props> = ({
         if (uniqueStockTickers.length > 0) {
           const onStockProgress = (done: number) =>
             setQuoteRefreshProgress((p) => ({ ...p, current: done }));
+          onLog?.(`[${logLabel}] 배치 요청 중… (미국/기타 + 한국 티커 묶음 처리)`, "info");
+          const batchStartAt = Date.now();
           let stockResults = await fetchYahooQuotes(uniqueStockTickers, {
             onProgress: (done, total, ticker, status) => {
               onStockProgress(done);
@@ -815,7 +817,11 @@ export const StocksView: React.FC<Props> = ({
                 onLog?.(`[${logLabel}] [${done}/${total} - ${percent}%] ${ticker} : ${status}`, "info");
               }
             },
-            exchangeMap: exchangeMapOpt
+            exchangeMap: exchangeMapOpt,
+            onBatchPhase: (phase) => {
+              const elapsed = ((Date.now() - batchStartAt) / 1000).toFixed(1);
+              onLog?.(`[${logLabel}] ${phase} (${elapsed}s)`, "info");
+            }
           });
           let successStock = new Set(
             stockResults

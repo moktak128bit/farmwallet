@@ -8,6 +8,7 @@ import type {
 } from "../../types";
 import { formatKRW, formatNumber } from "../../utils/formatter";
 import { isUSDStock } from "../../utils/finance";
+import { isInvestmentEntry, isSavingsExpenseEntry } from "../../utils/category";
 
 /** 표시용 종목명: 한글명은 그대로, 미국 주식은 티커만 */
 function displayName(ticker: string, name: string): string {
@@ -90,6 +91,7 @@ const barStyle = (
 export const WaterfallWidget: React.FC<InsightWidgetProps> = ({
   ledger,
   accounts,
+  categoryPresets,
   month,
 }) => {
   const items = useMemo(() => {
@@ -115,25 +117,15 @@ export const WaterfallWidget: React.FC<InsightWidgetProps> = ({
         (e) =>
           e.kind === "expense" &&
           !e.isFixedExpense &&
-          e.category !== "신용결제" &&
-          e.category !== "재테크",
+          e.category !== "재테크" &&
+          !isSavingsExpenseEntry(e, accounts, categoryPresets),
       )
       .reduce((s, e) => s + e.amount, 0);
     const investGain = ml
-      .filter(
-        (e) =>
-          e.kind === "expense" &&
-          e.category === "재테크" &&
-          (e.subCategory || "").includes("투자수익"),
-      )
+      .filter((e) => e.kind === "income" && (e.subCategory || "").includes("투자수익"))
       .reduce((s, e) => s + e.amount, 0);
     const investLoss = ml
-      .filter(
-        (e) =>
-          e.kind === "expense" &&
-          e.category === "재테크" &&
-          (e.subCategory || "").includes("투자손실"),
-      )
+      .filter((e) => e.kind === "expense" && (e.subCategory || "").includes("투자손실"))
       .reduce((s, e) => s + e.amount, 0);
     const divInt = ml
       .filter(
@@ -169,7 +161,7 @@ export const WaterfallWidget: React.FC<InsightWidgetProps> = ({
     rows.push({ label: "월말 잔액", value: endBal, positive: true });
 
     return rows;
-  }, [ledger, accounts, month]);
+  }, [ledger, accounts, categoryPresets, month]);
 
   const maxAbs = useMemo(
     () => Math.max(...items.map((r) => Math.abs(r.value)), 1),
@@ -254,6 +246,8 @@ export const WaterfallWidget: React.FC<InsightWidgetProps> = ({
 
 export const TopThreeBlocksWidget: React.FC<InsightWidgetProps> = ({
   ledger,
+  accounts,
+  categoryPresets,
   month,
 }) => {
   const data = useMemo(() => {
@@ -261,8 +255,8 @@ export const TopThreeBlocksWidget: React.FC<InsightWidgetProps> = ({
       (e) =>
         monthOf(e.date) === month &&
         e.kind === "expense" &&
-        e.category !== "신용결제" &&
-        e.category !== "재테크",
+        e.category !== "재테크" &&
+        !isSavingsExpenseEntry(e, accounts, categoryPresets),
     );
     const totalLiving = ml.reduce((s, e) => s + e.amount, 0);
 
@@ -298,7 +292,7 @@ export const TopThreeBlocksWidget: React.FC<InsightWidgetProps> = ({
     const blockPct = pct(blockTotal, totalLiving);
 
     return { totalLiving, dateExpense, carExpense, foodExpense, blockPct };
-  }, [ledger, month]);
+  }, [ledger, accounts, categoryPresets, month]);
 
   if (data.totalLiving === 0) {
     return (
@@ -832,6 +826,8 @@ export const DividendCoverageInsightWidget: React.FC<InsightWidgetProps> = ({
 
 export const SavingsRateTrendWidget: React.FC<InsightWidgetProps> = ({
   ledger,
+  accounts,
+  categoryPresets,
   month,
 }) => {
   const data = useMemo(() => {
@@ -839,25 +835,23 @@ export const SavingsRateTrendWidget: React.FC<InsightWidgetProps> = ({
 
     return months.map((m) => {
       const ml = ledger.filter((e) => monthOf(e.date) === m);
+      // 실제 노동/패시브 수입 (투자수익 제외 — 별도 지표)
       const totalIncome = ml
-        .filter((e) => e.kind === "income")
+        .filter((e) => e.kind === "income" && e.subCategory !== "투자수익")
         .reduce((s, e) => s + e.amount, 0);
       const salary = ml
         .filter((e) => e.kind === "income" && e.subCategory === "급여")
         .reduce((s, e) => s + e.amount, 0);
       const savings = ml
-        .filter(
-          (e) =>
-            e.kind === "expense" &&
-            (e.category === "재테크" || e.category === "저축성지출"),
-        )
+        .filter(isInvestmentEntry)
         .reduce((s, e) => s + e.amount, 0);
       const livingExpense = ml
         .filter(
           (e) =>
             e.kind === "expense" &&
-            e.category !== "신용결제" &&
-            e.category !== "재테크",
+            e.category !== "재테크" &&
+            !isInvestmentEntry(e) &&
+            !isSavingsExpenseEntry(e, accounts, categoryPresets),
         )
         .reduce((s, e) => s + e.amount, 0);
 
@@ -880,7 +874,7 @@ export const SavingsRateTrendWidget: React.FC<InsightWidgetProps> = ({
         salaryDependency,
       };
     });
-  }, [ledger, month]);
+  }, [ledger, accounts, categoryPresets, month]);
 
   const currentMonth = data[data.length - 1];
   const gap = currentMonth

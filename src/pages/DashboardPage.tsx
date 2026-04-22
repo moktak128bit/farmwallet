@@ -385,10 +385,12 @@ export const DashboardView: React.FC<Props> = (props) => {
         if (entry.kind === "income") {
           income += toKrw(entry);
         } else if (entry.kind === "expense") {
-          if (isSavingsExpenseEntry(entry, accounts, categoryPresets)) {
+          expense += toKrw(entry);
+        } else if (entry.kind === "transfer") {
+          // 저축이체/투자이체 (+ 구버전 저축/투자) → 자산 축적
+          const sub = entry.subCategory;
+          if (sub === "저축이체" || sub === "투자이체" || sub === "저축" || sub === "투자") {
             investing += toKrw(entry);
-          } else {
-            expense += toKrw(entry);
           }
         }
       }
@@ -619,6 +621,7 @@ export const DashboardView: React.FC<Props> = (props) => {
               );
             }
           }
+          continue;
         }
       }
 
@@ -1468,7 +1471,10 @@ export const DashboardView: React.FC<Props> = (props) => {
       const prev = byMonth.get(month) ?? { income: 0, investing: 0 };
       if (entry.kind === "income") {
         byMonth.set(month, { ...prev, income: prev.income + toKrw(entry) });
-      } else if (entry.kind === "expense" && isSavingsExpenseEntry(entry, accounts, categoryPresets)) {
+      } else if (entry.kind === "transfer" &&
+                 (entry.subCategory === "저축이체" || entry.subCategory === "투자이체" ||
+                  entry.subCategory === "저축" || entry.subCategory === "투자")) {
+        // 재테크 이체 (저축·투자) → 실제 자산 축적
         byMonth.set(month, { ...prev, investing: prev.investing + toKrw(entry) });
       }
     });
@@ -1613,6 +1619,8 @@ export const DashboardView: React.FC<Props> = (props) => {
         return;
       }
       if (entry.kind !== "expense") return;
+      // 순수 생활비만: 재테크(투자손실)·저축성지출·신용결제 제외
+      if (entry.category === "재테크" || entry.category === "신용결제") return;
       if (isSavingsExpenseEntry(entry, accounts, categoryPresets)) return;
       totalExpense += toKrw(entry);
     });
@@ -1629,6 +1637,8 @@ export const DashboardView: React.FC<Props> = (props) => {
     ledger.forEach((entry) => {
       if (!entry.date?.startsWith(currentMonth)) return;
       if (entry.kind !== "expense") return;
+      // 재테크(투자손실)·신용결제·저축성지출은 생활비 Top 5에서 제외
+      if (entry.category === "재테크" || entry.category === "신용결제") return;
       if (isSavingsExpenseEntry(entry, accounts, categoryPresets)) return;
       const cat = entry.subCategory || entry.category || "기타";
       catMap.set(cat, (catMap.get(cat) ?? 0) + toKrw(entry));

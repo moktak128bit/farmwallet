@@ -28,6 +28,15 @@ export function generateLedgerMarkdownReport(
   for (const e of ledger) {
     if (e.kind === "income") {
       income.push(e);
+    } else if (e.kind === "transfer" && (
+      e.subCategory === "저축이체" || e.subCategory === "투자이체" ||
+      e.subCategory === "저축" || e.subCategory === "투자"
+    )) {
+      // 저축이체/투자이체 → savingsExpense 그룹
+      savingsExpense.push(e);
+    } else if (e.kind === "expense" && e.category === "재테크") {
+      // 재테크 지출(투자손실) = 실질 지출
+      expense.push(e);
     } else if (isSavingsExpenseEntry(e, accounts)) {
       savingsExpense.push(e);
     } else if (e.kind === "transfer") {
@@ -86,6 +95,15 @@ export function generateLedgerMarkdownReport(
     }
     const row = monthMap.get(m)!;
     if (e.kind === "income") row.income += e.amount;
+    else if (e.kind === "transfer" && (
+      e.subCategory === "저축이체" || e.subCategory === "투자이체" ||
+      e.subCategory === "저축" || e.subCategory === "투자"
+    )) {
+      row.savings += e.amount;
+    }
+    else if (e.kind === "expense" && e.category === "재테크") {
+      row.expense += e.amount; // 투자손실 = 실질 지출
+    }
     else if (isSavingsExpenseEntry(e, accounts)) row.savings += e.amount;
     else if (e.kind === "transfer") row.transfer += e.amount;
     else row.expense += e.amount;

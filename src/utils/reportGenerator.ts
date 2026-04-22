@@ -505,12 +505,22 @@ export function generateDailyReport(
       )
       .reduce((sum, entry) => sum + toKrwAmount(entry.amount, entry.currency, fxRate), 0);
 
+    // 저축/투자 이체 + 저축성지출(투자손실 제외 — isSavingsExpenseEntry 내부에서 처리됨)
     const daySavingsExpense = filteredLedger
-      .filter((entry) => isSavingsExpenseEntry(entry, accounts) && entry.date === date)
+      .filter((entry) => entry.date === date && (
+        isSavingsExpenseEntry(entry, accounts) ||
+        (entry.kind === "transfer" && (
+          entry.subCategory === "저축이체" || entry.subCategory === "투자이체" ||
+          entry.subCategory === "저축" || entry.subCategory === "투자"
+        ))
+      ))
       .reduce((sum, entry) => sum + toKrwAmount(entry.amount, entry.currency, fxRate), 0);
 
+    // 일반 이체 (저축이체/투자이체 제외 — savings로 따로 집계됨)
     const dayTransfer = filteredLedger
-      .filter((entry) => entry.kind === "transfer" && entry.date === date)
+      .filter((entry) => entry.kind === "transfer" && entry.date === date &&
+        entry.subCategory !== "저축이체" && entry.subCategory !== "투자이체" &&
+        entry.subCategory !== "저축" && entry.subCategory !== "투자")
       .reduce((sum, entry) => sum + toKrwAmount(entry.amount, entry.currency, fxRate), 0);
 
     const positions = computePositions(filteredTrades, prices, accounts);
@@ -906,9 +916,20 @@ export function generateConsumptionImpactMonthlyReport(
     if (entry.kind === "expense") {
       if (isSavingsExpenseEntry(entry, accounts)) {
         row.actualInvested += amount;
+      } else if (entry.category === "재테크") {
+        // 투자손실
+        row.consumptionExpense += amount;
       } else {
         row.consumptionExpense += amount;
       }
+      continue;
+    }
+
+    if (entry.kind === "transfer" && (
+      entry.subCategory === "저축이체" || entry.subCategory === "투자이체" ||
+      entry.subCategory === "저축" || entry.subCategory === "투자"
+    )) {
+      row.actualInvested += amount;
       continue;
     }
 
@@ -1063,16 +1084,25 @@ export function generateComprehensiveMonthlyReport(
       row.totalExpense += amount;
       const cat = entry.category ?? "";
       const sub = entry.subCategory ?? "";
+      const detail = entry.detailCategory ?? "";
+      // 대출상환: 현재 구조 (지출/대출상환/학자금대출 등) + 구버전 (category=대출상환)
+      const isLoanRepay =
+        cat === "대출상환" ||
+        (cat === "지출" && sub === "대출상환");
+      const isInterest =
+        sub.includes("이자") || sub === "주담대이자" ||
+        detail.includes("이자");
 
-      if (isSavingsExpenseEntry(entry, accounts)) {
+      if (cat === "재테크") {
+        // 투자손실
+        row.livingExpense += amount;
+      } else if (isSavingsExpenseEntry(entry, accounts)) {
         row.savingsExpense += amount;
       } else if (cat === "신용결제" || cat === "신용카드") {
         row.creditPayment += amount;
-      } else if (cat === "대출상환") {
+      } else if (isLoanRepay) {
         row.loanRepayment += amount;
-        if (sub.includes("이자") || sub === "주담대이자") {
-          row.loanInterest += amount;
-        }
+        if (isInterest) row.loanInterest += amount;
         row.livingExpense += amount;
       } else if (cat === "주거비" && sub === "주담대이자") {
         row.loanInterest += amount;

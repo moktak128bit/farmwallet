@@ -195,6 +195,8 @@ export const AccountsView: React.FC<Props> = ({
   const effectiveFxRate = fxRate ?? localFxRate;
   /** Opening-balance reverse calc: user-entered actual current balances by account */
   const [actualCurrentInput, setActualCurrentInput] = useState<Record<string, string>>({});
+  /** 사용자가 직접 편집한 계좌 id 집합 — 자동 동기화에서 제외 */
+  const [actualCurrentEdited, setActualCurrentEdited] = useState<Set<string>>(() => new Set());
   const realizedPnlByTradeId = useMemo(
     () => computeRealizedPnlByTradeId(trades ?? []),
     [trades]
@@ -444,6 +446,14 @@ export const AccountsView: React.FC<Props> = ({
     return map;
   }, [safePositions, effectiveFxRate]);
 
+  /** 계좌의 '시작 잔액' (baseBalance). calculations.ts 와 완전 일치. */
+  const getBaseBalance = (account: Account): number => {
+    if (account.type === "securities" || account.type === "crypto") {
+      return account.initialCashBalance ?? account.initialBalance ?? 0;
+    }
+    return account.initialBalance ?? 0;
+  };
+
   /** 역산 초기잔액: rev = desired - computed + baseBalance */
   const reversedInitialBalance = (accountId: string): number | null => {
     const inputStr = actualCurrentInput[accountId];
@@ -452,10 +462,7 @@ export const AccountsView: React.FC<Props> = ({
     const row = safeBalances.find((b) => b.account.id === accountId);
     const account = safeAccounts.find((a) => a.id === accountId);
     if (!row || !account) return null;
-    const baseBalance =
-      account.type === "securities" || account.type === "crypto"
-        ? (account.initialCashBalance ?? account.initialBalance ?? 0)
-        : (account.initialBalance ?? 0);
+    const baseBalance = getBaseBalance(account);
     const computedCurrent = row.currentBalance ?? 0;
     return desired - computedCurrent + baseBalance;
   };
@@ -538,21 +545,24 @@ export const AccountsView: React.FC<Props> = ({
       .filter((row) => row.account.type !== "card");
   }, [accountsByType]);
 
-  // 계좌 초기 금액 역산 테이블: 현재 잔액을 기본값으로 채워서 역산 결과가 보이게 함
+  // 계좌 초기 금액 역산 테이블: 편집 안 한 계좌는 항상 현재 잔액에 동기화
+  // (거래가 추가돼 currentBalance가 바뀌면 입력칸도 최신 값 반영)
   useEffect(() => {
     if (orderedRowsForInitialReverse.length === 0) return;
     setActualCurrentInput((prev) => {
       let changed = false;
       const next = { ...prev };
       for (const row of orderedRowsForInitialReverse) {
-        if (!(row.account.id in prev)) {
-          next[row.account.id] = String(Math.round(row.currentBalance ?? 0));
+        if (actualCurrentEdited.has(row.account.id)) continue;
+        const synced = String(Math.round(row.currentBalance ?? 0));
+        if (prev[row.account.id] !== synced) {
+          next[row.account.id] = synced;
           changed = true;
         }
       }
       return changed ? next : prev;
     });
-  }, [orderedRowsForInitialReverse]);
+  }, [orderedRowsForInitialReverse, actualCurrentEdited]);
 
   const fillActualCurrentFromComputed = () => {
     const next: Record<string, string> = {};
@@ -560,6 +570,8 @@ export const AccountsView: React.FC<Props> = ({
       next[row.account.id] = String(Math.round(row.currentBalance ?? 0));
     });
     setActualCurrentInput(next);
+    // 수동 편집 표식 초기화 → 이후 currentBalance 변경 시 자동 동기화 재개
+    setActualCurrentEdited(new Set());
   };
 
   const totalSummary = useMemo(() => {
@@ -1409,6 +1421,74 @@ export const AccountsView: React.FC<Props> = ({
         </div>
       )}
 
+      {/* 계좌별 시작/현재 잔액 요약: 거래 순액을 시각화해 역산이 필요한 계좌 식별에 도움 */}
+      {orderedRowsForInitialReverse.length > 0 && (
+        <div className="card" style={{ marginTop: 24, padding: 20 }}>
+          <h3 style={{ margin: "0 0 8px", fontSize: 16 }}>계좌별 잔액 요약</h3>
+          <p style={{ margin: "0 0 16px", fontSize: 13, color: "var(--text-muted)" }}>
+            각 계좌의 시작 잔액과 현재 잔액, 그리고 그 차액(거래 누적 순액)을 확인할 수 있습니다. 차액이 실제와 다르면 아래 역산 도구로 조정하세요.
+          </p>
+          <table className="data-table" style={{ fontSize: 13 }}>
+            <thead>
+              <tr>
+                <th style={{ textAlign: "left" }}>계좌명</th>
+                <th style={{ textAlign: "right" }}>시작 잔액</th>
+                <th style={{ textAlign: "right" }}>현재 잔액</th>
+                <th style={{ textAlign: "right" }}>차액(순액)</th>
+              </tr>
+            </thead>
+            <tbody>
+              {orderedRowsForInitialReverse.map((row) => {
+                const base = getBaseBalance(row.account);
+                const current = row.currentBalance ?? 0;
+                const diff = current - base;
+                const diffColor =
+                  diff > 0 ? "var(--success)" : diff < 0 ? "var(--danger)" : "var(--text-muted)";
+                return (
+                  <tr key={row.account.id}>
+                    <td>
+                      {row.account.name} ({row.account.institution || "-"})
+                    </td>
+                    <td style={{ textAlign: "right" }}>{formatKRW(Math.round(base))}</td>
+                    <td style={{ textAlign: "right", fontWeight: 600 }}>{formatKRW(Math.round(current))}</td>
+                    <td style={{ textAlign: "right", fontWeight: 600, color: diffColor }}>
+                      {diff > 0 ? "+" : ""}
+                      {formatKRW(Math.round(diff))}
+                    </td>
+                  </tr>
+                );
+              })}
+              {(() => {
+                const totals = orderedRowsForInitialReverse.reduce(
+                  (acc, row) => {
+                    const base = getBaseBalance(row.account);
+                    const current = row.currentBalance ?? 0;
+                    acc.base += base;
+                    acc.current += current;
+                    return acc;
+                  },
+                  { base: 0, current: 0 }
+                );
+                const totalDiff = totals.current - totals.base;
+                const diffColor =
+                  totalDiff > 0 ? "var(--success)" : totalDiff < 0 ? "var(--danger)" : "var(--text-muted)";
+                return (
+                  <tr style={{ borderTop: "2px solid var(--border)", fontWeight: 700 }}>
+                    <td>합계</td>
+                    <td style={{ textAlign: "right" }}>{formatKRW(Math.round(totals.base))}</td>
+                    <td style={{ textAlign: "right" }}>{formatKRW(Math.round(totals.current))}</td>
+                    <td style={{ textAlign: "right", color: diffColor }}>
+                      {totalDiff > 0 ? "+" : ""}
+                      {formatKRW(Math.round(totalDiff))}
+                    </td>
+                  </tr>
+                );
+              })()}
+            </tbody>
+          </table>
+        </div>
+      )}
+
       {/* 계좌 초기 금액 역산: 현재 보유금액이 맞지 않을 때 역산하여 초기 금액 적용 */}
       {orderedRowsForInitialReverse.length > 0 && (
         <div className="card" style={{ marginTop: 24, padding: 20 }}>
@@ -1427,6 +1507,8 @@ export const AccountsView: React.FC<Props> = ({
             <tbody>
               {orderedRowsForInitialReverse.map((row) => {
                   const rev = reversedInitialBalance(row.account.id);
+                  const currentBase = getBaseBalance(row.account);
+                  const unchanged = rev != null && Math.round(rev) === Math.round(currentBase);
                   return (
                     <tr key={row.account.id}>
                       <td>
@@ -1437,12 +1519,19 @@ export const AccountsView: React.FC<Props> = ({
                           type="text"
                           inputMode="numeric"
                           value={actualCurrentInput[row.account.id] ?? ""}
-                          onChange={(e) =>
+                          onChange={(e) => {
                             setActualCurrentInput((prev) => ({
                               ...prev,
                               [row.account.id]: e.target.value
-                            }))
-                          }
+                            }));
+                            // 사용자 편집 마킹 → 자동 동기화에서 제외
+                            setActualCurrentEdited((prev) => {
+                              if (prev.has(row.account.id)) return prev;
+                              const next = new Set(prev);
+                              next.add(row.account.id);
+                              return next;
+                            });
+                          }}
                           placeholder="비어있음"
                           style={{
                             width: 120,
@@ -1452,8 +1541,8 @@ export const AccountsView: React.FC<Props> = ({
                           }}
                         />
                       </td>
-                      <td style={{ textAlign: "right", fontWeight: 600 }}>
-                        {rev != null ? formatKRW(Math.round(rev)) : "-"}
+                      <td style={{ textAlign: "right", fontWeight: 600, color: unchanged ? "var(--text-muted)" : undefined }}>
+                        {rev == null ? "-" : unchanged ? "변경 없음" : formatKRW(Math.round(rev))}
                       </td>
                     </tr>
                   );

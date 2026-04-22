@@ -103,12 +103,23 @@ function buildPeriodCompare(
         continue;
       }
       if (entry.kind === "expense") {
-        if (isSavingsExpenseEntry(entry, accounts)) {
+        if (entry.category === "재테크") {
+          // 투자손실 — 실질 지출
+          expense += amount;
+        } else if (isSavingsExpenseEntry(entry, accounts)) {
           savings += amount;
           investingIn += amount;
         } else {
           expense += amount;
         }
+        continue;
+      }
+      if (entry.kind === "transfer" && (
+        entry.subCategory === "저축이체" || entry.subCategory === "투자이체" ||
+        entry.subCategory === "저축" || entry.subCategory === "투자"
+      )) {
+        savings += amount;
+        investingIn += amount;
         continue;
       }
       if (entry.kind === "transfer") {

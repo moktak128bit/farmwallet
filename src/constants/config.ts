@@ -3,7 +3,7 @@ declare const __APP_VERSION__: string;
 declare const __BUILD_HASH__: string;
 export const APP_VERSION = __APP_VERSION__;
 export const BUILD_HASH = __BUILD_HASH__;
-export const DATA_SCHEMA_VERSION = 4;
+export const DATA_SCHEMA_VERSION = 9;
 
 /** 저축 목표: 월급의 비율 (%) */
 export const SAVINGS_RATE_GOAL = 70;

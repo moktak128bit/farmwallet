@@ -895,16 +895,80 @@ function backupApiPlugin(): Plugin {
         res.end(JSON.stringify({ error: `${stage} 실패: ${msg}` }));
       };
 
-      // 업데이트 (git pull) — 로컬 개발 전용
-      server.middlewares.use("/api/git-pull", (req: IncomingMessage, res: ServerResponse, next) => {
-        if (req.method !== "POST") { next(); return; }
+      // 요청 body 파싱 유틸
+      const readJsonBody = (req: IncomingMessage): Promise<Record<string, unknown>> =>
+        new Promise((resolve) => {
+          let raw = "";
+          req.on("data", (chunk) => { raw += String(chunk); });
+          req.on("end", () => {
+            if (!raw) { resolve({}); return; }
+            try { resolve(JSON.parse(raw) ?? {}); } catch { resolve({}); }
+          });
+          req.on("error", () => resolve({}));
+        });
+
+      // 최근 커밋 목록 + 현재 HEAD 상태 조회 — 버전 선택 UI용
+      server.middlewares.use("/api/git-log", (req: IncomingMessage, res: ServerResponse, next) => {
+        if (req.method !== "GET") { next(); return; }
+        const cwd = process.cwd();
         void (async () => {
           try {
-            await execAsync("git pull origin main --no-rebase", process.cwd());
+            await execAsync("git fetch origin main --quiet", cwd).catch(() => undefined);
+            const { stdout: logOut } = await execAsync(
+              'git log origin/main --format="%H|%ai|%s" -30 --no-merges',
+              cwd
+            );
+            const commits = logOut
+              .split("\n")
+              .map((line) => line.trim())
+              .filter(Boolean)
+              .map((line) => {
+                const [hash, date, ...rest] = line.split("|");
+                return { hash, date, message: rest.join("|") };
+              });
+            const { stdout: branchOut } = await execAsync("git rev-parse --abbrev-ref HEAD", cwd);
+            const { stdout: headOut } = await execAsync("git rev-parse HEAD", cwd);
             res.setHeader("Content-Type", "application/json");
-            res.end(JSON.stringify({ ok: true }));
+            res.end(JSON.stringify({
+              commits,
+              currentBranch: branchOut.trim(),
+              currentHead: headOut.trim()
+            }));
           } catch (err) {
-            sendErrorJson(res, "git pull", err);
+            sendErrorJson(res, "git log", err);
+          }
+        })();
+      });
+
+      // 업데이트 (git pull / 특정 버전 checkout) — 로컬 개발 전용
+      //   body { ref?: string }
+      //     ref 없음: main 브랜치로 돌아가 최신 pull
+      //     ref 있음: restore/<short>-<ts> 브랜치를 만들고 그 커밋으로 checkout (main 영향 없음)
+      server.middlewares.use("/api/git-pull", (req: IncomingMessage, res: ServerResponse, next) => {
+        if (req.method !== "POST") { next(); return; }
+        const cwd = process.cwd();
+        void (async () => {
+          const body = await readJsonBody(req);
+          const ref = typeof body.ref === "string" ? body.ref.trim() : "";
+          try {
+            if (!ref) {
+              // 최신: main 브랜치로 복귀 후 pull
+              await execAsync("git checkout main", cwd);
+              await execAsync("git pull origin main --no-rebase", cwd);
+              res.setHeader("Content-Type", "application/json");
+              res.end(JSON.stringify({ ok: true, branch: "main" }));
+              return;
+            }
+            // 특정 버전: 원격 가져온 뒤 임시 restore 브랜치로 checkout
+            await execAsync("git fetch origin --quiet", cwd);
+            const shortHash = ref.slice(0, 7);
+            const ts = new Date().toISOString().slice(0, 16).replace(/[:-]/g, "").replace("T", "-");
+            const branchName = `restore/${shortHash}-${ts}`;
+            await execAsync(`git checkout -B ${branchName} ${ref}`, cwd);
+            res.setHeader("Content-Type", "application/json");
+            res.end(JSON.stringify({ ok: true, branch: branchName, ref }));
+          } catch (err) {
+            sendErrorJson(res, "git checkout", err);
           }
         })();
       });

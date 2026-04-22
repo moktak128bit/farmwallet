@@ -14,6 +14,7 @@ import type {
 import { BUDGET_ALL_CATEGORY } from "../../types";
 import { formatKRW, formatNumber } from "../../utils/formatter";
 import { isUSDStock } from "../../utils/finance";
+import { isInvestmentEntry, isSavingsExpenseEntry } from "../../utils/category";
 
 // ─── 공유 Props ─────────────────────────────────────────────────────────────
 
@@ -75,23 +76,14 @@ export const RealReturnWidget: React.FC<AdvancedWidgetProps> = ({
     const yearTrades = trades.filter((t) => t.date.startsWith(currentYear));
     const yearLedger = ledger.filter((e) => e.date.startsWith(currentYear));
 
-    // 실현 수익 / 손실: 가계부에서 재테크 > 투자수익 / 투자손실
+    // 실현 수익 = kind=income + subCategory 투자수익
+    // 실현 손실 = kind=expense + subCategory 투자손실 (구버전 호환: expense+재테크)
     const gains = yearLedger
-      .filter(
-        (e) =>
-          e.kind === "income" &&
-          e.category === "재테크" &&
-          (e.subCategory || "").includes("투자수익"),
-      )
+      .filter((e) => e.kind === "income" && (e.subCategory || "").includes("투자수익"))
       .reduce((s, e) => s + e.amount, 0);
 
     const losses = yearLedger
-      .filter(
-        (e) =>
-          e.kind === "expense" &&
-          e.category === "재테크" &&
-          (e.subCategory || "").includes("투자손실"),
-      )
+      .filter((e) => e.kind === "expense" && (e.subCategory || "").includes("투자손실"))
       .reduce((s, e) => s + e.amount, 0);
 
     // 비용: 매매 수수료
@@ -286,6 +278,7 @@ export const GoalPlannerWidget: React.FC<AdvancedWidgetProps> = ({
   accounts,
   ledger,
   trades,
+  categoryPresets,
 }) => {
   const [targetAmount, setTargetAmount] = useState(100_000_000);
   const { currentMonth } = useMemo(() => getNow(), []);
@@ -321,8 +314,8 @@ export const GoalPlannerWidget: React.FC<AdvancedWidgetProps> = ({
         .filter(
           (e) =>
             e.kind === "expense" &&
-            e.category !== "신용결제" &&
-            e.category !== "재테크",
+            e.category !== "재테크" &&
+            !isSavingsExpenseEntry(e, accounts, categoryPresets),
         )
         .reduce((s, e) => s + e.amount, 0);
       return income - living;
@@ -374,7 +367,7 @@ export const GoalPlannerWidget: React.FC<AdvancedWidgetProps> = ({
       scenario2Months,
       progressPct,
     };
-  }, [accounts, ledger, trades, currentMonth, targetAmount]);
+  }, [accounts, ledger, trades, categoryPresets, currentMonth, targetAmount]);
 
   const fmtMonths = (m: number) =>
     Number.isFinite(m) && m > 0
@@ -539,11 +532,7 @@ export const InvestCapacityWidget: React.FC<AdvancedWidgetProps> = ({
       const available = Math.max(0, income - fixed - essential);
 
       const actualInvest = moLedger
-        .filter(
-          (e) =>
-            e.kind === "expense" &&
-            (e.category === "재테크" || e.category === "저축성지출"),
-        )
+        .filter(isInvestmentEntry)
         .reduce((s, e) => s + e.amount, 0);
 
       const utilization =
@@ -663,8 +652,10 @@ export const InvestCapacityWidget: React.FC<AdvancedWidgetProps> = ({
 // ─── Widget 4: TradeVsSpendWidget — "매매 vs 소비 패턴" ─────────────────────
 
 export const TradeVsSpendWidget: React.FC<AdvancedWidgetProps> = ({
+  accounts,
   ledger,
   trades,
+  categoryPresets,
 }) => {
   const { currentMonth } = useMemo(() => getNow(), []);
 
@@ -699,15 +690,15 @@ export const TradeVsSpendWidget: React.FC<AdvancedWidgetProps> = ({
       tradesByDay[dow]++;
     });
 
-    // 요일별 큰 지출 건수 (>50000, 신용결제/재테크 제외)
+    // 요일별 큰 지출 건수 (>50000, 재테크/저축성지출 제외)
     const bigSpendByDay = Array(7).fill(0) as number[];
     recentLedger
       .filter(
         (e) =>
           e.kind === "expense" &&
           e.amount > 50000 &&
-          e.category !== "신용결제" &&
-          e.category !== "재테크",
+          e.category !== "재테크" &&
+          !isSavingsExpenseEntry(e, accounts, categoryPresets),
       )
       .forEach((e) => {
         const dow = new Date(e.date).getDay();
@@ -747,7 +738,7 @@ export const TradeVsSpendWidget: React.FC<AdvancedWidgetProps> = ({
     const maxCount = Math.max(...tradesByDay, ...bigSpendByDay, 1);
 
     return { dayLabels, tradesByDay, bigSpendByDay, patterns, maxCount };
-  }, [ledger, trades, currentMonth]);
+  }, [accounts, ledger, trades, categoryPresets, currentMonth]);
 
   return (
     <div className="card">
@@ -1028,10 +1019,12 @@ export const DividendCoverageWidget: React.FC<AdvancedWidgetProps> = ({
 // ─── Widget 6: ConcentrationWidget — "투자 집중도 vs 소비 다양성" ───────────────
 
 export const ConcentrationWidget: React.FC<AdvancedWidgetProps> = ({
+  accounts,
   ledger,
   trades,
   prices,
   fxRate,
+  categoryPresets,
 }) => {
   const { currentMonth } = useMemo(() => getNow(), []);
 
@@ -1073,13 +1066,13 @@ export const ConcentrationWidget: React.FC<AdvancedWidgetProps> = ({
       }, 0) * 10000;
     }
 
-    // ── 소비 HHI ──
+    // ── 소비 HHI ── (재테크/저축성지출 제외: 순수 소비 집중도)
     const currentMonthExpenses = ledger.filter(
       (e) =>
         monthOf(e.date) === currentMonth &&
         e.kind === "expense" &&
-        e.category !== "신용결제" &&
-        e.category !== "재테크",
+        e.category !== "재테크" &&
+        !isSavingsExpenseEntry(e, accounts, categoryPresets),
     );
 
     const catMap = new Map<string, number>();
@@ -1135,7 +1128,7 @@ export const ConcentrationWidget: React.FC<AdvancedWidgetProps> = ({
       spendColor: hhiColor(spendHHI),
       insight,
     };
-  }, [ledger, trades, prices, fxRate, currentMonth]);
+  }, [accounts, ledger, trades, prices, fxRate, categoryPresets, currentMonth]);
 
   const maxHHI = 10000;
 

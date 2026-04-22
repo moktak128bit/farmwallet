@@ -226,7 +226,7 @@ export const WorkoutView: React.FC<Props> = ({
   };
 
   const addSet = (exerciseId: string, partial: Partial<WorkoutSet>) => {
-    // 빠른 추가는 "방금 수행" 의미라 done=true 로 저장하며 완료 시각도 기록.
+    // 세트 추가는 "계획"으로만 저장 (done=false). 사용자가 실제 수행 후 체크박스를 직접 눌러 완료 처리.
     const ts = nowIso();
     upsertEntry(selectedDate, (entry) => ({
       ...entry,
@@ -242,8 +242,7 @@ export const WorkoutView: React.FC<Props> = ({
                   reps: partial.reps ?? 0,
                   durationMin: partial.durationMin,
                   distanceKm: partial.distanceKm,
-                  done: true,
-                  completedAt: ts,
+                  done: false,
                 },
               ],
             }

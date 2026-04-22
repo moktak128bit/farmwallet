@@ -966,9 +966,10 @@ export const LedgerView: React.FC<Props> = ({
       updated.toAccountId = editingValue || undefined;
     } else if (field === "grossAmount") {
       const isUSD = entry.currency === "USD";
+      // KRW 도 소수점 허용해서 파싱 후 반올림 — float 쓰레기 값 들어와도 안전
       const gross = isUSD
         ? parseFloat(editingValue.replace(/[^\d.]/g, ""))
-        : Number(editingValue.replace(/[^\d]/g, ""));
+        : Math.round(parseFloat(editingValue.replace(/[^\d.]/g, "")) || 0);
       if (!Number.isFinite(gross) || isNaN(gross)) {
         setEditingField(null);
         setEditingValue("");
@@ -978,9 +979,10 @@ export const LedgerView: React.FC<Props> = ({
       updated.amount = gross - disc;
     } else if (field === "amount") {
       const isUSD = entry.currency === "USD";
+      // KRW 도 소수점 허용해서 파싱 후 반올림 — float 쓰레기 값 들어와도 안전
       const amount = isUSD
         ? parseFloat(editingValue.replace(/[^\d.]/g, ""))
-        : Number(editingValue.replace(/[^\d]/g, ""));
+        : Math.round(parseFloat(editingValue.replace(/[^\d.]/g, "")) || 0);
       if (Number.isFinite(amount) && !isNaN(amount)) {
         updated.amount = amount;
         if ((entry.kind === "expense" || entry.kind === "income") && (entry.discountAmount ?? 0) > 0) {
@@ -999,12 +1001,13 @@ export const LedgerView: React.FC<Props> = ({
       }
       const isUSD = entry.currency === "USD";
       const trimmed = editingValue.trim();
+      // KRW 도 소수점 허용해서 파싱 후 반올림 — float 쓰레기 값 들어와도 안전
       const disc =
         trimmed === ""
           ? 0
           : isUSD
             ? parseFloat(editingValue.replace(/[^\d.]/g, ""))
-            : Number(editingValue.replace(/[^\d]/g, ""));
+            : Math.round(parseFloat(editingValue.replace(/[^\d.]/g, "")) || 0);
       if (trimmed !== "" && (isNaN(disc) || disc < 0)) {
         toast.error("할인은 0 이상이어야 합니다");
         setEditingField(null);

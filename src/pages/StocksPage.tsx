@@ -5,9 +5,13 @@ import { FxFormSection } from "../features/stocks/FxFormSection";
 import { FxHistorySection } from "../features/stocks/FxHistorySection";
 import { StockStatsCard } from "../features/stocks/StockStatsCard";
 import { PresetSection } from "../features/stocks/PresetSection";
+import { PresetModal } from "../features/stocks/PresetModal";
 import { TradeHistorySection } from "../features/stocks/TradeHistorySection";
 import { PositionListSection } from "../features/stocks/PositionListSection";
 import { ChartSkeleton } from "../components/charts/ChartSkeleton";
+import { StockTabNav } from "../features/stocks/StockTabNav";
+import { QuoteErrorBanner } from "../features/stocks/QuoteErrorBanner";
+import { QuoteRefreshProgress } from "../features/stocks/QuoteRefreshProgress";
 
 const LazyPortfolioChartsSection = lazy(() =>
   import("../features/stocks/PortfolioChartsSection").then((m) => ({ default: m.PortfolioChartsSection }))
@@ -1327,35 +1331,7 @@ export const StocksView: React.FC<Props> = ({
 
     return (
     <div>
-      {/* 탭 네비게이션 */}
-      <div style={{ display: "flex", gap: 8, marginBottom: 16, borderBottom: "1px solid var(--border)" }}>
-        <button
-          type="button"
-          className={activeTab === "stocks" ? "primary" : "secondary"}
-          onClick={() => setActiveTab("stocks")}
-          style={{ padding: "8px 16px", fontSize: 14, borderRadius: "6px 6px 0 0", borderBottom: activeTab === "stocks" ? "2px solid var(--primary)" : "none" }}
-        >
-          주식
-        </button>
-        <button
-          type="button"
-          className={activeTab === "portfolio" ? "primary" : "secondary"}
-          onClick={() => setActiveTab("portfolio")}
-          style={{ padding: "8px 16px", fontSize: 14, borderRadius: "6px 6px 0 0", borderBottom: activeTab === "portfolio" ? "2px solid var(--primary)" : "none" }}
-        >
-          포트폴리오 분석
-        </button>
-        {onChangeLedger && (
-          <button
-            type="button"
-            className={activeTab === "fx" ? "primary" : "secondary"}
-            onClick={() => setActiveTab("fx")}
-            style={{ padding: "8px 16px", fontSize: 14, borderRadius: "6px 6px 0 0", borderBottom: activeTab === "fx" ? "2px solid var(--primary)" : "none" }}
-          >
-            환전
-          </button>
-        )}
-      </div>
+      <StockTabNav activeTab={activeTab} setActiveTab={setActiveTab} showFxTab={Boolean(onChangeLedger)} />
 
       {/* 주식 탭 */}
       {activeTab === "stocks" && (
@@ -1866,26 +1842,15 @@ export const StocksView: React.FC<Props> = ({
           )}
         </p>
       )}
-      {quoteError && (
-        <div style={{ marginTop: 8, display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
-          <p className="error-text" style={{ margin: 0 }}>
-            {quoteError}
-          </p>
-          <button
-            type="button"
-            className="primary"
-            onClick={() => {
-              setQuoteError(null);
-              const m = lastQuoteRefreshModeRef.current;
-              if (m === "full") void handleRefreshQuotesFull();
-              else void handleRefreshQuotesHoldings();
-            }}
-            style={{ padding: "6px 12px", fontSize: 13 }}
-          >
-            다시 시도
-          </button>
-        </div>
-      )}
+      <QuoteErrorBanner
+        quoteError={quoteError}
+        onDismiss={() => setQuoteError(null)}
+        onRetry={() => {
+          const m = lastQuoteRefreshModeRef.current;
+          if (m === "full") void handleRefreshQuotesFull();
+          else void handleRefreshQuotesHoldings();
+        }}
+      />
 
       <PositionListSection
         positionsByAccount={positionsByAccount}
@@ -1947,96 +1912,14 @@ export const StocksView: React.FC<Props> = ({
         </>
       )}
 
-      {/* 프리셋 관리 모달 */}
       {showPresetModal && (
-        <div className="modal-backdrop" onClick={() => setShowPresetModal(false)}>
-          <div className="modal" onClick={(e) => e.stopPropagation()}>
-            <div className="modal-header">
-              <h3 style={{ margin: 0 }}>프리셋 관리</h3>
-              <button type="button" className="secondary" onClick={() => setShowPresetModal(false)}>
-                닫기
-              </button>
-            </div>
-            <div className="modal-body">
-              <div style={{ marginBottom: 16 }}>
-                <button
-                  type="button"
-                  className="primary"
-                  onClick={() => {
-                    saveCurrentAsPreset();
-                    setShowPresetModal(false);
-                  }}
-                >
-                  새 프리셋 추가
-                </button>
-              </div>
-              <div style={{ maxHeight: 400, overflowY: "auto" }}>
-                {presets.length === 0 ? (
-                  <p className="hint">저장된 프리셋이 없습니다.</p>
-                ) : (
-                  <table className="data-table">
-                    <colgroup>
-                      <col style={{ width: "14%" }} />
-                      <col style={{ width: "12%" }} />
-                      <col style={{ width: "10%" }} />
-                      <col style={{ width: "16%" }} />
-                      <col style={{ width: "10%" }} />
-                      <col style={{ width: "12%" }} />
-                      <col style={{ width: "14%" }} />
-                      <col style={{ width: "12%" }} />
-                    </colgroup>
-                    <thead>
-                      <tr>
-                        <th>이름</th>
-                        <th>계좌</th>
-                        <th>티커</th>
-                        <th>종목명</th>
-                        <th>수량</th>
-                        <th>수수료</th>
-                        <th>마지막 사용</th>
-                        <th>작업</th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {presets.map((preset) => (
-                        <tr key={preset.id}>
-                          <td>{preset.name}</td>
-                          <td>{preset.accountId}</td>
-                          <td>{preset.ticker}</td>
-                          <td>{preset.stockName || "-"}</td>
-                          <td className="number">{preset.quantity ? preset.quantity : "-"}</td>
-                          <td className="number">{preset.fee ? Math.round(preset.fee).toLocaleString() : "-"}</td>
-                          <td>{preset.lastUsed ? new Date(preset.lastUsed).toLocaleDateString() : "-"}</td>
-                          <td>
-                            <button
-                              type="button"
-                              className="secondary"
-                              onClick={() => {
-                                applyPreset(preset);
-                                setShowPresetModal(false);
-                              }}
-                              style={{ marginRight: 6, fontSize: 13, padding: "6px 12px" }}
-                            >
-                              적용
-                            </button>
-                            <button
-                              type="button"
-                              className="danger"
-                              onClick={() => deletePreset(preset.id)}
-                              style={{ fontSize: 13, padding: "6px 12px" }}
-                            >
-                              삭제
-                            </button>
-                          </td>
-                        </tr>
-                      ))}
-                    </tbody>
-                  </table>
-                )}
-              </div>
-            </div>
-          </div>
-        </div>
+        <PresetModal
+          presets={presets}
+          onClose={() => setShowPresetModal(false)}
+          onSaveCurrent={saveCurrentAsPreset}
+          onApplyPreset={applyPreset}
+          onDeletePreset={deletePreset}
+        />
       )}
 
       {/* 환전 탭 */}
@@ -2077,18 +1960,7 @@ export const StocksView: React.FC<Props> = ({
         />
       )}
 
-      {/* 시세 갱신 진행바 (하단 고정, % 표시) */}
-      {isLoadingQuotes && (
-        <div className="quote-refresh-progress" role="progressbar" aria-valuenow={quoteRefreshProgress.total ? Math.round((quoteRefreshProgress.current / quoteRefreshProgress.total) * 100) : 0} aria-valuemin={0} aria-valuemax={100} aria-label="시세 갱신 중">
-          <div
-            className="quote-refresh-progress__bar quote-refresh-progress__bar--determinate"
-            style={{ width: quoteRefreshProgress.total ? `${(quoteRefreshProgress.current / quoteRefreshProgress.total) * 100}%` : "0%" }}
-          />
-          <span className="quote-refresh-progress__label">
-            시세 갱신 중 {quoteRefreshProgress.total ? Math.round((quoteRefreshProgress.current / quoteRefreshProgress.total) * 100) : 0}%
-          </span>
-        </div>
-      )}
+      <QuoteRefreshProgress isLoadingQuotes={isLoadingQuotes} quoteRefreshProgress={quoteRefreshProgress} />
     </div>
   );
 };

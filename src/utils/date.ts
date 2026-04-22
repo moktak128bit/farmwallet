@@ -69,6 +69,33 @@ export function getMonthEndDate(month: string): string {
   return `${month}-${String(lastDay).padStart(2, "0")}`;
 }
 
+/**
+ * fromDate(YYYY-MM-DD)가 속한 달부터 toDate까지의 매월 1일·15일 날짜를 오름차순 반환.
+ * fromDate 이전 또는 toDate 이후 날짜는 제외.
+ */
+export function buildHalfMonthSnapshotDates(fromDate: string, toDate: string): string[] {
+  if (!fromDate || !toDate || toDate < fromDate) return [];
+  const [sy, sm] = fromDate.slice(0, 7).split("-").map(Number);
+  const [ey, em] = toDate.slice(0, 7).split("-").map(Number);
+  if (!sy || !sm || !ey || !em) return [];
+  const dates: string[] = [];
+  let y = sy;
+  let m = sm;
+  while (y < ey || (y === ey && m <= em)) {
+    const ym = `${y}-${String(m).padStart(2, "0")}`;
+    const d01 = `${ym}-01`;
+    const d15 = `${ym}-15`;
+    if (d01 >= fromDate && d01 <= toDate) dates.push(d01);
+    if (d15 >= fromDate && d15 <= toDate) dates.push(d15);
+    m += 1;
+    if (m > 12) {
+      m = 1;
+      y += 1;
+    }
+  }
+  return dates;
+}
+
 /** startMonth~endMonth 사이의 "YYYY-MM" 배열 (양 끝 포함) */
 export function buildMonthRange(startMonth: string, endMonth: string): string[] {
   const result: string[] = [];

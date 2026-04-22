@@ -1,7 +1,21 @@
 import React, { lazy, Suspense, useCallback, useMemo, useState } from "react";
-import { BudgetAlertWidget } from "../features/dashboard/AdvancedWidgets";
+import { BudgetAlertWidget } from "../features/dashboard/BudgetAlertWidget";
 import { InvestmentSummaryCard } from "../features/dashboard/InvestmentSummaryCard";
 import { InvestmentRecordCard } from "../features/dashboard/InvestmentRecordCard";
+import { MonthlySummaryCards } from "../features/dashboard/MonthlySummaryCards";
+import { NetWorthTrendChart } from "../features/dashboard/NetWorthTrendChart";
+import { DividendTrendCard } from "../features/dashboard/DividendTrendCard";
+import { MonthPaceCard } from "../features/dashboard/MonthPaceCard";
+import { SpendingCalendarCard } from "../features/dashboard/SpendingCalendarCard";
+import { TopExpensesCard } from "../features/dashboard/TopExpensesCard";
+import { MonthlyTrendCard } from "../features/dashboard/MonthlyTrendCard";
+import { InvestmentBreakdownCard } from "../features/dashboard/InvestmentBreakdownCard";
+import { SavingsRatioCard } from "../features/dashboard/SavingsRatioCard";
+import { DividendCoverageCard } from "../features/dashboard/DividendCoverageCard";
+import { AssetCompositionCard } from "../features/dashboard/AssetCompositionCard";
+import { AccountBalanceTrendCard } from "../features/dashboard/AccountBalanceTrendCard";
+import { StockCostVsMarketCard } from "../features/dashboard/StockCostVsMarketCard";
+import { TotalAssetTrendCard } from "../features/dashboard/TotalAssetTrendCard";
 import type {
   Account,
   LedgerEntry,
@@ -17,7 +31,6 @@ import {
   computeTotalNetWorth,
   positionMarketValueKRW
 } from "../calculations";
-import { formatKRW } from "../utils/formatter";
 import { useFxRateValue } from "../context/FxRateContext";
 import { useAppStore } from "../store/appStore";
 import {
@@ -35,17 +48,6 @@ import { parseQuantityFromNote } from "../utils/dividend";
 import { ISA_PORTFOLIO } from "../constants/config";
 const LazyPortfolioDashboardCharts = lazy(() =>
   import("../features/stocks/PortfolioDashboardCharts").then((m) => ({ default: m.PortfolioDashboardCharts }))
-);
-
-// 인라인 차트 — recharts가 초기 번들에 포함되지 않도록 개별 lazy import
-const LazyAssetTreemap = lazy(() =>
-  import("../features/dashboard/DashboardInlineCharts").then((m) => ({ default: m.AssetTreemap }))
-);
-const LazyAccountBalanceChart = lazy(() =>
-  import("../features/dashboard/DashboardInlineCharts").then((m) => ({ default: m.AccountBalanceChart }))
-);
-const LazyDividendTrendChart = lazy(() =>
-  import("../features/dashboard/DashboardInlineCharts").then((m) => ({ default: m.DividendTrendChart }))
 );
 
 interface Props {
@@ -83,9 +85,6 @@ type CalendarCell = {
   income: number;
   count: number;
 };
-
-const DAY_LABELS = ["일", "월", "화", "수", "목", "금", "토"];
-
 
 function isDividendIncome(entry: LedgerEntry): boolean {
   if (entry.kind !== "income") return false;
@@ -1261,6 +1260,8 @@ export const DashboardView: React.FC<Props> = (props) => {
       </div>
 
       <div style={{ display: "flex", flexDirection: "column", gap: 28 }}>
+        <MonthlySummaryCards monthlySummary={monthlySummary} allTimeSummary={allTimeSummary} />
+
         <InvestmentSummaryCard
           accounts={accounts}
           ledger={ledger}
@@ -1271,360 +1272,20 @@ export const DashboardView: React.FC<Props> = (props) => {
 
         <InvestmentRecordCard trades={trades} accounts={accounts} ledger={ledger} fxRate={fxRate ?? null} />
 
-        <div
-          style={{
-            display: "grid",
-            gridTemplateColumns: "repeat(auto-fit, minmax(220px, 1fr))",
-            gap: 16
-          }}
-        >
-          <div className="card" style={{ minHeight: 124, borderLeft: "4px solid var(--chart-expense)" }}>
-            <div className="card-title">이번 달 지출</div>
-            <div className="card-value" style={{ color: "var(--chart-expense)", fontSize: 24 }}>
-              {formatKRW(Math.round(monthlySummary.expense))}
-            </div>
-            <div className="hint" style={{ marginTop: 8 }}>
-              전체 기간: {formatKRW(allTimeSummary.expense)}
-            </div>
-          </div>
-
-          <div className="card" style={{ minHeight: 124, borderLeft: "4px solid var(--chart-income)" }}>
-            <div className="card-title">이번 달 수입</div>
-            <div className="card-value" style={{ color: "var(--chart-income)", fontSize: 24 }}>
-              {formatKRW(Math.round(monthlySummary.income))}
-            </div>
-            <div className="hint" style={{ marginTop: 8 }}>전체 기간: {formatKRW(allTimeSummary.income)}</div>
-          </div>
-
-          <div className="card" style={{ minHeight: 124, borderLeft: "4px solid var(--chart-primary)" }}>
-            <div className="card-title">이번 달 재테크</div>
-            <div className="card-value" style={{ color: "var(--chart-primary)", fontSize: 24 }}>
-              {formatKRW(Math.round(monthlySummary.investing))}
-            </div>
-            <div className="hint" style={{ marginTop: 8 }}>전체 기간: {formatKRW(allTimeSummary.investing)}</div>
-          </div>
-
-          <div className="card" style={{ minHeight: 124, borderLeft: "4px solid var(--success)" }}>
-            <div className="card-title">이번 달 수지</div>
-            <div className="card-value" style={{ color: monthlySummary.income - monthlySummary.expense >= 0 ? "var(--success)" : "var(--danger)", fontSize: 24 }}>
-              {formatKRW(Math.round(monthlySummary.income - monthlySummary.expense))}
-            </div>
-            <div className="hint" style={{ marginTop: 8 }}>수입 − 지출 (장부 기준)</div>
-          </div>
-        </div>
-
-        {/* ── 순자산 추이 ─────────────────────────────────────────────────────── */}
-        {netWorthTrendData.length >= 2 && (() => {
-          const values = netWorthTrendData.map((d) => d.value);
-          const minVal = Math.min(...values);
-          const maxVal = Math.max(...values);
-          const range = maxVal - minVal || 1;
-          const PAD_L = 56;
-          const PAD_R = 16;
-          const PAD_T = 16;
-          const PAD_B = 28;
-          const W = 600;
-          const H = 160;
-          const chartW = W - PAD_L - PAD_R;
-          const chartH = H - PAD_T - PAD_B;
-          const n = netWorthTrendData.length;
-
-          const toX = (i: number) => PAD_L + (i / (n - 1)) * chartW;
-          const toY = (v: number) => PAD_T + chartH - ((v - minVal) / range) * chartH;
-
-          const pts = netWorthTrendData.map((d, i) => ({ x: toX(i), y: toY(d.value), ...d }));
-          const polyline = pts.map((p) => `${p.x},${p.y}`).join(" ");
-          const areaPath =
-            `M${pts[0].x},${PAD_T + chartH} ` +
-            pts.map((p) => `L${p.x},${p.y}`).join(" ") +
-            ` L${pts[pts.length - 1].x},${PAD_T + chartH} Z`;
-
-          const currentPt = pts[pts.length - 1];
-          const currentWorth = netWorthTrendData[netWorthTrendData.length - 1].value;
-          const prevWorth = netWorthTrendData[netWorthTrendData.length - 2]?.value ?? currentWorth;
-          const nwDelta = currentWorth - prevWorth;
-          const nwDeltaPct = prevWorth !== 0 ? (nwDelta / Math.abs(prevWorth)) * 100 : 0;
-          const nwDeltaColor = nwDelta > 0 ? "var(--success)" : nwDelta < 0 ? "var(--danger)" : "var(--muted)";
-          const nwArrow = nwDelta > 0 ? "▲" : nwDelta < 0 ? "▼" : "–";
-
-          // Y axis ticks (3 ticks)
-          const yTicks = [minVal, Math.round((minVal + maxVal) / 2), maxVal];
-
-          // X axis: show label every N months to avoid crowding
-          const labelStep = n <= 12 ? 1 : n <= 24 ? 2 : n <= 36 ? 3 : 6;
-          const xLabels = pts.filter((_, i) => i % labelStep === 0 || i === n - 1);
-
-          const gradId = "nwt-grad";
-
-          return (
-            <div className="card" style={{ padding: 20 }}>
-              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginBottom: 12, flexWrap: "wrap", gap: 8 }}>
-                <div className="card-title" style={{ margin: 0 }}>순자산 추이 <span style={{ fontSize: 11, color: "var(--muted)", fontWeight: 400 }}>(전체 계좌 − 부채)</span></div>
-                <div style={{ textAlign: "right" }}>
-                  <div style={{ fontWeight: 700, fontSize: 24, color: "var(--primary)" }}>
-                    {currentWorth >= 0 ? "" : "-"}{Math.abs(currentWorth).toLocaleString()}만원
-                  </div>
-                  <div style={{ display: "flex", gap: 6, alignItems: "center", justifyContent: "flex-end", marginTop: 2 }}>
-                    <span style={{ fontSize: 12, fontWeight: 700, color: nwDeltaColor }}>
-                      {nwArrow} {Math.abs(nwDelta).toLocaleString()}만원
-                    </span>
-                    <span style={{ fontSize: 11, color: nwDeltaColor }}>
-                      ({nwDelta >= 0 ? "+" : ""}{nwDeltaPct.toFixed(1)}%)
-                    </span>
-                  </div>
-                  <div className="hint" style={{ fontSize: 11 }}>현재 순자산 · 전월 대비</div>
-                </div>
-              </div>
-              <div style={{ width: "100%", overflowX: "auto" }}>
-                <svg
-                  viewBox={`0 0 ${W} ${H}`}
-                  width="100%"
-                  style={{ display: "block", minWidth: 280, maxHeight: 180 }}
-                  aria-label="순자산 추이 차트"
-                >
-                  <defs>
-                    <linearGradient id={gradId} x1="0" y1="0" x2="0" y2="1">
-                      <stop offset="0%" stopColor="var(--primary, #2563eb)" stopOpacity="0.28" />
-                      <stop offset="100%" stopColor="var(--primary, #2563eb)" stopOpacity="0.02" />
-                    </linearGradient>
-                  </defs>
-
-                  {/* Y grid lines + labels */}
-                  {yTicks.map((tick) => {
-                    const y = toY(tick);
-                    const label = tick >= 0
-                      ? `${tick.toLocaleString()}`
-                      : `-${Math.abs(tick).toLocaleString()}`;
-                    return (
-                      <g key={tick}>
-                        <line
-                          x1={PAD_L} y1={y} x2={W - PAD_R} y2={y}
-                          stroke="var(--border, #e5e7eb)" strokeWidth={1} strokeDasharray="3 3"
-                        />
-                        <text
-                          x={PAD_L - 4} y={y + 4}
-                          textAnchor="end"
-                          fontSize={10}
-                          fill="var(--text-muted, #9ca3af)"
-                        >
-                          {label}
-                        </text>
-                      </g>
-                    );
-                  })}
-
-                  {/* Gradient fill area */}
-                  <path d={areaPath} fill={`url(#${gradId})`} />
-
-                  {/* Line */}
-                  <polyline
-                    points={polyline}
-                    fill="none"
-                    stroke="var(--primary, #2563eb)"
-                    strokeWidth={2}
-                    strokeLinejoin="round"
-                    strokeLinecap="round"
-                  />
-
-                  {/* Data points (small) */}
-                  {pts.map((p, i) => (
-                    <circle
-                      key={i}
-                      cx={p.x} cy={p.y} r={2.5}
-                      fill="var(--primary, #2563eb)"
-                      opacity={0.6}
-                    />
-                  ))}
-
-                  {/* Current point highlight */}
-                  <circle
-                    cx={currentPt.x} cy={currentPt.y} r={5}
-                    fill="var(--primary, #2563eb)"
-                    stroke="var(--bg, #fff)" strokeWidth={2}
-                  />
-
-                  {/* X axis labels */}
-                  {xLabels.map((p) => (
-                    <text
-                      key={p.month}
-                      x={p.x} y={H - 6}
-                      textAnchor="middle"
-                      fontSize={9.5}
-                      fill="var(--text-muted, #9ca3af)"
-                    >
-                      {p.month.slice(2)}
-                    </text>
-                  ))}
-                </svg>
-              </div>
-              <div className="hint" style={{ fontSize: 11, marginTop: 4, textAlign: "right" }}>
-                단위: 만원 · {netWorthTrendData[0]?.month} ~ {netWorthTrendData[netWorthTrendData.length - 1]?.month}
-              </div>
-            </div>
-          );
-        })()}
+        <NetWorthTrendChart data={netWorthTrendData} />
 
         <div className="dashboard-two-col" style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 16 }}>
-          <div className="card">
-            <div className="card-title">이번 달 지출 Top 5 ({currentMonth})</div>
-            <div style={{ marginTop: 12, display: "flex", flexDirection: "column", gap: 8 }}>
-              {topCategoriesThisMonth.length === 0 && (
-                <div className="hint">이번 달 지출 데이터가 없습니다.</div>
-              )}
-              {topCategoriesThisMonth.map(([cat, amount], i) => {
-                const maxAmt = topCategoriesThisMonth[0]?.[1] ?? 1;
-                const pct = (amount / maxAmt) * 100;
-                return (
-                  <div key={cat}>
-                    <div style={{ display: "flex", justifyContent: "space-between", fontSize: 13, marginBottom: 2 }}>
-                      <span style={{ fontWeight: 600 }}>{i + 1}. {cat}</span>
-                      <span style={{ fontWeight: 700, color: "var(--chart-expense)" }}>{formatKRW(Math.round(amount))}</span>
-                    </div>
-                    <div style={{ height: 6, background: "var(--border)", borderRadius: 3 }}>
-                      <div style={{ height: "100%", width: `${pct}%`, background: "var(--chart-expense)", borderRadius: 3, opacity: 1 - i * 0.15 }} />
-                    </div>
-                  </div>
-                );
-              })}
-            </div>
-          </div>
-
-          <div className="card">
-            <div className="card-title">월별 추이 (최근 6개월)</div>
-            <div style={{ marginTop: 12, display: "flex", flexDirection: "column", gap: 6 }}>
-              {monthlyTrendData.map((row) => {
-                const maxVal = Math.max(...monthlyTrendData.map(r => Math.max(r.income, r.expense + r.investing)));
-                const incPct = maxVal > 0 ? (row.income / maxVal) * 100 : 0;
-                const expPct = maxVal > 0 ? (row.expense / maxVal) * 100 : 0;
-                const invPct = maxVal > 0 ? (row.investing / maxVal) * 100 : 0;
-                return (
-                  <div key={row.month}>
-                    <div style={{ display: "flex", justifyContent: "space-between", fontSize: 12, marginBottom: 2 }}>
-                      <span style={{ fontWeight: 600 }}>{row.month}</span>
-                      <span className="hint">{formatKRW(Math.round(row.income))} / {formatKRW(Math.round(row.expense))}</span>
-                    </div>
-                    <div style={{ display: "flex", gap: 2, height: 8 }}>
-                      <div style={{ width: `${incPct}%`, background: "var(--chart-income)", borderRadius: 3, minWidth: row.income > 0 ? 2 : 0 }} />
-                      <div style={{ width: `${expPct}%`, background: "var(--chart-expense)", borderRadius: 3, minWidth: row.expense > 0 ? 2 : 0 }} />
-                      <div style={{ width: `${invPct}%`, background: "var(--chart-primary)", borderRadius: 3, minWidth: row.investing > 0 ? 2 : 0 }} />
-                    </div>
-                  </div>
-                );
-              })}
-              <div className="hint" style={{ fontSize: 11, marginTop: 4 }}>
-                <span style={{ color: "var(--chart-income)" }}>■</span> 수입 <span style={{ color: "var(--chart-expense)" }}>■</span> 지출 <span style={{ color: "var(--chart-primary)" }}>■</span> 재테크
-              </div>
-            </div>
-          </div>
+          <TopExpensesCard currentMonth={currentMonth} topCategoriesThisMonth={topCategoriesThisMonth} />
+          <MonthlyTrendCard monthlyTrendData={monthlyTrendData} />
         </div>
 
-        <div className="card" style={{ marginTop: 0 }}>
-          <div className="card-title">이번 달 재테크 세부 ({monthlySummary.month})</div>
-          <div
-            className="dashboard-four-col"
-            style={{
-              display: "grid",
-              gridTemplateColumns: "repeat(4, 1fr)",
-              gap: 12,
-              marginTop: 12
-            }}
-          >
-            <div style={{ padding: "10px 12px", background: "var(--surface)", borderRadius: 8 }}>
-              <div className="hint" style={{ fontSize: 12 }}>저축</div>
-              <div className="card-value" style={{ fontSize: 18 }}>{formatKRW(Math.round(monthlyRecheckBreakdown.저축))}</div>
-            </div>
-            <div style={{ padding: "10px 12px", background: "var(--surface)", borderRadius: 8 }}>
-              <div className="hint" style={{ fontSize: 12 }}>투자(매수 등)</div>
-              <div className="card-value" style={{ fontSize: 18 }}>{formatKRW(Math.round(monthlyRecheckBreakdown.투자))}</div>
-            </div>
-            <div style={{ padding: "10px 12px", background: "var(--surface)", borderRadius: 8, borderLeft: "3px solid var(--chart-income)" }}>
-              <div className="hint" style={{ fontSize: 12 }}>투자수익</div>
-              <div className="card-value" style={{ fontSize: 18, color: "var(--chart-income)" }}>{formatKRW(Math.round(monthlyRecheckBreakdown.투자수익))}</div>
-            </div>
-            <div style={{ padding: "10px 12px", background: "var(--surface)", borderRadius: 8, borderLeft: "3px solid var(--chart-expense)" }}>
-              <div className="hint" style={{ fontSize: 12 }}>투자손실</div>
-              <div className="card-value" style={{ fontSize: 18, color: "var(--chart-expense)" }}>{formatKRW(Math.round(monthlyRecheckBreakdown.투자손실))}</div>
-            </div>
-          </div>
-          <div className="hint" style={{ marginTop: 10, fontSize: 12 }}>
-            누적 실현손익(매도 기준): {totalRealizedPnl >= 0 ? "+" : ""}{formatKRW(Math.round(totalRealizedPnl))}
-          </div>
-        </div>
+        <InvestmentBreakdownCard
+          month={monthlySummary.month}
+          monthlyRecheckBreakdown={monthlyRecheckBreakdown}
+          totalRealizedPnl={totalRealizedPnl}
+        />
 
-        {/* ── Widget: 이번 달 페이스 예측 ───────────────────────────────── */}
-        <div className="card">
-          <div className="card-title" style={{ marginBottom: 12 }}>이번 달 페이스 예측 ({currentMonth})</div>
-          <div
-            style={{
-              display: "grid",
-              gridTemplateColumns: "repeat(auto-fit, minmax(130px, 1fr))",
-              gap: 12,
-              marginBottom: 16
-            }}
-          >
-            <div style={{ padding: "10px 12px", background: "var(--surface)", borderRadius: 8 }}>
-              <div className="hint" style={{ fontSize: 12 }}>현재 지출</div>
-              <div style={{ fontWeight: 700, fontSize: 18 }}>{formatKRW(Math.round(monthPaceData.currentExpense))}</div>
-              <div className="hint" style={{ fontSize: 11 }}>{monthPaceData.elapsed}일 / {monthPaceData.totalDays}일</div>
-            </div>
-            <div style={{ padding: "10px 12px", background: "var(--surface)", borderRadius: 8 }}>
-              <div className="hint" style={{ fontSize: 12 }}>이달 예상 (페이스)</div>
-              <div
-                style={{
-                  fontWeight: 700,
-                  fontSize: 18,
-                  color: monthPaceData.pace != null && monthPaceData.pace > 110 ? "var(--chart-expense)" : "var(--text)"
-                }}
-              >
-                {formatKRW(Math.round(monthPaceData.projectedExpense))}
-              </div>
-              {monthPaceData.pace != null && (
-                <div
-                  className="hint"
-                  style={{ fontSize: 11, color: monthPaceData.pace > 100 ? "var(--chart-expense)" : "var(--chart-income)" }}
-                >
-                  평균 대비 {monthPaceData.pace > 100 ? "+" : ""}{(monthPaceData.pace - 100).toFixed(1)}%
-                </div>
-              )}
-            </div>
-            <div style={{ padding: "10px 12px", background: "var(--surface)", borderRadius: 8 }}>
-              <div className="hint" style={{ fontSize: 12 }}>최근 3달 평균</div>
-              <div style={{ fontWeight: 700, fontSize: 18 }}>{formatKRW(Math.round(monthPaceData.avgPrev3))}</div>
-            </div>
-          </div>
-          {monthPaceData.avgPrev3 > 0 && (() => {
-            const barMax = monthPaceData.avgPrev3 * 1.5;
-            const projPct = Math.min(100, (monthPaceData.projectedExpense / barMax) * 100);
-            const avgPct = (monthPaceData.avgPrev3 / barMax) * 100;
-            return (
-              <div>
-                <div style={{ position: "relative", height: 12, background: "var(--border)", borderRadius: 6, overflow: "hidden" }}>
-                  <div
-                    style={{
-                      height: "100%",
-                      width: `${projPct}%`,
-                      background: projPct > avgPct ? "var(--chart-expense)" : "var(--chart-income)",
-                      borderRadius: 6,
-                    }}
-                  />
-                  <div
-                    style={{
-                      position: "absolute",
-                      left: `${avgPct}%`,
-                      top: 0,
-                      bottom: 0,
-                      width: 2,
-                      background: "var(--text-muted)",
-                    }}
-                  />
-                </div>
-                <div className="hint" style={{ marginTop: 4, fontSize: 11 }}>
-                  세로선 = 3달 평균. 막대 최대 = 평균 × 1.5
-                </div>
-              </div>
-            );
-          })()}
-        </div>
+        <MonthPaceCard currentMonth={currentMonth} data={monthPaceData} />
 
         <Suspense
           fallback={
@@ -1649,201 +1310,47 @@ export const DashboardView: React.FC<Props> = (props) => {
             alignItems: "stretch"
           }}
         >
-          <div className="card" style={{ minHeight: 200 }}>
-            <div className="card-title">저축 대비 비교 (저번달)</div>
-            <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 16, marginTop: 8 }}>
-              <div>
-                <div className="hint" style={{ fontSize: 12, marginBottom: 4 }}>저번달 저축 ({lastMonthSummary.month})</div>
-                <div
-                  className="card-value"
-                  style={{ fontSize: 22, color: lastMonthSavingsRate != null ? "var(--chart-primary)" : "var(--text-muted)" }}
-                >
-                  {lastMonthSavingsRate != null ? `${lastMonthSavingsRate.toFixed(1)}%` : "-"}
-                </div>
-                <div className="hint" style={{ fontSize: 12, marginTop: 4 }}>수입 대비 저축비율</div>
-              </div>
-              <div>
-                <div className="hint" style={{ fontSize: 12, marginBottom: 4 }}>지출 구성 (주식 대비 저축)</div>
-                <div style={{ fontSize: 22, fontWeight: 700, color: "var(--text)" }}>
-                  주식 {lastMonthInvestingRatio.stockPct.toFixed(0)}% / 저축 {lastMonthInvestingRatio.savingsPct.toFixed(0)}%
-                </div>
-                <div className="hint" style={{ fontSize: 12, marginTop: 4 }}>
-                  {formatKRW(Math.round(lastMonthRecheckBreakdown.투자))} / {formatKRW(Math.round(lastMonthRecheckBreakdown.저축))}
-                </div>
-              </div>
-            </div>
-            <div style={{ marginTop: 12, height: 8, display: "flex", borderRadius: 4, overflow: "hidden" }}>
-              <div
-                style={{
-                  width: `${lastMonthInvestingRatio.stockPct}%`,
-                  background: "var(--chart-primary)",
-                  minWidth: lastMonthInvestingRatio.stockPct > 0 ? 4 : 0
-                }}
-              />
-              <div
-                style={{
-                  width: `${lastMonthInvestingRatio.savingsPct}%`,
-                  background: "var(--chart-positive)",
-                  minWidth: lastMonthInvestingRatio.savingsPct > 0 ? 4 : 0
-                }}
-              />
-            </div>
-          </div>
+          <SavingsRatioCard
+            lastMonthLabel={lastMonthSummary.month}
+            lastMonthSavingsRate={lastMonthSavingsRate}
+            lastMonthInvestingRatio={lastMonthInvestingRatio}
+            lastMonthRecheckBreakdown={lastMonthRecheckBreakdown}
+          />
 
-          <div className="card" style={{ minHeight: 180 }}>
-            <div className="card-title">해당 금액 상세 (최근 3개월 기준)</div>
-            <div
-              className="card-value"
-              style={{
-                fontSize: 20,
-                color:
-                  dividendCoverage.coverageRate != null && dividendCoverage.coverageRate >= 100
-                    ? "var(--primary)"
-                    : "var(--danger)"
-              }}
-            >
-              {dividendCoverage.coverageRate == null ? "-" : `${dividendCoverage.coverageRate.toFixed(1)}%`}
-            </div>
-            <div className="hint" style={{ marginTop: 4 }}>
-              배당 {formatKRW(Math.round(dividendCoverage.monthlyDividendAvg))}
-              {" / 예정"}
-              {formatKRW(Math.round(dividendCoverage.monthlyFixedExpenseAvg))}
-            </div>
-            <div
-              style={{
-                marginTop: 16,
-                display: "flex",
-                alignItems: "center",
-                gap: 12
-              }}
-            >
-              <div
-                style={{
-                  flex: 1,
-                  position: "relative",
-                  height: 28,
-                  minWidth: 60
-                }}
-              >
-                <div
-                  style={{
-                    position: "absolute",
-                    inset: 0,
-                    background: "var(--chart-expense)",
-                    opacity: 0.3,
-                    borderRadius: 6
-                  }}
-                  aria-hidden
-                />
-                <div
-                  style={{
-                    position: "absolute",
-                    left: 0,
-                    top: "50%",
-                    transform: "translateY(-50%)",
-                    height: 10,
-                    width: `${
-                      dividendCoverage.monthlyFixedExpenseAvg > 0
-                        ? Math.min(
-                            100,
-                            (dividendCoverage.monthlyDividendAvg / dividendCoverage.monthlyFixedExpenseAvg) * 100
-                          )
-                        : 0
-                    }%`,
-                    minWidth: dividendCoverage.monthlyDividendAvg > 0 ? 4 : 0,
-                    background: "var(--chart-income)",
-                    borderRadius: 4
-                  }}
-                />
-              </div>
-              <span
-                style={{
-                  flexShrink: 0,
-                  fontSize: 13,
-                  fontWeight: 700,
-                  color:
-                    dividendCoverage.coverageRate != null && dividendCoverage.coverageRate >= 100
-                      ? "var(--primary)"
-                      : "var(--text)"
-                }}
-              >
-                커버리지 {dividendCoverage.coverageRate == null ? "-" : `${dividendCoverage.coverageRate.toFixed(1)}%`}
-              </span>
-            </div>
-          </div>
+          <DividendCoverageCard dividendCoverage={dividendCoverage} />
         </div>
 
-        <div className="card" style={{ marginTop: 16, padding: 20 }}>
-          <div className="card-title" style={{ fontSize: 18 }}>자산 구성 (종류별)</div>
-          <div style={{ width: "100%", height: 220, marginTop: 12 }}>
-            <Suspense fallback={<div style={{ height: 220 }} />}>
-              <LazyAssetTreemap portfolioTreemapData={portfolioTreemapData} portfolioByType={portfolioByType} />
-            </Suspense>
-          </div>
-          <div className="hint" style={{ marginTop: 12, textAlign: "center", fontSize: 13 }}>
-            순자산 {formatKRW(Math.round(totalNetWorth))}
-            {totalDebt < 0 && (
-              <span style={{ marginLeft: 8, color: "var(--chart-expense)" }}>
-                (부채 {formatKRW(Math.round(Math.abs(totalDebt)))})
-              </span>
-            )}
-          </div>
-        </div>
+        <AssetCompositionCard
+          portfolioTreemapData={portfolioTreemapData}
+          portfolioByType={portfolioByType}
+          totalNetWorth={totalNetWorth}
+          totalDebt={totalDebt}
+        />
 
-        {accountBalanceSnapshots.length > 0 && (() => {
-          const lastSnap = accountBalanceSnapshots[accountBalanceSnapshots.length - 1];
-          const prevSnap = accountBalanceSnapshots[accountBalanceSnapshots.length - 3] ?? accountBalanceSnapshots[0];
-          const lastTotal = Number(lastSnap.total) || 0;
-          const prevTotal = Number(prevSnap.total) || 0;
-          const abDelta = lastTotal - prevTotal;
-          const abDeltaPct = prevTotal !== 0 ? (abDelta / Math.abs(prevTotal)) * 100 : 0;
-          const abColor = abDelta > 0 ? "var(--success)" : abDelta < 0 ? "var(--danger)" : "var(--muted)";
-          const abArrow = abDelta > 0 ? "▲" : abDelta < 0 ? "▼" : "–";
-          return (
-          <div className="card" style={{ marginTop: 16, padding: 20 }}>
-            <div style={{ display: "flex", flexWrap: "wrap", alignItems: "center", justifyContent: "space-between", gap: 16, marginBottom: 12 }}>
-              <div className="card-title" style={{ margin: 0 }}>계좌별 잔액 추이 <span style={{ fontSize: 11, color: "var(--muted)", fontWeight: 400 }}>(매월 15·월말, 부채 미차감)</span></div>
-              <div style={{ textAlign: "right" }}>
-                <div style={{ fontWeight: 700, fontSize: 22, color: "var(--chart-primary)" }}>{formatKRW(Math.round(lastTotal))}</div>
-                <div style={{ fontSize: 12, fontWeight: 700, color: abColor }}>
-                  {abArrow} {formatKRW(Math.round(Math.abs(abDelta)))} ({abDelta >= 0 ? "+" : ""}{abDeltaPct.toFixed(1)}%)
-                </div>
-                <div className="hint" style={{ fontSize: 11 }}>현재 합계 · 지난달 대비</div>
-              </div>
-            </div>
-            <div style={{ display: "flex", flexWrap: "wrap", alignItems: "center", gap: 16, marginBottom: 12 }}>
-              <select
-                value={accountBalanceChartView}
-                onChange={(e) => setAccountBalanceChartView(e.target.value)}
-                style={{
-                  minWidth: 160,
-                  padding: "6px 10px",
-                  borderRadius: 8,
-                  border: "1px solid var(--border)",
-                  background: "var(--surface)",
-                  color: "var(--text)",
-                  fontSize: 13
-                }}
-              >
-                <option value="total">전체 합계</option>
-                <option value="all">모두 보기 (계좌별 + 합계)</option>
-                {accounts.map((acc) => (
-                  <option key={acc.id} value={acc.id}>{acc.name || acc.id}</option>
-                ))}
-              </select>
-            </div>
-            <div style={{ width: "100%", height: 280 }}>
-              <Suspense fallback={<div style={{ height: 280 }} />}>
-                <LazyAccountBalanceChart
-                  accountBalanceSnapshots={accountBalanceSnapshots}
-                  accountBalanceChartView={accountBalanceChartView}
-                  accounts={accounts}
-                />
-              </Suspense>
-            </div>
-          </div>
-          );
-        })()}
+        <AccountBalanceTrendCard
+          accountBalanceSnapshots={accountBalanceSnapshots}
+          accountBalanceChartView={accountBalanceChartView}
+          setAccountBalanceChartView={setAccountBalanceChartView}
+          accounts={accounts}
+        />
+
+        <StockCostVsMarketCard
+          today={today}
+          accounts={accounts}
+          trades={trades}
+          prices={prices}
+          fxRate={fxRate}
+        />
+
+        <TotalAssetTrendCard
+          today={today}
+          accounts={accounts}
+          ledger={ledger}
+          trades={trades}
+          prices={prices}
+          fxRate={fxRate}
+          marketEnvSnapshots={storeData.marketEnvSnapshots}
+        />
 
         <div
           style={{
@@ -1853,367 +1360,27 @@ export const DashboardView: React.FC<Props> = (props) => {
             marginTop: 16
           }}
         >
-          <div className="card" style={{ minHeight: 320 }}>
-            <div className="card-title" style={{ marginBottom: 12 }}>{trackedTickerName} 해당금액 변동 (전체 기준)</div>
-            <div
-              className="dashboard-two-col"
-              style={{
-                display: "grid",
-                gridTemplateColumns: "minmax(200px, 280px) 1fr",
-                gap: 20,
-                alignItems: "stretch"
-              }}
-            >
-              <div style={{ display: "flex", flexDirection: "column", gap: 12, justifyContent: "center" }}>
-                <div
-                  className={`card-value ${trackedDividendTrend.changeRate == null ? "" : trackedDividendTrend.changeRate >= 0 ? "positive" : "negative"}`}
-                  style={{ marginBottom: 0 }}
-                >
-                  {trackedDividendTrend.changeRate == null
-                    ? "-"
-                    : `${trackedDividendTrend.changeRate >= 0 ? "+" : ""}${trackedDividendTrend.changeRate.toFixed(1)}%`}
-                </div>
-                <div className="hint" style={{ marginTop: 0 }}>
-                  {trackedDividendTrend.latest && trackedDividendTrend.previous
-                    ? `${trackedDividendTrend.previous.month} ${formatKRW(Math.round(trackedDividendTrend.previous.dividend))} → ${trackedDividendTrend.latest.month} ${formatKRW(Math.round(trackedDividendTrend.latest.dividend))}`
-                    : `${trackedDividendTrend.ticker} 배당 데이터가 없습니다.`}
-                </div>
-                <div style={{ display: "flex", flexDirection: "column", gap: 8, fontSize: 13 }}>
-                  <div className={trackedDividendTrend.shareChange >= 0 ? "positive" : "negative"}>
-                    주식수 {trackedDividendTrend.shareChange >= 0 ? "+" : ""}{trackedDividendTrend.shareChange.toLocaleString()}
-                    {trackedDividendTrend.shareChangeRate == null ? "" : ` (${trackedDividendTrend.shareChangeRate >= 0 ? "+" : ""}${trackedDividendTrend.shareChangeRate.toFixed(1)}%)`}
-                  </div>
-                  <div className={trackedDividendTrend.dividendChange >= 0 ? "positive" : "negative"}>
-                    배당 {trackedDividendTrend.dividendChange >= 0 ? "+" : ""}{formatKRW(Math.round(trackedDividendTrend.dividendChange))}
-                  </div>
-                  <div className={trackedDividendTrend.yieldChangeRate != null && trackedDividendTrend.yieldChangeRate >= 0 ? "positive" : "negative"}>
-                    배당율 변화 {trackedDividendTrend.yieldChangeRate == null ? "-" : `${trackedDividendTrend.yieldChangeRate >= 0 ? "+" : ""}${trackedDividendTrend.yieldChangeRate.toFixed(1)}%`}
-                  </div>
-                  <div style={{ marginTop: 4, paddingTop: 8, borderTop: "1px solid var(--border)", fontSize: 13, fontWeight: 600 }}>
-                    최근 12개월간 총 배당율 {trackedDividendTrend.yieldSumLast12Months == null ? "-" : `${trackedDividendTrend.yieldSumLast12Months.toFixed(2)}%`}
-                  </div>
-                  {trackedDividendTrend.latest && trackedDividendTrend.latest.shares > 0 && (
-                    <div className="hint" style={{ marginTop: 8, padding: 8, background: "var(--surface)", borderRadius: 8, fontSize: 12 }}>
-                      <div style={{ fontWeight: 600, marginBottom: 4 }}>{trackedDividendTrend.latest.month} 산식</div>
-                      <div>평단가 {formatKRW(Math.round(trackedDividendTrend.latest.costBasis / trackedDividendTrend.latest.shares))}</div>
-                      <div>주당 배당금 {formatKRW(Math.round(trackedDividendTrend.latest.dividend / trackedDividendTrend.latest.shares))}</div>
-                      <div>매입금액 {formatKRW(Math.round(trackedDividendTrend.latest.costBasis))} → 배당률 {trackedDividendTrend.latest.yieldRate != null ? `${trackedDividendTrend.latest.yieldRate.toFixed(2)}%` : "-"}</div>
-                    </div>
-                  )}
-                </div>
-              </div>
-              <div style={{ minHeight: 260 }}>
-                <Suspense fallback={<div style={{ height: 260 }} />}>
-                  <LazyDividendTrendChart rows={trackedDividendTrend.rows} />
-                </Suspense>
-              </div>
-            </div>
-          </div>
-
-          <div className="card" style={{ minHeight: 320 }}>
-            <div className="card-title" style={{ marginBottom: 12 }}>{rise200CardTitle}</div>
-            <div
-              className="dashboard-two-col"
-              style={{
-                display: "grid",
-                gridTemplateColumns: "minmax(200px, 280px) 1fr",
-                gap: 20,
-                alignItems: "stretch"
-              }}
-            >
-              <div style={{ display: "flex", flexDirection: "column", gap: 12, justifyContent: "center" }}>
-                <div
-                  className={`card-value ${rise200DividendTrend.changeRate == null ? "" : rise200DividendTrend.changeRate >= 0 ? "positive" : "negative"}`}
-                  style={{ marginBottom: 0 }}
-                >
-                  {rise200DividendTrend.changeRate == null
-                    ? "-"
-                    : `${rise200DividendTrend.changeRate >= 0 ? "+" : ""}${rise200DividendTrend.changeRate.toFixed(1)}%`}
-                </div>
-                <div className="hint" style={{ marginTop: 0 }}>
-                  {rise200DividendTrend.latest && rise200DividendTrend.previous
-                    ? `${rise200DividendTrend.previous.month} ${formatKRW(Math.round(rise200DividendTrend.previous.dividend))} → ${rise200DividendTrend.latest.month} ${formatKRW(Math.round(rise200DividendTrend.latest.dividend))}`
-                    : `${rise200DividendTrend.ticker} 배당 데이터가 없습니다.`}
-                </div>
-                <div style={{ display: "flex", flexDirection: "column", gap: 8, fontSize: 13 }}>
-                  <div className={rise200DividendTrend.shareChange >= 0 ? "positive" : "negative"}>
-                    주식수 {rise200DividendTrend.shareChange >= 0 ? "+" : ""}{rise200DividendTrend.shareChange.toLocaleString()}
-                    {rise200DividendTrend.shareChangeRate == null ? "" : ` (${rise200DividendTrend.shareChangeRate >= 0 ? "+" : ""}${rise200DividendTrend.shareChangeRate.toFixed(1)}%)`}
-                  </div>
-                  <div className={rise200DividendTrend.dividendChange >= 0 ? "positive" : "negative"}>
-                    배당 {rise200DividendTrend.dividendChange >= 0 ? "+" : ""}{formatKRW(Math.round(rise200DividendTrend.dividendChange))}
-                  </div>
-                  <div className={rise200DividendTrend.yieldChangeRate != null && rise200DividendTrend.yieldChangeRate >= 0 ? "positive" : "negative"}>
-                    배당율 변화 {rise200DividendTrend.yieldChangeRate == null ? "-" : `${rise200DividendTrend.yieldChangeRate >= 0 ? "+" : ""}${rise200DividendTrend.yieldChangeRate.toFixed(1)}%`}
-                  </div>
-                  <div style={{ marginTop: 4, paddingTop: 8, borderTop: "1px solid var(--border)", fontSize: 13, fontWeight: 600 }}>
-                    최근 12개월간 총 배당율 {rise200DividendTrend.yieldSumLast12Months == null ? "-" : `${rise200DividendTrend.yieldSumLast12Months.toFixed(2)}%`}
-                  </div>
-                  {rise200DividendTrend.latest && rise200DividendTrend.latest.shares > 0 && (
-                    <div className="hint" style={{ marginTop: 8, padding: 8, background: "var(--surface)", borderRadius: 8, fontSize: 12 }}>
-                      <div style={{ fontWeight: 600, marginBottom: 4 }}>{rise200DividendTrend.latest.month} 산식</div>
-                      <div>평단가 {formatKRW(Math.round(rise200DividendTrend.latest.costBasis / rise200DividendTrend.latest.shares))}</div>
-                      <div>주당 배당금 {formatKRW(Math.round(rise200DividendTrend.latest.dividend / rise200DividendTrend.latest.shares))}</div>
-                      <div>매입금액 {formatKRW(Math.round(rise200DividendTrend.latest.costBasis))} → 배당률 {rise200DividendTrend.latest.yieldRate != null ? `${rise200DividendTrend.latest.yieldRate.toFixed(2)}%` : "-"}</div>
-                    </div>
-                  )}
-                </div>
-              </div>
-              <div style={{ minHeight: 260 }}>
-                <Suspense fallback={<div style={{ height: 260 }} />}>
-                  <LazyDividendTrendChart rows={rise200DividendTrend.rows} />
-                </Suspense>
-              </div>
-            </div>
-          </div>
+          <DividendTrendCard title={`${trackedTickerName} 해당금액 변동 (전체 기준)`} trend={trackedDividendTrend} />
+          <DividendTrendCard title={rise200CardTitle} trend={rise200DividendTrend} />
         </div>
 
-        <div className="card">
-          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 12, flexWrap: "wrap", gap: 8 }}>
-            <div className="card-title" style={{ margin: 0 }}>소비 캘린더</div>
-            <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
-              <span className="hint" style={{ margin: 0, fontSize: 12 }}>분류</span>
-              <select
-                value={spendingFilterType}
-                onChange={(e) => setSpendingFilterType((e.target.value || "") as "" | "spending" | "investing" | "income")}
-                style={{
-                  minWidth: 130,
-                  padding: "4px 8px",
-                  borderRadius: 8,
-                  border: "1px solid var(--border)",
-                  background: "var(--surface)",
-                  color: "var(--text)",
-                  fontSize: 12
-                }}
-              >
-                <option value="">전체</option>
-                <option value="spending">내가 쓴 소비</option>
-                <option value="investing">재테크</option>
-                <option value="income">수입</option>
-              </select>
-              <button
-                type="button"
-                className="secondary"
-                style={{ fontSize: 14, padding: "6px 14px", fontWeight: 600 }}
-                onClick={() => setCashflowMonth((prev) => shiftMonth(prev, -1))}
-              >
-                ◀ 이전달
-              </button>
-              <strong style={{ minWidth: 80, textAlign: "center", fontSize: 15 }}>{cashflowMonth}</strong>
-              <button
-                type="button"
-                className="secondary"
-                style={{ fontSize: 14, padding: "6px 14px", fontWeight: 600 }}
-                onClick={() => setCashflowMonth((prev) => shiftMonth(prev, 1))}
-              >
-                다음달 ▶
-              </button>
-            </div>
-          </div>
-          <div
-            style={{
-              display: "flex",
-              flexWrap: "wrap",
-              gap: 16,
-              marginBottom: 12,
-              padding: "12px 16px",
-              background: "var(--surface)",
-              borderRadius: 8,
-              border: "1px solid var(--border)"
-            }}
-          >
-            <span style={{ fontSize: 14, fontWeight: 600, color: "var(--chart-income)" }}>
-              수입 {formatKRW(Math.round(selectedMonthTotals.income))}
-            </span>
-            <span style={{ fontSize: 14, fontWeight: 600, color: "var(--chart-expense)" }}>
-              지출 {formatKRW(Math.round(selectedMonthTotals.spending))}
-            </span>
-            <span style={{ fontSize: 14, fontWeight: 600, color: "var(--chart-primary)" }}>
-              재테크 {formatKRW(Math.round(selectedMonthTotals.investing))}
-            </span>
-          </div>
-          <div
-            style={{
-              display: "grid",
-              gridTemplateColumns: "repeat(7, minmax(36px, 1fr))",
-              gap: 4,
-              overflowX: "auto",
-              minWidth: 0,
-            }}
-          >
-            {DAY_LABELS.map((day) => (
-              <div key={day} style={{ textAlign: "center", fontSize: 13, fontWeight: 700, color: "var(--text-muted)" }}>
-                {day}
-              </div>
-            ))}
-            {calendarCells.map((cell) => {
-              const isSelected = selectedCalendarDate === cell.date;
-              const clickable = cell.inMonth;
-              return (
-              <div
-                key={cell.date}
-                onClick={() => {
-                  if (!clickable) return;
-                  setSelectedCalendarDate((prev) => (prev === cell.date ? null : cell.date));
-                }}
-                role={clickable ? "button" : undefined}
-                tabIndex={clickable ? 0 : undefined}
-                onKeyDown={(e) => {
-                  if (!clickable) return;
-                  if (e.key === "Enter" || e.key === " ") {
-                    e.preventDefault();
-                    setSelectedCalendarDate((prev) => (prev === cell.date ? null : cell.date));
-                  }
-                }}
-                style={{
-                  minHeight: 82,
-                  border: "1px solid var(--border)",
-                  borderRadius: 8,
-                  padding: 6,
-                  background: isSelected
-                    ? "var(--primary-light)"
-                    : cell.inMonth ? "var(--surface)" : "var(--bg)",
-                  opacity: cell.inMonth ? 1 : 0.6,
-                  outline: isSelected
-                    ? "2px solid var(--primary)"
-                    : cell.isToday ? "2px solid var(--primary)" : "none",
-                  cursor: clickable ? "pointer" : "default",
-                  transition: "background 120ms ease"
-                }}
-              >
-                <div style={{ fontSize: 13, fontWeight: 600, color: cell.date < today ? "var(--text-muted)" : "var(--text)" }}>
-                  {cell.day}
-                </div>
-                {cell.spending > 0 && (
-                  <div style={{ marginTop: 4, fontSize: 11, color: "var(--chart-expense)", fontWeight: 600 }}>
-                    소비 {formatKRW(Math.round(cell.spending))}
-                  </div>
-                )}
-                {cell.investing > 0 && (
-                  <div style={{ marginTop: 2, fontSize: 11, color: "var(--chart-primary)", fontWeight: 600 }}>
-                    재테크 {formatKRW(Math.round(cell.investing))}
-                  </div>
-                )}
-                {cell.income > 0 && (
-                  <div style={{ marginTop: 2, fontSize: 11, color: "var(--chart-income)", fontWeight: 600 }}>
-                    수입 {formatKRW(Math.round(cell.income))}
-                  </div>
-                )}
-                {cell.count > 0 && (
-                  <div style={{ marginTop: 2, fontSize: 10, color: "var(--text-muted)" }}>
-                    {cell.count}건
-                  </div>
-                )}
-              </div>
-              );
-            })}
-          </div>
-
-          <p className="hint" style={{ marginTop: 12, marginBottom: 8 }}>
-            {cashflowMonth} 소비 {formatKRW(Math.round(selectedMonthTotals.spending))} / 재테크 {formatKRW(Math.round(selectedMonthTotals.investing))} / 수입 {formatKRW(Math.round(selectedMonthTotals.income))} · {selectedMonthSpendingRows.length}건
-          </p>
-
-          {/* 선택 날짜 세부 내역 — 캘린더 셀을 클릭하면 표시, 같은 셀 재클릭 시 닫힘 */}
-          {selectedCalendarDate ? (() => {
-            const dayRows = selectedMonthSpendingRows.filter((r) => r.date === selectedCalendarDate);
-            const daySpending = dayRows.filter((r) => r.type === "spending").reduce((s, r) => s + r.amount, 0);
-            const dayInvesting = dayRows.filter((r) => r.type === "investing").reduce((s, r) => s + r.amount, 0);
-            const dayIncome = dayRows.filter((r) => r.type === "income").reduce((s, r) => s + r.amount, 0);
-            return (
-              <div style={{ marginTop: 8 }}>
-                <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 8, flexWrap: "wrap", marginBottom: 8 }}>
-                  <div style={{ display: "flex", alignItems: "baseline", gap: 12, flexWrap: "wrap" }}>
-                    <strong style={{ fontSize: 14 }}>{selectedCalendarDate}</strong>
-                    <span style={{ fontSize: 12, color: "var(--text-muted)" }}>
-                      소비 {formatKRW(Math.round(daySpending))} · 재테크 {formatKRW(Math.round(dayInvesting))} · 수입 {formatKRW(Math.round(dayIncome))} · {dayRows.length}건
-                    </span>
-                  </div>
-                  <button
-                    type="button"
-                    className="secondary"
-                    style={{ fontSize: 12, padding: "4px 10px" }}
-                    onClick={() => setSelectedCalendarDate(null)}
-                  >
-                    닫기
-                  </button>
-                </div>
-                <div style={{ overflowX: "auto" }}>
-                  <table className="table compact" style={{ width: "100%", fontSize: 12 }}>
-                    <thead>
-                      <tr>
-                        <th style={{ textAlign: "left" }}>분류</th>
-                        <th style={{ textAlign: "left" }}>카테고리 (대·중분류)</th>
-                        <th style={{ textAlign: "left" }}>내역</th>
-                        <th style={{ textAlign: "left" }}>계좌</th>
-                        <th style={{ textAlign: "right" }}>금액</th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {dayRows.map((row) => (
-                        <tr key={`${row.id}:${row.date}`}>
-                          <td>
-                            <span
-                              style={{
-                                color: row.type === "spending" ? "var(--chart-expense)" : row.type === "investing" ? "var(--chart-primary)" : "var(--chart-income)",
-                                fontWeight: 600
-                              }}
-                            >
-                              {row.type === "spending" ? "내가 쓴 소비" : row.type === "investing" ? "재테크" : "수입"}
-                            </span>
-                          </td>
-                          <td>
-                            <span style={{ fontWeight: 500 }}>{row.category || "-"}</span>
-                            {row.subCategory && (
-                              <>
-                                <span style={{ color: "var(--text-muted)", margin: "0 4px" }}>·</span>
-                                <span style={{ color: "var(--text)" }}>{row.subCategory}</span>
-                              </>
-                            )}
-                          </td>
-                          <td style={{ color: row.description ? "var(--text)" : "var(--text-muted)" }}>
-                            {row.description || "—"}
-                          </td>
-                          <td>{row.type === "income" ? (row.toAccountName || row.toAccountId || "-") : (row.fromAccountName || row.fromAccountId || "-")}</td>
-                          <td
-                            className="number"
-                            style={{
-                              textAlign: "right",
-                              color: row.type === "income" ? "var(--chart-income)" : "var(--chart-expense)",
-                              fontWeight: 700
-                            }}
-                          >
-                            {row.type === "income" ? "+" : "-"}{formatKRW(Math.round(row.amount))}
-                          </td>
-                        </tr>
-                      ))}
-                      {dayRows.length === 0 && (
-                        <tr>
-                          <td colSpan={5} style={{ textAlign: "center", color: "var(--text-muted)" }}>
-                            이 날짜에는 기록이 없습니다.
-                          </td>
-                        </tr>
-                      )}
-                    </tbody>
-                  </table>
-                </div>
-              </div>
-            );
-          })() : (
-            <p className="hint" style={{ marginTop: 8, marginBottom: 0, fontSize: 12, color: "var(--text-muted)" }}>
-              캘린더에서 날짜를 클릭하면 해당 날짜의 세부 내역이 표시됩니다.
-            </p>
-          )}
-        </div>
+        <SpendingCalendarCard
+          cashflowMonth={cashflowMonth}
+          setCashflowMonth={setCashflowMonth}
+          spendingFilterType={spendingFilterType}
+          setSpendingFilterType={setSpendingFilterType}
+          calendarCells={calendarCells}
+          selectedMonthTotals={selectedMonthTotals}
+          selectedMonthSpendingRows={selectedMonthSpendingRows}
+          selectedCalendarDate={selectedCalendarDate}
+          setSelectedCalendarDate={setSelectedCalendarDate}
+          today={today}
+        />
 
 
         {/* 예산 초과 알림 */}
         <BudgetAlertWidget
-          accounts={accounts}
           ledger={ledger}
-          trades={trades}
-          prices={prices}
-          fxRate={fxRate ?? 1300}
-          categoryPresets={categoryPresets}
           budgetGoals={storeData.budgetGoals}
         />
       </div>

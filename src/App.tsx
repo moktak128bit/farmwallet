@@ -68,14 +68,14 @@ import { usePortfolioWorker } from "./hooks/usePortfolioWorker";
 import { APP_VERSION } from "./constants/config";
 import { runIntegrityCheck } from "./utils/dataIntegrity";
 import { useGistSync } from "./hooks/useGistSync";
+import { useMarketEnvSnapshotRecorder } from "./hooks/useMarketEnvSnapshotRecorder";
 import { GistVersionModal } from "./components/GistVersionModal";
 import { GitVersionModal } from "./components/GitVersionModal";
 import { GistConflictModal } from "./components/GistConflictModal";
 import { isGistConfigured, saveToGist } from "./services/gistSync";
 import { toUserDataJson } from "./services/dataService";
 import { useUIStore, type PendingAction } from "./store/uiStore";
-
-const TAB_ORDER: TabId[] = ["dashboard", "accounts", "ledger", "categories", "stocks", "dividends", "debt", "spend", "budget", "reports", "insights", "workout", "settings"];
+import { TAB_ORDER } from "./constants/tabs";
 
 export const App: React.FC = () => {
   // UI 상태는 모두 uiStore에서 관리 (App.tsx에서 useState 17개를 슬라이스로 이전)
@@ -246,6 +246,8 @@ export const App: React.FC = () => {
     handleGistPulledData,
     { onLog: addAppLog }
   );
+
+  useMarketEnvSnapshotRecorder();
 
   const gistConflict = useUIStore((s) => s.gistConflict);
 

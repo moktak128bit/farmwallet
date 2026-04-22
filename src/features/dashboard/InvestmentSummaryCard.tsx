@@ -120,8 +120,8 @@ export const InvestmentSummaryCard: React.FC<Props> = ({
   const cumulativePnl = totalInvestmentAssets - principal;
 
   const closedRecords = useMemo(
-    () => buildClosedTradeRecords(trades, accounts),
-    [trades, accounts]
+    () => buildClosedTradeRecords(trades, accounts, fxRate ?? undefined),
+    [trades, accounts, fxRate]
   );
 
   const monthlyRealizedPnl = useMemo(() => {
@@ -234,9 +234,9 @@ export const InvestmentSummaryCard: React.FC<Props> = ({
         </div>
         <span
           style={{
-            fontSize: 12,
+            fontSize: 14,
             fontWeight: 700,
-            padding: "2px 8px",
+            padding: "3px 10px",
             borderRadius: 12,
             background: monthlyRealizedPnl > 0 ? "rgba(34,197,94,0.12)" : monthlyRealizedPnl < 0 ? "rgba(239,68,68,0.12)" : "var(--border)",
             color: pnlColor(monthlyRealizedPnl),
@@ -244,7 +244,7 @@ export const InvestmentSummaryCard: React.FC<Props> = ({
         >
           {monthlyRealizedPnl > 0 ? "▲" : monthlyRealizedPnl < 0 ? "▼" : "–"} 이번달 {formatKRW(Math.round(Math.abs(monthlyRealizedPnl)))}
         </span>
-        <span style={{ fontSize: 11, color: "var(--muted)" }}>
+        <span style={{ fontSize: 13, color: "var(--muted)" }}>
           증권·crypto 계좌 현금+포지션 (일반 계좌·부채 제외)
         </span>
       </div>
@@ -375,7 +375,7 @@ export const InvestmentSummaryCard: React.FC<Props> = ({
       </div>
       <div
         style={{
-          fontSize: 11,
+          fontSize: 13,
           color: "var(--muted)",
           display: "flex",
           justifyContent: "flex-end",
@@ -540,7 +540,7 @@ const ProgressBar: React.FC<{ pct: number; label: string }> = ({ pct, label }) =
           }}
         />
       </div>
-      <div style={{ fontSize: 11, color: "var(--muted)" }}>{label}</div>
+      <div style={{ fontSize: 13, color: "var(--muted)" }}>{label}</div>
     </div>
   );
 };
@@ -562,7 +562,7 @@ const MiniStat: React.FC<{ label: string; value: string; color: string; sub?: st
     }}
   >
     <div style={{ fontSize: 11, color: "var(--muted)" }}>{label}</div>
-    <div style={{ fontSize: 16, fontWeight: 700, color }}>{value}</div>
-    {sub && <div style={{ fontSize: 10, color: "var(--muted)" }}>{sub}</div>}
+    <div style={{ fontSize: 18, fontWeight: 700, color }}>{value}</div>
+    {sub && <div style={{ fontSize: 12, color: "var(--muted)" }}>{sub}</div>}
   </div>
 );

@@ -197,6 +197,10 @@ export const AccountsView: React.FC<Props> = ({
   const [actualCurrentInput, setActualCurrentInput] = useState<Record<string, string>>({});
   /** 사용자가 직접 편집한 계좌 id 집합 — 자동 동기화에서 제외 */
   const [actualCurrentEdited, setActualCurrentEdited] = useState<Set<string>>(() => new Set());
+  // 시작금액 → 이체 기록 변환 패널
+  const [showSeedPanel, setShowSeedPanel] = useState(false);
+  const [seedSourceId, setSeedSourceId] = useState<string>("");
+  const [seedDate, setSeedDate] = useState("2026-06-01");
   const realizedPnlByTradeId = useMemo(
     () => computeRealizedPnlByTradeId(trades ?? []),
     [trades]
@@ -467,6 +471,145 @@ export const AccountsView: React.FC<Props> = ({
     return desired - computedCurrent + baseBalance;
   };
 
+  /** 모든 계좌의 cashAdjustment를 initialBalance/initialCashBalance에 병합해 시작금액을 단일화한다.
+   *  currentBalance 공식에서 baseBalance와 cashAdjustment가 모두 더해지므로 병합해도 현재 잔액은 불변. */
+  const flattenAllCashAdjustments = () => {
+    const affected = safeAccounts.filter((a) => (a.cashAdjustment ?? 0) !== 0);
+    if (affected.length === 0) {
+      toast("정리할 계좌가 없습니다. 모든 계좌의 보정금액이 이미 0원입니다.", { icon: "ℹ️" });
+      return;
+    }
+    const ok = window.confirm(
+      `${affected.length}개 계좌의 보정금액을 시작금액에 병합합니다.\n현재 잔액은 변하지 않습니다.\n계속하시겠습니까?`
+    );
+    if (!ok) return;
+    const updated = safeAccounts.map((a) => {
+      const adj = a.cashAdjustment ?? 0;
+      if (adj === 0) return a;
+      if (a.type === "securities" || a.type === "crypto") {
+        return {
+          ...a,
+          initialCashBalance: (a.initialCashBalance ?? a.initialBalance ?? 0) + adj,
+          cashAdjustment: 0
+        };
+      }
+      return { ...a, initialBalance: (a.initialBalance ?? 0) + adj, cashAdjustment: 0 };
+    });
+    onChangeAccounts(updated);
+    toast.success(`${affected.length}개 계좌의 시작금액을 정리했습니다.`);
+  };
+
+  /** 농협 감지 checking 계좌 id (없으면 첫 checking 계좌, 그것도 없으면 빈 문자열) */
+  const defaultSeedSourceId = useMemo(() => {
+    const checkings = safeAccounts.filter((a) => a.type === "checking");
+    const nh = checkings.find(
+      (a) =>
+        (a.institution && a.institution.includes("농협")) ||
+        (a.name && a.name.includes("농협"))
+    );
+    return nh?.id ?? checkings[0]?.id ?? "";
+  }, [safeAccounts]);
+
+  /** 시작금액 → 이체 기록 변환: 모든 non-source 계좌의 effectiveStart(baseBalance + cashAdjustment)를
+   *  source와의 이체로 옮긴다. cashAdjustment도 함께 자동 병합. currentBalance 보존됨. */
+  const applySeedTransferConversion = () => {
+    if (!onChangeLedger) {
+      toast.error("가계부 기록 수정 권한이 없습니다.");
+      return;
+    }
+    const source = safeAccounts.find((a) => a.id === seedSourceId);
+    if (!source) {
+      toast.error("출금 계좌를 선택해주세요.");
+      return;
+    }
+
+    // 실효 시작 잔액 = baseBalance + cashAdjustment (보정금액도 자동 흡수)
+    const effectiveStart = (a: Account): number => {
+      const base =
+        a.type === "securities" || a.type === "crypto"
+          ? (a.initialCashBalance ?? a.initialBalance ?? 0)
+          : (a.initialBalance ?? 0);
+      return base + (a.cashAdjustment ?? 0);
+    };
+
+    // target: non-source · non-card · effectiveStart != 0
+    type Target = { account: Account; base: number };
+    const targets: Target[] = [];
+    let totalNonSourceBase = 0;
+    for (const a of safeAccounts) {
+      if (a.id === source.id) continue;
+      if (a.type === "card") continue;
+      const base = effectiveStart(a);
+      if (Math.round(base) === 0) continue;
+      targets.push({ account: a, base });
+      totalNonSourceBase += base;
+    }
+
+    if (targets.length === 0) {
+      toast("변환할 시작금액이 있는 계좌가 없습니다.", { icon: "ℹ️" });
+      return;
+    }
+
+    const ok = window.confirm(
+      `${targets.length}개 계좌의 시작금액(보정금액 포함)을 '${source.name}' 과의 이체 기록(${seedDate})으로 변환합니다.\n\n` +
+        `- 각 계좌의 시작금액·보정금액이 0으로 초기화됩니다.\n` +
+        `- '${source.name}' 의 시작금액은 전체 합계를 흡수합니다.\n` +
+        `- 모든 계좌의 현재 잔액은 변하지 않습니다.\n\n계속하시겠습니까?`
+    );
+    if (!ok) return;
+
+    // ledger entries 생성
+    const newEntries: LedgerEntry[] = targets.map((t) => {
+      const base = Math.round(t.base);
+      const [fromId, toId, amount] =
+        base > 0
+          ? [source.id, t.account.id, base]
+          : [t.account.id, source.id, -base];
+      return {
+        id: `LEDGER-${Date.now()}-${Math.random().toString(36).slice(2, 9)}`,
+        date: seedDate,
+        kind: "transfer",
+        category: "이체",
+        subCategory: "계좌이체",
+        description: "시작금액 이체 (자동 생성)",
+        fromAccountId: fromId,
+        toAccountId: toId,
+        amount,
+        currency: "KRW"
+      };
+    });
+
+    // 계좌 업데이트: 모든 계좌의 cashAdjustment=0 병합, target은 base=0, source는 전체 합계 흡수
+    const updatedAccounts = safeAccounts.map((a) => {
+      if (a.id === source.id) {
+        const sourceNewBase = effectiveStart(a) + totalNonSourceBase;
+        if (a.type === "securities" || a.type === "crypto") {
+          return { ...a, initialCashBalance: sourceNewBase, cashAdjustment: 0 };
+        }
+        return { ...a, initialBalance: sourceNewBase, cashAdjustment: 0 };
+      }
+      const isTarget = targets.some((t) => t.account.id === a.id);
+      if (!isTarget) {
+        // 비-target 이지만 cashAdjustment 잔여값은 정리해 병합
+        if ((a.cashAdjustment ?? 0) === 0) return a;
+        const merged = effectiveStart(a);
+        if (a.type === "securities" || a.type === "crypto") {
+          return { ...a, initialCashBalance: merged, cashAdjustment: 0 };
+        }
+        return { ...a, initialBalance: merged, cashAdjustment: 0 };
+      }
+      if (a.type === "securities" || a.type === "crypto") {
+        return { ...a, initialCashBalance: 0, cashAdjustment: 0 };
+      }
+      return { ...a, initialBalance: 0, cashAdjustment: 0 };
+    });
+
+    onChangeAccounts(updatedAccounts);
+    onChangeLedger([...ledger, ...newEntries]);
+    toast.success(`${targets.length}건 이체 기록 생성 완료 (${seedDate})`);
+    setShowSeedPanel(false);
+  };
+
   const applyReversedInitial = () => {
     const updates: Account[] = safeAccounts.map((acc) => {
       const rev = reversedInitialBalance(acc.id);
@@ -537,16 +680,22 @@ export const AccountsView: React.FC<Props> = ({
   }, [safeBalances]);
 
 
-  // 카드 제외 역산용 순서 (증권·입출금만 역산)
-  const orderedRowsForInitialReverse = useMemo(() => {
-    const typeOrder: AccountType[] = ["checking", "savings", "card", "securities", "crypto", "other"];
-    return typeOrder
-      .flatMap((type) => accountsByType.get(type) ?? [])
-      .filter((row) => row.account.type !== "card");
-  }, [accountsByType]);
+  // 카드 제외 목록: 위 "계좌별 잔액 구성" 표와 아래 "계좌 초기 금액 역산" 표가 공유하는 단일 소스
+  // (원본 safeBalances 순서 유지 → 두 표가 항상 같은 순서로 나열됨)
+  const orderedRowsForInitialReverse = useMemo(
+    () => safeBalances.filter((row) => row.account.type !== "card"),
+    [safeBalances]
+  );
 
   // 계좌 초기 금액 역산 테이블: 편집 안 한 계좌는 항상 현재 잔액에 동기화
   // (거래가 추가돼 currentBalance가 바뀌면 입력칸도 최신 값 반영)
+  // seedSourceId 자동 동기화: 비어 있으면 농협 감지 기본값으로 채움
+  useEffect(() => {
+    if (!seedSourceId && defaultSeedSourceId) {
+      setSeedSourceId(defaultSeedSourceId);
+    }
+  }, [defaultSeedSourceId, seedSourceId]);
+
   useEffect(() => {
     if (orderedRowsForInitialReverse.length === 0) return;
     setActualCurrentInput((prev) => {
@@ -1236,7 +1385,6 @@ export const AccountsView: React.FC<Props> = ({
                       <th style={{ textAlign: "right" }}>지출</th>
                       <th style={{ textAlign: "right" }}>이체 순액</th>
                       <th style={{ textAlign: "right" }}>매매 영향</th>
-                      <th style={{ textAlign: "right" }}>저축</th>
                       <th style={{
                         textAlign: "right",
                         borderLeft: "2px solid var(--border)",
@@ -1246,16 +1394,13 @@ export const AccountsView: React.FC<Props> = ({
                     </tr>
                   </thead>
                   <tbody>
-                    {safeBalances
-                      .filter((row) => row.account.type !== "card")
-                      .map((row) => {
+                    {orderedRowsForInitialReverse.map((row) => {
                         const account = row.account;
                         const baseBalance =
                           account.type === "securities" || account.type === "crypto"
                             ? (account.initialCashBalance ?? account.initialBalance ?? 0)
                             : (account.initialBalance ?? 0);
                         const cashAdj = account.cashAdjustment ?? 0;
-                        const savings = account.savings ?? 0;
                         const { incomeSum, expenseSum, transferNet, tradeCashImpact, currentBalance } = row;
 
                         const numCell = (value: number, opts?: { highlight?: boolean; muted?: boolean }) => {
@@ -1347,14 +1492,13 @@ export const AccountsView: React.FC<Props> = ({
                             {numCell(expenseSum)}
                             {numCell(transferNet)}
                             {numCell(tradeCashImpact)}
-                            {numCell(savings)}
                             {numCell(currentBalance, { highlight: true })}
                           </tr>
                         );
                       })}
                     {/* 합계 행 */}
                     {(() => {
-                      const rows = safeBalances.filter((r) => r.account.type !== "card");
+                      const rows = orderedRowsForInitialReverse;
                       const totals = rows.reduce(
                         (acc, row) => {
                           const account = row.account;
@@ -1369,11 +1513,10 @@ export const AccountsView: React.FC<Props> = ({
                             expense: acc.expense + row.expenseSum,
                             transfer: acc.transfer + row.transferNet,
                             trade: acc.trade + row.tradeCashImpact,
-                            savings: acc.savings + (account.savings ?? 0),
                             balance: acc.balance + row.currentBalance
                           };
                         },
-                        { base: 0, cashAdj: 0, income: 0, expense: 0, transfer: 0, trade: 0, savings: 0, balance: 0 }
+                        { base: 0, cashAdj: 0, income: 0, expense: 0, transfer: 0, trade: 0, balance: 0 }
                       );
 
                       const totalCell = (value: number, opts?: { highlight?: boolean }) => (
@@ -1408,7 +1551,6 @@ export const AccountsView: React.FC<Props> = ({
                           {totalCell(totals.expense)}
                           {totalCell(totals.transfer)}
                           {totalCell(totals.trade)}
-                          {totalCell(totals.savings)}
                           {totalCell(totals.balance, { highlight: true })}
                         </tr>
                       );
@@ -1416,83 +1558,96 @@ export const AccountsView: React.FC<Props> = ({
                   </tbody>
                 </table>
               </div>
+              <p style={{ margin: "10px 0 0", fontSize: 11, color: "var(--text-muted)", lineHeight: 1.5 }}>
+                ※ 카드 계좌는 부채 추적용으로 이 표에서 제외됩니다. 이체 순액 합계가 0이 아닌 경우, 카드 계좌로의 순 이체(카드 결제 등)가 포함돼 있기 때문입니다.
+              </p>
             </div>
           )}
-        </div>
-      )}
-
-      {/* 계좌별 시작/현재 잔액 요약: 거래 순액을 시각화해 역산이 필요한 계좌 식별에 도움 */}
-      {orderedRowsForInitialReverse.length > 0 && (
-        <div className="card" style={{ marginTop: 24, padding: 20 }}>
-          <h3 style={{ margin: "0 0 8px", fontSize: 16 }}>계좌별 잔액 요약</h3>
-          <p style={{ margin: "0 0 16px", fontSize: 13, color: "var(--text-muted)" }}>
-            각 계좌의 시작 잔액과 현재 잔액, 그리고 그 차액(거래 누적 순액)을 확인할 수 있습니다. 차액이 실제와 다르면 아래 역산 도구로 조정하세요.
-          </p>
-          <table className="data-table" style={{ fontSize: 13 }}>
-            <thead>
-              <tr>
-                <th style={{ textAlign: "left" }}>계좌명</th>
-                <th style={{ textAlign: "right" }}>시작 잔액</th>
-                <th style={{ textAlign: "right" }}>현재 잔액</th>
-                <th style={{ textAlign: "right" }}>차액(순액)</th>
-              </tr>
-            </thead>
-            <tbody>
-              {orderedRowsForInitialReverse.map((row) => {
-                const base = getBaseBalance(row.account);
-                const current = row.currentBalance ?? 0;
-                const diff = current - base;
-                const diffColor =
-                  diff > 0 ? "var(--success)" : diff < 0 ? "var(--danger)" : "var(--text-muted)";
-                return (
-                  <tr key={row.account.id}>
-                    <td>
-                      {row.account.name} ({row.account.institution || "-"})
-                    </td>
-                    <td style={{ textAlign: "right" }}>{formatKRW(Math.round(base))}</td>
-                    <td style={{ textAlign: "right", fontWeight: 600 }}>{formatKRW(Math.round(current))}</td>
-                    <td style={{ textAlign: "right", fontWeight: 600, color: diffColor }}>
-                      {diff > 0 ? "+" : ""}
-                      {formatKRW(Math.round(diff))}
-                    </td>
-                  </tr>
-                );
-              })}
-              {(() => {
-                const totals = orderedRowsForInitialReverse.reduce(
-                  (acc, row) => {
-                    const base = getBaseBalance(row.account);
-                    const current = row.currentBalance ?? 0;
-                    acc.base += base;
-                    acc.current += current;
-                    return acc;
-                  },
-                  { base: 0, current: 0 }
-                );
-                const totalDiff = totals.current - totals.base;
-                const diffColor =
-                  totalDiff > 0 ? "var(--success)" : totalDiff < 0 ? "var(--danger)" : "var(--text-muted)";
-                return (
-                  <tr style={{ borderTop: "2px solid var(--border)", fontWeight: 700 }}>
-                    <td>합계</td>
-                    <td style={{ textAlign: "right" }}>{formatKRW(Math.round(totals.base))}</td>
-                    <td style={{ textAlign: "right" }}>{formatKRW(Math.round(totals.current))}</td>
-                    <td style={{ textAlign: "right", color: diffColor }}>
-                      {totalDiff > 0 ? "+" : ""}
-                      {formatKRW(Math.round(totalDiff))}
-                    </td>
-                  </tr>
-                );
-              })()}
-            </tbody>
-          </table>
         </div>
       )}
 
       {/* 계좌 초기 금액 역산: 현재 보유금액이 맞지 않을 때 역산하여 초기 금액 적용 */}
       {orderedRowsForInitialReverse.length > 0 && (
         <div className="card" style={{ marginTop: 24, padding: 20 }}>
-          <h3 style={{ margin: "0 0 8px", fontSize: 16 }}>계좌 초기 금액 역산</h3>
+          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 8, gap: 12, flexWrap: "wrap" }}>
+            <h3 style={{ margin: 0, fontSize: 16 }}>계좌 초기 금액 역산</h3>
+            <button
+              type="button"
+              className="secondary"
+              onClick={flattenAllCashAdjustments}
+              title="모든 계좌의 보정금액을 시작금액에 병합해 깔끔한 상태로 만듭니다 (현재 잔액 불변)"
+              style={{ fontSize: 12, padding: "6px 12px" }}
+            >
+              모든 계좌 시작금액 정리
+            </button>
+            {onChangeLedger && (
+              <button
+                type="button"
+                className="secondary"
+                onClick={() => setShowSeedPanel((v) => !v)}
+                title="모든 계좌의 시작금액을 출금 계좌와의 이체 기록으로 변환합니다 (현재 잔액 불변)"
+                style={{ fontSize: 12, padding: "6px 12px" }}
+              >
+                시작금액 → 이체 기록 변환
+              </button>
+            )}
+          </div>
+          {showSeedPanel && onChangeLedger && (
+            <div style={{
+              marginBottom: 16,
+              padding: 12,
+              border: "1px solid var(--border)",
+              borderRadius: 8,
+              background: "var(--bg)",
+              display: "flex",
+              gap: 12,
+              flexWrap: "wrap",
+              alignItems: "flex-end"
+            }}>
+              <label style={{ display: "flex", flexDirection: "column", fontSize: 12, color: "var(--text-muted)" }}>
+                출금 계좌
+                <select
+                  value={seedSourceId}
+                  onChange={(e) => setSeedSourceId(e.target.value)}
+                  style={{ padding: 6, borderRadius: 4, marginTop: 4, minWidth: 200 }}
+                >
+                  <option value="">-- 선택 --</option>
+                  {safeAccounts
+                    .filter((a) => a.type === "checking")
+                    .map((a) => (
+                      <option key={a.id} value={a.id}>
+                        {a.name} ({a.institution || "-"})
+                      </option>
+                    ))}
+                </select>
+              </label>
+              <label style={{ display: "flex", flexDirection: "column", fontSize: 12, color: "var(--text-muted)" }}>
+                기준 날짜
+                <input
+                  type="date"
+                  value={seedDate}
+                  onChange={(e) => setSeedDate(e.target.value)}
+                  style={{ padding: 6, borderRadius: 4, marginTop: 4 }}
+                />
+              </label>
+              <button
+                type="button"
+                className="primary"
+                onClick={applySeedTransferConversion}
+                style={{ padding: "8px 16px", fontSize: 13, fontWeight: 600 }}
+              >
+                실행
+              </button>
+              <button
+                type="button"
+                className="secondary"
+                onClick={() => setShowSeedPanel(false)}
+                style={{ padding: "8px 16px", fontSize: 13 }}
+              >
+                취소
+              </button>
+            </div>
+          )}
           <p style={{ margin: "0 0 16px", fontSize: 13, color: "var(--text-muted)" }}>
             각 계좌의 <strong>현재 보유금액(역산)</strong>이 맞지 않을 때, 이체·거래 내역으로부터 역산한 계좌 초기 금액을 일괄 조정합니다.
           </p>
@@ -1542,7 +1697,7 @@ export const AccountsView: React.FC<Props> = ({
                         />
                       </td>
                       <td style={{ textAlign: "right", fontWeight: 600, color: unchanged ? "var(--text-muted)" : undefined }}>
-                        {rev == null ? "-" : unchanged ? "변경 없음" : formatKRW(Math.round(rev))}
+                        {rev == null ? "-" : formatKRW(Math.round(rev))}
                       </td>
                     </tr>
                   );
@@ -1918,12 +2073,12 @@ export const AccountsView: React.FC<Props> = ({
         const currentBalance = krwBalance;
 
         const amounts: number[] = accountTransactions.map((r) => Number(r.amount) || 0);
+        // 현재 잔액에서 역순으로 누적 차감 → 각 거래 "직후" 잔액 계산 (newest-first 순서 기준)
         const runningBalances: number[] = [];
         let acc = currentBalance;
         for (let i = 0; i < amounts.length; i++) {
           runningBalances.push(acc);
           const amt = amounts[i];
-          // 증권계좌 예수금 잔액: USD 잔액 모드(isUsd) 거래는 예수금(KRW) 잔액에 영향을 주지 않으므로 제외
           if (accountTransactions[i].isUsd) {
             if (!isSecuritiesAccount && effectiveFxRate != null) {
               acc -= amt * effectiveFxRate;
@@ -1932,6 +2087,8 @@ export const AccountsView: React.FC<Props> = ({
             acc -= amt;
           }
         }
+        // 마지막 acc = 모든 거래 적용 전 잔액 = 시작 잔액 (initialBalance + cashAdjustment + savings)
+        const startingBalance = acc;
 
         const kindLabel = (r: Row): string => {
           const amt = Number(r.amount) || 0;
@@ -1958,25 +2115,67 @@ export const AccountsView: React.FC<Props> = ({
           return formatKRW(Math.round(val));
         };
 
+        // 상단 요약: 입금/출금 건수·금액 (증권계좌 USD 거래는 KRW 예수금 잔액에 영향 안 주므로 제외)
+        let inflowCount = 0;
+        let outflowCount = 0;
+        let inflowTotal = 0;
+        let outflowTotal = 0;
+        accountTransactions.forEach((r, idx) => {
+          if (r.isUsd && isSecuritiesAccount) return;
+          const amt = amounts[idx];
+          const krw = r.isUsd && effectiveFxRate ? amt * effectiveFxRate : amt;
+          if (krw > 0) { inflowCount++; inflowTotal += krw; }
+          else if (krw < 0) { outflowCount++; outflowTotal += -krw; }
+        });
+        const netFlow = inflowTotal - outflowTotal;
+
         return (
           <div className="modal-backdrop" onClick={() => setSelectedAccount(null)}>
             <div className="modal" onClick={(e) => e.stopPropagation()} style={{ maxWidth: "950px", maxHeight: "80vh" }}>
               <div className="modal-header">
                 <h3>{selectedAccount.name} ({selectedAccount.id}) - 거래 내역</h3>
-                <div style={{ display: "flex", alignItems: "center", gap: 16 }}>
-                  <span style={{ fontSize: 14, color: "var(--text-muted)" }}>
-                    현재 잔액: <strong style={{ color: "var(--text)", fontSize: 16 }}>{formatKRW(Math.round(currentBalance))}</strong>
-                  </span>
-                  <button
-                    type="button"
-                    onClick={() => setSelectedAccount(null)}
-                    style={{ background: "transparent", border: "none", fontSize: "20px", cursor: "pointer", padding: "0", width: "24px", height: "24px" }}
-                  >
-                    ×
-                  </button>
-                </div>
+                <button
+                  type="button"
+                  onClick={() => setSelectedAccount(null)}
+                  style={{ background: "transparent", border: "none", fontSize: "20px", cursor: "pointer", padding: "0", width: "24px", height: "24px" }}
+                >
+                  ×
+                </button>
               </div>
-              <div className="modal-body" style={{ overflowY: "auto", maxHeight: "calc(80vh - 120px)" }}>
+              {accountTransactions.length > 0 && (
+                <div style={{
+                  display: "grid",
+                  gridTemplateColumns: "repeat(auto-fit, minmax(130px, 1fr))",
+                  gap: 8,
+                  padding: "12px 20px",
+                  background: "var(--bg)",
+                  borderBottom: "1px solid var(--border)"
+                }}>
+                  <div>
+                    <div style={{ fontSize: 11, color: "var(--text-muted)", marginBottom: 2 }}>시작 잔액</div>
+                    <div style={{ fontSize: 15, fontWeight: 700, color: "var(--text-muted)" }}>{formatKRW(Math.round(startingBalance))}</div>
+                  </div>
+                  <div>
+                    <div style={{ fontSize: 11, color: "var(--text-muted)", marginBottom: 2 }}>현재 잔액</div>
+                    <div style={{ fontSize: 15, fontWeight: 700, color: "var(--text)" }}>{formatKRW(Math.round(currentBalance))}</div>
+                  </div>
+                  <div>
+                    <div style={{ fontSize: 11, color: "var(--text-muted)", marginBottom: 2 }}>총 입금 ({inflowCount}건)</div>
+                    <div style={{ fontSize: 15, fontWeight: 700, color: "var(--chart-income)" }}>+{formatKRW(Math.round(inflowTotal))}</div>
+                  </div>
+                  <div>
+                    <div style={{ fontSize: 11, color: "var(--text-muted)", marginBottom: 2 }}>총 출금 ({outflowCount}건)</div>
+                    <div style={{ fontSize: 15, fontWeight: 700, color: "var(--chart-expense)" }}>−{formatKRW(Math.round(outflowTotal))}</div>
+                  </div>
+                  <div>
+                    <div style={{ fontSize: 11, color: "var(--text-muted)", marginBottom: 2 }}>순 흐름</div>
+                    <div style={{ fontSize: 15, fontWeight: 700, color: netFlow >= 0 ? "var(--chart-income)" : "var(--chart-expense)" }}>
+                      {netFlow >= 0 ? "+" : "−"}{formatKRW(Math.round(Math.abs(netFlow)))}
+                    </div>
+                  </div>
+                </div>
+              )}
+              <div className="modal-body" style={{ overflowY: "auto", maxHeight: "calc(80vh - 200px)" }}>
                 {accountTransactions.length === 0 ? (
                   <p style={{ textAlign: "center", color: "var(--text-muted)", padding: "40px" }}>
                     이 계좌에 거래 내역이 없습니다.
@@ -1985,46 +2184,71 @@ export const AccountsView: React.FC<Props> = ({
                   <table className="data-table" style={{ fontSize: "13px" }}>
                     <thead>
                       <tr>
-                        <th>날짜</th>
-                        <th>유형</th>
-                        <th>카테고리</th>
-                        <th>설명</th>
-                        <th style={{ textAlign: "right" }}>현금흐름</th>
-                        <th style={{ textAlign: "right" }} title="매도 거래의 실현손익(선입선출). 잔액 계산에는 포함되지 않습니다.">실현손익</th>
-                        <th style={{ textAlign: "right" }}>잔액</th>
+                        <th style={{ textAlign: "left", width: 90 }}>날짜</th>
+                        <th style={{ textAlign: "left" }}>내용</th>
+                        <th style={{ textAlign: "right", color: "var(--chart-income)", width: 120 }}>입금</th>
+                        <th style={{ textAlign: "right", color: "var(--chart-expense)", width: 120 }}>출금</th>
+                        <th style={{ textAlign: "right", width: 110 }}>잔액</th>
                       </tr>
                     </thead>
                     <tbody>
+                      {/* 거래 내역 — 최신 → 과거 순 */}
                       {accountTransactions.map((r, idx) => {
                         const cashFlow = amounts[idx];
                         const realizedPnl = realizedPnlByRowId.get(r.id);
                         const balanceAfter = runningBalances[idx];
+                        const isInflow = cashFlow > 0;
+                        const isOutflow = cashFlow < 0;
+                        const kind = kindLabel(r);
+                        const cat = r.category && r.category !== kind && !kind.includes(r.category) ? r.category : null;
+                        const typeLabel = cat ? `${kind} · ${cat}` : kind;
+                        const description = r.description && r.description.trim() !== "" && r.description !== "-" ? r.description : null;
 
                         return (
                           <tr key={r.id}>
-                            <td>{formatShortDate(r.date)}</td>
-                            <td>{kindLabel(r)}</td>
-                            <td>{r.category}</td>
-                            <td>{r.description}</td>
-                            <td style={{ textAlign: "right", color: cashFlow >= 0 ? "var(--chart-income)" : "var(--chart-expense)", fontWeight: 600 }}>
-                              {cashFlow >= 0 ? "+" : ""}{formatAmount(r, cashFlow)}
-                              {isSecuritiesAccount && r.isUsd && (
-                                <div className="hint" style={{ fontSize: 10, marginTop: 2 }}>
-                                  (USD 잔액 모드: 예수금 잔액 미반영)
+                            <td style={{ whiteSpace: "nowrap" }}>{formatShortDate(r.date)}</td>
+                            <td>
+                              <div style={{ fontSize: 13, fontWeight: 500 }}>{typeLabel}</div>
+                              {description && (
+                                <div style={{ fontSize: 11, color: "var(--text-muted)", marginTop: 2 }}>{description}</div>
+                              )}
+                            </td>
+                            <td style={{ textAlign: "right", color: "var(--chart-income)", fontWeight: 600 }}>
+                              {isInflow ? `+${formatAmount(r, cashFlow)}` : <span style={{ color: "var(--text-muted)", fontWeight: 400 }}>—</span>}
+                              {isSecuritiesAccount && r.isUsd && isInflow && (
+                                <div style={{ fontSize: 10, marginTop: 2, color: "var(--text-muted)", fontWeight: 400 }}>
+                                  (USD — 예수금 미반영)
                                 </div>
                               )}
                             </td>
-                            <td style={{ textAlign: "right", fontWeight: 600, color: realizedPnl == null ? "var(--text-muted)" : (realizedPnl >= 0 ? "var(--chart-income)" : "var(--chart-expense)") }}>
-                              {realizedPnl == null
-                                ? "-"
-                                : `${realizedPnl >= 0 ? "+" : ""}${formatKRW(Math.round(realizedPnl))}`}
+                            <td style={{ textAlign: "right", color: "var(--chart-expense)", fontWeight: 600 }}>
+                              {isOutflow ? `−${formatAmount(r, -cashFlow)}` : <span style={{ color: "var(--text-muted)", fontWeight: 400 }}>—</span>}
+                              {isSecuritiesAccount && r.isUsd && isOutflow && (
+                                <div style={{ fontSize: 10, marginTop: 2, color: "var(--text-muted)", fontWeight: 400 }}>
+                                  (USD — 예수금 미반영)
+                                </div>
+                              )}
+                              {realizedPnl != null && (
+                                <div style={{ fontSize: 10, marginTop: 2, fontWeight: 500, color: realizedPnl >= 0 ? "var(--chart-income)" : "var(--chart-expense)" }}>
+                                  실현 {realizedPnl >= 0 ? "+" : "−"}{formatKRW(Math.round(Math.abs(realizedPnl)))}
+                                </div>
+                              )}
                             </td>
-                            <td style={{ textAlign: "right", fontWeight: 600, color: "var(--text)" }}>
+                            <td style={{ textAlign: "right", fontWeight: 600, color: "var(--text)", whiteSpace: "nowrap" }}>
                               {formatKRW(Math.round(balanceAfter))}
                             </td>
                           </tr>
                         );
                       })}
+                      {/* 시작 잔액 행 (맨 아래 — 모든 거래 적용 전 기준점) */}
+                      <tr style={{ background: "var(--bg)", borderTop: "2px solid var(--border)" }}>
+                        <td colSpan={4} style={{ color: "var(--text-muted)", padding: "10px 12px", fontStyle: "italic" }}>
+                          시작 잔액 (모든 거래 적용 전)
+                        </td>
+                        <td style={{ textAlign: "right", fontWeight: 700, color: "var(--text-muted)", whiteSpace: "nowrap" }}>
+                          {formatKRW(Math.round(startingBalance))}
+                        </td>
+                      </tr>
                     </tbody>
                   </table>
                 )}

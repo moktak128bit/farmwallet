@@ -534,7 +534,7 @@ function backupApiPlugin(): Plugin {
               res.setHeader("Content-Type", "application/json");
               res.end(JSON.stringify({ error: "Proxy fetch failed" }));
             });
-        } catch (e) {
+        } catch {
           res.statusCode = 500;
           res.setHeader("Content-Type", "application/json");
           res.end(JSON.stringify({ error: "Invalid request" }));
@@ -566,7 +566,7 @@ function backupApiPlugin(): Plugin {
               res.setHeader("Content-Type", "application/json");
               res.end(JSON.stringify({ error: "Proxy fetch failed" }));
             });
-        } catch (e) {
+        } catch {
           res.statusCode = 500;
           res.setHeader("Content-Type", "application/json");
           res.end(JSON.stringify({ error: "Invalid request" }));
@@ -755,7 +755,7 @@ function backupApiPlugin(): Plugin {
                 const fileContent = fs.readFileSync(tickerJsonFile, "utf-8");
                 try {
                   tickerData = JSON.parse(fileContent);
-                } catch (parseErr) {
+                } catch {
                   console.warn("Failed to parse ticker.json, using empty data");
                 }
               }

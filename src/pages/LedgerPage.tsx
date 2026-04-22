@@ -3,7 +3,7 @@ import { Autocomplete } from "../components/ui/Autocomplete";
 import type { Account, AccountBalanceRow, CategoryPresets, ExpenseDetailGroup, LedgerEntry, LedgerKind, LedgerTemplate, StockTrade } from "../types";
 import { formatShortDate, formatUSD, formatKRW } from "../utils/formatter";
 import { shortcutManager, type ShortcutAction } from "../utils/shortcuts";
-import { validateDate, validateRequired, validateTransfer, validateAccountExists } from "../utils/validation";
+import { validateLedgerForm } from "../features/ledger/validateLedgerForm";
 import { isSavingsExpenseEntry, makeIsSavingsExpense } from "../utils/category";
 import { parseAmount as sharedParseAmount, formatAmount as sharedFormatAmount } from "../utils/parseAmount";
 import { getKoreaTime, getTodayKST, getThisMonthKST } from "../utils/date";
@@ -11,7 +11,8 @@ import { toast } from "react-hot-toast";
 import { ERROR_MESSAGES } from "../constants/errorMessages";
 import { computeRealizedPnlByTradeId } from "../calculations";
 import { exportLedgerCsv } from "../utils/csvExport";
-import { useFocusTrap } from "../hooks/useFocusTrap";
+import { QuickCopyModal } from "../features/ledger/QuickCopyModal";
+import { useLedgerColumnResize } from "../features/ledger/useLedgerColumnResize";
 import { ReceiptScanner, type OcrResult } from "../features/ocr/ReceiptScanner";
 import {
   ledgerEntryGross,
@@ -46,9 +47,9 @@ export const LedgerView: React.FC<Props> = ({
   balances = [],
   trades = [],
   categoryPresets,
-  ledgerTemplates = [],
+  ledgerTemplates: _ledgerTemplates = [],
   onChangeLedger,
-  onChangeTemplates,
+  onChangeTemplates: _onChangeTemplates,
   copyRequest,
   onCopyComplete,
   highlightLedgerId,
@@ -164,9 +165,11 @@ export const LedgerView: React.FC<Props> = ({
     // 날짜, 대분류, 중분류, 소분류, 상세내역, 출금, 입금, 할인 전, 할인, 최종, 작업
     return [8, 9, 9, 9, 19, 9, 9, 9, 5, 8, 9];
   });
-  const [resizingColumn, setResizingColumn] = useState<number | null>(null);
-  const [liveColumnWidths, setLiveColumnWidths] = useState<number[] | null>(null);
-  const resizeStartRef = useRef<{ x: number; width: number; widths: number[] }>({ x: 0, width: 0, widths: [] });
+  const { resizingColumn, liveColumnWidths, handleResizeStart } = useLedgerColumnResize({
+    columnWidths,
+    setColumnWidths,
+    tableRef: ledgerTableRef,
+  });
 
   const widthsForRender =
     resizingColumn !== null && liveColumnWidths && liveColumnWidths.length === 11 ? liveColumnWidths : columnWidths;
@@ -215,74 +218,6 @@ export const LedgerView: React.FC<Props> = ({
   };
   
   // 컬럼 리사이즈: ref에 시작값 고정, 리사이즈 중에는 liveColumnWidths로 표시
-  const handleResizeStart = (e: React.MouseEvent | React.PointerEvent, columnIndex: number) => {
-    e.preventDefault();
-    e.stopPropagation();
-    const clientX = "clientX" in e ? e.clientX : (e as React.PointerEvent).clientX;
-    resizeStartRef.current = {
-      x: clientX,
-      width: columnWidths[columnIndex],
-      widths: [...columnWidths]
-    };
-    setLiveColumnWidths([...columnWidths]);
-    setResizingColumn(columnIndex);
-  };
-
-  useEffect(() => {
-    if (resizingColumn === null) return;
-
-    const handleMove = (e: MouseEvent | PointerEvent) => {
-      const table = ledgerTableRef.current || document.querySelector(".ledger-table") as HTMLElement | null;
-      if (!table) return;
-      let tableWidth = table.offsetWidth;
-      if (tableWidth <= 0) tableWidth = table.getBoundingClientRect().width || (table.parentElement?.clientWidth ?? 0);
-      if (tableWidth <= 0) return;
-
-      const { x, width, widths } = resizeStartRef.current;
-      if (!widths.length) return;
-      const clientX = "clientX" in e ? e.clientX : (e as PointerEvent).clientX;
-      const deltaX = clientX - x;
-      const deltaPercent = (deltaX / tableWidth) * 100;
-
-      const newWidths = [...widths];
-      const newWidth = Math.max(1, Math.min(80, width + deltaPercent));
-      newWidths[resizingColumn] = newWidth;
-
-      const total = newWidths.reduce((sum, w) => sum + w, 0);
-      if (total <= 0) return;
-      const scale = 100 / total;
-      const adjustedWidths = newWidths.map((w) => w * scale);
-
-      setLiveColumnWidths(adjustedWidths);
-      setColumnWidths(adjustedWidths);
-      if (typeof window !== "undefined") {
-        localStorage.setItem("ledger-column-widths", JSON.stringify(adjustedWidths));
-      }
-    };
-
-    const handleUp = () => {
-      setResizingColumn(null);
-      setLiveColumnWidths(null);
-    };
-
-    const opts = { capture: true };
-    document.body.style.userSelect = "none";
-    document.body.style.cursor = "col-resize";
-    document.addEventListener("mousemove", handleMove as (e: MouseEvent) => void, opts);
-    document.addEventListener("mouseup", handleUp, opts);
-    document.addEventListener("pointermove", handleMove as (e: PointerEvent) => void, opts);
-    document.addEventListener("pointerup", handleUp, opts);
-    document.addEventListener("pointercancel", handleUp, opts);
-    return () => {
-      document.body.style.userSelect = "";
-      document.body.style.cursor = "";
-      document.removeEventListener("mousemove", handleMove as (e: MouseEvent) => void, opts);
-      document.removeEventListener("mouseup", handleUp, opts);
-      document.removeEventListener("pointermove", handleMove as (e: PointerEvent) => void, opts);
-      document.removeEventListener("pointerup", handleUp, opts);
-      document.removeEventListener("pointercancel", handleUp, opts);
-    };
-  }, [resizingColumn]);
 
   // 탭 전환 시 필터 초기화
   useEffect(() => {
@@ -401,104 +336,10 @@ export const LedgerView: React.FC<Props> = ({
   }, [effectiveFormKind, kindForTab]);
 
   // 실시간 폼 검증
-  const validateForm = useMemo(() => {
-    const errors: Record<string, string> = {};
-    // 날짜 검증
-    // 주의: 가계부(Ledger)는 미래 날짜를 제한합니다 (현재 날짜까지만 허용)
-    // StocksView와 달리 maxDate를 전달하여 미래 날짜 입력을 방지합니다
-    // 한국 시간 기준으로 현재 날짜 계산
-    const todayStr = getTodayKST();
-    const todayDate = new Date(todayStr + "T00:00:00+09:00"); // 한국 시간 기준
-    
-    const dateValidation = validateDate(form.date, todayDate); // 미래 날짜 제한
-    if (!dateValidation.valid) {
-      errors.date = dateValidation.error || "";
-    }
-    
-    // 금액 검증 (USD 이체 시 소수점 허용)
-    const allowDecimal = kindForTab === "transfer" && form.currency === "USD";
-    const parsedAmount = parseAmount(form.amount, allowDecimal);
-    if (parsedAmount <= 0) {
-      if (!form.amount || form.amount.trim() === "") {
-        errors.amount = "금액을 입력해주세요";
-      } else {
-        errors.amount = "금액은 0보다 커야 합니다";
-      }
-    }
-    
-    // 계좌 검증: 수입=입금, 지출=출금, 이체=둘 다.
-    const requireFromAccount = kindForTab === "transfer" || kindForTab === "expense";
-    const requireToAccount = kindForTab === "income" || kindForTab === "transfer";
-
-    if (requireFromAccount) {
-      const fromAccountValidation = validateRequired(form.fromAccountId, "출금 계좌");
-      if (!fromAccountValidation.valid) {
-        errors.fromAccountId = fromAccountValidation.error || "";
-      } else {
-        const fromExists = validateAccountExists(form.fromAccountId, accounts);
-        if (!fromExists.valid) {
-          errors.fromAccountId = fromExists.error || "";
-        }
-      }
-    }
-
-    if (requireToAccount) {
-      const toAccountValidation = validateRequired(form.toAccountId, "입금 계좌");
-      if (!toAccountValidation.valid) {
-        errors.toAccountId = toAccountValidation.error || "";
-      } else {
-        const toExists = validateAccountExists(form.toAccountId, accounts);
-        if (!toExists.valid) {
-          errors.toAccountId = toExists.error || "";
-        }
-      }
-    }
-    
-    // 이체 검증 (출금계좌와 입금계좌가 다른지)
-    if (kindForTab === "transfer") {
-      const transferValidation = validateTransfer(form.fromAccountId, form.toAccountId);
-      if (!transferValidation.valid) {
-        errors.transfer = transferValidation.error || "";
-      }
-    }
-
-    // 할인 검증 (수입·지출: 금액=할인 전, 저장 시 amount=금액−할인)
-    const allowLedgerDiscount =
-      effectiveFormKind === "income" || effectiveFormKind === "expense";
-    if (allowLedgerDiscount && form.discountAmount?.trim()) {
-      const discount = parseAmount(form.discountAmount, false);
-      if (discount < 0) {
-        errors.discountAmount = "할인금액은 0 이상이어야 합니다";
-      } else if (effectiveFormKind === "income") {
-        if (discount > parsedAmount) {
-          errors.discountAmount = "할인은 금액(할인 전)을 넘을 수 없습니다";
-        } else if (parsedAmount - discount <= 0) {
-          errors.amount = "할인 후 실제 수입액은 0보다 커야 합니다";
-        }
-      }
-      // 지출·재테크·신용결제: 순액 0/음수·할인이 금액 초과 허용(환급·전액 할인 등)
-    }
-    
-    // 대분류/중분류 검증
-    if (kindForTab === "income") {
-      const subCategoryValidation = validateRequired(form.subCategory, "수입 중분류");
-      if (!subCategoryValidation.valid) {
-        errors.subCategory = subCategoryValidation.error || "";
-      }
-    } else {
-      const mainCategoryValidation = validateRequired(form.mainCategory, "대분류");
-      if (!mainCategoryValidation.valid) {
-        errors.mainCategory = mainCategoryValidation.error || "";
-      }
-      const subCategoryValidation = validateRequired(form.subCategory, "중분류");
-      if (!subCategoryValidation.valid) {
-        errors.subCategory = subCategoryValidation.error || "";
-      }
-    }
-    // 상세내역은 선택사항이므로 검증하지 않음
-    
-    return errors;
-  }, [form, effectiveFormKind, parseAmount, accounts, kindForTab]);
+  const validateForm = useMemo(
+    () => validateLedgerForm({ form, kindForTab, effectiveFormKind, accounts, parseAmount }),
+    [form, effectiveFormKind, parseAmount, accounts, kindForTab]
+  );
   
   // formErrors를 직접 사용 (useEffect 제거로 성능 개선)
   const formErrors = validateForm;
@@ -694,7 +535,7 @@ export const LedgerView: React.FC<Props> = ({
       toast.error(ERROR_MESSAGES.COPY_FAILED);
       isCopyingRef.current = false;
     }
-  }, [accounts, categoryPresets]);
+  }, []);
 
   // 외부에서 복사 요청이 들어온 경우 처리
   useEffect(() => {
@@ -1083,7 +924,7 @@ export const LedgerView: React.FC<Props> = ({
     });
     
     return sorted;
-  }, [ledgerByTab, ledgerTab, viewMode, selectedMonths, dateFilter, filterMainCategory, filterSubCategory, filterDetailCategory, filterAccountId, filterFromAccountId, filterToAccountId, filterAmountMin, filterAmountMax, filterTagsInput, searchQuery, ledgerSort]);
+  }, [ledgerByTab, viewMode, selectedMonths, dateFilter, filterMainCategory, filterSubCategory, filterDetailCategory, filterAccountId, filterFromAccountId, filterToAccountId, filterAmountMin, filterAmountMax, filterTagsInput, searchQuery, ledgerSort]);
 
   // 필터 변경 시 페이지 초기화
   useEffect(() => {
@@ -3744,120 +3585,3 @@ export const LedgerView: React.FC<Props> = ({
   );
 };
 
-/* ─── 빠른 복사 모달 컴포넌트 ─── */
-const QuickCopyModal: React.FC<{
-  kindLabel: string;
-  date: string;
-  categoryLabel: string;
-  description: string;
-  fromName?: string;
-  toName?: string;
-  amount: string;
-  onAmountChange: (v: string) => void;
-  onSubmit: () => void;
-  onEditInForm: () => void;
-  onClose: () => void;
-}> = ({ kindLabel, date, categoryLabel, description, fromName, toName, amount, onAmountChange, onSubmit, onEditInForm, onClose }) => {
-  const trapRef = useFocusTrap<HTMLDivElement>(true);
-  const inputRef = useRef<HTMLInputElement>(null);
-
-  useEffect(() => {
-    const id = setTimeout(() => inputRef.current?.focus(), 50);
-    return () => clearTimeout(id);
-  }, []);
-
-  useEffect(() => {
-    const handler = (e: KeyboardEvent) => { if (e.key === "Escape") onClose(); };
-    window.addEventListener("keydown", handler);
-    return () => window.removeEventListener("keydown", handler);
-  }, [onClose]);
-
-  const infoRow = (label: string, value?: string) =>
-    value ? (
-      <div style={{ display: "flex", gap: 8, fontSize: 13, lineHeight: 1.6 }}>
-        <span style={{ color: "var(--text-muted)", minWidth: 48, flexShrink: 0 }}>{label}</span>
-        <span style={{ fontWeight: 500 }}>{value}</span>
-      </div>
-    ) : null;
-
-  return (
-    <div
-      className="modal-backdrop"
-      style={{ zIndex: 2000 }}
-      role="presentation"
-      onClick={(e) => { if (e.target === e.currentTarget) onClose(); }}
-    >
-      <div
-        ref={trapRef}
-        className="modal"
-        role="dialog"
-        aria-modal="true"
-        style={{ maxWidth: 440, padding: "24px 28px" }}
-      >
-        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 16 }}>
-          <h3 style={{ margin: 0, fontSize: 17, fontWeight: 700 }}>복사 추가</h3>
-          <button
-            type="button"
-            onClick={onClose}
-            style={{ background: "transparent", border: "none", fontSize: 20, cursor: "pointer", padding: 0, width: 24, height: 24, color: "var(--text-muted)" }}
-          >
-            &times;
-          </button>
-        </div>
-
-        <div style={{
-          padding: "12px 14px",
-          background: "var(--bg)",
-          borderRadius: 8,
-          border: "1px solid var(--border)",
-          marginBottom: 16,
-          display: "flex",
-          flexDirection: "column",
-          gap: 2
-        }}>
-          {infoRow("구분", kindLabel)}
-          {infoRow("날짜", formatShortDate(date))}
-          {infoRow("분류", categoryLabel)}
-          {infoRow("내역", description)}
-          {infoRow("출금", fromName)}
-          {infoRow("입금", toName)}
-        </div>
-
-        <div style={{ marginBottom: 20 }}>
-          <label style={{ display: "block", fontSize: 13, fontWeight: 600, marginBottom: 6 }}>금액</label>
-          <input
-            ref={inputRef}
-            type="text"
-            inputMode="numeric"
-            placeholder="금액 입력"
-            value={amount}
-            onChange={(e) => onAmountChange(e.target.value.replace(/[^0-9,]/g, ""))}
-            onKeyDown={(e) => { if (e.key === "Enter") onSubmit(); }}
-            style={{
-              width: "100%",
-              padding: "10px 12px",
-              fontSize: 16,
-              fontWeight: 600,
-              borderRadius: 8,
-              border: "1px solid var(--border)",
-              textAlign: "right",
-              boxSizing: "border-box"
-            }}
-          />
-        </div>
-
-        <div style={{ display: "flex", gap: 8, justifyContent: "flex-end" }}>
-          <button type="button" className="secondary" onClick={onEditInForm} style={{ fontSize: 13 }}>
-            폼에서 편집
-          </button>
-          <button type="button" className="secondary" onClick={onClose}>
-            취소
-          </button>
-          <button type="button" className="primary" onClick={onSubmit}>
-            추가
-          </button>
-        </div>
-      </div>
-    </div>
-  );
-};

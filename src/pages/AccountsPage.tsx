@@ -146,7 +146,7 @@ export const AccountsView: React.FC<Props> = ({
   onRenameAccountId
 }) => {
   const storeData = useAppStore((s) => s.data);
-  const safeAccounts = accounts ?? [];
+  const safeAccounts = useMemo(() => accounts ?? [], [accounts]);
   const safeBalances = useMemo(() => balances ?? [], [balances]);
   const safePositions = useMemo(() => positions ?? [], [positions]);
 

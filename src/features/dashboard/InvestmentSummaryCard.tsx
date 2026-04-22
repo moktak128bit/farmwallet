@@ -44,7 +44,7 @@ function formatPct(num: number, den: number): string {
   return `${Math.round((num / den) * 100)}%`;
 }
 
-type EditKey = "annualDeposit" | "finalTotal" | "retirement";
+type EditKey = "annualDeposit" | "finalTotal" | "retirement" | "startDate";
 
 export const InvestmentSummaryCard: React.FC<Props> = ({
   accounts,
@@ -182,6 +182,7 @@ export const InvestmentSummaryCard: React.FC<Props> = ({
     if (key === "annualDeposit") setDraft(String(goals.annualDepositTarget ?? ""));
     else if (key === "finalTotal") setDraft(String(goals.finalTotalAssetTarget ?? ""));
     else if (key === "retirement") setDraft(goals.retirementDate ?? "");
+    else if (key === "startDate") setDraft(goals.investmentStartDate ?? startDate);
   };
 
   const cancelEdit = () => {
@@ -202,6 +203,8 @@ export const InvestmentSummaryCard: React.FC<Props> = ({
         nextGoals.finalTotalAssetTarget = Number.isFinite(n) && n > 0 ? n : undefined;
       } else if (key === "retirement") {
         nextGoals.retirementDate = /^\d{4}-\d{2}-\d{2}$/.test(draft) ? draft : undefined;
+      } else if (key === "startDate") {
+        nextGoals.investmentStartDate = /^\d{4}-\d{2}-\d{2}$/.test(draft) ? draft : undefined;
       }
       return { ...prev, investmentGoals: nextGoals };
     });
@@ -225,10 +228,25 @@ export const InvestmentSummaryCard: React.FC<Props> = ({
       }}
     >
       <div style={{ display: "flex", alignItems: "baseline", gap: 12, flexWrap: "wrap" }}>
-        <div className="card-title">총 자산</div>
+        <div className="card-title">투자 자산</div>
         <div style={{ fontSize: 28, fontWeight: 700, color: "var(--chart-primary)" }}>
           {formatKRW(Math.round(totalInvestmentAssets))}
         </div>
+        <span
+          style={{
+            fontSize: 12,
+            fontWeight: 700,
+            padding: "2px 8px",
+            borderRadius: 12,
+            background: monthlyRealizedPnl > 0 ? "rgba(34,197,94,0.12)" : monthlyRealizedPnl < 0 ? "rgba(239,68,68,0.12)" : "var(--border)",
+            color: pnlColor(monthlyRealizedPnl),
+          }}
+        >
+          {monthlyRealizedPnl > 0 ? "▲" : monthlyRealizedPnl < 0 ? "▼" : "–"} 이번달 {formatKRW(Math.round(Math.abs(monthlyRealizedPnl)))}
+        </span>
+        <span style={{ fontSize: 11, color: "var(--muted)" }}>
+          증권·crypto 계좌 현금+포지션 (일반 계좌·부채 제외)
+        </span>
       </div>
 
       <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
@@ -355,9 +373,58 @@ export const InvestmentSummaryCard: React.FC<Props> = ({
         벌써 <strong style={{ color: "var(--chart-primary)" }}>{daysInvesting.toLocaleString()}</strong>일째
         투자중이에요!
       </div>
-      <div style={{ fontSize: 11, color: "var(--muted)", textAlign: "right" }}>
-        시작일: {startDate}
-        {!goals.investmentStartDate && " (자동: 첫 거래일)"}
+      <div
+        style={{
+          fontSize: 11,
+          color: "var(--muted)",
+          display: "flex",
+          justifyContent: "flex-end",
+          alignItems: "center",
+          gap: 6,
+        }}
+      >
+        {editing === "startDate" ? (
+          <>
+            <span>시작일:</span>
+            <input
+              type="date"
+              value={draft}
+              onChange={(e) => setDraft(e.target.value)}
+              style={{ fontSize: 11, padding: "2px 6px" }}
+            />
+            <button
+              type="button"
+              onClick={saveEdit}
+              style={{ padding: 2, background: "transparent", border: "none", cursor: "pointer" }}
+              aria-label="저장"
+            >
+              <Check size={12} color="var(--success)" />
+            </button>
+            <button
+              type="button"
+              onClick={cancelEdit}
+              style={{ padding: 2, background: "transparent", border: "none", cursor: "pointer" }}
+              aria-label="취소"
+            >
+              <X size={12} color="var(--danger)" />
+            </button>
+          </>
+        ) : (
+          <>
+            <span>
+              시작일: {startDate}
+              {!goals.investmentStartDate && " (자동: 첫 거래일)"}
+            </span>
+            <button
+              type="button"
+              onClick={() => startEdit("startDate")}
+              style={{ padding: 2, background: "transparent", border: "none", cursor: "pointer" }}
+              aria-label="시작일 편집"
+            >
+              <Pencil size={10} color="var(--muted)" />
+            </button>
+          </>
+        )}
       </div>
     </div>
   );

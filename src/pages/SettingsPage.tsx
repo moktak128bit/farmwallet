@@ -25,7 +25,6 @@ import * as gistSyncModule from "../services/gistSync";
 import { toUserDataJson } from "../services/dataService";
 import { ERROR_MESSAGES } from "../constants/errorMessages";
 import { appDataFromTableBackupPayload, buildTableBackupFile } from "../utils/tableDataBackup";
-import { CategoryClassifier } from "../features/ml/CategoryClassifier";
 
 interface Props {
   data: AppData;
@@ -945,7 +944,6 @@ export const SettingsView: React.FC<Props> = ({
             켜면 주식 탭에서 보유 종목 가격을 30분마다 자동으로 배치 갱신합니다 (탭이 보일 때만 동작).
           </p>
         </div>
-        <CategoryClassifierCard ledger={data.ledger} />
         <div className="card">
           <div className="card-title">클라우드 동기화 (GitHub Gist)</div>
           <p className="hint" style={{ marginBottom: 12 }}>
@@ -1409,46 +1407,3 @@ export const SettingsView: React.FC<Props> = ({
   );
 };
 
-const CategoryClassifierCard: React.FC<{ ledger: AppData["ledger"] }> = ({ ledger }) => {
-  const [stats, setStats] = useState(() => CategoryClassifier.load().getStats());
-  const refresh = () => setStats(CategoryClassifier.load().getStats());
-
-  const handleRetrain = () => {
-    const c = new CategoryClassifier();
-    c.trainFromLedger(ledger, "expense");
-    c.trainFromLedger(ledger, "income");
-    c.save();
-    refresh();
-    toast.success(`재학습 완료 — ${ledger.length}건 분석`);
-  };
-
-  const handleReset = () => {
-    if (!window.confirm("학습된 분류기 데이터를 모두 지울까요?")) return;
-    CategoryClassifier.load().reset();
-    refresh();
-    toast.success("분류기 초기화 완료");
-  };
-
-  const accuracyText = stats.accuracy != null
-    ? `${(stats.accuracy * 100).toFixed(1)}% (${stats.evaluations}회)`
-    : "측정 데이터 없음";
-
-  return (
-    <div className="card">
-      <div className="card-title">카테고리 자동 분류기 (Local ML)</div>
-      <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(120px, 1fr))", gap: 8, fontSize: 12, marginBottom: 12 }}>
-        <div><strong>학습 항목</strong><br/>{stats.totalDocs.toLocaleString("ko-KR")}건</div>
-        <div><strong>분류 카테고리</strong><br/>{stats.categories}개</div>
-        <div><strong>어휘</strong><br/>{stats.vocabulary.toLocaleString("ko-KR")}개</div>
-        <div><strong>정확도</strong><br/>{accuracyText}</div>
-      </div>
-      <div style={{ display: "flex", gap: 8 }}>
-        <button type="button" onClick={handleRetrain}>현재 가계부로 재학습</button>
-        <button type="button" onClick={handleReset}>초기화</button>
-      </div>
-      <p className="hint" style={{ marginTop: 8 }}>
-        가계부 입력 시 설명 텍스트로 카테고리·중분류를 추천합니다. 정확도는 추천 채택 여부로 자동 측정됩니다.
-      </p>
-    </div>
-  );
-};

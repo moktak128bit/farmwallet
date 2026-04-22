@@ -98,7 +98,7 @@ export function WeekendChart({ rows }: WeekendChartProps) {
 
 // ─── 자산 구성 Treemap ───────────────────────────────────────────────────────
 
-interface TreemapItem {
+export interface TreemapItem {
   name: string;
   children?: Array<{ name: string; value: number; fill: string; percent: number }>;
   [key: string]: unknown;
@@ -430,6 +430,213 @@ export function CumulativePnlAreaChart({ rows }: CumulativePnlAreaChartProps) {
         />
         <Area type="monotone" dataKey="value" name="누적 실현손익" stroke={strokeColor} strokeWidth={2.5} fill="url(#pnlGrad)" />
       </AreaChart>
+    </ResponsiveContainer>
+  );
+}
+
+// ─── 주식 매입액 vs 평가액 (15일 간격) ───────────────────────────────────────
+
+export interface CostVsMarketRow {
+  date: string;
+  label: string;
+  cost: number;
+  market: number;
+}
+
+interface CostVsMarketChartProps {
+  rows: CostVsMarketRow[];
+  activeDate?: string | null;
+  onPointClick?: (date: string) => void;
+}
+
+export function CostVsMarketValueChart({ rows, activeDate, onPointClick }: CostVsMarketChartProps) {
+  // 라벨 과밀 방지: 대략 10개 이하가 되도록 tick을 솎아낸다.
+  const xInterval = rows.length > 10 ? Math.ceil(rows.length / 10) - 1 : 0;
+  const handleChartClick = (state: unknown) => {
+    if (!onPointClick) return;
+    const s = state as
+      | {
+          activePayload?: Array<{ payload?: CostVsMarketRow }>;
+          activeLabel?: string;
+          activeTooltipIndex?: number;
+        }
+      | null;
+    if (!s) return;
+    const payloadDate = s.activePayload?.[0]?.payload?.date;
+    if (payloadDate) {
+      onPointClick(payloadDate);
+      return;
+    }
+    if (
+      typeof s.activeTooltipIndex === "number" &&
+      s.activeTooltipIndex >= 0 &&
+      s.activeTooltipIndex < rows.length
+    ) {
+      onPointClick(rows[s.activeTooltipIndex].date);
+      return;
+    }
+    if (s.activeLabel) {
+      const found = rows.find((r) => r.label === s.activeLabel);
+      if (found) onPointClick(found.date);
+    }
+  };
+  const handleDotClick = (data: unknown) => {
+    if (!onPointClick) return;
+    const d = data as { payload?: CostVsMarketRow } | null;
+    if (d?.payload?.date) onPointClick(d.payload.date);
+  };
+  return (
+    <ResponsiveContainer width="100%" height="100%">
+      <ComposedChart data={rows} margin={{ top: 12, right: 16, left: 8, bottom: 8 }} onClick={handleChartClick} style={{ cursor: "pointer" }}>
+        <defs>
+          <linearGradient id="marketGrad" x1="0" y1="0" x2="0" y2="1">
+            <stop offset="5%" stopColor="#2563eb" stopOpacity={0.28} />
+            <stop offset="95%" stopColor="#2563eb" stopOpacity={0.02} />
+          </linearGradient>
+        </defs>
+        <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="var(--border)" />
+        <XAxis dataKey="label" fontSize={12} axisLine={false} tickLine={false} interval={xInterval} minTickGap={16} />
+        <YAxis fontSize={12} tickFormatter={(v) => `${Math.round(Number(v) / 10000)}만`} axisLine={false} tickLine={false} width={56} />
+        <Tooltip
+          formatter={(val: number | string | undefined, name: string | number | undefined) => [
+            formatKRW(Math.round(Number(val ?? 0))),
+            String(name ?? ""),
+          ]}
+          contentStyle={{ fontSize: 13, fontWeight: 600 }}
+          labelFormatter={(_, payload) => payload?.[0]?.payload?.date ?? ""}
+        />
+        <Legend wrapperStyle={{ fontSize: 13 }} />
+        {activeDate && (
+          <ReferenceLine
+            x={rows.find((r) => r.date === activeDate)?.label}
+            stroke="#0f172a"
+            strokeDasharray="3 3"
+            strokeOpacity={0.5}
+          />
+        )}
+        <Area
+          type="monotone"
+          dataKey="market"
+          name="평가액"
+          stroke="#2563eb"
+          strokeWidth={2.5}
+          fill="url(#marketGrad)"
+          dot={{ r: 3, fill: "#2563eb" }}
+          activeDot={{ r: 7, stroke: "#0f172a", strokeWidth: 2, onClick: handleDotClick }}
+        />
+        <Line
+          type="monotone"
+          dataKey="cost"
+          name="매입액"
+          stroke="#f59e0b"
+          strokeWidth={2}
+          dot={{ r: 3, fill: "#f59e0b" }}
+          activeDot={{ r: 7, stroke: "#0f172a", strokeWidth: 2, onClick: handleDotClick }}
+        />
+      </ComposedChart>
+    </ResponsiveContainer>
+  );
+}
+
+// ─── 총자산 추이 (현금+원가, 현금+평가) ─────────────────────────────────────
+
+export interface TotalAssetRow {
+  date: string;
+  label: string;
+  cashPlusCost: number;   // 계좌 현금 + 주식 원가 (KRW)
+  cashPlusMarket: number; // 계좌 현금 + 주식 평가액 (KRW)
+}
+
+interface TotalAssetChartProps {
+  rows: TotalAssetRow[];
+  activeDate?: string | null;
+  onPointClick?: (date: string) => void;
+}
+
+export function TotalAssetValueChart({ rows, activeDate, onPointClick }: TotalAssetChartProps) {
+  const xInterval = rows.length > 10 ? Math.ceil(rows.length / 10) - 1 : 0;
+  const handleChartClick = (state: unknown) => {
+    if (!onPointClick) return;
+    const s = state as
+      | {
+          activePayload?: Array<{ payload?: TotalAssetRow }>;
+          activeLabel?: string;
+          activeTooltipIndex?: number;
+        }
+      | null;
+    if (!s) return;
+    const payloadDate = s.activePayload?.[0]?.payload?.date;
+    if (payloadDate) {
+      onPointClick(payloadDate);
+      return;
+    }
+    if (
+      typeof s.activeTooltipIndex === "number" &&
+      s.activeTooltipIndex >= 0 &&
+      s.activeTooltipIndex < rows.length
+    ) {
+      onPointClick(rows[s.activeTooltipIndex].date);
+      return;
+    }
+    if (s.activeLabel) {
+      const found = rows.find((r) => r.label === s.activeLabel);
+      if (found) onPointClick(found.date);
+    }
+  };
+  const handleDotClick = (data: unknown) => {
+    if (!onPointClick) return;
+    const d = data as { payload?: TotalAssetRow } | null;
+    if (d?.payload?.date) onPointClick(d.payload.date);
+  };
+  return (
+    <ResponsiveContainer width="100%" height="100%">
+      <ComposedChart data={rows} margin={{ top: 12, right: 16, left: 8, bottom: 8 }} onClick={handleChartClick} style={{ cursor: "pointer" }}>
+        <defs>
+          <linearGradient id="totalMarketGrad" x1="0" y1="0" x2="0" y2="1">
+            <stop offset="5%" stopColor="#2563eb" stopOpacity={0.28} />
+            <stop offset="95%" stopColor="#2563eb" stopOpacity={0.02} />
+          </linearGradient>
+        </defs>
+        <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="var(--border)" />
+        <XAxis dataKey="label" fontSize={12} axisLine={false} tickLine={false} interval={xInterval} minTickGap={16} />
+        <YAxis fontSize={12} tickFormatter={(v) => `${Math.round(Number(v) / 10000)}만`} axisLine={false} tickLine={false} width={56} />
+        <Tooltip
+          formatter={(val: number | string | undefined, name: string | number | undefined) => [
+            formatKRW(Math.round(Number(val ?? 0))),
+            String(name ?? ""),
+          ]}
+          contentStyle={{ fontSize: 13, fontWeight: 600 }}
+          labelFormatter={(_, payload) => payload?.[0]?.payload?.date ?? ""}
+        />
+        <Legend wrapperStyle={{ fontSize: 13 }} />
+        {activeDate && (
+          <ReferenceLine
+            x={rows.find((r) => r.date === activeDate)?.label}
+            stroke="#0f172a"
+            strokeDasharray="3 3"
+            strokeOpacity={0.5}
+          />
+        )}
+        <Area
+          type="monotone"
+          dataKey="cashPlusMarket"
+          name="현금+평가액"
+          stroke="#2563eb"
+          strokeWidth={2.5}
+          fill="url(#totalMarketGrad)"
+          dot={{ r: 3, fill: "#2563eb" }}
+          activeDot={{ r: 7, stroke: "#0f172a", strokeWidth: 2, onClick: handleDotClick }}
+        />
+        <Line
+          type="monotone"
+          dataKey="cashPlusCost"
+          name="현금+원가"
+          stroke="#f59e0b"
+          strokeWidth={2}
+          dot={{ r: 3, fill: "#f59e0b" }}
+          activeDot={{ r: 7, stroke: "#0f172a", strokeWidth: 2, onClick: handleDotClick }}
+        />
+      </ComposedChart>
     </ResponsiveContainer>
   );
 }

@@ -6,7 +6,7 @@ import { shortcutManager, type ShortcutAction } from "../utils/shortcuts";
 import { validateLedgerForm } from "../features/ledger/validateLedgerForm";
 import { isSavingsExpenseEntry, makeIsSavingsExpense } from "../utils/category";
 import { parseAmount as sharedParseAmount, formatAmount as sharedFormatAmount } from "../utils/parseAmount";
-import { getKoreaTime, getTodayKST, getThisMonthKST } from "../utils/date";
+import { getKoreaTime, getThisMonthKST } from "../utils/date";
 import { toast } from "react-hot-toast";
 import { ERROR_MESSAGES } from "../constants/errorMessages";
 import { computeRealizedPnlByTradeId } from "../calculations";
@@ -3394,8 +3394,8 @@ export const LedgerView: React.FC<Props> = ({
                   const cur =
                     (l.discountAmount ?? 0) > 0
                       ? l.currency === "USD"
-                        ? String(l.discountAmount)
-                        : String(Math.round(l.discountAmount!))
+                        ? String(l.discountAmount ?? 0)
+                        : String(Math.round(l.discountAmount ?? 0))
                       : "";
                   startEditField(l.id, "discountAmount", cur);
                 }}
@@ -3421,9 +3421,9 @@ export const LedgerView: React.FC<Props> = ({
                   />
                 ) : (l.discountAmount ?? 0) > 0 ? (
                   l.currency === "USD" ? (
-                    formatUSD(l.discountAmount!)
+                    formatUSD(l.discountAmount ?? 0)
                   ) : (
-                    Math.round(l.discountAmount!).toLocaleString()
+                    Math.round(l.discountAmount ?? 0).toLocaleString()
                   )
                 ) : (
                   "—"

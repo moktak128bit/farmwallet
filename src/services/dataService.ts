@@ -5,7 +5,8 @@ import type {
   CategoryPresets,
   ExpenseDetailGroup,
   HistoricalDailyClose,
-  IsaPortfolioItem
+  IsaPortfolioItem,
+  MarketEnvSnapshot
 } from "../types";
 import { STORAGE_KEYS, DEFAULT_US_TICKERS, ISA_PORTFOLIO, DATA_SCHEMA_VERSION } from "../constants/config";
 import { DEFAULT_WORKOUT_ROUTINES } from "../data/defaultWorkoutRoutines";
@@ -411,6 +412,38 @@ function normalizeAssetSnapshots(raw: unknown): AssetSnapshotPoint[] {
   return rows;
 }
 
+function normalizeMarketEnvSnapshots(raw: unknown): MarketEnvSnapshot[] {
+  if (!Array.isArray(raw)) return [];
+  const rows: MarketEnvSnapshot[] = [];
+  for (const item of raw) {
+    if (!item || typeof item !== "object") continue;
+    const obj = item as Record<string, unknown>;
+    const date = String(obj.date ?? "").trim();
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(date)) continue;
+    const fxRate = toNullableNumber(obj.fxRate);
+    if (fxRate == null || fxRate <= 0) continue;
+    const pricesRaw = Array.isArray(obj.prices) ? obj.prices : [];
+    const prices: MarketEnvSnapshot["prices"] = [];
+    for (const p of pricesRaw) {
+      if (!p || typeof p !== "object") continue;
+      const pr = p as Record<string, unknown>;
+      const ticker = String(pr.ticker ?? "").trim();
+      const price = toNullableNumber(pr.price);
+      if (!ticker || price == null || !Number.isFinite(price)) continue;
+      const currency = typeof pr.currency === "string" ? pr.currency : undefined;
+      prices.push({ ticker, price, currency });
+    }
+    const recordedAt = typeof obj.recordedAt === "string" ? obj.recordedAt : new Date().toISOString();
+    rows.push({ date, fxRate, prices, recordedAt });
+  }
+  const dedup = new Map<string, MarketEnvSnapshot>();
+  for (const r of rows) {
+    const prev = dedup.get(r.date);
+    if (!prev || r.recordedAt > prev.recordedAt) dedup.set(r.date, r);
+  }
+  return Array.from(dedup.values()).sort((a, b) => a.date.localeCompare(b.date));
+}
+
 function normalizeHistoricalDailyCloses(raw: unknown): HistoricalDailyClose[] {
   if (!Array.isArray(raw)) return [];
   const rows: HistoricalDailyClose[] = [];
@@ -755,6 +788,7 @@ export function loadData(): AppData {
       customExercises: parsedCustomExercises,
       targetNetWorthCurve: normalizedTargetCurve,
       assetSnapshots: normalizeAssetSnapshots(parsed.assetSnapshots),
+      marketEnvSnapshots: normalizeMarketEnvSnapshots(parsed.marketEnvSnapshots),
       historicalDailyCloses: effectiveHistoricalDailyCloses,
       dividendTrackingTicker: parsed.dividendTrackingTicker !== undefined && parsed.dividendTrackingTicker !== null ? String(parsed.dividendTrackingTicker) : "458730",
       isaPortfolio: parsedIsaPortfolio.length > 0 ? parsedIsaPortfolio : getDefaultIsaPortfolio()

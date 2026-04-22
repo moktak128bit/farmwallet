@@ -245,7 +245,9 @@ export const StockDetailModal: React.FC<Props> = ({
     }
 
     const totalCost = position.avgPrice * position.quantity;
-    return (amount / totalCost) * 100;
+    if (totalCost <= 0) return null;
+    const yieldPct = (amount / totalCost) * 100;
+    return Number.isFinite(yieldPct) ? yieldPct : null;
   }, [calculatedAmount, dividendForm.tax, dividendForm.fee, position, selectedTickerCurrency, showUSD, fxRate]);
 
   // 배당 입력 처리

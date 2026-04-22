@@ -32,7 +32,10 @@ export const InvestmentRecordCard: React.FC<Props> = ({ trades, accounts, ledger
   const [filter, setFilter] = useState<PeriodFilter>({ kind: "year", year: currentYear });
   const [tab, setTab] = useState<Tab>("summary");
 
-  const all = useMemo(() => buildClosedTradeRecords(trades, accounts), [trades, accounts]);
+  const all = useMemo(
+    () => buildClosedTradeRecords(trades, accounts, fxRate ?? undefined),
+    [trades, accounts, fxRate]
+  );
   const filtered = useMemo(() => filterByPeriod(all, filter), [all, filter]);
   const summary = useMemo(() => summarizeRecords(filtered), [filtered]);
 
@@ -173,21 +176,21 @@ export const InvestmentRecordCard: React.FC<Props> = ({ trades, accounts, ledger
       <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", flexWrap: "wrap", gap: 12 }}>
         <div style={{ display: "flex", alignItems: "baseline", gap: 10 }}>
           <div className="card-title">투자 기록</div>
-          <span style={{ fontSize: 11, color: "var(--muted)" }}>확정 거래 기준 · FIFO</span>
+          <span style={{ fontSize: 13, color: "var(--muted)" }}>확정 거래 기준 · FIFO</span>
         </div>
         <div style={{ display: "flex", gap: 6, alignItems: "center", flexWrap: "wrap" }}>
           <PeriodSelect filter={filter} years={years} onChange={setFilter} />
           <button
             type="button"
             onClick={exportExcel}
-            style={{ padding: "4px 10px", fontSize: 11, borderRadius: 6, border: "1px solid var(--border)", background: "var(--surface)", cursor: "pointer" }}
+            style={{ padding: "6px 12px", fontSize: 13, borderRadius: 6, border: "1px solid var(--border)", background: "var(--surface)", cursor: "pointer" }}
           >
             Excel
           </button>
           <button
             type="button"
             onClick={exportCsv}
-            style={{ padding: "4px 10px", fontSize: 11, borderRadius: 6, border: "1px solid var(--border)", background: "var(--surface)", cursor: "pointer" }}
+            style={{ padding: "6px 12px", fontSize: 13, borderRadius: 6, border: "1px solid var(--border)", background: "var(--surface)", cursor: "pointer" }}
           >
             CSV
           </button>
@@ -209,8 +212,8 @@ export const InvestmentRecordCard: React.FC<Props> = ({ trades, accounts, ledger
             type="button"
             onClick={() => setTab(key)}
             style={{
-              padding: "4px 10px",
-              fontSize: 12,
+              padding: "6px 12px",
+              fontSize: 14,
               fontWeight: 600,
               background: tab === key ? "var(--chart-secondary)" : "transparent",
               color: tab === key ? "#fff" : "var(--text)",
@@ -269,8 +272,8 @@ const PeriodSelect: React.FC<{
         }
       }}
       style={{
-        padding: "4px 8px",
-        fontSize: 12,
+        padding: "6px 10px",
+        fontSize: 14,
         borderRadius: 6,
         border: "1px solid var(--border)",
         background: "var(--surface)",
@@ -344,14 +347,14 @@ const KpiGrid: React.FC<{
 
 const Kpi: React.FC<{ label: string; value: string; color?: string; sub?: string }> = ({ label, value, color, sub }) => (
   <div style={{ padding: "8px 10px", background: "var(--bg-subtle, var(--border))", borderRadius: 6 }}>
-    <div style={{ fontSize: 10, color: "var(--muted)" }}>{label}</div>
-    <div style={{ fontSize: 15, fontWeight: 700, color: color ?? "var(--text)" }}>{value}</div>
-    {sub && <div style={{ fontSize: 10, color: "var(--muted)" }}>{sub}</div>}
+    <div style={{ fontSize: 12, color: "var(--muted)" }}>{label}</div>
+    <div style={{ fontSize: 18, fontWeight: 700, color: color ?? "var(--text)" }}>{value}</div>
+    {sub && <div style={{ fontSize: 12, color: "var(--muted)" }}>{sub}</div>}
   </div>
 );
 
 const SummaryPanel: React.FC<{ summary: ReturnType<typeof summarizeRecords>; pnlColor: (v: number) => string }> = ({ summary, pnlColor }) => (
-  <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(180px, 1fr))", gap: 10, fontSize: 12 }}>
+  <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(180px, 1fr))", gap: 10, fontSize: 14 }}>
     <Row label="총 투자원금" value={formatKRW(Math.round(summary.totalCost))} />
     <Row label="평균 수익 거래" value={formatKRW(Math.round(summary.avgWin))} color={pnlColor(summary.avgWin)} />
     <Row label="평균 손실 거래" value={formatKRW(Math.round(summary.avgLoss))} color={pnlColor(summary.avgLoss)} />
@@ -372,7 +375,7 @@ const YearPanel: React.FC<{ yearGroups: Map<string, ReturnType<typeof summarizeR
   const rows = [...yearGroups.entries()].sort((a, b) => b[0].localeCompare(a[0]));
   const maxAbs = Math.max(1, ...rows.map(([, s]) => Math.abs(s.totalPnl)));
   return (
-    <div style={{ display: "flex", flexDirection: "column", gap: 6, fontSize: 12 }}>
+    <div style={{ display: "flex", flexDirection: "column", gap: 6, fontSize: 14 }}>
       {rows.length === 0 && <div className="hint">데이터 없음</div>}
       {rows.map(([year, s]) => {
         const pct = (Math.abs(s.totalPnl) / maxAbs) * 100;
@@ -406,7 +409,7 @@ const MonthPanel: React.FC<{ monthGroups: Map<string, ReturnType<typeof summariz
   const rows = [...monthGroups.entries()].sort((a, b) => b[0].localeCompare(a[0]));
   return (
     <div style={{ overflowX: "auto" }}>
-      <table style={{ width: "100%", fontSize: 12, borderCollapse: "collapse" }}>
+      <table style={{ width: "100%", fontSize: 14, borderCollapse: "collapse" }}>
         <thead>
           <tr style={{ textAlign: "left", color: "var(--muted)", borderBottom: "1px solid var(--border)" }}>
             <th style={{ padding: "4px 6px" }}>연월</th>
@@ -440,12 +443,12 @@ const HoldingPanel: React.FC<{
   range: { min: number; max: number };
   pnlColor: (v: number) => string;
 }> = ({ holdingGroups, range, pnlColor }) => (
-  <div style={{ display: "flex", flexDirection: "column", gap: 6, fontSize: 12 }}>
-    <div style={{ fontSize: 11, color: "var(--muted)" }}>
+  <div style={{ display: "flex", flexDirection: "column", gap: 6, fontSize: 14 }}>
+    <div style={{ fontSize: 13, color: "var(--muted)" }}>
       최장 {range.max}일 · 최단 {range.min}일
     </div>
     <div style={{ overflowX: "auto" }}>
-      <table style={{ width: "100%", fontSize: 12, borderCollapse: "collapse" }}>
+      <table style={{ width: "100%", fontSize: 14, borderCollapse: "collapse" }}>
         <thead>
           <tr style={{ textAlign: "left", color: "var(--muted)", borderBottom: "1px solid var(--border)" }}>
             <th style={{ padding: "4px 6px" }}>보유기간</th>
@@ -481,7 +484,7 @@ const TradesPanel: React.FC<{
   pnlColor: (v: number) => string;
 }> = ({ records, accountNameById, pnlColor }) => (
   <div style={{ overflowX: "auto", maxHeight: 320, overflowY: "auto" }}>
-    <table style={{ width: "100%", fontSize: 11, borderCollapse: "collapse" }}>
+    <table style={{ width: "100%", fontSize: 13, borderCollapse: "collapse" }}>
       <thead style={{ position: "sticky", top: 0, background: "var(--surface)" }}>
         <tr style={{ textAlign: "left", color: "var(--muted)", borderBottom: "1px solid var(--border)" }}>
           <th style={{ padding: "4px 6px" }}>종목</th>

@@ -62,6 +62,7 @@ function parseDayMs(dateStr: string): number {
 }
 
 function toDateStr(ms: number): string {
+  if (!Number.isFinite(ms)) return "";
   const d = new Date(ms);
   const y = d.getFullYear();
   const mo = String(d.getMonth() + 1).padStart(2, "0");
@@ -71,14 +72,14 @@ function toDateStr(ms: number): string {
 
 /**
  * 매도 거래를 FIFO로 매수 로트와 매칭하여 보유기간·실현손익(KRW)을 산출.
- * - USD 종목: 각 거래의 `fxRateAtTrade`로 개별 환산 (매수 당시 환율 × 매수 총액, 매도 당시 환율 × 매도 총액).
- *   `fxRateAtTrade` 없으면 해당 건은 0 취급(안전 가드).
+ * - USD 종목: 각 거래의 `fxRateAtTrade`로 개별 환산. 없으면 `fallbackFx`(현재 환율) 사용.
  * - KRW 종목: totalAmount 그대로.
  * - buyDateWeighted = FIFO 소비된 매수 로트 날짜들의 수량 가중평균.
  */
 export function buildClosedTradeRecords(
   trades: StockTrade[],
-  accounts: Account[]
+  accounts: Account[],
+  fallbackFx?: number
 ): ClosedTradeRecord[] {
   const accountById = new Map<string, Account>();
   for (const a of accounts) accountById.set(a.id, a);
@@ -108,7 +109,8 @@ export function buildClosedTradeRecords(
 
     for (const t of sorted) {
       const usd = isUSDStock(t.ticker);
-      const fx = t.fxRateAtTrade ?? 0;
+      const tradeFx = t.fxRateAtTrade ?? 0;
+      const fx = tradeFx > 0 ? tradeFx : (fallbackFx && fallbackFx > 0 ? fallbackFx : 0);
       const toKRW = usd ? (fx > 0 ? t.totalAmount * fx : 0) : t.totalAmount;
 
       if (t.side === "buy") {
@@ -159,7 +161,7 @@ export function buildClosedTradeRecords(
         name: t.name,
         accountId: t.accountId,
         sellDate: t.date,
-        buyDateWeighted: toDateStr(buyDateMs),
+        buyDateWeighted: toDateStr(buyDateMs) || t.date,
         holdingDays,
         sellQuantity: t.quantity,
         costBasisKRW,

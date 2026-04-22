@@ -370,6 +370,18 @@ export interface AssetSnapshotAccountBreakdown {
   evaluationAmount: number;
 }
 
+/**
+ * 월 1일·15일 시점의 "시세 환경" 박제.
+ * 보유 종목/수량/원가는 trades에서 항상 재계산 — 과거 거래 수정이 반영됨.
+ * 오직 그 날짜의 시세·환율만 저장해서 과거 평가액을 재현 가능하게 한다.
+ */
+export interface MarketEnvSnapshot {
+  date: string; // YYYY-MM-01 | YYYY-MM-15
+  fxRate: number; // 그 시점 USD/KRW
+  prices: Array<{ ticker: string; price: number; currency?: string }>;
+  recordedAt: string; // ISO — 언제 기록되었는지 (감사용)
+}
+
 /** Half-month/daily asset snapshot row. */
 export interface AssetSnapshotPoint {
   date: string; // yyyy-mm-dd
@@ -410,6 +422,8 @@ export interface AppData {
   targetNetWorthCurve?: Record<string, number>;
   /** 반월/일별 자산 스냅샷 시계열 */
   assetSnapshots?: AssetSnapshotPoint[];
+  /** 월 1일·15일 시세 환경 박제 (총자산 추이 차트용) */
+  marketEnvSnapshots?: MarketEnvSnapshot[];
   /** 종목별 일별 종가 (매입 시점부터 자동 수집/저장) */
   historicalDailyCloses?: HistoricalDailyClose[];
   /** 배당 추적 위젯에 표시할 티커. 비어 있으면 위젯 비활성화 또는 티커 선택 프롬프트 */

@@ -1,12 +1,42 @@
 /**
  * 카테고리 타입 판단 유틸리티
  *
- * 구분 (일관된 정의):
- * - 저축성 지출: kind === "expense" 이고 대분류가 저축성지출 카테고리. (지출의 한 분류, 계좌 잔액 이동 없음)
- * - 이체: kind === "transfer" 전부. (계좌 간 이동, 저축/증권으로 가도 이체)
+ * 구조 (v5 이후):
+ * - 수입 (income): kind === "income"
+ * - 지출 (expense): kind === "expense"
+ * - 이체 (transfer): kind === "transfer"
+ *   - 저축/투자: kind === "transfer" && subCategory ∈ {저축, 투자} (= 재테크 이체)
+ *
+ * 구버전 호환: (kind=expense, category=재테크) 구조가 남아있으면 동일하게 인식.
  */
 
 import type { LedgerKind, CategoryPresets, LedgerEntry, Account } from "../types";
+
+/**
+ * 재테크 저축·투자(자산 이동)인지 판별.
+ * 현재 구조: kind=transfer + subCategory ∈ {저축이체, 투자이체}
+ * 구버전 호환:
+ *  - kind=transfer + sub=저축/투자 (v7 임시)
+ *  - kind=expense/category=재테크/sub=저축·투자 (v5 이전)
+ */
+export function isInvestmentEntry(entry: LedgerEntry): boolean {
+  const sub = entry.subCategory;
+  if (entry.kind === "transfer" && (sub === "저축이체" || sub === "투자이체" || sub === "저축" || sub === "투자")) return true;
+  if (entry.kind === "expense" && entry.category === "재테크" && (sub === "저축" || sub === "투자")) return true;
+  return false;
+}
+
+/**
+ * 재테크 전체(저축·투자 이체 + 투자수익 수입 + 투자손실 지출).
+ * 투자수익: kind=income, subCategory=투자수익
+ * 투자손실: kind=expense, category=재테크
+ */
+export function isInvestmentKind(entry: LedgerEntry): boolean {
+  if (isInvestmentEntry(entry)) return true;
+  if (entry.kind === "income" && entry.subCategory === "투자수익") return true;
+  if (entry.kind === "expense" && entry.category === "재테크") return true;
+  return false;
+}
 
 export type CategoryType = "income" | "transfer" | "savings" | "fixed" | "variable";
 
@@ -73,10 +103,9 @@ function getSavingsSet(categoryPresets?: CategoryPresets): Set<string> {
 }
 
 /**
- * 가계부 단일 소스: 저축성지출 여부.
- * 저축성 지출 = kind === "expense" 이고 대분류가 저축성지출 카테고리.
- * @param categoryPresets - 선택. 미제공 시 기본 ["저축성지출"] 사용
- * 성능: categoryPresets 참조별 Set 캐시 → 같은 presets로 N번 호출해도 Set 1번만 생성.
+ * 가계부 단일 소스: 저축성지출 여부 (= 자산 계좌로 이동한 지출, 실질 소비 아님).
+ * kind === "expense" && 대분류가 저축성지출 카테고리.
+ * 단, subCategory === "투자손실"은 실질 지출이므로 false 반환 (부풀려 집계 방지).
  */
 export function isSavingsExpenseEntry(
   entry: LedgerEntry,
@@ -84,6 +113,7 @@ export function isSavingsExpenseEntry(
   categoryPresets?: CategoryPresets
 ): boolean {
   if (entry.kind !== "expense") return false;
+  if (entry.subCategory === "투자손실") return false;
   return getSavingsSet(categoryPresets).has(entry.category);
 }
 
@@ -101,7 +131,10 @@ export function makeIsSavingsExpense(
   categoryPresets?: CategoryPresets
 ): (entry: LedgerEntry) => boolean {
   const savingsSet = getSavingsSet(categoryPresets);
-  return (entry) => entry.kind === "expense" && savingsSet.has(entry.category);
+  return (entry) =>
+    entry.kind === "expense" &&
+    entry.subCategory !== "투자손실" &&
+    savingsSet.has(entry.category);
 }
 
 /**

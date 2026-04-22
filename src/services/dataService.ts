@@ -153,7 +153,7 @@ function getDefaultCategoryPresets(): CategoryPresets {
   const expenseDetails: ExpenseDetailGroup[] = [
     {
       main: "재테크",
-      subs: ["저축", "투자", "투자수익", "투자손실"]
+      subs: ["투자손실"]
     },
     {
       main: "식비",
@@ -258,10 +258,6 @@ function getDefaultCategoryPresets(): CategoryPresets {
     {
       main: "실수",
       subs: ["아차차", "구독미스", "API 초과"]
-    },
-    {
-      main: "신용카드",
-      subs: ["카드대금"]
     }
   ];
 
@@ -284,11 +280,11 @@ function getDefaultCategoryPresets(): CategoryPresets {
     ],
     expense: expenseDetails.map((g) => g.main),
     expenseDetails,
-    transfer: ["저축이체", "계좌이체", "카드결제이체"],
+    transfer: ["저축이체", "투자이체", "계좌이체", "카드결제이체", "데이트이체", "이월이체"],
     categoryTypes: {
       fixed: ["주거비", "통신비", "구독비"],
-      savings: ["재테크", "저축성지출"],
-      transfer: ["저축이체", "계좌이체", "카드결제이체"]
+      savings: [],
+      transfer: ["저축이체", "투자이체", "계좌이체", "카드결제이체"]
     }
   };
 }
@@ -302,13 +298,32 @@ function mergeCategoryPresets(
   const income = fromStorage.income && Array.isArray(fromStorage.income) && fromStorage.income.length > 0
     ? fromStorage.income
     : defaults.income;
-  const transfer = fromStorage.transfer && Array.isArray(fromStorage.transfer) && fromStorage.transfer.length > 0
+  let transfer = fromStorage.transfer && Array.isArray(fromStorage.transfer) && fromStorage.transfer.length > 0
     ? fromStorage.transfer
     : defaults.transfer;
-  const expenseDetails: ExpenseDetailGroup[] =
+  let expenseDetails: ExpenseDetailGroup[] =
     fromStorage.expenseDetails && Array.isArray(fromStorage.expenseDetails) && fromStorage.expenseDetails.length > 0
       ? fromStorage.expenseDetails
       : (defaults.expenseDetails ?? []);
+
+  // 방어적 정정 (idempotent, schema version과 무관):
+  // 1) transfer에 "저축이체"가 있는데 "투자이체"가 없으면 자동 추가 (UI 노출 보장)
+  if (transfer.includes("저축이체") && !transfer.includes("투자이체")) {
+    const idx = transfer.indexOf("저축이체");
+    transfer = [...transfer.slice(0, idx + 1), "투자이체", ...transfer.slice(idx + 1)];
+  }
+  // 2) expenseDetails의 "재테크" subs에 저축/투자/투자수익이 섞여있으면 "투자손실"만 남김
+  //    (저축/투자는 이체, 투자수익은 수입으로 이관됐음)
+  expenseDetails = expenseDetails.map((g) => {
+    if (g.main !== "재테크") return g;
+    const legacySubs = new Set(["저축", "투자", "투자수익", "저축이체", "투자이체"]);
+    const hasLegacy = g.subs.some((s) => legacySubs.has(s));
+    if (!hasLegacy) return g;
+    return { ...g, subs: ["투자손실"] };
+  });
+  // 3) expenseDetails에 "신용카드" main이 있으면 제거 (카드결제는 이제 이체 subCategory)
+  expenseDetails = expenseDetails.filter((g) => g.main !== "신용카드");
+
   const expense = expenseDetails.map((g) => g.main);
   const categoryTypes = fromStorage.categoryTypes ?? defaults.categoryTypes ?? {
     fixed: [],
@@ -515,6 +530,108 @@ function migrateBySchema(
       if (net <= 0) return entry;
       return { ...entry, amount: net };
     });
+    migrated = true;
+  }
+
+  // v5~v8: 재테크/신용결제 분리 및 최종 통합.
+  // 최종 형태는:
+  //   - 재테크 저축 → kind=transfer, category=이체, subCategory=저축이체
+  //   - 재테크 투자 → kind=transfer, category=이체, subCategory=투자이체
+  //   - 재테크 투자수익 → kind=income,   category=수입, subCategory=투자수익
+  //   - 재테크 투자손실 → kind=expense,  category=재테크, subCategory=투자손실
+  //   - 신용결제 → kind=transfer, category=이체, subCategory=카드결제이체
+  //
+  // 이전 단계(v4 원본 재테크, v5 investment, v6 investment, v7 임시 저축/투자)
+  // 어디에 멈춰있어도 v8에서 최종 형태로 수렴.
+  if (fromVersion < 8) {
+    const ledger = asArray<Record<string, unknown>>(next.ledger);
+    next.ledger = ledger.map((entry) => {
+      if (!entry || typeof entry !== "object") return entry;
+      const sub = String(entry.subCategory ?? "");
+
+      // --- 재테크 이관 (v4 원본, v5/v6 investment, v7 임시 모두) ---
+      const isOldRecheck =
+        (entry.kind === "expense" && entry.category === "재테크") ||
+        entry.kind === "investment";
+      if (isOldRecheck) {
+        if (sub === "저축" || sub === "저축이체") {
+          return { ...entry, kind: "transfer", category: "이체", subCategory: "저축이체" };
+        }
+        if (sub === "투자" || sub === "투자이체") {
+          return { ...entry, kind: "transfer", category: "이체", subCategory: "투자이체" };
+        }
+        if (sub === "투자수익") {
+          return { ...entry, kind: "income", category: "수입", subCategory: "투자수익" };
+        }
+        if (sub === "투자손실") {
+          return { ...entry, kind: "expense", category: "재테크", subCategory: "투자손실" };
+        }
+      }
+
+      // --- v7 임시 이름 (subCategory="저축"/"투자", kind이 이미 transfer) 클린업 ---
+      if (entry.kind === "transfer" && sub === "저축") {
+        return { ...entry, category: "이체", subCategory: "저축이체" };
+      }
+      if (entry.kind === "transfer" && sub === "투자") {
+        return { ...entry, category: "이체", subCategory: "투자이체" };
+      }
+
+      // --- 신용결제 이관 (지출 → 이체/카드결제이체) ---
+      // 원래 구조: kind=expense, category=신용결제, subCategory=신용결제
+      // from=은행, to=카드 계좌로 이미 채워져 있어 transfer 구조와 동일.
+      if (entry.kind === "expense" && entry.category === "신용결제") {
+        return { ...entry, kind: "transfer", category: "이체", subCategory: "카드결제이체" };
+      }
+
+      return entry;
+    });
+
+    migrated = true;
+  }
+
+  // v9: categoryPresets 정리 — 사용자 저장 preset이 v8 migration에서 완전히 업데이트 안 된
+  // 경우를 보정 (idempotent). 신규 입력 UX를 새 구조에 맞춤.
+  //  - transfer에 "투자이체" 보장
+  //  - categoryTypes.transfer에도 동일
+  //  - expenseDetails의 "재테크" main subs를 ["투자손실"]로 축소 (저축/투자/수익은 각각 이체/수입에 있음)
+  //  - expenseDetails에서 "신용카드" main 제거 (카드결제는 이제 이체 subCategory)
+  if (fromVersion < 9) {
+    const cp = next.categoryPresets as Record<string, unknown> | undefined;
+    if (cp && typeof cp === "object") {
+      // transfer에 투자이체 삽입
+      const tr = asArray<string>(cp.transfer);
+      if (tr.length > 0 && !tr.includes("투자이체")) {
+        const idx = tr.indexOf("저축이체");
+        cp.transfer = idx >= 0
+          ? [...tr.slice(0, idx + 1), "투자이체", ...tr.slice(idx + 1)]
+          : [...tr, "투자이체"];
+      }
+      // categoryTypes.transfer도 동일
+      const ct = cp.categoryTypes as Record<string, unknown> | undefined;
+      if (ct && typeof ct === "object") {
+        const ctt = asArray<string>(ct.transfer);
+        if (ctt.length > 0 && !ctt.includes("투자이체")) {
+          const idx = ctt.indexOf("저축이체");
+          ct.transfer = idx >= 0
+            ? [...ctt.slice(0, idx + 1), "투자이체", ...ctt.slice(idx + 1)]
+            : [...ctt, "투자이체"];
+        }
+      }
+      // expenseDetails 정리: "재테크" subs를 ["투자손실"]로, "신용카드" main 제거
+      const expDetails = asArray<Record<string, unknown>>(cp.expenseDetails);
+      if (expDetails.length > 0) {
+        const filtered = expDetails
+          .filter((g) => g?.main !== "신용카드")
+          .map((g) => {
+            if (g?.main === "재테크") {
+              return { ...g, subs: ["투자손실"] };
+            }
+            return g;
+          });
+        cp.expenseDetails = filtered;
+        cp.expense = filtered.map((g) => g?.main).filter(Boolean);
+      }
+    }
     migrated = true;
   }
 

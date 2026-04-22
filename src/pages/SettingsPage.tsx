@@ -373,7 +373,22 @@ export const SettingsView: React.FC<Props> = ({
       const raw = localStorage.getItem(STORAGE_KEYS.DASHBOARD_WIDGET_ORDER);
       if (raw) {
         const parsed = JSON.parse(raw) as string[];
-        if (Array.isArray(parsed) && parsed.length === DASHBOARD_WIDGET_ORDER.length) return parsed.map(migrateWidgetId);
+        if (Array.isArray(parsed)) {
+          // 저장된 순서에서 아직 유효한 위젯은 순서 그대로 유지, 신규 위젯은 뒤에 추가,
+          // 제거된 위젯은 drop. 길이 불일치로 전체 초기화하지 않음.
+          const currentSet = new Set(DASHBOARD_WIDGET_ORDER);
+          const seen = new Set<string>();
+          const kept: string[] = [];
+          for (const raw of parsed) {
+            const id = migrateWidgetId(raw);
+            if (currentSet.has(id) && !seen.has(id)) {
+              kept.push(id);
+              seen.add(id);
+            }
+          }
+          const missing = DASHBOARD_WIDGET_ORDER.filter((id) => !seen.has(id));
+          return [...kept, ...missing];
+        }
       }
     } catch (e) {
       console.warn("[SettingsView] 위젯 순서 로드 실패", e);

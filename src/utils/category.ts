@@ -3,6 +3,8 @@ import {
   getSavingsCategories,
   isSavingsExpenseEntry,
   makeIsSavingsExpense,
+  isInvestmentEntry,
+  isInvestmentKind,
   type CategoryType
 } from "./categoryUtils";
 import { recommendCategory } from "./categoryRecommendation";
@@ -20,6 +22,8 @@ export {
   getSavingsCategories,
   isSavingsExpenseEntry,
   makeIsSavingsExpense,
+  isInvestmentEntry,
+  isInvestmentKind,
   recommendCategory,
   autoCategorize,
   learnFromEntry,

@@ -74,6 +74,7 @@ function buildMonthCategoryDetail(
     if (entry.kind === "income") {
       add(incomeMap, key, amount);
     } else if (entry.kind === "expense") {
+      // 저축성지출(재테크/저축성지출 카테고리)은 savings. 단 투자손실은 실질 지출이므로 제외(isSavingsExpenseEntry 내부에서 이미 처리).
       if (isSavingsExpenseEntry(entry, accounts)) {
         add(savingsMap, key, amount);
       } else if (cat === "신용결제" || cat === "신용카드") {
@@ -82,7 +83,12 @@ function buildMonthCategoryDetail(
         add(livingMap, key, amount);
       }
     } else if (entry.kind === "transfer") {
-      // 카드 계좌로의 이체 = 신용결제 (카드 대금 납부)
+      // 저축/투자 이체 → savings로 집계
+      if (sub === "저축이체" || sub === "투자이체" || sub === "저축" || sub === "투자") {
+        add(savingsMap, key, amount);
+        continue;
+      }
+      // 카드 계좌로의 이체 = 신용결제
       const toAcc = entry.toAccountId ? accounts.find(a => a.id === entry.toAccountId) : undefined;
       if (toAcc && toAcc.type === "card") {
         add(creditMap, key, amount);

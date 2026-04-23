@@ -2,6 +2,7 @@ import type {
   Account,
   AccountBalanceRow,
   LedgerEntry,
+  Loan,
   PositionRow,
   StockPrice,
   StockTrade
@@ -415,17 +416,61 @@ export function positionMarketValueKRW(
   return p.marketValue;
 }
 
-/** 전체 순자산: 현금(KRW+USD환산) + 주식 평가액 + 부채(음수) */
+/**
+ * 대출 상환 ledger 엔트리 여부 (category 구조 3세대 대응 + 대출명 매칭 포함).
+ */
+function isLoanRepaymentForLoan(entry: LedgerEntry, loanName: string): boolean {
+  if (entry.kind !== "expense") return false;
+  const matchesStructure =
+    (entry.category === "지출" && entry.subCategory === "대출상환") ||
+    entry.category === "대출상환" ||
+    (entry.category === "대출" && entry.subCategory === "빚");
+  if (!matchesStructure) return false;
+  return (entry.description || "").includes(loanName);
+}
+
+/** detailCategory에 "이자"가 들어있으면 이자 상환, 아니면 원금 상환 (legacy 호환). */
+export function isInterestRepayment(entry: LedgerEntry): boolean {
+  return (entry.detailCategory || "").includes("이자");
+}
+
+/**
+ * 특정 일자 기준 대출 잔금 합계.
+ * 각 대출별로 loanAmount − Σ(원금 상환, detailCategory에 "이자" 미포함) 을 합산.
+ * asOfDate 이후 개시된 대출은 제외, asOfDate 이후 상환은 차감 대상 아님.
+ */
+export function computeLoanBalanceAt(
+  loans: Loan[] | undefined,
+  ledger: LedgerEntry[] | undefined,
+  asOfDate?: string
+): number {
+  if (!loans || loans.length === 0) return 0;
+  const entries = ledger ?? [];
+  return loans.reduce((sum, loan) => {
+    if (asOfDate && loan.loanDate && loan.loanDate > asOfDate) return sum;
+    const principalRepaid = entries.reduce((s, e) => {
+      if (!isLoanRepaymentForLoan(e, loan.loanName)) return s;
+      if (isInterestRepayment(e)) return s;
+      if (asOfDate && e.date && e.date > asOfDate) return s;
+      return s + (e.amount || 0);
+    }, 0);
+    return sum + Math.max(0, (loan.loanAmount ?? 0) - principalRepaid);
+  }, 0);
+}
+
+/** 전체 순자산: 현금(KRW+USD환산) + 주식 평가액 - account.debt - 대출잔금 */
 export function computeTotalNetWorth(
   balances: AccountBalanceRowLike[],
   positions: PositionRowLike[],
-  fxRate?: number | null
+  fxRate?: number | null,
+  loans?: Loan[],
+  ledger?: LedgerEntry[]
 ): number {
   const stockMap = new Map<string, number>();
   positions.forEach((p) => {
     stockMap.set(p.accountId, (stockMap.get(p.accountId) ?? 0) + positionMarketValueKRW(p, fxRate));
   });
-  return balances.reduce((sum, row) => {
+  const assetSide = balances.reduce((sum, row) => {
     const krwCash = row.currentBalance;
     const stockAsset = stockMap.get(row.account.id) ?? 0;
     const debt = Math.abs(row.account.debt ?? 0);
@@ -436,6 +481,7 @@ export function computeTotalNetWorth(
     const usdToKrw = fxRate && usdCash !== 0 ? usdCash * fxRate : 0;
     return sum + krwCash + usdToKrw + stockAsset - debt;
   }, 0);
+  return assetSide - computeLoanBalanceAt(loans, ledger);
 }
 
 
@@ -491,9 +537,15 @@ export function computeTotalSavings(
     .reduce((s, b) => s + b.currentBalance, 0);
 }
 
-/** 부채 합계 (음수=부채, 양수=선결제/환급) */
-export function computeTotalDebt(accounts: Account[]): number {
-  return -accounts.reduce((s, a) => s + Math.abs(a.debt ?? 0), 0);
+/** 부채 합계 (음수=부채, 양수=선결제/환급). account.debt + 대출 잔금 합산. */
+export function computeTotalDebt(
+  accounts: Account[],
+  loans?: Loan[],
+  ledger?: LedgerEntry[]
+): number {
+  const accountDebt = accounts.reduce((s, a) => s + Math.abs(a.debt ?? 0), 0);
+  const loanDebt = computeLoanBalanceAt(loans, ledger);
+  return -(accountDebt + loanDebt);
 }
 
 

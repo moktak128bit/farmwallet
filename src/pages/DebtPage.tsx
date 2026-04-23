@@ -3,8 +3,36 @@ import { ChevronDown, ChevronUp, Pencil, Trash2 } from "lucide-react";
 import type { Loan, RepaymentMethod, LedgerEntry, Account, CategoryPresets } from "../types";
 import { formatKRW } from "../utils/formatter";
 import { parseAmount } from "../utils/parseAmount";
+import { isInterestRepayment } from "../calculations";
 
-const DEFAULT_LOAN_REPAYMENT_SUBS = ["학자금대출", "주담대원금", "주담대이자", "개인대출", "기타대출상환"];
+/** 거치기간 만료일: loanDate + gracePeriodYears (소수 허용). 미설정이면 null. */
+function graceEndDate(loan: Loan): string | null {
+  if (!loan.gracePeriodYears || loan.gracePeriodYears <= 0) return null;
+  const d = new Date(loan.loanDate);
+  if (Number.isNaN(d.getTime())) return null;
+  const months = Math.round(loan.gracePeriodYears * 12);
+  d.setMonth(d.getMonth() + months);
+  return d.toISOString().slice(0, 10);
+}
+
+/** 오늘이 거치기간 내인가? */
+function isInGracePeriod(loan: Loan, todayIso: string): boolean {
+  const end = graceEndDate(loan);
+  return end !== null && todayIso < end;
+}
+
+/** ledger detailCategory용 — 원금/이자만 구분 */
+const DEFAULT_LOAN_REPAYMENT_SUBS = ["원금상환", "이자상환"];
+/** Loan.subCategory용 — 대출 종류 */
+const LOAN_TYPE_OPTIONS = ["학자금대출", "주담대", "개인대출", "기타대출"];
+
+/** legacy Loan.subCategory → 새 LOAN_TYPE_OPTIONS 매핑 (편집 UI용) */
+function mapLegacyLoanType(sub: string): string {
+  if (LOAN_TYPE_OPTIONS.includes(sub)) return sub;
+  if (sub.startsWith("주담대")) return "주담대";
+  if (sub.includes("기타")) return "기타대출";
+  return LOAN_TYPE_OPTIONS[0];
+}
 
 interface Props {
   loans?: Loan[];
@@ -106,7 +134,7 @@ export const DebtView: React.FC<Props> = ({
     setForm({
       institution: loan.institution,
       loanName: loan.loanName,
-      subCategory: loanRepaymentSubOptions.includes(sub) ? sub : loanRepaymentSubOptions[0] ?? "",
+      subCategory: sub ? mapLegacyLoanType(sub) : LOAN_TYPE_OPTIONS[0],
       loanAmount: String(loan.loanAmount),
       annualInterestRate: String(loan.annualInterestRate),
       repaymentMethod: loan.repaymentMethod,
@@ -257,8 +285,16 @@ export const DebtView: React.FC<Props> = ({
         : entry.category === "대출상환"
           ? entry.subCategory
           : undefined;
-    const sub = detail || "기타대출상환";
-    setEditSubCategory(loanRepaymentSubOptions.includes(sub) ? sub : "기타대출상환");
+    // 새 체계(원금상환/이자상환)에 있으면 그대로, legacy면 "이자" 키워드로 분류
+    const interestOption = loanRepaymentSubOptions.find((s) => s.includes("이자")) ?? "이자상환";
+    const principalOption = loanRepaymentSubOptions.find((s) => s.includes("원금")) ?? "원금상환";
+    const mapped =
+      detail && loanRepaymentSubOptions.includes(detail)
+        ? detail
+        : (detail || "").includes("이자")
+          ? interestOption
+          : principalOption;
+    setEditSubCategory(mapped);
     setEditFromAccountId(entry.fromAccountId || "");
     setEditDate(entry.date || new Date().toISOString().slice(0, 10));
     setEditDescription(entry.description || "");
@@ -300,18 +336,19 @@ export const DebtView: React.FC<Props> = ({
     onChangeLedger(ledger.filter((l) => l.id !== entry.id));
   };
 
-  // 대출별 상환 내역 계산 (설명에 대출명 포함된 건 매칭)
+  // 대출별 원금/이자 상환 누적. 현재 잔금은 원금 상환분만 차감한다.
   const loanRepayments = useMemo(() => {
-    const repayments = new Map<string, number>();
+    const principal = new Map<string, number>();
+    const interest = new Map<string, number>();
     ledger
       .filter(isLoanRepaymentEntry)
       .forEach((l) => {
         const loan = matchRepaymentLoan(l);
-        if (loan) {
-          repayments.set(loan.id, (repayments.get(loan.id) || 0) + l.amount);
-        }
+        if (!loan) return;
+        const bucket = isInterestRepayment(l) ? interest : principal;
+        bucket.set(loan.id, (bucket.get(loan.id) || 0) + l.amount);
       });
-    return repayments;
+    return { principal, interest };
   }, [ledger, matchRepaymentLoan]);
 
   const daysBetween = (date1: string, date2: string): number => {
@@ -427,14 +464,14 @@ export const DebtView: React.FC<Props> = ({
                 />
               </label>
               <label>
-                <span>세부 항목 *</span>
+                <span>대출 종류 *</span>
                 <select
                   value={form.subCategory}
                   onChange={(e) => setForm({ ...form, subCategory: e.target.value })}
                   required
                 >
                   <option value="">선택</option>
-                  {loanRepaymentSubOptions.map((sub) => (
+                  {LOAN_TYPE_OPTIONS.map((sub) => (
                     <option key={sub} value={sub}>
                       {sub}
                     </option>
@@ -542,8 +579,11 @@ export const DebtView: React.FC<Props> = ({
             const today = new Date().toISOString().slice(0, 10);
             const remainingPeriod = daysBetween(today, loan.maturityDate);
             const totalInterest = calculateTotalInterest(loan);
-            const accumulatedRepayment = loanRepayments.get(loan.id) || 0;
-            const currentBalance = loan.loanAmount - accumulatedRepayment;
+            const principalPaid = loanRepayments.principal.get(loan.id) || 0;
+            const interestPaid = loanRepayments.interest.get(loan.id) || 0;
+            const currentBalance = Math.max(0, loan.loanAmount - principalPaid);
+            const graceEnd = graceEndDate(loan);
+            const inGrace = graceEnd !== null && today < graceEnd;
 
             return (
               <div
@@ -641,6 +681,24 @@ export const DebtView: React.FC<Props> = ({
                     <span style={{ fontSize: 13, color: "var(--text-muted)" }}>남은 기간</span>
                     <span>{formatPeriod(remainingPeriod)}</span>
                   </div>
+                  {graceEnd && (
+                    <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+                      <span style={{ fontSize: 13, color: "var(--text-muted)" }}>
+                        거치 {inGrace ? "중" : "종료"}
+                      </span>
+                      <span style={{ fontSize: 12, color: inGrace ? "var(--primary)" : "var(--text-muted)" }}>
+                        ~ {graceEnd}
+                      </span>
+                    </div>
+                  )}
+                  <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+                    <span style={{ fontSize: 13, color: "var(--text-muted)" }}>원금 상환</span>
+                    <span style={{ fontSize: 13 }}>{formatKRW(Math.round(principalPaid))}</span>
+                  </div>
+                  <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+                    <span style={{ fontSize: 13, color: "var(--text-muted)" }}>이자 납입</span>
+                    <span style={{ fontSize: 13, color: "var(--text-muted)" }}>{formatKRW(Math.round(interestPaid))}</span>
+                  </div>
                   <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginTop: 4 }}>
                     <span style={{ fontSize: 13, color: "var(--text-muted)" }}>현재 잔금</span>
                     <span
@@ -664,8 +722,11 @@ export const DebtView: React.FC<Props> = ({
                       setRepayingLoan(loan);
                       setRepayAmount("");
                       setRepayFromAccountId(cashAccounts[0]?.id ?? "");
-                      const sub = loan.subCategory && loanRepaymentSubOptions.includes(loan.subCategory) ? loan.subCategory : loanRepaymentSubOptions[0] ?? "";
-                      setRepaySubCategory(sub);
+                      // 거치기간 중이면 "이자상환" 자동 선택, 아니면 "원금상환"
+                      const interestOption = loanRepaymentSubOptions.find((s) => s.includes("이자"));
+                      const principalOption =
+                        loanRepaymentSubOptions.find((s) => s.includes("원금")) ?? loanRepaymentSubOptions[0] ?? "";
+                      setRepaySubCategory(inGrace && interestOption ? interestOption : principalOption);
                       setRepayDate(new Date().toISOString().slice(0, 10));
                     }}
                     style={{ width: "100%", padding: "12px 16px", fontSize: 15, fontWeight: 600 }}
@@ -793,6 +854,14 @@ export const DebtView: React.FC<Props> = ({
               ) : (
                 visibleRepaymentGroups.map(([debtId, group]) => {
                   const entries = [...group.entries].sort((a, b) => (b.date || "").localeCompare(a.date || ""));
+                  const principalTotal = entries.reduce(
+                    (s, e) => (isInterestRepayment(e) ? s : s + e.amount),
+                    0
+                  );
+                  const interestTotal = entries.reduce(
+                    (s, e) => (isInterestRepayment(e) ? s + e.amount : s),
+                    0
+                  );
                   return (
                     <div
                       key={debtId}
@@ -811,12 +880,16 @@ export const DebtView: React.FC<Props> = ({
                           display: "flex",
                           justifyContent: "space-between",
                           alignItems: "center",
+                          gap: 12,
+                          flexWrap: "wrap",
                           borderBottom: "1px solid var(--border)"
                         }}
                       >
                         <span>{group.label}</span>
-                        <span style={{ fontSize: 13, color: "var(--text-muted)", fontWeight: 600 }}>
-                          {entries.length}건 · 합계 {formatKRW(Math.round(group.total))}
+                        <span style={{ fontSize: 13, color: "var(--text-muted)", fontWeight: 600, display: "flex", gap: 12, flexWrap: "wrap" }}>
+                          <span>{entries.length}건 · {formatKRW(Math.round(group.total))}</span>
+                          <span style={{ color: "var(--text)" }}>원금 {formatKRW(Math.round(principalTotal))}</span>
+                          <span style={{ color: "var(--chart-expense)" }}>이자 {formatKRW(Math.round(interestTotal))}</span>
                         </span>
                       </div>
                       <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 14 }}>
@@ -845,8 +918,28 @@ export const DebtView: React.FC<Props> = ({
                               <td style={{ padding: "14px 20px", verticalAlign: "top" }}>
                                 <div>
                                   <span style={{ fontWeight: 500 }}>{e.description || "(상환)"}</span>
-                                  {e.subCategory && (
-                                    <span style={{ marginLeft: 8, fontSize: 12, color: "var(--primary)" }}>{e.subCategory}</span>
+                                  {(() => {
+                                    const isInterest = isInterestRepayment(e);
+                                    return (
+                                      <span
+                                        style={{
+                                          marginLeft: 8,
+                                          fontSize: 11,
+                                          fontWeight: 700,
+                                          padding: "2px 8px",
+                                          borderRadius: 10,
+                                          background: isInterest ? "var(--chart-expense)" : "var(--primary)",
+                                          color: "white"
+                                        }}
+                                      >
+                                        {isInterest ? "이자" : "원금"}
+                                      </span>
+                                    );
+                                  })()}
+                                  {e.detailCategory && e.detailCategory !== "원금상환" && e.detailCategory !== "이자상환" && (
+                                    <span style={{ marginLeft: 8, fontSize: 12, color: "var(--text-muted)" }}>
+                                      ({e.detailCategory})
+                                    </span>
                                   )}
                                   {e.fromAccountId && (
                                     <div style={{ marginTop: 4, fontSize: 12, color: "var(--text-muted)" }}>
@@ -929,9 +1022,23 @@ export const DebtView: React.FC<Props> = ({
               </button>
             </div>
             <div className="modal-body">
-              <p style={{ fontSize: 13, color: "var(--text-muted)", marginBottom: 16 }}>
-                현재 잔금: {formatKRW(Math.round(repayingLoan.loanAmount - (loanRepayments.get(repayingLoan.id) || 0)))}
+              <p style={{ fontSize: 13, color: "var(--text-muted)", marginBottom: 8 }}>
+                현재 잔금: {formatKRW(Math.round(Math.max(0, repayingLoan.loanAmount - (loanRepayments.principal.get(repayingLoan.id) || 0))))}
               </p>
+              {isInGracePeriod(repayingLoan, new Date().toISOString().slice(0, 10)) && (
+                <p
+                  style={{
+                    fontSize: 13,
+                    color: "var(--primary)",
+                    background: "var(--primary-muted)",
+                    padding: "8px 12px",
+                    borderRadius: 6,
+                    marginBottom: 16
+                  }}
+                >
+                  ℹ️ 거치기간 중 — 세부 항목에 "이자"가 포함된 옵션을 선택하면 원금 잔금이 차감되지 않습니다.
+                </p>
+              )}
               <label style={{ display: "block", marginBottom: 16 }}>
                 <span style={{ fontSize: 14, fontWeight: 600, display: "block", marginBottom: 8 }}>상환 금액 *</span>
                 <input

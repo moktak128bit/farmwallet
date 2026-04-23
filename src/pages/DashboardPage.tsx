@@ -25,6 +25,7 @@ import type {
 import {
   computeAccountBalances,
   computeBalanceAtDateForAccounts,
+  computeLoanBalanceAt,
   computePositions,
   computeRealizedPnlByTradeId,
   computeTotalDebt,
@@ -371,10 +372,11 @@ export const DashboardView: React.FC<Props> = (props) => {
     return Array.from(map.values()).sort((a, b) => a.accountName.localeCompare(b.accountName));
   }, [positionsWithPrice]);
 
-  const totalDebt = useMemo(() => computeTotalDebt(accounts), [accounts]);
+  const loans = storeData.loans ?? [];
+  const totalDebt = useMemo(() => computeTotalDebt(accounts, loans, ledger), [accounts, loans, ledger]);
   const totalNetWorth = useMemo(
-    () => computeTotalNetWorth(balances, positions, fxRate),
-    [balances, positions, fxRate]
+    () => computeTotalNetWorth(balances, positions, fxRate, loans, ledger),
+    [balances, positions, fxRate, loans, ledger]
   );
 
   const accountTimelineRows = useMemo(() => {
@@ -531,6 +533,10 @@ export const DashboardView: React.FC<Props> = (props) => {
         }
       });
 
+      // 월말 시점 대출 잔금 차감 (원금 상환은 차감, 이자 상환은 잔금 불변)
+      const monthLoanBalance = computeLoanBalanceAt(loans, ledger, monthEndDate);
+      totalValue -= monthLoanBalance;
+
       row.stock = totalStockValue;
       row.savings = totalSavingsValue;
       row.total = totalValue;
@@ -538,7 +544,7 @@ export const DashboardView: React.FC<Props> = (props) => {
     });
 
     return rows;
-  }, [monthRange, ledger, trades, adjustedPrices, accounts, fxRate, currentMonth]);
+  }, [monthRange, ledger, trades, adjustedPrices, accounts, fxRate, currentMonth, loans]);
 
   const portfolioByType = useMemo(() => {
     let cashTotal = 0;

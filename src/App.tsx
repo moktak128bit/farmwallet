@@ -19,7 +19,6 @@ const loadCategories = () => import("./pages/CategoriesPage").then((m) => ({ def
 const loadStocks = () => import("./pages/StocksPage").then((m) => ({ default: m.StocksView }));
 const loadDividends = () => import("./pages/DividendsPage").then((m) => ({ default: m.DividendsView }));
 const loadDebt = () => import("./pages/DebtPage").then((m) => ({ default: m.DebtView }));
-const loadSpend = () => import("./pages/SpendPage").then((m) => ({ default: m.SpendView }));
 const loadBudget = () => import("./components/BudgetRecurringView").then((m) => ({ default: m.BudgetRecurringView }));
 const loadReport = () => import("./pages/ReportPage").then((m) => ({ default: m.ReportView }));
 const loadSettings = () => import("./pages/SettingsPage").then((m) => ({ default: m.SettingsView }));
@@ -33,7 +32,6 @@ const CategoriesView = lazy(loadCategories);
 const StocksView = lazy(loadStocks);
 const DividendsView = lazy(loadDividends);
 const DebtView = lazy(loadDebt);
-const SpendView = lazy(loadSpend);
 const BudgetRecurringView = lazy(loadBudget);
 const ReportView = lazy(loadReport);
 const SettingsView = lazy(loadSettings);
@@ -49,7 +47,6 @@ const TAB_PREFETCH: Record<TabId, () => Promise<{ default: React.ComponentType<a
   stocks: loadStocks,
   dividends: loadDividends,
   debt: loadDebt,
-  spend: loadSpend,
   budget: loadBudget,
   reports: loadReport,
   settings: loadSettings,
@@ -155,7 +152,7 @@ export const App: React.FC = () => {
     // 1단계: 가벼운 탭은 idle 시 즉시 (100ms 이내)
     const lightTabs: TabId[] = ["ledger", "categories", "accounts", "dividends", "debt", "budget", "workout"];
     // 2단계: 무거운 탭은 1단계 이후 750ms 뒤 (초기 렌더와 경합 방지)
-    const heavyTabs: TabId[] = ["stocks", "reports", "spend", "insights"];
+    const heavyTabs: TabId[] = ["stocks", "reports", "insights"];
 
     const win = window as Window & {
       requestIdleCallback?: (callback: IdleRequestCallback, options?: IdleRequestOptions) => number;
@@ -747,15 +744,6 @@ export const App: React.FC = () => {
               categoryPresets={data.categoryPresets}
               onChangeLoans={(loans) => setDataWithHistory((prev) => ({ ...prev, loans }))}
               onChangeLedger={(ledger) => setDataWithHistory((prev) => ({ ...prev, ledger }))}
-            />
-            </TabErrorBoundary>
-          )}
-          {tab === "spend" && (
-            <TabErrorBoundary tabName="지출 분석">
-            <SpendView
-              accounts={data.accounts}
-              ledger={data.ledger}
-              categoryPresets={data.categoryPresets}
             />
             </TabErrorBoundary>
           )}

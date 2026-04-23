@@ -1,4 +1,4 @@
-import React from "react";
+import React, { useState } from "react";
 import type { Payload, ValueType, NameType } from "recharts/types/component/DefaultTooltipContent";
 import type { PieLabelRenderProps } from "recharts/types/polar/Pie";
 
@@ -49,15 +49,74 @@ export function Card({ title, children, span = 1, accent = false }: {
   );
 }
 
-export function Kpi({ label, value, sub, badge, color = "#e94560" }: {
-  label: string; value: string; sub?: string; badge?: string; color?: string;
+export function Kpi({ label, value, sub, badge, color = "#e94560", info }: {
+  label: string; value: string; sub?: string; badge?: string; color?: string; info?: string;
 }) {
   return (
     <div style={{ textAlign: "center" }}>
-      <div style={{ fontSize: 11, color: "#999", fontWeight: 600, textTransform: "uppercase" as const, letterSpacing: 1 }}>{label}</div>
+      <div style={{ fontSize: 11, color: "#999", fontWeight: 600, textTransform: "uppercase" as const, letterSpacing: 1, display: "flex", justifyContent: "center", alignItems: "center", gap: 4 }}>
+        {label}
+        {info && (
+          <span
+            title={info}
+            role="img"
+            aria-label={info}
+            style={{
+              cursor: "help",
+              fontSize: 10,
+              width: 14,
+              height: 14,
+              borderRadius: 7,
+              background: "rgba(255,255,255,0.15)",
+              color: "rgba(255,255,255,0.7)",
+              display: "inline-flex",
+              alignItems: "center",
+              justifyContent: "center",
+              fontWeight: 700,
+            }}
+          >ⓘ</span>
+        )}
+      </div>
       <div style={{ fontSize: 28, fontWeight: 800, color, marginTop: 4 }}>{value}</div>
       {sub && <div style={{ fontSize: 12, color: "#666", marginTop: 2 }}>{sub}</div>}
       {badge && <div style={{ fontSize: 11, marginTop: 4, display: "inline-block", padding: "2px 8px", borderRadius: 4, background: badge.startsWith("-") ? "rgba(72,201,176,0.15)" : "rgba(233,69,96,0.15)", color: badge.startsWith("-") ? "#48c9b0" : "#e94560", fontWeight: 700 }}>{badge}</div>}
+    </div>
+  );
+}
+
+/** localStorage로 접힘 상태 유지되는 섹션 래퍼 (Overview/Expense 등 탭 재사용) */
+export function Section({ storageKey, title, defaultOpen = true, children }: {
+  storageKey: string; title: string; defaultOpen?: boolean; children: React.ReactNode;
+}) {
+  const [open, setOpen] = useState<boolean>(() => {
+    try {
+      const saved = localStorage.getItem(storageKey);
+      return saved == null ? defaultOpen : saved === "1";
+    } catch { return defaultOpen; }
+  });
+  const toggle = () => {
+    setOpen((v) => {
+      try { localStorage.setItem(storageKey, v ? "0" : "1"); } catch { /* ignore */ }
+      return !v;
+    });
+  };
+  return (
+    <div style={{ marginBottom: 20 }}>
+      <button
+        type="button"
+        onClick={toggle}
+        style={{
+          width: "100%", display: "flex", justifyContent: "space-between", alignItems: "center",
+          padding: "10px 4px", border: "none", background: "transparent", cursor: "pointer",
+          fontSize: 15, fontWeight: 700, color: "#1a1a2e",
+          borderBottom: open ? "2px solid #1a1a2e" : "1px solid #ddd",
+          marginBottom: open ? 14 : 0,
+        }}
+      >
+        <span>{title}</span>
+        <span style={{ fontSize: 14, color: "#666" }}>{open ? "▾ 접기" : "▸ 펼치기"}</span>
+      </button>
+      {open && <div className="grid-4">{children}</div>}
     </div>
   );
 }
@@ -131,11 +190,82 @@ export interface InvestSubInsight {
   comment: string;
 }
 
+export interface AnomalyLite {
+  category: string;
+  currentMonthAmount: number;
+  averageAmount: number;
+  zScore: number;
+  percentChange: number;
+  severity: "normal" | "elevated" | "extreme";
+  isAnomaly: boolean;
+}
+
+export interface IncomeGrowth {
+  series: { l: string; month: string; income: number; momPct: number | null }[];
+  mom: number | null;
+  yoy: number | null;
+  avg3MoM: number | null;
+  targetInc: number;
+  prevInc: number;
+}
+
+export interface SpendingInertia {
+  curExp: number;
+  avg: number;
+  deviation: number | null;
+  lookbackMonths: number;
+}
+
+export interface BudgetProgressRow {
+  category: string;
+  limit: number;
+  spent: number;
+  remaining: number;
+  pct: number;
+  status: "safe" | "warning" | "over";
+}
+
+export interface CategoryGrowthRow {
+  sub: string;
+  cur: number;
+  avg3: number;
+  pctChange: number;
+}
+
+export interface EntryOutlier {
+  date: string;
+  desc: string;
+  sub: string;
+  cat: string;
+  amount: number;
+  zScore: number;
+  avg: number;
+}
+
+export interface PatternStats {
+  longestSpendStreak: number;
+  longestZeroStreak: number;
+  currentStreakType: "none" | "spend" | "zero";
+  currentStreakDays: number;
+  zeroDaysPerMonth: { month: string; label: string; zeroDays: number; totalDays: number }[];
+  avgIntervalDays: number;
+}
+
 export interface D {
   months: string[];
   ml: Record<string, string>;
   selMonth: string | null;
   txCount: number;
+  anomalyTargetMonth: string | null;
+  topAnomaly: AnomalyLite | null;
+  incomeGrowth: IncomeGrowth;
+  spendingInertia: SpendingInertia | null;
+  budgetProgress: BudgetProgressRow[];
+  categoryGrowth: { up: CategoryGrowthRow[]; down: CategoryGrowthRow[] };
+  entryOutliers: EntryOutlier[];
+  spendByDOMAvg: number[];
+  domOccurrences: number[];
+  patternStats: PatternStats;
 
   monthly: Record<string, { income: number; expense: number; investment: number }>;
   savRateTrend: { l: string; rate: number; cumRate: number; sav: number }[];
@@ -198,6 +328,10 @@ export interface D {
   originalAssets: number;
   originalAssetsByAcct: { name: string; amount: number }[];
   tempIncomeTotal: number;
+  /** 데이트 계좌에서 지출된 총액 (기간 내) */
+  dateAccountSpend: number;
+  /** 데이트 계좌 지출 중 상대 부담분 (50%) — 실 지출 계산에서 차감됨 */
+  datePartnerShare: number;
 
   netProfit: number;
   realSavRate: number;

@@ -11,7 +11,6 @@ import {
   CreditCard,
   FileText,
   Dumbbell,
-  ShoppingCart,
   Lightbulb
 } from "lucide-react";
 
@@ -22,7 +21,6 @@ export type TabId =
   | "dashboard"
   | "dividends"
   | "debt"
-  | "spend"
   | "budget"
   | "categories"
   | "settings"
@@ -44,7 +42,6 @@ const TABS: TabItem[] = [
   { id: "insights", label: "인사이트", icon: <Lightbulb size={18} /> },
   { id: "dividends", label: "배당/이자", icon: <CircleDollarSign size={18} /> },
   { id: "debt", label: "부채", icon: <CreditCard size={18} /> },
-  { id: "spend", label: "소비", icon: <ShoppingCart size={18} /> },
   { id: "budget", label: "예산/반복", icon: <PiggyBank size={18} /> },
   { id: "workout", label: "운동", icon: <Dumbbell size={18} /> },
   { id: "categories", label: "카테고리", icon: <Tags size={18} /> },

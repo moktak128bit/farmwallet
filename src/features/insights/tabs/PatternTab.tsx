@@ -4,6 +4,7 @@ import {
 } from "recharts";
 import type { ValueType } from "recharts/types/component/DefaultTooltipContent";
 import { WDN, C, F, W, Card, Kpi, Insight, Section, CT, type D } from "../insightsShared";
+import { FunTab } from "./FunTab";
 
 export const PatternTab = React.memo(function PatternTab({ d }: { d: D }) {
   const ps = d.patternStats;
@@ -204,6 +205,9 @@ export const PatternTab = React.memo(function PatternTab({ d }: { d: D }) {
           </div>
         </Card>
       </Section>
+
+      {/* ============ 재미 통계 (흡수) ============ */}
+      <FunTab d={d} />
     </div>
   );
 });

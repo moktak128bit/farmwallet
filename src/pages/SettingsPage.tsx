@@ -21,6 +21,7 @@ const SavingsMigrationView = lazy(() => import("./SavingsMigrationPage").then((m
 const ThemeCustomizer = lazy(() => import("../components/ThemeCustomizer").then((m) => ({ default: m.ThemeCustomizer })));
 import { usePWAInstall } from "../hooks/usePWAInstall";
 import { STORAGE_KEYS, ISA_PORTFOLIO } from "../constants/config";
+import { notifyDateAccountChange } from "../hooks/useDateAccountSettings";
 import * as gistSyncModule from "../services/gistSync";
 import { toUserDataJson } from "../services/dataService";
 import { ERROR_MESSAGES } from "../constants/errorMessages";
@@ -1073,6 +1074,7 @@ export const SettingsView: React.FC<Props> = ({
                 const v = e.target.value;
                 setDateAccountId(v);
                 localStorage.setItem(STORAGE_KEYS.DATE_ACCOUNT_ID, v);
+                notifyDateAccountChange();
                 toast.success(v ? `데이트통장: ${v}` : "데이트통장 해제");
               }}
               style={{ flex: 1, padding: "6px 10px", borderRadius: 6 }}
@@ -1094,6 +1096,7 @@ export const SettingsView: React.FC<Props> = ({
                 const v = Math.min(100, Math.max(0, Number(e.target.value) || 0));
                 setDateAccountRatio(v);
                 localStorage.setItem(STORAGE_KEYS.DATE_ACCOUNT_RATIO, String(v));
+                notifyDateAccountChange();
               }}
               style={{ width: 70, padding: "6px 10px", borderRadius: 6, textAlign: "right" }}
             />

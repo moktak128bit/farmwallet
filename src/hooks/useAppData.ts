@@ -1,5 +1,5 @@
 import { useEffect, useState, useCallback, useRef } from "react";
-import { loadData, preloadKrNames, applyKoreanStockNames, saveData } from "../storage";
+import { loadData, preloadKrNames, applyKoreanStockNames, saveData, normalizeImportedData } from "../storage";
 import { useAppStore } from "../store/appStore";
 import { loadCacheFromDB, mergeCacheIntoAppData } from "../services/cacheStore";
 import {
@@ -51,12 +51,15 @@ export function useAppData() {
     }
     fetch("/api/restore-latest-backup")
       .then((r) => r.json())
-      .then((backup: Record<string, unknown> | null) => {
+      .then((backup: unknown) => {
         if (!backup || typeof backup !== "object") return;
-        const ledger = backup.ledger;
+        const asRecord = backup as Record<string, unknown>;
+        const ledger = asRecord.ledger;
         if (!Array.isArray(ledger) || ledger.length === 0) return;
         try {
-          saveData(backup as unknown as Parameters<typeof saveData>[0]);
+          // 백업 JSON은 외부 소스 — normalizeImportedData로 구조 검증·정규화 후 저장
+          const normalized = normalizeImportedData(backup);
+          saveData(normalized);
           const reloaded = loadData();
           useAppStore.setState({ data: reloaded });
           setLoadFailed(false);

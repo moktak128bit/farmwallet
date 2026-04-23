@@ -169,12 +169,13 @@ export const StockCostVsMarketCard: React.FC<Props> = ({
         const priceInfo = priceIndex.get(meta.tickerNorm);
         const currentPriceNative = priceInfo ? priceInfo.price : null;
 
-        // 평가액(KRW) — 현재가 × 수량, 통화 환산 적용. 시세 없으면 원가와 동일 처리(손익 0)
+        // 평가액(KRW) — 현재가 × 수량, 통화 환산 적용.
+        // 시세 없거나 USD인데 환율 없으면 원가와 동일 처리(손익 0) — TotalAssetTrendCard와 일관
         let marketKrw: number;
         if (currentPriceNative == null) {
           marketKrw = costKrw;
         } else if (meta.usd) {
-          marketKrw = fxRate ? currentPriceNative * qty * fxRate : 0;
+          marketKrw = fxRate ? currentPriceNative * qty * fxRate : costKrw;
         } else {
           marketKrw = currentPriceNative * qty;
         }
@@ -202,10 +203,9 @@ export const StockCostVsMarketCard: React.FC<Props> = ({
     return { rows: out, holdingsByDate: byDate };
   }, [today, trades, fxRate, securitiesAccountIds, accountNameById, priceIndex]);
 
+  // 상세는 차트 점 클릭 시에만 표시. 자동으로 최신을 선택하지 않음.
   const [selectedDate, setSelectedDate] = useState<string | null>(null);
-  const activeDate = selectedDate && holdingsByDate.has(selectedDate)
-    ? selectedDate
-    : rows.length > 0 ? rows[rows.length - 1].date : null;
+  const activeDate = selectedDate && holdingsByDate.has(selectedDate) ? selectedDate : null;
   const activeRow = activeDate ? rows.find((r) => r.date === activeDate) : undefined;
   const activeHoldings = activeDate ? holdingsByDate.get(activeDate) ?? [] : [];
 

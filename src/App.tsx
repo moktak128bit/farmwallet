@@ -5,7 +5,6 @@ import { Tabs, type TabId } from "./components/ui/Tabs";
 import { ShortcutsHelp } from "./components/ShortcutsHelp";
 import { SearchModal } from "./components/SearchModal";
 import { PWAStatus } from "./components/PWAStatus";
-import { useSwipe } from "./hooks/useSwipe";
 import { ConfirmModal } from "./components/ui/ConfirmModal";
 import { QuickEntryModal } from "./components/QuickEntryModal";
 import { RecurringDueBadge } from "./components/RecurringDueBadge";
@@ -62,14 +61,16 @@ import { useFxRateValue } from "./context/FxRateContext";
 import { useTickerDatabase } from "./hooks/useTickerDatabase";
 import { useKeyboardShortcuts } from "./hooks/useKeyboardShortcuts";
 import { usePortfolioWorker } from "./hooks/usePortfolioWorker";
-import { APP_VERSION } from "./constants/config";
+import { APP_VERSION, STORAGE_KEYS } from "./constants/config";
+import { SyncActionBar } from "./components/SyncActionBar";
 import { runIntegrityCheck } from "./utils/dataIntegrity";
 import { useGistSync } from "./hooks/useGistSync";
 import { useMarketEnvSnapshotRecorder } from "./hooks/useMarketEnvSnapshotRecorder";
 import { GistVersionModal } from "./components/GistVersionModal";
 import { GitVersionModal } from "./components/GitVersionModal";
 import { GistConflictModal } from "./components/GistConflictModal";
-import { isGistConfigured, saveToGist } from "./services/gistSync";
+import { isGistConfigured, saveToGist, setGistLastPushAt } from "./services/gistSync";
+import { formatTimeAgo } from "./utils/date";
 import { toUserDataJson } from "./services/dataService";
 import { useUIStore, type PendingAction } from "./store/uiStore";
 import { TAB_ORDER } from "./constants/tabs";
@@ -101,6 +102,14 @@ export const App: React.FC = () => {
   const [showGitVersionModal, setShowGitVersionModal] = useState(false);
   const [gitCurrentBranch, setGitCurrentBranch] = useState<string>("main");
   const isOnRestoreBranch = gitCurrentBranch.startsWith("restore/");
+  const [gitLastPushAt, setGitLastPushAt] = useState<string | null>(() => {
+    if (typeof window === "undefined") return null;
+    try { return localStorage.getItem(STORAGE_KEYS.GIT_LAST_PUSH_AT); } catch { return null; }
+  });
+  const [gitLastPullAt, setGitLastPullAt] = useState<string | null>(() => {
+    if (typeof window === "undefined") return null;
+    try { return localStorage.getItem(STORAGE_KEYS.GIT_LAST_PULL_AT); } catch { return null; }
+  });
 
   // dev 환경에서 현재 git 브랜치 조회 (이전 버전 상태인지 감지)
   useEffect(() => {
@@ -195,11 +204,6 @@ export const App: React.FC = () => {
   const { setDataWithHistory, handleUndo, handleRedo } = useUndoRedo(data, setData);
   const { theme, toggleTheme } = useTheme();
 
-  // 모바일 좌/우 스와이프로 탭 이동
-  const swipeHandlers = useSwipe(
-    () => { const i = TAB_ORDER.indexOf(tab); if (i < TAB_ORDER.length - 1) setTab(TAB_ORDER[i + 1]); },
-    () => { const i = TAB_ORDER.indexOf(tab); if (i > 0) setTab(TAB_ORDER[i - 1]); },
-  );
   const fxRate = useFxRateValue();
   const {
     isSearchOpen,
@@ -442,20 +446,6 @@ export const App: React.FC = () => {
             >
               {theme === "light" ? <Moon size={16} /> : <Sun size={16} />}
             </button>
-            {latestBackupAt ? (
-              <div className="pill">
-                최근 백업:{" "}
-                {new Date(latestBackupAt).toLocaleString("ko-KR", {
-                  year: "numeric",
-                  month: "2-digit",
-                  day: "2-digit",
-                  hour: "2-digit",
-                  minute: "2-digit"
-                })}
-              </div>
-            ) : (
-              <div className="pill muted">백업 기록 없음</div>
-            )}
           </div>
           {newVersionAvailable && (
             <div className="pill success" style={{ cursor: "pointer", fontWeight: 600 }} onClick={() => window.location.reload()}>
@@ -474,143 +464,101 @@ export const App: React.FC = () => {
           {backupIntegrity.status === "mismatch" && (
             <div className="pill danger">최근 로컬 백업 해시 불일치. 백업을 다시 생성하세요.</div>
           )}
-          <div className="app-header-actions" style={{ display: 'flex', gap: 12 }}>
-            {/* 그룹 1: 백업 · 저장 · 배포 */}
-            <div style={{ display: 'flex', gap: 4, alignItems: 'center', background: 'var(--surface)', borderRadius: 8, padding: '2px 4px' }}>
-              <button
-                type="button"
-                className="primary"
-                onClick={() => withConfirm({
-                  title: "로컬 백업",
-                  message: "현재 데이터를 백업 파일로 저장합니다.",
-                  confirmLabel: "백업",
-                  onConfirm: () => { void handleManualBackup(); },
-                })}
-              >
-                백업
-              </button>
-              {import.meta.env.DEV && (
-                <button
-                  type="button"
-                  className="primary"
-                  style={{
-                    background: isOnRestoreBranch ? "var(--text-muted)" : "var(--success, #22c55e)",
-                    cursor: isOnRestoreBranch ? "not-allowed" : undefined
-                  }}
-                  disabled={isPushingToGit || isOnRestoreBranch}
-                  title={isOnRestoreBranch
-                    ? `이전 버전 상태(${gitCurrentBranch})에서는 업로드할 수 없습니다. 최신 main으로 돌아온 뒤 시도하세요.`
-                    : undefined}
-                  onClick={() => withConfirm({
-                    title: "git에 업로드",
-                    message: "현재 코드와 데이터를 git 원격에 push합니다. 약 2분 후 반영됩니다.",
-                    confirmLabel: "업로드",
-                    confirmStyle: "danger",
-                    onConfirm: async () => {
-                      setIsPushingToGit(true);
-                      addAppLog("git에 업로드 중...", "info");
-                      try {
-                        const res = await fetch("/api/git-push", { method: "POST" });
-                        const json = await res.json();
-                        if (!res.ok) throw new Error(json.error ?? "git 업로드 실패");
-                        addAppLog("git 업로드 완료 (약 2분 후 반영)", "success");
-                        toast.success("git에 업로드 완료");
-                      } catch (e) {
-                        const msg = e instanceof Error ? e.message : String(e);
-                        addAppLog(`git 업로드 실패: ${msg}`, "error");
-                        toast.error(msg || "git 업로드 실패");
-                      } finally {
-                        setIsPushingToGit(false);
-                      }
-                    },
-                  })}
-                >
-                  {isPushingToGit ? "업로드 중..." : isOnRestoreBranch ? "⚠ 이전 버전 상태" : "git에 업로드"}
-                </button>
-              )}
-            </div>
-            {/* 그룹 2: Gist 동기화 */}
-            {gistConfigured && (
-              <div style={{ display: 'flex', gap: 4, alignItems: 'center', background: 'var(--surface)', borderRadius: 8, padding: '2px 4px' }}>
-                <button
-                  type="button"
-                  className="primary"
-                  style={{ background: "var(--chart-income)", fontSize: 13 }}
-                  disabled={isGistSaving}
-                  onClick={() => withConfirm({
-                    title: "Gist 저장",
-                    message: "현재 데이터를 Gist에 저장합니다.",
-                    confirmLabel: "저장",
-                    onConfirm: async () => {
-                      setIsGistSaving(true);
-                      addAppLog("Gist에 저장 중...", "info");
-                      try {
-                        const jsonStr = toUserDataJson(data);
-                        await saveToGist(jsonStr);
-                        addAppLog("Gist 저장 완료", "success");
-                        toast.success("Gist에 저장 완료");
-                      } catch (e) {
-                        const msg = e instanceof Error ? e.message : String(e);
-                        addAppLog(`Gist 저장 실패: ${msg}`, "error");
-                        toast.error(msg || "Gist 저장 실패");
-                      } finally {
-                        setIsGistSaving(false);
-                      }
-                    },
-                  })}
-                >
-                  {isGistSaving ? "저장 중..." : "Gist 저장"}
-                </button>
-                <button
-                  type="button"
-                  className="secondary"
-                  style={{ fontSize: 13 }}
-                  onClick={() => setShowGistVersionModal(true)}
-                  title="Gist 버전 목록에서 선택해서 불러오기"
-                >
-                  Gist 불러오기
-                </button>
-              </div>
-            )}
-            {/* 그룹 3: 업데이트 */}
-            <div style={{ display: 'flex', gap: 4, alignItems: 'center', background: 'var(--surface)', borderRadius: 8, padding: '2px 4px' }}>
-              <button
-                type="button"
-                className="secondary"
-                style={
-                  isOnRestoreBranch
-                    ? { borderColor: "var(--warning, #f59e0b)", color: "var(--warning, #b45309)", fontWeight: 600 }
-                    : newVersionAvailable
-                      ? { borderColor: "var(--success, #22c55e)", color: "var(--success, #22c55e)", fontWeight: 600 }
-                      : undefined
+          <SyncActionBar
+            data={data}
+            latestBackupAt={latestBackupAt}
+            gistLastPushAt={gistLastPushAt}
+            gistLastPullAt={gistLastPullAt}
+            gitLastPushAt={gitLastPushAt}
+            gitLastPullAt={gitLastPullAt}
+            gistConfigured={gistConfigured}
+            isGistSaving={isGistSaving}
+            isPushingToGit={isPushingToGit}
+            isPullingFromGit={isPullingFromGit}
+            isOnRestoreBranch={isOnRestoreBranch}
+            gitCurrentBranch={gitCurrentBranch}
+            newVersionAvailable={newVersionAvailable}
+            onLocalBackup={() => withConfirm({
+              title: "로컬 백업",
+              message: "현재 데이터를 백업 파일로 저장합니다.",
+              confirmLabel: "백업",
+              onConfirm: () => { void handleManualBackup(); },
+            })}
+            onGistSave={() => withConfirm({
+              title: "Gist 저장",
+              message: "현재 데이터를 Gist에 저장합니다.",
+              confirmLabel: "저장",
+              onConfirm: async () => {
+                setIsGistSaving(true);
+                addAppLog("Gist에 저장 중...", "info");
+                try {
+                  const jsonStr = toUserDataJson(data);
+                  const result = await saveToGist(jsonStr);
+                  setGistLastPushAt(result.updatedAt);
+                  addAppLog("Gist 저장 완료", "success");
+                  toast.success("Gist 저장 완료");
+                } catch (e) {
+                  const msg = e instanceof Error ? e.message : String(e);
+                  addAppLog(`Gist 저장 실패: ${msg}`, "error");
+                  toast.error(msg || "Gist 저장 실패");
+                } finally {
+                  setIsGistSaving(false);
                 }
-                disabled={isPullingFromGit}
-                onClick={() => {
-                  if (import.meta.env.DEV) {
-                    setShowGitVersionModal(true);
-                  } else {
-                    // 프로덕션: 새 배포 버전으로 페이지 새로고침
-                    window.location.reload();
+              },
+            })}
+            onGistLoad={() => setShowGistVersionModal(true)}
+            onGitPush={() => withConfirm({
+              title: "git에 업로드",
+              message: "현재 코드와 데이터를 git 원격에 push합니다. 약 2분 후 반영됩니다.",
+              confirmLabel: "업로드",
+              confirmStyle: "danger",
+              onConfirm: async () => {
+                setIsPushingToGit(true);
+                addAppLog("최신 데이터 저장 중...", "info");
+                try {
+                  // auto-save 디바운스(500ms) 중일 수 있어 data/farmwallet-data.json이 구버전일 수 있음.
+                  // 명시적으로 flush해 최신 데이터가 파일에 반영된 뒤 push.
+                  const userDataStr = toUserDataJson(data);
+                  const userFieldsWithMeta = {
+                    ...JSON.parse(userDataStr),
+                    _exportedAt: new Date().toISOString(),
+                  };
+                  const flushRes = await fetch("/api/farmwallet-data", {
+                    method: "POST",
+                    headers: { "Content-Type": "application/json" },
+                    body: JSON.stringify(userFieldsWithMeta),
+                  });
+                  if (!flushRes.ok) {
+                    const flushJson = await flushRes.json().catch(() => ({}));
+                    throw new Error(flushJson.error ?? "데이터 파일 저장 실패");
                   }
-                }}
-              >
-                {isPullingFromGit
-                  ? "내려받는 중..."
-                  : isOnRestoreBranch
-                    ? `⚠ ${gitCurrentBranch.replace("restore/", "")}`
-                    : newVersionAvailable
-                      ? "새 버전 적용"
-                      : "git 내려받기"}
-              </button>
-            </div>
-            <button
-              type="button"
-              className="secondary"
-              onClick={() => setIsSearchOpen(true)}
-            >
-              빠른 검색
-            </button>
-          </div>
+                  addAppLog("git에 업로드 중...", "info");
+                  const res = await fetch("/api/git-push", { method: "POST" });
+                  const json = await res.json();
+                  if (!res.ok) throw new Error(json.error ?? "git 업로드 실패");
+                  const nowIso = new Date().toISOString();
+                  try { localStorage.setItem(STORAGE_KEYS.GIT_LAST_PUSH_AT, nowIso); } catch { /* */ }
+                  setGitLastPushAt(nowIso);
+                  addAppLog("git 업로드 완료 (약 2분 후 반영)", "success");
+                  toast.success("git 업로드 완료");
+                } catch (e) {
+                  const msg = e instanceof Error ? e.message : String(e);
+                  addAppLog(`git 업로드 실패: ${msg}`, "error");
+                  toast.error(msg || "git 업로드 실패");
+                } finally {
+                  setIsPushingToGit(false);
+                }
+              },
+            })}
+            onGitPull={() => {
+              if (import.meta.env.DEV) {
+                setShowGitVersionModal(true);
+              } else {
+                window.location.reload();
+              }
+            }}
+            onSearch={() => setIsSearchOpen(true)}
+          />
         </div>
       </header>
 
@@ -638,7 +586,7 @@ export const App: React.FC = () => {
                 </div>
               </>
             )}
-            <main id="main-content" className="app-main" role="main" {...swipeHandlers}>
+            <main id="main-content" className="app-main" role="main">
           <Suspense fallback={<div className="card" style={{ padding: 24, textAlign: "center", color: "var(--text-muted)" }}>로딩 중...</div>}>
           {tab === "dashboard" && (
             <TabErrorBoundary tabName="대시보드"><DashboardView /></TabErrorBoundary>
@@ -753,8 +701,6 @@ export const App: React.FC = () => {
               accounts={data.accounts}
               ledger={data.ledger}
               trades={data.trades}
-              prices={data.prices}
-              fxRate={fxRate ?? undefined}
               categoryPresets={data.categoryPresets}
               budgetGoals={data.budgetGoals}
               recurringExpenses={data.recurringExpenses}
@@ -891,6 +837,9 @@ export const App: React.FC = () => {
             if (!res.ok) throw new Error(json.error ?? "git 내려받기 실패");
             const branch = json.branch ?? "main";
             setGitCurrentBranch(branch);
+            const nowIso = new Date().toISOString();
+            try { localStorage.setItem(STORAGE_KEYS.GIT_LAST_PULL_AT, nowIso); } catch { /* */ }
+            setGitLastPullAt(nowIso);
             const msg = ref === ""
               ? "git 내려받기 완료 — main 최신. F5로 새로고침하세요."
               : `git 내려받기 완료 — ${branch}. F5로 새로고침하세요.`;

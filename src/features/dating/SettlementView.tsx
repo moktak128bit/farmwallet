@@ -1,7 +1,7 @@
 import React, { useMemo, useState } from "react";
 import type { Account, AppData, LedgerEntry } from "../../types";
-import { STORAGE_KEYS } from "../../constants/config";
 import { Section } from "../insights/insightsShared";
+import { useDateAccountId } from "../../hooks/useDateAccountSettings";
 
 interface Props {
   data: AppData;
@@ -12,9 +12,7 @@ interface Props {
 const SETTLE_LAST_KEY = "fw-date-account-last-settle-at";
 
 export const SettlementView: React.FC<Props> = ({ data, onSettle, formatNumber }) => {
-  const dateAccountId = typeof window !== "undefined"
-    ? localStorage.getItem(STORAGE_KEYS.DATE_ACCOUNT_ID) ?? ""
-    : "";
+  const dateAccountId = useDateAccountId() ?? "";
   const lastSettleAt = typeof window !== "undefined"
     ? localStorage.getItem(SETTLE_LAST_KEY) ?? ""
     : "";

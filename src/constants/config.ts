@@ -46,6 +46,10 @@ export const STORAGE_KEYS = {
   GIST_LAST_PUSH_AT: "fw-gist-last-push-at",
   /** 마지막 자동 Gist 불러오기 성공 시각 (ISO 8601) */
   GIST_LAST_PULL_AT: "fw-gist-last-pull-at",
+  /** 마지막 git 업로드(push) 성공 시각 (ISO 8601) — 헤더 버튼 표시용 */
+  GIT_LAST_PUSH_AT: "fw-git-last-push-at",
+  /** 마지막 git 내려받기(pull) 성공 시각 (ISO 8601) — 헤더 버튼 표시용 */
+  GIT_LAST_PULL_AT: "fw-git-last-pull-at",
   /** API로 수집한 캐시 데이터 (prices, tickerDatabase, historicalDailyCloses) */
   CACHE: "farmwallet-cache-v1"
 } as const;

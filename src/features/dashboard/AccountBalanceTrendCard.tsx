@@ -27,7 +27,7 @@ export const AccountBalanceTrendCard: React.FC<Props> = ({
   const lastTotal = Number(lastSnap.total) || 0;
   const prevTotal = Number(prevSnap.total) || 0;
   const abDelta = lastTotal - prevTotal;
-  const abDeltaPct = prevTotal !== 0 ? (abDelta / Math.abs(prevTotal)) * 100 : 0;
+  const abDeltaPct = prevTotal !== 0 ? (abDelta / prevTotal) * 100 : 0;
   const abColor = abDelta > 0 ? "var(--success)" : abDelta < 0 ? "var(--danger)" : "var(--muted)";
   const abArrow = abDelta > 0 ? "▲" : abDelta < 0 ? "▼" : "–";
 

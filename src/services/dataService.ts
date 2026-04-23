@@ -254,7 +254,7 @@ function getDefaultCategoryPresets(): CategoryPresets {
     },
     {
       main: "대출상환",
-      subs: ["학자금대출", "주담대원금", "주담대이자", "개인대출", "기타대출상환"]
+      subs: ["원금상환", "이자상환"]
     },
     {
       main: "실수",
@@ -324,6 +324,14 @@ function mergeCategoryPresets(
   });
   // 3) expenseDetails에 "신용카드" main이 있으면 제거 (카드결제는 이제 이체 subCategory)
   expenseDetails = expenseDetails.filter((g) => g.main !== "신용카드");
+  // 4) "대출상환" subs에 "원금상환" 또는 "이자상환"이 없으면 새 단순화된 기본값으로 교체
+  //    (대출 종류는 Loan.subCategory에서 관리, ledger detailCategory는 원금/이자만 구분)
+  expenseDetails = expenseDetails.map((g) => {
+    if (g.main !== "대출상환") return g;
+    const hasNewScheme = g.subs.includes("원금상환") || g.subs.includes("이자상환");
+    if (hasNewScheme) return g;
+    return { ...g, subs: ["원금상환", "이자상환"] };
+  });
 
   const expense = expenseDetails.map((g) => g.main);
   const categoryTypes = fromStorage.categoryTypes ?? defaults.categoryTypes ?? {

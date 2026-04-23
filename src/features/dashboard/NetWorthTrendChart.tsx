@@ -40,7 +40,7 @@ export const NetWorthTrendChart: React.FC<Props> = ({ data }) => {
   const currentWorth = data[data.length - 1].value;
   const prevWorth = data[data.length - 2]?.value ?? currentWorth;
   const nwDelta = currentWorth - prevWorth;
-  const nwDeltaPct = Number.isFinite(prevWorth) && prevWorth !== 0 ? (nwDelta / Math.abs(prevWorth)) * 100 : 0;
+  const nwDeltaPct = Number.isFinite(prevWorth) && prevWorth !== 0 ? (nwDelta / prevWorth) * 100 : 0;
   const nwDeltaColor = nwDelta > 0 ? "var(--success)" : nwDelta < 0 ? "var(--danger)" : "var(--muted)";
   const nwArrow = nwDelta > 0 ? "▲" : nwDelta < 0 ? "▼" : "–";
 

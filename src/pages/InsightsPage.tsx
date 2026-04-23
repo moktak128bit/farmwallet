@@ -1,10 +1,11 @@
 import React, { useMemo, useState } from "react";
-import type { Account, LedgerEntry, StockTrade, StockPrice, CategoryPresets, BudgetGoal, RecurringExpense } from "../types";
+import type { Account, LedgerEntry, StockTrade, CategoryPresets, BudgetGoal, RecurringExpense } from "../types";
 import { ForecastView } from "../features/insights/ForecastView";
 import { SettlementView } from "../features/dating/SettlementView";
 import { calcTrend, mTotalsFor } from "../utils/insightsHelpers";
 import { isInvestmentEntry } from "../utils/category";
 import { detectSpendAnomalies } from "../utils/anomaly";
+import { useDateAccountId } from "../hooks/useDateAccountSettings";
 import {
   F, W, SD,
   type D, type SubInsight, type IncSubInsight, type DateSubInsight, type InvestSubInsight,
@@ -14,31 +15,25 @@ import { ExpenseTab } from "../features/insights/tabs/ExpenseTab";
 import { IncomeTab } from "../features/insights/tabs/IncomeTab";
 import { DateTab } from "../features/insights/tabs/DateTab";
 import { InvestTab } from "../features/insights/tabs/InvestTab";
-import { SubTab } from "../features/insights/tabs/SubTab";
 import { PatternTab } from "../features/insights/tabs/PatternTab";
 import { AssetTab } from "../features/insights/tabs/AssetTab";
-import { FunTab } from "../features/insights/tabs/FunTab";
 
 const TABS: { id: TabId; label: string; icon: string }[] = [
   { id: "overview", label: "종합 대시보드", icon: "📊" },
-  { id: "expense", label: "지출 분석", icon: "💸" },
+  { id: "expense", label: "지출·구독", icon: "💸" },
   { id: "income", label: "수입 구조", icon: "💰" },
   { id: "asset", label: "자산 분석", icon: "🏦" },
-  { id: "date", label: "데이트 분석", icon: "💕" },
-  { id: "settle", label: "데이트 정산", icon: "🤝" },
   { id: "invest", label: "투자 포트폴리오", icon: "📈" },
-  { id: "sub", label: "구독 관리", icon: "🔄" },
-  { id: "pattern", label: "소비 패턴", icon: "🔍" },
-  { id: "forecast", label: "다음 달 예측", icon: "🔮" },
-  { id: "fun", label: "재미 통계", icon: "🎯" },
+  { id: "date", label: "데이트", icon: "💕" },
+  { id: "pattern", label: "패턴·재미", icon: "🔍" },
 ];
-type TabId = "overview" | "expense" | "income" | "asset" | "date" | "settle" | "invest" | "sub" | "pattern" | "forecast" | "fun";
+type TabId = "overview" | "expense" | "income" | "asset" | "invest" | "date" | "pattern";
 
 /* ================================================================== */
 /*  Data computation hook                                              */
 /* ================================================================== */
 
-function useD(ledger: LedgerEntry[], rawTrades: StockTrade[], accounts: Account[], selMonth: string | null, categoryPresets?: CategoryPresets, budgetGoals?: BudgetGoal[]): D {
+function useD(ledger: LedgerEntry[], rawTrades: StockTrade[], accounts: Account[], selMonth: string | null, categoryPresets: CategoryPresets | undefined, budgetGoals: BudgetGoal[] | undefined, dateAccountId: string | null): D {
   return useMemo(() => {
     const aMap = new Map(accounts.map(a => [a.id, a.name]));
     const invIds = new Set(accounts.filter(a => a.type === "securities" || a.type === "crypto").map(a => a.id));
@@ -64,8 +59,11 @@ function useD(ledger: LedgerEntry[], rawTrades: StockTrade[], accounts: Account[
     const fT = selMonth ? rawTrades.filter(t => t.date?.startsWith(selMonth)) : rawTrades;
     // 일반 지출: expense kind 중 재테크/환전 제외 (투자손실은 category=재테크라 자동 제외)
     const fExp = fL.filter(l => l.kind === "expense" && Number(l.amount) > 0 && l.category !== "재테크" && l.category !== "환전");
-    // 수입 (투자수익도 kind=income으로 마이그레이션되어 자연 포함)
-    const fInc = fL.filter(l => l.kind === "income" && Number(l.amount) > 0);
+    // 이월/원래 보유 자산은 실수입이 아니므로 수입 합계에서 완전 제외 (UX 기억: 모든 수입 지표 일관)
+    const isCarryOverStr = (s: string) => s === "이월" || s.includes("이월") || s === "원래 보유 자산" || s.includes("보유 자산");
+    const isCarryOver = (l: LedgerEntry) => isCarryOverStr(l.category || "") || isCarryOverStr(l.subCategory || "");
+    // 수입 (투자수익도 kind=income으로 마이그레이션되어 자연 포함). 이월/원래보유자산 제외.
+    const fInc = fL.filter(l => l.kind === "income" && Number(l.amount) > 0 && !isCarryOver(l));
 
     /* period totals */
     const pIncome = fInc.reduce((s, l) => s + Number(l.amount), 0);
@@ -190,13 +188,10 @@ function useD(ledger: LedgerEntry[], rawTrades: StockTrade[], accounts: Account[
     const dateTop = Array.from(dateDescM.entries()).sort((a, b) => b[1] - a[1]).slice(0, 20);
     const dateSubCats = Array.from(dateSubCatM.entries()).sort((a, b) => b[1] - a[1]).slice(0, 10);
 
-    /* incomeByCategory — 원래 보유 자산(이월)은 실질 수입이 아니므로 제외 */
-    const isCarryOverStr = (s: string) => s === "이월" || s.includes("이월") || s === "원래 보유 자산" || s.includes("보유 자산");
-    const isCarryOver = (l: LedgerEntry) => isCarryOverStr(l.category || "") || isCarryOverStr(l.subCategory || "");
+    /* incomeByCategory — fInc가 이미 이월/원래보유자산을 제외했으므로 추가 필터 불필요 */
     const icM = new Map<string, number>();
     for (const l of fInc) {
       const c = l.subCategory || l.category || "기타";
-      if (isCarryOver(l)) continue;
       icM.set(c, (icM.get(c) ?? 0) + Number(l.amount));
     }
     const incByCat = Array.from(icM.entries()).sort((a, b) => b[1] - a[1]);
@@ -672,7 +667,6 @@ function useD(ledger: LedgerEntry[], rawTrades: StockTrade[], accounts: Account[
       .sort((a, b) => b.amount - a.amount);
     const originalAssets = originalAssetsByAcct.reduce((s, a) => s + a.amount, 0);
     // 데이트 계좌 지출: 50/50 분담 → 절반은 상대 부담이므로 실 지출에서 제거
-    const dateAccountId = typeof window !== "undefined" ? localStorage.getItem("fw-date-account-id") : null;
     const dateAccountSpend = dateAccountId
       ? fExp.reduce((s, l) => (l.fromAccountId === dateAccountId ? s + Number(l.amount) : s), 0)
       : 0;
@@ -884,12 +878,14 @@ function useD(ledger: LedgerEntry[], rawTrades: StockTrade[], accounts: Account[
 
     /* 카테고리 성장률 TOP — 현재월 중분류 지출 vs 최근 3개월 평균 */
     const categoryGrowth = (() => {
+      type GrowthRow = { sub: string; cur: number; avg3: number; pctChange: number; isNew: boolean };
+      const emptyRet: { up: GrowthRow[]; down: GrowthRow[] } = { up: [], down: [] };
       const targetMonth = anomalyTargetMonth;
-      if (!targetMonth) return { up: [], down: [] as { sub: string; cur: number; avg3: number; pctChange: number }[] };
+      if (!targetMonth) return emptyRet;
       const idx = months.indexOf(targetMonth);
-      if (idx < 0) return { up: [], down: [] };
+      if (idx < 0) return emptyRet;
       const prevMonths = months.slice(Math.max(0, idx - 3), idx);
-      if (prevMonths.length === 0) return { up: [], down: [] };
+      if (prevMonths.length === 0) return emptyRet;
       // subCategory별 월별 지출
       const subMonthly = new Map<string, Map<string, number>>();
       for (const l of ledger) {
@@ -901,13 +897,15 @@ function useD(ledger: LedgerEntry[], rawTrades: StockTrade[], accounts: Account[
         if (!subMonthly.has(sub)) subMonthly.set(sub, new Map());
         subMonthly.get(sub)!.set(mo, (subMonthly.get(sub)!.get(mo) ?? 0) + Number(l.amount));
       }
-      const rows: { sub: string; cur: number; avg3: number; pctChange: number }[] = [];
+      const rows: { sub: string; cur: number; avg3: number; pctChange: number; isNew: boolean }[] = [];
       for (const [sub, mm] of subMonthly) {
         const cur = mm.get(targetMonth) ?? 0;
         const avg3 = prevMonths.reduce((s, m) => s + (mm.get(m) ?? 0), 0) / prevMonths.length;
         if (cur === 0 && avg3 === 0) continue;
-        const pct = avg3 > 0 ? ((cur - avg3) / avg3) * 100 : cur > 0 ? 999 : 0;
-        rows.push({ sub, cur, avg3, pctChange: pct });
+        const isNew = avg3 === 0 && cur > 0;
+        // pctChange: 신규 카테고리(avg3=0)는 정렬 편의상 큰 양수로 기록하되 isNew 플래그로 UI 구분
+        const pct = avg3 > 0 ? ((cur - avg3) / avg3) * 100 : isNew ? Number.POSITIVE_INFINITY : 0;
+        rows.push({ sub, cur, avg3, pctChange: pct, isNew });
       }
       const upRows = [...rows].filter((r) => r.cur > 50000 || r.avg3 > 50000).sort((a, b) => b.pctChange - a.pctChange).slice(0, 5);
       const downRows = [...rows].filter((r) => r.avg3 > 50000).sort((a, b) => a.pctChange - b.pctChange).slice(0, 5);
@@ -1013,7 +1011,7 @@ function useD(ledger: LedgerEntry[], rawTrades: StockTrade[], accounts: Account[
       incomeStability, investReturnRate, subTotal, fixedExpense, variableExpense,
       netWorthByMonth, accountBalances, assetAllocation, funStats,
     };
-  }, [ledger, rawTrades, accounts, selMonth, categoryPresets]);
+  }, [ledger, rawTrades, accounts, selMonth, categoryPresets, budgetGoals, dateAccountId]);
 }
 
 /* ================================================================== */
@@ -1024,15 +1022,13 @@ interface Props {
   accounts: Account[];
   ledger: LedgerEntry[];
   trades?: StockTrade[];
-  prices?: StockPrice[];
-  fxRate?: number;
   categoryPresets: CategoryPresets;
   budgetGoals?: BudgetGoal[];
   recurringExpenses?: RecurringExpense[];
   onAddLedger?: (entry: LedgerEntry) => void;
 }
 
-export const InsightsView: React.FC<Props> = ({ accounts, ledger, trades = [], prices: _p, fxRate: _f, categoryPresets, budgetGoals: _b, recurringExpenses = [], onAddLedger }) => {
+export const InsightsView: React.FC<Props> = ({ accounts, ledger, trades = [], categoryPresets, budgetGoals, recurringExpenses = [], onAddLedger }) => {
   const [tab, setTab] = useState<TabId>("overview");
   const [selMonth, setSelMonth] = useState<string | null>(null);
   const [periodMonths, setPeriodMonths] = useState<number | null>(null); // null = 전체
@@ -1046,16 +1042,16 @@ export const InsightsView: React.FC<Props> = ({ accounts, ledger, trades = [], p
       filteredTrades: trades.filter((t) => (t.date ?? "") >= cutoffIso),
     };
   }, [ledger, trades, periodMonths]);
-  const d = useD(filteredLedger, filteredTrades, accounts, selMonth, categoryPresets, _b);
+  // 데이트 계좌 ID — Settings에서 설정하는 값. localStorage 변경은 storage 이벤트로 반영.
+  const dateAccountId = useDateAccountId();
+  const d = useD(filteredLedger, filteredTrades, accounts, selMonth, categoryPresets, budgetGoals, dateAccountId);
 
   const dateRange = d.months.length > 0 ? `${d.months[0].replace("-", ".")} ~ ${d.months[d.months.length - 1].replace("-", ".")}` : "";
-  const TabMap: Record<TabId, React.FC<{ d: D }>> = { overview: OverviewTab, expense: ExpenseTab, income: IncomeTab, asset: AssetTab, date: DateTab, invest: InvestTab, sub: SubTab, pattern: PatternTab, fun: FunTab, settle: () => null, forecast: () => null };
+  const TabMap: Record<TabId, React.FC<{ d: D }>> = { overview: OverviewTab, expense: ExpenseTab, income: IncomeTab, asset: AssetTab, invest: InvestTab, date: DateTab, pattern: PatternTab };
   const ActiveTab = TabMap[tab];
 
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: 0, fontFamily: "'Pretendard Variable', 'Pretendard', -apple-system, sans-serif" }}>
-      <link href="https://cdn.jsdelivr.net/gh/orioncactus/pretendard@v1.3.9/dist/web/variable/pretendardvariable-dynamic-subset.min.css" rel="stylesheet" />
-
       {/* Header */}
       <div style={{ background: "linear-gradient(135deg, #1a1a2e 0%, #16213e 60%, #0f3460 100%)", padding: "24px 32px 18px", color: "#fff", borderRadius: "12px 12px 0 0", display: "flex", justifyContent: "space-between", alignItems: "flex-end" }}>
         <div>
@@ -1064,7 +1060,8 @@ export const InsightsView: React.FC<Props> = ({ accounts, ledger, trades = [], p
           <div style={{ fontSize: 12, color: "rgba(255,255,255,0.5)", marginTop: 4 }}>{dateRange} · {d.txCount.toLocaleString()}건 분석</div>
         </div>
         <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
-          <div style={{ display: "flex", gap: 2, background: "rgba(255,255,255,0.1)", borderRadius: 8, padding: 2 }}>
+          {/* 기간: 특정 월 선택 시엔 의미 없으므로 흐리게 */}
+          <div style={{ display: "flex", gap: 2, background: "rgba(255,255,255,0.1)", borderRadius: 8, padding: 2, opacity: selMonth ? 0.4 : 1 }}>
             {[
               { label: "3M", v: 3 },
               { label: "6M", v: 6 },
@@ -1074,9 +1071,11 @@ export const InsightsView: React.FC<Props> = ({ accounts, ledger, trades = [], p
               <button
                 key={p.label}
                 type="button"
-                onClick={() => setPeriodMonths(p.v)}
+                disabled={!!selMonth}
+                onClick={() => { setPeriodMonths(p.v); setSelMonth(null); }}
                 style={{
-                  padding: "6px 12px", borderRadius: 6, border: "none", cursor: "pointer",
+                  padding: "6px 12px", borderRadius: 6, border: "none",
+                  cursor: selMonth ? "not-allowed" : "pointer",
                   fontSize: 12, fontWeight: 700,
                   background: periodMonths === p.v ? "#fff" : "transparent",
                   color: periodMonths === p.v ? "#1a1a2e" : "rgba(255,255,255,0.7)",
@@ -1085,10 +1084,18 @@ export const InsightsView: React.FC<Props> = ({ accounts, ledger, trades = [], p
               >{p.label}</button>
             ))}
           </div>
-          <select value={selMonth ?? "all"} onChange={e => setSelMonth(e.target.value === "all" ? null : e.target.value)} style={{
-            padding: "8px 14px", borderRadius: 8, border: "1px solid rgba(255,255,255,0.2)", background: "rgba(255,255,255,0.1)",
-            color: "#fff", fontSize: 13, fontWeight: 600, cursor: "pointer", outline: "none", minWidth: 120,
-          }}>
+          <select
+            value={selMonth ?? "all"}
+            onChange={(e) => {
+              const v = e.target.value === "all" ? null : e.target.value;
+              setSelMonth(v);
+              if (v) setPeriodMonths(null); // 특정 월 선택 시 period 리셋 (충돌 제거)
+            }}
+            style={{
+              padding: "8px 14px", borderRadius: 8, border: "1px solid rgba(255,255,255,0.2)", background: "rgba(255,255,255,0.1)",
+              color: "#fff", fontSize: 13, fontWeight: 600, cursor: "pointer", outline: "none", minWidth: 120,
+            }}
+          >
             <option value="all" style={{ color: "#1a1a2e" }}>전체 월</option>
             {[...d.months].reverse().map(m => <option key={m} value={m} style={{ color: "#1a1a2e" }}>{d.ml[m]} ({m})</option>)}
           </select>
@@ -1109,16 +1116,16 @@ export const InsightsView: React.FC<Props> = ({ accounts, ledger, trades = [], p
 
       {/* Content */}
       <div style={{ padding: "20px 24px", maxWidth: 1200, margin: "0 auto", width: "100%", boxSizing: "border-box" }}>
-        {tab === "forecast" ? (
+        <ActiveTab d={d} />
+        {tab === "overview" && (
           <ForecastView ledger={ledger} recurring={recurringExpenses} formatNumber={W} />
-        ) : tab === "settle" ? (
+        )}
+        {tab === "date" && (
           <SettlementView
-            data={{ accounts, ledger, trades, prices: [], categoryPresets, recurringExpenses, budgetGoals: _b ?? [], customSymbols: [] }}
+            data={{ accounts, ledger, trades, prices: [], categoryPresets, recurringExpenses, budgetGoals: budgetGoals ?? [], customSymbols: [] }}
             onSettle={(entry) => onAddLedger?.(entry)}
             formatNumber={W}
           />
-        ) : (
-          <ActiveTab d={d} />
         )}
       </div>
     </div>

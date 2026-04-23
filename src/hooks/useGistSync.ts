@@ -74,10 +74,21 @@ export function useGistSync(
         const latest = versions[0];
         knownRemoteCommitRef.current = latest?.committedAt ?? "";
         const localPull = getGistLastPullAt();
-        const remoteIsNewer =
+        const localPush = getGistLastPushAt();
+        // 1) 원격이 마지막 pull보다 새로움 + 2) 원격이 우리의 마지막 push와 다름 (= 외부 기기가 변경)
+        // 두 조건 모두 만족할 때만 pull. 하나라도 아니면 로컬에 미-push된 변경이 덮여 사라지는 것을 방지.
+        const remoteIsNewerThanLastPull =
           !!latest && (!localPull || new Date(latest.committedAt) > new Date(localPull));
+        const remoteIsFromExternalDevice =
+          !!latest && (!localPush || new Date(latest.committedAt) > new Date(localPush));
+        const remoteIsNewer = remoteIsNewerThanLastPull && remoteIsFromExternalDevice;
         if (!remoteIsNewer) {
-          onLog?.("Gist 자동 동기화: 원격이 더 새롭지 않아 건너뜀", "info");
+          if (remoteIsNewerThanLastPull && !remoteIsFromExternalDevice) {
+            // lastPushAt == remote.committedAt: 우리 푸시가 최신. lastPullAt을 맞춰 다음부터 불필요한 pull 방지
+            setGistLastPullAt(latest!.committedAt);
+            setLastPullAt(latest!.committedAt);
+          }
+          onLog?.("Gist 자동 동기화: 외부 변경 없음(건너뜀)", "info");
           return;
         }
         const { dataJson, updatedAt } = await loadFromGist();

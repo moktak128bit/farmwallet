@@ -1,5 +1,5 @@
 import React from "react";
-import { F, Card, type D } from "../insightsShared";
+import { F, Card, Section, type D } from "../insightsShared";
 
 export const FunTab = React.memo(function FunTab({ d }: { d: D }) {
   const fs = d.funStats;
@@ -23,8 +23,8 @@ export const FunTab = React.memo(function FunTab({ d }: { d: D }) {
     ? Math.round(fs.weekendVsWeekday.weekend / (fs.weekendVsWeekday.weekend + fs.weekendVsWeekday.weekday) * 100) : 0;
 
   return (
-    <div>
-      <div className="grid-4" style={{ marginBottom: 20 }}>
+    <>
+      <Section storageKey="fun-section-records" title="🏆 재미 기록">
         {statCards.map((s, i) => (
           <Card key={i} accent>
             <div style={{ textAlign: "center", padding: "8px 0" }}>
@@ -35,9 +35,9 @@ export const FunTab = React.memo(function FunTab({ d }: { d: D }) {
             </div>
           </Card>
         ))}
-      </div>
+      </Section>
 
-      <div className="grid-2">
+      <Section storageKey="fun-section-detail" title="🎯 재미 통계 상세" defaultOpen={false}>
         <Card title="주말 vs 평일 지출">
           <div style={{ display: "flex", alignItems: "center", gap: 16 }}>
             <div style={{ flex: 1 }}>
@@ -120,7 +120,7 @@ export const FunTab = React.memo(function FunTab({ d }: { d: D }) {
             })()}
           </div>
         </Card>
-      </div>
-    </div>
+      </Section>
+    </>
   );
 });

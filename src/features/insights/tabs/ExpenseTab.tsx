@@ -6,6 +6,7 @@ import {
 } from "recharts";
 import type { ValueType } from "recharts/types/component/DefaultTooltipContent";
 import { C, F, W, SD, Card, Kpi, Insight, Section, CT, pieLabel, type D } from "../insightsShared";
+import { SubTab } from "./SubTab";
 
 const WDAY_LABELS = ["월", "화", "수", "목", "금", "토", "일"];
 
@@ -351,7 +352,9 @@ export const ExpenseTab = React.memo(function ExpenseTab({ d }: { d: D }) {
                   <div key={r.sub} style={{ padding: "6px 10px", background: "#fff5f5", borderRadius: 6, marginBottom: 4, fontSize: 12 }}>
                     <div style={{ display: "flex", justifyContent: "space-between", fontWeight: 600 }}>
                       <span>{r.sub}</span>
-                      <span style={{ color: "#e94560", fontWeight: 800 }}>+{r.pctChange.toFixed(0)}%</span>
+                      <span style={{ color: "#e94560", fontWeight: 800 }}>
+                        {r.isNew ? "NEW" : `+${r.pctChange.toFixed(0)}%`}
+                      </span>
                     </div>
                     <div style={{ fontSize: 10, color: "#999" }}>{F(r.avg3)}원 → {F(r.cur)}원</div>
                   </div>
@@ -454,6 +457,9 @@ export const ExpenseTab = React.memo(function ExpenseTab({ d }: { d: D }) {
           </Card>
         )}
       </Section>
+
+      {/* ============ 구독 (흡수: 구독은 반복 지출의 세부) ============ */}
+      <SubTab d={d} />
     </div>
   );
 });

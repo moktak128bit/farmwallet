@@ -12,6 +12,28 @@ export const C = [
   "#3498db", "#e74c3c", "#2ecc71", "#9b59b6", "#1abc9c", "#d35400",
 ];
 
+/**
+ * 인사이트 탭 공용 색 토큰. 점진 이관: 새 코드 및 수정 코드는 이 상수를 사용.
+ * 기존 hex 직접 사용은 일괄 치환하지 않음 (리스크 대비 이득 낮음).
+ */
+export const COLORS = {
+  navy: "#1a1a2e",
+  navyDeep: "#16213e",
+  navyMid: "#0f3460",
+  accent: "#e94560",   // 빨강 — 경고/지출
+  success: "#48c9b0",  // 민트 — 긍정/절약
+  successDark: "#059669",
+  warn: "#f0c040",     // 노랑 — 주의
+  warnDark: "#f59e0b",
+  info: "#3498db",
+  violet: "#533483",
+  textDim: "#999",
+  textMid: "#666",
+  border: "#eee",
+  surface: "#f8f9fa",
+  surfaceAlt: "#f0f8ff",
+} as const;
+
 /* ================================================================== */
 /*  Formatters                                                         */
 /* ================================================================== */
@@ -229,7 +251,9 @@ export interface CategoryGrowthRow {
   sub: string;
   cur: number;
   avg3: number;
+  /** 신규 카테고리(avg3=0)의 경우 Infinity — UI는 isNew로 분기 */
   pctChange: number;
+  isNew: boolean;
 }
 
 export interface EntryOutlier {

@@ -358,10 +358,9 @@ export const TotalAssetTrendCard: React.FC<Props> = ({
     snapByDate,
   ]);
 
+  // 상세는 차트 점 클릭 시에만 표시. 자동으로 최신을 선택하지 않음.
   const [selectedDate, setSelectedDate] = useState<string | null>(null);
-  const activeDate = selectedDate && detailByDate.has(selectedDate)
-    ? selectedDate
-    : rows.length > 0 ? rows[rows.length - 1].date : null;
+  const activeDate = selectedDate && detailByDate.has(selectedDate) ? selectedDate : null;
   const activeRow = activeDate ? rows.find((r) => r.date === activeDate) : undefined;
   const activeDetail = activeDate ? detailByDate.get(activeDate) : undefined;
 

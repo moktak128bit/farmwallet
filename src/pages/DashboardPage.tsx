@@ -17,6 +17,7 @@ import { AssetCompositionCard } from "../features/dashboard/AssetCompositionCard
 import { AccountBalanceTrendCard } from "../features/dashboard/AccountBalanceTrendCard";
 import { StockCostVsMarketCard } from "../features/dashboard/StockCostVsMarketCard";
 import { TotalAssetTrendCard } from "../features/dashboard/TotalAssetTrendCard";
+import { TickerPerformanceCard } from "../features/dashboard/TickerPerformanceCard";
 import type {
   Account,
   LedgerEntry,
@@ -310,8 +311,12 @@ export const DashboardView: React.FC<Props> = (props) => {
   const lastMonthSavingsRate = useMemo(() => {
     const { income, investing } = lastMonthSummary;
     if (income <= 0) return null;
-    return (investing / income) * 100;
-  }, [lastMonthSummary]);
+    // investing(transfer 저축이체/투자이체)만 쓰면 재테크 expense(저축/투자)로 기록한 저축이 누락됨.
+    // 저축률 = (transfer 저축 + 재테크 expense 저축·투자) / 수입. 투자손실은 실소비라 제외.
+    const recheckSavings = lastMonthRecheckBreakdown.저축 + lastMonthRecheckBreakdown.투자;
+    const totalSavings = investing + recheckSavings;
+    return (totalSavings / income) * 100;
+  }, [lastMonthSummary, lastMonthRecheckBreakdown]);
 
   const lastMonthInvestingRatio = useMemo(() => {
     const 저축 = lastMonthRecheckBreakdown.저축;
@@ -608,6 +613,8 @@ export const DashboardView: React.FC<Props> = (props) => {
         continue;
       }
       if (entry.kind !== "expense") continue;
+      // 신용결제(카드 청구액 결제 이체)는 실제 지출의 중복 — 고정비 집계에서 제외
+      if (entry.category === "신용결제") continue;
       if (isSavingsExpenseEntry(entry, accounts, categoryPresets)) continue;
       const categoryType = getCategoryType(
         entry.category,
@@ -1188,35 +1195,40 @@ export const DashboardView: React.FC<Props> = (props) => {
   // ── Widget 1: 순자산 누적 곡선 — accountTimelineRows already has { month, total } ──
 
   // ── Widget 5: 이번 달 페이스 예측 ────────────────────────────────────────────
+  // 페이스 = 현재까지 지출 추세로 월말 예상 지출 / 과거 3개월 평균 지출 × 100
+  // 중요: 과거 3개월과 현재월은 같은 필터 정책을 써야 비교 의미가 있음
+  //   → 저축성지출(재테크/저축 등)·신용결제(카드대금은 실제 지출의 이체) 제외
   const monthPaceData = useMemo(() => {
     const [year, monthNum] = currentMonth.split("-").map(Number);
     const totalDays = new Date(year, monthNum, 0).getDate();
     const todayDay = parseInt(today.slice(8, 10), 10);
     const elapsed = Math.min(Math.max(todayDay, 1), totalDays);
-    const projectedExpense = (monthlySummary.expense / elapsed) * totalDays;
     const toKrw = (entry: LedgerEntry) =>
       entry.currency === "USD" && fxRate ? entry.amount * fxRate : entry.amount;
-    const prevTotals = [-1, -2, -3].map((offset) => {
-      const m = shiftMonth(currentMonth, offset);
+    const sumMonth = (m: string) => {
       let total = 0;
       ledger.forEach((entry) => {
         if (!entry.date?.startsWith(m)) return;
         if (entry.kind !== "expense") return;
+        if (entry.category === "신용결제") return;
         if (isSavingsExpenseEntry(entry, accounts, categoryPresets)) return;
         total += toKrw(entry);
       });
       return total;
-    });
+    };
+    const currentExpense = sumMonth(currentMonth);
+    const projectedExpense = (currentExpense / elapsed) * totalDays;
+    const prevTotals = [-1, -2, -3].map((offset) => sumMonth(shiftMonth(currentMonth, offset)));
     const avgPrev3 = prevTotals.reduce((s, v) => s + v, 0) / 3;
     return {
-      currentExpense: monthlySummary.expense,
+      currentExpense,
       projectedExpense,
       avgPrev3,
       elapsed,
       totalDays,
       pace: avgPrev3 > 0 ? (projectedExpense / avgPrev3) * 100 : null,
     };
-  }, [currentMonth, today, monthlySummary.expense, ledger, fxRate, accounts, categoryPresets]);
+  }, [currentMonth, today, ledger, fxRate, accounts, categoryPresets]);
 
   const topCategoriesThisMonth = useMemo(() => {
     const toKrw = (entry: LedgerEntry) =>
@@ -1247,6 +1259,8 @@ export const DashboardView: React.FC<Props> = (props) => {
       const row = map.get(m)!;
       if (entry.kind === "income") row.income += toKrw(entry);
       else if (entry.kind === "expense") {
+        // 신용결제는 카드 결제 이체로 실제 지출의 중복 — expense 집계에서 제외 (topCategoriesThisMonth와 일관)
+        if (entry.category === "신용결제") return;
         if (isSavingsExpenseEntry(entry, accounts, categoryPresets)) row.investing += toKrw(entry);
         else row.expense += toKrw(entry);
       }
@@ -1341,6 +1355,14 @@ export const DashboardView: React.FC<Props> = (props) => {
           accountBalanceChartView={accountBalanceChartView}
           setAccountBalanceChartView={setAccountBalanceChartView}
           accounts={accounts}
+        />
+
+        <TickerPerformanceCard
+          trades={trades}
+          accounts={accounts}
+          prices={adjustedPrices}
+          ledger={ledger}
+          fxRate={fxRate ?? null}
         />
 
         <StockCostVsMarketCard

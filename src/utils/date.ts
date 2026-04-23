@@ -38,6 +38,34 @@ export function parseIsoLocal(date: string): Date | null {
   return parsed;
 }
 
+/**
+ * ISO 타임스탬프(또는 Date)를 상대 시간 레이블로 변환.
+ * - 30초 미만: "방금"
+ * - 60분 미만: "N분 전"
+ * - 24시간 미만: "N시간 전"
+ * - 7일 미만: "N일 전"
+ * - 그 외: "YYYY-MM-DD"
+ * - null/빈 값: "기록 없음"
+ */
+export function formatTimeAgo(input: string | number | Date | null | undefined): string {
+  if (!input) return "기록 없음";
+  const t = typeof input === "string" || typeof input === "number" ? new Date(input) : input;
+  const ms = t.getTime();
+  if (!Number.isFinite(ms)) return "기록 없음";
+  const diffSec = Math.max(0, Math.round((Date.now() - ms) / 1000));
+  if (diffSec < 30) return "방금";
+  const diffMin = Math.floor(diffSec / 60);
+  if (diffMin < 60) return `${diffMin}분 전`;
+  const diffHr = Math.floor(diffMin / 60);
+  if (diffHr < 24) return `${diffHr}시간 전`;
+  const diffDay = Math.floor(diffHr / 24);
+  if (diffDay < 7) return `${diffDay}일 전`;
+  const y = t.getFullYear();
+  const m = String(t.getMonth() + 1).padStart(2, "0");
+  const d = String(t.getDate()).padStart(2, "0");
+  return `${y}-${m}-${d}`;
+}
+
 /** Date → "YYYY-MM-DD" 로컬 포맷. TZ 이슈 없는 직렬화. */
 export function formatIsoLocal(date: Date): string {
   const y = date.getFullYear();

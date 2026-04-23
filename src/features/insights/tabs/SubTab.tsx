@@ -63,27 +63,22 @@ export const SubTab = React.memo(function SubTab({ d }: { d: D }) {
   const savingsIfCutTop3 = top3Monthly * 12;
   const savingsIfCutHalf = totalMonthly * 0.5 * 12;
 
-  const periodLabel = d.months.length > 0 ? `${d.months[0]} ~ ${d.months[d.months.length - 1]}` : "-";
-
-  return (
-    <div>
-      {/* 상단 배너 */}
-      <div style={{ padding: "10px 14px", background: "#f8f9fa", borderRadius: 8, marginBottom: 16, fontSize: 12, color: "#666", lineHeight: 1.6 }}>
-        ℹ️ 범위: <strong>{d.months.length}개월</strong> ({periodLabel}) · 단위: <strong>원</strong> · 감지: 가계부 대분류/중분류에 <strong>"구독"</strong> 포함된 항목. 월 평균은 기간 내 결제 건수 기준
-      </div>
-
-      {subs.length === 0 ? (
-        <div className="card" style={{ textAlign: "center", padding: "60px 20px", color: "#999", borderRadius: 12 }}>
-          <div style={{ fontSize: 48, marginBottom: 16 }}>🔄</div>
-          <div style={{ fontSize: 17, fontWeight: 700, marginBottom: 8 }}>구독 데이터가 없습니다</div>
+  if (subs.length === 0) {
+    return (
+      <Section storageKey="sub-section-empty" title="🔄 구독 관리">
+        <div style={{ gridColumn: "span 4", textAlign: "center", padding: "40px 20px", color: "#999" }}>
           <div style={{ fontSize: 13, lineHeight: 1.8 }}>
-            가계부 항목의 <b>대분류</b> 또는 <b>중분류</b>에 "구독"이 포함되어 있으면 자동 감지됩니다.
+            구독 데이터가 없습니다. 가계부 항목의 <b>대분류</b> 또는 <b>중분류</b>에 "구독"이 포함되어 있으면 자동 감지됩니다.
           </div>
         </div>
-      ) : (
-        <>
+      </Section>
+    );
+  }
+
+  return (
+    <>
           {/* ============ 한눈에 ============ */}
-          <Section storageKey="sub-section-overview" title="📊 한눈에 보기">
+          <Section storageKey="sub-section-overview" title="🔄 구독 한눈에 보기">
             <Card accent><Kpi label="활성 구독 수" value={`${subs.length}개`} sub={`${categorized.length}개 카테고리 + 기타 ${uncategorized.length}`} color="#fff" info="기간 내 한 번 이상 결제된 고유 구독 서비스 수" /></Card>
             <Card accent><Kpi label="월 구독 비용" value={F(totalMonthly) + "원"} sub={`일 ${W(costPerDay)} · ${subMoM != null ? (subMoM >= 0 ? "+" : "") + subMoM.toFixed(0) + "% MoM" : "변화 없음"}`} color="#f0c040" info="Σ(서비스별 기간 평균). 실제 월마다 달라질 수 있음" /></Card>
             <Card accent><Kpi label="연간 구독 비용" value={F(totalAnnual) + "원"} sub={totalAnnual >= 1000000 ? "연 100만원 초과" : "적정"} color="#e94560" info="월 구독비 × 12. 실제 총 소요 예상치" /></Card>
@@ -103,7 +98,7 @@ export const SubTab = React.memo(function SubTab({ d }: { d: D }) {
           </Section>
 
           {/* ============ 구독 상세 ============ */}
-          <Section storageKey="sub-section-details" title="📋 구독 상세">
+          <Section storageKey="sub-section-details" title="📋 구독 상세" defaultOpen={false}>
             <Card title={`구독 서비스 ${subs.length}개 (월 비용 순)`} span={4}>
               <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(220px, 1fr))", gap: 10 }}>
                 {[...subs].sort((a, b) => b.avg - a.avg).map(({ name, count, total, avg }, i) => {
@@ -183,7 +178,7 @@ export const SubTab = React.memo(function SubTab({ d }: { d: D }) {
           </Section>
 
           {/* ============ 최적화 제안 ============ */}
-          <Section storageKey="sub-section-optimization" title="💡 최적화 제안">
+          <Section storageKey="sub-section-optimization" title="💡 구독 최적화 제안" defaultOpen={false}>
             <Card title="카테고리별 점검" span={4}>
               <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(280px, 1fr))", gap: 12 }}>
                 {categorized.filter((g) => g.items.length > 1).map((g) => (
@@ -219,8 +214,6 @@ export const SubTab = React.memo(function SubTab({ d }: { d: D }) {
               </div>
             </Card>
           </Section>
-        </>
-      )}
-    </div>
+    </>
   );
 });

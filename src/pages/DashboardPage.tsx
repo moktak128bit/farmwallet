@@ -3,6 +3,7 @@ import { BudgetAlertWidget } from "../features/dashboard/BudgetAlertWidget";
 import { InvestmentSummaryCard } from "../features/dashboard/InvestmentSummaryCard";
 import { InvestmentRecordCard } from "../features/dashboard/InvestmentRecordCard";
 import { MonthlySummaryCards } from "../features/dashboard/MonthlySummaryCards";
+import { ExpenseIncomeCompareCard } from "../features/dashboard/ExpenseIncomeCompareCard";
 import { NetWorthTrendChart } from "../features/dashboard/NetWorthTrendChart";
 import { DividendTrendCard } from "../features/dashboard/DividendTrendCard";
 import { MonthPaceCard } from "../features/dashboard/MonthPaceCard";
@@ -1267,6 +1268,8 @@ export const DashboardView: React.FC<Props> = (props) => {
 
       <div style={{ display: "flex", flexDirection: "column", gap: 28 }}>
         <MonthlySummaryCards monthlySummary={monthlySummary} allTimeSummary={allTimeSummary} />
+
+        <ExpenseIncomeCompareCard ledger={ledger} month={currentMonth} />
 
         <InvestmentSummaryCard
           accounts={accounts}

@@ -1,4 +1,5 @@
 import type { LedgerEntry } from "../types";
+import { isDividendEntry, isInterestEntry } from "./categoryMatch";
 
 /** 한국 분리과세 배당·이자소득세율 (소득세 14% + 지방세 1.4%) */
 export const SEPARATE_TAX_RATE = 0.154;
@@ -27,17 +28,13 @@ export interface TaxYearSummary {
  */
 export function summarizeTaxYear(ledger: LedgerEntry[], year: number): TaxYearSummary {
   const yearStr = String(year);
-  const hasDividend = (s?: string) => !!s && s.includes("배당");
-  const hasInterest = (s?: string) => !!s && s.includes("이자");
 
   let dividendGross = 0;
   let interestGross = 0;
   for (const e of ledger) {
     if (e.kind !== "income" || !e.date?.startsWith(yearStr)) continue;
-    const isDiv = hasDividend(e.category) || hasDividend(e.subCategory);
-    if (isDiv) { dividendGross += e.amount; continue; }
-    const isInt = hasInterest(e.category) || hasInterest(e.subCategory);
-    if (isInt) interestGross += e.amount;
+    if (isDividendEntry(e)) { dividendGross += e.amount; continue; }
+    if (isInterestEntry(e)) interestGross += e.amount;
   }
 
   const totalGross = dividendGross + interestGross;

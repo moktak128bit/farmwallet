@@ -192,21 +192,40 @@ export function useGistSync(
     try {
       if (resolution === "apply-remote") {
         // 원격 데이터를 로컬에 반영. 로컬 변경은 폐기.
-        onApplyPulledData(conflict.remoteDataJson, conflict.remoteUpdatedAt);
-        setGistLastPullAt(conflict.remoteUpdatedAt);
-        setLastPullAt(conflict.remoteUpdatedAt);
-        knownRemoteCommitRef.current = conflict.remoteUpdatedAt;
+        // 모달이 열려있는 동안 원격이 또 갱신됐을 가능성을 보수적으로 처리:
+        // 사용 직전에 commits API로 최신 commit 시각을 한 번 더 권위 확보.
+        let authoritativeRemoteAt = conflict.remoteUpdatedAt;
+        try {
+          const versions = await getGistVersions(1);
+          if (versions[0]?.committedAt) authoritativeRemoteAt = versions[0].committedAt;
+        } catch { /* 무시 — 모달의 시각 유지 */ }
+
+        onApplyPulledData(conflict.remoteDataJson, authoritativeRemoteAt);
+        setGistLastPullAt(authoritativeRemoteAt);
+        setLastPullAt(authoritativeRemoteAt);
+        knownRemoteCommitRef.current = authoritativeRemoteAt;
         // pendingLocalDataJson이 곧 원격으로 덮여 다음 effect에서 lastPushedPayloadRef와 같아질 가능성 높음.
         // 즉시 lastPushedPayloadRef를 원격 payload로 맞춰 불필요한 push 방지.
         lastPushedPayloadRef.current = conflict.remoteDataJson;
         onLog?.("Gist 충돌: 원격 데이터를 적용했습니다", "success");
       } else if (resolution === "force-push-local") {
         // 로컬 데이터를 원격에 강제 push. 원격 변경은 폐기.
+        // push 직후 원격 commit 시각을 다시 조회해 knownRemoteCommitRef를 권위 있는 값으로 갱신.
+        // (saveToGist의 updatedAt이 GitHub commits API와 다를 수 있는 엣지 보호)
         const result = await saveToGist(conflict.pendingLocalDataJson);
         lastPushedPayloadRef.current = conflict.pendingLocalDataJson;
         setGistLastPushAt(result.updatedAt);
         setLastPushAt(result.updatedAt);
-        knownRemoteCommitRef.current = result.updatedAt;
+        try {
+          const versions = await getGistVersions(1);
+          const authoritative = versions[0]?.committedAt ?? result.updatedAt;
+          knownRemoteCommitRef.current = authoritative;
+          setGistLastPullAt(authoritative);
+          setLastPullAt(authoritative);
+        } catch {
+          // 재조회 실패 시 result.updatedAt으로 fallback (다음 push 사이클에서 재시도)
+          knownRemoteCommitRef.current = result.updatedAt;
+        }
         onLog?.("Gist 충돌: 로컬 데이터를 강제 push 했습니다", "success");
       } else {
         // cancel: 모달 닫기만. 다음 변경 시 다시 충돌 가능.

@@ -57,7 +57,7 @@ function isUsdEntry(l: LedgerEntry): boolean {
 /**
  * 중복 거래 탐지
  */
-export function detectDuplicateTrades(
+function detectDuplicateTrades(
   ledger: LedgerEntry[],
   trades: StockTrade[],
   _threshold: number = 0.95
@@ -118,45 +118,8 @@ export function detectDuplicateTrades(
 }
 
 /**
- * 계좌 잔액 검증 */
-export function validateAccountBalances(
-  accounts: Account[],
-  ledger: LedgerEntry[],
-  trades: StockTrade[]
-): BalanceMismatch[] {
-  const mismatches: BalanceMismatch[] = [];
-  const balances = computeAccountBalances(accounts, ledger, trades);
-
-  accounts.forEach((account) => {
-    const balanceRow = balances.find((b) => b.account.id === account.id);
-    if (!balanceRow) return;
-
-    const expectedBalance =
-      account.initialBalance +
-      (account.cashAdjustment ?? 0) +
-      (account.initialCashBalance ?? 0);
-
-    const calculatedBalance = balanceRow.currentBalance;
-    const difference = calculatedBalance - expectedBalance;
-
-    // 차이가 1원 이상이면 이슈로 추가
-    if (Math.abs(difference) >= 1) {
-      mismatches.push({
-        accountId: account.id,
-        accountName: account.name,
-        calculatedBalance,
-        expectedBalance,
-        difference
-      });
-    }
-  });
-
-  return mismatches;
-}
-
-/**
  * 주식 거래 참조 검사 */
-export function checkMissingReferences(
+function checkMissingReferences(
   accounts: Account[],
   ledger: LedgerEntry[],
   trades: StockTrade[]
@@ -214,7 +177,7 @@ export function checkMissingReferences(
 }
 /**
  * 날짜 순서 검증 */
-export function validateDateOrder(
+function validateDateOrder(
   ledger: LedgerEntry[],
   trades: StockTrade[]
 ): IntegrityIssue[] {
@@ -247,7 +210,7 @@ export function validateDateOrder(
 }
 /**
  * 금액 일관성 검증 */
-export function validateAmountConsistency(
+function validateAmountConsistency(
   ledger: LedgerEntry[],
   trades: StockTrade[]
 ): IntegrityIssue[] {
@@ -275,7 +238,7 @@ export function validateAmountConsistency(
 }
 /**
   * 내부 이체 쌍 검증: fromAccountId·toAccountId 모두 있는 이체는 계좌 간 합계 0이어야 함 */
-export function validateTransferPairConsistency(
+function validateTransferPairConsistency(
   ledger: LedgerEntry[],
   accounts: Account[]
 ): IntegrityIssue[] {
@@ -332,7 +295,7 @@ export function validateTransferPairConsistency(
 
 /**
  * 이체 항목 쌍 검증: kind=transfer일 때 fromAccountId 또는 toAccountId가 없으면 검사 */
-export function validateTransferRequiredFields(
+function validateTransferRequiredFields(
   ledger: LedgerEntry[]
 ): IntegrityIssue[] {
   const issues: IntegrityIssue[] = [];
@@ -357,7 +320,7 @@ export function validateTransferRequiredFields(
 /**
  * USD 증권 계좌 일관성 검증: USD 거래 순합계와 usdBalance+usdTransferNet 비교
  */
-export function validateUsdSecuritiesConsistency(
+function validateUsdSecuritiesConsistency(
   accounts: Account[],
   ledger: LedgerEntry[],
   trades: StockTrade[]
@@ -409,7 +372,7 @@ export function validateUsdSecuritiesConsistency(
 /**
  * 카테고리 일관성 검증: 원장 항목의 category/subCategory가 CategoryPresets에 있는지 검사
  */
-export function checkCategoryConsistency(
+function checkCategoryConsistency(
   ledger: LedgerEntry[],
   categoryPresets: CategoryPresets
 ): IntegrityIssue[] {

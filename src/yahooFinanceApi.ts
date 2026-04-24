@@ -330,10 +330,6 @@ const getEnv = (): Record<string, string | boolean | undefined> =>
     ? (import.meta as { env?: Record<string, string | boolean | undefined> }).env
     : undefined) ?? {};
 const useCorsProxy = (): boolean => getEnv().DEV === true || getEnv().MODE === "development";
-const getAllOriginsUrl = (path: "get" | "raw", encodedInnerUrl: string): string =>
-  useCorsProxy()
-    ? `/api/external/${path}?url=${encodedInnerUrl}`
-    : `https://api.allorigins.win/${path}?url=${encodedInnerUrl}`;
 
 
 /** exchange: 사용자가 지정한 거래소(KOSPI/KOSDAQ)가 있으면 그 suffix만 사용 */
@@ -411,8 +407,10 @@ const fetchFromYahooQuoteBatch = async (
       const res = await fetch(`/api/yahoo-quote?${qs.toString()}`, { signal: controller.signal });
       clearTimeout(timeoutId);
       if (res.ok) {
-        const data = (await res.json()) as YahooQuoteApiResponse;
-        const list = data.quoteResponse?.result ?? [];
+        // 응답 구조를 일단 unknown으로 받고, 예상 형태가 아닐 때 안전하게 빈 결과 반환
+        const rawUnknown: unknown = await res.json();
+        const data = (rawUnknown && typeof rawUnknown === "object" ? rawUnknown : {}) as YahooQuoteApiResponse;
+        const list = Array.isArray(data.quoteResponse?.result) ? data.quoteResponse!.result! : [];
         const byClean = new Map<string, (typeof list)[number]>();
         const nowSec = Math.floor(Date.now() / 1000);
         for (const item of list) {
@@ -495,12 +493,13 @@ const fetchFromYahooQuoteBatch = async (
 
   let data: YahooQuoteApiResponse;
   try {
-    data = JSON.parse(payloadStr);
+    const parsed: unknown = JSON.parse(payloadStr);
+    data = (parsed && typeof parsed === "object" ? parsed : {}) as YahooQuoteApiResponse;
   } catch {
     return new Map();
   }
 
-  const list = data.quoteResponse?.result ?? [];
+  const list = Array.isArray(data.quoteResponse?.result) ? data.quoteResponse!.result! : [];
   const byClean = new Map<string, (typeof list)[number]>();
   const nowSec = Math.floor(Date.now() / 1000);
   for (const item of list) {
@@ -627,62 +626,6 @@ const fetchFromYahooChart = async (
     updatedAt
   };
 };
-
-/** 기간별 일별 종가 조회 (배당/수익률용). startDate/endDate는 yyyy-mm-dd */
-export async function fetchYahooHistoricalCloses(
-  ticker: string,
-  startDate: string,
-  endDate: string
-): Promise<Array<{ date: string; close: number }>> {
-  const cleaned = ticker.trim().toUpperCase();
-  const candidates = buildLookupCandidates(cleaned);
-  const period1 = Math.floor(new Date(startDate + "T00:00:00Z").getTime() / 1000);
-  const period2 = Math.ceil(new Date(endDate + "T23:59:59Z").getTime() / 1000);
-
-  for (const lookupSymbol of candidates) {
-    try {
-      const params = new URLSearchParams({
-        interval: "1d",
-        period1: String(period1),
-        period2: String(period2),
-        lang: "en-US",
-        region: "US",
-        includePrePost: "false"
-      });
-      const innerUrl = `${YAHOO_CHART_BASE}/${encodeURIComponent(lookupSymbol)}?${params.toString()}`;
-      const proxyUrl = getAllOriginsUrl("get", encodeURIComponent(innerUrl));
-      const controller = new AbortController();
-      const timeoutId = setTimeout(() => controller.abort(), 15000);
-      const res = await fetch(proxyUrl, { signal: controller.signal });
-      clearTimeout(timeoutId);
-      if (!res.ok) {
-        if (res.status === 429) throw new RateLimitError();
-        continue;
-      }
-      const payload = (await res.json()) as { contents?: string };
-      const data = payload.contents
-        ? (JSON.parse(payload.contents) as YahooChartResponse)
-        : (payload as unknown as YahooChartResponse);
-      const result = data.chart?.result?.[0];
-      const timestamps = result?.timestamp ?? [];
-      const closes = result?.indicators?.quote?.[0]?.close ?? [];
-      const rows: Array<{ date: string; close: number }> = [];
-      for (let i = 0; i < timestamps.length; i++) {
-        const ts = timestamps[i];
-        const c = closes[i];
-        if (typeof ts !== "number" || typeof c !== "number") continue;
-        const date = new Date(ts * 1000).toISOString().slice(0, 10);
-        if (date < startDate || date > endDate) continue;
-        rows.push({ date, close: c });
-      }
-      if (rows.length > 0) return rows;
-    } catch (err) {
-      if (err instanceof RateLimitError) throw err;
-      continue;
-    }
-  }
-  return [];
-}
 
 const fetchFromStooq = async (requestedSymbol: string): Promise<YahooQuoteResult | null> => {
   const sym = `${requestedSymbol.toLowerCase()}.us`;

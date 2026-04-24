@@ -30,7 +30,7 @@ const sheetXml = (sheet: SheetData): string => {
   return `<Worksheet ss:Name="${escapeXml(sheet.name).slice(0, 31)}"><Table>${rows}</Table></Worksheet>`;
 };
 
-export function buildSpreadsheetXml(sheets: SheetData[]): string {
+function buildSpreadsheetXml(sheets: SheetData[]): string {
   const body = sheets.map(sheetXml).join("");
   return `<?xml version="1.0"?>
 <?mso-application progid="Excel.Sheet"?>

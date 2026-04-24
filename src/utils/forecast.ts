@@ -28,6 +28,22 @@ const offsetMonth = (yyyymm: string, deltaMonths: number) => {
 };
 
 /**
+ * 양 끝 trimRatio(0~0.5)를 잘라낸 평균. 길이가 짧으면 단순 평균으로 fallback.
+ * 예: 의료비 1회 큰 값이 평균을 끌어올리는 것을 방지.
+ */
+function trimmedMean(values: number[], trimRatio = 0.1): number {
+  if (values.length === 0) return 0;
+  if (values.length < 5) {
+    return values.reduce((s, v) => s + v, 0) / values.length;
+  }
+  const sorted = [...values].sort((a, b) => a - b);
+  const trim = Math.floor(sorted.length * trimRatio);
+  const sliced = sorted.slice(trim, sorted.length - trim);
+  if (sliced.length === 0) return sorted.reduce((s, v) => s + v, 0) / sorted.length;
+  return sliced.reduce((s, v) => s + v, 0) / sliced.length;
+}
+
+/**
  * 다음 달 카테고리별 지출 예측.
  * - 반복지출(recurring) 합계 + 비반복 6개월 이동평균
  * - 신뢰구간(±1σ) 함께 제공
@@ -74,13 +90,14 @@ export function forecastNextMonth(
     const recurringSum = recurringByCat.get(cat) ?? 0;
     const perMonth = byCatMonth.get(cat);
     const monthlySums = monthOrder.map((mm) => perMonth?.get(mm) ?? 0);
-    const variableAvg = monthlySums.length === 0
-      ? 0
-      : monthlySums.reduce((s, v) => s + v, 0) / monthlySums.length;
+    // 단순 평균 대신 양 끝 10% trim — 의료비·여행 같은 일회성 큰 지출이 추세를 왜곡하는 것 방지.
+    // 표본이 5개 미만이면 단순 평균으로 fallback (trimmedMean이 처리).
+    const variableAvg = trimmedMean(monthlySums, 0.1);
     const variance = monthlySums.length === 0
       ? 0
       : monthlySums.reduce((s, v) => s + (v - variableAvg) ** 2, 0) / monthlySums.length;
-    const std = Math.sqrt(variance);
+    // 부동소수점 오차로 음수가 나올 수 있어 0으로 클램프 후 sqrt
+    const std = Math.sqrt(Math.max(0, variance));
 
     const forecast = Math.max(recurringSum, variableAvg);
     byCategory.push({

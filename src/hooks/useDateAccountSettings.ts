@@ -27,12 +27,6 @@ export function useDateAccountId(): string | null {
   return useStorageValue(STORAGE_KEYS.DATE_ACCOUNT_ID);
 }
 
-export function useDateAccountRatio(): number {
-  const raw = useStorageValue(STORAGE_KEYS.DATE_ACCOUNT_RATIO);
-  const n = raw == null ? NaN : Number(raw);
-  return Number.isFinite(n) && n >= 0 && n <= 100 ? n : 50;
-}
-
 export function notifyDateAccountChange(): void {
   if (typeof window !== "undefined") window.dispatchEvent(new Event("fw-date-account-change"));
 }

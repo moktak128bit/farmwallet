@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef } from "react";
+import React, { useState, useEffect, useRef, useId } from "react";
 
 export interface AutocompleteOption {
   value: string;
@@ -20,6 +20,8 @@ interface AutocompleteProps {
   autoFocus?: boolean;
   disabled?: boolean;
   renderOption?: (option: AutocompleteOption) => React.ReactNode;
+  /** 스크린 리더용 라벨 (없으면 placeholder fallback) */
+  ariaLabel?: string;
 }
 
 export const Autocomplete: React.FC<AutocompleteProps> = ({
@@ -31,12 +33,15 @@ export const Autocomplete: React.FC<AutocompleteProps> = ({
   className,
   autoFocus,
   disabled,
-  renderOption
+  renderOption,
+  ariaLabel
 }) => {
   const [isOpen, setIsOpen] = useState(false);
   const [highlightedIndex, setHighlightedIndex] = useState(-1);
   const containerRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLInputElement>(null);
+  const listboxId = useId();
+  const optionId = (idx: number) => `${listboxId}-opt-${idx}`;
 
   // 외부 클릭 시 닫기
   useEffect(() => {
@@ -87,7 +92,15 @@ export const Autocomplete: React.FC<AutocompleteProps> = ({
   };
 
   return (
-    <div className={`autocomplete-container ${className || ""}`} ref={containerRef} style={{ position: "relative" }}>
+    <div
+      className={`autocomplete-container ${className || ""}`}
+      ref={containerRef}
+      style={{ position: "relative" }}
+      role="combobox"
+      aria-expanded={isOpen && options.length > 0}
+      aria-haspopup="listbox"
+      aria-owns={listboxId}
+    >
       <input
         ref={inputRef}
         type="text"
@@ -103,10 +116,17 @@ export const Autocomplete: React.FC<AutocompleteProps> = ({
         placeholder={placeholder}
         autoFocus={autoFocus}
         disabled={disabled}
+        aria-label={ariaLabel ?? placeholder}
+        aria-autocomplete="list"
+        aria-controls={listboxId}
+        aria-activedescendant={isOpen && highlightedIndex >= 0 ? optionId(highlightedIndex) : undefined}
+        autoComplete="off"
         style={{ width: "100%", padding: "6px 8px", fontSize: 14 }}
       />
       {isOpen && options.length > 0 && (
         <ul
+          id={listboxId}
+          role="listbox"
           className="autocomplete-dropdown"
           style={{
             position: "absolute",
@@ -131,6 +151,9 @@ export const Autocomplete: React.FC<AutocompleteProps> = ({
             return (
               <li
                 key={`${option.value}-${index}`}
+                id={optionId(index)}
+                role="option"
+                aria-selected={isHighlighted}
                 className={`autocomplete-item ${isHighlighted ? "highlighted" : ""}`}
                 onMouseDown={(e) => {
                   e.preventDefault(); // prevent blur

@@ -6,6 +6,7 @@ import { shortcutManager, type ShortcutAction } from "../utils/shortcuts";
 import { validateLedgerForm } from "../features/ledger/validateLedgerForm";
 import { isSavingsExpenseEntry, makeIsSavingsExpense } from "../utils/category";
 import { parseAmount as sharedParseAmount, formatAmount as sharedFormatAmount } from "../utils/parseAmount";
+import { newIdWithPrefix } from "../utils/id";
 import { getKoreaTime, getThisMonthKST } from "../utils/date";
 import { toast } from "react-hot-toast";
 import { ERROR_MESSAGES } from "../constants/errorMessages";
@@ -405,7 +406,7 @@ export const LedgerView: React.FC<Props> = ({
       const updated = ledger.map((l) => (l.id === form.id ? { ...base, id: l.id } : l));
       onChangeLedger(updated);
     } else {
-      const id = `L${Date.now()}`;
+      const id = newIdWithPrefix("L");
       const entry: LedgerEntry = { id, ...base };
       onChangeLedger([entry, ...ledger]);
       setLastAddedEntryId(id);
@@ -466,7 +467,7 @@ export const LedgerView: React.FC<Props> = ({
       toast.error("금액을 입력해주세요.");
       return;
     }
-    const id = `L${Date.now()}`;
+    const id = newIdWithPrefix("L");
     const entry: LedgerEntry = {
       ...quickCopyEntry,
       id,

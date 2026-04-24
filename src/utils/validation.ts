@@ -277,11 +277,3 @@ export function validateTransfer(
   return { valid: true };
 }
 
-export type {
-  AccountPerformanceInput,
-  AccountPerformanceResult
-} from "./accountPerformanceValidation";
-export {
-  calculateAccountPerformance,
-  logAccountPerformance
-} from "./accountPerformanceValidation";

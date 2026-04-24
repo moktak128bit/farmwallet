@@ -15,6 +15,7 @@ import {
   STORAGE_KEYS
 } from "../constants/config";
 import { ERROR_MESSAGES } from "../constants/errorMessages";
+import { notifyDataChanged } from "../services/tabSync";
 
 export interface BackupIntegrity {
   createdAt: string | null;
@@ -85,24 +86,32 @@ export function useBackup(data: AppData, options?: UseBackupOptions) {
   }, [refreshLatestBackup]);
 
   // 탭 닫힘/새로고침 직전 pending 자동저장을 flush — 500ms 디바운스 중 F5 → 유실 방지
+  // beforeunload는 동기적이므로 retry 루프 없이 단발 setItem만 시도. 실패 시 콘솔 로깅만.
+  // pagehide는 모바일 (특히 iOS Safari)에서 더 안정적인 종료 시그널.
   useEffect(() => {
     if (typeof window === "undefined") return;
     const flush = () => {
-      if (!autoSaveTimerRef.current) return;
-      window.clearTimeout(autoSaveTimerRef.current);
-      autoSaveTimerRef.current = null;
+      if (autoSaveTimerRef.current) {
+        window.clearTimeout(autoSaveTimerRef.current);
+        autoSaveTimerRef.current = null;
+      }
       try {
         const payload = JSON.stringify(data);
-        if (payload && payload !== lastSavedPayloadRef.current) {
-          saveDataSerialized(payload);
-          lastSavedPayloadRef.current = payload;
-        }
-      } catch {
-        /* quota 등 에러는 조용히 무시 — 다음 저장에서 재시도됨 */
+        if (!payload || payload === lastSavedPayloadRef.current) return;
+        // 동기 저장만 — async retry 루프는 unload 도중 잘릴 수 있음.
+        window.localStorage.setItem(STORAGE_KEYS.DATA, payload);
+        lastSavedPayloadRef.current = payload;
+        notifyDataChanged(payload);
+      } catch (err) {
+        console.warn("[useBackup] beforeunload flush failed", err);
       }
     };
     window.addEventListener("beforeunload", flush);
-    return () => window.removeEventListener("beforeunload", flush);
+    window.addEventListener("pagehide", flush);
+    return () => {
+      window.removeEventListener("beforeunload", flush);
+      window.removeEventListener("pagehide", flush);
+    };
   }, [data]);
 
   useEffect(() => {
@@ -123,6 +132,7 @@ export function useBackup(data: AppData, options?: UseBackupOptions) {
       try {
         saveDataSerialized(payload);
         lastSavedPayloadRef.current = payload;
+        notifyDataChanged(payload);
       } catch (error) {
         console.warn("[useBackup] auto save failed", error);
         const message = error instanceof Error ? error.message : "자동 저장에 실패했습니다.";

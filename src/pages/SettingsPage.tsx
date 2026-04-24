@@ -22,7 +22,17 @@ const ThemeCustomizer = lazy(() => import("../components/ThemeCustomizer").then(
 import { usePWAInstall } from "../hooks/usePWAInstall";
 import { STORAGE_KEYS, ISA_PORTFOLIO } from "../constants/config";
 import { notifyDateAccountChange } from "../hooks/useDateAccountSettings";
-import * as gistSyncModule from "../services/gistSync";
+import { useUIStore } from "../store/uiStore";
+import {
+  getGistToken,
+  getGistTokenPersisted,
+  setGistToken as gistSetToken,
+  setGistTokenPersisted as gistSetTokenPersisted,
+  getGistId,
+  setGistId as gistSetId,
+  saveToGist,
+  loadFromGist,
+} from "../services/gistSync";
 import { toUserDataJson } from "../services/dataService";
 import { ERROR_MESSAGES } from "../constants/errorMessages";
 import { appDataFromTableBackupPayload, buildTableBackupFile } from "../utils/tableDataBackup";
@@ -338,8 +348,9 @@ export const SettingsView: React.FC<Props> = ({
     return localStorage.getItem(STORAGE_KEYS.PRICE_API_ENABLED) === "true";
   });
 
-  const [gistToken, setGistToken] = useState(() => gistSyncModule.getGistToken());
-  const [gistId, setGistIdState] = useState(() => gistSyncModule.getGistId());
+  const [gistToken, setGistToken] = useState(() => getGistToken());
+  const [gistTokenPersist, setGistTokenPersist] = useState(() => getGistTokenPersisted());
+  const [gistId, setGistIdState] = useState(() => getGistId());
   const [gistSyncing, setGistSyncing] = useState(false);
   const [gistLastSync, setGistLastSync] = useState<string | null>(null);
 
@@ -866,6 +877,31 @@ export const SettingsView: React.FC<Props> = ({
           </button>
         </div>
         <div className="card">
+          <div className="card-title">앱 로그 내보내기</div>
+          <p className="hint" style={{ marginBottom: 12 }}>
+            로컬에 보관된 최근 활동 로그(최대 500건)를 JSON 파일로 다운로드합니다. 문제 진단·이슈 보고 시 첨부하세요.
+          </p>
+          <button
+            type="button"
+            onClick={() => {
+              const logs = useUIStore.getState().appLog;
+              const payload = { exportedAt: new Date().toISOString(), count: logs.length, logs };
+              const blob = new Blob([JSON.stringify(payload, null, 2)], { type: "application/json" });
+              const url = URL.createObjectURL(blob);
+              const a = document.createElement("a");
+              const today = new Date().toISOString().slice(0, 10);
+              a.href = url;
+              a.download = `farmwallet-app-log-${today}.json`;
+              a.click();
+              URL.revokeObjectURL(url);
+              toast.success(`로그 ${logs.length}건 다운로드`);
+            }}
+            style={{ padding: "8px 16px", fontSize: 13 }}
+          >
+            📥 로그 JSON 다운로드
+          </button>
+        </div>
+        <div className="card">
           <div className="card-title">데이터 초기화</div>
           <p>
             <strong style={{ color: "var(--danger)" }}>⚠️ 주의:</strong> 가계부, 주식 거래, 계좌, 예산, 배당·이자 등 <strong>모든 앱 데이터를 삭제</strong>하고 빈 상태로 되돌립니다. 복구할 수 없으니 필요 시 먼저 "백업 파일 다운로드"로 저장해 두세요.
@@ -956,17 +992,34 @@ export const SettingsView: React.FC<Props> = ({
             <input
               type="password"
               value={gistToken}
-              onChange={(e) => { setGistToken(e.target.value); gistSyncModule.setGistToken(e.target.value); }}
+              onChange={(e) => { setGistToken(e.target.value); gistSetToken(e.target.value, { persist: gistTokenPersist }); }}
               placeholder="ghp_xxxxxxxxxxxx"
+              autoComplete="off"
+              spellCheck={false}
               style={{ flex: 1, padding: "6px 10px", borderRadius: 6, fontFamily: "monospace", fontSize: 12 }}
             />
+          </label>
+          <label style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 12, fontSize: 12, color: "var(--muted, #666)" }}>
+            <input
+              type="checkbox"
+              checked={gistTokenPersist}
+              onChange={(e) => {
+                const next = e.target.checked;
+                setGistTokenPersist(next);
+                gistSetTokenPersisted(next);
+                toast(next
+                  ? "토큰이 이 기기에 영구 저장됩니다 (XSS 위험 증가)."
+                  : "토큰은 이 탭에서만 유지됩니다 (탭을 닫으면 재입력 필요).");
+              }}
+            />
+            <span>이 기기에서 기억 (꺼두면 탭 닫을 때 토큰 삭제 — 권장)</span>
           </label>
           <label style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 12 }}>
             <span style={{ minWidth: 80 }}>Gist ID</span>
             <input
               type="text"
               value={gistId}
-              onChange={(e) => { setGistIdState(e.target.value); gistSyncModule.setGistId(e.target.value); }}
+              onChange={(e) => { setGistIdState(e.target.value); gistSetId(e.target.value); }}
               placeholder="자동 생성됨 (첫 저장 시)"
               style={{ flex: 1, padding: "6px 10px", borderRadius: 6, fontFamily: "monospace", fontSize: 12 }}
               readOnly={false}
@@ -982,7 +1035,7 @@ export const SettingsView: React.FC<Props> = ({
                   setGistSyncing(true);
                   try {
                     const jsonStr = toUserDataJson(data);
-                    const result = await gistSyncModule.saveToGist(jsonStr);
+                    const result = await saveToGist(jsonStr);
                     setGistIdState(result.gistId);
                     setGistLastSync(result.updatedAt);
                     toast.success("Gist에 저장 완료");
@@ -1006,7 +1059,7 @@ export const SettingsView: React.FC<Props> = ({
                 onClick={async () => {
                   setGistSyncing(true);
                   try {
-                    const result = await gistSyncModule.loadFromGist();
+                    const result = await loadFromGist();
                     const parsed = JSON.parse(result.dataJson);
                     // Gist에 없는 API 캐시 데이터는 현재 메모리의 것을 유지
                     onChangeData({

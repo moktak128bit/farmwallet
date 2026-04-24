@@ -37,7 +37,44 @@ export interface GistConflict {
 }
 
 const APP_LOG_MAX = 200;
+/** localStorage에 보관할 최근 로그 (세션 복원용 + 사용자 내보내기) */
+const APP_LOG_PERSIST_MAX = 500;
+const APP_LOG_STORAGE_KEY = "fw-app-log-v1";
 let appLogIdCounter = 0;
+
+function loadPersistedLog(): AppLogEntry[] {
+  if (typeof window === "undefined") return [];
+  try {
+    const raw = window.localStorage.getItem(APP_LOG_STORAGE_KEY);
+    if (!raw) return [];
+    const parsed: unknown = JSON.parse(raw);
+    if (!Array.isArray(parsed)) return [];
+    // 최근 APP_LOG_MAX만 UI로 올림
+    return parsed
+      .filter((e): e is AppLogEntry =>
+        !!e && typeof e === "object" &&
+        typeof (e as AppLogEntry).id === "number" &&
+        typeof (e as AppLogEntry).message === "string" &&
+        typeof (e as AppLogEntry).time === "string")
+      .slice(-APP_LOG_MAX);
+  } catch { return []; }
+}
+
+let persistScheduled = false;
+function schedulePersist(getEntries: () => AppLogEntry[]) {
+  if (persistScheduled || typeof window === "undefined") return;
+  persistScheduled = true;
+  // 연속된 log 추가를 한 번에 묶어 쓰도록 idle/next-tick에 지연
+  setTimeout(() => {
+    persistScheduled = false;
+    try {
+      const trimmed = getEntries().slice(-APP_LOG_PERSIST_MAX);
+      window.localStorage.setItem(APP_LOG_STORAGE_KEY, JSON.stringify(trimmed));
+    } catch {
+      // quota 초과 등 — 조용히 실패, 다음 호출에서 재시도
+    }
+  }, 500);
+}
 
 interface UIStore {
   // Navigation
@@ -135,7 +172,7 @@ export const useUIStore = create<UIStore>((set) => ({
   integritySummary: null,
   setIntegritySummary: (integritySummary) => set({ integritySummary }),
 
-  appLog: [],
+  appLog: loadPersistedLog(),
   addAppLog: (message, type = "success") =>
     set((state) => {
       const id = ++appLogIdCounter;
@@ -144,8 +181,9 @@ export const useUIStore = create<UIStore>((set) => ({
         minute: "2-digit",
         second: "2-digit",
       });
-      return {
-        appLog: [...state.appLog.slice(-(APP_LOG_MAX - 1)), { id, message, type, time }],
-      };
+      const next = [...state.appLog.slice(-(APP_LOG_MAX - 1)), { id, message, type, time }];
+      // 백그라운드 영속화 — quota 초과 시 조용히 실패
+      schedulePersist(() => useUIStore.getState().appLog);
+      return { appLog: next };
     }),
 }));

@@ -13,6 +13,15 @@ import { DEFAULT_WORKOUT_ROUTINES } from "../data/defaultWorkoutRoutines";
 import { buildTableBackupFile } from "../utils/tableDataBackup";
 import { saveCacheToDB } from "./cacheStore";
 import { getKoreanNameOverlay } from "./krNameResolver";
+import { cleanTicker } from "../utils/finance";
+
+// dataService 내부에서만 쓰는 느슨한 한국 주식 판정 (6+자).
+// finance.ts의 isKRWStock은 더 엄격(6자 정확)하므로 별도 유지.
+function isKRWStockLoose(ticker: string): boolean {
+  if (!ticker) return false;
+  return cleanTicker(ticker).length >= 6;
+}
+
 // krNames는 첫 loadData 호출 전에 preloadKrNames()로 미리 로드됨
 let _krNames: Record<string, string> = {};
 
@@ -32,16 +41,6 @@ export function getKrNames(): Record<string, string> {
   return Object.keys(overlay).length > 0 ? { ..._krNames, ...overlay } : _krNames;
 }
 
-function cleanTicker(raw: string): string {
-  if (!raw || typeof raw !== "string") return "";
-  return raw.toUpperCase().replace(/\.(KS|KQ|KO|K|KSQ)$/i, "");
-}
-
-function isKRWStock(ticker: string): boolean {
-  if (!ticker) return false;
-  return cleanTicker(ticker).length >= 6;
-}
-
 /** krNames에서 한글명 조회. 4~5자 티커는 6자리로 보정해 조회 (예: 23A0 → 0023A0) */
 function getKrName(map: Record<string, string>, key: string): string | undefined {
   if (!key) return undefined;
@@ -56,7 +55,7 @@ function getKrName(map: Record<string, string>, key: string): string | undefined
 /** 한국 종목 한글명 적용 대상 여부 (6자 이상 또는 4~5자로 krNames에 6자리 키로 있는 경우) */
 function shouldApplyKrName(map: Record<string, string>, key: string): boolean {
   if (!key) return false;
-  if (isKRWStock(key)) return true;
+  if (isKRWStockLoose(key)) return true;
   if (key.length >= 4 && key.length <= 5 && /^[0-9A-Z]+$/.test(key) && map[key.padStart(6, "0")]) return true;
   return false;
 }
@@ -679,10 +678,47 @@ function migrateBySchema(
   return { data: next, migrated };
 }
 
-export function normalizeImportedData(rawData: unknown): AppData {
+/** import 본문의 최소 형태 검증. 실패 시 throw. */
+function validateImportShape(rawData: unknown): asserts rawData is Record<string, unknown> {
   if (!rawData || typeof rawData !== "object" || Array.isArray(rawData)) {
-    throw new Error("Invalid backup format");
+    throw new Error("Invalid backup format: 객체 형태가 아닙니다.");
   }
+  const obj = rawData as Record<string, unknown>;
+  // 핵심 컬렉션은 누락 가능하지만, 존재한다면 반드시 배열이어야 한다.
+  const arrayFields = [
+    "accounts", "ledger", "trades", "prices", "recurringExpenses",
+    "budgetGoals", "tickerDatabase", "workoutWeeks"
+  ];
+  for (const f of arrayFields) {
+    if (f in obj && obj[f] != null && !Array.isArray(obj[f])) {
+      throw new Error(`Invalid backup format: ${f} 필드가 배열이 아닙니다.`);
+    }
+  }
+  // categoryPresets가 있으면 객체여야
+  if ("categoryPresets" in obj && obj.categoryPresets != null) {
+    if (typeof obj.categoryPresets !== "object" || Array.isArray(obj.categoryPresets)) {
+      throw new Error("Invalid backup format: categoryPresets는 객체여야 합니다.");
+    }
+  }
+  // ledger 항목 샘플 검증 (큰 데이터 전부 순회 안 하고 처음 5개만)
+  if (Array.isArray(obj.ledger)) {
+    for (const e of obj.ledger.slice(0, 5)) {
+      if (!e || typeof e !== "object") {
+        throw new Error("Invalid backup format: ledger 항목이 객체가 아닙니다.");
+      }
+      const entry = e as Record<string, unknown>;
+      if (entry.id != null && typeof entry.id !== "string") {
+        throw new Error("Invalid backup format: ledger.id는 문자열이어야 합니다.");
+      }
+      if (entry.amount != null && (typeof entry.amount !== "number" || !Number.isFinite(entry.amount))) {
+        throw new Error("Invalid backup format: ledger.amount는 유한 숫자여야 합니다.");
+      }
+    }
+  }
+}
+
+export function normalizeImportedData(rawData: unknown): AppData {
+  validateImportShape(rawData);
 
   if (typeof window === "undefined") {
     return getEmptyData();

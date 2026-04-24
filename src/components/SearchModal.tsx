@@ -1,5 +1,6 @@
 import React, { useEffect, useState } from "react";
 import type { SearchQuery, SavedFilter } from "../hooks/useSearch";
+import { useFocusTrap } from "../hooks/useFocusTrap";
 
 interface SearchModalProps {
   isOpen: boolean;
@@ -56,14 +57,22 @@ export const SearchModal: React.FC<SearchModalProps> = ({
     return () => window.removeEventListener("keydown", handleKeyDown);
   }, [isOpen, onClose]);
 
+  const trapRef = useFocusTrap<HTMLDivElement>(isOpen);
   if (!isOpen) return null;
 
   return (
     <div className="modal-backdrop" onClick={onClose}>
-      <div className="modal" onClick={(e) => e.stopPropagation()}>
+      <div
+        ref={trapRef}
+        className="modal"
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="search-modal-title"
+        onClick={(e) => e.stopPropagation()}
+      >
         <div className="modal-header">
-          <h3 style={{ margin: 0 }}>전역 검색</h3>
-          <button type="button" className="secondary" onClick={onClose}>
+          <h3 id="search-modal-title" style={{ margin: 0 }}>전역 검색</h3>
+          <button type="button" className="secondary" onClick={onClose} aria-label="검색 닫기">
             닫기
           </button>
         </div>

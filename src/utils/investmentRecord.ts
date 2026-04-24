@@ -289,14 +289,19 @@ export function filterByPeriod(
   return records;
 }
 
-/** 보유기간 max/min. 기록 없으면 0. */
+/** 보유기간 max/min. 기록 없으면 0. NaN/Infinity 입력은 무시. */
 export function holdingRange(records: ClosedTradeRecord[]): { min: number; max: number } {
   if (records.length === 0) return { min: 0, max: 0 };
   let min = Infinity;
   let max = 0;
+  let validCount = 0;
   for (const r of records) {
-    if (r.holdingDays < min) min = r.holdingDays;
-    if (r.holdingDays > max) max = r.holdingDays;
+    const days = r.holdingDays;
+    if (!Number.isFinite(days)) continue;
+    validCount++;
+    if (days < min) min = days;
+    if (days > max) max = days;
   }
+  if (validCount === 0) return { min: 0, max: 0 };
   return { min: min === Infinity ? 0 : min, max };
 }

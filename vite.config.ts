@@ -1065,8 +1065,7 @@ export default defineConfig({
   ],
   base: "/farmwallet/",
   define: {
-    __APP_VERSION__: JSON.stringify(packageJson.version),
-    __BUILD_HASH__: JSON.stringify(buildHash)
+    __APP_VERSION__: JSON.stringify(packageJson.version)
   },
   build: {
     chunkSizeWarningLimit: 600,

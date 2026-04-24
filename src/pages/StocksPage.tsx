@@ -1028,6 +1028,11 @@ export const StocksView: React.FC<Props> = ({
       if (!hasAnyPrice) toast.error(ERROR_MESSAGES.QUOTE_UNAVAILABLE);
       return;
     }
+    // 음수 입력 명시 거부 (HTML number input은 음수를 허용함)
+    if (quantity < 0 || price < 0 || fee < 0 || priceKRWEarly < 0) {
+      toast.error("수량·단가·수수료는 음수일 수 없습니다.");
+      return;
+    }
     const side = tradeForm.side || "buy";
     const selectedAccount = accounts.find((a) => a.id === accountId);
     if (!selectedAccount) {

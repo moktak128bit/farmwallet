@@ -14,6 +14,7 @@ export {
   saveBackupSnapshot,
   getBackupList,
   loadBackupData,
+  loadBackupDataVerified,
   getLatestLocalBackupIntegrity,
   getAllBackupList,
   loadServerBackupData,

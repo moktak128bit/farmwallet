@@ -87,13 +87,16 @@ describe("useAppData", () => {
     mocked.loadData.mockReturnValue(makeData()); // ledger 빈 상태
 
     const fetchSpy = vi.fn(() =>
-      Promise.resolve({ json: () => Promise.resolve(null) } as Response)
+      Promise.resolve({ ok: true, json: () => Promise.resolve(null) } as Response)
     );
     globalThis.fetch = fetchSpy as typeof fetch;
 
     renderHook(() => useAppData());
     await waitFor(() =>
-      expect(fetchSpy).toHaveBeenCalledWith("/api/restore-latest-backup")
+      expect(fetchSpy).toHaveBeenCalledWith(
+        "/api/restore-latest-backup",
+        expect.objectContaining({ signal: expect.anything() })
+      )
     );
   });
 
@@ -110,7 +113,7 @@ describe("useAppData", () => {
       ledger: [{ id: "B1", date: "2026-01-01", kind: "income", category: "x", description: "n", amount: 1 }],
     });
     globalThis.fetch = vi.fn(() =>
-      Promise.resolve({ json: () => Promise.resolve(backupBody) } as Response)
+      Promise.resolve({ ok: true, json: () => Promise.resolve(backupBody) } as Response)
     ) as typeof fetch;
 
     renderHook(() => useAppData());
@@ -126,7 +129,7 @@ describe("useAppData", () => {
       })
     );
     const fetchSpy = vi.fn(() =>
-      Promise.resolve({ json: () => Promise.resolve(null) } as Response)
+      Promise.resolve({ ok: true, json: () => Promise.resolve(null) } as Response)
     );
     globalThis.fetch = fetchSpy as typeof fetch;
 
@@ -134,7 +137,10 @@ describe("useAppData", () => {
     await waitFor(() => expect(result.current.isLoading).toBe(false));
     // 추가로 잠시 대기 — restore 호출이 없어야 함
     await new Promise((r) => setTimeout(r, 50));
-    expect(fetchSpy).not.toHaveBeenCalledWith("/api/restore-latest-backup");
+    expect(fetchSpy).not.toHaveBeenCalledWith(
+      "/api/restore-latest-backup",
+      expect.anything()
+    );
   });
 
   it("초기 로드 후 preloadKrNames 호출, 변경 시 store 업데이트", async () => {

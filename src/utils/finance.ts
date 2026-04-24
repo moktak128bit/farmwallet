@@ -15,7 +15,7 @@ export const cleanTicker = (raw: string): string => {
  * 한국 종목: 접미사(.KS 등) 제거 후 **정확히 6글자**, **맨 앞은 반드시 숫자**, 나머지는 숫자·영문 무관.
  * (예: 005930, 0167Z0, 0167B0) — CoinGecko ID 휴리스틱과 겹치지 않게 암호화폐에서 제외할 때도 사용.
  */
-export const isLikelyKoreanSixCharCode = (ticker: string): boolean => {
+const isLikelyKoreanSixCharCode = (ticker: string): boolean => {
   const c = cleanTicker(ticker);
   if (c.length !== 6) return false;
   return /^[0-9][0-9A-Z]{5}$/.test(c);

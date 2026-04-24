@@ -37,8 +37,8 @@ const SettingsView = lazy(loadSettings);
 const WorkoutView = lazy(loadWorkout);
 const InsightsView = lazy(loadInsights);
 
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
-const TAB_PREFETCH: Record<TabId, () => Promise<{ default: React.ComponentType<any> }>> = {
+// 프리페치는 청크 로드만 트리거하므로 반환 타입을 unknown으로 두면 any 없이 안전.
+const TAB_PREFETCH: Record<TabId, () => Promise<unknown>> = {
   dashboard: loadDashboard,
   accounts: loadAccounts,
   ledger: loadLedger,
@@ -53,6 +53,7 @@ const TAB_PREFETCH: Record<TabId, () => Promise<{ default: React.ComponentType<a
   insights: loadInsights
 };
 import { useAppData } from "./hooks/useAppData";
+import { useStorageQuota } from "./hooks/useStorageQuota";
 import { useUndoRedo } from "./hooks/useUndoRedo";
 import { useBackup } from "./hooks/useBackup";
 import { useSearch } from "./hooks/useSearch";
@@ -114,12 +115,21 @@ export const App: React.FC = () => {
   // dev 환경에서 현재 git 브랜치 조회 (이전 버전 상태인지 감지)
   useEffect(() => {
     if (!import.meta.env.DEV) return;
-    fetch("/api/git-log")
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), 5_000);
+    fetch("/api/git-log", { signal: controller.signal })
       .then((r) => (r.ok ? r.json() : null))
       .then((data: { currentBranch?: string } | null) => {
         if (data?.currentBranch) setGitCurrentBranch(data.currentBranch);
       })
-      .catch(() => { /* dev server not running or endpoint missing */ });
+      .catch((err: unknown) => {
+        // dev server not running 등 정상 케이스 — 콘솔에만
+        if (err instanceof DOMException && err.name === "AbortError") {
+          console.warn("[FarmWallet] /api/git-log 시간 초과");
+        }
+      })
+      .finally(() => clearTimeout(timeoutId));
+    return () => clearTimeout(timeoutId);
   }, []);
   const isGistSaving = useUIStore((s) => s.isGistSaving);
   const setIsGistSaving = useUIStore((s) => s.setIsGistSaving);
@@ -249,6 +259,26 @@ export const App: React.FC = () => {
   );
 
   useMarketEnvSnapshotRecorder();
+
+  // 저장소 사용률 85% 초과 시 1회 경고 (세션당 1회)
+  const storageQuota = useStorageQuota();
+  useEffect(() => {
+    if (!storageQuota.isNearLimit) return;
+    const warnedKey = "fw-storage-near-limit-warned";
+    try {
+      if (sessionStorage.getItem(warnedKey) === "1") return;
+      sessionStorage.setItem(warnedKey, "1");
+    } catch { /* */ }
+    const used = storageQuota.usage ?? 0;
+    const total = storageQuota.quota ?? 0;
+    const mb = (b: number) => (b / (1024 * 1024)).toFixed(1);
+    const pct = storageQuota.ratio != null ? Math.round(storageQuota.ratio * 100) : "?";
+    toast.error(
+      `저장소 사용 ${pct}% (${mb(used)}MB / ${mb(total)}MB). 설정에서 백업 정리를 고려하세요.`,
+      { duration: 8000, id: "storage-near-limit" }
+    );
+    addAppLog(`저장소 사용률 높음 (${pct}%) — 백업 정리 권장`, "error");
+  }, [storageQuota.isNearLimit, storageQuota.usage, storageQuota.quota, storageQuota.ratio, addAppLog]);
 
   const gistConflict = useUIStore((s) => s.gistConflict);
 
@@ -391,6 +421,22 @@ export const App: React.FC = () => {
         containerStyle={{ top: 12, zIndex: 9999 }}
       />
       <PWAStatus />
+      {isOnRestoreBranch && (
+        <div
+          role="alert"
+          style={{
+            background: "#fef3c7",
+            color: "#92400e",
+            borderBottom: "1px solid #f59e0b",
+            padding: "8px 16px",
+            fontSize: 13,
+            fontWeight: 600,
+            textAlign: "center",
+          }}
+        >
+          ⚠ 복구 브랜치({gitCurrentBranch}) 상태입니다 — git 업로드는 잠겨 있습니다. 작업 후 main으로 돌아가세요.
+        </div>
+      )}
       <header className="app-header">
         <div style={{ display: "flex", alignItems: "center", gap: 12, flex: 1, minWidth: 0 }}>
           <button
@@ -523,18 +569,44 @@ export const App: React.FC = () => {
                     ...JSON.parse(userDataStr),
                     _exportedAt: new Date().toISOString(),
                   };
-                  const flushRes = await fetch("/api/farmwallet-data", {
-                    method: "POST",
-                    headers: { "Content-Type": "application/json" },
-                    body: JSON.stringify(userFieldsWithMeta),
-                  });
+                  // 두 단계 fetch 각각에 타임아웃 적용 (네트워크 단절·서버 응답 없음 보호)
+                  const flushController = new AbortController();
+                  const flushTimer = setTimeout(() => flushController.abort(), 15_000);
+                  let flushRes: Response;
+                  try {
+                    flushRes = await fetch("/api/farmwallet-data", {
+                      method: "POST",
+                      headers: { "Content-Type": "application/json" },
+                      body: JSON.stringify(userFieldsWithMeta),
+                      signal: flushController.signal,
+                    });
+                  } catch (err) {
+                    if (err instanceof DOMException && err.name === "AbortError") {
+                      throw new Error("데이터 파일 저장 시간 초과 (15s)");
+                    }
+                    throw err;
+                  } finally {
+                    clearTimeout(flushTimer);
+                  }
                   if (!flushRes.ok) {
                     const flushJson = await flushRes.json().catch(() => ({}));
                     throw new Error(flushJson.error ?? "데이터 파일 저장 실패");
                   }
                   addAppLog("git에 업로드 중...", "info");
-                  const res = await fetch("/api/git-push", { method: "POST" });
-                  const json = await res.json();
+                  const pushController = new AbortController();
+                  const pushTimer = setTimeout(() => pushController.abort(), 120_000);
+                  let res: Response;
+                  try {
+                    res = await fetch("/api/git-push", { method: "POST", signal: pushController.signal });
+                  } catch (err) {
+                    if (err instanceof DOMException && err.name === "AbortError") {
+                      throw new Error("git 업로드 시간 초과 (120s)");
+                    }
+                    throw err;
+                  } finally {
+                    clearTimeout(pushTimer);
+                  }
+                  const json = await res.json().catch(() => ({}));
                   if (!res.ok) throw new Error(json.error ?? "git 업로드 실패");
                   const nowIso = new Date().toISOString();
                   try { localStorage.setItem(STORAGE_KEYS.GIT_LAST_PUSH_AT, nowIso); } catch { /* */ }

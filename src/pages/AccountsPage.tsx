@@ -118,6 +118,22 @@ export const AccountsView: React.FC<Props> = ({
   };
 
   const handleDeleteAccount = (id: string) => {
+    // 삭제 전 해당 계좌를 참조하는 ledger·trade 개수 확인.
+    // 0개면 그대로 삭제, 그 이상이면 사용자에게 명시적 확인 받음
+    // (참조 레코드는 그대로 유지 — 과거 거래 기록을 자동 삭제하지 않는 게 안전).
+    const ledgerRefs = ledger.filter((l) => l.fromAccountId === id || l.toAccountId === id).length;
+    const tradeRefs = trades.filter((t) => t.accountId === id).length;
+    if (ledgerRefs > 0 || tradeRefs > 0) {
+      const parts: string[] = [];
+      if (ledgerRefs > 0) parts.push(`가계부 ${ledgerRefs}건`);
+      if (tradeRefs > 0) parts.push(`주식거래 ${tradeRefs}건`);
+      const refs = parts.join(", ");
+      const ok = window.confirm(
+        `이 계좌를 참조하는 ${refs}이(가) 있습니다.\n` +
+        `계좌만 삭제하면 해당 거래 기록은 "삭제된 계좌"로 남습니다.\n계속하시겠습니까?`
+      );
+      if (!ok) return;
+    }
     onChangeAccounts(safeAccounts.filter((a) => a.id !== id));
   };
 

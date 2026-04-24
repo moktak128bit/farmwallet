@@ -527,16 +527,6 @@ export function computeBalanceAtDateForAccounts(
 
 
 
-/** 저축 합계: savings 타입 계좌 잔액만 (account.savings는 currentBalance에 이미 포함되어 있어 별도 합산 시 이중 집계됨) */
-export function computeTotalSavings(
-  balances: AccountBalanceRowLike[],
-  _accounts: Account[]
-): number {
-  return balances
-    .filter((b) => b.account.type === "savings")
-    .reduce((s, b) => s + b.currentBalance, 0);
-}
-
 /** 부채 합계 (음수=부채, 양수=선결제/환급). account.debt + 대출 잔금 합산. */
 export function computeTotalDebt(
   accounts: Account[],

@@ -15,6 +15,27 @@ export interface CacheData {
   prices: StockPrice[];
   tickerDatabase: TickerInfo[];
   historicalDailyCloses: HistoricalDailyClose[];
+  /** 마지막으로 saveCacheToDB가 성공한 ISO 시각 (없으면 epoch) */
+  cachedAt?: string;
+}
+
+/**
+ * 캐시 신선도 판정. updatedAt이 너무 오래됐으면 stale.
+ * prices는 1일 이상이면 stale로 간주.
+ */
+export function isPricesStale(cache: CacheData, maxAgeMs = 24 * 60 * 60_000): boolean {
+  if (!cache.cachedAt) {
+    // updatedAt 없는 구버전: 개별 price.updatedAt에서 가장 신선한 것을 확인
+    let latest = 0;
+    for (const p of cache.prices) {
+      const t = p.updatedAt ? new Date(p.updatedAt).getTime() : 0;
+      if (Number.isFinite(t) && t > latest) latest = t;
+    }
+    if (latest === 0) return cache.prices.length > 0; // 시각 정보 없으면 stale로 간주
+    return Date.now() - latest > maxAgeMs;
+  }
+  const ageMs = Date.now() - new Date(cache.cachedAt).getTime();
+  return !Number.isFinite(ageMs) || ageMs > maxAgeMs;
 }
 
 const DB_NAME = "farmwallet-cache";
@@ -28,8 +49,26 @@ export function isIndexedDBAvailable(): boolean {
   return typeof window !== "undefined" && typeof window.indexedDB !== "undefined";
 }
 
+let _unloadHandlerRegistered = false;
+
+function registerUnloadCloseHandler() {
+  if (_unloadHandlerRegistered || typeof window === "undefined") return;
+  _unloadHandlerRegistered = true;
+  // 탭 종료/리프레시 시 db.close()로 IDB 풀에 점유된 connection 반환.
+  // pagehide가 brower 호환성·iOS 안정성 면에서 beforeunload보다 안전.
+  const closeIfOpen = () => {
+    if (!_dbPromise) return;
+    _dbPromise
+      .then((db) => { try { db.close(); } catch { /* */ } })
+      .catch(() => { /* open 자체 실패면 close 불필요 */ });
+    _dbPromise = null;
+  };
+  window.addEventListener("pagehide", closeIfOpen);
+}
+
 function openDB(): Promise<IDBDatabase> {
   if (_dbPromise) return _dbPromise;
+  registerUnloadCloseHandler();
   _dbPromise = new Promise<IDBDatabase>((resolve, reject) => {
     if (!isIndexedDBAvailable()) {
       reject(new Error("IndexedDB not available"));
@@ -42,14 +81,35 @@ function openDB(): Promise<IDBDatabase> {
         db.createObjectStore(STORE_NAME);
       }
     };
-    req.onsuccess = () => resolve(req.result);
+    req.onsuccess = () => {
+      const db = req.result;
+      // 다른 탭에서 schema upgrade 요청 시 자동으로 close해야 다음 open이 막히지 않음
+      db.onversionchange = () => {
+        try { db.close(); } catch { /* */ }
+        _dbPromise = null;
+      };
+      resolve(db);
+    };
     req.onerror = () => reject(req.error ?? new Error("Failed to open IndexedDB"));
   });
   return _dbPromise;
 }
 
+/** 명시적으로 IndexedDB 연결을 닫고 promise 캐시도 비운다 (테스트·종료 시 사용) */
+export async function closeCacheDB(): Promise<void> {
+  if (!_dbPromise) return;
+  try {
+    const db = await _dbPromise;
+    db.close();
+  } catch {
+    /* */
+  } finally {
+    _dbPromise = null;
+  }
+}
+
 function emptyCache(): CacheData {
-  return { prices: [], tickerDatabase: [], historicalDailyCloses: [] };
+  return { prices: [], tickerDatabase: [], historicalDailyCloses: [], cachedAt: undefined };
 }
 
 /** IndexedDB에서 캐시 로드. 실패 시 빈 캐시 반환. */
@@ -72,6 +132,7 @@ export async function loadCacheFromDB(): Promise<CacheData> {
           historicalDailyCloses: Array.isArray(raw.historicalDailyCloses)
             ? raw.historicalDailyCloses
             : [],
+          cachedAt: typeof raw.cachedAt === "string" ? raw.cachedAt : undefined,
         });
       };
       req.onerror = () => resolve(emptyCache());
@@ -85,10 +146,11 @@ export async function loadCacheFromDB(): Promise<CacheData> {
 export async function saveCacheToDB(cache: CacheData): Promise<void> {
   try {
     const db = await openDB();
+    const enriched: CacheData = { ...cache, cachedAt: new Date().toISOString() };
     await new Promise<void>((resolve) => {
       const tx = db.transaction(STORE_NAME, "readwrite");
       const store = tx.objectStore(STORE_NAME);
-      store.put(cache, CACHE_KEY);
+      store.put(enriched, CACHE_KEY);
       tx.oncomplete = () => resolve();
       tx.onerror = () => resolve();
       tx.onabort = () => resolve();

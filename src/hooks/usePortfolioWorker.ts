@@ -61,6 +61,8 @@ export function usePortfolioWorker(params: UsePortfolioWorkerParams): PortfolioS
   const workerRef = useRef<Worker | null>(null);
   const requestIdRef = useRef(0);
   const latestHandledRequestRef = useRef(0);
+  /** 우리가 보낸 request id 중 가장 큰 값. 응답이 이 값과 다르면 stale로 간주 */
+  const latestPostedRequestRef = useRef(0);
 
   const syncResult = useMemo(() => {
     if (supportsWorker) return null;
@@ -98,7 +100,9 @@ export function usePortfolioWorker(params: UsePortfolioWorkerParams): PortfolioS
       error?: string;
     }>) => {
       const { requestId, balances, positions, error } = event.data;
+      // 더 최신 요청을 이미 처리했거나, 우리가 가장 최근 보낸 요청이 아니면 폐기 (stale)
       if (requestId < latestHandledRequestRef.current) return;
+      if (requestId !== latestPostedRequestRef.current) return;
       latestHandledRequestRef.current = requestId;
       if (error) {
         console.warn("[usePortfolioWorker] worker failed, keeping previous value", error);
@@ -129,6 +133,7 @@ export function usePortfolioWorker(params: UsePortfolioWorkerParams): PortfolioS
     if (!worker) return;
 
     const requestId = ++requestIdRef.current;
+    latestPostedRequestRef.current = requestId;
     setState((prev) => ({ ...prev, isComputing: true }));
 
     worker.postMessage({

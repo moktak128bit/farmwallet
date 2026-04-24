@@ -17,6 +17,8 @@
     "test:watch": "vitest",
     "test:smoke": "node scripts/smoke-test.mjs",
     "ci": "npm run -s check-text && npm run -s lint && npm run -s build && npm run -s test:smoke",
+    "knip": "knip",
+    "knip:report": "knip --reporter compact",
     "check-text": "node scripts/check-text-integrity.mjs",
     "check-text:report": "node scripts/check-text-integrity.mjs --report",
     "check-text:update-baseline": "node scripts/check-text-integrity.mjs --update-baseline"

@@ -52,10 +52,17 @@ export function validateLedgerForm({
 
   const allowDecimal = kindForTab === "transfer" && form.currency === "USD";
   const parsedAmount = parseAmount(form.amount, allowDecimal);
-  if (parsedAmount <= 0) {
-    errors.amount = !form.amount || form.amount.trim() === ""
-      ? "금액을 입력해주세요"
-      : "금액은 0보다 커야 합니다";
+  const trimmedAmount = (form.amount ?? "").trim();
+  // 숫자·콤마·(허용 시) 점 외의 문자가 섞이면 명시적 에러 (공백만/이모지/한글 거부)
+  const amountPattern = allowDecimal ? /^[\d.,]+$/ : /^[\d,]+$/;
+  if (!trimmedAmount) {
+    errors.amount = "금액을 입력해주세요";
+  } else if (!amountPattern.test(trimmedAmount)) {
+    errors.amount = allowDecimal
+      ? "숫자·소수점·콤마만 입력 가능합니다"
+      : "숫자와 콤마만 입력 가능합니다";
+  } else if (parsedAmount <= 0) {
+    errors.amount = "금액은 0보다 커야 합니다";
   }
 
   const requireFromAccount = kindForTab === "transfer" || kindForTab === "expense";

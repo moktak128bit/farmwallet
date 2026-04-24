@@ -51,10 +51,3 @@ export function findOverdueRecurring(
   return items;
 }
 
-export function countMissingRecurring(
-  recurring: RecurringExpense[],
-  ledger: LedgerEntry[],
-  refDate: string = todayIso()
-): number {
-  return findOverdueRecurring(recurring, ledger, refDate).filter((i) => !i.alreadyLogged).length;
-}

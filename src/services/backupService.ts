@@ -286,6 +286,36 @@ export function loadBackupData(id: string): AppData | null {
   }
 }
 
+/**
+ * 읽기 시점에 SHA-256 해시를 재계산해 저장 시 해시와 비교한다.
+ * 손상되었으면 onCorrupt 콜백 호출 후 데이터를 그대로 반환 (사용자가 결정).
+ * 해시가 없으면 검증 생략 (skipHash로 저장된 구버전 호환).
+ */
+export async function loadBackupDataVerified(
+  id: string,
+  onCorrupt?: (info: { id: string; createdAt: string }) => void
+): Promise<{ data: AppData | null; status: "valid" | "missing-hash" | "mismatch" | "not-found" }> {
+  if (typeof window === "undefined") return { data: null, status: "not-found" };
+  try {
+    const current = readStoredBackups();
+    const found = current.find((b) => b.id === id);
+    if (!found) return { data: null, status: "not-found" };
+    if (!found.hash) return { data: found.data, status: "missing-hash" };
+
+    const text = JSON.stringify(found.data);
+    const hash = await computeBackupHashFromText(text);
+    if (hash !== found.hash) {
+      console.warn("[backupService] backup hash mismatch", { id, expected: found.hash, actual: hash });
+      onCorrupt?.({ id: found.id, createdAt: found.createdAt });
+      return { data: found.data, status: "mismatch" };
+    }
+    return { data: found.data, status: "valid" };
+  } catch (error) {
+    console.warn("[backupService] failed to verify backup", error);
+    return { data: null, status: "not-found" };
+  }
+}
+
 export async function getLatestLocalBackupIntegrity(): Promise<{
   createdAt: string | null;
   status: "valid" | "missing-hash" | "mismatch" | "none";

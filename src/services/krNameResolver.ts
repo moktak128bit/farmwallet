@@ -32,19 +32,13 @@ export function getKoreanNameOverlay(): Record<string, string> {
   return { ...overlayMap };
 }
 
-/** 오버레이에서 한글명 조회 (없으면 undefined) */
-export function getOverlayName(ticker: string): string | undefined {
-  const key = canonicalTickerForMatch(ticker);
-  return key ? overlayMap[key] : undefined;
-}
-
 /**
  * Naver 금융에서 한국 종목 한글명 가져오기.
  * - DEV가 아니면 즉시 null (proxy 없음).
  * - 동일 ticker 동시 호출 시 하나의 Promise 공유.
  * - 실패 시 재시도하지 않도록 failedTickers에 기록.
  */
-export async function fetchKoreanNameFromNaver(ticker: string): Promise<string | null> {
+async function fetchKoreanNameFromNaver(ticker: string): Promise<string | null> {
   if (!isDev()) return null;
   const key = canonicalTickerForMatch(ticker);
   if (!key || !isKRWStock(key)) return null;

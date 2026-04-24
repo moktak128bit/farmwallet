@@ -3,6 +3,8 @@ import { toast } from "react-hot-toast";
 import { ERROR_MESSAGES } from "../constants/errorMessages";
 import type { Account, BudgetGoal, CategoryPresets, RecurringExpense, Recurrence, LedgerEntry } from "../types";
 import { BUDGET_ALL_CATEGORY } from "../types";
+import { parseIsoLocal, formatIsoLocal, getTodayKST } from "../utils/date";
+import { newIdWithPrefix } from "../utils/id";
 
 interface Props {
   accounts: Account[];
@@ -58,13 +60,14 @@ export const BudgetRecurringView: React.FC<Props> = ({
   const [editingBudgetValue, setEditingBudgetValue] = useState<string>("");
   const [selectedRecurringIds, setSelectedRecurringIds] = useState<Set<string>>(new Set());
   const [previewEntries, setPreviewEntries] = useState<LedgerEntry[] | null>(null);
-  const currentMonth = new Date().toISOString().slice(0, 7); // yyyy-mm
+  // KST 기준 현재 월 (UTC 자정 직전 일/월 경계 오차 방지)
+  const currentMonth = getTodayKST().slice(0, 7); // yyyy-mm
 
   const formatNextRun = (item: RecurringExpense): string => {
     const start = item.startDate || "";
     if (!start) return "-";
-    const d = new Date(start);
-    if (isNaN(d.getTime())) return start;
+    const d = parseIsoLocal(start);
+    if (!d) return start;
     const month = d.getMonth() + 1;
     const day = d.getDate();
     if (item.frequency === "monthly") return `${day}일`;
@@ -285,15 +288,17 @@ export const BudgetRecurringView: React.FC<Props> = ({
 
   const generateOccurrencesForMonthFromRecurring = (recurringList: RecurringExpense[], month: string): LedgerEntry[] => {
     const [y, m] = month.split("-").map(Number);
+    // 모두 로컬 Date — toISOString()으로 직렬화하면 UTC로 바뀌어 1일 어긋날 수 있음
     const monthStart = new Date(y, m - 1, 1);
     const monthEnd = new Date(y, m, 0);
     const entries: LedgerEntry[] = [];
 
     for (const r of recurringList) {
       if (!r.startDate || !r.startDate.trim()) continue;
-      const start = new Date(r.startDate);
-      if (isNaN(start.getTime())) continue;
-      if (r.endDate && new Date(r.endDate) < monthStart) continue;
+      const start = parseIsoLocal(r.startDate);
+      if (!start) continue;
+      const endParsed = r.endDate ? parseIsoLocal(r.endDate) : null;
+      if (endParsed && endParsed < monthStart) continue;
 
       const pushIfInMonth = (date: Date) => {
         if (date >= monthStart && date <= monthEnd) {
@@ -301,8 +306,8 @@ export const BudgetRecurringView: React.FC<Props> = ({
             (r.category && r.category.trim()) ||
             (r.toAccountId ? "저축성지출" : defaultExpenseCategory);
           entries.push({
-            id: `L${Date.now()}${Math.random().toString(16).slice(2)}`,
-            date: date.toISOString().slice(0, 10),
+            id: newIdWithPrefix("L"),
+            date: formatIsoLocal(date), // UTC가 아닌 로컬 yyyy-mm-dd
             kind: r.toAccountId ? "transfer" : "expense",
             category,
             subCategory: r.title,

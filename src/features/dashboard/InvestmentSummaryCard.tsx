@@ -6,6 +6,7 @@ import {
   computeAccountBalances,
   computePositions,
   positionMarketValueKRW,
+  computeTotalNetWorth,
 } from "../../calculations";
 import { formatKRW } from "../../utils/formatter";
 import { getTodayKST, parseIsoLocal } from "../../utils/date";
@@ -97,6 +98,13 @@ export const InvestmentSummaryCard: React.FC<Props> = ({
     }
     return total;
   }, [balances, positions, securitiesAccountIds, fxRate]);
+
+  // 총자산 목표 진행률용: 모든 계좌 + 포지션 - 부채 (= 순자산)
+  const loans = useAppStore((s) => s.data.loans);
+  const totalNetWorth = useMemo(
+    () => computeTotalNetWorth(balances, positions, fxRate, loans, ledger),
+    [balances, positions, fxRate, loans, ledger]
+  );
 
   const principal = useMemo(() => {
     let p = 0;
@@ -265,8 +273,8 @@ export const InvestmentSummaryCard: React.FC<Props> = ({
           placeholder="목표 금액 (원)"
         />
         <GoalRow
-          label="최종 총자산 목표"
-          progress={totalInvestmentAssets}
+          label="최종 총자산 목표 (전 계좌 − 부채)"
+          progress={totalNetWorth}
           target={goals.finalTotalAssetTarget}
           isEditing={editing === "finalTotal"}
           draft={draft}
@@ -314,10 +322,23 @@ export const InvestmentSummaryCard: React.FC<Props> = ({
                 <button
                   type="button"
                   onClick={() => startEdit("retirement")}
-                  style={{ padding: 2, background: "transparent", border: "none", cursor: "pointer" }}
+                  style={{
+                    padding: "4px 10px",
+                    background: "var(--primary-light, #dbeafe)",
+                    color: "var(--primary, #2563eb)",
+                    border: "1px solid var(--primary, #2563eb)",
+                    borderRadius: 6,
+                    cursor: "pointer",
+                    fontSize: 12,
+                    fontWeight: 600,
+                    display: "inline-flex",
+                    alignItems: "center",
+                    gap: 4,
+                  }}
                   aria-label="은퇴 목표 편집"
                 >
-                  <Pencil size={12} color="var(--muted)" />
+                  <Pencil size={12} />
+                  {retirementTarget ? "수정" : "설정"}
                 </button>
               </div>
             )}
@@ -498,10 +519,23 @@ const GoalRow: React.FC<GoalRowProps> = ({
             <button
               type="button"
               onClick={onStartEdit}
-              style={{ padding: 2, background: "transparent", border: "none", cursor: "pointer" }}
+              style={{
+                padding: "4px 10px",
+                background: "var(--primary-light, #dbeafe)",
+                color: "var(--primary, #2563eb)",
+                border: "1px solid var(--primary, #2563eb)",
+                borderRadius: 6,
+                cursor: "pointer",
+                fontSize: 12,
+                fontWeight: 600,
+                display: "inline-flex",
+                alignItems: "center",
+                gap: 4,
+              }}
               aria-label={`${label} 편집`}
             >
-              <Pencil size={12} color="var(--muted)" />
+              <Pencil size={12} />
+              {target ? "수정" : "설정"}
             </button>
           </div>
         )}

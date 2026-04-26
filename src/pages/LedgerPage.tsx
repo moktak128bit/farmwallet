@@ -377,15 +377,35 @@ export const LedgerView: React.FC<Props> = ({
     const normalizedMainCategory = form.mainCategory?.trim() || "";
     const normalizedSubCategory = form.subCategory?.trim() || "";
 
+    // 3-level 구조로 저장:
+    //   - category    = "지출" / "수입" / "이체"  (대분류 — kind 자동매핑)
+    //   - subCategory = 식비 / 유류교통비 / ...   (중분류 — picker의 첫째 행)
+    //   - detailCategory = 시장/마트 / 주차비 / .. (소분류 — picker의 둘째 행, 지출만)
+    let storedCategory: string;
+    let storedSubCategory: string;
+    let storedDetailCategory: string | undefined;
+    if (kindForTab === "income") {
+      storedCategory = "수입";
+      storedSubCategory = normalizedSubCategory || "(미분류)";
+      storedDetailCategory = undefined;
+    } else if (kindForTab === "transfer") {
+      storedCategory = "이체";
+      storedSubCategory = normalizedSubCategory || "(미분류)";
+      storedDetailCategory = undefined;
+    } else {
+      // expense
+      storedCategory = "지출";
+      storedSubCategory = normalizedMainCategory || "(미분류)";
+      storedDetailCategory = normalizedSubCategory || undefined;
+    }
+
     const base: Omit<LedgerEntry, "id"> = {
       date: form.date,
       kind: kindForTab,
       isFixedExpense: isFixed,
-      category:
-        kindForTab === "income"
-          ? "수입"
-          : normalizedMainCategory || "(미분류)",
-      subCategory: normalizedSubCategory || "(미분류)",
+      category: storedCategory,
+      subCategory: storedSubCategory,
+      ...(storedDetailCategory ? { detailCategory: storedDetailCategory } : {}),
       description: form.description?.trim() || "",
       amount,
       fromAccountId:
@@ -1888,7 +1908,7 @@ export const LedgerView: React.FC<Props> = ({
                 {/* 이체 탭일 때는 대분류를 숨기고 "이체"로 고정 */}
                 {ledgerTab === "transfer" ? (
                   <div style={{ marginBottom: 8 }}>
-                    <span style={{ fontSize: 12, marginBottom: 8, display: "block", fontWeight: 600 }}>대분류: 이체</span>
+                    <span style={{ fontSize: 12, marginBottom: 8, display: "block", fontWeight: 600 }}>대분류: 이체 (자동)</span>
                     <div style={{ 
                       padding: "10px 12px", 
                       background: "var(--primary-light)", 
@@ -1903,7 +1923,7 @@ export const LedgerView: React.FC<Props> = ({
                   </div>
                 ) : (
                   <label>
-                    <span style={{ fontSize: 12, marginBottom: 8, display: "block" }}>대분류 *</span>
+                    <span style={{ fontSize: 12, marginBottom: 8, display: "block" }}>중분류 * <span style={{ fontSize: 11, color: "var(--text-muted)", fontWeight: 400 }}>(대분류: 지출)</span></span>
                     <span style={{ fontSize: 11, color: "var(--danger)", display: "block", marginBottom: 4, visibility: formErrors.mainCategory ? "visible" : "hidden" }}>
                       {formErrors.mainCategory || "\u00A0"}
                     </span>
@@ -1953,11 +1973,11 @@ export const LedgerView: React.FC<Props> = ({
                 </label>
                 )}
 
-                {/* 3. 중분류 - 대분류 선택 시에만 표시 (이체 탭일 때는 항상 표시) */}
+                {/* 3. 소분류 - 중분류 선택 시에만 표시 (이체 탭일 때는 항상 표시) */}
                 {(form.mainCategory || ledgerTab === "transfer") ? (
                   <label>
                     <span style={{ fontSize: 12, marginBottom: 8, display: "block" }}>
-                      중분류 * <span style={{ fontSize: 11, color: "var(--text-muted)", fontWeight: 400 }}>({ledgerTab === "transfer" ? "이체" : form.mainCategory}의 중분류)</span>
+                      {ledgerTab === "transfer" ? "중분류 *" : "소분류 *"} <span style={{ fontSize: 11, color: "var(--text-muted)", fontWeight: 400 }}>({ledgerTab === "transfer" ? "이체" : form.mainCategory}의 {ledgerTab === "transfer" ? "중분류" : "소분류"})</span>
                     </span>
                     <span style={{ fontSize: 11, color: "var(--danger)", display: "block", marginBottom: 4, visibility: formErrors.subCategory ? "visible" : "hidden" }}>
                       {formErrors.subCategory || "\u00A0"}
@@ -2020,7 +2040,7 @@ export const LedgerView: React.FC<Props> = ({
                     borderRadius: "8px",
                     background: "var(--surface)"
                   }}>
-                    대분류를 먼저 선택하세요
+                    중분류를 먼저 선택하세요
                   </div>
                 )}
               </>

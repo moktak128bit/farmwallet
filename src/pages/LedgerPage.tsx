@@ -1722,14 +1722,29 @@ export const LedgerView: React.FC<Props> = ({
       {/* 입력 폼 */}
       <form className="card" onSubmit={handleSubmit} style={{ padding: 16, marginBottom: 16 }}>
           <div style={{ display: "flex", flexDirection: "column", gap: "16px" }}>
-            {/* 수입/지출/이체 구분 선택 — 탭 필터와 연동 */}
+            {/* 대분류 토글 (전체/수입/지출/이체) — "전체"는 목록 필터만 풀고 입력 kind는 유지 */}
             <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+              <button
+                type="button"
+                tabIndex={-1}
+                className={ledgerTab === "all" ? "primary" : "secondary"}
+                onClick={() => {
+                  // 전체: 목록 필터만 풀기 — 입력용 kind는 그대로 (formKindWhenAll 유지)
+                  setLedgerTab("all");
+                  setFilterMainCategory(undefined);
+                  setFilterSubCategory(undefined);
+                  setFilterDetailCategory(undefined);
+                }}
+                style={{ fontSize: 13, padding: "6px 12px" }}
+              >
+                전체
+              </button>
               {(["income", "expense", "transfer"] as const).map((k) => (
                 <button
                   key={k}
                   type="button"
                   tabIndex={-1}
-                  className={effectiveFormKind === k ? "primary" : "secondary"}
+                  className={ledgerTab === k && effectiveFormKind === k ? "primary" : "secondary"}
                   onClick={() => {
                     // 입력 kind 선택 = 아래 목록도 해당 탭으로 필터
                     setFormKindWhenAll(k);
@@ -2354,6 +2369,24 @@ export const LedgerView: React.FC<Props> = ({
               {label}
             </button>
           ))}
+          <button
+            type="button"
+            onClick={() => setViewMode(viewMode === "monthly" ? "all" : "monthly")}
+            title={viewMode === "monthly" ? "월별 보기 끄기 (전체 기간)" : "월별 보기 켜기"}
+            style={{
+              padding: "12px 8px",
+              fontSize: 15,
+              fontWeight: 700,
+              borderRadius: 10,
+              border: viewMode === "monthly" ? "2px solid var(--primary)" : "2px solid var(--border)",
+              background: viewMode === "monthly" ? "var(--primary)" : "var(--surface)",
+              color: viewMode === "monthly" ? "white" : "var(--text)",
+              cursor: "pointer",
+              transition: "all 0.15s",
+            }}
+          >
+            {viewMode === "monthly" ? "월별 ✓" : "월별"}
+          </button>
         </div>
 
         {/* 대분류 필터 — 종류 탭이 전체가 아닐 때, 또는 전체 탭이지만 카테고리가 2개 이상일 때 */}

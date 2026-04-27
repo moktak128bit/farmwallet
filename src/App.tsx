@@ -776,6 +776,7 @@ export const App: React.FC = () => {
               categoryPresets={data.categoryPresets}
               budgetGoals={data.budgetGoals}
               recurringExpenses={data.recurringExpenses}
+              fxRate={fxRate}
               onAddLedger={(entry) => setDataWithHistory((prev) => ({ ...prev, ledger: [...prev.ledger, entry] }))}
             />
             </TabErrorBoundary>

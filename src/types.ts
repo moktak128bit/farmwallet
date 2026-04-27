@@ -439,8 +439,8 @@ export interface InvestmentGoals {
   annualDepositTarget?: number;
   /** 최종 총자산 목표 (KRW) */
   finalTotalAssetTarget?: number;
-  /** 은퇴 목표 시점 (YYYY-MM-DD) */
-  retirementDate?: string;
+  /** 연간 배당금 수령액 목표 (KRW) — 현금 흐름 목표. 진행률은 최근 12개월 누적 배당으로 측정. */
+  targetAnnualDividend?: number;
   /** 투자 시작일 (YYYY-MM-DD). 미설정이면 첫 거래일 자동 사용 */
   investmentStartDate?: string;
 }

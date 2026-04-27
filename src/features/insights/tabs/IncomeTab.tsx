@@ -38,20 +38,23 @@ export const IncomeTab = React.memo(function IncomeTab({ d }: { d: D }) {
     momPct: d.incomeGrowth.series.find((s) => s.month === m)?.momPct ?? null,
   }));
 
-  const periodLabel = d.months.length > 0 ? `${d.months[0]} ~ ${d.months[d.months.length - 1]}` : "-";
+  const periodLabel = d.selMonth
+    ? d.selMonth
+    : (d.months.length > 0 ? `${d.months[0]} ~ ${d.months[d.months.length - 1]}` : "-");
+  const rangeLabel = d.selMonth ? `1개월 (${d.ml[d.selMonth] ?? d.selMonth})` : `${d.months.length}개월`;
 
   return (
     <div>
       {/* 상단 기간·단위 배너 */}
       <div style={{ padding: "10px 14px", background: "#f8f9fa", borderRadius: 8, marginBottom: 16, fontSize: 12, color: "#666", lineHeight: 1.6 }}>
-        ℹ️ 범위: <strong>{d.months.length}개월</strong> ({periodLabel}) · 단위: <strong>원</strong> · 분류: 회사소득(급여·수당·상여) / 투자·패시브(배당·이자·투자수익) / 기타수입(캐시백·지원·대출 등)
+        ℹ️ 범위: <strong>{rangeLabel}</strong> ({periodLabel}) · 단위: <strong>원</strong> · 분류: 회사소득(급여·수당·상여) / 투자·패시브(배당·이자·투자수익) / 기타수입(캐시백·지원·대출 등)
       </div>
 
       {/* ============ 한눈에 보기 ============ */}
       <Section storageKey="income-section-overview" title="📊 한눈에 보기">
-        <Card accent><Kpi label="총 수입" value={F(totalIncome) + "원"} sub={`${d.months.length}개월 누적`} color="#f0c040" info="장부 수입 기준. 실질 수입은 심층 분석 탭 참조" /></Card>
+        <Card accent><Kpi label="총 수입" value={F(totalIncome) + "원"} sub={d.accumLabel} color="#f0c040" info="장부 수입 기준. 실질 수입은 심층 분석 탭 참조" /></Card>
         <Card accent><Kpi label="회사소득 의존도" value={salaryPct.toFixed(1) + "%"} sub={`${F(salaryGroupTotal)}원 / ${F(totalIncome)}원`} color={salaryPct > 80 ? "#e94560" : salaryPct > 50 ? "#f0c040" : "#48c9b0"} info="회사소득 그룹(급여·수당·상여)이 전체에서 차지하는 비율. 80% 초과 시 다각화 권장" /></Card>
-        <Card accent><Kpi label="패시브 수입 비율" value={passivePct.toFixed(1) + "%"} sub={`월평균 ${F(Math.round(passiveGroupTotal / Math.max(d.months.length, 1)))}원`} color={passivePct >= 10 ? "#48c9b0" : "#3498db"} info="배당·이자·투자수익 합 / 총 수입. 10%↑ 권장" /></Card>
+        <Card accent><Kpi label="패시브 수입 비율" value={passivePct.toFixed(1) + "%"} sub={`월평균 ${F(Math.round(passiveGroupTotal / d.monthSpan))}원`} color={passivePct >= 10 ? "#48c9b0" : "#3498db"} info="배당·이자·투자수익 합 / 총 수입. 10%↑ 권장" /></Card>
         <Card accent><Kpi label="실효 수입원 수" value={effectiveSources.toFixed(1) + "개"} sub={`실제 ${d.incByCat.length}개 · 집중도 반영`} color="#533483" info="1 / HHI. 같은 비율 N개면 N, 한 곳에 몰릴수록 작음" /></Card>
 
         <Card title="수입 구조 (그룹별)" span={2}>
@@ -215,7 +218,7 @@ export const IncomeTab = React.memo(function IncomeTab({ d }: { d: D }) {
               {d.incomeStability !== null ? `안정성 지수 ${d.incomeStability}% (1 − 표준편차/평균). ${d.incomeStability >= 70 ? "매우 안정적인 수입 흐름. 지출 계획과 투자 전략 세우기 좋은 환경." : d.incomeStability >= 40 ? "수입에 변동이 있지만 관리 가능 수준. 변동 원인 파악하면 더 안정화 가능." : "수입 변동이 큼. 비상자금(재정 활주로 6개월 이상) 확보 필수, 안정 수입원 늘리기 권장."}` : "데이터 부족 (최소 2개월 이상 필요)"}
             </Insight>
             <Insight title="패시브 수입 현황" color="#059669" bg="#d4edda">
-              {d.passiveIncome > 0 ? `배당·이자·투자수익 합산 ${F(d.passiveIncome)}원 (전체 수입의 ${passivePct.toFixed(1)}%). 월평균 ${F(Math.round(d.passiveIncome / Math.max(d.months.length, 1)))}원의 패시브 수입이 발생. ${passivePct >= 10 ? "패시브 비중 10% 달성. 자산이 돈을 벌어주는 구조!" : "10% 이상으로 늘리면 FIRE 가능성이 커집니다. 배당 ETF 적립식 투자가 시작점."}` : "패시브 수입 없음. 배당주/ETF/예금 이자 등 소액부터 시작해 보세요. 월 1만원도 의미 있는 첫걸음."}
+              {d.passiveIncome > 0 ? `배당·이자·투자수익 합산 ${F(d.passiveIncome)}원 (전체 수입의 ${passivePct.toFixed(1)}%). 월평균 ${F(Math.round(d.passiveIncome / d.monthSpan))}원의 패시브 수입이 발생. ${passivePct >= 10 ? "패시브 비중 10% 달성. 자산이 돈을 벌어주는 구조!" : "10% 이상으로 늘리면 FIRE 가능성이 커집니다. 배당 ETF 적립식 투자가 시작점."}` : "패시브 수입 없음. 배당주/ETF/예금 이자 등 소액부터 시작해 보세요. 월 1만원도 의미 있는 첫걸음."}
             </Insight>
             <Insight title="수입 다각화 점검" color="#b45309" bg="#fff3cd">
               {d.incByCat.length}개 수입원 · 실효 {effectiveSources.toFixed(1)}개.

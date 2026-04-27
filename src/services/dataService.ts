@@ -14,6 +14,7 @@ import { buildTableBackupFile } from "../utils/tableDataBackup";
 import { saveCacheToDB } from "./cacheStore";
 import { getKoreanNameOverlay } from "./krNameResolver";
 import { cleanTicker } from "../utils/finance";
+import { sanitizeLedger, sanitizeTrades } from "../utils/dataSanitize";
 
 // dataService 내부에서만 쓰는 느슨한 한국 주식 판정 (6+자).
 // finance.ts의 isKRWStock은 더 엄격(6자 정확)하므로 별도 유지.
@@ -451,6 +452,33 @@ function normalizeMarketEnvSnapshots(raw: unknown): MarketEnvSnapshot[] {
   return Array.from(dedup.values()).sort((a, b) => a.date.localeCompare(b.date));
 }
 
+/**
+ * loadData에서 investmentGoals 필드 누락으로 매번 초기화되던 회귀 방지.
+ * 잘못된 타입(문자열로 저장된 숫자, NaN 등)은 해당 필드만 떨궈 부분 복원 가능.
+ * 모든 필드가 비어있으면 undefined 반환.
+ */
+function normalizeInvestmentGoals(raw: unknown): import("../types").InvestmentGoals | undefined {
+  if (!raw || typeof raw !== "object") return undefined;
+  const r = raw as Record<string, unknown>;
+  const out: import("../types").InvestmentGoals = {};
+  if (typeof r.annualDepositTarget === "number" && Number.isFinite(r.annualDepositTarget)) {
+    out.annualDepositTarget = r.annualDepositTarget;
+  }
+  if (typeof r.finalTotalAssetTarget === "number" && Number.isFinite(r.finalTotalAssetTarget)) {
+    out.finalTotalAssetTarget = r.finalTotalAssetTarget;
+  }
+  if (typeof r.targetAnnualDividend === "number" && Number.isFinite(r.targetAnnualDividend)) {
+    out.targetAnnualDividend = r.targetAnnualDividend;
+  } else if (typeof r.targetMonthlyDividend === "number" && Number.isFinite(r.targetMonthlyDividend)) {
+    // 마이그레이션: 직전 버전의 월 단위 목표 → 연 환산 (×12)
+    out.targetAnnualDividend = r.targetMonthlyDividend * 12;
+  }
+  if (typeof r.investmentStartDate === "string" && r.investmentStartDate.length > 0) {
+    out.investmentStartDate = r.investmentStartDate;
+  }
+  return Object.keys(out).length > 0 ? out : undefined;
+}
+
 function normalizeHistoricalDailyCloses(raw: unknown): HistoricalDailyClose[] {
   if (!Array.isArray(raw)) return [];
   const rows: HistoricalDailyClose[] = [];
@@ -767,8 +795,17 @@ export function loadData(): AppData {
     const schemaVersionChanged = migratedBySchema.migrated || schemaVersion !== DATA_SCHEMA_VERSION;
     const parsedLoans = asArray(parsed.loans) as NonNullable<AppData["loans"]>;
     const parsedAccounts = asArray(parsed.accounts) as AppData["accounts"];
-    const parsedLedger = asArray(parsed.ledger) as AppData["ledger"];
-    const parsedTrades = asArray(parsed.trades) as AppData["trades"];
+    // 손상된 ledger/trade 엔트리는 폐기 — NaN/누락 amount가 계산에 흘러들지 않게.
+    const ledgerSan = sanitizeLedger(asArray<unknown>(parsed.ledger));
+    const tradesSan = sanitizeTrades(asArray<unknown>(parsed.trades));
+    if (ledgerSan.dropped > 0) {
+      console.warn(`[FarmWallet] sanitize: ledger ${ledgerSan.dropped}건 폐기`, ledgerSan.droppedSamples);
+    }
+    if (tradesSan.dropped > 0) {
+      console.warn(`[FarmWallet] sanitize: trades ${tradesSan.dropped}건 폐기`, tradesSan.droppedSamples);
+    }
+    const parsedLedger = ledgerSan.clean as AppData["ledger"];
+    const parsedTrades = tradesSan.clean as AppData["trades"];
     const parsedRecurring = asArray(parsed.recurringExpenses) as AppData["recurringExpenses"];
     const parsedBudgetGoals = asArray(parsed.budgetGoals) as AppData["budgetGoals"];
     const parsedCustomSymbols = asArray(parsed.customSymbols) as AppData["customSymbols"];
@@ -835,7 +872,8 @@ export function loadData(): AppData {
       marketEnvSnapshots: normalizeMarketEnvSnapshots(parsed.marketEnvSnapshots),
       historicalDailyCloses: effectiveHistoricalDailyCloses,
       dividendTrackingTicker: parsed.dividendTrackingTicker !== undefined && parsed.dividendTrackingTicker !== null ? String(parsed.dividendTrackingTicker) : "458730",
-      isaPortfolio: parsedIsaPortfolio.length > 0 ? parsedIsaPortfolio : getDefaultIsaPortfolio()
+      isaPortfolio: parsedIsaPortfolio.length > 0 ? parsedIsaPortfolio : getDefaultIsaPortfolio(),
+      investmentGoals: normalizeInvestmentGoals(parsed.investmentGoals)
     };
     // krNames는 idle 시간에 비동기 로드되므로, 여기서는 빈 맵일 수 있음.
     // 실제 한글명 적용은 useAppData의 idle 콜백에서 수행.

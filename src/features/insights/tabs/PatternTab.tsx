@@ -34,12 +34,15 @@ export const PatternTab = React.memo(function PatternTab({ d }: { d: D }) {
     pct: m.totalDays > 0 ? (m.zeroDays / m.totalDays) * 100 : 0,
   }));
 
-  const periodLabel = d.months.length > 0 ? `${d.months[0]} ~ ${d.months[d.months.length - 1]}` : "-";
+  const periodLabel = d.selMonth
+    ? d.selMonth
+    : (d.months.length > 0 ? `${d.months[0]} ~ ${d.months[d.months.length - 1]}` : "-");
+  const rangeLabel = d.selMonth ? `1개월 (${d.ml[d.selMonth] ?? d.selMonth})` : `${d.months.length}개월`;
 
   return (
     <div>
       <div style={{ padding: "10px 14px", background: "#f8f9fa", borderRadius: 8, marginBottom: 16, fontSize: 12, color: "#666", lineHeight: 1.6 }}>
-        ℹ️ 범위: <strong>{d.months.length}개월</strong> ({periodLabel}) · 단위: <strong>원</strong> · 초점: <strong>언제·어떻게</strong> 소비하는지 (타이밍·빈도·스트릭). 금액 심층 분석은 지출 분석 탭 참조
+        ℹ️ 범위: <strong>{rangeLabel}</strong> ({periodLabel}) · 단위: <strong>원</strong> · 초점: <strong>언제·어떻게</strong> 소비하는지 (타이밍·빈도·스트릭). 금액 심층 분석은 지출 분석 탭 참조
       </div>
 
       {/* ============ 한눈에 ============ */}

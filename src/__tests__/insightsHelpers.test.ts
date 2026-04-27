@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { calcTrend, mTotalsFor } from "../utils/insightsHelpers";
+import { calcTrend, mTotalsFor, computePeriodScope } from "../utils/insightsHelpers";
 import type { LedgerEntry } from "../types";
 
 describe("calcTrend", () => {
@@ -52,5 +52,47 @@ describe("mTotalsFor", () => {
   it("요청한 월에 데이터 없으면 0", () => {
     const result = mTotalsFor(["2026-03"], ledger, () => true);
     expect(result).toEqual([0]);
+  });
+});
+
+describe("computePeriodScope", () => {
+  const months = ["2026-01", "2026-02", "2026-03", "2026-04"];
+  const ml: Record<string, string> = {
+    "2026-01": "1월",
+    "2026-02": "2월",
+    "2026-03": "3월",
+    "2026-04": "4월",
+  };
+
+  it("selMonth 없을 때: monthSpan = months.length, accumLabel = 'N개월 누적'", () => {
+    const r = computePeriodScope(null, months, ml);
+    expect(r.monthSpan).toBe(4);
+    expect(r.accumLabel).toBe("4개월 누적");
+  });
+
+  it("selMonth 설정 시: monthSpan = 1, accumLabel = 그 달 라벨", () => {
+    const r = computePeriodScope("2026-04", months, ml);
+    expect(r.monthSpan).toBe(1);
+    expect(r.accumLabel).toBe("4월");
+  });
+
+  it("months 비어있으면 monthSpan은 최소 1로 보정 (NaN 방지)", () => {
+    const r = computePeriodScope(null, [], {});
+    expect(r.monthSpan).toBe(1);
+    expect(r.accumLabel).toBe("0개월 누적");
+  });
+
+  it("ml에 키 없을 때 selMonth: accumLabel은 selMonth 자체로 폴백", () => {
+    const r = computePeriodScope("2099-12", months, ml);
+    expect(r.monthSpan).toBe(1);
+    expect(r.accumLabel).toBe("2099-12");
+  });
+
+  it("회귀: 4월 합계를 monthSpan으로 나누면 4월 합 그대로 (1로 나눠짐)", () => {
+    // ExpenseTab subAvg 버그 회귀 방지: 필터된 합 ÷ months.length(과거 버그) 였던 것을
+    // ÷ monthSpan으로 바꾼 동작이 살아있는지 검증.
+    const aprilSubAmount = 50000;
+    const { monthSpan } = computePeriodScope("2026-04", months, ml);
+    expect(Math.round(aprilSubAmount / monthSpan)).toBe(50000);
   });
 });

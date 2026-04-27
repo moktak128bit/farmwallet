@@ -19,7 +19,10 @@ export const InvestTab = React.memo(function InvestTab({ d }: { d: D }) {
   const closedPL = holdings.filter((h) => h.보유수량 === 0 && h.매도 > 0);
   const noSellHoldings = holdOnly.filter((h) => h.매도 === 0 && h.매수 > 500000);
   const totalInvested = holdOnly.reduce((s, h) => s + h.매수, 0);
-  const totalDiv = d.divTrend.reduce((s, m) => s + m.amount, 0);
+  // selMonth 필터 시 해당 월만, 아니면 전체 합 — totalInvested(d.trades 기반)와 스코프 일치
+  const totalDiv = d.selMonth
+    ? (d.divTrend.find(m => m.l === (d.ml[d.selMonth!] ?? d.selMonth))?.amount ?? 0)
+    : d.divTrend.reduce((s, m) => s + m.amount, 0);
   const totalBuy = holdings.reduce((s, h) => s + h.매수, 0);
   const totalSell = holdings.reduce((s, h) => s + h.매도, 0);
 
@@ -36,23 +39,26 @@ export const InvestTab = React.memo(function InvestTab({ d }: { d: D }) {
     ? (d.realPL.winCnt / (d.realPL.winCnt + d.realPL.lossCnt)) * 100
     : null;
 
-  // 연환산 배당률 (기간 평균 투자원금 기준)
-  const divYieldAnnualized = totalInvested > 0 && d.months.length > 0
-    ? (totalDiv / totalInvested) * (12 / d.months.length) * 100
+  // 연환산 배당률 (기간 평균 투자원금 기준) — selMonth 시 해당 월만 보고 12배 환산
+  const divYieldAnnualized = totalInvested > 0
+    ? (totalDiv / totalInvested) * (12 / d.monthSpan) * 100
     : 0;
 
   // 매매 회전율 (연환산)
-  const turnoverAnnualized = totalInvested > 0 && d.months.length > 0
-    ? ((totalBuy + totalSell) / 2) / totalInvested * (12 / d.months.length)
+  const turnoverAnnualized = totalInvested > 0
+    ? ((totalBuy + totalSell) / 2) / totalInvested * (12 / d.monthSpan)
     : 0;
 
-  const periodLabel = d.months.length > 0 ? `${d.months[0]} ~ ${d.months[d.months.length - 1]}` : "-";
+  const periodLabel = d.selMonth
+    ? d.selMonth
+    : (d.months.length > 0 ? `${d.months[0]} ~ ${d.months[d.months.length - 1]}` : "-");
+  const rangeLabel = d.selMonth ? `1개월 (${d.ml[d.selMonth] ?? d.selMonth})` : `${d.months.length}개월`;
 
   return (
     <div>
       {/* 상단 배너 */}
       <div style={{ padding: "10px 14px", background: "#f8f9fa", borderRadius: 8, marginBottom: 16, fontSize: 12, color: "#666", lineHeight: 1.6 }}>
-        ℹ️ 범위: <strong>{d.months.length}개월</strong> ({periodLabel}) · 단위: <strong>원</strong> · 매수/매도 기준 (현재 시가 평가는 대시보드 참조) · 실현손익·배당은 기간 내 체결 기준
+        ℹ️ 범위: <strong>{rangeLabel}</strong> ({periodLabel}) · 단위: <strong>원</strong> · 매수/매도 기준 (현재 시가 평가는 대시보드 참조) · 실현손익·배당은 기간 내 체결 기준
       </div>
 
       {/* ============ 한눈에 ============ */}
@@ -60,11 +66,11 @@ export const InvestTab = React.memo(function InvestTab({ d }: { d: D }) {
         <Card accent><Kpi label="총 매수금액 (보유)" value={F(totalInvested) + "원"} sub={`청산 포함 ${F(totalBuy)}원`} color="#f0c040" info="현재 보유 중인 종목의 매수금액 합 (매도 제외)" /></Card>
         <Card accent>
           <Kpi
-            label="실현 손익"
+            label="실현 손익 (전체 누적)"
             value={(d.realPL.total >= 0 ? "+" : "") + F(Math.round(d.realPL.total)) + "원"}
             sub={d.investReturnRate !== 0 ? `수익률 ${d.investReturnRate.toFixed(1)}%` : "매도 내역 없음"}
             color={d.realPL.total >= 0 ? "#48c9b0" : "#e94560"}
-            info="청산 종목의 매도금액 − 비례 매수금액. 미실현 손익 제외"
+            info="FIFO 매칭으로 계산한 청산 거래의 실현손익 합. 라이프타임 누적 (기간 필터 무관). 대시보드 '투자 기록'과 동일 로직, 미실현·배당 제외"
           />
         </Card>
         <Card accent>
@@ -304,7 +310,7 @@ export const InvestTab = React.memo(function InvestTab({ d }: { d: D }) {
               {turnoverAnnualized > 2 ? " 거래가 잦음 — 수수료·세금 누적 주의." : turnoverAnnualized < 0.3 ? " 장기 보유형 전략." : ""}
             </Insight>
             <Insight title="배당/이자 수입" color="#059669" bg="#d4edda">
-              {totalDiv > 0 ? `총 ${F(totalDiv)}원 · 월평균 ${F(Math.round(totalDiv / Math.max(d.months.length, 1)))}원. 투자 원금 대비 연환산 배당률 ${divYieldAnnualized.toFixed(2)}%. ${divYieldAnnualized >= 4 ? "배당률 4%↑ — 우수한 패시브 수입 구조!" : divYieldAnnualized >= 2 ? "배당률 2~4% — 안정적 수준." : "배당률 2% 미만 — 배당 ETF·고배당주 비중을 늘리면 패시브 수입이 커집니다."}` : "아직 배당/이자 수입이 없습니다. 배당 ETF·고배당주·CMA 이자 등으로 패시브 수입을 만들어 보세요."}
+              {totalDiv > 0 ? `총 ${F(totalDiv)}원 · 월평균 ${F(Math.round(totalDiv / d.monthSpan))}원. 투자 원금 대비 연환산 배당률 ${divYieldAnnualized.toFixed(2)}%. ${divYieldAnnualized >= 4 ? "배당률 4%↑ — 우수한 패시브 수입 구조!" : divYieldAnnualized >= 2 ? "배당률 2~4% — 안정적 수준." : "배당률 2% 미만 — 배당 ETF·고배당주 비중을 늘리면 패시브 수입이 커집니다."}` : "아직 배당/이자 수입이 없습니다. 배당 ETF·고배당주·CMA 이자 등으로 패시브 수입을 만들어 보세요."}
             </Insight>
             <Insight title="매매 전략 평가" color="#b45309" bg="#fff3cd">
               {d.realPL.winCnt + d.realPL.lossCnt > 0

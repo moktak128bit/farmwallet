@@ -27,7 +27,7 @@ export const ExpenseTab = React.memo(function ExpenseTab({ d }: { d: D }) {
   }
 
   const topDescs = d.expByDesc.filter(x => x.cat !== "신용결제").slice(0, 25);
-  const subAvg = subs.slice(0, 10).map(s => ({ name: s.sub, avg: Math.round(SD(s.amount, d.months.length)) }));
+  const subAvg = subs.slice(0, 10).map(s => ({ name: s.sub, avg: Math.round(SD(s.amount, d.monthSpan)) }));
 
   // DOM 월 가중치 보정 — 일평균 기준
   const domData = d.spendByDOMAvg.map((v, i) => ({ day: i + 1, 일평균: Math.round(v), 월수: d.domOccurrences[i] }));
@@ -61,18 +61,21 @@ export const ExpenseTab = React.memo(function ExpenseTab({ d }: { d: D }) {
   ].filter(x => x.value > 0);
   const fvColors = ["#0f3460", "#f39c12"];
 
-  const periodLabel = d.months.length > 0 ? `${d.months[0]} ~ ${d.months[d.months.length - 1]}` : "-";
+  const periodLabel = d.selMonth
+    ? d.selMonth
+    : (d.months.length > 0 ? `${d.months[0]} ~ ${d.months[d.months.length - 1]}` : "-");
+  const rangeLabel = d.selMonth ? `1개월 (${d.ml[d.selMonth] ?? d.selMonth})` : `${d.months.length}개월`;
 
   return (
     <div>
       {/* 상단 기간·단위 배너 */}
       <div style={{ padding: "10px 14px", background: "#f8f9fa", borderRadius: 8, marginBottom: 16, fontSize: 12, color: "#666", lineHeight: 1.6 }}>
-        ℹ️ 범위: <strong>{d.months.length}개월</strong> ({periodLabel}) · 단위: <strong>원</strong> · 신용결제·재테크·환전 제외 · 이상치/성장률은 <strong>{d.anomalyTargetMonth ?? "-"}</strong> 기준 최근 3개월 비교
+        ℹ️ 범위: <strong>{rangeLabel}</strong> ({periodLabel}) · 단위: <strong>원</strong> · 신용결제·재테크·환전 제외 · 이상치/성장률은 <strong>{d.anomalyTargetMonth ?? "-"}</strong> 기준 최근 3개월 비교
       </div>
 
       {/* ============ 한눈에 보기 ============ */}
       <Section storageKey="expense-section-overview" title="📊 한눈에 보기">
-        <Card title={`중분류 지출 순위 (${d.months.length}개월 누적)`} span={2}>
+        <Card title={`중분류 지출 순위 (${d.accumLabel})`} span={2}>
           <div style={{ maxHeight: 380, overflow: "auto" }}>
             {subs.slice(0, 20).map((s, i) => (
               <div key={s.sub} style={{ display: "flex", alignItems: "center", gap: 10, padding: "5px 0", borderBottom: "1px solid #f5f5f5" }}>
@@ -207,7 +210,7 @@ export const ExpenseTab = React.memo(function ExpenseTab({ d }: { d: D }) {
           </div>
         </Card>
 
-        <Card title="중분류 월평균 지출 (Top 10)" span={2}>
+        <Card title={d.selMonth ? `중분류 지출 (${d.ml[d.selMonth] ?? d.selMonth}, Top 10)` : "중분류 월평균 지출 (Top 10)"} span={2}>
           <ResponsiveContainer width="100%" height={320}>
             <BarChart data={subAvg} layout="vertical">
               <CartesianGrid strokeDasharray="3 3" stroke="#eee" />

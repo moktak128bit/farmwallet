@@ -14,6 +14,7 @@ import {
 } from "./helpers";
 import { ExercisePicker } from "./ExercisePicker";
 import type { CustomExercise } from "../../types";
+import type { ExerciseSession } from "../../utils/workoutStats";
 
 interface Props {
   selectedEntry: WorkoutDayEntry | null;
@@ -24,6 +25,8 @@ interface Props {
   suggestedRoutineName: string | null;
   customExercises: CustomExercise[];
   recentExercises: Record<WorkoutBodyPart, string[]>;
+  /** 종목별 이전 세션·누적 best — 종목 옆 "전회 80kg×8" 표시와 PR 판정용 */
+  exerciseStatsMap?: Map<string, { prev: ExerciseSession | null; best: { maxWeight: number; totalVolume: number; estimated1RM: number } | null }>;
   onStartWorkout: () => void;
   onStartRest: () => void;
   onEndWorkout: () => void;
@@ -44,7 +47,7 @@ interface Props {
 const DayWorkoutEditorInner: React.FC<Props> = ({
   selectedEntry, selectedDate,
   workoutRoutines, sortedRoutines, suggestedRoutineId, suggestedRoutineName,
-  customExercises, recentExercises,
+  customExercises, recentExercises, exerciseStatsMap,
   onStartWorkout, onStartRest, onEndWorkout, onResumeWorkout,
   onApplyRoutine, onUpsertEntry,
   onAddExercise, onRemoveExercise, onReorderExercise,
@@ -206,6 +209,24 @@ const DayWorkoutEditorInner: React.FC<Props> = ({
         const isCardio = isCardioExercise(exercise);
         const cardioKind = isCardio ? getCardioKind(exercise.name) : "distance";
 
+        // #2: 이전 세션 표시 + #5: 오늘이 PR인지 판정
+        const stats = exerciseStatsMap?.get(exercise.name);
+        const prevSession = stats?.prev ?? null;
+        const baselineBest = stats?.best ?? null;
+        // 오늘 done=true 세트만 집계
+        const doneSetsToday = exercise.sets.filter((s) => s.done);
+        const todayMaxWeight = doneSetsToday.reduce((mx, s) => Math.max(mx, s.weightKg || 0), 0);
+        const todayVolume = doneSetsToday.reduce((sum, s) => sum + (s.weightKg || 0) * (s.reps || 0), 0);
+        const todayBest1RM = doneSetsToday.reduce((mx, s) => {
+          const w = s.weightKg || 0; const r = s.reps || 0;
+          if (w <= 0 || r <= 0) return mx;
+          return Math.max(mx, w * (1 + r / 30));
+        }, 0);
+        const isWeightPR = !isCardio && baselineBest != null && todayMaxWeight > baselineBest.maxWeight && todayMaxWeight > 0;
+        const isVolumePR = !isCardio && baselineBest != null && todayVolume > baselineBest.totalVolume && todayVolume > 0;
+        const is1RMPR = !isCardio && baselineBest != null && todayBest1RM > baselineBest.estimated1RM && todayBest1RM > 0;
+        // baseline이 없으면 첫 시도 — PR 미표시 (의미 없음)
+
         return (
           <div key={exercise.id} style={{
             marginBottom: 14,
@@ -253,6 +274,34 @@ const DayWorkoutEditorInner: React.FC<Props> = ({
                   </span>
                 )}
                 <strong style={{ fontSize: 15 }}>{exercise.name}</strong>
+                {!isCardio && prevSession && (
+                  <span
+                    title={`전회 ${prevSession.date} · 최고 ${prevSession.topSet.weight}kg×${prevSession.topSet.reps}회 · 볼륨 ${Math.round(prevSession.totalVolume)}kg`}
+                    style={{
+                      fontSize: 11, fontWeight: 600, padding: "3px 8px", borderRadius: 6,
+                      background: "rgba(99,102,241,0.10)", color: "#6366f1",
+                      border: "1px solid rgba(99,102,241,0.3)",
+                    }}
+                  >
+                    전회 {prevSession.topSet.weight}kg×{prevSession.topSet.reps}
+                  </span>
+                )}
+                {(isWeightPR || isVolumePR || is1RMPR) && (
+                  <span
+                    title={[
+                      isWeightPR && `최고중량 PR (${todayMaxWeight}kg, 이전 ${baselineBest?.maxWeight}kg)`,
+                      isVolumePR && `볼륨 PR (${Math.round(todayVolume)}kg, 이전 ${Math.round(baselineBest?.totalVolume ?? 0)}kg)`,
+                      is1RMPR && `1RM PR (${Math.round(todayBest1RM)}kg, 이전 ${Math.round(baselineBest?.estimated1RM ?? 0)}kg)`,
+                    ].filter(Boolean).join(" · ")}
+                    style={{
+                      fontSize: 11, fontWeight: 800, padding: "3px 8px", borderRadius: 6,
+                      background: "linear-gradient(135deg, #fbbf24, #f59e0b)", color: "#fff",
+                      border: "1px solid #d97706",
+                    }}
+                  >
+                    🏆 PR{isWeightPR ? " 중량" : ""}{isVolumePR ? " 볼륨" : ""}{is1RMPR ? " 1RM" : ""}
+                  </span>
+                )}
                 {totalCount > 0 && (
                   <span style={{
                     fontSize: 12, fontWeight: 700, padding: "3px 10px", borderRadius: 999,

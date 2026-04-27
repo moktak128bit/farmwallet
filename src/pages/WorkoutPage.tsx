@@ -7,7 +7,7 @@ import { RoutineManager } from "../features/workout/RoutineManager";
 import { DayWorkoutEditor } from "../features/workout/DayWorkoutEditor";
 import { ExerciseHistoryModal } from "../features/workout/ExerciseHistoryModal";
 import { EXERCISE_PRESETS } from "../features/workout/constants";
-import { getExerciseSessions, upsertCustomExercise } from "../utils/workoutStats";
+import { getExerciseSessions, upsertCustomExercise, getPreviousSession, getBestBeforeDate, type ExerciseSession } from "../utils/workoutStats";
 import {
   toDateString, parseDate, getWeekStart, getMonthStart,
   formatDisplayDate, makeId, nowIso,
@@ -98,6 +98,26 @@ export const WorkoutView: React.FC<Props> = ({
 
   const selectedRef = entryByDate.get(selectedDate);
   const selectedEntry = selectedRef?.entry ?? null;
+
+  /**
+   * 이번 주(일~토) 부위별 빈도 + 균형 알림.
+   * 주요 부위(가슴/등/어깨/팔/하체/코어) 중 한 번도 안 한 게 있으면 알림 대상.
+   */
+  const weeklyBalance = useMemo(() => {
+    const weekStart = getWeekStart(today);
+    const weekEnd = parseDate(weekStart);
+    weekEnd.setDate(weekEnd.getDate() + 6);
+    const weekEndIso = toDateString(weekEnd);
+    const partCount = new Map<WorkoutBodyPart, number>();
+    entryByDate.forEach(({ entry }, date) => {
+      if (date < weekStart || date > weekEndIso) return;
+      if (entry.type !== "workout") return;
+      getEntryBodyParts(entry).forEach((p) => partCount.set(p, (partCount.get(p) || 0) + 1));
+    });
+    const major: WorkoutBodyPart[] = ["가슴", "등", "어깨", "팔", "하체", "코어"];
+    const missing = major.filter((p) => !partCount.get(p));
+    return { partCount, missing, weekStart, weekEndIso };
+  }, [today, entryByDate]);
 
   const monthStats = useMemo(() => {
     const monthKey = currentMonth.slice(0, 7);
@@ -227,27 +247,36 @@ export const WorkoutView: React.FC<Props> = ({
 
   const addSet = (exerciseId: string, partial: Partial<WorkoutSet>) => {
     // 세트 추가는 "계획"으로만 저장 (done=false). 사용자가 실제 수행 후 체크박스를 직접 눌러 완료 처리.
+    // 명시적으로 partial이 안 넘어오면 직전 세트 값을 자동 복사 (반복 입력 부담 줄임).
     const ts = nowIso();
     upsertEntry(selectedDate, (entry) => ({
       ...entry,
       startedAt: entry.startedAt ?? ts,
-      exercises: (entry.exercises ?? []).map((ex) =>
-        ex.id === exerciseId
-          ? {
-              ...ex,
-              sets: [
-                ...ex.sets,
-                {
-                  weightKg: partial.weightKg ?? 0,
-                  reps: partial.reps ?? 0,
-                  durationMin: partial.durationMin,
-                  distanceKm: partial.distanceKm,
-                  done: false,
-                },
-              ],
-            }
-          : ex
-      )
+      exercises: (entry.exercises ?? []).map((ex) => {
+        if (ex.id !== exerciseId) return ex;
+        const prev = ex.sets[ex.sets.length - 1];
+        const newSet: WorkoutSet = {
+          weightKg: partial.weightKg ?? prev?.weightKg ?? 0,
+          reps: partial.reps ?? prev?.reps ?? 0,
+          durationMin: partial.durationMin ?? prev?.durationMin,
+          distanceKm: partial.distanceKm ?? prev?.distanceKm,
+          // 유산소 인터벌·강도·횟수 필드도 복사
+          intervalStrongSpeed: prev?.intervalStrongSpeed,
+          intervalStrongSec: prev?.intervalStrongSec,
+          intervalWeakSpeed: prev?.intervalWeakSpeed,
+          intervalWeakSec: prev?.intervalWeakSec,
+          intervalReps: prev?.intervalReps,
+          intensity: prev?.intensity,
+          repsCount: prev?.repsCount,
+          // 목표값도 유지 (루틴 적용 후 추가 세트에서도 목표 보임)
+          targetWeightKg: prev?.targetWeightKg,
+          targetReps: prev?.targetReps,
+          targetRepsRange: prev?.targetRepsRange,
+          restSec: prev?.restSec,
+          done: false,
+        };
+        return { ...ex, sets: [...ex.sets, newSet] };
+      })
     }));
   };
 
@@ -306,6 +335,25 @@ export const WorkoutView: React.FC<Props> = ({
       };
     });
   };
+
+  /**
+   * 선택 날짜의 운동 종목별 "이전 세션 정보 + 누적 PR 베이스라인".
+   * - prev: selectedDate 이전 마지막 세션 (없으면 null)
+   * - best: selectedDate 이전 누적 최고치 — 오늘이 PR인지 비교용
+   */
+  const exerciseStatsMap = useMemo(() => {
+    const map = new Map<string, { prev: ExerciseSession | null; best: { maxWeight: number; totalVolume: number; estimated1RM: number } | null }>();
+    if (!selectedEntry || selectedEntry.type !== "workout") return map;
+    const exercises = selectedEntry.exercises ?? [];
+    for (const ex of exercises) {
+      if (map.has(ex.name)) continue;
+      map.set(ex.name, {
+        prev: getPreviousSession(workoutWeeks, ex.name, selectedDate),
+        best: getBestBeforeDate(workoutWeeks, ex.name, selectedDate),
+      });
+    }
+    return map;
+  }, [selectedEntry, workoutWeeks, selectedDate]);
 
   // 최근 사용한 운동 이름 (부위별)
   const recentExercises = useMemo(() => {
@@ -568,6 +616,25 @@ export const WorkoutView: React.FC<Props> = ({
 
       <MonthStats stats={monthStats} />
 
+      {/* 주간 부위 균형 알림 */}
+      {weeklyBalance.missing.length > 0 && (
+        <div className="card" style={{
+          padding: "10px 14px", marginBottom: 16,
+          background: "rgba(251,191,36,0.08)",
+          borderLeft: "3px solid #f59e0b",
+          fontSize: 13,
+        }}>
+          <strong style={{ color: "#b45309" }}>이번 주 균형 알림</strong>
+          {" — "}
+          <span style={{ color: "var(--text)" }}>
+            아직 안 한 부위: <strong>{weeklyBalance.missing.join(", ")}</strong>
+          </span>
+          <span style={{ color: "var(--text-muted)", marginLeft: 8, fontSize: 12 }}>
+            (주: {weeklyBalance.weekStart} ~ {weeklyBalance.weekEndIso})
+          </span>
+        </div>
+      )}
+
       {/* 선택된 날짜 기록 */}
       <div className="card" style={{ padding: 16 }}>
         <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 16 }}>
@@ -597,6 +664,7 @@ export const WorkoutView: React.FC<Props> = ({
           suggestedRoutineName={suggestedRoutineName}
           customExercises={customExercises}
           recentExercises={recentExercises}
+          exerciseStatsMap={exerciseStatsMap}
           onStartWorkout={startWorkout}
           onStartRest={startRest}
           onEndWorkout={endWorkout}

@@ -67,6 +67,8 @@ describe("tradeToLedgerRow", () => {
       },
       new Map([["t2", 100000]])
     );
+    expect(row.kind).toBe("income"); // 투자수익은 income — 일별 소계에 +로 합산
+    expect(row.category).toBe("수입");
     expect(row.subCategory).toBe("투자수익");
     expect(row.amount).toBe(100000);
     expect(row.toAccountId).toBe("acc1");
@@ -90,6 +92,8 @@ describe("tradeToLedgerRow", () => {
       },
       new Map([["t3", -50000]])
     );
+    expect(row.kind).toBe("expense"); // 투자손실은 expense — 소계에 -로 합산
+    expect(row.category).toBe("재테크");
     expect(row.subCategory).toBe("투자손실");
     expect(row.amount).toBe(50000);
     expect(row.fromAccountId).toBe("acc1");

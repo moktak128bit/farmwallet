@@ -18,8 +18,13 @@ const KIND_TO_TOP_CATEGORY: Record<LedgerKind, string> = {
   transfer: "이체",
 };
 
-/** 이미 표준 구조인 cat 값 (변경 불필요) */
-const STANDARD_TOP_CATS = new Set<string>(["지출", "수입", "이체"]);
+/**
+ * 이미 표준 구조인 cat 값 (변경 불필요).
+ * - 지출/수입/이체: kind 매핑 표준
+ * - 신용결제: AccountsPage의 카드 부채 탕감 로직이 `category === "신용결제"` 분기를 사용 → demote 시 깨짐
+ * - 재테크: 투자손실 등 `category === "재테크"` 분기를 여러 화면에서 사용 → demote 시 깨짐
+ */
+const STANDARD_TOP_CATS = new Set<string>(["지출", "수입", "이체", "신용결제", "재테크"]);
 
 /** description 마커 — 만약 demote 시 detailCategory가 이미 있으면 보존용 */
 const ORIG_DET_MARKER_RE = /\s*\[원래소소분류:[^\]]+\]/g;

@@ -24,6 +24,8 @@ export interface ValidateLedgerFormArgs {
   effectiveFormKind: LedgerKind;
   accounts: Account[];
   parseAmount: (value: string, allowDecimal?: boolean) => number;
+  /** 신용결제 탭 여부 (kind=expense인 expense 탭과 검증 규칙이 다름) */
+  isCreditPayment?: boolean;
 }
 
 /**
@@ -41,6 +43,7 @@ export function validateLedgerForm({
   effectiveFormKind,
   accounts,
   parseAmount,
+  isCreditPayment = false,
 }: ValidateLedgerFormArgs): Record<string, string> {
   const errors: Record<string, string> = {};
 
@@ -65,8 +68,9 @@ export function validateLedgerForm({
     errors.amount = "금액은 0보다 커야 합니다";
   }
 
+  // 신용결제: 출금(은행) → 입금(카드) 둘 다 필수
   const requireFromAccount = kindForTab === "transfer" || kindForTab === "expense";
-  const requireToAccount = kindForTab === "income" || kindForTab === "transfer";
+  const requireToAccount = isCreditPayment || kindForTab === "income" || kindForTab === "transfer";
 
   if (requireFromAccount) {
     const v = validateRequired(form.fromAccountId, "출금 계좌");
@@ -106,7 +110,9 @@ export function validateLedgerForm({
     }
   }
 
-  if (kindForTab === "income") {
+  if (isCreditPayment) {
+    // 신용결제는 카테고리 자동 ("신용결제") — 사용자 입력 불필요
+  } else if (kindForTab === "income") {
     const v = validateRequired(form.subCategory, "수입 중분류");
     if (!v.valid) errors.subCategory = v.error || "";
   } else {

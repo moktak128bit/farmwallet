@@ -109,6 +109,45 @@ export function detectPRs(sessions: ExerciseSession[]): ExerciseSessionWithPR[] 
 }
 
 /**
+ * 지정 날짜 *이전*의 마지막 세션. 없으면 null.
+ * "이전 기록 표시" 및 PR 판정용.
+ */
+export function getPreviousSession(
+  weeks: WorkoutWeek[] | undefined,
+  exerciseName: string,
+  beforeDate: string
+): ExerciseSession | null {
+  const sessions = getExerciseSessions(weeks, exerciseName);
+  // 오름차순으로 들어옴 — beforeDate 이전 중 가장 최신
+  let prev: ExerciseSession | null = null;
+  for (const s of sessions) {
+    if (s.date >= beforeDate) break;
+    prev = s;
+  }
+  return prev;
+}
+
+/**
+ * 지정 날짜 이전의 최고 기록. 누적 PR 판정 기준 (오늘 PR인지 비교용).
+ * 없으면 null.
+ */
+export function getBestBeforeDate(
+  weeks: WorkoutWeek[] | undefined,
+  exerciseName: string,
+  beforeDate: string
+): { maxWeight: number; totalVolume: number; estimated1RM: number } | null {
+  const sessions = getExerciseSessions(weeks, exerciseName).filter((s) => s.date < beforeDate);
+  if (sessions.length === 0) return null;
+  let mw = 0, tv = 0, e1 = 0;
+  for (const s of sessions) {
+    if (s.maxWeight > mw) mw = s.maxWeight;
+    if (s.totalVolume > tv) tv = s.totalVolume;
+    if (s.estimated1RM > e1) e1 = s.estimated1RM;
+  }
+  return { maxWeight: mw, totalVolume: tv, estimated1RM: e1 };
+}
+
+/**
  * customExercises 배열에 (name, bodyPart) upsert. 중복 이름은 무시 (bodyPart 덮어쓰기 없음).
  * 반환: 새로운 배열 (불변).
  */

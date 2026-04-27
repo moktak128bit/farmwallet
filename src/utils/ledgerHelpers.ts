@@ -29,11 +29,13 @@ export function tradeToLedgerRow(
   const rawPnl = isSell ? (realizedPnlByTradeId.get(t.id) ?? t.totalAmount) : t.totalAmount;
   if (isSell) {
     const isProfit = rawPnl >= 0;
+    // 수익은 income(가계부 일별 소계에 +), 손실은 expense(소계에 -). 둘 다 amount는 절댓값.
+    // 이전엔 둘 다 expense라 일별 소계에서 투자수익이 음수처럼 빼져 표시되던 문제 수정.
     return {
       id: `trade-${t.id}`,
       date: t.date,
-      kind: "expense",
-      category: "재테크",
+      kind: isProfit ? "income" : "expense",
+      category: isProfit ? "수입" : "재테크",
       subCategory: isProfit ? "투자수익" : "투자손실",
       description,
       amount: Math.abs(rawPnl),

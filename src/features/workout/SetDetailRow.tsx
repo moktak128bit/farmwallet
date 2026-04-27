@@ -1,4 +1,4 @@
-import React, { memo } from "react";
+import React, { memo, useEffect, useState } from "react";
 import type { WorkoutSet } from "../../types";
 import { Stepper } from "./Stepper";
 import { formatClockTime, formatDuration, nowIso, type CardioKind } from "./helpers";
@@ -28,6 +28,23 @@ const SetDetailRowInner: React.FC<Props> = ({
     : 0;
   const gapLabel = formatDuration(gapMs);
   const completedClock = formatClockTime(set.completedAt);
+
+  // 휴식 카운트다운: 이 세트가 아직 done=false이고, 직전 세트의 완료 시각 + restSec(또는 기본 90초)
+  // 이 시각보다 지금이 이전이면 남은 초 표시. 지나면 "휴식 끝" 메시지.
+  // restSec이 0이면 카운트다운 숨김 (사용자 명시적으로 끔).
+  const [now, setNow] = useState(() => Date.now());
+  const restTargetSec = set.restSec ?? 90;
+  const showCountdown = !set.done && !!prevCompletedAt && restTargetSec > 0;
+  useEffect(() => {
+    if (!showCountdown) return;
+    const id = window.setInterval(() => setNow(Date.now()), 1000);
+    return () => window.clearInterval(id);
+  }, [showCountdown]);
+  const elapsedSec = showCountdown
+    ? Math.floor((now - new Date(prevCompletedAt!).getTime()) / 1000)
+    : 0;
+  const remainingSec = Math.max(0, restTargetSec - elapsedSec);
+  const isRestOver = showCountdown && remainingSec === 0;
 
   return (
     <div style={{
@@ -145,6 +162,38 @@ const SetDetailRowInner: React.FC<Props> = ({
           ×
         </button>
       </div>
+
+      {showCountdown && (
+        <div style={{
+          display: "flex", alignItems: "center", gap: 8, padding: "4px 10px", borderRadius: 8,
+          background: isRestOver ? "rgba(16,185,129,0.14)" : "rgba(59,130,246,0.10)",
+          border: `1px solid ${isRestOver ? "#10b98160" : "rgba(59,130,246,0.3)"}`,
+          fontSize: 12, fontWeight: 700,
+          color: isRestOver ? "#10b981" : "#3b82f6",
+        }}>
+          {isRestOver
+            ? `🔔 휴식 끝 (${restTargetSec}s 경과 — 다음 세트 시작)`
+            : `⏱ 휴식 ${remainingSec}s / ${restTargetSec}s`}
+          <button
+            type="button"
+            onClick={() => {
+              const raw = window.prompt("휴식 시간(초). 0=꺼짐", String(restTargetSec));
+              if (raw == null) return;
+              const n = parseInt(raw, 10);
+              if (!Number.isFinite(n) || n < 0) return;
+              onUpdate({ restSec: n });
+            }}
+            style={{
+              marginLeft: "auto", padding: "2px 8px", fontSize: 11, fontWeight: 600,
+              background: "transparent", border: `1px solid ${isRestOver ? "#10b98180" : "#3b82f680"}`,
+              borderRadius: 4, cursor: "pointer", color: "inherit",
+            }}
+            title="휴식 시간 변경"
+          >
+            변경
+          </button>
+        </div>
+      )}
 
       <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
         {set.done && completedClock && (

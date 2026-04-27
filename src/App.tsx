@@ -71,10 +71,8 @@ import { GistVersionModal } from "./components/GistVersionModal";
 import { GitVersionModal } from "./components/GitVersionModal";
 import { GistConflictModal } from "./components/GistConflictModal";
 import { isGistConfigured, saveToGist, setGistLastPushAt } from "./services/gistSync";
-import { formatTimeAgo } from "./utils/date";
 import { toUserDataJson } from "./services/dataService";
 import { useUIStore, type PendingAction } from "./store/uiStore";
-import { TAB_ORDER } from "./constants/tabs";
 
 export const App: React.FC = () => {
   // UI 상태는 모두 uiStore에서 관리 (App.tsx에서 useState 17개를 슬라이스로 이전)

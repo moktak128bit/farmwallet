@@ -34,21 +34,6 @@ export const AssetTab = React.memo(function AssetTab({ d }: { d: D }) {
   const target = goals?.finalTotalAssetTarget ?? null;
   const targetProgress = target && target > 0 ? (current / target) * 100 : null;
 
-  // 은퇴 목표일까지 남은 개월 (설정 시)
-  const retirementDate = goals?.retirementDate ?? null;
-  const monthsToRetirement = (() => {
-    if (!retirementDate) return null;
-    const today = new Date();
-    const tgt = new Date(retirementDate);
-    const diffMs = tgt.getTime() - today.getTime();
-    if (diffMs <= 0) return 0;
-    return Math.round(diffMs / (1000 * 60 * 60 * 24 * 30));
-  })();
-
-  // 필요 월 저축액 (목표 달성을 위한)
-  const requiredMonthlySaving = target && monthsToRetirement && monthsToRetirement > 0
-    ? (target - current) / monthsToRetirement
-    : null;
 
   // 자산 집중도 (HHI 기반 실효 자산 카테고리 수)
   const hhi = totalAssets > 0
@@ -61,13 +46,16 @@ export const AssetTab = React.memo(function AssetTab({ d }: { d: D }) {
   const liquidAssets = d.assetAllocation.filter((a) => liquidTypes.has(a.name)).reduce((s, x) => s + x.value, 0);
   const liquidPct = totalAssets > 0 ? (liquidAssets / totalAssets) * 100 : 0;
 
-  const periodLabel = d.months.length > 0 ? `${d.months[0]} ~ ${d.months[d.months.length - 1]}` : "-";
+  const periodLabel = d.selMonth
+    ? d.selMonth
+    : (d.months.length > 0 ? `${d.months[0]} ~ ${d.months[d.months.length - 1]}` : "-");
+  const rangeLabel = d.selMonth ? `1개월 (${d.ml[d.selMonth] ?? d.selMonth})` : `${d.months.length}개월`;
 
   return (
     <div>
       {/* 상단 배너 */}
       <div style={{ padding: "10px 14px", background: "#f8f9fa", borderRadius: 8, marginBottom: 16, fontSize: 12, color: "#666", lineHeight: 1.6 }}>
-        ℹ️ 범위: <strong>{d.months.length}개월</strong> ({periodLabel}) · 단위: <strong>원</strong> · 순자산 = 계좌잔액 − account.debt − 대출잔금.
+        ℹ️ 범위: <strong>{rangeLabel}</strong> ({periodLabel}) · 단위: <strong>원</strong> · 순자산 = 계좌잔액 − account.debt − 대출잔금.
         월별 추이는 <strong>현금 흐름 누적 근사치</strong>이며 주식 평가액·환율 변동은 반영 안 됨 (정확한 트렌드는 대시보드 참조)
       </div>
 
@@ -126,34 +114,15 @@ export const AssetTab = React.memo(function AssetTab({ d }: { d: D }) {
                   transition: "width 0.6s",
                 }} />
               </div>
-              <div style={{ display: "grid", gridTemplateColumns: "repeat(3, 1fr)", gap: 10, fontSize: 12 }}>
+              <div style={{ display: "grid", gridTemplateColumns: "1fr", gap: 10, fontSize: 12 }}>
                 <div style={{ padding: "8px 10px", background: "#f8f9fa", borderRadius: 6 }}>
                   <div style={{ color: "#999", fontSize: 11 }}>잔여 목표</div>
                   <div style={{ fontWeight: 700 }}>{F(Math.max(0, target - current))}원</div>
                 </div>
-                {monthsToRetirement != null && (
-                  <div style={{ padding: "8px 10px", background: "#f8f9fa", borderRadius: 6 }}>
-                    <div style={{ color: "#999", fontSize: 11 }}>은퇴까지</div>
-                    <div style={{ fontWeight: 700 }}>{monthsToRetirement}개월</div>
-                  </div>
-                )}
-                {requiredMonthlySaving != null && (
-                  <div style={{ padding: "8px 10px", background: monthlyGrowth >= requiredMonthlySaving ? "#f0fdf4" : "#fff5f5", borderRadius: 6 }}>
-                    <div style={{ color: "#999", fontSize: 11 }}>필요 월저축</div>
-                    <div style={{ fontWeight: 700, color: monthlyGrowth >= requiredMonthlySaving ? "#059669" : "#e94560" }}>
-                      {F(Math.round(requiredMonthlySaving))}원
-                    </div>
-                    <div style={{ fontSize: 10, color: "#999", marginTop: 2 }}>
-                      현재 페이스 {F(monthlyGrowth)}원/월
-                    </div>
-                  </div>
-                )}
-              </div>
-              {requiredMonthlySaving != null && monthlyGrowth > 0 && monthlyGrowth < requiredMonthlySaving && (
-                <div style={{ marginTop: 8, fontSize: 11, color: "#e94560", padding: "6px 10px", background: "#fff5f5", borderRadius: 6 }}>
-                  ⚠️ 현재 페이스로는 목표 미달. 월 {F(Math.round(requiredMonthlySaving - monthlyGrowth))}원 추가 저축 필요
+                <div style={{ fontSize: 10, color: "#999" }}>
+                  현재 월 순자산 증가 페이스 {F(monthlyGrowth)}원/월
                 </div>
-              )}
+              </div>
             </div>
           )}
         </Card>

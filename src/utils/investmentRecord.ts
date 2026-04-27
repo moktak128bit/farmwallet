@@ -289,6 +289,28 @@ export function filterByPeriod(
   return records;
 }
 
+/**
+ * 인사이트 InvestTab에서 사용하는 realPL shape로 PeriodSummary 변환.
+ * - total: 순 실현손익 (음수 가능)
+ * - wins/losses: 절대값 합 (UI에서 +/− 별도 표시)
+ * - winCnt/lossCnt: 0원 거래 제외한 승/패 건수
+ */
+export function summaryToRealPL(s: PeriodSummary): {
+  total: number;
+  wins: number;
+  losses: number;
+  winCnt: number;
+  lossCnt: number;
+} {
+  return {
+    total: s.totalPnl,
+    winCnt: s.winCount,
+    lossCnt: s.lossCount,
+    wins: s.winCount > 0 ? s.avgWin * s.winCount : 0,
+    losses: s.lossCount > 0 ? Math.abs(s.avgLoss) * s.lossCount : 0,
+  };
+}
+
 /** 보유기간 max/min. 기록 없으면 0. NaN/Infinity 입력은 무시. */
 export function holdingRange(records: ClosedTradeRecord[]): { min: number; max: number } {
   if (records.length === 0) return { min: 0, max: 0 };

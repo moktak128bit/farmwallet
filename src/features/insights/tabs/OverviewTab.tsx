@@ -24,7 +24,7 @@ export const OverviewTab = React.memo(function OverviewTab({ d }: { d: D }) {
 
   /* 저축률 목표 vs 실제 */
   const goals = useAppStore((s) => s.data.investmentGoals);
-  const monthsCount = Math.max(1, d.months.length);
+  const monthsCount = d.monthSpan;
   const monthlyRealIncome = d.realIncome / monthsCount;
   const monthlyDepositTarget = goals?.annualDepositTarget ? goals.annualDepositTarget / 12 : null;
   const targetSavRate = monthlyDepositTarget && monthlyRealIncome > 0
@@ -368,17 +368,17 @@ export const OverviewTab = React.memo(function OverviewTab({ d }: { d: D }) {
           </div>
         </Card>
 
-        <Card title={`핵심 재무 지표 — ${d.months.length}개월 누적 기준`} span={4}>
+        <Card title={`핵심 재무 지표 — ${d.accumLabel} 기준`} span={4}>
           <div style={{ fontSize: 11, color: "#999", marginBottom: 10, padding: "6px 10px", background: "#f8f9fa", borderRadius: 6, lineHeight: 1.5 }}>
-            ℹ️ 금액 단위는 <strong>원</strong>. 표시 범위는 상단 기간 필터({d.months.length}개월, {d.months[0] ?? "-"} ~ {d.months[d.months.length - 1] ?? "-"})에 해당.
-            <strong>누적</strong> 기준 표기가 기본이며, 일평균·투자수익률은 별도 기준.
+            ℹ️ 금액 단위는 <strong>원</strong>. 표시 범위는 상단 기간 필터({d.selMonth ? `1개월 (${d.ml[d.selMonth] ?? d.selMonth})` : `${d.months.length}개월, ${d.months[0] ?? "-"} ~ ${d.months[d.months.length - 1] ?? "-"}`})에 해당.
+            <strong>{d.selMonth ? "선택 월" : "누적"}</strong> 기준 표기가 기본이며, 일평균·투자수익률은 별도 기준.
           </div>
           <div style={{ display: "grid", gridTemplateColumns: "repeat(5,1fr)", gap: 10 }}>
             {[
-              { label: "순수익", value: F(d.netProfit) + "원", sub: `${d.months.length}개월 누적 · 실질수입 − 실질지출`, color: d.netProfit >= 0 ? "#059669" : "#e94560", bg: d.netProfit >= 0 ? "#f0fdf4" : "#fff5f5", border: d.netProfit >= 0 ? "#86efac" : "#fcc" },
-              { label: "실질 저축률", value: d.realSavRate.toFixed(1) + "%", sub: `${d.months.length}개월 누적 기준`, color: d.realSavRate >= 30 ? "#059669" : d.realSavRate >= 0 ? "#f0c040" : "#e94560", bg: "#f0f8ff", border: "#bde" },
-              { label: "지출/수입 비율", value: d.expToIncRatio.toFixed(1) + "%", sub: d.expToIncRatio > 80 ? "⚠ 지출 비중 높음" : `${d.months.length}개월 누적`, color: d.expToIncRatio > 80 ? "#e94560" : "#2563eb", bg: "#f8f9fa", border: "#eee" },
-              { label: "패시브 수입", value: F(d.passiveIncome) + "원", sub: `${d.months.length}개월 누적 · 수입 대비 ${d.pIncome > 0 ? Math.round(SD(d.passiveIncome, d.pIncome) * 100) : 0}%`, color: "#48c9b0", bg: "#f0fdf4", border: "#86efac" },
+              { label: "순수익", value: F(d.netProfit) + "원", sub: `${d.accumLabel} · 실질수입 − 실질지출`, color: d.netProfit >= 0 ? "#059669" : "#e94560", bg: d.netProfit >= 0 ? "#f0fdf4" : "#fff5f5", border: d.netProfit >= 0 ? "#86efac" : "#fcc" },
+              { label: "실질 저축률", value: d.realSavRate.toFixed(1) + "%", sub: `${d.accumLabel} 기준`, color: d.realSavRate >= 30 ? "#059669" : d.realSavRate >= 0 ? "#f0c040" : "#e94560", bg: "#f0f8ff", border: "#bde" },
+              { label: "지출/수입 비율", value: d.expToIncRatio.toFixed(1) + "%", sub: d.expToIncRatio > 80 ? "⚠ 지출 비중 높음" : d.accumLabel, color: d.expToIncRatio > 80 ? "#e94560" : "#2563eb", bg: "#f8f9fa", border: "#eee" },
+              { label: "패시브 수입", value: F(d.passiveIncome) + "원", sub: `${d.accumLabel} · 수입 대비 ${d.pIncome > 0 ? Math.round(SD(d.passiveIncome, d.pIncome) * 100) : 0}%`, color: "#48c9b0", bg: "#f0fdf4", border: "#86efac" },
               { label: "일 평균 지출", value: F(d.dailyAvgExp) + "원", sub: `하루당 · ${d.totalDays}일 기준`, color: "#533483", bg: "rgba(83,52,131,0.06)", border: "rgba(83,52,131,0.2)" },
             ].map(m => (
               <div key={m.label} style={{ padding: "12px 14px", background: m.bg, borderRadius: 10, border: `1px solid ${m.border}`, textAlign: "center" }}>
@@ -390,10 +390,10 @@ export const OverviewTab = React.memo(function OverviewTab({ d }: { d: D }) {
           </div>
           <div style={{ display: "grid", gridTemplateColumns: "repeat(5,1fr)", gap: 10, marginTop: 10 }}>
             {[
-              { label: "순현금흐름", value: F(d.netCashFlow) + "원", sub: `${d.months.length}개월 누적 · 수입−지출−투자`, color: d.netCashFlow >= 0 ? "#059669" : "#e94560" },
+              { label: "순현금흐름", value: F(d.netCashFlow) + "원", sub: `${d.accumLabel} · 수입−지출−투자`, color: d.netCashFlow >= 0 ? "#059669" : "#e94560" },
               { label: "투자 수익률", value: d.investReturnRate !== 0 ? d.investReturnRate.toFixed(1) + "%" : "-", sub: "전 기간 · 실현손익 / 투자원금", color: d.investReturnRate >= 0 ? "#059669" : "#e94560" },
-              { label: "고정비", value: F(d.fixedExpense) + "원", sub: `${d.months.length}개월 누적 · 지출의 ${Math.round(SD(d.fixedExpense, d.pExpense) * 100)}%`, color: "#0f3460" },
-              { label: "변동비", value: F(d.variableExpense) + "원", sub: `${d.months.length}개월 누적 · 지출의 ${Math.round(SD(d.variableExpense, d.pExpense) * 100)}%`, color: "#f39c12" },
+              { label: "고정비", value: F(d.fixedExpense) + "원", sub: `${d.accumLabel} · 지출의 ${Math.round(SD(d.fixedExpense, d.pExpense) * 100)}%`, color: "#0f3460" },
+              { label: "변동비", value: F(d.variableExpense) + "원", sub: `${d.accumLabel} · 지출의 ${Math.round(SD(d.variableExpense, d.pExpense) * 100)}%`, color: "#f39c12" },
               { label: "수입 안정성", value: d.incomeStability !== null ? d.incomeStability + "%" : "-", sub: d.incomeStability !== null && d.incomeStability >= 70 ? "월별 편차 작음" : "월별 편차 큼", color: "#2563eb" },
             ].map(m => (
               <div key={m.label} style={{ padding: "10px 12px", background: "#f8f9fa", borderRadius: 8, border: "1px solid #eee", textAlign: "center" }}>
@@ -443,7 +443,7 @@ export const OverviewTab = React.memo(function OverviewTab({ d }: { d: D }) {
           <div className="grid-2" style={{ gap: 12 }}>
             <Insight title="저축률 분석" color="#059669" bg="#d4edda">
               {d.pSavRate >= 30
-                ? `저축률 ${d.pSavRate.toFixed(0)}%로 매우 건강한 수준입니다. 수입 ${F(d.pIncome)} 중 ${F(Math.round(d.pIncome * d.pSavRate / 100))}을 저축하고 있습니다. 이 속도라면 연간 약 ${F(Math.round(d.pIncome * d.pSavRate / 100 * 12 / Math.max(d.months.length, 1)))} 이상 자산 증가가 가능합니다.`
+                ? `저축률 ${d.pSavRate.toFixed(0)}%로 매우 건강한 수준입니다. 수입 ${F(d.pIncome)} 중 ${F(Math.round(d.pIncome * d.pSavRate / 100))}을 저축하고 있습니다. 이 속도라면 연간 약 ${F(Math.round(d.pIncome * d.pSavRate / 100 * 12 / d.monthSpan))} 이상 자산 증가가 가능합니다.`
                 : d.pSavRate >= 0
                 ? `저축률 ${d.pSavRate.toFixed(0)}%로 개선 여지가 있습니다. 30% 이상을 목표로 월 ${F(Math.round(d.pExpense * 0.1))} 정도 추가 절약하면 장기적으로 큰 차이를 만들 수 있습니다.`
                 : `마이너스 저축률! 수입보다 지출이 ${F(d.pExpense - d.pIncome)} 더 많습니다. 고정비와 변동비를 점검하고, 상위 지출 카테고리부터 줄여보세요.`}
@@ -451,14 +451,14 @@ export const OverviewTab = React.memo(function OverviewTab({ d }: { d: D }) {
             <Insight title="지출 집중도 분석" color="#b45309" bg="#fff3cd">
               상위 3개 중분류({top3Sub.map(s => s.sub).join(", ")})가 전체 지출의 {top3pct}%를 차지합니다.
               {top3pct > 70 ? ` 지출이 소수 카테고리에 집중되어 있어 해당 항목의 절약이 전체 지출 감소에 큰 효과를 줍니다. 특히 1위 ${top3Sub[0]?.sub}(${F(top3Sub[0]?.amount ?? 0)})에 집중해 보세요.` : ` 비교적 골고루 분산되어 있어 특정 항목보다 전반적인 소비 습관 개선이 효과적입니다.`}
-              {top3Sub[0] && d.pExpense > 0 && ` 1위 ${top3Sub[0].sub}만 10% 줄여도 월 ${F(Math.round(top3Sub[0].amount * 0.1 / Math.max(d.months.length, 1)))} 절약.`}
+              {top3Sub[0] && d.pExpense > 0 && ` 1위 ${top3Sub[0].sub}만 10% 줄여도 월 ${F(Math.round(top3Sub[0].amount * 0.1 / d.monthSpan))} 절약.`}
             </Insight>
             <Insight title="투자 현황" color="#2563eb" bg="#cce5ff">
               {d.pIncome > 0
                 ? `수입 대비 투자 비율 ${Math.round(d.pInvest / d.pIncome * 100)}%. 총 ${F(d.pInvest)}를 투자에 할당했습니다.`
                 : ""}
               {d.pInvest > 0
-                ? ` 월평균 ${F(Math.round(d.pInvest / Math.max(d.months.length, 1)))} 투자. ${d.pInvest / Math.max(d.pIncome, 1) > 0.2 ? "적극적으로 투자하고 있어 장기적 자산 성장이 기대됩니다." : "투자 비중을 수입의 20% 이상으로 높이면 복리 효과가 커집니다."}`
+                ? ` 월평균 ${F(Math.round(d.pInvest / d.monthSpan))} 투자. ${d.pInvest / Math.max(d.pIncome, 1) > 0.2 ? "적극적으로 투자하고 있어 장기적 자산 성장이 기대됩니다." : "투자 비중을 수입의 20% 이상으로 높이면 복리 효과가 커집니다."}`
                 : " 투자 활동이 없습니다. 소액이라도 ETF 적립식 투자를 시작해 보세요."}
             </Insight>
             <Insight title="소비 습관" color="#7c3aed" bg="rgba(139,92,246,0.08)">
@@ -482,8 +482,8 @@ export const OverviewTab = React.memo(function OverviewTab({ d }: { d: D }) {
             <Insight title="순수익 분석" color="#059669" bg="#ecfdf5">
               순수익(실질수입-실질지출) {d.netProfit >= 0 ? "+" : ""}{F(d.netProfit)}.
               {d.netProfit > 0
-                ? ` 매월 평균 ${F(Math.round(SD(d.netProfit, Math.max(d.months.length, 1))))} 흑자 구조입니다. 연간 환산 시 약 ${F(Math.round(d.netProfit * SD(12, Math.max(d.months.length, 1))))} 순자산 증가가 예상됩니다.`
-                : ` 적자 상태입니다. 매월 ${F(Math.abs(Math.round(SD(d.netProfit, Math.max(d.months.length, 1)))))}씩 자산이 감소하고 있습니다. 고정비 점검이 시급합니다.`}
+                ? ` 매월 평균 ${F(Math.round(SD(d.netProfit, d.monthSpan)))} 흑자 구조입니다. 연간 환산 시 약 ${F(Math.round(d.netProfit * SD(12, d.monthSpan)))} 순자산 증가가 예상됩니다.`
+                : ` 적자 상태입니다. 매월 ${F(Math.abs(Math.round(SD(d.netProfit, d.monthSpan))))}씩 자산이 감소하고 있습니다. 고정비 점검이 시급합니다.`}
               {d.pInvest > 0 && d.netProfit > 0 ? ` 투자(${F(d.pInvest)})를 포함하면 실질 자산배분 여력이 충분합니다.` : ""}
             </Insight>
             <Insight title="고정비 vs 변동비" color="#7c3aed" bg="rgba(124,58,237,0.06)">

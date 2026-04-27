@@ -2,6 +2,7 @@ import { describe, it, expect } from "vitest";
 import {
   buildClosedTradeRecords,
   summarizeRecords,
+  summaryToRealPL,
   groupByYear,
   groupByMonth,
   groupByHoldingBucket,
@@ -204,5 +205,49 @@ describe("filterByPeriod", () => {
     expect(filterByPeriod(r, { kind: "month", year: 2025, month: 12 })).toHaveLength(1);
     expect(filterByPeriod(r, { kind: "month", year: 2026, month: 3 })).toHaveLength(1);
     expect(filterByPeriod(r, { kind: "month", year: 2026, month: 1 })).toHaveLength(0);
+  });
+});
+
+describe("summaryToRealPL", () => {
+  // 회귀 방지: 인사이트 InvestTab의 realPL이 대시보드 InvestmentRecordCard의 summarizeRecords와 동일 데이터에서 동일 결과를 내야 함.
+  it("summarizeRecords 결과를 realPL shape로 정확히 매핑", () => {
+    // 매수 1000원 → 매도 1500원 (수익 +500), 매수 1000원 → 매도 700원 (손실 −300)
+    const r = buildClosedTradeRecords(
+      [
+        t({ id: "b1", side: "buy", date: "2026-01-01", quantity: 10, totalAmount: 1000 }),
+        t({ id: "s1", side: "sell", date: "2026-02-01", quantity: 10, totalAmount: 1500 }),
+        t({ id: "b2", side: "buy", date: "2026-03-01", quantity: 10, totalAmount: 1000 }),
+        t({ id: "s2", side: "sell", date: "2026-04-01", quantity: 10, totalAmount: 700 }),
+      ],
+      [acc]
+    );
+    const summary = summarizeRecords(r);
+    const realPL = summaryToRealPL(summary);
+    expect(realPL.total).toBe(200);
+    expect(realPL.winCnt).toBe(1);
+    expect(realPL.lossCnt).toBe(1);
+    expect(realPL.wins).toBe(500);
+    expect(realPL.losses).toBe(300);
+  });
+
+  it("청산 없으면 모두 0", () => {
+    const summary = summarizeRecords([]);
+    const realPL = summaryToRealPL(summary);
+    expect(realPL).toEqual({ total: 0, winCnt: 0, lossCnt: 0, wins: 0, losses: 0 });
+  });
+
+  it("승만 있으면 losses=0", () => {
+    const r = buildClosedTradeRecords(
+      [
+        t({ id: "b1", side: "buy", date: "2026-01-01", quantity: 10, totalAmount: 1000 }),
+        t({ id: "s1", side: "sell", date: "2026-02-01", quantity: 10, totalAmount: 1500 }),
+      ],
+      [acc]
+    );
+    const realPL = summaryToRealPL(summarizeRecords(r));
+    expect(realPL.winCnt).toBe(1);
+    expect(realPL.lossCnt).toBe(0);
+    expect(realPL.wins).toBe(500);
+    expect(realPL.losses).toBe(0);
   });
 });

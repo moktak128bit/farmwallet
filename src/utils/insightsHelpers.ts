@@ -40,3 +40,21 @@ export function mTotalsFor(
     return t;
   });
 }
+
+/**
+ * 인사이트 화면의 기간 스코프 파생값.
+ * - monthSpan: 월평균 계산의 분모. selMonth 설정 시 1, 아니면 max(1, months.length).
+ *   필터된 합계(예: pIncome, pExpense)를 나눌 때 일관되게 사용해야 selMonth=4월일 때 4월 합 ÷ 1 = 4월 합이 나온다.
+ * - accumLabel: "X개월 누적" 류 라벨용. selMonth 설정 시 그 달명, 아니면 "{N}개월 누적".
+ */
+export function computePeriodScope(
+  selMonth: string | null,
+  months: string[],
+  ml: Record<string, string>
+): { monthSpan: number; accumLabel: string } {
+  const monthSpan = selMonth ? 1 : Math.max(1, months.length);
+  const accumLabel = selMonth
+    ? (ml[selMonth] ?? selMonth)
+    : `${months.length}개월 누적`;
+  return { monthSpan, accumLabel };
+}

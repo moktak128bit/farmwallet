@@ -32,20 +32,22 @@ function daysBetween(fromIso: string, toIso: string): number {
   return Math.max(0, Math.floor(diff / 86_400_000));
 }
 
-function monthsBetween(fromIso: string, toIso: string): number {
-  const a = parseIsoLocal(fromIso);
-  const b = parseIsoLocal(toIso);
-  if (!a || !b) return 0;
-  const months = (b.getFullYear() - a.getFullYear()) * 12 + (b.getMonth() - a.getMonth());
-  return Math.max(0, months);
-}
-
 function formatPct(num: number, den: number): string {
   if (den <= 0) return "0%";
   return `${Math.round((num / den) * 100)}%`;
 }
 
-type EditKey = "annualDeposit" | "finalTotal" | "retirement" | "startDate";
+type EditKey = "annualDeposit" | "finalTotal" | "annualDividend" | "startDate";
+
+/** 배당성 income 항목 판정 — InvestmentRecordCard와 동일 규칙. */
+function isDividendEntry(e: LedgerEntry): boolean {
+  if (e.kind !== "income") return false;
+  return (
+    (e.category ?? "").includes("배당") ||
+    (e.subCategory ?? "").includes("배당") ||
+    (e.description ?? "").includes("배당")
+  );
+}
 
 export const InvestmentSummaryCard: React.FC<Props> = ({
   accounts,
@@ -171,16 +173,20 @@ export const InvestmentSummaryCard: React.FC<Props> = ({
 
   const daysInvesting = useMemo(() => daysBetween(startDate, today), [startDate, today]);
 
-  const retirementProgress = useMemo(() => {
-    if (!goals.retirementDate) return { elapsed: 0, total: 0, pct: 0 };
-    const totalMonths = monthsBetween(startDate, goals.retirementDate);
-    const elapsedMonths = monthsBetween(startDate, today);
-    return {
-      elapsed: elapsedMonths,
-      total: totalMonths,
-      pct: totalMonths > 0 ? Math.min(100, (elapsedMonths / totalMonths) * 100) : 0,
-    };
-  }, [startDate, goals.retirementDate, today]);
+  /** 최근 12개월(오늘 포함 직전 12개월) 누적 배당 수령액 — 연간 배당금 목표 진행률 측정. */
+  const trailing12MoDividend = useMemo(() => {
+    const cutoff = new Date(parseIsoLocal(today)?.getTime() ?? Date.now());
+    cutoff.setMonth(cutoff.getMonth() - 12);
+    const cutoffIso = cutoff.toISOString().slice(0, 10);
+    let total = 0;
+    for (const e of ledger) {
+      if (!isDividendEntry(e)) continue;
+      if (!e.date || e.date < cutoffIso || e.date > today) continue;
+      const amt = e.currency === "USD" && fxRate ? e.amount * fxRate : e.amount;
+      total += amt;
+    }
+    return total;
+  }, [ledger, today, fxRate]);
 
   const [editing, setEditing] = useState<EditKey | null>(null);
   const [draft, setDraft] = useState<string>("");
@@ -189,7 +195,7 @@ export const InvestmentSummaryCard: React.FC<Props> = ({
     setEditing(key);
     if (key === "annualDeposit") setDraft(String(goals.annualDepositTarget ?? ""));
     else if (key === "finalTotal") setDraft(String(goals.finalTotalAssetTarget ?? ""));
-    else if (key === "retirement") setDraft(goals.retirementDate ?? "");
+    else if (key === "annualDividend") setDraft(String(goals.targetAnnualDividend ?? ""));
     else if (key === "startDate") setDraft(goals.investmentStartDate ?? startDate);
   };
 
@@ -209,8 +215,9 @@ export const InvestmentSummaryCard: React.FC<Props> = ({
       } else if (key === "finalTotal") {
         const n = Number(draft.replace(/[^\d.-]/g, ""));
         nextGoals.finalTotalAssetTarget = Number.isFinite(n) && n > 0 ? n : undefined;
-      } else if (key === "retirement") {
-        nextGoals.retirementDate = /^\d{4}-\d{2}-\d{2}$/.test(draft) ? draft : undefined;
+      } else if (key === "annualDividend") {
+        const n = Number(draft.replace(/[^\d.-]/g, ""));
+        nextGoals.targetAnnualDividend = Number.isFinite(n) && n > 0 ? n : undefined;
       } else if (key === "startDate") {
         nextGoals.investmentStartDate = /^\d{4}-\d{2}-\d{2}$/.test(draft) ? draft : undefined;
       }
@@ -222,8 +229,6 @@ export const InvestmentSummaryCard: React.FC<Props> = ({
 
   const pnlColor = (v: number) =>
     v > 0 ? "var(--success)" : v < 0 ? "var(--danger)" : "var(--muted)";
-
-  const retirementTarget = goals.retirementDate ?? "";
 
   return (
     <div
@@ -286,74 +291,20 @@ export const InvestmentSummaryCard: React.FC<Props> = ({
           formatValue={(v) => formatKRW(Math.round(v))}
           placeholder="목표 금액 (원)"
         />
-        <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
-          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 8 }}>
-            <span style={{ fontSize: 13, color: "var(--muted)" }}>은퇴 목표 시점</span>
-            {editing === "retirement" ? (
-              <div style={{ display: "flex", gap: 4, alignItems: "center" }}>
-                <input
-                  type="date"
-                  value={draft}
-                  onChange={(e) => setDraft(e.target.value)}
-                  style={{ fontSize: 12, padding: "2px 6px" }}
-                />
-                <button
-                  type="button"
-                  onClick={saveEdit}
-                  style={{ padding: 2, background: "transparent", border: "none", cursor: "pointer" }}
-                  aria-label="저장"
-                >
-                  <Check size={14} color="var(--success)" />
-                </button>
-                <button
-                  type="button"
-                  onClick={cancelEdit}
-                  style={{ padding: 2, background: "transparent", border: "none", cursor: "pointer" }}
-                  aria-label="취소"
-                >
-                  <X size={14} color="var(--danger)" />
-                </button>
-              </div>
-            ) : (
-              <div style={{ display: "flex", gap: 6, alignItems: "center" }}>
-                <span style={{ fontSize: 13, fontWeight: 600 }}>
-                  {retirementTarget || "미설정"}
-                </span>
-                <button
-                  type="button"
-                  onClick={() => startEdit("retirement")}
-                  style={{
-                    padding: "4px 10px",
-                    background: "var(--primary-light, #dbeafe)",
-                    color: "var(--primary, #2563eb)",
-                    border: "1px solid var(--primary, #2563eb)",
-                    borderRadius: 6,
-                    cursor: "pointer",
-                    fontSize: 12,
-                    fontWeight: 600,
-                    display: "inline-flex",
-                    alignItems: "center",
-                    gap: 4,
-                  }}
-                  aria-label="은퇴 목표 편집"
-                >
-                  <Pencil size={12} />
-                  {retirementTarget ? "수정" : "설정"}
-                </button>
-              </div>
-            )}
-          </div>
-          <ProgressBar
-            pct={retirementProgress.pct}
-            label={
-              retirementProgress.total > 0
-                ? `${retirementProgress.elapsed}개월 / ${retirementProgress.total}개월 (${Math.round(
-                    retirementProgress.pct
-                  )}%)`
-                : "목표를 설정하면 진행률이 표시됩니다"
-            }
-          />
-        </div>
+        <GoalRow
+          label="연간 배당금 수령액 목표 (현금 흐름 · 최근 12개월)"
+          progress={trailing12MoDividend}
+          target={goals.targetAnnualDividend}
+          isEditing={editing === "annualDividend"}
+          draft={draft}
+          onStartEdit={() => startEdit("annualDividend")}
+          onDraftChange={setDraft}
+          onSave={saveEdit}
+          onCancel={cancelEdit}
+          inputType="number"
+          formatValue={(v) => formatKRW(Math.round(v))}
+          placeholder="목표 금액 (원/년)"
+        />
       </div>
 
       <div

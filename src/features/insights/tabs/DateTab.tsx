@@ -38,15 +38,20 @@ export const DateTab = React.memo(function DateTab({ d }: { d: D }) {
   const dateSet = new Set(d.dateEntries.map((e) => e.date).filter(Boolean));
   const uniqueDateDays = dateSet.size;
 
+  // selMonth 활성 시 dateEntries는 그 달 내역만 — 빈도도 그 달 일수 기준이어야 함
   const totalDaysSpan = (() => {
     if (d.dateEntries.length === 0 || d.months.length === 0) return 0;
+    if (d.selMonth) {
+      const [y, mo] = d.selMonth.split("-").map(Number);
+      return new Date(y, mo, 0).getDate();
+    }
     const start = new Date(d.months[0] + "-01");
     const [y, mo] = d.months[d.months.length - 1].split("-").map(Number);
-    const end = new Date(y, mo, 0); // last day of last month
+    const end = new Date(y, mo, 0);
     return Math.max(1, Math.round((end.getTime() - start.getTime()) / (1000 * 60 * 60 * 24)) + 1);
   })();
   const datesPerWeek = totalDaysSpan > 0 ? (uniqueDateDays / totalDaysSpan) * 7 : 0;
-  const datesPerMonth = d.months.length > 0 ? uniqueDateDays / d.months.length : 0;
+  const datesPerMonth = uniqueDateDays / d.monthSpan;
 
   /* 가장 긴 공백 (최근 데이트 이후 경과일 포함) */
   const longestGap = (() => {
@@ -89,13 +94,16 @@ export const DateTab = React.memo(function DateTab({ d }: { d: D }) {
   const minMonth = allMonthData.filter((m) => m.금액 > 0).reduce((min, m) => (m.금액 < min.금액 ? m : min), allMonthData.find((m) => m.금액 > 0) || { name: "", 금액: 0 });
 
   const noData = d.dateTxCount === 0;
-  const periodLabel = d.months.length > 0 ? `${d.months[0]} ~ ${d.months[d.months.length - 1]}` : "-";
+  const periodLabel = d.selMonth
+    ? d.selMonth
+    : (d.months.length > 0 ? `${d.months[0]} ~ ${d.months[d.months.length - 1]}` : "-");
+  const rangeLabel = d.selMonth ? `1개월 (${d.ml[d.selMonth] ?? d.selMonth})` : `${d.months.length}개월`;
 
   return (
     <div>
       {/* 상단 배너 */}
       <div style={{ padding: "10px 14px", background: "#f8f9fa", borderRadius: 8, marginBottom: 16, fontSize: 12, color: "#666", lineHeight: 1.6 }}>
-        ℹ️ 범위: <strong>{d.months.length}개월</strong> ({periodLabel}) · 단위: <strong>원</strong> · 감지 조건: 대분류/중분류에 <strong>"데이트"</strong> 포함 · 모임통장: 계좌명에 "모임" 포함
+        ℹ️ 범위: <strong>{rangeLabel}</strong> ({periodLabel}) · 단위: <strong>원</strong> · 감지 조건: 대분류/중분류에 <strong>"데이트"</strong> 포함 · 모임통장: 계좌명에 "모임" 포함
       </div>
 
       {noData ? (
@@ -329,7 +337,7 @@ export const DateTab = React.memo(function DateTab({ d }: { d: D }) {
                   {splitTotal > 0 ? `모임통장 ${F(d.dateMoim)}원 (${moimPct}%), 개인 ${F(d.datePersonal)}원 (${100 - moimPct}%). ${moimPct >= 50 ? "모임통장 적극 활용 중 — 분담이 잘 되고 있습니다." : moimPct >= 30 ? "활용도 적당. 더 늘리면 개인 부담이 줄어듭니다." : "개인 결제 비중이 높음. 공동 지출을 모임통장으로 돌리면 정산·관리가 편해집니다."}` : "모임통장 사용 내역 없음. 모임통장을 만들면 데이트 비용 관리가 편해집니다."}
                 </Insight>
                 <Insight title="데이트 빈도" color="#b45309" bg="#fff3cd">
-                  {uniqueDateDays > 0 ? `${d.months.length}개월 동안 ${uniqueDateDays}회 데이트 (주평균 ${datesPerWeek.toFixed(2)}회). ${daysSinceLast != null && daysSinceLast > 14 ? `⚠️ 마지막 데이트 ${daysSinceLast}일 전 — 한동안 공백이 있었습니다.` : daysSinceLast != null && daysSinceLast <= 7 ? "최근에 데이트 — 꾸준히 만나는 중!" : ""} 최장 공백 ${longestGap}일.` : "기록 없음"}
+                  {uniqueDateDays > 0 ? `${d.selMonth ? (d.ml[d.selMonth] ?? d.selMonth) : `${d.months.length}개월`} 동안 ${uniqueDateDays}회 데이트 (주평균 ${datesPerWeek.toFixed(2)}회). ${daysSinceLast != null && daysSinceLast > 14 ? `⚠️ 마지막 데이트 ${daysSinceLast}일 전 — 한동안 공백이 있었습니다.` : daysSinceLast != null && daysSinceLast <= 7 ? "최근에 데이트 — 꾸준히 만나는 중!" : ""} 최장 공백 ${longestGap}일.` : "기록 없음"}
                 </Insight>
                 <Insight title="데이트 비중" color="#533483" bg="rgba(83,52,131,0.08)">
                   {d.pExpense > 0 ? `전체 지출의 ${Math.round((total / d.pExpense) * 100)}%가 데이트. ${total / d.pExpense > 0.15 ? "비중이 높은 편입니다. 가성비 데이트 고려." : total / d.pExpense > 0.05 ? "적정 수준." : "알뜰 수준."} 월평균 ${F(Math.round(avgPerPeriodMonth))}원 · 건당 ${F(avgPerTx)}원.` : ""}

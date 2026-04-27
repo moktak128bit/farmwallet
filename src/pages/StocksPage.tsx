@@ -21,6 +21,7 @@ const LazyTargetPortfolioSection = lazy(() =>
 );
 import type { Account, StockPrice, StockTrade, TickerInfo, StockPreset, LedgerEntry, TargetPortfolio, AccountBalanceRow } from "../types";
 import { computePositions } from "../calculations";
+import { buildClosedTradeRecords, summarizeRecords } from "../utils/investmentRecord";
 import { fetchYahooQuotes, fetchTickersFromFile } from "../yahooFinanceApi";
 import { fetchCryptoQuotes } from "../coinGeckoApi";
 import { saveTickerToJson } from "../storage";
@@ -333,6 +334,17 @@ export const StocksView: React.FC<Props> = ({
       l.currency === "USD" && fxRate ? l.amount * fxRate : l.amount;
     return ledger.filter(isDividend).reduce((s, l) => s + toKrw(l), 0);
   }, [ledger, fxRate]);
+
+  /** FIFO 누적 실현손익 — 대시보드 InvestmentRecordCard·인사이트 InvestTab과 동일 로직. */
+  const realized = useMemo(() => {
+    const records = buildClosedTradeRecords(trades, accounts, fxRate ?? undefined);
+    const summary = summarizeRecords(records);
+    return {
+      pnl: summary.totalPnl,
+      returnRate: summary.totalCost > 0 ? summary.totalPnl / summary.totalCost : 0,
+      tradeCount: summary.tradeCount,
+    };
+  }, [trades, accounts, fxRate]);
 
 
   const updateFxRate = useCallback(async () => {
@@ -1435,6 +1447,9 @@ export const StocksView: React.FC<Props> = ({
         totalCost={totals.totalCost}
         totalReturnRate={totalReturnRate}
         totalDividend={totalDividend}
+        realizedPnl={realized.pnl}
+        realizedReturnRate={realized.returnRate}
+        realizedTradeCount={realized.tradeCount}
       />
 
       {/* 거래/평가 섹션 */}

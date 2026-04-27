@@ -257,6 +257,10 @@ export interface D {
   months: string[];
   ml: Record<string, string>;
   selMonth: string | null;
+  /** 필터된 데이터의 실제 개월 범위. selMonth 설정 시 1, 아니면 months.length (최소 1). 월평균 계산의 분모로 사용. */
+  monthSpan: number;
+  /** "X개월 누적" 류 라벨용 텍스트. selMonth 설정 시 해당 월명만, 아니면 "{N}개월 누적". */
+  accumLabel: string;
   txCount: number;
   anomalyTargetMonth: string | null;
   topAnomaly: AnomalyLite | null;

@@ -4,11 +4,12 @@ import { ForecastView } from "../features/insights/ForecastView";
 import { SettlementView } from "../features/dating/SettlementView";
 import { calcTrend, mTotalsFor, computePeriodScope } from "../utils/insightsHelpers";
 import { isInvestmentEntry } from "../utils/category";
+import { tradeAmountKRW } from "../utils/finance";
 import { detectSpendAnomalies } from "../utils/anomaly";
 import { buildClosedTradeRecords, summarizeRecords, summaryToRealPL } from "../utils/investmentRecord";
 import { computeRealIncome, computeOriginalAssets } from "../utils/realIncome";
 import { classifyExpenses } from "../utils/expenseClassification";
-import { isDateEntry, getMoimAccountIds, computeDatePartnerShare } from "../utils/dateAccounting";
+import { isDateEntry, getMoimAccountIds, computeDatePartnerShare, computeMoimAccountFlow } from "../utils/dateAccounting";
 import { useDateAccountId } from "../hooks/useDateAccountSettings";
 import {
   F, W, SD,
@@ -200,7 +201,7 @@ function useD(ledger: LedgerEntry[], rawTrades: StockTrade[], allTrades: StockTr
       const n = t.name || t.ticker;
       if (!tM.has(n)) tM.set(n, { buyCount: 0, sellCount: 0, buyTotal: 0, sellTotal: 0 });
       const e = tM.get(n)!;
-      const kr = t.fxRateAtTrade ? t.totalAmount * t.fxRateAtTrade : t.totalAmount;
+      const kr = tradeAmountKRW(t, fxRate);
       if (t.side === "buy") { e.buyCount += t.quantity; e.buyTotal += kr; }
       else { e.sellCount += t.quantity; e.sellTotal += kr; }
     }
@@ -427,7 +428,7 @@ function useD(ledger: LedgerEntry[], rawTrades: StockTrade[], allTrades: StockTr
       if (t.side !== "buy") continue;
       const name = t.name || t.ticker || "";
       if (!name) continue;
-      stockBuyTotals.set(name, (stockBuyTotals.get(name) ?? 0) + (t.fxRateAtTrade ? t.totalAmount * t.fxRateAtTrade : t.totalAmount));
+      stockBuyTotals.set(name, (stockBuyTotals.get(name) ?? 0) + tradeAmountKRW(t, fxRate));
     }
     const trackedStocks = [...stockBuyTotals.entries()].sort((a, b) => b[1] - a[1]).slice(0, 5).map(e => e[0]);
     const stockTrends = trackedStocks.map(stockName => {
@@ -438,7 +439,7 @@ function useD(ledger: LedgerEntry[], rawTrades: StockTrade[], allTrades: StockTr
         for (const t of rawTrades) {
           if (t.date?.slice(0, 7) !== m) continue;
           if (!t.name?.includes(prefix)) continue;
-          const kr = t.fxRateAtTrade ? t.totalAmount * t.fxRateAtTrade : t.totalAmount;
+          const kr = tradeAmountKRW(t, fxRate);
           if (t.side === "buy") cum += kr; else cum -= kr;
         }
         cumByMonth.set(m, cum);
@@ -652,6 +653,8 @@ function useD(ledger: LedgerEntry[], rawTrades: StockTrade[], allTrades: StockTr
     const { originalAssetsByAcct, originalAssets } = computeOriginalAssets(accounts);
     // 데이트 계좌 지출: 50/50 분담 → 절반은 상대 부담이므로 실 지출에서 제거
     const { dateAccountSpend, datePartnerShare } = computeDatePartnerShare(fExp, dateAccountId);
+    // 분담 통장 월별 흐름 — 전체 ledger·전체 months 사용 (현재 잔액 누적 의미)
+    const moimFlow = computeMoimAccountFlow(ledger, dateAccountId, months);
     // 실질 지출: 데이트 계좌 50% 제거 (상대 부담). 정산은 수입에서 이미 제외했으므로 여기서 중복 차감 안 함
     const realExpense = pExpense - datePartnerShare;
 
@@ -978,7 +981,7 @@ function useD(ledger: LedgerEntry[], rawTrades: StockTrade[], allTrades: StockTr
       score: { total: scorePts, grade, comment: comments[grade] || "" }, prev, avgMonthExp,
       incByGroup, investBySub, dateByDetail, stockTrends,
       subInsights, incSubInsights, dateSubInsights, investSubInsights,
-      realIncome, realExpense, settlementTotal, tempIncomeTotal, dateAccountSpend, datePartnerShare, originalAssets, originalAssetsByAcct,
+      realIncome, realExpense, settlementTotal, tempIncomeTotal, dateAccountSpend, datePartnerShare, moimFlow, originalAssets, originalAssetsByAcct,
       netProfit, realSavRate, passiveIncome, expToIncRatio, dailyAvgExp, netCashFlow,
       incomeStability, investReturnRate, subTotal, fixedExpense, variableExpense,
       netWorthByMonth, accountBalances, assetAllocation, funStats,

@@ -31,6 +31,8 @@ import { ERROR_MESSAGES } from "../constants/errorMessages";
 import { computeRealizedPnlByTradeId } from "../calculations";
 import { exportLedgerCsv } from "../utils/csvExport";
 import { QuickCopyModal } from "../features/ledger/QuickCopyModal";
+import { DescriptionMergeModal } from "../features/ledger/DescriptionMergeModal";
+import { TaxiSplitWizard } from "../features/ledger/TaxiSplitWizard";
 import { useLedgerColumnResize } from "../features/ledger/useLedgerColumnResize";
 import { ReceiptScanner, type OcrResult } from "../features/ocr/ReceiptScanner";
 import {
@@ -50,6 +52,7 @@ interface Props {
   ledgerTemplates?: LedgerTemplate[];
   onChangeLedger: (next: LedgerEntry[]) => void;
   onChangeTemplates?: (next: LedgerTemplate[]) => void;
+  onChangeCategoryPresets?: (next: CategoryPresets) => void;
   copyRequest?: LedgerEntry | null;
   onCopyComplete?: () => void;
   highlightLedgerId?: string | null;
@@ -69,6 +72,7 @@ export const LedgerView: React.FC<Props> = ({
   ledgerTemplates: _ledgerTemplates = [],
   onChangeLedger,
   onChangeTemplates: _onChangeTemplates,
+  onChangeCategoryPresets,
   copyRequest,
   onCopyComplete,
   highlightLedgerId,
@@ -94,6 +98,8 @@ export const LedgerView: React.FC<Props> = ({
   const [quickCopyEntry, setQuickCopyEntry] = useState<LedgerEntry | null>(null);
   const [quickCopyAmount, setQuickCopyAmount] = useState("");
   const [showReceiptScanner, setShowReceiptScanner] = useState(false);
+  const [showMergeModal, setShowMergeModal] = useState(false);
+  const [showTaxiSplitWizard, setShowTaxiSplitWizard] = useState(false);
   const [selectedMonths, setSelectedMonths] = useState<Set<string>>(() => new Set([getThisMonthKST()]));
   const [currentYear, setCurrentYear] = useState(() => String(getKoreaTime().getFullYear()));
   const [draggingId, setDraggingId] = useState<string | null>(null);
@@ -1415,19 +1421,82 @@ export const LedgerView: React.FC<Props> = ({
     <div>
       <div className="section-header" style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
         <h2>가계부 (거래 입력)</h2>
-        <button
-          type="button"
-          className="secondary"
-          style={{ fontSize: 12, padding: "6px 12px" }}
-          onClick={() => {
-            const entries = filteredLedger.filter((l): l is LedgerEntry => "id" in l);
-            exportLedgerCsv(entries, accounts);
-            toast.success(`${entries.length}건 CSV 내보내기 완료`);
-          }}
-        >
-          CSV 내보내기
-        </button>
+        <div style={{ display: "flex", gap: 8 }}>
+          <button
+            type="button"
+            className="secondary"
+            style={{ fontSize: 12, padding: "6px 12px" }}
+            onClick={() => setShowTaxiSplitWizard(true)}
+            title="유류교통비에서 택시를 별도 소분류로 분리"
+          >
+            🚕 택시 분리
+          </button>
+          <button
+            type="button"
+            className="secondary"
+            style={{ fontSize: 12, padding: "6px 12px" }}
+            onClick={() => setShowMergeModal(true)}
+            title="유사한 description을 한 번에 통합"
+          >
+            🔀 유사 설명 통합
+          </button>
+          <button
+            type="button"
+            className="secondary"
+            style={{ fontSize: 12, padding: "6px 12px" }}
+            onClick={() => {
+              const entries = filteredLedger.filter((l): l is LedgerEntry => "id" in l);
+              exportLedgerCsv(entries, accounts);
+              toast.success(`${entries.length}건 CSV 내보내기 완료`);
+            }}
+          >
+            CSV 내보내기
+          </button>
+        </div>
       </div>
+
+      {showMergeModal && (
+        <DescriptionMergeModal
+          ledger={ledger}
+          onApply={(next) => {
+            const changedCount = next.reduce(
+              (count, l, i) => count + (l !== ledger[i] ? 1 : 0),
+              0
+            );
+            onChangeLedger(next);
+            if (changedCount > 0) {
+              toast.success(`${changedCount}건 description 통합 완료`);
+            }
+          }}
+          onClose={() => setShowMergeModal(false)}
+        />
+      )}
+
+      {showTaxiSplitWizard && (
+        <TaxiSplitWizard
+          ledger={ledger}
+          categoryPresets={categoryPresets}
+          onChangeLedger={(next) => {
+            const changedCount = next.reduce(
+              (count, l, i) => count + (l !== ledger[i] ? 1 : 0),
+              0
+            );
+            onChangeLedger(next);
+            if (changedCount > 0) {
+              toast.success(`${changedCount}건 detailCategory를 '택시'로 변경`);
+            }
+          }}
+          onChangeCategoryPresets={(next) => {
+            if (onChangeCategoryPresets) {
+              onChangeCategoryPresets(next);
+              toast.success("프리셋에 '택시' 소분류 추가");
+            } else {
+              toast.error("카테고리 프리셋 변경 핸들러 미연결 — 앱 재시작 필요");
+            }
+          }}
+          onClose={() => setShowTaxiSplitWizard(false)}
+        />
+      )}
 
       {/* 요약 카드: 항상 표시, 필터 적용 시 해당 결과 합계 */}
       <div style={{

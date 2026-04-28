@@ -338,6 +338,8 @@ export interface D {
   dateAccountSpend: number;
   /** 데이트 계좌 지출 중 상대 부담분 (50%) — 실 지출 계산에서 차감됨 */
   datePartnerShare: number;
+  /** 분담 통장(dateAccountId) 월별 자금 흐름 — 입금·출금·잔액변화 + 이상감지 */
+  moimFlow: import("../../utils/dateAccounting").MoimFlowAnalysis;
 
   netProfit: number;
   realSavRate: number;

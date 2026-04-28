@@ -7,6 +7,7 @@ import {
 import type { ValueType } from "recharts/types/component/DefaultTooltipContent";
 import { C, F, W, SD, Card, Kpi, Insight, Section, CT, pieLabel, type D } from "../insightsShared";
 import { SubTab } from "./SubTab";
+import { computeDateAccountUtilization } from "../../../utils/dateAccounting";
 
 const WDAY_LABELS = ["월", "화", "수", "목", "금", "토", "일"];
 
@@ -131,6 +132,145 @@ export const ExpenseTab = React.memo(function ExpenseTab({ d }: { d: D }) {
           )}
         </Card>
 
+        <Card title="🔄 분담 통장 활용률 (데이트)" span={4}>
+          {(() => {
+            const u = computeDateAccountUtilization({ dateMoim: d.dateMoim, datePersonal: d.datePersonal });
+            const span = d.monthSpan;
+            if (u.totalDate === 0) {
+              return <div style={{ padding: 24, textAlign: "center", color: "#999", fontSize: 13 }}>데이트성 지출이 없습니다.</div>;
+            }
+            const ratePct = Math.round(u.utilizationRate * 100);
+            const personalPct = 100 - ratePct;
+            const rateColor = ratePct >= 80 ? "#059669" : ratePct >= 50 ? "#f59e0b" : "#dc2626";
+            const rateLabel = ratePct >= 80 ? "양호" : ratePct >= 50 ? "보통" : "낮음 — 본인 카드 결제 비중이 큼";
+            return (
+              <div style={{ display: "grid", gridTemplateColumns: "1fr 1.4fr", gap: 16 }}>
+                {/* 활용률 시각화 */}
+                <div style={{ padding: "16px 18px", background: "#f8fafc", borderRadius: 10 }}>
+                  <div style={{ fontSize: 12, color: "#64748b", marginBottom: 4 }}>분담 통장 활용률</div>
+                  <div style={{ fontSize: 36, fontWeight: 800, color: rateColor, lineHeight: 1.1 }}>{ratePct}%</div>
+                  <div style={{ fontSize: 12, color: rateColor, fontWeight: 600, marginBottom: 12 }}>{rateLabel}</div>
+                  <div style={{ height: 14, background: "#e2e8f0", borderRadius: 7, overflow: "hidden", display: "flex" }}>
+                    <div style={{ width: `${ratePct}%`, background: "#48c9b0", display: "flex", alignItems: "center", justifyContent: "center", color: "#fff", fontSize: 10, fontWeight: 700 }}>
+                      {ratePct >= 15 ? "분담통장" : ""}
+                    </div>
+                    <div style={{ width: `${personalPct}%`, background: "#e94560", display: "flex", alignItems: "center", justifyContent: "center", color: "#fff", fontSize: 10, fontWeight: 700 }}>
+                      {personalPct >= 15 ? "본인 카드" : ""}
+                    </div>
+                  </div>
+                  <div style={{ display: "flex", justifyContent: "space-between", fontSize: 11, color: "#64748b", marginTop: 6 }}>
+                    <span>분담통장 {F(Math.round(u.viaSharedAccount))}원</span>
+                    <span>본인 카드 {F(Math.round(u.viaPersonal))}원</span>
+                  </div>
+                </div>
+
+                {/* 잠재 절감액 */}
+                <div style={{ padding: "16px 18px", background: u.lostShareSavings > 0 ? "#fef3c7" : "#f0fdf4", borderRadius: 10, border: `1px solid ${u.lostShareSavings > 0 ? "#fde68a" : "#86efac"}` }}>
+                  <div style={{ fontSize: 12, color: "#78350f", marginBottom: 4 }}>본인 부담 비교</div>
+                  <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10, marginBottom: 10 }}>
+                    <div>
+                      <div style={{ fontSize: 11, color: "#94a3b8" }}>현재 본인 부담</div>
+                      <div style={{ fontSize: 18, fontWeight: 800, color: "#0f172a" }}>{F(Math.round(u.currentSelfBurden))}원</div>
+                      <div style={{ fontSize: 10, color: "#94a3b8" }}>월 {F(Math.round(u.currentSelfBurden / span))}원</div>
+                    </div>
+                    <div>
+                      <div style={{ fontSize: 11, color: "#94a3b8" }}>100% 활용 시 (50/50)</div>
+                      <div style={{ fontSize: 18, fontWeight: 800, color: "#059669" }}>{F(Math.round(u.optimalSelfBurden))}원</div>
+                      <div style={{ fontSize: 10, color: "#94a3b8" }}>월 {F(Math.round(u.optimalSelfBurden / span))}원</div>
+                    </div>
+                  </div>
+                  {u.lostShareSavings > 0 && (
+                    <div style={{ padding: "10px 12px", background: "#fff", borderRadius: 8, fontSize: 12, color: "#78350f", lineHeight: 1.6 }}>
+                      <strong style={{ color: "#dc2626" }}>분담 미활용으로 추가 부담:</strong>{" "}
+                      <strong>{F(Math.round(u.lostShareSavings))}원</strong>
+                      {" "}(<strong>월 {F(Math.round(u.lostShareSavings / span))}원</strong>)
+                      <div style={{ fontSize: 11, color: "#92400e", marginTop: 6 }}>
+                        💡 본인 카드 결제 데이트의 절반은 분담통장 카드를 사용했다면 상대가 부담했을 금액입니다.
+                        지갑에 분담통장 체크카드를 디폴트로 두면 자동으로 줄어듭니다.
+                      </div>
+                    </div>
+                  )}
+                  {u.lostShareSavings === 0 && (
+                    <div style={{ padding: "10px 12px", background: "#fff", borderRadius: 8, fontSize: 12, color: "#065f46" }}>
+                      ✓ 분담 시스템 100% 가동 중. 추가 손실 없음.
+                    </div>
+                  )}
+                </div>
+              </div>
+            );
+          })()}
+        </Card>
+
+        <Card title="📐 가계부 raw vs 실 부담 — 정산·분담 반영" span={4}>
+          {(() => {
+            const raw = d.pExpense;
+            const afterSplit = raw - d.datePartnerShare;          // 모임통장 50% 차감 (= realExpense)
+            const afterSettle = afterSplit - d.settlementTotal;    // 정산 income 회수 추가 차감
+            const topSingle = d.topTx?.[0];
+            const oneOffThreshold = 500000;
+            const hasOneOff = topSingle && topSingle.amount >= oneOffThreshold;
+            const afterOneOff = hasOneOff ? afterSettle - topSingle.amount : afterSettle;
+            const span = d.monthSpan;
+            const Row: React.FC<{ label: string; sub?: string; value: number; delta?: number; bold?: boolean; bg?: string }> = ({ label, sub, value, delta, bold, bg }) => (
+              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline", padding: "10px 14px", background: bg ?? "transparent", borderRadius: 8, marginBottom: 4 }}>
+                <div style={{ display: "flex", flexDirection: "column", gap: 2 }}>
+                  <span style={{ fontSize: 13, fontWeight: bold ? 700 : 500, color: bold ? "#0f172a" : "#475569" }}>{label}</span>
+                  {sub && <span style={{ fontSize: 11, color: "#94a3b8" }}>{sub}</span>}
+                </div>
+                <div style={{ display: "flex", flexDirection: "column", alignItems: "flex-end", gap: 2 }}>
+                  <span style={{ fontSize: bold ? 18 : 14, fontWeight: bold ? 800 : 600, color: bold ? "#0f172a" : "#475569" }}>{F(Math.round(value))}원</span>
+                  <span style={{ fontSize: 11, color: "#94a3b8" }}>월 {F(Math.round(value / span))}원</span>
+                  {delta != null && delta !== 0 && (
+                    <span style={{ fontSize: 11, color: delta < 0 ? "#059669" : "#dc2626", fontWeight: 600 }}>
+                      {delta < 0 ? "−" : "+"}{F(Math.abs(Math.round(delta)))}원
+                    </span>
+                  )}
+                </div>
+              </div>
+            );
+            return (
+              <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(360px, 1fr))", gap: 16 }}>
+                <div>
+                  <Row label="① 가계부 raw 지출" sub="신용결제·재테크·환전 제외" value={raw} bg="#f8fafc" />
+                  <Row label="② 모임통장 50% (상대 부담)" sub={d.datePartnerShare > 0 ? `데이트 계좌 출금 ${F(Math.round(d.dateAccountSpend))}원의 절반` : "데이트 계좌 미설정 또는 출금 없음"} value={afterSplit} delta={-d.datePartnerShare} bg="#f0fdf4" />
+                  <Row label="③ 정산 income 회수" sub={d.settlementTotal > 0 ? "subCategory에 '정산' 포함된 수입" : "정산 내역 없음"} value={afterSettle} delta={-d.settlementTotal} bg="#f0fdf4" />
+                  {hasOneOff && (
+                    <Row
+                      label="④ 일회성 큰 단건 제외"
+                      sub={`${topSingle.date} ${topSingle.desc || topSingle.sub || "-"} (50만+)`}
+                      value={afterOneOff}
+                      delta={-topSingle.amount}
+                      bg="#fff7ed"
+                    />
+                  )}
+                  <div style={{ height: 1, background: "#e2e8f0", margin: "8px 0" }} />
+                  <Row label={hasOneOff ? "💰 일상 실 부담 (정산·분담·일회성 차감)" : "💰 실 부담 (정산·분담 차감)"} value={hasOneOff ? afterOneOff : afterSettle} bold bg="#fef3c7" />
+                </div>
+                <div style={{ padding: "12px 14px", background: "#f8fafc", borderRadius: 8, fontSize: 12, color: "#475569", lineHeight: 1.7 }}>
+                  <div style={{ fontWeight: 700, marginBottom: 8, color: "#0f172a" }}>📖 왜 라벨마다 숫자가 다른가요?</div>
+                  <div style={{ marginBottom: 6 }}>
+                    <strong>① raw</strong>: 가계부에 입력된 그대로의 지출 합. <span style={{ color: "#94a3b8" }}>실은 "이 정도 결제했음" 통계.</span>
+                  </div>
+                  <div style={{ marginBottom: 6 }}>
+                    <strong>② 모임통장 50%</strong>: 데이트 계좌 출금은 상대와 반반 부담이라고 가정 (Settings에서 데이트 계좌 지정 시).
+                  </div>
+                  <div style={{ marginBottom: 6 }}>
+                    <strong>③ 정산</strong>: 본인이 결제 후 상대에게서 돌려받은 금액. 수입의 "정산" 카테고리로 잡힘.
+                  </div>
+                  {hasOneOff && (
+                    <div style={{ marginBottom: 6 }}>
+                      <strong>④ 일회성</strong>: 50만 이상 단건 1개 (자동차 수리 같은). 평균을 왜곡하므로 별도 표시.
+                    </div>
+                  )}
+                  <div style={{ marginTop: 10, padding: "8px 10px", background: "#fef3c7", borderRadius: 6, color: "#78350f", fontWeight: 600 }}>
+                    💡 "내가 진짜 한 달에 쓴 돈"은 마지막 줄로 보세요.
+                  </div>
+                </div>
+              </div>
+            );
+          })()}
+        </Card>
+
         <Card title={`🎯 예산 vs 실적 (${d.anomalyTargetMonth ?? "-"})`} span={4}>
           {d.budgetProgress.length === 0 ? (
             <div style={{ padding: 24, textAlign: "center", color: "#999", fontSize: 13 }}>
@@ -167,6 +307,72 @@ export const ExpenseTab = React.memo(function ExpenseTab({ d }: { d: D }) {
 
       {/* ============ 드릴다운 ============ */}
       <Section storageKey="expense-section-drilldown" title="🔍 드릴다운">
+        {d.moimFlow.months.length > 0 && d.moimFlow.months.some(m => m.myTransfer + m.partnerDeposit + m.spending > 0) && (
+          <Card title="💸 분담 통장 자금 흐름 (월별)" span={4}>
+            <div style={{ overflowX: "auto" }}>
+              <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 12 }}>
+                <thead>
+                  <tr style={{ borderBottom: "2px solid #e2e8f0", background: "#f8fafc" }}>
+                    <th style={{ padding: "10px 8px", textAlign: "left", color: "#475569" }}>월</th>
+                    <th style={{ padding: "10px 8px", textAlign: "right", color: "#475569" }}>내 이체 →</th>
+                    <th style={{ padding: "10px 8px", textAlign: "right", color: "#475569" }}>상대 입금 →</th>
+                    <th style={{ padding: "10px 8px", textAlign: "right", color: "#475569" }}>← 결제(데이트)</th>
+                    <th style={{ padding: "10px 8px", textAlign: "right", color: "#475569" }}>잔액 변화</th>
+                    <th style={{ padding: "10px 8px", textAlign: "left", color: "#475569" }}>비고</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {d.moimFlow.months.map((row) => {
+                    const anomaly = d.moimFlow.anomalies.find(a => a.month === row.month);
+                    const isHighlight = !!anomaly;
+                    return (
+                      <tr key={row.month} style={{ borderBottom: "1px solid #f1f5f9", background: isHighlight ? "#fff7ed" : "transparent" }}>
+                        <td style={{ padding: "8px", fontWeight: 600 }}>{d.ml[row.month] ?? row.month}</td>
+                        <td style={{ padding: "8px", textAlign: "right", color: "#0f172a" }}>{row.myTransfer > 0 ? F(row.myTransfer) + "원" : "-"}</td>
+                        <td style={{ padding: "8px", textAlign: "right", color: anomaly ? "#dc2626" : "#0f172a" }}>
+                          {row.partnerDeposit > 0 ? F(row.partnerDeposit) + "원" : "-"}
+                          {anomaly && " ⚠"}
+                        </td>
+                        <td style={{ padding: "8px", textAlign: "right", color: "#dc2626" }}>{row.spending > 0 ? F(row.spending) + "원" : "-"}</td>
+                        <td style={{ padding: "8px", textAlign: "right", fontWeight: 700, color: row.balanceChange >= 0 ? "#059669" : "#dc2626" }}>
+                          {row.balanceChange >= 0 ? "+" : ""}{F(row.balanceChange)}원
+                        </td>
+                        <td style={{ padding: "8px", fontSize: 11, color: "#92400e" }}>
+                          {anomaly?.message ?? ""}
+                        </td>
+                      </tr>
+                    );
+                  })}
+                </tbody>
+                <tfoot>
+                  <tr style={{ borderTop: "2px solid #e2e8f0", background: "#f8fafc", fontWeight: 700 }}>
+                    <td style={{ padding: "10px 8px" }}>누적</td>
+                    <td style={{ padding: "10px 8px", textAlign: "right" }}>{F(d.moimFlow.months.reduce((s,r)=>s+r.myTransfer,0))}원</td>
+                    <td style={{ padding: "10px 8px", textAlign: "right" }}>{F(d.moimFlow.months.reduce((s,r)=>s+r.partnerDeposit,0))}원</td>
+                    <td style={{ padding: "10px 8px", textAlign: "right" }}>{F(d.moimFlow.months.reduce((s,r)=>s+r.spending,0))}원</td>
+                    <td style={{ padding: "10px 8px", textAlign: "right", color: d.moimFlow.cumBalance >= 0 ? "#059669" : "#dc2626" }}>
+                      {d.moimFlow.cumBalance >= 0 ? "+" : ""}{F(d.moimFlow.cumBalance)}원
+                    </td>
+                    <td style={{ padding: "10px 8px" }}></td>
+                  </tr>
+                </tfoot>
+              </table>
+            </div>
+            <div style={{ marginTop: 10, fontSize: 11, color: "#64748b", lineHeight: 1.6 }}>
+              {d.moimFlow.cumBalance > 0
+                ? `누적 잔액 ${F(d.moimFlow.cumBalance)}원이 모임통장에 쌓이고 있습니다 — 입금이 결제보다 많은 상태. 큰 이벤트(여행·기념일) 적립 효과.`
+                : d.moimFlow.cumBalance < 0
+                  ? `누적 잔액 ${F(d.moimFlow.cumBalance)}원 — 결제가 입금보다 많아 잔액 부족. 곧 본인 카드 backup 결제가 늘어날 수 있습니다.`
+                  : `입금과 결제가 거의 균형 — 안정적 운영 중.`}
+              {d.moimFlow.anomalies.length > 0 && (
+                <span style={{ color: "#92400e", fontWeight: 600 }}>
+                  {" "}⚠ {d.moimFlow.anomalies.length}개월의 상대 입금이 평균 대비 50% 미만 — 자동이체 누락 가능성 확인.
+                </span>
+              )}
+            </div>
+          </Card>
+        )}
+
         <Card title="대분류 → 중분류 상세" span={2}>
           <div style={{ maxHeight: 420, overflow: "auto" }}>
             {cats.slice(0, 10).map(([catName, catTotal], ci) => {

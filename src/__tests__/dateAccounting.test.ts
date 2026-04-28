@@ -5,6 +5,8 @@ import {
   getMoimAccountIds,
   computeDatePartnerShare,
   splitDateMoimVsPersonal,
+  computeDateAccountUtilization,
+  computeMoimAccountFlow,
 } from "../utils/dateAccounting";
 import type { Account, LedgerEntry } from "../types";
 
@@ -123,5 +125,116 @@ describe("splitDateMoimVsPersonal", () => {
 
   it("빈 배열 → 0/0", () => {
     expect(splitDateMoimVsPersonal([], moimIds)).toEqual({ dateMoim: 0, datePersonal: 0 });
+  });
+});
+
+describe("computeDateAccountUtilization", () => {
+  it("100% 분담통장 사용 — utilizationRate=1, lostShareSavings=0", () => {
+    const r = computeDateAccountUtilization({ dateMoim: 1_000_000, datePersonal: 0 });
+    expect(r.utilizationRate).toBe(1);
+    expect(r.currentSelfBurden).toBe(500_000);   // 100만 × 50%
+    expect(r.optimalSelfBurden).toBe(500_000);   // 동일
+    expect(r.lostShareSavings).toBe(0);
+  });
+
+  it("0% 분담통장 사용 (전부 본인 카드) — utilizationRate=0, lostShareSavings=절반", () => {
+    const r = computeDateAccountUtilization({ dateMoim: 0, datePersonal: 1_000_000 });
+    expect(r.utilizationRate).toBe(0);
+    expect(r.currentSelfBurden).toBe(1_000_000);  // 100% 본인
+    expect(r.optimalSelfBurden).toBe(500_000);    // 분담했다면 50%
+    expect(r.lostShareSavings).toBe(500_000);     // 절반이 그냥 새는 중
+  });
+
+  it("50/50 사용 (분담통장 절반, 개인 절반)", () => {
+    const r = computeDateAccountUtilization({ dateMoim: 500_000, datePersonal: 500_000 });
+    expect(r.utilizationRate).toBe(0.5);
+    expect(r.currentSelfBurden).toBe(750_000);    // 25만(분담) + 50만(개인)
+    expect(r.optimalSelfBurden).toBe(500_000);
+    expect(r.lostShareSavings).toBe(250_000);     // 개인 결제 50만의 절반
+  });
+
+  it("데이트 지출 0 — 모든 값 0, NaN 없음", () => {
+    const r = computeDateAccountUtilization({ dateMoim: 0, datePersonal: 0 });
+    expect(r.utilizationRate).toBe(0);
+    expect(r.currentSelfBurden).toBe(0);
+    expect(r.optimalSelfBurden).toBe(0);
+    expect(r.lostShareSavings).toBe(0);
+    expect(r.totalDate).toBe(0);
+  });
+
+  it("회귀: lostShareSavings = 개인 결제분의 정확히 50%", () => {
+    const personalCases = [200_000, 1_500_000, 7_777_777];
+    for (const personal of personalCases) {
+      const r = computeDateAccountUtilization({ dateMoim: 100_000, datePersonal: personal });
+      expect(r.lostShareSavings).toBe(personal / 2);
+    }
+  });
+});
+
+describe("computeMoimAccountFlow", () => {
+  const moimId = "moim";
+  const months = ["2026-01", "2026-02", "2026-03"];
+
+  it("accountId null → 빈 결과", () => {
+    const r = computeMoimAccountFlow([entry({ id: "1", amount: 100, toAccountId: moimId, kind: "transfer" })], null, months);
+    expect(r.months).toEqual([]);
+    expect(r.cumBalance).toBe(0);
+  });
+
+  it("월별 transfer/income/expense 분리 합산", () => {
+    const ledger = [
+      entry({ id: "t1", date: "2026-01-15", kind: "transfer", amount: 300_000, fromAccountId: "a", toAccountId: moimId }),
+      entry({ id: "i1", date: "2026-01-20", kind: "income", amount: 301_600, toAccountId: moimId, category: "이체" }),
+      entry({ id: "e1", date: "2026-01-25", kind: "expense", amount: 576_747, fromAccountId: moimId, category: "데이트" }),
+      entry({ id: "t2", date: "2026-02-15", kind: "transfer", amount: 300_000, fromAccountId: "a", toAccountId: moimId }),
+      entry({ id: "i2", date: "2026-02-20", kind: "income", amount: 300_527, toAccountId: moimId, category: "이체" }),
+      entry({ id: "e2", date: "2026-02-25", kind: "expense", amount: 272_300, fromAccountId: moimId, category: "데이트" }),
+    ];
+    const r = computeMoimAccountFlow(ledger, moimId, months);
+    expect(r.months).toHaveLength(3);
+    expect(r.months[0]).toEqual({
+      month: "2026-01",
+      myTransfer: 300_000,
+      partnerDeposit: 301_600,
+      spending: 576_747,
+      balanceChange: 300_000 + 301_600 - 576_747,  // +24,853
+    });
+    expect(r.months[1].balanceChange).toBe(300_000 + 300_527 - 272_300);
+    expect(r.months[2].balanceChange).toBe(0);
+    expect(r.cumBalance).toBe(r.months[0].balanceChange + r.months[1].balanceChange);
+  });
+
+  it("이상감지: 상대 입금이 평균 50% 미만이면 partner_low 경고", () => {
+    const ledger = [
+      // 2026-01, 02, 03에 평균 30만원 상대 입금. 04월은 1500원만
+      entry({ id: "i1", date: "2026-01-20", kind: "income", amount: 300_000, toAccountId: moimId, category: "이체" }),
+      entry({ id: "i2", date: "2026-02-20", kind: "income", amount: 300_000, toAccountId: moimId, category: "이체" }),
+      entry({ id: "i3", date: "2026-03-20", kind: "income", amount: 300_000, toAccountId: moimId, category: "이체" }),
+      entry({ id: "i4", date: "2026-04-20", kind: "income", amount: 1_500, toAccountId: moimId, category: "이체" }),
+    ];
+    const r = computeMoimAccountFlow(ledger, moimId, ["2026-01", "2026-02", "2026-03", "2026-04"]);
+    expect(r.anomalies).toHaveLength(1);
+    expect(r.anomalies[0].month).toBe("2026-04");
+    expect(r.anomalies[0].type).toBe("partner_low");
+  });
+
+  it("다른 계좌 거래는 무시", () => {
+    const ledger = [
+      entry({ id: "t1", date: "2026-01-15", kind: "transfer", amount: 100_000, toAccountId: "other" }),
+      entry({ id: "e1", date: "2026-01-25", kind: "expense", amount: 50_000, fromAccountId: "other", category: "데이트" }),
+    ];
+    const r = computeMoimAccountFlow(ledger, moimId, months);
+    expect(r.months[0].myTransfer).toBe(0);
+    expect(r.months[0].spending).toBe(0);
+  });
+
+  it("amount NaN/음수는 무시 (방어적)", () => {
+    const ledger = [
+      entry({ id: "1", date: "2026-01-01", kind: "transfer", amount: NaN, toAccountId: moimId }),
+      entry({ id: "2", date: "2026-01-02", kind: "transfer", amount: -1000, toAccountId: moimId }),
+      entry({ id: "3", date: "2026-01-03", kind: "transfer", amount: 100, toAccountId: moimId }),
+    ];
+    const r = computeMoimAccountFlow(ledger, moimId, months);
+    expect(r.months[0].myTransfer).toBe(100);
   });
 });

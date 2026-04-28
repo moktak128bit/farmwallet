@@ -687,6 +687,7 @@ export const App: React.FC = () => {
               ledgerTemplates={data.ledgerTemplates ?? []}
               onChangeLedger={(ledger) => setDataWithHistory((prev) => ({ ...prev, ledger }))}
               onChangeTemplates={(ledgerTemplates) => setDataWithHistory((prev) => ({ ...prev, ledgerTemplates }))}
+              onChangeCategoryPresets={(categoryPresets) => setDataWithHistory((prev) => ({ ...prev, categoryPresets }))}
               copyRequest={copyRequest}
               onCopyComplete={() => setCopyRequest(null)}
               highlightLedgerId={highlightLedgerId}

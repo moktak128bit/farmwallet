@@ -80,3 +80,128 @@ export function splitDateMoimVsPersonal(
   }
   return { dateMoim, datePersonal };
 }
+
+export interface DateAccountUtilization {
+  /** 분담 통장에서 결제된 데이트 합 */
+  viaSharedAccount: number;
+  /** 개인 통장/카드에서 결제된 데이트 합 */
+  viaPersonal: number;
+  /** 전체 데이트성 지출 합 */
+  totalDate: number;
+  /** 분담 통장 활용률 (0~1). totalDate=0이면 0. */
+  utilizationRate: number;
+  /** 현재 본인 부담 추정: 분담통장 결제의 50% + 개인 결제 100%. */
+  currentSelfBurden: number;
+  /** 모든 데이트를 분담 통장으로 결제했을 때 본인 부담 (50/50 가정). */
+  optimalSelfBurden: number;
+  /** 분담 통장 활용 미흡으로 인한 추가 부담 = currentSelfBurden − optimalSelfBurden. */
+  lostShareSavings: number;
+}
+
+/**
+ * 분담 통장 활용도와 잠재 절감액 계산.
+ * 입력은 splitDateMoimVsPersonal 결과를 그대로 받아서 파생값만 계산하는 순수 함수.
+ *
+ * 핵심 가설: 모든 데이트가 분담 통장에서 결제되면 본인 부담은 정확히 50%.
+ * 현재 개인 결제분은 100% 본인 부담 → 그 절반이 "분담 못 한 손실"로 계산됨.
+ * (정산으로 일부 회수 가능하지만 그건 별개 — 여기선 분담 시스템 자체의 비효율만 측정)
+ */
+export interface MoimFlowMonth {
+  month: string;            // "YYYY-MM"
+  myTransfer: number;       // 본인 계좌 → 분담 통장 (kind=transfer)
+  partnerDeposit: number;   // 외부 입금 (kind=income, 상대 입금·캐시백 등)
+  spending: number;         // 분담 통장 출금 합 (kind=expense)
+  balanceChange: number;    // myTransfer + partnerDeposit - spending
+}
+
+export interface MoimFlowAnalysis {
+  months: MoimFlowMonth[];
+  cumBalance: number;       // 모든 월 balanceChange 누적 (= 현재 모임통장 잔액 변동)
+  anomalies: { month: string; type: "partner_low"; message: string }[];
+}
+
+/**
+ * 분담 통장의 월별 자금 흐름 분석.
+ *
+ * @param ledger 전체 ledger
+ * @param accountId 분담 통장 id (Settings에서 설정한 dateAccountId)
+ * @param months 분석할 월 배열 ("YYYY-MM" 정렬됨)
+ *
+ * 이상 감지 (anomalies):
+ *  - partner_low: 어떤 달의 partnerDeposit이 다른 달 평균의 50% 미만이면 "상대 입금 누락 가능"
+ *    (예: 평균 30만인데 한 달 1500원만 입금 → 자동 이체 실패 가능성)
+ */
+export function computeMoimAccountFlow(
+  ledger: LedgerEntry[],
+  accountId: string | null,
+  months: string[]
+): MoimFlowAnalysis {
+  if (!accountId || months.length === 0) {
+    return { months: [], cumBalance: 0, anomalies: [] };
+  }
+
+  const byMonth = new Map<string, MoimFlowMonth>();
+  for (const m of months) {
+    byMonth.set(m, { month: m, myTransfer: 0, partnerDeposit: 0, spending: 0, balanceChange: 0 });
+  }
+
+  for (const l of ledger) {
+    const m = l.date?.slice(0, 7);
+    if (!m || !byMonth.has(m)) continue;
+    const row = byMonth.get(m)!;
+    const amount = Number(l.amount);
+    if (!Number.isFinite(amount) || amount <= 0) continue;
+
+    if (l.kind === "transfer" && l.toAccountId === accountId) {
+      row.myTransfer += amount;
+    } else if (l.kind === "income" && l.toAccountId === accountId) {
+      row.partnerDeposit += amount;
+    } else if (l.kind === "expense" && l.fromAccountId === accountId) {
+      row.spending += amount;
+    }
+  }
+
+  const result: MoimFlowMonth[] = [];
+  let cumBalance = 0;
+  for (const m of months) {
+    const row = byMonth.get(m)!;
+    row.balanceChange = row.myTransfer + row.partnerDeposit - row.spending;
+    cumBalance += row.balanceChange;
+    result.push(row);
+  }
+
+  // 이상 감지: 상대 입금(partnerDeposit) 평균 대비 50% 미만인 월
+  const partnerDeposits = result.map((r) => r.partnerDeposit).filter((v) => v > 0);
+  const anomalies: { month: string; type: "partner_low"; message: string }[] = [];
+  if (partnerDeposits.length >= 2) {
+    const avg = partnerDeposits.reduce((s, v) => s + v, 0) / partnerDeposits.length;
+    const threshold = avg * 0.5;
+    for (const r of result) {
+      if (r.partnerDeposit > 0 && r.partnerDeposit < threshold) {
+        anomalies.push({
+          month: r.month,
+          type: "partner_low",
+          message: `상대 입금 ${r.partnerDeposit.toLocaleString()}원 (평균 ${Math.round(avg).toLocaleString()}원의 ${Math.round((r.partnerDeposit / avg) * 100)}%)`,
+        });
+      }
+    }
+  }
+
+  return { months: result, cumBalance, anomalies };
+}
+
+export function computeDateAccountUtilization(split: DateMoimSplit): DateAccountUtilization {
+  const total = split.dateMoim + split.datePersonal;
+  const utilizationRate = total > 0 ? split.dateMoim / total : 0;
+  const currentSelfBurden = split.dateMoim / 2 + split.datePersonal;
+  const optimalSelfBurden = total / 2;
+  return {
+    viaSharedAccount: split.dateMoim,
+    viaPersonal: split.datePersonal,
+    totalDate: total,
+    utilizationRate,
+    currentSelfBurden,
+    optimalSelfBurden,
+    lostShareSavings: currentSelfBurden - optimalSelfBurden,
+  };
+}

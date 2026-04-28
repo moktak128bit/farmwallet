@@ -72,6 +72,28 @@ export const isKRWStock = (ticker?: string): boolean => {
   return false;
 };
 
+/**
+ * 거래(StockTrade) 1건의 totalAmount를 KRW로 환산.
+ *
+ * 규칙:
+ *  - KRW 종목: totalAmount 그대로 (이미 원화)
+ *  - USD 종목: t.fxRateAtTrade 우선 사용, 없으면 fallbackFx (현재 환율) 적용
+ *  - USD 종목인데 둘 다 없으면 0 반환 — 단위 섞임 방지 ("USD 금액을 KRW 합계에 그대로 더하기" 방지)
+ *
+ * 인사이트·대시보드 어디서든 동일 규칙을 쓰도록 통합. 기존 인라인 `t.fxRateAtTrade ? ... : t.totalAmount`
+ * 패턴은 fxRateAtTrade 누락 USD 거래에서 USD↔KRW 단위 혼합 버그가 있었음.
+ */
+export function tradeAmountKRW(
+  t: { ticker: string; totalAmount: number; fxRateAtTrade?: number | null },
+  fallbackFx?: number | null
+): number {
+  if (!isUSDStock(t.ticker)) return t.totalAmount;
+  const tradeFx = t.fxRateAtTrade ?? 0;
+  if (tradeFx > 0) return t.totalAmount * tradeFx;
+  if (fallbackFx && fallbackFx > 0) return t.totalAmount * fallbackFx;
+  return 0;
+}
+
 export function extractTickerFromText(text: string): string | null {
   if (!text || typeof text !== "string") return null;
   const sixDigit = text.match(/([0-9]{6})/);

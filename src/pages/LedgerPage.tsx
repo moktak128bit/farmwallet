@@ -25,6 +25,9 @@ import { validateLedgerForm } from "../features/ledger/validateLedgerForm";
 import { isSavingsExpenseEntry, makeIsSavingsExpense } from "../utils/category";
 import { parseAmount as sharedParseAmount, formatAmount as sharedFormatAmount } from "../utils/parseAmount";
 import { newIdWithPrefix } from "../utils/id";
+import { DailyBudgetBar } from "../features/ledger/DailyBudgetBar";
+import { DEFAULT_DAILY_BUDGET, todaySpend, weeklySpend, weeklyLimit, getCurrentWeekRange } from "../utils/dailyBudget";
+import { useAppStore } from "../store/appStore";
 import { getKoreaTime, getThisMonthKST } from "../utils/date";
 import { toast } from "react-hot-toast";
 import { ERROR_MESSAGES } from "../constants/errorMessages";
@@ -80,6 +83,8 @@ export const LedgerView: React.FC<Props> = ({
 }) => {
   const deferredLedger = useDeferredValue(ledger);
   const deferredTrades = useDeferredValue(trades);
+  // dailyBudget 설정 — store에서 직접 읽음 (props로 안 받음)
+  const dailyBudgetConfig = useAppStore((s) => s.data.dailyBudget) ?? DEFAULT_DAILY_BUDGET;
   const [form, setForm] = useState(createDefaultForm);
   // 기본값을 월별 보기로 설정하여 성능 최적화
   const [viewMode, setViewMode] = useState<"all" | "monthly">("monthly");
@@ -125,10 +130,6 @@ export const LedgerView: React.FC<Props> = ({
   });
   const [showDailySummary, setShowDailySummary] = useState<boolean>(() => {
     try { return localStorage.getItem("fw-daily-summary") !== "false"; } catch { return true; }
-  });
-  // 필터 영역 접기/펼치기 (기본 접힘)
-  const [filtersExpanded, setFiltersExpanded] = useState<boolean>(() => {
-    try { return localStorage.getItem("fw-ledger-filters-expanded") === "true"; } catch { return false; }
   });
   // 정렬 상태
   type LedgerSortKey =
@@ -224,11 +225,6 @@ export const LedgerView: React.FC<Props> = ({
     try { localStorage.setItem("fw-ledger-form-expanded", String(formExpanded)); } catch {}
   }, [formExpanded]);
 
-  // 필터 펼침 상태 localStorage 동기화
-  useEffect(() => {
-    try { localStorage.setItem("fw-ledger-filters-expanded", String(filtersExpanded)); } catch {}
-  }, [filtersExpanded]);
-  
   // 정렬 함수
   const toggleLedgerSort = (key: LedgerSortKey) => {
     setLedgerSort((prev) => ({
@@ -400,6 +396,36 @@ export const LedgerView: React.FC<Props> = ({
 
     const isFixed = false;
 
+    // 하루 예산 사전 경고: kindForTab=expense이고 dailyBudget enabled일 때만
+    // 이 거래로 인해 한도 초과 시 confirm 표시 (취소 시 입력 안 됨)
+    if (
+      dailyBudgetConfig.enabled &&
+      dailyBudgetConfig.warnOnExceed &&
+      kindForTab === "expense" &&
+      ledgerTab !== "creditPayment"
+    ) {
+      const isExcludedCat = dailyBudgetConfig.excludedCategories.includes("지출");
+      const subToCheck = form.mainCategory?.trim() || "";
+      const isExcludedSub = subToCheck && dailyBudgetConfig.excludedSubCategories.includes(subToCheck);
+      if (!isExcludedCat && !isExcludedSub) {
+        const isWeekly = dailyBudgetConfig.mode === "weekly";
+        const limit = isWeekly ? weeklyLimit(dailyBudgetConfig) : dailyBudgetConfig.dailyLimit;
+        const range = isWeekly ? getCurrentWeekRange(form.date) : null;
+        const currentSpent = isWeekly && range
+          ? weeklySpend(ledger, range.start, range.end, dailyBudgetConfig)
+          : todaySpend(ledger, dailyBudgetConfig);
+        const projected = currentSpent + amount;
+        if (projected > limit) {
+          const periodLabel = isWeekly ? "이번 주" : "오늘";
+          const confirmMsg =
+            `이 거래(₩${amount.toLocaleString()})를 추가하면 ${periodLabel} 한도 초과:\n` +
+            `  현재 ₩${Math.round(currentSpent).toLocaleString()} → ₩${Math.round(projected).toLocaleString()} (한도 ₩${limit.toLocaleString()})\n` +
+            `  ${Math.round(projected - limit).toLocaleString()}원 초과\n\n계속 추가하시겠습니까?`;
+          if (!window.confirm(confirmMsg)) return;
+        }
+      }
+    }
+
     // 카테고리 값 정규화 (빈 문자열 체크)
     const normalizedMainCategory = form.mainCategory?.trim() || "";
     const normalizedSubCategory = form.subCategory?.trim() || "";
@@ -506,7 +532,7 @@ export const LedgerView: React.FC<Props> = ({
         isFixedExpense: false
       };
     });
-  }, [isFormValid, validateForm, kindForTab, form, parseAmount, effectiveFormKind, ledger, onChangeLedger, ledgerTab]);
+  }, [isFormValid, validateForm, kindForTab, form, parseAmount, effectiveFormKind, ledger, onChangeLedger, ledgerTab, dailyBudgetConfig]);
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
@@ -763,50 +789,6 @@ export const LedgerView: React.FC<Props> = ({
     endDate?: string;
   }>({});
 
-  // 빠른 필터 함수들
-  const applyQuickFilter = (filterType: "thisMonth" | "lastMonth" | "thisYear" | "last3Months" | "last6Months" | "lastYear") => {
-    // 한국 시간 기준으로 계산
-    const koreaTime = getKoreaTime();
-    const year = koreaTime.getFullYear();
-    const month = koreaTime.getMonth();
-    const day = koreaTime.getDate();
-    let startDate: string;
-    const endDateStr = `${year}-${String(month + 1).padStart(2, "0")}-${String(day).padStart(2, "0")}`;
-    let endDate: string = endDateStr;
-
-    switch (filterType) {
-      case "thisMonth":
-        startDate = `${year}-${String(month + 1).padStart(2, "0")}-01`;
-        break;
-      case "lastMonth":
-        const lastMonth = new Date(year, month - 1, 1);
-        const lastMonthYear = lastMonth.getFullYear();
-        const lastMonthMonth = lastMonth.getMonth();
-        startDate = `${lastMonthYear}-${String(lastMonthMonth + 1).padStart(2, "0")}-01`;
-        endDate = `${lastMonthYear}-${String(lastMonthMonth + 1).padStart(2, "0")}-${new Date(lastMonthYear, lastMonthMonth + 1, 0).getDate()}`;
-        break;
-      case "thisYear":
-        startDate = `${year}-01-01`;
-        break;
-      case "last3Months":
-        const threeMonthsAgo = new Date(year, month - 3, 1);
-        startDate = `${threeMonthsAgo.getFullYear()}-${String(threeMonthsAgo.getMonth() + 1).padStart(2, "0")}-01`;
-        break;
-      case "last6Months":
-        const sixMonthsAgo = new Date(year, month - 6, 1);
-        startDate = `${sixMonthsAgo.getFullYear()}-${String(sixMonthsAgo.getMonth() + 1).padStart(2, "0")}-01`;
-        break;
-      case "lastYear":
-        const oneYearAgo = new Date(year - 1, month, 1);
-        startDate = `${oneYearAgo.getFullYear()}-${String(oneYearAgo.getMonth() + 1).padStart(2, "0")}-01`;
-        endDate = `${year - 1}-12-31`;
-        break;
-    }
-
-    setDateFilter({ startDate, endDate });
-    setViewMode("all");
-  };
-
   const clearDateFilter = () => {
     setDateFilter({});
   };
@@ -814,6 +796,7 @@ export const LedgerView: React.FC<Props> = ({
   const clearAllFilters = () => {
     setFilterMainCategory(undefined);
     setFilterSubCategory(undefined);
+    setFilterDetailCategory(undefined);
     setFilterFromAccountId(undefined);
     setFilterToAccountId(undefined);
     setFilterAccountId(null);
@@ -823,6 +806,7 @@ export const LedgerView: React.FC<Props> = ({
     setSearchQuery("");
     setDateFilter({});
     setForm((p) => ({ ...p, mainCategory: "", subCategory: "", fromAccountId: "", toAccountId: "" }));
+    // 월별 보기 / 종류 탭은 사용자가 유지 — 일부러 건드리지 않음
   };
 
   useEffect(() => {
@@ -1349,69 +1333,6 @@ export const LedgerView: React.FC<Props> = ({
   const hasTagFilter = filterTagsInput.trim() !== "";
   const hasFilter = hasCategoryFilter || hasDateFilter || hasAmountFilter || hasTagFilter || !!filterAccountId || searchQuery.trim() !== "";
 
-  // 활성 필터 개수 (검색창은 항상 펼쳐져 있으므로 제외)
-  const activeFilterCount =
-    (ledgerTab !== "all" ? 1 : 0) +
-    (filterMainCategory ? 1 : 0) +
-    (filterSubCategory ? 1 : 0) +
-    (filterDetailCategory ? 1 : 0) +
-    (filterAccountId ? 1 : 0) +
-    (filterFromAccountId ? 1 : 0) +
-    (filterToAccountId ? 1 : 0) +
-    (hasDateFilter ? 1 : 0) +
-    (viewMode === "monthly" && selectedMonths.size > 0 ? 1 : 0) +
-    (hasAmountFilter ? 1 : 0) +
-    (hasTagFilter ? 1 : 0);
-
-  // 현재 탭 기준 계좌 버튼 목록 (ledgerByTab에 등장하는 계좌만)
-  const accountsWithLedger = useMemo(() => {
-    const ids = new Set<string>();
-    for (const l of ledgerByTab) {
-      if (l.fromAccountId) ids.add(l.fromAccountId);
-      if (l.toAccountId) ids.add(l.toAccountId);
-    }
-    return accounts.filter((a) => ids.has(a.id));
-  }, [ledgerByTab, accounts]);
-
-  // 현재 탭 기준 대분류 목록 (모든 탭 동일: l.category 그대로, 등장 빈도순)
-  const categoriesInTab = useMemo(() => {
-    const counts = new Map<string, number>();
-    for (const l of ledgerByTab) {
-      const cat = l.category?.trim();
-      if (cat) counts.set(cat, (counts.get(cat) || 0) + 1);
-    }
-    return [...counts.entries()]
-      .sort((a, b) => b[1] - a[1])
-      .map(([cat]) => cat);
-  }, [ledgerByTab]);
-
-  // 중분류 목록 (모든 탭 동일: l.subCategory, 대분류 선택 시 해당 대분류만)
-  const subCategoriesInTab = useMemo(() => {
-    const counts = new Map<string, number>();
-    for (const l of ledgerByTab) {
-      if (filterMainCategory && l.category !== filterMainCategory) continue;
-      const sub = l.subCategory?.trim();
-      if (sub) counts.set(sub, (counts.get(sub) || 0) + 1);
-    }
-    return [...counts.entries()]
-      .sort((a, b) => b[1] - a[1])
-      .map(([sub]) => sub);
-  }, [ledgerByTab, filterMainCategory]);
-
-  // 소분류 목록 (모든 탭 동일: l.detailCategory, 상위 선택 시 해당 하위만)
-  const detailCategoriesInTab = useMemo(() => {
-    const counts = new Map<string, number>();
-    for (const l of ledgerByTab) {
-      if (filterMainCategory && l.category !== filterMainCategory) continue;
-      if (filterSubCategory && l.subCategory !== filterSubCategory) continue;
-      const det = l.detailCategory?.trim();
-      if (det) counts.set(det, (counts.get(det) || 0) + 1);
-    }
-    return [...counts.entries()]
-      .sort((a, b) => b[1] - a[1])
-      .map(([det]) => det);
-  }, [ledgerByTab, filterMainCategory, filterSubCategory]);
-
   const filterFromAccount = filterFromAccountId ? accounts.find((a) => a.id === filterFromAccountId) : null;
   const filterFromAccountName = filterFromAccountId ? (filterFromAccount?.name || filterFromAccount?.id || filterFromAccountId) : null;
   const filterToAccount = filterToAccountId ? accounts.find((a) => a.id === filterToAccountId) : null;
@@ -1419,6 +1340,7 @@ export const LedgerView: React.FC<Props> = ({
 
   return (
     <div>
+      <DailyBudgetBar ledger={ledger} config={dailyBudgetConfig} />
       <div className="section-header" style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
         <h2>가계부 (거래 입력)</h2>
         <div style={{ display: "flex", gap: 8 }}>
@@ -2452,410 +2374,43 @@ export const LedgerView: React.FC<Props> = ({
           )}
         </div>
 
-        {/* 필터 펼치기/접기 토글 */}
-        <button
-          type="button"
-          onClick={() => setFiltersExpanded((v) => !v)}
-          aria-expanded={filtersExpanded}
-          style={{
-            width: "100%",
-            display: "flex",
-            alignItems: "center",
-            justifyContent: "space-between",
-            padding: "10px 12px",
-            marginBottom: filtersExpanded ? 14 : 0,
-            fontSize: 14,
-            fontWeight: 600,
-            borderRadius: 8,
-            border: "1px solid var(--border)",
-            background: "var(--surface)",
-            color: "var(--text)",
-            cursor: "pointer",
-          }}
-        >
-          <span style={{ display: "inline-flex", alignItems: "center", gap: 8 }}>
-            <span
-              style={{
-                display: "inline-block",
-                transform: filtersExpanded ? "rotate(90deg)" : "rotate(0deg)",
-                transition: "transform 0.15s",
-              }}
-            >
-              ▶
-            </span>
-            필터
-            {activeFilterCount > 0 && (
-              <span
-                style={{
-                  display: "inline-block",
-                  minWidth: 20,
-                  padding: "2px 8px",
-                  fontSize: 11,
-                  fontWeight: 700,
-                  borderRadius: 999,
-                  background: "var(--primary)",
-                  color: "white",
-                  textAlign: "center",
-                }}
-              >
-                {activeFilterCount}
-              </span>
-            )}
-          </span>
-          <span style={{ fontSize: 12, color: "var(--text-muted)", fontWeight: 500 }}>
-            {filtersExpanded ? "접기" : "펼치기"}
-          </span>
-        </button>
-
-        {filtersExpanded && <>
-
-        {/* 종류 필터 — 큰 버튼 */}
-        <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(100px, 1fr))", gap: 8, marginBottom: 14 }}>
-          {([
-            ["all", "전체"],
-            ["income", "수입"],
-            ["expense", "지출"],
-            ["transfer", "이체"],
-          ] as const).map(([tab, label]) => (
-            <button
-              key={tab}
-              type="button"
-              onClick={() => setLedgerTab(tab)}
-              style={{
-                padding: "12px 8px",
-                fontSize: 15,
-                fontWeight: 700,
-                borderRadius: 10,
-                border: ledgerTab === tab ? "2px solid var(--primary)" : "2px solid var(--border)",
-                background: ledgerTab === tab ? "var(--primary)" : "var(--surface)",
-                color: ledgerTab === tab ? "white" : "var(--text)",
-                cursor: "pointer",
-                transition: "all 0.15s",
-              }}
-            >
-              {label}
-            </button>
-          ))}
+        {/* 월별 보기 + 필터 초기화 — 검색바 아래 우측 */}
+        <div style={{ display: "flex", justifyContent: "flex-end", gap: 8 }}>
+          <button
+            type="button"
+            onClick={clearAllFilters}
+            title="검색·카테고리·계좌·금액·태그·날짜 필터 모두 초기화 (월별/종류 탭은 유지)"
+            style={{
+              padding: "8px 16px",
+              fontSize: 13,
+              fontWeight: 600,
+              borderRadius: 8,
+              border: "1px solid var(--border)",
+              background: "var(--surface)",
+              color: "var(--text-muted)",
+              cursor: "pointer",
+            }}
+          >
+            🔄 필터 초기화
+          </button>
           <button
             type="button"
             onClick={() => setViewMode(viewMode === "monthly" ? "all" : "monthly")}
             title={viewMode === "monthly" ? "월별 보기 끄기 (전체 기간)" : "월별 보기 켜기"}
             style={{
-              padding: "12px 8px",
-              fontSize: 15,
+              padding: "8px 16px",
+              fontSize: 13,
               fontWeight: 700,
-              borderRadius: 10,
+              borderRadius: 8,
               border: viewMode === "monthly" ? "2px solid var(--primary)" : "2px solid var(--border)",
               background: viewMode === "monthly" ? "var(--primary)" : "var(--surface)",
               color: viewMode === "monthly" ? "white" : "var(--text)",
               cursor: "pointer",
-              transition: "all 0.15s",
             }}
           >
             {viewMode === "monthly" ? "월별 ✓" : "월별"}
           </button>
         </div>
-
-        {/* 대분류 필터 — 종류 탭이 전체가 아닐 때, 또는 전체 탭이지만 카테고리가 2개 이상일 때 */}
-        {categoriesInTab.length > 1 && (
-          <div style={{ marginBottom: 12 }}>
-            <div style={{ fontSize: 12, fontWeight: 600, color: "var(--text-muted)", marginBottom: 6 }}>대분류</div>
-            <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
-              <button
-                type="button"
-                onClick={() => { setFilterMainCategory(undefined); setFilterSubCategory(undefined); setFilterDetailCategory(undefined); }}
-                style={{
-                  padding: "8px 16px",
-                  fontSize: 13,
-                  fontWeight: 600,
-                  borderRadius: 8,
-                  border: !filterMainCategory ? "2px solid var(--primary)" : "1px solid var(--border)",
-                  background: !filterMainCategory ? "var(--primary)" : "var(--surface)",
-                  color: !filterMainCategory ? "white" : "var(--text)",
-                  cursor: "pointer",
-                }}
-              >
-                전체
-              </button>
-              {categoriesInTab.map((cat) => (
-                <button
-                  key={cat}
-                  type="button"
-                  onClick={() => {
-                    if (filterMainCategory === cat) {
-                      setFilterMainCategory(undefined);
-                      setFilterSubCategory(undefined);
-                      setFilterDetailCategory(undefined);
-                    } else {
-                      setFilterMainCategory(cat);
-                      setFilterSubCategory(undefined);
-                      setFilterDetailCategory(undefined);
-                    }
-                  }}
-                  style={{
-                    padding: "8px 16px",
-                    fontSize: 13,
-                    fontWeight: 600,
-                    borderRadius: 8,
-                    border: filterMainCategory === cat ? "2px solid var(--primary)" : "1px solid var(--border)",
-                    background: filterMainCategory === cat ? "var(--primary)" : "var(--surface)",
-                    color: filterMainCategory === cat ? "white" : "var(--text)",
-                    cursor: "pointer",
-                  }}
-                >
-                  {cat}
-                </button>
-              ))}
-            </div>
-          </div>
-        )}
-
-        {/* 중분류 필터 — 대분류 선택 시 표시 */}
-        {filterMainCategory && subCategoriesInTab.length > 1 && (
-          <div style={{ marginBottom: 12 }}>
-            <div style={{ fontSize: 12, fontWeight: 600, color: "var(--text-muted)", marginBottom: 6 }}>중분류{filterMainCategory ? ` (${filterMainCategory})` : ""}</div>
-            <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
-              <button
-                type="button"
-                onClick={() => { setFilterSubCategory(undefined); setFilterDetailCategory(undefined); }}
-                style={{
-                  padding: "8px 16px",
-                  fontSize: 13,
-                  fontWeight: 600,
-                  borderRadius: 8,
-                  border: !filterSubCategory ? "2px solid var(--primary)" : "1px solid var(--border)",
-                  background: !filterSubCategory ? "var(--primary)" : "var(--surface)",
-                  color: !filterSubCategory ? "white" : "var(--text)",
-                  cursor: "pointer",
-                }}
-              >
-                전체
-              </button>
-              {subCategoriesInTab.map((sub) => (
-                <button
-                  key={sub}
-                  type="button"
-                  onClick={() => { setFilterSubCategory(filterSubCategory === sub ? undefined : sub); setFilterDetailCategory(undefined); }}
-                  style={{
-                    padding: "8px 16px",
-                    fontSize: 13,
-                    fontWeight: 600,
-                    borderRadius: 8,
-                    border: filterSubCategory === sub ? "2px solid var(--primary)" : "1px solid var(--border)",
-                    background: filterSubCategory === sub ? "var(--primary)" : "var(--surface)",
-                    color: filterSubCategory === sub ? "white" : "var(--text)",
-                    cursor: "pointer",
-                  }}
-                >
-                  {sub}
-                </button>
-              ))}
-            </div>
-          </div>
-        )}
-
-        {/* 소분류 필터 — 중분류 선택 시 표시 */}
-        {filterSubCategory && detailCategoriesInTab.length > 1 && (
-          <div style={{ marginBottom: 12 }}>
-            <div style={{ fontSize: 12, fontWeight: 600, color: "var(--text-muted)", marginBottom: 6 }}>소분류{filterSubCategory ? ` (${filterSubCategory})` : ""}</div>
-            <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
-              <button
-                type="button"
-                onClick={() => setFilterDetailCategory(undefined)}
-                style={{
-                  padding: "8px 16px",
-                  fontSize: 13,
-                  fontWeight: 600,
-                  borderRadius: 8,
-                  border: !filterDetailCategory ? "2px solid var(--primary)" : "1px solid var(--border)",
-                  background: !filterDetailCategory ? "var(--primary)" : "var(--surface)",
-                  color: !filterDetailCategory ? "white" : "var(--text)",
-                  cursor: "pointer",
-                }}
-              >
-                전체
-              </button>
-              {detailCategoriesInTab.map((det) => (
-                <button
-                  key={det}
-                  type="button"
-                  onClick={() => setFilterDetailCategory(filterDetailCategory === det ? undefined : det)}
-                  style={{
-                    padding: "8px 16px",
-                    fontSize: 13,
-                    fontWeight: 600,
-                    borderRadius: 8,
-                    border: filterDetailCategory === det ? "2px solid var(--primary)" : "1px solid var(--border)",
-                    background: filterDetailCategory === det ? "var(--primary)" : "var(--surface)",
-                    color: filterDetailCategory === det ? "white" : "var(--text)",
-                    cursor: "pointer",
-                  }}
-                >
-                  {det}
-                </button>
-              ))}
-            </div>
-          </div>
-        )}
-
-        {/* 계좌 필터 */}
-        {accountsWithLedger.length > 1 && (
-          <div style={{ marginBottom: 12 }}>
-            <div style={{ fontSize: 12, fontWeight: 600, color: "var(--text-muted)", marginBottom: 6 }}>계좌</div>
-            <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
-              <button
-                type="button"
-                onClick={() => setFilterAccountId(null)}
-                style={{
-                  padding: "8px 16px",
-                  fontSize: 13,
-                  fontWeight: 600,
-                  borderRadius: 8,
-                  border: filterAccountId === null ? "2px solid var(--primary)" : "1px solid var(--border)",
-                  background: filterAccountId === null ? "var(--primary)" : "var(--surface)",
-                  color: filterAccountId === null ? "white" : "var(--text)",
-                  cursor: "pointer",
-                }}
-              >
-                전체
-              </button>
-              {accountsWithLedger.map((acc) => (
-                <button
-                  key={acc.id}
-                  type="button"
-                  onClick={() => setFilterAccountId(filterAccountId === acc.id ? null : acc.id)}
-                  style={{
-                    padding: "8px 16px",
-                    fontSize: 13,
-                    fontWeight: 600,
-                    borderRadius: 8,
-                    border: filterAccountId === acc.id ? "2px solid var(--primary)" : "1px solid var(--border)",
-                    background: filterAccountId === acc.id ? "var(--primary)" : "var(--surface)",
-                    color: filterAccountId === acc.id ? "white" : "var(--text)",
-                    cursor: "pointer",
-                  }}
-                >
-                  {acc.name}
-                </button>
-              ))}
-            </div>
-          </div>
-        )}
-
-        {/* 기간 필터 */}
-        <div style={{ marginBottom: 12 }}>
-          <div style={{ fontSize: 12, fontWeight: 600, color: "var(--text-muted)", marginBottom: 6 }}>기간</div>
-          <div style={{ display: "flex", gap: 6, flexWrap: "wrap", alignItems: "center" }}>
-            <button type="button" onClick={() => { setViewMode("monthly"); clearDateFilter(); }}
-              style={{ padding: "8px 16px", fontSize: 13, fontWeight: 600, borderRadius: 8, border: viewMode === "monthly" ? "2px solid var(--primary)" : "1px solid var(--border)", background: viewMode === "monthly" ? "var(--primary)" : "var(--surface)", color: viewMode === "monthly" ? "white" : "var(--text)", cursor: "pointer" }}>
-              월별
-            </button>
-            <button type="button" onClick={() => { setViewMode("all"); clearDateFilter(); }}
-              style={{ padding: "8px 16px", fontSize: 13, fontWeight: 600, borderRadius: 8, border: viewMode === "all" && !dateFilter.startDate ? "2px solid var(--primary)" : "1px solid var(--border)", background: viewMode === "all" && !dateFilter.startDate ? "var(--primary)" : "var(--surface)", color: viewMode === "all" && !dateFilter.startDate ? "white" : "var(--text)", cursor: "pointer" }}>
-              전체
-            </button>
-            <span style={{ width: 1, height: 24, background: "var(--border)", margin: "0 4px" }} />
-            {([
-              ["thisMonth", "이번 달"],
-              ["lastMonth", "지난 달"],
-              ["thisYear", "올해"],
-              ["last3Months", "3개월"],
-              ["last6Months", "6개월"],
-              ["lastYear", "1년"],
-            ] as const).map(([key, label]) => (
-              <button key={key} type="button" onClick={() => applyQuickFilter(key)}
-                style={{ padding: "8px 12px", fontSize: 12, fontWeight: 600, borderRadius: 8, border: "1px solid var(--border)", background: "var(--surface)", color: "var(--text)", cursor: "pointer" }}>
-                {label}
-              </button>
-            ))}
-            <span style={{ width: 1, height: 24, background: "var(--border)", margin: "0 4px" }} />
-            <input type="date" value={dateFilter.startDate || ""} onChange={(e) => { setDateFilter((prev) => ({ ...prev, startDate: e.target.value || undefined })); setViewMode("all"); }}
-              style={{ padding: "8px 10px", fontSize: 12, borderRadius: 8, border: "1px solid var(--border)", background: "var(--surface)", color: "var(--text)" }} title="시작일" />
-            <span style={{ fontSize: 12, color: "var(--text-muted)" }}>~</span>
-            <input type="date" value={dateFilter.endDate || ""} onChange={(e) => { setDateFilter((prev) => ({ ...prev, endDate: e.target.value || undefined })); setViewMode("all"); }}
-              style={{ padding: "8px 10px", fontSize: 12, borderRadius: 8, border: "1px solid var(--border)", background: "var(--surface)", color: "var(--text)" }} title="종료일" />
-          </div>
-        </div>
-
-        {/* 상세 필터 + 액션 */}
-        <div style={{ display: "flex", gap: 8, flexWrap: "wrap", alignItems: "center" }}>
-          <input type="number" value={filterAmountMin ?? ""} onChange={(e) => { const v = e.target.value; setFilterAmountMin(v === "" ? undefined : Number(v) || undefined); }}
-            placeholder="최소 금액" style={{ padding: "8px 10px", fontSize: 12, borderRadius: 8, border: "1px solid var(--border)", width: 100, background: "var(--surface)", color: "var(--text)" }} />
-          <span style={{ fontSize: 12, color: "var(--text-muted)" }}>~</span>
-          <input type="number" value={filterAmountMax ?? ""} onChange={(e) => { const v = e.target.value; setFilterAmountMax(v === "" ? undefined : Number(v) || undefined); }}
-            placeholder="최대 금액" style={{ padding: "8px 10px", fontSize: 12, borderRadius: 8, border: "1px solid var(--border)", width: 100, background: "var(--surface)", color: "var(--text)" }} />
-          <input type="text" value={filterTagsInput} onChange={(e) => setFilterTagsInput(e.target.value)}
-            placeholder="태그 (쉼표 구분)" style={{ padding: "8px 10px", fontSize: 12, borderRadius: 8, border: "1px solid var(--border)", width: 150, background: "var(--surface)", color: "var(--text)" }} />
-          {hasFilter && (
-            <button type="button" onClick={clearAllFilters}
-              style={{ padding: "8px 16px", fontSize: 13, fontWeight: 700, borderRadius: 8, border: "2px solid var(--danger)", background: "transparent", color: "var(--danger)", cursor: "pointer" }}>
-              필터 초기화
-            </button>
-          )}
-          {filteredLedger.length > 0 && (
-            <button
-              type="button"
-              className="secondary"
-              onClick={() => {
-                const headers = [
-                  "date",
-                  "kind",
-                  "category",
-                  "subCategory",
-                  "description",
-                  "tags",
-                  "fromAccount",
-                  "toAccount",
-                  "grossAmount",
-                  "discountAmount",
-                  "amount"
-                ];
-                const rows = filteredLedger.map((l) => {
-                  const exportKind =
-                    l.kind === "income"
-                      ? "income"
-                      : l.kind === "transfer"
-                        ? "transfer"
-                        : isSavingsExpenseEntry(l, accounts, categoryPresets)
-                          ? "investment"
-                          : "expense";
-                  return [
-                    l.date,
-                    exportKind,
-                    l.category || "",
-                    l.subCategory || "",
-                    l.description || "",
-                    Array.isArray(l.tags) ? l.tags.join(",") : "",
-                    l.fromAccountId || "",
-                    l.toAccountId || "",
-                    String(ledgerEntryGross(l)),
-                    l.discountAmount != null && l.discountAmount > 0 ? String(l.discountAmount) : "",
-                    l.amount.toString()
-                  ];
-                });
-                const csvContent = [headers, ...rows].map((row) => row.map((cell) => `"${String(cell).replace(/"/g, '""')}"`).join(",")).join("\r\n");
-                const blob = new Blob(["\uFEFF" + csvContent], { type: "text/csv;charset=utf-8" });
-                const link = document.createElement("a");
-                const url = URL.createObjectURL(blob);
-                link.setAttribute("href", url);
-                const koreaTime = getKoreaTime();
-                const year = koreaTime.getFullYear();
-                const month = String(koreaTime.getMonth() + 1).padStart(2, "0");
-                const day = String(koreaTime.getDate()).padStart(2, "0");
-                link.setAttribute("download", `가계부_${year}-${month}-${day}.csv`);
-                link.style.visibility = "hidden";
-                document.body.appendChild(link);
-                link.click();
-                document.body.removeChild(link);
-                toast.success("CSV 파일로 내보냈습니다");
-              }}
-              style={{ fontSize: 12, padding: "6px 12px", marginLeft: 8 }}
-            >
-              📥 검색 결과 내보내기 (CSV)
-            </button>
-          )}
-        </div>
-        </>}
       </div>
       {viewMode === "monthly" && (
           <MonthNavigator

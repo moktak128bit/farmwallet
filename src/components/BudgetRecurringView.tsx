@@ -1,10 +1,11 @@
 import React, { useMemo, useState } from "react";
 import { toast } from "react-hot-toast";
 import { ERROR_MESSAGES } from "../constants/errorMessages";
-import type { Account, BudgetGoal, CategoryPresets, RecurringExpense, Recurrence, LedgerEntry } from "../types";
+import type { Account, BudgetGoal, CategoryPresets, RecurringExpense, Recurrence, LedgerEntry, DailyBudgetConfig } from "../types";
 import { BUDGET_ALL_CATEGORY } from "../types";
 import { parseIsoLocal, formatIsoLocal, getTodayKST } from "../utils/date";
 import { newIdWithPrefix } from "../utils/id";
+import { DEFAULT_DAILY_BUDGET } from "../utils/dailyBudget";
 
 interface Props {
   accounts: Account[];
@@ -15,6 +16,9 @@ interface Props {
   onChangeBudgets: (next: BudgetGoal[]) => void;
   ledger: LedgerEntry[];
   onChangeLedger: (next: LedgerEntry[]) => void;
+  /** "하루 N원" 원칙 설정 — 가계부 상단 진행바·streak·월간 카드와 연동 */
+  dailyBudget?: DailyBudgetConfig;
+  onChangeDailyBudget?: (next: DailyBudgetConfig) => void;
 }
 
 const freqLabel: Record<Recurrence, string> = {
@@ -49,7 +53,9 @@ export const BudgetRecurringView: React.FC<Props> = ({
   onChangeRecurring,
   onChangeBudgets,
   ledger,
-  onChangeLedger
+  onChangeLedger,
+  dailyBudget,
+  onChangeDailyBudget,
 }) => {
   const [recForm, setRecForm] = useState<RecurringExpense>(createRecurring);
   const [budForm, setBudForm] = useState<BudgetGoal>(createBudget);
@@ -198,19 +204,24 @@ export const BudgetRecurringView: React.FC<Props> = ({
 
     const toCreate: LedgerEntry[] = [];
     for (const rec of activeRecurring) {
+      // 중복 검사 — 3-level 구조 기준: sub === rec.category, det === rec.title
       const alreadyExists = ledger.some(
         (l) =>
           l.date?.startsWith(currentMonth) &&
-          l.category === rec.category &&
+          l.subCategory === rec.category &&
+          l.detailCategory === rec.title &&
           Math.abs(l.amount - rec.amount) < 100
       );
       if (!alreadyExists) {
+        const isTransfer = !!rec.toAccountId;
+        const userCat = rec.category || defaultExpenseCategory;
         toCreate.push({
           id: `REC-${rec.id}-${currentMonth}`,
           date: `${currentMonth}-01`,
-          kind: rec.toAccountId ? "transfer" : "expense",
-          category: rec.category || defaultExpenseCategory,
-          subCategory: rec.title,
+          kind: isTransfer ? "transfer" : "expense",
+          category: isTransfer ? "이체" : "지출",
+          subCategory: userCat,
+          detailCategory: rec.title || undefined,
           description: `[반복] ${rec.title}`,
           amount: rec.amount,
           fromAccountId: rec.fromAccountId,
@@ -302,15 +313,22 @@ export const BudgetRecurringView: React.FC<Props> = ({
 
       const pushIfInMonth = (date: Date) => {
         if (date >= monthStart && date <= monthEnd) {
-          const category =
+          // 3-level 구조로 저장:
+          //   - kind = transfer(저축성지출) 또는 expense
+          //   - category = "이체"/"지출" (대분류)
+          //   - subCategory = r.category (예: "구독비") — 사용자가 폼에 적은 카테고리
+          //   - detailCategory = r.title (예: "넷플릭스") — 구체 항목
+          const userCat =
             (r.category && r.category.trim()) ||
             (r.toAccountId ? "저축성지출" : defaultExpenseCategory);
+          const isTransfer = !!r.toAccountId;
           entries.push({
             id: newIdWithPrefix("L"),
             date: formatIsoLocal(date), // UTC가 아닌 로컬 yyyy-mm-dd
-            kind: r.toAccountId ? "transfer" : "expense",
-            category,
-            subCategory: r.title,
+            kind: isTransfer ? "transfer" : "expense",
+            category: isTransfer ? "이체" : "지출",
+            subCategory: userCat,
+            detailCategory: r.title || undefined,
             description: r.title,
             amount: r.amount,
             fromAccountId: r.fromAccountId,
@@ -342,6 +360,9 @@ export const BudgetRecurringView: React.FC<Props> = ({
     return entries;
   };
 
+  // 예산 사용액 계산 — 데이터 스키마: cat=지출/수입/이체/신용결제/재테크, sub=식비/.../중분류
+  // - 개별 카테고리 (예산 카테고리="식비"): cat="지출" AND sub="식비" 매칭
+  // - "전체" 모드: cat="지출"만 합산 (신용결제·재테크·저축성지출 자동 제외) + 사용자 지정 sub 제외
   const budgetUsage = useMemo(() => {
     return budgets.map((b) => {
       const isTotal = b.category === BUDGET_ALL_CATEGORY;
@@ -350,11 +371,15 @@ export const BudgetRecurringView: React.FC<Props> = ({
       for (const l of ledger) {
         if (l.kind !== "expense") continue;
         if (!l.date?.startsWith(currentMonth)) continue;
+        // 일반 지출만 (신용결제·재테크 등 cat이 "지출"이 아닌 항목은 모두 제외)
+        if (l.category !== "지출") continue;
         if (isTotal) {
-          if (excludeSet.has(l.category)) continue;
+          // "전체" 모드 — 사용자 지정 sub 제외 후 합산
+          if (l.subCategory && excludeSet.has(l.subCategory)) continue;
           spent += l.amount;
         } else {
-          if (l.category === b.category) spent += l.amount;
+          // 개별 카테고리 — sub === b.category (식비/유류교통비/...) 매칭
+          if (l.subCategory === b.category) spent += l.amount;
         }
       }
       const remain = b.monthlyLimit - spent;
@@ -367,6 +392,83 @@ export const BudgetRecurringView: React.FC<Props> = ({
       <div className="section-header">
         <h2>예산 / 반복 지출</h2>
       </div>
+
+      {/* 💰 하루 예산 한도 — 가계부 상단 진행 바·streak·월간 카드와 연동 */}
+      {onChangeDailyBudget && (() => {
+        const cfg: DailyBudgetConfig = dailyBudget ?? DEFAULT_DAILY_BUDGET;
+        const update = (patch: Partial<DailyBudgetConfig>) => onChangeDailyBudget({ ...cfg, ...patch });
+        return (
+          <div className="card" style={{ padding: 16, marginBottom: 16, borderLeft: "3px solid #10b981" }}>
+            <div className="card-title" style={{ marginBottom: 8 }}>💰 하루 예산 한도 (가계부 상단 진행 바와 연동)</div>
+            <p className="hint" style={{ marginBottom: 12 }}>
+              "하루 ₩N원 이하" 원칙. 켜면 가계부 상단에 진행 바가 표시되고, 한도 초과 입력 시 confirm 경고가 뜹니다.
+              <br />고정비(통신·구독·주거)와 카드결제·투자·이체는 자동 제외.
+            </p>
+            <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
+              <label style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                <input type="checkbox" checked={cfg.enabled} onChange={(e) => update({ enabled: e.target.checked })} />
+                <span style={{ fontWeight: 600 }}>활성화 (가계부 상단 진행 바·streak·월간 카드 표시)</span>
+              </label>
+              <div style={{ display: "flex", gap: 12, flexWrap: "wrap", alignItems: "center" }}>
+                <label style={{ display: "flex", alignItems: "center", gap: 6 }}>
+                  <span>일 한도 (원)</span>
+                  <input
+                    type="number"
+                    min={0}
+                    step={1000}
+                    value={cfg.dailyLimit}
+                    onChange={(e) => {
+                      const n = Number(e.target.value);
+                      if (Number.isFinite(n) && n >= 0) update({ dailyLimit: n });
+                    }}
+                    style={{ width: 120, padding: "6px 10px", borderRadius: 6 }}
+                  />
+                </label>
+                <label style={{ display: "flex", alignItems: "center", gap: 6 }}>
+                  <span>모드</span>
+                  <select
+                    value={cfg.mode}
+                    onChange={(e) => update({ mode: e.target.value as "daily" | "weekly" })}
+                    style={{ padding: "6px 10px", borderRadius: 6 }}
+                  >
+                    <option value="daily">하루 단위</option>
+                    <option value="weekly">주간 평균 (×7)</option>
+                  </select>
+                </label>
+                <label style={{ display: "flex", alignItems: "center", gap: 6 }}>
+                  <input type="checkbox" checked={cfg.warnOnExceed} onChange={(e) => update({ warnOnExceed: e.target.checked })} />
+                  <span>입력 초과 시 경고</span>
+                </label>
+              </div>
+              <details style={{ marginTop: 4 }}>
+                <summary style={{ cursor: "pointer", fontSize: 12, color: "var(--text-muted)" }}>제외 카테고리 설정 (고급)</summary>
+                <div style={{ display: "flex", flexDirection: "column", gap: 8, marginTop: 8 }}>
+                  <label style={{ display: "flex", flexDirection: "column", gap: 4 }}>
+                    <span style={{ fontSize: 12 }}>제외 대분류 (콤마 구분)</span>
+                    <input
+                      type="text"
+                      value={cfg.excludedCategories.join(", ")}
+                      onChange={(e) => update({ excludedCategories: e.target.value.split(",").map((s) => s.trim()).filter(Boolean) })}
+                      placeholder="신용결제, 재테크, 저축성지출, 이체, 수입"
+                      style={{ padding: "6px 10px", borderRadius: 6, fontSize: 12 }}
+                    />
+                  </label>
+                  <label style={{ display: "flex", flexDirection: "column", gap: 4 }}>
+                    <span style={{ fontSize: 12 }}>제외 중분류 (콤마 구분)</span>
+                    <input
+                      type="text"
+                      value={cfg.excludedSubCategories.join(", ")}
+                      onChange={(e) => update({ excludedSubCategories: e.target.value.split(",").map((s) => s.trim()).filter(Boolean) })}
+                      placeholder="통신비, 구독비, 주거비"
+                      style={{ padding: "6px 10px", borderRadius: 6, fontSize: 12 }}
+                    />
+                  </label>
+                </div>
+              </details>
+            </div>
+          </div>
+        );
+      })()}
 
       <div className="two-column">
         <div className="card form-grid">

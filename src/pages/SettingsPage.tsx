@@ -1045,6 +1045,7 @@ export const SettingsView: React.FC<Props> = ({
             🗑️ 모든 데이터 초기화하고 처음부터 다시 하기
           </button>
         </div>
+        {/* 💰 하루 예산 한도 카드는 가계부 상단 "예산 / 반복 지출" 탭으로 이동됨. */}
         <div className="card">
           <div className="card-title">자동 백업 스냅샷</div>
           <label style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 12 }}>

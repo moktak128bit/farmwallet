@@ -788,9 +788,11 @@ export const App: React.FC = () => {
               budgets={data.budgetGoals}
               categoryPresets={data.categoryPresets}
               ledger={data.ledger}
+              dailyBudget={data.dailyBudget}
               onChangeRecurring={(recurringExpenses) => setDataWithHistory((prev) => ({ ...prev, recurringExpenses }))}
               onChangeBudgets={(budgetGoals) => setDataWithHistory((prev) => ({ ...prev, budgetGoals }))}
               onChangeLedger={(ledger) => setDataWithHistory((prev) => ({ ...prev, ledger }))}
+              onChangeDailyBudget={(dailyBudget) => setDataWithHistory((prev) => ({ ...prev, dailyBudget }))}
             />
             </TabErrorBoundary>
           )}

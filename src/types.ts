@@ -432,6 +432,30 @@ export interface AppData {
   isaPortfolio?: IsaPortfolioItem[];
   /** 대시보드 투자 요약 카드의 사용자 설정 목표 */
   investmentGoals?: InvestmentGoals;
+  /** "하루 N원" 절약 원칙 — 가계부 상단 진행 바·streak·월간 달성률에 사용 */
+  dailyBudget?: DailyBudgetConfig;
+}
+
+export interface DailyBudgetConfig {
+  /** 활성화 여부. false면 진행 바·경고·streak 모두 미표시 */
+  enabled: boolean;
+  /** 일 한도 (KRW). 기본 30,000 */
+  dailyLimit: number;
+  /** "daily": 하루 단위, "weekly": 주간 평균 (= dailyLimit × 7) */
+  mode: "daily" | "weekly";
+  /**
+   * 한도 계산에서 제외할 category 목록 (대분류).
+   * 기본: ["신용결제", "재테크", "저축성지출", "이체", "수입"]
+   * → 카드값 갚기·투자·저축은 일상 소비가 아니라서 제외
+   */
+  excludedCategories: string[];
+  /**
+   * 한도 계산에서 제외할 subCategory 목록 (중분류).
+   * 기본: ["통신비", "구독비", "주거비"] — 고정비 제외
+   */
+  excludedSubCategories: string[];
+  /** 폼 제출 시 한도 초과면 confirm 다이얼로그 표시 */
+  warnOnExceed: boolean;
 }
 
 export interface InvestmentGoals {

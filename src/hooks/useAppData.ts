@@ -9,6 +9,7 @@ import {
 import { canonicalTickerForMatch, isKRWStock } from "../utils/finance";
 import { subscribeDataChanges } from "../services/tabSync";
 import { useUIStore } from "../store/uiStore";
+import { DRAFT_MAX_AGE_MS, STORAGE_KEYS } from "../constants/config";
 
 export function useAppData() {
   const data = useAppStore((s) => s.data);
@@ -37,6 +38,47 @@ export function useAppData() {
     }, 0);
     return () => clearTimeout(id);
   }, []);
+
+  // 디바운스 대기 중 크래시로 디스크에 못 들어간 미저장 변경이 있으면 복구 banner 노출.
+  // 정상 종료(beforeunload/pagehide flush 또는 정상 디바운스 commit)는 슬롯을 비워둔다.
+  // 슬롯이 7일 이상 묵었거나 main DATA와 동일하면 stale → 조용히 폐기.
+  const draftCheckDone = useRef(false);
+  useEffect(() => {
+    if (isLoading || draftCheckDone.current) return;
+    draftCheckDone.current = true;
+    if (typeof window === "undefined") return;
+    try {
+      const draftJson = window.localStorage.getItem(STORAGE_KEYS.DRAFT);
+      const draftAtRaw = window.localStorage.getItem(STORAGE_KEYS.DRAFT_AT);
+      if (!draftJson || !draftAtRaw) return;
+      const draftAt = Number.parseInt(draftAtRaw, 10);
+      const cleanup = () => {
+        try {
+          window.localStorage.removeItem(STORAGE_KEYS.DRAFT);
+          window.localStorage.removeItem(STORAGE_KEYS.DRAFT_AT);
+        } catch { /* */ }
+      };
+      if (!Number.isFinite(draftAt) || Date.now() - draftAt > DRAFT_MAX_AGE_MS) {
+        cleanup();
+        return;
+      }
+      // 메인 DATA와 같으면 stale (정상 commit 후 cleanup이 누락된 케이스) → 폐기
+      const mainJson = window.localStorage.getItem(STORAGE_KEYS.DATA) ?? "";
+      if (draftJson === mainJson) {
+        cleanup();
+        return;
+      }
+      // ledger 배열 존재만 확인하는 가벼운 sanity 체크 — 정식 검증은 사용자가 [복구] 누른 시점에
+      const parsed = JSON.parse(draftJson) as unknown;
+      if (!parsed || typeof parsed !== "object" || !Array.isArray((parsed as { ledger?: unknown }).ledger)) {
+        cleanup();
+        return;
+      }
+      useUIStore.getState().setDraftRecovery({ draftJson, draftAt });
+    } catch (err) {
+      console.warn("[FarmWallet] draft 검사 실패", err);
+    }
+  }, [isLoading]);
 
   // "처음 방문"일 때만(localStorage 앱 키가 아예 없고 ledger도 비어있음) 최신 백업에서 복원.
   // 사용자가 의도적으로 데이터를 지운 경우(localStorage에 빈 AppData를 저장)는 복원하지 않음.
@@ -232,12 +274,31 @@ export function useAppData() {
   }, [krNamesReady, cacheHydrated, data.trades]);
 
   // 다른 탭에서 데이터 변경 시 현재 탭 store에 반영. 같은 탭 자신의 변경은 originId로 필터링됨.
+  // 단, 이 탭에 미저장 dirty 변경이 있으면 단순 덮어쓰기 = 사용자 편집 유실 → 충돌 모달로 분기.
   useEffect(() => {
     if (isLoading || loadFailed) return;
     const unsubscribe = subscribeDataChanges((payload) => {
       try {
         const parsedUnknown = JSON.parse(payload) as unknown;
         if (!parsedUnknown || typeof parsedUnknown !== "object") return;
+        const ui = useUIStore.getState();
+        if (ui.hasDirtyChanges) {
+          // 우리도 편집 중 + 다른 탭이 저장 → 사용자가 결정해야 함
+          const localDataJson = JSON.stringify(useAppStore.getState().data);
+          // 양쪽 동일 데이터면 (서로 같은 결과로 수렴) 그냥 dirty만 정리하고 적용
+          if (localDataJson === payload) {
+            const reloaded = loadData();
+            useAppStore.setState({ data: reloaded });
+            ui.setHasDirtyChanges(false);
+            return;
+          }
+          ui.setTabConflict({
+            remoteDataJson: payload,
+            localDataJson,
+            detectedAt: Date.now()
+          });
+          return;
+        }
         // loadData()를 통과시켜 schema migration·normalization 동일 경로 사용
         const reloaded = loadData();
         useAppStore.setState({ data: reloaded });

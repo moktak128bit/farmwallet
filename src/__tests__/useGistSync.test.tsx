@@ -11,6 +11,7 @@ vi.mock("../services/gistSync", async () => {
   return {
     ...actual,
     saveToGist: vi.fn(),
+    saveToGistWithRetry: vi.fn(),
     loadFromGist: vi.fn(),
     getGistVersions: vi.fn(),
     getGistToken: vi.fn(() => "test-token"),
@@ -60,6 +61,7 @@ describe("useGistSync", () => {
     mocked.getGistLastPullAt.mockReturnValue("");
     mocked.getGistVersions.mockResolvedValue([]);
     mocked.saveToGist.mockResolvedValue({ gistId: "test-gist-id", updatedAt: "2026-04-20T00:00:00Z" });
+    mocked.saveToGistWithRetry.mockResolvedValue({ gistId: "test-gist-id", updatedAt: "2026-04-20T00:00:00Z" });
     mocked.loadFromGist.mockResolvedValue({ dataJson: "{}", updatedAt: "2026-04-20T00:00:00Z" });
   });
 
@@ -103,7 +105,7 @@ describe("useGistSync", () => {
     await flush();
     expect(mocked.getGistVersions).not.toHaveBeenCalled();
     expect(mocked.loadFromGist).not.toHaveBeenCalled();
-    expect(mocked.saveToGist).not.toHaveBeenCalled();
+    expect(mocked.saveToGistWithRetry).not.toHaveBeenCalled();
   });
 
   it("토큰/Gist ID가 없으면 동기화 건너뜀", async () => {
@@ -112,7 +114,7 @@ describe("useGistSync", () => {
     renderHook(() => useGistSync(makeData(0), vi.fn()));
     await flush();
     expect(mocked.getGistVersions).not.toHaveBeenCalled();
-    expect(mocked.saveToGist).not.toHaveBeenCalled();
+    expect(mocked.saveToGistWithRetry).not.toHaveBeenCalled();
   });
 
   it("데이터 변경 시 debounce 시간 후 자동 push", async () => {
@@ -120,17 +122,17 @@ describe("useGistSync", () => {
       initialProps: { d: makeData(0) },
     });
     await flush();
-    mocked.saveToGist.mockClear();
+    mocked.saveToGistWithRetry.mockClear();
 
     rerender({ d: makeData(1) });
     // debounce 미만에선 push 없음
     await vi.advanceTimersByTimeAsync(GIST_AUTO_PUSH_DEBOUNCE_MS - 1000);
-    expect(mocked.saveToGist).not.toHaveBeenCalled();
+    expect(mocked.saveToGistWithRetry).not.toHaveBeenCalled();
 
     // debounce 경과 후 push
     await vi.advanceTimersByTimeAsync(2000);
     await flush();
-    expect(mocked.saveToGist).toHaveBeenCalledTimes(1);
+    expect(mocked.saveToGistWithRetry).toHaveBeenCalledTimes(1);
   });
 
   it("debounce 내 연속 변경 시 마지막 값 1번만 push", async () => {
@@ -138,7 +140,7 @@ describe("useGistSync", () => {
       initialProps: { d: makeData(0) },
     });
     await flush();
-    mocked.saveToGist.mockClear();
+    mocked.saveToGistWithRetry.mockClear();
 
     rerender({ d: makeData(1) });
     await vi.advanceTimersByTimeAsync(60_000);
@@ -148,8 +150,8 @@ describe("useGistSync", () => {
     await vi.advanceTimersByTimeAsync(GIST_AUTO_PUSH_DEBOUNCE_MS + 1000);
     await flush();
 
-    expect(mocked.saveToGist).toHaveBeenCalledTimes(1);
-    const lastPushedJson = mocked.saveToGist.mock.calls[0][0];
+    expect(mocked.saveToGistWithRetry).toHaveBeenCalledTimes(1);
+    const lastPushedJson = mocked.saveToGistWithRetry.mock.calls[0][0];
     expect(JSON.parse(lastPushedJson).ledger[0].amount).toBe(3);
   });
 
@@ -169,6 +171,7 @@ describe("useGistSync", () => {
     // 초기 effect 처리 (원격이 더 새로 자동 pull됨, knownRemoteCommitRef = 5시)
     await flush();
     mocked.saveToGist.mockClear();
+    mocked.saveToGistWithRetry.mockClear();
     mocked.loadFromGist.mockClear();
 
     // 원격이 다시 더 새로워짐 (6시)
@@ -184,7 +187,7 @@ describe("useGistSync", () => {
     await vi.advanceTimersByTimeAsync(GIST_AUTO_PUSH_DEBOUNCE_MS + 1000);
     await flush();
 
-    expect(mocked.saveToGist).not.toHaveBeenCalled();
+    expect(mocked.saveToGistWithRetry).not.toHaveBeenCalled();
     const conflict = useUIStore.getState().gistConflict;
     expect(conflict).not.toBeNull();
     expect(conflict?.remoteUpdatedAt).toBe("2026-04-20T06:00:00Z");
@@ -196,6 +199,7 @@ describe("useGistSync", () => {
     const { result } = renderHook(() => useGistSync(makeData(0), onApply));
     await flush();
     mocked.saveToGist.mockClear();
+    mocked.saveToGistWithRetry.mockClear();
     onApply.mockClear();
 
     // 충돌 상태를 직접 set
@@ -212,6 +216,7 @@ describe("useGistSync", () => {
     expect(onApply).toHaveBeenCalledWith('{"x":1}', "2026-04-20T07:00:00Z");
     expect(useUIStore.getState().gistConflict).toBeNull();
     expect(mocked.saveToGist).not.toHaveBeenCalled();
+    expect(mocked.saveToGistWithRetry).not.toHaveBeenCalled();
   });
 
   it("resolveGistConflict('force-push-local'): saveToGist 호출 + 충돌 클리어", async () => {
@@ -238,6 +243,7 @@ describe("useGistSync", () => {
     const { result } = renderHook(() => useGistSync(makeData(0), onApply));
     await flush();
     mocked.saveToGist.mockClear();
+    mocked.saveToGistWithRetry.mockClear();
     onApply.mockClear();
 
     useUIStore.getState().setGistConflict({
@@ -252,6 +258,7 @@ describe("useGistSync", () => {
 
     expect(onApply).not.toHaveBeenCalled();
     expect(mocked.saveToGist).not.toHaveBeenCalled();
+    expect(mocked.saveToGistWithRetry).not.toHaveBeenCalled();
     expect(useUIStore.getState().gistConflict).toBeNull();
   });
 });

@@ -3,7 +3,7 @@ import type { Account, LedgerEntry, StockTrade, CategoryPresets, BudgetGoal, Rec
 import { ForecastView } from "../features/insights/ForecastView";
 import { SettlementView } from "../features/dating/SettlementView";
 import { calcTrend, mTotalsFor, computePeriodScope } from "../utils/insightsHelpers";
-import { isInvestmentEntry } from "../utils/category";
+import { isInvestmentEntry, isCreditPayment } from "../utils/category";
 import { tradeAmountKRW } from "../utils/finance";
 import { detectSpendAnomalies } from "../utils/anomaly";
 import { buildClosedTradeRecords, summarizeRecords, summaryToRealPL } from "../utils/investmentRecord";
@@ -52,7 +52,7 @@ function useD(ledger: LedgerEntry[], rawTrades: StockTrade[], allTrades: StockTr
       const a = Number(l.amount); if (a <= 0) continue;
       if (l.kind === "income") monthly[m].income += a;
       else if (isInvestmentEntry(l)) monthly[m].investment += a; // 저축·투자 이체
-      else if (l.kind === "expense") monthly[m].expense += a;
+      else if (l.kind === "expense" && !isCreditPayment(l)) monthly[m].expense += a;  // 신용결제는 카드 사용시 이미 잡힘 — 이중계상 방지
       else if (l.kind === "transfer" && l.toAccountId && invIds.has(l.toAccountId)) monthly[m].investment += a;
     }
     const months = Object.keys(monthly).sort();
@@ -62,8 +62,9 @@ function useD(ledger: LedgerEntry[], rawTrades: StockTrade[], allTrades: StockTr
     /* ===== filter for period ===== */
     const fL = selMonth ? ledger.filter(l => l.date?.startsWith(selMonth)) : ledger;
     const fT = selMonth ? rawTrades.filter(t => t.date?.startsWith(selMonth)) : rawTrades;
-    // 일반 지출: expense kind 중 재테크/환전 제외 (투자손실은 category=재테크라 자동 제외)
-    const fExp = fL.filter(l => l.kind === "expense" && Number(l.amount) > 0 && l.category !== "재테크" && l.category !== "환전");
+    // 일반 지출: expense kind 중 재테크/환전/신용결제 제외 (투자손실은 category=재테크라 자동 제외)
+    // 신용결제 제외 이유: 카드 사용 시점에 이미 expense로 기록됨. 카드 대금 결제까지 합치면 이중계상 → 월 지출 ~2배 부풀려짐.
+    const fExp = fL.filter(l => l.kind === "expense" && Number(l.amount) > 0 && l.category !== "재테크" && l.category !== "환전" && !isCreditPayment(l));
     // 이월/원래 보유 자산은 실수입이 아니므로 수입 합계에서 완전 제외 (UX 기억: 모든 수입 지표 일관)
     const isCarryOverStr = (s: string) => s === "이월" || s.includes("이월") || s === "원래 보유 자산" || s.includes("보유 자산");
     const isCarryOver = (l: LedgerEntry) => isCarryOverStr(l.category || "") || isCarryOverStr(l.subCategory || "");
@@ -378,8 +379,8 @@ function useD(ledger: LedgerEntry[], rawTrades: StockTrade[], allTrades: StockTr
         if (l.date?.slice(0, 7) !== pm) continue;
         const a = Number(l.amount); if (a <= 0) continue;
         if (l.kind === "income") pi += a;
-        // 지출: 일반 지출 + 투자손실(category=재테크). 환전은 제외.
-        else if (l.kind === "expense" && l.category !== "환전") pe += a;
+        // 지출: 일반 지출 + 투자손실(category=재테크). 환전·신용결제는 제외.
+        else if (l.kind === "expense" && l.category !== "환전" && !isCreditPayment(l)) pe += a;
       }
       if (pi > 0 || pe > 0) prev = { income: pi, expense: pe };
     }
@@ -452,7 +453,7 @@ function useD(ledger: LedgerEntry[], rawTrades: StockTrade[], allTrades: StockTr
     /* ===== 지출 중분류별 인사이트 ===== */
     const subInsights: SubInsight[] = expBySub.slice(0, 15).map(s => {
       const mTotals = mTotalsFor(months, ledger, l =>
-        l.kind === "expense" && l.category !== "재테크" && l.category !== "환전" &&
+        l.kind === "expense" && l.category !== "재테크" && l.category !== "환전" && !isCreditPayment(l) &&
         (l.subCategory || l.category || "기타") === s.sub
       );
       const { monthTrend, mom, nonZero, monthAvg } = calcTrend(mTotals);
@@ -834,7 +835,7 @@ function useD(ledger: LedgerEntry[], rawTrades: StockTrade[], allTrades: StockTr
     const budgetProgress = (() => {
       const targetMonth = anomalyTargetMonth;
       if (!targetMonth || !budgetGoals || budgetGoals.length === 0) return [];
-      const monthExp = ledger.filter((l) => l.kind === "expense" && l.date?.startsWith(targetMonth) && l.category !== "재테크" && l.category !== "환전" && Number(l.amount) > 0);
+      const monthExp = ledger.filter((l) => l.kind === "expense" && l.date?.startsWith(targetMonth) && l.category !== "재테크" && l.category !== "환전" && !isCreditPayment(l) && Number(l.amount) > 0);
       return budgetGoals.map((g) => {
         let spent = 0;
         if (g.category === "전체") {

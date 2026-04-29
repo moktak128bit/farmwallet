@@ -19,6 +19,44 @@ import type { LedgerKind, CategoryPresets, LedgerEntry, Account } from "../types
  *  - kind=transfer + sub=저축/투자 (v7 임시)
  *  - kind=expense/category=재테크/sub=저축·투자 (v5 이전)
  */
+/**
+ * 신용카드 대금 결제 항목인지 판별.
+ * 데이터 모델: kind="expense", category="신용결제", fromAccountId=출금계좌, toAccountId=카드계좌.
+ *
+ * 주의: 일반 지출 합계에서 반드시 제외해야 함 — 카드 사용 시점에 이미 expense로 잡혔는데
+ * 카드 대금 결제 시점에 또 expense로 카운트되면 이중계상 발생 (월 지출이 약 2배 부풀려짐).
+ *
+ * 계좌 잔액 계산은 영향받지 않음 (양 계좌의 입출금이 정확히 반영되어야 하므로 별개).
+ */
+export function isCreditPayment(entry: LedgerEntry): boolean {
+  return entry.category === "신용결제" || entry.subCategory === "신용결제";
+}
+
+/**
+ * "실질 소비 지출" 판별 — 일반 지출 합계 계산용.
+ *
+ * 제외 대상:
+ *  - 신용결제 (카드 사용 시점에 이미 잡힘 — 이중계상 방지)
+ *  - 환전 (계좌 간 이동)
+ *  - 저축성지출 (자산 축적, 실 소비 아님)
+ *
+ * 포함 대상:
+ *  - 일반 expense (식비·교통비·데이트비 등)
+ *  - 투자손실 (재테크 카테고리 + subCategory=투자손실 — 실제 손실은 지출 성격)
+ *
+ * @param entry 가계부 항목
+ * @param categoryPresets 저축성지출 카테고리 판단용 (생략 시 기본 "재테크"·"저축성지출"만 제외)
+ */
+export function isRealExpenseEntry(entry: LedgerEntry, categoryPresets?: CategoryPresets): boolean {
+  if (entry.kind !== "expense") return false;
+  if (Number(entry.amount) <= 0) return false;
+  if (isCreditPayment(entry)) return false;
+  if (entry.category === "환전") return false;
+  // 저축성지출 제외 — 단, 투자손실(category=재테크, subCategory=투자손실)은 실 지출이므로 포함
+  if (isSavingsExpenseEntry(entry, [], categoryPresets)) return false;
+  return true;
+}
+
 export function isInvestmentEntry(entry: LedgerEntry): boolean {
   const sub = entry.subCategory;
   if (entry.kind === "transfer" && (sub === "저축이체" || sub === "투자이체" || sub === "저축" || sub === "투자")) return true;

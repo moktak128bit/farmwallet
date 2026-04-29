@@ -4,7 +4,7 @@ import {
   computePositions,
   computeRealizedPnlByTradeId
 } from "../calculations";
-import { isSavingsExpenseEntry } from "./category";
+import { isSavingsExpenseEntry, isCreditPayment } from "./category";
 import { canonicalTickerForMatch, isUSDStock } from "./finance";
 import { xirr, type CashFlowItem } from "./irr";
 
@@ -271,7 +271,7 @@ export function generateMonthlyReport(
 
     const report = reports.get(month)!;
     if (entry.kind === "income") report.income += entry.amount;
-    if (entry.kind === "expense") report.expense += entry.amount;
+    if (entry.kind === "expense" && !isCreditPayment(entry)) report.expense += entry.amount;
     if (entry.kind === "transfer") report.transfer += entry.amount;
   }
 
@@ -298,7 +298,7 @@ export function generateYearlyReport(ledger: LedgerEntry[]): MonthlyReport[] {
 
     const report = reports.get(year)!;
     if (entry.kind === "income") report.income += entry.amount;
-    if (entry.kind === "expense") report.expense += entry.amount;
+    if (entry.kind === "expense" && !isCreditPayment(entry)) report.expense += entry.amount;
     if (entry.kind === "transfer") report.transfer += entry.amount;
   }
 
@@ -914,6 +914,8 @@ export function generateConsumptionImpactMonthlyReport(
     }
 
     if (entry.kind === "expense") {
+      // 신용결제는 카드 사용 시점에 이미 잡힘 — 이중계상 방지
+      if (isCreditPayment(entry)) continue;
       if (isSavingsExpenseEntry(entry, accounts)) {
         row.actualInvested += amount;
       } else if (entry.category === "재테크") {
@@ -1081,6 +1083,8 @@ export function generateComprehensiveMonthlyReport(
     }
 
     if (entry.kind === "expense") {
+      // 신용결제는 카드 사용 시점에 이미 잡힘 — 이중계상 방지
+      if (isCreditPayment(entry)) continue;
       row.totalExpense += amount;
       const cat = entry.category ?? "";
       const sub = entry.subCategory ?? "";

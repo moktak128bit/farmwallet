@@ -190,6 +190,46 @@ export function DividendTrendChart({ rows }: DividendTrendChartProps) {
   );
 }
 
+// ─── CMA·현금성 계좌 잔액 추이 ───────────────────────────────────────────────
+
+export interface CmaTrendRow {
+  date: string;
+  label: string;
+  balance: number;
+}
+
+interface CmaBalanceChartProps {
+  rows: CmaTrendRow[];
+}
+
+export function CmaBalanceChart({ rows }: CmaBalanceChartProps) {
+  return (
+    <ResponsiveContainer width="100%" height={220}>
+      <LineChart data={rows} margin={{ top: 8, right: 12, left: 12, bottom: 4 }}>
+        <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="var(--border)" />
+        <XAxis dataKey="label" fontSize={11} axisLine={false} tickLine={false} />
+        <YAxis fontSize={11} tickFormatter={(v) => formatKRW(Math.round(Number(v)))} width={70} />
+        <Tooltip
+          formatter={(val: ValueType | undefined) => formatKRW(Math.round(Number(val ?? 0)))}
+          labelFormatter={(label, payload) => {
+            const date = payload?.[0]?.payload?.date;
+            return date ?? label;
+          }}
+          contentStyle={{ fontSize: 14, fontWeight: 600 }}
+        />
+        <Line
+          dataKey="balance"
+          name="잔액"
+          stroke="var(--chart-primary)"
+          strokeWidth={2.5}
+          dot={{ r: 3 }}
+          activeDot={{ r: 5 }}
+        />
+      </LineChart>
+    </ResponsiveContainer>
+  );
+}
+
 // ─── 주식 매입액 vs 평가액 (15일 간격) ───────────────────────────────────────
 
 export interface CostVsMarketRow {

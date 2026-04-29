@@ -4,7 +4,7 @@
  */
 
 import type { Account, LedgerEntry } from "../types";
-import { isSavingsExpenseEntry } from "./category";
+import { isSavingsExpenseEntry, isCreditPayment } from "./category";
 
 function formatAmount(amount: number): string {
   return new Intl.NumberFormat("ko-KR").format(amount) + "원";
@@ -34,6 +34,9 @@ export function generateLedgerMarkdownReport(
     )) {
       // 저축이체/투자이체 → savingsExpense 그룹
       savingsExpense.push(e);
+    } else if (e.kind === "expense" && isCreditPayment(e)) {
+      // 신용결제는 카드 사용 시점에 이미 expense로 잡힘 — 이중계상 방지 (그룹에서 제외)
+      continue;
     } else if (e.kind === "expense" && e.category === "재테크") {
       // 재테크 지출(투자손실) = 실질 지출
       expense.push(e);

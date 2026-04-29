@@ -13,7 +13,7 @@ import {
   generateStockPerformanceReport,
   generateYearlyReport
 } from "../utils/reportGenerator";
-import { isSavingsExpenseEntry } from "../utils/category";
+import { isSavingsExpenseEntry, isCreditPayment } from "../utils/category";
 import type { Account, LedgerEntry, StockPrice, StockTrade } from "../types";
 
 interface PeriodSummary {
@@ -103,6 +103,8 @@ function buildPeriodCompare(
         continue;
       }
       if (entry.kind === "expense") {
+        // 신용결제는 카드 사용 시점에 이미 expense로 잡힘 — 이중계상 방지
+        if (isCreditPayment(entry)) continue;
         if (entry.category === "재테크") {
           // 투자손실 — 실질 지출
           expense += amount;

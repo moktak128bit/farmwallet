@@ -13,6 +13,8 @@ import {
   isSavingsExpenseEntry,
   makeIsSavingsExpense,
   isInvestmentEntry,
+  isCreditPayment,
+  isRealExpenseEntry,
   type CategoryType,
 } from "./categoryUtils";
 
@@ -23,4 +25,6 @@ export {
   isSavingsExpenseEntry,
   makeIsSavingsExpense,
   isInvestmentEntry,
+  isCreditPayment,
+  isRealExpenseEntry,
 };

@@ -5,7 +5,7 @@ import { InvestmentRecordCard } from "../features/dashboard/InvestmentRecordCard
 import { MonthlySummaryCards } from "../features/dashboard/MonthlySummaryCards";
 import { ExpenseIncomeCompareCard } from "../features/dashboard/ExpenseIncomeCompareCard";
 import { NetWorthTrendChart } from "../features/dashboard/NetWorthTrendChart";
-import { DividendTrendCard } from "../features/dashboard/DividendTrendCard";
+import { CmaBalanceTrendCard } from "../features/dashboard/CmaBalanceTrendCard";
 import { MonthPaceCard } from "../features/dashboard/MonthPaceCard";
 import { SpendingCalendarCard } from "../features/dashboard/SpendingCalendarCard";
 import { TopExpensesCard } from "../features/dashboard/TopExpensesCard";
@@ -17,7 +17,6 @@ import { AssetCompositionCard } from "../features/dashboard/AssetCompositionCard
 import { AccountBalanceTrendCard } from "../features/dashboard/AccountBalanceTrendCard";
 import { StockCostVsMarketCard } from "../features/dashboard/StockCostVsMarketCard";
 import { TotalAssetTrendCard } from "../features/dashboard/TotalAssetTrendCard";
-import { TickerPerformanceCard } from "../features/dashboard/TickerPerformanceCard";
 import type {
   Account,
   LedgerEntry,
@@ -45,10 +44,8 @@ import {
   getMonthEndDate,
   buildMonthRange,
 } from "../utils/date";
-import { getCategoryType, isSavingsExpenseEntry } from "../utils/category";
-import { canonicalTickerForMatch, extractTickerFromText, isUSDStock } from "../utils/finance";
-import { parseQuantityFromNote } from "../utils/dividend";
-import { ISA_PORTFOLIO } from "../constants/config";
+import { getCategoryType, isSavingsExpenseEntry, isCreditPayment } from "../utils/category";
+import { isUSDStock } from "../utils/finance";
 const LazyPortfolioDashboardCharts = lazy(() =>
   import("../features/stocks/PortfolioDashboardCharts").then((m) => ({ default: m.PortfolioDashboardCharts }))
 );
@@ -137,27 +134,6 @@ export const DashboardView: React.FC<Props> = (props) => {
   const trades = props.trades ?? storeData.trades;
   const prices = props.prices ?? storeData.prices;
   const categoryPresets = storeData.categoryPresets;
-  const trackedTicker = canonicalTickerForMatch(
-    (storeData.dividendTrackingTicker ?? "458730").trim() || "458730"
-  );
-  const trackedTickerName =
-    ISA_PORTFOLIO.find((x) => canonicalTickerForMatch(x.ticker) === trackedTicker)?.name ??
-    storeData.tickerDatabase?.find((t) => canonicalTickerForMatch(t.ticker) === trackedTicker)?.name ??
-    trackedTicker;
-
-  /** 배당·해당금액 변동 카드에서 추적할 종목 (종목코드 표기) */
-  const RISE_200_TICKER = "0167B0";
-  const rise200Canonical = canonicalTickerForMatch(RISE_200_TICKER);
-  const rise200TickerName =
-    ISA_PORTFOLIO.find((x) => canonicalTickerForMatch(x.ticker) === rise200Canonical)?.name?.trim() ||
-    storeData.tickerDatabase?.find((t) => canonicalTickerForMatch(t.ticker) === rise200Canonical)?.name?.trim() ||
-    prices.find((p) => canonicalTickerForMatch(p.ticker) === rise200Canonical)?.name?.trim() ||
-    trades.find((t) => canonicalTickerForMatch(t.ticker) === rise200Canonical)?.name?.trim() ||
-    "";
-  const rise200CardTitle =
-    rise200TickerName !== ""
-      ? `${RISE_200_TICKER} · ${rise200TickerName} 해당금액 변동 (전체 기준)`
-      : `${RISE_200_TICKER} 해당금액 변동 (전체 기준)`;
 
   const fxRate = useFxRateValue();
   const currentMonth = useMemo(() => getThisMonthKST(), []);
@@ -248,6 +224,8 @@ export const DashboardView: React.FC<Props> = (props) => {
         if (entry.kind === "income") {
           income += toKrw(entry);
         } else if (entry.kind === "expense") {
+          // 신용결제는 카드 사용 시점에 이미 expense로 잡힘 — 이중계상 방지
+          if (isCreditPayment(entry)) continue;
           expense += toKrw(entry);
         } else if (entry.kind === "transfer") {
           // 저축이체/투자이체 (+ 구버전 저축/투자) → 자산 축적
@@ -658,423 +636,6 @@ export const DashboardView: React.FC<Props> = (props) => {
     };
   }, [ledger, fxRate, accounts, categoryPresets, currentMonth]);
 
-  const trackedDividendTrend = useMemo(() => {
-    type TrendRow = {
-      month: string;
-      shares: number;
-      dividend: number;
-      costBasis: number;
-      yieldRate: number | null;
-    };
-
-    const toKrw = (entry: LedgerEntry) =>
-      entry.currency === "USD" && fxRate ? entry.amount * fxRate : entry.amount;
-    const dividendByMonth = new Map<string, number>();
-    /** 배당 수령일별 금액 + 입금 계좌(해당 계좌 기준 평단가/매입금액) */
-    const dividendEntriesByDate: { date: string; amount: number; quantityFromNote?: number; toAccountId?: string }[] = [];
-    const tickerTrades = trades
-      .filter((trade) => canonicalTickerForMatch(trade.ticker) === trackedTicker)
-      .sort((a, b) => a.date.localeCompare(b.date));
-    const monthSet = new Set<string>();
-
-    ledger.forEach((entry) => {
-      if (!isDividendIncome(entry)) return;
-      const sourceTicker = (
-        extractTickerFromText(entry.description ?? "") ??
-        extractTickerFromText(entry.subCategory ?? "") ??
-        extractTickerFromText(entry.category ?? "")
-      )?.toUpperCase();
-      if (!sourceTicker) return;
-      if (canonicalTickerForMatch(sourceTicker) !== trackedTicker) return;
-      const date = entry.date?.slice(0, 10);
-      const month = entry.date?.slice(0, 7);
-      if (!date || !month) return;
-      const amount = toKrw(entry);
-      dividendByMonth.set(month, (dividendByMonth.get(month) ?? 0) + amount);
-      const quantityFromNote = parseQuantityFromNote(entry.note) ?? undefined;
-      dividendEntriesByDate.push({ date, amount, quantityFromNote, toAccountId: entry.toAccountId });
-      monthSet.add(month);
-    });
-    dividendEntriesByDate.sort((a, b) => a.date.localeCompare(b.date));
-
-    tickerTrades.forEach((trade) => monthSet.add(trade.date.slice(0, 7)));
-    const months = Array.from(monthSet).sort();
-    if (months.length === 0) {
-      return {
-        ticker: trackedTicker,
-        rows: [] as TrendRow[],
-        latest: null as TrendRow | null,
-        previous: null as TrendRow | null,
-        shareChange: 0,
-        shareChangeRate: null as number | null,
-        dividendChange: 0,
-        dividendChangeRate: null as number | null,
-        yieldChange: 0,
-        yieldChangeRate: null as number | null,
-        changeRate: null as number | null,
-        yieldSumLast12Months: null as number | null
-      };
-    }
-
-    /** 해당일 기준 보유 주식 수 (그날 거래 제외 = “배당 받을 때” 보유, 모든 계좌 합산) */
-    const getQuantityAtDate = (ticker: string, date: string, accountId?: string): number => {
-      const ct = canonicalTickerForMatch(ticker);
-      const relevant = trades.filter(
-        (t) =>
-          canonicalTickerForMatch(t.ticker) === ct &&
-          t.date < date &&
-          (!accountId || t.accountId === accountId)
-      );
-      let qty = 0;
-      for (const t of relevant) {
-        const side = (t.side ?? "").toString().toLowerCase();
-        if (side === "buy") qty += t.quantity;
-        else if (side === "sell") qty -= t.quantity;
-      }
-      return Math.max(0, qty);
-    };
-
-    type Lot = { qty: number; totalAmount: number };
-    /** 해당일 거래 전 매입원가 합계(FIFO). accountId 있으면 해당 계좌만. 달러 종목은 호출부에서 원화 환산 */
-    const getCostBasisAtDate = (beforeDate: string, accountId?: string): number => {
-      const list = accountId ? tickerTrades.filter((t) => t.accountId === accountId) : tickerTrades;
-      const lots: Lot[] = [];
-      for (const trade of list) {
-        if (trade.date >= beforeDate) break;
-        const side = (trade.side ?? "").toString().toLowerCase();
-        if (side === "buy") {
-          lots.push({ qty: trade.quantity, totalAmount: trade.totalAmount });
-        } else if (side === "sell") {
-          let remaining = trade.quantity;
-          while (remaining > 0 && lots.length > 0) {
-            const lot = lots[0];
-            const used = Math.min(remaining, lot.qty);
-            const usedCost = lot.qty > 0 ? (lot.totalAmount / lot.qty) * used : 0;
-            lot.qty -= used;
-            lot.totalAmount -= usedCost;
-            remaining -= used;
-            if (lot.qty <= 0) lots.shift();
-          }
-        }
-      }
-      return lots.reduce((sum, lot) => sum + lot.totalAmount, 0);
-    };
-
-    const fullMonths = buildMonthRange(months[0], months[months.length - 1]);
-    const lots: Lot[] = [];
-    let tradeIndex = 0;
-    const rows: TrendRow[] = [];
-    let prevYieldRate: number | null = null;
-
-    for (const month of fullMonths) {
-      while (
-        tradeIndex < tickerTrades.length &&
-        tickerTrades[tradeIndex].date.slice(0, 7) <= month
-      ) {
-        const trade = tickerTrades[tradeIndex];
-        const side = (trade.side ?? "").toString().toLowerCase();
-        if (side === "buy") {
-          lots.push({ qty: trade.quantity, totalAmount: trade.totalAmount });
-        } else if (side === "sell") {
-          let remaining = trade.quantity;
-          while (remaining > 0 && lots.length > 0) {
-            const lot = lots[0];
-            const used = Math.min(remaining, lot.qty);
-            const usedCost = lot.qty > 0 ? (lot.totalAmount / lot.qty) * used : 0;
-            lot.qty -= used;
-            lot.totalAmount -= usedCost;
-            remaining -= used;
-            if (lot.qty <= 0) lots.shift();
-          }
-        }
-        tradeIndex += 1;
-      }
-
-      const dividend = dividendByMonth.get(month) ?? 0;
-      const entriesInMonth = dividendEntriesByDate.filter((e) => e.date.startsWith(month));
-      const firstEntry = entriesInMonth[0];
-      const accountIdForMonth = firstEntry?.toAccountId;
-      const firstEntryWithQty = entriesInMonth.find((e) => e.quantityFromNote != null);
-      const shares =
-        firstEntryWithQty?.quantityFromNote != null
-          ? firstEntryWithQty.quantityFromNote
-          : entriesInMonth.length > 0
-            ? getQuantityAtDate(trackedTicker, firstEntry.date, accountIdForMonth)
-            : lots.reduce((sum, lot) => sum + lot.qty, 0);
-      let effectiveCostBasis = 0;
-      for (const e of entriesInMonth) {
-        const costAtPaymentDate = getCostBasisAtDate(e.date, e.toAccountId ?? accountIdForMonth);
-        effectiveCostBasis += costAtPaymentDate;
-      }
-      // 달러 종목: 매입금액을 원화로 환산해 배당금(원화)과 동일 단위로 배당률 계산
-      if (isUSDStock(trackedTicker) && fxRate && effectiveCostBasis > 0) {
-        effectiveCostBasis = effectiveCostBasis * fxRate;
-      }
-      let yieldRate: number | null =
-        dividend > 0 && effectiveCostBasis > 0 ? (dividend / effectiveCostBasis) * 100 : null;
-      if (yieldRate != null) prevYieldRate = yieldRate;
-      else if (prevYieldRate != null) yieldRate = prevYieldRate; // 배당 0인 달은 이전 달 배당률 유지(그래프 끊김 방지)
-
-      rows.push({
-        month,
-        shares,
-        dividend,
-        costBasis: effectiveCostBasis,
-        yieldRate
-      });
-    }
-
-    const latest = rows.length > 0 ? rows[rows.length - 1] : null;
-    const previous = rows.length > 1 ? rows[rows.length - 2] : null;
-    const shareChange = latest && previous ? latest.shares - previous.shares : 0;
-    const shareChangeRate =
-      latest && previous && previous.shares > 0
-        ? (shareChange / previous.shares) * 100
-        : null;
-    const dividendChange =
-      latest && previous ? latest.dividend - previous.dividend : 0;
-    const dividendChangeRate =
-      latest && previous && previous.dividend > 0
-        ? (dividendChange / previous.dividend) * 100
-        : null;
-    const yieldChange =
-      latest &&
-      previous &&
-      latest.yieldRate != null &&
-      previous.yieldRate != null
-        ? latest.yieldRate - previous.yieldRate
-        : 0;
-    const yieldChangeRate =
-      latest &&
-      previous &&
-      latest.yieldRate != null &&
-      previous.yieldRate != null &&
-      previous.yieldRate > 0
-        ? (yieldChange / previous.yieldRate) * 100
-        : null;
-
-    const last12Rows = rows.slice(-12);
-    const yieldSumLast12Months =
-      last12Rows.length > 0
-        ? last12Rows.reduce((sum, r) => sum + (r.yieldRate ?? 0), 0)
-        : null;
-
-    return {
-      ticker: trackedTicker,
-      rows,
-      latest,
-      previous,
-      shareChange,
-      shareChangeRate,
-      dividendChange,
-      dividendChangeRate,
-      yieldChange,
-      yieldChangeRate,
-      changeRate: dividendChangeRate,
-      yieldSumLast12Months
-    };
-  }, [ledger, trades, fxRate, trackedTicker]);
-
-  const rise200DividendTrend = useMemo(() => {
-    type TrendRow = {
-      month: string;
-      shares: number;
-      dividend: number;
-      costBasis: number;
-      yieldRate: number | null;
-    };
-    const toKrw = (entry: LedgerEntry) =>
-      entry.currency === "USD" && fxRate ? entry.amount * fxRate : entry.amount;
-    const dividendByMonth = new Map<string, number>();
-    const dividendEntriesByDate: { date: string; amount: number; quantityFromNote?: number; toAccountId?: string }[] = [];
-    const tickerTrades = trades
-      .filter((trade) => canonicalTickerForMatch(trade.ticker) === rise200Canonical)
-      .sort((a, b) => a.date.localeCompare(b.date));
-    const monthSet = new Set<string>();
-    ledger.forEach((entry) => {
-      if (!isDividendIncome(entry)) return;
-      const sourceTicker = (
-        extractTickerFromText(entry.description ?? "") ??
-        extractTickerFromText(entry.subCategory ?? "") ??
-        extractTickerFromText(entry.category ?? "")
-      )?.toUpperCase();
-      if (!sourceTicker) return;
-      if (canonicalTickerForMatch(sourceTicker) !== rise200Canonical) return;
-      const date = entry.date?.slice(0, 10);
-      const month = entry.date?.slice(0, 7);
-      if (!date || !month) return;
-      const amount = toKrw(entry);
-      dividendByMonth.set(month, (dividendByMonth.get(month) ?? 0) + amount);
-      const quantityFromNote = parseQuantityFromNote(entry.note) ?? undefined;
-      dividendEntriesByDate.push({ date, amount, quantityFromNote, toAccountId: entry.toAccountId });
-      monthSet.add(month);
-    });
-    dividendEntriesByDate.sort((a, b) => a.date.localeCompare(b.date));
-    tickerTrades.forEach((trade) => monthSet.add(trade.date.slice(0, 7)));
-    const months = Array.from(monthSet).sort();
-    if (months.length === 0) {
-      return {
-        ticker: RISE_200_TICKER,
-        rows: [] as TrendRow[],
-        latest: null as TrendRow | null,
-        previous: null as TrendRow | null,
-        shareChange: 0,
-        shareChangeRate: null as number | null,
-        dividendChange: 0,
-        dividendChangeRate: null as number | null,
-        yieldChange: 0,
-        yieldChangeRate: null as number | null,
-        changeRate: null as number | null,
-        yieldSumLast12Months: null as number | null
-      };
-    }
-    const getQuantityAtDate = (ticker: string, date: string, accountId?: string): number => {
-      const ct = canonicalTickerForMatch(ticker);
-      const relevant = trades.filter(
-        (t) =>
-          canonicalTickerForMatch(t.ticker) === ct &&
-          t.date < date &&
-          (!accountId || t.accountId === accountId)
-      );
-      let qty = 0;
-      for (const t of relevant) {
-        const side = (t.side ?? "").toString().toLowerCase();
-        if (side === "buy") qty += t.quantity;
-        else if (side === "sell") qty -= t.quantity;
-      }
-      return Math.max(0, qty);
-    };
-    type Lot = { qty: number; totalAmount: number };
-    const getCostBasisAtDate = (beforeDate: string, accountId?: string): number => {
-      const list = accountId ? tickerTrades.filter((t) => t.accountId === accountId) : tickerTrades;
-      const lots: Lot[] = [];
-      for (const trade of list) {
-        if (trade.date >= beforeDate) break;
-        const side = (trade.side ?? "").toString().toLowerCase();
-        if (side === "buy") {
-          lots.push({ qty: trade.quantity, totalAmount: trade.totalAmount });
-        } else if (side === "sell") {
-          let remaining = trade.quantity;
-          while (remaining > 0 && lots.length > 0) {
-            const lot = lots[0];
-            const used = Math.min(remaining, lot.qty);
-            const usedCost = lot.qty > 0 ? (lot.totalAmount / lot.qty) * used : 0;
-            lot.qty -= used;
-            lot.totalAmount -= usedCost;
-            remaining -= used;
-            if (lot.qty <= 0) lots.shift();
-          }
-        }
-      }
-      return lots.reduce((sum, lot) => sum + lot.totalAmount, 0);
-    };
-    const fullMonths = buildMonthRange(months[0], months[months.length - 1]);
-    const lots: Lot[] = [];
-    let tradeIndex = 0;
-    const rows: TrendRow[] = [];
-    let prevYieldRate: number | null = null;
-    for (const month of fullMonths) {
-      while (
-        tradeIndex < tickerTrades.length &&
-        tickerTrades[tradeIndex].date.slice(0, 7) <= month
-      ) {
-        const trade = tickerTrades[tradeIndex];
-        const side = (trade.side ?? "").toString().toLowerCase();
-        if (side === "buy") {
-          lots.push({ qty: trade.quantity, totalAmount: trade.totalAmount });
-        } else if (side === "sell") {
-          let remaining = trade.quantity;
-          while (remaining > 0 && lots.length > 0) {
-            const lot = lots[0];
-            const used = Math.min(remaining, lot.qty);
-            const usedCost = lot.qty > 0 ? (lot.totalAmount / lot.qty) * used : 0;
-            lot.qty -= used;
-            lot.totalAmount -= usedCost;
-            remaining -= used;
-            if (lot.qty <= 0) lots.shift();
-          }
-        }
-        tradeIndex += 1;
-      }
-      const dividend = dividendByMonth.get(month) ?? 0;
-      const entriesInMonth = dividendEntriesByDate.filter((e) => e.date.startsWith(month));
-      const firstEntry = entriesInMonth[0];
-      const accountIdForMonth = firstEntry?.toAccountId;
-      const firstEntryWithQty = entriesInMonth.find((e) => e.quantityFromNote != null);
-      const shares =
-        firstEntryWithQty?.quantityFromNote != null
-          ? firstEntryWithQty.quantityFromNote
-          : entriesInMonth.length > 0
-            ? getQuantityAtDate(RISE_200_TICKER, firstEntry.date, accountIdForMonth)
-            : lots.reduce((sum, lot) => sum + lot.qty, 0);
-      let effectiveCostBasis = 0;
-      for (const e of entriesInMonth) {
-        const costAtPaymentDate = getCostBasisAtDate(e.date, e.toAccountId ?? accountIdForMonth);
-        effectiveCostBasis += costAtPaymentDate;
-      }
-      if (isUSDStock(RISE_200_TICKER) && fxRate && effectiveCostBasis > 0) {
-        effectiveCostBasis = effectiveCostBasis * fxRate;
-      }
-      let yieldRate: number | null =
-        dividend > 0 && effectiveCostBasis > 0 ? (dividend / effectiveCostBasis) * 100 : null;
-      if (yieldRate != null) prevYieldRate = yieldRate;
-      else if (prevYieldRate != null) yieldRate = prevYieldRate;
-      rows.push({
-        month,
-        shares,
-        dividend,
-        costBasis: effectiveCostBasis,
-        yieldRate
-      });
-    }
-    const latest = rows.length > 0 ? rows[rows.length - 1] : null;
-    const previous = rows.length > 1 ? rows[rows.length - 2] : null;
-    const shareChange = latest && previous ? latest.shares - previous.shares : 0;
-    const shareChangeRate =
-      latest && previous && previous.shares > 0
-        ? (shareChange / previous.shares) * 100
-        : null;
-    const dividendChange =
-      latest && previous ? latest.dividend - previous.dividend : 0;
-    const dividendChangeRate =
-      latest && previous && previous.dividend > 0
-        ? (dividendChange / previous.dividend) * 100
-        : null;
-    const yieldChange =
-      latest &&
-      previous &&
-      latest.yieldRate != null &&
-      previous.yieldRate != null
-        ? latest.yieldRate - previous.yieldRate
-        : 0;
-    const yieldChangeRate =
-      latest &&
-      previous &&
-      latest.yieldRate != null &&
-      previous.yieldRate != null &&
-      previous.yieldRate > 0
-        ? (yieldChange / previous.yieldRate) * 100
-        : null;
-    const last12Rows = rows.slice(-12);
-    const yieldSumLast12Months =
-      last12Rows.length > 0
-        ? last12Rows.reduce((sum, r) => sum + (r.yieldRate ?? 0), 0)
-        : null;
-    return {
-      ticker: RISE_200_TICKER,
-      rows,
-      latest,
-      previous,
-      shareChange,
-      shareChangeRate,
-      dividendChange,
-      dividendChangeRate,
-      yieldChange,
-      yieldChangeRate,
-      changeRate: dividendChangeRate,
-      yieldSumLast12Months
-    };
-  }, [ledger, trades, fxRate, rise200Canonical]);
 
   const accountNameById = useMemo(() => {
     return new Map(accounts.map((account) => [account.id, account.name || account.id]));
@@ -1357,14 +918,6 @@ export const DashboardView: React.FC<Props> = (props) => {
           accounts={accounts}
         />
 
-        <TickerPerformanceCard
-          trades={trades}
-          accounts={accounts}
-          prices={adjustedPrices}
-          ledger={ledger}
-          fxRate={fxRate ?? null}
-        />
-
         <StockCostVsMarketCard
           today={today}
           accounts={accounts}
@@ -1383,17 +936,19 @@ export const DashboardView: React.FC<Props> = (props) => {
           marketEnvSnapshots={storeData.marketEnvSnapshots}
         />
 
-        <div
-          style={{
-            display: "grid",
-            gridTemplateColumns: "1fr",
-            gap: 16,
-            marginTop: 16
-          }}
-        >
-          <DividendTrendCard title={`${trackedTickerName} 해당금액 변동 (전체 기준)`} trend={trackedDividendTrend} />
-          <DividendTrendCard title={rise200CardTitle} trend={rise200DividendTrend} />
-        </div>
+        {(() => {
+          const cmaAccount = accounts.find((a) => a.id === "CMA");
+          if (!cmaAccount) return null;
+          return (
+            <div style={{ marginTop: 16 }}>
+              <CmaBalanceTrendCard
+                accountBalanceSnapshots={accountBalanceSnapshots}
+                accountId={cmaAccount.id}
+                accountName={cmaAccount.name || cmaAccount.id}
+              />
+            </div>
+          );
+        })()}
 
         <SpendingCalendarCard
           cashflowMonth={cashflowMonth}

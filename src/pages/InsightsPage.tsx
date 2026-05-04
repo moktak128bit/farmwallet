@@ -839,8 +839,13 @@ function useD(ledger: LedgerEntry[], rawTrades: StockTrade[], allTrades: StockTr
       return budgetGoals.map((g) => {
         let spent = 0;
         if (g.category === "전체") {
-          const excl = new Set(g.excludeCategories ?? []);
-          spent = monthExp.filter((l) => !excl.has(l.category || "") && !excl.has(l.subCategory || "")).reduce((s, l) => s + Number(l.amount), 0);
+          const exclCats = new Set(g.excludeCategories ?? []);
+          const exclAccts = new Set(g.excludeAccountIds ?? []);
+          spent = monthExp.filter((l) =>
+            !exclCats.has(l.category || "") &&
+            !exclCats.has(l.subCategory || "") &&
+            !exclAccts.has(l.fromAccountId || "")
+          ).reduce((s, l) => s + Number(l.amount), 0);
         } else {
           spent = monthExp.filter((l) => l.category === g.category || l.subCategory === g.category).reduce((s, l) => s + Number(l.amount), 0);
         }

@@ -1,11 +1,14 @@
 import React, { useMemo } from "react";
-import type { LedgerEntry, BudgetGoal } from "../../types";
+import type { LedgerEntry, BudgetGoal, Account } from "../../types";
 import { BUDGET_ALL_CATEGORY } from "../../types";
 import { formatNumber } from "../../utils/formatter";
+import { isCreditPayment } from "../../utils/category";
 
 interface Props {
   ledger: LedgerEntry[];
   budgetGoals?: BudgetGoal[];
+  /** 예산 표시에 계좌명 변환용 (excludeAccountIds → 이름) */
+  accounts?: Account[];
 }
 
 const monthOf = (d: string) => (d || "").slice(0, 7);
@@ -15,16 +18,25 @@ const currentMonthKey = () => {
   return now.getFullYear() + "-" + String(now.getMonth() + 1).padStart(2, "0");
 };
 
-export const BudgetAlertWidget: React.FC<Props> = ({ ledger, budgetGoals }) => {
+export const BudgetAlertWidget: React.FC<Props> = ({ ledger, budgetGoals, accounts }) => {
   const currentMonth = useMemo(() => currentMonthKey(), []);
+
+  const accountNameById = useMemo(() => {
+    const m = new Map<string, string>();
+    for (const a of accounts ?? []) m.set(a.id, a.name || a.id);
+    return m;
+  }, [accounts]);
 
   const alerts = useMemo(() => {
     if (!budgetGoals || budgetGoals.length === 0) return [];
+    // 이번달 expense만 — 신용결제는 카드 사용 시점에 이미 잡혔으므로 제외 (이중계상 방지).
+    // 이체(kind="transfer")는 expense가 아니라 이 루프에 자연스럽게 포함되지 않음.
+    const monthExp = ledger.filter(
+      (l) => l.kind === "expense" && monthOf(l.date) === currentMonth && !isCreditPayment(l) && Number(l.amount) > 0
+    );
     const catSpend = new Map<string, number>();
     let totalExpense = 0;
-    const expenseByMainCat = new Map<string, number>();
-    for (const l of ledger) {
-      if (l.kind !== "expense" || monthOf(l.date) !== currentMonth) continue;
+    for (const l of monthExp) {
       const amt = Number(l.amount);
       const cat = l.subCategory || l.category || "";
       if (cat) catSpend.set(cat, (catSpend.get(cat) ?? 0) + amt);
@@ -32,19 +44,25 @@ export const BudgetAlertWidget: React.FC<Props> = ({ ledger, budgetGoals }) => {
         catSpend.set(l.category, (catSpend.get(l.category) ?? 0) + amt);
       }
       totalExpense += amt;
-      if (l.category) {
-        expenseByMainCat.set(l.category, (expenseByMainCat.get(l.category) ?? 0) + amt);
-      }
     }
     return budgetGoals
       .map((g) => {
         let spent: number;
         if (g.category === BUDGET_ALL_CATEGORY) {
-          const excluded = (g.excludeCategories ?? []).reduce(
-            (s, c) => s + (expenseByMainCat.get(c) ?? 0),
-            0
-          );
-          spent = Math.max(0, totalExpense - excluded);
+          // excludeCategories: category·subCategory 어느 쪽으로도 매칭
+          // excludeAccountIds: fromAccountId 매칭 (모임통장 등 공동 계좌 제외용)
+          const exclCats = new Set(g.excludeCategories ?? []);
+          const exclAccts = new Set(g.excludeAccountIds ?? []);
+          const noFilter = exclCats.size === 0 && exclAccts.size === 0;
+          spent = noFilter
+            ? totalExpense
+            : monthExp
+                .filter((l) =>
+                  !exclCats.has(l.category || "") &&
+                  !exclCats.has(l.subCategory || "") &&
+                  !exclAccts.has(l.fromAccountId || "")
+                )
+                .reduce((s, l) => s + Number(l.amount), 0);
         } else {
           spent = catSpend.get(g.category) ?? 0;
         }
@@ -84,18 +102,21 @@ export const BudgetAlertWidget: React.FC<Props> = ({ ledger, budgetGoals }) => {
           return (
             <div key={a.id}>
               <div style={{ display: "flex", justifyContent: "space-between", fontSize: 15, marginBottom: 6 }}>
-                <span
-                  style={{ fontWeight: 600 }}
-                  title={
-                    a.category === BUDGET_ALL_CATEGORY && (a.excludeCategories ?? []).length > 0
-                      ? `제외: ${(a.excludeCategories ?? []).join(", ")}`
-                      : undefined
-                  }
-                >
-                  {a.category === BUDGET_ALL_CATEGORY
-                    ? `전체${(a.excludeCategories ?? []).length > 0 ? ` (− ${(a.excludeCategories ?? []).join(", ")})` : ""}`
-                    : a.category}
-                </span>
+                {(() => {
+                  const exclCats = a.excludeCategories ?? [];
+                  const exclAccts = (a.excludeAccountIds ?? []).map((id) => accountNameById.get(id) ?? id);
+                  const allExcl = [...exclCats, ...exclAccts];
+                  return (
+                    <span
+                      style={{ fontWeight: 600 }}
+                      title={a.category === BUDGET_ALL_CATEGORY && allExcl.length > 0 ? `제외: ${allExcl.join(", ")}` : undefined}
+                    >
+                      {a.category === BUDGET_ALL_CATEGORY
+                        ? `전체${allExcl.length > 0 ? ` (− ${allExcl.join(", ")})` : ""}`
+                        : a.category}
+                    </span>
+                  );
+                })()}
                 <span style={{ color }}>
                   {formatNumber(a.spent)} / {formatNumber(a.monthlyLimit)}
                   <span style={{ marginLeft: 6, fontSize: 13 }}>({Math.round(a.pct)}%)</span>

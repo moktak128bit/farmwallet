@@ -196,3 +196,55 @@ describe("loadData round-trip — investmentGoals 보존", () => {
     expect((loaded.investmentGoals as Record<string, unknown>).retirementDate).toBeUndefined();
   });
 });
+
+describe("v10 migration: 데이트 입금 카테고리 통일", () => {
+  beforeEach(() => {
+    window.localStorage.clear();
+  });
+
+  it("kind=income, category='데이트비'를 '데이트통장'으로 변경", () => {
+    const oldData = {
+      ...makeAppData(),
+      ledger: [
+        { id: "i1", date: "2026-03-30", kind: "income", category: "데이트비", description: "", amount: 300_000 },
+        { id: "i2", date: "2026-05-01", kind: "income", category: "데이트통장", description: "", amount: 300_000 },
+      ],
+    };
+    window.localStorage.setItem(STORAGE_KEYS.DATA, JSON.stringify(oldData));
+    // 직전 schema 버전을 9로 강제 → v10 migration 트리거
+    window.localStorage.setItem(STORAGE_KEYS.DATA_SCHEMA_VERSION, "9");
+    const loaded = loadData();
+    expect(loaded.ledger[0].category).toBe("데이트통장");
+    expect(loaded.ledger[1].category).toBe("데이트통장");
+  });
+
+  it("kind=expense의 '데이트비'는 그대로 유지 (지출 카테고리는 정상 사용)", () => {
+    const oldData = {
+      ...makeAppData(),
+      ledger: [
+        { id: "e1", date: "2026-04-01", kind: "expense", category: "데이트비", description: "저녁", amount: 50_000 },
+        { id: "i1", date: "2026-04-01", kind: "income", category: "데이트비", description: "", amount: 300_000 },
+      ],
+    };
+    window.localStorage.setItem(STORAGE_KEYS.DATA, JSON.stringify(oldData));
+    window.localStorage.setItem(STORAGE_KEYS.DATA_SCHEMA_VERSION, "9");
+    const loaded = loadData();
+    expect(loaded.ledger.find((l) => l.id === "e1")?.category).toBe("데이트비");
+    expect(loaded.ledger.find((l) => l.id === "i1")?.category).toBe("데이트통장");
+  });
+
+  it("loadData 후 income preset에 '데이트통장' 보장 (mergeCategoryPresets 방어선)", () => {
+    const oldData = {
+      ...makeAppData({
+        categoryPresets: { income: ["급여", "기타수입"], expense: [], transfer: [] }
+      }),
+    };
+    window.localStorage.setItem(STORAGE_KEYS.DATA, JSON.stringify(oldData));
+    const loaded = loadData();
+    expect(loaded.categoryPresets.income).toContain("데이트통장");
+    // "기타수입" 직전에 삽입됐는지 확인
+    const idx = loaded.categoryPresets.income.indexOf("데이트통장");
+    const otherIdx = loaded.categoryPresets.income.indexOf("기타수입");
+    expect(idx).toBeLessThan(otherIdx);
+  });
+});

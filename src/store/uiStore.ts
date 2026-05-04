@@ -36,6 +36,33 @@ export interface GistConflict {
   pendingLocalDataJson: string;
 }
 
+/** 자동저장 상태 머신. saving/saved는 디바운스 콜백 진입·완료에 매핑. error는 다음 시도까지 sticky. */
+export type SaveStatus = "idle" | "saving" | "saved" | "error";
+
+/**
+ * 다른 탭에서 저장된 변경이 도착했을 때, 현재 탭에 미저장 dirty 변경이 있어
+ * 단순 덮어쓰기로는 데이터 유실이 발생할 수 있는 충돌 상황.
+ */
+export interface TabConflict {
+  /** 다른 탭이 저장한 데이터 (localStorage에서 읽은 직렬화 payload) */
+  remoteDataJson: string;
+  /** 우리 탭의 현재 store 데이터 직렬화 (충돌 해결 후 그대로 push할 수 있도록) */
+  localDataJson: string;
+  /** 충돌 감지 시각 (ms epoch) */
+  detectedAt: number;
+}
+
+/**
+ * 디바운스 대기 중 크래시로 유실될 뻔한 미저장 변경이 boot 시점에 발견된 경우.
+ * 사용자가 [복구]/[폐기]를 선택할 때까지 banner로 노출.
+ */
+export interface DraftRecovery {
+  /** 드래프트 슬롯에 보관됐던 직렬화 데이터 */
+  draftJson: string;
+  /** 드래프트 작성 시각 (ms epoch) */
+  draftAt: number;
+}
+
 const APP_LOG_MAX = 200;
 /** localStorage에 보관할 최근 로그 (세션 복원용 + 사용자 내보내기) */
 const APP_LOG_PERSIST_MAX = 500;
@@ -97,6 +124,23 @@ interface UIStore {
   gistConflict: GistConflict | null;
   setGistConflict: (conflict: GistConflict | null) => void;
 
+  // 자동저장 상태 표시기
+  saveStatus: SaveStatus;
+  saveStatusError: string | null;
+  /** saved/error 진입 시각 — pill의 "N초 전" 표시·자동 idle 복귀 타이머용 */
+  saveStatusAt: number;
+  setSaveStatus: (status: SaveStatus, error?: string | null) => void;
+
+  /** 사용자 편집이 디바운스 큐에 있고 아직 디스크에 안 들어간 dirty 윈도우 신호 */
+  hasDirtyChanges: boolean;
+  setHasDirtyChanges: (v: boolean) => void;
+
+  // 탭 간 충돌 / 드래프트 복구
+  tabConflict: TabConflict | null;
+  setTabConflict: (conflict: TabConflict | null) => void;
+  draftRecovery: DraftRecovery | null;
+  setDraftRecovery: (recovery: DraftRecovery | null) => void;
+
   // Cross-page navigation
   copyRequest: LedgerEntry | null;
   setCopyRequest: (entry: LedgerEntry | null) => void;
@@ -148,6 +192,20 @@ export const useUIStore = create<UIStore>((set) => ({
 
   gistConflict: null,
   setGistConflict: (gistConflict) => set({ gistConflict }),
+
+  saveStatus: "idle",
+  saveStatusError: null,
+  saveStatusAt: 0,
+  setSaveStatus: (status, error = null) =>
+    set({ saveStatus: status, saveStatusError: error, saveStatusAt: Date.now() }),
+
+  hasDirtyChanges: false,
+  setHasDirtyChanges: (hasDirtyChanges) => set({ hasDirtyChanges }),
+
+  tabConflict: null,
+  setTabConflict: (tabConflict) => set({ tabConflict }),
+  draftRecovery: null,
+  setDraftRecovery: (draftRecovery) => set({ draftRecovery }),
 
   copyRequest: null,
   setCopyRequest: (copyRequest) => set({ copyRequest }),

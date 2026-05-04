@@ -277,6 +277,7 @@ function getDefaultCategoryPresets(): CategoryPresets {
       "처분소득",
       "용돈",
       "지원",
+      "데이트통장",
       "기타수입"
     ],
     expense: expenseDetails.map((g) => g.main),
@@ -296,9 +297,16 @@ function mergeCategoryPresets(
 ): CategoryPresets {
   if (!fromStorage) return defaults;
 
-  const income = fromStorage.income && Array.isArray(fromStorage.income) && fromStorage.income.length > 0
+  let income = fromStorage.income && Array.isArray(fromStorage.income) && fromStorage.income.length > 0
     ? fromStorage.income
     : defaults.income;
+  // 방어적: "데이트통장" 보장 (v10 migration 누락·import preset 등 케이스 대비)
+  if (!income.includes("데이트통장")) {
+    const idx = income.indexOf("기타수입");
+    income = idx >= 0
+      ? [...income.slice(0, idx), "데이트통장", ...income.slice(idx)]
+      : [...income, "데이트통장"];
+  }
   let transfer = fromStorage.transfer && Array.isArray(fromStorage.transfer) && fromStorage.transfer.length > 0
     ? fromStorage.transfer
     : defaults.transfer;
@@ -698,6 +706,36 @@ function migrateBySchema(
           });
         cp.expenseDetails = filtered;
         cp.expense = filtered.map((g) => g?.main).filter(Boolean);
+      }
+    }
+    migrated = true;
+  }
+
+  // v10: 데이트통장 입금 카테고리 통일.
+  // 사용자가 같은 의미의 매월 데이트 입금을 어떤 달엔 "데이트비"(지출 카테고리), 어떤 달엔 "데이트통장"으로
+  // 손입력해 카테고리 합산이 깨졌음. income 항목의 category="데이트비"는 모두 "데이트통장"으로 통일.
+  // - subCategory는 그대로 유지 (있다면)
+  // - kind=expense의 "데이트비"는 정상 사용이므로 건드리지 않음
+  // - 같이 income preset에도 "데이트통장" 보장 (사용자 preset 보호하면서)
+  if (fromVersion < 10) {
+    const ledgerArr = asArray<Record<string, unknown>>(next.ledger);
+    if (ledgerArr.length > 0) {
+      next.ledger = ledgerArr.map((l) => {
+        if (l?.kind === "income" && l?.category === "데이트비") {
+          return { ...l, category: "데이트통장" };
+        }
+        return l;
+      });
+    }
+    const cp = next.categoryPresets as Record<string, unknown> | undefined;
+    if (cp && typeof cp === "object") {
+      const inc = asArray<string>(cp.income);
+      if (inc.length > 0 && !inc.includes("데이트통장")) {
+        // "기타수입" 직전에 삽입 (있으면), 없으면 끝에
+        const idx = inc.indexOf("기타수입");
+        cp.income = idx >= 0
+          ? [...inc.slice(0, idx), "데이트통장", ...inc.slice(idx)]
+          : [...inc, "데이트통장"];
       }
     }
     migrated = true;

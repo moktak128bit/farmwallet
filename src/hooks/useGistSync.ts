@@ -1,7 +1,9 @@
 import { useCallback, useEffect, useRef, useState } from "react";
+import { toast } from "react-hot-toast";
 import type { AppData } from "../types";
 import {
   saveToGist,
+  saveToGistWithRetry,
   loadFromGist,
   getGistToken,
   getGistId,
@@ -15,14 +17,22 @@ import {
   detectConflict
 } from "../services/gistSync";
 import { toUserDataJson } from "../services/dataService";
-import { GIST_AUTO_PUSH_DEBOUNCE_MS } from "../constants/config";
+import { GIST_AUTO_PUSH_DEBOUNCE_MS, GIST_STALE_WARNING_HOURS } from "../constants/config";
 import { useUIStore } from "../store/uiStore";
+
+const GIST_AUTO_SAVE_ERROR_TOAST_ID = "gist-auto-save-error";
 
 export interface UseGistSyncOptions {
   onLog?: (message: string, type?: "success" | "error" | "info") => void;
 }
 
 export type GistConflictResolution = "apply-remote" | "force-push-local" | "cancel";
+
+export interface GistStaleWarning {
+  type: "warning" | "critical";
+  message: string;
+  hoursSince: number;
+}
 
 export interface UseGistSyncReturn {
   autoSyncEnabled: boolean;
@@ -32,6 +42,8 @@ export interface UseGistSyncReturn {
   isSyncing: boolean;
   /** Gist 충돌 모달에서 사용자가 액션을 선택했을 때 호출 */
   resolveGistConflict: (resolution: GistConflictResolution) => Promise<void>;
+  /** N시간 이상 푸시 안 됐을 때 노출되는 경고 (자동 동기화 켜져 있을 때만) */
+  gistStaleWarning: GistStaleWarning | null;
 }
 
 /**
@@ -56,6 +68,9 @@ export function useGistSync(
   const hasMountedRef = useRef(false);
   const isPushingRef = useRef(false);
   const knownRemoteCommitRef = useRef<string>("");
+  /** runAutoPush가 항상 최신 data를 직렬화하도록 — 디바운스 타이머 + visibility flush 양쪽이 공유 */
+  const dataRef = useRef(data);
+  dataRef.current = data;
 
   // Effect 1: 시작 시 자동 불러오기 (자동 동기화 ON 일 때만)
   // - Gist의 마지막 commit 시각이 로컬 lastPullAt 보다 최신이면 자동으로 불러옴
@@ -109,9 +124,68 @@ export function useGistSync(
     return () => { cancelled = true; };
   }, [autoSyncEnabled, onApplyPulledData, onLog]);
 
+  /**
+   * 디바운스/즉시 flush 양쪽이 호출하는 실제 push 루틴.
+   * 충돌 감지 → 충돌 모달 / 정상 → retry 래퍼로 push.
+   * 일시적 오류는 saveToGistWithRetry가 내부 재시도, 영구 오류는 즉시 throw → toast.
+   */
+  const runAutoPush = useCallback(async () => {
+    if (!autoSyncEnabled) return;
+    if (!getGistToken() || !getGistId()) return;
+    if (isPushingRef.current) return;
+    if (useUIStore.getState().gistConflict) {
+      onLog?.("Gist 충돌 모달이 열려 있어 자동 저장 보류", "info");
+      return;
+    }
+
+    const dataJson = toUserDataJson(dataRef.current);
+    if (dataJson === lastPushedPayloadRef.current) return;
+
+    isPushingRef.current = true;
+    try {
+      setIsSyncing(true);
+      const versions = await getGistVersions(1).catch(() => []);
+      const latest = versions[0];
+      const known = knownRemoteCommitRef.current || getGistLastPullAt();
+      if (detectConflict(latest?.committedAt, known)) {
+        onLog?.("Gist 충돌 감지 — 원격 데이터 fetch 후 모달 표시", "info");
+        try {
+          const remote = await loadFromGist();
+          useUIStore.getState().setGistConflict({
+            remoteDataJson: remote.dataJson,
+            remoteUpdatedAt: remote.updatedAt,
+            pendingLocalDataJson: dataJson,
+          });
+        } catch (pullErr) {
+          const message = pullErr instanceof Error ? pullErr.message : String(pullErr);
+          onLog?.(`Gist 충돌 후 원격 fetch 실패: ${message}`, "error");
+        }
+        return;
+      }
+      const result = await saveToGistWithRetry(dataJson, {
+        onAttempt: (attempt, err) => {
+          onLog?.(`Gist 푸시 ${attempt}회 실패 (${err.message}) — 재시도`, "info");
+        }
+      });
+      lastPushedPayloadRef.current = dataJson;
+      setGistLastPushAt(result.updatedAt);
+      setLastPushAt(result.updatedAt);
+      knownRemoteCommitRef.current = result.updatedAt;
+      onLog?.("Gist 자동 저장 성공", "success");
+      // 이전 실패 토스트가 있다면 정리
+      toast.dismiss(GIST_AUTO_SAVE_ERROR_TOAST_ID);
+    } catch (err) {
+      const message = err instanceof Error ? err.message : String(err);
+      onLog?.(`Gist 자동 저장 실패: ${message}`, "error");
+      // 토스트로 사용자에게 가시화 — 모바일에서 백그라운드 suspend 등 조용한 실패 방지
+      toast.error(`Gist 저장 실패: ${message}`, { id: GIST_AUTO_SAVE_ERROR_TOAST_ID });
+    } finally {
+      isPushingRef.current = false;
+      setIsSyncing(false);
+    }
+  }, [autoSyncEnabled, onLog]);
+
   // Effect 2: 데이터 변경 시 자동 저장 (debounced)
-  // - 마지막 변경 후 GIST_AUTO_PUSH_DEBOUNCE_MS 경과 시 push
-  // - push 직전에 원격 commit 시각을 확인. 우리가 알고 있는 시점보다 새로우면 충돌로 간주하고 사용자에게 알림 (덮어쓰지 않음)
   useEffect(() => {
     if (!autoSyncEnabled) return;
     if (!getGistToken() || !getGistId()) return;
@@ -124,48 +198,9 @@ export function useGistSync(
       window.clearTimeout(autoPushTimerRef.current);
     }
 
-    autoPushTimerRef.current = window.setTimeout(async () => {
-      if (isPushingRef.current) return;
-      // 충돌 모달이 열려 있는 동안에는 push 보류 (사용자가 결정할 때까지 대기)
-      if (useUIStore.getState().gistConflict) {
-        onLog?.("Gist 충돌 모달이 열려 있어 자동 저장 보류", "info");
-        return;
-      }
-      isPushingRef.current = true;
-      try {
-        setIsSyncing(true);
-        const versions = await getGistVersions(1).catch(() => []);
-        const latest = versions[0];
-        const known = knownRemoteCommitRef.current || getGistLastPullAt();
-        if (detectConflict(latest?.committedAt, known)) {
-          // 자동 pull 후 사용자에게 머지/덮어쓰기/취소 모달 노출
-          onLog?.("Gist 충돌 감지 — 원격 데이터 fetch 후 모달 표시", "info");
-          try {
-            const remote = await loadFromGist();
-            useUIStore.getState().setGistConflict({
-              remoteDataJson: remote.dataJson,
-              remoteUpdatedAt: remote.updatedAt,
-              pendingLocalDataJson: dataJson,
-            });
-          } catch (pullErr) {
-            const message = pullErr instanceof Error ? pullErr.message : String(pullErr);
-            onLog?.(`Gist 충돌 후 원격 fetch 실패: ${message}`, "error");
-          }
-          return;
-        }
-        const result = await saveToGist(dataJson);
-        lastPushedPayloadRef.current = dataJson;
-        setGistLastPushAt(result.updatedAt);
-        setLastPushAt(result.updatedAt);
-        knownRemoteCommitRef.current = result.updatedAt;
-        onLog?.("Gist 자동 저장 성공", "success");
-      } catch (err) {
-        const message = err instanceof Error ? err.message : String(err);
-        onLog?.(`Gist 자동 저장 실패: ${message}`, "error");
-      } finally {
-        isPushingRef.current = false;
-        setIsSyncing(false);
-      }
+    autoPushTimerRef.current = window.setTimeout(() => {
+      autoPushTimerRef.current = null;
+      void runAutoPush();
     }, GIST_AUTO_PUSH_DEBOUNCE_MS);
 
     return () => {
@@ -174,7 +209,40 @@ export function useGistSync(
         autoPushTimerRef.current = null;
       }
     };
-  }, [autoSyncEnabled, data, onLog]);
+  }, [autoSyncEnabled, data, runAutoPush]);
+
+  // Effect 3: 모바일 백그라운드 suspend 방지용 즉시 flush.
+  // visibilitychange:hidden — 앱 전환·화면 잠금 시점. setTimeout이 정지·지연되기 전에 push.
+  // pagehide — 페이지가 실제로 unload되는 시점 (iOS Safari에서 신뢰성 ↑).
+  // 두 이벤트 모두 dirty가 있을 때만 작동, 디바운스 타이머는 cancel 후 즉시 push 시도.
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    if (!autoSyncEnabled) return;
+    if (!hasMountedRef.current) return;
+
+    const flush = () => {
+      if (!getGistToken() || !getGistId()) return;
+      const dataJson = toUserDataJson(dataRef.current);
+      if (dataJson === lastPushedPayloadRef.current) return;
+      if (autoPushTimerRef.current) {
+        window.clearTimeout(autoPushTimerRef.current);
+        autoPushTimerRef.current = null;
+      }
+      // 페이지가 곧 죽을 수 있어 await하지 않음 — 브라우저가 in-flight fetch를 잠시 살려둠 (보통 ~30s)
+      void runAutoPush();
+    };
+
+    const onVisibilityChange = () => {
+      if (document.visibilityState === "hidden") flush();
+    };
+
+    document.addEventListener("visibilitychange", onVisibilityChange);
+    window.addEventListener("pagehide", flush);
+    return () => {
+      document.removeEventListener("visibilitychange", onVisibilityChange);
+      window.removeEventListener("pagehide", flush);
+    };
+  }, [autoSyncEnabled, runAutoPush]);
 
   const setAutoSyncEnabled = useCallback((enabled: boolean) => {
     setGistAutoSync(enabled);
@@ -239,5 +307,36 @@ export function useGistSync(
     }
   }, [onApplyPulledData, onLog]);
 
-  return { autoSyncEnabled, setAutoSyncEnabled, lastPushAt, lastPullAt, isSyncing, resolveGistConflict };
+  // 경고는 매 렌더에 재계산 — 사용자가 앱을 보고 있으면 어차피 자주 리렌더됨 (탭 전환·데이터 변경 등).
+  // 별도 setInterval로 강제 갱신은 안 함 (불필요 + fake-timer 테스트와 충돌).
+  let gistStaleWarning: GistStaleWarning | null = null;
+  if (autoSyncEnabled && lastPushAt) {
+    const ms = Date.now() - new Date(lastPushAt).getTime();
+    if (Number.isFinite(ms) && ms > 0) {
+      const hoursSince = ms / 36e5;
+      if (hoursSince >= GIST_STALE_WARNING_HOURS.CRITICAL) {
+        gistStaleWarning = {
+          type: "critical",
+          message: `${Math.floor(hoursSince)}시간 동안 Gist에 푸시되지 않았습니다. 지금 푸시하세요.`,
+          hoursSince,
+        };
+      } else if (hoursSince >= GIST_STALE_WARNING_HOURS.WARNING) {
+        gistStaleWarning = {
+          type: "warning",
+          message: `${Math.floor(hoursSince)}시간 경과 — Gist 푸시 권장`,
+          hoursSince,
+        };
+      }
+    }
+  }
+
+  return {
+    autoSyncEnabled,
+    setAutoSyncEnabled,
+    lastPushAt,
+    lastPullAt,
+    isSyncing,
+    resolveGistConflict,
+    gistStaleWarning,
+  };
 }

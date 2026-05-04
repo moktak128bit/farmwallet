@@ -968,6 +968,7 @@ export const DashboardView: React.FC<Props> = (props) => {
         <BudgetAlertWidget
           ledger={ledger}
           budgetGoals={storeData.budgetGoals}
+          accounts={accounts}
         />
       </div>
     </div>

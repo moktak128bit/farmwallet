@@ -366,7 +366,8 @@ export const BudgetRecurringView: React.FC<Props> = ({
   const budgetUsage = useMemo(() => {
     return budgets.map((b) => {
       const isTotal = b.category === BUDGET_ALL_CATEGORY;
-      const excludeSet = new Set(b.excludeCategories ?? []);
+      const exclCats = new Set(b.excludeCategories ?? []);
+      const exclAccts = new Set(b.excludeAccountIds ?? []);
       let spent = 0;
       for (const l of ledger) {
         if (l.kind !== "expense") continue;
@@ -374,8 +375,9 @@ export const BudgetRecurringView: React.FC<Props> = ({
         // 일반 지출만 (신용결제·재테크 등 cat이 "지출"이 아닌 항목은 모두 제외)
         if (l.category !== "지출") continue;
         if (isTotal) {
-          // "전체" 모드 — 사용자 지정 sub 제외 후 합산
-          if (l.subCategory && excludeSet.has(l.subCategory)) continue;
+          // "전체" 모드 — 사용자 지정 sub·계좌 제외 후 합산
+          if (l.subCategory && exclCats.has(l.subCategory)) continue;
+          if (l.fromAccountId && exclAccts.has(l.fromAccountId)) continue;
           spent += l.amount;
         } else {
           // 개별 카테고리 — sub === b.category (식비/유류교통비/...) 매칭
@@ -568,8 +570,9 @@ export const BudgetRecurringView: React.FC<Props> = ({
                 setBudForm((prev) => ({
                   ...prev,
                   category: next,
-                  // 개별 카테고리 모드로 바뀌면 제외 목록 비움
+                  // 개별 카테고리 모드로 바뀌면 제외 목록 둘 다 비움
                   excludeCategories: next === BUDGET_ALL_CATEGORY ? (prev.excludeCategories ?? []) : undefined,
+                  excludeAccountIds: next === BUDGET_ALL_CATEGORY ? (prev.excludeAccountIds ?? []) : undefined,
                 }));
               }}
               style={{ width: "100%" }}
@@ -635,6 +638,63 @@ export const BudgetRecurringView: React.FC<Props> = ({
               </div>
               <span className="hint" style={{ display: "block", marginTop: 4, fontSize: 11 }}>
                 체크한 카테고리의 지출은 이 예산 집계에서 제외됩니다. 예: 데이트비·재테크 제외 월 60만원.
+              </span>
+            </label>
+          )}
+          {budForm.category === BUDGET_ALL_CATEGORY && (
+            <label className="wide">
+              <span>제외 계좌 (출금 기준)</span>
+              <div
+                style={{
+                  display: "flex",
+                  flexWrap: "wrap",
+                  gap: 6,
+                  padding: 8,
+                  border: "1px solid var(--border)",
+                  borderRadius: 6,
+                  background: "var(--bg)",
+                }}
+              >
+                {accounts.length === 0 && (
+                  <span className="hint">계좌가 없습니다.</span>
+                )}
+                {accounts.map((a) => {
+                  const checked = (budForm.excludeAccountIds ?? []).includes(a.id);
+                  return (
+                    <label
+                      key={a.id}
+                      style={{
+                        display: "inline-flex",
+                        alignItems: "center",
+                        gap: 4,
+                        padding: "4px 10px",
+                        borderRadius: 14,
+                        fontSize: 13,
+                        cursor: "pointer",
+                        border: "1px solid var(--border)",
+                        background: checked ? "var(--primary-light)" : "var(--surface)",
+                        color: checked ? "var(--primary)" : "var(--text)",
+                        fontWeight: checked ? 600 : 400,
+                      }}
+                    >
+                      <input
+                        type="checkbox"
+                        checked={checked}
+                        onChange={(e) => {
+                          const set = new Set(budForm.excludeAccountIds ?? []);
+                          if (e.target.checked) set.add(a.id);
+                          else set.delete(a.id);
+                          setBudForm({ ...budForm, excludeAccountIds: [...set] });
+                        }}
+                        style={{ margin: 0 }}
+                      />
+                      {a.name || a.id}
+                    </label>
+                  );
+                })}
+              </div>
+              <span className="hint" style={{ display: "block", marginTop: 4, fontSize: 11 }}>
+                체크한 계좌에서 빠져나간 지출(fromAccount)은 집계에서 제외됩니다. 예: 모임통장 결제는 본인 부담 아님 → 예산 외.
               </span>
             </label>
           )}
@@ -1138,15 +1198,21 @@ export const BudgetRecurringView: React.FC<Props> = ({
                             fontSize: 15,
                             color: accentColor,
                           }}
-                          title={
-                            b.category === BUDGET_ALL_CATEGORY && (b.excludeCategories ?? []).length > 0
-                              ? `제외: ${(b.excludeCategories ?? []).join(", ")}`
-                              : undefined
-                          }
+                          title={(() => {
+                            if (b.category !== BUDGET_ALL_CATEGORY) return undefined;
+                            const cats = b.excludeCategories ?? [];
+                            const accts = (b.excludeAccountIds ?? []).map((id) => accounts.find(a => a.id === id)?.name ?? id);
+                            const all = [...cats, ...accts];
+                            return all.length > 0 ? `제외: ${all.join(", ")}` : undefined;
+                          })()}
                         >
-                          {b.category === BUDGET_ALL_CATEGORY
-                            ? `전체${(b.excludeCategories ?? []).length > 0 ? ` (− ${(b.excludeCategories ?? []).join(", ")})` : ""}`
-                            : (b.category || "(미분류)")}
+                          {(() => {
+                            if (b.category !== BUDGET_ALL_CATEGORY) return (b.category || "(미분류)");
+                            const cats = b.excludeCategories ?? [];
+                            const accts = (b.excludeAccountIds ?? []).map((id) => accounts.find(a => a.id === id)?.name ?? id);
+                            const all = [...cats, ...accts];
+                            return `전체${all.length > 0 ? ` (− ${all.join(", ")})` : ""}`;
+                          })()}
                         </span>
                         <span
                           style={{

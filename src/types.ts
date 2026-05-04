@@ -107,10 +107,16 @@ export interface BudgetGoal {
   monthlyLimit: number;
   note?: string;
   /**
-   * category="전체"일 때만 의미 있음. 여기 나열한 카테고리의 지출은 집계에서 제외.
+   * category="전체"일 때만 의미 있음. 여기 나열한 카테고리(category 또는 subCategory) 지출은 집계에서 제외.
    * 예: ["데이트비", "재테크"] → "데이트비와 재테크 제외한 월 지출이 한도 이하"인지 판정.
    */
   excludeCategories?: string[];
+  /**
+   * category="전체"일 때만 의미 있음. 여기 나열한 계좌(fromAccountId)에서 빠져나간 지출은 집계에서 제외.
+   * 예: ["유진성우"] → "모임통장에서 결제된 데이트비는 본인 부담 아님 → 예산에 포함 안 함".
+   * excludeCategories와 OR 조합 (둘 중 하나만 매칭돼도 제외).
+   */
+  excludeAccountIds?: string[];
 }
 
 export interface SymbolInfo {

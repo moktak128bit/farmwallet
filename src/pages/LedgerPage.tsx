@@ -8,11 +8,11 @@
  *   - subCategory         = 중분류 (예: 식비, 유류교통비, 저축이체)
  *   - detailCategory      = 소분류 (예: 시장/마트, 주차비)  — 지출에만 의미 있음
  *
- * 폼 picker → 필터 매핑 (헷갈리기 쉬움 — 주의):
- *   - 지출 탭의 "대분류 picker (식비/...)" 클릭 → setFilterSubCategory  (data.subCategory)
- *   - 지출 탭의 "중분류 picker (시장/마트/...)" 클릭 → setFilterDetailCategory (data.detailCategory)
- *   - 이체 탭의 "중분류 picker (저축이체/...)" 클릭 → setFilterSubCategory (cat=이체 sub=저축이체)
- *   - 수입 탭의 단일 picker → setFilterSubCategory (cat=수입 sub=급여/배당/...)
+ * 폼과 필터는 완전히 독립.
+ *   - 폼 picker는 form.{mainCategory,subCategory}만 변경 — setFilter* 호출 없음.
+ *   - 리스트 필터는 LedgerFilterBar 컴포넌트의 5개 드롭다운에서만 변경 (대/중/소/출금계좌/입금계좌).
+ *   - 칩 바(L1500대)의 × 버튼은 해당 필터만 끔 — 폼 상태 건드리지 않음.
+ *   - 탭 전환·새 항목 추가 시 필터 자동 클리어 안 함 — 사용자가 명시적으로 끄거나 바꿀 때만 변경됨.
  *
  * 신용결제 탭은 cat="신용결제" 고정, sub/det 미사용. AccountsPage 카드부채 로직 의존.
  */
@@ -45,6 +45,7 @@ import {
   type LedgerDisplayRow,
 } from "../utils/ledgerHelpers";
 import { MonthNavigator } from "../components/ledger/MonthNavigator";
+import { LedgerFilterBar } from "../features/ledger/LedgerFilterBar";
 
 interface Props {
   accounts: Account[];
@@ -240,14 +241,7 @@ export const LedgerView: React.FC<Props> = ({
   
   // 컬럼 리사이즈: ref에 시작값 고정, 리사이즈 중에는 liveColumnWidths로 표시
 
-  // 탭 전환 시 필터 초기화
-  useEffect(() => {
-    setFilterMainCategory(undefined);
-    setFilterSubCategory(undefined);
-    setFilterFromAccountId(undefined);
-    setFilterToAccountId(undefined);
-    setFilterAccountId(null);
-  }, [ledgerTab]);
+  // 탭 전환 시 필터는 유지 — 필터는 폼과 독립이라 사용자가 의도적으로 끄거나 바꿀 때만 변경됨
 
   // 이체 탭일 때 form.mainCategory를 "이체"로 설정 (중분류 목록 표시용)
   useEffect(() => {
@@ -489,14 +483,7 @@ export const LedgerView: React.FC<Props> = ({
       const entry: LedgerEntry = { id, ...base };
       onChangeLedger([entry, ...ledger]);
       setLastAddedEntryId(id);
-      // 새 내역 추가 시 기존 필터 초기화
-      setFilterMainCategory(undefined);
-      setFilterSubCategory(undefined);
-      setFilterFromAccountId(undefined);
-      setFilterToAccountId(undefined);
-      setFilterAmountMin(undefined);
-      setFilterAmountMax(undefined);
-      setDateFilter({});
+      // 필터는 폼과 독립이라 새 항목 추가 시 자동 클리어 안 함 — 사용자가 의도적으로 좁힌 view를 유지
       const amountStr = kindForTab === "transfer" && form.currency === "USD"
         ? `${amount.toLocaleString()} USD`
         : `${amount.toLocaleString()}원`;
@@ -555,13 +542,7 @@ export const LedgerView: React.FC<Props> = ({
     };
     onChangeLedger([entry, ...ledger]);
     setLastAddedEntryId(id);
-    setFilterMainCategory(undefined);
-    setFilterSubCategory(undefined);
-    setFilterFromAccountId(undefined);
-    setFilterToAccountId(undefined);
-    setFilterAmountMin(undefined);
-    setFilterAmountMax(undefined);
-    setDateFilter({});
+    // 필터는 폼과 독립이라 빠른 복사 후에도 유지
     const amountStr = quickCopyEntry.currency === "USD"
       ? `${parsed.toLocaleString()} USD`
       : `${parsed.toLocaleString()}원`;
@@ -1540,7 +1521,7 @@ export const LedgerView: React.FC<Props> = ({
               {filterMainCategory && (
                 <button
                   type="button"
-                  onClick={() => { setFilterMainCategory(undefined); setFilterSubCategory(undefined); setForm((p) => ({ ...p, mainCategory: "", subCategory: "" })); }}
+                  onClick={() => { setFilterMainCategory(undefined); setFilterSubCategory(undefined); setFilterDetailCategory(undefined); }}
                   style={{
                     padding: "6px 12px",
                     fontSize: 12,
@@ -1558,7 +1539,7 @@ export const LedgerView: React.FC<Props> = ({
               {filterSubCategory && (
                 <button
                   type="button"
-                  onClick={() => { setFilterSubCategory(undefined); setFilterDetailCategory(undefined); setForm((p) => ({ ...p, mainCategory: "", subCategory: "" })); }}
+                  onClick={() => { setFilterSubCategory(undefined); setFilterDetailCategory(undefined); }}
                   style={{
                     padding: "6px 12px",
                     fontSize: 12,
@@ -1576,7 +1557,7 @@ export const LedgerView: React.FC<Props> = ({
               {filterDetailCategory && (
                 <button
                   type="button"
-                  onClick={() => { setFilterDetailCategory(undefined); setForm((p) => ({ ...p, subCategory: "" })); }}
+                  onClick={() => { setFilterDetailCategory(undefined); }}
                   style={{
                     padding: "6px 12px",
                     fontSize: 12,
@@ -1594,7 +1575,7 @@ export const LedgerView: React.FC<Props> = ({
               {filterFromAccountId && (
                 <button
                   type="button"
-                  onClick={() => { setFilterFromAccountId(undefined); setForm((p) => ({ ...p, fromAccountId: "" })); }}
+                  onClick={() => { setFilterFromAccountId(undefined); }}
                   style={{
                     padding: "6px 12px",
                     fontSize: 12,
@@ -1612,7 +1593,7 @@ export const LedgerView: React.FC<Props> = ({
               {filterToAccountId && (
                 <button
                   type="button"
-                  onClick={() => { setFilterToAccountId(undefined); setForm((p) => ({ ...p, toAccountId: "" })); }}
+                  onClick={() => { setFilterToAccountId(undefined); }}
                   style={{
                     padding: "6px 12px",
                     fontSize: 12,
@@ -1954,15 +1935,11 @@ export const LedgerView: React.FC<Props> = ({
                         tabIndex={-1}
                         className={`category-chip ${form.subCategory === c ? "active" : ""}`}
                         onClick={() => {
+                          // 폼 입력 전용 — 리스트 필터에는 영향 주지 않음 (필터는 별도 바에서)
                           if (form.subCategory === c) {
                             setForm((prev) => ({ ...prev, subCategory: "" }));
-                            setFilterSubCategory(undefined);
-                            setFilterDetailCategory(undefined);
                           } else {
                             setForm((prev) => ({ ...prev, subCategory: c || "" }));
-                            // 아래 목록도 해당 중분류로 필터
-                            setFilterSubCategory(c);
-                            setFilterDetailCategory(undefined);
                           }
                         }}
                         style={{
@@ -2033,16 +2010,11 @@ export const LedgerView: React.FC<Props> = ({
                         type="button"
                         tabIndex={-1}
                         onClick={() => {
+                          // 폼 입력 전용 — 리스트 필터에는 영향 주지 않음 (필터는 별도 바에서)
                           if (form.mainCategory === c) {
                             setForm((prev) => ({ ...prev, mainCategory: "", subCategory: "" }));
-                            setFilterSubCategory(undefined);
-                            setFilterDetailCategory(undefined);
                           } else {
                             setForm((prev) => ({ ...prev, mainCategory: c || "", subCategory: "" }));
-                            // 데이터 스키마: 폼의 "대분류"는 데이터의 subCategory에 저장됨 (cat=지출, sub=식비, det=시장/마트)
-                            // → 필터도 subCategory 슬롯에 매칭해야 함
-                            setFilterSubCategory(c);
-                            setFilterDetailCategory(undefined);
                           }
                         }}
                         style={{
@@ -2088,28 +2060,11 @@ export const LedgerView: React.FC<Props> = ({
                             type="button"
                             tabIndex={-1}
                             onClick={() => {
+                              // 폼 입력 전용 — 리스트 필터에는 영향 주지 않음 (필터는 별도 바에서)
                               if (form.subCategory === c) {
                                 setForm((prev) => ({ ...prev, subCategory: "" }));
-                                // 지출 탭: detail 슬롯 정리. 이체/수입 탭: sub 슬롯 정리.
-                                if (ledgerTab === "transfer" || ledgerTab === "income") {
-                                  setFilterSubCategory(undefined);
-                                } else {
-                                  setFilterDetailCategory(undefined);
-                                }
                               } else {
                                 setForm((prev) => ({ ...prev, subCategory: c || "" }));
-                                // 데이터 스키마 매핑:
-                                //   지출 탭: 폼의 "중분류"는 데이터 detailCategory (3-level)
-                                //   이체 탭: 폼의 "중분류"는 데이터 subCategory (2-level, cat=이체 sub=저축이체)
-                                //   수입 탭: 별도 picker라 여긴 안 옴
-                                if (ledgerTab === "transfer") {
-                                  setFilterMainCategory("이체");
-                                  setFilterSubCategory(c);
-                                  setFilterDetailCategory(undefined);
-                                } else {
-                                  // 지출 탭
-                                  setFilterDetailCategory(c);
-                                }
                               }
                             }}
                             style={{
@@ -2331,6 +2286,21 @@ export const LedgerView: React.FC<Props> = ({
 
       {/* ── 필터 영역 ── */}
       <div className="card" style={{ padding: 16, marginBottom: 16 }}>
+        {/* 가계부 리스트 전용 필터 — 폼과 독립적으로 동작 */}
+        <LedgerFilterBar
+          ledger={ledger}
+          accounts={accounts}
+          filterMainCategory={filterMainCategory}
+          filterSubCategory={filterSubCategory}
+          filterDetailCategory={filterDetailCategory}
+          filterFromAccountId={filterFromAccountId}
+          filterToAccountId={filterToAccountId}
+          setFilterMainCategory={setFilterMainCategory}
+          setFilterSubCategory={setFilterSubCategory}
+          setFilterDetailCategory={setFilterDetailCategory}
+          setFilterFromAccountId={setFilterFromAccountId}
+          setFilterToAccountId={setFilterToAccountId}
+        />
         {/* 검색 입력 (항상 표시) */}
         <div style={{ position: "relative", marginBottom: 14 }}>
           <input

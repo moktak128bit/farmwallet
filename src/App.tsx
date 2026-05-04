@@ -70,9 +70,13 @@ import { useMarketEnvSnapshotRecorder } from "./hooks/useMarketEnvSnapshotRecord
 import { GistVersionModal } from "./components/GistVersionModal";
 import { GitVersionModal } from "./components/GitVersionModal";
 import { GistConflictModal } from "./components/GistConflictModal";
-import { isGistConfigured, saveToGist, setGistLastPushAt } from "./services/gistSync";
+import { isGistConfigured, saveToGistWithRetry, setGistLastPushAt } from "./services/gistSync";
 import { toUserDataJson } from "./services/dataService";
 import { useUIStore, type PendingAction } from "./store/uiStore";
+import { SaveStatusPill } from "./components/SaveStatusPill";
+import { TabConflictModal, type TabConflictResolution } from "./components/TabConflictModal";
+import { DraftRecoveryBanner } from "./components/DraftRecoveryBanner";
+import { normalizeImportedData, saveData as persistData, loadData } from "./storage";
 
 export const App: React.FC = () => {
   // UI 상태는 모두 uiStore에서 관리 (App.tsx에서 useState 17개를 슬라이스로 이전)
@@ -229,7 +233,9 @@ export const App: React.FC = () => {
     backupVersion,
     backupIntegrity,
     handleManualBackup,
-    backupWarning
+    backupWarning,
+    flushPendingSave,
+    discardPendingSaveAndApply
   } = useBackup(data, { onLog: addAppLog });
 
   const { isLoadingTickerDatabase, handleLoadInitialTickers } = useTickerDatabase(data, setDataWithHistory, { onLog: addAppLog });
@@ -250,7 +256,7 @@ export const App: React.FC = () => {
     }
   }, [data.prices, data.tickerDatabase, data.historicalDailyCloses, setDataWithHistory, addAppLog]);
 
-  const { autoSyncEnabled, setAutoSyncEnabled, lastPushAt: gistLastPushAt, lastPullAt: gistLastPullAt, resolveGistConflict } = useGistSync(
+  const { autoSyncEnabled, setAutoSyncEnabled, lastPushAt: gistLastPushAt, lastPullAt: gistLastPullAt, resolveGistConflict, gistStaleWarning } = useGistSync(
     data,
     handleGistPulledData,
     { onLog: addAppLog }
@@ -279,10 +285,90 @@ export const App: React.FC = () => {
   }, [storageQuota.isNearLimit, storageQuota.usage, storageQuota.quota, storageQuota.ratio, addAppLog]);
 
   const gistConflict = useUIStore((s) => s.gistConflict);
+  const tabConflict = useUIStore((s) => s.tabConflict);
+  const setTabConflict = useUIStore((s) => s.setTabConflict);
+  const setDraftRecovery = useUIStore((s) => s.setDraftRecovery);
+
+  const handleResolveTabConflict = useCallback((resolution: TabConflictResolution) => {
+    if (!tabConflict) return;
+    if (resolution === "keep-local") {
+      // 우리 변경 즉시 flush → broadcast로 다른 탭이 받게 됨
+      flushPendingSave();
+    } else {
+      // 다른 탭 변경 적용 — loadData()로 schema migration·normalization 동일 경로 보장
+      try {
+        const reloaded = loadData();
+        setData(reloaded);
+      } catch (err) {
+        console.warn("[FarmWallet] tab-conflict apply-remote failed", err);
+      }
+      discardPendingSaveAndApply(tabConflict.remoteDataJson);
+    }
+    setTabConflict(null);
+  }, [tabConflict, flushPendingSave, discardPendingSaveAndApply, setTabConflict, setData]);
+
+  const handleRecoverDraft = useCallback(() => {
+    const recovery = useUIStore.getState().draftRecovery;
+    if (!recovery) return;
+    try {
+      const parsed = JSON.parse(recovery.draftJson) as unknown;
+      const normalized = normalizeImportedData(parsed);
+      persistData(normalized);
+      const reloaded = loadData();
+      setData(reloaded);
+      addAppLog("미저장 변경 복구됨", "success");
+      toast.success("미저장 변경을 복구했습니다.");
+    } catch (err) {
+      const message = err instanceof Error ? err.message : "복구 실패";
+      console.error("[FarmWallet] draft 복구 실패", err);
+      toast.error(`복구 실패: ${message}`);
+      return;
+    } finally {
+      try {
+        window.localStorage.removeItem(STORAGE_KEYS.DRAFT);
+        window.localStorage.removeItem(STORAGE_KEYS.DRAFT_AT);
+      } catch { /* */ }
+      setDraftRecovery(null);
+    }
+  }, [setData, addAppLog, setDraftRecovery]);
+
+  const handleDiscardDraft = useCallback(() => {
+    try {
+      window.localStorage.removeItem(STORAGE_KEYS.DRAFT);
+      window.localStorage.removeItem(STORAGE_KEYS.DRAFT_AT);
+    } catch { /* */ }
+    setDraftRecovery(null);
+  }, [setDraftRecovery]);
 
   const handleGistVersionLoad = useCallback((dataJson: string, _committedAt: string) => {
     handleGistPulledData(dataJson, _committedAt);
   }, [handleGistPulledData]);
+
+  /**
+   * 수동 Gist 저장. 자동 저장과 동일하게 retry 래퍼 사용 — 모바일 LTE 핸드오버 등 일시적 실패에 견고.
+   * SyncActionBar 버튼과 staleWarning pill 양쪽이 공유.
+   */
+  const handleGistManualSave = useCallback(async () => {
+    setIsGistSaving(true);
+    addAppLog("Gist에 저장 중...", "info");
+    try {
+      const jsonStr = toUserDataJson(data);
+      const result = await saveToGistWithRetry(jsonStr, {
+        onAttempt: (attempt, err) => {
+          addAppLog(`Gist 푸시 ${attempt}회 실패 (${err.message}) — 재시도`, "info");
+        }
+      });
+      setGistLastPushAt(result.updatedAt);
+      addAppLog("Gist 저장 완료", "success");
+      toast.success("Gist 저장 완료");
+    } catch (e) {
+      const msg = e instanceof Error ? e.message : String(e);
+      addAppLog(`Gist 저장 실패: ${msg}`, "error");
+      toast.error(msg || "Gist 저장 실패");
+    } finally {
+      setIsGistSaving(false);
+    }
+  }, [data, addAppLog, setIsGistSaving]);
 
   // keyboard shortcuts
   useKeyboardShortcuts({
@@ -496,6 +582,24 @@ export const App: React.FC = () => {
               새 버전이 배포되었습니다 — 클릭하여 적용
             </div>
           )}
+          <SaveStatusPill />
+          <DraftRecoveryBanner onRecover={handleRecoverDraft} onDiscard={handleDiscardDraft} />
+          {gistStaleWarning && (
+            <div
+              className={`pill ${gistStaleWarning.type === "critical" ? "danger" : "warning"}`}
+              style={{ display: "flex", alignItems: "center", gap: "var(--space-2)" }}
+            >
+              <span>{gistStaleWarning.message}</span>
+              <button
+                type="button"
+                className="primary"
+                onClick={() => { void handleGistManualSave(); }}
+                style={{ padding: "2px 10px", fontSize: 12 }}
+              >
+                지금 푸시
+              </button>
+            </div>
+          )}
           {backupWarning && (
             <div className={`pill ${backupWarning.type === "critical" ? "warning" : "muted"}`}>
               {backupWarning.message}
@@ -532,23 +636,7 @@ export const App: React.FC = () => {
               title: "Gist 저장",
               message: "현재 데이터를 Gist에 저장합니다.",
               confirmLabel: "저장",
-              onConfirm: async () => {
-                setIsGistSaving(true);
-                addAppLog("Gist에 저장 중...", "info");
-                try {
-                  const jsonStr = toUserDataJson(data);
-                  const result = await saveToGist(jsonStr);
-                  setGistLastPushAt(result.updatedAt);
-                  addAppLog("Gist 저장 완료", "success");
-                  toast.success("Gist 저장 완료");
-                } catch (e) {
-                  const msg = e instanceof Error ? e.message : String(e);
-                  addAppLog(`Gist 저장 실패: ${msg}`, "error");
-                  toast.error(msg || "Gist 저장 실패");
-                } finally {
-                  setIsGistSaving(false);
-                }
-              },
+              onConfirm: () => { void handleGistManualSave(); },
             })}
             onGistLoad={() => setShowGistVersionModal(true)}
             onGitPush={() => withConfirm({
@@ -945,6 +1033,7 @@ export const App: React.FC = () => {
       />
 
       <GistConflictModal conflict={gistConflict} onResolve={(r) => void resolveGistConflict(r)} />
+      <TabConflictModal conflict={tabConflict} onResolve={handleResolveTabConflict} />
     </div>
   );
 };

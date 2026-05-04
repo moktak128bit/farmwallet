@@ -9,7 +9,7 @@
  * - 기존 사용자(localStorage에만 있는 경우) 호환을 위해 read 시 fallback
  */
 
-import { STORAGE_KEYS } from "../constants/config";
+import { GIST_PUSH_RETRY, STORAGE_KEYS } from "../constants/config";
 
 const GIST_TOKEN_KEY = "fw-gist-token";
 const GIST_TOKEN_PERSIST_KEY = "fw-gist-token-persist";
@@ -132,6 +132,47 @@ function parseApiError(status: number, body: string, action: string): string {
     case 429: return `${action} 실패: API 요청 한도 초과. 잠시 후 다시 시도하세요.`;
     default: return `${action} 실패 (${status}): ${body.slice(0, 200)}`;
   }
+}
+
+/**
+ * 에러 메시지 본문으로 일시적 오류 (재시도 가치 있음) 판별.
+ * - 네트워크 단절·CORS·DNS: TypeError → "네트워크 연결을 확인해주세요." 매핑
+ * - 타임아웃: AbortError → "요청 시간 초과 (15s)" 매핑
+ * - 5xx 서버 오류
+ * 4xx 인증·데이터 오류는 retry 무가치 (영구 오류).
+ */
+function isTransientGistError(err: unknown): boolean {
+  const msg = err instanceof Error ? err.message : String(err);
+  if (msg.includes("네트워크 연결")) return true;
+  if (msg.includes("시간 초과")) return true;
+  // parseApiError 5xx default 케이스 — "(5xx)" 형태로 status 포함됨
+  return /\((5\d\d)\)/.test(msg);
+}
+
+const sleep = (ms: number) => new Promise<void>((resolve) => setTimeout(resolve, ms));
+
+/**
+ * Gist push retry 래퍼. 일시적 오류에만 재시도, 영구 오류 (401/403/404/422)는 즉시 throw.
+ * 모바일 LTE 핸드오버·약한 Wi-Fi에서 한 번 죽어도 회복하기 위함.
+ * 마지막 시도 실패 시 마지막 에러를 그대로 throw.
+ */
+export async function saveToGistWithRetry(
+  dataJson: string,
+  options?: { onAttempt?: (attempt: number, err: Error) => void }
+): Promise<{ gistId: string; updatedAt: string }> {
+  let lastErr: unknown;
+  for (let attempt = 1; attempt <= GIST_PUSH_RETRY.MAX_ATTEMPTS; attempt++) {
+    try {
+      return await saveToGist(dataJson);
+    } catch (err) {
+      lastErr = err;
+      if (!isTransientGistError(err) || attempt >= GIST_PUSH_RETRY.MAX_ATTEMPTS) break;
+      const delay = GIST_PUSH_RETRY.BASE_DELAY_MS * Math.pow(2, attempt - 1);
+      options?.onAttempt?.(attempt, err instanceof Error ? err : new Error(String(err)));
+      await sleep(delay);
+    }
+  }
+  throw lastErr instanceof Error ? lastErr : new Error(String(lastErr));
 }
 
 /** Gist에 데이터 저장. Gist ID가 없으면 새로 생성. */

@@ -31,7 +31,8 @@ import {
   isKRWStock,
   isCryptoStock,
   canonicalTickerForMatch,
-  getUniqueTickersFromTrades
+  getUniqueTickersFromTrades,
+  getCurrentHoldingsTickers
 } from "../utils/finance";
 import { shouldUseUsdBalanceMode as shouldUseUsdBalanceModeUtil, computeTradeCashImpact } from "../utils/tradeCashImpact";
 import { toast } from "react-hot-toast";
@@ -382,28 +383,41 @@ export const StocksView: React.FC<Props> = ({
     return formatKRW(value);
   };
 
-  // 시세 갱신 대상: 거래 내역(trades)에 실제로 등장한 티커만 (중복 제거·정규화)
+  // 거래된 적 있는 모든 티커 (청산 포함) — 종목 리스트 표시 등 시세 갱신 외 용도
   const uniqueTickers = useMemo(() => getUniqueTickersFromTrades(trades), [trades]);
 
+  // 시세 갱신용: "현재 보유 중" 티커만 (청산 종목은 굳이 갱신 안 함 → 429 회피 + 속도 ↑)
+  const holdingsOnlyTickers = useMemo(() => getCurrentHoldingsTickers(trades), [trades]);
+
   /** tickerDatabase의 market=CRYPTO 우선, 없으면 티커 문자열 휴리스틱 */
-  const uniqueStockTickers = useMemo(() => {
+  const isHoldingsCrypto = useMemo(() => {
     const dbByKey = new Map(tickerDatabase.map((x) => [canonicalTickerForMatch(x.ticker), x]));
-    const isHoldingsCrypto = (t: string) => {
+    return (t: string) => {
       const db = dbByKey.get(canonicalTickerForMatch(t));
       if (db?.market === "CRYPTO") return true;
       return isCryptoStock(t);
     };
-    return uniqueTickers.filter((t) => !isHoldingsCrypto(t)).map((t) => t.toUpperCase());
-  }, [uniqueTickers, tickerDatabase]);
-  const uniqueCryptoTickers = useMemo(() => {
-    const dbByKey = new Map(tickerDatabase.map((x) => [canonicalTickerForMatch(x.ticker), x]));
-    const isHoldingsCrypto = (t: string) => {
-      const db = dbByKey.get(canonicalTickerForMatch(t));
-      if (db?.market === "CRYPTO") return true;
-      return isCryptoStock(t);
-    };
-    return uniqueTickers.filter((t) => isHoldingsCrypto(t)).map((t) => t.toLowerCase());
-  }, [uniqueTickers, tickerDatabase]);
+  }, [tickerDatabase]);
+
+  // 거래된 적 있는 전체 (현재는 사용처 없음 — uniqueTickers 자체 유지용)
+  const uniqueStockTickers = useMemo(() =>
+    uniqueTickers.filter((t) => !isHoldingsCrypto(t)).map((t) => t.toUpperCase()),
+    [uniqueTickers, isHoldingsCrypto]
+  );
+  const uniqueCryptoTickers = useMemo(() =>
+    uniqueTickers.filter((t) => isHoldingsCrypto(t)).map((t) => t.toLowerCase()),
+    [uniqueTickers, isHoldingsCrypto]
+  );
+
+  // 보유 종목 갱신용 (holdings 모드·자동 갱신에서 사용)
+  const holdingsStockTickers = useMemo(() =>
+    holdingsOnlyTickers.filter((t) => !isHoldingsCrypto(t)).map((t) => t.toUpperCase()),
+    [holdingsOnlyTickers, isHoldingsCrypto]
+  );
+  const holdingsCryptoTickers = useMemo(() =>
+    holdingsOnlyTickers.filter((t) => isHoldingsCrypto(t)).map((t) => t.toLowerCase()),
+    [holdingsOnlyTickers, isHoldingsCrypto]
+  );
 
   const mergeQuoteResultsIntoPrices = useCallback(
     (
@@ -640,21 +654,21 @@ export const StocksView: React.FC<Props> = ({
     lastQuoteRefreshModeRef.current = "holdings";
     await runQuoteRefresh({
       mode: "holdings",
-      stockTickers: uniqueStockTickers,
-      cryptoTickers: uniqueCryptoTickers,
+      stockTickers: holdingsStockTickers,
+      cryptoTickers: holdingsCryptoTickers,
       updateTickerDatabase: true,
       persistToTickerJson: true,
       logLabel: "보유 종목"
     });
-  }, [runQuoteRefresh, uniqueStockTickers, uniqueCryptoTickers]);
+  }, [runQuoteRefresh, holdingsStockTickers, holdingsCryptoTickers]);
 
   usePriceAutoRefresh({
     onRefresh: async () => {
-      if (uniqueStockTickers.length === 0 && uniqueCryptoTickers.length === 0) return;
+      if (holdingsStockTickers.length === 0 && holdingsCryptoTickers.length === 0) return;
       await runQuoteRefresh({
         mode: "holdings",
-        stockTickers: uniqueStockTickers,
-        cryptoTickers: uniqueCryptoTickers,
+        stockTickers: holdingsStockTickers,
+        cryptoTickers: holdingsCryptoTickers,
         updateTickerDatabase: false,
         persistToTickerJson: false,
         logLabel: "자동 갱신"

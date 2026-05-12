@@ -2,7 +2,7 @@ import React, { useState, useMemo, useEffect, useRef } from "react";
 import { toast } from "react-hot-toast";
 import type { Account, AccountBalanceRow, StockPrice, StockTrade, TradeSide } from "../../types";
 import { computeRealizedPnlByTradeId, computeRealizedPnlDetailByTradeId } from "../../calculations";
-import { isUSDStock, canonicalTickerForMatch } from "../../utils/finance";
+import { isUSDStock, canonicalTickerForMatch, cryptoDisplaySymbol } from "../../utils/finance";
 import { computeTradeCashImpact } from "../../utils/tradeCashImpact";
 import { validateAccountTickerCurrency } from "../../utils/validation";
 import { ERROR_MESSAGES } from "../../constants/errorMessages";
@@ -729,12 +729,12 @@ export const TradeHistorySection: React.FC<TradeHistorySectionProps> = ({
                       </>
                     )}
                   </td>
-                  <td 
+                  <td
                     onClick={() => onStartEditTrade(t)}
                     style={{ cursor: "pointer", textDecoration: "underline", color: "var(--primary)" }}
                     title="클릭하여 수정"
                   >
-                    {t.ticker}
+                    {cryptoDisplaySymbol(t.ticker)}
                   </td>
                   <td 
                     className="name-cell" 

@@ -1,6 +1,6 @@
 import React, { useState, useMemo, useEffect } from "react";
 import type { Account, StockPrice, AccountBalanceRow, PositionRow, TickerInfo } from "../../types";
-import { isUSDStock, canonicalTickerForMatch } from "../../utils/finance";
+import { isUSDStock, canonicalTickerForMatch, cryptoDisplaySymbol } from "../../utils/finance";
 import { formatNumber, formatKRW, formatUSD } from "../../utils/formatter";
 
 type PositionSortKey =
@@ -469,7 +469,7 @@ export const PositionListSection: React.FC<PositionListSectionProps> = ({
                         }}
                       >
                         <td className="ticker-cell" style={{ color: "var(--primary)", fontWeight: 500 }}>
-                          {p.ticker}
+                          {cryptoDisplaySymbol(p.ticker)}
                         </td>
                         <td 
                           style={{ 

@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { tradeAmountKRW, isUSDStock } from "../utils/finance";
+import { tradeAmountKRW, isUSDStock, getCurrentHoldingsTickers, cryptoDisplaySymbol } from "../utils/finance";
 
 describe("tradeAmountKRW", () => {
   it("KRW 종목은 totalAmount 그대로 (환율 무시)", () => {
@@ -43,5 +43,92 @@ describe("tradeAmountKRW", () => {
     expect(isUSDStock("MSFT")).toBe(true);
     expect(isUSDStock("AAPL")).toBe(true);
     expect(isUSDStock("RKLB")).toBe(true);
+  });
+});
+
+describe("getCurrentHoldingsTickers", () => {
+  it("매수 후 미매도 → 포함", () => {
+    const trades = [{ ticker: "MSFT", quantity: 10, side: "buy" as const }];
+    expect(getCurrentHoldingsTickers(trades)).toEqual(["MSFT"]);
+  });
+
+  it("매수 == 매도(완전 청산) → 제외", () => {
+    const trades = [
+      { ticker: "MSFT", quantity: 10, side: "buy" as const },
+      { ticker: "MSFT", quantity: 10, side: "sell" as const },
+    ];
+    expect(getCurrentHoldingsTickers(trades)).toEqual([]);
+  });
+
+  it("일부 매도 후 잔량 있음 → 포함", () => {
+    const trades = [
+      { ticker: "MSFT", quantity: 10, side: "buy" as const },
+      { ticker: "MSFT", quantity: 3, side: "sell" as const },
+    ];
+    expect(getCurrentHoldingsTickers(trades)).toEqual(["MSFT"]);
+  });
+
+  it("여러 종목 — 청산된 것만 제외", () => {
+    const trades = [
+      { ticker: "MSFT", quantity: 10, side: "buy" as const },
+      { ticker: "AAPL", quantity: 5, side: "buy" as const },
+      { ticker: "AAPL", quantity: 5, side: "sell" as const },
+      { ticker: "RKLB", quantity: 20, side: "buy" as const },
+    ];
+    expect(getCurrentHoldingsTickers(trades).sort()).toEqual(["MSFT", "RKLB"]);
+  });
+
+  it("코인 잔량 — 1e-8 이하는 0으로 간주 (부동소수점 미세 오차 보호)", () => {
+    const trades = [
+      { ticker: "SOLANA", quantity: 1.5, side: "buy" as const },
+      { ticker: "SOLANA", quantity: 1.4999999999, side: "sell" as const },
+    ];
+    expect(getCurrentHoldingsTickers(trades)).toEqual([]);
+  });
+
+  it("잘못된 quantity (NaN/Infinity)는 무시", () => {
+    const trades = [
+      { ticker: "MSFT", quantity: NaN, side: "buy" as const },
+      { ticker: "AAPL", quantity: 5, side: "buy" as const },
+    ];
+    expect(getCurrentHoldingsTickers(trades)).toEqual(["AAPL"]);
+  });
+
+  it("매도가 매수보다 많아 음수 잔량 → 제외", () => {
+    const trades = [
+      { ticker: "MSFT", quantity: 5, side: "buy" as const },
+      { ticker: "MSFT", quantity: 10, side: "sell" as const },
+    ];
+    expect(getCurrentHoldingsTickers(trades)).toEqual([]);
+  });
+
+  it("빈 배열", () => {
+    expect(getCurrentHoldingsTickers([])).toEqual([]);
+  });
+
+  it("회귀: cryptoDisplaySymbol — CoinGecko ID 풀네임 → short symbol", () => {
+    // 사용자 데이터: ticker='solana' 인데 업비트 표기는 'SOL' — 표시 시 변환
+    expect(cryptoDisplaySymbol("solana")).toBe("SOL");
+    expect(cryptoDisplaySymbol("ethereum")).toBe("ETH");
+    expect(cryptoDisplaySymbol("bitcoin")).toBe("BTC");
+    // 대소문자 무관
+    expect(cryptoDisplaySymbol("SOLANA")).toBe("SOL");
+    expect(cryptoDisplaySymbol("Ethereum")).toBe("ETH");
+    // 매핑에 없으면 원본 유지 (주식 ticker는 영향 X)
+    expect(cryptoDisplaySymbol("MSFT")).toBe("MSFT");
+    expect(cryptoDisplaySymbol("005930")).toBe("005930");
+    expect(cryptoDisplaySymbol("0167B0")).toBe("0167B0");
+  });
+
+  it("회귀: 청산 종목이 자동 갱신 대상에서 제외 (yahoo API 호출 감소)", () => {
+    // 사용자 데이터 시뮬: RKLB 모두 매도, 0167B0 보유 중
+    const trades = [
+      { ticker: "RKLB", quantity: 47, side: "buy" as const },
+      { ticker: "RKLB", quantity: 47, side: "sell" as const },
+      { ticker: "0167B0", quantity: 55, side: "buy" as const },
+    ];
+    const holdings = getCurrentHoldingsTickers(trades);
+    expect(holdings).toContain("0167B0");
+    expect(holdings).not.toContain("RKLB");
   });
 });

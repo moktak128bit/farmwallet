@@ -55,6 +55,71 @@ export function getUniqueTickersFromTrades(trades: Array<{ ticker: string }>): s
   return Array.from(set).sort((a, b) => a.localeCompare(b));
 }
 
+/**
+ * 현재 실제로 보유 중인(매수 수량 - 매도 수량 > 0) 종목 티커만 반환.
+ *
+ * 청산 완료(보유 0) 종목은 갱신 대상에서 제외 — Yahoo API 호출 줄여 429 회피 + 갱신 속도 ↑.
+ * "전체 갱신" 버튼(ticker.json 기반)은 별도 — 청산 종목까지 보고 싶을 때 사용.
+ *
+ * 부동소수점 잔량 안전망: |buy − sell| < 1e-8 이면 0으로 간주 (코인 미세 잔량 의도치 않은 포함 방지).
+ */
+/**
+ * CoinGecko ID(풀네임) → 업비트/CCXT 표준 short symbol 매핑.
+ *
+ * 시스템 내부 ticker는 CoinGecko ID로 유지 (시세 매칭 키). 사용자에게 보여줄 때만
+ * "solana" → "SOL" 같이 깔끔한 short symbol로 변환.
+ *
+ * 거래소 UI(업비트 등)와 표기 일치 — 사용자 멘탈모델: "ticker=SOL, name=솔라나"
+ */
+const CRYPTO_DISPLAY_SYMBOL: Record<string, string> = {
+  bitcoin: "BTC",
+  ethereum: "ETH",
+  solana: "SOL",
+  ripple: "XRP",
+  "usd-coin": "USDC",
+  tether: "USDT",
+  binancecoin: "BNB",
+  cardano: "ADA",
+  dogecoin: "DOGE",
+  "avalanche-2": "AVAX",
+  "matic-network": "MATIC",
+  polkadot: "DOT",
+  chainlink: "LINK",
+  litecoin: "LTC",
+  uniswap: "UNI",
+  stellar: "XLM",
+  monero: "XMR",
+  cosmos: "ATOM",
+  "ethereum-classic": "ETC",
+};
+
+/**
+ * CoinGecko ID 형태(소문자 풀네임)면 깔끔한 short symbol 반환, 그 외엔 입력 그대로.
+ * 예: "solana" → "SOL", "MSFT" → "MSFT", "005930" → "005930"
+ */
+export function cryptoDisplaySymbol(ticker: string): string {
+  if (!ticker) return ticker;
+  const key = ticker.toLowerCase().trim();
+  return CRYPTO_DISPLAY_SYMBOL[key] ?? ticker;
+}
+
+export function getCurrentHoldingsTickers(trades: Array<{ ticker: string; quantity: number; side: "buy" | "sell" }>): string[] {
+  const net = new Map<string, number>();
+  for (const t of trades) {
+    const symbol = canonicalTickerForMatch(t.ticker);
+    if (!symbol) continue;
+    const qty = Number(t.quantity);
+    if (!Number.isFinite(qty)) continue;
+    const delta = t.side === "buy" ? qty : -qty;
+    net.set(symbol, (net.get(symbol) ?? 0) + delta);
+  }
+  const out: string[] = [];
+  for (const [symbol, qty] of net) {
+    if (qty > 1e-8) out.push(symbol);
+  }
+  return out.sort((a, b) => a.localeCompare(b));
+}
+
 export const isUSDStock = (ticker?: string): boolean => {
   if (!ticker) return false;
   if (isCryptoStock(ticker)) return false;

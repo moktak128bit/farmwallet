@@ -22,7 +22,7 @@ import type { Account, AccountBalanceRow, CategoryPresets, ExpenseDetailGroup, L
 import { formatShortDate, formatUSD, formatKRW } from "../utils/formatter";
 import { shortcutManager, type ShortcutAction } from "../utils/shortcuts";
 import { validateLedgerForm } from "../features/ledger/validateLedgerForm";
-import { isSavingsExpenseEntry, makeIsSavingsExpense, isCreditPayment } from "../utils/category";
+import { isSavingsExpenseEntry, makeIsSavingsExpense, isCreditPayment, isInvestmentKind } from "../utils/category";
 import { parseAmount as sharedParseAmount, formatAmount as sharedFormatAmount } from "../utils/parseAmount";
 import { newIdWithPrefix } from "../utils/id";
 import { DailyBudgetBar } from "../features/ledger/DailyBudgetBar";
@@ -867,9 +867,20 @@ export const LedgerView: React.FC<Props> = ({
     }
 
     // 대분류/중분류/소분류 필터 (모든 탭 동일: category / subCategory / detailCategory)
+    // "재테크" 대분류는 특수 처리 — 데이터 구조상 재테크 관련 항목이 여러 형태로 흩어져 있음:
+    //  - kind=expense, category=재테크 (투자손실)
+    //  - kind=transfer, subCategory=저축이체/투자이체 (자산 이전)
+    //  - kind=income, subCategory=투자수익 (실현 수익)
+    // category=="재테크"만 매칭하면 transfer류가 누락돼서 대시보드 "이번 달 재테크"와 숫자가 다름.
     if (filterMainCategory || filterSubCategory || filterDetailCategory) {
       filtered = filtered.filter((l) => {
-        if (filterMainCategory && l.category !== filterMainCategory) return false;
+        if (filterMainCategory) {
+          if (filterMainCategory === "재테크") {
+            if (!isInvestmentKind(l)) return false;
+          } else if (l.category !== filterMainCategory) {
+            return false;
+          }
+        }
         if (filterSubCategory && l.subCategory !== filterSubCategory) return false;
         if (filterDetailCategory && l.detailCategory !== filterDetailCategory) return false;
         return true;

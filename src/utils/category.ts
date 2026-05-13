@@ -13,6 +13,7 @@ import {
   isSavingsExpenseEntry,
   makeIsSavingsExpense,
   isInvestmentEntry,
+  isInvestmentKind,
   isCreditPayment,
   isRealExpenseEntry,
   type CategoryType,
@@ -25,6 +26,7 @@ export {
   isSavingsExpenseEntry,
   makeIsSavingsExpense,
   isInvestmentEntry,
+  isInvestmentKind,
   isCreditPayment,
   isRealExpenseEntry,
 };

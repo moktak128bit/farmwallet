@@ -44,6 +44,12 @@ export interface UseGistSyncReturn {
   resolveGistConflict: (resolution: GistConflictResolution) => Promise<void>;
   /** N시간 이상 푸시 안 됐을 때 노출되는 경고 (자동 동기화 켜져 있을 때만) */
   gistStaleWarning: GistStaleWarning | null;
+  /**
+   * 수동 저장 — 디바운스·dirty 체크 건너뛰고 즉시 푸시.
+   * React state(`lastPushAt`)와 localStorage 둘 다 갱신해서 헤더 "N시간 전" 표시가 즉시 반영됨.
+   * 자동 동기화 OFF 상태에서도 사용 가능 (사용자 의도 우선).
+   */
+  manualPush: () => Promise<void>;
 }
 
 /**
@@ -168,9 +174,11 @@ export function useGistSync(
         }
       });
       lastPushedPayloadRef.current = dataJson;
-      setGistLastPushAt(result.updatedAt);
-      setLastPushAt(result.updatedAt);
-      knownRemoteCommitRef.current = result.updatedAt;
+      // 로컬 시각 사용 — GitHub updated_at이 약간 지연/stale일 수 있어 "방금 저장" 즉시 반영
+      const nowIso = new Date().toISOString();
+      setGistLastPushAt(nowIso);
+      setLastPushAt(nowIso);
+      knownRemoteCommitRef.current = result.updatedAt || nowIso;
       onLog?.("Gist 자동 저장 성공", "success");
       // 이전 실패 토스트가 있다면 정리
       toast.dismiss(GIST_AUTO_SAVE_ERROR_TOAST_ID);
@@ -184,6 +192,76 @@ export function useGistSync(
       setIsSyncing(false);
     }
   }, [autoSyncEnabled, onLog]);
+
+  /**
+   * 수동 저장 — 사용자가 "저장" 버튼 클릭 시. 디바운스/dirty 체크 없이 즉시 푸시.
+   * 자동 동기화 OFF 상태에서도 작동 (자동 동기화 가드 없음).
+   * 동일 payload여도 푸시 — GitHub이 새 commit·새 updated_at 만들어 timestamp가 갱신됨.
+   */
+  const manualPush = useCallback(async () => {
+    if (!getGistToken() || !getGistId()) {
+      onLog?.("Gist 토큰·ID 미설정", "error");
+      return;
+    }
+    if (isPushingRef.current) return;
+    if (useUIStore.getState().gistConflict) {
+      onLog?.("Gist 충돌 모달이 열려 있어 저장 보류", "info");
+      return;
+    }
+
+    const dataJson = toUserDataJson(dataRef.current);
+
+    // 진행 중인 디바운스 타이머가 있으면 취소 (수동 저장이 우선)
+    if (autoPushTimerRef.current) {
+      window.clearTimeout(autoPushTimerRef.current);
+      autoPushTimerRef.current = null;
+    }
+
+    isPushingRef.current = true;
+    try {
+      setIsSyncing(true);
+      // 충돌 감지 (자동 동기화 OFF여도 다른 기기에서 변경됐을 수 있으니 체크)
+      const versions = await getGistVersions(1).catch(() => []);
+      const latest = versions[0];
+      const known = knownRemoteCommitRef.current || getGistLastPullAt();
+      if (detectConflict(latest?.committedAt, known)) {
+        onLog?.("Gist 충돌 감지 — 원격 데이터 fetch 후 모달 표시", "info");
+        try {
+          const remote = await loadFromGist();
+          useUIStore.getState().setGistConflict({
+            remoteDataJson: remote.dataJson,
+            remoteUpdatedAt: remote.updatedAt,
+            pendingLocalDataJson: dataJson,
+          });
+        } catch (pullErr) {
+          const message = pullErr instanceof Error ? pullErr.message : String(pullErr);
+          onLog?.(`Gist 충돌 후 원격 fetch 실패: ${message}`, "error");
+        }
+        return;
+      }
+      const result = await saveToGistWithRetry(dataJson, {
+        onAttempt: (attempt, err) => {
+          onLog?.(`Gist 푸시 ${attempt}회 실패 (${err.message}) — 재시도`, "info");
+        }
+      });
+      lastPushedPayloadRef.current = dataJson;
+      // 로컬 시각 사용 — GitHub 응답의 updated_at이 stale일 수 있어 사용자 체감과 어긋남 방지
+      const nowIso = new Date().toISOString();
+      setGistLastPushAt(nowIso);
+      setLastPushAt(nowIso);
+      knownRemoteCommitRef.current = result.updatedAt || nowIso;
+      onLog?.("Gist 저장 성공", "success");
+      toast.dismiss(GIST_AUTO_SAVE_ERROR_TOAST_ID);
+      toast.success("Gist 저장 완료");
+    } catch (err) {
+      const message = err instanceof Error ? err.message : String(err);
+      onLog?.(`Gist 저장 실패: ${message}`, "error");
+      toast.error(`Gist 저장 실패: ${message}`, { id: GIST_AUTO_SAVE_ERROR_TOAST_ID });
+    } finally {
+      isPushingRef.current = false;
+      setIsSyncing(false);
+    }
+  }, [onLog]);
 
   // Effect 2: 데이터 변경 시 자동 저장 (debounced)
   useEffect(() => {
@@ -338,5 +416,6 @@ export function useGistSync(
     isSyncing,
     resolveGistConflict,
     gistStaleWarning,
+    manualPush,
   };
 }

@@ -70,7 +70,7 @@ import { useMarketEnvSnapshotRecorder } from "./hooks/useMarketEnvSnapshotRecord
 import { GistVersionModal } from "./components/GistVersionModal";
 import { GitVersionModal } from "./components/GitVersionModal";
 import { GistConflictModal } from "./components/GistConflictModal";
-import { isGistConfigured, saveToGistWithRetry, setGistLastPushAt } from "./services/gistSync";
+import { isGistConfigured } from "./services/gistSync";
 import { toUserDataJson } from "./services/dataService";
 import { useUIStore, type PendingAction } from "./store/uiStore";
 import { SaveStatusPill } from "./components/SaveStatusPill";
@@ -256,7 +256,7 @@ export const App: React.FC = () => {
     }
   }, [data.prices, data.tickerDatabase, data.historicalDailyCloses, setDataWithHistory, addAppLog]);
 
-  const { autoSyncEnabled, setAutoSyncEnabled, lastPushAt: gistLastPushAt, lastPullAt: gistLastPullAt, resolveGistConflict, gistStaleWarning } = useGistSync(
+  const { autoSyncEnabled, setAutoSyncEnabled, lastPushAt: gistLastPushAt, lastPullAt: gistLastPullAt, resolveGistConflict, gistStaleWarning, manualPush: gistManualPush } = useGistSync(
     data,
     handleGistPulledData,
     { onLog: addAppLog }
@@ -345,30 +345,19 @@ export const App: React.FC = () => {
   }, [handleGistPulledData]);
 
   /**
-   * 수동 Gist 저장. 자동 저장과 동일하게 retry 래퍼 사용 — 모바일 LTE 핸드오버 등 일시적 실패에 견고.
-   * SyncActionBar 버튼과 staleWarning pill 양쪽이 공유.
+   * 수동 Gist 저장. useGistSync.manualPush로 위임 — React state(lastPushAt) 동시 갱신해서
+   * 헤더 "N시간 전" 표시가 즉시 반영됨 (이전엔 localStorage만 갱신해서 다음 마운트까지 stale).
+   * 충돌 감지·retry·로깅 모두 manualPush 내부에서 처리.
    */
   const handleGistManualSave = useCallback(async () => {
     setIsGistSaving(true);
-    addAppLog("Gist에 저장 중...", "info");
     try {
-      const jsonStr = toUserDataJson(data);
-      const result = await saveToGistWithRetry(jsonStr, {
-        onAttempt: (attempt, err) => {
-          addAppLog(`Gist 푸시 ${attempt}회 실패 (${err.message}) — 재시도`, "info");
-        }
-      });
-      setGistLastPushAt(result.updatedAt);
-      addAppLog("Gist 저장 완료", "success");
-      toast.success("Gist 저장 완료");
-    } catch (e) {
-      const msg = e instanceof Error ? e.message : String(e);
-      addAppLog(`Gist 저장 실패: ${msg}`, "error");
-      toast.error(msg || "Gist 저장 실패");
+      await gistManualPush();
+      // toast(성공/실패/충돌)는 manualPush 내부에서 처리
     } finally {
       setIsGistSaving(false);
     }
-  }, [data, addAppLog, setIsGistSaving]);
+  }, [gistManualPush, setIsGistSaving]);
 
   // keyboard shortcuts
   useKeyboardShortcuts({

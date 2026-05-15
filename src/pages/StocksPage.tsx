@@ -571,7 +571,10 @@ export const StocksView: React.FC<Props> = ({
           const cryptoResults = await fetchCryptoQuotes(uniqueCryptoTickers, fxRate ?? undefined);
           const cryptoAsStockPrice: StockPrice[] = cryptoResults.map((c) => ({
             ticker: c.ticker,
-            name: c.symbol,
+            // name은 풀네임(CoinGecko ID) — short symbol은 ticker 표시 단에서 cryptoDisplaySymbol로 변환.
+            // priceInfo.name이 short symbol("ETH")이면 calculations.ts의 name 우선순위 때문에 거래의 name이 덮여
+            // "종목명 컬럼"에 "ETH"가 떠버림 → 사용자 의도(name="ethereum")와 어긋남.
+            name: c.ticker,
             price: c.priceKrw,
             currency: "KRW" as const,
             changePercent: c.changePercent24h,

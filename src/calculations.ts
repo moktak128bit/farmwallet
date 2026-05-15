@@ -7,7 +7,7 @@ import type {
   StockPrice,
   StockTrade
 } from "./types";
-import { isKRWStock, isUSDStock, canonicalTickerForMatch } from "./utils/finance";
+import { isKRWStock, isUSDStock, canonicalTickerForMatch, isCryptoStock } from "./utils/finance";
 
 // Re-export calculation result types from single source (types.ts)
 export type { AccountBalanceRow, PositionRow } from "./types";
@@ -314,7 +314,13 @@ export function computePositions(
     const firstTrade = ts[0];
     // 포지션 티커는 항상 tickerNorm(대문자 정규형)만 사용 — prices에 'bitx'로 들어 있어도 표시는 'BITX'
     const rowTicker = tickerNorm;
-    const name = priceInfo?.name ?? firstTrade?.name ?? rowTicker;
+    // name 우선순위:
+    //  - crypto: 거래 name 우선 (priceInfo.name이 short symbol "ETH"로 캐시되어 있을 수 있어 신뢰 X)
+    //  - 그 외(주식): priceInfo.name 우선 (한국 종목 한글명, 미국 종목 회사 풀네임 등 API가 더 정확)
+    const isCrypto = isCryptoStock(tickerNorm);
+    const name = isCrypto
+      ? (firstTrade?.name || priceInfo?.name || rowTicker)
+      : (priceInfo?.name ?? firstTrade?.name ?? rowTicker);
 
     const marketValue = marketPrice * quantity;
     const pnl = marketValue - remainingCostBasis;

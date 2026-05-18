@@ -50,7 +50,9 @@ export const STORAGE_KEYS = {
   /** 디바운스 대기 중 크래시 시 복구를 위한 드래프트 슬롯 (write-through, 정상 저장 직후 삭제) */
   DRAFT: "farmwallet-data-v1__draft",
   /** 드래프트 작성 시각 (ms epoch). 너무 오래된 드래프트는 자동 폐기. */
-  DRAFT_AT: "farmwallet-data-v1__draft__at"
+  DRAFT_AT: "farmwallet-data-v1__draft__at",
+  /** 월급 실시간 타이머 설정 (월급일·월급액). 대시보드 위젯 전용, 로컬 저장. */
+  SALARY_TIMER: "fw-salary-timer"
 } as const;
 
 /** 드래프트 슬롯이 이보다 오래되면 boot 시 무시·삭제 (스테일 복구 안내 방지) */

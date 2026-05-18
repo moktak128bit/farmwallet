@@ -7,6 +7,7 @@ import { ExpenseIncomeCompareCard } from "../features/dashboard/ExpenseIncomeCom
 import { NetWorthTrendChart } from "../features/dashboard/NetWorthTrendChart";
 import { CmaBalanceTrendCard } from "../features/dashboard/CmaBalanceTrendCard";
 import { MonthPaceCard } from "../features/dashboard/MonthPaceCard";
+import { SalaryTimerCard } from "../features/dashboard/SalaryTimerCard";
 import { SpendingCalendarCard } from "../features/dashboard/SpendingCalendarCard";
 import { TopExpensesCard } from "../features/dashboard/TopExpensesCard";
 import { MonthlyTrendCard } from "../features/dashboard/MonthlyTrendCard";
@@ -843,6 +844,8 @@ export const DashboardView: React.FC<Props> = (props) => {
 
       <div style={{ display: "flex", flexDirection: "column", gap: 28 }}>
         <MonthlySummaryCards monthlySummary={monthlySummary} allTimeSummary={allTimeSummary} />
+
+        <SalaryTimerCard ledger={ledger} />
 
         <ExpenseIncomeCompareCard ledger={ledger} month={currentMonth} />
 

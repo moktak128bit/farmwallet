@@ -16,6 +16,14 @@ export type { AccountBalanceRow, PositionRow } from "./types";
 // Helpers (pure, used only inside this module)
 // ---------------------------------------------------------------------------
 
+/**
+ * 포지션 잔량 dust 임계값.
+ * 전량 매도 시 FIFO 차감(lot.qty -= use)에서 누적된 부동소수점 오차가
+ * 1e-9 수준의 극소 잔량을 남겨 "유령 포지션"으로 표시되는 것을 방지.
+ * BTC 최소 단위(사토시)가 1e-8이므로 그보다 작은 잔량은 항상 dust로 간주.
+ */
+const POSITION_DUST_EPSILON = 1e-8;
+
 function isUsdEntry(l: LedgerEntry): boolean {
   return l.currency === "USD";
 }
@@ -279,7 +287,8 @@ export function computePositions(
       }
     }
     const quantity = queue.reduce((s, lot) => s + lot.qty, 0);
-    if (quantity <= 0) continue;
+    // dust(부동소수점 잔량) 포지션 제외 — 전량 매도분이 0.000000으로 남는 것 방지
+    if (quantity <= POSITION_DUST_EPSILON) continue;
     const remainingCostBasis = queue.reduce((s, lot) => s + lot.totalAmount, 0);
     const avgPrice = quantity > 0 ? remainingCostBasis / quantity : 0;
     // USD 종목: 매입가 원화 = 잔여 매입 달러 × 매입 당시 환율 (없으면 현재 환율)

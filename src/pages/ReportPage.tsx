@@ -608,6 +608,80 @@ export const ReportView: React.FC<Props> = ({ accounts, ledger, trades, prices }
             </p>
           </div>
 
+          {/* 확정수익 거래 목록 */}
+          {rec.winningTrades.length > 0 && (
+            <div className="card" style={{ padding: 16, marginBottom: 12 }}>
+              <h4 style={{ margin: "0 0 2px" }}>
+                확정수익 거래{" "}
+                <span style={{ fontSize: 12, fontWeight: 400, color: "var(--text-muted)" }}>이익 보고 매도한 건</span>
+              </h4>
+              <p className="hint" style={{ fontSize: 12, margin: "0 0 12px" }}>
+                매도로 이익이 확정된 거래입니다. 수익 큰 거래 순.
+              </p>
+              <div style={{ overflowX: "auto", width: "100%" }}>
+                <table className="data-table" style={{ width: "100%", minWidth: 560 }}>
+                  <thead>
+                    <tr>
+                      <th>매도일</th>
+                      <th>종목</th>
+                      <th>계좌</th>
+                      <th className="number">실현손익</th>
+                      <th className="number">수익률</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {rec.winningTrades.map((t, i) => (
+                      <tr key={`${t.date}-${t.ticker}-${i}`}>
+                        <td>{t.date}</td>
+                        <td>{t.name}</td>
+                        <td>{t.accountName}</td>
+                        <td className="number positive">{signedKRW(t.pnl)}</td>
+                        <td className="number positive">{(t.returnRate * 100).toFixed(2)}%</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          )}
+
+          {/* 확정손실 거래 목록 */}
+          {rec.losingTrades.length > 0 && (
+            <div className="card" style={{ padding: 16, marginBottom: 12 }}>
+              <h4 style={{ margin: "0 0 2px" }}>
+                확정손실 거래{" "}
+                <span style={{ fontSize: 12, fontWeight: 400, color: "var(--text-muted)" }}>손실 보고 매도한 건</span>
+              </h4>
+              <p className="hint" style={{ fontSize: 12, margin: "0 0 12px" }}>
+                매도로 손실이 확정된 거래입니다. 손실 큰 거래 순.
+              </p>
+              <div style={{ overflowX: "auto", width: "100%" }}>
+                <table className="data-table" style={{ width: "100%", minWidth: 560 }}>
+                  <thead>
+                    <tr>
+                      <th>매도일</th>
+                      <th>종목</th>
+                      <th>계좌</th>
+                      <th className="number">실현손익</th>
+                      <th className="number">수익률</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {rec.losingTrades.map((t, i) => (
+                      <tr key={`${t.date}-${t.ticker}-${i}`}>
+                        <td>{t.date}</td>
+                        <td>{t.name}</td>
+                        <td>{t.accountName}</td>
+                        <td className="number negative">{signedKRW(t.pnl)}</td>
+                        <td className="number negative">{(t.returnRate * 100).toFixed(2)}%</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          )}
+
           {/* 평가수익 종목 목록 */}
           {rec.winningPositions.length > 0 && (
             <div className="card" style={{ padding: 16, marginBottom: 12 }}>

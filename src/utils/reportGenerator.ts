@@ -2,7 +2,8 @@ import type { Account, LedgerEntry, StockPrice, StockTrade } from "../types";
 import {
   computeAccountBalances,
   computePositions,
-  computeRealizedPnlByTradeId
+  computeRealizedPnlByTradeId,
+  computeRealizedPnlDetailByTradeId
 } from "../calculations";
 import { isSavingsExpenseEntry, isCreditPayment } from "./category";
 import { canonicalTickerForMatch, isUSDStock } from "./finance";
@@ -922,6 +923,18 @@ export interface InvestmentMonthlyPnlRow {
   realizedLoss: number; // 0 이하
 }
 
+/** 확정(매도 완료)된 거래 한 건 */
+export interface InvestmentRealizedTradeRow {
+  date: string; // 매도일
+  accountName: string;
+  ticker: string;
+  name: string;
+  /** 실현손익 (KRW) */
+  pnl: number;
+  /** 매수원가 대비 수익률 (비율, 예: -0.12 = −12%) */
+  returnRate: number;
+}
+
 export interface InvestmentReconciliation {
   /** 집계 대상 투자 계좌가 하나라도 있는지 */
   hasData: boolean;
@@ -944,6 +957,8 @@ export interface InvestmentReconciliation {
   // ── 이익/손실 총액 (상계 전) ──
   realizedGain: number;     // 이익 본 매도 합계 (≥ 0)
   realizedLoss: number;     // 손실 본 매도 합계 (≤ 0)
+  winningTrades: InvestmentRealizedTradeRow[];  // 확정수익 거래
+  losingTrades: InvestmentRealizedTradeRow[];   // 확정손실 거래
   unrealizedGain: number;   // 평가이익 종목 합계 (≥ 0)
   unrealizedLoss: number;   // 평가손실 종목 합계 (≤ 0)
   winningPositions: InvestmentPositionPnlRow[];
@@ -974,6 +989,7 @@ export function computeInvestmentReconciliation(
     currentValue: 0, totalReturn: 0, returnRate: null, irr: null,
     realizedPnl: 0, unrealizedPnl: 0, dividendIncome: 0, pnlSum: 0, residual: 0,
     realizedGain: 0, realizedLoss: 0, unrealizedGain: 0, unrealizedLoss: 0,
+    winningTrades: [], losingTrades: [],
     winningPositions: [], losingPositions: [], monthlyPnl: [],
     buyVolume: 0, sellVolume: 0, tradeCount: 0, accounts: []
   };
@@ -1051,13 +1067,15 @@ export function computeInvestmentReconciliation(
   });
   accountRows.sort((a, b) => b.currentValue - a.currentValue);
 
-  // 거래 활동량 + 실현손익 이익/손실 분리 + 월별 추이
-  const realizedByTradeId = computeRealizedPnlByTradeId(trades);
+  // 거래 활동량 + 실현손익 이익/손실 분리 + 확정 거래 목록 + 월별 추이
+  const realizedDetailByTradeId = computeRealizedPnlDetailByTradeId(trades);
   let buyVolume = 0;
   let sellVolume = 0;
   let tradeCount = 0;
   let realizedGain = 0;
   let realizedLoss = 0;
+  const winningTrades: InvestmentRealizedTradeRow[] = [];
+  const losingTrades: InvestmentRealizedTradeRow[] = [];
   const monthlyPnlMap = new Map<string, { gain: number; loss: number }>();
   for (const t of trades) {
     if (!investingIds.has(t.accountId)) continue;
@@ -1069,7 +1087,10 @@ export function computeInvestmentReconciliation(
       continue;
     }
     sellVolume += amount;
-    const pnl = convertPositionAmount(realizedByTradeId.get(t.id) ?? 0, t.ticker, account, fxRate);
+    const detail = realizedDetailByTradeId.get(t.id);
+    const rawPnl = detail?.pnl ?? 0;
+    const costBasis = detail?.costBasis ?? 0;
+    const pnl = convertPositionAmount(rawPnl, t.ticker, account, fxRate);
     const month = t.date.slice(0, 7);
     const bucket = monthlyPnlMap.get(month) ?? { gain: 0, loss: 0 };
     if (pnl >= 0) {
@@ -1080,7 +1101,19 @@ export function computeInvestmentReconciliation(
       bucket.loss += pnl;
     }
     monthlyPnlMap.set(month, bucket);
+    const tradeRow: InvestmentRealizedTradeRow = {
+      date: t.date,
+      accountName: account?.name ?? t.accountId,
+      ticker: t.ticker,
+      name: t.name,
+      pnl,
+      returnRate: costBasis > 0 ? rawPnl / costBasis : 0
+    };
+    if (pnl >= 0) winningTrades.push(tradeRow);
+    else losingTrades.push(tradeRow);
   }
+  winningTrades.sort((a, b) => b.pnl - a.pnl); // 수익 큰 거래 먼저
+  losingTrades.sort((a, b) => a.pnl - b.pnl); // 손실 큰 거래 먼저
   const monthlyPnl: InvestmentMonthlyPnlRow[] = Array.from(monthlyPnlMap.entries())
     .sort((a, b) => a[0].localeCompare(b[0]))
     .map(([month, v]) => ({ month, realizedGain: v.gain, realizedLoss: v.loss }));
@@ -1146,6 +1179,8 @@ export function computeInvestmentReconciliation(
     residual: totalReturn - pnlSum,
     realizedGain,
     realizedLoss,
+    winningTrades,
+    losingTrades,
     unrealizedGain,
     unrealizedLoss,
     winningPositions,

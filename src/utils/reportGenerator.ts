@@ -879,6 +879,285 @@ export function generateAccountPerformanceBreakdown(
   return rows.sort((a, b) => b.currentValue - a.currentValue);
 }
 
+// ---------------------------------------------------------------------------
+// 투자 정산 (Investment reconciliation)
+// 규칙: 주식·코인 계좌를 하나의 "투자 세계"로 보고, 자본 흐름과 손익을 분리해 정산.
+//   투자 총성과 = 현재 평가액 − 순투입원금
+//   순투입원금  = 투자계좌 초기자본 + 누적 입금(이체) − 누적 출금(이체, 생활비 회수 포함)
+// 매수/매도 총액은 계좌 안에서 현금↔주식 형태만 바꾼 "거래량"이라 손익·정산에 들어가지 않음.
+// ---------------------------------------------------------------------------
+
+/** 투자 정산 — 투자 계좌(주식·코인)만 집계 대상으로 삼는다 */
+const RECONCILIATION_ACCOUNT_TYPES = new Set<Account["type"]>(["securities", "crypto"]);
+
+export interface InvestmentReconciliationAccountRow {
+  accountId: string;
+  accountName: string;
+  /** 초기자본 + 입금 − 출금 (계좌 간 이체 포함) */
+  netContributed: number;
+  currentValue: number;
+  /** currentValue − netContributed */
+  totalReturn: number;
+  realizedPnl: number;
+  unrealizedPnl: number;
+  dividendIncome: number;
+  irr?: number | null;
+}
+
+/** 보유 종목의 미실현 손익 (평가수익·평가손실 공통) */
+export interface InvestmentPositionPnlRow {
+  accountName: string;
+  ticker: string;
+  name: string;
+  /** 미실현 손익 (KRW) */
+  pnl: number;
+  /** 손익률 (비율, 예: -0.12 = −12%) */
+  pnlRate: number;
+}
+
+/** 월별 실현손익 (이익·손실 분리) */
+export interface InvestmentMonthlyPnlRow {
+  month: string; // yyyy-mm
+  realizedGain: number;
+  realizedLoss: number; // 0 이하
+}
+
+export interface InvestmentReconciliation {
+  /** 집계 대상 투자 계좌가 하나라도 있는지 */
+  hasData: boolean;
+  // ── 자본 흐름 ──
+  initialCapital: number;
+  deposits: number;
+  withdrawals: number;
+  netContributed: number;
+  currentValue: number;
+  totalReturn: number;
+  returnRate: number | null;
+  irr: number | null;
+  // ── 손익 분해 (순액) ──
+  realizedPnl: number;
+  unrealizedPnl: number;
+  dividendIncome: number;
+  pnlSum: number;
+  /** totalReturn − pnlSum: 초기 보유분·계좌 입금 수입 등으로 설명되지 않는 차이 */
+  residual: number;
+  // ── 이익/손실 총액 (상계 전) ──
+  realizedGain: number;     // 이익 본 매도 합계 (≥ 0)
+  realizedLoss: number;     // 손실 본 매도 합계 (≤ 0)
+  unrealizedGain: number;   // 평가이익 종목 합계 (≥ 0)
+  unrealizedLoss: number;   // 평가손실 종목 합계 (≤ 0)
+  winningPositions: InvestmentPositionPnlRow[];
+  losingPositions: InvestmentPositionPnlRow[];
+  monthlyPnl: InvestmentMonthlyPnlRow[];
+  // ── 거래 활동량 (참고: 손익 아님) ──
+  buyVolume: number;
+  sellVolume: number;
+  tradeCount: number;
+  accounts: InvestmentReconciliationAccountRow[];
+}
+
+/**
+ * 투자 정산표 계산. accountPerformance(전체 기간 계좌 성과 분해)를 입력으로 받아
+ * 평가액·실현/미실현/배당을 재사용하고, 자본 흐름(입금·출금·초기자본)만 추가로 계산한다.
+ */
+export function computeInvestmentReconciliation(
+  accounts: Account[],
+  ledger: LedgerEntry[],
+  trades: StockTrade[],
+  prices: StockPrice[],
+  accountPerformance: AccountPerformanceBreakdownRow[],
+  fxRate?: number
+): InvestmentReconciliation {
+  const empty: InvestmentReconciliation = {
+    hasData: false,
+    initialCapital: 0, deposits: 0, withdrawals: 0, netContributed: 0,
+    currentValue: 0, totalReturn: 0, returnRate: null, irr: null,
+    realizedPnl: 0, unrealizedPnl: 0, dividendIncome: 0, pnlSum: 0, residual: 0,
+    realizedGain: 0, realizedLoss: 0, unrealizedGain: 0, unrealizedLoss: 0,
+    winningPositions: [], losingPositions: [], monthlyPnl: [],
+    buyVolume: 0, sellVolume: 0, tradeCount: 0, accounts: []
+  };
+
+  const investingAccounts = accounts.filter((a) => RECONCILIATION_ACCOUNT_TYPES.has(a.type));
+  if (investingAccounts.length === 0) return empty;
+
+  const investingIds = new Set(investingAccounts.map((a) => a.id));
+  const accountById = new Map(accounts.map((a) => [a.id, a]));
+  const perfById = new Map(accountPerformance.map((r) => [r.accountId, r]));
+
+  // 초기자본 C0 — 어떤 거래도 반영되기 전 투자계좌의 기본 잔액
+  const earlyMap = accountValueMapAtDate(accounts, ledger, trades, prices, "1900-01-01", fxRate);
+  const contributedByAccount = new Map<string, number>();
+  let initialCapital = 0;
+  for (const a of investingAccounts) {
+    const base = earlyMap.get(a.id) ?? 0;
+    contributedByAccount.set(a.id, base);
+    initialCapital += base;
+  }
+
+  // 입금·출금 — 투자계좌 경계를 넘는 이체(transfer)만 집계
+  let deposits = 0;
+  let withdrawals = 0;
+  const netFlowByDate = new Map<string, number>(); // 투자 세계로의 순유입 (IRR용)
+  for (const entry of ledger) {
+    if (entry.kind !== "transfer") continue;
+    const amount = toKrwAmount(entry.amount, entry.currency, fxRate);
+    if (!(amount > 0)) continue;
+    const fromInv = !!entry.fromAccountId && investingIds.has(entry.fromAccountId);
+    const toInv = !!entry.toAccountId && investingIds.has(entry.toAccountId);
+    if (toInv) {
+      contributedByAccount.set(entry.toAccountId!, (contributedByAccount.get(entry.toAccountId!) ?? 0) + amount);
+    }
+    if (fromInv) {
+      contributedByAccount.set(entry.fromAccountId!, (contributedByAccount.get(entry.fromAccountId!) ?? 0) - amount);
+    }
+    if (toInv && !fromInv) {
+      deposits += amount;
+      netFlowByDate.set(entry.date, (netFlowByDate.get(entry.date) ?? 0) + amount);
+    }
+    if (fromInv && !toInv) {
+      withdrawals += amount;
+      netFlowByDate.set(entry.date, (netFlowByDate.get(entry.date) ?? 0) - amount);
+    }
+  }
+
+  // 평가액·손익 — accountPerformance 재사용
+  let currentValue = 0;
+  let realizedPnl = 0;
+  let unrealizedPnl = 0;
+  let dividendIncome = 0;
+  const accountRows: InvestmentReconciliationAccountRow[] = investingAccounts.map((a) => {
+    const perf = perfById.get(a.id);
+    const cv = perf?.currentValue ?? 0;
+    const nc = contributedByAccount.get(a.id) ?? 0;
+    const realized = perf?.realizedPnl ?? 0;
+    const unrealized = perf?.unrealizedPnl ?? 0;
+    const dividend = perf?.dividendContribution ?? 0;
+    currentValue += cv;
+    realizedPnl += realized;
+    unrealizedPnl += unrealized;
+    dividendIncome += dividend;
+    return {
+      accountId: a.id,
+      accountName: a.name,
+      netContributed: nc,
+      currentValue: cv,
+      totalReturn: cv - nc,
+      realizedPnl: realized,
+      unrealizedPnl: unrealized,
+      dividendIncome: dividend,
+      irr: perf?.irr ?? null
+    };
+  });
+  accountRows.sort((a, b) => b.currentValue - a.currentValue);
+
+  // 거래 활동량 + 실현손익 이익/손실 분리 + 월별 추이
+  const realizedByTradeId = computeRealizedPnlByTradeId(trades);
+  let buyVolume = 0;
+  let sellVolume = 0;
+  let tradeCount = 0;
+  let realizedGain = 0;
+  let realizedLoss = 0;
+  const monthlyPnlMap = new Map<string, { gain: number; loss: number }>();
+  for (const t of trades) {
+    if (!investingIds.has(t.accountId)) continue;
+    const account = accountById.get(t.accountId);
+    const amount = convertPositionAmount(t.totalAmount, t.ticker, account, fxRate);
+    tradeCount += 1;
+    if (t.side === "buy") {
+      buyVolume += amount;
+      continue;
+    }
+    sellVolume += amount;
+    const pnl = convertPositionAmount(realizedByTradeId.get(t.id) ?? 0, t.ticker, account, fxRate);
+    const month = t.date.slice(0, 7);
+    const bucket = monthlyPnlMap.get(month) ?? { gain: 0, loss: 0 };
+    if (pnl >= 0) {
+      realizedGain += pnl;
+      bucket.gain += pnl;
+    } else {
+      realizedLoss += pnl;
+      bucket.loss += pnl;
+    }
+    monthlyPnlMap.set(month, bucket);
+  }
+  const monthlyPnl: InvestmentMonthlyPnlRow[] = Array.from(monthlyPnlMap.entries())
+    .sort((a, b) => a[0].localeCompare(b[0]))
+    .map(([month, v]) => ({ month, realizedGain: v.gain, realizedLoss: v.loss }));
+
+  // 미실현 손익 이익/손실 분리 + 평가수익·평가손실 종목 목록
+  let unrealizedGain = 0;
+  let unrealizedLoss = 0;
+  const winningPositions: InvestmentPositionPnlRow[] = [];
+  const losingPositions: InvestmentPositionPnlRow[] = [];
+  for (const p of computePositions(trades, prices, accounts)) {
+    if (!investingIds.has(p.accountId)) continue;
+    const account = accountById.get(p.accountId);
+    const pnl = convertPositionAmount(p.pnl, p.ticker, account, fxRate);
+    const row: InvestmentPositionPnlRow = {
+      accountName: account?.name ?? p.accountId,
+      ticker: p.ticker,
+      name: p.name,
+      pnl,
+      pnlRate: p.pnlRate
+    };
+    if (pnl > 0) {
+      unrealizedGain += pnl;
+      winningPositions.push(row);
+    } else if (pnl < 0) {
+      unrealizedLoss += pnl;
+      losingPositions.push(row);
+    }
+  }
+  winningPositions.sort((a, b) => b.pnl - a.pnl); // 수익 큰 종목 먼저
+  losingPositions.sort((a, b) => a.pnl - b.pnl); // 손실 큰 종목 먼저
+
+  const netContributed = initialCapital + deposits - withdrawals;
+  const totalReturn = currentValue - netContributed;
+  const pnlSum = realizedPnl + unrealizedPnl + dividendIncome;
+
+  // 포트폴리오 IRR — 초기자본·이체 순유입을 음(−), 현재 평가액을 양(+)으로
+  const today = formatIsoLocal(new Date());
+  let firstDate = today;
+  for (const e of ledger) if (e.date && e.date < firstDate) firstDate = e.date;
+  for (const t of trades) if (t.date && t.date < firstDate) firstDate = t.date;
+  const irrFlows: CashFlowItem[] = [];
+  if (Math.abs(initialCapital) > 0.000001) irrFlows.push({ date: firstDate, amount: -initialCapital });
+  for (const [date, net] of Array.from(netFlowByDate.entries()).sort((a, b) => a[0].localeCompare(b[0]))) {
+    if (Math.abs(net) > 0.000001) irrFlows.push({ date, amount: -net });
+  }
+  if (Math.abs(currentValue) > 0.000001) irrFlows.push({ date: today, amount: currentValue });
+  const irr = irrFlows.length >= 2 ? (xirr(irrFlows) ?? null) : null;
+
+  return {
+    hasData: true,
+    initialCapital,
+    deposits,
+    withdrawals,
+    netContributed,
+    currentValue,
+    totalReturn,
+    returnRate: netContributed > 0 ? totalReturn / netContributed : null,
+    irr,
+    realizedPnl,
+    unrealizedPnl,
+    dividendIncome,
+    pnlSum,
+    residual: totalReturn - pnlSum,
+    realizedGain,
+    realizedLoss,
+    unrealizedGain,
+    unrealizedLoss,
+    winningPositions,
+    losingPositions,
+    monthlyPnl,
+    buyVolume,
+    sellVolume,
+    tradeCount,
+    accounts: accountRows
+  };
+}
+
 export function generateConsumptionImpactMonthlyReport(
   ledger: LedgerEntry[],
   accounts: Account[],

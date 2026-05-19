@@ -6911,6 +6911,10 @@
     {
       "ticker": "950210",
       "name": "프레스티지바이오파마"
+    },
+    {
+      "ticker": "RKLX",
+      "name": "RKLX"
     }
   ],
   "US": [
@@ -31097,6 +31101,10 @@
     {
       "ticker": "RKLB",
       "name": "RKLB"
+    },
+    {
+      "ticker": "RKLX",
+      "name": "RKLX"
     },
     {
       "ticker": "RKT",

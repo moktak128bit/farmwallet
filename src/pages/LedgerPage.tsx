@@ -263,6 +263,13 @@ export const LedgerView: React.FC<Props> = ({
     }
   }, [ledgerTab, form.mainCategory, form.subCategory]);
 
+  // 재테크 탭(savingsExpense): mainCategory를 "재테크"로 고정. subCategory는 사용자가 재테크 하위 중 선택.
+  useEffect(() => {
+    if (ledgerTab === "savingsExpense" && form.mainCategory !== "재테크") {
+      setForm((prev) => ({ ...prev, mainCategory: "재테크" }));
+    }
+  }, [ledgerTab, form.mainCategory]);
+
 
   const expenseSubSuggestions = useMemo(() => {
     // 이체 탭: transfer 카테고리를 중분류로 사용 (계좌이체/저축/투자/환전/카드결제이체)
@@ -311,6 +318,10 @@ export const LedgerView: React.FC<Props> = ({
     if (effectiveFormKind === "transfer") {
       return ["이체"];
     }
+    // 재테크 탭은 대분류 고정
+    if (ledgerTab === "savingsExpense") {
+      return ["재테크"];
+    }
     if (!categoryPresets || !categoryPresets.expense) {
       if (import.meta.env.DEV) {
         console.warn("[LedgerView] categoryPresets.expense가 없습니다.", categoryPresets);
@@ -321,7 +332,7 @@ export const LedgerView: React.FC<Props> = ({
     return effectiveFormKind === "expense"
       ? list.filter((c) => c !== "재테크")
       : list;
-  }, [effectiveFormKind, categoryPresets]);
+  }, [effectiveFormKind, ledgerTab, categoryPresets]);
 
   // 수입 중분류 옵션 (카테고리 탭에서 입력한 순서 그대로)
   const incomeCategoryOptions = useMemo(() => {
@@ -1802,6 +1813,22 @@ export const LedgerView: React.FC<Props> = ({
                   {tabLabel[k]}
                 </button>
               ))}
+              {/* 재테크 — 별도 탭. 내부 kind=expense, category=재테크 고정 (sub는 자유 선택) */}
+              <button
+                type="button"
+                tabIndex={-1}
+                className={ledgerTab === "savingsExpense" ? "primary" : "secondary"}
+                onClick={() => {
+                  setLedgerTab("savingsExpense");
+                  setFilterMainCategory(undefined);
+                  setFilterSubCategory(undefined);
+                  setFilterDetailCategory(undefined);
+                }}
+                style={{ fontSize: 13, padding: "6px 12px" }}
+                title="재테크 (투자손실·저축·투자 등 — 카테고리 탭의 재테크 그룹)"
+              >
+                📈 재테크
+              </button>
               {/* 신용결제 — 별도 탭. 내부 kind=expense, category=신용결제 고정 */}
               <button
                 type="button"

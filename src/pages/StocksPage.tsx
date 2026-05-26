@@ -818,11 +818,13 @@ export const StocksView: React.FC<Props> = ({
       market: db?.market,
       exchange: db?.exchange,
       side: "sell",
-      quantity: String(p.quantity),
+      // 부동소수점 잡음 제거: 여러 매수 합산·환율 곱셈에서 생긴 0.6982870000000005 같은 노이즈를
+      // toFixed(10)로 깎고 Number→String round-trip 시키면 본래 표기로 복원됨 (사토시 1e-8 보다 2자리 여유).
+      quantity: String(Number(p.quantity.toFixed(10))),
       price: String(currentPrice),
       fee: "0"
     });
-    
+
     // 티커 정보도 설정
     if (priceInfo) {
       setTickerInfo({
@@ -832,7 +834,7 @@ export const StocksView: React.FC<Props> = ({
         currency: priceInfo.currency
       });
     }
-    
+
     // 거래 입력 폼으로 스크롤
     setTimeout(() => {
       const formElement = document.querySelector('form[class*="card"]');
@@ -1260,7 +1262,7 @@ export const StocksView: React.FC<Props> = ({
       market: db?.market,
       exchange: db?.exchange,
       side: t.side,
-      quantity: String(t.quantity),
+      quantity: String(Number(t.quantity.toFixed(10))),
       price: String(t.price),
       fee: String(t.fee),
       priceKRW: isUSD && rate > 0 ? String(Math.round(t.price * rate)) : "",

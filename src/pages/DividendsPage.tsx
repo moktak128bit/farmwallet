@@ -6,6 +6,7 @@ import { formatKRW, formatShortDate } from "../utils/formatter";
 import { isKRWStock, isUSDStock, canonicalTickerForMatch, extractTickerFromText } from "../utils/finance";
 import { parseExDateFromNote, parseQuantityFromNote, buildDividendNote } from "../utils/dividend";
 import { getKrNames } from "../storage";
+import { STORAGE_KEYS } from "../constants/config";
 import { toast } from "react-hot-toast";
 
 interface Props {
@@ -40,13 +41,27 @@ interface DividendRow {
 }
 
 type TabType = "dividend" | "interest";
-type ViewMode = "all" | "dividend" | "interest";
+
+function readLastTab(): TabType {
+  if (typeof window === "undefined") return "dividend";
+  try {
+    const v = window.localStorage.getItem(STORAGE_KEYS.DIVIDENDS_LAST_TAB);
+    return v === "interest" ? "interest" : "dividend";
+  } catch {
+    return "dividend";
+  }
+}
 
 export const DividendsView: React.FC<Props> = ({ accounts, ledger, trades, prices, tickerDatabase, historicalDailyCloses: _historicalDailyCloses = [], onChangeLedger, fxRate: propFxRate = null }) => {
   const deferredLedger = useDeferredValue(ledger);
   const deferredTrades = useDeferredValue(trades);
-  const [activeTab, setActiveTab] = useState<TabType>("dividend");
-  const [viewMode, setViewMode] = useState<ViewMode>("all");
+  // 입력·보기 분리 → 단일 탭: 선택한 탭의 폼과 표·차트만 보임.
+  // 이전 두 줄 탭(activeTab + viewMode) 구조는 화면 절반이 다른 자료라 혼란을 줘서 통합.
+  const [tab, setTabState] = useState<TabType>(() => readLastTab());
+  const setTab = (next: TabType) => {
+    setTabState(next);
+    try { window.localStorage.setItem(STORAGE_KEYS.DIVIDENDS_LAST_TAB, next); } catch { /* */ }
+  };
   const [showUSD, setShowUSD] = useState(false);
   const [fxRate, setFxRate] = useState<number | null>(propFxRate);
   const [editingEntryId, setEditingEntryId] = useState<string | null>(null);
@@ -96,14 +111,9 @@ export const DividendsView: React.FC<Props> = ({ accounts, ledger, trades, price
     return computePositions(trades, adjustedPrices, accounts, { fxRate: fxRate ?? undefined });
   }, [trades, adjustedPrices, accounts, fxRate]);
 
-  // 티커 자동완성 옵션 (보유 종목만) + "티커 없음" 옵션
+  // 티커 자동완성 옵션 — 보유 종목만. 이자는 별도 이자 탭에서 입력.
   const tickerOptions = useMemo(() => {
-    const options: Array<{ value: string; label: string; subLabel?: string }> = [
-      { value: "", label: "티커 없음 (이자로 등록)", subLabel: "비우거나 '이자' 입력 시 이자로 저장" },
-      { value: "이자", label: "이자 (은행이자)", subLabel: "이자로 저장됩니다" }
-    ];
-    
-    // 보유 종목만 추가
+    const options: Array<{ value: string; label: string; subLabel?: string }> = [];
     positions.forEach((pos) => {
       if (pos.quantity > 0) {
         options.push({
@@ -113,14 +123,7 @@ export const DividendsView: React.FC<Props> = ({ accounts, ledger, trades, price
         });
       }
     });
-    
-    return options.sort((a, b) => {
-      if (a.value === "") return -1;
-      if (b.value === "") return 1;
-      if (a.value === "이자") return -1;
-      if (b.value === "이자") return 1;
-      return a.value.localeCompare(b.value);
-    });
+    return options.sort((a, b) => a.value.localeCompare(b.value));
   }, [positions]);
 
   // 선택한 티커의 보유 정보 (주식 탭과 동일: 원화 기준)
@@ -303,34 +306,10 @@ export const DividendsView: React.FC<Props> = ({ accounts, ledger, trades, price
     }
 
     const tickerTrimmed = dividendForm.ticker?.trim() ?? "";
-    
-    // 티커가 비어 있거나 "이자"로 입력하면 이자(은행이자)로 저장
-    if (!tickerTrimmed || tickerTrimmed === "이자") {
-      if (!amount || amount <= 0) return;
-      const netAmount = amount - tax - fee;
-      const description = `이자${tax > 0 ? `, 세금: ${Math.round(tax).toLocaleString()}원` : ""}${fee > 0 ? `, 수수료: ${Math.round(fee).toLocaleString()}원` : ""}`;
-      const entry: LedgerEntry = {
-        id: `I${Date.now()}`,
-        date: dividendForm.date,
-        kind: "income",
-        category: "이자",
-        description: description,
-        toAccountId: dividendForm.accountId,
-        amount: netAmount
-      };
-      onChangeLedger([entry, ...ledger]);
-      setDividendForm({
-        date: new Date().toISOString().slice(0, 10),
-        exDate: "",
-        accountId: dividendForm.accountId,
-        ticker: "",
-        name: "",
-        dividendPerShare: "",
-        amount: "",
-        quantity: "",
-        tax: "",
-        fee: ""
-      });
+
+    // 이자 입력은 이자 탭으로 — 배당 폼은 티커 필수
+    if (!tickerTrimmed) {
+      toast.error("종목을 선택하세요. 이자는 이자 탭에서 입력합니다.");
       return;
     }
     const quantityForCalc = dividendForm.quantity !== "" ? Number(dividendForm.quantity) || 0 : selectedPosition?.quantity ?? 0;
@@ -570,16 +549,6 @@ export const DividendsView: React.FC<Props> = ({ accounts, ledger, trades, price
     return rows.sort((a, b) => b.date.localeCompare(a.date)); // 최신순
   }, [deferredLedger, deferredTrades, trades, accounts, tickerDatabase, adjustedPrices, fxRate, latestPriceByCanonicalTicker]);
 
-  const monthlyTotal = useMemo(() => {
-    const map = new Map<string, number>();
-    incomeRows.forEach((r) => {
-      map.set(r.month, (map.get(r.month) ?? 0) + r.amount);
-    });
-    return Array.from(map.entries())
-      .map(([month, total]) => ({ month, total }))
-      .sort((a, b) => b.month.localeCompare(a.month)); // 최신 월이 위로
-  }, [incomeRows]);
-
   const byMonthSource = useMemo(() => {
     const map = new Map<string, DividendRow[]>();
     incomeRows.forEach((r) => {
@@ -667,56 +636,49 @@ export const DividendsView: React.FC<Props> = ({ accounts, ledger, trades, price
         <h2>배당/이자 (수입)</h2>
       </div>
 
-      {/* 입력 탭: 배당 입력 / 이자 입력 */}
-      <div style={{ display: "flex", gap: 8, marginBottom: 12 }}>
-        <button
-          type="button"
-          className={activeTab === "dividend" ? "primary" : ""}
-          onClick={() => setActiveTab("dividend")}
-          style={{ padding: "8px 16px", fontSize: 14 }}
-        >
-          배당 입력
-        </button>
-        <button
-          type="button"
-          className={activeTab === "interest" ? "primary" : ""}
-          onClick={() => setActiveTab("interest")}
-          style={{ padding: "8px 16px", fontSize: 14 }}
-        >
-          이자 입력
-        </button>
+      {/* 항상 보이는 요약 한 줄 — 어느 탭이든 전체 그림을 한눈에 */}
+      <div
+        className="hint"
+        style={{
+          fontSize: 13,
+          marginBottom: 12,
+          padding: "8px 12px",
+          background: "var(--surface)",
+          borderRadius: 6,
+          display: "flex",
+          gap: 16,
+          flexWrap: "wrap"
+        }}
+      >
+        <span>누적 배당 <strong style={{ color: "var(--positive)" }}>{formatKRW(Math.round(totalDividend))}</strong></span>
+        <span>·</span>
+        <span>이자 <strong style={{ color: "var(--positive)" }}>{formatKRW(Math.round(totalInterest))}</strong></span>
+        <span>·</span>
+        <span>합계 <strong>{formatKRW(Math.round(totalDividend + totalInterest))}</strong></span>
       </div>
 
-      {/* 보기 탭: 전체 / 배당만 / 이자만 */}
+      {/* 단일 탭 — 선택한 쪽의 입력 폼·표·차트만 노출 */}
       <div style={{ display: "flex", gap: 8, marginBottom: 16 }}>
         <button
           type="button"
-          className={viewMode === "all" ? "primary" : ""}
-          onClick={() => setViewMode("all")}
-          style={{ padding: "6px 14px", fontSize: 13 }}
+          className={tab === "dividend" ? "primary" : ""}
+          onClick={() => setTab("dividend")}
+          style={{ padding: "8px 20px", fontSize: 14, fontWeight: 600 }}
         >
-          전체 보기
+          배당
         </button>
         <button
           type="button"
-          className={viewMode === "dividend" ? "primary" : ""}
-          onClick={() => setViewMode("dividend")}
-          style={{ padding: "6px 14px", fontSize: 13 }}
+          className={tab === "interest" ? "primary" : ""}
+          onClick={() => setTab("interest")}
+          style={{ padding: "8px 20px", fontSize: 14, fontWeight: 600 }}
         >
-          배당만 보기
-        </button>
-        <button
-          type="button"
-          className={viewMode === "interest" ? "primary" : ""}
-          onClick={() => setViewMode("interest")}
-          style={{ padding: "6px 14px", fontSize: 13 }}
-        >
-          이자만 보기
+          이자
         </button>
       </div>
 
       {/* 배당 입력 폼 */}
-      {activeTab === "dividend" && (
+      {tab === "dividend" && (
         <>
           {/* 빠른 입력: 이전 배당 내역 */}
           {recentDividends.length > 0 && (
@@ -1011,7 +973,7 @@ export const DividendsView: React.FC<Props> = ({ accounts, ledger, trades, price
       )}
 
       {/* 이자 입력 폼 */}
-      {activeTab === "interest" && (
+      {tab === "interest" && (
         <div className="card" style={{ padding: 16, marginBottom: 16 }}>
           <h3 style={{ marginTop: 0, marginBottom: 12 }}>이자 입력</h3>
           <p className="hint" style={{ marginBottom: 12 }}>
@@ -1093,57 +1055,41 @@ export const DividendsView: React.FC<Props> = ({ accounts, ledger, trades, price
 
 
       <div className="cards-row">
-        {(viewMode === "all" || viewMode === "dividend") && (
-          <div className={viewMode === "dividend" ? "card highlight" : "card"}>
-            <div className="card-title">배당 총액</div>
-            <div className="card-value positive">
-              {formatKRW(Math.round(totalDividend))}
-            </div>
-          </div>
-        )}
-        {(viewMode === "all" || viewMode === "interest") && (
-          <div className={viewMode === "interest" ? "card highlight" : "card"}>
-            <div className="card-title">이자 총액</div>
-            <div className="card-value positive">
-              {formatKRW(Math.round(totalInterest))}
-            </div>
-          </div>
-        )}
-        {viewMode === "all" && (
+        {tab === "dividend" && (
           <>
-            <div className="card">
-              <div className="card-title">전체 누적</div>
-              <div className="card-value">
-                {formatKRW(Math.round(incomeRows.reduce((s, r) => s + r.amount, 0)))}
+            <div className="card highlight">
+              <div className="card-title">배당 총액</div>
+              <div className="card-value positive">
+                {formatKRW(Math.round(totalDividend))}
               </div>
             </div>
             <div className="card">
-              <div className="card-title">최근 월 합계</div>
+              <div className="card-title">최근 월 배당</div>
               <div className="card-value">
-                {formatKRW(Math.round(monthlyTotal[0]?.total ?? 0))}
+                {formatKRW(Math.round(monthlyDividendTotal[0]?.total ?? 0))}
               </div>
             </div>
           </>
         )}
-        {viewMode === "dividend" && (
-          <div className="card">
-            <div className="card-title">최근 월 배당</div>
-            <div className="card-value">
-              {formatKRW(Math.round(monthlyDividendTotal[0]?.total ?? 0))}
+        {tab === "interest" && (
+          <>
+            <div className="card highlight">
+              <div className="card-title">이자 총액</div>
+              <div className="card-value positive">
+                {formatKRW(Math.round(totalInterest))}
+              </div>
             </div>
-          </div>
-        )}
-        {viewMode === "interest" && (
-          <div className="card">
-            <div className="card-title">최근 월 이자</div>
-            <div className="card-value">
-              {formatKRW(Math.round(monthlyInterestTotal[0]?.total ?? 0))}
+            <div className="card">
+              <div className="card-title">최근 월 이자</div>
+              <div className="card-value">
+                {formatKRW(Math.round(monthlyInterestTotal[0]?.total ?? 0))}
+              </div>
             </div>
-          </div>
+          </>
         )}
       </div>
 
-      {(viewMode === "all" || viewMode === "dividend") && byTicker.length > 0 && (
+      {tab === "dividend" && byTicker.length > 0 && (
         <>
           <h3>종목별 누적 배당</h3>
           <table className="data-table compact">
@@ -1171,9 +1117,9 @@ export const DividendsView: React.FC<Props> = ({ accounts, ledger, trades, price
         </>
       )}
 
-      {(viewMode === "all" || viewMode === "dividend") && (
+      {tab === "dividend" && (
         <>
-          <h3>{viewMode === "dividend" ? "월별 배당 합계" : "월별 합계"}</h3>
+          <h3>월별 배당 합계</h3>
           <table className="data-table compact">
             <thead>
               <tr>
@@ -1182,7 +1128,7 @@ export const DividendsView: React.FC<Props> = ({ accounts, ledger, trades, price
               </tr>
             </thead>
             <tbody>
-              {(viewMode === "all" ? monthlyTotal : monthlyDividendTotal).map((row) => (
+              {monthlyDividendTotal.map((row) => (
                 <tr key={row.month}>
                   <td style={{ fontWeight: 500 }}>{row.month}</td>
                   <td className="number positive" style={{ fontWeight: 600, fontSize: 15 }}>
@@ -1190,10 +1136,10 @@ export const DividendsView: React.FC<Props> = ({ accounts, ledger, trades, price
                   </td>
                 </tr>
               ))}
-              {(viewMode === "all" ? monthlyTotal : monthlyDividendTotal).length === 0 && (
+              {monthlyDividendTotal.length === 0 && (
                 <tr>
                   <td colSpan={2} style={{ textAlign: "center" }}>
-                    {viewMode === "dividend" ? "배당 내역이 없습니다." : "배당/이자 내역이 없습니다."}
+                    배당 내역이 없습니다.
                   </td>
                 </tr>
               )}
@@ -1202,7 +1148,7 @@ export const DividendsView: React.FC<Props> = ({ accounts, ledger, trades, price
         </>
       )}
 
-      {viewMode === "interest" && (
+      {tab === "interest" && (
         <>
           <h3>월별 이자 합계</h3>
           <table className="data-table compact">
@@ -1233,7 +1179,7 @@ export const DividendsView: React.FC<Props> = ({ accounts, ledger, trades, price
         </>
       )}
 
-      {(viewMode === "all" || viewMode === "dividend") && (
+      {tab === "dividend" && (
         <>
       <h3 style={{ marginTop: 16 }}>월별 종목별 배당 내역</h3>
       {byMonthSource.length === 0 ? (
@@ -1658,6 +1604,48 @@ export const DividendsView: React.FC<Props> = ({ accounts, ledger, trades, price
                                     ✏️
                                   </button>
                                 )}
+                                {!isEditing && (
+                                  <button
+                                    type="button"
+                                    onClick={() => {
+                                      if (confirm(`이 항목을 이자로 변환하시겠습니까?\n${r.ticker || r.source}: ${formatKRW(Math.round(r.amount))}\n\n잘못 배당으로 분류된 이자(예: OK저축은행)를 이자 탭으로 옮길 때 사용합니다.`)) {
+                                        const cleanedDesc = (ledgerEntry.description ?? "").replace(/배당/g, "이자");
+                                        const updated: LedgerEntry = {
+                                          ...ledgerEntry,
+                                          category: "이자",
+                                          subCategory: undefined,
+                                          description: cleanedDesc || "이자",
+                                          note: undefined  // 배당 전용 메타(qty/exDate) 제거
+                                        };
+                                        const newLedger = ledger.map(l => l.id === ledgerEntry.id ? updated : l);
+                                        onChangeLedger(newLedger);
+                                        toast.success("이자로 변환되었습니다 (이자 탭에서 확인)");
+                                      }
+                                    }}
+                                    style={{
+                                      background: "none",
+                                      border: "1px solid var(--border)",
+                                      color: "var(--text-muted)",
+                                      cursor: "pointer",
+                                      fontSize: 11,
+                                      padding: "4px 8px",
+                                      borderRadius: 4,
+                                      display: "inline-flex",
+                                      alignItems: "center",
+                                      justifyContent: "center",
+                                      whiteSpace: "nowrap"
+                                    }}
+                                    onMouseEnter={(e) => {
+                                      e.currentTarget.style.backgroundColor = "var(--surface)";
+                                    }}
+                                    onMouseLeave={(e) => {
+                                      e.currentTarget.style.backgroundColor = "transparent";
+                                    }}
+                                    title="이자로 변환 — 잘못 배당으로 분류된 이자(은행 이자 등) 정정"
+                                  >
+                                    → 이자
+                                  </button>
+                                )}
                                 <button
                                   type="button"
                                   onClick={() => {
@@ -1704,9 +1692,9 @@ export const DividendsView: React.FC<Props> = ({ accounts, ledger, trades, price
         </>
       )}
 
-      {(viewMode === "all" || viewMode === "interest") && (
+      {tab === "interest" && (
         <>
-      <h3 style={{ marginTop: viewMode === "interest" ? 0 : 24 }}>월별 이자 내역</h3>
+      <h3 style={{ marginTop: 0 }}>월별 이자 내역</h3>
       {byMonthInterest.length === 0 ? (
         <p className="hint" style={{ textAlign: "center", padding: 20 }}>
           이자 내역이 없습니다.

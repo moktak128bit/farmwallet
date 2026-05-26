@@ -30,12 +30,17 @@ function emitConfigChange() {
 /**
  * AbortController + setTimeout 으로 fetch 타임아웃 구현.
  * 응답 본문 일부(최대 500자)를 텍스트로 같이 반환해 에러 메시지에 활용.
+ *
+ * cache: "no-store" 기본 적용 — GitHub API는 `Cache-Control: private, max-age=60`을 주기 때문에,
+ * 모바일/데스크탑이 60초 안에 같은 엔드포인트(예: /gists/{id})를 두 번 부르면 브라우저가 stale 응답을 그대로 반환해
+ * "불러오기를 눌러도 최신이 안 오는" 증상이 생긴다. 동기화는 빈도 낮고 항상 최신이 필요한 작업이라 캐시 비활성화가 옳다.
+ * 호출자가 명시적으로 다른 cache 모드를 주면 그게 우선.
  */
 async function fetchWithTimeout(url: string, init?: RequestInit, timeoutMs = FETCH_TIMEOUT_MS): Promise<Response> {
   const controller = new AbortController();
   const id = setTimeout(() => controller.abort(), timeoutMs);
   try {
-    return await fetch(url, { ...init, signal: controller.signal });
+    return await fetch(url, { cache: "no-store", ...init, signal: controller.signal });
   } catch (err) {
     if (err instanceof DOMException && err.name === "AbortError") {
       throw new Error(`요청 시간 초과 (${Math.round(timeoutMs / 1000)}s)`);

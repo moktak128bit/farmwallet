@@ -24,9 +24,17 @@ export const FxFormSection: React.FC<FxFormSectionProps> = ({ accounts, ledger, 
     fromAmount: "",
     toAmount: "",
     rate: fxRate ? String(Math.round(fxRate * 100) / 100) : "",
+    fee: "",
+    feeCurrency: "KRW" as FxCurrency,
     description: ""
   });
   const [loadingRate, setLoadingRate] = useState(false);
+  // 사용자가 직접 입력한 필드는 자동 계산이 덮어쓰지 않음 — 거래소·증권사가 표시한 환전 결과를 그대로 기록 가능.
+  // false인 필드만 다른 필드 변경 시 자동 채워짐. 폼 reset 시 함께 초기화.
+  const [manualEdits, setManualEdits] = useState({ fromAmount: false, toAmount: false, rate: false });
+  // 환전 모드 — 기본은 "같은 계좌 내 환전" (증권사·거래소 내부 KRW↔USD 환전이 일반적).
+  // 체크 시에만 출발/도착 계좌를 따로 지정 (예: 은행 KRW → 증권사 USD).
+  const [crossAccount, setCrossAccount] = useState(false);
 
   useEffect(() => {
     if (fxRate != null && !form.rate) {
@@ -70,10 +78,17 @@ export const FxFormSection: React.FC<FxFormSectionProps> = ({ accounts, ledger, 
         ? toAmt / rateNum
         : toAmt;
 
+  // value === "" 면 manual flag 해제 (지웠으니 다시 자동 채움 허용)
+  const markEdited = (field: "fromAmount" | "toAmount" | "rate", value: string) => {
+    setManualEdits((prev) => ({ ...prev, [field]: value !== "" }));
+  };
+
   const handleRateChange = (newRate: string) => {
     const rate = parseFloat(newRate) || 0;
+    markEdited("rate", newRate);
     setForm((prev) => {
-      if (prev.fromAmount && rate > 0) {
+      // 도착 금액이 사용자 입력값이면 덮어쓰지 않음 — 비어 있을 때만 환율로 자동 채움
+      if (prev.fromAmount && rate > 0 && !manualEdits.toAmount) {
         const fromAmount = parseFloat(prev.fromAmount) || 0;
         const toAmount = computeToFromFrom(fromAmount);
         return {
@@ -88,11 +103,13 @@ export const FxFormSection: React.FC<FxFormSectionProps> = ({ accounts, ledger, 
 
   const handleFromAmountChange = (value: string) => {
     const amount = parseFloat(value) || 0;
+    markEdited("fromAmount", value);
     setForm((prev) => ({
       ...prev,
       fromAmount: value,
+      // 도착 금액을 사용자가 직접 입력한 상태면 덮어쓰지 않음
       toAmount:
-        rateNum > 0
+        !manualEdits.toAmount && rateNum > 0
           ? toCurrency === "USD"
             ? String(Math.round(computeToFromFrom(amount) * 100) / 100)
             : String(Math.round(computeToFromFrom(amount)))
@@ -102,11 +119,13 @@ export const FxFormSection: React.FC<FxFormSectionProps> = ({ accounts, ledger, 
 
   const handleToAmountChange = (value: string) => {
     const amount = parseFloat(value) || 0;
+    markEdited("toAmount", value);
     setForm((prev) => ({
       ...prev,
       toAmount: value,
+      // 출발 금액을 사용자가 직접 입력한 상태면 덮어쓰지 않음
       fromAmount:
-        rateNum > 0
+        !manualEdits.fromAmount && rateNum > 0
           ? fromCurrency === "USD"
             ? String(Math.round(computeFromFromTo(amount) * 100) / 100)
             : String(Math.round(computeFromFromTo(amount)))
@@ -125,6 +144,7 @@ export const FxFormSection: React.FC<FxFormSectionProps> = ({ accounts, ledger, 
     const fromAmount = parseFloat(form.fromAmount) || 0;
     const toAmount = parseFloat(form.toAmount) || 0;
     const rate = parseFloat(form.rate) || 0;
+    const fee = parseFloat(form.fee) || 0;
 
     if (fromAmount <= 0 || toAmount <= 0 || rate <= 0) {
       toast.error(ERROR_MESSAGES.FX_AMOUNT_RATE_REQUIRED);
@@ -138,15 +158,19 @@ export const FxFormSection: React.FC<FxFormSectionProps> = ({ accounts, ledger, 
 
     const desc =
       form.description ||
-      `환전: ${fromCurrency === "KRW" ? formatKRW(fromAmount) : formatUSD(fromAmount)} → ${toCurrency === "KRW" ? formatKRW(toAmount) : formatUSD(toAmount)} (환율: ${rate.toFixed(2)})`;
+      `환전: ${fromCurrency === "KRW" ? formatKRW(fromAmount) : formatUSD(fromAmount)} → ${toCurrency === "KRW" ? formatKRW(toAmount) : formatUSD(toAmount)} (환율: ${rate.toFixed(2)})${fee > 0 ? ` (수수료 ${form.feeCurrency === "KRW" ? formatKRW(fee) : formatUSD(fee)})` : ""}`;
 
     const baseId = `fx-${Date.now()}`;
+    // 사용자 카테고리 체계와 일치:
+    //   transfer (환전 자체) → 이체 > 환전이체
+    //   expense  (수수료)    → 지출 > 수수료 > 환전수수료
     const entries: LedgerEntry[] = [
       {
         id: `${baseId}-from`,
         date: form.date,
         kind: "transfer",
-        category: "환전",
+        category: "이체",
+        subCategory: "환전이체",
         description: desc,
         fromAccountId: form.fromAccountId,
         toAccountId: undefined,
@@ -157,7 +181,8 @@ export const FxFormSection: React.FC<FxFormSectionProps> = ({ accounts, ledger, 
         id: `${baseId}-to`,
         date: form.date,
         kind: "transfer",
-        category: "환전",
+        category: "이체",
+        subCategory: "환전이체",
         description: desc,
         fromAccountId: undefined,
         toAccountId: form.toAccountId,
@@ -165,6 +190,21 @@ export const FxFormSection: React.FC<FxFormSectionProps> = ({ accounts, ledger, 
         currency: toCurrency
       }
     ];
+
+    if (fee > 0) {
+      entries.push({
+        id: `${baseId}-fee`,
+        date: form.date,
+        kind: "expense",
+        category: "지출",
+        subCategory: "수수료",
+        detailCategory: "환전수수료",
+        description: `환전 수수료${form.description ? ` — ${form.description}` : ""}`,
+        fromAccountId: form.fromAccountId,
+        amount: fee,
+        currency: form.feeCurrency
+      });
+    }
 
     onChangeLedger([...ledger, ...entries]);
     toast.success("환전 거래가 추가되었습니다");
@@ -177,8 +217,11 @@ export const FxFormSection: React.FC<FxFormSectionProps> = ({ accounts, ledger, 
       fromAmount: "",
       toAmount: "",
       rate: fxRate ? String(Math.round(fxRate * 100) / 100) : "",
+      fee: "",
+      feeCurrency: "KRW",
       description: ""
     });
+    setManualEdits({ fromAmount: false, toAmount: false, rate: false });
   };
 
   const resetForm = () => {
@@ -191,12 +234,32 @@ export const FxFormSection: React.FC<FxFormSectionProps> = ({ accounts, ledger, 
       fromAmount: "",
       toAmount: "",
       rate: fxRate ? String(Math.round(fxRate * 100) / 100) : "",
+      fee: "",
+      feeCurrency: "KRW",
       description: ""
     });
+    setManualEdits({ fromAmount: false, toAmount: false, rate: false });
   };
 
   return (
     <form onSubmit={handleSubmit}>
+      {/* 모드 토글 — 같은 계좌 환전이 기본, 필요할 때만 다른 계좌 모드로 전환 */}
+      <label style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 12, fontSize: 13 }}>
+        <input
+          type="checkbox"
+          checked={crossAccount}
+          onChange={(e) => {
+            const checked = e.target.checked;
+            setCrossAccount(checked);
+            if (!checked) {
+              // 같은 계좌 모드로 복귀 — 도착 계좌를 출발 계좌와 같게 맞춤
+              setForm((prev) => ({ ...prev, toAccountId: prev.fromAccountId }));
+            }
+          }}
+        />
+        <span>다른 계좌로 환전 (예: 은행 → 증권). 체크 안 하면 같은 계좌 내 환전 (KRW ↔ USD).</span>
+      </label>
+
       <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(200px, 1fr))", gap: "12px" }}>
         <label style={{ display: "flex", flexDirection: "column", gap: 4 }}>
           <span style={{ fontSize: 13, fontWeight: 500 }}>거래일</span>
@@ -209,45 +272,70 @@ export const FxFormSection: React.FC<FxFormSectionProps> = ({ accounts, ledger, 
           />
         </label>
 
-        <label style={{ display: "flex", flexDirection: "column", gap: 4 }}>
-          <span style={{ fontSize: 13, fontWeight: 500 }}>출발 계좌</span>
-          <select
-            value={form.fromAccountId}
-            onChange={(e) =>
-              setForm((prev) => ({
-                ...prev,
-                fromAccountId: e.target.value,
-                toAccountId: prev.toAccountId === prev.fromAccountId ? e.target.value : prev.toAccountId
-              }))
-            }
-            style={{ padding: "6px 8px", fontSize: 14 }}
-            required
-          >
-            <option value="">선택</option>
-            {accounts.map((a) => (
-              <option key={a.id} value={a.id}>
-                {a.id} {a.name ? `(${a.name})` : ""}
-              </option>
-            ))}
-          </select>
-        </label>
+        {!crossAccount ? (
+          <label style={{ display: "flex", flexDirection: "column", gap: 4 }}>
+            <span style={{ fontSize: 13, fontWeight: 500 }}>계좌</span>
+            <select
+              value={form.fromAccountId}
+              onChange={(e) => {
+                const v = e.target.value;
+                // 같은 계좌 모드 — 출발·도착 동시에 같은 계좌로 설정
+                setForm((prev) => ({ ...prev, fromAccountId: v, toAccountId: v }));
+              }}
+              style={{ padding: "6px 8px", fontSize: 14 }}
+              required
+            >
+              <option value="">선택</option>
+              {accounts.map((a) => (
+                <option key={a.id} value={a.id}>
+                  {a.id} {a.name ? `(${a.name})` : ""}
+                </option>
+              ))}
+            </select>
+          </label>
+        ) : (
+          <>
+            <label style={{ display: "flex", flexDirection: "column", gap: 4 }}>
+              <span style={{ fontSize: 13, fontWeight: 500 }}>출발 계좌</span>
+              <select
+                value={form.fromAccountId}
+                onChange={(e) =>
+                  setForm((prev) => ({
+                    ...prev,
+                    fromAccountId: e.target.value,
+                    toAccountId: prev.toAccountId === prev.fromAccountId ? e.target.value : prev.toAccountId
+                  }))
+                }
+                style={{ padding: "6px 8px", fontSize: 14 }}
+                required
+              >
+                <option value="">선택</option>
+                {accounts.map((a) => (
+                  <option key={a.id} value={a.id}>
+                    {a.id} {a.name ? `(${a.name})` : ""}
+                  </option>
+                ))}
+              </select>
+            </label>
 
-        <label style={{ display: "flex", flexDirection: "column", gap: 4 }}>
-          <span style={{ fontSize: 13, fontWeight: 500 }}>도착 계좌</span>
-          <select
-            value={form.toAccountId}
-            onChange={(e) => setForm({ ...form, toAccountId: e.target.value })}
-            style={{ padding: "6px 8px", fontSize: 14 }}
-            required
-          >
-            <option value="">선택</option>
-            {accounts.map((a) => (
-              <option key={a.id} value={a.id}>
-                {a.id} {a.name ? `(${a.name})` : ""}
-              </option>
-            ))}
-          </select>
-        </label>
+            <label style={{ display: "flex", flexDirection: "column", gap: 4 }}>
+              <span style={{ fontSize: 13, fontWeight: 500 }}>도착 계좌</span>
+              <select
+                value={form.toAccountId}
+                onChange={(e) => setForm({ ...form, toAccountId: e.target.value })}
+                style={{ padding: "6px 8px", fontSize: 14 }}
+                required
+              >
+                <option value="">선택</option>
+                {accounts.map((a) => (
+                  <option key={a.id} value={a.id}>
+                    {a.id} {a.name ? `(${a.name})` : ""}
+                  </option>
+                ))}
+              </select>
+            </label>
+          </>
+        )}
 
         {isSameAccount && (
           <>
@@ -362,6 +450,39 @@ export const FxFormSection: React.FC<FxFormSectionProps> = ({ accounts, ledger, 
             required
           />
         </label>
+
+        {/* 수수료 금액 — 별도 셀로 분리해 입력칸이 항상 충분히 보이도록 */}
+        <label style={{ display: "flex", flexDirection: "column", gap: 4 }}>
+          <span style={{ fontSize: 13, fontWeight: 500 }}>수수료 금액 (선택)</span>
+          <input
+            type="number"
+            min={0}
+            step={form.feeCurrency === "USD" ? "0.01" : "1"}
+            value={form.fee}
+            onChange={(e) => setForm({ ...form, fee: e.target.value })}
+            placeholder="0"
+            style={{ padding: "6px 8px", fontSize: 14 }}
+          />
+        </label>
+
+        {/* 수수료 통화 — 출발 통화와 독립적 (국내 증권사는 보통 KRW) */}
+        <label style={{ display: "flex", flexDirection: "column", gap: 4 }}>
+          <span style={{ fontSize: 13, fontWeight: 500 }}>수수료 통화</span>
+          <select
+            value={form.feeCurrency}
+            onChange={(e) => setForm({ ...form, feeCurrency: e.target.value as FxCurrency })}
+            style={{ padding: "6px 8px", fontSize: 14 }}
+          >
+            <option value="KRW">KRW (원)</option>
+            <option value="USD">USD (달러)</option>
+          </select>
+        </label>
+
+        {/* 수수료 설명 한 줄 — 풀너비 */}
+        <p className="hint" style={{ fontSize: 12, margin: 0, gridColumn: "1 / -1" }}>
+          수수료 입력 시 출발 계좌에서 추가로 차감되며, 가계부에 <strong>지출 &gt; 수수료 &gt; 환전수수료</strong>로 기록됩니다.
+          환전 자체는 <strong>이체 &gt; 환전이체</strong>로 분류됩니다.
+        </p>
 
         <label style={{ display: "flex", flexDirection: "column", gap: 4, gridColumn: "1 / -1" }}>
           <span style={{ fontSize: 13, fontWeight: 500 }}>메모 (선택)</span>

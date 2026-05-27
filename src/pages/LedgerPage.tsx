@@ -263,13 +263,6 @@ export const LedgerView: React.FC<Props> = ({
     }
   }, [ledgerTab, form.mainCategory, form.subCategory]);
 
-  // 재테크 탭(savingsExpense): mainCategory를 "재테크"로 고정. subCategory는 사용자가 재테크 하위 중 선택.
-  useEffect(() => {
-    if (ledgerTab === "savingsExpense" && form.mainCategory !== "재테크") {
-      setForm((prev) => ({ ...prev, mainCategory: "재테크" }));
-    }
-  }, [ledgerTab, form.mainCategory]);
-
 
   const expenseSubSuggestions = useMemo(() => {
     // 이체 탭: transfer 카테고리를 중분류로 사용 (계좌이체/저축/투자/환전/카드결제이체)
@@ -318,10 +311,6 @@ export const LedgerView: React.FC<Props> = ({
     if (effectiveFormKind === "transfer") {
       return ["이체"];
     }
-    // 재테크 탭은 대분류 고정
-    if (ledgerTab === "savingsExpense") {
-      return ["재테크"];
-    }
     if (!categoryPresets || !categoryPresets.expense) {
       if (import.meta.env.DEV) {
         console.warn("[LedgerView] categoryPresets.expense가 없습니다.", categoryPresets);
@@ -332,7 +321,7 @@ export const LedgerView: React.FC<Props> = ({
     return effectiveFormKind === "expense"
       ? list.filter((c) => c !== "재테크")
       : list;
-  }, [effectiveFormKind, ledgerTab, categoryPresets]);
+  }, [effectiveFormKind, categoryPresets]);
 
   // 수입 중분류 옵션 (카테고리 탭에서 입력한 순서 그대로)
   const incomeCategoryOptions = useMemo(() => {
@@ -841,17 +830,42 @@ export const LedgerView: React.FC<Props> = ({
   // 탭별 필터링된 거래 목록 (가계부 + 주식 매수/매도)
   // 특수 탭 처리:
   //   - "creditPayment": kind=expense + category=신용결제 인 항목만
-  //   - "savingsExpense": isSavingsExpenseEntry(저축성지출) 분류된 expense/transfer 항목만
+  //   - "savingsExpense" (재테크 탭): 재테크 관련 모든 항목을 한 화면에 모음:
+  //       · expense: category="재테크" OR isSavingsExpenseEntry (사용자 categoryTypes.savings)
+  //       · income: 배당·이자·투자수익 (category/subCategory/description 매칭)
+  //       · transfer: subCategory ∈ {저축이체, 투자이체, 저축, 투자}
+  //       · trade: tradesAsLedgerRows로 합쳐진 매수/매도 행 (_tradeId 마커)
   //   - "all": 전체
   //   - "income"/"expense"/"transfer": 해당 kind만
   const ledgerByTab = useMemo(() => {
+    const investmentRelated = (l: LedgerDisplayRow): boolean => {
+      if (l._tradeId) return true; // 매수·매도 가상 행
+      if (l.kind === "expense") {
+        if (l.category === "재테크") return true;
+        return isSavingsExpenseEntry(l, accounts, categoryPresets);
+      }
+      if (l.kind === "income") {
+        const cat = l.category ?? "";
+        const sub = l.subCategory ?? "";
+        const desc = l.description ?? "";
+        if (cat === "배당" || cat === "이자") return true;
+        if (sub === "배당" || sub === "이자" || sub === "투자수익") return true;
+        if (desc.includes("배당") || desc.includes("이자")) return true;
+        return false;
+      }
+      if (l.kind === "transfer") {
+        const sub = l.subCategory ?? "";
+        return sub === "저축이체" || sub === "투자이체" || sub === "저축" || sub === "투자";
+      }
+      return false;
+    };
     return combinedLedger.filter((l) => {
       if (ledgerTab === "all") return true;
       if (ledgerTab === "creditPayment") {
         return l.kind === "expense" && l.category === "신용결제";
       }
       if (ledgerTab === "savingsExpense") {
-        return isSavingsExpenseEntry(l, accounts, categoryPresets);
+        return investmentRelated(l);
       }
       return l.kind === ledgerTab;
     });
@@ -1813,7 +1827,7 @@ export const LedgerView: React.FC<Props> = ({
                   {tabLabel[k]}
                 </button>
               ))}
-              {/* 재테크 — 별도 탭. 내부 kind=expense, category=재테크 고정 (sub는 자유 선택) */}
+              {/* 재테크 — 보기 전용 탭. 입력은 각 본래 위치(배당/이자/주식/이체)에서. 여기선 흩어진 항목을 모아 보여줌. */}
               <button
                 type="button"
                 tabIndex={-1}
@@ -1825,9 +1839,9 @@ export const LedgerView: React.FC<Props> = ({
                   setFilterDetailCategory(undefined);
                 }}
                 style={{ fontSize: 13, padding: "6px 12px" }}
-                title="재테크 (투자손실·저축·투자 등 — 카테고리 탭의 재테크 그룹)"
+                title="재테크 보기 — 배당/이자/매매/저축·투자 이체를 한 화면에 모음 (입력은 본래 위치에서)"
               >
-                📈 재테크
+                📊 재테크 보기
               </button>
               {/* 신용결제 — 별도 탭. 내부 kind=expense, category=신용결제 고정 */}
               <button
@@ -1846,6 +1860,30 @@ export const LedgerView: React.FC<Props> = ({
                 💳 신용결제
               </button>
             </div>
+            {ledgerTab === "savingsExpense" && (
+              <div
+                className="hint"
+                style={{
+                  padding: "20px 16px",
+                  textAlign: "center",
+                  lineHeight: 1.7,
+                  fontSize: 13,
+                  background: "var(--surface)",
+                  borderRadius: 8,
+                  marginTop: 4
+                }}
+              >
+                <strong>📊 재테크 보기 전용 탭</strong>
+                <br />
+                흩어진 재테크 활동을 모아서 보여줍니다. 입력은 본래 위치에서:
+                <br />
+                · 배당·이자 → <strong>배당/이자</strong> 탭
+                &nbsp;·&nbsp; 매수·매도 → <strong>주식</strong> 탭
+                &nbsp;·&nbsp; 저축·투자 이체 → <strong>이체</strong> 탭
+                &nbsp;·&nbsp; 투자손실 → 가계부 행 더블클릭으로 직접 편집
+              </div>
+            )}
+            <div style={{ display: ledgerTab === "savingsExpense" ? "none" : "block" }}>
             {/* 상단: 날짜와 금액을 한 줄에 */}
             <div style={{ display: "grid", gridTemplateColumns: "1fr 2fr", gap: "12px", alignItems: "start" }}>
               {/* 날짜 */}
@@ -2323,6 +2361,7 @@ export const LedgerView: React.FC<Props> = ({
               </button>
             </div>
           </div>
+            </div>
         </form>
 
       {/* ── 필터 영역 (기본 접힘 — 너무 큰 영역 차지하던 문제 해결) ── */}

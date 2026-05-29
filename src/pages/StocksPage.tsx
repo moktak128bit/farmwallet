@@ -40,6 +40,7 @@ import { validateDate, validateTicker, validateRequired, validateQuantity, valid
 import { ERROR_MESSAGES } from "../constants/errorMessages";
 import { displayNameForTicker, createDefaultTradeForm } from "../utils/stockHelpers";
 import { usePriceAutoRefresh } from "../hooks/usePriceAutoRefresh";
+import { blocksToCsv, type ReportBlock } from "../utils/reportExport";
 
 /** 환율 미로드 시 미국 주식 저장에 사용하는 기본 환율 (저장 차단 대신 사용) */
 const DEFAULT_FX_RATE = 1400;
@@ -385,6 +386,42 @@ export const StocksView: React.FC<Props> = ({
 
   // 거래된 적 있는 모든 티커 (청산 포함) — 종목 리스트 표시 등 시세 갱신 외 용도
   const uniqueTickers = useMemo(() => getUniqueTickersFromTrades(trades), [trades]);
+
+  /** 전체 매매 기록을 CSV로 내보내기 (날짜 최신순). */
+  const exportTradesCsv = () => {
+    if (trades.length === 0) {
+      toast.error("내보낼 거래 내역이 없습니다.");
+      return;
+    }
+    const nameById = new Map(accounts.map((a) => [a.id, a.name]));
+    const sorted = [...trades].sort((a, b) => (a.date < b.date ? 1 : a.date > b.date ? -1 : 0));
+    const block: ReportBlock = {
+      title: "주식 거래내역",
+      head: ["날짜", "계좌", "종목코드", "종목명", "구분", "수량", "단가", "수수료", "거래금액", "현금영향"],
+      rows: sorted.map((t) => [
+        t.date,
+        nameById.get(t.accountId) ?? t.accountId,
+        t.ticker,
+        t.name,
+        t.side === "buy" ? "매수" : "매도",
+        t.quantity,
+        t.price,
+        t.fee,
+        t.totalAmount,
+        t.cashImpact
+      ])
+    };
+    const blob = new Blob(["﻿" + blocksToCsv([block])], { type: "text/csv;charset=utf-8;" });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement("a");
+    link.href = url;
+    link.download = `주식_거래내역_${new Date().toISOString().slice(0, 10)}.csv`;
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+    URL.revokeObjectURL(url);
+    toast.success(`${trades.length}건 CSV 내보내기 완료`);
+  };
 
   // 시세 갱신용: "현재 보유 중" 티커만 (청산 종목은 굳이 갱신 안 함 → 429 회피 + 속도 ↑)
   const holdingsOnlyTickers = useMemo(() => getCurrentHoldingsTickers(trades), [trades]);
@@ -1437,6 +1474,14 @@ export const StocksView: React.FC<Props> = ({
             disabled={isLoadingTickerDatabase}
           >
             {isLoadingTickerDatabase ? "불러오는 중..." : "종목 불러오기"}
+          </button>
+          <button
+            type="button"
+            className="secondary"
+            onClick={exportTradesCsv}
+            title="전체 매매 기록을 CSV로 내보내기"
+          >
+            거래내역 CSV
           </button>
 
           {yahooUpdatedAt && (() => {

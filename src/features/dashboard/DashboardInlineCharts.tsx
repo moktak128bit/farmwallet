@@ -91,6 +91,7 @@ export function AssetTreemap({ portfolioTreemapData, portfolioByType }: AssetTre
   return (
     <ResponsiveContainer width="100%" height="100%">
       <Treemap
+        isAnimationActive={false}
         data={portfolioTreemapData}
         dataKey="value"
         nameKey="name"
@@ -132,18 +133,18 @@ export function AccountBalanceChart({ accountBalanceSnapshots, accountBalanceCha
           labelFormatter={(_, payload) => payload?.[0]?.payload?.date ?? ""}
         />
         {accountBalanceChartView === "total" && (
-          <Line type="monotone" dataKey="total" name="전체 합계" stroke={ACCOUNT_LINE_COLORS[0]} strokeWidth={2.5} dot={{ r: 3 }} connectNulls />
+          <Line isAnimationActive={false} type="monotone" dataKey="total" name="전체 합계" stroke={ACCOUNT_LINE_COLORS[0]} strokeWidth={2.5} dot={{ r: 3 }} connectNulls />
         )}
         {accountBalanceChartView === "all" && (
           <>
-            <Line type="monotone" dataKey="total" name="전체 합계" stroke="#0f172a" strokeWidth={3} dot={{ r: 3 }} connectNulls />
+            <Line isAnimationActive={false} type="monotone" dataKey="total" name="전체 합계" stroke="#0f172a" strokeWidth={3} dot={{ r: 3 }} connectNulls />
             {accounts.map((acc, i) => (
-              <Line key={acc.id} type="monotone" dataKey={acc.id} name={acc.name || acc.id} stroke={ACCOUNT_LINE_COLORS[i % ACCOUNT_LINE_COLORS.length]} strokeWidth={2} dot={{ r: 2 }} connectNulls />
+              <Line isAnimationActive={false} key={acc.id} type="monotone" dataKey={acc.id} name={acc.name || acc.id} stroke={ACCOUNT_LINE_COLORS[i % ACCOUNT_LINE_COLORS.length]} strokeWidth={2} dot={{ r: 2 }} connectNulls />
             ))}
           </>
         )}
         {accountBalanceChartView !== "total" && accountBalanceChartView !== "all" && accounts.some((a) => a.id === accountBalanceChartView) && (
-          <Line type="monotone" dataKey={accountBalanceChartView} name={accounts.find((a) => a.id === accountBalanceChartView)?.name || accountBalanceChartView} stroke={ACCOUNT_LINE_COLORS[0]} strokeWidth={2.5} dot={{ r: 3 }} connectNulls />
+          <Line isAnimationActive={false} type="monotone" dataKey={accountBalanceChartView} name={accounts.find((a) => a.id === accountBalanceChartView)?.name || accountBalanceChartView} stroke={ACCOUNT_LINE_COLORS[0]} strokeWidth={2.5} dot={{ r: 3 }} connectNulls />
         )}
       </LineChart>
     </ResponsiveContainer>
@@ -182,9 +183,9 @@ export function DividendTrendChart({ rows }: DividendTrendChartProps) {
           }}
           contentStyle={{ fontSize: 14, fontWeight: 600 }}
         />
-        <Bar yAxisId="left" dataKey="dividend" name="배당금(수입)" fill="var(--chart-income)" maxBarSize={32} radius={[4, 4, 0, 0]} />
-        <Line yAxisId="right" dataKey="shares" name="주수" stroke="var(--chart-expense)" strokeWidth={2.5} dot={{ r: 4, fill: "var(--chart-expense)" }} />
-        <Line yAxisId="yield" dataKey="yieldRate" name="배당률" stroke="var(--chart-warning)" strokeWidth={2.5} dot={{ r: 4, fill: "var(--chart-warning)" }} connectNulls />
+        <Bar isAnimationActive={false} yAxisId="left" dataKey="dividend" name="배당금(수입)" fill="var(--chart-income)" maxBarSize={32} radius={[4, 4, 0, 0]} />
+        <Line isAnimationActive={false} yAxisId="right" dataKey="shares" name="주수" stroke="var(--chart-expense)" strokeWidth={2.5} dot={{ r: 4, fill: "var(--chart-expense)" }} />
+        <Line isAnimationActive={false} yAxisId="yield" dataKey="yieldRate" name="배당률" stroke="var(--chart-warning)" strokeWidth={2.5} dot={{ r: 4, fill: "var(--chart-warning)" }} connectNulls />
       </ComposedChart>
     </ResponsiveContainer>
   );
@@ -218,6 +219,7 @@ export function CmaBalanceChart({ rows }: CmaBalanceChartProps) {
           contentStyle={{ fontSize: 14, fontWeight: 600 }}
         />
         <Line
+          isAnimationActive={false}
           dataKey="balance"
           name="잔액"
           stroke="var(--chart-primary)"
@@ -311,6 +313,7 @@ export function CostVsMarketValueChart({ rows, activeDate, onPointClick }: CostV
           />
         )}
         <Area
+          isAnimationActive={false}
           type="monotone"
           dataKey="market"
           name="평가액"
@@ -321,6 +324,7 @@ export function CostVsMarketValueChart({ rows, activeDate, onPointClick }: CostV
           activeDot={{ r: 7, stroke: "#0f172a", strokeWidth: 2, onClick: handleDotClick }}
         />
         <Line
+          isAnimationActive={false}
           type="monotone"
           dataKey="cost"
           name="매입액"
@@ -414,6 +418,7 @@ export function TotalAssetValueChart({ rows, activeDate, onPointClick }: TotalAs
           />
         )}
         <Area
+          isAnimationActive={false}
           type="monotone"
           dataKey="cashPlusMarket"
           name="현금+평가액"
@@ -424,6 +429,7 @@ export function TotalAssetValueChart({ rows, activeDate, onPointClick }: TotalAs
           activeDot={{ r: 7, stroke: "#0f172a", strokeWidth: 2, onClick: handleDotClick }}
         />
         <Line
+          isAnimationActive={false}
           type="monotone"
           dataKey="cashPlusCost"
           name="현금+원가"

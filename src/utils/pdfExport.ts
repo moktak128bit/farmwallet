@@ -10,7 +10,9 @@ export interface PrintOptions {
 }
 
 export function openPrintWindow({ title, subtitle, bodyHtml }: PrintOptions): void {
-  const win = window.open("", "_blank", "noopener,noreferrer,width=900,height=900");
+  // noopener/noreferrer를 features 문자열에 넣으면 window.open이 null을 반환해(스펙) 항상 "팝업 차단"으로 오인됨.
+  // 새 창에 document.write로 내용을 써야 하므로 핸들이 반드시 필요 — 두 옵션을 넣지 않는다.
+  const win = window.open("", "_blank", "width=900,height=900");
   if (!win) {
     alert("팝업이 차단되었습니다. 브라우저 설정을 확인해주세요.");
     return;
@@ -23,6 +25,7 @@ export function openPrintWindow({ title, subtitle, bodyHtml }: PrintOptions): vo
   @media print { @page { margin: 16mm; } }
   body { font-family: 'Pretendard', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; color: #111; padding: 24px; }
   h1 { font-size: 22px; margin: 0 0 4px; }
+  h2 { font-size: 16px; margin: 22px 0 6px; }
   .subtitle { color: #666; font-size: 13px; margin-bottom: 24px; }
   table { width: 100%; border-collapse: collapse; margin-bottom: 16px; font-size: 13px; }
   th, td { border: 1px solid #ddd; padding: 6px 8px; text-align: left; }

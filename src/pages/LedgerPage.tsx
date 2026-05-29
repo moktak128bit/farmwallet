@@ -22,7 +22,7 @@ import type { Account, AccountBalanceRow, CategoryPresets, ExpenseDetailGroup, L
 import { formatShortDate, formatUSD, formatKRW } from "../utils/formatter";
 import { shortcutManager, type ShortcutAction } from "../utils/shortcuts";
 import { validateLedgerForm } from "../features/ledger/validateLedgerForm";
-import { isSavingsExpenseEntry, makeIsSavingsExpense, isCreditPayment, isInvestmentKind } from "../utils/category";
+import { isSavingsExpenseEntry, makeIsSavingsExpense, isCreditPayment, isInvestmentKind, isInvestmentEntry } from "../utils/category";
 import { parseAmount as sharedParseAmount, formatAmount as sharedFormatAmount } from "../utils/parseAmount";
 import { newIdWithPrefix } from "../utils/id";
 import { DailyBudgetBar } from "../features/ledger/DailyBudgetBar";
@@ -1022,7 +1022,9 @@ export const LedgerView: React.FC<Props> = ({
     let expenseAmount = 0;
     let incomeAmount = 0;
     for (const l of filteredLedger) {
-      if (isSavings(l)) {
+      // 재테크 = 저축성지출(expense 재테크/저축성지출) + 저축·투자 이체(transfer 저축이체/투자이체).
+      // 옛 기준(isSavings, expense만)은 현행 데이터(이체로 기록된 저축/투자)를 못 잡아 0으로 나왔음.
+      if (isInvestmentEntry(l) || isSavings(l)) {
         savingsAmount += l.amount;
       } else if (l.kind === "expense" && !isCreditPayment(l)) {
         // 신용결제는 카드 사용 시점에 이미 expense로 잡힘 — 이중계상 방지

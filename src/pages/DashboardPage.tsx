@@ -249,20 +249,34 @@ export const DashboardView: React.FC<Props> = (props) => {
     ...computeSummary(currentMonth),
   }), [computeSummary, currentMonth]);
 
-  /** 이번 달 재테크 세부: 저축, 투자, 투자수익, 투자손실 (가계부 category=재테크 기준) */
-  const monthlyRecheckBreakdown = useMemo(() => {
-    const toKrw = (entry: LedgerEntry) =>
-      entry.currency === "USD" && fxRate ? entry.amount * fxRate : entry.amount;
-    const sub = { 저축: 0, 투자: 0, 투자수익: 0, 투자손실: 0 };
-    ledger.forEach((entry) => {
-      if (!entry.date?.startsWith(currentMonth) || entry.kind !== "expense" || entry.category !== "재테크") return;
-      const amt = toKrw(entry);
-      const key = entry.subCategory as keyof typeof sub;
-      if (key in sub) sub[key] += amt;
-      else if (entry.subCategory === "주식매수") sub.투자 += amt;
-    });
-    return sub;
-  }, [ledger, currentMonth, fxRate]);
+  /** 재테크 세부(저축/투자/투자수익/투자손실)를 각 항목의 정식 소스에서 집계.
+   * 저축=transfer 저축이체, 투자=transfer 투자이체, 투자수익=income 투자수익, 투자손실=expense 재테크 투자손실. */
+  const computeRecheckBreakdown = useCallback(
+    (monthPrefix: string) => {
+      const toKrw = (entry: LedgerEntry) =>
+        entry.currency === "USD" && fxRate ? entry.amount * fxRate : entry.amount;
+      const sub = { 저축: 0, 투자: 0, 투자수익: 0, 투자손실: 0 };
+      for (const entry of ledger) {
+        if (!entry.date?.startsWith(monthPrefix)) continue;
+        const amt = toKrw(entry);
+        if (entry.kind === "transfer") {
+          if (entry.subCategory === "저축이체") sub.저축 += amt;
+          else if (entry.subCategory === "투자이체") sub.투자 += amt;
+        } else if (entry.kind === "income" && entry.subCategory === "투자수익") {
+          sub.투자수익 += amt;
+        } else if (entry.kind === "expense" && entry.category === "재테크" && entry.subCategory === "투자손실") {
+          sub.투자손실 += amt;
+        }
+      }
+      return sub;
+    },
+    [ledger, fxRate]
+  );
+
+  const monthlyRecheckBreakdown = useMemo(
+    () => computeRecheckBreakdown(currentMonth),
+    [computeRecheckBreakdown, currentMonth]
+  );
 
   const lastMonth = useMemo(() => shiftMonth(currentMonth, -1), [currentMonth]);
 
@@ -273,29 +287,17 @@ export const DashboardView: React.FC<Props> = (props) => {
   }), [computeSummary, lastMonth]);
 
   /** 저번달 재테크 세부 (저축 대비 비교 위젯용) */
-  const lastMonthRecheckBreakdown = useMemo(() => {
-    const toKrw = (entry: LedgerEntry) =>
-      entry.currency === "USD" && fxRate ? entry.amount * fxRate : entry.amount;
-    const sub = { 저축: 0, 투자: 0, 투자수익: 0, 투자손실: 0 };
-    ledger.forEach((entry) => {
-      if (!entry.date?.startsWith(lastMonth) || entry.kind !== "expense" || entry.category !== "재테크") return;
-      const amt = toKrw(entry);
-      const key = entry.subCategory as keyof typeof sub;
-      if (key in sub) sub[key] += amt;
-      else if (entry.subCategory === "주식매수") sub.투자 += amt;
-    });
-    return sub;
-  }, [ledger, lastMonth, fxRate]);
+  const lastMonthRecheckBreakdown = useMemo(
+    () => computeRecheckBreakdown(lastMonth),
+    [computeRecheckBreakdown, lastMonth]
+  );
 
   const lastMonthSavingsRate = useMemo(() => {
     const { income, investing } = lastMonthSummary;
     if (income <= 0) return null;
-    // investing(transfer 저축이체/투자이체)만 쓰면 재테크 expense(저축/투자)로 기록한 저축이 누락됨.
-    // 저축률 = (transfer 저축 + 재테크 expense 저축·투자) / 수입. 투자손실은 실소비라 제외.
-    const recheckSavings = lastMonthRecheckBreakdown.저축 + lastMonthRecheckBreakdown.투자;
-    const totalSavings = investing + recheckSavings;
-    return (totalSavings / income) * 100;
-  }, [lastMonthSummary, lastMonthRecheckBreakdown]);
+    // 저축률 = (transfer 저축이체+투자이체) / 수입. 투자손실(실소비)은 제외.
+    return (investing / income) * 100;
+  }, [lastMonthSummary]);
 
   const lastMonthInvestingRatio = useMemo(() => {
     const 저축 = lastMonthRecheckBreakdown.저축;

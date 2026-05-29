@@ -100,6 +100,7 @@ export function PortfolioDashboardCharts(props: {
             <ResponsiveContainer width="100%" height="100%" minHeight={300} minWidth={0}>
               <PieChart>
                 <Pie
+                  isAnimationActive={false}
                   data={positionWeightData}
                   cx="50%"
                   cy="50%"
@@ -141,6 +142,7 @@ export function PortfolioDashboardCharts(props: {
             <ResponsiveContainer width="100%" height="100%" minHeight={300} minWidth={0}>
               <PieChart>
                 <Pie
+                  isAnimationActive={false}
                   data={accountAssetData}
                   cx="50%"
                   cy="50%"

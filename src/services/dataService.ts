@@ -741,6 +741,26 @@ function migrateBySchema(
     migrated = true;
   }
 
+  // v11: transfer 저축/투자 → 저축이체/투자이체 재정규화.
+  // v8 블록(L622)이 fromVersion<8 게이트라, 스키마 버전이 이미 8+로 올라간 뒤
+  // 남은 v7 임시 형식(transfer+저축/투자) 및 v5 이전 재테크 expense 저축/투자 항목이
+  // 정규화를 못 거친 케이스 보정. idempotent (이미 저축이체/투자이체면 무변경).
+  if (fromVersion < 11) {
+    const ledgerArr = asArray<Record<string, unknown>>(next.ledger);
+    next.ledger = ledgerArr.map((entry) => {
+      if (!entry || typeof entry !== "object") return entry;
+      const sub = String(entry.subCategory ?? "");
+      if (entry.kind === "expense" && entry.category === "재테크") {
+        if (sub === "저축") return { ...entry, kind: "transfer", category: "이체", subCategory: "저축이체" };
+        if (sub === "투자") return { ...entry, kind: "transfer", category: "이체", subCategory: "투자이체" };
+      }
+      if (entry.kind === "transfer" && sub === "저축") return { ...entry, category: "이체", subCategory: "저축이체" };
+      if (entry.kind === "transfer" && sub === "투자") return { ...entry, category: "이체", subCategory: "투자이체" };
+      return entry;
+    });
+    migrated = true;
+  }
+
   return { data: next, migrated };
 }
 

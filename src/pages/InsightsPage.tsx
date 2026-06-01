@@ -1,5 +1,6 @@
 import React, { useMemo, useState } from "react";
-import type { Account, LedgerEntry, StockTrade, CategoryPresets, BudgetGoal, RecurringExpense } from "../types";
+import type { Account, LedgerEntry, StockTrade, StockPrice, CategoryPresets, BudgetGoal, RecurringExpense } from "../types";
+import { computePositions } from "../calculations";
 import { ForecastView } from "../features/insights/ForecastView";
 import { SettlementView } from "../features/dating/SettlementView";
 import { calcTrend, mTotalsFor, computePeriodScope } from "../utils/insightsHelpers";
@@ -38,7 +39,7 @@ type TabId = "overview" | "expense" | "income" | "asset" | "invest" | "date" | "
 /*  Data computation hook                                              */
 /* ================================================================== */
 
-function useD(ledger: LedgerEntry[], rawTrades: StockTrade[], allTrades: StockTrade[], accounts: Account[], selMonth: string | null, categoryPresets: CategoryPresets | undefined, budgetGoals: BudgetGoal[] | undefined, dateAccountId: string | null, fxRate: number | null): D {
+function useD(ledger: LedgerEntry[], rawTrades: StockTrade[], allTrades: StockTrade[], accounts: Account[], prices: StockPrice[], selMonth: string | null, categoryPresets: CategoryPresets | undefined, budgetGoals: BudgetGoal[] | undefined, dateAccountId: string | null, fxRate: number | null): D {
   return useMemo(() => {
     const aMap = new Map(accounts.map(a => [a.id, a.name]));
     const invIds = new Set(accounts.filter(a => a.type === "securities" || a.type === "crypto").map(a => a.id));
@@ -978,11 +979,34 @@ function useD(ledger: LedgerEntry[], rawTrades: StockTrade[], allTrades: StockTr
 
     const { monthSpan, accumLabel } = computePeriodScope(selMonth, months, ml);
 
+    // 투자 손익 4분할 (실현/미실현 × 수익/손실, KRW 환산).
+    // 실현: plWin/plLoss (FIFO 청산 손익, 라이프타임 누적).
+    // 미실현: 보유 종목 × (현재가 - 평단), USD는 현재 환율로 환산해 KRW로 합산.
+    let unrealizedGain = 0;
+    let unrealizedLoss = 0;
+    const _positions = computePositions(allTrades, prices, accounts, { fxRate: fxRate ?? undefined });
+    for (const p of _positions) {
+      if (!p.quantity || p.quantity <= 0) continue;
+      const isUsd = p.marketCurrency === "USD";
+      const costKrw = isUsd ? (p.totalBuyAmountKRW ?? p.totalBuyAmount * (fxRate ?? 0)) : p.totalBuyAmount;
+      const marketKrw = isUsd ? p.marketValue * (fxRate ?? 0) : p.marketValue;
+      const pnlKrw = marketKrw - costKrw;
+      if (pnlKrw > 0) unrealizedGain += pnlKrw;
+      else if (pnlKrw < 0) unrealizedLoss += -pnlKrw;
+    }
+    const investBreakdown = {
+      realizedGain: plWin,
+      realizedLoss: plLoss,
+      unrealizedGain,
+      unrealizedLoss,
+    };
+
     return {
       months, ml, selMonth, monthSpan, accumLabel, txCount: fL.length, anomalyTargetMonth, topAnomaly, incomeGrowth, spendingInertia,
       budgetProgress, categoryGrowth, entryOutliers, spendByDOMAvg, domOccurrences, patternStats,
       monthly, savRateTrend, salaryTrend, cumIE, investTrend, divTrend, tradeCntTrend, subTrend, txCntTrend, cumSpend, monthlyCatTrend, dateExpMonthly,
       pIncome, pExpense, pInvest, pSavRate, expByCat, expBySub, topCats, acctUsage, wdSpend, dateTop, dateSubCats, dateEntries, dateTxCount, incByCat, trades, subs, largeExp, topTx, expBySubCat, expByDesc, dateMoim, datePersonal, spendByDOM, portfolio, realPL: { total: plTot, wins: plWin, losses: plLoss, winCnt: plWC, lossCnt: plLC },
+      investBreakdown,
       zeroDays, totalDays, weekendTot, weekdayTot, topDates,
       score: { total: scorePts, grade, comment: comments[grade] || "" }, prev, avgMonthExp,
       incByGroup, investBySub, dateByDetail, stockTrends,
@@ -992,7 +1016,7 @@ function useD(ledger: LedgerEntry[], rawTrades: StockTrade[], allTrades: StockTr
       incomeStability, investReturnRate, subTotal, fixedExpense, variableExpense,
       netWorthByMonth, accountBalances, assetAllocation, funStats,
     };
-  }, [ledger, rawTrades, accounts, selMonth, categoryPresets, budgetGoals, dateAccountId]);
+  }, [ledger, rawTrades, allTrades, accounts, prices, selMonth, categoryPresets, budgetGoals, dateAccountId, fxRate]);
 }
 
 /* ================================================================== */
@@ -1003,6 +1027,7 @@ interface Props {
   accounts: Account[];
   ledger: LedgerEntry[];
   trades?: StockTrade[];
+  prices?: StockPrice[];
   categoryPresets: CategoryPresets;
   budgetGoals?: BudgetGoal[];
   recurringExpenses?: RecurringExpense[];
@@ -1010,7 +1035,7 @@ interface Props {
   onAddLedger?: (entry: LedgerEntry) => void;
 }
 
-export const InsightsView: React.FC<Props> = ({ accounts, ledger, trades = [], categoryPresets, budgetGoals, recurringExpenses = [], fxRate = null, onAddLedger }) => {
+export const InsightsView: React.FC<Props> = ({ accounts, ledger, trades = [], prices = [], categoryPresets, budgetGoals, recurringExpenses = [], fxRate = null, onAddLedger }) => {
   const [tab, setTab] = useState<TabId>("overview");
   const [selMonth, setSelMonth] = useState<string | null>(null);
   const [periodMonths, setPeriodMonths] = useState<number | null>(null); // null = 전체
@@ -1026,7 +1051,7 @@ export const InsightsView: React.FC<Props> = ({ accounts, ledger, trades = [], c
   }, [ledger, trades, periodMonths]);
   // 데이트 계좌 ID — Settings에서 설정하는 값. localStorage 변경은 storage 이벤트로 반영.
   const dateAccountId = useDateAccountId();
-  const d = useD(filteredLedger, filteredTrades, trades, accounts, selMonth, categoryPresets, budgetGoals, dateAccountId, fxRate);
+  const d = useD(filteredLedger, filteredTrades, trades, accounts, prices, selMonth, categoryPresets, budgetGoals, dateAccountId, fxRate);
 
   const dateRange = d.months.length > 0 ? `${d.months[0].replace("-", ".")} ~ ${d.months[d.months.length - 1].replace("-", ".")}` : "";
   const TabMap: Record<TabId, React.FC<{ d: D }>> = { overview: OverviewTab, expense: ExpenseTab, income: IncomeTab, asset: AssetTab, invest: InvestTab, date: DateTab, pattern: PatternTab };

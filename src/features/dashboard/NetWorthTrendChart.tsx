@@ -1,8 +1,10 @@
-import React from "react";
+import React, { useRef, useState } from "react";
 
 export interface NetWorthTrendPoint {
   month: string;
   value: number;
+  asset: number;
+  debt: number;
 }
 
 interface Props {
@@ -10,6 +12,9 @@ interface Props {
 }
 
 export const NetWorthTrendChart: React.FC<Props> = ({ data }) => {
+  const svgRef = useRef<SVGSVGElement>(null);
+  const [hoverIdx, setHoverIdx] = useState<number | null>(null);
+
   if (data.length < 2) return null;
 
   const values = data.map((d) => d.value);
@@ -50,6 +55,38 @@ export const NetWorthTrendChart: React.FC<Props> = ({ data }) => {
 
   const gradId = "nwt-grad";
 
+  // 호버 인터랙션 — 마우스 x좌표로 가장 가까운 데이터 포인트 찾기
+  const handleMove = (e: React.MouseEvent<SVGSVGElement>) => {
+    const svg = svgRef.current;
+    if (!svg) return;
+    const rect = svg.getBoundingClientRect();
+    if (rect.width <= 0) return;
+    const xRatio = (e.clientX - rect.left) / rect.width;
+    const svgX = xRatio * W;
+    if (svgX < PAD_L - 8 || svgX > W - PAD_R + 8) {
+      setHoverIdx(null);
+      return;
+    }
+    let nearest = 0;
+    let minDist = Infinity;
+    for (let i = 0; i < pts.length; i++) {
+      const dist = Math.abs(pts[i].x - svgX);
+      if (dist < minDist) {
+        minDist = dist;
+        nearest = i;
+      }
+    }
+    setHoverIdx(nearest);
+  };
+  const handleLeave = () => setHoverIdx(null);
+
+  const hover = hoverIdx != null ? pts[hoverIdx] : null;
+  const TT_W = 168;
+  const TT_H = 84;
+  const ttX = hover ? (hover.x < W / 2 ? hover.x + 12 : hover.x - 12 - TT_W) : 0;
+  const ttY = hover ? Math.max(PAD_T, Math.min(hover.y - TT_H / 2, PAD_T + chartH - TT_H)) : 0;
+  const fmt = (v: number) => (v >= 0 ? "" : "-") + Math.abs(v).toLocaleString() + "만원";
+
   return (
     <div className="card" style={{ padding: 20 }}>
       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginBottom: 12, flexWrap: "wrap", gap: 8 }}>
@@ -71,10 +108,13 @@ export const NetWorthTrendChart: React.FC<Props> = ({ data }) => {
       </div>
       <div style={{ width: "100%", overflowX: "auto" }}>
         <svg
+          ref={svgRef}
           viewBox={`0 0 ${W} ${H}`}
           width="100%"
           style={{ display: "block", minWidth: 320, maxHeight: 300 }}
           aria-label="순자산 추이 차트"
+          onMouseMove={handleMove}
+          onMouseLeave={handleLeave}
         >
           <defs>
             <linearGradient id={gradId} x1="0" y1="0" x2="0" y2="1">
@@ -143,6 +183,45 @@ export const NetWorthTrendChart: React.FC<Props> = ({ data }) => {
               {p.month.slice(2)}
             </text>
           ))}
+
+          {/* 호버: 세로 가이드 + 강조 점 + 툴팁 */}
+          {hover && (
+            <g pointerEvents="none">
+              <line
+                x1={hover.x} y1={PAD_T} x2={hover.x} y2={PAD_T + chartH}
+                stroke="var(--text-muted, #9ca3af)" strokeWidth={1} strokeDasharray="3 3"
+              />
+              <circle
+                cx={hover.x} cy={hover.y} r={6}
+                fill="var(--primary, #2563eb)"
+                stroke="var(--bg, #fff)" strokeWidth={2.5}
+              />
+              <g transform={`translate(${ttX}, ${ttY})`}>
+                <rect
+                  width={TT_W} height={TT_H} rx={6} ry={6}
+                  fill="var(--bg, #fff)"
+                  stroke="var(--border, #d1d5db)" strokeWidth={1}
+                  opacity={0.97}
+                />
+                <text x={10} y={18} fontSize={13} fontWeight={700} fill="var(--text, #111)">
+                  {hover.month}
+                </text>
+                <text x={10} y={38} fontSize={12} fill="var(--text, #111)">
+                  자산
+                  <tspan x={TT_W - 10} textAnchor="end" fontWeight={600}>{fmt(hover.asset)}</tspan>
+                </text>
+                <text x={10} y={56} fontSize={12} fill="var(--text, #111)">
+                  부채
+                  <tspan x={TT_W - 10} textAnchor="end" fontWeight={600} fill="var(--danger, #dc2626)">−{Math.abs(hover.debt).toLocaleString()}만원</tspan>
+                </text>
+                <line x1={8} y1={62} x2={TT_W - 8} y2={62} stroke="var(--border, #e5e7eb)" strokeWidth={1} />
+                <text x={10} y={76} fontSize={12} fontWeight={700} fill="var(--primary, #2563eb)">
+                  순자산
+                  <tspan x={TT_W - 10} textAnchor="end">{fmt(hover.value)}</tspan>
+                </text>
+              </g>
+            </g>
+          )}
         </svg>
       </div>
       <div className="hint" style={{ fontSize: 13, marginTop: 6, textAlign: "right" }}>

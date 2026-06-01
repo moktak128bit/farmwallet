@@ -371,6 +371,8 @@ export const DashboardView: React.FC<Props> = (props) => {
       month: string;
       stock: number;
       savings: number;
+      asset: number;
+      debt: number;
       total: number;
     };
 
@@ -500,7 +502,9 @@ export const DashboardView: React.FC<Props> = (props) => {
       let totalStockValue = 0;
       let totalSavingsValue = 0;
       let totalValue = 0;
-      const row: AccountTimelineRow = { month, stock: 0, savings: 0, total: 0 };
+      let totalAssetValue = 0;
+      let totalDebtValue = 0;
+      const row: AccountTimelineRow = { month, stock: 0, savings: 0, asset: 0, debt: 0, total: 0 };
       accounts.forEach((account) => {
         const cash = runningBalanceByAccount.get(account.id) ?? 0;
         const usdCash =
@@ -510,7 +514,10 @@ export const DashboardView: React.FC<Props> = (props) => {
         const usdToKrw = fxRate && usdCash !== 0 ? usdCash * fxRate : 0;
         const stock = stockByAccount.get(account.id) ?? 0;
         const debt = Math.abs(account.debt ?? 0);
-        const accountValue = cash + usdToKrw + stock - debt;
+        const accountAsset = cash + usdToKrw + stock;
+        const accountValue = accountAsset - debt;
+        totalAssetValue += accountAsset;
+        totalDebtValue += debt;
         totalValue += accountValue;
 
         if (account.type === "securities" || account.type === "crypto") {
@@ -522,10 +529,13 @@ export const DashboardView: React.FC<Props> = (props) => {
 
       // 월말 시점 대출 잔금 차감 (원금 상환은 차감, 이자 상환은 잔금 불변)
       const monthLoanBalance = computeLoanBalanceAt(loans, ledger, monthEndDate);
+      totalDebtValue += monthLoanBalance;
       totalValue -= monthLoanBalance;
 
       row.stock = totalStockValue;
       row.savings = totalSavingsValue;
+      row.asset = totalAssetValue;
+      row.debt = totalDebtValue;
       row.total = totalValue;
       rows.push(row);
     });
@@ -645,10 +655,12 @@ export const DashboardView: React.FC<Props> = (props) => {
   }, [accounts]);
   /** 순자산 추이: accountTimelineRows에서 month, total 추출 (만원 단위) */
   const netWorthTrendData = useMemo(() => {
-    if (accountTimelineRows.length === 0) return [] as Array<{ month: string; value: number }>;
+    if (accountTimelineRows.length === 0) return [] as Array<{ month: string; value: number; asset: number; debt: number }>;
     return accountTimelineRows.map((row) => ({
       month: String(row.month),
-      value: Math.round(Number(row.total) / 10000)
+      value: Math.round(Number(row.total) / 10000),
+      asset: Math.round(Number(row.asset) / 10000),
+      debt: Math.round(Number(row.debt) / 10000)
     }));
   }, [accountTimelineRows]);
 

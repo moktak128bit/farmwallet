@@ -311,6 +311,8 @@ export interface D {
   spendByDOM: number[];
   portfolio: { name: string; value: number }[];
   realPL: { total: number; wins: number; losses: number; winCnt: number; lossCnt: number };
+  /** 투자 손익 4분할 (KRW 환산, 손실은 양의 절대값). 실현=FIFO 청산 누적, 미실현=보유×(현재가-평단). */
+  investBreakdown: { realizedGain: number; realizedLoss: number; unrealizedGain: number; unrealizedLoss: number };
   zeroDays: number;
   totalDays: number;
   weekendTot: number;

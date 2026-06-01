@@ -2251,6 +2251,8 @@ export const LedgerView: React.FC<Props> = ({
                 </div>
                 <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(120px, 1fr))", gap: 8 }}>
                   {accounts
+                    // 숨김 처리된 계좌는 입력 폼에서 제외. 단, 이미 선택된 계좌면 보이도록 유지
+                    .filter((a) => !a.archived || form.fromAccountId === a.id)
                     .filter((a) => ledgerTab !== "creditPayment" || a.type !== "card")
                     .map((a) => {
                       const accountName = (a.name + a.id).toLowerCase();
@@ -2302,6 +2304,7 @@ export const LedgerView: React.FC<Props> = ({
                 </div>
                 <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(120px, 1fr))", gap: 8 }}>
                   {accounts
+                    .filter((a) => !a.archived || form.toAccountId === a.id)
                     .filter((a) => ledgerTab !== "creditPayment" || a.type === "card")
                     .map((a) => {
                     const accountName = (a.name + a.id).toLowerCase();
@@ -3161,11 +3164,13 @@ export const LedgerView: React.FC<Props> = ({
                     style={{ width: "100%" }}
                   >
                     <option value="">-</option>
-                    {accounts.map((acc) => (
-                      <option key={acc.id} value={acc.id}>
-                        {acc.id}
-                      </option>
-                    ))}
+                    {accounts
+                      .filter((acc) => !acc.archived || acc.id === editingValue)
+                      .map((acc) => (
+                        <option key={acc.id} value={acc.id}>
+                          {acc.id}
+                        </option>
+                      ))}
                   </select>
                 ) : (
                   <>
@@ -3216,11 +3221,13 @@ export const LedgerView: React.FC<Props> = ({
                     style={{ width: "100%" }}
                   >
                     <option value="">-</option>
-                    {accounts.map((acc) => (
-                      <option key={acc.id} value={acc.id}>
-                        {acc.id}
-                      </option>
-                    ))}
+                    {accounts
+                      .filter((acc) => !acc.archived || acc.id === editingValue)
+                      .map((acc) => (
+                        <option key={acc.id} value={acc.id}>
+                          {acc.id}
+                        </option>
+                      ))}
                   </select>
                 ) : (
                   <>

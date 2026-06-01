@@ -698,8 +698,11 @@ export const AccountsView: React.FC<Props> = ({
         const cardId = row.account.id;
         const usage = totalUsage.get(cardId) ?? 0;
         const payment = totalPayment.get(cardId) ?? 0;
+        // total = 현재 카드 부채 (양수=갚을 돈, 음수=선납·환불 잔액).
+        // 초기 부채(account.debt)를 포함해 ledger 사용·결제 차감 → "지금 갚을 돈" 한 줄로 표시 가능.
+        const initialDebt = row.account.debt ?? 0;
         map.set(cardId, {
-          total: payment - usage
+          total: initialDebt + usage - payment
         });
       }
     });
@@ -778,9 +781,10 @@ export const AccountsView: React.FC<Props> = ({
     const savings = safeBalances
       .filter((r) => r.account.type === "savings")
       .reduce((s, r) => s + r.currentBalance, 0);
+    // cardDebtMap.total: 양수=부채, 음수=선납 (account.debt 포함).
     const cardNet = Array.from(cardDebtMap.values()).reduce((s, v) => s + v.total, 0);
-    const cardDebt = Array.from(cardDebtMap.values()).reduce((s, v) => s + (v.total < 0 ? Math.abs(v.total) : 0), 0);
-    const cardCredit = Array.from(cardDebtMap.values()).reduce((s, v) => s + (v.total > 0 ? v.total : 0), 0);
+    const cardDebt = Array.from(cardDebtMap.values()).reduce((s, v) => s + (v.total > 0 ? v.total : 0), 0);
+    const cardCredit = Array.from(cardDebtMap.values()).reduce((s, v) => s + (v.total < 0 ? Math.abs(v.total) : 0), 0);
     const securities = safeBalances
       .filter((r) => r.account.type === "securities" || r.account.type === "crypto")
       .reduce((s, row) => {
@@ -791,7 +795,8 @@ export const AccountsView: React.FC<Props> = ({
         return s + stock + krw + usdKrw;
       }, 0);
     // 순자산 계산에는 카드 net(초과결제=+, 미결제=-) 그대로 반영
-    const total = checking + savings + securities + cardNet;
+    // 부채는 빼야 순자산 — cardNet은 양수가 부채라 차감.
+    const total = checking + savings + securities - cardNet;
     return { checking, savings, cardNet, cardDebt, cardCredit, securities, total };
   }, [safeBalances, stockMap, cardDebtMap, fxRate]);
 
@@ -799,6 +804,8 @@ export const AccountsView: React.FC<Props> = ({
     <tr
       key={row.account.id}
       draggable
+      style={{ opacity: row.account.archived ? 0.55 : undefined }}
+      title={row.account.archived ? "숨김 처리된 계좌 — 가계부/배당 입력 드롭다운에서 제외됩니다" : undefined}
       onDragOver={(e) => {
         if (!draggingId) return;
         e.preventDefault();
@@ -1046,19 +1053,21 @@ export const AccountsView: React.FC<Props> = ({
       {(() => {
         if (accountType === "card") {
           const debtInfo = cardDebtMap.get(row.account.id) ?? { total: 0 };
-          const debtDisplay = debtInfo.total < 0 ? Math.abs(debtInfo.total) : 0;
-          const creditDisplay = debtInfo.total > 0 ? debtInfo.total : 0;
+          const netDebt = debtInfo.total; // 양수=부채, 음수=선납·환불 잔액
           return (
             <>
               <td className="number" style={{ whiteSpace: "nowrap" }}>
-                <div style={{ display: "flex", flexDirection: "column", alignItems: "flex-end", gap: 2 }}>
-                  <div className={debtDisplay > 0 ? "negative" : "muted"}>
-                    부채 {formatKRW(Math.round(debtDisplay))}
+                {netDebt > 0 ? (
+                  <div className="negative" title="초기 부채 + 카드 사용 − 결제. 지금 갚을 돈.">
+                    부채 {formatKRW(Math.round(netDebt))}
                   </div>
-                  <div className={creditDisplay > 0 ? "positive" : "muted"}>
-                    크레딧 {formatKRW(Math.round(creditDisplay))}
+                ) : netDebt < 0 ? (
+                  <div className="positive" title="결제·환불이 사용보다 많아 카드에 남은 +잔액">
+                    선납 {formatKRW(Math.round(Math.abs(netDebt)))}
                   </div>
-                </div>
+                ) : (
+                  <div className="muted">부채 0</div>
+                )}
               </td>
             </>
           );
@@ -1083,6 +1092,25 @@ export const AccountsView: React.FC<Props> = ({
             style={{ fontSize: "14px", padding: "8px 16px" }}
           >
             수정
+          </button>
+          <button
+            type="button"
+            onClick={() => {
+              const isArchiving = !row.account.archived;
+              const updated = safeAccounts.map((a) =>
+                a.id === row.account.id ? { ...a, archived: isArchiving || undefined } : a
+              );
+              onChangeAccounts(updated);
+              toast.success(
+                isArchiving
+                  ? `"${row.account.name}" 숨김 — 입력 드롭다운에서 제외됩니다 (기록은 유지)`
+                  : `"${row.account.name}" 다시 표시됩니다`
+              );
+            }}
+            style={{ fontSize: "14px", padding: "8px 16px" }}
+            title={row.account.archived ? "가계부·배당 입력 폼에 다시 노출" : "가계부·배당 입력 폼에서 숨김 (과거 기록은 그대로 유지)"}
+          >
+            {row.account.archived ? "표시" : "숨김"}
           </button>
           <button
             type="button"
@@ -1161,7 +1189,7 @@ export const AccountsView: React.FC<Props> = ({
             )}
             {type === "card" ? (
               <>
-                <th>부채 / 크레딧</th>
+                <th>현재 부채</th>
               </>
             ) : (
               <th>현재 잔액</th>
@@ -1235,20 +1263,17 @@ export const AccountsView: React.FC<Props> = ({
                       const debtInfo = cardDebtMap.get(row.account.id) ?? { total: 0 };
                       return sum + debtInfo.total;
                     }, 0);
-                    const debtDisplay = net < 0 ? Math.abs(net) : 0;
-                    const creditDisplay = net > 0 ? net : 0;
                     return (
                       <tr key="total" style={{ backgroundColor: "var(--bg)", fontWeight: "bold", borderTop: "2px solid var(--border)" }}>
                         <td colSpan={5} style={{ textAlign: "right", padding: "12px" }}>합계</td>
                         <td className="number" style={{ whiteSpace: "nowrap" }}>
-                          <div style={{ display: "flex", flexDirection: "column", alignItems: "flex-end", gap: 2 }}>
-                            <div className={debtDisplay > 0 ? "negative" : "muted"}>
-                              부채 {formatKRW(Math.round(debtDisplay))}
-                            </div>
-                            <div className={creditDisplay > 0 ? "positive" : "muted"}>
-                              크레딧 {formatKRW(Math.round(creditDisplay))}
-                            </div>
-                          </div>
+                          {net > 0 ? (
+                            <div className="negative">부채 {formatKRW(Math.round(net))}</div>
+                          ) : net < 0 ? (
+                            <div className="positive">선납 {formatKRW(Math.round(Math.abs(net)))}</div>
+                          ) : (
+                            <div className="muted">부채 0</div>
+                          )}
                         </td>
                         <td></td>
                       </tr>
@@ -1329,6 +1354,7 @@ export const AccountsView: React.FC<Props> = ({
           cardDebtMap={cardDebtMap}
           ledger={ledger}
           onChangeLedger={onChangeLedger}
+          onChangeAccounts={onChangeAccounts}
           fxRate={fxRate}
           adjustValue={adjustValue}
           setAdjustValue={setAdjustValue}

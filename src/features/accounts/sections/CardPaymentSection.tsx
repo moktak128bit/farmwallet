@@ -20,7 +20,8 @@ export function CardPaymentSection({
 }: Props) {
   const [fromAccountId, setFromAccountId] = useState(() => checkingAccounts[0]?.id ?? "");
   const [payAmount, setPayAmount] = useState("");
-  const debtAmount = currentDebt < 0 ? Math.abs(currentDebt) : 0;
+  // currentDebt: 양수=부채 (account.debt 포함), 음수=선납
+  const debtAmount = currentDebt > 0 ? currentDebt : 0;
 
   const handlePay = () => {
     if (!fromAccountId) return;

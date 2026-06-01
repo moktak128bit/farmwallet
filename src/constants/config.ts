@@ -1,7 +1,7 @@
 // 앱 버전은 vite.config.ts에서 __APP_VERSION__으로 주입됨
 declare const __APP_VERSION__: string;
 export const APP_VERSION = __APP_VERSION__;
-export const DATA_SCHEMA_VERSION = 11;
+export const DATA_SCHEMA_VERSION = 12;
 
 /** ISA 기준 포트폴리오 (목표 비중 %) */
 export const ISA_PORTFOLIO = [

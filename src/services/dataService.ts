@@ -154,7 +154,7 @@ function getDefaultCategoryPresets(): CategoryPresets {
   const expenseDetails: ExpenseDetailGroup[] = [
     {
       main: "재테크",
-      subs: ["투자손실"]
+      subs: ["투자손실", "수수료", "세금", "환차손", "기타"]
     },
     {
       main: "식비",
@@ -321,14 +321,14 @@ function mergeCategoryPresets(
     const idx = transfer.indexOf("저축이체");
     transfer = [...transfer.slice(0, idx + 1), "투자이체", ...transfer.slice(idx + 1)];
   }
-  // 2) expenseDetails의 "재테크" subs에 저축/투자/투자수익이 섞여있으면 "투자손실"만 남김
-  //    (저축/투자는 이체, 투자수익은 수입으로 이관됐음)
+  // 2) expenseDetails의 "재테크" subs에서 저축/투자/투자수익/이체 류만 제거 (다른 kind로 이관됨).
+  //    사용자 정의 sub(수수료/세금/환차손/기타 등)는 보존. 모두 제거되면 실용 기본값 보충.
   expenseDetails = expenseDetails.map((g) => {
     if (g.main !== "재테크") return g;
     const legacySubs = new Set(["저축", "투자", "투자수익", "저축이체", "투자이체"]);
-    const hasLegacy = g.subs.some((s) => legacySubs.has(s));
-    if (!hasLegacy) return g;
-    return { ...g, subs: ["투자손실"] };
+    const filtered = g.subs.filter((s) => !legacySubs.has(s));
+    if (filtered.length === 0) return { ...g, subs: ["투자손실", "수수료", "세금", "환차손", "기타"] };
+    return { ...g, subs: filtered };
   });
   // 3) expenseDetails에 "신용카드" main이 있으면 제거 (카드결제는 이제 이체 subCategory)
   expenseDetails = expenseDetails.filter((g) => g.main !== "신용카드");
@@ -758,6 +758,29 @@ function migrateBySchema(
       if (entry.kind === "transfer" && sub === "투자") return { ...entry, category: "이체", subCategory: "투자이체" };
       return entry;
     });
+    migrated = true;
+  }
+
+  // v12: 재테크 expense 중분류 확장. 기존엔 "투자손실"만 남도록 강제됐는데,
+  // 실제 재테크 지출(수수료/세금/환차손 등)을 분류할 수 없어 사용자가 불편함.
+  // 누락된 실용 기본 subs(수수료/세금/환차손/기타)를 보충. 사용자가 추가한 sub는 보존.
+  if (fromVersion < 12) {
+    const cp = next.categoryPresets as Record<string, unknown> | undefined;
+    if (cp && typeof cp === "object") {
+      const expDetails = asArray<Record<string, unknown>>(cp.expenseDetails);
+      if (expDetails.length > 0) {
+        const defaultRecheckSubs = ["투자손실", "수수료", "세금", "환차손", "기타"];
+        cp.expenseDetails = expDetails.map((g) => {
+          if (g?.main !== "재테크") return g;
+          const currentSubs = asArray<string>(g.subs);
+          const merged = [...currentSubs];
+          for (const def of defaultRecheckSubs) {
+            if (!merged.includes(def)) merged.push(def);
+          }
+          return { ...g, subs: merged };
+        });
+      }
+    }
     migrated = true;
   }
 

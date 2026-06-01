@@ -120,6 +120,46 @@ export const InvestTab = React.memo(function InvestTab({ d }: { d: D }) {
         </Card>
       </Section>
 
+      {/* ============ 손익 분해 (실현/미실현 × 수익/손실) ============ */}
+      <Section storageKey="invest-section-pnl-breakdown" title="📊 손익 분해 (실현/미실현 × 수익/손실)">
+        <Card accent>
+          <Kpi
+            label="실현 수익"
+            value={"+" + F(Math.round(d.investBreakdown.realizedGain)) + "원"}
+            sub={`청산 중 이익 매도 ${d.realPL.winCnt}건`}
+            color="#48c9b0"
+            info="FIFO 매칭으로 청산된 거래 중 이익 본 매도의 합 (양수). 라이프타임 누적"
+          />
+        </Card>
+        <Card accent>
+          <Kpi
+            label="미실현 수익"
+            value={"+" + F(Math.round(d.investBreakdown.unrealizedGain)) + "원"}
+            sub="보유 중 현재가 > 평단"
+            color="#48c9b0"
+            info="보유 종목별 (현재가 − 평단) × 수량 중 양수만 합. USD 종목은 현재 환율로 KRW 환산"
+          />
+        </Card>
+        <Card accent>
+          <Kpi
+            label="실현 손실"
+            value={"-" + F(Math.round(d.investBreakdown.realizedLoss)) + "원"}
+            sub={`청산 중 손실 매도 ${d.realPL.lossCnt}건`}
+            color="#e94560"
+            info="FIFO 매칭으로 청산된 거래 중 손실 본 매도의 절대값 합. 라이프타임 누적"
+          />
+        </Card>
+        <Card accent>
+          <Kpi
+            label="미실현 손실"
+            value={"-" + F(Math.round(d.investBreakdown.unrealizedLoss)) + "원"}
+            sub="보유 중 현재가 < 평단"
+            color="#e94560"
+            info="보유 종목별 (현재가 − 평단) × 수량 중 음수만 절대값 합. USD 종목은 현재 환율로 KRW 환산"
+          />
+        </Card>
+      </Section>
+
       {/* ============ 포트폴리오 분산 ============ */}
       <Section storageKey="invest-section-diversification" title="🎯 포트폴리오 분산">
         <Card accent>

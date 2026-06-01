@@ -849,6 +849,7 @@ export const App: React.FC = () => {
               accounts={data.accounts}
               ledger={data.ledger}
               trades={data.trades}
+              prices={data.prices}
               categoryPresets={data.categoryPresets}
               budgetGoals={data.budgetGoals}
               recurringExpenses={data.recurringExpenses}

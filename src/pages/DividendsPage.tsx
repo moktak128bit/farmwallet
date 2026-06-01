@@ -21,6 +21,8 @@ interface Props {
 }
 
 interface DividendRow {
+  /** 원본 ledger 엔트리 id — 편집/삭제 시 행→ledger 매칭에 사용 (티커/금액 매칭은 fragile해서 ID 직접 사용) */
+  id: string;
   month: string;
   date: string;
   source: string;
@@ -531,6 +533,7 @@ export const DividendsView: React.FC<Props> = ({ accounts, ledger, trades, price
         amount > 0 && costBasis > 0 ? amount / costBasis : undefined;
       const isInterest = (l.category ?? "") === "이자" || ((desc.includes("이자") || (l.category ?? "").includes("이자")) && !ticker);
       rows.push({
+        id: l.id,
         month,
         date: l.date || "",
         source,
@@ -801,11 +804,13 @@ export const DividendsView: React.FC<Props> = ({ accounts, ledger, trades, price
                   required
                 >
                   <option value="">선택</option>
-                  {accounts.map((acc) => (
-                    <option key={acc.id} value={acc.id}>
-                      {acc.id}
-                    </option>
-                  ))}
+                  {accounts
+                    .filter((acc) => !acc.archived || acc.id === dividendForm.accountId)
+                    .map((acc) => (
+                      <option key={acc.id} value={acc.id}>
+                        {acc.id}
+                      </option>
+                    ))}
                 </select>
               </label>
               <label style={{ display: "flex", flexDirection: "column", gap: 4, gridColumn: "1 / -1" }}>
@@ -1000,11 +1005,13 @@ export const DividendsView: React.FC<Props> = ({ accounts, ledger, trades, price
                   required
                 >
                   <option value="">선택</option>
-                  {accounts.map((acc) => (
-                    <option key={acc.id} value={acc.id}>
-                      {acc.id}
-                    </option>
-                  ))}
+                  {accounts
+                    .filter((acc) => !acc.archived || acc.id === interestForm.accountId)
+                    .map((acc) => (
+                      <option key={acc.id} value={acc.id}>
+                        {acc.id}
+                      </option>
+                    ))}
                 </select>
               </label>
               <label style={{ display: "flex", flexDirection: "column", gap: 4 }}>
@@ -1218,23 +1225,17 @@ export const DividendsView: React.FC<Props> = ({ accounts, ledger, trades, price
                       <th style={{ width: "10%" }}>주당배당금</th>
                       <th style={{ width: "8%" }}>보유주수</th>
                       <th style={{ width: "11%" }}>총 배당금</th>
-                      <th style={{ width: "16%" }}>배당율(매입대비)</th>
+                      <th style={{ width: "12%" }}>배당율(매입대비)</th>
                       <th style={{ width: "10%" }}>계좌</th>
-                      <th style={{ width: "5%" }}></th>
+                      <th style={{ width: "9%", minWidth: 96 }}>작업</th>
                     </tr>
                   </thead>
                   <tbody>
                     {dividendRowsInMonth.map((r, idx) => {
                       const tickerName = r.name ?? (r.source.includes(" - ") ? r.source.split(" - ")[1] : "");
                       const displayName = tickerName.length > 30 ? tickerName.slice(0, 30) + "..." : tickerName;
-                      // 해당 배당 기록 찾기
-                      const ledgerEntry = ledger.find(l => {
-                        if (l.kind !== "income") return false;
-                        const lMonth = l.date?.slice(0, 7) || "기타";
-                        if (lMonth !== month) return false;
-                        const lTicker = (extractTickerFromText(l.description ?? "") ?? extractTickerFromText(l.category ?? ""))?.toUpperCase();
-                        return lTicker === r.ticker && Math.abs(l.amount - r.amount) < 1;
-                      });
+                      // 해당 배당 기록 찾기 — 원본 ledger id로 직접 매칭 (fragile한 ticker/amount 매칭 폐기)
+                      const ledgerEntry = ledger.find(l => l.id === r.id);
                       
                       const isEditing = ledgerEntry && editingEntryId === ledgerEntry.id;
                       
@@ -1431,7 +1432,42 @@ export const DividendsView: React.FC<Props> = ({ accounts, ledger, trades, price
                             {isEditing ? (() => {
                               const q = Number(editingQuantity) || 0;
                               const a = Number(editingAmount) || 0;
-                              return q > 0 ? formatKRW(Math.round(a / q)) : "-";
+                              const currentDps = q > 0 && a > 0 ? a / q : 0;
+                              return (
+                                <input
+                                  type="number"
+                                  value={currentDps > 0 ? currentDps : ""}
+                                  onChange={(e) => {
+                                    // 주당배당금 변경 → 총배당금(editingAmount) = dps × 보유주수 로 재계산
+                                    const newDps = Number(e.target.value) || 0;
+                                    if (q > 0 && newDps >= 0) {
+                                      setEditingAmount(String(Math.round(newDps * q * 100) / 100));
+                                    }
+                                  }}
+                                  onBlur={(e) => handleSaveEdit(e)}
+                                  onKeyDown={(e) => {
+                                    if (e.key === "Enter") {
+                                      e.preventDefault();
+                                      const quantityInput = e.currentTarget.closest("tr")?.querySelector("input[type='number']:nth-of-type(2)") as HTMLInputElement;
+                                      quantityInput?.focus();
+                                    } else if (e.key === "Escape") cancelEdit();
+                                  }}
+                                  style={{
+                                    width: "100%",
+                                    padding: "4px 8px",
+                                    fontSize: 13,
+                                    border: "1px solid var(--accent)",
+                                    borderRadius: 4,
+                                    backgroundColor: "var(--surface)",
+                                    textAlign: "right"
+                                  }}
+                                  onClick={(e) => e.stopPropagation()}
+                                  placeholder={q > 0 ? "주당배당금" : "먼저 보유주수 입력"}
+                                  disabled={q <= 0}
+                                  min={0}
+                                  step={0.0001}
+                                />
+                              );
                             })() : (
                               r.dividendPerShare != null ? formatKRW(Math.round(r.dividendPerShare)) : "-"
                             )}
@@ -1449,7 +1485,8 @@ export const DividendsView: React.FC<Props> = ({ accounts, ledger, trades, price
                                 onKeyDown={(e) => {
                                   if (e.key === "Enter") {
                                     e.preventDefault();
-                                    const amountInput = e.currentTarget.closest("tr")?.querySelector("input[type='number']:nth-of-type(2)") as HTMLInputElement;
+                                    // DPS가 number:1로 추가됐으므로 amount는 number:3
+                                    const amountInput = e.currentTarget.closest("tr")?.querySelector("input[type='number']:nth-of-type(3)") as HTMLInputElement;
                                     amountInput?.focus();
                                   } else if (e.key === "Escape") cancelEdit();
                                   else if (e.key === "Tab") { /* 기본 동작 */ }
@@ -1556,11 +1593,13 @@ export const DividendsView: React.FC<Props> = ({ accounts, ledger, trades, price
                                 onClick={(e) => e.stopPropagation()}
                               >
                                 <option value="">선택</option>
-                                {accounts.map((acc) => (
-                                  <option key={acc.id} value={acc.id}>
-                                    {acc.name || acc.id}
-                                  </option>
-                                ))}
+                                {accounts
+                                  .filter((acc) => !acc.archived || acc.id === editingAccountId)
+                                  .map((acc) => (
+                                    <option key={acc.id} value={acc.id}>
+                                      {acc.name || acc.id}
+                                    </option>
+                                  ))}
                               </select>
                             ) : (
                               r.accountName || r.accountId || "-"
@@ -1724,20 +1763,13 @@ export const DividendsView: React.FC<Props> = ({ accounts, ledger, trades, price
                     <th style={{ width: "38%" }}>출처</th>
                     <th style={{ width: "20%" }}>이자금액</th>
                     <th style={{ width: "18%" }}>계좌</th>
-                    <th style={{ width: "12%" }}></th>
+                    <th style={{ width: "12%", minWidth: 80 }}>작업</th>
                   </tr>
                 </thead>
                 <tbody>
                   {rows.map((r, idx) => {
-                    const ledgerEntry = ledger.find(l => {
-                      if (l.kind !== "income") return false;
-                      const isInterestEntry = (l.category ?? "") === "이자" || (l.description ?? "").includes("이자");
-                      if (!isInterestEntry) return false;
-                      const lMonth = l.date?.slice(0, 7) || "기타";
-                      if (lMonth !== month) return false;
-                      const lSource = l.description || l.category || "기타";
-                      return lSource === r.source && Math.abs(l.amount - r.amount) < 1;
-                    });
+                    // 원본 ledger id로 직접 매칭
+                    const ledgerEntry = ledger.find(l => l.id === r.id);
                     const isEditing = ledgerEntry && editingEntryId === ledgerEntry.id;
                     const handleSaveInterestEdit = (e?: React.FocusEvent) => {
                       if (!ledgerEntry) return;
@@ -1826,9 +1858,11 @@ export const DividendsView: React.FC<Props> = ({ accounts, ledger, trades, price
                               style={{ width: "100%", padding: "4px 8px", fontSize: 13, border: "1px solid var(--accent)", borderRadius: 4, backgroundColor: "var(--surface)" }}
                             >
                               <option value="">선택</option>
-                              {accounts.map((acc) => (
-                                <option key={acc.id} value={acc.id}>{acc.name || acc.id}</option>
-                              ))}
+                              {accounts
+                                .filter((acc) => !acc.archived || acc.id === editingAccountId)
+                                .map((acc) => (
+                                  <option key={acc.id} value={acc.id}>{acc.name || acc.id}</option>
+                                ))}
                             </select>
                           ) : (
                             r.accountName || r.accountId || "-"

@@ -1,8 +1,10 @@
+import { useState } from "react";
 import type { Account, AccountType, LedgerEntry, AccountBalanceRow } from "../../../types";
 import { formatNumber, formatKRW, formatUSD } from "../../../utils/formatter";
 import { parseAmount } from "../../../utils/parseAmount";
 import { ACCOUNT_TYPE_LABEL, sanitizeSignedNumericInput } from "../accountsShared";
 import { CardPaymentSection } from "./CardPaymentSection";
+import { toast } from "react-hot-toast";
 
 interface Props {
   adjustingAccount: { id: string; type: AccountType };
@@ -11,6 +13,7 @@ interface Props {
   cardDebtMap: Map<string, { total: number }>;
   ledger: LedgerEntry[];
   onChangeLedger?: (next: LedgerEntry[]) => void;
+  onChangeAccounts?: (next: Account[]) => void;
   fxRate: number | null;
   adjustValue: string;
   setAdjustValue: (v: string) => void;
@@ -31,6 +34,7 @@ export function AdjustmentModal({
   cardDebtMap,
   ledger,
   onChangeLedger,
+  onChangeAccounts,
   fxRate,
   adjustValue,
   setAdjustValue,
@@ -43,6 +47,7 @@ export function AdjustmentModal({
   onAdjustBalance,
   onClose,
 }: Props) {
+  const [targetDebtInput, setTargetDebtInput] = useState("");
   const account = safeAccounts.find((a) => a.id === adjustingAccount.id);
   if (!account) return null;
 
@@ -123,17 +128,62 @@ export function AdjustmentModal({
             }
             if (adjustingAccount.type === "card") {
               const currentDebt = cardDebtMap.get(account.id)?.total ?? 0;
-              const debtDisplay = currentDebt < 0 ? Math.abs(currentDebt) : 0;
+              // cardDebtMap.total: 양수=부채 (account.debt 포함), 음수=선납
+              const debtDisplay = currentDebt > 0 ? currentDebt : 0;
               return (
-                <div style={{ marginBottom: "20px", padding: "12px", background: "var(--bg)", borderRadius: "8px", border: "1px solid var(--border)" }}>
-                  <div style={{ fontSize: "13px", color: "var(--text-muted)", marginBottom: "8px" }}>현재 카드 부채</div>
-                  <div style={{ fontSize: "24px", fontWeight: "700", color: debtDisplay > 0 ? "var(--danger)" : "var(--primary)" }}>
-                    {formatAmount(debtDisplay)}
+                <>
+                  <div style={{ marginBottom: "12px", padding: "12px", background: "var(--bg)", borderRadius: "8px", border: "1px solid var(--border)" }}>
+                    <div style={{ fontSize: "13px", color: "var(--text-muted)", marginBottom: "8px" }}>현재 카드 부채</div>
+                    <div style={{ fontSize: "24px", fontWeight: "700", color: debtDisplay > 0 ? "var(--danger)" : "var(--primary)" }}>
+                      {formatAmount(debtDisplay)}
+                    </div>
+                    <div style={{ fontSize: "12px", color: "var(--text-muted)", marginTop: "6px" }}>
+                      카드 사용/결제 내역이 자동 반영됩니다. 결제하면 부채가 탕감됩니다.
+                    </div>
                   </div>
-                  <div style={{ fontSize: "12px", color: "var(--text-muted)", marginTop: "6px" }}>
-                    카드 사용/결제 내역이 자동 반영됩니다. 결제하면 부채가 탕감됩니다.
-                  </div>
-                </div>
+                  {onChangeAccounts && (
+                    <div style={{ marginBottom: "20px", padding: "12px", background: "var(--surface)", borderRadius: "8px", border: "1px dashed var(--border)" }}>
+                      <div style={{ fontSize: "13px", color: "var(--text-muted)", marginBottom: "8px" }}>
+                        현재 부채 직접 설정 — 입력값에 맞추기 위해 초기 부채(account.debt)가 자동 재계산됩니다.
+                      </div>
+                      <div style={{ display: "flex", gap: 8 }}>
+                        <input
+                          type="text"
+                          value={targetDebtInput}
+                          onChange={(e) => setTargetDebtInput(sanitizeSignedNumericInput(e.target.value))}
+                          placeholder={`현재: ${formatAmount(debtDisplay)}`}
+                          style={{ flex: 1, padding: "8px 12px", fontSize: 14 }}
+                        />
+                        <button
+                          type="button"
+                          className="primary"
+                          onClick={() => {
+                            const raw = targetDebtInput.trim();
+                            if (!raw) return;
+                            const target = Math.round(parseAmount(raw));
+                            if (!Number.isFinite(target)) {
+                              toast.error("숫자를 입력하세요");
+                              return;
+                            }
+                            const oldAccountDebt = account.debt ?? 0;
+                            // currentDebt = oldAccountDebt + (ledger usage - payment) → ledgerDelta = currentDebt - oldAccountDebt
+                            // 목표 부채로 맞추려면: newAccountDebt = target - ledgerDelta = target - currentDebt + oldAccountDebt
+                            const newAccountDebt = target - currentDebt + oldAccountDebt;
+                            const updated = safeAccounts.map((a) =>
+                              a.id === account.id ? { ...a, debt: newAccountDebt } : a
+                            );
+                            onChangeAccounts(updated);
+                            toast.success(`현재 부채 ${formatAmount(target)} 설정 — 초기 부채: ${formatAmount(oldAccountDebt)} → ${formatAmount(newAccountDebt)}`);
+                            setTargetDebtInput("");
+                          }}
+                          style={{ padding: "8px 16px", fontSize: 14 }}
+                        >
+                          적용
+                        </button>
+                      </div>
+                    </div>
+                  )}
+                </>
               );
             }
             return (

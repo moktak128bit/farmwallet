@@ -20,6 +20,9 @@ export interface Account {
   billingCycleStart?: number;
   /** 신용카드 결제일 (1~31, 예: 25 = 매월 25일 결제) */
   paymentDay?: number;
+  /** 계좌 비활성화(숨김). true면 가계부/배당 등 입력 폼 드롭다운에서 숨겨짐.
+   * 과거 기록은 그대로 유지·표시됨 (필터/내역에는 계속 나옴). */
+  archived?: boolean;
 }
 
 export type LedgerKind = "income" | "expense" | "transfer";

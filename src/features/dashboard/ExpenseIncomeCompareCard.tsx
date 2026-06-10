@@ -10,7 +10,8 @@ interface Props {
   month: string;
 }
 
-export const ExpenseIncomeCompareCard: React.FC<Props> = ({ ledger, month }) => {
+// React.memo — 부모(DashboardPage)가 넘기는 props는 안정적(store 참조·원시값)이어야 한다.
+export const ExpenseIncomeCompareCard: React.FC<Props> = React.memo(function ExpenseIncomeCompareCard({ ledger, month }) {
   const expenseComparison = useMemo(() => compareMonths(ledger, month, "expense"), [ledger, month]);
   const incomeComparison = useMemo(() => compareMonths(ledger, month, "income"), [ledger, month]);
   const anomalies = useMemo(() => detectSpendAnomalies(ledger, month, 6), [ledger, month]);
@@ -61,4 +62,4 @@ export const ExpenseIncomeCompareCard: React.FC<Props> = ({ ledger, month }) => 
       )}
     </div>
   );
-};
+});

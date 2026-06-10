@@ -313,7 +313,7 @@ export const PortfolioChartsSection: React.FC<PortfolioChartsSectionProps> = ({
                       ]}
                       cursor={{fill: 'rgba(0,0,0,0.05)'}}
                     />
-                    <Bar dataKey="pnl" name="평가손익" radius={[0, 4, 4, 0]}>
+                    <Bar isAnimationActive={false} dataKey="pnl" name="평가손익" radius={[0, 4, 4, 0]}>
                       {chartData.map((entry, index) => (
                         <Cell key={`cell-${index}`} fill={entry.fill} />
                       ))}

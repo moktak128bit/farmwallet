@@ -171,7 +171,7 @@ export const AssetTab = React.memo(function AssetTab({ d }: { d: D }) {
           <Card title="자산 유형별 배분" span={2}>
             <ResponsiveContainer width="100%" height={280}>
               <PieChart>
-                <Pie data={d.assetAllocation} dataKey="value" cx="50%" cy="50%" outerRadius={100} innerRadius={50} label={pieLabel} labelLine={false} style={{ fontSize: 10 }}>
+                <Pie isAnimationActive={false} data={d.assetAllocation} dataKey="value" cx="50%" cy="50%" outerRadius={100} innerRadius={50} label={pieLabel} labelLine={false} style={{ fontSize: 10 }}>
                   {d.assetAllocation.map((_, i) => <Cell key={i} fill={C[i % C.length]} />)}
                 </Pie>
                 <Tooltip formatter={(v: ValueType | undefined) => W(Number(v ?? 0))} />
@@ -211,7 +211,7 @@ export const AssetTab = React.memo(function AssetTab({ d }: { d: D }) {
                 <XAxis dataKey="label" tick={{ fontSize: 11 }} />
                 <YAxis tickFormatter={F} tick={{ fontSize: 11 }} domain={[Math.max(0, minNW * 0.9), maxNW * 1.05]} />
                 <Tooltip formatter={(v: ValueType | undefined) => W(Number(v ?? 0))} />
-                <Area type="monotone" dataKey="total" stroke="#48c9b0" fill="url(#nwGrad)" strokeWidth={2} name="순자산 추이" />
+                <Area isAnimationActive={false} type="monotone" dataKey="total" stroke="#48c9b0" fill="url(#nwGrad)" strokeWidth={2} name="순자산 추이" />
               </AreaChart>
             </ResponsiveContainer>
           </Card>

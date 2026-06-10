@@ -3,7 +3,7 @@ import {
   BarChart, Bar, Cell, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer,
 } from "recharts";
 import type { ValueType } from "recharts/types/component/DefaultTooltipContent";
-import { WDN, C, F, W, Card, Kpi, Insight, Section, CT, type D } from "../insightsShared";
+import { WDN, C, F, Card, Kpi, Insight, Section, CT, type D } from "../insightsShared";
 import { FunTab } from "./FunTab";
 
 export const PatternTab = React.memo(function PatternTab({ d }: { d: D }) {
@@ -100,7 +100,7 @@ export const PatternTab = React.memo(function PatternTab({ d }: { d: D }) {
               <YAxis yAxisId="left" tick={{ fontSize: 10 }} />
               <YAxis yAxisId="right" orientation="right" tickFormatter={(v) => v.toFixed(0) + "%"} tick={{ fontSize: 10 }} domain={[0, 100]} />
               <Tooltip formatter={(v: ValueType | undefined, n) => n === "무지출" ? `${v}일` : `${Number(v ?? 0).toFixed(0)}%`} />
-              <Bar yAxisId="left" dataKey="무지출" radius={[4, 4, 0, 0]}>
+              <Bar isAnimationActive={false} yAxisId="left" dataKey="무지출" radius={[4, 4, 0, 0]}>
                 {zeroTrendData.map((e, i) => <Cell key={i} fill={e.pct >= 20 ? "#48c9b0" : e.pct >= 10 ? "#f0c040" : "#e94560"} />)}
               </Bar>
             </BarChart>
@@ -120,7 +120,7 @@ export const PatternTab = React.memo(function PatternTab({ d }: { d: D }) {
               <XAxis dataKey="name" tick={{ fontSize: 12 }} />
               <YAxis tick={{ fontSize: 10 }} />
               <Tooltip formatter={(v: ValueType | undefined, _n, p) => [`${v}건`, `건당 평균 ${F(p.payload.avg)}원`]} />
-              <Bar dataKey="count" radius={[4, 4, 0, 0]}>
+              <Bar isAnimationActive={false} dataKey="count" radius={[4, 4, 0, 0]}>
                 {wdData.map((e, i) => <Cell key={i} fill={i >= 5 ? "#e94560" : "#0f3460"} opacity={0.8} />)}
               </Bar>
             </BarChart>
@@ -137,7 +137,7 @@ export const PatternTab = React.memo(function PatternTab({ d }: { d: D }) {
               <XAxis dataKey="name" tick={{ fontSize: 11 }} />
               <YAxis tickFormatter={F} tick={{ fontSize: 10 }} />
               <Tooltip content={<CT />} />
-              <Bar dataKey="지출" radius={[6, 6, 0, 0]}>
+              <Bar isAnimationActive={false} dataKey="지출" radius={[6, 6, 0, 0]}>
                 {thirdData.map((_, i) => <Cell key={i} fill={C[i]} />)}
               </Bar>
             </BarChart>

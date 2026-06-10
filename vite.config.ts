@@ -987,7 +987,7 @@ function backupApiPlugin(): Plugin {
             await execAsync(`git commit -m "${msg.replace(/"/g, "'")}" --allow-empty`, cwd);
           } catch (err) { return sendErrorJson(res, "git commit", err); }
           try {
-            await execAsync("git push origin main --force", cwd);
+            await execAsync("git push origin main --force-with-lease", cwd);
             res.setHeader("Content-Type", "application/json");
             res.end(JSON.stringify({ ok: true }));
           } catch (err) { sendErrorJson(res, "git push", err); }

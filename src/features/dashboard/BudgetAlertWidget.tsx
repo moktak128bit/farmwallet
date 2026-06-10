@@ -18,7 +18,8 @@ const currentMonthKey = () => {
   return now.getFullYear() + "-" + String(now.getMonth() + 1).padStart(2, "0");
 };
 
-export const BudgetAlertWidget: React.FC<Props> = ({ ledger, budgetGoals, accounts }) => {
+// React.memo — 부모(DashboardPage)가 넘기는 props는 안정적(store 참조)이어야 한다.
+export const BudgetAlertWidget: React.FC<Props> = React.memo(function BudgetAlertWidget({ ledger, budgetGoals, accounts }) {
   const currentMonth = useMemo(() => currentMonthKey(), []);
 
   const accountNameById = useMemo(() => {
@@ -157,4 +158,4 @@ export const BudgetAlertWidget: React.FC<Props> = ({ ledger, budgetGoals, accoun
       )}
     </div>
   );
-};
+});

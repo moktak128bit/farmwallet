@@ -1,3 +1,9 @@
+/**
+ * 계좌 거래 내역 모달 — 가계부 + 주식거래 이력을 한 계좌 기준으로 통합 표시.
+ * AccountsPage에서 분리 — React.memo로 감싸므로 부모가 넘기는 onClose는
+ * 안정적(useCallback)이어야 하고, 나머지 props는 부모 memo 결과를 그대로 받는다.
+ */
+import React from "react";
 import type { Account, LedgerEntry, StockTrade, AccountBalanceRow } from "../../../types";
 import { formatShortDate, formatKRW, formatUSD } from "../../../utils/formatter";
 import { isUSDStock } from "../../../utils/finance";
@@ -14,7 +20,7 @@ interface Props {
   onClose: () => void;
 }
 
-export function TransactionHistoryModal({
+export const TransactionHistoryModal = React.memo(function TransactionHistoryModal({
   account: selectedAccount,
   ledger,
   trades,
@@ -255,4 +261,4 @@ export function TransactionHistoryModal({
       </div>
     </div>
   );
-}
+});

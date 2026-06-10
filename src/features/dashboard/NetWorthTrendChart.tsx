@@ -11,7 +11,8 @@ interface Props {
   data: NetWorthTrendPoint[];
 }
 
-export const NetWorthTrendChart: React.FC<Props> = ({ data }) => {
+// React.memo — 부모(DashboardPage)가 넘기는 data는 안정적(useMemo 결과)이어야 한다.
+export const NetWorthTrendChart: React.FC<Props> = React.memo(function NetWorthTrendChart({ data }) {
   const svgRef = useRef<SVGSVGElement>(null);
   const [hoverIdx, setHoverIdx] = useState<number | null>(null);
 
@@ -229,4 +230,4 @@ export const NetWorthTrendChart: React.FC<Props> = ({ data }) => {
       </div>
     </div>
   );
-};
+});

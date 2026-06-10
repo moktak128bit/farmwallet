@@ -12,7 +12,8 @@ interface Props {
   allTimeSummary: Summary;
 }
 
-export const MonthlySummaryCards: React.FC<Props> = ({ monthlySummary, allTimeSummary }) => {
+// React.memo — 부모(DashboardPage)가 넘기는 props는 안정적(useMemo 결과)이어야 한다.
+export const MonthlySummaryCards: React.FC<Props> = React.memo(function MonthlySummaryCards({ monthlySummary, allTimeSummary }) {
   const balance = monthlySummary.income - monthlySummary.expense;
   return (
     <div
@@ -57,4 +58,4 @@ export const MonthlySummaryCards: React.FC<Props> = ({ monthlySummary, allTimeSu
       </div>
     </div>
   );
-};
+});

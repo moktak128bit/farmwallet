@@ -2,6 +2,7 @@
   "name": "farmwallet-web",
   "version": "4.2.0",
   "private": true,
+  "type": "module",
   "scripts": {
     "postinstall": "node scripts/generate-kr-names.mjs",
     "predev": "npm run -s check-text && node scripts/generate-kr-names.mjs",

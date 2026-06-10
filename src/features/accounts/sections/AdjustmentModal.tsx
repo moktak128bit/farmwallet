@@ -1,8 +1,15 @@
-import { useState } from "react";
+/**
+ * 계좌 잔액 조정 모달 — 일반 계좌 증감/직접설정, 증권·암호화폐 USD/KRW 설정, 카드 결제 관리.
+ * AccountsPage에서 분리 — 조정 입력 상태(adjustValue 등)를 이 컴포넌트가 소유해
+ * 입력 타이핑이 부모(AccountsPage)를 재렌더하지 않는다. 모달은 열릴 때마다 새로 마운트되므로
+ * 입력 상태는 항상 빈 값으로 시작한다 (기존 열기 시 초기화 동작과 동일).
+ * React.memo로 감싸므로 부모가 넘기는 콜백(onClose)은 안정적(useCallback)이어야 한다.
+ */
+import React, { useState } from "react";
 import type { Account, AccountType, LedgerEntry, AccountBalanceRow } from "../../../types";
 import { formatNumber, formatKRW, formatUSD } from "../../../utils/formatter";
 import { parseAmount } from "../../../utils/parseAmount";
-import { ACCOUNT_TYPE_LABEL, sanitizeSignedNumericInput } from "../accountsShared";
+import { ACCOUNT_TYPE_LABEL, parseSignedAmount, sanitizeSignedNumericInput } from "../accountsShared";
 import { CardPaymentSection } from "./CardPaymentSection";
 import { toast } from "react-hot-toast";
 
@@ -15,19 +22,10 @@ interface Props {
   onChangeLedger?: (next: LedgerEntry[]) => void;
   onChangeAccounts?: (next: Account[]) => void;
   fxRate: number | null;
-  adjustValue: string;
-  setAdjustValue: (v: string) => void;
-  isSetDirectly: boolean;
-  setIsSetDirectly: (v: boolean) => void;
-  editUsdBalance: string;
-  setEditUsdBalance: (v: string) => void;
-  editKrwBalance: string;
-  setEditKrwBalance: (v: string) => void;
-  onAdjustBalance: () => void;
   onClose: () => void;
 }
 
-export function AdjustmentModal({
+export const AdjustmentModal = React.memo(function AdjustmentModal({
   adjustingAccount,
   safeAccounts,
   safeBalances,
@@ -36,18 +34,116 @@ export function AdjustmentModal({
   onChangeLedger,
   onChangeAccounts,
   fxRate,
-  adjustValue,
-  setAdjustValue,
-  isSetDirectly,
-  setIsSetDirectly,
-  editUsdBalance,
-  setEditUsdBalance,
-  editKrwBalance,
-  setEditKrwBalance,
-  onAdjustBalance,
   onClose,
 }: Props) {
   const [targetDebtInput, setTargetDebtInput] = useState("");
+  // 조정 입력 상태 — 모달 마운트 시 항상 빈 값 (이전엔 부모가 열 때마다 초기화하던 동작과 동일)
+  const [adjustValue, setAdjustValue] = useState("");
+  const [isSetDirectly, setIsSetDirectly] = useState(false);
+  const [editUsdBalance, setEditUsdBalance] = useState("");
+  const [editKrwBalance, setEditKrwBalance] = useState("");
+
+  const handleAdjustBalance = () => {
+    if (!onChangeAccounts) return;
+
+    if (adjustingAccount.type === "securities" || adjustingAccount.type === "crypto") {
+      const balanceRow = safeBalances.find((b) => b.account.id === adjustingAccount.id);
+      const account = safeAccounts.find((a) => a.id === adjustingAccount.id);
+      if (!account || !balanceRow) return;
+
+      const inputUsd = Number(editUsdBalance.replace(/[^\d.-]/g, "")) || 0;
+      const inputKrw = Number(editKrwBalance.replace(/[^\d.-]/g, "")) || 0;
+
+      let targetUsd: number;
+      let targetKrw: number;
+      const dispUsd = (account.usdBalance ?? 0) + (balanceRow.usdTransferNet ?? 0);
+      const currentKrw = balanceRow.currentBalance ?? 0;
+
+      if (isSetDirectly) {
+        targetUsd = inputUsd;
+        targetKrw = inputKrw;
+      } else {
+        // 원화/달러
+        if (inputUsd === 0 && inputKrw === 0) {
+          alert("USD 또는 KRW 중 하나 이상 0이 아닌 값을 입력해주세요.");
+          return;
+        }
+        targetUsd = dispUsd + inputUsd;
+        targetKrw = currentKrw + inputKrw;
+      }
+
+      const usdTransferNet = balanceRow.usdTransferNet ?? 0;
+      const newUsdBalance = targetUsd - usdTransferNet;
+      // 옵션 B: initialCashBalance 만 조정, cashAdjustment 는 0 으로 평탄화
+      // newInitial = currentInitial + currentCashAdj + (targetKrw - currentKrw)
+      //   = currentBalance 공식 `base + activity + cashAdj = current` 에서
+      //     activity 보존, cashAdj 0 흡수, target 달성
+      const currentInitialCash = account.initialCashBalance ?? account.initialBalance ?? 0;
+      const currentCashAdj = account.cashAdjustment ?? 0;
+      // 부동소수점 오차 방지 — KRW 시작금액은 정수 유지
+      const newInitialCashBalance = Math.round(currentInitialCash + currentCashAdj + (targetKrw - currentKrw));
+
+      onChangeAccounts(
+        safeAccounts.map((a) => {
+          if (a.id !== adjustingAccount.id) return a;
+          return {
+            ...a,
+            usdBalance: newUsdBalance,
+            initialCashBalance: newInitialCashBalance,
+            cashAdjustment: 0
+          };
+        })
+      );
+      setEditUsdBalance("");
+      setEditKrwBalance("");
+      setIsSetDirectly(false);
+      onClose();
+      return;
+    }
+
+    const balanceRow = safeBalances.find((b) => b.account.id === adjustingAccount.id);
+    const currentBalance = balanceRow?.currentBalance ?? 0;
+
+    let value = 0;
+    if (adjustValue.trim() !== "") {
+      const parsed = parseSignedAmount(adjustValue);
+      if (parsed == null) {
+        alert("금액 형식이 올바르지 않습니다. 예: +100000, -50000");
+        return;
+      }
+      value = parsed;
+      if (value === 0 && !isSetDirectly) {
+        alert("0이 아닌 값을 입력해주세요.");
+        return;
+      }
+    } else {
+      alert("금액을 입력해주세요.");
+      return;
+    }
+
+    const updated = safeAccounts.map((a) => {
+      if (a.id !== adjustingAccount.id) return a;
+
+      if (adjustingAccount.type === "card") {
+        return a;
+      } else {
+        // 옵션 B: initialBalance 만 사용. 남아있을 수 있는 cashAdjustment 는 함께 병합
+        const pendingAdj = a.cashAdjustment ?? 0;
+        const baseShift = isSetDirectly ? (value - currentBalance) : value;
+        // 부동소수점 오차 방지 — KRW 시작금액은 정수 유지
+        return {
+          ...a,
+          initialBalance: Math.round((a.initialBalance ?? 0) + pendingAdj + baseShift),
+          cashAdjustment: 0
+        };
+      }
+    });
+
+    onChangeAccounts(updated);
+    setAdjustValue("");
+    setIsSetDirectly(false);
+  };
+
   const account = safeAccounts.find((a) => a.id === adjustingAccount.id);
   if (!account) return null;
 
@@ -224,7 +320,7 @@ export function AdjustmentModal({
                   style={{ width: "100%", padding: "10px", fontSize: "16px" }}
                   onKeyDown={(e) => {
                     if (e.key === "Enter") {
-                      onAdjustBalance();
+                      handleAdjustBalance();
                     } else if (e.key === "Escape") {
                       onClose();
                     }
@@ -252,7 +348,7 @@ export function AdjustmentModal({
                   style={{ width: "100%", padding: "10px", fontSize: "16px" }}
                   onKeyDown={(e) => {
                     if (e.key === "Enter") {
-                      onAdjustBalance();
+                      handleAdjustBalance();
                     } else if (e.key === "Escape") {
                       onClose();
                     }
@@ -309,7 +405,7 @@ export function AdjustmentModal({
                   autoFocus
                   onKeyDown={(e) => {
                     if (e.key === "Enter") {
-                      onAdjustBalance();
+                      handleAdjustBalance();
                       setAdjustValue("");
                     } else if (e.key === "Escape") {
                       onClose();
@@ -327,7 +423,7 @@ export function AdjustmentModal({
               <button
                 type="button"
                 className="primary"
-                onClick={onAdjustBalance}
+                onClick={handleAdjustBalance}
               >
                 {isSetDirectly ? "설정" : "적용"}
               </button>
@@ -337,4 +433,4 @@ export function AdjustmentModal({
       </div>
     </div>
   );
-}
+});

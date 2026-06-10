@@ -677,11 +677,11 @@ export const AccountsView: React.FC<Props> = ({
     const cardIds = new Set(safeBalances.filter((r) => r.account.type === "card").map((r) => r.account.id));
 
     for (const l of ledger) {
-      // 신용카드 사용 → 부채 증가 (출금계좌가 카드인 지출, 단 신용결제 제외)
+      // 신용카드 사용 → 부채 증가 (출금계좌가 카드인 지출, 단 레거시 신용결제 expense 제외)
       if (l.kind === "expense" && l.fromAccountId && l.category !== "신용결제") {
         add(totalUsage, l.fromAccountId, l.amount);
       }
-      // 신용결제 또는 카드로 들어온 이체 → 부채 탕감
+      // 카드 대금 납부 → 부채 탕감: 카드계좌로 들어온 이체(신규 카드결제이체 포함) + 레거시 신용결제 expense
       if (l.toAccountId && cardIds.has(l.toAccountId)) {
         const isPayment =
           l.kind === "transfer" ||

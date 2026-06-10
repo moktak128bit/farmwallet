@@ -96,9 +96,11 @@ export const LedgerView: React.FC<Props> = ({
   const effectiveFormKind: LedgerKind =
     ledgerTab === "all"
       ? formKindWhenAll
-      : ledgerTab === "savingsExpense" || ledgerTab === "creditPayment"
+      : ledgerTab === "savingsExpense"
         ? "expense"
-        : ledgerTab;
+        : ledgerTab === "creditPayment"
+          ? "transfer"
+          : ledgerTab;
   const kindForTab: LedgerKind = effectiveFormKind;
   const isCopyingRef = useRef(false);
   const [quickCopyEntry, setQuickCopyEntry] = useState<LedgerEntry | null>(null);
@@ -253,12 +255,13 @@ export const LedgerView: React.FC<Props> = ({
     }
   }, [ledgerTab, form.mainCategory]);
 
-  // 신용결제 탭일 때 main/sub 모두 "신용결제" 고정 (옛 데이터 패턴 유지).
-  // 제출 시 category="신용결제", subCategory="신용결제"로 저장됨.
+  // 신용결제 탭은 이제 이체로 저장 (kind=transfer, category=이체, subCategory=카드결제이체).
+  // 카드 대금 납부는 새 소비가 아니라 은행→카드(부채)계좌 자산 이동이므로 transfer가 정확.
+  // 제출 시 category="이체", subCategory="카드결제이체"로 저장됨.
   useEffect(() => {
     if (ledgerTab === "creditPayment") {
-      if (form.mainCategory !== "신용결제" || form.subCategory !== "신용결제") {
-        setForm((prev) => ({ ...prev, mainCategory: "신용결제", subCategory: "신용결제" }));
+      if (form.mainCategory !== "이체" || form.subCategory !== "카드결제이체") {
+        setForm((prev) => ({ ...prev, mainCategory: "이체", subCategory: "카드결제이체" }));
       }
     }
   }, [ledgerTab, form.mainCategory, form.subCategory]);
@@ -431,14 +434,14 @@ export const LedgerView: React.FC<Props> = ({
     //   - category    = "지출" / "수입" / "이체"  (대분류 — kind 자동매핑)
     //   - subCategory = 식비 / 유류교통비 / ...   (중분류 — picker의 첫째 행)
     //   - detailCategory = 시장/마트 / 주차비 / .. (소분류 — picker의 둘째 행, 지출만)
-    // 예외: 신용결제 탭은 category="신용결제" 고정 (AccountsPage 부채 탕감 로직 의존)
+    // 신용결제 탭은 이체로 저장 (AccountsPage 부채 탕감은 카드계좌로 들어온 transfer를 인식)
     let storedCategory: string;
     let storedSubCategory: string;
     let storedDetailCategory: string | undefined;
     if (ledgerTab === "creditPayment") {
-      // 옛 데이터 패턴: category="신용결제", subCategory="신용결제" (대=중 동일)
-      storedCategory = "신용결제";
-      storedSubCategory = "신용결제";
+      // 카드 대금 납부 = 이체 (은행 → 카드 부채계좌)
+      storedCategory = "이체";
+      storedSubCategory = "카드결제이체";
       storedDetailCategory = undefined;
     } else if (kindForTab === "income") {
       storedCategory = "수입";
@@ -829,7 +832,7 @@ export const LedgerView: React.FC<Props> = ({
 
   // 탭별 필터링된 거래 목록 (가계부 + 주식 매수/매도)
   // 특수 탭 처리:
-  //   - "creditPayment": kind=expense + category=신용결제 인 항목만
+  //   - "creditPayment": 이체>카드결제이체(신버전) + expense/신용결제(레거시) 항목
   //   - "savingsExpense" (재테크 탭): 재테크 관련 모든 항목을 한 화면에 모음:
   //       · expense: category="재테크" OR isSavingsExpenseEntry (사용자 categoryTypes.savings)
   //       · income: 배당·이자·투자수익 (category/subCategory/description 매칭)
@@ -862,7 +865,11 @@ export const LedgerView: React.FC<Props> = ({
     return combinedLedger.filter((l) => {
       if (ledgerTab === "all") return true;
       if (ledgerTab === "creditPayment") {
-        return l.kind === "expense" && l.category === "신용결제";
+        // 신버전: 이체 > 카드결제이체. 레거시: expense + 신용결제 (미마이그레이션 데이터)
+        return (
+          (l.kind === "transfer" && l.subCategory === "카드결제이체") ||
+          (l.kind === "expense" && l.category === "신용결제")
+        );
       }
       if (ledgerTab === "savingsExpense") {
         return investmentRelated(l);
@@ -2051,7 +2058,7 @@ export const LedgerView: React.FC<Props> = ({
                   fontSize: 13,
                   color: "var(--text-muted)",
                 }}>
-                  카테고리·세부분류는 자동으로 "신용결제"로 저장됩니다. 출금계좌(은행) → 입금계좌(카드)만 선택하세요.
+                  자동으로 "이체 &gt; 카드결제이체"로 저장됩니다. 출금계좌(은행) → 입금계좌(카드)만 선택하세요.
                 </div>
               </div>
             ) : (

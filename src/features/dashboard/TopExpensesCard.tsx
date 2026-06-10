@@ -1,12 +1,46 @@
-import React from "react";
+/**
+ * 이번 달 지출 Top 5 카드 — DashboardPage에서 분리.
+ * 카테고리별 지출 집계(topCategoriesThisMonth)를 카드가 소유한다.
+ * React.memo로 감싸므로 부모가 넘기는 props는 안정적(store 참조·원시값)이어야 한다.
+ */
+import React, { useMemo } from "react";
+import type { Account, CategoryPresets, LedgerEntry } from "../../types";
 import { formatKRW } from "../../utils/formatter";
+import { isSavingsExpenseEntry } from "../../utils/category";
 
 interface Props {
   currentMonth: string;
-  topCategoriesThisMonth: [string, number][];
+  ledger: LedgerEntry[];
+  accounts: Account[];
+  categoryPresets: CategoryPresets;
+  fxRate: number | null;
 }
 
-export const TopExpensesCard: React.FC<Props> = ({ currentMonth, topCategoriesThisMonth }) => {
+export const TopExpensesCard: React.FC<Props> = React.memo(function TopExpensesCard({
+  currentMonth,
+  ledger,
+  accounts,
+  categoryPresets,
+  fxRate,
+}) {
+  const topCategoriesThisMonth = useMemo(() => {
+    const toKrw = (entry: LedgerEntry) =>
+      entry.currency === "USD" && fxRate ? entry.amount * fxRate : entry.amount;
+    const catMap = new Map<string, number>();
+    ledger.forEach((entry) => {
+      if (!entry.date?.startsWith(currentMonth)) return;
+      if (entry.kind !== "expense") return;
+      // 재테크(투자손실)·신용결제·저축성지출은 생활비 Top 5에서 제외
+      if (entry.category === "재테크" || entry.category === "신용결제") return;
+      if (isSavingsExpenseEntry(entry, accounts, categoryPresets)) return;
+      const cat = entry.subCategory || entry.category || "기타";
+      catMap.set(cat, (catMap.get(cat) ?? 0) + toKrw(entry));
+    });
+    return Array.from(catMap.entries())
+      .sort((a, b) => b[1] - a[1])
+      .slice(0, 5);
+  }, [ledger, currentMonth, fxRate, accounts, categoryPresets]);
+
   return (
     <div className="card">
       <div className="card-title">이번 달 지출 Top 5 ({currentMonth})</div>
@@ -32,4 +66,4 @@ export const TopExpensesCard: React.FC<Props> = ({ currentMonth, topCategoriesTh
       </div>
     </div>
   );
-};
+});

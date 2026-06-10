@@ -1,35 +1,74 @@
+/**
+ * 계좌별 잔액 구성 표 (접이식) — 시작금액 인라인 편집 + 항목별 구성·합계.
+ * AccountsPage에서 분리 — 펼침/편집 상태를 이 컴포넌트가 소유해
+ * 편집 타이핑이 부모(AccountsPage)를 재렌더하지 않는다.
+ * React.memo로 감싸므로 부모가 넘기는 props는 안정적(부모 useMemo/setState)이어야 한다.
+ */
+import React, { useState } from "react";
 import { ChevronDown, ChevronRight } from "lucide-react";
-import type { AccountBalanceRow } from "../../../types";
+import type { Account, AccountBalanceRow } from "../../../types";
+import { parseAmount } from "../../../utils/parseAmount";
 
 type EditField = "initialBalance" | "debt" | "savings" | "cashAdjustment" | "initialCashBalance";
 
 interface Props {
   safeBalances: AccountBalanceRow[];
   orderedRowsForInitialReverse: AccountBalanceRow[];
-  showBalanceBreakdown: boolean;
-  setShowBalanceBreakdown: (fn: (v: boolean) => boolean) => void;
-  editingNumber: { id: string; field: EditField } | null;
-  editValue: string;
-  setEditValue: (v: string) => void;
-  startEditNumber: (id: string, field: EditField, currentValue: number) => void;
-  saveNumber: () => void;
-  cancelEditNumber: () => void;
+  safeAccounts: Account[];
+  onChangeAccounts: (next: Account[]) => void;
   formatKRW: (n: number) => string;
 }
 
-export function BalanceBreakdownSection({
+export const BalanceBreakdownSection: React.FC<Props> = React.memo(function BalanceBreakdownSection({
   safeBalances,
   orderedRowsForInitialReverse,
-  showBalanceBreakdown,
-  setShowBalanceBreakdown,
-  editingNumber,
-  editValue,
-  setEditValue,
-  startEditNumber,
-  saveNumber,
-  cancelEditNumber,
+  safeAccounts,
+  onChangeAccounts,
   formatKRW,
-}: Props) {
+}) {
+  const [showBalanceBreakdown, setShowBalanceBreakdown] = useState(false);
+  const [editingNumber, setEditingNumber] = useState<{ id: string; field: EditField } | null>(null);
+  const [editValue, setEditValue] = useState("");
+
+  const startEditNumber = (accountId: string, field: EditField, currentValue: number) => {
+    setEditingNumber({ id: accountId, field });
+    // 소수점 쓰레기(부동소수점 오차) 가 있으면 정수로 반올림해 편집 입력에 넣는다.
+    // (parseAmount 기본값이 정수만 허용하므로, "123.45" 가 들어가면 소수점이 지워지며 12345로 저장되는 버그 방지)
+    const safe = Number.isFinite(currentValue) ? Math.round(currentValue) : 0;
+    setEditValue(String(safe));
+  };
+
+  const saveNumber = () => {
+    if (!editingNumber) return;
+    const value = parseAmount(editValue);
+    const updated = safeAccounts.map((a) => {
+      if (a.id === editingNumber.id) {
+        if (editingNumber.field === "cashAdjustment") {
+          return { ...a, cashAdjustment: value };
+        }
+        if (editingNumber.field === "initialCashBalance") {
+          return { ...a, initialCashBalance: value };
+        }
+        if (editingNumber.field === "debt") {
+          return { ...a, debt: value };
+        }
+        if (editingNumber.field === "savings") {
+          return { ...a, savings: value };
+        }
+        return { ...a, [editingNumber.field]: value };
+      }
+      return a;
+    });
+    onChangeAccounts(updated);
+    setEditingNumber(null);
+    setEditValue("");
+  };
+
+  const cancelEditNumber = () => {
+    setEditingNumber(null);
+    setEditValue("");
+  };
+
   if (safeBalances.length === 0) return null;
 
   return (
@@ -250,4 +289,4 @@ export function BalanceBreakdownSection({
       )}
     </div>
   );
-}
+});

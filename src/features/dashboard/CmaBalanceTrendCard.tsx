@@ -28,7 +28,8 @@ export interface CmaTrendRow {
  *
  * accountBalanceSnapshots는 DashboardPage에서 이미 계산되어 있으므로 추가 비용 없음.
  */
-export const CmaBalanceTrendCard: React.FC<Props> = ({ accountBalanceSnapshots, accountId, accountName }) => {
+// React.memo — 부모(DashboardPage)가 넘기는 props는 안정적(useMemo 결과·원시값)이어야 한다.
+export const CmaBalanceTrendCard: React.FC<Props> = React.memo(function CmaBalanceTrendCard({ accountBalanceSnapshots, accountId, accountName }) {
   const rows: CmaTrendRow[] = useMemo(
     () =>
       accountBalanceSnapshots.map((s) => ({
@@ -103,4 +104,4 @@ export const CmaBalanceTrendCard: React.FC<Props> = ({ accountBalanceSnapshots, 
       </div>
     </div>
   );
-};
+});

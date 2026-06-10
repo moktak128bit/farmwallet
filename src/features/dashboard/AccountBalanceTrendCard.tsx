@@ -1,4 +1,10 @@
-import React, { Suspense, lazy } from "react";
+/**
+ * 계좌별 잔액 추이 카드 — DashboardPage에서 분리.
+ * 차트 보기 선택(accountBalanceChartView) 상태를 카드가 소유한다.
+ * 무거운 공유 파생값(accountBalanceSnapshots)은 부모에서 계산해 props로 받는다 — 재계산 금지.
+ * React.memo로 감싸므로 부모가 넘기는 props는 안정적(부모 useMemo 결과)이어야 한다.
+ */
+import React, { Suspense, lazy, useState } from "react";
 import type { Account } from "../../types";
 import { formatKRW } from "../../utils/formatter";
 
@@ -8,17 +14,15 @@ const LazyAccountBalanceChart = lazy(() =>
 
 interface Props {
   accountBalanceSnapshots: Array<Record<string, number | string>>;
-  accountBalanceChartView: string;
-  setAccountBalanceChartView: (value: string) => void;
   accounts: Account[];
 }
 
-export const AccountBalanceTrendCard: React.FC<Props> = ({
+export const AccountBalanceTrendCard: React.FC<Props> = React.memo(function AccountBalanceTrendCard({
   accountBalanceSnapshots,
-  accountBalanceChartView,
-  setAccountBalanceChartView,
   accounts,
-}) => {
+}) {
+  const [accountBalanceChartView, setAccountBalanceChartView] = useState<string>("total");
+
   if (accountBalanceSnapshots.length === 0) return null;
 
   const lastSnap = accountBalanceSnapshots[accountBalanceSnapshots.length - 1];
@@ -77,4 +81,4 @@ export const AccountBalanceTrendCard: React.FC<Props> = ({
       </div>
     </div>
   );
-};
+});

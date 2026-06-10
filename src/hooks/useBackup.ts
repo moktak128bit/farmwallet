@@ -137,10 +137,11 @@ export function useBackup(data: AppData, options?: UseBackupOptions) {
    * 최신 dataRef를 직렬화 → dedup → saveStatus("saving") → setItem → 드래프트 클리어 →
    * saveStatus("saved") → broadcast + (옵션) 백업.
    */
-  const runAutoSave = useCallback(() => {
+  const runAutoSave = useCallback((knownPayload?: string) => {
     if (typeof window === "undefined") return;
     const ui = useUIStore.getState();
-    const payload = JSON.stringify(dataRef.current);
+    // 디바운스 경로는 effect에서 직렬화한 payload를 재사용해 중복 stringify를 피한다.
+    const payload = knownPayload ?? JSON.stringify(dataRef.current);
     if (!payload || payload === lastSavedPayloadRef.current) {
       // dedup: 저장할 게 없음 → 상태 깜빡임 없이 종료. dirty 신호만 정리.
       ui.setHasDirtyChanges(false);
@@ -214,19 +215,24 @@ export function useBackup(data: AppData, options?: UseBackupOptions) {
     }
 
     // 디스크 마지막 값과 다르면 dirty 윈도우 진입 — 탭 충돌 감지의 신호.
-    // 또한 크래시 윈도우 축소를 위해 드래프트 슬롯을 즉시 write-through.
     const pendingPayload = JSON.stringify(data);
-    if (pendingPayload && pendingPayload !== lastSavedPayloadRef.current) {
+    const isDirty = Boolean(pendingPayload) && pendingPayload !== lastSavedPayloadRef.current;
+    if (isDirty) {
       useUIStore.getState().setHasDirtyChanges(true);
-      try {
-        window.localStorage.setItem(STORAGE_KEYS.DRAFT, pendingPayload);
-        window.localStorage.setItem(STORAGE_KEYS.DRAFT_AT, Date.now().toString());
-      } catch { /* quota·access 무시 — 드래프트는 best-effort */ }
     }
 
     autoSaveTimerRef.current = window.setTimeout(() => {
       autoSaveTimerRef.current = null;
-      runAutoSave();
+      // 드래프트 슬롯은 저장 직전 1회만 기록 — 매 변경마다 대용량 write-through 하지 않는다.
+      // (크래시 보호 윈도우가 디바운스 길이만큼 늘어나는 대신 localStorage 쓰기 횟수가 줄어듦.
+      //  저장 실패(quota 등) 시에는 드래프트가 남아 다음 boot에서 복구 가능.)
+      if (isDirty) {
+        try {
+          window.localStorage.setItem(STORAGE_KEYS.DRAFT, pendingPayload);
+          window.localStorage.setItem(STORAGE_KEYS.DRAFT_AT, Date.now().toString());
+        } catch { /* quota·access 무시 — 드래프트는 best-effort */ }
+      }
+      runAutoSave(pendingPayload);
     }, AUTO_SAVE_DELAY);
 
     return () => {

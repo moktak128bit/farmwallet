@@ -1,0 +1,1962 @@
+{
+  "_source": "farmwallet-data.json",
+  "_sourceExportedAt": "2026-06-10T00:48:55.523Z",
+  "_extractedAt": "2026-06-10T05:56:46.146Z",
+  "workoutWeeks": [
+    {
+      "id": "w-1781006710971-18ibbz",
+      "weekStart": "2026-06-07",
+      "entries": [
+        {
+          "id": "day-1781006710970-z6kczp",
+          "date": "2026-06-09",
+          "type": "workout",
+          "dayLabel": "화 — 등/이두 (65분)",
+          "exercises": [
+            {
+              "id": "ex-1781006717679-1cshhm",
+              "name": "벤치프레스",
+              "bodyPart": "가슴",
+              "sets": [
+                {
+                  "weightKg": 40,
+                  "reps": 10,
+                  "done": true,
+                  "targetWeightKg": 40,
+                  "targetReps": 9,
+                  "targetRepsRange": "8~10",
+                  "restSec": 105,
+                  "completedAt": "2026-06-09T12:07:06.078Z"
+                },
+                {
+                  "weightKg": 40,
+                  "reps": 10,
+                  "done": true,
+                  "targetWeightKg": 40,
+                  "targetReps": 9,
+                  "targetRepsRange": "8~10",
+                  "restSec": 105,
+                  "completedAt": "2026-06-09T12:10:13.839Z"
+                },
+                {
+                  "weightKg": 40,
+                  "reps": 10,
+                  "done": true,
+                  "targetWeightKg": 40,
+                  "targetReps": 9,
+                  "targetRepsRange": "8~10",
+                  "restSec": 105,
+                  "completedAt": "2026-06-09T12:16:21.030Z"
+                }
+              ],
+              "warmupNote": "빈 바(20kg) × 10 → 30kg × 8",
+              "cueNote": "견갑을 의자에 꽉 모아 고정, 가슴을 하늘로. 바를 가슴 중앙으로 받는 느낌. 올릴 때 팔이 아니라 겨드랑이로 짜듯. 팔꿈치 45도 유지."
+            },
+            {
+              "id": "ex-1781007397129-2vlyis",
+              "name": "덤벨 컬",
+              "bodyPart": "팔",
+              "sets": [
+                {
+                  "weightKg": 9,
+                  "reps": 10,
+                  "done": true,
+                  "completedAt": "2026-06-09T12:17:05.494Z"
+                },
+                {
+                  "weightKg": 9,
+                  "reps": 10,
+                  "done": true,
+                  "completedAt": "2026-06-09T12:19:34.481Z"
+                },
+                {
+                  "weightKg": 9,
+                  "reps": 6,
+                  "done": true,
+                  "completedAt": "2026-06-09T12:21:55.060Z"
+                }
+              ]
+            },
+            {
+              "id": "ex-1781006717680-y8r4dr",
+              "name": "인클라인 덤벨프레스",
+              "bodyPart": "가슴",
+              "sets": [
+                {
+                  "weightKg": 12,
+                  "reps": 11,
+                  "done": false,
+                  "targetWeightKg": 12,
+                  "targetReps": 11,
+                  "targetRepsRange": "10~12",
+                  "restSec": 75
+                },
+                {
+                  "weightKg": 12,
+                  "reps": 11,
+                  "done": false,
+                  "targetWeightKg": 12,
+                  "targetReps": 11,
+                  "targetRepsRange": "10~12",
+                  "restSec": 75
+                },
+                {
+                  "weightKg": 12,
+                  "reps": 11,
+                  "done": false,
+                  "targetWeightKg": 12,
+                  "targetReps": 11,
+                  "targetRepsRange": "10~12",
+                  "restSec": 75
+                }
+              ],
+              "cueNote": "벤치 30도. 윗가슴이 늘어나는 스트레치 2초 느끼고 올리기. 위에서 덤벨 두 개 살짝 부딪히듯 모으기."
+            },
+            {
+              "id": "ex-1781006717680-46020i",
+              "name": "체스트프레스 머신",
+              "bodyPart": "가슴",
+              "sets": [
+                {
+                  "weightKg": 37.5,
+                  "reps": 12,
+                  "done": false,
+                  "targetWeightKg": 37.5,
+                  "targetReps": 12,
+                  "restSec": 60
+                },
+                {
+                  "weightKg": 37.5,
+                  "reps": 12,
+                  "done": false,
+                  "targetWeightKg": 37.5,
+                  "targetReps": 12,
+                  "restSec": 60
+                },
+                {
+                  "weightKg": 37.5,
+                  "reps": 12,
+                  "done": false,
+                  "targetWeightKg": 37.5,
+                  "targetReps": 12,
+                  "restSec": 60
+                }
+              ],
+              "cueNote": "팔로 민다는 생각 버리고 가슴 안쪽을 쥐어짜는 감각. 끝까지 펴지 말고 팔꿈치 살짝 남겨 긴장 유지."
+            },
+            {
+              "id": "ex-1781006717680-r543t2",
+              "name": "펙덱 플라이",
+              "bodyPart": "가슴",
+              "sets": [
+                {
+                  "weightKg": 35,
+                  "reps": 12,
+                  "done": false,
+                  "targetWeightKg": 35,
+                  "targetReps": 12,
+                  "restSec": 60
+                },
+                {
+                  "weightKg": 35,
+                  "reps": 12,
+                  "done": false,
+                  "targetWeightKg": 35,
+                  "targetReps": 12,
+                  "restSec": 60
+                },
+                {
+                  "weightKg": 35,
+                  "reps": 12,
+                  "done": false,
+                  "targetWeightKg": 35,
+                  "targetReps": 12,
+                  "restSec": 60
+                }
+              ],
+              "cueNote": "팔꿈치를 패드에 붙이고 가슴으로 밀어 모으는 느낌. 중앙에서 1초 정지하며 쥐어짜기. 끝까지 벌리지 말 것."
+            },
+            {
+              "id": "ex-1781006717680-q3zj82",
+              "name": "트라이셉 푸쉬다운",
+              "bodyPart": "팔",
+              "sets": [
+                {
+                  "weightKg": 20,
+                  "reps": 12,
+                  "done": false,
+                  "targetWeightKg": 20,
+                  "targetReps": 12,
+                  "restSec": 60
+                },
+                {
+                  "weightKg": 20,
+                  "reps": 12,
+                  "done": false,
+                  "targetWeightKg": 20,
+                  "targetReps": 12,
+                  "restSec": 60
+                },
+                {
+                  "weightKg": 20,
+                  "reps": 12,
+                  "done": false,
+                  "targetWeightKg": 20,
+                  "targetReps": 12,
+                  "restSec": 60
+                }
+              ],
+              "cueNote": "팔꿈치 옆구리에 고정, 윗팔 절대 움직이지 말 것. 내릴 때 팔뚝 뒤쪽이 터질 듯 끝까지 펴기."
+            }
+          ],
+          "cardio": "트레드밀 15분",
+          "startedAt": "2026-06-09T12:05:10.971Z",
+          "endedAt": "2026-06-09T12:35:18.106Z"
+        }
+      ]
+    },
+    {
+      "id": "w-1779796096304-fv0my4",
+      "weekStart": "2026-05-24",
+      "entries": [
+        {
+          "id": "day-1779796096303-9jc4nk",
+          "date": "2026-05-26",
+          "type": "workout",
+          "dayLabel": "화 — 등/이두 (65분)",
+          "exercises": [
+            {
+              "id": "ex-1779796106367-zfp589",
+              "name": "체스트 프레스 머신",
+              "bodyPart": "가슴",
+              "sets": [
+                {
+                  "weightKg": 30,
+                  "reps": 10,
+                  "done": true,
+                  "completedAt": "2026-05-26T11:48:41.498Z"
+                },
+                {
+                  "weightKg": 30,
+                  "reps": 10,
+                  "done": true,
+                  "completedAt": "2026-05-26T11:48:40.186Z"
+                },
+                {
+                  "weightKg": 30,
+                  "reps": 10,
+                  "done": true,
+                  "completedAt": "2026-05-26T11:48:40.550Z"
+                }
+              ]
+            },
+            {
+              "id": "ex-1779796126183-9pnxyp",
+              "name": "벤치프레스",
+              "bodyPart": "가슴",
+              "sets": [
+                {
+                  "weightKg": 40,
+                  "reps": 6,
+                  "done": true,
+                  "completedAt": "2026-05-26T11:48:51.886Z"
+                },
+                {
+                  "weightKg": 40,
+                  "reps": 6,
+                  "done": true,
+                  "completedAt": "2026-05-26T11:48:53.457Z"
+                }
+              ]
+            },
+            {
+              "id": "ex-1779796192974-1hcixk",
+              "name": "계단오르기",
+              "bodyPart": "유산소",
+              "sets": [
+                {
+                  "weightKg": 0,
+                  "reps": 0,
+                  "durationMin": 20,
+                  "done": true,
+                  "intensity": 6,
+                  "completedAt": "2026-05-26T12:09:37.501Z"
+                }
+              ]
+            }
+          ],
+          "cardio": "트레드밀 15분",
+          "startedAt": "2026-05-26T11:48:16.304Z",
+          "endedAt": "2026-05-26T12:09:43.312Z"
+        },
+        {
+          "id": "day-1779970602829-qb3a8s",
+          "date": "2026-05-27",
+          "type": "workout",
+          "dayLabel": "수 — 휴식",
+          "exercises": [
+            {
+              "id": "ex-1779970613176-c011nj",
+              "name": "러닝",
+              "bodyPart": "유산소",
+              "sets": [
+                {
+                  "weightKg": 0,
+                  "reps": 0,
+                  "durationMin": 45,
+                  "distanceKm": 5.5,
+                  "done": true,
+                  "completedAt": "2026-05-28T12:17:05.834Z"
+                }
+              ]
+            }
+          ],
+          "cardio": "",
+          "restNotes": "본 운동 쉬기. 가벼운 산책 30분 정도는 권장 (혈류 회복에 도움). 충분한 수면과 단백질 섭취.",
+          "startedAt": "2026-05-28T12:16:54.625Z",
+          "endedAt": "2026-05-28T12:17:12.170Z"
+        },
+        {
+          "id": "day-1779970640992-y8kpr2",
+          "date": "2026-05-28",
+          "type": "workout",
+          "dayLabel": "목 — 하체/코어 (65분)",
+          "exercises": [
+            {
+              "id": "ex-1779970640992-oiawhz",
+              "name": "스쿼트",
+              "bodyPart": "하체",
+              "sets": [
+                {
+                  "weightKg": 20,
+                  "reps": 10,
+                  "done": true,
+                  "targetWeightKg": 80,
+                  "targetReps": 10,
+                  "completedAt": "2026-05-28T12:17:33.807Z"
+                },
+                {
+                  "weightKg": 20,
+                  "reps": 10,
+                  "targetWeightKg": 80,
+                  "targetReps": 10,
+                  "done": true,
+                  "completedAt": "2026-05-28T12:17:38.418Z"
+                },
+                {
+                  "weightKg": 20,
+                  "reps": 10,
+                  "targetWeightKg": 80,
+                  "targetReps": 10,
+                  "done": true,
+                  "completedAt": "2026-05-28T12:17:40.000Z"
+                }
+              ]
+            },
+            {
+              "id": "ex-1779970640992-aw15r8",
+              "name": "레그프레스",
+              "bodyPart": "하체",
+              "sets": [],
+              "warmupNote": "50kg × 10",
+              "cueNote": "발 전체로 발판을 밀어내는 감각. 무릎이 발끝과 같은 방향. 발판 위쪽에 놓으면 엉덩이/햄스트링 자극, 아래쪽이면 앞허벅지. 허벅지가 가슴에 거의 닿을 때까지 깊게 내리기."
+            },
+            {
+              "id": "ex-1779970640992-nezxml",
+              "name": "레그 익스텐션",
+              "bodyPart": "하체",
+              "sets": [],
+              "cueNote": "끝에서 1초 정지하며 허벅지 앞쪽을 쥐어짜기. 내릴 때 천천히 2초."
+            },
+            {
+              "id": "ex-1779970640992-f9i451",
+              "name": "레그 컬",
+              "bodyPart": "하체",
+              "sets": [],
+              "cueNote": "발끝을 정강이 쪽으로 당긴 상태로 수행하면 햄스트링 자극이 훨씬 강해짐. 끝에서 1초 정지."
+            },
+            {
+              "id": "ex-1779970640992-69begs",
+              "name": "크런치 머신",
+              "bodyPart": "코어",
+              "sets": [],
+              "cueNote": "바닥에 누워 무릎 90도. 무릎을 가슴 쪽으로 당기며 엉덩이를 살짝 들어올려 하복부 쥐어짜기. 다리 힘 아니라 복근 힘으로."
+            },
+            {
+              "id": "ex-1779970675476-pizjhh",
+              "name": "계단오르기",
+              "bodyPart": "유산소",
+              "sets": [
+                {
+                  "weightKg": 0,
+                  "reps": 0,
+                  "durationMin": 20,
+                  "intensity": 6,
+                  "done": true,
+                  "completedAt": "2026-05-28T12:49:50.426Z"
+                }
+              ]
+            }
+          ],
+          "cardio": "트레드밀 15분 (하체 털린 상태라 경사 낮추기)",
+          "startedAt": "2026-05-28T12:17:20.992Z",
+          "endedAt": "2026-05-28T12:49:59.979Z"
+        },
+        {
+          "id": "day-1780125299704-oa50gj",
+          "date": "2026-05-29",
+          "type": "rest",
+          "dayLabel": "휴식",
+          "cardio": "",
+          "restNotes": ""
+        }
+      ]
+    },
+    {
+      "id": "w-1779090121401-09rzo6",
+      "weekStart": "2026-05-17",
+      "entries": [
+        {
+          "id": "day-1779090121401-quyj9b",
+          "date": "2026-05-17",
+          "type": "rest",
+          "dayLabel": "휴식",
+          "cardio": "",
+          "restNotes": ""
+        },
+        {
+          "id": "day-1779102509459-gxs37h",
+          "date": "2026-05-18",
+          "type": "workout",
+          "dayLabel": "월 — 가슴/삼두 (65분)",
+          "exercises": [
+            {
+              "id": "ex-1779102512620-srj274",
+              "name": "벤치프레스",
+              "bodyPart": "가슴",
+              "sets": [
+                {
+                  "weightKg": 40,
+                  "reps": 10,
+                  "done": true,
+                  "targetWeightKg": 40,
+                  "targetReps": 9,
+                  "targetRepsRange": "8~10",
+                  "restSec": 105,
+                  "completedAt": "2026-05-18T11:10:02.876Z"
+                },
+                {
+                  "weightKg": 40,
+                  "reps": 10,
+                  "done": true,
+                  "targetWeightKg": 40,
+                  "targetReps": 9,
+                  "targetRepsRange": "8~10",
+                  "restSec": 60,
+                  "completedAt": "2026-05-18T11:12:43.003Z"
+                },
+                {
+                  "weightKg": 40,
+                  "reps": 10,
+                  "done": true,
+                  "targetWeightKg": 40,
+                  "targetReps": 9,
+                  "targetRepsRange": "8~10",
+                  "restSec": 105,
+                  "completedAt": "2026-05-18T11:15:16.928Z"
+                }
+              ],
+              "warmupNote": "빈 바(20kg) × 10 → 30kg × 8",
+              "cueNote": "견갑을 의자에 꽉 모아 고정, 가슴을 하늘로. 바를 가슴 중앙으로 받는 느낌. 올릴 때 팔이 아니라 겨드랑이로 짜듯. 팔꿈치 45도 유지."
+            },
+            {
+              "id": "ex-1779102512621-333kju",
+              "name": "인클라인 덤벨프레스",
+              "bodyPart": "가슴",
+              "sets": [
+                {
+                  "weightKg": 12,
+                  "reps": 11,
+                  "done": true,
+                  "targetWeightKg": 12,
+                  "targetReps": 11,
+                  "targetRepsRange": "10~12",
+                  "restSec": 75,
+                  "completedAt": "2026-05-18T11:19:59.118Z"
+                },
+                {
+                  "weightKg": 12,
+                  "reps": 10,
+                  "done": true,
+                  "targetWeightKg": 12,
+                  "targetReps": 11,
+                  "targetRepsRange": "10~12",
+                  "restSec": 75,
+                  "completedAt": "2026-05-18T11:23:01.142Z"
+                },
+                {
+                  "weightKg": 12,
+                  "reps": 12,
+                  "done": true,
+                  "targetWeightKg": 12,
+                  "targetReps": 11,
+                  "targetRepsRange": "10~12",
+                  "restSec": 75,
+                  "completedAt": "2026-05-18T11:25:55.575Z"
+                }
+              ],
+              "cueNote": "벤치 30도. 윗가슴이 늘어나는 스트레치 2초 느끼고 올리기. 위에서 덤벨 두 개 살짝 부딪히듯 모으기."
+            },
+            {
+              "id": "ex-1779102512621-nc2o2p",
+              "name": "체스트프레스 머신",
+              "bodyPart": "가슴",
+              "sets": [
+                {
+                  "weightKg": 25,
+                  "reps": 6,
+                  "done": true,
+                  "targetWeightKg": 37.5,
+                  "targetReps": 12,
+                  "restSec": 60,
+                  "completedAt": "2026-05-18T11:27:47.486Z"
+                },
+                {
+                  "weightKg": 25,
+                  "reps": 6,
+                  "targetWeightKg": 37.5,
+                  "targetReps": 12,
+                  "restSec": 60,
+                  "done": true,
+                  "completedAt": "2026-05-18T11:30:06.913Z"
+                }
+              ],
+              "cueNote": "팔로 민다는 생각 버리고 가슴 안쪽을 쥐어짜는 감각. 끝까지 펴지 말고 팔꿈치 살짝 남겨 긴장 유지."
+            },
+            {
+              "id": "ex-1779103829130-3m0sul",
+              "name": "계단오르기",
+              "bodyPart": "유산소",
+              "sets": [
+                {
+                  "weightKg": 0,
+                  "reps": 0,
+                  "durationMin": 5,
+                  "intensity": 8,
+                  "done": true,
+                  "completedAt": "2026-05-18T11:36:20.867Z"
+                },
+                {
+                  "weightKg": 0,
+                  "reps": 0,
+                  "durationMin": 5,
+                  "intensity": 8,
+                  "done": false
+                }
+              ]
+            }
+          ],
+          "cardio": "트레드밀 빠르게 걷기 15분 (경사 3~5%, 속도 5.5~6.5km/h)",
+          "startedAt": "2026-05-18T11:08:29.459Z",
+          "endedAt": "2026-05-18T11:36:29.495Z"
+        }
+      ]
+    },
+    {
+      "id": "w-1778551609869-uxgod2",
+      "weekStart": "2026-05-10",
+      "entries": [
+        {
+          "id": "day-1778551609869-t5v8yr",
+          "date": "2026-05-10",
+          "type": "rest",
+          "dayLabel": "휴식",
+          "cardio": "",
+          "restNotes": ""
+        },
+        {
+          "id": "day-1778551614572-a9e8b3",
+          "date": "2026-05-11",
+          "type": "workout",
+          "dayLabel": "",
+          "exercises": [
+            {
+              "id": "ex-1778551616949-zu8g5t",
+              "name": "러닝",
+              "bodyPart": "유산소",
+              "sets": [
+                {
+                  "weightKg": 0,
+                  "reps": 0,
+                  "durationMin": 35,
+                  "distanceKm": 4,
+                  "done": true,
+                  "completedAt": "2026-05-12T02:07:12.482Z"
+                }
+              ]
+            }
+          ],
+          "cardio": "",
+          "startedAt": "2026-05-12T02:06:54.572Z",
+          "endedAt": "2026-05-12T02:07:12.482Z"
+        },
+        {
+          "id": "day-1778582673884-yg2py7",
+          "date": "2026-05-12",
+          "type": "workout",
+          "dayLabel": "",
+          "exercises": [
+            {
+              "id": "ex-1778582676151-x4at9w",
+              "name": "데드리프트",
+              "bodyPart": "등",
+              "sets": [
+                {
+                  "weightKg": 40,
+                  "reps": 10,
+                  "done": true,
+                  "completedAt": "2026-05-12T10:47:20.586Z"
+                },
+                {
+                  "weightKg": 60,
+                  "reps": 8,
+                  "done": true,
+                  "completedAt": "2026-05-12T10:50:46.682Z"
+                },
+                {
+                  "weightKg": 80,
+                  "reps": 6,
+                  "done": true,
+                  "completedAt": "2026-05-12T10:52:47.224Z"
+                },
+                {
+                  "weightKg": 80,
+                  "reps": 6,
+                  "done": true,
+                  "completedAt": "2026-05-12T10:56:37.399Z"
+                },
+                {
+                  "weightKg": 80,
+                  "reps": 6,
+                  "done": true,
+                  "completedAt": "2026-05-12T10:59:35.466Z"
+                }
+              ]
+            },
+            {
+              "id": "ex-1778583691733-wlsd59",
+              "name": "랫풀다운",
+              "bodyPart": "등",
+              "sets": [
+                {
+                  "weightKg": 40,
+                  "reps": 10,
+                  "done": true,
+                  "completedAt": "2026-05-12T11:03:25.319Z"
+                },
+                {
+                  "weightKg": 40,
+                  "reps": 10,
+                  "done": true,
+                  "completedAt": "2026-05-12T11:06:49.916Z"
+                },
+                {
+                  "weightKg": 40,
+                  "reps": 8,
+                  "done": true,
+                  "completedAt": "2026-05-12T11:09:31.691Z"
+                }
+              ]
+            },
+            {
+              "id": "ex-1778585034182-f3dlf5",
+              "name": "러닝",
+              "bodyPart": "유산소",
+              "sets": [
+                {
+                  "weightKg": 0,
+                  "reps": 0,
+                  "durationMin": 40,
+                  "distanceKm": 3,
+                  "done": true,
+                  "completedAt": "2026-05-12T11:24:04.701Z"
+                }
+              ]
+            }
+          ],
+          "cardio": "",
+          "startedAt": "2026-05-12T10:44:33.883Z",
+          "endedAt": "2026-05-12T11:24:11.956Z"
+        },
+        {
+          "id": "day-1779090116502-q7ohqp",
+          "date": "2026-05-13",
+          "type": "rest",
+          "dayLabel": "휴식",
+          "cardio": "",
+          "restNotes": ""
+        },
+        {
+          "id": "day-1779090117860-3zquwj",
+          "date": "2026-05-14",
+          "type": "rest",
+          "dayLabel": "휴식",
+          "cardio": "",
+          "restNotes": ""
+        },
+        {
+          "id": "day-1779090118978-plb38q",
+          "date": "2026-05-15",
+          "type": "rest",
+          "dayLabel": "휴식",
+          "cardio": "",
+          "restNotes": ""
+        },
+        {
+          "id": "day-1779090120230-c91c14",
+          "date": "2026-05-16",
+          "type": "rest",
+          "dayLabel": "휴식",
+          "cardio": "",
+          "restNotes": ""
+        }
+      ]
+    },
+    {
+      "id": "w-1777798952351-9xhzmq",
+      "weekStart": "2026-05-03",
+      "entries": [
+        {
+          "id": "day-1777798952351-kduwkh",
+          "date": "2026-05-03",
+          "type": "workout",
+          "dayLabel": "",
+          "exercises": [
+            {
+              "id": "ex-1777798962549-odnvay",
+              "name": "풋살 2시간 반",
+              "bodyPart": "유산소",
+              "sets": []
+            }
+          ],
+          "cardio": "",
+          "startedAt": "2026-05-03T09:02:32.351Z"
+        },
+        {
+          "id": "day-1778551595447-4mm7h1",
+          "date": "2026-05-04",
+          "type": "rest",
+          "dayLabel": "휴식",
+          "cardio": "",
+          "restNotes": ""
+        },
+        {
+          "id": "day-1778551596977-v1p8m5",
+          "date": "2026-05-05",
+          "type": "rest",
+          "dayLabel": "휴식",
+          "cardio": "",
+          "restNotes": ""
+        },
+        {
+          "id": "day-1778551600683-ak2am3",
+          "date": "2026-05-06",
+          "type": "rest",
+          "dayLabel": "휴식",
+          "cardio": "",
+          "restNotes": ""
+        },
+        {
+          "id": "day-1778551602527-5cf54u",
+          "date": "2026-05-07",
+          "type": "rest",
+          "dayLabel": "휴식",
+          "cardio": "",
+          "restNotes": ""
+        },
+        {
+          "id": "day-1778551607477-dw4zru",
+          "date": "2026-05-08",
+          "type": "rest",
+          "dayLabel": "휴식",
+          "cardio": "",
+          "restNotes": ""
+        },
+        {
+          "id": "day-1778551608729-wx5jc5",
+          "date": "2026-05-09",
+          "type": "rest",
+          "dayLabel": "휴식",
+          "cardio": "",
+          "restNotes": ""
+        }
+      ]
+    },
+    {
+      "id": "w-1777205691875-9uao1w",
+      "weekStart": "2026-04-26",
+      "entries": [
+        {
+          "id": "day-1777205691875-ma1q5e",
+          "date": "2026-04-26",
+          "type": "rest",
+          "dayLabel": "휴식",
+          "cardio": "",
+          "restNotes": "감기"
+        },
+        {
+          "id": "day-1777462943030-f9ig8i",
+          "date": "2026-04-27",
+          "type": "workout",
+          "dayLabel": "월 — 가슴/삼두 (65분)",
+          "exercises": [
+            {
+              "id": "ex-1777462943031-owlqwx",
+              "name": "벤치프레스",
+              "bodyPart": "가슴",
+              "sets": [
+                {
+                  "weightKg": 40,
+                  "reps": 10,
+                  "done": true,
+                  "targetWeightKg": 40,
+                  "targetReps": 9,
+                  "targetRepsRange": "8~10",
+                  "restSec": 105,
+                  "completedAt": "2026-04-29T11:42:27.550Z"
+                },
+                {
+                  "weightKg": 40,
+                  "reps": 10,
+                  "done": true,
+                  "targetWeightKg": 40,
+                  "targetReps": 9,
+                  "targetRepsRange": "8~10",
+                  "restSec": 105,
+                  "completedAt": "2026-04-29T11:42:28.930Z"
+                },
+                {
+                  "weightKg": 40,
+                  "reps": 10,
+                  "done": true,
+                  "targetWeightKg": 40,
+                  "targetReps": 9,
+                  "targetRepsRange": "8~10",
+                  "restSec": 105,
+                  "completedAt": "2026-04-29T11:42:31.047Z"
+                }
+              ],
+              "warmupNote": "빈 바(20kg) × 10 → 30kg × 8",
+              "cueNote": "견갑을 의자에 꽉 모아 고정, 가슴을 하늘로. 바를 가슴 중앙으로 받는 느낌. 올릴 때 팔이 아니라 겨드랑이로 짜듯. 팔꿈치 45도 유지."
+            },
+            {
+              "id": "ex-1777462943031-j61elh",
+              "name": "인클라인 덤벨프레스",
+              "bodyPart": "가슴",
+              "sets": [
+                {
+                  "weightKg": 12,
+                  "reps": 12,
+                  "done": true,
+                  "targetWeightKg": 12,
+                  "targetReps": 11,
+                  "targetRepsRange": "10~12",
+                  "restSec": 75,
+                  "completedAt": "2026-04-29T11:42:33.393Z"
+                },
+                {
+                  "weightKg": 12,
+                  "reps": 12,
+                  "done": true,
+                  "targetWeightKg": 12,
+                  "targetReps": 11,
+                  "targetRepsRange": "10~12",
+                  "restSec": 75,
+                  "completedAt": "2026-04-29T11:42:34.919Z"
+                },
+                {
+                  "weightKg": 12,
+                  "reps": 12,
+                  "done": true,
+                  "targetWeightKg": 12,
+                  "targetReps": 11,
+                  "targetRepsRange": "10~12",
+                  "restSec": 75,
+                  "completedAt": "2026-04-29T11:42:36.415Z"
+                }
+              ],
+              "cueNote": "벤치 30도. 윗가슴이 늘어나는 스트레치 2초 느끼고 올리기. 위에서 덤벨 두 개 살짝 부딪히듯 모으기."
+            },
+            {
+              "id": "ex-1777462943031-eyjvbr",
+              "name": "체스트프레스 머신",
+              "bodyPart": "가슴",
+              "sets": [
+                {
+                  "weightKg": 25,
+                  "reps": 12,
+                  "done": true,
+                  "targetWeightKg": 37.5,
+                  "targetReps": 12,
+                  "restSec": 60,
+                  "completedAt": "2026-04-29T11:42:38.663Z"
+                },
+                {
+                  "weightKg": 25,
+                  "reps": 12,
+                  "targetWeightKg": 37.5,
+                  "targetReps": 12,
+                  "restSec": 60,
+                  "done": false
+                },
+                {
+                  "weightKg": 25,
+                  "reps": 12,
+                  "targetWeightKg": 37.5,
+                  "targetReps": 12,
+                  "restSec": 60,
+                  "done": false
+                }
+              ],
+              "cueNote": "팔로 민다는 생각 버리고 가슴 안쪽을 쥐어짜는 감각. 끝까지 펴지 말고 팔꿈치 살짝 남겨 긴장 유지."
+            },
+            {
+              "id": "ex-1777462943031-gx3vv8",
+              "name": "펙덱 플라이",
+              "bodyPart": "가슴",
+              "sets": [
+                {
+                  "weightKg": 15,
+                  "reps": 12,
+                  "done": true,
+                  "targetWeightKg": 35,
+                  "targetReps": 12,
+                  "restSec": 60,
+                  "completedAt": "2026-04-29T11:42:50.190Z"
+                },
+                {
+                  "weightKg": 15,
+                  "reps": 12,
+                  "targetWeightKg": 35,
+                  "targetReps": 12,
+                  "restSec": 60,
+                  "done": false
+                },
+                {
+                  "weightKg": 15,
+                  "reps": 12,
+                  "targetWeightKg": 35,
+                  "targetReps": 12,
+                  "restSec": 60,
+                  "done": false
+                }
+              ],
+              "cueNote": "팔꿈치를 패드에 붙이고 가슴으로 밀어 모으는 느낌. 중앙에서 1초 정지하며 쥐어짜기. 끝까지 벌리지 말 것."
+            },
+            {
+              "id": "ex-1777462943031-m5ikn1",
+              "name": "트라이셉 푸쉬다운",
+              "bodyPart": "팔",
+              "sets": [
+                {
+                  "weightKg": 15,
+                  "reps": 10,
+                  "done": true,
+                  "targetWeightKg": 20,
+                  "targetReps": 12,
+                  "restSec": 60,
+                  "completedAt": "2026-04-29T11:43:09.261Z"
+                },
+                {
+                  "weightKg": 15,
+                  "reps": 10,
+                  "targetWeightKg": 20,
+                  "targetReps": 12,
+                  "restSec": 60,
+                  "done": true,
+                  "completedAt": "2026-04-29T11:43:11.112Z"
+                },
+                {
+                  "weightKg": 15,
+                  "reps": 10,
+                  "targetWeightKg": 20,
+                  "targetReps": 12,
+                  "restSec": 60,
+                  "done": true,
+                  "completedAt": "2026-04-29T11:43:12.653Z"
+                }
+              ],
+              "cueNote": "팔꿈치 옆구리에 고정, 윗팔 절대 움직이지 말 것. 내릴 때 팔뚝 뒤쪽이 터질 듯 끝까지 펴기."
+            },
+            {
+              "id": "ex-1777462996062-4p4zue",
+              "name": "트레드밀",
+              "bodyPart": "유산소",
+              "sets": [
+                {
+                  "weightKg": 0,
+                  "reps": 0,
+                  "durationMin": 20,
+                  "distanceKm": 3,
+                  "done": true,
+                  "completedAt": "2026-04-29T11:43:23.992Z"
+                }
+              ]
+            }
+          ],
+          "cardio": "트레드밀 빠르게 걷기 15분 (경사 3~5%, 속도 5.5~6.5km/h)",
+          "startedAt": "2026-04-29T11:42:23.031Z"
+        },
+        {
+          "id": "day-1777463010004-7yerih",
+          "date": "2026-04-28",
+          "type": "rest",
+          "dayLabel": "휴식",
+          "cardio": "",
+          "restNotes": ""
+        },
+        {
+          "id": "day-1777463013074-z8kxnp",
+          "date": "2026-04-29",
+          "type": "workout",
+          "dayLabel": "화 — 등/이두 (65분)",
+          "exercises": [
+            {
+              "id": "ex-1777463035367-271sdt",
+              "name": "데드리프트",
+              "bodyPart": "등",
+              "sets": [
+                {
+                  "weightKg": 90,
+                  "reps": 8,
+                  "done": true,
+                  "completedAt": "2026-04-29T11:48:01.551Z"
+                },
+                {
+                  "weightKg": 90,
+                  "reps": 6,
+                  "done": true,
+                  "completedAt": "2026-04-29T11:50:13.043Z"
+                },
+                {
+                  "weightKg": 90,
+                  "reps": 6,
+                  "done": true,
+                  "completedAt": "2026-04-29T11:54:42.470Z"
+                }
+              ]
+            },
+            {
+              "id": "ex-1777463013074-xnlgsp",
+              "name": "랫풀다운",
+              "bodyPart": "등",
+              "sets": [
+                {
+                  "weightKg": 40,
+                  "reps": 10,
+                  "done": true,
+                  "targetWeightKg": 45,
+                  "targetReps": 9,
+                  "targetRepsRange": "8~10",
+                  "restSec": 90,
+                  "completedAt": "2026-04-29T11:56:22.613Z"
+                },
+                {
+                  "weightKg": 40,
+                  "reps": 10,
+                  "done": true,
+                  "targetWeightKg": 45,
+                  "targetReps": 9,
+                  "targetRepsRange": "8~10",
+                  "restSec": 90,
+                  "completedAt": "2026-04-29T11:59:08.974Z"
+                },
+                {
+                  "weightKg": 40,
+                  "reps": 10,
+                  "done": true,
+                  "targetWeightKg": 45,
+                  "targetReps": 9,
+                  "targetRepsRange": "8~10",
+                  "restSec": 90,
+                  "completedAt": "2026-04-29T12:01:09.488Z"
+                }
+              ],
+              "warmupNote": "30kg × 10",
+              "cueNote": "팔로 당기면 실패. 가슴 살짝 내밀고 팔꿈치를 허리 뒷주머니로 박는 감각. 손은 갈고리일 뿐."
+            },
+            {
+              "id": "ex-1777463970462-513wey",
+              "name": "바벨 컬",
+              "bodyPart": "팔",
+              "sets": [
+                {
+                  "weightKg": 20,
+                  "reps": 20,
+                  "done": true,
+                  "completedAt": "2026-04-29T12:03:25.297Z"
+                },
+                {
+                  "weightKg": 20,
+                  "reps": 20,
+                  "done": true,
+                  "completedAt": "2026-04-29T12:06:28.706Z"
+                },
+                {
+                  "weightKg": 20,
+                  "reps": 20,
+                  "done": true,
+                  "completedAt": "2026-04-29T12:10:06.169Z"
+                }
+              ]
+            },
+            {
+              "id": "ex-1777464608615-0ths2m",
+              "name": "트레드밀",
+              "bodyPart": "유산소",
+              "sets": [
+                {
+                  "weightKg": 0,
+                  "reps": 0,
+                  "durationMin": 2,
+                  "distanceKm": 0.2,
+                  "done": false
+                }
+              ]
+            }
+          ],
+          "cardio": "트레드밀 15분",
+          "startedAt": "2026-04-29T11:43:33.074Z",
+          "endedAt": "2026-04-29T12:12:16.071Z"
+        },
+        {
+          "id": "day-1777798923093-77myjv",
+          "date": "2026-04-30",
+          "type": "rest",
+          "dayLabel": "휴식",
+          "cardio": "",
+          "restNotes": ""
+        },
+        {
+          "id": "day-1777798931072-ybgkx9",
+          "date": "2026-05-01",
+          "type": "workout",
+          "dayLabel": "",
+          "exercises": [
+            {
+              "id": "ex-1777798938165-dipxq8",
+              "name": "등산",
+              "bodyPart": "유산소",
+              "sets": []
+            }
+          ],
+          "cardio": "",
+          "startedAt": "2026-05-03T09:02:11.072Z",
+          "endedAt": "2026-05-03T09:02:24.768Z"
+        },
+        {
+          "id": "day-1777798949147-lgm8q0",
+          "date": "2026-05-02",
+          "type": "rest",
+          "dayLabel": "휴식",
+          "cardio": "",
+          "restNotes": ""
+        }
+      ]
+    },
+    {
+      "id": "w-1776736729352-4f9zyt",
+      "weekStart": "2026-04-19",
+      "entries": [
+        {
+          "id": "day-1776736729352-p93xiz",
+          "date": "2026-04-20",
+          "type": "workout",
+          "dayLabel": "",
+          "exercises": [
+            {
+              "id": "ex-1776736747705-sd1xbz",
+              "name": "벤치프레스",
+              "bodyPart": "가슴",
+              "sets": [
+                {
+                  "weightKg": 40,
+                  "reps": 10,
+                  "done": true,
+                  "completedAt": "2026-04-21T01:59:10.128Z",
+                  "note": "가슴자극 없음, 어꺠 자극",
+                  "noteUpdatedAt": "2026-04-21T02:01:29.682Z"
+                },
+                {
+                  "weightKg": 40,
+                  "reps": 10,
+                  "done": true,
+                  "completedAt": "2026-04-21T01:59:21.520Z",
+                  "note": "가슴자극 없음, 어꺠 자극",
+                  "noteUpdatedAt": "2026-04-21T02:01:31.422Z"
+                },
+                {
+                  "weightKg": 40,
+                  "reps": 10,
+                  "done": true,
+                  "completedAt": "2026-04-21T01:59:24.558Z",
+                  "note": "가슴자극 없음, 어꺠 자극",
+                  "noteUpdatedAt": "2026-04-21T02:01:31.982Z"
+                }
+              ]
+            },
+            {
+              "id": "ex-1776736787358-b7fqw0",
+              "name": "인클라인 덤벨",
+              "bodyPart": "가슴",
+              "sets": [
+                {
+                  "weightKg": 12,
+                  "reps": 12,
+                  "done": true,
+                  "completedAt": "2026-04-21T01:59:48.873Z",
+                  "note": "가슴자극 없음",
+                  "noteUpdatedAt": "2026-04-21T02:01:35.120Z"
+                },
+                {
+                  "weightKg": 12,
+                  "reps": 12,
+                  "done": true,
+                  "completedAt": "2026-04-21T01:59:57.994Z",
+                  "note": "가슴자극 없음",
+                  "noteUpdatedAt": "2026-04-21T02:01:35.500Z"
+                },
+                {
+                  "weightKg": 12,
+                  "reps": 12,
+                  "done": true,
+                  "completedAt": "2026-04-21T01:59:58.729Z",
+                  "note": "가슴자극 없음",
+                  "noteUpdatedAt": "2026-04-21T02:01:35.938Z"
+                }
+              ]
+            },
+            {
+              "id": "ex-1776736826434-oh0phq",
+              "name": "체스트 프레스 머신",
+              "bodyPart": "가슴",
+              "sets": [
+                {
+                  "weightKg": 25,
+                  "reps": 10,
+                  "done": true,
+                  "completedAt": "2026-04-21T02:00:28.084Z"
+                },
+                {
+                  "weightKg": 25,
+                  "reps": 10,
+                  "done": true,
+                  "completedAt": "2026-04-21T02:00:34.677Z"
+                },
+                {
+                  "weightKg": 25,
+                  "reps": 10,
+                  "done": true,
+                  "completedAt": "2026-04-21T02:00:35.426Z"
+                }
+              ]
+            },
+            {
+              "id": "ex-1776736842732-fl2eii",
+              "name": "체스트 플라이",
+              "bodyPart": "가슴",
+              "sets": [
+                {
+                  "weightKg": 15,
+                  "reps": 10,
+                  "done": true,
+                  "completedAt": "2026-04-21T02:00:47.434Z"
+                },
+                {
+                  "weightKg": 151,
+                  "reps": 10,
+                  "done": true,
+                  "completedAt": "2026-04-21T02:00:52.752Z"
+                },
+                {
+                  "weightKg": 15,
+                  "reps": 10,
+                  "done": true,
+                  "completedAt": "2026-04-21T02:00:54.649Z"
+                }
+              ]
+            },
+            {
+              "id": "ex-1776736860440-apckkg",
+              "name": "트라이셉 푸시다운",
+              "bodyPart": "팔",
+              "sets": [
+                {
+                  "weightKg": 15,
+                  "reps": 10,
+                  "done": true,
+                  "completedAt": "2026-04-21T02:01:09.650Z"
+                },
+                {
+                  "weightKg": 10,
+                  "reps": 10,
+                  "done": true,
+                  "completedAt": "2026-04-21T02:01:15.837Z"
+                },
+                {
+                  "weightKg": 10,
+                  "reps": 10,
+                  "done": true,
+                  "completedAt": "2026-04-21T02:01:17.689Z"
+                }
+              ]
+            }
+          ],
+          "cardio": "",
+          "startedAt": "2026-04-21T01:58:49.352Z",
+          "cardioMinutes": 19,
+          "cardioDistanceKm": 3
+        },
+        {
+          "id": "day-1776840850104-0tpbp3",
+          "date": "2026-04-21",
+          "type": "workout",
+          "dayLabel": "",
+          "exercises": [
+            {
+              "id": "ex-1776840856705-uhfnwl",
+              "name": "데드리프트",
+              "bodyPart": "등",
+              "sets": [
+                {
+                  "weightKg": 80,
+                  "reps": 10,
+                  "done": true,
+                  "completedAt": "2026-04-22T06:54:18.100Z",
+                  "note": "20kg 10개, 40kg 10개로 워밍업",
+                  "noteUpdatedAt": "2026-04-22T06:54:36.202Z"
+                },
+                {
+                  "weightKg": 80,
+                  "reps": 10,
+                  "done": true,
+                  "completedAt": "2026-04-22T06:54:37.615Z"
+                },
+                {
+                  "weightKg": 80,
+                  "reps": 10,
+                  "done": true,
+                  "completedAt": "2026-04-22T06:54:38.801Z"
+                }
+              ]
+            },
+            {
+              "id": "ex-1776840894678-3yvc48",
+              "name": "랫풀다운",
+              "bodyPart": "등",
+              "sets": [
+                {
+                  "weightKg": 30,
+                  "reps": 10,
+                  "done": true,
+                  "completedAt": "2026-04-22T06:54:55.915Z"
+                },
+                {
+                  "weightKg": 35,
+                  "reps": 10,
+                  "done": true,
+                  "completedAt": "2026-04-22T06:55:11.966Z"
+                },
+                {
+                  "weightKg": 30,
+                  "reps": 10,
+                  "done": true,
+                  "completedAt": "2026-04-22T06:55:14.944Z"
+                }
+              ]
+            },
+            {
+              "id": "ex-1776840932629-818f6c",
+              "name": "바벨 컬",
+              "bodyPart": "팔",
+              "sets": [
+                {
+                  "weightKg": 15,
+                  "reps": 20,
+                  "done": true,
+                  "completedAt": "2026-04-22T06:55:33.859Z"
+                },
+                {
+                  "weightKg": 15,
+                  "reps": 20,
+                  "done": true,
+                  "completedAt": "2026-04-22T06:55:40.707Z"
+                },
+                {
+                  "weightKg": 15,
+                  "reps": 20,
+                  "done": true,
+                  "completedAt": "2026-04-22T06:55:41.479Z",
+                  "note": "어깨 아픔",
+                  "noteUpdatedAt": "2026-04-22T06:56:09.532Z"
+                }
+              ]
+            },
+            {
+              "id": "ex-1776840948349-3zlew9",
+              "name": "러닝",
+              "bodyPart": "유산소",
+              "sets": [
+                {
+                  "weightKg": 0,
+                  "reps": 0,
+                  "durationMin": 9,
+                  "distanceKm": 1,
+                  "done": true,
+                  "completedAt": "2026-04-22T06:55:49.325Z",
+                  "note": "종아리 아픔",
+                  "noteUpdatedAt": "2026-04-22T06:56:04.097Z"
+                }
+              ]
+            }
+          ],
+          "cardio": "",
+          "startedAt": "2026-04-22T06:54:10.104Z",
+          "endedAt": "2026-04-22T06:56:13.811Z"
+        },
+        {
+          "id": "day-1776844538247-jz0tpn",
+          "date": "2026-04-22",
+          "type": "workout",
+          "dayLabel": "",
+          "exercises": [],
+          "cardio": "",
+          "startedAt": "2026-04-22T07:55:38.247Z"
+        },
+        {
+          "id": "day-1776944405358-1ejwip",
+          "date": "2026-04-23",
+          "type": "workout",
+          "dayLabel": "목 — 하체/코어 (65분)",
+          "exercises": [
+            {
+              "id": "ex-1776944405358-drvw62",
+              "name": "스쿼트",
+              "bodyPart": "하체",
+              "sets": [
+                {
+                  "weightKg": 80,
+                  "reps": 1,
+                  "done": true,
+                  "targetWeightKg": 80,
+                  "targetReps": 10,
+                  "note": "워밍업 50kg 10개, 힘들어서 실패",
+                  "noteUpdatedAt": "2026-04-23T11:40:45.677Z",
+                  "completedAt": "2026-04-23T11:40:56.566Z"
+                },
+                {
+                  "weightKg": 50,
+                  "reps": 8,
+                  "done": true,
+                  "targetWeightKg": 80,
+                  "targetReps": 10,
+                  "completedAt": "2026-04-23T11:40:58.155Z"
+                },
+                {
+                  "weightKg": 50,
+                  "reps": 8,
+                  "done": true,
+                  "targetWeightKg": 80,
+                  "targetReps": 10,
+                  "completedAt": "2026-04-23T11:43:19.367Z",
+                  "note": "허리 아픔",
+                  "noteUpdatedAt": "2026-04-23T11:43:24.941Z"
+                },
+                {
+                  "weightKg": 20,
+                  "reps": 10,
+                  "done": true,
+                  "completedAt": "2026-04-23T11:45:24.098Z"
+                }
+              ]
+            },
+            {
+              "id": "ex-1776944405358-faiswf",
+              "name": "레그프레스",
+              "bodyPart": "하체",
+              "sets": [
+                {
+                  "weightKg": 75,
+                  "reps": 10,
+                  "done": true,
+                  "targetWeightKg": 80,
+                  "targetReps": 9,
+                  "targetRepsRange": "8~10",
+                  "restSec": 120,
+                  "completedAt": "2026-04-23T11:47:32.938Z"
+                },
+                {
+                  "weightKg": 75,
+                  "reps": 10,
+                  "done": true,
+                  "targetWeightKg": 80,
+                  "targetReps": 9,
+                  "targetRepsRange": "8~10",
+                  "restSec": 120,
+                  "completedAt": "2026-04-23T11:49:58.512Z"
+                },
+                {
+                  "weightKg": 75,
+                  "reps": 10,
+                  "done": true,
+                  "targetWeightKg": 80,
+                  "targetReps": 9,
+                  "targetRepsRange": "8~10",
+                  "restSec": 120,
+                  "completedAt": "2026-04-23T11:52:22.281Z"
+                }
+              ],
+              "warmupNote": "50kg × 10",
+              "cueNote": "발 전체로 발판을 밀어내는 감각. 무릎이 발끝과 같은 방향. 발판 위쪽에 놓으면 엉덩이/햄스트링 자극, 아래쪽이면 앞허벅지. 허벅지가 가슴에 거의 닿을 때까지 깊게 내리기."
+            },
+            {
+              "id": "ex-1776944405359-uq6mz7",
+              "name": "레그 익스텐션",
+              "bodyPart": "하체",
+              "sets": [
+                {
+                  "weightKg": 50,
+                  "reps": 10,
+                  "done": true,
+                  "targetWeightKg": 30,
+                  "targetReps": 12,
+                  "restSec": 60,
+                  "completedAt": "2026-04-23T11:54:26.747Z"
+                },
+                {
+                  "weightKg": 50,
+                  "reps": 10,
+                  "done": true,
+                  "targetWeightKg": 30,
+                  "targetReps": 12,
+                  "restSec": 60,
+                  "completedAt": "2026-04-23T11:56:41.759Z"
+                },
+                {
+                  "weightKg": 50,
+                  "reps": 10,
+                  "done": true,
+                  "targetWeightKg": 30,
+                  "targetReps": 12,
+                  "restSec": 60,
+                  "completedAt": "2026-04-23T11:58:56.174Z",
+                  "note": "끝에 쥐여짜기",
+                  "noteUpdatedAt": "2026-04-23T11:59:00.403Z"
+                }
+              ],
+              "cueNote": "끝에서 1초 정지하며 허벅지 앞쪽을 쥐어짜기. 내릴 때 천천히 2초."
+            },
+            {
+              "id": "ex-1776944405359-i0p7ol",
+              "name": "레그 컬",
+              "bodyPart": "하체",
+              "sets": [
+                {
+                  "weightKg": 75,
+                  "reps": 6,
+                  "done": true,
+                  "targetWeightKg": 25,
+                  "targetReps": 12,
+                  "restSec": 60,
+                  "completedAt": "2026-04-23T12:00:54.003Z"
+                },
+                {
+                  "weightKg": 75,
+                  "reps": 6,
+                  "done": true,
+                  "completedAt": "2026-04-23T12:02:23.714Z"
+                },
+                {
+                  "weightKg": 75,
+                  "reps": 6,
+                  "done": true,
+                  "completedAt": "2026-04-23T12:05:16.571Z"
+                }
+              ],
+              "cueNote": "발끝을 정강이 쪽으로 당긴 상태로 수행하면 햄스트링 자극이 훨씬 강해짐. 끝에서 1초 정지."
+            },
+            {
+              "id": "ex-1776944405359-jr9gox",
+              "name": "크런치 머신",
+              "bodyPart": "코어",
+              "sets": [
+                {
+                  "weightKg": 25,
+                  "reps": 10,
+                  "done": true,
+                  "targetWeightKg": 0,
+                  "targetReps": 15,
+                  "restSec": 45,
+                  "completedAt": "2026-04-23T12:07:54.904Z"
+                },
+                {
+                  "weightKg": 25,
+                  "reps": 7,
+                  "done": true,
+                  "note": "8개째 실패",
+                  "noteUpdatedAt": "2026-04-23T12:08:56.592Z",
+                  "completedAt": "2026-04-23T12:11:41.051Z"
+                },
+                {
+                  "weightKg": 5,
+                  "reps": 6,
+                  "done": true,
+                  "completedAt": "2026-04-23T12:11:48.706Z"
+                }
+              ],
+              "cueNote": "바닥에 누워 무릎 90도. 무릎을 가슴 쪽으로 당기며 엉덩이를 살짝 들어올려 하복부 쥐어짜기. 다리 힘 아니라 복근 힘으로."
+            },
+            {
+              "id": "ex-1776946313051-3tb670",
+              "name": "트레드밀",
+              "bodyPart": "유산소",
+              "sets": [
+                {
+                  "weightKg": 0,
+                  "reps": 0,
+                  "durationMin": 5,
+                  "distanceKm": 0.5,
+                  "done": true,
+                  "completedAt": "2026-04-23T12:16:32.754Z"
+                }
+              ]
+            }
+          ],
+          "cardio": "트레드밀 15분 (하체 털린 상태라 경사 낮추기)",
+          "startedAt": "2026-04-23T11:40:05.359Z",
+          "endedAt": "2026-04-23T12:16:38.441Z"
+        },
+        {
+          "id": "day-1777205722317-oke9jh",
+          "date": "2026-04-24",
+          "type": "rest",
+          "dayLabel": "휴식",
+          "cardio": "",
+          "restNotes": "회식"
+        },
+        {
+          "id": "day-1777205729540-l8kgxi",
+          "date": "2026-04-25",
+          "type": "rest",
+          "dayLabel": "휴식",
+          "cardio": "",
+          "restNotes": ""
+        }
+      ]
+    }
+  ],
+  "workoutRoutines": [
+    {
+      "id": "seed-mon-chest-tri",
+      "name": "월 — 가슴/삼두 (65분)",
+      "weekday": 1,
+      "cardioNote": "트레드밀 빠르게 걷기 15분 (경사 3~5%, 속도 5.5~6.5km/h)",
+      "exercises": [
+        {
+          "id": "seed-mon-1",
+          "name": "벤치프레스",
+          "bodyPart": "가슴",
+          "targetSets": 3,
+          "targetReps": 9,
+          "targetRepsRange": "8~10",
+          "targetWeightKg": 40,
+          "restSec": 105,
+          "warmupNote": "빈 바(20kg) × 10 → 30kg × 8",
+          "cueNote": "견갑을 의자에 꽉 모아 고정, 가슴을 하늘로. 바를 가슴 중앙으로 받는 느낌. 올릴 때 팔이 아니라 겨드랑이로 짜듯. 팔꿈치 45도 유지."
+        },
+        {
+          "id": "seed-mon-2",
+          "name": "인클라인 덤벨프레스",
+          "bodyPart": "가슴",
+          "targetSets": 3,
+          "targetReps": 11,
+          "targetRepsRange": "10~12",
+          "targetWeightKg": 12,
+          "restSec": 75,
+          "cueNote": "벤치 30도. 윗가슴이 늘어나는 스트레치 2초 느끼고 올리기. 위에서 덤벨 두 개 살짝 부딪히듯 모으기."
+        },
+        {
+          "id": "seed-mon-3",
+          "name": "체스트프레스 머신",
+          "bodyPart": "가슴",
+          "targetSets": 3,
+          "targetReps": 12,
+          "targetWeightKg": 37.5,
+          "restSec": 60,
+          "cueNote": "팔로 민다는 생각 버리고 가슴 안쪽을 쥐어짜는 감각. 끝까지 펴지 말고 팔꿈치 살짝 남겨 긴장 유지."
+        },
+        {
+          "id": "seed-mon-4",
+          "name": "펙덱 플라이",
+          "bodyPart": "가슴",
+          "targetSets": 3,
+          "targetReps": 12,
+          "targetWeightKg": 35,
+          "restSec": 60,
+          "cueNote": "팔꿈치를 패드에 붙이고 가슴으로 밀어 모으는 느낌. 중앙에서 1초 정지하며 쥐어짜기. 끝까지 벌리지 말 것."
+        },
+        {
+          "id": "seed-mon-5",
+          "name": "트라이셉 푸쉬다운",
+          "bodyPart": "팔",
+          "targetSets": 3,
+          "targetReps": 12,
+          "targetWeightKg": 20,
+          "restSec": 60,
+          "cueNote": "팔꿈치 옆구리에 고정, 윗팔 절대 움직이지 말 것. 내릴 때 팔뚝 뒤쪽이 터질 듯 끝까지 펴기."
+        }
+      ]
+    },
+    {
+      "id": "seed-tue-back-bi",
+      "name": "화 — 등/이두 (65분)",
+      "weekday": 2,
+      "cardioNote": "트레드밀 15분",
+      "exercises": [
+        {
+          "id": "seed-tue-1",
+          "name": "랫풀다운",
+          "bodyPart": "등",
+          "targetSets": 3,
+          "targetReps": 9,
+          "targetRepsRange": "8~10",
+          "targetWeightKg": 45,
+          "restSec": 90,
+          "warmupNote": "30kg × 10",
+          "cueNote": "팔로 당기면 실패. 가슴 살짝 내밀고 팔꿈치를 허리 뒷주머니로 박는 감각. 손은 갈고리일 뿐."
+        },
+        {
+          "id": "seed-tue-2",
+          "name": "바벨 로우",
+          "bodyPart": "등",
+          "targetSets": 3,
+          "targetReps": 10,
+          "targetWeightKg": 35,
+          "restSec": 90,
+          "cueNote": "상체 45도 유지(허리 곧게), 바를 배꼽 쪽으로 당기며 견갑을 서로 붙이기. 당긴 후 1초 정지. 허리 시큰하면 무게 바로 감량."
+        },
+        {
+          "id": "seed-tue-3",
+          "name": "원암 덤벨 로우 (좌/우 각각)",
+          "bodyPart": "등",
+          "targetSets": 3,
+          "targetReps": 10,
+          "targetWeightKg": 16,
+          "restSec": 60,
+          "cueNote": "어깨를 귀 쪽으로 으쓱하지 말고 뒤쪽으로 돌리는 감각. 팔꿈치를 엉덩이 방향으로 끌어당기기."
+        },
+        {
+          "id": "seed-tue-4",
+          "name": "리어 델트 플라이 머신",
+          "bodyPart": "어깨",
+          "targetSets": 3,
+          "targetReps": 12,
+          "targetWeightKg": 20,
+          "restSec": 60,
+          "cueNote": "팔꿈치 살짝 굽힌 채 어깨 뒤쪽으로만 벌리기. 승모근에 힘 들어가면 무게 줄이기."
+        },
+        {
+          "id": "seed-tue-5",
+          "name": "덤벨 컬 (좌우 동시)",
+          "bodyPart": "팔",
+          "targetSets": 3,
+          "targetReps": 12,
+          "targetWeightKg": 9,
+          "restSec": 60,
+          "cueNote": "팔꿈치 절대 앞으로 나오지 않게 고정. 내릴 때 3초 천천히 버티며 이두 늘어나는 느낌. 어깨 반동 금지."
+        }
+      ]
+    },
+    {
+      "id": "seed-wed-rest",
+      "name": "수 — 휴식",
+      "weekday": 3,
+      "restDay": true,
+      "exercises": [],
+      "note": "본 운동 쉬기. 가벼운 산책 30분 정도는 권장 (혈류 회복에 도움). 충분한 수면과 단백질 섭취."
+    },
+    {
+      "id": "seed-thu-legs-core",
+      "name": "목 — 하체/코어 (65분)",
+      "weekday": 4,
+      "cardioNote": "트레드밀 15분 (하체 털린 상태라 경사 낮추기)",
+      "exercises": [
+        {
+          "id": "rex-1776899653074-qk0eut",
+          "name": "스쿼트",
+          "bodyPart": "하체",
+          "targetSets": 3,
+          "targetReps": 10,
+          "targetWeightKg": 80
+        },
+        {
+          "id": "seed-thu-1",
+          "name": "레그프레스",
+          "bodyPart": "하체",
+          "targetSets": 3,
+          "targetReps": 9,
+          "targetRepsRange": "8~10",
+          "targetWeightKg": 80,
+          "restSec": 120,
+          "warmupNote": "50kg × 10",
+          "cueNote": "발 전체로 발판을 밀어내는 감각. 무릎이 발끝과 같은 방향. 발판 위쪽에 놓으면 엉덩이/햄스트링 자극, 아래쪽이면 앞허벅지. 허벅지가 가슴에 거의 닿을 때까지 깊게 내리기."
+        },
+        {
+          "id": "seed-thu-2",
+          "name": "레그 익스텐션",
+          "bodyPart": "하체",
+          "targetSets": 3,
+          "targetReps": 12,
+          "targetWeightKg": 30,
+          "restSec": 60,
+          "cueNote": "끝에서 1초 정지하며 허벅지 앞쪽을 쥐어짜기. 내릴 때 천천히 2초."
+        },
+        {
+          "id": "seed-thu-3",
+          "name": "레그 컬",
+          "bodyPart": "하체",
+          "targetSets": 3,
+          "targetReps": 12,
+          "targetWeightKg": 25,
+          "restSec": 60,
+          "cueNote": "발끝을 정강이 쪽으로 당긴 상태로 수행하면 햄스트링 자극이 훨씬 강해짐. 끝에서 1초 정지."
+        },
+        {
+          "id": "seed-thu-5",
+          "name": "크런치 머신",
+          "bodyPart": "코어",
+          "targetSets": 3,
+          "targetReps": 15,
+          "targetWeightKg": 0,
+          "restSec": 45,
+          "cueNote": "바닥에 누워 무릎 90도. 무릎을 가슴 쪽으로 당기며 엉덩이를 살짝 들어올려 하복부 쥐어짜기. 다리 힘 아니라 복근 힘으로."
+        }
+      ]
+    },
+    {
+      "id": "seed-fri-shoulder-traps",
+      "name": "금 — 어깨/승모 (55분)",
+      "weekday": 5,
+      "cardioNote": "트레드밀 or 사이클 20분",
+      "exercises": [
+        {
+          "id": "seed-fri-1",
+          "name": "숄더프레스 머신",
+          "bodyPart": "어깨",
+          "targetSets": 3,
+          "targetReps": 9,
+          "targetRepsRange": "8~10",
+          "targetWeightKg": 25,
+          "restSec": 90,
+          "warmupNote": "15kg × 10",
+          "cueNote": "허리 젖히지 말고 코어 단단히 잡기. 위에서 팔꿈치 완전히 펴지 말고 어깨 긴장 유지. 내릴 때 귀 높이까지."
+        },
+        {
+          "id": "seed-fri-2",
+          "name": "사이드 레터럴 레이즈",
+          "bodyPart": "어깨",
+          "targetSets": 4,
+          "targetReps": 13,
+          "targetRepsRange": "12~15",
+          "targetWeightKg": 6,
+          "restSec": 60,
+          "cueNote": "무거우면 무조건 실패. 새끼손가락이 엄지보다 살짝 위로 올라오게. 덤벨을 든다기보다 팔꿈치를 들어올린다는 감각. 어깨가 으쓱하면 무게 과함 → 즉시 감량."
+        },
+        {
+          "id": "seed-fri-3",
+          "name": "리어 델트 플라이 머신",
+          "bodyPart": "어깨",
+          "targetSets": 3,
+          "targetReps": 12,
+          "targetWeightKg": 17.5,
+          "restSec": 60,
+          "cueNote": "화요일과 같은 요령. 어깨 뒤쪽만. 승모근 힘 빠지게."
+        },
+        {
+          "id": "seed-fri-4",
+          "name": "덤벨 슈러그",
+          "bodyPart": "어깨",
+          "targetSets": 3,
+          "targetReps": 12,
+          "targetWeightKg": 18,
+          "restSec": 60,
+          "cueNote": "귀에 어깨를 붙인다는 느낌. 수직으로만 올렸다 내리기. 돌리지 말 것. 위에서 1초 정지."
+        }
+      ]
+    },
+    {
+      "id": "seed-sat-cardio-core",
+      "name": "토 — 유산소 + 코어 (45분)",
+      "weekday": 6,
+      "cardioNote": "트레드밀 빠르게 걷기(경사 5~8%) 또는 사이클 30분. 심박 130~140 유지 (대화는 가능하지만 노래는 못 부를 정도). 복귀 4주차부터 HIIT 전환 가능 (30초 전력 / 90초 회복 × 8라운드).",
+      "exercises": [
+        {
+          "id": "seed-sat-1",
+          "name": "플랭크 (45~60초 유지)",
+          "bodyPart": "코어",
+          "targetSets": 3,
+          "targetReps": 60,
+          "targetRepsRange": "45~60",
+          "targetWeightKg": 0,
+          "restSec": 45,
+          "cueNote": "일직선 유지. 복부 단단히. (reps=초)"
+        },
+        {
+          "id": "seed-sat-2",
+          "name": "크런치",
+          "bodyPart": "코어",
+          "targetSets": 3,
+          "targetReps": 15,
+          "targetWeightKg": 0,
+          "restSec": 45,
+          "cueNote": "턱 당기지 말고 배꼽 보는 느낌으로 상체 말기. 손으로 머리 당기지 말 것."
+        },
+        {
+          "id": "seed-sat-3",
+          "name": "러시안 트위스트 (좌우 합)",
+          "bodyPart": "코어",
+          "targetSets": 3,
+          "targetReps": 20,
+          "targetWeightKg": 0,
+          "restSec": 45,
+          "cueNote": "상체를 45도 뒤로 기울인 채 유지. 팔이 아니라 허리 돌리는 감각."
+        }
+      ]
+    },
+    {
+      "id": "seed-sun-rest",
+      "name": "일 — 완전 휴식",
+      "weekday": 0,
+      "restDay": true,
+      "exercises": [],
+      "note": "운동 금지. 근육 회복은 쉬는 날에 일어납니다."
+    }
+  ],
+  "customExercises": [
+    {
+      "name": "체스트 프레스 머신",
+      "bodyPart": "가슴",
+      "addedAt": "2026-04-21T02:00:26.434Z"
+    },
+    {
+      "name": "등산",
+      "bodyPart": "유산소",
+      "addedAt": "2026-05-03T09:02:18.165Z"
+    },
+    {
+      "name": "풋살 2시간 반",
+      "bodyPart": "유산소",
+      "addedAt": "2026-05-03T09:02:42.549Z"
+    }
+  ]
+}

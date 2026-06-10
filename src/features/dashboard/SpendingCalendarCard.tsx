@@ -1,8 +1,16 @@
-import React from "react";
+/**
+ * 소비 캘린더 카드 — DashboardPage에서 분리.
+ * 월 이동/분류 필터/선택 날짜 상태와 캘린더 집계(±1년 창 내 ledger → 일별 합계)를
+ * 카드가 전부 소유한다. React.memo로 감싸므로 부모가 넘기는 props는
+ * 안정적(부모 useMemo 결과 또는 원시값)이어야 한다.
+ */
+import React, { useMemo, useState } from "react";
+import type { Account, CategoryPresets, LedgerEntry } from "../../types";
 import { formatKRW } from "../../utils/formatter";
-import { shiftMonth } from "../../utils/date";
+import { addDaysToIso, formatIsoLocal, shiftMonth } from "../../utils/date";
+import { isSavingsExpenseEntry } from "../../utils/category";
 
-export type SpendingCalendarRow = {
+type SpendingCalendarRow = {
   id: string;
   date: string;
   title: string;
@@ -18,7 +26,9 @@ export type SpendingCalendarRow = {
   source: "ledger";
 };
 
-export type CalendarCell = {
+type SpendingByDate = { spending: number; investing: number; income: number; count: number };
+
+type CalendarCell = {
   date: string;
   day: number;
   inMonth: boolean;
@@ -29,35 +39,174 @@ export type CalendarCell = {
   count: number;
 };
 
-export type SpendingFilterType = "" | "spending" | "investing" | "income";
+type SpendingFilterType = "" | "spending" | "investing" | "income";
 
 const DAY_LABELS = ["일", "월", "화", "수", "목", "금", "토"];
 
+function buildCalendarCells(
+  month: string,
+  byDate: Map<string, SpendingByDate>,
+  today: string
+): CalendarCell[] {
+  const [year, monthNum] = month.split("-").map(Number);
+  if (!year || !monthNum) return [];
+
+  const firstDay = new Date(year, monthNum - 1, 1);
+  const startOffset = firstDay.getDay();
+  const start = new Date(year, monthNum - 1, 1 - startOffset);
+
+  const cells: CalendarCell[] = [];
+  for (let i = 0; i < 42; i += 1) {
+    const current = new Date(start);
+    current.setDate(start.getDate() + i);
+    const date = formatIsoLocal(current);
+    const summary = byDate.get(date);
+    cells.push({
+      date,
+      day: current.getDate(),
+      inMonth: date.slice(0, 7) === month,
+      isToday: date === today,
+      spending: summary?.spending ?? 0,
+      investing: summary?.investing ?? 0,
+      income: summary?.income ?? 0,
+      count: summary?.count ?? 0
+    });
+  }
+  return cells;
+}
+
 interface Props {
-  cashflowMonth: string;
-  setCashflowMonth: React.Dispatch<React.SetStateAction<string>>;
-  spendingFilterType: SpendingFilterType;
-  setSpendingFilterType: React.Dispatch<React.SetStateAction<SpendingFilterType>>;
-  calendarCells: CalendarCell[];
-  selectedMonthTotals: { spending: number; investing: number; income: number };
-  selectedMonthSpendingRows: SpendingCalendarRow[];
-  selectedCalendarDate: string | null;
-  setSelectedCalendarDate: React.Dispatch<React.SetStateAction<string | null>>;
+  ledger: LedgerEntry[];
+  accounts: Account[];
+  categoryPresets: CategoryPresets;
+  fxRate: number | null;
+  currentMonth: string;
   today: string;
 }
 
-export const SpendingCalendarCard: React.FC<Props> = ({
-  cashflowMonth,
-  setCashflowMonth,
-  spendingFilterType,
-  setSpendingFilterType,
-  calendarCells,
-  selectedMonthTotals,
-  selectedMonthSpendingRows,
-  selectedCalendarDate,
-  setSelectedCalendarDate,
+export const SpendingCalendarCard: React.FC<Props> = React.memo(function SpendingCalendarCard({
+  ledger,
+  accounts,
+  categoryPresets,
+  fxRate,
+  currentMonth,
   today,
-}) => {
+}) {
+  const [cashflowMonth, setCashflowMonth] = useState<string>(currentMonth);
+  const [spendingFilterType, setSpendingFilterType] = useState<SpendingFilterType>("");
+  // 캘린더에서 선택한 날짜 — null이면 상세 표 숨김, 값이 있으면 해당 날짜 항목만 표시.
+  // cashflowMonth가 바뀌면 자동 초기화 (월이 변경되면 이전 달 선택은 무의미).
+  const [selectedCalendarDate, setSelectedCalendarDate] = useState<string | null>(null);
+  React.useEffect(() => { setSelectedCalendarDate(null); }, [cashflowMonth]);
+
+  const accountNameById = useMemo(() => {
+    return new Map(accounts.map((account) => [account.id, account.name || account.id]));
+  }, [accounts]);
+
+  const calendarWindowStart = useMemo(() => addDaysToIso(today, -365), [today]);
+  const calendarWindowEnd = useMemo(() => addDaysToIso(today, 89), [today]);
+
+  const spendingCalendarRows = useMemo(() => {
+    const rows: SpendingCalendarRow[] = [];
+    const toKrw = (entry: LedgerEntry) =>
+      entry.currency === "USD" && fxRate ? entry.amount * fxRate : entry.amount;
+
+    ledger.forEach((entry) => {
+      if (!entry.date || entry.date < calendarWindowStart || entry.date > calendarWindowEnd) return;
+      if (entry.kind === "transfer") return;
+
+      const amount = toKrw(entry);
+      if (amount <= 0) return;
+
+      const title = entry.subCategory || entry.description || entry.category || "미분류";
+      const category = entry.category || "";
+      const subCategory = entry.subCategory || undefined;
+      const description = entry.description || undefined;
+
+      if (entry.kind === "income") {
+        rows.push({
+          id: entry.id,
+          date: entry.date,
+          title,
+          category,
+          subCategory,
+          description,
+          amount,
+          type: "income",
+          toAccountId: entry.toAccountId,
+          toAccountName: entry.toAccountId ? accountNameById.get(entry.toAccountId) : undefined,
+          source: "ledger"
+        });
+        return;
+      }
+
+      if (entry.kind === "expense") {
+        if (!entry.fromAccountId) return;
+        const isSavings = isSavingsExpenseEntry(entry, accounts, categoryPresets);
+        rows.push({
+          id: entry.id,
+          date: entry.date,
+          title,
+          category,
+          subCategory,
+          description,
+          amount,
+          type: isSavings ? "investing" : "spending",
+          fromAccountId: entry.fromAccountId,
+          fromAccountName: accountNameById.get(entry.fromAccountId),
+          source: "ledger"
+        });
+      }
+    });
+
+    return rows.sort((a, b) => {
+      const byDate = a.date.localeCompare(b.date);
+      if (byDate !== 0) return byDate;
+      return b.amount - a.amount;
+    });
+  }, [ledger, calendarWindowStart, calendarWindowEnd, fxRate, accountNameById, accounts, categoryPresets]);
+
+  const filteredSpendingRows = useMemo(() => {
+    if (!spendingFilterType) return spendingCalendarRows;
+    return spendingCalendarRows.filter((row) => row.type === spendingFilterType);
+  }, [spendingCalendarRows, spendingFilterType]);
+
+  const spendingByDate = useMemo(() => {
+    const map = new Map<string, SpendingByDate>();
+    spendingCalendarRows.forEach((row) => {
+      const prev = map.get(row.date) ?? { spending: 0, investing: 0, income: 0, count: 0 };
+      if (row.type === "spending") {
+        map.set(row.date, { ...prev, spending: prev.spending + row.amount, count: prev.count + 1 });
+      } else if (row.type === "investing") {
+        map.set(row.date, { ...prev, investing: prev.investing + row.amount, count: prev.count + 1 });
+      } else {
+        map.set(row.date, { ...prev, income: prev.income + row.amount, count: prev.count + 1 });
+      }
+    });
+    return map;
+  }, [spendingCalendarRows]);
+
+  const calendarCells = useMemo(
+    () => buildCalendarCells(cashflowMonth, spendingByDate, today),
+    [cashflowMonth, spendingByDate, today]
+  );
+
+  const selectedMonthSpendingRows = useMemo(
+    () => filteredSpendingRows.filter((row) => row.date.slice(0, 7) === cashflowMonth),
+    [filteredSpendingRows, cashflowMonth]
+  );
+
+  const selectedMonthTotals = useMemo(
+    () => {
+      const t = { spending: 0, investing: 0, income: 0 };
+      selectedMonthSpendingRows.forEach((row) => {
+        t[row.type] += row.amount;
+      });
+      return t;
+    },
+    [selectedMonthSpendingRows]
+  );
+
   const dayRows = selectedCalendarDate
     ? selectedMonthSpendingRows.filter((r) => r.date === selectedCalendarDate)
     : [];
@@ -296,4 +445,4 @@ export const SpendingCalendarCard: React.FC<Props> = ({
       )}
     </div>
   );
-};
+});

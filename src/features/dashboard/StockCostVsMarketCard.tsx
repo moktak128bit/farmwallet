@@ -49,13 +49,14 @@ function buildPriceIndex(prices: StockPrice[]): Map<string, { price: number; cur
   return out;
 }
 
-export const StockCostVsMarketCard: React.FC<Props> = ({
+// React.memo — 부모(DashboardPage)가 넘기는 props는 안정적(store 참조·원시값)이어야 한다.
+export const StockCostVsMarketCard: React.FC<Props> = React.memo(function StockCostVsMarketCard({
   today,
   accounts,
   trades,
   prices,
   fxRate,
-}) => {
+}) {
   const securitiesAccountIds = useMemo(() => {
     const set = new Set<string>();
     for (const a of accounts) {
@@ -285,7 +286,7 @@ export const StockCostVsMarketCard: React.FC<Props> = ({
       )}
     </div>
   );
-};
+});
 
 interface SnapshotDetailProps {
   row: CostVsMarketRow;

@@ -1,31 +1,59 @@
-import React from "react";
+/**
+ * 저축 대비 비교 (저번달) 카드 — DashboardPage에서 분리.
+ * 저번달 요약·재테크 세부 집계를 카드가 소유한다 (공용 순수 함수 summaryMath 사용).
+ * React.memo로 감싸므로 부모가 넘기는 props는 안정적(store 참조·원시값)이어야 한다.
+ */
+import React, { useMemo } from "react";
+import type { LedgerEntry } from "../../types";
 import { formatKRW } from "../../utils/formatter";
-
-export interface InvestingRatio {
-  stockPct: number;
-  savingsPct: number;
-}
-
-export interface RecheckBreakdown {
-  저축: number;
-  투자: number;
-  투자수익: number;
-  투자손실: number;
-}
+import { shiftMonth } from "../../utils/date";
+import { computeLedgerSummary, computeRecheckBreakdown } from "./summaryMath";
 
 interface Props {
-  lastMonthLabel: string;
-  lastMonthSavingsRate: number | null;
-  lastMonthInvestingRatio: InvestingRatio;
-  lastMonthRecheckBreakdown: RecheckBreakdown;
+  ledger: LedgerEntry[];
+  fxRate: number | null;
+  currentMonth: string;
 }
 
-export const SavingsRatioCard: React.FC<Props> = ({
-  lastMonthLabel,
-  lastMonthSavingsRate,
-  lastMonthInvestingRatio,
-  lastMonthRecheckBreakdown,
-}) => {
+export const SavingsRatioCard: React.FC<Props> = React.memo(function SavingsRatioCard({
+  ledger,
+  fxRate,
+  currentMonth,
+}) {
+  const lastMonth = useMemo(() => shiftMonth(currentMonth, -1), [currentMonth]);
+
+  /** 저번달 요약 (저축 대비 비교 위젯용) */
+  const lastMonthSummary = useMemo(() => ({
+    month: lastMonth,
+    ...computeLedgerSummary(ledger, fxRate, lastMonth),
+  }), [ledger, fxRate, lastMonth]);
+
+  /** 저번달 재테크 세부 (저축 대비 비교 위젯용) */
+  const lastMonthRecheckBreakdown = useMemo(
+    () => computeRecheckBreakdown(ledger, fxRate, lastMonth),
+    [ledger, fxRate, lastMonth]
+  );
+
+  const lastMonthSavingsRate = useMemo(() => {
+    const { income, investing } = lastMonthSummary;
+    if (income <= 0) return null;
+    // 저축률 = (transfer 저축이체+투자이체) / 수입. 투자손실(실소비)은 제외.
+    return (investing / income) * 100;
+  }, [lastMonthSummary]);
+
+  const lastMonthInvestingRatio = useMemo(() => {
+    const 저축 = lastMonthRecheckBreakdown.저축;
+    const 투자 = lastMonthRecheckBreakdown.투자;
+    const total = 저축 + 투자;
+    if (total <= 0) return { stockPct: 0, savingsPct: 0 };
+    return {
+      stockPct: (투자 / total) * 100,
+      savingsPct: (저축 / total) * 100
+    };
+  }, [lastMonthRecheckBreakdown]);
+
+  const lastMonthLabel = lastMonthSummary.month;
+
   return (
     <div className="card" style={{ minHeight: 200 }}>
       <div className="card-title">저축 대비 비교 (저번달)</div>
@@ -68,4 +96,4 @@ export const SavingsRatioCard: React.FC<Props> = ({
       </div>
     </div>
   );
-};
+});

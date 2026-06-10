@@ -1,3 +1,10 @@
+/**
+ * 계좌 유형별 요약 카드 (현금/저축/부채/주식/순자산).
+ * AccountsPage에서 분리 — React.memo로 감싸 무관한 부모 상태 변경 시 재렌더를 건너뛴다.
+ * summary는 부모 useMemo(typeSummary) 결과를 그대로 받아야 memo가 효과를 가진다.
+ */
+import React from "react";
+
 interface TypeSummary {
   checking: number;
   savings: number;
@@ -13,7 +20,7 @@ interface Props {
   formatKRW: (n: number) => string;
 }
 
-export function TypeSummarySection({ summary, formatKRW }: Props) {
+export const TypeSummarySection = React.memo(function TypeSummarySection({ summary, formatKRW }: Props) {
   return (
     <div style={{
       marginBottom: "24px",
@@ -74,4 +81,4 @@ export function TypeSummarySection({ summary, formatKRW }: Props) {
       </div>
     </div>
   );
-}
+});

@@ -35,20 +35,8 @@ export const SubTab = React.memo(function SubTab({ d }: { d: D }) {
   const top3Monthly = topSubs.reduce((s, x) => s + x.avg, 0);
   const top3Share = totalMonthly > 0 ? (top3Monthly / totalMonthly) * 100 : 0;
 
-  // 신규/해지 구독 감지 (최근 월과 그 이전 월 비교)
+  // 신규/해지 구독 감지는 미구현 — subs에 월별 결제 정보가 없어 월간 비교 불가.
   const currentMonth = d.anomalyTargetMonth;
-  const { newSubs, endedSubs } = (() => {
-    if (!currentMonth) return { newSubs: [] as string[], endedSubs: [] as string[] };
-    const prevIdx = d.months.indexOf(currentMonth) - 1;
-    const prevMonth = prevIdx >= 0 ? d.months[prevIdx] : null;
-    if (!prevMonth) return { newSubs: [], endedSubs: [] };
-    // subs는 전체 기간 기준이라 월별 존재 여부 확인 어려움 — subTrend는 월별 합계만. 단순화:
-    //   여기선 "이번 달에 결제된 구독 이름"과 "지난 달에 결제된 구독 이름" 비교는 불가 (subs에 월별 결제 정보 없음).
-    //   프록시로 "이번 달 결제 건수 > 0 이면서 지난 달 결제 건수 없음" → 불가능.
-    //   대안: 현재 월 subTrend[current] > 0 && prev subTrend[prev] == 0 이면 신규, 반대는 해지.
-    //   정밀도 낮지만 전체 추세는 잡힘.
-    return { newSubs: [], endedSubs: [] };
-  })();
   // 월별 구독비 변화 감지 (이번달 vs 이전달)
   const curSubAmt = currentMonth ? d.subTrend.find((t) => t.l === d.ml[currentMonth])?.amount ?? 0 : 0;
   const prevSubAmt = (() => {
@@ -91,7 +79,7 @@ export const SubTab = React.memo(function SubTab({ d }: { d: D }) {
                   <XAxis dataKey="l" tick={{ fontSize: 12 }} />
                   <YAxis tickFormatter={F} tick={{ fontSize: 11 }} />
                   <Tooltip content={<CT />} />
-                  <Bar dataKey="amount" fill="#533483" radius={[4, 4, 0, 0]} name="구독비" />
+                  <Bar isAnimationActive={false} dataKey="amount" fill="#533483" radius={[4, 4, 0, 0]} name="구독비" />
                 </BarChart>
               </ResponsiveContainer>
             </Card>

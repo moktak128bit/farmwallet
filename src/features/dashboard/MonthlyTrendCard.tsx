@@ -1,18 +1,52 @@
-import React from "react";
+/**
+ * 월별 추이 (최근 6개월) 카드 — DashboardPage에서 분리.
+ * 월별 수입/지출/재테크 집계(monthlyTrendData)를 카드가 소유한다.
+ * React.memo로 감싸므로 부모가 넘기는 props는 안정적(store 참조·원시값)이어야 한다.
+ */
+import React, { useMemo } from "react";
+import type { Account, CategoryPresets, LedgerEntry } from "../../types";
 import { formatKRW } from "../../utils/formatter";
-
-export interface MonthlyTrendRow {
-  month: string;
-  income: number;
-  expense: number;
-  investing: number;
-}
+import { isSavingsExpenseEntry } from "../../utils/category";
 
 interface Props {
-  monthlyTrendData: MonthlyTrendRow[];
+  ledger: LedgerEntry[];
+  accounts: Account[];
+  categoryPresets: CategoryPresets;
+  fxRate: number | null;
 }
 
-export const MonthlyTrendCard: React.FC<Props> = ({ monthlyTrendData }) => {
+export const MonthlyTrendCard: React.FC<Props> = React.memo(function MonthlyTrendCard({
+  ledger,
+  accounts,
+  categoryPresets,
+  fxRate,
+}) {
+  const monthlyTrendData = useMemo(() => {
+    const toKrw = (entry: LedgerEntry) =>
+      entry.currency === "USD" && fxRate ? entry.amount * fxRate : entry.amount;
+    const map = new Map<string, { income: number; expense: number; investing: number }>();
+    ledger.forEach((entry) => {
+      if (!entry.date) return;
+      const m = entry.date.slice(0, 7);
+      if (!map.has(m)) map.set(m, { income: 0, expense: 0, investing: 0 });
+      const row = map.get(m)!;
+      if (entry.kind === "income") row.income += toKrw(entry);
+      else if (entry.kind === "expense") {
+        // 신용결제는 카드 결제 이체로 실제 지출의 중복 — expense 집계에서 제외 (topCategoriesThisMonth와 일관)
+        if (entry.category === "신용결제") return;
+        if (isSavingsExpenseEntry(entry, accounts, categoryPresets)) row.investing += toKrw(entry);
+        else row.expense += toKrw(entry);
+      }
+    });
+    return Array.from(map.entries())
+      .sort((a, b) => a[0].localeCompare(b[0]))
+      .slice(-6)
+      .map(([month, data]) => ({
+        month: month.slice(5),
+        ...data
+      }));
+  }, [ledger, fxRate, accounts, categoryPresets]);
+
   const maxVal = Math.max(
     ...monthlyTrendData.map((r) => Math.max(r.income, r.expense + r.investing))
   );
@@ -45,4 +79,4 @@ export const MonthlyTrendCard: React.FC<Props> = ({ monthlyTrendData }) => {
       </div>
     </div>
   );
-};
+});

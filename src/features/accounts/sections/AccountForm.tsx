@@ -1,3 +1,7 @@
+/**
+ * 계좌 추가 폼 — form 상태를 이 컴포넌트가 소유해 폼 타이핑이 부모(AccountsPage)를 재렌더하지 않는다.
+ * React.memo로 감싸므로 부모가 넘기는 onAdd는 useCallback, existingIds는 useMemo로 안정적이어야 한다.
+ */
 import React, { useState } from "react";
 import type { Account, AccountType } from "../../../types";
 import { parseAmount } from "../../../utils/parseAmount";
@@ -7,7 +11,7 @@ interface Props {
   existingIds: string[];
 }
 
-export const AccountForm: React.FC<Props> = ({ onAdd, existingIds }) => {
+export const AccountForm: React.FC<Props> = React.memo(function AccountForm({ onAdd, existingIds }) {
   const [form, setForm] = useState({
     id: "",
     name: "",
@@ -174,4 +178,4 @@ export const AccountForm: React.FC<Props> = ({ onAdd, existingIds }) => {
       </div>
     </form>
   );
-};
+});

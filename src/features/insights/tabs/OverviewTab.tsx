@@ -1,6 +1,6 @@
 import React from "react";
 import {
-  LineChart, Line, PieChart, Pie, Cell,
+  LineChart, Line, Cell,
   XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer,
   AreaChart, Area, ComposedChart, Bar,
 } from "recharts";
@@ -208,8 +208,8 @@ export const OverviewTab = React.memo(function OverviewTab({ d }: { d: D }) {
               <YAxis yAxisId="right" orientation="right" tickFormatter={(v) => v + "%"} tick={{ fontSize: 10 }} />
               <Tooltip content={<CT />} />
               <Legend wrapperStyle={{ fontSize: 11 }} />
-              <Bar yAxisId="left" dataKey="income" name="수입" fill="#f0c040" radius={[4, 4, 0, 0]} opacity={0.5} />
-              <Line yAxisId="right" type="monotone" dataKey="momPct" name="MoM%" stroke="#e94560" strokeWidth={2} dot={{ r: 3 }} />
+              <Bar isAnimationActive={false} yAxisId="left" dataKey="income" name="수입" fill="#f0c040" radius={[4, 4, 0, 0]} opacity={0.5} />
+              <Line isAnimationActive={false} yAxisId="right" type="monotone" dataKey="momPct" name="MoM%" stroke="#e94560" strokeWidth={2} dot={{ r: 3 }} />
             </ComposedChart>
           </ResponsiveContainer>
         </Card>
@@ -218,7 +218,7 @@ export const OverviewTab = React.memo(function OverviewTab({ d }: { d: D }) {
           <ResponsiveContainer width="100%" height={220}>
             <AreaChart data={flowData}><CartesianGrid strokeDasharray="3 3" stroke="#eee" /><XAxis dataKey="name" tick={{ fontSize: 12 }} /><YAxis tickFormatter={F} tick={{ fontSize: 11 }} /><Tooltip content={<CT />} />
               <defs><linearGradient id="fg" x1="0" y1="0" x2="0" y2="1"><stop offset="5%" stopColor="#e94560" stopOpacity={0.3} /><stop offset="95%" stopColor="#e94560" stopOpacity={0} /></linearGradient></defs>
-              <Area dataKey="순현금흐름" stroke="#e94560" fill="url(#fg)" strokeWidth={2.5} />
+              <Area isAnimationActive={false} dataKey="순현금흐름" stroke="#e94560" fill="url(#fg)" strokeWidth={2.5} />
             </AreaChart>
           </ResponsiveContainer>
         </Card>
@@ -227,10 +227,10 @@ export const OverviewTab = React.memo(function OverviewTab({ d }: { d: D }) {
           <p style={{ fontSize: 11, color: "#999", margin: "0 0 4px", textAlign: "right" }}>월급이 월말 지급이므로 월별 저축률 대신 누적 기준 표시</p>
           <ResponsiveContainer width="100%" height={210}>
             <ComposedChart data={d.savRateTrend}><CartesianGrid strokeDasharray="3 3" stroke="#eee" /><XAxis dataKey="l" tick={{ fontSize: 12 }} /><YAxis tickFormatter={(v: number) => v + "%"} tick={{ fontSize: 11 }} /><Tooltip formatter={(v: ValueType | undefined) => Number(v ?? 0).toFixed(1) + "%"} />
-              <Bar dataKey="rate" name="월별" radius={[4, 4, 0, 0]} opacity={0.35}>
+              <Bar isAnimationActive={false} dataKey="rate" name="월별" radius={[4, 4, 0, 0]} opacity={0.35}>
                 {d.savRateTrend.map((e, i) => <Cell key={i} fill={e.rate >= 30 ? "#48c9b0" : e.rate >= 0 ? "#f0c040" : "#e94560"} />)}
               </Bar>
-              <Line dataKey="cumRate" name="누적" stroke="#0f3460" strokeWidth={2.5} dot={false} />
+              <Line isAnimationActive={false} dataKey="cumRate" name="누적" stroke="#0f3460" strokeWidth={2.5} dot={false} />
             </ComposedChart>
           </ResponsiveContainer>
         </Card>
@@ -238,8 +238,8 @@ export const OverviewTab = React.memo(function OverviewTab({ d }: { d: D }) {
         <Card title="누적 수입 vs 누적 지출" span={4}>
           <ResponsiveContainer width="100%" height={220}>
             <LineChart data={d.cumIE}><CartesianGrid strokeDasharray="3 3" stroke="#eee" /><XAxis dataKey="l" tick={{ fontSize: 12 }} /><YAxis tickFormatter={F} tick={{ fontSize: 11 }} /><Tooltip content={<CT />} /><Legend wrapperStyle={{ fontSize: 12 }} />
-              <Line type="monotone" dataKey="누적수입" stroke="#f0c040" strokeWidth={2.5} dot={{ r: 3 }} />
-              <Line type="monotone" dataKey="누적지출" stroke="#e94560" strokeWidth={2.5} dot={{ r: 3 }} />
+              <Line isAnimationActive={false} type="monotone" dataKey="누적수입" stroke="#f0c040" strokeWidth={2.5} dot={{ r: 3 }} />
+              <Line isAnimationActive={false} type="monotone" dataKey="누적지출" stroke="#e94560" strokeWidth={2.5} dot={{ r: 3 }} />
             </LineChart>
           </ResponsiveContainer>
         </Card>

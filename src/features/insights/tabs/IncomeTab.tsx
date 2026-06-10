@@ -4,7 +4,7 @@ import {
   XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer, ComposedChart,
 } from "recharts";
 import type { ValueType } from "recharts/types/component/DefaultTooltipContent";
-import { C, F, W, Pct, SD, Card, Kpi, Insight, Section, CT, pieLabel, type D } from "../insightsShared";
+import { C, F, W, Pct, Card, Kpi, Insight, Section, CT, pieLabel, type D } from "../insightsShared";
 
 const GROUP_COLORS = ["#f0c040", "#48c9b0", "#3498db"];
 
@@ -15,7 +15,6 @@ export const IncomeTab = React.memo(function IncomeTab({ d }: { d: D }) {
   // 회사소득 그룹 합계 (급여 단독이 아님 — 급여/수당/상여 모두 포함)
   const salaryGroupTotal = d.incByGroup.find((g) => g.name === "회사소득")?.value ?? 0;
   const passiveGroupTotal = d.incByGroup.find((g) => g.name === "투자/패시브")?.value ?? 0;
-  const otherGroupTotal = d.incByGroup.find((g) => g.name === "기타수입")?.value ?? 0;
 
   const salaryPct = totalIncome > 0 ? (salaryGroupTotal / totalIncome) * 100 : 0;
   const passivePct = totalIncome > 0 ? (passiveGroupTotal / totalIncome) * 100 : 0;
@@ -63,7 +62,7 @@ export const IncomeTab = React.memo(function IncomeTab({ d }: { d: D }) {
           ) : (
             <ResponsiveContainer width="100%" height={260}>
               <PieChart>
-                <Pie data={d.incByGroup} dataKey="value" cx="50%" cy="50%" outerRadius={95} innerRadius={45} label={pieLabel} labelLine={false} style={{ fontSize: 10 }}>
+                <Pie isAnimationActive={false} data={d.incByGroup} dataKey="value" cx="50%" cy="50%" outerRadius={95} innerRadius={45} label={pieLabel} labelLine={false} style={{ fontSize: 10 }}>
                   {d.incByGroup.map((g, i) => <Cell key={i} fill={GROUP_COLORS[d.incByGroup.findIndex((x) => x.name === g.name)] ?? C[i]} />)}
                 </Pie>
                 <Tooltip formatter={(v: ValueType | undefined) => W(Number(v ?? 0))} />
@@ -162,8 +161,8 @@ export const IncomeTab = React.memo(function IncomeTab({ d }: { d: D }) {
               <YAxis yAxisId="right" orientation="right" tickFormatter={(v) => v + "%"} tick={{ fontSize: 10 }} />
               <Tooltip content={<CT />} />
               <Legend wrapperStyle={{ fontSize: 11 }} />
-              <Bar yAxisId="left" dataKey="수입" fill="#f0c040" radius={[4, 4, 0, 0]} />
-              <Line yAxisId="right" type="monotone" dataKey="momPct" name="MoM%" stroke="#e94560" strokeWidth={2} dot={{ r: 3 }} />
+              <Bar isAnimationActive={false} yAxisId="left" dataKey="수입" fill="#f0c040" radius={[4, 4, 0, 0]} />
+              <Line isAnimationActive={false} yAxisId="right" type="monotone" dataKey="momPct" name="MoM%" stroke="#e94560" strokeWidth={2} dot={{ r: 3 }} />
             </ComposedChart>
           </ResponsiveContainer>
         </Card>
@@ -176,8 +175,8 @@ export const IncomeTab = React.memo(function IncomeTab({ d }: { d: D }) {
               <YAxis tickFormatter={F} tick={{ fontSize: 11 }} />
               <Tooltip content={<CT />} />
               <Legend wrapperStyle={{ fontSize: 11 }} />
-              <Bar dataKey="salary" stackId="a" fill="#f0c040" name="회사소득" />
-              <Bar dataKey="nonSalary" stackId="a" fill="#48c9b0" name="비회사소득" radius={[4, 4, 0, 0]} />
+              <Bar isAnimationActive={false} dataKey="salary" stackId="a" fill="#f0c040" name="회사소득" />
+              <Bar isAnimationActive={false} dataKey="nonSalary" stackId="a" fill="#48c9b0" name="비회사소득" radius={[4, 4, 0, 0]} />
             </BarChart>
           </ResponsiveContainer>
         </Card>
@@ -189,7 +188,7 @@ export const IncomeTab = React.memo(function IncomeTab({ d }: { d: D }) {
               <XAxis dataKey="l" tick={{ fontSize: 12 }} />
               <YAxis tickFormatter={F} tick={{ fontSize: 11 }} />
               <Tooltip formatter={(v: ValueType | undefined) => W(Number(v ?? 0))} />
-              <Bar dataKey="amount" fill="#48c9b0" radius={[4, 4, 0, 0]} name="패시브 수입" />
+              <Bar isAnimationActive={false} dataKey="amount" fill="#48c9b0" radius={[4, 4, 0, 0]} name="패시브 수입" />
             </BarChart>
           </ResponsiveContainer>
         </Card>
@@ -201,7 +200,7 @@ export const IncomeTab = React.memo(function IncomeTab({ d }: { d: D }) {
               <XAxis dataKey="l" tick={{ fontSize: 12 }} />
               <YAxis tickFormatter={(v) => v.toFixed(0) + "%"} tick={{ fontSize: 10 }} domain={[0, "auto"]} />
               <Tooltip formatter={(v: ValueType | undefined) => `${Number(v ?? 0).toFixed(1)}%`} />
-              <Line type="monotone" dataKey="비율" stroke="#48c9b0" strokeWidth={2.5} dot={{ r: 3 }} />
+              <Line isAnimationActive={false} type="monotone" dataKey="비율" stroke="#48c9b0" strokeWidth={2.5} dot={{ r: 3 }} />
             </LineChart>
           </ResponsiveContainer>
           <div style={{ fontSize: 11, color: "#999", textAlign: "center", marginTop: 4 }}>

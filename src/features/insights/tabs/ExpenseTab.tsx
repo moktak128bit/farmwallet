@@ -103,7 +103,7 @@ export const ExpenseTab = React.memo(function ExpenseTab({ d }: { d: D }) {
             <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 16, alignItems: "center" }}>
               <ResponsiveContainer width="100%" height={220}>
                 <PieChart>
-                  <Pie data={fvData} dataKey="value" cx="50%" cy="50%" outerRadius={90} innerRadius={45} label={pieLabel} labelLine={false} style={{ fontSize: 11 }}>
+                  <Pie isAnimationActive={false} data={fvData} dataKey="value" cx="50%" cy="50%" outerRadius={90} innerRadius={45} label={pieLabel} labelLine={false} style={{ fontSize: 11 }}>
                     {fvData.map((_, i) => <Cell key={i} fill={fvColors[i]} />)}
                   </Pie>
                   <Tooltip formatter={(v: ValueType | undefined) => W(Number(v ?? 0))} />
@@ -423,7 +423,7 @@ export const ExpenseTab = React.memo(function ExpenseTab({ d }: { d: D }) {
               <XAxis type="number" tickFormatter={F} tick={{ fontSize: 10 }} />
               <YAxis dataKey="name" type="category" width={90} tick={{ fontSize: 10 }} />
               <Tooltip formatter={(v: ValueType | undefined) => W(Number(v ?? 0))} />
-              <Bar dataKey="avg" fill="#533483" radius={[0, 4, 4, 0]} name="월평균 (원)" />
+              <Bar isAnimationActive={false} dataKey="avg" fill="#533483" radius={[0, 4, 4, 0]} name="월평균 (원)" />
             </BarChart>
           </ResponsiveContainer>
         </Card>
@@ -466,7 +466,7 @@ export const ExpenseTab = React.memo(function ExpenseTab({ d }: { d: D }) {
                 <Tooltip content={<CT />} />
                 <Legend wrapperStyle={{ fontSize: 11 }} />
                 {validMonths.map((m, i) => (
-                  <Line key={m} type="monotone" dataKey={d.ml[m]} stroke={velocityColors[i % velocityColors.length]} strokeWidth={1.5} dot={false} strokeOpacity={0.7} />
+                  <Line isAnimationActive={false} key={m} type="monotone" dataKey={d.ml[m]} stroke={velocityColors[i % velocityColors.length]} strokeWidth={1.5} dot={false} strokeOpacity={0.7} />
                 ))}
               </LineChart>
             </ResponsiveContainer>
@@ -504,7 +504,7 @@ export const ExpenseTab = React.memo(function ExpenseTab({ d }: { d: D }) {
               <YAxis tickFormatter={F} tick={{ fontSize: 11 }} />
               <Tooltip content={<CT />} />
               <Legend wrapperStyle={{ fontSize: 11 }} />
-              {trendCats.map((c, i) => <Area key={c} type="monotone" dataKey={c} stackId="1" stroke={C[i]} fill={C[i]} fillOpacity={0.6} />)}
+              {trendCats.map((c, i) => <Area isAnimationActive={false} key={c} type="monotone" dataKey={c} stackId="1" stroke={C[i]} fill={C[i]} fillOpacity={0.6} />)}
             </AreaChart>
           </ResponsiveContainer>
         </Card>
@@ -516,7 +516,7 @@ export const ExpenseTab = React.memo(function ExpenseTab({ d }: { d: D }) {
               <XAxis dataKey="name" tick={{ fontSize: 12 }} />
               <YAxis tickFormatter={F} tick={{ fontSize: 10 }} />
               <Tooltip formatter={(v: ValueType | undefined, _n, p) => [W(Number(v ?? 0)), `${p.payload.건수}건 · 총 ${W(p.payload.총액)}`]} />
-              <Bar dataKey="일평균" radius={[4, 4, 0, 0]}>
+              <Bar isAnimationActive={false} dataKey="일평균" radius={[4, 4, 0, 0]}>
                 {wdData.map((e, i) => <Cell key={i} fill={i >= 5 ? "#e94560" : "#0f3460"} opacity={0.8} />)}
               </Bar>
             </BarChart>
@@ -535,7 +535,7 @@ export const ExpenseTab = React.memo(function ExpenseTab({ d }: { d: D }) {
               <Tooltip
                 formatter={(v: ValueType | undefined, _n, p) => [W(Number(v ?? 0)), `${p.payload.월수}개월 평균`]}
               />
-              <Bar dataKey="일평균" radius={[2, 2, 0, 0]}>
+              <Bar isAnimationActive={false} dataKey="일평균" radius={[2, 2, 0, 0]}>
                 {domData.map((e, i) => <Cell key={i} fill={e.일평균 > domAvg * 1.3 ? "#e94560" : "#0f3460"} opacity={0.75} />)}
               </Bar>
             </BarChart>

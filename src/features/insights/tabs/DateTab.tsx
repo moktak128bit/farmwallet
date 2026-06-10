@@ -131,8 +131,8 @@ export const DateTab = React.memo(function DateTab({ d }: { d: D }) {
                   <XAxis dataKey="name" tick={{ fontSize: 12 }} />
                   <YAxis tickFormatter={F} tick={{ fontSize: 11 }} />
                   <Tooltip content={<CT />} />
-                  <Bar dataKey="금액" fill="#e94560" radius={[6, 6, 0, 0]} />
-                  <Line type="monotone" dataKey="금액" stroke="#f0c040" strokeWidth={2} dot={{ r: 3 }} name="추세" />
+                  <Bar isAnimationActive={false} dataKey="금액" fill="#e94560" radius={[6, 6, 0, 0]} />
+                  <Line isAnimationActive={false} type="monotone" dataKey="금액" stroke="#f0c040" strokeWidth={2} dot={{ r: 3 }} name="추세" />
                 </ComposedChart>
               </ResponsiveContainer>
             </Card>
@@ -141,7 +141,7 @@ export const DateTab = React.memo(function DateTab({ d }: { d: D }) {
               {subPie.length > 0 ? (
                 <ResponsiveContainer width="100%" height={260}>
                   <PieChart>
-                    <Pie data={subPie} dataKey="value" cx="50%" cy="50%" outerRadius={100} innerRadius={45} label={pieLabel} labelLine={false} style={{ fontSize: 10 }}>
+                    <Pie isAnimationActive={false} data={subPie} dataKey="value" cx="50%" cy="50%" outerRadius={100} innerRadius={45} label={pieLabel} labelLine={false} style={{ fontSize: 10 }}>
                       {subPie.map((_, i) => <Cell key={i} fill={C[i]} />)}
                     </Pie>
                     <Tooltip formatter={(v: ValueType | undefined) => W(Number(v ?? 0))} />
@@ -197,7 +197,7 @@ export const DateTab = React.memo(function DateTab({ d }: { d: D }) {
                   <XAxis dataKey="name" tick={{ fontSize: 12 }} />
                   <YAxis tickFormatter={F} tick={{ fontSize: 10 }} />
                   <Tooltip formatter={(v: ValueType | undefined, _n, p) => [W(Number(v ?? 0)), `${p.payload.건수}건`]} />
-                  <Bar dataKey="금액" radius={[6, 6, 0, 0]}>
+                  <Bar isAnimationActive={false} dataKey="금액" radius={[6, 6, 0, 0]}>
                     {dowData.map((e, i) => <Cell key={i} fill={e.금액 === Math.max(...dowData.map((x) => x.금액)) ? "#e94560" : "#0f3460"} />)}
                   </Bar>
                 </BarChart>
@@ -214,7 +214,7 @@ export const DateTab = React.memo(function DateTab({ d }: { d: D }) {
                   <XAxis dataKey="name" tick={{ fontSize: 12 }} />
                   <YAxis tickFormatter={F} tick={{ fontSize: 10 }} />
                   <Tooltip formatter={(v: ValueType | undefined) => W(Number(v ?? 0))} />
-                  <Line type="monotone" dataKey="건당평균" stroke="#e94560" strokeWidth={2.5} dot={{ r: 3 }} />
+                  <Line isAnimationActive={false} type="monotone" dataKey="건당평균" stroke="#e94560" strokeWidth={2.5} dot={{ r: 3 }} />
                 </LineChart>
               </ResponsiveContainer>
               <div style={{ fontSize: 11, color: "#999", textAlign: "center", marginTop: 4 }}>
@@ -303,7 +303,7 @@ export const DateTab = React.memo(function DateTab({ d }: { d: D }) {
                   <XAxis dataKey="name" tick={{ fontSize: 12 }} />
                   <YAxis tickFormatter={F} tick={{ fontSize: 10 }} />
                   <Tooltip formatter={(v: ValueType | undefined) => W(Number(v ?? 0))} />
-                  <Line type="monotone" dataKey="누적" stroke="#e94560" strokeWidth={2.5} dot={{ r: 3 }} />
+                  <Line isAnimationActive={false} type="monotone" dataKey="누적" stroke="#e94560" strokeWidth={2.5} dot={{ r: 3 }} />
                 </LineChart>
               </ResponsiveContainer>
             </Card>
@@ -315,7 +315,7 @@ export const DateTab = React.memo(function DateTab({ d }: { d: D }) {
                   <XAxis dataKey="name" tick={{ fontSize: 10 }} />
                   <YAxis tickFormatter={(v: number) => v + "%"} tick={{ fontSize: 10 }} />
                   <Tooltip formatter={(v: ValueType | undefined) => v + "%"} />
-                  <Bar dataKey="비율" fill="#e94560" radius={[4, 4, 0, 0]} />
+                  <Bar isAnimationActive={false} dataKey="비율" fill="#e94560" radius={[4, 4, 0, 0]} />
                 </BarChart>
               </ResponsiveContainer>
               <div style={{ fontSize: 11, color: "#999", textAlign: "center", marginTop: 4 }}>

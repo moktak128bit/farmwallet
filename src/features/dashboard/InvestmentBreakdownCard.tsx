@@ -14,11 +14,12 @@ interface Props {
   totalRealizedPnl: number;
 }
 
-export const InvestmentBreakdownCard: React.FC<Props> = ({
+// React.memo — 부모(DashboardPage)가 넘기는 props는 안정적(useMemo 결과·원시값)이어야 한다.
+export const InvestmentBreakdownCard: React.FC<Props> = React.memo(function InvestmentBreakdownCard({
   month,
   monthlyRecheckBreakdown,
   totalRealizedPnl,
-}) => {
+}) {
   return (
     <div className="card" style={{ marginTop: 0 }}>
       <div className="card-title">이번 달 재테크 세부 ({month})</div>
@@ -53,4 +54,4 @@ export const InvestmentBreakdownCard: React.FC<Props> = ({
       </div>
     </div>
   );
-};
+});

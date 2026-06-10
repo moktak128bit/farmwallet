@@ -49,13 +49,14 @@ function isDividendEntry(e: LedgerEntry): boolean {
   );
 }
 
-export const InvestmentSummaryCard: React.FC<Props> = ({
+// React.memo — 부모(DashboardPage)가 넘기는 props는 안정적(store 참조·useMemo 결과)이어야 한다.
+export const InvestmentSummaryCard: React.FC<Props> = React.memo(function InvestmentSummaryCard({
   accounts,
   ledger,
   trades,
   prices,
   fxRate,
-}) => {
+}) {
   const setData = useAppStore((s) => s.setData);
   const goalsRaw = useAppStore((s) => s.data.investmentGoals);
   const goals: InvestmentGoals = useMemo(() => goalsRaw ?? {}, [goalsRaw]);
@@ -400,7 +401,7 @@ export const InvestmentSummaryCard: React.FC<Props> = ({
       </div>
     </div>
   );
-};
+});
 
 interface GoalRowProps {
   label: string;

@@ -558,8 +558,8 @@ export const TargetPortfolioSection: React.FC<TargetPortfolioSectionProps> = ({
                         labelFormatter={(_, payload) => (payload?.[0]?.payload?.ticker ? `${payload[0].payload.ticker}` : "")}
                       />
                       <Legend />
-                      <Bar dataKey="target" name="목표" fill="#94a3b8" radius={[0, 4, 4, 0]} barSize={12} />
-                      <Bar dataKey="actual" name="현재" fill="#6366f1" radius={[0, 4, 4, 0]} barSize={12} />
+                      <Bar isAnimationActive={false} dataKey="target" name="목표" fill="#94a3b8" radius={[0, 4, 4, 0]} barSize={12} />
+                      <Bar isAnimationActive={false} dataKey="actual" name="현재" fill="#6366f1" radius={[0, 4, 4, 0]} barSize={12} />
                     </BarChart>
                   </ResponsiveContainer>
                 ) : (

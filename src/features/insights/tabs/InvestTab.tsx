@@ -100,7 +100,7 @@ export const InvestTab = React.memo(function InvestTab({ d }: { d: D }) {
                 <XAxis type="number" tickFormatter={F} tick={{ fontSize: 11 }} />
                 <YAxis dataKey="name" type="category" width={150} tick={{ fontSize: 10 }} />
                 <Tooltip formatter={(v: ValueType | undefined) => W(Number(v ?? 0))} />
-                <Bar dataKey="매수" fill="#0f3460" radius={[0, 6, 6, 0]} name="매수금액" />
+                <Bar isAnimationActive={false} dataKey="매수" fill="#0f3460" radius={[0, 6, 6, 0]} name="매수금액" />
               </BarChart>
             </ResponsiveContainer>
           )}
@@ -110,7 +110,7 @@ export const InvestTab = React.memo(function InvestTab({ d }: { d: D }) {
           {d.portfolio.length > 0 ? (
             <ResponsiveContainer width="100%" height={280}>
               <PieChart>
-                <Pie data={d.portfolio} dataKey="value" cx="50%" cy="50%" outerRadius={100} innerRadius={45} label={pieLabel} labelLine={false} style={{ fontSize: 10 }}>
+                <Pie isAnimationActive={false} data={d.portfolio} dataKey="value" cx="50%" cy="50%" outerRadius={100} innerRadius={45} label={pieLabel} labelLine={false} style={{ fontSize: 10 }}>
                   {d.portfolio.map((_, i) => <Cell key={i} fill={C[i]} />)}
                 </Pie>
                 <Tooltip formatter={(v: ValueType | undefined) => W(Number(v ?? 0))} />
@@ -287,7 +287,7 @@ export const InvestTab = React.memo(function InvestTab({ d }: { d: D }) {
               <XAxis dataKey="l" tick={{ fontSize: 11 }} />
               <YAxis tickFormatter={F} tick={{ fontSize: 10 }} />
               <Tooltip content={<CT />} />
-              <Bar dataKey="amount" fill="#f0c040" radius={[4, 4, 0, 0]} name="배당/이자" />
+              <Bar isAnimationActive={false} dataKey="amount" fill="#f0c040" radius={[4, 4, 0, 0]} name="배당/이자" />
             </BarChart>
           </ResponsiveContainer>
           <div style={{ fontSize: 11, color: "#999", textAlign: "center", marginTop: 4 }}>
@@ -306,7 +306,7 @@ export const InvestTab = React.memo(function InvestTab({ d }: { d: D }) {
               <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 16, alignItems: "center" }}>
                 <ResponsiveContainer width="100%" height={240}>
                   <PieChart>
-                    <Pie data={pieData} dataKey="value" cx="50%" cy="50%" outerRadius={90} innerRadius={40} label={pieLabel} labelLine={false} style={{ fontSize: 10 }}>
+                    <Pie isAnimationActive={false} data={pieData} dataKey="value" cx="50%" cy="50%" outerRadius={90} innerRadius={40} label={pieLabel} labelLine={false} style={{ fontSize: 10 }}>
                       {d.investBySub.map((_, i) => <Cell key={i} fill={C[i]} />)}
                     </Pie>
                     <Tooltip formatter={(v: ValueType | undefined) => W(Number(v ?? 0))} />

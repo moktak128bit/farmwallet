@@ -39,3 +39,6 @@ src/data/krNames.json
 
 blog_post_inventory.py
 posts_inventory.csv
+
+# Claude Code 임시 워크트리
+.claude/worktrees/

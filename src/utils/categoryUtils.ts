@@ -20,13 +20,16 @@ import type { LedgerKind, CategoryPresets, LedgerEntry, Account } from "../types
  *  - kind=expense/category=재테크/sub=저축·투자 (v5 이전)
  */
 /**
- * 신용카드 대금 결제 항목인지 판별.
- * 데이터 모델: kind="expense", category="신용결제", fromAccountId=출금계좌, toAccountId=카드계좌.
+ * 신용카드 대금 결제 항목인지 판별 — 레거시 데이터 전용.
  *
- * 주의: 일반 지출 합계에서 반드시 제외해야 함 — 카드 사용 시점에 이미 expense로 잡혔는데
- * 카드 대금 결제 시점에 또 expense로 카운트되면 이중계상 발생 (월 지출이 약 2배 부풀려짐).
+ * 현행 모델: 카드 대금 납부는 이체로 기록됨 (kind="transfer", category="이체",
+ * subCategory="카드결제이체"). transfer는 모든 지출 합계에서 구조적으로 제외되므로
+ * 이 함수가 따로 잡아줄 필요가 없다.
  *
- * 계좌 잔액 계산은 영향받지 않음 (양 계좌의 입출금이 정확히 반영되어야 하므로 별개).
+ * 이 함수는 아직 마이그레이션되지 않은 구버전 데이터(kind="expense",
+ * category="신용결제")만 감지한다. 카드 사용 시점에 이미 expense로 잡힌 항목이
+ * 카드 대금 결제 시점에 또 expense로 카운트되어 이중계상되는 것을 막기 위함
+ * (월 지출이 약 2배 부풀려짐). 신규 입력은 모두 transfer라 여기 걸리지 않는다.
  */
 export function isCreditPayment(entry: LedgerEntry): boolean {
   return entry.category === "신용결제" || entry.subCategory === "신용결제";

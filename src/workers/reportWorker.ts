@@ -13,27 +13,7 @@ import {
   generateStockPerformanceReport,
   generateYearlyReport
 } from "../utils/reportGenerator";
-import { isSavingsExpenseEntry, isCreditPayment } from "../utils/category";
 import type { Account, LedgerEntry, StockPrice, StockTrade } from "../types";
-
-interface PeriodSummary {
-  income: number;
-  expense: number;
-  savings: number;
-  investingIn: number;
-  investingOut: number;
-  investingNet: number;
-  net: number;
-}
-
-interface PeriodCompareResult {
-  thisMonthKey: string;
-  lastMonthKey: string;
-  lastYearSameMonthKey: string;
-  thisMonth: PeriodSummary;
-  lastMonth: PeriodSummary;
-  lastYearSameMonth: PeriodSummary;
-}
 
 interface ReportWorkerPayload {
   accounts: Account[];
@@ -43,6 +23,8 @@ interface ReportWorkerPayload {
   startDate: string;
   endDate: string;
   fxRate: number | null;
+  /** 데이트 계좌 id (localStorage 값) — 종합 월간 실질지출의 데이트 50% 차감용. structured-clone 가능 */
+  dateAccountId: string | null;
 }
 
 interface ReportWorkerRequest {
@@ -63,92 +45,7 @@ interface ReportWorkerResponse {
   accountPerformance: ReturnType<typeof generateAccountPerformanceBreakdown>;
   consumptionImpact: ReturnType<typeof generateConsumptionImpactMonthlyReport>;
   comprehensiveMonthly: ReturnType<typeof generateComprehensiveMonthlyReport>;
-  periodCompare: PeriodCompareResult;
   error?: string;
-}
-
-const INVESTING_ACCOUNT_TYPES = new Set<Account["type"]>(["savings", "securities", "crypto"]);
-
-function isInvestingAccount(account: Account | undefined): boolean {
-  return !!account && INVESTING_ACCOUNT_TYPES.has(account.type);
-}
-
-function buildPeriodCompare(
-  accounts: Account[],
-  ledger: LedgerEntry[],
-  fxRate: number | null
-): PeriodCompareResult {
-  const accountById = new Map(accounts.map((account) => [account.id, account]));
-  const toKrw = (entry: LedgerEntry) =>
-    entry.currency === "USD" && fxRate ? entry.amount * fxRate : entry.amount;
-
-  const now = new Date();
-  const year = now.getFullYear();
-  const month = now.getMonth() + 1;
-  const thisMonthKey = `${year}-${String(month).padStart(2, "0")}`;
-  const lastMonthKey =
-    month === 1 ? `${year - 1}-12` : `${year}-${String(month - 1).padStart(2, "0")}`;
-  const lastYearSameMonthKey = `${year - 1}-${String(month).padStart(2, "0")}`;
-
-  const summarize = (entries: LedgerEntry[]): PeriodSummary => {
-    let income = 0;
-    let expense = 0;
-    let savings = 0;
-    let investingIn = 0;
-    let investingOut = 0;
-    for (const entry of entries) {
-      const amount = toKrw(entry);
-      if (entry.kind === "income") {
-        income += amount;
-        continue;
-      }
-      if (entry.kind === "expense") {
-        // 신용결제는 카드 사용 시점에 이미 expense로 잡힘 — 이중계상 방지
-        if (isCreditPayment(entry)) continue;
-        if (entry.category === "재테크") {
-          // 투자손실 — 실질 지출
-          expense += amount;
-        } else if (isSavingsExpenseEntry(entry, accounts)) {
-          savings += amount;
-          investingIn += amount;
-        } else {
-          expense += amount;
-        }
-        continue;
-      }
-      if (entry.kind === "transfer" && (
-        entry.subCategory === "저축이체" || entry.subCategory === "투자이체" ||
-        entry.subCategory === "저축" || entry.subCategory === "투자"
-      )) {
-        savings += amount;
-        investingIn += amount;
-        continue;
-      }
-      if (entry.kind === "transfer") {
-        const fromAccount = entry.fromAccountId ? accountById.get(entry.fromAccountId) : undefined;
-        const toAccount = entry.toAccountId ? accountById.get(entry.toAccountId) : undefined;
-        const fromInvesting = isInvestingAccount(fromAccount);
-        const toInvesting = isInvestingAccount(toAccount);
-        if (!fromInvesting && toInvesting) investingIn += amount;
-        if (fromInvesting && !toInvesting) investingOut += amount;
-      }
-    }
-    return {
-      income,
-      expense,
-      savings,
-      investingIn,
-      investingOut,
-      investingNet: investingIn - investingOut,
-      net: income - expense - savings
-    };
-  };
-
-  const thisMonth = summarize(ledger.filter((entry) => entry.date.startsWith(thisMonthKey)));
-  const lastMonth = summarize(ledger.filter((entry) => entry.date.startsWith(lastMonthKey)));
-  const lastYearSameMonth = summarize(ledger.filter((entry) => entry.date.startsWith(lastYearSameMonthKey)));
-
-  return { thisMonthKey, lastMonthKey, lastYearSameMonthKey, thisMonth, lastMonth, lastYearSameMonth };
 }
 
 const workerScope = self as DedicatedWorkerGlobalScope;
@@ -205,9 +102,9 @@ workerScope.onmessage = (event: MessageEvent<ReportWorkerRequest>) => {
         payload.accounts,
         payload.startDate.slice(0, 7),
         payload.endDate.slice(0, 7),
-        payload.fxRate ?? undefined
-      ),
-      periodCompare: buildPeriodCompare(payload.accounts, payload.ledger, payload.fxRate)
+        payload.fxRate ?? undefined,
+        payload.dateAccountId
+      )
     };
 
     workerScope.postMessage(response);
@@ -242,14 +139,6 @@ workerScope.onmessage = (event: MessageEvent<ReportWorkerRequest>) => {
       accountPerformance: [],
       consumptionImpact: [],
       comprehensiveMonthly: [],
-      periodCompare: {
-        thisMonthKey: "",
-        lastMonthKey: "",
-        lastYearSameMonthKey: "",
-        thisMonth: { income: 0, expense: 0, savings: 0, investingIn: 0, investingOut: 0, investingNet: 0, net: 0 },
-        lastMonth: { income: 0, expense: 0, savings: 0, investingIn: 0, investingOut: 0, investingNet: 0, net: 0 },
-        lastYearSameMonth: { income: 0, expense: 0, savings: 0, investingIn: 0, investingOut: 0, investingNet: 0, net: 0 }
-      },
       error: error instanceof Error ? error.message : String(error)
     };
     workerScope.postMessage(response);

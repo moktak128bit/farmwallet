@@ -42,19 +42,6 @@ export const ForecastView: React.FC<Props> = ({ ledger, recurring, formatNumber 
   const uncertaintyPct = result.totalForecast > 0
     ? Math.round(((result.totalUpper - result.totalLower) / 2 / result.totalForecast) * 100)
     : 0;
-  const currentMonthActual = useMemo(() => {
-    let sum = 0;
-    for (const l of ledger) {
-      if (l.kind !== "expense" || l.amount <= 0 || !l.date) continue;
-      if (!l.date.startsWith(currentMonth)) continue;
-      sum += l.amount;
-    }
-    return sum;
-  }, [ledger, currentMonth]);
-
-  const dayOfMonth = today.getDate();
-  const daysInCurrentMonth = new Date(today.getFullYear(), today.getMonth() + 1, 0).getDate();
-  const projectedCurrent = dayOfMonth > 0 ? (currentMonthActual / dayOfMonth) * daysInCurrentMonth : 0;
 
   // 반복지출 월별 목록
   const monthlyRecurring = recurring.filter((r) => r.frequency === "monthly");
@@ -107,28 +94,6 @@ export const ForecastView: React.FC<Props> = ({ ledger, recurring, formatNumber 
             <div style={{ fontSize: 22, fontWeight: 800, color: uncertaintyPct > 30 ? "#e94560" : "#059669", marginTop: 4 }}>±{uncertaintyPct}%</div>
             <div style={{ fontSize: 11, color: "#999", marginTop: 4 }}>
               {uncertaintyPct > 30 ? "변동 큼" : uncertaintyPct > 15 ? "보통" : "안정"}
-            </div>
-          </div>
-        </div>
-
-        <div style={{ marginTop: 12, padding: "12px 14px", background: "var(--bg)", borderRadius: 10 }}>
-          <div style={{ fontSize: 12, fontWeight: 700, marginBottom: 8, color: "var(--text)" }}>이번 달 진행 현황 ({currentMonth})</div>
-          <div style={{ display: "grid", gridTemplateColumns: "repeat(3, 1fr)", gap: 10, fontSize: 12 }}>
-            <div>
-              <div style={{ color: "var(--text-faint)", fontSize: 11 }}>현재 지출 ({dayOfMonth}일차)</div>
-              <div style={{ fontWeight: 700, fontSize: 16 }}>{formatNumber(currentMonthActual)}</div>
-            </div>
-            <div>
-              <div style={{ color: "var(--text-faint)", fontSize: 11 }}>이 속도면 월말</div>
-              <div style={{ fontWeight: 700, fontSize: 16, color: projectedCurrent > result.totalForecast * 1.1 ? "#e94560" : "#059669" }}>
-                {formatNumber(Math.round(projectedCurrent))}
-              </div>
-            </div>
-            <div>
-              <div style={{ color: "var(--text-faint)", fontSize: 11 }}>다음 달 예측 대비</div>
-              <div style={{ fontWeight: 700, fontSize: 16, color: "#0f3460" }}>
-                {result.totalForecast > 0 ? Math.round((projectedCurrent / result.totalForecast) * 100) : 0}%
-              </div>
             </div>
           </div>
         </div>

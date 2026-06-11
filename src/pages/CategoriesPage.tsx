@@ -1,14 +1,20 @@
 import React, { useMemo, useState, useEffect } from "react";
 import { toast } from "react-hot-toast";
 import type { CategoryPresets, ExpenseDetailGroup, LedgerEntry } from "../types";
+import {
+  buildMergeCandidates, buildMergeMapper, countMergeTargets, mergePresets,
+  subPairKey, splitSubPairKey, type MergeKind, type MergeSpec,
+} from "../utils/categoryMerge";
 
 interface Props {
   presets: CategoryPresets;
   onChangePresets: (next: CategoryPresets) => void;
   ledger?: LedgerEntry[];
+  /** 카테고리 통합 시 가계부 항목 일괄 치환 (undo 히스토리에 포함되도록 부모에서 setDataWithHistory로 연결) */
+  onBulkUpdateLedger?: (mapper: (l: LedgerEntry) => LedgerEntry) => void;
 }
 
-export const CategoriesView: React.FC<Props> = ({ presets, onChangePresets, ledger = [] }) => {
+export const CategoriesView: React.FC<Props> = ({ presets, onChangePresets, ledger = [], onBulkUpdateLedger }) => {
   const [incomeRows, setIncomeRows] = useState<string[]>(() => [...presets.income]);
   const [transferRows, setTransferRows] = useState<string[]>(() => [...presets.transfer]);
 
@@ -89,12 +95,11 @@ export const CategoriesView: React.FC<Props> = ({ presets, onChangePresets, ledg
   };
 
   const addRow = () => {
-    const next = expenseGroups.map((g) => ({ ...g, subs: [...g.subs] }));
-    // just increase maxRows by 1 via longer subs length
-    if (next.length > 0) {
-      next[0].subs = [...next[0].subs, ""];
-    }
-    setExpenseGroups(next);
+    // 모든 열에 빈 칸을 붙여야 maxRows가 항상 +1 됨 — 지출 한 열만 늘리면
+    // 다른 열(예: 수입)이 더 길 때 행 수가 그대로라 버튼이 안 먹는 것처럼 보임
+    setIncomeRows((prev) => [...prev, ""]);
+    setTransferRows((prev) => [...prev, ""]);
+    setExpenseGroups((prev) => prev.map((g) => ({ ...g, subs: [...g.subs, ""] })));
   };
 
   const updateMain = (index: number, value: string) => {
@@ -316,45 +321,63 @@ export const CategoriesView: React.FC<Props> = ({ presets, onChangePresets, ledg
     return unused;
   }, [presets, categoryUsage]);
 
-  // 카테고리 통합 함수
-  const mergeCategories = (fromCategory: string, toCategory: string, type: "main" | "sub", groupIndex?: number) => {
-    if (type === "main") {
-      // 대분류 통합
-      const updatedGroups = expenseGroups.map((g) => {
-        if (g.main === fromCategory) {
-          return { ...g, main: toCategory };
-        }
-        return g;
-      });
-      // 중복 제거 및 통합
-      const merged: ExpenseDetailGroup[] = [];
-      const seen = new Set<string>();
-      updatedGroups.forEach((g) => {
-        if (!seen.has(g.main)) {
-          seen.add(g.main);
-          merged.push(g);
-        } else {
-          const existing = merged.find((m) => m.main === g.main);
-          if (existing) {
-            existing.subs = [...new Set([...existing.subs, ...g.subs])];
-          }
-        }
-      });
-      setExpenseGroups(merged);
-    } else if (type === "sub" && groupIndex !== undefined) {
-      // 세부 항목 통합
-      const updatedGroups = [...expenseGroups];
-      const group = updatedGroups[groupIndex];
-      const fromIndex = group.subs.indexOf(fromCategory);
-      if (fromIndex >= 0) {
-        group.subs = group.subs.filter((_, i) => i !== fromIndex);
-        if (!group.subs.includes(toCategory)) {
-          group.subs.push(toCategory);
-        }
-        updatedGroups[groupIndex] = group;
-        setExpenseGroups(updatedGroups);
-      }
+  /* ===== 카테고리 통합 (utils/categoryMerge 단일 소스) =====
+     로컬 편집 중인 표 상태를 스냅샷으로 프리셋을 만들고, 통합 결과를
+     ① 로컬 상태 ② onChangePresets(즉시 저장) ③ onBulkUpdateLedger(가계부 치환)에 모두 반영 */
+  const [mergeKind, setMergeKind] = useState<MergeKind>("income");
+  const [mergeFrom, setMergeFrom] = useState("");
+  const [mergeTo, setMergeTo] = useState("");
+
+  const presetsSnapshot = useMemo((): CategoryPresets => {
+    const normalize = (items: string[]) => items.map((v) => v.trim()).filter((v, i, arr) => v && arr.indexOf(v) === i);
+    const cleanedGroups = expenseGroups
+      .map((g) => ({ main: g.main.trim(), subs: g.subs.map((s) => s.trim()).filter((s, i, arr) => s && arr.indexOf(s) === i) }))
+      .filter((g) => g.main);
+    return {
+      income: normalize(incomeRows),
+      expense: cleanedGroups.map((g) => g.main),
+      expenseDetails: cleanedGroups,
+      transfer: normalize(transferRows),
+      categoryTypes,
+    };
+  }, [incomeRows, transferRows, expenseGroups, categoryTypes]);
+
+  const mergeCandidates = useMemo(
+    () => buildMergeCandidates(mergeKind, presetsSnapshot, ledger),
+    [mergeKind, presetsSnapshot, ledger]
+  );
+
+  const handleMerge = () => {
+    if (!mergeFrom || !mergeTo || mergeFrom === mergeTo) {
+      toast.error("서로 다른 두 카테고리를 선택해주세요.");
+      return;
     }
+    const spec: MergeSpec = mergeKind === "expenseSub"
+      ? (() => {
+          const f = splitSubPairKey(mergeFrom); const t = splitSubPairKey(mergeTo);
+          return { kind: mergeKind, from: f.sub, to: t.sub, fromMain: f.main, toMain: t.main };
+        })()
+      : { kind: mergeKind, from: mergeFrom, to: mergeTo };
+    const fromLabel = spec.fromMain ? `${spec.fromMain} > ${spec.from}` : spec.from;
+    const toLabel = spec.toMain ? `${spec.toMain} > ${spec.to}` : spec.to;
+    const n = countMergeTargets(ledger, spec);
+    if (!confirm(`"${fromLabel}"을(를) "${toLabel}"(으)로 통합합니다.\n가계부 항목 ${n}건의 분류가 변경되고, 목록에서 "${fromLabel}"이(가) 제거됩니다.`)) return;
+
+    const nextPresets = mergePresets(presetsSnapshot, spec);
+    // 로컬 표 상태 동기화
+    setIncomeRows([...nextPresets.income]);
+    setTransferRows([...nextPresets.transfer]);
+    setExpenseGroups(nextPresets.expenseDetails ?? nextPresets.expense.map((main) => ({ main, subs: [] })));
+    if (nextPresets.categoryTypes) setCategoryTypes({
+      fixed: nextPresets.categoryTypes.fixed ?? [],
+      savings: nextPresets.categoryTypes.savings ?? [],
+      transfer: nextPresets.categoryTypes.transfer ?? nextPresets.transfer,
+    });
+    // 즉시 저장 + 가계부 일괄 치환
+    onChangePresets(nextPresets);
+    if (n > 0 && onBulkUpdateLedger) onBulkUpdateLedger(buildMergeMapper(spec));
+    setMergeFrom(""); setMergeTo("");
+    toast.success(`"${fromLabel}" → "${toLabel}" 통합 완료 (가계부 ${n}건 변경). 실수라면 Ctrl+Z로 되돌릴 수 있습니다.`);
   };
 
   return (
@@ -737,83 +760,37 @@ export const CategoriesView: React.FC<Props> = ({ presets, onChangePresets, ledg
         <div>
           <h4 style={{ fontSize: 14, marginBottom: 8 }}>카테고리 통합</h4>
           <p className="hint" style={{ fontSize: 12, marginBottom: 8 }}>
-            두 카테고리를 하나로 통합할 수 있습니다. 통합하면 기존 데이터의 카테고리도 자동으로 변경됩니다.
+            두 카테고리를 하나로 합칩니다. 가계부의 기존 항목도 함께 변경되고 즉시 저장됩니다 (Ctrl+Z로 되돌리기 가능).
+            목록에 없이 데이터에만 남은 카테고리(예: 띄어쓰기가 다른 중복)도 후보에 표시됩니다.
           </p>
-          <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr auto", gap: 8, alignItems: "end" }}>
+          <div style={{ display: "grid", gridTemplateColumns: "auto 1fr 1fr auto", gap: 8, alignItems: "end" }}>
             <div>
-              <label style={{ fontSize: 11, marginBottom: 4, display: "block" }}>통합할 카테고리</label>
+              <label style={{ fontSize: 11, marginBottom: 4, display: "block" }}>유형</label>
               <select
-                id="merge-from"
-                style={{ width: "100%", padding: "6px", fontSize: 13 }}
-                defaultValue=""
+                value={mergeKind}
+                onChange={(e) => { setMergeKind(e.target.value as MergeKind); setMergeFrom(""); setMergeTo(""); }}
+                style={{ padding: "6px", fontSize: 13 }}
               >
-                <option value="">선택</option>
-                {expenseGroups.map((g, idx) => (
-                  <optgroup key={idx} label={g.main || "(대분류 없음)"}>
-                    <option value={`main:${idx}:${g.main}`}>{g.main} (대분류)</option>
-                    {g.subs.map((sub, subIdx) => (
-                      <option key={subIdx} value={`sub:${idx}:${sub}`}>
-                        {sub} (세부)
-                      </option>
-                    ))}
-                  </optgroup>
-                ))}
+                <option value="income">수입</option>
+                <option value="transfer">이체</option>
+                <option value="expenseMain">지출 대분류</option>
+                <option value="expenseSub">지출 세부</option>
               </select>
             </div>
-            <div>
-              <label style={{ fontSize: 11, marginBottom: 4, display: "block" }}>통합 대상 카테고리</label>
-              <select
-                id="merge-to"
-                style={{ width: "100%", padding: "6px", fontSize: 13 }}
-                defaultValue=""
-              >
-                <option value="">선택</option>
-                {expenseGroups.map((g, idx) => (
-                  <optgroup key={idx} label={g.main || "(대분류 없음)"}>
-                    <option value={`main:${idx}:${g.main}`}>{g.main} (대분류)</option>
-                    {g.subs.map((sub, subIdx) => (
-                      <option key={subIdx} value={`sub:${idx}:${sub}`}>
-                        {sub} (세부)
-                      </option>
-                    ))}
-                  </optgroup>
-                ))}
-              </select>
-            </div>
-            <button
-              type="button"
-              className="primary"
-              onClick={() => {
-                const fromSelect = document.getElementById("merge-from") as HTMLSelectElement;
-                const toSelect = document.getElementById("merge-to") as HTMLSelectElement;
-                const fromValue = fromSelect.value;
-                const toValue = toSelect.value;
-                
-                if (!fromValue || !toValue || fromValue === toValue) {
-                  alert("서로 다른 두 카테고리를 선택해주세요.");
-                  return;
-                }
-                
-                const [fromType, fromIdx, fromName] = fromValue.split(":");
-                const [toType, , toName] = toValue.split(":");
-                
-                if (fromType !== toType) {
-                  alert("같은 유형의 카테고리만 통합할 수 있습니다.");
-                  return;
-                }
-                
-                if (confirm(`"${fromName}"을(를) "${toName}"(으)로 통합하시겠습니까?`)) {
-                  if (fromType === "main") {
-                    mergeCategories(fromName, toName, "main");
-                  } else {
-                    mergeCategories(fromName, toName, "sub", parseInt(fromIdx));
-                  }
-                  fromSelect.value = "";
-                  toSelect.value = "";
-                }
-              }}
-              style={{ padding: "6px 12px", fontSize: 13 }}
-            >
+            {([["통합할 카테고리 (없어짐)", mergeFrom, setMergeFrom], ["통합 대상 (남음)", mergeTo, setMergeTo]] as const).map(([label, value, setter]) => (
+              <div key={label}>
+                <label style={{ fontSize: 11, marginBottom: 4, display: "block" }}>{label}</label>
+                <select value={value} onChange={(e) => setter(e.target.value)} style={{ width: "100%", padding: "6px", fontSize: 13 }}>
+                  <option value="">선택</option>
+                  {mergeCandidates.map((c) => {
+                    const v = mergeKind === "expenseSub" ? subPairKey(c.main ?? "", c.name) : c.name;
+                    const text = `${mergeKind === "expenseSub" ? `${c.main} > ` : ""}${c.name} (${c.count}건${c.inPreset ? "" : " · 목록에 없음"})`;
+                    return <option key={v} value={v}>{text}</option>;
+                  })}
+                </select>
+              </div>
+            ))}
+            <button type="button" className="primary" onClick={handleMerge} style={{ padding: "6px 12px", fontSize: 13 }}>
               통합
             </button>
           </div>

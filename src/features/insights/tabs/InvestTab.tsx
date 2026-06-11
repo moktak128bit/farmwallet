@@ -106,7 +106,7 @@ export const InvestTab = React.memo(function InvestTab({ d }: { d: D }) {
           )}
         </Card>
 
-        <Card title="포트폴리오 자산배분 (계좌별)" span={2}>
+        <Card title="포트폴리오 자산배분 (현재 보유 평가액)" span={2}>
           {d.portfolio.length > 0 ? (
             <ResponsiveContainer width="100%" height={280}>
               <PieChart>

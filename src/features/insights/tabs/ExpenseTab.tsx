@@ -271,38 +271,6 @@ export const ExpenseTab = React.memo(function ExpenseTab({ d }: { d: D }) {
           })()}
         </Card>
 
-        <Card title={`🎯 예산 vs 실적 (${d.anomalyTargetMonth ?? "-"})`} span={4}>
-          {d.budgetProgress.length === 0 ? (
-            <div style={{ padding: 24, textAlign: "center", color: "var(--text-faint)", fontSize: 13 }}>
-              설정된 예산이 없습니다. 예산/반복 탭에서 예산을 설정하면 여기에 진척도가 표시됩니다.
-            </div>
-          ) : (
-            <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(280px, 1fr))", gap: 12 }}>
-              {d.budgetProgress.map((b) => {
-                const color = b.status === "over" ? "#e94560" : b.status === "warning" ? "#f0c040" : "#48c9b0";
-                return (
-                  <div key={b.category} style={{ padding: "12px 14px", background: b.status === "over" ? "#fff5f5" : b.status === "warning" ? "#fff7e6" : "#f0fdf4", borderRadius: 10, border: `1px solid ${color}55` }}>
-                    <div style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline", marginBottom: 6 }}>
-                      <span style={{ fontWeight: 700, fontSize: 14 }}>{b.category}</span>
-                      <span style={{ fontSize: 16, fontWeight: 800, color }}>{b.pct.toFixed(0)}%</span>
-                    </div>
-                    <div style={{ height: 8, background: "#f0f0f0", borderRadius: 4, overflow: "hidden", marginBottom: 6 }}>
-                      <div style={{ height: "100%", width: `${Math.min(100, b.pct)}%`, background: color }} />
-                    </div>
-                    <div style={{ fontSize: 12, color: "#666", display: "flex", justifyContent: "space-between" }}>
-                      <span>소진 {F(b.spent)}원</span>
-                      <span>한도 {F(b.limit)}원</span>
-                    </div>
-                    <div style={{ fontSize: 11, color: b.remaining < 0 ? "#e94560" : "#999", marginTop: 2 }}>
-                      {b.remaining >= 0 ? `잔여 ${F(b.remaining)}원` : `초과 ${F(Math.abs(b.remaining))}원`}
-                      {b.status === "over" && " ⚠️"}
-                    </div>
-                  </div>
-                );
-              })}
-            </div>
-          )}
-        </Card>
       </Section>
 
       {/* ============ 드릴다운 ============ */}

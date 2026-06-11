@@ -238,14 +238,14 @@ export const ComprehensiveMonthlySection: React.FC<Props> = React.memo(function 
                 <div style={{ fontSize: 22, fontWeight: 700, color: r.realNet >= 0 ? "var(--positive)" : "var(--negative)" }}>
                   {signedKRW(r.realNet)}
                 </div>
-                <div style={{ fontSize: 12, color: "var(--text-muted)" }}>근로소득 − 생활소비 (정산 차감)</div>
+                <div style={{ fontSize: 12, color: "var(--text-muted)" }}>실질수입 − 실질지출 (정산·일시소득·환전·신용결제 제외, 데이트 50% 반영)</div>
               </div>
               <div>
                 <div style={{ fontSize: 13, color: "var(--text-muted)" }}>실질 저축률</div>
                 <div style={{ fontSize: 22, fontWeight: 700 }}>
                   {r.realSavingsRate != null ? `${r.realSavingsRate.toFixed(1)}%` : "-"}
                 </div>
-                <div style={{ fontSize: 12, color: "var(--text-muted)" }}>실질 순수입 / 근로소득</div>
+                <div style={{ fontSize: 12, color: "var(--text-muted)" }}>실질 순수입 / 실질수입</div>
               </div>
               <div>
                 <div style={{ fontSize: 13, color: "var(--text-muted)" }}>장부 순수입</div>
@@ -269,7 +269,7 @@ export const ComprehensiveMonthlySection: React.FC<Props> = React.memo(function 
                 <Legend />
                 <Bar isAnimationActive={false} dataKey="earnedIncome" fill="#10b981" name="근로소득" />
                 <Bar isAnimationActive={false} dataKey="livingExpense" fill="#f43f5e" name="생활소비" />
-                <Bar isAnimationActive={false} dataKey="realNet" fill="#6366f1" name="진짜 순수입" />
+                <Bar isAnimationActive={false} dataKey="realNet" fill="#6366f1" name="실질 순수입" />
               </BarChart>
             </ResponsiveContainer>
           </div>

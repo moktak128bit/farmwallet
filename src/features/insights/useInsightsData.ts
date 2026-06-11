@@ -5,21 +5,26 @@
  */
 import { useMemo } from "react";
 import type { Account, LedgerEntry, StockTrade, StockPrice, CategoryPresets, BudgetGoal } from "../../types";
-import { computePositions } from "../../calculations";
+import { computeAccountBalances, computePositions, positionMarketValueKRW } from "../../calculations";
 import { calcTrend, mTotalsFor, computePeriodScope } from "../../utils/insightsHelpers";
 import { isInvestmentEntry, isCreditPayment } from "../../utils/category";
 import { tradeAmountKRW } from "../../utils/finance";
 import { detectSpendAnomalies } from "../../utils/anomaly";
 import { buildClosedTradeRecords, summarizeRecords, summaryToRealPL } from "../../utils/investmentRecord";
-import { computeRealIncome, computeOriginalAssets } from "../../utils/realIncome";
+import { computeOriginalAssets, classifyIncomeNature, NON_REAL_INCOME } from "../../utils/realIncome";
 import { classifyExpenses } from "../../utils/expenseClassification";
-import { isDateEntry, getMoimAccountIds, computeDatePartnerShare, computeMoimAccountFlow } from "../../utils/dateAccounting";
+import { isDateEntry, getMoimAccountIds, computeMoimAccountFlow } from "../../utils/dateAccounting";
+import { isCarryOverIncomeEntry, computeRealSavingsRate, computeMonthlyRealFlows } from "../../utils/savingsRate";
+import type { AccountTimelineRow } from "../../utils/accountTimeline";
 import {
   F, SD,
   type D, type SubInsight, type IncSubInsight, type DateSubInsight, type InvestSubInsight,
 } from "./insightsShared";
 
-export function useInsightsData(ledger: LedgerEntry[], rawTrades: StockTrade[], allTrades: StockTrade[], accounts: Account[], prices: StockPrice[], selMonth: string | null, categoryPresets: CategoryPresets | undefined, budgetGoals: BudgetGoal[] | undefined, dateAccountId: string | null, fxRate: number | null): D {
+// _budgetGoals: 예산 vs 실적 파생 제거(대시보드 BudgetAlertWidget 단일화) 후 미사용 — 호출부 시그니처 유지용
+// timelineRows: 대시보드와 동일한 순자산 타임라인(시세·환율·대출 반영) — InsightsPage가 전체 기간으로 1회 계산
+// allLedger: 기간 필터 전 전체 가계부 — 계좌별 현재 잔액(누적)의 정확성을 위해 별도 전달
+export function useInsightsData(ledger: LedgerEntry[], rawTrades: StockTrade[], allTrades: StockTrade[], accounts: Account[], prices: StockPrice[], selMonth: string | null, categoryPresets: CategoryPresets | undefined, _budgetGoals: BudgetGoal[] | undefined, dateAccountId: string | null, fxRate: number | null, timelineRows: AccountTimelineRow[], allLedger: LedgerEntry[]): D {
   return useMemo(() => {
     const aMap = new Map(accounts.map(a => [a.id, a.name]));
     const invIds = new Set(accounts.filter(a => a.type === "securities" || a.type === "crypto").map(a => a.id));
@@ -31,7 +36,8 @@ export function useInsightsData(ledger: LedgerEntry[], rawTrades: StockTrade[], 
     for (const l of ledger) {
       const m = l.date?.slice(0, 7); if (!m) continue; em(m);
       const a = Number(l.amount); if (a <= 0) continue;
-      if (l.kind === "income") monthly[m].income += a;
+      // 이월/원래 보유 자산은 실수입이 아니므로 월별 수입에서도 제외 (모든 수입 지표 일관)
+      if (l.kind === "income") { if (!isCarryOverIncomeEntry(l)) monthly[m].income += a; }
       else if (isInvestmentEntry(l)) monthly[m].investment += a; // 저축·투자 이체
       else if (l.kind === "expense" && !isCreditPayment(l)) monthly[m].expense += a;  // 신용결제는 카드 사용시 이미 잡힘 — 이중계상 방지
       else if (l.kind === "transfer" && l.toAccountId && invIds.has(l.toAccountId)) monthly[m].investment += a;
@@ -46,11 +52,8 @@ export function useInsightsData(ledger: LedgerEntry[], rawTrades: StockTrade[], 
     // 일반 지출: expense kind 중 재테크/환전/신용결제 제외 (투자손실은 category=재테크라 자동 제외)
     // 신용결제 제외 이유: 카드 사용 시점에 이미 expense로 기록됨. 카드 대금 결제까지 합치면 이중계상 → 월 지출 ~2배 부풀려짐.
     const fExp = fL.filter(l => l.kind === "expense" && Number(l.amount) > 0 && l.category !== "재테크" && l.category !== "환전" && !isCreditPayment(l));
-    // 이월/원래 보유 자산은 실수입이 아니므로 수입 합계에서 완전 제외 (UX 기억: 모든 수입 지표 일관)
-    const isCarryOverStr = (s: string) => s === "이월" || s.includes("이월") || s === "원래 보유 자산" || s.includes("보유 자산");
-    const isCarryOver = (l: LedgerEntry) => isCarryOverStr(l.category || "") || isCarryOverStr(l.subCategory || "");
-    // 수입 (투자수익도 kind=income으로 마이그레이션되어 자연 포함). 이월/원래보유자산 제외.
-    const fInc = fL.filter(l => l.kind === "income" && Number(l.amount) > 0 && !isCarryOver(l));
+    // 수입 (투자수익도 kind=income으로 마이그레이션되어 자연 포함). 이월/원래보유자산 제외 — utils/savingsRate 단일 판정.
+    const fInc = fL.filter(l => l.kind === "income" && Number(l.amount) > 0 && !isCarryOverIncomeEntry(l));
 
     /* period totals */
     const pIncome = fInc.reduce((s, l) => s + Number(l.amount), 0);
@@ -63,7 +66,20 @@ export function useInsightsData(ledger: LedgerEntry[], rawTrades: StockTrade[], 
       if (isInvestmentEntry(l)) pInvest += Number(l.amount);
       else if (l.kind === "transfer" && l.toAccountId && invIds.has(l.toAccountId)) pInvest += Number(l.amount);
     }
-    const pSavRate = SD(pIncome - pExpense, pIncome) * 100;
+    /* ===== 실질 수입/지출 (정산·일시소득 제외, USD 환산, 데이트 50% 분담) — utils/savingsRate 단일 소스 ===== */
+    const realFlows = computeMonthlyRealFlows(ledger, { fxRate, dateAccountId });
+    let realIncome = 0, realExpense = 0, settlementTotal = 0, tempIncomeTotal = 0, dateAccountSpend = 0, datePartnerShare = 0;
+    {
+      const flowMonths = selMonth ? [selMonth] : months;
+      for (const m of flowMonths) {
+        const rf = realFlows.get(m); if (!rf) continue;
+        realIncome += rf.realIncome; realExpense += rf.realExpense;
+        settlementTotal += rf.settlementTotal; tempIncomeTotal += rf.tempIncomeTotal;
+        dateAccountSpend += rf.dateAccountSpend; datePartnerShare += rf.datePartnerShare;
+      }
+    }
+    // D.realSavRate는 number 계약 — 분모 0(실질수입 없음)이면 0 폴백
+    const realSavRate = computeRealSavingsRate(realIncome, realExpense) ?? 0;
 
     /* ===== expenseByCategory (대분류) ===== */
     const catM = new Map<string, number>();
@@ -223,7 +239,7 @@ export function useInsightsData(ledger: LedgerEntry[], rawTrades: StockTrade[], 
     for (const l of ledger) {
       if (l.kind !== "income" || Number(l.amount) <= 0) continue;
       const m = l.date?.slice(0, 7); const sub = l.subCategory || l.category || "";
-      if (!m || !sub || isCarryOver(l)) continue;
+      if (!m || !sub || isCarryOverIncomeEntry(l)) continue;
       if (!incSubMonths.has(sub)) incSubMonths.set(sub, new Set());
       incSubMonths.get(sub)!.add(m);
     }
@@ -236,7 +252,8 @@ export function useInsightsData(ledger: LedgerEntry[], rawTrades: StockTrade[], 
     // 자주 나타나도 회사소득이 아닌 카테고리 (빈도 자동감지 오분류 보정)
     //  - 캐시백: 카드 리워드 → 기타수입
     //  - 배당/이자/투자수익: 투자/패시브로 강제 이동
-    const NEVER_SALARY = ["캐시백", "배당", "이자", "투자수익"];
+    //  - 정산·환불·데이트통장·지원·용돈·대출 등 비실질 수입: 자주 발생해도 소득이 아님
+    const NEVER_SALARY = ["캐시백", "배당", "이자", "투자수익", "환불", "데이트통장", ...NON_REAL_INCOME];
     for (const k of NEVER_SALARY) salaryKeys.delete(k);
     // 투자/패시브: 투자 계좌에서 발생하는 수입 중분류 (급여성 제외) + 명시적 목록
     const investIncKeys = new Set<string>();
@@ -248,15 +265,26 @@ export function useInsightsData(ledger: LedgerEntry[], rawTrades: StockTrade[], 
     }
     const ALWAYS_INVEST_INCOME = ["배당", "이자", "투자수익"];
     for (const k of ALWAYS_INVEST_INCOME) investIncKeys.add(k);
+    // 투자계좌에 우연히 들어온 리워드·환급류가 "패시브" 분류 전체를 오염시키는 것 방지
+    // (예: 증권사 이벤트 캐시백 1건 → 모든 캐시백이 패시브로 집계되는 버그)
+    const NEVER_INVEST_INCOME = ["캐시백", "환불", "데이트통장", ...NON_REAL_INCOME];
+    for (const k of NEVER_INVEST_INCOME) investIncKeys.delete(k);
 
     /* ===== trend data (full period) ===== */
+    // 저축률 추이 — 실질 저축률 정의로 통일 (realFlows 기반, 분모 0이면 0)
     const savRateTrend: D["savRateTrend"] = [];
     {
       let cumInc = 0, cumExp = 0;
       for (const m of months) {
-        const i = monthly[m].income, e = monthly[m].expense;
+        const rf = realFlows.get(m);
+        const i = rf?.realIncome ?? 0, e = rf?.realExpense ?? 0;
         cumInc += i; cumExp += e;
-        savRateTrend.push({ l: ml[m], rate: SD(i - e, i) * 100, cumRate: SD(cumInc - cumExp, cumInc) * 100, sav: i - e });
+        savRateTrend.push({
+          l: ml[m],
+          rate: computeRealSavingsRate(i, e) ?? 0,
+          cumRate: computeRealSavingsRate(cumInc, cumExp) ?? 0,
+          sav: i - e,
+        });
       }
     }
     const salaryTrend = months.map(m => {
@@ -264,7 +292,7 @@ export function useInsightsData(ledger: LedgerEntry[], rawTrades: StockTrade[], 
       for (const l of ledger) {
         if (l.kind !== "income" || l.date?.slice(0, 7) !== m || Number(l.amount) <= 0) continue;
         const sub = l.subCategory || l.category || "";
-        if (isCarryOver(l)) continue;
+        if (isCarryOverIncomeEntry(l)) continue;
         if (salaryKeys.has(sub)) sal += Number(l.amount); else non += Number(l.amount);
       }
       return { l: ml[m], salary: sal, nonSalary: non };
@@ -298,19 +326,25 @@ export function useInsightsData(ledger: LedgerEntry[], rawTrades: StockTrade[], 
       cumSpend[m] = cum;
     }
 
-    /* portfolio allocation */
+    /* portfolio allocation — 현재 보유 포지션의 시세 평가액 기준.
+       기존 buyTotal(누적 매수금액) 합산은 ① 이미 매도한 종목이 계속 잡히고(이름이 "BTC"/"bitcoin"처럼
+       다르면 상쇄도 실패) ② 보유 규모가 아닌 과거 매수 규모를 보여줘 오해 유발 — 평가액으로 교체.
+       암호화폐 판정은 이름 정규식 대신 계좌 타입(crypto)으로 — 거래 이름 표기에 의존하지 않음. */
+    const curPositions = computePositions(allTrades, prices, accounts, { fxRate: fxRate ?? undefined, priceFallback: "cost" });
+    const acctTypeById = new Map(accounts.map(a => [a.id, a.type]));
     const pM = new Map<string, number>();
-    for (const t of trades) {
-      if (t.buyCount - t.sellCount <= 0) continue;
-      const n = t.name.toLowerCase();
+    for (const p of curPositions) {
+      if (p.quantity <= 1e-9) continue;
+      const v = positionMarketValueKRW(p, fxRate);
+      if (v <= 0) continue;
       let tp = "개별주식";
-      if (/tiger|kodex|rise|sol |1q |ace |kbstar|hanaro/i.test(n)) tp = "ETF";
-      else if (/solana|ethereum|bitcoin|sol$|eth$|btc$/i.test(n)) tp = "암호화폐";
-      pM.set(tp, (pM.get(tp) ?? 0) + t.buyTotal);
+      if (acctTypeById.get(p.accountId) === "crypto") tp = "암호화폐";
+      else if (/tiger|kodex|rise|sol |1q |ace |kbstar|hanaro/i.test(p.name)) tp = "ETF";
+      pM.set(tp, (pM.get(tp) ?? 0) + v);
     }
     const portfolio = Array.from(pM.entries()).map(([name, value]) => ({ name, value })).sort((a, b) => b.value - a.value);
 
-    /* realized PL — FIFO 매칭 (대시보드 InvestmentRecordCard와 동일 로직). 라이프타임 기준 (전체 trades) */
+    /* realized PL — FIFO 매칭 (리포트 InvestmentRecordCard와 동일 로직). 라이프타임 기준 (전체 trades) */
     const allClosedRecords = buildClosedTradeRecords(allTrades, accounts, fxRate ?? undefined);
     const lifetimeRealizedSummary = summarizeRecords(allClosedRecords);
     const realPL = summaryToRealPL(lifetimeRealizedSummary);
@@ -339,9 +373,9 @@ export function useInsightsData(ledger: LedgerEntry[], rawTrades: StockTrade[], 
     }
     const topDates = Array.from(tdM.entries()).map(([date, v]) => ({ date, ...v })).sort((a, b) => b.total - a.total).slice(0, 5);
 
-    /* financial score */
+    /* financial score — 저축률 항목은 실질 저축률 기준 (정의 통일) */
     let scorePts = 0;
-    const sr = pSavRate;
+    const sr = realSavRate;
     if (sr >= 50) scorePts += 40; else if (sr >= 30) scorePts += 30; else if (sr >= 20) scorePts += 20; else if (sr >= 10) scorePts += 10;
     if (zeroDays > totalDays * 0.2) scorePts += 20; else if (zeroDays > totalDays * 0.1) scorePts += 10;
     if (pInvest > 0) scorePts += 20; else scorePts += 5;
@@ -359,7 +393,8 @@ export function useInsightsData(ledger: LedgerEntry[], rawTrades: StockTrade[], 
       for (const l of ledger) {
         if (l.date?.slice(0, 7) !== pm) continue;
         const a = Number(l.amount); if (a <= 0) continue;
-        if (l.kind === "income") pi += a;
+        // 이월/원래 보유 자산은 전월 수입에서도 제외 (모든 수입 지표 일관)
+        if (l.kind === "income") { if (!isCarryOverIncomeEntry(l)) pi += a; }
         // 지출: 일반 지출 + 투자손실(category=재테크). 환전·신용결제는 제외.
         else if (l.kind === "expense" && l.category !== "환전" && !isCreditPayment(l)) pe += a;
       }
@@ -370,13 +405,16 @@ export function useInsightsData(ledger: LedgerEntry[], rawTrades: StockTrade[], 
     const avgMonthExp = SD(months.reduce((s, m) => s + monthly[m].expense, 0), fullMonths);
 
     /* ===== 소득 그룹별 분류 ===== */
+    // "비실질"은 환급(정산·환불)·일시(지원·용돈)·부채(대출) — 장부엔 수입이지만 번 돈이 아닌 유입
     const groupMap: Record<string, { total: number; items: Map<string, number> }> = {
       "회사소득": { total: 0, items: new Map() },
       "투자/패시브": { total: 0, items: new Map() },
       "기타수입": { total: 0, items: new Map() },
+      "비실질": { total: 0, items: new Map() },
     };
     for (const [cat, val] of incByCat) {
-      const g = salaryKeys.has(cat) ? "회사소득" : investIncKeys.has(cat) ? "투자/패시브" : "기타수입";
+      const nature = classifyIncomeNature(cat, { salaryKeys, investIncKeys });
+      const g = nature === "근로" ? "회사소득" : nature === "패시브" ? "투자/패시브" : nature === "기타" ? "기타수입" : "비실질";
       groupMap[g].total += val;
       groupMap[g].items.set(cat, (groupMap[g].items.get(cat) ?? 0) + val);
     }
@@ -520,54 +558,85 @@ export function useInsightsData(ledger: LedgerEntry[], rawTrades: StockTrade[], 
     });
 
     /* ===== 수입 중분류별 인사이트 ===== */
+    // 진행 중인 달은 추세·안정성 계산에서 제외 — 월말까지 안 들어온 달과 비교하면 모든 수입원이 "급감"으로 표시됨
+    const nowD = new Date();
+    const curMonthStr = `${nowD.getFullYear()}-${String(nowD.getMonth() + 1).padStart(2, "0")}`;
+    const doneCnt = months.length > 1 && months[months.length - 1] === curMonthStr ? months.length - 1 : months.length;
     const incSubInsights: IncSubInsight[] = incByCat.slice(0, 12).map(([sub, total]) => {
       const cnt = fInc.filter(l => (l.subCategory || l.category || "기타") === sub).length;
       const fullMTotals = mTotalsFor(months, ledger, l =>
         l.kind === "income" && (l.subCategory || l.category || "기타") === sub
       );
-      const { monthTrend, mom, nonZero, monthAvg } = calcTrend(fullMTotals);
-      // 안정성 지수
-      let stability = 0;
-      if (nonZero.length >= 2) {
+      const doneTotals = fullMTotals.slice(0, doneCnt);
+      const { monthTrend, mom, nonZero, monthAvg } = calcTrend(doneTotals);
+      // 수입 성격 — 같은 "수입"이라도 근로/패시브/환급/일시/부채는 전혀 다른 돈
+      const nature = classifyIncomeNature(sub, { salaryKeys, investIncKeys });
+      const isReal = nature === "근로" || nature === "패시브" || nature === "기타";
+      const realShare = isReal && realIncome > 0 ? Math.round(SD(total, realIncome) * 100) : null;
+      // 안정성 지수 — 표본 3개월 미만이면 의미 없으므로 null (음수는 0으로 클램프)
+      let stability: number | null = null;
+      if (nonZero.length >= 3) {
         const mean = nonZero.reduce((a, b) => a + b, 0) / nonZero.length;
         const std = Math.sqrt(nonZero.reduce((s, v) => s + (v - mean) ** 2, 0) / nonZero.length);
-        stability = mean > 0 ? Math.round((1 - SD(std, mean)) * 100) : 0;
+        stability = mean > 0 ? Math.max(0, Math.round((1 - SD(std, mean)) * 100)) : 0;
       }
-      // 최대 수입 월
-      const maxIdx = fullMTotals.length > 0 ? fullMTotals.indexOf(Math.max(...fullMTotals)) : -1;
+      // 최대 수입 월 (완결월 기준)
+      const maxIdx = doneTotals.length > 0 ? doneTotals.indexOf(Math.max(...doneTotals)) : -1;
       const maxMonth = maxIdx >= 0 && months[maxIdx] ? ml[months[maxIdx]] : "";
-      const maxMonthAmt = fullMTotals[maxIdx] ?? 0;
+      const maxMonthAmt = doneTotals[maxIdx] ?? 0;
       const avg = Math.round(SD(total, cnt));
       const share = Math.round(SD(total, pIncome) * 100);
-      // 수입 발생 빈도
-      const incFreq = Math.round(SD(nonZero.length, months.length) * 100);
-      // 코멘트
+      // 수입 발생 빈도 (완결월 기준)
+      const incFreq = Math.round(SD(nonZero.length, doneCnt) * 100);
+      const recurring = incFreq >= 50 && nonZero.length >= 3;
+      // 코멘트 — 성격별로 완전히 다른 서사
       const cs: string[] = [];
-      if (share > 50) cs.push(`전체 수입의 ${share}%로 핵심 수입원입니다. 이 수입이 줄어들면 가계에 큰 영향을 미칩니다.`);
-      else if (share > 20) cs.push(`전체 수입의 ${share}%를 차지하는 중요한 수입원입니다.`);
-      else if (share > 5) cs.push(`전체 수입의 ${share}%를 차지합니다.`);
-      else cs.push(`전체 수입의 ${share}%로 소규모 수입원입니다.`);
-      // 안정성 상세
-      if (stability >= 80) cs.push(`안정성 ${stability}%로 매우 안정적입니다. 예측 가능한 수입으로 재무 계획에 신뢰할 수 있습니다.`);
-      else if (stability >= 60) cs.push(`안정성 ${stability}%로 비교적 안정적입니다.`);
-      else if (stability >= 40) cs.push(`안정성 ${stability}%로 변동이 있습니다. 이 수입에만 의존하지 않도록 주의하세요.`);
-      else if (nonZero.length >= 2) cs.push(`안정성 ${stability}%로 변동폭이 매우 큽니다. 비정기적 수입이므로 이를 고정 지출 계획에 포함하면 위험합니다.`);
-      // 추세 상세
-      if (monthTrend === "up" && mom > 30) cs.push(`최근 ${mom}% 급증! 매우 긍정적인 흐름입니다.`);
-      else if (monthTrend === "up") cs.push(`최근 ${mom}% 증가 추세로 좋은 방향입니다.`);
-      else if (monthTrend === "down" && Math.abs(mom) > 30) cs.push(`최근 ${Math.abs(mom)}% 급감! 원인을 파악하고 대응 방안을 마련하세요.`);
-      else if (monthTrend === "down") cs.push(`최근 ${Math.abs(mom)}% 감소 중입니다.`);
-      else cs.push("최근 안정적인 수준을 유지 중입니다.");
-      // 빈도
-      if (incFreq >= 90) cs.push(`${months.length}개월 중 ${nonZero.length}개월 발생 — 매월 꾸준히 들어오는 수입입니다.`);
-      else if (incFreq >= 50) cs.push(`${months.length}개월 중 ${nonZero.length}개월 발생 — 비교적 자주 들어옵니다.`);
-      else if (nonZero.length >= 1) cs.push(`${months.length}개월 중 ${nonZero.length}개월만 발생 — 비정기 수입입니다.`);
-      // 월평균과 최대 비교
-      if (maxMonth && maxMonthAmt > monthAvg * 2) cs.push(`최대 수입월 ${maxMonth}(${F(maxMonthAmt)})은 월평균(${F(monthAvg)})의 ${Math.round(SD(maxMonthAmt, monthAvg))}배 — 특별 수입이 있었습니다.`);
-      else if (maxMonth) cs.push(`최대 수입월: ${maxMonth}(${F(maxMonthAmt)}), 월평균 ${F(monthAvg)}.`);
-      if (cnt > 0) cs.push(`총 ${cnt}건 발생, 건당 평균 ${F(avg)}.`);
-      return { sub, total, count: cnt, avg, monthTrend, mom, share, monthAvg, stability, maxMonth, maxMonthAmt, comment: cs.join(" ") };
+      if (nature === "부채") {
+        cs.push(`대출 유입은 수입이 아니라 갚아야 할 부채입니다. 실질 수입에서 제외되며, 비중·안정성 분석 대상이 아닙니다.`);
+        cs.push(`총 ${cnt}건, ${F(total)} 유입. 상환 계획과 함께 관리하세요.`);
+      } else if (nature === "환급") {
+        if (sub.includes("환불")) cs.push(`결제 취소·이중 결제 등을 돌려받은 정정성 입금입니다. 번 돈이 아니므로 실질 수입에서 제외됩니다.`);
+        else if (sub === "데이트통장") cs.push(`데이트 통장 분담금 입금입니다. 상대 부담분은 실질 지출에서 이미 차감되므로 수입으로 집계하지 않습니다.`);
+        else cs.push(`내가 먼저 쓴 돈을 돌려받은 정산성 입금입니다. 번 돈이 아니므로 실질 수입에서 제외됩니다.`);
+        cs.push(`총 ${cnt}건, ${F(total)} 회수.`);
+      } else if (nature === "일시") {
+        cs.push(`${sub} 같은 일시·이전성 소득은 반복된다는 보장이 없습니다. 실질 수입에서 제외되며, 고정 지출 계획의 근거로 삼지 마세요.`);
+        cs.push(`${doneCnt}개월 중 ${nonZero.length}개월 발생, 총 ${F(total)}. 들어올 때 저축·투자로 돌리는 것이 안전합니다.`);
+      } else {
+        // 근로·패시브·기타 — 실질 수입을 구성하는 진짜 수입원
+        if (realShare !== null) {
+          if (realShare > 50) cs.push(`실질 수입의 ${realShare}%를 책임지는 핵심 수입원입니다. 이 수입이 줄어들면 가계에 직접 타격이 옵니다.`);
+          else if (realShare > 20) cs.push(`실질 수입의 ${realShare}%를 차지하는 중요한 수입원입니다.`);
+          else if (realShare > 5) cs.push(`실질 수입의 ${realShare}%를 차지합니다.`);
+          else cs.push(`실질 수입의 ${realShare}%인 소규모 수입원입니다.`);
+        }
+        if (nature === "패시브") {
+          cs.push(`자산이 일해서 번 패시브 수입입니다.`);
+          if (monthTrend === "up") cs.push(`증가 추세 — 투자 자산 축적 효과가 나타나고 있습니다.`);
+        }
+        if (nature === "근로" && !recurring && nonZero.length >= 1) {
+          cs.push(`상여·수당처럼 비정기로 들어오는 근로소득입니다. 고정 지출은 정기 급여 기준으로 계획하고, 이런 목돈은 저축·투자로 돌리세요.`);
+        }
+        // 안정성·추세는 정기적으로 들어오는 수입원에만 의미가 있음
+        if (recurring) {
+          if (stability !== null) {
+            if (stability >= 80) cs.push(`안정성 ${stability}%로 매우 안정적 — 재무 계획의 기준으로 삼을 수 있습니다.`);
+            else if (stability >= 60) cs.push(`안정성 ${stability}%로 비교적 안정적입니다.`);
+            else cs.push(`안정성 ${stability}%로 월별 변동이 큽니다. 이 수입에만 의존하지 않도록 주의하세요.`);
+          }
+          if (monthTrend === "up" && mom > 30) cs.push(`전월 대비 ${mom}% 급증했습니다.`);
+          else if (monthTrend === "down" && Math.abs(mom) > 30) cs.push(`전월 대비 ${Math.abs(mom)}% 급감 — 일시적인지 구조적인지 확인해 보세요.`);
+        } else if (nonZero.length >= 1 && nature !== "근로") {
+          cs.push(`${doneCnt}개월 중 ${nonZero.length}개월 발생한 비정기 수입 — 보너스로 보고 계획에는 넣지 않는 것이 좋습니다.`);
+        }
+        if (maxMonth && monthAvg > 0 && maxMonthAmt > monthAvg * 2) cs.push(`최대 수입월 ${maxMonth}(${F(maxMonthAmt)})은 발생월 평균(${F(monthAvg)})의 ${Math.round(SD(maxMonthAmt, monthAvg))}배였습니다.`);
+        if (cnt > 0) cs.push(`총 ${cnt}건, 건당 평균 ${F(avg)}.`);
+      }
+      return { sub, total, count: cnt, avg, monthTrend, mom, share, monthAvg, stability, maxMonth, maxMonthAmt, nature, isReal, realShare, recurring, comment: cs.join(" ") };
     });
+    // 진짜 수입원(근로→패시브→기타)을 앞에, 환급·일시·부채는 뒤로 — 각 그룹 안에서는 금액순
+    const natureOrder: Record<string, number> = { 근로: 0, 패시브: 1, 기타: 2, 일시: 3, 환급: 4, 부채: 5 };
+    incSubInsights.sort((a, b) => (natureOrder[a.nature] ?? 9) - (natureOrder[b.nature] ?? 9) || b.total - a.total);
 
     /* ===== 데이트 중분류별 인사이트 ===== */
     const dTotal = dateEntries.reduce((s, e) => s + e.amount, 0);
@@ -630,19 +699,13 @@ export function useInsightsData(ledger: LedgerEntry[], rawTrades: StockTrade[], 
       return { sub: v.sub, amount: v.amount, count: v.count, avg, share, monthAvg, monthTrend: ivTrend, mom: ivMom, comment: cs.join(" ") };
     });
 
-    /* ===== 실질 수입/지출 (정산·일시소득 제외, 데이트 50% 분담) ===== */
-    const { settlementTotal, tempIncomeTotal, realIncome } = computeRealIncome(fInc, pIncome);
+    /* ===== 원래 보유 자산·분담 통장 흐름 (실질 수입/지출은 위 realFlows 블록 소유) ===== */
     const { originalAssetsByAcct, originalAssets } = computeOriginalAssets(accounts);
-    // 데이트 계좌 지출: 50/50 분담 → 절반은 상대 부담이므로 실 지출에서 제거
-    const { dateAccountSpend, datePartnerShare } = computeDatePartnerShare(fExp, dateAccountId);
     // 분담 통장 월별 흐름 — 전체 ledger·전체 months 사용 (현재 잔액 누적 의미)
     const moimFlow = computeMoimAccountFlow(ledger, dateAccountId, months);
-    // 실질 지출: 데이트 계좌 50% 제거 (상대 부담). 정산은 수입에서 이미 제외했으므로 여기서 중복 차감 안 함
-    const realExpense = pExpense - datePartnerShare;
 
     /* ===== 추가 계산 지표 ===== */
     const netProfit = realIncome - realExpense;
-    const realSavRate = realIncome > 0 ? (realIncome - realExpense) / realIncome * 100 : 0;
     let passiveIncome = 0;
     for (const [cat, val] of incByCat) { if (investIncKeys.has(cat)) passiveIncome += val; }
     const expToIncRatio = pIncome > 0 ? pExpense / pIncome * 100 : 0;
@@ -665,26 +728,42 @@ export function useInsightsData(ledger: LedgerEntry[], rawTrades: StockTrade[], 
     const { fixedExpense, variableExpense } = classifyExpenses(fExp, categoryPresets);
 
     /* ===== 순자산/자산 분석 ===== */
-    // 월별 순자산 추이 (누적 수입-지출 + 초기잔액)
-    const totalInitBal = accounts.reduce((s, a) => s + (a.initialBalance ?? 0) + (a.cashAdjustment ?? 0) + (a.savings ?? 0), 0);
-    let cumInc = 0, cumExp = 0, cumSav = 0;
-    const netWorthByMonth = months.map(m => {
-      cumInc += monthly[m].income; cumExp += monthly[m].expense; cumSav += monthly[m].investment;
-      return { month: m, label: ml[m], total: totalInitBal + cumInc - cumExp, income: monthly[m].income, expense: monthly[m].expense, savings: cumSav };
+    // 월별 순자산 추이 — 대시보드 타임라인(시세·환율·대출 반영)과 동일 계산.
+    // 기간 필터 시 '전체 기간 누적의 윈도우 절단' — 끝은 자르지 않음(마지막 행 = currentMonth, 대시보드 현재값과 정합).
+    const timelineSlice = months.length === 0 ? [] : timelineRows.filter(r => r.month >= months[0]);
+    let cumSav = 0;
+    const netWorthByMonth = timelineSlice.map(r => {
+      cumSav += monthly[r.month]?.investment ?? 0;
+      return {
+        month: r.month,
+        label: ml[r.month] ?? `${parseInt(r.month.slice(5))}월`,
+        total: r.total,
+        income: monthly[r.month]?.income ?? 0,
+        expense: monthly[r.month]?.expense ?? 0,
+        savings: cumSav,
+      };
     });
-    // 계좌별 현재 잔액 추정
-    const acctBal = new Map<string, number>();
-    accounts.forEach(a => acctBal.set(a.id, (a.initialBalance ?? 0) + (a.cashAdjustment ?? 0) + (a.savings ?? 0)));
-    for (const l of ledger) {
-      if (l.kind === "income" && l.toAccountId) acctBal.set(l.toAccountId, (acctBal.get(l.toAccountId) ?? 0) + l.amount);
-      if (l.kind === "expense" && l.fromAccountId) acctBal.set(l.fromAccountId, (acctBal.get(l.fromAccountId) ?? 0) - l.amount);
-      if (l.kind === "expense" && l.toAccountId) acctBal.set(l.toAccountId, (acctBal.get(l.toAccountId) ?? 0) + l.amount);
-      if (l.kind === "transfer" && l.currency !== "USD") {
-        if (l.fromAccountId) acctBal.set(l.fromAccountId, (acctBal.get(l.fromAccountId) ?? 0) - l.amount);
-        if (l.toAccountId) acctBal.set(l.toAccountId, (acctBal.get(l.toAccountId) ?? 0) + l.amount);
-      }
+    // 현재 순자산/총자산/총부채 — 타임라인 슬라이스 마지막 행 (대시보드와 동일 숫자)
+    const lastTimelineRow = timelineSlice.length > 0 ? timelineSlice[timelineSlice.length - 1] : null;
+    const netWorthNow = lastTimelineRow
+      ? { total: lastTimelineRow.total, asset: lastTimelineRow.asset, debt: lastTimelineRow.debt }
+      : null;
+    // 계좌별 현재 잔액 — 현금(computeAccountBalances) + USD 환산 + 보유 포지션 평가액.
+    // 평가액을 빼면 증권/암호화폐 계좌가 예수금 몇 푼으로만 보여 순자산 KPI(타임라인: 시세 반영)와 모순됨
+    const stockValueByAccount = new Map<string, number>();
+    for (const p of curPositions) {
+      if (p.quantity <= 1e-9) continue;
+      stockValueByAccount.set(p.accountId, (stockValueByAccount.get(p.accountId) ?? 0) + positionMarketValueKRW(p, fxRate));
     }
-    const accountBalances = accounts.map(a => ({ name: a.name, type: a.type || "checking", balance: acctBal.get(a.id) ?? 0 })).sort((a, b) => b.balance - a.balance);
+    const accountBalances = computeAccountBalances(accounts, allLedger, allTrades)
+      .map(row => {
+        const a = row.account;
+        const usdToKrw = a.type === "securities" || a.type === "crypto"
+          ? ((a.usdBalance ?? 0) + row.usdTransferNet) * (fxRate ?? 0)
+          : 0;
+        return { name: a.name, type: a.type || "checking", balance: row.currentBalance + usdToKrw + (stockValueByAccount.get(a.id) ?? 0) };
+      })
+      .sort((a, b) => b.balance - a.balance);
     // 자산 유형별 배분
     const typeMap: Record<string, number> = {};
     const typeLabels: Record<string, string> = { checking: "입출금", savings: "저축", securities: "증권", crypto: "암호화폐", credit: "신용카드", cash: "현금", loan: "대출" };
@@ -744,12 +823,13 @@ export function useInsightsData(ledger: LedgerEntry[], rawTrades: StockTrade[], 
     // 월수입을 며칠만에 쓰는지 — selMonth 필터 시 1개월 기준
     const avgMonthInc = pIncome / (selMonth ? 1 : Math.max(1, months.length));
     const daysToSpendIncome = avgMonthInc > 0 && dailyAvgExp > 0 ? Math.round(avgMonthInc / dailyAvgExp) : null;
-    // 최고 저축률 달
+    // 최고 실질 저축률 달 — realFlows 기반 (savRateTrend와 동일 정의)
     let bestSavingsMonth: { month: string; rate: number } | null = null;
     for (const m of months) {
-      const mi = monthly[m].income, me = monthly[m].expense;
-      if (mi > 0) {
-        const rate = Math.round((mi - me) / mi * 100);
+      const rf = realFlows.get(m);
+      const rawRate = rf ? computeRealSavingsRate(rf.realIncome, rf.realExpense) : null;
+      if (rawRate != null) {
+        const rate = Math.round(rawRate);
         if (!bestSavingsMonth || rate > bestSavingsMonth.rate) bestSavingsMonth = { month: m, rate };
       }
     }
@@ -808,30 +888,6 @@ export function useInsightsData(ledger: LedgerEntry[], rawTrades: StockTrade[], 
       const avg = lookback.reduce((s, m) => s + (monthly[m]?.expense ?? 0), 0) / lookback.length;
       const deviation = avg > 0 ? ((curExp - avg) / avg) * 100 : null;
       return { curExp, avg, deviation, lookbackMonths: lookback.length };
-    })();
-
-    /* 예산 vs 실적 (현재월 기준) */
-    const budgetProgress = (() => {
-      const targetMonth = anomalyTargetMonth;
-      if (!targetMonth || !budgetGoals || budgetGoals.length === 0) return [];
-      const monthExp = ledger.filter((l) => l.kind === "expense" && l.date?.startsWith(targetMonth) && l.category !== "재테크" && l.category !== "환전" && !isCreditPayment(l) && Number(l.amount) > 0);
-      return budgetGoals.map((g) => {
-        let spent = 0;
-        if (g.category === "전체") {
-          const exclCats = new Set(g.excludeCategories ?? []);
-          const exclAccts = new Set(g.excludeAccountIds ?? []);
-          spent = monthExp.filter((l) =>
-            !exclCats.has(l.category || "") &&
-            !exclCats.has(l.subCategory || "") &&
-            !exclAccts.has(l.fromAccountId || "")
-          ).reduce((s, l) => s + Number(l.amount), 0);
-        } else {
-          spent = monthExp.filter((l) => l.category === g.category || l.subCategory === g.category).reduce((s, l) => s + Number(l.amount), 0);
-        }
-        const pct = g.monthlyLimit > 0 ? (spent / g.monthlyLimit) * 100 : 0;
-        const status: "safe" | "warning" | "over" = pct >= 100 ? "over" : pct >= 80 ? "warning" : "safe";
-        return { category: g.category, limit: g.monthlyLimit, spent, remaining: g.monthlyLimit - spent, pct, status };
-      }).sort((a, b) => b.pct - a.pct);
     })();
 
     /* 카테고리 성장률 TOP — 현재월 중분류 지출 vs 최근 3개월 평균 */
@@ -981,9 +1037,9 @@ export function useInsightsData(ledger: LedgerEntry[], rawTrades: StockTrade[], 
 
     return {
       months, ml, selMonth, monthSpan, accumLabel, txCount: fL.length, anomalyTargetMonth, topAnomaly, incomeGrowth, spendingInertia,
-      budgetProgress, categoryGrowth, entryOutliers, spendByDOMAvg, domOccurrences, patternStats,
+      categoryGrowth, entryOutliers, spendByDOMAvg, domOccurrences, patternStats,
       monthly, savRateTrend, salaryTrend, cumIE, investTrend, divTrend, tradeCntTrend, subTrend, txCntTrend, cumSpend, monthlyCatTrend, dateExpMonthly,
-      pIncome, pExpense, pInvest, pSavRate, expByCat, expBySub, topCats, acctUsage, wdSpend, dateTop, dateSubCats, dateEntries, dateTxCount, incByCat, trades, subs, largeExp, topTx, expBySubCat, expByDesc, dateMoim, datePersonal, spendByDOM, portfolio, realPL: { total: plTot, wins: plWin, losses: plLoss, winCnt: plWC, lossCnt: plLC },
+      pIncome, pExpense, pInvest, expByCat, expBySub, topCats, acctUsage, wdSpend, dateTop, dateSubCats, dateEntries, dateTxCount, incByCat, trades, subs, largeExp, topTx, expBySubCat, expByDesc, dateMoim, datePersonal, spendByDOM, portfolio, realPL: { total: plTot, wins: plWin, losses: plLoss, winCnt: plWC, lossCnt: plLC },
       investBreakdown,
       zeroDays, totalDays, weekendTot, weekdayTot, topDates,
       score: { total: scorePts, grade, comment: comments[grade] || "" }, prev, avgMonthExp,
@@ -992,7 +1048,7 @@ export function useInsightsData(ledger: LedgerEntry[], rawTrades: StockTrade[], 
       realIncome, realExpense, settlementTotal, tempIncomeTotal, dateAccountSpend, datePartnerShare, moimFlow, originalAssets, originalAssetsByAcct,
       netProfit, realSavRate, passiveIncome, expToIncRatio, dailyAvgExp, netCashFlow,
       incomeStability, investReturnRate, subTotal, fixedExpense, variableExpense,
-      netWorthByMonth, accountBalances, assetAllocation, funStats,
+      netWorthByMonth, netWorthNow, accountBalances, assetAllocation, funStats,
     };
-  }, [ledger, rawTrades, allTrades, accounts, prices, selMonth, categoryPresets, budgetGoals, dateAccountId, fxRate]);
+  }, [ledger, rawTrades, allTrades, accounts, prices, selMonth, categoryPresets, dateAccountId, fxRate, timelineRows, allLedger]);
 }

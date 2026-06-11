@@ -15,20 +15,23 @@ export const AssetTab = React.memo(function AssetTab({ d }: { d: D }) {
   const accounts = useAppStore((s) => s.data.accounts);
 
   const nw = d.netWorthByMonth;
-  const current = nw.length > 0 ? nw[nw.length - 1].total : 0;
+  const current = d.netWorthNow?.total ?? 0;
   const first = nw.length > 0 ? nw[0].total : 0;
-  const growth = first > 0 ? Math.round((current / first - 1) * 100) : 0;
+  // 시작 순자산이 0 이하(부채 > 자산으로 출발)면 비율 성장이 정의되지 않음 — 증가액으로 표시
+  const growthAbs = current - first;
+  const growthPct = first > 0 ? Math.round((current / first - 1) * 100) : null;
   const maxNW = nw.length > 0 ? Math.max(...nw.map((n) => n.total)) : 0;
   const minNW = nw.length > 0 ? Math.min(...nw.map((n) => n.total)) : 0;
   const monthlyGrowth = nw.length >= 2 ? Math.round((current - first) / (nw.length - 1)) : 0;
 
-  // 부채 합계 (account.debt + 현재 대출 잔금)
+  // 신용/대출 분해 표시용 (sub 문구·대출 잔금 인사이트). KPI 자체는 타임라인 월말 기준(netWorthNow) —
+  // 미래일자 상환 기록이 있을 때만 분해 합과 미세 차이가 날 수 있음 (표시 전용이라 수용)
   const accountDebtSum = accounts.reduce((s, a) => s + Math.abs(a.debt ?? 0), 0);
   const loanDebtSum = computeLoanBalanceAt(loans, ledger);
-  const totalDebt = accountDebtSum + loanDebtSum;
 
-  // 총자산 (부채 추가 전) 근사치 — 순자산 + 부채
-  const totalAssets = current + totalDebt;
+  // 총 부채/총 자산 — 대시보드 타임라인과 동일 계산 (시세·환율·대출 반영)
+  const totalDebt = d.netWorthNow?.debt ?? 0;
+  const totalAssets = d.netWorthNow?.asset ?? 0;
 
   // 목표 대비 진척률
   const target = goals?.finalTotalAssetTarget ?? null;
@@ -56,16 +59,22 @@ export const AssetTab = React.memo(function AssetTab({ d }: { d: D }) {
       {/* 상단 배너 */}
       <div style={{ padding: "10px 14px", background: "var(--bg)", borderRadius: 8, marginBottom: 16, fontSize: 12, color: "var(--text-muted)", lineHeight: 1.6 }}>
         ℹ️ 범위: <strong>{rangeLabel}</strong> ({periodLabel}) · 단위: <strong>원</strong> · 순자산 = 계좌잔액 − account.debt − 대출잔금.
-        월별 추이는 <strong>현금 흐름 누적 근사치</strong>이며 주식 평가액·환율 변동은 반영 안 됨 (정확한 트렌드는 대시보드 참조)
+        월별 추이는 <strong>대시보드 순자산 추이와 동일 계산</strong> (주식 평가액·환율·대출 반영)
       </div>
 
       {/* ============ 한눈에 ============ */}
       <Section storageKey="asset-section-overview" title="🎯 한눈에">
         <Card accent>
-          <Kpi label="현재 순자산" value={F(current) + "원"} sub={`${nw.length}개월 추적`} color="#48c9b0" info="계좌 현재 잔액 − account.debt − 대출 잔금 (주식 평가액 제외)" />
+          <Kpi label="현재 순자산" value={F(current) + "원"} sub={`${nw.length}개월 추적`} color="#48c9b0" info="계좌 현재 잔액 − account.debt − 대출 잔금" />
         </Card>
         <Card accent>
-          <Kpi label="총 성장률" value={`${growth >= 0 ? "+" : ""}${growth}%`} sub={`시작 ${F(first)}원 → 현재 ${F(current)}원`} color={growth >= 0 ? "#48c9b0" : "#e94560"} info="추적 시작 월 대비 현재 순자산 비율 변화" />
+          <Kpi
+            label={growthPct !== null ? "총 성장률" : "순자산 증가액"}
+            value={growthPct !== null ? `${growthPct >= 0 ? "+" : ""}${growthPct}%` : `${growthAbs >= 0 ? "+" : "−"}${F(Math.abs(growthAbs))}원`}
+            sub={`시작 ${F(first)}원 → 현재 ${F(current)}원${first <= 0 && current > 0 ? " · 적자 → 흑자 전환" : ""}`}
+            color={growthAbs >= 0 ? "#48c9b0" : "#e94560"}
+            info="추적 시작 월 대비. 시작 순자산이 0 이하(부채로 출발)면 비율이 정의되지 않아 증가액으로 표시"
+          />
         </Card>
         <Card accent>
           <Kpi
@@ -198,7 +207,7 @@ export const AssetTab = React.memo(function AssetTab({ d }: { d: D }) {
       {/* ============ 추이 ============ */}
       <Section storageKey="asset-section-trend" title="📈 추이">
         {nw.length >= 2 && (
-          <Card title="순자산 추이 (현금흐름 누적 기반)" span={4}>
+          <Card title="순자산 추이" span={4}>
             <ResponsiveContainer width="100%" height={300}>
               <AreaChart data={nw}>
                 <defs>

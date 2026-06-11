@@ -7,6 +7,8 @@ import {
 } from "../calculations";
 import { isSavingsExpenseEntry, isCreditPayment } from "./category";
 import { canonicalTickerForMatch, isUSDStock } from "./finance";
+import { computeMonthlyRealFlows, computeRealSavingsRate } from "./savingsRate";
+import { isNonRealIncomeSub } from "./realIncome";
 import { xirr, type CashFlowItem } from "./irr";
 
 export interface MonthlyReport {
@@ -1283,10 +1285,7 @@ export function generateConsumptionImpactMonthlyReport(
 // 종합 월간 보고서 (Comprehensive Monthly Summary)
 // ---------------------------------------------------------------------------
 
-/** 수입 카테고리 분류: 허수(정산/용돈/원래 보유 자산/대출/처분소득/지원)를 걸러낸 진짜 수입 */
-const NON_REAL_INCOME_CATEGORIES = new Set([
-  "정산", "용돈", "이월", "원래 보유 자산", "대출", "처분소득", "지원"
-]);
+/** 수입 카테고리 분류: 허수(정산/환불/용돈/대출 등)를 걸러낸 진짜 수입 — utils/realIncome 단일 소스 */
 
 /** 자본소득 카테고리 (근로소득과 분리) */
 const CAPITAL_INCOME_CATEGORIES = new Set([
@@ -1324,9 +1323,11 @@ export interface ComprehensiveMonthlyRow {
   loanRepayment: number;        // 대출상환 지출
   loanInterest: number;         // 대출이자 (주담대이자 등)
 
-  // ── 핵심 지표 ──
-  realNet: number;              // 진짜 순수입 = 근로소득 - 생활소비
-  realSavingsRate: number | null; // 진짜 저축률 = realNet / earnedIncome (%)
+  // ── 핵심 지표 (실질 기준 — utils/savingsRate.computeMonthlyRealFlows 단일 소스) ──
+  realIncome: number;           // 실질수입 (정산·일시소득·이월 제외, USD 환산)
+  realExpense: number;          // 실질지출 (환전·신용결제·재테크 제외, 투자손실 포함, 데이트 50% 차감)
+  realNet: number;              // 실질 순수입 = 실질수입 − 실질지출
+  realSavingsRate: number | null; // 실질 저축률 = realNet / 실질수입 (%) — 실질수입 0이면 null
   totalNet: number;             // 장부 순수입 = totalIncome - totalExpense
 }
 
@@ -1336,7 +1337,8 @@ export function generateComprehensiveMonthlyReport(
   accounts: Account[],
   startMonth?: string,
   endMonth?: string,
-  fxRate?: number
+  fxRate?: number,
+  dateAccountId?: string | null
 ): ComprehensiveMonthlyRow[] {
   const accountById = new Map(accounts.map((a) => [a.id, a]));
 
@@ -1352,7 +1354,7 @@ export function generateComprehensiveMonthlyReport(
   const months = buildMonthRange(rangeStart, rangeEnd);
 
   // 초기화
-  type Accum = Omit<ComprehensiveMonthlyRow, "month" | "realNet" | "realSavingsRate" | "totalNet">;
+  type Accum = Omit<ComprehensiveMonthlyRow, "month" | "realIncome" | "realExpense" | "realNet" | "realSavingsRate" | "totalNet">;
   const rows = new Map<string, Accum>();
   for (const m of months) {
     rows.set(m, {
@@ -1378,7 +1380,7 @@ export function generateComprehensiveMonthlyReport(
       const cat = entry.category ?? "";
       const sub = entry.subCategory ?? "";
 
-      if (NON_REAL_INCOME_CATEGORIES.has(cat) || NON_REAL_INCOME_CATEGORIES.has(sub)) {
+      if (isNonRealIncomeSub(cat) || isNonRealIncomeSub(sub)) {
         row.nonRealIncome += amount;
       } else if (CAPITAL_INCOME_CATEGORIES.has(cat) || CAPITAL_INCOME_CATEGORIES.has(sub)) {
         row.capitalIncome += amount;
@@ -1468,14 +1470,25 @@ export function generateComprehensiveMonthlyReport(
     }
   }
 
+  // 월별 실질수입/실질지출 — utils/savingsRate 단일 소스 (인사이트 실질 저축률과 동일 정의)
+  const realFlows = computeMonthlyRealFlows(ledger, {
+    fxRate: fxRate ?? null,
+    dateAccountId: dateAccountId ?? null,
+    startMonth: rangeStart,
+    endMonth: rangeEnd
+  });
+
   // 최종 행 생성
   return months.map((month) => {
     const r = rows.get(month)!;
-    const realNet = r.earnedIncome - r.livingExpense;
-    const realSavingsRate = r.earnedIncome > 0 ? (realNet / r.earnedIncome) * 100 : null;
+    const rf = realFlows.get(month);
+    const realIncome = rf?.realIncome ?? 0;
+    const realExpense = rf?.realExpense ?? 0;
+    const realNet = realIncome - realExpense;
+    const realSavingsRate = computeRealSavingsRate(realIncome, realExpense);
     const totalNet = r.totalIncome - r.totalExpense;
 
-    return { month, ...r, realNet, realSavingsRate, totalNet };
+    return { month, ...r, realIncome, realExpense, realNet, realSavingsRate, totalNet };
   });
 }
 

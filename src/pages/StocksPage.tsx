@@ -242,7 +242,7 @@ export const StocksView: React.FC<Props> = ({
     return ledger.filter(isDividend).reduce((s, l) => s + toKrw(l), 0);
   }, [ledger, fxRate]);
 
-  /** FIFO 누적 실현손익 — 대시보드 InvestmentRecordCard·인사이트 InvestTab과 동일 로직. */
+  /** FIFO 누적 실현손익 — 리포트 InvestmentRecordCard·인사이트 InvestTab과 동일 로직. */
   const realized = useMemo(() => {
     const records = buildClosedTradeRecords(trades, accounts, fxRate ?? undefined);
     const summary = summarizeRecords(records);

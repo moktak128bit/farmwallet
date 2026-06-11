@@ -15,12 +15,50 @@ export const NON_REAL_INCOME = new Set([
   "대출",
   "처분소득",
   "지원",
+  "환불",
 ]);
 
+/**
+ * 정산성(회수) 수입 판정 — 내가/우리가 먼저 쓴 돈이 돌아온 것.
+ *  - "정산" 부분일치
+ *  - "데이트통장" 정확 일치: 상대 분담금 입금. 실질 지출 쪽에서 상대 부담 50%를
+ *    이미 차감하므로(computeDatePartnerShare) 입금까지 수입으로 잡으면 이중계상.
+ */
+export const isSettlementLikeSub = (s: string): boolean =>
+  s.includes("정산") || s === "데이트통장";
+
+/** 비-실질 수입 판정 단일 소스 — 정산성 + NON_REAL_INCOME 정확 일치 + "환불" 부분일치. */
+export const isNonRealIncomeSub = (s: string): boolean =>
+  isSettlementLikeSub(s) || NON_REAL_INCOME.has(s) || s.includes("환불");
+
+/**
+ * 수입원의 성격 — 인사이트에서 "수입원"을 한 덩어리로 취급하지 않기 위한 분류.
+ *  - 근로: 급여·상여·수당 등 일해서 번 돈 (salaryKeys)
+ *  - 패시브: 배당·이자·투자수익 — 자산이 번 돈 (investIncKeys)
+ *  - 환급: 정산·환불·데이트통장 분담금 — 쓴 돈이 돌아온 것, 수입 아님
+ *  - 일시: 지원·용돈·처분소득 등 반복 보장 없는 이전성 소득, 실질 수입 제외
+ *  - 부채: 대출 유입 — 갚아야 할 돈
+ *  - 기타: 캐시백·지역화폐 등 소액 부수입 (실질 수입에는 포함)
+ */
+export type IncomeNature = "근로" | "패시브" | "환급" | "일시" | "부채" | "기타";
+
+export function classifyIncomeNature(
+  sub: string,
+  opts?: { salaryKeys?: Set<string>; investIncKeys?: Set<string> }
+): IncomeNature {
+  const s = (sub || "").trim();
+  if (s === "대출") return "부채";
+  if (isSettlementLikeSub(s) || s.includes("환불")) return "환급";
+  if (NON_REAL_INCOME.has(s)) return "일시";
+  if (opts?.salaryKeys?.has(s)) return "근로";
+  if (opts?.investIncKeys?.has(s)) return "패시브";
+  return "기타";
+}
+
 export interface RealIncomeBreakdown {
-  /** 정산성 수입 합 (subCategory 또는 category에 "정산" 포함 — 부분일치). */
+  /** 정산성 수입 합 — isSettlementLikeSub("정산" 부분일치, "데이트통장") 참조. */
   settlementTotal: number;
-  /** 일시성 수입 합 (NON_REAL_INCOME 정확 일치, "정산" 제외). */
+  /** 일시성 수입 합 (NON_REAL_INCOME 정확 일치 + "환불" 부분일치, 정산성 제외). */
   tempIncomeTotal: number;
   /** 실질 수입 = pIncome − settlementTotal − tempIncomeTotal. */
   realIncome: number;
@@ -33,8 +71,8 @@ export interface RealIncomeBreakdown {
  * @param pIncome 같은 fInc의 amount 합. (재계산 안 하고 받음 — 호출 측에서 이미 reduce했음)
  *
  * 분류 규칙:
- *  - "정산" 부분일치 → settlementTotal (상대가 돌려준 돈)
- *  - NON_REAL_INCOME 정확 일치 → tempIncomeTotal (용돈/지원/대출 등 일시성)
+ *  - 정산성(isSettlementLikeSub: "정산" 부분일치, "데이트통장") → settlementTotal (돌려받은 돈)
+ *  - NON_REAL_INCOME 정확 일치 또는 "환불" 부분일치 → tempIncomeTotal (용돈/지원/대출/환불 등)
  *  - 그 외 → 실질 수입
  *  카테고리 매칭은 subCategory 우선, 없으면 category 사용 (둘 다 없으면 빈 문자열).
  */
@@ -46,9 +84,9 @@ export function computeRealIncome(
   let tempIncomeTotal = 0;
   for (const l of fInc) {
     const sub = (l.subCategory || l.category || "").trim();
-    if (sub === "정산" || sub.includes("정산")) {
+    if (isSettlementLikeSub(sub)) {
       settlementTotal += Number(l.amount);
-    } else if (NON_REAL_INCOME.has(sub)) {
+    } else if (NON_REAL_INCOME.has(sub) || sub.includes("환불")) {
       tempIncomeTotal += Number(l.amount);
     }
   }

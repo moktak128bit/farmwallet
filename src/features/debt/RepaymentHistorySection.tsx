@@ -13,7 +13,18 @@ import { ChevronDown, ChevronUp, Pencil, Trash2 } from "lucide-react";
 import type { Account, LedgerEntry, Loan } from "../../types";
 import { formatKRW } from "../../utils/formatter";
 import { isInterestRepayment } from "../../calculations";
+import { useAppStore } from "../../store/appStore";
 import { isLoanRepaymentEntry } from "./debtShared";
+
+// ─── 삭제 토스트 [실행 취소] — "삭제 항목 재삽입" 복원 ───────────────────
+// 풀 스냅샷 undo가 아니다:
+//  - 삭제 이후 다른 변경(시세 갱신·Gist pull·탭 동기화·다른 편집)이 있어도
+//    그 변경을 보존한 채 삭제된 항목만 되살린다.
+//  - 복원은 onChange*(→ setDataWithHistory) 경유의 새 히스토리 write라
+//    Ctrl+Z로 복원 자체를 다시 취소할 수 있다.
+// 전제: appStore.setData는 동기(zustand) — 클릭 시점 getState() 재조회가 항상 최신.
+// useAppStore는 핸들러 내부 getState()만 사용 — 훅 구독 금지(재렌더 유발·memo 무력화 방지).
+import { buildRestoreById, showDeleteUndoToast } from "../../utils/undoToast";
 
 interface Props {
   loans: Loan[];
@@ -108,8 +119,18 @@ export const RepaymentHistorySection: React.FC<Props> = React.memo(function Repa
 
   const handleDeleteRepayment = (entry: LedgerEntry) => {
     if (!onChangeLedger) return;
-    if (!window.confirm(`"${entry.description || "상환"}" 내역을 삭제하시겠습니까?`)) return;
+    if (
+      !window.confirm(
+        `"${entry.description || "상환"}" 내역을 삭제하시겠습니까?\n${entry.date || "날짜 없음"} · ${formatKRW(Math.round(entry.amount))}`
+      )
+    )
+      return;
+    const deletedIndex = ledger.findIndex((l) => l.id === entry.id);
     onChangeLedger(ledger.filter((l) => l.id !== entry.id));
+    showDeleteUndoToast(
+      "상환 내역이 삭제되었습니다.",
+      buildRestoreById(() => useAppStore.getState().data.ledger, onChangeLedger, entry, deletedIndex)
+    );
   };
 
   return (

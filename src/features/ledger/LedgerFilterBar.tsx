@@ -3,6 +3,8 @@ import type { Account, LedgerEntry } from "../../types";
 
 interface LedgerFilterBarProps {
   ledger: LedgerEntry[];
+  /** 현재 수입/지출/이체 탭으로 좁혀진 목록 — 카테고리 옵션은 여기서 추출 (계좌 옵션은 전체 ledger 유지) */
+  tabLedger: LedgerEntry[];
   accounts: Account[];
   filterMainCategory: string | undefined;
   filterSubCategory: string | undefined;
@@ -87,6 +89,7 @@ const ChipRow: React.FC<ChipRowProps> = ({ label, options, selected, onSelect })
  */
 export const LedgerFilterBar: React.FC<LedgerFilterBarProps> = ({
   ledger,
+  tabLedger,
   accounts,
   filterMainCategory,
   filterSubCategory,
@@ -99,30 +102,31 @@ export const LedgerFilterBar: React.FC<LedgerFilterBarProps> = ({
   setFilterFromAccountId,
   setFilterToAccountId,
 }) => {
+  // 카테고리 옵션은 현재 탭(tabLedger) 기준 — 탭에 없는 카테고리는 노출하지 않음
   const mainOptions = useMemo(() => {
     const set = new Set<string>();
-    for (const l of ledger) if (l.category) set.add(l.category);
+    for (const l of tabLedger) if (l.category) set.add(l.category);
     return [...set].sort((a, b) => a.localeCompare(b, "ko")).map((v) => ({ value: v, display: v }));
-  }, [ledger]);
+  }, [tabLedger]);
 
   const subOptions = useMemo(() => {
     const set = new Set<string>();
-    for (const l of ledger) {
+    for (const l of tabLedger) {
       if (filterMainCategory && l.category !== filterMainCategory) continue;
       if (l.subCategory) set.add(l.subCategory);
     }
     return [...set].sort((a, b) => a.localeCompare(b, "ko")).map((v) => ({ value: v, display: v }));
-  }, [ledger, filterMainCategory]);
+  }, [tabLedger, filterMainCategory]);
 
   const detailOptions = useMemo(() => {
     const set = new Set<string>();
-    for (const l of ledger) {
+    for (const l of tabLedger) {
       if (filterMainCategory && l.category !== filterMainCategory) continue;
       if (filterSubCategory && l.subCategory !== filterSubCategory) continue;
       if (l.detailCategory) set.add(l.detailCategory);
     }
     return [...set].sort((a, b) => a.localeCompare(b, "ko")).map((v) => ({ value: v, display: v }));
-  }, [ledger, filterMainCategory, filterSubCategory]);
+  }, [tabLedger, filterMainCategory, filterSubCategory]);
 
   // 계좌는 ID로 필터링하지만 화면엔 이름. 사용 중(ledger에 등장한) 계좌만 노출.
   const usedAccountIds = useMemo(() => {

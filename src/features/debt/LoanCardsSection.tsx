@@ -99,7 +99,11 @@ export const LoanCardsSection: React.FC<Props> = React.memo(function LoanCardsSe
   };
 
   if (loans.length === 0) {
-    return <p>등록된 대출이 없습니다. 새 대출을 추가해보세요.</p>;
+    return (
+      <p className="hint" style={{ textAlign: "center", padding: 20 }}>
+        등록된 대출이 없습니다 — 위 '새 대출 추가' 버튼으로 첫 대출을 등록해 보세요.
+      </p>
+    );
   }
 
   return (

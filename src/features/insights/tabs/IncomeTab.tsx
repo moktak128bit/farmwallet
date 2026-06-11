@@ -45,7 +45,7 @@ export const IncomeTab = React.memo(function IncomeTab({ d }: { d: D }) {
   return (
     <div>
       {/* 상단 기간·단위 배너 */}
-      <div style={{ padding: "10px 14px", background: "#f8f9fa", borderRadius: 8, marginBottom: 16, fontSize: 12, color: "#666", lineHeight: 1.6 }}>
+      <div style={{ padding: "10px 14px", background: "var(--bg)", borderRadius: 8, marginBottom: 16, fontSize: 12, color: "var(--text-muted)", lineHeight: 1.6 }}>
         ℹ️ 범위: <strong>{rangeLabel}</strong> ({periodLabel}) · 단위: <strong>원</strong> · 분류: 회사소득(급여·수당·상여) / 투자·패시브(배당·이자·투자수익) / 기타수입(캐시백·지원·대출 등)
       </div>
 
@@ -58,7 +58,7 @@ export const IncomeTab = React.memo(function IncomeTab({ d }: { d: D }) {
 
         <Card title="수입 구조 (그룹별)" span={2}>
           {d.incByGroup.length === 0 ? (
-            <div style={{ padding: 20, textAlign: "center", color: "#999" }}>데이터 없음</div>
+            <div style={{ padding: 20, textAlign: "center", color: "var(--text-faint)" }}>데이터 없음</div>
           ) : (
             <ResponsiveContainer width="100%" height={260}>
               <PieChart>
@@ -75,14 +75,14 @@ export const IncomeTab = React.memo(function IncomeTab({ d }: { d: D }) {
           <div style={{ maxHeight: 280, overflow: "auto" }}>
             {d.incByGroup.map((g) => {
               const groupIdx = ["회사소득", "투자/패시브", "기타수입"].indexOf(g.name);
-              const col = GROUP_COLORS[groupIdx] ?? "#333";
+              const col = GROUP_COLORS[groupIdx] ?? "var(--text)";
               return (
                 <div key={g.name}>
                   <div style={{ padding: "8px 0 4px", fontWeight: 700, fontSize: 13, color: col, borderBottom: `2px solid ${col}` }}>
                     {g.name} — {F(g.value)}원 ({totalIncome > 0 ? Math.round(g.value / totalIncome * 100) : 0}%)
                   </div>
                   {g.items.map(([name, value]) => (
-                    <div key={name} style={{ display: "flex", justifyContent: "space-between", padding: "5px 0 5px 16px", fontSize: 12, color: "#555" }}>
+                    <div key={name} style={{ display: "flex", justifyContent: "space-between", padding: "5px 0 5px 16px", fontSize: 12, color: "var(--text-secondary)" }}>
                       <span>{name}</span>
                       <span style={{ fontWeight: 600 }}>{F(value)}원</span>
                     </div>
@@ -90,7 +90,7 @@ export const IncomeTab = React.memo(function IncomeTab({ d }: { d: D }) {
                 </div>
               );
             })}
-            {d.incByGroup.length === 0 && <div style={{ padding: 20, textAlign: "center", color: "#999" }}>데이터 없음</div>}
+            {d.incByGroup.length === 0 && <div style={{ padding: 20, textAlign: "center", color: "var(--text-faint)" }}>데이터 없음</div>}
           </div>
         </Card>
       </Section>
@@ -102,22 +102,22 @@ export const IncomeTab = React.memo(function IncomeTab({ d }: { d: D }) {
             {incData.map(({ name, value }, i) => {
               const top = incData[0]?.value ?? 1;
               return (
-                <div key={name} style={{ display: "flex", alignItems: "center", gap: 10, padding: "6px 0", borderBottom: "1px solid #f5f5f5" }}>
-                  <span style={{ fontSize: 11, color: i < 3 ? "#059669" : "#999", width: 20, textAlign: "right", fontWeight: 700 }}>{i + 1}</span>
+                <div key={name} style={{ display: "flex", alignItems: "center", gap: 10, padding: "6px 0", borderBottom: "1px solid var(--border-light)" }}>
+                  <span style={{ fontSize: 11, color: i < 3 ? "#059669" : "var(--text-faint)", width: 20, textAlign: "right", fontWeight: 700 }}>{i + 1}</span>
                   <div style={{ flex: 1 }}>
                     <div style={{ fontSize: 13, fontWeight: 600 }}>{name}</div>
-                    <div style={{ height: 4, background: "#f0f0f0", borderRadius: 2, marginTop: 3 }}>
+                    <div style={{ height: 4, background: "var(--surface-hover)", borderRadius: 2, marginTop: 3 }}>
                       <div style={{ height: 4, background: C[i % 12], borderRadius: 2, width: `${top > 0 ? (value / top) * 100 : 0}%` }} />
                     </div>
                   </div>
                   <div style={{ textAlign: "right" }}>
                     <div style={{ fontSize: 13, fontWeight: 700, color: "#059669" }}>{F(value)}원</div>
-                    <div style={{ fontSize: 10, color: "#999" }}>{totalIncome > 0 ? Math.round(value / totalIncome * 100) : 0}%</div>
+                    <div style={{ fontSize: 10, color: "var(--text-faint)" }}>{totalIncome > 0 ? Math.round(value / totalIncome * 100) : 0}%</div>
                   </div>
                 </div>
               );
             })}
-            {incData.length === 0 && <div style={{ padding: 20, textAlign: "center", color: "#999" }}>데이터 없음</div>}
+            {incData.length === 0 && <div style={{ padding: 20, textAlign: "center", color: "var(--text-faint)" }}>데이터 없음</div>}
           </div>
         </Card>
 
@@ -155,7 +155,7 @@ export const IncomeTab = React.memo(function IncomeTab({ d }: { d: D }) {
         <Card title={`📈 수입 성장률 — MoM ${d.incomeGrowth.mom != null ? Pct(d.incomeGrowth.mom) : "–"} · YoY ${d.incomeGrowth.yoy != null ? Pct(d.incomeGrowth.yoy) : "–"} · 3M평균 ${d.incomeGrowth.avg3MoM != null ? Pct(d.incomeGrowth.avg3MoM) : "–"}`} span={4}>
           <ResponsiveContainer width="100%" height={240}>
             <ComposedChart data={monthlyInc}>
-              <CartesianGrid strokeDasharray="3 3" stroke="#eee" />
+              <CartesianGrid strokeDasharray="3 3" stroke="var(--chart-grid)" />
               <XAxis dataKey="name" tick={{ fontSize: 12 }} />
               <YAxis yAxisId="left" tickFormatter={F} tick={{ fontSize: 11 }} />
               <YAxis yAxisId="right" orientation="right" tickFormatter={(v) => v + "%"} tick={{ fontSize: 10 }} />
@@ -170,7 +170,7 @@ export const IncomeTab = React.memo(function IncomeTab({ d }: { d: D }) {
         <Card title="회사소득 vs 비회사소득 추이" span={2}>
           <ResponsiveContainer width="100%" height={240}>
             <BarChart data={d.salaryTrend}>
-              <CartesianGrid strokeDasharray="3 3" stroke="#eee" />
+              <CartesianGrid strokeDasharray="3 3" stroke="var(--chart-grid)" />
               <XAxis dataKey="l" tick={{ fontSize: 12 }} />
               <YAxis tickFormatter={F} tick={{ fontSize: 11 }} />
               <Tooltip content={<CT />} />
@@ -184,7 +184,7 @@ export const IncomeTab = React.memo(function IncomeTab({ d }: { d: D }) {
         <Card title="패시브 수입 월별 (배당·이자)" span={2}>
           <ResponsiveContainer width="100%" height={240}>
             <BarChart data={d.divTrend}>
-              <CartesianGrid strokeDasharray="3 3" stroke="#eee" />
+              <CartesianGrid strokeDasharray="3 3" stroke="var(--chart-grid)" />
               <XAxis dataKey="l" tick={{ fontSize: 12 }} />
               <YAxis tickFormatter={F} tick={{ fontSize: 11 }} />
               <Tooltip formatter={(v: ValueType | undefined) => W(Number(v ?? 0))} />
@@ -196,14 +196,14 @@ export const IncomeTab = React.memo(function IncomeTab({ d }: { d: D }) {
         <Card title="패시브 수입 비율 추이 (%)" span={4}>
           <ResponsiveContainer width="100%" height={220}>
             <LineChart data={passiveRatioTrend}>
-              <CartesianGrid strokeDasharray="3 3" stroke="#eee" />
+              <CartesianGrid strokeDasharray="3 3" stroke="var(--chart-grid)" />
               <XAxis dataKey="l" tick={{ fontSize: 12 }} />
               <YAxis tickFormatter={(v) => v.toFixed(0) + "%"} tick={{ fontSize: 10 }} domain={[0, "auto"]} />
               <Tooltip formatter={(v: ValueType | undefined) => `${Number(v ?? 0).toFixed(1)}%`} />
               <Line isAnimationActive={false} type="monotone" dataKey="비율" stroke="#48c9b0" strokeWidth={2.5} dot={{ r: 3 }} />
             </LineChart>
           </ResponsiveContainer>
-          <div style={{ fontSize: 11, color: "#999", textAlign: "center", marginTop: 4 }}>
+          <div style={{ fontSize: 11, color: "var(--text-faint)", textAlign: "center", marginTop: 4 }}>
             월별 (배당+이자+투자수익) / (월 총수입) × 100. 장기 상승이면 투자 자산 축적 효과.
           </div>
         </Card>

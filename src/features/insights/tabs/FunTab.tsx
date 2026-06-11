@@ -44,13 +44,13 @@ export const FunTab = React.memo(function FunTab({ d }: { d: D }) {
               <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 8, fontSize: 13 }}>
                 <span>주말 ({wkPct}%)</span><span style={{ fontWeight: 700 }}>{F(fs.weekendVsWeekday.weekend)}</span>
               </div>
-              <div style={{ height: 12, background: "#f0f0f0", borderRadius: 6, overflow: "hidden" }}>
+              <div style={{ height: 12, background: "var(--surface-hover)", borderRadius: 6, overflow: "hidden" }}>
                 <div style={{ width: `${wkPct}%`, height: "100%", background: "#e94560", borderRadius: 6 }} />
               </div>
               <div style={{ display: "flex", justifyContent: "space-between", marginTop: 12, marginBottom: 8, fontSize: 13 }}>
                 <span>평일 ({100 - wkPct}%)</span><span style={{ fontWeight: 700 }}>{F(fs.weekendVsWeekday.weekday)}</span>
               </div>
-              <div style={{ height: 12, background: "#f0f0f0", borderRadius: 6, overflow: "hidden" }}>
+              <div style={{ height: 12, background: "var(--surface-hover)", borderRadius: 6, overflow: "hidden" }}>
                 <div style={{ width: `${100 - wkPct}%`, height: "100%", background: "#3498db", borderRadius: 6 }} />
               </div>
             </div>
@@ -74,14 +74,14 @@ export const FunTab = React.memo(function FunTab({ d }: { d: D }) {
               <div style={{ fontSize: 36, fontWeight: 800, color: fs.monthOverMonthGrowth >= 0 ? "#48c9b0" : "#e94560" }}>
                 {fs.monthOverMonthGrowth >= 0 ? "+" : ""}{fs.monthOverMonthGrowth}%
               </div>
-              <div style={{ fontSize: 12, color: "#999", marginTop: 8 }}>매월 평균 순자산 변화율</div>
+              <div style={{ fontSize: 12, color: "var(--text-faint)", marginTop: 8 }}>매월 평균 순자산 변화율</div>
             </div>
           </Card>
         )}
 
         {fs.daysToSpendIncome && (
           <Card title="수입 소진 속도 분석">
-            <div style={{ fontSize: 13, lineHeight: 1.8, color: "#444" }}>
+            <div style={{ fontSize: 13, lineHeight: 1.8, color: "var(--text-secondary)" }}>
               {fs.daysToSpendIncome >= 30
                 ? `월수입을 다 쓰려면 ${fs.daysToSpendIncome}일이 걸립니다. 지출 대비 수입이 넉넉합니다!`
                 : fs.daysToSpendIncome >= 20
@@ -89,10 +89,10 @@ export const FunTab = React.memo(function FunTab({ d }: { d: D }) {
                   : `${fs.daysToSpendIncome}일이면 월수입이 바닥납니다! 지출 감소 또는 수입 증대가 필요합니다.`
               }
               <div style={{ marginTop: 8 }}>
-                <div style={{ display: "flex", justifyContent: "space-between", fontSize: 11, color: "#999", marginBottom: 4 }}>
+                <div style={{ display: "flex", justifyContent: "space-between", fontSize: 11, color: "var(--text-faint)", marginBottom: 4 }}>
                   <span>0일</span><span>30일</span>
                 </div>
-                <div style={{ height: 16, background: "#f0f0f0", borderRadius: 8, position: "relative", overflow: "hidden" }}>
+                <div style={{ height: 16, background: "var(--surface-hover)", borderRadius: 8, position: "relative", overflow: "hidden" }}>
                   <div style={{ width: `${Math.min(100, fs.daysToSpendIncome / 30 * 100)}%`, height: "100%", background: fs.daysToSpendIncome >= 30 ? "#48c9b0" : fs.daysToSpendIncome >= 20 ? "#f0c040" : "#e94560", borderRadius: 8, transition: "width 0.5s" }} />
                 </div>
               </div>
@@ -112,8 +112,8 @@ export const FunTab = React.memo(function FunTab({ d }: { d: D }) {
                 }, new Map<string, { total: number; count: number }>())
               ).sort((a, b) => b[1].total - a[1].total).slice(0, 10);
               return stores.map(([name, v], i) => (
-                <div key={name} style={{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: "8px 0", borderBottom: "1px solid #f0f0f0", fontSize: 13 }}>
-                  <span><span style={{ fontWeight: 700, color: "#999", marginRight: 8 }}>{i + 1}</span>{name} <span style={{ fontSize: 11, color: "#999" }}>({v.count}회)</span></span>
+                <div key={name} style={{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: "8px 0", borderBottom: "1px solid var(--border-light)", fontSize: 13 }}>
+                  <span><span style={{ fontWeight: 700, color: "var(--text-faint)", marginRight: 8 }}>{i + 1}</span>{name} <span style={{ fontSize: 11, color: "var(--text-faint)" }}>({v.count}회)</span></span>
                   <span style={{ fontWeight: 700 }}>{F(v.total)}</span>
                 </div>
               ));

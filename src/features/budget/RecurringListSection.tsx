@@ -13,6 +13,7 @@ import { ERROR_MESSAGES } from "../../constants/errorMessages";
 import type { Account, CategoryPresets, LedgerEntry, Recurrence, RecurringExpense } from "../../types";
 import { parseIsoLocal, formatIsoLocal } from "../../utils/date";
 import { newIdWithPrefix } from "../../utils/id";
+import { isCoarsePointer } from "../../utils/pointer";
 
 const freqLabel: Record<Recurrence, string> = {
   monthly: "매월",
@@ -68,9 +69,18 @@ export const RecurringListSection: React.FC<Props> = React.memo(function Recurri
     }
   };
 
+  // 터치 환경 여부 — 렌더당 1회 평가 (coarse 포인터는 더블클릭 대신 단일 탭으로 편집 진입)
+  const coarsePointer = isCoarsePointer();
+
   const startEditField = (id: string, field: string, currentValue: string | number) => {
     setEditingField({ id, field });
     setEditingValue(String(currentValue));
+  };
+
+  // 터치(coarse) 단일 탭 편집 진입 — 이미 해당 셀을 편집 중이면(입력 내부 탭 등) 재진입으로 입력값이 초기화되지 않게 막는다
+  const tapToEditField = (id: string, field: string, currentValue: string | number) => {
+    if (editingField?.id === id && editingField.field === field) return;
+    startEditField(id, field, currentValue);
   };
 
   const saveEditField = () => {
@@ -371,8 +381,9 @@ export const RecurringListSection: React.FC<Props> = React.memo(function Recurri
                 />
               </td>
               <td
+                className="cell-editable"
                 onDoubleClick={() => startEditField(r.id, "title", r.title)}
-                style={{ cursor: "pointer" }}
+                onClick={coarsePointer ? () => tapToEditField(r.id, "title", r.title) : undefined}
                 title="더블클릭하여 수정"
               >
                 {editingField?.id === r.id && editingField.field === "title" ? (
@@ -393,9 +404,9 @@ export const RecurringListSection: React.FC<Props> = React.memo(function Recurri
                 )}
               </td>
               <td
-                className="number"
+                className="number cell-editable"
                 onDoubleClick={() => startEditField(r.id, "amount", r.amount)}
-                style={{ cursor: "pointer" }}
+                onClick={coarsePointer ? () => tapToEditField(r.id, "amount", r.amount) : undefined}
                 title="더블클릭하여 수정"
               >
                 {editingField?.id === r.id && editingField.field === "amount" ? (
@@ -416,8 +427,9 @@ export const RecurringListSection: React.FC<Props> = React.memo(function Recurri
                 )}
               </td>
               <td
+                className="cell-editable"
                 onDoubleClick={() => startEditField(r.id, "category", r.category)}
-                style={{ cursor: "pointer" }}
+                onClick={coarsePointer ? () => tapToEditField(r.id, "category", r.category) : undefined}
                 title="더블클릭하여 수정"
               >
                 {editingField?.id === r.id && editingField.field === "category" ? (
@@ -438,8 +450,9 @@ export const RecurringListSection: React.FC<Props> = React.memo(function Recurri
                 )}
               </td>
               <td
+                className="cell-editable"
                 onDoubleClick={() => startEditField(r.id, "frequency", r.frequency)}
-                style={{ cursor: "pointer" }}
+                onClick={coarsePointer ? () => tapToEditField(r.id, "frequency", r.frequency) : undefined}
                 title="더블클릭하여 수정"
               >
                 {editingField?.id === r.id && editingField.field === "frequency" ? (
@@ -467,11 +480,12 @@ export const RecurringListSection: React.FC<Props> = React.memo(function Recurri
                 )}
               </td>
               <td
+                className="cell-editable"
                 onDoubleClick={(e) => {
                   e.stopPropagation();
                   startEditField(r.id, "fromAccountId", r.fromAccountId || "");
                 }}
-                style={{ cursor: "pointer" }}
+                onClick={coarsePointer ? () => tapToEditField(r.id, "fromAccountId", r.fromAccountId || "") : undefined}
                 title="더블클릭하여 수정"
               >
                 {editingField?.id === r.id && editingField.field === "fromAccountId" ? (
@@ -502,11 +516,12 @@ export const RecurringListSection: React.FC<Props> = React.memo(function Recurri
                 )}
               </td>
               <td
+                className="cell-editable"
                 onDoubleClick={(e) => {
                   e.stopPropagation();
                   startEditField(r.id, "toAccountId", r.toAccountId || "");
                 }}
-                style={{ cursor: "pointer" }}
+                onClick={coarsePointer ? () => tapToEditField(r.id, "toAccountId", r.toAccountId || "") : undefined}
                 title="더블클릭하여 수정"
               >
                 {editingField?.id === r.id && editingField.field === "toAccountId" ? (
@@ -537,8 +552,9 @@ export const RecurringListSection: React.FC<Props> = React.memo(function Recurri
                 )}
               </td>
               <td
+                className="cell-editable"
                 onDoubleClick={() => startEditField(r.id, "startDate", r.startDate)}
-                style={{ cursor: "pointer" }}
+                onClick={coarsePointer ? () => tapToEditField(r.id, "startDate", r.startDate) : undefined}
                 title="더블클릭하여 수정"
               >
                 {editingField?.id === r.id && editingField.field === "startDate" ? (
@@ -568,27 +584,29 @@ export const RecurringListSection: React.FC<Props> = React.memo(function Recurri
           {recurring.length === 0 && (
             <tr>
               <td colSpan={9} style={{ textAlign: "center" }}>
-                등록된 고정 지출이 없습니다.
+                등록된 고정 지출이 없습니다 — 위 폼에서 구독·고정 지출을 추가해 보세요.
               </td>
             </tr>
           )}
         </tbody>
       </table>
       </div>
-      <div style={{ marginTop: 8, display: "flex", justifyContent: "space-between", alignItems: "center" }}>
-        <span style={{ fontSize: 14, color: "var(--text-muted)" }}>
-          {selectedRecurringIds.size > 0 ? `${selectedRecurringIds.size}개 항목 선택됨` : "반영할 항목을 선택하세요"}
-        </span>
-        <button
-          type="button"
-          className="primary"
-          onClick={handleApplyCurrentMonth}
-          disabled={selectedRecurringIds.size === 0}
-          style={{ opacity: selectedRecurringIds.size === 0 ? 0.5 : 1 }}
-        >
-          선택한 항목 가계부에 반영 ({selectedRecurringIds.size}개)
-        </button>
-      </div>
+      {recurring.length > 0 && (
+        <div style={{ marginTop: 8, display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+          <span style={{ fontSize: 14, color: "var(--text-muted)" }}>
+            {selectedRecurringIds.size > 0 ? `${selectedRecurringIds.size}개 항목 선택됨` : "반영할 항목을 선택하세요"}
+          </span>
+          <button
+            type="button"
+            className="primary"
+            onClick={handleApplyCurrentMonth}
+            disabled={selectedRecurringIds.size === 0}
+            style={{ opacity: selectedRecurringIds.size === 0 ? 0.5 : 1 }}
+          >
+            선택한 항목 가계부에 반영 ({selectedRecurringIds.size}개)
+          </button>
+        </div>
+      )}
     </>
   );
 });

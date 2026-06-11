@@ -61,7 +61,7 @@ export const ForecastView: React.FC<Props> = ({ ledger, recurring, formatNumber 
 
   return (
     <div>
-      <div style={{ padding: "10px 14px", background: "#f8f9fa", borderRadius: 8, marginBottom: 16, fontSize: 12, color: "#666", lineHeight: 1.6 }}>
+      <div style={{ padding: "10px 14px", background: "var(--bg)", borderRadius: 8, marginBottom: 16, fontSize: 12, color: "var(--text-muted)", lineHeight: 1.6 }}>
         ℹ️ 공식: <strong>MAX(반복지출 합, 최근 {lookback}개월 평균)</strong> · 신뢰구간 ±1σ · 기준: {monthLabel(result.baseMonth)} → 예측 <strong>{monthLabel(result.forecastMonth)}</strong>
         <span style={{ marginLeft: 10 }}>
           lookback:
@@ -69,9 +69,9 @@ export const ForecastView: React.FC<Props> = ({ ledger, recurring, formatNumber 
             <button key={n} type="button" onClick={() => setLookback(n)}
               style={{
                 marginLeft: 4, padding: "2px 8px", fontSize: 11, borderRadius: 4,
-                border: lookback === n ? "1px solid #1a1a2e" : "1px solid #ccc",
-                background: lookback === n ? "#1a1a2e" : "#fff",
-                color: lookback === n ? "#fff" : "#666",
+                border: lookback === n ? "1px solid var(--text)" : "1px solid var(--border)",
+                background: lookback === n ? "var(--text)" : "var(--surface)",
+                color: lookback === n ? "var(--bg)" : "var(--text-muted)",
                 cursor: "pointer", fontWeight: 600,
               }}
             >{n}M</button>
@@ -111,21 +111,21 @@ export const ForecastView: React.FC<Props> = ({ ledger, recurring, formatNumber 
           </div>
         </div>
 
-        <div style={{ marginTop: 12, padding: "12px 14px", background: "#f8f9fa", borderRadius: 10 }}>
-          <div style={{ fontSize: 12, fontWeight: 700, marginBottom: 8, color: "#1a1a2e" }}>이번 달 진행 현황 ({currentMonth})</div>
+        <div style={{ marginTop: 12, padding: "12px 14px", background: "var(--bg)", borderRadius: 10 }}>
+          <div style={{ fontSize: 12, fontWeight: 700, marginBottom: 8, color: "var(--text)" }}>이번 달 진행 현황 ({currentMonth})</div>
           <div style={{ display: "grid", gridTemplateColumns: "repeat(3, 1fr)", gap: 10, fontSize: 12 }}>
             <div>
-              <div style={{ color: "#999", fontSize: 11 }}>현재 지출 ({dayOfMonth}일차)</div>
+              <div style={{ color: "var(--text-faint)", fontSize: 11 }}>현재 지출 ({dayOfMonth}일차)</div>
               <div style={{ fontWeight: 700, fontSize: 16 }}>{formatNumber(currentMonthActual)}</div>
             </div>
             <div>
-              <div style={{ color: "#999", fontSize: 11 }}>이 속도면 월말</div>
+              <div style={{ color: "var(--text-faint)", fontSize: 11 }}>이 속도면 월말</div>
               <div style={{ fontWeight: 700, fontSize: 16, color: projectedCurrent > result.totalForecast * 1.1 ? "#e94560" : "#059669" }}>
                 {formatNumber(Math.round(projectedCurrent))}
               </div>
             </div>
             <div>
-              <div style={{ color: "#999", fontSize: 11 }}>다음 달 예측 대비</div>
+              <div style={{ color: "var(--text-faint)", fontSize: 11 }}>다음 달 예측 대비</div>
               <div style={{ fontWeight: 700, fontSize: 16, color: "#0f3460" }}>
                 {result.totalForecast > 0 ? Math.round((projectedCurrent / result.totalForecast) * 100) : 0}%
               </div>
@@ -136,15 +136,15 @@ export const ForecastView: React.FC<Props> = ({ ledger, recurring, formatNumber 
 
       <Section storageKey="forecast-section-breakdown" title="📋 카테고리별 예측">
         <div style={{ gridColumn: "span 4" }}>
-          <table style={{ width: "100%", fontSize: 13, borderCollapse: "collapse", background: "#fff", borderRadius: 10, overflow: "hidden" }}>
+          <table style={{ width: "100%", fontSize: 13, borderCollapse: "collapse", background: "var(--surface)", borderRadius: 10, overflow: "hidden" }}>
             <thead>
-              <tr style={{ background: "#f8f9fa", borderBottom: "2px solid #e0e0e0" }}>
-                <th style={{ textAlign: "left", padding: "10px 12px", fontSize: 12, color: "#666" }}>카테고리</th>
-                <th style={{ textAlign: "right", padding: "10px 12px", fontSize: 12, color: "#666" }}>반복</th>
-                <th style={{ textAlign: "right", padding: "10px 12px", fontSize: 12, color: "#666" }}>변동평균</th>
-                <th style={{ textAlign: "right", padding: "10px 12px", fontSize: 12, color: "#666" }}>예측</th>
-                <th style={{ textAlign: "right", padding: "10px 12px", fontSize: 12, color: "#666" }}>현재월 실적</th>
-                <th style={{ width: "25%", padding: "10px 12px", fontSize: 12, color: "#666" }}>분포</th>
+              <tr style={{ background: "var(--surface-hover)", borderBottom: "2px solid var(--border)" }}>
+                <th style={{ textAlign: "left", padding: "10px 12px", fontSize: 12, color: "var(--text-muted)" }}>카테고리</th>
+                <th style={{ textAlign: "right", padding: "10px 12px", fontSize: 12, color: "var(--text-muted)" }}>반복</th>
+                <th style={{ textAlign: "right", padding: "10px 12px", fontSize: 12, color: "var(--text-muted)" }}>변동평균</th>
+                <th style={{ textAlign: "right", padding: "10px 12px", fontSize: 12, color: "var(--text-muted)" }}>예측</th>
+                <th style={{ textAlign: "right", padding: "10px 12px", fontSize: 12, color: "var(--text-muted)" }}>현재월 실적</th>
+                <th style={{ width: "25%", padding: "10px 12px", fontSize: 12, color: "var(--text-muted)" }}>분포</th>
               </tr>
             </thead>
             <tbody>
@@ -152,19 +152,19 @@ export const ForecastView: React.FC<Props> = ({ ledger, recurring, formatNumber 
                 const cur = currentMonthSpend.get(c.category) ?? 0;
                 const pct = c.forecast > 0 ? (cur / c.forecast) * 100 : 0;
                 return (
-                  <tr key={c.category} style={{ borderBottom: "1px solid #f0f0f0" }}>
+                  <tr key={c.category} style={{ borderBottom: "1px solid var(--border-light)" }}>
                     <td style={{ padding: "10px 12px", fontWeight: 600 }}>{c.category}</td>
-                    <td style={{ padding: "10px 12px", textAlign: "right", color: c.recurringAmount > 0 ? "#0f3460" : "#ccc" }}>{formatNumber(c.recurringAmount)}</td>
+                    <td style={{ padding: "10px 12px", textAlign: "right", color: c.recurringAmount > 0 ? "#0f3460" : "var(--text-faint)" }}>{formatNumber(c.recurringAmount)}</td>
                     <td style={{ padding: "10px 12px", textAlign: "right", color: "#d97706" }}>{formatNumber(c.variableAverage)}</td>
-                    <td style={{ padding: "10px 12px", textAlign: "right", fontWeight: 700, color: "#1a1a2e" }}>{formatNumber(c.forecast)}</td>
+                    <td style={{ padding: "10px 12px", textAlign: "right", fontWeight: 700, color: "var(--text)" }}>{formatNumber(c.forecast)}</td>
                     <td style={{ padding: "10px 12px", textAlign: "right", fontSize: 12 }}>
                       <span style={{ color: pct > 100 ? "#e94560" : pct > 80 ? "#f0c040" : "#059669", fontWeight: 700 }}>
                         {formatNumber(cur)}
                       </span>
-                      <div style={{ fontSize: 10, color: "#999" }}>{pct.toFixed(0)}%</div>
+                      <div style={{ fontSize: 10, color: "var(--text-faint)" }}>{pct.toFixed(0)}%</div>
                     </td>
                     <td style={{ padding: "10px 12px" }}>
-                      <div style={{ position: "relative", height: 8, background: "#f0f0f0", borderRadius: 4 }}>
+                      <div style={{ position: "relative", height: 8, background: "var(--surface-hover)", borderRadius: 4 }}>
                         <div style={{
                           position: "absolute",
                           left: `${(c.lower / maxAmount) * 100}%`,
@@ -189,13 +189,13 @@ export const ForecastView: React.FC<Props> = ({ ledger, recurring, formatNumber 
                 );
               })}
               {result.byCategory.length === 0 && (
-                <tr><td colSpan={6} style={{ padding: 20, textAlign: "center", color: "#999" }}>
+                <tr><td colSpan={6} style={{ padding: 20, textAlign: "center", color: "var(--text-faint)" }}>
                   예측에 사용할 데이터가 부족합니다.
                 </td></tr>
               )}
             </tbody>
           </table>
-          <div style={{ fontSize: 11, color: "#999", marginTop: 6, textAlign: "center" }}>
+          <div style={{ fontSize: 11, color: "var(--text-faint)", marginTop: 6, textAlign: "center" }}>
             빨간 선 = 예측값, 녹색 선 = 현재월 실적, 회색 바 = ±1σ 신뢰구간
           </div>
         </div>
@@ -204,7 +204,7 @@ export const ForecastView: React.FC<Props> = ({ ledger, recurring, formatNumber 
       {monthlyRecurring.length > 0 && (
         <Section storageKey="forecast-section-recurring" title="🔁 반복지출 명세" defaultOpen={false}>
           <div style={{ gridColumn: "span 4" }}>
-            <div style={{ fontSize: 12, color: "#666", marginBottom: 8 }}>
+            <div style={{ fontSize: 12, color: "var(--text-muted)", marginBottom: 8 }}>
               예측의 고정 부분에 포함되는 월별 반복지출 {monthlyRecurring.length}개 (합계 {formatNumber(totalRecurring)})
             </div>
             <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(220px, 1fr))", gap: 8 }}>

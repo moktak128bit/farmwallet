@@ -1,7 +1,8 @@
-import type { LedgerEntry, LedgerKind, StockTrade } from "../types";
+import type { Account, LedgerEntry, LedgerKind, LedgerTemplate, StockTrade } from "../types";
 import { formatUSD, formatKRW } from "./formatter";
 import { isUSDStock } from "./finance";
 import { getTodayKST } from "./date";
+import { formatAmount, parseAmount } from "./parseAmount";
 
 /** 가계부에 표시하는 한 행: ledger 항목 또는 주식 거래를 ledger 형태로 만든 것 */
 export type LedgerDisplayRow = LedgerEntry & { _tradeId?: string };
@@ -92,5 +93,71 @@ export function createDefaultLedgerForm(): LedgerFormState {
     discountAmount: "",
     currency: "KRW",
     tags: [],
+  };
+}
+
+/** 템플릿 적용 결과 — 폼 상태 + 존재하지 않아 비운 계좌 id 목록 */
+export interface TemplateApplyResult {
+  form: LedgerFormState;
+  clearedAccountIds: string[];
+}
+
+/**
+ * LedgerTemplate → LedgerFormState (순수 함수).
+ * 날짜=오늘(KST), id=undefined(새 항목). 존재하지 않는 계좌는 비우고 clearedAccountIds로 보고.
+ * startCopy 경유 금지 — startCopy는 저장 스키마(category="지출")를 mainCategory에 넣는 다른 경로.
+ */
+export function ledgerTemplateToForm(
+  t: LedgerTemplate,
+  accounts: ReadonlyArray<Pick<Account, "id">>
+): TemplateApplyResult {
+  const exists = (id?: string) => !!id && accounts.some((a) => a.id === id);
+  const clearedAccountIds: string[] = [];
+  let fromAccountId = "";
+  let toAccountId = "";
+  if (t.kind !== "income" && t.fromAccountId) {
+    if (exists(t.fromAccountId)) fromAccountId = t.fromAccountId;
+    else clearedAccountIds.push(t.fromAccountId);
+  }
+  if (t.kind !== "expense" && t.toAccountId) {
+    if (exists(t.toAccountId)) toAccountId = t.toAccountId;
+    else clearedAccountIds.push(t.toAccountId);
+  }
+  return {
+    form: {
+      ...createDefaultLedgerForm(),
+      kind: t.kind,
+      mainCategory: t.kind === "transfer" ? "이체" : t.kind === "income" ? "" : (t.mainCategory ?? ""),
+      subCategory: t.subCategory ?? "",
+      description: t.description ?? "",
+      fromAccountId,
+      toAccountId,
+      amount: t.amount && t.amount > 0 ? formatAmount(String(t.amount)) : ""
+    },
+    clearedAccountIds
+  };
+}
+
+/**
+ * 현재 폼 → LedgerTemplate (순수 함수). id는 호출 측이 newIdWithPrefix("LT")로 생성해 전달.
+ * 템플릿에 currency 필드가 없으므로 USD 폼의 amount는 저장하지 않음 (적용 시 KRW 오해석 방지).
+ */
+export function ledgerFormToTemplate(
+  form: LedgerFormState,
+  kind: LedgerKind,
+  name: string,
+  id: string
+): LedgerTemplate {
+  const parsed = form.currency === "USD" ? 0 : parseAmount(form.amount);
+  return {
+    id,
+    name: name.trim(),
+    kind,
+    mainCategory: kind === "income" ? undefined : (form.mainCategory || undefined),
+    subCategory: form.subCategory || undefined,
+    description: form.description.trim() || undefined,
+    amount: parsed > 0 ? parsed : undefined,
+    fromAccountId: kind !== "income" ? (form.fromAccountId || undefined) : undefined,
+    toAccountId: kind !== "expense" ? (form.toAccountId || undefined) : undefined
   };
 }

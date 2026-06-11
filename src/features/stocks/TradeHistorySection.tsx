@@ -6,6 +6,7 @@ import { isUSDStock, canonicalTickerForMatch, cryptoDisplaySymbol } from "../../
 import { computeTradeCashImpact } from "../../utils/tradeCashImpact";
 import { validateAccountTickerCurrency } from "../../utils/validation";
 import { ERROR_MESSAGES } from "../../constants/errorMessages";
+import { isCoarsePointer } from "../../utils/pointer";
 import { formatNumber, formatKRW, formatUSD, formatShortDate } from "../../utils/formatter";
 
 const sideLabel: Record<TradeSide, string> = {
@@ -110,6 +111,8 @@ export const TradeHistorySection: React.FC<TradeHistorySectionProps> = ({
   const [inlineEditField, setInlineEditField] = useState<"date" | "accountId" | "quantity" | "price" | "fee" | "totalAmount" | null>(null);
   /** 계좌별 보기: null = 전체, 값 있으면 해당 계좌만 */
   const [filterAccountId, setFilterAccountId] = useState<string | null>(null);
+  // 렌더당 1회 평가 — 터치(coarse) 포인터에서는 더블클릭 대신 단일 탭으로 인라인 편집 진입
+  const coarsePointer = isCoarsePointer();
 
   const tradesFiltered = useMemo(() => {
     if (!filterAccountId) return trades;
@@ -312,12 +315,39 @@ export const TradeHistorySection: React.FC<TradeHistorySectionProps> = ({
     setInlineEditField(null);
   };
 
+  /**
+   * coarse 포인터(터치) 전용: 단일 탭으로 인라인 편집 진입하는 onClick 핸들러.
+   * 해당 행을 이미 편집 중이면 무시 — 입력 중 탭으로 편집 값이 초기화되는 것을 막는다.
+   * (티커/종목명 셀은 별도 클릭 동작이 있으므로 적용하지 않는다)
+   */
+  const tapToInlineEdit = (
+    t: StockTrade,
+    field: "date" | "accountId" | "quantity" | "price" | "fee" | "totalAmount"
+  ) =>
+    coarsePointer
+      ? () => {
+          if (inlineEdit?.id === t.id) return;
+          startInlineEdit(t, field);
+        }
+      : undefined;
+
   const saveInlineEdit = () => {
     if (!inlineEdit) return;
     const quantity = Number(inlineEdit.quantity);
     const price = Number(inlineEdit.price);
     const fee = Number(inlineEdit.fee || "0");
     if (!inlineEdit.date || !inlineEdit.accountId || !inlineEdit.ticker || !quantity || !price) {
+      // 어떤 항목 때문에 저장되지 않았는지 항상 알려준다 (편집 상태는 유지)
+      const reason = !inlineEdit.date
+        ? "날짜를 입력해주세요."
+        : !inlineEdit.accountId
+          ? ERROR_MESSAGES.ACCOUNT_REQUIRED
+          : !inlineEdit.ticker
+            ? "티커를 입력해주세요."
+            : !quantity
+              ? "수량을 올바르게 입력해주세요."
+              : "단가를 올바르게 입력해주세요.";
+      toast.error(reason);
       return;
     }
     const side = inlineEdit.side;
@@ -509,6 +539,7 @@ export const TradeHistorySection: React.FC<TradeHistorySectionProps> = ({
           })}
         </div>
       )}
+      {tradesFiltered.length > 0 && (
       <div className="card" style={{ marginBottom: 16, padding: 12 }}>
         <div style={{ display: "flex", gap: 24, flexWrap: "wrap", fontSize: 14 }}>
           {krwBuyAmount + krwSellAmount + krwFee > 0 && (
@@ -557,6 +588,7 @@ export const TradeHistorySection: React.FC<TradeHistorySectionProps> = ({
           )}
         </div>
       </div>
+      )}
       <div className="card" style={{ padding: 0 }}>
         <div
           ref={tradeViewportRef}
@@ -658,11 +690,13 @@ export const TradeHistorySection: React.FC<TradeHistorySectionProps> = ({
                 >
                   <td className="drag-cell">
                     <span className="drag-handle" title="드래그하여 순서 변경">
-                      ::
+                      ☰
                     </span>
                   </td>
-                  <td 
+                  <td
+                    className="cell-editable"
                     onDoubleClick={() => startInlineEdit(t, "date")}
+                    onClick={tapToInlineEdit(t, "date")}
                     style={{ cursor: "pointer" }}
                     title="더블클릭하여 수정"
                   >
@@ -683,8 +717,10 @@ export const TradeHistorySection: React.FC<TradeHistorySectionProps> = ({
                       formatShortDate(t.date)
                     )}
                   </td>
-                  <td 
+                  <td
+                    className="cell-editable"
                     onDoubleClick={() => startInlineEdit(t, "accountId")}
+                    onClick={tapToInlineEdit(t, "accountId")}
                     style={{ cursor: "pointer" }}
                     title="더블클릭하여 수정"
                   >
@@ -759,9 +795,10 @@ export const TradeHistorySection: React.FC<TradeHistorySectionProps> = ({
                       : latestPriceByCanonicalTicker.get(canonicalTickerForMatch(t.ticker))?.name || t.name || t.ticker}
                   </td>
                   <td>{sideLabel[t.side]}</td>
-                  <td 
-                    className="number"
+                  <td
+                    className="number cell-editable"
                     onDoubleClick={() => startInlineEdit(t, "quantity")}
+                    onClick={tapToInlineEdit(t, "quantity")}
                     style={{ cursor: "pointer" }}
                     title="더블클릭하여 수정"
                   >
@@ -784,9 +821,10 @@ export const TradeHistorySection: React.FC<TradeHistorySectionProps> = ({
                       t.quantity % 1 === 0 ? formatNumber(t.quantity) : t.quantity.toFixed(6)
                     )}
                   </td>
-                  <td 
-                    className={`number ${t.price >= 0 ? "positive" : "negative"}`}
+                  <td
+                    className={`number cell-editable ${t.price >= 0 ? "positive" : "negative"}`}
                     onDoubleClick={() => startInlineEdit(t, "price")}
+                    onClick={tapToInlineEdit(t, "price")}
                     style={{ cursor: "pointer" }}
                     title="더블클릭하여 수정"
                   >
@@ -813,9 +851,10 @@ export const TradeHistorySection: React.FC<TradeHistorySectionProps> = ({
                       })()
                     )}
                   </td>
-                  <td 
-                    className={`number ${t.fee >= 0 ? "positive" : "negative"}`}
+                  <td
+                    className={`number cell-editable ${t.fee >= 0 ? "positive" : "negative"}`}
                     onDoubleClick={() => startInlineEdit(t, "fee")}
+                    onClick={tapToInlineEdit(t, "fee")}
                     style={{ cursor: "pointer" }}
                     title="더블클릭하여 수정"
                   >
@@ -842,9 +881,10 @@ export const TradeHistorySection: React.FC<TradeHistorySectionProps> = ({
                       })()
                     )}
                   </td>
-                  <td 
-                    className={`number ${t.totalAmount >= 0 ? "positive" : "negative"}`}
+                  <td
+                    className={`number cell-editable ${t.totalAmount >= 0 ? "positive" : "negative"}`}
                     onDoubleClick={() => startInlineEdit(t, "totalAmount")}
+                    onClick={tapToInlineEdit(t, "totalAmount")}
                     style={{ cursor: "pointer" }}
                     title="더블클릭하여 수정 (수량 자동 조정)"
                   >
@@ -917,6 +957,27 @@ export const TradeHistorySection: React.FC<TradeHistorySectionProps> = ({
                 </tr>
               );
             })}
+            {sortedTrades.length === 0 && (
+              <tr>
+                <td colSpan={columnWidths.length} style={{ textAlign: "center", padding: 20, color: "var(--text-muted)" }}>
+                  {trades.length === 0 ? (
+                    "아직 매매 내역이 없습니다 — 위 거래 입력 폼에서 첫 거래를 기록해 보세요."
+                  ) : (
+                    <span style={{ display: "inline-flex", alignItems: "center", gap: 8, flexWrap: "wrap", justifyContent: "center" }}>
+                      선택한 계좌에 표시할 거래가 없습니다.
+                      <button
+                        type="button"
+                        className="secondary"
+                        style={{ fontSize: 13, padding: "6px 12px" }}
+                        onClick={() => setFilterAccountId(null)}
+                      >
+                        전체 보기
+                      </button>
+                    </span>
+                  )}
+                </td>
+              </tr>
+            )}
           </tbody>
         </table>
         </div>

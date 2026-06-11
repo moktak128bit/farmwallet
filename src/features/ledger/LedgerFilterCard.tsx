@@ -11,6 +11,8 @@ type SetStr = React.Dispatch<React.SetStateAction<string | undefined>>;
 
 interface Props {
   ledger: LedgerEntry[];
+  /** 현재 수입/지출/이체 탭으로 좁혀진 목록 (부모 memo) — 카테고리 옵션용 */
+  tabLedger: LedgerEntry[];
   accounts: Account[];
   showFilters: boolean;
   setShowFilters: React.Dispatch<React.SetStateAction<boolean>>;
@@ -38,6 +40,7 @@ interface Props {
 
 export const LedgerFilterCard: React.FC<Props> = React.memo(function LedgerFilterCard({
   ledger,
+  tabLedger,
   accounts,
   showFilters,
   setShowFilters,
@@ -173,6 +176,7 @@ export const LedgerFilterCard: React.FC<Props> = React.memo(function LedgerFilte
         <div style={{ marginTop: 14 }}>
           <LedgerFilterBar
             ledger={ledger}
+            tabLedger={tabLedger}
             accounts={accounts}
             filterMainCategory={filterMainCategory}
             filterSubCategory={filterSubCategory}
@@ -190,7 +194,7 @@ export const LedgerFilterCard: React.FC<Props> = React.memo(function LedgerFilte
               type="text"
               value={searchQuery}
               onChange={(e) => setSearchQuery(e.target.value)}
-              placeholder="거래 검색 (날짜, 카테고리, 내용, 계좌...)"
+              placeholder="거래 검색 (날짜, 카테고리, 내용, 계좌, 태그, 금액)"
               style={{
                 width: "100%",
                 padding: "12px 16px",

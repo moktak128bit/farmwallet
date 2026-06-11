@@ -102,12 +102,12 @@ export const DateTab = React.memo(function DateTab({ d }: { d: D }) {
   return (
     <div>
       {/* 상단 배너 */}
-      <div style={{ padding: "10px 14px", background: "#f8f9fa", borderRadius: 8, marginBottom: 16, fontSize: 12, color: "#666", lineHeight: 1.6 }}>
+      <div style={{ padding: "10px 14px", background: "var(--bg)", borderRadius: 8, marginBottom: 16, fontSize: 12, color: "var(--text-muted)", lineHeight: 1.6 }}>
         ℹ️ 범위: <strong>{rangeLabel}</strong> ({periodLabel}) · 단위: <strong>원</strong> · 감지 조건: 대분류/중분류에 <strong>"데이트"</strong> 포함 · 모임통장: 계좌명에 "모임" 포함
       </div>
 
       {noData ? (
-        <div className="card" style={{ textAlign: "center", padding: "60px 20px", color: "#999", borderRadius: 12 }}>
+        <div className="card" style={{ textAlign: "center", padding: "60px 20px", color: "var(--text-faint)", borderRadius: 12 }}>
           <div style={{ fontSize: 48, marginBottom: 16 }}>💕</div>
           <div style={{ fontSize: 17, fontWeight: 700, marginBottom: 8 }}>데이트 지출 데이터가 없습니다</div>
           <div style={{ fontSize: 13, lineHeight: 1.8 }}>
@@ -127,7 +127,7 @@ export const DateTab = React.memo(function DateTab({ d }: { d: D }) {
             <Card title="월별 데이트 지출" span={2}>
               <ResponsiveContainer width="100%" height={260}>
                 <ComposedChart data={allMonthData}>
-                  <CartesianGrid strokeDasharray="3 3" stroke="#eee" />
+                  <CartesianGrid strokeDasharray="3 3" stroke="var(--chart-grid)" />
                   <XAxis dataKey="name" tick={{ fontSize: 12 }} />
                   <YAxis tickFormatter={F} tick={{ fontSize: 11 }} />
                   <Tooltip content={<CT />} />
@@ -147,7 +147,7 @@ export const DateTab = React.memo(function DateTab({ d }: { d: D }) {
                     <Tooltip formatter={(v: ValueType | undefined) => W(Number(v ?? 0))} />
                   </PieChart>
                 </ResponsiveContainer>
-              ) : <div style={{ textAlign: "center", padding: 40, color: "#999" }}>중분류 없음</div>}
+              ) : <div style={{ textAlign: "center", padding: 40, color: "var(--text-faint)" }}>중분류 없음</div>}
             </Card>
           </Section>
 
@@ -193,7 +193,7 @@ export const DateTab = React.memo(function DateTab({ d }: { d: D }) {
             <Card title="요일별 데이트 지출" span={2}>
               <ResponsiveContainer width="100%" height={220}>
                 <BarChart data={dowData}>
-                  <CartesianGrid strokeDasharray="3 3" stroke="#eee" />
+                  <CartesianGrid strokeDasharray="3 3" stroke="var(--chart-grid)" />
                   <XAxis dataKey="name" tick={{ fontSize: 12 }} />
                   <YAxis tickFormatter={F} tick={{ fontSize: 10 }} />
                   <Tooltip formatter={(v: ValueType | undefined, _n, p) => [W(Number(v ?? 0)), `${p.payload.건수}건`]} />
@@ -202,7 +202,7 @@ export const DateTab = React.memo(function DateTab({ d }: { d: D }) {
                   </Bar>
                 </BarChart>
               </ResponsiveContainer>
-              <div style={{ fontSize: 11, color: "#999", textAlign: "center", marginTop: 4 }}>
+              <div style={{ fontSize: 11, color: "var(--text-faint)", textAlign: "center", marginTop: 4 }}>
                 {(() => { const best = dowData.reduce((m, cur) => cur.금액 > m.금액 ? cur : m, dowData[0]); return best.금액 > 0 ? `${best.name}요일에 가장 많이 지출 (${best.건수}건)` : ""; })()}
               </div>
             </Card>
@@ -210,14 +210,14 @@ export const DateTab = React.memo(function DateTab({ d }: { d: D }) {
             <Card title="건당 평균 추이 (월별)" span={2}>
               <ResponsiveContainer width="100%" height={220}>
                 <LineChart data={avgPerTxTrend}>
-                  <CartesianGrid strokeDasharray="3 3" stroke="#eee" />
+                  <CartesianGrid strokeDasharray="3 3" stroke="var(--chart-grid)" />
                   <XAxis dataKey="name" tick={{ fontSize: 12 }} />
                   <YAxis tickFormatter={F} tick={{ fontSize: 10 }} />
                   <Tooltip formatter={(v: ValueType | undefined) => W(Number(v ?? 0))} />
                   <Line isAnimationActive={false} type="monotone" dataKey="건당평균" stroke="#e94560" strokeWidth={2.5} dot={{ r: 3 }} />
                 </LineChart>
               </ResponsiveContainer>
-              <div style={{ fontSize: 11, color: "#999", textAlign: "center", marginTop: 4 }}>
+              <div style={{ fontSize: 11, color: "var(--text-faint)", textAlign: "center", marginTop: 4 }}>
                 월별 총액 / 건수. 상승 추세면 건당 지출이 커지는 중
               </div>
             </Card>
@@ -228,8 +228,8 @@ export const DateTab = React.memo(function DateTab({ d }: { d: D }) {
             <Card title="지출처 TOP 20" span={2}>
               <div style={{ maxHeight: 320, overflow: "auto" }}>
                 {d.dateTop.map(([name, value], i) => (
-                  <div key={name} style={{ display: "flex", alignItems: "center", gap: 8, padding: "5px 0", borderBottom: "1px solid #f5f5f5", fontSize: 12 }}>
-                    <span style={{ fontWeight: 700, color: i < 3 ? "#e94560" : "#999", width: 20, textAlign: "right" }}>{i + 1}</span>
+                  <div key={name} style={{ display: "flex", alignItems: "center", gap: 8, padding: "5px 0", borderBottom: "1px solid var(--border-light)", fontSize: 12 }}>
+                    <span style={{ fontWeight: 700, color: i < 3 ? "#e94560" : "var(--text-faint)", width: 20, textAlign: "right" }}>{i + 1}</span>
                     <span style={{ flex: 1, fontWeight: 500 }}>{name}</span>
                     <span style={{ fontWeight: 700, color: "#e94560" }}>{F(value)}원</span>
                   </div>
@@ -240,16 +240,16 @@ export const DateTab = React.memo(function DateTab({ d }: { d: D }) {
             <Card title="🎁 단일 건 TOP 10 (기념일 감지)" span={2}>
               <div style={{ maxHeight: 320, overflow: "auto" }}>
                 {bigSingles.map((e, i) => (
-                  <div key={i} style={{ display: "flex", alignItems: "center", gap: 8, padding: "6px 0", borderBottom: "1px solid #f5f5f5", fontSize: 12 }}>
-                    <span style={{ fontWeight: 700, color: i < 3 ? "#e94560" : "#999", width: 20, textAlign: "right" }}>{i + 1}</span>
+                  <div key={i} style={{ display: "flex", alignItems: "center", gap: 8, padding: "6px 0", borderBottom: "1px solid var(--border-light)", fontSize: 12 }}>
+                    <span style={{ fontWeight: 700, color: i < 3 ? "#e94560" : "var(--text-faint)", width: 20, textAlign: "right" }}>{i + 1}</span>
                     <div style={{ flex: 1, minWidth: 0 }}>
                       <div style={{ fontWeight: 600, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{e.desc || "(설명 없음)"}</div>
-                      <div style={{ fontSize: 10, color: "#999" }}>{e.date} · {e.sub || "-"}</div>
+                      <div style={{ fontSize: 10, color: "var(--text-faint)" }}>{e.date} · {e.sub || "-"}</div>
                     </div>
                     <span style={{ fontWeight: 700, color: "#e94560" }}>{F(e.amount)}원</span>
                   </div>
                 ))}
-                {bigSingles.length === 0 && <div style={{ padding: 20, textAlign: "center", color: "#999" }}>데이터 없음</div>}
+                {bigSingles.length === 0 && <div style={{ padding: 20, textAlign: "center", color: "var(--text-faint)" }}>데이터 없음</div>}
               </div>
             </Card>
 
@@ -259,11 +259,11 @@ export const DateTab = React.memo(function DateTab({ d }: { d: D }) {
                   {d.dateByDetail.map(([name, value], i) => {
                     const dtTotal = d.dateByDetail.reduce((s, [, v]) => s + v, 0);
                     return (
-                      <div key={name} style={{ display: "flex", justifyContent: "space-between", padding: "6px 0", borderBottom: "1px solid #f5f5f5", fontSize: 12 }}>
+                      <div key={name} style={{ display: "flex", justifyContent: "space-between", padding: "6px 0", borderBottom: "1px solid var(--border-light)", fontSize: 12 }}>
                         <span style={{ display: "flex", alignItems: "center", gap: 8 }}>
                           <span style={{ width: 10, height: 10, borderRadius: 5, background: C[i % 12], display: "inline-block" }} />{name}
                         </span>
-                        <span style={{ fontWeight: 700 }}>{F(value)}원 <span style={{ fontSize: 10, color: "#999" }}>({dtTotal > 0 ? Math.round((value / dtTotal) * 100) : 0}%)</span></span>
+                        <span style={{ fontWeight: 700 }}>{F(value)}원 <span style={{ fontSize: 10, color: "var(--text-faint)" }}>({dtTotal > 0 ? Math.round((value / dtTotal) * 100) : 0}%)</span></span>
                       </div>
                     );
                   })}
@@ -274,22 +274,22 @@ export const DateTab = React.memo(function DateTab({ d }: { d: D }) {
             <Card title="데이트 내역 상세 (최근 30건)" span={2}>
               <div style={{ overflowX: "auto", maxHeight: 320 }}>
                 <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 12 }}>
-                  <thead><tr style={{ borderBottom: "2px solid #eee" }}>
-                    <th style={{ padding: "6px", textAlign: "left", color: "#999" }}>날짜</th>
-                    <th style={{ padding: "6px", textAlign: "left", color: "#999" }}>내용</th>
-                    <th style={{ padding: "6px", textAlign: "left", color: "#999" }}>중분류</th>
-                    <th style={{ padding: "6px", textAlign: "right", color: "#999" }}>금액</th>
+                  <thead><tr style={{ borderBottom: "2px solid var(--border-light)" }}>
+                    <th style={{ padding: "6px", textAlign: "left", color: "var(--text-faint)" }}>날짜</th>
+                    <th style={{ padding: "6px", textAlign: "left", color: "var(--text-faint)" }}>내용</th>
+                    <th style={{ padding: "6px", textAlign: "left", color: "var(--text-faint)" }}>중분류</th>
+                    <th style={{ padding: "6px", textAlign: "right", color: "var(--text-faint)" }}>금액</th>
                   </tr></thead>
                   <tbody>{d.dateEntries.slice(0, 30).map((e, i) => (
-                    <tr key={i} style={{ borderBottom: "1px solid #f5f5f5" }}>
-                      <td style={{ padding: "5px 6px", color: "#666" }}>{e.date}</td>
+                    <tr key={i} style={{ borderBottom: "1px solid var(--border-light)" }}>
+                      <td style={{ padding: "5px 6px", color: "var(--text-muted)" }}>{e.date}</td>
                       <td style={{ padding: "5px 6px", fontWeight: 500 }}>{e.desc || "-"}</td>
-                      <td style={{ padding: "5px 6px", color: "#888" }}>{e.sub || "-"}</td>
+                      <td style={{ padding: "5px 6px", color: "var(--text-muted)" }}>{e.sub || "-"}</td>
                       <td style={{ padding: "5px 6px", textAlign: "right", fontWeight: 700, color: "#e94560" }}>{F(e.amount)}원</td>
                     </tr>
                   ))}</tbody>
                 </table>
-                {d.dateEntries.length > 30 && <div style={{ fontSize: 11, color: "#999", textAlign: "center", marginTop: 4 }}>+{d.dateEntries.length - 30}건 더</div>}
+                {d.dateEntries.length > 30 && <div style={{ fontSize: 11, color: "var(--text-faint)", textAlign: "center", marginTop: 4 }}>+{d.dateEntries.length - 30}건 더</div>}
               </div>
             </Card>
           </Section>
@@ -299,7 +299,7 @@ export const DateTab = React.memo(function DateTab({ d }: { d: D }) {
             <Card title="누적 데이트 지출" span={2}>
               <ResponsiveContainer width="100%" height={240}>
                 <LineChart data={cumDate}>
-                  <CartesianGrid strokeDasharray="3 3" stroke="#eee" />
+                  <CartesianGrid strokeDasharray="3 3" stroke="var(--chart-grid)" />
                   <XAxis dataKey="name" tick={{ fontSize: 12 }} />
                   <YAxis tickFormatter={F} tick={{ fontSize: 10 }} />
                   <Tooltip formatter={(v: ValueType | undefined) => W(Number(v ?? 0))} />
@@ -311,14 +311,14 @@ export const DateTab = React.memo(function DateTab({ d }: { d: D }) {
             <Card title="전체 지출 대비 데이트비 비율 (%)" span={2}>
               <ResponsiveContainer width="100%" height={240}>
                 <BarChart data={dateVsTotal}>
-                  <CartesianGrid strokeDasharray="3 3" stroke="#eee" />
+                  <CartesianGrid strokeDasharray="3 3" stroke="var(--chart-grid)" />
                   <XAxis dataKey="name" tick={{ fontSize: 10 }} />
                   <YAxis tickFormatter={(v: number) => v + "%"} tick={{ fontSize: 10 }} />
                   <Tooltip formatter={(v: ValueType | undefined) => v + "%"} />
                   <Bar isAnimationActive={false} dataKey="비율" fill="#e94560" radius={[4, 4, 0, 0]} />
                 </BarChart>
               </ResponsiveContainer>
-              <div style={{ fontSize: 11, color: "#999", textAlign: "center", marginTop: 4 }}>
+              <div style={{ fontSize: 11, color: "var(--text-faint)", textAlign: "center", marginTop: 4 }}>
                 월별 (데이트 지출 / 월 총지출) × 100
               </div>
             </Card>
@@ -379,8 +379,8 @@ export const DateTab = React.memo(function DateTab({ d }: { d: D }) {
                   { label: "단일 최고", value: bigSingles[0] ? `${bigSingles[0].date} (${F(bigSingles[0].amount)}원)` : "-", color: "#f0c040" },
                   { label: "활성 월 수", value: `${monthsActive} / ${d.months.length}개월`, color: "#533483" },
                 ].map((s) => (
-                  <div key={s.label} style={{ padding: "10px 12px", background: "#f8f9fa", borderRadius: 8 }}>
-                    <div style={{ color: "#999", fontSize: 11, marginBottom: 2 }}>{s.label}</div>
+                  <div key={s.label} style={{ padding: "10px 12px", background: "var(--bg)", borderRadius: 8 }}>
+                    <div style={{ color: "var(--text-faint)", fontSize: 11, marginBottom: 2 }}>{s.label}</div>
                     <div style={{ fontWeight: 700, color: s.color }}>{s.value}</div>
                   </div>
                 ))}

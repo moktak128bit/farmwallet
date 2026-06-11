@@ -41,7 +41,7 @@ export const PatternTab = React.memo(function PatternTab({ d }: { d: D }) {
 
   return (
     <div>
-      <div style={{ padding: "10px 14px", background: "#f8f9fa", borderRadius: 8, marginBottom: 16, fontSize: 12, color: "#666", lineHeight: 1.6 }}>
+      <div style={{ padding: "10px 14px", background: "var(--bg)", borderRadius: 8, marginBottom: 16, fontSize: 12, color: "var(--text-muted)", lineHeight: 1.6 }}>
         ℹ️ 범위: <strong>{rangeLabel}</strong> ({periodLabel}) · 단위: <strong>원</strong> · 초점: <strong>언제·어떻게</strong> 소비하는지 (타이밍·빈도·스트릭). 금액 심층 분석은 지출 분석 탭 참조
       </div>
 
@@ -95,7 +95,7 @@ export const PatternTab = React.memo(function PatternTab({ d }: { d: D }) {
         <Card title="월별 무지출일 추이" span={4}>
           <ResponsiveContainer width="100%" height={220}>
             <BarChart data={zeroTrendData}>
-              <CartesianGrid strokeDasharray="3 3" stroke="#eee" />
+              <CartesianGrid strokeDasharray="3 3" stroke="var(--chart-grid)" />
               <XAxis dataKey="name" tick={{ fontSize: 11 }} />
               <YAxis yAxisId="left" tick={{ fontSize: 10 }} />
               <YAxis yAxisId="right" orientation="right" tickFormatter={(v) => v.toFixed(0) + "%"} tick={{ fontSize: 10 }} domain={[0, 100]} />
@@ -105,7 +105,7 @@ export const PatternTab = React.memo(function PatternTab({ d }: { d: D }) {
               </Bar>
             </BarChart>
           </ResponsiveContainer>
-          <div style={{ fontSize: 11, color: "#999", textAlign: "center", marginTop: 4 }}>
+          <div style={{ fontSize: 11, color: "var(--text-faint)", textAlign: "center", marginTop: 4 }}>
             녹색 ≥20% · 노랑 10~20% · 빨강 &lt;10%
           </div>
         </Card>
@@ -116,7 +116,7 @@ export const PatternTab = React.memo(function PatternTab({ d }: { d: D }) {
         <Card title="요일별 거래 빈도" span={2}>
           <ResponsiveContainer width="100%" height={240}>
             <BarChart data={wdData}>
-              <CartesianGrid strokeDasharray="3 3" stroke="#eee" />
+              <CartesianGrid strokeDasharray="3 3" stroke="var(--chart-grid)" />
               <XAxis dataKey="name" tick={{ fontSize: 12 }} />
               <YAxis tick={{ fontSize: 10 }} />
               <Tooltip formatter={(v: ValueType | undefined, _n, p) => [`${v}건`, `건당 평균 ${F(p.payload.avg)}원`]} />
@@ -125,7 +125,7 @@ export const PatternTab = React.memo(function PatternTab({ d }: { d: D }) {
               </Bar>
             </BarChart>
           </ResponsiveContainer>
-          <div style={{ fontSize: 11, color: "#999", textAlign: "center", marginTop: 4 }}>
+          <div style={{ fontSize: 11, color: "var(--text-faint)", textAlign: "center", marginTop: 4 }}>
             빈도(건수) 기준 · 최다: {sortedByCount[0]?.name}요일 ({sortedByCount[0]?.count}건) · 금액 기준은 지출 분석 탭
           </div>
         </Card>
@@ -133,7 +133,7 @@ export const PatternTab = React.memo(function PatternTab({ d }: { d: D }) {
         <Card title="상·중·하순 지출 분포" span={2}>
           <ResponsiveContainer width="100%" height={240}>
             <BarChart data={thirdData}>
-              <CartesianGrid strokeDasharray="3 3" stroke="#eee" />
+              <CartesianGrid strokeDasharray="3 3" stroke="var(--chart-grid)" />
               <XAxis dataKey="name" tick={{ fontSize: 11 }} />
               <YAxis tickFormatter={F} tick={{ fontSize: 10 }} />
               <Tooltip content={<CT />} />
@@ -142,30 +142,30 @@ export const PatternTab = React.memo(function PatternTab({ d }: { d: D }) {
               </Bar>
             </BarChart>
           </ResponsiveContainer>
-          <div style={{ fontSize: 11, color: "#999", textAlign: "center", marginTop: 4 }}>
+          <div style={{ fontSize: 11, color: "var(--text-faint)", textAlign: "center", marginTop: 4 }}>
             {byThird[2] > byThird[0] && byThird[2] > byThird[1] ? "하순 집중 (카드 결제일·월말 소비)" :
               byThird[0] > byThird[1] ? "상순 집중 (고정비 결제)" : "중순 집중"}
           </div>
         </Card>
 
         <Card title="지출 많은 날 TOP 5" span={4}>
-          {d.topDates.length === 0 ? <div style={{ textAlign: "center", padding: 20, color: "#999" }}>데이터 없음</div> : (
+          {d.topDates.length === 0 ? <div style={{ textAlign: "center", padding: 20, color: "var(--text-faint)" }}>데이터 없음</div> : (
             <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
               {d.topDates.map((dt, idx) => (
-                <div key={dt.date} style={{ background: idx < 3 ? "#fff5f5" : "#f8f9fa", borderRadius: 10, padding: "10px 14px", border: idx < 3 ? "1px solid #fcc" : "1px solid #eee", position: "relative", overflow: "hidden" }}>
+                <div key={dt.date} style={{ background: idx < 3 ? "rgba(233,69,96,0.08)" : "var(--bg)", borderRadius: 10, padding: "10px 14px", border: idx < 3 ? "1px solid rgba(233,69,96,0.25)" : "1px solid var(--border-light)", position: "relative", overflow: "hidden" }}>
                   <div style={{ position: "absolute", left: 0, top: 0, bottom: 0, width: `${d.topDates[0] ? (dt.total / d.topDates[0].total) * 100 : 0}%`, background: "rgba(233,69,96,0.06)", borderRadius: 10 }} />
                   <div style={{ position: "relative", display: "flex", alignItems: "center", gap: 10 }}>
-                    <span style={{ fontSize: 18, fontWeight: 800, color: idx < 3 ? "#e94560" : "#999", width: 28 }}>{idx + 1}</span>
-                    <span style={{ fontSize: 13, color: "#666", fontWeight: 600, minWidth: 85 }}>{dt.date}</span>
+                    <span style={{ fontSize: 18, fontWeight: 800, color: idx < 3 ? "#e94560" : "var(--text-faint)", width: 28 }}>{idx + 1}</span>
+                    <span style={{ fontSize: 13, color: "var(--text-muted)", fontWeight: 600, minWidth: 85 }}>{dt.date}</span>
                     <span style={{ fontWeight: 700, fontSize: 15, color: "#e94560", marginLeft: "auto" }}>{F(dt.total)}원</span>
                   </div>
                   <div style={{ position: "relative", display: "flex", flexWrap: "wrap", gap: 4, marginTop: 4 }}>
                     {dt.items.slice(0, 4).map((it, j) => (
-                      <span key={j} style={{ fontSize: 10, color: "#999", background: "#fff", border: "1px solid #eee", borderRadius: 4, padding: "1px 6px" }}>
+                      <span key={j} style={{ fontSize: 10, color: "var(--text-faint)", background: "var(--surface)", border: "1px solid var(--border-light)", borderRadius: 4, padding: "1px 6px" }}>
                         {it.desc} {F(it.amount)}원
                       </span>
                     ))}
-                    {dt.items.length > 4 && <span style={{ fontSize: 10, color: "#999" }}>+{dt.items.length - 4}건</span>}
+                    {dt.items.length > 4 && <span style={{ fontSize: 10, color: "var(--text-faint)" }}>+{dt.items.length - 4}건</span>}
                   </div>
                 </div>
               ))}

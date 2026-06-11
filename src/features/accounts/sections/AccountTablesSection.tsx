@@ -10,7 +10,19 @@ import React, { useRef, useState } from "react";
 import type { Account, AccountType, LedgerEntry, AccountBalanceRow, StockTrade } from "../../../types";
 import { formatKRW, formatUSD } from "../../../utils/formatter";
 import { toast } from "react-hot-toast";
+import { isCoarsePointer } from "../../../utils/pointer";
+import { useAppStore } from "../../../store/appStore";
 import { ACCOUNT_TYPE_LABEL } from "../accountsShared";
+
+// ─── 삭제 토스트 [실행 취소] — "삭제 항목 재삽입" 복원 ───────────────────
+// 풀 스냅샷 undo가 아니다:
+//  - 삭제 이후 다른 변경(시세 갱신·Gist pull·탭 동기화·다른 편집)이 있어도
+//    그 변경을 보존한 채 삭제된 항목만 되살린다.
+//  - 복원은 onChange*(→ setDataWithHistory) 경유의 새 히스토리 write라
+//    Ctrl+Z로 복원 자체를 다시 취소할 수 있다.
+// 전제: appStore.setData는 동기(zustand) — 클릭 시점 getState() 재조회가 항상 최신.
+// useAppStore는 핸들러 내부 getState()만 사용 — 훅 구독 금지(재렌더 유발·memo 무력화 방지).
+import { buildRestoreById, showDeleteUndoToast } from "../../../utils/undoToast";
 
 interface Props {
   safeAccounts: Account[];
@@ -53,6 +65,8 @@ export const AccountTablesSection: React.FC<Props> = React.memo(function Account
   const [editingCellValue, setEditingCellValue] = useState("");
   const [draggingId, setDraggingId] = useState<string | null>(null);
   const accountNameClickTimerRef = useRef<number | null>(null);
+  // 렌더당 1회 평가 — 터치(coarse) 포인터에서는 더블클릭 대신 단일 탭으로 편집 진입
+  const coarsePointer = isCoarsePointer();
 
   const handleDeleteAccount = (id: string) => {
     // 삭제 전 해당 계좌를 참조하는 ledger·trade 개수 확인.
@@ -71,7 +85,17 @@ export const AccountTablesSection: React.FC<Props> = React.memo(function Account
       );
       if (!ok) return;
     }
+    // index 전달 — 계좌는 드래그 순서가 의미 있으므로 원래 위치로 복원.
+    // 계좌 삭제는 참조 레코드(ledger·trade)를 보존하므로 재삽입만으로 완전 복원된다.
+    const index = safeAccounts.findIndex((a) => a.id === id);
+    const deleted = index >= 0 ? safeAccounts[index] : undefined;
     onChangeAccounts(safeAccounts.filter((a) => a.id !== id));
+    if (deleted) {
+      showDeleteUndoToast(
+        `"${deleted.name}" 계좌가 삭제되었습니다.`,
+        buildRestoreById(() => useAppStore.getState().data.accounts, onChangeAccounts, deleted, index)
+      );
+    }
   };
 
   const handleReorderAccount = (id: string, newIndex: number) => {
@@ -142,6 +166,23 @@ export const AccountTablesSection: React.FC<Props> = React.memo(function Account
     setEditingCellValue("");
   };
 
+  /**
+   * coarse 포인터(터치) 전용: 단일 탭으로 편집 진입하는 onClick 핸들러.
+   * 다른 클릭 동작이 있는 셀(계좌명 → 거래 내역 모달)에는 쓰지 않는다.
+   * 이미 해당 셀을 편집 중이면 무시해 입력 중 탭으로 값이 초기화되는 것을 막는다.
+   */
+  const tapToEditCell = (
+    id: string,
+    field: "id" | "name" | "institution" | "type" | "currency" | "usdBalance" | "krwBalance",
+    current: string | number
+  ) =>
+    coarsePointer
+      ? () => {
+          if (editingCell && editingCell.id === id && editingCell.field === field) return;
+          startEditCell(id, field, current);
+        }
+      : undefined;
+
   const renderAccountRow = (row: AccountBalanceRow, accountType: AccountType) => (
     <tr
       key={row.account.id}
@@ -163,10 +204,12 @@ export const AccountTablesSection: React.FC<Props> = React.memo(function Account
       onDragEnd={() => setDraggingId(null)}
     >
       <td className="drag-cell">
-        <span className="drag-handle" title="드래그하여 순서 변경">::</span>
+        <span className="drag-handle" title="드래그하여 순서 변경">☰</span>
       </td>
       <td
+        className="cell-editable"
         onDoubleClick={() => startEditCell(row.account.id, "id", row.account.id)}
+        onClick={tapToEditCell(row.account.id, "id", row.account.id)}
         style={{ cursor: "pointer" }}
         title="더블클릭하여 계좌 ID 수정"
       >
@@ -187,6 +230,7 @@ export const AccountTablesSection: React.FC<Props> = React.memo(function Account
         )}
       </td>
       <td
+        className="cell-editable"
         onClick={(e) => {
           if (editingCell?.id === row.account.id && editingCell?.field === "name") return;
           e.stopPropagation();
@@ -208,7 +252,7 @@ export const AccountTablesSection: React.FC<Props> = React.memo(function Account
           startEditCell(row.account.id, "name", row.account.name ?? "");
         }}
         style={{ cursor: "pointer" }}
-        title="클릭: 거래 내역 보기, 더블클릭: 계좌명 수정"
+        title="클릭: 거래 내역 · 더블클릭: 이름 수정"
       >
         {editingCell && editingCell.id === row.account.id && editingCell.field === "name" ? (
           <input
@@ -227,9 +271,11 @@ export const AccountTablesSection: React.FC<Props> = React.memo(function Account
         )}
       </td>
       <td
+        className="cell-editable"
         onDoubleClick={() =>
           startEditCell(row.account.id, "institution", row.account.institution ?? "")
         }
+        onClick={tapToEditCell(row.account.id, "institution", row.account.institution ?? "")}
         style={{ cursor: "pointer" }}
         title="더블클릭하여 기관 수정"
       >
@@ -269,9 +315,10 @@ export const AccountTablesSection: React.FC<Props> = React.memo(function Account
               {/* USD 잔액 (더블클릭 수정) */}
               <td
                 onDoubleClick={() => startEditCell(row.account.id, "usdBalance", row.account.usdBalance ?? 0)}
+                onClick={tapToEditCell(row.account.id, "usdBalance", row.account.usdBalance ?? 0)}
                 style={{ cursor: "pointer", padding: "8px", textAlign: "right" }}
                 title="더블클릭하여 USD 잔액 수정"
-                className="number"
+                className="number cell-editable"
               >
                 {editingCell && editingCell.id === row.account.id && editingCell.field === "usdBalance" ? (
                   <input
@@ -341,7 +388,9 @@ export const AccountTablesSection: React.FC<Props> = React.memo(function Account
       ) : (
         <>
           <td
+            className="cell-editable"
             onDoubleClick={() => startEditCell(row.account.id, "type", row.account.type)}
+            onClick={tapToEditCell(row.account.id, "type", row.account.type)}
             style={{ cursor: "pointer" }}
             title="더블클릭하여 계좌 유형 수정"
           >

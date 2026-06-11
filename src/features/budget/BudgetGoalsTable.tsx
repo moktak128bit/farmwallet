@@ -7,8 +7,21 @@
  * 부모가 넘기는 콜백은 모두 안정적(setState 또는 useCallback)이어야 memo가 효과를 가진다.
  */
 import React, { useState } from "react";
+import { toast } from "react-hot-toast";
 import type { BudgetGoal } from "../../types";
+import { isCoarsePointer } from "../../utils/pointer";
+import { useAppStore } from "../../store/appStore";
 import type { BudgetUsageRow } from "./BudgetDashboardSection";
+
+// ─── 삭제 토스트 [실행 취소] — "삭제 항목 재삽입" 복원 ───────────────────
+// 풀 스냅샷 undo가 아니다:
+//  - 삭제 이후 다른 변경(시세 갱신·Gist pull·탭 동기화·다른 편집)이 있어도
+//    그 변경을 보존한 채 삭제된 항목만 되살린다.
+//  - 복원은 onChange*(→ setDataWithHistory) 경유의 새 히스토리 write라
+//    Ctrl+Z로 복원 자체를 다시 취소할 수 있다.
+// 전제: appStore.setData는 동기(zustand) — 클릭 시점 getState() 재조회가 항상 최신.
+// useAppStore는 핸들러 내부 getState()만 사용 — 훅 구독 금지(재렌더 유발·memo 무력화 방지).
+import { buildRestoreById, showDeleteUndoToast } from "../../utils/undoToast";
 
 interface Props {
   budgetUsage: BudgetUsageRow[];
@@ -23,14 +36,34 @@ export const BudgetGoalsTable: React.FC<Props> = React.memo(function BudgetGoals
 }) {
   const [editingBudgetField, setEditingBudgetField] = useState<{ id: string; field: string } | null>(null);
   const [editingBudgetValue, setEditingBudgetValue] = useState<string>("");
+  // 터치 환경 여부 — 렌더당 1회 평가 (coarse 포인터는 더블클릭 대신 단일 탭으로 편집 진입)
+  const coarsePointer = isCoarsePointer();
 
-  const deleteBudget = (id: string) => {
+  const deleteBudget = (id: string, category: string) => {
+    if (!window.confirm(`"${category}" 예산을 삭제하시겠습니까?`)) return;
+    // index 전달 — 예산 표는 배열 순서대로 렌더되므로 원래 위치로 복원
+    const index = budgets.findIndex((b) => b.id === id);
+    const deleted = index >= 0 ? budgets[index] : undefined;
     onChangeBudgets(budgets.filter((b) => b.id !== id));
+    if (deleted) {
+      showDeleteUndoToast(
+        `"${category}" 예산이 삭제되었습니다.`,
+        buildRestoreById(() => useAppStore.getState().data.budgetGoals, onChangeBudgets, deleted, index)
+      );
+    } else {
+      toast.success(`"${category}" 예산이 삭제되었습니다.`);
+    }
   };
 
   const startEditBudgetField = (id: string, field: string, currentValue: string | number) => {
     setEditingBudgetField({ id, field });
     setEditingBudgetValue(String(currentValue));
+  };
+
+  // 터치(coarse) 단일 탭 편집 진입 — 이미 해당 셀을 편집 중이면(입력 내부 탭 등) 재진입으로 입력값이 초기화되지 않게 막는다
+  const tapToEditBudgetField = (id: string, field: string, currentValue: string | number) => {
+    if (editingBudgetField?.id === id && editingBudgetField.field === field) return;
+    startEditBudgetField(id, field, currentValue);
   };
 
   const saveEditBudgetField = () => {
@@ -83,8 +116,9 @@ export const BudgetGoalsTable: React.FC<Props> = React.memo(function BudgetGoals
             return (
             <tr key={b.id} style={isOver ? { backgroundColor: "var(--danger-light, rgba(244, 63, 94, 0.08))" } : undefined}>
               <td
+                className="cell-editable"
                 onDoubleClick={() => startEditBudgetField(b.id, "category", b.category)}
-                style={{ cursor: "pointer" }}
+                onClick={coarsePointer ? () => tapToEditBudgetField(b.id, "category", b.category) : undefined}
                 title="더블클릭하여 수정"
               >
                 {editingBudgetField?.id === b.id && editingBudgetField.field === "category" ? (
@@ -105,9 +139,9 @@ export const BudgetGoalsTable: React.FC<Props> = React.memo(function BudgetGoals
                 )}
               </td>
               <td
-                className="number"
+                className="number cell-editable"
                 onDoubleClick={() => startEditBudgetField(b.id, "monthlyLimit", b.monthlyLimit)}
-                style={{ cursor: "pointer" }}
+                onClick={coarsePointer ? () => tapToEditBudgetField(b.id, "monthlyLimit", b.monthlyLimit) : undefined}
                 title="더블클릭하여 수정"
               >
                 {editingBudgetField?.id === b.id && editingBudgetField.field === "monthlyLimit" ? (
@@ -165,8 +199,9 @@ export const BudgetGoalsTable: React.FC<Props> = React.memo(function BudgetGoals
                 </div>
               </td>
               <td
+                className="cell-editable"
                 onDoubleClick={() => startEditBudgetField(b.id, "note", b.note || "")}
-                style={{ cursor: "pointer" }}
+                onClick={coarsePointer ? () => tapToEditBudgetField(b.id, "note", b.note || "") : undefined}
                 title="더블클릭하여 수정"
               >
                 {editingBudgetField?.id === b.id && editingBudgetField.field === "note" ? (
@@ -187,7 +222,7 @@ export const BudgetGoalsTable: React.FC<Props> = React.memo(function BudgetGoals
                 )}
               </td>
               <td>
-                <button type="button" className="danger" onClick={() => deleteBudget(b.id)}>
+                <button type="button" className="danger" onClick={() => deleteBudget(b.id, b.category)}>
                   삭제
                 </button>
               </td>
@@ -197,7 +232,7 @@ export const BudgetGoalsTable: React.FC<Props> = React.memo(function BudgetGoals
           {budgets.length === 0 && (
             <tr>
               <td colSpan={7} style={{ textAlign: "center" }}>
-                설정된 예산이 없습니다.
+                설정된 예산이 없습니다 — 위 '예산/목표 추가' 폼에서 첫 예산을 만들어 보세요.
               </td>
             </tr>
           )}

@@ -54,7 +54,7 @@ export const AssetTab = React.memo(function AssetTab({ d }: { d: D }) {
   return (
     <div>
       {/* 상단 배너 */}
-      <div style={{ padding: "10px 14px", background: "#f8f9fa", borderRadius: 8, marginBottom: 16, fontSize: 12, color: "#666", lineHeight: 1.6 }}>
+      <div style={{ padding: "10px 14px", background: "var(--bg)", borderRadius: 8, marginBottom: 16, fontSize: 12, color: "var(--text-muted)", lineHeight: 1.6 }}>
         ℹ️ 범위: <strong>{rangeLabel}</strong> ({periodLabel}) · 단위: <strong>원</strong> · 순자산 = 계좌잔액 − account.debt − 대출잔금.
         월별 추이는 <strong>현금 흐름 누적 근사치</strong>이며 주식 평가액·환율 변동은 반영 안 됨 (정확한 트렌드는 대시보드 참조)
       </div>
@@ -88,21 +88,21 @@ export const AssetTab = React.memo(function AssetTab({ d }: { d: D }) {
 
         <Card title={target ? `🎯 목표 자산 진척 (${F(target)}원)` : "🎯 목표 자산 진척"} span={4}>
           {target == null ? (
-            <div style={{ padding: 20, textAlign: "center", color: "#666", fontSize: 13, lineHeight: 1.7 }}>
+            <div style={{ padding: 20, textAlign: "center", color: "var(--text-muted)", fontSize: 13, lineHeight: 1.7 }}>
               최종 총자산 목표가 설정되지 않았습니다.<br />
-              <span style={{ fontSize: 11, color: "#999" }}>대시보드 → 투자 요약 카드에서 목표를 설정하면 여기에 진척도가 표시됩니다.</span>
+              <span style={{ fontSize: 11, color: "var(--text-faint)" }}>대시보드 → 투자 요약 카드에서 목표를 설정하면 여기에 진척도가 표시됩니다.</span>
             </div>
           ) : (
             <div>
               <div style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline", marginBottom: 6 }}>
-                <span style={{ fontSize: 13, fontWeight: 600, color: "#666" }}>
+                <span style={{ fontSize: 13, fontWeight: 600, color: "var(--text-muted)" }}>
                   {F(current)}원 / {F(target)}원
                 </span>
                 <span style={{ fontSize: 22, fontWeight: 800, color: (targetProgress ?? 0) >= 100 ? "#48c9b0" : "#f0c040" }}>
                   {(targetProgress ?? 0).toFixed(1)}%
                 </span>
               </div>
-              <div style={{ height: 14, background: "#f0f0f0", borderRadius: 7, overflow: "hidden", marginBottom: 8 }}>
+              <div style={{ height: 14, background: "var(--surface-hover)", borderRadius: 7, overflow: "hidden", marginBottom: 8 }}>
                 <div style={{
                   height: "100%",
                   width: `${Math.min(100, targetProgress ?? 0)}%`,
@@ -115,11 +115,11 @@ export const AssetTab = React.memo(function AssetTab({ d }: { d: D }) {
                 }} />
               </div>
               <div style={{ display: "grid", gridTemplateColumns: "1fr", gap: 10, fontSize: 12 }}>
-                <div style={{ padding: "8px 10px", background: "#f8f9fa", borderRadius: 6 }}>
-                  <div style={{ color: "#999", fontSize: 11 }}>잔여 목표</div>
+                <div style={{ padding: "8px 10px", background: "var(--bg)", borderRadius: 6 }}>
+                  <div style={{ color: "var(--text-faint)", fontSize: 11 }}>잔여 목표</div>
                   <div style={{ fontWeight: 700 }}>{F(Math.max(0, target - current))}원</div>
                 </div>
-                <div style={{ fontSize: 10, color: "#999" }}>
+                <div style={{ fontSize: 10, color: "var(--text-faint)" }}>
                   현재 월 순자산 증가 페이스 {F(monthlyGrowth)}원/월
                 </div>
               </div>
@@ -183,13 +183,13 @@ export const AssetTab = React.memo(function AssetTab({ d }: { d: D }) {
         <Card title="계좌별 잔액" span={2}>
           <div style={{ maxHeight: 300, overflow: "auto" }}>
             {d.accountBalances.filter((a) => a.balance !== 0).map((a) => (
-              <div key={a.name} style={{ display: "flex", justifyContent: "space-between", padding: "8px 0", borderBottom: "1px solid #f0f0f0", fontSize: 13 }}>
-                <span>{a.name} <span style={{ fontSize: 10, color: "#999" }}>({a.type})</span></span>
-                <span style={{ fontWeight: 700, color: a.balance >= 0 ? "#333" : "#e94560" }}>{F(a.balance)}원</span>
+              <div key={a.name} style={{ display: "flex", justifyContent: "space-between", padding: "8px 0", borderBottom: "1px solid var(--border-light)", fontSize: 13 }}>
+                <span>{a.name} <span style={{ fontSize: 10, color: "var(--text-faint)" }}>({a.type})</span></span>
+                <span style={{ fontWeight: 700, color: a.balance >= 0 ? "var(--text)" : "#e94560" }}>{F(a.balance)}원</span>
               </div>
             ))}
             {d.accountBalances.filter((a) => a.balance !== 0).length === 0 && (
-              <div style={{ padding: 20, textAlign: "center", color: "#999" }}>데이터 없음</div>
+              <div style={{ padding: 20, textAlign: "center", color: "var(--text-faint)" }}>데이터 없음</div>
             )}
           </div>
         </Card>
@@ -207,7 +207,7 @@ export const AssetTab = React.memo(function AssetTab({ d }: { d: D }) {
                     <stop offset="95%" stopColor="#48c9b0" stopOpacity={0} />
                   </linearGradient>
                 </defs>
-                <CartesianGrid strokeDasharray="3 3" stroke="#eee" />
+                <CartesianGrid strokeDasharray="3 3" stroke="var(--chart-grid)" />
                 <XAxis dataKey="label" tick={{ fontSize: 11 }} />
                 <YAxis tickFormatter={F} tick={{ fontSize: 11 }} domain={[Math.max(0, minNW * 0.9), maxNW * 1.05]} />
                 <Tooltip formatter={(v: ValueType | undefined) => W(Number(v ?? 0))} />

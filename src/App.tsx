@@ -390,6 +390,13 @@ export const App: React.FC = () => {
     toast.success(`가계부에 추가됨: ${entry.description}`);
   }, [setDataWithHistory]);
 
+  // 가계부 템플릿 변경 — LedgerEntryForm의 memo 계약 유지를 위해 안정 참조로 전달
+  const handleChangeLedgerTemplates = useCallback(
+    (ledgerTemplates: import("./types").LedgerTemplate[]) =>
+      setDataWithHistory((prev) => ({ ...prev, ledgerTemplates })),
+    [setDataWithHistory]
+  );
+
 
   const needsPortfolioAggregation = tab === "accounts" || tab === "stocks";
   const needsBalances = tab === "accounts" || tab === "ledger" || tab === "stocks";
@@ -763,7 +770,7 @@ export const App: React.FC = () => {
               categoryPresets={data.categoryPresets}
               ledgerTemplates={data.ledgerTemplates ?? []}
               onChangeLedger={(ledger) => setDataWithHistory((prev) => ({ ...prev, ledger }))}
-              onChangeTemplates={(ledgerTemplates) => setDataWithHistory((prev) => ({ ...prev, ledgerTemplates }))}
+              onChangeTemplates={handleChangeLedgerTemplates}
               onChangeCategoryPresets={(categoryPresets) => setDataWithHistory((prev) => ({ ...prev, categoryPresets }))}
               copyRequest={copyRequest}
               onCopyComplete={() => setCopyRequest(null)}

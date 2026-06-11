@@ -14,7 +14,21 @@ import { toast } from "react-hot-toast";
 import type { Account, LedgerEntry, PositionRow } from "../../types";
 import { formatKRW, formatShortDate } from "../../utils/formatter";
 import { canonicalTickerForMatch, extractTickerFromText } from "../../utils/finance";
+import { useAppStore } from "../../store/appStore";
 import type { DividendRow, TabType } from "./types";
+
+/** 배당 행 판별 — 월별 표의 인라인 필터와 동일 술어 (이자 행·비배당 행 제외) */
+const isDividendRow = (r: DividendRow) => !r.isInterest && (!!r.ticker || r.source.includes("배당"));
+
+// ─── 삭제 토스트 [실행 취소] — "삭제 항목 재삽입" 복원 ───────────────────
+// 풀 스냅샷 undo가 아니다:
+//  - 삭제 이후 다른 변경(시세 갱신·Gist pull·탭 동기화·다른 편집)이 있어도
+//    그 변경을 보존한 채 삭제된 항목만 되살린다.
+//  - 복원은 onChange*(→ setDataWithHistory) 경유의 새 히스토리 write라
+//    Ctrl+Z로 복원 자체를 다시 취소할 수 있다.
+// 전제: appStore.setData는 동기(zustand) — 클릭 시점 getState() 재조회가 항상 최신.
+// useAppStore는 핸들러 내부 getState()만 사용 — 훅 구독 금지(재렌더 유발·memo 무력화 방지).
+import { buildRestoreById, showDeleteUndoToast } from "../../utils/undoToast";
 
 interface Props {
   tab: TabType;
@@ -46,18 +60,23 @@ export const IncomeRecordsSection: React.FC<Props> = React.memo(function IncomeR
   const [editingDate, setEditingDate] = useState<string>("");
   const [editingAccountId, setEditingAccountId] = useState<string>("");
 
+  // 배당 행이 하나라도 있는지 — 이자 기록만 있으면 배당 탭은 빈 안내를 보여준다
+  const hasDividendRows = byMonthSource.some(([, rows]) => rows.some(isDividendRow));
+
   return (
     <>
       {tab === "dividend" && (
         <>
       <h3 style={{ marginTop: 16 }}>월별 종목별 배당 내역</h3>
-      {byMonthSource.length === 0 ? (
+      {!hasDividendRows ? (
         <p className="hint" style={{ textAlign: "center", padding: 20 }}>
-          배당 내역이 없습니다.
+          아직 배당 기록이 없습니다 — 위 배당 입력 폼에서 첫 배당을 기록해 보세요.
         </p>
       ) : (
         byMonthSource.map(([month, rows]) => {
-          const dividendRowsInMonth = rows.filter(r => !r.isInterest && (r.ticker || r.source.includes("배당")));
+          const dividendRowsInMonth = rows.filter(isDividendRow);
+          // 이자-전용 월 스킵 — "배당 합계: 0원" 빈 월 헤더 제거
+          if (dividendRowsInMonth.length === 0) return null;
           const monthDividendTotal = dividendRowsInMonth.reduce((sum, r) => sum + r.amount, 0);
 
           return (
@@ -500,7 +519,7 @@ export const IncomeRecordsSection: React.FC<Props> = React.memo(function IncomeR
                                     onMouseLeave={(e) => {
                                       e.currentTarget.style.backgroundColor = "transparent";
                                     }}
-                                    title="수정"
+                                    title="이 행을 수정"
                                   >
                                     ✏️
                                   </button>
@@ -550,9 +569,13 @@ export const IncomeRecordsSection: React.FC<Props> = React.memo(function IncomeR
                                 <button
                                   type="button"
                                   onClick={() => {
-                                    if (confirm(`이 배당 기록을 삭제하시겠습니까?\n${r.ticker || r.source}: ${formatKRW(Math.round(r.amount))}`)) {
-                                      const newLedger = ledger.filter(l => l.id !== ledgerEntry.id);
-                                      onChangeLedger(newLedger);
+                                    if (confirm(`이 배당 기록을 삭제하시겠습니까?\n${r.date ? formatShortDate(r.date) : "날짜 없음"} · ${r.ticker || r.source}: ${formatKRW(Math.round(r.amount))}`)) {
+                                      const deletedIndex = ledger.findIndex(l => l.id === ledgerEntry.id);
+                                      onChangeLedger(ledger.filter(l => l.id !== ledgerEntry.id));
+                                      showDeleteUndoToast(
+                                        "배당 기록이 삭제되었습니다.",
+                                        buildRestoreById(() => useAppStore.getState().data.ledger, onChangeLedger, ledgerEntry, deletedIndex)
+                                      );
                                     }
                                   }}
                                   style={{
@@ -598,7 +621,7 @@ export const IncomeRecordsSection: React.FC<Props> = React.memo(function IncomeR
       <h3 style={{ marginTop: 0 }}>월별 이자 내역</h3>
       {byMonthInterest.length === 0 ? (
         <p className="hint" style={{ textAlign: "center", padding: 20 }}>
-          이자 내역이 없습니다.
+          아직 이자 기록이 없습니다 — 위 이자 입력 폼에서 첫 이자를 기록해 보세요.
         </p>
       ) : (
         byMonthInterest.map(([month, rows]) => {
@@ -744,7 +767,7 @@ export const IncomeRecordsSection: React.FC<Props> = React.memo(function IncomeR
                                     setEditingAccountId(ledgerEntry.toAccountId ?? r.accountId ?? "");
                                   }}
                                   style={{ background: "none", border: "1px solid var(--border)", color: "var(--accent)", cursor: "pointer", fontSize: 12, padding: "4px 8px", borderRadius: 4 }}
-                                  title="수정"
+                                  title="이 행을 수정"
                                 >
                                   ✏️
                                 </button>
@@ -752,8 +775,13 @@ export const IncomeRecordsSection: React.FC<Props> = React.memo(function IncomeR
                               <button
                                 type="button"
                                 onClick={() => {
-                                  if (confirm(`이 이자 기록을 삭제하시겠습니까?\n${r.source}: ${formatKRW(Math.round(r.amount))}`)) {
+                                  if (confirm(`이 이자 기록을 삭제하시겠습니까?\n${r.date ? formatShortDate(r.date) : "날짜 없음"} · ${r.source}: ${formatKRW(Math.round(r.amount))}`)) {
+                                    const deletedIndex = ledger.findIndex(l => l.id === ledgerEntry.id);
                                     onChangeLedger(ledger.filter(l => l.id !== ledgerEntry.id));
+                                    showDeleteUndoToast(
+                                      "이자 기록이 삭제되었습니다.",
+                                      buildRestoreById(() => useAppStore.getState().data.ledger, onChangeLedger, ledgerEntry, deletedIndex)
+                                    );
                                   }
                                 }}
                                 style={{ background: "none", border: "none", color: "#ef4444", cursor: "pointer", fontSize: 18, padding: "4px 8px" }}

@@ -36,14 +36,19 @@ export function Card({ title, children, span = 1, accent = false }: {
 }) {
   return (
     <div style={{
-      background: accent ? "linear-gradient(135deg, #1a1a2e 0%, #16213e 100%)" : "#fff",
+      background: accent ? "linear-gradient(135deg, #1a1a2e 0%, #16213e 100%)" : "var(--surface)",
       borderRadius: 16, padding: "20px 24px",
       gridColumn: span > 1 ? `span ${span}` : undefined,
       boxShadow: accent ? "0 8px 32px rgba(233,69,96,0.15)" : "0 2px 12px rgba(0,0,0,0.06)",
-      border: accent ? "1px solid rgba(233,69,96,0.3)" : "1px solid #f0f0f0",
-      color: accent ? "#fff" : "#1a1a2e",
+      border: accent ? "1px solid rgba(233,69,96,0.3)" : "1px solid var(--border-light)",
+      color: accent ? "#fff" : "var(--text)",
+      /* 카드 표면에 맞는 보조색을 로컬 CSS 변수로 주입 — accent(고정 다크)는 흰색 계열 고정 */
+      ...(accent
+        ? { "--ins-muted": "rgba(255,255,255,0.7)", "--ins-faint": "rgba(255,255,255,0.55)", "--ins-chip-bg": "rgba(255,255,255,0.15)" }
+        : { "--ins-muted": "var(--text-muted)", "--ins-faint": "var(--text-faint)", "--ins-chip-bg": "var(--surface-hover)" }
+      ) as React.CSSProperties,
     }}>
-      {title && <div style={{ fontSize: 13, fontWeight: 700, textTransform: "uppercase" as const, letterSpacing: 1.5, marginBottom: 16, color: accent ? "rgba(255,255,255,0.6)" : "#999" }}>{title}</div>}
+      {title && <div style={{ fontSize: 13, fontWeight: 700, textTransform: "uppercase" as const, letterSpacing: 1.5, marginBottom: 16, color: accent ? "rgba(255,255,255,0.6)" : "var(--text-faint)" }}>{title}</div>}
       {children}
     </div>
   );
@@ -54,7 +59,7 @@ export function Kpi({ label, value, sub, badge, color = "#e94560", info }: {
 }) {
   return (
     <div style={{ textAlign: "center" }}>
-      <div style={{ fontSize: 11, color: "#999", fontWeight: 600, textTransform: "uppercase" as const, letterSpacing: 1, display: "flex", justifyContent: "center", alignItems: "center", gap: 4 }}>
+      <div style={{ fontSize: 11, color: "var(--ins-faint, #999)", fontWeight: 600, textTransform: "uppercase" as const, letterSpacing: 1, display: "flex", justifyContent: "center", alignItems: "center", gap: 4 }}>
         {label}
         {info && (
           <span
@@ -67,8 +72,8 @@ export function Kpi({ label, value, sub, badge, color = "#e94560", info }: {
               width: 14,
               height: 14,
               borderRadius: 7,
-              background: "rgba(255,255,255,0.15)",
-              color: "rgba(255,255,255,0.7)",
+              background: "var(--ins-chip-bg, rgba(255,255,255,0.15))",
+              color: "var(--ins-muted, rgba(255,255,255,0.7))",
               display: "inline-flex",
               alignItems: "center",
               justifyContent: "center",
@@ -78,7 +83,7 @@ export function Kpi({ label, value, sub, badge, color = "#e94560", info }: {
         )}
       </div>
       <div style={{ fontSize: 28, fontWeight: 800, color, marginTop: 4 }}>{value}</div>
-      {sub && <div style={{ fontSize: 12, color: "#666", marginTop: 2 }}>{sub}</div>}
+      {sub && <div style={{ fontSize: 12, color: "var(--ins-muted, #666)", marginTop: 2 }}>{sub}</div>}
       {badge && <div style={{ fontSize: 11, marginTop: 4, display: "inline-block", padding: "2px 8px", borderRadius: 4, background: badge.startsWith("-") ? "rgba(72,201,176,0.15)" : "rgba(233,69,96,0.15)", color: badge.startsWith("-") ? "#48c9b0" : "#e94560", fontWeight: 700 }}>{badge}</div>}
     </div>
   );
@@ -108,13 +113,13 @@ export function Section({ storageKey, title, defaultOpen = true, children }: {
         style={{
           width: "100%", display: "flex", justifyContent: "space-between", alignItems: "center",
           padding: "10px 4px", border: "none", background: "transparent", cursor: "pointer",
-          fontSize: 15, fontWeight: 700, color: "#1a1a2e",
-          borderBottom: open ? "2px solid #1a1a2e" : "1px solid #ddd",
+          fontSize: 15, fontWeight: 700, color: "var(--text)",
+          borderBottom: open ? "2px solid var(--text)" : "1px solid var(--border)",
           marginBottom: open ? 14 : 0,
         }}
       >
         <span>{title}</span>
-        <span style={{ fontSize: 14, color: "#666" }}>{open ? "▾ 접기" : "▸ 펼치기"}</span>
+        <span style={{ fontSize: 14, color: "var(--text-muted)" }}>{open ? "▾ 접기" : "▸ 펼치기"}</span>
       </button>
       {open && <div className="grid-4">{children}</div>}
     </div>

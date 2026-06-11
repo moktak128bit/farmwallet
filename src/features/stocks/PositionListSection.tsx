@@ -211,19 +211,26 @@ export const PositionListSection: React.FC<PositionListSectionProps> = ({
     <>
       <h3>
         보유 종목 현황 (계좌별)
-        <label style={{ display: "flex", alignItems: "center", gap: 6, fontSize: 14, fontWeight: "normal", cursor: "pointer" }}>
-          <input
-            type="checkbox"
-            checked={isAccountReorderMode}
-            onChange={(e) => {
-              setIsAccountReorderMode(e.target.checked);
-              localStorage.setItem("fw-account-reorder-mode", String(e.target.checked));
-            }}
-            style={{ cursor: "pointer" }}
-          />
-          <span>계좌순서 바꾸기</span>
-        </label>
+        {positionsByAccount.length > 0 && (
+          <label style={{ display: "flex", alignItems: "center", gap: 6, fontSize: 14, fontWeight: "normal", cursor: "pointer" }}>
+            <input
+              type="checkbox"
+              checked={isAccountReorderMode}
+              onChange={(e) => {
+                setIsAccountReorderMode(e.target.checked);
+                localStorage.setItem("fw-account-reorder-mode", String(e.target.checked));
+              }}
+              style={{ cursor: "pointer" }}
+            />
+            <span>계좌순서 바꾸기</span>
+          </label>
+        )}
       </h3>
+      {positionsByAccount.length === 0 && (
+        <p className="hint" style={{ textAlign: "center", padding: 20 }}>
+          아직 보유 종목이 없습니다 — 위 거래 입력 폼에서 첫 매수를 기록해 보세요.
+        </p>
+      )}
       {sortedPositionsByAccount.map((group, groupIndex) => {
         const balance = balances.find((b) => b.account.id === group.accountId);
         const account = accounts.find((a) => a.id === group.accountId);

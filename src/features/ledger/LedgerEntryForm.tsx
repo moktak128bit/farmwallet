@@ -11,7 +11,7 @@
  */
 import React, { useCallback, useEffect, useImperativeHandle, useMemo, useRef, useState } from "react";
 import { Autocomplete } from "../../components/ui/Autocomplete";
-import type { Account, CategoryPresets, ExpenseDetailGroup, LedgerEntry, LedgerKind } from "../../types";
+import type { Account, CategoryPresets, ExpenseDetailGroup, LedgerEntry, LedgerKind, LedgerTemplate } from "../../types";
 import { shortcutManager, type ShortcutAction } from "../../utils/shortcuts";
 import { validateLedgerForm } from "./validateLedgerForm";
 import { parseAmount as sharedParseAmount, formatAmount as sharedFormatAmount } from "../../utils/parseAmount";
@@ -23,8 +23,12 @@ import { ERROR_MESSAGES } from "../../constants/errorMessages";
 import { ReceiptScanner, type OcrResult } from "../ocr/ReceiptScanner";
 import {
   createDefaultLedgerForm as createDefaultForm,
+  ledgerTemplateToForm,
+  ledgerFormToTemplate,
   type LedgerFormState,
 } from "../../utils/ledgerHelpers";
+import { LedgerTemplateChips } from "./LedgerTemplateChips";
+import { LedgerTemplateManageModal } from "./LedgerTemplateManageModal";
 
 export type LedgerTab = "all" | "income" | "expense" | "savingsExpense" | "transfer" | "creditPayment";
 
@@ -43,6 +47,9 @@ const tabLabel: Record<"income" | "expense" | "transfer", string> = {
   transfer: "이체"
 };
 
+// `?? []` 신규 배열 생성으로 인한 LedgerTemplateChips memo 무효화 방지용 안정 참조
+const EMPTY_TEMPLATES: LedgerTemplate[] = [];
+
 interface Props {
   accounts: Account[];
   ledger: LedgerEntry[];
@@ -60,6 +67,9 @@ interface Props {
   onCopyComplete?: () => void;
   /** 새 항목 추가 알림 — 부모가 행 스크롤/하이라이트 처리 (setState — 참조 안정) */
   onEntryAdded: (id: string) => void;
+  /** 자주 쓰는 거래 템플릿 — onChangeTemplates가 없으면 칩 UI를 렌더하지 않음 */
+  ledgerTemplates?: LedgerTemplate[];
+  onChangeTemplates?: (next: LedgerTemplate[]) => void;
 }
 
 export const LedgerEntryForm = React.memo(React.forwardRef<LedgerEntryFormHandle, Props>(
@@ -75,7 +85,9 @@ export const LedgerEntryForm = React.memo(React.forwardRef<LedgerEntryFormHandle
     setFilterDetailCategory,
     copyRequest,
     onCopyComplete,
-    onEntryAdded
+    onEntryAdded,
+    ledgerTemplates,
+    onChangeTemplates
   }, ref) {
     // dailyBudget 설정 — store에서 직접 읽음 (props로 안 받음)
     const dailyBudgetConfig = useAppStore((s) => s.data.dailyBudget) ?? DEFAULT_DAILY_BUDGET;
@@ -91,6 +103,11 @@ export const LedgerEntryForm = React.memo(React.forwardRef<LedgerEntryFormHandle
             : ledgerTab;
     const kindForTab: LedgerKind = effectiveFormKind;
     const isCopyingRef = useRef(false);
+    const [showTemplateManage, setShowTemplateManage] = useState(false);
+    // form 최신값 미러 — 템플릿 콜백을 form 의존 없이 안정 참조로 유지 (memo 계약).
+    // form을 deps에 넣으면 키 입력마다 콜백 참조가 바뀌어 LedgerTemplateChips의 memo가 무효가 된다.
+    const latestFormRef = useRef(form);
+    useEffect(() => { latestFormRef.current = form; });
     const [showReceiptScanner, setShowReceiptScanner] = useState(false);
     // 폼 확장/축소 상태 (progressive disclosure)
     const [formExpanded] = useState<boolean>(() => {
@@ -451,6 +468,63 @@ export const LedgerEntryForm = React.memo(React.forwardRef<LedgerEntryFormHandle
       startCopy
     }), [startCopy]);
 
+    // ── 자주 쓰는 거래 템플릿 ──────────────────────────────
+    // 템플릿 적용 — startCopy 호출 금지(저장 스키마 경로). isCopyingRef + setTimeout 가드 패턴 재사용.
+    const applyTemplate = useCallback((t: LedgerTemplate) => {
+      if (latestFormRef.current.id) {
+        if (!confirm(`수정 중인 항목이 있습니다. 템플릿 "${t.name}"을(를) 적용하면 수정 내용이 사라집니다. 계속할까요?`)) return;
+      }
+      const { form: nextForm, clearedAccountIds } = ledgerTemplateToForm(t, accounts);
+      const nextTab: LedgerTab = t.kind; // income|expense|transfer ⊂ LedgerTab
+      isCopyingRef.current = true;
+      setFormKindWhenAll(t.kind); // "전체" 복귀 시 kind 유지 — 종류 토글 버튼과 동일 규칙
+      if (nextTab !== ledgerTab) {
+        // kind가 바뀌면 하위 카테고리 필터 초기화 — 종류 토글 버튼과 동일 규칙 (빈 목록 방지)
+        setFilterMainCategory(undefined);
+        setFilterSubCategory(undefined);
+        setFilterDetailCategory(undefined);
+      }
+      setLedgerTab(nextTab);
+      setTimeout(() => {
+        setForm(nextForm);
+        setTimeout(() => { isCopyingRef.current = false; }, 200);
+      }, 10);
+      for (const accountId of clearedAccountIds) {
+        toast(`계좌 "${accountId}"가 없어 해당 항목을 비웠습니다.`);
+      }
+      toast.success(`템플릿 "${t.name}" 적용됨`);
+    }, [accounts, ledgerTab, setLedgerTab, setFilterMainCategory, setFilterSubCategory, setFilterDetailCategory]);
+
+    // 현재 입력을 템플릿으로 저장 — form은 latestFormRef로 읽음 (deps에 form 금지: 칩 memo 계약)
+    const saveCurrentAsTemplate = useCallback(() => {
+      if (!onChangeTemplates) return;
+      const f = latestFormRef.current;
+      const list = ledgerTemplates ?? EMPTY_TEMPLATES;
+      if (list.length >= 20) { toast.error("템플릿은 최대 20개까지 저장할 수 있습니다."); return; }
+      // 이체 탭은 mainCategory가 "이체"로 자동 설정되므로 검사에서 제외 (쓰레기 템플릿 방지)
+      const meaningful = effectiveFormKind === "transfer"
+        ? (f.subCategory || f.fromAccountId || f.toAccountId || f.description.trim())
+        : (f.mainCategory || f.subCategory || f.fromAccountId || f.toAccountId || f.description.trim());
+      if (!meaningful) { toast.error("저장할 내용이 없습니다 — 카테고리나 계좌를 먼저 선택하세요."); return; }
+      const suggested = f.description.trim() || [f.mainCategory, f.subCategory].filter(Boolean).join("-");
+      const name = prompt("템플릿 이름을 입력하세요:", suggested);
+      if (!name || !name.trim()) return;
+      const t = ledgerFormToTemplate(f, effectiveFormKind, name, newIdWithPrefix("LT"));
+      onChangeTemplates([...list, t]);
+      toast.success(`템플릿 "${t.name}" 저장됨`);
+    }, [ledgerTemplates, onChangeTemplates, effectiveFormKind]);
+
+    // 템플릿 삭제 — confirm + 성공 토스트 (기존 행 삭제 UX와 동일)
+    const deleteTemplate = useCallback((t: LedgerTemplate) => {
+      if (!onChangeTemplates) return;
+      if (!confirm(`템플릿 "${t.name}"을(를) 삭제하시겠습니까?`)) return;
+      onChangeTemplates((ledgerTemplates ?? EMPTY_TEMPLATES).filter((x) => x.id !== t.id));
+      toast.success(`템플릿 "${t.name}" 삭제됨`);
+    }, [ledgerTemplates, onChangeTemplates]);
+
+    const openTemplateManage = useCallback(() => setShowTemplateManage(true), []);
+    const closeTemplateManage = useCallback(() => setShowTemplateManage(false), []);
+
     const resetForm = useCallback(() => {
       setForm({
         ...createDefaultForm(),
@@ -622,6 +696,15 @@ export const LedgerEntryForm = React.memo(React.forwardRef<LedgerEntryFormHandle
               </div>
             )}
             <div style={{ display: ledgerTab === "savingsExpense" ? "none" : "block" }}>
+            {/* 자주 쓰는 거래 템플릿 칩 — onChangeTemplates 없으면 미렌더 */}
+            {onChangeTemplates && (
+              <LedgerTemplateChips
+                templates={ledgerTemplates ?? EMPTY_TEMPLATES}
+                onApply={applyTemplate}
+                onSaveCurrent={saveCurrentAsTemplate}
+                onOpenManage={openTemplateManage}
+              />
+            )}
             {/* 상단: 날짜와 금액을 한 줄에 */}
             <div style={{ display: "grid", gridTemplateColumns: "1fr 2fr", gap: "12px", alignItems: "start" }}>
               {/* 날짜 */}
@@ -1117,6 +1200,14 @@ export const LedgerEntryForm = React.memo(React.forwardRef<LedgerEntryFormHandle
           toast.success("영수증 인식 완료 — 폼에 채워졌습니다.");
         }}
       />
+      {onChangeTemplates && showTemplateManage && (
+        <LedgerTemplateManageModal
+          templates={ledgerTemplates ?? EMPTY_TEMPLATES}
+          onClose={closeTemplateManage}
+          onApply={applyTemplate}
+          onDelete={deleteTemplate}
+        />
+      )}
       </>
     );
   }

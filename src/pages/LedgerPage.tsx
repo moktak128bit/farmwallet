@@ -71,9 +71,9 @@ export const LedgerView: React.FC<Props> = ({
   balances = [],
   trades = [],
   categoryPresets,
-  ledgerTemplates: _ledgerTemplates = [],
+  ledgerTemplates = [],
   onChangeLedger,
-  onChangeTemplates: _onChangeTemplates,
+  onChangeTemplates,
   onChangeCategoryPresets,
   copyRequest,
   onCopyComplete,
@@ -344,8 +344,12 @@ export const LedgerView: React.FC<Props> = ({
     // 전문 검색 필터
     if (searchQuery.trim()) {
       const q = searchQuery.trim().toLowerCase();
+      // 금액 검색: 쉼표·공백 제거 후 전부 숫자면 금액(절삭·절대값)에도 부분 일치 허용
+      const digitQuery = q.replace(/[,\s]/g, "");
+      const isDigitQuery = digitQuery.length > 0 && /^\d+$/.test(digitQuery);
       filtered = filtered.filter((l) => {
         return (
+          (isDigitQuery && String(Math.trunc(Math.abs(l.amount ?? 0))).includes(digitQuery)) ||
           (l.date || "").toLowerCase().includes(q) ||
           (l.category || "").toLowerCase().includes(q) ||
           (l.subCategory || "").toLowerCase().includes(q) ||
@@ -839,11 +843,14 @@ export const LedgerView: React.FC<Props> = ({
         copyRequest={copyRequest}
         onCopyComplete={onCopyComplete}
         onEntryAdded={setLastAddedEntryId}
+        ledgerTemplates={ledgerTemplates}
+        onChangeTemplates={onChangeTemplates}
       />
 
       {/* ── 필터 영역 (기본 접힘 — 너무 큰 영역 차지하던 문제 해결) ── */}
       <LedgerFilterCard
         ledger={ledger}
+        tabLedger={ledgerByTab}
         accounts={accounts}
         showFilters={showFilters}
         setShowFilters={setShowFilters}
@@ -878,9 +885,10 @@ export const LedgerView: React.FC<Props> = ({
           />
         )}
 
-      {viewMode === "all" && !isBatchEditMode && (
+      {!isBatchEditMode && (
         <p style={{ fontSize: 12, color: "var(--text-muted)", marginBottom: 8 }}>
           <strong>Shift+드래그</strong>로 구간 토글(선택된 건 해제), <strong>Shift+클릭</strong>으로 1건 토글. 합계는 아래에 고정 표시됩니다.
+          {" "}행 앞 ☰를 드래그하면 같은 날짜 안에서 순서를 바꿀 수 있습니다 (날짜 정렬일 때).
         </p>
       )}
       {dragSumStartIndex != null && (

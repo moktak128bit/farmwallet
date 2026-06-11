@@ -54,7 +54,7 @@ export const SubTab = React.memo(function SubTab({ d }: { d: D }) {
   if (subs.length === 0) {
     return (
       <Section storageKey="sub-section-empty" title="🔄 구독 관리">
-        <div style={{ gridColumn: "span 4", textAlign: "center", padding: "40px 20px", color: "#999" }}>
+        <div style={{ gridColumn: "span 4", textAlign: "center", padding: "40px 20px", color: "var(--text-faint)" }}>
           <div style={{ fontSize: 13, lineHeight: 1.8 }}>
             구독 데이터가 없습니다. 가계부 항목의 <b>대분류</b> 또는 <b>중분류</b>에 "구독"이 포함되어 있으면 자동 감지됩니다.
           </div>
@@ -75,7 +75,7 @@ export const SubTab = React.memo(function SubTab({ d }: { d: D }) {
             <Card title="월별 구독 지출 추이" span={4}>
               <ResponsiveContainer width="100%" height={240}>
                 <BarChart data={d.subTrend}>
-                  <CartesianGrid strokeDasharray="3 3" stroke="#eee" />
+                  <CartesianGrid strokeDasharray="3 3" stroke="var(--chart-grid)" />
                   <XAxis dataKey="l" tick={{ fontSize: 12 }} />
                   <YAxis tickFormatter={F} tick={{ fontSize: 11 }} />
                   <Tooltip content={<CT />} />
@@ -92,13 +92,13 @@ export const SubTab = React.memo(function SubTab({ d }: { d: D }) {
                 {[...subs].sort((a, b) => b.avg - a.avg).map(({ name, count, total, avg }, i) => {
                   const cat = CATEGORY_PATTERNS.find((c) => c.regex.test(name));
                   return (
-                    <div key={name} style={{ background: "#f8f9fa", borderRadius: 10, padding: "12px 14px", border: `1px solid ${cat?.color ?? "#eee"}33`, borderLeft: `3px solid ${cat?.color ?? "#ccc"}` }}>
+                    <div key={name} style={{ background: "var(--bg)", borderRadius: 10, padding: "12px 14px", border: `1px solid ${cat ? cat.color + "33" : "var(--border-light)"}`, borderLeft: `3px solid ${cat?.color ?? "var(--border)"}` }}>
                       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline" }}>
                         <span style={{ fontWeight: 700, fontSize: 14 }}>{name}</span>
-                        <span style={{ fontSize: 11, color: i < 3 ? "#e94560" : "#999", fontWeight: 700 }}>#{i + 1}</span>
+                        <span style={{ fontSize: 11, color: i < 3 ? "#e94560" : "var(--text-faint)", fontWeight: 700 }}>#{i + 1}</span>
                       </div>
                       {cat && <div style={{ fontSize: 10, color: cat.color, marginTop: 2, fontWeight: 600 }}>{cat.label}</div>}
-                      <div style={{ display: "flex", justifyContent: "space-between", fontSize: 12, color: "#666", marginTop: 6 }}>
+                      <div style={{ display: "flex", justifyContent: "space-between", fontSize: 12, color: "var(--text-muted)", marginTop: 6 }}>
                         <span>월 ~{W(avg)}</span>
                         <span>{count}회</span>
                       </div>
@@ -113,23 +113,23 @@ export const SubTab = React.memo(function SubTab({ d }: { d: D }) {
               <Card title="카테고리 분류" span={2}>
                 <div style={{ display: "flex", flexDirection: "column", gap: 8, fontSize: 13 }}>
                   {categorized.map((g) => (
-                    <div key={g.label} style={{ padding: "10px 12px", background: "#f8f9fa", borderRadius: 8, borderLeft: `4px solid ${g.color}` }}>
+                    <div key={g.label} style={{ padding: "10px 12px", background: "var(--bg)", borderRadius: 8, borderLeft: `4px solid ${g.color}` }}>
                       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline" }}>
                         <span style={{ fontWeight: 700, color: g.color }}>{g.label}</span>
                         <span style={{ fontWeight: 700 }}>월 {W(g.monthly)}</span>
                       </div>
-                      <div style={{ fontSize: 11, color: "#666", marginTop: 4 }}>
+                      <div style={{ fontSize: 11, color: "var(--text-muted)", marginTop: 4 }}>
                         {g.items.length}개 · {g.items.map((s) => s.name).join(", ")}
                       </div>
                     </div>
                   ))}
                   {uncategorized.length > 0 && (
-                    <div style={{ padding: "10px 12px", background: "#f8f9fa", borderRadius: 8, borderLeft: "4px solid #bbb" }}>
+                    <div style={{ padding: "10px 12px", background: "var(--bg)", borderRadius: 8, borderLeft: "4px solid var(--border)" }}>
                       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline" }}>
-                        <span style={{ fontWeight: 700, color: "#666" }}>기타 (미분류)</span>
+                        <span style={{ fontWeight: 700, color: "var(--text-muted)" }}>기타 (미분류)</span>
                         <span style={{ fontWeight: 700 }}>월 {W(uncategorized.reduce((s, x) => s + x.avg, 0))}</span>
                       </div>
-                      <div style={{ fontSize: 11, color: "#999", marginTop: 4 }}>
+                      <div style={{ fontSize: 11, color: "var(--text-faint)", marginTop: 4 }}>
                         {uncategorized.length}개 · {uncategorized.map((s) => s.name).join(", ")}
                       </div>
                     </div>

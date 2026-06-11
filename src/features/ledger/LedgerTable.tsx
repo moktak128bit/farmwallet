@@ -9,7 +9,19 @@ import { toast } from "react-hot-toast";
 import type { Account, CategoryPresets, LedgerEntry } from "../../types";
 import { formatShortDate, formatUSD, formatKRW } from "../../utils/formatter";
 import { ledgerEntryGross, type LedgerDisplayRow } from "../../utils/ledgerHelpers";
+import { isCoarsePointer } from "../../utils/pointer";
+import { useAppStore } from "../../store/appStore";
 import { useLedgerColumnResize } from "./useLedgerColumnResize";
+
+// ─── 삭제 토스트 [실행 취소] — "삭제 항목 재삽입" 복원 ───────────────────
+// 풀 스냅샷 undo가 아니다:
+//  - 삭제 이후 다른 변경(시세 갱신·Gist pull·탭 동기화·다른 편집)이 있어도
+//    그 변경을 보존한 채 삭제된 항목만 되살린다.
+//  - 복원은 onChange*(→ setDataWithHistory) 경유의 새 히스토리 write라
+//    Ctrl+Z로 복원 자체를 다시 취소할 수 있다.
+// 전제: appStore.setData는 동기(zustand) — 클릭 시점 getState() 재조회가 항상 최신.
+// useAppStore는 핸들러 내부 getState()만 사용 — 훅 구독 금지(재렌더 유발·memo 무력화 방지).
+import { buildRestoreById, showDeleteUndoToast } from "../../utils/undoToast";
 
 // 정렬 키 — 정렬 적용(filteredLedger memo)은 부모(LedgerPage)에서, 헤더 토글 UI는 여기서
 export type LedgerSortKey =
@@ -91,6 +103,8 @@ export const LedgerTable: React.FC<Props> = React.memo(function LedgerTable({
 }) {
   const ledgerScrollRef = useRef<HTMLDivElement>(null);
   const ledgerTableRef = useRef<HTMLTableElement>(null);
+  // 터치(coarse 포인터)에서는 더블클릭이 불가 — 단일 탭을 편집 진입 대체 경로로 사용 (렌더당 1회 평가)
+  const coarsePointer = isCoarsePointer();
   const [draggingId, setDraggingId] = useState<string | null>(null);
   // 페이지네이션 상태
   const [listPage, setListPage] = useState(0);
@@ -526,6 +540,68 @@ export const LedgerTable: React.FC<Props> = React.memo(function LedgerTable({
             const isInSumSelection = selectedLedgerIdsForSum.has(l.id);
             const isInDragSumRange = isDraggingRange || isInSumSelection;
             const balanceKey = (l as LedgerDisplayRow)._tradeId ?? l.id;
+            // 더블클릭 인라인 편집 핸들러 — onDoubleClick과 (coarse 포인터일 때) onClick에서 공유.
+            // tapEdit: 이미 해당 셀을 편집 중이면 무시 — 편집 UI 내부 탭이 편집을 리셋하지 않도록.
+            const tapEdit = (field: string, handler: (e: React.MouseEvent<HTMLTableCellElement>) => void) =>
+              coarsePointer && !(editingField?.id === l.id && editingField.field === field) ? handler : undefined;
+            const editDateCell = (e: React.MouseEvent<HTMLTableCellElement>) => {
+              e.stopPropagation();
+              startEditField(l.id, "date", l.date);
+            };
+            const editCategoryCell = (e: React.MouseEvent<HTMLTableCellElement>) => {
+              e.stopPropagation();
+              startEditField(l.id, "category", l.category);
+            };
+            const editSubCategoryCell = (e: React.MouseEvent<HTMLTableCellElement>) => {
+              e.stopPropagation();
+              startEditField(l.id, "subCategory", l.subCategory || "");
+            };
+            const editDetailCategoryCell = (e: React.MouseEvent<HTMLTableCellElement>) => {
+              e.stopPropagation();
+              startEditField(l.id, "detailCategory", l.detailCategory || "");
+            };
+            const editDescriptionCell = (e: React.MouseEvent<HTMLTableCellElement>) => {
+              e.stopPropagation();
+              startEditField(l.id, "description", l.description || "");
+            };
+            const editFromAccountCell = (e: React.MouseEvent<HTMLTableCellElement>) => {
+              e.stopPropagation();
+              startEditField(l.id, "fromAccountId", l.fromAccountId || "");
+            };
+            const editToAccountCell = (e: React.MouseEvent<HTMLTableCellElement>) => {
+              e.stopPropagation();
+              startEditField(l.id, "toAccountId", l.toAccountId || "");
+            };
+            const editGrossAmountCell = (e: React.MouseEvent<HTMLTableCellElement>) => {
+              e.stopPropagation();
+              if ((l as LedgerDisplayRow)._tradeId) {
+                toast("주식 거래는 주식 탭에서 수정하세요.");
+                return;
+              }
+              startEditField(l.id, "grossAmount", ledgerEntryGross(l));
+            };
+            const editDiscountCell = (e: React.MouseEvent<HTMLTableCellElement>) => {
+              e.stopPropagation();
+              if ((l as LedgerDisplayRow)._tradeId) {
+                toast("주식 거래는 주식 탭에서 수정하세요.");
+                return;
+              }
+              if (l.kind !== "income" && l.kind !== "expense") {
+                toast("할인은 수입·지출만 수정할 수 있습니다.");
+                return;
+              }
+              const cur =
+                (l.discountAmount ?? 0) > 0
+                  ? l.currency === "USD"
+                    ? String(l.discountAmount ?? 0)
+                    : String(Math.round(l.discountAmount ?? 0))
+                  : "";
+              startEditField(l.id, "discountAmount", cur);
+            };
+            const editAmountCell = (e: React.MouseEvent<HTMLTableCellElement>) => {
+              e.stopPropagation();
+              startEditField(l.id, "amount", l.amount);
+            };
             const row = (
             <tr
               key={l.id}
@@ -609,18 +685,16 @@ export const LedgerTable: React.FC<Props> = React.memo(function LedgerTable({
                 </td>
               )}
               <td
-                className="ledger-col-date"
-                onDoubleClick={(e) => {
-                  e.stopPropagation();
-                  startEditField(l.id, "date", l.date);
-                }}
+                className="ledger-col-date cell-editable"
+                onDoubleClick={editDateCell}
+                onClick={tapEdit("date", editDateCell)}
                 style={{ cursor: "pointer", position: "relative", width: ledgerColumnWidthStyles[0] }}
                 title="더블클릭하여 수정"
               >
                 {editingField?.id === l.id && editingField.field === "date" ? (
                   <>
                     {viewMode === "all" && (
-                      <span style={{ position: "absolute", left: "4px", color: "var(--muted)", fontSize: "12px" }}>=</span>
+                      <span className="drag-handle" style={{ position: "absolute", left: "4px", color: "var(--text-muted)", fontSize: "12px" }}>☰</span>
                     )}
                     <input
                       type="date"
@@ -638,7 +712,7 @@ export const LedgerTable: React.FC<Props> = React.memo(function LedgerTable({
                 ) : (
                   <>
                     {viewMode === "all" && (
-                      <span style={{ position: "absolute", left: "4px", color: "var(--muted)", fontSize: "12px" }}>=</span>
+                      <span className="drag-handle" style={{ position: "absolute", left: "4px", color: "var(--text-muted)", fontSize: "12px" }}>☰</span>
                     )}
                     <span style={{ marginLeft: viewMode === "all" ? "16px" : "0" }}>
                       {formatShortDate(l.date)}
@@ -647,10 +721,9 @@ export const LedgerTable: React.FC<Props> = React.memo(function LedgerTable({
                 )}
               </td>
               <td
-                onDoubleClick={(e) => {
-                  e.stopPropagation();
-                  startEditField(l.id, "category", l.category);
-                }}
+                className="cell-editable"
+                onDoubleClick={editCategoryCell}
+                onClick={tapEdit("category", editCategoryCell)}
                 style={{ cursor: "pointer", width: ledgerColumnWidthStyles[1] }}
                 title={l.category ? l.category + " (더블클릭하여 수정)" : "더블클릭하여 수정"}
               >
@@ -722,10 +795,9 @@ export const LedgerTable: React.FC<Props> = React.memo(function LedgerTable({
                 )}
               </td>
               <td
-                onDoubleClick={(e) => {
-                  e.stopPropagation();
-                  startEditField(l.id, "subCategory", l.subCategory || "");
-                }}
+                className="cell-editable"
+                onDoubleClick={editSubCategoryCell}
+                onClick={tapEdit("subCategory", editSubCategoryCell)}
                 style={{ cursor: "pointer", width: ledgerColumnWidthStyles[2] }}
                 title={l.subCategory ? l.subCategory + " (더블클릭하여 수정)" : "더블클릭하여 수정"}
               >
@@ -775,10 +847,9 @@ export const LedgerTable: React.FC<Props> = React.memo(function LedgerTable({
                 )}
               </td>
               <td
-                onDoubleClick={(e) => {
-                  e.stopPropagation();
-                  startEditField(l.id, "detailCategory", l.detailCategory || "");
-                }}
+                className="cell-editable"
+                onDoubleClick={editDetailCategoryCell}
+                onClick={tapEdit("detailCategory", editDetailCategoryCell)}
                 style={{ cursor: "pointer", width: ledgerColumnWidthStyles[3] }}
                 title={l.detailCategory ? l.detailCategory + " (더블클릭하여 수정)" : "더블클릭하여 수정"}
               >
@@ -818,10 +889,9 @@ export const LedgerTable: React.FC<Props> = React.memo(function LedgerTable({
                 )}
               </td>
               <td
-                onDoubleClick={(e) => {
-                  e.stopPropagation();
-                  startEditField(l.id, "description", l.description || "");
-                }}
+                className="cell-editable"
+                onDoubleClick={editDescriptionCell}
+                onClick={tapEdit("description", editDescriptionCell)}
                 style={{ cursor: "pointer", whiteSpace: "normal", wordBreak: "break-word", width: ledgerColumnWidthStyles[4] }}
                 title={l.description ? l.description + " (더블클릭하여 수정)" : "더블클릭하여 수정"}
               >
@@ -843,10 +913,9 @@ export const LedgerTable: React.FC<Props> = React.memo(function LedgerTable({
                 )}
               </td>
               <td
-                onDoubleClick={(e) => {
-                  e.stopPropagation();
-                  startEditField(l.id, "fromAccountId", l.fromAccountId || "");
-                }}
+                className="cell-editable"
+                onDoubleClick={editFromAccountCell}
+                onClick={tapEdit("fromAccountId", editFromAccountCell)}
                 style={{ cursor: "pointer", width: ledgerColumnWidthStyles[5] }}
                 title={l.fromAccountId ? l.fromAccountId + " (더블클릭하여 수정)" : "더블클릭하여 수정"}
               >
@@ -900,10 +969,9 @@ export const LedgerTable: React.FC<Props> = React.memo(function LedgerTable({
                 )}
               </td>
               <td
-                onDoubleClick={(e) => {
-                  e.stopPropagation();
-                  startEditField(l.id, "toAccountId", l.toAccountId || "");
-                }}
+                className="cell-editable"
+                onDoubleClick={editToAccountCell}
+                onClick={tapEdit("toAccountId", editToAccountCell)}
                 style={{ cursor: "pointer", width: ledgerColumnWidthStyles[6] }}
                 title={l.toAccountId ? l.toAccountId + " (더블클릭하여 수정)" : "더블클릭하여 수정"}
               >
@@ -957,15 +1025,9 @@ export const LedgerTable: React.FC<Props> = React.memo(function LedgerTable({
                 )}
               </td>
               <td
-                className="number"
-                onDoubleClick={(e) => {
-                  e.stopPropagation();
-                  if ((l as LedgerDisplayRow)._tradeId) {
-                    toast("주식 거래는 주식 탭에서 수정하세요.");
-                    return;
-                  }
-                  startEditField(l.id, "grossAmount", ledgerEntryGross(l));
-                }}
+                className="number cell-editable"
+                onDoubleClick={editGrossAmountCell}
+                onClick={tapEdit("grossAmount", editGrossAmountCell)}
                 style={{ cursor: "pointer", width: ledgerColumnWidthStyles[7] }}
                 title="할인 적용 전 금액 · 더블클릭하여 수정"
               >
@@ -993,25 +1055,9 @@ export const LedgerTable: React.FC<Props> = React.memo(function LedgerTable({
                 )}
               </td>
               <td
-                className="number"
-                onDoubleClick={(e) => {
-                  e.stopPropagation();
-                  if ((l as LedgerDisplayRow)._tradeId) {
-                    toast("주식 거래는 주식 탭에서 수정하세요.");
-                    return;
-                  }
-                  if (l.kind !== "income" && l.kind !== "expense") {
-                    toast("할인은 수입·지출만 수정할 수 있습니다.");
-                    return;
-                  }
-                  const cur =
-                    (l.discountAmount ?? 0) > 0
-                      ? l.currency === "USD"
-                        ? String(l.discountAmount ?? 0)
-                        : String(Math.round(l.discountAmount ?? 0))
-                      : "";
-                  startEditField(l.id, "discountAmount", cur);
-                }}
+                className="number cell-editable"
+                onDoubleClick={editDiscountCell}
+                onClick={tapEdit("discountAmount", editDiscountCell)}
                 style={{ cursor: "pointer", width: ledgerColumnWidthStyles[8], color: "var(--text-muted)" }}
                 title="할인액 · 더블클릭하여 수정"
               >
@@ -1043,11 +1089,9 @@ export const LedgerTable: React.FC<Props> = React.memo(function LedgerTable({
                 )}
               </td>
               <td
-                className="number"
-                onDoubleClick={(e) => {
-                  e.stopPropagation();
-                  startEditField(l.id, "amount", l.amount);
-                }}
+                className="number cell-editable"
+                onDoubleClick={editAmountCell}
+                onClick={tapEdit("amount", editAmountCell)}
                 style={{ cursor: "pointer", width: ledgerColumnWidthStyles[9], fontWeight: 600 }}
                 title="할인 반영 후 금액 · 더블클릭하여 수정"
               >
@@ -1096,8 +1140,22 @@ export const LedgerTable: React.FC<Props> = React.memo(function LedgerTable({
                         toast("주식 거래는 주식 탭에서 삭제하세요.");
                         return;
                       }
-                      if (confirm("이 항목을 삭제하시겠습니까?")) {
+                      const categoryLabel = [l.category, l.subCategory, l.detailCategory].filter(Boolean).join(" > ");
+                      const amountText = l.currency === "USD" ? formatUSD(l.amount) : formatKRW(l.amount);
+                      if (confirm(`이 항목을 삭제하시겠습니까?\n${l.date} · ${categoryLabel || "-"} · ${amountText}`)) {
+                        // l은 LedgerDisplayRow — 재삽입은 ledger 배열의 원본 LedgerEntry로
+                        // 원 인덱스 보존: 같은 날짜 내 수동 드래그 순서가 복원 시 유지되도록
+                        const deletedIndex = ledger.findIndex((entry) => entry.id === l.id);
+                        const deletedEntry = deletedIndex >= 0 ? ledger[deletedIndex] : undefined;
                         onChangeLedger(ledger.filter((entry) => entry.id !== l.id));
+                        if (deletedEntry) {
+                          showDeleteUndoToast(
+                            `삭제했습니다: ${l.date} ${amountText}`,
+                            buildRestoreById(() => useAppStore.getState().data.ledger, onChangeLedger, deletedEntry, deletedIndex)
+                          );
+                        } else {
+                          toast.success(`삭제했습니다: ${l.date} ${amountText}`);
+                        }
                       }
                     }}
                   >
@@ -1119,9 +1177,11 @@ export const LedgerTable: React.FC<Props> = React.memo(function LedgerTable({
       </div>
       {filteredLedger.length === 0 && (
         <p>
-          {viewMode === "all"
+          {ledger.length === 0
             ? "아직 거래가 없습니다. 위 폼에서 첫 거래를 입력해 보세요."
-            : "이 달에는 내역이 없습니다."}
+            : viewMode === "monthly"
+              ? "이 달에는 내역이 없습니다."
+              : "현재 탭·필터 조건에 표시할 내역이 없습니다."}
         </p>
       )}
       {filteredLedger.length > 0 && (

@@ -24,10 +24,12 @@
   --text: #0f172a;       /* Almost black for main text */
   --text-secondary: #334155; /* Dark gray for secondary */
   --text-muted: #475569;     /* Medium gray for meta info - darker than before */
-  
+  --text-faint: #94a3b8;     /* 가장 옅은 보조 텍스트 (캡션·순위·작은 라벨) */
+
   /* Borders & Shadows */
   --border: #cbd5e1;     /* Distinct border color */
   --border-light: #e2e8f0;
+  --chart-grid: #e2e8f0;     /* recharts CartesianGrid 라인 */
   --shadow-sm: 0 1px 2px 0 rgb(0 0 0 / 0.05);
   --shadow: 0 4px 6px -1px rgb(0 0 0 / 0.1), 0 2px 4px -2px rgb(0 0 0 / 0.1);
   --shadow-lg: 0 10px 15px -3px rgb(0 0 0 / 0.1), 0 4px 6px -4px rgb(0 0 0 / 0.1);
@@ -88,10 +90,12 @@
   --text: #f1f5f9;
   --text-secondary: #cbd5e1;
   --text-muted: #94a3b8;
-  
+  --text-faint: #64748b;
+
   /* Borders & Shadows */
   --border: #334155;
   --border-light: #1e293b;
+  --chart-grid: #334155;
   --shadow-sm: 0 1px 2px 0 rgb(0 0 0 / 0.3);
   --shadow: 0 4px 6px -1px rgb(0 0 0 / 0.3);
   --shadow-lg: 0 10px 15px -3px rgb(0 0 0 / 0.3);
@@ -417,6 +421,25 @@ a:hover {
   opacity: 0.7;
 }
 
+/* 더블클릭(터치는 탭) 인라인 편집 가능한 셀 — 공용 어포던스.
+   호버 시 배경 + 하단 강조선으로 "여기를 편집할 수 있다"를 표시한다. */
+td.cell-editable {
+  cursor: pointer;
+}
+td.cell-editable:hover {
+  background: var(--surface-hover);
+  box-shadow: inset 0 -2px 0 var(--primary);
+}
+
+/* 행 드래그 핸들 — grab 커서로 "끌 수 있음"을 표시 */
+.drag-handle {
+  cursor: grab;
+  user-select: none;
+}
+.drag-handle:active {
+  cursor: grabbing;
+}
+
 /* 리사이즈 핸들 — 정렬 버튼보다 위에 두고 히트 영역 확보 */
 .data-table th .resize-handle {
   position: absolute;
@@ -429,6 +452,18 @@ a:hover {
   background: transparent;
   z-index: 10;
   pointer-events: auto;
+}
+
+/* 기본 상태에서도 가는 세로선으로 "여기서 너비 조절 가능"을 표시 */
+.data-table th .resize-handle::after {
+  content: "";
+  position: absolute;
+  right: 6px;
+  top: 25%;
+  bottom: 25%;
+  width: 2px;
+  border-radius: 1px;
+  background: var(--border);
 }
 
 .data-table th .resize-handle:hover {
@@ -1298,6 +1333,8 @@ label {
   --text: #000000;
   --text-secondary: #333333;
   --text-muted: #666666;
+  --text-faint: #666666;
+  --chart-grid: #999999;
   --border: #000000;
   --primary: #0000ff;
   --primary-hover: #0000cc;
@@ -1314,6 +1351,8 @@ label {
   --text: #ffffff;
   --text-secondary: #cccccc;
   --text-muted: #999999;
+  --text-faint: #999999;
+  --chart-grid: #666666;
   --border: #ffffff;
   --primary: #00ffff;
   --primary-hover: #00cccc;

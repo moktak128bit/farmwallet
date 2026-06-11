@@ -17,7 +17,7 @@ export const OverviewTab = React.memo(function OverviewTab({ d }: { d: D }) {
   /* 재정 활주로 (Financial Runway): 현금성 자산 / 월평균 지출 */
   const liquidAssets = d.accountBalances.reduce((s, b) => s + Math.max(0, b.balance), 0);
   const runwayMonths = d.avgMonthExp > 0 ? liquidAssets / d.avgMonthExp : null;
-  const runwayColor = runwayMonths == null ? "#999" : runwayMonths >= 12 ? "#48c9b0" : runwayMonths >= 6 ? "#f0c040" : "#e94560";
+  const runwayColor = runwayMonths == null ? "var(--text-faint)" : runwayMonths >= 12 ? "#48c9b0" : runwayMonths >= 6 ? "#f0c040" : "#e94560";
   const runwayLabel = runwayMonths == null
     ? "-"
     : runwayMonths >= 24 ? "매우 여유" : runwayMonths >= 12 ? "안정권" : runwayMonths >= 6 ? "주의" : "위험";
@@ -36,9 +36,9 @@ export const OverviewTab = React.memo(function OverviewTab({ d }: { d: D }) {
 
   /* 수입 성장률 요약 */
   const ig = d.incomeGrowth;
-  const igMomColor = ig.mom == null ? "#999" : ig.mom >= 0 ? "#48c9b0" : "#e94560";
-  const igYoyColor = ig.yoy == null ? "#999" : ig.yoy >= 0 ? "#48c9b0" : "#e94560";
-  const igAvgColor = ig.avg3MoM == null ? "#999" : ig.avg3MoM >= 0 ? "#48c9b0" : "#e94560";
+  const igMomColor = ig.mom == null ? "var(--text-faint)" : ig.mom >= 0 ? "#48c9b0" : "#e94560";
+  const igYoyColor = ig.yoy == null ? "var(--text-faint)" : ig.yoy >= 0 ? "#48c9b0" : "#e94560";
+  const igAvgColor = ig.avg3MoM == null ? "var(--text-faint)" : ig.avg3MoM >= 0 ? "#48c9b0" : "#e94560";
 
   /* 지출 관성 */
   const si = d.spendingInertia;
@@ -100,16 +100,16 @@ export const OverviewTab = React.memo(function OverviewTab({ d }: { d: D }) {
               </div>
               <div style={{ fontSize: 13, fontWeight: 700, color: runwayColor, marginTop: 6 }}>{runwayLabel}</div>
             </div>
-            <div style={{ fontSize: 13, lineHeight: 1.7, color: "#555" }}>
-              <div style={{ display: "flex", justifyContent: "space-between", padding: "4px 0", borderBottom: "1px solid #f0f0f0" }}>
-                <span style={{ color: "#999" }}>현금성 자산 (모든 계좌 합계)</span>
+            <div style={{ fontSize: 13, lineHeight: 1.7, color: "var(--text-secondary)" }}>
+              <div style={{ display: "flex", justifyContent: "space-between", padding: "4px 0", borderBottom: "1px solid var(--border-light)" }}>
+                <span style={{ color: "var(--text-faint)" }}>현금성 자산 (모든 계좌 합계)</span>
                 <span style={{ fontWeight: 700 }}>{F(liquidAssets)}</span>
               </div>
-              <div style={{ display: "flex", justifyContent: "space-between", padding: "4px 0", borderBottom: "1px solid #f0f0f0" }}>
-                <span style={{ color: "#999" }}>월평균 지출</span>
+              <div style={{ display: "flex", justifyContent: "space-between", padding: "4px 0", borderBottom: "1px solid var(--border-light)" }}>
+                <span style={{ color: "var(--text-faint)" }}>월평균 지출</span>
                 <span style={{ fontWeight: 700 }}>{F(Math.round(d.avgMonthExp))}</span>
               </div>
-              <div style={{ padding: "8px 12px", background: "#f8f9fa", borderRadius: 6, marginTop: 8, fontSize: 12, color: "#666" }}>
+              <div style={{ padding: "8px 12px", background: "var(--bg)", borderRadius: 6, marginTop: 8, fontSize: 12, color: "var(--text-muted)" }}>
                 수입이 갑자기 끊겨도 현재 지출 수준으로 {runwayMonths != null ? `약 ${runwayMonths.toFixed(1)}개월` : "—"} 유지 가능.
                 일반적으로 <strong>6개월 이상</strong>은 안전, 12개월 이상이면 여유 있음.
                 {runwayMonths != null && runwayMonths < 6 && " 비상자금 확보를 권장합니다."}
@@ -121,18 +121,18 @@ export const OverviewTab = React.memo(function OverviewTab({ d }: { d: D }) {
         <Card title={`🎯 저축률 목표 vs 실제 (${targetSavRateSrc})`} span={4}>
           <div style={{ display: "grid", gridTemplateColumns: "1fr 2fr", gap: 16, alignItems: "center" }}>
             <div style={{ textAlign: "center" }}>
-              <div style={{ fontSize: 13, color: "#999", fontWeight: 600 }}>현재 저축률</div>
+              <div style={{ fontSize: 13, color: "var(--text-faint)", fontWeight: 600 }}>현재 저축률</div>
               <div style={{ fontSize: 36, fontWeight: 800, color: savRateOk ? "#48c9b0" : actualSavRate >= 0 ? "#f0c040" : "#e94560" }}>
                 {actualSavRate.toFixed(1)}%
               </div>
-              <div style={{ fontSize: 12, color: "#999", marginTop: 4 }}>목표 {targetSavRate.toFixed(1)}%</div>
+              <div style={{ fontSize: 12, color: "var(--text-faint)", marginTop: 4 }}>목표 {targetSavRate.toFixed(1)}%</div>
             </div>
             <div>
-              <div style={{ position: "relative", height: 36, background: "#f0f0f0", borderRadius: 18, overflow: "hidden" }}>
+              <div style={{ position: "relative", height: 36, background: "var(--surface-hover)", borderRadius: 18, overflow: "hidden" }}>
                 <div style={{
                   position: "absolute", top: 0, bottom: 0,
                   left: `${Math.min(100, (targetSavRate / Math.max(targetSavRate, actualSavRate, 50)) * 100)}%`,
-                  width: 2, background: "#1a1a2e", zIndex: 2,
+                  width: 2, background: "var(--text)", zIndex: 2,
                 }} />
                 <div style={{
                   height: "100%",
@@ -149,17 +149,17 @@ export const OverviewTab = React.memo(function OverviewTab({ d }: { d: D }) {
                   padding: "0 12px", fontSize: 11, fontWeight: 700, color: "#fff", textShadow: "0 1px 2px rgba(0,0,0,0.4)",
                 }}>
                   <span>0%</span>
-                  <span style={{ color: "#333", textShadow: "none" }}>목표 {targetSavRate.toFixed(0)}%</span>
+                  <span style={{ color: "var(--text-secondary)", textShadow: "none" }}>목표 {targetSavRate.toFixed(0)}%</span>
                 </div>
               </div>
-              <div style={{ marginTop: 10, fontSize: 12, color: "#666", lineHeight: 1.6 }}>
+              <div style={{ marginTop: 10, fontSize: 12, color: "var(--text-muted)", lineHeight: 1.6 }}>
                 {savRateOk
                   ? `✅ 목표 ${targetSavRate.toFixed(0)}%를 달성 중입니다. 월 실질수입 ${F(Math.round(monthlyRealIncome))} 중 ${F(Math.round(monthlyRealIncome * actualSavRate / 100))} 저축.`
                   : actualSavRate >= 0
                     ? `목표까지 ${(targetSavRate - actualSavRate).toFixed(1)}%p 부족. 월 ${F(Math.round(monthlyRealIncome * (targetSavRate - actualSavRate) / 100))} 더 절약 or 수입 증가 필요.`
                     : `⚠️ 현재 적자 상태. 수입보다 지출이 많습니다. 우선 지출 축소가 시급합니다.`}
                 {!monthlyDepositTarget && (
-                  <div style={{ marginTop: 6, fontSize: 11, color: "#999" }}>
+                  <div style={{ marginTop: 6, fontSize: 11, color: "var(--text-faint)" }}>
                     ℹ️ 대시보드 {">"} 투자 요약에서 연 입금액 목표를 설정하면 개인화된 목표 저축률이 적용됩니다.
                   </div>
                 )}
@@ -174,35 +174,35 @@ export const OverviewTab = React.memo(function OverviewTab({ d }: { d: D }) {
         {/* 수입 성장률 (NEW) */}
         <Card title="📈 수입 성장률 (MoM · YoY · 3M 평균)" span={4}>
           <div style={{ display: "grid", gridTemplateColumns: "repeat(3, 1fr)", gap: 10, marginBottom: 12 }}>
-            <div style={{ padding: "12px 14px", background: "#f8f9fa", borderRadius: 10, textAlign: "center" }}>
-              <div style={{ fontSize: 11, color: "#666", fontWeight: 600 }}>전월 대비 (MoM)</div>
+            <div style={{ padding: "12px 14px", background: "var(--bg)", borderRadius: 10, textAlign: "center" }}>
+              <div style={{ fontSize: 11, color: "var(--text-muted)", fontWeight: 600 }}>전월 대비 (MoM)</div>
               <div style={{ fontSize: 22, fontWeight: 800, color: igMomColor, marginTop: 4 }}>
                 {ig.mom == null ? "–" : Pct(ig.mom)}
               </div>
-              <div style={{ fontSize: 10, color: "#999", marginTop: 2 }}>
+              <div style={{ fontSize: 10, color: "var(--text-faint)", marginTop: 2 }}>
                 {ig.prevInc > 0 ? `${F(ig.prevInc)} → ${F(ig.targetInc)}` : "비교 데이터 없음"}
               </div>
             </div>
-            <div style={{ padding: "12px 14px", background: "#f8f9fa", borderRadius: 10, textAlign: "center" }}>
-              <div style={{ fontSize: 11, color: "#666", fontWeight: 600 }}>전년 동월 대비 (YoY)</div>
+            <div style={{ padding: "12px 14px", background: "var(--bg)", borderRadius: 10, textAlign: "center" }}>
+              <div style={{ fontSize: 11, color: "var(--text-muted)", fontWeight: 600 }}>전년 동월 대비 (YoY)</div>
               <div style={{ fontSize: 22, fontWeight: 800, color: igYoyColor, marginTop: 4 }}>
                 {ig.yoy == null ? "–" : Pct(ig.yoy)}
               </div>
-              <div style={{ fontSize: 10, color: "#999", marginTop: 2 }}>
+              <div style={{ fontSize: 10, color: "var(--text-faint)", marginTop: 2 }}>
                 {ig.yoy == null ? "1년 전 데이터 없음" : "작년 동월 비교"}
               </div>
             </div>
-            <div style={{ padding: "12px 14px", background: "#f8f9fa", borderRadius: 10, textAlign: "center" }}>
-              <div style={{ fontSize: 11, color: "#666", fontWeight: 600 }}>최근 3개월 평균 성장률</div>
+            <div style={{ padding: "12px 14px", background: "var(--bg)", borderRadius: 10, textAlign: "center" }}>
+              <div style={{ fontSize: 11, color: "var(--text-muted)", fontWeight: 600 }}>최근 3개월 평균 성장률</div>
               <div style={{ fontSize: 22, fontWeight: 800, color: igAvgColor, marginTop: 4 }}>
                 {ig.avg3MoM == null ? "–" : Pct(ig.avg3MoM)}
               </div>
-              <div style={{ fontSize: 10, color: "#999", marginTop: 2 }}>월평균 MoM</div>
+              <div style={{ fontSize: 10, color: "var(--text-faint)", marginTop: 2 }}>월평균 MoM</div>
             </div>
           </div>
           <ResponsiveContainer width="100%" height={180}>
             <ComposedChart data={ig.series}>
-              <CartesianGrid strokeDasharray="3 3" stroke="#eee" />
+              <CartesianGrid strokeDasharray="3 3" stroke="var(--chart-grid)" />
               <XAxis dataKey="l" tick={{ fontSize: 11 }} />
               <YAxis yAxisId="left" tickFormatter={F} tick={{ fontSize: 10 }} />
               <YAxis yAxisId="right" orientation="right" tickFormatter={(v) => v + "%"} tick={{ fontSize: 10 }} />
@@ -216,7 +216,7 @@ export const OverviewTab = React.memo(function OverviewTab({ d }: { d: D }) {
 
         <Card title="순 현금흐름 (수입 - 지출 - 투자)" span={2}>
           <ResponsiveContainer width="100%" height={220}>
-            <AreaChart data={flowData}><CartesianGrid strokeDasharray="3 3" stroke="#eee" /><XAxis dataKey="name" tick={{ fontSize: 12 }} /><YAxis tickFormatter={F} tick={{ fontSize: 11 }} /><Tooltip content={<CT />} />
+            <AreaChart data={flowData}><CartesianGrid strokeDasharray="3 3" stroke="var(--chart-grid)" /><XAxis dataKey="name" tick={{ fontSize: 12 }} /><YAxis tickFormatter={F} tick={{ fontSize: 11 }} /><Tooltip content={<CT />} />
               <defs><linearGradient id="fg" x1="0" y1="0" x2="0" y2="1"><stop offset="5%" stopColor="#e94560" stopOpacity={0.3} /><stop offset="95%" stopColor="#e94560" stopOpacity={0} /></linearGradient></defs>
               <Area isAnimationActive={false} dataKey="순현금흐름" stroke="#e94560" fill="url(#fg)" strokeWidth={2.5} />
             </AreaChart>
@@ -224,9 +224,9 @@ export const OverviewTab = React.memo(function OverviewTab({ d }: { d: D }) {
         </Card>
 
         <Card title="누적 저축률 추이" span={2}>
-          <p style={{ fontSize: 11, color: "#999", margin: "0 0 4px", textAlign: "right" }}>월급이 월말 지급이므로 월별 저축률 대신 누적 기준 표시</p>
+          <p style={{ fontSize: 11, color: "var(--text-faint)", margin: "0 0 4px", textAlign: "right" }}>월급이 월말 지급이므로 월별 저축률 대신 누적 기준 표시</p>
           <ResponsiveContainer width="100%" height={210}>
-            <ComposedChart data={d.savRateTrend}><CartesianGrid strokeDasharray="3 3" stroke="#eee" /><XAxis dataKey="l" tick={{ fontSize: 12 }} /><YAxis tickFormatter={(v: number) => v + "%"} tick={{ fontSize: 11 }} /><Tooltip formatter={(v: ValueType | undefined) => Number(v ?? 0).toFixed(1) + "%"} />
+            <ComposedChart data={d.savRateTrend}><CartesianGrid strokeDasharray="3 3" stroke="var(--chart-grid)" /><XAxis dataKey="l" tick={{ fontSize: 12 }} /><YAxis tickFormatter={(v: number) => v + "%"} tick={{ fontSize: 11 }} /><Tooltip formatter={(v: ValueType | undefined) => Number(v ?? 0).toFixed(1) + "%"} />
               <Bar isAnimationActive={false} dataKey="rate" name="월별" radius={[4, 4, 0, 0]} opacity={0.35}>
                 {d.savRateTrend.map((e, i) => <Cell key={i} fill={e.rate >= 30 ? "#48c9b0" : e.rate >= 0 ? "#f0c040" : "#e94560"} />)}
               </Bar>
@@ -237,7 +237,7 @@ export const OverviewTab = React.memo(function OverviewTab({ d }: { d: D }) {
 
         <Card title="누적 수입 vs 누적 지출" span={4}>
           <ResponsiveContainer width="100%" height={220}>
-            <LineChart data={d.cumIE}><CartesianGrid strokeDasharray="3 3" stroke="#eee" /><XAxis dataKey="l" tick={{ fontSize: 12 }} /><YAxis tickFormatter={F} tick={{ fontSize: 11 }} /><Tooltip content={<CT />} /><Legend wrapperStyle={{ fontSize: 12 }} />
+            <LineChart data={d.cumIE}><CartesianGrid strokeDasharray="3 3" stroke="var(--chart-grid)" /><XAxis dataKey="l" tick={{ fontSize: 12 }} /><YAxis tickFormatter={F} tick={{ fontSize: 11 }} /><Tooltip content={<CT />} /><Legend wrapperStyle={{ fontSize: 12 }} />
               <Line isAnimationActive={false} type="monotone" dataKey="누적수입" stroke="#f0c040" strokeWidth={2.5} dot={{ r: 3 }} />
               <Line isAnimationActive={false} type="monotone" dataKey="누적지출" stroke="#e94560" strokeWidth={2.5} dot={{ r: 3 }} />
             </LineChart>
@@ -279,7 +279,7 @@ export const OverviewTab = React.memo(function OverviewTab({ d }: { d: D }) {
               <div style={{ fontSize: 11, color: "#666", marginTop: 4 }}>배당·이자 등 투자수익</div>
             </div>
           </div>
-          <div style={{ marginTop: 10, fontSize: 11, color: "#999", lineHeight: 1.6, padding: "8px 12px", background: "#f8f9fa", borderRadius: 8 }}>
+          <div style={{ marginTop: 10, fontSize: 11, color: "var(--text-faint)", lineHeight: 1.6, padding: "8px 12px", background: "var(--bg)", borderRadius: 8 }}>
             <strong>실질 수입</strong> = 장부 수입 − 정산(상대가 돌려준 돈) − 일시소득(용돈·지원·이월·대출·처분소득).{" "}
             <strong>실질 지출</strong> = 장부 지출 − 데이트 계좌 지출 × 50%(상대 부담분).{" "}
             저축률은 실질 기준으로 계산해야 실제 재산 형성 능력을 반영합니다.
@@ -289,20 +289,20 @@ export const OverviewTab = React.memo(function OverviewTab({ d }: { d: D }) {
         {/* 지출 관성 (NEW) */}
         <Card title="⚡ 지출 관성" span={2}>
           {si == null ? (
-            <div style={{ padding: 20, textAlign: "center", color: "#999", fontSize: 13 }}>
+            <div style={{ padding: 20, textAlign: "center", color: "var(--text-faint)", fontSize: 13 }}>
               비교할 과거 데이터가 부족합니다.
             </div>
           ) : (
             <div>
               <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: "12px 0" }}>
                 <div>
-                  <div style={{ fontSize: 11, color: "#999", fontWeight: 600 }}>이번달 지출</div>
-                  <div style={{ fontSize: 20, fontWeight: 800, color: "#1a1a2e" }}>{F(Math.round(si.curExp))}</div>
+                  <div style={{ fontSize: 11, color: "var(--text-faint)", fontWeight: 600 }}>이번달 지출</div>
+                  <div style={{ fontSize: 20, fontWeight: 800, color: "var(--text)" }}>{F(Math.round(si.curExp))}</div>
                 </div>
-                <div style={{ fontSize: 24, color: "#ccc" }}>↔</div>
+                <div style={{ fontSize: 24, color: "var(--text-faint)" }}>↔</div>
                 <div>
-                  <div style={{ fontSize: 11, color: "#999", fontWeight: 600 }}>최근 {si.lookbackMonths}개월 평균</div>
-                  <div style={{ fontSize: 20, fontWeight: 800, color: "#666" }}>{F(Math.round(si.avg))}</div>
+                  <div style={{ fontSize: 11, color: "var(--text-faint)", fontWeight: 600 }}>최근 {si.lookbackMonths}개월 평균</div>
+                  <div style={{ fontSize: 20, fontWeight: 800, color: "var(--text-muted)" }}>{F(Math.round(si.avg))}</div>
                 </div>
               </div>
               <div style={{
@@ -329,8 +329,8 @@ export const OverviewTab = React.memo(function OverviewTab({ d }: { d: D }) {
         <Card title="재무 건강 점수" span={2}>
           <div style={{ display: "grid", gridTemplateColumns: "140px 1fr", gap: 16, alignItems: "center" }}>
             <div style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: 8 }}>
-              <div style={{ position: "relative", width: 120, height: 120, borderRadius: "50%", background: `conic-gradient(${d.score.total >= 70 ? "#48c9b0" : d.score.total >= 40 ? "#f0c040" : "#e94560"} ${d.score.total * 3.6}deg, #f0f0f0 ${d.score.total * 3.6}deg)`, display: "flex", alignItems: "center", justifyContent: "center" }}>
-                <div style={{ width: 96, height: 96, borderRadius: "50%", background: "#fff", display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center" }}>
+              <div style={{ position: "relative", width: 120, height: 120, borderRadius: "50%", background: `conic-gradient(${d.score.total >= 70 ? "#48c9b0" : d.score.total >= 40 ? "#f0c040" : "#e94560"} ${d.score.total * 3.6}deg, var(--surface-hover) ${d.score.total * 3.6}deg)`, display: "flex", alignItems: "center", justifyContent: "center" }}>
+                <div style={{ width: 96, height: 96, borderRadius: "50%", background: "var(--surface)", display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center" }}>
                   <span style={{ fontSize: 28, fontWeight: 800 }}>{d.score.total}</span>
                   <span style={{ fontSize: 14, fontWeight: 700, color: "#e94560" }}>{d.score.grade}</span>
                 </div>
@@ -355,10 +355,10 @@ export const OverviewTab = React.memo(function OverviewTab({ d }: { d: D }) {
                 return items.map((it) => (
                   <div key={it.label}>
                     <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 3 }}>
-                      <span style={{ fontWeight: 600 }}>{it.label} <span style={{ color: "#999", fontWeight: 400, marginLeft: 4 }}>{it.hint}</span></span>
+                      <span style={{ fontWeight: 600 }}>{it.label} <span style={{ color: "var(--text-faint)", fontWeight: 400, marginLeft: 4 }}>{it.hint}</span></span>
                       <span style={{ fontWeight: 700 }}>{it.pts} / {it.max}</span>
                     </div>
-                    <div style={{ height: 8, background: "#f0f0f0", borderRadius: 4, overflow: "hidden" }}>
+                    <div style={{ height: 8, background: "var(--surface-hover)", borderRadius: 4, overflow: "hidden" }}>
                       <div style={{ height: "100%", width: `${(it.pts / it.max) * 100}%`, background: it.color, transition: "width 0.4s" }} />
                     </div>
                   </div>
@@ -369,7 +369,7 @@ export const OverviewTab = React.memo(function OverviewTab({ d }: { d: D }) {
         </Card>
 
         <Card title={`핵심 재무 지표 — ${d.accumLabel} 기준`} span={4}>
-          <div style={{ fontSize: 11, color: "#999", marginBottom: 10, padding: "6px 10px", background: "#f8f9fa", borderRadius: 6, lineHeight: 1.5 }}>
+          <div style={{ fontSize: 11, color: "var(--text-faint)", marginBottom: 10, padding: "6px 10px", background: "var(--bg)", borderRadius: 6, lineHeight: 1.5 }}>
             ℹ️ 금액 단위는 <strong>원</strong>. 표시 범위는 상단 기간 필터({d.selMonth ? `1개월 (${d.ml[d.selMonth] ?? d.selMonth})` : `${d.months.length}개월, ${d.months[0] ?? "-"} ~ ${d.months[d.months.length - 1] ?? "-"}`})에 해당.
             <strong>{d.selMonth ? "선택 월" : "누적"}</strong> 기준 표기가 기본이며, 일평균·투자수익률은 별도 기준.
           </div>
@@ -396,10 +396,10 @@ export const OverviewTab = React.memo(function OverviewTab({ d }: { d: D }) {
               { label: "변동비", value: F(d.variableExpense) + "원", sub: `${d.accumLabel} · 지출의 ${Math.round(SD(d.variableExpense, d.pExpense) * 100)}%`, color: "#f39c12" },
               { label: "수입 안정성", value: d.incomeStability !== null ? d.incomeStability + "%" : "-", sub: d.incomeStability !== null && d.incomeStability >= 70 ? "월별 편차 작음" : "월별 편차 큼", color: "#2563eb" },
             ].map(m => (
-              <div key={m.label} style={{ padding: "10px 12px", background: "#f8f9fa", borderRadius: 8, border: "1px solid #eee", textAlign: "center" }}>
-                <div style={{ fontSize: 10, color: "#999", fontWeight: 600 }}>{m.label}</div>
+              <div key={m.label} style={{ padding: "10px 12px", background: "var(--bg)", borderRadius: 8, border: "1px solid var(--border-light)", textAlign: "center" }}>
+                <div style={{ fontSize: 10, color: "var(--text-faint)", fontWeight: 600 }}>{m.label}</div>
                 <div style={{ fontSize: 16, fontWeight: 800, color: m.color, marginTop: 2 }}>{m.value}</div>
-                <div style={{ fontSize: 10, color: "#aaa", marginTop: 2 }}>{m.sub}</div>
+                <div style={{ fontSize: 10, color: "var(--text-faint)", marginTop: 2 }}>{m.sub}</div>
               </div>
             ))}
           </div>

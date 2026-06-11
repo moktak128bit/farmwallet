@@ -181,6 +181,7 @@ export interface StockPreset {
   lastUsed?: string; // 마지막 사용 날짜 (ISO yyyy-mm-dd)
 }
 
+/** 자주 쓰는 거래 템플릿 — 필드는 LedgerFormState(폼 상태)와 동형. 칩 클릭 시 폼에 채워 넣는다 (즉시 제출 아님). USD 폼은 amount를 저장하지 않는다. */
 export interface LedgerTemplate {
   id: string;
   name: string;

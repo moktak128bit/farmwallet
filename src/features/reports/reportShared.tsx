@@ -4,10 +4,6 @@
  */
 import React from "react";
 import { formatKRW } from "../../utils/formatter";
-import type { useReportWorker } from "../../hooks/useReportWorker";
-
-/** useReportWorker가 돌려주는 기간 비교 결과 타입 (훅 내부 비공개 타입을 파생) */
-export type PeriodCompareResult = ReturnType<typeof useReportWorker>["periodCompare"];
 
 export type ReportType =
   | "comprehensive"
@@ -18,7 +14,6 @@ export type ReportType =
   | "stock"
   | "account"
   | "daily"
-  | "periodCompare"
   | "closing"
   | "performanceAdvanced"
   | "tax";

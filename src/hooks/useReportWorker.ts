@@ -13,26 +13,6 @@ import {
   generateStockPerformanceReport,
   generateYearlyReport
 } from "../utils/reportGenerator";
-import { isSavingsExpenseEntry } from "../utils/category";
-
-interface PeriodSummary {
-  income: number;
-  expense: number;
-  savings: number;
-  investingIn: number;
-  investingOut: number;
-  investingNet: number;
-  net: number;
-}
-
-interface PeriodCompareResult {
-  thisMonthKey: string;
-  lastMonthKey: string;
-  lastYearSameMonthKey: string;
-  thisMonth: PeriodSummary;
-  lastMonth: PeriodSummary;
-  lastYearSameMonth: PeriodSummary;
-}
 
 interface UseReportWorkerParams {
   accounts: Account[];
@@ -42,6 +22,8 @@ interface UseReportWorkerParams {
   startDate: string;
   endDate: string;
   fxRate: number | null;
+  /** 데이트 계좌 id — localStorage 값이라 워커에 명시 전달 (종합 월간 실질지출용) */
+  dateAccountId: string | null;
 }
 
 interface ReportWorkerData {
@@ -56,29 +38,10 @@ interface ReportWorkerData {
   accountPerformance: ReturnType<typeof generateAccountPerformanceBreakdown>;
   consumptionImpact: ReturnType<typeof generateConsumptionImpactMonthlyReport>;
   comprehensiveMonthly: ReturnType<typeof generateComprehensiveMonthlyReport>;
-  periodCompare: PeriodCompareResult;
 }
 
 interface UseReportWorkerResult extends ReportWorkerData {
   isComputing: boolean;
-}
-
-const INVESTING_ACCOUNT_TYPES = new Set<Account["type"]>(["savings", "securities", "crypto"]);
-
-function isInvestingAccount(account: Account | undefined): boolean {
-  return !!account && INVESTING_ACCOUNT_TYPES.has(account.type);
-}
-
-function createEmptyPeriodSummary(): PeriodSummary {
-  return {
-    income: 0,
-    expense: 0,
-    savings: 0,
-    investingIn: 0,
-    investingOut: 0,
-    investingNet: 0,
-    net: 0
-  };
 }
 
 function createEmptyData(): ReportWorkerData {
@@ -110,81 +73,8 @@ function createEmptyData(): ReportWorkerData {
     },
     accountPerformance: [],
     consumptionImpact: [],
-    comprehensiveMonthly: [],
-    periodCompare: {
-      thisMonthKey: "",
-      lastMonthKey: "",
-      lastYearSameMonthKey: "",
-      thisMonth: createEmptyPeriodSummary(),
-      lastMonth: createEmptyPeriodSummary(),
-      lastYearSameMonth: createEmptyPeriodSummary()
-    }
+    comprehensiveMonthly: []
   };
-}
-
-function buildPeriodCompare(
-  accounts: Account[],
-  ledger: LedgerEntry[],
-  fxRate: number | null
-): PeriodCompareResult {
-  const accountById = new Map(accounts.map((account) => [account.id, account]));
-  const toKrw = (entry: LedgerEntry) =>
-    entry.currency === "USD" && fxRate ? entry.amount * fxRate : entry.amount;
-
-  const now = new Date();
-  const year = now.getFullYear();
-  const month = now.getMonth() + 1;
-  const thisMonthKey = `${year}-${String(month).padStart(2, "0")}`;
-  const lastMonthKey =
-    month === 1 ? `${year - 1}-12` : `${year}-${String(month - 1).padStart(2, "0")}`;
-  const lastYearSameMonthKey = `${year - 1}-${String(month).padStart(2, "0")}`;
-
-  const summarize = (entries: LedgerEntry[]): PeriodSummary => {
-    let income = 0;
-    let expense = 0;
-    let savings = 0;
-    let investingIn = 0;
-    let investingOut = 0;
-    for (const entry of entries) {
-      const amount = toKrw(entry);
-      if (entry.kind === "income") {
-        income += amount;
-        continue;
-      }
-      if (entry.kind === "expense") {
-        if (isSavingsExpenseEntry(entry, accounts)) {
-          savings += amount;
-          investingIn += amount;
-        } else {
-          expense += amount;
-        }
-        continue;
-      }
-      if (entry.kind === "transfer") {
-        const fromAccount = entry.fromAccountId ? accountById.get(entry.fromAccountId) : undefined;
-        const toAccount = entry.toAccountId ? accountById.get(entry.toAccountId) : undefined;
-        const fromInvesting = isInvestingAccount(fromAccount);
-        const toInvesting = isInvestingAccount(toAccount);
-        if (!fromInvesting && toInvesting) investingIn += amount;
-        if (fromInvesting && !toInvesting) investingOut += amount;
-      }
-    }
-    return {
-      income,
-      expense,
-      savings,
-      investingIn,
-      investingOut,
-      investingNet: investingIn - investingOut,
-      net: income - expense - savings
-    };
-  };
-
-  const thisMonth = summarize(ledger.filter((entry) => entry.date.startsWith(thisMonthKey)));
-  const lastMonth = summarize(ledger.filter((entry) => entry.date.startsWith(lastMonthKey)));
-  const lastYearSameMonth = summarize(ledger.filter((entry) => entry.date.startsWith(lastYearSameMonthKey)));
-
-  return { thisMonthKey, lastMonthKey, lastYearSameMonthKey, thisMonth, lastMonth, lastYearSameMonth };
 }
 
 function computeSynchronously(params: UseReportWorkerParams): ReportWorkerData {
@@ -240,9 +130,9 @@ function computeSynchronously(params: UseReportWorkerParams): ReportWorkerData {
       params.accounts,
       params.startDate.slice(0, 7),
       params.endDate.slice(0, 7),
-      params.fxRate ?? undefined
-    ),
-    periodCompare: buildPeriodCompare(params.accounts, params.ledger, params.fxRate)
+      params.fxRate ?? undefined,
+      params.dateAccountId
+    )
   };
 }
 
@@ -318,7 +208,8 @@ export function useReportWorker(params: UseReportWorkerParams): UseReportWorkerR
         prices: params.prices,
         startDate: params.startDate,
         endDate: params.endDate,
-        fxRate: params.fxRate
+        fxRate: params.fxRate,
+        dateAccountId: params.dateAccountId
       }
     });
   }, [
@@ -329,7 +220,8 @@ export function useReportWorker(params: UseReportWorkerParams): UseReportWorkerR
     params.prices,
     params.startDate,
     params.endDate,
-    params.fxRate
+    params.fxRate,
+    params.dateAccountId
   ]);
 
   return state;

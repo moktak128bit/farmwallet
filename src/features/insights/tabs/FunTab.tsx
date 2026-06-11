@@ -8,7 +8,7 @@ export const FunTab = React.memo(function FunTab({ d }: { d: D }) {
   if (fs.biggestSpendDay) statCards.push({ icon: "🔥", title: "역대 최고 지출일", value: F(fs.biggestSpendDay.total), sub: fs.biggestSpendDay.date });
   if (fs.mostSpendMonth) statCards.push({ icon: "💸", title: "가장 많이 쓴 달", value: F(fs.mostSpendMonth.expense), sub: d.ml[fs.mostSpendMonth.month] || fs.mostSpendMonth.month });
   if (fs.mostFrugalMonth) statCards.push({ icon: "🏆", title: "가장 절약한 달", value: F(fs.mostFrugalMonth.expense), sub: d.ml[fs.mostFrugalMonth.month] || fs.mostFrugalMonth.month });
-  if (fs.bestSavingsMonth) statCards.push({ icon: "💎", title: "최고 저축률", value: `${fs.bestSavingsMonth.rate}%`, sub: d.ml[fs.bestSavingsMonth.month] || fs.bestSavingsMonth.month });
+  if (fs.bestSavingsMonth) statCards.push({ icon: "💎", title: "최고 실질 저축률", value: `${fs.bestSavingsMonth.rate}%`, sub: d.ml[fs.bestSavingsMonth.month] || fs.bestSavingsMonth.month });
   if (fs.longestZeroStreak > 0) statCards.push({ icon: "🧘", title: "최장 무지출 연속", value: `${fs.longestZeroStreak}일`, sub: "하루도 안 쓴 기록" });
   if (fs.topStore) statCards.push({ icon: "🏪", title: "최다 이용처", value: fs.topStore.name, sub: `${fs.topStore.count}회 · ${F(fs.topStore.total)}` });
   if (fs.daysToSpendIncome) statCards.push({ icon: "⏱️", title: "월수입 소진 속도", value: `${fs.daysToSpendIncome}일`, sub: "일 평균 지출 기준" });

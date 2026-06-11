@@ -1,6 +1,6 @@
 /**
  * 기본 표 보고서 모음 — 월별 수입/지출 · 연간 요약 · 카테고리별 지출 · 주식 성과 ·
- * 계좌 요약 · 일별 자산 스냅샷 · 기간 비교 (단순 표/차트 7종).
+ * 계좌 요약 · 일별 자산 스냅샷 (단순 표/차트 6종).
  * ReportPage에서 분리 — React.memo로 감싸 다른 보고서 상태 변경 시 재렌더를 건너뛴다.
  * 모든 데이터는 부모의 reportWorker 결과 — 여기서 재계산하지 않는다.
  * startDate/endDate는 워커 입력이라 부모 소유 — setter(setState)는 참조가 안정적이어야 memo가 효과를 가진다.
@@ -19,21 +19,18 @@ import { formatKRW } from "../../utils/formatter";
 import {
   DateRangePicker,
   MonthRangePicker,
-  signedKRW,
   toPercent,
-  type PeriodCompareResult,
   type ReportType
 } from "./reportShared";
 
 interface Props {
-  reportType: Extract<ReportType, "monthly" | "yearly" | "category" | "stock" | "account" | "daily" | "periodCompare">;
+  reportType: Extract<ReportType, "monthly" | "yearly" | "category" | "stock" | "account" | "daily">;
   monthlyReport: MonthlyReport[];
   yearlyReport: MonthlyReport[];
   categoryReport: CategoryReport[];
   stockReport: StockPerformanceReport[];
   accountReport: AccountReport[];
   dailyReport: DailyReport[];
-  periodCompare: PeriodCompareResult;
   startDate: string;
   endDate: string;
   setStartDate: React.Dispatch<React.SetStateAction<string>>;
@@ -48,7 +45,6 @@ export const BasicReportTables: React.FC<Props> = React.memo(function BasicRepor
   stockReport,
   accountReport,
   dailyReport,
-  periodCompare,
   startDate,
   endDate,
   setStartDate,
@@ -228,62 +224,21 @@ export const BasicReportTables: React.FC<Props> = React.memo(function BasicRepor
   }
 
   // ─── 일별 스냅샷 ───
-  if (reportType === "daily") {
-    return (
-      <div>
-        <h3>일별 자산 스냅샷</h3>
-        <DateRangePicker startDate={startDate} endDate={endDate} setStartDate={setStartDate} setEndDate={setEndDate} />
-        <ResponsiveContainer width="100%" height={300}>
-          <LineChart data={dailyReport}>
-            <CartesianGrid strokeDasharray="3 3" />
-            <XAxis dataKey="date" />
-            <YAxis />
-            <Tooltip formatter={(value: number | undefined) => formatKRW(value ?? 0)} />
-            <Legend />
-            <Line isAnimationActive={false} type="monotone" dataKey="totalAsset" name="총 자산" stroke="#6366f1" />
-            <Line isAnimationActive={false} type="monotone" dataKey="netWorth" name="순자산" stroke="#10b981" />
-          </LineChart>
-        </ResponsiveContainer>
-      </div>
-    );
-  }
-
-  // ─── 기간 비교 ───
-  const rows = [
-    { label: "수입", a: periodCompare.thisMonth.income, b: periodCompare.lastMonth.income },
-    { label: "지출", a: periodCompare.thisMonth.expense, b: periodCompare.lastMonth.expense },
-    { label: "저축성 지출", a: periodCompare.thisMonth.savings, b: periodCompare.lastMonth.savings },
-    { label: "투자 순액", a: periodCompare.thisMonth.investingNet, b: periodCompare.lastMonth.investingNet },
-    { label: "순수입", a: periodCompare.thisMonth.net, b: periodCompare.lastMonth.net }
-  ];
   return (
     <div>
-      <h3>기간 비교 ({periodCompare.thisMonthKey} vs {periodCompare.lastMonthKey})</h3>
-      <div style={{ overflowX: "auto", width: "100%" }}>
-        <table className="data-table" style={{ width: "100%", minWidth: 700 }}>
-          <thead>
-            <tr>
-              <th>항목</th>
-              <th className="number">{periodCompare.thisMonthKey}</th>
-              <th className="number">{periodCompare.lastMonthKey}</th>
-              <th className="number">차이</th>
-            </tr>
-          </thead>
-          <tbody>
-            {rows.map((row) => {
-              const d = row.a - row.b;
-              return (
-                <tr key={row.label}>
-                  <td>{row.label}</td>
-                  <td className="number">{formatKRW(row.a)}</td>
-                  <td className="number">{formatKRW(row.b)}</td>
-                  <td className={`number ${d >= 0 ? "positive" : "negative"}`}>{signedKRW(d)}</td>
-                </tr>
-              );
-            })}
-          </tbody>
-        </table>
-      </div>
+      <h3>일별 자산 스냅샷</h3>
+      <DateRangePicker startDate={startDate} endDate={endDate} setStartDate={setStartDate} setEndDate={setEndDate} />
+      <ResponsiveContainer width="100%" height={300}>
+        <LineChart data={dailyReport}>
+          <CartesianGrid strokeDasharray="3 3" />
+          <XAxis dataKey="date" />
+          <YAxis />
+          <Tooltip formatter={(value: number | undefined) => formatKRW(value ?? 0)} />
+          <Legend />
+          <Line isAnimationActive={false} type="monotone" dataKey="totalAsset" name="총 자산" stroke="#6366f1" />
+          <Line isAnimationActive={false} type="monotone" dataKey="netWorth" name="순자산" stroke="#10b981" />
+        </LineChart>
+      </ResponsiveContainer>
     </div>
   );
 });

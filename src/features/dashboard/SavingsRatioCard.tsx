@@ -1,12 +1,14 @@
 /**
- * 저축 대비 비교 (저번달) 카드 — DashboardPage에서 분리.
+ * 저축률(이체 기준) · 저번달 카드 — DashboardPage에서 분리.
  * 저번달 요약·재테크 세부 집계를 카드가 소유한다 (공용 순수 함수 summaryMath 사용).
+ * 저축률 수식은 utils/savingsRate.computeTransferSavingsRate 단일 소스.
  * React.memo로 감싸므로 부모가 넘기는 props는 안정적(store 참조·원시값)이어야 한다.
  */
 import React, { useMemo } from "react";
 import type { LedgerEntry } from "../../types";
 import { formatKRW } from "../../utils/formatter";
 import { shiftMonth } from "../../utils/date";
+import { computeTransferSavingsRate } from "../../utils/savingsRate";
 import { computeLedgerSummary, computeRecheckBreakdown } from "./summaryMath";
 
 interface Props {
@@ -36,9 +38,8 @@ export const SavingsRatioCard: React.FC<Props> = React.memo(function SavingsRati
 
   const lastMonthSavingsRate = useMemo(() => {
     const { income, investing } = lastMonthSummary;
-    if (income <= 0) return null;
-    // 저축률 = (transfer 저축이체+투자이체) / 수입. 투자손실(실소비)은 제외.
-    return (investing / income) * 100;
+    // 저축률(이체 기준) = (transfer 저축이체+투자이체) / 수입. 투자손실(실소비)은 제외. 수입 없으면 null.
+    return computeTransferSavingsRate(income, investing);
   }, [lastMonthSummary]);
 
   const lastMonthInvestingRatio = useMemo(() => {
@@ -56,7 +57,7 @@ export const SavingsRatioCard: React.FC<Props> = React.memo(function SavingsRati
 
   return (
     <div className="card" style={{ minHeight: 200 }}>
-      <div className="card-title">저축 대비 비교 (저번달)</div>
+      <div className="card-title">저축률(이체 기준) · 저번달</div>
       <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 16, marginTop: 8 }}>
         <div>
           <div className="hint" style={{ fontSize: 14, marginBottom: 6 }}>저번달 저축 ({lastMonthLabel})</div>
@@ -66,7 +67,7 @@ export const SavingsRatioCard: React.FC<Props> = React.memo(function SavingsRati
           >
             {lastMonthSavingsRate != null ? `${lastMonthSavingsRate.toFixed(1)}%` : "-"}
           </div>
-          <div className="hint" style={{ fontSize: 14, marginTop: 6 }}>수입 대비 저축비율</div>
+          <div className="hint" style={{ fontSize: 14, marginTop: 6 }}>수입 대비 재테크 이체 비율</div>
         </div>
         <div>
           <div className="hint" style={{ fontSize: 14, marginBottom: 6 }}>지출 구성 (주식 대비 저축)</div>

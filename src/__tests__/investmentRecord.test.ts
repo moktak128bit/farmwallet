@@ -209,7 +209,7 @@ describe("filterByPeriod", () => {
 });
 
 describe("summaryToRealPL", () => {
-  // 회귀 방지: 인사이트 InvestTab의 realPL이 대시보드 InvestmentRecordCard의 summarizeRecords와 동일 데이터에서 동일 결과를 내야 함.
+  // 회귀 방지: 인사이트 InvestTab의 realPL이 리포트 InvestmentRecordCard의 summarizeRecords와 동일 데이터에서 동일 결과를 내야 함.
   it("summarizeRecords 결과를 realPL shape로 정확히 매핑", () => {
     // 매수 1000원 → 매도 1500원 (수익 +500), 매수 1000원 → 매도 700원 (손실 −300)
     const r = buildClosedTradeRecords(

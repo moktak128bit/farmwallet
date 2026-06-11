@@ -785,6 +785,7 @@ export const App: React.FC = () => {
               presets={data.categoryPresets}
               onChangePresets={(categoryPresets) => setDataWithHistory((prev) => ({ ...prev, categoryPresets }))}
               ledger={data.ledger}
+              onBulkUpdateLedger={(mapper) => setDataWithHistory((prev) => ({ ...prev, ledger: prev.ledger.map(mapper) }))}
             />
             </TabErrorBoundary>
           )}

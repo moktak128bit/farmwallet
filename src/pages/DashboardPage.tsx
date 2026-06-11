@@ -17,7 +17,6 @@
 import React, { lazy, Suspense, useMemo } from "react";
 import { BudgetAlertWidget } from "../features/dashboard/BudgetAlertWidget";
 import { InvestmentSummaryCard } from "../features/dashboard/InvestmentSummaryCard";
-import { InvestmentRecordCard } from "../features/dashboard/InvestmentRecordCard";
 import { MonthlySummaryCards } from "../features/dashboard/MonthlySummaryCards";
 import { ExpenseIncomeCompareCard } from "../features/dashboard/ExpenseIncomeCompareCard";
 import { NetWorthTrendChart } from "../features/dashboard/NetWorthTrendChart";
@@ -35,7 +34,8 @@ import { AccountBalanceTrendCard } from "../features/dashboard/AccountBalanceTre
 import { StockCostVsMarketCard } from "../features/dashboard/StockCostVsMarketCard";
 import { TotalAssetTrendCard } from "../features/dashboard/TotalAssetTrendCard";
 import { computeLedgerSummary, computeRecheckBreakdown } from "../features/dashboard/summaryMath";
-import { useAccountTimelineRows } from "../features/dashboard/hooks/useAccountTimelineRows";
+import { useAccountTimelineRows } from "../hooks/useAccountTimelineRows";
+import { buildAdjustedPrices, buildTimelineMonthRange } from "../utils/accountTimeline";
 import type {
   Account,
   LedgerEntry,
@@ -56,7 +56,6 @@ import {
   getThisMonthKST,
   getTodayKST,
   getMonthEndDate,
-  buildMonthRange,
 } from "../utils/date";
 import { isUSDStock } from "../utils/finance";
 const LazyPortfolioDashboardCharts = lazy(() =>
@@ -82,22 +81,9 @@ export const DashboardView: React.FC<Props> = (props) => {
   const currentMonth = useMemo(() => getThisMonthKST(), []);
   const today = useMemo(() => getTodayKST(), []);
 
-  const monthRange = useMemo(() => {
-    const monthSet = new Set<string>();
-    ledger.forEach((l) => l.date && monthSet.add(l.date.slice(0, 7)));
-    trades.forEach((t) => t.date && monthSet.add(t.date.slice(0, 7)));
-    monthSet.add(currentMonth);
-    const sorted = Array.from(monthSet).sort();
-    if (sorted.length === 0) return [] as string[];
-    return buildMonthRange(sorted[0], sorted[sorted.length - 1]);
-  }, [ledger, trades, currentMonth]);
+  const monthRange = useMemo(() => buildTimelineMonthRange(ledger, trades, currentMonth), [ledger, trades, currentMonth]);
 
-  const adjustedPrices = useMemo(() => {
-    if (!fxRate) return prices;
-    return prices.map((p) =>
-      p.currency === "USD" ? { ...p, price: p.price * fxRate, currency: "KRW" as const } : p
-    );
-  }, [prices, fxRate]);
+  const adjustedPrices = useMemo(() => buildAdjustedPrices(prices, fxRate), [prices, fxRate]);
 
   /** 매월 15일·월말 스냅샷 날짜 (오늘 이전만) */
   const balanceSnapshotDates = useMemo(() => {
@@ -214,7 +200,7 @@ export const DashboardView: React.FC<Props> = (props) => {
     [balances, positions, fxRate, loans, ledger]
   );
 
-  /** 월별 계좌 타임라인 — 무거운 집계는 훅(features/dashboard/hooks)으로 분리, 호출은 부모 1회 */
+  /** 월별 계좌 타임라인 — 무거운 집계는 공용 훅(hooks/useAccountTimelineRows)으로 분리, 호출은 부모 1회 */
   const accountTimelineRows = useAccountTimelineRows({
     accounts,
     ledger,
@@ -259,8 +245,6 @@ export const DashboardView: React.FC<Props> = (props) => {
           prices={adjustedPrices}
           fxRate={fxRate}
         />
-
-        <InvestmentRecordCard trades={trades} accounts={accounts} ledger={ledger} fxRate={fxRate} />
 
         <NetWorthTrendChart data={netWorthTrendData} />
 

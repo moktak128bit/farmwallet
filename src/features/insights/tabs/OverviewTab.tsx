@@ -223,7 +223,7 @@ export const OverviewTab = React.memo(function OverviewTab({ d }: { d: D }) {
           </ResponsiveContainer>
         </Card>
 
-        <Card title="누적 저축률 추이" span={2}>
+        <Card title="누적 실질 저축률 추이" span={2}>
           <p style={{ fontSize: 11, color: "var(--text-faint)", margin: "0 0 4px", textAlign: "right" }}>월급이 월말 지급이므로 월별 저축률 대신 누적 기준 표시</p>
           <ResponsiveContainer width="100%" height={210}>
             <ComposedChart data={d.savRateTrend}><CartesianGrid strokeDasharray="3 3" stroke="var(--chart-grid)" /><XAxis dataKey="l" tick={{ fontSize: 12 }} /><YAxis tickFormatter={(v: number) => v + "%"} tick={{ fontSize: 11 }} /><Tooltip formatter={(v: ValueType | undefined) => Number(v ?? 0).toFixed(1) + "%"} />
@@ -339,7 +339,7 @@ export const OverviewTab = React.memo(function OverviewTab({ d }: { d: D }) {
             </div>
             <div style={{ display: "flex", flexDirection: "column", gap: 8, fontSize: 12 }}>
               {(() => {
-                const sr = d.pSavRate;
+                const sr = d.realSavRate;
                 const srPts = sr >= 50 ? 40 : sr >= 30 ? 30 : sr >= 20 ? 20 : sr >= 10 ? 10 : 0;
                 const zeroRatio = d.totalDays > 0 ? d.zeroDays / d.totalDays : 0;
                 const zPts = zeroRatio > 0.2 ? 20 : zeroRatio > 0.1 ? 10 : 0;
@@ -347,7 +347,7 @@ export const OverviewTab = React.memo(function OverviewTab({ d }: { d: D }) {
                 const nDiv = d.incByCat.length;
                 const dPts = nDiv >= 5 ? 20 : nDiv >= 3 ? 15 : nDiv >= 2 ? 10 : 5;
                 const items = [
-                  { label: "저축률", pts: srPts, max: 40, hint: `${sr.toFixed(0)}% (50%=만점)`, color: "#48c9b0" },
+                  { label: "실질 저축률", pts: srPts, max: 40, hint: `${sr.toFixed(0)}% (50%=만점)`, color: "#48c9b0" },
                   { label: "무지출 비율", pts: zPts, max: 20, hint: `${(zeroRatio * 100).toFixed(0)}% (20%=만점)`, color: "#3498db" },
                   { label: "투자 활동", pts: iPts, max: 20, hint: d.pInvest > 0 ? "활성" : "없음", color: "#f0c040" },
                   { label: "수입 다양성", pts: dPts, max: 20, hint: `${nDiv}개 수입원 (5+=만점)`, color: "#e94560" },
@@ -441,12 +441,12 @@ export const OverviewTab = React.memo(function OverviewTab({ d }: { d: D }) {
       <Section storageKey="overview-section-insights" title="💡 종합 인사이트" defaultOpen={false}>
         <Card title="종합 인사이트" span={4}>
           <div className="grid-2" style={{ gap: 12 }}>
-            <Insight title="저축률 분석" color="#059669" bg="#d4edda">
-              {d.pSavRate >= 30
-                ? `저축률 ${d.pSavRate.toFixed(0)}%로 매우 건강한 수준입니다. 수입 ${F(d.pIncome)} 중 ${F(Math.round(d.pIncome * d.pSavRate / 100))}을 저축하고 있습니다. 이 속도라면 연간 약 ${F(Math.round(d.pIncome * d.pSavRate / 100 * 12 / d.monthSpan))} 이상 자산 증가가 가능합니다.`
-                : d.pSavRate >= 0
-                ? `저축률 ${d.pSavRate.toFixed(0)}%로 개선 여지가 있습니다. 30% 이상을 목표로 월 ${F(Math.round(d.pExpense * 0.1))} 정도 추가 절약하면 장기적으로 큰 차이를 만들 수 있습니다.`
-                : `마이너스 저축률! 수입보다 지출이 ${F(d.pExpense - d.pIncome)} 더 많습니다. 고정비와 변동비를 점검하고, 상위 지출 카테고리부터 줄여보세요.`}
+            <Insight title="실질 저축률 분석" color="#059669" bg="#d4edda">
+              {d.realSavRate >= 30
+                ? `실질 저축률 ${d.realSavRate.toFixed(0)}%로 매우 건강한 수준입니다. 실질 수입 ${F(d.realIncome)} 중 ${F(Math.round(d.netProfit))}을 저축하고 있습니다. 이 속도라면 연간 약 ${F(Math.round(d.netProfit * 12 / d.monthSpan))} 이상 자산 증가가 가능합니다.`
+                : d.realSavRate >= 0
+                ? `실질 저축률 ${d.realSavRate.toFixed(0)}%로 개선 여지가 있습니다. 30% 이상을 목표로 월 ${F(Math.round(d.realExpense * 0.1))} 정도 추가 절약하면 장기적으로 큰 차이를 만들 수 있습니다.`
+                : `마이너스 실질 저축률! 실질 수입보다 지출이 ${F(d.realExpense - d.realIncome)} 더 많습니다. 고정비와 변동비를 점검하고, 상위 지출 카테고리부터 줄여보세요.`}
             </Insight>
             <Insight title="지출 집중도 분석" color="#b45309" bg="#fff3cd">
               상위 3개 중분류({top3Sub.map(s => s.sub).join(", ")})가 전체 지출의 {top3pct}%를 차지합니다.

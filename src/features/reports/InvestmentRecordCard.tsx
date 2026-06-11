@@ -25,7 +25,7 @@ interface Props {
 
 type Tab = "summary" | "year" | "month" | "holding" | "trades";
 
-// React.memo — 부모(DashboardPage)가 넘기는 props는 안정적(store 참조·원시값)이어야 한다.
+// React.memo — 부모(ReportPage)가 넘기는 props는 안정적(store 참조·원시값)이어야 한다.
 export const InvestmentRecordCard: React.FC<Props> = React.memo(function InvestmentRecordCard({ trades, accounts, ledger, fxRate }) {
   const today = useMemo(() => getTodayKST(), []);
   const currentYear = Number(today.slice(0, 4));

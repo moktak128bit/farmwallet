@@ -231,6 +231,7 @@ export const StockCostVsMarketCard: React.FC<Props> = React.memo(function StockC
           <div className="card-title" style={{ marginBottom: 4 }}>주식 매입액 vs 평가액 (월 1일·15일)</div>
           <div className="hint" style={{ fontSize: 13 }}>
             매월 1일·15일 스냅샷 · 매입액 = 그 시점 보유 종목의 원가 · 평가액 = 그 보유 종목을 현재 시세로 환산
+            · 매도하면 판 수량의 원가가 매입액에서 빠집니다 (보유분 기준)
           </div>
         </div>
         {latest && (

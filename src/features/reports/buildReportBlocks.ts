@@ -17,7 +17,7 @@ import type {
 } from "../../utils/reportGenerator";
 import type { TaxYearSummary } from "../../utils/taxCalculator";
 import type { ReportBlock } from "../../utils/reportExport";
-import { toPercent, type PeriodCompareResult, type ReportType } from "./reportShared";
+import { toPercent, type ReportType } from "./reportShared";
 
 export interface ReportBlocksInput {
   reportType: ReportType;
@@ -32,7 +32,6 @@ export interface ReportBlocksInput {
   stockReport: StockPerformanceReport[];
   accountReport: AccountReport[];
   dailyReport: DailyReport[];
-  periodCompare: PeriodCompareResult;
   closingReport: ClosingReportData;
   accountPerformance: AccountPerformanceBreakdownRow[];
   consumptionImpact: ConsumptionImpactMonthlyRow[];
@@ -61,7 +60,6 @@ export function buildReportBlocks(input: ReportBlocksInput): ReportBlocksResult 
     stockReport,
     accountReport,
     dailyReport,
-    periodCompare,
     closingReport,
     accountPerformance,
     consumptionImpact,
@@ -82,13 +80,14 @@ export function buildReportBlocks(input: ReportBlocksInput): ReportBlocksResult 
       subtitle = `${startDate.slice(0, 7)} ~ ${endDate.slice(0, 7)}`;
       blocks.push({
         title: "종합 월간",
-        head: ["월", "근로소득", "자본소득", "비실질수입", "전체수입", "생활소비", "저축성지출", "대출상환", "신용결제", "전체지출", "매수", "매도", "실현손익", "배당", "투자이체", "투자출금", "이체총액", "실질순수입", "장부순수입", "실질저축률"],
+        head: ["월", "근로소득", "자본소득", "비실질수입", "전체수입", "생활소비", "저축성지출", "대출상환", "신용결제", "전체지출", "매수", "매도", "실현손익", "배당", "투자이체", "투자출금", "이체총액", "실질순수입", "장부순수입", "실질저축률", "실질수입", "실질지출"],
         rows: comprehensiveMonthly.map((r) => [
           r.month, r.earnedIncome, r.capitalIncome, r.nonRealIncome, r.totalIncome,
           r.livingExpense, r.savingsExpense, r.loanRepayment, r.creditPayment, r.totalExpense,
           r.buyAmount, r.sellAmount, r.realizedPnl, r.dividendIncome, r.investingIn, r.investingOut,
           r.transferTotal, r.realNet, r.totalNet,
-          r.realSavingsRate != null ? `${r.realSavingsRate.toFixed(1)}%` : "-"
+          r.realSavingsRate != null ? `${r.realSavingsRate.toFixed(1)}%` : "-",
+          r.realIncome, r.realExpense
         ])
       });
       break;
@@ -238,26 +237,6 @@ export function buildReportBlocks(input: ReportBlocksInput): ReportBlocksResult 
         title: "일별 자산 스냅샷",
         head: ["날짜", "수입", "지출", "저축성지출", "이체", "주식평가", "현금", "저축자산", "총자산", "순자산"],
         rows: dailyReport.map((r) => [r.date, r.income, r.expense, r.savingsExpense, r.transfer, Math.round(r.stockValue), Math.round(r.cashValue), Math.round(r.savingsValue), Math.round(r.totalAsset), Math.round(r.netWorth)])
-      });
-      break;
-    }
-    case "periodCompare": {
-      title = "기간 비교";
-      filenameBase = "기간_비교";
-      subtitle = `${periodCompare.thisMonthKey} vs ${periodCompare.lastMonthKey}`;
-      const t = periodCompare.thisMonth;
-      const l = periodCompare.lastMonth;
-      const row = (label: string, a: number, b: number): (string | number)[] => [label, Math.round(a), Math.round(b), Math.round(a - b)];
-      blocks.push({
-        title: "기간 비교",
-        head: ["항목", periodCompare.thisMonthKey, periodCompare.lastMonthKey, "차이"],
-        rows: [
-          row("수입", t.income, l.income),
-          row("지출", t.expense, l.expense),
-          row("저축성 지출", t.savings, l.savings),
-          row("투자 순액", t.investingNet, l.investingNet),
-          row("순수입", t.net, l.net)
-        ]
       });
       break;
     }

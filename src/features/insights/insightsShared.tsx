@@ -1,6 +1,7 @@
 import React, { useState } from "react";
 import type { Payload, ValueType, NameType } from "recharts/types/component/DefaultTooltipContent";
 import type { PieLabelRenderProps } from "recharts/types/polar/Pie";
+import type { IncomeNature } from "../../utils/realIncome";
 
 /* ================================================================== */
 /*  Constants                                                          */
@@ -176,8 +177,18 @@ export interface SubInsight {
 export interface IncSubInsight {
   sub: string; total: number; count: number; avg: number;
   monthTrend: "up" | "down" | "flat"; mom: number; share: number;
-  monthAvg: number; stability: number;
+  monthAvg: number;
+  /** 변동계수 기반 0~100. 발생월 3개 미만이면 null (표본 부족). */
+  stability: number | null;
   maxMonth: string; maxMonthAmt: number;
+  /** 수입 성격 — utils/realIncome.classifyIncomeNature. */
+  nature: IncomeNature;
+  /** 실질 수입에 포함되는 진짜 수입원인지 (근로·패시브·기타). */
+  isReal: boolean;
+  /** 실질 수입 대비 비중(%) — isReal일 때만, 아니면 null. */
+  realShare: number | null;
+  /** 정기성 — 완결월의 50% 이상 & 3개월 이상 발생. 추세 표시는 이 경우에만 의미. */
+  recurring: boolean;
   comment: string;
 }
 
@@ -221,15 +232,6 @@ export interface SpendingInertia {
   lookbackMonths: number;
 }
 
-export interface BudgetProgressRow {
-  category: string;
-  limit: number;
-  spent: number;
-  remaining: number;
-  pct: number;
-  status: "safe" | "warning" | "over";
-}
-
 export interface CategoryGrowthRow {
   sub: string;
   cur: number;
@@ -271,7 +273,6 @@ export interface D {
   topAnomaly: AnomalyLite | null;
   incomeGrowth: IncomeGrowth;
   spendingInertia: SpendingInertia | null;
-  budgetProgress: BudgetProgressRow[];
   categoryGrowth: { up: CategoryGrowthRow[]; down: CategoryGrowthRow[] };
   entryOutliers: EntryOutlier[];
   spendByDOMAvg: number[];
@@ -294,7 +295,6 @@ export interface D {
   pIncome: number;
   pExpense: number;
   pInvest: number;
-  pSavRate: number;
   expByCat: [string, number][];
   expBySub: { cat: string; sub: string; amount: number; count: number }[];
   topCats: string[];
@@ -361,6 +361,8 @@ export interface D {
   variableExpense: number;
 
   netWorthByMonth: { month: string; label: string; total: number; income: number; expense: number; savings: number }[];
+  /** 현재 순자산/총자산/총부채 — 대시보드 타임라인 마지막 행 (시세·환율·대출 반영). 데이터 없으면 null */
+  netWorthNow: { total: number; asset: number; debt: number } | null;
   accountBalances: { name: string; type: string; balance: number }[];
   assetAllocation: { name: string; value: number }[];
 

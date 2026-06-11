@@ -2,6 +2,7 @@ import { describe, it, expect } from "vitest";
 import {
   computeRealIncome,
   computeOriginalAssets,
+  classifyIncomeNature,
   NON_REAL_INCOME,
 } from "../utils/realIncome";
 import type { Account, LedgerEntry } from "../types";
@@ -89,11 +90,31 @@ describe("computeRealIncome", () => {
     expect(r.tempIncomeTotal).toBe(0);
   });
 
-  it("부분일치는 정산만 적용 — '대출하기'는 NON_REAL_INCOME 아님 (정확 일치 아니라서)", () => {
+  it("부분일치는 정산·환불만 적용 — '대출이자'는 NON_REAL_INCOME 아님 (정확 일치 아니라서)", () => {
     const fInc = [inc({ id: "1", amount: 100_000, subCategory: "대출이자" })];
     const r = computeRealIncome(fInc, 100_000);
     expect(r.tempIncomeTotal).toBe(0);
     expect(r.realIncome).toBe(100_000);
+  });
+
+  it("환불은 부분일치로 일시소득 처리 — 이중 결제 환급은 번 돈이 아님", () => {
+    const fInc = [
+      inc({ id: "1", amount: 2_653_394, subCategory: "환불" }),
+      inc({ id: "2", amount: 259_500, subCategory: "공모주 환불" }),
+    ];
+    const r = computeRealIncome(fInc, 2_912_894);
+    expect(r.tempIncomeTotal).toBe(2_912_894);
+    expect(r.realIncome).toBe(0);
+  });
+
+  it("데이트통장 입금은 정산성 — 상대 분담금이라 실질 수입에서 제외", () => {
+    const fInc = [
+      inc({ id: "1", amount: 1_000_000, subCategory: "급여" }),
+      inc({ id: "2", amount: 300_000, subCategory: "데이트통장" }),
+    ];
+    const r = computeRealIncome(fInc, 1_300_000);
+    expect(r.settlementTotal).toBe(300_000);
+    expect(r.realIncome).toBe(1_000_000);
   });
 
   it("빈 배열·pIncome 0이면 모두 0", () => {
@@ -103,8 +124,46 @@ describe("computeRealIncome", () => {
 
   it("회귀: NON_REAL_INCOME 집합 변경 감지 — 항목 추가/제거 시 의도된 것인지 확인", () => {
     expect([...NON_REAL_INCOME].sort()).toEqual(
-      ["대출", "용돈", "원래 보유 자산", "이월", "정산", "지원", "처분소득"]
+      ["대출", "용돈", "원래 보유 자산", "이월", "정산", "지원", "처분소득", "환불"].sort()
     );
+  });
+});
+
+describe("classifyIncomeNature", () => {
+  const salaryKeys = new Set(["급여", "상여", "수당"]);
+  const investIncKeys = new Set(["배당", "이자", "투자수익"]);
+  const opts = { salaryKeys, investIncKeys };
+
+  it("근로: salaryKeys에 속한 중분류", () => {
+    expect(classifyIncomeNature("급여", opts)).toBe("근로");
+    expect(classifyIncomeNature("상여", opts)).toBe("근로");
+  });
+
+  it("패시브: investIncKeys에 속한 중분류", () => {
+    expect(classifyIncomeNature("배당", opts)).toBe("패시브");
+    expect(classifyIncomeNature("이자", opts)).toBe("패시브");
+  });
+
+  it("부채: 대출 — 갚아야 할 돈은 수입이 아님", () => {
+    expect(classifyIncomeNature("대출", opts)).toBe("부채");
+  });
+
+  it("환급: 정산 부분일치·환불·데이트통장 — 돌려받은 돈", () => {
+    expect(classifyIncomeNature("정산", opts)).toBe("환급");
+    expect(classifyIncomeNature("데이트정산", opts)).toBe("환급");
+    expect(classifyIncomeNature("환불", opts)).toBe("환급");
+    expect(classifyIncomeNature("데이트통장", opts)).toBe("환급");
+  });
+
+  it("일시: 지원·용돈·처분소득 — 반복 보장 없는 이전성 소득", () => {
+    expect(classifyIncomeNature("지원", opts)).toBe("일시");
+    expect(classifyIncomeNature("용돈", opts)).toBe("일시");
+    expect(classifyIncomeNature("처분소득", opts)).toBe("일시");
+  });
+
+  it("기타: 캐시백·지역화폐 등 — 실질 수입에는 포함되는 부수입", () => {
+    expect(classifyIncomeNature("캐시백", opts)).toBe("기타");
+    expect(classifyIncomeNature("지역화폐", opts)).toBe("기타");
   });
 });
 

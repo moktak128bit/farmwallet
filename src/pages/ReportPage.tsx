@@ -17,11 +17,13 @@ import React, { useMemo, useState } from "react";
 import type { Account, LedgerEntry, StockPrice, StockTrade } from "../types";
 import { computeInvestmentReconciliation } from "../utils/reportGenerator";
 import { useFxRateValue } from "../context/FxRateContext";
+import { useDateAccountId } from "../hooks/useDateAccountSettings";
 import { useReportWorker } from "../hooks/useReportWorker";
 import { summarizeTaxYear } from "../utils/taxCalculator";
 import type { ReportType } from "../features/reports/reportShared";
 import { ReportExportButtons } from "../features/reports/ReportExportButtons";
 import { ComprehensiveMonthlySection } from "../features/reports/ComprehensiveMonthlySection";
+import { InvestmentRecordCard } from "../features/reports/InvestmentRecordCard";
 import { InvestmentReconciliationSection } from "../features/reports/InvestmentReconciliationSection";
 import { BasicReportTables } from "../features/reports/BasicReportTables";
 import { ClosingReportSection } from "../features/reports/ClosingReportSection";
@@ -37,6 +39,8 @@ interface Props {
 
 export const ReportView: React.FC<Props> = ({ accounts, ledger, trades, prices }) => {
   const fxRate = useFxRateValue();
+  // 데이트 계좌 ID — localStorage 값이라 워커 payload에 명시 전달 (종합 월간 실질지출의 50% 차감)
+  const dateAccountId = useDateAccountId();
   const [reportType, setReportType] = useState<ReportType>("comprehensive");
   const [startDate, setStartDate] = useState<string>(() => {
     const date = new Date();
@@ -62,7 +66,6 @@ export const ReportView: React.FC<Props> = ({ accounts, ledger, trades, prices }
     closingReport,
     accountPerformance,
     consumptionImpact,
-    periodCompare,
     comprehensiveMonthly
   } = useReportWorker({
     accounts,
@@ -71,7 +74,8 @@ export const ReportView: React.FC<Props> = ({ accounts, ledger, trades, prices }
     prices,
     startDate,
     endDate,
-    fxRate
+    fxRate,
+    dateAccountId
   });
 
   /** 투자 정산 — 전체 기간 누적, 주식·코인 계좌 기준 */
@@ -97,7 +101,12 @@ export const ReportView: React.FC<Props> = ({ accounts, ledger, trades, prices }
 
     // ─── 투자 정산 ───
     if (reportType === "investment") {
-      return <InvestmentReconciliationSection reconciliation={reconciliation} />;
+      return (
+        <>
+          <InvestmentRecordCard trades={trades} accounts={accounts} ledger={ledger} fxRate={fxRate} />
+          <InvestmentReconciliationSection reconciliation={reconciliation} />
+        </>
+      );
     }
 
     // ─── 주간/월간 정산 ───
@@ -131,7 +140,7 @@ export const ReportView: React.FC<Props> = ({ accounts, ledger, trades, prices }
       );
     }
 
-    // ─── 기본 표 보고서 (월별/연간/카테고리/주식/계좌/일별/기간 비교) ───
+    // ─── 기본 표 보고서 (월별/연간/카테고리/주식/계좌/일별) ───
     return (
       <BasicReportTables
         reportType={reportType}
@@ -141,7 +150,6 @@ export const ReportView: React.FC<Props> = ({ accounts, ledger, trades, prices }
         stockReport={stockReport}
         accountReport={accountReport}
         dailyReport={dailyReport}
-        periodCompare={periodCompare}
         startDate={startDate}
         endDate={endDate}
         setStartDate={setStartDate}
@@ -167,17 +175,12 @@ export const ReportView: React.FC<Props> = ({ accounts, ledger, trades, prices }
           stockReport={stockReport}
           accountReport={accountReport}
           dailyReport={dailyReport}
-          periodCompare={periodCompare}
           closingReport={closingReport}
           accountPerformance={accountPerformance}
           consumptionImpact={consumptionImpact}
           taxYear={taxYear}
           taxSummary={taxSummary}
         />
-      </div>
-
-      <div className="hint" style={{ marginBottom: 8, fontSize: 12 }}>
-        실현 손익·승률·보유기간 중심 요약은 <strong>대시보드 → 투자 기록 카드</strong>에서 확인할 수 있습니다.
       </div>
 
       <div style={{ display: "flex", gap: 8, marginBottom: 16, flexWrap: "wrap" }}>
@@ -189,7 +192,6 @@ export const ReportView: React.FC<Props> = ({ accounts, ledger, trades, prices }
         <button type="button" className={reportType === "stock" ? "primary" : ""} onClick={() => setReportType("stock")}>주식 성과</button>
         <button type="button" className={reportType === "account" ? "primary" : ""} onClick={() => setReportType("account")}>계좌별</button>
         <button type="button" className={reportType === "daily" ? "primary" : ""} onClick={() => setReportType("daily")}>일별</button>
-        <button type="button" className={reportType === "periodCompare" ? "primary" : ""} onClick={() => setReportType("periodCompare")}>기간 비교</button>
         <button type="button" className={reportType === "closing" ? "primary" : ""} onClick={() => setReportType("closing")}>주간/월간 정산</button>
         <button type="button" className={reportType === "performanceAdvanced" ? "primary" : ""} onClick={() => setReportType("performanceAdvanced")}>성과 분석</button>
         <button type="button" className={reportType === "tax" ? "primary" : ""} onClick={() => setReportType("tax")}>세금 (한국)</button>

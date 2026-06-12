@@ -10,7 +10,7 @@ import type { LedgerDisplayRow } from "../../utils/ledgerHelpers";
 import { isCreditPayment, isInvestmentEntry, makeIsSavingsExpense } from "../../utils/category";
 import { useFxRateValue } from "../../context/FxRateContext";
 
-export type LedgerFilteredSummary = {
+type LedgerFilteredSummary = {
   expenseAmount: number;
   savingsAmount: number;
   incomeAmount: number;

@@ -1,7 +1,7 @@
 import type { LedgerEntry, RecurringExpense } from "../types";
 import { parseIsoLocal } from "./date";
 
-export interface CategoryForecast {
+interface CategoryForecast {
   category: string;
   recurringAmount: number;
   variableAverage: number;
@@ -11,7 +11,7 @@ export interface CategoryForecast {
   basedOnMonths: number;
 }
 
-export interface ForecastResult {
+interface ForecastResult {
   totalForecast: number;
   totalLower: number;
   totalUpper: number;

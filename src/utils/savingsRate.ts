@@ -35,7 +35,7 @@ export function isCarryOverIncomeEntry(l: LedgerEntry): boolean {
   return isCarryOverStr(l.category || "") || isCarryOverStr(l.subCategory || "");
 }
 
-export interface MonthlyRealFlow {
+interface MonthlyRealFlow {
   month: string;
   realIncome: number;
   realExpense: number;

@@ -1,6 +1,6 @@
 import React from "react";
 
-export type StockPageTab = "stocks" | "portfolio" | "fx";
+type StockPageTab = "stocks" | "portfolio" | "fx";
 
 interface Props {
   activeTab: StockPageTab;

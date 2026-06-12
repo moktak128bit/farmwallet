@@ -3,7 +3,7 @@ import type { WorkoutDayEntry } from "../../types";
 import { BODY_PART_COLORS, WEEKDAY_LABELS } from "./constants";
 import { formatMonthLabel, getEntryBodyParts, getMonthStart, parseDate, toDateString } from "./helpers";
 
-export interface CalendarCell {
+interface CalendarCell {
   date: string;
   inCurrentMonth: boolean;
 }

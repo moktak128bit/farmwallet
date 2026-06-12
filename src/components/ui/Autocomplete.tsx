@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useRef, useId } from "react";
 
-export interface AutocompleteOption {
+interface AutocompleteOption {
   value: string;
   label?: string;
   subLabel?: string;

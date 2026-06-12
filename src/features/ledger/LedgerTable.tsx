@@ -42,7 +42,7 @@ export type LedgerSortKey =
 export type LedgerSortState = { key: LedgerSortKey; direction: "asc" | "desc" };
 
 /** 출금/입금 셀에 표시할 계좌별 금액·잔액 맵 (부모 memo에서 계산) */
-export type BalanceAfterMap = Map<
+type BalanceAfterMap = Map<
   string,
   { from?: { amount: number; balance: number }; to?: { amount: number; balance: number } }
 >;

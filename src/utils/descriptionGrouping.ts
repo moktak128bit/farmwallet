@@ -102,7 +102,7 @@ export interface DescriptionGroup {
 }
 
 /** (kind, category, subCategory)별 모든 distinct description 변형 — 수동 추가용. */
-export type VariantsByContext = Map<string, DescriptionVariant[]>;
+type VariantsByContext = Map<string, DescriptionVariant[]>;
 
 /**
  * ledger 전체에서 유사 description 그룹들을 추출.

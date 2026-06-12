@@ -1,7 +1,7 @@
 import type { LedgerEntry } from "../types";
 import { isCreditPayment } from "./category";
 
-export interface AnomalyResult {
+interface AnomalyResult {
   category: string;
   currentMonthAmount: number;
   averageAmount: number;

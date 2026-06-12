@@ -9,7 +9,7 @@
  */
 import { STORAGE_KEYS } from "../../constants/config";
 
-export interface DashboardWidgetDef {
+interface DashboardWidgetDef {
   id: string;
   label: string;
 }

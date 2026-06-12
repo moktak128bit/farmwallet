@@ -3,7 +3,7 @@ import type { WorkoutBodyPart } from "../../types";
 import { formatNumber } from "../../utils/formatter";
 import { BODY_PART_COLORS } from "./constants";
 
-export interface MonthStatsData {
+interface MonthStatsData {
   workoutDays: number;
   restDays: number;
   volume: number;

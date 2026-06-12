@@ -40,7 +40,7 @@ function needsDemote(e: LedgerEntry): boolean {
   return !STANDARD_TOP_CATS.has(e.category);
 }
 
-export interface DemotePreview {
+interface DemotePreview {
   totalLedger: number;
   /** 변경될 항목 수 */
   affected: number;

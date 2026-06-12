@@ -2,7 +2,7 @@ import type { Account, StockTrade } from "../types";
 import { canonicalTickerForMatch, isUSDStock } from "./finance";
 
 /** 청산(매도)된 단일 거래 한 건의 실현 수익 기록. USD 종목은 거래시점 환율로 원화 환산. */
-export interface ClosedTradeRecord {
+interface ClosedTradeRecord {
   tradeId: string;
   ticker: string;
   name: string;
@@ -18,7 +18,7 @@ export interface ClosedTradeRecord {
   isUsd: boolean;
 }
 
-export interface PeriodSummary {
+interface PeriodSummary {
   totalPnl: number;
   totalCost: number;
   returnPct: number;
@@ -32,7 +32,7 @@ export interface PeriodSummary {
   avgHoldingDays: number;
 }
 
-export type HoldingBucket = "1주 이하" | "1주~1개월" | "1~3개월" | "3~12개월" | "1년 이상";
+type HoldingBucket = "1주 이하" | "1주~1개월" | "1~3개월" | "3~12개월" | "1년 이상";
 
 export const HOLDING_BUCKETS: HoldingBucket[] = [
   "1주 이하",

@@ -17,10 +17,10 @@
 
 import type { AppData, CategoryPresets, ExpenseDetailGroup, LedgerEntry } from "../types";
 
-export const TRANSPORT_MAIN = "유류교통비";
+const TRANSPORT_MAIN = "유류교통비";
 
 /** 옛 14개 → 새 6개 매핑 */
-export const TRANSPORT_SUB_MAPPING: Record<string, string> = {
+const TRANSPORT_SUB_MAPPING: Record<string, string> = {
   "버스/지하철": "대중교통",
   "택시": "대중교통",
   "기타교통": "대중교통",
@@ -86,7 +86,7 @@ function locateTransportSub(e: LedgerEntry): TransportLocator | null {
   return null;
 }
 
-export interface TransportMigrationPreview {
+interface TransportMigrationPreview {
   /** 실제 값이 변경될 항목 수 */
   ledgerAffected: number;
   /** 옛 분류명별 건수 */

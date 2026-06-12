@@ -18,7 +18,7 @@ function fallbackId(): string {
 }
 
 /** 접두사 없는 raw UUID-like 문자열 */
-export function newId(): string {
+function newId(): string {
   if (typeof crypto !== "undefined" && typeof crypto.randomUUID === "function") {
     try { return crypto.randomUUID(); } catch { /* secure context 외 */ }
   }

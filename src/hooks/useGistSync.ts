@@ -25,19 +25,19 @@ import { useUIStore } from "../store/uiStore";
 
 const GIST_AUTO_SAVE_ERROR_TOAST_ID = "gist-auto-save-error";
 
-export interface UseGistSyncOptions {
+interface UseGistSyncOptions {
   onLog?: (message: string, type?: "success" | "error" | "info") => void;
 }
 
 export type GistConflictResolution = "apply-remote" | "force-push-local" | "cancel";
 
-export interface GistStaleWarning {
+interface GistStaleWarning {
   type: "warning" | "critical";
   message: string;
   hoursSince: number;
 }
 
-export interface UseGistSyncReturn {
+interface UseGistSyncReturn {
   autoSyncEnabled: boolean;
   setAutoSyncEnabled: (enabled: boolean) => void;
   lastPushAt: string | null;

@@ -16,10 +16,8 @@ import {
   isInvestmentKind,
   isCreditPayment,
   isRealExpenseEntry,
-  type CategoryType,
 } from "./categoryUtils";
 
-export type { CategoryType };
 export {
   getCategoryType,
   getSavingsCategories,

@@ -150,7 +150,7 @@ export function mergePresets(presets: CategoryPresets, spec: MergeSpec): Categor
   return { ...presets, expense: next.map((g) => g.main), expenseDetails: next };
 }
 
-export interface MergeCandidate {
+interface MergeCandidate {
   name: string;
   /** 가계부 사용 건수 */
   count: number;

@@ -10,7 +10,7 @@ export type ShortcutAction =
   | "submit-form"
   | "show-help";
 
-export interface ShortcutHandler {
+interface ShortcutHandler {
   action: ShortcutAction;
   handler: () => void;
   enabled?: () => boolean;

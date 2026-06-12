@@ -65,8 +65,6 @@ interface Props {
   onClearHighlightLedger?: () => void;
 }
 
-export type { LedgerDisplayRow };
-
 export const LedgerView: React.FC<Props> = ({
   accounts,
   ledger,

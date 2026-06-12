@@ -9,7 +9,7 @@
  * - allowDecimal=true는 외화 환전·이체 등 소수점이 실제 필요한 경우에만.
  */
 
-export interface ParseAmountOptions {
+interface ParseAmountOptions {
   /** 소수점 허용 (USD 이체 등). 기본 false — 정수만 */
   allowDecimal?: boolean;
 }

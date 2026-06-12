@@ -6,7 +6,7 @@ import type { Account } from "../types";
 import { isUSDStock } from "./finance";
 import { formatIsoLocal } from "./date";
 
-export interface ValidationResult {
+interface ValidationResult {
   valid: boolean;
   error?: string;
 }

@@ -79,7 +79,7 @@ export function isInvestmentKind(entry: LedgerEntry): boolean {
   return false;
 }
 
-export type CategoryType = "income" | "transfer" | "savings" | "fixed" | "variable";
+type CategoryType = "income" | "transfer" | "savings" | "fixed" | "variable";
 
 /** 재테크/저축 탭에서 보여줄 대분류 (항상 포함해 이전 저장 데이터와 호환) */
 const SAVINGS_CATEGORIES_FALLBACK = ["재테크", "저축성지출"] as const;

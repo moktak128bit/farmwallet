@@ -1,13 +1,13 @@
 import { useEffect, useRef, useState, type RefObject } from "react";
 
-export interface UseLedgerColumnResizeArgs {
+interface UseLedgerColumnResizeArgs {
   columnWidths: number[];
   setColumnWidths: (widths: number[]) => void;
   tableRef: RefObject<HTMLTableElement | null>;
   storageKey?: string;
 }
 
-export interface UseLedgerColumnResizeReturn {
+interface UseLedgerColumnResizeReturn {
   resizingColumn: number | null;
   liveColumnWidths: number[] | null;
   handleResizeStart: (e: React.MouseEvent | React.PointerEvent, columnIndex: number) => void;

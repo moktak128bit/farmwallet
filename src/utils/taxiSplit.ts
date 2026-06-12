@@ -10,7 +10,7 @@ import type { CategoryPresets, LedgerEntry } from "../types";
  */
 
 export const TAXI_PARENT = "유류교통비";
-export const TAXI_DETAIL = "택시";
+const TAXI_DETAIL = "택시";
 /** 택시 결제 description 매칭 — 카카오T, 우버, 타다 같은 변형 포함. 대소문자 무시. */
 export const TAXI_RE = /택시|카카오T|카카오\s*택시|우버|타다|UBER|kakao\s*t/i;
 

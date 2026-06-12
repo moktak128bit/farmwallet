@@ -1,14 +1,14 @@
 /**
  * 배당 성장 추적 카드 — "버핏의 코카콜라" 위젯.
- * 질문 하나당 차트 하나(3단 구성, 마우스 호버 동기화):
- *   ① 주가는 내 평단 대비 어디쯤인가
- *   ② 매달 분배금을 얼마나 받았나 (적립 효과)
- *   ③ 월 분배율 — 지금 주가 기준 vs 내가 산 가격 기준 (배당성장이면 초록 선이 우상향)
+ * 기본 2단 차트(마우스 호버 동기화) + 주가 차트는 접이식(보조 정보 — KPI에 현재가·평단 있음):
+ *   ① 매달 분배금을 얼마나 받았나 (적립 효과)
+ *   ② 월 분배율 — 지금 주가 기준 vs 내가 산 가격 기준 (배당성장이면 초록 선이 우상향)
+ *   (+ 펼치면) 주가는 내 평단 대비 어디쯤인가
  *
  * 데이터 계산은 utils/dividendGrowth.ts(순수 함수)가 담당, 이 컴포넌트는 표시만.
  * React.memo — 부모가 넘기는 props는 안정적(useMemo 결과)이어야 한다.
  */
-import React from "react";
+import React, { useState } from "react";
 import {
   Area, Bar, BarChart, CartesianGrid, ComposedChart, Line, LineChart,
   ResponsiveContainer, Tooltip, XAxis, YAxis,
@@ -37,6 +37,8 @@ const PanelTitle: React.FC<{ title: string; desc?: string }> = ({ title, desc })
 export const DividendGrowthCard: React.FC<{ data: DividendGrowthData }> = React.memo(function DividendGrowthCard({ data }) {
   const { current: cur, points } = data;
   const sync = `div-growth-${data.ticker}`;
+  // 주가 차트는 보조 정보 — 기본 접힘 (KPI에 현재가·평단 대비 % 있음)
+  const [showPrice, setShowPrice] = useState(false);
   const priceVsCost =
     cur.price != null && cur.avgCost ? ((cur.price - cur.avgCost) / cur.avgCost) * 100 : null;
 
@@ -77,45 +79,8 @@ export const DividendGrowthCard: React.FC<{ data: DividendGrowthData }> = React.
         />
       </div>
 
-      {/* ① 주가 vs 내 평단 */}
-      <PanelTitle title="① 주가" desc="회색 점선 = 내 평단. 주가가 점선 아래면 평단보다 싸게 모을 수 있는 구간" />
-      <ResponsiveContainer width="100%" height={140}>
-        <ComposedChart data={points} syncId={sync} margin={{ top: 4, right: 12, left: 4, bottom: 0 }}>
-          <CartesianGrid strokeDasharray="3 3" stroke="var(--chart-grid)" />
-          <XAxis dataKey="label" tick={{ fontSize: 10 }} interval="preserveStartEnd" />
-          <YAxis domain={["auto", "auto"]} tick={{ fontSize: 10 }} width={52} tickFormatter={fmtAxisWon} />
-          <Tooltip
-            formatter={(v: number | string | undefined, key: string | undefined) =>
-              [fmtWon(Number(v ?? 0)), key ?? ""] as [string, string]
-            }
-          />
-          <Area
-            isAnimationActive={false}
-            type="monotone"
-            dataKey="price"
-            name="주가"
-            stroke="var(--chart-primary)"
-            fill="var(--primary-light)"
-            strokeWidth={2}
-            connectNulls
-            dot={false}
-          />
-          <Line
-            isAnimationActive={false}
-            type="stepAfter"
-            dataKey="avgCost"
-            name="내 평단"
-            stroke="var(--text-faint)"
-            strokeDasharray="4 3"
-            strokeWidth={1.5}
-            connectNulls
-            dot={false}
-          />
-        </ComposedChart>
-      </ResponsiveContainer>
-
-      {/* ② 매달 받은 분배금 */}
-      <PanelTitle title="② 매달 받은 분배금" desc="모아갈수록 막대가 커지는 게 목표 (수량 증가 × 주당 분배금 성장)" />
+      {/* ① 매달 받은 분배금 */}
+      <PanelTitle title="① 매달 받은 분배금" desc="모아갈수록 막대가 커지는 게 목표 (수량 증가 × 주당 분배금 성장)" />
       <ResponsiveContainer width="100%" height={150}>
         <BarChart data={points} syncId={sync} margin={{ top: 4, right: 12, left: 4, bottom: 0 }}>
           <CartesianGrid strokeDasharray="3 3" stroke="var(--chart-grid)" />
@@ -135,10 +100,10 @@ export const DividendGrowthCard: React.FC<{ data: DividendGrowthData }> = React.
         </BarChart>
       </ResponsiveContainer>
 
-      {/* ③ 월 분배율 — 두 기준 비교 */}
+      {/* ② 월 분배율 — 두 기준 비교 */}
       <PanelTitle
-        title="③ 월 분배율 — 100만원당 매달 얼마 받나"
-        desc="파랑 = 지금 주가로 살 때 · 초록 = 내가 산 가격 기준. 분배금이 자라면 초록 선만 계속 올라감 (배당성장)"
+        title="② 월 분배율 — 100만원당 매달 얼마 받나"
+        desc="파랑 = 지금 주가로 살 때(주당 분배금÷주가) · 초록 = 내가 산 가격 기준(주당 분배금÷내 평단). 분배금이 자라면 초록 선만 계속 올라감 (배당성장)"
       />
       <ResponsiveContainer width="100%" height={170}>
         <LineChart data={points} syncId={sync} margin={{ top: 4, right: 12, left: 4, bottom: 0 }}>
@@ -180,6 +145,56 @@ export const DividendGrowthCard: React.FC<{ data: DividendGrowthData }> = React.
           />
         </LineChart>
       </ResponsiveContainer>
+
+      {/* 주가 차트 — 보조 정보라 기본 접힘 */}
+      <button
+        type="button"
+        className="link"
+        onClick={() => setShowPrice((v) => !v)}
+        style={{ fontSize: 12, marginTop: 8, padding: 0 }}
+        aria-expanded={showPrice}
+      >
+        {showPrice ? "▲ 주가·평단 차트 접기" : "▼ 주가·평단 차트 보기"}
+      </button>
+      {showPrice && (
+        <>
+          <PanelTitle title="주가" desc="회색 점선 = 내 평단. 주가가 점선 아래면 평단보다 싸게 모을 수 있는 구간" />
+          <ResponsiveContainer width="100%" height={140}>
+            <ComposedChart data={points} syncId={sync} margin={{ top: 4, right: 12, left: 4, bottom: 0 }}>
+              <CartesianGrid strokeDasharray="3 3" stroke="var(--chart-grid)" />
+              <XAxis dataKey="label" tick={{ fontSize: 10 }} interval="preserveStartEnd" />
+              <YAxis domain={["auto", "auto"]} tick={{ fontSize: 10 }} width={52} tickFormatter={fmtAxisWon} />
+              <Tooltip
+                formatter={(v: number | string | undefined, key: string | undefined) =>
+                  [fmtWon(Number(v ?? 0)), key ?? ""] as [string, string]
+                }
+              />
+              <Area
+                isAnimationActive={false}
+                type="monotone"
+                dataKey="price"
+                name="주가"
+                stroke="var(--chart-primary)"
+                fill="var(--primary-light)"
+                strokeWidth={2}
+                connectNulls
+                dot={false}
+              />
+              <Line
+                isAnimationActive={false}
+                type="stepAfter"
+                dataKey="avgCost"
+                name="내 평단"
+                stroke="var(--text-faint)"
+                strokeDasharray="4 3"
+                strokeWidth={1.5}
+                connectNulls
+                dot={false}
+              />
+            </ComposedChart>
+          </ResponsiveContainer>
+        </>
+      )}
     </div>
   );
 });

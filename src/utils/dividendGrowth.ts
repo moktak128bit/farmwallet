@@ -24,10 +24,11 @@ export interface DividendGrowthPoint {
   perShare: number | null;
   /** 월 기준 주가 (월말 종가 우선, 폴백 체인) */
   price: number | null;
-  /** 분배율(연환산 %, 시장가 기준) = perShare × 12 ÷ price × 100 */
-  annualYield: number | null;
-  /** YOC(연환산 %, 그 시점 내 평단 기준) = perShare × 12 ÷ avgCost × 100 */
-  yoc: number | null;
+  /** 월 분배율(%, 주가 대비) = 월 주당 분배금 ÷ 주가 × 100 */
+  monthlyYield: number | null;
+  /** 월 분배율(%, 내 매입금 대비) = 월 주당 분배금 ÷ 평단 × 100
+   *  — 배당성장 지표: 분배율이 그대로여도 분배금이 자라면 이 선은 우상향 (버핏의 코카콜라) */
+  monthlyYoc: number | null;
   /** 월말 보유 수량 */
   shares: number;
   /** 월말 평단 (이동평균, 수수료 포함) */
@@ -48,6 +49,10 @@ export interface DividendGrowthData {
     lastMonthReceived: number | null;
     /** 최근 수령 월의 주당 분배금 (원) */
     lastMonthPerShare: number | null;
+    /** 최근 수령 월의 월 분배율 (%, 주가 대비) */
+    lastMonthYield: number | null;
+    /** 최근 수령 월의 월 분배율 (%, 내 매입금 대비) */
+    lastMonthYoc: number | null;
     /** 연환산 주당 분배금 (최근 ≤12개월 평균 × 12) */
     annualPerShare: number | null;
     /** 분배율 (연환산, 현재가 기준 %) */
@@ -243,8 +248,8 @@ export function buildDividendGrowth(args: {
       received,
       perShare,
       price,
-      annualYield: perShare != null && price ? (perShare * 12 / price) * 100 : null,
-      yoc: perShare != null && avgCost ? (perShare * 12 / avgCost) * 100 : null,
+      monthlyYield: perShare != null && price ? (perShare / price) * 100 : null,
+      monthlyYoc: perShare != null && avgCost ? (perShare / avgCost) * 100 : null,
       shares: qty,
       avgCost,
     });
@@ -275,6 +280,8 @@ export function buildDividendGrowth(args: {
       price: curPrice,
       lastMonthReceived: lastPaid?.received ?? null,
       lastMonthPerShare: lastPaid?.perShare ?? null,
+      lastMonthYield: lastPaid?.monthlyYield ?? null,
+      lastMonthYoc: lastPaid?.monthlyYoc ?? null,
       annualPerShare,
       marketYield: annualPerShare != null && curPrice ? (annualPerShare / curPrice) * 100 : null,
       yoc: annualPerShare != null && curAvgCost ? (annualPerShare / curAvgCost) * 100 : null,

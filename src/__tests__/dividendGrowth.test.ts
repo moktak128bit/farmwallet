@@ -60,11 +60,11 @@ describe("buildDividendGrowth", () => {
     expect(jun.shares).toBe(30);
     // 평단 = (8×1만 + 2×1.1만 + 20×1.2만) / 30 = 11,400
     expect(jun.avgCost).toBeCloseTo(11400);
-    // 이번 달 주가 = 현재 시세 폴백(12500), 분배율 = 50×12/12500 = 4.8%
+    // 이번 달 주가 = 현재 시세 폴백(12500), 월 분배율(주가 대비) = 50/12500 = 0.4%
     expect(jun.price).toBe(12500);
-    expect(jun.annualYield).toBeCloseTo(4.8);
-    // YOC = 50×12/11400 ≈ 5.26% — 분배율보다 높음 (싸게 산 만큼)
-    expect(jun.yoc).toBeCloseTo(5.263, 2);
+    expect(jun.monthlyYield).toBeCloseTo(0.4);
+    // 월 분배율(내 매입금 대비) = 50/11400 ≈ 0.4386% — 주가 대비보다 높음 (싸게 산 만큼)
+    expect(jun.monthlyYoc).toBeCloseTo(0.4386, 3);
     // 수령액 막대가 우상향
     expect(r!.points.map((p) => p.received)).toEqual([0, 320, 450, 1500]);
   });

@@ -397,21 +397,9 @@ export const DashboardView: React.FC<Props> = (props) => {
           </div>
         )}
 
-        {/* 배당 성장 추적 — 장기 적립 종목별 분배금·분배율·주가 (종목당 카드 1개) */}
-        {show("dividendGrowth") && dividendGrowthData.length > 0 && (
-          <div
-            style={{
-              display: "grid",
-              gridTemplateColumns: "repeat(auto-fit, minmax(360px, 1fr))",
-              gap: 16,
-              alignItems: "stretch"
-            }}
-          >
-            {dividendGrowthData.map((d) => (
-              <DividendGrowthCard key={d.ticker} data={d} />
-            ))}
-          </div>
-        )}
+        {/* 배당 성장 추적 — 장기 적립 종목별 분배금·분배율·주가. 한 행에 카드 1개 (차트 가독성) */}
+        {show("dividendGrowth") &&
+          dividendGrowthData.map((d) => <DividendGrowthCard key={d.ticker} data={d} />)}
 
         {show("assetComposition") && (
           <AssetCompositionCard

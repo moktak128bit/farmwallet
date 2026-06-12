@@ -15,7 +15,7 @@ import {
 import type { DividendGrowthData } from "../../utils/dividendGrowth";
 
 const fmtWon = (n: number) => `${Math.round(n).toLocaleString()}원`;
-const fmtPct = (n: number) => `${n.toFixed(1)}%`;
+const fmtPct = (n: number, digits = 2) => `${n.toFixed(digits)}%`;
 
 const Kpi: React.FC<{ label: string; value: string; tone?: string; hint?: string }> = ({ label, value, tone, hint }) => (
   <div style={{ padding: "8px 12px", background: "var(--bg)", borderRadius: "var(--radius-md)", minWidth: 96 }} title={hint}>
@@ -36,7 +36,7 @@ export const DividendGrowthCard: React.FC<{ data: DividendGrowthData }> = React.
           💎 {data.name} <span style={{ color: "var(--text-faint)", fontWeight: 500, fontSize: 12 }}>({data.ticker})</span>
         </div>
         <span style={{ fontSize: 11, color: "var(--text-faint)" }}>
-          분배금 기록 {data.recordCount}건 · 분배율=시장가 기준, YOC=내 평단 기준 (연환산)
+          분배금 기록 {data.recordCount}건 · 월 분배율 = 주가 대비 / 내 매입금 대비 (둘 다 월 기준 %)
         </span>
       </div>
 
@@ -55,17 +55,21 @@ export const DividendGrowthCard: React.FC<{ data: DividendGrowthData }> = React.
           value={cur.lastMonthReceived != null ? fmtWon(cur.lastMonthReceived) : "–"}
           hint={cur.lastMonthPerShare != null ? `주당 ${cur.lastMonthPerShare.toFixed(1)}원` : undefined}
         />
-        <Kpi label="분배율(연)" value={cur.marketYield != null ? fmtPct(cur.marketYield) : "–"} />
         <Kpi
-          label="YOC(평단 기준)"
-          value={cur.yoc != null ? fmtPct(cur.yoc) : "–"}
+          label="월 분배율 (주가)"
+          value={cur.lastMonthYield != null ? fmtPct(cur.lastMonthYield) : "–"}
+          hint={cur.marketYield != null ? `연환산 약 ${fmtPct(cur.marketYield, 1)}` : undefined}
+        />
+        <Kpi
+          label="월 분배율 (내 매입금)"
+          value={cur.lastMonthYoc != null ? fmtPct(cur.lastMonthYoc) : "–"}
           tone="var(--success)"
-          hint="Yield on Cost — 내 평단 대비 연 분배율. 모아갈수록·분배금이 자랄수록 상승"
+          hint={`배당성장 지표 — 분배금이 자라면 평단 고정이라 계속 상승${cur.yoc != null ? ` (연환산 약 ${fmtPct(cur.yoc, 1)})` : ""}`}
         />
       </div>
 
       {/* 주가 + 평단 미니 차트 */}
-      <ResponsiveContainer width="100%" height={110}>
+      <ResponsiveContainer width="100%" height={150}>
         <ComposedChart data={points} margin={{ top: 4, right: 8, left: 8, bottom: 0 }}>
           <CartesianGrid strokeDasharray="3 3" stroke="var(--chart-grid)" />
           <XAxis dataKey="label" tick={{ fontSize: 10 }} interval="preserveStartEnd" />
@@ -106,8 +110,8 @@ export const DividendGrowthCard: React.FC<{ data: DividendGrowthData }> = React.
         </ComposedChart>
       </ResponsiveContainer>
 
-      {/* 월 분배금(막대) + 분배율/YOC(선) */}
-      <ResponsiveContainer width="100%" height={200}>
+      {/* 월 분배금(막대) + 월 분배율 두 기준(선) */}
+      <ResponsiveContainer width="100%" height={280}>
         <ComposedChart data={points} margin={{ top: 8, right: 8, left: 8, bottom: 0 }}>
           <CartesianGrid strokeDasharray="3 3" stroke="var(--chart-grid)" />
           <XAxis dataKey="label" tick={{ fontSize: 10 }} interval="preserveStartEnd" />
@@ -145,30 +149,31 @@ export const DividendGrowthCard: React.FC<{ data: DividendGrowthData }> = React.
             isAnimationActive={false}
             yAxisId="pct"
             type="monotone"
-            dataKey="annualYield"
-            name="분배율(연)"
+            dataKey="monthlyYield"
+            name="월 분배율 (주가 대비)"
             stroke="var(--chart-accent)"
             strokeWidth={2}
             connectNulls
-            dot={{ r: 2 }}
+            dot={{ r: 3 }}
           />
           <Line
             isAnimationActive={false}
             yAxisId="pct"
             type="monotone"
-            dataKey="yoc"
-            name="YOC"
+            dataKey="monthlyYoc"
+            name="월 분배율 (내 매입금 대비)"
             stroke="var(--success)"
-            strokeWidth={2}
+            strokeWidth={2.5}
             connectNulls
-            dot={{ r: 2 }}
+            dot={{ r: 3 }}
           />
           <ReferenceLine yAxisId="pct" y={0} stroke="var(--chart-grid)" />
         </ComposedChart>
       </ResponsiveContainer>
 
       <div style={{ fontSize: 11, color: "var(--text-faint)", marginTop: 6 }}>
-        막대 = 그 달 실제 수령액 (모아갈수록 우상향이 목표) · 분배율·YOC는 월 주당 분배금 × 12 연환산.
+        막대 = 그 달 실제 수령액 · 파란 선 = 주가 대비 월 분배율 · <span style={{ color: "var(--success)", fontWeight: 600 }}>초록 선 = 내 매입금 대비 월 분배율</span> —
+        분배금이 자라면 평단은 고정이라 초록 선이 파란 선 위로 벌어지며 우상향 (배당성장).
       </div>
     </div>
   );

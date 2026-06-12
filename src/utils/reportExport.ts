@@ -16,18 +16,20 @@ export function hasReportRows(blocks: ReportBlock[]): boolean {
 }
 
 const csvCell = (v: string | number): string => {
-  const s = typeof v === "number" ? v.toLocaleString() : v;
+  // 숫자는 천단위 쉼표 없이 raw로 — toLocaleString을 쓰면 스프레드시트가 텍스트로 인식
+  const s = typeof v === "number" ? String(v) : v;
   return `"${s.replace(/"/g, '""')}"`;
 };
 
 export function blocksToCsv(blocks: ReportBlock[]): string {
+  // 줄바꿈은 RFC 4180에 맞춰 CRLF — csvExport와 동일 (Windows Excel 호환)
   return blocks
     .map((b) => {
       const lines = [`# ${b.title}`, b.head.map(csvCell).join(",")];
       for (const row of b.rows) lines.push(row.map(csvCell).join(","));
-      return lines.join("\n");
+      return lines.join("\r\n");
     })
-    .join("\n\n");
+    .join("\r\n\r\n");
 }
 
 // Excel 시트명 제약: 31자 이하, \ / ? * [ ] : 금지. 중복 시 접미사로 구분.

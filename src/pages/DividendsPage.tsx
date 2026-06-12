@@ -174,7 +174,14 @@ export const DividendsView: React.FC<Props> = ({ accounts, ledger, trades, price
       const lots: Lot[] = [];
       for (const t of relevant) {
         const side = (t.side ?? "").toString().toLowerCase();
-        const amtKrW = isUSDStock(ticker) && fxRate ? t.totalAmount * fxRate : t.totalAmount;
+        // 거래 당시 환율(fxRateAtTrade) 우선 — 다른 곳(StockDetailModal·computePositions)과 일관
+        const appliedFx =
+          t.fxRateAtTrade && t.fxRateAtTrade > 0
+            ? t.fxRateAtTrade
+            : fxRate && fxRate > 0
+              ? fxRate
+              : null;
+        const amtKrW = isUSDStock(ticker) && appliedFx ? t.totalAmount * appliedFx : t.totalAmount;
         if (side === "buy") {
           lots.push({ qty: t.quantity, totalAmount: amtKrW });
         } else if (side === "sell") {
@@ -339,9 +346,9 @@ export const DividendsView: React.FC<Props> = ({ accounts, ledger, trades, price
           flexWrap: "wrap"
         }}
       >
-        <span>누적 배당 <strong style={{ color: "var(--positive)" }}>{formatKRW(Math.round(totalDividend))}</strong></span>
+        <span>누적 배당 <strong style={{ color: "var(--danger)" }}>{formatKRW(Math.round(totalDividend))}</strong></span>
         <span>·</span>
-        <span>이자 <strong style={{ color: "var(--positive)" }}>{formatKRW(Math.round(totalInterest))}</strong></span>
+        <span>이자 <strong style={{ color: "var(--danger)" }}>{formatKRW(Math.round(totalInterest))}</strong></span>
         <span>·</span>
         <span>합계 <strong>{formatKRW(Math.round(totalDividend + totalInterest))}</strong></span>
       </div>

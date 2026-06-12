@@ -1,4 +1,5 @@
 import type { WorkoutExercise, WorkoutDayEntry, WorkoutBodyPart } from "../../types";
+import { newIdWithPrefix } from "../../utils/id";
 
 export function toDateString(date: Date): string {
   const y = date.getFullYear();
@@ -45,19 +46,30 @@ export function formatDisplayDate(dateStr: string): string {
   });
 }
 
+/** 공용 ID 유틸 기반 (crypto.randomUUID 우선) — 자체 저엔트로피 구현 제거 */
 export function makeId(prefix: string): string {
-  return `${prefix}-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+  return newIdWithPrefix(prefix);
 }
 
 export function nowIso(): string {
   return new Date().toISOString();
 }
 
-/** 유산소 제외 sum(weight × reps) */
+/**
+ * 유산소 제외 sum(weight × reps).
+ * 수행 완료(done===true) 세트만 합산 — 루틴 적용으로 생긴 계획 세트(done=false)는
+ * 볼륨에 포함하지 않음 (workoutStats의 세션 집계 기준과 일치).
+ */
 export function computeExerciseVolume(exercises: WorkoutExercise[]): number {
   return exercises.reduce((sum, exercise) => {
     if (exercise.bodyPart === "유산소") return sum;
-    return sum + exercise.sets.reduce((setSum, set) => setSum + set.weightKg * set.reps, 0);
+    return (
+      sum +
+      exercise.sets.reduce(
+        (setSum, set) => (set.done === true ? setSum + set.weightKg * set.reps : setSum),
+        0
+      )
+    );
   }, 0);
 }
 

@@ -3,12 +3,12 @@
  * 자동 동기화 토글. SettingsPage에서 분리.
  * gistToken/gistTokenPersist/gistId/gistSyncing/gistLastSync 상태는 이 카드 전용이라
  * 이 컴포넌트가 소유한다 (입력 타이핑이 부모를 재렌더하지 않음).
- * React.memo로 감싸므로 부모가 넘기는 콜백(onChangeData/onAutoSyncChange)은
- * 참조가 안정적이어야 한다.
+ * 저장/불러오기는 useGistSync의 manualPush/manualPull(정식 경로)을 props로 받아 사용 —
+ * 카드 자체 fetch로 충돌 감지·lastPushAt/lastPullAt 갱신을 우회하지 않는다.
+ * React.memo로 감싸므로 부모가 넘기는 콜백은 참조가 안정적이어야 한다.
  */
 import React, { useState } from "react";
 import { toast } from "react-hot-toast";
-import type { AppData } from "../../types";
 import {
   getGistToken,
   getGistTokenPersisted,
@@ -16,29 +16,28 @@ import {
   setGistTokenPersisted as gistSetTokenPersisted,
   getGistId,
   setGistId as gistSetId,
-  saveToGist,
-  loadFromGist,
 } from "../../services/gistSync";
-import { toUserDataJson } from "../../services/dataService";
 
 interface Props {
-  data: AppData;
-  onChangeData: (next: AppData) => void;
   /** 자동 Gist 동기화 ON/OFF */
   autoSyncEnabled: boolean;
   onAutoSyncChange?: (enabled: boolean) => void;
   /** 마지막 자동 저장/불러오기 시각 */
   gistLastPushAt?: string | null;
   gistLastPullAt?: string | null;
+  /** 정식 push 경로 (충돌 감지·lastPushAt·payload 기록 포함) — useGistSync.manualPush */
+  onManualPush?: () => Promise<void>;
+  /** 정식 pull 경로 (검증·안전 스냅샷·lastPullAt 갱신 포함) — useGistSync.manualPull */
+  onManualPull?: () => Promise<void>;
 }
 
 export const GistSyncCard: React.FC<Props> = React.memo(function GistSyncCard({
-  data,
-  onChangeData,
   autoSyncEnabled,
   onAutoSyncChange,
   gistLastPushAt,
-  gistLastPullAt
+  gistLastPullAt,
+  onManualPush,
+  onManualPull
 }) {
   const [gistToken, setGistToken] = useState(() => getGistToken());
   const [gistTokenPersist, setGistTokenPersist] = useState(() => getGistTokenPersisted());
@@ -49,23 +48,28 @@ export const GistSyncCard: React.FC<Props> = React.memo(function GistSyncCard({
   return (
     <div className="card">
       <div className="card-title">클라우드 동기화 (GitHub Gist)</div>
-      <p className="hint" style={{ marginBottom: 12 }}>
+      <p className="hint" style={{ marginBottom: 8 }}>
         GitHub Personal Access Token (gist 권한)으로 데이터를 Private Gist에 저장/불러옵니다.
         <br />다른 기기에서도 동일한 토큰 + Gist ID로 데이터를 공유할 수 있습니다.
+      </p>
+      <p className="hint" style={{ marginBottom: 12, color: "var(--warning)" }}>
+        주의: secret gist도 URL을 아는 사람은 누구나 열람할 수 있습니다. 민감한 정보가 있다면 공유에 유의하세요.
       </p>
       <label style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 10 }}>
         <span style={{ minWidth: 80 }}>Token</span>
         <input
           type="password"
           value={gistToken}
-          onChange={(e) => { setGistToken(e.target.value); gistSetToken(e.target.value, { persist: gistTokenPersist }); }}
+          onChange={(e) => setGistToken(e.target.value)}
+          // 키 입력마다 storage에 기록하지 않고 입력을 마친 시점(blur)에만 저장
+          onBlur={() => gistSetToken(gistToken, { persist: gistTokenPersist })}
           placeholder="ghp_xxxxxxxxxxxx"
           autoComplete="off"
           spellCheck={false}
           style={{ flex: 1, padding: "6px 10px", borderRadius: 6, fontFamily: "monospace", fontSize: 12 }}
         />
       </label>
-      <label style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 12, fontSize: 12, color: "var(--muted, #666)" }}>
+      <label style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 12, fontSize: 12, color: "var(--text-muted)" }}>
         <input
           type="checkbox"
           checked={gistTokenPersist}
@@ -98,16 +102,18 @@ export const GistSyncCard: React.FC<Props> = React.memo(function GistSyncCard({
             type="button"
             disabled={gistSyncing || !gistToken}
             onClick={async () => {
+              if (!onManualPush) {
+                toast.error("동기화 핸들러가 연결되지 않았습니다.");
+                return;
+              }
               setGistSyncing(true);
               try {
-                const jsonStr = toUserDataJson(data);
-                const result = await saveToGist(jsonStr);
-                setGistIdState(result.gistId);
-                setGistLastSync(result.updatedAt);
-                toast.success("Gist에 저장 완료");
-              } catch (e) {
-                const msg = e instanceof Error ? e.message : String(e);
-                toast.error(msg || "Gist 저장 실패");
+                // 정식 push 경로 — 충돌 감지·lastPushedPayload·GIST_LAST_PUSH_AT 갱신 포함
+                // (성공/실패/충돌 토스트는 manualPush 내부에서 처리)
+                await onManualPush();
+                // 첫 저장 시 Gist가 새로 생성됐을 수 있어 ID 필드 동기화
+                setGistIdState(getGistId());
+                setGistLastSync(new Date().toISOString());
               } finally {
                 setGistSyncing(false);
               }
@@ -123,27 +129,24 @@ export const GistSyncCard: React.FC<Props> = React.memo(function GistSyncCard({
             type="button"
             disabled={gistSyncing || !gistToken || !gistId}
             onClick={async () => {
+              if (!onManualPull) {
+                toast.error("동기화 핸들러가 연결되지 않았습니다.");
+                return;
+              }
+              if (!window.confirm("Gist의 데이터로 현재 데이터를 덮어씁니다.\n적용 직전 현재 데이터는 안전 스냅샷으로 보관됩니다. 계속할까요?")) {
+                return;
+              }
               setGistSyncing(true);
               try {
-                const result = await loadFromGist();
-                const parsed = JSON.parse(result.dataJson);
-                // Gist에 없는 API 캐시 데이터는 현재 메모리의 것을 유지
-                onChangeData({
-                  ...parsed,
-                  prices: parsed.prices?.length > 0 ? parsed.prices : data.prices,
-                  tickerDatabase: parsed.tickerDatabase?.length > 0 ? parsed.tickerDatabase : data.tickerDatabase,
-                  historicalDailyCloses: parsed.historicalDailyCloses?.length > 0 ? parsed.historicalDailyCloses : data.historicalDailyCloses,
-                });
-                setGistLastSync(result.updatedAt);
-                toast.success("Gist에서 불러오기 완료");
-              } catch (e) {
-                const msg = e instanceof Error ? e.message : String(e);
-                toast.error(msg || "Gist 불러오기 실패");
+                // 정식 pull 경로 — 데이터 검증·안전 스냅샷·lastPullAt 갱신 포함
+                // (성공/실패 토스트는 manualPull 내부에서 처리)
+                await onManualPull();
+                setGistLastSync(new Date().toISOString());
               } finally {
                 setGistSyncing(false);
               }
             }}
-            style={{ background: "var(--surface)", border: "2px solid orange", color: "var(--text)", padding: "8px 20px", borderRadius: 8, fontWeight: 600 }}
+            style={{ background: "var(--surface)", border: "2px solid var(--warning)", color: "var(--text)", padding: "8px 20px", borderRadius: 8, fontWeight: 600 }}
           >
             Gist에서 불러오기
           </button>

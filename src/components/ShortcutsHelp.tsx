@@ -1,4 +1,6 @@
 import React, { useEffect } from "react";
+import { useFocusTrap } from "../hooks/useFocusTrap";
+import { useModalStackEntry } from "../utils/modalStack";
 
 interface ShortcutsHelpProps {
   isOpen: boolean;
@@ -10,15 +12,16 @@ interface ShortcutGroup {
   shortcuts: { key: string; description: string }[];
 }
 
+// 실제 구현된 단축키만 안내 (useKeyboardShortcuts + shortcutManager 기준)
 const shortcutGroups: ShortcutGroup[] = [
   {
     title: "편집",
     shortcuts: [
       { key: "Ctrl+Z", description: "실행 취소" },
       { key: "Ctrl+Y / Ctrl+Shift+Z", description: "다시 실행" },
-      { key: "Ctrl+S", description: "백업" },
-      { key: "Ctrl+N", description: "가계부 추가 (가계부 탭으로 이동 후 금액 입력란 포커스)" },
-      { key: "Ctrl+Enter", description: "폼 제출" }
+      { key: "Ctrl+S", description: "수동 백업" },
+      { key: "Alt+N", description: "새 가계부 항목 (가계부 탭으로 이동 후 입력란 포커스)" },
+      { key: "Ctrl+Enter", description: "가계부 폼 제출" }
     ]
   },
   {
@@ -26,15 +29,16 @@ const shortcutGroups: ShortcutGroup[] = [
     shortcuts: [
       { key: "Alt+←", description: "이전 탭" },
       { key: "Alt+→", description: "다음 탭" },
+      { key: "Ctrl+1~9", description: "탭 바로 이동" },
       { key: "Tab", description: "다음 필드" },
       { key: "Shift+Tab", description: "이전 필드" }
     ]
   },
   {
-    title: "검색",
+    title: "검색·입력",
     shortcuts: [
       { key: "Ctrl+K", description: "전역 검색 열기" },
-      { key: "Ctrl+F", description: "현재 탭 검색" }
+      { key: "Ctrl+Shift+K", description: "빠른 가계부 입력" }
     ]
   },
   {
@@ -47,11 +51,15 @@ const shortcutGroups: ShortcutGroup[] = [
 ];
 
 export const ShortcutsHelp: React.FC<ShortcutsHelpProps> = ({ isOpen, onClose }) => {
+  const isTopModal = useModalStackEntry(isOpen);
+  const trapRef = useFocusTrap<HTMLDivElement>(isOpen);
+
   useEffect(() => {
     if (!isOpen) return;
 
     const handleKeyDown = (e: KeyboardEvent) => {
-      if (e.key === "Escape") {
+      // 다른 모달이 위에 열려 있으면 최상위 모달만 닫히게 양보
+      if (e.key === "Escape" && isTopModal()) {
         onClose();
       }
     };
@@ -60,7 +68,7 @@ export const ShortcutsHelp: React.FC<ShortcutsHelpProps> = ({ isOpen, onClose })
     return () => {
       window.removeEventListener("keydown", handleKeyDown);
     };
-  }, [isOpen, onClose]);
+  }, [isOpen, onClose, isTopModal]);
 
   if (!isOpen) return null;
 
@@ -76,7 +84,7 @@ export const ShortcutsHelp: React.FC<ShortcutsHelpProps> = ({ isOpen, onClose })
       aria-modal="true"
       aria-labelledby="shortcuts-help-title"
     >
-      <div className="modal" onClick={(e) => e.stopPropagation()}>
+      <div ref={trapRef} className="modal" onClick={(e) => e.stopPropagation()}>
         <div className="modal-header">
           <h3 id="shortcuts-help-title" style={{ margin: 0 }}>
             키보드 단축키

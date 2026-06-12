@@ -127,10 +127,27 @@ export function Section({ storageKey, title, defaultOpen = true, children }: {
   );
 }
 
-export function Insight({ title, color, bg, children }: { title: string; color: string; bg: string; children: React.ReactNode }) {
+/**
+ * 인사이트 텍스트 박스.
+ * tone 사용 권장 — 라이트/다크 모두 대응되는 CSS 변수 기반 tint 배경 + var(--text) 본문.
+ * (과거 하드코딩 라이트 bg(#d4edda 등)는 다크모드에서 본문이 읽히지 않는 문제가 있었음)
+ * color/bg는 tone으로 못 나타내는 커스텀 색(반투명 rgba 등)용 레거시 경로.
+ */
+export type InsightTone = "success" | "warning" | "info" | "danger";
+const INSIGHT_TONES: Record<InsightTone, { bg: string; title: string }> = {
+  success: { bg: "var(--primary-light)", title: "var(--success)" },
+  warning: { bg: "var(--warning-light)", title: "var(--warning)" },
+  info: { bg: "var(--accent-light)", title: "var(--accent)" },
+  danger: { bg: "var(--danger-light)", title: "var(--danger)" },
+};
+
+export function Insight({ title, color, bg, tone, children }: {
+  title: string; color?: string; bg?: string; tone?: InsightTone; children: React.ReactNode;
+}) {
+  const t = tone ? INSIGHT_TONES[tone] : null;
   return (
-    <div style={{ background: bg, padding: 14, borderRadius: 10, fontSize: 13, lineHeight: 1.7 }}>
-      <div style={{ fontWeight: 700, color, marginBottom: 4 }}>{title}</div>
+    <div style={{ background: t?.bg ?? bg, padding: 14, borderRadius: 10, fontSize: 13, lineHeight: 1.7, color: "var(--text)" }}>
+      <div style={{ fontWeight: 700, color: t?.title ?? color, marginBottom: 4 }}>{title}</div>
       {children}
     </div>
   );

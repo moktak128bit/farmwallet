@@ -5,7 +5,10 @@
  */
 import React, { useMemo } from "react";
 import { formatKRW } from "../../utils/formatter";
+import type { CategoryPresets } from "../../types";
 import type { LedgerDisplayRow } from "../../utils/ledgerHelpers";
+import { isCreditPayment, isInvestmentEntry, makeIsSavingsExpense } from "../../utils/category";
+import { useFxRateValue } from "../../context/FxRateContext";
 
 export type LedgerFilteredSummary = {
   expenseAmount: number;
@@ -53,6 +56,8 @@ interface Props {
   clearAllFilters: () => void;
   selectedMonths: Set<string>;
   filteredLedger: LedgerDisplayRow[];
+  /** 월별 비교 카드의 지출 기준(저축성지출 제외)을 요약 카드와 맞추기 위한 프리셋 */
+  categoryPresets: CategoryPresets;
 }
 
 const chipStyle: React.CSSProperties = {
@@ -97,11 +102,18 @@ export const LedgerSummarySection: React.FC<Props> = React.memo(function LedgerS
   setFilterTagsInput,
   clearAllFilters,
   selectedMonths,
-  filteredLedger
+  filteredLedger,
+  categoryPresets
 }) {
-  // 월별 비교 모드: 2개 이상 월 선택 시
+  // USD 항목 KRW 환산용 환율 (요약 카드와 동일 정책)
+  const fxRate = useFxRateValue();
+
+  // 월별 비교 모드: 2개 이상 월 선택 시.
+  // 지출 기준은 요약 카드(filteredSummary)와 동일 — 신용결제·재테크(사용자 정의 savings 포함) 제외.
   const monthSummaries = useMemo(() => {
     if (viewMode !== "monthly" || selectedMonths.size < 2) return null;
+    const isSavings = makeIsSavingsExpense(categoryPresets);
+    const toKrw = (l: LedgerDisplayRow) => (l.currency === "USD" && fxRate ? l.amount * fxRate : l.amount);
     const sortedMonths = Array.from(selectedMonths).sort();
     return sortedMonths.map((monthKey) => {
       const entries = filteredLedger.filter((l) => l.date && l.date.startsWith(monthKey));
@@ -109,17 +121,18 @@ export const LedgerSummarySection: React.FC<Props> = React.memo(function LedgerS
         .filter(
           (l) =>
             l.kind === "expense" &&
-            l.category !== "재테크" &&
-            l.category !== "저축성지출"
+            !isCreditPayment(l) &&
+            !isInvestmentEntry(l) &&
+            !isSavings(l)
         )
-        .reduce((s, l) => s + l.amount, 0);
+        .reduce((s, l) => s + toKrw(l), 0);
       const incomeAmount = entries
         .filter((l) => l.kind === "income")
-        .reduce((s, l) => s + l.amount, 0);
+        .reduce((s, l) => s + toKrw(l), 0);
       const total = incomeAmount - expenseAmount;
       return { monthKey, expenseAmount, incomeAmount, total };
     });
-  }, [viewMode, selectedMonths, filteredLedger]);
+  }, [viewMode, selectedMonths, filteredLedger, categoryPresets, fxRate]);
 
   return (
     <>
@@ -187,7 +200,7 @@ export const LedgerSummarySection: React.FC<Props> = React.memo(function LedgerS
               border: "1px solid rgba(245, 158, 11, 0.24)"
             }}>
               <span style={{ fontSize: 11, color: "var(--text-muted)", fontWeight: 600 }}>재테크</span>
-              <span style={{ fontSize: 18, fontWeight: 700, color: "#d97706" }}>
+              <span style={{ fontSize: 18, fontWeight: 700, color: "var(--warning)" }}>
                 {formatKRW(filteredSummary.savingsAmount)}
               </span>
             </div>

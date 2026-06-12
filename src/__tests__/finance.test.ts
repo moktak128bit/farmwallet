@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { tradeAmountKRW, isUSDStock, getCurrentHoldingsTickers, cryptoDisplaySymbol } from "../utils/finance";
+import { tradeAmountKRW, isUSDStock, getCurrentHoldingsTickers, cryptoDisplaySymbol, extractTickerFromText } from "../utils/finance";
 
 describe("tradeAmountKRW", () => {
   it("KRW 종목은 totalAmount 그대로 (환율 무시)", () => {
@@ -43,6 +43,40 @@ describe("tradeAmountKRW", () => {
     expect(isUSDStock("MSFT")).toBe(true);
     expect(isUSDStock("AAPL")).toBe(true);
     expect(isUSDStock("RKLB")).toBe(true);
+  });
+
+  it("회귀: isUSDStock — 5자 티커(GOOGL)·클래스 접미사(BRK.B)도 USD", () => {
+    expect(isUSDStock("GOOGL")).toBe(true);
+    expect(isUSDStock("BRK.B")).toBe(true);
+    expect(isUSDStock("AAPL")).toBe(true);
+    // 한국 6자 코드는 KRW
+    expect(isUSDStock("005930")).toBe(false);
+    // 암호화폐(CoinGecko ID)는 isCryptoStock 우선 — USD 주식 아님
+    expect(isUSDStock("bitcoin")).toBe(false);
+    expect(isUSDStock("solana")).toBe(false);
+    // 1자 미국 티커(F, T)도 USD 유지
+    expect(isUSDStock("F")).toBe(true);
+  });
+
+  it("회귀: 5자 USD 티커 환산 — GOOGL이 KRW로 잘못 합산되지 않음", () => {
+    expect(tradeAmountKRW({ ticker: "GOOGL", totalAmount: 100, fxRateAtTrade: 1400 })).toBe(140_000);
+    expect(tradeAmountKRW({ ticker: "BRK.B", totalAmount: 100 }, 1400)).toBe(140_000);
+  });
+});
+
+describe("extractTickerFromText", () => {
+  it("6자리 한국 코드 우선 추출", () => {
+    expect(extractTickerFromText("005930 - 삼성전자 배당")).toBe("005930");
+  });
+
+  it("영문 티커 추출", () => {
+    expect(extractTickerFromText("AAPL - Apple 배당")).toBe("AAPL");
+  });
+
+  it("회귀: 숫자-only 토큰('2024')을 티커로 오인하지 않음", () => {
+    expect(extractTickerFromText("2024 결산 이자")).toBeNull();
+    expect(extractTickerFromText("이자 (이율: 3.5%)")).toBeNull();
+    expect(extractTickerFromText("2024 AAPL 배당")).toBe("AAPL");
   });
 });
 

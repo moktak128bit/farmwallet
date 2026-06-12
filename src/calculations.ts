@@ -444,9 +444,16 @@ function isLoanRepaymentForLoan(entry: LedgerEntry, loanName: string): boolean {
   return (entry.description || "").includes(loanName);
 }
 
-/** detailCategory에 "이자"가 들어있으면 이자 상환, 아니면 원금 상환 (legacy 호환). */
+/**
+ * 이자 상환 여부 (아니면 원금 상환).
+ * - 현재 구조: detailCategory에 "이자" 포함 (category="지출", subCategory="대출상환")
+ * - 2세대 구조: category="대출상환" 플랫 메인 — 세부 항목이 subCategory에 있음
+ *   (debtShared.ts의 isLoanRepaymentEntry 매칭 세대와 대칭)
+ */
 export function isInterestRepayment(entry: LedgerEntry): boolean {
-  return (entry.detailCategory || "").includes("이자");
+  if ((entry.detailCategory || "").includes("이자")) return true;
+  if (entry.category === "대출상환" && (entry.subCategory || "").includes("이자")) return true;
+  return false;
 }
 
 /**

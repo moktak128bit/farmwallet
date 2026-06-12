@@ -1,7 +1,10 @@
 import React, { useEffect, useMemo, useRef, useState } from "react";
+import { toast } from "react-hot-toast";
 import type { Account, AppData, LedgerEntry, LedgerKind } from "../types";
 import { recommendCategory } from "../utils/categoryRecommendation";
 import { parseAmount } from "../utils/parseAmount";
+import { getTodayKST } from "../utils/date";
+import { newIdWithPrefix } from "../utils/id";
 
 interface Props {
   open: boolean;
@@ -10,7 +13,8 @@ interface Props {
   onAdd: (entry: LedgerEntry) => void;
 }
 
-const parseQuickInput = (text: string): { description: string; amount: number; kind: LedgerKind } => {
+// 테스트에서 직접 검증할 수 있도록 export (UI와 분리된 순수 함수)
+export const parseQuickInput = (text: string): { description: string; amount: number; kind: LedgerKind } => {
   const trimmed = text.trim();
   let kind: LedgerKind = "expense";
   let body = trimmed;
@@ -18,14 +22,23 @@ const parseQuickInput = (text: string): { description: string; amount: number; k
   else if (/^이체\s+/.test(trimmed)) { kind = "transfer"; body = trimmed.replace(/^이체\s+/, ""); }
   else if (/^지출\s+/.test(trimmed)) { kind = "expense"; body = trimmed.replace(/^지출\s+/, ""); }
 
-  // 금액 파싱: 공용 parseAmount 사용 (양수만 허용, NaN/과학표기 방어)
-  const amountMatch = body.match(/(\d{1,3}(?:,\d{3})*|\d+)(?:\s*원)?/);
+  // 금액 파싱: "원"이 붙은 토큰 우선, 없으면 마지막 숫자 토큰.
+  // 첫 숫자를 잡으면 "GS25 떡볶이 3000"에서 25를 금액으로 오인하던 문제 방지.
+  // 콤마 그룹 패턴(\d{1,3}(?:,\d{3})+)을 앞에 두되 콤마 없는 수는 \d+로 전체 매칭
+  // (기존 `\d{1,3}(?:,\d{3})*` 우선 패턴은 "3000"에서 "300"만 매칭하던 결함).
+  // 공용 parseAmount 사용 (양수만 허용, NaN/과학표기 방어)
+  const matches = Array.from(body.matchAll(/(\d{1,3}(?:,\d{3})+|\d+)(\s*원)?/g));
+  const amountMatch = matches.find((m) => m[2]) ?? matches[matches.length - 1];
   const amount = amountMatch ? parseAmount(amountMatch[1]) : 0;
   const description = amountMatch
-    ? body.replace(amountMatch[0], "").trim()
+    ? (body.slice(0, amountMatch.index ?? 0) + body.slice((amountMatch.index ?? 0) + amountMatch[0].length)).trim()
     : body.trim();
   return { description, amount, kind };
 };
+
+/** 추천이 없을 때 폼 저장 경로와 동일한 대분류 (category="" 저장 방지) */
+const fallbackCategoryOf = (kind: LedgerKind): string =>
+  kind === "income" ? "수입" : kind === "transfer" ? "이체" : "지출";
 
 export const QuickEntryModal: React.FC<Props> = ({ open, onClose, data, onAdd }) => {
   const [text, setText] = useState("");
@@ -63,17 +76,34 @@ export const QuickEntryModal: React.FC<Props> = ({ open, onClose, data, onAdd })
 
   const submit = () => {
     if (!parsed.description || parsed.amount <= 0) return;
-    const today = new Date().toISOString().slice(0, 10);
+
+    // 계좌 결정 — 이체는 출금·입금 둘 다 필요. 빠른 입력으로 입금 계좌를 정할 수 없으면 거부.
+    let fromAccountId: string | undefined;
+    let toAccountId: string | undefined;
+    if (parsed.kind === "income") {
+      toAccountId = defaultAccount?.id;
+    } else if (parsed.kind === "transfer") {
+      fromAccountId = recommendation?.fromAccountId ?? defaultAccount?.id;
+      toAccountId = recommendation?.toAccountId;
+      if (!fromAccountId || !toAccountId || fromAccountId === toAccountId) {
+        toast.error("이체는 입금 계좌를 정할 수 없어 빠른 입력으로 추가할 수 없습니다. 가계부 폼에서 입력해주세요.");
+        return;
+      }
+    } else {
+      fromAccountId = defaultAccount?.id;
+    }
+
     const entry: LedgerEntry = {
-      id: `qe-${Date.now()}`,
-      date: today,
+      id: newIdWithPrefix("L"),
+      date: getTodayKST(),
       kind: parsed.kind,
-      category: recommendation?.category ?? "",
-      subCategory: recommendation?.subCategory,
+      // 추천이 없으면 폼 저장 경로와 동일한 스키마로 저장 (category="" 방지)
+      category: recommendation?.category || fallbackCategoryOf(parsed.kind),
+      subCategory: recommendation?.subCategory || "(미분류)",
       description: parsed.description,
       amount: parsed.amount,
-      fromAccountId: parsed.kind === "income" ? undefined : defaultAccount?.id,
-      toAccountId: parsed.kind === "income" ? defaultAccount?.id : undefined
+      fromAccountId,
+      toAccountId
     };
     onAdd(entry);
     onClose();
@@ -118,7 +148,7 @@ export const QuickEntryModal: React.FC<Props> = ({ open, onClose, data, onAdd })
           <div style={{ marginTop: 12, fontSize: 13, color: "var(--text-muted)" }}>
             <div><strong>{parsed.kind === "income" ? "수입" : parsed.kind === "transfer" ? "이체" : "지출"}</strong>: {parsed.description}</div>
             <div>금액: {parsed.amount.toLocaleString()}원</div>
-            <div>카테고리: {recommendation?.category ?? "(미분류)"}{recommendation?.subCategory ? ` › ${recommendation.subCategory}` : ""}</div>
+            <div>카테고리: {recommendation?.category || fallbackCategoryOf(parsed.kind)} › {recommendation?.subCategory || "(미분류)"}</div>
             <div>계좌: {defaultAccount?.name ?? "(없음)"}</div>
           </div>
         )}

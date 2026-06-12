@@ -34,7 +34,7 @@ export interface ValidateLedgerFormArgs {
  * - 금액: > 0 (USD 이체는 소수점 허용)
  * - 계좌: kind별 from/to 필수
  * - 이체: from ≠ to
- * - 할인: 0 이상, 수입은 금액 초과 금지·순액 > 0
+ * - 할인: 금액(할인 전) 초과 금지 (수입·지출 공통), 수입은 순액 > 0
  * - 카테고리: kind별 필수 항목
  */
 export function validateLedgerForm({
@@ -98,14 +98,18 @@ export function validateLedgerForm({
   const allowLedgerDiscount =
     effectiveFormKind === "income" || effectiveFormKind === "expense";
   if (allowLedgerDiscount && form.discountAmount?.trim()) {
+    // parseAmount는 음수를 반환하지 않으므로 discount < 0 분기는 불필요 (dead branch 제거)
     const discount = parseAmount(form.discountAmount, false);
-    if (discount < 0) {
-      errors.discountAmount = "할인금액은 0 이상이어야 합니다";
-    } else if (effectiveFormKind === "income") {
+    if (effectiveFormKind === "income") {
       if (discount > parsedAmount) {
         errors.discountAmount = "할인은 금액(할인 전)을 넘을 수 없습니다";
       } else if (parsedAmount - discount <= 0) {
         errors.amount = "할인 후 실제 수입액은 0보다 커야 합니다";
+      }
+    } else if (effectiveFormKind === "expense") {
+      // 지출도 할인이 금액을 넘으면 음수 금액이 저장됨 — 동일하게 거부 (전액 할인=0원은 허용)
+      if (discount > parsedAmount) {
+        errors.discountAmount = "할인은 금액(할인 전)을 넘을 수 없습니다";
       }
     }
   }

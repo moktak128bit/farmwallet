@@ -1,42 +1,37 @@
 /**
  * 월별 추이 (최근 6개월) 카드 — DashboardPage에서 분리.
  * 월별 수입/지출/재테크 집계(monthlyTrendData)를 카드가 소유한다.
+ * 분류는 summaryMath.classifyLedgerFlow 단일 기준 — "재테크" 정의(저축·투자 이체 +
+ * 레거시 저축성지출)가 요약 카드·소비 캘린더와 동일하다.
  * React.memo로 감싸므로 부모가 넘기는 props는 안정적(store 참조·원시값)이어야 한다.
  */
 import React, { useMemo } from "react";
-import type { Account, CategoryPresets, LedgerEntry } from "../../types";
+import type { CategoryPresets, LedgerEntry } from "../../types";
 import { formatKRW } from "../../utils/formatter";
-import { isSavingsExpenseEntry } from "../../utils/category";
+import { classifyLedgerFlow, toKrwAmount } from "./summaryMath";
 
 interface Props {
   ledger: LedgerEntry[];
-  accounts: Account[];
   categoryPresets: CategoryPresets;
   fxRate: number | null;
 }
 
 export const MonthlyTrendCard: React.FC<Props> = React.memo(function MonthlyTrendCard({
   ledger,
-  accounts,
   categoryPresets,
   fxRate,
 }) {
   const monthlyTrendData = useMemo(() => {
-    const toKrw = (entry: LedgerEntry) =>
-      entry.currency === "USD" && fxRate ? entry.amount * fxRate : entry.amount;
     const map = new Map<string, { income: number; expense: number; investing: number }>();
     ledger.forEach((entry) => {
       if (!entry.date) return;
+      // 단일 분류 기준: 신용결제·일반 이체 제외, 레거시 저축성지출·저축/투자이체 = 재테크
+      const flow = classifyLedgerFlow(entry, categoryPresets);
+      if (!flow) return;
       const m = entry.date.slice(0, 7);
       if (!map.has(m)) map.set(m, { income: 0, expense: 0, investing: 0 });
       const row = map.get(m)!;
-      if (entry.kind === "income") row.income += toKrw(entry);
-      else if (entry.kind === "expense") {
-        // 신용결제는 카드 결제 이체로 실제 지출의 중복 — expense 집계에서 제외 (topCategoriesThisMonth와 일관)
-        if (entry.category === "신용결제") return;
-        if (isSavingsExpenseEntry(entry, accounts, categoryPresets)) row.investing += toKrw(entry);
-        else row.expense += toKrw(entry);
-      }
+      row[flow] += toKrwAmount(entry, fxRate);
     });
     return Array.from(map.entries())
       .sort((a, b) => a[0].localeCompare(b[0]))
@@ -45,11 +40,23 @@ export const MonthlyTrendCard: React.FC<Props> = React.memo(function MonthlyTren
         month: month.slice(5),
         ...data
       }));
-  }, [ledger, fxRate, accounts, categoryPresets]);
+  }, [ledger, fxRate, categoryPresets]);
 
   const maxVal = Math.max(
     ...monthlyTrendData.map((r) => Math.max(r.income, r.expense + r.investing))
   );
+
+  // 빈 상태 — 집계할 기록이 없으면 범례 대신 안내 문구
+  if (monthlyTrendData.length === 0) {
+    return (
+      <div className="card">
+        <div className="card-title">월별 추이 (최근 6개월)</div>
+        <p style={{ marginTop: 12, fontSize: 14, color: "var(--text-muted)" }}>
+          아직 집계할 기록이 없습니다. 가계부에 수입·지출을 입력하면 월별 추이가 표시됩니다.
+        </p>
+      </div>
+    );
+  }
 
   return (
     <div className="card">

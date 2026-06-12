@@ -164,7 +164,7 @@ export const Autocomplete: React.FC<AutocompleteProps> = ({
                   padding: "8px 12px",
                   cursor: "pointer",
                   borderBottom: index < options.length - 1 ? "1px solid var(--border, #eee)" : "none",
-                  backgroundColor: isHighlighted ? "var(--hover-bg, #f5f5f5)" : "transparent",
+                  backgroundColor: isHighlighted ? "var(--surface-hover)" : "transparent",
                   color: "var(--text, #000)"
                 }}
               >
@@ -174,7 +174,7 @@ export const Autocomplete: React.FC<AutocompleteProps> = ({
                   <div>
                     <div style={{ fontWeight: 500 }}>{option.value}</div>
                     {(option.label || option.subLabel) && (
-                      <div style={{ fontSize: 12, color: "var(--muted, #666)", marginTop: 2 }}>
+                      <div style={{ fontSize: 12, color: "var(--text-muted)", marginTop: 2 }}>
                         {[option.label, option.subLabel].filter(Boolean).join(" • ")}
                       </div>
                     )}

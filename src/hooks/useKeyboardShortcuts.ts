@@ -27,20 +27,31 @@ export function useKeyboardShortcuts({
 }: UseKeyboardShortcutsOptions) {
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
-      // Ctrl+S (저장)
+      // Ctrl+S (수동 백업) — 입력 필드 포커스 중에도 동작 (브라우저 저장 다이얼로그 방지 위해 preventDefault 필수)
       if ((e.ctrlKey || e.metaKey) && e.key === "s") {
         e.preventDefault();
         onSave?.();
         return;
       }
 
-      // Ctrl+N (가계부 추가)
-      if ((e.ctrlKey || e.metaKey) && e.key === "n") {
+      // 입력 필드(INPUT/TEXTAREA/contentEditable) 포커스 중에는 나머지 전역 단축키 무시
+      // — 텍스트 입력 중 Ctrl+Z가 앱 데이터 전체 undo로 발동하는 문제 방지.
+      //   Ctrl+Enter(폼 제출)·ESC는 shortcutManager 경로에서 별도 처리됨.
+      const target = e.target as HTMLElement | null;
+      const isInputFocused =
+        !!target &&
+        (target.tagName === "INPUT" ||
+          target.tagName === "TEXTAREA" ||
+          target.isContentEditable);
+      if (isInputFocused) return;
+
+      // Alt+N (가계부 추가) — Ctrl+N은 브라우저 예약키(새 창)라 동작하지 않아 Alt+N으로 재매핑
+      if (e.altKey && !e.ctrlKey && !e.shiftKey && e.key.toLowerCase() === "n") {
         e.preventDefault();
         onAddLedger?.();
         return;
       }
-      
+
       // Ctrl+Z (실행 취소)
       if (e.ctrlKey && e.key === "z" && !e.shiftKey && !e.altKey) {
         e.preventDefault();

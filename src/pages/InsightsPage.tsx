@@ -15,7 +15,7 @@ import { useAppStore } from "../store/appStore";
 import { useDateAccountId } from "../hooks/useDateAccountSettings";
 import { useAccountTimelineRows } from "../hooks/useAccountTimelineRows";
 import { buildAdjustedPrices, buildTimelineMonthRange } from "../utils/accountTimeline";
-import { getThisMonthKST } from "../utils/date";
+import { getThisMonthKST, getTodayKST, shiftMonth, getLastDayOfMonth } from "../utils/date";
 import { useInsightsData } from "../features/insights/useInsightsData";
 import { InsightsHeader } from "../features/insights/InsightsHeader";
 import { InsightsTabNav, type TabId } from "../features/insights/InsightsTabNav";
@@ -56,9 +56,12 @@ export const InsightsView: React.FC<Props> = ({ accounts, ledger, trades = [], p
   const [periodMonths, setPeriodMonths] = useState<number | null>(null); // null = 전체
   const { filteredLedger, filteredTrades } = useMemo(() => {
     if (periodMonths == null) return { filteredLedger: ledger, filteredTrades: trades };
-    const cutoff = new Date();
-    cutoff.setMonth(cutoff.getMonth() - periodMonths);
-    const cutoffIso = cutoff.toISOString().slice(0, 10);
+    // 기간 cutoff — KST 기준 + setMonth 월말 오버플로 회피 (shiftMonth로 월 이동 후 일자는 말일로 클램프)
+    const today = getTodayKST(); // "YYYY-MM-DD"
+    const cutoffMonth = shiftMonth(today.slice(0, 7), -periodMonths);
+    const [cy, cm] = cutoffMonth.split("-").map(Number);
+    const day = Math.min(Number(today.slice(8, 10)), getLastDayOfMonth(cy, cm));
+    const cutoffIso = `${cutoffMonth}-${String(day).padStart(2, "0")}`;
     return {
       filteredLedger: ledger.filter((l) => (l.date ?? "") >= cutoffIso),
       filteredTrades: trades.filter((t) => (t.date ?? "") >= cutoffIso),

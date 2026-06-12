@@ -14,6 +14,7 @@ import { toast } from "react-hot-toast";
 import type { Account, LedgerEntry, PositionRow } from "../../types";
 import { formatKRW, formatShortDate } from "../../utils/formatter";
 import { canonicalTickerForMatch, extractTickerFromText } from "../../utils/finance";
+import { buildDividendNote, parseExDateFromNote } from "../../utils/dividend";
 import { useAppStore } from "../../store/appStore";
 import type { DividendRow, TabType } from "./types";
 
@@ -90,7 +91,7 @@ export const IncomeRecordsSection: React.FC<Props> = React.memo(function IncomeR
                 borderBottom: "2px solid var(--border)"
               }}>
                 <h4 style={{ margin: 0, fontSize: 18, fontWeight: 600 }}>{month}</h4>
-                <div style={{ fontSize: 16, fontWeight: 600, color: "#10b981" }}>
+                <div style={{ fontSize: 16, fontWeight: 600, color: "var(--success)" }}>
                   배당 합계: {formatKRW(Math.round(monthDividendTotal))}
                 </div>
               </div>
@@ -159,8 +160,13 @@ export const IncomeRecordsSection: React.FC<Props> = React.memo(function IncomeR
                         // 배당금액 수정
                         const newAmount = editingAmount ? Number(editingAmount) : ledgerEntry.amount;
 
-                        // 보유주식은 note 필드에 저장 (나중에 참조용)
-                        const newNote = editingQuantity ? `보유주식: ${editingQuantity}` : ledgerEntry.note;
+                        // 보유주식은 note 필드에 저장 — 기존 note의 "배당락일:" 메타는 보존하며 보유주식만 갱신
+                        const existingExDate = parseExDateFromNote(ledgerEntry.note) ?? undefined;
+                        const editedQty = editingQuantity ? parseInt(editingQuantity, 10) : NaN;
+                        const newNote =
+                          editingQuantity && Number.isInteger(editedQty) && editedQty >= 0
+                            ? buildDividendNote(editedQty, existingExDate)
+                            : ledgerEntry.note;
 
                         // 날짜, 계좌 수정
                         const newDate = editingDate || ledgerEntry.date || "";
@@ -201,7 +207,7 @@ export const IncomeRecordsSection: React.FC<Props> = React.memo(function IncomeR
 
                       return (
                         <tr key={`${month}-${r.ticker}-${idx}`}>
-                          <td style={{ fontSize: 13, color: "#666", position: "relative" }}>
+                          <td style={{ fontSize: 13, color: "var(--text-muted)", position: "relative" }}>
                             {isEditing ? (
                               <input
                                 type="date"
@@ -211,7 +217,9 @@ export const IncomeRecordsSection: React.FC<Props> = React.memo(function IncomeR
                                 onKeyDown={(e) => {
                                   if (e.key === "Enter") {
                                     e.preventDefault();
-                                    (e.currentTarget.closest("tr")?.querySelector("input[type='text']:nth-of-type(1)") as HTMLInputElement)?.focus();
+                                    // 다음 입력(티커)으로 이동 — 각 input은 서로 다른 td에 있어 nth-of-type은 매칭 불가
+                                    const textInputs = e.currentTarget.closest("tr")?.querySelectorAll<HTMLInputElement>("input[type='text']");
+                                    textInputs?.[0]?.focus();
                                   } else if (e.key === "Escape") cancelEdit();
                                 }}
                                 style={{
@@ -245,8 +253,9 @@ export const IncomeRecordsSection: React.FC<Props> = React.memo(function IncomeR
                                 onKeyDown={(e) => {
                                   if (e.key === "Enter") {
                                     e.preventDefault();
-                                    const nameInput = e.currentTarget.closest("tr")?.querySelector("input[type='text']:nth-of-type(2)") as HTMLInputElement;
-                                    nameInput?.focus();
+                                    // 다음 입력(종목명)으로 이동 — 행 내 text input 중 두 번째
+                                    const textInputs = e.currentTarget.closest("tr")?.querySelectorAll<HTMLInputElement>("input[type='text']");
+                                    textInputs?.[1]?.focus();
                                   } else if (e.key === "Escape") cancelEdit();
                                   else if (e.key === "Tab") { /* 기본 동작 */ }
                                 }}
@@ -284,8 +293,9 @@ export const IncomeRecordsSection: React.FC<Props> = React.memo(function IncomeR
                                 onKeyDown={(e) => {
                                   if (e.key === "Enter") {
                                     e.preventDefault();
-                                    const quantityInput = e.currentTarget.closest("tr")?.querySelector("input[type='number']:nth-of-type(1)") as HTMLInputElement;
-                                    quantityInput?.focus();
+                                    // 다음 입력(보유주수)으로 이동 — 행 내 number input: [0]=주당배당금, [1]=보유주수, [2]=총배당금
+                                    const numberInputs = e.currentTarget.closest("tr")?.querySelectorAll<HTMLInputElement>("input[type='number']");
+                                    numberInputs?.[1]?.focus();
                                   } else if (e.key === "Escape") cancelEdit();
                                   else if (e.key === "Tab") { /* 기본 동작 */ }
                                 }}
@@ -329,8 +339,9 @@ export const IncomeRecordsSection: React.FC<Props> = React.memo(function IncomeR
                                   onKeyDown={(e) => {
                                     if (e.key === "Enter") {
                                       e.preventDefault();
-                                      const quantityInput = e.currentTarget.closest("tr")?.querySelector("input[type='number']:nth-of-type(2)") as HTMLInputElement;
-                                      quantityInput?.focus();
+                                      // 다음 입력(보유주수)으로 이동 — number input: [0]=주당배당금, [1]=보유주수, [2]=총배당금
+                                      const numberInputs = e.currentTarget.closest("tr")?.querySelectorAll<HTMLInputElement>("input[type='number']");
+                                      numberInputs?.[1]?.focus();
                                     } else if (e.key === "Escape") cancelEdit();
                                   }}
                                   style={{
@@ -366,9 +377,9 @@ export const IncomeRecordsSection: React.FC<Props> = React.memo(function IncomeR
                                 onKeyDown={(e) => {
                                   if (e.key === "Enter") {
                                     e.preventDefault();
-                                    // DPS가 number:1로 추가됐으므로 amount는 number:3
-                                    const amountInput = e.currentTarget.closest("tr")?.querySelector("input[type='number']:nth-of-type(3)") as HTMLInputElement;
-                                    amountInput?.focus();
+                                    // 다음 입력(총배당금)으로 이동 — number input: [0]=주당배당금, [1]=보유주수, [2]=총배당금
+                                    const numberInputs = e.currentTarget.closest("tr")?.querySelectorAll<HTMLInputElement>("input[type='number']");
+                                    numberInputs?.[2]?.focus();
                                   } else if (e.key === "Escape") cancelEdit();
                                   else if (e.key === "Tab") { /* 기본 동작 */ }
                                 }}
@@ -406,8 +417,8 @@ export const IncomeRecordsSection: React.FC<Props> = React.memo(function IncomeR
                                 onBlur={(e) => handleSaveEdit(e)}
                                 onKeyDown={(e) => {
                                   if (e.key === "Enter") {
+                                    // blur가 onBlur(handleSaveEdit)를 호출하므로 직접 호출하지 않음 (저장 2회 실행 방지)
                                     e.currentTarget.blur();
-                                    handleSaveEdit();
                                   } else if (e.key === "Escape") cancelEdit();
                                   else if (e.key === "Tab") { /* 기본 동작 */ }
                                 }}
@@ -451,7 +462,7 @@ export const IncomeRecordsSection: React.FC<Props> = React.memo(function IncomeR
                               </span>
                             ) : "-"}
                           </td>
-                          <td style={{ fontSize: 13, color: "#666", position: "relative" }}>
+                          <td style={{ fontSize: 13, color: "var(--text-muted)", position: "relative" }}>
                             {isEditing ? (
                               <select
                                 value={editingAccountId}
@@ -581,7 +592,7 @@ export const IncomeRecordsSection: React.FC<Props> = React.memo(function IncomeR
                                   style={{
                                     background: "none",
                                     border: "none",
-                                    color: "#ef4444",
+                                    color: "var(--danger)",
                                     cursor: "pointer",
                                     fontSize: 18,
                                     padding: "4px 8px",
@@ -591,7 +602,7 @@ export const IncomeRecordsSection: React.FC<Props> = React.memo(function IncomeR
                                     justifyContent: "center"
                                   }}
                                   onMouseEnter={(e) => {
-                                    e.currentTarget.style.backgroundColor = "#fee2e2";
+                                    e.currentTarget.style.backgroundColor = "var(--danger-light)";
                                   }}
                                   onMouseLeave={(e) => {
                                     e.currentTarget.style.backgroundColor = "transparent";
@@ -637,7 +648,7 @@ export const IncomeRecordsSection: React.FC<Props> = React.memo(function IncomeR
                 borderBottom: "2px solid var(--border)"
               }}>
                 <h4 style={{ margin: 0, fontSize: 18, fontWeight: 600 }}>{month}</h4>
-                <div style={{ fontSize: 16, fontWeight: 600, color: "#10b981" }}>
+                <div style={{ fontSize: 16, fontWeight: 600, color: "var(--success)" }}>
                   이자 합계: {formatKRW(Math.round(monthInterestTotal))}
                 </div>
               </div>
@@ -690,7 +701,7 @@ export const IncomeRecordsSection: React.FC<Props> = React.memo(function IncomeR
                     };
                     return (
                       <tr key={`${month}-interest-${idx}`}>
-                        <td style={{ fontSize: 13, color: "#666", position: "relative" }}>
+                        <td style={{ fontSize: 13, color: "var(--text-muted)", position: "relative" }}>
                           {isEditing ? (
                             <input
                               type="date"
@@ -733,7 +744,7 @@ export const IncomeRecordsSection: React.FC<Props> = React.memo(function IncomeR
                             formatKRW(Math.round(r.amount))
                           )}
                         </td>
-                        <td style={{ fontSize: 13, color: "#666", position: "relative" }}>
+                        <td style={{ fontSize: 13, color: "var(--text-muted)", position: "relative" }}>
                           {isEditing ? (
                             <select
                               value={editingAccountId}
@@ -784,7 +795,7 @@ export const IncomeRecordsSection: React.FC<Props> = React.memo(function IncomeR
                                     );
                                   }
                                 }}
-                                style={{ background: "none", border: "none", color: "#ef4444", cursor: "pointer", fontSize: 18, padding: "4px 8px" }}
+                                style={{ background: "none", border: "none", color: "var(--danger)", cursor: "pointer", fontSize: 18, padding: "4px 8px" }}
                                 title="삭제"
                               >
                                 ×

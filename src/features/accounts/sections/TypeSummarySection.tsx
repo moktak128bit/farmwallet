@@ -8,6 +8,8 @@ import React from "react";
 interface TypeSummary {
   checking: number;
   savings: number;
+  /** 기타(other) 유형 계좌 잔액 — 순자산(total)에 포함 */
+  other: number;
   cardNet: number;
   cardDebt: number;
   cardCredit: number;
@@ -65,6 +67,14 @@ export const TypeSummarySection = React.memo(function TypeSummarySection({ summa
             {formatKRW(summary.securities)}
           </span>
         </div>
+        {summary.other !== 0 && (
+          <div style={{ display: "flex", flexDirection: "column", gap: 4 }}>
+            <span style={{ fontSize: 12, color: "var(--text-muted)", fontWeight: 600 }}>기타</span>
+            <span style={{ fontSize: 18, fontWeight: 700, color: "var(--primary)" }}>
+              {formatKRW(summary.other)}
+            </span>
+          </div>
+        )}
         <div style={{
           display: "flex",
           flexDirection: "column",

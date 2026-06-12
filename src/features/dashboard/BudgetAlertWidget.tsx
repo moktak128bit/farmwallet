@@ -3,24 +3,24 @@ import type { LedgerEntry, BudgetGoal, Account } from "../../types";
 import { BUDGET_ALL_CATEGORY } from "../../types";
 import { formatNumber } from "../../utils/formatter";
 import { isCreditPayment } from "../../utils/category";
+import { getThisMonthKST } from "../../utils/date";
+import { toKrwAmount } from "./summaryMath";
 
 interface Props {
   ledger: LedgerEntry[];
   budgetGoals?: BudgetGoal[];
   /** 예산 표시에 계좌명 변환용 (excludeAccountIds → 이름) */
   accounts?: Account[];
+  /** USD 지출 원화 환산용 — 다른 위젯과 동일 기준 */
+  fxRate?: number | null;
 }
 
 const monthOf = (d: string) => (d || "").slice(0, 7);
 
-const currentMonthKey = () => {
-  const now = new Date();
-  return now.getFullYear() + "-" + String(now.getMonth() + 1).padStart(2, "0");
-};
-
 // React.memo — 부모(DashboardPage)가 넘기는 props는 안정적(store 참조)이어야 한다.
-export const BudgetAlertWidget: React.FC<Props> = React.memo(function BudgetAlertWidget({ ledger, budgetGoals, accounts }) {
-  const currentMonth = useMemo(() => currentMonthKey(), []);
+export const BudgetAlertWidget: React.FC<Props> = React.memo(function BudgetAlertWidget({ ledger, budgetGoals, accounts, fxRate = null }) {
+  // 이번달 키 — 다른 위젯과 동일하게 KST 기준 (로컬 타임존 new Date() 사용 금지)
+  const currentMonth = useMemo(() => getThisMonthKST(), []);
 
   const accountNameById = useMemo(() => {
     const m = new Map<string, string>();
@@ -38,7 +38,8 @@ export const BudgetAlertWidget: React.FC<Props> = React.memo(function BudgetAler
     const catSpend = new Map<string, number>();
     let totalExpense = 0;
     for (const l of monthExp) {
-      const amt = Number(l.amount);
+      // USD 지출은 환율로 원화 환산 (summaryMath.toKrwAmount — 다른 위젯과 동일 정책)
+      const amt = toKrwAmount(l, fxRate);
       const cat = l.subCategory || l.category || "";
       if (cat) catSpend.set(cat, (catSpend.get(cat) ?? 0) + amt);
       if (l.category && l.category !== cat) {
@@ -63,7 +64,7 @@ export const BudgetAlertWidget: React.FC<Props> = React.memo(function BudgetAler
                   !exclCats.has(l.subCategory || "") &&
                   !exclAccts.has(l.fromAccountId || "")
                 )
-                .reduce((s, l) => s + Number(l.amount), 0);
+                .reduce((s, l) => s + toKrwAmount(l, fxRate), 0);
         } else {
           spent = catSpend.get(g.category) ?? 0;
         }
@@ -71,7 +72,7 @@ export const BudgetAlertWidget: React.FC<Props> = React.memo(function BudgetAler
         return { ...g, spent, pct };
       })
       .sort((a, b) => b.pct - a.pct);
-  }, [ledger, budgetGoals, currentMonth]);
+  }, [ledger, budgetGoals, currentMonth, fxRate]);
 
   if (alerts.length === 0) {
     return (
@@ -92,14 +93,15 @@ export const BudgetAlertWidget: React.FC<Props> = React.memo(function BudgetAler
       <h3 style={{ margin: "0 0 12px", fontSize: 18, display: "flex", alignItems: "center", gap: 8 }}>
         예산 관리
         {overBudget.length > 0 && (
-          <span style={{ fontSize: 13, background: "#ef4444", color: "#fff", borderRadius: 10, padding: "3px 10px" }}>
+          <span style={{ fontSize: 13, background: "var(--danger)", color: "#fff", borderRadius: 10, padding: "3px 10px" }}>
             {overBudget.length}건 초과
           </span>
         )}
       </h3>
       <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
         {alerts.slice(0, 8).map((a) => {
-          const color = a.pct >= 100 ? "#ef4444" : a.pct >= 80 ? "#f59e0b" : "#22c55e";
+          // 상태색 컨벤션: 초과=danger / 임박=warning / 여유=success (테마 변수 — 다크모드 대응)
+          const color = a.pct >= 100 ? "var(--danger)" : a.pct >= 80 ? "var(--warning)" : "var(--success)";
           return (
             <div key={a.id}>
               <div style={{ display: "flex", justifyContent: "space-between", fontSize: 15, marginBottom: 6 }}>
@@ -123,7 +125,14 @@ export const BudgetAlertWidget: React.FC<Props> = React.memo(function BudgetAler
                   <span style={{ marginLeft: 6, fontSize: 13 }}>({Math.round(a.pct)}%)</span>
                 </span>
               </div>
-              <div style={{ height: 10, background: "var(--border)", borderRadius: 5, overflow: "hidden" }}>
+              <div
+                role="progressbar"
+                aria-valuemin={0}
+                aria-valuemax={100}
+                aria-valuenow={Math.round(Math.min(100, Math.max(0, a.pct)))}
+                aria-label={`${a.category === BUDGET_ALL_CATEGORY ? "전체" : a.category} 예산 사용률 ${Math.round(a.pct)}%`}
+                style={{ height: 10, background: "var(--border)", borderRadius: 5, overflow: "hidden" }}
+              >
                 <div
                   style={{
                     width: `${Math.min(100, Math.max(0, a.pct))}%`,
@@ -146,9 +155,9 @@ export const BudgetAlertWidget: React.FC<Props> = React.memo(function BudgetAler
             padding: "10px 14px",
             borderRadius: 6,
             fontSize: 15,
-            background: overBudget.length > 0 ? "#fef2f2" : "#fffbeb",
-            color: overBudget.length > 0 ? "#b91c1c" : "#92400e",
-            border: `1px solid ${overBudget.length > 0 ? "#fecaca" : "#fde68a"}`,
+            background: overBudget.length > 0 ? "var(--danger-light)" : "var(--warning-light)",
+            color: overBudget.length > 0 ? "var(--danger)" : "var(--warning)",
+            border: `1px solid ${overBudget.length > 0 ? "var(--danger)" : "var(--warning)"}`,
           }}
         >
           {overBudget.length > 0

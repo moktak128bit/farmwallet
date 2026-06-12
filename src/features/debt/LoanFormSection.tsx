@@ -14,6 +14,7 @@
 import React, { useImperativeHandle, useState } from "react";
 import type { Loan, RepaymentMethod } from "../../types";
 import { parseAmount } from "../../utils/parseAmount";
+import { getTodayKST } from "../../utils/date";
 
 /** Loan.subCategory용 — 대출 종류 */
 const LOAN_TYPE_OPTIONS = ["학자금대출", "주담대", "개인대출", "기타대출"];
@@ -33,7 +34,8 @@ const createEmptyForm = () => ({
   loanAmount: "",
   annualInterestRate: "",
   repaymentMethod: "equal_payment" as RepaymentMethod,
-  loanDate: new Date().toISOString().slice(0, 10),
+  // KST 기준 오늘 — UTC 변환 시 00:00~08:59에 전날로 기록되는 문제 방지
+  loanDate: getTodayKST(),
   maturityDate: "",
   gracePeriodYears: ""
 });

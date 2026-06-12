@@ -109,17 +109,8 @@ export const LedgerEntryForm = React.memo(React.forwardRef<LedgerEntryFormHandle
     const latestFormRef = useRef(form);
     useEffect(() => { latestFormRef.current = form; });
     const [showReceiptScanner, setShowReceiptScanner] = useState(false);
-    // 폼 확장/축소 상태 (progressive disclosure)
-    const [formExpanded] = useState<boolean>(() => {
-      try { return localStorage.getItem("fw-ledger-form-expanded") === "true"; } catch { return false; }
-    });
 
     // 폼 검증 오류는 validateForm useMemo에서 직접 계산됨
-
-    // 폼 확장 상태 localStorage 동기화
-    useEffect(() => {
-      try { localStorage.setItem("fw-ledger-form-expanded", String(formExpanded)); } catch {}
-    }, [formExpanded]);
 
     // 탭 전환 시 필터는 유지 — 필터는 폼과 독립이라 사용자가 의도적으로 끄거나 바꿀 때만 변경됨
 
@@ -216,6 +207,13 @@ export const LedgerEntryForm = React.memo(React.forwardRef<LedgerEntryFormHandle
       return sharedFormatAmount(value, { allowDecimal });
     }, []);
 
+    // 금액 입력 onChange — JSX 속성 안 useCallback(rules-of-hooks 위반 패턴)을 컴포넌트 상단으로 이동
+    const handleAmountChange = useCallback((e: React.ChangeEvent<HTMLInputElement>) => {
+      const allowDec = effectiveFormKind === "transfer" && form.currency === "USD";
+      const formatted = formatAmount(e.target.value, allowDec);
+      setForm((prev) => ({ ...prev, amount: formatted }));
+    }, [formatAmount, effectiveFormKind, form.currency]);
+
     useEffect(() => {
       // 복사 중일 때는 폼을 초기화하지 않음
       if (isCopyingRef.current) {
@@ -244,7 +242,8 @@ export const LedgerEntryForm = React.memo(React.forwardRef<LedgerEntryFormHandle
     const formErrors = validateForm;
     const isFormValid = Object.keys(formErrors).length === 0;
 
-    const submitForm = useCallback((keepContext: boolean) => {
+    // 제출 후에는 항상 컨텍스트 유지(구분/카테고리/계좌) + 금액·설명만 비움 — 모든 제출 경로 동일 동작
+    const submitForm = useCallback(() => {
       // 검증 실패 시 제출 방지
       if (!isFormValid) {
         const firstError = Object.values(validateForm)[0];
@@ -376,35 +375,26 @@ export const LedgerEntryForm = React.memo(React.forwardRef<LedgerEntryFormHandle
         toast.success(msg);
       }
 
-      setForm((prev) => {
-        if (keepContext) {
-          // 같은 구분/카테고리/계좌를 유지하고 금액만 비우기
-          return {
-            ...prev,
-            id: undefined,
-            date: form.date,
-            kind: kindForTab,
-            isFixedExpense: isFixed,
-            mainCategory: "",
-            subCategory: "",
-            description: form.description,
-            fromAccountId: form.fromAccountId,
-            toAccountId: form.toAccountId,
-            amount: "",
-            ...(allowLedgerDiscount ? { discountAmount: "" } : {})
-          };
-        }
-        return {
-          ...createDefaultForm(),
-          kind: kindForTab,
-          isFixedExpense: false
-        };
-      });
+      // 같은 구분/카테고리/계좌를 유지하고 금액·설명만 비우기 (연속 입력 최적화)
+      setForm((prev) => ({
+        ...prev,
+        id: undefined,
+        date: form.date,
+        kind: kindForTab,
+        isFixedExpense: isFixed,
+        mainCategory: form.mainCategory,
+        subCategory: form.subCategory,
+        description: "",
+        fromAccountId: form.fromAccountId,
+        toAccountId: form.toAccountId,
+        amount: "",
+        ...(allowLedgerDiscount ? { discountAmount: "" } : {})
+      }));
     }, [isFormValid, validateForm, kindForTab, form, parseAmount, effectiveFormKind, ledger, onChangeLedger, onEntryAdded, ledgerTab, dailyBudgetConfig]);
 
     const handleSubmit = (e: React.FormEvent) => {
       e.preventDefault();
-      submitForm(false);
+      submitForm();
     };
 
     const startCopy = useCallback((entry: LedgerEntry) => {
@@ -416,14 +406,26 @@ export const LedgerEntryForm = React.memo(React.forwardRef<LedgerEntryFormHandle
               ? "transfer"
               : "expense";
 
-        // 폼 데이터 준비
+        // 폼 데이터 준비 — 저장 스키마 → 폼 스키마 매핑
+        //   지출 저장: category="지출", subCategory=중분류, detailCategory=소분류
+        //   폼:        mainCategory=중분류,  subCategory=소분류
         const newForm = {
           id: undefined as string | undefined,
           date: entry.date,
           kind: entry.kind,
           isFixedExpense: entry.isFixedExpense ?? false,
-          mainCategory: entry.kind === "income" ? "" : (entry.category || ""),
-          subCategory: entry.kind === "income" ? (entry.subCategory || entry.category || "") : (entry.subCategory || ""),
+          mainCategory:
+            entry.kind === "income"
+              ? ""
+              : entry.kind === "transfer"
+                ? "이체"
+                : (entry.subCategory || ""),
+          subCategory:
+            entry.kind === "income"
+              ? (entry.subCategory || entry.category || "")
+              : entry.kind === "transfer"
+                ? (entry.subCategory || "")
+                : (entry.detailCategory || ""),
           description: entry.description || "",
           fromAccountId: entry.fromAccountId ?? "",
           toAccountId: entry.toAccountId ?? "",
@@ -537,6 +539,7 @@ export const LedgerEntryForm = React.memo(React.forwardRef<LedgerEntryFormHandle
     const dateInputRef = useRef<HTMLInputElement>(null);
 
     // 키보드 단축키 처리 (close-modal/ESC는 셀 편집 취소용 — 부모 소유)
+    // Ctrl+Enter(submit-form) = 폼 제출. Ctrl+S는 앱 전역 백업 전용 — 여기서 처리하지 않음.
     useEffect(() => {
       const handlers = [
         {
@@ -548,9 +551,9 @@ export const LedgerEntryForm = React.memo(React.forwardRef<LedgerEntryFormHandle
           enabled: () => !isEditing
         },
         {
-          action: "save-entry" as ShortcutAction,
+          action: "submit-form" as ShortcutAction,
           handler: () => {
-            submitForm(false);
+            submitForm();
           },
           enabled: () => {
             const allowDec = effectiveFormKind === "transfer" && form.currency === "USD";
@@ -564,25 +567,6 @@ export const LedgerEntryForm = React.memo(React.forwardRef<LedgerEntryFormHandle
         handlers.forEach(handler => shortcutManager.unregister(handler));
       };
     }, [isEditing, form, effectiveFormKind, parseAmount, resetForm, submitForm]);
-
-    useEffect(() => {
-      const handleKeyDown = (e: KeyboardEvent) => {
-        // Ctrl+S: 저장
-        if (e.ctrlKey && e.key === "s" && !e.shiftKey && !e.altKey) {
-          e.preventDefault();
-          const allowDec = effectiveFormKind === "transfer" && form.currency === "USD";
-          const amount = parseAmount(form.amount, allowDec);
-          if (form.date && amount && amount > 0) {
-            submitForm(true);
-          }
-        }
-      };
-
-      window.addEventListener("keydown", handleKeyDown);
-      return () => {
-        window.removeEventListener("keydown", handleKeyDown);
-      };
-    }, [form, effectiveFormKind, parseAmount, submitForm]);
 
     // Ctrl+N 시 전역 이벤트로 가계부 폼 포커스
     useEffect(() => {
@@ -651,11 +635,11 @@ export const LedgerEntryForm = React.memo(React.forwardRef<LedgerEntryFormHandle
                   setFilterDetailCategory(undefined);
                 }}
                 style={{ fontSize: 13, padding: "6px 12px" }}
-                title="재테크 보기 — 배당/이자/매매/저축·투자 이체를 한 화면에 모음 (입력은 본래 위치에서)"
+                title="재테크 — 배당/이자/매매/저축·투자 이체를 한 화면에 모음 (입력은 본래 위치에서)"
               >
-                📊 재테크 보기
+                📊 재테크
               </button>
-              {/* 신용결제 — 별도 탭. 내부 kind=expense, category=신용결제 고정 */}
+              {/* 신용결제 — 별도 탭. 이체로 저장 (kind=transfer, 이체 > 카드결제이체) */}
               <button
                 type="button"
                 tabIndex={-1}
@@ -685,7 +669,7 @@ export const LedgerEntryForm = React.memo(React.forwardRef<LedgerEntryFormHandle
                   marginTop: 4
                 }}
               >
-                <strong>📊 재테크 보기 전용 탭</strong>
+                <strong>📊 재테크 — 보기 전용 탭</strong>
                 <br />
                 흩어진 재테크 활동을 모아서 보여줍니다. 입력은 본래 위치에서:
                 <br />
@@ -765,15 +749,11 @@ export const LedgerEntryForm = React.memo(React.forwardRef<LedgerEntryFormHandle
                   inputMode={effectiveFormKind === "transfer" && form.currency === "USD" ? "decimal" : "numeric"}
                   placeholder={effectiveFormKind === "transfer" && form.currency === "USD" ? "0.00" : "0"}
                   value={form.amount}
-                  onChange={useCallback((e: React.ChangeEvent<HTMLInputElement>) => {
-                    const allowDec = effectiveFormKind === "transfer" && form.currency === "USD";
-                    const formatted = formatAmount(e.target.value, allowDec);
-                    setForm((prev) => ({ ...prev, amount: formatted }));
-                  }, [formatAmount, effectiveFormKind, form.currency])}
+                  onChange={handleAmountChange}
                   onKeyDown={(e) => {
                     if (e.key === "Enter") {
                       e.preventDefault();
-                      submitForm(true);
+                      submitForm();
                     }
                   }}
                   style={{

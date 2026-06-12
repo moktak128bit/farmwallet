@@ -32,14 +32,14 @@ export const AccountBalanceTrendCard: React.FC<Props> = React.memo(function Acco
   const prevTotal = Number(prevSnap.total) || 0;
   const abDelta = lastTotal - prevTotal;
   const abDeltaPct = prevTotal !== 0 ? (abDelta / prevTotal) * 100 : 0;
-  const abColor = abDelta > 0 ? "var(--success)" : abDelta < 0 ? "var(--danger)" : "var(--muted)";
+  const abColor = abDelta > 0 ? "var(--success)" : abDelta < 0 ? "var(--danger)" : "var(--text-muted)";
   const abArrow = abDelta > 0 ? "▲" : abDelta < 0 ? "▼" : "–";
 
   return (
     <div className="card" style={{ marginTop: 16, padding: 20 }}>
       <div style={{ display: "flex", flexWrap: "wrap", alignItems: "center", justifyContent: "space-between", gap: 16, marginBottom: 12 }}>
         <div className="card-title" style={{ margin: 0, fontSize: 17 }}>
-          계좌별 잔액 추이 <span style={{ fontSize: 13, color: "var(--muted)", fontWeight: 400 }}>(매월 15·월말, 부채 미차감)</span>
+          계좌별 잔액 추이 <span style={{ fontSize: 13, color: "var(--text-muted)", fontWeight: 400 }}>(매월 15·월말, 부채 미차감)</span>
         </div>
         <div style={{ textAlign: "right" }}>
           <div style={{ fontWeight: 700, fontSize: 26, color: "var(--chart-primary)" }}>{formatKRW(Math.round(lastTotal))}</div>

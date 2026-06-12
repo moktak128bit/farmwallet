@@ -20,9 +20,15 @@ export const STORAGE_KEYS = {
   BACKUPS: "farmwallet-backups-v1",
   THEME: "fw-theme",
   HIGH_CONTRAST: "fw-high-contrast",
+  /** 테마 커스터마이저가 저장한 커스텀 색상 (JSON). 없으면 CSS 기본 팔레트 사용 */
+  CUSTOM_THEME: "fw-custom-theme",
+  /** 테마 커스터마이저가 저장한 폰트 크기 (small|medium|large) */
+  FONT_SIZE: "fw-font-size",
   SAVED_FILTERS: "fw-saved-filters",
   DASHBOARD_WIDGETS: "fw-dashboard-widgets",
   DASHBOARD_WIDGET_ORDER: "fw-dashboard-widget-order",
+  /** 대시보드에서 숨길 위젯 ID 목록 (JSON 배열). 비어있으면 전부 표시 — 신규 위젯은 기본 표시 */
+  DASHBOARD_HIDDEN_WIDGETS: "fw-dashboard-hidden-widgets",
   BACKUP_ON_SAVE: "fw-backup-on-save",
   TICKER: "ticker",
   /** 가격 API 사용 여부 (켜면 외부 API로 배치 갱신 가능, 연동은 추후 구현) */

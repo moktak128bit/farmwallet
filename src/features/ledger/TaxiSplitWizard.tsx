@@ -124,7 +124,7 @@ export const TaxiSplitWizard: React.FC<Props> = ({
         <div style={{ padding: "16px 24px", overflowY: "auto", flex: 1 }}>
           {/* 유류교통비 그룹 자체가 없으면 작업 불가 */}
           {!hasTransportGroup && (
-            <div style={{ padding: "16px 18px", background: "#fef2f2", border: "1px solid #fecaca", borderRadius: 8, color: "#991b1b", fontSize: 13, marginBottom: 12 }}>
+            <div style={{ padding: "16px 18px", background: "var(--danger-light)", border: "1px solid var(--danger)", borderRadius: 8, color: "var(--danger)", fontSize: 13, marginBottom: 12 }}>
               <div style={{ display: "flex", alignItems: "center", gap: 8, fontWeight: 700, marginBottom: 4 }}>
                 <AlertTriangle size={16} /> 유류교통비 그룹이 카테고리 프리셋에 없습니다
               </div>
@@ -136,10 +136,10 @@ export const TaxiSplitWizard: React.FC<Props> = ({
 
           {/* 이미 완전 적용된 상태 */}
           {fullyMigrated && (
-            <div style={{ padding: "24px 18px", textAlign: "center", color: "#059669", background: "#f0fdf4", border: "1px solid #86efac", borderRadius: 10 }}>
+            <div style={{ padding: "24px 18px", textAlign: "center", color: "var(--success)", background: "var(--primary-light)", border: "1px solid var(--success)", borderRadius: 10 }}>
               <div style={{ fontSize: 32, marginBottom: 8 }}>✓</div>
               <div style={{ fontSize: 14, fontWeight: 700, marginBottom: 4 }}>이미 적용되어 있습니다</div>
-              <div style={{ fontSize: 12, color: "#065f46" }}>
+              <div style={{ fontSize: 12, color: "var(--text-muted)" }}>
                 프리셋에 '택시' 소분류가 있고, 유류교통비 안에 재분류할 택시 항목도 없습니다.
               </div>
             </div>
@@ -149,32 +149,32 @@ export const TaxiSplitWizard: React.FC<Props> = ({
           {hasTransportGroup && !fullyMigrated && (
             <>
               {/* 프리셋 변경 표시 */}
-              <div style={{ padding: "12px 14px", background: hasTaxiInPresets ? "#f0fdf4" : "#eff6ff", border: `1px solid ${hasTaxiInPresets ? "#86efac" : "#bfdbfe"}`, borderRadius: 8, marginBottom: 12, fontSize: 12 }}>
-                <div style={{ fontWeight: 700, marginBottom: 6, color: hasTaxiInPresets ? "#065f46" : "#1e3a8a" }}>
+              <div style={{ padding: "12px 14px", background: hasTaxiInPresets ? "var(--primary-light)" : "var(--accent-light)", border: `1px solid ${hasTaxiInPresets ? "var(--success)" : "var(--accent)"}`, borderRadius: 8, marginBottom: 12, fontSize: 12 }}>
+                <div style={{ fontWeight: 700, marginBottom: 6, color: hasTaxiInPresets ? "var(--success)" : "var(--accent)" }}>
                   ① 카테고리 프리셋 변경
                 </div>
                 {hasTaxiInPresets ? (
-                  <div style={{ color: "#065f46" }}>
+                  <div style={{ color: "var(--success)" }}>
                     ✓ 이미 유류교통비.subs에 '택시' 있음 — 변경 없음
                   </div>
                 ) : (
-                  <div style={{ color: "#1e3a8a", lineHeight: 1.6 }}>
+                  <div style={{ color: "var(--accent)", lineHeight: 1.6 }}>
                     유류교통비.subs에 <strong>'택시'</strong>를 '대중교통' 다음 위치로 추가합니다.
                   </div>
                 )}
               </div>
 
               {/* 재분류 후보 */}
-              <div style={{ padding: "12px 14px", background: candidates.length > 0 ? "#fffbeb" : "#f0fdf4", border: `1px solid ${candidates.length > 0 ? "#fde68a" : "#86efac"}`, borderRadius: 8, marginBottom: 12, fontSize: 12 }}>
-                <div style={{ fontWeight: 700, marginBottom: 6, color: candidates.length > 0 ? "#78350f" : "#065f46" }}>
+              <div style={{ padding: "12px 14px", background: candidates.length > 0 ? "var(--warning-bg)" : "var(--primary-light)", border: `1px solid ${candidates.length > 0 ? "var(--warning)" : "var(--success)"}`, borderRadius: 8, marginBottom: 12, fontSize: 12 }}>
+                <div style={{ fontWeight: 700, marginBottom: 6, color: candidates.length > 0 ? "var(--warning)" : "var(--success)" }}>
                   ② Ledger 재분류 — {candidates.length}건 검출
                 </div>
                 {candidates.length === 0 ? (
-                  <div style={{ color: "#065f46" }}>
+                  <div style={{ color: "var(--success)" }}>
                     ✓ 재분류할 택시 항목이 없습니다 — 이미 모두 처리됨 또는 해당 항목 없음
                   </div>
                 ) : (
-                  <div style={{ color: "#78350f", lineHeight: 1.6 }}>
+                  <div style={{ color: "var(--text)", lineHeight: 1.6 }}>
                     유류교통비 안에서 description이 <strong>택시·카카오T·우버·타다</strong>로 매칭되는 항목들의 detailCategory를 <strong>'택시'</strong>로 변경합니다. 체크박스로 제외 가능.
                   </div>
                 )}
@@ -183,7 +183,7 @@ export const TaxiSplitWizard: React.FC<Props> = ({
               {/* 후보 리스트 */}
               {candidates.length > 0 && (
                 <div style={{ border: "1px solid var(--border)", borderRadius: 8, overflow: "hidden", marginBottom: 12 }}>
-                  <div style={{ padding: "10px 14px", background: "#f8fafc", borderBottom: "1px solid var(--border)", display: "flex", justifyContent: "space-between", alignItems: "center", fontSize: 12, fontWeight: 700, color: "#475569" }}>
+                  <div style={{ padding: "10px 14px", background: "var(--surface-hover)", borderBottom: "1px solid var(--border)", display: "flex", justifyContent: "space-between", alignItems: "center", fontSize: 12, fontWeight: 700, color: "var(--text-muted)" }}>
                     <span>선택 {selectedIds.size}/{candidates.length}건</span>
                     <span>합 {formatKRW(selectedSum)}</span>
                   </div>
@@ -198,7 +198,7 @@ export const TaxiSplitWizard: React.FC<Props> = ({
                             alignItems: "center",
                             gap: 10,
                             padding: "8px 14px",
-                            borderBottom: "1px solid #f1f5f9",
+                            borderBottom: "1px solid var(--border-light)",
                             cursor: "pointer",
                             background: checked ? "rgba(37,99,235,0.04)" : "transparent",
                             fontSize: 13,
@@ -217,7 +217,7 @@ export const TaxiSplitWizard: React.FC<Props> = ({
                           <span style={{ fontSize: 11, color: "var(--text-muted)", minWidth: 80, textAlign: "right" }}>
                             {l.detailCategory || "(미분류)"} → 택시
                           </span>
-                          <span style={{ fontSize: 13, fontWeight: 700, color: "#dc2626", minWidth: 90, textAlign: "right" }}>
+                          <span style={{ fontSize: 13, fontWeight: 700, color: "var(--danger)", minWidth: 90, textAlign: "right" }}>
                             {formatKRW(l.amount)}
                           </span>
                         </label>

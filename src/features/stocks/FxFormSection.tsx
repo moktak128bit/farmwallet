@@ -3,6 +3,7 @@ import { toast } from "react-hot-toast";
 import type { Account, LedgerEntry } from "../../types";
 import { fetchYahooQuotes } from "../../yahooFinanceApi";
 import { formatKRW, formatUSD } from "../../utils/formatter";
+import { getTodayKST } from "../../utils/date";
 import { ERROR_MESSAGES } from "../../constants/errorMessages";
 
 type FxCurrency = "KRW" | "USD";
@@ -16,7 +17,7 @@ interface FxFormSectionProps {
 
 export const FxFormSection: React.FC<FxFormSectionProps> = ({ accounts, ledger, onChangeLedger, fxRate }) => {
   const [form, setForm] = useState({
-    date: new Date().toISOString().slice(0, 10),
+    date: getTodayKST(),
     fromAccountId: "",
     toAccountId: "",
     fromCurrency: "KRW" as FxCurrency,
@@ -51,17 +52,13 @@ export const FxFormSection: React.FC<FxFormSectionProps> = ({ accounts, ledger, 
 
   const isSameAccount = form.fromAccountId && form.fromAccountId === form.toAccountId;
 
-  // 출발/도착 통화: 같은 계좌면 폼 값, 다른 계좌면 계좌 유형으로 고정
-  const fromCurrency: FxCurrency = isSameAccount
-    ? form.fromCurrency
-    : krwAccounts.some((a) => a.id === form.fromAccountId)
-      ? "KRW"
-      : "USD";
-  const toCurrency: FxCurrency = isSameAccount
-    ? form.toCurrency
-    : krwAccounts.some((a) => a.id === form.toAccountId)
-      ? "KRW"
-      : "USD";
+  /** 계좌명 휴리스틱("usd"/"달러" 포함 여부)으로 통화 추정 — 기본값 용도로만 사용 */
+  const guessCurrency = (accountId: string): FxCurrency =>
+    krwAccounts.some((a) => a.id === accountId) ? "KRW" : "USD";
+
+  // 출발/도착 통화: 항상 폼의 명시 select 값 사용 — 계좌명 휴리스틱은 계좌 선택 시 기본값으로만 적용
+  const fromCurrency: FxCurrency = form.fromCurrency;
+  const toCurrency: FxCurrency = form.toCurrency;
 
   // 환율: 1 USD = rate KRW
   const rateNum = parseFloat(form.rate) || 0;
@@ -90,7 +87,13 @@ export const FxFormSection: React.FC<FxFormSectionProps> = ({ accounts, ledger, 
       // 도착 금액이 사용자 입력값이면 덮어쓰지 않음 — 비어 있을 때만 환율로 자동 채움
       if (prev.fromAmount && rate > 0 && !manualEdits.toAmount) {
         const fromAmount = parseFloat(prev.fromAmount) || 0;
-        const toAmount = computeToFromFrom(fromAmount);
+        // 직전 렌더의 rateNum(stale)이 아닌 방금 입력된 새 환율로 계산
+        const toAmount =
+          fromCurrency === "KRW" && toCurrency === "USD"
+            ? fromAmount / rate
+            : fromCurrency === "USD" && toCurrency === "KRW"
+              ? fromAmount * rate
+              : fromAmount;
         return {
           ...prev,
           rate: newRate,
@@ -209,7 +212,7 @@ export const FxFormSection: React.FC<FxFormSectionProps> = ({ accounts, ledger, 
     onChangeLedger([...ledger, ...entries]);
     toast.success("환전 거래가 추가되었습니다");
     setForm({
-      date: new Date().toISOString().slice(0, 10),
+      date: getTodayKST(),
       fromAccountId: "",
       toAccountId: "",
       fromCurrency: "KRW",
@@ -226,7 +229,7 @@ export const FxFormSection: React.FC<FxFormSectionProps> = ({ accounts, ledger, 
 
   const resetForm = () => {
     setForm({
-      date: new Date().toISOString().slice(0, 10),
+      date: getTodayKST(),
       fromAccountId: "",
       toAccountId: "",
       fromCurrency: "KRW",
@@ -299,13 +302,19 @@ export const FxFormSection: React.FC<FxFormSectionProps> = ({ accounts, ledger, 
               <span style={{ fontSize: 13, fontWeight: 500 }}>출발 계좌</span>
               <select
                 value={form.fromAccountId}
-                onChange={(e) =>
+                onChange={(e) => {
+                  const v = e.target.value;
+                  // 계좌명 휴리스틱은 기본값으로만 — 아래 통화 select로 언제든 바꿀 수 있음
+                  const guessed = v ? guessCurrency(v) : undefined;
                   setForm((prev) => ({
                     ...prev,
-                    fromAccountId: e.target.value,
-                    toAccountId: prev.toAccountId === prev.fromAccountId ? e.target.value : prev.toAccountId
-                  }))
-                }
+                    fromAccountId: v,
+                    toAccountId: prev.toAccountId === prev.fromAccountId ? v : prev.toAccountId,
+                    ...(guessed
+                      ? { fromCurrency: guessed, toCurrency: guessed === "KRW" ? ("USD" as FxCurrency) : ("KRW" as FxCurrency) }
+                      : {})
+                  }));
+                }}
                 style={{ padding: "6px 8px", fontSize: 14 }}
                 required
               >
@@ -322,7 +331,17 @@ export const FxFormSection: React.FC<FxFormSectionProps> = ({ accounts, ledger, 
               <span style={{ fontSize: 13, fontWeight: 500 }}>도착 계좌</span>
               <select
                 value={form.toAccountId}
-                onChange={(e) => setForm({ ...form, toAccountId: e.target.value })}
+                onChange={(e) => {
+                  const v = e.target.value;
+                  const guessed = v ? guessCurrency(v) : undefined;
+                  setForm((prev) => ({
+                    ...prev,
+                    toAccountId: v,
+                    ...(guessed
+                      ? { toCurrency: guessed, fromCurrency: guessed === "KRW" ? ("USD" as FxCurrency) : ("KRW" as FxCurrency) }
+                      : {})
+                  }));
+                }}
                 style={{ padding: "6px 8px", fontSize: 14 }}
                 required
               >
@@ -337,50 +356,47 @@ export const FxFormSection: React.FC<FxFormSectionProps> = ({ accounts, ledger, 
           </>
         )}
 
-        {isSameAccount && (
-          <>
-            <label style={{ display: "flex", flexDirection: "column", gap: 4 }}>
-              <span style={{ fontSize: 13, fontWeight: 500 }}>출발 통화</span>
-              <select
-                value={form.fromCurrency}
-                onChange={(e) => {
-                  const next: FxCurrency = e.target.value as FxCurrency;
-                  setForm((prev) => ({
-                    ...prev,
-                    fromCurrency: next,
-                    toCurrency: next === "KRW" ? "USD" : "KRW",
-                    fromAmount: "",
-                    toAmount: ""
-                  }));
-                }}
-                style={{ padding: "6px 8px", fontSize: 14 }}
-              >
-                <option value="KRW">KRW (원)</option>
-                <option value="USD">USD (달러)</option>
-              </select>
-            </label>
-            <label style={{ display: "flex", flexDirection: "column", gap: 4 }}>
-              <span style={{ fontSize: 13, fontWeight: 500 }}>도착 통화</span>
-              <select
-                value={form.toCurrency}
-                onChange={(e) => {
-                  const next: FxCurrency = e.target.value as FxCurrency;
-                  setForm((prev) => ({
-                    ...prev,
-                    toCurrency: next,
-                    fromCurrency: next === "KRW" ? "USD" : "KRW",
-                    fromAmount: "",
-                    toAmount: ""
-                  }));
-                }}
-                style={{ padding: "6px 8px", fontSize: 14 }}
-              >
-                <option value="KRW">KRW (원)</option>
-                <option value="USD">USD (달러)</option>
-              </select>
-            </label>
-          </>
-        )}
+        {/* 통화 select는 모드와 무관하게 항상 표시 — 휴리스틱 추정이 틀려도 직접 지정 가능 */}
+        <label style={{ display: "flex", flexDirection: "column", gap: 4 }}>
+          <span style={{ fontSize: 13, fontWeight: 500 }}>출발 통화</span>
+          <select
+            value={form.fromCurrency}
+            onChange={(e) => {
+              const next: FxCurrency = e.target.value as FxCurrency;
+              setForm((prev) => ({
+                ...prev,
+                fromCurrency: next,
+                toCurrency: next === "KRW" ? "USD" : "KRW",
+                fromAmount: "",
+                toAmount: ""
+              }));
+            }}
+            style={{ padding: "6px 8px", fontSize: 14 }}
+          >
+            <option value="KRW">KRW (원)</option>
+            <option value="USD">USD (달러)</option>
+          </select>
+        </label>
+        <label style={{ display: "flex", flexDirection: "column", gap: 4 }}>
+          <span style={{ fontSize: 13, fontWeight: 500 }}>도착 통화</span>
+          <select
+            value={form.toCurrency}
+            onChange={(e) => {
+              const next: FxCurrency = e.target.value as FxCurrency;
+              setForm((prev) => ({
+                ...prev,
+                toCurrency: next,
+                fromCurrency: next === "KRW" ? "USD" : "KRW",
+                fromAmount: "",
+                toAmount: ""
+              }));
+            }}
+            style={{ padding: "6px 8px", fontSize: 14 }}
+          >
+            <option value="KRW">KRW (원)</option>
+            <option value="USD">USD (달러)</option>
+          </select>
+        </label>
 
         <label style={{ display: "flex", flexDirection: "column", gap: 4 }}>
           <span style={{ fontSize: 13, fontWeight: 500 }}>출발 금액 ({fromCurrency})</span>

@@ -3,6 +3,7 @@ import type { AppData } from "../types";
 import { STORAGE_KEYS } from "../constants/config";
 import { toast } from "react-hot-toast";
 import { isUSDStock } from "../utils/finance";
+import { useFxRateValue } from "../context/FxRateContext";
 
 export interface SearchQuery {
   keyword: string;
@@ -18,7 +19,14 @@ export interface SavedFilter {
   query: SearchQuery;
 }
 
-export function useSearch(data: AppData) {
+/**
+ * 전역 검색 훅.
+ * @param fxRate USD→KRW 환산용 환율 (금액 필터에서 USD 거래를 원화로 환산해 비교).
+ *               생략하면 FxRateContext 값을 사용.
+ */
+export function useSearch(data: AppData, fxRate?: number | null) {
+  const contextFxRate = useFxRateValue();
+  const effectiveFxRate = fxRate ?? contextFxRate;
   const [isSearchOpen, setIsSearchOpen] = useState(false);
   const [searchQuery, setSearchQuery] = useState<SearchQuery>({
     keyword: "",
@@ -97,14 +105,19 @@ export function useSearch(data: AppData) {
         const hay = `${r.title} ${r.meta} ${r.accounts}`.toLowerCase();
         if (!hay.includes(key)) continue;
       }
-      if (minAmount != null && r.amount < minAmount) continue;
-      if (maxAmount != null && r.amount > maxAmount) continue;
+      // 금액 필터는 원화 기준 — USD 거래는 환율로 환산해 비교 (환율 없으면 원금액 그대로)
+      const amountKRW =
+        r.currency === "USD" && effectiveFxRate != null && effectiveFxRate > 0
+          ? r.amount * effectiveFxRate
+          : r.amount;
+      if (minAmount != null && amountKRW < minAmount) continue;
+      if (maxAmount != null && amountKRW > maxAmount) continue;
       results.push(r);
       if (results.length >= resultLimit) break;
     }
 
     return results;
-  }, [searchQuery, unifiedRecords, isSearchActive]);
+  }, [searchQuery, unifiedRecords, isSearchActive, effectiveFxRate]);
 
   const saveCurrentFilter = (name: string) => {
     if (!name.trim()) return;

@@ -137,7 +137,8 @@ export function AccountBalanceChart({ accountBalanceSnapshots, accountBalanceCha
         )}
         {accountBalanceChartView === "all" && (
           <>
-            <Line isAnimationActive={false} type="monotone" dataKey="total" name="전체 합계" stroke="#0f172a" strokeWidth={3} dot={{ r: 3 }} connectNulls />
+            {/* 합계선 — 테마 본문색 (다크모드에서도 보이도록 하드코딩 금지) */}
+            <Line isAnimationActive={false} type="monotone" dataKey="total" name="전체 합계" stroke="var(--text)" strokeWidth={3} dot={{ r: 3 }} connectNulls />
             {accounts.map((acc, i) => (
               <Line isAnimationActive={false} key={acc.id} type="monotone" dataKey={acc.id} name={acc.name || acc.id} stroke={ACCOUNT_LINE_COLORS[i % ACCOUNT_LINE_COLORS.length]} strokeWidth={2} dot={{ r: 2 }} connectNulls />
             ))}
@@ -184,7 +185,8 @@ export function DividendTrendChart({ rows }: DividendTrendChartProps) {
           contentStyle={{ fontSize: 14, fontWeight: 600 }}
         />
         <Bar isAnimationActive={false} yAxisId="left" dataKey="dividend" name="배당금(수입)" fill="var(--chart-income)" maxBarSize={32} radius={[4, 4, 0, 0]} />
-        <Line isAnimationActive={false} yAxisId="right" dataKey="shares" name="주수" stroke="var(--chart-expense)" strokeWidth={2.5} dot={{ r: 4, fill: "var(--chart-expense)" }} />
+        {/* 주수는 지출이 아님 — 지출색 대신 중립 시리즈색 사용 */}
+        <Line isAnimationActive={false} yAxisId="right" dataKey="shares" name="주수" stroke="var(--chart-series-a)" strokeWidth={2.5} dot={{ r: 4, fill: "var(--chart-series-a)" }} />
         <Line isAnimationActive={false} yAxisId="yield" dataKey="yieldRate" name="배당률" stroke="var(--chart-warning)" strokeWidth={2.5} dot={{ r: 4, fill: "var(--chart-warning)" }} connectNulls />
       </ComposedChart>
     </ResponsiveContainer>
@@ -209,7 +211,8 @@ export function CmaBalanceChart({ rows }: CmaBalanceChartProps) {
       <LineChart data={rows} margin={{ top: 8, right: 12, left: 12, bottom: 4 }}>
         <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="var(--border)" />
         <XAxis dataKey="label" fontSize={11} axisLine={false} tickLine={false} />
-        <YAxis fontSize={11} tickFormatter={(v) => formatKRW(Math.round(Number(v)))} width={70} />
+        {/* 축 라벨은 "N만" 축약 — formatKRW 전체 표기는 길어서 잘림 */}
+        <YAxis fontSize={11} tickFormatter={(v) => `${Math.round(Number(v) / 10000)}만`} axisLine={false} tickLine={false} width={48} />
         <Tooltip
           formatter={(val: ValueType | undefined) => formatKRW(Math.round(Number(val ?? 0)))}
           labelFormatter={(label, payload) => {
@@ -307,7 +310,7 @@ export function CostVsMarketValueChart({ rows, activeDate, onPointClick }: CostV
         {activeDate && (
           <ReferenceLine
             x={rows.find((r) => r.date === activeDate)?.label}
-            stroke="#0f172a"
+            stroke="var(--text)"
             strokeDasharray="3 3"
             strokeOpacity={0.5}
           />
@@ -321,7 +324,7 @@ export function CostVsMarketValueChart({ rows, activeDate, onPointClick }: CostV
           strokeWidth={2.5}
           fill="url(#marketGrad)"
           dot={{ r: 3, fill: "#2563eb" }}
-          activeDot={{ r: 7, stroke: "#0f172a", strokeWidth: 2, onClick: handleDotClick }}
+          activeDot={{ r: 7, stroke: "var(--text)", strokeWidth: 2, onClick: handleDotClick }}
         />
         <Line
           isAnimationActive={false}
@@ -331,7 +334,7 @@ export function CostVsMarketValueChart({ rows, activeDate, onPointClick }: CostV
           stroke="#f59e0b"
           strokeWidth={2}
           dot={{ r: 3, fill: "#f59e0b" }}
-          activeDot={{ r: 7, stroke: "#0f172a", strokeWidth: 2, onClick: handleDotClick }}
+          activeDot={{ r: 7, stroke: "var(--text)", strokeWidth: 2, onClick: handleDotClick }}
         />
       </ComposedChart>
     </ResponsiveContainer>
@@ -412,7 +415,7 @@ export function TotalAssetValueChart({ rows, activeDate, onPointClick }: TotalAs
         {activeDate && (
           <ReferenceLine
             x={rows.find((r) => r.date === activeDate)?.label}
-            stroke="#0f172a"
+            stroke="var(--text)"
             strokeDasharray="3 3"
             strokeOpacity={0.5}
           />
@@ -426,7 +429,7 @@ export function TotalAssetValueChart({ rows, activeDate, onPointClick }: TotalAs
           strokeWidth={2.5}
           fill="url(#totalMarketGrad)"
           dot={{ r: 3, fill: "#2563eb" }}
-          activeDot={{ r: 7, stroke: "#0f172a", strokeWidth: 2, onClick: handleDotClick }}
+          activeDot={{ r: 7, stroke: "var(--text)", strokeWidth: 2, onClick: handleDotClick }}
         />
         <Line
           isAnimationActive={false}
@@ -436,7 +439,7 @@ export function TotalAssetValueChart({ rows, activeDate, onPointClick }: TotalAs
           stroke="#f59e0b"
           strokeWidth={2}
           dot={{ r: 3, fill: "#f59e0b" }}
-          activeDot={{ r: 7, stroke: "#0f172a", strokeWidth: 2, onClick: handleDotClick }}
+          activeDot={{ r: 7, stroke: "var(--text)", strokeWidth: 2, onClick: handleDotClick }}
         />
       </ComposedChart>
     </ResponsiveContainer>

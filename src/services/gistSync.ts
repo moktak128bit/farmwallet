@@ -395,3 +395,27 @@ export function getGistLastPullAt(): string {
 export function setGistLastPullAt(iso: string): void {
   try { localStorage.setItem(STORAGE_KEYS.GIST_LAST_PULL_AT, iso); } catch { /* */ }
 }
+
+// =========================================
+//  마지막 push payload 해시 — 부팅 자동 pull 시 "로컬 미push 변경" 감지용
+// =========================================
+
+const GIST_LAST_PUSH_HASH_KEY = "fw-gist-last-push-hash";
+
+/** push payload의 간단 해시(djb2). 암호학적 용도가 아니라 변경 감지용. */
+export function hashGistPayload(payload: string): string {
+  let hash = 5381;
+  for (let i = 0; i < payload.length; i++) {
+    hash = ((hash << 5) + hash + payload.charCodeAt(i)) | 0;
+  }
+  return String(hash);
+}
+
+/** 마지막으로 push(또는 pull로 동기화)된 payload 해시 */
+export function getGistLastPushedHash(): string {
+  try { return localStorage.getItem(GIST_LAST_PUSH_HASH_KEY) ?? ""; } catch { return ""; }
+}
+
+export function setGistLastPushedHash(hash: string): void {
+  try { localStorage.setItem(GIST_LAST_PUSH_HASH_KEY, hash); } catch { /* */ }
+}

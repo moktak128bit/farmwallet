@@ -218,6 +218,41 @@ describe("computeMoimAccountFlow", () => {
     expect(r.anomalies[0].type).toBe("partner_low");
   });
 
+  it("정산 입금(kind=income, category=정산)은 상대 입금(partnerDeposit)으로 분류", () => {
+    // SettlementView가 기록하는 현행 형태
+    const ledger = [
+      entry({ id: "s1", date: "2026-01-20", kind: "income", amount: 150_000, toAccountId: moimId, category: "정산", subCategory: "데이트통장" }),
+    ];
+    const r = computeMoimAccountFlow(ledger, moimId, months);
+    expect(r.months[0].partnerDeposit).toBe(150_000);
+    expect(r.months[0].myTransfer).toBe(0);
+  });
+
+  it("구버전 정산 기록(kind=transfer, category=정산)도 내 이체가 아닌 상대 입금으로 분류", () => {
+    const ledger = [
+      // 과거 SettlementView가 남긴 형태 — 하위 호환
+      entry({ id: "s1", date: "2026-01-20", kind: "transfer", amount: 120_000, toAccountId: moimId, category: "정산", subCategory: "데이트통장" }),
+      // 일반 이체는 그대로 내 이체
+      entry({ id: "t1", date: "2026-01-15", kind: "transfer", amount: 300_000, fromAccountId: "a", toAccountId: moimId, category: "이체" }),
+    ];
+    const r = computeMoimAccountFlow(ledger, moimId, months);
+    expect(r.months[0].partnerDeposit).toBe(120_000);
+    expect(r.months[0].myTransfer).toBe(300_000);
+    expect(r.months[0].balanceChange).toBe(120_000 + 300_000);
+  });
+
+  it("정산 입금이 partner_low 이상감지를 왜곡하지 않음 (정산 월도 정상 입금으로 인식)", () => {
+    const ledger = [
+      entry({ id: "i1", date: "2026-01-20", kind: "income", amount: 300_000, toAccountId: moimId, category: "이체" }),
+      entry({ id: "i2", date: "2026-02-20", kind: "income", amount: 300_000, toAccountId: moimId, category: "이체" }),
+      // 3월은 정기 입금 대신 transfer 정산으로 회수 — partnerDeposit으로 잡혀야 partner_low 미발생
+      entry({ id: "s1", date: "2026-03-20", kind: "transfer", amount: 290_000, toAccountId: moimId, category: "정산", subCategory: "데이트통장" }),
+    ];
+    const r = computeMoimAccountFlow(ledger, moimId, months);
+    expect(r.months[2].partnerDeposit).toBe(290_000);
+    expect(r.anomalies).toHaveLength(0);
+  });
+
   it("다른 계좌 거래는 무시", () => {
     const ledger = [
       entry({ id: "t1", date: "2026-01-15", kind: "transfer", amount: 100_000, toAccountId: "other" }),

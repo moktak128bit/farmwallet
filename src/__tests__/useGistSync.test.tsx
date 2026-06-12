@@ -53,6 +53,9 @@ describe("useGistSync", () => {
   beforeEach(() => {
     vi.useFakeTimers();
     vi.clearAllMocks();
+    // hashGistPayload/getGistLastPushedHash 등은 actual 구현(localStorage 기반)을 쓰므로
+    // 테스트 간 상태 누수를 막기 위해 항상 초기화
+    window.localStorage.clear();
     useUIStore.getState().setGistConflict(null);
     mocked.getGistAutoSync.mockReturnValue(true);
     mocked.getGistToken.mockReturnValue("test-token");
@@ -115,6 +118,104 @@ describe("useGistSync", () => {
     await flush();
     expect(mocked.getGistVersions).not.toHaveBeenCalled();
     expect(mocked.saveToGistWithRetry).not.toHaveBeenCalled();
+  });
+
+  it("부팅 시 토큰이 없어도 나중에 입력하면 자동 push가 동작 (hasMounted 순서 회귀 방지)", async () => {
+    // 부팅 시점: 토큰 없음 → 초기 pull 건너뜀, 그러나 마운트 플래그는 세워져야 함
+    mocked.getGistToken.mockReturnValue("");
+    const { rerender } = renderHook(({ d }: { d: AppData }) => useGistSync(d, vi.fn()), {
+      initialProps: { d: makeData(0) },
+    });
+    await flush();
+    expect(mocked.saveToGistWithRetry).not.toHaveBeenCalled();
+
+    // 사용자가 설정 카드에서 토큰 입력
+    mocked.getGistToken.mockReturnValue("test-token");
+
+    // 데이터 변경 → 디바운스 후 자동 push가 살아 있어야 함
+    rerender({ d: makeData(1) });
+    await vi.advanceTimersByTimeAsync(GIST_AUTO_PUSH_DEBOUNCE_MS + 1000);
+    await flush();
+    expect(mocked.saveToGistWithRetry).toHaveBeenCalledTimes(1);
+  });
+
+  it("부팅 자동 pull: 로컬에 미push 변경이 있으면 덮어쓰지 않고 충돌 모달", async () => {
+    // 원격이 더 새로움 (외부 기기 변경)
+    mocked.getGistVersions.mockResolvedValue([
+      { sha: "abc", committedAt: "2026-04-20T01:00:00Z", url: "u" },
+    ]);
+    mocked.getGistLastPullAt.mockReturnValue("2026-04-19T00:00:00Z");
+    mocked.loadFromGist.mockResolvedValue({
+      dataJson: '{"accounts":[],"ledger":[{"id":"REMOTE"}]}',
+      updatedAt: "2026-04-20T01:00:00Z",
+    });
+    // 마지막 push payload 해시가 기록돼 있고 현재 로컬과 다름 → 로컬 dirty
+    window.localStorage.setItem("fw-gist-last-push-hash", "stale-hash-mismatch");
+
+    const onApply = vi.fn();
+    renderHook(() => useGistSync(makeData(7), onApply));
+    await flush();
+
+    expect(onApply).not.toHaveBeenCalled();
+    const conflict = useUIStore.getState().gistConflict;
+    expect(conflict).not.toBeNull();
+    expect(conflict?.remoteDataJson).toContain("REMOTE");
+    expect(conflict?.pendingLocalDataJson).toContain('"amount":7');
+  });
+
+  it("부팅 자동 pull: push 해시 기록이 없으면(구버전 상태) 기존처럼 원격 적용", async () => {
+    mocked.getGistVersions.mockResolvedValue([
+      { sha: "abc", committedAt: "2026-04-20T01:00:00Z", url: "u" },
+    ]);
+    mocked.getGistLastPullAt.mockReturnValue("2026-04-19T00:00:00Z");
+    mocked.loadFromGist.mockResolvedValue({
+      dataJson: '{"accounts":[]}',
+      updatedAt: "2026-04-20T01:00:00Z",
+    });
+
+    const onApply = vi.fn();
+    renderHook(() => useGistSync(makeData(0), onApply));
+    await flush();
+
+    expect(onApply).toHaveBeenCalledWith('{"accounts":[]}', "2026-04-20T01:00:00Z");
+    expect(useUIStore.getState().gistConflict).toBeNull();
+  });
+
+  it("manualPull: loadFromGist 결과를 적용하고 lastPullAt 갱신", async () => {
+    const onApply = vi.fn();
+    const { result } = renderHook(() => useGistSync(makeData(0), onApply));
+    await flush();
+    onApply.mockClear();
+    mocked.setGistLastPullAt.mockClear();
+
+    mocked.loadFromGist.mockResolvedValue({
+      dataJson: '{"accounts":[],"ledger":[{"id":"PULL"}]}',
+      updatedAt: "2026-04-21T00:00:00Z",
+    });
+
+    await act(async () => {
+      await result.current.manualPull();
+    });
+
+    expect(onApply).toHaveBeenCalledWith('{"accounts":[],"ledger":[{"id":"PULL"}]}', "2026-04-21T00:00:00Z");
+    expect(mocked.setGistLastPullAt).toHaveBeenCalledWith("2026-04-21T00:00:00Z");
+    expect(result.current.lastPullAt).toBe("2026-04-21T00:00:00Z");
+  });
+
+  it("manualPull: 토큰 없으면 아무것도 하지 않음", async () => {
+    const onApply = vi.fn();
+    const { result } = renderHook(() => useGistSync(makeData(0), onApply));
+    await flush();
+    onApply.mockClear();
+    mocked.loadFromGist.mockClear();
+    mocked.getGistToken.mockReturnValue("");
+
+    await act(async () => {
+      await result.current.manualPull();
+    });
+
+    expect(mocked.loadFromGist).not.toHaveBeenCalled();
+    expect(onApply).not.toHaveBeenCalled();
   });
 
   it("데이터 변경 시 debounce 시간 후 자동 push", async () => {

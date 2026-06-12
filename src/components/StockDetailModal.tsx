@@ -1,9 +1,11 @@
 import React, { useCallback, useMemo, useState, useEffect } from "react";
 import type { Account, LedgerEntry, StockPrice, StockTrade, TickerInfo } from "../types";
 import { formatKRW, formatNumber } from "../utils/formatter";
-import { isKRWStock, isUSDStock, extractTickerFromText } from "../utils/finance";
+import { isKRWStock, isUSDStock, extractTickerFromText, canonicalTickerForMatch } from "../utils/finance";
 import { parseExDateFromNote, buildDividendNote } from "../utils/dividend";
 import { parseAmount } from "../utils/parseAmount";
+import { getTodayKST } from "../utils/date";
+import { useFocusTrap } from "../hooks/useFocusTrap";
 import { toast } from "react-hot-toast";
 import { ERROR_MESSAGES } from "../constants/errorMessages";
 
@@ -46,9 +48,20 @@ export const StockDetailModal: React.FC<Props> = ({
   const [activeTab, setActiveTab] = useState<"trades" | "dividends">("trades");
   const [showUSD, setShowUSD] = useState(false);
   const [fxRate, setFxRate] = useState<number | null>(propFxRate);
-  
+  // 모달 접근성: 포커스 트랩 + ESC 닫기 + role="dialog"
+  const modalRef = useFocusTrap<HTMLDivElement>(Boolean(position));
+
+  useEffect(() => {
+    if (!position) return;
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key === "Escape") onClose();
+    };
+    window.addEventListener("keydown", handleKeyDown);
+    return () => window.removeEventListener("keydown", handleKeyDown);
+  }, [position, onClose]);
+
   const [dividendForm, setDividendForm] = useState(() => ({
-    date: new Date().toISOString().slice(0, 10),
+    date: getTodayKST(),
     exDate: "" as string,
     accountId: position?.accountId ?? "",
     quantity: position?.quantity != null ? String(position.quantity) : "",
@@ -89,16 +102,17 @@ export const StockDetailModal: React.FC<Props> = ({
     });
   }, [position?.ticker]);
 
-  // 선택한 티커의 통화 정보
+  // 선택한 티커의 통화 정보 (canonical 매칭 — 소문자/접미사 표기 차이 흡수)
   const selectedTickerCurrency = useMemo(() => {
     if (!position?.ticker) return undefined;
+    const posKey = canonicalTickerForMatch(position.ticker);
 
-    const originalPriceInfo = prices.find((p) => p.ticker === position.ticker);
+    const originalPriceInfo = prices.find((p) => canonicalTickerForMatch(p.ticker) === posKey);
     if (originalPriceInfo?.currency) {
       return originalPriceInfo.currency;
     }
 
-    const tickerInfo = tickerDatabase.find((t) => t.ticker === position.ticker);
+    const tickerInfo = tickerDatabase.find((t) => canonicalTickerForMatch(t.ticker) === posKey);
     if (tickerInfo?.market === "US") {
       return "USD";
     }
@@ -129,7 +143,7 @@ export const StockDetailModal: React.FC<Props> = ({
       const isDividendEntry = l.category === "배당" || (l.category === "수입" && l.subCategory === "배당") || (l.description ?? "").includes("배당");
       if (!isDividendEntry) return false;
       const ledgerTicker = (extractTickerFromText(l.description ?? "") ?? extractTickerFromText(l.category ?? ""))?.toUpperCase() ?? "";
-      return ledgerTicker === position.ticker.toUpperCase();
+      return Boolean(ledgerTicker) && canonicalTickerForMatch(ledgerTicker) === canonicalTickerForMatch(position.ticker);
     };
     return ledger.filter(isDividend).sort((a, b) => b.date.localeCompare(a.date));
   }, [ledger, position]);
@@ -221,7 +235,7 @@ export const StockDetailModal: React.FC<Props> = ({
     return qty * dps;
   }, [dividendForm.quantity, dividendForm.dividendPerShare]);
 
-  // 배당율 계산
+  // 배당율 계산 — 매입원가는 항상 KRW 기준 (USD 평단으로 나누면 환율 배수(~1400배)로 과대 계산되는 버그 수정)
   const dividendYield = useMemo(() => {
     if (calculatedAmount == null || !position) return null;
     let amount = calculatedAmount;
@@ -230,7 +244,8 @@ export const StockDetailModal: React.FC<Props> = ({
 
     if (amount <= 0 || position.avgPrice <= 0 || position.quantity <= 0) return null;
 
-    if (selectedTickerCurrency === "USD" && showUSD && fxRate) {
+    if (selectedTickerCurrency === "USD" && showUSD) {
+      if (!fxRate || fxRate <= 0) return null; // 환율 없으면 환산 불가
       amount = amount * fxRate;
       if (tax > 0) {
         const taxKRW = tax * fxRate;
@@ -244,7 +259,15 @@ export const StockDetailModal: React.FC<Props> = ({
       amount = amount - tax - fee;
     }
 
-    const totalCost = position.avgPrice * position.quantity;
+    // USD 종목 원화 매입원가: 매입 당시 환율 기반 totalBuyAmountKRW 우선, 없으면 현재 환율 환산
+    const totalCost =
+      selectedTickerCurrency === "USD"
+        ? position.totalBuyAmountKRW != null
+          ? position.totalBuyAmountKRW
+          : fxRate && fxRate > 0
+            ? position.totalBuyAmount * fxRate
+            : 0
+        : position.avgPrice * position.quantity;
     if (totalCost <= 0) return null;
     const yieldPct = (amount / totalCost) * 100;
     return Number.isFinite(yieldPct) ? yieldPct : null;
@@ -265,7 +288,12 @@ export const StockDetailModal: React.FC<Props> = ({
 
     let amount = qty * dps;
 
-    if (selectedTickerCurrency === "USD" && showUSD && fxRate) {
+    // USD 입력 모드: 환율 미로드 시 무환산 저장 차단 (USD 금액이 원화인 척 저장되는 것 방지)
+    if (selectedTickerCurrency === "USD" && showUSD) {
+      if (!fxRate || fxRate <= 0) {
+        toast.error("환율 정보가 없어 USD 금액을 원화로 환산할 수 없습니다. 환율 갱신 후 다시 시도하거나 원화로 입력하세요.");
+        return;
+      }
       amount = amount * fxRate;
       if (tax > 0) {
         const taxKRW = tax * fxRate;
@@ -291,6 +319,8 @@ export const StockDetailModal: React.FC<Props> = ({
       description: description,
       toAccountId: dividendForm.accountId,
       amount: netAmount,
+      // 저장 금액은 항상 KRW로 환산됨 — 통화 명시
+      currency: "KRW",
       note
     };
 
@@ -298,7 +328,7 @@ export const StockDetailModal: React.FC<Props> = ({
     onChangeLedger(newLedger);
 
     setDividendForm({
-      date: new Date().toISOString().slice(0, 10),
+      date: getTodayKST(),
       exDate: "",
       accountId: dividendForm.accountId,
       quantity: position.quantity != null ? String(position.quantity) : "",
@@ -319,7 +349,7 @@ export const StockDetailModal: React.FC<Props> = ({
   const handleStartEditDividend = (dividend: LedgerEntry) => {
     setEditingDividendId(dividend.id);
     setEditingDividendValues({
-      date: dividend.date || new Date().toISOString().slice(0, 10),
+      date: dividend.date || getTodayKST(),
       accountId: dividend.toAccountId || "",
       amount: dividend.amount != null ? String(dividend.amount) : "",
       description: dividend.description || ""
@@ -388,7 +418,15 @@ export const StockDetailModal: React.FC<Props> = ({
 
   return (
     <div className="modal-backdrop" onClick={onClose}>
-      <div className="modal" onClick={(e) => e.stopPropagation()} style={{ maxWidth: "900px", width: "90vw", maxHeight: "90vh", overflow: "auto" }}>
+      <div
+        ref={modalRef}
+        className="modal"
+        role="dialog"
+        aria-modal="true"
+        aria-label={`${position.ticker} 종목 상세`}
+        onClick={(e) => e.stopPropagation()}
+        style={{ maxWidth: "900px", width: "90vw", maxHeight: "90vh", overflow: "auto" }}
+      >
         <div className="modal-header">
           <div>
             <h2 style={{ margin: 0, fontSize: 20 }}>{position.ticker}</h2>
@@ -435,7 +473,7 @@ export const StockDetailModal: React.FC<Props> = ({
               </div>
               <div>
                 <div style={{ fontSize: 12, color: "var(--text-muted)", marginBottom: 4 }}>총 배당금</div>
-                <div style={{ fontSize: 16, fontWeight: 600, color: "#10b981" }}>
+                <div style={{ fontSize: 16, fontWeight: 600, color: "var(--success)" }}>
                   {formatKRW(Math.round(totalDividend))}
                 </div>
               </div>
@@ -486,7 +524,8 @@ export const StockDetailModal: React.FC<Props> = ({
                     {positionTrades.map((trade) => (
                       <tr key={trade.id}>
                         <td>{trade.date}</td>
-                        <td style={{ color: trade.side === "buy" ? "#0ea5e9" : "#f43f5e", fontWeight: 600 }}>
+                        {/* 국내 관례: 매수=빨강, 매도=파랑 */}
+                        <td style={{ color: trade.side === "buy" ? "var(--danger)" : "var(--accent)", fontWeight: 600 }}>
                           {trade.side === "buy" ? "매수" : "매도"}
                         </td>
                         <td className="number">{trade.quantity.toLocaleString()}주</td>
@@ -564,7 +603,7 @@ export const StockDetailModal: React.FC<Props> = ({
                         <option value="">선택</option>
                         {accounts.map((acc) => (
                           <option key={acc.id} value={acc.id}>
-                            {acc.id}
+                            {acc.name || acc.id}
                           </option>
                         ))}
                       </select>
@@ -604,7 +643,7 @@ export const StockDetailModal: React.FC<Props> = ({
                         <span style={{ fontSize: 13, fontWeight: 500 }}>
                           총 배당금
                           {selectedTickerCurrency === "USD" && showUSD && fxRate && (
-                            <span style={{ fontSize: 11, color: "#666", marginLeft: 4 }}>
+                            <span style={{ fontSize: 11, color: "var(--text-muted)", marginLeft: 4 }}>
                               ≈ {formatKRW(Math.round(calculatedAmount * fxRate))}
                             </span>
                           )}
@@ -615,7 +654,7 @@ export const StockDetailModal: React.FC<Props> = ({
                             ? `$${formatNumber(calculatedAmount)}`
                             : formatKRW(Math.round(calculatedAmount))}
                           disabled
-                          style={{ padding: "6px 8px", fontSize: 14, backgroundColor: "#f5f5f5", fontWeight: 600, color: "#10b981" }}
+                          style={{ padding: "6px 8px", fontSize: 14, backgroundColor: "var(--surface-hover)", fontWeight: 600, color: "var(--success)" }}
                         />
                       </label>
                     )}
@@ -658,7 +697,7 @@ export const StockDetailModal: React.FC<Props> = ({
                           type="text"
                           value={`${dividendYield.toFixed(2)}%`}
                           disabled
-                          style={{ padding: "6px 8px", fontSize: 14, backgroundColor: "#f5f5f5", color: "#2563eb", fontWeight: 600 }}
+                          style={{ padding: "6px 8px", fontSize: 14, backgroundColor: "var(--surface-hover)", color: "var(--accent)", fontWeight: 600 }}
                         />
                       </label>
                     )}
@@ -748,7 +787,7 @@ export const StockDetailModal: React.FC<Props> = ({
                                 <option value="">선택</option>
                                 {accounts.map((acc) => (
                                   <option key={acc.id} value={acc.id}>
-                                    {acc.id}
+                                    {acc.name || acc.id}
                                   </option>
                                 ))}
                               </select>
@@ -813,14 +852,14 @@ export const StockDetailModal: React.FC<Props> = ({
                                   style={{
                                     background: "none",
                                     border: "none",
-                                    color: "#ef4444",
+                                    color: "var(--danger)",
                                     cursor: "pointer",
                                     fontSize: 16,
                                     padding: "4px 8px",
                                     borderRadius: 4
                                   }}
                                   onMouseEnter={(e) => {
-                                    e.currentTarget.style.backgroundColor = "#fee2e2";
+                                    e.currentTarget.style.backgroundColor = "var(--danger-light)";
                                   }}
                                   onMouseLeave={(e) => {
                                     e.currentTarget.style.backgroundColor = "transparent";

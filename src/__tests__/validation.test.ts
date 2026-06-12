@@ -60,6 +60,20 @@ describe("validateDate", () => {
     expect(validateDate("2026-06-15", max).valid).toBe(false);
     expect(validateDate("2025-12-31", max).valid).toBe(true);
   });
+
+  it("한도 초과 에러 메시지에 로컬(KST) 날짜 표기 — toISOString 하루 밀림 방지", () => {
+    const max = new Date(2026, 5, 11); // 로컬 2026-06-11 (UTC 변환 시 2026-06-10이 되던 문제)
+    const result = validateDate("2026-06-15", max);
+    expect(result.valid).toBe(false);
+    expect(result.error).toContain("2026-06-11");
+  });
+
+  it("minDate 미만 에러 메시지도 로컬 날짜 표기", () => {
+    const min = new Date(2026, 0, 1); // 로컬 2026-01-01
+    const result = validateDate("2025-12-15", undefined, min);
+    expect(result.valid).toBe(false);
+    expect(result.error).toContain("2026-01-01");
+  });
 });
 
 describe("validateTicker", () => {

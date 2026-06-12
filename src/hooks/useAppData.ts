@@ -89,9 +89,8 @@ export function useAppData() {
     const currentData = useAppStore.getState().data;
     if (currentData?.ledger && currentData.ledger.length > 0) return;
     if (typeof window !== "undefined") {
-      const STORAGE_KEY = "farmwallet-data-v1";
       // 사용자가 한 번이라도 저장한 흔적이 있으면 자동 복원 안 함 (의도적 wipe 존중)
-      if (window.localStorage.getItem(STORAGE_KEY) !== null) return;
+      if (window.localStorage.getItem(STORAGE_KEYS.DATA) !== null) return;
     }
     // 자동 복원은 "최초 방문" 한정이라 사용자 UI를 방해하지 않지만,
     // 콘솔 로그는 남겨 디버깅·감사 가능하도록.

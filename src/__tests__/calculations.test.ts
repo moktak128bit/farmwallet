@@ -1,6 +1,6 @@
 import { describe, it, expect } from "vitest";
-import { computeRealizedPnlByTradeId } from "../calculations";
-import type { StockTrade } from "../types";
+import { computeRealizedPnlByTradeId, isInterestRepayment, computeLoanBalanceAt } from "../calculations";
+import type { LedgerEntry, Loan, StockTrade } from "../types";
 
 function makeTrade(overrides: Partial<StockTrade> & { id: string; side: "buy" | "sell" }): StockTrade {
   return {
@@ -49,5 +49,65 @@ describe("computeRealizedPnlByTradeId (FIFO)", () => {
     ];
     const result = computeRealizedPnlByTradeId(trades);
     expect(result.get("s1")).toBe(-200); // (80-100) * 10
+  });
+});
+
+function makeRepayment(overrides: Partial<LedgerEntry> & { id: string }): LedgerEntry {
+  return {
+    date: "2026-01-15",
+    kind: "expense",
+    category: "지출",
+    description: "주담대 상환",
+    amount: 100_000,
+    ...overrides,
+  } as LedgerEntry;
+}
+
+describe("isInterestRepayment — 카테고리 구조 세대별 이자 판정", () => {
+  it("현재 구조: detailCategory에 '이자' 포함이면 이자 상환", () => {
+    const entry = makeRepayment({ id: "1", category: "지출", subCategory: "대출상환", detailCategory: "이자상환" });
+    expect(isInterestRepayment(entry)).toBe(true);
+  });
+
+  it("현재 구조: detailCategory가 '원금상환'이면 원금 상환", () => {
+    const entry = makeRepayment({ id: "2", category: "지출", subCategory: "대출상환", detailCategory: "원금상환" });
+    expect(isInterestRepayment(entry)).toBe(false);
+  });
+
+  it("2세대 구조: (category='대출상환', subCategory='이자상환')도 이자 상환으로 판정", () => {
+    const entry = makeRepayment({ id: "3", category: "대출상환", subCategory: "이자상환" });
+    expect(isInterestRepayment(entry)).toBe(true);
+  });
+
+  it("2세대 구조: (category='대출상환', subCategory='원금상환')은 원금 상환", () => {
+    const entry = makeRepayment({ id: "4", category: "대출상환", subCategory: "원금상환" });
+    expect(isInterestRepayment(entry)).toBe(false);
+  });
+
+  it("현재 구조의 subCategory='대출상환' 자체는 이자로 오판하지 않는다", () => {
+    const entry = makeRepayment({ id: "5", category: "지출", subCategory: "대출상환" });
+    expect(isInterestRepayment(entry)).toBe(false);
+  });
+});
+
+describe("computeLoanBalanceAt — 2세대 이자 상환은 잔금에서 차감하지 않음", () => {
+  const loans: Loan[] = [{
+    id: "l1",
+    institution: "은행",
+    loanName: "주담대",
+    loanAmount: 1_000_000,
+    annualInterestRate: 3,
+    repaymentMethod: "bullet",
+    loanDate: "2026-01-01",
+    maturityDate: "2030-01-01",
+  }];
+
+  it("2세대 이자상환 엔트리는 원금 잔금을 줄이지 않는다", () => {
+    const ledger: LedgerEntry[] = [
+      makeRepayment({ id: "1", category: "대출상환", subCategory: "이자상환", amount: 50_000 }),
+      makeRepayment({ id: "2", category: "대출상환", subCategory: "원금상환", amount: 200_000 }),
+    ];
+    // 이자 50,000은 무시, 원금 200,000만 차감
+    expect(computeLoanBalanceAt(loans, ledger)).toBe(800_000);
   });
 });

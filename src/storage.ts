@@ -12,6 +12,7 @@ export {
 } from "./services/dataService";
 export {
   saveBackupSnapshot,
+  saveSafetySnapshot,
   getBackupList,
   loadBackupData,
   loadBackupDataVerified,

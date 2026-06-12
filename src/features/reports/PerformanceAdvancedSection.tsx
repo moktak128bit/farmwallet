@@ -53,8 +53,9 @@ export const PerformanceAdvancedSection: React.FC<Props> = React.memo(function P
               <tr key={row.accountId}>
                 <td>{row.accountName}</td>
                 <td className="number">{formatKRW(row.currentValue)}</td>
-                <td className={`number ${row.irr != null && row.irr >= 0 ? "positive" : "negative"}`}>{toPercent(row.irr)}</td>
-                <td className={`number ${row.ttwr != null && row.ttwr >= 0 ? "positive" : "negative"}`}>{toPercent(row.ttwr)}</td>
+                {/* IRR/TTWR 계산 불가(null)는 손실이 아님 — 중립색 "-" */}
+                <td className={`number ${row.irr == null ? "" : row.irr >= 0 ? "positive" : "negative"}`}>{toPercent(row.irr)}</td>
+                <td className={`number ${row.ttwr == null ? "" : row.ttwr >= 0 ? "positive" : "negative"}`}>{toPercent(row.ttwr)}</td>
                 <td className={`number ${row.realizedPnl >= 0 ? "positive" : "negative"}`}>{formatKRW(row.realizedPnl)}</td>
                 <td className={`number ${row.unrealizedPnl >= 0 ? "positive" : "negative"}`}>{formatKRW(row.unrealizedPnl)}</td>
                 <td className={`number ${row.dividendContribution >= 0 ? "positive" : "negative"}`}>{formatKRW(row.dividendContribution)}</td>

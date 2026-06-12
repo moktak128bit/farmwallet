@@ -55,7 +55,7 @@ const ExerciseProgressionChartInner: React.FC<Props> = ({ sessions, metric }) =>
   return (
     <DeferredResponsiveContainer width="100%" height={240}>
       <LineChart data={data} margin={{ top: 16, right: 20, left: 0, bottom: 8 }}>
-        <CartesianGrid strokeDasharray="3 3" stroke="#eee" />
+        <CartesianGrid strokeDasharray="3 3" stroke="var(--chart-grid)" />
         <XAxis dataKey="date" tick={{ fontSize: 11 }} />
         <YAxis tick={{ fontSize: 11 }} tickFormatter={(v) => formatNumber(Number(v))} />
         <Tooltip
@@ -68,6 +68,7 @@ const ExerciseProgressionChartInner: React.FC<Props> = ({ sessions, metric }) =>
           name={METRIC_LABEL[metric]}
           stroke={color}
           strokeWidth={2.5}
+          isAnimationActive={false}
           dot={(props) => {
             const { cx, cy, payload, index } = props as { cx?: number; cy?: number; payload?: { isPR?: boolean }; index?: number };
             if (cx == null || cy == null) return <g key={index} />;

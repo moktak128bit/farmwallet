@@ -264,7 +264,9 @@ function variantStyle(variant: Variant, disabled?: boolean): React.CSSProperties
     case "success":
       return { background: "var(--success, #22c55e)", color: "#fff" };
     case "navy":
-      return { background: "#0f172a", color: "#fff" };
+      // 테마 변수 사용 — 하드코딩 #0f172a는 다크모드 배경(--bg)과 동일해 버튼이 묻혔음.
+      // 라이트: 진한 네이비 배경 + 밝은 글자 / 다크: 밝은 배경 + 어두운 글자.
+      return { background: "var(--text)", color: "var(--bg)" };
     case "secondary":
       return { background: "var(--surface)", color: "var(--text)", border: "1px solid var(--border)" };
     case "muted":

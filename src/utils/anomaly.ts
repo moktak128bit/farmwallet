@@ -1,4 +1,5 @@
 import type { LedgerEntry } from "../types";
+import { isCreditPayment } from "./category";
 
 export interface AnomalyResult {
   category: string;
@@ -32,6 +33,9 @@ export function detectSpendAnomalies(
   const byCat = new Map<string, { monthly: Map<string, number>; current: number }>();
   for (const e of ledger) {
     if (e.kind !== "expense" || e.amount <= 0 || !e.category || !e.date) continue;
+    // 일반 소비 지출만 대상 — 신용결제(이중계상)·재테크(저축성지출)·환전 제외
+    // (useInsightsData의 fExp 필터와 동일 기준 — "주목할 한 가지" 오탐 방지)
+    if (e.category === "재테크" || e.category === "환전" || isCreditPayment(e)) continue;
     const ym = yyyymmOf(e.date);
     const isCurrent = ym === currentMonth;
     const isLookback = months.has(ym);

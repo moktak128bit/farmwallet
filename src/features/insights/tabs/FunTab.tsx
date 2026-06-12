@@ -14,9 +14,11 @@ export const FunTab = React.memo(function FunTab({ d }: { d: D }) {
   if (fs.daysToSpendIncome) statCards.push({ icon: "⏱️", title: "월수입 소진 속도", value: `${fs.daysToSpendIncome}일`, sub: "일 평균 지출 기준" });
   statCards.push({ icon: "📝", title: "일 평균 거래", value: `${fs.avgTxPerDay}건`, sub: `총 ${d.txCount.toLocaleString()}건` });
 
-  const prevComp = d.prev ? {
-    incDiff: d.monthly[d.months[d.months.length - 1]]?.income - d.prev.income,
-    expDiff: d.monthly[d.months[d.months.length - 1]]?.expense - d.prev.expense,
+  // d.prev는 선택 월(selMonth)의 "직전 달" 합계 — 비교 대상도 선택 월이어야 한다.
+  // (기간 마지막 월과 비교하면 엉뚱한 두 달을 비교하게 됨)
+  const prevComp = d.prev && d.selMonth ? {
+    incDiff: (d.monthly[d.selMonth]?.income ?? 0) - d.prev.income,
+    expDiff: (d.monthly[d.selMonth]?.expense ?? 0) - d.prev.expense,
   } : null;
 
   const wkPct = fs.weekendVsWeekday.weekend + fs.weekendVsWeekday.weekday > 0

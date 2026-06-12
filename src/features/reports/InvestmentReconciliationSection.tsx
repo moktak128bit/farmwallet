@@ -30,7 +30,7 @@ export const InvestmentReconciliationSection: React.FC<Props> = React.memo(funct
     );
   }
   const positive = rec.totalReturn >= 0;
-  const returnColor = positive ? "var(--positive)" : "var(--negative)";
+  const returnColor = positive ? "var(--danger)" : "var(--accent)";
   return (
     <div>
       <h3>투자 정산</h3>

@@ -178,26 +178,26 @@ export const PatternTab = React.memo(function PatternTab({ d }: { d: D }) {
       <Section storageKey="pattern-section-insights" title="💡 인사이트">
         <Card title="소비 패턴 종합 분석" span={4}>
           <div className="grid-2" style={{ gap: 12 }}>
-            <Insight title="요일 빈도 패턴" color="#e94560" bg="#f8d7da">
+            <Insight title="요일 빈도 패턴" tone="danger">
               가장 자주 지출하는 요일: {sortedByCount.slice(0, 2).map((w) => `${w.name}(${w.count}건, 건당 ${F(w.avg)}원)`).join(", ")}.
               가장 적게 지출하는 요일: {sortedByCount.slice(-1).map((w) => `${w.name}(${w.count}건)`).join("")}.
               {sortedByCount[0] && sortedByCount[sortedByCount.length - 1] && sortedByCount[0].count > sortedByCount[sortedByCount.length - 1].count * 3
                 ? ` ${sortedByCount[0].name}요일 거래 빈도가 ${sortedByCount[sortedByCount.length - 1].name}요일의 ${Math.round(sortedByCount[0].count / Math.max(sortedByCount[sortedByCount.length - 1].count, 1))}배 — 특정 요일에 소비가 몰립니다.`
                 : " 요일별 빈도는 비교적 고름."}
             </Insight>
-            <Insight title="주말 vs 주중" color="#0f3460" bg="#f0f8ff">
+            <Insight title="주말 vs 주중" tone="info">
               주말 {weekendPct}% ({F(d.weekendTot)}원), 주중 {100 - weekendPct}% ({F(d.weekdayTot)}원).
               {weekendPct > 40 ? " 주말 지출 집중 — 외식·여가·쇼핑이 주말에 몰리는 패턴. 주말 예산 설정이 효과적." :
                 weekendPct > 25 ? " 주중·주말 균형적." :
                 " 주중 지출 압도적 — 출퇴근·점심값 등 고정 패턴."}
             </Insight>
-            <Insight title="월 주기성 (상·중·하순)" color="#b45309" bg="#fff3cd">
+            <Insight title="월 주기성 (상·중·하순)" tone="warning">
               상순 {F(byThird[0])}원 ({d.pExpense > 0 ? Math.round((byThird[0] / d.pExpense) * 100) : 0}%), 중순 {F(byThird[1])}원 ({d.pExpense > 0 ? Math.round((byThird[1] / d.pExpense) * 100) : 0}%), 하순 {F(byThird[2])}원 ({d.pExpense > 0 ? Math.round((byThird[2] / d.pExpense) * 100) : 0}%).
               {byThird[2] > byThird[0] && byThird[2] > byThird[1] ? " 하순에 집중 — 카드 결제일·월말 효과." :
                 byThird[0] > byThird[1] ? " 상순에 집중 — 고정비 결제(월세·보험 등)." :
                 " 중순에 집중."}
             </Insight>
-            <Insight title="스트릭·소비 통제력" color="#059669" bg="#d4edda">
+            <Insight title="스트릭·소비 통제력" tone="success">
               {ps.currentStreakType === "zero" ? `🔥 현재 ${ps.currentStreakDays}일 연속 무지출 중!` : ps.currentStreakType === "spend" ? `${ps.currentStreakDays}일 연속 지출 중.` : ""}
               {" "}최장 무지출 {ps.longestZeroStreak}일, 최장 연속 소비 {ps.longestSpendStreak}일.
               {" "}평균 {ps.avgIntervalDays.toFixed(1)}일에 한 번 지출.

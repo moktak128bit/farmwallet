@@ -3,11 +3,13 @@
  * AccountsPage에서 분리 — React.memo로 감싸므로 부모가 넘기는 onClose는
  * 안정적(useCallback)이어야 하고, 나머지 props는 부모 memo 결과를 그대로 받는다.
  */
-import React from "react";
+import React, { useEffect } from "react";
 import type { Account, LedgerEntry, StockTrade, AccountBalanceRow } from "../../../types";
 import { formatShortDate, formatKRW, formatUSD } from "../../../utils/formatter";
 import { isUSDStock } from "../../../utils/finance";
 import { shouldUseUsdBalanceMode } from "../../../utils/tradeCashImpact";
+import { useFocusTrap } from "../../../hooks/useFocusTrap";
+import { useModalStackEntry } from "../../../utils/modalStack";
 
 interface Props {
   account: Account;
@@ -30,6 +32,17 @@ export const TransactionHistoryModal = React.memo(function TransactionHistoryMod
   effectiveFxRate,
   onClose,
 }: Props) {
+  // 접근성: 포커스 트랩 + window 레벨 ESC + 모달 스택 (최상위 모달만 닫힘)
+  const trapRef = useFocusTrap<HTMLDivElement>(true);
+  const isTopModal = useModalStackEntry(true);
+  useEffect(() => {
+    const handler = (e: KeyboardEvent) => {
+      if (e.key === "Escape" && isTopModal()) onClose();
+    };
+    window.addEventListener("keydown", handler);
+    return () => window.removeEventListener("keydown", handler);
+  }, [onClose, isTopModal]);
+
   const ledgerRows = ledger
     .filter((l) => l.fromAccountId === selectedAccount.id || l.toAccountId === selectedAccount.id)
     .map((l) => ({
@@ -138,12 +151,21 @@ export const TransactionHistoryModal = React.memo(function TransactionHistoryMod
 
   return (
     <div className="modal-backdrop" onClick={onClose}>
-      <div className="modal" onClick={(e) => e.stopPropagation()} style={{ maxWidth: "950px", maxHeight: "80vh" }}>
+      <div
+        ref={trapRef}
+        className="modal"
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="transaction-history-modal-title"
+        onClick={(e) => e.stopPropagation()}
+        style={{ maxWidth: "950px", maxHeight: "80vh" }}
+      >
         <div className="modal-header">
-          <h3>{selectedAccount.name} ({selectedAccount.id}) - 거래 내역</h3>
+          <h3 id="transaction-history-modal-title">{selectedAccount.name} ({selectedAccount.id}) - 거래 내역</h3>
           <button
             type="button"
             onClick={onClose}
+            aria-label="닫기"
             style={{ background: "transparent", border: "none", fontSize: "20px", cursor: "pointer", padding: "0", width: "24px", height: "24px" }}
           >
             ×

@@ -43,13 +43,13 @@ export const ForecastView: React.FC<Props> = ({ ledger, recurring, formatNumber 
     ? Math.round(((result.totalUpper - result.totalLower) / 2 / result.totalForecast) * 100)
     : 0;
 
-  // 반복지출 월별 목록
-  const monthlyRecurring = recurring.filter((r) => r.frequency === "monthly");
+  // 반복지출 명세 — 예측의 고정 부분에 포함되는 매월·매주 항목 (매주는 월 환산으로 합산됨)
+  const fixedRecurring = recurring.filter((r) => r.frequency === "monthly" || r.frequency === "weekly");
 
   return (
     <div>
       <div style={{ padding: "10px 14px", background: "var(--bg)", borderRadius: 8, marginBottom: 16, fontSize: 12, color: "var(--text-muted)", lineHeight: 1.6 }}>
-        ℹ️ 공식: <strong>MAX(반복지출 합, 최근 {lookback}개월 평균)</strong> · 신뢰구간 ±1σ · 기준: {monthLabel(result.baseMonth)} → 예측 <strong>{monthLabel(result.forecastMonth)}</strong>
+        ℹ️ 공식: <strong>MAX(반복지출 합, 직전 {lookback}개월 평균)</strong> (진행 중인 이번 달 제외) · 신뢰구간 ±1σ · 기준: {monthLabel(result.baseMonth)} → 예측 <strong>{monthLabel(result.forecastMonth)}</strong>
         <span style={{ marginLeft: 10 }}>
           lookback:
           {[3, 6, 12].map((n) => (
@@ -70,23 +70,23 @@ export const ForecastView: React.FC<Props> = ({ ledger, recurring, formatNumber 
         <div style={{ display: "grid", gridTemplateColumns: "repeat(4, 1fr)", gap: 12 }}>
           <div style={{ padding: "14px 16px", background: "linear-gradient(135deg, #1a1a2e, #16213e)", borderRadius: 10, color: "#fff" }}>
             <div style={{ fontSize: 11, color: "rgba(255,255,255,0.6)", fontWeight: 600 }}>예상 총 지출</div>
-            <div style={{ fontSize: 26, fontWeight: 800, color: "#f0c040", marginTop: 4 }}>{formatNumber(result.totalForecast)}</div>
+            <div style={{ fontSize: 26, fontWeight: 800, color: "#f0c040", marginTop: 4 }}>{formatNumber(Math.round(result.totalForecast))}</div>
             <div style={{ fontSize: 11, color: "rgba(255,255,255,0.5)", marginTop: 4 }}>
-              {formatNumber(result.totalLower)} ~ {formatNumber(result.totalUpper)}
+              {formatNumber(Math.round(result.totalLower))} ~ {formatNumber(Math.round(result.totalUpper))}
             </div>
           </div>
           <div style={{ padding: "14px 16px", background: "#f0f8ff", borderRadius: 10, border: "1px solid #bde" }}>
             <div style={{ fontSize: 11, color: "#666", fontWeight: 600 }}>반복 고정 지출</div>
-            <div style={{ fontSize: 22, fontWeight: 800, color: "#0f3460", marginTop: 4 }}>{formatNumber(totalRecurring)}</div>
+            <div style={{ fontSize: 22, fontWeight: 800, color: "#0f3460", marginTop: 4 }}>{formatNumber(Math.round(totalRecurring))}</div>
             <div style={{ fontSize: 11, color: "#999", marginTop: 4 }}>
-              {monthlyRecurring.length}개 항목 · 확정
+              {fixedRecurring.length}개 항목 · 확정
             </div>
           </div>
           <div style={{ padding: "14px 16px", background: "#fdf5e6", borderRadius: 10, border: "1px solid #f0c040" }}>
             <div style={{ fontSize: 11, color: "#666", fontWeight: 600 }}>변동 지출 평균</div>
-            <div style={{ fontSize: 22, fontWeight: 800, color: "#d97706", marginTop: 4 }}>{formatNumber(totalVariable)}</div>
+            <div style={{ fontSize: 22, fontWeight: 800, color: "#d97706", marginTop: 4 }}>{formatNumber(Math.round(totalVariable))}</div>
             <div style={{ fontSize: 11, color: "#999", marginTop: 4 }}>
-              최근 {lookback}개월 평균
+              직전 {lookback}개월(완결 월) 평균
             </div>
           </div>
           <div style={{ padding: "14px 16px", background: uncertaintyPct > 30 ? "#fff5f5" : "#f0fdf4", borderRadius: 10, border: `1px solid ${uncertaintyPct > 30 ? "#fcc" : "#86efac"}` }}>
@@ -119,12 +119,12 @@ export const ForecastView: React.FC<Props> = ({ ledger, recurring, formatNumber 
                 return (
                   <tr key={c.category} style={{ borderBottom: "1px solid var(--border-light)" }}>
                     <td style={{ padding: "10px 12px", fontWeight: 600 }}>{c.category}</td>
-                    <td style={{ padding: "10px 12px", textAlign: "right", color: c.recurringAmount > 0 ? "#0f3460" : "var(--text-faint)" }}>{formatNumber(c.recurringAmount)}</td>
-                    <td style={{ padding: "10px 12px", textAlign: "right", color: "#d97706" }}>{formatNumber(c.variableAverage)}</td>
-                    <td style={{ padding: "10px 12px", textAlign: "right", fontWeight: 700, color: "var(--text)" }}>{formatNumber(c.forecast)}</td>
+                    <td style={{ padding: "10px 12px", textAlign: "right", color: c.recurringAmount > 0 ? "#0f3460" : "var(--text-faint)" }}>{formatNumber(Math.round(c.recurringAmount))}</td>
+                    <td style={{ padding: "10px 12px", textAlign: "right", color: "#d97706" }}>{formatNumber(Math.round(c.variableAverage))}</td>
+                    <td style={{ padding: "10px 12px", textAlign: "right", fontWeight: 700, color: "var(--text)" }}>{formatNumber(Math.round(c.forecast))}</td>
                     <td style={{ padding: "10px 12px", textAlign: "right", fontSize: 12 }}>
                       <span style={{ color: pct > 100 ? "#e94560" : pct > 80 ? "#f0c040" : "#059669", fontWeight: 700 }}>
-                        {formatNumber(cur)}
+                        {formatNumber(Math.round(cur))}
                       </span>
                       <div style={{ fontSize: 10, color: "var(--text-faint)" }}>{pct.toFixed(0)}%</div>
                     </td>
@@ -166,19 +166,19 @@ export const ForecastView: React.FC<Props> = ({ ledger, recurring, formatNumber 
         </div>
       </Section>
 
-      {monthlyRecurring.length > 0 && (
+      {fixedRecurring.length > 0 && (
         <Section storageKey="forecast-section-recurring" title="🔁 반복지출 명세" defaultOpen={false}>
           <div style={{ gridColumn: "span 4" }}>
             <div style={{ fontSize: 12, color: "var(--text-muted)", marginBottom: 8 }}>
-              예측의 고정 부분에 포함되는 월별 반복지출 {monthlyRecurring.length}개 (합계 {formatNumber(totalRecurring)})
+              예측의 고정 부분에 포함되는 반복지출 {fixedRecurring.length}개 (합계 {formatNumber(Math.round(totalRecurring))}) — 매주 항목은 예측 월 발생 횟수로 환산
             </div>
             <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(220px, 1fr))", gap: 8 }}>
-              {monthlyRecurring.map((r) => (
+              {fixedRecurring.map((r) => (
                 <div key={r.id} style={{ padding: "10px 12px", background: "#f0f8ff", borderRadius: 8, border: "1px solid #bde", fontSize: 12 }}>
-                  <div style={{ fontWeight: 700 }}>{r.title}</div>
+                  <div style={{ fontWeight: 700 }}>{r.title}{r.frequency === "weekly" ? " (매주)" : ""}</div>
                   <div style={{ display: "flex", justifyContent: "space-between", marginTop: 4, color: "#666" }}>
                     <span>{r.category}</span>
-                    <span style={{ fontWeight: 700, color: "#0f3460" }}>{formatNumber(r.amount)}</span>
+                    <span style={{ fontWeight: 700, color: "#0f3460" }}>{formatNumber(Math.round(r.amount))}</span>
                   </div>
                 </div>
               ))}

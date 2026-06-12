@@ -1,6 +1,7 @@
-import React, { useEffect, useState } from "react";
+import React, { useEffect, useRef, useState } from "react";
 import type { SearchQuery, SavedFilter } from "../hooks/useSearch";
 import { useFocusTrap } from "../hooks/useFocusTrap";
+import { useModalStackEntry } from "../utils/modalStack";
 
 interface SearchModalProps {
   isOpen: boolean;
@@ -40,6 +41,10 @@ export const SearchModal: React.FC<SearchModalProps> = ({
   fxRate
 }) => {
   const [showAmountInKRW, setShowAmountInKRW] = useState(true);
+  // "뷰 저장" 버튼이 input 값을 안정적으로 읽도록 ref 사용
+  // (기존 document.activeElement 방식은 버튼 클릭 시 activeElement가 버튼 자신이라 무동작)
+  const filterNameRef = useRef<HTMLInputElement>(null);
+  const isTopModal = useModalStackEntry(isOpen);
   const displayAmount = (r: (typeof filteredResults)[0]) => {
     const amount = r.amount;
     const currency = r.currency ?? "KRW";
@@ -51,11 +56,12 @@ export const SearchModal: React.FC<SearchModalProps> = ({
   useEffect(() => {
     if (!isOpen) return;
     const handleKeyDown = (e: KeyboardEvent) => {
-      if (e.key === "Escape") onClose();
+      // 모달 중첩 시 최상위 모달만 ESC로 닫힘
+      if (e.key === "Escape" && isTopModal()) onClose();
     };
     window.addEventListener("keydown", handleKeyDown);
     return () => window.removeEventListener("keydown", handleKeyDown);
-  }, [isOpen, onClose]);
+  }, [isOpen, onClose, isTopModal]);
 
   const trapRef = useFocusTrap<HTMLDivElement>(isOpen);
   if (!isOpen) return null;
@@ -132,7 +138,7 @@ export const SearchModal: React.FC<SearchModalProps> = ({
               <span>주식 거래 포함</span>
             </label>
             <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
-              <span style={{ fontSize: 13, color: "var(--muted)" }}>금액 표시:</span>
+              <span style={{ fontSize: 13, color: "var(--text-muted)" }}>금액 표시:</span>
               <button
                 type="button"
                 className={showAmountInKRW ? "primary" : "secondary"}
@@ -152,6 +158,7 @@ export const SearchModal: React.FC<SearchModalProps> = ({
 
           <div style={{ display: "flex", gap: 8, alignItems: "center", margin: "8px 0" }}>
             <input
+              ref={filterNameRef}
               type="text"
               placeholder="필터 이름 저장"
               onKeyDown={(e) => {
@@ -166,8 +173,8 @@ export const SearchModal: React.FC<SearchModalProps> = ({
               type="button"
               className="secondary"
               onClick={() => {
-                const input = document.activeElement as HTMLInputElement;
-                if (input && input.value) {
+                const input = filterNameRef.current;
+                if (input && input.value.trim()) {
                   onSaveFilter(input.value);
                   input.value = "";
                 }

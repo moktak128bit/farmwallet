@@ -6,8 +6,15 @@
  * React.memo — 부모가 넘기는 콜백은 모두 안정적(setState 또는 useCallback)이어야 memo가 효과를 가진다.
  * cashAccounts/loanRepaymentSubOptions는 부모 memo — 여기서 재계산하지 않는다.
  */
-import React, { useState } from "react";
-import type { Account, LedgerEntry } from "../../types";
+import React, { useEffect, useState } from "react";
+import { toast } from "react-hot-toast";
+import type { Account, LedgerEntry, Loan } from "../../types";
+import { formatKRW } from "../../utils/formatter";
+import { getTodayKST } from "../../utils/date";
+import { useFocusTrap } from "../../hooks/useFocusTrap";
+import { useModalStackEntry } from "../../utils/modalStack";
+import { isInterestRepayment } from "../../calculations";
+import { isLoanRepaymentEntry } from "./debtShared";
 
 interface Props {
   /** 수정 대상 상환 내역 (열림 상태는 부모 소유) */
@@ -17,6 +24,8 @@ interface Props {
   cashAccounts: Account[];
   /** 부모 memo — 대출상환 세부 항목 옵션 */
   loanRepaymentSubOptions: string[];
+  /** 부모 useCallback — 상환 내역 ↔ 대출 매칭 (잔금 초과 경고용) */
+  matchRepaymentLoan?: (entry: LedgerEntry) => Loan | null;
   onChangeLedger: (ledger: LedgerEntry[]) => void;
   /** 부모 useCallback — setEditingRepayment(null) */
   onClose: () => void;
@@ -27,6 +36,7 @@ export const EditRepaymentModal: React.FC<Props> = React.memo(function EditRepay
   ledger,
   cashAccounts,
   loanRepaymentSubOptions,
+  matchRepaymentLoan,
   onChangeLedger,
   onClose
 }) {
@@ -52,8 +62,19 @@ export const EditRepaymentModal: React.FC<Props> = React.memo(function EditRepay
         : principalOption;
   });
   const [editFromAccountId, setEditFromAccountId] = useState(entry.fromAccountId || "");
-  const [editDate, setEditDate] = useState(() => entry.date || new Date().toISOString().slice(0, 10));
+  const [editDate, setEditDate] = useState(() => entry.date || getTodayKST());
   const [editDescription, setEditDescription] = useState(entry.description || "");
+
+  // 접근성: 포커스 트랩 + window 레벨 ESC + 모달 스택 (최상위 모달만 닫힘)
+  const trapRef = useFocusTrap<HTMLDivElement>(true);
+  const isTopModal = useModalStackEntry(true);
+  useEffect(() => {
+    const handler = (e: KeyboardEvent) => {
+      if (e.key === "Escape" && isTopModal()) onClose();
+    };
+    window.addEventListener("keydown", handler);
+    return () => window.removeEventListener("keydown", handler);
+  }, [onClose, isTopModal]);
 
   const handleSaveEditRepayment = () => {
     const amount = Number(editAmount.replace(/[^0-9]/g, "")) || 0;
@@ -68,6 +89,33 @@ export const EditRepaymentModal: React.FC<Props> = React.memo(function EditRepay
     if (!editSubCategory) {
       alert("세부 항목을 선택해주세요.");
       return;
+    }
+    // 날짜 빈값 거부 — date input은 지우기로 빈 문자열이 될 수 있다
+    if (!editDate) {
+      alert("날짜를 입력해주세요.");
+      return;
+    }
+
+    // 원금 상환이 해당 대출의 잔금(이 내역 제외)을 초과하면 경고 (저장은 진행 — 잔금은 0으로 클램프)
+    if (matchRepaymentLoan && !editSubCategory.includes("이자")) {
+      const draft: LedgerEntry = { ...entry, description: editDescription || entry.description };
+      const loan = matchRepaymentLoan(draft);
+      if (loan) {
+        const principalPaidOthers = ledger.reduce((s, l) => {
+          if (l.id === entry.id) return s;
+          if (!isLoanRepaymentEntry(l)) return s;
+          if (isInterestRepayment(l)) return s;
+          if (matchRepaymentLoan(l)?.id !== loan.id) return s;
+          return s + l.amount;
+        }, 0);
+        const remaining = Math.max(0, loan.loanAmount - principalPaidOthers);
+        if (amount > remaining) {
+          toast(
+            `상환 금액이 현재 잔금(${formatKRW(Math.round(remaining))})을 초과합니다 — 잔금은 0원으로 처리됩니다.`,
+            { icon: "⚠️" }
+          );
+        }
+      }
     }
     const updated: LedgerEntry = {
       ...entry,
@@ -86,12 +134,21 @@ export const EditRepaymentModal: React.FC<Props> = React.memo(function EditRepay
 
   return (
     <div className="modal-backdrop" onClick={onClose}>
-      <div className="modal" onClick={(e) => e.stopPropagation()} style={{ maxWidth: 400 }}>
+      <div
+        ref={trapRef}
+        className="modal"
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="edit-repayment-modal-title"
+        onClick={(e) => e.stopPropagation()}
+        style={{ maxWidth: 400 }}
+      >
         <div className="modal-header">
-          <h3>상환 내역 수정</h3>
+          <h3 id="edit-repayment-modal-title">상환 내역 수정</h3>
           <button
             type="button"
             onClick={onClose}
+            aria-label="닫기"
             style={{
               background: "transparent",
               border: "none",

@@ -455,8 +455,11 @@ const fetchFromYahooQuoteBatch = async (
         }
         return results;
       }
-      // 429 또는 기타 비정상 시 아래 proxy 경로로 폴백
-    } catch {
+      // 429면 RateLimitError를 실제로 throw — 호출부(fetchYahooQuotes)의 429 분기(폴백/스킵)가 동작
+      if (res.status === 429) throw new RateLimitError();
+      // 기타 비정상 시 아래 proxy 경로로 폴백
+    } catch (err) {
+      if (err instanceof RateLimitError) throw err;
       // 네트워크 오류·timeout 등: 아래 proxy 경로로 폴백
     } finally {
       clearTimeout(timeoutId);
@@ -473,12 +476,15 @@ const fetchFromYahooQuoteBatch = async (
   ];
 
   let payloadStr = "";
+  let saw429 = false;
   for (const proxyUrl of proxyUrls) {
     const controller = new AbortController();
     const timeoutId = setTimeout(() => controller.abort(), 6000);
     try {
       const res = await fetch(proxyUrl, { signal: controller.signal });
-      if (res.ok) {
+      if (res.status === 429) {
+        saw429 = true; // 다음 예비 프록시 시도 — 전부 실패하면 RateLimitError
+      } else if (res.ok) {
         payloadStr = await res.text();
         if (payloadStr && !payloadStr.includes("Not Found")) break;
       }
@@ -489,7 +495,11 @@ const fetchFromYahooQuoteBatch = async (
     }
   }
 
-  if (!payloadStr) return new Map();
+  if (!payloadStr) {
+    // 모든 프록시 실패 + 429 발생 → 호출부 429 분기(종목별 chart 폴백)가 동작하도록 throw
+    if (saw429) throw new RateLimitError();
+    return new Map();
+  }
 
   let data: YahooQuoteApiResponse;
   try {
@@ -570,12 +580,15 @@ const fetchFromYahooChart = async (
   ];
 
   let payloadStr = "";
+  let saw429 = false;
   for (const proxyUrl of proxyUrls) {
     const controller = new AbortController();
     const timeoutId = setTimeout(() => controller.abort(), 5000);
     try {
       const res = await fetch(proxyUrl, { signal: controller.signal });
-      if (res.ok) {
+      if (res.status === 429) {
+        saw429 = true; // 다음 예비 프록시 시도 — 전부 실패하면 RateLimitError
+      } else if (res.ok) {
         payloadStr = await res.text();
         if (payloadStr && !payloadStr.includes("Not Found")) break;
       }
@@ -585,7 +598,11 @@ const fetchFromYahooChart = async (
     }
   }
 
-  if (!payloadStr) return null;
+  if (!payloadStr) {
+    // 모든 프록시 실패 + 429 발생 → 호출부 429 분기(해당 종목 스킵)가 동작하도록 throw
+    if (saw429) throw new RateLimitError();
+    return null;
+  }
 
   let data: YahooChartResponse;
   try {
@@ -636,6 +653,8 @@ const fetchFromStooq = async (requestedSymbol: string): Promise<YahooQuoteResult
   try {
     const res = await fetch(url, { signal: controller.signal });
     clearTimeout(timeoutId);
+    // 429면 throw — 호출부의 RateLimitError 분기(재throw·스킵)가 동작
+    if (res.status === 429) throw new RateLimitError();
     if (!res.ok) return null;
     const json = (await res.json()) as {
       symbols?: Array<{ symbol: string; name?: string; close?: string }>;

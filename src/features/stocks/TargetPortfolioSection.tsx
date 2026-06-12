@@ -1,4 +1,5 @@
 import React, { useMemo, useState, useRef, useEffect } from "react";
+import { toast } from "react-hot-toast";
 import {
   PieChart,
   Pie,
@@ -163,8 +164,15 @@ export const TargetPortfolioSection: React.FC<TargetPortfolioSectionProps> = ({
   };
 
   const handleDeleteTarget = (id: string) => {
+    const target = targetPortfolios.find((t) => t.id === id);
+    if (
+      typeof window !== "undefined" &&
+      !window.confirm(`목표 포트폴리오 "${target?.name ?? id}"를 삭제하시겠습니까?`)
+    ) {
+      return;
+    }
     onChangeTargetPortfolios(targetPortfolios.filter((t) => t.id !== id));
-    if (selectedTargetId === id) setSelectedTargetId(targetPortfolios[0]?.id ?? "");
+    if (selectedTargetId === id) setSelectedTargetId(targetPortfolios.find((t) => t.id !== id)?.id ?? "");
     setEditingTarget(null);
   };
 
@@ -172,7 +180,10 @@ export const TargetPortfolioSection: React.FC<TargetPortfolioSectionProps> = ({
     if (!editingTarget) return;
     const newItems = [...editingTarget.items, { ticker: ticker.trim().toUpperCase(), targetPercent }];
     const sum = newItems.reduce((s, i) => s + i.targetPercent, 0);
-    if (sum > 100) return;
+    if (sum > 100) {
+      toast.error(`목표 비중 합이 100%를 초과합니다 (현재 합계 ${sum.toFixed(1)}%)`);
+      return;
+    }
     setEditingTarget({ ...editingTarget, items: newItems });
   };
 
@@ -190,7 +201,10 @@ export const TargetPortfolioSection: React.FC<TargetPortfolioSectionProps> = ({
       i === index ? { ...item, targetPercent } : item
     );
     const sum = next.reduce((s, i) => s + i.targetPercent, 0);
-    if (sum > 100) return;
+    if (sum > 100) {
+      toast.error(`목표 비중 합이 100%를 초과합니다 (현재 합계 ${sum.toFixed(1)}%)`);
+      return;
+    }
     setEditingTarget({ ...editingTarget, items: next });
   };
 
@@ -470,6 +484,7 @@ export const TargetPortfolioSection: React.FC<TargetPortfolioSectionProps> = ({
                     <ResponsiveContainer width="100%" height="100%">
                       <PieChart>
                         <Pie
+                          isAnimationActive={false}
                           data={targetPieData}
                           cx="50%"
                           cy="50%"
@@ -509,6 +524,7 @@ export const TargetPortfolioSection: React.FC<TargetPortfolioSectionProps> = ({
                     <ResponsiveContainer width="100%" height="100%">
                       <PieChart>
                         <Pie
+                          isAnimationActive={false}
                           data={currentPieData}
                           cx="50%"
                           cy="50%"

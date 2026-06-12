@@ -1,4 +1,7 @@
 import React from "react";
+import { STORAGE_KEYS } from "../constants/config";
+import { saveSafetySnapshot } from "../services/backupService";
+import type { AppData } from "../types";
 
 interface AppErrorBoundaryProps {
   children: React.ReactNode;
@@ -66,6 +69,42 @@ export class AppErrorBoundary extends React.Component<AppErrorBoundaryProps, App
 
   private handleResetData = async (): Promise<void> => {
     if (!this.props.onResetData) return;
+
+    // 무확인 즉시 초기화 방지 — 강한 경고와 함께 명시적 확인을 받는다.
+    const confirmed = window.confirm(
+      "정말 모든 데이터를 초기화할까요?\n\n가계부·계좌·주식 거래 등 모든 앱 데이터가 삭제되며 복구할 수 없습니다.\n초기화 직전에 현재 데이터의 백업 스냅샷 저장을 시도합니다."
+    );
+    if (!confirmed) return;
+
+    // 초기화 직전 백업 스냅샷 시도 — 손상 데이터라도 사본을 남겨 복구 여지를 확보
+    this.setState({
+      isRecovering: true,
+      recoveryMessage: "초기화 전 백업 스냅샷 저장 중..."
+    });
+    let snapshotOk = false;
+    try {
+      const raw = window.localStorage.getItem(STORAGE_KEYS.DATA);
+      if (!raw) {
+        // 저장된 데이터가 아예 없으면 잃을 것이 없음 — 스냅샷 생략하고 진행
+        snapshotOk = true;
+      } else {
+        const parsed = JSON.parse(raw) as AppData;
+        snapshotOk = await saveSafetySnapshot(parsed, "오류 화면 데이터 초기화 직전 자동 스냅샷");
+      }
+    } catch (snapshotError) {
+      console.warn("[AppErrorBoundary] 초기화 전 스냅샷 실패", snapshotError);
+      snapshotOk = false;
+    }
+    if (!snapshotOk) {
+      const proceedAnyway = window.confirm(
+        "백업 스냅샷 저장에 실패했습니다 (데이터가 손상됐을 수 있음).\n그래도 데이터를 초기화할까요? 이 경우 복구가 불가능합니다."
+      );
+      if (!proceedAnyway) {
+        this.setState({ isRecovering: false, recoveryMessage: "초기화를 취소했습니다." });
+        return;
+      }
+    }
+
     this.setState({
       isRecovering: true,
       recoveryMessage: "앱 데이터를 초기화하는 중..."

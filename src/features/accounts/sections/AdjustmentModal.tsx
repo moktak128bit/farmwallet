@@ -5,12 +5,13 @@
  * 입력 상태는 항상 빈 값으로 시작한다 (기존 열기 시 초기화 동작과 동일).
  * React.memo로 감싸므로 부모가 넘기는 콜백(onClose)은 안정적(useCallback)이어야 한다.
  */
-import React, { useState } from "react";
+import React, { useEffect, useState } from "react";
 import type { Account, AccountType, LedgerEntry, AccountBalanceRow } from "../../../types";
 import { formatNumber, formatKRW, formatUSD } from "../../../utils/formatter";
-import { parseAmount } from "../../../utils/parseAmount";
 import { ACCOUNT_TYPE_LABEL, parseSignedAmount, sanitizeSignedNumericInput } from "../accountsShared";
 import { CardPaymentSection } from "./CardPaymentSection";
+import { useFocusTrap } from "../../../hooks/useFocusTrap";
+import { useModalStackEntry } from "../../../utils/modalStack";
 import { toast } from "react-hot-toast";
 
 interface Props {
@@ -42,6 +43,18 @@ export const AdjustmentModal = React.memo(function AdjustmentModal({
   const [isSetDirectly, setIsSetDirectly] = useState(false);
   const [editUsdBalance, setEditUsdBalance] = useState("");
   const [editKrwBalance, setEditKrwBalance] = useState("");
+
+  // 접근성: 포커스 트랩 + window 레벨 ESC (입력 포커스 여부와 무관하게 닫힘)
+  // 모달 중첩 시 최상위 모달만 ESC로 닫히도록 모달 스택을 사용한다.
+  const trapRef = useFocusTrap<HTMLDivElement>(true);
+  const isTopModal = useModalStackEntry(true);
+  useEffect(() => {
+    const handler = (e: KeyboardEvent) => {
+      if (e.key === "Escape" && isTopModal()) onClose();
+    };
+    window.addEventListener("keydown", handler);
+    return () => window.removeEventListener("keydown", handler);
+  }, [onClose, isTopModal]);
 
   const handleAdjustBalance = () => {
     if (!onChangeAccounts) return;
@@ -140,8 +153,11 @@ export const AdjustmentModal = React.memo(function AdjustmentModal({
     });
 
     onChangeAccounts(updated);
+    // 증권/암호화폐 분기와 동일하게 — 적용 후 성공 안내와 함께 모달을 닫는다
+    toast.success(isSetDirectly ? "계좌 잔액을 설정했습니다." : "계좌 잔액을 조정했습니다.");
     setAdjustValue("");
     setIsSetDirectly(false);
+    onClose();
   };
 
   const account = safeAccounts.find((a) => a.id === adjustingAccount.id);
@@ -154,9 +170,17 @@ export const AdjustmentModal = React.memo(function AdjustmentModal({
 
   return (
     <div className="modal-backdrop" onClick={onClose}>
-      <div className="modal" onClick={(e) => e.stopPropagation()} style={{ maxWidth: "500px" }}>
+      <div
+        ref={trapRef}
+        className="modal"
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="adjustment-modal-title"
+        onClick={(e) => e.stopPropagation()}
+        style={{ maxWidth: "500px" }}
+      >
         <div className="modal-header">
-          <h3>
+          <h3 id="adjustment-modal-title">
             {(() => {
               const label = `${account.name} (${ACCOUNT_TYPE_LABEL[adjustingAccount.type]})`;
               if (adjustingAccount.type === "card") {
@@ -171,6 +195,7 @@ export const AdjustmentModal = React.memo(function AdjustmentModal({
           <button
             type="button"
             onClick={onClose}
+            aria-label="닫기"
             style={{ background: "transparent", border: "none", fontSize: "20px", cursor: "pointer", padding: "0", width: "24px", height: "24px" }}
           >
             ×
@@ -180,7 +205,7 @@ export const AdjustmentModal = React.memo(function AdjustmentModal({
           {adjustingAccount.type === "card" && onChangeLedger && (
             <CardPaymentSection
               account={account}
-              checkingAccounts={safeAccounts.filter((a) => a.type === "checking" || a.type === "savings")}
+              checkingAccounts={safeAccounts.filter((a) => (a.type === "checking" || a.type === "savings") && !a.archived)}
               currentDebt={cardDebtMap.get(account.id)?.total ?? 0}
               onAddPayment={(entry) => {
                 onChangeLedger([...ledger, entry]);
@@ -256,11 +281,14 @@ export const AdjustmentModal = React.memo(function AdjustmentModal({
                           onClick={() => {
                             const raw = targetDebtInput.trim();
                             if (!raw) return;
-                            const target = Math.round(parseAmount(raw));
-                            if (!Number.isFinite(target)) {
+                            // 부호 보존 파서 — parseAmount는 "-"를 제거해 음수 목표(선납 상태)가 양수 부채로 반전되는 버그가 있었다.
+                            // parseSignedAmount는 형식 오류 시 null을 반환하므로 가드가 실제로 동작한다.
+                            const parsed = parseSignedAmount(raw);
+                            if (parsed == null) {
                               toast.error("숫자를 입력하세요");
                               return;
                             }
+                            const target = Math.round(parsed);
                             const oldAccountDebt = account.debt ?? 0;
                             // currentDebt = oldAccountDebt + (ledger usage - payment) → ledgerDelta = currentDebt - oldAccountDebt
                             // 목표 부채로 맞추려면: newAccountDebt = target - ledgerDelta = target - currentDebt + oldAccountDebt
@@ -319,18 +347,20 @@ export const AdjustmentModal = React.memo(function AdjustmentModal({
                   autoFocus
                   style={{ width: "100%", padding: "10px", fontSize: "16px" }}
                   onKeyDown={(e) => {
-                    if (e.key === "Enter") {
-                      handleAdjustBalance();
-                    } else if (e.key === "Escape") {
-                      onClose();
-                    }
+                    // ESC 닫기는 window 레벨 핸들러가 담당 (중복 제거)
+                    if (e.key === "Enter") handleAdjustBalance();
                   }}
                 />
-                {editUsdBalance && fxRate && (
-                  <div style={{ fontSize: "12px", color: "var(--text-muted)", marginTop: "8px" }}>
-                    원화 환산 약 {formatNumber(parseAmount(editUsdBalance, { allowDecimal: true }) * fxRate)}원
-                  </div>
-                )}
+                {editUsdBalance && fxRate && (() => {
+                  // 부호 보존 파서 — 음수 증감 입력 시 환산 힌트도 음수로 정확히 표시
+                  const usdParsed = parseSignedAmount(editUsdBalance);
+                  if (usdParsed == null) return null;
+                  return (
+                    <div style={{ fontSize: "12px", color: "var(--text-muted)", marginTop: "8px" }}>
+                      원화 환산 약 {formatNumber(usdParsed * fxRate)}원
+                    </div>
+                  );
+                })()}
               </label>
 
               <label style={{ marginBottom: "16px" }}>
@@ -347,11 +377,8 @@ export const AdjustmentModal = React.memo(function AdjustmentModal({
                   placeholder={isSetDirectly ? "KRW 잔액 (예: 1000000)" : "KRW 증감 (예: 100000 또는 -50000)"}
                   style={{ width: "100%", padding: "10px", fontSize: "16px" }}
                   onKeyDown={(e) => {
-                    if (e.key === "Enter") {
-                      handleAdjustBalance();
-                    } else if (e.key === "Escape") {
-                      onClose();
-                    }
+                    // ESC 닫기는 window 레벨 핸들러가 담당 (중복 제거)
+                    if (e.key === "Enter") handleAdjustBalance();
                   }}
                 />
               </label>
@@ -404,11 +431,10 @@ export const AdjustmentModal = React.memo(function AdjustmentModal({
                   }
                   autoFocus
                   onKeyDown={(e) => {
+                    // ESC 닫기는 window 레벨 핸들러가 담당 (중복 제거)
                     if (e.key === "Enter") {
                       handleAdjustBalance();
                       setAdjustValue("");
-                    } else if (e.key === "Escape") {
-                      onClose();
                     }
                   }}
                 />

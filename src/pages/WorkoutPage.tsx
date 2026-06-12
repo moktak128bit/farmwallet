@@ -13,6 +13,9 @@ import {
   formatDisplayDate, makeId, nowIso,
   computeExerciseVolume, getEntryBodyParts,
 } from "../features/workout/helpers";
+import { getTodayKST } from "../utils/date";
+import { showDeleteUndoToast } from "../utils/undoToast";
+import { useAppStore } from "../store/appStore";
 
 interface Props {
   workoutWeeks?: WorkoutWeek[];
@@ -31,7 +34,7 @@ export const WorkoutView: React.FC<Props> = ({
   customExercises = [],
   onChangeCustomExercises,
 }) => {
-  const today = toDateString(new Date());
+  const today = getTodayKST();
   const [currentMonth, setCurrentMonth] = useState<string>(() => getMonthStart(today));
   const [selectedDate, setSelectedDate] = useState<string>(today);
   // 종목별 진행 이력 모달
@@ -199,6 +202,7 @@ export const WorkoutView: React.FC<Props> = ({
 
   const removeEntry = (date: string) => {
     const weekStart = getWeekStart(date);
+    const deletedEntry = entryByDate.get(date)?.entry ?? null;
     const nextWeeks = workoutWeeks
       .map((week) => {
         if (week.weekStart !== weekStart) return week;
@@ -206,6 +210,33 @@ export const WorkoutView: React.FC<Props> = ({
       })
       .filter((week) => (week.entries ?? []).length > 0);
     onChangeWorkoutWeeks(nextWeeks);
+
+    // 삭제 토스트 + 실행 취소 (복원 시점의 최신 상태에 재삽입)
+    if (deletedEntry) {
+      showDeleteUndoToast(`${formatDisplayDate(date)} 기록을 삭제했습니다.`, () => {
+        const weeks = useAppStore.getState().data.workoutWeeks ?? [];
+        const week = weeks.find((w) => w.weekStart === weekStart);
+        if (week?.entries?.some((en) => en.date === date)) return false; // 같은 날짜 기록이 이미 생김
+        let restored: WorkoutWeek[];
+        if (week) {
+          restored = weeks.map((w) =>
+            w.weekStart !== weekStart
+              ? w
+              : {
+                  ...w,
+                  entries: [...(w.entries ?? []), deletedEntry].sort((a, b) =>
+                    a.date.localeCompare(b.date)
+                  ),
+                }
+          );
+        } else {
+          restored = [...weeks, { id: makeId("w"), weekStart, entries: [deletedEntry] }];
+          restored.sort((a, b) => b.weekStart.localeCompare(a.weekStart));
+        }
+        onChangeWorkoutWeeks(restored);
+        return true;
+      });
+    }
   };
 
   const addExercise = (name: string, bodyPart: WorkoutBodyPart) => {
@@ -227,10 +258,46 @@ export const WorkoutView: React.FC<Props> = ({
   };
 
   const removeExercise = (exerciseId: string) => {
-    upsertEntry(selectedDate, (entry) => ({
+    const date = selectedDate;
+    const currentExercises = entryByDate.get(date)?.entry.exercises ?? [];
+    const deletedIndex = currentExercises.findIndex((ex) => ex.id === exerciseId);
+    const deletedExercise = deletedIndex >= 0 ? currentExercises[deletedIndex] : null;
+
+    upsertEntry(date, (entry) => ({
       ...entry,
       exercises: (entry.exercises ?? []).filter((ex) => ex.id !== exerciseId)
     }));
+
+    // 삭제 토스트 + 실행 취소 — 세트 입력이 있던 종목을 실수로 지웠을 때 복구 경로
+    if (deletedExercise) {
+      const weekStart = getWeekStart(date);
+      showDeleteUndoToast(`"${deletedExercise.name}" 종목을 삭제했습니다.`, () => {
+        const weeks = useAppStore.getState().data.workoutWeeks ?? [];
+        const week = weeks.find((w) => w.weekStart === weekStart);
+        const entryNow = week?.entries?.find((en) => en.date === date);
+        if (!week || !entryNow || entryNow.type !== "workout") return false;
+        const list = entryNow.exercises ?? [];
+        if (list.some((ex) => ex.id === deletedExercise.id)) return false; // 이미 복원됨
+        const nextList = [...list];
+        if (deletedIndex >= 0 && deletedIndex <= nextList.length) {
+          nextList.splice(deletedIndex, 0, deletedExercise);
+        } else {
+          nextList.push(deletedExercise);
+        }
+        const restored = weeks.map((w) =>
+          w.weekStart !== weekStart
+            ? w
+            : {
+                ...w,
+                entries: (w.entries ?? []).map((en) =>
+                  en.date !== date ? en : { ...en, exercises: nextList }
+                ),
+              }
+        );
+        onChangeWorkoutWeeks(restored);
+        return true;
+      });
+    }
   };
 
   const reorderExercise = (exerciseId: string, direction: "up" | "down") => {
@@ -541,15 +608,27 @@ export const WorkoutView: React.FC<Props> = ({
       const generated: WorkoutExercise[] = routine.exercises.map((rex) => {
         // 계획 세트: 중량/반복을 목표치로 미리 채워 두고 done=false.
         // 사용자는 실제 수행 후 [✓] 체크 + 필요시 값 인라인 수정.
-        const sets: WorkoutSet[] = Array.from({ length: rex.targetSets }, () => ({
-          weightKg: rex.targetWeightKg,
-          reps: rex.targetReps,
-          done: false,
-          targetWeightKg: rex.targetWeightKg,
-          targetReps: rex.targetReps,
-          targetRepsRange: rex.targetRepsRange,
-          restSec: rex.restSec,
-        }));
+        // 유산소 종목은 "(reps=분)" 컨벤션을 실제 필드로 변환 — durationMin에 분을 채움.
+        const isCardio = rex.bodyPart === "유산소";
+        const sets: WorkoutSet[] = Array.from({ length: rex.targetSets }, () =>
+          isCardio
+            ? {
+                weightKg: 0,
+                reps: 0,
+                done: false,
+                durationMin: rex.targetReps,
+                restSec: rex.restSec,
+              }
+            : {
+                weightKg: rex.targetWeightKg,
+                reps: rex.targetReps,
+                done: false,
+                targetWeightKg: rex.targetWeightKg,
+                targetReps: rex.targetReps,
+                targetRepsRange: rex.targetRepsRange,
+                restSec: rex.restSec,
+              }
+        );
         return {
           id: makeId("ex"),
           name: rex.name,

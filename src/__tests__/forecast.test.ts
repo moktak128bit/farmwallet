@@ -14,14 +14,17 @@ const mkExpense = (date: string, category: string, amount: number): LedgerEntry 
 const mkRecurring = (
   category: string,
   amount: number,
-  freq: "monthly" | "weekly" | "yearly" = "monthly"
+  freq: "monthly" | "weekly" | "yearly" = "monthly",
+  startDate = "2024-01-01",
+  endDate?: string
 ): RecurringExpense => ({
   id: Math.random().toString(36).slice(2),
   title: "test",
   amount,
   category,
   frequency: freq,
-  startDate: "2024-01-01",
+  startDate,
+  endDate,
 });
 
 describe("forecastNextMonth", () => {
@@ -52,7 +55,7 @@ describe("forecastNextMonth", () => {
     expect(c.upper).toBe(50_000);
   });
 
-  it("variableAverage: lookback 기간 내 expense 평균", () => {
+  it("variableAverage: 완결된 과거 lookback 개월의 expense 평균 (현재 월 제외)", () => {
     const ledger: LedgerEntry[] = [
       mkExpense("2024-01-15", "외식", 100_000),
       mkExpense("2024-02-15", "외식", 200_000),
@@ -61,17 +64,29 @@ describe("forecastNextMonth", () => {
       mkExpense("2024-05-15", "외식", 200_000),
       mkExpense("2024-06-15", "외식", 300_000),
     ];
-    // currentMonth=2024-06, lookback=6 → 2024-01..2024-06 모두 포함
-    const r = forecastNextMonth(ledger, [], "2024-06", 6);
+    // currentMonth=2024-07, lookback=6 → 2024-01..2024-06 (직전 6개 완결 월)
+    const r = forecastNextMonth(ledger, [], "2024-07", 6);
     const c = r.byCategory.find((x) => x.category === "외식");
     expect(c).toBeDefined();
     expect(c!.variableAverage).toBe(200_000); // (100+200+300+100+200+300)/6
     expect(c!.basedOnMonths).toBe(6);
   });
 
+  it("진행 중인 현재 월은 lookback에서 제외 — 월초의 작은 합계가 평균을 끌어내리지 않음", () => {
+    const ledger: LedgerEntry[] = [
+      mkExpense("2024-05-15", "외식", 300_000), // 완결 월
+      mkExpense("2024-06-02", "외식", 10_000),  // 진행 중인 현재 월 (월초)
+    ];
+    const r = forecastNextMonth(ledger, [], "2024-06", 1);
+    const c = r.byCategory.find((x) => x.category === "외식")!;
+    // lookback=1 → 2024-05만 사용. 2024-06의 1만원은 평균에 미포함.
+    expect(c.variableAverage).toBe(300_000);
+    expect(c.basedOnMonths).toBe(1);
+  });
+
   it("forecast = max(recurring, variableAverage)", () => {
     const ledger: LedgerEntry[] = [
-      mkExpense("2024-06-01", "통신비", 30_000),
+      mkExpense("2024-05-01", "통신비", 30_000),
     ];
     const recurring = [mkRecurring("통신비", 50_000)];
     const r = forecastNextMonth(ledger, recurring, "2024-06");
@@ -81,7 +96,7 @@ describe("forecastNextMonth", () => {
 
   it("std로 인한 신뢰구간: lower는 0 미만으로 안 떨어짐", () => {
     const ledger: LedgerEntry[] = [
-      mkExpense("2024-06-01", "기타", 1000),
+      mkExpense("2024-05-01", "기타", 1000),
       // 다른 달은 0
     ];
     const r = forecastNextMonth(ledger, [], "2024-06", 6);
@@ -92,8 +107,8 @@ describe("forecastNextMonth", () => {
 
   it("expense 외 kind는 제외 (income, transfer 무시)", () => {
     const ledger: LedgerEntry[] = [
-      { ...mkExpense("2024-06-01", "외식", 100_000), kind: "income" },
-      { ...mkExpense("2024-06-02", "외식", 100_000), kind: "transfer" },
+      { ...mkExpense("2024-05-01", "외식", 100_000), kind: "income" },
+      { ...mkExpense("2024-05-02", "외식", 100_000), kind: "transfer" },
     ];
     const r = forecastNextMonth(ledger, [], "2024-06");
     expect(r.byCategory).toEqual([]);
@@ -101,23 +116,47 @@ describe("forecastNextMonth", () => {
 
   it("amount가 0 이하인 항목은 무시", () => {
     const ledger: LedgerEntry[] = [
-      mkExpense("2024-06-01", "외식", 0),
-      mkExpense("2024-06-02", "외식", -100),
+      mkExpense("2024-05-01", "외식", 0),
+      mkExpense("2024-05-02", "외식", -100),
     ];
     const r = forecastNextMonth(ledger, [], "2024-06");
     expect(r.byCategory).toEqual([]);
   });
 
-  it("weekly/yearly 반복지출은 (현재 정책상) recurringByCat에 미포함", () => {
+  it("weekly 반복은 예측 월 발생 횟수로 월 환산 포함, yearly는 미포함", () => {
     const recurring = [
       mkRecurring("월간", 10_000, "monthly"),
-      mkRecurring("주간", 7_000, "weekly"),
+      // 2024-01-01은 월요일 — 2024년 7월 월요일: 1, 8, 15, 22, 29 → 5회
+      mkRecurring("주간", 7_000, "weekly", "2024-01-01"),
       mkRecurring("연간", 12_000, "yearly"),
     ];
     const r = forecastNextMonth([], recurring, "2024-06");
+    expect(r.forecastMonth).toBe("2024-07");
+    expect(r.byCategory.map((c) => c.category).sort()).toEqual(["월간", "주간"]);
+    expect(r.byCategory.find((c) => c.category === "월간")!.recurringAmount).toBe(10_000);
+    expect(r.byCategory.find((c) => c.category === "주간")!.recurringAmount).toBe(7_000 * 5);
+  });
+
+  it("weekly: 예측 월 중간에 시작하면 시작일 이후 발생만 카운트", () => {
+    // 2024-07-20(토) 시작 — 7월 토요일 중 20, 27 → 2회
+    const recurring = [mkRecurring("주간", 5_000, "weekly", "2024-07-20")];
+    const r = forecastNextMonth([], recurring, "2024-06");
     expect(r.byCategory).toHaveLength(1);
-    expect(r.byCategory[0].category).toBe("월간");
-    expect(r.byCategory[0].recurringAmount).toBe(10_000);
+    expect(r.byCategory[0].recurringAmount).toBe(5_000 * 2);
+  });
+
+  it("weekly: endDate 이후 발생은 제외", () => {
+    // 2024-01-01(월) 시작, 2024-07-10 종료 — 7월 월요일 중 1, 8만 포함 (15 이후 제외)
+    const recurring = [mkRecurring("주간", 5_000, "weekly", "2024-01-01", "2024-07-10")];
+    const r = forecastNextMonth([], recurring, "2024-06");
+    expect(r.byCategory).toHaveLength(1);
+    expect(r.byCategory[0].recurringAmount).toBe(5_000 * 2);
+  });
+
+  it("weekly: 예측 월 이후 시작이면 미포함", () => {
+    const recurring = [mkRecurring("주간", 5_000, "weekly", "2024-09-01")];
+    const r = forecastNextMonth([], recurring, "2024-06");
+    expect(r.byCategory).toEqual([]);
   });
 
   it("totalForecast = byCategory.forecast 합", () => {

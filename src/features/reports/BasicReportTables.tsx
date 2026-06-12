@@ -50,8 +50,24 @@ export const BasicReportTables: React.FC<Props> = React.memo(function BasicRepor
   setStartDate,
   setEndDate
 }) {
+  /** 빈 데이터 안내 문구 — 기간 선택은 유지한 채 표/차트 대신 표시 */
+  const emptyHint = (
+    <p className="hint" style={{ padding: 24, textAlign: "center", color: "var(--text-muted)" }}>
+      표시할 데이터가 없습니다. 기간을 조정하거나 가계부에 항목을 추가해보세요.
+    </p>
+  );
+
   // ─── 월별 수입/지출 ───
   if (reportType === "monthly") {
+    if (monthlyReport.length === 0) {
+      return (
+        <div>
+          <h3>월별 수입 / 지출</h3>
+          <MonthRangePicker startDate={startDate} endDate={endDate} setStartDate={setStartDate} setEndDate={setEndDate} />
+          {emptyHint}
+        </div>
+      );
+    }
     return (
       <div>
         <h3>월별 수입 / 지출</h3>
@@ -96,6 +112,14 @@ export const BasicReportTables: React.FC<Props> = React.memo(function BasicRepor
 
   // ─── 연간 요약 ───
   if (reportType === "yearly") {
+    if (yearlyReport.length === 0) {
+      return (
+        <div>
+          <h3>연간 요약</h3>
+          {emptyHint}
+        </div>
+      );
+    }
     return (
       <div>
         <h3>연간 요약</h3>
@@ -127,6 +151,15 @@ export const BasicReportTables: React.FC<Props> = React.memo(function BasicRepor
 
   // ─── 카테고리별 지출 ───
   if (reportType === "category") {
+    if (categoryReport.length === 0) {
+      return (
+        <div>
+          <h3>카테고리별 지출</h3>
+          <DateRangePicker startDate={startDate} endDate={endDate} setStartDate={setStartDate} setEndDate={setEndDate} />
+          {emptyHint}
+        </div>
+      );
+    }
     return (
       <div>
         <h3>카테고리별 지출</h3>
@@ -159,6 +192,14 @@ export const BasicReportTables: React.FC<Props> = React.memo(function BasicRepor
 
   // ─── 주식 성과 ───
   if (reportType === "stock") {
+    if (stockReport.length === 0) {
+      return (
+        <div>
+          <h3>주식 성과</h3>
+          {emptyHint}
+        </div>
+      );
+    }
     return (
       <div>
         <h3>주식 성과</h3>
@@ -180,7 +221,8 @@ export const BasicReportTables: React.FC<Props> = React.memo(function BasicRepor
                   <td>{row.name}</td>
                   <td className="number">{formatKRW(row.currentValue)}</td>
                   <td className={`number ${row.pnl >= 0 ? "positive" : "negative"}`}>{formatKRW(row.pnl)}</td>
-                  <td className={`number ${row.irr != null && row.irr >= 0 ? "positive" : "negative"}`}>{toPercent(row.irr)}</td>
+                  {/* IRR 계산 불가(null)는 손실이 아님 — 중립색 "-" */}
+                  <td className={`number ${row.irr == null ? "" : row.irr >= 0 ? "positive" : "negative"}`}>{toPercent(row.irr)}</td>
                 </tr>
               ))}
             </tbody>
@@ -192,6 +234,14 @@ export const BasicReportTables: React.FC<Props> = React.memo(function BasicRepor
 
   // ─── 계좌 요약 ───
   if (reportType === "account") {
+    if (accountReport.length === 0) {
+      return (
+        <div>
+          <h3>계좌 요약</h3>
+          {emptyHint}
+        </div>
+      );
+    }
     return (
       <div>
         <h3>계좌 요약</h3>
@@ -224,6 +274,15 @@ export const BasicReportTables: React.FC<Props> = React.memo(function BasicRepor
   }
 
   // ─── 일별 스냅샷 ───
+  if (dailyReport.length === 0) {
+    return (
+      <div>
+        <h3>일별 자산 스냅샷</h3>
+        <DateRangePicker startDate={startDate} endDate={endDate} setStartDate={setStartDate} setEndDate={setEndDate} />
+        {emptyHint}
+      </div>
+    );
+  }
   return (
     <div>
       <h3>일별 자산 스냅샷</h3>

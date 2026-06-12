@@ -43,7 +43,7 @@ export const BudgetDashboardSection: React.FC<Props> = React.memo(function Budge
       {/* Overall summary card */}
       <div
         style={{
-          background: "var(--card-bg, #1e1e2e)",
+          background: "var(--surface)",
           border: "1px solid var(--border, #2e2e3e)",
           borderRadius: 10,
           padding: "18px 20px",
@@ -157,7 +157,7 @@ export const BudgetDashboardSection: React.FC<Props> = React.memo(function Budge
                 style={{
                   background: isOver
                     ? "rgba(244, 63, 94, 0.07)"
-                    : "var(--card-bg, #1e1e2e)",
+                    : "var(--surface)",
                   border: "1px solid var(--border, #2e2e3e)",
                   borderLeft: `4px solid ${accentColor}`,
                   borderRadius: 8,

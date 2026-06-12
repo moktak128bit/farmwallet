@@ -4,6 +4,7 @@
 
 import type { Account } from "../types";
 import { isUSDStock } from "./finance";
+import { formatIsoLocal } from "./date";
 
 export interface ValidationResult {
   valid: boolean;
@@ -118,12 +119,13 @@ export function validateDate(
   const minDateOnly = minDate ? new Date(minDate.getFullYear(), minDate.getMonth(), minDate.getDate()) : null;
 
   if (maxDateOnly && dateOnly > maxDateOnly) {
-    const maxDateStr = maxDateOnly.toISOString().slice(0, 10);
+    // toISOString()은 UTC 기준이라 KST에서 하루 이전 날짜로 표기되던 문제 → 로컬 포맷 사용
+    const maxDateStr = formatIsoLocal(maxDateOnly);
     return { valid: false, error: `${maxDateStr} 이전 날짜만 선택할 수 있습니다` };
   }
 
   if (minDateOnly && dateOnly < minDateOnly) {
-    const minDateStr = minDateOnly.toISOString().slice(0, 10);
+    const minDateStr = formatIsoLocal(minDateOnly);
     return { valid: false, error: `${minDateStr} 이후 날짜만 선택할 수 있습니다` };
   }
 

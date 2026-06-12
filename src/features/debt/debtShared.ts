@@ -3,15 +3,24 @@
  * DebtPage 오케스트레이터와 features/debt/* 자식들이 함께 사용한다.
  */
 import type { Loan, LedgerEntry } from "../../types";
+import { parseIsoLocal, formatIsoLocal, getLastDayOfMonth } from "../../utils/date";
 
-/** 거치기간 만료일: loanDate + gracePeriodYears (소수 허용). 미설정이면 null. */
+/**
+ * 거치기간 만료일: loanDate + gracePeriodYears (소수 허용). 미설정이면 null.
+ * - parseIsoLocal/formatIsoLocal로 UTC/로컬 혼용 제거 (toISOString은 타임존에 따라 하루 밀림)
+ * - setMonth 월말 오버플로 방지: 1월 31일 + 1개월 → 3월 3일이 아니라 2월 말일로 클램프
+ */
 export function graceEndDate(loan: Loan): string | null {
   if (!loan.gracePeriodYears || loan.gracePeriodYears <= 0) return null;
-  const d = new Date(loan.loanDate);
-  if (Number.isNaN(d.getTime())) return null;
+  const d = parseIsoLocal(loan.loanDate);
+  if (!d) return null;
   const months = Math.round(loan.gracePeriodYears * 12);
+  const day = d.getDate();
+  d.setDate(1); // 먼저 1일로 옮겨 월 가산 시 오버플로 방지
   d.setMonth(d.getMonth() + months);
-  return d.toISOString().slice(0, 10);
+  const lastDay = getLastDayOfMonth(d.getFullYear(), d.getMonth() + 1);
+  d.setDate(Math.min(day, lastDay));
+  return formatIsoLocal(d);
 }
 
 /** 오늘이 거치기간 내인가? */

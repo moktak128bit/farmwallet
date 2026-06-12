@@ -34,7 +34,8 @@ export const DividendCoverageCard: React.FC<Props> = React.memo(function Dividen
   currentMonth,
 }) {
   const dividendCoverage = useMemo(() => {
-    const months = [shiftMonth(currentMonth, -2), shiftMonth(currentMonth, -1), currentMonth];
+    // 진행 중인 이번달을 넣으면 평균이 체계적으로 과소 — 완결된 직전 3개월만 사용
+    const months = [shiftMonth(currentMonth, -3), shiftMonth(currentMonth, -2), shiftMonth(currentMonth, -1)];
     const monthSetRecent = new Set(months);
     const toKrw = (entry: LedgerEntry) =>
       entry.currency === "USD" && fxRate ? entry.amount * fxRate : entry.amount;
@@ -107,19 +108,23 @@ export const DividendCoverageCard: React.FC<Props> = React.memo(function Dividen
 
   return (
     <div className="card" style={{ minHeight: 180 }}>
-      <div className="card-title">해당 금액 상세 (최근 3개월 기준)</div>
+      <div className="card-title">배당 금액 상세 (직전 3개월 평균)</div>
       <div
         className="card-value"
         style={{
           fontSize: 26,
-          color: isCovered ? "var(--primary)" : "var(--danger)",
+          // 고정비가 없어 비율을 못 구하면(null) 나쁨(danger)이 아니라 중립색
+          color:
+            dividendCoverage.coverageRate == null
+              ? "var(--text-muted)"
+              : isCovered ? "var(--primary)" : "var(--danger)",
         }}
       >
         {dividendCoverage.coverageRate == null ? "-" : `${dividendCoverage.coverageRate.toFixed(1)}%`}
       </div>
       <div className="hint" style={{ marginTop: 6, fontSize: 14 }}>
         배당 {formatKRW(Math.round(dividendCoverage.monthlyDividendAvg))}
-        {" / 예정"}
+        {" / 고정비 "}
         {formatKRW(Math.round(dividendCoverage.monthlyFixedExpenseAvg))}
       </div>
       <div

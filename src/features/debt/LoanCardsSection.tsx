@@ -8,6 +8,9 @@
 import React from "react";
 import type { Loan, RepaymentMethod } from "../../types";
 import { formatKRW } from "../../utils/formatter";
+import { getTodayKST } from "../../utils/date";
+import { useAppStore } from "../../store/appStore";
+import { buildRestoreById, showDeleteUndoToast } from "../../utils/undoToast";
 import { graceEndDate } from "./debtShared";
 
 const daysBetween = (date1: string, date2: string): number => {
@@ -28,35 +31,51 @@ const formatPeriod = (days: number): string => {
   return parts.length > 0 ? parts.join(" ") : "0일";
 };
 
-const calculateTotalInterest = (loan: Loan): number => {
+/**
+ * 총 대출이자 추정.
+ * - 거치기간 동안은 원금 전액에 대한 이자만 납부 — 이 이자도 총액에 가산한다 (기존엔 누락).
+ * - 만기일시(bullet)는 전 기간(거치 포함) 원금 전액 이자.
+ * - 상환 개월수는 정수로 보정 — 소수 개월(예: 53.4)로 회차 수·월 원금이 어긋나는 문제 방지.
+ * (테스트용 export)
+ */
+export const calculateTotalInterest = (loan: Loan): number => {
   const totalDays = daysBetween(loan.loanDate, loan.maturityDate);
   const totalYears = totalDays / 365;
-  const graceYears = loan.gracePeriodYears || 0;
+  if (totalYears <= 0) return 0;
+  // 거치기간은 전체 기간을 넘지 않게 클램프
+  const graceYears = Math.min(loan.gracePeriodYears || 0, totalYears);
   const repaymentYears = totalYears - graceYears;
+  const annualRate = loan.annualInterestRate / 100;
+  // 거치기간 이자: 원금 전액 × 연이율 × 거치년수
+  const graceInterest = loan.loanAmount * annualRate * graceYears;
 
-  if (repaymentYears <= 0) return 0;
+  if (loan.repaymentMethod === "bullet") {
+    // 만기일시: 거치 여부와 무관하게 전 기간 원금 전액에 이자 발생
+    return loan.loanAmount * annualRate * totalYears;
+  }
 
-  const monthlyRate = loan.annualInterestRate / 100 / 12;
-  const months = repaymentYears * 12;
+  if (repaymentYears <= 0) return graceInterest;
+
+  const monthlyRate = annualRate / 12;
+  const months = Math.max(1, Math.round(repaymentYears * 12));
 
   if (loan.repaymentMethod === "equal_payment") {
-    if (monthlyRate === 0) return 0;
+    if (monthlyRate === 0) return graceInterest;
     const monthlyPayment =
       (loan.loanAmount * monthlyRate * Math.pow(1 + monthlyRate, months)) /
       (Math.pow(1 + monthlyRate, months) - 1);
-    return monthlyPayment * months - loan.loanAmount;
-  } else if (loan.repaymentMethod === "equal_principal") {
-    const monthlyPrincipal = loan.loanAmount / months;
-    let totalInterest = 0;
-    let remainingPrincipal = loan.loanAmount;
-    for (let i = 0; i < months; i++) {
-      totalInterest += remainingPrincipal * monthlyRate;
-      remainingPrincipal -= monthlyPrincipal;
-    }
-    return totalInterest;
-  } else {
-    return loan.loanAmount * (loan.annualInterestRate / 100) * repaymentYears;
+    return graceInterest + (monthlyPayment * months - loan.loanAmount);
   }
+
+  // equal_principal (원금균등)
+  const monthlyPrincipal = loan.loanAmount / months;
+  let totalInterest = 0;
+  let remainingPrincipal = loan.loanAmount;
+  for (let i = 0; i < months; i++) {
+    totalInterest += remainingPrincipal * monthlyRate;
+    remainingPrincipal -= monthlyPrincipal;
+  }
+  return graceInterest + totalInterest;
 };
 
 const repaymentMethodLabel: Record<RepaymentMethod, string> = {
@@ -93,9 +112,20 @@ export const LoanCardsSection: React.FC<Props> = React.memo(function LoanCardsSe
   onStartRepay
 }) {
   const handleDelete = (id: string) => {
-    if (window.confirm("정말 이 대출을 삭제하시겠습니까?")) {
-      onChangeLoans(loans.filter((l) => l.id !== id));
-    }
+    const index = loans.findIndex((l) => l.id === id);
+    const deleted = index >= 0 ? loans[index] : undefined;
+    if (!deleted) return;
+    const ok = window.confirm(
+      `"${deleted.loanName}" 대출을 삭제할까요?\n\n가계부의 상환 내역 기록은 삭제되지 않고 그대로 유지됩니다.`
+    );
+    if (!ok) return;
+    onChangeLoans(loans.filter((l) => l.id !== id));
+    // 삭제 토스트 [실행 취소] — restore-by-id 재삽입 (showDeleteUndoToast 공용 패턴).
+    // 대출 삭제는 상환 내역(ledger)을 건드리지 않으므로 재삽입만으로 완전 복원된다.
+    showDeleteUndoToast(
+      `"${deleted.loanName}" 대출이 삭제되었습니다. 상환 내역은 가계부에 그대로 남아 있습니다.`,
+      buildRestoreById(() => useAppStore.getState().data.loans, onChangeLoans, deleted, index)
+    );
   };
 
   if (loans.length === 0) {
@@ -116,7 +146,8 @@ export const LoanCardsSection: React.FC<Props> = React.memo(function LoanCardsSe
       }}
     >
       {loans.map((loan) => {
-        const today = new Date().toISOString().slice(0, 10);
+        // KST 기준 오늘 — UTC 변환 시 00:00~08:59에 전날로 계산되는 문제 방지
+        const today = getTodayKST();
         const remainingPeriod = daysBetween(today, loan.maturityDate);
         const totalInterest = calculateTotalInterest(loan);
         const principalPaid = loanRepayments.principal.get(loan.id) || 0;

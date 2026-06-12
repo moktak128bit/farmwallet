@@ -87,7 +87,8 @@ export const MonthPaceCard: React.FC<Props> = React.memo(function MonthPaceCard(
             style={{
               fontWeight: 700,
               fontSize: 22,
-              color: data.pace != null && data.pace > 110 ? "var(--chart-expense)" : "var(--text)"
+              // 상태색(좋음/나쁨)은 차트 시리즈색이 아닌 var(--danger)/var(--success) 사용
+              color: data.pace != null && data.pace > 110 ? "var(--danger)" : "var(--text)"
             }}
           >
             {formatKRW(Math.round(data.projectedExpense))}
@@ -95,7 +96,7 @@ export const MonthPaceCard: React.FC<Props> = React.memo(function MonthPaceCard(
           {data.pace != null && (
             <div
               className="hint"
-              style={{ fontSize: 13, color: data.pace > 100 ? "var(--chart-expense)" : "var(--chart-income)" }}
+              style={{ fontSize: 13, color: data.pace > 100 ? "var(--danger)" : "var(--success)" }}
             >
               평균 대비 {data.pace > 100 ? "+" : ""}{(data.pace - 100).toFixed(1)}%
             </div>
@@ -113,7 +114,8 @@ export const MonthPaceCard: React.FC<Props> = React.memo(function MonthPaceCard(
               style={{
                 height: "100%",
                 width: `${projPct}%`,
-                background: projPct > avgPct ? "var(--chart-expense)" : "var(--chart-income)",
+                // 평균 초과 = 나쁨(danger) / 평균 이하 = 좋음(success) — 상태색 컨벤션
+                background: projPct > avgPct ? "var(--danger)" : "var(--success)",
                 borderRadius: 6,
               }}
             />

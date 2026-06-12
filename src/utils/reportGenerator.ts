@@ -6,6 +6,7 @@ import {
   computeRealizedPnlDetailByTradeId
 } from "../calculations";
 import { isSavingsExpenseEntry, isCreditPayment } from "./category";
+import { isDividendEntry, isInterestEntry } from "./categoryMatch";
 import { canonicalTickerForMatch, isUSDStock } from "./finance";
 import { computeMonthlyRealFlows, computeRealSavingsRate } from "./savingsRate";
 import { isNonRealIncomeSub } from "./realIncome";
@@ -216,10 +217,9 @@ function convertPositionAmount(
   return amount;
 }
 
+/** 배당 수입 판정 — categoryMatch 단일 진입점 (category/subCategory 정확 매칭, 위양성 방지) */
 function isDividendIncomeEntry(entry: LedgerEntry): boolean {
-  if (entry.kind !== "income") return false;
-  const source = `${entry.category ?? ""} ${entry.subCategory ?? ""} ${entry.description ?? ""}`.toLowerCase();
-  return source.includes("배당") || source.includes("dividend");
+  return entry.kind === "income" && isDividendEntry(entry);
 }
 
 function accountValueMapAtDate(
@@ -434,18 +434,8 @@ export function generateMonthlyIncomeDetail(
       if (startMonth && month < startMonth) return false;
       if (endMonth && month > endMonth) return false;
 
-      const category = `${entry.category ?? ""} ${entry.subCategory ?? ""}`;
-      const description = entry.description ?? "";
-      return (
-        category.includes("배당") ||
-        category.includes("이자") ||
-        description.includes("배당") ||
-        description.includes("이자") ||
-        category.toLowerCase().includes("dividend") ||
-        category.toLowerCase().includes("interest") ||
-        description.toLowerCase().includes("dividend") ||
-        description.toLowerCase().includes("interest")
-      );
+      // 배당·이자 판정 — categoryMatch 단일 진입점 (substring 위양성 방지)
+      return isDividendEntry(entry) || isInterestEntry(entry);
     })
     .map((entry) => ({
       month: entry.date.slice(0, 7),
@@ -501,10 +491,14 @@ export function generateDailyReport(
       .filter((entry) => entry.kind === "income" && entry.date === date)
       .reduce((sum, entry) => sum + toKrwAmount(entry.amount, entry.currency, fxRate), 0);
 
+    // 신용결제(레거시)는 카드 사용 시점에 이미 잡힘 — 월별/연간과 동일 기준으로 제외 (이중계상 방지)
     const dayExpense = filteredLedger
       .filter(
         (entry) =>
-          entry.kind === "expense" && !isSavingsExpenseEntry(entry, accounts) && entry.date === date
+          entry.kind === "expense" &&
+          !isCreditPayment(entry) &&
+          !isSavingsExpenseEntry(entry, accounts) &&
+          entry.date === date
       )
       .reduce((sum, entry) => sum + toKrwAmount(entry.amount, entry.currency, fxRate), 0);
 
@@ -641,7 +635,8 @@ export function generateClosingReportData(
       startDate,
       endDate,
       asset,
-      debt: netWorth - asset,
+      // 순자산 = 자산 − 부채 ⇒ 부채 = 자산 − 순자산 (양수)
+      debt: asset - netWorth,
       netWorth,
       income,
       expense,
@@ -689,8 +684,8 @@ export function generateClosingReportData(
       cashflowDelta,
       summary:
         netWorthDelta >= 0
-          ? `Net worth improved versus ${previous.periodKey}.`
-          : `Net worth declined versus ${previous.periodKey}.`
+          ? `${previous.periodKey} 대비 순자산이 늘었습니다.`
+          : `${previous.periodKey} 대비 순자산이 줄었습니다.`
     };
   }
 
@@ -1303,7 +1298,7 @@ export interface ComprehensiveMonthlyRow {
 
   // ── 지출 ──
   totalExpense: number;         // 전체 지출 (장부 기준)
-  livingExpense: number;        // 생활소비 (재테크/신용결제 제외)
+  livingExpense: number;        // 생활소비 (재테크/신용결제/대출상환 제외 — 대출상환은 loanRepayment에 별도 집계)
   savingsExpense: number;       // 저축성 지출 (재테크)
   creditPayment: number;        // 신용카드 결제 (이중계산 제외용)
 
@@ -1390,7 +1385,7 @@ export function generateComprehensiveMonthlyReport(
         }
       } else {
         row.earnedIncome += amount;
-        // 배당 키워드가 설명에 있을 수 있음
+        // 비표준 표기(예: "수입-배당")가 카테고리에 남아있을 수 있음
         if (isDividendIncomeEntry(entry) && cat !== "배당") {
           row.dividendIncome += amount;
         }
@@ -1413,17 +1408,19 @@ export function generateComprehensiveMonthlyReport(
         sub.includes("이자") || sub === "주담대이자" ||
         detail.includes("이자");
 
-      if (cat === "재테크") {
-        // 투자손실
-        row.livingExpense += amount;
-      } else if (isSavingsExpenseEntry(entry, accounts)) {
+      // 저축성지출 판정을 재테크 분기보다 먼저 — 구버전(kind=expense, category=재테크,
+      // sub=저축/투자) 항목이 생활소비로 오분류되지 않도록 (consumptionImpact·daily와 동일 순서)
+      if (isSavingsExpenseEntry(entry, accounts)) {
         row.savingsExpense += amount;
+      } else if (cat === "재테크") {
+        // 투자손실 — 실질 지출 성격
+        row.livingExpense += amount;
       } else if (cat === "신용결제" || cat === "신용카드") {
         row.creditPayment += amount;
       } else if (isLoanRepay) {
+        // 대출상환은 loanRepayment에만 집계 — livingExpense와 이중 가산 금지
         row.loanRepayment += amount;
         if (isInterest) row.loanInterest += amount;
-        row.livingExpense += amount;
       } else if (cat === "주거비" && sub === "주담대이자") {
         row.loanInterest += amount;
         row.livingExpense += amount;
@@ -1490,22 +1487,4 @@ export function generateComprehensiveMonthlyReport(
 
     return { month, ...r, realIncome, realExpense, realNet, realSavingsRate, totalNet };
   });
-}
-
-export function reportToCSV<T extends object>(report: T[]): string {
-  if (report.length === 0) return "";
-
-  const firstRow = report[0] as Record<string, unknown>;
-  const headers = Object.keys(firstRow);
-  const rows = report.map((row) =>
-    headers.map((header) => {
-      const value = (row as Record<string, unknown>)[header];
-      if (typeof value === "number") return value.toLocaleString();
-      return String(value ?? "");
-    })
-  );
-
-  return [headers, ...rows]
-    .map((row) => row.map((cell) => `"${cell}"`).join(","))
-    .join("\n");
 }

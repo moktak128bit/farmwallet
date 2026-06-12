@@ -2,6 +2,7 @@ import React, { memo, useEffect, useState } from "react";
 import type { WorkoutSet } from "../../types";
 import { Stepper } from "./Stepper";
 import { formatClockTime, formatDuration, nowIso, type CardioKind } from "./helpers";
+import { CommitInput } from "../../components/ui/CommitInput";
 
 interface Props {
   set: WorkoutSet;
@@ -9,6 +10,8 @@ interface Props {
   isCardio: boolean;
   /** 유산소 입력 타입. isCardio=false 면 무시. */
   cardioKind?: CardioKind;
+  /** 오늘 날짜 기록인지 — 휴식 카운트다운은 오늘 기록에서만 동작 */
+  isToday?: boolean;
   /** 직전 완료 세트 시각 (첫 세트는 운동 startedAt). 없으면 gap 미표시. */
   prevCompletedAt: string | undefined;
   onToggleDone: () => void;
@@ -17,7 +20,7 @@ interface Props {
 }
 
 const SetDetailRowInner: React.FC<Props> = ({
-  set, index, isCardio, cardioKind = "distance", prevCompletedAt, onToggleDone, onUpdate, onRemove
+  set, index, isCardio, cardioKind = "distance", isToday = false, prevCompletedAt, onToggleDone, onUpdate, onRemove
 }) => {
   const hasTarget = set.targetWeightKg !== undefined || set.targetReps !== undefined;
   const targetLabel = hasTarget
@@ -32,9 +35,10 @@ const SetDetailRowInner: React.FC<Props> = ({
   // 휴식 카운트다운: 이 세트가 아직 done=false이고, 직전 세트의 완료 시각 + restSec(또는 기본 90초)
   // 이 시각보다 지금이 이전이면 남은 초 표시. 지나면 "휴식 끝" 메시지.
   // restSec이 0이면 카운트다운 숨김 (사용자 명시적으로 끔).
+  // 오늘 날짜 기록에서만 동작 — 과거 기록 열람 시 "휴식 끝" 배지가 뜨는 문제 방지.
   const [now, setNow] = useState(() => Date.now());
   const restTargetSec = set.restSec ?? 90;
-  const showCountdown = !set.done && !!prevCompletedAt && restTargetSec > 0;
+  const showCountdown = isToday && !set.done && !!prevCompletedAt && restTargetSec > 0;
   useEffect(() => {
     if (!showCountdown) return;
     const id = window.setInterval(() => setNow(Date.now()), 1000);
@@ -205,10 +209,10 @@ const SetDetailRowInner: React.FC<Props> = ({
             {completedClock}{gapLabel ? ` (+${gapLabel})` : ""}
           </span>
         )}
-        <input
+        <CommitInput
           type="text"
           value={set.note ?? ""}
-          onChange={(e) => onUpdate({ note: e.target.value, noteUpdatedAt: nowIso() })}
+          onCommit={(text) => onUpdate({ note: text, noteUpdatedAt: nowIso() })}
           placeholder="특이사항 (예: 오른쪽 어깨 시큰함)"
           style={{
             flex: 1, minWidth: 140, padding: "6px 10px",

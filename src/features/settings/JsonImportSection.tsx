@@ -9,7 +9,7 @@
 import React, { useCallback } from "react";
 import { toast } from "react-hot-toast";
 import type { AppData } from "../../types";
-import { normalizeImportedData } from "../../storage";
+import { normalizeImportedData, saveSafetySnapshot } from "../../storage";
 import { ERROR_MESSAGES } from "../../constants/errorMessages";
 
 interface Props {
@@ -17,6 +17,8 @@ interface Props {
   setText: React.Dispatch<React.SetStateAction<string>>;
   error: string | null;
   setError: React.Dispatch<React.SetStateAction<string | null>>;
+  /** 현재 데이터 — 가져오기 직전 안전 스냅샷용 */
+  data: AppData;
   onChangeData: (next: AppData) => void;
   /** 로드 실패 후 백업 복원했을 때 호출 (저장 재활성화) */
   onBackupRestored?: () => void;
@@ -27,17 +29,23 @@ export const JsonImportSection: React.FC<Props> = React.memo(function JsonImport
   setText,
   error,
   setError,
+  data,
   onChangeData,
   onBackupRestored
 }) {
-  const handleImport = useCallback(() => {
+  const handleImport = useCallback(async () => {
     try {
       if (!text || !text.trim()) {
         toast.error(ERROR_MESSAGES.JSON_INPUT_REQUIRED);
         setError(ERROR_MESSAGES.JSON_INPUT_REQUIRED);
         return;
       }
+      if (!window.confirm("입력한 JSON 데이터로 현재 데이터를 덮어씁니다.\n적용 직전 현재 데이터는 안전 스냅샷으로 보관됩니다. 계속할까요?")) {
+        return;
+      }
       const parsed = JSON.parse(text);
+      // 적용 직전 현재 데이터 안전 스냅샷
+      await saveSafetySnapshot(data, "JSON 가져오기 직전 자동 스냅샷");
       const normalized = normalizeImportedData(parsed);
       onChangeData(normalized);
       setText(JSON.stringify(normalized, null, 2));
@@ -51,19 +59,20 @@ export const JsonImportSection: React.FC<Props> = React.memo(function JsonImport
         console.error("JSON 파싱 오류:", e);
       }
     }
-  }, [text, setText, setError, onChangeData, onBackupRestored]);
+  }, [text, setText, setError, data, onChangeData, onBackupRestored]);
 
   return (
     <>
       <textarea
         className="json-editor"
+        aria-label="가져올 JSON 데이터 입력"
         value={text}
         onChange={(e) => setText(e.target.value)}
-        placeholder="JSON을 붙여넣거나 위 '현재 데이터 다시 불러오기'를 눌러주세요."
+        placeholder="JSON을 붙여넣거나 위 '현재 데이터 새로고침' 버튼을 눌러주세요."
         rows={20}
       />
       <div className="form-actions">
-        <button type="button" className="primary" onClick={handleImport}>
+        <button type="button" className="primary" onClick={() => { void handleImport(); }}>
           JSON 불러오기
         </button>
       </div>

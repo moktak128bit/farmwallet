@@ -2,6 +2,7 @@ import React, { useMemo, useState } from "react";
 import type { Account, AppData, LedgerEntry } from "../../types";
 import { Section } from "../insights/insightsShared";
 import { useDateAccountId } from "../../hooks/useDateAccountSettings";
+import { getTodayKST, getMonthEndDate, shiftMonth } from "../../utils/date";
 
 interface Props {
   data: AppData;
@@ -22,15 +23,21 @@ export const SettlementView: React.FC<Props> = ({ data, onSettle, formatNumber }
   // 50/50 고정 (데이트 비용은 항상 절반 부담)
   const ratio = 50;
   const [sinceDate, setSinceDate] = useState(lastSettleAt || (() => {
-    const d = new Date();
-    d.setMonth(d.getMonth() - 1);
-    return d.toISOString().slice(0, 10);
+    // 기본값: KST 기준 1개월 전 (setMonth 월말 오버플로 없이 — 일자는 전월 말일로 클램프)
+    const today = getTodayKST();
+    const prevMonth = shiftMonth(today.slice(0, 7), -1);
+    const lastDay = Number(getMonthEndDate(prevMonth).slice(8, 10));
+    const day = Math.min(Number(today.slice(8, 10)), lastDay);
+    return `${prevMonth}-${String(day).padStart(2, "0")}`;
   })());
 
   const settlement = useMemo(() => {
     if (!dateAccount) return null;
+    // 경계는 "초과(>)" — sinceDate(마지막 정산일) 당일 지출은 직전 정산에 이미 포함됐다고
+    // 보고 제외해 이중 정산을 막는다. 트레이드오프: 정산 당일 "정산 이후" 발생한 지출은
+    // 이번 회차에서 빠지고 다음 정산 때 합산된다 (이중 청구보다 안전한 방향).
     const items = data.ledger
-      .filter((l) => l.kind === "expense" && l.fromAccountId === dateAccount.id && l.date >= sinceDate)
+      .filter((l) => l.kind === "expense" && l.fromAccountId === dateAccount.id && l.date > sinceDate)
       .sort((a, b) => (b.date || "").localeCompare(a.date || ""));
     const total = items.reduce((s, l) => s + l.amount, 0);
     const myShare = total * (ratio / 100);
@@ -56,9 +63,9 @@ export const SettlementView: React.FC<Props> = ({ data, onSettle, formatNumber }
           <div style={{ fontSize: 40, marginBottom: 12 }}>🤝</div>
           <div style={{ fontSize: 16, fontWeight: 700, marginBottom: 8, color: "var(--text)" }}>데이트 계좌가 설정되어 있지 않습니다</div>
           <div style={{ fontSize: 13, lineHeight: 1.7 }}>
-            <strong>백업/설정 탭</strong>에서 데이트 통장 계좌와 본인 부담 비율을 지정해주세요.<br />
+            <strong>백업/설정 탭</strong>에서 데이트 통장 계좌를 지정해주세요.<br />
             <span style={{ fontSize: 11, color: "var(--text-faint)", marginTop: 8, display: "inline-block" }}>
-              설정 항목: <code>DATE_ACCOUNT_ID</code> (데이트 계좌 ID) · <code>DATE_ACCOUNT_RATIO</code> (본인 부담 % 0~100)
+              설정 항목: <code>DATE_ACCOUNT_ID</code> (데이트 계좌 ID) · 분담 비율은 <strong>50:50 고정</strong>입니다
             </span>
           </div>
         </div>
@@ -68,15 +75,18 @@ export const SettlementView: React.FC<Props> = ({ data, onSettle, formatNumber }
 
   const handleSettle = () => {
     if (!settlement || settlement.partnerShare <= 0) return;
-    const today = new Date().toISOString().slice(0, 10);
+    const today = getTodayKST();
+    // kind=income + toAccountId — computeMoimAccountFlow(dateAccounting)가 "상대 입금"으로
+    // 인식하는 형태. subCategory "데이트통장"은 실질 수입 계산(realIncome)에서 정산성
+    // 회수로 자동 차감되므로 수입 이중계상이 없다.
     const entry: LedgerEntry = {
       id: `settle-${Date.now()}`,
       date: today,
-      kind: "transfer",
+      kind: "income",
       category: "정산",
       subCategory: "데이트통장",
       description: `${sinceDate} 이후 정산 (상대 부담분 입금)`,
-      amount: settlement.partnerShare,
+      amount: Math.round(settlement.partnerShare), // 0.5원 단위 방지 — 정수 금액으로 저장
       toAccountId: dateAccount.id,
       note: `합계 ${settlement.total.toLocaleString()}원 / 본인비율 ${ratio}%`
     };
@@ -132,7 +142,7 @@ export const SettlementView: React.FC<Props> = ({ data, onSettle, formatNumber }
               💸 상대 부담분 {formatNumber(Math.round(settlement.partnerShare))} 정산 입금 기록
             </button>
             <div style={{ fontSize: 11, color: "var(--text-faint)", marginTop: 6, textAlign: "center" }}>
-              클릭 시 가계부에 "이체 / 정산 / 데이트통장" 항목으로 자동 추가되고 마지막 정산일이 갱신됩니다
+              클릭 시 가계부에 "수입 / 정산 / 데이트통장" 항목(실질 수입에서는 자동 제외)으로 추가되고 마지막 정산일이 갱신됩니다
             </div>
           </div>
         )}

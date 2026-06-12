@@ -10,6 +10,8 @@ interface Props {
   fromName?: string;
   toName?: string;
   amount: string;
+  /** USD 항목이면 소수점 입력 허용 */
+  allowDecimal?: boolean;
   onAmountChange: (v: string) => void;
   onSubmit: () => void;
   onEditInForm: () => void;
@@ -24,6 +26,7 @@ export const QuickCopyModal: React.FC<Props> = ({
   fromName,
   toName,
   amount,
+  allowDecimal = false,
   onAmountChange,
   onSubmit,
   onEditInForm,
@@ -99,10 +102,10 @@ export const QuickCopyModal: React.FC<Props> = ({
           <input
             ref={inputRef}
             type="text"
-            inputMode="numeric"
-            placeholder="금액 입력"
+            inputMode={allowDecimal ? "decimal" : "numeric"}
+            placeholder={allowDecimal ? "금액 입력 (소수점 허용)" : "금액 입력"}
             value={amount}
-            onChange={(e) => onAmountChange(e.target.value.replace(/[^0-9,]/g, ""))}
+            onChange={(e) => onAmountChange(e.target.value.replace(allowDecimal ? /[^0-9.,]/g : /[^0-9,]/g, ""))}
             onKeyDown={(e) => { if (e.key === "Enter") onSubmit(); }}
             style={{
               width: "100%",

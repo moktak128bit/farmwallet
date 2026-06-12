@@ -70,10 +70,21 @@ const MonthCalendarInner: React.FC<Props> = ({
           const isToday = cell.date === today;
           const parts = entry?.type === "workout" ? getEntryBodyParts(entry) : [];
 
+          // 스크린리더용 라벨: "6월 11일, 3종목 기록" / "6월 11일, 휴식" / "6월 11일, 기록 없음"
+          const cellDate = parseDate(cell.date);
+          const dateLabel = `${cellDate.getMonth() + 1}월 ${cellDate.getDate()}일`;
+          const statusLabel = entry
+            ? entry.type === "rest"
+              ? "휴식"
+              : `${entry.exercises?.length ?? 0}종목 기록`
+            : "기록 없음";
+
           return (
             <button
               key={cell.date}
               type="button"
+              aria-label={`${dateLabel}, ${statusLabel}`}
+              aria-pressed={isSelected}
               onClick={() => {
                 onSelectDate(cell.date);
                 if (!cell.inCurrentMonth) onEnsureMonthFor(getMonthStart(cell.date));

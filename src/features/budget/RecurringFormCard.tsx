@@ -7,9 +7,11 @@
  *
  * 부모 → 폼 외부 접점은 ref API(RecurringFormCardHandle)로 노출:
  *   - notifyRecurringDeleted(id): 목록에서 항목 삭제 시 — 해당 항목을 수정 중이었다면 수정 모드 해제
+ *   - startEditRecurring(item): 목록의 "수정" 버튼 → 폼을 해당 항목 수정 모드로 전환
  */
 import React, { useImperativeHandle, useState } from "react";
 import type { Account, Recurrence, RecurringExpense } from "../../types";
+import { getTodayKST } from "../../utils/date";
 
 const createRecurring = (): RecurringExpense => ({
   id: `R${Date.now()}`,
@@ -17,7 +19,7 @@ const createRecurring = (): RecurringExpense => ({
   amount: 0,
   category: "",
   frequency: "monthly",
-  startDate: new Date().toISOString().slice(0, 10),
+  startDate: getTodayKST(), // UTC 파싱 함정 회피 — KST 00:00~08:59에 전날로 기록되는 문제 방지
   fromAccountId: undefined,
   toAccountId: undefined
 });
@@ -25,6 +27,7 @@ const createRecurring = (): RecurringExpense => ({
 /** 부모(BudgetRecurringView)에서 ref로 호출하는 폼 외부 접점 */
 export interface RecurringFormCardHandle {
   notifyRecurringDeleted: (id: string) => void;
+  startEditRecurring: (item: RecurringExpense) => void;
 }
 
 interface Props {
@@ -62,6 +65,11 @@ export const RecurringFormCard = React.memo(React.forwardRef<RecurringFormCardHa
           setEditingRecurringId(null);
           setRecForm(createRecurring());
         }
+      },
+      // 목록 "수정" 버튼 → 폼을 수정 모드로 전환 (id 유지 — 저장 시 같은 항목 교체)
+      startEditRecurring: (item: RecurringExpense) => {
+        setRecForm({ ...item });
+        setEditingRecurringId(item.id);
       }
     }), [editingRecurringId]);
 

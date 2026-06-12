@@ -1,19 +1,22 @@
-import React, { useState, useEffect } from "react";
-
-interface ThemeColors {
-  primary: string;
-  primaryHover: string;
-  accent: string;
-  danger: string;
-  warning: string;
-  success: string;
-}
+import React, { useEffect, useState } from "react";
+import { STORAGE_KEYS } from "../constants/config";
+import { useFocusTrap } from "../hooks/useFocusTrap";
+import { useModalStackEntry } from "../utils/modalStack";
+import {
+  type CustomThemeColors,
+  type FontSizeOption,
+  applyCustomThemeColors,
+  applyFontSizeOption,
+  clearCustomThemeVars,
+  readSavedCustomTheme,
+  readSavedFontSize,
+} from "../hooks/useTheme";
 
 interface Props {
   onClose: () => void;
 }
 
-const PRESET_THEMES: Record<string, ThemeColors> = {
+const PRESET_THEMES: Record<string, CustomThemeColors> = {
   default: {
     primary: "#0d9488",
     primaryHover: "#0f766e",
@@ -49,62 +52,71 @@ const PRESET_THEMES: Record<string, ThemeColors> = {
 };
 
 export const ThemeCustomizer: React.FC<Props> = ({ onClose }) => {
-  const [colors, setColors] = useState<ThemeColors>(() => {
-    if (typeof window !== "undefined") {
-      try {
-        const saved = localStorage.getItem("fw-custom-theme");
-        if (saved) return JSON.parse(saved);
-      } catch (e) {
-        console.warn("[ThemeCustomizer] 저장된 테마 로드 실패", e);
-      }
-    }
-    return PRESET_THEMES.default;
-  });
+  const [colors, setColors] = useState<CustomThemeColors>(
+    () => readSavedCustomTheme() ?? PRESET_THEMES.default
+  );
+  const [fontSize, setFontSize] = useState<FontSizeOption>(
+    () => readSavedFontSize() ?? "medium"
+  );
 
-  const [fontSize, setFontSize] = useState<"small" | "medium" | "large">(() => {
-    if (typeof window !== "undefined") {
-      return (localStorage.getItem("fw-font-size") as "small" | "medium" | "large" | null) || "medium";
-    }
-    return "medium";
-  });
+  const trapRef = useFocusTrap<HTMLDivElement>(true);
+  const isTopModal = useModalStackEntry(true);
 
   useEffect(() => {
-    // CSS 변수 업데이트
-    const root = document.documentElement;
-    root.style.setProperty("--primary", colors.primary);
-    root.style.setProperty("--primary-hover", colors.primaryHover);
-    root.style.setProperty("--accent", colors.accent);
-    root.style.setProperty("--danger", colors.danger);
-    root.style.setProperty("--warning", colors.warning);
-    root.style.setProperty("--success", colors.success);
-
-    // 폰트 크기 적용
-    const fontSizeMap = {
-      small: "13px",
-      medium: "14px",
-      large: "16px"
+    const handleKeyDown = (e: KeyboardEvent) => {
+      // 모달 중첩 시 최상위 모달만 ESC로 닫힘
+      if (e.key === "Escape" && isTopModal()) onClose();
     };
-    root.style.setProperty("--base-font-size", fontSizeMap[fontSize]);
+    window.addEventListener("keydown", handleKeyDown);
+    return () => window.removeEventListener("keydown", handleKeyDown);
+  }, [onClose, isTopModal]);
 
-    // 저장
-    localStorage.setItem("fw-custom-theme", JSON.stringify(colors));
-    localStorage.setItem("fw-font-size", fontSize);
-  }, [colors, fontSize]);
-
-  const applyPreset = (presetName: string) => {
-    setColors(PRESET_THEMES[presetName]);
+  /**
+   * 사용자가 명시적으로 변경했을 때만 적용+저장.
+   * (이전에는 모달을 열기만 해도 기본 프리셋이 인라인 변수로 저장돼
+   *  다크모드 팔레트를 영구히 덮어쓰는 문제가 있었음)
+   */
+  const persist = (nextColors: CustomThemeColors, nextFontSize: FontSizeOption) => {
+    applyCustomThemeColors(nextColors);
+    applyFontSizeOption(nextFontSize);
+    localStorage.setItem(STORAGE_KEYS.CUSTOM_THEME, JSON.stringify(nextColors));
+    localStorage.setItem(STORAGE_KEYS.FONT_SIZE, nextFontSize);
   };
 
+  const updateColors = (next: CustomThemeColors) => {
+    setColors(next);
+    persist(next, fontSize);
+  };
+
+  const updateFontSize = (next: FontSizeOption) => {
+    setFontSize(next);
+    persist(colors, next);
+  };
+
+  const applyPreset = (presetName: string) => {
+    updateColors(PRESET_THEMES[presetName]);
+  };
+
+  /** 기본값 복원: 인라인 변수 제거 → 스타일시트(.dark 포함) 기본 팔레트로 복귀 + 저장본 삭제 */
   const resetToDefault = () => {
     setColors(PRESET_THEMES.default);
     setFontSize("medium");
+    clearCustomThemeVars();
+    localStorage.removeItem(STORAGE_KEYS.CUSTOM_THEME);
+    localStorage.removeItem(STORAGE_KEYS.FONT_SIZE);
   };
 
   return (
-    <div className="modal-backdrop" onClick={onClose}>
-      <div className="modal" onClick={(e) => e.stopPropagation()}>
+    <div
+      className="modal-backdrop"
+      onClick={onClose}
+      role="dialog"
+      aria-modal="true"
+      aria-labelledby="theme-customizer-title"
+    >
+      <div ref={trapRef} className="modal" onClick={(e) => e.stopPropagation()}>
         <div className="modal-header">
-          <h3 style={{ margin: 0 }}>테마 커스터마이징</h3>
+          <h3 id="theme-customizer-title" style={{ margin: 0 }}>테마 커스터마이징</h3>
           <button type="button" className="secondary" onClick={onClose}>
             닫기
           </button>
@@ -138,7 +150,7 @@ export const ThemeCustomizer: React.FC<Props> = ({ onClose }) => {
                   <input
                     type="color"
                     value={colors.primary}
-                    onChange={(e) => setColors({ ...colors, primary: e.target.value })}
+                    onChange={(e) => updateColors({ ...colors, primary: e.target.value })}
                     style={{ width: 60, height: 40 }}
                   />
                 </label>
@@ -147,7 +159,7 @@ export const ThemeCustomizer: React.FC<Props> = ({ onClose }) => {
                   <input
                     type="color"
                     value={colors.accent}
-                    onChange={(e) => setColors({ ...colors, accent: e.target.value })}
+                    onChange={(e) => updateColors({ ...colors, accent: e.target.value })}
                     style={{ width: 60, height: 40 }}
                   />
                 </label>
@@ -163,7 +175,7 @@ export const ThemeCustomizer: React.FC<Props> = ({ onClose }) => {
                     key={size}
                     type="button"
                     className={fontSize === size ? "primary" : "secondary"}
-                    onClick={() => setFontSize(size)}
+                    onClick={() => updateFontSize(size)}
                     style={{ fontSize: 12, padding: "8px 16px" }}
                   >
                     {size === "small" ? "작게" : size === "medium" ? "보통" : "크게"}
@@ -184,10 +196,3 @@ export const ThemeCustomizer: React.FC<Props> = ({ onClose }) => {
     </div>
   );
 };
-
-
-
-
-
-
-

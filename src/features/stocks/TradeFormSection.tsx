@@ -16,7 +16,7 @@
  *   - applyPreset(preset):      프리셋 적용 — 폼 필드만 갱신 (lastUsed 기록은 부모 소유)
  *   - getFormSnapshot():        "현재 저장" 프리셋 생성용 폼 스냅샷
  */
-import React, { useCallback, useEffect, useImperativeHandle, useMemo, useState } from "react";
+import React, { useCallback, useEffect, useImperativeHandle, useMemo, useRef, useState } from "react";
 import { Autocomplete } from "../../components/ui/Autocomplete";
 import type {
   Account,
@@ -36,6 +36,7 @@ import { shouldUseUsdBalanceMode as shouldUseUsdBalanceModeUtil, computeTradeCas
 import { toast } from "react-hot-toast";
 import { validateDate, validateTicker, validateRequired, validateQuantity, validateAmount, validateAccountTickerCurrency } from "../../utils/validation";
 import { ERROR_MESSAGES } from "../../constants/errorMessages";
+import { getTodayKST } from "../../utils/date";
 import { displayNameForTicker, createDefaultTradeForm, type TradeFormState } from "../../utils/stockHelpers";
 
 /** 환율 미로드 시 미국 주식 저장에 사용하는 기본 환율 (저장 차단 대신 사용) */
@@ -93,6 +94,10 @@ export const TradeFormSection = React.memo(React.forwardRef<TradeFormSectionHand
   }, ref) {
     const [tradeForm, setTradeForm] = useState(createDefaultTradeForm);
     const [tickerSuggestions, setTickerSuggestions] = useState<TickerInfo[]>([]);
+    // 최신 accounts prop 추적 — setTimeout 시점에 스냅샷이 아닌 최신 배열에 델타만 적용
+    // (스냅샷 전체 교체는 그 사이 발생한 다른 계좌 변경을 유실시킴)
+    const accountsRef = useRef(accounts);
+    accountsRef.current = accounts;
     // showTickerSuggestions 상태 제거 (Autocomplete 내부에서 처리)
     const [tickerInfo, setTickerInfo] = useState<{
       ticker: string;
@@ -227,16 +232,30 @@ export const TradeFormSection = React.memo(React.forwardRef<TradeFormSectionHand
         errors.quantity = quantityValidation.error || "";
       }
       // 매도 시: 보유 수량 초과 여부
+      // 거래 수정 중이면 편집 대상 거래 자신을 제외한 보유 수량으로 검증 —
+      // 전량 매도 거래(보유 0)도 수정할 수 있어야 한다 (자기 매도분이 검증에 반영되는 버그 수정)
       if (tradeForm.side === "sell" && tradeForm.accountId && tickerClean && !errors.quantity) {
         const q = Number(tradeForm.quantity);
         if (!Number.isNaN(q) && q > 0) {
           const pos = positions.find(
             (p) => p.accountId === tradeForm.accountId && canonicalTickerForMatch(p.ticker) === tickerClean
           );
-          if (!pos) {
+          let available = pos?.quantity ?? 0;
+          if (tradeForm.id) {
+            const original = trades.find((t) => t.id === tradeForm.id);
+            if (
+              original &&
+              original.accountId === tradeForm.accountId &&
+              canonicalTickerForMatch(original.ticker) === tickerClean
+            ) {
+              // 편집 대상이 매도였다면 그 수량만큼 다시 매도 가능, 매수였다면 제외
+              available += original.side === "sell" ? original.quantity : -original.quantity;
+            }
+          }
+          if (available <= 1e-8) {
             errors.quantity = "해당 계좌에 이 종목 보유 내역이 없습니다.";
-          } else if (q > pos.quantity) {
-            errors.quantity = `보유 수량(${pos.quantity}주)을 초과할 수 없습니다.`;
+          } else if (q > available + 1e-8) {
+            errors.quantity = `보유 수량(${Number(available.toFixed(8))}주)을 초과할 수 없습니다.`;
           }
         }
       }
@@ -272,7 +291,7 @@ export const TradeFormSection = React.memo(React.forwardRef<TradeFormSectionHand
       }
 
       return errors;
-    }, [tradeForm, positions]);
+    }, [tradeForm, positions, trades]);
 
     const isTradeFormValid = Object.keys(tradeFormValidation).length === 0;
 
@@ -300,8 +319,9 @@ export const TradeFormSection = React.memo(React.forwardRef<TradeFormSectionHand
       let fee = Number(tradeForm.fee || "0");
       const priceKRWEarly = Number(tradeForm.priceKRW ?? 0);
       const isUSDTicker = isUSDStock(tickerClean);
-      const accountId = tradeForm.accountId || (trades.length > 0 ? trades[trades.length - 1].accountId : accounts.filter((a) => a.type === "securities" || a.type === "crypto")[0]?.id || "");
-      const date = tradeForm.date || new Date().toISOString().slice(0, 10);
+      // 계좌는 폼 검증(validateRequired)에서 필수 — 도달 불가 fallback 제거
+      const accountId = tradeForm.accountId;
+      const date = tradeForm.date || getTodayKST();
       const hasAnyPrice = price > 0 || (isUSDTicker && priceKRWEarly > 0);
       if (!date || !accountId || !tickerClean || !quantity || !hasAnyPrice) {
         if (!hasAnyPrice) toast.error(ERROR_MESSAGES.QUOTE_UNAVAILABLE);
@@ -379,6 +399,20 @@ export const TradeFormSection = React.memo(React.forwardRef<TradeFormSectionHand
         map.set(targetId, (map.get(targetId) ?? 0) + delta);
       };
       const usdDeltaByAccount = new Map<string, number>();
+      /** usdBalance 델타를 최신 accounts(ref) 기준으로 적용 — 스냅샷 교체로 인한 병행 변경 유실 방지 */
+      const applyUsdDeltas = (deltas: Map<string, number>) => {
+        if (!onChangeAccounts || deltas.size === 0) return;
+        setTimeout(() => {
+          const base = accountsRef.current;
+          onChangeAccounts(
+            base.map((a) => {
+              const delta = deltas.get(a.id);
+              if (!delta) return a;
+              return { ...a, usdBalance: (a.usdBalance ?? 0) + delta };
+            })
+          );
+        }, 0);
+      };
 
       if (tradeForm.id) {
         const oldTrade = trades.find((t) => t.id === tradeForm.id);
@@ -393,14 +427,6 @@ export const TradeFormSection = React.memo(React.forwardRef<TradeFormSectionHand
         }
         if (useUsdBalanceMode && isUSDCurrency) {
           addUsdDelta(usdDeltaByAccount, accountId, side === "buy" ? -totalAmount : totalAmount);
-        }
-        let updatedAccounts = accounts;
-        if (onChangeAccounts && usdDeltaByAccount.size > 0) {
-          updatedAccounts = accounts.map((a) => {
-            const delta = usdDeltaByAccount.get(a.id);
-            if (!delta) return a;
-            return { ...a, usdBalance: (a.usdBalance ?? 0) + delta };
-          });
         }
         onChangeTrades((prevTrades) =>
           prevTrades.map((t) =>
@@ -430,20 +456,10 @@ export const TradeFormSection = React.memo(React.forwardRef<TradeFormSectionHand
           next.push({ ticker: tickerClean, name: fallbackName, market: marketEdit, exchange: tradeForm.exchange });
           return next.sort((a, b) => a.ticker.localeCompare(b.ticker));
         });
-        if (onChangeAccounts && usdDeltaByAccount.size > 0) {
-          setTimeout(() => onChangeAccounts(updatedAccounts), 0);
-        }
+        applyUsdDeltas(usdDeltaByAccount);
       } else {
         if (useUsdBalanceMode && isUSDCurrency) {
           addUsdDelta(usdDeltaByAccount, accountId, side === "buy" ? -totalAmount : totalAmount);
-        }
-        let updatedAccounts = accounts;
-        if (onChangeAccounts && usdDeltaByAccount.size > 0) {
-          updatedAccounts = accounts.map((a) => {
-            const delta = usdDeltaByAccount.get(a.id);
-            if (!delta) return a;
-            return { ...a, usdBalance: (a.usdBalance ?? 0) + delta };
-          });
         }
         const id = `T${Date.now()}`;
         const trade: StockTrade = {
@@ -470,9 +486,7 @@ export const TradeFormSection = React.memo(React.forwardRef<TradeFormSectionHand
           next.push({ ticker: tickerClean, name: fallbackName, market, exchange });
           return next.sort((a, b) => a.ticker.localeCompare(b.ticker));
         });
-        if (onChangeAccounts && usdDeltaByAccount.size > 0) {
-          setTimeout(() => onChangeAccounts(updatedAccounts), 0);
-        }
+        applyUsdDeltas(usdDeltaByAccount);
       }
       onLog?.("저장 완료: 거래가 저장되었습니다.", "success");
       setTradeForm((prev) => ({ ...createDefaultTradeForm(), side: "buy", accountId: prev.accountId || accountId || "" }));
@@ -528,13 +542,14 @@ export const TradeFormSection = React.memo(React.forwardRef<TradeFormSectionHand
 
     /** 보유 종목 빠른 매수/매도 — 폼 적재 + 시세 정보 설정 + 폼으로 스크롤 */
     const startQuickTrade = useCallback((p: PositionRow, side: TradeSide) => {
-      const priceInfo = prices.find((pr) => pr.ticker === p.ticker);
+      // canonical 매칭 — 소문자/접미사 표기 차이로 시세를 못 찾는 일 방지
+      const priceInfo = latestPriceByCanonicalTicker.get(canonicalTickerForMatch(p.ticker));
       const currentPrice = priceInfo?.price ?? p.marketPrice;
       const db = tickerDatabase.find((x) => canonicalTickerForMatch(x.ticker) === canonicalTickerForMatch(p.ticker));
       setTradeForm({
         ...createDefaultTradeForm(),
         id: undefined,
-        date: new Date().toISOString().slice(0, 10),
+        date: getTodayKST(),
         accountId: p.accountId,
         ticker: p.ticker,
         name: p.name,
@@ -565,7 +580,7 @@ export const TradeFormSection = React.memo(React.forwardRef<TradeFormSectionHand
           formElement.scrollIntoView({ behavior: 'smooth', block: 'start' });
         }
       }, 100);
-    }, [prices, tickerDatabase]);
+    }, [latestPriceByCanonicalTicker, tickerDatabase]);
 
     /** 프리셋 적용 — 폼 필드만 갱신 (lastUsed 기록은 부모의 applyPreset이 담당) */
     const applyPreset = useCallback((preset: StockPreset) => {
@@ -746,7 +761,7 @@ export const TradeFormSection = React.memo(React.forwardRef<TradeFormSectionHand
                 .filter((a) => a.type === "securities" || a.type === "crypto")
                 .map((a) => (
                   <option key={a.id} value={a.id}>
-                    {a.id}
+                    {a.name || a.id}
                   </option>
                 ))}
             </select>
@@ -1037,7 +1052,7 @@ export const TradeFormSection = React.memo(React.forwardRef<TradeFormSectionHand
               </button>
             </div>
           </div>
-          <div className="quote-panel" style={{ border: "1px solid #e5e7eb", borderRadius: 12, padding: 16, minHeight: 120 }}>
+          <div className="quote-panel" style={{ border: "1px solid var(--border)", borderRadius: 12, padding: 16, minHeight: 120 }}>
                 {tickerInfo ? (
                   <div>
                 <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginBottom: 12 }}>

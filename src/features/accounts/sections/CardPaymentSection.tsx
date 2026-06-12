@@ -2,6 +2,7 @@ import { useState } from "react";
 import { toast } from "react-hot-toast";
 import type { Account, LedgerEntry } from "../../../types";
 import { parseAmount } from "../../../utils/parseAmount";
+import { getTodayKST } from "../../../utils/date";
 
 interface Props {
   account: Account;
@@ -27,7 +28,8 @@ export function CardPaymentSection({
     if (!fromAccountId) return;
     const amount = payAmount.trim() ? Math.round(parseAmount(payAmount)) : debtAmount;
     if (amount <= 0) return;
-    const today = new Date().toISOString().slice(0, 10);
+    // KST 기준 오늘 — UTC 변환 시 00:00~08:59에 전날로 기록되는 문제 방지
+    const today = getTodayKST();
     const entry: LedgerEntry = {
       id: `LEDGER-${Date.now()}-${Math.random().toString(36).slice(2, 9)}`,
       date: today,
@@ -45,7 +47,7 @@ export function CardPaymentSection({
   };
 
   return (
-    <div style={{ marginBottom: 20, padding: 16, background: "var(--surface-alt)", borderRadius: 8, border: "1px solid var(--border)" }}>
+    <div style={{ marginBottom: 20, padding: 16, background: "var(--surface-hover)", borderRadius: 8, border: "1px solid var(--border)" }}>
       <div style={{ fontSize: 13, fontWeight: 600, marginBottom: 8 }}>결제하기</div>
       {debtAmount > 0 && (
         <div style={{ fontSize: 12, color: "var(--text-muted)", marginBottom: 8 }}>

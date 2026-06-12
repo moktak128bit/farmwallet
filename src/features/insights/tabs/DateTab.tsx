@@ -6,13 +6,18 @@ import {
 } from "recharts";
 import type { ValueType } from "recharts/types/component/DefaultTooltipContent";
 import { WDN, C, F, W, Card, Kpi, Insight, Section, CT, pieLabel, type D } from "../insightsShared";
+import { parseIsoLocal } from "../../../utils/date";
 
 export const DateTab = React.memo(function DateTab({ d }: { d: D }) {
+  // 차트용 전체 월 데이터 (dateExpMonthly는 selMonth와 무관하게 전 기간 월별 합)
   const allMonthData = d.months.map((m) => ({ name: d.ml[m], 금액: d.dateExpMonthly[m] ?? 0 }));
-  const total = Object.values(d.dateExpMonthly).reduce((a, b) => a + b, 0);
+  const chartTotal = Object.values(d.dateExpMonthly).reduce((a, b) => a + b, 0);
+  // KPI용 합계는 기간(선택 월) 스코프 — dateEntries/dateTxCount와 동일 스코프.
+  // (과거엔 selMonth일 때도 전체 기간 총액을 써서 건당 평균·비중이 수배 부풀려졌음)
+  const total = d.dateEntries.reduce((s, e) => s + e.amount, 0);
   const monthsActive = Object.values(d.dateExpMonthly).filter((v) => v > 0).length;
-  const avgPerActiveMonth = monthsActive > 0 ? total / monthsActive : 0;
-  const avgPerPeriodMonth = d.months.length > 0 ? total / d.months.length : 0;
+  const avgPerActiveMonth = monthsActive > 0 ? chartTotal / monthsActive : 0;
+  const avgPerPeriodMonth = d.months.length > 0 ? chartTotal / d.months.length : 0;
   const splitTotal = d.dateMoim + d.datePersonal;
   const moimPct = splitTotal > 0 ? Math.round((d.dateMoim / splitTotal) * 100) : 0;
   const subPie = d.dateSubCats.slice(0, 8).map(([name, value]) => ({ name, value }));
@@ -23,11 +28,13 @@ export const DateTab = React.memo(function DateTab({ d }: { d: D }) {
     비율: d.dateExpMonthly[m] && d.monthly[m].expense > 0 ? Math.round((d.dateExpMonthly[m] / d.monthly[m].expense) * 100) : 0,
   }));
 
-  /* 요일별 데이트 지출 */
+  /* 요일별 데이트 지출 — parseIsoLocal 로컬 파싱 (UTC 파싱 시 음수 타임존에서 요일 밀림) */
   const dateDow = Array.from({ length: 7 }, () => ({ total: 0, count: 0 }));
   for (const e of d.dateEntries) {
     if (!e.date) continue;
-    const js = new Date(e.date).getDay();
+    const dt = parseIsoLocal(e.date);
+    if (!dt) continue;
+    const js = dt.getDay();
     const idx = js === 0 ? 6 : js - 1;
     dateDow[idx].total += e.amount;
     dateDow[idx].count++;
@@ -328,15 +335,15 @@ export const DateTab = React.memo(function DateTab({ d }: { d: D }) {
           <Section storageKey="date-section-insights" title="💡 인사이트">
             <Card title="데이트비 종합 인사이트" span={4}>
               <div className="grid-2" style={{ gap: 12 }}>
-                <Insight title="지출처 분석" color="#e94560" bg="#fff5f5">
+                <Insight title="지출처 분석" tone="danger">
                   {d.dateTop.length > 0 ? `최다 지출처: ${d.dateTop[0][0]}에 총 ${F(d.dateTop[0][1])}원 (전체의 ${total > 0 ? Math.round((d.dateTop[0][1] / total) * 100) : 0}%).` : "데이터 없음"}
                   {d.dateTop.length > 1 ? ` 2위 ${d.dateTop[1][0]}(${F(d.dateTop[1][1])}원)${d.dateTop.length > 2 ? `, 3위 ${d.dateTop[2][0]}(${F(d.dateTop[2][1])}원)` : ""}.` : ""}
                   {d.dateTop.length > 3 ? ` 상위 3곳이 ${total > 0 ? Math.round((d.dateTop[0][1] + d.dateTop[1][1] + (d.dateTop[2]?.[1] ?? 0)) / total * 100) : 0}% 차지.` : ""}
                 </Insight>
-                <Insight title="모임통장 활용" color="#2ecc71" bg="#f5fff5">
+                <Insight title="모임통장 활용" tone="success">
                   {splitTotal > 0 ? `모임통장 ${F(d.dateMoim)}원 (${moimPct}%), 개인 ${F(d.datePersonal)}원 (${100 - moimPct}%). ${moimPct >= 50 ? "모임통장 적극 활용 중 — 분담이 잘 되고 있습니다." : moimPct >= 30 ? "활용도 적당. 더 늘리면 개인 부담이 줄어듭니다." : "개인 결제 비중이 높음. 공동 지출을 모임통장으로 돌리면 정산·관리가 편해집니다."}` : "모임통장 사용 내역 없음. 모임통장을 만들면 데이트 비용 관리가 편해집니다."}
                 </Insight>
-                <Insight title="데이트 빈도" color="#b45309" bg="#fff3cd">
+                <Insight title="데이트 빈도" tone="warning">
                   {uniqueDateDays > 0 ? `${d.selMonth ? (d.ml[d.selMonth] ?? d.selMonth) : `${d.months.length}개월`} 동안 ${uniqueDateDays}회 데이트 (주평균 ${datesPerWeek.toFixed(2)}회). ${daysSinceLast != null && daysSinceLast > 14 ? `⚠️ 마지막 데이트 ${daysSinceLast}일 전 — 한동안 공백이 있었습니다.` : daysSinceLast != null && daysSinceLast <= 7 ? "최근에 데이트 — 꾸준히 만나는 중!" : ""} 최장 공백 ${longestGap}일.` : "기록 없음"}
                 </Insight>
                 <Insight title="데이트 비중" color="#533483" bg="rgba(83,52,131,0.08)">
@@ -349,7 +356,7 @@ export const DateTab = React.memo(function DateTab({ d }: { d: D }) {
               <Card title="중분류별 데이트 상세 인사이트" span={4}>
                 <div className="grid-2" style={{ gap: 10 }}>
                   {d.dateSubInsights.map((s, i) => (
-                    <div key={s.sub} style={{ padding: "12px 14px", borderRadius: 10, background: "#fff5f5", border: "1px solid #fcc", fontSize: 12 }}>
+                    <div key={s.sub} style={{ padding: "12px 14px", borderRadius: 10, background: "var(--danger-light)", border: "1px solid var(--border-light)", fontSize: 12, color: "var(--text)" }}>
                       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 6 }}>
                         <span style={{ fontWeight: 700, fontSize: 14, display: "flex", alignItems: "center", gap: 6 }}>
                           <span style={{ width: 10, height: 10, borderRadius: 5, background: C[i % 12], display: "inline-block" }} />
@@ -357,12 +364,12 @@ export const DateTab = React.memo(function DateTab({ d }: { d: D }) {
                         </span>
                         <span style={{ fontSize: 16, fontWeight: 800, color: "#e94560" }}>{F(s.total)}원</span>
                       </div>
-                      <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 4, fontSize: 11, color: "#555", marginBottom: 4 }}>
+                      <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 4, fontSize: 11, color: "var(--text-secondary)", marginBottom: 4 }}>
                         <span>비중 {s.share}%</span>
                         <span>{s.count}건</span>
                         <span>건당 {F(s.avg)}원</span>
                       </div>
-                      <div style={{ fontSize: 11, color: "#666", lineHeight: 1.6, borderTop: "1px solid #eee", paddingTop: 4 }}>
+                      <div style={{ fontSize: 11, color: "var(--text-muted)", lineHeight: 1.6, borderTop: "1px solid var(--border-light)", paddingTop: 4 }}>
                         {s.comment}
                       </div>
                     </div>

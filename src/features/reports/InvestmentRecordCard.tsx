@@ -1,5 +1,8 @@
 import React, { useMemo, useState } from "react";
+import { toast } from "react-hot-toast";
 import type { Account, LedgerEntry, StockTrade } from "../../types";
+import { ERROR_MESSAGES } from "../../constants/errorMessages";
+import { isDividendEntry } from "../../utils/categoryMatch";
 import {
   buildClosedTradeRecords,
   filterByPeriod,
@@ -42,10 +45,8 @@ export const InvestmentRecordCard: React.FC<Props> = React.memo(function Investm
 
   const dividendIncome = useMemo(() => {
     let sum = 0;
-    const isDividend = (e: LedgerEntry) =>
-      (e.category ?? "").includes("배당") ||
-      (e.subCategory ?? "").includes("배당") ||
-      (e.description ?? "").includes("배당");
+    // 배당 판정 — categoryMatch 단일 진입점 (substring 위양성 방지, 보고서 간 수치 일치)
+    const isDividend = (e: LedgerEntry) => isDividendEntry(e);
     const inPeriod = (dateStr: string | undefined): boolean => {
       if (!dateStr) return false;
       if (filter.kind === "all") return true;
@@ -97,6 +98,10 @@ export const InvestmentRecordCard: React.FC<Props> = React.memo(function Investm
   }, [accounts]);
 
   const exportExcel = () => {
+    if (filtered.length === 0) {
+      toast.error(ERROR_MESSAGES.NO_DATA_TO_EXPORT);
+      return;
+    }
     const header = ["종목", "티커", "계좌", "매수일(가중평균)", "매도일", "보유일수", "수량", "원가(KRW)", "매도대금(KRW)", "실현손익(KRW)", "수익률(%)"];
     const rows = filtered.map((r) => [
       r.name,
@@ -121,40 +126,57 @@ export const InvestmentRecordCard: React.FC<Props> = React.memo(function Investm
       ["거래 건수", summary.tradeCount],
     ];
     const stamp = today.replace(/-/g, "");
-    downloadAsExcel(`farmwallet-투자기록-${stamp}`, [
-      { name: "요약", rows: [["항목", "값"], ...kpi] },
-      { name: "확정거래", rows: [header, ...rows] },
-    ]);
+    try {
+      downloadAsExcel(`farmwallet-투자기록-${stamp}`, [
+        { name: "요약", rows: [["항목", "값"], ...kpi] },
+        { name: "확정거래", rows: [header, ...rows] },
+      ]);
+      toast.success("Excel 내보내기 완료");
+    } catch (error) {
+      console.error("[InvestmentRecordCard] Excel 내보내기 실패", error);
+      toast.error("Excel 내보내기에 실패했습니다.");
+    }
   };
 
   const exportCsv = () => {
+    if (filtered.length === 0) {
+      toast.error(ERROR_MESSAGES.NO_DATA_TO_EXPORT);
+      return;
+    }
     const header = ["종목", "티커", "계좌", "매수일", "매도일", "보유일수", "수량", "원가KRW", "매도대금KRW", "실현손익KRW", "수익률%"];
     const esc = (v: string | number) => {
       const s = String(v);
-      return /[",\n]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s;
+      return /[",\r\n]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s;
     };
-    const lines = [header.join(",")];
-    for (const r of filtered) {
-      lines.push([
-        r.name, r.ticker, accountNameById.get(r.accountId) ?? r.accountId,
-        r.buyDateWeighted, r.sellDate, r.holdingDays, r.sellQuantity,
-        Math.round(r.costBasisKRW), Math.round(r.proceedsKRW), Math.round(r.realizedPnlKRW),
-        (r.returnPct * 100).toFixed(2),
-      ].map(esc).join(","));
+    try {
+      const lines = [header.join(",")];
+      for (const r of filtered) {
+        lines.push([
+          r.name, r.ticker, accountNameById.get(r.accountId) ?? r.accountId,
+          r.buyDateWeighted, r.sellDate, r.holdingDays, r.sellQuantity,
+          Math.round(r.costBasisKRW), Math.round(r.proceedsKRW), Math.round(r.realizedPnlKRW),
+          (r.returnPct * 100).toFixed(2),
+        ].map(esc).join(","));
+      }
+      // RFC 4180 CRLF 줄바꿈 — csvExport와 동일 (Windows Excel 호환)
+      const csv = "﻿" + lines.join("\r\n");
+      const blob = new Blob([csv], { type: "text/csv;charset=utf-8" });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = `farmwallet-투자기록-${today.replace(/-/g, "")}.csv`;
+      a.click();
+      URL.revokeObjectURL(url);
+      toast.success("CSV 내보내기 완료");
+    } catch (error) {
+      console.error("[InvestmentRecordCard] CSV 내보내기 실패", error);
+      toast.error("CSV 내보내기에 실패했습니다.");
     }
-    const csv = "﻿" + lines.join("\n");
-    const blob = new Blob([csv], { type: "text/csv;charset=utf-8" });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement("a");
-    a.href = url;
-    a.download = `farmwallet-투자기록-${today.replace(/-/g, "")}.csv`;
-    a.click();
-    URL.revokeObjectURL(url);
   };
 
   if (all.length === 0) {
     return (
-      <div className="card" style={{ borderLeft: "4px solid var(--chart-secondary)" }}>
+      <div className="card" style={{ borderLeft: "4px solid var(--accent)" }}>
         <div className="card-title">투자 기록</div>
         <div className="hint" style={{ marginTop: 8 }}>아직 확정된 매도 거래가 없습니다.</div>
       </div>
@@ -162,7 +184,7 @@ export const InvestmentRecordCard: React.FC<Props> = React.memo(function Investm
   }
 
   const pnlColor = (v: number) =>
-    v > 0 ? "var(--success)" : v < 0 ? "var(--danger)" : "var(--muted)";
+    v > 0 ? "var(--success)" : v < 0 ? "var(--danger)" : "var(--text-muted)";
 
   return (
     <div
@@ -171,13 +193,13 @@ export const InvestmentRecordCard: React.FC<Props> = React.memo(function Investm
         display: "flex",
         flexDirection: "column",
         gap: 14,
-        borderLeft: "4px solid var(--chart-secondary)",
+        borderLeft: "4px solid var(--accent)",
       }}
     >
       <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", flexWrap: "wrap", gap: 12 }}>
         <div style={{ display: "flex", alignItems: "baseline", gap: 10 }}>
           <div className="card-title">투자 기록</div>
-          <span style={{ fontSize: 13, color: "var(--muted)" }}>확정 거래 기준 · FIFO</span>
+          <span style={{ fontSize: 13, color: "var(--text-muted)" }}>확정 거래 기준 · FIFO</span>
         </div>
         <div style={{ display: "flex", gap: 6, alignItems: "center", flexWrap: "wrap" }}>
           <PeriodSelect filter={filter} years={years} onChange={setFilter} />
@@ -216,9 +238,9 @@ export const InvestmentRecordCard: React.FC<Props> = React.memo(function Investm
               padding: "6px 12px",
               fontSize: 14,
               fontWeight: 600,
-              background: tab === key ? "var(--chart-secondary)" : "transparent",
+              background: tab === key ? "var(--accent)" : "transparent",
               color: tab === key ? "#fff" : "var(--text)",
-              border: "1px solid " + (tab === key ? "var(--chart-secondary)" : "var(--border)"),
+              border: "1px solid " + (tab === key ? "var(--accent)" : "var(--border)"),
               borderRadius: 6,
               cursor: "pointer",
             }}
@@ -303,7 +325,7 @@ const KpiGrid: React.FC<{
   dividendIncome: number;
   totalWithDividend: number;
 }> = ({ summary, range, periodIrr, dividendIncome, totalWithDividend }) => {
-  const pnlColor = summary.totalPnl > 0 ? "var(--success)" : summary.totalPnl < 0 ? "var(--danger)" : "var(--muted)";
+  const pnlColor = summary.totalPnl > 0 ? "var(--success)" : summary.totalPnl < 0 ? "var(--danger)" : "var(--text-muted)";
   return (
     <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(130px, 1fr))", gap: 10 }}>
       <Kpi label="실현손익" value={formatKRW(Math.round(summary.totalPnl))} color={pnlColor} />
@@ -348,9 +370,9 @@ const KpiGrid: React.FC<{
 
 const Kpi: React.FC<{ label: string; value: string; color?: string; sub?: string }> = ({ label, value, color, sub }) => (
   <div style={{ padding: "8px 10px", background: "var(--bg-subtle, var(--border))", borderRadius: 6 }}>
-    <div style={{ fontSize: 12, color: "var(--muted)" }}>{label}</div>
+    <div style={{ fontSize: 12, color: "var(--text-muted)" }}>{label}</div>
     <div style={{ fontSize: 18, fontWeight: 700, color: color ?? "var(--text)" }}>{value}</div>
-    {sub && <div style={{ fontSize: 12, color: "var(--muted)" }}>{sub}</div>}
+    {sub && <div style={{ fontSize: 12, color: "var(--text-muted)" }}>{sub}</div>}
   </div>
 );
 
@@ -367,7 +389,7 @@ const SummaryPanel: React.FC<{ summary: ReturnType<typeof summarizeRecords>; pnl
 
 const Row: React.FC<{ label: string; value: string; color?: string }> = ({ label, value, color }) => (
   <div style={{ display: "flex", justifyContent: "space-between", padding: "6px 8px", borderBottom: "1px dashed var(--border)" }}>
-    <span style={{ color: "var(--muted)" }}>{label}</span>
+    <span style={{ color: "var(--text-muted)" }}>{label}</span>
     <span style={{ fontWeight: 600, color: color ?? "var(--text)" }}>{value}</span>
   </div>
 );
@@ -397,8 +419,8 @@ const YearPanel: React.FC<{ yearGroups: Map<string, ReturnType<typeof summarizeR
               />
             </div>
             <span style={{ fontWeight: 700, textAlign: "right", color: pnlColor(s.totalPnl) }}>{formatKRW(Math.round(s.totalPnl))}</span>
-            <span style={{ textAlign: "right", color: "var(--muted)" }}>{s.tradeCount}건</span>
-            <span style={{ textAlign: "right", color: "var(--muted)" }}>승률 {Math.round(s.winRate * 100)}%</span>
+            <span style={{ textAlign: "right", color: "var(--text-muted)" }}>{s.tradeCount}건</span>
+            <span style={{ textAlign: "right", color: "var(--text-muted)" }}>승률 {Math.round(s.winRate * 100)}%</span>
           </div>
         );
       })}
@@ -412,7 +434,7 @@ const MonthPanel: React.FC<{ monthGroups: Map<string, ReturnType<typeof summariz
     <div style={{ overflowX: "auto" }}>
       <table style={{ width: "100%", fontSize: 14, borderCollapse: "collapse" }}>
         <thead>
-          <tr style={{ textAlign: "left", color: "var(--muted)", borderBottom: "1px solid var(--border)" }}>
+          <tr style={{ textAlign: "left", color: "var(--text-muted)", borderBottom: "1px solid var(--border)" }}>
             <th style={{ padding: "4px 6px" }}>연월</th>
             <th style={{ padding: "4px 6px", textAlign: "right" }}>실현손익</th>
             <th style={{ padding: "4px 6px", textAlign: "right" }}>수익률</th>
@@ -422,7 +444,7 @@ const MonthPanel: React.FC<{ monthGroups: Map<string, ReturnType<typeof summariz
         </thead>
         <tbody>
           {rows.length === 0 && (
-            <tr><td colSpan={5} style={{ padding: 8, color: "var(--muted)" }}>데이터 없음</td></tr>
+            <tr><td colSpan={5} style={{ padding: 8, color: "var(--text-muted)" }}>데이터 없음</td></tr>
           )}
           {rows.map(([ym, s]) => (
             <tr key={ym} style={{ borderBottom: "1px dashed var(--border)" }}>
@@ -445,13 +467,13 @@ const HoldingPanel: React.FC<{
   pnlColor: (v: number) => string;
 }> = ({ holdingGroups, range, pnlColor }) => (
   <div style={{ display: "flex", flexDirection: "column", gap: 6, fontSize: 14 }}>
-    <div style={{ fontSize: 13, color: "var(--muted)" }}>
+    <div style={{ fontSize: 13, color: "var(--text-muted)" }}>
       최장 {range.max}일 · 최단 {range.min}일
     </div>
     <div style={{ overflowX: "auto" }}>
       <table style={{ width: "100%", fontSize: 14, borderCollapse: "collapse" }}>
         <thead>
-          <tr style={{ textAlign: "left", color: "var(--muted)", borderBottom: "1px solid var(--border)" }}>
+          <tr style={{ textAlign: "left", color: "var(--text-muted)", borderBottom: "1px solid var(--border)" }}>
             <th style={{ padding: "4px 6px" }}>보유기간</th>
             <th style={{ padding: "4px 6px", textAlign: "right" }}>거래</th>
             <th style={{ padding: "4px 6px", textAlign: "right" }}>승률</th>
@@ -487,7 +509,7 @@ const TradesPanel: React.FC<{
   <div style={{ overflowX: "auto", maxHeight: 320, overflowY: "auto" }}>
     <table style={{ width: "100%", fontSize: 13, borderCollapse: "collapse" }}>
       <thead style={{ position: "sticky", top: 0, background: "var(--surface)" }}>
-        <tr style={{ textAlign: "left", color: "var(--muted)", borderBottom: "1px solid var(--border)" }}>
+        <tr style={{ textAlign: "left", color: "var(--text-muted)", borderBottom: "1px solid var(--border)" }}>
           <th style={{ padding: "4px 6px" }}>종목</th>
           <th style={{ padding: "4px 6px" }}>계좌</th>
           <th style={{ padding: "4px 6px" }}>매수일</th>
@@ -500,12 +522,12 @@ const TradesPanel: React.FC<{
       </thead>
       <tbody>
         {records.length === 0 && (
-          <tr><td colSpan={8} style={{ padding: 8, color: "var(--muted)" }}>거래 없음</td></tr>
+          <tr><td colSpan={8} style={{ padding: 8, color: "var(--text-muted)" }}>거래 없음</td></tr>
         )}
         {records.map((r) => (
           <tr key={r.tradeId} style={{ borderBottom: "1px dashed var(--border)" }}>
-            <td style={{ padding: "3px 6px", fontWeight: 600 }}>{r.name || r.ticker}{r.isUsd && <span style={{ marginLeft: 4, fontSize: 9, color: "var(--muted)" }}>USD</span>}</td>
-            <td style={{ padding: "3px 6px", color: "var(--muted)" }}>{accountNameById.get(r.accountId) ?? "-"}</td>
+            <td style={{ padding: "3px 6px", fontWeight: 600 }}>{r.name || r.ticker}{r.isUsd && <span style={{ marginLeft: 4, fontSize: 9, color: "var(--text-muted)" }}>USD</span>}</td>
+            <td style={{ padding: "3px 6px", color: "var(--text-muted)" }}>{accountNameById.get(r.accountId) ?? "-"}</td>
             <td style={{ padding: "3px 6px" }}>{r.buyDateWeighted}</td>
             <td style={{ padding: "3px 6px" }}>{r.sellDate}</td>
             <td style={{ padding: "3px 6px", textAlign: "right" }}>{r.holdingDays}일</td>

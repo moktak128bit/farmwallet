@@ -59,6 +59,10 @@ export const BudgetRecurringView: React.FC<Props> = ({
   const handleRecurringDeleted = useCallback((id: string) => {
     recurringFormRef.current?.notifyRecurringDeleted(id);
   }, []);
+  // 목록 "수정" 버튼 → 상단 폼을 수정 모드로 전환 (ref API 경유)
+  const handleRequestEditRecurring = useCallback((item: RecurringExpense) => {
+    recurringFormRef.current?.startEditRecurring(item);
+  }, []);
 
   // 예산 사용액 계산 — 데이터 스키마: cat=지출/수입/이체/신용결제/재테크, sub=식비/.../중분류
   // - 개별 카테고리 (예산 카테고리="식비"): cat="지출" AND sub="식비" 매칭
@@ -128,6 +132,7 @@ export const BudgetRecurringView: React.FC<Props> = ({
         onChangeRecurring={onChangeRecurring}
         onChangeLedger={onChangeLedger}
         onRecurringDeleted={handleRecurringDeleted}
+        onRequestEdit={handleRequestEditRecurring}
       />
 
       {/* ── Budget Visual Dashboard ── */}

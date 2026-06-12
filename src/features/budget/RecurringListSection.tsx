@@ -32,6 +32,14 @@ interface Props {
   onChangeLedger: (next: LedgerEntry[]) => void;
   /** 삭제된 항목을 폼이 수정 중이었다면 수정 모드 해제 (부모 useCallback → RecurringFormCard ref) */
   onRecurringDeleted: (id: string) => void;
+  /** "수정" 버튼 → 상단 폼(RecurringFormCard)을 수정 모드로 전환 (부모 useCallback → ref) */
+  onRequestEdit: (item: RecurringExpense) => void;
+}
+
+/** 월 발생 항목 + 원본 주기 — 중복 판정을 주기별로 다르게 하기 위한 쌍 */
+interface RecurringOccurrence {
+  entry: LedgerEntry;
+  frequency: Recurrence;
 }
 
 export const RecurringListSection: React.FC<Props> = React.memo(function RecurringListSection({
@@ -43,6 +51,7 @@ export const RecurringListSection: React.FC<Props> = React.memo(function Recurri
   onChangeRecurring,
   onChangeLedger,
   onRecurringDeleted,
+  onRequestEdit,
 }) {
   const [editingField, setEditingField] = useState<{ id: string; field: string } | null>(null);
   const [editingValue, setEditingValue] = useState<string>("");
@@ -71,6 +80,8 @@ export const RecurringListSection: React.FC<Props> = React.memo(function Recurri
 
   // 터치 환경 여부 — 렌더당 1회 평가 (coarse 포인터는 더블클릭 대신 단일 탭으로 편집 진입)
   const coarsePointer = isCoarsePointer();
+  // 셀 툴팁/안내 문구 — 입력 방식에 맞게 분기
+  const cellEditHint = coarsePointer ? "탭하여 수정" : "더블클릭하여 수정";
 
   const startEditField = (id: string, field: string, currentValue: string | number) => {
     setEditingField({ id, field });
@@ -118,41 +129,12 @@ export const RecurringListSection: React.FC<Props> = React.memo(function Recurri
     setEditingValue("");
   };
 
+  // "이번 달 반복 지출 생성" — 선택 반영 경로와 동일한 generateOccurrencesForMonthFromRecurring 기반.
+  // (과거 구현은 frequency를 무시해 매년 항목이 매달, 매주 항목이 월 1회 전액으로 생성되고
+  //  미래 시작일도 생성되는 결함이 있었음 — 주기·시작일·종료일을 모두 반영하는 단일 경로로 통일)
   const generateRecurringEntries = () => {
-    const activeRecurring = recurring.filter((r) => {
-      if (!r.startDate) return false;
-      if (r.endDate && r.endDate < `${currentMonth}-01`) return false;
-      return true;
-    });
-
-    const toCreate: LedgerEntry[] = [];
-    for (const rec of activeRecurring) {
-      // 중복 검사 — 3-level 구조 기준: sub === rec.category, det === rec.title
-      const alreadyExists = ledger.some(
-        (l) =>
-          l.date?.startsWith(currentMonth) &&
-          l.subCategory === rec.category &&
-          l.detailCategory === rec.title &&
-          Math.abs(l.amount - rec.amount) < 100
-      );
-      if (!alreadyExists) {
-        const isTransfer = !!rec.toAccountId;
-        const userCat = rec.category || defaultExpenseCategory;
-        toCreate.push({
-          id: `REC-${rec.id}-${currentMonth}`,
-          date: `${currentMonth}-01`,
-          kind: isTransfer ? "transfer" : "expense",
-          category: isTransfer ? "이체" : "지출",
-          subCategory: userCat,
-          detailCategory: rec.title || undefined,
-          description: `[반복] ${rec.title}`,
-          amount: rec.amount,
-          fromAccountId: rec.fromAccountId,
-          toAccountId: rec.toAccountId,
-          isFixedExpense: true
-        });
-      }
-    }
+    const occurrences = generateOccurrencesForMonthFromRecurring(recurring, currentMonth);
+    const toCreate = filterDuplicateOccurrences(occurrences, ledger, currentMonth);
 
     if (toCreate.length === 0) {
       toast.error("이번 달에 생성할 새 반복 지출 항목이 없습니다 (이미 모두 반영됨).");
@@ -172,7 +154,7 @@ export const RecurringListSection: React.FC<Props> = React.memo(function Recurri
   const handleApplyCurrentMonth = () => {
     const selectedRecurring = recurring.filter((r) => selectedRecurringIds.has(r.id));
     if (selectedRecurring.length === 0) {
-      alert("반영할 항목을 선택해주세요.");
+      toast.error("반영할 항목을 선택해주세요.");
       return;
     }
 
@@ -192,24 +174,31 @@ export const RecurringListSection: React.FC<Props> = React.memo(function Recurri
     );
   };
 
+  /**
+   * 중복 제거 — 주기별로 판정 기준이 다르다:
+   *  - monthly/yearly: 월 1회 발생이므로 "같은 달 + 같은 중분류/소분류 + 금액 ±100원"이면 중복
+   *    (수동 입력·과거 1일 고정 생성분처럼 날짜가 달라도 잡아낸다)
+   *  - weekly: 한 달에 여러 번 발생하므로 날짜까지 같아야 중복
+   */
   const filterDuplicateOccurrences = (
-    occurrences: LedgerEntry[],
+    occurrences: RecurringOccurrence[],
     existingLedger: LedgerEntry[],
     month: string
   ): LedgerEntry[] => {
     const monthLedger = existingLedger.filter((l) => l.date?.startsWith(month));
-    return occurrences.filter((occ) => {
-      const dup = monthLedger.some(
-        (l) =>
-          l.date === occ.date &&
-          l.category === occ.category &&
+    const result: LedgerEntry[] = [];
+    for (const { entry: occ, frequency } of occurrences) {
+      const dup = monthLedger.some((l) => {
+        if (frequency === "weekly" && l.date !== occ.date) return false;
+        return (
           l.subCategory === occ.subCategory &&
-          l.amount === occ.amount &&
-          l.fromAccountId === occ.fromAccountId &&
-          l.toAccountId === occ.toAccountId
-      );
-      return !dup;
-    });
+          (l.detailCategory ?? "") === (occ.detailCategory ?? "") &&
+          Math.abs(Number(l.amount) - occ.amount) < 100
+        );
+      });
+      if (!dup) result.push(occ);
+    }
+    return result;
   };
 
   // 프리셋 지출 대분류 중 첫 항목 (반복 반영 시 카테고리 비었을 때 사용, 버튼 필터에 잡히도록)
@@ -220,12 +209,12 @@ export const RecurringListSection: React.FC<Props> = React.memo(function Recurri
     return exceptRecheck[0] ?? list[0] ?? "(고정지출)";
   }, [categoryPresets?.expense]);
 
-  const generateOccurrencesForMonthFromRecurring = (recurringList: RecurringExpense[], month: string): LedgerEntry[] => {
+  const generateOccurrencesForMonthFromRecurring = (recurringList: RecurringExpense[], month: string): RecurringOccurrence[] => {
     const [y, m] = month.split("-").map(Number);
     // 모두 로컬 Date — toISOString()으로 직렬화하면 UTC로 바뀌어 1일 어긋날 수 있음
     const monthStart = new Date(y, m - 1, 1);
     const monthEnd = new Date(y, m, 0);
-    const entries: LedgerEntry[] = [];
+    const occurrences: RecurringOccurrence[] = [];
 
     for (const r of recurringList) {
       if (!r.startDate || !r.startDate.trim()) continue;
@@ -235,6 +224,9 @@ export const RecurringListSection: React.FC<Props> = React.memo(function Recurri
       if (endParsed && endParsed < monthStart) continue;
 
       const pushIfInMonth = (date: Date) => {
+        // 시작일 이전(미래 시작 반복)·종료일 이후 발생은 생성하지 않음
+        if (date < start) return;
+        if (endParsed && date > endParsed) return;
         if (date >= monthStart && date <= monthEnd) {
           // 3-level 구조로 저장:
           //   - kind = transfer(저축성지출) 또는 expense
@@ -245,18 +237,21 @@ export const RecurringListSection: React.FC<Props> = React.memo(function Recurri
             (r.category && r.category.trim()) ||
             (r.toAccountId ? "저축성지출" : defaultExpenseCategory);
           const isTransfer = !!r.toAccountId;
-          entries.push({
-            id: newIdWithPrefix("L"),
-            date: formatIsoLocal(date), // UTC가 아닌 로컬 yyyy-mm-dd
-            kind: isTransfer ? "transfer" : "expense",
-            category: isTransfer ? "이체" : "지출",
-            subCategory: userCat,
-            detailCategory: r.title || undefined,
-            description: r.title,
-            amount: r.amount,
-            fromAccountId: r.fromAccountId,
-            toAccountId: r.toAccountId,
-            isFixedExpense: true // LedgerView 이전 달→현재 달 자동 복사에 사용
+          occurrences.push({
+            frequency: r.frequency,
+            entry: {
+              id: newIdWithPrefix("L"),
+              date: formatIsoLocal(date), // UTC가 아닌 로컬 yyyy-mm-dd
+              kind: isTransfer ? "transfer" : "expense",
+              category: isTransfer ? "이체" : "지출",
+              subCategory: userCat,
+              detailCategory: r.title || undefined,
+              description: r.title,
+              amount: r.amount,
+              fromAccountId: r.fromAccountId,
+              toAccountId: r.toAccountId,
+              isFixedExpense: true // LedgerView 이전 달→현재 달 자동 복사에 사용
+            }
           });
         }
       };
@@ -264,12 +259,15 @@ export const RecurringListSection: React.FC<Props> = React.memo(function Recurri
       if (r.frequency === "monthly") {
         const day = start.getDate();
         if (day >= 1 && day <= 31) {
+          // 29/30/31일 시작은 짧은 달에서 월말로 클램프. 시작일 검사는 pushIfInMonth가 수행
           const target = new Date(y, m - 1, Math.min(day, new Date(y, m, 0).getDate()));
           pushIfInMonth(target);
         }
       } else if (r.frequency === "yearly") {
+        // 해당 월이면서 시작 연도 이후만 — 연도 비교는 pushIfInMonth의 date >= start가 수행
+        // (2/29 시작 같은 경우도 월말 클램프로 윤년 아닌 해에 3/1로 밀리지 않게)
         if (start.getMonth() + 1 === m) {
-          const target = new Date(y, m - 1, start.getDate());
+          const target = new Date(y, m - 1, Math.min(start.getDate(), new Date(y, m, 0).getDate()));
           pushIfInMonth(target);
         }
       } else if (r.frequency === "weekly") {
@@ -280,7 +278,7 @@ export const RecurringListSection: React.FC<Props> = React.memo(function Recurri
         }
       }
     }
-    return entries;
+    return occurrences;
   };
 
   return (
@@ -292,13 +290,15 @@ export const RecurringListSection: React.FC<Props> = React.memo(function Recurri
         </button>
       </div>
       <p className="hint" style={{ marginTop: 4, marginBottom: 8 }}>
-        각 셀을 더블클릭하여 수정할 수 있습니다.
+        {coarsePointer
+          ? "각 셀을 탭하여 수정하거나, 작업 열의 수정 버튼으로 상단 폼에서 수정할 수 있습니다."
+          : "각 셀을 더블클릭하여 수정하거나, 작업 열의 수정 버튼으로 상단 폼에서 수정할 수 있습니다."}
       </p>
 
       {previewEntries && (
         <div
           style={{
-            background: "var(--card-bg, #1e1e2e)",
+            background: "var(--surface)",
             border: "1px solid var(--border, #2e2e3e)",
             borderRadius: 8,
             padding: 16,
@@ -309,7 +309,7 @@ export const RecurringListSection: React.FC<Props> = React.memo(function Recurri
           <ul style={{ margin: "8px 0", paddingLeft: 20, fontSize: 14 }}>
             {previewEntries.map((e) => (
               <li key={e.id}>
-                {e.description} — {e.amount.toLocaleString()}원 ({e.category})
+                {e.date} · {e.description} — {e.amount.toLocaleString()}원 ({e.subCategory || e.category})
               </li>
             ))}
           </ul>
@@ -334,7 +334,7 @@ export const RecurringListSection: React.FC<Props> = React.memo(function Recurri
           <col style={{ width: 100 }} />
           <col style={{ width: 100 }} />
           <col style={{ width: 90 }} />
-          <col style={{ width: 70 }} />
+          <col style={{ width: 110 }} />
         </colgroup>
         <thead>
           <tr>
@@ -384,7 +384,7 @@ export const RecurringListSection: React.FC<Props> = React.memo(function Recurri
                 className="cell-editable"
                 onDoubleClick={() => startEditField(r.id, "title", r.title)}
                 onClick={coarsePointer ? () => tapToEditField(r.id, "title", r.title) : undefined}
-                title="더블클릭하여 수정"
+                title={cellEditHint}
               >
                 {editingField?.id === r.id && editingField.field === "title" ? (
                   <input
@@ -407,7 +407,7 @@ export const RecurringListSection: React.FC<Props> = React.memo(function Recurri
                 className="number cell-editable"
                 onDoubleClick={() => startEditField(r.id, "amount", r.amount)}
                 onClick={coarsePointer ? () => tapToEditField(r.id, "amount", r.amount) : undefined}
-                title="더블클릭하여 수정"
+                title={cellEditHint}
               >
                 {editingField?.id === r.id && editingField.field === "amount" ? (
                   <input
@@ -430,7 +430,7 @@ export const RecurringListSection: React.FC<Props> = React.memo(function Recurri
                 className="cell-editable"
                 onDoubleClick={() => startEditField(r.id, "category", r.category)}
                 onClick={coarsePointer ? () => tapToEditField(r.id, "category", r.category) : undefined}
-                title="더블클릭하여 수정"
+                title={cellEditHint}
               >
                 {editingField?.id === r.id && editingField.field === "category" ? (
                   <input
@@ -453,7 +453,7 @@ export const RecurringListSection: React.FC<Props> = React.memo(function Recurri
                 className="cell-editable"
                 onDoubleClick={() => startEditField(r.id, "frequency", r.frequency)}
                 onClick={coarsePointer ? () => tapToEditField(r.id, "frequency", r.frequency) : undefined}
-                title="더블클릭하여 수정"
+                title={cellEditHint}
               >
                 {editingField?.id === r.id && editingField.field === "frequency" ? (
                   <select
@@ -486,7 +486,7 @@ export const RecurringListSection: React.FC<Props> = React.memo(function Recurri
                   startEditField(r.id, "fromAccountId", r.fromAccountId || "");
                 }}
                 onClick={coarsePointer ? () => tapToEditField(r.id, "fromAccountId", r.fromAccountId || "") : undefined}
-                title="더블클릭하여 수정"
+                title={cellEditHint}
               >
                 {editingField?.id === r.id && editingField.field === "fromAccountId" ? (
                   <select
@@ -522,7 +522,7 @@ export const RecurringListSection: React.FC<Props> = React.memo(function Recurri
                   startEditField(r.id, "toAccountId", r.toAccountId || "");
                 }}
                 onClick={coarsePointer ? () => tapToEditField(r.id, "toAccountId", r.toAccountId || "") : undefined}
-                title="더블클릭하여 수정"
+                title={cellEditHint}
               >
                 {editingField?.id === r.id && editingField.field === "toAccountId" ? (
                   <select
@@ -555,7 +555,7 @@ export const RecurringListSection: React.FC<Props> = React.memo(function Recurri
                 className="cell-editable"
                 onDoubleClick={() => startEditField(r.id, "startDate", r.startDate)}
                 onClick={coarsePointer ? () => tapToEditField(r.id, "startDate", r.startDate) : undefined}
-                title="더블클릭하여 수정"
+                title={cellEditHint}
               >
                 {editingField?.id === r.id && editingField.field === "startDate" ? (
                   <input
@@ -575,9 +575,14 @@ export const RecurringListSection: React.FC<Props> = React.memo(function Recurri
                 )}
               </td>
               <td>
-                <button type="button" className="danger" onClick={() => deleteRecurring(r.id)}>
-                  삭제
-                </button>
+                <div style={{ display: "flex", gap: 4 }}>
+                  <button type="button" className="secondary" onClick={() => onRequestEdit(r)} title="상단 폼에서 수정">
+                    수정
+                  </button>
+                  <button type="button" className="danger" onClick={() => deleteRecurring(r.id)}>
+                    삭제
+                  </button>
+                </div>
               </td>
             </tr>
           ))}

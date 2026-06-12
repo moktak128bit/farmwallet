@@ -211,17 +211,18 @@ export const ExpenseTab = React.memo(function ExpenseTab({ d }: { d: D }) {
             const hasOneOff = topSingle && topSingle.amount >= oneOffThreshold;
             const afterOneOff = hasOneOff ? afterSettle - topSingle.amount : afterSettle;
             const span = d.monthSpan;
+            // 텍스트는 CSS 변수 — 하드코딩 다크 텍스트(#0f172a)는 다크모드에서 검정-on-검정이 됨
             const Row: React.FC<{ label: string; sub?: string; value: number; delta?: number; bold?: boolean; bg?: string }> = ({ label, sub, value, delta, bold, bg }) => (
               <div style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline", padding: "10px 14px", background: bg ?? "transparent", borderRadius: 8, marginBottom: 4 }}>
                 <div style={{ display: "flex", flexDirection: "column", gap: 2 }}>
-                  <span style={{ fontSize: 13, fontWeight: bold ? 700 : 500, color: bold ? "#0f172a" : "#475569" }}>{label}</span>
-                  {sub && <span style={{ fontSize: 11, color: "#94a3b8" }}>{sub}</span>}
+                  <span style={{ fontSize: 13, fontWeight: bold ? 700 : 500, color: bold ? "var(--text)" : "var(--text-secondary)" }}>{label}</span>
+                  {sub && <span style={{ fontSize: 11, color: "var(--text-faint)" }}>{sub}</span>}
                 </div>
                 <div style={{ display: "flex", flexDirection: "column", alignItems: "flex-end", gap: 2 }}>
-                  <span style={{ fontSize: bold ? 18 : 14, fontWeight: bold ? 800 : 600, color: bold ? "#0f172a" : "#475569" }}>{F(Math.round(value))}원</span>
-                  <span style={{ fontSize: 11, color: "#94a3b8" }}>월 {F(Math.round(value / span))}원</span>
+                  <span style={{ fontSize: bold ? 18 : 14, fontWeight: bold ? 800 : 600, color: bold ? "var(--text)" : "var(--text-secondary)" }}>{F(Math.round(value))}원</span>
+                  <span style={{ fontSize: 11, color: "var(--text-faint)" }}>월 {F(Math.round(value / span))}원</span>
                   {delta != null && delta !== 0 && (
-                    <span style={{ fontSize: 11, color: delta < 0 ? "#059669" : "#dc2626", fontWeight: 600 }}>
+                    <span style={{ fontSize: 11, color: delta < 0 ? "var(--success)" : "var(--danger)", fontWeight: 600 }}>
                       {delta < 0 ? "−" : "+"}{F(Math.abs(Math.round(delta)))}원
                     </span>
                   )}
@@ -232,19 +233,19 @@ export const ExpenseTab = React.memo(function ExpenseTab({ d }: { d: D }) {
               <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(360px, 1fr))", gap: 16 }}>
                 <div>
                   <Row label="① 가계부 raw 지출" sub="신용결제·재테크·환전 제외" value={raw} bg="var(--bg)" />
-                  <Row label="② 모임통장 50% (상대 부담)" sub={d.datePartnerShare > 0 ? `데이트 계좌 출금 ${F(Math.round(d.dateAccountSpend))}원의 절반` : "데이트 계좌 미설정 또는 출금 없음"} value={afterSplit} delta={-d.datePartnerShare} bg="#f0fdf4" />
-                  <Row label="③ 정산 income 회수" sub={d.settlementTotal > 0 ? "subCategory에 '정산' 포함된 수입" : "정산 내역 없음"} value={afterSettle} delta={-d.settlementTotal} bg="#f0fdf4" />
+                  <Row label="② 모임통장 50% (상대 부담)" sub={d.datePartnerShare > 0 ? `데이트 계좌 출금 ${F(Math.round(d.dateAccountSpend))}원의 절반` : "데이트 계좌 미설정 또는 출금 없음"} value={afterSplit} delta={-d.datePartnerShare} bg="var(--primary-light)" />
+                  <Row label="③ 정산 income 회수" sub={d.settlementTotal > 0 ? "subCategory에 '정산' 포함된 수입" : "정산 내역 없음"} value={afterSettle} delta={-d.settlementTotal} bg="var(--primary-light)" />
                   {hasOneOff && (
                     <Row
                       label="④ 일회성 큰 단건 제외"
                       sub={`${topSingle.date} ${topSingle.desc || topSingle.sub || "-"} (50만+)`}
                       value={afterOneOff}
                       delta={-topSingle.amount}
-                      bg="#fff7ed"
+                      bg="var(--warning-light)"
                     />
                   )}
                   <div style={{ height: 1, background: "var(--border)", margin: "8px 0" }} />
-                  <Row label={hasOneOff ? "💰 일상 실 부담 (정산·분담·일회성 차감)" : "💰 실 부담 (정산·분담 차감)"} value={hasOneOff ? afterOneOff : afterSettle} bold bg="#fef3c7" />
+                  <Row label={hasOneOff ? "💰 일상 실 부담 (정산·분담·일회성 차감)" : "💰 실 부담 (정산·분담 차감)"} value={hasOneOff ? afterOneOff : afterSettle} bold bg="var(--warning-bg)" />
                 </div>
                 <div style={{ padding: "12px 14px", background: "var(--bg)", borderRadius: 8, fontSize: 12, color: "var(--text-secondary)", lineHeight: 1.7 }}>
                   <div style={{ fontWeight: 700, marginBottom: 8, color: "var(--text)" }}>📖 왜 라벨마다 숫자가 다른가요?</div>
@@ -262,7 +263,7 @@ export const ExpenseTab = React.memo(function ExpenseTab({ d }: { d: D }) {
                       <strong>④ 일회성</strong>: 50만 이상 단건 1개 (자동차 수리 같은). 평균을 왜곡하므로 별도 표시.
                     </div>
                   )}
-                  <div style={{ marginTop: 10, padding: "8px 10px", background: "#fef3c7", borderRadius: 6, color: "#78350f", fontWeight: 600 }}>
+                  <div style={{ marginTop: 10, padding: "8px 10px", background: "var(--warning-bg)", borderRadius: 6, color: "var(--text)", fontWeight: 600 }}>
                     💡 "내가 진짜 한 달에 쓴 돈"은 마지막 줄로 보세요.
                   </div>
                 </div>
@@ -526,14 +527,14 @@ export const ExpenseTab = React.memo(function ExpenseTab({ d }: { d: D }) {
               <div>
                 <div style={{ fontSize: 12, fontWeight: 700, color: "#e94560", marginBottom: 6 }}>▲ 가장 많이 늘어남</div>
                 {d.categoryGrowth.up.map((r) => (
-                  <div key={r.sub} style={{ padding: "6px 10px", background: "#fff5f5", borderRadius: 6, marginBottom: 4, fontSize: 12 }}>
+                  <div key={r.sub} style={{ padding: "6px 10px", background: "var(--danger-light)", borderRadius: 6, marginBottom: 4, fontSize: 12 }}>
                     <div style={{ display: "flex", justifyContent: "space-between", fontWeight: 600 }}>
                       <span>{r.sub}</span>
-                      <span style={{ color: "#e94560", fontWeight: 800 }}>
+                      <span style={{ color: "var(--danger)", fontWeight: 800 }}>
                         {r.isNew ? "NEW" : `+${r.pctChange.toFixed(0)}%`}
                       </span>
                     </div>
-                    <div style={{ fontSize: 10, color: "#999" }}>{F(r.avg3)}원 → {F(r.cur)}원</div>
+                    <div style={{ fontSize: 10, color: "var(--text-faint)" }}>{F(r.avg3)}원 → {F(r.cur)}원</div>
                   </div>
                 ))}
                 {d.categoryGrowth.up.length === 0 && <div style={{ fontSize: 11, color: "var(--text-faint)" }}>해당 없음</div>}
@@ -541,12 +542,12 @@ export const ExpenseTab = React.memo(function ExpenseTab({ d }: { d: D }) {
               <div>
                 <div style={{ fontSize: 12, fontWeight: 700, color: "#059669", marginBottom: 6 }}>▼ 가장 많이 줄어듦</div>
                 {d.categoryGrowth.down.map((r) => (
-                  <div key={r.sub} style={{ padding: "6px 10px", background: "#f0fdf4", borderRadius: 6, marginBottom: 4, fontSize: 12 }}>
+                  <div key={r.sub} style={{ padding: "6px 10px", background: "var(--primary-light)", borderRadius: 6, marginBottom: 4, fontSize: 12 }}>
                     <div style={{ display: "flex", justifyContent: "space-between", fontWeight: 600 }}>
                       <span>{r.sub}</span>
-                      <span style={{ color: "#059669", fontWeight: 800 }}>{r.pctChange.toFixed(0)}%</span>
+                      <span style={{ color: "var(--success)", fontWeight: 800 }}>{r.pctChange.toFixed(0)}%</span>
                     </div>
-                    <div style={{ fontSize: 10, color: "#999" }}>{F(r.avg3)}원 → {F(r.cur)}원</div>
+                    <div style={{ fontSize: 10, color: "var(--text-faint)" }}>{F(r.avg3)}원 → {F(r.cur)}원</div>
                   </div>
                 ))}
                 {d.categoryGrowth.down.length === 0 && <div style={{ fontSize: 11, color: "var(--text-faint)" }}>해당 없음</div>}
@@ -580,13 +581,13 @@ export const ExpenseTab = React.memo(function ExpenseTab({ d }: { d: D }) {
 
         <Card title="지출 분석 인사이트" span={4}>
           <div className="grid-2" style={{ gap: 10 }}>
-            <Insight title="최다 지출 중분류" color="#e94560" bg="#fff5f5">
+            <Insight title="최다 지출 중분류" tone="danger">
               {topSub ? `${topSub.sub}에 총 ${F(topSub.amount)}원 (${topSub.count}건, 건당 평균 ${F(Math.round(SD(topSub.amount, topSub.count)))}원). ${d.pExpense > 0 ? `전체 지출의 ${Math.round(SD(topSub.amount, d.pExpense) * 100)}%를 차지합니다.` : ""} ${topSub.count > 10 ? "잦은 소비가 누적되고 있습니다. 건수를 줄이는 것만으로도 효과적입니다." : "고단가 지출이 비중을 높이고 있습니다."}` : "데이터 없음"}
             </Insight>
-            <Insight title="최다 지출 항목(설명)" color="#0f3460" bg="#f0f8ff">
+            <Insight title="최다 지출 항목(설명)" tone="info">
               {topDescs.length > 0 ? `${topDescs[0].desc}에 총 ${F(topDescs[0].amount)}원을 사용했습니다 (${topDescs[0].cat} · ${topDescs[0].sub || "기타"}). ${topDescs.length > 1 ? `2위 ${topDescs[1].desc}(${F(topDescs[1].amount)}원), 3위 ${topDescs.length > 2 ? `${topDescs[2].desc}(${F(topDescs[2].amount)}원)` : "없음"}.` : ""}` : "데이터 없음"}
             </Insight>
-            <Insight title="요일 패턴" color="#b45309" bg="#fff3cd">
+            <Insight title="요일 패턴" tone="warning">
               {(() => {
                 const sorted = [...wdData].sort((a, b) => b.일평균 - a.일평균);
                 const top = sorted[0]; const bot = sorted[sorted.length - 1];
@@ -594,7 +595,7 @@ export const ExpenseTab = React.memo(function ExpenseTab({ d }: { d: D }) {
                 return `가장 많이 쓰는 요일: ${top.name}요일 (일평균 ${F(top.일평균)}원). 가장 적게 쓰는 요일: ${bot.name}요일 (${F(bot.일평균)}원).`;
               })()}
             </Insight>
-            <Insight title="지출 효율성" color="#059669" bg="#d4edda">
+            <Insight title="지출 효율성" tone="success">
               {d.pExpense > 0 && d.totalDays > 0 ? `일 평균 ${F(Math.round(d.pExpense / d.totalDays))}원 지출. 총 ${d.expByCat.length}개 대분류, ${subs.length}개 중분류에 분산. ${subs.length > 15 ? "지출처가 많아 관리가 복잡합니다. 통합할 수 있는 항목이 있는지 확인하세요." : subs.length > 8 ? "적당한 수의 카테고리에 분산되어 있습니다." : "소수 카테고리에 집중되어 있어 관리가 용이합니다."}` : "데이터 없음"}
             </Insight>
           </div>
@@ -604,16 +605,16 @@ export const ExpenseTab = React.memo(function ExpenseTab({ d }: { d: D }) {
           <Card title="중분류별 세부 인사이트" span={4}>
             <div className="grid-2" style={{ gap: 10 }}>
               {d.subInsights.map((s, i) => (
-                <div key={s.sub} style={{ padding: "12px 14px", borderRadius: 10, background: s.monthTrend === "up" ? "#fff5f5" : s.monthTrend === "down" ? "#f0fdf4" : "#f8f9fa", border: `1px solid ${s.monthTrend === "up" ? "#fcc" : s.monthTrend === "down" ? "#86efac" : "#eee"}`, fontSize: 12 }}>
+                <div key={s.sub} style={{ padding: "12px 14px", borderRadius: 10, background: s.monthTrend === "up" ? "var(--danger-light)" : s.monthTrend === "down" ? "var(--primary-light)" : "var(--bg)", border: "1px solid var(--border-light)", fontSize: 12, color: "var(--text)" }}>
                   <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 6 }}>
                     <span style={{ fontWeight: 700, fontSize: 14, display: "flex", alignItems: "center", gap: 6 }}>
                       <span style={{ width: 10, height: 10, borderRadius: 5, background: C[i % 12], display: "inline-block" }} />
                       {s.sub}
-                      <span style={{ fontSize: 11, fontWeight: 400, color: "#999" }}>{s.cat}</span>
+                      <span style={{ fontSize: 11, fontWeight: 400, color: "var(--text-faint)" }}>{s.cat}</span>
                     </span>
                     <span style={{ fontSize: 16, fontWeight: 800, color: "#e94560" }}>{F(s.total)}원</span>
                   </div>
-                  <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 4, fontSize: 11, color: "#555", marginBottom: 4 }}>
+                  <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 4, fontSize: 11, color: "var(--text-secondary)", marginBottom: 4 }}>
                     <span>비중 {s.share}%</span>
                     <span>{s.count}건</span>
                     <span>건당 {F(s.avg)}원</span>
@@ -621,11 +622,11 @@ export const ExpenseTab = React.memo(function ExpenseTab({ d }: { d: D }) {
                     <span>피크 {s.peak || "-"}</span>
                     <span>최대건 {F(s.maxSingle)}원</span>
                   </div>
-                  <div style={{ fontSize: 11, color: s.monthTrend === "up" ? "#e94560" : s.monthTrend === "down" ? "#059669" : "#999", fontWeight: 600, marginBottom: 4 }}>
+                  <div style={{ fontSize: 11, color: s.monthTrend === "up" ? "var(--danger)" : s.monthTrend === "down" ? "var(--success)" : "var(--text-faint)", fontWeight: 600, marginBottom: 4 }}>
                     {s.monthTrend === "up" ? `▲ 전월 대비 ${s.mom}% 증가` : s.monthTrend === "down" ? `▼ 전월 대비 ${Math.abs(s.mom)}% 감소` : "전월과 유사"}
                     {s.streakUp >= 2 && ` · ${s.streakUp}개월 연속 증가!`}
                   </div>
-                  <div style={{ fontSize: 11, color: "#666", lineHeight: 1.6, borderTop: "1px solid #eee", paddingTop: 4 }}>
+                  <div style={{ fontSize: 11, color: "var(--text-muted)", lineHeight: 1.6, borderTop: "1px solid var(--border-light)", paddingTop: 4 }}>
                     {s.comment}
                   </div>
                 </div>

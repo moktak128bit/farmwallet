@@ -26,7 +26,6 @@ import { buildRestoreById, showDeleteUndoToast } from "../../../utils/undoToast"
 
 interface Props {
   safeAccounts: Account[];
-  safeBalances: AccountBalanceRow[];
   /** 계좌 종류별로 묶인 잔액 행 (부모 memo) */
   accountsByType: Map<AccountType, AccountBalanceRow[]>;
   /** 계좌별 주식 평가액 KRW (부모 memo) */
@@ -46,7 +45,6 @@ interface Props {
 
 export const AccountTablesSection: React.FC<Props> = React.memo(function AccountTablesSection({
   safeAccounts,
-  safeBalances,
   accountsByType,
   stockMap,
   cardDebtMap,
@@ -60,7 +58,7 @@ export const AccountTablesSection: React.FC<Props> = React.memo(function Account
 }) {
   const [editingCell, setEditingCell] = useState<{
     id: string;
-    field: "id" | "name" | "institution" | "type" | "currency" | "usdBalance" | "krwBalance";
+    field: "id" | "name" | "institution" | "type" | "usdBalance";
   } | null>(null);
   const [editingCellValue, setEditingCellValue] = useState("");
   const [draggingId, setDraggingId] = useState<string | null>(null);
@@ -69,33 +67,28 @@ export const AccountTablesSection: React.FC<Props> = React.memo(function Account
   const coarsePointer = isCoarsePointer();
 
   const handleDeleteAccount = (id: string) => {
-    // 삭제 전 해당 계좌를 참조하는 ledger·trade 개수 확인.
-    // 0개면 그대로 삭제, 그 이상이면 사용자에게 명시적 확인 받음
-    // (참조 레코드는 그대로 유지 — 과거 거래 기록을 자동 삭제하지 않는 게 안전).
-    const ledgerRefs = ledger.filter((l) => l.fromAccountId === id || l.toAccountId === id).length;
-    const tradeRefs = trades.filter((t) => t.accountId === id).length;
-    if (ledgerRefs > 0 || tradeRefs > 0) {
-      const parts: string[] = [];
-      if (ledgerRefs > 0) parts.push(`가계부 ${ledgerRefs}건`);
-      if (tradeRefs > 0) parts.push(`주식거래 ${tradeRefs}건`);
-      const refs = parts.join(", ");
-      const ok = window.confirm(
-        `이 계좌를 참조하는 ${refs}이(가) 있습니다.\n` +
-        `계좌만 삭제하면 해당 거래 기록은 "삭제된 계좌"로 남습니다.\n계속하시겠습니까?`
-      );
-      if (!ok) return;
-    }
-    // index 전달 — 계좌는 드래그 순서가 의미 있으므로 원래 위치로 복원.
-    // 계좌 삭제는 참조 레코드(ledger·trade)를 보존하므로 재삽입만으로 완전 복원된다.
+    // 삭제 확인은 이 함수 한 곳에서만 수행한다 (호출부 confirm 중복 금지).
+    // 참조 레코드(ledger·trade)는 그대로 유지 — 과거 거래 기록을 자동 삭제하지 않는 게 안전.
     const index = safeAccounts.findIndex((a) => a.id === id);
     const deleted = index >= 0 ? safeAccounts[index] : undefined;
+    if (!deleted) return;
+    const ledgerRefs = ledger.filter((l) => l.fromAccountId === id || l.toAccountId === id).length;
+    const tradeRefs = trades.filter((t) => t.accountId === id).length;
+    const parts: string[] = [];
+    if (ledgerRefs > 0) parts.push(`가계부 ${ledgerRefs}건`);
+    if (tradeRefs > 0) parts.push(`주식거래 ${tradeRefs}건`);
+    const refNote = parts.length > 0
+      ? `\n\n이 계좌를 참조하는 ${parts.join(", ")}이(가) 있습니다.\n해당 거래 기록은 삭제되지 않고 "삭제된 계좌"로 표시됩니다.`
+      : "\n\n관련 거래 내역은 그대로 유지됩니다.";
+    const ok = window.confirm(`"${deleted.name}" 계좌를 삭제할까요?${refNote}`);
+    if (!ok) return;
+    // index 전달 — 계좌는 드래그 순서가 의미 있으므로 원래 위치로 복원.
+    // 계좌 삭제는 참조 레코드(ledger·trade)를 보존하므로 재삽입만으로 완전 복원된다.
     onChangeAccounts(safeAccounts.filter((a) => a.id !== id));
-    if (deleted) {
-      showDeleteUndoToast(
-        `"${deleted.name}" 계좌가 삭제되었습니다.`,
-        buildRestoreById(() => useAppStore.getState().data.accounts, onChangeAccounts, deleted, index)
-      );
-    }
+    showDeleteUndoToast(
+      `"${deleted.name}" 계좌가 삭제되었습니다.`,
+      buildRestoreById(() => useAppStore.getState().data.accounts, onChangeAccounts, deleted, index)
+    );
   };
 
   const handleReorderAccount = (id: string, newIndex: number) => {
@@ -109,7 +102,7 @@ export const AccountTablesSection: React.FC<Props> = React.memo(function Account
     onChangeAccounts(next);
   };
 
-  const startEditCell = (id: string, field: "id" | "name" | "institution" | "type" | "currency" | "usdBalance" | "krwBalance", current: string | number) => {
+  const startEditCell = (id: string, field: "id" | "name" | "institution" | "type" | "usdBalance", current: string | number) => {
     setEditingCell({ id, field });
     setEditingCellValue(String(current));
   };
@@ -135,13 +128,6 @@ export const AccountTablesSection: React.FC<Props> = React.memo(function Account
         return;
       }
       onRenameAccountId(id, nextId);
-    } else if (field === "currency") {
-      const updated = safeAccounts.map((a) =>
-        a.id === id
-          ? { ...a, currency: (raw === "KRW" || raw === "USD") ? (raw as "KRW" | "USD") : undefined }
-          : a
-      );
-      onChangeAccounts(updated);
     } else {
       const updated = safeAccounts.map((a) =>
         a.id === id
@@ -149,7 +135,7 @@ export const AccountTablesSection: React.FC<Props> = React.memo(function Account
               ...a,
               [field]: field === "type"
                 ? (editingCellValue as AccountType)
-                : field === "usdBalance" || field === "krwBalance"
+                : field === "usdBalance"
                 ? Number(raw.replace(/[^\d.-]/g, "")) || 0
                 : editingCellValue
             }
@@ -173,7 +159,7 @@ export const AccountTablesSection: React.FC<Props> = React.memo(function Account
    */
   const tapToEditCell = (
     id: string,
-    field: "id" | "name" | "institution" | "type" | "currency" | "usdBalance" | "krwBalance",
+    field: "id" | "name" | "institution" | "type" | "usdBalance",
     current: string | number
   ) =>
     coarsePointer
@@ -196,8 +182,12 @@ export const AccountTablesSection: React.FC<Props> = React.memo(function Account
       onDrop={(e) => {
         if (!draggingId) return;
         e.preventDefault();
-        const currentIndex = safeBalances.findIndex((b) => b.account.id === draggingId);
-        handleReorderAccount(draggingId, currentIndex);
+        // 드롭 "대상 행"(row.account.id)의 인덱스를 목표 위치로 사용한다.
+        // (드래그 항목 자신의 인덱스를 쓰면 항상 제자리 → no-op 버그)
+        const targetIndex = safeAccounts.findIndex((a) => a.id === row.account.id);
+        if (targetIndex !== -1 && draggingId !== row.account.id) {
+          handleReorderAccount(draggingId, targetIndex);
+        }
         setDraggingId(null);
       }}
       onDragStart={() => setDraggingId(row.account.id)}
@@ -497,20 +487,8 @@ export const AccountTablesSection: React.FC<Props> = React.memo(function Account
           <button
             type="button"
             className="danger"
-            onClick={() => {
-              const accountId = row.account.id;
-              const ledgerRefs = ledger.filter((l) => l.fromAccountId === accountId || l.toAccountId === accountId).length;
-              const tradeRefs = trades.filter((t) => t.accountId === accountId).length;
-              const refParts: string[] = [];
-              if (ledgerRefs > 0) refParts.push(`가계부 ${ledgerRefs}건`);
-              if (tradeRefs > 0) refParts.push(`주식 거래 ${tradeRefs}건`);
-              const refNote = refParts.length > 0
-                ? `\n\n이 계좌를 참조하는 ${refParts.join(", ")}이 있습니다. 삭제하면 해당 항목은 '누락된 참조'로 표시되며 잔액/집계에 포함되지 않습니다.`
-                : "\n\n관련 거래 내역은 유지됩니다.";
-              if (window.confirm(`"${row.account.name}" 계좌를 삭제할까요?${refNote}`)) {
-                handleDeleteAccount(accountId);
-              }
-            }}
+            // 삭제 확인은 handleDeleteAccount 한 곳에서만 수행 (confirm 중복 방지)
+            onClick={() => handleDeleteAccount(row.account.id)}
             style={{ fontSize: "14px", padding: "8px 16px" }}
           >
             삭제
@@ -555,7 +533,8 @@ export const AccountTablesSection: React.FC<Props> = React.memo(function Account
               <>
                 <th>현재 부채</th>
               </>
-            ) : (
+            ) : (type === "securities" || type === "crypto") ? null : (
+              // 증권/암호화폐는 위 5열(USD/KRW/주식/현금/합계)이 잔액 — 바디와 동일하게 "현재 잔액" 열 없음
               <th>현재 잔액</th>
             )}
             <th>작업</th>
@@ -570,9 +549,9 @@ export const AccountTablesSection: React.FC<Props> = React.memo(function Account
                       return sum + (stockMap.get(row.account.id) ?? 0);
                     }, 0);
 
-                    // USD 잔액 합계, KRW 잔액 합계
+                    // USD 잔액 합계 — 각 행 표시값과 동일하게 usdTransferNet(이체 순액)을 포함한다
                     const totalUsdBalance = accountsOfType.reduce((sum, row) => {
-                      return sum + (row.account.usdBalance ?? 0);
+                      return sum + (row.account.usdBalance ?? 0) + (row.usdTransferNet ?? 0);
                     }, 0);
                     // KRW 잔액 합계 (ledger 기반 currentBalance)
                     const totalKrwBalance = accountsOfType.reduce((sum, row) => {

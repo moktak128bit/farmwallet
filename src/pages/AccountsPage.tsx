@@ -22,6 +22,7 @@ import { EmptyState } from "../components/ui/EmptyState";
 import { Wallet, Download } from "lucide-react";
 import { toast } from "react-hot-toast";
 import { computeRealizedPnlByTradeId, positionMarketValueKRW } from "../calculations";
+import { getTodayKST } from "../utils/date";
 import { useAppStore } from "../store/appStore";
 import { buildUnifiedCsv } from "../utils/unifiedCsvExport";
 import { AccountForm } from "../features/accounts/sections/AccountForm";
@@ -66,7 +67,7 @@ export const AccountsView: React.FC<Props> = ({
     const blob = new Blob([bom + unified], { type: "text/csv;charset=utf-8" });
     const url = URL.createObjectURL(blob);
     const a = document.createElement("a");
-    const today = new Date().toISOString().slice(0, 10);
+    const today = getTodayKST();
     a.href = url; a.download = `farmwallet-all-${today}.csv`; a.click();
     URL.revokeObjectURL(url);
     toast.success("전체 데이터 CSV 다운로드 완료");
@@ -198,6 +199,10 @@ export const AccountsView: React.FC<Props> = ({
     const savings = safeBalances
       .filter((r) => r.account.type === "savings")
       .reduce((s, r) => s + r.currentBalance, 0);
+    // 기타(other) 계좌 잔액 — 대시보드 computeTotalNetWorth와 동일하게 순자산에 포함
+    const other = safeBalances
+      .filter((r) => r.account.type === "other")
+      .reduce((s, r) => s + r.currentBalance, 0);
     // cardDebtMap.total: 양수=부채, 음수=선납 (account.debt 포함).
     const cardNet = Array.from(cardDebtMap.values()).reduce((s, v) => s + v.total, 0);
     const cardDebt = Array.from(cardDebtMap.values()).reduce((s, v) => s + (v.total > 0 ? v.total : 0), 0);
@@ -208,14 +213,15 @@ export const AccountsView: React.FC<Props> = ({
         const stock = stockMap.get(row.account.id) ?? 0;
         const krw = row.currentBalance;
         const usd = (row.account.usdBalance ?? 0) + (row.usdTransferNet ?? 0);
-        const usdKrw = fxRate ? usd * fxRate : 0;
+        // effectiveFxRate: prop 미전달 시 로컬 fetch 폴백 포함 — 주식 환산과 동일 기준
+        const usdKrw = effectiveFxRate ? usd * effectiveFxRate : 0;
         return s + stock + krw + usdKrw;
       }, 0);
     // 순자산 계산에는 카드 net(초과결제=+, 미결제=-) 그대로 반영
     // 부채는 빼야 순자산 — cardNet은 양수가 부채라 차감.
-    const total = checking + savings + securities - cardNet;
-    return { checking, savings, cardNet, cardDebt, cardCredit, securities, total };
-  }, [safeBalances, stockMap, cardDebtMap, fxRate]);
+    const total = checking + savings + other + securities - cardNet;
+    return { checking, savings, other, cardNet, cardDebt, cardCredit, securities, total };
+  }, [safeBalances, stockMap, cardDebtMap, effectiveFxRate]);
 
   return (
     <div>
@@ -240,11 +246,10 @@ export const AccountsView: React.FC<Props> = ({
       {/* 계좌 목록 테이블 (유형별) — 분리 컴포넌트 (React.memo). 셀 편집·드래그 상태는 자식 소유 */}
       <AccountTablesSection
         safeAccounts={safeAccounts}
-        safeBalances={safeBalances}
         accountsByType={accountsByType}
         stockMap={stockMap}
         cardDebtMap={cardDebtMap}
-        fxRate={fxRate}
+        fxRate={effectiveFxRate}
         ledger={ledger}
         trades={trades}
         onChangeAccounts={onChangeAccounts}
@@ -273,7 +278,7 @@ export const AccountsView: React.FC<Props> = ({
         formatKRW={formatKRW}
       />
 
-      {accounts.length === 0 && (
+      {safeAccounts.length === 0 && (
         <EmptyState
           icon={<Wallet size={48} />}
           title="아직 계좌가 없습니다"
@@ -291,7 +296,7 @@ export const AccountsView: React.FC<Props> = ({
           ledger={ledger}
           onChangeLedger={onChangeLedger}
           onChangeAccounts={onChangeAccounts}
-          fxRate={fxRate}
+          fxRate={effectiveFxRate}
           onClose={handleCloseAdjust}
         />
       )}

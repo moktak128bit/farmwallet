@@ -38,13 +38,10 @@ export const SubTab = React.memo(function SubTab({ d }: { d: D }) {
   // 신규/해지 구독 감지는 미구현 — subs에 월별 결제 정보가 없어 월간 비교 불가.
   const currentMonth = d.anomalyTargetMonth;
   // 월별 구독비 변화 감지 (이번달 vs 이전달)
-  const curSubAmt = currentMonth ? d.subTrend.find((t) => t.l === d.ml[currentMonth])?.amount ?? 0 : 0;
-  const prevSubAmt = (() => {
-    if (!currentMonth) return 0;
-    const idx = d.months.indexOf(currentMonth);
-    if (idx <= 0) return 0;
-    return d.subTrend.find((t) => t.l === d.ml[d.months[idx - 1]])?.amount ?? 0;
-  })();
+  // subTrend는 d.months와 평행 배열 — YYYY-MM 인덱스로 조회 ("6월" 라벨 find는 다른 해와 충돌)
+  const curIdx = currentMonth ? d.months.indexOf(currentMonth) : -1;
+  const curSubAmt = curIdx >= 0 ? d.subTrend[curIdx]?.amount ?? 0 : 0;
+  const prevSubAmt = curIdx > 0 ? d.subTrend[curIdx - 1]?.amount ?? 0 : 0;
   const subMoM = prevSubAmt > 0 ? ((curSubAmt - prevSubAmt) / prevSubAmt) * 100 : null;
 
   // 절약 시나리오
@@ -140,23 +137,23 @@ export const SubTab = React.memo(function SubTab({ d }: { d: D }) {
 
             <Card title="집중도·절약 시나리오" span={2}>
               <div style={{ display: "flex", flexDirection: "column", gap: 10, fontSize: 13 }}>
-                <div style={{ padding: "10px 12px", background: "#f0f8ff", borderRadius: 8, borderLeft: "4px solid #2563eb" }}>
-                  <div style={{ fontWeight: 700, color: "#2563eb", marginBottom: 4 }}>상위 3개 집중도</div>
-                  <div style={{ fontSize: 18, fontWeight: 800 }}>{top3Share.toFixed(0)}%</div>
-                  <div style={{ fontSize: 11, color: "#666", marginTop: 2 }}>
+                <div style={{ padding: "10px 12px", background: "var(--accent-light)", borderRadius: 8, borderLeft: "4px solid var(--accent)" }}>
+                  <div style={{ fontWeight: 700, color: "var(--accent)", marginBottom: 4 }}>상위 3개 집중도</div>
+                  <div style={{ fontSize: 18, fontWeight: 800, color: "var(--text)" }}>{top3Share.toFixed(0)}%</div>
+                  <div style={{ fontSize: 11, color: "var(--text-muted)", marginTop: 2 }}>
                     {topSubs.map((s) => s.name).join(" · ")} · 월 {W(top3Monthly)}
                   </div>
                 </div>
-                <div style={{ padding: "10px 12px", background: "#f0fdf4", borderRadius: 8, borderLeft: "4px solid #059669" }}>
-                  <div style={{ fontWeight: 700, color: "#059669", marginBottom: 4 }}>💡 절약 시나리오</div>
-                  <div style={{ fontSize: 12, color: "#444", lineHeight: 1.7 }}>
+                <div style={{ padding: "10px 12px", background: "var(--primary-light)", borderRadius: 8, borderLeft: "4px solid var(--success)" }}>
+                  <div style={{ fontWeight: 700, color: "var(--success)", marginBottom: 4 }}>💡 절약 시나리오</div>
+                  <div style={{ fontSize: 12, color: "var(--text-secondary)", lineHeight: 1.7 }}>
                     상위 3개 해지 시 연 <strong>{W(savingsIfCutTop3)}</strong> 절약<br />
                     전체 구독 50% 정리 시 연 <strong>{W(Math.round(savingsIfCutHalf))}</strong> 절약
                   </div>
                 </div>
-                <div style={{ padding: "10px 12px", background: "#fff5f5", borderRadius: 8, borderLeft: "4px solid #e94560" }}>
-                  <div style={{ fontWeight: 700, color: "#e94560", marginBottom: 4 }}>일·주·월 환산</div>
-                  <div style={{ fontSize: 12, color: "#444", lineHeight: 1.7 }}>
+                <div style={{ padding: "10px 12px", background: "var(--danger-light)", borderRadius: 8, borderLeft: "4px solid var(--danger)" }}>
+                  <div style={{ fontWeight: 700, color: "var(--danger)", marginBottom: 4 }}>일·주·월 환산</div>
+                  <div style={{ fontSize: 12, color: "var(--text-secondary)", lineHeight: 1.7 }}>
                     일 {W(costPerDay)} · 주 {W(costPerDay * 7)} · 월 {W(totalMonthly)}<br />
                     {costPerDay > 3000 ? "☕ 하루 커피 한 잔 이상 구독에 지출 중" : "☕ 하루 커피 한 잔 미만"}
                   </div>
@@ -176,7 +173,7 @@ export const SubTab = React.memo(function SubTab({ d }: { d: D }) {
                   </Insight>
                 ))}
                 {categorized.filter((g) => g.items.length > 1).length === 0 && (
-                  <Insight title="카테고리 중복 없음" color="#059669" bg="#d4edda">
+                  <Insight title="카테고리 중복 없음" tone="success">
                     같은 카테고리 내 중복 구독이 없습니다. 효율적으로 관리하고 있어요!
                   </Insight>
                 )}
@@ -187,13 +184,13 @@ export const SubTab = React.memo(function SubTab({ d }: { d: D }) {
                     " 적정 수준 — 관리 잘 되고 있음."}
                   {" "}수입 대비 {subPctIncome.toFixed(1)}%.
                 </Insight>
-                <Insight title="집중도 경고" color="#b45309" bg="#fff3cd">
+                <Insight title="집중도 경고" tone="warning">
                   {top3Share >= 70
                     ? `상위 3개(${topSubs.map((s) => s.name).join(", ")})가 ${top3Share.toFixed(0)}% 차지 — 이 3개가 핵심. 필요성 재검토 시 큰 절약 가능.`
                     : `상위 3개가 ${top3Share.toFixed(0)}% — 비교적 분산되어 있음. 작은 구독들을 일괄 정리하는 것도 방법.`}
                 </Insight>
                 {subMoM != null && Math.abs(subMoM) >= 20 && (
-                  <Insight title={subMoM > 0 ? "⚠️ 구독비 급증" : "✅ 구독비 감소"} color={subMoM > 0 ? "#e94560" : "#059669"} bg={subMoM > 0 ? "#fff5f5" : "#d4edda"}>
+                  <Insight title={subMoM > 0 ? "⚠️ 구독비 급증" : "✅ 구독비 감소"} tone={subMoM > 0 ? "danger" : "success"}>
                     전월 대비 <strong>{subMoM >= 0 ? "+" : ""}{subMoM.toFixed(0)}%</strong>
                     ({W(prevSubAmt)} → {W(curSubAmt)}).
                     {subMoM > 0 ? " 새로 시작한 구독이 있는지 확인하세요." : " 해지·일시 결제 없는 달일 수 있음."}

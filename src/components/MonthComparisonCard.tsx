@@ -10,11 +10,15 @@ interface Props {
 const arrow = (delta: number) => delta > 0 ? "▲" : delta < 0 ? "▼" : "—";
 const tone = (delta: number, kind: "expense" | "income"): string => {
   if (delta === 0) return "var(--text-muted)";
-  // For expense: increase = bad (danger); for income: increase = good (success)
+  // 지출: 증가 = 나쁨(danger) / 수입: 증가 = 좋음(success)
   const isUp = delta > 0;
   if (kind === "expense") return isUp ? "var(--danger)" : "var(--success)";
   return isUp ? "var(--success)" : "var(--danger)";
 };
+
+/** 비교 기준이 0이라 비율을 못 구하면(pct=null) "신규", 아니면 "▲ 12.3%" 형태 */
+const pctLabel = (delta: number, pct: number | null): string =>
+  pct == null ? "신규" : `${arrow(delta)} ${Math.abs(pct).toFixed(1)}%`;
 
 export const MonthComparisonCard: React.FC<Props & { kind?: "expense" | "income" }> = ({
   title,
@@ -36,14 +40,14 @@ export const MonthComparisonCard: React.FC<Props & { kind?: "expense" | "income"
         <div>
           <span style={{ color: "var(--text-muted)" }}>전월:</span>{" "}
           <span style={{ color: tone(current - previousMonth, kind) }}>
-            {arrow(current - previousMonth)} {Math.abs(diffPrevMonthPct).toFixed(1)}%
+            {pctLabel(current - previousMonth, diffPrevMonthPct)}
           </span>
           <div style={{ color: "var(--text-muted)", fontSize: 11 }}>{formatNumber(previousMonth)}</div>
         </div>
         <div>
           <span style={{ color: "var(--text-muted)" }}>전년 동월:</span>{" "}
           <span style={{ color: tone(current - previousYearSameMonth, kind) }}>
-            {arrow(current - previousYearSameMonth)} {Math.abs(diffPrevYearPct).toFixed(1)}%
+            {pctLabel(current - previousYearSameMonth, diffPrevYearPct)}
           </span>
           <div style={{ color: "var(--text-muted)", fontSize: 11 }}>{formatNumber(previousYearSameMonth)}</div>
         </div>

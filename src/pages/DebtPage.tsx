@@ -60,9 +60,18 @@ export const DebtView: React.FC<Props> = ({
     return subs && subs.length > 0 ? subs : DEFAULT_LOAN_REPAYMENT_SUBS;
   }, [categoryPresets]);
 
+  // 대출 매칭: ① 설명이 대출명과 정확히 일치하면 우선, ② 부분 포함이면 가장 긴 이름 우선.
+  // (단순 includes 첫 매칭은 "주택대출"/"주택대출2"처럼 접두 관계인 이름에서 혼선을 일으킨다)
   const matchRepaymentLoan = useCallback((entry: LedgerEntry): Loan | null => {
     const description = entry.description || "";
-    return loans.find((loan) => description.includes(loan.loanName)) ?? null;
+    const exact = loans.find((loan) => description === loan.loanName);
+    if (exact) return exact;
+    let best: Loan | null = null;
+    for (const loan of loans) {
+      if (!loan.loanName || !description.includes(loan.loanName)) continue;
+      if (!best || loan.loanName.length > best.loanName.length) best = loan;
+    }
+    return best;
   }, [loans]);
 
   // 대출별 원금/이자 상환 누적. 현재 잔금은 원금 상환분만 차감한다.
@@ -80,8 +89,9 @@ export const DebtView: React.FC<Props> = ({
     return { principal, interest };
   }, [ledger, matchRepaymentLoan]);
 
+  // 숨김(archived) 계좌는 출금 계좌 드롭다운에서 제외 — "입력 드롭다운에서 제외" 안내와 일치
   const cashAccounts = useMemo(
-    () => accounts.filter((a) => a.type === "checking" || a.type === "savings" || a.type === "other"),
+    () => accounts.filter((a) => (a.type === "checking" || a.type === "savings" || a.type === "other") && !a.archived),
     [accounts]
   );
 
@@ -167,6 +177,7 @@ export const DebtView: React.FC<Props> = ({
           ledger={ledger}
           cashAccounts={cashAccounts}
           loanRepaymentSubOptions={loanRepaymentSubOptions}
+          matchRepaymentLoan={matchRepaymentLoan}
           onChangeLedger={onChangeLedger}
           onClose={handleCloseEditRepayment}
         />

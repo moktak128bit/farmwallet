@@ -1,8 +1,10 @@
-import React, { memo, useMemo, useState } from "react";
+import React, { memo, useEffect, useMemo, useState } from "react";
 import { formatNumber } from "../../utils/formatter";
 import { detectPRs, getExerciseSessions } from "../../utils/workoutStats";
 import type { WorkoutWeek } from "../../types";
 import { ExerciseProgressionChart, type Metric } from "./ExerciseProgressionChart";
+import { useFocusTrap } from "../../hooks/useFocusTrap";
+import { useModalStackEntry } from "../../utils/modalStack";
 
 interface Props {
   exerciseName: string;
@@ -18,6 +20,17 @@ const METRIC_OPTIONS: { value: Metric; label: string }[] = [
 
 const ExerciseHistoryModalInner: React.FC<Props> = ({ exerciseName, workoutWeeks, onClose }) => {
   const [metric, setMetric] = useState<Metric>("maxWeight");
+  const trapRef = useFocusTrap<HTMLDivElement>(true);
+  const isTopModal = useModalStackEntry(true);
+
+  // ESC로 닫기 (모달 중첩 시 최상위만)
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key === "Escape" && isTopModal()) onClose();
+    };
+    window.addEventListener("keydown", handleKeyDown);
+    return () => window.removeEventListener("keydown", handleKeyDown);
+  }, [onClose, isTopModal]);
 
   const sessions = useMemo(
     () => detectPRs(getExerciseSessions(workoutWeeks, exerciseName)),
@@ -52,6 +65,7 @@ const ExerciseHistoryModalInner: React.FC<Props> = ({ exerciseName, workoutWeeks
       }}
     >
       <div
+        ref={trapRef}
         onClick={(e) => e.stopPropagation()}
         style={{
           width: "100%", maxWidth: 680, maxHeight: "90vh", overflow: "auto",

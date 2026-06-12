@@ -58,7 +58,7 @@ export const CmaBalanceTrendCard: React.FC<Props> = React.memo(function CmaBalan
   const totalDelta = latest.balance - first.balance;
   const totalRate = first.balance !== 0 ? (totalDelta / Math.abs(first.balance)) * 100 : 0;
 
-  const colorOf = (v: number) => (v > 0 ? "var(--success)" : v < 0 ? "var(--danger)" : "var(--muted)");
+  const colorOf = (v: number) => (v > 0 ? "var(--success)" : v < 0 ? "var(--danger)" : "var(--text-muted)");
   const arrowOf = (v: number) => (v > 0 ? "▲" : v < 0 ? "▼" : "–");
 
   return (

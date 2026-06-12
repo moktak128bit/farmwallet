@@ -156,9 +156,7 @@ export const StocksView: React.FC<Props> = ({
       const originalPriceInfo = latestPriceByCanonicalTicker.get(pNorm);
       const currency = originalPriceInfo?.currency || (isUSDStock(p.ticker) ? "USD" : "KRW");
       const isUSD = currency === "USD";
-      const displayMarketPrice = isUSD
-        ? (originalPriceInfo?.price ?? p.marketPrice)
-        : (originalPriceInfo?.price ?? p.marketPrice);
+      const displayMarketPrice = originalPriceInfo?.price ?? p.marketPrice;
       const originalMarketPrice = isUSD ? originalPriceInfo?.price : undefined;
 
       // 종목명: tickerDatabase 정식명 우선 (거래/시세에 잘못 저장된 이름 방지, 예: BITX→BIT)
@@ -169,8 +167,8 @@ export const StocksView: React.FC<Props> = ({
       const marketValue = displayMarketPrice * p.quantity;
       const pnl = marketValue - p.totalBuyAmount;
       const pnlRate = p.totalBuyAmount > 0 ? pnl / p.totalBuyAmount : 0;
-      // 단가와 현재가 차이
-      const diff = displayMarketPrice - Math.round(p.avgPrice);
+      // 단가와 현재가 차이 — USD 평단은 달러 소수 유지 (반올림하면 센트 단위 오차)
+      const diff = displayMarketPrice - (isUSD ? p.avgPrice : Math.round(p.avgPrice));
 
       return {
         ...p,
@@ -254,17 +252,20 @@ export const StocksView: React.FC<Props> = ({
   }, [trades, accounts, fxRate]);
 
 
-  const updateFxRate = useCallback(async () => {
+  /** 환율 갱신. 갱신된 환율을 반환해 호출부가 stale 클로저 없이 즉시 사용 가능 (실패 시 null) */
+  const updateFxRate = useCallback(async (): Promise<number | null> => {
     try {
       const res = await fetchYahooQuotes(["USDKRW=X"]);
       const r = res[0];
       if (r?.price) {
         setFxRate(r.price);
         setFxUpdatedAt(r.updatedAt ?? new Date().toISOString());
+        return r.price;
       }
     } catch (err) {
       console.warn("환율 조회 실패", err);
     }
+    return null;
   }, []);
 
   // (removed) "기존 달러 거래 cashImpact 원화 재계산" 자동 effect.
@@ -469,8 +470,9 @@ export const StocksView: React.FC<Props> = ({
   const closePresetModal = useCallback(() => setShowPresetModal(false), []);
 
   // 필터링된 프리셋 (최근 사용한 것 우선, 최대 9개)
+  // 복사 후 정렬 — presets prop(스토어 배열)을 in-place sort로 직접 변형하지 않음
   const filteredPresets = useMemo(() => {
-    return presets
+    return [...presets]
       .sort((a, b) => {
         if (a.lastUsed && b.lastUsed) {
           return b.lastUsed.localeCompare(a.lastUsed);

@@ -19,6 +19,8 @@ type LedgerFilteredSummary = {
   prevIncome: number;
   hasPrev: boolean;
   prevMonth: string;
+  /** 진행 중인 이번 달 비교 시 오늘 일자 — 전월도 같은 기간(1~N일)만 합산됐음을 의미 */
+  prevDayCap: number | null;
 };
 
 type SetStr = React.Dispatch<React.SetStateAction<string | undefined>>;
@@ -225,14 +227,14 @@ export const LedgerSummarySection: React.FC<Props> = React.memo(function LedgerS
               display: "flex", gap: 16, fontSize: 12, color: "var(--text-muted)",
               paddingTop: 8, borderTop: "1px solid var(--border)", justifyContent: "center"
             }}>
-              <span>전월 대비 지출: <span style={{
+              <span>전월 {filteredSummary.prevDayCap != null ? `동기(1~${filteredSummary.prevDayCap}일) ` : ""}대비 지출: <span style={{
                 fontWeight: 700,
                 color: filteredSummary.expenseAmount > filteredSummary.prevExpense ? "var(--danger)" : "var(--success)"
               }}>
                 {filteredSummary.expenseAmount > filteredSummary.prevExpense ? "+" : ""}
                 {formatKRW(filteredSummary.expenseAmount - filteredSummary.prevExpense)}
               </span></span>
-              <span>전월 대비 수입: <span style={{
+              <span>전월 {filteredSummary.prevDayCap != null ? `동기(1~${filteredSummary.prevDayCap}일) ` : ""}대비 수입: <span style={{
                 fontWeight: 700,
                 color: filteredSummary.incomeAmount >= filteredSummary.prevIncome ? "var(--success)" : "var(--danger)"
               }}>

@@ -30,7 +30,7 @@ import { newIdWithPrefix } from "../utils/id";
 import { DailyBudgetBar } from "../features/ledger/DailyBudgetBar";
 import { DEFAULT_DAILY_BUDGET } from "../utils/dailyBudget";
 import { useAppStore } from "../store/appStore";
-import { getKoreaTime, getThisMonthKST } from "../utils/date";
+import { getKoreaTime, getThisMonthKST, getTodayKST } from "../utils/date";
 import { toast } from "react-hot-toast";
 import { computeRealizedPnlByTradeId } from "../calculations";
 import { exportLedgerCsv } from "../utils/csvExport";
@@ -435,12 +435,17 @@ export const LedgerView: React.FC<Props> = ({
     }
 
     // 전월 대비 비교 — 현재 합계와 동일한 데이터 소스(ledgerByTab: 탭 필터 + trade 가상 행 포함)와
-    // 동일한 분류 기준(재테크 제외·신용결제 제외)으로 1회 순회
+    // 동일한 분류 기준(재테크 제외·신용결제 제외)으로 1회 순회.
+    // 진행 중인 이번 달을 보는 중이면 전월도 같은 기간(1~오늘 일)만 합산 —
+    // 부분 월 vs 완전한 월 비교 왜곡 방지 (월급 25일이면 월중 내내 수입이 급감으로 보임)
+    const prevDayCap =
+      viewMode === "monthly" && baseMonth === getThisMonthKST() ? Number(getTodayKST().slice(8, 10)) : null;
     let prevExpense = 0;
     let prevIncome = 0;
     let prevCount = 0;
     for (const l of ledgerByTab) {
       if (!l.date?.startsWith(prevMonth)) continue;
+      if (prevDayCap != null && Number(l.date.slice(8, 10)) > prevDayCap) continue;
       prevCount += 1;
       if (l.kind === "income") {
         prevIncome += toKrw(l);
@@ -463,6 +468,7 @@ export const LedgerView: React.FC<Props> = ({
       prevIncome,
       hasPrev: prevCount > 0,
       prevMonth,
+      prevDayCap,
     };
   }, [filteredLedger, categoryPresets, ledgerByTab, viewMode, selectedMonths, fxRate]);
 

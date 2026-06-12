@@ -241,6 +241,8 @@ export interface IncomeGrowth {
   avg3MoM: number | null;
   targetInc: number;
   prevInc: number;
+  /** 대상 월이 진행 중인 이번 달이면 오늘 일자(1~N) — MoM/YoY가 전월·전년의 같은 기간(1~N일)과 비교됐음을 의미 */
+  partialDay: number | null;
 }
 
 export interface SpendingInertia {
@@ -248,6 +250,8 @@ export interface SpendingInertia {
   avg: number;
   deviation: number | null;
   lookbackMonths: number;
+  /** 진행 중인 달이면 오늘 일자 — avg가 과거 3개월의 같은 기간(1~N일) 평균임을 의미 */
+  partialDay: number | null;
 }
 
 export interface CategoryGrowthRow {
@@ -291,7 +295,7 @@ export interface D {
   topAnomaly: AnomalyLite | null;
   incomeGrowth: IncomeGrowth;
   spendingInertia: SpendingInertia | null;
-  categoryGrowth: { up: CategoryGrowthRow[]; down: CategoryGrowthRow[] };
+  categoryGrowth: { up: CategoryGrowthRow[]; down: CategoryGrowthRow[]; partialDay: number | null };
   entryOutliers: EntryOutlier[];
   spendByDOMAvg: number[];
   domOccurrences: number[];

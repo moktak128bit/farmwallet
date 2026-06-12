@@ -92,3 +92,38 @@ describe("compareMonths — 수입 비교", () => {
     expect(r.diffPrevMonthPct).toBeCloseTo(50);
   });
 });
+
+describe("compareMonths — dayCap (진행 중인 달의 동기 비교)", () => {
+  it("dayCap을 넘기면 전월·전년 동월도 1~dayCap일만 합산한다 (월급 25일 시나리오)", () => {
+    const ledger = [
+      // 이번 달(진행 중, 오늘 = 12일): 용돈성 수입만
+      entry({ date: "2026-06-05", kind: "income", category: "기타수입", amount: 100_000 }),
+      // 전월: 같은 기간의 수입 + 25일 월급 (dayCap=12면 월급은 비교에서 빠져야 함)
+      entry({ date: "2026-05-03", kind: "income", category: "기타수입", amount: 90_000 }),
+      entry({ date: "2026-05-25", kind: "income", category: "급여", amount: 3_000_000 }),
+      // 전년 동월도 동일 구조
+      entry({ date: "2025-06-02", kind: "income", category: "기타수입", amount: 80_000 }),
+      entry({ date: "2025-06-25", kind: "income", category: "급여", amount: 2_800_000 }),
+    ];
+    // dayCap 없이: 부분 월 vs 완전한 월 → -90%대 (기존 왜곡)
+    const wrong = compareMonths(ledger, "2026-06", "income");
+    expect(wrong.diffPrevMonthPct!).toBeLessThan(-90);
+    // dayCap=12: 같은 기간끼리 비교 → +11.1%
+    const r = compareMonths(ledger, "2026-06", "income", null, undefined, 12);
+    expect(r.current).toBe(100_000);
+    expect(r.previousMonth).toBe(90_000);
+    expect(r.previousYearSameMonth).toBe(80_000);
+    expect(r.diffPrevMonthPct).toBeCloseTo(11.111, 2);
+    expect(r.dayCap).toBe(12);
+  });
+
+  it("dayCap 미지정 시 기존 동작(전체 월 합산) 그대로 + dayCap=null", () => {
+    const ledger = [
+      entry({ date: "2026-06-10", amount: 120_000 }),
+      entry({ date: "2026-05-25", amount: 100_000 }),
+    ];
+    const r = compareMonths(ledger, "2026-06", "expense");
+    expect(r.previousMonth).toBe(100_000);
+    expect(r.dayCap).toBeNull();
+  });
+});

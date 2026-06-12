@@ -517,7 +517,7 @@ export const ExpenseTab = React.memo(function ExpenseTab({ d }: { d: D }) {
 
       {/* ============ 인사이트·이상치 ============ */}
       <Section storageKey="expense-section-insights" title="💡 인사이트·이상치">
-        <Card title={`📈 카테고리 성장률 TOP (vs 최근 3개월 평균)`} span={2}>
+        <Card title={`📈 카테고리 성장률 TOP (vs 최근 3개월 ${d.categoryGrowth.partialDay != null ? `동기 1~${d.categoryGrowth.partialDay}일 ` : ""}평균)`} span={2}>
           {d.categoryGrowth.up.length === 0 && d.categoryGrowth.down.length === 0 ? (
             <div style={{ padding: 20, textAlign: "center", color: "var(--text-faint)", fontSize: 13 }}>
               비교할 과거 데이터가 부족합니다.

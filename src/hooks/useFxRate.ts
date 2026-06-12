@@ -5,7 +5,7 @@ import { FX_UPDATE_INTERVAL, STORAGE_KEYS } from "../constants/config";
 const FX_RETRY_DELAY_MS = 5_000;
 const FX_MAX_RETRIES = 3;
 /** 캐시된 환율이 이 시간보다 오래되면 stale로 간주 (사용은 가능하지만 UI에 경고) */
-export const FX_STALE_THRESHOLD_MS = 24 * 60 * 60_000;
+const FX_STALE_THRESHOLD_MS = 24 * 60 * 60_000;
 
 interface CachedFxRate {
   rate: number;
@@ -41,7 +41,7 @@ function saveFxRate(rate: number) {
   }
 }
 
-export interface FxRateInfo {
+interface FxRateInfo {
   rate: number | null;
   /** 마지막 성공 시점 ISO. 캐시 only이고 시간이 너무 오래됐으면 isStale=true */
   fetchedAt: string | null;
@@ -54,7 +54,7 @@ export function useFxRate(): number | null {
 }
 
 /** 신규: 환율 + 신선도 정보 반환 */
-export function useFxRateInfo(): FxRateInfo {
+function useFxRateInfo(): FxRateInfo {
   const [info, setInfo] = useState<FxRateInfo>(() => {
     const cached = loadCachedFxRate();
     if (!cached) return { rate: null, fetchedAt: null, isStale: false };

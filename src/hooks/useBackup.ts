@@ -18,14 +18,14 @@ import { ERROR_MESSAGES } from "../constants/errorMessages";
 import { notifyDataChanged } from "../services/tabSync";
 import { useUIStore } from "../store/uiStore";
 
-export interface BackupIntegrity {
+interface BackupIntegrity {
   createdAt: string | null;
   status: "valid" | "missing-hash" | "mismatch" | "none";
 }
 
 const AUTO_SAVE_ERROR_TOAST_ID = "auto-save-error";
 
-export type UseBackupOptions = {
+type UseBackupOptions = {
   onLog?: (message: string, type?: "success" | "error" | "info") => void;
   /**
    * true면 자동저장·unload flush·수동 백업을 모두 차단.

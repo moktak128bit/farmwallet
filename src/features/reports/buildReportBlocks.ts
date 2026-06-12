@@ -40,7 +40,7 @@ export interface ReportBlocksInput {
   taxSummary: TaxYearSummary;
 }
 
-export interface ReportBlocksResult {
+interface ReportBlocksResult {
   filename: string;
   title: string;
   subtitle?: string;

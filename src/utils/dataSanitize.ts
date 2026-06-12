@@ -27,7 +27,7 @@ function isValidIsoDate(v: unknown): v is string {
   return typeof v === "string" && ISO_DATE_RE.test(v);
 }
 
-export interface SanitizeResult<T> {
+interface SanitizeResult<T> {
   clean: T[];
   dropped: number;
   /** 디버깅용 — 폐기된 엔트리의 raw 값 (대량 데이터 시 비활성화 권장). 최대 10개 보관. */

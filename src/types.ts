@@ -359,11 +359,6 @@ export interface PositionRow {
   pnlRate: number;
 }
 
-export interface MonthlyNetWorthRow {
-  month: string; // yyyy-mm
-  netWorth: number;
-}
-
 /** ISA 포트폴리오 한 종목 (목표 비중 %) */
 export interface IsaPortfolioItem {
   ticker: string;

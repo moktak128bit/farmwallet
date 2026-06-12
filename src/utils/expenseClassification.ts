@@ -35,7 +35,7 @@ export function isFixedExpense(l: LedgerEntry, fixedCats: Set<string>): boolean 
   return false;
 }
 
-export interface ExpenseClassification {
+interface ExpenseClassification {
   fixedExpense: number;
   variableExpense: number;
 }

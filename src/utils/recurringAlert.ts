@@ -1,7 +1,7 @@
 import type { LedgerEntry, RecurringExpense } from "../types";
 import { getTodayKST, getLastDayOfMonth, parseIsoLocal } from "./date";
 
-export interface RecurringDueItem {
+interface RecurringDueItem {
   recurring: RecurringExpense;
   dueDate: string;
   alreadyLogged: boolean;

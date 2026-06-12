@@ -3,7 +3,7 @@ import type { TabId } from "../components/ui/Tabs";
 import type { LedgerEntry } from "../types";
 import { isGistConfigured } from "../services/gistSync";
 
-export interface AppLogEntry {
+interface AppLogEntry {
   id: number;
   message: string;
   type: "success" | "error" | "info";
@@ -18,7 +18,7 @@ export interface PendingAction {
   onConfirm: () => void;
 }
 
-export interface IntegritySummary {
+interface IntegritySummary {
   error: number;
   warning: number;
 }
@@ -37,7 +37,7 @@ export interface GistConflict {
 }
 
 /** 자동저장 상태 머신. saving/saved는 디바운스 콜백 진입·완료에 매핑. error는 다음 시도까지 sticky. */
-export type SaveStatus = "idle" | "saving" | "saved" | "error";
+type SaveStatus = "idle" | "saving" | "saved" | "error";
 
 /**
  * 다른 탭에서 저장된 변경이 도착했을 때, 현재 탭에 미저장 dirty 변경이 있어
@@ -56,7 +56,7 @@ export interface TabConflict {
  * 디바운스 대기 중 크래시로 유실될 뻔한 미저장 변경이 boot 시점에 발견된 경우.
  * 사용자가 [복구]/[폐기]를 선택할 때까지 banner로 노출.
  */
-export interface DraftRecovery {
+interface DraftRecovery {
   /** 드래프트 슬롯에 보관됐던 직렬화 데이터 */
   draftJson: string;
   /** 드래프트 작성 시각 (ms epoch) */

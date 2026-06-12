@@ -29,6 +29,8 @@ data/farmwallet-data.json
 data/app-data.json
 data/app-data-tables.json
 data/전체계좌.csv
+data/extracted/
+data/farmwallet-data.before-*.json
 
 # Generated source data
 src/data/krNames.json

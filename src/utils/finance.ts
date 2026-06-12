@@ -45,16 +45,6 @@ export const canonicalTickerForMatch = (raw: string): string => {
   return c;
 };
 
-/** 거래 내역에 실제로 등장한 티커만 중복 제거·정규화(시세 갱신 대상) */
-export function getUniqueTickersFromTrades(trades: Array<{ ticker: string }>): string[] {
-  const set = new Set<string>();
-  for (const t of trades) {
-    const symbol = canonicalTickerForMatch(t.ticker);
-    if (symbol) set.add(symbol);
-  }
-  return Array.from(set).sort((a, b) => a.localeCompare(b));
-}
-
 /**
  * 현재 실제로 보유 중인(매수 수량 - 매도 수량 > 0) 종목 티커만 반환.
  *

@@ -615,46 +615,4 @@ export function runIntegrityCheck(
   return issues;
 }
 
-/**
- * 중복 항목 병합
- */
-export function mergeDuplicates(
-  duplicates: DuplicateTrade[],
-  keepFirst: boolean = true
-): { ledger: Set<string>; trades: Set<string> } {
-  const ledgerToRemove = new Set<string>();
-  const tradesToRemove = new Set<string>();
-
-  duplicates.forEach((dup) => {
-    if (keepFirst) {
-      // 첫 번째 항목만 남기고 제거
-      for (let i = 1; i < dup.entries.length; i++) {
-        if (dup.type === "ledger") {
-          ledgerToRemove.add((dup.entries[i] as LedgerEntry).id);
-        } else {
-          tradesToRemove.add((dup.entries[i] as StockTrade).id);
-        }
-      }
-    } else {
-      // 마지막 항목만 남기고 제거
-      for (let i = 0; i < dup.entries.length - 1; i++) {
-        if (dup.type === "ledger") {
-          ledgerToRemove.add((dup.entries[i] as LedgerEntry).id);
-        } else {
-          tradesToRemove.add((dup.entries[i] as StockTrade).id);
-        }
-      }
-    }
-  });
-
-  return {
-    ledger: ledgerToRemove,
-    trades: tradesToRemove
-  };
-}
-
-
-
-
-
 

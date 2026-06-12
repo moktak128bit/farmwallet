@@ -18,7 +18,7 @@ export interface LedgerFormSnapshot {
   discountAmount?: string;
 }
 
-export interface ValidateLedgerFormArgs {
+interface ValidateLedgerFormArgs {
   form: LedgerFormSnapshot;
   kindForTab: LedgerKind;
   effectiveFormKind: LedgerKind;

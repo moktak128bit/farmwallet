@@ -24,7 +24,7 @@ export const NON_REAL_INCOME = new Set([
  *  - "데이트통장" 정확 일치: 상대 분담금 입금. 실질 지출 쪽에서 상대 부담 50%를
  *    이미 차감하므로(computeDatePartnerShare) 입금까지 수입으로 잡으면 이중계상.
  */
-export const isSettlementLikeSub = (s: string): boolean =>
+const isSettlementLikeSub = (s: string): boolean =>
   s.includes("정산") || s === "데이트통장";
 
 /** 비-실질 수입 판정 단일 소스 — 정산성 + NON_REAL_INCOME 정확 일치 + "환불" 부분일치. */
@@ -55,7 +55,7 @@ export function classifyIncomeNature(
   return "기타";
 }
 
-export interface RealIncomeBreakdown {
+interface RealIncomeBreakdown {
   /** 정산성 수입 합 — isSettlementLikeSub("정산" 부분일치, "데이트통장") 참조. */
   settlementTotal: number;
   /** 일시성 수입 합 (NON_REAL_INCOME 정확 일치 + "환불" 부분일치, 정산성 제외). */
@@ -97,7 +97,7 @@ export function computeRealIncome(
   };
 }
 
-export interface OriginalAssetsBreakdown {
+interface OriginalAssetsBreakdown {
   /** 계좌별 초기잔액(0 초과)만, 큰 순서로 정렬. */
   originalAssetsByAcct: { name: string; amount: number }[];
   /** 위 합계. */

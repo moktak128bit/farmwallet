@@ -88,7 +88,7 @@ export function clearCustomThemeVars(): void {
  * - 앱 시작 시(useTheme 초기화)와 라이트/다크 전환 시 호출.
  * - 저장본이 없으면 setProperty를 전혀 하지 않아 .dark 팔레트가 그대로 살아 있음.
  */
-export function applySavedCustomTheme(): void {
+function applySavedCustomTheme(): void {
   const colors = readSavedCustomTheme();
   if (colors) applyCustomThemeColors(colors);
   const fontSize = readSavedFontSize();

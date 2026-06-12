@@ -97,7 +97,7 @@ export function createDefaultLedgerForm(): LedgerFormState {
 }
 
 /** 템플릿 적용 결과 — 폼 상태 + 존재하지 않아 비운 계좌 id 목록 */
-export interface TemplateApplyResult {
+interface TemplateApplyResult {
   form: LedgerFormState;
   clearedAccountIds: string[];
 }

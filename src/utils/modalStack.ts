@@ -10,19 +10,19 @@ let stack: number[] = [];
 let seq = 0;
 
 /** 모달 열림 시 호출 — 스택에 쌓고 토큰 반환 */
-export function pushModal(): number {
+function pushModal(): number {
   seq += 1;
   stack.push(seq);
   return seq;
 }
 
 /** 모달 닫힘 시 호출 — 스택에서 제거 */
-export function popModal(token: number): void {
+function popModal(token: number): void {
   stack = stack.filter((t) => t !== token);
 }
 
 /** 해당 토큰이 현재 최상위 모달인지 */
-export function isTopModal(token: number | null): boolean {
+function isTopModal(token: number | null): boolean {
   return token != null && stack.length > 0 && stack[stack.length - 1] === token;
 }
 

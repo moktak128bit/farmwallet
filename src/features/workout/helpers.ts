@@ -123,7 +123,7 @@ export function formatClockTime(iso?: string): string {
   return `${String(d.getHours()).padStart(2, "0")}:${String(d.getMinutes()).padStart(2, "0")}`;
 }
 
-export interface ExerciseTiming {
+interface ExerciseTiming {
   durationMs?: number;
   /** now-갱신 필요 (운동 진행 중이고 이 종목이 "현재 진행 중") */
   isLive: boolean;

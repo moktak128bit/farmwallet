@@ -4,7 +4,6 @@
  */
 import {
   Area,
-  Bar,
   CartesianGrid,
   ComposedChart,
   Legend,
@@ -19,7 +18,7 @@ import {
 import { DeferredResponsiveContainer as ResponsiveContainer } from "../../components/charts/DeferredResponsiveContainer";
 import { formatKRW } from "../../utils/formatter";
 import type { Account } from "../../types";
-import type { ValueType, NameType } from "recharts/types/component/DefaultTooltipContent";
+import type { ValueType } from "recharts/types/component/DefaultTooltipContent";
 
 // ─── 공통 상수 ──────────────────────────────────────────────────────────────
 
@@ -152,50 +151,9 @@ export function AccountBalanceChart({ accountBalanceSnapshots, accountBalanceCha
   );
 }
 
-// ─── 배당 추이 ComposedChart (공통 — 두 카드에서 재사용) ─────────────────────
-
-interface DividendTrendRow {
-  month: string;
-  shares: number;
-  dividend: number;
-  costBasis: number;
-  yieldRate: number | null;
-}
-
-interface DividendTrendChartProps {
-  rows: DividendTrendRow[];
-}
-
-export function DividendTrendChart({ rows }: DividendTrendChartProps) {
-  return (
-    <ResponsiveContainer width="100%" height={260}>
-      <ComposedChart data={rows} margin={{ top: 8, right: 12, left: 12, bottom: 4 }}>
-        <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="var(--border)" />
-        <XAxis dataKey="month" fontSize={12} tickFormatter={(v) => String(v).slice(2)} axisLine={false} tickLine={false} />
-        <YAxis yAxisId="left" hide />
-        <YAxis yAxisId="right" orientation="right" hide />
-        <YAxis yAxisId="yield" orientation="right" hide />
-        <Legend wrapperStyle={{ fontSize: 12 }} iconSize={8} iconType="circle" />
-        <Tooltip
-          formatter={(val: ValueType | undefined, name?: NameType) => {
-            if (name === "주수") return [`${Number(val).toLocaleString()}주`, name];
-            if (name === "배당률") return [val == null ? "-" : `${Number(val).toFixed(2)}%`, name];
-            return [formatKRW(Math.round(Number(val ?? 0))), name ?? ""];
-          }}
-          contentStyle={{ fontSize: 14, fontWeight: 600 }}
-        />
-        <Bar isAnimationActive={false} yAxisId="left" dataKey="dividend" name="배당금(수입)" fill="var(--chart-income)" maxBarSize={32} radius={[4, 4, 0, 0]} />
-        {/* 주수는 지출이 아님 — 지출색 대신 중립 시리즈색 사용 */}
-        <Line isAnimationActive={false} yAxisId="right" dataKey="shares" name="주수" stroke="var(--chart-series-a)" strokeWidth={2.5} dot={{ r: 4, fill: "var(--chart-series-a)" }} />
-        <Line isAnimationActive={false} yAxisId="yield" dataKey="yieldRate" name="배당률" stroke="var(--chart-warning)" strokeWidth={2.5} dot={{ r: 4, fill: "var(--chart-warning)" }} connectNulls />
-      </ComposedChart>
-    </ResponsiveContainer>
-  );
-}
-
 // ─── CMA·현금성 계좌 잔액 추이 ───────────────────────────────────────────────
 
-export interface CmaTrendRow {
+interface CmaTrendRow {
   date: string;
   label: string;
   balance: number;

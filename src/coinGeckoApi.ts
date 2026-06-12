@@ -3,7 +3,7 @@
  * ticker에는 CoinGecko ID(예: bitcoin, ethereum)를 사용합니다.
  */
 
-export interface CryptoQuoteResult {
+interface CryptoQuoteResult {
   ticker: string; // CoinGecko ID (예: 'bitcoin')
   symbol: string; // 표시용 심볼 (예: 'BTC')
   priceKrw: number;

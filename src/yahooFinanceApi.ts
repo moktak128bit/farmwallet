@@ -1,7 +1,7 @@
 import { canonicalTickerForMatch, isKRWStock } from "./utils/finance";
 import { getKrNames } from "./storage";
 
-export interface YahooQuoteResult {
+interface YahooQuoteResult {
   ticker: string;
   name?: string;
   price: number;
@@ -64,7 +64,7 @@ interface YahooQuoteApiResponse {
  * 한국 코스피/코스닥 주요 종목 목록 가져오기
  * 야후 파이낸스 검색 API를 사용하여 주요 종목들 검색
  */
-export async function fetchKoreaTopStocks(): Promise<Array<{ ticker: string; name?: string; exchange?: string }>> {
+async function fetchKoreaTopStocks(): Promise<Array<{ ticker: string; name?: string; exchange?: string }>> {
   const results: Array<{ ticker: string; name?: string; exchange?: string }> = [];
   const seen = new Set<string>();
   
@@ -190,7 +190,7 @@ export async function fetchKoreaTopStocks(): Promise<Array<{ ticker: string; nam
  * 미국 주요 종목 목록 가져오기
  * S&P 500, NASDAQ 100 주요 종목들
  */
-export async function fetchUSTopStocks(): Promise<Array<{ ticker: string; name?: string; exchange?: string }>> {
+async function fetchUSTopStocks(): Promise<Array<{ ticker: string; name?: string; exchange?: string }>> {
   const results: Array<{ ticker: string; name?: string; exchange?: string }> = [];
   const seen = new Set<string>();
   
@@ -680,7 +680,7 @@ const fetchFromStooq = async (requestedSymbol: string): Promise<YahooQuoteResult
 // 전역 요청 추적을 위한 맵
 const activeRequests = new Map<string, Promise<YahooQuoteResult[]>>();
 
-export type FetchYahooQuotesOptions = {
+type FetchYahooQuotesOptions = {
   /** 진행률 및 종목별 성공/실패 로그용 (done, total, ticker?, status?) */
   onProgress?: (done: number, total: number, ticker?: string, status?: string) => void;
   /** 티커별 거래소(KOSPI/KOSDAQ). 지정 시 해당 티커는 .KS/.KQ 우선순위에 사용 */
@@ -870,7 +870,7 @@ export async function fetchYahooQuotes(
   return requestPromise;
 }
 
-export async function searchYahooSymbol(
+async function searchYahooSymbol(
   query: string
 ): Promise<Array<{ ticker: string; name?: string }>> {
   const trimmed = query.trim().toUpperCase();

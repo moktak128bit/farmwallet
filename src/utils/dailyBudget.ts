@@ -22,7 +22,7 @@ export const DEFAULT_DAILY_BUDGET: DailyBudgetConfig = {
 };
 
 /** entry가 한도 계산 대상인지 (kind=expense + 미제외 카테고리) */
-export function isCountableExpense(entry: LedgerEntry, config: DailyBudgetConfig): boolean {
+function isCountableExpense(entry: LedgerEntry, config: DailyBudgetConfig): boolean {
   if (entry.kind !== "expense") return false;
   if (config.excludedCategories.includes(entry.category)) return false;
   if (entry.subCategory && config.excludedSubCategories.includes(entry.subCategory)) return false;
@@ -30,7 +30,7 @@ export function isCountableExpense(entry: LedgerEntry, config: DailyBudgetConfig
 }
 
 /** 특정 일자(YYYY-MM-DD) 사용액 합 */
-export function dailySpend(ledger: LedgerEntry[], dateIso: string, config: DailyBudgetConfig): number {
+function dailySpend(ledger: LedgerEntry[], dateIso: string, config: DailyBudgetConfig): number {
   let sum = 0;
   for (const e of ledger) {
     if (!e.date || !e.date.startsWith(dateIso)) continue;
@@ -101,7 +101,7 @@ export function computeStreak(
   return streak;
 }
 
-export interface MonthlyBudgetStats {
+interface MonthlyBudgetStats {
   /** YYYY-MM */
   monthKey: string;
   /** 해당 월의 총 일수 (오늘이 속한 월이면 오늘까지) */

@@ -2,6 +2,7 @@ import React, { useState } from "react";
 import type { Payload, ValueType, NameType } from "recharts/types/component/DefaultTooltipContent";
 import type { PieLabelRenderProps } from "recharts/types/polar/Pie";
 import type { IncomeNature } from "../../utils/realIncome";
+import type { MoimFlowAnalysis } from "../../utils/dateAccounting";
 
 /* ================================================================== */
 /*  Constants                                                          */
@@ -133,7 +134,7 @@ export function Section({ storageKey, title, defaultOpen = true, children }: {
  * (과거 하드코딩 라이트 bg(#d4edda 등)는 다크모드에서 본문이 읽히지 않는 문제가 있었음)
  * color/bg는 tone으로 못 나타내는 커스텀 색(반투명 rgba 등)용 레거시 경로.
  */
-export type InsightTone = "success" | "warning" | "info" | "danger";
+type InsightTone = "success" | "warning" | "info" | "danger";
 const INSIGHT_TONES: Record<InsightTone, { bg: string; title: string }> = {
   success: { bg: "var(--primary-light)", title: "var(--success)" },
   warning: { bg: "var(--warning-light)", title: "var(--warning)" },
@@ -156,7 +157,7 @@ export function Insight({ title, color, bg, tone, children }: {
 export const pieLabel = ({ name, percent }: PieLabelRenderProps) =>
   `${name ?? ""} ${((percent ?? 0) * 100).toFixed(0)}%`;
 
-export interface CTProps {
+interface CTProps {
   active?: boolean;
   payload?: ReadonlyArray<Payload<ValueType, NameType>>;
   label?: string | number;
@@ -363,7 +364,7 @@ export interface D {
   /** 데이트 계좌 지출 중 상대 부담분 (50%) — 실 지출 계산에서 차감됨 */
   datePartnerShare: number;
   /** 분담 통장(dateAccountId) 월별 자금 흐름 — 입금·출금·잔액변화 + 이상감지 */
-  moimFlow: import("../../utils/dateAccounting").MoimFlowAnalysis;
+  moimFlow: MoimFlowAnalysis;
 
   netProfit: number;
   realSavRate: number;

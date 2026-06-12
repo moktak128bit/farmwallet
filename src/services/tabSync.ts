@@ -68,7 +68,7 @@ export function notifyDataChanged(payload: string): void {
   try { ch?.postMessage(msg); } catch { /* 채널 닫힘 등 무시 */ }
 }
 
-export type TabSyncHandler = (payload: string) => void;
+type TabSyncHandler = (payload: string) => void;
 
 /**
  * 다른 탭의 변경을 구독. handler는 현재 localStorage 값을 읽어 store에 반영해야 한다.
@@ -149,8 +149,3 @@ export function subscribeDataChanges(handler: TabSyncHandler): () => void {
   };
 }
 
-/** 테스트·shutdown 훅 */
-export function closeTabSyncChannel(): void {
-  try { channel?.close(); } catch { /* */ }
-  channel = null;
-}

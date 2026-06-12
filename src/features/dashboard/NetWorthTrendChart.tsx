@@ -1,6 +1,6 @@
 import React, { useRef, useState } from "react";
 
-export interface NetWorthTrendPoint {
+interface NetWorthTrendPoint {
   month: string;
   value: number;
   asset: number;

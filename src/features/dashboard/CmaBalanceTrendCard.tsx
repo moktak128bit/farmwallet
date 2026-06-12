@@ -15,7 +15,7 @@ interface Props {
   accountName: string;
 }
 
-export interface CmaTrendRow {
+interface CmaTrendRow {
   date: string;
   label: string;
   balance: number;

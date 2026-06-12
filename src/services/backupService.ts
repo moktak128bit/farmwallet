@@ -144,7 +144,7 @@ async function computeBackupHashFromText(text: string): Promise<string> {
     .join("");
 }
 
-export interface SaveBackupOptions {
+interface SaveBackupOptions {
   skipHash?: boolean;
   folder?: string;
   timeoutMs?: number;

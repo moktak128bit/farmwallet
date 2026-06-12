@@ -9,8 +9,6 @@ import type {
 } from "./types";
 import { isKRWStock, isUSDStock, canonicalTickerForMatch, isCryptoStock } from "./utils/finance";
 
-// Re-export calculation result types from single source (types.ts)
-export type { AccountBalanceRow, PositionRow } from "./types";
 
 // ---------------------------------------------------------------------------
 // Helpers (pure, used only inside this module)
@@ -51,7 +49,7 @@ function groupTradesByAccountTicker(
 }
 
 /** 매도 건별 FIFO 실현손익 상세: 실현손익, 매수원가(평균단가×수량), 수량 (동일 통화) */
-export type RealizedPnlDetail = { pnl: number; costBasis: number; quantity: number };
+type RealizedPnlDetail = { pnl: number; costBasis: number; quantity: number };
 
 function fifoRealizedPnlDetailBySell(
   sortedTrades: StockTrade[],
@@ -408,8 +406,8 @@ export function computeRealizedPnlDetailByTradeId(
 // Dashboard / UI aggregation (no inline reduce in views)
 // ---------------------------------------------------------------------------
 
-export type AccountBalanceRowLike = { account: Account; currentBalance: number; usdTransferNet?: number };
-export type PositionRowLike = {
+type AccountBalanceRowLike = { account: Account; currentBalance: number; usdTransferNet?: number };
+type PositionRowLike = {
   accountId: string;
   marketValue: number;
   totalBuyAmount?: number;

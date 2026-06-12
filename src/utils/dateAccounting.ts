@@ -28,7 +28,7 @@ export function getMoimAccountIds(accounts: Account[]): Set<string> {
   return new Set(accounts.filter(isMoimAccount).map((a) => a.id));
 }
 
-export interface DatePartnerShare {
+interface DatePartnerShare {
   /** 데이트 계좌(설정에서 지정)에서 빠져나간 지출 합. */
   dateAccountSpend: number;
   /** 그 중 상대 부담분 = dateAccountSpend × 0.5. 실질 지출 계산에서 차감. */
@@ -55,7 +55,7 @@ export function computeDatePartnerShare(
   return { dateAccountSpend, datePartnerShare: dateAccountSpend * 0.5 };
 }
 
-export interface DateMoimSplit {
+interface DateMoimSplit {
   /** 모임 통장에서 나간 데이트 지출 합. */
   dateMoim: number;
   /** 개인 통장(모임이 아닌)에서 나간 데이트 지출 합. */
@@ -81,7 +81,7 @@ export function splitDateMoimVsPersonal(
   return { dateMoim, datePersonal };
 }
 
-export interface DateAccountUtilization {
+interface DateAccountUtilization {
   /** 분담 통장에서 결제된 데이트 합 */
   viaSharedAccount: number;
   /** 개인 통장/카드에서 결제된 데이트 합 */
@@ -106,7 +106,7 @@ export interface DateAccountUtilization {
  * 현재 개인 결제분은 100% 본인 부담 → 그 절반이 "분담 못 한 손실"로 계산됨.
  * (정산으로 일부 회수 가능하지만 그건 별개 — 여기선 분담 시스템 자체의 비효율만 측정)
  */
-export interface MoimFlowMonth {
+interface MoimFlowMonth {
   month: string;            // "YYYY-MM"
   myTransfer: number;       // 본인 계좌 → 분담 통장 (kind=transfer, 정산 제외)
   partnerDeposit: number;   // 외부 입금 (kind=income, 상대 입금·캐시백 등) + 정산 입금(구버전 transfer 포함)

@@ -12,7 +12,7 @@ export const toKrwAmount = (entry: LedgerEntry, fxRate: number | null): number =
   entry.currency === "USD" && fxRate ? entry.amount * fxRate : entry.amount;
 
 /** 대시보드 공통 흐름 분류 결과. null = 집계 제외 (신용결제·재테크 아닌 일반 이체) */
-export type LedgerFlowType = "income" | "expense" | "investing";
+type LedgerFlowType = "income" | "expense" | "investing";
 
 /**
  * 대시보드 단일 분류 기준 — 수입/지출/재테크.

@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 
-export interface StorageQuotaInfo {
+interface StorageQuotaInfo {
   /** Bytes used (approx, reported by browser) */
   usage: number | null;
   /** Max bytes allocated to this origin */

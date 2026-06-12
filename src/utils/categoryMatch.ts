@@ -14,12 +14,12 @@
 const DIVIDEND_EXACT = /^(배당|.+-배당)$/;
 const INTEREST_EXACT = /^(이자|.+-이자)$/;
 
-export function isDividendCategoryName(name: string | null | undefined): boolean {
+function isDividendCategoryName(name: string | null | undefined): boolean {
   if (!name) return false;
   return DIVIDEND_EXACT.test(name);
 }
 
-export function isInterestCategoryName(name: string | null | undefined): boolean {
+function isInterestCategoryName(name: string | null | undefined): boolean {
   if (!name) return false;
   return INTEREST_EXACT.test(name);
 }

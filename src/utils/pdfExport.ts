@@ -3,7 +3,7 @@
  * window.print를 활용한 인쇄용 뷰 생성 — 사용자가 "PDF로 저장"을 선택해 저장.
  */
 
-export interface PrintOptions {
+interface PrintOptions {
   title: string;
   subtitle?: string;
   bodyHtml: string;

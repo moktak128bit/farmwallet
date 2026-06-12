@@ -1,7 +1,7 @@
 import React from "react";
 import { formatKRW } from "../../utils/formatter";
 
-export interface MonthlyRecheckBreakdown {
+interface MonthlyRecheckBreakdown {
   저축: number;
   투자: number;
   투자수익: number;

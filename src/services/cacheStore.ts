@@ -19,25 +19,6 @@ export interface CacheData {
   cachedAt?: string;
 }
 
-/**
- * 캐시 신선도 판정. updatedAt이 너무 오래됐으면 stale.
- * prices는 1일 이상이면 stale로 간주.
- */
-export function isPricesStale(cache: CacheData, maxAgeMs = 24 * 60 * 60_000): boolean {
-  if (!cache.cachedAt) {
-    // updatedAt 없는 구버전: 개별 price.updatedAt에서 가장 신선한 것을 확인
-    let latest = 0;
-    for (const p of cache.prices) {
-      const t = p.updatedAt ? new Date(p.updatedAt).getTime() : 0;
-      if (Number.isFinite(t) && t > latest) latest = t;
-    }
-    if (latest === 0) return cache.prices.length > 0; // 시각 정보 없으면 stale로 간주
-    return Date.now() - latest > maxAgeMs;
-  }
-  const ageMs = Date.now() - new Date(cache.cachedAt).getTime();
-  return !Number.isFinite(ageMs) || ageMs > maxAgeMs;
-}
-
 const DB_NAME = "farmwallet-cache";
 const DB_VERSION = 1;
 const STORE_NAME = "kv";
@@ -45,7 +26,7 @@ const CACHE_KEY = "cache-v1";
 
 let _dbPromise: Promise<IDBDatabase> | null = null;
 
-export function isIndexedDBAvailable(): boolean {
+function isIndexedDBAvailable(): boolean {
   return typeof window !== "undefined" && typeof window.indexedDB !== "undefined";
 }
 
@@ -93,19 +74,6 @@ function openDB(): Promise<IDBDatabase> {
     req.onerror = () => reject(req.error ?? new Error("Failed to open IndexedDB"));
   });
   return _dbPromise;
-}
-
-/** 명시적으로 IndexedDB 연결을 닫고 promise 캐시도 비운다 (테스트·종료 시 사용) */
-export async function closeCacheDB(): Promise<void> {
-  if (!_dbPromise) return;
-  try {
-    const db = await _dbPromise;
-    db.close();
-  } catch {
-    /* */
-  } finally {
-    _dbPromise = null;
-  }
 }
 
 function emptyCache(): CacheData {

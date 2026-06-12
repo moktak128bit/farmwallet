@@ -14,7 +14,10 @@ import {
   getGistLastPullAt,
   setGistLastPullAt,
   getGistVersions,
-  detectConflict
+  detectConflict,
+  hashGistPayload,
+  getGistLastPushedHash,
+  setGistLastPushedHash
 } from "../services/gistSync";
 import { toUserDataJson } from "../services/dataService";
 import { GIST_AUTO_PUSH_DEBOUNCE_MS, GIST_STALE_WARNING_HOURS } from "../constants/config";
@@ -50,6 +53,12 @@ export interface UseGistSyncReturn {
    * 자동 동기화 OFF 상태에서도 사용 가능 (사용자 의도 우선).
    */
   manualPush: () => Promise<void>;
+  /**
+   * 수동 불러오기 — Gist 최신 데이터를 onApplyPulledData로 적용하고
+   * lastPullAt·knownRemoteCommit·lastPushedPayload를 정식 경로와 동일하게 갱신.
+   * (설정 카드의 "Gist에서 불러오기"가 상태 갱신을 우회하던 문제 해소)
+   */
+  manualPull: () => Promise<void>;
 }
 
 /**
@@ -83,9 +92,11 @@ export function useGistSync(
   // - 첫 활성화 시 강제로 풀 백업이 만들어진 뒤 동기화 (loadFromGist 응답을 그대로 적용 콜백에 전달)
   useEffect(() => {
     if (!autoSyncEnabled) return;
-    if (!getGistToken() || !getGistId()) return;
     if (hasMountedRef.current) return;
+    // 토큰 검사보다 먼저 마운트 플래그를 세운다 — 부팅 시 토큰이 없었다가
+    // 나중에 입력해도 Effect 2(자동 push)가 영구 비활성되지 않도록.
     hasMountedRef.current = true;
+    if (!getGistToken() || !getGistId()) return;
 
     let cancelled = false;
     (async () => {
@@ -114,10 +125,29 @@ export function useGistSync(
         }
         const { dataJson, updatedAt } = await loadFromGist();
         if (cancelled) return;
+        // 로컬에 push되지 않은 변경이 있으면 무모달 덮어쓰기 금지 — 충돌 모달로 사용자 결정.
+        // (마지막 push payload 해시와 현재 로컬 데이터 해시를 비교해 dirty 감지.
+        //  해시 기록이 없는 구버전 상태에서는 기존 동작 유지 — 원격 적용.)
+        const localJson = toUserDataJson(dataRef.current);
+        const lastPushedHash = getGistLastPushedHash();
+        const localDirty =
+          !!lastPushedHash && hashGistPayload(localJson) !== lastPushedHash && localJson !== dataJson;
+        if (localDirty) {
+          useUIStore.getState().setGistConflict({
+            remoteDataJson: dataJson,
+            remoteUpdatedAt: updatedAt,
+            pendingLocalDataJson: localJson,
+          });
+          onLog?.("Gist 자동 불러오기: 로컬에 push되지 않은 변경 감지 — 충돌 확인 필요", "info");
+          return;
+        }
         onApplyPulledData(dataJson, updatedAt);
         setGistLastPullAt(updatedAt);
         setLastPullAt(updatedAt);
         knownRemoteCommitRef.current = updatedAt;
+        // pull 적용 후 로컬=원격 — 동일 payload 재push 방지 + 다음 부팅 dirty 기준 갱신
+        lastPushedPayloadRef.current = dataJson;
+        setGistLastPushedHash(hashGistPayload(dataJson));
         onLog?.("Gist 자동 불러오기 성공", "success");
       } catch (err) {
         const message = err instanceof Error ? err.message : String(err);
@@ -174,6 +204,7 @@ export function useGistSync(
         }
       });
       lastPushedPayloadRef.current = dataJson;
+      setGistLastPushedHash(hashGistPayload(dataJson));
       // 로컬 시각 사용 — GitHub updated_at이 약간 지연/stale일 수 있어 "방금 저장" 즉시 반영
       const nowIso = new Date().toISOString();
       setGistLastPushAt(nowIso);
@@ -199,8 +230,10 @@ export function useGistSync(
    * 동일 payload여도 푸시 — GitHub이 새 commit·새 updated_at 만들어 timestamp가 갱신됨.
    */
   const manualPush = useCallback(async () => {
-    if (!getGistToken() || !getGistId()) {
-      onLog?.("Gist 토큰·ID 미설정", "error");
+    // gistId는 없어도 됨 — 첫 저장 시 saveToGist가 새 Gist를 생성하고 ID를 기록한다.
+    if (!getGistToken()) {
+      onLog?.("Gist 토큰 미설정", "error");
+      toast.error("Gist 토큰을 먼저 설정하세요.");
       return;
     }
     if (isPushingRef.current) return;
@@ -245,6 +278,7 @@ export function useGistSync(
         }
       });
       lastPushedPayloadRef.current = dataJson;
+      setGistLastPushedHash(hashGistPayload(dataJson));
       // 로컬 시각 사용 — GitHub 응답의 updated_at이 stale일 수 있어 사용자 체감과 어긋남 방지
       const nowIso = new Date().toISOString();
       setGistLastPushAt(nowIso);
@@ -262,6 +296,41 @@ export function useGistSync(
       setIsSyncing(false);
     }
   }, [onLog]);
+
+  /**
+   * 수동 불러오기 — 설정 카드의 "Gist에서 불러오기"용 정식 pull 경로.
+   * lastPullAt(localStorage+state)·knownRemoteCommitRef·lastPushedPayloadRef를 모두 갱신해
+   * 다음 자동 push 때 가짜 충돌 모달이 뜨지 않게 한다.
+   * 데이터 검증·안전 스냅샷은 onApplyPulledData(App.handleGistPulledData) 내부에서 수행.
+   */
+  const manualPull = useCallback(async () => {
+    if (!getGistToken() || !getGistId()) {
+      onLog?.("Gist 토큰·ID 미설정", "error");
+      toast.error("Gist 토큰과 ID를 먼저 설정하세요.");
+      return;
+    }
+    if (useUIStore.getState().gistConflict) {
+      onLog?.("Gist 충돌 모달이 열려 있어 불러오기 보류", "info");
+      return;
+    }
+    try {
+      setIsSyncing(true);
+      const { dataJson, updatedAt } = await loadFromGist();
+      onApplyPulledData(dataJson, updatedAt);
+      setGistLastPullAt(updatedAt);
+      setLastPullAt(updatedAt);
+      knownRemoteCommitRef.current = updatedAt;
+      lastPushedPayloadRef.current = dataJson;
+      setGistLastPushedHash(hashGistPayload(dataJson));
+      onLog?.("Gist에서 불러오기 완료", "success");
+    } catch (err) {
+      const message = err instanceof Error ? err.message : String(err);
+      onLog?.(`Gist 불러오기 실패: ${message}`, "error");
+      toast.error(`Gist 불러오기 실패: ${message}`);
+    } finally {
+      setIsSyncing(false);
+    }
+  }, [onApplyPulledData, onLog]);
 
   // Effect 2: 데이터 변경 시 자동 저장 (debounced)
   useEffect(() => {
@@ -353,6 +422,7 @@ export function useGistSync(
         // pendingLocalDataJson이 곧 원격으로 덮여 다음 effect에서 lastPushedPayloadRef와 같아질 가능성 높음.
         // 즉시 lastPushedPayloadRef를 원격 payload로 맞춰 불필요한 push 방지.
         lastPushedPayloadRef.current = conflict.remoteDataJson;
+        setGistLastPushedHash(hashGistPayload(conflict.remoteDataJson));
         onLog?.("Gist 충돌: 원격 데이터를 적용했습니다", "success");
       } else if (resolution === "force-push-local") {
         // 로컬 데이터를 원격에 강제 push. 원격 변경은 폐기.
@@ -360,6 +430,7 @@ export function useGistSync(
         // (saveToGist의 updatedAt이 GitHub commits API와 다를 수 있는 엣지 보호)
         const result = await saveToGist(conflict.pendingLocalDataJson);
         lastPushedPayloadRef.current = conflict.pendingLocalDataJson;
+        setGistLastPushedHash(hashGistPayload(conflict.pendingLocalDataJson));
         setGistLastPushAt(result.updatedAt);
         setLastPushAt(result.updatedAt);
         try {
@@ -380,6 +451,8 @@ export function useGistSync(
     } catch (err) {
       const message = err instanceof Error ? err.message : String(err);
       onLog?.(`Gist 충돌 해결 실패: ${message}`, "error");
+      // force-push 등 실패가 조용히 모달만 닫히면 사용자가 "해결됐다"고 오해 — 토스트로 가시화
+      toast.error(`Gist 충돌 해결 실패: ${message}`);
     } finally {
       setConflict(null);
     }
@@ -417,5 +490,6 @@ export function useGistSync(
     resolveGistConflict,
     gistStaleWarning,
     manualPush,
+    manualPull,
   };
 }

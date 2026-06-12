@@ -17,7 +17,7 @@ export const PresetSection: React.FC<PresetSectionProps> = ({
   return (
     <div className="card" style={{ padding: 12, marginBottom: 12 }}>
       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 8 }}>
-        <span style={{ fontSize: 13, fontWeight: 500, color: "var(--muted)" }}>
+        <span style={{ fontSize: 13, fontWeight: 500, color: "var(--text-muted)" }}>
           프리셋 {presets.length > 0 ? `(Ctrl+1~9)` : ""}
         </span>
         <div style={{ display: "flex", gap: 6 }}>

@@ -20,6 +20,7 @@ import { useFxRateValue } from "../context/FxRateContext";
 import { useDateAccountId } from "../hooks/useDateAccountSettings";
 import { useReportWorker } from "../hooks/useReportWorker";
 import { summarizeTaxYear } from "../utils/taxCalculator";
+import { getTodayKST } from "../utils/date";
 import type { ReportType } from "../features/reports/reportShared";
 import { ReportExportButtons } from "../features/reports/ReportExportButtons";
 import { ComprehensiveMonthlySection } from "../features/reports/ComprehensiveMonthlySection";
@@ -43,11 +44,13 @@ export const ReportView: React.FC<Props> = ({ accounts, ledger, trades, prices }
   const dateAccountId = useDateAccountId();
   const [reportType, setReportType] = useState<ReportType>("comprehensive");
   const [startDate, setStartDate] = useState<string>(() => {
-    const date = new Date();
-    date.setMonth(date.getMonth() - 11);
-    return date.toISOString().slice(0, 10);
+    // KST 기준 11개월 전 — UTC(toISOString) 사용 시 오전 9시 이전에 날짜가 하루 밀림
+    const [y, m, d] = getTodayKST().split("-").map(Number);
+    const date = new Date(y, m - 1 - 11, d);
+    return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, "0")}-${String(date.getDate()).padStart(2, "0")}`;
   });
-  const [endDate, setEndDate] = useState<string>(() => new Date().toISOString().slice(0, 10));
+  // 기본 종료일: KST 오늘 — UTC 사용 시 오전 9시 이전엔 당일 항목이 보고서 범위에서 빠짐
+  const [endDate, setEndDate] = useState<string>(() => getTodayKST());
 
   /** 종합 월간 보고서: 단일 월 선택 */
   const [selectedMonth, setSelectedMonth] = useState<string>(() => {
@@ -66,7 +69,8 @@ export const ReportView: React.FC<Props> = ({ accounts, ledger, trades, prices }
     closingReport,
     accountPerformance,
     consumptionImpact,
-    comprehensiveMonthly
+    comprehensiveMonthly,
+    isComputing
   } = useReportWorker({
     accounts,
     ledger,
@@ -162,7 +166,14 @@ export const ReportView: React.FC<Props> = ({ accounts, ledger, trades, prices }
     <div>
       <div className="section-header">
         <h2>보고서</h2>
+        {/* 워커 재계산 중에는 내보내기 비활성 — 새 기간 제목 + 이전 기간 데이터 합성 파일 방지 */}
+        {isComputing && (
+          <span style={{ fontSize: 13, color: "var(--text-muted)" }} role="status">
+            재계산 중…
+          </span>
+        )}
         <ReportExportButtons
+          disabled={isComputing}
           reportType={reportType}
           startDate={startDate}
           endDate={endDate}

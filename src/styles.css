@@ -66,6 +66,12 @@
   --overlay-bg: rgba(0, 0, 0, 0.45);
   --z-modal: 9998;
   --z-toast: 9999;
+
+  /* Semantic tint backgrounds — 경고 박스·심각도 배지용 */
+  --warning-bg: #fef3c7;
+  --danger-light: #fee2e2;
+  --warning-light: #fef3c7;
+  --accent-light: #e0f2fe;
 }
 
 :root.dark {
@@ -110,6 +116,12 @@
   --chart-warning: var(--warning);
   --chart-series-a: #38bdf8;
   --chart-series-b: #7dd3fc;
+
+  /* Semantic tint backgrounds — 다크모드 */
+  --warning-bg: rgba(217, 119, 6, 0.18);
+  --danger-light: rgba(248, 113, 113, 0.15);
+  --warning-light: rgba(251, 191, 36, 0.15);
+  --accent-light: rgba(56, 189, 248, 0.15);
 }
 
 /* =========================================
@@ -732,7 +744,7 @@ td.cell-editable:hover {
 
 .data-table.category-matrix .col-drag-handle {
   cursor: move;
-  color: var(--muted);
+  color: var(--text-muted);
   font-size: 16px;
   padding: 2px;
 }
@@ -999,6 +1011,63 @@ label {
 .pill.success { background: #dcfce7; color: #166534; }
 .pill.warning { background: #fef3c7; color: #92400e; }
 .pill.danger { background: #fee2e2; color: #b91c1c; }
+
+/* 다크모드 pill — 라이트 전용 파스텔 배경 교체 */
+:root.dark .pill.success { background: rgba(52, 211, 153, 0.18); color: #6ee7b7; }
+:root.dark .pill.warning { background: rgba(251, 191, 36, 0.18); color: #fcd34d; }
+:root.dark .pill.danger { background: rgba(248, 113, 113, 0.18); color: #fca5a5; }
+
+/* recharts 기본 툴팁 — 인라인 기본값(흰 배경)이 다크모드를 무시하므로 테마 변수로 강제 */
+.recharts-default-tooltip {
+  background-color: var(--surface) !important;
+  border-color: var(--border) !important;
+}
+.recharts-default-tooltip .recharts-tooltip-label {
+  color: var(--text) !important;
+}
+
+/* =========================================
+   Components: Search Modal
+   ========================================= */
+
+.search-results {
+  border-top: 1px solid var(--border-light);
+}
+.search-row {
+  padding: 8px 6px;
+  border-bottom: 1px solid var(--border-light);
+}
+.search-row:hover,
+.search-row:focus-visible {
+  background: var(--surface-hover);
+}
+.search-row-title {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+}
+.search-row-meta {
+  display: flex;
+  gap: 12px;
+  font-size: 13px;
+  color: var(--text-muted);
+  margin-top: 2px;
+}
+.saved-filters {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+  margin: 4px 0;
+}
+.saved-filter-item {
+  display: inline-flex;
+  gap: 6px;
+  align-items: center;
+  padding: 4px 10px;
+  border: 1px solid var(--border-light);
+  border-radius: 9999px;
+  font-size: 13px;
+}
 
 /* =========================================
    Utils & Misc

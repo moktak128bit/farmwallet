@@ -43,7 +43,7 @@ export const ComprehensiveMonthlySection: React.FC<Props> = React.memo(function 
     const d = cur - prev;
     if (d === 0) return null;
     return (
-      <span style={{ fontSize: 12, marginLeft: 6, color: d > 0 ? "var(--positive)" : "var(--negative)" }}>
+      <span style={{ fontSize: 12, marginLeft: 6, color: d > 0 ? "var(--danger)" : "var(--accent)" }}>
         {d > 0 ? "+" : ""}{formatKRW(d)}
       </span>
     );
@@ -61,7 +61,10 @@ export const ComprehensiveMonthlySection: React.FC<Props> = React.memo(function 
         <input
           type="month"
           value={selectedMonth}
-          onChange={(e) => setSelectedMonth(e.target.value)}
+          onChange={(e) => {
+            // 빈값(지우기/잘못된 입력)이면 직전 값 유지 — "NaN-NaN" 표시 방지
+            if (e.target.value) setSelectedMonth(e.target.value);
+          }}
           style={{ fontSize: 15, fontWeight: 600 }}
         />
         <button type="button" onClick={() => setSelectedMonth(shiftMonthKey(selectedMonth, 1))}>다음 월 ▶</button>
@@ -194,7 +197,7 @@ export const ComprehensiveMonthlySection: React.FC<Props> = React.memo(function 
                   <td>매매 건수</td>
                   <td className="number">{r.tradeCount}건</td>
                   <td className="number">{prevRow != null && r.tradeCount !== prevRow.tradeCount ? (
-                    <span style={{ fontSize: 12, color: r.tradeCount > prevRow.tradeCount ? "var(--positive)" : "var(--negative)" }}>
+                    <span style={{ fontSize: 12, color: r.tradeCount > prevRow.tradeCount ? "var(--danger)" : "var(--accent)" }}>
                       {r.tradeCount > prevRow.tradeCount ? "+" : ""}{r.tradeCount - prevRow.tradeCount}건
                     </span>
                   ) : null}</td>
@@ -235,7 +238,7 @@ export const ComprehensiveMonthlySection: React.FC<Props> = React.memo(function 
             <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(200px, 1fr))", gap: 16 }}>
               <div>
                 <div style={{ fontSize: 13, color: "var(--text-muted)" }}>실질 순수입</div>
-                <div style={{ fontSize: 22, fontWeight: 700, color: r.realNet >= 0 ? "var(--positive)" : "var(--negative)" }}>
+                <div style={{ fontSize: 22, fontWeight: 700, color: r.realNet >= 0 ? "var(--danger)" : "var(--accent)" }}>
                   {signedKRW(r.realNet)}
                 </div>
                 <div style={{ fontSize: 12, color: "var(--text-muted)" }}>실질수입 − 실질지출 (정산·일시소득·환전·신용결제 제외, 데이트 50% 반영)</div>
@@ -249,7 +252,7 @@ export const ComprehensiveMonthlySection: React.FC<Props> = React.memo(function 
               </div>
               <div>
                 <div style={{ fontSize: 13, color: "var(--text-muted)" }}>장부 순수입</div>
-                <div style={{ fontSize: 22, fontWeight: 700, color: r.totalNet >= 0 ? "var(--positive)" : "var(--negative)" }}>
+                <div style={{ fontSize: 22, fontWeight: 700, color: r.totalNet >= 0 ? "var(--danger)" : "var(--accent)" }}>
                   {signedKRW(r.totalNet)}
                 </div>
                 <div style={{ fontSize: 12, color: "var(--text-muted)" }}>전체 수입 - 전체 지출</div>

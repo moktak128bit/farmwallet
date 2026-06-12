@@ -1,4 +1,5 @@
 import type { LedgerEntry, RecurringExpense } from "../types";
+import { parseIsoLocal } from "./date";
 
 export interface CategoryForecast {
   category: string;
@@ -44,8 +45,37 @@ function trimmedMean(values: number[], trimRatio = 0.1): number {
 }
 
 /**
+ * 매주 반복지출이 특정 월("YYYY-MM")에 몇 번 발생하는지 계산.
+ * startDate의 요일 기준 7일 간격, 시작일 이전·종료일 이후는 제외.
+ */
+function countWeeklyOccurrencesInMonth(r: RecurringExpense, month: string): number {
+  const start = parseIsoLocal(r.startDate);
+  if (!start) return 0;
+  const [y, m] = month.split("-").map(Number);
+  if (!y || !m) return 0;
+  const monthStart = new Date(y, m - 1, 1);
+  const monthEnd = new Date(y, m, 0);
+  const end = r.endDate ? parseIsoLocal(r.endDate) : null;
+  if (start > monthEnd) return 0;
+  // 시작일이 월 시작 이전이면 같은 요일을 유지한 채 월 안쪽 첫 발생일로 당김
+  const cursor = new Date(start);
+  if (cursor < monthStart) {
+    const diffDays = Math.ceil((monthStart.getTime() - cursor.getTime()) / 86400000);
+    cursor.setDate(cursor.getDate() + Math.ceil(diffDays / 7) * 7);
+  }
+  let count = 0;
+  while (cursor <= monthEnd) {
+    if (!end || cursor <= end) count++;
+    cursor.setDate(cursor.getDate() + 7);
+  }
+  return count;
+}
+
+/**
  * 다음 달 카테고리별 지출 예측.
- * - 반복지출(recurring) 합계 + 비반복 6개월 이동평균
+ * - 반복지출(recurring) 합계 + 비반복 N개월 이동평균
+ * - lookback은 진행 중인 현재 월을 제외한 "완결된 과거 N개월"만 사용
+ *   (현재 월을 포함하면 월초마다 평균이 체계적으로 과소 추정됨 — anomaly.ts와 동일 기준)
  * - 신뢰구간(±1σ) 함께 제공
  */
 export function forecastNextMonth(
@@ -59,15 +89,22 @@ export function forecastNextMonth(
   const monthSet = new Set<string>();
   const monthOrder: string[] = [];
   for (let i = 1; i <= lookbackMonths; i++) {
-    const mm = offsetMonth(currentMonth, -i + 1);
+    const mm = offsetMonth(currentMonth, -i); // 현재 월 제외 — 직전 월부터 N개월
     monthSet.add(mm);
     monthOrder.push(mm);
   }
 
   const recurringByCat = new Map<string, number>();
   for (const r of recurring) {
-    if (!r.category || r.frequency !== "monthly") continue;
-    recurringByCat.set(r.category, (recurringByCat.get(r.category) ?? 0) + r.amount);
+    if (!r.category) continue;
+    if (r.frequency === "monthly") {
+      recurringByCat.set(r.category, (recurringByCat.get(r.category) ?? 0) + r.amount);
+    } else if (r.frequency === "weekly") {
+      // 매주 반복은 예측 월의 실제 발생 횟수로 월 환산해 고정 지출에 포함
+      const n = countWeeklyOccurrencesInMonth(r, forecastMonth);
+      if (n > 0) recurringByCat.set(r.category, (recurringByCat.get(r.category) ?? 0) + r.amount * n);
+    }
+    // yearly는 발생 월에만 의미가 있어 월 예측의 "고정" 합에는 포함하지 않음
   }
 
   const byCatMonth = new Map<string, Map<string, number>>();

@@ -122,10 +122,12 @@ export const AccountForm: React.FC<Props> = React.memo(function AccountForm({ on
         />
       </label>
       <label>
-        <span>부채</span>
+        {/* 부채는 양수로 입력 — 파서(parseAmount)가 부호를 제거하므로 음수 표기 안내는 오해를 부른다 */}
+        <span>부채 (갚을 금액, 양수)</span>
         <input
           type="number"
-          placeholder="-100000"
+          min={0}
+          placeholder="예: 100000"
           value={form.debt}
           onChange={(e) => setForm({ ...form, debt: e.target.value })}
         />

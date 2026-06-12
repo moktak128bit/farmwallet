@@ -25,8 +25,8 @@ interface UseQuoteRefreshParams {
   prices: StockPrice[];
   tickerDatabase: TickerInfo[];
   fxRate: number | null;
-  /** 환율 갱신 — fxRate 상태는 페이지 소유 (positions 등 공유 memo가 의존) */
-  updateFxRate: () => Promise<void>;
+  /** 환율 갱신 — fxRate 상태는 페이지 소유 (positions 등 공유 memo가 의존). 갱신된 환율을 반환 (실패 시 null) */
+  updateFxRate: () => Promise<number | null>;
   onChangePrices: (next: StockPrice[]) => void;
   onChangeTickerDatabase: (next: TickerInfo[] | ((prev: TickerInfo[]) => TickerInfo[])) => void;
   onLog?: (message: string, type?: "success" | "error" | "info") => void;
@@ -48,6 +48,11 @@ export function useQuoteRefresh({
   const [quoteRefreshProgress, setQuoteRefreshProgress] = useState({ current: 0, total: 1 });
   const [quoteError, setQuoteError] = useState<string | null>(null);
   const [yahooUpdatedAt, setYahooUpdatedAt] = useState<string | null>(null);
+  // 최신 prices prop 추적 — 갱신 도중(시작 시점 클로저) 다른 경로로 바뀐 시세를 머지 시 유실하지 않도록
+  const pricesRef = useRef(prices);
+  pricesRef.current = prices;
+  // 동시 실행 가드 — 수동 갱신과 자동 갱신(usePriceAutoRefresh)이 겹치면 lost update 발생
+  const isRefreshingRef = useRef(false);
 
   // 시세 갱신용: "현재 보유 중" 티커만 (청산 종목은 굳이 갱신 안 함 → 429 회피 + 속도 ↑)
   const holdingsOnlyTickers = useMemo(() => getCurrentHoldingsTickers(trades), [trades]);
@@ -149,11 +154,19 @@ export function useQuoteRefresh({
         return;
       }
 
+      // 동시 실행 가드 — 진행 중이면 건너뜀 (자동 갱신과 수동 갱신 충돌 방지)
+      if (isRefreshingRef.current) {
+        onLog?.(`${logLabel}: 이미 시세 갱신이 진행 중입니다 — 건너뜁니다.`, "info");
+        return;
+      }
+      isRefreshingRef.current = true;
+
       onLog?.(`${logLabel} 시작...`, "info");
       try {
         setIsLoadingQuotes(true);
         setQuoteError(null);
-        void updateFxRate();
+        // 환율 갱신을 시작해 두고, 암호화폐 환산 시점에 결과를 사용 (stale 클로저 fxRate 의존 제거)
+        const fxPromise: Promise<number | null> = updateFxRate().catch(() => null);
         setQuoteRefreshProgress({ current: 0, total: Math.max(1, totalSymbols) });
         onLog?.(`[시작] ${logLabel} — ${totalSymbols}개 티커`, "info");
 
@@ -221,7 +234,9 @@ export function useQuoteRefresh({
         }
 
         if (uniqueCryptoTickers.length > 0) {
-          const cryptoResults = await fetchCryptoQuotes(uniqueCryptoTickers, fxRate ?? undefined);
+          // 방금 갱신된 환율 우선 — 없으면 기존 fxRate (stale 클로저 제거)
+          const refreshedFx = await fxPromise;
+          const cryptoResults = await fetchCryptoQuotes(uniqueCryptoTickers, refreshedFx ?? fxRate ?? undefined);
           const cryptoAsStockPrice: StockPrice[] = cryptoResults.map((c) => ({
             ticker: c.ticker,
             // name은 풀네임(CoinGecko ID) — short symbol은 ticker 표시 단에서 cryptoDisplaySymbol로 변환.
@@ -246,7 +261,8 @@ export function useQuoteRefresh({
           return;
         }
 
-        const next = mergeQuoteResultsIntoPrices(prices, allResults, { persistToTickerJson });
+        // 시작 시점 클로저(prices)가 아닌 최신 prices(ref) 기반 머지 — 갱신 도중 발생한 다른 변경 보존
+        const next = mergeQuoteResultsIntoPrices(pricesRef.current, allResults, { persistToTickerJson });
         onChangePrices(next);
 
         if (updateTickerDatabase) {
@@ -291,6 +307,7 @@ export function useQuoteRefresh({
         setQuoteError("시세 갱신 중 오류가 발생했습니다. 잠시 후 다시 시도하세요.");
         onLog?.(`${logLabel} 실패: 오류가 발생했습니다.`, "error");
       } finally {
+        isRefreshingRef.current = false;
         setIsLoadingQuotes(false);
       }
     },
@@ -299,7 +316,6 @@ export function useQuoteRefresh({
       onChangePrices,
       onChangeTickerDatabase,
       onLog,
-      prices,
       tickerDatabase,
       fxRate,
       updateFxRate

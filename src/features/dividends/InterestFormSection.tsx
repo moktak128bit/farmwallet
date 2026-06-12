@@ -10,6 +10,7 @@
  */
 import React, { useState } from "react";
 import type { Account, LedgerEntry } from "../../types";
+import { getTodayKST } from "../../utils/date";
 
 interface Props {
   /** 이자 탭에서만 표시 — false면 null 렌더 (폼 상태는 유지) */
@@ -27,7 +28,7 @@ export const InterestFormSection: React.FC<Props> = React.memo(function Interest
 }) {
   // 이자 입력 폼
   const [interestForm, setInterestForm] = useState({
-    date: new Date().toISOString().slice(0, 10),
+    date: getTodayKST(),
     accountId: "",
     amount: "",
     rate: "", // 이율 (%)
@@ -60,7 +61,7 @@ export const InterestFormSection: React.FC<Props> = React.memo(function Interest
 
     // 폼 초기화
     setInterestForm({
-      date: new Date().toISOString().slice(0, 10),
+      date: getTodayKST(),
       accountId: interestForm.accountId,
       amount: "",
       rate: "",
@@ -101,7 +102,7 @@ export const InterestFormSection: React.FC<Props> = React.memo(function Interest
                 .filter((acc) => !acc.archived || acc.id === interestForm.accountId)
                 .map((acc) => (
                   <option key={acc.id} value={acc.id}>
-                    {acc.id}
+                    {acc.name || acc.id}
                   </option>
                 ))}
             </select>

@@ -7,14 +7,19 @@ import {
 import type { ValueType } from "recharts/types/component/DefaultTooltipContent";
 import { C, F, W, Pct, SD, Card, Kpi, Insight, CT, Section, type D } from "../insightsShared";
 import { useAppStore } from "../../../store/appStore";
+import { getThisMonthKST } from "../../../utils/date";
 
 export const OverviewTab = React.memo(function OverviewTab({ d }: { d: D }) {
-  const flowData = d.months.slice(0, -1).map(m => ({ name: d.ml[m], 순현금흐름: d.monthly[m].income - d.monthly[m].expense - d.monthly[m].investment }));
+  // 순현금흐름 차트 — 진행 중인 현재 월만 제외 (마지막 월이 완결 월이면 포함)
+  const flowMonths = d.months.length > 0 && d.months[d.months.length - 1] === getThisMonthKST()
+    ? d.months.slice(0, -1)
+    : d.months;
+  const flowData = flowMonths.map(m => ({ name: d.ml[m], 순현금흐름: d.monthly[m].income - d.monthly[m].expense - d.monthly[m].investment }));
   const expBadge = d.prev ? Pct(SD(d.pExpense - d.prev.expense, d.prev.expense) * 100) + " vs 전월" : undefined;
   const top3Sub = d.expBySub.filter(s => s.sub !== "신용결제" && s.cat !== "신용결제").slice(0, 3);
   const top3pct = d.pExpense > 0 ? Math.round(top3Sub.reduce((s, x) => s + x.amount, 0) / d.pExpense * 100) : 0;
 
-  /* 재정 활주로 (Financial Runway): 현금성 자산 / 월평균 지출 */
+  /* 재정 활주로 (Financial Runway): 가용 자산(현금 + 증권·코인 평가액) / 월평균 지출 */
   const liquidAssets = d.accountBalances.reduce((s, b) => s + Math.max(0, b.balance), 0);
   const runwayMonths = d.avgMonthExp > 0 ? liquidAssets / d.avgMonthExp : null;
   const runwayColor = runwayMonths == null ? "var(--text-faint)" : runwayMonths >= 12 ? "#48c9b0" : runwayMonths >= 6 ? "#f0c040" : "#e94560";
@@ -102,7 +107,7 @@ export const OverviewTab = React.memo(function OverviewTab({ d }: { d: D }) {
             </div>
             <div style={{ fontSize: 13, lineHeight: 1.7, color: "var(--text-secondary)" }}>
               <div style={{ display: "flex", justifyContent: "space-between", padding: "4px 0", borderBottom: "1px solid var(--border-light)" }}>
-                <span style={{ color: "var(--text-faint)" }}>현금성 자산 (모든 계좌 합계)</span>
+                <span style={{ color: "var(--text-faint)" }}>가용 자산 (전 계좌 + 증권·코인 평가액)</span>
                 <span style={{ fontWeight: 700 }}>{F(liquidAssets)}</span>
               </div>
               <div style={{ display: "flex", justifyContent: "space-between", padding: "4px 0", borderBottom: "1px solid var(--border-light)" }}>
@@ -409,7 +414,7 @@ export const OverviewTab = React.memo(function OverviewTab({ d }: { d: D }) {
           <Card title="중분류별 상세 분석" span={4}>
             <div style={{ display: "grid", gridTemplateColumns: "repeat(3, 1fr)", gap: 10 }}>
               {d.subInsights.slice(0, 9).map((s, i) => (
-                <div key={s.sub} style={{ padding: "12px 14px", borderRadius: 10, background: s.monthTrend === "up" ? "#fff5f5" : s.monthTrend === "down" ? "#f0fdf4" : "#f8f9fa", border: `1px solid ${s.monthTrend === "up" ? "#fcc" : s.monthTrend === "down" ? "#86efac" : "#eee"}`, fontSize: 12 }}>
+                <div key={s.sub} style={{ padding: "12px 14px", borderRadius: 10, background: s.monthTrend === "up" ? "var(--danger-light)" : s.monthTrend === "down" ? "var(--primary-light)" : "var(--bg)", border: "1px solid var(--border-light)", fontSize: 12, color: "var(--text)" }}>
                   <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 6 }}>
                     <span style={{ fontWeight: 700, fontSize: 14, display: "flex", alignItems: "center", gap: 6 }}>
                       <span style={{ width: 10, height: 10, borderRadius: 5, background: C[i % 12], display: "inline-block" }} />
@@ -417,17 +422,17 @@ export const OverviewTab = React.memo(function OverviewTab({ d }: { d: D }) {
                     </span>
                     <span style={{ fontSize: 16, fontWeight: 800, color: "#e94560" }}>{F(s.total)}</span>
                   </div>
-                  <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 4, fontSize: 11, color: "#555" }}>
+                  <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 4, fontSize: 11, color: "var(--text-secondary)" }}>
                     <span>비중: {s.share}%</span>
                     <span>건수: {s.count}건</span>
                     <span>건당 평균: {F(s.avg)}</span>
                     <span>월평균: {F(s.monthAvg)}</span>
                   </div>
-                  <div style={{ marginTop: 4, fontSize: 11, color: s.monthTrend === "up" ? "#e94560" : s.monthTrend === "down" ? "#059669" : "#999", fontWeight: 600 }}>
+                  <div style={{ marginTop: 4, fontSize: 11, color: s.monthTrend === "up" ? "var(--danger)" : s.monthTrend === "down" ? "var(--success)" : "var(--text-faint)", fontWeight: 600 }}>
                     {s.monthTrend === "up" ? `▲ 전월 대비 ${s.mom}% 증가` : s.monthTrend === "down" ? `▼ 전월 대비 ${Math.abs(s.mom)}% 감소` : "전월과 유사"}
                     {s.streakUp >= 2 && ` · ${s.streakUp}개월 연속 증가`}
                   </div>
-                  <div style={{ marginTop: 6, fontSize: 11, color: "#666", lineHeight: 1.6, borderTop: "1px solid #eee", paddingTop: 6 }}>
+                  <div style={{ marginTop: 6, fontSize: 11, color: "var(--text-muted)", lineHeight: 1.6, borderTop: "1px solid var(--border-light)", paddingTop: 6 }}>
                     {s.comment}
                   </div>
                 </div>
@@ -441,19 +446,19 @@ export const OverviewTab = React.memo(function OverviewTab({ d }: { d: D }) {
       <Section storageKey="overview-section-insights" title="💡 종합 인사이트" defaultOpen={false}>
         <Card title="종합 인사이트" span={4}>
           <div className="grid-2" style={{ gap: 12 }}>
-            <Insight title="실질 저축률 분석" color="#059669" bg="#d4edda">
+            <Insight title="실질 저축률 분석" tone="success">
               {d.realSavRate >= 30
                 ? `실질 저축률 ${d.realSavRate.toFixed(0)}%로 매우 건강한 수준입니다. 실질 수입 ${F(d.realIncome)} 중 ${F(Math.round(d.netProfit))}을 저축하고 있습니다. 이 속도라면 연간 약 ${F(Math.round(d.netProfit * 12 / d.monthSpan))} 이상 자산 증가가 가능합니다.`
                 : d.realSavRate >= 0
                 ? `실질 저축률 ${d.realSavRate.toFixed(0)}%로 개선 여지가 있습니다. 30% 이상을 목표로 월 ${F(Math.round(d.realExpense * 0.1))} 정도 추가 절약하면 장기적으로 큰 차이를 만들 수 있습니다.`
                 : `마이너스 실질 저축률! 실질 수입보다 지출이 ${F(d.realExpense - d.realIncome)} 더 많습니다. 고정비와 변동비를 점검하고, 상위 지출 카테고리부터 줄여보세요.`}
             </Insight>
-            <Insight title="지출 집중도 분석" color="#b45309" bg="#fff3cd">
+            <Insight title="지출 집중도 분석" tone="warning">
               상위 3개 중분류({top3Sub.map(s => s.sub).join(", ")})가 전체 지출의 {top3pct}%를 차지합니다.
               {top3pct > 70 ? ` 지출이 소수 카테고리에 집중되어 있어 해당 항목의 절약이 전체 지출 감소에 큰 효과를 줍니다. 특히 1위 ${top3Sub[0]?.sub}(${F(top3Sub[0]?.amount ?? 0)})에 집중해 보세요.` : ` 비교적 골고루 분산되어 있어 특정 항목보다 전반적인 소비 습관 개선이 효과적입니다.`}
               {top3Sub[0] && d.pExpense > 0 && ` 1위 ${top3Sub[0].sub}만 10% 줄여도 월 ${F(Math.round(top3Sub[0].amount * 0.1 / d.monthSpan))} 절약.`}
             </Insight>
-            <Insight title="투자 현황" color="#2563eb" bg="#cce5ff">
+            <Insight title="투자 현황" tone="info">
               {d.pIncome > 0
                 ? `수입 대비 투자 비율 ${Math.round(d.pInvest / d.pIncome * 100)}%. 총 ${F(d.pInvest)}를 투자에 할당했습니다.`
                 : ""}
@@ -468,18 +473,18 @@ export const OverviewTab = React.memo(function OverviewTab({ d }: { d: D }) {
               {d.pExpense > 0 && ` 일 평균 지출 ${F(d.dailyAvgExp)}.`}
             </Insight>
             {d.prev && (
-              <Insight title="전월 대비 변화" color="#0f3460" bg="#f0f8ff">
+              <Insight title="전월 대비 변화" tone="info">
                 수입 {d.pIncome >= d.prev.income ? "+" : ""}{F(d.pIncome - d.prev.income)} ({d.prev.income > 0 ? Pct((d.pIncome - d.prev.income) / d.prev.income * 100) : "N/A"}),
                 지출 {d.pExpense >= d.prev.expense ? "+" : ""}{F(d.pExpense - d.prev.expense)} ({d.prev.expense > 0 ? Pct((d.pExpense - d.prev.expense) / d.prev.expense * 100) : "N/A"}).
                 {d.pExpense > d.prev.expense ? ` 지출이 ${F(d.pExpense - d.prev.expense)} 증가했습니다. 어떤 카테고리에서 증가했는지 지출 분석 탭에서 확인하세요.` : ` 지출이 ${F(d.prev.expense - d.pExpense)} 감소했습니다. 좋은 흐름입니다!`}
               </Insight>
             )}
-            <Insight title="수입 다각화" color="#e94560" bg="#fff5f5">
+            <Insight title="수입 다각화" tone="danger">
               {d.incByCat.length}개 수입원 보유.
               {d.incByCat.length >= 5 ? " 수입 다각화가 잘 되어 있습니다. 하나의 수입원이 줄어도 타격이 적습니다." : d.incByCat.length >= 3 ? " 수입원이 적당히 분산되어 있습니다." : " 수입원이 1~2개로 집중되어 있어 리스크가 있습니다. 부업이나 투자 수입을 늘려보세요."}
               {d.incByCat[0] && d.pIncome > 0 && ` 최대 수입원: ${d.incByCat[0][0]}(${Math.round(SD(d.incByCat[0][1], d.pIncome) * 100)}%).`}
             </Insight>
-            <Insight title="순수익 분석" color="#059669" bg="#ecfdf5">
+            <Insight title="순수익 분석" tone="success">
               순수익(실질수입-실질지출) {d.netProfit >= 0 ? "+" : ""}{F(d.netProfit)}.
               {d.netProfit > 0
                 ? ` 매월 평균 ${F(Math.round(SD(d.netProfit, d.monthSpan)))} 흑자 구조입니다. 연간 환산 시 약 ${F(Math.round(d.netProfit * SD(12, d.monthSpan)))} 순자산 증가가 예상됩니다.`

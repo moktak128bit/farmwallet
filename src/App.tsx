@@ -73,10 +73,20 @@ import { GistConflictModal } from "./components/GistConflictModal";
 import { isGistConfigured } from "./services/gistSync";
 import { toUserDataJson } from "./services/dataService";
 import { useUIStore, type PendingAction } from "./store/uiStore";
+import { useAppStore } from "./store/appStore";
 import { SaveStatusPill } from "./components/SaveStatusPill";
 import { TabConflictModal, type TabConflictResolution } from "./components/TabConflictModal";
 import { DraftRecoveryBanner } from "./components/DraftRecoveryBanner";
-import { normalizeImportedData, saveData as persistData, loadData } from "./storage";
+import {
+  normalizeImportedData,
+  saveData as persistData,
+  loadData,
+  saveSafetySnapshot,
+  getAllBackupList,
+  loadBackupData,
+  type BackupEntry
+} from "./storage";
+import type { AppData } from "./types";
 
 export const App: React.FC = () => {
   // UI 상태는 모두 uiStore에서 관리 (App.tsx에서 useState 17개를 슬라이스로 이전)
@@ -236,27 +246,37 @@ export const App: React.FC = () => {
     backupWarning,
     flushPendingSave,
     discardPendingSaveAndApply
-  } = useBackup(data, { onLog: addAppLog });
+    // loadFailed 동안 자동저장·unload flush·수동 백업 차단 — 손상됐지만 복구 가능한
+    // 원본 localStorage를 빈/불완전 데이터로 덮어쓰지 않도록.
+  } = useBackup(data, { onLog: addAppLog, disabled: loadFailed });
 
   const { isLoadingTickerDatabase, handleLoadInitialTickers } = useTickerDatabase(data, setDataWithHistory, { onLog: addAppLog });
 
-  // Gist 동기화 훅
+  // Gist 동기화 훅 — 수신 JSON은 normalizeImportedData로 구조 검증·정규화 후에만 적용.
+  // 잘못된 Gist(깨진 구조·타입 오류)는 toast로 거부해 자동저장이 손상 데이터를 굳히는 것을 방지.
   const handleGistPulledData = useCallback((dataJson: string, _remoteUpdatedAt: string) => {
     try {
-      const parsed = JSON.parse(dataJson);
+      const parsed = JSON.parse(dataJson) as unknown;
+      const normalized = normalizeImportedData(parsed); // 검증 실패 시 throw
+      const current = useAppStore.getState().data;
+      // 덮어쓰기 직전 현재 데이터 안전 스냅샷 (best-effort — 실패해도 진행)
+      void saveSafetySnapshot(current, "Gist 불러오기 직전 자동 스냅샷");
       setDataWithHistory({
-        ...parsed,
-        prices: parsed.prices?.length > 0 ? parsed.prices : data.prices,
-        tickerDatabase: parsed.tickerDatabase?.length > 0 ? parsed.tickerDatabase : data.tickerDatabase,
-        historicalDailyCloses: parsed.historicalDailyCloses?.length > 0 ? parsed.historicalDailyCloses : data.historicalDailyCloses,
+        ...normalized,
+        // Gist에는 API 캐시가 없음 — 현재 메모리의 캐시 유지
+        prices: (normalized.prices?.length ?? 0) > 0 ? normalized.prices : current.prices,
+        tickerDatabase: (normalized.tickerDatabase?.length ?? 0) > 0 ? normalized.tickerDatabase : current.tickerDatabase,
+        historicalDailyCloses: (normalized.historicalDailyCloses?.length ?? 0) > 0 ? normalized.historicalDailyCloses : current.historicalDailyCloses,
       });
       addAppLog("Gist에서 데이터 불러오기 완료", "success");
-    } catch {
-      addAppLog("Gist 데이터 파싱 실패", "error");
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err);
+      addAppLog(`Gist 데이터 검증 실패 — 적용하지 않음: ${msg}`, "error");
+      toast.error(`Gist 데이터가 올바르지 않아 적용하지 않았습니다: ${msg}`);
     }
-  }, [data.prices, data.tickerDatabase, data.historicalDailyCloses, setDataWithHistory, addAppLog]);
+  }, [setDataWithHistory, addAppLog]);
 
-  const { autoSyncEnabled, setAutoSyncEnabled, lastPushAt: gistLastPushAt, lastPullAt: gistLastPullAt, resolveGistConflict, gistStaleWarning, manualPush: gistManualPush } = useGistSync(
+  const { autoSyncEnabled, setAutoSyncEnabled, lastPushAt: gistLastPushAt, lastPullAt: gistLastPullAt, resolveGistConflict, gistStaleWarning, manualPush: gistManualPush, manualPull: gistManualPull } = useGistSync(
     data,
     handleGistPulledData,
     { onLog: addAppLog }
@@ -318,17 +338,16 @@ export const App: React.FC = () => {
       setData(reloaded);
       addAppLog("미저장 변경 복구됨", "success");
       toast.success("미저장 변경을 복구했습니다.");
-    } catch (err) {
-      const message = err instanceof Error ? err.message : "복구 실패";
-      console.error("[FarmWallet] draft 복구 실패", err);
-      toast.error(`복구 실패: ${message}`);
-      return;
-    } finally {
+      // 드래프트 삭제·배너 제거는 "성공 경로에서만" — 복구 실패 시 드래프트가 유일한 사본이므로 보존
       try {
         window.localStorage.removeItem(STORAGE_KEYS.DRAFT);
         window.localStorage.removeItem(STORAGE_KEYS.DRAFT_AT);
       } catch { /* */ }
       setDraftRecovery(null);
+    } catch (err) {
+      const message = err instanceof Error ? err.message : "복구 실패";
+      console.error("[FarmWallet] draft 복구 실패", err);
+      toast.error(`복구 실패: ${message} — 드래프트는 보존됩니다. [폐기]를 누르기 전까지 다시 시도할 수 있습니다.`);
     }
   }, [setData, addAppLog, setDraftRecovery]);
 
@@ -440,7 +459,7 @@ export const App: React.FC = () => {
     return undefined;
   }, [integritySummary]);
 
-  const handleRenameAccountId = (oldId: string, newId: string) => {
+  const handleRenameAccountId = useCallback((oldId: string, newId: string) => {
     if (!oldId || !newId || oldId === newId) return;
     setDataWithHistory((prev) => {
       const renameId = (id?: string) => (id === oldId ? newId : id);
@@ -458,8 +477,167 @@ export const App: React.FC = () => {
       };
     });
     toast.success("계좌 ID 변경 완료");
-  };
+  }, [setDataWithHistory]);
 
+  // ─────────────────────────────────────────────────────────────
+  // 데이터 변경 콜백 — 인라인 화살표 대신 useCallback으로 안정화해
+  // React.memo 자식 컴포넌트의 재렌더 방지. (콜백 시그니처는 기존과 동일)
+  // ─────────────────────────────────────────────────────────────
+  const handleChangeAccounts = useCallback(
+    (accounts: AppData["accounts"]) => setDataWithHistory((prev) => ({ ...prev, accounts })),
+    [setDataWithHistory]
+  );
+  const handleChangeLedger = useCallback(
+    (ledger: AppData["ledger"]) => setDataWithHistory((prev) => ({ ...prev, ledger })),
+    [setDataWithHistory]
+  );
+  const handleChangeCategoryPresets = useCallback(
+    (categoryPresets: AppData["categoryPresets"]) => setDataWithHistory((prev) => ({ ...prev, categoryPresets })),
+    [setDataWithHistory]
+  );
+  const handleBulkUpdateLedger = useCallback(
+    (mapper: (entry: AppData["ledger"][number]) => AppData["ledger"][number]) =>
+      setDataWithHistory((prev) => ({ ...prev, ledger: prev.ledger.map(mapper) })),
+    [setDataWithHistory]
+  );
+  const handleChangeTrades = useCallback(
+    (trades: AppData["trades"] | ((prev: AppData["trades"]) => AppData["trades"])) =>
+      setDataWithHistory((prev) => ({
+        ...prev,
+        trades: typeof trades === "function" ? trades(prev.trades) : trades
+      })),
+    [setDataWithHistory]
+  );
+  const handleChangePrices = useCallback(
+    (prices: AppData["prices"]) => setDataWithHistory((prev) => ({ ...prev, prices })),
+    [setDataWithHistory]
+  );
+  const handleChangeTickerDatabase = useCallback(
+    (next: NonNullable<AppData["tickerDatabase"]> | ((prev: NonNullable<AppData["tickerDatabase"]>) => NonNullable<AppData["tickerDatabase"]>)) =>
+      setDataWithHistory((prev) => {
+        const current = Array.isArray(prev.tickerDatabase) ? prev.tickerDatabase : [];
+        const nextDb = typeof next === "function" ? next(current) : next;
+        return { ...prev, tickerDatabase: Array.isArray(nextDb) ? nextDb : current };
+      }),
+    [setDataWithHistory]
+  );
+  const handleChangeStockPresets = useCallback(
+    (stockPresets: AppData["stockPresets"]) => setDataWithHistory((prev) => ({ ...prev, stockPresets })),
+    [setDataWithHistory]
+  );
+  const handleChangeTargetPortfolios = useCallback(
+    (targetPortfolios: AppData["targetPortfolios"]) => setDataWithHistory((prev) => ({ ...prev, targetPortfolios })),
+    [setDataWithHistory]
+  );
+  const handleChangeLoans = useCallback(
+    (loans: AppData["loans"]) => setDataWithHistory((prev) => ({ ...prev, loans })),
+    [setDataWithHistory]
+  );
+  const handleChangeRecurring = useCallback(
+    (recurringExpenses: AppData["recurringExpenses"]) => setDataWithHistory((prev) => ({ ...prev, recurringExpenses })),
+    [setDataWithHistory]
+  );
+  const handleChangeBudgets = useCallback(
+    (budgetGoals: AppData["budgetGoals"]) => setDataWithHistory((prev) => ({ ...prev, budgetGoals })),
+    [setDataWithHistory]
+  );
+  const handleChangeDailyBudget = useCallback(
+    (dailyBudget: AppData["dailyBudget"]) => setDataWithHistory((prev) => ({ ...prev, dailyBudget })),
+    [setDataWithHistory]
+  );
+  const handleChangeWorkoutWeeks = useCallback(
+    (workoutWeeks: NonNullable<AppData["workoutWeeks"]>) => setDataWithHistory((prev) => ({ ...prev, workoutWeeks })),
+    [setDataWithHistory]
+  );
+  const handleChangeWorkoutRoutines = useCallback(
+    (workoutRoutines: NonNullable<AppData["workoutRoutines"]>) => setDataWithHistory((prev) => ({ ...prev, workoutRoutines })),
+    [setDataWithHistory]
+  );
+  const handleChangeCustomExercises = useCallback(
+    (customExercises: NonNullable<AppData["customExercises"]>) => setDataWithHistory((prev) => ({ ...prev, customExercises })),
+    [setDataWithHistory]
+  );
+  const handleAddLedgerEntry = useCallback(
+    (entry: AppData["ledger"][number]) => setDataWithHistory((prev) => ({ ...prev, ledger: [...prev.ledger, entry] })),
+    [setDataWithHistory]
+  );
+  const handleNavigateToRecord = useCallback(({ type, id }: { type: "ledger" | "trade"; id: string }) => {
+    if (type === "ledger") {
+      setTab("ledger");
+      setHighlightLedgerId(id);
+      setHighlightTradeId(null);
+    } else {
+      setTab("stocks");
+      setHighlightTradeId(id);
+      setHighlightLedgerId(null);
+    }
+  }, [setTab, setHighlightLedgerId, setHighlightTradeId]);
+  const handleNavigateToTab = useCallback((nextTab: "accounts" | "ledger" | "stocks") => {
+    setTab(nextTab);
+    if (nextTab !== "ledger") setHighlightLedgerId(null);
+    if (nextTab !== "stocks") setHighlightTradeId(null);
+  }, [setTab, setHighlightLedgerId, setHighlightTradeId]);
+  const handleSettingsChangeData = useCallback((next: AppData) => {
+    setDataWithHistory(next);
+    // 실제 디스크 기록은 자동 저장 디바운스(500ms) 후 — "저장 완료"로 표기하지 않는다
+    addAppLog("데이터 변경 적용됨 — 자동 저장 대기 중", "info");
+  }, [setDataWithHistory, addAppLog]);
+
+  // ─────────────────────────────────────────────────────────────
+  // 로드 실패(loadFailed) 복구 — 이 화면에서 직접 백업 파일/로컬 백업으로 복구 가능
+  // ─────────────────────────────────────────────────────────────
+  const [recoveryBackups, setRecoveryBackups] = useState<BackupEntry[]>([]);
+  useEffect(() => {
+    if (!loadFailed) return;
+    let cancelled = false;
+    getAllBackupList()
+      .then((list) => { if (!cancelled) setRecoveryBackups(list); })
+      .catch(() => { /* 목록 로드 실패 — 빈 목록 유지 */ });
+    return () => { cancelled = true; };
+  }, [loadFailed]);
+
+  const applyRecoveredData = useCallback((raw: unknown, sourceLabel: string) => {
+    try {
+      const normalized = normalizeImportedData(raw); // 검증 실패 시 throw
+      persistData(normalized);
+      const reloaded = loadData();
+      setData(reloaded);
+      clearLoadFailed();
+      addAppLog(`${sourceLabel}에서 데이터 복구 완료`, "success");
+      toast.success("데이터를 복구했습니다.");
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err);
+      addAppLog(`데이터 복구 실패: ${msg}`, "error");
+      toast.error(`복구 실패: ${msg}`);
+    }
+  }, [setData, clearLoadFailed, addAppLog]);
+
+  const handleRecoveryFileSelect = useCallback(() => {
+    const input = document.createElement("input");
+    input.type = "file";
+    input.accept = ".json,application/json";
+    input.onchange = async (e) => {
+      const file = (e.target as HTMLInputElement).files?.[0];
+      if (!file) return;
+      try {
+        const text = await file.text();
+        const parsed = JSON.parse(text) as unknown;
+        applyRecoveredData(parsed, "백업 파일");
+      } catch {
+        toast.error("백업 파일을 읽을 수 없습니다. JSON 파일인지 확인해 주세요.");
+      }
+    };
+    input.click();
+  }, [applyRecoveredData]);
+
+  const handleRecoveryFromLocalBackup = useCallback((id: string) => {
+    const restored = loadBackupData(id);
+    if (!restored) {
+      toast.error("선택한 백업을 불러올 수 없습니다.");
+      return;
+    }
+    applyRecoveredData(restored, "로컬 백업");
+  }, [applyRecoveredData]);
 
   if (isLoading) {
     return (
@@ -472,13 +650,52 @@ export const App: React.FC = () => {
   if (loadFailed) {
     return (
       <div className="app-root" style={{ display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", minHeight: "100vh", padding: 24, textAlign: "center" }}>
+        <Toaster position="top-center" />
         <p style={{ color: "var(--danger)", fontSize: 16, fontWeight: 600, marginBottom: 8 }}>데이터를 불러오지 못했습니다.</p>
-        <p style={{ color: "var(--text-muted)", fontSize: 14, marginBottom: 24, maxWidth: 400 }}>
-          저장된 데이터가 손상되었거나 읽을 수 없습니다. 설정 탭에서 &quot;백업 파일 불러오기&quot;로 이전에 받아 둔 JSON 백업을 불러오세요.
+        <p style={{ color: "var(--text-muted)", fontSize: 14, marginBottom: 16, maxWidth: 460 }}>
+          저장된 데이터가 손상되었거나 읽을 수 없습니다. 아래에서 바로 복구할 수 있습니다.
+          복구 전까지 자동 저장은 중단되어 기존 데이터를 덮어쓰지 않습니다.
         </p>
-        <button type="button" className="primary" onClick={() => setTab("settings")}>
-          설정 탭으로 이동
-        </button>
+        <div style={{ display: "flex", gap: 8, flexWrap: "wrap", justifyContent: "center", marginBottom: 20 }}>
+          <button type="button" className="primary" onClick={handleRecoveryFileSelect}>
+            백업 파일에서 복구 (JSON 선택)
+          </button>
+        </div>
+        {recoveryBackups.length > 0 ? (
+          <div style={{ width: "100%", maxWidth: 520, textAlign: "left" }}>
+            <p style={{ fontSize: 13, fontWeight: 600, marginBottom: 8 }}>브라우저에 저장된 로컬 백업에서 복구:</p>
+            <table className="data-table compact" style={{ width: "100%" }}>
+              <thead>
+                <tr>
+                  <th>백업 시각</th>
+                  <th style={{ width: 120 }}>복원</th>
+                </tr>
+              </thead>
+              <tbody>
+                {recoveryBackups.map((b) => (
+                  <tr key={`${b.source}-${b.id}`}>
+                    <td>
+                      {new Date(b.createdAt).toLocaleString("ko-KR", {
+                        year: "numeric", month: "2-digit", day: "2-digit",
+                        hour: "2-digit", minute: "2-digit", timeZone: "Asia/Seoul"
+                      })}
+                      {b.label && <div style={{ fontSize: 11, color: "var(--text-muted)" }}>{b.label}</div>}
+                    </td>
+                    <td>
+                      <button type="button" onClick={() => handleRecoveryFromLocalBackup(b.id)}>
+                        이 시점으로 복원
+                      </button>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        ) : (
+          <p style={{ color: "var(--text-muted)", fontSize: 13 }}>
+            브라우저에 저장된 로컬 백업이 없습니다. 내려받아 둔 백업 JSON 파일이 있다면 위 버튼으로 불러오세요.
+          </p>
+        )}
       </div>
     );
   }
@@ -505,9 +722,9 @@ export const App: React.FC = () => {
         <div
           role="alert"
           style={{
-            background: "#fef3c7",
-            color: "#92400e",
-            borderBottom: "1px solid #f59e0b",
+            background: "var(--warning-bg)",
+            color: "var(--warning)",
+            borderBottom: "1px solid var(--warning)",
             padding: "8px 16px",
             fontSize: 13,
             fontWeight: 600,
@@ -754,8 +971,8 @@ export const App: React.FC = () => {
               ledger={data.ledger}
               trades={data.trades}
               fxRate={fxRate}
-              onChangeAccounts={(accounts) => setDataWithHistory((prev) => ({ ...prev, accounts }))}
-              onChangeLedger={(ledger) => setDataWithHistory((prev) => ({ ...prev, ledger }))}
+              onChangeAccounts={handleChangeAccounts}
+              onChangeLedger={handleChangeLedger}
               onRenameAccountId={handleRenameAccountId}
             />
             </TabErrorBoundary>
@@ -769,9 +986,9 @@ export const App: React.FC = () => {
               trades={data.trades}
               categoryPresets={data.categoryPresets}
               ledgerTemplates={data.ledgerTemplates ?? []}
-              onChangeLedger={(ledger) => setDataWithHistory((prev) => ({ ...prev, ledger }))}
+              onChangeLedger={handleChangeLedger}
               onChangeTemplates={handleChangeLedgerTemplates}
-              onChangeCategoryPresets={(categoryPresets) => setDataWithHistory((prev) => ({ ...prev, categoryPresets }))}
+              onChangeCategoryPresets={handleChangeCategoryPresets}
               copyRequest={copyRequest}
               onCopyComplete={() => setCopyRequest(null)}
               highlightLedgerId={highlightLedgerId}
@@ -783,9 +1000,9 @@ export const App: React.FC = () => {
             <TabErrorBoundary tabName="카테고리">
             <CategoriesView
               presets={data.categoryPresets}
-              onChangePresets={(categoryPresets) => setDataWithHistory((prev) => ({ ...prev, categoryPresets }))}
+              onChangePresets={handleChangeCategoryPresets}
               ledger={data.ledger}
-              onBulkUpdateLedger={(mapper) => setDataWithHistory((prev) => ({ ...prev, ledger: prev.ledger.map(mapper) }))}
+              onBulkUpdateLedger={handleBulkUpdateLedger}
             />
             </TabErrorBoundary>
           )}
@@ -799,29 +1016,20 @@ export const App: React.FC = () => {
               tickerDatabase={Array.isArray(data.tickerDatabase) ? data.tickerDatabase : []}
               highlightTradeId={highlightTradeId}
               onClearHighlightTrade={() => setHighlightTradeId(null)}
-              onChangeTrades={(trades) => setDataWithHistory((prev) => ({
-                ...prev,
-                trades: typeof trades === "function" ? trades(prev.trades) : trades
-              }))}
-              onChangePrices={(prices) => setDataWithHistory((prev) => ({ ...prev, prices }))}
-              onChangeTickerDatabase={(next) =>
-                setDataWithHistory((prev) => {
-                  const current = Array.isArray(prev.tickerDatabase) ? prev.tickerDatabase : [];
-                  const nextDb = typeof next === "function" ? next(current) : next;
-                  return { ...prev, tickerDatabase: Array.isArray(nextDb) ? nextDb : current };
-                })
-              }
+              onChangeTrades={handleChangeTrades}
+              onChangePrices={handleChangePrices}
+              onChangeTickerDatabase={handleChangeTickerDatabase}
               onLoadInitialTickers={handleLoadInitialTickers}
               isLoadingTickerDatabase={isLoadingTickerDatabase}
               onLog={addAppLog}
               presets={data.stockPresets}
-              onChangePresets={(stockPresets) => setDataWithHistory((prev) => ({ ...prev, stockPresets }))}
+              onChangePresets={handleChangeStockPresets}
               ledger={data.ledger}
-              onChangeLedger={(ledger) => setDataWithHistory((prev) => ({ ...prev, ledger }))}
-              onChangeAccounts={(accounts) => setDataWithHistory((prev) => ({ ...prev, accounts }))}
+              onChangeLedger={handleChangeLedger}
+              onChangeAccounts={handleChangeAccounts}
               fxRate={fxRate}
               targetPortfolios={data.targetPortfolios ?? []}
-              onChangeTargetPortfolios={(targetPortfolios) => setDataWithHistory((prev) => ({ ...prev, targetPortfolios }))}
+              onChangeTargetPortfolios={handleChangeTargetPortfolios}
             />
             </TabErrorBoundary>
           )}
@@ -834,7 +1042,7 @@ export const App: React.FC = () => {
               prices={data.prices}
               tickerDatabase={Array.isArray(data.tickerDatabase) ? data.tickerDatabase : []}
               historicalDailyCloses={data.historicalDailyCloses ?? []}
-              onChangeLedger={(ledger) => setDataWithHistory((prev) => ({ ...prev, ledger }))}
+              onChangeLedger={handleChangeLedger}
               fxRate={fxRate}
             />
             </TabErrorBoundary>
@@ -846,8 +1054,8 @@ export const App: React.FC = () => {
               ledger={data.ledger}
               accounts={data.accounts}
               categoryPresets={data.categoryPresets}
-              onChangeLoans={(loans) => setDataWithHistory((prev) => ({ ...prev, loans }))}
-              onChangeLedger={(ledger) => setDataWithHistory((prev) => ({ ...prev, ledger }))}
+              onChangeLoans={handleChangeLoans}
+              onChangeLedger={handleChangeLedger}
             />
             </TabErrorBoundary>
           )}
@@ -862,7 +1070,7 @@ export const App: React.FC = () => {
               budgetGoals={data.budgetGoals}
               recurringExpenses={data.recurringExpenses}
               fxRate={fxRate}
-              onAddLedger={(entry) => setDataWithHistory((prev) => ({ ...prev, ledger: [...prev.ledger, entry] }))}
+              onAddLedger={handleAddLedgerEntry}
             />
             </TabErrorBoundary>
           )}
@@ -875,10 +1083,10 @@ export const App: React.FC = () => {
               categoryPresets={data.categoryPresets}
               ledger={data.ledger}
               dailyBudget={data.dailyBudget}
-              onChangeRecurring={(recurringExpenses) => setDataWithHistory((prev) => ({ ...prev, recurringExpenses }))}
-              onChangeBudgets={(budgetGoals) => setDataWithHistory((prev) => ({ ...prev, budgetGoals }))}
-              onChangeLedger={(ledger) => setDataWithHistory((prev) => ({ ...prev, ledger }))}
-              onChangeDailyBudget={(dailyBudget) => setDataWithHistory((prev) => ({ ...prev, dailyBudget }))}
+              onChangeRecurring={handleChangeRecurring}
+              onChangeBudgets={handleChangeBudgets}
+              onChangeLedger={handleChangeLedger}
+              onChangeDailyBudget={handleChangeDailyBudget}
             />
             </TabErrorBoundary>
           )}
@@ -896,11 +1104,11 @@ export const App: React.FC = () => {
             <TabErrorBoundary tabName="운동">
             <WorkoutView
               workoutWeeks={data.workoutWeeks ?? []}
-              onChangeWorkoutWeeks={(workoutWeeks) => setDataWithHistory((prev) => ({ ...prev, workoutWeeks }))}
+              onChangeWorkoutWeeks={handleChangeWorkoutWeeks}
               workoutRoutines={data.workoutRoutines ?? []}
-              onChangeWorkoutRoutines={(workoutRoutines) => setDataWithHistory((prev) => ({ ...prev, workoutRoutines }))}
+              onChangeWorkoutRoutines={handleChangeWorkoutRoutines}
               customExercises={data.customExercises ?? []}
-              onChangeCustomExercises={(customExercises) => setDataWithHistory((prev) => ({ ...prev, customExercises }))}
+              onChangeCustomExercises={handleChangeCustomExercises}
             />
             </TabErrorBoundary>
           )}
@@ -910,30 +1118,15 @@ export const App: React.FC = () => {
               data={data}
               backupVersion={backupVersion}
               onBackupRestored={clearLoadFailed}
-              onNavigateToRecord={({ type, id }) => {
-                if (type === "ledger") {
-                  setTab("ledger");
-                  setHighlightLedgerId(id);
-                  setHighlightTradeId(null);
-                } else {
-                  setTab("stocks");
-                  setHighlightTradeId(id);
-                  setHighlightLedgerId(null);
-                }
-              }}
-              onNavigateToTab={(nextTab) => {
-                setTab(nextTab);
-                if (nextTab !== "ledger") setHighlightLedgerId(null);
-                if (nextTab !== "stocks") setHighlightTradeId(null);
-              }}
-              onChangeData={(next) => {
-                setDataWithHistory(next);
-                addAppLog("저장 완료: 거래·시세·종목 등 데이터가 저장되었습니다.", "success");
-              }}
+              onNavigateToRecord={handleNavigateToRecord}
+              onNavigateToTab={handleNavigateToTab}
+              onChangeData={handleSettingsChangeData}
               autoSyncEnabled={autoSyncEnabled}
               onAutoSyncChange={setAutoSyncEnabled}
               gistLastPushAt={gistLastPushAt}
               gistLastPullAt={gistLastPullAt}
+              onGistManualPush={gistManualPush}
+              onGistManualPull={gistManualPull}
             />
             </TabErrorBoundary>
           )}
@@ -952,17 +1145,7 @@ export const App: React.FC = () => {
         onSaveFilter={saveCurrentFilter}
         onApplyFilter={applySavedFilter}
         onDeleteFilter={deleteSavedFilter}
-        onNavigate={({ type, id }) => {
-          if (type === "ledger") {
-            setTab("ledger");
-            setHighlightLedgerId(id);
-            setHighlightTradeId(null);
-          } else {
-            setTab("stocks");
-            setHighlightTradeId(id);
-            setHighlightLedgerId(null);
-          }
-        }}
+        onNavigate={handleNavigateToRecord}
       />
 
       <ShortcutsHelp isOpen={showShortcutsHelp} onClose={() => setShowShortcutsHelp(false)} />
@@ -1031,7 +1214,11 @@ export const App: React.FC = () => {
       />
 
       <GistConflictModal conflict={gistConflict} onResolve={(r) => void resolveGistConflict(r)} />
-      <TabConflictModal conflict={tabConflict} onResolve={handleResolveTabConflict} />
+      <TabConflictModal
+        conflict={tabConflict}
+        onResolve={handleResolveTabConflict}
+        onDismiss={() => setTabConflict(null)}
+      />
     </div>
   );
 };

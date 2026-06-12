@@ -27,7 +27,8 @@ const sheetXml = (sheet: SheetData): string => {
   const rows = sheet.rows.map((row) =>
     `<Row>${row.map(cellXml).join("")}</Row>`
   ).join("");
-  return `<Worksheet ss:Name="${escapeXml(sheet.name).slice(0, 31)}"><Table>${rows}</Table></Worksheet>`;
+  // 31자 절단 후 이스케이프 — 이스케이프 후 절단하면 &amp; 같은 엔티티가 중간에서 잘릴 수 있음
+  return `<Worksheet ss:Name="${escapeXml(sheet.name.slice(0, 31))}"><Table>${rows}</Table></Worksheet>`;
 };
 
 function buildSpreadsheetXml(sheets: SheetData[]): string {

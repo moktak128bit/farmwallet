@@ -6,10 +6,14 @@
  * React.memo — 부모가 넘기는 콜백은 모두 안정적(setState 또는 useCallback)이어야 memo가 효과를 가진다.
  * loanRepayments/cashAccounts/loanRepaymentSubOptions는 부모 memo — 여기서 재계산하지 않는다.
  */
-import React, { useState } from "react";
+import React, { useEffect, useState } from "react";
+import { toast } from "react-hot-toast";
 import type { Account, LedgerEntry, Loan } from "../../types";
 import { formatKRW } from "../../utils/formatter";
 import { parseAmount } from "../../utils/parseAmount";
+import { getTodayKST } from "../../utils/date";
+import { useFocusTrap } from "../../hooks/useFocusTrap";
+import { useModalStackEntry } from "../../utils/modalStack";
 import { isInGracePeriod } from "./debtShared";
 
 interface Props {
@@ -37,15 +41,26 @@ export const RepayLoanModal: React.FC<Props> = React.memo(function RepayLoanModa
 }) {
   const [repayAmount, setRepayAmount] = useState("");
   const [repayFromAccountId, setRepayFromAccountId] = useState(() => cashAccounts[0]?.id ?? "");
-  // 거치기간 중이면 "이자상환" 자동 선택, 아니면 "원금상환"
+  // 거치기간 중이면 "이자상환" 자동 선택, 아니면 "원금상환" (오늘 날짜는 KST 기준)
   const [repaySubCategory, setRepaySubCategory] = useState(() => {
-    const inGrace = isInGracePeriod(loan, new Date().toISOString().slice(0, 10));
+    const inGrace = isInGracePeriod(loan, getTodayKST());
     const interestOption = loanRepaymentSubOptions.find((s) => s.includes("이자"));
     const principalOption =
       loanRepaymentSubOptions.find((s) => s.includes("원금")) ?? loanRepaymentSubOptions[0] ?? "";
     return inGrace && interestOption ? interestOption : principalOption;
   });
-  const [repayDate, setRepayDate] = useState(new Date().toISOString().slice(0, 10));
+  const [repayDate, setRepayDate] = useState(getTodayKST());
+
+  // 접근성: 포커스 트랩 + window 레벨 ESC + 모달 스택 (최상위 모달만 닫힘)
+  const trapRef = useFocusTrap<HTMLDivElement>(true);
+  const isTopModal = useModalStackEntry(true);
+  useEffect(() => {
+    const handler = (e: KeyboardEvent) => {
+      if (e.key === "Escape" && isTopModal()) onClose();
+    };
+    window.addEventListener("keydown", handler);
+    return () => window.removeEventListener("keydown", handler);
+  }, [onClose, isTopModal]);
 
   const handleRepaySubmit = () => {
     const amount = parseAmount(repayAmount);
@@ -60,6 +75,21 @@ export const RepayLoanModal: React.FC<Props> = React.memo(function RepayLoanModa
     if (!repaySubCategory) {
       alert("세부 항목을 선택해주세요.");
       return;
+    }
+    // 날짜 빈값 거부 — date input은 지우기로 빈 문자열이 될 수 있다
+    if (!repayDate) {
+      alert("날짜를 입력해주세요.");
+      return;
+    }
+
+    // 원금 상환이 현재 잔금을 초과하면 경고 (저장은 진행 — 잔금은 0으로 클램프되어 집계됨)
+    const isPrincipal = !repaySubCategory.includes("이자");
+    const currentBalance = Math.max(0, loan.loanAmount - (loanRepayments.principal.get(loan.id) || 0));
+    if (isPrincipal && amount > currentBalance) {
+      toast(
+        `상환 금액이 현재 잔금(${formatKRW(Math.round(currentBalance))})을 초과합니다 — 잔금은 0원으로 처리됩니다.`,
+        { icon: "⚠️" }
+      );
     }
 
     const newEntry: LedgerEntry = {
@@ -80,12 +110,21 @@ export const RepayLoanModal: React.FC<Props> = React.memo(function RepayLoanModa
 
   return (
     <div className="modal-backdrop" onClick={onClose}>
-      <div className="modal" onClick={(e) => e.stopPropagation()} style={{ maxWidth: 400 }}>
+      <div
+        ref={trapRef}
+        className="modal"
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="repay-loan-modal-title"
+        onClick={(e) => e.stopPropagation()}
+        style={{ maxWidth: 400 }}
+      >
         <div className="modal-header">
-          <h3>{loan.loanName} 상환</h3>
+          <h3 id="repay-loan-modal-title">{loan.loanName} 상환</h3>
           <button
             type="button"
             onClick={onClose}
+            aria-label="닫기"
             style={{
               background: "transparent",
               border: "none",
@@ -103,12 +142,12 @@ export const RepayLoanModal: React.FC<Props> = React.memo(function RepayLoanModa
           <p style={{ fontSize: 13, color: "var(--text-muted)", marginBottom: 8 }}>
             현재 잔금: {formatKRW(Math.round(Math.max(0, loan.loanAmount - (loanRepayments.principal.get(loan.id) || 0))))}
           </p>
-          {isInGracePeriod(loan, new Date().toISOString().slice(0, 10)) && (
+          {isInGracePeriod(loan, getTodayKST()) && (
             <p
               style={{
                 fontSize: 13,
                 color: "var(--primary)",
-                background: "var(--primary-muted)",
+                background: "var(--primary-light)",
                 padding: "8px 12px",
                 borderRadius: 6,
                 marginBottom: 16

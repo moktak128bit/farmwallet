@@ -52,6 +52,7 @@ export const InsightsHeader = React.memo(function InsightsHeader({ dateRange, tx
           ))}
         </div>
         <select
+          aria-label="분석 월 선택"
           value={selMonth ?? "all"}
           onChange={(e) => onSelectMonth(e.target.value === "all" ? null : e.target.value)}
           style={{

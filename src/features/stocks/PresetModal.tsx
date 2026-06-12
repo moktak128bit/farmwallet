@@ -1,4 +1,6 @@
+import { useEffect } from "react";
 import type { StockPreset } from "../../types";
+import { useFocusTrap } from "../../hooks/useFocusTrap";
 
 interface Props {
   presets: StockPreset[];
@@ -15,9 +17,27 @@ export function PresetModal({
   onApplyPreset,
   onDeletePreset,
 }: Props) {
+  // 모달 접근성: 포커스 트랩 + ESC 닫기 + role="dialog"
+  const modalRef = useFocusTrap<HTMLDivElement>(true);
+
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key === "Escape") onClose();
+    };
+    window.addEventListener("keydown", handleKeyDown);
+    return () => window.removeEventListener("keydown", handleKeyDown);
+  }, [onClose]);
+
   return (
     <div className="modal-backdrop" onClick={onClose}>
-      <div className="modal" onClick={(e) => e.stopPropagation()}>
+      <div
+        ref={modalRef}
+        className="modal"
+        role="dialog"
+        aria-modal="true"
+        aria-label="프리셋 관리"
+        onClick={(e) => e.stopPropagation()}
+      >
         <div className="modal-header">
           <h3 style={{ margin: 0 }}>프리셋 관리</h3>
           <button type="button" className="secondary" onClick={onClose}>

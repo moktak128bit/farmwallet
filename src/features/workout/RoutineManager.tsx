@@ -1,6 +1,7 @@
 import React, { memo } from "react";
 import type { WorkoutRoutine, WorkoutRoutineExercise } from "../../types";
 import { BODY_PARTS, BODY_PART_COLORS } from "./constants";
+import { CommitInput } from "../../components/ui/CommitInput";
 
 interface Props {
   routines: WorkoutRoutine[];
@@ -90,10 +91,10 @@ const RoutineManagerInner: React.FC<Props> = ({
                   border: "1px solid var(--border)", background: "var(--surface)",
                 }}>
                   <div style={{ display: "flex", gap: 8, alignItems: "center", marginBottom: isEditing ? 10 : 0 }}>
-                    <input
+                    <CommitInput
                       type="text"
                       value={routine.name}
-                      onChange={(e) => onRenameRoutine(routine.id, e.target.value)}
+                      onCommit={(text) => onRenameRoutine(routine.id, text)}
                       style={{ flex: 1, padding: "6px 10px", borderRadius: 6, fontSize: 14, fontWeight: 600 }}
                     />
                     <span style={{ fontSize: 12, color: "var(--text-muted)" }}>
@@ -180,11 +181,11 @@ const RoutineManagerInner: React.FC<Props> = ({
                                     <option key={p} value={p}>{p}</option>
                                   ))}
                                 </select>
-                                <input
+                                <CommitInput
                                   type="text"
                                   value={rex.name}
-                                  onChange={(e) =>
-                                    onUpdateRoutineExercise(routine.id, rex.id, { name: e.target.value })
+                                  onCommit={(text) =>
+                                    onUpdateRoutineExercise(routine.id, rex.id, { name: text })
                                   }
                                   placeholder="운동 이름"
                                   style={{

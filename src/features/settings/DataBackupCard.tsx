@@ -8,9 +8,10 @@
 import React, { useCallback } from "react";
 import { toast } from "react-hot-toast";
 import type { AppData } from "../../types";
-import { normalizeImportedData } from "../../storage";
+import { normalizeImportedData, saveSafetySnapshot } from "../../storage";
 import { getKoreaTime } from "../../utils/date";
 import { ERROR_MESSAGES } from "../../constants/errorMessages";
+import { DATA_SCHEMA_VERSION } from "../../constants/config";
 import { appDataFromTableBackupPayload, buildTableBackupFile } from "../../utils/tableDataBackup";
 
 interface Props {
@@ -47,7 +48,8 @@ export const DataBackupCard: React.FC<Props> = React.memo(function DataBackupCar
   // 백업 파일로 다운로드
   const handleDownloadBackup = useCallback(() => {
     try {
-      const jsonData = JSON.stringify(data, null, 2);
+      // schemaVersion 포함 — 복원 시 올바른 버전 기준으로 마이그레이션되도록
+      const jsonData = JSON.stringify({ ...data, schemaVersion: DATA_SCHEMA_VERSION }, null, 2);
       const blob = new Blob([jsonData], { type: "application/json;charset=utf-8" });
       const url = URL.createObjectURL(blob);
       const a = document.createElement("a");
@@ -108,11 +110,16 @@ export const DataBackupCard: React.FC<Props> = React.memo(function DataBackupCar
       const file = (e.target as HTMLInputElement).files?.[0];
       if (!file) return;
 
+      if (!window.confirm("선택한 테이블 백업 파일의 데이터로 현재 데이터를 덮어씁니다.\n복원 직전 현재 데이터는 안전 스냅샷으로 보관됩니다. 계속할까요?")) {
+        return;
+      }
       const toastId = toast.loading("테이블 백업에서 복원하는 중...");
       try {
         const text = await file.text();
         const parsed = JSON.parse(text) as unknown;
         const appJson = appDataFromTableBackupPayload(parsed);
+        // 복원 직전 현재 데이터 안전 스냅샷
+        await saveSafetySnapshot(data, "테이블 백업 복원 직전 자동 스냅샷");
         const normalized = normalizeImportedData(appJson);
         onChangeData(normalized);
         setText(JSON.stringify(normalized, null, 2));
@@ -129,7 +136,7 @@ export const DataBackupCard: React.FC<Props> = React.memo(function DataBackupCar
       }
     };
     input.click();
-  }, [onChangeData, setText, setError, loadBackupList, onBackupRestored]);
+  }, [data, onChangeData, setText, setError, loadBackupList, onBackupRestored]);
 
   // 백업 파일에서 불러오기
   const handleUploadBackup = useCallback(() => {
@@ -140,10 +147,15 @@ export const DataBackupCard: React.FC<Props> = React.memo(function DataBackupCar
       const file = (e.target as HTMLInputElement).files?.[0];
       if (!file) return;
 
+      if (!window.confirm("선택한 백업 파일의 데이터로 현재 데이터를 덮어씁니다.\n복원 직전 현재 데이터는 안전 스냅샷으로 보관됩니다. 계속할까요?")) {
+        return;
+      }
       const toastId = toast.loading("백업 파일을 불러오는 중...");
       try {
         const text = await file.text();
         const parsed = JSON.parse(text);
+        // 복원 직전 현재 데이터 안전 스냅샷
+        await saveSafetySnapshot(data, "백업 파일 복원 직전 자동 스냅샷");
         const normalized = normalizeImportedData(parsed);
         onChangeData(normalized);
         setText(JSON.stringify(normalized, null, 2));
@@ -160,7 +172,7 @@ export const DataBackupCard: React.FC<Props> = React.memo(function DataBackupCar
       }
     };
     input.click();
-  }, [onChangeData, setText, setError, loadBackupList, onBackupRestored]);
+  }, [data, onChangeData, setText, setError, loadBackupList, onBackupRestored]);
 
   return (
     <div className="card">

@@ -5,11 +5,17 @@
 import type { Account, LedgerEntry, StockTrade, CategoryPresets } from "../types";
 import { computeAccountBalances } from "../calculations";
 import { isUSDStock } from "./finance";
+import { getTodayKST } from "./date";
 
 export interface DuplicateTrade {
   type: "ledger" | "trade";
   entries: (LedgerEntry | StockTrade)[];
   similarity: number;
+  /**
+   * true: 동일 id 중복 (데이터 손상 — 자동 제거 안전)
+   * false: 내용만 동일하고 id는 다름 (같은 가게 2번 결제 등 정상 거래일 수 있어 경고만)
+   */
+  sameId: boolean;
 }
 
 export interface BalanceMismatch {
@@ -55,7 +61,9 @@ function isUsdEntry(l: LedgerEntry): boolean {
 }
 
 /**
- * 중복 거래 탐지
+ * 중복 거래 탐지.
+ * - 동일 id 중복: 실제 데이터 손상 — 자동 제거 대상 (sameId=true)
+ * - 내용 동일·id 상이: 같은 날 같은 금액 2번 결제 등 정상 거래일 수 있음 — 경고만 (sameId=false)
  */
 function detectDuplicateTrades(
   ledger: LedgerEntry[],
@@ -64,7 +72,34 @@ function detectDuplicateTrades(
 ): DuplicateTrade[] {
   const duplicates: DuplicateTrade[] = [];
 
-  // 원장 중복 탐지
+  // 1) 동일 id 중복 (손상)
+  const ledgerById = new Map<string, LedgerEntry[]>();
+  ledger.forEach((entry) => {
+    const id = entry.id ?? "";
+    if (!id) return;
+    if (!ledgerById.has(id)) ledgerById.set(id, []);
+    ledgerById.get(id)!.push(entry);
+  });
+  ledgerById.forEach((entries) => {
+    if (entries.length > 1) {
+      duplicates.push({ type: "ledger", entries, similarity: 1.0, sameId: true });
+    }
+  });
+
+  const tradeById = new Map<string, StockTrade[]>();
+  trades.forEach((trade) => {
+    const id = trade.id ?? "";
+    if (!id) return;
+    if (!tradeById.has(id)) tradeById.set(id, []);
+    tradeById.get(id)!.push(trade);
+  });
+  tradeById.forEach((entries) => {
+    if (entries.length > 1) {
+      duplicates.push({ type: "trade", entries, similarity: 1.0, sameId: true });
+    }
+  });
+
+  // 2) 내용 동일·id 상이 (정보성 경고)
   const ledgerGroups = new Map<string, LedgerEntry[]>();
   ledger.forEach((entry) => {
     const key = [
@@ -85,11 +120,13 @@ function detectDuplicateTrades(
   });
 
   ledgerGroups.forEach((entries) => {
-    if (entries.length > 1) {
+    const distinctIds = new Set(entries.map((e) => e.id));
+    if (entries.length > 1 && distinctIds.size > 1) {
       duplicates.push({
         type: "ledger",
         entries,
-        similarity: 1.0
+        similarity: 1.0,
+        sameId: false
       });
     }
   });
@@ -105,11 +142,13 @@ function detectDuplicateTrades(
   });
 
   tradeGroups.forEach((entries) => {
-    if (entries.length > 1) {
+    const distinctIds = new Set(entries.map((e) => e.id));
+    if (entries.length > 1 && distinctIds.size > 1) {
       duplicates.push({
         type: "trade",
         entries,
-        similarity: 1.0
+        similarity: 1.0,
+        sameId: false
       });
     }
   });
@@ -183,7 +222,8 @@ function validateDateOrder(
 ): IntegrityIssue[] {
   const issues: IntegrityIssue[] = [];
 
-  const today = new Date().toISOString().slice(0, 10);
+  // KST 기준 오늘 — UTC 기준이면 오전 9시 이전 '오늘' 항목을 미래 날짜로 오탐
+  const today = getTodayKST();
   ledger.forEach((entry) => {
     if (entry.date > today) {
       issues.push({
@@ -525,10 +565,13 @@ export function runIntegrityCheck(
   // 중복 거래 탐지
   const duplicates = detectDuplicateTrades(ledger, trades);
   duplicates.forEach((dup) => {
+    const target = dup.type === "ledger" ? "가계부" : "주식";
     issues.push({
       type: "duplicate",
-      severity: dup.entries.length > 2 ? "error" : "warning",
-      message: `${dup.type === "ledger" ? "가계부" : "주식"} 중복 거래 ${dup.entries.length}건 발견`,
+      severity: dup.sameId ? "error" : "warning",
+      message: dup.sameId
+        ? `${target} 동일 ID 중복 ${dup.entries.length}건 발견 (데이터 손상 — 자동 제거 가능)`
+        : `${target} 내용 동일 거래 ${dup.entries.length}건 (ID 상이 — 정상 중복일 수 있어 자동 제거하지 않음)`,
       data: dup
     });
   });

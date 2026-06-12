@@ -32,7 +32,14 @@ export const ClosingReportSection: React.FC<Props> = React.memo(function Closing
           </div>
           <div style={{ fontWeight: 700, fontSize: 24 }}>{status.completionRate.toFixed(1)}%</div>
         </div>
-        <div style={{ marginTop: 12, width: "100%", height: 10, borderRadius: 999, background: "var(--border)" }}>
+        <div
+          role="progressbar"
+          aria-label="이번 달 정산 완료율"
+          aria-valuenow={Math.round(Math.max(0, Math.min(100, status.completionRate)))}
+          aria-valuemin={0}
+          aria-valuemax={100}
+          style={{ marginTop: 12, width: "100%", height: 10, borderRadius: 999, background: "var(--border)" }}
+        >
           <div
             style={{
               width: `${Math.max(0, Math.min(100, status.completionRate))}%`,

@@ -1,6 +1,7 @@
 import React, { useEffect, useRef } from "react";
 import { AlertTriangle, Info } from "lucide-react";
 import { useFocusTrap } from "../../hooks/useFocusTrap";
+import { useModalStackEntry } from "../../utils/modalStack";
 
 interface ConfirmModalProps {
   isOpen: boolean;
@@ -25,6 +26,7 @@ export const ConfirmModal: React.FC<ConfirmModalProps> = ({
   const cancelBtnRef = useRef<HTMLButtonElement>(null);
   const isDanger = confirmStyle === "danger";
   const trapRef = useFocusTrap<HTMLDivElement>(isOpen);
+  const isTopModal = useModalStackEntry(isOpen);
 
   useEffect(() => {
     if (!isOpen) return;
@@ -43,11 +45,12 @@ export const ConfirmModal: React.FC<ConfirmModalProps> = ({
   useEffect(() => {
     if (!isOpen) return;
     const handler = (e: KeyboardEvent) => {
-      if (e.key === "Escape") onCancel();
+      // 모달 중첩 시 최상위 모달만 ESC로 닫힘
+      if (e.key === "Escape" && isTopModal()) onCancel();
     };
     window.addEventListener("keydown", handler);
     return () => window.removeEventListener("keydown", handler);
-  }, [isOpen, onCancel]);
+  }, [isOpen, onCancel, isTopModal]);
 
   if (!isOpen) return null;
 

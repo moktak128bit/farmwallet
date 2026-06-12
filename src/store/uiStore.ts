@@ -67,7 +67,6 @@ const APP_LOG_MAX = 200;
 /** localStorage에 보관할 최근 로그 (세션 복원용 + 사용자 내보내기) */
 const APP_LOG_PERSIST_MAX = 500;
 const APP_LOG_STORAGE_KEY = "fw-app-log-v1";
-let appLogIdCounter = 0;
 
 function loadPersistedLog(): AppLogEntry[] {
   if (typeof window === "undefined") return [];
@@ -86,6 +85,13 @@ function loadPersistedLog(): AppLogEntry[] {
       .slice(-APP_LOG_MAX);
   } catch { return []; }
 }
+
+/** 부팅 시 복원된 영속 로그 — id 카운터를 최대 id 다음부터 시작해 React key 중복 방지 */
+const initialAppLog = loadPersistedLog();
+let appLogIdCounter = initialAppLog.reduce(
+  (max, e) => (Number.isFinite(e.id) && e.id > max ? e.id : max),
+  0
+);
 
 let persistScheduled = false;
 function schedulePersist(getEntries: () => AppLogEntry[]) {
@@ -230,7 +236,7 @@ export const useUIStore = create<UIStore>((set) => ({
   integritySummary: null,
   setIntegritySummary: (integritySummary) => set({ integritySummary }),
 
-  appLog: loadPersistedLog(),
+  appLog: initialAppLog,
   addAppLog: (message, type = "success") =>
     set((state) => {
       const id = ++appLogIdCounter;

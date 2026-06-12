@@ -1,9 +1,10 @@
-import React, { useMemo, useState, useEffect } from "react";
+import React, { useMemo, useState, useEffect, useRef } from "react";
 import { toast } from "react-hot-toast";
 import type { CategoryPresets, ExpenseDetailGroup, LedgerEntry } from "../types";
 import {
   buildMergeCandidates, buildMergeMapper, countMergeTargets, mergePresets,
-  subPairKey, splitSubPairKey, type MergeKind, type MergeSpec,
+  subPairKey, splitSubPairKey, effectiveSubName, expenseMainName,
+  type MergeKind, type MergeSpec,
 } from "../utils/categoryMerge";
 
 interface Props {
@@ -43,8 +44,21 @@ export const CategoriesView: React.FC<Props> = ({ presets, onChangePresets, ledg
     transfer: presets.categoryTypes?.transfer ?? presets.transfer
   }));
 
-  // presets이 변경되면 categoryTypes도 업데이트
+  // presets prop이 외부에서 바뀌면(Ctrl+Z 복원, 다른 경로 저장 등) 로컬 표 상태 전체를 재구성.
+  // 내용 직렬화 비교로 실제 변경 시에만 동기화 — 참조만 바뀐 재렌더로
+  // 사용자가 편집 중인 표가 덮어써지는 것을 방지.
+  const lastSyncedPresetsRef = useRef<string>(JSON.stringify(presets));
   useEffect(() => {
+    const serialized = JSON.stringify(presets);
+    if (serialized === lastSyncedPresetsRef.current) return;
+    lastSyncedPresetsRef.current = serialized;
+    setIncomeRows([...presets.income]);
+    setTransferRows([...presets.transfer]);
+    setExpenseGroups(
+      presets.expenseDetails && presets.expenseDetails.length > 0
+        ? presets.expenseDetails.map((g) => ({ main: g.main, subs: [...g.subs] }))
+        : presets.expense.map((main) => ({ main, subs: [] }))
+    );
     setCategoryTypes({
       fixed: presets.categoryTypes?.fixed ?? [],
       savings: presets.categoryTypes?.savings ?? [],
@@ -223,8 +237,8 @@ export const CategoriesView: React.FC<Props> = ({ presets, onChangePresets, ledg
   const [dragIncome, setDragIncome] = useState<number | null>(null);
   const [dragTransfer, setDragTransfer] = useState<number | null>(null);
 
-  const removeGroup = (index: number) => {
-    if (!confirm("정말 지우시겠습니까?")) return;
+  /** confirm 없이 대분류 열 제거 — 호출부에서 이미 확인한 경로(미사용 카테고리 삭제)용 */
+  const removeGroupAt = (index: number) => {
     if (expenseGroups.length <= 1) {
       // 최소 1개는 유지
       const next = expenseGroups.map((g, i) =>
@@ -236,6 +250,11 @@ export const CategoriesView: React.FC<Props> = ({ presets, onChangePresets, ledg
     const next = expenseGroups.slice();
     next.splice(index, 1);
     setExpenseGroups(next);
+  };
+
+  const removeGroup = (index: number) => {
+    if (!confirm("정말 지우시겠습니까?")) return;
+    removeGroupAt(index);
   };
 
   const removeIncomeRow = (rowIdx: number) => {
@@ -260,34 +279,40 @@ export const CategoriesView: React.FC<Props> = ({ presets, onChangePresets, ledg
     setExpenseGroups(next);
   };
 
-  // 카테고리 사용 통계 계산
+  // 카테고리 사용 통계 계산 — categoryMerge 헬퍼 재사용 (현행 스키마:
+  // category="지출"/subCategory=대분류/detailCategory=세부 + 레거시: category=대분류 모두 집계)
   const categoryUsage = useMemo(() => {
     const usage = new Map<string, number>();
-    
-    // 수입 카테고리 사용 횟수
+
+    // 수입 카테고리 사용 횟수 — effectiveSubName: subCategory 우선, 구세대는 category
     presets.income.forEach((cat) => {
       const count = ledger.filter(
-        (l) => l.kind === "income" && (l.subCategory === cat || l.category === cat)
+        (l) => l.kind === "income" && effectiveSubName(l) === cat
       ).length;
       if (count > 0) usage.set(`income:${cat}`, count);
     });
-    
-    // 지출 대분류 사용 횟수
+
+    // 지출 대분류 사용 횟수 — expenseMainName: subCategory=대분류(현행), category=대분류(레거시)
     presets.expense.forEach((cat) => {
-      const count = ledger.filter((l) => l.kind === "expense" && l.category === cat).length;
+      const count = ledger.filter(
+        (l) => l.kind === "expense" && expenseMainName(l) === cat
+      ).length;
       if (count > 0) usage.set(`expense:${cat}`, count);
     });
-    
-    // 지출 세부 항목 사용 횟수
+
+    // 지출 세부 항목 사용 횟수 — 대분류 일치 + detailCategory=세부 (categoryMerge expenseSub와 동일 기준)
     presets.expenseDetails?.forEach((group) => {
       group.subs.forEach((sub) => {
         const count = ledger.filter(
-          (l) => l.kind === "expense" && l.subCategory === sub
+          (l) =>
+            l.kind === "expense" &&
+            expenseMainName(l) === group.main &&
+            (l.detailCategory ?? "").trim() === sub
         ).length;
         if (count > 0) usage.set(`expense:${group.main}:${sub}`, count);
       });
     });
-    
+
     return usage;
   }, [presets, ledger]);
 
@@ -440,6 +465,7 @@ export const CategoriesView: React.FC<Props> = ({ presets, onChangePresets, ledg
                           value={g.main}
                           onChange={(e) => updateMain(idx, e.target.value)}
                           style={{ flex: 1, minWidth: 100 }}
+                          aria-label={`지출 대분류 ${idx + 1}${g.main ? ` (${g.main})` : ""}`}
                         />
                         <button
                           type="button"
@@ -548,6 +574,7 @@ export const CategoriesView: React.FC<Props> = ({ presets, onChangePresets, ledg
                         onChange={(e) => updateIncomeRow(rowIdx, e.target.value)}
                         style={{ flex: 1, minWidth: 0 }}
                         onClick={(e) => e.stopPropagation()}
+                        aria-label={`수입 항목 ${rowIdx + 1}`}
                       />
                       {(incomeItems[rowIdx] ?? "").trim() && (
                         <button
@@ -590,6 +617,7 @@ export const CategoriesView: React.FC<Props> = ({ presets, onChangePresets, ledg
                         onChange={(e) => updateTransferRow(rowIdx, e.target.value)}
                         style={{ flex: 1, minWidth: 0 }}
                         onClick={(e) => e.stopPropagation()}
+                        aria-label={`이체 항목 ${rowIdx + 1}`}
                       />
                       {(transferItems[rowIdx] ?? "").trim() && (
                         <button
@@ -633,6 +661,7 @@ export const CategoriesView: React.FC<Props> = ({ presets, onChangePresets, ledg
                           onChange={(e) => updateSub(colIdx, rowIdx, e.target.value)}
                           style={{ flex: 1, minWidth: 0 }}
                           onClick={(e) => e.stopPropagation()}
+                          aria-label={`${g.main || `대분류 ${colIdx + 1}`} 세부 항목 ${rowIdx + 1}`}
                         />
                         {(g.subs[rowIdx] ?? "").trim() && (
                           <button
@@ -722,7 +751,8 @@ export const CategoriesView: React.FC<Props> = ({ presets, onChangePresets, ledg
                         } else if (item.type === "지출 대분류") {
                           const groupIndex = expenseGroups.findIndex((g) => g.main === item.name);
                           if (groupIndex >= 0) {
-                            removeGroup(groupIndex);
+                            // 이미 위에서 confirm 했으므로 재확인 없는 경로 사용 (confirm 중복 방지)
+                            removeGroupAt(groupIndex);
                           }
                         } else if (item.type === "지출 세부") {
                           const [main, sub] = item.path.split(" > ");

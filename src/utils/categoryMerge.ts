@@ -37,8 +37,9 @@ const matchesIncomeOrTransfer = (l: LedgerEntry, kind: "income" | "transfer", na
 const matchesExpenseMain = (l: LedgerEntry, main: string) =>
   l.kind === "expense" && (l.subCategory === main || l.category === main);
 
-/** 지출 항목의 실효 대분류 — subCategory 우선, 구세대(재테크 등)는 category. */
-const expenseMainName = (l: LedgerEntry): string => {
+/** 지출 항목의 실효 대분류 — subCategory 우선, 구세대(재테크 등)는 category.
+ * (CategoriesPage 사용 통계 등 분류 집계의 단일 소스로 export) */
+export const expenseMainName = (l: LedgerEntry): string => {
   const sub = (l.subCategory || "").trim();
   if (sub) return sub;
   const cat = (l.category || "").trim();

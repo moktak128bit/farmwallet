@@ -25,10 +25,20 @@ export interface BackupIntegrity {
 
 const AUTO_SAVE_ERROR_TOAST_ID = "auto-save-error";
 
-export type UseBackupOptions = { onLog?: (message: string, type?: "success" | "error" | "info") => void };
+export type UseBackupOptions = {
+  onLog?: (message: string, type?: "success" | "error" | "info") => void;
+  /**
+   * true면 자동저장·unload flush·수동 백업을 모두 차단.
+   * 데이터 로드 실패(loadFailed) 상태에서 빈/불완전 데이터가
+   * 손상됐지만 복구 가능한 원본 localStorage를 덮어쓰는 것을 방지.
+   */
+  disabled?: boolean;
+};
 
 export function useBackup(data: AppData, options?: UseBackupOptions) {
   const onLog = options?.onLog;
+  const disabledRef = useRef(options?.disabled === true);
+  disabledRef.current = options?.disabled === true;
   const [latestBackupAt, setLatestBackupAt] = useState<string | null>(null);
   const [backupVersion, setBackupVersion] = useState<number>(0);
   const [backupIntegrity, setBackupIntegrity] = useState<BackupIntegrity>({
@@ -99,27 +109,43 @@ export function useBackup(data: AppData, options?: UseBackupOptions) {
   }, [refreshLatestBackup]);
 
   // 탭 닫힘/새로고침 직전 pending 자동저장을 flush — 500ms 디바운스 중 F5 → 유실 방지
-  // beforeunload는 동기적이므로 retry 루프 없이 단발 setItem만 시도. 실패 시 콘솔 로깅만.
+  // beforeunload는 동기적이므로 retry 루프 없이 단발 setItem만 시도.
   // pagehide는 모바일 (특히 iOS Safari)에서 더 안정적인 종료 시그널.
   useEffect(() => {
     if (typeof window === "undefined") return;
     const flush = () => {
+      // 로드 실패 상태에서는 flush 금지 — 손상됐지만 복구 가능한 원본을 덮어쓰지 않는다
+      if (disabledRef.current) return;
       if (autoSaveTimerRef.current) {
         window.clearTimeout(autoSaveTimerRef.current);
         autoSaveTimerRef.current = null;
       }
       try {
-        const payload = JSON.stringify(data);
+        const payload = JSON.stringify(dataRef.current);
         if (!payload || payload === lastSavedPayloadRef.current) return;
-        // 동기 저장만 — async retry 루프는 unload 도중 잘릴 수 있음.
-        window.localStorage.setItem(STORAGE_KEYS.DATA, payload);
+        // 분리 저장 정책 준수: DATA 키에는 캐시(prices/tickerDatabase/historicalDailyCloses)를
+        // 제외한 사용자 데이터만 기록 (full payload를 넣으면 다음 정상 저장까지 키 용량이 부풀음).
+        const { prices: _p, tickerDatabase: _t, historicalDailyCloses: _h, ...userFields } = dataRef.current;
+        const userDataStr = JSON.stringify(userFields);
+        try {
+          // 동기 저장만 — async retry 루프는 unload 도중 잘릴 수 있음.
+          window.localStorage.setItem(STORAGE_KEYS.DATA, userDataStr);
+        } catch (writeErr) {
+          // 본 저장 실패(quota 등) — 드래프트 슬롯에라도 기록을 시도해 다음 부팅에서 복구 가능하게
+          try {
+            window.localStorage.setItem(STORAGE_KEYS.DRAFT, payload);
+            window.localStorage.setItem(STORAGE_KEYS.DRAFT_AT, Date.now().toString());
+          } catch { /* quota — 더 이상 손쓸 수 없음 */ }
+          console.warn("[useBackup] unload flush 저장 실패 — 드래프트 기록 시도", writeErr);
+          return;
+        }
         lastSavedPayloadRef.current = payload;
         // unload flush가 성공했다면 드래프트 슬롯도 정리 — 다음 boot에서 거짓 복구 방지
         try {
           window.localStorage.removeItem(STORAGE_KEYS.DRAFT);
           window.localStorage.removeItem(STORAGE_KEYS.DRAFT_AT);
         } catch { /* */ }
-        notifyDataChanged(payload);
+        notifyDataChanged(userDataStr);
       } catch (err) {
         console.warn("[useBackup] beforeunload flush failed", err);
       }
@@ -130,7 +156,7 @@ export function useBackup(data: AppData, options?: UseBackupOptions) {
       window.removeEventListener("beforeunload", flush);
       window.removeEventListener("pagehide", flush);
     };
-  }, [data]);
+  }, []);
 
   /**
    * 디바운스/즉시 flush 양쪽이 호출하는 실제 저장 루틴.
@@ -139,6 +165,8 @@ export function useBackup(data: AppData, options?: UseBackupOptions) {
    */
   const runAutoSave = useCallback((knownPayload?: string) => {
     if (typeof window === "undefined") return;
+    // 로드 실패 상태에서는 저장 금지 — 복구 가능한 원본 localStorage 보호
+    if (disabledRef.current) return;
     const ui = useUIStore.getState();
     // 디바운스 경로는 effect에서 직렬화한 payload를 재사용해 중복 stringify를 피한다.
     const payload = knownPayload ?? JSON.stringify(dataRef.current);
@@ -205,6 +233,7 @@ export function useBackup(data: AppData, options?: UseBackupOptions) {
 
   useEffect(() => {
     if (typeof window === "undefined") return;
+    if (disabledRef.current) return; // 로드 실패 상태 — 자동저장 예약 금지
     if (!hasMountedRef.current) {
       hasMountedRef.current = true;
       return;
@@ -244,6 +273,10 @@ export function useBackup(data: AppData, options?: UseBackupOptions) {
   }, [data, runAutoSave]);
 
   const handleManualBackup = useCallback(async () => {
+    if (disabledRef.current) {
+      toast.error("데이터 로드 실패 상태에서는 백업할 수 없습니다. 먼저 복구를 진행하세요.");
+      return;
+    }
     const toastId = "manual-backup";
     onLog?.("백업 시작...", "info");
     toast.loading("백업 저장 중...", { id: toastId });
@@ -265,7 +298,9 @@ export function useBackup(data: AppData, options?: UseBackupOptions) {
 
       await refreshLatestBackup();
 
-      if (result.fileSaved && result.localSaved) {
+      // 프로덕션에서는 파일 저장 단계가 의도적으로 생략됨(fileSkipped) — 로컬 저장만으로 완전 성공
+      const fileOk = result.fileSaved || result.fileSkipped === true;
+      if (fileOk && result.localSaved) {
         onLog?.("백업 완료.", "success");
         toast.success("백업 저장 완료", { id: toastId });
         return;

@@ -12,6 +12,7 @@ import { toast } from "react-hot-toast";
 import type { AppData } from "../types";
 import { getAllBackupList, type BackupEntry } from "../storage";
 import { ERROR_MESSAGES } from "../constants/errorMessages";
+import { STORAGE_KEYS } from "../constants/config";
 import { PWAInstallCard } from "../features/settings/PWAInstallCard";
 import { DataBackupCard } from "../features/settings/DataBackupCard";
 import { ExportToolsCards } from "../features/settings/ExportToolsCards";
@@ -45,6 +46,9 @@ interface Props {
   /** 마지막 자동 저장/불러오기 시각 */
   gistLastPushAt?: string | null;
   gistLastPullAt?: string | null;
+  /** 정식 Gist push/pull 경로 (useGistSync.manualPush/manualPull) — 카드 자체 fetch 우회 방지 */
+  onGistManualPush?: () => Promise<void>;
+  onGistManualPull?: () => Promise<void>;
 }
 
 type SettingsTab = "backup" | "integrity" | "theme" | "accessibility" | "dashboard" | "savingsMigration";
@@ -60,13 +64,19 @@ export const SettingsView: React.FC<Props> = ({
   autoSyncEnabled = false,
   onAutoSyncChange,
   gistLastPushAt,
-  gistLastPullAt
+  gistLastPullAt,
+  onGistManualPush,
+  onGistManualPull
 }) => {
   const [activeTab, setActiveTab] = useState<SettingsTab>("backup");
   const [showThemeCustomizer, setShowThemeCustomizer] = useState(false);
   const [text, setText] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [backups, setBackups] = useState<BackupEntry[]>([]);
+  // 고대비 모드 — 렌더 중 DOM(classList) 직접 읽기 대신 상태로 관리
+  const [highContrast, setHighContrast] = useState(
+    () => typeof document !== "undefined" && document.documentElement.classList.contains("high-contrast")
+  );
 
   const loadBackupList = useCallback(async () => {
     try {
@@ -129,7 +139,7 @@ export const SettingsView: React.FC<Props> = ({
               categoryPresets={data.categoryPresets}
             />
             <MigrationToolsCards data={data} onChangeData={onChangeData} />
-            <DataResetCard onChangeData={onChangeData} setText={setText} setError={setError} />
+            <DataResetCard data={data} onChangeData={onChangeData} setText={setText} setError={setError} />
             {/* 💰 하루 예산 한도 카드는 가계부 상단 "예산 / 반복 지출" 탭으로 이동됨. */}
             <BackupSnapshotCard
               backups={backups}
@@ -138,18 +148,19 @@ export const SettingsView: React.FC<Props> = ({
             />
             <PriceApiCard />
             <GistSyncCard
-              data={data}
-              onChangeData={onChangeData}
               autoSyncEnabled={autoSyncEnabled}
               onAutoSyncChange={onAutoSyncChange}
               gistLastPushAt={gistLastPushAt}
               gistLastPullAt={gistLastPullAt}
+              onManualPush={onGistManualPush}
+              onManualPull={onGistManualPull}
             />
             <DateAccountCard accounts={data.accounts} />
           </div>
 
           <BackupHistoryTable
             backups={backups}
+            data={data}
             onChangeData={onChangeData}
             setText={setText}
             setError={setError}
@@ -162,6 +173,7 @@ export const SettingsView: React.FC<Props> = ({
             setText={setText}
             error={error}
             setError={setError}
+            data={data}
             onChangeData={onChangeData}
             onBackupRestored={onBackupRestored}
           />
@@ -204,16 +216,15 @@ export const SettingsView: React.FC<Props> = ({
           <label style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 12 }}>
             <input
               type="checkbox"
-              checked={typeof document !== "undefined" && document.documentElement.classList.contains("high-contrast")}
+              checked={highContrast}
               onChange={(e) => {
+                const next = e.target.checked;
+                setHighContrast(next);
                 if (typeof document !== "undefined") {
-                  if (e.target.checked) {
-                    document.documentElement.classList.add("high-contrast");
-                    localStorage.setItem("fw-high-contrast", "true");
-                  } else {
-                    document.documentElement.classList.remove("high-contrast");
-                    localStorage.setItem("fw-high-contrast", "false");
-                  }
+                  document.documentElement.classList.toggle("high-contrast", next);
+                  try {
+                    localStorage.setItem(STORAGE_KEYS.HIGH_CONTRAST, next ? "true" : "false");
+                  } catch { /* 저장 실패해도 토글 자체는 유지 */ }
                 }
               }}
             />

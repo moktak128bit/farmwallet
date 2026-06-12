@@ -1,14 +1,16 @@
 /**
  * 소비 캘린더 카드 — DashboardPage에서 분리.
  * 월 이동/분류 필터/선택 날짜 상태와 캘린더 집계(±1년 창 내 ledger → 일별 합계)를
- * 카드가 전부 소유한다. React.memo로 감싸므로 부모가 넘기는 props는
+ * 카드가 전부 소유한다. 분류는 summaryMath.classifyLedgerFlow 단일 기준 —
+ * 신용결제 제외(이중계상 방지), "재테크" = 저축·투자 이체 + 레거시 저축성지출.
+ * React.memo로 감싸므로 부모가 넘기는 props는
  * 안정적(부모 useMemo 결과 또는 원시값)이어야 한다.
  */
 import React, { useMemo, useState } from "react";
 import type { Account, CategoryPresets, LedgerEntry } from "../../types";
 import { formatKRW } from "../../utils/formatter";
 import { addDaysToIso, formatIsoLocal, shiftMonth } from "../../utils/date";
-import { isSavingsExpenseEntry } from "../../utils/category";
+import { classifyLedgerFlow, toKrwAmount } from "./summaryMath";
 
 type SpendingCalendarRow = {
   id: string;
@@ -106,16 +108,27 @@ export const SpendingCalendarCard: React.FC<Props> = React.memo(function Spendin
   const calendarWindowStart = useMemo(() => addDaysToIso(today, -365), [today]);
   const calendarWindowEnd = useMemo(() => addDaysToIso(today, 89), [today]);
 
+  // 집계 창(−365일~+89일) 밖의 달은 기록이 있어도 0으로 보여 오해 소지 —
+  // 달 이동을 창 안의 달로 제한한다 (창 경계 달은 일부만 집계될 수 있어 하단에 안내).
+  const minNavMonth = calendarWindowStart.slice(0, 7);
+  const maxNavMonth = calendarWindowEnd.slice(0, 7);
+  const canGoPrev = cashflowMonth > minNavMonth;
+  const canGoNext = cashflowMonth < maxNavMonth;
+  const isEdgeMonth = cashflowMonth === minNavMonth || cashflowMonth === maxNavMonth;
+
   const spendingCalendarRows = useMemo(() => {
     const rows: SpendingCalendarRow[] = [];
-    const toKrw = (entry: LedgerEntry) =>
-      entry.currency === "USD" && fxRate ? entry.amount * fxRate : entry.amount;
 
     ledger.forEach((entry) => {
       if (!entry.date || entry.date < calendarWindowStart || entry.date > calendarWindowEnd) return;
-      if (entry.kind === "transfer") return;
+      // 단일 분류 기준 (classifyLedgerFlow):
+      //  - 신용결제 expense 제외 (카드 사용 시점에 이미 잡힘 — 이중계상 방지)
+      //  - 재테크 = 저축·투자 이체 + 레거시 저축성지출 (요약 카드·월별 추이와 동일 정의)
+      //  - 재테크가 아닌 일반 이체는 제외
+      const flow = classifyLedgerFlow(entry, categoryPresets);
+      if (!flow) return;
 
-      const amount = toKrw(entry);
+      const amount = toKrwAmount(entry, fxRate);
       if (amount <= 0) return;
 
       const title = entry.subCategory || entry.description || entry.category || "미분류";
@@ -123,7 +136,7 @@ export const SpendingCalendarCard: React.FC<Props> = React.memo(function Spendin
       const subCategory = entry.subCategory || undefined;
       const description = entry.description || undefined;
 
-      if (entry.kind === "income") {
+      if (flow === "income") {
         rows.push({
           id: entry.id,
           date: entry.date,
@@ -140,23 +153,21 @@ export const SpendingCalendarCard: React.FC<Props> = React.memo(function Spendin
         return;
       }
 
-      if (entry.kind === "expense") {
-        if (!entry.fromAccountId) return;
-        const isSavings = isSavingsExpenseEntry(entry, accounts, categoryPresets);
-        rows.push({
-          id: entry.id,
-          date: entry.date,
-          title,
-          category,
-          subCategory,
-          description,
-          amount,
-          type: isSavings ? "investing" : "spending",
-          fromAccountId: entry.fromAccountId,
-          fromAccountName: accountNameById.get(entry.fromAccountId),
-          source: "ledger"
-        });
-      }
+      // 지출(expense)은 기존 정책대로 출금 계좌 없는 항목 제외. 재테크 이체는 계좌 없어도 표시.
+      if (entry.kind === "expense" && !entry.fromAccountId) return;
+      rows.push({
+        id: entry.id,
+        date: entry.date,
+        title,
+        category,
+        subCategory,
+        description,
+        amount,
+        type: flow === "investing" ? "investing" : "spending",
+        fromAccountId: entry.fromAccountId,
+        fromAccountName: entry.fromAccountId ? accountNameById.get(entry.fromAccountId) : undefined,
+        source: "ledger"
+      });
     });
 
     return rows.sort((a, b) => {
@@ -164,7 +175,7 @@ export const SpendingCalendarCard: React.FC<Props> = React.memo(function Spendin
       if (byDate !== 0) return byDate;
       return b.amount - a.amount;
     });
-  }, [ledger, calendarWindowStart, calendarWindowEnd, fxRate, accountNameById, accounts, categoryPresets]);
+  }, [ledger, calendarWindowStart, calendarWindowEnd, fxRate, accountNameById, categoryPresets]);
 
   const filteredSpendingRows = useMemo(() => {
     if (!spendingFilterType) return spendingCalendarRows;
@@ -242,7 +253,9 @@ export const SpendingCalendarCard: React.FC<Props> = React.memo(function Spendin
             type="button"
             className="secondary"
             style={{ fontSize: 15, padding: "8px 16px", fontWeight: 600 }}
-            onClick={() => setCashflowMonth((prev) => shiftMonth(prev, -1))}
+            onClick={() => setCashflowMonth((prev) => (prev > minNavMonth ? shiftMonth(prev, -1) : prev))}
+            disabled={!canGoPrev}
+            title={canGoPrev ? undefined : "캘린더 집계 범위(오늘 기준 1년 전)까지만 이동할 수 있습니다"}
           >
             ◀ 이전달
           </button>
@@ -251,7 +264,9 @@ export const SpendingCalendarCard: React.FC<Props> = React.memo(function Spendin
             type="button"
             className="secondary"
             style={{ fontSize: 15, padding: "8px 16px", fontWeight: 600 }}
-            onClick={() => setCashflowMonth((prev) => shiftMonth(prev, 1))}
+            onClick={() => setCashflowMonth((prev) => (prev < maxNavMonth ? shiftMonth(prev, 1) : prev))}
+            disabled={!canGoNext}
+            title={canGoNext ? undefined : "캘린더 집계 범위(오늘 기준 약 3개월 후)까지만 이동할 수 있습니다"}
           >
             다음달 ▶
           </button>
@@ -358,6 +373,11 @@ export const SpendingCalendarCard: React.FC<Props> = React.memo(function Spendin
 
       <p className="hint" style={{ marginTop: 12, marginBottom: 8 }}>
         {cashflowMonth} 소비 {formatKRW(Math.round(selectedMonthTotals.spending))} / 재테크 {formatKRW(Math.round(selectedMonthTotals.investing))} / 수입 {formatKRW(Math.round(selectedMonthTotals.income))} · {selectedMonthSpendingRows.length}건
+        {isEdgeMonth && (
+          <span style={{ marginLeft: 6, color: "var(--warning)" }}>
+            · 이 달은 집계 범위 경계라 일부 날짜만 집계될 수 있습니다
+          </span>
+        )}
       </p>
 
       {selectedCalendarDate ? (

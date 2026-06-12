@@ -5,7 +5,7 @@
  * React.memo로 감싸므로 부모가 넘기는 props는 안정적(store 참조·원시값)이어야 한다.
  */
 import React, { useMemo } from "react";
-import type { LedgerEntry } from "../../types";
+import type { CategoryPresets, LedgerEntry } from "../../types";
 import { formatKRW } from "../../utils/formatter";
 import { shiftMonth } from "../../utils/date";
 import { computeTransferSavingsRate } from "../../utils/savingsRate";
@@ -15,20 +15,23 @@ interface Props {
   ledger: LedgerEntry[];
   fxRate: number | null;
   currentMonth: string;
+  /** 레거시 저축성지출(재테크) 분류용 — 이번달 요약 카드와 동일 기준 */
+  categoryPresets?: CategoryPresets;
 }
 
 export const SavingsRatioCard: React.FC<Props> = React.memo(function SavingsRatioCard({
   ledger,
   fxRate,
   currentMonth,
+  categoryPresets,
 }) {
   const lastMonth = useMemo(() => shiftMonth(currentMonth, -1), [currentMonth]);
 
   /** 저번달 요약 (저축 대비 비교 위젯용) */
   const lastMonthSummary = useMemo(() => ({
     month: lastMonth,
-    ...computeLedgerSummary(ledger, fxRate, lastMonth),
-  }), [ledger, fxRate, lastMonth]);
+    ...computeLedgerSummary(ledger, fxRate, lastMonth, categoryPresets),
+  }), [ledger, fxRate, lastMonth, categoryPresets]);
 
   /** 저번달 재테크 세부 (저축 대비 비교 위젯용) */
   const lastMonthRecheckBreakdown = useMemo(

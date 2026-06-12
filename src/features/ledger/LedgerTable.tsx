@@ -12,6 +12,9 @@ import { ledgerEntryGross, type LedgerDisplayRow } from "../../utils/ledgerHelpe
 import { isCoarsePointer } from "../../utils/pointer";
 import { useAppStore } from "../../store/appStore";
 import { useLedgerColumnResize } from "./useLedgerColumnResize";
+import { useFxRateValue } from "../../context/FxRateContext";
+import { validateDate } from "../../utils/validation";
+import { getTodayKST } from "../../utils/date";
 
 // ─── 삭제 토스트 [실행 취소] — "삭제 항목 재삽입" 복원 ───────────────────
 // 풀 스냅샷 undo가 아니다:
@@ -55,7 +58,6 @@ interface Props {
   viewMode: "all" | "monthly";
   /** 필터/보기 변경 시 테이블 영역 리마운트용 키 (부모 memo) */
   ledgerScrollKey: string;
-  isBatchEditMode: boolean;
   ledgerSort: LedgerSortState;
   setLedgerSort: React.Dispatch<React.SetStateAction<LedgerSortState>>;
   /** 인라인 셀 편집 상태 — ESC 단축키 핸들러가 부모에 있어 부모 소유 */
@@ -84,7 +86,6 @@ export const LedgerTable: React.FC<Props> = React.memo(function LedgerTable({
   balanceAfterByLedgerId,
   viewMode,
   ledgerScrollKey,
-  isBatchEditMode,
   ledgerSort,
   setLedgerSort,
   editingField,
@@ -105,14 +106,16 @@ export const LedgerTable: React.FC<Props> = React.memo(function LedgerTable({
   const ledgerTableRef = useRef<HTMLTableElement>(null);
   // 터치(coarse 포인터)에서는 더블클릭이 불가 — 단일 탭을 편집 진입 대체 경로로 사용 (렌더당 1회 평가)
   const coarsePointer = isCoarsePointer();
+  // 일별 소계 USD 환산용 환율 (요약 카드와 동일 정책)
+  const fxRate = useFxRateValue();
   const [draggingId, setDraggingId] = useState<string | null>(null);
   // 페이지네이션 상태
   const [listPage, setListPage] = useState(0);
   const [showDailySummary, setShowDailySummary] = useState<boolean>(() => {
     try { return localStorage.getItem("fw-daily-summary") !== "false"; } catch { return true; }
   });
-  // 배치 편집 선택 상태
-  const [selectedLedgerIds, setSelectedLedgerIds] = useState<Set<string>>(new Set());
+  // 행 순서 변경(☰ 드래그)은 전체 보기 + 날짜 정렬일 때만 — 핸들 표시와 draggable 조건 일치
+  const canReorder = viewMode === "all" && ledgerSort.key === "date";
 
   // 컬럼 너비 상태 (localStorage에서 로드; 10개 = 데이터 9 + 작업 1: 할인 전·할인·최종)
   const [columnWidths, setColumnWidths] = useState<number[]>(() => {
@@ -204,6 +207,15 @@ export const LedgerTable: React.FC<Props> = React.memo(function LedgerTable({
 
     const updated: LedgerEntry = { ...entry };
     if (field === "date") {
+      // 폼과 동일 검증 — 빈 값·형식 오류·미래 날짜 거부 (KST 기준 오늘까지)
+      const todayStr = getTodayKST();
+      const dv = validateDate(editingValue, new Date(todayStr + "T00:00:00+09:00"));
+      if (!dv.valid) {
+        toast.error(dv.error || "유효하지 않은 날짜입니다");
+        setEditingField(null);
+        setEditingValue("");
+        return;
+      }
       updated.date = editingValue;
     } else if (field === "category") {
       updated.category = editingValue;
@@ -284,6 +296,13 @@ export const LedgerTable: React.FC<Props> = React.memo(function LedgerTable({
         }
         updated.amount = net;
       } else {
+        // 지출도 할인이 금액(할인 전)을 넘으면 음수 금액이 저장됨 — 수입과 동일하게 거부
+        if (disc > gross) {
+          toast.error("할인은 금액(할인 전)을 넘을 수 없습니다");
+          setEditingField(null);
+          setEditingValue("");
+          return;
+        }
         updated.amount = gross - disc;
       }
       updated.discountAmount = disc > 0 ? disc : undefined;
@@ -348,7 +367,6 @@ export const LedgerTable: React.FC<Props> = React.memo(function LedgerTable({
         <div key={ledgerScrollKey}>
         <table ref={ledgerTableRef} className="data-table ledger-table" style={{ width: "100%", minWidth: 0, tableLayout: "fixed" }}>
           <colgroup>
-            {isBatchEditMode && <col key="cb" style={{ width: "40px" }} />}
             {widthsForRender.map((width, index) => {
               const workColPx = 168;
               if (index === 10) {
@@ -361,22 +379,6 @@ export const LedgerTable: React.FC<Props> = React.memo(function LedgerTable({
           </colgroup>
           <thead>
           <tr>
-            {isBatchEditMode && (
-              <th style={{ width: "40px", minWidth: "40px" }}>
-                <input
-                  type="checkbox"
-                  checked={selectedLedgerIds.size === filteredLedger.length && filteredLedger.length > 0}
-                  onChange={(e) => {
-                    if (e.target.checked) {
-                      setSelectedLedgerIds(new Set(filteredLedger.map((l) => l.id)));
-                    } else {
-                      setSelectedLedgerIds(new Set());
-                    }
-                  }}
-                  title="전체 선택/해제"
-                />
-              </th>
-            )}
             <th className="ledger-col-date" style={{ position: "relative", width: ledgerColumnWidthStyles[0] }}>
               <button type="button" className="sort-header" onClick={() => toggleLedgerSort("date")}>
                 날짜 <span className="arrow">{sortIndicator(ledgerSort.key, "date", ledgerSort.direction)}</span>
@@ -499,6 +501,8 @@ export const LedgerTable: React.FC<Props> = React.memo(function LedgerTable({
             const rows: React.ReactNode[] = [];
             let prevDate: string | null = null;
             let dayIncome = 0, dayExpense = 0, dayCount = 0, dayDate = "";
+            // USD 항목은 환율로 KRW 환산 후 소계 합산 (요약 카드와 동일 정책)
+            const toKrw = (l: LedgerDisplayRow) => (l.currency === "USD" && fxRate ? l.amount * fxRate : l.amount);
 
             const flushDaySummary = () => {
               if (!enableDaySummary || !dayDate || dayCount === 0) return;
@@ -509,9 +513,10 @@ export const LedgerTable: React.FC<Props> = React.memo(function LedgerTable({
                     <div style={{ display: "flex", alignItems: "center", gap: 12, flexWrap: "wrap" }}>
                       <span style={{ fontWeight: 600, color: "var(--text)" }}>{formatShortDate(dayDate)}</span>
                       <span style={{ color: "var(--text-muted)" }}>{dayCount}건</span>
-                      {dayIncome > 0 && <span style={{ color: "var(--chart-income)", fontWeight: 500 }}>+{formatKRW(dayIncome)}</span>}
-                      {dayExpense > 0 && <span style={{ color: "var(--chart-expense)", fontWeight: 500 }}>-{formatKRW(dayExpense)}</span>}
-                      <span style={{ fontWeight: 600, color: net >= 0 ? "var(--chart-income)" : "var(--chart-expense)" }}>
+                      {/* 색상 의미는 요약 카드와 동일: 수입=초록(success), 지출=빨강(danger) */}
+                      {dayIncome > 0 && <span style={{ color: "var(--success)", fontWeight: 500 }}>+{formatKRW(dayIncome)}</span>}
+                      {dayExpense > 0 && <span style={{ color: "var(--danger)", fontWeight: 500 }}>-{formatKRW(dayExpense)}</span>}
+                      <span style={{ fontWeight: 600, color: net >= 0 ? "var(--success)" : "var(--danger)" }}>
                         = {net >= 0 ? "+" : ""}{formatKRW(net)}
                       </span>
                     </div>
@@ -520,7 +525,9 @@ export const LedgerTable: React.FC<Props> = React.memo(function LedgerTable({
               );
             };
 
-            pageItems.forEach((l, index) => {
+            pageItems.forEach((l, pageIndex) => {
+            // 부모(Shift+드래그 합계)는 filteredLedger 절대 인덱스 기준 — 페이지 상대 인덱스를 절대로 변환
+            const index = listPage * PAGE_SIZE + pageIndex;
             if (enableDaySummary && prevDate !== null && l.date !== prevDate) {
               flushDaySummary();
               dayIncome = 0; dayExpense = 0; dayCount = 0;
@@ -528,8 +535,8 @@ export const LedgerTable: React.FC<Props> = React.memo(function LedgerTable({
             if (enableDaySummary) {
               dayDate = l.date;
               dayCount++;
-              if (l.kind === "income") dayIncome += l.amount;
-              else if (l.kind === "expense") dayExpense += l.amount;
+              if (l.kind === "income") dayIncome += toKrw(l);
+              else if (l.kind === "expense") dayExpense += toKrw(l);
             }
             prevDate = l.date;
 
@@ -606,16 +613,16 @@ export const LedgerTable: React.FC<Props> = React.memo(function LedgerTable({
             <tr
               key={l.id}
               data-ledger-id={l.id}
-              draggable={ledgerSort.key === "date" && !isBatchEditMode && !(l as LedgerDisplayRow)._tradeId}
+              draggable={canReorder && !(l as LedgerDisplayRow)._tradeId}
               onMouseDown={(e) => {
-                if (e.shiftKey && !isBatchEditMode) {
+                if (e.shiftKey) {
                   e.preventDefault();
                   e.stopPropagation();
                   handleDragSumStart(index);
                 }
               }}
               onClick={(e) => {
-                if (e.shiftKey && !isBatchEditMode) {
+                if (e.shiftKey) {
                   e.preventDefault();
                   e.stopPropagation();
                   setSelectedLedgerIdsForSum((prev) => {
@@ -631,17 +638,17 @@ export const LedgerTable: React.FC<Props> = React.memo(function LedgerTable({
                   e.preventDefault();
                   return;
                 }
-                if (ledgerSort.key !== "date" || isBatchEditMode) return;
+                if (!canReorder) return;
                 setDraggingId(l.id);
               }}
               onDragOver={(e) => {
-                if (ledgerSort.key !== "date") return;
+                if (!canReorder) return;
                 // 같은 날짜 항목 위에서만 드롭을 허용 (커서로 피드백)
                 const src = draggingId ? ledger.find((x) => x.id === draggingId) : null;
                 if (src && src.date === l.date) e.preventDefault();
               }}
               onDrop={(e) => {
-                if (ledgerSort.key !== "date") return;
+                if (!canReorder) return;
                 e.preventDefault();
                 if (draggingId && draggingId !== l.id && !(l as LedgerDisplayRow)._tradeId) {
                   const src = ledger.find((x) => x.id === draggingId);
@@ -663,27 +670,6 @@ export const LedgerTable: React.FC<Props> = React.memo(function LedgerTable({
                   : undefined
               }
             >
-              {isBatchEditMode && (
-                <td style={{ width: "40px", minWidth: "40px" }}>
-                  {(l as LedgerDisplayRow)._tradeId ? (
-                    <span style={{ color: "var(--text-muted)", fontSize: 11 }}>주식</span>
-                  ) : (
-                    <input
-                      type="checkbox"
-                      checked={selectedLedgerIds.has(l.id)}
-                      onChange={(e) => {
-                        const newSet = new Set(selectedLedgerIds);
-                        if (e.target.checked) {
-                          newSet.add(l.id);
-                        } else {
-                          newSet.delete(l.id);
-                        }
-                        setSelectedLedgerIds(newSet);
-                      }}
-                    />
-                  )}
-                </td>
-              )}
               <td
                 className="ledger-col-date cell-editable"
                 onDoubleClick={editDateCell}
@@ -693,7 +679,7 @@ export const LedgerTable: React.FC<Props> = React.memo(function LedgerTable({
               >
                 {editingField?.id === l.id && editingField.field === "date" ? (
                   <>
-                    {viewMode === "all" && (
+                    {canReorder && (
                       <span className="drag-handle" style={{ position: "absolute", left: "4px", color: "var(--text-muted)", fontSize: "12px" }}>☰</span>
                     )}
                     <input
@@ -706,15 +692,15 @@ export const LedgerTable: React.FC<Props> = React.memo(function LedgerTable({
                         if (e.key === "Escape") cancelEditField();
                       }}
                       autoFocus
-                      style={{ width: "100%", padding: "4px", fontSize: 14, marginLeft: viewMode === "all" ? "16px" : "0" }}
+                      style={{ width: "100%", padding: "4px", fontSize: 14, marginLeft: canReorder ? "16px" : "0" }}
                     />
                   </>
                 ) : (
                   <>
-                    {viewMode === "all" && (
+                    {canReorder && (
                       <span className="drag-handle" style={{ position: "absolute", left: "4px", color: "var(--text-muted)", fontSize: "12px" }}>☰</span>
                     )}
-                    <span style={{ marginLeft: viewMode === "all" ? "16px" : "0" }}>
+                    <span style={{ marginLeft: canReorder ? "16px" : "0" }}>
                       {formatShortDate(l.date)}
                     </span>
                   </>

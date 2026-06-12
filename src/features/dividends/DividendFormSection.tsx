@@ -14,9 +14,10 @@ import React, { useEffect, useMemo, useState } from "react";
 import { toast } from "react-hot-toast";
 import { Autocomplete } from "../../components/ui/Autocomplete";
 import type { Account, LedgerEntry, PositionRow, StockPrice, StockTrade, TickerInfo } from "../../types";
-import { formatKRW } from "../../utils/formatter";
+import { formatKRW, formatUSD } from "../../utils/formatter";
 import { isKRWStock, isUSDStock, canonicalTickerForMatch, extractTickerFromText } from "../../utils/finance";
 import { buildDividendNote } from "../../utils/dividend";
+import { getTodayKST } from "../../utils/date";
 import { getKrNames } from "../../storage";
 
 interface Props {
@@ -49,7 +50,7 @@ export const DividendFormSection: React.FC<Props> = React.memo(function Dividend
 
   // 배당 입력 폼 (date = 수령일, exDate = 배당락일, 배당율은 락일 기준 주가 사용)
   const [dividendForm, setDividendForm] = useState({
-    date: new Date().toISOString().slice(0, 10),
+    date: getTodayKST(),
     exDate: "", // 배당락일 (선택, 있으면 배당율 계산에 락일 기준 주가 사용)
     accountId: "",
     ticker: "",
@@ -66,10 +67,14 @@ export const DividendFormSection: React.FC<Props> = React.memo(function Dividend
     const options: Array<{ value: string; label: string; subLabel?: string }> = [];
     positions.forEach((pos) => {
       if (pos.quantity > 0) {
+        // USD 종목 평단은 달러로 표기 (원화 단위로 오인 방지)
+        const avgLabel = isUSDStock(pos.ticker)
+          ? formatUSD(pos.avgPrice)
+          : `${Math.round(pos.avgPrice).toLocaleString()}원`;
         options.push({
           value: pos.ticker,
           label: pos.name,
-          subLabel: `보유: ${pos.quantity}주, 평균단가: ${Math.round(pos.avgPrice).toLocaleString()}원`
+          subLabel: `보유: ${pos.quantity}주, 평균단가: ${avgLabel}`
         });
       }
     });
@@ -83,6 +88,11 @@ export const DividendFormSection: React.FC<Props> = React.memo(function Dividend
   }, [positions, dividendForm.ticker]);
 
   // 티커 선택 시 보유 수량을 폼 기본값으로 채움 (수정 가능하므로 사용자가 바꿀 수 있음)
+  // 티커(선택된 포지션)가 실제로 바뀔 때만 초기화 — positions 재계산(객체 참조 변경)이
+  // 사용자가 고친 수량을 덮어쓰지 않도록 deps에서 객체·quantity 제거.
+  const selectedPositionKey = selectedPosition
+    ? `${selectedPosition.accountId}::${canonicalTickerForMatch(selectedPosition.ticker)}`
+    : "";
   useEffect(() => {
     if (selectedPosition) {
       setDividendForm((prev) => ({
@@ -92,7 +102,8 @@ export const DividendFormSection: React.FC<Props> = React.memo(function Dividend
     } else {
       setDividendForm((prev) => ({ ...prev, quantity: "" }));
     }
-  }, [selectedPosition?.ticker, selectedPosition?.quantity, selectedPosition]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [selectedPositionKey]);
 
   // 선택한 티커의 통화 정보 (StocksView와 동일한 방식)
   const selectedTickerCurrency = useMemo(() => {
@@ -121,9 +132,23 @@ export const DividendFormSection: React.FC<Props> = React.memo(function Dividend
     return undefined;
   }, [latestPriceByCanonicalTicker, tickerDatabase, dividendForm.ticker]);
 
-  const formatUSD = (value: number) => Math.round(value).toLocaleString("en-US");
+  /**
+   * 선택 포지션의 원화 평단.
+   * USD 종목: 매입 당시 환율 기반 totalBuyAmountKRW 우선, 없으면 현재 환율 환산.
+   * 환산 불가(환율 미로드)면 null — 배당율 계산 불가.
+   */
+  const selectedAvgPriceKRW = useMemo(() => {
+    if (!selectedPosition) return null;
+    if (!isUSDStock(selectedPosition.ticker)) return selectedPosition.avgPrice;
+    if (selectedPosition.totalBuyAmountKRW != null && selectedPosition.quantity > 0) {
+      return selectedPosition.totalBuyAmountKRW / selectedPosition.quantity;
+    }
+    if (fxRate && fxRate > 0) return selectedPosition.avgPrice * fxRate;
+    return null;
+  }, [selectedPosition, fxRate]);
 
   // 배당율 계산 (주식 탭과 동일: 항상 원화 기준, 순 배당금 기준. 수량은 폼 값 우선)
+  // 매입원가도 원화 평단 기준 — USD 평단(달러)으로 나누면 환율 배수(~1400배)로 과대 계산되는 버그 수정.
   const dividendYield = useMemo(() => {
     if (!selectedPosition) return null;
     const quantity = dividendForm.quantity !== "" ? Number(dividendForm.quantity) || 0 : selectedPosition.quantity;
@@ -132,10 +157,12 @@ export const DividendFormSection: React.FC<Props> = React.memo(function Dividend
     const tax = dividendForm.tax ? Number(dividendForm.tax) : 0;
     const fee = dividendForm.fee ? Number(dividendForm.fee) : 0;
 
-    if (amount <= 0 || selectedPosition.avgPrice <= 0 || quantity <= 0) return null;
+    if (amount <= 0 || quantity <= 0) return null;
+    if (selectedAvgPriceKRW == null || selectedAvgPriceKRW <= 0) return null;
 
-    // USD 종목이고 USD로 입력받았으면 원화로 변환
-    if (selectedTickerCurrency === "USD" && showUSD && fxRate) {
+    // USD 종목이고 USD로 입력받았으면 원화로 변환 (환율 없으면 환산 불가 → 표시 안 함)
+    if (selectedTickerCurrency === "USD" && showUSD) {
+      if (!fxRate || fxRate <= 0) return null;
       amount = amount * fxRate;
       if (tax > 0) {
         const taxKRW = tax * fxRate;
@@ -149,9 +176,9 @@ export const DividendFormSection: React.FC<Props> = React.memo(function Dividend
       amount = amount - tax - fee;
     }
 
-    const totalCost = selectedPosition.avgPrice * quantity;
+    const totalCost = selectedAvgPriceKRW * quantity;
     return (amount / totalCost) * 100;
-  }, [dividendForm.dividendPerShare, dividendForm.tax, dividendForm.fee, dividendForm.quantity, selectedPosition, selectedTickerCurrency, showUSD, fxRate]);
+  }, [dividendForm.dividendPerShare, dividendForm.tax, dividendForm.fee, dividendForm.quantity, selectedPosition, selectedAvgPriceKRW, selectedTickerCurrency, showUSD, fxRate]);
 
   // 이전 배당 입력 내역 (빠른 재입력용)
   const recentDividends = useMemo(() => {
@@ -205,7 +232,7 @@ export const DividendFormSection: React.FC<Props> = React.memo(function Dividend
     const quantity = matchedPosition?.quantity ?? 0;
     const dividendPerShare = quantity > 0 ? String(Math.round((recent.amount / quantity) * 100) / 100) : "";
     setDividendForm({
-      date: new Date().toISOString().slice(0, 10),
+      date: getTodayKST(),
       exDate: "",
       accountId: recent.accountId || dividendForm.accountId,
       ticker: recent.ticker,
@@ -225,26 +252,64 @@ export const DividendFormSection: React.FC<Props> = React.memo(function Dividend
     const fee = dividendForm.fee ? Number(dividendForm.fee) : 0;
 
     if (!dividendForm.date || !dividendForm.accountId) {
+      toast.error("날짜와 계좌를 입력하세요.");
       return;
     }
 
     const tickerTrimmed = dividendForm.ticker?.trim() ?? "";
 
-    // 이자 입력은 이자 탭으로 — 배당 폼은 티커 필수
-    if (!tickerTrimmed) {
-      toast.error("종목을 선택하세요. 이자는 이자 탭에서 입력합니다.");
+    // 안내 문구 그대로: 티커를 비우거나 '이자'를 입력하면 이자 수입으로 저장
+    // (저장 형식은 이자 탭 InterestFormSection과 동일: kind=income, category=이자)
+    const isInterestEntry = !tickerTrimmed || tickerTrimmed === "이자";
+    if (isInterestEntry) {
+      if (!amount || amount <= 0) {
+        toast.error("이자 금액을 입력하세요.");
+        return;
+      }
+      const netInterest = amount - tax - fee;
+      const description = `이자${tax > 0 ? `, 세금: ${Math.round(tax).toLocaleString()}원` : ""}${fee > 0 ? `, 수수료: ${Math.round(fee).toLocaleString()}원` : ""}`;
+      const interestEntry: LedgerEntry = {
+        id: `I${Date.now()}`,
+        date: dividendForm.date,
+        kind: "income",
+        category: "이자",
+        description,
+        toAccountId: dividendForm.accountId,
+        amount: netInterest,
+        currency: "KRW"
+      };
+      onChangeLedger([interestEntry, ...ledger]);
+      toast.success("이자로 등록되었습니다 (이자 탭에서 확인)");
+      setDividendForm({
+        date: getTodayKST(),
+        exDate: "",
+        accountId: dividendForm.accountId,
+        ticker: "",
+        name: "",
+        dividendPerShare: "",
+        amount: "",
+        quantity: "",
+        tax: "",
+        fee: ""
+      });
       return;
     }
+
     const quantityForCalc = dividendForm.quantity !== "" ? Number(dividendForm.quantity) || 0 : selectedPosition?.quantity ?? 0;
     const dividendPerShare = dividendForm.dividendPerShare ? Number(dividendForm.dividendPerShare) : 0;
     if (quantityForCalc <= 0 || dividendPerShare <= 0) {
+      toast.error("보유 수량과 주당 배당금을 올바르게 입력하세요.");
       return;
     }
     amount = dividendPerShare * quantityForCalc;
 
     // 주식 탭과 동일: 항상 원화(KRW) 기준으로 저장
-    // USD 종목이고 USD로 입력받았으면 원화로 변환
-    if (selectedTickerCurrency === "USD" && showUSD && fxRate) {
+    // USD 종목이고 USD로 입력받았으면 원화로 변환 — 환율 미로드 시 무환산 저장 차단
+    if (selectedTickerCurrency === "USD" && showUSD) {
+      if (!fxRate || fxRate <= 0) {
+        toast.error("환율 정보가 없어 USD 금액을 원화로 환산할 수 없습니다. 환율 갱신 후 다시 시도하거나 원화로 입력하세요.");
+        return;
+      }
       amount = amount * fxRate; // USD → KRW 변환
       // 세금과 수수료도 USD로 입력받았으면 원화로 변환
       if (tax > 0) {
@@ -276,6 +341,8 @@ export const DividendFormSection: React.FC<Props> = React.memo(function Dividend
       description: description,
       toAccountId: dividendForm.accountId,
       amount: netAmount,
+      // 저장 금액은 항상 KRW로 환산됨 — 통화 명시
+      currency: "KRW",
       note
     };
 
@@ -283,7 +350,7 @@ export const DividendFormSection: React.FC<Props> = React.memo(function Dividend
     onChangeLedger(newLedger);
 
     setDividendForm({
-      date: new Date().toISOString().slice(0, 10),
+      date: getTodayKST(),
       exDate: "",
       accountId: dividendForm.accountId,
       ticker: dividendForm.ticker,
@@ -302,7 +369,7 @@ export const DividendFormSection: React.FC<Props> = React.memo(function Dividend
     <>
       {/* 빠른 입력: 이전 배당 내역 */}
       {recentDividends.length > 0 && (
-        <div className="card" style={{ padding: 16, marginBottom: 16, backgroundColor: "#f8fafc" }}>
+        <div className="card" style={{ padding: 16, marginBottom: 16, backgroundColor: "var(--surface-hover)" }}>
           <h4 style={{ marginTop: 0, marginBottom: 12, fontSize: 16, fontWeight: 600 }}>빠른 입력 (이전 배당 내역)</h4>
           <p className="hint" style={{ marginBottom: 12, fontSize: 13 }}>
             이전에 입력한 배당 내역을 클릭하면 자동으로 폼이 채워집니다. 모든 필드를 수정할 수 있습니다.
@@ -332,9 +399,9 @@ export const DividendFormSection: React.FC<Props> = React.memo(function Dividend
                   style={{
                     padding: "8px 12px",
                     fontSize: 13,
-                    border: "1px solid var(--border, #ddd)",
+                    border: "1px solid var(--border)",
                     borderRadius: 6,
-                    backgroundColor: "white",
+                    backgroundColor: "var(--surface)",
                     cursor: "pointer",
                     display: "flex",
                     flexDirection: "column",
@@ -343,27 +410,27 @@ export const DividendFormSection: React.FC<Props> = React.memo(function Dividend
                     minWidth: "140px"
                   }}
                   onMouseEnter={(e) => {
-                    e.currentTarget.style.backgroundColor = "#eef2ff";
-                    e.currentTarget.style.borderColor = "#2563eb";
+                    e.currentTarget.style.backgroundColor = "var(--accent-light)";
+                    e.currentTarget.style.borderColor = "var(--accent)";
                   }}
                   onMouseLeave={(e) => {
-                    e.currentTarget.style.backgroundColor = "white";
-                    e.currentTarget.style.borderColor = "var(--border, #ddd)";
+                    e.currentTarget.style.backgroundColor = "var(--surface)";
+                    e.currentTarget.style.borderColor = "var(--border)";
                   }}
                 >
-                  <div style={{ fontWeight: 600, color: "#1e40af" }}>
+                  <div style={{ fontWeight: 600, color: "var(--accent)" }}>
                     {recent.ticker}
                   </div>
                   {recent.name && (
-                    <div style={{ fontSize: 12, color: "#666" }}>
+                    <div style={{ fontSize: 12, color: "var(--text-muted)" }}>
                       {recent.name.length > 15 ? recent.name.slice(0, 15) + "..." : recent.name}
                     </div>
                   )}
-                  <div style={{ fontSize: 12, color: "#2563eb", fontWeight: 500 }}>
+                  <div style={{ fontSize: 12, color: "var(--accent)", fontWeight: 500 }}>
                     {formatKRW(Math.round(recent.amount))}
                   </div>
                   {pos && (
-                    <div style={{ fontSize: 11, color: "#888" }}>
+                    <div style={{ fontSize: 11, color: "var(--text-muted)" }}>
                       보유: {pos.quantity}주
                     </div>
                   )}
@@ -425,7 +492,7 @@ export const DividendFormSection: React.FC<Props> = React.memo(function Dividend
                 .filter((acc) => !acc.archived || acc.id === dividendForm.accountId)
                 .map((acc) => (
                   <option key={acc.id} value={acc.id}>
-                    {acc.id}
+                    {acc.name || acc.id}
                   </option>
                 ))}
             </select>
@@ -455,9 +522,13 @@ export const DividendFormSection: React.FC<Props> = React.memo(function Dividend
                 <span style={{ fontSize: 13, fontWeight: 500 }}>평균 단가</span>
                 <input
                   type="text"
-                  value={formatKRW(Math.round(selectedPosition.avgPrice))}
+                  value={
+                    isUSDStock(selectedPosition.ticker)
+                      ? `${formatUSD(selectedPosition.avgPrice)}${selectedAvgPriceKRW != null ? ` (약 ${formatKRW(Math.round(selectedAvgPriceKRW))})` : ""}`
+                      : formatKRW(Math.round(selectedPosition.avgPrice))
+                  }
                   disabled
-                  style={{ padding: "6px 8px", fontSize: 14, backgroundColor: "#f5f5f5" }}
+                  style={{ padding: "6px 8px", fontSize: 14, backgroundColor: "var(--surface-hover)" }}
                 />
               </label>
               <label style={{ display: "flex", flexDirection: "column", gap: 4 }}>
@@ -476,9 +547,13 @@ export const DividendFormSection: React.FC<Props> = React.memo(function Dividend
                 <span style={{ fontSize: 13, fontWeight: 500 }}>총 매입 금액</span>
                 <input
                   type="text"
-                  value={formatKRW(Math.round(selectedPosition.avgPrice * selectedPosition.quantity))}
+                  value={
+                    isUSDStock(selectedPosition.ticker)
+                      ? `${formatUSD(selectedPosition.totalBuyAmount)}${selectedAvgPriceKRW != null ? ` (약 ${formatKRW(Math.round(selectedAvgPriceKRW * selectedPosition.quantity))})` : ""}`
+                      : formatKRW(Math.round(selectedPosition.avgPrice * selectedPosition.quantity))
+                  }
                   disabled
-                  style={{ padding: "6px 8px", fontSize: 14, backgroundColor: "#f5f5f5" }}
+                  style={{ padding: "6px 8px", fontSize: 14, backgroundColor: "var(--surface-hover)" }}
                 />
               </label>
             </>
@@ -512,12 +587,12 @@ export const DividendFormSection: React.FC<Props> = React.memo(function Dividend
                     const total = q > 0 && dps > 0 ? q * dps : 0;
                     if (total <= 0) return "-";
                     if (selectedTickerCurrency === "USD" && showUSD) {
-                      return `${formatUSD(total)} USD${fxRate ? ` (약 ${formatKRW(Math.round(total * fxRate))})` : ""}`;
+                      return `${formatUSD(total)}${fxRate ? ` (약 ${formatKRW(Math.round(total * fxRate))})` : ""}`;
                     }
                     return formatKRW(Math.round(total));
                   })()}
                   disabled
-                  style={{ padding: "6px 8px", fontSize: 14, backgroundColor: "#f5f5f5" }}
+                  style={{ padding: "6px 8px", fontSize: 14, backgroundColor: "var(--surface-hover)" }}
                 />
               </label>
             </>
@@ -579,7 +654,7 @@ export const DividendFormSection: React.FC<Props> = React.memo(function Dividend
                 type="text"
                 value={`${dividendYield.toFixed(2)}%`}
                 disabled
-                style={{ padding: "6px 8px", fontSize: 14, backgroundColor: "#f5f5f5", color: "#2563eb", fontWeight: 600 }}
+                style={{ padding: "6px 8px", fontSize: 14, backgroundColor: "var(--surface-hover)", color: "var(--accent)", fontWeight: 600 }}
               />
             </label>
           )}

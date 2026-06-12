@@ -240,11 +240,11 @@ export const AssetTab = React.memo(function AssetTab({ d }: { d: D }) {
                 { label: "목표 달성률 > 0%", pass: (targetProgress ?? 0) > 0, hint: "목표 설정 + 진행 중" },
               ];
               return items.map((it) => (
-                <div key={it.label} style={{ display: "flex", alignItems: "center", gap: 10, padding: "6px 10px", background: it.pass ? "#f0fdf4" : "#fff5f5", borderRadius: 6 }}>
+                <div key={it.label} style={{ display: "flex", alignItems: "center", gap: 10, padding: "6px 10px", background: it.pass ? "var(--primary-light)" : "var(--danger-light)", borderRadius: 6 }}>
                   <span style={{ fontSize: 18 }}>{it.pass ? "✅" : "⚠️"}</span>
                   <div style={{ flex: 1 }}>
-                    <div style={{ fontWeight: 700, color: it.pass ? "#059669" : "#e94560" }}>{it.label}</div>
-                    <div style={{ fontSize: 11, color: "#666" }}>{it.hint}</div>
+                    <div style={{ fontWeight: 700, color: it.pass ? "var(--success)" : "var(--danger)" }}>{it.label}</div>
+                    <div style={{ fontSize: 11, color: "var(--text-muted)" }}>{it.hint}</div>
                   </div>
                 </div>
               ));
@@ -254,7 +254,7 @@ export const AssetTab = React.memo(function AssetTab({ d }: { d: D }) {
 
         <Card title="요약" span={2}>
           <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
-            <Insight title="순자산 추세" color="#059669" bg="#ecfdf5">
+            <Insight title="순자산 추세" tone="success">
               {nw.length >= 2 ? (() => {
                 const last3 = nw.slice(-3);
                 const trend3 = last3.length >= 2 ? last3[last3.length - 1].total - last3[0].total : 0;
@@ -263,7 +263,7 @@ export const AssetTab = React.memo(function AssetTab({ d }: { d: D }) {
                 return "최근 3개월간 순자산이 거의 변동 없습니다. 저축률 점검을 권장합니다.";
               })() : "추적 기간이 2개월 미만입니다."}
             </Insight>
-            <Insight title="부채 건강도" color={totalDebt > totalAssets * 0.5 ? "#e94560" : "#2563eb"} bg={totalDebt > totalAssets * 0.5 ? "#fff5f5" : "#f0f8ff"}>
+            <Insight title="부채 건강도" tone={totalDebt > totalAssets * 0.5 ? "danger" : "info"}>
               총 부채 {F(totalDebt)}원 (자산 대비 {totalAssets > 0 ? Math.round((totalDebt / totalAssets) * 100) : 0}%).
               {totalDebt === 0 ? " 부채 없음 — 안정적." :
                 totalDebt > totalAssets * 0.5 ? ` 부채 비중 50% 초과 — 상환 계획 필요.` :
@@ -271,7 +271,7 @@ export const AssetTab = React.memo(function AssetTab({ d }: { d: D }) {
                 ` 부채 비중 20% 이내 — 건강한 수준.`}
               {loanDebtSum > 0 && ` 대출 잔금 ${F(loanDebtSum)}원은 원금 상환 시 차감됨.`}
             </Insight>
-            <Insight title="자산 배분" color="#b45309" bg="#fff3cd">
+            <Insight title="자산 배분" tone="warning">
               {d.assetAllocation.length >= 2 ? (() => {
                 const top = d.assetAllocation[0];
                 const share = totalAssets > 0 ? Math.round((top.value / totalAssets) * 100) : 0;

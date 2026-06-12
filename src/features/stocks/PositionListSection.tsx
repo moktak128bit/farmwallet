@@ -62,18 +62,29 @@ interface PositionListSectionProps {
 
 const STORAGE_KEY_PREFIX = "fw-position-display-currency-";
 
-/** 포지션 금액을 표시 통화로 변환. 달러→원화: ×환율, 원화→달러: ÷환율. 환율 없으면 변환 불가(0 반환). */
+/**
+ * 포지션 금액을 표시 통화로 변환. 달러→원화: ×환율, 원화→달러: ÷환율.
+ * 환율이 없어 변환할 수 없으면 원본 값·원본 통화를 그대로 반환한다 —
+ * 호출부는 반환된 currency로 포맷해 단위 표기가 항상 실제 통화와 일치한다.
+ */
 const toDisplayValue = (
   value: number,
   positionCurrency: string | undefined,
   ticker: string | undefined,
   displayCurrency: "USD" | "KRW",
   fxRate: number
-): number => {
+): { value: number; currency: "USD" | "KRW" } => {
   const posIsUSD = positionCurrency === "USD" || isUSDStock(ticker);
-  if (displayCurrency === "KRW" && posIsUSD) return fxRate > 0 ? value * fxRate : value;
-  if (displayCurrency === "USD" && !posIsUSD) return fxRate > 0 ? value / fxRate : value;
-  return value;
+  const posCurrency: "USD" | "KRW" = posIsUSD ? "USD" : "KRW";
+  if (posCurrency === displayCurrency) return { value, currency: displayCurrency };
+  if (fxRate > 0) {
+    return {
+      value: displayCurrency === "KRW" ? value * fxRate : value / fxRate,
+      currency: displayCurrency
+    };
+  }
+  // 환율 미로드 — 변환 불가: 원본 통화로 표시 (잘못된 단위 표기 방지)
+  return { value, currency: posCurrency };
 };
 
 const formatByDisplayCurrency = (value: number, displayCurrency: "USD" | "KRW") =>
@@ -308,7 +319,7 @@ export const PositionListSection: React.FC<PositionListSectionProps> = ({
               )}
               <span>{group.accountName}</span>
               <span style={{ marginLeft: "auto", display: "flex", alignItems: "center", gap: 6 }}>
-                <span style={{ fontSize: 12, color: "var(--muted)", marginRight: 4 }}>금액 표시:</span>
+                <span style={{ fontSize: 12, color: "var(--text-muted)", marginRight: 4 }}>금액 표시:</span>
                 <button
                   type="button"
                   className={getAccountDisplayCurrency(group.accountId) === "KRW" ? "primary" : "secondary"}
@@ -330,12 +341,12 @@ export const PositionListSection: React.FC<PositionListSectionProps> = ({
                 const effUsd = (account?.usdBalance ?? 0) + (balance?.usdTransferNet ?? 0);
                 return (
                 <>
-                  <span style={{ fontSize: 14, fontWeight: 400, color: "var(--muted)" }}>
+                  <span style={{ fontSize: 14, fontWeight: 400, color: "var(--text-muted)" }}>
                     달러: <span className={effUsd >= 0 ? "positive" : "negative"}>
                       {formatUSD(effUsd)}
                     </span>
                   </span>
-                  <span style={{ fontSize: 14, fontWeight: 400, color: "var(--muted)" }}>
+                  <span style={{ fontSize: 14, fontWeight: 400, color: "var(--text-muted)" }}>
                     원화: <span className={(balance?.currentBalance ?? 0) >= 0 ? "positive" : "negative"}>
                       {formatKRW(Math.round(balance?.currentBalance ?? 0))}
                     </span>
@@ -343,22 +354,22 @@ export const PositionListSection: React.FC<PositionListSectionProps> = ({
                 </>
                 );
               })()}
-              <span style={{ fontSize: 14, fontWeight: 400, color: "var(--muted)" }}>
+              <span style={{ fontSize: 14, fontWeight: 400, color: "var(--text-muted)" }}>
                 현금+예수금: <span className={cashBalance >= 0 ? "positive" : "negative"}>{formatKRW(Math.round(cashBalance))}</span>
               </span>
               {stockCost > 0 && (
-                <span style={{ fontSize: 14, fontWeight: 400, color: "var(--muted)" }}>
+                <span style={{ fontSize: 14, fontWeight: 400, color: "var(--text-muted)" }}>
                   원금: <span>{formatKRW(Math.round(stockCost))}</span>
                 </span>
               )}
-              <span style={{ fontSize: 14, fontWeight: 400, color: "var(--muted)" }}>
+              <span style={{ fontSize: 14, fontWeight: 400, color: "var(--text-muted)" }}>
                 평가금: <span className={stockValue >= 0 ? "positive" : "negative"}>{formatKRW(Math.round(stockValue))}</span>
                 {rate > 0 && (
                   <span style={{ marginLeft: 4, fontSize: 12 }}>≈ {formatUSD(stockValue / rate)}</span>
                 )}
               </span>
               {stockCost > 0 && (
-                <span style={{ fontSize: 14, fontWeight: 400, color: "var(--muted)" }}>
+                <span style={{ fontSize: 14, fontWeight: 400, color: "var(--text-muted)" }}>
                   평가손익:{" "}
                   <span className={stockPnl >= 0 ? "positive" : "negative"} style={{ fontWeight: 600 }}>
                     {stockPnl >= 0 ? "+" : ""}{formatKRW(Math.round(stockPnl))}
@@ -370,7 +381,7 @@ export const PositionListSection: React.FC<PositionListSectionProps> = ({
                   )}
                 </span>
               )}
-              <span style={{ fontSize: 14, fontWeight: 400, color: "var(--muted)" }}>
+              <span style={{ fontSize: 14, fontWeight: 400, color: "var(--text-muted)" }}>
                 총자산: <span className={totalAsset >= 0 ? "positive" : "negative"}>{formatKRW(Math.round(totalAsset))}</span>
                 {rate > 0 && (
                   <span style={{ marginLeft: 4, fontSize: 12 }}>≈ {formatUSD(totalAsset / rate)}</span>
@@ -379,6 +390,7 @@ export const PositionListSection: React.FC<PositionListSectionProps> = ({
             </h4>
             <div>
               <table className="data-table positions-table" style={{ width: "100%" }}>
+                {/* 컬럼 11개 (티커·종목명·시장·평가손익·수익률·현재가·평균단가·보유수량·총매입·총평가·작업) */}
                 <colgroup>
                   <col style={{ width: "100px" }} />
                   <col style={{ width: "170px" }} />
@@ -390,6 +402,7 @@ export const PositionListSection: React.FC<PositionListSectionProps> = ({
                   <col style={{ width: "80px" }} />
                   <col style={{ width: "110px" }} />
                   <col style={{ width: "110px" }} />
+                  <col style={{ width: "150px" }} />
                 </colgroup>
                 <thead>
                   <tr>
@@ -445,21 +458,21 @@ export const PositionListSection: React.FC<PositionListSectionProps> = ({
                 <tbody>
                   {group.rows.map((p) => {
                     const displayCurrency = getAccountDisplayCurrency(group.accountId);
-                    const r = rate; // 환율 없으면 0 → toDisplayValue에서 변환 시 0 반환
+                    const r = rate; // 환율 없으면 0 → toDisplayValue가 원본 통화 그대로 반환 (단위 표기 일치)
                     const isUSD = p.currency === "USD";
                     // 외국 종목 원화: 매입가 = 매입 당시 달러×당시 환율(totalBuyAmountKRW), 평가액 = 현재가×현재 환율
                     const totalBuyDisplay =
                       displayCurrency === "KRW" && isUSD && p.totalBuyAmountKRW != null
-                        ? p.totalBuyAmountKRW
+                        ? { value: p.totalBuyAmountKRW, currency: "KRW" as const }
                         : toDisplayValue(p.totalBuyAmount, p.currency, p.ticker, displayCurrency, r);
                     const marketValDisplay = toDisplayValue(p.marketValue, p.currency, p.ticker, displayCurrency, r);
                     const avgDisplay =
                       displayCurrency === "KRW" && isUSD && p.totalBuyAmountKRW != null && p.quantity > 0
-                        ? p.totalBuyAmountKRW / p.quantity
-                        : toDisplayValue(Math.round(p.avgPrice), p.currency, p.ticker, displayCurrency, r);
+                        ? { value: p.totalBuyAmountKRW / p.quantity, currency: "KRW" as const }
+                        : toDisplayValue(p.avgPrice, p.currency, p.ticker, displayCurrency, r);
                     const pnlDisplay =
-                      displayCurrency === "KRW" && isUSD && p.totalBuyAmountKRW != null
-                        ? marketValDisplay - totalBuyDisplay
+                      displayCurrency === "KRW" && isUSD && p.totalBuyAmountKRW != null && marketValDisplay.currency === "KRW"
+                        ? { value: marketValDisplay.value - totalBuyDisplay.value, currency: "KRW" as const }
                         : toDisplayValue(p.pnl, p.currency, p.ticker, displayCurrency, r);
                     const priceDisplay = toDisplayValue(p.displayMarketPrice, p.currency, p.ticker, displayCurrency, r);
                     return (
@@ -516,32 +529,32 @@ export const PositionListSection: React.FC<PositionListSectionProps> = ({
                             ))}
                           </select>
                         </td>
-                        <td 
+                        <td
                           className="number"
-                          style={{ 
-                            color: p.pnl >= 0 ? "#f43f5e" : "#0ea5e9",
+                          style={{
+                            color: p.pnl >= 0 ? "var(--danger)" : "var(--accent)",
                             fontWeight: "600"
                           }}
                         >
-                          {formatByDisplayCurrency(pnlDisplay, displayCurrency)}
+                          {formatByDisplayCurrency(pnlDisplay.value, pnlDisplay.currency)}
                         </td>
-                        <td 
+                        <td
                           className="number"
-                          style={{ 
-                            color: p.pnl >= 0 ? "#f43f5e" : "#0ea5e9",
+                          style={{
+                            color: p.pnl >= 0 ? "var(--danger)" : "var(--accent)",
                             fontWeight: "600"
                           }}
                         >
                           {(p.pnlRate * 100).toFixed(2)}%
                         </td>
                         <td className="number">
-                          {formatByDisplayCurrency(priceDisplay, displayCurrency)}
+                          {formatByDisplayCurrency(priceDisplay.value, priceDisplay.currency)}
                         </td>
-                        <td className="number">{formatByDisplayCurrency(avgDisplay, displayCurrency)}</td>
+                        <td className="number">{formatByDisplayCurrency(avgDisplay.value, avgDisplay.currency)}</td>
                         <td className="number">{p.quantity % 1 === 0 ? formatNumber(p.quantity) : p.quantity.toFixed(6)}</td>
-                        <td className="number">{formatByDisplayCurrency(totalBuyDisplay, displayCurrency)}</td>
+                        <td className="number">{formatByDisplayCurrency(totalBuyDisplay.value, totalBuyDisplay.currency)}</td>
                         <td className={`number ${p.marketValue >= p.totalBuyAmount ? "positive" : "negative"}`}>
-                          {formatByDisplayCurrency(marketValDisplay, displayCurrency)}
+                          {formatByDisplayCurrency(marketValDisplay.value, marketValDisplay.currency)}
                         </td>
                         <td style={{ textAlign: "center", padding: "4px" }}>
                           <div style={{ display: "flex", gap: 4, justifyContent: "center" }}>

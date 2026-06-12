@@ -7,9 +7,10 @@
 import React, { useState } from "react";
 import { ChevronDown, ChevronRight } from "lucide-react";
 import type { Account, AccountBalanceRow } from "../../../types";
-import { parseAmount } from "../../../utils/parseAmount";
+import { parseSignedAmount, sanitizeSignedNumericInput } from "../accountsShared";
 
-type EditField = "initialBalance" | "debt" | "savings" | "cashAdjustment" | "initialCashBalance";
+// 실제 편집 진입점은 시작금액(initialBalance/initialCashBalance)뿐 — 나머지 필드는 dead code라 제거
+type EditField = "initialBalance" | "initialCashBalance";
 
 interface Props {
   safeBalances: AccountBalanceRow[];
@@ -33,29 +34,28 @@ export const BalanceBreakdownSection: React.FC<Props> = React.memo(function Bala
   const startEditNumber = (accountId: string, field: EditField, currentValue: number) => {
     setEditingNumber({ id: accountId, field });
     // 소수점 쓰레기(부동소수점 오차) 가 있으면 정수로 반올림해 편집 입력에 넣는다.
-    // (parseAmount 기본값이 정수만 허용하므로, "123.45" 가 들어가면 소수점이 지워지며 12345로 저장되는 버그 방지)
+    // Math.round는 부호를 보존하므로 음수 시작금액도 "-"가 유지된 채 입력칸에 들어간다.
     const safe = Number.isFinite(currentValue) ? Math.round(currentValue) : 0;
     setEditValue(String(safe));
   };
 
   const saveNumber = () => {
     if (!editingNumber) return;
-    const value = parseAmount(editValue);
+    // 부호 보존 파서 — parseAmount는 "-"를 제거해 음수 시작금액이 양수로 반전 저장되는 버그가 있었다
+    const parsed = parseSignedAmount(editValue);
+    if (parsed == null) {
+      // 형식이 올바르지 않으면 저장하지 않고 편집만 종료 (기존 값 유지)
+      setEditingNumber(null);
+      setEditValue("");
+      return;
+    }
+    const value = Math.round(parsed);
     const updated = safeAccounts.map((a) => {
       if (a.id === editingNumber.id) {
-        if (editingNumber.field === "cashAdjustment") {
-          return { ...a, cashAdjustment: value };
-        }
         if (editingNumber.field === "initialCashBalance") {
           return { ...a, initialCashBalance: value };
         }
-        if (editingNumber.field === "debt") {
-          return { ...a, debt: value };
-        }
-        if (editingNumber.field === "savings") {
-          return { ...a, savings: value };
-        }
-        return { ...a, [editingNumber.field]: value };
+        return { ...a, initialBalance: value };
       }
       return a;
     });
@@ -176,7 +176,7 @@ export const BalanceBreakdownSection: React.FC<Props> = React.memo(function Bala
                             inputMode="numeric"
                             value={editValue}
                             autoFocus
-                            onChange={(e) => setEditValue(e.target.value)}
+                            onChange={(e) => setEditValue(sanitizeSignedNumericInput(e.target.value))}
                             onBlur={saveNumber}
                             onKeyDown={(e) => {
                               if (e.key === "Enter") saveNumber();

@@ -10,6 +10,7 @@ import type {
 } from "../types";
 import { STORAGE_KEYS, DEFAULT_US_TICKERS, ISA_PORTFOLIO, DATA_SCHEMA_VERSION } from "../constants/config";
 import { DEFAULT_WORKOUT_ROUTINES } from "../data/defaultWorkoutRoutines";
+import { DEFAULT_DAILY_BUDGET } from "../utils/dailyBudget";
 import { buildTableBackupFile } from "../utils/tableDataBackup";
 import { saveCacheToDB } from "./cacheStore";
 import { getKoreanNameOverlay } from "./krNameResolver";
@@ -487,6 +488,29 @@ function normalizeInvestmentGoals(raw: unknown): import("../types").InvestmentGo
   return Object.keys(out).length > 0 ? out : undefined;
 }
 
+/**
+ * dailyBudget(하루 예산 설정) 정규화. loadData 필드 누락으로 새로고침마다
+ * 설정이 유실되던 회귀 방지 (investmentGoals와 동일 패턴).
+ * dailyLimit이 유효 숫자가 아니면 설정 전체를 미설정으로 처리.
+ */
+function normalizeDailyBudget(raw: unknown): import("../types").DailyBudgetConfig | undefined {
+  if (!raw || typeof raw !== "object" || Array.isArray(raw)) return undefined;
+  const r = raw as Record<string, unknown>;
+  if (typeof r.dailyLimit !== "number" || !Number.isFinite(r.dailyLimit) || r.dailyLimit <= 0) return undefined;
+  return {
+    enabled: r.enabled === true,
+    dailyLimit: r.dailyLimit,
+    mode: r.mode === "weekly" ? "weekly" : "daily",
+    excludedCategories: Array.isArray(r.excludedCategories)
+      ? r.excludedCategories.map((v) => String(v))
+      : [...DEFAULT_DAILY_BUDGET.excludedCategories],
+    excludedSubCategories: Array.isArray(r.excludedSubCategories)
+      ? r.excludedSubCategories.map((v) => String(v))
+      : [...DEFAULT_DAILY_BUDGET.excludedSubCategories],
+    warnOnExceed: r.warnOnExceed !== false
+  };
+}
+
 function normalizeHistoricalDailyCloses(raw: unknown): HistoricalDailyClose[] {
   if (!Array.isArray(raw)) return [];
   const rows: HistoricalDailyClose[] = [];
@@ -826,38 +850,132 @@ function validateImportShape(rawData: unknown): asserts rawData is Record<string
   }
 }
 
+/**
+ * 외부 JSON(백업 파일·Gist·붙여넣기)을 검증·마이그레이션·정규화해 AppData로 반환하는 순수 함수.
+ * localStorage 임시 쓰기 부작용 없음 — storage 이벤트 발화나 CACHE/IndexedDB 오염이 없다.
+ * 저장은 호출부 책임 (onChangeData → 자동 저장, 또는 saveData 직접 호출).
+ *
+ * 마이그레이션 기준 버전:
+ *  - 가져온 데이터에 schemaVersion 필드가 있으면 그 버전부터 마이그레이션 (구버전 백업 정상 변환)
+ *  - 없으면 보수적으로 현 버전으로 간주 (추정 마이그레이션이 데이터를 건드리지 않게)
+ */
 export function normalizeImportedData(rawData: unknown): AppData {
   validateImportShape(rawData);
+  const obj = rawData as Record<string, unknown>;
+  const importedVersionRaw = Number(obj.schemaVersion);
+  const fromVersion = Number.isFinite(importedVersionRaw) && importedVersionRaw > 0
+    ? Math.min(Math.floor(importedVersionRaw), DATA_SCHEMA_VERSION)
+    : DATA_SCHEMA_VERSION;
+  const migrated = migrateBySchema(obj, fromVersion);
+  const { data } = buildAppDataFromMigrated(migrated.data, null);
+  // 한글 종목명 적용은 idempotent — 가져오기 경로에서도 동일하게 적용 (저장은 안 함)
+  const { data: withKrNames } = applyKoreanStockNames(data);
+  return withKrNames;
+}
 
-  if (typeof window === "undefined") {
-    return getEmptyData();
+/**
+ * 마이그레이션이 끝난 파싱 객체를 AppData로 정규화하는 순수 빌더.
+ * loadData(저장소 경로)와 normalizeImportedData(가져오기 경로)가 공유한다.
+ * localStorage·IndexedDB 등 어떤 부작용도 없다 (sanitize 경고 콘솔 로그 제외).
+ *
+ * @param cache 분리 저장된 API 캐시(loadData 경로). null이면(가져오기 경로) 본문 필드만 사용.
+ */
+function buildAppDataFromMigrated(
+  migratedObject: Record<string, unknown>,
+  cache: CacheData | null
+): { data: AppData; needsCacheMigration: boolean } {
+  const defaults = getDefaultCategoryPresets();
+  const parsed = migratedObject as Partial<AppData>;
+  const parsedLoans = asArray(parsed.loans) as NonNullable<AppData["loans"]>;
+  const parsedAccounts = asArray(parsed.accounts) as AppData["accounts"];
+  // 손상된 ledger/trade 엔트리는 폐기 — NaN/누락 amount가 계산에 흘러들지 않게.
+  const ledgerSan = sanitizeLedger(asArray<unknown>(parsed.ledger));
+  const tradesSan = sanitizeTrades(asArray<unknown>(parsed.trades));
+  if (ledgerSan.dropped > 0) {
+    console.warn(`[FarmWallet] sanitize: ledger ${ledgerSan.dropped}건 폐기`, ledgerSan.droppedSamples);
   }
+  if (tradesSan.dropped > 0) {
+    console.warn(`[FarmWallet] sanitize: trades ${tradesSan.dropped}건 폐기`, tradesSan.droppedSamples);
+  }
+  const parsedLedger = ledgerSan.clean as AppData["ledger"];
+  const parsedTrades = tradesSan.clean as AppData["trades"];
+  const parsedRecurring = asArray(parsed.recurringExpenses) as AppData["recurringExpenses"];
+  const parsedBudgetGoals = asArray(parsed.budgetGoals) as AppData["budgetGoals"];
+  const parsedCustomSymbols = asArray(parsed.customSymbols) as AppData["customSymbols"];
+  const parsedLedgerTemplates = asArray(parsed.ledgerTemplates) as NonNullable<AppData["ledgerTemplates"]>;
+  const parsedStockPresets = asArray(parsed.stockPresets) as NonNullable<AppData["stockPresets"]>;
+  const parsedTargetPortfolios = asArray(parsed.targetPortfolios) as NonNullable<AppData["targetPortfolios"]>;
+  const parsedWorkoutWeeks = asArray(parsed.workoutWeeks) as NonNullable<AppData["workoutWeeks"]>;
+  // 시드 주입 정책: 저장 필드가 "부재"할 때만 DEFAULT_WORKOUT_ROUTINES 주입.
+  // 빈 배열로 존재하면 사용자가 전부 삭제한 것 — 그대로 존중 (리로드 시 시드 재주입 금지).
+  const parsedWorkoutRoutines = Array.isArray(parsed.workoutRoutines)
+    ? (parsed.workoutRoutines as NonNullable<AppData["workoutRoutines"]>)
+    : [...DEFAULT_WORKOUT_ROUTINES];
+  const parsedCustomExercises = asArray(parsed.customExercises) as NonNullable<AppData["customExercises"]>;
+  const parsedIsaPortfolio = asArray(parsed.isaPortfolio) as NonNullable<AppData["isaPortfolio"]>;
 
-  const serialized = JSON.stringify(rawData);
-  const previousRaw = window.localStorage.getItem(STORAGE_KEYS.DATA);
-  const previousSchemaVersion = window.localStorage.getItem(STORAGE_KEYS.DATA_SCHEMA_VERSION);
-
-  try {
-    window.localStorage.setItem(STORAGE_KEYS.DATA, serialized);
-    writeStoredSchemaVersion(DATA_SCHEMA_VERSION);
-    return loadData();
-  } finally {
-    if (previousRaw == null) {
-      window.localStorage.removeItem(STORAGE_KEYS.DATA);
-    } else {
-      window.localStorage.setItem(STORAGE_KEYS.DATA, previousRaw);
-    }
-    if (previousSchemaVersion == null) {
-      window.localStorage.removeItem(STORAGE_KEYS.DATA_SCHEMA_VERSION);
-    } else {
-      window.localStorage.setItem(STORAGE_KEYS.DATA_SCHEMA_VERSION, previousSchemaVersion);
+  // 캐시 분리 키 값(loadData 경로)이 있으면 우선, 없으면 본문 필드 사용
+  const mainPrices = asArray(parsed.prices) as AppData["prices"];
+  const mainTickerDb = asArray(parsed.tickerDatabase) as NonNullable<AppData["tickerDatabase"]>;
+  const mainHistorical = asArray(parsed.historicalDailyCloses);
+  const cacheData: CacheData = cache ?? { prices: [], tickerDatabase: [], historicalDailyCloses: [] };
+  // 캐시 키가 비어 있고 메인 키에 데이터가 있으면 마이그레이션 필요 (loadData 경로에서만 의미 있음)
+  const needsCacheMigration =
+    cache != null &&
+    cacheData.prices.length === 0 && cacheData.tickerDatabase.length === 0 && cacheData.historicalDailyCloses.length === 0 &&
+    (mainPrices.length > 0 || mainTickerDb.length > 0 || mainHistorical.length > 0);
+  const effectivePrices = cacheData.prices.length > 0 ? cacheData.prices : mainPrices;
+  const effectiveTickerDatabase = cacheData.tickerDatabase.length > 0 ? cacheData.tickerDatabase : mainTickerDb;
+  const effectiveHistoricalDailyCloses = cacheData.historicalDailyCloses.length > 0
+    ? cacheData.historicalDailyCloses
+    : normalizeHistoricalDailyCloses(mainHistorical);
+  const normalizedTargetCurveRaw = asObject(parsed.targetNetWorthCurve);
+  const normalizedTargetCurve: Record<string, number> = {};
+  for (const [date, value] of Object.entries(normalizedTargetCurveRaw)) {
+    if (typeof value === "number" && Number.isFinite(value)) {
+      normalizedTargetCurve[date] = value;
     }
   }
+  const parsedData: AppData = {
+    loans: parsedLoans,
+    accounts: parsedAccounts.map((a) => {
+      const debtValue = typeof a.debt === "number" ? a.debt : Number(a.debt ?? 0) || 0;
+      return {
+        ...a,
+        debt: debtValue,
+        savings: a.savings ?? 0
+      };
+    }),
+    ledger: parsedLedger,
+    trades: parsedTrades,
+    prices: effectivePrices,
+    categoryPresets: mergeCategoryPresets(parsed.categoryPresets, defaults),
+    recurringExpenses: parsedRecurring,
+    budgetGoals: parsedBudgetGoals,
+    customSymbols: parsedCustomSymbols,
+    usTickers: asArray<string>(parsed.usTickers).length > 0 ? [...asArray<string>(parsed.usTickers)] : [...DEFAULT_US_TICKERS],
+    tickerDatabase: effectiveTickerDatabase,
+    ledgerTemplates: parsedLedgerTemplates,
+    stockPresets: parsedStockPresets,
+    targetPortfolios: parsedTargetPortfolios,
+    workoutWeeks: parsedWorkoutWeeks,
+    workoutRoutines: parsedWorkoutRoutines,
+    customExercises: parsedCustomExercises,
+    targetNetWorthCurve: normalizedTargetCurve,
+    assetSnapshots: normalizeAssetSnapshots(parsed.assetSnapshots),
+    marketEnvSnapshots: normalizeMarketEnvSnapshots(parsed.marketEnvSnapshots),
+    historicalDailyCloses: effectiveHistoricalDailyCloses,
+    dividendTrackingTicker: parsed.dividendTrackingTicker !== undefined && parsed.dividendTrackingTicker !== null ? String(parsed.dividendTrackingTicker) : "458730",
+    isaPortfolio: parsedIsaPortfolio.length > 0 ? parsedIsaPortfolio : getDefaultIsaPortfolio(),
+    investmentGoals: normalizeInvestmentGoals(parsed.investmentGoals),
+    // 하루 예산 설정 — loadData 필드 누락으로 새로고침마다 유실되던 회귀 방지
+    dailyBudget: normalizeDailyBudget(parsed.dailyBudget)
+  };
+  return { data: parsedData, needsCacheMigration };
 }
 
 export function loadData(): AppData {
   const emptyData = getEmptyData();
-  const defaults = getDefaultCategoryPresets();
 
   if (typeof window === "undefined") {
     return emptyData;
@@ -872,90 +990,11 @@ export function loadData(): AppData {
     const parsedObject = asObject(parsedUnknown);
     const schemaVersion = readStoredSchemaVersion();
     const migratedBySchema = migrateBySchema(parsedObject, schemaVersion);
-    const parsed = migratedBySchema.data as Partial<AppData>;
     const schemaVersionChanged = migratedBySchema.migrated || schemaVersion !== DATA_SCHEMA_VERSION;
-    const parsedLoans = asArray(parsed.loans) as NonNullable<AppData["loans"]>;
-    const parsedAccounts = asArray(parsed.accounts) as AppData["accounts"];
-    // 손상된 ledger/trade 엔트리는 폐기 — NaN/누락 amount가 계산에 흘러들지 않게.
-    const ledgerSan = sanitizeLedger(asArray<unknown>(parsed.ledger));
-    const tradesSan = sanitizeTrades(asArray<unknown>(parsed.trades));
-    if (ledgerSan.dropped > 0) {
-      console.warn(`[FarmWallet] sanitize: ledger ${ledgerSan.dropped}건 폐기`, ledgerSan.droppedSamples);
-    }
-    if (tradesSan.dropped > 0) {
-      console.warn(`[FarmWallet] sanitize: trades ${tradesSan.dropped}건 폐기`, tradesSan.droppedSamples);
-    }
-    const parsedLedger = ledgerSan.clean as AppData["ledger"];
-    const parsedTrades = tradesSan.clean as AppData["trades"];
-    const parsedRecurring = asArray(parsed.recurringExpenses) as AppData["recurringExpenses"];
-    const parsedBudgetGoals = asArray(parsed.budgetGoals) as AppData["budgetGoals"];
-    const parsedCustomSymbols = asArray(parsed.customSymbols) as AppData["customSymbols"];
-    const parsedLedgerTemplates = asArray(parsed.ledgerTemplates) as NonNullable<AppData["ledgerTemplates"]>;
-    const parsedStockPresets = asArray(parsed.stockPresets) as NonNullable<AppData["stockPresets"]>;
-    const parsedTargetPortfolios = asArray(parsed.targetPortfolios) as NonNullable<AppData["targetPortfolios"]>;
-    const parsedWorkoutWeeks = asArray(parsed.workoutWeeks) as NonNullable<AppData["workoutWeeks"]>;
-    const parsedWorkoutRoutinesRaw = asArray(parsed.workoutRoutines) as NonNullable<AppData["workoutRoutines"]>;
-    // 시드 주입 정책: 기존 사용자의 편집을 절대 덮어쓰지 않는다.
-    // 저장값이 비어 있을 때만 DEFAULT_WORKOUT_ROUTINES 를 주입.
-    const parsedWorkoutRoutines =
-      parsedWorkoutRoutinesRaw.length > 0 ? parsedWorkoutRoutinesRaw : [...DEFAULT_WORKOUT_ROUTINES];
-    const parsedCustomExercises = asArray(parsed.customExercises) as NonNullable<AppData["customExercises"]>;
-    const parsedIsaPortfolio = asArray(parsed.isaPortfolio) as NonNullable<AppData["isaPortfolio"]>;
 
     // 캐시 분리 키에서 로드, 없으면 메인 키의 값으로 마이그레이션
     const cache = loadCacheData();
-    const mainPrices = asArray(parsed.prices) as AppData["prices"];
-    const mainTickerDb = asArray(parsed.tickerDatabase) as NonNullable<AppData["tickerDatabase"]>;
-    const mainHistorical = asArray(parsed.historicalDailyCloses);
-    // 캐시 키가 비어 있고 메인 키에 데이터가 있으면 마이그레이션 필요
-    const needsCacheMigration =
-      cache.prices.length === 0 && cache.tickerDatabase.length === 0 && cache.historicalDailyCloses.length === 0 &&
-      (mainPrices.length > 0 || mainTickerDb.length > 0 || mainHistorical.length > 0);
-    const effectivePrices = cache.prices.length > 0 ? cache.prices : mainPrices;
-    const effectiveTickerDatabase = cache.tickerDatabase.length > 0 ? cache.tickerDatabase : mainTickerDb;
-    const effectiveHistoricalDailyCloses = cache.historicalDailyCloses.length > 0
-      ? cache.historicalDailyCloses
-      : normalizeHistoricalDailyCloses(mainHistorical);
-    const normalizedTargetCurveRaw = asObject(parsed.targetNetWorthCurve);
-    const normalizedTargetCurve: Record<string, number> = {};
-    for (const [date, value] of Object.entries(normalizedTargetCurveRaw)) {
-      if (typeof value === "number" && Number.isFinite(value)) {
-        normalizedTargetCurve[date] = value;
-      }
-    }
-    const parsedData: AppData = {
-      loans: parsedLoans,
-      accounts: parsedAccounts.map((a) => {
-        const debtValue = typeof a.debt === "number" ? a.debt : Number(a.debt ?? 0) || 0;
-        return {
-          ...a,
-          debt: debtValue,
-          savings: a.savings ?? 0
-        };
-      }),
-      ledger: parsedLedger,
-      trades: parsedTrades,
-      prices: effectivePrices,
-      categoryPresets: mergeCategoryPresets(parsed.categoryPresets, defaults),
-      recurringExpenses: parsedRecurring,
-      budgetGoals: parsedBudgetGoals,
-      customSymbols: parsedCustomSymbols,
-      usTickers: asArray<string>(parsed.usTickers).length > 0 ? [...asArray<string>(parsed.usTickers)] : [...DEFAULT_US_TICKERS],
-      tickerDatabase: effectiveTickerDatabase,
-      ledgerTemplates: parsedLedgerTemplates,
-      stockPresets: parsedStockPresets,
-      targetPortfolios: parsedTargetPortfolios,
-      workoutWeeks: parsedWorkoutWeeks,
-      workoutRoutines: parsedWorkoutRoutines,
-      customExercises: parsedCustomExercises,
-      targetNetWorthCurve: normalizedTargetCurve,
-      assetSnapshots: normalizeAssetSnapshots(parsed.assetSnapshots),
-      marketEnvSnapshots: normalizeMarketEnvSnapshots(parsed.marketEnvSnapshots),
-      historicalDailyCloses: effectiveHistoricalDailyCloses,
-      dividendTrackingTicker: parsed.dividendTrackingTicker !== undefined && parsed.dividendTrackingTicker !== null ? String(parsed.dividendTrackingTicker) : "458730",
-      isaPortfolio: parsedIsaPortfolio.length > 0 ? parsedIsaPortfolio : getDefaultIsaPortfolio(),
-      investmentGoals: normalizeInvestmentGoals(parsed.investmentGoals)
-    };
+    const { data: parsedData, needsCacheMigration } = buildAppDataFromMigrated(migratedBySchema.data, cache);
     // krNames는 idle 시간에 비동기 로드되므로, 여기서는 빈 맵일 수 있음.
     // 실제 한글명 적용은 useAppData의 idle 콜백에서 수행.
     const { data: dataWithKrNames, changed: krNamesChanged } = applyKoreanStockNames(parsedData);

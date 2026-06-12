@@ -25,9 +25,9 @@ interface Props {
 
 export const InsightsTabNav = React.memo(function InsightsTabNav({ tab, onSelectTab, selMonthLabel }: Props) {
   return (
-    <div style={{ display: "flex", gap: 4, padding: "12px 24px", background: "var(--surface)", borderBottom: "1px solid var(--border-light)", overflowX: "auto", flexWrap: "nowrap" }}>
+    <div role="tablist" aria-label="인사이트 탭" style={{ display: "flex", gap: 4, padding: "12px 24px", background: "var(--surface)", borderBottom: "1px solid var(--border-light)", overflowX: "auto", flexWrap: "nowrap" }}>
       {TABS.map(t => (
-        <button key={t.id} onClick={() => onSelectTab(t.id)} style={{
+        <button key={t.id} role="tab" aria-selected={tab === t.id} onClick={() => onSelectTab(t.id)} style={{
           padding: "8px 16px", borderRadius: 20, border: "none", cursor: "pointer", whiteSpace: "nowrap",
           fontSize: 13, fontWeight: tab === t.id ? 700 : 500,
           /* 활성 필: 무채색 반전(텍스트색 배경 + 배경색 글자) — 다크에서 밝은 필로 가시성 확보 */

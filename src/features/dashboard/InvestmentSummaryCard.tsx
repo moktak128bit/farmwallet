@@ -1,15 +1,20 @@
 import React, { useMemo, useState } from "react";
 import { Pencil, Check, X } from "lucide-react";
-import type { Account, LedgerEntry, StockTrade, StockPrice, InvestmentGoals } from "../../types";
+import type {
+  Account,
+  AccountBalanceRow,
+  InvestmentGoals,
+  LedgerEntry,
+  PositionRow,
+  StockTrade,
+} from "../../types";
 import { useAppStore } from "../../store/appStore";
 import {
-  computeAccountBalances,
-  computePositions,
   positionMarketValueKRW,
   computeTotalNetWorth,
 } from "../../calculations";
 import { formatKRW } from "../../utils/formatter";
-import { getTodayKST, parseIsoLocal } from "../../utils/date";
+import { formatIsoLocal, getTodayKST, parseIsoLocal } from "../../utils/date";
 import {
   buildClosedTradeRecords,
   filterByPeriod,
@@ -20,7 +25,9 @@ interface Props {
   accounts: Account[];
   ledger: LedgerEntry[];
   trades: StockTrade[];
-  prices: StockPrice[];
+  /** 부모(DashboardPage)가 1회 계산한 값 — 카드에서 재계산하지 않는다 (헤더 주석 정책) */
+  balances: AccountBalanceRow[];
+  positions: PositionRow[];
   fxRate: number | null;
 }
 
@@ -54,7 +61,8 @@ export const InvestmentSummaryCard: React.FC<Props> = React.memo(function Invest
   accounts,
   ledger,
   trades,
-  prices,
+  balances,
+  positions,
   fxRate,
 }) {
   const setData = useAppStore((s) => s.setData);
@@ -72,20 +80,6 @@ export const InvestmentSummaryCard: React.FC<Props> = React.memo(function Invest
     }
     return set;
   }, [accounts]);
-
-  const balances = useMemo(
-    () => computeAccountBalances(accounts, ledger, trades),
-    [accounts, ledger, trades]
-  );
-
-  const positions = useMemo(
-    () =>
-      computePositions(trades, prices, accounts, {
-        fxRate: fxRate ?? undefined,
-        priceFallback: "cost",
-      }),
-    [trades, prices, accounts, fxRate]
-  );
 
   const totalInvestmentAssets = useMemo(() => {
     let total = 0;
@@ -176,9 +170,10 @@ export const InvestmentSummaryCard: React.FC<Props> = React.memo(function Invest
 
   /** 최근 12개월(오늘 포함 직전 12개월) 누적 배당 수령액 — 연간 배당금 목표 진행률 측정. */
   const trailing12MoDividend = useMemo(() => {
-    const cutoff = new Date(parseIsoLocal(today)?.getTime() ?? Date.now());
+    // KST-safe: 로컬 파싱(parseIsoLocal) → 12개월 빼기 → 로컬 포맷. toISOString(UTC) 사용 금지
+    const cutoff = parseIsoLocal(today) ?? new Date();
     cutoff.setMonth(cutoff.getMonth() - 12);
-    const cutoffIso = cutoff.toISOString().slice(0, 10);
+    const cutoffIso = formatIsoLocal(cutoff);
     let total = 0;
     for (const e of ledger) {
       if (!isDividendEntry(e)) continue;
@@ -229,7 +224,7 @@ export const InvestmentSummaryCard: React.FC<Props> = React.memo(function Invest
   };
 
   const pnlColor = (v: number) =>
-    v > 0 ? "var(--success)" : v < 0 ? "var(--danger)" : "var(--muted)";
+    v > 0 ? "var(--success)" : v < 0 ? "var(--danger)" : "var(--text-muted)";
 
   return (
     <div
@@ -258,7 +253,7 @@ export const InvestmentSummaryCard: React.FC<Props> = React.memo(function Invest
         >
           {monthlyRealizedPnl > 0 ? "▲" : monthlyRealizedPnl < 0 ? "▼" : "–"} 이번달 {formatKRW(Math.round(Math.abs(monthlyRealizedPnl)))}
         </span>
-        <span style={{ fontSize: 13, color: "var(--muted)" }}>
+        <span style={{ fontSize: 13, color: "var(--text-muted)" }}>
           증권·crypto 계좌 현금+포지션 (일반 계좌·부채 제외)
         </span>
       </div>
@@ -315,7 +310,7 @@ export const InvestmentSummaryCard: React.FC<Props> = React.memo(function Invest
           gap: 12,
         }}
       >
-        <MiniStat label="원금" value={formatKRW(Math.round(principal))} color="var(--muted)" />
+        <MiniStat label="원금" value={formatKRW(Math.round(principal))} color="var(--text-muted)" />
         <MiniStat
           label="누적 손익"
           value={formatKRW(Math.round(cumulativePnl))}
@@ -337,7 +332,7 @@ export const InvestmentSummaryCard: React.FC<Props> = React.memo(function Invest
       <div
         style={{
           fontSize: 13,
-          color: "var(--muted)",
+          color: "var(--text-muted)",
           textAlign: "center",
           padding: "6px 0",
           borderTop: "1px dashed var(--border)",
@@ -349,7 +344,7 @@ export const InvestmentSummaryCard: React.FC<Props> = React.memo(function Invest
       <div
         style={{
           fontSize: 13,
-          color: "var(--muted)",
+          color: "var(--text-muted)",
           display: "flex",
           justifyContent: "flex-end",
           alignItems: "center",
@@ -394,7 +389,7 @@ export const InvestmentSummaryCard: React.FC<Props> = React.memo(function Invest
               style={{ padding: 2, background: "transparent", border: "none", cursor: "pointer" }}
               aria-label="시작일 편집"
             >
-              <Pencil size={10} color="var(--muted)" />
+              <Pencil size={10} color="var(--text-muted)" />
             </button>
           </>
         )}
@@ -436,7 +431,7 @@ const GoalRow: React.FC<GoalRowProps> = ({
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 8 }}>
-        <span style={{ fontSize: 13, color: "var(--muted)" }}>{label}</span>
+        <span style={{ fontSize: 13, color: "var(--text-muted)" }}>{label}</span>
         {isEditing ? (
           <div style={{ display: "flex", gap: 4, alignItems: "center" }}>
             <input
@@ -526,7 +521,7 @@ const ProgressBar: React.FC<{ pct: number; label: string }> = ({ pct, label }) =
           }}
         />
       </div>
-      <div style={{ fontSize: 13, color: "var(--muted)" }}>{label}</div>
+      <div style={{ fontSize: 13, color: "var(--text-muted)" }}>{label}</div>
     </div>
   );
 };
@@ -547,8 +542,8 @@ const MiniStat: React.FC<{ label: string; value: string; color: string; sub?: st
       gap: 2,
     }}
   >
-    <div style={{ fontSize: 11, color: "var(--muted)" }}>{label}</div>
+    <div style={{ fontSize: 11, color: "var(--text-muted)" }}>{label}</div>
     <div style={{ fontSize: 18, fontWeight: 700, color }}>{value}</div>
-    {sub && <div style={{ fontSize: 12, color: "var(--muted)" }}>{sub}</div>}
+    {sub && <div style={{ fontSize: 12, color: "var(--text-muted)" }}>{sub}</div>}
   </div>
 );

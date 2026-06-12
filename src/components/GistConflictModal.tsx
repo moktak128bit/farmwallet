@@ -1,6 +1,7 @@
-import React, { useMemo, useState } from "react";
+import React, { useEffect, useMemo, useState } from "react";
 import type { GistConflict } from "../store/uiStore";
 import type { GistConflictResolution } from "../hooks/useGistSync";
+import { useFocusTrap } from "../hooks/useFocusTrap";
 
 interface GistConflictModalProps {
   conflict: GistConflict | null;
@@ -30,6 +31,7 @@ function summarizeJson(json: string): { ledger: number | string; trades: number 
 
 export const GistConflictModal: React.FC<GistConflictModalProps> = ({ conflict, onResolve }) => {
   const [busy, setBusy] = useState<GistConflictResolution | null>(null);
+  const trapRef = useFocusTrap<HTMLDivElement>(!!conflict);
 
   const summary = useMemo(() => {
     if (!conflict) return null;
@@ -38,6 +40,19 @@ export const GistConflictModal: React.FC<GistConflictModalProps> = ({ conflict, 
       local: summarizeJson(conflict.pendingLocalDataJson),
     };
   }, [conflict]);
+
+  // ESC = 취소 (아무것도 적용하지 않고 닫기)
+  useEffect(() => {
+    if (!conflict) return;
+    const onKeyDown = (e: KeyboardEvent) => {
+      if (e.key === "Escape") {
+        e.stopPropagation();
+        onResolve("cancel");
+      }
+    };
+    window.addEventListener("keydown", onKeyDown);
+    return () => window.removeEventListener("keydown", onKeyDown);
+  }, [conflict, onResolve]);
 
   if (!conflict || !summary) return null;
 
@@ -67,6 +82,7 @@ export const GistConflictModal: React.FC<GistConflictModalProps> = ({ conflict, 
       }}
     >
       <div
+        ref={trapRef}
         className="card"
         style={{
           width: "100%",

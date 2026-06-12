@@ -8,11 +8,13 @@
 import React, { useCallback } from "react";
 import { toast } from "react-hot-toast";
 import type { AppData } from "../../types";
-import { loadBackupData, normalizeImportedData, type BackupEntry } from "../../storage";
+import { loadBackupData, normalizeImportedData, saveSafetySnapshot, type BackupEntry } from "../../storage";
 import { ERROR_MESSAGES } from "../../constants/errorMessages";
 
 interface Props {
   backups: BackupEntry[];
+  /** 현재 데이터 — 복원 직전 안전 스냅샷용 */
+  data: AppData;
   onChangeData: (next: AppData) => void;
   setText: React.Dispatch<React.SetStateAction<string>>;
   setError: React.Dispatch<React.SetStateAction<string | null>>;
@@ -24,6 +26,7 @@ interface Props {
 
 export const BackupHistoryTable: React.FC<Props> = React.memo(function BackupHistoryTable({
   backups,
+  data,
   onChangeData,
   setText,
   setError,
@@ -31,17 +34,17 @@ export const BackupHistoryTable: React.FC<Props> = React.memo(function BackupHis
   loadBackupList
 }) {
   const handleRestoreBackup = useCallback(async (entry: BackupEntry) => {
+    const when = new Date(entry.createdAt).toLocaleString("ko-KR", { timeZone: "Asia/Seoul" });
+    if (!window.confirm(`${when} 시점 백업으로 현재 데이터를 덮어씁니다.\n복원 직전 현재 데이터는 안전 스냅샷으로 보관됩니다. 계속할까요?`)) {
+      return;
+    }
     const toastId = toast.loading("백업을 복원하는 중...");
     try {
-      let restored: AppData | null = null;
-      // 로컬 백업만 복원
-      if (entry.source === "browser") {
-        restored = loadBackupData(entry.id);
-      } else {
-        // 서버 백업은 복원하지 않음
-        toast.error(ERROR_MESSAGES.SERVER_BACKUP_DISABLED, { id: toastId });
-        return;
-      }
+      // 복원 직전 현재 데이터 안전 스냅샷 (실수 복원 시 되돌릴 수 있게)
+      await saveSafetySnapshot(data, "백업 복원 직전 자동 스냅샷");
+
+      // 백업 목록은 로컬(브라우저) 백업만 제공됨 — getAllBackupList 참조
+      const restored = loadBackupData(entry.id);
 
       if (!restored) {
         setError(ERROR_MESSAGES.BACKUP_SELECTED_NOT_FOUND);
@@ -63,7 +66,7 @@ export const BackupHistoryTable: React.FC<Props> = React.memo(function BackupHis
         console.error("백업 복원 오류:", e);
       }
     }
-  }, [onChangeData, setText, setError, loadBackupList, onBackupRestored]);
+  }, [data, onChangeData, setText, setError, loadBackupList, onBackupRestored]);
 
   return (
     <table className="data-table compact">
@@ -93,8 +96,11 @@ export const BackupHistoryTable: React.FC<Props> = React.memo(function BackupHis
                 minute: "2-digit",
                 timeZone: "Asia/Seoul"
               })}
+              {b.label && (
+                <div style={{ fontSize: 11, color: "var(--text-muted)", marginTop: 2 }}>{b.label}</div>
+              )}
             </td>
-            <td>{b.source === "server" ? "로컬 파일" : "브라우저 저장소"}</td>
+            <td>브라우저 저장소</td>
             <td>
               <button type="button" onClick={() => handleRestoreBackup(b)}>
                 이 시점으로 복원

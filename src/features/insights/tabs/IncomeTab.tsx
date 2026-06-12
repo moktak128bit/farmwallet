@@ -40,10 +40,11 @@ export const IncomeTab = React.memo(function IncomeTab({ d }: { d: D }) {
   const hhi = realIncTotal > 0 ? realIncData.reduce((s, x) => s + Math.pow(x.value / realIncTotal, 2), 0) : 0;
   const effectiveSources = hhi > 0 ? 1 / hhi : 0;
 
-  // 패시브 비율 추이
-  const passiveRatioTrend = d.months.map((m) => {
+  // 패시브 비율 추이 — divTrend는 d.months와 평행 배열이므로 인덱스로 조회
+  // ("6월" 같은 연도 없는 라벨 find 조인은 13개월 이상 기간에서 엉뚱한 해와 매칭됨)
+  const passiveRatioTrend = d.months.map((m, i) => {
     const inc = d.monthly[m].income;
-    const dv = d.divTrend.find((t) => t.l === d.ml[m])?.amount ?? 0;
+    const dv = d.divTrend[i]?.amount ?? 0;
     return { l: d.ml[m], 수입: inc, 패시브: dv, 비율: inc > 0 ? (dv / inc) * 100 : 0 };
   });
 
@@ -229,13 +230,13 @@ export const IncomeTab = React.memo(function IncomeTab({ d }: { d: D }) {
       <Section storageKey="income-section-insights" title="💡 인사이트">
         <Card title="수입 종합 인사이트" span={4}>
           <div className="grid-2" style={{ gap: 10 }}>
-            <Insight title="수입 안정성" color="#2563eb" bg="#cce5ff">
+            <Insight title="수입 안정성" tone="info">
               {d.incomeStability !== null ? `안정성 지수 ${d.incomeStability}% (1 − 표준편차/평균). ${d.incomeStability >= 70 ? "매우 안정적인 수입 흐름. 지출 계획과 투자 전략 세우기 좋은 환경." : d.incomeStability >= 40 ? "수입에 변동이 있지만 관리 가능 수준. 변동 원인 파악하면 더 안정화 가능." : "수입 변동이 큼. 비상자금(재정 활주로 6개월 이상) 확보 필수, 안정 수입원 늘리기 권장."}` : "데이터 부족 (최소 2개월 이상 필요)"}
             </Insight>
-            <Insight title="패시브 수입 현황" color="#059669" bg="#d4edda">
+            <Insight title="패시브 수입 현황" tone="success">
               {d.passiveIncome > 0 ? `배당·이자·투자수익 합산 ${F(d.passiveIncome)}원 (실질 수입의 ${passivePct.toFixed(1)}%). 월평균 ${F(Math.round(d.passiveIncome / d.monthSpan))}원의 패시브 수입이 발생. ${passivePct >= 10 ? "패시브 비중 10% 달성. 자산이 돈을 벌어주는 구조!" : "10% 이상으로 늘리면 FIRE 가능성이 커집니다. 배당 ETF 적립식 투자가 시작점."}` : "패시브 수입 없음. 배당주/ETF/예금 이자 등 소액부터 시작해 보세요. 월 1만원도 의미 있는 첫걸음."}
             </Insight>
-            <Insight title="수입 다각화 점검" color="#b45309" bg="#fff3cd">
+            <Insight title="수입 다각화 점검" tone="warning">
               실질 수입원 {realIncData.length}개 · 실효 {effectiveSources.toFixed(1)}개.
               {salaryPct > 80
                 ? ` 회사소득 의존도 ${salaryPct.toFixed(0)}%로 매우 높습니다. 비회사 실질 수입 ${F(Math.max(0, d.realIncome - salaryGroupTotal))}원에 불과. 부업·투자 수입·프리랜서로 다각화 권장.`
@@ -256,33 +257,33 @@ export const IncomeTab = React.memo(function IncomeTab({ d }: { d: D }) {
           <Card title="수입원별 세부 인사이트" span={4}>
             <div className="grid-2" style={{ gap: 10 }}>
               {d.incSubInsights.map((s) => {
-                const natureColor = NATURE_COLORS[s.nature] ?? "#999";
+                const natureColor = NATURE_COLORS[s.nature] ?? "var(--text-faint)";
                 // 추세 색 배경은 정기 수입원에만 — 비정기·환급·부채에 "급감" 빨강은 노이즈
                 const tinted = s.isReal && s.recurring;
                 return (
-                  <div key={s.sub} style={{ padding: "12px 14px", borderRadius: 10, background: tinted && s.monthTrend === "up" ? "#f0fdf4" : tinted && s.monthTrend === "down" ? "#fff5f5" : "#f8f9fa", border: `1px solid ${tinted && s.monthTrend === "up" ? "#86efac" : tinted && s.monthTrend === "down" ? "#fcc" : "#eee"}`, fontSize: 12, opacity: s.isReal ? 1 : 0.85 }}>
+                  <div key={s.sub} style={{ padding: "12px 14px", borderRadius: 10, background: tinted && s.monthTrend === "up" ? "var(--primary-light)" : tinted && s.monthTrend === "down" ? "var(--danger-light)" : "var(--bg)", border: "1px solid var(--border-light)", fontSize: 12, color: "var(--text)", opacity: s.isReal ? 1 : 0.85 }}>
                     <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 6 }}>
                       <span style={{ fontWeight: 700, fontSize: 14, display: "flex", alignItems: "center", gap: 6 }}>
                         <span style={{ width: 10, height: 10, borderRadius: 5, background: natureColor, display: "inline-block" }} />
                         {s.sub}
                         <span style={{ fontSize: 10, fontWeight: 700, color: natureColor, border: `1px solid ${natureColor}`, borderRadius: 8, padding: "1px 6px" }}>{NATURE_LABELS[s.nature] ?? s.nature}</span>
-                        {!s.isReal && <span style={{ fontSize: 10, fontWeight: 600, color: "#888", background: "#eee", borderRadius: 8, padding: "1px 6px" }}>실질 수입 제외</span>}
+                        {!s.isReal && <span style={{ fontSize: 10, fontWeight: 600, color: "var(--text-muted)", background: "var(--surface-hover)", borderRadius: 8, padding: "1px 6px" }}>실질 수입 제외</span>}
                       </span>
-                      <span style={{ fontSize: 16, fontWeight: 800, color: s.isReal ? "#059669" : "#888" }}>{F(s.total)}원</span>
+                      <span style={{ fontSize: 16, fontWeight: 800, color: s.isReal ? "var(--success)" : "var(--text-faint)" }}>{F(s.total)}원</span>
                     </div>
-                    <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 4, fontSize: 11, color: "#555", marginBottom: 4 }}>
+                    <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 4, fontSize: 11, color: "var(--text-secondary)", marginBottom: 4 }}>
                       <span>{s.isReal && s.realShare !== null ? `실질 수입 대비 ${s.realShare}%` : `장부 비중 ${s.share}%`}</span>
                       <span>{s.count}건 · 건당 {F(s.avg)}원</span>
                       <span>발생월 평균: {F(s.monthAvg)}원</span>
                       <span>안정성: {s.stability === null ? "— (표본 부족)" : `${s.stability}%`}</span>
                     </div>
-                    <div style={{ fontSize: 11, color: tinted && s.monthTrend === "up" ? "#059669" : tinted && s.monthTrend === "down" ? "#e94560" : "#999", fontWeight: 600, marginBottom: 4 }}>
+                    <div style={{ fontSize: 11, color: tinted && s.monthTrend === "up" ? "var(--success)" : tinted && s.monthTrend === "down" ? "var(--danger)" : "var(--text-faint)", fontWeight: 600, marginBottom: 4 }}>
                       {tinted
                         ? (s.monthTrend === "up" ? `▲ 전월 대비 ${s.mom}% 증가` : s.monthTrend === "down" ? `▼ 전월 대비 ${Math.abs(s.mom)}% 감소` : "전월과 유사")
                         : "비정기 발생"}
                       {s.maxMonth ? ` · 최대: ${s.maxMonth} (${F(s.maxMonthAmt)}원)` : ""}
                     </div>
-                    <div style={{ fontSize: 11, color: "#666", lineHeight: 1.6, borderTop: "1px solid #eee", paddingTop: 4 }}>
+                    <div style={{ fontSize: 11, color: "var(--text-muted)", lineHeight: 1.6, borderTop: "1px solid var(--border-light)", paddingTop: 4 }}>
                       {s.comment}
                     </div>
                   </div>

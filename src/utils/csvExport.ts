@@ -1,4 +1,5 @@
 import type { LedgerEntry, Account } from "../types";
+import { getTodayKST } from "./date";
 
 /**
  * RFC 4180 호환 escape:
@@ -51,7 +52,8 @@ export function exportLedgerCsv(
   const url = URL.createObjectURL(blob);
   const a = document.createElement("a");
   a.href = url;
-  a.download = filename || `farmwallet_${new Date().toISOString().slice(0, 10)}.csv`;
+  // 기본 파일명 날짜는 KST 기준 — UTC 사용 시 오전 9시 이전엔 전날 날짜가 찍힘
+  a.download = filename || `farmwallet_${getTodayKST()}.csv`;
   a.click();
   URL.revokeObjectURL(url);
 }

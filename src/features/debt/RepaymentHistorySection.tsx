@@ -171,7 +171,7 @@ export const RepaymentHistorySection: React.FC<Props> = React.memo(function Repa
                 fontSize: 14,
                 fontWeight: 600,
                 color: "var(--primary)",
-                background: "var(--primary-muted)",
+                background: "var(--primary-light)",
                 padding: "4px 10px",
                 borderRadius: 20
               }}

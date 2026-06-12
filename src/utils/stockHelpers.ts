@@ -1,5 +1,6 @@
 import type { TradeSide } from "../types";
 import { canonicalTickerForMatch, isKRWStock } from "./finance";
+import { getTodayKST } from "./date";
 import { getKrNames } from "../services/dataService";
 
 /** 한국 종목은 krNames 한글명 우선, 그 외는 apiName 그대로 */
@@ -31,11 +32,11 @@ export interface TradeFormState {
   feeKRW: string;
 }
 
-/** 기본 거래 폼 상태 팩토리. 매수/오늘/빈 필드. */
+/** 기본 거래 폼 상태 팩토리. 매수/오늘(KST)/빈 필드. */
 export function createDefaultTradeForm(): TradeFormState {
   return {
     id: undefined,
-    date: new Date().toISOString().slice(0, 10),
+    date: getTodayKST(),
     accountId: "",
     ticker: "",
     name: "",

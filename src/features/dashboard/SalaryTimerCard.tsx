@@ -1,6 +1,7 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { LedgerEntry } from "../../types";
 import { STORAGE_KEYS } from "../../constants/config";
+import { toKrwAmount } from "./summaryMath";
 
 interface SalaryTimerSettings {
   /** 월급 받는 날 (1~31). 짧은 달은 말일로 자동 보정 */
@@ -11,9 +12,11 @@ interface SalaryTimerSettings {
 
 interface Props {
   ledger: LedgerEntry[];
+  /** USD 급여 기록 원화 환산용 (가계부 급여 추정) */
+  fxRate: number | null;
 }
 
-const MS_PER = { sec: 1000, min: 60_000, hour: 3_600_000, day: 86_400_000, week: 604_800_000 } as const;
+const MS_PER = { sec: 1000, min: 60_000, hour: 3_600_000, day: 86_400_000 } as const;
 
 /** 짧은 달 보정: 요청 payday가 그 달 말일보다 크면 말일로 클램프 */
 function clampPayday(year: number, monthIndex: number, payday: number): number {
@@ -74,7 +77,7 @@ function pad2(n: number): string {
 }
 
 // React.memo — 부모(DashboardPage)가 넘기는 props는 안정적(store 참조)이어야 한다.
-export const SalaryTimerCard: React.FC<Props> = React.memo(function SalaryTimerCard({ ledger }) {
+export const SalaryTimerCard: React.FC<Props> = React.memo(function SalaryTimerCard({ ledger, fxRate }) {
   const [settings, setSettings] = useState<SalaryTimerSettings | null>(() => loadSettings());
   const [editing, setEditing] = useState<boolean>(() => loadSettings() === null);
   const [paydayInput, setPaydayInput] = useState<string>(() => String(loadSettings()?.payday ?? 25));
@@ -96,7 +99,7 @@ export const SalaryTimerCard: React.FC<Props> = React.memo(function SalaryTimerC
     return () => cancelAnimationFrame(rafRef.current);
   }, [settings, editing]);
 
-  /** 가계부의 '급여' 수입 기록에서 월평균 추정 (자동 채우기용) */
+  /** 가계부의 '급여' 수입 기록에서 월평균 추정 (자동 채우기용) — USD 기록은 환율로 원화 환산 */
   const ledgerSalary = useMemo(() => {
     const byMonth = new Map<string, number>();
     for (const e of ledger) {
@@ -105,13 +108,13 @@ export const SalaryTimerCard: React.FC<Props> = React.memo(function SalaryTimerC
       if (!hay.includes("급여") && !hay.includes("월급")) continue;
       const month = e.date?.slice(0, 7);
       if (!month) continue;
-      byMonth.set(month, (byMonth.get(month) ?? 0) + e.amount);
+      byMonth.set(month, (byMonth.get(month) ?? 0) + toKrwAmount(e, fxRate));
     }
     if (byMonth.size === 0) return null;
     const values = [...byMonth.values()];
     const avg = Math.round(values.reduce((s, v) => s + v, 0) / values.length);
     return { avg, months: values.length };
-  }, [ledger]);
+  }, [ledger, fxRate]);
 
   const handleSave = useCallback(() => {
     const payday = Math.round(Number(paydayInput));
@@ -130,10 +133,10 @@ export const SalaryTimerCard: React.FC<Props> = React.memo(function SalaryTimerC
 
   // ── 설정 폼 ──────────────────────────────────────────────────────────────
   if (editing || !settings) {
-    const paddayNum = Number(paydayInput);
+    const paydayNum = Number(paydayInput);
     const salaryNum = Number(salaryInput.replace(/[,\s]/g, ""));
     const valid =
-      Number.isFinite(paddayNum) && paddayNum >= 1 && paddayNum <= 31 && Number.isFinite(salaryNum) && salaryNum > 0;
+      Number.isFinite(paydayNum) && paydayNum >= 1 && paydayNum <= 31 && Number.isFinite(salaryNum) && salaryNum > 0;
     return (
       <div className="card">
         <div className="card-title" style={{ marginBottom: 4 }}>💰 월급 실시간 타이머</div>
@@ -268,7 +271,14 @@ export const SalaryTimerCard: React.FC<Props> = React.memo(function SalaryTimerC
       </div>
 
       {/* 진행 바 */}
-      <div style={{ position: "relative", height: 10, background: "var(--border)", borderRadius: 5, overflow: "hidden" }}>
+      <div
+        role="progressbar"
+        aria-valuemin={0}
+        aria-valuemax={100}
+        aria-valuenow={Math.round(progress * 100)}
+        aria-label={`급여 구간 진행률 ${(progress * 100).toFixed(0)}%`}
+        style={{ position: "relative", height: 10, background: "var(--border)", borderRadius: 5, overflow: "hidden" }}
+      >
         <div
           style={{
             height: "100%",

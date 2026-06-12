@@ -94,6 +94,7 @@ export const PortfolioChartsSection: React.FC<PortfolioChartsSectionProps> = ({
                 <ResponsiveContainer width="100%" height="100%" minHeight={300} minWidth={0}>
                   <PieChart>
                     <Pie
+                      isAnimationActive={false}
                       data={sectorData}
                       cx="50%"
                       cy="50%"
@@ -118,7 +119,7 @@ export const PortfolioChartsSection: React.FC<PortfolioChartsSectionProps> = ({
                 </ResponsiveContainer>
               );
             })() : (
-              <div style={{ display: "flex", justifyContent: "center", alignItems: "center", height: "100%", color: "var(--muted)" }}>
+              <div style={{ display: "flex", justifyContent: "center", alignItems: "center", height: "100%", color: "var(--text-muted)" }}>
                 보유 종목이 없습니다.
               </div>
             )}
@@ -159,6 +160,7 @@ export const PortfolioChartsSection: React.FC<PortfolioChartsSectionProps> = ({
                 <ResponsiveContainer width="100%" height="100%" minHeight={300} minWidth={0}>
                   <PieChart>
                     <Pie
+                      isAnimationActive={false}
                       data={chartData}
                       cx="50%"
                       cy="50%"
@@ -189,7 +191,7 @@ export const PortfolioChartsSection: React.FC<PortfolioChartsSectionProps> = ({
                 </ResponsiveContainer>
               );
             })() : (
-              <div style={{ display: "flex", justifyContent: "center", alignItems: "center", height: "100%", color: "var(--muted)" }}>
+              <div style={{ display: "flex", justifyContent: "center", alignItems: "center", height: "100%", color: "var(--text-muted)" }}>
                 보유 종목이 없습니다.
               </div>
             )}
@@ -223,6 +225,7 @@ export const PortfolioChartsSection: React.FC<PortfolioChartsSectionProps> = ({
                 <ResponsiveContainer width="100%" height="100%" minHeight={300} minWidth={0}>
                   <PieChart>
                     <Pie
+                      isAnimationActive={false}
                       data={accountData}
                       cx="50%"
                       cy="50%"
@@ -266,7 +269,9 @@ export const PortfolioChartsSection: React.FC<PortfolioChartsSectionProps> = ({
       <div style={{ marginTop: 24 }}>
          {/* 3. 종목별 평가손익 (수평 Bar Chart) */}
          <div className="card" style={{ border: "1px solid var(--border)", boxShadow: "none", padding: 16 }}>
-          <h4 style={{ margin: "0 0 12px 0", textAlign: "center" }}>종목별 평가 손익 (상위/하위 10개)</h4>
+          <h4 style={{ margin: "0 0 12px 0", textAlign: "center" }}>
+            종목별 평가 손익 {positionsWithPrice.length <= 20 ? "(전체)" : "(상위/하위 10개)"}
+          </h4>
           <div style={{ width: "100%", height: Math.max(400, positionsWithPrice.length * 30), minHeight: 400, minWidth: 0 }}>
             {positionsWithPrice.length > 0 ? (() => {
               const withPnlKRW = positionsWithPrice.map(p => ({
@@ -274,13 +279,15 @@ export const PortfolioChartsSection: React.FC<PortfolioChartsSectionProps> = ({
                 pnlKRW: toKRW(p, p.pnl, rate)
               }));
               const sorted = [...withPnlKRW].sort((a, b) => b.pnlKRW - a.pnlKRW);
-              const top10 = sorted.slice(0, 10);
-              const bottom10 = sorted.slice(-10).reverse();
-              const chartData = [...top10, ...bottom10].map(p => ({
+              // 종목 20개 이하면 중복 없이 전체 표시, 초과 시에만 상위/하위 10개
+              const selected =
+                sorted.length <= 20 ? sorted : [...sorted.slice(0, 10), ...sorted.slice(-10)];
+              // 색 컨벤션(국내 관례): 이익=빨강(var(--danger)), 손실=파랑(var(--accent))
+              const chartData = selected.map(p => ({
                 name: (p.name || p.ticker).length > 20 ? (p.name || p.ticker).slice(0, 20) + "..." : (p.name || p.ticker),
                 pnl: p.pnlKRW,
                 fullName: p.name || p.ticker,
-                fill: p.pnlKRW >= 0 ? "#10b981" : "#f43f5e"
+                fill: p.pnlKRW >= 0 ? "var(--danger)" : "var(--accent)"
               }));
               
               return (
@@ -311,7 +318,7 @@ export const PortfolioChartsSection: React.FC<PortfolioChartsSectionProps> = ({
                         formatWithUSD(Number(value ?? 0), rate || null),
                         pieTooltipLabel(item) || name
                       ]}
-                      cursor={{fill: 'rgba(0,0,0,0.05)'}}
+                      cursor={{ fill: "var(--surface-hover)" }}
                     />
                     <Bar isAnimationActive={false} dataKey="pnl" name="평가손익" radius={[0, 4, 4, 0]}>
                       {chartData.map((entry, index) => (
@@ -322,7 +329,7 @@ export const PortfolioChartsSection: React.FC<PortfolioChartsSectionProps> = ({
                 </ResponsiveContainer>
               );
             })() : (
-              <div style={{ display: "flex", justifyContent: "center", alignItems: "center", height: "100%", color: "var(--muted)" }}>
+              <div style={{ display: "flex", justifyContent: "center", alignItems: "center", height: "100%", color: "var(--text-muted)" }}>
                 데이터 없음
               </div>
             )}

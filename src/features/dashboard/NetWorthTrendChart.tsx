@@ -16,7 +16,19 @@ export const NetWorthTrendChart: React.FC<Props> = React.memo(function NetWorthT
   const svgRef = useRef<SVGSVGElement>(null);
   const [hoverIdx, setHoverIdx] = useState<number | null>(null);
 
-  if (data.length < 2) return null;
+  // 빈 상태 — 카드가 통째로 사라지면 위젯이 있는 줄도 모르므로 안내를 보여준다
+  if (data.length < 2) {
+    return (
+      <div className="card" style={{ padding: 20 }}>
+        <div className="card-title" style={{ margin: 0, fontSize: 17 }}>
+          순자산 추이 <span style={{ fontSize: 13, color: "var(--text-muted)", fontWeight: 400 }}>(전체 계좌 − 부채)</span>
+        </div>
+        <p style={{ marginTop: 12, marginBottom: 4, fontSize: 14, color: "var(--text-muted)" }}>
+          월별 데이터가 2개 이상 쌓이면 추이 차트가 표시됩니다. 가계부·거래 기록을 입력해 보세요.
+        </p>
+      </div>
+    );
+  }
 
   const values = data.map((d) => d.value);
   const minVal = Math.min(...values);
@@ -47,10 +59,11 @@ export const NetWorthTrendChart: React.FC<Props> = React.memo(function NetWorthT
   const prevWorth = data[data.length - 2]?.value ?? currentWorth;
   const nwDelta = currentWorth - prevWorth;
   const nwDeltaPct = Number.isFinite(prevWorth) && prevWorth !== 0 ? (nwDelta / prevWorth) * 100 : 0;
-  const nwDeltaColor = nwDelta > 0 ? "var(--success)" : nwDelta < 0 ? "var(--danger)" : "var(--muted)";
+  const nwDeltaColor = nwDelta > 0 ? "var(--success)" : nwDelta < 0 ? "var(--danger)" : "var(--text-muted)";
   const nwArrow = nwDelta > 0 ? "▲" : nwDelta < 0 ? "▼" : "–";
 
-  const yTicks = [minVal, Math.round((minVal + maxVal) / 2), maxVal];
+  // 값 범위가 좁으면 min/중간/max가 겹침 — 중복 제거 (React key 중복 방지)
+  const yTicks = Array.from(new Set([minVal, Math.round((minVal + maxVal) / 2), maxVal]));
   const labelStep = n <= 12 ? 1 : n <= 24 ? 2 : n <= 36 ? 3 : 6;
   const xLabels = pts.filter((_, i) => i % labelStep === 0 || i === n - 1);
 
@@ -91,7 +104,7 @@ export const NetWorthTrendChart: React.FC<Props> = React.memo(function NetWorthT
   return (
     <div className="card" style={{ padding: 20 }}>
       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginBottom: 12, flexWrap: "wrap", gap: 8 }}>
-        <div className="card-title" style={{ margin: 0, fontSize: 17 }}>순자산 추이 <span style={{ fontSize: 13, color: "var(--muted)", fontWeight: 400 }}>(전체 계좌 − 부채)</span></div>
+        <div className="card-title" style={{ margin: 0, fontSize: 17 }}>순자산 추이 <span style={{ fontSize: 13, color: "var(--text-muted)", fontWeight: 400 }}>(전체 계좌 − 부채)</span></div>
         <div style={{ textAlign: "right" }}>
           <div style={{ fontWeight: 700, fontSize: 30, color: "var(--primary)" }}>
             {currentWorth >= 0 ? "" : "-"}{Math.abs(currentWorth).toLocaleString()}만원
@@ -213,7 +226,15 @@ export const NetWorthTrendChart: React.FC<Props> = React.memo(function NetWorthT
                 </text>
                 <text x={10} y={56} fontSize={12} fill="var(--text, #111)">
                   부채
-                  <tspan x={TT_W - 10} textAnchor="end" fontWeight={600} fill="var(--danger, #dc2626)">−{Math.abs(hover.debt).toLocaleString()}만원</tspan>
+                  {/* 부채 0이면 "−0만원" 대신 중립 "0만원" */}
+                  <tspan
+                    x={TT_W - 10}
+                    textAnchor="end"
+                    fontWeight={600}
+                    fill={hover.debt === 0 ? "var(--text, #111)" : "var(--danger, #dc2626)"}
+                  >
+                    {hover.debt === 0 ? "0만원" : `−${Math.abs(hover.debt).toLocaleString()}만원`}
+                  </tspan>
                 </text>
                 <line x1={8} y1={62} x2={TT_W - 8} y2={62} stroke="var(--border, #e5e7eb)" strokeWidth={1} />
                 <text x={10} y={76} fontSize={12} fontWeight={700} fill="var(--primary, #2563eb)">

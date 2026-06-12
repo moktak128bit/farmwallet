@@ -108,8 +108,8 @@ export interface DateAccountUtilization {
  */
 export interface MoimFlowMonth {
   month: string;            // "YYYY-MM"
-  myTransfer: number;       // 본인 계좌 → 분담 통장 (kind=transfer)
-  partnerDeposit: number;   // 외부 입금 (kind=income, 상대 입금·캐시백 등)
+  myTransfer: number;       // 본인 계좌 → 분담 통장 (kind=transfer, 정산 제외)
+  partnerDeposit: number;   // 외부 입금 (kind=income, 상대 입금·캐시백 등) + 정산 입금(구버전 transfer 포함)
   spending: number;         // 분담 통장 출금 합 (kind=expense)
   balanceChange: number;    // myTransfer + partnerDeposit - spending
 }
@@ -153,7 +153,12 @@ export function computeMoimAccountFlow(
     if (!Number.isFinite(amount) || amount <= 0) continue;
 
     if (l.kind === "transfer" && l.toAccountId === accountId) {
-      row.myTransfer += amount;
+      // 정산 입금은 "상대가 자기 부담분을 돌려준 돈" — 내 이체가 아니라 상대 입금으로 분류.
+      // 현행 SettlementView는 kind=income으로 기록하지만, 과거 정산 기록(kind=transfer,
+      // category=정산)이 남아 있을 수 있어 하위 호환으로 함께 인식한다.
+      // (partner_low 이상감지가 정산 입금 누락으로 왜곡되는 것 방지)
+      if ((l.category || "").includes("정산")) row.partnerDeposit += amount;
+      else row.myTransfer += amount;
     } else if (l.kind === "income" && l.toAccountId === accountId) {
       row.partnerDeposit += amount;
     } else if (l.kind === "expense" && l.fromAccountId === accountId) {

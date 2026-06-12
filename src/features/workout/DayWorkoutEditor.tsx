@@ -15,6 +15,8 @@ import {
 import { ExercisePicker } from "./ExercisePicker";
 import type { CustomExercise } from "../../types";
 import type { ExerciseSession } from "../../utils/workoutStats";
+import { CommitInput, CommitTextarea } from "../../components/ui/CommitInput";
+import { getTodayKST } from "../../utils/date";
 
 interface Props {
   selectedEntry: WorkoutDayEntry | null;
@@ -56,6 +58,8 @@ const DayWorkoutEditorInner: React.FC<Props> = ({
 }) => {
   const [nowTick, setNowTick] = useState(() => Date.now());
   const exercises = selectedEntry?.exercises ?? [];
+  // 휴식 카운트다운은 오늘 날짜 기록에서만 동작 (과거 기록 열람 시 무의미한 타이머 방지)
+  const isSelectedToday = selectedDate === getTodayKST();
 
   const timings = useMemo(() => {
     if (!selectedEntry) return new Map();
@@ -130,22 +134,25 @@ const DayWorkoutEditorInner: React.FC<Props> = ({
   if (selectedEntry.type === "rest") {
     return (
       <div>
-        <div style={{ display: "flex", gap: 8, marginBottom: 12 }}>
-          <button type="button" className="primary"
-            style={{ padding: "8px 16px", fontSize: 14, fontWeight: 600 }}
-            onClick={() => onUpsertEntry(selectedDate, (e) => ({ ...e, type: "rest" }))}>
+        <div style={{ display: "flex", gap: 8, marginBottom: 12, alignItems: "center" }}>
+          {/* 현재 기록 타입 표시 (장식용 — 클릭 시맨틱 제거) */}
+          <span style={{
+            padding: "8px 16px", fontSize: 14, fontWeight: 600, borderRadius: 8,
+            background: "var(--primary)", color: "#fff",
+            display: "inline-flex", alignItems: "center",
+          }}>
             휴식
-          </button>
+          </span>
           <button type="button" className="secondary"
             style={{ padding: "8px 16px", fontSize: 14, fontWeight: 600 }}
             onClick={() => onUpsertEntry(selectedDate, (e) => ({ ...e, type: "workout", exercises: e.exercises ?? [] }))}>
             운동으로 변경
           </button>
         </div>
-        <textarea
+        <CommitTextarea
           rows={3}
           value={selectedEntry.restNotes ?? ""}
-          onChange={(e) => onUpsertEntry(selectedDate, (entry) => ({ ...entry, restNotes: e.target.value }))}
+          onCommit={(text) => onUpsertEntry(selectedDate, (entry) => ({ ...entry, restNotes: text }))}
           placeholder="수면, 컨디션, 피로도 등을 기록하세요"
           style={{ width: "100%", padding: 12, borderRadius: 8, resize: "vertical", fontSize: 14 }}
         />
@@ -156,18 +163,23 @@ const DayWorkoutEditorInner: React.FC<Props> = ({
   return (
     <>
       <div style={{ display: "flex", gap: 8, marginBottom: 12, flexWrap: "wrap", alignItems: "center" }}>
-        <button type="button" className="primary" style={{ padding: "8px 16px", fontSize: 14, fontWeight: 600 }}>
+        {/* 현재 기록 타입 표시 (장식용 — 클릭 시맨틱 제거) */}
+        <span style={{
+          padding: "8px 16px", fontSize: 14, fontWeight: 600, borderRadius: 8,
+          background: "var(--primary)", color: "#fff",
+          display: "inline-flex", alignItems: "center",
+        }}>
           운동
-        </button>
+        </span>
         <button type="button" className="secondary"
           style={{ padding: "8px 16px", fontSize: 14, fontWeight: 600 }}
           onClick={() => onUpsertEntry(selectedDate, (e) => ({ ...e, type: "rest", restNotes: e.restNotes ?? "" }))}>
           휴식으로 변경
         </button>
-        <input
+        <CommitInput
           type="text"
           value={selectedEntry.dayLabel ?? ""}
-          onChange={(e) => onUpsertEntry(selectedDate, (entry) => ({ ...entry, dayLabel: e.target.value }))}
+          onCommit={(text) => onUpsertEntry(selectedDate, (entry) => ({ ...entry, dayLabel: text }))}
           placeholder="라벨 (예: 상체, 등+이두)"
           style={{ padding: "8px 12px", borderRadius: 8, fontSize: 14, flex: 1, minWidth: 140 }}
         />
@@ -347,7 +359,16 @@ const DayWorkoutEditorInner: React.FC<Props> = ({
                   type="button"
                   className="danger"
                   style={{ fontSize: 13, padding: "6px 12px" }}
-                  onClick={() => onRemoveExercise(exercise.id)}
+                  onClick={() => {
+                    // 세트 입력이 있으면 실수 삭제 방지를 위해 확인 (삭제 후 토스트로 실행 취소 가능)
+                    if (
+                      exercise.sets.length > 0 &&
+                      !window.confirm(`"${exercise.name}" 종목과 세트 ${exercise.sets.length}개를 삭제하시겠습니까?`)
+                    ) {
+                      return;
+                    }
+                    onRemoveExercise(exercise.id);
+                  }}
                 >
                   삭제
                 </button>
@@ -385,6 +406,7 @@ const DayWorkoutEditorInner: React.FC<Props> = ({
                     index={idx}
                     isCardio={isCardio}
                     cardioKind={cardioKind}
+                    isToday={isSelectedToday}
                     prevCompletedAt={idx > 0 ? exercise.sets[idx - 1]?.completedAt : firstSetPrev}
                     onToggleDone={() => onToggleSetDone(exercise.id, idx)}
                     onUpdate={(patch) => onUpdateSet(exercise.id, idx, patch)}
@@ -442,14 +464,14 @@ const DayWorkoutEditorInner: React.FC<Props> = ({
               )}
             </button>
 
-            <input
+            <CommitInput
               type="text"
               value={exercise.note ?? ""}
-              onChange={(e) =>
+              onCommit={(text) =>
                 onUpsertEntry(selectedDate, (entry) => ({
                   ...entry,
                   exercises: (entry.exercises ?? []).map((ex) =>
-                    ex.id === exercise.id ? { ...ex, note: e.target.value } : ex
+                    ex.id === exercise.id ? { ...ex, note: text } : ex
                   )
                 }))
               }

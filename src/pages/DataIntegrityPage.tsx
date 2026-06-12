@@ -2,7 +2,6 @@ import React, { useMemo, useState } from "react";
 import type { AppData, LedgerEntry } from "../types";
 import {
   runIntegrityCheck,
-  mergeDuplicates,
   type IntegrityIssue,
   type DuplicateTrade,
   type MissingReference
@@ -87,6 +86,20 @@ export const DataIntegrityView: React.FC<Props> = ({
       toast.error(ERROR_MESSAGES.INTEGRITY_CHECK_FAILED);
     } finally {
       setIsChecking(false);
+    }
+  };
+
+  /**
+   * 자동 수정 직후 재검사 — onChangeData에 넘긴 "새 데이터"로 직접 검사한다.
+   * (props.data는 부모 리렌더 전까지 stale이라 runCheck()를 그대로 부르면 수정 전 데이터를 재검사함)
+   */
+  const recheckWith = (next: AppData) => {
+    try {
+      const foundIssues = runIntegrityCheck(next.accounts, next.ledger, next.trades, next.categoryPresets);
+      setIssues(foundIssues);
+    } catch (error) {
+      console.error("무결성 재검사 오류:", error);
+      toast.error(ERROR_MESSAGES.INTEGRITY_CHECK_FAILED);
     }
   };
 
@@ -275,30 +288,63 @@ export const DataIntegrityView: React.FC<Props> = ({
     toast.error("이동 기능이 연결되지 않았습니다.");
   };
 
+  /**
+   * 중복 자동 제거 — "동일 id" 중복만 대상 (데이터 손상 케이스).
+   * 내용만 같고 id가 다른 항목은 같은 날 같은 금액 2번 결제 등 정상 거래일 수 있어 경고만 한다.
+   * 동일 id 그룹은 id 필터로 지우면 전부 사라지므로, 첫 occurrence만 남기는 방식으로 제거.
+   */
   const handleFixDuplicates = () => {
     const duplicateIssues = issues.filter((issue) => issue.type === "duplicate") as Array<IntegrityIssue & { data: DuplicateTrade }>;
-    if (duplicateIssues.length === 0) {
-      toast.error(ERROR_MESSAGES.NO_DUPLICATES);
+    const sameIdDups = duplicateIssues.map((issue) => issue.data).filter((dup) => dup.sameId);
+    if (sameIdDups.length === 0) {
+      toast.error("자동 제거 가능한 동일 ID 중복이 없습니다. (내용 동일·ID 상이 항목은 직접 확인 후 삭제하세요)");
       return;
     }
 
-    const duplicates = duplicateIssues.map((issue) => issue.data);
-    const { ledger: ledgerToRemove, trades: tradesToRemove } = mergeDuplicates(duplicates, true);
+    const dupLedgerIds = new Set(
+      sameIdDups.filter((d) => d.type === "ledger").flatMap((d) => d.entries.map((e) => (e as LedgerEntry).id))
+    );
+    const dupTradeIds = new Set(
+      sameIdDups.filter((d) => d.type === "trade").flatMap((d) => d.entries.map((e) => (e as { id: string }).id))
+    );
+    const totalToRemove =
+      data.ledger.filter((e) => dupLedgerIds.has(e.id)).length - dupLedgerIds.size +
+      data.trades.filter((t) => dupTradeIds.has(t.id)).length - dupTradeIds.size;
 
-    onChangeData({
-      ...data,
-      ledger: data.ledger.filter((entry) => !ledgerToRemove.has(entry.id)),
-      trades: data.trades.filter((trade) => !tradesToRemove.has(trade.id))
+    if (!window.confirm(`동일 ID 중복 ${totalToRemove}건을 제거합니다 (각 ID의 첫 항목만 유지). 계속할까요?`)) {
+      return;
+    }
+
+    const seenLedger = new Set<string>();
+    const fixedLedger = data.ledger.filter((entry) => {
+      if (!dupLedgerIds.has(entry.id)) return true;
+      if (seenLedger.has(entry.id)) return false;
+      seenLedger.add(entry.id);
+      return true;
+    });
+    const seenTrades = new Set<string>();
+    const fixedTrades = data.trades.filter((trade) => {
+      if (!dupTradeIds.has(trade.id)) return true;
+      if (seenTrades.has(trade.id)) return false;
+      seenTrades.add(trade.id);
+      return true;
     });
 
-    toast.success(`${ledgerToRemove.size + tradesToRemove.size}개 중복 항목 제거됨`);
-    runCheck();
+    const next: AppData = { ...data, ledger: fixedLedger, trades: fixedTrades };
+    onChangeData(next);
+
+    const removed = (data.ledger.length - fixedLedger.length) + (data.trades.length - fixedTrades.length);
+    toast.success(`${removed}개 중복 항목 제거됨`);
+    recheckWith(next);
   };
 
   const handleFixMissingReferences = () => {
     const missingRefIssues = issues.filter((issue) => issue.type === "missing_reference");
     if (missingRefIssues.length === 0) {
       toast.error(ERROR_MESSAGES.NO_MISSING_REFERENCE);
+      return;
+    }
+    if (!window.confirm("누락된 계좌 참조를 자동 수정합니다.\n가계부 항목의 깨진 계좌 연결은 해제되고, 존재하지 않는 계좌를 참조하는 주식 거래는 삭제됩니다. 계속할까요?")) {
       return;
     }
 
@@ -328,14 +374,11 @@ export const DataIntegrityView: React.FC<Props> = ({
     });
     const fixedTrades = data.trades.filter((trade) => !tradeRemoveIds.has(trade.id));
 
-    onChangeData({
-      ...data,
-      ledger: fixedLedger,
-      trades: fixedTrades
-    });
+    const next: AppData = { ...data, ledger: fixedLedger, trades: fixedTrades };
+    onChangeData(next);
 
     toast.success("누락된 참조 수정 완료");
-    runCheck();
+    recheckWith(next);
   };
 
   return (
@@ -362,9 +405,9 @@ export const DataIntegrityView: React.FC<Props> = ({
           </div>
 
           <div style={{ display: "flex", gap: 8, marginBottom: 8, flexWrap: "wrap" }}>
-            {issuesByType.has("duplicate") && (
+            {issues.some((i) => i.type === "duplicate" && (i.data as DuplicateTrade).sameId) && (
               <button type="button" className="secondary" onClick={handleFixDuplicates}>
-                중복 항목 자동 제거
+                동일 ID 중복 자동 제거
               </button>
             )}
             {issuesByType.has("missing_reference") && (

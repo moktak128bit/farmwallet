@@ -72,7 +72,10 @@ export const BackupSnapshotCard: React.FC<Props> = React.memo(function BackupSna
         />
         <span>저장할 때마다 스냅샷 저장 (자동 저장·수동 저장 시 백업 스냅샷 함께 생성)</span>
       </label>
-      <p>최근 20개까지 자동으로 저장된 백업 목록입니다. 원하는 시점으로 되돌릴 수 있습니다.</p>
+      <p>
+        백업은 KST 기준 <strong>최근 4일 × 하루 최대 5개</strong>(최대 20개)까지 보관됩니다.
+        복원·가져오기·초기화 직전에 만들어지는 안전 스냅샷도 이 목록에 포함되며, 아래 백업 기록 표에서 원하는 시점으로 되돌릴 수 있습니다.
+      </p>
       <div style={{ display: "flex", gap: 8, flexWrap: "wrap", marginBottom: 8 }}>
         <button type="button" onClick={handleRefreshBackups}>
           백업 목록 새로고침
@@ -98,7 +101,7 @@ export const BackupSnapshotCard: React.FC<Props> = React.memo(function BackupSna
               minute: "2-digit",
               timeZone: "Asia/Seoul"
             })}`
-          : "아직 저장된 백업이 없습니다. 상단의 '백업 스냅샷 저장' 버튼을 눌러주세요."}
+          : "아직 저장된 백업이 없습니다. 화면 상단 헤더의 '백업' 버튼을 눌러 백업을 만들어 주세요."}
       </div>
     </div>
   );

@@ -14,7 +14,7 @@
  *
  * 자식은 모두 React.memo — 부모가 넘기는 값은 useMemo 결과 또는 원시값으로 참조 고정.
  */
-import React, { lazy, Suspense, useMemo } from "react";
+import React, { lazy, Suspense, useEffect, useMemo, useState } from "react";
 import { BudgetAlertWidget } from "../features/dashboard/BudgetAlertWidget";
 import { InvestmentSummaryCard } from "../features/dashboard/InvestmentSummaryCard";
 import { MonthlySummaryCards } from "../features/dashboard/MonthlySummaryCards";
@@ -34,6 +34,7 @@ import { AccountBalanceTrendCard } from "../features/dashboard/AccountBalanceTre
 import { StockCostVsMarketCard } from "../features/dashboard/StockCostVsMarketCard";
 import { TotalAssetTrendCard } from "../features/dashboard/TotalAssetTrendCard";
 import { computeLedgerSummary, computeRecheckBreakdown } from "../features/dashboard/summaryMath";
+import { loadHiddenDashboardWidgets } from "../features/dashboard/dashboardWidgets";
 import { useAccountTimelineRows } from "../hooks/useAccountTimelineRows";
 import { buildAdjustedPrices, buildTimelineMonthRange } from "../utils/accountTimeline";
 import type {
@@ -53,7 +54,6 @@ import {
 import { useFxRateValue } from "../context/FxRateContext";
 import { useAppStore } from "../store/appStore";
 import {
-  getThisMonthKST,
   getTodayKST,
   getMonthEndDate,
 } from "../utils/date";
@@ -78,8 +78,30 @@ export const DashboardView: React.FC<Props> = (props) => {
   const categoryPresets = storeData.categoryPresets;
 
   const fxRate = useFxRateValue();
-  const currentMonth = useMemo(() => getThisMonthKST(), []);
-  const today = useMemo(() => getTodayKST(), []);
+
+  // 오늘/이번달 — 자정을 넘겨 탭을 켜둔 경우 대비, 탭 복귀(visibilitychange/focus) 시 재계산.
+  // 날짜가 실제로 바뀐 경우에만 상태가 갱신되어 불필요한 리렌더는 없다.
+  const [today, setToday] = useState<string>(() => getTodayKST());
+  useEffect(() => {
+    const refresh = () => {
+      if (document.visibilityState === "hidden") return;
+      const next = getTodayKST();
+      setToday((prev) => (prev === next ? prev : next));
+    };
+    document.addEventListener("visibilitychange", refresh);
+    window.addEventListener("focus", refresh);
+    return () => {
+      document.removeEventListener("visibilitychange", refresh);
+      window.removeEventListener("focus", refresh);
+    };
+  }, []);
+  // 이번달(KST) = 오늘(KST)의 YYYY-MM — getThisMonthKST()와 동일 기준, today 갱신 시 함께 갱신
+  const currentMonth = useMemo(() => today.slice(0, 7), [today]);
+
+  // 위젯 표시/숨김 — 설정 탭에서 저장한 숨김 목록을 마운트 시 적용
+  // (대시보드 탭은 전환 시 언마운트/재마운트되므로 설정 변경 후 돌아오면 즉시 반영됨)
+  const [hiddenWidgets] = useState<Set<string>>(() => loadHiddenDashboardWidgets());
+  const show = (id: string) => !hiddenWidgets.has(id);
 
   const monthRange = useMemo(() => buildTimelineMonthRange(ledger, trades, currentMonth), [ledger, trades, currentMonth]);
 
@@ -128,16 +150,16 @@ export const DashboardView: React.FC<Props> = (props) => {
     });
   }, [balanceSnapshotDates, accounts, ledger, trades, adjustedPrices, fxRate]);
 
-  /** 전체 기간 합계: 수입, 일반 지출, 재테크 지출 */
+  /** 전체 기간 합계: 수입, 일반 지출, 재테크 (categoryPresets로 레거시 저축성지출도 재테크 분류) */
   const allTimeSummary = useMemo(
-    () => computeLedgerSummary(ledger, fxRate, null),
-    [ledger, fxRate]
+    () => computeLedgerSummary(ledger, fxRate, null, categoryPresets),
+    [ledger, fxRate, categoryPresets]
   );
 
   const monthlySummary = useMemo(() => ({
     month: currentMonth,
-    ...computeLedgerSummary(ledger, fxRate, currentMonth),
-  }), [ledger, fxRate, currentMonth]);
+    ...computeLedgerSummary(ledger, fxRate, currentMonth, categoryPresets),
+  }), [ledger, fxRate, currentMonth, categoryPresets]);
 
   const monthlyRecheckBreakdown = useMemo(
     () => computeRecheckBreakdown(ledger, fxRate, currentMonth),
@@ -232,119 +254,161 @@ export const DashboardView: React.FC<Props> = (props) => {
       </div>
 
       <div style={{ display: "flex", flexDirection: "column", gap: 28 }}>
-        <MonthlySummaryCards monthlySummary={monthlySummary} allTimeSummary={allTimeSummary} />
+        {show("summary") && (
+          <MonthlySummaryCards monthlySummary={monthlySummary} allTimeSummary={allTimeSummary} />
+        )}
 
-        <SalaryTimerCard ledger={ledger} />
+        {show("salaryTimer") && <SalaryTimerCard ledger={ledger} fxRate={fxRate} />}
 
-        <ExpenseIncomeCompareCard ledger={ledger} month={currentMonth} />
-
-        <InvestmentSummaryCard
-          accounts={accounts}
-          ledger={ledger}
-          trades={trades}
-          prices={adjustedPrices}
-          fxRate={fxRate}
-        />
-
-        <NetWorthTrendChart data={netWorthTrendData} />
-
-        <div className="dashboard-two-col" style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 16 }}>
-          <TopExpensesCard
-            currentMonth={currentMonth}
+        {show("monthCompare") && (
+          <ExpenseIncomeCompareCard
             ledger={ledger}
-            accounts={accounts}
-            categoryPresets={categoryPresets}
+            month={currentMonth}
             fxRate={fxRate}
+            categoryPresets={categoryPresets}
           />
-          <MonthlyTrendCard
+        )}
+
+        {show("investmentSummary") && (
+          <InvestmentSummaryCard
+            accounts={accounts}
             ledger={ledger}
-            accounts={accounts}
-            categoryPresets={categoryPresets}
-            fxRate={fxRate}
-          />
-        </div>
-
-        <InvestmentBreakdownCard
-          month={monthlySummary.month}
-          monthlyRecheckBreakdown={monthlyRecheckBreakdown}
-          totalRealizedPnl={totalRealizedPnl}
-        />
-
-        <MonthPaceCard
-          currentMonth={currentMonth}
-          today={today}
-          ledger={ledger}
-          accounts={accounts}
-          categoryPresets={categoryPresets}
-          fxRate={fxRate}
-        />
-
-        <Suspense
-          fallback={
-            <div className="card" style={{ padding: 24, textAlign: "center", color: "var(--text-muted)", minHeight: 120 }}>
-              포트폴리오 차트 로딩 중…
-            </div>
-          }
-        >
-          <LazyPortfolioDashboardCharts
-            positionsWithPrice={positionsWithPrice}
-            positionsByAccount={positionsByAccount}
+            trades={trades}
             balances={balances}
+            positions={positions}
             fxRate={fxRate}
           />
-        </Suspense>
+        )}
 
-        <div
-          style={{
-            display: "grid",
-            gridTemplateColumns: "repeat(auto-fit, minmax(280px, 1fr))",
-            gap: 16,
-            alignItems: "stretch"
-          }}
-        >
-          <SavingsRatioCard ledger={ledger} fxRate={fxRate} currentMonth={currentMonth} />
+        {show("netWorthTrend") && <NetWorthTrendChart data={netWorthTrendData} />}
 
-          <DividendCoverageCard
+        {(show("topExpenses") || show("monthlyTrend")) && (
+          <div className="dashboard-two-col" style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 16 }}>
+            {show("topExpenses") && (
+              <TopExpensesCard
+                currentMonth={currentMonth}
+                ledger={ledger}
+                accounts={accounts}
+                categoryPresets={categoryPresets}
+                fxRate={fxRate}
+              />
+            )}
+            {show("monthlyTrend") && (
+              <MonthlyTrendCard
+                ledger={ledger}
+                categoryPresets={categoryPresets}
+                fxRate={fxRate}
+              />
+            )}
+          </div>
+        )}
+
+        {show("investmentBreakdown") && (
+          <InvestmentBreakdownCard
+            month={monthlySummary.month}
+            monthlyRecheckBreakdown={monthlyRecheckBreakdown}
+            totalRealizedPnl={totalRealizedPnl}
+          />
+        )}
+
+        {show("monthPace") && (
+          <MonthPaceCard
+            currentMonth={currentMonth}
+            today={today}
             ledger={ledger}
             accounts={accounts}
             categoryPresets={categoryPresets}
             fxRate={fxRate}
-            currentMonth={currentMonth}
           />
-        </div>
+        )}
 
-        <AssetCompositionCard
-          balances={balances}
-          positions={positions}
-          fxRate={fxRate}
-          totalNetWorth={totalNetWorth}
-          totalDebt={totalDebt}
-        />
+        {show("portfolioCharts") && (
+          <Suspense
+            fallback={
+              <div className="card" style={{ padding: 24, textAlign: "center", color: "var(--text-muted)", minHeight: 120 }}>
+                포트폴리오 차트 로딩 중…
+              </div>
+            }
+          >
+            <LazyPortfolioDashboardCharts
+              positionsWithPrice={positionsWithPrice}
+              positionsByAccount={positionsByAccount}
+              balances={balances}
+              fxRate={fxRate}
+            />
+          </Suspense>
+        )}
 
-        <AccountBalanceTrendCard
-          accountBalanceSnapshots={accountBalanceSnapshots}
-          accounts={accounts}
-        />
+        {(show("savingsRatio") || show("dividendCoverage")) && (
+          <div
+            style={{
+              display: "grid",
+              gridTemplateColumns: "repeat(auto-fit, minmax(280px, 1fr))",
+              gap: 16,
+              alignItems: "stretch"
+            }}
+          >
+            {show("savingsRatio") && (
+              <SavingsRatioCard
+                ledger={ledger}
+                fxRate={fxRate}
+                currentMonth={currentMonth}
+                categoryPresets={categoryPresets}
+              />
+            )}
 
-        <StockCostVsMarketCard
-          today={today}
-          accounts={accounts}
-          trades={trades}
-          prices={prices}
-          fxRate={fxRate}
-        />
+            {show("dividendCoverage") && (
+              <DividendCoverageCard
+                ledger={ledger}
+                accounts={accounts}
+                categoryPresets={categoryPresets}
+                fxRate={fxRate}
+                currentMonth={currentMonth}
+              />
+            )}
+          </div>
+        )}
 
-        <TotalAssetTrendCard
-          today={today}
-          accounts={accounts}
-          ledger={ledger}
-          trades={trades}
-          prices={prices}
-          fxRate={fxRate}
-          marketEnvSnapshots={storeData.marketEnvSnapshots}
-        />
+        {show("assetComposition") && (
+          <AssetCompositionCard
+            balances={balances}
+            positions={positions}
+            fxRate={fxRate}
+            totalNetWorth={totalNetWorth}
+            totalDebt={totalDebt}
+          />
+        )}
 
-        {cmaAccount && (
+        {show("accountBalanceTrend") && (
+          <AccountBalanceTrendCard
+            accountBalanceSnapshots={accountBalanceSnapshots}
+            accounts={accounts}
+          />
+        )}
+
+        {show("stockCostVsMarket") && (
+          <StockCostVsMarketCard
+            today={today}
+            accounts={accounts}
+            trades={trades}
+            prices={prices}
+            fxRate={fxRate}
+          />
+        )}
+
+        {show("totalAssetTrend") && (
+          <TotalAssetTrendCard
+            today={today}
+            accounts={accounts}
+            ledger={ledger}
+            trades={trades}
+            prices={prices}
+            fxRate={fxRate}
+            marketEnvSnapshots={storeData.marketEnvSnapshots}
+          />
+        )}
+
+        {cmaAccount && show("cmaBalanceTrend") && (
           <div style={{ marginTop: 16 }}>
             <CmaBalanceTrendCard
               accountBalanceSnapshots={accountBalanceSnapshots}
@@ -354,21 +418,26 @@ export const DashboardView: React.FC<Props> = (props) => {
           </div>
         )}
 
-        <SpendingCalendarCard
-          ledger={ledger}
-          accounts={accounts}
-          categoryPresets={categoryPresets}
-          fxRate={fxRate}
-          currentMonth={currentMonth}
-          today={today}
-        />
+        {show("spendingCalendar") && (
+          <SpendingCalendarCard
+            ledger={ledger}
+            accounts={accounts}
+            categoryPresets={categoryPresets}
+            fxRate={fxRate}
+            currentMonth={currentMonth}
+            today={today}
+          />
+        )}
 
         {/* 예산 초과 알림 */}
-        <BudgetAlertWidget
-          ledger={ledger}
-          budgetGoals={storeData.budgetGoals}
-          accounts={accounts}
-        />
+        {show("budgetAlert") && (
+          <BudgetAlertWidget
+            ledger={ledger}
+            budgetGoals={storeData.budgetGoals}
+            accounts={accounts}
+            fxRate={fxRate}
+          />
+        )}
       </div>
     </div>
   );

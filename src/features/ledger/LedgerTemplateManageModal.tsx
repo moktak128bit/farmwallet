@@ -1,8 +1,11 @@
 /**
  * 자주 쓰는 거래(템플릿) 관리 모달 — PresetModal(src/features/stocks) 구조 미러.
  * confirm/토스트 등 삭제 UX는 부모(LedgerEntryForm)의 deleteTemplate이 수행한다.
+ * 접근성: 포커스 트랩 + ESC 닫기 + role="dialog" (다른 모달들과 동일 패턴).
  */
+import { useEffect } from "react";
 import type { LedgerTemplate } from "../../types";
+import { useFocusTrap } from "../../hooks/useFocusTrap";
 
 const kindLabel: Record<LedgerTemplate["kind"], string> = { income: "수입", expense: "지출", transfer: "이체" };
 
@@ -14,11 +17,27 @@ interface Props {
 }
 
 export function LedgerTemplateManageModal({ templates, onClose, onApply, onDelete }: Props) {
+  const trapRef = useFocusTrap<HTMLDivElement>(true);
+
+  // ESC로 닫기
+  useEffect(() => {
+    const handler = (e: KeyboardEvent) => { if (e.key === "Escape") onClose(); };
+    window.addEventListener("keydown", handler);
+    return () => window.removeEventListener("keydown", handler);
+  }, [onClose]);
+
   return (
     <div className="modal-backdrop" onClick={onClose}>
-      <div className="modal" onClick={(e) => e.stopPropagation()}>
+      <div
+        ref={trapRef}
+        className="modal"
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="ledger-template-manage-title"
+        onClick={(e) => e.stopPropagation()}
+      >
         <div className="modal-header">
-          <h3 style={{ margin: 0 }}>자주 쓰는 거래 관리</h3>
+          <h3 id="ledger-template-manage-title" style={{ margin: 0 }}>자주 쓰는 거래 관리</h3>
           <button type="button" className="secondary" onClick={onClose}>
             닫기
           </button>

@@ -15,6 +15,7 @@ import { computeOriginalAssets, classifyIncomeNature, NON_REAL_INCOME } from "..
 import { classifyExpenses } from "../../utils/expenseClassification";
 import { isDateEntry, getMoimAccountIds, computeMoimAccountFlow } from "../../utils/dateAccounting";
 import { isCarryOverIncomeEntry, computeRealSavingsRate, computeMonthlyRealFlows } from "../../utils/savingsRate";
+import { parseIsoLocal, formatIsoLocal, getTodayKST, getThisMonthKST } from "../../utils/date";
 import type { AccountTimelineRow } from "../../utils/accountTimeline";
 import {
   F, SD,
@@ -139,11 +140,13 @@ export function useInsightsData(ledger: LedgerEntry[], rawTrades: StockTrade[], 
     }
     const expByDesc = Array.from(descM.values()).sort((a, b) => b.amount - a.amount).slice(0, 30);
 
-    /* weekdaySpending */
+    /* weekdaySpending — parseIsoLocal로 로컬 파싱 (UTC 파싱 시 음수 타임존에서 요일이 하루 밀림) */
     const wdSpend: { total: number; count: number }[] = Array.from({ length: 7 }, () => ({ total: 0, count: 0 }));
     for (const l of fExp) {
       if (!l.date) continue;
-      const js = new Date(l.date).getDay();
+      const d = parseIsoLocal(l.date);
+      if (!d) continue;
+      const js = d.getDay();
       const idx = js === 0 ? 6 : js - 1;
       wdSpend[idx].total += Number(l.amount); wdSpend[idx].count++;
     }
@@ -302,7 +305,8 @@ export function useInsightsData(ledger: LedgerEntry[], rawTrades: StockTrade[], 
     const investTrend = months.map(m => ({ l: ml[m], amount: monthly[m].investment }));
     const divTrend = months.map(m => {
       let d = 0;
-      for (const l of ledger) { if (l.kind !== "income" || l.date?.slice(0, 7) !== m) continue; if (investIncKeys.has(l.subCategory || "")) d += Number(l.amount); }
+      // subCategory 없으면 category 폴백 — incByCat·investIncKeys 산출과 동일 키 규칙
+      for (const l of ledger) { if (l.kind !== "income" || l.date?.slice(0, 7) !== m) continue; if (investIncKeys.has(l.subCategory || l.category || "")) d += Number(l.amount); }
       return { l: ml[m], amount: d };
     });
     const tradeCntTrend = months.map(m => ({ l: ml[m], count: rawTrades.filter(t => t.date?.slice(0, 7) === m).length }));
@@ -361,9 +365,9 @@ export function useInsightsData(ledger: LedgerEntry[], rawTrades: StockTrade[], 
       for (let d = 1; d <= md; d++) { totalDays++; if (!spendSet.has(`${m}-${String(d).padStart(2, "0")}`)) zeroDays++; }
     }
 
-    /* weekend vs weekday */
+    /* weekend vs weekday — parseIsoLocal 로컬 파싱 (요일 밀림 방지) */
     let weekendTot = 0, weekdayTot = 0;
-    for (const l of fExp) { const d = new Date(l.date).getDay(); if (d === 0 || d === 6) weekendTot += Number(l.amount); else weekdayTot += Number(l.amount); }
+    for (const l of fExp) { const d = parseIsoLocal(l.date)?.getDay(); if (d == null) continue; if (d === 0 || d === 6) weekendTot += Number(l.amount); else weekdayTot += Number(l.amount); }
 
     /* top spend dates */
     const tdM = new Map<string, { total: number; items: { desc: string; amount: number }[] }>();
@@ -469,15 +473,23 @@ export function useInsightsData(ledger: LedgerEntry[], rawTrades: StockTrade[], 
       return { name: stockName, data };
     }).filter(s => s.data.length > 0);
 
+    /* ===== 완결 월 수 (지출·수입·재테크 중분류 인사이트 공용) =====
+       진행 중인 달은 추세(MoM)·연속증가 계산에서 제외 — 월말까지 안 들어온 달과
+       비교하면 월초마다 모든 항목이 "급감"으로 표시되는 왜곡이 생김. KST 기준. */
+    const curMonthStr = getThisMonthKST();
+    const doneCnt = months.length > 1 && months[months.length - 1] === curMonthStr ? months.length - 1 : months.length;
+
     /* ===== 지출 중분류별 인사이트 ===== */
     const subInsights: SubInsight[] = expBySub.slice(0, 15).map(s => {
       const mTotals = mTotalsFor(months, ledger, l =>
         l.kind === "expense" && l.category !== "재테크" && l.category !== "환전" && !isCreditPayment(l) &&
         (l.subCategory || l.category || "기타") === s.sub
       );
-      const { monthTrend, mom, nonZero, monthAvg } = calcTrend(mTotals);
-      const last2 = mTotals.slice(-2);
-      const peakIdx = mTotals.length > 0 ? mTotals.indexOf(Math.max(...mTotals)) : -1;
+      // 추세·피크·연속증가는 완결 월만으로 계산 (수입 인사이트와 동일 기준)
+      const doneTotals = mTotals.slice(0, doneCnt);
+      const { monthTrend, mom, nonZero, monthAvg } = calcTrend(doneTotals);
+      const last2 = doneTotals.slice(-2);
+      const peakIdx = doneTotals.length > 0 ? doneTotals.indexOf(Math.max(...doneTotals)) : -1;
       // 해당 중분류 최대 단건
       let maxSingle = 0, maxSingleDesc = "";
       for (const l of fExp) {
@@ -493,10 +505,10 @@ export function useInsightsData(ledger: LedgerEntry[], rawTrades: StockTrade[], 
         descMap.set(d, (descMap.get(d) ?? 0) + Number(l.amount));
       }
       const topDescEntry = [...descMap.entries()].sort((a, b) => b[1] - a[1])[0];
-      // 연속 증가 월수
+      // 연속 증가 월수 (완결 월 기준 — 진행 중인 달이 끼면 항상 끊긴 것으로 보임)
       let streakUp = 0;
-      for (let i = mTotals.length - 1; i >= 1; i--) {
-        if (mTotals[i] > mTotals[i - 1] && mTotals[i] > 0) streakUp++; else break;
+      for (let i = doneTotals.length - 1; i >= 1; i--) {
+        if (doneTotals[i] > doneTotals[i - 1] && doneTotals[i] > 0) streakUp++; else break;
       }
       const share = Math.round(SD(s.amount, pExpense) * 100);
       // 2번째 지출처
@@ -543,7 +555,7 @@ export function useInsightsData(ledger: LedgerEntry[], rawTrades: StockTrade[], 
       // 최대 단건
       if (maxSingle > avgPerTx * 3 && maxSingleDesc) comments.push(`최대 단건 ${maxSingleDesc}(${F(maxSingle)})은 평균의 ${Math.round(SD(maxSingle, avgPerTx))}배입니다.`);
       // 피크월
-      if (months[peakIdx]) comments.push(`지출 최고월: ${ml[months[peakIdx]]}(${F(mTotals[peakIdx])}).`);
+      if (months[peakIdx]) comments.push(`지출 최고월: ${ml[months[peakIdx]]}(${F(doneTotals[peakIdx])}).`);
 
       return {
         sub: s.sub, cat: s.cat, total: s.amount, count: s.count,
@@ -558,10 +570,7 @@ export function useInsightsData(ledger: LedgerEntry[], rawTrades: StockTrade[], 
     });
 
     /* ===== 수입 중분류별 인사이트 ===== */
-    // 진행 중인 달은 추세·안정성 계산에서 제외 — 월말까지 안 들어온 달과 비교하면 모든 수입원이 "급감"으로 표시됨
-    const nowD = new Date();
-    const curMonthStr = `${nowD.getFullYear()}-${String(nowD.getMonth() + 1).padStart(2, "0")}`;
-    const doneCnt = months.length > 1 && months[months.length - 1] === curMonthStr ? months.length - 1 : months.length;
+    // 진행 중인 달은 추세·안정성 계산에서 제외 — doneCnt(위 공용 계산) 사용
     const incSubInsights: IncSubInsight[] = incByCat.slice(0, 12).map(([sub, total]) => {
       const cnt = fInc.filter(l => (l.subCategory || l.category || "기타") === sub).length;
       const fullMTotals = mTotalsFor(months, ledger, l =>
@@ -674,11 +683,12 @@ export function useInsightsData(ledger: LedgerEntry[], rawTrades: StockTrade[], 
       const ivTotal = investBySub.reduce((s, x) => s + x.amount, 0);
       const share = Math.round(SD(v.amount, ivTotal) * 100);
       const avg = Math.round(SD(v.amount, v.count));
-      // 월별 추이
+      // 월별 추이 — 완결 월만으로 추세 계산 (수입·지출 인사이트와 동일 기준)
       const ivMTotals = mTotalsFor(months, ledger, l =>
         isInvestmentEntry(l) && (l.subCategory || "기타") === v.sub
       );
-      const { monthTrend: ivTrend, mom: ivMom, nonZero: ivNonZero, monthAvg } = calcTrend(ivMTotals);
+      const ivDoneTotals = ivMTotals.slice(0, doneCnt);
+      const { monthTrend: ivTrend, mom: ivMom, nonZero: ivNonZero, monthAvg } = calcTrend(ivDoneTotals);
       const cs: string[] = [];
       if (share > 40) cs.push(`재테크 지출의 ${share}%로 가장 큰 투자 카테고리입니다.`);
       else if (share > 20) cs.push(`재테크 지출의 ${share}%로 주요 투자 항목입니다.`);
@@ -690,11 +700,11 @@ export function useInsightsData(ledger: LedgerEntry[], rawTrades: StockTrade[], 
       else if (ivTrend === "down" && Math.abs(ivMom) > 30) cs.push(`최근 ${Math.abs(ivMom)}% 투자 금액이 급감했습니다. 시장 상황이나 자금 사정 변화를 확인하세요.`);
       else if (ivTrend === "down") cs.push(`최근 ${Math.abs(ivMom)}% 투자 금액이 감소 중입니다.`);
       else cs.push("최근 안정적인 투자 금액을 유지하고 있습니다.");
-      // 빈도 분석
-      const ivFreq = Math.round(SD(ivNonZero.length, months.length) * 100);
-      if (ivFreq >= 90) cs.push(`${months.length}개월 중 ${ivNonZero.length}개월 투자 — 매월 꾸준히 적립하는 훌륭한 습관입니다!`);
-      else if (ivFreq >= 60) cs.push(`${months.length}개월 중 ${ivNonZero.length}개월 투자 — 비교적 자주 투자합니다.`);
-      else if (ivNonZero.length >= 2) cs.push(`${months.length}개월 중 ${ivNonZero.length}개월만 투자 — 비정기적 투자 패턴입니다. 자동이체 적립식 투자를 추천합니다.`);
+      // 빈도 분석 (완결 월 기준)
+      const ivFreq = Math.round(SD(ivNonZero.length, doneCnt) * 100);
+      if (ivFreq >= 90) cs.push(`${doneCnt}개월 중 ${ivNonZero.length}개월 투자 — 매월 꾸준히 적립하는 훌륭한 습관입니다!`);
+      else if (ivFreq >= 60) cs.push(`${doneCnt}개월 중 ${ivNonZero.length}개월 투자 — 비교적 자주 투자합니다.`);
+      else if (ivNonZero.length >= 2) cs.push(`${doneCnt}개월 중 ${ivNonZero.length}개월만 투자 — 비정기적 투자 패턴입니다. 자동이체 적립식 투자를 추천합니다.`);
       else if (ivNonZero.length === 1) cs.push("단 1번만 투자한 항목입니다.");
       return { sub: v.sub, amount: v.amount, count: v.count, avg, share, monthAvg, monthTrend: ivTrend, mom: ivMom, comment: cs.join(" ") };
     });
@@ -813,12 +823,12 @@ export function useInsightsData(ledger: LedgerEntry[], rawTrades: StockTrade[], 
     }
     let topStore: { name: string; total: number; count: number } | null = null;
     for (const [name, v] of storeMap) { if (!topStore || v.count > topStore.count) topStore = { name, ...v }; }
-    // 순자산 월평균 성장률
+    // 순자산 월평균 성장률 — 분모는 구간 수(개월 수 − 1). N개월이면 월간 변화는 N−1번.
     let monthOverMonthGrowth: number | null = null;
     if (netWorthByMonth.length >= 2) {
       const first = netWorthByMonth[0].total;
       const last = netWorthByMonth[netWorthByMonth.length - 1].total;
-      if (first > 0) monthOverMonthGrowth = Math.round((last / first - 1) / netWorthByMonth.length * 100 * 10) / 10;
+      if (first > 0) monthOverMonthGrowth = Math.round((last / first - 1) / (netWorthByMonth.length - 1) * 100 * 10) / 10;
     }
     // 월수입을 며칠만에 쓰는지 — selMonth 필터 시 1개월 기준
     const avgMonthInc = pIncome / (selMonth ? 1 : Math.max(1, months.length));
@@ -960,49 +970,60 @@ export function useInsightsData(ledger: LedgerEntry[], rawTrades: StockTrade[], 
     }
     const spendByDOMAvg = spendByDOM.map((v, i) => domOccurrences[i] > 0 ? v / domOccurrences[i] : 0);
 
-    /* 소비 스트릭·월별 무지출일·거래 간격 */
+    /* 소비 스트릭·월별 무지출일·거래 간격
+       — 미래 날짜를 무지출일로 세지 않도록 루프 끝을 오늘(KST)로 캡 (zeroDays 로직과 일치)
+       — 날짜 파싱/직렬화는 parseIsoLocal/formatIsoLocal (UTC 혼용 시 음수 타임존에서 하루 밀림) */
     const patternStats = (() => {
+      const emptyStats = {
+        longestSpendStreak: 0,
+        longestZeroStreak: 0,
+        currentStreakType: "none" as "none" | "spend" | "zero",
+        currentStreakDays: 0,
+        zeroDaysPerMonth: [] as { month: string; label: string; zeroDays: number; totalDays: number }[],
+        avgIntervalDays: 0,
+      };
       const spendDaySet = new Set<string>();
       for (const l of fExp) if (l.date) spendDaySet.add(l.date);
-      if (months.length === 0) {
-        return {
-          longestSpendStreak: 0,
-          longestZeroStreak: 0,
-          currentStreakType: "none" as "none" | "spend" | "zero",
-          currentStreakDays: 0,
-          zeroDaysPerMonth: [] as { month: string; label: string; zeroDays: number; totalDays: number }[],
-          avgIntervalDays: 0,
-        };
-      }
-      const start = new Date(months[0] + "-01");
+      if (months.length === 0) return emptyStats;
+      const todayIso = getTodayKST();
+      const todayDate = parseIsoLocal(todayIso)!;
+      const start = parseIsoLocal(months[0] + "-01");
       const [ly, lm] = months[months.length - 1].split("-").map(Number);
-      const end = new Date(ly, lm, 0);
+      let end = new Date(ly, lm, 0); // 마지막 월의 말일
+      if (end > todayDate) end = todayDate; // 오늘로 캡 — 미래 일자는 집계 대상 아님
+      if (!start || end < start) return emptyStats;
       let longestSpend = 0, longestZero = 0, curSpend = 0, curZero = 0;
       for (let cur = new Date(start); cur <= end; cur.setDate(cur.getDate() + 1)) {
-        const iso = cur.toISOString().slice(0, 10);
+        const iso = formatIsoLocal(cur);
         if (spendDaySet.has(iso)) { curSpend++; curZero = 0; if (curSpend > longestSpend) longestSpend = curSpend; }
         else { curZero++; curSpend = 0; if (curZero > longestZero) longestZero = curZero; }
       }
-      const lastIso = end.toISOString().slice(0, 10);
+      const lastIso = formatIsoLocal(end);
       const currentStreakType: "none" | "spend" | "zero" = spendDaySet.has(lastIso) ? "spend" : "zero";
       const currentStreakDays = currentStreakType === "spend" ? curSpend : curZero;
 
+      const curMonthIso = todayIso.slice(0, 7);
       const zeroDaysPerMonth = months.map((m) => {
         const [y, mo] = m.split("-").map(Number);
         const daysInMonth = new Date(y, mo, 0).getDate();
+        // 진행 중인 달은 오늘까지만, 미래 달은 0일 — 미래를 무지출로 세지 않음
+        const lastDay = m > curMonthIso ? 0
+          : m === curMonthIso ? Math.min(daysInMonth, Number(todayIso.slice(8, 10)))
+          : daysInMonth;
         let zd = 0;
-        for (let dd = 1; dd <= daysInMonth; dd++) {
+        for (let dd = 1; dd <= lastDay; dd++) {
           const iso = `${m}-${String(dd).padStart(2, "0")}`;
           if (!spendDaySet.has(iso)) zd++;
         }
-        return { month: m, label: ml[m], zeroDays: zd, totalDays: daysInMonth };
+        return { month: m, label: ml[m], zeroDays: zd, totalDays: lastDay };
       });
 
       const sortedSpendDays = Array.from(spendDaySet).sort();
       let sumGap = 0, gapCount = 0;
       for (let i = 1; i < sortedSpendDays.length; i++) {
-        const a = new Date(sortedSpendDays[i - 1]);
-        const b = new Date(sortedSpendDays[i]);
+        const a = parseIsoLocal(sortedSpendDays[i - 1]);
+        const b = parseIsoLocal(sortedSpendDays[i]);
+        if (!a || !b) continue;
         sumGap += Math.round((b.getTime() - a.getTime()) / (1000 * 60 * 60 * 24));
         gapCount++;
       }

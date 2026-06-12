@@ -58,7 +58,7 @@ export const DEFAULT_WORKOUT_ROUTINES: WorkoutRoutine[] = [
       },
       {
         id: "seed-mon-5",
-        name: "트라이셉 푸쉬다운",
+        name: "트라이셉 푸시다운",
         bodyPart: "팔",
         targetSets: 3,
         targetReps: 12,
@@ -160,7 +160,7 @@ export const DEFAULT_WORKOUT_ROUTINES: WorkoutRoutine[] = [
     exercises: [
       {
         id: "seed-thu-1",
-        name: "레그프레스",
+        name: "레그 프레스",
         bodyPart: "하체",
         targetSets: 3,
         targetReps: 9,
@@ -240,7 +240,7 @@ export const DEFAULT_WORKOUT_ROUTINES: WorkoutRoutine[] = [
       },
       {
         id: "seed-fri-2",
-        name: "사이드 레터럴 레이즈",
+        name: "사이드 레터럴",
         bodyPart: "어깨",
         targetSets: 4,
         targetReps: 13,

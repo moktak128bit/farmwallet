@@ -71,6 +71,23 @@ export const TradeHistorySection: React.FC<TradeHistorySectionProps> = ({
   });
   const tradeViewportRef = useRef<HTMLDivElement | null>(null);
   const [visibleCount, setVisibleCount] = useState(TRADE_PAGE_SIZE);
+  // 최신 accounts prop 추적 — setTimeout 시점에 스냅샷이 아닌 최신 배열에 델타만 적용
+  // (스냅샷 전체 교체는 그 사이 발생한 다른 계좌 변경을 유실시킴)
+  const accountsRef = useRef(accounts);
+  accountsRef.current = accounts;
+  // 인라인 저장 중복 실행 가드 (Enter + blur 등으로 같은 편집이 두 번 저장되는 것 방지)
+  const inlineSavingRef = useRef(false);
+
+  /** usdBalance 델타를 최신 accounts 기준으로 적용 (다른 변경 유실 방지) */
+  const applyUsdBalanceDelta = (accountId: string, delta: number) => {
+    if (!onChangeAccounts || !accountId || !Number.isFinite(delta) || Math.abs(delta) < 0.000001) return;
+    setTimeout(() => {
+      const base = accountsRef.current;
+      onChangeAccounts(
+        base.map((a) => (a.id === accountId ? { ...a, usdBalance: (a.usdBalance ?? 0) + delta } : a))
+      );
+    }, 0);
+  };
 
   // Column width ratios (sum to 100): index, date, account, ticker, name, side, quantity, price, fee, total, realized PnL, actions.
   const [columnWidths, setColumnWidths] = useState<number[]>(() => {
@@ -296,6 +313,7 @@ export const TradeHistorySection: React.FC<TradeHistorySectionProps> = ({
   };
 
   const startInlineEdit = (t: StockTrade, field?: "date" | "accountId" | "quantity" | "price" | "fee" | "totalAmount") => {
+    inlineSavingRef.current = false;
     setInlineEdit({
       id: t.id,
       date: t.date,
@@ -333,6 +351,8 @@ export const TradeHistorySection: React.FC<TradeHistorySectionProps> = ({
 
   const saveInlineEdit = () => {
     if (!inlineEdit) return;
+    // Enter(keydown 저장)와 blur 저장이 같은 편집을 두 번 실행하는 것 방지
+    if (inlineSavingRef.current) return;
     const quantity = Number(inlineEdit.quantity);
     const price = Number(inlineEdit.price);
     const fee = Number(inlineEdit.fee || "0");
@@ -351,7 +371,7 @@ export const TradeHistorySection: React.FC<TradeHistorySectionProps> = ({
       return;
     }
     const side = inlineEdit.side;
-    
+
     const selectedAccount = accounts.find((a) => a.id === inlineEdit.accountId);
     if (!selectedAccount) {
       toast.error(ERROR_MESSAGES.ACCOUNT_REQUIRED);
@@ -363,18 +383,42 @@ export const TradeHistorySection: React.FC<TradeHistorySectionProps> = ({
       toast.error(currencyValidation.error ?? "계좌 통화와 종목 통화가 일치하지 않습니다.");
       return;
     }
+    // 매도 수량 보유 초과 검증 — 메인 폼과 동일 (편집 대상 거래 자신은 제외하고 계산)
+    if (side === "sell") {
+      const editKey = canonicalTickerForMatch(inlineEdit.ticker);
+      let available = 0;
+      for (const t of trades) {
+        if (t.id === inlineEdit.id) continue;
+        if (t.accountId !== inlineEdit.accountId) continue;
+        if (canonicalTickerForMatch(t.ticker) !== editKey) continue;
+        available += t.side === "buy" ? t.quantity : -t.quantity;
+      }
+      if (quantity > available + 1e-8) {
+        toast.error(`보유 수량(${Number(Math.max(0, available).toFixed(8))}주)을 초과할 수 없습니다.`);
+        return;
+      }
+    }
     const isUSDCurrency = priceInfo?.currency === "USD" || isUSDStock(inlineEdit.ticker);
-    const exchangeRate = isUSDCurrency && fxRate ? fxRate : 1;
-    const totalAmount = side === "buy" 
-      ? quantity * price + fee 
+    const existingTrade = trades.find((t) => t.id === inlineEdit.id);
+    // 역사적 환율(fxRateAtTrade) 보존 — 인라인 수정(날짜·수량 등)이 과거 환율을 현재 환율로
+    // 덮어쓰면 원화 실현손익이 소급 변경된다. 기존 환율이 없을 때만 현재 환율로 보완.
+    const preservedFx =
+      existingTrade?.fxRateAtTrade && existingTrade.fxRateAtTrade > 0
+        ? existingTrade.fxRateAtTrade
+        : fxRate && fxRate > 0
+          ? fxRate
+          : 0;
+    const exchangeRate = isUSDCurrency ? preservedFx : 1;
+    const totalAmount = side === "buy"
+      ? quantity * price + fee
       : quantity * price - fee;
     const totalAmountKRW = totalAmount * exchangeRate;
-    const existingTrade = trades.find((t) => t.id === inlineEdit.id);
     const useUsdBalanceMode =
       (selectedAccount.type === "securities" || selectedAccount.type === "crypto") &&
       isUSDCurrency &&
       Math.abs(existingTrade?.cashImpact ?? 0) < 0.000001;
     const cashImpact = computeTradeCashImpact(side, totalAmountKRW, useUsdBalanceMode);
+    inlineSavingRef.current = true;
     const updated = trades.map((t) =>
       t.id === inlineEdit.id
         ? {
@@ -399,17 +443,7 @@ export const TradeHistorySection: React.FC<TradeHistorySectionProps> = ({
       const prevUsdImpact =
         existingTrade.side === "buy" ? -existingTrade.totalAmount : existingTrade.totalAmount;
       const nextUsdImpact = side === "buy" ? -totalAmount : totalAmount;
-      const delta = nextUsdImpact - prevUsdImpact;
-      if (delta !== 0) {
-        const updatedAccounts = accounts.map((a) =>
-          a.id === inlineEdit.accountId
-            ? { ...a, usdBalance: (a.usdBalance ?? 0) + delta }
-            : a
-        );
-        setTimeout(() => {
-          onChangeAccounts(updatedAccounts);
-        }, 0);
-      }
+      applyUsdBalanceDelta(inlineEdit.accountId, nextUsdImpact - prevUsdImpact);
     }
 
     setInlineEdit(null);
@@ -419,34 +453,22 @@ export const TradeHistorySection: React.FC<TradeHistorySectionProps> = ({
   const handleDeleteTrade = (id: string) => {
     const tradeToDelete = trades.find((t) => t.id === id);
     if (!tradeToDelete) return;
-    
-    let updatedAccounts = accounts;
+
     const account = accounts.find((a) => a.id === tradeToDelete.accountId);
     if ((account?.type === "securities" || account?.type === "crypto") && onChangeAccounts) {
       const priceInfo = latestPriceByCanonicalTicker.get(canonicalTickerForMatch(tradeToDelete.ticker));
       const isUSD = priceInfo?.currency === "USD" || isUSDStock(tradeToDelete.ticker);
-      
+
       const usesUsdBalanceMode = Math.abs(tradeToDelete.cashImpact ?? 0) < 0.000001;
       if (isUSD && usesUsdBalanceMode) {
         const usdImpact = tradeToDelete.side === "buy" ? tradeToDelete.totalAmount : -tradeToDelete.totalAmount;
-        updatedAccounts = accounts.map((a) => {
-          if (a.id === tradeToDelete.accountId) {
-            const currentUsdBalance = a.usdBalance ?? 0;
-            const newUsdBalance = currentUsdBalance + usdImpact;
-            return { ...a, usdBalance: newUsdBalance };
-          }
-          return a;
-        });
+        // 최신 accounts에 델타만 적용 — 스냅샷 교체로 다른 변경이 유실되지 않게
+        applyUsdBalanceDelta(tradeToDelete.accountId, usdImpact);
       }
     }
-    
+
     onChangeTrades((prevTrades) => prevTrades.filter((t) => t.id !== id));
-    
-    if ((account?.type === "securities" || account?.type === "crypto") && onChangeAccounts && updatedAccounts !== accounts) {
-      setTimeout(() => {
-        onChangeAccounts(updatedAccounts);
-      }, 0);
-    }
+
     if (onResetTradeForm) {
       onResetTradeForm();
     }
@@ -545,19 +567,19 @@ export const TradeHistorySection: React.FC<TradeHistorySectionProps> = ({
           {krwBuyAmount + krwSellAmount + krwFee > 0 && (
             <>
               <div>
-                <span style={{ color: "var(--muted)", marginRight: 8 }}>총 매수 (원):</span>
+                <span style={{ color: "var(--text-muted)", marginRight: 8 }}>총 매수 (원):</span>
                 <span className="negative">{formatKRW(Math.round(krwBuyAmount))}</span>
               </div>
               <div>
-                <span style={{ color: "var(--muted)", marginRight: 8 }}>총 매도 (원):</span>
+                <span style={{ color: "var(--text-muted)", marginRight: 8 }}>총 매도 (원):</span>
                 <span className="positive">{formatKRW(Math.round(krwSellAmount))}</span>
               </div>
               <div>
-                <span style={{ color: "var(--muted)", marginRight: 8 }}>총 수수료 (원):</span>
+                <span style={{ color: "var(--text-muted)", marginRight: 8 }}>총 수수료 (원):</span>
                 <span className="negative">{formatKRW(Math.round(krwFee))}</span>
               </div>
               <div>
-                <span style={{ color: "var(--muted)", marginRight: 8 }}>실현 손익 (원):</span>
+                <span style={{ color: "var(--text-muted)", marginRight: 8 }}>실현 손익 (원):</span>
                 <span className={krwRealizedPnl >= 0 ? "positive" : "negative"}>
                   {krwRealizedPnl >= 0 ? "+" : ""}{formatKRW(Math.round(krwRealizedPnl))}
                 </span>
@@ -567,19 +589,19 @@ export const TradeHistorySection: React.FC<TradeHistorySectionProps> = ({
           {usdBuyAmount + usdSellAmount + usdFee > 0 && (
             <>
               <div>
-                <span style={{ color: "var(--muted)", marginRight: 8 }}>총 매수 (달러):</span>
+                <span style={{ color: "var(--text-muted)", marginRight: 8 }}>총 매수 (달러):</span>
                 <span className="negative">{formatUSD(usdBuyAmount)}</span>
               </div>
               <div>
-                <span style={{ color: "var(--muted)", marginRight: 8 }}>총 매도 (달러):</span>
+                <span style={{ color: "var(--text-muted)", marginRight: 8 }}>총 매도 (달러):</span>
                 <span className="positive">{formatUSD(usdSellAmount)}</span>
               </div>
               <div>
-                <span style={{ color: "var(--muted)", marginRight: 8 }}>총 수수료 (달러):</span>
+                <span style={{ color: "var(--text-muted)", marginRight: 8 }}>총 수수료 (달러):</span>
                 <span className="negative">{formatUSD(usdFee)}</span>
               </div>
               <div>
-                <span style={{ color: "var(--muted)", marginRight: 8 }}>실현 손익 (달러):</span>
+                <span style={{ color: "var(--text-muted)", marginRight: 8 }}>실현 손익 (달러):</span>
                 <span className={usdRealizedPnl >= 0 ? "positive" : "negative"}>
                   {usdRealizedPnl >= 0 ? "+" : ""}{formatUSD(usdRealizedPnl)}
                 </span>
@@ -822,7 +844,7 @@ export const TradeHistorySection: React.FC<TradeHistorySectionProps> = ({
                     )}
                   </td>
                   <td
-                    className={`number cell-editable ${t.price >= 0 ? "positive" : "negative"}`}
+                    className="number cell-editable"
                     onDoubleClick={() => startInlineEdit(t, "price")}
                     onClick={tapToInlineEdit(t, "price")}
                     style={{ cursor: "pointer" }}
@@ -845,14 +867,14 @@ export const TradeHistorySection: React.FC<TradeHistorySectionProps> = ({
                       />
                     ) : (
                       (() => {
-                        const priceInfo = prices.find((p) => p.ticker === t.ticker);
+                        const priceInfo = latestPriceByCanonicalTicker.get(canonicalTickerForMatch(t.ticker));
                         const currency = inferTradeCurrency(t, priceInfo?.currency);
                         return formatPriceWithCurrency(t.price, currency, t.ticker);
                       })()
                     )}
                   </td>
                   <td
-                    className={`number cell-editable ${t.fee >= 0 ? "positive" : "negative"}`}
+                    className="number cell-editable"
                     onDoubleClick={() => startInlineEdit(t, "fee")}
                     onClick={tapToInlineEdit(t, "fee")}
                     style={{ cursor: "pointer" }}
@@ -875,14 +897,14 @@ export const TradeHistorySection: React.FC<TradeHistorySectionProps> = ({
                       />
                     ) : (
                       (() => {
-                        const priceInfo = prices.find((p) => p.ticker === t.ticker);
+                        const priceInfo = latestPriceByCanonicalTicker.get(canonicalTickerForMatch(t.ticker));
                         const currency = inferTradeCurrency(t, priceInfo?.currency);
                         return formatPriceWithCurrency(t.fee, currency, t.ticker);
                       })()
                     )}
                   </td>
                   <td
-                    className={`number cell-editable ${t.totalAmount >= 0 ? "positive" : "negative"}`}
+                    className="number cell-editable"
                     onDoubleClick={() => startInlineEdit(t, "totalAmount")}
                     onClick={tapToInlineEdit(t, "totalAmount")}
                     style={{ cursor: "pointer" }}
@@ -911,7 +933,7 @@ export const TradeHistorySection: React.FC<TradeHistorySectionProps> = ({
                       />
                     ) : (
                       (() => {
-                        const priceInfo = prices.find((p) => p.ticker === t.ticker);
+                        const priceInfo = latestPriceByCanonicalTicker.get(canonicalTickerForMatch(t.ticker));
                         const currency = inferTradeCurrency(t, priceInfo?.currency);
                         return formatPriceWithCurrency(t.totalAmount, currency, t.ticker);
                       })()
@@ -924,7 +946,7 @@ export const TradeHistorySection: React.FC<TradeHistorySectionProps> = ({
                     {t.side === "sell" ? (() => {
                       const detail = realizedPnlDetailByTradeId.get(t.id);
                       if (detail === undefined) return "-";
-                      const priceInfo = prices.find((p) => p.ticker === t.ticker);
+                      const priceInfo = latestPriceByCanonicalTicker.get(canonicalTickerForMatch(t.ticker));
                       const currency = inferTradeCurrency(t, priceInfo?.currency);
                       const fmt = formatPriceWithCurrency(detail.pnl, currency, t.ticker);
                       const avgPrice = detail.quantity > 0 ? detail.costBasis / detail.quantity : 0;

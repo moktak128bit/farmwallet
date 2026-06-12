@@ -10,6 +10,11 @@ function formatAmount(amount: number): string {
   return new Intl.NumberFormat("ko-KR").format(amount) + "원";
 }
 
+/** 마크다운 표 셀 이스케이프 — `|`는 열 구분자로 해석되므로 \| 로, 줄바꿈은 공백으로 치환 */
+function escapeCell(value: string): string {
+  return value.replace(/\|/g, "\\|").replace(/\r?\n/g, " ");
+}
+
 function accountName(accounts: Account[], id: string | undefined): string {
   if (!id) return "-";
   const a = accounts.find((x) => x.id === id);
@@ -37,11 +42,13 @@ export function generateLedgerMarkdownReport(
     } else if (e.kind === "expense" && isCreditPayment(e)) {
       // 신용결제는 카드 사용 시점에 이미 expense로 잡힘 — 이중계상 방지 (그룹에서 제외)
       continue;
+    } else if (isSavingsExpenseEntry(e, accounts)) {
+      // 저축성지출 판정을 재테크 분기보다 먼저 — 구버전(category=재테크, sub=저축/투자)
+      // 항목이 실질 지출로 오분류되지 않도록 (종합 월간 보고서와 동일 순서)
+      savingsExpense.push(e);
     } else if (e.kind === "expense" && e.category === "재테크") {
       // 재테크 지출(투자손실) = 실질 지출
       expense.push(e);
-    } else if (isSavingsExpenseEntry(e, accounts)) {
-      savingsExpense.push(e);
     } else if (e.kind === "transfer") {
       transfer.push(e);
     } else if (e.kind === "expense") {
@@ -83,7 +90,7 @@ export function generateLedgerMarkdownReport(
     const cashAdjustment = a.cashAdjustment ?? 0;
     const savings = a.savings ?? 0;
     const adjustment = baseBalance + cashAdjustment + savings;
-    md += `| ${a.name} | ${formatAmount(adjustment)} |\n`;
+    md += `| ${escapeCell(a.name)} | ${formatAmount(adjustment)} |\n`;
   }
   md += `\n`;
 
@@ -104,10 +111,11 @@ export function generateLedgerMarkdownReport(
     )) {
       row.savings += e.amount;
     }
+    // 저축성지출 판정 먼저 (위 그룹 분류와 동일 순서 — 구버전 재테크 저축/투자 호환)
+    else if (isSavingsExpenseEntry(e, accounts)) row.savings += e.amount;
     else if (e.kind === "expense" && e.category === "재테크") {
       row.expense += e.amount; // 투자손실 = 실질 지출
     }
-    else if (isSavingsExpenseEntry(e, accounts)) row.savings += e.amount;
     else if (e.kind === "transfer") row.transfer += e.amount;
     else row.expense += e.amount;
   }
@@ -138,7 +146,7 @@ export function generateLedgerMarkdownReport(
   md += `| 카테고리 | 금액 |\n`;
   md += `|----------|------|\n`;
   for (const [cat, amt] of categoryRows) {
-    md += `| ${cat} | ${formatAmount(amt)} |\n`;
+    md += `| ${escapeCell(cat)} | ${formatAmount(amt)} |\n`;
   }
   md += `\n`;
 
@@ -149,16 +157,16 @@ export function generateLedgerMarkdownReport(
 
   function row(e: LedgerEntry, kindLabel: string): string {
     const fix = e.isFixedExpense ? " (고정)" : "";
-    const cat = e.category || "-";
-    const sub = e.subCategory || "-";
-    const desc = e.description || "-";
+    const cat = escapeCell(e.category || "-");
+    const sub = escapeCell(e.subCategory || "-");
+    const desc = escapeCell(e.description || "-");
     let acc: string;
     if (e.kind === "income") acc = accountName(accounts, e.toAccountId);
     else if (e.kind === "transfer" && e.fromAccountId && e.toAccountId)
       acc = `${accountName(accounts, e.fromAccountId)} → ${accountName(accounts, e.toAccountId)}`;
     else acc = accountName(accounts, e.fromAccountId ?? e.toAccountId);
-    const note = e.note || "-";
-    return `| ${e.date} | ${kindLabel}${fix} | ${cat} | ${sub} | ${desc} | ${formatAmount(e.amount)} | ${acc} | ${note} |\n`;
+    const note = escapeCell(e.note || "-");
+    return `| ${e.date} | ${kindLabel}${fix} | ${cat} | ${sub} | ${desc} | ${formatAmount(e.amount)} | ${escapeCell(acc)} | ${note} |\n`;
   }
 
   md += `## 수입 내역\n\n`;

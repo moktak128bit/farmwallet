@@ -81,9 +81,23 @@ export function subscribeDataChanges(handler: TabSyncHandler): () => void {
     try { return window.localStorage.getItem(STORAGE_KEYS.DATA) ?? ""; } catch { return ""; }
   };
 
+  /** 150ms dedup으로 드롭된 방송을 트레일링 재시도로 보완하기 위한 타이머 */
+  let pendingRetryTimer: number | null = null;
+
   const deliver = (hashHint: number | null) => {
     const now = Date.now();
-    if (now - lastHandledAt < MIN_DIFF_INTERVAL_MS) return;
+    const sinceLast = now - lastHandledAt;
+    if (sinceLast < MIN_DIFF_INTERVAL_MS) {
+      // 짧은 시간 내 연속 방송 — 즉시 처리는 건너뛰되, 마지막 변경이 영구 드롭되지 않게
+      // dedup 윈도우가 끝난 뒤 한 번 더 localStorage를 읽어 재처리한다.
+      if (pendingRetryTimer == null) {
+        pendingRetryTimer = window.setTimeout(() => {
+          pendingRetryTimer = null;
+          deliver(null);
+        }, MIN_DIFF_INTERVAL_MS - sinceLast + 10);
+      }
+      return;
+    }
     const current = readCurrent();
     if (!current) return;
     const currentHash = djb2Hash(current);
@@ -95,7 +109,13 @@ export function subscribeDataChanges(handler: TabSyncHandler): () => void {
       // write 직후 localStorage 반영 지연일 수 있어 한 틱 뒤 재시도
       setTimeout(() => {
         const retry = readCurrent();
-        if (djb2Hash(retry) === hashHint) handler(retry);
+        if (djb2Hash(retry) === hashHint) {
+          // 재시도 성공 — 처리 상태를 실제 적용한 payload 기준으로 갱신
+          // (갱신하지 않으면 같은 변경이 다음 방송에서 중복 처리됨)
+          lastSeenHash = hashHint;
+          lastHandledAt = Date.now();
+          handler(retry);
+        }
       }, 50);
       return;
     }
@@ -122,6 +142,10 @@ export function subscribeDataChanges(handler: TabSyncHandler): () => void {
   return () => {
     try { ch?.removeEventListener("message", onMessage); } catch { /* */ }
     window.removeEventListener("storage", onStorage);
+    if (pendingRetryTimer != null) {
+      window.clearTimeout(pendingRetryTimer);
+      pendingRetryTimer = null;
+    }
   };
 }
 

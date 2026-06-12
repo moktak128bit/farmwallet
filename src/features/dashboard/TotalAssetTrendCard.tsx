@@ -137,12 +137,14 @@ export const TotalAssetTrendCard: React.FC<Props> = React.memo(function TotalAss
   const { rows, detailByDate } = useMemo(() => {
     const empty = { rows: [] as TotalAssetRow[], detailByDate: new Map<string, SnapshotDetailData>() };
 
-    // 첫 거래 또는 첫 ledger 항목 이후부터 스냅샷 생성
-    const firstTradeDate = trades.length > 0
-      ? [...trades].sort((a, b) => a.date.localeCompare(b.date))[0].date.slice(0, 10)
+    // 첫 거래 또는 첫 ledger 항목 이후부터 스냅샷 생성 — date 없는 항목은 정렬 전에 제외 (160행과 일관)
+    const datedTrades = trades.filter((t) => !!t.date);
+    const firstTradeDate = datedTrades.length > 0
+      ? [...datedTrades].sort((a, b) => a.date.localeCompare(b.date))[0].date.slice(0, 10)
       : "";
-    const firstLedgerDate = ledger.length > 0
-      ? [...ledger].sort((a, b) => a.date.localeCompare(b.date))[0].date.slice(0, 10)
+    const datedLedger = ledger.filter((l) => !!l.date);
+    const firstLedgerDate = datedLedger.length > 0
+      ? [...datedLedger].sort((a, b) => a.date.localeCompare(b.date))[0].date.slice(0, 10)
       : "";
     const candidates = [firstTradeDate, firstLedgerDate].filter(Boolean);
     if (candidates.length === 0) return empty;
@@ -283,7 +285,8 @@ export const TotalAssetTrendCard: React.FC<Props> = React.memo(function TotalAss
         if (priceNative == null) {
           marketKrw = costKrw;
         } else if (meta.usd) {
-          marketKrw = effectiveFx > 0 ? priceNative * qty * effectiveFx : 0;
+          // USD 종목인데 환율이 없으면 0이 아니라 원가로 폴백 (StockCostVsMarketCard와 일관 — 손익 0 처리)
+          marketKrw = effectiveFx > 0 ? priceNative * qty * effectiveFx : costKrw;
         } else {
           marketKrw = priceNative * qty;
         }

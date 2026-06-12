@@ -14,7 +14,8 @@
  *   - 칩 바(L1500대)의 × 버튼은 해당 필터만 끔 — 폼 상태 건드리지 않음.
  *   - 탭 전환·새 항목 추가 시 필터 자동 클리어 안 함 — 사용자가 명시적으로 끄거나 바꿀 때만 변경됨.
  *
- * 신용결제 탭은 cat="신용결제" 고정, sub/det 미사용. AccountsPage 카드부채 로직 의존.
+ * 신용결제 탭은 이체로 저장 (kind=transfer, category="이체", subCategory="카드결제이체").
+ * 레거시(kind=expense, category="신용결제") 데이터도 같은 탭에 표시. AccountsPage 카드부채 로직 의존.
  *
  * 입력 폼은 LedgerEntryForm(분리 컴포넌트)이 form 상태를 소유 — 폼 타이핑이 이 페이지를 재렌더하지 않음.
  * 외부 접점(필터 일괄 초기화·복사 적재)은 ledgerFormRef의 patchForm/startCopy로 처리.
@@ -42,6 +43,7 @@ import {
   type LedgerDisplayRow,
 } from "../utils/ledgerHelpers";
 import { MonthNavigator } from "../components/ledger/MonthNavigator";
+import { useFxRateValue } from "../context/FxRateContext";
 import { LedgerEntryForm, type LedgerEntryFormHandle, type LedgerTab } from "../features/ledger/LedgerEntryForm";
 import { LedgerFilterCard } from "../features/ledger/LedgerFilterCard";
 import { LedgerSummarySection } from "../features/ledger/LedgerSummarySection";
@@ -82,6 +84,8 @@ export const LedgerView: React.FC<Props> = ({
 }) => {
   const deferredLedger = useDeferredValue(ledger);
   const deferredTrades = useDeferredValue(trades);
+  // USD 항목 KRW 환산용 환율 — 합산 시 대시보드 summaryMath.toKrw와 동일 정책
+  const fxRate = useFxRateValue();
   // dailyBudget 설정 — store에서 직접 읽음 (props로 안 받음)
   const dailyBudgetConfig = useAppStore((s) => s.data.dailyBudget) ?? DEFAULT_DAILY_BUDGET;
   // 입력 폼 상태는 LedgerEntryForm이 소유 — 외부 접점(필터 초기화·복사 적재)은 ref API로
@@ -94,7 +98,7 @@ export const LedgerView: React.FC<Props> = ({
   const [showMergeModal, setShowMergeModal] = useState(false);
   const [showTaxiSplitWizard, setShowTaxiSplitWizard] = useState(false);
   // 가계부 필터 영역은 기본 접힘 — 화면 너무 차지하던 문제 해결.
-  // 검색·필터 활성 시 자동으로 펼쳐짐 (사용자가 적용한 필터 가려지면 안 됨).
+  // 접힌 상태에서도 활성 필터 요약 칩이 헤더 한 줄에 표시됨 (LedgerFilterCard).
   const [showFilters, setShowFilters] = useState(false);
   const [selectedMonths, setSelectedMonths] = useState<Set<string>>(() => new Set([getThisMonthKST()]));
   const [currentYear, setCurrentYear] = useState(() => String(getKoreaTime().getFullYear()));
@@ -118,9 +122,7 @@ export const LedgerView: React.FC<Props> = ({
   });
   const [lastAddedEntryId, setLastAddedEntryId] = useState<string | null>(null);
 
-  // 배치 편집 모드 상태
-  const [isBatchEditMode] = useState(false);
-  // Ctrl+드래그 구간 선택 / Shift+클릭 추가·제거
+  // Shift+드래그 구간 선택 / Shift+클릭 추가·제거
   const [selectedLedgerIdsForSum, setSelectedLedgerIdsForSum] = useState<Set<string>>(new Set());
   const [dragSumStartIndex, setDragSumStartIndex] = useState<number | null>(null);
   const [dragSumEndIndex, setDragSumEndIndex] = useState<number | null>(null);
@@ -130,7 +132,8 @@ export const LedgerView: React.FC<Props> = ({
 
   const submitQuickCopy = () => {
     if (!quickCopyEntry) return;
-    const parsed = sharedParseAmount(quickCopyAmount);
+    // USD 항목은 소수점 입력 허용 (폼의 USD 이체 입력과 동일 규칙)
+    const parsed = sharedParseAmount(quickCopyAmount, { allowDecimal: quickCopyEntry.currency === "USD" });
     if (parsed <= 0) {
       toast.error("금액을 입력해주세요.");
       return;
@@ -159,7 +162,7 @@ export const LedgerView: React.FC<Props> = ({
     setEditingValue("");
   }, []);
 
-  // 키보드 단축키 처리 — 폼 단축키(new-entry/save-entry)는 LedgerEntryForm으로 이동
+  // 키보드 단축키 처리 — 폼 단축키(new-entry/submit-form)는 LedgerEntryForm으로 이동
   useEffect(() => {
     const handler = {
       action: "close-modal" as ShortcutAction,
@@ -397,7 +400,7 @@ export const LedgerView: React.FC<Props> = ({
     all: "전체",
     income: "수입",
     expense: "지출",
-    savingsExpense: "저축성지출",
+    savingsExpense: "재테크",
     transfer: "이체",
     creditPayment: "신용결제"
   };
@@ -406,10 +409,15 @@ export const LedgerView: React.FC<Props> = ({
   // 필터 적용 시 지출액/수입액/전체 요약 (지출 = 재테크·저축성지출 제외한 expense만)
   // 성능: 5000건 기준 3회→1회 루프로 감소. makeIsSavingsExpense로 Set을 한 번만 생성.
   const filteredSummary = useMemo(() => {
-    const thisMonth = getThisMonthKST();
-    const [ty, tm] = thisMonth.split("-").map(Number);
+    // "전월" 기준: 월별 보기에서 월을 선택했으면 가장 이른 선택 월 기준, 아니면 실제 오늘(KST) 기준
+    const sortedSelected = Array.from(selectedMonths).sort();
+    const baseMonth =
+      viewMode === "monthly" && sortedSelected.length > 0 ? sortedSelected[0] : getThisMonthKST();
+    const [ty, tm] = baseMonth.split("-").map(Number);
     const prevMonth = `${tm === 1 ? ty - 1 : ty}-${String(tm === 1 ? 12 : tm - 1).padStart(2, "0")}`;
     const isSavings = makeIsSavingsExpense(categoryPresets);
+    // USD 항목은 환율로 KRW 환산 후 합산 — 대시보드 summaryMath.toKrw와 동일 정책
+    const toKrw = (l: LedgerDisplayRow) => (l.currency === "USD" && fxRate ? l.amount * fxRate : l.amount);
 
     let savingsAmount = 0;
     let expenseAmount = 0;
@@ -418,27 +426,33 @@ export const LedgerView: React.FC<Props> = ({
       // 재테크 = 저축성지출(expense 재테크/저축성지출) + 저축·투자 이체(transfer 저축이체/투자이체).
       // 옛 기준(isSavings, expense만)은 현행 데이터(이체로 기록된 저축/투자)를 못 잡아 0으로 나왔음.
       if (isInvestmentEntry(l) || isSavings(l)) {
-        savingsAmount += l.amount;
+        savingsAmount += toKrw(l);
       } else if (l.kind === "expense" && !isCreditPayment(l)) {
         // 신용결제는 카드 사용 시점에 이미 expense로 잡힘 — 이중계상 방지
-        expenseAmount += l.amount;
+        expenseAmount += toKrw(l);
       }
       if (l.kind === "income") {
-        incomeAmount += l.amount;
+        incomeAmount += toKrw(l);
       }
     }
 
-    // 전월 대비 비교 — ledger 전체 1회 순회로 prevEntries 통계 수집
+    // 전월 대비 비교 — 현재 합계와 동일한 데이터 소스(ledgerByTab: 탭 필터 + trade 가상 행 포함)와
+    // 동일한 분류 기준(재테크 제외·신용결제 제외)으로 1회 순회
     let prevExpense = 0;
     let prevIncome = 0;
     let prevCount = 0;
-    for (const l of ledger) {
+    for (const l of ledgerByTab) {
       if (!l.date?.startsWith(prevMonth)) continue;
       prevCount += 1;
       if (l.kind === "income") {
-        prevIncome += l.amount;
-      } else if (l.kind === "expense" && !isSavings(l) && !isCreditPayment(l)) {
-        prevExpense += l.amount;
+        prevIncome += toKrw(l);
+      } else if (
+        l.kind === "expense" &&
+        !isInvestmentEntry(l) &&
+        !isSavings(l) &&
+        !isCreditPayment(l)
+      ) {
+        prevExpense += toKrw(l);
       }
     }
 
@@ -452,7 +466,7 @@ export const LedgerView: React.FC<Props> = ({
       hasPrev: prevCount > 0,
       prevMonth,
     };
-  }, [filteredLedger, categoryPresets, ledger]);
+  }, [filteredLedger, categoryPresets, ledgerByTab, viewMode, selectedMonths, fxRate]);
 
   // 출금/입금 셀에 표시할 계좌별 금액·잔액 (ledger + trades 혼합, 날짜순 역산)
   const balanceAfterByLedgerId = useMemo(() => {
@@ -584,9 +598,11 @@ export const LedgerView: React.FC<Props> = ({
     let expenseSum = 0;
     let transferSum = 0;
     slice.forEach((e) => {
-      if (e.kind === "income") incomeSum += e.amount;
-      else if (e.kind === "transfer" || isSavingsExpenseEntry(e, accounts, categoryPresets)) transferSum += e.amount;
-      else expenseSum += e.amount;
+      // USD 항목은 환율로 KRW 환산 후 합산 (요약 카드와 동일 정책)
+      const amt = e.currency === "USD" && fxRate ? e.amount * fxRate : e.amount;
+      if (e.kind === "income") incomeSum += amt;
+      else if (e.kind === "transfer" || isSavingsExpenseEntry(e, accounts, categoryPresets)) transferSum += amt;
+      else expenseSum += amt;
     });
     return {
       count: slice.length,
@@ -595,7 +611,7 @@ export const LedgerView: React.FC<Props> = ({
       transferSum,
       net: incomeSum - expenseSum - transferSum
     };
-  }, [filteredLedger, selectedLedgerIdsForSum, accounts, categoryPresets]);
+  }, [filteredLedger, selectedLedgerIdsForSum, accounts, categoryPresets, fxRate]);
 
   // 사용 가능한 월 목록 (거래가 있는 월들) - 년도별로 정리
   const availableMonths = useMemo(() => {
@@ -740,7 +756,8 @@ export const LedgerView: React.FC<Props> = ({
             className="secondary"
             style={{ fontSize: 12, padding: "6px 12px" }}
             onClick={() => {
-              const entries = filteredLedger.filter((l): l is LedgerEntry => "id" in l);
+              // 주식 매매 가상 행(_tradeId)은 가계부 원본이 아니므로 제외 — 주식 탭 CSV에서 따로 내보냄
+              const entries = filteredLedger.filter((l) => !l._tradeId);
               exportLedgerCsv(entries, accounts);
               toast.success(`${entries.length}건 CSV 내보내기 완료`);
             }}
@@ -826,6 +843,7 @@ export const LedgerView: React.FC<Props> = ({
         clearAllFilters={clearAllFilters}
         selectedMonths={selectedMonths}
         filteredLedger={filteredLedger}
+        categoryPresets={categoryPresets}
       />
 
       {/* 입력 폼 — 분리 컴포넌트 (React.memo + forwardRef). 폼 상태는 자식 소유 */}
@@ -885,12 +903,12 @@ export const LedgerView: React.FC<Props> = ({
           />
         )}
 
-      {!isBatchEditMode && (
-        <p style={{ fontSize: 12, color: "var(--text-muted)", marginBottom: 8 }}>
-          <strong>Shift+드래그</strong>로 구간 토글(선택된 건 해제), <strong>Shift+클릭</strong>으로 1건 토글. 합계는 아래에 고정 표시됩니다.
-          {" "}행 앞 ☰를 드래그하면 같은 날짜 안에서 순서를 바꿀 수 있습니다 (날짜 정렬일 때).
-        </p>
-      )}
+      <p style={{ fontSize: 12, color: "var(--text-muted)", marginBottom: 8 }}>
+        <strong>Shift+드래그</strong>로 구간 토글(선택된 건 해제), <strong>Shift+클릭</strong>으로 1건 토글. 합계는 아래에 고정 표시됩니다.
+        {viewMode === "all" && ledgerSort.key === "date" && (
+          <> 행 앞 ☰를 드래그하면 같은 날짜 안에서 순서를 바꿀 수 있습니다.</>
+        )}
+      </p>
       {dragSumStartIndex != null && (
         <div
           style={{
@@ -957,7 +975,6 @@ export const LedgerView: React.FC<Props> = ({
         balanceAfterByLedgerId={balanceAfterByLedgerId}
         viewMode={viewMode}
         ledgerScrollKey={ledgerScrollKey}
-        isBatchEditMode={isBatchEditMode}
         ledgerSort={ledgerSort}
         setLedgerSort={setLedgerSort}
         editingField={editingField}
@@ -991,6 +1008,7 @@ export const LedgerView: React.FC<Props> = ({
             fromName={fromName}
             toName={toName}
             amount={quickCopyAmount}
+            allowDecimal={qe.currency === "USD"}
             onAmountChange={setQuickCopyAmount}
             onSubmit={submitQuickCopy}
             onEditInForm={() => {

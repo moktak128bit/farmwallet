@@ -1,7 +1,7 @@
 import { describe, it, expect, beforeEach } from "vitest";
-import { toUserDataJson, loadData, saveData } from "../services/dataService";
+import { toUserDataJson, loadData, saveData, normalizeImportedData } from "../services/dataService";
 import { STORAGE_KEYS } from "../constants/config";
-import type { AppData } from "../types";
+import type { AppData, DailyBudgetConfig } from "../types";
 
 function makeAppData(overrides: Partial<AppData> = {}): AppData {
   return {
@@ -194,6 +194,155 @@ describe("loadData round-trip — investmentGoals 보존", () => {
     expect(loaded.investmentGoals).toEqual({ annualDepositTarget: 6_000_000 });
     // retirementDate는 새 타입에 없음 — 폐기됐는지 확인
     expect((loaded.investmentGoals as Record<string, unknown>).retirementDate).toBeUndefined();
+  });
+});
+
+describe("loadData round-trip — 필드 보존 (dailyBudget 포함)", () => {
+  beforeEach(() => {
+    window.localStorage.clear();
+  });
+
+  const sampleDailyBudget: DailyBudgetConfig = {
+    enabled: true,
+    dailyLimit: 25_000,
+    mode: "weekly",
+    excludedCategories: ["이체", "수입"],
+    excludedSubCategories: ["통신비"],
+    warnOnExceed: false,
+  };
+
+  it("save → load 후 dailyBudget 유지 (회귀: loadData 필드 누락으로 새로고침마다 유실)", () => {
+    const data = makeAppData({ dailyBudget: sampleDailyBudget });
+    saveData(data);
+    const loaded = loadData();
+    expect(loaded.dailyBudget).toEqual(sampleDailyBudget);
+  });
+
+  it("dailyBudget 미설정 시 undefined 유지", () => {
+    saveData(makeAppData());
+    const loaded = loadData();
+    expect(loaded.dailyBudget).toBeUndefined();
+  });
+
+  it("dailyLimit이 손상(NaN/문자열)되면 설정 전체를 미설정으로 처리", () => {
+    const corrupt = {
+      ...makeAppData(),
+      dailyBudget: { enabled: true, dailyLimit: "abc", mode: "daily" },
+    };
+    window.localStorage.setItem(STORAGE_KEYS.DATA, JSON.stringify(corrupt));
+    const loaded = loadData();
+    expect(loaded.dailyBudget).toBeUndefined();
+  });
+
+  it("주요 사용자 필드 전수 왕복 보존 (ledger/trades/loans/workoutWeeks/dailyBudget/investmentGoals 등)", () => {
+    const data = makeAppData({
+      accounts: [{ id: "a1", name: "주거래", institution: "은행", type: "checking" as const, initialBalance: 100 }],
+      ledger: [{ id: "l1", date: "2026-01-01", kind: "expense" as const, category: "식비", description: "점심", amount: 10000 }],
+      trades: [{ id: "t1", date: "2026-01-01", accountId: "a1", ticker: "AAPL", name: "Apple", side: "buy" as const, quantity: 1, price: 100, fee: 0, totalAmount: 100, cashImpact: -100 }],
+      recurringExpenses: [{ id: "r1", title: "넷플", amount: 17000, category: "구독비", frequency: "monthly" as const, startDate: "2026-01-01" }],
+      budgetGoals: [{ id: "b1", category: "식비", monthlyLimit: 300000 }],
+      loans: [{ id: "L1", institution: "은행", loanName: "주담대", loanAmount: 1, annualInterestRate: 4, repaymentMethod: "equal_payment" as const, loanDate: "2026-01-01", maturityDate: "2056-01-01" }],
+      workoutWeeks: [{ id: "w1", weekStart: "2026-01-05", entries: [] }],
+      customExercises: [{ name: "케이블 크런치", bodyPart: "코어" as const, addedAt: "2026-01-01T00:00:00.000Z" }],
+      targetNetWorthCurve: { "2026-12-31": 100000000 },
+      dividendTrackingTicker: "005930",
+      investmentGoals: { annualDepositTarget: 12_000_000 },
+      dailyBudget: sampleDailyBudget,
+    } as Partial<AppData>);
+    saveData(data);
+    const loaded = loadData();
+    expect(loaded.accounts).toHaveLength(1);
+    expect(loaded.ledger).toEqual(data.ledger);
+    expect(loaded.trades).toEqual(data.trades);
+    expect(loaded.recurringExpenses).toEqual(data.recurringExpenses);
+    expect(loaded.budgetGoals).toEqual(data.budgetGoals);
+    expect(loaded.loans).toEqual(data.loans);
+    expect(loaded.workoutWeeks).toEqual(data.workoutWeeks);
+    expect(loaded.customExercises).toEqual(data.customExercises);
+    expect(loaded.targetNetWorthCurve).toEqual(data.targetNetWorthCurve);
+    expect(loaded.dividendTrackingTicker).toBe("005930");
+    expect(loaded.investmentGoals).toEqual(data.investmentGoals);
+    expect(loaded.dailyBudget).toEqual(sampleDailyBudget);
+  });
+
+  it("workoutRoutines: 빈 배열로 '존재'하면 시드 재주입 없이 빈 배열 유지 (사용자의 전부 삭제 존중)", () => {
+    const data = { ...makeAppData(), workoutRoutines: [] };
+    window.localStorage.setItem(STORAGE_KEYS.DATA, JSON.stringify(data));
+    const loaded = loadData();
+    expect(loaded.workoutRoutines).toEqual([]);
+  });
+
+  it("workoutRoutines: 필드가 '부재'하면 기본 시드 주입", () => {
+    window.localStorage.setItem(STORAGE_KEYS.DATA, JSON.stringify(makeAppData()));
+    const loaded = loadData();
+    expect((loaded.workoutRoutines ?? []).length).toBeGreaterThan(0);
+  });
+});
+
+describe("normalizeImportedData — 순수 함수 (localStorage 부작용 없음)", () => {
+  beforeEach(() => {
+    window.localStorage.clear();
+  });
+
+  it("호출 전후 localStorage(DATA/CACHE/스키마 버전)가 변하지 않는다", () => {
+    window.localStorage.setItem(STORAGE_KEYS.DATA, '{"ledger":[]}');
+    window.localStorage.setItem(STORAGE_KEYS.DATA_SCHEMA_VERSION, "12");
+    window.localStorage.setItem(STORAGE_KEYS.CACHE, '{"prices":[]}');
+
+    const imported = makeAppData({
+      ledger: [{ id: "x1", date: "2026-01-01", kind: "expense" as const, category: "식비", description: "a", amount: 1000 }],
+    });
+    const result = normalizeImportedData(imported);
+
+    expect(result.ledger).toHaveLength(1);
+    expect(window.localStorage.getItem(STORAGE_KEYS.DATA)).toBe('{"ledger":[]}');
+    expect(window.localStorage.getItem(STORAGE_KEYS.DATA_SCHEMA_VERSION)).toBe("12");
+    expect(window.localStorage.getItem(STORAGE_KEYS.CACHE)).toBe('{"prices":[]}');
+  });
+
+  it("schemaVersion이 있으면 그 버전 기준으로 마이그레이션 (v9 백업: income 데이트비 → 데이트통장)", () => {
+    const oldBackup = {
+      ...makeAppData(),
+      schemaVersion: 9,
+      ledger: [
+        { id: "i1", date: "2026-03-30", kind: "income", category: "데이트비", description: "", amount: 300_000 },
+      ],
+    };
+    const result = normalizeImportedData(oldBackup);
+    expect(result.ledger[0].category).toBe("데이트통장");
+  });
+
+  it("schemaVersion이 없으면 보수적으로 현 버전 취급 — 추정 마이그레이션으로 데이터를 건드리지 않음", () => {
+    const backup = {
+      ...makeAppData(),
+      ledger: [
+        { id: "i1", date: "2026-03-30", kind: "income", category: "데이트비", description: "", amount: 300_000 },
+      ],
+    };
+    const result = normalizeImportedData(backup);
+    expect(result.ledger[0].category).toBe("데이트비");
+  });
+
+  it("dailyBudget을 포함한 가져오기 데이터가 보존된다", () => {
+    const imported = makeAppData({
+      dailyBudget: {
+        enabled: true,
+        dailyLimit: 30_000,
+        mode: "daily" as const,
+        excludedCategories: [],
+        excludedSubCategories: [],
+        warnOnExceed: true,
+      },
+    });
+    const result = normalizeImportedData(imported);
+    expect(result.dailyBudget?.enabled).toBe(true);
+    expect(result.dailyBudget?.dailyLimit).toBe(30_000);
+  });
+
+  it("배열이어야 할 필드가 배열이 아니면 throw (검증 유지)", () => {
+    expect(() => normalizeImportedData({ ledger: "oops" })).toThrow();
+    expect(() => normalizeImportedData(null)).toThrow();
+    expect(() => normalizeImportedData([1, 2])).toThrow();
   });
 });
 

@@ -12,9 +12,12 @@ import { openPrintWindow } from "../../utils/pdfExport";
 import { blocksToCsv, blocksToSheets, blocksToHtml, hasReportRows } from "../../utils/reportExport";
 import { buildReportBlocks, type ReportBlocksInput } from "./buildReportBlocks";
 
-type Props = ReportBlocksInput;
+type Props = ReportBlocksInput & {
+  /** 워커 재계산 중 — 이전 기간 데이터로 내보내는 것을 막기 위해 버튼 비활성 */
+  disabled?: boolean;
+};
 
-export const ReportExportButtons: React.FC<Props> = React.memo(function ReportExportButtons(props) {
+export const ReportExportButtons: React.FC<Props> = React.memo(function ReportExportButtons({ disabled, ...props }) {
   const exportCurrentCsv = () => {
     const { filename, blocks } = buildReportBlocks(props);
     if (!hasReportRows(blocks)) {
@@ -52,11 +55,13 @@ export const ReportExportButtons: React.FC<Props> = React.memo(function ReportEx
     openPrintWindow({ title, subtitle, bodyHtml: blocksToHtml(blocks) });
   };
 
+  const disabledTitle = disabled ? "보고서를 재계산하는 중입니다. 잠시 후 다시 시도해주세요." : undefined;
+
   return (
     <div style={{ display: "flex", gap: 8 }}>
-      <button type="button" onClick={exportCurrentExcel}>Excel</button>
-      <button type="button" onClick={exportCurrentPdf}>PDF/인쇄</button>
-      <button type="button" className="primary" onClick={exportCurrentCsv}>
+      <button type="button" onClick={exportCurrentExcel} disabled={disabled} title={disabledTitle}>Excel</button>
+      <button type="button" onClick={exportCurrentPdf} disabled={disabled} title={disabledTitle}>PDF/인쇄</button>
+      <button type="button" className="primary" onClick={exportCurrentCsv} disabled={disabled} title={disabledTitle}>
         CSV 내보내기
       </button>
     </div>

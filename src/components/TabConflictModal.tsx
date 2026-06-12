@@ -1,11 +1,14 @@
-import React, { useMemo, useState } from "react";
+import React, { useEffect, useMemo, useState } from "react";
 import type { TabConflict } from "../store/uiStore";
+import { useFocusTrap } from "../hooks/useFocusTrap";
 
 export type TabConflictResolution = "keep-local" | "apply-remote";
 
 interface TabConflictModalProps {
   conflict: TabConflict | null;
   onResolve: (resolution: TabConflictResolution) => void;
+  /** ESC로 결정 없이 닫기 (충돌은 미해결 상태로 남음 — 다음 변경 시 다시 감지될 수 있음) */
+  onDismiss?: () => void;
 }
 
 function summarizeJson(json: string): { ledger: number | string; trades: number | string; accounts: number | string } {
@@ -29,8 +32,22 @@ function summarizeJson(json: string): { ledger: number | string; trades: number 
  * 탭 간 편집 충돌. 우리 탭에 미저장 dirty가 있는 동안 다른 탭이 저장한 경우 노출.
  * 양쪽 데이터의 주요 컬렉션 카운트를 보여 사용자가 어느 쪽을 살릴지 결정.
  */
-export const TabConflictModal: React.FC<TabConflictModalProps> = ({ conflict, onResolve }) => {
+export const TabConflictModal: React.FC<TabConflictModalProps> = ({ conflict, onResolve, onDismiss }) => {
   const [busy, setBusy] = useState<TabConflictResolution | null>(null);
+  const trapRef = useFocusTrap<HTMLDivElement>(!!conflict);
+
+  // ESC = 결정 없이 닫기 (onDismiss가 주어진 경우만)
+  useEffect(() => {
+    if (!conflict || !onDismiss) return;
+    const onKeyDown = (e: KeyboardEvent) => {
+      if (e.key === "Escape") {
+        e.stopPropagation();
+        onDismiss();
+      }
+    };
+    window.addEventListener("keydown", onKeyDown);
+    return () => window.removeEventListener("keydown", onKeyDown);
+  }, [conflict, onDismiss]);
 
   const summary = useMemo(() => {
     if (!conflict) return null;
@@ -68,6 +85,7 @@ export const TabConflictModal: React.FC<TabConflictModalProps> = ({ conflict, on
       }}
     >
       <div
+        ref={trapRef}
         className="card"
         style={{
           width: "100%",

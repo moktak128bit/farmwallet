@@ -92,12 +92,17 @@ export function buildUnifiedCsv(
   for (const t of trades) {
     const sideLabel = t.side === "buy" ? "buy" : "sell";
     const isSell = t.side === "sell";
-    const rawPnl = isSell ? (realizedPnlByTradeId.get(t.id) ?? t.totalAmount) : 0;
-    const subCategory = isSell ? (rawPnl >= 0 ? "투자수익" : "투자손실") : "";
-    const kind = isSell ? "expense" : sideLabel;
-    const category = isSell ? "재테크" : "";
+    // FIFO 미매칭 매도(선행 매수 없음)는 매도대금 전액을 손익으로 잡지 않고 0 처리 + 비고 표기
+    const fifoMatched = !isSell || realizedPnlByTradeId.has(t.id);
+    const rawPnl = isSell ? (realizedPnlByTradeId.get(t.id) ?? 0) : 0;
+    const isGain = rawPnl >= 0;
+    const subCategory = isSell ? (isGain ? "투자수익" : "투자손실") : "";
+    // dataService v8 규약: 투자수익 → kind=income/category=수입, 투자손실 → kind=expense/category=재테크
+    const kind = isSell ? (isGain ? "income" : "expense") : sideLabel;
+    const category = isSell ? (isGain ? "수입" : "재테크") : "";
     const description = isSell ? subCategory : "";
     const amount = isSell ? Math.abs(Number(rawPnl)) : "";
+    const note = fifoMatched ? "" : "FIFO 미매칭 매도 — 손익 0 처리";
     const currency = isUSDStock(t.ticker) ? "USD" : "KRW";
     withDate.push({
       date: t.date,
@@ -112,7 +117,7 @@ export function buildUnifiedCsv(
         isSell ? currency : "",
         "",
         "",
-        "",
+        note,
         "",
         accountNameById.get(t.accountId) ?? t.accountId,
         t.ticker,

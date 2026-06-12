@@ -9,6 +9,10 @@ export interface PrintOptions {
   bodyHtml: string;
 }
 
+/** title/subtitle은 외부 입력이 올 수 있으므로 HTML 이스케이프 (bodyHtml은 호출부에서 이미 escape됨) */
+const escHtml = (s: string): string =>
+  s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+
 export function openPrintWindow({ title, subtitle, bodyHtml }: PrintOptions): void {
   // noopener/noreferrer를 features 문자열에 넣으면 window.open이 null을 반환해(스펙) 항상 "팝업 차단"으로 오인됨.
   // 새 창에 document.write로 내용을 써야 하므로 핸들이 반드시 필요 — 두 옵션을 넣지 않는다.
@@ -20,7 +24,7 @@ export function openPrintWindow({ title, subtitle, bodyHtml }: PrintOptions): vo
   const generatedAt = new Date().toLocaleString("ko-KR");
   win.document.open();
   win.document.write(`<!doctype html>
-<html lang="ko"><head><meta charset="utf-8"><title>${title}</title>
+<html lang="ko"><head><meta charset="utf-8"><title>${escHtml(title)}</title>
 <style>
   @media print { @page { margin: 16mm; } }
   body { font-family: 'Pretendard', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; color: #111; padding: 24px; }
@@ -34,8 +38,8 @@ export function openPrintWindow({ title, subtitle, bodyHtml }: PrintOptions): vo
   .footer { margin-top: 32px; color: #999; font-size: 11px; text-align: right; }
 </style></head>
 <body>
-<h1>FarmWallet · ${title}</h1>
-${subtitle ? `<div class="subtitle">${subtitle}</div>` : ""}
+<h1>FarmWallet · ${escHtml(title)}</h1>
+${subtitle ? `<div class="subtitle">${escHtml(subtitle)}</div>` : ""}
 ${bodyHtml}
 <div class="footer">생성: ${generatedAt}</div>
 ${"<script>"}setTimeout(function(){window.print();}, 200);${"<" + "/script>"}

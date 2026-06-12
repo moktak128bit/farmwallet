@@ -123,7 +123,10 @@ export function getCurrentHoldingsTickers(trades: Array<{ ticker: string; quanti
 export const isUSDStock = (ticker?: string): boolean => {
   if (!ticker) return false;
   if (isCryptoStock(ticker)) return false;
-  return cleanTicker(ticker).length <= 4;
+  // 위 isCryptoStock 주석과 동일 규칙: 접미사 제거 후 1~5자 순영문이면 미국 주식/ETF.
+  // (GOOGL 등 5자 티커, F·T 등 1자 티커 포함. BRK.B 같은 클래스 접미사도 허용)
+  const c = cleanTicker(ticker.trim());
+  return /^[A-Z]{1,5}([.-][A-Z])?$/.test(c);
 };
 
 export const isKRWStock = (ticker?: string): boolean => {
@@ -163,7 +166,11 @@ export function extractTickerFromText(text: string): string | null {
   if (!text || typeof text !== "string") return null;
   const sixDigit = text.match(/([0-9]{6})/);
   if (sixDigit) return sixDigit[1];
-  const m = text.match(/([0-9A-Z]{1,10})/i);
-  return m ? m[1] : null;
+  // 숫자-only 토큰("2024", "3" 등 연도·수치)은 티커가 아님 — 영문이 하나 이상 포함된 토큰만 인정
+  const tokens = text.match(/[0-9A-Za-z]{1,10}/g) ?? [];
+  for (const token of tokens) {
+    if (/[A-Za-z]/.test(token)) return token;
+  }
+  return null;
 }
 

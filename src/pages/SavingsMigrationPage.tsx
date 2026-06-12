@@ -72,6 +72,9 @@ export const SavingsMigrationView: React.FC<Props> = ({ data, onChangeData }) =>
       toast.error("출금 계좌(농협)를 선택해주세요.");
       return;
     }
+    if (!window.confirm(`저축성지출 ${targetEntries.length}건의 출금·입금 계좌를 일괄 변경합니다. 계속할까요?`)) {
+      return;
+    }
 
     let updated = 0;
     const newLedger = ledger.map((entry) => {
@@ -90,19 +93,32 @@ export const SavingsMigrationView: React.FC<Props> = ({ data, onChangeData }) =>
     toast.success(`저축성지출 ${updated}건의 출금·입금 계좌를 적용했습니다.`);
   };
 
+  /**
+   * 저축성지출 → 현행 스키마(v8 이후)로 전환.
+   * dataService 마이그레이션 결과와 동일한 최종 형태로 생성:
+   *  - 저축 계열 → kind=transfer, category=이체, subCategory=저축이체
+   *  - 그 외(투자) → kind=transfer, category=이체, subCategory=투자이체
+   * (이전 구현은 v8 이전 형식(category=재테크, subCategory=저축/투자)을 만들어
+   *  마이그레이션이 재실행되지 않는 한 집계에서 어긋났음.)
+   */
   const handleConvertToRecheck = () => {
+    if (!window.confirm(`저축성지출 ${targetEntries.length}건을 이체(저축이체/투자이체)로 일괄 전환합니다. 계속할까요?`)) {
+      return;
+    }
     let updated = 0;
     const newLedger = ledger.map((entry) => {
       if (!isTargetEntry(entry)) return entry;
       updated += 1;
+      const mapped = mapSubToRecheckSub(entry.subCategory ?? "");
       return {
         ...entry,
-        category: RECHECK_CATEGORY,
-        subCategory: mapSubToRecheckSub(entry.subCategory ?? "")
+        kind: "transfer" as const,
+        category: "이체",
+        subCategory: mapped === "저축" ? "저축이체" : "투자이체"
       };
     });
     onChangeData({ ...data, ledger: newLedger });
-    toast.success(`저축성지출 ${updated}건을 재테크(저축/투자)로 전환했습니다.`);
+    toast.success(`저축성지출 ${updated}건을 이체(저축이체/투자이체)로 전환했습니다.`);
   };
 
   const recheckEntries = useMemo(() => ledger.filter(isRecheckEntry), [ledger]);
@@ -113,6 +129,9 @@ export const SavingsMigrationView: React.FC<Props> = ({ data, onChangeData }) =>
   const handleRecheckFromAccountApply = () => {
     if (!recheckFromAccountId.trim()) {
       toast.error("출금 계좌(농협)를 선택해주세요.");
+      return;
+    }
+    if (!window.confirm(`재테크 ${recheckEntries.length}건의 출금 계좌를 일괄 변경합니다. 계속할까요?`)) {
       return;
     }
     let updated = 0;
@@ -245,11 +264,11 @@ export const SavingsMigrationView: React.FC<Props> = ({ data, onChangeData }) =>
 
       <hr style={{ margin: "24px 0", border: "none", borderTop: "1px solid var(--border)" }} />
 
-      <h3 style={{ margin: "0 0 12px", fontSize: 16 }}>재테크로 전환</h3>
+      <h3 style={{ margin: "0 0 12px", fontSize: 16 }}>이체(재테크)로 전환</h3>
       <p style={{ margin: "0 0 16px", fontSize: 13, color: "var(--text-muted)" }}>
-        대분류를 <strong>재테크</strong>로, 중분류를 <strong>저축</strong> 또는 <strong>투자</strong>로 일괄 변경합니다.
+        현행 스키마에 맞게 <strong>이체</strong>(kind=transfer)로 전환하고, 중분류를 <strong>저축이체</strong> 또는 <strong>투자이체</strong>로 일괄 변경합니다.
         <br />
-        예금·적금·청년도약계좌·주택청약·비상금·빚상환용·기타저축 → 저축, 그 외 → 투자.
+        예금·적금·청년도약계좌·주택청약·비상금·빚상환용·기타저축 → 저축이체, 그 외 → 투자이체.
       </p>
       <button
         type="button"
@@ -257,7 +276,7 @@ export const SavingsMigrationView: React.FC<Props> = ({ data, onChangeData }) =>
         onClick={handleConvertToRecheck}
         style={{ padding: "10px 20px", fontSize: 14 }}
       >
-        저축성지출 {targetEntries.length}건 재테크로 전환
+        저축성지출 {targetEntries.length}건 이체로 전환
       </button>
         </>
       )}

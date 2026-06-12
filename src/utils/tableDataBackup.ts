@@ -412,6 +412,13 @@ export function buildTableBackupFile(data: AppData): {
       stock_presets: data.stockPresets ?? [],
       loans: data.loans ?? [],
       historical_daily_closes: data.historicalDailyCloses ?? [],
+      // 누락 보강: "테이블 백업만으로 복구 가능" 약속을 지키기 위한 5개 필드
+      workout_routines: data.workoutRoutines ?? [],
+      custom_exercises: data.customExercises ?? [],
+      market_env_snapshots: data.marketEnvSnapshots ?? [],
+      // 단일 객체 설정은 0~1행 테이블로 직렬화
+      investment_goals: data.investmentGoals ? [data.investmentGoals] : [],
+      daily_budget: data.dailyBudget ? [data.dailyBudget] : [],
       ...cp,
       ...tp,
       ...wt,
@@ -514,6 +521,28 @@ export function appDataFromTableBackupPayload(raw: unknown): AppData {
     return point;
   });
 
+  // 구버전 테이블 백업(해당 테이블 자체가 없는 파일)에서는 필드를 "부재"로 두어
+  // 복원 후 기본값(시드 루틴 등) 주입 정책이 정상 작동하게 한다.
+  // 테이블이 존재하면 빈 배열이어도 그대로 복원 (사용자의 "전부 삭제" 존중).
+  const optionalFields: Partial<AppData> = {};
+  if (Array.isArray(tables.workout_routines)) {
+    optionalFields.workoutRoutines = asArray(tables.workout_routines);
+  }
+  if (Array.isArray(tables.custom_exercises)) {
+    optionalFields.customExercises = asArray(tables.custom_exercises);
+  }
+  if (Array.isArray(tables.market_env_snapshots)) {
+    optionalFields.marketEnvSnapshots = asArray(tables.market_env_snapshots);
+  }
+  const investmentGoalsRow = asArray<Record<string, unknown>>(tables.investment_goals)[0];
+  if (investmentGoalsRow && typeof investmentGoalsRow === "object") {
+    optionalFields.investmentGoals = investmentGoalsRow as AppData["investmentGoals"];
+  }
+  const dailyBudgetRow = asArray<Record<string, unknown>>(tables.daily_budget)[0];
+  if (dailyBudgetRow && typeof dailyBudgetRow === "object") {
+    optionalFields.dailyBudget = dailyBudgetRow as unknown as AppData["dailyBudget"];
+  }
+
   return {
     loans: asArray(tables.loans),
     accounts: asArray(tables.accounts),
@@ -534,7 +563,10 @@ export function appDataFromTableBackupPayload(raw: unknown): AppData {
     assetSnapshots,
     historicalDailyCloses: asArray(tables.historical_daily_closes),
     dividendTrackingTicker,
-    isaPortfolio: isaFinal
+    isaPortfolio: isaFinal,
+    // 루트 schemaVersion을 보존해 normalizeImportedData가 올바른 버전 기준으로 마이그레이션
+    ...(typeof root.schemaVersion === "number" ? { schemaVersion: root.schemaVersion } : {}),
+    ...optionalFields
   } as AppData;
 }
 

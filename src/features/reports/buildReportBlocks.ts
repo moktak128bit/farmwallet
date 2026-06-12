@@ -17,6 +17,7 @@ import type {
 } from "../../utils/reportGenerator";
 import type { TaxYearSummary } from "../../utils/taxCalculator";
 import type { ReportBlock } from "../../utils/reportExport";
+import { getTodayKST } from "../../utils/date";
 import { toPercent, type ReportType } from "./reportShared";
 
 export interface ReportBlocksInput {
@@ -67,7 +68,8 @@ export function buildReportBlocks(input: ReportBlocksInput): ReportBlocksResult 
     taxSummary
   } = input;
 
-  const today = new Date().toISOString().slice(0, 10);
+  // 파일명 날짜는 KST 기준 — UTC 사용 시 오전 9시 이전엔 전날 날짜가 찍힘
+  const today = getTodayKST();
   const blocks: ReportBlock[] = [];
   let title = "";
   let filenameBase: string = reportType;
@@ -180,8 +182,9 @@ export function buildReportBlocks(input: ReportBlocksInput): ReportBlocksResult 
         rows: monthlyReport.map((r) => [r.month, r.income, r.expense, r.transfer, r.net])
       });
       if (monthlyIncomeDetail.length > 0) {
+        // 실제 내용은 배당·이자 수입만 포함 — 전체 수입으로 오해되지 않도록 라벨 명시
         blocks.push({
-          title: "수입 상세",
+          title: "배당·이자 상세",
           head: ["월", "일자", "대분류", "중분류", "내용", "계좌", "금액"],
           rows: monthlyIncomeDetail.map((d) => [d.month, d.date, d.category, d.subCategory ?? "", d.description, d.accountName ?? "", d.amount])
         });

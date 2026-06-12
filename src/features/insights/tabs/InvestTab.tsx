@@ -20,8 +20,9 @@ export const InvestTab = React.memo(function InvestTab({ d }: { d: D }) {
   const noSellHoldings = holdOnly.filter((h) => h.매도 === 0 && h.매수 > 500000);
   const totalInvested = holdOnly.reduce((s, h) => s + h.매수, 0);
   // selMonth 필터 시 해당 월만, 아니면 전체 합 — totalInvested(d.trades 기반)와 스코프 일치
+  // divTrend는 d.months와 평행 배열 — YYYY-MM 인덱스로 조회 ("6월" 라벨 find는 다른 해와 충돌)
   const totalDiv = d.selMonth
-    ? (d.divTrend.find(m => m.l === (d.ml[d.selMonth!] ?? d.selMonth))?.amount ?? 0)
+    ? (d.divTrend[d.months.indexOf(d.selMonth)]?.amount ?? 0)
     : d.divTrend.reduce((s, m) => s + m.amount, 0);
   const totalBuy = holdings.reduce((s, h) => s + h.매수, 0);
   const totalSell = holdings.reduce((s, h) => s + h.매도, 0);
@@ -203,7 +204,7 @@ export const InvestTab = React.memo(function InvestTab({ d }: { d: D }) {
           <Card title="매도 없는 종목 리스트" span={4}>
             <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(280px, 1fr))", gap: 10 }}>
               {noSellHoldings.map((h, i) => (
-                <div key={h.fullName} style={{ padding: "10px 14px", background: "#fff5f5", borderRadius: 8, border: "1px solid #fcc", fontSize: 12 }}>
+                <div key={h.fullName} style={{ padding: "10px 14px", background: "var(--danger-light)", borderRadius: 8, border: "1px solid var(--border-light)", fontSize: 12, color: "var(--text)" }}>
                   <div style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline" }}>
                     <span style={{ fontWeight: 700 }}>
                       <span style={{ color: "#e94560", marginRight: 6 }}>{i + 1}</span>
@@ -211,7 +212,7 @@ export const InvestTab = React.memo(function InvestTab({ d }: { d: D }) {
                     </span>
                     <span style={{ fontWeight: 800, color: "#e94560" }}>{F(h.매수)}원</span>
                   </div>
-                  <div style={{ fontSize: 11, color: "#666", marginTop: 3 }}>
+                  <div style={{ fontSize: 11, color: "var(--text-muted)", marginTop: 3 }}>
                     포트폴리오 비중 {totalInvested > 0 ? ((h.매수 / totalInvested) * 100).toFixed(1) : 0}%
                   </div>
                 </div>
@@ -225,22 +226,22 @@ export const InvestTab = React.memo(function InvestTab({ d }: { d: D }) {
       <Section storageKey="invest-section-performance" title="💰 수익·매매 성과">
         <Card title="매매 성과 요약" span={2}>
           <div style={{ display: "flex", flexDirection: "column", gap: 10, fontSize: 13 }}>
-            <div style={{ display: "flex", justifyContent: "space-between", padding: "12px 14px", background: d.realPL.total >= 0 ? "#d4edda" : "#f8d7da", borderRadius: 8 }}>
+            <div style={{ display: "flex", justifyContent: "space-between", padding: "12px 14px", background: d.realPL.total >= 0 ? "var(--primary-light)" : "var(--danger-light)", borderRadius: 8, color: "var(--text)" }}>
               <span style={{ fontWeight: 600 }}>순 실현손익</span>
-              <span style={{ fontWeight: 800, color: d.realPL.total >= 0 ? "#2ecc71" : "#e94560", fontSize: 18 }}>
+              <span style={{ fontWeight: 800, color: d.realPL.total >= 0 ? "var(--success)" : "var(--danger)", fontSize: 18 }}>
                 {d.realPL.total >= 0 ? "+" : ""}{F(Math.round(d.realPL.total))}원
               </span>
             </div>
             <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8 }}>
-              <div style={{ padding: "10px 12px", background: "#d4edda", borderRadius: 8, textAlign: "center" }}>
-                <div style={{ fontSize: 11, color: "#666" }}>수익 ({d.realPL.winCnt}건)</div>
-                <div style={{ fontWeight: 700, color: "#2ecc71" }}>+{F(Math.round(d.realPL.wins))}원</div>
-                <div style={{ fontSize: 10, color: "#666", marginTop: 2 }}>평균 {F(Math.round(avgWin))}원</div>
+              <div style={{ padding: "10px 12px", background: "var(--primary-light)", borderRadius: 8, textAlign: "center", color: "var(--text)" }}>
+                <div style={{ fontSize: 11, color: "var(--text-muted)" }}>수익 ({d.realPL.winCnt}건)</div>
+                <div style={{ fontWeight: 700, color: "var(--success)" }}>+{F(Math.round(d.realPL.wins))}원</div>
+                <div style={{ fontSize: 10, color: "var(--text-muted)", marginTop: 2 }}>평균 {F(Math.round(avgWin))}원</div>
               </div>
-              <div style={{ padding: "10px 12px", background: "#f8d7da", borderRadius: 8, textAlign: "center" }}>
-                <div style={{ fontSize: 11, color: "#666" }}>손실 ({d.realPL.lossCnt}건)</div>
-                <div style={{ fontWeight: 700, color: "#e94560" }}>−{F(Math.round(d.realPL.losses))}원</div>
-                <div style={{ fontSize: 10, color: "#666", marginTop: 2 }}>평균 {F(Math.round(avgLoss))}원</div>
+              <div style={{ padding: "10px 12px", background: "var(--danger-light)", borderRadius: 8, textAlign: "center", color: "var(--text)" }}>
+                <div style={{ fontSize: 11, color: "var(--text-muted)" }}>손실 ({d.realPL.lossCnt}건)</div>
+                <div style={{ fontWeight: 700, color: "var(--danger)" }}>−{F(Math.round(d.realPL.losses))}원</div>
+                <div style={{ fontSize: 10, color: "var(--text-muted)", marginTop: 2 }}>평균 {F(Math.round(avgLoss))}원</div>
               </div>
             </div>
             <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8, fontSize: 12 }}>
@@ -263,7 +264,12 @@ export const InvestTab = React.memo(function InvestTab({ d }: { d: D }) {
           </div>
         </Card>
 
-        <Card title="청산 종목 손익" span={2}>
+        <Card title="청산 종목 손익 (평균단가 기준)" span={2}>
+          {/* 종목별 매수/매도 합산(평균단가) 기준 — FIFO 기반 KPI '실현 손익'과는 방법론이 달라
+              부분 매도·재매수가 있으면 수치가 다를 수 있음 (D에 종목별 FIFO 기록이 없어 라벨로 명시) */}
+          <div style={{ fontSize: 11, color: "var(--text-faint)", marginBottom: 6 }}>
+            매도금액 − 평균 매수단가 × 매도수량. FIFO 기준인 상단 "실현 손익" KPI와 다를 수 있습니다.
+          </div>
           <div style={{ maxHeight: 340, overflow: "auto" }}>
             {closedPL.length === 0 ? <div style={{ textAlign: "center", padding: 40, color: "var(--text-faint)" }}>청산 종목 없음</div> : closedPL.map(({ fullName, 매수, 매도, 실현손익 }) => (
               <div key={fullName} style={{ padding: "8px 0", borderBottom: "1px solid var(--border-light)" }}>
@@ -335,7 +341,7 @@ export const InvestTab = React.memo(function InvestTab({ d }: { d: D }) {
 
         <Card title="투자 종합 인사이트" span={4}>
           <div className="grid-2" style={{ gap: 12 }}>
-            {holdOnly[0] && <Insight title="최대 보유 종목 분석" color="#0f3460" bg="#f0f8ff">
+            {holdOnly[0] && <Insight title="최대 보유 종목 분석" tone="info">
               {holdOnly[0].fullName} — 총 매수금액 {F(holdOnly[0].매수)}원. 포트폴리오 비중 {topShare.toFixed(1)}%.
               {holdOnly[0].매도 > 0 ? ` 일부 매도(${F(holdOnly[0].매도)}원). 실현손익 ${holdOnly[0].실현손익 >= 0 ? "+" : ""}${F(Math.round(holdOnly[0].실현손익))}원.` : " 매도 없이 보유 중."}
               {topShare > 50 ? " ⚠️ 단일 종목 비중 50% 초과 — 분산 투자 고려 권장." : ""}
@@ -349,10 +355,10 @@ export const InvestTab = React.memo(function InvestTab({ d }: { d: D }) {
               {" "}매매 회전율 {turnoverAnnualized.toFixed(2)}x (연환산).
               {turnoverAnnualized > 2 ? " 거래가 잦음 — 수수료·세금 누적 주의." : turnoverAnnualized < 0.3 ? " 장기 보유형 전략." : ""}
             </Insight>
-            <Insight title="배당/이자 수입" color="#059669" bg="#d4edda">
+            <Insight title="배당/이자 수입" tone="success">
               {totalDiv > 0 ? `총 ${F(totalDiv)}원 · 월평균 ${F(Math.round(totalDiv / d.monthSpan))}원. 투자 원금 대비 연환산 배당률 ${divYieldAnnualized.toFixed(2)}%. ${divYieldAnnualized >= 4 ? "배당률 4%↑ — 우수한 패시브 수입 구조!" : divYieldAnnualized >= 2 ? "배당률 2~4% — 안정적 수준." : "배당률 2% 미만 — 배당 ETF·고배당주 비중을 늘리면 패시브 수입이 커집니다."}` : "아직 배당/이자 수입이 없습니다. 배당 ETF·고배당주·CMA 이자 등으로 패시브 수입을 만들어 보세요."}
             </Insight>
-            <Insight title="매매 전략 평가" color="#b45309" bg="#fff3cd">
+            <Insight title="매매 전략 평가" tone="warning">
               {d.realPL.winCnt + d.realPL.lossCnt > 0
                 ? `${d.realPL.winCnt + d.realPL.lossCnt}건 청산 · 승률 ${winRate?.toFixed(0)}% · 수익:손실 배수 ${winLossRatio?.toFixed(2) ?? "-"}x. ${d.realPL.total >= 0 ? `순이익 +${F(Math.round(d.realPL.total))}원.` : `순손실 ${F(Math.round(d.realPL.total))}원 — 전략 재점검 필요.`} ${winLossRatio != null && winLossRatio >= 2 ? " 수익 > 손실의 2배 — 잘 끊어내고 있음." : winLossRatio != null && winLossRatio < 1 ? " 손실이 수익보다 큼 — 손절 기준 점검 필요." : ""}`
                 : "매도 내역이 없어 성과 평가 보류. 장기 보유 전략이라면 정상."}
@@ -364,24 +370,24 @@ export const InvestTab = React.memo(function InvestTab({ d }: { d: D }) {
           <Card title="재테크 중분류별 상세 인사이트" span={4}>
             <div className="grid-2" style={{ gap: 10 }}>
               {d.investSubInsights.map((v, i) => (
-                <div key={v.sub} style={{ padding: "12px 14px", borderRadius: 10, background: v.monthTrend === "up" ? "#f0fdf4" : v.monthTrend === "down" ? "#fff5f5" : "#f0f8ff", border: `1px solid ${v.monthTrend === "up" ? "#86efac" : v.monthTrend === "down" ? "#fcc" : "#cce5ff"}`, fontSize: 12 }}>
+                <div key={v.sub} style={{ padding: "12px 14px", borderRadius: 10, background: v.monthTrend === "up" ? "var(--primary-light)" : v.monthTrend === "down" ? "var(--danger-light)" : "var(--accent-light)", border: "1px solid var(--border-light)", fontSize: 12, color: "var(--text)" }}>
                   <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 6 }}>
                     <span style={{ fontWeight: 700, fontSize: 14, display: "flex", alignItems: "center", gap: 6 }}>
                       <span style={{ width: 10, height: 10, borderRadius: 5, background: C[i % 12], display: "inline-block" }} />
                       {v.sub}
                     </span>
-                    <span style={{ fontSize: 16, fontWeight: 800, color: "#0f3460" }}>{F(v.amount)}원</span>
+                    <span style={{ fontSize: 16, fontWeight: 800, color: "var(--accent)" }}>{F(v.amount)}원</span>
                   </div>
-                  <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 4, fontSize: 11, color: "#555", marginBottom: 4 }}>
+                  <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 4, fontSize: 11, color: "var(--text-secondary)", marginBottom: 4 }}>
                     <span>비중 {v.share}%</span>
                     <span>{v.count}건</span>
                     <span>건당 {F(v.avg)}원</span>
                     <span>월평균 {F(v.monthAvg)}원</span>
-                    <span style={{ color: v.monthTrend === "up" ? "#059669" : v.monthTrend === "down" ? "#e94560" : "#999", fontWeight: 600 }}>
+                    <span style={{ color: v.monthTrend === "up" ? "var(--success)" : v.monthTrend === "down" ? "var(--danger)" : "var(--text-faint)", fontWeight: 600 }}>
                       {v.monthTrend === "up" ? `▲ ${v.mom}%` : v.monthTrend === "down" ? `▼ ${Math.abs(v.mom)}%` : "유지"}
                     </span>
                   </div>
-                  <div style={{ fontSize: 11, color: "#666", lineHeight: 1.6, borderTop: "1px solid #eee", paddingTop: 4 }}>
+                  <div style={{ fontSize: 11, color: "var(--text-muted)", lineHeight: 1.6, borderTop: "1px solid var(--border-light)", paddingTop: 4 }}>
                     {v.comment}
                   </div>
                 </div>

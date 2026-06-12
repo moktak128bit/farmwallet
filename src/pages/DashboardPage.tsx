@@ -29,12 +29,14 @@ import { MonthlyTrendCard } from "../features/dashboard/MonthlyTrendCard";
 import { InvestmentBreakdownCard } from "../features/dashboard/InvestmentBreakdownCard";
 import { SavingsRatioCard } from "../features/dashboard/SavingsRatioCard";
 import { DividendCoverageCard } from "../features/dashboard/DividendCoverageCard";
+import { DividendGrowthCard } from "../features/dashboard/DividendGrowthCard";
 import { AssetCompositionCard } from "../features/dashboard/AssetCompositionCard";
 import { AccountBalanceTrendCard } from "../features/dashboard/AccountBalanceTrendCard";
 import { StockCostVsMarketCard } from "../features/dashboard/StockCostVsMarketCard";
 import { TotalAssetTrendCard } from "../features/dashboard/TotalAssetTrendCard";
 import { computeLedgerSummary, computeRecheckBreakdown } from "../features/dashboard/summaryMath";
 import { loadHiddenDashboardWidgets } from "../features/dashboard/dashboardWidgets";
+import { buildDividendGrowth, resolveTrackedTickers } from "../utils/dividendGrowth";
 import { useAccountTimelineRows } from "../hooks/useAccountTimelineRows";
 import { buildAdjustedPrices, buildTimelineMonthRange } from "../utils/accountTimeline";
 import type {
@@ -106,6 +108,32 @@ export const DashboardView: React.FC<Props> = (props) => {
   const monthRange = useMemo(() => buildTimelineMonthRange(ledger, trades, currentMonth), [ledger, trades, currentMonth]);
 
   const adjustedPrices = useMemo(() => buildAdjustedPrices(prices, fxRate), [prices, fxRate]);
+
+  // 배당 성장 추적 — 설정 티커(쉼표 구분 복수 가능) + 자동 보충(보유 중 & 분배 기록 ≥2건, 최근 수령 순)
+  const dividendGrowthData = useMemo(() => {
+    const tickers = resolveTrackedTickers(storeData.dividendTrackingTicker, ledger, trades);
+    return tickers
+      .map((t) =>
+        buildDividendGrowth({
+          ticker: t,
+          ledger,
+          trades,
+          prices,
+          historicalDailyCloses: storeData.historicalDailyCloses,
+          marketEnvSnapshots: storeData.marketEnvSnapshots,
+          currentMonth,
+        })
+      )
+      .filter((d): d is NonNullable<typeof d> => d != null);
+  }, [
+    storeData.dividendTrackingTicker,
+    storeData.historicalDailyCloses,
+    storeData.marketEnvSnapshots,
+    ledger,
+    trades,
+    prices,
+    currentMonth,
+  ]);
 
   /** 매월 15일·월말 스냅샷 날짜 (오늘 이전만) */
   const balanceSnapshotDates = useMemo(() => {
@@ -366,6 +394,22 @@ export const DashboardView: React.FC<Props> = (props) => {
                 currentMonth={currentMonth}
               />
             )}
+          </div>
+        )}
+
+        {/* 배당 성장 추적 — 장기 적립 종목별 분배금·분배율·주가 (종목당 카드 1개) */}
+        {show("dividendGrowth") && dividendGrowthData.length > 0 && (
+          <div
+            style={{
+              display: "grid",
+              gridTemplateColumns: "repeat(auto-fit, minmax(360px, 1fr))",
+              gap: 16,
+              alignItems: "stretch"
+            }}
+          >
+            {dividendGrowthData.map((d) => (
+              <DividendGrowthCard key={d.ticker} data={d} />
+            ))}
           </div>
         )}
 

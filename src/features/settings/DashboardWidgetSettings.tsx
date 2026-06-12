@@ -276,17 +276,18 @@ export const DashboardWidgetSettings: React.FC<Props> = React.memo(function Dash
     <div className="card">
       <h3>대시보드 위젯 표시</h3>
       <div style={{ marginBottom: 16 }}>
-        <label htmlFor="dividend-tracking-ticker" style={{ display: "block", fontWeight: 600, marginBottom: 4 }}>배당 추적 위젯 티커</label>
+        <label htmlFor="dividend-tracking-ticker" style={{ display: "block", fontWeight: 600, marginBottom: 4 }}>배당 성장 추적 티커</label>
         <input
           id="dividend-tracking-ticker"
           type="text"
-          placeholder="예: 458730"
+          placeholder="예: 458730, 0167B0"
           value={data.dividendTrackingTicker ?? ""}
           onChange={(e) => onChangeData({ ...data, dividendTrackingTicker: e.target.value.trim() || undefined })}
-          style={{ width: "100%", maxWidth: 200, padding: "8px 12px" }}
+          style={{ width: "100%", maxWidth: 320, padding: "8px 12px" }}
         />
         <p style={{ fontSize: 12, color: "var(--text-muted)", marginTop: 4 }}>
-          배당 추적에 사용할 종목 티커 (데이터에 저장됩니다). 현재 대시보드에는 전용 위젯이 없어 표시에는 사용되지 않습니다.
+          대시보드 "배당 성장 추적" 위젯에 표시할 종목 — 쉼표로 여러 개 지정 가능 (종목당 차트 1개).
+          2개 미만이면 보유 중이면서 분배금 기록이 2건 이상인 종목을 최근 수령 순으로 자동 보충합니다.
         </p>
       </div>
       <p style={{ fontSize: 12, color: "var(--text-muted)", marginBottom: 12 }}>

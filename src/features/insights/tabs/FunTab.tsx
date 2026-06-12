@@ -1,5 +1,6 @@
 import React from "react";
 import { F, Card, Section, type D } from "../insightsShared";
+import { getThisMonthKST } from "../../../utils/date";
 
 export const FunTab = React.memo(function FunTab({ d }: { d: D }) {
   const fs = d.funStats;
@@ -60,7 +61,7 @@ export const FunTab = React.memo(function FunTab({ d }: { d: D }) {
         </Card>
 
         {prevComp && (
-          <Card title="전월 대비 변화">
+          <Card title={d.selMonth === getThisMonthKST() ? "전월 대비 변화 (이번 달 진행 중 — 참고용)" : "전월 대비 변화"}>
             <div style={{ fontSize: 13, lineHeight: 2 }}>
               <div>수입: <span style={{ fontWeight: 700, color: prevComp.incDiff >= 0 ? "#48c9b0" : "#e94560" }}>{prevComp.incDiff >= 0 ? "+" : ""}{F(prevComp.incDiff)}</span></div>
               <div>지출: <span style={{ fontWeight: 700, color: prevComp.expDiff <= 0 ? "#48c9b0" : "#e94560" }}>{prevComp.expDiff >= 0 ? "+" : ""}{F(prevComp.expDiff)}</span>

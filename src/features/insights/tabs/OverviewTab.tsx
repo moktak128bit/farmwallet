@@ -180,12 +180,14 @@ export const OverviewTab = React.memo(function OverviewTab({ d }: { d: D }) {
         <Card title="📈 수입 성장률 (MoM · YoY · 3M 평균)" span={4}>
           <div style={{ display: "grid", gridTemplateColumns: "repeat(3, 1fr)", gap: 10, marginBottom: 12 }}>
             <div style={{ padding: "12px 14px", background: "var(--bg)", borderRadius: 10, textAlign: "center" }}>
-              <div style={{ fontSize: 11, color: "var(--text-muted)", fontWeight: 600 }}>전월 대비 (MoM)</div>
+              <div style={{ fontSize: 11, color: "var(--text-muted)", fontWeight: 600 }}>
+                {ig.partialDay != null ? `전월 동기 대비 (1~${ig.partialDay}일)` : "전월 대비 (MoM)"}
+              </div>
               <div style={{ fontSize: 22, fontWeight: 800, color: igMomColor, marginTop: 4 }}>
                 {ig.mom == null ? "–" : Pct(ig.mom)}
               </div>
               <div style={{ fontSize: 10, color: "var(--text-faint)", marginTop: 2 }}>
-                {ig.prevInc > 0 ? `${F(ig.prevInc)} → ${F(ig.targetInc)}` : "비교 데이터 없음"}
+                {ig.prevInc > 0 ? `${F(ig.prevInc)} → ${F(ig.targetInc)}` : ig.partialDay != null ? `전월 1~${ig.partialDay}일 수입 없음` : "비교 데이터 없음"}
               </div>
             </div>
             <div style={{ padding: "12px 14px", background: "var(--bg)", borderRadius: 10, textAlign: "center" }}>
@@ -194,7 +196,7 @@ export const OverviewTab = React.memo(function OverviewTab({ d }: { d: D }) {
                 {ig.yoy == null ? "–" : Pct(ig.yoy)}
               </div>
               <div style={{ fontSize: 10, color: "var(--text-faint)", marginTop: 2 }}>
-                {ig.yoy == null ? "1년 전 데이터 없음" : "작년 동월 비교"}
+                {ig.yoy == null ? "1년 전 데이터 없음" : ig.partialDay != null ? `작년 동월 1~${ig.partialDay}일 비교` : "작년 동월 비교"}
               </div>
             </div>
             <div style={{ padding: "12px 14px", background: "var(--bg)", borderRadius: 10, textAlign: "center" }}>
@@ -301,12 +303,16 @@ export const OverviewTab = React.memo(function OverviewTab({ d }: { d: D }) {
             <div>
               <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: "12px 0" }}>
                 <div>
-                  <div style={{ fontSize: 11, color: "var(--text-faint)", fontWeight: 600 }}>이번달 지출</div>
+                  <div style={{ fontSize: 11, color: "var(--text-faint)", fontWeight: 600 }}>
+                    이번달 지출{si.partialDay != null ? ` (1~${si.partialDay}일)` : ""}
+                  </div>
                   <div style={{ fontSize: 20, fontWeight: 800, color: "var(--text)" }}>{F(Math.round(si.curExp))}</div>
                 </div>
                 <div style={{ fontSize: 24, color: "var(--text-faint)" }}>↔</div>
                 <div>
-                  <div style={{ fontSize: 11, color: "var(--text-faint)", fontWeight: 600 }}>최근 {si.lookbackMonths}개월 평균</div>
+                  <div style={{ fontSize: 11, color: "var(--text-faint)", fontWeight: 600 }}>
+                    최근 {si.lookbackMonths}개월 {si.partialDay != null ? `동기(1~${si.partialDay}일) ` : ""}평균
+                  </div>
                   <div style={{ fontSize: 20, fontWeight: 800, color: "var(--text-muted)" }}>{F(Math.round(si.avg))}</div>
                 </div>
               </div>

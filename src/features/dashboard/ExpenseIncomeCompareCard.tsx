@@ -3,6 +3,7 @@ import type { CategoryPresets, LedgerEntry } from "../../types";
 import { formatKRW } from "../../utils/formatter";
 import { compareMonths } from "../../utils/monthComparison";
 import { MonthComparisonCard } from "../../components/MonthComparisonCard";
+import { getThisMonthKST, getTodayKST } from "../../utils/date";
 
 interface Props {
   ledger: LedgerEntry[];
@@ -20,19 +21,22 @@ export const ExpenseIncomeCompareCard: React.FC<Props> = React.memo(function Exp
   fxRate,
   categoryPresets,
 }) {
+  // 진행 중인 이번 달이면 전월·전년도 같은 기간(1~오늘 일)만 비교 —
+  // 부분 월 vs 완전한 월 비교 왜곡 방지 (월급 25일이면 월중 내내 수입 -90%대로 보이는 문제)
+  const dayCap = month === getThisMonthKST() ? Number(getTodayKST().slice(8, 10)) : null;
   const expenseComparison = useMemo(
-    () => compareMonths(ledger, month, "expense", fxRate, categoryPresets),
-    [ledger, month, fxRate, categoryPresets]
+    () => compareMonths(ledger, month, "expense", fxRate, categoryPresets, dayCap),
+    [ledger, month, fxRate, categoryPresets, dayCap]
   );
   const incomeComparison = useMemo(
-    () => compareMonths(ledger, month, "income", fxRate, categoryPresets),
-    [ledger, month, fxRate, categoryPresets]
+    () => compareMonths(ledger, month, "income", fxRate, categoryPresets, dayCap),
+    [ledger, month, fxRate, categoryPresets, dayCap]
   );
 
   return (
     <div className="card" style={{ padding: 16, display: "flex", flexDirection: "column", gap: 12 }}>
       <div className="card-title" style={{ margin: 0, fontSize: 17 }}>
-        {month} 전월·전년 대비
+        {month} 전월·전년 대비{dayCap != null ? ` (1~${dayCap}일 동기 비교)` : ""}
       </div>
       <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(220px, 1fr))", gap: 12 }}>
         <MonthComparisonCard

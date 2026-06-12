@@ -3,6 +3,7 @@ import {
   BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer,
 } from "recharts";
 import { F, W, Card, Kpi, Insight, Section, CT, type D } from "../insightsShared";
+import { getThisMonthKST } from "../../../utils/date";
 
 const CATEGORY_PATTERNS: { label: string; color: string; regex: RegExp }[] = [
   { label: "AI/생산성", color: "#e94560", regex: /chatgpt|claude|cursor|\bai\b|gpt|copilot|notion|slack|figma/i },
@@ -39,10 +40,12 @@ export const SubTab = React.memo(function SubTab({ d }: { d: D }) {
   const currentMonth = d.anomalyTargetMonth;
   // 월별 구독비 변화 감지 (이번달 vs 이전달)
   // subTrend는 d.months와 평행 배열 — YYYY-MM 인덱스로 조회 ("6월" 라벨 find는 다른 해와 충돌)
+  // 진행 중인 이번 달은 아직 안 빠진 구독이 많아 전월 전체와 비교하면 항상 "급감" — MoM 표시를 보류
+  const isPartialMonth = currentMonth != null && currentMonth === getThisMonthKST();
   const curIdx = currentMonth ? d.months.indexOf(currentMonth) : -1;
   const curSubAmt = curIdx >= 0 ? d.subTrend[curIdx]?.amount ?? 0 : 0;
   const prevSubAmt = curIdx > 0 ? d.subTrend[curIdx - 1]?.amount ?? 0 : 0;
-  const subMoM = prevSubAmt > 0 ? ((curSubAmt - prevSubAmt) / prevSubAmt) * 100 : null;
+  const subMoM = !isPartialMonth && prevSubAmt > 0 ? ((curSubAmt - prevSubAmt) / prevSubAmt) * 100 : null;
 
   // 절약 시나리오
   const savingsIfCutTop3 = top3Monthly * 12;
@@ -65,7 +68,7 @@ export const SubTab = React.memo(function SubTab({ d }: { d: D }) {
           {/* ============ 한눈에 ============ */}
           <Section storageKey="sub-section-overview" title="🔄 구독 한눈에 보기">
             <Card accent><Kpi label="활성 구독 수" value={`${subs.length}개`} sub={`${categorized.length}개 카테고리 + 기타 ${uncategorized.length}`} color="#fff" info="기간 내 한 번 이상 결제된 고유 구독 서비스 수" /></Card>
-            <Card accent><Kpi label="월 구독 비용" value={F(totalMonthly) + "원"} sub={`일 ${W(costPerDay)} · ${subMoM != null ? (subMoM >= 0 ? "+" : "") + subMoM.toFixed(0) + "% MoM" : "변화 없음"}`} color="#f0c040" info="Σ(서비스별 기간 평균). 실제 월마다 달라질 수 있음" /></Card>
+            <Card accent><Kpi label="월 구독 비용" value={F(totalMonthly) + "원"} sub={`일 ${W(costPerDay)} · ${subMoM != null ? (subMoM >= 0 ? "+" : "") + subMoM.toFixed(0) + "% MoM" : isPartialMonth ? "이번 달 집계 중" : "변화 없음"}`} color="#f0c040" info="Σ(서비스별 기간 평균). 실제 월마다 달라질 수 있음" /></Card>
             <Card accent><Kpi label="연간 구독 비용" value={F(totalAnnual) + "원"} sub={totalAnnual >= 1000000 ? "연 100만원 초과" : "적정"} color="#e94560" info="월 구독비 × 12. 실제 총 소요 예상치" /></Card>
             <Card accent><Kpi label="수입 대비 비율" value={subPctIncome.toFixed(1) + "%"} sub={subPctIncome > 5 ? "⚠ 구독 비중 높음" : "적정 수준"} color={subPctIncome > 5 ? "#e94560" : "#48c9b0"} info="구독 누적 / 총 수입. 5% 이하 권장" /></Card>
 

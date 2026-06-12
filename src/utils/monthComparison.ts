@@ -10,6 +10,8 @@ export interface MonthComparison {
   /** 비교 기준(전월/전년 동월)이 0이고 현재 > 0이면 null — UI에서 "신규"로 표시 */
   diffPrevMonthPct: number | null;
   diffPrevYearPct: number | null;
+  /** 진행 중인 달 비교 시 오늘 일자(1~N) — 전월·전년도 같은 기간(1~N일)만 합산됐음을 의미 */
+  dayCap: number | null;
 }
 
 const offsetMonth = (yyyymm: string, deltaMonths: number) => {
@@ -28,13 +30,18 @@ const pctOrNull = (current: number, base: number): number | null => {
  * 전월·전년 동월 비교 — summaryMath와 동일 분류 기준 사용:
  * 신용결제 제외(이중계상 방지), 레거시 저축성지출은 재테크로 분리(지출 비교에서 제외),
  * USD 항목은 fxRate로 원화 환산.
+ *
+ * dayCap: 진행 중인 달을 비교할 때 오늘 일자(1~31)를 넘기면 전월·전년 동월도
+ * 같은 기간(1~dayCap일)만 합산 — 부분 월 vs 완전한 월 비교 왜곡 방지
+ * (예: 월급이 25일이면 25일 전까지 수입이 내내 -90%대로 표시되는 문제).
  */
 export function compareMonths(
   ledger: LedgerEntry[],
   currentMonth: string,
   kind: "expense" | "income" = "expense",
   fxRate: number | null = null,
-  categoryPresets?: CategoryPresets
+  categoryPresets?: CategoryPresets,
+  dayCap: number | null = null
 ): MonthComparison {
   const prevMonthKey = offsetMonth(currentMonth, -1);
   const prevYearKey = offsetMonth(currentMonth, -12);
@@ -44,6 +51,7 @@ export function compareMonths(
     if (classifyLedgerFlow(e, categoryPresets) !== kind) continue;
     const ym = e.date.slice(0, 7);
     if (ym !== currentMonth && ym !== prevMonthKey && ym !== prevYearKey) continue;
+    if (dayCap != null && Number(e.date.slice(8, 10)) > dayCap) continue;
     const amt = toKrwAmount(e, fxRate);
     if (ym === currentMonth) current += amt;
     else if (ym === prevMonthKey) prevMonth += amt;
@@ -57,6 +65,7 @@ export function compareMonths(
     diffPrevMonth: current - prevMonth,
     diffPrevYear: current - prevYear,
     diffPrevMonthPct: pctOrNull(current, prevMonth),
-    diffPrevYearPct: pctOrNull(current, prevYear)
+    diffPrevYearPct: pctOrNull(current, prevYear),
+    dayCap
   };
 }

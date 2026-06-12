@@ -26,7 +26,7 @@ export const MonthComparisonCard: React.FC<Props & { kind?: "expense" | "income"
   formatNumber,
   kind = "expense"
 }) => {
-  const { current, previousMonth, previousYearSameMonth, diffPrevMonthPct, diffPrevYearPct } = comparison;
+  const { current, previousMonth, previousYearSameMonth, diffPrevMonthPct, diffPrevYearPct, dayCap } = comparison;
   return (
     <div style={{
       border: "1px solid var(--border)",
@@ -34,18 +34,21 @@ export const MonthComparisonCard: React.FC<Props & { kind?: "expense" | "income"
       padding: 12,
       background: "var(--surface)"
     }}>
-      <div style={{ fontSize: 12, color: "var(--text-muted)", marginBottom: 4 }}>{title}</div>
+      <div style={{ fontSize: 12, color: "var(--text-muted)", marginBottom: 4 }}>
+        {title}
+        {dayCap != null && <span style={{ color: "var(--text-faint)" }}> · 1~{dayCap}일</span>}
+      </div>
       <div style={{ fontSize: 20, fontWeight: 700, marginBottom: 8 }}>{formatNumber(current)}</div>
       <div style={{ display: "flex", gap: 16, fontSize: 12 }}>
         <div>
-          <span style={{ color: "var(--text-muted)" }}>전월:</span>{" "}
+          <span style={{ color: "var(--text-muted)" }}>{dayCap != null ? "전월 동기:" : "전월:"}</span>{" "}
           <span style={{ color: tone(current - previousMonth, kind) }}>
             {pctLabel(current - previousMonth, diffPrevMonthPct)}
           </span>
           <div style={{ color: "var(--text-muted)", fontSize: 11 }}>{formatNumber(previousMonth)}</div>
         </div>
         <div>
-          <span style={{ color: "var(--text-muted)" }}>전년 동월:</span>{" "}
+          <span style={{ color: "var(--text-muted)" }}>{dayCap != null ? "전년 동월 동기:" : "전년 동월:"}</span>{" "}
           <span style={{ color: tone(current - previousYearSameMonth, kind) }}>
             {pctLabel(current - previousYearSameMonth, diffPrevYearPct)}
           </span>

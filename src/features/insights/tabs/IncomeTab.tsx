@@ -169,7 +169,7 @@ export const IncomeTab = React.memo(function IncomeTab({ d }: { d: D }) {
 
       {/* ============ 추이·성장 ============ */}
       <Section storageKey="income-section-trends" title="📈 추이·성장">
-        <Card title={`📈 수입 성장률 — MoM ${d.incomeGrowth.mom != null ? Pct(d.incomeGrowth.mom) : "–"} · YoY ${d.incomeGrowth.yoy != null ? Pct(d.incomeGrowth.yoy) : "–"} · 3M평균 ${d.incomeGrowth.avg3MoM != null ? Pct(d.incomeGrowth.avg3MoM) : "–"}`} span={4}>
+        <Card title={`📈 수입 성장률 — MoM ${d.incomeGrowth.mom != null ? Pct(d.incomeGrowth.mom) : "–"} · YoY ${d.incomeGrowth.yoy != null ? Pct(d.incomeGrowth.yoy) : "–"} · 3M평균 ${d.incomeGrowth.avg3MoM != null ? Pct(d.incomeGrowth.avg3MoM) : "–"}${d.incomeGrowth.partialDay != null ? ` (이번 달 1~${d.incomeGrowth.partialDay}일 동기 비교)` : ""}`} span={4}>
           <ResponsiveContainer width="100%" height={240}>
             <ComposedChart data={monthlyInc}>
               <CartesianGrid strokeDasharray="3 3" stroke="var(--chart-grid)" />

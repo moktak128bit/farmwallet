@@ -859,57 +859,98 @@ export function useInsightsData(ledger: LedgerEntry[], rawTrades: StockTrade[], 
       return triggered[0] ?? null;
     })();
 
-    /* 수입 성장률 시계열 (MoM %) + 핵심 지표 MoM/YoY */
+    /* 수입 성장률 시계열 (MoM %) + 핵심 지표 MoM/YoY
+       진행 중인 이번 달은 부분 데이터 — 완료된 전월 전체와 비교하면 월급(예: 25일) 전까지
+       내내 -90%대가 나옴. 대상 월이 이번 달이면 전월·전년의 "같은 기간(1~오늘 일)"과 비교. */
+    const todayDayNum = Number(getTodayKST().slice(8, 10));
     const incomeGrowth = (() => {
+      /** month의 1~dayCap일 수입 합 — monthly[].income과 동일 분류(이월 제외) */
+      const incomeUpTo = (month: string, dayCap: number) => {
+        let s = 0;
+        for (const l of ledger) {
+          if (l.kind !== "income" || !l.date?.startsWith(month)) continue;
+          const a = Number(l.amount);
+          if (a <= 0 || isCarryOverIncomeEntry(l)) continue;
+          if (Number(l.date.slice(8, 10)) > dayCap) continue;
+          s += a;
+        }
+        return s;
+      };
       const series = months.map((m, i) => {
         const cur = monthly[m]?.income ?? 0;
         const prev = i > 0 ? monthly[months[i - 1]]?.income ?? 0 : 0;
-        const mom = prev > 0 ? ((cur - prev) / prev) * 100 : null;
+        // 진행 중인 달은 시계열에서 MoM 점 생략 (부분 vs 전체 비교 왜곡)
+        const mom = m === curMonthStr ? null : prev > 0 ? ((cur - prev) / prev) * 100 : null;
         return { l: ml[m], month: m, income: cur, momPct: mom };
       });
       const targetMonth = anomalyTargetMonth ?? (months.length ? months[months.length - 1] : null);
       const targetIdx = targetMonth ? months.indexOf(targetMonth) : -1;
-      const targetInc = targetIdx >= 0 ? monthly[months[targetIdx]].income : 0;
-      const prevInc = targetIdx > 0 ? monthly[months[targetIdx - 1]].income : 0;
+      const partialDay = targetMonth === curMonthStr ? todayDayNum : null;
+      let targetInc = targetIdx >= 0 ? monthly[months[targetIdx]].income : 0;
+      let prevInc = targetIdx > 0 ? monthly[months[targetIdx - 1]].income : 0;
+      if (partialDay != null && targetMonth && targetIdx > 0) {
+        // 전월 동기(1~오늘 일) 비교
+        targetInc = incomeUpTo(targetMonth, partialDay);
+        prevInc = incomeUpTo(months[targetIdx - 1], partialDay);
+      }
       const mom = prevInc > 0 ? ((targetInc - prevInc) / prevInc) * 100 : null;
-      // YoY: find same month 12 months ago
+      // YoY: 12개월 전 같은 달 (진행 중인 달이면 작년 동월도 같은 기간으로)
       let yoy: number | null = null;
       if (targetMonth) {
         const [y, mo] = targetMonth.split("-").map(Number);
         const yoyKey = `${y - 1}-${String(mo).padStart(2, "0")}`;
-        const yoyInc = monthly[yoyKey]?.income;
-        if (yoyInc && yoyInc > 0) yoy = ((targetInc - yoyInc) / yoyInc) * 100;
+        const yoyInc = partialDay != null ? incomeUpTo(yoyKey, partialDay) : monthly[yoyKey]?.income ?? 0;
+        if (yoyInc > 0) yoy = ((targetInc - yoyInc) / yoyInc) * 100;
       }
-      // 3-month avg MoM growth
-      const last3Moms = series.slice(-3).map((s) => s.momPct).filter((x): x is number => x != null);
+      // 3-month avg MoM growth — 완결 월의 momPct만 사용
+      const last3Moms = series.map((s) => s.momPct).filter((x): x is number => x != null).slice(-3);
       const avg3MoM = last3Moms.length > 0 ? last3Moms.reduce((s, x) => s + x, 0) / last3Moms.length : null;
-      return { series, mom, yoy, avg3MoM, targetInc, prevInc };
+      return { series, mom, yoy, avg3MoM, targetInc, prevInc, partialDay };
     })();
 
-    /* 지출 관성: 현재월 지출 vs 최근 3개월 평균 */
+    /* 지출 관성: 현재월 지출 vs 최근 3개월 평균
+       진행 중인 달이면 과거 3개월도 "같은 기간(1~오늘 일)"만 합산 — 월중에 항상 "절약 모드"로 나오는 왜곡 방지 */
     const spendingInertia = (() => {
       const targetMonth = anomalyTargetMonth ?? (months.length ? months[months.length - 1] : null);
       if (!targetMonth) return null;
       const idx = months.indexOf(targetMonth);
       if (idx < 0) return null;
+      const partialDay = targetMonth === curMonthStr ? todayDayNum : null;
+      /** month의 1~dayCap일 지출 합 — monthly[].expense와 동일 분류(재테크·신용결제 제외) */
+      const expenseUpTo = (month: string, dayCap: number) => {
+        let s = 0;
+        for (const l of ledger) {
+          if (l.kind !== "expense" || !l.date?.startsWith(month)) continue;
+          const a = Number(l.amount);
+          if (a <= 0 || isInvestmentEntry(l) || isCreditPayment(l)) continue;
+          if (Number(l.date.slice(8, 10)) > dayCap) continue;
+          s += a;
+        }
+        return s;
+      };
       const curExp = monthly[targetMonth]?.expense ?? 0;
       const lookback = months.slice(Math.max(0, idx - 3), idx);
       if (lookback.length === 0) return null;
-      const avg = lookback.reduce((s, m) => s + (monthly[m]?.expense ?? 0), 0) / lookback.length;
+      const avg =
+        partialDay != null
+          ? lookback.reduce((s, m) => s + expenseUpTo(m, partialDay), 0) / lookback.length
+          : lookback.reduce((s, m) => s + (monthly[m]?.expense ?? 0), 0) / lookback.length;
       const deviation = avg > 0 ? ((curExp - avg) / avg) * 100 : null;
-      return { curExp, avg, deviation, lookbackMonths: lookback.length };
+      return { curExp, avg, deviation, lookbackMonths: lookback.length, partialDay };
     })();
 
-    /* 카테고리 성장률 TOP — 현재월 중분류 지출 vs 최근 3개월 평균 */
+    /* 카테고리 성장률 TOP — 현재월 중분류 지출 vs 최근 3개월 평균
+       진행 중인 달이면 과거 3개월도 같은 기간(1~오늘 일)만 집계 — 월중에 전부 "감소"로 보이는 왜곡 방지 */
     const categoryGrowth = (() => {
       type GrowthRow = { sub: string; cur: number; avg3: number; pctChange: number; isNew: boolean };
-      const emptyRet: { up: GrowthRow[]; down: GrowthRow[] } = { up: [], down: [] };
+      const emptyRet: { up: GrowthRow[]; down: GrowthRow[]; partialDay: number | null } = { up: [], down: [], partialDay: null };
       const targetMonth = anomalyTargetMonth;
       if (!targetMonth) return emptyRet;
       const idx = months.indexOf(targetMonth);
       if (idx < 0) return emptyRet;
       const prevMonths = months.slice(Math.max(0, idx - 3), idx);
       if (prevMonths.length === 0) return emptyRet;
+      const partialDay = targetMonth === curMonthStr ? todayDayNum : null;
       // subCategory별 월별 지출
       const subMonthly = new Map<string, Map<string, number>>();
       for (const l of ledger) {
@@ -918,6 +959,7 @@ export function useInsightsData(ledger: LedgerEntry[], rawTrades: StockTrade[], 
         const sub = (l.subCategory || l.category || "").trim(); if (!sub) continue;
         const mo = l.date?.slice(0, 7); if (!mo) continue;
         if (mo !== targetMonth && !prevMonths.includes(mo)) continue;
+        if (partialDay != null && Number(l.date!.slice(8, 10)) > partialDay) continue;
         if (!subMonthly.has(sub)) subMonthly.set(sub, new Map());
         subMonthly.get(sub)!.set(mo, (subMonthly.get(sub)!.get(mo) ?? 0) + Number(l.amount));
       }
@@ -933,7 +975,7 @@ export function useInsightsData(ledger: LedgerEntry[], rawTrades: StockTrade[], 
       }
       const upRows = [...rows].filter((r) => r.cur > 50000 || r.avg3 > 50000).sort((a, b) => b.pctChange - a.pctChange).slice(0, 5);
       const downRows = [...rows].filter((r) => r.avg3 > 50000).sort((a, b) => a.pctChange - b.pctChange).slice(0, 5);
-      return { up: upRows, down: downRows };
+      return { up: upRows, down: downRows, partialDay };
     })();
 
     /* 단건 지출 이상치 TOP — 중분류 내 z-score */

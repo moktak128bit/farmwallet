@@ -46,7 +46,7 @@ export const DividendGrowthCard: React.FC<{ data: DividendGrowthData }> = React.
     <div className="card" style={{ padding: 16 }}>
       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline", flexWrap: "wrap", gap: 6 }}>
         <div className="card-title" style={{ margin: 0, fontSize: 16 }}>
-          💎 {data.name} <span style={{ color: "var(--text-faint)", fontWeight: 500, fontSize: 12 }}>({data.ticker})</span>
+          {data.name} <span style={{ color: "var(--text-faint)", fontWeight: 500, fontSize: 12 }}>({data.ticker})</span>
         </div>
         <span style={{ fontSize: 11, color: "var(--text-faint)" }}>분배금 기록 {data.recordCount}건</span>
       </div>
@@ -93,7 +93,7 @@ export const DividendGrowthCard: React.FC<{ data: DividendGrowthData }> = React.
             isAnimationActive={false}
             dataKey="received"
             name="받은 분배금"
-            fill="var(--chart-primary)"
+            fill="var(--chart-warning)"
             radius={[3, 3, 0, 0]}
             maxBarSize={36}
           />
@@ -129,9 +129,9 @@ export const DividendGrowthCard: React.FC<{ data: DividendGrowthData }> = React.
             dataKey="monthlyYield"
             name="지금 주가 기준"
             stroke="var(--chart-accent)"
-            strokeWidth={2}
+            strokeWidth={3}
             connectNulls
-            dot={{ r: 3 }}
+            dot={{ r: 4, strokeWidth: 0, fill: "var(--chart-accent)" }}
           />
           <Line
             isAnimationActive={false}
@@ -139,9 +139,9 @@ export const DividendGrowthCard: React.FC<{ data: DividendGrowthData }> = React.
             dataKey="monthlyYoc"
             name="내 매입가 기준 (배당성장)"
             stroke="var(--success)"
-            strokeWidth={2.5}
+            strokeWidth={3}
             connectNulls
-            dot={{ r: 3 }}
+            dot={{ r: 4, strokeWidth: 0, fill: "var(--success)" }}
           />
         </LineChart>
       </ResponsiveContainer>

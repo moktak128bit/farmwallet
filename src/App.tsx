@@ -65,6 +65,8 @@ import { usePortfolioWorker } from "./hooks/usePortfolioWorker";
 import { APP_VERSION, STORAGE_KEYS } from "./constants/config";
 import { SyncActionBar } from "./components/SyncActionBar";
 import { runIntegrityCheck } from "./utils/dataIntegrity";
+import { upsertDailyCloses } from "./utils/dailyCloses";
+import { getTodayKST } from "./utils/date";
 import { useGistSync } from "./hooks/useGistSync";
 import { useMarketEnvSnapshotRecorder } from "./hooks/useMarketEnvSnapshotRecorder";
 import { GistVersionModal } from "./components/GistVersionModal";
@@ -509,7 +511,13 @@ export const App: React.FC = () => {
     [setDataWithHistory]
   );
   const handleChangePrices = useCallback(
-    (prices: AppData["prices"]) => setDataWithHistory((prev) => ({ ...prev, prices })),
+    (prices: AppData["prices"]) =>
+      setDataWithHistory((prev) => {
+        // 시세 갱신 시 보유 종목의 당일 종가를 적립 (배당 성장 차트의 주가 소스).
+        // 보존 압축 포함 — 캐시 슬롯에 저장되므로 메인 데이터·백업 무게에 영향 없음.
+        const closes = upsertDailyCloses(prev.historicalDailyCloses, prices, prev.trades, getTodayKST());
+        return { ...prev, prices, ...(closes ? { historicalDailyCloses: closes } : {}) };
+      }),
     [setDataWithHistory]
   );
   const handleChangeTickerDatabase = useCallback(

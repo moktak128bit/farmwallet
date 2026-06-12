@@ -258,13 +258,14 @@ export function buildDividendGrowth(args: {
   // ── 현재 KPI
   const last = points[points.length - 1];
   const lastPaid = [...points].reverse().find((p) => p.received > 0) ?? null;
-  // 연환산 주당 분배금: 첫 분배 월부터 최근 12개월 창의 perShare 합 ÷ 창 길이 × 12
+  // 연환산 주당 분배금: 첫 분배 월부터 최근 12개월 창에서 "주당 분배금을 아는 달"만 평균 × 12.
+  // 보유주식 미기재 기록(perShare 불명) 달을 0으로 섞으면 체계적으로 과소되므로 제외.
   const sinceFirstDiv = points.filter((p) => p.month >= firstDivMonth);
   const windowPts = sinceFirstDiv.slice(-12);
   const knownPerShare = windowPts.filter((p) => p.perShare != null);
   const annualPerShare =
-    knownPerShare.length > 0 && windowPts.length > 0
-      ? (windowPts.reduce((s, p) => s + (p.perShare ?? 0), 0) / windowPts.length) * 12
+    knownPerShare.length > 0
+      ? (knownPerShare.reduce((s, p) => s + (p.perShare ?? 0), 0) / knownPerShare.length) * 12
       : null;
   const curPrice = currentPrice ?? last?.price ?? null;
   const curAvgCost = last?.avgCost ?? null;

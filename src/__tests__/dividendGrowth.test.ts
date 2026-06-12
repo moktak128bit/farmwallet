@@ -90,6 +90,24 @@ describe("buildDividendGrowth", () => {
     expect(may.perShare).toBeCloseTo(250);
   });
 
+  it("연환산 주당 분배금은 '주당 분배금을 아는 달'만 평균한다 (보유주식 미기재 달이 0으로 섞이지 않음)", () => {
+    const noNote = { ...div("2026-05-06", "458730", "TIGER 미국배당다우존스", 1000, 1), note: undefined };
+    const ledger = [
+      div("2026-04-02", "458730", "TIGER 미국배당다우존스", 400, 10), // 주당 40
+      noNote, // 5월: 수령은 있으나 보유주식 미기재 → perShare 불명
+      div("2026-06-02", "458730", "TIGER 미국배당다우존스", 500, 10), // 주당 50
+    ];
+    const r = buildDividendGrowth({
+      ticker: "458730",
+      ledger,
+      trades: [buy("2026-03-15", "458730", 10, 10000)],
+      prices: [],
+      currentMonth: "2026-06",
+    });
+    // (40+50)/2 × 12 = 540 — 5월을 0으로 섞은 (40+0+50)/3 × 12 = 360이 아님
+    expect(r!.current.annualPerShare).toBeCloseTo(540);
+  });
+
   it("분배금 기록이 없으면 null", () => {
     expect(
       buildDividendGrowth({ ticker: "005930", ledger: [], trades: [buy("2026-01-02", "005930", 1, 60000)], prices: [], currentMonth: "2026-06" })

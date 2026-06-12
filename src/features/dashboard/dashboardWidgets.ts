@@ -28,6 +28,7 @@ export const DASHBOARD_WIDGETS: DashboardWidgetDef[] = [
   { id: "portfolioCharts", label: "포트폴리오 차트" },
   { id: "savingsRatio", label: "저축률 (저번달)" },
   { id: "dividendCoverage", label: "배당 vs 고정비 커버리지" },
+  { id: "dividendGrowth", label: "배당 성장 추적 (종목별 분배금·분배율·주가)" },
   { id: "assetComposition", label: "자산 구성" },
   { id: "accountBalanceTrend", label: "계좌별 잔액 추이" },
   { id: "stockCostVsMarket", label: "주식 매입액 vs 평가액" },

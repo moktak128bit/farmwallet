@@ -38,10 +38,16 @@ export const CategoriesView: React.FC<Props> = ({ presets, onChangePresets, ledg
     fixed: string[];
     savings: string[];
     transfer: string[];
+    salary: string[];
+    passive: string[];
+    nonRealIncome: string[];
   }>(() => ({
     fixed: presets.categoryTypes?.fixed ?? [],
     savings: presets.categoryTypes?.savings ?? [],
-    transfer: presets.categoryTypes?.transfer ?? presets.transfer
+    transfer: presets.categoryTypes?.transfer ?? presets.transfer,
+    salary: presets.categoryTypes?.salary ?? [],
+    passive: presets.categoryTypes?.passive ?? [],
+    nonRealIncome: presets.categoryTypes?.nonRealIncome ?? []
   }));
 
   // presets prop이 외부에서 바뀌면(Ctrl+Z 복원, 다른 경로 저장 등) 로컬 표 상태 전체를 재구성.
@@ -62,7 +68,10 @@ export const CategoriesView: React.FC<Props> = ({ presets, onChangePresets, ledg
     setCategoryTypes({
       fixed: presets.categoryTypes?.fixed ?? [],
       savings: presets.categoryTypes?.savings ?? [],
-      transfer: presets.categoryTypes?.transfer ?? presets.transfer
+      transfer: presets.categoryTypes?.transfer ?? presets.transfer,
+      salary: presets.categoryTypes?.salary ?? [],
+      passive: presets.categoryTypes?.passive ?? [],
+      nonRealIncome: presets.categoryTypes?.nonRealIncome ?? []
     });
   }, [presets]);
 
@@ -75,6 +84,12 @@ export const CategoriesView: React.FC<Props> = ({ presets, onChangePresets, ledg
         ...expenseGroups.map((g) => g.subs.length)
       ),
     [expenseGroups, incomeItems.length, transferItems.length]
+  );
+
+  // 수입 성격 지정 대상 — 현재 입력된 수입 카테고리(중복·빈값 제거)
+  const incomeNatureCats = useMemo(
+    () => Array.from(new Set(incomeRows.map((r) => r.trim()).filter(Boolean))),
+    [incomeRows]
   );
 
   const handleSave = () => {
@@ -98,7 +113,11 @@ export const CategoriesView: React.FC<Props> = ({ presets, onChangePresets, ledg
       categoryTypes: {
         fixed: categoryTypes.fixed,
         savings: categoryTypes.savings,
-        transfer: categoryTypes.transfer
+        transfer: categoryTypes.transfer,
+        // 입력 행에 더 이상 없는 카테고리는 정리 (이름 변경·삭제 시 잔재 방지)
+        salary: categoryTypes.salary.filter((c) => incomeRows.includes(c)),
+        passive: categoryTypes.passive.filter((c) => incomeRows.includes(c)),
+        nonRealIncome: categoryTypes.nonRealIncome.filter((c) => incomeRows.includes(c))
       }
     });
     toast.success("카테고리 설정이 저장되었습니다.");
@@ -397,6 +416,9 @@ export const CategoriesView: React.FC<Props> = ({ presets, onChangePresets, ledg
       fixed: nextPresets.categoryTypes.fixed ?? [],
       savings: nextPresets.categoryTypes.savings ?? [],
       transfer: nextPresets.categoryTypes.transfer ?? nextPresets.transfer,
+      salary: nextPresets.categoryTypes.salary ?? [],
+      passive: nextPresets.categoryTypes.passive ?? [],
+      nonRealIncome: nextPresets.categoryTypes.nonRealIncome ?? [],
     });
     // 즉시 저장 + 가계부 일괄 치환
     onChangePresets(nextPresets);
@@ -680,6 +702,57 @@ export const CategoriesView: React.FC<Props> = ({ presets, onChangePresets, ledg
               ))}
             </tbody>
           </table>
+        </div>
+      </div>
+
+      {/* 수입 성격 지정 — 인사이트·대시보드의 "수입=근로소득" 분류를 사용자가 직접 덮어쓰기 */}
+      <div className="card" style={{ marginTop: 16 }}>
+        <div className="section-header">
+          <h3>수입 성격 지정</h3>
+        </div>
+        <p className="hint" style={{ marginTop: 0, marginBottom: 12, lineHeight: 1.7 }}>
+          인사이트·대시보드의 <strong>수입 추세·저축률</strong>은 근로소득(월급·수당·상여)만 집계합니다.
+          카테고리 성격을 직접 지정하면 자동 추측을 덮어씁니다 (<strong>자동</strong>은 빈도 기반 추정).
+          <br />
+          · <strong>근로소득</strong> 수입 추세·저축률 분모에 포함 ·
+          {" "}<strong>패시브</strong> 실질수입엔 포함, 근로소득 추세엔 제외(배당·이자) ·
+          {" "}<strong>비실질</strong> 정산·용돈·지원처럼 실질수입에서 제외
+        </p>
+        <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(220px, 1fr))", gap: 10 }}>
+          {incomeNatureCats.map((cat) => {
+            const value = categoryTypes.salary.includes(cat) ? "salary"
+              : categoryTypes.passive.includes(cat) ? "passive"
+              : categoryTypes.nonRealIncome.includes(cat) ? "nonRealIncome"
+              : "auto";
+            return (
+              <div key={cat} style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 8, padding: "8px 10px", background: "var(--bg)", borderRadius: 8, border: "1px solid var(--border-light)" }}>
+                <span style={{ fontSize: 13, fontWeight: 600, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }} title={cat}>{cat}</span>
+                <select
+                  aria-label={`${cat} 수입 성격`}
+                  value={value}
+                  onChange={(e) => {
+                    const v = e.target.value;
+                    setCategoryTypes((prev) => {
+                      const salary = prev.salary.filter((c) => c !== cat);
+                      const passive = prev.passive.filter((c) => c !== cat);
+                      const nonRealIncome = prev.nonRealIncome.filter((c) => c !== cat);
+                      if (v === "salary") salary.push(cat);
+                      else if (v === "passive") passive.push(cat);
+                      else if (v === "nonRealIncome") nonRealIncome.push(cat);
+                      return { ...prev, salary, passive, nonRealIncome };
+                    });
+                  }}
+                  style={{ fontSize: 12, padding: "3px 6px", border: "1px solid var(--border)", borderRadius: 4, backgroundColor: "var(--surface)" }}
+                >
+                  <option value="auto">자동</option>
+                  <option value="salary">근로소득</option>
+                  <option value="passive">패시브</option>
+                  <option value="nonRealIncome">비실질</option>
+                </select>
+              </div>
+            );
+          })}
+          {incomeNatureCats.length === 0 && <div className="hint">수입 카테고리를 먼저 추가하세요.</div>}
         </div>
       </div>
 

@@ -35,6 +35,7 @@ import { AccountBalanceTrendCard } from "../features/dashboard/AccountBalanceTre
 import { StockCostVsMarketCard } from "../features/dashboard/StockCostVsMarketCard";
 import { TotalAssetTrendCard } from "../features/dashboard/TotalAssetTrendCard";
 import { computeLedgerSummary, computeRecheckBreakdown } from "../features/dashboard/summaryMath";
+import { computeIncomeNatureKeys } from "../utils/incomeClassification";
 import { loadHiddenDashboardWidgets } from "../features/dashboard/dashboardWidgets";
 import { buildDividendGrowth, resolveTrackedTickers } from "../utils/dividendGrowth";
 import { useAccountTimelineRows } from "../hooks/useAccountTimelineRows";
@@ -178,16 +179,20 @@ export const DashboardView: React.FC<Props> = (props) => {
     });
   }, [balanceSnapshotDates, accounts, ledger, trades, adjustedPrices, fxRate]);
 
-  /** 전체 기간 합계: 수입, 일반 지출, 재테크 (categoryPresets로 레거시 저축성지출도 재테크 분류) */
+  /** 근로소득(월급·수당·상여) 키 — 인사이트와 동일한 단일 소스. 수입 카드·추이·비교·저축률이 공유.
+   *  이 키가 지정되면 정산·용돈·배당 등 비근로 유입은 "수입"에서 제외된다. */
+  const salaryKeys = useMemo(() => computeIncomeNatureKeys(ledger, accounts, categoryPresets?.categoryTypes).salaryKeys, [ledger, accounts, categoryPresets]);
+
+  /** 전체 기간 합계: 수입(근로소득), 일반 지출, 재테크 (categoryPresets로 레거시 저축성지출도 재테크 분류) */
   const allTimeSummary = useMemo(
-    () => computeLedgerSummary(ledger, fxRate, null, categoryPresets),
-    [ledger, fxRate, categoryPresets]
+    () => computeLedgerSummary(ledger, fxRate, null, categoryPresets, salaryKeys),
+    [ledger, fxRate, categoryPresets, salaryKeys]
   );
 
   const monthlySummary = useMemo(() => ({
     month: currentMonth,
-    ...computeLedgerSummary(ledger, fxRate, currentMonth, categoryPresets),
-  }), [ledger, fxRate, currentMonth, categoryPresets]);
+    ...computeLedgerSummary(ledger, fxRate, currentMonth, categoryPresets, salaryKeys),
+  }), [ledger, fxRate, currentMonth, categoryPresets, salaryKeys]);
 
   const monthlyRecheckBreakdown = useMemo(
     () => computeRecheckBreakdown(ledger, fxRate, currentMonth),
@@ -294,6 +299,7 @@ export const DashboardView: React.FC<Props> = (props) => {
             month={currentMonth}
             fxRate={fxRate}
             categoryPresets={categoryPresets}
+            salaryKeys={salaryKeys}
           />
         )}
 
@@ -326,6 +332,7 @@ export const DashboardView: React.FC<Props> = (props) => {
                 ledger={ledger}
                 categoryPresets={categoryPresets}
                 fxRate={fxRate}
+                salaryKeys={salaryKeys}
               />
             )}
           </div>
@@ -382,6 +389,7 @@ export const DashboardView: React.FC<Props> = (props) => {
                 fxRate={fxRate}
                 currentMonth={currentMonth}
                 categoryPresets={categoryPresets}
+                salaryKeys={salaryKeys}
               />
             )}
 

@@ -25,7 +25,7 @@ import { QuoteErrorBanner } from "../features/stocks/QuoteErrorBanner";
 import { QuoteRefreshProgress } from "../features/stocks/QuoteRefreshProgress";
 import { StocksHeaderSection } from "../features/stocks/StocksHeaderSection";
 import { TradeFormSection, type TradeFormSectionHandle } from "../features/stocks/TradeFormSection";
-import { useQuoteRefresh } from "../features/stocks/useQuoteRefresh";
+import { useQuoteRefresh, getLastQuoteRefreshAt } from "../features/stocks/useQuoteRefresh";
 
 const LazyPortfolioChartsSection = lazy(() =>
   import("../features/stocks/PortfolioChartsSection").then((m) => ({ default: m.PortfolioChartsSection }))
@@ -146,6 +146,8 @@ export const StocksView: React.FC<Props> = ({
     originalMarketPrice?: number; // USD 원본 가격 (표시용)
     currency?: string;
     diff: number;
+    /** 유효 시세(>0) 존재 여부 — false면 "시세 없음"으로 표시하고 평가는 매입가 기준 중립 처리 */
+    hasQuote: boolean;
     sector?: string;
     industry?: string;
   };
@@ -156,7 +158,10 @@ export const StocksView: React.FC<Props> = ({
       const originalPriceInfo = latestPriceByCanonicalTicker.get(pNorm);
       const currency = originalPriceInfo?.currency || (isUSDStock(p.ticker) ? "USD" : "KRW");
       const isUSD = currency === "USD";
-      const displayMarketPrice = originalPriceInfo?.price ?? p.marketPrice;
+      // 시세 누락/0이면 평균단가로 중립 평가 — 현재가 0원·수익률 -100% 오표시 방지
+      const rawQuote = originalPriceInfo?.price ?? p.marketPrice;
+      const hasQuote = typeof rawQuote === "number" && Number.isFinite(rawQuote) && rawQuote > 0;
+      const displayMarketPrice = hasQuote ? rawQuote : p.avgPrice;
       const originalMarketPrice = isUSD ? originalPriceInfo?.price : undefined;
 
       // 종목명: tickerDatabase 정식명 우선 (거래/시세에 잘못 저장된 이름 방지, 예: BITX→BIT)
@@ -164,11 +169,11 @@ export const StocksView: React.FC<Props> = ({
       const displayName = dbEntry?.name ?? p.name ?? p.ticker;
 
       // 평가금액/손익 계산 (USD 종목은 USD 기준, KRW 종목은 KRW 기준)
-      const marketValue = displayMarketPrice * p.quantity;
-      const pnl = marketValue - p.totalBuyAmount;
-      const pnlRate = p.totalBuyAmount > 0 ? pnl / p.totalBuyAmount : 0;
+      const marketValue = hasQuote ? displayMarketPrice * p.quantity : p.totalBuyAmount;
+      const pnl = hasQuote ? marketValue - p.totalBuyAmount : 0;
+      const pnlRate = hasQuote && p.totalBuyAmount > 0 ? pnl / p.totalBuyAmount : 0;
       // 단가와 현재가 차이 — USD 평단은 달러 소수 유지 (반올림하면 센트 단위 오차)
-      const diff = displayMarketPrice - (isUSD ? p.avgPrice : Math.round(p.avgPrice));
+      const diff = hasQuote ? displayMarketPrice - (isUSD ? p.avgPrice : Math.round(p.avgPrice)) : 0;
 
       return {
         ...p,
@@ -180,6 +185,7 @@ export const StocksView: React.FC<Props> = ({
         pnl,
         pnlRate,
         diff,
+        hasQuote,
         sector: originalPriceInfo?.sector,
         industry: originalPriceInfo?.industry
       };
@@ -190,8 +196,14 @@ export const StocksView: React.FC<Props> = ({
     const rate = fxRate ?? 0;
     const toKRW = (p: PositionWithPrice, val: number) =>
       (p.currency === "USD" || isUSDStock(p.ticker)) && rate ? val * rate : val;
+    // 시세 없음 USD 행: 평가금을 현재환율 환산이 아닌 매입원가(KRW)로 잡아 손익 기여를 정확히 0으로
+    // (toKRW(달러원가)는 환차분만큼 가짜 손익을 만들어 행의 "—" 표시와 합계가 어긋남)
+    const marketValueKRW = (p: PositionWithPrice) =>
+      !p.hasQuote && (p.currency === "USD" || isUSDStock(p.ticker)) && p.totalBuyAmountKRW != null
+        ? p.totalBuyAmountKRW
+        : toKRW(p, p.marketValue);
     const totalMarketValueKRW = positionsWithPrice.reduce(
-      (sum, p) => sum + toKRW(p, p.marketValue),
+      (sum, p) => sum + marketValueKRW(p),
       0
     );
     const totalMarketValueUSD = rate > 0 ? totalMarketValueKRW / rate : 0;
@@ -207,9 +219,10 @@ export const StocksView: React.FC<Props> = ({
         p.currency === "USD" && p.totalBuyAmountKRW != null
           ? p.totalBuyAmountKRW
           : toKRW(p, p.totalBuyAmount);
-      return sum + (toKRW(p, p.marketValue) - costKRW);
+      return sum + (marketValueKRW(p) - costKRW);
     }, 0);
     const dayPnl = positionsWithPrice.reduce((sum, p) => {
+      if (!p.hasQuote) return sum; // 시세 없음 행의 잔존 change가 일일손익을 오염시키지 않게
       const priceInfo = latestPriceByCanonicalTicker.get(canonicalTickerForMatch(p.ticker));
       const change = priceInfo?.change ?? 0;
       const dayPnlPos = change * p.quantity;
@@ -323,6 +336,7 @@ export const StocksView: React.FC<Props> = ({
     clearQuoteError,
     yahooUpdatedAt,
     handleRefreshQuotesHoldings,
+    handleRefreshQuotesAuto,
     handleRefreshQuotesFull,
     retryLastQuoteRefresh
   } = useQuoteRefresh({
@@ -335,6 +349,20 @@ export const StocksView: React.FC<Props> = ({
     onChangeTickerDatabase,
     onLog
   });
+
+  // 주식 탭 진입 시 마지막 갱신 "시도"가 10분+ 지났으면 보유 종목 1회 자동 갱신 —
+  // 자동 갱신(30분 interval)은 기본 꺼짐 + 탭 체류 중에만 동작해 "탭 열면 옛값" 문제가 있었음.
+  // 판정 기준은 시세 updatedAt(체결 시각)이 아님: 장외엔 체결 시각이 멈춰 매 진입마다 발사된다.
+  const autoRefreshOnMountRef = useRef(false);
+  useEffect(() => {
+    if (autoRefreshOnMountRef.current) return;
+    if (positions.length === 0) return;
+    autoRefreshOnMountRef.current = true;
+    const STALE_MS = 10 * 60 * 1000;
+    if (Date.now() - getLastQuoteRefreshAt() > STALE_MS) {
+      void handleRefreshQuotesAuto();
+    }
+  }, [positions.length, handleRefreshQuotesAuto]);
 
   const handleLoadTickers = useCallback(async () => {
     onLog?.("종목 불러오기 시작...", "info");

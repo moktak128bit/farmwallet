@@ -42,16 +42,17 @@ export const IncomeTab = React.memo(function IncomeTab({ d }: { d: D }) {
 
   // 패시브 비율 추이 — divTrend는 d.months와 평행 배열이므로 인덱스로 조회
   // ("6월" 같은 연도 없는 라벨 find 조인은 13개월 이상 기간에서 엉뚱한 해와 매칭됨)
+  // 분모는 월별 실질 수입(정산·용돈 제외, 배당·이자 포함) — 위 passivePct KPI와 동일 기준
   const passiveRatioTrend = d.months.map((m, i) => {
-    const inc = d.monthly[m].income;
+    const inc = d.realIncomeMonthly[m] ?? 0;
     const dv = d.divTrend[i]?.amount ?? 0;
     return { l: d.ml[m], 수입: inc, 패시브: dv, 비율: inc > 0 ? (dv / inc) * 100 : 0 };
   });
 
-  // 월별 수입 + MoM% (Overview의 incomeGrowth 재사용)
+  // 월별 근로소득 + MoM% (incomeGrowth 재사용) — 수입 성장률은 정기 근로소득 기준
   const monthlyInc = d.months.map((m) => ({
     name: d.ml[m],
-    수입: d.monthly[m].income,
+    수입: d.salaryMonthly[m] ?? 0,
     momPct: d.incomeGrowth.series.find((s) => s.month === m)?.momPct ?? null,
   }));
 
@@ -169,7 +170,7 @@ export const IncomeTab = React.memo(function IncomeTab({ d }: { d: D }) {
 
       {/* ============ 추이·성장 ============ */}
       <Section storageKey="income-section-trends" title="📈 추이·성장">
-        <Card title={`📈 수입 성장률 — MoM ${d.incomeGrowth.mom != null ? Pct(d.incomeGrowth.mom) : "–"} · YoY ${d.incomeGrowth.yoy != null ? Pct(d.incomeGrowth.yoy) : "–"} · 3M평균 ${d.incomeGrowth.avg3MoM != null ? Pct(d.incomeGrowth.avg3MoM) : "–"}${d.incomeGrowth.partialDay != null ? ` (이번 달 1~${d.incomeGrowth.partialDay}일 동기 비교)` : ""}`} span={4}>
+        <Card title={`📈 근로소득 성장률 — MoM ${d.incomeGrowth.mom != null ? Pct(d.incomeGrowth.mom) : "–"} · YoY ${d.incomeGrowth.yoy != null ? Pct(d.incomeGrowth.yoy) : "–"} · 3M평균 ${d.incomeGrowth.avg3MoM != null ? Pct(d.incomeGrowth.avg3MoM) : "–"}${d.incomeGrowth.partialDay != null ? ` (이번 달 1~${d.incomeGrowth.partialDay}일 동기 비교)` : ""}`} span={4}>
           <ResponsiveContainer width="100%" height={240}>
             <ComposedChart data={monthlyInc}>
               <CartesianGrid strokeDasharray="3 3" stroke="var(--chart-grid)" />
@@ -178,10 +179,13 @@ export const IncomeTab = React.memo(function IncomeTab({ d }: { d: D }) {
               <YAxis yAxisId="right" orientation="right" tickFormatter={(v) => v + "%"} tick={{ fontSize: 10 }} />
               <Tooltip content={<CT />} />
               <Legend wrapperStyle={{ fontSize: 11 }} />
-              <Bar isAnimationActive={false} yAxisId="left" dataKey="수입" fill="#f0c040" radius={[4, 4, 0, 0]} />
+              <Bar isAnimationActive={false} yAxisId="left" dataKey="수입" name="근로소득" fill="#f0c040" radius={[4, 4, 0, 0]} />
               <Line isAnimationActive={false} yAxisId="right" type="monotone" dataKey="momPct" name="MoM%" stroke="#e94560" strokeWidth={2} dot={{ r: 3 }} />
             </ComposedChart>
           </ResponsiveContainer>
+          <div style={{ fontSize: 11, color: "var(--text-faint)", textAlign: "center", marginTop: 4 }}>
+            수입 = 근로소득(월급·수당·상여)만. 정산·용돈·지원·배당·이자 등 비근로 유입은 추세에서 제외.
+          </div>
         </Card>
 
         <Card title="회사소득 vs 비회사소득 추이" span={2}>
@@ -221,7 +225,7 @@ export const IncomeTab = React.memo(function IncomeTab({ d }: { d: D }) {
             </LineChart>
           </ResponsiveContainer>
           <div style={{ fontSize: 11, color: "var(--text-faint)", textAlign: "center", marginTop: 4 }}>
-            월별 (배당+이자+투자수익) / (월 총수입) × 100. 장기 상승이면 투자 자산 축적 효과.
+            월별 (배당+이자+투자수익) / (월 실질수입) × 100. 장기 상승이면 투자 자산 축적 효과.
           </div>
         </Card>
       </Section>

@@ -19,6 +19,35 @@ import {
 } from "../../utils/finance";
 import { displayNameForTicker } from "../../utils/stockHelpers";
 import { usePriceAutoRefresh } from "../../hooks/usePriceAutoRefresh";
+import { STORAGE_KEYS } from "../../constants/config";
+
+/** 유효 시세 판정 — 0/NaN은 실패로 취급해 재시도·머지에서 제외 */
+const isValidPrice = (price: unknown): boolean =>
+  typeof price === "number" && Number.isFinite(price) && price > 0;
+
+const hasHangul = (s?: string | null): boolean => !!s && /[가-힣]/.test(s);
+
+/**
+ * 마지막 시세 갱신 "시도" 시각 — 탭 진입 stale 판정용.
+ * 시세의 updatedAt(체결 시각)은 장외엔 멈춰 있어 신선도 기준으로 쓰면
+ * 장 마감 후~다음 개장까지 항상 stale로 오판된다.
+ */
+export function getLastQuoteRefreshAt(): number {
+  try {
+    const v = Number(localStorage.getItem(STORAGE_KEYS.LAST_QUOTE_REFRESH_AT) ?? 0);
+    return Number.isFinite(v) ? v : 0;
+  } catch {
+    return 0;
+  }
+}
+
+function markQuoteRefreshAttempt(): void {
+  try {
+    localStorage.setItem(STORAGE_KEYS.LAST_QUOTE_REFRESH_AT, String(Date.now()));
+  } catch {
+    // localStorage 불가 환경이면 stale 판정만 보수적으로 동작
+  }
+}
 
 interface UseQuoteRefreshParams {
   trades: StockTrade[];
@@ -87,22 +116,29 @@ export function useQuoteRefresh({
       const next: StockPrice[] = [...currentPrices];
       for (const r of results) {
         if (r.ticker === "USDKRW=X") continue;
+        // 0/NaN 시세는 저장하지 않음 — prices에 0이 남으면 현재가 0원·수익률 -100%로 전파됨
+        if (!isValidPrice(r.price)) continue;
         const rKey = canonicalTickerForMatch(r.ticker);
-        const displayName = displayNameForTicker(
-          r.ticker,
-          r.name ??
-            next.find((p) => canonicalTickerForMatch(p.ticker) === rKey)?.name ??
-            trades.find((t) => canonicalTickerForMatch(t.ticker) === rKey)?.name ??
-            undefined
-        );
+        const existingName =
+          next.find((p) => canonicalTickerForMatch(p.ticker) === rKey)?.name ??
+          trades.find((t) => canonicalTickerForMatch(t.ticker) === rKey)?.name;
+        let displayName = displayNameForTicker(r.ticker, r.name ?? existingName ?? undefined);
+        // 한국 종목: 기존 한글명을 영문 API명으로 덮어쓰지 않음 (krNames 미수록 신규 ETF 보호)
+        if (isKRWStock(r.ticker) && !hasHangul(displayName) && hasHangul(existingName)) {
+          displayName = existingName!;
+        }
         const nameToSave = displayName || r.name || r.ticker;
-        if (persistToTickerJson && nameToSave && !isCryptoStock(r.ticker)) {
+        if (
+          persistToTickerJson &&
+          nameToSave &&
+          !isCryptoStock(r.ticker) &&
+          // 한국 종목인데 한글명이 없으면 ticker.json에 기록하지 않음 — 영문명 고착 루프 방지
+          (!isKRWStock(r.ticker) || hasHangul(nameToSave))
+        ) {
           const market = isKRWStock(r.ticker) ? "KR" : "US";
           void saveTickerToJson(r.ticker, nameToSave, market);
         }
         const idx = next.findIndex((p) => canonicalTickerForMatch(p.ticker) === rKey);
-        const existingName =
-          next[idx]?.name ?? trades.find((t) => canonicalTickerForMatch(t.ticker) === rKey)?.name;
         const item: StockPrice = {
           ticker: r.ticker,
           name: displayName || existingName || r.ticker,
@@ -110,7 +146,8 @@ export function useQuoteRefresh({
           currency: r.currency,
           change: r.change,
           changePercent: r.changePercent,
-          updatedAt: r.updatedAt,
+          // updatedAt 없는 결과(chart 폴백 일부)가 기존 updatedAt을 undefined로 덮지 않게 보존
+          updatedAt: r.updatedAt ?? next[idx]?.updatedAt,
           sector: r.sector,
           industry: r.industry
         };
@@ -160,6 +197,7 @@ export function useQuoteRefresh({
         return;
       }
       isRefreshingRef.current = true;
+      markQuoteRefreshAttempt();
 
       onLog?.(`${logLabel} 시작...`, "info");
       try {
@@ -197,15 +235,23 @@ export function useQuoteRefresh({
             onBatchPhase: (phase) => {
               const elapsed = ((Date.now() - batchStartAt) / 1000).toFixed(1);
               onLog?.(`[${logLabel}] ${phase} (${elapsed}s)`, "info");
+            },
+            // Naver 배치 성공분 즉시 반영 — 느린 종목별 폴백/재시도를 기다리지 않고 화면 먼저 갱신.
+            // ticker.json 기록은 최종 머지 1회로 일원화 (이중 POST 방지)
+            onPartialResults: (partial) => {
+              const merged = mergeQuoteResultsIntoPrices(pricesRef.current, partial, {
+                persistToTickerJson: false
+              });
+              onChangePrices(merged);
             }
           });
-          let successStock = new Set(
+          const successStock = new Set(
             stockResults
-              .filter((r) => r.ticker !== "USDKRW=X" && r.price != null && Number.isFinite(r.price))
+              .filter((r) => r.ticker !== "USDKRW=X" && isValidPrice(r.price))
               .map((r) => r.ticker)
           );
           let failedStock = uniqueStockTickers.filter((t) => !successStock.has(t));
-          const maxRetries = 3;
+          const maxRetries = 2; // 영구 실패 종목이 갱신 전체를 붙잡지 않도록 재시도는 1회만
           for (let attempt = 1; attempt < maxRetries && failedStock.length > 0; attempt++) {
             onLog?.(`[${logLabel}] [재시도 ${attempt}/${maxRetries - 1}] 실패 ${failedStock.length}종목...`, "info");
             await new Promise((r) => setTimeout(r, 2000));
@@ -220,13 +266,10 @@ export function useQuoteRefresh({
               exchangeMap: exchangeMapOpt
             });
             const retrySuccess = new Set(
-              retryResults.filter((r) => r.price != null && Number.isFinite(r.price)).map((r) => r.ticker)
+              retryResults.filter((r) => isValidPrice(r.price)).map((r) => r.ticker)
             );
             failedStock = failedStock.filter((t) => !retrySuccess.has(t));
             stockResults = [...stockResults, ...retryResults];
-            successStock = new Set(
-              stockResults.filter((r) => r.ticker !== "USDKRW=X" && r.price != null).map((r) => r.ticker)
-            );
           }
           setQuoteRefreshProgress((p) => ({ ...p, current: uniqueStockTickers.length }));
           allResults.push(...stockResults.filter((r) => r.ticker !== "USDKRW=X"));
@@ -272,8 +315,12 @@ export function useQuoteRefresh({
             for (const r of allResults) {
               if (r.ticker === "USDKRW=X") continue;
               const key = canonicalTickerForMatch(r.ticker);
-              const name = displayNameForTicker(r.ticker, r.name ?? undefined) || r.name || r.ticker;
               const existing = byKey.get(key);
+              let name = displayNameForTicker(r.ticker, r.name ?? undefined) || r.name || r.ticker;
+              // 한국 종목: tickerDatabase의 기존 한글명을 영문 API명으로 덮어쓰지 않음
+              if (isKRWStock(r.ticker) && !hasHangul(name) && hasHangul(existing?.name)) {
+                name = existing!.name;
+              }
               byKey.set(key, {
                 ticker: key,
                 name: name || existing?.name || key,
@@ -293,7 +340,7 @@ export function useQuoteRefresh({
             .at(-1) ?? new Date().toISOString();
         setYahooUpdatedAt(latestUpdatedAt);
 
-        const successCount = allResults.filter((r) => r.price != null && Number.isFinite(r.price)).length;
+        const successCount = allResults.filter((r) => isValidPrice(r.price)).length;
         const successMsg =
           failedTickers.length > 0
             ? `[${logLabel}] 시세 반영: ${successCount}종목 (실패 ${failedTickers.length}종목: ${failedTickers.slice(0, 3).join(", ")}${failedTickers.length > 3 ? " …" : ""})`
@@ -334,19 +381,23 @@ export function useQuoteRefresh({
     });
   }, [runQuoteRefresh, holdingsStockTickers, holdingsCryptoTickers]);
 
-  usePriceAutoRefresh({
-    onRefresh: async () => {
-      if (holdingsStockTickers.length === 0 && holdingsCryptoTickers.length === 0) return;
-      await runQuoteRefresh({
-        mode: "holdings",
-        stockTickers: holdingsStockTickers,
-        cryptoTickers: holdingsCryptoTickers,
-        updateTickerDatabase: false,
-        persistToTickerJson: false,
-        logLabel: "자동 갱신"
-      });
-    }
-  });
+  /**
+   * 자동 갱신 경로 (interval·탭 진입 stale) — 수동 갱신과 달리 tickerDatabase·ticker.json은
+   * 건드리지 않아 사용자 액션 없는 갱신이 undo 히스토리·dev 파일을 오염시키지 않는다.
+   */
+  const handleRefreshQuotesAuto = useCallback(async () => {
+    if (holdingsStockTickers.length === 0 && holdingsCryptoTickers.length === 0) return;
+    await runQuoteRefresh({
+      mode: "holdings",
+      stockTickers: holdingsStockTickers,
+      cryptoTickers: holdingsCryptoTickers,
+      updateTickerDatabase: false,
+      persistToTickerJson: false,
+      logLabel: "자동 갱신"
+    });
+  }, [runQuoteRefresh, holdingsStockTickers, holdingsCryptoTickers]);
+
+  usePriceAutoRefresh({ onRefresh: handleRefreshQuotesAuto });
 
   const handleRefreshQuotesFull = useCallback(async () => {
     const rows = await fetchTickersFromFile();
@@ -405,6 +456,7 @@ export function useQuoteRefresh({
     clearQuoteError,
     yahooUpdatedAt,
     handleRefreshQuotesHoldings,
+    handleRefreshQuotesAuto,
     handleRefreshQuotesFull,
     retryLastQuoteRefresh
   };

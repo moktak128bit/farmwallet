@@ -125,6 +125,8 @@ export const SpendingCalendarCard: React.FC<Props> = React.memo(function Spendin
       //  - 신용결제 expense 제외 (카드 사용 시점에 이미 잡힘 — 이중계상 방지)
       //  - 재테크 = 저축·투자 이체 + 레거시 저축성지출 (요약 카드·월별 추이와 동일 정의)
       //  - 재테크가 아닌 일반 이체는 제외
+      //  달력은 거래 내역(현금 흐름) 뷰 — 수입은 정산·용돈 포함 전체. 근로소득 필터(salaryKeys)는
+      //  분석 지표(요약·추이·비교·저축률)에만 적용하고 여기엔 적용하지 않는다(실제 입금일 누락 방지).
       const flow = classifyLedgerFlow(entry, categoryPresets);
       if (!flow) return;
 

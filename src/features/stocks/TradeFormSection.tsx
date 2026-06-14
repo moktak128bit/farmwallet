@@ -174,7 +174,11 @@ export const TradeFormSection = React.memo(React.forwardRef<TradeFormSectionHand
             setTradeForm((prev) => ({ ...prev, name: prev.name || stockName }));
             if (r.name) {
               const market = tradeForm.market ?? (isKRWStock(symbol) ? "KR" : "US");
-              if (market !== "CRYPTO") await saveTickerToJson(symbol, r.name, market);
+              // 한국 종목은 한글명일 때만 ticker.json에 기록 — 영문명이 들어가면 krNames 생성에서
+              // 영구 탈락(한글 필터)해 종목명이 영문으로 고착된다
+              if (market !== "CRYPTO" && (market !== "KR" || /[가-힣]/.test(r.name))) {
+                await saveTickerToJson(symbol, r.name, market);
+              }
             }
           }
         } catch (err) {
@@ -604,6 +608,8 @@ export const TradeFormSection = React.memo(React.forwardRef<TradeFormSectionHand
     }), [submitTradeFromForm, startEditTrade, resetTradeForm, startQuickTrade, applyPreset, tradeForm]);
 
     const applyQuoteResult = (symbol: string, r: StockPrice, fallbackName?: string) => {
+      // 0/NaN 시세는 prices에 저장하지 않음 — 기존 유효 가격을 0으로 덮으면 현재가 0원·-100%로 전파
+      if (!(typeof r.price === "number" && Number.isFinite(r.price) && r.price > 0)) return;
       const existingPriceName = prices.find((p) => p.ticker === symbol)?.name;
       const preferredName = displayNameForTicker(
         symbol,
@@ -661,9 +667,9 @@ export const TradeFormSection = React.memo(React.forwardRef<TradeFormSectionHand
           const existingName = tickerDatabase.find(t => t.ticker === symbol)?.name;
           applyQuoteResult(symbol, r, existingName);
 
-          // ticker.json에 저장 (한국 종목은 한글명으로)
+          // ticker.json에 저장 (한국 종목은 한글명일 때만 — 영문명 고착 방지)
           const nameToSave = displayNameForTicker(symbol, r.name ?? existingName ?? undefined);
-          if (nameToSave) {
+          if (nameToSave && (!isKRWStock(symbol) || /[가-힣]/.test(nameToSave))) {
             const market = isKRWStock(symbol) ? 'KR' : 'US';
             await saveTickerToJson(symbol, nameToSave, market);
           }

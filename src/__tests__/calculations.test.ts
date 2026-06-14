@@ -1,6 +1,6 @@
 import { describe, it, expect } from "vitest";
-import { computeRealizedPnlByTradeId, isInterestRepayment, computeLoanBalanceAt } from "../calculations";
-import type { LedgerEntry, Loan, StockTrade } from "../types";
+import { computePositions, computeRealizedPnlByTradeId, isInterestRepayment, computeLoanBalanceAt } from "../calculations";
+import type { Account, LedgerEntry, Loan, StockTrade } from "../types";
 
 function makeTrade(overrides: Partial<StockTrade> & { id: string; side: "buy" | "sell" }): StockTrade {
   return {
@@ -62,6 +62,27 @@ function makeRepayment(overrides: Partial<LedgerEntry> & { id: string }): Ledger
     ...overrides,
   } as LedgerEntry;
 }
+
+describe("computePositions — price=0 시세는 '시세 없음'으로 취급 (-100% 오표시 방지)", () => {
+  const accounts = [{ id: "acc1", name: "증권" }] as Account[];
+  const buyTrades = [
+    makeTrade({ id: "b1", side: "buy", ticker: "0180V0", quantity: 598, price: 13235, totalAmount: 7914530 })
+  ];
+
+  it("price=0 + priceFallback:'cost'면 평균단가로 폴백한다 (손익 0)", () => {
+    const positions = computePositions(buyTrades, [{ ticker: "0180V0", price: 0 }], accounts, {
+      priceFallback: "cost"
+    });
+    expect(positions).toHaveLength(1);
+    expect(positions[0].marketPrice).toBeCloseTo(7914530 / 598);
+    expect(positions[0].pnlRate).toBeCloseTo(0);
+  });
+
+  it("폴백 미지정이면 marketPrice=0 — 호출부(주식 탭)가 '시세 없음'으로 표시한다", () => {
+    const positions = computePositions(buyTrades, [{ ticker: "0180V0", price: 0 }], accounts);
+    expect(positions[0].marketPrice).toBe(0);
+  });
+});
 
 describe("isInterestRepayment — 카테고리 구조 세대별 이자 판정", () => {
   it("현재 구조: detailCategory에 '이자' 포함이면 이자 상환", () => {

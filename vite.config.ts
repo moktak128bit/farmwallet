@@ -573,119 +573,61 @@ function backupApiPlugin(): Plugin {
         }
       });
 
-      // Yahoo Finance proxy (bypass CORS in local dev). 2xx만 캐시. 429 방지를 위해 Yahoo 요청 직렬화 + 최소 2.5초 간격.
-      const yahooQuoteCache = new Map<string, { expires: number; status: number; body: string }>();
-      const YAHOO_QUOTE_CACHE_TTL_MS = 60_000;
-      const YAHOO_MIN_INTERVAL_MS = 2500;
-      let lastYahooRequestEnd = 0;
-      const yahooQuoteQueue: Array<{
-        symbols: string;
-        resolve: (body: string, status: number) => void;
-      }> = [];
-      let yahooQuoteInFlight = false;
-
-      const processYahooQuoteQueue = () => {
-        if (yahooQuoteInFlight || yahooQuoteQueue.length === 0) return;
-        const job = yahooQuoteQueue.shift()!;
-        const wait = Math.max(0, lastYahooRequestEnd + YAHOO_MIN_INTERVAL_MS - Date.now());
-        yahooQuoteInFlight = true;
-        setTimeout(() => {
-          const doRequest = (
-            symbols: string,
-            onDone: (body: string, status: number) => void,
-            isRetry = false
-          ) => {
-            const yahooUrl = new URL("https://query1.finance.yahoo.com/v7/finance/quote");
-            yahooUrl.searchParams.set("symbols", symbols);
-            https
-              .get(yahooUrl, (yahooRes) => {
-                let body = "";
-                yahooRes.on("data", (chunk) => {
-                  body += chunk.toString();
-                });
-                yahooRes.on("end", () => {
-                  const status = yahooRes.statusCode ?? 200;
-                  lastYahooRequestEnd = Date.now();
-                  if (status === 429 && !isRetry) {
-                    // 429 시 60초 후 한 번만 재시도
-                    setTimeout(() => {
-                      doRequest(symbols, onDone, true);
-                    }, 60_000);
-                    return;
-                  }
-                  yahooQuoteInFlight = false;
-                  onDone(body, status);
-                });
-              })
-              .on("error", () => {
-                lastYahooRequestEnd = Date.now();
-                yahooQuoteInFlight = false;
-                onDone(JSON.stringify({ error: "Failed to fetch Yahoo quotes" }), 500);
-                processYahooQuoteQueue();
-              });
-          };
-          doRequest(job.symbols, (body, status) => {
-            yahooQuoteInFlight = false;
-            job.resolve(body, status);
-            processYahooQuoteQueue();
-          });
-        }, wait);
-      };
-
-      server.middlewares.use(
-        "/api/yahoo-quote",
-        (req: IncomingMessage, res: ServerResponse, next) => {
-          if (req.method !== "GET" || !req.url) {
-            next();
+      // Naver 실시간 시세 polling 프록시 — 한국 종목 1차 시세 소스 (CORS 우회).
+      // Yahoo v7 quote 프록시는 제거됨 (2023년부터 cookie+crumb 인증 요구로 무조건 401).
+      // 짧은 캐시(10초)로 연타 시 Naver 부담만 완화 — "갱신 눌러도 옛값" 문제가 없는 수준.
+      const naverQuoteCache = new Map<string, { expires: number; status: number; body: string }>();
+      const NAVER_QUOTE_CACHE_TTL_MS = 10_000;
+      server.middlewares.use("/api/naver-quote", (req: IncomingMessage, res: ServerResponse, next) => {
+        if (req.method !== "GET" || !req.url) {
+          next();
+          return;
+        }
+        try {
+          const url = new URL(req.url, "http://localhost");
+          const codes = (url.searchParams.get("codes") || "").trim().toUpperCase();
+          if (!codes || !/^[0-9A-Z]{4,6}(,[0-9A-Z]{4,6})*$/.test(codes)) {
+            res.statusCode = 400;
+            res.setHeader("Content-Type", "application/json");
+            res.end(JSON.stringify({ error: "codes query required (comma-separated Korean tickers)" }));
             return;
           }
-
-          (async () => {
-            try {
-              const url = new URL(req.url!, "http://localhost");
-              const symbols = url.searchParams.get("symbols");
-              if (!symbols) {
-                res.statusCode = 400;
+          const now = Date.now();
+          const hit = naverQuoteCache.get(codes);
+          if (hit && hit.expires > now) {
+            res.statusCode = hit.status;
+            res.setHeader("Content-Type", "application/json");
+            res.end(hit.body);
+            return;
+          }
+          const naverUrl = `https://polling.finance.naver.com/api/realtime/domestic/stock/${codes}`;
+          https
+            .get(naverUrl, { headers: { "User-Agent": "Mozilla/5.0", Accept: "application/json" } }, (extRes) => {
+              const chunks: Buffer[] = [];
+              extRes.on("data", (chunk: Buffer) => chunks.push(chunk));
+              extRes.on("end", () => {
+                const status = extRes.statusCode ?? 200;
+                const body = Buffer.concat(chunks).toString("utf-8");
+                if (status >= 200 && status < 300) {
+                  naverQuoteCache.set(codes, { expires: now + NAVER_QUOTE_CACHE_TTL_MS, status, body });
+                }
+                res.statusCode = status;
                 res.setHeader("Content-Type", "application/json");
-                res.end(JSON.stringify({ error: "symbols query is required" }));
-                return;
-              }
-              const cacheKey = symbols;
-              const now = Date.now();
-              const hit = yahooQuoteCache.get(cacheKey);
-              if (hit && hit.expires > now) {
-                res.statusCode = hit.status;
-                res.setHeader("Content-Type", "application/json");
-                res.end(hit.body);
-                return;
-              }
-
-              const { body, status } = await new Promise<{ body: string; status: number }>((resolve) => {
-                yahooQuoteQueue.push({
-                  symbols,
-                  resolve: (b, s) => resolve({ body: b, status: s })
-                });
-                processYahooQuoteQueue();
+                res.end(body);
               });
-
-              res.statusCode = status;
+            })
+            .on("error", (err) => {
+              console.warn("[api/naver-quote] fetch failed", err.message);
+              res.statusCode = 502;
               res.setHeader("Content-Type", "application/json");
-              if (status >= 200 && status < 300) {
-                yahooQuoteCache.set(cacheKey, {
-                  expires: now + YAHOO_QUOTE_CACHE_TTL_MS,
-                  status,
-                  body
-                });
-              }
-              res.end(body);
-            } catch {
-              res.statusCode = 500;
-              res.setHeader("Content-Type", "application/json");
-              res.end(JSON.stringify({ error: "Invalid request" }));
-            }
-          })();
+              res.end(JSON.stringify({ error: "Naver fetch failed" }));
+            });
+        } catch {
+          res.statusCode = 500;
+          res.setHeader("Content-Type", "application/json");
+          res.end(JSON.stringify({ error: "Invalid request" }));
         }
-      );
+      });
 
       // ticker database backup API (GET/POST) — dev에서 SPA fallback 대신 JSON 반환
       const tickerBackupFile = path.join(process.cwd(), "data", "ticker-backup.json");
@@ -768,7 +710,12 @@ function backupApiPlugin(): Plugin {
               
               if (existingIndex >= 0) {
                 // Update name only when changed.
-                if (name && targetArray[existingIndex].name !== name) {
+                // KR: 기존 한글명을 영문명으로 덮어쓰지 않음 — krNames 생성기가 한글명만 수록하므로
+                // 영문명이 들어오면 krNames에서 영구 탈락하는 고착 루프가 생긴다.
+                const existingName = targetArray[existingIndex].name ?? "";
+                const keepKorean =
+                  market === "KR" && /[가-힣]/.test(existingName) && !/[가-힣]/.test(String(name ?? ""));
+                if (name && !keepKorean && existingName !== name) {
                   targetArray[existingIndex].name = name;
                 }
               } else {

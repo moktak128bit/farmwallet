@@ -37,16 +37,22 @@ export function upsertDailyCloses(
 
   let changed = map.size !== (existing?.length ?? 0);
 
-  // 오늘자 보유 종목 시세 upsert
+  // 보유 종목 시세 upsert — 시세의 체결일(updatedAt, KST) 날짜로 기록.
+  // '오늘 날짜'로 고정 기록하면 갱신 실패로 남은 며칠 전 가격이 오늘 종가로 오기록되고,
+  // 주말·휴장일 갱신 시 금요일 종가가 버려진다 — 체결일 기록은 둘 다 해결.
   for (const p of prices) {
     const t = canonicalTickerForMatch(p.ticker ?? "");
     if (!t || !held.has(t)) continue;
     const close = Number(p.price);
     if (!Number.isFinite(close) || close <= 0) continue;
-    const key = `${t}|${today}`;
+    const updatedMs = p.updatedAt ? Date.parse(p.updatedAt) : NaN;
+    if (!Number.isFinite(updatedMs)) continue; // 신선도를 알 수 없는 시세는 적립하지 않음
+    const closeDay = new Date(updatedMs + 9 * 60 * 60 * 1000).toISOString().slice(0, 10);
+    if (closeDay > today) continue; // 시계 왜곡 방어
+    const key = `${t}|${closeDay}`;
     const prev = map.get(key);
     if (prev && prev.close === close) continue;
-    map.set(key, { ticker: t, date: today, close, currency: p.currency });
+    map.set(key, { ticker: t, date: closeDay, close, currency: p.currency });
     changed = true;
   }
 

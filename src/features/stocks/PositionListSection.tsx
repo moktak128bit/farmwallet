@@ -20,6 +20,8 @@ type PositionWithPrice = PositionRow & {
   originalMarketPrice?: number;
   currency?: string;
   diff: number;
+  /** 유효 시세(>0) 존재 여부 — false면 평가손익/수익률/현재가 대신 "시세 없음" 표시 */
+  hasQuote: boolean;
   sector?: string;
   industry?: string;
 };
@@ -260,7 +262,15 @@ export const PositionListSection: React.FC<PositionListSectionProps> = ({
         const rate = (fxRate && fxRate > 0) ? fxRate : inferredRate;
         const toKRW = (p: typeof group.rows[0], val: number) =>
           (p.currency === "USD" || isUSDStock(p.ticker)) && rate > 0 ? val * rate : val;
-        const stockValue = group.rows.reduce((sum, p) => sum + toKRW(p, p.marketValue), 0);
+        // 시세 없음 USD 행은 매입원가(KRW)로 — 현재환율 환산 시 환차분이 가짜 손익으로 잡힘
+        const stockValue = group.rows.reduce(
+          (sum, p) =>
+            sum +
+            (!p.hasQuote && (p.currency === "USD" || isUSDStock(p.ticker)) && p.totalBuyAmountKRW != null
+              ? p.totalBuyAmountKRW
+              : toKRW(p, p.marketValue)),
+          0
+        );
         const stockCost = group.rows.reduce((sum, p) => {
           if (p.quantity <= 0) return sum;
           const isUsd = p.currency === "USD" || isUSDStock(p.ticker);
@@ -532,28 +542,37 @@ export const PositionListSection: React.FC<PositionListSectionProps> = ({
                         <td
                           className="number"
                           style={{
-                            color: p.pnl >= 0 ? "var(--danger)" : "var(--accent)",
+                            color: !p.hasQuote ? "var(--text-muted)" : p.pnl >= 0 ? "var(--danger)" : "var(--accent)",
                             fontWeight: "600"
                           }}
                         >
-                          {formatByDisplayCurrency(pnlDisplay.value, pnlDisplay.currency)}
+                          {p.hasQuote ? formatByDisplayCurrency(pnlDisplay.value, pnlDisplay.currency) : "—"}
                         </td>
                         <td
                           className="number"
                           style={{
-                            color: p.pnl >= 0 ? "var(--danger)" : "var(--accent)",
+                            color: !p.hasQuote ? "var(--text-muted)" : p.pnl >= 0 ? "var(--danger)" : "var(--accent)",
                             fontWeight: "600"
                           }}
                         >
-                          {(p.pnlRate * 100).toFixed(2)}%
+                          {p.hasQuote ? `${(p.pnlRate * 100).toFixed(2)}%` : "—"}
                         </td>
                         <td className="number">
-                          {formatByDisplayCurrency(priceDisplay.value, priceDisplay.currency)}
+                          {p.hasQuote ? (
+                            formatByDisplayCurrency(priceDisplay.value, priceDisplay.currency)
+                          ) : (
+                            <span style={{ color: "var(--text-muted)", fontSize: 12 }} title="시세를 가져오지 못했습니다 — 평가금액은 매입가 기준">
+                              시세 없음
+                            </span>
+                          )}
                         </td>
                         <td className="number">{formatByDisplayCurrency(avgDisplay.value, avgDisplay.currency)}</td>
                         <td className="number">{p.quantity % 1 === 0 ? formatNumber(p.quantity) : p.quantity.toFixed(6)}</td>
                         <td className="number">{formatByDisplayCurrency(totalBuyDisplay.value, totalBuyDisplay.currency)}</td>
-                        <td className={`number ${p.marketValue >= p.totalBuyAmount ? "positive" : "negative"}`}>
+                        <td
+                          className={`number ${!p.hasQuote ? "" : p.marketValue >= p.totalBuyAmount ? "positive" : "negative"}`}
+                          title={!p.hasQuote ? "시세 없음 — 매입금액 기준" : undefined}
+                        >
                           {formatByDisplayCurrency(marketValDisplay.value, marketValDisplay.currency)}
                         </td>
                         <td style={{ textAlign: "center", padding: "4px" }}>

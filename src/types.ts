@@ -141,6 +141,11 @@ export interface CategoryPresets {
     fixed?: string[];      // 고정지출 카테고리 목록
     savings?: string[];    // 저축성지출 카테고리 목록
     transfer?: string[];   // 이체 카테고리 목록
+    // 수입 성격 사용자 지정 — 빈도 자동감지(휴리스틱)보다 우선한다.
+    // utils/incomeClassification.computeIncomeNatureKeys가 이 목록을 강제 반영.
+    salary?: string[];         // 근로소득(월급·수당·상여) 수입 카테고리
+    passive?: string[];        // 패시브(배당·이자·투자수익) 수입 카테고리
+    nonRealIncome?: string[];  // 비실질(정산·용돈·지원·환불·대출 등) — 실질수입에서 제외
   };
 }
 

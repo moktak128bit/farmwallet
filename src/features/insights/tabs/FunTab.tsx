@@ -12,13 +12,13 @@ export const FunTab = React.memo(function FunTab({ d }: { d: D }) {
   if (fs.bestSavingsMonth) statCards.push({ icon: "💎", title: "최고 실질 저축률", value: `${fs.bestSavingsMonth.rate}%`, sub: d.ml[fs.bestSavingsMonth.month] || fs.bestSavingsMonth.month });
   if (fs.longestZeroStreak > 0) statCards.push({ icon: "🧘", title: "최장 무지출 연속", value: `${fs.longestZeroStreak}일`, sub: "하루도 안 쓴 기록" });
   if (fs.topStore) statCards.push({ icon: "🏪", title: "최다 이용처", value: fs.topStore.name, sub: `${fs.topStore.count}회 · ${F(fs.topStore.total)}` });
-  if (fs.daysToSpendIncome) statCards.push({ icon: "⏱️", title: "월수입 소진 속도", value: `${fs.daysToSpendIncome}일`, sub: "일 평균 지출 기준" });
+  if (fs.daysToSpendIncome) statCards.push({ icon: "⏱️", title: "월급 소진 속도", value: `${fs.daysToSpendIncome}일`, sub: "근로소득 ÷ 일평균 지출" });
   statCards.push({ icon: "📝", title: "일 평균 거래", value: `${fs.avgTxPerDay}건`, sub: `총 ${d.txCount.toLocaleString()}건` });
 
   // d.prev는 선택 월(selMonth)의 "직전 달" 합계 — 비교 대상도 선택 월이어야 한다.
   // (기간 마지막 월과 비교하면 엉뚱한 두 달을 비교하게 됨)
   const prevComp = d.prev && d.selMonth ? {
-    incDiff: (d.monthly[d.selMonth]?.income ?? 0) - d.prev.income,
+    incDiff: (d.salaryMonthly[d.selMonth] ?? 0) - d.prev.salary,
     expDiff: (d.monthly[d.selMonth]?.expense ?? 0) - d.prev.expense,
   } : null;
 
@@ -63,7 +63,7 @@ export const FunTab = React.memo(function FunTab({ d }: { d: D }) {
         {prevComp && (
           <Card title={d.selMonth === getThisMonthKST() ? "전월 대비 변화 (이번 달 진행 중 — 참고용)" : "전월 대비 변화"}>
             <div style={{ fontSize: 13, lineHeight: 2 }}>
-              <div>수입: <span style={{ fontWeight: 700, color: prevComp.incDiff >= 0 ? "#48c9b0" : "#e94560" }}>{prevComp.incDiff >= 0 ? "+" : ""}{F(prevComp.incDiff)}</span></div>
+              <div>근로소득: <span style={{ fontWeight: 700, color: prevComp.incDiff >= 0 ? "#48c9b0" : "#e94560" }}>{prevComp.incDiff >= 0 ? "+" : ""}{F(prevComp.incDiff)}</span></div>
               <div>지출: <span style={{ fontWeight: 700, color: prevComp.expDiff <= 0 ? "#48c9b0" : "#e94560" }}>{prevComp.expDiff >= 0 ? "+" : ""}{F(prevComp.expDiff)}</span>
                 {prevComp.expDiff > 0 ? " (주의!)" : prevComp.expDiff < 0 ? " (절약!)" : ""}
               </div>
@@ -83,13 +83,13 @@ export const FunTab = React.memo(function FunTab({ d }: { d: D }) {
         )}
 
         {fs.daysToSpendIncome && (
-          <Card title="수입 소진 속도 분석">
+          <Card title="월급 소진 속도 분석">
             <div style={{ fontSize: 13, lineHeight: 1.8, color: "var(--text-secondary)" }}>
               {fs.daysToSpendIncome >= 30
-                ? `월수입을 다 쓰려면 ${fs.daysToSpendIncome}일이 걸립니다. 지출 대비 수입이 넉넉합니다!`
+                ? `월 근로소득을 다 쓰려면 ${fs.daysToSpendIncome}일이 걸립니다. 지출 대비 월급이 넉넉합니다!`
                 : fs.daysToSpendIncome >= 20
-                  ? `일 평균 지출 기준으로 ${fs.daysToSpendIncome}일이면 월수입이 소진됩니다. 적정 수준입니다.`
-                  : `${fs.daysToSpendIncome}일이면 월수입이 바닥납니다! 지출 감소 또는 수입 증대가 필요합니다.`
+                  ? `일 평균 지출 기준으로 ${fs.daysToSpendIncome}일이면 월 근로소득이 소진됩니다. 적정 수준입니다.`
+                  : `${fs.daysToSpendIncome}일이면 월 근로소득이 바닥납니다! 지출 감소 또는 수입 증대가 필요합니다.`
               }
               <div style={{ marginTop: 8 }}>
                 <div style={{ display: "flex", justifyContent: "space-between", fontSize: 11, color: "var(--text-faint)", marginBottom: 4 }}>

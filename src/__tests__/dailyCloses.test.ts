@@ -16,7 +16,12 @@ const buy = (ticker: string, qty = 10): StockTrade => ({
   totalAmount: qty * 10000,
   cashImpact: -qty * 10000,
 });
-const px = (ticker: string, price: number): StockPrice => ({ ticker, price });
+// updatedAt 기본값은 적립 기준일(2026-06-12 KST) 장중 — 오늘 갱신된 시세만 적립되는 가드 통과용
+const px = (ticker: string, price: number, updatedAt = "2026-06-12T10:00:00+09:00"): StockPrice => ({
+  ticker,
+  price,
+  updatedAt
+});
 
 describe("upsertDailyCloses", () => {
   const trades = [buy("458730"), buy("0167b0")]; // 소문자도 canonical 매칭
@@ -63,5 +68,19 @@ describe("upsertDailyCloses", () => {
     ];
     const r = upsertDailyCloses(recent, [px("458730", 15550)], trades, "2026-06-12")!;
     expect(r.filter((c) => c.date.startsWith("2026-05"))).toHaveLength(2);
+  });
+
+  it("stale 시세는 오늘이 아닌 체결일 날짜로 적립한다 (주말 갱신 시 금요일 종가 보존)", () => {
+    // 이틀 전 updatedAt — 오늘 날짜로 오기록되면 안 되고, 체결일(06-10)로 기록되어야 함
+    const r = upsertDailyCloses([], [px("458730", 15550, "2026-06-10T15:30:00+09:00")], trades, "2026-06-12")!;
+    expect(r).toHaveLength(1);
+    expect(r[0].date).toBe("2026-06-10");
+    expect(r[0].close).toBe(15550);
+    // updatedAt 자체가 없으면 신선도를 알 수 없으므로 적립하지 않음
+    expect(upsertDailyCloses([], [{ ticker: "458730", price: 15550 }], trades, "2026-06-12")).toBeNull();
+  });
+
+  it("price=0 시세는 적립하지 않는다 (종가 히스토리 0 오염 방지)", () => {
+    expect(upsertDailyCloses([], [px("458730", 0)], trades, "2026-06-12")).toBeNull();
   });
 });

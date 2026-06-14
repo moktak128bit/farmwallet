@@ -17,6 +17,8 @@ interface Props {
   currentMonth: string;
   /** 레거시 저축성지출(재테크) 분류용 — 이번달 요약 카드와 동일 기준 */
   categoryPresets?: CategoryPresets;
+  /** 근로소득 키 — 지정 시 저축률 분모(수입)는 근로소득(월급·수당·상여)만 */
+  salaryKeys?: Set<string>;
 }
 
 export const SavingsRatioCard: React.FC<Props> = React.memo(function SavingsRatioCard({
@@ -24,14 +26,15 @@ export const SavingsRatioCard: React.FC<Props> = React.memo(function SavingsRati
   fxRate,
   currentMonth,
   categoryPresets,
+  salaryKeys,
 }) {
   const lastMonth = useMemo(() => shiftMonth(currentMonth, -1), [currentMonth]);
 
   /** 저번달 요약 (저축 대비 비교 위젯용) */
   const lastMonthSummary = useMemo(() => ({
     month: lastMonth,
-    ...computeLedgerSummary(ledger, fxRate, lastMonth, categoryPresets),
-  }), [ledger, fxRate, lastMonth, categoryPresets]);
+    ...computeLedgerSummary(ledger, fxRate, lastMonth, categoryPresets, salaryKeys),
+  }), [ledger, fxRate, lastMonth, categoryPresets, salaryKeys]);
 
   /** 저번달 재테크 세부 (저축 대비 비교 위젯용) */
   const lastMonthRecheckBreakdown = useMemo(
@@ -70,7 +73,7 @@ export const SavingsRatioCard: React.FC<Props> = React.memo(function SavingsRati
           >
             {lastMonthSavingsRate != null ? `${lastMonthSavingsRate.toFixed(1)}%` : "-"}
           </div>
-          <div className="hint" style={{ fontSize: 14, marginTop: 6 }}>수입 대비 재테크 이체 비율</div>
+          <div className="hint" style={{ fontSize: 14, marginTop: 6 }}>근로소득 대비 재테크 이체 비율</div>
         </div>
         <div>
           <div className="hint" style={{ fontSize: 14, marginBottom: 6 }}>지출 구성 (주식 대비 저축)</div>

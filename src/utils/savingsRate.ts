@@ -59,9 +59,17 @@ interface MonthlyRealFlow {
  */
 export function computeMonthlyRealFlows(
   ledger: LedgerEntry[],
-  opts: { fxRate: number | null; dateAccountId: string | null; startMonth?: string; endMonth?: string }
+  opts: {
+    fxRate: number | null;
+    dateAccountId: string | null;
+    startMonth?: string;
+    endMonth?: string;
+    /** 설정에서 "비실질"로 지정한 수입 카테고리 — 실질수입에서 추가 제외 (하드코딩 정산·용돈 외) */
+    nonRealIncomeOverride?: string[];
+  }
 ): Map<string, MonthlyRealFlow> {
-  const { fxRate, dateAccountId, startMonth, endMonth } = opts;
+  const { fxRate, dateAccountId, startMonth, endMonth, nonRealIncomeOverride } = opts;
+  const extraNonReal = nonRealIncomeOverride?.length ? new Set(nonRealIncomeOverride) : undefined;
 
   // (a)(b) 월 버킷 적재 — summaryMath와 동일한 toKrw 규칙으로 정규화
   const byMonth = new Map<string, LedgerEntry[]>();
@@ -85,7 +93,7 @@ export function computeMonthlyRealFlows(
       (l) => l.kind === "income" && Number(l.amount) > 0 && !isCarryOverIncomeEntry(l)
     );
     const pIncome = incomeEntries.reduce((s, l) => s + Number(l.amount), 0);
-    const { settlementTotal, tempIncomeTotal, realIncome } = computeRealIncome(incomeEntries, pIncome);
+    const { settlementTotal, tempIncomeTotal, realIncome } = computeRealIncome(incomeEntries, pIncome, extraNonReal);
 
     // (d) 지출: 표준 실질 지출 판정 → 데이트 계좌 50% 상대 부담분 차감
     const expenseEntries = entries.filter((l) => isRealExpenseEntry(l));

@@ -114,8 +114,27 @@ export const LedgerTable: React.FC<Props> = React.memo(function LedgerTable({
   const [showDailySummary, setShowDailySummary] = useState<boolean>(() => {
     try { return localStorage.getItem("fw-daily-summary") !== "false"; } catch { return true; }
   });
-  // 행 순서 변경(☰ 드래그)은 전체 보기 + 날짜 정렬일 때만 — 핸들 표시와 draggable 조건 일치
-  const canReorder = viewMode === "all" && ledgerSort.key === "date";
+  // 행 순서 변경(☰ 드래그 / ▲▼ 버튼)은 날짜 정렬일 때만 — 다른 정렬에선 배열 순서가 표시에 안 보임.
+  // 전체·월별 보기 모두 허용 (월별 보기에서도 같은 날짜 안에서 순서를 바꿀 수 있어야 함).
+  // 드래그는 터치 기기(PWA)에서 동작하지 않으므로 ▲▼ 버튼을 병행 제공한다.
+  const canReorder = ledgerSort.key === "date";
+
+  // 행별 같은-날짜 인접 항목 존재 여부(▲▼ 버튼 활성화용) — 표시 목록 기준.
+  // 같은 날짜의 실제 항목(주식 가상 행 제외)이 위/아래에 있으면 이동 가능.
+  const moveability = useMemo(() => {
+    const m = new Map<string, { up: boolean; down: boolean }>();
+    const rows = filteredLedger;
+    const isReal = (r: LedgerDisplayRow) => !(r as LedgerDisplayRow)._tradeId;
+    for (let i = 0; i < rows.length; i += 1) {
+      const r = rows[i];
+      if (!isReal(r)) continue;
+      let up = false, down = false;
+      for (let j = i - 1; j >= 0 && rows[j].date === r.date; j -= 1) { if (isReal(rows[j])) { up = true; break; } }
+      for (let j = i + 1; j < rows.length && rows[j].date === r.date; j += 1) { if (isReal(rows[j])) { down = true; break; } }
+      m.set(r.id, { up, down });
+    }
+    return m;
+  }, [filteredLedger]);
 
   // 컬럼 너비 상태 (localStorage에서 로드; 10개 = 데이터 9 + 작업 1: 할인 전·할인·최종)
   const [columnWidths, setColumnWidths] = useState<number[]>(() => {
@@ -345,6 +364,27 @@ export const LedgerTable: React.FC<Props> = React.memo(function LedgerTable({
     const next = [...ledger];
     const [item] = next.splice(currentIndex, 1);
     next.splice(clamped, 0, item);
+    onChangeLedger(next);
+  };
+
+  // ▲▼ 버튼 이동 — 표시 목록에서 같은 날짜의 인접 실제 항목을 찾아 배열 위치를 교환한다.
+  // (같은 날짜 표시 순서 = 배열 순서이므로 두 항목 위치를 바꾸면 표시 순서가 바뀐다. 터치 대응)
+  const handleMove = (id: string, dir: "up" | "down") => {
+    const rows = filteredLedger;
+    const idx = rows.findIndex((r) => r.id === id);
+    if (idx === -1) return;
+    const date = rows[idx].date;
+    const step = dir === "up" ? -1 : 1;
+    let targetId: string | null = null;
+    for (let i = idx + step; i >= 0 && i < rows.length && rows[i].date === date; i += step) {
+      if (!(rows[i] as LedgerDisplayRow)._tradeId) { targetId = rows[i].id; break; }
+    }
+    if (!targetId) return;
+    const a = ledger.findIndex((l) => l.id === id);
+    const b = ledger.findIndex((l) => l.id === targetId);
+    if (a === -1 || b === -1) return;
+    const next = [...ledger];
+    [next[a], next[b]] = [next[b], next[a]];
     onChangeLedger(next);
   };
 
@@ -1105,7 +1145,25 @@ export const LedgerTable: React.FC<Props> = React.memo(function LedgerTable({
                 )}
               </td>
               <td style={{ width: ledgerColumnWidthStyles[10] }}>
-                <div style={{ display: "flex", gap: 8 }}>
+                <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
+                  {canReorder && !(l as LedgerDisplayRow)._tradeId && (
+                    <div style={{ display: "flex", flexDirection: "column", gap: 1 }} title="같은 날짜 안에서 순서 이동">
+                      <button
+                        type="button"
+                        aria-label="위로 이동"
+                        disabled={!moveability.get(l.id)?.up}
+                        onClick={(e) => { e.stopPropagation(); handleMove(l.id, "up"); }}
+                        style={{ padding: "0 6px", fontSize: 10, lineHeight: 1.3, opacity: moveability.get(l.id)?.up ? 1 : 0.25 }}
+                      >▲</button>
+                      <button
+                        type="button"
+                        aria-label="아래로 이동"
+                        disabled={!moveability.get(l.id)?.down}
+                        onClick={(e) => { e.stopPropagation(); handleMove(l.id, "down"); }}
+                        style={{ padding: "0 6px", fontSize: 10, lineHeight: 1.3, opacity: moveability.get(l.id)?.down ? 1 : 0.25 }}
+                      >▼</button>
+                    </div>
+                  )}
                   <button type="button" onClick={(e) => {
                     e.stopPropagation();
                     if ((l as LedgerDisplayRow)._tradeId) {

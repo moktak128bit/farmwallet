@@ -33,6 +33,8 @@ export const STORAGE_KEYS = {
   TICKER: "ticker",
   /** 가격 API 사용 여부 (켜면 외부 API로 배치 갱신 가능, 연동은 추후 구현) */
   PRICE_API_ENABLED: "fw-price-api-enabled",
+  /** 마지막 시세 갱신 "시도" 시각(epoch ms) — 탭 진입 stale 판정은 체결 시각(updatedAt)이 아닌 이 값 기준 (장외엔 체결 시각이 멈춰 항상 stale로 오판) */
+  LAST_QUOTE_REFRESH_AT: "fw-last-quote-refresh-at",
   /** 테이블 형태 백업 JSON (일반 DATA와 별도; 저장 시 동기 갱신) */
   DATA_TABLE_BACKUP: "farmwallet-data-tables-v1",
   /** 마지막으로 성공한 USD/KRW 환율 캐시 */

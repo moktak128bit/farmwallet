@@ -98,7 +98,16 @@ const replaceInList = (list: string[], from: string, to: string): string[] => {
 /** 프리셋을 spec에 따라 정리한 사본 반환 — from 제거, to 보장, 대분류 통합 시 세부·타입 매핑까지 병합. */
 export function mergePresets(presets: CategoryPresets, spec: MergeSpec): CategoryPresets {
   if (spec.kind === "income") {
-    return { ...presets, income: replaceInList(presets.income, spec.from, spec.to) };
+    const ct = presets.categoryTypes;
+    const remap = (list?: string[]) => (list ? replaceInList(list, spec.from, spec.to) : list);
+    return {
+      ...presets,
+      income: replaceInList(presets.income, spec.from, spec.to),
+      // 수입 성격 지정(근로/패시브/비실질)도 from→to로 승계 (통합 후 분류 유실 방지)
+      categoryTypes: ct
+        ? { ...ct, salary: remap(ct.salary), passive: remap(ct.passive), nonRealIncome: remap(ct.nonRealIncome) }
+        : ct,
+    };
   }
   if (spec.kind === "transfer") {
     const transfer = replaceInList(presets.transfer, spec.from, spec.to);

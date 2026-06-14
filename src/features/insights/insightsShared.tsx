@@ -302,6 +302,10 @@ export interface D {
   patternStats: PatternStats;
 
   monthly: Record<string, { income: number; expense: number; investment: number }>;
+  /** 월별 근로소득(월급·수당·상여). 수입 추세·흐름·안정성·소진속도의 단일 기준 (정산·용돈·배당 등 제외). */
+  salaryMonthly: Record<string, number>;
+  /** 월별 실질 수입(장부−정산−일시소득). 패시브 비율 추이의 분모. */
+  realIncomeMonthly: Record<string, number>;
   savRateTrend: { l: string; rate: number; cumRate: number; sav: number }[];
   salaryTrend: { l: string; salary: number; nonSalary: number }[];
   cumIE: { l: string; 누적수입: number; 누적지출: number }[];
@@ -315,6 +319,8 @@ export interface D {
   dateExpMonthly: Record<string, number>;
 
   pIncome: number;
+  /** 기간 근로소득 합 — pIncome(장부)과 구분. 지출/수입·순현금흐름·투자비율의 분모. */
+  pSalary: number;
   pExpense: number;
   pInvest: number;
   expByCat: [string, number][];
@@ -346,7 +352,7 @@ export interface D {
   weekdayTot: number;
   topDates: { date: string; total: number; items: { desc: string; amount: number }[] }[];
   score: { total: number; grade: string; comment: string };
-  prev: { income: number; expense: number } | null;
+  prev: { income: number; expense: number; salary: number } | null;
   avgMonthExp: number;
 
   incByGroup: { name: string; value: number; items: [string, number][] }[];

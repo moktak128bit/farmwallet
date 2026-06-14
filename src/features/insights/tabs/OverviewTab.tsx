@@ -14,7 +14,8 @@ export const OverviewTab = React.memo(function OverviewTab({ d }: { d: D }) {
   const flowMonths = d.months.length > 0 && d.months[d.months.length - 1] === getThisMonthKST()
     ? d.months.slice(0, -1)
     : d.months;
-  const flowData = flowMonths.map(m => ({ name: d.ml[m], 순현금흐름: d.monthly[m].income - d.monthly[m].expense - d.monthly[m].investment }));
+  // 순현금흐름 = 근로소득 − 지출 − 투자. "월급으로 지출·투자를 감당하는가"를 현실적으로 (비근로 유입 제외)
+  const flowData = flowMonths.map(m => ({ name: d.ml[m], 순현금흐름: (d.salaryMonthly[m] ?? 0) - d.monthly[m].expense - d.monthly[m].investment }));
   const expBadge = d.prev ? Pct(SD(d.pExpense - d.prev.expense, d.prev.expense) * 100) + " vs 전월" : undefined;
   const top3Sub = d.expBySub.filter(s => s.sub !== "신용결제" && s.cat !== "신용결제").slice(0, 3);
   const top3pct = d.pExpense > 0 ? Math.round(top3Sub.reduce((s, x) => s + x.amount, 0) / d.pExpense * 100) : 0;
@@ -176,8 +177,8 @@ export const OverviewTab = React.memo(function OverviewTab({ d }: { d: D }) {
 
       {/* ============ SECTION 2: 장기 트렌드 ============ */}
       <Section storageKey="overview-section-trends" title="📊 장기 트렌드">
-        {/* 수입 성장률 (NEW) */}
-        <Card title="📈 수입 성장률 (MoM · YoY · 3M 평균)" span={4}>
+        {/* 수입 성장률 (NEW) — 근로소득 기준 */}
+        <Card title="📈 근로소득 성장률 (MoM · YoY · 3M 평균)" span={4}>
           <div style={{ display: "grid", gridTemplateColumns: "repeat(3, 1fr)", gap: 10, marginBottom: 12 }}>
             <div style={{ padding: "12px 14px", background: "var(--bg)", borderRadius: 10, textAlign: "center" }}>
               <div style={{ fontSize: 11, color: "var(--text-muted)", fontWeight: 600 }}>
@@ -215,13 +216,16 @@ export const OverviewTab = React.memo(function OverviewTab({ d }: { d: D }) {
               <YAxis yAxisId="right" orientation="right" tickFormatter={(v) => v + "%"} tick={{ fontSize: 10 }} />
               <Tooltip content={<CT />} />
               <Legend wrapperStyle={{ fontSize: 11 }} />
-              <Bar isAnimationActive={false} yAxisId="left" dataKey="income" name="수입" fill="#f0c040" radius={[4, 4, 0, 0]} opacity={0.5} />
+              <Bar isAnimationActive={false} yAxisId="left" dataKey="income" name="근로소득" fill="#f0c040" radius={[4, 4, 0, 0]} opacity={0.5} />
               <Line isAnimationActive={false} yAxisId="right" type="monotone" dataKey="momPct" name="MoM%" stroke="#e94560" strokeWidth={2} dot={{ r: 3 }} />
             </ComposedChart>
           </ResponsiveContainer>
+          <div style={{ fontSize: 11, color: "var(--text-faint)", textAlign: "center", marginTop: 4 }}>
+            수입 = 근로소득(월급·수당·상여)만. 정산·용돈·배당 등 비근로 유입 제외.
+          </div>
         </Card>
 
-        <Card title="순 현금흐름 (수입 - 지출 - 투자)" span={2}>
+        <Card title="순 현금흐름 (근로소득 - 지출 - 투자)" span={2}>
           <ResponsiveContainer width="100%" height={220}>
             <AreaChart data={flowData}><CartesianGrid strokeDasharray="3 3" stroke="var(--chart-grid)" /><XAxis dataKey="name" tick={{ fontSize: 12 }} /><YAxis tickFormatter={F} tick={{ fontSize: 11 }} /><Tooltip content={<CT />} />
               <defs><linearGradient id="fg" x1="0" y1="0" x2="0" y2="1"><stop offset="5%" stopColor="#e94560" stopOpacity={0.3} /><stop offset="95%" stopColor="#e94560" stopOpacity={0} /></linearGradient></defs>
@@ -249,6 +253,9 @@ export const OverviewTab = React.memo(function OverviewTab({ d }: { d: D }) {
               <Line isAnimationActive={false} type="monotone" dataKey="누적지출" stroke="#e94560" strokeWidth={2.5} dot={{ r: 3 }} />
             </LineChart>
           </ResponsiveContainer>
+          <div style={{ fontSize: 11, color: "var(--text-faint)", textAlign: "center", marginTop: 4 }}>
+            누적수입 = 근로소득(월급·수당·상여) 누적. 정산·용돈·배당 등 비근로 유입 제외.
+          </div>
         </Card>
       </Section>
 
@@ -388,8 +395,8 @@ export const OverviewTab = React.memo(function OverviewTab({ d }: { d: D }) {
             {[
               { label: "순수익", value: F(d.netProfit) + "원", sub: `${d.accumLabel} · 실질수입 − 실질지출`, color: d.netProfit >= 0 ? "#059669" : "#e94560", bg: d.netProfit >= 0 ? "#f0fdf4" : "#fff5f5", border: d.netProfit >= 0 ? "#86efac" : "#fcc" },
               { label: "실질 저축률", value: d.realSavRate.toFixed(1) + "%", sub: `${d.accumLabel} 기준`, color: d.realSavRate >= 30 ? "#059669" : d.realSavRate >= 0 ? "#f0c040" : "#e94560", bg: "#f0f8ff", border: "#bde" },
-              { label: "지출/수입 비율", value: d.expToIncRatio.toFixed(1) + "%", sub: d.expToIncRatio > 80 ? "⚠ 지출 비중 높음" : d.accumLabel, color: d.expToIncRatio > 80 ? "#e94560" : "#2563eb", bg: "#f8f9fa", border: "#eee" },
-              { label: "패시브 수입", value: F(d.passiveIncome) + "원", sub: `${d.accumLabel} · 수입 대비 ${d.pIncome > 0 ? Math.round(SD(d.passiveIncome, d.pIncome) * 100) : 0}%`, color: "#48c9b0", bg: "#f0fdf4", border: "#86efac" },
+              { label: "지출/근로소득 비율", value: d.expToIncRatio.toFixed(1) + "%", sub: d.expToIncRatio > 80 ? "⚠ 지출 비중 높음" : d.accumLabel, color: d.expToIncRatio > 80 ? "#e94560" : "#2563eb", bg: "#f8f9fa", border: "#eee" },
+              { label: "패시브 수입", value: F(d.passiveIncome) + "원", sub: `${d.accumLabel} · 실질수입 대비 ${d.realIncome > 0 ? Math.round(SD(d.passiveIncome, d.realIncome) * 100) : 0}%`, color: "#48c9b0", bg: "#f0fdf4", border: "#86efac" },
               { label: "일 평균 지출", value: F(d.dailyAvgExp) + "원", sub: `하루당 · ${d.totalDays}일 기준`, color: "#533483", bg: "rgba(83,52,131,0.06)", border: "rgba(83,52,131,0.2)" },
             ].map(m => (
               <div key={m.label} style={{ padding: "12px 14px", background: m.bg, borderRadius: 10, border: `1px solid ${m.border}`, textAlign: "center" }}>
@@ -401,11 +408,11 @@ export const OverviewTab = React.memo(function OverviewTab({ d }: { d: D }) {
           </div>
           <div style={{ display: "grid", gridTemplateColumns: "repeat(5,1fr)", gap: 10, marginTop: 10 }}>
             {[
-              { label: "순현금흐름", value: F(d.netCashFlow) + "원", sub: `${d.accumLabel} · 수입−지출−투자`, color: d.netCashFlow >= 0 ? "#059669" : "#e94560" },
+              { label: "순현금흐름", value: F(d.netCashFlow) + "원", sub: `${d.accumLabel} · 근로소득−지출−투자`, color: d.netCashFlow >= 0 ? "#059669" : "#e94560" },
               { label: "투자 수익률", value: d.investReturnRate !== 0 ? d.investReturnRate.toFixed(1) + "%" : "-", sub: "전 기간 · 실현손익 / 투자원금", color: d.investReturnRate >= 0 ? "#059669" : "#e94560" },
               { label: "고정비", value: F(d.fixedExpense) + "원", sub: `${d.accumLabel} · 지출의 ${Math.round(SD(d.fixedExpense, d.pExpense) * 100)}%`, color: "#0f3460" },
               { label: "변동비", value: F(d.variableExpense) + "원", sub: `${d.accumLabel} · 지출의 ${Math.round(SD(d.variableExpense, d.pExpense) * 100)}%`, color: "#f39c12" },
-              { label: "수입 안정성", value: d.incomeStability !== null ? d.incomeStability + "%" : "-", sub: d.incomeStability !== null && d.incomeStability >= 70 ? "월별 편차 작음" : "월별 편차 큼", color: "#2563eb" },
+              { label: "근로소득 안정성", value: d.incomeStability !== null ? d.incomeStability + "%" : "-", sub: d.incomeStability !== null && d.incomeStability >= 70 ? "월별 편차 작음" : "월별 편차 큼", color: "#2563eb" },
             ].map(m => (
               <div key={m.label} style={{ padding: "10px 12px", background: "var(--bg)", borderRadius: 8, border: "1px solid var(--border-light)", textAlign: "center" }}>
                 <div style={{ fontSize: 10, color: "var(--text-faint)", fontWeight: 600 }}>{m.label}</div>
@@ -465,11 +472,11 @@ export const OverviewTab = React.memo(function OverviewTab({ d }: { d: D }) {
               {top3Sub[0] && d.pExpense > 0 && ` 1위 ${top3Sub[0].sub}만 10% 줄여도 월 ${F(Math.round(top3Sub[0].amount * 0.1 / d.monthSpan))} 절약.`}
             </Insight>
             <Insight title="투자 현황" tone="info">
-              {d.pIncome > 0
-                ? `수입 대비 투자 비율 ${Math.round(d.pInvest / d.pIncome * 100)}%. 총 ${F(d.pInvest)}를 투자에 할당했습니다.`
+              {d.pSalary > 0
+                ? `근로소득 대비 투자 비율 ${Math.round(d.pInvest / d.pSalary * 100)}%. 총 ${F(d.pInvest)}를 투자에 할당했습니다.`
                 : ""}
               {d.pInvest > 0
-                ? ` 월평균 ${F(Math.round(d.pInvest / d.monthSpan))} 투자. ${d.pInvest / Math.max(d.pIncome, 1) > 0.2 ? "적극적으로 투자하고 있어 장기적 자산 성장이 기대됩니다." : "투자 비중을 수입의 20% 이상으로 높이면 복리 효과가 커집니다."}`
+                ? ` 월평균 ${F(Math.round(d.pInvest / d.monthSpan))} 투자. ${d.pInvest / Math.max(d.pSalary, 1) > 0.2 ? "적극적으로 투자하고 있어 장기적 자산 성장이 기대됩니다." : "투자 비중을 근로소득의 20% 이상으로 높이면 복리 효과가 커집니다."}`
                 : " 투자 활동이 없습니다. 소액이라도 ETF 적립식 투자를 시작해 보세요."}
             </Insight>
             <Insight title="소비 습관" color="#7c3aed" bg="rgba(139,92,246,0.08)">
@@ -480,7 +487,7 @@ export const OverviewTab = React.memo(function OverviewTab({ d }: { d: D }) {
             </Insight>
             {d.prev && (
               <Insight title="전월 대비 변화" tone="info">
-                수입 {d.pIncome >= d.prev.income ? "+" : ""}{F(d.pIncome - d.prev.income)} ({d.prev.income > 0 ? Pct((d.pIncome - d.prev.income) / d.prev.income * 100) : "N/A"}),
+                근로소득 {d.pSalary >= d.prev.salary ? "+" : ""}{F(d.pSalary - d.prev.salary)} ({d.prev.salary > 0 ? Pct((d.pSalary - d.prev.salary) / d.prev.salary * 100) : "N/A"}),
                 지출 {d.pExpense >= d.prev.expense ? "+" : ""}{F(d.pExpense - d.prev.expense)} ({d.prev.expense > 0 ? Pct((d.pExpense - d.prev.expense) / d.prev.expense * 100) : "N/A"}).
                 {d.pExpense > d.prev.expense ? ` 지출이 ${F(d.pExpense - d.prev.expense)} 증가했습니다. 어떤 카테고리에서 증가했는지 지출 분석 탭에서 확인하세요.` : ` 지출이 ${F(d.prev.expense - d.pExpense)} 감소했습니다. 좋은 흐름입니다!`}
               </Insight>
@@ -500,7 +507,7 @@ export const OverviewTab = React.memo(function OverviewTab({ d }: { d: D }) {
             <Insight title="고정비 vs 변동비" color="#7c3aed" bg="rgba(124,58,237,0.06)">
               고정비 {F(d.fixedExpense)} ({Math.round(SD(d.fixedExpense, d.pExpense) * 100)}%), 변동비 {F(d.variableExpense)} ({Math.round(SD(d.variableExpense, d.pExpense) * 100)}%).
               {SD(d.fixedExpense, d.pExpense) > 0.5 ? " 고정비 비중이 50%를 초과합니다. 통신비, 구독, 보험 등 재협상 가능한 항목을 점검하세요." : SD(d.fixedExpense, d.pExpense) > 0.3 ? " 고정비와 변동비가 균형 잡혀 있습니다." : " 변동비 비중이 높아 지출 통제 여지가 큽니다. 예산 관리로 효과적인 절약이 가능합니다."}
-              {d.subTotal > 0 ? ` 구독 비용만 ${F(d.subTotal)}로 수입 대비 ${(SD(d.subTotal, d.pIncome) * 100).toFixed(1)}%.` : ""}
+              {d.subTotal > 0 ? ` 구독 비용만 ${F(d.subTotal)}로 근로소득 대비 ${(SD(d.subTotal, d.pSalary) * 100).toFixed(1)}%.` : ""}
             </Insight>
           </div>
         </Card>

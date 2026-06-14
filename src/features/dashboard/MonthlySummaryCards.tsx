@@ -24,11 +24,11 @@ export const MonthlySummaryCards: React.FC<Props> = React.memo(function MonthlyS
       }}
     >
       <div className="card" style={{ minHeight: 124, borderLeft: "4px solid var(--chart-income)" }}>
-        <div className="card-title">이번 달 수입</div>
+        <div className="card-title">이번 달 수입 (근로소득)</div>
         <div className="card-value" style={{ color: "var(--chart-income)", fontSize: 28 }}>
           {formatKRW(Math.round(monthlySummary.income))}
         </div>
-        <div className="hint" style={{ marginTop: 8 }}>전체 기간: {formatKRW(allTimeSummary.income)}</div>
+        <div className="hint" style={{ marginTop: 8 }}>전체 기간: {formatKRW(allTimeSummary.income)} · 월급·수당·상여만</div>
       </div>
 
       <div className="card" style={{ minHeight: 124, borderLeft: "4px solid var(--chart-expense)" }}>
@@ -54,7 +54,7 @@ export const MonthlySummaryCards: React.FC<Props> = React.memo(function MonthlyS
         <div className="card-value" style={{ color: balance >= 0 ? "var(--success)" : "var(--danger)", fontSize: 28 }}>
           {formatKRW(Math.round(balance))}
         </div>
-        <div className="hint" style={{ marginTop: 8 }}>수입 − 지출 (장부 기준)</div>
+        <div className="hint" style={{ marginTop: 8 }}>근로소득 − 지출</div>
       </div>
     </div>
   );

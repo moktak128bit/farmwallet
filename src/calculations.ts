@@ -300,8 +300,9 @@ export function computePositions(
         : undefined;
 
     const priceInfo = latestPriceByTicker.get(tickerNorm);
+    // price=0은 "시세 없음"으로 취급 — 0을 유효 시세로 인정하면 -100% 수익률이 전 화면에 전파됨
     const hasMarketPrice =
-      typeof priceInfo?.price === "number" && Number.isFinite(priceInfo.price);
+      typeof priceInfo?.price === "number" && Number.isFinite(priceInfo.price) && priceInfo.price > 0;
     const marketPrice = hasMarketPrice
       ? (priceInfo?.price ?? 0)
       : options?.priceFallback === "cost"

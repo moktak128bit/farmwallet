@@ -1,4 +1,4 @@
-import { canonicalTickerForMatch, isKRWStock } from "./utils/finance";
+import { canonicalTickerForMatch, cleanTicker, isKRWStock, isUSDStock } from "./utils/finance";
 import { getKrNames } from "./storage";
 
 interface YahooQuoteResult {
@@ -44,20 +44,16 @@ interface YahooChartResponse {
   };
 }
 
-interface YahooQuoteApiResponse {
-  quoteResponse?: {
-    result?: Array<{
-      symbol?: string;
-      longName?: string;
-      shortName?: string;
-      regularMarketPrice?: number;
-      currency?: string;
-      regularMarketPreviousClose?: number;
-      regularMarketTime?: number;
-      sector?: string;
-      industry?: string;
-    }>;
-  };
+/** Naver 실시간 시세 polling API 응답 — 한국 종목 1차 소스 */
+interface NaverPollingResponse {
+  datas?: Array<{
+    itemCode?: string;
+    stockName?: string;
+    closePrice?: string;
+    compareToPreviousClosePrice?: string;
+    fluctuationsRatio?: string;
+    localTradedAt?: string;
+  }>;
 }
 
 /**
@@ -324,6 +320,7 @@ export async function buildInitialTickerDatabase(): Promise<Array<{
  */
 const YAHOO_CHART_BASE = "https://query1.finance.yahoo.com/v8/finance/chart";
 const STOOQ_BASE = "https://stooq.pl/q/l/";
+const NAVER_POLLING_BASE = "https://polling.finance.naver.com/api/realtime/domestic/stock";
 
 const getEnv = (): Record<string, string | boolean | undefined> =>
   (typeof import.meta !== "undefined"
@@ -392,171 +389,110 @@ function setCachedQuote(symbol: string, result: YahooQuoteResult): void {
   quoteCache.set(symbol, { result, fetchedAt: Date.now() });
 }
 
-const fetchFromYahooQuoteBatch = async (
-  requestedSymbols: string[],
-  lookupSymbols: string[]
-): Promise<Map<string, YahooQuoteResult>> => {
-  if (lookupSymbols.length === 0) return new Map();
+/** Naver 시세 숫자 파싱 — "13,145" 같은 콤마 문자열 */
+const parseNaverNumber = (raw?: string): number => Number(String(raw ?? "").replace(/,/g, ""));
 
-  // 개발 환경: /api/yahoo-quote 우선 사용(동일 서버에서 직접 Yahoo 호출, 429 캐시 없음)
+/**
+ * 한국 종목 시세 — Naver polling API (1차 소스).
+ * Yahoo와 달리 실시간(지연 0)이고, 신형 영숫자 코드(0180V0 등)·한글 종목명·콤마 배치 조회를
+ * 모두 지원한다. (Yahoo v7 quote는 2023년부터 cookie+crumb 인증을 요구해 무조건 401 → 제거됨)
+ */
+const fetchFromNaverPolling = async (
+  requestedSymbols: string[]
+): Promise<Map<string, YahooQuoteResult>> => {
+  const results = new Map<string, YahooQuoteResult>();
+  if (requestedSymbols.length === 0) return results;
+  const codes = requestedSymbols.map((s) => cleanTicker(s)).join(",");
+
+  let payloadStr = "";
+  // 개발 환경: vite 프록시 (CORS 우회 + 10초 캐시)
   if (useCorsProxy()) {
     const controller = new AbortController();
     const timeoutId = setTimeout(() => controller.abort(), 6000);
     try {
-      const qs = new URLSearchParams({ symbols: lookupSymbols.join(",") });
-      const res = await fetch(`/api/yahoo-quote?${qs.toString()}`, { signal: controller.signal });
-      clearTimeout(timeoutId);
-      if (res.ok) {
-        // 응답 구조를 일단 unknown으로 받고, 예상 형태가 아닐 때 안전하게 빈 결과 반환
-        const rawUnknown: unknown = await res.json();
-        const data = (rawUnknown && typeof rawUnknown === "object" ? rawUnknown : {}) as YahooQuoteApiResponse;
-        const list = Array.isArray(data.quoteResponse?.result) ? data.quoteResponse!.result! : [];
-        const byClean = new Map<string, (typeof list)[number]>();
-        const nowSec = Math.floor(Date.now() / 1000);
-        for (const item of list) {
-          const symbol = String(item?.symbol ?? "").toUpperCase();
-          if (!symbol) continue;
-          const marketTime = item.regularMarketTime || 0;
-          if (marketTime > 0 && nowSec - marketTime > GHOST_CUTOFF_SEC) continue; // 유령: 30일 초과 데이터 버림
-          const key = symbol.replace(/\.(KS|KQ|KO|K|KSQ)$/i, "");
-          const existing = byClean.get(key);
-          if (!existing || marketTime > (existing.regularMarketTime || 0)) byClean.set(key, item);
-        }
-        const results = new Map<string, YahooQuoteResult>();
-        for (const requested of requestedSymbols) {
-          const key = requested.replace(/\.(KS|KQ|KO|K|KSQ)$/i, "");
-          const item = byClean.get(key);
-          if (!item || typeof item.regularMarketPrice !== "number") continue;
-          // 한국 주식: 원화(KRW) 시세만 신뢰 (다른 통화 반환 시 스킵)
-          if (isKRWStock(requested) && item.currency !== "KRW") continue;
-          let change: number | undefined;
-          let changePercent: number | undefined;
-          if (typeof item.regularMarketPreviousClose === "number") {
-            change = item.regularMarketPrice - item.regularMarketPreviousClose;
-            if (item.regularMarketPreviousClose !== 0) {
-              changePercent = (change / item.regularMarketPreviousClose) * 100;
-            }
-          }
-          const updatedAt =
-            typeof item.regularMarketTime === "number"
-              ? new Date(item.regularMarketTime * 1000).toISOString()
-              : undefined;
-          results.set(requested, {
-            ticker: requested,
-            name: item.longName || item.shortName || requested,
-            price: item.regularMarketPrice,
-            currency: item.currency,
-            change,
-            changePercent,
-            updatedAt,
-            sector: item.sector,
-            industry: item.industry
-          });
-        }
-        return results;
-      }
-      // 429면 RateLimitError를 실제로 throw — 호출부(fetchYahooQuotes)의 429 분기(폴백/스킵)가 동작
+      const res = await fetch(`/api/naver-quote?codes=${encodeURIComponent(codes)}`, {
+        signal: controller.signal
+      });
       if (res.status === 429) throw new RateLimitError();
-      // 기타 비정상 시 아래 proxy 경로로 폴백
+      if (res.ok) payloadStr = await res.text();
     } catch (err) {
       if (err instanceof RateLimitError) throw err;
-      // 네트워크 오류·timeout 등: 아래 proxy 경로로 폴백
+      // 네트워크 오류·timeout 등: 아래 공개 프록시 경로로 폴백
     } finally {
       clearTimeout(timeoutId);
     }
   }
 
-  const params = new URLSearchParams({ symbols: lookupSymbols.join(",") });
-  const innerUrl = `https://query1.finance.yahoo.com/v7/finance/quote?${params.toString()}`;
-
-  const proxyUrls = [
-    `https://api.allorigins.win/raw?url=${encodeURIComponent(innerUrl)}`,
-    `https://corsproxy.io/?${innerUrl}`,
-    `https://api.codetabs.com/v1/proxy?quest=${encodeURIComponent(innerUrl)}`
-  ];
-
-  let payloadStr = "";
-  let saw429 = false;
-  for (const proxyUrl of proxyUrls) {
-    const controller = new AbortController();
-    const timeoutId = setTimeout(() => controller.abort(), 6000);
-    try {
-      const res = await fetch(proxyUrl, { signal: controller.signal });
-      if (res.status === 429) {
-        saw429 = true; // 다음 예비 프록시 시도 — 전부 실패하면 RateLimitError
-      } else if (res.ok) {
-        payloadStr = await res.text();
-        if (payloadStr && !payloadStr.includes("Not Found")) break;
-      }
-    } catch {
-      // 조용히 다음 예비 프록시로
-    } finally {
-      clearTimeout(timeoutId);
-    }
-  }
-
+  // 프로덕션(정적 배포) 또는 dev 프록시 실패: 공개 CORS 프록시 경유
+  // (Naver는 브라우저 외부 출처 직접 호출 시 'Invalid CORS request' 403)
   if (!payloadStr) {
-    // 모든 프록시 실패 + 429 발생 → 호출부 429 분기(종목별 chart 폴백)가 동작하도록 throw
-    if (saw429) throw new RateLimitError();
-    return new Map();
+    const innerUrl = `${NAVER_POLLING_BASE}/${codes}`;
+    const proxyUrls = [
+      `https://api.allorigins.win/raw?url=${encodeURIComponent(innerUrl)}`,
+      `https://corsproxy.io/?url=${encodeURIComponent(innerUrl)}`,
+      `https://api.codetabs.com/v1/proxy?quest=${encodeURIComponent(innerUrl)}`
+    ];
+    let saw429 = false;
+    for (const proxyUrl of proxyUrls) {
+      const controller = new AbortController();
+      const timeoutId = setTimeout(() => controller.abort(), 6000);
+      try {
+        const res = await fetch(proxyUrl, { signal: controller.signal });
+        if (res.status === 429) {
+          saw429 = true; // 다음 예비 프록시 시도 — 전부 실패하면 RateLimitError
+        } else if (res.ok) {
+          payloadStr = await res.text();
+          if (payloadStr) break;
+        }
+      } catch {
+        // 조용히 다음 예비 프록시로
+      } finally {
+        clearTimeout(timeoutId);
+      }
+    }
+    if (!payloadStr && saw429) throw new RateLimitError();
   }
 
-  let data: YahooQuoteApiResponse;
+  if (!payloadStr) return results;
+
+  let data: NaverPollingResponse;
   try {
     const parsed: unknown = JSON.parse(payloadStr);
-    data = (parsed && typeof parsed === "object" ? parsed : {}) as YahooQuoteApiResponse;
+    data = (parsed && typeof parsed === "object" ? parsed : {}) as NaverPollingResponse;
   } catch {
-    return new Map();
+    return results;
   }
 
-  const list = Array.isArray(data.quoteResponse?.result) ? data.quoteResponse!.result! : [];
-  const byClean = new Map<string, (typeof list)[number]>();
-  const nowSec = Math.floor(Date.now() / 1000);
-  for (const item of list) {
-    const symbol = String(item?.symbol ?? "").toUpperCase();
-    if (!symbol) continue;
-    const marketTime = item.regularMarketTime || 0;
-    if (marketTime > 0 && nowSec - marketTime > GHOST_CUTOFF_SEC) continue; // 유령: 30일 초과 데이터 버림
-    const key = symbol.replace(/\.(KS|KQ|KO|K|KSQ)$/i, "");
-    const existing = byClean.get(key);
-    if (!existing || marketTime > (existing.regularMarketTime || 0)) byClean.set(key, item);
+  const byCode = new Map<string, NonNullable<NaverPollingResponse["datas"]>[number]>();
+  for (const item of data.datas ?? []) {
+    const code = String(item?.itemCode ?? "").toUpperCase();
+    if (code) byCode.set(code, item);
   }
 
-  const results = new Map<string, YahooQuoteResult>();
   for (const requested of requestedSymbols) {
-    const key = requested.replace(/\.(KS|KQ|KO|K|KSQ)$/i, "");
-    const item = byClean.get(key);
+    const item = byCode.get(cleanTicker(requested));
     if (!item) continue;
-    if (typeof item.regularMarketPrice !== "number") continue;
-    if (isKRWStock(requested) && item.currency !== "KRW") continue;
-
-    let change: number | undefined;
-    let changePercent: number | undefined;
-    if (typeof item.regularMarketPreviousClose === "number") {
-      change = item.regularMarketPrice - item.regularMarketPreviousClose;
-      if (item.regularMarketPreviousClose !== 0) {
-        changePercent = (change / item.regularMarketPreviousClose) * 100;
-      }
+    const price = parseNaverNumber(item.closePrice);
+    if (!Number.isFinite(price) || price <= 0) continue; // 0/NaN 시세는 결과에서 제외
+    // fluctuationsRatio는 부호 포함("-0.61") — compareToPreviousClosePrice가 무부호인 응답에 대비해 부호를 비율에서 보정
+    const changePercent = Number(item.fluctuationsRatio);
+    let change = parseNaverNumber(item.compareToPreviousClosePrice);
+    if (Number.isFinite(change) && Number.isFinite(changePercent) && changePercent < 0 && change > 0) {
+      change = -change;
     }
-
-    const updatedAt =
-      typeof item.regularMarketTime === "number"
-        ? new Date(item.regularMarketTime * 1000).toISOString()
-        : undefined;
-
+    const tradedAtMs = item.localTradedAt ? Date.parse(item.localTradedAt) : NaN;
     results.set(requested, {
       ticker: requested,
-      name: item.longName || item.shortName || requested,
-      price: item.regularMarketPrice,
-      currency: item.currency,
-      change,
-      changePercent,
-      updatedAt,
-      sector: item.sector,
-      industry: item.industry
+      name: item.stockName || requested,
+      price,
+      currency: "KRW",
+      change: Number.isFinite(change) ? change : undefined,
+      changePercent: Number.isFinite(changePercent) ? changePercent : undefined,
+      updatedAt: Number.isFinite(tradedAtMs)
+        ? new Date(tradedAtMs).toISOString()
+        : new Date().toISOString()
     });
   }
-
   return results;
 };
 
@@ -574,8 +510,10 @@ const fetchFromYahooChart = async (
   const innerUrl = `${YAHOO_CHART_BASE}/${encodeURIComponent(lookupSymbol)}?${params.toString()}`;
 
   const proxyUrls = [
+    // 개발 환경: vite 서버 프록시 우선 (불안정한 공개 프록시 의존 제거 + 10초 캐시)
+    ...(useCorsProxy() ? [`/api/external/raw?url=${encodeURIComponent(innerUrl)}`] : []),
     `https://api.allorigins.win/raw?url=${encodeURIComponent(innerUrl)}`,
-    `https://corsproxy.io/?${innerUrl}`,
+    `https://corsproxy.io/?url=${encodeURIComponent(innerUrl)}`,
     `https://api.codetabs.com/v1/proxy?quest=${encodeURIComponent(innerUrl)}`
   ];
 
@@ -617,7 +555,7 @@ const fetchFromYahooChart = async (
   const closes = data.chart?.result?.[0]?.indicators?.quote?.[0]?.close ?? [];
   const lastClose = closes.filter((v): v is number => typeof v === "number").at(-1);
   const price = typeof meta?.regularMarketPrice === "number" ? meta.regularMarketPrice : lastClose;
-  if (price == null) return null;
+  if (price == null || !(price > 0)) return null; // 0/NaN 시세는 실패로 취급 (0원·-100% 오염 방지)
 
   let change: number | undefined;
   let changePercent: number | undefined;
@@ -661,7 +599,7 @@ const fetchFromStooq = async (requestedSymbol: string): Promise<YahooQuoteResult
     };
     const item = json.symbols?.[0];
     const price = item?.close ? Number(item.close) : NaN;
-    if (!item?.symbol || Number.isNaN(price)) return null;
+    if (!item?.symbol || !(price > 0)) return null; // 0/NaN 시세는 실패로 취급
     return {
       ticker: requestedSymbol,
       name: item.name ?? requestedSymbol,
@@ -687,6 +625,8 @@ type FetchYahooQuotesOptions = {
   exchangeMap?: Record<string, string>;
   /** 배치 단계별 상태 로그 (개별 fallback 들어가기 전 가시성용) */
   onBatchPhase?: (phase: string) => void;
+  /** 배치(Naver) 성공분을 느린 종목별 폴백 완료 전에 먼저 반영하고 싶을 때 */
+  onPartialResults?: (results: YahooQuoteResult[]) => void;
 };
 
 export async function fetchYahooQuotes(
@@ -704,86 +644,59 @@ export async function fetchYahooQuotes(
 
   const onProgress = options?.onProgress;
   const onBatchPhase = options?.onBatchPhase;
+  const onPartialResults = options?.onPartialResults;
   const exchangeMap = options?.exchangeMap ?? {};
   const total = uniq.length;
 
   const requestPromise = (async () => {
     try {
       const results: YahooQuoteResult[] = [];
-      // 429 쿨다운 제거(요청: 대기 없이 진행)
 
-      // 1) 배치: 미국/기타 한 번에, 한국은 2종목씩 작은 청크로 요청(청크 간 1.5초 지연)해 429 회피.
+      // 1) 한국 종목: Naver polling 배치 — 실시간(지연 0)·한글명·신형 영숫자 코드(0180V0 등) 지원.
+      //    미국/기타(USDKRW=X 포함)는 아래 종목별 Yahoo v8 chart 경로로 조회.
       const requestedSymbols = uniq.map((s) => s.trim().toUpperCase());
       const krTickers = requestedSymbols.filter((s) => isKRWStock(s));
-      const batchTickers = requestedSymbols.filter((s) => !isKRWStock(s));
       const batchResults = new Map<string, YahooQuoteResult>();
-      if (batchTickers.length > 0) {
-        onBatchPhase?.(`배치 요청: 미국/기타 ${batchTickers.length}개`);
-        const lookupSymbols: string[] = [];
-        const seen = new Set<string>();
-        for (const s of batchTickers) {
-          for (const c of buildLookupCandidates(s)) {
-            if (!seen.has(c)) {
-              seen.add(c);
-              lookupSymbols.push(c);
+      const NAVER_CHUNK = 20;
+      if (krTickers.length > 0) {
+        onBatchPhase?.(`Naver 배치 요청: 한국 ${krTickers.length}개 (${Math.ceil(krTickers.length / NAVER_CHUNK)}개 청크)`);
+        for (let i = 0; i < krTickers.length; i += NAVER_CHUNK) {
+          const chunk = krTickers.slice(i, i + NAVER_CHUNK);
+          try {
+            const chunkMap = await fetchFromNaverPolling(chunk);
+            for (const [ticker, quote] of chunkMap.entries()) {
+              batchResults.set(ticker, quote);
+              setCachedQuote(ticker, quote);
+              results.push(quote);
             }
+          } catch (err) {
+            if (err instanceof RateLimitError) {
+              console.warn("[시세] Naver 배치 429. 나머지 한국 종목은 chart 폴백.");
+              onBatchPhase?.(`Naver 배치 실패 (429): 종목별 fallback`);
+              break;
+            }
+            // 네트워크 등 기타 오류 시 해당 청크만 스킵 (종목별 chart 폴백이 처리)
+          }
+          if (i + NAVER_CHUNK < krTickers.length) {
+            await new Promise((r) => setTimeout(r, 200));
           }
         }
-        try {
-          const chunkMap = await fetchFromYahooQuoteBatch(batchTickers, lookupSymbols);
-          for (const [ticker, quote] of chunkMap.entries()) {
-            batchResults.set(ticker, quote);
-            setCachedQuote(ticker, quote);
-            results.push(quote);
-          }
-          onBatchPhase?.(`배치 응답: 미국/기타 ${chunkMap.size}/${batchTickers.length} 성공`);
-        } catch (err) {
-          if (err instanceof RateLimitError) {
-            console.warn("[시세] 배치 429. 종목별 chart 폴백 진행.");
-            onBatchPhase?.(`배치 실패 (429): 종목별 fallback`);
-          } else throw err;
+        onBatchPhase?.(`Naver 배치 응답: 한국 ${batchResults.size}/${krTickers.length} 성공`);
+        // 배치 성공분 즉시 반영 — 느린 종목별 폴백을 기다리지 않고 화면 먼저 갱신
+        if (batchResults.size > 0 && onPartialResults) {
+          const krMap = getKrNames();
+          onPartialResults(
+            [...batchResults.values()].map((q) => {
+              const krName = krMap[canonicalTickerForMatch(q.ticker)];
+              return krName ? { ...q, name: krName } : q;
+            })
+          );
         }
-      }
-      const KR_BATCH_CHUNK = 15; // 429 회피하면서 속도 개선 (6→15, 지연 1.2s→0.5s)
-      if (krTickers.length > 0) {
-        await new Promise((r) => setTimeout(r, 500)); // 미국 배치 직후 429 회피
-      }
-      if (krTickers.length > 0) {
-        onBatchPhase?.(`배치 요청: 한국 ${krTickers.length}개 (${Math.ceil(krTickers.length / KR_BATCH_CHUNK)}개 청크)`);
-      }
-      // 한국: exchange가 있으면 suffix 1개만 요청, 없으면 KS/KQ 둘 다 요청 후 최신 regularMarketTime 기준으로 유령 티커 제거
-      let krSuccessCount = 0;
-      for (let i = 0; i < krTickers.length; i += KR_BATCH_CHUNK) {
-        const chunk = krTickers.slice(i, i + KR_BATCH_CHUNK);
-        const chunkLookup = chunk.flatMap((s) => buildLookupCandidates(s, exchangeMap[s]));
-        if (chunkLookup.length === 0) continue;
-        try {
-          const chunkMap = await fetchFromYahooQuoteBatch(chunk, chunkLookup);
-          for (const [ticker, quote] of chunkMap.entries()) {
-            batchResults.set(ticker, quote);
-            setCachedQuote(ticker, quote);
-            results.push(quote);
-          }
-          krSuccessCount += chunkMap.size;
-        } catch (err) {
-          if (err instanceof RateLimitError) {
-            console.warn("[시세] 한국 배치 청크 429. 나머지 한국 종목은 chart 폴백.");
-            onBatchPhase?.(`배치 실패 (429): 한국 청크, 종목별 fallback`);
-            break;
-          }
-          // 네트워크 등 기타 오류 시 해당 청크만 스킵
-        }
-        if (i + KR_BATCH_CHUNK < krTickers.length) {
-          await new Promise((r) => setTimeout(r, 500)); // 청크 간 0.5초 (429 발생 시 다시 늘릴 수 있음)
-        }
-      }
-      if (krTickers.length > 0) {
-        onBatchPhase?.(`배치 응답: 한국 ${krSuccessCount}/${krTickers.length} 성공`);
       }
 
       const fallbackCount = uniq.filter((r) => !batchResults.has(r.trim().toUpperCase())).length;
       if (fallbackCount > 0) {
-        onBatchPhase?.(`개별 fallback 시작: ${fallbackCount}종목 (종목당 200~300ms 지연)`);
+        onBatchPhase?.(`개별 조회 시작: ${fallbackCount}종목 (Yahoo chart, 종목당 200~300ms 지연)`);
       }
 
       for (let i = 0; i < uniq.length; i++) {
@@ -803,28 +716,19 @@ export async function fetchYahooQuotes(
 
         let quote: YahooQuoteResult | null = null;
         try {
-          // 배치가 실패(429 등)했으면 Yahoo 대신 Stooq 먼저 시도(미국 종목 등)
-          if (batchResults.size === 0) {
+          const chartDelayMs = isKRWStock(requestedSymbol) ? 300 : 200; // 개별 차트 지연 (429 발생 시 500/400 등으로 늘릴 수 있음)
+          for (const lookupSymbol of buildLookupCandidates(requestedSymbol, exchangeMap[requestedSymbol])) {
             try {
-              quote = await fetchFromStooq(requestedSymbol);
+              await new Promise((r) => setTimeout(r, chartDelayMs));
+              quote = await fetchFromYahooChart(requestedSymbol, lookupSymbol);
+              if (quote) break;
             } catch (err) {
               if (err instanceof RateLimitError) throw err;
+              // 조용히 실패 처리 (프록시/서버 문제 가능)
             }
           }
-          if (!quote) {
-            const chartDelayMs = isKRWStock(requestedSymbol) ? 300 : 200; // 개별 차트 폴백 지연 (429 발생 시 500/400 등으로 늘릴 수 있음)
-            for (const lookupSymbol of buildLookupCandidates(requestedSymbol, exchangeMap[requestedSymbol])) {
-              try {
-                await new Promise((r) => setTimeout(r, chartDelayMs));
-                quote = await fetchFromYahooChart(requestedSymbol, lookupSymbol);
-                if (quote) break;
-              } catch (err) {
-                if (err instanceof RateLimitError) throw err;
-                // 조용히 실패 처리 (프록시/서버 문제 가능)
-              }
-            }
-          }
-          if (!quote) {
+          // Stooq는 심볼에 .us를 강제하므로 미국 티커에만 의미 있음 (한국/특수 심볼은 생략)
+          if (!quote && isUSDStock(requestedSymbol)) {
             try {
               quote = await fetchFromStooq(requestedSymbol);
             } catch (err) {
@@ -889,7 +793,7 @@ async function searchYahooSymbol(
       const innerUrl = `https://query1.finance.yahoo.com/v1/finance/search?q=${encodeURIComponent(q)}&quotesCount=15&newsCount=0`;
       const proxyUrls = [
         `https://api.allorigins.win/raw?url=${encodeURIComponent(innerUrl)}`,
-        `https://corsproxy.io/?${innerUrl}`,
+        `https://corsproxy.io/?url=${encodeURIComponent(innerUrl)}`,
         `https://api.codetabs.com/v1/proxy?quest=${encodeURIComponent(innerUrl)}`
       ];
 

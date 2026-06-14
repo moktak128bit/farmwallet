@@ -76,6 +76,9 @@ function buildCategoryTables(cp: CategoryPresets) {
   const category_type_fixed = (ct.fixed ?? []).map((value, sort_order) => ({ sort_order, value }));
   const category_type_savings = (ct.savings ?? []).map((value, sort_order) => ({ sort_order, value }));
   const category_type_transfer = (ct.transfer ?? []).map((value, sort_order) => ({ sort_order, value }));
+  const category_type_salary = (ct.salary ?? []).map((value, sort_order) => ({ sort_order, value }));
+  const category_type_passive = (ct.passive ?? []).map((value, sort_order) => ({ sort_order, value }));
+  const category_type_non_real_income = (ct.nonRealIncome ?? []).map((value, sort_order) => ({ sort_order, value }));
   return {
     category_preset_income,
     category_preset_transfer,
@@ -83,7 +86,10 @@ function buildCategoryTables(cp: CategoryPresets) {
     expense_detail_subs,
     category_type_fixed,
     category_type_savings,
-    category_type_transfer
+    category_type_transfer,
+    category_type_salary,
+    category_type_passive,
+    category_type_non_real_income
   };
 }
 
@@ -119,6 +125,15 @@ function parseCategoryPresets(tables: Record<string, unknown>): CategoryPresets 
   const transferTypes = sortBySortOrder(
     asArray<{ sort_order?: number; value?: string }>(tables.category_type_transfer)
   ).map((r) => String(r.value ?? ""));
+  const salary = sortBySortOrder(asArray<{ sort_order?: number; value?: string }>(tables.category_type_salary)).map(
+    (r) => String(r.value ?? "")
+  );
+  const passive = sortBySortOrder(asArray<{ sort_order?: number; value?: string }>(tables.category_type_passive)).map(
+    (r) => String(r.value ?? "")
+  );
+  const nonRealIncome = sortBySortOrder(
+    asArray<{ sort_order?: number; value?: string }>(tables.category_type_non_real_income)
+  ).map((r) => String(r.value ?? ""));
 
   return {
     income: income.length ? income : [],
@@ -128,7 +143,10 @@ function parseCategoryPresets(tables: Record<string, unknown>): CategoryPresets 
     categoryTypes: {
       fixed,
       savings,
-      transfer: transferTypes
+      transfer: transferTypes,
+      salary,
+      passive,
+      nonRealIncome
     }
   };
 }

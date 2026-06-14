@@ -19,6 +19,8 @@ interface PositionWithPrice {
   totalBuyAmount: number;
   totalBuyAmountKRW?: number;
   displayMarketPrice: number;
+  /** 유효 시세(>0) 존재 여부 — false면 displayMarketPrice는 평균단가 폴백이라 "시세 없음" 표시 */
+  hasQuote?: boolean;
   currency?: string;
 }
 
@@ -458,9 +460,15 @@ export const StockDetailModal: React.FC<Props> = ({
               <div>
                 <div style={{ fontSize: 12, color: "var(--text-muted)", marginBottom: 4 }}>현재가</div>
                 <div style={{ fontSize: 16, fontWeight: 600 }}>
-                  {selectedTickerCurrency === "USD" && showUSD
-                    ? `$${formatNumber(position.displayMarketPrice)}`
-                    : formatKRW(Math.round(marketPriceKRW))}
+                  {position.hasQuote === false ? (
+                    <span style={{ color: "var(--text-muted)" }} title="시세를 가져오지 못했습니다">
+                      시세 없음
+                    </span>
+                  ) : selectedTickerCurrency === "USD" && showUSD ? (
+                    `$${formatNumber(position.displayMarketPrice)}`
+                  ) : (
+                    formatKRW(Math.round(marketPriceKRW))
+                  )}
                 </div>
               </div>
               <div>

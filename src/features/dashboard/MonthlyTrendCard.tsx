@@ -14,19 +14,23 @@ interface Props {
   ledger: LedgerEntry[];
   categoryPresets: CategoryPresets;
   fxRate: number | null;
+  /** 근로소득 키 — 지정 시 월별 "수입"은 근로소득(월급·수당·상여)만 (정산·용돈·배당 제외) */
+  salaryKeys?: Set<string>;
 }
 
 export const MonthlyTrendCard: React.FC<Props> = React.memo(function MonthlyTrendCard({
   ledger,
   categoryPresets,
   fxRate,
+  salaryKeys,
 }) {
   const monthlyTrendData = useMemo(() => {
     const map = new Map<string, { income: number; expense: number; investing: number }>();
     ledger.forEach((entry) => {
       if (!entry.date) return;
       // 단일 분류 기준: 신용결제·일반 이체 제외, 레거시 저축성지출·저축/투자이체 = 재테크
-      const flow = classifyLedgerFlow(entry, categoryPresets);
+      // salaryKeys 지정 시 수입은 근로소득만 (비근로 유입은 classifyLedgerFlow가 null로 제외)
+      const flow = classifyLedgerFlow(entry, categoryPresets, salaryKeys);
       if (!flow) return;
       const m = entry.date.slice(0, 7);
       if (!map.has(m)) map.set(m, { income: 0, expense: 0, investing: 0 });
@@ -40,7 +44,7 @@ export const MonthlyTrendCard: React.FC<Props> = React.memo(function MonthlyTren
         month: month.slice(5),
         ...data
       }));
-  }, [ledger, fxRate, categoryPresets]);
+  }, [ledger, fxRate, categoryPresets, salaryKeys]);
 
   const maxVal = Math.max(
     ...monthlyTrendData.map((r) => Math.max(r.income, r.expense + r.investing))
@@ -81,7 +85,7 @@ export const MonthlyTrendCard: React.FC<Props> = React.memo(function MonthlyTren
           );
         })}
         <div className="hint" style={{ fontSize: 13, marginTop: 6 }}>
-          <span style={{ color: "var(--chart-income)" }}>■</span> 수입 <span style={{ color: "var(--chart-expense)" }}>■</span> 지출 <span style={{ color: "var(--chart-primary)" }}>■</span> 재테크
+          <span style={{ color: "var(--chart-income)" }}>■</span> 근로소득 <span style={{ color: "var(--chart-expense)" }}>■</span> 지출 <span style={{ color: "var(--chart-primary)" }}>■</span> 재테크
         </div>
       </div>
     </div>

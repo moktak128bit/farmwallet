@@ -41,14 +41,15 @@ export function compareMonths(
   kind: "expense" | "income" = "expense",
   fxRate: number | null = null,
   categoryPresets?: CategoryPresets,
-  dayCap: number | null = null
+  dayCap: number | null = null,
+  salaryKeys?: Set<string>
 ): MonthComparison {
   const prevMonthKey = offsetMonth(currentMonth, -1);
   const prevYearKey = offsetMonth(currentMonth, -12);
   let current = 0, prevMonth = 0, prevYear = 0;
   for (const e of ledger) {
     if (!e.date) continue;
-    if (classifyLedgerFlow(e, categoryPresets) !== kind) continue;
+    if (classifyLedgerFlow(e, categoryPresets, salaryKeys) !== kind) continue;
     const ym = e.date.slice(0, 7);
     if (ym !== currentMonth && ym !== prevMonthKey && ym !== prevYearKey) continue;
     if (dayCap != null && Number(e.date.slice(8, 10)) > dayCap) continue;

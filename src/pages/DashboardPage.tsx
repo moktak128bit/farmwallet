@@ -22,6 +22,7 @@ import { ExpenseIncomeCompareCard } from "../features/dashboard/ExpenseIncomeCom
 import { NetWorthTrendChart } from "../features/dashboard/NetWorthTrendChart";
 import { CmaBalanceTrendCard } from "../features/dashboard/CmaBalanceTrendCard";
 import { MonthPaceCard } from "../features/dashboard/MonthPaceCard";
+import { CashFlowForecastCard } from "../features/dashboard/CashFlowForecastCard";
 import { SalaryTimerCard } from "../features/dashboard/SalaryTimerCard";
 import { SpendingCalendarCard } from "../features/dashboard/SpendingCalendarCard";
 import { TopExpensesCard } from "../features/dashboard/TopExpensesCard";
@@ -348,6 +349,10 @@ export const DashboardView: React.FC<Props> = (props) => {
             categoryPresets={categoryPresets}
             fxRate={fxRate}
           />
+        )}
+
+        {show("cashFlow") && (
+          <CashFlowForecastCard recurring={storeData.recurringExpenses ?? []} />
         )}
 
         {show("portfolioCharts") && (

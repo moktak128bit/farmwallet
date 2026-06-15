@@ -16,6 +16,7 @@ import {
   previewDemoteSchema,
   applyDemoteSchema,
 } from "../../utils/demoteSchema";
+import { saveSafetySnapshot } from "../../services/backupService";
 
 interface Props {
   data: AppData;
@@ -38,7 +39,7 @@ export const MigrationToolsCards: React.FC<Props> = React.memo(function Migratio
         </p>
         <button
           type="button"
-          onClick={() => {
+          onClick={async () => {
             const preview = previewDemoteSchema(data);
             if (preview.affected === 0) {
               toast("이미 모두 표준 구조입니다 (정렬 불필요).");
@@ -71,6 +72,7 @@ export const MigrationToolsCards: React.FC<Props> = React.memo(function Migratio
             lines.push(``, `이대로 적용하시겠습니까?`);
             if (!window.confirm(lines.join("\n"))) return;
 
+            await saveSafetySnapshot(data, "구조 정렬 직전 자동 스냅샷");
             const next = applyDemoteSchema(data);
             onChangeData(next);
             toast.success(`1단계 완료: ${preview.affected}건 정렬 — 이제 2단계(유류교통비 통합) 가능`);
@@ -95,7 +97,7 @@ export const MigrationToolsCards: React.FC<Props> = React.memo(function Migratio
         </p>
         <button
           type="button"
-          onClick={() => {
+          onClick={async () => {
             const preview = previewTransportMigration(data);
             if (
               !preview.presetsNeedUpdate &&
@@ -135,6 +137,7 @@ export const MigrationToolsCards: React.FC<Props> = React.memo(function Migratio
             lines.push(``, `이대로 적용하시겠습니까?`);
             if (!window.confirm(lines.join("\n"))) return;
 
+            await saveSafetySnapshot(data, "유류교통비 통합 직전 자동 스냅샷");
             const next = applyTransportMigration(data);
             onChangeData(next);
             toast.success(

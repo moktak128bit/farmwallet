@@ -18,6 +18,8 @@ import React, { useCallback, useMemo, useRef } from "react";
 import type { Account, BudgetGoal, CategoryPresets, RecurringExpense, LedgerEntry, DailyBudgetConfig } from "../types";
 import { BUDGET_ALL_CATEGORY } from "../types";
 import { getTodayKST } from "../utils/date";
+import { expenseMainName } from "../utils/categoryMerge";
+import { isCreditPayment, isSavingsExpenseEntry } from "../utils/category";
 import { DailyBudgetSection } from "../features/budget/DailyBudgetSection";
 import { RecurringFormCard, type RecurringFormCardHandle } from "../features/budget/RecurringFormCard";
 import { BudgetFormCard } from "../features/budget/BudgetFormCard";
@@ -64,9 +66,8 @@ export const BudgetRecurringView: React.FC<Props> = ({
     recurringFormRef.current?.startEditRecurring(item);
   }, []);
 
-  // 예산 사용액 계산 — 데이터 스키마: cat=지출/수입/이체/신용결제/재테크, sub=식비/.../중분류
-  // - 개별 카테고리 (예산 카테고리="식비"): cat="지출" AND sub="식비" 매칭
-  // - "전체" 모드: cat="지출"만 합산 (신용결제·재테크·저축성지출 자동 제외) + 사용자 지정 sub 제외
+  // 예산 사용액 계산 — 대분류는 expenseMainName 단일소스(현행 sub + 레거시 cat 직접 둘 다 처리).
+  // 제외: 신용결제(이중계상)·재테크/환전(투자·이동)·저축성지출(자산축적) — 분류 단일소스 헬퍼 사용.
   const budgetUsage = useMemo<BudgetUsageRow[]>(() => {
     return budgets.map((b) => {
       const isTotal = b.category === BUDGET_ALL_CATEGORY;
@@ -76,22 +77,25 @@ export const BudgetRecurringView: React.FC<Props> = ({
       for (const l of ledger) {
         if (l.kind !== "expense") continue;
         if (!l.date?.startsWith(currentMonth)) continue;
-        // 일반 지출만 (신용결제·재테크 등 cat이 "지출"이 아닌 항목은 모두 제외)
-        if (l.category !== "지출") continue;
+        if (isCreditPayment(l)) continue;
+        if (l.category === "재테크" || l.category === "환전") continue;
+        if (isSavingsExpenseEntry(l, accounts, categoryPresets)) continue;
+        const mainName = expenseMainName(l);
+        if (!mainName) continue;
         if (isTotal) {
-          // "전체" 모드 — 사용자 지정 sub·계좌 제외 후 합산
-          if (l.subCategory && exclCats.has(l.subCategory)) continue;
+          // "전체" 모드 — 사용자 지정 대분류·계좌 제외 후 합산
+          if (exclCats.has(mainName)) continue;
           if (l.fromAccountId && exclAccts.has(l.fromAccountId)) continue;
           spent += l.amount;
         } else {
-          // 개별 카테고리 — sub === b.category (식비/유류교통비/...) 매칭
-          if (l.subCategory === b.category) spent += l.amount;
+          // 개별 카테고리 — 대분류(식비/유류교통비/...) 매칭 (레거시 cat 직접 입력도 포함)
+          if (mainName === b.category) spent += l.amount;
         }
       }
       const remain = b.monthlyLimit - spent;
       return { ...b, spent, remain };
     });
-  }, [budgets, ledger, currentMonth]);
+  }, [budgets, ledger, currentMonth, accounts, categoryPresets]);
 
   return (
     <div>

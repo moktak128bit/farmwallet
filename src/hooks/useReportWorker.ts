@@ -24,6 +24,8 @@ interface UseReportWorkerParams {
   fxRate: number | null;
   /** 데이트 계좌 id — localStorage 값이라 워커에 명시 전달 (종합 월간 실질지출용) */
   dateAccountId: string | null;
+  /** 설정에서 "비실질"로 지정한 수입 카테고리 — 실질수입에서 제외 (인사이트와 동일 기준) */
+  nonRealIncomeOverride?: string[];
 }
 
 interface ReportWorkerData {
@@ -131,7 +133,8 @@ function computeSynchronously(params: UseReportWorkerParams): ReportWorkerData {
       params.startDate.slice(0, 7),
       params.endDate.slice(0, 7),
       params.fxRate ?? undefined,
-      params.dateAccountId
+      params.dateAccountId,
+      params.nonRealIncomeOverride
     )
   };
 }
@@ -209,7 +212,8 @@ export function useReportWorker(params: UseReportWorkerParams): UseReportWorkerR
         startDate: params.startDate,
         endDate: params.endDate,
         fxRate: params.fxRate,
-        dateAccountId: params.dateAccountId
+        dateAccountId: params.dateAccountId,
+        nonRealIncomeOverride: params.nonRealIncomeOverride
       }
     });
   }, [
@@ -221,7 +225,8 @@ export function useReportWorker(params: UseReportWorkerParams): UseReportWorkerR
     params.startDate,
     params.endDate,
     params.fxRate,
-    params.dateAccountId
+    params.dateAccountId,
+    params.nonRealIncomeOverride
   ]);
 
   return state;

@@ -15,6 +15,7 @@ import React, { useImperativeHandle, useState } from "react";
 import type { Loan, RepaymentMethod } from "../../types";
 import { parseAmount } from "../../utils/parseAmount";
 import { getTodayKST } from "../../utils/date";
+import { newIdWithPrefix } from "../../utils/id";
 
 /** Loan.subCategory용 — 대출 종류 */
 const LOAN_TYPE_OPTIONS = ["학자금대출", "주담대", "개인대출", "기타대출"];
@@ -93,7 +94,7 @@ export const LoanFormSection = React.memo(React.forwardRef<LoanFormSectionHandle
       }
 
       const loan: Loan = {
-        id: editingLoan?.id || `LOAN-${Date.now()}`,
+        id: editingLoan?.id || newIdWithPrefix("LOAN"),
         institution: form.institution,
         loanName: form.loanName,
         subCategory: form.subCategory,

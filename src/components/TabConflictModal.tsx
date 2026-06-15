@@ -1,6 +1,7 @@
 import React, { useEffect, useMemo, useState } from "react";
 import type { TabConflict } from "../store/uiStore";
 import { useFocusTrap } from "../hooks/useFocusTrap";
+import { useModalStackEntry } from "../utils/modalStack";
 
 export type TabConflictResolution = "keep-local" | "apply-remote";
 
@@ -35,19 +36,21 @@ function summarizeJson(json: string): { ledger: number | string; trades: number 
 export const TabConflictModal: React.FC<TabConflictModalProps> = ({ conflict, onResolve, onDismiss }) => {
   const [busy, setBusy] = useState<TabConflictResolution | null>(null);
   const trapRef = useFocusTrap<HTMLDivElement>(!!conflict);
+  const isTopModal = useModalStackEntry(!!conflict);
 
   // ESC = 결정 없이 닫기 (onDismiss가 주어진 경우만)
   useEffect(() => {
     if (!conflict || !onDismiss) return;
     const onKeyDown = (e: KeyboardEvent) => {
-      if (e.key === "Escape") {
+      // 모달 중첩 시 최상위 모달만 ESC로 닫힘
+      if (e.key === "Escape" && isTopModal()) {
         e.stopPropagation();
         onDismiss();
       }
     };
     window.addEventListener("keydown", onKeyDown);
     return () => window.removeEventListener("keydown", onKeyDown);
-  }, [conflict, onDismiss]);
+  }, [conflict, onDismiss, isTopModal]);
 
   const summary = useMemo(() => {
     if (!conflict) return null;

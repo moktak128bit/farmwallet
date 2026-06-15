@@ -1,5 +1,6 @@
 import type { LedgerEntry } from "../types";
 import { isCreditPayment } from "./category";
+import { expenseMainName } from "./categoryMerge";
 
 interface AnomalyResult {
   category: string;
@@ -32,18 +33,21 @@ export function detectSpendAnomalies(
 
   const byCat = new Map<string, { monthly: Map<string, number>; current: number }>();
   for (const e of ledger) {
-    if (e.kind !== "expense" || e.amount <= 0 || !e.category || !e.date) continue;
+    if (e.kind !== "expense" || e.amount <= 0 || !e.date) continue;
     // 일반 소비 지출만 대상 — 신용결제(이중계상)·재테크(저축성지출)·환전 제외
     // (useInsightsData의 fExp 필터와 동일 기준 — "주목할 한 가지" 오탐 방지)
     if (e.category === "재테크" || e.category === "환전" || isCreditPayment(e)) continue;
+    // 대분류는 expenseMainName 단일소스 — 현행 스키마(category="지출")가 한 버킷으로 뭉쳐 이상감지가 무의미해지는 것 방지
+    const cat = expenseMainName(e);
+    if (!cat) continue;
     const ym = yyyymmOf(e.date);
     const isCurrent = ym === currentMonth;
     const isLookback = months.has(ym);
     if (!isCurrent && !isLookback) continue;
-    let slot = byCat.get(e.category);
+    let slot = byCat.get(cat);
     if (!slot) {
       slot = { monthly: new Map(), current: 0 };
-      byCat.set(e.category, slot);
+      byCat.set(cat, slot);
     }
     if (isCurrent) slot.current += e.amount;
     if (isLookback) slot.monthly.set(ym, (slot.monthly.get(ym) ?? 0) + e.amount);

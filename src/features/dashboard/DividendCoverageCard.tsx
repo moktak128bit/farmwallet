@@ -7,7 +7,7 @@ import React, { useMemo } from "react";
 import type { Account, CategoryPresets, LedgerEntry } from "../../types";
 import { formatKRW } from "../../utils/formatter";
 import { shiftMonth } from "../../utils/date";
-import { getCategoryType, isSavingsExpenseEntry } from "../../utils/category";
+import { getCategoryType, isSavingsExpenseEntry, isCreditPayment } from "../../utils/category";
 
 function isDividendIncome(entry: LedgerEntry): boolean {
   if (entry.kind !== "income") return false;
@@ -51,8 +51,8 @@ export const DividendCoverageCard: React.FC<Props> = React.memo(function Dividen
         continue;
       }
       if (entry.kind !== "expense") continue;
-      // 신용결제(카드 청구액 결제 이체)는 실제 지출의 중복 — 고정비 집계에서 제외
-      if (entry.category === "신용결제") continue;
+      // 신용결제(카드 청구액 결제 이체)는 실제 지출의 중복 — 고정비 집계에서 제외 (subCategory 레거시 포함)
+      if (isCreditPayment(entry)) continue;
       if (isSavingsExpenseEntry(entry, accounts, categoryPresets)) continue;
       const categoryType = getCategoryType(
         entry.category,

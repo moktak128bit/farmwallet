@@ -31,6 +31,7 @@ import { TransactionHistoryModal } from "../features/accounts/sections/Transacti
 import { AdjustmentModal } from "../features/accounts/sections/AdjustmentModal";
 import { BalanceBreakdownSection } from "../features/accounts/sections/BalanceBreakdownSection";
 import { InitialReversePanel } from "../features/accounts/sections/InitialReversePanel";
+import { saveSafetySnapshot } from "../services/backupService";
 import { AccountTablesSection } from "../features/accounts/sections/AccountTablesSection";
 
 interface Props {
@@ -276,6 +277,7 @@ export const AccountsView: React.FC<Props> = ({
         onChangeAccounts={onChangeAccounts}
         onChangeLedger={onChangeLedger}
         formatKRW={formatKRW}
+        saveSnapshot={(reason) => saveSafetySnapshot(storeData, reason)}
       />
 
       {safeAccounts.length === 0 && (

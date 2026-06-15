@@ -6,7 +6,7 @@ import {
 } from "recharts";
 import type { ValueType } from "recharts/types/component/DefaultTooltipContent";
 import { WDN, C, F, W, Card, Kpi, Insight, Section, CT, pieLabel, type D } from "../insightsShared";
-import { parseIsoLocal } from "../../../utils/date";
+import { parseIsoLocal, getTodayKST } from "../../../utils/date";
 
 export const DateTab = React.memo(function DateTab({ d }: { d: D }) {
   // 차트용 전체 월 데이터 (dateExpMonthly는 selMonth와 무관하게 전 기간 월별 합)
@@ -52,7 +52,7 @@ export const DateTab = React.memo(function DateTab({ d }: { d: D }) {
       const [y, mo] = d.selMonth.split("-").map(Number);
       return new Date(y, mo, 0).getDate();
     }
-    const start = new Date(d.months[0] + "-01");
+    const start = parseIsoLocal(d.months[0] + "-01")!;
     const [y, mo] = d.months[d.months.length - 1].split("-").map(Number);
     const end = new Date(y, mo, 0);
     return Math.max(1, Math.round((end.getTime() - start.getTime()) / (1000 * 60 * 60 * 24)) + 1);
@@ -66,8 +66,8 @@ export const DateTab = React.memo(function DateTab({ d }: { d: D }) {
     if (sorted.length === 0) return 0;
     let maxGap = 0;
     for (let i = 1; i < sorted.length; i++) {
-      const a = new Date(sorted[i - 1]);
-      const b = new Date(sorted[i]);
+      const a = parseIsoLocal(sorted[i - 1])!;
+      const b = parseIsoLocal(sorted[i])!;
       const gap = Math.round((b.getTime() - a.getTime()) / (1000 * 60 * 60 * 24));
       if (gap > maxGap) maxGap = gap;
     }
@@ -76,8 +76,8 @@ export const DateTab = React.memo(function DateTab({ d }: { d: D }) {
   const daysSinceLast = (() => {
     const sorted = Array.from(dateSet).sort();
     if (sorted.length === 0) return null;
-    const last = new Date(sorted[sorted.length - 1]);
-    const today = new Date();
+    const last = parseIsoLocal(sorted[sorted.length - 1])!;
+    const today = parseIsoLocal(getTodayKST())!;
     return Math.round((today.getTime() - last.getTime()) / (1000 * 60 * 60 * 24));
   })();
 

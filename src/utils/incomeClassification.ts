@@ -15,7 +15,7 @@ import type { Account, LedgerEntry } from "../types";
 import { NON_REAL_INCOME } from "./realIncome";
 import { isCarryOverIncomeEntry } from "./savingsRate";
 
-export interface IncomeNatureKeys {
+interface IncomeNatureKeys {
   /** 근로소득(월급·수당·상여 등) 중분류 집합 */
   salaryKeys: Set<string>;
   /** 투자/패시브(배당·이자·투자수익 등) 중분류 집합 */
@@ -23,7 +23,7 @@ export interface IncomeNatureKeys {
 }
 
 /** 사용자가 설정(categoryTypes)에서 지정한 수입 성격 — 자동감지보다 우선. */
-export interface IncomeNatureOverride {
+interface IncomeNatureOverride {
   salary?: string[];
   passive?: string[];
   nonRealIncome?: string[];
@@ -96,10 +96,4 @@ export function computeIncomeNatureKeys(
   for (const k of override?.salary ?? []) { investIncKeys.delete(k); salaryKeys.add(k); }
 
   return { salaryKeys, investIncKeys };
-}
-
-/** 근로소득 수입 항목 여부 — kind=income & 중분류(없으면 대분류)가 salaryKeys에 속함. */
-export function isSalaryIncomeEntry(entry: LedgerEntry, salaryKeys: Set<string>): boolean {
-  if (entry.kind !== "income") return false;
-  return salaryKeys.has(entry.subCategory || entry.category || "");
 }

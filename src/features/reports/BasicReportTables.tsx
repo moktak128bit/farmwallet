@@ -79,8 +79,8 @@ export const BasicReportTables: React.FC<Props> = React.memo(function BasicRepor
             <YAxis />
             <Tooltip formatter={(value: number | undefined) => formatKRW(value ?? 0)} />
             <Legend />
-            <Bar isAnimationActive={false} dataKey="income" fill="#10b981" name="수입" />
-            <Bar isAnimationActive={false} dataKey="expense" fill="#f43f5e" name="지출" />
+            <Bar isAnimationActive={false} dataKey="income" fill="var(--chart-income)" name="수입" />
+            <Bar isAnimationActive={false} dataKey="expense" fill="var(--chart-expense)" name="지출" />
             <Bar isAnimationActive={false} dataKey="net" fill="#6366f1" name="순수입" />
           </BarChart>
         </ResponsiveContainer>

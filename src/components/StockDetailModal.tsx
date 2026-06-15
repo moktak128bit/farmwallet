@@ -5,7 +5,9 @@ import { isKRWStock, isUSDStock, extractTickerFromText, canonicalTickerForMatch 
 import { parseExDateFromNote, buildDividendNote } from "../utils/dividend";
 import { parseAmount } from "../utils/parseAmount";
 import { getTodayKST } from "../utils/date";
+import { newIdWithPrefix } from "../utils/id";
 import { useFocusTrap } from "../hooks/useFocusTrap";
+import { useModalStackEntry } from "../utils/modalStack";
 import { toast } from "react-hot-toast";
 import { ERROR_MESSAGES } from "../constants/errorMessages";
 
@@ -52,15 +54,17 @@ export const StockDetailModal: React.FC<Props> = ({
   const [fxRate, setFxRate] = useState<number | null>(propFxRate);
   // 모달 접근성: 포커스 트랩 + ESC 닫기 + role="dialog"
   const modalRef = useFocusTrap<HTMLDivElement>(Boolean(position));
+  const isTopModal = useModalStackEntry(Boolean(position));
 
   useEffect(() => {
     if (!position) return;
     const handleKeyDown = (e: KeyboardEvent) => {
-      if (e.key === "Escape") onClose();
+      // 모달 중첩 시 최상위 모달만 ESC로 닫힘
+      if (e.key === "Escape" && isTopModal()) onClose();
     };
     window.addEventListener("keydown", handleKeyDown);
     return () => window.removeEventListener("keydown", handleKeyDown);
-  }, [position, onClose]);
+  }, [position, onClose, isTopModal]);
 
   const [dividendForm, setDividendForm] = useState(() => ({
     date: getTodayKST(),
@@ -313,7 +317,7 @@ export const StockDetailModal: React.FC<Props> = ({
     const description = `${position.ticker}${position.name ? ` - ${position.name}` : ""} 배당${tax > 0 ? `, 세금: ${Math.round(tax).toLocaleString()}원` : ""}${fee > 0 ? `, 수수료: ${Math.round(fee).toLocaleString()}원` : ""}`;
     const note = buildDividendNote(qty, dividendForm.exDate?.trim() || undefined);
     const entry: LedgerEntry = {
-      id: `D${Date.now()}`,
+      id: newIdWithPrefix("D"),
       date: dividendForm.date,
       kind: "income",
       category: "수입",

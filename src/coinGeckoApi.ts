@@ -73,6 +73,8 @@ export async function fetchCryptoQuotes(coinIds: string[], fxRate?: number): Pro
       if (!coin || (coin.krw == null && coin.usd == null)) continue;
 
       const priceKrw = coin.krw ?? (coin.usd != null && fxRate ? coin.usd * fxRate : 0);
+      // KRW 환산 불가(USD만 있고 환율 미로드) → 0원 저장 시 -100%로 오염되므로 이 코인은 건너뜀
+      if (!(priceKrw > 0)) continue;
       const priceUsd = coin.usd ?? 0;
       const changePercent24h = coin.krw_24h_change ?? coin.usd_24h_change;
       const updatedAt =

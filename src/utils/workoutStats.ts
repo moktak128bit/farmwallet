@@ -13,6 +13,10 @@ export interface ExerciseSession {
   topSet: { weight: number; reps: number };
   /** 참고용 완료 세트 수 */
   completedSetCount: number;
+  /** 완료 세트 중 최대 reps (맨몸운동 진행 추적용). 중량 운동도 채워짐. */
+  maxReps?: number;
+  /** 완료 세트의 총 reps 합 (맨몸운동 볼륨 대용). */
+  totalReps?: number;
 }
 
 export interface ExerciseSessionWithPR extends ExerciseSession {
@@ -59,27 +63,37 @@ export function getExerciseSessions(
     let maxWeight = 0;
     let totalVolume = 0;
     let estimated1RM = 0;
+    let maxReps = 0;
+    let totalReps = 0;
     let topSet: { weight: number; reps: number } = { weight: 0, reps: 0 };
     for (const s of sets) {
       const w = Number(s.weightKg) || 0;
       const r = Number(s.reps) || 0;
-      if (w <= 0 || r <= 0) continue;
-      totalVolume += w * r;
-      const e1rm = epley1RM(w, r);
-      if (e1rm > estimated1RM) estimated1RM = e1rm;
+      // reps 없는 세트만 제외 — 중량 0이어도 reps가 있으면 맨몸운동으로 집계 (예전엔 w<=0이라 통째로 사라짐)
+      if (r <= 0) continue;
+      totalReps += r;
+      if (r > maxReps) maxReps = r;
+      if (w > 0) {
+        totalVolume += w * r;
+        const e1rm = epley1RM(w, r);
+        if (e1rm > estimated1RM) estimated1RM = e1rm;
+      }
       if (w > maxWeight || (w === maxWeight && r > topSet.reps)) {
         maxWeight = w;
         topSet = { weight: w, reps: r };
       }
     }
-    if (totalVolume <= 0) continue;
+    // 완료 reps가 하나도 없으면 세션 아님 (기존 totalVolume<=0 대체 — 맨몸운동도 살아남도록)
+    if (totalReps <= 0) continue;
     sessions.push({
       date,
       maxWeight,
       totalVolume,
       estimated1RM,
       topSet,
-      completedSetCount: sets.length
+      completedSetCount: sets.length,
+      maxReps,
+      totalReps
     });
   }
   sessions.sort((a, b) => a.date.localeCompare(b.date));

@@ -454,6 +454,11 @@ export const TradeHistorySection: React.FC<TradeHistorySectionProps> = ({
     const tradeToDelete = trades.find((t) => t.id === id);
     if (!tradeToDelete) return;
 
+    // 거래 삭제는 보유수량·실현손익·USD잔액에 즉시 영향 → 되돌리기가 까다로우므로 삭제 전 확인 (불변식 #8)
+    const sideLabel = tradeToDelete.side === "buy" ? "매수" : "매도";
+    const nm = tradeToDelete.name || tradeToDelete.ticker;
+    if (!window.confirm(`${tradeToDelete.date} ${nm} ${sideLabel} ${tradeToDelete.quantity}주 거래를 삭제할까요?`)) return;
+
     const account = accounts.find((a) => a.id === tradeToDelete.accountId);
     if ((account?.type === "securities" || account?.type === "crypto") && onChangeAccounts) {
       const priceInfo = latestPriceByCanonicalTicker.get(canonicalTickerForMatch(tradeToDelete.ticker));
@@ -913,13 +918,17 @@ export const TradeHistorySection: React.FC<TradeHistorySectionProps> = ({
                     {inlineEdit?.id === t.id && inlineEditField === "totalAmount" ? (
                       <input
                         type="number"
-                        value={Math.round(Number(inlineEdit.quantity) * Number(inlineEdit.price) + Number(inlineEdit.fee || 0))}
+                        value={Math.round(
+                          Number(inlineEdit.quantity) * Number(inlineEdit.price) +
+                          (inlineEdit.side === "sell" ? -1 : 1) * Number(inlineEdit.fee || 0)
+                        )}
                         onChange={(e) => {
                           const newTotal = Number(e.target.value);
                           const fee = Number(inlineEdit.fee || 0);
                           const price = Number(inlineEdit.price);
                           if (price > 0) {
-                            const newQuantity = (newTotal - fee) / price;
+                            // 매수 total=q*p+fee → q=(total−fee)/p / 매도 total=q*p−fee → q=(total+fee)/p (저장공식과 일치)
+                            const newQuantity = (newTotal + (inlineEdit.side === "sell" ? fee : -fee)) / price;
                             setInlineEdit({ ...inlineEdit, quantity: String(Math.max(0, Math.round(newQuantity * 100) / 100)) });
                           }
                         }}

@@ -18,6 +18,7 @@ import type { StockPrice } from "../../types";
 import type { TickerInfo } from "../../types";
 import { formatKRW } from "../../utils/formatter";
 import { isUSDStock, canonicalTickerForMatch } from "../../utils/finance";
+import { newIdWithPrefix } from "../../utils/id";
 
 const CHART_COLORS = ["#0ea5e9", "#6366f1", "#f43f5e", "#10b981", "#f59e0b", "#8b5cf6", "#ec4899", "#14b8a6", "#64748b"];
 
@@ -100,11 +101,14 @@ export const TargetPortfolioSection: React.FC<TargetPortfolioSectionProps> = ({
     const rate = fxRate ?? 0;
     const rows = selectedTarget.items.map((item) => {
       const targetValueKRW = (totalMarketValueKRW * item.targetPercent) / 100;
-      const currentValue = positionsInScope
+      // 분자도 분모(totalMarketValueKRW)와 동일한 per-position USD 판정으로 환산 — 통화 판정 불일치 제거
+      const currentValueKRW = positionsInScope
         .filter((p) => normTicker(p.ticker) === normTicker(item.ticker))
-        .reduce((s, p) => s + p.marketValue, 0);
-      const isUSD = isUSDStock(item.ticker);
-      const currentValueKRW = isUSD ? currentValue * rate : currentValue;
+        .reduce((s, p) => {
+          const pUSD = p.currency === "USD" || isUSDStock(p.ticker);
+          return s + (pUSD ? p.marketValue * rate : p.marketValue);
+        }, 0);
+      const isUSD = isUSDStock(item.ticker); // 매매 필요수량 환산(priceKRW)용
       const priceInfo = prices.find((x) => normTicker(x.ticker) === normTicker(item.ticker));
       const tickerInfo = tickerDatabase.find((x) => normTicker(x.ticker) === normTicker(item.ticker));
       const currentPrice = priceInfo?.price ?? 0;
@@ -121,7 +125,6 @@ export const TargetPortfolioSection: React.FC<TargetPortfolioSectionProps> = ({
         targetPercent: item.targetPercent,
         targetValueKRW,
         currentValueKRW,
-        currentValue,
         isUSD,
         achievement,
         diffKRW,
@@ -143,7 +146,7 @@ export const TargetPortfolioSection: React.FC<TargetPortfolioSectionProps> = ({
   ]);
 
   const handleAddTarget = () => {
-    const id = `TP${Date.now()}`;
+    const id = newIdWithPrefix("TP");
     const newTarget: TargetPortfolio = {
       id,
       name: "새 목표 포트폴리오",

@@ -8,9 +8,10 @@
 import React, { useMemo, useState } from "react";
 import type { Account, BudgetGoal, CategoryPresets } from "../../types";
 import { BUDGET_ALL_CATEGORY } from "../../types";
+import { newIdWithPrefix } from "../../utils/id";
 
 const createBudget = (): BudgetGoal => ({
-  id: `B${Date.now()}`,
+  id: newIdWithPrefix("B"),
   category: "",
   monthlyLimit: 0,
   note: ""

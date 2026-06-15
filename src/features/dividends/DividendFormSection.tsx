@@ -15,6 +15,7 @@ import { toast } from "react-hot-toast";
 import { Autocomplete } from "../../components/ui/Autocomplete";
 import type { Account, LedgerEntry, PositionRow, StockPrice, StockTrade, TickerInfo } from "../../types";
 import { formatKRW, formatUSD } from "../../utils/formatter";
+import { newIdWithPrefix } from "../../utils/id";
 import { isKRWStock, isUSDStock, canonicalTickerForMatch, extractTickerFromText } from "../../utils/finance";
 import { buildDividendNote } from "../../utils/dividend";
 import { getTodayKST } from "../../utils/date";
@@ -269,7 +270,7 @@ export const DividendFormSection: React.FC<Props> = React.memo(function Dividend
       const netInterest = amount - tax - fee;
       const description = `이자${tax > 0 ? `, 세금: ${Math.round(tax).toLocaleString()}원` : ""}${fee > 0 ? `, 수수료: ${Math.round(fee).toLocaleString()}원` : ""}`;
       const interestEntry: LedgerEntry = {
-        id: `I${Date.now()}`,
+        id: newIdWithPrefix("I"),
         date: dividendForm.date,
         kind: "income",
         category: "이자",
@@ -333,7 +334,7 @@ export const DividendFormSection: React.FC<Props> = React.memo(function Dividend
     const quantityToSave = typeof qtyForNote === "number" && !Number.isNaN(qtyForNote) && qtyForNote >= 0 ? qtyForNote : undefined;
     const note = buildDividendNote(quantityToSave, dividendForm.exDate?.trim());
     const entry: LedgerEntry = {
-      id: `D${Date.now()}`,
+      id: newIdWithPrefix("D"),
       date: dividendForm.date,
       kind: "income",
       category: "수입",

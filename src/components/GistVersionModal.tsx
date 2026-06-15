@@ -1,6 +1,7 @@
 import React, { useEffect, useState } from "react";
 import { History, X } from "lucide-react";
 import { getGistVersions, loadFromGistVersion, type GistVersion } from "../services/gistSync";
+import { useModalStackEntry } from "../utils/modalStack";
 
 interface Props {
   isOpen: boolean;
@@ -15,6 +16,7 @@ export const GistVersionModal: React.FC<Props> = ({ isOpen, onClose, onLoad, onL
   const [loadingIndex, setLoadingIndex] = useState<number | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [fetchCount, setFetchCount] = useState(0);
+  const isTopModal = useModalStackEntry(isOpen);
 
   const fetchVersions = React.useCallback(() => {
     setVersions([]);
@@ -33,10 +35,10 @@ export const GistVersionModal: React.FC<Props> = ({ isOpen, onClose, onLoad, onL
 
   useEffect(() => {
     if (!isOpen) return;
-    const handler = (e: KeyboardEvent) => { if (e.key === "Escape") onClose(); };
+    const handler = (e: KeyboardEvent) => { if (e.key === "Escape" && isTopModal()) onClose(); };
     window.addEventListener("keydown", handler);
     return () => window.removeEventListener("keydown", handler);
-  }, [isOpen, onClose]);
+  }, [isOpen, onClose, isTopModal]);
 
   if (!isOpen) return null;
 

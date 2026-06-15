@@ -25,6 +25,8 @@ interface ReportWorkerPayload {
   fxRate: number | null;
   /** 데이트 계좌 id (localStorage 값) — 종합 월간 실질지출의 데이트 50% 차감용. structured-clone 가능 */
   dateAccountId: string | null;
+  /** 설정에서 "비실질"로 지정한 수입 카테고리 — 실질수입 제외 (인사이트와 동일 기준) */
+  nonRealIncomeOverride?: string[];
 }
 
 interface ReportWorkerRequest {
@@ -103,7 +105,8 @@ workerScope.onmessage = (event: MessageEvent<ReportWorkerRequest>) => {
         payload.startDate.slice(0, 7),
         payload.endDate.slice(0, 7),
         payload.fxRate ?? undefined,
-        payload.dateAccountId
+        payload.dateAccountId,
+        payload.nonRealIncomeOverride
       )
     };
 

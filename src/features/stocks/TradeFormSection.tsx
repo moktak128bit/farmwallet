@@ -37,6 +37,7 @@ import { toast } from "react-hot-toast";
 import { validateDate, validateTicker, validateRequired, validateQuantity, validateAmount, validateAccountTickerCurrency } from "../../utils/validation";
 import { ERROR_MESSAGES } from "../../constants/errorMessages";
 import { getTodayKST } from "../../utils/date";
+import { newIdWithPrefix } from "../../utils/id";
 import { displayNameForTicker, createDefaultTradeForm, type TradeFormState } from "../../utils/stockHelpers";
 
 /** 환율 미로드 시 미국 주식 저장에 사용하는 기본 환율 (저장 차단 대신 사용) */
@@ -465,7 +466,7 @@ export const TradeFormSection = React.memo(React.forwardRef<TradeFormSectionHand
         if (useUsdBalanceMode && isUSDCurrency) {
           addUsdDelta(usdDeltaByAccount, accountId, side === "buy" ? -totalAmount : totalAmount);
         }
-        const id = `T${Date.now()}`;
+        const id = newIdWithPrefix("T");
         const trade: StockTrade = {
           id,
           date,

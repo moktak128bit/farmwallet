@@ -1,5 +1,6 @@
 import { canonicalTickerForMatch, cleanTicker, isKRWStock, isUSDStock } from "./utils/finance";
 import { getKrNames } from "./storage";
+import { parseEtfItemList, type EtfDiscountRow } from "./utils/etfDiscount";
 
 interface YahooQuoteResult {
   ticker: string;
@@ -614,6 +615,61 @@ const fetchFromStooq = async (requestedSymbol: string): Promise<YahooQuoteResult
     throw err;
   }
 };
+
+// 네이버 ETF 목록(전 종목 NAV·현재가) — 괴리율 스캔용. 공개 CORS 프록시 경유(브라우저 직접 호출은 403).
+const ETF_LIST_URL = "https://finance.naver.com/api/sise/etfItemList.nhn";
+
+/**
+ * 한국 ETF 전 종목의 괴리율(시장가 vs NAV)을 받아 저평가 순으로 정렬해 반환한다.
+ * 별도 시세 갱신 경로와 독립 — 사용자가 버튼으로 on-demand 호출(약 800종목 1회 요청).
+ * @throws RateLimitError 프록시가 모두 429일 때. 그 외 네트워크/파싱 실패는 일반 Error.
+ */
+export async function fetchKoreanEtfDiscounts(): Promise<EtfDiscountRow[]> {
+  const proxyUrls = [
+    `https://api.allorigins.win/raw?url=${encodeURIComponent(ETF_LIST_URL)}`,
+    `https://corsproxy.io/?url=${encodeURIComponent(ETF_LIST_URL)}`,
+    `https://api.codetabs.com/v1/proxy?quest=${encodeURIComponent(ETF_LIST_URL)}`
+  ];
+  let payloadStr = "";
+  let saw429 = false;
+  for (const proxyUrl of proxyUrls) {
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), 8000);
+    try {
+      const res = await fetch(proxyUrl, { signal: controller.signal });
+      if (res.status === 429) {
+        saw429 = true; // 다음 예비 프록시 시도
+      } else if (res.ok) {
+        // etfItemList(.nhn)는 EUC-KR 레거시 응답 — res.text()(UTF-8)로 읽으면 한글 종목명이 깨진다.
+        // 원본 바이트를 EUC-KR로 직접 디코딩해야 종목명이 정상 복원됨 (숫자·코드는 ASCII라 무관).
+        const buf = await res.arrayBuffer();
+        payloadStr = new TextDecoder("euc-kr").decode(buf);
+        if (payloadStr) break;
+      }
+    } catch {
+      // 조용히 다음 예비 프록시로
+    } finally {
+      clearTimeout(timeoutId);
+    }
+  }
+  if (!payloadStr) {
+    if (saw429) throw new RateLimitError();
+    throw new Error("ETF 목록을 불러오지 못했습니다 (네트워크 또는 프록시 오류).");
+  }
+  let json: unknown;
+  try {
+    json = JSON.parse(payloadStr);
+  } catch {
+    throw new Error("ETF 목록 응답을 해석하지 못했습니다.");
+  }
+  // 종목명은 위에서 EUC-KR로 정상 디코딩됨. 추가로 앱 표준 한글명(krNames)이 있으면 그 이름으로 통일
+  // (다른 화면의 종목명과 일치 + 일부 프록시가 바이트를 재인코딩해 깨지는 경우의 안전망).
+  const krNames = getKrNames();
+  return parseEtfItemList(json).map((r) => {
+    const resolved = krNames[r.code];
+    return resolved ? { ...r, name: resolved } : r;
+  });
+}
 
 // 전역 요청 추적을 위한 맵
 const activeRequests = new Map<string, Promise<YahooQuoteResult[]>>();

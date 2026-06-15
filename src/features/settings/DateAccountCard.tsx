@@ -1,7 +1,8 @@
 /**
- * 데이트통장 설정 카드 — 데이트통장 계좌 선택 + 본인 부담 비율. SettingsPage에서 분리.
- * dateAccountId/dateAccountRatio 상태는 이 카드 전용이라 이 컴포넌트가 소유한다
+ * 데이트통장 설정 카드 — 데이트통장 계좌 선택. SettingsPage에서 분리.
+ * dateAccountId 상태는 이 카드 전용이라 이 컴포넌트가 소유한다
  * (localStorage 저장 + notifyDateAccountChange 통지 포함).
+ * (분담 비율은 정산 로직상 50:50 고정 — 입력 컨트롤은 실제 계산에 반영되지 않아 제거함.)
  * React.memo로 감싸므로 부모가 넘기는 accounts는 data 슬라이스(참조 동일성 유지)다.
  */
 import React, { useState } from "react";
@@ -18,11 +19,6 @@ export const DateAccountCard: React.FC<Props> = React.memo(function DateAccountC
   const [dateAccountId, setDateAccountId] = useState(() => {
     if (typeof window === "undefined") return "";
     return localStorage.getItem(STORAGE_KEYS.DATE_ACCOUNT_ID) ?? "";
-  });
-  const [dateAccountRatio, setDateAccountRatio] = useState(() => {
-    if (typeof window === "undefined") return 50;
-    const v = Number(localStorage.getItem(STORAGE_KEYS.DATE_ACCOUNT_RATIO));
-    return Number.isFinite(v) ? v : 50;
   });
 
   return (
@@ -47,25 +43,8 @@ export const DateAccountCard: React.FC<Props> = React.memo(function DateAccountC
           ))}
         </select>
       </label>
-      <label style={{ display: "flex", alignItems: "center", gap: 8 }}>
-        <span style={{ minWidth: 80 }}>본인 부담</span>
-        <input
-          type="number"
-          min={0}
-          max={100}
-          value={dateAccountRatio}
-          onChange={(e) => {
-            const v = Math.min(100, Math.max(0, Number(e.target.value) || 0));
-            setDateAccountRatio(v);
-            localStorage.setItem(STORAGE_KEYS.DATE_ACCOUNT_RATIO, String(v));
-            notifyDateAccountChange();
-          }}
-          style={{ width: 70, padding: "6px 10px", borderRadius: 6, textAlign: "right" }}
-        />
-        <span>%</span>
-      </label>
       <p className="hint" style={{ marginTop: 8 }}>
-        데이트통장에서 나간 지출은 설정 비율만 본인 부담으로 계산합니다. (기본 50%)
+        데이트통장에서 나간 지출은 50:50(본인 부담 50%)으로 분담 계산합니다.
       </p>
     </div>
   );

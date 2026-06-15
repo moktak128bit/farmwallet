@@ -84,6 +84,30 @@ describe("computePositions — price=0 시세는 '시세 없음'으로 취급 (-
   });
 });
 
+describe("computePositions — 같은 날 매수·매도 정렬 (id순이 매도 먼저여도 보유수량 안 부풀려짐)", () => {
+  const accounts = [{ id: "acc1", name: "증권" }] as Account[];
+  it("같은 날 전량 매수+매도면 보유수량 0 (id상 매도가 먼저여도)", () => {
+    // 배열 순서·id 모두 매도가 먼저(a-sell < z-buy) → 옛 id정렬은 매도 먼저 처리해 오버셀 무시→매수 lot 잔존(수량 10 오류)
+    const trades = [
+      makeTrade({ id: "a-sell", side: "sell", date: "2026-03-01", quantity: 10, price: 150, totalAmount: 1500 }),
+      makeTrade({ id: "z-buy", side: "buy", date: "2026-03-01", quantity: 10, price: 100, totalAmount: 1000 }),
+    ];
+    const positions = computePositions(trades, [{ ticker: "AAPL", price: 150 }], accounts);
+    // 매수 먼저 처리 → 매도가 전량 소진 → 잔여 0 (포지션 없음 또는 수량 0)
+    const total = positions.reduce((s, p) => s + p.quantity, 0);
+    expect(total).toBe(0);
+  });
+
+  it("같은 날 매수10·매도4면 보유수량 6", () => {
+    const trades = [
+      makeTrade({ id: "a-sell", side: "sell", date: "2026-03-01", quantity: 4, price: 150, totalAmount: 600 }),
+      makeTrade({ id: "z-buy", side: "buy", date: "2026-03-01", quantity: 10, price: 100, totalAmount: 1000 }),
+    ];
+    const positions = computePositions(trades, [{ ticker: "AAPL", price: 150 }], accounts);
+    expect(positions.reduce((s, p) => s + p.quantity, 0)).toBe(6);
+  });
+});
+
 describe("isInterestRepayment — 카테고리 구조 세대별 이자 판정", () => {
   it("현재 구조: detailCategory에 '이자' 포함이면 이자 상환", () => {
     const entry = makeRepayment({ id: "1", category: "지출", subCategory: "대출상환", detailCategory: "이자상환" });

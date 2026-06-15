@@ -27,8 +27,12 @@ export const BudgetDashboardSection: React.FC<Props> = React.memo(function Budge
   const daysInMonth = new Date(year, month + 1, 0).getDate();
   const daysRemaining = daysInMonth - dayOfMonth;
 
-  const totalSpent = budgetUsage.reduce((s, b) => s + b.spent, 0);
-  const totalLimit = budgetUsage.reduce((s, b) => s + b.monthlyLimit, 0);
+  // '전체' 예산은 이미 모든 개별 카테고리를 포함 → 둘을 합치면 이중계상.
+  // '전체' 예산이 있으면 그것을 총괄로, 없으면 개별 예산의 합을 총괄로 사용.
+  const allBudget = budgetUsage.find((b) => b.category === BUDGET_ALL_CATEGORY);
+  const overallSource = allBudget ? [allBudget] : budgetUsage;
+  const totalSpent = overallSource.reduce((s, b) => s + b.spent, 0);
+  const totalLimit = overallSource.reduce((s, b) => s + b.monthlyLimit, 0);
   const overallPct = totalLimit > 0 ? (totalSpent / totalLimit) * 100 : 0;
   const overallBarColor =
     overallPct >= 100 ? "#f43f5e" : overallPct >= 80 ? "#f59e0b" : "#22c55e";

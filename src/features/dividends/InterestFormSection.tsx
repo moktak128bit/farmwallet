@@ -11,6 +11,7 @@
 import React, { useState } from "react";
 import type { Account, LedgerEntry } from "../../types";
 import { getTodayKST } from "../../utils/date";
+import { newIdWithPrefix } from "../../utils/id";
 
 interface Props {
   /** 이자 탭에서만 표시 — false면 null 렌더 (폼 상태는 유지) */
@@ -47,7 +48,7 @@ export const InterestFormSection: React.FC<Props> = React.memo(function Interest
 
     const description = `이자${rate != null ? ` (이율: ${rate}%)` : ""}${tax > 0 ? `, 세금: ${tax.toLocaleString()}원` : ""}`;
     const entry: LedgerEntry = {
-      id: `I${Date.now()}`,
+      id: newIdWithPrefix("I"),
       date: interestForm.date,
       kind: "income",
       category: "이자",

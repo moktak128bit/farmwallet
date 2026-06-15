@@ -3,6 +3,7 @@ import type { Account, AppData, LedgerEntry } from "../../types";
 import { Section } from "../insights/insightsShared";
 import { useDateAccountId } from "../../hooks/useDateAccountSettings";
 import { getTodayKST, getMonthEndDate, shiftMonth } from "../../utils/date";
+import { newIdWithPrefix } from "../../utils/id";
 
 interface Props {
   data: AppData;
@@ -80,7 +81,7 @@ export const SettlementView: React.FC<Props> = ({ data, onSettle, formatNumber }
     // 인식하는 형태. subCategory "데이트통장"은 실질 수입 계산(realIncome)에서 정산성
     // 회수로 자동 차감되므로 수입 이중계상이 없다.
     const entry: LedgerEntry = {
-      id: `settle-${Date.now()}`,
+      id: newIdWithPrefix("settle"),
       date: today,
       kind: "income",
       category: "정산",

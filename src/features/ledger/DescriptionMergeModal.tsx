@@ -2,6 +2,7 @@ import React, { useEffect, useMemo, useState } from "react";
 import { Check, X, Plus } from "lucide-react";
 import type { LedgerEntry } from "../../types";
 import { useFocusTrap } from "../../hooks/useFocusTrap";
+import { useModalStackEntry } from "../../utils/modalStack";
 import { formatKRW } from "../../utils/formatter";
 import {
   applyDescriptionMerge,
@@ -29,6 +30,7 @@ interface GroupUIState {
 
 export const DescriptionMergeModal: React.FC<Props> = ({ ledger, onApply, onClose }) => {
   const trapRef = useFocusTrap<HTMLDivElement>(true);
+  const isTopModal = useModalStackEntry(true);
 
   // 머지가 누적되면서 그룹이 줄어들 수 있도록 ledger 변화에 반응
   const groups = useMemo(() => findDescriptionGroups(ledger), [ledger]);
@@ -64,10 +66,11 @@ export const DescriptionMergeModal: React.FC<Props> = ({ ledger, onApply, onClos
   }, [groups]);
 
   useEffect(() => {
-    const handler = (e: KeyboardEvent) => { if (e.key === "Escape") onClose(); };
+    // 모달 중첩 시 최상위 모달만 ESC로 닫힘
+    const handler = (e: KeyboardEvent) => { if (e.key === "Escape" && isTopModal()) onClose(); };
     window.addEventListener("keydown", handler);
     return () => window.removeEventListener("keydown", handler);
-  }, [onClose]);
+  }, [onClose, isTopModal]);
 
   const toggleVariant = (groupIdx: number, desc: string) => {
     setUiState((prev) => {

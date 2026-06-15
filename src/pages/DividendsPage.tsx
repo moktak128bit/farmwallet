@@ -18,6 +18,7 @@ import type { Account, HistoricalDailyClose, LedgerEntry, StockPrice, StockTrade
 import { computePositions } from "../calculations";
 import { formatKRW } from "../utils/formatter";
 import { isKRWStock, isUSDStock, canonicalTickerForMatch, extractTickerFromText } from "../utils/finance";
+import { isDividendEntry, isInterestEntry } from "../utils/categoryMatch";
 import { parseExDateFromNote, parseQuantityFromNote } from "../utils/dividend";
 import { getKrNames } from "../storage";
 import { STORAGE_KEYS } from "../constants/config";
@@ -104,12 +105,11 @@ export const DividendsView: React.FC<Props> = ({ accounts, ledger, trades, price
   }, [propFxRate]);
 
   const incomeRows = useMemo(() => {
+    // 분류 단일소스(categoryMatch) — category/subCategory는 정확 매칭으로 위양성("비배당" 등) 제거.
+    // description은 앱 생성 배당 항목이 본문에 종목/배당을 기록하므로 fallback 유지.
     const isDividend = (l: LedgerEntry) =>
       l.kind === "income" &&
-      ((l.category ?? "").includes("배당") ||
-        (l.category ?? "").includes("이자") ||
-        (l.subCategory ?? "").includes("배당") ||
-        (l.subCategory ?? "").includes("이자") ||
+      (isDividendEntry(l) || isInterestEntry(l) ||
         (l.description ?? "").includes("배당") ||
         (l.description ?? "").includes("이자"));
 
@@ -218,7 +218,8 @@ export const DividendsView: React.FC<Props> = ({ accounts, ledger, trades, price
         quantityAtDate = ticker && l.date ? getQuantityAtDate(ticker, l.date, accountIdForPosition) : undefined;
       }
       const quantity = quantityAtDate;
-      const amount = l.amount;
+      // USD 배당/이자는 원화로 환산해야 합계·수익률(KRW 원가 대비)이 일관 (불변식 #5). 환율 미로드 시 raw 폴백.
+      const amount = l.currency === "USD" && fxRate ? l.amount * fxRate : l.amount;
       const dividendPerShare = quantity != null && quantity > 0 ? amount / quantity : undefined;
       const dateForCost = parseExDateFromNote(l.note) || l.date || "";
       const costBasis = ticker && dateForCost ? getCostBasisAtDate(ticker, dateForCost, accountIdForPosition) : 0;

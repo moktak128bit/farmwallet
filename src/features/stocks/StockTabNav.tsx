@@ -1,6 +1,6 @@
 import React from "react";
 
-type StockPageTab = "stocks" | "portfolio" | "fx";
+type StockPageTab = "stocks" | "portfolio" | "fx" | "etf";
 
 interface Props {
   activeTab: StockPageTab;
@@ -44,6 +44,14 @@ export const StockTabNav: React.FC<Props> = ({ activeTab, setActiveTab, showFxTa
           환전
         </button>
       )}
+      <button
+        type="button"
+        className={activeTab === "etf" ? "primary" : "secondary"}
+        onClick={() => setActiveTab("etf")}
+        style={btn("etf")}
+      >
+        ETF 괴리율
+      </button>
     </div>
   );
 };

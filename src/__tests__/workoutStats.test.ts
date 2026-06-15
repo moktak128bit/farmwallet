@@ -110,6 +110,34 @@ describe("getExerciseSessions", () => {
     ];
     expect(getExerciseSessions(weeks, "벤치프레스")).toEqual([]);
   });
+
+  it("맨몸운동(중량 0, reps만)도 세션으로 집계 — 예전엔 사라졌음", () => {
+    const weeks = [
+      mkWeek("2026-01-04", [
+        { date: "2026-01-06", exercises: [{ name: "푸시업", sets: [mkSet(0, 20), mkSet(0, 15)] }] }
+      ])
+    ];
+    const sessions = getExerciseSessions(weeks, "푸시업");
+    expect(sessions).toHaveLength(1);
+    expect(sessions[0].maxReps).toBe(20);
+    expect(sessions[0].totalReps).toBe(35);
+    expect(sessions[0].maxWeight).toBe(0);
+    expect(sessions[0].totalVolume).toBe(0);
+    expect(sessions[0].completedSetCount).toBe(2);
+  });
+
+  it("중량 운동 지표는 reps 필드 추가 후에도 동일 (회귀)", () => {
+    const weeks = [
+      mkWeek("2026-01-04", [
+        { date: "2026-01-06", exercises: [{ name: "벤치프레스", sets: [mkSet(60, 10), mkSet(80, 5)] }] }
+      ])
+    ];
+    const [s] = getExerciseSessions(weeks, "벤치프레스");
+    expect(s.totalVolume).toBe(600 + 400);
+    expect(s.maxWeight).toBe(80);
+    expect(s.maxReps).toBe(10);
+    expect(s.totalReps).toBe(15);
+  });
 });
 
 describe("detectPRs", () => {

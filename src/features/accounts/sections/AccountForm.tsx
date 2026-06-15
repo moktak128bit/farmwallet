@@ -19,7 +19,6 @@ export const AccountForm: React.FC<Props> = React.memo(function AccountForm({ on
     type: "checking" as AccountType,
     initialBalance: "",
     debt: "",
-    savings: "",
     cashAdjustment: "",
     initialCashBalance: "",
     note: "",
@@ -38,7 +37,6 @@ export const AccountForm: React.FC<Props> = React.memo(function AccountForm({ on
     const amount = parseAmount(form.initialBalance);
     const rawDebt = parseAmount(form.debt);
     const debt = rawDebt;
-    const savings = parseAmount(form.savings);
     const cashAdjustment = parseAmount(form.cashAdjustment);
     const initialCashBalance = parseAmount(form.initialCashBalance);
     const account: Account = {
@@ -48,7 +46,7 @@ export const AccountForm: React.FC<Props> = React.memo(function AccountForm({ on
       type: form.type,
       initialBalance: amount,
       debt,
-      savings,
+      savings: 0,
       cashAdjustment: (form.type === "securities" || form.type === "crypto") ? cashAdjustment : undefined,
       initialCashBalance: (form.type === "securities" || form.type === "crypto") && initialCashBalance > 0 ? initialCashBalance : undefined,
       note: form.note.trim() || undefined,
@@ -61,7 +59,6 @@ export const AccountForm: React.FC<Props> = React.memo(function AccountForm({ on
       type: "checking",
       initialBalance: "",
       debt: "",
-      savings: "",
       cashAdjustment: "",
       initialCashBalance: "",
       note: "",
@@ -130,16 +127,6 @@ export const AccountForm: React.FC<Props> = React.memo(function AccountForm({ on
           placeholder="예: 100000"
           value={form.debt}
           onChange={(e) => setForm({ ...form, debt: e.target.value })}
-        />
-      </label>
-      <label>
-        <span>저축</span>
-        <input
-          type="number"
-          min={0}
-          placeholder="0"
-          value={form.savings}
-          onChange={(e) => setForm({ ...form, savings: e.target.value })}
         />
       </label>
       {(form.type === "securities" || form.type === "crypto") && (

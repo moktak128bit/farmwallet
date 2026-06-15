@@ -3,6 +3,9 @@ import type { Payload, ValueType, NameType } from "recharts/types/component/Defa
 import type { PieLabelRenderProps } from "recharts/types/polar/Pie";
 import type { IncomeNature } from "../../utils/realIncome";
 import type { MoimFlowAnalysis } from "../../utils/dateAccounting";
+// 추세·패턴 파생 지표 타입은 산출 모듈이 소유 (useInsightsData 점진적 리팩터)
+import type { IncomeGrowth, SpendingInertia, CategoryGrowthRow } from "../../utils/insightsTrends";
+import type { EntryOutlier, PatternStats } from "../../utils/insightsPatterns";
 
 /* ================================================================== */
 /*  Constants                                                          */
@@ -234,54 +237,6 @@ export interface AnomalyLite {
   isAnomaly: boolean;
 }
 
-export interface IncomeGrowth {
-  series: { l: string; month: string; income: number; momPct: number | null }[];
-  mom: number | null;
-  yoy: number | null;
-  avg3MoM: number | null;
-  targetInc: number;
-  prevInc: number;
-  /** 대상 월이 진행 중인 이번 달이면 오늘 일자(1~N) — MoM/YoY가 전월·전년의 같은 기간(1~N일)과 비교됐음을 의미 */
-  partialDay: number | null;
-}
-
-export interface SpendingInertia {
-  curExp: number;
-  avg: number;
-  deviation: number | null;
-  lookbackMonths: number;
-  /** 진행 중인 달이면 오늘 일자 — avg가 과거 3개월의 같은 기간(1~N일) 평균임을 의미 */
-  partialDay: number | null;
-}
-
-export interface CategoryGrowthRow {
-  sub: string;
-  cur: number;
-  avg3: number;
-  /** 신규 카테고리(avg3=0)의 경우 Infinity — UI는 isNew로 분기 */
-  pctChange: number;
-  isNew: boolean;
-}
-
-export interface EntryOutlier {
-  date: string;
-  desc: string;
-  sub: string;
-  cat: string;
-  amount: number;
-  zScore: number;
-  avg: number;
-}
-
-export interface PatternStats {
-  longestSpendStreak: number;
-  longestZeroStreak: number;
-  currentStreakType: "none" | "spend" | "zero";
-  currentStreakDays: number;
-  zeroDaysPerMonth: { month: string; label: string; zeroDays: number; totalDays: number }[];
-  avgIntervalDays: number;
-}
-
 export interface D {
   months: string[];
   ml: Record<string, string>;
@@ -346,6 +301,10 @@ export interface D {
   realPL: { total: number; wins: number; losses: number; winCnt: number; lossCnt: number };
   /** 투자 손익 4분할 (KRW 환산, 손실은 양의 절대값). 실현=FIFO 청산 누적, 미실현=보유×(현재가-평단). */
   investBreakdown: { realizedGain: number; realizedLoss: number; unrealizedGain: number; unrealizedLoss: number };
+  /** 현재 보유 종목별 FIFO 매입원가·평가액(KRW, costKRW 내림차순). 누적 매수액(gross) 아님 — 매도-재매수 중복 방지. */
+  holdingsByStock: { name: string; costKRW: number; valueKRW: number }[];
+  /** 보유 종목 FIFO 매입원가 합(KRW) = 투자 '원금'. 배당률·회전율·집중도 분모. */
+  totalHoldingsCost: number;
   zeroDays: number;
   totalDays: number;
   weekendTot: number;

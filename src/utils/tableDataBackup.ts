@@ -208,10 +208,29 @@ function buildWorkoutTables(weeks: WorkoutWeek[]) {
     });
   }
 
-  return { workout_weeks, workout_day_entries, workout_exercises, workout_sets };
+  return {
+    workout_weeks,
+    workout_day_entries,
+    workout_exercises,
+    workout_sets,
+    // 완전 round-trip용 — 위 표(가독성)는 done/목표중량/목표반복/휴식·카디오 시간 등 일부 필드를 떨궈
+    // 복원 시 운동 통계(done 세트만 집계)가 깨졌음. weeks 전체를 JSON으로 보존해 모든 필드를 무손실 복원한다.
+    workout_data_json: [{ json: JSON.stringify(weeks) }]
+  };
 }
 
 function parseWorkoutWeeks(tables: Record<string, unknown>): WorkoutWeek[] {
+  // 완전 보존 JSON이 있으면 우선 사용 — done/목표/휴식 등 모든 필드 무손실 복원.
+  // 구버전 백업(JSON 없음)은 아래 표 기반 복원으로 폴백.
+  const jsonRows = asArray<{ json?: unknown }>(tables.workout_data_json);
+  if (jsonRows.length > 0 && typeof jsonRows[0]?.json === "string") {
+    try {
+      const parsed = JSON.parse(jsonRows[0].json as string);
+      if (Array.isArray(parsed)) return parsed as WorkoutWeek[];
+    } catch {
+      /* 손상 시 아래 표 기반 복원으로 폴백 */
+    }
+  }
   const weekRows = asArray<{ id?: string; week_start?: string }>(tables.workout_weeks);
   type DayRow = {
     id?: string;

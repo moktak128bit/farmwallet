@@ -6,7 +6,7 @@ import {
   generateMonthlyIncomeDetail
 } from "../utils/reportGenerator";
 import { generateLedgerMarkdownReport } from "../utils/ledgerMarkdownReport";
-import type { Account, LedgerEntry } from "../types";
+import type { Account, LedgerEntry, StockTrade } from "../types";
 
 const account = (o: Partial<Account> & { id: string }): Account => ({
   name: o.id,
@@ -24,6 +24,20 @@ const entry = (o: Partial<LedgerEntry> & { id: string }): LedgerEntry => ({
   amount: 1000,
   ...o,
 } as LedgerEntry);
+
+describe("generateComprehensiveMonthlyReport — USD 실현손익은 거래시점 환율(fxRateAtTrade)", () => {
+  it("과거 USD 매도를 '현재' 환율이 아닌 거래 당시 환율로 환산 (화면 간 손익 정합)", () => {
+    const accounts = [account({ id: "sec1", type: "securities" })];
+    const trades: StockTrade[] = [
+      { id: "tb", date: "2026-01-10", accountId: "sec1", ticker: "AAPL", name: "Apple", side: "buy", quantity: 10, price: 100, fee: 0, totalAmount: 1000, cashImpact: 0, fxRateAtTrade: 1000 },
+      { id: "ts", date: "2026-02-10", accountId: "sec1", ticker: "AAPL", name: "Apple", side: "sell", quantity: 10, price: 150, fee: 0, totalAmount: 1500, cashImpact: 0, fxRateAtTrade: 1200 },
+    ];
+    // 거래시점: 1500×1200 − 1000×1000 = 800,000. (옛 현재환율(1500) 방식이면 ($500)×1500 = 750,000)
+    const rows = generateComprehensiveMonthlyReport([], trades, accounts, "2026-01", "2026-02", 1500);
+    const feb = rows.find((r) => r.month === "2026-02");
+    expect(feb?.realizedPnl).toBe(800_000);
+  });
+});
 
 describe("generateClosingReportData — 정산 스냅샷 부채 부호", () => {
   it("부채가 있는 계좌의 월간 스냅샷에서 debt가 양수로 나온다 (자산 − 순자산)", () => {

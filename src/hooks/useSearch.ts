@@ -3,6 +3,7 @@ import type { AppData } from "../types";
 import { STORAGE_KEYS } from "../constants/config";
 import { toast } from "react-hot-toast";
 import { isUSDStock } from "../utils/finance";
+import { newIdWithPrefix } from "../utils/id";
 import { useFxRateValue } from "../context/FxRateContext";
 
 export interface SearchQuery {
@@ -121,7 +122,7 @@ export function useSearch(data: AppData, fxRate?: number | null) {
 
   const saveCurrentFilter = (name: string) => {
     if (!name.trim()) return;
-    const entry: SavedFilter = { id: `F${Date.now()}`, name: name.trim(), query: searchQuery };
+    const entry: SavedFilter = { id: newIdWithPrefix("F"), name: name.trim(), query: searchQuery };
     const next = [entry, ...savedFilters].slice(0, 10);
     setSavedFilters(next);
     if (typeof window !== "undefined") {

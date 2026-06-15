@@ -66,6 +66,9 @@ export const IncomeTab = React.memo(function IncomeTab({ d }: { d: D }) {
       {/* 상단 기간·단위 배너 */}
       <div style={{ padding: "10px 14px", background: "var(--bg)", borderRadius: 8, marginBottom: 16, fontSize: 12, color: "var(--text-muted)", lineHeight: 1.6 }}>
         ℹ️ 범위: <strong>{rangeLabel}</strong> ({periodLabel}) · 단위: <strong>원</strong> · 분류: 회사소득(급여·수당·상여) / 투자·패시브(배당·이자·투자수익) / 기타수입(캐시백 등 부수입) / 비실질(정산·환불·지원·용돈·대출 — 실질 수입 제외)
+        <div style={{ marginTop: 4 }}>
+          분류는 자동 감지입니다. 월급·배당 등이 잘못 분류됐다면 <strong>설정 ▸ 항목 관리 ▸ 수입 성격 지정</strong>에서 카테고리별로 직접 지정할 수 있습니다.
+        </div>
       </div>
 
       {/* ============ 한눈에 보기 ============ */}

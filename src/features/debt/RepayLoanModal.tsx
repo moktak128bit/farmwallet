@@ -12,6 +12,7 @@ import type { Account, LedgerEntry, Loan } from "../../types";
 import { formatKRW } from "../../utils/formatter";
 import { parseAmount } from "../../utils/parseAmount";
 import { getTodayKST } from "../../utils/date";
+import { newIdWithPrefix } from "../../utils/id";
 import { useFocusTrap } from "../../hooks/useFocusTrap";
 import { useModalStackEntry } from "../../utils/modalStack";
 import { isInGracePeriod } from "./debtShared";
@@ -93,7 +94,7 @@ export const RepayLoanModal: React.FC<Props> = React.memo(function RepayLoanModa
     }
 
     const newEntry: LedgerEntry = {
-      id: `LEDGER-${Date.now()}-${Math.random().toString(36).slice(2, 9)}`,
+      id: newIdWithPrefix("L"),
       date: repayDate,
       kind: "expense",
       category: "지출",

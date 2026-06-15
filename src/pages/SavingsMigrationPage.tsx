@@ -1,6 +1,7 @@
 import React, { useMemo, useState } from "react";
 import { toast } from "react-hot-toast";
 import type { AppData, Account, LedgerEntry } from "../types";
+import { saveSafetySnapshot } from "../services/backupService";
 
 interface Props {
   data: AppData;
@@ -67,7 +68,7 @@ export const SavingsMigrationView: React.FC<Props> = ({ data, onChangeData }) =>
     Record<string, string>
   >(() => ({}));
 
-  const handleApply = () => {
+  const handleApply = async () => {
     if (!fromAccountId.trim()) {
       toast.error("출금 계좌(농협)를 선택해주세요.");
       return;
@@ -76,6 +77,7 @@ export const SavingsMigrationView: React.FC<Props> = ({ data, onChangeData }) =>
       return;
     }
 
+    await saveSafetySnapshot(data, "저축성지출 계좌 일괄 변경 직전 자동 스냅샷");
     let updated = 0;
     const newLedger = ledger.map((entry) => {
       if (!isTargetEntry(entry)) return entry;
@@ -85,7 +87,8 @@ export const SavingsMigrationView: React.FC<Props> = ({ data, onChangeData }) =>
       return {
         ...entry,
         fromAccountId: fromAccountId.trim() || undefined,
-        toAccountId: toId?.trim() || undefined
+        // 매핑 안 된 중분류는 기존 입금 계좌 보존 (undefined로 덮어쓰면 입금계좌가 삭제됨)
+        toAccountId: toId?.trim() || entry.toAccountId
       };
     });
 
@@ -101,10 +104,11 @@ export const SavingsMigrationView: React.FC<Props> = ({ data, onChangeData }) =>
    * (이전 구현은 v8 이전 형식(category=재테크, subCategory=저축/투자)을 만들어
    *  마이그레이션이 재실행되지 않는 한 집계에서 어긋났음.)
    */
-  const handleConvertToRecheck = () => {
+  const handleConvertToRecheck = async () => {
     if (!window.confirm(`저축성지출 ${targetEntries.length}건을 이체(저축이체/투자이체)로 일괄 전환합니다. 계속할까요?`)) {
       return;
     }
+    await saveSafetySnapshot(data, "저축성지출→이체 전환 직전 자동 스냅샷");
     let updated = 0;
     const newLedger = ledger.map((entry) => {
       if (!isTargetEntry(entry)) return entry;
@@ -126,7 +130,7 @@ export const SavingsMigrationView: React.FC<Props> = ({ data, onChangeData }) =>
     defaultFromAccountId(accounts)
   );
 
-  const handleRecheckFromAccountApply = () => {
+  const handleRecheckFromAccountApply = async () => {
     if (!recheckFromAccountId.trim()) {
       toast.error("출금 계좌(농협)를 선택해주세요.");
       return;
@@ -134,6 +138,7 @@ export const SavingsMigrationView: React.FC<Props> = ({ data, onChangeData }) =>
     if (!window.confirm(`재테크 ${recheckEntries.length}건의 출금 계좌를 일괄 변경합니다. 계속할까요?`)) {
       return;
     }
+    await saveSafetySnapshot(data, "재테크 출금계좌 일괄 변경 직전 자동 스냅샷");
     let updated = 0;
     const newLedger = ledger.map((entry) => {
       if (!isRecheckEntry(entry)) return entry;

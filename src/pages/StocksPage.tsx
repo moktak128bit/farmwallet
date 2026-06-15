@@ -19,6 +19,7 @@ import { PresetSection } from "../features/stocks/PresetSection";
 import { PresetModal } from "../features/stocks/PresetModal";
 import { TradeHistorySection } from "../features/stocks/TradeHistorySection";
 import { PositionListSection } from "../features/stocks/PositionListSection";
+import { EtfDiscountSection } from "../features/stocks/EtfDiscountSection";
 import { ChartSkeleton } from "../components/charts/ChartSkeleton";
 import { StockTabNav } from "../features/stocks/StockTabNav";
 import { QuoteErrorBanner } from "../features/stocks/QuoteErrorBanner";
@@ -38,6 +39,8 @@ import { computePositions } from "../calculations";
 import { buildClosedTradeRecords, summarizeRecords } from "../utils/investmentRecord";
 import { fetchYahooQuotes } from "../yahooFinanceApi";
 import { isUSDStock, canonicalTickerForMatch } from "../utils/finance";
+import { newIdWithPrefix } from "../utils/id";
+import { isDividendEntry } from "../utils/categoryMatch";
 import { toast } from "react-hot-toast";
 import { blocksToCsv, type ReportBlock } from "../utils/reportExport";
 
@@ -107,7 +110,7 @@ export const StocksView: React.FC<Props> = ({
     }
   }, [propFxRate]);
   // 탭 관리
-  const [activeTab, setActiveTab] = useState<"stocks" | "portfolio" | "fx">("stocks");
+  const [activeTab, setActiveTab] = useState<"stocks" | "portfolio" | "fx" | "etf">("stocks");
   const [selectedPosition, setSelectedPosition] = useState<PositionWithPrice | null>(null);
 
   // 거래 입력 폼 상태는 TradeFormSection이 소유 — 외부 접점(거래 수정·빠른 매수/매도·프리셋·Ctrl+S)은 ref API로
@@ -243,11 +246,9 @@ export const StocksView: React.FC<Props> = ({
   );
 
   const totalDividend = useMemo(() => {
+    // 분류 단일소스(categoryMatch) — cat/sub 정확 매칭 + description fallback (앱 생성 배당 본문)
     const isDividend = (l: LedgerEntry) =>
-      l.kind === "income" &&
-      ((l.category ?? "").includes("배당") ||
-        (l.subCategory ?? "").includes("배당") ||
-        (l.description ?? "").includes("배당"));
+      l.kind === "income" && (isDividendEntry(l) || (l.description ?? "").includes("배당"));
     const toKrw = (l: LedgerEntry) =>
       l.currency === "USD" && fxRate ? l.amount * fxRate : l.amount;
     return ledger.filter(isDividend).reduce((s, l) => s + toKrw(l), 0);
@@ -473,7 +474,7 @@ export const StocksView: React.FC<Props> = ({
     if (!tradeForm) return;
 
     const newPreset: StockPreset = {
-      id: `PRESET-${Date.now()}`,
+      id: newIdWithPrefix("PRESET"),
       name: presetName.trim(),
       accountId: tradeForm.accountId,
       ticker: tradeForm.ticker,
@@ -636,6 +637,9 @@ export const StocksView: React.FC<Props> = ({
           />
         </>
       )}
+
+      {/* ETF 괴리율 탭 — 환전 옆 별도 탭 */}
+      {activeTab === "etf" && <EtfDiscountSection />}
 
       {/* 포트폴리오 분석 탭 */}
       {activeTab === "portfolio" && (

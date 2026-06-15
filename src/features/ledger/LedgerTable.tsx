@@ -114,15 +114,15 @@ export const LedgerTable: React.FC<Props> = React.memo(function LedgerTable({
   const [showDailySummary, setShowDailySummary] = useState<boolean>(() => {
     try { return localStorage.getItem("fw-daily-summary") !== "false"; } catch { return true; }
   });
-  // 행 순서 변경(☰ 드래그 / ▲▼ 버튼)은 날짜 정렬일 때만 — 다른 정렬에선 배열 순서가 표시에 안 보임.
+  // 행 순서 변경(☰ 드래그)은 날짜 정렬일 때만 — 다른 정렬에선 배열 순서가 표시에 안 드러남.
   // 전체·월별 보기 모두 허용 (월별 보기에서도 같은 날짜 안에서 순서를 바꿀 수 있어야 함).
-  // 드래그는 터치 기기(PWA)에서 동작하지 않으므로 ▲▼ 버튼을 병행 제공한다.
   const canReorder = ledgerSort.key === "date";
 
-  // 행별 같은-날짜 인접 항목 존재 여부(▲▼ 버튼 활성화용) — 표시 목록 기준.
-  // 같은 날짜의 실제 항목(주식 가상 행 제외)이 위/아래에 있으면 이동 가능.
+  // 모바일(터치)은 네이티브 HTML5 드래그가 동작하지 않으므로 ▲▼ 버튼으로 순서 이동 제공.
+  // 데스크톱은 ☰ 드래그만 사용(버튼 미표시). 행별 같은-날짜 인접 실제 항목 존재 여부를 미리 계산.
   const moveability = useMemo(() => {
     const m = new Map<string, { up: boolean; down: boolean }>();
+    if (!coarsePointer || !canReorder) return m;
     const rows = filteredLedger;
     const isReal = (r: LedgerDisplayRow) => !(r as LedgerDisplayRow)._tradeId;
     for (let i = 0; i < rows.length; i += 1) {
@@ -134,7 +134,7 @@ export const LedgerTable: React.FC<Props> = React.memo(function LedgerTable({
       m.set(r.id, { up, down });
     }
     return m;
-  }, [filteredLedger]);
+  }, [filteredLedger, coarsePointer, canReorder]);
 
   // 컬럼 너비 상태 (localStorage에서 로드; 10개 = 데이터 9 + 작업 1: 할인 전·할인·최종)
   const [columnWidths, setColumnWidths] = useState<number[]>(() => {
@@ -260,6 +260,13 @@ export const LedgerTable: React.FC<Props> = React.memo(function LedgerTable({
         return;
       }
       const disc = entry.discountAmount ?? 0;
+      // 할인 전 금액이 할인액보다 작으면 net이 음수가 되어 집계가 깨짐 → 거부
+      if (disc > 0 && gross < disc) {
+        toast.error(`할인 전 금액은 할인액(${disc.toLocaleString()})보다 작을 수 없습니다`);
+        setEditingField(null);
+        setEditingValue("");
+        return;
+      }
       updated.amount = gross - disc;
     } else if (field === "amount") {
       const isUSD = entry.currency === "USD";
@@ -367,8 +374,8 @@ export const LedgerTable: React.FC<Props> = React.memo(function LedgerTable({
     onChangeLedger(next);
   };
 
-  // ▲▼ 버튼 이동 — 표시 목록에서 같은 날짜의 인접 실제 항목을 찾아 배열 위치를 교환한다.
-  // (같은 날짜 표시 순서 = 배열 순서이므로 두 항목 위치를 바꾸면 표시 순서가 바뀐다. 터치 대응)
+  // ▲▼ 버튼(터치) 이동 — 표시 목록에서 같은 날짜의 인접 실제 항목과 배열 위치를 교환한다.
+  // 같은 날짜 표시 순서 = 배열 순서이므로 두 항목 위치를 바꾸면 표시 순서가 바뀐다.
   const handleMove = (id: string, dir: "up" | "down") => {
     const rows = filteredLedger;
     const idx = rows.findIndex((r) => r.id === id);
@@ -553,10 +560,10 @@ export const LedgerTable: React.FC<Props> = React.memo(function LedgerTable({
                     <div style={{ display: "flex", alignItems: "center", gap: 12, flexWrap: "wrap" }}>
                       <span style={{ fontWeight: 600, color: "var(--text)" }}>{formatShortDate(dayDate)}</span>
                       <span style={{ color: "var(--text-muted)" }}>{dayCount}건</span>
-                      {/* 색상 의미는 요약 카드와 동일: 수입=초록(success), 지출=빨강(danger) */}
-                      {dayIncome > 0 && <span style={{ color: "var(--success)", fontWeight: 500 }}>+{formatKRW(dayIncome)}</span>}
-                      {dayExpense > 0 && <span style={{ color: "var(--danger)", fontWeight: 500 }}>-{formatKRW(dayExpense)}</span>}
-                      <span style={{ fontWeight: 600, color: net >= 0 ? "var(--success)" : "var(--danger)" }}>
+                      {/* 국내 관례: 수입=빨강(chart-income), 지출=파랑(chart-expense) */}
+                      {dayIncome > 0 && <span style={{ color: "var(--chart-income)", fontWeight: 500 }}>+{formatKRW(dayIncome)}</span>}
+                      {dayExpense > 0 && <span style={{ color: "var(--chart-expense)", fontWeight: 500 }}>-{formatKRW(dayExpense)}</span>}
+                      <span style={{ fontWeight: 600, color: net >= 0 ? "var(--chart-income)" : "var(--chart-expense)" }}>
                         = {net >= 0 ? "+" : ""}{formatKRW(net)}
                       </span>
                     </div>
@@ -1146,7 +1153,7 @@ export const LedgerTable: React.FC<Props> = React.memo(function LedgerTable({
               </td>
               <td style={{ width: ledgerColumnWidthStyles[10] }}>
                 <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
-                  {canReorder && !(l as LedgerDisplayRow)._tradeId && (
+                  {coarsePointer && canReorder && !(l as LedgerDisplayRow)._tradeId && (
                     <div style={{ display: "flex", flexDirection: "column", gap: 1 }} title="같은 날짜 안에서 순서 이동">
                       <button
                         type="button"

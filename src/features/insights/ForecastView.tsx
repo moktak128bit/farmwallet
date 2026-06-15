@@ -1,6 +1,7 @@
 import React, { useMemo } from "react";
 import type { LedgerEntry, RecurringExpense } from "../../types";
 import { forecastNextMonth } from "../../utils/forecast";
+import { getThisMonthKST } from "../../utils/date";
 import { Section } from "./insightsShared";
 
 interface Props {
@@ -15,8 +16,7 @@ const monthLabel = (yyyymm: string) => {
 };
 
 export const ForecastView: React.FC<Props> = ({ ledger, recurring, formatNumber }) => {
-  const today = new Date();
-  const currentMonth = `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, "0")}`;
+  const currentMonth = getThisMonthKST();
   const [lookback, setLookback] = React.useState(6);
 
   const result = useMemo(

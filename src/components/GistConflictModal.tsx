@@ -2,6 +2,7 @@ import React, { useEffect, useMemo, useState } from "react";
 import type { GistConflict } from "../store/uiStore";
 import type { GistConflictResolution } from "../hooks/useGistSync";
 import { useFocusTrap } from "../hooks/useFocusTrap";
+import { useModalStackEntry } from "../utils/modalStack";
 
 interface GistConflictModalProps {
   conflict: GistConflict | null;
@@ -32,6 +33,7 @@ function summarizeJson(json: string): { ledger: number | string; trades: number 
 export const GistConflictModal: React.FC<GistConflictModalProps> = ({ conflict, onResolve }) => {
   const [busy, setBusy] = useState<GistConflictResolution | null>(null);
   const trapRef = useFocusTrap<HTMLDivElement>(!!conflict);
+  const isTopModal = useModalStackEntry(!!conflict);
 
   const summary = useMemo(() => {
     if (!conflict) return null;
@@ -45,14 +47,15 @@ export const GistConflictModal: React.FC<GistConflictModalProps> = ({ conflict, 
   useEffect(() => {
     if (!conflict) return;
     const onKeyDown = (e: KeyboardEvent) => {
-      if (e.key === "Escape") {
+      // 모달 중첩 시 최상위 모달만 ESC로 닫힘
+      if (e.key === "Escape" && isTopModal()) {
         e.stopPropagation();
         onResolve("cancel");
       }
     };
     window.addEventListener("keydown", onKeyDown);
     return () => window.removeEventListener("keydown", onKeyDown);
-  }, [conflict, onResolve]);
+  }, [conflict, onResolve, isTopModal]);
 
   if (!conflict || !summary) return null;
 

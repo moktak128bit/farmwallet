@@ -3,6 +3,7 @@ import { toast } from "react-hot-toast";
 import type { Account, LedgerEntry } from "../../../types";
 import { parseAmount } from "../../../utils/parseAmount";
 import { getTodayKST } from "../../../utils/date";
+import { newIdWithPrefix } from "../../../utils/id";
 
 interface Props {
   account: Account;
@@ -31,7 +32,7 @@ export function CardPaymentSection({
     // KST 기준 오늘 — UTC 변환 시 00:00~08:59에 전날로 기록되는 문제 방지
     const today = getTodayKST();
     const entry: LedgerEntry = {
-      id: `LEDGER-${Date.now()}-${Math.random().toString(36).slice(2, 9)}`,
+      id: newIdWithPrefix("L"),
       date: today,
       kind: "transfer",
       category: "이체",

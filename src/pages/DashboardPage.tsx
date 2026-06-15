@@ -50,10 +50,10 @@ import {
   computeAccountBalances,
   computeBalanceAtDateForAccounts,
   computePositions,
-  computeRealizedPnlByTradeId,
   computeTotalDebt,
   computeTotalNetWorth
 } from "../calculations";
+import { buildClosedTradeRecords, summarizeRecords } from "../utils/investmentRecord";
 import { useFxRateValue } from "../context/FxRateContext";
 import { useAppStore } from "../store/appStore";
 import {
@@ -199,17 +199,10 @@ export const DashboardView: React.FC<Props> = (props) => {
     [ledger, fxRate, currentMonth]
   );
 
-  /** 누적 실현손익: 매도 건 FIFO 실현손익 합계 (원화 환산) */
+  /** 누적 실현손익: 매도 건 FIFO 실현손익 합계 (KRW, 거래시점 환율 — 투자기록 카드·리포트와 동일 정의) */
   const totalRealizedPnl = useMemo(() => {
-    const byId = computeRealizedPnlByTradeId(trades);
-    let krw = 0;
-    trades.forEach((t) => {
-      if (t.side !== "sell") return;
-      const pnl = byId.get(t.id) ?? 0;
-      krw += isUSDStock(t.ticker) && fxRate ? pnl * fxRate : pnl;
-    });
-    return krw;
-  }, [trades, fxRate]);
+    return summarizeRecords(buildClosedTradeRecords(trades, accounts, fxRate ?? undefined)).totalPnl;
+  }, [trades, accounts, fxRate]);
 
   const balances = useMemo(
     () => computeAccountBalances(accounts, ledger, trades),

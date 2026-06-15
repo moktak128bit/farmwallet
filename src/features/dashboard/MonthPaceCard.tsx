@@ -7,7 +7,7 @@ import React, { useMemo } from "react";
 import type { Account, CategoryPresets, LedgerEntry } from "../../types";
 import { formatKRW } from "../../utils/formatter";
 import { shiftMonth } from "../../utils/date";
-import { isSavingsExpenseEntry } from "../../utils/category";
+import { isSavingsExpenseEntry, isCreditPayment } from "../../utils/category";
 
 interface Props {
   currentMonth: string;
@@ -41,7 +41,7 @@ export const MonthPaceCard: React.FC<Props> = React.memo(function MonthPaceCard(
       ledger.forEach((entry) => {
         if (!entry.date?.startsWith(m)) return;
         if (entry.kind !== "expense") return;
-        if (entry.category === "신용결제") return;
+        if (isCreditPayment(entry)) return;
         if (isSavingsExpenseEntry(entry, accounts, categoryPresets)) return;
         total += toKrw(entry);
       });

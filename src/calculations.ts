@@ -218,15 +218,19 @@ export function computePositions(
   accounts: Account[],
   options?: { fxRate?: number; priceFallback?: "zero" | "cost" }
 ): PositionRow[] {
+  // 같은 날짜는 매수 먼저·매도 나중 → id 순. FIFO 실현손익 경로
+  // (computeRealizedPnlByTradeId)와 동일 기준으로 통일: 같은 날 매도가 먼저 처리되면
+  // 큐가 비어 오버셀이 무시되고 매수 lot이 남아 보유수량·평가액이 부풀려지는 버그 방지.
+  const cmpTrade = (a: StockTrade, b: StockTrade) => {
+    if (a.date !== b.date) return a.date.localeCompare(b.date);
+    if (a.side === "buy" && b.side === "sell") return -1;
+    if (a.side === "sell" && b.side === "buy") return 1;
+    return a.id.localeCompare(b.id);
+  };
   let tradesSorted = trades;
   for (let i = 1; i < trades.length; i += 1) {
-    const prev = trades[i - 1];
-    const curr = trades[i];
-    if (prev.date > curr.date || (prev.date === curr.date && prev.id > curr.id)) {
-      tradesSorted = [...trades].sort((a, b) => {
-        if (a.date === b.date) return a.id.localeCompare(b.id);
-        return a.date.localeCompare(b.date);
-      });
+    if (cmpTrade(trades[i - 1], trades[i]) > 0) {
+      tradesSorted = [...trades].sort(cmpTrade);
       break;
     }
   }

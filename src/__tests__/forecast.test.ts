@@ -174,4 +174,24 @@ describe("forecastNextMonth", () => {
     const r = forecastNextMonth([], recurring, "2024-06");
     expect(r.byCategory.map((c) => c.category)).toEqual(["큼", "중간", "작음"]);
   });
+
+  it("현행 스키마(category='지출')는 subCategory 대분류로 분리 (한 버킷 붕괴 방지)", () => {
+    const cur = (date: string, sub: string, amount: number): LedgerEntry =>
+      ({ id: Math.random().toString(36).slice(2), date, kind: "expense", category: "지출", subCategory: sub, description: "", amount });
+    const ledger = [
+      cur("2024-05-10", "식비", 100_000), cur("2024-04-10", "식비", 100_000),
+      cur("2024-05-11", "교통", 50_000), cur("2024-04-11", "교통", 50_000),
+    ];
+    const r = forecastNextMonth(ledger, [], "2024-06", 6);
+    expect(r.byCategory.map((c) => c.category).sort()).toEqual(["교통", "식비"]);
+  });
+
+  it("신용결제·재테크(저축/투자)·환전은 지출 예측에서 제외", () => {
+    const ex = (cat: string, sub: string): LedgerEntry =>
+      ({ id: Math.random().toString(36).slice(2), date: "2024-05-10", kind: "expense", category: cat, subCategory: sub, description: "", amount: 500_000 });
+    const ledger = [ex("신용결제", "신용결제"), ex("재테크", "투자"), ex("환전", "환전수수료")];
+    const r = forecastNextMonth(ledger, [], "2024-06", 6);
+    expect(r.byCategory).toEqual([]);
+    expect(r.totalForecast).toBe(0);
+  });
 });

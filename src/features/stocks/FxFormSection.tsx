@@ -4,6 +4,7 @@ import type { Account, LedgerEntry } from "../../types";
 import { fetchYahooQuotes } from "../../yahooFinanceApi";
 import { formatKRW, formatUSD } from "../../utils/formatter";
 import { getTodayKST } from "../../utils/date";
+import { newIdWithPrefix } from "../../utils/id";
 import { ERROR_MESSAGES } from "../../constants/errorMessages";
 
 type FxCurrency = "KRW" | "USD";
@@ -163,7 +164,7 @@ export const FxFormSection: React.FC<FxFormSectionProps> = ({ accounts, ledger, 
       form.description ||
       `환전: ${fromCurrency === "KRW" ? formatKRW(fromAmount) : formatUSD(fromAmount)} → ${toCurrency === "KRW" ? formatKRW(toAmount) : formatUSD(toAmount)} (환율: ${rate.toFixed(2)})${fee > 0 ? ` (수수료 ${form.feeCurrency === "KRW" ? formatKRW(fee) : formatUSD(fee)})` : ""}`;
 
-    const baseId = `fx-${Date.now()}`;
+    const baseId = newIdWithPrefix("fx");
     // 사용자 카테고리 체계와 일치:
     //   transfer (환전 자체) → 이체 > 환전이체
     //   expense  (수수료)    → 지출 > 수수료 > 환전수수료

@@ -18,7 +18,9 @@ export const InvestTab = React.memo(function InvestTab({ d }: { d: D }) {
   const holdOnly = holdings.filter((h) => h.보유수량 > 0);
   const closedPL = holdings.filter((h) => h.보유수량 === 0 && h.매도 > 0);
   const noSellHoldings = holdOnly.filter((h) => h.매도 === 0 && h.매수 > 500000);
-  const totalInvested = holdOnly.reduce((s, h) => s + h.매수, 0);
+  // 보유 규모·원금·집중도는 FIFO 잔여원가(holdingsByStock) 기준 — 누적 매수액(gross)은 매도-재매수 시 부풀려짐.
+  const holdCost = d.holdingsByStock;
+  const totalInvested = d.totalHoldingsCost;
   // selMonth 필터 시 해당 월만, 아니면 전체 합 — totalInvested(d.trades 기반)와 스코프 일치
   // divTrend는 d.months와 평행 배열 — YYYY-MM 인덱스로 조회 ("6월" 라벨 find는 다른 해와 충돌)
   const totalDiv = d.selMonth
@@ -27,10 +29,10 @@ export const InvestTab = React.memo(function InvestTab({ d }: { d: D }) {
   const totalBuy = holdings.reduce((s, h) => s + h.매수, 0);
   const totalSell = holdings.reduce((s, h) => s + h.매도, 0);
 
-  // 포트폴리오 집중도 (HHI)
-  const hhi = totalInvested > 0 ? holdOnly.reduce((s, h) => s + Math.pow(h.매수 / totalInvested, 2), 0) : 0;
+  // 포트폴리오 집중도 (HHI) — FIFO 보유원가(costKRW) 기준
+  const hhi = totalInvested > 0 ? holdCost.reduce((s, h) => s + Math.pow(h.costKRW / totalInvested, 2), 0) : 0;
   const effectiveHoldings = hhi > 0 ? 1 / hhi : 0;
-  const topShare = totalInvested > 0 && holdOnly[0] ? (holdOnly[0].매수 / totalInvested) * 100 : 0;
+  const topShare = totalInvested > 0 && holdCost[0] ? (holdCost[0].costKRW / totalInvested) * 100 : 0;
 
   // 승수 (수익:손실 배수)
   const avgWin = d.realPL.winCnt > 0 ? d.realPL.wins / d.realPL.winCnt : 0;
@@ -64,7 +66,7 @@ export const InvestTab = React.memo(function InvestTab({ d }: { d: D }) {
 
       {/* ============ 한눈에 ============ */}
       <Section storageKey="invest-section-overview" title="📊 한눈에 보기">
-        <Card accent><Kpi label="총 매수금액 (보유)" value={F(totalInvested) + "원"} sub={`청산 포함 ${F(totalBuy)}원`} color="#f0c040" info="현재 보유 중인 종목의 매수금액 합 (매도 제외)" /></Card>
+        <Card accent><Kpi label="보유 종목 매입원가" value={F(totalInvested) + "원"} sub={`누적 매수(청산 포함) ${F(totalBuy)}원`} color="#f0c040" info="현재 보유분의 매입원가(FIFO 잔여원가). 매도분·재매수 중복을 제외 — 누적 매수액과 다름" /></Card>
         <Card accent>
           <Kpi
             label="실현 손익 (전체 누적)"
@@ -86,22 +88,22 @@ export const InvestTab = React.memo(function InvestTab({ d }: { d: D }) {
         <Card accent>
           <Kpi
             label="보유 종목 수"
-            value={`${holdOnly.length}종목`}
+            value={`${holdCost.length}종목`}
             sub={`청산 ${closedPL.length} · 실효 ${effectiveHoldings.toFixed(1)}개`}
             color="#fff"
             info="실효 종목 수 = 1 / HHI — 한 종목에 몰릴수록 작아짐"
           />
         </Card>
 
-        <Card title="보유 종목 (매수금액 기준)" span={2}>
-          {holdOnly.length === 0 ? <div style={{ textAlign: "center", padding: 40, color: "var(--text-faint)" }}>보유 종목 없음</div> : (
+        <Card title="보유 종목 (매입원가 기준)" span={2}>
+          {holdCost.length === 0 ? <div style={{ textAlign: "center", padding: 40, color: "var(--text-faint)" }}>보유 종목 없음</div> : (
             <ResponsiveContainer width="100%" height={280}>
-              <BarChart data={holdOnly.slice(0, 10)} layout="vertical">
+              <BarChart data={holdCost.slice(0, 10)} layout="vertical">
                 <CartesianGrid strokeDasharray="3 3" stroke="var(--chart-grid)" />
                 <XAxis type="number" tickFormatter={F} tick={{ fontSize: 11 }} />
                 <YAxis dataKey="name" type="category" width={150} tick={{ fontSize: 10 }} />
                 <Tooltip formatter={(v: ValueType | undefined) => W(Number(v ?? 0))} />
-                <Bar isAnimationActive={false} dataKey="매수" fill="#0f3460" radius={[0, 6, 6, 0]} name="매수금액" />
+                <Bar isAnimationActive={false} dataKey="costKRW" fill="#0f3460" radius={[0, 6, 6, 0]} name="매입원가" />
               </BarChart>
             </ResponsiveContainer>
           )}
@@ -167,7 +169,7 @@ export const InvestTab = React.memo(function InvestTab({ d }: { d: D }) {
           <Kpi
             label="실효 종목 수"
             value={effectiveHoldings.toFixed(1) + "개"}
-            sub={`실제 ${holdOnly.length}종목 · HHI ${(hhi * 100).toFixed(1)}`}
+            sub={`실제 ${holdCost.length}종목 · HHI ${(hhi * 100).toFixed(1)}`}
             color={effectiveHoldings >= 10 ? "#48c9b0" : effectiveHoldings >= 5 ? "#f0c040" : "#e94560"}
             info="1 / Σ(비중²). 같은 비율 N개면 N, 한 종목에 몰릴수록 작음. 10개↑ 권장"
           />
@@ -176,7 +178,7 @@ export const InvestTab = React.memo(function InvestTab({ d }: { d: D }) {
           <Kpi
             label="최대 종목 비중"
             value={topShare.toFixed(1) + "%"}
-            sub={holdOnly[0]?.fullName ?? "-"}
+            sub={holdCost[0]?.name ?? "-"}
             color={topShare > 50 ? "#e94560" : topShare > 30 ? "#f0c040" : "#48c9b0"}
             info="단일 종목 집중 위험 지표. 30% 이하 권장, 50% 초과면 집중 위험"
           />
@@ -341,14 +343,13 @@ export const InvestTab = React.memo(function InvestTab({ d }: { d: D }) {
 
         <Card title="투자 종합 인사이트" span={4}>
           <div className="grid-2" style={{ gap: 12 }}>
-            {holdOnly[0] && <Insight title="최대 보유 종목 분석" tone="info">
-              {holdOnly[0].fullName} — 총 매수금액 {F(holdOnly[0].매수)}원. 포트폴리오 비중 {topShare.toFixed(1)}%.
-              {holdOnly[0].매도 > 0 ? ` 일부 매도(${F(holdOnly[0].매도)}원). 실현손익 ${holdOnly[0].실현손익 >= 0 ? "+" : ""}${F(Math.round(holdOnly[0].실현손익))}원.` : " 매도 없이 보유 중."}
+            {holdCost[0] && <Insight title="최대 보유 종목 분석" tone="info">
+              {holdCost[0].name} — 매입원가 {F(holdCost[0].costKRW)}원 (FIFO 보유 기준). 포트폴리오 비중 {topShare.toFixed(1)}%.
               {topShare > 50 ? " ⚠️ 단일 종목 비중 50% 초과 — 분산 투자 고려 권장." : ""}
-              {holdOnly.length > 1 ? ` 2위: ${holdOnly[1].fullName}(${F(holdOnly[1].매수)}원).` : ""}
+              {holdCost.length > 1 ? ` 2위: ${holdCost[1].name}(${F(holdCost[1].costKRW)}원).` : ""}
             </Insight>}
             <Insight title="포트폴리오 분산" color="#7c3aed" bg="rgba(124,58,237,0.08)">
-              {holdOnly.length}종목 보유, 실효 {effectiveHoldings.toFixed(1)}개.
+              {holdCost.length}종목 보유, 실효 {effectiveHoldings.toFixed(1)}개.
               {effectiveHoldings < 5 ? " 분산 부족 — 5개 이상 실효 종목 권장. 한두 종목 실패가 전체에 큰 타격." :
                 effectiveHoldings < 10 ? " 적당한 수준. 10개↑로 더 분산하면 안정성 상승." :
                 " 훌륭한 분산. 시장 충격에 강한 구조."}

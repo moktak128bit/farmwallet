@@ -8,6 +8,7 @@
 import React, { useEffect, useMemo, useState } from "react";
 import { toast } from "react-hot-toast";
 import type { Account, AccountBalanceRow, LedgerEntry } from "../../../types";
+import { newIdWithPrefix } from "../../../utils/id";
 
 interface Props {
   /** 카드 제외 잔액 행 (부모 memo — "계좌별 잔액 구성" 표와 순서 공유) */
@@ -18,6 +19,8 @@ interface Props {
   onChangeAccounts: (next: Account[]) => void;
   onChangeLedger?: (next: LedgerEntry[]) => void;
   formatKRW: (n: number) => string;
+  /** 위험 작업(전 계좌 초기금액 덮어쓰기) 직전 안전 스냅샷 저장 — 부모가 AppData를 들고 제공 */
+  saveSnapshot?: (reason: string) => void | Promise<unknown>;
 }
 
 export const InitialReversePanel: React.FC<Props> = React.memo(function InitialReversePanel({
@@ -28,6 +31,7 @@ export const InitialReversePanel: React.FC<Props> = React.memo(function InitialR
   onChangeAccounts,
   onChangeLedger,
   formatKRW,
+  saveSnapshot,
 }) {
   /** Opening-balance reverse calc: user-entered actual current balances by account */
   const [actualCurrentInput, setActualCurrentInput] = useState<Record<string, string>>({});
@@ -180,7 +184,7 @@ export const InitialReversePanel: React.FC<Props> = React.memo(function InitialR
           ? [source.id, t.account.id, base]
           : [t.account.id, source.id, -base];
       return {
-        id: `LEDGER-${Date.now()}-${Math.random().toString(36).slice(2, 9)}`,
+        id: newIdWithPrefix("L"),
         date: seedDate,
         kind: "transfer",
         category: "이체",
@@ -224,7 +228,11 @@ export const InitialReversePanel: React.FC<Props> = React.memo(function InitialR
     setShowSeedPanel(false);
   };
 
-  const applyReversedInitial = () => {
+  const applyReversedInitial = async () => {
+    // 전 계좌의 시작금액을 한 번에 덮어쓰는 위험 작업 → 확인 + 안전 스냅샷 (불변식 #9)
+    const cnt = safeAccounts.filter((acc) => reversedInitialBalance(acc.id) != null && acc.type !== "card").length;
+    if (!window.confirm(`${cnt}개 계좌의 시작 금액을 역산값으로 덮어씁니다. 계속할까요?`)) return;
+    await saveSnapshot?.("계좌 시작금액 역산 적용 직전 자동 스냅샷");
     const updates: Account[] = safeAccounts.map((acc) => {
       const rev = reversedInitialBalance(acc.id);
       if (rev == null || acc.type === "card") return acc;

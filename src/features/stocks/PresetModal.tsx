@@ -1,6 +1,7 @@
 import { useEffect } from "react";
 import type { StockPreset } from "../../types";
 import { useFocusTrap } from "../../hooks/useFocusTrap";
+import { useModalStackEntry } from "../../utils/modalStack";
 
 interface Props {
   presets: StockPreset[];
@@ -19,14 +20,16 @@ export function PresetModal({
 }: Props) {
   // 모달 접근성: 포커스 트랩 + ESC 닫기 + role="dialog"
   const modalRef = useFocusTrap<HTMLDivElement>(true);
+  const isTopModal = useModalStackEntry(true);
 
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
-      if (e.key === "Escape") onClose();
+      // 모달 중첩 시 최상위 모달만 ESC로 닫힘
+      if (e.key === "Escape" && isTopModal()) onClose();
     };
     window.addEventListener("keydown", handleKeyDown);
     return () => window.removeEventListener("keydown", handleKeyDown);
-  }, [onClose]);
+  }, [onClose, isTopModal]);
 
   return (
     <div className="modal-backdrop" onClick={onClose}>

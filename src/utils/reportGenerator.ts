@@ -2,9 +2,10 @@ import type { Account, LedgerEntry, StockPrice, StockTrade } from "../types";
 import {
   computeAccountBalances,
   computePositions,
-  computeRealizedPnlByTradeId,
   computeRealizedPnlDetailByTradeId
 } from "../calculations";
+import { buildClosedTradeRecords } from "./investmentRecord";
+import { getTodayKST } from "./date";
 import { isSavingsExpenseEntry, isCreditPayment } from "./category";
 import { isDividendEntry, isInterestEntry } from "./categoryMatch";
 import { canonicalTickerForMatch, isUSDStock } from "./finance";
@@ -217,6 +218,17 @@ function convertPositionAmount(
   return amount;
 }
 
+/**
+ * 매도 건별 실현손익(KRW) — lot별 거래시점 환율(fxRateAtTrade) 기준.
+ * 대시보드·투자기록 카드(buildClosedTradeRecords)와 동일 정의로 통일 —
+ * 과거 USD 매도를 '현재' 환율로 환산하면 환변동분이 손익에 섞여 화면마다 값이 달라짐(불변식: 과거손익 보존).
+ */
+function realizedPnlKRWByTradeId(trades: StockTrade[], accounts: Account[], fxRate?: number): Map<string, number> {
+  const m = new Map<string, number>();
+  for (const r of buildClosedTradeRecords(trades, accounts, fxRate)) m.set(r.tradeId, r.realizedPnlKRW);
+  return m;
+}
+
 /** 배당 수입 판정 — categoryMatch 단일 진입점 (category/subCategory 정확 매칭, 위양성 방지) */
 function isDividendIncomeEntry(entry: LedgerEntry): boolean {
   return entry.kind === "income" && isDividendEntry(entry);
@@ -358,7 +370,7 @@ export function generateStockPerformanceReport(
   accounts: Account[]
 ): StockPerformanceReport[] {
   const positions = computePositions(trades, prices, accounts);
-  const today = formatIsoLocal(new Date());
+  const today = getTodayKST();
 
   return positions
     .map((position) => {
@@ -580,7 +592,7 @@ export function generateClosingReportData(
   prices: StockPrice[],
   fxRate?: number
 ): ClosingReportData {
-  const today = formatIsoLocal(new Date());
+  const today = getTodayKST();
   const allDates = [...ledger.map((entry) => entry.date), ...trades.map((trade) => trade.date)]
     .filter(Boolean)
     .sort();
@@ -753,7 +765,7 @@ export function generateAccountPerformanceBreakdown(
   fxRate?: number
 ): AccountPerformanceBreakdownRow[] {
   const accountById = new Map(accounts.map((account) => [account.id, account]));
-  const today = formatIsoLocal(new Date());
+  const today = getTodayKST();
 
   const timelineDates = Array.from(
     new Set<string>([today, ...ledger.map((entry) => entry.date), ...trades.map((trade) => trade.date)])
@@ -779,13 +791,12 @@ export function generateAccountPerformanceBreakdown(
     if (entry.fromAccountId) addFlow(entry.fromAccountId, entry.date, -amount);
   }
 
-  const realizedByTradeId = computeRealizedPnlByTradeId(trades);
+  const realizedByTradeId = realizedPnlKRWByTradeId(trades, accounts, fxRate);
   const realizedByAccount = new Map<string, number>();
   for (const trade of trades) {
     if (trade.side !== "sell") continue;
-    const account = accountById.get(trade.accountId);
-    let pnl = realizedByTradeId.get(trade.id) ?? 0;
-    pnl = convertPositionAmount(pnl, trade.ticker, account, fxRate);
+    // pnl은 이미 거래시점 환율로 KRW 환산됨 — convertPositionAmount(현재환율) 재적용 금지
+    const pnl = realizedByTradeId.get(trade.id) ?? 0;
     realizedByAccount.set(trade.accountId, (realizedByAccount.get(trade.accountId) ?? 0) + pnl);
   }
 
@@ -1147,7 +1158,7 @@ export function computeInvestmentReconciliation(
   const pnlSum = realizedPnl + unrealizedPnl + dividendIncome;
 
   // 포트폴리오 IRR — 초기자본·이체 순유입을 음(−), 현재 평가액을 양(+)으로
-  const today = formatIsoLocal(new Date());
+  const today = getTodayKST();
   let firstDate = today;
   for (const e of ledger) if (e.date && e.date < firstDate) firstDate = e.date;
   for (const t of trades) if (t.date && t.date < firstDate) firstDate = t.date;
@@ -1333,7 +1344,8 @@ export function generateComprehensiveMonthlyReport(
   startMonth?: string,
   endMonth?: string,
   fxRate?: number,
-  dateAccountId?: string | null
+  dateAccountId?: string | null,
+  nonRealIncomeOverride?: string[]
 ): ComprehensiveMonthlyRow[] {
   const accountById = new Map(accounts.map((a) => [a.id, a]));
 
@@ -1446,7 +1458,7 @@ export function generateComprehensiveMonthlyReport(
   }
 
   // 매매 집계 (월별)
-  const realizedByTradeId = computeRealizedPnlByTradeId(trades);
+  const realizedByTradeId = realizedPnlKRWByTradeId(trades, accounts, fxRate);
   for (const trade of trades) {
     const month = trade.date.slice(0, 7);
     if (month < rangeStart || month > rangeEnd) continue;
@@ -1461,9 +1473,8 @@ export function generateComprehensiveMonthlyReport(
       row.buyAmount += amount;
     } else {
       row.sellAmount += amount;
-      let pnl = realizedByTradeId.get(trade.id) ?? 0;
-      pnl = convertPositionAmount(pnl, trade.ticker, account, fxRate);
-      row.realizedPnl += pnl;
+      // pnl은 이미 거래시점 환율로 KRW 환산됨 — convertPositionAmount(현재환율) 재적용 금지
+      row.realizedPnl += realizedByTradeId.get(trade.id) ?? 0;
     }
   }
 
@@ -1472,7 +1483,8 @@ export function generateComprehensiveMonthlyReport(
     fxRate: fxRate ?? null,
     dateAccountId: dateAccountId ?? null,
     startMonth: rangeStart,
-    endMonth: rangeEnd
+    endMonth: rangeEnd,
+    nonRealIncomeOverride
   });
 
   // 최종 행 생성

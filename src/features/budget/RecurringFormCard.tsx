@@ -12,9 +12,10 @@
 import React, { useImperativeHandle, useState } from "react";
 import type { Account, Recurrence, RecurringExpense } from "../../types";
 import { getTodayKST } from "../../utils/date";
+import { newIdWithPrefix } from "../../utils/id";
 
 const createRecurring = (): RecurringExpense => ({
-  id: `R${Date.now()}`,
+  id: newIdWithPrefix("R"),
   title: "",
   amount: 0,
   category: "",

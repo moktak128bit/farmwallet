@@ -1,5 +1,7 @@
 import type { LedgerEntry, RecurringExpense } from "../types";
 import { parseIsoLocal } from "./date";
+import { isCreditPayment, isInvestmentEntry } from "./category";
+import { expenseMainName } from "./categoryMerge";
 
 interface CategoryForecast {
   category: string;
@@ -109,13 +111,18 @@ export function forecastNextMonth(
 
   const byCatMonth = new Map<string, Map<string, number>>();
   for (const e of ledger) {
-    if (e.kind !== "expense" || e.amount <= 0 || !e.category || !e.date) continue;
+    if (e.kind !== "expense" || e.amount <= 0 || !e.date) continue;
+    // 실제 소비만 — 신용결제(이중계상)·재테크(저축/투자)·환전(계좌이동)은 지출 예측에서 제외
+    if (isCreditPayment(e) || isInvestmentEntry(e) || e.category === "환전") continue;
+    // 대분류는 expenseMainName 단일소스 — 현행 스키마(category="지출")가 한 버킷으로 뭉쳐 카테고리 예측이 무의미해지는 것 방지
+    const cat = expenseMainName(e);
+    if (!cat) continue;
     const ym = yyyymmOf(e.date);
     if (!monthSet.has(ym)) continue;
-    let slot = byCatMonth.get(e.category);
+    let slot = byCatMonth.get(cat);
     if (!slot) {
       slot = new Map();
-      byCatMonth.set(e.category, slot);
+      byCatMonth.set(cat, slot);
     }
     slot.set(ym, (slot.get(ym) ?? 0) + e.amount);
   }

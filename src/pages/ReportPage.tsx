@@ -18,6 +18,7 @@ import type { Account, LedgerEntry, StockPrice, StockTrade } from "../types";
 import { computeInvestmentReconciliation } from "../utils/reportGenerator";
 import { useFxRateValue } from "../context/FxRateContext";
 import { useDateAccountId } from "../hooks/useDateAccountSettings";
+import { useAppStore } from "../store/appStore";
 import { useReportWorker } from "../hooks/useReportWorker";
 import { summarizeTaxYear } from "../utils/taxCalculator";
 import { getTodayKST } from "../utils/date";
@@ -42,6 +43,8 @@ export const ReportView: React.FC<Props> = ({ accounts, ledger, trades, prices }
   const fxRate = useFxRateValue();
   // 데이트 계좌 ID — localStorage 값이라 워커 payload에 명시 전달 (종합 월간 실질지출의 50% 차감)
   const dateAccountId = useDateAccountId();
+  // 설정의 "비실질" 수입 카테고리 — 보고서 실질수입도 인사이트와 동일 기준으로 제외
+  const nonRealIncomeOverride = useAppStore((s) => s.data.categoryPresets?.categoryTypes?.nonRealIncome);
   const [reportType, setReportType] = useState<ReportType>("comprehensive");
   const [startDate, setStartDate] = useState<string>(() => {
     // KST 기준 11개월 전 — UTC(toISOString) 사용 시 오전 9시 이전에 날짜가 하루 밀림
@@ -79,7 +82,8 @@ export const ReportView: React.FC<Props> = ({ accounts, ledger, trades, prices }
     startDate,
     endDate,
     fxRate,
-    dateAccountId
+    dateAccountId,
+    nonRealIncomeOverride
   });
 
   /** 투자 정산 — 전체 기간 누적, 주식·코인 계좌 기준 */

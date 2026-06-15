@@ -1,5 +1,6 @@
 import React, { useCallback, useEffect, useState } from "react";
 import { GitBranch, X } from "lucide-react";
+import { useModalStackEntry } from "../utils/modalStack";
 
 interface GitCommit {
   hash: string;
@@ -29,6 +30,7 @@ export const GitVersionModal: React.FC<Props> = ({ isOpen, onClose, onSelect, on
   const [loadingRef, setLoadingRef] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [fetchCount, setFetchCount] = useState(0);
+  const isTopModal = useModalStackEntry(isOpen);
 
   const fetchLog = useCallback(() => {
     setCommits([]);
@@ -58,10 +60,10 @@ export const GitVersionModal: React.FC<Props> = ({ isOpen, onClose, onSelect, on
 
   useEffect(() => {
     if (!isOpen) return;
-    const handler = (e: KeyboardEvent) => { if (e.key === "Escape") onClose(); };
+    const handler = (e: KeyboardEvent) => { if (e.key === "Escape" && isTopModal()) onClose(); };
     window.addEventListener("keydown", handler);
     return () => window.removeEventListener("keydown", handler);
-  }, [isOpen, onClose]);
+  }, [isOpen, onClose, isTopModal]);
 
   if (!isOpen) return null;
 

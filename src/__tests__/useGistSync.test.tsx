@@ -63,8 +63,8 @@ describe("useGistSync", () => {
     mocked.getGistLastPushAt.mockReturnValue("");
     mocked.getGistLastPullAt.mockReturnValue("");
     mocked.getGistVersions.mockResolvedValue([]);
-    mocked.saveToGist.mockResolvedValue({ gistId: "test-gist-id", updatedAt: "2026-04-20T00:00:00Z" });
-    mocked.saveToGistWithRetry.mockResolvedValue({ gistId: "test-gist-id", updatedAt: "2026-04-20T00:00:00Z" });
+    mocked.saveToGist.mockResolvedValue({ gistId: "test-gist-id", updatedAt: "2026-04-20T00:00:00Z", committedAt: "2026-04-20T00:00:00Z" });
+    mocked.saveToGistWithRetry.mockResolvedValue({ gistId: "test-gist-id", updatedAt: "2026-04-20T00:00:00Z", committedAt: "2026-04-20T00:00:00Z" });
     mocked.loadFromGist.mockResolvedValue({ dataJson: "{}", updatedAt: "2026-04-20T00:00:00Z" });
   });
 
@@ -293,6 +293,37 @@ describe("useGistSync", () => {
     expect(conflict).not.toBeNull();
     expect(conflict?.remoteUpdatedAt).toBe("2026-04-20T06:00:00Z");
     expect(conflict?.pendingLocalDataJson).toContain('"amount":1');
+  });
+
+  it("가짜 충돌 방지: push 후 동일 commit이 원격에 보여도 충돌 모달 없이 저장 (known을 committed_at로 갱신)", async () => {
+    // GitHub은 같은 push의 updated_at(00s)과 commit committed_at(01s)이 다를 수 있어,
+    // 예전엔 known=updated_at(00s) < 원격 committed_at(01s) → 매 push마다 가짜 충돌이 떴다.
+    mocked.getGistVersions.mockResolvedValue([]); // 첫 push 전 원격 비어있음 → 충돌 없음
+    mocked.saveToGistWithRetry.mockResolvedValue({
+      gistId: "g", updatedAt: "2026-04-20T05:00:00Z", committedAt: "2026-04-20T05:00:01Z",
+    });
+
+    const { rerender } = renderHook(({ d }: { d: AppData }) => useGistSync(d, vi.fn()), {
+      initialProps: { d: makeData(0) },
+    });
+    await flush();
+    mocked.saveToGistWithRetry.mockClear(); // 마운트 시 초기 push 무시
+
+    rerender({ d: makeData(1) }); // 첫 변경 → push. known = committed_at(01s)
+    await vi.advanceTimersByTimeAsync(GIST_AUTO_PUSH_DEBOUNCE_MS + 1000);
+    await flush();
+    expect(mocked.saveToGistWithRetry).toHaveBeenCalledTimes(1);
+
+    // 원격엔 방금 push한 commit(committed_at=01s)이 보임 — 예전 코드면 01s>known(00s)로 가짜 충돌
+    mocked.getGistVersions.mockResolvedValue([{ sha: "v", committedAt: "2026-04-20T05:00:01Z", url: "u" }]);
+    mocked.saveToGistWithRetry.mockClear();
+
+    rerender({ d: makeData(2) }); // 두 번째 변경 → push
+    await vi.advanceTimersByTimeAsync(GIST_AUTO_PUSH_DEBOUNCE_MS + 1000);
+    await flush();
+
+    expect(useUIStore.getState().gistConflict).toBeNull(); // 가짜 충돌 모달 없음
+    expect(mocked.saveToGistWithRetry).toHaveBeenCalledTimes(1); // 정상 저장
   });
 
   it("resolveGistConflict('apply-remote'): onApplyPulledData 호출 + 충돌 클리어", async () => {

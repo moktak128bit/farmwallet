@@ -184,19 +184,29 @@ export function useGistSync(
       const latest = versions[0];
       const known = knownRemoteCommitRef.current || getGistLastPullAt();
       if (detectConflict(latest?.committedAt, known)) {
-        onLog?.("Gist 충돌 감지 — 원격 데이터 fetch 후 모달 표시", "info");
+        // 시각상 원격이 새로 보여도, 내용이 우리가 마지막에 push한 것과 같으면 가짜 충돌
+        // (gist updated_at vs commit committed_at 소스 차이). 내용 해시로 진짜 외부 변경만 모달 표시 →
+        // "PC에서 수정했는데 자꾸 과거로 되돌리라"는 가짜 충돌 제거.
         try {
           const remote = await loadFromGist();
-          useUIStore.getState().setGistConflict({
-            remoteDataJson: remote.dataJson,
-            remoteUpdatedAt: remote.updatedAt,
-            pendingLocalDataJson: dataJson,
-          });
+          const lastPushedHash = getGistLastPushedHash();
+          if (lastPushedHash && hashGistPayload(remote.dataJson) === lastPushedHash) {
+            knownRemoteCommitRef.current = latest?.committedAt || known;
+            onLog?.("Gist: 시각만 다른 가짜 충돌(내용 동일) — 저장 진행", "info");
+          } else {
+            onLog?.("Gist 충돌 감지 — 외부 기기 변경 확인, 모달 표시", "info");
+            useUIStore.getState().setGistConflict({
+              remoteDataJson: remote.dataJson,
+              remoteUpdatedAt: remote.updatedAt,
+              pendingLocalDataJson: dataJson,
+            });
+            return;
+          }
         } catch (pullErr) {
           const message = pullErr instanceof Error ? pullErr.message : String(pullErr);
           onLog?.(`Gist 충돌 후 원격 fetch 실패: ${message}`, "error");
+          return;
         }
-        return;
       }
       const result = await saveToGistWithRetry(dataJson, {
         onAttempt: (attempt, err) => {
@@ -209,7 +219,9 @@ export function useGistSync(
       const nowIso = new Date().toISOString();
       setGistLastPushAt(nowIso);
       setLastPushAt(nowIso);
-      knownRemoteCommitRef.current = result.updatedAt || nowIso;
+      // committed_at(getGistVersions와 동일 소스)을 known으로 — updated_at을 쓰면 다음 push에서
+      // committed_at > updated_at 로 보여 매번 가짜 충돌이 떴음.
+      knownRemoteCommitRef.current = result.committedAt || result.updatedAt || nowIso;
       onLog?.("Gist 자동 저장 성공", "success");
       // 이전 실패 토스트가 있다면 정리
       toast.dismiss(GIST_AUTO_SAVE_ERROR_TOAST_ID);
@@ -258,19 +270,29 @@ export function useGistSync(
       const latest = versions[0];
       const known = knownRemoteCommitRef.current || getGistLastPullAt();
       if (detectConflict(latest?.committedAt, known)) {
-        onLog?.("Gist 충돌 감지 — 원격 데이터 fetch 후 모달 표시", "info");
+        // 시각상 원격이 새로 보여도, 내용이 우리가 마지막에 push한 것과 같으면 가짜 충돌
+        // (gist updated_at vs commit committed_at 소스 차이). 내용 해시로 진짜 외부 변경만 모달 표시 →
+        // "PC에서 수정했는데 자꾸 과거로 되돌리라"는 가짜 충돌 제거.
         try {
           const remote = await loadFromGist();
-          useUIStore.getState().setGistConflict({
-            remoteDataJson: remote.dataJson,
-            remoteUpdatedAt: remote.updatedAt,
-            pendingLocalDataJson: dataJson,
-          });
+          const lastPushedHash = getGistLastPushedHash();
+          if (lastPushedHash && hashGistPayload(remote.dataJson) === lastPushedHash) {
+            knownRemoteCommitRef.current = latest?.committedAt || known;
+            onLog?.("Gist: 시각만 다른 가짜 충돌(내용 동일) — 저장 진행", "info");
+          } else {
+            onLog?.("Gist 충돌 감지 — 외부 기기 변경 확인, 모달 표시", "info");
+            useUIStore.getState().setGistConflict({
+              remoteDataJson: remote.dataJson,
+              remoteUpdatedAt: remote.updatedAt,
+              pendingLocalDataJson: dataJson,
+            });
+            return;
+          }
         } catch (pullErr) {
           const message = pullErr instanceof Error ? pullErr.message : String(pullErr);
           onLog?.(`Gist 충돌 후 원격 fetch 실패: ${message}`, "error");
+          return;
         }
-        return;
       }
       const result = await saveToGistWithRetry(dataJson, {
         onAttempt: (attempt, err) => {
@@ -283,7 +305,9 @@ export function useGistSync(
       const nowIso = new Date().toISOString();
       setGistLastPushAt(nowIso);
       setLastPushAt(nowIso);
-      knownRemoteCommitRef.current = result.updatedAt || nowIso;
+      // committed_at(getGistVersions와 동일 소스)을 known으로 — updated_at을 쓰면 다음 push에서
+      // committed_at > updated_at 로 보여 매번 가짜 충돌이 떴음.
+      knownRemoteCommitRef.current = result.committedAt || result.updatedAt || nowIso;
       onLog?.("Gist 저장 성공", "success");
       toast.dismiss(GIST_AUTO_SAVE_ERROR_TOAST_ID);
       toast.success("Gist 저장 완료");

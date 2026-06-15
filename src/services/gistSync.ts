@@ -164,7 +164,7 @@ const sleep = (ms: number) => new Promise<void>((resolve) => setTimeout(resolve,
 export async function saveToGistWithRetry(
   dataJson: string,
   options?: { onAttempt?: (attempt: number, err: Error) => void }
-): Promise<{ gistId: string; updatedAt: string }> {
+): Promise<{ gistId: string; updatedAt: string; committedAt: string }> {
   let lastErr: unknown;
   for (let attempt = 1; attempt <= GIST_PUSH_RETRY.MAX_ATTEMPTS; attempt++) {
     try {
@@ -181,7 +181,7 @@ export async function saveToGistWithRetry(
 }
 
 /** Gist에 데이터 저장. Gist ID가 없으면 새로 생성. */
-export async function saveToGist(dataJson: string): Promise<{ gistId: string; updatedAt: string }> {
+export async function saveToGist(dataJson: string): Promise<{ gistId: string; updatedAt: string; committedAt: string }> {
   const token = getGistToken();
   if (!token) throw new Error("GitHub 토큰이 설정되지 않았습니다.");
 
@@ -211,7 +211,7 @@ export async function saveToGist(dataJson: string): Promise<{ gistId: string; up
       throw new Error(parseApiError(res.status, err, "Gist 저장"));
     }
     const data = await parseGistResponse(res);
-    return { gistId: data.id ?? gistId, updatedAt: data.updated_at ?? new Date().toISOString() };
+    return { gistId: data.id ?? gistId, updatedAt: data.updated_at ?? new Date().toISOString(), committedAt: committedAtFromResponse(data) };
   }
 
   // Create new gist
@@ -227,14 +227,22 @@ export async function saveToGist(dataJson: string): Promise<{ gistId: string; up
   const data = await parseGistResponse(res);
   if (!data.id) throw new Error("Gist 생성 응답에 ID가 없습니다.");
   setGistId(data.id);
-  return { gistId: data.id, updatedAt: data.updated_at ?? new Date().toISOString() };
+  return { gistId: data.id, updatedAt: data.updated_at ?? new Date().toISOString(), committedAt: committedAtFromResponse(data) };
 }
 
 /** GitHub Gist API 응답의 최소 형태 */
 interface GistApiResponse {
   id?: string;
   updated_at?: string;
+  /** 커밋 이력 — history[0]이 가장 최근 커밋. committed_at은 getGistVersions의 committedAt와 동일 소스라
+   *  push 후 known 갱신에 써야 가짜 충돌(updated_at vs committed_at 시각 차이)이 안 생긴다. */
+  history?: Array<{ committed_at?: string } | undefined>;
   files?: Record<string, { content?: string; raw_url?: string } | undefined>;
+}
+
+/** PATCH/POST 응답 history[0]의 committed_at — getGistVersions와 동일 소스. 없으면 updated_at 폴백. */
+function committedAtFromResponse(data: GistApiResponse): string {
+  return data.history?.[0]?.committed_at ?? data.updated_at ?? new Date().toISOString();
 }
 
 async function parseGistResponse(res: Response): Promise<GistApiResponse> {

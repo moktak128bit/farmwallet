@@ -88,3 +88,61 @@ describe("tableDataBackup — 누락 5필드 백업·복원 (workoutRoutines/cus
     expect(restored.schemaVersion).toBe(file.schemaVersion);
   });
 });
+
+describe("tableDataBackup — 운동 weeks 무손실 왕복 (done/목표/휴식 보존)", () => {
+  const workoutWeeks = [
+    {
+      id: "wk1",
+      weekStart: "2026-06-07",
+      entries: [
+        {
+          id: "d1",
+          date: "2026-06-08",
+          type: "workout" as const,
+          dayLabel: "Day 1 (상체)",
+          cardioMinutes: 20,
+          cardioDistanceKm: 3.2,
+          startedAt: "2026-06-08T09:00:00Z",
+          endedAt: "2026-06-08T10:10:00Z",
+          exercises: [
+            {
+              id: "ex1",
+              name: "벤치프레스",
+              bodyPart: "가슴" as const,
+              warmupNote: "빈 바 × 10",
+              cueNote: "견갑 고정",
+              sets: [
+                { weightKg: 60, reps: 10, done: true, targetWeightKg: 60, targetReps: 10, targetRepsRange: "8~10", restSec: 90, note: "워밍업" },
+                { weightKg: 80, reps: 5, done: false, targetReps: 5, restSec: 120 },
+              ],
+            },
+            // 맨몸운동(중량 0) 도 보존되는지
+            { id: "ex2", name: "푸시업", sets: [{ weightKg: 0, reps: 20, done: true }] },
+          ],
+        },
+      ],
+    },
+  ] as unknown as NonNullable<AppData["workoutWeeks"]>;
+
+  it("done·목표중량·목표반복·휴식·맨몸세트가 build→restore 후 그대로 보존", () => {
+    const file = buildTableBackupFile(makeAppData({ workoutWeeks }));
+    const restored = appDataFromTableBackupPayload(file);
+    // 완전 JSON 보존 → 깊은 동등성 (예전 표 백업은 done/목표/휴식을 떨궈 실패했음)
+    expect(restored.workoutWeeks).toEqual(workoutWeeks);
+  });
+
+  it("완전 JSON 테이블(workout_data_json)이 백업에 포함됨", () => {
+    const file = buildTableBackupFile(makeAppData({ workoutWeeks }));
+    expect(file.tables.workout_data_json).toHaveLength(1);
+  });
+
+  it("구버전 백업(JSON 테이블 없음)은 표 기반으로 폴백 복원 (하위호환)", () => {
+    const file = buildTableBackupFile(makeAppData({ workoutWeeks }));
+    const tables = file.tables as Record<string, unknown>;
+    delete tables.workout_data_json;
+    const restored = appDataFromTableBackupPayload(file);
+    // 표 기반 폴백은 가독 필드(weight/reps/구조)는 복원하되 done 등은 없음 — 최소한 주차·날짜 구조는 살아있어야 함
+    expect(restored.workoutWeeks?.[0]?.id).toBe("wk1");
+    expect(restored.workoutWeeks?.[0]?.entries?.[0]?.exercises?.[0]?.name).toBe("벤치프레스");
+  });
+});

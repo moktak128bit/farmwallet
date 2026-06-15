@@ -25,6 +25,7 @@ export const DASHBOARD_WIDGETS: DashboardWidgetDef[] = [
   { id: "monthlyTrend", label: "월별 추이 (최근 6개월)" },
   { id: "investmentBreakdown", label: "재테크 세부 (저축·투자)" },
   { id: "monthPace", label: "이번 달 페이스 예측" },
+  { id: "cashFlow", label: "다가오는 고정 지출 (현금흐름 예측)" },
   { id: "portfolioCharts", label: "포트폴리오 차트" },
   { id: "savingsRatio", label: "저축률 (저번달)" },
   { id: "dividendCoverage", label: "배당 vs 고정비 커버리지" },

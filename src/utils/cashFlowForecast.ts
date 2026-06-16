@@ -11,8 +11,9 @@
  *  - yearly : 시작일의 월·일
  *  시작일 이전·종료일 이후 발생은 제외. 윈도우는 [오늘, 오늘+horizonDays].
  */
-import type { RecurringExpense } from "../types";
+import type { LedgerEntry, RecurringExpense } from "../types";
 import { parseIsoLocal, formatIsoLocal } from "./date";
+import { matchesRecurringEntry } from "./recurringAlert";
 
 interface CashFlowEvent {
   /** yyyy-mm-dd (KST 로컬) */
@@ -55,12 +56,13 @@ function emptyForecast(horizonDays: number): CashFlowForecast {
 
 export function computeCashFlowForecast(
   recurring: RecurringExpense[],
-  opts: { todayIso: string; horizonDays?: number }
+  opts: { todayIso: string; horizonDays?: number; ledger?: LedgerEntry[] }
 ): CashFlowForecast {
   const horizonDays = opts.horizonDays ?? 60;
   const today = parseIsoLocal(opts.todayIso);
   if (!today) return emptyForecast(horizonDays);
   const end = addDays(today, horizonDays);
+  const ledger = opts.ledger ?? [];
 
   const events: CashFlowEvent[] = [];
 
@@ -72,12 +74,29 @@ export function computeCashFlowForecast(
     const amount = Number(r.amount) || 0;
     if (amount <= 0) continue;
 
+    // 해당 사이클에 이미 기록(조기 납부)됐는지 — '이번 달 남은 고정지출'이 이미 낸 건을 중복 계상하지 않게.
+    // monthly=같은 달, yearly=같은 해, weekly=발생일 ±6일 윈도우.
+    const alreadyLoggedForCycle = (eventIso: string): boolean => {
+      const matches = ledger.filter((l) => l.date && matchesRecurringEntry(l, r));
+      if (r.frequency === "monthly") return matches.some((l) => l.date.slice(0, 7) === eventIso.slice(0, 7));
+      if (r.frequency === "yearly") return matches.some((l) => l.date.slice(0, 4) === eventIso.slice(0, 4));
+      // weekly: 발생일 기준 ±6일 내 기록이면 이번 주 납부로 간주
+      const ev = parseIsoLocal(eventIso);
+      if (!ev) return false;
+      return matches.some((l) => {
+        const ld = parseIsoLocal(l.date);
+        return ld != null && Math.abs((ld.getTime() - ev.getTime()) / 86400000) <= 6;
+      });
+    };
+
     const push = (date: Date) => {
       if (date < start) return;
       if (endParsed && date > endParsed) return;
       if (date < today || date > end) return; // 윈도우 [오늘, 오늘+horizon]
+      const iso = formatIsoLocal(date);
+      if (alreadyLoggedForCycle(iso)) return; // 이미 납부한 사이클은 제외
       events.push({
-        date: formatIsoLocal(date),
+        date: iso,
         title: r.title || r.category || "반복지출",
         category: r.category || "",
         amount,

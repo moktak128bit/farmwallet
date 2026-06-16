@@ -30,6 +30,7 @@ import { newIdWithPrefix } from "../utils/id";
 import { DailyBudgetBar } from "../features/ledger/DailyBudgetBar";
 import { DEFAULT_DAILY_BUDGET } from "../utils/dailyBudget";
 import { useAppStore } from "../store/appStore";
+import { saveSafetySnapshot } from "../services/backupService";
 import { getKoreaTime, getThisMonthKST, getTodayKST } from "../utils/date";
 import { toast } from "react-hot-toast";
 import { computeRealizedPnlByTradeId } from "../calculations";
@@ -779,6 +780,10 @@ export const LedgerView: React.FC<Props> = ({
               (count, l, i) => count + (l !== ledger[i] ? 1 : 0),
               0
             );
+            if (changedCount > 0) {
+              // 다건 일괄 변경 → 안전 스냅샷 (불변식 #9)
+              void saveSafetySnapshot(useAppStore.getState().data, "description 통합 직전 자동 스냅샷");
+            }
             onChangeLedger(next);
             if (changedCount > 0) {
               toast.success(`${changedCount}건 description 통합 완료`);
@@ -797,6 +802,10 @@ export const LedgerView: React.FC<Props> = ({
               (count, l, i) => count + (l !== ledger[i] ? 1 : 0),
               0
             );
+            if (changedCount > 0) {
+              // 다건 일괄 변경 → 안전 스냅샷 (불변식 #9)
+              void saveSafetySnapshot(useAppStore.getState().data, "택시 분리 일괄 변경 직전 자동 스냅샷");
+            }
             onChangeLedger(next);
             if (changedCount > 0) {
               toast.success(`${changedCount}건 detailCategory를 '택시'로 변경`);

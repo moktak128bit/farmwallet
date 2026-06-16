@@ -104,7 +104,14 @@ export const RecurringListSection: React.FC<Props> = React.memo(function Recurri
     if (field === "title") {
       updated.title = editingValue;
     } else if (field === "amount") {
-      updated.amount = Number(editingValue) || 0;
+      // 빈 입력/NaN으로 금액을 0으로 조용히 덮어쓰지 않음 — 실수 blur 방지
+      const trimmed = editingValue.trim();
+      const n = Number(trimmed.replace(/,/g, ""));
+      if (trimmed === "" || !Number.isFinite(n)) {
+        cancelEditField();
+        return;
+      }
+      updated.amount = n;
     } else if (field === "category") {
       updated.category = editingValue;
     } else if (field === "frequency") {

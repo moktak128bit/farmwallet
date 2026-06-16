@@ -2,7 +2,8 @@ import type { Account, LedgerEntry, StockPrice, StockTrade } from "../types";
 import {
   computeAccountBalances,
   computePositions,
-  computeRealizedPnlDetailByTradeId
+  computeRealizedPnlDetailByTradeId,
+  positionMarketValueKRW
 } from "../calculations";
 import { buildClosedTradeRecords } from "./investmentRecord";
 import { getTodayKST } from "./date";
@@ -367,9 +368,13 @@ export function generateCategoryReport(
 export function generateStockPerformanceReport(
   trades: StockTrade[],
   prices: StockPrice[],
-  accounts: Account[]
+  accounts: Account[],
+  fxRate?: number
 ): StockPerformanceReport[] {
-  const positions = computePositions(trades, prices, accounts);
+  // fxRate를 넘겨 USD 종목의 매입원가(매입 당시 환율)·평가액(현재 환율)을 모두 KRW로 정규화한다.
+  // cashImpact(현금흐름)는 totalAmountKRW(원화)이므로, 이를 섞지 않으려면 종가도 KRW여야
+  // IRR이 'KRW 유출 + USD 종가 유입'으로 환율배수만큼 왜곡되지 않는다.
+  const positions = computePositions(trades, prices, accounts, { fxRate });
   const today = getTodayKST();
 
   return positions
@@ -382,20 +387,26 @@ export function generateStockPerformanceReport(
         )
         .sort((a, b) => a.date.localeCompare(b.date));
 
+      // 평가액·매입원가를 KRW로 통일 (USD 종목은 환산, KRW 종목은 그대로)
+      const currentValueKRW = positionMarketValueKRW(position, fxRate);
+      const totalBuyAmountKRW = position.totalBuyAmountKRW ?? position.totalBuyAmount;
+      const pnlKRW = currentValueKRW - totalBuyAmountKRW;
+      const pnlRateKRW = totalBuyAmountKRW > 0 ? pnlKRW / totalBuyAmountKRW : 0;
+
       const flows: CashFlowItem[] = positionTrades.map((trade) => ({
         date: trade.date,
-        amount: trade.cashImpact
+        amount: trade.cashImpact // KRW (totalAmountKRW) 또는 USD잔액모드 0
       }));
-      flows.push({ date: today, amount: position.marketValue });
+      flows.push({ date: today, amount: currentValueKRW });
 
       return {
         accountId: position.accountId,
         ticker: position.ticker,
         name: position.name || position.ticker,
-        totalBuyAmount: position.totalBuyAmount,
-        currentValue: position.marketValue,
-        pnl: position.pnl,
-        pnlRate: position.pnlRate,
+        totalBuyAmount: totalBuyAmountKRW,
+        currentValue: currentValueKRW,
+        pnl: pnlKRW,
+        pnlRate: pnlRateKRW,
         quantity: position.quantity,
         irr: xirr(flows) ?? undefined
       };

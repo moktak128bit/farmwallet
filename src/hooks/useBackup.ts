@@ -131,9 +131,10 @@ export function useBackup(data: AppData, options?: UseBackupOptions) {
           // 동기 저장만 — async retry 루프는 unload 도중 잘릴 수 있음.
           window.localStorage.setItem(STORAGE_KEYS.DATA, userDataStr);
         } catch (writeErr) {
-          // 본 저장 실패(quota 등) — 드래프트 슬롯에라도 기록을 시도해 다음 부팅에서 복구 가능하게
+          // 본 저장 실패(quota 등) — 드래프트 슬롯에라도 기록을 시도해 다음 부팅에서 복구 가능하게.
+          // 캐시 제외한 user payload(userDataStr)로 — full payload는 더 커서 quota 상황에서 또 실패.
           try {
-            window.localStorage.setItem(STORAGE_KEYS.DRAFT, payload);
+            window.localStorage.setItem(STORAGE_KEYS.DRAFT, userDataStr);
             window.localStorage.setItem(STORAGE_KEYS.DRAFT_AT, Date.now().toString());
           } catch { /* quota — 더 이상 손쓸 수 없음 */ }
           console.warn("[useBackup] unload flush 저장 실패 — 드래프트 기록 시도", writeErr);
@@ -257,7 +258,11 @@ export function useBackup(data: AppData, options?: UseBackupOptions) {
       //  저장 실패(quota 등) 시에는 드래프트가 남아 다음 boot에서 복구 가능.)
       if (isDirty) {
         try {
-          window.localStorage.setItem(STORAGE_KEYS.DRAFT, pendingPayload);
+          // 드래프트에도 캐시(prices/tickerDatabase/historicalDailyCloses)는 제외 — full payload는
+          // 메인 DATA보다 커서 quota 압박 시 드래프트 write까지 동반 실패한다. 캐시는 부팅 시
+          // IndexedDB에서 하이드레이션되므로 복구에 불필요. (메인 DATA와 같은 형태라 stale 비교도 정상 동작)
+          const { prices: _p, tickerDatabase: _t, historicalDailyCloses: _h, ...userFields } = data;
+          window.localStorage.setItem(STORAGE_KEYS.DRAFT, JSON.stringify(userFields));
           window.localStorage.setItem(STORAGE_KEYS.DRAFT_AT, Date.now().toString());
         } catch { /* quota·access 무시 — 드래프트는 best-effort */ }
       }

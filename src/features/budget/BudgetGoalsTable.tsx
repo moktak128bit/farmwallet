@@ -76,7 +76,14 @@ export const BudgetGoalsTable: React.FC<Props> = React.memo(function BudgetGoals
     if (field === "category") {
       updated.category = editingBudgetValue;
     } else if (field === "monthlyLimit") {
-      updated.monthlyLimit = Number(editingBudgetValue) || 0;
+      // 빈 입력/NaN으로 예산을 0으로 조용히 덮어쓰지 않음 — '더블클릭→삭제→실수 blur' 방지
+      const trimmed = editingBudgetValue.trim();
+      const n = Number(trimmed.replace(/,/g, ""));
+      if (trimmed === "" || !Number.isFinite(n)) {
+        cancelEditBudgetField();
+        return;
+      }
+      updated.monthlyLimit = n;
     } else if (field === "note") {
       updated.note = editingBudgetValue || undefined;
     }

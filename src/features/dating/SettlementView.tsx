@@ -15,9 +15,11 @@ const SETTLE_LAST_KEY = "fw-date-account-last-settle-at";
 
 export const SettlementView: React.FC<Props> = ({ data, onSettle, formatNumber }) => {
   const dateAccountId = useDateAccountId() ?? "";
-  const lastSettleAt = typeof window !== "undefined"
-    ? localStorage.getItem(SETTLE_LAST_KEY) ?? ""
-    : "";
+  // 마지막 정산일을 state로 보관 — 정산 후 배너·시작일이 즉시 갱신되도록
+  const [lastSettleAt, setLastSettleAt] = useState<string>(() =>
+    typeof window !== "undefined" ? localStorage.getItem(SETTLE_LAST_KEY) ?? "" : ""
+  );
+  const [settling, setSettling] = useState(false);
 
   const dateAccount: Account | undefined = data.accounts.find((a) => a.id === dateAccountId);
 
@@ -75,8 +77,17 @@ export const SettlementView: React.FC<Props> = ({ data, onSettle, formatNumber }
   }
 
   const handleSettle = () => {
+    if (settling) return; // 더블클릭/연타 가드
     if (!settlement || settlement.partnerShare <= 0) return;
     const today = getTodayKST();
+    const amount = Math.round(settlement.partnerShare); // 0.5원 단위 방지 — 정수 금액으로 저장
+    // 정산 입금은 되돌리기 어려운 기록 추가 → 확인 + 시작일 자동 이동으로 이중청구 방지
+    const ok = window.confirm(
+      `상대 부담분 ${amount.toLocaleString()}원을 '${dateAccount.name}'에 정산 입금으로 기록합니다.\n` +
+        `정산 시작일이 오늘(${today})로 이동해 같은 기간이 다시 정산되지 않습니다.\n계속할까요?`
+    );
+    if (!ok) return;
+    setSettling(true);
     // kind=income + toAccountId — computeMoimAccountFlow(dateAccounting)가 "상대 입금"으로
     // 인식하는 형태. subCategory "데이트통장"은 실질 수입 계산(realIncome)에서 정산성
     // 회수로 자동 차감되므로 수입 이중계상이 없다.
@@ -87,12 +98,16 @@ export const SettlementView: React.FC<Props> = ({ data, onSettle, formatNumber }
       category: "정산",
       subCategory: "데이트통장",
       description: `${sinceDate} 이후 정산 (상대 부담분 입금)`,
-      amount: Math.round(settlement.partnerShare), // 0.5원 단위 방지 — 정수 금액으로 저장
+      amount,
       toAccountId: dateAccount.id,
       note: `합계 ${settlement.total.toLocaleString()}원 / 본인비율 ${ratio}%`
     };
     onSettle(entry);
     if (typeof window !== "undefined") localStorage.setItem(SETTLE_LAST_KEY, today);
+    setLastSettleAt(today);
+    // 같은 기간이 다시 정산 대상으로 잡히는 이중청구를 구조적으로 차단 (정산 시작일을 오늘로 이동)
+    setSinceDate(today);
+    setSettling(false);
   };
 
   return (
@@ -105,7 +120,7 @@ export const SettlementView: React.FC<Props> = ({ data, onSettle, formatNumber }
       <Section storageKey="settle-section-overview" title="💰 현재 정산 대상">
         {settlement && (
           <div style={{ gridColumn: "span 4" }}>
-            <div style={{ marginBottom: 16, padding: "12px 14px", background: "#f0f8ff", borderRadius: 10, border: "1px solid #bde" }}>
+            <div style={{ marginBottom: 16, padding: "12px 14px", background: "var(--accent-light)", borderRadius: 10, border: "1px solid var(--border)" }}>
               <label style={{ fontSize: 12, color: "var(--text-muted)", fontWeight: 600 }}>정산 시작일</label>
               <input
                 type="date" value={sinceDate} onChange={(e) => setSinceDate(e.target.value)}
@@ -119,19 +134,21 @@ export const SettlementView: React.FC<Props> = ({ data, onSettle, formatNumber }
                 <div style={{ fontSize: 12, color: "var(--text-muted)", fontWeight: 600 }}>총 지출 ({settlement.items.length}건)</div>
                 <div style={{ fontSize: 28, fontWeight: 800, color: "var(--text)", marginTop: 4 }}>{formatNumber(settlement.total)}</div>
               </div>
-              <div style={{ padding: "16px 18px", background: "#f0f8ff", borderRadius: 10, border: "1px solid #bde", textAlign: "center" }}>
-                <div style={{ fontSize: 12, color: "#666", fontWeight: 600 }}>내 부담 ({ratio}%)</div>
-                <div style={{ fontSize: 28, fontWeight: 800, color: "#0f3460", marginTop: 4 }}>{formatNumber(Math.round(settlement.myShare))}</div>
+              <div style={{ padding: "16px 18px", background: "var(--accent-light)", borderRadius: 10, border: "1px solid var(--border)", textAlign: "center" }}>
+                <div style={{ fontSize: 12, color: "var(--text-muted)", fontWeight: 600 }}>내 부담 ({ratio}%)</div>
+                {/* 내가 내는 돈(지출성) → 파랑 */}
+                <div style={{ fontSize: 28, fontWeight: 800, color: "var(--accent)", marginTop: 4 }}>{formatNumber(Math.round(settlement.myShare))}</div>
               </div>
-              <div style={{ padding: "16px 18px", background: "#d4edda", borderRadius: 10, border: "1px solid #86efac", textAlign: "center" }}>
-                <div style={{ fontSize: 12, color: "#666", fontWeight: 600 }}>상대 부담 ({100 - ratio}%) — 받을 돈</div>
-                <div style={{ fontSize: 28, fontWeight: 800, color: "#059669", marginTop: 4 }}>{formatNumber(Math.round(settlement.partnerShare))}</div>
+              <div style={{ padding: "16px 18px", background: "var(--danger-light)", borderRadius: 10, border: "1px solid var(--danger)", textAlign: "center" }}>
+                <div style={{ fontSize: 12, color: "var(--text-muted)", fontWeight: 600 }}>상대 부담 ({100 - ratio}%) — 받을 돈</div>
+                {/* 받을 돈(수입성) → 국내 관례 빨강 */}
+                <div style={{ fontSize: 28, fontWeight: 800, color: "var(--danger)", marginTop: 4 }}>{formatNumber(Math.round(settlement.partnerShare))}</div>
               </div>
             </div>
 
             <button
               type="button" onClick={handleSettle}
-              disabled={!settlement || settlement.partnerShare <= 0}
+              disabled={settling || !settlement || settlement.partnerShare <= 0}
               style={{
                 width: "100%", padding: "14px 18px",
                 background: settlement.partnerShare > 0 ? "var(--text)" : "var(--border)",
@@ -170,7 +187,7 @@ export const SettlementView: React.FC<Props> = ({ data, onSettle, formatNumber }
                       <td style={{ padding: "8px 12px", color: "var(--text-muted)" }}>
                         {l.subCategory || l.category || "-"}
                       </td>
-                      <td style={{ padding: "8px 12px", textAlign: "right", fontWeight: 700, color: "#e94560" }}>
+                      <td style={{ padding: "8px 12px", textAlign: "right", fontWeight: 700, color: "var(--chart-expense)" }}>
                         {formatNumber(l.amount)}
                       </td>
                     </tr>
@@ -197,7 +214,7 @@ export const SettlementView: React.FC<Props> = ({ data, onSettle, formatNumber }
                 </div>
                 <div style={{ padding: "10px 14px", background: "var(--bg)", borderRadius: 8, textAlign: "center" }}>
                   <div style={{ fontSize: 11, color: "var(--text-muted)" }}>누적 정산 금액</div>
-                  <div style={{ fontSize: 18, fontWeight: 700, color: "#059669" }}>{formatNumber(settleTotal)}</div>
+                  <div style={{ fontSize: 18, fontWeight: 700, color: "var(--danger)" }}>{formatNumber(settleTotal)}</div>
                 </div>
                 <div style={{ padding: "10px 14px", background: "var(--bg)", borderRadius: 8, textAlign: "center" }}>
                   <div style={{ fontSize: 11, color: "var(--text-muted)" }}>평균 정산 금액</div>
@@ -209,7 +226,7 @@ export const SettlementView: React.FC<Props> = ({ data, onSettle, formatNumber }
                   <div key={l.id} style={{ padding: "10px 14px", borderBottom: "1px solid var(--border-light)", display: "flex", alignItems: "center", gap: 12, fontSize: 12 }}>
                     <span style={{ color: "var(--text-muted)", fontWeight: 600, minWidth: 90 }}>{l.date}</span>
                     <span style={{ flex: 1, color: "var(--text-secondary)" }}>{l.description || "-"}</span>
-                    <span style={{ fontWeight: 700, color: "#059669" }}>+{formatNumber(l.amount)}</span>
+                    <span style={{ fontWeight: 700, color: "var(--danger)" }}>+{formatNumber(l.amount)}</span>
                   </div>
                 ))}
               </div>

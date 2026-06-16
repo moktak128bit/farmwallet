@@ -149,6 +149,20 @@ function buildLedgerIndex(
   };
 }
 
+/**
+ * 계좌의 '시작 잔액'(baseBalance) 단일 정의.
+ * 증권/코인 계좌는 initialCashBalance(현금부) 우선, 없으면 initialBalance.
+ * 그 외 계좌는 initialBalance. 둘 다 없으면 0.
+ * 잔액 계산(computeAccountBalances)과 원금(principal) 계산이 반드시 같은 정의를 쓰도록 export.
+ * ⚠ initialBalance와 initialCashBalance를 더하지 말 것 — 이중계상이 된다.
+ */
+export function baseBalanceForAccount(account: Account): number {
+  if (account.type === "securities" || account.type === "crypto") {
+    return account.initialCashBalance ?? account.initialBalance ?? 0;
+  }
+  return account.initialBalance ?? 0;
+}
+
 export function computeAccountBalances(
   accounts: Account[],
   ledger: LedgerEntry[],
@@ -178,10 +192,7 @@ export function computeAccountBalances(
 
     const tradeCashImpact = tradeCashByAccount.get(account.id) ?? 0;
 
-    const baseBalance =
-      account.type === "securities" || account.type === "crypto"
-        ? (account.initialCashBalance ?? account.initialBalance)
-        : account.initialBalance;
+    const baseBalance = baseBalanceForAccount(account);
     const cashAdjustment = account.cashAdjustment ?? 0;
     const savings = account.savings ?? 0;
 

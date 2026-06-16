@@ -28,9 +28,23 @@ describe("findOverdueRecurring — 만기 판정", () => {
     expect(r[0].dueDate).toBe("2026-06-15");
   });
 
-  it("monthly: 일자가 다르면 due 아님", () => {
+  it("monthly: 마감일 전이면 due 아님", () => {
     const r = findOverdueRecurring([rec({ id: "r1", title: "넷플릭스", amount: 17_000, startDate: "2026-01-15" })], [], "2026-06-14");
     expect(r).toHaveLength(0);
+  });
+
+  it("monthly: 마감일이 지나도 그 달 안에선 미등록으로 계속 알림 (하루 결근 누락 방지)", () => {
+    // 과거 버그: 마감 당일(5일)에만 떴고, 6일에 켜면 영영 사라짐
+    const r = rec({ id: "r1", title: "월세", amount: 500_000, startDate: "2026-01-05" });
+    const res = findOverdueRecurring([r], [], "2026-06-16");
+    expect(res).toHaveLength(1);
+    expect(res[0].dueDate).toBe("2026-06-05");
+  });
+
+  it("monthly: 마감 한 달 이상 지나면 알림 종료 (다음 달 마감은 미래라 자연 종료)", () => {
+    const r = rec({ id: "r1", title: "월세", amount: 500_000, startDate: "2026-01-05" });
+    // 7-04는 7월 마감(7-05)이 아직 미래라 6월 누락이 잡히지 않음
+    expect(findOverdueRecurring([r], [], "2026-07-04")).toHaveLength(0);
   });
 
   it("monthly 29/30/31일 반복: 짧은 달에는 월말로 클램프되어 알림 발생", () => {
@@ -54,17 +68,27 @@ describe("findOverdueRecurring — 만기 판정", () => {
     expect(r).toHaveLength(0);
   });
 
-  it("weekly: 시작 요일과 같은 요일에 due", () => {
-    // 2026-06-01은 월요일 → 2026-06-15(월) due, 2026-06-16(화) 아님
+  it("weekly: 마감 요일에 due, 같은 주 며칠간은 미등록이면 계속 알림", () => {
+    // 2026-06-01은 월요일 → 2026-06-15(월) 마감
     const recurring = [rec({ id: "r1", title: "주간회비", amount: 5_000, frequency: "weekly", startDate: "2026-06-01" })];
-    expect(findOverdueRecurring(recurring, [], "2026-06-15")).toHaveLength(1);
-    expect(findOverdueRecurring(recurring, [], "2026-06-16")).toHaveLength(0);
+    expect(findOverdueRecurring(recurring, [], "2026-06-15")[0].dueDate).toBe("2026-06-15");
+    // 화요일에도 미등록이면 계속(같은 주 마감일 06-15)
+    const tue = findOverdueRecurring(recurring, [], "2026-06-16");
+    expect(tue).toHaveLength(1);
+    expect(tue[0].dueDate).toBe("2026-06-15");
+    // 다음 주 월요일은 새 마감일
+    expect(findOverdueRecurring(recurring, [], "2026-06-22")[0].dueDate).toBe("2026-06-22");
   });
 
-  it("yearly: 같은 월·일에만 due", () => {
+  it("yearly: 기념일에 due, 약 한 달까지 미등록 알림 후 종료", () => {
     const recurring = [rec({ id: "r1", title: "연회비", amount: 30_000, frequency: "yearly", startDate: "2025-06-15" })];
     expect(findOverdueRecurring(recurring, [], "2026-06-15")).toHaveLength(1);
-    expect(findOverdueRecurring(recurring, [], "2026-07-15")).toHaveLength(0);
+    // 기념일 5일 후 미등록이면 계속 알림
+    expect(findOverdueRecurring(recurring, [], "2026-06-20")).toHaveLength(1);
+    // 기념일 전이면 아직 아님
+    expect(findOverdueRecurring(recurring, [], "2026-06-10")).toHaveLength(0);
+    // 한 달 이상 지나면 종료(과도한 알림 방지)
+    expect(findOverdueRecurring(recurring, [], "2026-07-20")).toHaveLength(0);
   });
 });
 
@@ -108,11 +132,21 @@ describe("findOverdueRecurring — alreadyLogged (실제 생성 스키마와 매
     expect(findOverdueRecurring([savings], transferLogged, "2026-06-15")[0].alreadyLogged).toBe(true);
   });
 
-  it("다른 날짜의 기록은 무시 (오늘 기록만 검사)", () => {
+  it("마감 윈도우(마감일~오늘) 밖 기록은 무시 — 이전 달 기록은 미기록", () => {
     const ledger = [
       entry({ id: "l1", date: "2026-05-15", kind: "expense", category: "지출", subCategory: "구독비", detailCategory: "넷플릭스", amount: 17_000 }),
     ];
     const r = findOverdueRecurring([netflix], ledger, "2026-06-15");
     expect(r[0].alreadyLogged).toBe(false);
+  });
+
+  it("마감일에 기록했으면 며칠 뒤 조회에서도 alreadyLogged (마감일~오늘 구간 검사)", () => {
+    const rent = rec({ id: "r1", title: "월세", amount: 500_000, category: "주거비", startDate: "2026-01-05" });
+    const ledger = [
+      entry({ id: "l1", date: "2026-06-05", kind: "expense", category: "지출", subCategory: "주거비", detailCategory: "월세", amount: 500_000 }),
+    ];
+    const r = findOverdueRecurring([rent], ledger, "2026-06-16");
+    expect(r).toHaveLength(1);
+    expect(r[0].alreadyLogged).toBe(true);
   });
 });

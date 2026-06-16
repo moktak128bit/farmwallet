@@ -12,6 +12,7 @@ import { useAppStore } from "../../store/appStore";
 import {
   positionMarketValueKRW,
   computeTotalNetWorth,
+  baseBalanceForAccount,
 } from "../../calculations";
 import { formatKRW } from "../../utils/formatter";
 import { formatIsoLocal, getTodayKST, parseIsoLocal } from "../../utils/date";
@@ -105,8 +106,8 @@ export const InvestmentSummaryCard: React.FC<Props> = React.memo(function Invest
     let p = 0;
     for (const a of accounts) {
       if (!securitiesAccountIds.has(a.id)) continue;
-      p += a.initialBalance ?? 0;
-      p += a.initialCashBalance ?? 0;
+      // 잔액 계산과 동일한 단일 정의 사용 — initialBalance + initialCashBalance 이중계상 방지
+      p += baseBalanceForAccount(a);
     }
     for (const e of ledger) {
       if (e.kind !== "transfer") continue;

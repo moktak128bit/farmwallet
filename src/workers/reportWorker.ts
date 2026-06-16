@@ -66,7 +66,7 @@ workerScope.onmessage = (event: MessageEvent<ReportWorkerRequest>) => {
       ),
       yearlyReport: generateYearlyReport(payload.ledger),
       categoryReport: generateCategoryReport(payload.ledger, payload.startDate, payload.endDate),
-      stockReport: generateStockPerformanceReport(payload.trades, payload.prices, payload.accounts),
+      stockReport: generateStockPerformanceReport(payload.trades, payload.prices, payload.accounts, payload.fxRate ?? undefined),
       accountReport: generateAccountReport(payload.accounts, payload.ledger, payload.trades),
       dailyReport: generateDailyReport(
         payload.accounts,

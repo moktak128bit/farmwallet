@@ -8,7 +8,8 @@ export {
   preloadKrNames,
   getKrNames,
   applyKoreanStockNames,
-  toUserDataJson
+  toUserDataJson,
+  consumeSanitizeReport
 } from "./services/dataService";
 export {
   saveBackupSnapshot,

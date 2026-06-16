@@ -102,7 +102,7 @@ export const InitialReversePanel: React.FC<Props> = React.memo(function InitialR
 
   /** 모든 계좌의 cashAdjustment를 initialBalance/initialCashBalance에 병합해 시작금액을 단일화한다.
    *  currentBalance 공식에서 baseBalance와 cashAdjustment가 모두 더해지므로 병합해도 현재 잔액은 불변. */
-  const flattenAllCashAdjustments = () => {
+  const flattenAllCashAdjustments = async () => {
     const affected = safeAccounts.filter((a) => (a.cashAdjustment ?? 0) !== 0);
     if (affected.length === 0) {
       toast("정리할 계좌가 없습니다. 모든 계좌의 보정금액이 이미 0원입니다.", { icon: "ℹ️" });
@@ -112,6 +112,8 @@ export const InitialReversePanel: React.FC<Props> = React.memo(function InitialR
       `${affected.length}개 계좌의 보정금액을 시작금액에 병합합니다.\n현재 잔액은 변하지 않습니다.\n계속하시겠습니까?`
     );
     if (!ok) return;
+    // 전 계좌 시작금액 일괄 변경 → 안전 스냅샷 (불변식 #9)
+    await saveSnapshot?.("계좌 보정금액 일괄 병합 직전 자동 스냅샷");
     const updated = safeAccounts.map((a) => {
       const adj = a.cashAdjustment ?? 0;
       if (adj === 0) return a;
@@ -130,7 +132,7 @@ export const InitialReversePanel: React.FC<Props> = React.memo(function InitialR
 
   /** 시작금액 → 이체 기록 변환: 모든 non-source 계좌의 effectiveStart(baseBalance + cashAdjustment)를
    *  source와의 이체로 옮긴다. cashAdjustment도 함께 자동 병합. currentBalance 보존됨. */
-  const applySeedTransferConversion = () => {
+  const applySeedTransferConversion = async () => {
     if (!onChangeLedger) {
       toast.error("가계부 기록 수정 권한이 없습니다.");
       return;
@@ -175,6 +177,8 @@ export const InitialReversePanel: React.FC<Props> = React.memo(function InitialR
         `- 모든 계좌의 현재 잔액은 변하지 않습니다.\n\n계속하시겠습니까?`
     );
     if (!ok) return;
+    // 전 계좌 시작금액 0 초기화 + N건 ledger 대량 생성 → 가장 파괴적, 안전 스냅샷 (불변식 #9)
+    await saveSnapshot?.("시작금액 → 이체 기록 변환 직전 자동 스냅샷");
 
     // ledger entries 생성
     const newEntries: LedgerEntry[] = targets.map((t) => {

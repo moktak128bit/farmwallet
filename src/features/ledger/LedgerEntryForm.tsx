@@ -352,7 +352,9 @@ export const LedgerEntryForm = React.memo(React.forwardRef<LedgerEntryFormHandle
         ...(allowLedgerDiscount
           ? { discountAmount: discountParsed > 0 ? discountParsed : undefined }
           : {}),
-        ...(kindForTab === "transfer" && form.currency === "USD" ? { currency: "USD" as const } : {})
+        ...(kindForTab === "transfer" && form.currency === "USD" ? { currency: "USD" as const } : {}),
+        // 태그 보존 — 복사/편집 시 form.tags가 채워져 있으면 저장 (누락 시 태그가 영구 소실)
+        ...(form.tags?.length ? { tags: form.tags } : {})
       };
 
       if (form.id) {

@@ -94,7 +94,7 @@ function computeSynchronously(params: UseReportWorkerParams): ReportWorkerData {
     ),
     yearlyReport: generateYearlyReport(params.ledger),
     categoryReport: generateCategoryReport(params.ledger, params.startDate, params.endDate),
-    stockReport: generateStockPerformanceReport(params.trades, params.prices, params.accounts),
+    stockReport: generateStockPerformanceReport(params.trades, params.prices, params.accounts, params.fxRate ?? undefined),
     accountReport: generateAccountReport(params.accounts, params.ledger, params.trades),
     dailyReport: generateDailyReport(
       params.accounts,

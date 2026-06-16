@@ -1,5 +1,6 @@
 import { useEffect, useState, useCallback, useRef } from "react";
-import { loadData, preloadKrNames, applyKoreanStockNames, saveData, normalizeImportedData } from "../storage";
+import { toast } from "react-hot-toast";
+import { loadData, preloadKrNames, applyKoreanStockNames, saveData, normalizeImportedData, consumeSanitizeReport } from "../storage";
 import { useAppStore } from "../store/appStore";
 import { loadCacheFromDB, mergeCacheIntoAppData } from "../services/cacheStore";
 import {
@@ -30,6 +31,18 @@ export function useAppData() {
         const loaded = loadData();
         useAppStore.setState({ data: loaded });
         setLoadFailed(false);
+        // 손상 항목 폐기를 사용자에게 가시화 — 조용한 손실 방지 (콘솔만으로는 인지 못 함)
+        const report = consumeSanitizeReport();
+        if (report) {
+          const parts = [
+            report.droppedLedger > 0 ? `가계부 ${report.droppedLedger}건` : "",
+            report.droppedTrades > 0 ? `주식거래 ${report.droppedTrades}건` : ""
+          ].filter(Boolean).join(", ");
+          toast.error(
+            `손상된 ${parts}을(를) 불러오지 못해 제외했습니다. 최근 백업을 확인하세요.`,
+            { duration: 8000 }
+          );
+        }
       } catch (e) {
         console.error("[FarmWallet] 초기 데이터 로드 실패", e);
         setLoadFailed(true);

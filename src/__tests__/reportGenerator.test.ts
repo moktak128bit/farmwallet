@@ -3,10 +3,11 @@ import {
   generateClosingReportData,
   generateComprehensiveMonthlyReport,
   generateDailyReport,
-  generateMonthlyIncomeDetail
+  generateMonthlyIncomeDetail,
+  generateStockPerformanceReport
 } from "../utils/reportGenerator";
 import { generateLedgerMarkdownReport } from "../utils/ledgerMarkdownReport";
-import type { Account, LedgerEntry, StockTrade } from "../types";
+import type { Account, LedgerEntry, StockPrice, StockTrade } from "../types";
 
 const account = (o: Partial<Account> & { id: string }): Account => ({
   name: o.id,
@@ -36,6 +37,27 @@ describe("generateComprehensiveMonthlyReport — USD 실현손익은 거래시�
     const rows = generateComprehensiveMonthlyReport([], trades, accounts, "2026-01", "2026-02", 1500);
     const feb = rows.find((r) => r.month === "2026-02");
     expect(feb?.realizedPnl).toBe(800_000);
+  });
+});
+
+describe("generateStockPerformanceReport — USD 종목 KRW 정규화 (IRR 현금흐름 통일)", () => {
+  it("USD 종목 평가액·매입원가·손익을 KRW로 환산 (cashImpact는 원화이므로 종가도 원화여야 IRR 정합)", () => {
+    const accounts = [account({ id: "sec1", type: "securities" })];
+    // KRW 현금모드(cashImpact = ±totalAmountKRW): 매수 10주 × $100, 당시 환율 1000 → 매입원가 1,000,000원
+    const trades: StockTrade[] = [
+      { id: "tb", date: "2026-01-10", accountId: "sec1", ticker: "AAPL", name: "Apple", side: "buy", quantity: 10, price: 100, fee: 0, totalAmount: 1000, cashImpact: -1_000_000, fxRateAtTrade: 1000 },
+    ];
+    const prices: StockPrice[] = [
+      { ticker: "AAPL", price: 150, currency: "USD", updatedAt: "2026-06-16T00:00:00Z" } as StockPrice,
+    ];
+    const rows = generateStockPerformanceReport(trades, prices, accounts, 1300);
+    const aapl = rows.find((r) => r.ticker === "AAPL");
+    // 평가액 = 10 × $150 × 1300 = 1,950,000원, 매입원가 = $1000 × 1000 = 1,000,000원
+    expect(aapl?.currentValue).toBe(1_950_000);
+    expect(aapl?.totalBuyAmount).toBe(1_000_000);
+    expect(aapl?.pnl).toBe(950_000);
+    // IRR: 같은 통화(원) 유출/유입이라 양수로 산출됨 (환율배수 왜곡 없음)
+    expect(aapl?.irr).toBeGreaterThan(0);
   });
 });
 

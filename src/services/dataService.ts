@@ -874,9 +874,23 @@ export function normalizeImportedData(rawData: unknown): AppData {
 }
 
 /**
+ * 마지막 buildAppDataFromMigrated 호출에서 sanitize로 폐기된 ledger/trade 건수.
+ * 콘솔 경고만으로는 사용자가 손실을 인지하지 못하므로, 로드/가져오기 직후
+ * UI(useAppData)가 consumeSanitizeReport()로 읽어 토스트로 알린다. (>0일 때만 보관)
+ */
+let lastSanitizeReport: { droppedLedger: number; droppedTrades: number } | null = null;
+
+/** 마지막 sanitize 폐기 리포트를 읽고 비운다. 폐기가 없었으면 null. */
+export function consumeSanitizeReport(): { droppedLedger: number; droppedTrades: number } | null {
+  const r = lastSanitizeReport;
+  lastSanitizeReport = null;
+  return r;
+}
+
+/**
  * 마이그레이션이 끝난 파싱 객체를 AppData로 정규화하는 순수 빌더.
  * loadData(저장소 경로)와 normalizeImportedData(가져오기 경로)가 공유한다.
- * localStorage·IndexedDB 등 어떤 부작용도 없다 (sanitize 경고 콘솔 로그 제외).
+ * localStorage·IndexedDB 등 어떤 부작용도 없다 (sanitize 경고 콘솔 로그 + 폐기 리포트 기록 제외).
  *
  * @param cache 분리 저장된 API 캐시(loadData 경로). null이면(가져오기 경로) 본문 필드만 사용.
  */
@@ -897,6 +911,11 @@ function buildAppDataFromMigrated(
   if (tradesSan.dropped > 0) {
     console.warn(`[FarmWallet] sanitize: trades ${tradesSan.dropped}건 폐기`, tradesSan.droppedSamples);
   }
+  // 폐기가 있었으면 UI가 읽어 토스트로 알리도록 리포트 기록 (없으면 비워 이전 리포트 잔류 방지)
+  lastSanitizeReport =
+    ledgerSan.dropped > 0 || tradesSan.dropped > 0
+      ? { droppedLedger: ledgerSan.dropped, droppedTrades: tradesSan.dropped }
+      : null;
   const parsedLedger = ledgerSan.clean as AppData["ledger"];
   const parsedTrades = tradesSan.clean as AppData["trades"];
   const parsedRecurring = asArray(parsed.recurringExpenses) as AppData["recurringExpenses"];

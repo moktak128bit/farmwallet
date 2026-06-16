@@ -14,6 +14,8 @@ import {
   makeIsSavingsExpense,
   isInvestmentEntry,
   isInvestmentKind,
+  isInvestmentPnlEntry,
+  isInvestmentLossEntry,
   isCreditPayment,
   isRealExpenseEntry,
 } from "./categoryUtils";
@@ -25,6 +27,8 @@ export {
   makeIsSavingsExpense,
   isInvestmentEntry,
   isInvestmentKind,
+  isInvestmentPnlEntry,
+  isInvestmentLossEntry,
   isCreditPayment,
   isRealExpenseEntry,
 };

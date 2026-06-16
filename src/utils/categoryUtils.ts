@@ -86,6 +86,22 @@ export function isInvestmentKind(entry: LedgerEntry): boolean {
   return false;
 }
 
+/**
+ * 투자 실현손익 엔트리 — 투자수익(수입) 또는 투자손실(지출, category="재테크").
+ * 일반 수입/지출 집계에서 제외하고 '재테크' 순집계에 넣기 위한 단일 판정.
+ * 재테크 합계에서 투자수익은 +, 투자손실은 − (isInvestmentLossEntry로 부호 구분).
+ */
+export function isInvestmentPnlEntry(entry: LedgerEntry): boolean {
+  if (entry.kind === "income") return entry.subCategory === "투자수익";
+  if (entry.kind === "expense") return entry.category === "재테크" && entry.subCategory === "투자손실";
+  return false;
+}
+
+/** 투자손실 — 재테크 순집계에서 음수로 반영 (번 돈 − 잃은 돈) */
+export function isInvestmentLossEntry(entry: LedgerEntry): boolean {
+  return entry.kind === "expense" && entry.category === "재테크" && entry.subCategory === "투자손실";
+}
+
 type CategoryType = "income" | "transfer" | "savings" | "fixed" | "variable";
 
 /** 재테크/저축 탭에서 보여줄 대분류 (항상 포함해 이전 저장 데이터와 호환) */

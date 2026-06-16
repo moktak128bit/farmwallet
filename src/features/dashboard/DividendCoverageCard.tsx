@@ -8,14 +8,11 @@ import type { Account, CategoryPresets, LedgerEntry } from "../../types";
 import { formatKRW } from "../../utils/formatter";
 import { shiftMonth } from "../../utils/date";
 import { getCategoryType, isSavingsExpenseEntry, isCreditPayment } from "../../utils/category";
+import { isDividendEntryLoose } from "../../utils/categoryMatch";
 
 function isDividendIncome(entry: LedgerEntry): boolean {
-  if (entry.kind !== "income") return false;
-  return (
-    (entry.category ?? "").includes("배당") ||
-    (entry.subCategory ?? "").includes("배당") ||
-    (entry.description ?? "").includes("배당")
-  );
+  // 분류 단일소스(categoryMatch) — cat/sub 정확 매칭 + description fallback (includes("배당") 직접 사용 금지)
+  return entry.kind === "income" && isDividendEntryLoose(entry);
 }
 
 interface Props {

@@ -114,6 +114,43 @@ describe("buildDividendGrowth", () => {
     ).toBeNull();
   });
 
+  it("USD 종목: fxRate로 분배금·주가·평단을 KRW로 정규화 (비율은 보존)", () => {
+    const ledger: LedgerEntry[] = [
+      { id: "ud", date: "2026-06-03", kind: "income", category: "수입", subCategory: "배당", description: "SCHD - Schwab US Dividend 배당", amount: 4, note: "보유주식: 10", currency: "USD" },
+    ];
+    const trades: StockTrade[] = [
+      { id: "ut", date: "2026-05-02", accountId: "a1", ticker: "SCHD", name: "SCHD", side: "buy", quantity: 10, price: 80, fee: 0, totalAmount: 800, cashImpact: 0, fxRateAtTrade: 1300 },
+    ];
+    const r = buildDividendGrowth({
+      ticker: "SCHD",
+      ledger,
+      trades,
+      prices: [{ ticker: "SCHD", price: 85 }],
+      currentMonth: "2026-06",
+      fxRate: 1300,
+    })!;
+    const jun = r.points.find((p) => p.month === "2026-06")!;
+    expect(jun.received).toBe(4 * 1300); // 분배금 USD → KRW
+    expect(jun.price).toBe(85 * 1300); // 주가 USD → KRW
+    expect(jun.avgCost).toBeCloseTo(80 * 1300); // 평단 USD → KRW
+    // YoC = 주당분배금/평단 = (0.4×1300)/(80×1300) = 0.4/80 → 비율은 환율 무관하게 보존
+    expect(jun.monthlyYoc).toBeCloseTo((0.4 / 80) * 100, 4);
+  });
+
+  it("USD 종목인데 환율 없으면 null (왜곡 방지)", () => {
+    const ledger: LedgerEntry[] = [
+      { id: "ud", date: "2026-06-03", kind: "income", category: "수입", subCategory: "배당", description: "SCHD - Schwab 배당", amount: 4, note: "보유주식: 10", currency: "USD" },
+    ];
+    const r = buildDividendGrowth({
+      ticker: "SCHD",
+      ledger,
+      trades: [{ id: "ut", date: "2026-05-02", accountId: "a1", ticker: "SCHD", name: "SCHD", side: "buy", quantity: 10, price: 80, fee: 0, totalAmount: 800, cashImpact: 0 }],
+      prices: [],
+      currentMonth: "2026-06",
+    });
+    expect(r).toBeNull();
+  });
+
   it("매도 시 평단 유지·원가 비례 차감 (이동평균법)", () => {
     const ledger = [div("2026-06-01", "458730", "TIGER 미국배당다우존스", 100, 5)];
     const trades = [

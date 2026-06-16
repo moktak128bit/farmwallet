@@ -18,7 +18,7 @@ import type { Account, HistoricalDailyClose, LedgerEntry, StockPrice, StockTrade
 import { computePositions } from "../calculations";
 import { formatKRW } from "../utils/formatter";
 import { isKRWStock, isUSDStock, canonicalTickerForMatch, extractTickerFromText } from "../utils/finance";
-import { isDividendEntry, isInterestEntry } from "../utils/categoryMatch";
+import { isDividendEntryLoose, isInterestEntryLoose } from "../utils/categoryMatch";
 import { parseExDateFromNote, parseQuantityFromNote } from "../utils/dividend";
 import { getKrNames } from "../storage";
 import { STORAGE_KEYS } from "../constants/config";
@@ -105,13 +105,9 @@ export const DividendsView: React.FC<Props> = ({ accounts, ledger, trades, price
   }, [propFxRate]);
 
   const incomeRows = useMemo(() => {
-    // 분류 단일소스(categoryMatch) — category/subCategory는 정확 매칭으로 위양성("비배당" 등) 제거.
-    // description은 앱 생성 배당 항목이 본문에 종목/배당을 기록하므로 fallback 유지.
+    // 분류 단일소스(categoryMatch) — cat/sub 정확 매칭 + description fallback (배당·이자 loose).
     const isDividend = (l: LedgerEntry) =>
-      l.kind === "income" &&
-      (isDividendEntry(l) || isInterestEntry(l) ||
-        (l.description ?? "").includes("배당") ||
-        (l.description ?? "").includes("이자"));
+      l.kind === "income" && (isDividendEntryLoose(l) || isInterestEntryLoose(l));
 
     const accountMap = new Map(accounts.map((a) => [a.id, a]));
 

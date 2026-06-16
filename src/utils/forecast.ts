@@ -24,6 +24,27 @@ interface ForecastResult {
 
 const yyyymmOf = (iso: string) => iso.slice(0, 7);
 
+/**
+ * 특정 월(YYYY-MM)의 expenseMainName별 실제 소비 합계.
+ * forecastNextMonth의 버킷/제외 기준(신용결제·재테크·환전 제외, 대분류=expenseMainName)과
+ * 동일하게 계산 — ForecastView '현재월 실적'이 예측과 같은 키를 쓰도록 단일소스.
+ */
+export function expenseMainTotalsForMonth(
+  ledger: LedgerEntry[],
+  monthPrefix: string
+): Map<string, number> {
+  const map = new Map<string, number>();
+  for (const e of ledger) {
+    if (e.kind !== "expense" || e.amount <= 0 || !e.date) continue;
+    if (!e.date.startsWith(monthPrefix)) continue;
+    if (isCreditPayment(e) || isInvestmentEntry(e) || e.category === "환전") continue;
+    const cat = expenseMainName(e);
+    if (!cat) continue;
+    map.set(cat, (map.get(cat) ?? 0) + e.amount);
+  }
+  return map;
+}
+
 const offsetMonth = (yyyymm: string, deltaMonths: number) => {
   const [y, m] = yyyymm.split("-").map(Number);
   const d = new Date(y, m - 1 + deltaMonths, 1);

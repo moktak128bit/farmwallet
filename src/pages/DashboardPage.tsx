@@ -124,6 +124,7 @@ export const DashboardView: React.FC<Props> = (props) => {
           historicalDailyCloses: storeData.historicalDailyCloses,
           marketEnvSnapshots: storeData.marketEnvSnapshots,
           currentMonth,
+          fxRate, // USD 종목의 분배금·주가·평단을 KRW로 정규화 (불변식 #5)
         })
       )
       .filter((d): d is NonNullable<typeof d> => d != null);
@@ -135,6 +136,7 @@ export const DashboardView: React.FC<Props> = (props) => {
     trades,
     prices,
     currentMonth,
+    fxRate,
   ]);
 
   /** 매월 15일·월말 스냅샷 날짜 (오늘 이전만) */

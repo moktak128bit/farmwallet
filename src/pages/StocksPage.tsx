@@ -40,7 +40,7 @@ import { buildClosedTradeRecords, summarizeRecords } from "../utils/investmentRe
 import { fetchYahooQuotes } from "../yahooFinanceApi";
 import { isUSDStock, canonicalTickerForMatch } from "../utils/finance";
 import { newIdWithPrefix } from "../utils/id";
-import { isDividendEntry } from "../utils/categoryMatch";
+import { isDividendEntryLoose } from "../utils/categoryMatch";
 import { toast } from "react-hot-toast";
 import { blocksToCsv, type ReportBlock } from "../utils/reportExport";
 
@@ -246,9 +246,8 @@ export const StocksView: React.FC<Props> = ({
   );
 
   const totalDividend = useMemo(() => {
-    // 분류 단일소스(categoryMatch) — cat/sub 정확 매칭 + description fallback (앱 생성 배당 본문)
-    const isDividend = (l: LedgerEntry) =>
-      l.kind === "income" && (isDividendEntry(l) || (l.description ?? "").includes("배당"));
+    // 분류 단일소스(categoryMatch.isDividendEntryLoose) — cat/sub 정확 매칭 + description fallback
+    const isDividend = (l: LedgerEntry) => l.kind === "income" && isDividendEntryLoose(l);
     const toKrw = (l: LedgerEntry) =>
       l.currency === "USD" && fxRate ? l.amount * fxRate : l.amount;
     return ledger.filter(isDividend).reduce((s, l) => s + toKrw(l), 0);

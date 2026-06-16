@@ -18,6 +18,7 @@ import { formatKRW, formatUSD } from "../../utils/formatter";
 import { newIdWithPrefix } from "../../utils/id";
 import { isKRWStock, isUSDStock, canonicalTickerForMatch, extractTickerFromText } from "../../utils/finance";
 import { buildDividendNote } from "../../utils/dividend";
+import { isDividendEntryLoose } from "../../utils/categoryMatch";
 import { getTodayKST } from "../../utils/date";
 import { getKrNames } from "../../storage";
 
@@ -183,8 +184,8 @@ export const DividendFormSection: React.FC<Props> = React.memo(function Dividend
 
   // 이전 배당 입력 내역 (빠른 재입력용)
   const recentDividends = useMemo(() => {
-    const isDividend = (l: LedgerEntry) =>
-      l.kind === "income" && (l.category === "배당" || (l.category === "수입" && l.subCategory === "배당") || (l.description ?? "").includes("배당"));
+    // 분류 단일소스(categoryMatch.isDividendEntryLoose) — cat/sub 정확 매칭 + description fallback
+    const isDividend = (l: LedgerEntry) => l.kind === "income" && isDividendEntryLoose(l);
 
     const tickerMap = new Map<string, { ticker: string; name: string; amount: number; accountId: string; date: string }>();
 

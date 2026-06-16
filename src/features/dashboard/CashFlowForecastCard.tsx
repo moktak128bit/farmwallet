@@ -4,7 +4,7 @@
  * 로직은 순수 모듈에 있고 이 카드는 표시만 — React.memo(부모가 넘기는 recurring은 store 참조로 안정적).
  */
 import React, { useMemo } from "react";
-import type { RecurringExpense } from "../../types";
+import type { LedgerEntry, RecurringExpense } from "../../types";
 import { formatKRW } from "../../utils/formatter";
 import { getTodayKST, parseIsoLocal } from "../../utils/date";
 import { computeCashFlowForecast } from "../../utils/cashFlowForecast";
@@ -28,13 +28,15 @@ function daysAway(iso: string, todayIso: string): number {
 
 interface Props {
   recurring: RecurringExpense[];
+  /** 이미 납부(기록)한 반복지출 사이클을 '남은'에서 제외하기 위한 가계부 */
+  ledger: LedgerEntry[];
 }
 
-export const CashFlowForecastCard: React.FC<Props> = React.memo(function CashFlowForecastCard({ recurring }) {
+export const CashFlowForecastCard: React.FC<Props> = React.memo(function CashFlowForecastCard({ recurring, ledger }) {
   const todayIso = getTodayKST();
   const f = useMemo(
-    () => computeCashFlowForecast(recurring, { todayIso, horizonDays: HORIZON }),
-    [recurring, todayIso]
+    () => computeCashFlowForecast(recurring, { todayIso, horizonDays: HORIZON, ledger }),
+    [recurring, todayIso, ledger]
   );
 
   return (

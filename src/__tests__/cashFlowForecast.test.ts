@@ -1,6 +1,6 @@
 import { describe, it, expect } from "vitest";
 import { computeCashFlowForecast } from "../utils/cashFlowForecast";
-import type { RecurringExpense } from "../types";
+import type { LedgerEntry, RecurringExpense } from "../types";
 
 function rec(o: Partial<RecurringExpense> & { id: string; amount: number; startDate: string }): RecurringExpense {
   return { title: "항목", category: "구독", frequency: "monthly", ...o } as RecurringExpense;
@@ -18,6 +18,17 @@ describe("computeCashFlowForecast", () => {
     expect(f.next7Days).toBe(0); // 06-22까지 없음
     expect(f.next30Days).toBe(17000); // 07-15까지 06-25
     expect(f.totalHorizon).toBe(34000);
+  });
+
+  it("monthly: 이미 납부(같은 달 기록)한 사이클은 '남은'에서 제외", () => {
+    // 25일 월세를 15일에 미리 기록 → 이번 달(06) 발생은 제외, 다음 달(07)은 유지
+    const r = [rec({ id: "rent", title: "월세", amount: 500000, category: "주거비", startDate: "2026-01-25", frequency: "monthly" })];
+    const ledger: LedgerEntry[] = [
+      { id: "l1", date: "2026-06-15", kind: "expense", category: "지출", subCategory: "주거비", detailCategory: "월세", description: "", amount: 500000 },
+    ];
+    const f = computeCashFlowForecast(r, { todayIso: TODAY, horizonDays: 60, ledger });
+    expect(f.events.map((e) => e.date)).toEqual(["2026-07-25"]); // 06-25 제외(이미 납부)
+    expect(f.thisMonthRemaining).toBe(0);
   });
 
   it("monthly: 오늘 이전 같은 달 발생은 제외", () => {

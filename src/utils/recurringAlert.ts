@@ -65,6 +65,20 @@ const computeDueDate = (r: RecurringExpense, refDate: string): string | null => 
 };
 
 /**
+ * ledger 엔트리가 반복지출 r의 생성 스키마와 일치하는지 — kind(transfer/expense)+금액(±1)+분류/제목.
+ * 기간(어느 사이클) 필터는 호출부 책임. recurringAlert(미등록 배지)와 cashFlowForecast(이미납부 차감)가 공유.
+ */
+export function matchesRecurringEntry(l: LedgerEntry, r: RecurringExpense): boolean {
+  const expectedKind = r.toAccountId ? "transfer" : "expense";
+  if (l.kind !== expectedKind) return false;
+  if (Math.abs(Number(l.amount) - r.amount) >= 1) return false;
+  const subMatch = !!r.category && l.subCategory === r.category;
+  const titleMatch =
+    !!r.title && (l.detailCategory === r.title || (l.description ?? "").includes(r.title));
+  return subMatch || titleMatch;
+}
+
+/**
  * 등록되어야 할 반복지출 중 아직 가계부에 기록되지 않은 항목 목록.
  *
  * 마감일이 지나도 grace 윈도우 안이면 계속 알리며(하루 결근 시 영구 누락 방지),
@@ -84,17 +98,9 @@ export function findOverdueRecurring(
   for (const r of recurring) {
     const due = computeDueDate(r, refDate);
     if (!due) continue;
-    const expectedKind = r.toAccountId ? "transfer" : "expense";
     // 마감일~오늘 구간의 기록을 검사 (당일만 보면 마감 당일 등록을 놓침)
     const windowEntries = ledger.filter((l) => l.date >= due && l.date <= refDate);
-    const alreadyLogged = windowEntries.some((l) => {
-      if (l.kind !== expectedKind) return false;
-      if (Math.abs(Number(l.amount) - r.amount) >= 1) return false;
-      const subMatch = !!r.category && l.subCategory === r.category;
-      const titleMatch =
-        !!r.title && (l.detailCategory === r.title || (l.description ?? "").includes(r.title));
-      return subMatch || titleMatch;
-    });
+    const alreadyLogged = windowEntries.some((l) => matchesRecurringEntry(l, r));
     items.push({ recurring: r, dueDate: due, alreadyLogged });
   }
   return items;

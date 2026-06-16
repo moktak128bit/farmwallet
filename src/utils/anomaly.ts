@@ -22,7 +22,10 @@ const yyyymmOf = (iso: string) => iso.slice(0, 7);
 export function detectSpendAnomalies(
   ledger: LedgerEntry[],
   currentMonth: string,
-  lookbackMonths = 6
+  lookbackMonths = 6,
+  /** 진행 중인 달과 공정 비교용 — 지정 시 현재월·과거월 모두 1~dayCap일만 합산.
+   *  (없으면 전체 월. 부분-월 current를 완결 월 평균과 비교해 월말에만 경고 켜지는 사각 방지) */
+  dayCap?: number
 ): AnomalyResult[] {
   const months = new Set<string>();
   const [y, m] = currentMonth.split("-").map(Number);
@@ -37,6 +40,7 @@ export function detectSpendAnomalies(
     // 일반 소비 지출만 대상 — 신용결제(이중계상)·재테크(저축성지출)·환전 제외
     // (useInsightsData의 fExp 필터와 동일 기준 — "주목할 한 가지" 오탐 방지)
     if (e.category === "재테크" || e.category === "환전" || isCreditPayment(e)) continue;
+    if (dayCap != null && Number(e.date.slice(8, 10)) > dayCap) continue;
     // 대분류는 expenseMainName 단일소스 — 현행 스키마(category="지출")가 한 버킷으로 뭉쳐 이상감지가 무의미해지는 것 방지
     const cat = expenseMainName(e);
     if (!cat) continue;

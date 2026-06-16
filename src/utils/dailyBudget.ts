@@ -30,7 +30,7 @@ function isCountableExpense(entry: LedgerEntry, config: DailyBudgetConfig): bool
 }
 
 /** 특정 일자(YYYY-MM-DD) 사용액 합 */
-function dailySpend(ledger: LedgerEntry[], dateIso: string, config: DailyBudgetConfig): number {
+export function dailySpend(ledger: LedgerEntry[], dateIso: string, config: DailyBudgetConfig): number {
   let sum = 0;
   for (const e of ledger) {
     if (!e.date || !e.date.startsWith(dateIso)) continue;

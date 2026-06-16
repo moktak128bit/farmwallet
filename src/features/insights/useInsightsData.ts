@@ -839,7 +839,9 @@ export function useInsightsData(ledger: LedgerEntry[], rawTrades: StockTrade[], 
     const anomalyTargetMonth = selMonth ?? months[months.length - 1] ?? null;
     const topAnomaly = (() => {
       if (!anomalyTargetMonth) return null;
-      const results = detectSpendAnomalies(ledger, anomalyTargetMonth, 6);
+      // 진행 중인 달이면 과거 달도 같은 기간(1~오늘 일)만 비교 — 월말에만 경고 켜지는 사각 방지
+      const anomalyDayCap = anomalyTargetMonth === curMonthStr ? Number(getTodayKST().slice(8, 10)) : undefined;
+      const results = detectSpendAnomalies(ledger, anomalyTargetMonth, 6, anomalyDayCap);
       const triggered = results.filter((a) => a.isAnomaly).sort((a, b) => Math.abs(b.zScore) - Math.abs(a.zScore));
       return triggered[0] ?? null;
     })();

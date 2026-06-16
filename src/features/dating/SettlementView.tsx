@@ -12,13 +12,26 @@ interface Props {
 }
 
 const SETTLE_LAST_KEY = "fw-date-account-last-settle-at";
+const SETTLED_IDS_KEY = "fw-date-account-settled-ids";
 
 export const SettlementView: React.FC<Props> = ({ data, onSettle, formatNumber }) => {
   const dateAccountId = useDateAccountId() ?? "";
-  // 마지막 정산일을 state로 보관 — 정산 후 배너·시작일이 즉시 갱신되도록
+  // 마지막 정산일을 state로 보관 — 정산 후 배너가 즉시 갱신되도록
   const [lastSettleAt, setLastSettleAt] = useState<string>(() =>
     typeof window !== "undefined" ? localStorage.getItem(SETTLE_LAST_KEY) ?? "" : ""
   );
+  // 이미 정산한 지출 항목 id 집합 — 날짜 경계 대신 id로 이중청구를 막아
+  // '정산 당일 지출 누락'(date>sinceDate + sinceDate=today 조합)과 '시작일 과거 변경 이중청구'를 동시에 해결.
+  const [settledIds, setSettledIds] = useState<Set<string>>(() => {
+    if (typeof window === "undefined") return new Set();
+    try {
+      const raw = localStorage.getItem(SETTLED_IDS_KEY);
+      const arr = raw ? (JSON.parse(raw) as unknown) : [];
+      return new Set(Array.isArray(arr) ? arr.filter((x): x is string => typeof x === "string") : []);
+    } catch {
+      return new Set();
+    }
+  });
   const [settling, setSettling] = useState(false);
 
   const dateAccount: Account | undefined = data.accounts.find((a) => a.id === dateAccountId);
@@ -36,17 +49,22 @@ export const SettlementView: React.FC<Props> = ({ data, onSettle, formatNumber }
 
   const settlement = useMemo(() => {
     if (!dateAccount) return null;
-    // 경계는 "초과(>)" — sinceDate(마지막 정산일) 당일 지출은 직전 정산에 이미 포함됐다고
-    // 보고 제외해 이중 정산을 막는다. 트레이드오프: 정산 당일 "정산 이후" 발생한 지출은
-    // 이번 회차에서 빠지고 다음 정산 때 합산된다 (이중 청구보다 안전한 방향).
+    // sinceDate는 '얼마나 거슬러 볼지' 표시 범위(포함, >=)일 뿐 — 이중청구 방지는 settledIds(id 기준)가 담당.
+    // 따라서 정산 당일에 추가된 지출도 누락되지 않고(아직 settledIds에 없음), 이미 정산한 건은 날짜와 무관하게 제외된다.
     const items = data.ledger
-      .filter((l) => l.kind === "expense" && l.fromAccountId === dateAccount.id && l.date > sinceDate)
+      .filter(
+        (l) =>
+          l.kind === "expense" &&
+          l.fromAccountId === dateAccount.id &&
+          l.date >= sinceDate &&
+          !settledIds.has(l.id)
+      )
       .sort((a, b) => (b.date || "").localeCompare(a.date || ""));
     const total = items.reduce((s, l) => s + l.amount, 0);
     const myShare = total * (ratio / 100);
     const partnerShare = total - myShare;
     return { items, total, myShare, partnerShare };
-  }, [data.ledger, dateAccount, sinceDate, ratio]);
+  }, [data.ledger, dateAccount, sinceDate, ratio, settledIds]);
 
   // 정산 히스토리 (과거 정산 기록)
   const settleHistory = useMemo(() => {
@@ -81,10 +99,11 @@ export const SettlementView: React.FC<Props> = ({ data, onSettle, formatNumber }
     if (!settlement || settlement.partnerShare <= 0) return;
     const today = getTodayKST();
     const amount = Math.round(settlement.partnerShare); // 0.5원 단위 방지 — 정수 금액으로 저장
-    // 정산 입금은 되돌리기 어려운 기록 추가 → 확인 + 시작일 자동 이동으로 이중청구 방지
+    const count = settlement.items.length;
+    // 정산 입금은 되돌리기 어려운 기록 추가 → 확인. 정산한 항목은 id로 기록돼 다시 청구되지 않음.
     const ok = window.confirm(
       `상대 부담분 ${amount.toLocaleString()}원을 '${dateAccount.name}'에 정산 입금으로 기록합니다.\n` +
-        `정산 시작일이 오늘(${today})로 이동해 같은 기간이 다시 정산되지 않습니다.\n계속할까요?`
+        `정산한 ${count}건은 다시 청구되지 않습니다 (이중 정산 방지).\n계속할까요?`
     );
     if (!ok) return;
     setSettling(true);
@@ -103,10 +122,23 @@ export const SettlementView: React.FC<Props> = ({ data, onSettle, formatNumber }
       note: `합계 ${settlement.total.toLocaleString()}원 / 본인비율 ${ratio}%`
     };
     onSettle(entry);
+    // 이번에 정산한 지출 id를 기록 → 날짜 무관 재청구 방지. ledger에 존재하는 id만 유지(무한 증식 방지).
+    const settledNow = settlement.items.map((l) => l.id);
+    setSettledIds((prev) => {
+      const liveIds = new Set(data.ledger.map((l) => l.id));
+      const merged = [...prev, ...settledNow].filter((id) => liveIds.has(id));
+      const next = new Set(merged);
+      if (typeof window !== "undefined") {
+        try {
+          localStorage.setItem(SETTLED_IDS_KEY, JSON.stringify([...next]));
+        } catch {
+          /* quota 무시 */
+        }
+      }
+      return next;
+    });
     if (typeof window !== "undefined") localStorage.setItem(SETTLE_LAST_KEY, today);
     setLastSettleAt(today);
-    // 같은 기간이 다시 정산 대상으로 잡히는 이중청구를 구조적으로 차단 (정산 시작일을 오늘로 이동)
-    setSinceDate(today);
     setSettling(false);
   };
 

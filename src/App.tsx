@@ -289,7 +289,7 @@ export const App: React.FC = () => {
     }
   }, [setDataWithHistory, addAppLog]);
 
-  const { autoSyncEnabled, setAutoSyncEnabled, lastPushAt: gistLastPushAt, lastPullAt: gistLastPullAt, resolveGistConflict, gistStaleWarning, manualPush: gistManualPush, manualPull: gistManualPull } = useGistSync(
+  const { autoSyncEnabled, setAutoSyncEnabled, lastPushAt: gistLastPushAt, lastPullAt: gistLastPullAt, resolveGistConflict, gistStaleWarning, manualPush: gistManualPush, manualPull: gistManualPull, syncStateAfterRestore } = useGistSync(
     data,
     handleGistPulledData,
     { onLog: addAppLog }
@@ -372,9 +372,11 @@ export const App: React.FC = () => {
     setDraftRecovery(null);
   }, [setDraftRecovery]);
 
-  const handleGistVersionLoad = useCallback((dataJson: string, _committedAt: string) => {
-    handleGistPulledData(dataJson, _committedAt);
-  }, [handleGistPulledData]);
+  const handleGistVersionLoad = useCallback((dataJson: string, committedAt: string) => {
+    handleGistPulledData(dataJson, committedAt);
+    // 복원 직후 동기화 상태 갱신 — 과거 버전이 자동 push로 최신을 조용히 롤백하는 것 방지
+    syncStateAfterRestore(dataJson, committedAt);
+  }, [handleGistPulledData, syncStateAfterRestore]);
 
   /**
    * 수동 Gist 저장. useGistSync.manualPush로 위임 — React state(lastPushAt) 동시 갱신해서
@@ -523,22 +525,24 @@ export const App: React.FC = () => {
   );
   const handleChangePrices = useCallback(
     (prices: AppData["prices"]) =>
-      setDataWithHistory((prev) => {
+      // prices·historicalDailyCloses는 캐시(저장 DATA 제외, IndexedDB 하이드레이션) — undo 히스토리에 넣지 않는다.
+      // (setDataWithHistory를 쓰면 자동 시세갱신마다 undo 슬롯을 소비해 Ctrl+Z가 사용자 편집 대신 시세갱신을 취소함)
+      setData((prev) => {
         // 시세 갱신 시 보유 종목의 당일 종가를 적립 (배당 성장 차트의 주가 소스).
-        // 보존 압축 포함 — 캐시 슬롯에 저장되므로 메인 데이터·백업 무게에 영향 없음.
         const closes = upsertDailyCloses(prev.historicalDailyCloses, prices, prev.trades, getTodayKST());
         return { ...prev, prices, ...(closes ? { historicalDailyCloses: closes } : {}) };
       }),
-    [setDataWithHistory]
+    [setData]
   );
   const handleChangeTickerDatabase = useCallback(
     (next: NonNullable<AppData["tickerDatabase"]> | ((prev: NonNullable<AppData["tickerDatabase"]>) => NonNullable<AppData["tickerDatabase"]>)) =>
-      setDataWithHistory((prev) => {
+      // tickerDatabase도 캐시 — undo 히스토리 제외 (위와 동일 이유)
+      setData((prev) => {
         const current = Array.isArray(prev.tickerDatabase) ? prev.tickerDatabase : [];
         const nextDb = typeof next === "function" ? next(current) : next;
         return { ...prev, tickerDatabase: Array.isArray(nextDb) ? nextDb : current };
       }),
-    [setDataWithHistory]
+    [setData]
   );
   const handleChangeStockPresets = useCallback(
     (stockPresets: AppData["stockPresets"]) => setDataWithHistory((prev) => ({ ...prev, stockPresets })),

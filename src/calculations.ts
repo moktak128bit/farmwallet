@@ -387,7 +387,7 @@ export function computeRealizedPnlByTradeId(
       // 같은 날짜: 매수 먼저, 매도 나중에 (FIFO 올바른 계산을 위해)
       if (a.side === "buy" && b.side === "sell") return -1;
       if (a.side === "sell" && b.side === "buy") return 1;
-      return 0;
+      return a.id.localeCompare(b.id); // computePositions.cmpTrade와 동일 3차 타이브레이커 (잔여원가 vs 실현손익 정합)
     });
     const bySell = fifoRealizedPnlBySell(sorted);
     bySell.forEach((pnl, id) => result.set(id, pnl));
@@ -409,7 +409,7 @@ export function computeRealizedPnlDetailByTradeId(
       if (d !== 0) return d;
       if (a.side === "buy" && b.side === "sell") return -1;
       if (a.side === "sell" && b.side === "buy") return 1;
-      return 0;
+      return a.id.localeCompare(b.id); // computePositions.cmpTrade와 동일 3차 타이브레이커 (잔여원가 vs 실현손익 정합)
     });
     const bySell = fifoRealizedPnlDetailBySell(sorted);
     bySell.forEach((detail, id) => result.set(id, detail));
@@ -446,16 +446,19 @@ export function positionMarketValueKRW(
 }
 
 /**
- * 대출 상환 ledger 엔트리 여부 (category 구조 3세대 대응 + 대출명 매칭 포함).
+ * 대출 상환 ledger 엔트리가 특정 대출에 속하는지 (category 구조 3세대 대응).
+ * loanId가 있으면 우선 매칭 — 대출명을 바꿔도 과거 상환이 누락되지 않음 (#13, DebtPage와 동일 정책).
+ * loanId가 없는 레거시 엔트리만 description.includes 폴백.
  */
-function isLoanRepaymentForLoan(entry: LedgerEntry, loanName: string): boolean {
+function isLoanRepaymentForLoan(entry: LedgerEntry, loan: Loan): boolean {
   if (entry.kind !== "expense") return false;
   const matchesStructure =
     (entry.category === "지출" && entry.subCategory === "대출상환") ||
     entry.category === "대출상환" ||
     (entry.category === "대출" && entry.subCategory === "빚");
   if (!matchesStructure) return false;
-  return (entry.description || "").includes(loanName);
+  if (entry.loanId) return entry.loanId === loan.id;
+  return (entry.description || "").includes(loan.loanName);
 }
 
 /**
@@ -485,7 +488,7 @@ export function computeLoanBalanceAt(
   return loans.reduce((sum, loan) => {
     if (asOfDate && loan.loanDate && loan.loanDate > asOfDate) return sum;
     const principalRepaid = entries.reduce((s, e) => {
-      if (!isLoanRepaymentForLoan(e, loan.loanName)) return s;
+      if (!isLoanRepaymentForLoan(e, loan)) return s;
       if (isInterestRepayment(e)) return s;
       if (asOfDate && e.date && e.date > asOfDate) return s;
       return s + (e.amount || 0);

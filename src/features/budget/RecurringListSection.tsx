@@ -14,6 +14,8 @@ import type { Account, CategoryPresets, LedgerEntry, Recurrence, RecurringExpens
 import { parseIsoLocal, formatIsoLocal } from "../../utils/date";
 import { newIdWithPrefix } from "../../utils/id";
 import { isCoarsePointer } from "../../utils/pointer";
+import { buildRestoreById, showDeleteUndoToast } from "../../utils/undoToast";
+import { useAppStore } from "../../store/appStore";
 
 const freqLabel: Record<Recurrence, string> = {
   monthly: "매월",
@@ -71,11 +73,20 @@ export const RecurringListSection: React.FC<Props> = React.memo(function Recurri
   };
 
   const deleteRecurring = (id: string) => {
+    const index = recurring.findIndex((r) => r.id === id);
+    const item = index >= 0 ? recurring[index] : undefined;
+    if (!item) return;
+    // 고정 지출 영구 유실 방지 — confirm + 복원 토스트 (BudgetGoalsTable 패턴과 통일, 불변식 #8)
+    if (!window.confirm(`"${item.title}" 고정 지출을 삭제하시겠습니까?`)) return;
     onChangeRecurring(recurring.filter((r) => r.id !== id));
     onRecurringDeleted(id);
     if (editingField?.id === id) {
       setEditingField(null);
     }
+    showDeleteUndoToast(
+      `"${item.title}" 고정 지출이 삭제되었습니다.`,
+      buildRestoreById(() => useAppStore.getState().data.recurringExpenses ?? [], onChangeRecurring, item, index)
+    );
   };
 
   // 터치 환경 여부 — 렌더당 1회 평가 (coarse 포인터는 더블클릭 대신 단일 탭으로 편집 진입)

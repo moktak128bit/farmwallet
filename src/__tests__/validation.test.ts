@@ -1,5 +1,22 @@
 import { describe, it, expect } from "vitest";
-import { validateAmount, validateDate, validateTicker } from "../utils/validation";
+import { validateAmount, validateDate, validateTicker, validateQuantity } from "../utils/validation";
+
+describe("validateQuantity — 지수표기·기호 차단", () => {
+  it("정상 정수/소수", () => {
+    expect(validateQuantity("100").valid).toBe(true);
+    expect(validateQuantity("2.5", true).valid).toBe(true);
+  });
+  it("지수표기 1e3은 거부 (무음 통과 방지)", () => {
+    expect(validateQuantity("1e3").valid).toBe(false);
+  });
+  it("음수·문자 거부", () => {
+    expect(validateQuantity("-5").valid).toBe(false);
+    expect(validateQuantity("abc").valid).toBe(false);
+  });
+  it("소수 비허용 모드에서 소수는 거부", () => {
+    expect(validateQuantity("2.5", false).valid).toBe(false);
+  });
+});
 
 describe("validateAmount", () => {
   it("빈 값이면 실패", () => {

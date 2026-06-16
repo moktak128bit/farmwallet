@@ -42,6 +42,7 @@ export function useKeyboardShortcuts({
         !!target &&
         (target.tagName === "INPUT" ||
           target.tagName === "TEXTAREA" ||
+          target.tagName === "SELECT" || // 드롭다운 조작 중 Ctrl+Z/탭전환 오발동 차단
           target.isContentEditable);
       if (isInputFocused) return;
 

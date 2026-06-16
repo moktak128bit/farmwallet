@@ -175,11 +175,11 @@ export function validateQuantity(
   }
 
   const cleanQuantity = quantity.replace(/,/g, "");
-  const numValue = Number(cleanQuantity);
-  
-  if (isNaN(numValue)) {
+  // 지수표기(1e3 → 1000 무음 통과)·기호 차단 — 숫자/소수점만 허용 (parseAmount와 통일)
+  if (!/^\d+(\.\d+)?$/.test(cleanQuantity)) {
     return { valid: false, error: "올바른 숫자를 입력해주세요" };
   }
+  const numValue = Number(cleanQuantity);
 
   if (numValue <= 0) {
     return { valid: false, error: "수량은 0보다 커야 합니다" };

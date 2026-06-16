@@ -55,6 +55,7 @@ export function showDeleteUndoToast(message: string, restore: () => boolean): vo
         </button>
       </span>
     ),
-    { id: "delete-undo", duration: 7000 }
+    // 고정 id 제거 — 연속 삭제 시 각 토스트가 독립적으로 유지돼 먼저 삭제한 항목도 복원 가능
+    { duration: 7000 }
   );
 }

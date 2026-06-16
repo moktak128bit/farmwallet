@@ -41,20 +41,16 @@ function saveFxRate(rate: number) {
   }
 }
 
-interface FxRateInfo {
+export interface FxRateInfo {
   rate: number | null;
   /** 마지막 성공 시점 ISO. 캐시 only이고 시간이 너무 오래됐으면 isStale=true */
   fetchedAt: string | null;
   isStale: boolean;
 }
 
-/** 기존 호환: 숫자 환율만 반환 */
-export function useFxRate(): number | null {
-  return useFxRateInfo().rate;
-}
-
-/** 신규: 환율 + 신선도 정보 반환 */
-function useFxRateInfo(): FxRateInfo {
+/** 환율 + 신선도 정보 반환 (FxRateProvider가 사용 — 묵은 환율 경고 노출용).
+ *  숫자 환율만 필요하면 FxRateContext의 useFxRateValue()를 쓴다. */
+export function useFxRateInfo(): FxRateInfo {
   const [info, setInfo] = useState<FxRateInfo>(() => {
     const cached = loadCachedFxRate();
     if (!cached) return { rate: null, fetchedAt: null, isStale: false };

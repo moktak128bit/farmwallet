@@ -6,6 +6,7 @@
  */
 import type { CategoryPresets, LedgerEntry } from "../../types";
 import { isCreditPayment, isSavingsExpenseEntry } from "../../utils/category";
+import { INVESTMENT_TRANSFER_SUBS } from "../../utils/categoryUtils";
 
 /** USD 항목은 환율로 원화 환산. 환율이 없으면 액면 그대로 (대시보드 공통 정책) */
 export const toKrwAmount = (entry: LedgerEntry, fxRate: number | null): number =>
@@ -59,9 +60,8 @@ export function classifyLedgerFlow(
   }
   if (entry.kind === "transfer") {
     const sub = entry.subCategory;
-    if (sub === "저축이체" || sub === "투자이체" || sub === "저축" || sub === "투자") {
-      return "investing";
-    }
+    // 재테크 이체 집합은 categoryUtils와 공유 (한쪽만 바꾸면 대시보드 수치 어긋남)
+    if (sub && INVESTMENT_TRANSFER_SUBS.has(sub)) return "investing";
   }
   return null;
 }

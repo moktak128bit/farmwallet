@@ -58,7 +58,7 @@ import { useUndoRedo } from "./hooks/useUndoRedo";
 import { useBackup } from "./hooks/useBackup";
 import { useSearch } from "./hooks/useSearch";
 import { useTheme } from "./hooks/useTheme";
-import { useFxRateValue } from "./context/FxRateContext";
+import { useFxRateValue, useFxRateInfoValue } from "./context/FxRateContext";
 import { useTickerDatabase } from "./hooks/useTickerDatabase";
 import { useKeyboardShortcuts } from "./hooks/useKeyboardShortcuts";
 import { usePortfolioWorker } from "./hooks/usePortfolioWorker";
@@ -229,6 +229,17 @@ export const App: React.FC = () => {
   const { theme, toggleTheme } = useTheme();
 
   const fxRate = useFxRateValue();
+  const fxInfo = useFxRateInfoValue();
+  // 묵은 환율 경고 라벨 — fetchedAt 기준 경과 시간 (USD 평가액이 현재 시세와 어긋날 수 있음)
+  const fxStaleAgeText = (() => {
+    if (!fxInfo.fetchedAt) return "오래됨";
+    const ms = Date.now() - new Date(fxInfo.fetchedAt).getTime();
+    if (!Number.isFinite(ms) || ms < 0) return "오래됨";
+    const h = Math.floor(ms / 3_600_000);
+    if (h < 1) return "1시간 미만 전";
+    if (h < 48) return `${h}시간 전`;
+    return `${Math.floor(h / 24)}일 전`;
+  })();
   const {
     isSearchOpen,
     setIsSearchOpen,
@@ -805,6 +816,14 @@ export const App: React.FC = () => {
           )}
           <SaveStatusPill />
           <DraftRecoveryBanner onRecover={handleRecoverDraft} onDiscard={handleDiscardDraft} />
+          {fxInfo.isStale && fxInfo.rate != null && (
+            <div
+              className="pill warning"
+              title="환율이 24시간 이상 갱신되지 않았습니다. USD 자산 평가액이 현재 시세와 다를 수 있습니다."
+            >
+              환율 캐시 {fxStaleAgeText} · USD 평가 주의
+            </div>
+          )}
           {gistStaleWarning && (
             <div
               className={`pill ${gistStaleWarning.type === "critical" ? "danger" : "warning"}`}

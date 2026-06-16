@@ -5,17 +5,19 @@ export function parseExDateFromNote(note: string | undefined): string | null {
   return m ? m[1] : null;
 }
 
-/** ledger note에서 보유주식 수 추출. "보유주식: 254" 형식 */
+/** ledger note에서 보유주식 수 추출. "보유주식: 254" 또는 "보유주식: 2.5"(미국 소수 주식) 형식 */
 export function parseQuantityFromNote(note: string | undefined): number | null {
   if (!note || typeof note !== "string") return null;
-  const m = note.match(/보유주식\s*:\s*(\d+)/);
-  return m ? parseInt(m[1], 10) : null;
+  const m = note.match(/보유주식\s*:\s*(\d+(?:\.\d+)?)/);
+  if (!m) return null;
+  const q = parseFloat(m[1]);
+  return Number.isFinite(q) ? q : null;
 }
 
-/** 배당 입력 시 note 생성: 보유주식(입력값) + 배당락일 */
+/** 배당 입력 시 note 생성: 보유주식(입력값) + 배당락일. 소수 주식(미국 소수점 매수) 허용 */
 export function buildDividendNote(quantity?: number, exDate?: string): string | undefined {
   const parts: string[] = [];
-  if (quantity != null && Number.isInteger(quantity) && quantity >= 0) parts.push(`보유주식: ${quantity}`);
+  if (quantity != null && Number.isFinite(quantity) && quantity >= 0) parts.push(`보유주식: ${quantity}`);
   if (exDate?.trim()) parts.push(`배당락일:${exDate.trim()}`);
   return parts.length > 0 ? parts.join("\n") : undefined;
 }

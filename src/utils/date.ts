@@ -35,6 +35,8 @@ export function parseIsoLocal(date: string): Date | null {
   if (!y || !m || !d) return null;
   const parsed = new Date(y, m - 1, d);
   if (Number.isNaN(parsed.getTime())) return null;
+  // 월/일 오버플로 검증 — "2026-02-30"이 3/02로 조용히 이동(import/Gist 손상 날짜가 다른 달로 점프)하는 것 방지
+  if (parsed.getFullYear() !== y || parsed.getMonth() !== m - 1 || parsed.getDate() !== d) return null;
   return parsed;
 }
 

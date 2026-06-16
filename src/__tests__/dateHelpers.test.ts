@@ -32,6 +32,13 @@ describe("parseIsoLocal / formatIsoLocal", () => {
   it("부분 문자열 → null", () => {
     expect(parseIsoLocal("2026-04")).toBeNull();
   });
+  it("월/일 오버플로 → null (3/02로 조용히 이동 방지)", () => {
+    expect(parseIsoLocal("2026-02-30")).toBeNull(); // 2월 30일 없음
+    expect(parseIsoLocal("2026-13-01")).toBeNull(); // 13월 없음
+    expect(parseIsoLocal("2026-04-31")).toBeNull(); // 4월 31일 없음
+    expect(parseIsoLocal("2024-02-29")).not.toBeNull(); // 2024 윤년은 정상
+    expect(parseIsoLocal("2026-02-29")).toBeNull(); // 2026 평년
+  });
 });
 
 describe("addDaysToIso", () => {

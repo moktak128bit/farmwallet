@@ -512,29 +512,10 @@ export const StocksView: React.FC<Props> = ({
       .slice(0, 9); // 최대 9개만 표시 (Ctrl+1~9)
   }, [presets]);
 
-  // 키보드 단축키 처리
-  useEffect(() => {
-    const handleKeyDown = (e: KeyboardEvent) => {
-      // Ctrl+1~9: 프리셋 적용
-      if (e.ctrlKey && !e.shiftKey && !e.altKey && e.key >= "1" && e.key <= "9") {
-        const index = parseInt(e.key) - 1;
-        if (filteredPresets[index]) {
-          e.preventDefault();
-          applyPreset(filteredPresets[index]);
-        }
-      }
-      // Ctrl+S: 저장 (폼 제출과 동일 로직 — TradeFormSection ref로 위임)
-      if (e.ctrlKey && e.key === "s" && !e.shiftKey && !e.altKey) {
-        e.preventDefault();
-        tradeFormRef.current?.submit();
-      }
-    };
-
-    window.addEventListener("keydown", handleKeyDown);
-    return () => {
-      window.removeEventListener("keydown", handleKeyDown);
-    };
-  }, [filteredPresets, applyPreset]);
+  // 단축키:
+  // - Ctrl+S(백업)·Ctrl+1~9(탭 이동)는 App 전역(useKeyboardShortcuts) 소유 — 여기서 등록하면
+  //   백업+거래제출 / 탭이동+프리셋이 동시 발동하는 이중 발화가 생겨 제거했다 (불변식 #10).
+  // - 거래 폼 제출은 폼 스코프 Ctrl+Enter(TradeFormSection)로 처리. 프리셋은 프리셋 칩 클릭으로.
 
   return (
     <div>

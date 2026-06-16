@@ -331,8 +331,9 @@ export const DividendFormSection: React.FC<Props> = React.memo(function Dividend
     const netAmount = amount;
 
     const description = `${dividendForm.ticker}${dividendForm.name ? ` - ${dividendForm.name}` : ""} 배당${tax > 0 ? `, 세금: ${Math.round(tax).toLocaleString()}원` : ""}${fee > 0 ? `, 수수료: ${Math.round(fee).toLocaleString()}원` : ""}`;
-    const qtyForNote = dividendForm.quantity !== "" ? parseInt(dividendForm.quantity, 10) : selectedPosition?.quantity;
-    const quantityToSave = typeof qtyForNote === "number" && !Number.isNaN(qtyForNote) && qtyForNote >= 0 ? qtyForNote : undefined;
+    // 미국 소수점 주식 대비 — parseInt(정수 절삭) 대신 parseFloat
+    const qtyForNote = dividendForm.quantity !== "" ? parseFloat(dividendForm.quantity) : selectedPosition?.quantity;
+    const quantityToSave = typeof qtyForNote === "number" && Number.isFinite(qtyForNote) && qtyForNote >= 0 ? qtyForNote : undefined;
     const note = buildDividendNote(quantityToSave, dividendForm.exDate?.trim());
     const entry: LedgerEntry = {
       id: newIdWithPrefix("D"),
@@ -538,7 +539,7 @@ export const DividendFormSection: React.FC<Props> = React.memo(function Dividend
                 <input
                   type="number"
                   min={0}
-                  step={1}
+                  step="any"
                   value={dividendForm.quantity}
                   onChange={(e) => setDividendForm({ ...dividendForm, quantity: e.target.value })}
                   placeholder={String(selectedPosition.quantity)}

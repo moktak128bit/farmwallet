@@ -697,7 +697,18 @@ export const TradeFormSection = React.memo(React.forwardRef<TradeFormSectionHand
     return (
       <>
       <div className="two-column">
-        <form className="card" onSubmit={handleTradeSubmit} style={{ padding: 16 }}>
+        <form
+          className="card"
+          onSubmit={handleTradeSubmit}
+          onKeyDown={(e) => {
+            // Ctrl+Enter: 거래 폼 제출 (폼 스코프 — 전역 Ctrl+S 백업과 충돌하지 않음)
+            if ((e.ctrlKey || e.metaKey) && e.key === "Enter") {
+              e.preventDefault();
+              submitTradeFromForm();
+            }
+          }}
+          style={{ padding: 16 }}
+        >
           <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 8 }}>
             <h3 style={{ marginTop: 0, marginBottom: 0 }}>
               {tradeForm.side === "sell" ? "주식 매도" : "주식 거래 입력 (매수)"}

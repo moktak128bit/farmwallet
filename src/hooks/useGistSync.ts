@@ -382,10 +382,11 @@ export function useGistSync(
     };
   }, [autoSyncEnabled, data, runAutoPush]);
 
-  // Effect 3: 모바일 백그라운드 suspend 방지용 즉시 flush.
+  // Effect 3: 모바일 백그라운드 suspend 방지용 즉시 flush + 오프라인 복귀 시 재개.
   // visibilitychange:hidden — 앱 전환·화면 잠금 시점. setTimeout이 정지·지연되기 전에 push.
   // pagehide — 페이지가 실제로 unload되는 시점 (iOS Safari에서 신뢰성 ↑).
-  // 두 이벤트 모두 dirty가 있을 때만 작동, 디바운스 타이머는 cancel 후 즉시 push 시도.
+  // online — 장시간 오프라인 후 복귀. dirty면 1회 push (다음 변경까지 기다리면 다른 기기 변경에 덮일 위험).
+  // 모두 dirty가 있을 때만 작동(runAutoPush의 가드가 재진입 방지), 디바운스 타이머는 cancel 후 즉시 push.
   useEffect(() => {
     if (typeof window === "undefined") return;
     if (!autoSyncEnabled) return;
@@ -406,14 +407,20 @@ export function useGistSync(
     const onVisibilityChange = () => {
       if (document.visibilityState === "hidden") flush();
     };
+    const onOnline = () => {
+      onLog?.("네트워크 복귀 — 미저장 변경이 있으면 Gist 푸시 재개", "info");
+      flush();
+    };
 
     document.addEventListener("visibilitychange", onVisibilityChange);
     window.addEventListener("pagehide", flush);
+    window.addEventListener("online", onOnline);
     return () => {
       document.removeEventListener("visibilitychange", onVisibilityChange);
       window.removeEventListener("pagehide", flush);
+      window.removeEventListener("online", onOnline);
     };
-  }, [autoSyncEnabled, runAutoPush]);
+  }, [autoSyncEnabled, runAutoPush, onLog]);
 
   const setAutoSyncEnabled = useCallback((enabled: boolean) => {
     setGistAutoSync(enabled);

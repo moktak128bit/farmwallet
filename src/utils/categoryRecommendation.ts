@@ -1,4 +1,5 @@
 import type { LedgerEntry } from "../types";
+import { parseIsoLocal } from "./date";
 
 interface Recommendation {
   category?: string;
@@ -84,7 +85,8 @@ export function recommendCategory(
     const frequency = frequencyMap.get(key) || 0;
     const lastUsed = recentMap.get(key) || "";
     const now = new Date();
-    const lastUsedDate = lastUsed ? new Date(lastUsed) : new Date(0);
+    // new Date("YYYY-MM-DD")는 UTC 파싱(금지) — parseIsoLocal로 로컬 자정 기준 (분류 모듈 KST 통일)
+    const lastUsedDate = lastUsed ? parseIsoLocal(lastUsed) ?? new Date(0) : new Date(0);
     const daysSince = (now.getTime() - lastUsedDate.getTime()) / (1000 * 60 * 60 * 24);
     
     // 빈도 가중치 (최대 0.2)

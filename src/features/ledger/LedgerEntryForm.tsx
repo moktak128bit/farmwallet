@@ -538,50 +538,42 @@ export const LedgerEntryForm = React.memo(React.forwardRef<LedgerEntryFormHandle
     }, [kindForTab]);
 
     const isEditing = Boolean(form.id);
-    const dateInputRef = useRef<HTMLInputElement>(null);
 
-    // 키보드 단축키 처리 (close-modal/ESC는 셀 편집 취소용 — 부모 소유)
-    // Ctrl+Enter(submit-form) = 폼 제출. Ctrl+S는 앱 전역 백업 전용 — 여기서 처리하지 않음.
+    // Ctrl+Enter(submit-form) = 폼 제출 (입력 포커스 중에도 동작 — 핵심 시나리오).
+    // Ctrl+S는 앱 전역 백업 전용. Alt+N(새 항목)은 App이 단독 소유하고 아래 focus 이벤트로 위임받는다
+    // (과거: 여기서도 new-entry를 register해 App.onAddLedger와 이중 발화).
     useEffect(() => {
-      const handlers = [
-        {
-          action: "new-entry" as ShortcutAction,
-          handler: () => {
-            resetForm();
-            setTimeout(() => dateInputRef.current?.focus(), 100);
-          },
-          enabled: () => !isEditing
+      const handler = {
+        action: "submit-form" as ShortcutAction,
+        handler: () => {
+          submitForm();
         },
-        {
-          action: "submit-form" as ShortcutAction,
-          handler: () => {
-            submitForm();
-          },
-          enabled: () => {
-            const allowDec = effectiveFormKind === "transfer" && form.currency === "USD";
-            return Boolean(form.date && parseAmount(form.amount, allowDec) > 0);
-          }
+        enabled: () => {
+          const allowDec = effectiveFormKind === "transfer" && form.currency === "USD";
+          return Boolean(form.date && parseAmount(form.amount, allowDec) > 0);
         }
-      ];
-
-      handlers.forEach(handler => shortcutManager.register(handler));
-      return () => {
-        handlers.forEach(handler => shortcutManager.unregister(handler));
       };
-    }, [isEditing, form, effectiveFormKind, parseAmount, resetForm, submitForm]);
+      shortcutManager.register(handler);
+      return () => shortcutManager.unregister(handler);
+    }, [form, effectiveFormKind, parseAmount, submitForm]);
 
-    // Ctrl+N 시 전역 이벤트로 가계부 폼 포커스
+    // Alt+N(App.onAddLedger) → "farmwallet:focus-ledger-form" 이벤트로 위임:
+    // 편집 중이 아니면 폼을 초기화한 뒤 금액 칸으로 포커스 (새 항목 입력 준비).
     useEffect(() => {
       const handler = () => {
-        const el = document.querySelector("[data-ledger-focus=\"amount\"]") as HTMLInputElement | null;
-        if (el) {
-          el.focus();
-          el.scrollIntoView({ behavior: "smooth", block: "center" });
-        }
+        if (!isEditing) resetForm();
+        // resetForm 직후 리렌더를 기다렸다가 포커스 (편집 중이면 즉시 포커스만)
+        setTimeout(() => {
+          const el = document.querySelector("[data-ledger-focus=\"amount\"]") as HTMLInputElement | null;
+          if (el) {
+            el.focus();
+            el.scrollIntoView({ behavior: "smooth", block: "center" });
+          }
+        }, isEditing ? 0 : 60);
       };
       window.addEventListener("farmwallet:focus-ledger-form", handler);
       return () => window.removeEventListener("farmwallet:focus-ledger-form", handler);
-    }, []);
+    }, [isEditing, resetForm]);
 
     return (
       <>

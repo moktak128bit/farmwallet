@@ -1,14 +1,6 @@
 export type ShortcutAction =
-  | "new-entry"
-  | "save-entry"
-  | "open-search"
   | "close-modal"
-  | "undo"
-  | "redo"
-  | "focus-form"
-  | "global-search"
-  | "submit-form"
-  | "show-help";
+  | "submit-form";
 
 interface ShortcutHandler {
   action: ShortcutAction;
@@ -17,21 +9,16 @@ interface ShortcutHandler {
 }
 
 /**
- * 액션 → 키 조합 매핑.
- * - save-entry(ctrl+s): 제거 — Ctrl+S는 App의 useKeyboardShortcuts(수동 백업) 전용.
- * - open-search(ctrl+f): 제거 — 미구현 안내만 있던 매핑 (브라우저 찾기와 충돌).
- * - new-entry: Ctrl+N은 브라우저 예약키(새 창)라 동작 불가 → Alt+N으로 재매핑.
- * - submit-form(ctrl+enter): 가계부 폼 제출 (입력 포커스 중에도 허용 — 핵심 시나리오).
+ * 액션 → 키 조합 매핑. shortcutManager는 '입력 포커스 중에도 동작해야 하는' 폼 스코프 단축키만 담당한다.
+ * 전역 단축키(Ctrl+S 백업, Alt+N 새 항목, Ctrl+K 검색, Ctrl+Z/Y, Ctrl+/, Alt+←/→ 탭, Ctrl+1~9 탭)는
+ * App의 useKeyboardShortcuts가 단독 소유 — 여기에 중복 매핑하면 별개 window 리스너로 이중 발화한다.
+ * (과거 undo/redo/global-search/focus-form/show-help 매핑은 아무도 register하지 않는 죽은 매핑이라 제거)
+ * - close-modal(escape): 모달/셀 편집 취소 (각 화면이 register).
+ * - submit-form(ctrl+enter): 가계부·거래 폼 제출 (입력 포커스 중에도 허용 — 핵심 시나리오).
  */
 const DEFAULT_KEYMAP: Partial<Record<ShortcutAction, string[]>> = {
-  "new-entry": ["alt+n"],
   "close-modal": ["escape"],
-  "undo": ["ctrl+z"],
-  "redo": ["ctrl+y"],
-  "focus-form": ["ctrl+e"],
-  "global-search": ["ctrl+k"],
   "submit-form": ["ctrl+enter"],
-  "show-help": ["ctrl+/"],
 };
 
 /** 입력 필드(INPUT/TEXTAREA/contentEditable) 포커스 중에도 허용하는 키 조합 */

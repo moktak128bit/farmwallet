@@ -60,9 +60,16 @@ export function isRealExpenseEntry(entry: LedgerEntry, categoryPresets?: Categor
   return true;
 }
 
+/**
+ * 재테크(저축·투자)로 분류하는 '이체' subCategory 집합 — 저축이체/투자이체(+구버전 저축/투자).
+ * summaryMath.classifyLedgerFlow와 isInvestmentEntry가 같은 정의를 공유한다(한쪽만 바꾸면 대시보드 수치 어긋남).
+ * ⚠ categoryTypes.transfer union을 쓰지 말 것 — 카드결제이체까지 재테크로 오분류된다.
+ */
+export const INVESTMENT_TRANSFER_SUBS = new Set(["저축이체", "투자이체", "저축", "투자"]);
+
 export function isInvestmentEntry(entry: LedgerEntry): boolean {
   const sub = entry.subCategory;
-  if (entry.kind === "transfer" && (sub === "저축이체" || sub === "투자이체" || sub === "저축" || sub === "투자")) return true;
+  if (entry.kind === "transfer" && !!sub && INVESTMENT_TRANSFER_SUBS.has(sub)) return true;
   if (entry.kind === "expense" && entry.category === "재테크" && (sub === "저축" || sub === "투자")) return true;
   return false;
 }

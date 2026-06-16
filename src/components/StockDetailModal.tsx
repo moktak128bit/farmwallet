@@ -3,6 +3,7 @@ import type { Account, LedgerEntry, StockPrice, StockTrade, TickerInfo } from ".
 import { formatKRW, formatNumber } from "../utils/formatter";
 import { isKRWStock, isUSDStock, extractTickerFromText, canonicalTickerForMatch } from "../utils/finance";
 import { parseExDateFromNote, buildDividendNote } from "../utils/dividend";
+import { isDividendEntryLoose } from "../utils/categoryMatch";
 import { parseAmount } from "../utils/parseAmount";
 import { getTodayKST } from "../utils/date";
 import { newIdWithPrefix } from "../utils/id";
@@ -145,9 +146,8 @@ export const StockDetailModal: React.FC<Props> = ({
   const positionDividends = useMemo(() => {
     if (!position) return [];
     const isDividend = (l: LedgerEntry) => {
-      if (l.kind !== "income") return false;
-      const isDividendEntry = l.category === "배당" || (l.category === "수입" && l.subCategory === "배당") || (l.description ?? "").includes("배당");
-      if (!isDividendEntry) return false;
+      // 분류 단일소스(categoryMatch.isDividendEntryLoose) — cat/sub 정확 매칭 + description fallback
+      if (l.kind !== "income" || !isDividendEntryLoose(l)) return false;
       const ledgerTicker = (extractTickerFromText(l.description ?? "") ?? extractTickerFromText(l.category ?? ""))?.toUpperCase() ?? "";
       return Boolean(ledgerTicker) && canonicalTickerForMatch(ledgerTicker) === canonicalTickerForMatch(position.ticker);
     };

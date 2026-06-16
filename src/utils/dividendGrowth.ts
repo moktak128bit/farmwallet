@@ -12,6 +12,7 @@
  */
 import type { HistoricalDailyClose, LedgerEntry, MarketEnvSnapshot, StockPrice, StockTrade } from "../types";
 import { canonicalTickerForMatch, isUSDStock } from "./finance";
+import { isDividendEntryLoose } from "./categoryMatch";
 import { parseQuantityFromNote } from "./dividend";
 
 export interface DividendGrowthPoint {
@@ -68,11 +69,9 @@ const tickerFromDividendDesc = (desc: string | undefined): string | null => {
   return m ? canonicalTickerForMatch(m[1]) : null;
 };
 
-/** 배당 수입 기록 판정 (subCategory="배당" 또는 description에 배당) */
+/** 배당 수입 기록 판정 — 분류 단일소스(categoryMatch.isDividendEntryLoose) + 양수 금액 */
 const isDividendRecord = (l: LedgerEntry): boolean =>
-  l.kind === "income" &&
-  Number(l.amount) > 0 &&
-  ((l.subCategory || "").includes("배당") || (l.description || "").includes("배당"));
+  l.kind === "income" && Number(l.amount) > 0 && isDividendEntryLoose(l);
 
 const monthSeq = (from: string, to: string): string[] => {
   const out: string[] = [];

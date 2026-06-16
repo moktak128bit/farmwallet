@@ -99,11 +99,13 @@ const replaceInList = (list: string[], from: string, to: string): string[] => {
 export function mergePresets(presets: CategoryPresets, spec: MergeSpec): CategoryPresets {
   if (spec.kind === "income") {
     const ct = presets.categoryTypes;
-    const remap = (list?: string[]) => (list ? replaceInList(list, spec.from, spec.to) : list);
+    // ⚠ from이 그 타입 리스트에 실제로 있을 때만 to로 승계 — 무가드 replaceInList는 from이 없어도 to를
+    //   강제 추가해, 무관한 수입 A→B 통합 시 B가 salary/passive/nonReal에 잘못 등록(수입성격 오염)됨.
+    const remap = (list?: string[]) =>
+      list && list.includes(spec.from) ? replaceInList(list, spec.from, spec.to) : list;
     return {
       ...presets,
       income: replaceInList(presets.income, spec.from, spec.to),
-      // 수입 성격 지정(근로/패시브/비실질)도 from→to로 승계 (통합 후 분류 유실 방지)
       categoryTypes: ct
         ? { ...ct, salary: remap(ct.salary), passive: remap(ct.passive), nonRealIncome: remap(ct.nonRealIncome) }
         : ct,
@@ -115,7 +117,10 @@ export function mergePresets(presets: CategoryPresets, spec: MergeSpec): Categor
     return {
       ...presets,
       transfer,
-      categoryTypes: ct ? { ...ct, transfer: replaceInList(ct.transfer ?? [], spec.from, spec.to) } : ct,
+      // 위와 동일 가드 — from이 ct.transfer에 있을 때만 승계
+      categoryTypes: ct
+        ? { ...ct, transfer: ct.transfer?.includes(spec.from) ? replaceInList(ct.transfer, spec.from, spec.to) : ct.transfer }
+        : ct,
     };
   }
 

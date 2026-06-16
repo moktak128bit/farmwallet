@@ -92,6 +92,28 @@ describe("mergePresets", () => {
     expect(next.income).not.toContain("기타수입");
   });
 
+  it("수입: from이 salary/passive에 없으면 to를 그 타입에 강제 추가하지 않는다 (수입성격 오염 방지)", () => {
+    // '급여'(salary)는 그대로 두고, salary에 없는 '기타수입'→'부수입' 통합 시 '부수입'이 salary로 잘못 등록되면 안 됨
+    const p: CategoryPresets = {
+      ...presets,
+      categoryTypes: { ...presets.categoryTypes, salary: ["급여"], passive: ["배당"], nonRealIncome: ["정산"] },
+    };
+    const next = mergePresets(p, { kind: "income", from: "기타수입", to: "부수입" });
+    expect(next.categoryTypes?.salary).toEqual(["급여"]); // '부수입' 추가 안 됨
+    expect(next.categoryTypes?.passive).toEqual(["배당"]);
+    expect(next.categoryTypes?.nonRealIncome).toEqual(["정산"]);
+  });
+
+  it("수입: from이 salary에 있으면 to로 정상 승계", () => {
+    const p: CategoryPresets = {
+      ...presets,
+      categoryTypes: { ...presets.categoryTypes, salary: ["급여", "기타수입"] },
+    };
+    const next = mergePresets(p, { kind: "income", from: "기타수입", to: "급여" });
+    // 기타수입 제거, 급여 유지 (중복 없음)
+    expect(next.categoryTypes?.salary).toEqual(["급여"]);
+  });
+
   it("이체: categoryTypes.transfer 매핑도 정리", () => {
     const next = mergePresets(presets, { kind: "transfer", from: "저축이체", to: "계좌이체" });
     expect(next.transfer).toEqual(["계좌이체"]);

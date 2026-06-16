@@ -8,6 +8,9 @@ import { validateAccountTickerCurrency } from "../../utils/validation";
 import { ERROR_MESSAGES } from "../../constants/errorMessages";
 import { isCoarsePointer } from "../../utils/pointer";
 import { formatNumber, formatKRW, formatUSD, formatShortDate } from "../../utils/formatter";
+import { showDeleteUndoToast } from "../../utils/undoToast";
+import { saveSafetySnapshot } from "../../services/backupService";
+import { useAppStore } from "../../store/appStore";
 
 const sideLabel: Record<TradeSide, string> = {
   buy: "매수",
@@ -459,6 +462,10 @@ export const TradeHistorySection: React.FC<TradeHistorySectionProps> = ({
     const nm = tradeToDelete.name || tradeToDelete.ticker;
     if (!window.confirm(`${tradeToDelete.date} ${nm} ${sideLabel} ${tradeToDelete.quantity}주 거래를 삭제할까요?`)) return;
 
+    // 위험 작업 → 안전 스냅샷 (불변식 #9). stocks 도메인 유일하게 빠져 있던 보호.
+    void saveSafetySnapshot(useAppStore.getState().data, "주식 거래 삭제 직전 자동 스냅샷");
+
+    let usdDelta = 0; // 복원 시 역적용할 USD 잔액 델타
     const account = accounts.find((a) => a.id === tradeToDelete.accountId);
     if ((account?.type === "securities" || account?.type === "crypto") && onChangeAccounts) {
       const priceInfo = latestPriceByCanonicalTicker.get(canonicalTickerForMatch(tradeToDelete.ticker));
@@ -469,9 +476,11 @@ export const TradeHistorySection: React.FC<TradeHistorySectionProps> = ({
         const usdImpact = tradeToDelete.side === "buy" ? tradeToDelete.totalAmount : -tradeToDelete.totalAmount;
         // 최신 accounts에 델타만 적용 — 스냅샷 교체로 다른 변경이 유실되지 않게
         applyUsdBalanceDelta(tradeToDelete.accountId, usdImpact);
+        usdDelta = usdImpact;
       }
     }
 
+    const index = trades.findIndex((t) => t.id === id);
     onChangeTrades((prevTrades) => prevTrades.filter((t) => t.id !== id));
 
     if (onResetTradeForm) {
@@ -480,6 +489,18 @@ export const TradeHistorySection: React.FC<TradeHistorySectionProps> = ({
     if (inlineEdit?.id === id) {
       setInlineEdit(null);
     }
+
+    // 복원 토스트 — 거래 재삽입 + (적용했다면) USD 잔액 델타 역적용
+    showDeleteUndoToast(`${nm} ${sideLabel} 거래가 삭제되었습니다.`, () => {
+      const cur = useAppStore.getState().data.trades ?? [];
+      if (cur.some((t) => t.id === tradeToDelete.id)) return false;
+      const next = [...cur];
+      if (index >= 0 && index <= next.length) next.splice(index, 0, tradeToDelete);
+      else next.push(tradeToDelete);
+      onChangeTrades(next);
+      if (usdDelta !== 0) applyUsdBalanceDelta(tradeToDelete.accountId, -usdDelta);
+      return true;
+    });
   };
 
   const handleReorderTrade = (id: string, newIndex: number) => {

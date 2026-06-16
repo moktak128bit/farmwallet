@@ -59,6 +59,8 @@ interface UseGistSyncReturn {
    * (설정 카드의 "Gist에서 불러오기"가 상태 갱신을 우회하던 문제 해소)
    */
   manualPull: () => Promise<void>;
+  /** Gist 과거 버전 복원 직후 동기화 상태 갱신 — 자동 push로 인한 조용한 롤백 방지 */
+  syncStateAfterRestore: (dataJson: string, committedAt: string) => void;
 }
 
 /**
@@ -489,6 +491,20 @@ export function useGistSync(
     }
   }, [onApplyPulledData, onLog]);
 
+  /**
+   * Gist 과거 버전 복원(GistVersionModal) 직후 동기화 상태를 갱신한다.
+   * 이걸 호출하지 않으면 복원된 (과거) 데이터를 runAutoPush가 '새 로컬 변경'으로 보고
+   * 5분 뒤 조용히 push → 최신 원격이 과거로 롤백된다.
+   * - lastPushedPayloadRef/hash = 복원 데이터: 즉시 자동 push 막음(데이터 동일 → no-op).
+   * - knownRemoteCommitRef = 복원 버전의 commit 시각(과거): 이후 실제 변경 시 detectConflict가
+   *   '원격이 더 최신'을 감지해 충돌 모달로 사용자에게 롤백 여부를 의식적으로 묻게 함.
+   */
+  const syncStateAfterRestore = useCallback((dataJson: string, committedAt: string) => {
+    lastPushedPayloadRef.current = dataJson;
+    setGistLastPushedHash(hashGistPayload(dataJson));
+    knownRemoteCommitRef.current = committedAt;
+  }, []);
+
   // 경고는 매 렌더에 재계산 — 사용자가 앱을 보고 있으면 어차피 자주 리렌더됨 (탭 전환·데이터 변경 등).
   // 별도 setInterval로 강제 갱신은 안 함 (불필요 + fake-timer 테스트와 충돌).
   let gistStaleWarning: GistStaleWarning | null = null;
@@ -522,5 +538,6 @@ export function useGistSync(
     gistStaleWarning,
     manualPush,
     manualPull,
+    syncStateAfterRestore,
   };
 }

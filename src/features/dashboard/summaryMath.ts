@@ -5,7 +5,7 @@
  * 호출부에서 useMemo로 감싸 재계산을 막는다 (입력: ledger, fxRate, 월 prefix).
  */
 import type { CategoryPresets, LedgerEntry } from "../../types";
-import { isCreditPayment, isSavingsExpenseEntry } from "../../utils/category";
+import { isCreditPayment, isSavingsExpenseEntry, isInvestmentPnlEntry, isInvestmentLossEntry } from "../../utils/category";
 import { INVESTMENT_TRANSFER_SUBS } from "../../utils/categoryUtils";
 
 /** USD 항목은 환율로 원화 환산. 환율이 없으면 액면 그대로 (대시보드 공통 정책) */
@@ -49,6 +49,8 @@ export function classifyLedgerFlow(
   categoryPresets?: CategoryPresets,
   salaryKeys?: Set<string>
 ): LedgerFlowType | null {
+  // 투자 실현손익(투자수익·투자손실)은 일반 수입/지출이 아니라 '재테크'로 — 큰 손익이 생활 수입/지출을 부풀리지 않게.
+  if (isInvestmentPnlEntry(entry)) return "investing";
   if (entry.kind === "income") {
     if (salaryKeys && !salaryKeys.has(entry.subCategory || entry.category || "")) return null;
     return "income";
@@ -103,7 +105,10 @@ export function computeLedgerSummary(
     else if (flow === "expense") {
       expense += amt;
       if (excluded && isExcludedExpenseName(entry, excluded)) excludedExpense += amt;
-    } else investing += amt;
+    } else {
+      // 재테크 = 저축·투자 이체(+) + 투자수익(+) − 투자손실(−). 손실은 재테크 순액을 줄인다.
+      investing += isInvestmentLossEntry(entry) ? -amt : amt;
+    }
   }
   return { income, expense, investing, excludedExpense };
 }

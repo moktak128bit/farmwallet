@@ -24,7 +24,7 @@ import React, { useEffect, useMemo, useState, useRef, useCallback, useDeferredVa
 import type { Account, AccountBalanceRow, CategoryPresets, LedgerEntry, LedgerTemplate, StockTrade } from "../types";
 import { formatKRW } from "../utils/formatter";
 import { shortcutManager, type ShortcutAction } from "../utils/shortcuts";
-import { isSavingsExpenseEntry, makeIsSavingsExpense, isCreditPayment, isInvestmentKind, isInvestmentEntry } from "../utils/category";
+import { isSavingsExpenseEntry, makeIsSavingsExpense, isCreditPayment, isInvestmentKind, isInvestmentEntry, isInvestmentPnlEntry, isInvestmentLossEntry } from "../utils/category";
 import { isDividendEntryLoose, isInterestEntryLoose } from "../utils/categoryMatch";
 import { parseAmount as sharedParseAmount } from "../utils/parseAmount";
 import { newIdWithPrefix } from "../utils/id";
@@ -421,16 +421,18 @@ export const LedgerView: React.FC<Props> = ({
     let incomeAmount = 0;
     const excludedNames = new Set(EXPENSE_BOX_EXCLUDED_NAMES);
     for (const l of filteredLedger) {
-      // 재테크 = 저축성지출(expense 재테크/저축성지출) + 저축·투자 이체(transfer 저축이체/투자이체).
-      // 옛 기준(isSavings, expense만)은 현행 데이터(이체로 기록된 저축/투자)를 못 잡아 0으로 나왔음.
-      if (isInvestmentEntry(l) || isSavings(l)) {
-        savingsAmount += toKrw(l);
+      // 재테크 = 저축성지출 + 저축·투자 이체 + 투자수익(+) − 투자손실(−).
+      // 투자 실현손익은 생활 수입/지출을 부풀리지 않도록 재테크로만 집계 (대시보드 summaryMath와 동일 기준).
+      const isPnl = isInvestmentPnlEntry(l);
+      if (isInvestmentEntry(l) || isSavings(l) || isPnl) {
+        savingsAmount += isInvestmentLossEntry(l) ? -toKrw(l) : toKrw(l);
       } else if (l.kind === "expense" && !isCreditPayment(l)) {
         // 신용결제는 카드 사용 시점에 이미 expense로 잡힘 — 이중계상 방지
         expenseAmount += toKrw(l);
         if (isExcludedExpenseName(l, excludedNames)) excludedExpenseAmount += toKrw(l);
       }
-      if (l.kind === "income") {
+      // 투자수익(income)은 수입에서 제외 — 재테크로만
+      if (l.kind === "income" && !isPnl) {
         incomeAmount += toKrw(l);
       }
     }
@@ -448,12 +450,14 @@ export const LedgerView: React.FC<Props> = ({
       if (!l.date?.startsWith(prevMonth)) continue;
       if (prevDayCap != null && Number(l.date.slice(8, 10)) > prevDayCap) continue;
       prevCount += 1;
-      if (l.kind === "income") {
+      // 현재 합계와 동일 기준 — 투자수익은 수입 제외, 투자손익은 지출 제외(재테크로만)
+      if (l.kind === "income" && !isInvestmentPnlEntry(l)) {
         prevIncome += toKrw(l);
       } else if (
         l.kind === "expense" &&
         !isInvestmentEntry(l) &&
         !isSavings(l) &&
+        !isInvestmentPnlEntry(l) &&
         !isCreditPayment(l)
       ) {
         prevExpense += toKrw(l);

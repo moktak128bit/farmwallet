@@ -57,8 +57,9 @@ describe("classifyLedgerFlow — 단일 분류 기준", () => {
     expect(classifyLedgerFlow(entry({ kind: "expense", category: "재테크", subCategory: "저축" }))).toBe("investing");
   });
 
-  it("재테크 중 투자손실은 실소비 → expense", () => {
-    expect(classifyLedgerFlow(entry({ kind: "expense", category: "재테크", subCategory: "투자손실" }))).toBe("expense");
+  it("투자손실·투자수익은 일반 수입/지출이 아니라 재테크(investing)로 분류", () => {
+    expect(classifyLedgerFlow(entry({ kind: "expense", category: "재테크", subCategory: "투자손실" }))).toBe("investing");
+    expect(classifyLedgerFlow(entry({ kind: "income", category: "수입", subCategory: "투자수익" }))).toBe("investing");
   });
 
   it("저축이체/투자이체 transfer → investing (구버전 저축/투자 포함)", () => {
@@ -111,6 +112,20 @@ describe("computeLedgerSummary", () => {
   it("monthPrefix=null이면 전체 기간", () => {
     const s = computeLedgerSummary(ledger, 1400, null);
     expect(s.expense).toBe(200_000 + 10 * 1400 + 50_000);
+  });
+
+  it("투자수익(+)·투자손실(−)은 수입/지출에서 빠지고 재테크 순액에만 반영", () => {
+    const invLedger: LedgerEntry[] = [
+      entry({ kind: "income", category: "급여", subCategory: "급여", amount: 3_000_000, date: "2026-06-25" }),
+      entry({ kind: "expense", category: "지출", subCategory: "식비", amount: 200_000, date: "2026-06-10" }),
+      entry({ kind: "income", category: "수입", subCategory: "투자수익", amount: 1_000_000, date: "2026-06-12" }), // 재테크 +
+      entry({ kind: "expense", category: "재테크", subCategory: "투자손실", amount: 300_000, date: "2026-06-13" }), // 재테크 −
+      entry({ kind: "transfer", category: "이체", subCategory: "투자이체", amount: 500_000, date: "2026-06-14" }), // 재테크 +
+    ];
+    const s = computeLedgerSummary(invLedger, 1400, "2026-06");
+    expect(s.income).toBe(3_000_000); // 투자수익 제외
+    expect(s.expense).toBe(200_000); // 투자손실 제외
+    expect(s.investing).toBe(500_000 + 1_000_000 - 300_000); // 이체 + 수익 − 손실 = 1,200,000
   });
 
   it("excludedExpenseNames: 지출 박스 '제외 후' 합계 — subCategory/detailCategory/category로 매칭", () => {

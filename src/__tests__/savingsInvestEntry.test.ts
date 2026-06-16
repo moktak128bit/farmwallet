@@ -36,14 +36,14 @@ describe("savingsInvestStored — 재테크 입력 저장 매핑", () => {
 });
 
 describe("재테크 입력 엔트리가 분류 단일소스에 올바르게 인식됨", () => {
-  it("투자손실: 지출로 분류 + 재테크(investmentKind) 인식", () => {
+  it("투자손실: 재테크(investing)로 분류 — 일반 지출에서 제외", () => {
     const e = asEntry("투자손실");
-    expect(classifyLedgerFlow(e)).toBe("expense"); // 실소비 지출
-    expect(isInvestmentKind(e)).toBe(true); // 재테크 전체 집계엔 포함
+    expect(classifyLedgerFlow(e)).toBe("investing"); // 생활 지출이 아니라 재테크
+    expect(isInvestmentKind(e)).toBe(true);
   });
-  it("투자수익: 수입으로 분류 + investmentKind 인식", () => {
+  it("투자수익: 재테크(investing)로 분류 — 일반 수입에서 제외", () => {
     const e = asEntry("투자수익");
-    expect(classifyLedgerFlow(e)).toBe("income");
+    expect(classifyLedgerFlow(e)).toBe("investing");
     expect(isInvestmentKind(e)).toBe(true);
   });
   it("배당: isDividendEntry 정확 매칭", () => {

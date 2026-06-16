@@ -32,6 +32,28 @@ import { LedgerTemplateManageModal } from "./LedgerTemplateManageModal";
 
 export type LedgerTab = "all" | "income" | "expense" | "savingsExpense" | "transfer" | "creditPayment";
 
+/**
+ * 재테크 탭에서 직접 입력 가능한 중분류 — 신용결제처럼 자동 매핑된다.
+ * 저장 형태(분류 단일소스와 일치):
+ *  - 투자손실 → 지출(expense), category="재테크", subCategory="투자손실"
+ *  - 투자수익 → 수입(income), category="수입", subCategory="투자수익"
+ *  - 배당/이자 → 수입(income), category="수입", subCategory="배당"/"이자" (배당/이자 탭 입력과 동일 형태)
+ */
+export const SAVINGS_INVEST_SUBS = ["투자수익", "투자손실", "배당", "이자"] as const;
+const SAVINGS_INVEST_DEFAULT = "투자수익";
+/** 재테크 중분류 → 저장 kind (투자손실만 지출, 나머지는 수입) */
+const savingsKindForSub = (sub: string): LedgerKind => (sub === "투자손실" ? "expense" : "income");
+
+/**
+ * 재테크 중분류 → 저장 형태 (kind/category/subCategory). 분류 단일소스와 일치.
+ * 폼 submit과 테스트가 공유하는 단일 진입점.
+ */
+export function savingsInvestStored(sub: string): { kind: LedgerKind; category: string; subCategory: string } {
+  if (sub === "투자손실") return { kind: "expense", category: "재테크", subCategory: "투자손실" };
+  // 투자수익/배당/이자 → 수입 (배당/이자 탭 입력과 동일 형태 — isDividendEntry/isInterestEntry 정확 매칭)
+  return { kind: "income", category: "수입", subCategory: sub };
+}
+
 /** 부모(LedgerPage)에서 ref로 호출하는 폼 외부 접점 */
 export interface LedgerEntryFormHandle {
   /** 폼 일부 필드만 갱신 — 필터 일괄 초기화 등에서 사용 */
@@ -97,7 +119,7 @@ export const LedgerEntryForm = React.memo(React.forwardRef<LedgerEntryFormHandle
       ledgerTab === "all"
         ? formKindWhenAll
         : ledgerTab === "savingsExpense"
-          ? "expense"
+          ? savingsKindForSub(form.subCategory) // 중분류에 따라 투자손실=지출, 나머지=수입
           : ledgerTab === "creditPayment"
             ? "transfer"
             : ledgerTab;
@@ -220,6 +242,9 @@ export const LedgerEntryForm = React.memo(React.forwardRef<LedgerEntryFormHandle
         // 복사가 완료될 때까지 기다림 - 플래그는 startCopy에서 해제됨
         return;
       }
+      // 재테크 탭은 중분류에 따라 kind가 바뀌므로(effectiveFormKind 변동) 이 리셋이 중분류를 지우면 안 됨
+      // → 아래 전용 effect가 mainCategory/subCategory/kind를 관리한다.
+      if (ledgerTab === "savingsExpense") return;
       setForm((prev) => ({
         ...prev,
         kind: kindForTab,
@@ -230,7 +255,21 @@ export const LedgerEntryForm = React.memo(React.forwardRef<LedgerEntryFormHandle
         fromAccountId: kindForTab === "income" ? "" : prev.fromAccountId,
         toAccountId: kindForTab === "expense" ? "" : prev.toAccountId
       }));
-    }, [effectiveFormKind, kindForTab]);
+    }, [effectiveFormKind, kindForTab, ledgerTab]);
+
+    // 재테크 탭 전용: 대분류를 "재테크"로 고정, 중분류는 4종 중 하나(기본 투자수익),
+    // form.kind는 선택 중분류에 맞춰 수입/지출 동기화 (신용결제 탭의 자동 매핑과 동일 패턴).
+    useEffect(() => {
+      if (ledgerTab !== "savingsExpense" || isCopyingRef.current) return;
+      setForm((prev) => {
+        const sub = (SAVINGS_INVEST_SUBS as readonly string[]).includes(prev.subCategory)
+          ? prev.subCategory
+          : SAVINGS_INVEST_DEFAULT;
+        const k = savingsKindForSub(sub);
+        if (prev.mainCategory === "재테크" && prev.subCategory === sub && prev.kind === k) return prev;
+        return { ...prev, mainCategory: "재테크", subCategory: sub, kind: k };
+      });
+    }, [ledgerTab, form.subCategory]);
 
     // 실시간 폼 검증
     const validateForm = useMemo(
@@ -317,6 +356,12 @@ export const LedgerEntryForm = React.memo(React.forwardRef<LedgerEntryFormHandle
         // 카드 대금 납부 = 이체 (은행 → 카드 부채계좌)
         storedCategory = "이체";
         storedSubCategory = "카드결제이체";
+        storedDetailCategory = undefined;
+      } else if (ledgerTab === "savingsExpense") {
+        // 재테크 자동 매핑 — 분류 단일소스와 일치하는 형태로 저장 (kind는 kindForTab과 동일)
+        const mapped = savingsInvestStored(normalizedSubCategory || SAVINGS_INVEST_DEFAULT);
+        storedCategory = mapped.category;
+        storedSubCategory = mapped.subCategory;
         storedDetailCategory = undefined;
       } else if (kindForTab === "income") {
         storedCategory = "수입";
@@ -655,26 +700,21 @@ export const LedgerEntryForm = React.memo(React.forwardRef<LedgerEntryFormHandle
               <div
                 className="hint"
                 style={{
-                  padding: "20px 16px",
-                  textAlign: "center",
-                  lineHeight: 1.7,
-                  fontSize: 13,
+                  padding: "10px 14px",
+                  lineHeight: 1.6,
+                  fontSize: 12,
                   background: "var(--surface)",
                   borderRadius: 8,
-                  marginTop: 4
+                  marginTop: 4,
+                  marginBottom: 8
                 }}
               >
-                <strong>📊 재테크 — 보기 전용 탭</strong>
-                <br />
-                흩어진 재테크 활동을 모아서 보여줍니다. 입력은 본래 위치에서:
-                <br />
-                · 배당·이자 → <strong>배당/이자</strong> 탭
-                &nbsp;·&nbsp; 매수·매도 → <strong>주식</strong> 탭
-                &nbsp;·&nbsp; 저축·투자 이체 → <strong>이체</strong> 탭
-                &nbsp;·&nbsp; 투자손실 → 가계부 행 더블클릭으로 직접 편집
+                <strong>📊 재테크 입력</strong> — 투자수익·투자손실·배당·이자를 직접 기록합니다.
+                매수·매도는 <strong>주식</strong> 탭, 저축·투자 이체는 <strong>이체</strong> 탭에서.
+                아래 표에 재테크 항목이 모여 보입니다.
               </div>
             )}
-            <div style={{ display: ledgerTab === "savingsExpense" ? "none" : "block" }}>
+            <div style={{ display: "block" }}>
             {/* 자주 쓰는 거래 템플릿 칩 — onChangeTemplates 없으면 미렌더 */}
             {onChangeTemplates && (
               <LedgerTemplateChips
@@ -784,7 +824,45 @@ export const LedgerEntryForm = React.memo(React.forwardRef<LedgerEntryFormHandle
             </div>
 
             {/* 2. 대분류 (지출/이체만) 또는 수입 중분류 */}
-            {form.kind === "income" ? (
+            {ledgerTab === "savingsExpense" ? (
+              <div style={{ marginBottom: 8 }}>
+                <span style={{ fontSize: 12, marginBottom: 8, display: "block", fontWeight: 600 }}>대분류: 재테크 (자동) · 중분류 선택 *</span>
+                <span style={{ fontSize: 11, color: "var(--danger)", display: "block", marginBottom: 4, visibility: formErrors.subCategory ? "visible" : "hidden" }}>
+                  {formErrors.subCategory || " "}
+                </span>
+                <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(110px, 1fr))", gap: 8 }}>
+                  {SAVINGS_INVEST_SUBS.map((c) => {
+                    const active = form.subCategory === c;
+                    // 색 의미: 수익/배당/이자(수입) = 빨강 계열, 손실(지출) = 파랑 계열
+                    const accent = c === "투자손실" ? "var(--accent)" : "var(--danger)";
+                    return (
+                      <button
+                        key={c}
+                        type="button"
+                        tabIndex={-1}
+                        onClick={() => setForm((prev) => ({ ...prev, mainCategory: "재테크", subCategory: c, kind: savingsKindForSub(c) }))}
+                        style={{
+                          padding: "12px 8px",
+                          fontSize: 14,
+                          fontWeight: active ? 700 : 500,
+                          border: active ? `2px solid ${accent}` : "1px solid var(--border)",
+                          borderRadius: 8,
+                          background: active ? "var(--surface-hover)" : "var(--surface)",
+                          color: active ? accent : "var(--text)",
+                          cursor: "pointer",
+                          textAlign: "center"
+                        }}
+                      >
+                        {c}
+                        <span style={{ display: "block", fontSize: 10, color: "var(--text-muted)", marginTop: 2, fontWeight: 400 }}>
+                          {c === "투자손실" ? "지출" : "수입"}
+                        </span>
+                      </button>
+                    );
+                  })}
+                </div>
+              </div>
+            ) : form.kind === "income" ? (
               <label>
                 <span style={{ fontSize: 14, marginBottom: 8, display: "block", fontWeight: 600 }}>수입 중분류 *</span>
                 <div style={{ borderColor: formErrors.subCategory ? "var(--danger)" : undefined, border: formErrors.subCategory ? "1px solid var(--danger)" : "1px solid var(--border)" }}>

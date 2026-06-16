@@ -272,8 +272,10 @@ function accountValueMapAtDate(
 export function generateMonthlyReport(
   ledger: LedgerEntry[],
   startMonth?: string,
-  endMonth?: string
+  endMonth?: string,
+  fxRate?: number | null
 ): MonthlyReport[] {
+  const toKrw = (e: LedgerEntry) => (e.currency === "USD" && fxRate ? e.amount * fxRate : e.amount);
   const reports = new Map<string, { income: number; expense: number; transfer: number }>();
 
   for (const entry of ledger) {
@@ -286,9 +288,9 @@ export function generateMonthlyReport(
     }
 
     const report = reports.get(month)!;
-    if (entry.kind === "income") report.income += entry.amount;
-    if (entry.kind === "expense" && !isCreditPayment(entry)) report.expense += entry.amount;
-    if (entry.kind === "transfer") report.transfer += entry.amount;
+    if (entry.kind === "income") report.income += toKrw(entry);
+    if (entry.kind === "expense" && !isCreditPayment(entry)) report.expense += toKrw(entry);
+    if (entry.kind === "transfer") report.transfer += toKrw(entry);
   }
 
   return Array.from(reports.entries())
@@ -302,7 +304,8 @@ export function generateMonthlyReport(
     .sort((a, b) => a.month.localeCompare(b.month));
 }
 
-export function generateYearlyReport(ledger: LedgerEntry[]): MonthlyReport[] {
+export function generateYearlyReport(ledger: LedgerEntry[], fxRate?: number | null): MonthlyReport[] {
+  const toKrw = (e: LedgerEntry) => (e.currency === "USD" && fxRate ? e.amount * fxRate : e.amount);
   const reports = new Map<string, { income: number; expense: number; transfer: number }>();
 
   for (const entry of ledger) {
@@ -313,9 +316,9 @@ export function generateYearlyReport(ledger: LedgerEntry[]): MonthlyReport[] {
     }
 
     const report = reports.get(year)!;
-    if (entry.kind === "income") report.income += entry.amount;
-    if (entry.kind === "expense" && !isCreditPayment(entry)) report.expense += entry.amount;
-    if (entry.kind === "transfer") report.transfer += entry.amount;
+    if (entry.kind === "income") report.income += toKrw(entry);
+    if (entry.kind === "expense" && !isCreditPayment(entry)) report.expense += toKrw(entry);
+    if (entry.kind === "transfer") report.transfer += toKrw(entry);
   }
 
   return Array.from(reports.entries())

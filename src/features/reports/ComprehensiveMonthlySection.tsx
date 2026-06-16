@@ -270,9 +270,10 @@ export const ComprehensiveMonthlySection: React.FC<Props> = React.memo(function 
                 <YAxis />
                 <Tooltip formatter={(value: number | undefined) => formatKRW(value ?? 0)} />
                 <Legend />
-                <Bar isAnimationActive={false} dataKey="earnedIncome" fill="#10b981" name="근로소득" />
-                <Bar isAnimationActive={false} dataKey="livingExpense" fill="#f43f5e" name="생활소비" />
-                <Bar isAnimationActive={false} dataKey="realNet" fill="#6366f1" name="실질 순수입" />
+                {/* 국내 색 관례: 수입=빨강, 지출=파랑 (서구식 초록/빨강 역전 수정) + 다크모드 CSS 변수 */}
+                <Bar isAnimationActive={false} dataKey="earnedIncome" fill="var(--chart-income)" name="근로소득" />
+                <Bar isAnimationActive={false} dataKey="livingExpense" fill="var(--chart-expense)" name="생활소비" />
+                <Bar isAnimationActive={false} dataKey="realNet" fill="var(--chart-primary)" name="실질 순수입" />
               </BarChart>
             </ResponsiveContainer>
           </div>

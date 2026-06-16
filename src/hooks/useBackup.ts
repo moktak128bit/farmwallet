@@ -3,7 +3,8 @@ import {
   getAllBackupList,
   getLatestLocalBackupIntegrity,
   saveBackupSnapshot,
-  saveDataSerialized
+  saveDataSerialized,
+  clearOldBackups
 } from "../storage";
 import type { AppData } from "../types";
 import { toast } from "react-hot-toast";
@@ -24,6 +25,20 @@ interface BackupIntegrity {
 }
 
 const AUTO_SAVE_ERROR_TOAST_ID = "auto-save-error";
+
+/** localStorage quota 초과 판정 — 브라우저별 name/code 차이 + 메시지 폴백 */
+function isQuotaExceededError(error: unknown): boolean {
+  if (error instanceof DOMException) {
+    return (
+      error.name === "QuotaExceededError" ||
+      error.name === "NS_ERROR_DOM_QUOTA_REACHED" ||
+      error.code === 22 ||
+      error.code === 1014
+    );
+  }
+  const msg = error instanceof Error ? error.message.toLowerCase() : "";
+  return msg.includes("quota") || msg.includes("exceeded the storage");
+}
 
 type UseBackupOptions = {
   onLog?: (message: string, type?: "success" | "error" | "info") => void;
@@ -193,6 +208,35 @@ export function useBackup(data: AppData, options?: UseBackupOptions) {
       console.warn("[useBackup] auto save failed", error);
       const message = error instanceof Error ? error.message : "자동 저장에 실패했습니다.";
       ui.setSaveStatus("error", message);
+      // quota 초과: 오래된 백업을 자동 정리하고 1회 재시도 (저장 공간 막힘은 장기 사용자의 가장 현실적인 차단)
+      if (isQuotaExceededError(error)) {
+        const removed = clearOldBackups(3);
+        if (removed > 0) {
+          try {
+            saveDataSerialized(payload);
+            lastSavedPayloadRef.current = payload;
+            try {
+              window.localStorage.removeItem(STORAGE_KEYS.DRAFT);
+              window.localStorage.removeItem(STORAGE_KEYS.DRAFT_AT);
+            } catch { /* */ }
+            ui.setHasDirtyChanges(false);
+            ui.setSaveStatus("saved");
+            notifyDataChanged(payload);
+            void refreshLatestBackup();
+            toast.success(`저장 공간이 부족해 오래된 백업 ${removed}개를 정리하고 저장했습니다.`, {
+              id: AUTO_SAVE_ERROR_TOAST_ID
+            });
+            return;
+          } catch (retryErr) {
+            console.warn("[useBackup] quota 재시도 실패", retryErr);
+          }
+        }
+        toast.error(
+          "저장 공간이 가득 찼습니다. 설정 > 백업에서 오래된 백업·캐시를 비워주세요.",
+          { id: AUTO_SAVE_ERROR_TOAST_ID, duration: 8000 }
+        );
+        return;
+      }
       toast.error(message, { id: AUTO_SAVE_ERROR_TOAST_ID });
       return;
     }

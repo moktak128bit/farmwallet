@@ -63,6 +63,11 @@ export const DebtView: React.FC<Props> = ({
   // 대출 매칭: ① 설명이 대출명과 정확히 일치하면 우선, ② 부분 포함이면 가장 긴 이름 우선.
   // (단순 includes 첫 매칭은 "주택대출"/"주택대출2"처럼 접두 관계인 이름에서 혼선을 일으킨다)
   const matchRepaymentLoan = useCallback((entry: LedgerEntry): Loan | null => {
+    // loanId가 있으면 우선 매칭 — 대출명을 바꿔도 과거 상환이 누락되지 않음 (#13)
+    if (entry.loanId) {
+      const byId = loans.find((loan) => loan.id === entry.loanId);
+      if (byId) return byId;
+    }
     const description = entry.description || "";
     const exact = loans.find((loan) => description === loan.loanName);
     if (exact) return exact;

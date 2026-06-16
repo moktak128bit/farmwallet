@@ -2,6 +2,7 @@ import React, { useEffect, useState } from "react";
 import { History, X } from "lucide-react";
 import { getGistVersions, loadFromGistVersion, type GistVersion } from "../services/gistSync";
 import { useModalStackEntry } from "../utils/modalStack";
+import { useUIStore } from "../store/uiStore";
 
 interface Props {
   isOpen: boolean;
@@ -17,6 +18,7 @@ export const GistVersionModal: React.FC<Props> = ({ isOpen, onClose, onLoad, onL
   const [error, setError] = useState<string | null>(null);
   const [fetchCount, setFetchCount] = useState(0);
   const isTopModal = useModalStackEntry(isOpen);
+  const hasDirtyChanges = useUIStore((s) => s.hasDirtyChanges);
 
   const fetchVersions = React.useCallback(() => {
     setVersions([]);
@@ -43,6 +45,14 @@ export const GistVersionModal: React.FC<Props> = ({ isOpen, onClose, onLoad, onL
   if (!isOpen) return null;
 
   const handleLoad = async (version: GistVersion, index: number) => {
+    // 미저장(아직 푸시 안 된) 변경이 있으면 확인 — 불러오기는 현재 데이터를 선택 버전으로 덮어쓴다
+    if (hasDirtyChanges) {
+      const when = new Date(version.committedAt).toLocaleString("ko-KR");
+      const ok = window.confirm(
+        `저장하지 않은 변경이 있습니다.\n선택한 버전(${when})으로 교체하면 현재 변경은 사라집니다.\n계속할까요?`
+      );
+      if (!ok) return;
+    }
     setLoadingIndex(index);
     onLog("Gist 버전 불러오는 중...", "info");
     try {
@@ -86,6 +96,11 @@ export const GistVersionModal: React.FC<Props> = ({ isOpen, onClose, onLoad, onL
         <p style={{ margin: "0 0 16px", fontSize: 13, color: "var(--text-secondary)" }}>
           불러올 버전을 선택하세요. 현재 데이터가 선택한 버전으로 교체됩니다.
         </p>
+        {hasDirtyChanges && (
+          <p style={{ margin: "-8px 0 16px", fontSize: 12, color: "var(--danger)", fontWeight: 600 }}>
+            ⚠ 저장하지 않은 변경이 있습니다 — 불러오면 사라집니다.
+          </p>
+        )}
 
         {isFetching && (
           <div style={{ textAlign: "center", padding: "24px 0", color: "var(--text-muted)", fontSize: 14 }}>

@@ -44,6 +44,8 @@ export interface LedgerEntry {
   discountAmount?: number;
   note?: string;
   tags?: string[]; // 태그 시스템
+  /** 대출 상환 엔트리의 대상 대출 id — 대출명이 바뀌어도 매칭이 깨지지 않게 (없으면 description 텍스트 폴백) */
+  loanId?: string;
 }
 
 export type TradeSide = "buy" | "sell";

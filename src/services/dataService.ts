@@ -15,6 +15,7 @@ import { buildTableBackupFile } from "../utils/tableDataBackup";
 import { saveCacheToDB } from "./cacheStore";
 import { getKoreanNameOverlay } from "./krNameResolver";
 import { cleanTicker } from "../utils/finance";
+import { isDividendEntryLoose } from "../utils/categoryMatch";
 import { sanitizeLedger, sanitizeTrades } from "../utils/dataSanitize";
 
 // dataService 내부에서만 쓰는 느슨한 한국 주식 판정 (6+자).
@@ -70,11 +71,10 @@ export function applyKoreanStockNames(data: AppData): { data: AppData; changed: 
 
   const fixLedger = (ledger: AppData["ledger"]) => {
     if (!Array.isArray(ledger)) return ledger;
+    // 분류 단일소스(categoryMatch.isDividendEntryLoose) — cat/sub 정확 매칭 + description fallback
+    // (includes("배당") 직접 사용 금지 — "비배당" 등 위양성 방지)
     const isDividend = (l: { kind?: string; category?: string; subCategory?: string; description?: string }) =>
-      l?.kind === "income" &&
-      ((l.category ?? "").includes("배당") ||
-        (l.subCategory ?? "").includes("배당") ||
-        (l.description ?? "").includes("배당"));
+      l?.kind === "income" && isDividendEntryLoose(l);
     return ledger.map((l) => {
       if (!isDividend(l) || !l.description) return l;
       const desc = l.description;

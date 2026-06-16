@@ -21,7 +21,7 @@ import {
   filterByPeriod,
   summarizeRecords,
 } from "../../utils/investmentRecord";
-import { isDividendEntry as isDividendByCategory } from "../../utils/categoryMatch";
+import { isDividendEntryLoose } from "../../utils/categoryMatch";
 
 interface Props {
   accounts: Account[];
@@ -48,11 +48,9 @@ function formatPct(num: number, den: number): string {
 
 type EditKey = "annualDeposit" | "finalTotal" | "annualDividend" | "startDate";
 
-/** 배당성 income 항목 판정 — InvestmentRecordCard와 동일 규칙. */
+/** 배당성 income 항목 판정 — 분류 단일소스(categoryMatch.isDividendEntryLoose) 사용. */
 function isDividendEntry(e: LedgerEntry): boolean {
-  if (e.kind !== "income") return false;
-  // 분류 단일소스(categoryMatch) — cat/sub 정확 매칭 + description fallback
-  return isDividendByCategory(e) || (e.description ?? "").includes("배당");
+  return e.kind === "income" && isDividendEntryLoose(e);
 }
 
 // React.memo — 부모(DashboardPage)가 넘기는 props는 안정적(store 참조·useMemo 결과)이어야 한다.

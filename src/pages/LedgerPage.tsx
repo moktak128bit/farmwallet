@@ -25,6 +25,7 @@ import type { Account, AccountBalanceRow, CategoryPresets, LedgerEntry, LedgerTe
 import { formatKRW } from "../utils/formatter";
 import { shortcutManager, type ShortcutAction } from "../utils/shortcuts";
 import { isSavingsExpenseEntry, makeIsSavingsExpense, isCreditPayment, isInvestmentKind, isInvestmentEntry } from "../utils/category";
+import { isDividendEntryLoose, isInterestEntryLoose } from "../utils/categoryMatch";
 import { parseAmount as sharedParseAmount } from "../utils/parseAmount";
 import { newIdWithPrefix } from "../utils/id";
 import { DailyBudgetBar } from "../features/ledger/DailyBudgetBar";
@@ -238,13 +239,8 @@ export const LedgerView: React.FC<Props> = ({
         return isSavingsExpenseEntry(l, accounts, categoryPresets);
       }
       if (l.kind === "income") {
-        const cat = l.category ?? "";
-        const sub = l.subCategory ?? "";
-        const desc = l.description ?? "";
-        if (cat === "배당" || cat === "이자") return true;
-        if (sub === "배당" || sub === "이자" || sub === "투자수익") return true;
-        if (desc.includes("배당") || desc.includes("이자")) return true;
-        return false;
+        // 분류 단일소스(categoryMatch) — 배당·이자 loose + 투자수익
+        return isDividendEntryLoose(l) || isInterestEntryLoose(l) || l.subCategory === "투자수익";
       }
       if (l.kind === "transfer") {
         const sub = l.subCategory ?? "";

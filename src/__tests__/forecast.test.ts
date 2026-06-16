@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { forecastNextMonth } from "../utils/forecast";
+import { forecastNextMonth, expenseMainTotalsForMonth } from "../utils/forecast";
 import type { LedgerEntry, RecurringExpense } from "../types";
 
 const mkExpense = (date: string, category: string, amount: number): LedgerEntry => ({
@@ -25,6 +25,24 @@ const mkRecurring = (
   frequency: freq,
   startDate,
   endDate,
+});
+
+describe("expenseMainTotalsForMonth — 현재월 실적은 expenseMainName 키 + 예측과 동일 제외", () => {
+  it("현행 스키마(category='지출', subCategory=대분류)를 대분류 키로 집계 (l.category로 뭉뚱그려 0% 되던 회귀 방지)", () => {
+    const ledger: LedgerEntry[] = [
+      { id: "a", date: "2026-06-03", kind: "expense", category: "지출", subCategory: "식비", detailCategory: "외식", description: "", amount: 30_000 },
+      { id: "b", date: "2026-06-04", kind: "expense", category: "지출", subCategory: "식비", description: "", amount: 20_000 },
+      { id: "c", date: "2026-06-05", kind: "expense", category: "지출", subCategory: "교통", description: "", amount: 10_000 },
+      // 제외 대상: 신용결제·환전·다른 달
+      { id: "d", date: "2026-06-06", kind: "expense", category: "환전", description: "", amount: 999_999 },
+      { id: "e", date: "2026-05-30", kind: "expense", category: "지출", subCategory: "식비", description: "", amount: 5_000 },
+    ];
+    const m = expenseMainTotalsForMonth(ledger, "2026-06");
+    expect(m.get("식비")).toBe(50_000); // 외식+식비, 대분류로 합쳐짐
+    expect(m.get("교통")).toBe(10_000);
+    expect(m.get("환전")).toBeUndefined();
+    expect([...m.values()].reduce((s, v) => s + v, 0)).toBe(60_000);
+  });
 });
 
 describe("forecastNextMonth", () => {

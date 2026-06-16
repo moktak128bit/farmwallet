@@ -1,6 +1,6 @@
 import React, { useMemo } from "react";
 import type { LedgerEntry, RecurringExpense } from "../../types";
-import { forecastNextMonth } from "../../utils/forecast";
+import { forecastNextMonth, expenseMainTotalsForMonth } from "../../utils/forecast";
 import { getThisMonthKST } from "../../utils/date";
 import { Section } from "./insightsShared";
 
@@ -26,16 +26,12 @@ export const ForecastView: React.FC<Props> = ({ ledger, recurring, formatNumber 
 
   const maxAmount = result.byCategory.reduce((m, c) => Math.max(m, c.upper), 0) || 1;
 
-  // 현재월 실제 소진률 (카테고리별)
-  const currentMonthSpend = useMemo(() => {
-    const map = new Map<string, number>();
-    for (const l of ledger) {
-      if (l.kind !== "expense" || l.amount <= 0 || !l.category || !l.date) continue;
-      if (!l.date.startsWith(currentMonth)) continue;
-      map.set(l.category, (map.get(l.category) ?? 0) + l.amount);
-    }
-    return map;
-  }, [ledger, currentMonth]);
+  // 현재월 실제 소진률 (카테고리별) — 예측(byCategory)과 동일한 대분류(expenseMainName) 키·제외 기준 사용.
+  // (과거 버그: l.category로 그룹화 → 현행 스키마에선 거의 "지출" 한 값이라 카테고리별 실적이 전부 0%였음)
+  const currentMonthSpend = useMemo(
+    () => expenseMainTotalsForMonth(ledger, currentMonth),
+    [ledger, currentMonth]
+  );
 
   const totalRecurring = result.byCategory.reduce((s, c) => s + c.recurringAmount, 0);
   const totalVariable = result.byCategory.reduce((s, c) => s + c.variableAverage, 0);

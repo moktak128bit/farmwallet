@@ -8,10 +8,13 @@ import { formatKRW } from "../../utils/formatter";
 import type { CategoryPresets } from "../../types";
 import type { LedgerDisplayRow } from "../../utils/ledgerHelpers";
 import { isCreditPayment, isInvestmentEntry, makeIsSavingsExpense } from "../../utils/category";
+import { EXPENSE_BOX_EXCLUDED_NAMES } from "../dashboard/summaryMath";
 import { useFxRateValue } from "../../context/FxRateContext";
 
 type LedgerFilteredSummary = {
   expenseAmount: number;
+  /** 지출 중 제외 대상(데이터비 등) 합계 — '제외 후' 보조 표시용 */
+  excludedExpenseAmount?: number;
   savingsAmount: number;
   incomeAmount: number;
   total: number;
@@ -191,6 +194,11 @@ export const LedgerSummarySection: React.FC<Props> = React.memo(function LedgerS
               <span style={{ fontSize: 18, fontWeight: 700, color: "var(--danger)" }}>
                 {formatKRW(filteredSummary.expenseAmount)}
               </span>
+              {(filteredSummary.excludedExpenseAmount ?? 0) > 0 && (
+                <span style={{ fontSize: 11, color: "var(--text-muted)", fontWeight: 600 }}>
+                  {EXPENSE_BOX_EXCLUDED_NAMES.join("·")} 제외 {formatKRW(filteredSummary.expenseAmount - (filteredSummary.excludedExpenseAmount ?? 0))}
+                </span>
+              )}
             </div>
             <div style={{
               display: "flex",

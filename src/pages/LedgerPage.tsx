@@ -44,6 +44,7 @@ import {
   type LedgerDisplayRow,
 } from "../utils/ledgerHelpers";
 import { MonthNavigator } from "../components/ledger/MonthNavigator";
+import { EXPENSE_BOX_EXCLUDED_NAMES, isExcludedExpenseName } from "../features/dashboard/summaryMath";
 import { useFxRateValue } from "../context/FxRateContext";
 import { LedgerEntryForm, type LedgerEntryFormHandle, type LedgerTab } from "../features/ledger/LedgerEntryForm";
 import { LedgerFilterCard } from "../features/ledger/LedgerFilterCard";
@@ -420,7 +421,9 @@ export const LedgerView: React.FC<Props> = ({
 
     let savingsAmount = 0;
     let expenseAmount = 0;
+    let excludedExpenseAmount = 0; // 지출 중 데이터비 등 제외 대상 합계 ('제외 후' 표시용)
     let incomeAmount = 0;
+    const excludedNames = new Set(EXPENSE_BOX_EXCLUDED_NAMES);
     for (const l of filteredLedger) {
       // 재테크 = 저축성지출(expense 재테크/저축성지출) + 저축·투자 이체(transfer 저축이체/투자이체).
       // 옛 기준(isSavings, expense만)은 현행 데이터(이체로 기록된 저축/투자)를 못 잡아 0으로 나왔음.
@@ -429,6 +432,7 @@ export const LedgerView: React.FC<Props> = ({
       } else if (l.kind === "expense" && !isCreditPayment(l)) {
         // 신용결제는 카드 사용 시점에 이미 expense로 잡힘 — 이중계상 방지
         expenseAmount += toKrw(l);
+        if (isExcludedExpenseName(l, excludedNames)) excludedExpenseAmount += toKrw(l);
       }
       if (l.kind === "income") {
         incomeAmount += toKrw(l);
@@ -462,6 +466,7 @@ export const LedgerView: React.FC<Props> = ({
 
     return {
       expenseAmount,
+      excludedExpenseAmount,
       savingsAmount,
       incomeAmount,
       total: incomeAmount - expenseAmount,

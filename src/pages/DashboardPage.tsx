@@ -35,7 +35,7 @@ import { AssetCompositionCard } from "../features/dashboard/AssetCompositionCard
 import { AccountBalanceTrendCard } from "../features/dashboard/AccountBalanceTrendCard";
 import { StockCostVsMarketCard } from "../features/dashboard/StockCostVsMarketCard";
 import { TotalAssetTrendCard } from "../features/dashboard/TotalAssetTrendCard";
-import { computeLedgerSummary, computeRecheckBreakdown } from "../features/dashboard/summaryMath";
+import { computeLedgerSummary, computeRecheckBreakdown, EXPENSE_BOX_EXCLUDED_NAMES } from "../features/dashboard/summaryMath";
 import { computeIncomeNatureKeys } from "../utils/incomeClassification";
 import { loadHiddenDashboardWidgets } from "../features/dashboard/dashboardWidgets";
 import { buildDividendGrowth, resolveTrackedTickers } from "../utils/dividendGrowth";
@@ -186,13 +186,13 @@ export const DashboardView: React.FC<Props> = (props) => {
 
   /** 전체 기간 합계: 수입(근로소득), 일반 지출, 재테크 (categoryPresets로 레거시 저축성지출도 재테크 분류) */
   const allTimeSummary = useMemo(
-    () => computeLedgerSummary(ledger, fxRate, null, categoryPresets, salaryKeys),
+    () => computeLedgerSummary(ledger, fxRate, null, categoryPresets, salaryKeys, EXPENSE_BOX_EXCLUDED_NAMES),
     [ledger, fxRate, categoryPresets, salaryKeys]
   );
 
   const monthlySummary = useMemo(() => ({
     month: currentMonth,
-    ...computeLedgerSummary(ledger, fxRate, currentMonth, categoryPresets, salaryKeys),
+    ...computeLedgerSummary(ledger, fxRate, currentMonth, categoryPresets, salaryKeys, EXPENSE_BOX_EXCLUDED_NAMES),
   }), [ledger, fxRate, currentMonth, categoryPresets, salaryKeys]);
 
   const monthlyRecheckBreakdown = useMemo(

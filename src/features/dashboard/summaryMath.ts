@@ -11,6 +11,22 @@ import { isCreditPayment, isSavingsExpenseEntry } from "../../utils/category";
 export const toKrwAmount = (entry: LedgerEntry, fxRate: number | null): number =>
   entry.currency === "USD" && fxRate ? entry.amount * fxRate : entry.amount;
 
+/**
+ * '지출 박스'에서 "제외 후" 금액을 함께 보여줄 분류명(고정).
+ * 지출 항목의 subCategory/detailCategory/category 중 하나라도 이 이름과 일치하면 '제외' 대상.
+ * 대시보드 '이번 달 지출' 카드와 가계부 요약이 같은 정의를 공유한다.
+ */
+export const EXPENSE_BOX_EXCLUDED_NAMES = ["데이터비"];
+
+/** 지출 항목이 '제외 대상'(EXPENSE_BOX_EXCLUDED_NAMES)인지 — subCategory/detailCategory/category로 매칭 */
+export function isExcludedExpenseName(entry: LedgerEntry, names: Set<string>): boolean {
+  return (
+    names.has(entry.subCategory ?? "") ||
+    names.has(entry.detailCategory ?? "") ||
+    names.has(entry.category ?? "")
+  );
+}
+
 /** 대시보드 공통 흐름 분류 결과. null = 집계 제외 (신용결제·재테크 아닌 일반 이체) */
 type LedgerFlowType = "income" | "expense" | "investing";
 
@@ -67,11 +83,16 @@ export function computeLedgerSummary(
   fxRate: number | null,
   monthPrefix: string | null,
   categoryPresets?: CategoryPresets,
-  salaryKeys?: Set<string>
-): { income: number; expense: number; investing: number } {
+  salaryKeys?: Set<string>,
+  /** 지정 시, 지출 중 이 분류명에 해당하는 합계를 excludedExpense로 별도 집계 (지출 박스 '제외 후' 표시용) */
+  excludedExpenseNames?: string[]
+): { income: number; expense: number; investing: number; excludedExpense: number } {
   let income = 0;
   let expense = 0;
   let investing = 0;
+  let excludedExpense = 0;
+  const excluded =
+    excludedExpenseNames && excludedExpenseNames.length ? new Set(excludedExpenseNames) : null;
   for (const entry of ledger) {
     if (!entry.date) continue;
     if (monthPrefix && !entry.date.startsWith(monthPrefix)) continue;
@@ -79,10 +100,12 @@ export function computeLedgerSummary(
     if (!flow) continue;
     const amt = toKrwAmount(entry, fxRate);
     if (flow === "income") income += amt;
-    else if (flow === "expense") expense += amt;
-    else investing += amt;
+    else if (flow === "expense") {
+      expense += amt;
+      if (excluded && isExcludedExpenseName(entry, excluded)) excludedExpense += amt;
+    } else investing += amt;
   }
-  return { income, expense, investing };
+  return { income, expense, investing, excludedExpense };
 }
 
 /** 재테크 세부(저축/투자/투자수익/투자손실)를 각 항목의 정식 소스에서 집계.

@@ -112,4 +112,22 @@ describe("computeLedgerSummary", () => {
     const s = computeLedgerSummary(ledger, 1400, null);
     expect(s.expense).toBe(200_000 + 10 * 1400 + 50_000);
   });
+
+  it("excludedExpenseNames: 지출 박스 '제외 후' 합계 — subCategory/detailCategory/category로 매칭", () => {
+    const withDataFee: LedgerEntry[] = [
+      entry({ kind: "expense", category: "식비", amount: 200_000, date: "2026-06-10" }),
+      entry({ kind: "expense", category: "지출", subCategory: "데이터비", amount: 30_000, date: "2026-06-11" }),
+      entry({ kind: "expense", category: "지출", subCategory: "통신비", detailCategory: "데이터비", amount: 20_000, date: "2026-06-12" }),
+    ];
+    const s = computeLedgerSummary(withDataFee, 1400, "2026-06", undefined, undefined, ["데이터비"]);
+    expect(s.expense).toBe(250_000);
+    expect(s.excludedExpense).toBe(50_000); // 데이터비 = 30,000 + 20,000
+    // 제외 후 지출 = 250,000 − 50,000 = 200,000
+    expect(s.expense - s.excludedExpense).toBe(200_000);
+  });
+
+  it("excludedExpenseNames 미지정이면 excludedExpense=0", () => {
+    const s = computeLedgerSummary(ledger, 1400, "2026-06");
+    expect(s.excludedExpense).toBe(0);
+  });
 });

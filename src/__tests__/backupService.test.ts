@@ -63,6 +63,24 @@ describe("backupService — 보존 정책 (일별 최대 5개 × 최근 4일)", 
     expect(ids).not.toContain("OLD6");
   });
 
+  it("위험 작업 직전 안전 스냅샷은 같은 날 자동백업 cap에 밀려도 보존된다 (#10)", async () => {
+    const now = Date.now();
+    // 오래된 라벨 스냅샷 1개 + 더 최신 무라벨 자동백업 5개 (모두 오늘) → 라벨이 perDay(5) cap에 밀릴 위치
+    const seeds: SeedBackup[] = [
+      { id: "SAFE", createdAt: new Date(now - 60_000).toISOString(), data: makeAppData(), label: "위험 작업 직전 자동 스냅샷" },
+      ...Array.from({ length: 5 }, (_, i) => ({
+        id: `AUTO${i}`,
+        createdAt: new Date(now - (i + 1) * 1000).toISOString(),
+        data: makeAppData(),
+      })),
+    ];
+    seedBackups(seeds);
+    await saveSafetySnapshot(makeAppData(), "새 스냅샷");
+    const ids = getBackupList().map((b) => b.id);
+    // SAFE는 가장 오래돼 perDay cap이라면 잘려야 하지만, 라벨 스냅샷이라 보존됨
+    expect(ids).toContain("SAFE");
+  });
+
   it("백업이 있는 날짜는 최근 4일치만 유지", async () => {
     const now = Date.now();
     const day = 24 * 60 * 60 * 1000;

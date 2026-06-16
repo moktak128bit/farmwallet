@@ -102,7 +102,8 @@ export const RepayLoanModal: React.FC<Props> = React.memo(function RepayLoanModa
       detailCategory: repaySubCategory,
       description: `${loan.loanName} 상환`,
       fromAccountId: repayFromAccountId,
-      amount
+      amount,
+      loanId: loan.id // 대출명 변경에도 매칭이 깨지지 않게 id 고정
     };
 
     onChangeLedger([...ledger, newEntry]);

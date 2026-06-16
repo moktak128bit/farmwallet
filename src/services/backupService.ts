@@ -34,6 +34,11 @@ const BACKUP_RETENTION_DAY_SLOTS = 4;
  * 복구 지점이 사라지는 문제가 있어 복수 보관한다 (4일 × 5개 = 최대 20개).
  */
 const BACKUP_RETENTION_PER_DAY = 5;
+/**
+ * 라벨 스냅샷(위험 작업 직전 saveSafetySnapshot)을 perDay·day-slot 한도와 별개로 항상 보존할 최소 개수.
+ * 같은 날 자동 백업이 perDay를 채우면 안전 스냅샷이 cap에 밀려 사라져 복구망이 무력화되던 문제(#10) 방지.
+ */
+const BACKUP_RETENTION_LABELED_KEEP = 3;
 
 const seoulDayKeyFormatter = new Intl.DateTimeFormat("en-CA", {
   timeZone: "Asia/Seoul",
@@ -82,10 +87,18 @@ function getSeoulDayKeyFromCreatedAt(createdAt: string): string {
  */
 function applyBackupRetentionPolicy(
   backups: StoredBackup[],
-  perDay: number = BACKUP_RETENTION_PER_DAY
+  perDay: number = BACKUP_RETENTION_PER_DAY,
+  labeledKeep: number = BACKUP_RETENTION_LABELED_KEEP
 ): StoredBackup[] {
-  const byDay = new Map<string, StoredBackup[]>();
+  // 라벨 스냅샷(안전 스냅샷)은 perDay/day-slot 한도와 별개로 최근 K개를 항상 보존 (#10)
+  const protectedLabeled = sortBackupsNewestFirst(backups.filter((b) => !!b.label)).slice(
+    0,
+    Math.max(0, labeledKeep)
+  );
+  const keptById = new Map<string, StoredBackup>();
+  for (const b of protectedLabeled) keptById.set(b.id, b);
 
+  const byDay = new Map<string, StoredBackup[]>();
   for (const backup of backups) {
     const dayKey = getSeoulDayKeyFromCreatedAt(backup.createdAt);
     if (dayKey === "unknown") continue;
@@ -98,22 +111,23 @@ function applyBackupRetentionPolicy(
     .sort((a, b) => b.localeCompare(a))
     .slice(0, BACKUP_RETENTION_DAY_SLOTS);
 
-  const kept: StoredBackup[] = [];
   for (const dayKey of recentDayKeys) {
     const sameDayNewestFirst = sortBackupsNewestFirst(byDay.get(dayKey) ?? []);
-    kept.push(...sameDayNewestFirst.slice(0, Math.max(1, perDay)));
+    for (const b of sameDayNewestFirst.slice(0, Math.max(1, perDay))) {
+      if (!keptById.has(b.id)) keptById.set(b.id, b);
+    }
   }
 
-  if (kept.length === 0 && backups.length > 0) {
+  if (keptById.size === 0 && backups.length > 0) {
     return sortBackupsNewestFirst(backups).slice(0, 1);
   }
 
-  return sortBackupsNewestFirst(kept);
+  return sortBackupsNewestFirst([...keptById.values()]);
 }
 
-/** quota 부족 fallback — 일별 최신 1개만 남겨 용량을 최소화 */
+/** quota 부족 fallback — 일별 최신 1개 + 안전 스냅샷 1개만 남겨 용량을 최소화 (복구망 1개는 유지) */
 function keepRecentBackups(backups: StoredBackup[]): StoredBackup[] {
-  return applyBackupRetentionPolicy(backups, 1);
+  return applyBackupRetentionPolicy(backups, 1, 1);
 }
 
 function capBackups(backups: StoredBackup[]): StoredBackup[] {

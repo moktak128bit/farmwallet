@@ -9,24 +9,43 @@ interface GistConflictModalProps {
   onResolve: (resolution: GistConflictResolution) => void;
 }
 
+interface ConflictSummary {
+  ledger: number | string;
+  trades: number | string;
+  accounts: number | string;
+  /** 가장 최신 가계부 날짜 — '같은 건수 중 1건만 수정'된 충돌을 건수만으로 구분 못 하는 문제 보완 */
+  latestDate: string;
+  /** 가계부 금액 합계 (원) — 금액만 바뀐 수정도 구분 */
+  amountSum: number | null;
+}
+
 /**
- * 충돌 데이터 요약: 주요 컬렉션 길이를 비교용으로 보여줌.
+ * 충돌 데이터 요약: 주요 컬렉션 길이 + 최신 가계부 날짜 + 금액 합계를 비교용으로 보여줌.
  * JSON 파싱 실패 시 "?"로 표시.
  */
-function summarizeJson(json: string): { ledger: number | string; trades: number | string; accounts: number | string } {
+function summarizeJson(json: string): ConflictSummary {
   try {
     const parsed = JSON.parse(json) as {
-      ledger?: unknown[];
+      ledger?: Array<{ date?: unknown; amount?: unknown }>;
       trades?: unknown[];
       accounts?: unknown[];
     };
+    const ledger = Array.isArray(parsed.ledger) ? parsed.ledger : null;
+    const latestDate = ledger
+      ? ledger.reduce((max, l) => (typeof l?.date === "string" && l.date > max ? l.date : max), "")
+      : "";
+    const amountSum = ledger
+      ? Math.round(ledger.reduce((s, l) => s + (Number(l?.amount) || 0), 0))
+      : null;
     return {
-      ledger: Array.isArray(parsed.ledger) ? parsed.ledger.length : "?",
+      ledger: ledger ? ledger.length : "?",
       trades: Array.isArray(parsed.trades) ? parsed.trades.length : "?",
       accounts: Array.isArray(parsed.accounts) ? parsed.accounts.length : "?",
+      latestDate: latestDate || "—",
+      amountSum,
     };
   } catch {
-    return { ledger: "?", trades: "?", accounts: "?" };
+    return { ledger: "?", trades: "?", accounts: "?", latestDate: "—", amountSum: null };
   }
 }
 
@@ -127,6 +146,8 @@ export const GistConflictModal: React.FC<GistConflictModalProps> = ({ conflict, 
               <li>가계부: {summary.remote.ledger}건</li>
               <li>거래: {summary.remote.trades}건</li>
               <li>계좌: {summary.remote.accounts}개</li>
+              <li>최신 가계부: {summary.remote.latestDate}</li>
+              <li>가계부 합계: {summary.remote.amountSum != null ? `${summary.remote.amountSum.toLocaleString()}원` : "?"}</li>
             </ul>
           </div>
           <div
@@ -137,7 +158,7 @@ export const GistConflictModal: React.FC<GistConflictModalProps> = ({ conflict, 
               background: "var(--bg)",
             }}
           >
-            <div style={{ fontWeight: 600, fontSize: 13, marginBottom: "var(--space-1)" }}>로컬 (이 기기)</div>
+            <div style={{ fontWeight: 600, fontSize: 13, marginBottom: "var(--space-1)" }}>로컬 (이 기기 · 현재 화면 데이터)</div>
             <div style={{ fontSize: 12, color: "var(--text-muted)", marginBottom: "var(--space-1)" }}>
               push 대기 중
             </div>
@@ -145,6 +166,8 @@ export const GistConflictModal: React.FC<GistConflictModalProps> = ({ conflict, 
               <li>가계부: {summary.local.ledger}건</li>
               <li>거래: {summary.local.trades}건</li>
               <li>계좌: {summary.local.accounts}개</li>
+              <li>최신 가계부: {summary.local.latestDate}</li>
+              <li>가계부 합계: {summary.local.amountSum != null ? `${summary.local.amountSum.toLocaleString()}원` : "?"}</li>
             </ul>
           </div>
         </div>

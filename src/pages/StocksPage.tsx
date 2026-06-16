@@ -40,6 +40,7 @@ import { buildClosedTradeRecords, summarizeRecords } from "../utils/investmentRe
 import { fetchYahooQuotes } from "../yahooFinanceApi";
 import { isUSDStock, canonicalTickerForMatch } from "../utils/finance";
 import { newIdWithPrefix } from "../utils/id";
+import { getTodayKST } from "../utils/date";
 import { isDividendEntryLoose } from "../utils/categoryMatch";
 import { toast } from "react-hot-toast";
 import { blocksToCsv, type ReportBlock } from "../utils/reportExport";
@@ -319,7 +320,7 @@ export const StocksView: React.FC<Props> = ({
     const url = URL.createObjectURL(blob);
     const link = document.createElement("a");
     link.href = url;
-    link.download = `주식_거래내역_${new Date().toISOString().slice(0, 10)}.csv`;
+    link.download = `주식_거래내역_${getTodayKST()}.csv`;
     document.body.appendChild(link);
     link.click();
     document.body.removeChild(link);

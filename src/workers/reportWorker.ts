@@ -57,14 +57,14 @@ workerScope.onmessage = (event: MessageEvent<ReportWorkerRequest>) => {
   try {
     const response: ReportWorkerResponse = {
       requestId,
-      monthlyReport: generateMonthlyReport(payload.ledger, payload.startDate.slice(0, 7), payload.endDate.slice(0, 7)),
+      monthlyReport: generateMonthlyReport(payload.ledger, payload.startDate.slice(0, 7), payload.endDate.slice(0, 7), payload.fxRate ?? undefined),
       monthlyIncomeDetail: generateMonthlyIncomeDetail(
         payload.ledger,
         payload.accounts,
         payload.startDate.slice(0, 7),
         payload.endDate.slice(0, 7)
       ),
-      yearlyReport: generateYearlyReport(payload.ledger),
+      yearlyReport: generateYearlyReport(payload.ledger, payload.fxRate ?? undefined),
       categoryReport: generateCategoryReport(payload.ledger, payload.startDate, payload.endDate),
       stockReport: generateStockPerformanceReport(payload.trades, payload.prices, payload.accounts, payload.fxRate ?? undefined),
       accountReport: generateAccountReport(payload.accounts, payload.ledger, payload.trades),

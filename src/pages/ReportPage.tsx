@@ -93,7 +93,7 @@ export const ReportView: React.FC<Props> = ({ accounts, ledger, trades, prices }
   );
 
   const taxYear = useMemo(() => Number(selectedMonth.slice(0, 4)), [selectedMonth]);
-  const taxSummary = useMemo(() => summarizeTaxYear(ledger, taxYear), [ledger, taxYear]);
+  const taxSummary = useMemo(() => summarizeTaxYear(ledger, taxYear, fxRate), [ledger, taxYear, fxRate]);
 
   const renderReport = () => {
     // ─── 종합 월간 보고서 ───

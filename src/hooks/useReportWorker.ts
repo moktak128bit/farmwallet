@@ -84,7 +84,8 @@ function computeSynchronously(params: UseReportWorkerParams): ReportWorkerData {
     monthlyReport: generateMonthlyReport(
       params.ledger,
       params.startDate.slice(0, 7),
-      params.endDate.slice(0, 7)
+      params.endDate.slice(0, 7),
+      params.fxRate ?? undefined
     ),
     monthlyIncomeDetail: generateMonthlyIncomeDetail(
       params.ledger,
@@ -92,7 +93,7 @@ function computeSynchronously(params: UseReportWorkerParams): ReportWorkerData {
       params.startDate.slice(0, 7),
       params.endDate.slice(0, 7)
     ),
-    yearlyReport: generateYearlyReport(params.ledger),
+    yearlyReport: generateYearlyReport(params.ledger, params.fxRate ?? undefined),
     categoryReport: generateCategoryReport(params.ledger, params.startDate, params.endDate),
     stockReport: generateStockPerformanceReport(params.trades, params.prices, params.accounts, params.fxRate ?? undefined),
     accountReport: generateAccountReport(params.accounts, params.ledger, params.trades),

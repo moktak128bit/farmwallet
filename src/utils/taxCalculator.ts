@@ -26,15 +26,17 @@ export interface TaxYearSummary {
  * 가계부 amount는 세후 입금액일 가능성이 높지만(은행 자동 차감), 본 계산은
  * 사용자가 입력한 금액을 grossTaxable로 가정하고 표시한다.
  */
-export function summarizeTaxYear(ledger: LedgerEntry[], year: number): TaxYearSummary {
+export function summarizeTaxYear(ledger: LedgerEntry[], year: number, fxRate?: number | null): TaxYearSummary {
   const yearStr = String(year);
+  // USD 배당/이자는 원화로 환산해야 과세표준이 맞다 (환율 미로드 시 액면 폴백 — 합산 정책 일관)
+  const toKrw = (e: LedgerEntry) => (e.currency === "USD" && fxRate ? e.amount * fxRate : e.amount);
 
   let dividendGross = 0;
   let interestGross = 0;
   for (const e of ledger) {
     if (e.kind !== "income" || !e.date?.startsWith(yearStr)) continue;
-    if (isDividendEntry(e)) { dividendGross += e.amount; continue; }
-    if (isInterestEntry(e)) interestGross += e.amount;
+    if (isDividendEntry(e)) { dividendGross += toKrw(e); continue; }
+    if (isInterestEntry(e)) interestGross += toKrw(e);
   }
 
   const totalGross = dividendGross + interestGross;

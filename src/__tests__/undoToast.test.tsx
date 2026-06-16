@@ -99,11 +99,12 @@ describe("showDeleteUndoToast", () => {
     return button.props.onClick as () => void;
   }
 
-  it("성공 토스트를 id/duration 옵션과 함께 띄운다", () => {
+  it("성공 토스트를 duration 옵션과 함께 띄우고, 고정 id는 쓰지 않는다(연속 삭제 독립 복원)", () => {
     showDeleteUndoToast("삭제했습니다", () => true);
     expect(toast.success).toHaveBeenCalledTimes(1);
     const opts = (toast.success as ReturnType<typeof vi.fn>).mock.calls[0][1];
-    expect(opts).toMatchObject({ id: "delete-undo", duration: 7000 });
+    expect(opts).toMatchObject({ duration: 7000 });
+    expect(opts.id).toBeUndefined(); // 고정 id 제거 — 각 토스트가 독립
   });
 
   it("버튼 클릭 시 토스트를 닫고 복원 성공 토스트를 띄운다", () => {

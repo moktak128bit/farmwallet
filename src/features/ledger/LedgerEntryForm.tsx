@@ -16,7 +16,7 @@ import { shortcutManager, type ShortcutAction } from "../../utils/shortcuts";
 import { validateLedgerForm } from "./validateLedgerForm";
 import { parseAmount as sharedParseAmount, formatAmount as sharedFormatAmount } from "../../utils/parseAmount";
 import { newIdWithPrefix } from "../../utils/id";
-import { DEFAULT_DAILY_BUDGET, todaySpend, weeklySpend, weeklyLimit, getCurrentWeekRange } from "../../utils/dailyBudget";
+import { DEFAULT_DAILY_BUDGET, dailySpend, weeklySpend, weeklyLimit, getCurrentWeekRange } from "../../utils/dailyBudget";
 import { useAppStore } from "../../store/appStore";
 import { toast } from "react-hot-toast";
 import { ERROR_MESSAGES } from "../../constants/errorMessages";
@@ -287,7 +287,8 @@ export const LedgerEntryForm = React.memo(React.forwardRef<LedgerEntryFormHandle
           const range = isWeekly ? getCurrentWeekRange(form.date) : null;
           const currentSpent = isWeekly && range
             ? weeklySpend(ledger, range.start, range.end, dailyBudgetConfig)
-            : todaySpend(ledger, dailyBudgetConfig);
+            // 입력 폼의 날짜(form.date) 기준 — 과거/미래 날짜 입력 시 '오늘' 합계와 비교하던 오류 수정
+            : dailySpend(ledger, form.date, dailyBudgetConfig);
           const projected = currentSpent + amount;
           if (projected > limit) {
             const periodLabel = isWeekly ? "이번 주" : "오늘";

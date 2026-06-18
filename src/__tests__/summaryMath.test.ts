@@ -62,6 +62,15 @@ describe("classifyLedgerFlow — 단일 분류 기준", () => {
     expect(classifyLedgerFlow(entry({ kind: "income", category: "수입", subCategory: "투자수익" }))).toBe("investing");
   });
 
+  it("퇴직연금 수입은 소득 집계에서 제외(null) — category·subCategory 어느 쪽이든", () => {
+    expect(classifyLedgerFlow(entry({ kind: "income", category: "퇴직연금" }))).toBeNull();
+    expect(classifyLedgerFlow(entry({ kind: "income", category: "수입", subCategory: "퇴직연금" }))).toBeNull();
+    // salaryKeys를 줘서 정기 소득으로 강제해도 제외 유지
+    expect(
+      classifyLedgerFlow(entry({ kind: "income", category: "퇴직연금" }), undefined, new Set(["퇴직연금"]))
+    ).toBeNull();
+  });
+
   it("저축이체/투자이체 transfer → investing (구버전 저축/투자 포함)", () => {
     for (const sub of ["저축이체", "투자이체", "저축", "투자"]) {
       expect(classifyLedgerFlow(entry({ kind: "transfer", category: "이체", subCategory: sub }))).toBe("investing");
@@ -144,5 +153,17 @@ describe("computeLedgerSummary", () => {
   it("excludedExpenseNames 미지정이면 excludedExpense=0", () => {
     const s = computeLedgerSummary(ledger, 1400, "2026-06");
     expect(s.excludedExpense).toBe(0);
+  });
+
+  it("퇴직연금 수입은 income/investing 어디에도 합산되지 않음 (가계부엔 남음)", () => {
+    const withPension: LedgerEntry[] = [
+      entry({ kind: "income", category: "급여", subCategory: "급여", amount: 3_000_000, date: "2026-06-25" }),
+      entry({ kind: "income", category: "퇴직연금", amount: 250_000, date: "2026-06-25" }), // 회사 적립 — 소득 제외
+      entry({ kind: "expense", category: "지출", subCategory: "식비", amount: 200_000, date: "2026-06-10" }),
+    ];
+    const s = computeLedgerSummary(withPension, 1400, "2026-06");
+    expect(s.income).toBe(3_000_000); // 퇴직연금 250,000 제외
+    expect(s.investing).toBe(0);
+    expect(s.expense).toBe(200_000);
   });
 });

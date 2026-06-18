@@ -21,6 +21,7 @@ export const AccountForm: React.FC<Props> = React.memo(function AccountForm({ on
     debt: "",
     cashAdjustment: "",
     initialCashBalance: "",
+    isPension: false,
     note: "",
   });
 
@@ -49,6 +50,7 @@ export const AccountForm: React.FC<Props> = React.memo(function AccountForm({ on
       savings: 0,
       cashAdjustment: (form.type === "securities" || form.type === "crypto") ? cashAdjustment : undefined,
       initialCashBalance: (form.type === "securities" || form.type === "crypto") && initialCashBalance > 0 ? initialCashBalance : undefined,
+      isPension: form.type === "securities" && form.isPension ? true : undefined,
       note: form.note.trim() || undefined,
     };
     onAdd(account);
@@ -61,6 +63,7 @@ export const AccountForm: React.FC<Props> = React.memo(function AccountForm({ on
       debt: "",
       cashAdjustment: "",
       initialCashBalance: "",
+      isPension: false,
       note: "",
     });
   };
@@ -150,6 +153,16 @@ export const AccountForm: React.FC<Props> = React.memo(function AccountForm({ on
             />
           </label>
         </>
+      )}
+      {form.type === "securities" && (
+        <label className="wide" style={{ flexDirection: "row", alignItems: "center", gap: 8 }}>
+          <input
+            type="checkbox"
+            checked={form.isPension}
+            onChange={(e) => setForm({ ...form, isPension: e.target.checked })}
+          />
+          <span>연금 계좌 (퇴직연금·연금저축 — 자산 추이에서 '연금'으로 구분)</span>
+        </label>
       )}
       <label className="wide">
         <span>메모</span>

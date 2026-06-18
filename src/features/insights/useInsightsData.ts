@@ -18,7 +18,7 @@ import { computeOriginalAssets, classifyIncomeNature } from "../../utils/realInc
 import { computeIncomeNatureKeys } from "../../utils/incomeClassification";
 import { classifyExpenses } from "../../utils/expenseClassification";
 import { isDateEntry, getMoimAccountIds, computeMoimAccountFlow } from "../../utils/dateAccounting";
-import { isCarryOverIncomeEntry, computeRealSavingsRate, computeMonthlyRealFlows } from "../../utils/savingsRate";
+import { isExcludedIncomeEntry, computeRealSavingsRate, computeMonthlyRealFlows } from "../../utils/savingsRate";
 import { parseIsoLocal, formatIsoLocal, getTodayKST, getThisMonthKST } from "../../utils/date";
 import type { AccountTimelineRow } from "../../utils/accountTimeline";
 import {
@@ -41,8 +41,8 @@ export function useInsightsData(ledger: LedgerEntry[], rawTrades: StockTrade[], 
     for (const l of ledger) {
       const m = l.date?.slice(0, 7); if (!m) continue; em(m);
       const a = Number(l.amount); if (a <= 0) continue;
-      // 이월/원래 보유 자산은 실수입이 아니므로 월별 수입에서도 제외 (모든 수입 지표 일관)
-      if (l.kind === "income") { if (!isCarryOverIncomeEntry(l)) monthly[m].income += a; }
+      // 이월/원래보유·소득 집계 제외(퇴직연금)는 월별 수입에서도 제외 (모든 수입 지표 일관)
+      if (l.kind === "income") { if (!isExcludedIncomeEntry(l)) monthly[m].income += a; }
       else if (isInvestmentEntry(l)) monthly[m].investment += a; // 저축·투자 이체
       // 환전은 계좌 간 이동이라 지출 아님 — fExp/pExpense와 동일 기준으로 제외 (월별 추세 ↔ 기간 합계 정합)
       else if (l.kind === "expense" && !isCreditPayment(l) && l.category !== "환전") monthly[m].expense += a;  // 신용결제는 카드 사용시 이미 잡힘 — 이중계상 방지
@@ -59,7 +59,7 @@ export function useInsightsData(ledger: LedgerEntry[], rawTrades: StockTrade[], 
     // 신용결제 제외 이유: 카드 사용 시점에 이미 expense로 기록됨. 카드 대금 결제까지 합치면 이중계상 → 월 지출 ~2배 부풀려짐.
     const fExp = fL.filter(l => l.kind === "expense" && Number(l.amount) > 0 && l.category !== "재테크" && l.category !== "환전" && !isCreditPayment(l));
     // 수입 (투자수익도 kind=income으로 마이그레이션되어 자연 포함). 이월/원래보유자산 제외 — utils/savingsRate 단일 판정.
-    const fInc = fL.filter(l => l.kind === "income" && Number(l.amount) > 0 && !isCarryOverIncomeEntry(l));
+    const fInc = fL.filter(l => l.kind === "income" && Number(l.amount) > 0 && !isExcludedIncomeEntry(l));
 
     /* period totals */
     const pIncome = fInc.reduce((s, l) => s + Number(l.amount), 0);
@@ -255,7 +255,7 @@ export function useInsightsData(ledger: LedgerEntry[], rawTrades: StockTrade[], 
     for (const l of ledger) {
       if (l.kind !== "income" || Number(l.amount) <= 0) continue;
       const m = l.date?.slice(0, 7); if (!m || salaryMonthly[m] === undefined) continue;
-      if (isCarryOverIncomeEntry(l)) continue;
+      if (isExcludedIncomeEntry(l)) continue;
       if (salaryKeys.has(l.subCategory || l.category || "")) salaryMonthly[m] += Number(l.amount);
     }
     const pSalary = (selMonth ? [selMonth] : months).reduce((s, m) => s + (salaryMonthly[m] ?? 0), 0);
@@ -285,7 +285,7 @@ export function useInsightsData(ledger: LedgerEntry[], rawTrades: StockTrade[], 
       for (const l of ledger) {
         if (l.kind !== "income" || l.date?.slice(0, 7) !== m || Number(l.amount) <= 0) continue;
         const sub = l.subCategory || l.category || "";
-        if (isCarryOverIncomeEntry(l)) continue;
+        if (isExcludedIncomeEntry(l)) continue;
         if (salaryKeys.has(sub)) sal += Number(l.amount); else non += Number(l.amount);
       }
       return { l: ml[m], salary: sal, nonSalary: non };
@@ -380,7 +380,7 @@ export function useInsightsData(ledger: LedgerEntry[], rawTrades: StockTrade[], 
         if (l.date?.slice(0, 7) !== pm) continue;
         const a = Number(l.amount); if (a <= 0) continue;
         // 이월/원래 보유 자산은 전월 수입에서도 제외 (모든 수입 지표 일관)
-        if (l.kind === "income") { if (!isCarryOverIncomeEntry(l)) { pi += a; if (salaryKeys.has(l.subCategory || l.category || "")) ps += a; } }
+        if (l.kind === "income") { if (!isExcludedIncomeEntry(l)) { pi += a; if (salaryKeys.has(l.subCategory || l.category || "")) ps += a; } }
         // 지출: 일반 지출 + 투자손실(category=재테크). 환전·신용결제는 제외.
         else if (l.kind === "expense" && l.category !== "환전" && !isCreditPayment(l)) pe += a;
       }

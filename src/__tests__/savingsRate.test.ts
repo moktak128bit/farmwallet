@@ -72,6 +72,20 @@ describe("computeMonthlyRealFlows", () => {
     expect(rf.tempIncomeTotal).toBe(0);
   });
 
+  it("퇴직연금 수입은 실질수입에서 완전 제외 (settlement/temp에도 안 잡힘)", () => {
+    const flows = computeMonthlyRealFlows(
+      [
+        entry({ id: "1", amount: 2_000_000, kind: "income", subCategory: "급여" }),
+        entry({ id: "2", amount: 250_000, kind: "income", category: "퇴직연금" }),
+      ],
+      NO_OPTS
+    );
+    const rf = flows.get("2026-01")!;
+    expect(rf.realIncome).toBe(2_000_000);
+    expect(rf.settlementTotal).toBe(0);
+    expect(rf.tempIncomeTotal).toBe(0);
+  });
+
   it("정산은 부분일치로 settlementTotal, 일시소득(용돈)은 tempIncomeTotal — 실질수입에서 제외", () => {
     const flows = computeMonthlyRealFlows(
       [

@@ -19,6 +19,21 @@ export const NON_REAL_INCOME = new Set([
 ]);
 
 /**
+ * 수입으로 기록하되 "소득(수입)" 집계 전체에서 제외할 항목.
+ *
+ * 예: 퇴직연금(DC) 회사부담분 — 내 연금계좌로 들어와 계좌 잔액·순자산엔 반영되지만,
+ * 쓸 수 있는 소득이 아니므로 대시보드 수입 카드·수지·저축률, 인사이트 수입(실질수입·추세·MoM)
+ * 어디에도 넣지 않는다. (가계부 행·계좌 잔액 계산에는 영향 없음 — 거기선 일반 income으로 처리)
+ *
+ * 확장 시 이 Set에만 추가. 판정은 isIncomeExcludedFromTotals 단일 진입점.
+ */
+const INCOME_EXCLUDED_FROM_TOTALS = new Set(["퇴직연금"]);
+
+/** 위 INCOME_EXCLUDED_FROM_TOTALS 해당 수입 항목 여부 — subCategory 우선, 없으면 category. */
+export const isIncomeExcludedFromTotals = (l: LedgerEntry): boolean =>
+  l.kind === "income" && INCOME_EXCLUDED_FROM_TOTALS.has(l.subCategory || l.category || "");
+
+/**
  * 정산성(회수) 수입 판정 — 내가/우리가 먼저 쓴 돈이 돌아온 것.
  *  - "정산" 부분일치
  *  - "데이트통장" 정확 일치: 상대 분담금 입금. 실질 지출 쪽에서 상대 부담 50%를

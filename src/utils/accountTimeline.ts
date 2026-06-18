@@ -16,6 +16,8 @@ export type AccountTimelineRow = {
   asset: number;
   debt: number;
   total: number;
+  /** 연금계좌(isPension)의 순기여분 합계 (자산−계좌부채). 순자산에서 '연금 제외' 보기에 사용. */
+  pension: number;
 };
 
 export function computeAccountTimelineRows(params: {
@@ -159,7 +161,8 @@ export function computeAccountTimelineRows(params: {
     let totalValue = 0;
     let totalAssetValue = 0;
     let totalDebtValue = 0;
-    const row: AccountTimelineRow = { month, stock: 0, savings: 0, asset: 0, debt: 0, total: 0 };
+    let totalPensionValue = 0;
+    const row: AccountTimelineRow = { month, stock: 0, savings: 0, asset: 0, debt: 0, total: 0, pension: 0 };
     accounts.forEach((account) => {
       const cash = runningBalanceByAccount.get(account.id) ?? 0;
       const usdCash =
@@ -174,6 +177,7 @@ export function computeAccountTimelineRows(params: {
       totalAssetValue += accountAsset;
       totalDebtValue += debt;
       totalValue += accountValue;
+      if (account.isPension) totalPensionValue += accountValue;
 
       if (account.type === "securities" || account.type === "crypto") {
         totalStockValue += stock;
@@ -192,6 +196,7 @@ export function computeAccountTimelineRows(params: {
     row.asset = totalAssetValue;
     row.debt = totalDebtValue;
     row.total = totalValue;
+    row.pension = totalPensionValue;
     rows.push(row);
   });
 

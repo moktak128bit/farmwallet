@@ -7,6 +7,14 @@ import {
   type MergeKind, type MergeSpec,
 } from "../utils/categoryMerge";
 
+/** 수입 성격 선택지 — 라벨·강조색(CSS 변수, 다크 대응). 자동 외엔 색으로 한눈에 구분. */
+const INCOME_NATURE_OPTIONS = [
+  { value: "auto", label: "자동", color: "var(--text-muted)" },
+  { value: "salary", label: "근로소득", color: "var(--primary)" },
+  { value: "passive", label: "패시브", color: "var(--accent)" },
+  { value: "nonRealIncome", label: "비실질", color: "var(--warning)" },
+] as const;
+
 interface Props {
   presets: CategoryPresets;
   onChangePresets: (next: CategoryPresets) => void;
@@ -707,26 +715,55 @@ export const CategoriesView: React.FC<Props> = ({ presets, onChangePresets, ledg
 
       {/* 수입 성격 지정 — 인사이트·대시보드의 "수입=근로소득" 분류를 사용자가 직접 덮어쓰기 */}
       <div className="card" style={{ marginTop: 16 }}>
-        <div className="section-header">
-          <h3>수입 성격 지정</h3>
+        <div className="section-header" style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 8, flexWrap: "wrap" }}>
+          <h3 style={{ margin: 0 }}>수입 성격 지정</h3>
+          {(() => {
+            const overriddenCount =
+              categoryTypes.salary.length + categoryTypes.passive.length + categoryTypes.nonRealIncome.length;
+            if (overriddenCount === 0) return null;
+            return (
+              <button
+                type="button"
+                onClick={() => setCategoryTypes((prev) => ({ ...prev, salary: [], passive: [], nonRealIncome: [] }))}
+                style={{ fontSize: 12, padding: "4px 10px", borderRadius: 6, border: "1px solid var(--border)", background: "var(--surface)", cursor: "pointer" }}
+                title="모든 카테고리를 자동(빈도 기반 추정)으로 되돌립니다"
+              >
+                모두 자동으로 ({overriddenCount}건 지정됨)
+              </button>
+            );
+          })()}
         </div>
         <p className="hint" style={{ marginTop: 0, marginBottom: 12, lineHeight: 1.7 }}>
           인사이트·대시보드의 <strong>수입 추세·저축률</strong>은 근로소득(월급·수당·상여)만 집계합니다.
           카테고리 성격을 직접 지정하면 자동 추측을 덮어씁니다 (<strong>자동</strong>은 빈도 기반 추정).
           <br />
-          · <strong>근로소득</strong> 수입 추세·저축률 분모에 포함 ·
-          {" "}<strong>패시브</strong> 실질수입엔 포함, 근로소득 추세엔 제외(배당·이자) ·
-          {" "}<strong>비실질</strong> 정산·용돈·지원처럼 실질수입에서 제외
+          · <strong style={{ color: "var(--primary)" }}>근로소득</strong> 수입 추세·저축률 분모에 포함 ·
+          {" "}<strong style={{ color: "var(--accent)" }}>패시브</strong> 실질수입엔 포함, 근로소득 추세엔 제외(배당·이자) ·
+          {" "}<strong style={{ color: "var(--warning)" }}>비실질</strong> 정산·용돈·지원처럼 실질수입에서 제외
         </p>
-        <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(220px, 1fr))", gap: 10 }}>
+        <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(160px, 1fr))", gap: 10 }}>
           {incomeNatureCats.map((cat) => {
             const value = categoryTypes.salary.includes(cat) ? "salary"
               : categoryTypes.passive.includes(cat) ? "passive"
               : categoryTypes.nonRealIncome.includes(cat) ? "nonRealIncome"
               : "auto";
+            const meta = INCOME_NATURE_OPTIONS.find((o) => o.value === value)!;
+            const overridden = value !== "auto";
             return (
-              <div key={cat} style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 8, padding: "8px 10px", background: "var(--bg)", borderRadius: 8, border: "1px solid var(--border-light)" }}>
-                <span style={{ fontSize: 13, fontWeight: 600, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }} title={cat}>{cat}</span>
+              <div
+                key={cat}
+                style={{
+                  display: "flex",
+                  flexDirection: "column",
+                  gap: 6,
+                  padding: 10,
+                  background: "var(--bg)",
+                  borderRadius: 8,
+                  border: `1px solid ${overridden ? meta.color : "var(--border-light)"}`,
+                  borderLeft: `3px solid ${meta.color}`,
+                }}
+              >
+                <span style={{ fontSize: 13, fontWeight: 600, lineHeight: 1.35, wordBreak: "break-all" }} title={cat}>{cat}</span>
                 <select
                   aria-label={`${cat} 수입 성격`}
                   value={value}
@@ -742,12 +779,20 @@ export const CategoriesView: React.FC<Props> = ({ presets, onChangePresets, ledg
                       return { ...prev, salary, passive, nonRealIncome };
                     });
                   }}
-                  style={{ fontSize: 12, padding: "3px 6px", border: "1px solid var(--border)", borderRadius: 4, backgroundColor: "var(--surface)" }}
+                  style={{
+                    width: "100%",
+                    fontSize: 13,
+                    padding: "6px 8px",
+                    border: `1px solid ${overridden ? meta.color : "var(--border)"}`,
+                    borderRadius: 6,
+                    backgroundColor: "var(--surface)",
+                    color: overridden ? meta.color : "var(--text)",
+                    fontWeight: overridden ? 700 : 400,
+                  }}
                 >
-                  <option value="auto">자동</option>
-                  <option value="salary">근로소득</option>
-                  <option value="passive">패시브</option>
-                  <option value="nonRealIncome">비실질</option>
+                  {INCOME_NATURE_OPTIONS.map((o) => (
+                    <option key={o.value} value={o.value}>{o.label}</option>
+                  ))}
                 </select>
               </div>
             );

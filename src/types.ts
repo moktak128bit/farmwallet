@@ -23,6 +23,9 @@ export interface Account {
   /** 계좌 비활성화(숨김). true면 가계부/배당 등 입력 폼 드롭다운에서 숨겨짐.
    * 과거 기록은 그대로 유지·표시됨 (필터/내역에는 계속 나옴). */
   archived?: boolean;
+  /** 연금계좌(퇴직연금 DC·연금저축 등) 표시. type은 securities지만 자산 추이 그래프에서
+   * '증권'과 분리해 '연금' 자산군으로 색 구분한다. 순자산 합계엔 일반 증권과 동일하게 포함. */
+  isPension?: boolean;
 }
 
 export type LedgerKind = "income" | "expense" | "transfer";

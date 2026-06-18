@@ -37,6 +37,7 @@ interface PerAccountRow {
   accountId: string;
   accountName: string;
   type: AccountType;
+  isPension: boolean;
   cashKrw: number;
   costKrw: number;   // securities/crypto only; 0 otherwise
   marketKrw: number; // securities/crypto only; 0 otherwise
@@ -117,6 +118,13 @@ export const TotalAssetTrendCard: React.FC<Props> = React.memo(function TotalAss
     for (const a of accounts) {
       if (a.type === "securities" || a.type === "crypto") set.add(a.id);
     }
+    return set;
+  }, [accounts]);
+
+  // 연금 계좌(isPension) — 자산 추이에서 '증권'과 분리해 '연금' 자산군으로 집계
+  const pensionAccountIds = useMemo(() => {
+    const set = new Set<string>();
+    for (const a of accounts) if (a.isPension) set.add(a.id);
     return set;
   }, [accounts]);
 
@@ -311,17 +319,27 @@ export const TotalAssetTrendCard: React.FC<Props> = React.memo(function TotalAss
 
       holdings.sort((a, b) => b.marketKrw - a.marketKrw);
 
+      // 자산군별 합계(연금/증권/현금/저축/기타) — 누적 영역 차트용. 합 = cashPlusMarket
+      // (각 현금계좌는 정확히 한 군에 cash를, 증권/암호화폐/연금은 평가액도 같은 군에 더해 총액 보존)
+      let segPension = 0, segSecurities = 0, segCash = 0, segSavings = 0, segEtc = 0;
       const perAccount: PerAccountRow[] = [];
       for (const account of accounts) {
         if (!cashAccountIds.has(account.id)) continue;
         const accCash = cashByAccount.get(account.id) ?? 0;
         const accCost = costByAccount.get(account.id) ?? 0;
         const accMarket = marketByAccount.get(account.id) ?? 0;
+        const isPension = pensionAccountIds.has(account.id);
+        if (isPension) segPension += accCash + accMarket;
+        else if (account.type === "securities" || account.type === "crypto") segSecurities += accCash + accMarket;
+        else if (account.type === "savings") segSavings += accCash;
+        else if (account.type === "checking") segCash += accCash;
+        else segEtc += accCash; // other
         if (accCash === 0 && accCost === 0 && accMarket === 0) continue;
         perAccount.push({
           accountId: account.id,
           accountName: account.name,
           type: account.type,
+          isPension,
           cashKrw: accCash,
           costKrw: accCost,
           marketKrw: accMarket,
@@ -345,6 +363,11 @@ export const TotalAssetTrendCard: React.FC<Props> = React.memo(function TotalAss
         label: labelFor(snapDate),
         cashPlusCost: cashKrw + stockCostKrw,
         cashPlusMarket: cashKrw + stockMarketKrw,
+        pension: segPension,
+        securities: segSecurities,
+        cash: segCash,
+        savings: segSavings,
+        etc: segEtc,
       });
     }
 
@@ -357,6 +380,7 @@ export const TotalAssetTrendCard: React.FC<Props> = React.memo(function TotalAss
     fxRate,
     cashAccountIds,
     securitiesAccountIds,
+    pensionAccountIds,
     accountNameById,
     currentPriceIndex,
     snapByDate,
@@ -388,9 +412,9 @@ export const TotalAssetTrendCard: React.FC<Props> = React.memo(function TotalAss
         }}
       >
         <div>
-          <div className="card-title" style={{ marginBottom: 4 }}>총자산 추이 (현금 + 주식 원가 vs 현금 + 평가액)</div>
+          <div className="card-title" style={{ marginBottom: 4 }}>총자산 추이 (자산군별 — 연금·증권·현금·저축)</div>
           <div className="hint" style={{ fontSize: 13 }}>
-            매월 1일·15일 · 현금 = 계좌별 잔액 합계 · 평가액 = 박제 시세 우선(없으면 현재가) · <strong>부채 미차감</strong>
+            매월 1일·15일 · 색 누적 = 자산군별 평가액(합 = 현금+평가액) · 평가액 = 박제 시세 우선(없으면 현재가) · <strong>부채 미차감</strong>
             {savedCount > 0 && <span> · 박제 {savedCount}건</span>}
           </div>
         </div>
@@ -522,7 +546,7 @@ const SnapshotDetail: React.FC<SnapshotDetailProps> = ({ row, detail, isLatest, 
                 return (
                   <tr key={a.accountId} style={{ borderTop: "1px solid var(--border)", textAlign: "right" }}>
                     <td style={{ textAlign: "left", padding: "6px 8px", fontWeight: 600 }}>{a.accountName}</td>
-                    <td style={{ textAlign: "left", padding: "6px 8px", color: "var(--text-muted)" }}>{ACCOUNT_TYPE_LABEL[a.type] ?? a.type}</td>
+                    <td style={{ textAlign: "left", padding: "6px 8px", color: "var(--text-muted)" }}>{a.isPension ? "연금" : (ACCOUNT_TYPE_LABEL[a.type] ?? a.type)}</td>
                     <td style={{ padding: "6px 8px" }}>{formatKRW(Math.round(a.cashKrw))}</td>
                     <td style={{ padding: "6px 8px", color: isInvest ? "#f59e0b" : "var(--text-muted)" }}>
                       {isInvest ? formatKRW(Math.round(a.costKrw)) : "-"}

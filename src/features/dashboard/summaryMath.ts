@@ -7,6 +7,7 @@
 import type { CategoryPresets, LedgerEntry } from "../../types";
 import { isCreditPayment, isSavingsExpenseEntry, isInvestmentPnlEntry, isInvestmentLossEntry } from "../../utils/category";
 import { INVESTMENT_TRANSFER_SUBS } from "../../utils/categoryUtils";
+import { isIncomeExcludedFromTotals } from "../../utils/realIncome";
 
 /** USD 항목은 환율로 원화 환산. 환율이 없으면 액면 그대로 (대시보드 공통 정책) */
 export const toKrwAmount = (entry: LedgerEntry, fxRate: number | null): number =>
@@ -38,7 +39,8 @@ type LedgerFlowType = "income" | "expense" | "investing";
  *              (신용결제는 카드 사용 시점에 이미 expense로 잡힘 — 이중계상 방지 위해 제외)
  * - investing: "재테크" 단일 정의 = 저축이체·투자이체 transfer (+구버전 저축/투자 transfer)
  *              + 레거시 저축성지출 expense (isSavingsExpenseEntry)
- * - null     : 신용결제, 재테크가 아닌 일반 이체, (salaryKeys 지정 시) 비근로 수입
+ * - null     : 신용결제, 재테크가 아닌 일반 이체, 소득 집계 제외 수입(퇴직연금 등),
+ *              (salaryKeys 지정 시) 비근로 수입
  *
  * @param salaryKeys 지정 시 근로소득(월급·수당·상여) 중분류만 "income"으로 집계하고
  *   정산·용돈·배당 등 비근로 유입은 null로 제외 — 인사이트의 "수입=근로소득" 정의와 통일.
@@ -51,6 +53,8 @@ export function classifyLedgerFlow(
 ): LedgerFlowType | null {
   // 투자 실현손익(투자수익·투자손실)은 일반 수입/지출이 아니라 '재테크'로 — 큰 손익이 생활 수입/지출을 부풀리지 않게.
   if (isInvestmentPnlEntry(entry)) return "investing";
+  // 퇴직연금(DC) 회사부담분 등 — 수입으로 기록되나 소득 집계에서 제외 (계좌 잔액·순자산엔 별도 반영).
+  if (isIncomeExcludedFromTotals(entry)) return null;
   if (entry.kind === "income") {
     if (salaryKeys && !salaryKeys.has(entry.subCategory || entry.category || "")) return null;
     return "income";

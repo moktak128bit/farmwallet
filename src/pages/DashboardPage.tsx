@@ -265,12 +265,13 @@ export const DashboardView: React.FC<Props> = (props) => {
 
   /** 순자산 추이: accountTimelineRows에서 month, total 추출 (만원 단위) */
   const netWorthTrendData = useMemo(() => {
-    if (accountTimelineRows.length === 0) return [] as Array<{ month: string; value: number; asset: number; debt: number }>;
+    if (accountTimelineRows.length === 0) return [] as Array<{ month: string; value: number; asset: number; debt: number; pension: number }>;
     return accountTimelineRows.map((row) => ({
       month: String(row.month),
       value: Math.round(Number(row.total) / 10000),
       asset: Math.round(Number(row.asset) / 10000),
-      debt: Math.round(Number(row.debt) / 10000)
+      debt: Math.round(Number(row.debt) / 10000),
+      pension: Math.round(Number(row.pension) / 10000)
     }));
   }, [accountTimelineRows]);
 

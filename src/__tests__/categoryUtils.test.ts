@@ -3,8 +3,9 @@ import {
   isCreditPayment,
   isRealExpenseEntry,
   isSavingsExpenseEntry,
+  getCategoryType,
 } from "../utils/categoryUtils";
-import type { LedgerEntry } from "../types";
+import type { CategoryPresets, LedgerEntry } from "../types";
 
 function entry(o: Partial<LedgerEntry> & { id: string }): LedgerEntry {
   return {
@@ -96,5 +97,23 @@ describe("isRealExpenseEntry — 일반 지출 합계용", () => {
     const ledger = [credit, food];
     const realExpenseSum = ledger.filter((e) => isRealExpenseEntry(e)).reduce((s, e) => s + e.amount, 0);
     expect(realExpenseSum).toBe(10_000);  // 신용결제 제외, 식비만 합산
+  });
+});
+
+describe("getCategoryType — 고정비 판정 (스키마 회귀: 배당 커버리지 고정비 누락 버그)", () => {
+  // 사용자가 카테고리 설정에서 대분류 "주거비"를 고정지출로 지정
+  const presets = { categoryTypes: { fixed: ["주거비"] } } as unknown as CategoryPresets;
+
+  it("현행 스키마(category='지출', 대분류는 subCategory) → subCategory로 고정비 인식", () => {
+    // 이전 버그: category('지출')만 검사해 fixed 미인식 → 고정비 0원으로 집계됨
+    expect(getCategoryType("지출", "주거비", "expense", presets)).toBe("fixed");
+  });
+
+  it("레거시 스키마(category에 대분류 직접) → category로 고정비 인식", () => {
+    expect(getCategoryType("주거비", undefined, "expense", presets)).toBe("fixed");
+  });
+
+  it("고정 목록에 없는 대분류 → variable", () => {
+    expect(getCategoryType("지출", "식비", "expense", presets)).toBe("variable");
   });
 });

@@ -11,7 +11,7 @@
  */
 import type { LedgerEntry } from "../types";
 import { isRealExpenseEntry } from "./category";
-import { computeRealIncome } from "./realIncome";
+import { computeRealIncome, isIncomeExcludedFromTotals } from "./realIncome";
 import { computeDatePartnerShare } from "./dateAccounting";
 
 /** 이체 기준 저축률 = 재테크 이체(저축+투자) / 수입 × 100. 수입 ≤ 0 이면 null. */
@@ -33,6 +33,15 @@ const isCarryOverStr = (s: string) =>
 /** 이월/원래 보유 자산 수입 여부 — 실수입이 아니므로 모든 수입 지표에서 제외. */
 export function isCarryOverIncomeEntry(l: LedgerEntry): boolean {
   return isCarryOverStr(l.category || "") || isCarryOverStr(l.subCategory || "");
+}
+
+/**
+ * "모든 수입 지표에서 제외" 단일 게이트.
+ * = 이월/원래보유(isCarryOverIncomeEntry) + 소득 집계 제외 항목(퇴직연금 등, isIncomeExcludedFromTotals).
+ * 인사이트·실질흐름의 수입 합산은 carry-over 대신 이 게이트를 쓴다.
+ */
+export function isExcludedIncomeEntry(l: LedgerEntry): boolean {
+  return isCarryOverIncomeEntry(l) || isIncomeExcludedFromTotals(l);
 }
 
 interface MonthlyRealFlow {
@@ -90,7 +99,7 @@ export function computeMonthlyRealFlows(
   for (const [month, entries] of byMonth) {
     // (c) 수입: 이월/원래 보유 자산 제외 → 정산·일시소득 분리는 computeRealIncome 재사용
     const incomeEntries = entries.filter(
-      (l) => l.kind === "income" && Number(l.amount) > 0 && !isCarryOverIncomeEntry(l)
+      (l) => l.kind === "income" && Number(l.amount) > 0 && !isExcludedIncomeEntry(l)
     );
     const pIncome = incomeEntries.reduce((s, l) => s + Number(l.amount), 0);
     const { settlementTotal, tempIncomeTotal, realIncome } = computeRealIncome(incomeEntries, pIncome, extraNonReal);

@@ -13,7 +13,7 @@
  */
 import type { Account, LedgerEntry } from "../types";
 import { NON_REAL_INCOME } from "./realIncome";
-import { isCarryOverIncomeEntry } from "./savingsRate";
+import { isExcludedIncomeEntry } from "./savingsRate";
 
 interface IncomeNatureKeys {
   /** 근로소득(월급·수당·상여 등) 중분류 집합 */
@@ -58,7 +58,7 @@ export function computeIncomeNatureKeys(
     if (l.kind !== "income" || Number(l.amount) <= 0) continue;
     const m = l.date?.slice(0, 7);
     const sub = l.subCategory || l.category || "";
-    if (!m || !sub || isCarryOverIncomeEntry(l)) continue;
+    if (!m || !sub || isExcludedIncomeEntry(l)) continue;
     if (!incSubMonths.has(sub)) incSubMonths.set(sub, new Set());
     incSubMonths.get(sub)!.add(m);
   }

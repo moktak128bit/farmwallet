@@ -43,6 +43,10 @@ export const AdjustmentModal = React.memo(function AdjustmentModal({
   const [isSetDirectly, setIsSetDirectly] = useState(false);
   const [editUsdBalance, setEditUsdBalance] = useState("");
   const [editKrwBalance, setEditKrwBalance] = useState("");
+  // 연금 분류 — 즉시 저장하지 않고 '적용/설정' 버튼에서 함께 커밋 (취소 시 폐기)
+  const [pendingPension, setPendingPension] = useState(
+    () => !!safeAccounts.find((a) => a.id === adjustingAccount.id)?.isPension
+  );
 
   // 접근성: 포커스 트랩 + window 레벨 ESC (입력 포커스 여부와 무관하게 닫힘)
   // 모달 중첩 시 최상위 모달만 ESC로 닫히도록 모달 스택을 사용한다.
@@ -67,23 +71,30 @@ export const AdjustmentModal = React.memo(function AdjustmentModal({
       const inputUsd = Number(editUsdBalance.replace(/[^\d.-]/g, "")) || 0;
       const inputKrw = Number(editKrwBalance.replace(/[^\d.-]/g, "")) || 0;
 
-      let targetUsd: number;
-      let targetKrw: number;
-      const dispUsd = (account.usdBalance ?? 0) + (balanceRow.usdTransferNet ?? 0);
-      const currentKrw = balanceRow.currentBalance ?? 0;
+      // 연금 분류 변경분 (securities 전용 — crypto는 연금 옵션 없음)
+      const isSecurities = adjustingAccount.type === "securities";
+      const pensionTarget = pendingPension ? true : undefined;
+      const pensionChanged = isSecurities && pendingPension !== !!account.isPension;
+      const hasAmountChange = isSetDirectly || inputUsd !== 0 || inputKrw !== 0;
 
-      if (isSetDirectly) {
-        targetUsd = inputUsd;
-        targetKrw = inputKrw;
-      } else {
-        // 원화/달러
-        if (inputUsd === 0 && inputKrw === 0) {
-          alert("USD 또는 KRW 중 하나 이상 0이 아닌 값을 입력해주세요.");
+      // 금액 변경 없이 연금 분류만 저장 — 금액 입력 강제하지 않음
+      if (!hasAmountChange) {
+        if (pensionChanged) {
+          onChangeAccounts(
+            safeAccounts.map((a) => (a.id === adjustingAccount.id ? { ...a, isPension: pensionTarget } : a))
+          );
+          toast.success(pendingPension ? "연금 계좌로 분류했습니다." : "연금 분류를 해제했습니다.");
+          onClose();
           return;
         }
-        targetUsd = dispUsd + inputUsd;
-        targetKrw = currentKrw + inputKrw;
+        alert(isSecurities ? "변경할 금액을 입력하거나 연금 분류를 바꿔주세요." : "USD 또는 KRW 중 하나 이상 0이 아닌 값을 입력해주세요.");
+        return;
       }
+
+      const dispUsd = (account.usdBalance ?? 0) + (balanceRow.usdTransferNet ?? 0);
+      const currentKrw = balanceRow.currentBalance ?? 0;
+      const targetUsd = isSetDirectly ? inputUsd : dispUsd + inputUsd;
+      const targetKrw = isSetDirectly ? inputKrw : currentKrw + inputKrw;
 
       const usdTransferNet = balanceRow.usdTransferNet ?? 0;
       const newUsdBalance = targetUsd - usdTransferNet;
@@ -103,7 +114,9 @@ export const AdjustmentModal = React.memo(function AdjustmentModal({
             ...a,
             usdBalance: newUsdBalance,
             initialCashBalance: newInitialCashBalance,
-            cashAdjustment: 0
+            cashAdjustment: 0,
+            // securities면 연금 분류도 함께 반영 (금액+분류 동시 변경 지원)
+            ...(isSecurities ? { isPension: pensionTarget } : {})
           };
         })
       );
@@ -322,6 +335,19 @@ export const AdjustmentModal = React.memo(function AdjustmentModal({
 
           {(adjustingAccount.type === "securities" || adjustingAccount.type === "crypto") ? (
             <>
+              {adjustingAccount.type === "securities" && onChangeAccounts && (
+                <label style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 12, padding: "8px 10px", background: "var(--bg)", borderRadius: 8, border: "1px solid var(--border)" }}>
+                  <input
+                    type="checkbox"
+                    checked={pendingPension}
+                    onChange={(e) => setPendingPension(e.target.checked)}
+                  />
+                  <span style={{ fontSize: 13 }}>
+                    연금 계좌로 분류 (퇴직연금·연금저축 — 자산 추이에서 '연금'으로 구분)
+                    <span style={{ color: "var(--text-muted)" }}> · 금액 입력 없이 아래 버튼만 눌러도 저장됩니다</span>
+                  </span>
+                </label>
+              )}
               <label style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 8 }}>
                 <input
                   type="checkbox"

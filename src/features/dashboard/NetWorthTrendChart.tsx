@@ -5,6 +5,8 @@ interface NetWorthTrendPoint {
   value: number;
   asset: number;
   debt: number;
+  /** 연금계좌(isPension) 순기여분 (만원). '연금 제외' 토글 시 value에서 차감. */
+  pension: number;
 }
 
 interface Props {
@@ -15,6 +17,7 @@ interface Props {
 export const NetWorthTrendChart: React.FC<Props> = React.memo(function NetWorthTrendChart({ data }) {
   const svgRef = useRef<SVGSVGElement>(null);
   const [hoverIdx, setHoverIdx] = useState<number | null>(null);
+  const [excludePension, setExcludePension] = useState(false);
 
   // 빈 상태 — 카드가 통째로 사라지면 위젯이 있는 줄도 모르므로 안내를 보여준다
   if (data.length < 2) {
@@ -30,7 +33,10 @@ export const NetWorthTrendChart: React.FC<Props> = React.memo(function NetWorthT
     );
   }
 
-  const values = data.map((d) => d.value);
+  const hasPension = data.some((d) => (d.pension ?? 0) !== 0);
+  const showLiquid = excludePension && hasPension;
+  const eff = (d: NetWorthTrendPoint) => d.value - (showLiquid ? (d.pension ?? 0) : 0);
+  const values = data.map(eff);
   const minVal = Math.min(...values);
   const maxVal = Math.max(...values);
   const range = maxVal - minVal || 1;
@@ -47,7 +53,7 @@ export const NetWorthTrendChart: React.FC<Props> = React.memo(function NetWorthT
   const toX = (i: number) => PAD_L + (i / (n - 1)) * chartW;
   const toY = (v: number) => PAD_T + chartH - ((v - minVal) / range) * chartH;
 
-  const pts = data.map((d, i) => ({ x: toX(i), y: toY(d.value), ...d }));
+  const pts = data.map((d, i) => ({ x: toX(i), y: toY(eff(d)), v: eff(d), ...d }));
   const polyline = pts.map((p) => `${p.x},${p.y}`).join(" ");
   const areaPath =
     `M${pts[0].x},${PAD_T + chartH} ` +
@@ -55,8 +61,8 @@ export const NetWorthTrendChart: React.FC<Props> = React.memo(function NetWorthT
     ` L${pts[pts.length - 1].x},${PAD_T + chartH} Z`;
 
   const currentPt = pts[pts.length - 1];
-  const currentWorth = data[data.length - 1].value;
-  const prevWorth = data[data.length - 2]?.value ?? currentWorth;
+  const currentWorth = eff(data[data.length - 1]);
+  const prevWorth = data[data.length - 2] ? eff(data[data.length - 2]) : currentWorth;
   const nwDelta = currentWorth - prevWorth;
   const nwDeltaPct = Number.isFinite(prevWorth) && prevWorth !== 0 ? (nwDelta / prevWorth) * 100 : 0;
   const nwDeltaColor = nwDelta > 0 ? "var(--success)" : nwDelta < 0 ? "var(--danger)" : "var(--text-muted)";
@@ -95,8 +101,8 @@ export const NetWorthTrendChart: React.FC<Props> = React.memo(function NetWorthT
   const handleLeave = () => setHoverIdx(null);
 
   const hover = hoverIdx != null ? pts[hoverIdx] : null;
-  const TT_W = 168;
-  const TT_H = 84;
+  const TT_W = 178;
+  const TT_H = showLiquid ? 104 : 84;
   const ttX = hover ? (hover.x < W / 2 ? hover.x + 12 : hover.x - 12 - TT_W) : 0;
   const ttY = hover ? Math.max(PAD_T, Math.min(hover.y - TT_H / 2, PAD_T + chartH - TT_H)) : 0;
   const fmt = (v: number) => (v >= 0 ? "" : "-") + Math.abs(v).toLocaleString() + "만원";
@@ -104,7 +110,33 @@ export const NetWorthTrendChart: React.FC<Props> = React.memo(function NetWorthT
   return (
     <div className="card" style={{ padding: 20 }}>
       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginBottom: 12, flexWrap: "wrap", gap: 8 }}>
-        <div className="card-title" style={{ margin: 0, fontSize: 17 }}>순자산 추이 <span style={{ fontSize: 13, color: "var(--text-muted)", fontWeight: 400 }}>(전체 계좌 − 부채)</span></div>
+        <div style={{ display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap" }}>
+          <div className="card-title" style={{ margin: 0, fontSize: 17 }}>
+            순자산 추이 <span style={{ fontSize: 13, color: "var(--text-muted)", fontWeight: 400 }}>
+              {showLiquid ? "(연금 제외 · 유동 순자산)" : "(전체 계좌 − 부채)"}
+            </span>
+          </div>
+          {hasPension && (
+            <button
+              type="button"
+              onClick={() => setExcludePension((v) => !v)}
+              aria-pressed={showLiquid}
+              style={{
+                fontSize: 12,
+                padding: "3px 10px",
+                borderRadius: 6,
+                border: `1px solid ${showLiquid ? "var(--primary)" : "var(--border)"}`,
+                background: showLiquid ? "var(--primary-light)" : "var(--surface)",
+                color: showLiquid ? "var(--primary)" : "var(--text)",
+                fontWeight: showLiquid ? 700 : 400,
+                cursor: "pointer",
+              }}
+              title="연금계좌(퇴직연금·연금저축) 자산을 순자산에서 제외하고 봅니다"
+            >
+              연금 제외
+            </button>
+          )}
+        </div>
         <div style={{ textAlign: "right" }}>
           <div style={{ fontWeight: 700, fontSize: 30, color: "var(--primary)" }}>
             {currentWorth >= 0 ? "" : "-"}{Math.abs(currentWorth).toLocaleString()}만원
@@ -236,10 +268,18 @@ export const NetWorthTrendChart: React.FC<Props> = React.memo(function NetWorthT
                     {hover.debt === 0 ? "0만원" : `−${Math.abs(hover.debt).toLocaleString()}만원`}
                   </tspan>
                 </text>
-                <line x1={8} y1={62} x2={TT_W - 8} y2={62} stroke="var(--border, #e5e7eb)" strokeWidth={1} />
-                <text x={10} y={76} fontSize={12} fontWeight={700} fill="var(--primary, #2563eb)">
-                  순자산
-                  <tspan x={TT_W - 10} textAnchor="end">{fmt(hover.value)}</tspan>
+                {showLiquid && (
+                  <text x={10} y={74} fontSize={12} fill="var(--text, #111)">
+                    연금(제외)
+                    <tspan x={TT_W - 10} textAnchor="end" fontWeight={600} fill="var(--text-muted, #9ca3af)">
+                      {`−${Math.abs(hover.pension).toLocaleString()}만원`}
+                    </tspan>
+                  </text>
+                )}
+                <line x1={8} y1={showLiquid ? 82 : 62} x2={TT_W - 8} y2={showLiquid ? 82 : 62} stroke="var(--border, #e5e7eb)" strokeWidth={1} />
+                <text x={10} y={showLiquid ? 96 : 76} fontSize={12} fontWeight={700} fill="var(--primary, #2563eb)">
+                  {showLiquid ? "유동순자산" : "순자산"}
+                  <tspan x={TT_W - 10} textAnchor="end">{fmt(hover.v)}</tspan>
                 </text>
               </g>
             </g>

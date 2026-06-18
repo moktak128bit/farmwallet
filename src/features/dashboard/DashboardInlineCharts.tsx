@@ -4,6 +4,7 @@
  */
 import {
   Area,
+  AreaChart,
   CartesianGrid,
   ComposedChart,
   Legend,
@@ -306,7 +307,22 @@ export interface TotalAssetRow {
   label: string;
   cashPlusCost: number;   // 계좌 현금 + 주식 원가 (KRW)
   cashPlusMarket: number; // 계좌 현금 + 주식 평가액 (KRW)
+  // 자산군별 평가액 (누적 영역 차트용) — 합 = cashPlusMarket
+  pension: number;        // 연금 (isPension 증권계좌)
+  securities: number;     // 증권 (일반 securities + crypto)
+  cash: number;           // 현금 (입출금)
+  savings: number;        // 저축
+  etc: number;            // 기타 (other)
 }
+
+/** 자산군 누적 영역 시리즈 정의 — 아래(현금)→위(연금) 순으로 쌓인다. 색은 CSS 변수(다크 대응). */
+const ASSET_SEGMENTS: Array<{ key: keyof TotalAssetRow; name: string; color: string }> = [
+  { key: "cash", name: "현금", color: "var(--chart-warning)" },
+  { key: "savings", name: "저축", color: "var(--chart-positive)" },
+  { key: "securities", name: "증권", color: "var(--chart-accent)" },
+  { key: "pension", name: "연금", color: "var(--chart-primary)" },
+  { key: "etc", name: "기타", color: "var(--text-muted)" },
+];
 
 interface TotalAssetChartProps {
   rows: TotalAssetRow[];
@@ -349,15 +365,11 @@ export function TotalAssetValueChart({ rows, activeDate, onPointClick }: TotalAs
     const d = data as { payload?: TotalAssetRow } | null;
     if (d?.payload?.date) onPointClick(d.payload.date);
   };
+  // 값이 한 번이라도 0이 아닌 자산군만 렌더 (연금·기타가 없으면 범례에서 숨김)
+  const segments = ASSET_SEGMENTS.filter((s) => rows.some((r) => Number(r[s.key] ?? 0) !== 0));
   return (
     <ResponsiveContainer width="100%" height="100%">
-      <ComposedChart data={rows} margin={{ top: 12, right: 16, left: 8, bottom: 8 }} onClick={handleChartClick} style={{ cursor: "pointer" }}>
-        <defs>
-          <linearGradient id="totalMarketGrad" x1="0" y1="0" x2="0" y2="1">
-            <stop offset="5%" stopColor="#2563eb" stopOpacity={0.28} />
-            <stop offset="95%" stopColor="#2563eb" stopOpacity={0.02} />
-          </linearGradient>
-        </defs>
+      <AreaChart data={rows} margin={{ top: 12, right: 16, left: 8, bottom: 8 }} onClick={handleChartClick} style={{ cursor: "pointer" }}>
         <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="var(--border)" />
         <XAxis dataKey="label" fontSize={12} axisLine={false} tickLine={false} interval={xInterval} minTickGap={16} />
         <YAxis fontSize={12} tickFormatter={(v) => `${Math.round(Number(v) / 10000)}만`} axisLine={false} tickLine={false} width={56} />
@@ -378,28 +390,23 @@ export function TotalAssetValueChart({ rows, activeDate, onPointClick }: TotalAs
             strokeOpacity={0.5}
           />
         )}
-        <Area
-          isAnimationActive={false}
-          type="monotone"
-          dataKey="cashPlusMarket"
-          name="현금+평가액"
-          stroke="#2563eb"
-          strokeWidth={2.5}
-          fill="url(#totalMarketGrad)"
-          dot={{ r: 3, fill: "#2563eb" }}
-          activeDot={{ r: 7, stroke: "var(--text)", strokeWidth: 2, onClick: handleDotClick }}
-        />
-        <Line
-          isAnimationActive={false}
-          type="monotone"
-          dataKey="cashPlusCost"
-          name="현금+원가"
-          stroke="#f59e0b"
-          strokeWidth={2}
-          dot={{ r: 3, fill: "#f59e0b" }}
-          activeDot={{ r: 7, stroke: "var(--text)", strokeWidth: 2, onClick: handleDotClick }}
-        />
-      </ComposedChart>
+        {segments.map((s) => (
+          <Area
+            key={s.key}
+            isAnimationActive={false}
+            type="monotone"
+            dataKey={s.key}
+            name={s.name}
+            stackId="asset"
+            stroke={s.color}
+            strokeWidth={1.5}
+            fill={s.color}
+            fillOpacity={0.65}
+            dot={false}
+            activeDot={{ r: 5, stroke: "var(--text)", strokeWidth: 1.5, onClick: handleDotClick }}
+          />
+        ))}
+      </AreaChart>
     </ResponsiveContainer>
   );
 }

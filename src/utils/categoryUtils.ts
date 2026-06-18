@@ -209,11 +209,16 @@ function isFixedExpense(
   subCategory: string | undefined,
   categoryPresets: CategoryPresets
 ): boolean {
-  // categoryTypes에 정의된 고정지출 카테고리 확인
+  // categoryTypes에 정의된 고정지출 카테고리(대분류명) 확인
   const fixedCategories = categoryPresets.categoryTypes?.fixed ?? [];
-  
-  // 대분류가 고정지출인 경우
+
+  // 대분류가 고정지출인 경우.
+  // 현행 지출 스키마는 category="지출"이고 대분류가 subCategory에 들어가므로(레거시는 category에 직접)
+  // 둘 다 확인해야 누락이 없다. (이 검사가 subCategory를 안 보면 현행 데이터의 고정비가 전부 0으로 집계됨)
   if (fixedCategories.includes(category)) {
+    return true;
+  }
+  if (subCategory && fixedCategories.includes(subCategory)) {
     return true;
   }
 

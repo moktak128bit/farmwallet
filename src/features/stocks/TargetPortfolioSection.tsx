@@ -42,6 +42,8 @@ interface TargetPortfolioSectionProps {
   targetPortfolios: TargetPortfolio[];
   onChangeTargetPortfolios: (next: TargetPortfolio[]) => void;
   fxRate: number | null;
+  /** 리밸런싱 제안 '이대로 입력' — 거래 폼에 종목·수량·방향 적재 (제출은 사용자 확인) */
+  onPrefillTrade?: (req: { accountId?: string; ticker: string; name: string; side: "buy" | "sell"; quantity: number }) => void;
 }
 
 /** 목표/보유 비교용 티커 정규화 (한국형 4~5자 → 6자 통일 포함) */
@@ -57,7 +59,8 @@ export const TargetPortfolioSection: React.FC<TargetPortfolioSectionProps> = ({
   tickerDatabase = [],
   targetPortfolios,
   onChangeTargetPortfolios,
-  fxRate
+  fxRate,
+  onPrefillTrade
 }) => {
   const securitiesAccounts = useMemo(
     () => accounts.filter((a) => a.type === "securities" || a.type === "crypto"),
@@ -653,6 +656,23 @@ export const TargetPortfolioSection: React.FC<TargetPortfolioSectionProps> = ({
                         )}
                         {r.currentPrice <= 0 && Math.abs(r.diffKRW) > 1000 && (
                           <span style={{ color: "var(--text-muted)" }}>시세 갱신 필요</span>
+                        )}
+                        {onPrefillTrade && r.currentPrice > 0 && Math.abs(r.diffKRW) > 1000 && (
+                          <button
+                            type="button"
+                            onClick={() =>
+                              onPrefillTrade({
+                                accountId: scopeAccountId !== "all" ? scopeAccountId : (selectedTarget?.accountId ?? undefined),
+                                ticker: r.ticker,
+                                name: r.name,
+                                side: r.diffKRW > 0 ? "buy" : "sell",
+                                quantity: r.diffKRW > 0 ? Math.ceil(r.sharesToTrade) : Math.floor(r.sharesToTrade)
+                              })
+                            }
+                            style={{ marginLeft: 8, fontSize: 11, padding: "2px 8px", borderRadius: 5, border: "1px solid var(--border)", background: "var(--surface)", cursor: "pointer" }}
+                          >
+                            이대로 입력
+                          </button>
                         )}
                       </td>
                     </tr>

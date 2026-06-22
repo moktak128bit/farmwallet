@@ -20,6 +20,7 @@ export const DASHBOARD_WIDGETS: DashboardWidgetDef[] = [
   { id: "salaryTimer", label: "월급 실시간 타이머" },
   { id: "monthCompare", label: "전월·전년 대비 (지출/수입)" },
   { id: "investmentSummary", label: "투자 자산 요약·목표" },
+  { id: "investmentPerformance", label: "투자 성적표 (시장 대비 — TWR·벤치마크·리스크)" },
   { id: "netWorthTrend", label: "순자산 추이" },
   { id: "topExpenses", label: "이번 달 최대 지출" },
   { id: "monthlyTrend", label: "월별 추이 (최근 6개월)" },

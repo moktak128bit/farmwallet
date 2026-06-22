@@ -86,7 +86,7 @@ import {
   loadData,
   saveSafetySnapshot,
   getAllBackupList,
-  loadBackupData,
+  loadBackupDataVerified,
   type BackupEntry
 } from "./storage";
 import type { AppData } from "./types";
@@ -655,10 +655,19 @@ export const App: React.FC = () => {
     input.click();
   }, [applyRecoveredData]);
 
-  const handleRecoveryFromLocalBackup = useCallback((id: string) => {
-    const restored = loadBackupData(id);
+  const handleRecoveryFromLocalBackup = useCallback(async (id: string) => {
+    // 저장 시 기록한 해시로 무결성 검증 — 손상된 백업으로 복구하기 전 경고
+    const { data: restored, status } = await loadBackupDataVerified(id);
     if (!restored) {
       toast.error("선택한 백업을 불러올 수 없습니다.");
+      return;
+    }
+    if (
+      status === "mismatch" &&
+      !window.confirm(
+        "⚠ 이 백업의 무결성 검증에 실패했습니다 (손상되었을 수 있습니다).\n그래도 이 백업으로 복구할까요?"
+      )
+    ) {
       return;
     }
     applyRecoveredData(restored, "로컬 백업");

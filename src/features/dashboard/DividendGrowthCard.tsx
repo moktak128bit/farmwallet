@@ -76,13 +76,13 @@ export const DividendGrowthCard: React.FC<{ data: DividendGrowthData }> = React.
           }
         />
         <Hero
-          label="내 배당률 (YOC, 연환산)"
+          label="내 배당률 (YOC)"
           value={story.nowYoc != null ? fmtPct(story.nowYoc, 1) : "–"}
           tone="var(--success)"
           sub={
-            story.startYoc != null && story.yocGainPp != null
-              ? `시작 ${fmtPct(story.startYoc, 1)} → 지금 ${story.yocGainPp >= 0 ? "▲" : "▼"}${fmtPct(Math.abs(story.yocGainPp), 1)}p`
-              : "내가 산 가격 기준 배당률"
+            story.yocGainPp != null && story.yocGainPp > 0.05
+              ? `▲ 모으기 시작 후 +${fmtPct(story.yocGainPp, 1)}p`
+              : "내 평단 기준 · 12개월 실수령"
           }
         />
         <Hero
@@ -93,30 +93,30 @@ export const DividendGrowthCard: React.FC<{ data: DividendGrowthData }> = React.
         />
       </div>
 
-      {/* 📈 배당률 여정 (YOC) — 별 */}
-      <PanelTitle title="📈 배당률 여정 (YOC, 연환산)" desc="내가 산 가격 대비 배당률 — 분배금이 자랄수록 우상향 (배당성장의 핵심)" />
-      <ResponsiveContainer width="100%" height={170}>
+      {/* 📈 연 배당 런레이트 — 모을수록 우상향 (주인공) */}
+      <PanelTitle title="📈 연 배당 런레이트 — 모을수록 우상향" desc="보유주식 × 연환산 주당분배금. 모을 때마다 계단식으로 오릅니다 (확실한 우상향)" />
+      <ResponsiveContainer width="100%" height={180}>
         <AreaChart data={story.points} syncId={sync} margin={{ top: 4, right: 12, left: 4, bottom: 0 }}>
           <defs>
-            <linearGradient id={`yoc-${gid}`} x1="0" y1="0" x2="0" y2="1">
-              <stop offset="0%" stopColor="var(--success)" stopOpacity={0.35} />
-              <stop offset="100%" stopColor="var(--success)" stopOpacity={0.03} />
+            <linearGradient id={`run-${gid}`} x1="0" y1="0" x2="0" y2="1">
+              <stop offset="0%" stopColor="var(--chart-income, var(--danger))" stopOpacity={0.38} />
+              <stop offset="100%" stopColor="var(--chart-income, var(--danger))" stopOpacity={0.03} />
             </linearGradient>
           </defs>
           <CartesianGrid strokeDasharray="3 3" stroke="var(--chart-grid)" />
           <XAxis dataKey="label" tick={{ fontSize: 10 }} interval="preserveStartEnd" />
-          <YAxis tick={{ fontSize: 10 }} width={44} domain={[0, "auto"]} tickFormatter={(v: number) => `${v}%`} />
-          <Tooltip formatter={(v: number | string | undefined) => [fmtPct(Number(v ?? 0), 2), "내 배당률(YOC)"] as [string, string]} />
+          <YAxis tick={{ fontSize: 10 }} width={52} domain={[0, "auto"]} tickFormatter={fmtAxisWon} />
+          <Tooltip formatter={(v: number | string | undefined) => [fmtWon(Number(v ?? 0)), "연 배당 런레이트"] as [string, string]} />
           <Area
             isAnimationActive={false}
             type="monotone"
-            dataKey="annualYoc"
-            name="내 배당률(YOC)"
-            stroke="var(--success)"
+            dataKey="runRate"
+            name="연 배당 런레이트"
+            stroke="var(--chart-income, var(--danger))"
             strokeWidth={3}
-            fill={`url(#yoc-${gid})`}
+            fill={`url(#run-${gid})`}
             connectNulls
-            dot={{ r: 3, strokeWidth: 0, fill: "var(--success)" }}
+            dot={{ r: 3, strokeWidth: 0, fill: "var(--chart-income, var(--danger))" }}
           />
         </AreaChart>
       </ResponsiveContainer>

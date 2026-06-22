@@ -97,13 +97,18 @@ interface DividendStory {
  */
 export function buildDividendStory(data: DividendGrowthData): DividendStory {
   let cum = 0;
-  let lastPerShare: number | null = null;
+  // 분배금이 월/주/분기로 들쭉날쭉해도 매끄럽게: '최근 ≤12개월 known 주당분배금 평균 × 12'(이동평균 연환산).
+  // buildDividendGrowth의 현재 KPI(annualPerShare)와 동일 기준 → 마지막 점이 KPI와 일치.
+  const knownPerShare: number[] = [];
   const points: DividendStoryPoint[] = data.points.map((p) => {
     cum += p.received;
-    if (p.perShare != null) lastPerShare = p.perShare;
-    const annualYoc = p.monthlyYoc != null ? p.monthlyYoc * 12 : null;
-    const annualMarketYield = p.monthlyYield != null ? p.monthlyYield * 12 : null;
-    const runRate = lastPerShare != null && p.shares > 0 ? p.shares * lastPerShare * 12 : null;
+    if (p.perShare != null) knownPerShare.push(p.perShare);
+    const win = knownPerShare.slice(-12);
+    const annualPerShare = win.length > 0 ? (win.reduce((s, v) => s + v, 0) / win.length) * 12 : null;
+    // 런레이트·YOC는 비분배월에도 직전 연환산 추정으로 이어 매끄러운 곡선 (모을수록 우상향)
+    const runRate = annualPerShare != null && p.shares > 0 ? p.shares * annualPerShare : null;
+    const annualYoc = annualPerShare != null && p.avgCost ? (annualPerShare / p.avgCost) * 100 : null;
+    const annualMarketYield = annualPerShare != null && p.price ? (annualPerShare / p.price) * 100 : null;
     return { month: p.month, label: p.label, cumulativeReceived: cum, annualYoc, annualMarketYield, runRate };
   });
   const yocVals = points.filter((p) => p.annualYoc != null);

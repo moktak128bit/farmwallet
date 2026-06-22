@@ -31,38 +31,40 @@ const data: DividendGrowthData = {
 };
 
 describe("buildDividendStory", () => {
-  it("누적 눈덩이·연환산 YOC·런레이트를 파생한다", () => {
+  it("누적 눈덩이 + 이동평균 연환산 YOC·런레이트를 파생한다", () => {
     const s = buildDividendStory(data);
     // 누적
     expect(s.points[0].cumulativeReceived).toBe(1000);
     expect(s.points[1].cumulativeReceived).toBe(3200);
     expect(s.totalReceived).toBe(3200);
-    // 연환산 YOC = 월 YOC × 12
-    expect(s.points[0].annualYoc).toBeCloseTo(12, 6);
-    expect(s.points[1].annualYoc).toBeCloseTo(13.2, 6);
-    // 런레이트 = 보유 × 연환산 주당분배금
-    expect(s.points[0].runRate).toBeCloseTo(100 * 10 * 12, 6);
-    expect(s.points[1].runRate).toBeCloseTo(200 * 11 * 12, 6);
-    // YOC 여정
+    // 이동평균 연환산 주당분배금: m1 = 10×12=120, m2 = avg(10,11)×12 = 126
+    // 연환산 YOC = annualPerShare / 평단 × 100
+    expect(s.points[0].annualYoc).toBeCloseTo(12, 6); // 120/1000
+    expect(s.points[1].annualYoc).toBeCloseTo(12.6, 6); // 126/1000
+    // 런레이트 = 보유 × 이동평균 연환산 주당분배금
+    expect(s.points[0].runRate).toBeCloseTo(100 * 120, 6);
+    expect(s.points[1].runRate).toBeCloseTo(200 * 126, 6);
+    // YOC 여정 (매끄러운 추세)
     expect(s.startYoc).toBeCloseTo(12, 6);
-    expect(s.nowYoc).toBeCloseTo(13.2, 6);
-    expect(s.yocGainPp).toBeCloseTo(1.2, 6);
-    // 현재 연간 런레이트
+    expect(s.nowYoc).toBeCloseTo(12.6, 6);
+    expect(s.yocGainPp).toBeCloseTo(0.6, 6);
+    // 현재 연간 런레이트 = current.shares × current.annualPerShare (KPI 일치)
     expect(s.annualRunRate).toBeCloseTo(200 * 132, 6);
     expect(s.monthlyRunRate).toBeCloseTo((200 * 132) / 12, 6);
   });
 
-  it("perShare 모르는 달은 직전 값을 캐리포워드해 런레이트 유지", () => {
+  it("분배 없는 달도 직전 이동평균 연환산으로 런레이트·YOC 곡선을 잇는다", () => {
     const d2: DividendGrowthData = {
       ...data,
       points: [
-        pt({ month: "2026-01", received: 1000, perShare: 10, shares: 100, monthlyYoc: 1.0, avgCost: 1000 }),
-        pt({ month: "2026-02", received: 0, perShare: null, shares: 150, monthlyYoc: null, avgCost: 1000 }), // 분배 없음
+        pt({ month: "2026-01", received: 1000, perShare: 10, shares: 100, avgCost: 1000 }),
+        pt({ month: "2026-02", received: 0, perShare: null, shares: 150, avgCost: 1000 }), // 분배 없음
       ],
     };
     const s = buildDividendStory(d2);
-    expect(s.points[1].runRate).toBeCloseTo(150 * 10 * 12, 6); // 직전 주당분배금 10 유지
-    expect(s.points[1].annualYoc).toBeNull(); // YOC는 그 달 값이 없으면 null
+    // 직전 연환산 주당분배금 120 유지 → 보유 150주 반영해 상승
+    expect(s.points[1].runRate).toBeCloseTo(150 * 120, 6);
+    expect(s.points[1].annualYoc).toBeCloseTo(12, 6); // 매끄럽게 이어짐 (null 아님)
   });
 
   it("배당 기록이 비면 모두 null/0", () => {

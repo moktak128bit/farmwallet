@@ -1,6 +1,7 @@
 import { canonicalTickerForMatch, cleanTicker, isKRWStock, isUSDStock } from "./utils/finance";
 import { getKrNames } from "./storage";
 import { parseEtfItemList, type EtfDiscountRow } from "./utils/etfDiscount";
+import { parseHistoricalCloses } from "./utils/yahooChartParse";
 
 interface YahooQuoteResult {
   ticker: string;
@@ -580,6 +581,54 @@ const fetchFromYahooChart = async (
     updatedAt
   };
 };
+
+/**
+ * 과거 일별 종가 — 벤치마크 지수(^KS11 KOSPI, ^GSPC S&P500) 등 시계열 비교용.
+ * @param range Yahoo range ("6mo" | "1y" | "2y" | "5y" 등)
+ */
+export async function fetchHistoricalCloses(
+  symbol: string,
+  range = "1y"
+): Promise<Array<{ date: string; close: number }>> {
+  const params = new URLSearchParams({
+    interval: "1d",
+    range,
+    lang: "en-US",
+    region: "US",
+    includePrePost: "false"
+  });
+  const innerUrl = `${YAHOO_CHART_BASE}/${encodeURIComponent(symbol)}?${params.toString()}`;
+  const proxyUrls = [
+    ...(useCorsProxy() ? [`/api/external/raw?url=${encodeURIComponent(innerUrl)}`] : []),
+    `https://api.allorigins.win/raw?url=${encodeURIComponent(innerUrl)}`,
+    `https://corsproxy.io/?url=${encodeURIComponent(innerUrl)}`,
+    `https://api.codetabs.com/v1/proxy?quest=${encodeURIComponent(innerUrl)}`
+  ];
+  let payloadStr = "";
+  for (const proxyUrl of proxyUrls) {
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), 8000);
+    try {
+      const res = await fetch(proxyUrl, { signal: controller.signal });
+      if (res.ok) {
+        payloadStr = await res.text();
+        if (payloadStr && !payloadStr.includes("Not Found")) break;
+      }
+    } catch {
+      // 다음 프록시 시도
+    } finally {
+      clearTimeout(timeoutId);
+    }
+  }
+  if (!payloadStr) return [];
+  let data: YahooChartResponse;
+  try {
+    data = JSON.parse(payloadStr);
+  } catch {
+    return [];
+  }
+  return parseHistoricalCloses(data);
+}
 
 const fetchFromStooq = async (requestedSymbol: string): Promise<YahooQuoteResult | null> => {
   const sym = `${requestedSymbol.toLowerCase()}.us`;

@@ -461,6 +461,23 @@ function normalizeMarketEnvSnapshots(raw: unknown): MarketEnvSnapshot[] {
   return Array.from(dedup.values()).sort((a, b) => a.date.localeCompare(b.date));
 }
 
+function normalizeHistoricalDailyFx(raw: unknown): import("../types").HistoricalDailyFx[] {
+  if (!Array.isArray(raw)) return [];
+  const dedup = new Map<string, number>(); // date → rate (날짜당 1건)
+  for (const item of raw) {
+    if (!item || typeof item !== "object") continue;
+    const obj = item as Record<string, unknown>;
+    const date = String(obj.date ?? "").trim();
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(date)) continue;
+    const rate = toNullableNumber(obj.rate);
+    if (rate == null || rate <= 0) continue;
+    dedup.set(date, rate);
+  }
+  return Array.from(dedup.entries())
+    .map(([date, rate]) => ({ date, rate }))
+    .sort((a, b) => a.date.localeCompare(b.date));
+}
+
 /**
  * loadData에서 investmentGoals 필드 누락으로 매번 초기화되던 회귀 방지.
  * 잘못된 타입(문자열로 저장된 숫자, NaN 등)은 해당 필드만 떨궈 부분 복원 가능.
@@ -984,6 +1001,8 @@ function buildAppDataFromMigrated(
     assetSnapshots: normalizeAssetSnapshots(parsed.assetSnapshots),
     marketEnvSnapshots: normalizeMarketEnvSnapshots(parsed.marketEnvSnapshots),
     historicalDailyCloses: effectiveHistoricalDailyCloses,
+    historicalDailyFx: normalizeHistoricalDailyFx(parsed.historicalDailyFx),
+    benchmarkDailyCloses: normalizeHistoricalDailyCloses(asArray(parsed.benchmarkDailyCloses)),
     dividendTrackingTicker: parsed.dividendTrackingTicker !== undefined && parsed.dividendTrackingTicker !== null ? String(parsed.dividendTrackingTicker) : "458730",
     isaPortfolio: parsedIsaPortfolio.length > 0 ? parsedIsaPortfolio : getDefaultIsaPortfolio(),
     investmentGoals: normalizeInvestmentGoals(parsed.investmentGoals),

@@ -87,6 +87,12 @@ export interface HistoricalDailyClose {
   currency?: string;
 }
 
+/** 일별 USD/KRW 환율 (하루 1회 자동 적립 — 과거 USD 평가액 일별 복원용, A0 키스톤) */
+export interface HistoricalDailyFx {
+  date: string; // yyyy-mm-dd (KST)
+  rate: number; // USD/KRW
+}
+
 export type Recurrence = "monthly" | "weekly" | "yearly";
 
 export interface RecurringExpense {
@@ -437,6 +443,10 @@ export interface AppData {
   marketEnvSnapshots?: MarketEnvSnapshot[];
   /** 종목별 일별 종가 (매입 시점부터 자동 수집/저장) */
   historicalDailyCloses?: HistoricalDailyClose[];
+  /** 일별 USD/KRW 환율 (하루 1회 적립). 과거 시점 USD 평가액 일별 복원에 사용 (A0 키스톤) */
+  historicalDailyFx?: HistoricalDailyFx[];
+  /** 벤치마크 지수(^KS11 KOSPI, ^GSPC S&P500 등) 일별 종가 — 성과 비교용. ticker별로 마지막 fetch 범위 보관 (A1) */
+  benchmarkDailyCloses?: HistoricalDailyClose[];
   /** 배당 추적 위젯에 표시할 티커. 비어 있으면 위젯 비활성화 또는 티커 선택 프롬프트 */
   dividendTrackingTicker?: string;
   /** ISA 목표 포트폴리오. 비어 있으면 config 기본값 사용 */

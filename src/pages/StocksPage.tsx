@@ -31,6 +31,9 @@ import { useQuoteRefresh, getLastQuoteRefreshAt } from "../features/stocks/useQu
 const LazyPortfolioChartsSection = lazy(() =>
   import("../features/stocks/PortfolioChartsSection").then((m) => ({ default: m.PortfolioChartsSection }))
 );
+const LazyPortfolioPerformanceSection = lazy(() =>
+  import("../features/stocks/PortfolioPerformanceSection").then((m) => ({ default: m.PortfolioPerformanceSection }))
+);
 const LazyTargetPortfolioSection = lazy(() =>
   import("../features/stocks/TargetPortfolioSection").then((m) => ({ default: m.TargetPortfolioSection }))
 );
@@ -621,6 +624,9 @@ export const StocksView: React.FC<Props> = ({
       {/* 포트폴리오 분석 탭 */}
       {activeTab === "portfolio" && (
         <>
+          <Suspense fallback={<ChartSkeleton height={360} />}>
+            <LazyPortfolioPerformanceSection />
+          </Suspense>
           <Suspense fallback={<ChartSkeleton height={300} />}>
             <LazyPortfolioChartsSection
               positionsWithPrice={positionsWithPrice}

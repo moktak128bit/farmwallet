@@ -453,6 +453,8 @@ export function buildTableBackupFile(data: AppData): {
       workout_routines: data.workoutRoutines ?? [],
       custom_exercises: data.customExercises ?? [],
       market_env_snapshots: data.marketEnvSnapshots ?? [],
+      historical_daily_fx: data.historicalDailyFx ?? [],
+      benchmark_daily_closes: data.benchmarkDailyCloses ?? [],
       // 단일 객체 설정은 0~1행 테이블로 직렬화
       investment_goals: data.investmentGoals ? [data.investmentGoals] : [],
       daily_budget: data.dailyBudget ? [data.dailyBudget] : [],
@@ -570,6 +572,12 @@ export function appDataFromTableBackupPayload(raw: unknown): AppData {
   }
   if (Array.isArray(tables.market_env_snapshots)) {
     optionalFields.marketEnvSnapshots = asArray(tables.market_env_snapshots);
+  }
+  if (Array.isArray(tables.historical_daily_fx)) {
+    optionalFields.historicalDailyFx = asArray(tables.historical_daily_fx);
+  }
+  if (Array.isArray(tables.benchmark_daily_closes)) {
+    optionalFields.benchmarkDailyCloses = asArray(tables.benchmark_daily_closes);
   }
   const investmentGoalsRow = asArray<Record<string, unknown>>(tables.investment_goals)[0];
   if (investmentGoalsRow && typeof investmentGoalsRow === "object") {

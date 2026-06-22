@@ -23,13 +23,11 @@ import { fetchHistoricalCloses } from "../../yahooFinanceApi";
 import {
   buildPortfolioPerformance,
   upsertBenchmarkCloses,
+  STANDARD_BENCHMARKS,
   type PerformancePeriod,
 } from "../../utils/portfolioPerformance";
 
-const BENCHMARKS = [
-  { ticker: "^KS11", label: "KOSPI" },
-  { ticker: "^GSPC", label: "S&P500" },
-] as const;
+const BENCHMARKS = STANDARD_BENCHMARKS;
 
 const PERIODS: Array<{ key: PerformancePeriod; label: string }> = [
   { key: "3M", label: "3개월" },
@@ -194,7 +192,7 @@ export const PortfolioPerformanceSection: React.FC = () => {
                 />
               </>
             ) : (
-              <Summary label={`${benchmarkLabel} 비교`} value="—" color="var(--text-muted)" sub="지수 불러오기를 눌러 비교" />
+              <Summary label={`${benchmarkLabel} 비교`} value="—" color="var(--text-muted)" sub="지수 자동 로딩 중 — 잠시 후 표시" />
             )}
           </div>
 
@@ -212,7 +210,7 @@ export const PortfolioPerformanceSection: React.FC = () => {
               <div style={{ display: "flex", alignItems: "center", justifyContent: "center", height: "100%", color: "var(--text-muted)" }}>
                 {hasBenchmarkData
                   ? "비교할 데이터가 부족합니다 (시세 갱신으로 일별 종가가 쌓이면 표시됩니다)."
-                  : `${benchmarkLabel} 지수를 불러오면 비교 곡선이 표시됩니다.`}
+                  : `${benchmarkLabel} 지수를 자동으로 불러오는 중입니다 — 잠시 후 곡선이 표시됩니다 (또는 '지수 갱신' 클릭).`}
               </div>
             ) : (
               <ResponsiveContainer width="100%" height="100%">

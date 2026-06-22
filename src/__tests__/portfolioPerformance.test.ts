@@ -1,7 +1,7 @@
 /** A1 글루 — buildPortfolioPerformance(A0~A3 조합) + 벤치마크 upsert + 과거종가 파서 */
 import { describe, expect, it } from "vitest";
 import type { Account, HistoricalDailyClose, StockTrade } from "../types";
-import { buildPortfolioPerformance, performanceStartDate, upsertBenchmarkCloses } from "../utils/portfolioPerformance";
+import { benchmarksNeedingRefresh, buildPortfolioPerformance, performanceStartDate, upsertBenchmarkCloses } from "../utils/portfolioPerformance";
 import { parseHistoricalCloses } from "../utils/yahooChartParse";
 
 const accounts: Account[] = [{ id: "sec1", name: "증권", institution: "", type: "securities", initialBalance: 0 }];
@@ -82,6 +82,32 @@ describe("performanceStartDate", () => {
     expect(performanceStartDate("1Y", "2026-06-22", "2026-05-01")).toBe("2026-05-01");
     expect(performanceStartDate("3M", "2026-06-22", "2025-01-01")).toBe("2026-03-24");
     expect(performanceStartDate("ALL", "2026-06-22", "2025-01-01")).toBe("2025-01-01");
+  });
+});
+
+describe("benchmarksNeedingRefresh", () => {
+  const today = "2026-06-22";
+  it("없는 지수와 오래된 지수만 골라낸다 (최신은 제외)", () => {
+    const existing = [
+      { ticker: "^KS11", date: "2026-06-20", close: 2700 }, // 최신 → 제외
+      { ticker: "^GSPC", date: "2026-05-01", close: 5000 }, // 오래됨 → 포함
+      // QQQ 없음 → 포함
+    ];
+    const needed = benchmarksNeedingRefresh(existing, ["^KS11", "^GSPC", "QQQ"], today);
+    expect(needed).toEqual(["^GSPC", "QQQ"]);
+  });
+
+  it("전부 최신이면 빈 배열", () => {
+    const existing = [
+      { ticker: "^KS11", date: "2026-06-21", close: 2700 },
+      { ticker: "QQQ", date: "2026-06-20", close: 500 },
+    ];
+    expect(benchmarksNeedingRefresh(existing, ["^KS11", "QQQ"], today)).toEqual([]);
+  });
+
+  it("저장이 비어 있으면 전부 필요", () => {
+    expect(benchmarksNeedingRefresh([], ["^KS11", "^GSPC"], today)).toEqual(["^KS11", "^GSPC"]);
+    expect(benchmarksNeedingRefresh(undefined, ["QQQ"], today)).toEqual(["QQQ"]);
   });
 });
 

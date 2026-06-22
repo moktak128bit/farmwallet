@@ -34,6 +34,9 @@ const LazyPortfolioChartsSection = lazy(() =>
 const LazyPortfolioPerformanceSection = lazy(() =>
   import("../features/stocks/PortfolioPerformanceSection").then((m) => ({ default: m.PortfolioPerformanceSection }))
 );
+const LazyForeignCapitalGainsTaxCard = lazy(() =>
+  import("../features/stocks/ForeignCapitalGainsTaxCard").then((m) => ({ default: m.ForeignCapitalGainsTaxCard }))
+);
 const LazyTargetPortfolioSection = lazy(() =>
   import("../features/stocks/TargetPortfolioSection").then((m) => ({ default: m.TargetPortfolioSection }))
 );
@@ -626,6 +629,9 @@ export const StocksView: React.FC<Props> = ({
         <>
           <Suspense fallback={<ChartSkeleton height={360} />}>
             <LazyPortfolioPerformanceSection />
+          </Suspense>
+          <Suspense fallback={null}>
+            <LazyForeignCapitalGainsTaxCard />
           </Suspense>
           <Suspense fallback={<ChartSkeleton height={300} />}>
             <LazyPortfolioChartsSection

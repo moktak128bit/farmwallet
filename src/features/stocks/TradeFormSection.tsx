@@ -49,8 +49,18 @@ export interface TradeFormSectionHandle {
   startEditTrade: (t: StockTrade) => void;
   resetForm: () => void;
   startQuickTrade: (p: PositionRow, side: TradeSide) => void;
+  /** 리밸런싱 제안 등 외부에서 종목·수량·방향을 받아 폼에 적재 (거래 생성은 사용자 확인) */
+  prefillTrade: (req: PrefillTradeRequest) => void;
   applyPreset: (preset: StockPreset) => void;
   getFormSnapshot: () => TradeFormState;
+}
+
+interface PrefillTradeRequest {
+  accountId?: string;
+  ticker: string;
+  name: string;
+  side: TradeSide;
+  quantity: number;
 }
 
 interface Props {
@@ -599,14 +609,44 @@ export const TradeFormSection = React.memo(React.forwardRef<TradeFormSectionHand
       }));
     }, []);
 
+    /** 외부(리밸런싱 제안)에서 종목·수량·방향을 받아 폼 적재 + 폼으로 스크롤 (제출은 사용자 확인) */
+    const prefillTrade = useCallback((req: PrefillTradeRequest) => {
+      const key = canonicalTickerForMatch(req.ticker);
+      const priceInfo = latestPriceByCanonicalTicker.get(key);
+      const currentPrice = priceInfo?.price ?? 0;
+      const db = tickerDatabase.find((x) => canonicalTickerForMatch(x.ticker) === key);
+      setTradeForm((prev) => ({
+        ...createDefaultTradeForm(),
+        id: undefined,
+        date: getTodayKST(),
+        accountId: req.accountId || prev.accountId,
+        ticker: req.ticker,
+        name: req.name,
+        market: db?.market,
+        exchange: db?.exchange,
+        side: req.side,
+        quantity: req.quantity > 0 ? String(Number(req.quantity.toFixed(10))) : "",
+        price: currentPrice > 0 ? String(currentPrice) : "",
+        fee: "0"
+      }));
+      if (priceInfo) {
+        setTickerInfo({ ticker: req.ticker, name: req.name, price: currentPrice, currency: priceInfo.currency });
+      }
+      setTimeout(() => {
+        const formElement = document.querySelector('form[class*="card"]');
+        if (formElement) formElement.scrollIntoView({ behavior: "smooth", block: "start" });
+      }, 100);
+    }, [latestPriceByCanonicalTicker, tickerDatabase]);
+
     useImperativeHandle(ref, () => ({
       submit: submitTradeFromForm,
       startEditTrade,
       resetForm: resetTradeForm,
       startQuickTrade,
+      prefillTrade,
       applyPreset,
       getFormSnapshot: () => tradeForm
-    }), [submitTradeFromForm, startEditTrade, resetTradeForm, startQuickTrade, applyPreset, tradeForm]);
+    }), [submitTradeFromForm, startEditTrade, resetTradeForm, startQuickTrade, prefillTrade, applyPreset, tradeForm]);
 
     const applyQuoteResult = (symbol: string, r: StockPrice, fallbackName?: string) => {
       // 0/NaN 시세는 prices에 저장하지 않음 — 기존 유효 가격을 0으로 덮으면 현재가 0원·-100%로 전파

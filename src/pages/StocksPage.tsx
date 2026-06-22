@@ -652,6 +652,7 @@ export const StocksView: React.FC<Props> = ({
                 targetPortfolios={targetPortfolios}
                 onChangeTargetPortfolios={onChangeTargetPortfolios}
                 fxRate={propFxRate}
+                onPrefillTrade={(req) => tradeFormRef.current?.prefillTrade(req)}
               />
             </Suspense>
           )}

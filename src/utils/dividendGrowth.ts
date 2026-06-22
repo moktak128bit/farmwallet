@@ -63,6 +63,68 @@ export interface DividendGrowthData {
   };
 }
 
+interface DividendStoryPoint {
+  month: string;
+  label: string;
+  /** 누적 수령 분배금 (배당 눈덩이) */
+  cumulativeReceived: number;
+  /** 연환산 YOC (월 YOC × 12) — 내 배당률 여정 */
+  annualYoc: number | null;
+  /** 연환산 시장 분배율 (월 분배율 × 12) */
+  annualMarketYield: number | null;
+  /** 연간 배당 런레이트 = 그 시점 보유주식 × 연환산 주당분배금(직전 알려진 값 캐리포워드) */
+  runRate: number | null;
+}
+
+interface DividendStory {
+  points: DividendStoryPoint[];
+  /** 지금까지 받은 분배금 총합 */
+  totalReceived: number;
+  /** 배당률 여정 시작 YOC(연환산, %) */
+  startYoc: number | null;
+  /** 현재 YOC(연환산, %) */
+  nowYoc: number | null;
+  /** YOC 증가폭 (%p) — '배당율 증가'를 한 숫자로 */
+  yocGainPp: number | null;
+  /** 현재 연간 배당 런레이트 (보유 × 연환산 주당분배금) */
+  annualRunRate: number | null;
+  monthlyRunRate: number | null;
+}
+
+/**
+ * 배당 '모으는 재미' 스토리 — buildDividendGrowth 결과에서 누적 눈덩이·연환산 YOC 여정·연간 런레이트를 파생.
+ * 작은 월 퍼센트에 묻힌 배당성장/배당율증가를 큰 숫자와 우상향 곡선으로 드러내기 위한 표시용 가공.
+ */
+export function buildDividendStory(data: DividendGrowthData): DividendStory {
+  let cum = 0;
+  let lastPerShare: number | null = null;
+  const points: DividendStoryPoint[] = data.points.map((p) => {
+    cum += p.received;
+    if (p.perShare != null) lastPerShare = p.perShare;
+    const annualYoc = p.monthlyYoc != null ? p.monthlyYoc * 12 : null;
+    const annualMarketYield = p.monthlyYield != null ? p.monthlyYield * 12 : null;
+    const runRate = lastPerShare != null && p.shares > 0 ? p.shares * lastPerShare * 12 : null;
+    return { month: p.month, label: p.label, cumulativeReceived: cum, annualYoc, annualMarketYield, runRate };
+  });
+  const yocVals = points.filter((p) => p.annualYoc != null);
+  const startYoc = yocVals.length ? yocVals[0].annualYoc : null;
+  const nowYoc = yocVals.length ? yocVals[yocVals.length - 1].annualYoc : null;
+  const yocGainPp = startYoc != null && nowYoc != null ? nowYoc - startYoc : null;
+  const annualRunRate =
+    data.current.annualPerShare != null && data.current.shares > 0
+      ? data.current.shares * data.current.annualPerShare
+      : null;
+  return {
+    points,
+    totalReceived: cum,
+    startYoc,
+    nowYoc,
+    yocGainPp,
+    annualRunRate,
+    monthlyRunRate: annualRunRate != null ? annualRunRate / 12 : null,
+  };
+}
+
 /** description "458730 - TIGER 미국배당다우존스 배당"에서 티커 추출 */
 const tickerFromDividendDesc = (desc: string | undefined): string | null => {
   const m = (desc || "").match(/^([A-Za-z0-9.-]+)\s*-/);

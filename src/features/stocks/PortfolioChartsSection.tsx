@@ -32,8 +32,6 @@ interface PositionWithPrice {
   pnl: number;
   pnlRate: number;
   currency?: string;
-  sector?: string;
-  industry?: string;
 }
 
 interface PortfolioChartsSectionProps {
@@ -71,62 +69,7 @@ export const PortfolioChartsSection: React.FC<PortfolioChartsSectionProps> = ({
       <h2 style={{ margin: "0 0 16px 0" }}>주식 포트폴리오 분석</h2>
       
       <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(300px, 1fr))", gap: 24 }}>
-        {/* 1. 섹터별 비중 (평가금액 기준) */}
-        <div className="card" style={{ border: "1px solid var(--border)", boxShadow: "none", padding: 16 }}>
-          <h4 style={{ margin: "0 0 12px 0", textAlign: "center" }}>섹터별 비중 (평가액)</h4>
-          <div style={{ width: "100%", height: 300, minHeight: 300, minWidth: 0 }}>
-            {positionsWithPrice.length > 0 ? (() => {
-              const withKRW = positionsWithPrice.map(p => ({
-                ...p,
-                marketValueKRW: toKRW(p, p.marketValue, rate)
-              }));
-              const sectorMap = new Map<string, number>();
-              for (const p of withKRW) {
-                const sector = p.sector?.trim() || "미분류";
-                sectorMap.set(sector, (sectorMap.get(sector) ?? 0) + p.marketValueKRW);
-              }
-              const sectorData = [...sectorMap.entries()]
-                .filter(([, v]) => v > 0)
-                .sort((a, b) => b[1] - a[1])
-                .map(([name, value]) => ({ name, value, fullName: name }));
-              const colors = ["#0ea5e9", "#6366f1", "#f43f5e", "#10b981", "#f59e0b", "#8b5cf6", "#ec4899", "#14b8a6", "#64748b"];
-              return (
-                <ResponsiveContainer width="100%" height="100%" minHeight={300} minWidth={0}>
-                  <PieChart>
-                    <Pie
-                      isAnimationActive={false}
-                      data={sectorData}
-                      cx="50%"
-                      cy="50%"
-                      outerRadius={80}
-                      fill="#8884d8"
-                      dataKey="value"
-                      label={({ percent }) => percent ? `${(percent * 100).toFixed(1)}%` : "0%"}
-                      labelLine={false}
-                    >
-                      {sectorData.map((entry, index) => (
-                        <Cell key={`sector-${index}`} fill={colors[index % colors.length]} />
-                      ))}
-                    </Pie>
-                    <Tooltip
-                      formatter={(value: ValueType | undefined, name: NameType | undefined, item: Payload<ValueType, NameType>) => [
-                        formatWithUSD(Number(value ?? 0), rate || null),
-                        pieTooltipLabel(item) || name || "평가액"
-                      ]}
-                    />
-                    <Legend wrapperStyle={{ fontSize: "11px" }} />
-                  </PieChart>
-                </ResponsiveContainer>
-              );
-            })() : (
-              <div style={{ display: "flex", justifyContent: "center", alignItems: "center", height: "100%", color: "var(--text-muted)" }}>
-                보유 종목이 없습니다.
-              </div>
-            )}
-          </div>
-        </div>
-
-        {/* 2. 포트폴리오 비중 (평가금액 기준) */}
+        {/* 1. 종목별 비중 (평가금액 기준) */}
         <div className="card" style={{ border: "1px solid var(--border)", boxShadow: "none", padding: 16 }}>
           <h4 style={{ margin: "0 0 12px 0", textAlign: "center" }}>종목별 비중 (평가액)</h4>
           <div style={{ width: "100%", height: 300, minHeight: 300, minWidth: 0 }}>

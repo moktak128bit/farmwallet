@@ -77,10 +77,6 @@ export interface StockPrice {
   change?: number;
   changePercent?: number;
   updatedAt?: string;
-  /** Yahoo Finance sector (e.g. Technology, Financial Services) */
-  sector?: string;
-  /** Yahoo Finance industry */
-  industry?: string;
 }
 
 /** 종목별 일별 종가 (매입 시점부터 자동 수집/저장) */

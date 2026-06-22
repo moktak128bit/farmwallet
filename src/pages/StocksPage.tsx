@@ -152,8 +152,6 @@ export const StocksView: React.FC<Props> = ({
     diff: number;
     /** 유효 시세(>0) 존재 여부 — false면 "시세 없음"으로 표시하고 평가는 매입가 기준 중립 처리 */
     hasQuote: boolean;
-    sector?: string;
-    industry?: string;
   };
 
   const positionsWithPrice = useMemo<PositionWithPrice[]>(() => {
@@ -189,9 +187,7 @@ export const StocksView: React.FC<Props> = ({
         pnl,
         pnlRate,
         diff,
-        hasQuote,
-        sector: originalPriceInfo?.sector,
-        industry: originalPriceInfo?.industry
+        hasQuote
       };
     });
   }, [positions, latestPriceByCanonicalTicker, tickerDatabase]);

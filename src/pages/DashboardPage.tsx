@@ -68,6 +68,9 @@ const LazyPortfolioDashboardCharts = lazy(() =>
 const LazyPortfolioPerformanceSection = lazy(() =>
   import("../features/stocks/PortfolioPerformanceSection").then((m) => ({ default: m.PortfolioPerformanceSection }))
 );
+const LazySecuritiesValueTrendCard = lazy(() =>
+  import("../features/stocks/SecuritiesValueTrendCard").then((m) => ({ default: m.SecuritiesValueTrendCard }))
+);
 
 interface Props {
   accounts?: Account[];
@@ -317,6 +320,12 @@ export const DashboardView: React.FC<Props> = (props) => {
         {show("investmentPerformance") && (
           <Suspense fallback={<div className="card" style={{ minHeight: 360 }} />}>
             <LazyPortfolioPerformanceSection />
+          </Suspense>
+        )}
+
+        {show("securitiesValueTrend") && (
+          <Suspense fallback={<div className="card" style={{ minHeight: 320 }} />}>
+            <LazySecuritiesValueTrendCard />
           </Suspense>
         )}
 

@@ -70,6 +70,7 @@ import { getTodayKST } from "./utils/date";
 import { useGistSync } from "./hooks/useGistSync";
 import { useMarketEnvSnapshotRecorder } from "./hooks/useMarketEnvSnapshotRecorder";
 import { useDailyFxRecorder } from "./hooks/useDailyFxRecorder";
+import { useBenchmarkRecorder } from "./hooks/useBenchmarkRecorder";
 import { GistVersionModal } from "./components/GistVersionModal";
 import { GitVersionModal } from "./components/GitVersionModal";
 import { GistConflictModal } from "./components/GistConflictModal";
@@ -298,6 +299,7 @@ export const App: React.FC = () => {
 
   useMarketEnvSnapshotRecorder();
   useDailyFxRecorder();
+  useBenchmarkRecorder();
 
   // 저장소 사용률 85% 초과 시 1회 경고 (세션당 1회)
   const storageQuota = useStorageQuota();

@@ -36,6 +36,37 @@ const PERIODS_PER_YEAR = 365;
 /** 벤치마크 티커 정규화 — 지수 심볼(^KS11 등)은 단순 대문자 트림 (stock canonical 매칭 미사용) */
 const normBench = (t: string): string => (t ?? "").trim().toUpperCase();
 
+/** 비교에 쓰는 표준 시장 지수 — UI 드롭다운과 자동 적립 레코더가 공유하는 단일 소스 */
+export const STANDARD_BENCHMARKS = [
+  { ticker: "^KS11", label: "KOSPI" },
+  { ticker: "^GSPC", label: "S&P500" },
+  { ticker: "QQQ", label: "나스닥100 (QQQ)" },
+] as const;
+
+/**
+ * 저장된 벤치마크 종가가 없거나 오래된(staleAfterDays 초과) 티커 목록.
+ * 자동 적립 레코더가 "받아와야 할 지수"를 고를 때 사용 (이미 최신이면 야후를 호출하지 않음).
+ */
+export function benchmarksNeedingRefresh(
+  existing: HistoricalDailyClose[] | undefined,
+  tickers: readonly string[],
+  today: string,
+  staleAfterDays = 3
+): string[] {
+  const cutoff = addDaysToIso(today, -staleAfterDays);
+  const latestByTicker = new Map<string, string>();
+  for (const c of existing ?? []) {
+    if (!c?.date) continue;
+    const k = normBench(c.ticker);
+    const prev = latestByTicker.get(k);
+    if (!prev || c.date > prev) latestByTicker.set(k, c.date);
+  }
+  return tickers.filter((t) => {
+    const latest = latestByTicker.get(normBench(t));
+    return !latest || latest < cutoff;
+  });
+}
+
 export function performanceStartDate(
   period: PerformancePeriod,
   today: string,

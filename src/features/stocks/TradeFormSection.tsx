@@ -638,9 +638,7 @@ export const TradeFormSection = React.memo(React.forwardRef<TradeFormSectionHand
         currency: r.currency,
         change: r.change,
         changePercent: r.changePercent,
-        updatedAt: r.updatedAt,
-        sector: r.sector,
-        industry: r.industry
+        updatedAt: r.updatedAt
       };
       if (idx >= 0) {
         next[idx] = { ...next[idx], ...item };

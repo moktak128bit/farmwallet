@@ -10,8 +10,6 @@ interface YahooQuoteResult {
   change?: number;
   changePercent?: number;
   updatedAt?: string;
-  sector?: string;
-  industry?: string;
 }
 
 
@@ -591,7 +589,6 @@ const fetchFromStooq = async (requestedSymbol: string): Promise<YahooQuoteResult
   const timeoutId = setTimeout(() => controller.abort(), 5000);
   try {
     const res = await fetch(url, { signal: controller.signal });
-    clearTimeout(timeoutId);
     // 429면 throw — 호출부의 RateLimitError 분기(재throw·스킵)가 동작
     if (res.status === 429) throw new RateLimitError();
     if (!res.ok) return null;
@@ -608,11 +605,12 @@ const fetchFromStooq = async (requestedSymbol: string): Promise<YahooQuoteResult
       updatedAt: new Date().toISOString()
     };
   } catch (err) {
-    clearTimeout(timeoutId);
     if (err instanceof Error && err.name === 'AbortError') {
       throw new Error('Request timeout');
     }
     throw err;
+  } finally {
+    clearTimeout(timeoutId);
   }
 };
 
@@ -711,7 +709,9 @@ export async function fetchYahooQuotes(
       // 1) 한국 종목: Naver polling 배치 — 실시간(지연 0)·한글명·신형 영숫자 코드(0180V0 등) 지원.
       //    미국/기타(USDKRW=X 포함)는 아래 종목별 Yahoo v8 chart 경로로 조회.
       const requestedSymbols = uniq.map((s) => s.trim().toUpperCase());
-      const krTickers = requestedSymbols.filter((s) => isKRWStock(s));
+      // 캐시(2분 TTL)에 살아있는 한국 종목은 Naver 배치에서 제외 — 아래 종목별 루프가 캐시로 즉시 응답.
+      // (제외하지 않으면 KR은 매 새로고침마다 Naver를 다시 호출해 캐시가 사실상 무의미해진다)
+      const krTickers = requestedSymbols.filter((s) => isKRWStock(s) && !getCachedQuote(s));
       const batchResults = new Map<string, YahooQuoteResult>();
       const NAVER_CHUNK = 20;
       if (krTickers.length > 0) {
@@ -819,8 +819,7 @@ export async function fetchYahooQuotes(
         }
       }
 
-      if (results.length) return results;
-      return [];
+      return results;
     } finally {
       activeRequests.delete(requestKey);
     }

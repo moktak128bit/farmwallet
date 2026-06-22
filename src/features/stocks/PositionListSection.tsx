@@ -22,8 +22,6 @@ type PositionWithPrice = PositionRow & {
   diff: number;
   /** 유효 시세(>0) 존재 여부 — false면 평가손익/수익률/현재가 대신 "시세 없음" 표시 */
   hasQuote: boolean;
-  sector?: string;
-  industry?: string;
 };
 
 const MARKET_OPTIONS = [

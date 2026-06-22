@@ -147,9 +147,7 @@ export function useQuoteRefresh({
           change: r.change,
           changePercent: r.changePercent,
           // updatedAt 없는 결과(chart 폴백 일부)가 기존 updatedAt을 undefined로 덮지 않게 보존
-          updatedAt: r.updatedAt ?? next[idx]?.updatedAt,
-          sector: r.sector,
-          industry: r.industry
+          updatedAt: r.updatedAt ?? next[idx]?.updatedAt
         };
         if (idx >= 0) {
           next[idx] = { ...next[idx], ...item };

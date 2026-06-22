@@ -20,6 +20,7 @@ import {
   setGistLastPushedHash
 } from "../services/gistSync";
 import { toUserDataJson } from "../services/dataService";
+import { saveSafetySnapshot } from "../services/backupService";
 import { GIST_AUTO_PUSH_DEBOUNCE_MS, GIST_STALE_WARNING_HOURS } from "../constants/config";
 import { useUIStore } from "../store/uiStore";
 
@@ -458,7 +459,14 @@ export function useGistSync(
         setGistLastPushedHash(hashGistPayload(conflict.remoteDataJson));
         onLog?.("Gist 충돌: 원격 데이터를 적용했습니다", "success");
       } else if (resolution === "force-push-local") {
-        // 로컬 데이터를 원격에 강제 push. 원격 변경은 폐기.
+        // 로컬 데이터를 원격에 강제 push. 원격(다른 기기) 변경은 폐기 →
+        // 폐기되는 원격 데이터를 안전 스냅샷으로 보관해 "다른 기기에서 한 작업"을 되찾을 수 있게 한다.
+        try {
+          const remoteData = JSON.parse(conflict.remoteDataJson) as AppData;
+          await saveSafetySnapshot(remoteData, "Gist 강제 push 직전 폐기되는 원격 데이터 스냅샷");
+        } catch {
+          /* best-effort — 스냅샷 실패해도 사용자 선택(강제 push)은 진행 */
+        }
         // push 직후 원격 commit 시각을 다시 조회해 knownRemoteCommitRef를 권위 있는 값으로 갱신.
         // (saveToGist의 updatedAt이 GitHub commits API와 다를 수 있는 엣지 보호)
         const result = await saveToGist(conflict.pendingLocalDataJson);

@@ -8,7 +8,7 @@
 import React, { useCallback } from "react";
 import { toast } from "react-hot-toast";
 import type { AppData } from "../../types";
-import { loadBackupData, normalizeImportedData, saveSafetySnapshot, type BackupEntry } from "../../storage";
+import { loadBackupDataVerified, normalizeImportedData, saveSafetySnapshot, type BackupEntry } from "../../storage";
 import { ERROR_MESSAGES } from "../../constants/errorMessages";
 
 interface Props {
@@ -43,13 +43,26 @@ export const BackupHistoryTable: React.FC<Props> = React.memo(function BackupHis
       // 복원 직전 현재 데이터 안전 스냅샷 (실수 복원 시 되돌릴 수 있게)
       await saveSafetySnapshot(data, "백업 복원 직전 자동 스냅샷");
 
-      // 백업 목록은 로컬(브라우저) 백업만 제공됨 — getAllBackupList 참조
-      const restored = loadBackupData(entry.id);
+      // 백업 목록은 로컬(브라우저) 백업만 제공됨 — getAllBackupList 참조.
+      // 저장 시 기록한 SHA-256 해시를 읽기 시점에 재계산해 무결성 검증 (손상 감지).
+      const { data: restored, status } = await loadBackupDataVerified(entry.id);
 
       if (!restored) {
         setError(ERROR_MESSAGES.BACKUP_SELECTED_NOT_FOUND);
         toast.error(ERROR_MESSAGES.BACKUP_SELECTED_NOT_FOUND, { id: toastId });
         return;
+      }
+
+      // 해시 불일치 = 저장 후 손상되었을 수 있음 → 사용자가 복원 여부 결정 (직전 안전 스냅샷은 이미 저장됨)
+      if (status === "mismatch") {
+        toast.dismiss(toastId);
+        if (
+          !window.confirm(
+            "⚠ 이 백업의 무결성 검증에 실패했습니다 (저장 후 데이터가 손상되었을 수 있습니다).\n그래도 이 백업으로 복원할까요?"
+          )
+        ) {
+          return;
+        }
       }
 
       const normalized = normalizeImportedData(restored);

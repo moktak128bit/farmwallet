@@ -11,7 +11,7 @@
  */
 import React, { useMemo, useState } from "react";
 import {
-  Area, AreaChart, Bar, BarChart, CartesianGrid, ComposedChart, Line, LineChart,
+  Area, Bar, BarChart, CartesianGrid, ComposedChart, Legend, Line, LineChart,
   ResponsiveContainer, Tooltip, XAxis, YAxis,
 } from "recharts";
 import { buildDividendStory, type DividendGrowthData } from "../../utils/dividendGrowth";
@@ -93,59 +93,39 @@ export const DividendGrowthCard: React.FC<{ data: DividendGrowthData }> = React.
         />
       </div>
 
-      {/* 📈 연 배당 런레이트 — 모을수록 우상향 (주인공) */}
-      <PanelTitle title="📈 연 배당 런레이트 — 모을수록 우상향" desc="보유주식 × 연환산 주당분배금. 모을 때마다 계단식으로 오릅니다 (확실한 우상향)" />
-      <ResponsiveContainer width="100%" height={180}>
-        <AreaChart data={story.points} syncId={sync} margin={{ top: 4, right: 12, left: 4, bottom: 0 }}>
+      {/* 🎯 메인 콤보 — 월 배당금(막대) + 배당율 YOC(선) + 보유 평가액(배경) */}
+      <PanelTitle
+        title="📊 한눈에 — 받은 배당 · 배당률 · 내 보유"
+        desc="막대 = 월 배당금 · 초록선 = 내 배당률(YOC, 원금대비) · 연한 면적 = 보유 평가액(모을수록 우상향)"
+      />
+      <ResponsiveContainer width="100%" height={240}>
+        <ComposedChart data={story.points} margin={{ top: 6, right: 8, left: 4, bottom: 0 }}>
           <defs>
-            <linearGradient id={`run-${gid}`} x1="0" y1="0" x2="0" y2="1">
-              <stop offset="0%" stopColor="var(--chart-income, var(--danger))" stopOpacity={0.38} />
-              <stop offset="100%" stopColor="var(--chart-income, var(--danger))" stopOpacity={0.03} />
+            <linearGradient id={`val-${gid}`} x1="0" y1="0" x2="0" y2="1">
+              <stop offset="0%" stopColor="var(--chart-primary, #2563eb)" stopOpacity={0.18} />
+              <stop offset="100%" stopColor="var(--chart-primary, #2563eb)" stopOpacity={0.02} />
             </linearGradient>
           </defs>
-          <CartesianGrid strokeDasharray="3 3" stroke="var(--chart-grid)" />
+          <CartesianGrid strokeDasharray="3 3" stroke="var(--chart-grid)" vertical={false} />
           <XAxis dataKey="label" tick={{ fontSize: 10 }} interval="preserveStartEnd" />
-          <YAxis tick={{ fontSize: 10 }} width={52} domain={[0, "auto"]} tickFormatter={fmtAxisWon} />
-          <Tooltip formatter={(v: number | string | undefined) => [fmtWon(Number(v ?? 0)), "연 배당 런레이트"] as [string, string]} />
-          <Area
-            isAnimationActive={false}
-            type="monotone"
-            dataKey="runRate"
-            name="연 배당 런레이트"
-            stroke="var(--chart-income, var(--danger))"
-            strokeWidth={3}
-            fill={`url(#run-${gid})`}
-            connectNulls
-            dot={{ r: 3, strokeWidth: 0, fill: "var(--chart-income, var(--danger))" }}
+          {/* 좌: 월 배당금(원) */}
+          <YAxis yAxisId="won" tick={{ fontSize: 10 }} width={50} tickFormatter={fmtAxisWon} />
+          {/* 우: 배당률(%) */}
+          <YAxis yAxisId="pct" orientation="right" tick={{ fontSize: 10 }} width={40} domain={[0, "auto"]} tickFormatter={(v: number) => `${v}%`} />
+          {/* 숨김: 보유 평가액 — 자체 스케일로 배경 언덕 */}
+          <YAxis yAxisId="value" hide domain={[0, "auto"]} />
+          <Tooltip
+            formatter={(v: number | string | undefined, name: string | undefined) => {
+              const n = Number(v ?? 0);
+              if (name === "배당률(YOC)") return [fmtPct(n, 2), name] as [string, string];
+              return [fmtWon(n), name ?? ""] as [string, string];
+            }}
           />
-        </AreaChart>
-      </ResponsiveContainer>
-
-      {/* ❄️ 배당 눈덩이 (누적) */}
-      <PanelTitle title="❄️ 배당 눈덩이 (누적 수령액)" desc="지금까지 받은 분배금이 차곡차곡 쌓이는 그래프" />
-      <ResponsiveContainer width="100%" height={150}>
-        <AreaChart data={story.points} syncId={sync} margin={{ top: 4, right: 12, left: 4, bottom: 0 }}>
-          <defs>
-            <linearGradient id={`snow-${gid}`} x1="0" y1="0" x2="0" y2="1">
-              <stop offset="0%" stopColor="var(--chart-income, var(--danger))" stopOpacity={0.3} />
-              <stop offset="100%" stopColor="var(--chart-income, var(--danger))" stopOpacity={0.03} />
-            </linearGradient>
-          </defs>
-          <CartesianGrid strokeDasharray="3 3" stroke="var(--chart-grid)" />
-          <XAxis dataKey="label" tick={{ fontSize: 10 }} interval="preserveStartEnd" />
-          <YAxis tick={{ fontSize: 10 }} width={52} tickFormatter={fmtAxisWon} />
-          <Tooltip formatter={(v: number | string | undefined) => [fmtWon(Number(v ?? 0)), "누적 배당"] as [string, string]} />
-          <Area
-            isAnimationActive={false}
-            type="monotone"
-            dataKey="cumulativeReceived"
-            name="누적 배당"
-            stroke="var(--chart-income, var(--danger))"
-            strokeWidth={2.5}
-            fill={`url(#snow-${gid})`}
-            dot={false}
-          />
-        </AreaChart>
+          <Legend wrapperStyle={{ fontSize: 11 }} />
+          <Area yAxisId="value" isAnimationActive={false} type="monotone" dataKey="marketValue" name="보유 평가액" stroke="var(--chart-primary, #2563eb)" strokeOpacity={0.5} strokeWidth={1.5} fill={`url(#val-${gid})`} connectNulls dot={false} />
+          <Bar yAxisId="won" isAnimationActive={false} dataKey="received" name="월 배당금" fill="var(--chart-income, var(--danger))" radius={[3, 3, 0, 0]} maxBarSize={34} />
+          <Line yAxisId="pct" isAnimationActive={false} type="monotone" dataKey="annualYoc" name="배당률(YOC)" stroke="var(--success)" strokeWidth={2.5} connectNulls dot={{ r: 3, strokeWidth: 0, fill: "var(--success)" }} />
+        </ComposedChart>
       </ResponsiveContainer>
 
       {/* 자세히 — 기존 분석 차트(월 분배금·분배율·주가) */}

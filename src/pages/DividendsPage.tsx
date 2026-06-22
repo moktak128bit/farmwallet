@@ -24,6 +24,7 @@ import { getKrNames } from "../storage";
 import { STORAGE_KEYS } from "../constants/config";
 import type { DividendRow, TabType } from "../features/dividends/types";
 import { DividendFormSection } from "../features/dividends/DividendFormSection";
+import { ComprehensiveTaxCard } from "../features/dividends/ComprehensiveTaxCard";
 import { InterestFormSection } from "../features/dividends/InterestFormSection";
 import { IncomeSummarySection } from "../features/dividends/IncomeSummarySection";
 import { IncomeRecordsSection } from "../features/dividends/IncomeRecordsSection";
@@ -349,6 +350,9 @@ export const DividendsView: React.FC<Props> = ({ accounts, ledger, trades, price
         <span>·</span>
         <span>합계 <strong>{formatKRW(Math.round(totalDividend + totalInterest))}</strong></span>
       </div>
+
+      {/* 종합과세 추적 (B1) — 올해 금융소득 vs 2,000만 임계 */}
+      <ComprehensiveTaxCard ledger={ledger} fxRate={fxRate} />
 
       {/* 단일 탭 — 선택한 쪽의 입력 폼·표·차트만 노출 */}
       <div style={{ display: "flex", gap: 8, marginBottom: 16 }}>

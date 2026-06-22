@@ -25,6 +25,7 @@ import { STORAGE_KEYS } from "../constants/config";
 import type { DividendRow, TabType } from "../features/dividends/types";
 import { DividendFormSection } from "../features/dividends/DividendFormSection";
 import { ComprehensiveTaxCard } from "../features/dividends/ComprehensiveTaxCard";
+import { DividendCalendarCard } from "../features/dividends/DividendCalendarCard";
 import { InterestFormSection } from "../features/dividends/InterestFormSection";
 import { IncomeSummarySection } from "../features/dividends/IncomeSummarySection";
 import { IncomeRecordsSection } from "../features/dividends/IncomeRecordsSection";
@@ -353,6 +354,9 @@ export const DividendsView: React.FC<Props> = ({ accounts, ledger, trades, price
 
       {/* 종합과세 추적 (B1) — 올해 금융소득 vs 2,000만 임계 */}
       <ComprehensiveTaxCard ledger={ledger} fxRate={fxRate} />
+
+      {/* 배당 캘린더 & 목표 (C1·C2) — 향후 12개월 예상 배당 + 목표 진행률 */}
+      <DividendCalendarCard ledger={ledger} fxRate={fxRate} />
 
       {/* 단일 탭 — 선택한 쪽의 입력 폼·표·차트만 노출 */}
       <div style={{ display: "flex", gap: 8, marginBottom: 16 }}>

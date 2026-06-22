@@ -66,13 +66,17 @@ export interface DividendGrowthData {
 interface DividendStoryPoint {
   month: string;
   label: string;
+  /** 그 달 받은 분배금 (막대그래프용) */
+  received: number;
   /** 누적 수령 분배금 (배당 눈덩이) */
   cumulativeReceived: number;
-  /** 연환산 YOC (월 YOC × 12) — 내 배당률 여정 */
+  /** 월말 보유 평가액 (보유주식 × 월 주가, 원) — 배경 면적용 */
+  marketValue: number | null;
+  /** 연환산 YOC (이동평균) — 내 배당률(원금 대비) */
   annualYoc: number | null;
-  /** 연환산 시장 분배율 (월 분배율 × 12) */
+  /** 연환산 시장 분배율 (이동평균) */
   annualMarketYield: number | null;
-  /** 연간 배당 런레이트 = 그 시점 보유주식 × 연환산 주당분배금(직전 알려진 값 캐리포워드) */
+  /** 연간 배당 런레이트 = 그 시점 보유주식 × 연환산 주당분배금 */
   runRate: number | null;
 }
 
@@ -109,7 +113,17 @@ export function buildDividendStory(data: DividendGrowthData): DividendStory {
     const runRate = annualPerShare != null && p.shares > 0 ? p.shares * annualPerShare : null;
     const annualYoc = annualPerShare != null && p.avgCost ? (annualPerShare / p.avgCost) * 100 : null;
     const annualMarketYield = annualPerShare != null && p.price ? (annualPerShare / p.price) * 100 : null;
-    return { month: p.month, label: p.label, cumulativeReceived: cum, annualYoc, annualMarketYield, runRate };
+    const marketValue = p.price != null && p.shares > 0 ? p.shares * p.price : null;
+    return {
+      month: p.month,
+      label: p.label,
+      received: p.received,
+      cumulativeReceived: cum,
+      marketValue,
+      annualYoc,
+      annualMarketYield,
+      runRate,
+    };
   });
   const yocVals = points.filter((p) => p.annualYoc != null);
   const startYoc = yocVals.length ? yocVals[0].annualYoc : null;

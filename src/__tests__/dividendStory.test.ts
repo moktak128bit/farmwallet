@@ -33,10 +33,15 @@ const data: DividendGrowthData = {
 describe("buildDividendStory", () => {
   it("누적 눈덩이 + 이동평균 연환산 YOC·런레이트를 파생한다", () => {
     const s = buildDividendStory(data);
-    // 누적
+    // 월 배당금 + 누적
+    expect(s.points[0].received).toBe(1000);
+    expect(s.points[1].received).toBe(2200);
     expect(s.points[0].cumulativeReceived).toBe(1000);
     expect(s.points[1].cumulativeReceived).toBe(3200);
     expect(s.totalReceived).toBe(3200);
+    // 보유 평가액 = 보유주식 × 월 주가
+    expect(s.points[0].marketValue).toBe(100 * 1000);
+    expect(s.points[1].marketValue).toBe(200 * 1100);
     // 이동평균 연환산 주당분배금: m1 = 10×12=120, m2 = avg(10,11)×12 = 126
     // 연환산 YOC = annualPerShare / 평단 × 100
     expect(s.points[0].annualYoc).toBeCloseTo(12, 6); // 120/1000

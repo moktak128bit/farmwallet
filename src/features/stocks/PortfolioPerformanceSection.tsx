@@ -177,10 +177,20 @@ export const PortfolioPerformanceSection: React.FC = () => {
         </div>
       ) : (
         <>
-          {/* 요약 — 내 수익률 / 벤치마크 / 초과수익 */}
+          {/* 요약 — 내 수익률 / 벤치마크 / 초과수익. 벤치마크 있으면 '동일 기간' 포트 수익률을 써서 내−벤치=α 일치 */}
           <div style={{ display: "flex", gap: 24, flexWrap: "wrap", marginBottom: 16 }}>
-            <Summary label="내 수익률 (TWR)" value={pct(perf.twrReturnPct)} color={gainColor(perf.twrReturnPct)}
-              sub={perf.annualizedPct != null ? `연율 ${pct(perf.annualizedPct)}` : undefined} />
+            <Summary
+              label="내 수익률 (TWR)"
+              value={pct(perf.benchmark ? perf.benchmark.portfolioReturnPct : perf.twrReturnPct)}
+              color={gainColor(perf.benchmark ? perf.benchmark.portfolioReturnPct : perf.twrReturnPct)}
+              sub={
+                perf.benchmark
+                  ? `${perf.benchmark.startDate}부터 (지수와 동일 기간)`
+                  : perf.annualizedPct != null
+                    ? `연율 ${pct(perf.annualizedPct)}`
+                    : undefined
+              }
+            />
             {perf.benchmark ? (
               <>
                 <Summary label={`${perf.benchmark.benchmarkLabel} 수익률`} value={pct(perf.benchmark.benchmarkReturnPct)} color={gainColor(perf.benchmark.benchmarkReturnPct)} />
@@ -188,7 +198,7 @@ export const PortfolioPerformanceSection: React.FC = () => {
                   label="초과수익 (α)"
                   value={pct(perf.benchmark.excessReturnPct)}
                   color={gainColor(perf.benchmark.excessReturnPct)}
-                  sub={perf.benchmark.excessReturnPct >= 0 ? "시장을 이기는 중" : "시장에 뒤처짐"}
+                  sub={perf.benchmark.excessReturnPct >= 0 ? "시장을 이기는 중 🎉" : "시장에 뒤처짐"}
                 />
               </>
             ) : (
@@ -240,6 +250,10 @@ export const PortfolioPerformanceSection: React.FC = () => {
               비교 시작 {perf.benchmark.startDate} · 시작점을 100으로 정규화 · 점선 = {perf.benchmark.benchmarkLabel}
             </div>
           )}
+          <div className="hint" style={{ fontSize: 11, marginTop: 8, lineHeight: 1.5 }}>
+            ⓘ <strong>시간가중수익률(TWR)</strong> — 입금·출금 효과를 뺀 '전략' 수익률이라 증권사 표시(단순·자금가중)와 다를 수 있어요.
+            기록된 일별 종가 {perf.risk.observations}일 기준 — 시세 갱신을 자주 할수록 정확해집니다.
+          </div>
         </>
       )}
     </div>

@@ -65,6 +65,9 @@ import { isUSDStock } from "../utils/finance";
 const LazyPortfolioDashboardCharts = lazy(() =>
   import("../features/stocks/PortfolioDashboardCharts").then((m) => ({ default: m.PortfolioDashboardCharts }))
 );
+const LazyPortfolioPerformanceSection = lazy(() =>
+  import("../features/stocks/PortfolioPerformanceSection").then((m) => ({ default: m.PortfolioPerformanceSection }))
+);
 
 interface Props {
   accounts?: Account[];
@@ -309,6 +312,12 @@ export const DashboardView: React.FC<Props> = (props) => {
             positions={positions}
             fxRate={fxRate}
           />
+        )}
+
+        {show("investmentPerformance") && (
+          <Suspense fallback={<div className="card" style={{ minHeight: 360 }} />}>
+            <LazyPortfolioPerformanceSection />
+          </Suspense>
         )}
 
         {show("netWorthTrend") && <NetWorthTrendChart data={netWorthTrendData} />}

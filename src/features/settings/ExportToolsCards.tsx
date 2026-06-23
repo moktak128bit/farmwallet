@@ -9,6 +9,7 @@ import { toast } from "react-hot-toast";
 import type { Account, CategoryPresets, LedgerEntry, StockTrade } from "../../types";
 import { getKoreaTime } from "../../utils/date";
 import { useUIStore } from "../../store/uiStore";
+import { useAppStore } from "../../store/appStore";
 import { ERROR_MESSAGES } from "../../constants/errorMessages";
 
 interface Props {
@@ -24,6 +25,23 @@ export const ExportToolsCards: React.FC<Props> = React.memo(function ExportTools
   trades,
   categoryPresets
 }) {
+  const handleExportAllExcel = useCallback(async () => {
+    try {
+      const [{ downloadAsExcel }, { buildFullDataSheets }] = await Promise.all([
+        import("../../utils/excelExport"),
+        import("../../utils/fullDataExport"),
+      ]);
+      const sheets = buildFullDataSheets(useAppStore.getState().data);
+      const k = getKoreaTime();
+      const ymd = `${k.getFullYear()}${String(k.getMonth() + 1).padStart(2, "0")}${String(k.getDate()).padStart(2, "0")}`;
+      downloadAsExcel(`farmwallet-전체데이터-${ymd}`, sheets);
+      toast.success("전체 데이터를 엑셀로 다운로드했습니다.");
+    } catch (err) {
+      if (import.meta.env.DEV) console.error("전체 엑셀 내보내기 실패:", err);
+      toast.error("엑셀 내보내기 중 오류가 발생했습니다.");
+    }
+  }, []);
+
   const handleExportLedgerMd = useCallback(async () => {
     try {
       const { generateLedgerMarkdownReport } = await import("../../utils/ledgerMarkdownReport");
@@ -75,6 +93,20 @@ export const ExportToolsCards: React.FC<Props> = React.memo(function ExportTools
 
   return (
     <>
+      <div className="card">
+        <div className="card-title">📊 전체 데이터 한 번에 (엑셀)</div>
+        <p>
+          가계부·주식거래·보유현황·배당이자·계좌·예산·대출·반복지출을 <strong>시트별로 나눈 엑셀 파일 하나</strong>로
+          받습니다. 엑셀·구글시트에서 바로 열어 보고 편집하세요.
+          <br />
+          <span className="hint">
+            ※ 운동 등 나머지 전부를 통째로 백업하려면 아래 "데이터 백업 → 백업 파일 다운로드"(JSON)를 쓰세요.
+          </span>
+        </p>
+        <button type="button" className="primary" onClick={handleExportAllExcel}>
+          전체 데이터 엑셀 다운로드
+        </button>
+      </div>
       <div className="card">
         <div className="card-title">가계부 정리 (정리.md)</div>
         <p>

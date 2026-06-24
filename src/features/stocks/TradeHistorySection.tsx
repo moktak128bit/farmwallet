@@ -824,10 +824,10 @@ export const TradeHistorySection: React.FC<TradeHistorySectionProps> = ({
                     className="name-cell" 
                     onClick={() => onStartEditTrade(t)}
                     style={{ 
-                      cursor: "pointer", 
-                      textDecoration: "underline", 
+                      cursor: "pointer",
+                      textDecoration: "underline",
                       color: "var(--primary)",
-                      fontSize: "12px",
+                      fontSize: "13px",
                       whiteSpace: "nowrap",
                       overflow: "hidden",
                       textOverflow: "ellipsis"
@@ -842,7 +842,9 @@ export const TradeHistorySection: React.FC<TradeHistorySectionProps> = ({
                       ? t.name
                       : latestPriceByCanonicalTicker.get(canonicalTickerForMatch(t.ticker))?.name || t.name || t.ticker}
                   </td>
-                  <td>{sideLabel[t.side]}</td>
+                  <td>
+                    <span className={`trade-side ${t.side}`}>{sideLabel[t.side]}</span>
+                  </td>
                   <td
                     className="number cell-editable"
                     onDoubleClick={() => startInlineEdit(t, "quantity")}
@@ -930,7 +932,7 @@ export const TradeHistorySection: React.FC<TradeHistorySectionProps> = ({
                     )}
                   </td>
                   <td
-                    className="number cell-editable"
+                    className="number cell-editable trade-total"
                     onDoubleClick={() => startInlineEdit(t, "totalAmount")}
                     onClick={tapToInlineEdit(t, "totalAmount")}
                     style={{ cursor: "pointer" }}

@@ -33943,6 +33943,10 @@
       "name": "SSP"
     },
     {
+      "ticker": "SSPC",
+      "name": "Leverage Shares 2X Short SPCX Daily ETF"
+    },
+    {
       "ticker": "SSRM",
       "name": "SSRM"
     },

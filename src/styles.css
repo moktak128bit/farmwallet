@@ -599,6 +599,39 @@ td.cell-editable:hover {
   background-color: var(--bg);
 }
 
+/* ── 주식 매매내역 테이블: 가독성 강화 ──
+   컬럼 구성은 그대로 두고 글자/여백/색만 손봐 한눈에 스캔되도록 한다. */
+.data-table.trades-table td {
+  font-size: 14px;       /* 본문 글자 키움 (PC 가독성) */
+  padding: 11px 8px;     /* 세로 여백 약간 확대 */
+}
+.data-table.trades-table tbody tr:nth-child(even) {
+  background-color: var(--surface-hover); /* 줄무늬 대비 강화 */
+}
+/* 구분(매수/매도) 배지 — 국내 관례: 매수=빨강, 매도=파랑 */
+.trade-side {
+  display: inline-block;
+  min-width: 40px;
+  padding: 2px 8px;
+  border-radius: 6px;
+  font-size: 12px;
+  font-weight: 700;
+  text-align: center;
+  line-height: 1.5;
+}
+.trade-side.buy {
+  color: var(--danger);
+  background: var(--danger-light);
+}
+.trade-side.sell {
+  color: var(--accent);
+  background: var(--accent-light);
+}
+/* 합계 = 행의 핵심 숫자 → 굵게 */
+.data-table.trades-table td.trade-total {
+  font-weight: 600;
+}
+
 /* 가계부 인라인 편집용 드롭다운 */
 .data-table .ledger-cell-select {
   width: 100%;

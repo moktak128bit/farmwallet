@@ -35,7 +35,7 @@ export const BudgetDashboardSection: React.FC<Props> = React.memo(function Budge
   const totalLimit = overallSource.reduce((s, b) => s + b.monthlyLimit, 0);
   const overallPct = totalLimit > 0 ? (totalSpent / totalLimit) * 100 : 0;
   const overallBarColor =
-    overallPct >= 100 ? "#f43f5e" : overallPct >= 80 ? "#f59e0b" : "#22c55e";
+    overallPct >= 100 ? "var(--danger)" : overallPct >= 80 ? "var(--warning)" : "var(--success)";
 
   const cardColors = [
     "#6366f1", "#22c55e", "#f59e0b", "#f43f5e", "#3b82f6",
@@ -121,7 +121,7 @@ export const BudgetDashboardSection: React.FC<Props> = React.memo(function Budge
           </span>
           <span style={{ color: "var(--text-muted, #888)", fontSize: 13 }}>
             잔여{" "}
-            <strong style={{ color: totalLimit - totalSpent >= 0 ? "#22c55e" : "#f43f5e" }}>
+            <strong style={{ color: totalLimit - totalSpent >= 0 ? "var(--success)" : "var(--danger)" }}>
               {(totalLimit - totalSpent).toLocaleString()}원
             </strong>
           </span>
@@ -145,7 +145,7 @@ export const BudgetDashboardSection: React.FC<Props> = React.memo(function Budge
                 : 0;
             const isOver = b.spent > b.monthlyLimit && b.monthlyLimit > 0;
             const barColor =
-              catPct >= 100 ? "#f43f5e" : catPct >= 80 ? "#f59e0b" : "#22c55e";
+              catPct >= 100 ? "var(--danger)" : catPct >= 80 ? "var(--warning)" : "var(--success)";
             const accentColor = cardColors[idx % cardColors.length];
 
             // Pace: expected spend by today vs actual
@@ -160,7 +160,7 @@ export const BudgetDashboardSection: React.FC<Props> = React.memo(function Budge
                 key={b.id}
                 style={{
                   background: isOver
-                    ? "rgba(244, 63, 94, 0.07)"
+                    ? "var(--danger-light)"
                     : "var(--surface)",
                   border: "1px solid var(--border, #2e2e3e)",
                   borderLeft: `4px solid ${accentColor}`,
@@ -205,10 +205,10 @@ export const BudgetDashboardSection: React.FC<Props> = React.memo(function Budge
                     style={{
                       fontSize: 12,
                       fontWeight: 600,
-                      color: isAhead ? "#f43f5e" : "#22c55e",
+                      color: isAhead ? "var(--danger)" : "var(--success)",
                       background: isAhead
-                        ? "rgba(244, 63, 94, 0.12)"
-                        : "rgba(34, 197, 94, 0.12)",
+                        ? "var(--danger-light)"
+                        : "var(--success-light)",
                       borderRadius: 20,
                       padding: "2px 8px",
                     }}
@@ -262,7 +262,7 @@ export const BudgetDashboardSection: React.FC<Props> = React.memo(function Budge
                     style={{
                       fontSize: 12,
                       color:
-                        b.remain >= 0 ? "var(--text-muted, #888)" : "#f43f5e",
+                        b.remain >= 0 ? "var(--text-muted, #888)" : "var(--danger)",
                     }}
                   >
                     {b.remain >= 0

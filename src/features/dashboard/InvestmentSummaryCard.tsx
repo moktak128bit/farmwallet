@@ -22,6 +22,7 @@ import {
   summarizeRecords,
 } from "../../utils/investmentRecord";
 import { isDividendEntryLoose } from "../../utils/categoryMatch";
+import { toKrwByRate } from "../../utils/currency";
 
 interface Props {
   accounts: Account[];
@@ -112,7 +113,7 @@ export const InvestmentSummaryCard: React.FC<Props> = React.memo(function Invest
       const toSec = e.toAccountId ? securitiesAccountIds.has(e.toAccountId) : false;
       const fromSec = e.fromAccountId ? securitiesAccountIds.has(e.fromAccountId) : false;
       if (toSec === fromSec) continue;
-      const amtKrw = e.currency === "USD" && fxRate ? e.amount * fxRate : e.amount;
+      const amtKrw = toKrwByRate(e.amount, e.currency, fxRate);
       if (toSec) p += amtKrw;
       else if (fromSec) p -= amtKrw;
     }
@@ -146,7 +147,7 @@ export const InvestmentSummaryCard: React.FC<Props> = React.memo(function Invest
       const toSec = e.toAccountId ? securitiesAccountIds.has(e.toAccountId) : false;
       const fromSec = e.fromAccountId ? securitiesAccountIds.has(e.fromAccountId) : false;
       if (toSec === fromSec) continue;
-      const amtKrw = e.currency === "USD" && fxRate ? e.amount * fxRate : e.amount;
+      const amtKrw = toKrwByRate(e.amount, e.currency, fxRate);
       if (toSec) amt += amtKrw;
       else if (fromSec) amt -= amtKrw;
     }
@@ -175,7 +176,7 @@ export const InvestmentSummaryCard: React.FC<Props> = React.memo(function Invest
     for (const e of ledger) {
       if (!isDividendEntry(e)) continue;
       if (!e.date || e.date < cutoffIso || e.date > today) continue;
-      const amt = e.currency === "USD" && fxRate ? e.amount * fxRate : e.amount;
+      const amt = toKrwByRate(e.amount, e.currency, fxRate);
       total += amt;
     }
     return total;

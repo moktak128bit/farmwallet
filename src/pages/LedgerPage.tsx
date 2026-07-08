@@ -8,11 +8,17 @@
  *   - subCategory         = 중분류 (예: 식비, 유류교통비, 저축이체)
  *   - detailCategory      = 소분류 (예: 시장/마트, 주차비)  — 지출에만 의미 있음
  *
- * 폼과 필터는 완전히 독립.
- *   - 폼 picker는 form.{mainCategory,subCategory}만 변경 — setFilter* 호출 없음.
- *   - 리스트 필터는 LedgerFilterBar 컴포넌트의 5개 드롭다운에서만 변경 (대/중/소/출금계좌/입금계좌).
- *   - 칩 바(L1500대)의 × 버튼은 해당 필터만 끔 — 폼 상태 건드리지 않음.
- *   - 탭 전환·새 항목 추가 시 필터 자동 클리어 안 함 — 사용자가 명시적으로 끄거나 바꿀 때만 변경됨.
+ * 폼 입력 버튼 = 리스트 필터 (사용자 요청). 입력 폼의 카테고리·계좌 버튼을 누르면
+ * 폼 값과 함께 아래 목록도 같은 값으로 즉시 필터링된다. 매핑은 저장 스키마와 일치:
+ *   - 지출: 대분류→subCategory필터, 소분류→detailCategory필터
+ *   - 수입/이체: 중분류→subCategory필터 / 출금→fromAccountId, 입금→toAccountId
+ *   - 같은 버튼 재클릭(폼 값 해제) 시 해당 필터도 함께 해제.
+ *   - 종류 탭(전체/수입/지출/이체/재테크/신용결제) 전환 시 폼-구동 필터를 일괄 초기화
+ *     (kind마다 카테고리·계좌 의미가 달라 남겨두면 빈 목록이 됨). 구현: LedgerEntryForm.clearListFilters.
+ * 리스트 필터는 폼 버튼 외에 LedgerFilterBar의 드롭다운에서도 바꿀 수 있다.
+ *   - 칩 바(L1500대)의 × 버튼은 해당 필터만 끔 — 폼 상태는 건드리지 않음(편집 중 입력 보존).
+ *   - 새 항목 추가 시 필터는 유지 — 사용자가 좁혀 둔 view를 깨지 않음.
+ *   - 외부에서 startCopy(복사·편집 적재)는 폼만 채우고 필터는 건드리지 않음(버튼 클릭이 아니므로).
  *
  * 신용결제 탭은 이체로 저장 (kind=transfer, category="이체", subCategory="카드결제이체").
  * 레거시(kind=expense, category="신용결제") 데이터도 같은 탭에 표시. AccountsPage 카드부채 로직 의존.
@@ -39,6 +45,7 @@ import { exportLedgerCsv } from "../utils/csvExport";
 import { QuickCopyModal } from "../features/ledger/QuickCopyModal";
 import { DescriptionMergeModal } from "../features/ledger/DescriptionMergeModal";
 import { TaxiSplitWizard } from "../features/ledger/TaxiSplitWizard";
+import { TollParkingSplitWizard } from "../features/ledger/TollParkingSplitWizard";
 import {
   ledgerEntryGross,
   tradeToLedgerRow,
@@ -47,9 +54,11 @@ import {
 import { MonthNavigator } from "../components/ledger/MonthNavigator";
 import { EXPENSE_BOX_EXCLUDED_NAMES, isExcludedExpenseName } from "../features/dashboard/summaryMath";
 import { useFxRateValue } from "../context/FxRateContext";
+import { toKrwByRate } from "../utils/currency";
 import { LedgerEntryForm, type LedgerEntryFormHandle, type LedgerTab } from "../features/ledger/LedgerEntryForm";
 import { LedgerFilterCard } from "../features/ledger/LedgerFilterCard";
 import { LedgerSummarySection } from "../features/ledger/LedgerSummarySection";
+import { buildLedgerActiveChips } from "../features/ledger/ledgerActiveFilters";
 import { LedgerTable, type LedgerSortState } from "../features/ledger/LedgerTable";
 
 interface Props {
@@ -98,6 +107,7 @@ export const LedgerView: React.FC<Props> = ({
   const [quickCopyAmount, setQuickCopyAmount] = useState("");
   const [showMergeModal, setShowMergeModal] = useState(false);
   const [showTaxiSplitWizard, setShowTaxiSplitWizard] = useState(false);
+  const [showTollParkingWizard, setShowTollParkingWizard] = useState(false);
   // 가계부 필터 영역은 기본 접힘 — 화면 너무 차지하던 문제 해결.
   // 접힌 상태에서도 활성 필터 요약 칩이 헤더 한 줄에 표시됨 (LedgerFilterCard).
   const [showFilters, setShowFilters] = useState(false);
@@ -183,11 +193,6 @@ export const LedgerView: React.FC<Props> = ({
     startDate?: string;
     endDate?: string;
   }>({});
-
-  // memo된 하위 컴포넌트(LedgerSummarySection/LedgerFilterCard)에 넘기므로 참조 안정성 필요
-  const clearDateFilter = useCallback(() => {
-    setDateFilter({});
-  }, []);
 
   const clearAllFilters = useCallback(() => {
     setFilterMainCategory(undefined);
@@ -322,12 +327,12 @@ export const LedgerView: React.FC<Props> = ({
       filtered = filtered.filter((l) => l.toAccountId === filterToAccountId);
     }
 
-    // 금액 범위 필터
+    // 금액 범위 필터 — USD 항목은 원화 환산 후 비교 (불변식 #5, KRW 임계값과 통화 통일)
     if (filterAmountMin != null) {
-      filtered = filtered.filter((l) => (l.amount ?? 0) >= filterAmountMin);
+      filtered = filtered.filter((l) => toKrwByRate(l.amount, l.currency, fxRate) >= filterAmountMin);
     }
     if (filterAmountMax != null) {
-      filtered = filtered.filter((l) => (l.amount ?? 0) <= filterAmountMax);
+      filtered = filtered.filter((l) => toKrwByRate(l.amount, l.currency, fxRate) <= filterAmountMax);
     }
 
     const selectedTags = new Set(
@@ -390,7 +395,7 @@ export const LedgerView: React.FC<Props> = ({
     });
     
     return sorted;
-  }, [ledgerByTab, viewMode, selectedMonths, dateFilter, filterMainCategory, filterSubCategory, filterDetailCategory, filterAccountId, filterFromAccountId, filterToAccountId, filterAmountMin, filterAmountMax, filterTagsInput, searchQuery, ledgerSort]);
+  }, [ledgerByTab, viewMode, selectedMonths, dateFilter, filterMainCategory, filterSubCategory, filterDetailCategory, filterAccountId, filterFromAccountId, filterToAccountId, filterAmountMin, filterAmountMax, filterTagsInput, searchQuery, ledgerSort, fxRate]);
 
   const tabLabel: Record<LedgerTab, string> = {
     all: "전체",
@@ -412,8 +417,8 @@ export const LedgerView: React.FC<Props> = ({
     const [ty, tm] = baseMonth.split("-").map(Number);
     const prevMonth = `${tm === 1 ? ty - 1 : ty}-${String(tm === 1 ? 12 : tm - 1).padStart(2, "0")}`;
     const isSavings = makeIsSavingsExpense(categoryPresets);
-    // USD 항목은 환율로 KRW 환산 후 합산 — 대시보드 summaryMath.toKrw와 동일 정책
-    const toKrw = (l: LedgerDisplayRow) => (l.currency === "USD" && fxRate ? l.amount * fxRate : l.amount);
+    // USD 항목은 환율로 KRW 환산 후 합산 — 대시보드 summaryMath.toKrw와 동일 정책(단일 소스)
+    const toKrw = (l: LedgerDisplayRow) => toKrwByRate(l.amount, l.currency, fxRate);
 
     let savingsAmount = 0;
     let expenseAmount = 0;
@@ -546,9 +551,14 @@ export const LedgerView: React.FC<Props> = ({
         ledgerTab,
         filterMainCategory ?? "",
         filterSubCategory ?? "",
+        filterDetailCategory ?? "",
         filterFromAccountId ?? "",
         filterToAccountId ?? "",
-        filterTagsInput
+        filterAccountId ?? "",
+        filterAmountMin ?? "",
+        filterAmountMax ?? "",
+        filterTagsInput,
+        searchQuery
       ].join("|"),
     [
       viewMode,
@@ -558,9 +568,14 @@ export const LedgerView: React.FC<Props> = ({
       ledgerTab,
       filterMainCategory,
       filterSubCategory,
+      filterDetailCategory,
       filterFromAccountId,
       filterToAccountId,
-      filterTagsInput
+      filterAccountId,
+      filterAmountMin,
+      filterAmountMax,
+      filterTagsInput,
+      searchQuery
     ]
   );
 
@@ -609,7 +624,7 @@ export const LedgerView: React.FC<Props> = ({
     let transferSum = 0;
     slice.forEach((e) => {
       // USD 항목은 환율로 KRW 환산 후 합산 (요약 카드와 동일 정책)
-      const amt = e.currency === "USD" && fxRate ? e.amount * fxRate : e.amount;
+      const amt = toKrwByRate(e.amount, e.currency, fxRate);
       if (e.kind === "income") incomeSum += amt;
       else if (e.kind === "transfer" || isSavingsExpenseEntry(e, accounts, categoryPresets)) transferSum += amt;
       else expenseSum += amt;
@@ -726,7 +741,7 @@ export const LedgerView: React.FC<Props> = ({
     return () => clearTimeout(t);
   }, [lastAddedEntryId]);
 
-  const hasCategoryFilter = !!(filterMainCategory || filterSubCategory || filterFromAccountId || filterToAccountId);
+  const hasCategoryFilter = !!(filterMainCategory || filterSubCategory || filterDetailCategory || filterFromAccountId || filterToAccountId);
   const hasDateFilter = !!(dateFilter.startDate || dateFilter.endDate);
   const hasAmountFilter = filterAmountMin != null || filterAmountMax != null;
   const hasTagFilter = filterTagsInput.trim() !== "";
@@ -736,6 +751,26 @@ export const LedgerView: React.FC<Props> = ({
   const filterFromAccountName = filterFromAccountId ? (filterFromAccount?.name || filterFromAccount?.id || filterFromAccountId) : null;
   const filterToAccount = filterToAccountId ? accounts.find((a) => a.id === filterToAccountId) : null;
   const filterToAccountName = filterToAccountId ? (filterToAccount?.name || filterToAccount?.id || filterToAccountId) : null;
+  const filterAccount = filterAccountId ? accounts.find((a) => a.id === filterAccountId) : null;
+  const filterAccountName = filterAccountId ? (filterAccount?.name || filterAccount?.id || filterAccountId) : null;
+
+  // 활성 필터 칩 단일 소스 — 요약 섹션(제거 칩)과 필터 카드(개수·요약)가 같은 배열을 소비.
+  // setState 디스패처는 안정 참조라 deps에서 생략(eslint useState 예외).
+  const activeFilterChips = useMemo(
+    () => buildLedgerActiveChips(
+      {
+        searchQuery, filterMainCategory, filterSubCategory, filterDetailCategory,
+        filterFromAccountId, filterToAccountId, filterFromAccountName, filterToAccountName,
+        filterAccountId, filterAccountName, filterAmountMin, filterAmountMax, filterTagsInput, dateFilter,
+      },
+      {
+        setSearchQuery, setFilterMainCategory, setFilterSubCategory, setFilterDetailCategory,
+        setFilterFromAccountId, setFilterToAccountId, setFilterAccountId,
+        setFilterAmountMin, setFilterAmountMax, setFilterTagsInput, setDateFilter,
+      }
+    ),
+    [searchQuery, filterMainCategory, filterSubCategory, filterDetailCategory, filterFromAccountId, filterToAccountId, filterFromAccountName, filterToAccountName, filterAccountId, filterAccountName, filterAmountMin, filterAmountMax, filterTagsInput, dateFilter]
+  );
 
   return (
     <div>
@@ -751,6 +786,15 @@ export const LedgerView: React.FC<Props> = ({
             title="유류교통비에서 택시를 별도 소분류로 분리"
           >
             🚕 택시 분리
+          </button>
+          <button
+            type="button"
+            className="secondary"
+            style={{ fontSize: 12, padding: "6px 12px" }}
+            onClick={() => setShowTollParkingWizard(true)}
+            title="유류교통비 '통행·주차'를 톨비/주차비로 분리"
+          >
+            🅿️ 통행·주차 분리
           </button>
           <button
             type="button"
@@ -828,6 +872,36 @@ export const LedgerView: React.FC<Props> = ({
         />
       )}
 
+      {showTollParkingWizard && (
+        <TollParkingSplitWizard
+          ledger={ledger}
+          categoryPresets={categoryPresets}
+          onChangeLedger={(next) => {
+            const changedCount = next.reduce(
+              (count, l, i) => count + (l !== ledger[i] ? 1 : 0),
+              0
+            );
+            if (changedCount > 0) {
+              // 다건 일괄 변경 → 안전 스냅샷 (불변식 #9)
+              void saveSafetySnapshot(useAppStore.getState().data, "통행·주차 분리 일괄 변경 직전 자동 스냅샷");
+            }
+            onChangeLedger(next);
+            if (changedCount > 0) {
+              toast.success(`${changedCount}건을 톨비/주차비로 분리`);
+            }
+          }}
+          onChangeCategoryPresets={(next) => {
+            if (onChangeCategoryPresets) {
+              onChangeCategoryPresets(next);
+              toast.success("프리셋에 '톨비'·'주차비' 소분류 반영");
+            } else {
+              toast.error("카테고리 프리셋 변경 핸들러 미연결 — 앱 재시작 필요");
+            }
+          }}
+          onClose={() => setShowTollParkingWizard(false)}
+        />
+      )}
+
       {/* 요약 카드 + 필터 칩 + 월별 비교 — 분리 컴포넌트 (React.memo) */}
       <LedgerSummarySection
         hasFilter={hasFilter}
@@ -835,29 +909,7 @@ export const LedgerView: React.FC<Props> = ({
         selectedMonthsLabel={selectedMonthsLabel}
         summaryTabLabel={summaryTabLabel}
         filteredSummary={filteredSummary}
-        filterMainCategory={filterMainCategory}
-        filterSubCategory={filterSubCategory}
-        filterDetailCategory={filterDetailCategory}
-        filterFromAccountId={filterFromAccountId}
-        filterToAccountId={filterToAccountId}
-        filterFromAccountName={filterFromAccountName}
-        filterToAccountName={filterToAccountName}
-        setFilterMainCategory={setFilterMainCategory}
-        setFilterSubCategory={setFilterSubCategory}
-        setFilterDetailCategory={setFilterDetailCategory}
-        setFilterFromAccountId={setFilterFromAccountId}
-        setFilterToAccountId={setFilterToAccountId}
-        hasDateFilter={hasDateFilter}
-        dateFilter={dateFilter}
-        clearDateFilter={clearDateFilter}
-        hasAmountFilter={hasAmountFilter}
-        filterAmountMin={filterAmountMin}
-        filterAmountMax={filterAmountMax}
-        setFilterAmountMin={setFilterAmountMin}
-        setFilterAmountMax={setFilterAmountMax}
-        hasTagFilter={hasTagFilter}
-        filterTagsInput={filterTagsInput}
-        setFilterTagsInput={setFilterTagsInput}
+        activeFilterChips={activeFilterChips}
         clearAllFilters={clearAllFilters}
         selectedMonths={selectedMonths}
         filteredLedger={filteredLedger}
@@ -876,6 +928,8 @@ export const LedgerView: React.FC<Props> = ({
         setFilterMainCategory={setFilterMainCategory}
         setFilterSubCategory={setFilterSubCategory}
         setFilterDetailCategory={setFilterDetailCategory}
+        setFilterFromAccountId={setFilterFromAccountId}
+        setFilterToAccountId={setFilterToAccountId}
         copyRequest={copyRequest}
         onCopyComplete={onCopyComplete}
         onEntryAdded={setLastAddedEntryId}
@@ -902,11 +956,15 @@ export const LedgerView: React.FC<Props> = ({
         setFilterDetailCategory={setFilterDetailCategory}
         setFilterFromAccountId={setFilterFromAccountId}
         setFilterToAccountId={setFilterToAccountId}
-        filterAccountId={filterAccountId}
         filterAmountMin={filterAmountMin}
         filterAmountMax={filterAmountMax}
+        setFilterAmountMin={setFilterAmountMin}
+        setFilterAmountMax={setFilterAmountMax}
         filterTagsInput={filterTagsInput}
+        setFilterTagsInput={setFilterTagsInput}
         dateFilter={dateFilter}
+        setDateFilter={setDateFilter}
+        activeFilterChips={activeFilterChips}
         viewMode={viewMode}
         setViewMode={setViewMode}
         clearAllFilters={clearAllFilters}

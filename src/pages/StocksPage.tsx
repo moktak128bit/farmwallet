@@ -40,11 +40,16 @@ const LazyForeignCapitalGainsTaxCard = lazy(() =>
 const LazyTargetPortfolioSection = lazy(() =>
   import("../features/stocks/TargetPortfolioSection").then((m) => ({ default: m.TargetPortfolioSection }))
 );
+// 종목 조회 모달 — recharts 포함이라 lazy (초기 번들 제외)
+const LazyStockLookupModal = lazy(() =>
+  import("../features/stocks/StockLookupModal").then((m) => ({ default: m.StockLookupModal }))
+);
 import type { Account, StockPrice, StockTrade, TickerInfo, StockPreset, LedgerEntry, TargetPortfolio, AccountBalanceRow } from "../types";
 import { computePositions } from "../calculations";
 import { buildClosedTradeRecords, summarizeRecords } from "../utils/investmentRecord";
 import { fetchYahooQuotes } from "../yahooFinanceApi";
 import { isUSDStock, canonicalTickerForMatch } from "../utils/finance";
+import { toKrwByRate } from "../utils/currency";
 import { newIdWithPrefix } from "../utils/id";
 import { getTodayKST } from "../utils/date";
 import { isDividendEntryLoose } from "../utils/categoryMatch";
@@ -99,6 +104,7 @@ export const StocksView: React.FC<Props> = ({
   onClearHighlightTrade
 }) => {
   const [showPresetModal, setShowPresetModal] = useState(false);
+  const [showLookupModal, setShowLookupModal] = useState(false);
   const [accountOrder, setAccountOrder] = useState<string[]>(() => {
     try {
       const saved = localStorage.getItem("fw-account-order");
@@ -251,8 +257,7 @@ export const StocksView: React.FC<Props> = ({
   const totalDividend = useMemo(() => {
     // 분류 단일소스(categoryMatch.isDividendEntryLoose) — cat/sub 정확 매칭 + description fallback
     const isDividend = (l: LedgerEntry) => l.kind === "income" && isDividendEntryLoose(l);
-    const toKrw = (l: LedgerEntry) =>
-      l.currency === "USD" && fxRate ? l.amount * fxRate : l.amount;
+    const toKrw = (l: LedgerEntry) => toKrwByRate(l.amount, l.currency, fxRate);
     return ledger.filter(isDividend).reduce((s, l) => s + toKrw(l), 0);
   }, [ledger, fxRate]);
 
@@ -500,6 +505,9 @@ export const StocksView: React.FC<Props> = ({
   const openPresetModal = useCallback(() => setShowPresetModal(true), []);
   const closePresetModal = useCallback(() => setShowPresetModal(false), []);
 
+  const openLookupModal = useCallback(() => setShowLookupModal(true), []);
+  const closeLookupModal = useCallback(() => setShowLookupModal(false), []);
+
   // 필터링된 프리셋 (최근 사용한 것 우선, 최대 9개)
   // 복사 후 정렬 — presets prop(스토어 배열)을 in-place sort로 직접 변형하지 않음
   const filteredPresets = useMemo(() => {
@@ -537,6 +545,7 @@ export const StocksView: React.FC<Props> = ({
             onRefreshFull={handleRefreshQuotesFull}
             onLoadTickers={handleLoadTickers}
             onExportTradesCsv={exportTradesCsv}
+            onOpenLookup={openLookupModal}
           />
 
           <StockStatsCard
@@ -690,6 +699,27 @@ export const StocksView: React.FC<Props> = ({
           <h3>환전 내역</h3>
           <FxHistorySection ledger={ledger} />
         </div>
+      )}
+
+      {/* 종목 조회 모달 (미보유 종목 주가·배당 조회) — 청크 로딩 동안에도 즉시 백드롭 표시 */}
+      {showLookupModal && (
+        <Suspense
+          fallback={
+            <div className="modal-backdrop">
+              <div
+                className="modal"
+                role="dialog"
+                aria-modal="true"
+                aria-label="종목 조회"
+                style={{ padding: 24, textAlign: "center", color: "var(--text-muted)" }}
+              >
+                불러오는 중…
+              </div>
+            </div>
+          }
+        >
+          <LazyStockLookupModal tickerDatabase={tickerDatabase} onClose={closeLookupModal} />
+        </Suspense>
       )}
 
       {/* 종목 상세 모달 */}

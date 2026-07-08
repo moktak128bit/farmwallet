@@ -2,6 +2,7 @@ import { canonicalTickerForMatch, cleanTicker, isKRWStock, isUSDStock } from "./
 import { getKrNames } from "./storage";
 import { parseEtfItemList, type EtfDiscountRow } from "./utils/etfDiscount";
 import { parseHistoricalCloses } from "./utils/yahooChartParse";
+import { parseChartWithDividends, type StockLookupData } from "./utils/stockLookup";
 
 interface YahooQuoteResult {
   ticker: string;
@@ -583,36 +584,27 @@ const fetchFromYahooChart = async (
 };
 
 /**
- * 과거 일별 종가 — 벤치마크 지수(^KS11 KOSPI, ^GSPC S&P500) 등 시계열 비교용.
- * @param range Yahoo range ("6mo" | "1y" | "2y" | "5y" 등)
+ * Yahoo chart 계열 GET을 프록시 체인(개발 서버 → 공개 CORS 프록시)으로 시도.
+ * "Not Found" 본문은 실패로 보고 다음 프록시 시도. 전부 실패하면 "".
  */
-export async function fetchHistoricalCloses(
-  symbol: string,
-  range = "1y"
-): Promise<Array<{ date: string; close: number }>> {
-  const params = new URLSearchParams({
-    interval: "1d",
-    range,
-    lang: "en-US",
-    region: "US",
-    includePrePost: "false"
-  });
-  const innerUrl = `${YAHOO_CHART_BASE}/${encodeURIComponent(symbol)}?${params.toString()}`;
+async function fetchChartPayloadViaProxies(innerUrl: string, timeoutMs = 8000): Promise<string> {
   const proxyUrls = [
     ...(useCorsProxy() ? [`/api/external/raw?url=${encodeURIComponent(innerUrl)}`] : []),
     `https://api.allorigins.win/raw?url=${encodeURIComponent(innerUrl)}`,
     `https://corsproxy.io/?url=${encodeURIComponent(innerUrl)}`,
     `https://api.codetabs.com/v1/proxy?quest=${encodeURIComponent(innerUrl)}`
   ];
-  let payloadStr = "";
   for (const proxyUrl of proxyUrls) {
     const controller = new AbortController();
-    const timeoutId = setTimeout(() => controller.abort(), 8000);
+    const timeoutId = setTimeout(() => controller.abort(), timeoutMs);
     try {
       const res = await fetch(proxyUrl, { signal: controller.signal });
-      if (res.ok) {
-        payloadStr = await res.text();
-        if (payloadStr && !payloadStr.includes("Not Found")) break;
+      if (res.ok || res.status === 404) {
+        const payloadStr = await res.text();
+        // Yahoo chart JSON이면(정상 또는 symbol Not Found 에러 페이로드) 확정 응답으로 즉시 반환 —
+        // 심볼 미존재는 프록시 탓이 아니므로 남은 프록시를 재시도하지 않는다 (.KS→.KQ 폴백 지연 단축)
+        if (payloadStr.includes('"chart"')) return payloadStr;
+        if (res.ok && payloadStr && !payloadStr.includes("Not Found")) return payloadStr;
       }
     } catch {
       // 다음 프록시 시도
@@ -620,6 +612,30 @@ export async function fetchHistoricalCloses(
       clearTimeout(timeoutId);
     }
   }
+  return "";
+}
+
+const buildChartInnerUrl = (symbol: string, range: string, withDividends: boolean): string => {
+  const params = new URLSearchParams({
+    interval: "1d",
+    range,
+    lang: "en-US",
+    region: "US",
+    includePrePost: "false"
+  });
+  if (withDividends) params.set("events", "div");
+  return `${YAHOO_CHART_BASE}/${encodeURIComponent(symbol)}?${params.toString()}`;
+};
+
+/**
+ * 과거 일별 종가 — 벤치마크 지수(^KS11 KOSPI, ^GSPC S&P500) 등 시계열 비교용.
+ * @param range Yahoo range ("6mo" | "1y" | "2y" | "5y" 등)
+ */
+export async function fetchHistoricalCloses(
+  symbol: string,
+  range = "1y"
+): Promise<Array<{ date: string; close: number }>> {
+  const payloadStr = await fetchChartPayloadViaProxies(buildChartInnerUrl(symbol, range, false));
   if (!payloadStr) return [];
   let data: YahooChartResponse;
   try {
@@ -628,6 +644,50 @@ export async function fetchHistoricalCloses(
     return [];
   }
   return parseHistoricalCloses(data);
+}
+
+/**
+ * 종목 조회(미보유 포함) — 과거 일별 종가 + 주당 배당 이력(events=div) + 메타(통화·종목명).
+ * 한국 6자리 코드는 .KS → .KQ 순으로 시도. exchange는 우선순위 힌트로만 사용 —
+ * tickerDatabase의 거래소 정보가 틀려도(레거시 폴백 목록 등) 나머지 접미사를 이어서 시도한다.
+ * 마지막 거래가 30일 초과 과거인 유령(상장폐지/이전상장 잔재) 후보는 보류하고 live 후보를
+ * 우선하며, live가 없으면 meta.stale=true로 표시해 반환한다(폐지 종목도 조회는 가능하게).
+ * @returns 종가가 1개 이상 있는 응답. 전부 실패(네트워크/미존재 종목)면 null.
+ */
+export async function fetchStockLookup(
+  ticker: string,
+  range = "1y",
+  exchange?: string
+): Promise<StockLookupData | null> {
+  const requested = ticker.trim().toUpperCase();
+  if (!requested) return null;
+  const preferred = buildLookupCandidates(requested, exchange);
+  const candidates = [
+    ...preferred,
+    ...buildLookupCandidates(requested).filter((s) => !preferred.includes(s))
+  ];
+  let staleFallback: StockLookupData | null = null;
+  for (const lookupSymbol of candidates) {
+    const payloadStr = await fetchChartPayloadViaProxies(buildChartInnerUrl(lookupSymbol, range, true));
+    if (!payloadStr) continue;
+    let parsed: StockLookupData;
+    try {
+      parsed = parseChartWithDividends(JSON.parse(payloadStr));
+    } catch {
+      continue; // 파싱 실패 → 다음 후보 심볼
+    }
+    if (parsed.closes.length === 0) continue;
+    const marketTime = parsed.meta.marketTime;
+    const isGhost =
+      typeof marketTime === "number" &&
+      marketTime > 0 &&
+      Math.floor(Date.now() / 1000) - marketTime > GHOST_CUTOFF_SEC;
+    if (!isGhost) return parsed;
+    if (!staleFallback) {
+      staleFallback = { ...parsed, meta: { ...parsed.meta, stale: true } };
+    }
+  }
+  return staleFallback;
 }
 
 const fetchFromStooq = async (requestedSymbol: string): Promise<YahooQuoteResult | null> => {

@@ -17,6 +17,7 @@
 import React, { useMemo, useState, useEffect, useCallback } from "react";
 import type { Account, AccountType, LedgerEntry, AccountBalanceRow, PositionRow, StockTrade } from "../types";
 import { formatKRW } from "../utils/formatter";
+import { isCreditPayment } from "../utils/categoryUtils";
 import { fetchYahooQuotes } from "../yahooFinanceApi";
 import { EmptyState } from "../components/ui/EmptyState";
 import { Wallet, Download } from "lucide-react";
@@ -134,14 +135,15 @@ export const AccountsView: React.FC<Props> = ({
 
     for (const l of ledger) {
       // 신용카드 사용 → 부채 증가 (출금계좌가 카드인 지출, 단 레거시 신용결제 expense 제외)
-      if (l.kind === "expense" && l.fromAccountId && l.category !== "신용결제") {
+      // 분류 단일 소스 isCreditPayment 사용 — subCategory="신용결제" 레거시도 함께 제외(직접 비교는 놓침).
+      if (l.kind === "expense" && l.fromAccountId && !isCreditPayment(l)) {
         add(totalUsage, l.fromAccountId, l.amount);
       }
       // 카드 대금 납부 → 부채 탕감: 카드계좌로 들어온 이체(신규 카드결제이체 포함) + 레거시 신용결제 expense
       if (l.toAccountId && cardIds.has(l.toAccountId)) {
         const isPayment =
           l.kind === "transfer" ||
-          (l.kind === "expense" && l.category === "신용결제");
+          (l.kind === "expense" && isCreditPayment(l));
         if (isPayment) {
           const amt = l.amount;
           add(totalPayment, l.toAccountId, amt);

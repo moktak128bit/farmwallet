@@ -317,9 +317,9 @@ const DayWorkoutEditorInner: React.FC<Props> = ({
                 {totalCount > 0 && (
                   <span style={{
                     fontSize: 12, fontWeight: 700, padding: "3px 10px", borderRadius: 999,
-                    background: isAllDone ? "rgba(16,185,129,0.18)" : "var(--surface)",
-                    color: isAllDone ? "#10b981" : "var(--text-muted)",
-                    border: `1px solid ${isAllDone ? "#10b981" : "var(--border)"}`,
+                    background: isAllDone ? "var(--success-light)" : "var(--surface)",
+                    color: isAllDone ? "var(--success)" : "var(--text-muted)",
+                    border: `1px solid ${isAllDone ? "var(--success)" : "var(--border)"}`,
                   }}>
                     {doneCount}/{totalCount} 완료{isAllDone ? " ✓" : ""}
                   </span>
@@ -328,9 +328,9 @@ const DayWorkoutEditorInner: React.FC<Props> = ({
                   <span
                     style={{
                       fontSize: 12, fontWeight: 700, padding: "3px 10px", borderRadius: 999,
-                      background: timing?.isLive ? "rgba(16,185,129,0.14)" : "var(--surface)",
-                      color: timing?.isLive ? "#10b981" : "var(--text-muted)",
-                      border: `1px solid ${timing?.isLive ? "#10b98160" : "var(--border)"}`,
+                      background: timing?.isLive ? "var(--success-light)" : "var(--surface)",
+                      color: timing?.isLive ? "var(--success)" : "var(--text-muted)",
+                      border: `1px solid ${timing?.isLive ? "var(--success)" : "var(--border)"}`,
                     }}
                     title={timing?.isLive ? "이 종목 경과 (진행 중)" : "이 종목 소요 시간"}
                   >
@@ -378,10 +378,10 @@ const DayWorkoutEditorInner: React.FC<Props> = ({
             {exercise.warmupNote && (
               <div style={{
                 padding: "8px 12px", marginBottom: 8, borderRadius: 8,
-                background: "rgba(251,191,36,0.12)", border: "1px solid rgba(251,191,36,0.4)",
+                background: "var(--warning-light)", border: "1px solid var(--warning)",
                 fontSize: 13, color: "var(--text)",
               }}>
-                <span style={{ fontWeight: 700, color: "#b45309", marginRight: 6 }}>워밍업</span>
+                <span style={{ fontWeight: 700, color: "var(--warning)", marginRight: 6 }}>워밍업</span>
                 {exercise.warmupNote}
               </div>
             )}

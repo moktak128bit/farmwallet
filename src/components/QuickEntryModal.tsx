@@ -5,6 +5,8 @@ import { recommendCategory } from "../utils/categoryRecommendation";
 import { parseAmount } from "../utils/parseAmount";
 import { getTodayKST } from "../utils/date";
 import { newIdWithPrefix } from "../utils/id";
+import { useFocusTrap } from "../hooks/useFocusTrap";
+import { useModalStackEntry } from "../utils/modalStack";
 
 interface Props {
   open: boolean;
@@ -43,6 +45,8 @@ const fallbackCategoryOf = (kind: LedgerKind): string =>
 export const QuickEntryModal: React.FC<Props> = ({ open, onClose, data, onAdd }) => {
   const [text, setText] = useState("");
   const inputRef = useRef<HTMLInputElement>(null);
+  const trapRef = useFocusTrap<HTMLDivElement>(open);
+  const isTopModal = useModalStackEntry(open);
 
   useEffect(() => {
     if (open) {
@@ -54,11 +58,12 @@ export const QuickEntryModal: React.FC<Props> = ({ open, onClose, data, onAdd })
   useEffect(() => {
     if (!open) return;
     const handler = (e: KeyboardEvent) => {
-      if (e.key === "Escape") onClose();
+      // 최상위 모달일 때만 ESC 처리 — 다른 모달이 위에 겹쳐 있으면 같이 닫히지 않게(중첩 ESC 누수 방지)
+      if (e.key === "Escape" && isTopModal()) onClose();
     };
     window.addEventListener("keydown", handler);
     return () => window.removeEventListener("keydown", handler);
-  }, [open, onClose]);
+  }, [open, onClose, isTopModal]);
 
   const parsed = useMemo(() => parseQuickInput(text), [text]);
 
@@ -114,14 +119,16 @@ export const QuickEntryModal: React.FC<Props> = ({ open, onClose, data, onAdd })
     <div
       role="dialog"
       aria-modal="true"
+      aria-labelledby="quick-entry-title"
       onClick={onClose}
       style={{
-        position: "fixed", inset: 0, background: "rgba(0,0,0,0.5)",
+        position: "fixed", inset: 0, background: "var(--overlay-bg, rgba(0,0,0,0.5))",
         display: "flex", alignItems: "flex-start", justifyContent: "center",
         paddingTop: "20vh", zIndex: 9999
       }}
     >
       <div
+        ref={trapRef}
         onClick={(e) => e.stopPropagation()}
         style={{
           background: "var(--surface)", color: "var(--text)",
@@ -129,7 +136,7 @@ export const QuickEntryModal: React.FC<Props> = ({ open, onClose, data, onAdd })
           boxShadow: "var(--shadow-lg)", border: "1px solid var(--border)"
         }}
       >
-        <div style={{ fontSize: 12, color: "var(--text-muted)", marginBottom: 8 }}>
+        <div id="quick-entry-title" style={{ fontSize: 12, color: "var(--text-muted)", marginBottom: 8 }}>
           빠른 입력 — 예: "스타벅스 5500", "수입 월급 3000000"
         </div>
         <input

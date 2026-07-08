@@ -13,6 +13,7 @@ import { isCoarsePointer } from "../../utils/pointer";
 import { useAppStore } from "../../store/appStore";
 import { useLedgerColumnResize } from "./useLedgerColumnResize";
 import { useFxRateValue } from "../../context/FxRateContext";
+import { toKrwByRate } from "../../utils/currency";
 import { validateDate } from "../../utils/validation";
 import { getTodayKST } from "../../utils/date";
 
@@ -548,8 +549,8 @@ export const LedgerTable: React.FC<Props> = React.memo(function LedgerTable({
             const rows: React.ReactNode[] = [];
             let prevDate: string | null = null;
             let dayIncome = 0, dayExpense = 0, dayCount = 0, dayDate = "";
-            // USD 항목은 환율로 KRW 환산 후 소계 합산 (요약 카드와 동일 정책)
-            const toKrw = (l: LedgerDisplayRow) => (l.currency === "USD" && fxRate ? l.amount * fxRate : l.amount);
+            // USD 항목은 환율로 KRW 환산 후 소계 합산 (요약 카드와 동일 정책 — 단일 소스)
+            const toKrw = (l: LedgerDisplayRow) => toKrwByRate(l.amount, l.currency, fxRate);
 
             const flushDaySummary = () => {
               if (!enableDaySummary || !dayDate || dayCount === 0) return;

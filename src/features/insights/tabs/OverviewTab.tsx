@@ -263,21 +263,21 @@ export const OverviewTab = React.memo(function OverviewTab({ d }: { d: D }) {
       <Section storageKey="overview-section-analysis" title="🔬 심층 분석">
         <Card title="장부 vs 실질 비교 (왜 다른가?)" span={4}>
           <div className="grid-4" style={{ gap: 12, fontSize: 13 }}>
-            <div style={{ padding: "12px 14px", background: "#f0fdf4", borderRadius: 10, border: "1px solid #86efac" }}>
-              <div style={{ fontSize: 11, color: "#666", marginBottom: 4 }}>장부 수입 (전체)</div>
-              <div style={{ fontSize: 18, fontWeight: 700, color: "#059669" }}>{F(d.pIncome)}</div>
-              <div style={{ fontSize: 11, color: "#666", marginTop: 4 }}>→ 실질 수입: {F(d.realIncome)}</div>
+            <div style={{ padding: "12px 14px", background: "var(--success-light)", borderRadius: 10, border: "1px solid var(--success)" }}>
+              <div style={{ fontSize: 11, color: "var(--text-muted)", marginBottom: 4 }}>장부 수입 (전체)</div>
+              <div style={{ fontSize: 18, fontWeight: 700, color: "var(--success)" }}>{F(d.pIncome)}</div>
+              <div style={{ fontSize: 11, color: "var(--text-muted)", marginTop: 4 }}>→ 실질 수입: {F(d.realIncome)}</div>
             </div>
-            <div style={{ padding: "12px 14px", background: "#fff5f5", borderRadius: 10, border: "1px solid #fcc" }}>
-              <div style={{ fontSize: 11, color: "#666", marginBottom: 4 }}>장부 지출 (전체)</div>
-              <div style={{ fontSize: 18, fontWeight: 700, color: "#e94560" }}>{F(d.pExpense)}</div>
-              <div style={{ fontSize: 11, color: "#666", marginTop: 4 }}>→ 실질 지출: {F(d.realExpense)}</div>
+            <div style={{ padding: "12px 14px", background: "var(--danger-light)", borderRadius: 10, border: "1px solid var(--danger)" }}>
+              <div style={{ fontSize: 11, color: "var(--text-muted)", marginBottom: 4 }}>장부 지출 (전체)</div>
+              <div style={{ fontSize: 18, fontWeight: 700, color: "var(--danger)" }}>{F(d.pExpense)}</div>
+              <div style={{ fontSize: 11, color: "var(--text-muted)", marginTop: 4 }}>→ 실질 지출: {F(d.realExpense)}</div>
             </div>
             {d.settlementTotal > 0 && (
-              <div style={{ padding: "12px 14px", background: "#fdf5e6", borderRadius: 10, border: "1px solid #f0c040" }}>
-                <div style={{ fontSize: 11, color: "#666", marginBottom: 4 }}>정산 (상대가 돌려준 돈)</div>
-                <div style={{ fontSize: 18, fontWeight: 700, color: "#d97706" }}>{F(d.settlementTotal)}</div>
-                <div style={{ fontSize: 11, color: "#666", marginTop: 4 }}>실 수입에서 차감 (내 돈 아님)</div>
+              <div style={{ padding: "12px 14px", background: "var(--warning-light)", borderRadius: 10, border: "1px solid var(--warning)" }}>
+                <div style={{ fontSize: 11, color: "var(--text-muted)", marginBottom: 4 }}>정산 (상대가 돌려준 돈)</div>
+                <div style={{ fontSize: 18, fontWeight: 700, color: "var(--warning)" }}>{F(d.settlementTotal)}</div>
+                <div style={{ fontSize: 11, color: "var(--text-muted)", marginTop: 4 }}>실 수입에서 차감 (내 돈 아님)</div>
               </div>
             )}
             {d.datePartnerShare > 0 && (
@@ -287,10 +287,10 @@ export const OverviewTab = React.memo(function OverviewTab({ d }: { d: D }) {
                 <div style={{ fontSize: 11, color: "#666", marginTop: 4 }}>데이트 지출 {F(d.dateAccountSpend)} × 0.5 · 실 지출에서 차감</div>
               </div>
             )}
-            <div style={{ padding: "12px 14px", background: "#f0f8ff", borderRadius: 10, border: "1px solid #bde" }}>
-              <div style={{ fontSize: 11, color: "#666", marginBottom: 4 }}>패시브 수입</div>
-              <div style={{ fontSize: 18, fontWeight: 700, color: "#2563eb" }}>{F(d.passiveIncome)}</div>
-              <div style={{ fontSize: 11, color: "#666", marginTop: 4 }}>배당·이자 등 투자수익</div>
+            <div style={{ padding: "12px 14px", background: "var(--accent-light)", borderRadius: 10, border: "1px solid var(--border-light)" }}>
+              <div style={{ fontSize: 11, color: "var(--text-muted)", marginBottom: 4 }}>패시브 수입</div>
+              <div style={{ fontSize: 18, fontWeight: 700, color: "var(--accent)" }}>{F(d.passiveIncome)}</div>
+              <div style={{ fontSize: 11, color: "var(--text-muted)", marginTop: 4 }}>배당·이자 등 투자수익</div>
             </div>
           </div>
           <div style={{ marginTop: 10, fontSize: 11, color: "var(--text-faint)", lineHeight: 1.6, padding: "8px 12px", background: "var(--bg)", borderRadius: 8 }}>
@@ -325,14 +325,14 @@ export const OverviewTab = React.memo(function OverviewTab({ d }: { d: D }) {
               </div>
               <div style={{
                 padding: "12px 14px",
-                background: si.deviation != null && si.deviation > 20 ? "#fff5f5" : si.deviation != null && si.deviation > 5 ? "#fff7e6" : si.deviation != null && si.deviation < -10 ? "#f0fdf4" : "#f0f8ff",
+                background: si.deviation != null && si.deviation > 20 ? "var(--danger-light)" : si.deviation != null && si.deviation > 5 ? "var(--warning-light)" : si.deviation != null && si.deviation < -10 ? "var(--success-light)" : "var(--accent-light)",
                 borderRadius: 8, marginTop: 8, textAlign: "center",
               }}>
                 <div style={{ fontSize: 32, fontWeight: 800, color: siColor }}>
                   {si.deviation == null ? "–" : Pct(si.deviation)}
                 </div>
                 <div style={{ fontSize: 13, fontWeight: 700, color: siColor, marginTop: 2 }}>{siLabel}</div>
-                <div style={{ fontSize: 11, color: "#666", marginTop: 6, lineHeight: 1.5 }}>
+                <div style={{ fontSize: 11, color: "var(--text-muted)", marginTop: 6, lineHeight: 1.5 }}>
                   {si.deviation == null ? "" :
                     si.deviation > 20 ? "지출이 평소보다 크게 늘었어요. 카테고리 점검을 권장합니다." :
                     si.deviation > 5 ? "최근 지출 증가 추세. 이상치 배너도 확인하세요." :
@@ -393,26 +393,26 @@ export const OverviewTab = React.memo(function OverviewTab({ d }: { d: D }) {
           </div>
           <div style={{ display: "grid", gridTemplateColumns: "repeat(5,1fr)", gap: 10 }}>
             {[
-              { label: "순수익", value: F(d.netProfit) + "원", sub: `${d.accumLabel} · 실질수입 − 실질지출`, color: d.netProfit >= 0 ? "#059669" : "#e94560", bg: d.netProfit >= 0 ? "#f0fdf4" : "#fff5f5", border: d.netProfit >= 0 ? "#86efac" : "#fcc" },
-              { label: "실질 저축률", value: d.realSavRate.toFixed(1) + "%", sub: `${d.accumLabel} 기준`, color: d.realSavRate >= 30 ? "#059669" : d.realSavRate >= 0 ? "#f0c040" : "#e94560", bg: "#f0f8ff", border: "#bde" },
-              { label: "지출/근로소득 비율", value: d.expToIncRatio.toFixed(1) + "%", sub: d.expToIncRatio > 80 ? "⚠ 지출 비중 높음" : d.accumLabel, color: d.expToIncRatio > 80 ? "#e94560" : "#2563eb", bg: "#f8f9fa", border: "#eee" },
-              { label: "패시브 수입", value: F(d.passiveIncome) + "원", sub: `${d.accumLabel} · 실질수입 대비 ${d.realIncome > 0 ? Math.round(SD(d.passiveIncome, d.realIncome) * 100) : 0}%`, color: "#48c9b0", bg: "#f0fdf4", border: "#86efac" },
-              { label: "일 평균 지출", value: F(d.dailyAvgExp) + "원", sub: `하루당 · ${d.totalDays}일 기준`, color: "#533483", bg: "rgba(83,52,131,0.06)", border: "rgba(83,52,131,0.2)" },
+              { label: "순수익", value: F(d.netProfit) + "원", sub: `${d.accumLabel} · 실질수입 − 실질지출`, color: d.netProfit >= 0 ? "var(--success)" : "var(--danger)", bg: d.netProfit >= 0 ? "var(--success-light)" : "var(--danger-light)", border: d.netProfit >= 0 ? "var(--success)" : "var(--danger)" },
+              { label: "실질 저축률", value: d.realSavRate.toFixed(1) + "%", sub: `${d.accumLabel} 기준`, color: d.realSavRate >= 30 ? "var(--success)" : d.realSavRate >= 0 ? "var(--warning)" : "var(--danger)", bg: "var(--accent-light)", border: "var(--border-light)" },
+              { label: "지출/근로소득 비율", value: d.expToIncRatio.toFixed(1) + "%", sub: d.expToIncRatio > 80 ? "⚠ 지출 비중 높음" : d.accumLabel, color: d.expToIncRatio > 80 ? "var(--danger)" : "var(--accent)", bg: "var(--bg)", border: "var(--border-light)" },
+              { label: "패시브 수입", value: F(d.passiveIncome) + "원", sub: `${d.accumLabel} · 실질수입 대비 ${d.realIncome > 0 ? Math.round(SD(d.passiveIncome, d.realIncome) * 100) : 0}%`, color: "var(--success)", bg: "var(--success-light)", border: "var(--success)" },
+              { label: "일 평균 지출", value: F(d.dailyAvgExp) + "원", sub: `하루당 · ${d.totalDays}일 기준`, color: "var(--text)", bg: "var(--bg)", border: "var(--border-light)" },
             ].map(m => (
               <div key={m.label} style={{ padding: "12px 14px", background: m.bg, borderRadius: 10, border: `1px solid ${m.border}`, textAlign: "center" }}>
-                <div style={{ fontSize: 11, color: "#666", marginBottom: 4, fontWeight: 600 }}>{m.label}</div>
+                <div style={{ fontSize: 11, color: "var(--text-muted)", marginBottom: 4, fontWeight: 600 }}>{m.label}</div>
                 <div style={{ fontSize: 20, fontWeight: 800, color: m.color }}>{m.value}</div>
-                <div style={{ fontSize: 10, color: "#999", marginTop: 4 }}>{m.sub}</div>
+                <div style={{ fontSize: 10, color: "var(--text-faint)", marginTop: 4 }}>{m.sub}</div>
               </div>
             ))}
           </div>
           <div style={{ display: "grid", gridTemplateColumns: "repeat(5,1fr)", gap: 10, marginTop: 10 }}>
             {[
-              { label: "순현금흐름", value: F(d.netCashFlow) + "원", sub: `${d.accumLabel} · 근로소득−지출−투자`, color: d.netCashFlow >= 0 ? "#059669" : "#e94560" },
-              { label: "투자 수익률", value: d.investReturnRate !== 0 ? d.investReturnRate.toFixed(1) + "%" : "-", sub: "전 기간 · 실현손익 / 투자원금", color: d.investReturnRate >= 0 ? "#059669" : "#e94560" },
-              { label: "고정비", value: F(d.fixedExpense) + "원", sub: `${d.accumLabel} · 지출의 ${Math.round(SD(d.fixedExpense, d.pExpense) * 100)}%`, color: "#0f3460" },
-              { label: "변동비", value: F(d.variableExpense) + "원", sub: `${d.accumLabel} · 지출의 ${Math.round(SD(d.variableExpense, d.pExpense) * 100)}%`, color: "#f39c12" },
-              { label: "근로소득 안정성", value: d.incomeStability !== null ? d.incomeStability + "%" : "-", sub: d.incomeStability !== null && d.incomeStability >= 70 ? "월별 편차 작음" : "월별 편차 큼", color: "#2563eb" },
+              { label: "순현금흐름", value: F(d.netCashFlow) + "원", sub: `${d.accumLabel} · 근로소득−지출−투자`, color: d.netCashFlow >= 0 ? "var(--success)" : "var(--danger)" },
+              { label: "투자 수익률", value: d.investReturnRate !== 0 ? d.investReturnRate.toFixed(1) + "%" : "-", sub: "전 기간 · 실현손익 / 투자원금", color: d.investReturnRate >= 0 ? "var(--success)" : "var(--danger)" },
+              { label: "고정비", value: F(d.fixedExpense) + "원", sub: `${d.accumLabel} · 지출의 ${Math.round(SD(d.fixedExpense, d.pExpense) * 100)}%`, color: "var(--accent)" },
+              { label: "변동비", value: F(d.variableExpense) + "원", sub: `${d.accumLabel} · 지출의 ${Math.round(SD(d.variableExpense, d.pExpense) * 100)}%`, color: "var(--warning)" },
+              { label: "근로소득 안정성", value: d.incomeStability !== null ? d.incomeStability + "%" : "-", sub: d.incomeStability !== null && d.incomeStability >= 70 ? "월별 편차 작음" : "월별 편차 큼", color: "var(--accent)" },
             ].map(m => (
               <div key={m.label} style={{ padding: "10px 12px", background: "var(--bg)", borderRadius: 8, border: "1px solid var(--border-light)", textAlign: "center" }}>
                 <div style={{ fontSize: 10, color: "var(--text-faint)", fontWeight: 600 }}>{m.label}</div>
@@ -433,7 +433,7 @@ export const OverviewTab = React.memo(function OverviewTab({ d }: { d: D }) {
                       <span style={{ width: 10, height: 10, borderRadius: 5, background: C[i % 12], display: "inline-block" }} />
                       {s.sub}
                     </span>
-                    <span style={{ fontSize: 16, fontWeight: 800, color: "#e94560" }}>{F(s.total)}</span>
+                    <span style={{ fontSize: 16, fontWeight: 800, color: "var(--danger)" }}>{F(s.total)}</span>
                   </div>
                   <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 4, fontSize: 11, color: "var(--text-secondary)" }}>
                     <span>비중: {s.share}%</span>

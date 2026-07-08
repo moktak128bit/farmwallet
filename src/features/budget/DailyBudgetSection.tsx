@@ -21,7 +21,7 @@ export const DailyBudgetSection: React.FC<Props> = React.memo(function DailyBudg
   const cfg: DailyBudgetConfig = dailyBudget ?? DEFAULT_DAILY_BUDGET;
   const update = (patch: Partial<DailyBudgetConfig>) => onChangeDailyBudget({ ...cfg, ...patch });
   return (
-    <div className="card" style={{ padding: 16, marginBottom: 16, borderLeft: "3px solid #10b981" }}>
+    <div className="card" style={{ padding: 16, marginBottom: 16, borderLeft: "3px solid var(--success)" }}>
       <div className="card-title" style={{ marginBottom: 8 }}>💰 하루 예산 한도 (가계부 상단 진행 바와 연동)</div>
       <p className="hint" style={{ marginBottom: 12 }}>
         "하루 ₩N원 이하" 원칙. 켜면 가계부 상단에 진행 바가 표시되고, 한도 초과 입력 시 confirm 경고가 뜹니다.

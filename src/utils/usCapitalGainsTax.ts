@@ -12,6 +12,7 @@ import type { PositionRow, StockTrade } from "../types";
 import { isUSDStock, canonicalTickerForMatch } from "./finance";
 import { positionMarketValueKRW } from "../calculations";
 import { fxAsOf, type FxPoint } from "./portfolioHistory";
+import { consumeFifoLots, type FifoLot } from "./fifoLots";
 
 /** 해외주식 양도소득 연 기본공제 (원) */
 export const FOREIGN_CG_BASIC_DEDUCTION = 2_500_000;
@@ -73,26 +74,15 @@ export function realizedForeignGainKRW(
   let total = 0;
   for (const ts of byKey.values()) {
     const sorted = [...ts].sort(tradeCmp);
-    type Lot = { qty: number; usd: number; fx: number };
-    const queue: Lot[] = [];
+    const queue: FifoLot[] = [];
     for (const t of sorted) {
       const fx = t.fxRateAtTrade ?? fxAsOf(fxHistory, t.date, fallbackFxRate) ?? 0;
       if (t.side === "buy") {
-        queue.push({ qty: t.quantity, usd: t.totalAmount, fx });
+        // 양도세는 각 lot을 취득 당시 환율로 KRW 고정 — value에 KRW 비용을 접어 넣는다.
+        queue.push({ qty: t.quantity, value: t.totalAmount * fx });
         continue;
       }
-      let remaining = t.quantity;
-      let costKRW = 0;
-      while (remaining > 0 && queue.length > 0) {
-        const lot = queue[0];
-        const use = Math.min(remaining, lot.qty);
-        const unitUsd = lot.qty > 0 ? lot.usd / lot.qty : 0;
-        costKRW += unitUsd * use * lot.fx;
-        lot.qty -= use;
-        lot.usd = unitUsd * lot.qty;
-        remaining -= use;
-        if (lot.qty <= 0) queue.shift();
-      }
+      const { consumedValue: costKRW } = consumeFifoLots(queue, t.quantity);
       const proceedsKRW = t.totalAmount * fx;
       if (t.date.startsWith(yearStr)) total += proceedsKRW - costKRW;
     }

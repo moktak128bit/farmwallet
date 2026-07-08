@@ -279,6 +279,59 @@ describe("loadData round-trip — 필드 보존 (dailyBudget 포함)", () => {
   });
 });
 
+describe("loadData round-trip — 신규 옵션 필드 일괄 보존 (필드 누락 트랩 가드)", () => {
+  // CLAUDE.md 경고: AppData에 필드 추가 시 loadData parsedData·tableDataBackup 양쪽 누락 = 영구 유실.
+  // 새 필드가 save→load를 통과하는지 한 번에 검증한다 (analytics/config 신규 필드 집중).
+  beforeEach(() => {
+    window.localStorage.clear();
+  });
+
+  it("save → load 후 신규 옵션 필드들이 모두 보존됨", () => {
+    const data = makeAppData({
+      // 캐시 3종 (CACHE 키 경유 보존)
+      prices: [{ ticker: "AAPL", price: 150 }],
+      tickerDatabase: [{ ticker: "AAPL", name: "Apple", market: "US" as const }],
+      historicalDailyCloses: [{ ticker: "AAPL", date: "2026-01-01", close: 150 }],
+      // 사용자 데이터 신규/옵션 필드
+      usTickers: ["AAPL", "MSFT"],
+      ledgerTemplates: [{ id: "lt1", name: "월세", kind: "expense" as const }],
+      stockPresets: [{ id: "sp1", name: "프리셋", accountId: "a1", ticker: "AAPL" }],
+      targetPortfolios: [{ id: "tp1", name: "공격형", accountId: null, items: [{ ticker: "AAPL", targetPercent: 50 }] }],
+      targetNetWorthCurve: { "2026-01": 1_000_000 },
+      assetSnapshots: [{ date: "2026-01-01", pensionPrincipal: 500 }],
+      marketEnvSnapshots: [{ date: "2026-01-01", fxRate: 1300, prices: [{ ticker: "AAPL", price: 150 }], recordedAt: "2026-01-01T00:00:00Z" }],
+      historicalDailyFx: [{ date: "2026-01-01", rate: 1300 }],
+      benchmarkDailyCloses: [{ ticker: "^GSPC", date: "2026-01-01", close: 4800 }],
+      dividendTrackingTicker: "AAPL",
+      isaPortfolio: [{ ticker: "AAPL", name: "Apple", weight: 0.5, label: "성장" }],
+      customExercises: [{ name: "벤치프레스", bodyPart: "가슴", addedAt: "2026-01-01T00:00:00Z" }],
+      customSymbols: [{ ticker: "AAPL", name: "Apple" }],
+    });
+    saveData(data);
+    const loaded = loadData();
+
+    // 캐시 3종
+    expect(loaded.prices).toHaveLength(1);
+    expect(loaded.tickerDatabase).toHaveLength(1);
+    expect(loaded.historicalDailyCloses).toHaveLength(1);
+    // 사용자 데이터 옵션 필드 — 각 필드가 드롭되지 않고 보존됨
+    expect(loaded.usTickers).toEqual(["AAPL", "MSFT"]);
+    expect(loaded.ledgerTemplates).toHaveLength(1);
+    expect(loaded.stockPresets).toHaveLength(1);
+    expect(loaded.targetPortfolios).toHaveLength(1);
+    expect(loaded.targetNetWorthCurve).toMatchObject({ "2026-01": 1_000_000 });
+    expect(loaded.assetSnapshots).toHaveLength(1);
+    expect(loaded.marketEnvSnapshots).toHaveLength(1);
+    expect(loaded.historicalDailyFx).toEqual([{ date: "2026-01-01", rate: 1300 }]);
+    expect(loaded.benchmarkDailyCloses).toHaveLength(1);
+    expect(loaded.benchmarkDailyCloses?.[0].ticker).toBe("^GSPC");
+    expect(loaded.dividendTrackingTicker).toBe("AAPL");
+    expect(loaded.isaPortfolio).toHaveLength(1);
+    expect(loaded.customExercises).toHaveLength(1);
+    expect(loaded.customSymbols).toHaveLength(1);
+  });
+});
+
 describe("normalizeImportedData — 순수 함수 (localStorage 부작용 없음)", () => {
   beforeEach(() => {
     window.localStorage.clear();

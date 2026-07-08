@@ -5,10 +5,13 @@ import { isKRWStock, isUSDStock, extractTickerFromText, canonicalTickerForMatch 
 import { parseExDateFromNote, buildDividendNote } from "../utils/dividend";
 import { isDividendEntryLoose } from "../utils/categoryMatch";
 import { parseAmount } from "../utils/parseAmount";
+import { consumeFifoLots, type FifoLot } from "../utils/fifoLots";
 import { getTodayKST } from "../utils/date";
 import { newIdWithPrefix } from "../utils/id";
 import { useFocusTrap } from "../hooks/useFocusTrap";
 import { useModalStackEntry } from "../utils/modalStack";
+import { buildRestoreById, showDeleteUndoToast } from "../utils/undoToast";
+import { useAppStore } from "../store/appStore";
 import { toast } from "react-hot-toast";
 import { ERROR_MESSAGES } from "../constants/errorMessages";
 
@@ -181,8 +184,7 @@ export const StockDetailModal: React.FC<Props> = ({
             t.date < date
         )
         .sort((a, b) => a.date.localeCompare(b.date));
-      type Lot = { qty: number; totalAmount: number };
-      const lots: Lot[] = [];
+      const lots: FifoLot[] = [];
       for (const t of relevant) {
         const appliedFx =
           t.fxRateAtTrade && t.fxRateAtTrade > 0
@@ -195,21 +197,13 @@ export const StockDetailModal: React.FC<Props> = ({
             ? t.totalAmount * appliedFx
             : t.totalAmount;
         if (t.side === "buy") {
-          lots.push({ qty: t.quantity, totalAmount: amtKrW });
+          lots.push({ qty: t.quantity, value: amtKrW });
         } else {
-          let remaining = t.quantity;
-          while (remaining > 0 && lots.length > 0) {
-            const lot = lots[0];
-            const used = Math.min(remaining, lot.qty);
-            const usedCost = (lot.totalAmount / lot.qty) * used;
-            lot.qty -= used;
-            lot.totalAmount -= usedCost;
-            remaining -= used;
-            if (lot.qty <= 0) lots.shift();
-          }
+          consumeFifoLots(lots, t.quantity);
         }
       }
-      return lots.reduce((sum, lot) => sum + lot.totalAmount, 0);
+      // 잔존 lot의 가치 합 = 해당 날짜 시점 보유분의 매입원가
+      return lots.reduce((sum, lot) => sum + lot.value, 0);
     },
     [position, trades, fxRate]
   );
@@ -344,12 +338,17 @@ export const StockDetailModal: React.FC<Props> = ({
     });
   };
 
-  // 배당 삭제
+  // 배당 삭제 — 실행취소(restore-by-id) 토스트로 실수 삭제 복구 가능하게 (컨벤션 #8)
   const handleDeleteDividend = (dividendId: string) => {
-    if (confirm("이 배당 기록을 삭제하시겠습니까?")) {
-      const newLedger = ledger.filter((l) => l.id !== dividendId);
-      onChangeLedger(newLedger);
-    }
+    const index = ledger.findIndex((l) => l.id === dividendId);
+    const deleted = index >= 0 ? ledger[index] : null;
+    if (!deleted) return;
+    if (!confirm("이 배당 기록을 삭제하시겠습니까?")) return;
+    onChangeLedger(ledger.filter((l) => l.id !== dividendId));
+    showDeleteUndoToast(
+      "배당 기록을 삭제했습니다.",
+      buildRestoreById(() => useAppStore.getState().data.ledger, onChangeLedger, deleted, index)
+    );
   };
 
   const handleStartEditDividend = (dividend: LedgerEntry) => {

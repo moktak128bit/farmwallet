@@ -72,6 +72,7 @@
   --danger-light: #fee2e2;
   --warning-light: #fef3c7;
   --accent-light: #e0f2fe;
+  --success-light: #dcfce7;
 }
 
 :root.dark {
@@ -122,6 +123,7 @@
   --danger-light: rgba(248, 113, 113, 0.15);
   --warning-light: rgba(251, 191, 36, 0.15);
   --accent-light: rgba(56, 189, 248, 0.15);
+  --success-light: rgba(52, 211, 153, 0.15);
 }
 
 /* =========================================

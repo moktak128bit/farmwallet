@@ -21,12 +21,17 @@ import { buildForwardDividends } from "../../utils/forwardDividends";
 interface Props {
   ledger: LedgerEntry[];
   fxRate: number | null;
+  /** 현재 보유 수량 (canonical 티커 → 수량). 주면 매도 종목 제외 + 보유비율 스케일 반영 */
+  currentQtyByTicker?: Map<string, number>;
 }
 
-export const DividendCalendarCard: React.FC<Props> = ({ ledger, fxRate }) => {
+export const DividendCalendarCard: React.FC<Props> = ({ ledger, fxRate, currentQtyByTicker }) => {
   const targetAnnualDividend = useAppStore((s) => s.data.investmentGoals?.targetAnnualDividend);
   const today = getTodayKST();
-  const fd = useMemo(() => buildForwardDividends(ledger, today, fxRate), [ledger, today, fxRate]);
+  const fd = useMemo(
+    () => buildForwardDividends(ledger, today, fxRate, { currentQtyByTicker }),
+    [ledger, today, fxRate, currentQtyByTicker]
+  );
 
   const chartData = fd.months.map((m) => ({ label: `${Number(m.month.slice(5, 7))}월`, amount: Math.round(m.amountKRW) }));
   const monthlyAvg = fd.annualTotalKRW / 12;
@@ -49,7 +54,9 @@ export const DividendCalendarCard: React.FC<Props> = ({ ledger, fxRate }) => {
     <div className="card" style={{ marginBottom: 16 }}>
       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline", flexWrap: "wrap", gap: 8 }}>
         <div className="card-title">배당 캘린더 & 목표 — 향후 12개월</div>
-        <div className="hint" style={{ fontSize: 12 }}>최근 12개월 실적을 같은 달에 투영 (보유 유지 가정)</div>
+        <div className="hint" style={{ fontSize: 12 }}>
+          {currentQtyByTicker ? "최근 12개월 실적 × 현재 보유 비율 (매도 종목 제외)" : "최근 12개월 실적을 같은 달에 투영 (보유 유지 가정)"}
+        </div>
       </div>
 
       <div style={{ display: "flex", gap: 24, flexWrap: "wrap", margin: "10px 0 6px" }}>

@@ -80,10 +80,15 @@ interface Props {
   /** 종류 탭은 목록 필터와 공유되므로 부모 소유 */
   ledgerTab: LedgerTab;
   setLedgerTab: React.Dispatch<React.SetStateAction<LedgerTab>>;
-  /** 종류 탭 전환 시 하위 카테고리 필터 초기화용 (부모 setState — 참조 안정) */
+  /**
+   * 리스트 필터 setter (부모 setState — 참조 안정).
+   * 두 용도: ① 종류 탭 전환 시 하위 필터 초기화, ② 입력 폼 버튼이 곧 필터 (사용자 요청).
+   */
   setFilterMainCategory: React.Dispatch<React.SetStateAction<string | undefined>>;
   setFilterSubCategory: React.Dispatch<React.SetStateAction<string | undefined>>;
   setFilterDetailCategory: React.Dispatch<React.SetStateAction<string | undefined>>;
+  setFilterFromAccountId: React.Dispatch<React.SetStateAction<string | undefined>>;
+  setFilterToAccountId: React.Dispatch<React.SetStateAction<string | undefined>>;
   /** 외부(검색 등)에서 복사 요청 — 폼에 적재 후 onCopyComplete 호출 */
   copyRequest?: LedgerEntry | null;
   onCopyComplete?: () => void;
@@ -105,6 +110,8 @@ export const LedgerEntryForm = React.memo(React.forwardRef<LedgerEntryFormHandle
     setFilterMainCategory,
     setFilterSubCategory,
     setFilterDetailCategory,
+    setFilterFromAccountId,
+    setFilterToAccountId,
     copyRequest,
     onCopyComplete,
     onEntryAdded,
@@ -235,6 +242,16 @@ export const LedgerEntryForm = React.memo(React.forwardRef<LedgerEntryFormHandle
       const formatted = formatAmount(e.target.value, allowDec);
       setForm((prev) => ({ ...prev, amount: formatted }));
     }, [formatAmount, effectiveFormKind, form.currency]);
+
+    // 종류 탭 전환·"전체" 시 폼-구동 리스트 필터(대/중/소분류 + 출금/입금계좌)를 일괄 해제.
+    // 종류마다 카테고리·계좌 의미가 달라(수입엔 출금계좌가 없는 등) 남겨두면 빈 목록이 된다.
+    const clearListFilters = useCallback(() => {
+      setFilterMainCategory(undefined);
+      setFilterSubCategory(undefined);
+      setFilterDetailCategory(undefined);
+      setFilterFromAccountId(undefined);
+      setFilterToAccountId(undefined);
+    }, [setFilterMainCategory, setFilterSubCategory, setFilterDetailCategory, setFilterFromAccountId, setFilterToAccountId]);
 
     useEffect(() => {
       // 복사 중일 때는 폼을 초기화하지 않음
@@ -529,10 +546,8 @@ export const LedgerEntryForm = React.memo(React.forwardRef<LedgerEntryFormHandle
       isCopyingRef.current = true;
       setFormKindWhenAll(t.kind); // "전체" 복귀 시 kind 유지 — 종류 토글 버튼과 동일 규칙
       if (nextTab !== ledgerTab) {
-        // kind가 바뀌면 하위 카테고리 필터 초기화 — 종류 토글 버튼과 동일 규칙 (빈 목록 방지)
-        setFilterMainCategory(undefined);
-        setFilterSubCategory(undefined);
-        setFilterDetailCategory(undefined);
+        // kind가 바뀌면 하위 필터 초기화 — 종류 토글 버튼과 동일 규칙 (빈 목록 방지)
+        clearListFilters();
       }
       setLedgerTab(nextTab);
       setTimeout(() => {
@@ -543,7 +558,7 @@ export const LedgerEntryForm = React.memo(React.forwardRef<LedgerEntryFormHandle
         toast(`계좌 "${accountId}"가 없어 해당 항목을 비웠습니다.`);
       }
       toast.success(`템플릿 "${t.name}" 적용됨`);
-    }, [accounts, ledgerTab, setLedgerTab, setFilterMainCategory, setFilterSubCategory, setFilterDetailCategory]);
+    }, [accounts, ledgerTab, setLedgerTab, clearListFilters]);
 
     // 현재 입력을 템플릿으로 저장 — form은 latestFormRef로 읽음 (deps에 form 금지: 칩 memo 계약)
     const saveCurrentAsTemplate = useCallback(() => {
@@ -621,6 +636,50 @@ export const LedgerEntryForm = React.memo(React.forwardRef<LedgerEntryFormHandle
       return () => window.removeEventListener("farmwallet:focus-ledger-form", handler);
     }, [isEditing, resetForm]);
 
+    // ── 입력 폼 버튼 = 리스트 필터 (사용자 요청) ──────────────────
+    // 폼의 카테고리·계좌 버튼을 누르면 폼 값과 함께 아래 목록도 그 값으로 즉시 필터링한다.
+    // 필터 필드는 저장 스키마 매핑과 동일하게 고른다(LedgerPage.filteredLedger와 일치):
+    //   지출:     대분류 버튼 → subCategory필터,  소분류 버튼 → detailCategory필터
+    //   수입/이체: 중분류 버튼 → subCategory필터
+    //   계좌:     출금 → fromAccountId필터,  입금 → toAccountId필터
+    // 같은 버튼을 다시 눌러 해제하면 해당 필터도 함께 해제. 종류 탭(income/expense/…)은 ledgerByTab이 담당.
+    const pickExpenseMain = (c: string) => {
+      const off = form.mainCategory === c;
+      setForm((prev) => ({ ...prev, mainCategory: off ? "" : c, subCategory: "" }));
+      // 지출 대분류만 필터로 매핑(저장 subCategory). 이체의 고정 "이체" 버튼은 필터 의미 없음.
+      if (effectiveFormKind === "expense") {
+        setFilterSubCategory(off ? undefined : c);
+        setFilterDetailCategory(undefined); // 대분류가 바뀌면 하위 소분류 필터는 무효
+      }
+    };
+    // 지출 소분류 / 이체 중분류 공용 — 저장 위치가 kind에 따라 detailCategory/subCategory로 갈림
+    // (submitForm의 저장 매핑과 동일하게 effectiveFormKind 기준 — "전체" 탭에서 입력 kind가 이체인 경우 포함)
+    const pickSecondLevel = (c: string) => {
+      const off = form.subCategory === c;
+      setForm((prev) => ({ ...prev, subCategory: off ? "" : c }));
+      if (effectiveFormKind === "transfer") setFilterSubCategory(off ? undefined : c);
+      else setFilterDetailCategory(off ? undefined : c);
+    };
+    const pickIncomeSub = (c: string) => {
+      const off = form.subCategory === c;
+      setForm((prev) => ({ ...prev, subCategory: off ? "" : c }));
+      setFilterSubCategory(off ? undefined : c);
+    };
+    const pickSavingsSub = (c: string) => {
+      setForm((prev) => ({ ...prev, mainCategory: "재테크", subCategory: c, kind: savingsKindForSub(c) }));
+      setFilterSubCategory(c); // 저장 subCategory와 동일(투자수익/투자손실/배당/이자)
+    };
+    const pickFromAccount = (id: string) => {
+      const off = form.fromAccountId === id;
+      setForm((prev) => ({ ...prev, fromAccountId: off ? "" : id }));
+      setFilterFromAccountId(off ? undefined : id);
+    };
+    const pickToAccount = (id: string) => {
+      const off = form.toAccountId === id;
+      setForm((prev) => ({ ...prev, toAccountId: off ? "" : id }));
+      setFilterToAccountId(off ? undefined : id);
+    };
+
     return (
       <>
       {/* 입력 폼 */}
@@ -635,9 +694,7 @@ export const LedgerEntryForm = React.memo(React.forwardRef<LedgerEntryFormHandle
                 onClick={() => {
                   // 전체: 목록 필터만 풀기 — 입력용 kind는 그대로 (formKindWhenAll 유지)
                   setLedgerTab("all");
-                  setFilterMainCategory(undefined);
-                  setFilterSubCategory(undefined);
-                  setFilterDetailCategory(undefined);
+                  clearListFilters();
                 }}
                 style={{ fontSize: 13, padding: "6px 12px" }}
               >
@@ -653,10 +710,8 @@ export const LedgerEntryForm = React.memo(React.forwardRef<LedgerEntryFormHandle
                     // 입력 kind 선택 = 아래 목록도 해당 탭으로 필터
                     setFormKindWhenAll(k);
                     setLedgerTab(k);
-                    // kind가 바뀌면 하위 카테고리 필터 초기화 (kind별 카테고리가 다르므로)
-                    setFilterMainCategory(undefined);
-                    setFilterSubCategory(undefined);
-                    setFilterDetailCategory(undefined);
+                    // kind가 바뀌면 하위 필터 초기화 (kind별 카테고리·계좌 의미가 다르므로)
+                    clearListFilters();
                   }}
                   style={{ fontSize: 13, padding: "6px 12px" }}
                 >
@@ -670,9 +725,7 @@ export const LedgerEntryForm = React.memo(React.forwardRef<LedgerEntryFormHandle
                 className={ledgerTab === "savingsExpense" ? "primary" : "secondary"}
                 onClick={() => {
                   setLedgerTab("savingsExpense");
-                  setFilterMainCategory(undefined);
-                  setFilterSubCategory(undefined);
-                  setFilterDetailCategory(undefined);
+                  clearListFilters();
                 }}
                 style={{ fontSize: 13, padding: "6px 12px" }}
                 title="재테크 — 배당/이자/매매/저축·투자 이체를 한 화면에 모음 (입력은 본래 위치에서)"
@@ -686,9 +739,7 @@ export const LedgerEntryForm = React.memo(React.forwardRef<LedgerEntryFormHandle
                 className={ledgerTab === "creditPayment" ? "primary" : "secondary"}
                 onClick={() => {
                   setLedgerTab("creditPayment");
-                  setFilterMainCategory(undefined);
-                  setFilterSubCategory(undefined);
-                  setFilterDetailCategory(undefined);
+                  clearListFilters();
                 }}
                 style={{ fontSize: 13, padding: "6px 12px" }}
                 title="신용카드 결제 (은행 → 카드)"
@@ -840,7 +891,7 @@ export const LedgerEntryForm = React.memo(React.forwardRef<LedgerEntryFormHandle
                         key={c}
                         type="button"
                         tabIndex={-1}
-                        onClick={() => setForm((prev) => ({ ...prev, mainCategory: "재테크", subCategory: c, kind: savingsKindForSub(c) }))}
+                        onClick={() => pickSavingsSub(c)}
                         style={{
                           padding: "12px 8px",
                           fontSize: 14,
@@ -887,14 +938,7 @@ export const LedgerEntryForm = React.memo(React.forwardRef<LedgerEntryFormHandle
                         type="button"
                         tabIndex={-1}
                         className={`category-chip ${form.subCategory === c ? "active" : ""}`}
-                        onClick={() => {
-                          // 폼 입력 전용 — 리스트 필터에는 영향 주지 않음 (필터는 별도 바에서)
-                          if (form.subCategory === c) {
-                            setForm((prev) => ({ ...prev, subCategory: "" }));
-                          } else {
-                            setForm((prev) => ({ ...prev, subCategory: c || "" }));
-                          }
-                        }}
+                        onClick={() => pickIncomeSub(c)}
                         style={{
                           fontSize: 15,
                           fontWeight: form.subCategory === c ? 600 : 500,
@@ -962,14 +1006,7 @@ export const LedgerEntryForm = React.memo(React.forwardRef<LedgerEntryFormHandle
                         key={c}
                         type="button"
                         tabIndex={-1}
-                        onClick={() => {
-                          // 폼 입력 전용 — 리스트 필터에는 영향 주지 않음 (필터는 별도 바에서)
-                          if (form.mainCategory === c) {
-                            setForm((prev) => ({ ...prev, mainCategory: "", subCategory: "" }));
-                          } else {
-                            setForm((prev) => ({ ...prev, mainCategory: c || "", subCategory: "" }));
-                          }
-                        }}
+                        onClick={() => pickExpenseMain(c)}
                         style={{
                           padding: "10px 8px",
                           fontSize: 13,
@@ -1012,14 +1049,7 @@ export const LedgerEntryForm = React.memo(React.forwardRef<LedgerEntryFormHandle
                             key={c}
                             type="button"
                             tabIndex={-1}
-                            onClick={() => {
-                              // 폼 입력 전용 — 리스트 필터에는 영향 주지 않음 (필터는 별도 바에서)
-                              if (form.subCategory === c) {
-                                setForm((prev) => ({ ...prev, subCategory: "" }));
-                              } else {
-                                setForm((prev) => ({ ...prev, subCategory: c || "" }));
-                              }
-                            }}
+                            onClick={() => pickSecondLevel(c)}
                             style={{
                               padding: "10px 8px",
                               fontSize: 13,
@@ -1137,13 +1167,7 @@ export const LedgerEntryForm = React.memo(React.forwardRef<LedgerEntryFormHandle
                           key={a.id}
                           type="button"
                           tabIndex={-1}
-                          onClick={() => {
-                            if (form.fromAccountId === a.id) {
-                              setForm((prev) => ({ ...prev, fromAccountId: "" }));
-                            } else {
-                              setForm((prev) => ({ ...prev, fromAccountId: a.id || "" }));
-                            }
-                          }}
+                          onClick={() => pickFromAccount(a.id)}
                           style={{
                             padding: "10px 8px",
                             fontSize: 13,
@@ -1189,13 +1213,7 @@ export const LedgerEntryForm = React.memo(React.forwardRef<LedgerEntryFormHandle
                         key={a.id}
                         type="button"
                         tabIndex={-1}
-                        onClick={() => {
-                          if (form.toAccountId === a.id) {
-                            setForm((prev) => ({ ...prev, toAccountId: "" }));
-                          } else {
-                            setForm((prev) => ({ ...prev, toAccountId: a.id || "" }));
-                          }
-                        }}
+                        onClick={() => pickToAccount(a.id)}
                         style={{
                           padding: "10px 8px",
                           fontSize: 13,

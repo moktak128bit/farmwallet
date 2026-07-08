@@ -9,8 +9,9 @@
  *
  * byMonthSource/byMonthInterest/positions는 부모 memo — 여기서 재계산하지 않는다.
  */
-import React, { useState } from "react";
+import React, { useState, useMemo } from "react";
 import { toast } from "react-hot-toast";
+import { FilterChipRow } from "../../components/ui/FilterChipRow";
 import type { Account, LedgerEntry, PositionRow } from "../../types";
 import { formatKRW, formatShortDate } from "../../utils/formatter";
 import { canonicalTickerForMatch, extractTickerFromText } from "../../utils/finance";
@@ -18,8 +19,9 @@ import { buildDividendNote, parseExDateFromNote } from "../../utils/dividend";
 import { useAppStore } from "../../store/appStore";
 import type { DividendRow, TabType } from "./types";
 
-/** 배당 행 판별 — 월별 표의 인라인 필터와 동일 술어 (이자 행·비배당 행 제외) */
-const isDividendRow = (r: DividendRow) => !r.isInterest && (!!r.ticker || r.source.includes("배당"));
+/** 배당 행 판별 — 부모(DividendsPage)가 categoryMatch 단일소스로 isInterest를 산출하므로 그 반대가 곧 배당.
+ *  (incomeRows는 배당-또는-이자만 포함) */
+const isDividendRow = (r: DividendRow) => !r.isInterest;
 
 // ─── 삭제 토스트 [실행 취소] — "삭제 항목 재삽입" 복원 ───────────────────
 // 풀 스냅샷 undo가 아니다:
@@ -64,6 +66,63 @@ export const IncomeRecordsSection: React.FC<Props> = React.memo(function IncomeR
   // 배당 행이 하나라도 있는지 — 이자 기록만 있으면 배당 탭은 빈 안내를 보여준다
   const hasDividendRows = byMonthSource.some(([, rows]) => rows.some(isDividendRow));
 
+  // ── 레코드 필터 (계좌·종목) — 표시만 좁힘, 데이터·편집과 독립. 센티넬 string|undefined ──
+  const [recordFilterAccountId, setRecordFilterAccountId] = useState<string | undefined>();
+  const [recordFilterTicker, setRecordFilterTicker] = useState<string | undefined>();
+
+  const accountOption = (rows: DividendRow[]) => {
+    const map = new Map<string, { name: string; count: number }>();
+    for (const r of rows) {
+      if (!r.accountId) continue;
+      const cur = map.get(r.accountId);
+      map.set(r.accountId, { name: r.accountName || r.accountId, count: (cur?.count ?? 0) + 1 });
+    }
+    return [...map.entries()].sort((a, b) => b[1].count - a[1].count).map(([id, v]) => ({ value: id, display: v.name, count: v.count }));
+  };
+
+  const dividendFilterOptions = useMemo(() => {
+    const divRows = byMonthSource.flatMap(([, rows]) => rows.filter(isDividendRow));
+    const tickers = new Map<string, number>();
+    for (const r of divRows) if (r.ticker) tickers.set(r.ticker, (tickers.get(r.ticker) ?? 0) + 1);
+    return {
+      accountOptions: accountOption(divRows),
+      tickerOptions: [...tickers.entries()].sort((a, b) => b[1] - a[1]).map(([t, c]) => ({ value: t, display: t, count: c })),
+    };
+  }, [byMonthSource]);
+
+  const interestAccountOptions = useMemo(
+    () => accountOption(byMonthInterest.flatMap(([, rows]) => rows)),
+    [byMonthInterest]
+  );
+
+  const matchesDividendFilter = (r: DividendRow) =>
+    (!recordFilterAccountId || r.accountId === recordFilterAccountId) &&
+    (!recordFilterTicker || r.ticker === recordFilterTicker);
+  const matchesInterestFilter = (r: DividendRow) =>
+    !recordFilterAccountId || r.accountId === recordFilterAccountId;
+
+  const hasDividendFilter = recordFilterAccountId != null || recordFilterTicker != null;
+  const hasInterestFilter = recordFilterAccountId != null;
+  const anyDividendMatch = byMonthSource.some(([, rows]) => rows.some((r) => isDividendRow(r) && matchesDividendFilter(r)));
+  const anyInterestMatch = byMonthInterest.some(([, rows]) => rows.some(matchesInterestFilter));
+
+  // 배당/이자 필터 칩 바 — 옵션이 2개 미만이면 숨김(좁힐 게 없음)
+  const dividendFilterBar = (dividendFilterOptions.accountOptions.length > 1 || dividendFilterOptions.tickerOptions.length > 1) && (
+    <div style={{ display: "flex", flexDirection: "column", gap: 8, marginBottom: 16 }}>
+      {dividendFilterOptions.accountOptions.length > 1 && (
+        <FilterChipRow label="계좌" options={dividendFilterOptions.accountOptions} selected={recordFilterAccountId} onSelect={setRecordFilterAccountId} />
+      )}
+      {dividendFilterOptions.tickerOptions.length > 1 && (
+        <FilterChipRow label="종목" options={dividendFilterOptions.tickerOptions} selected={recordFilterTicker} onSelect={setRecordFilterTicker} />
+      )}
+    </div>
+  );
+  const interestFilterBar = interestAccountOptions.length > 1 && (
+    <div style={{ marginBottom: 16 }}>
+      <FilterChipRow label="계좌" options={interestAccountOptions} selected={recordFilterAccountId} onSelect={setRecordFilterAccountId} />
+    </div>
+  );
+
   return (
     <>
       {tab === "dividend" && (
@@ -74,8 +133,13 @@ export const IncomeRecordsSection: React.FC<Props> = React.memo(function IncomeR
           아직 배당 기록이 없습니다 — 위 배당 입력 폼에서 첫 배당을 기록해 보세요.
         </p>
       ) : (
-        byMonthSource.map(([month, rows]) => {
-          const dividendRowsInMonth = rows.filter(isDividendRow);
+        <>
+        {dividendFilterBar}
+        {hasDividendFilter && !anyDividendMatch && (
+          <p className="hint" style={{ textAlign: "center", padding: 20 }}>선택한 필터에 맞는 배당 내역이 없습니다.</p>
+        )}
+        {byMonthSource.map(([month, rows]) => {
+          const dividendRowsInMonth = rows.filter(isDividendRow).filter(matchesDividendFilter);
           // 이자-전용 월 스킵 — "배당 합계: 0원" 빈 월 헤더 제거
           if (dividendRowsInMonth.length === 0) return null;
           const monthDividendTotal = dividendRowsInMonth.reduce((sum, r) => sum + r.amount, 0);
@@ -622,7 +686,8 @@ export const IncomeRecordsSection: React.FC<Props> = React.memo(function IncomeR
               )}
             </div>
           );
-        })
+        })}
+        </>
       )}
         </>
       )}
@@ -635,7 +700,14 @@ export const IncomeRecordsSection: React.FC<Props> = React.memo(function IncomeR
           아직 이자 기록이 없습니다 — 위 이자 입력 폼에서 첫 이자를 기록해 보세요.
         </p>
       ) : (
-        byMonthInterest.map(([month, rows]) => {
+        <>
+        {interestFilterBar}
+        {hasInterestFilter && !anyInterestMatch && (
+          <p className="hint" style={{ textAlign: "center", padding: 20 }}>선택한 계좌의 이자 내역이 없습니다.</p>
+        )}
+        {byMonthInterest.map(([month, allRows]) => {
+          const rows = allRows.filter(matchesInterestFilter);
+          if (rows.length === 0) return null;
           const monthInterestTotal = rows.reduce((s, r) => s + r.amount, 0);
           return (
             <div key={month} style={{ marginBottom: 32 }}>
@@ -810,7 +882,8 @@ export const IncomeRecordsSection: React.FC<Props> = React.memo(function IncomeR
               </table>
             </div>
           );
-        })
+        })}
+        </>
       )}
         </>
       )}

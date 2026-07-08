@@ -8,6 +8,7 @@
  * 초과수익(alpha) = 포트 수익률 − 지수 수익률. 양수면 시장을 이긴 것.
  */
 import type { TwrPoint } from "./twr";
+import { fxAsOf, type FxPoint } from "./portfolioHistory";
 
 interface BenchmarkClose {
   date: string;
@@ -53,6 +54,10 @@ export function buildBenchmarkComparison(params: {
   twr: TwrPoint[];
   benchmarkCloses: BenchmarkClose[];
   benchmarkLabel: string;
+  /** 벤치마크 지수 통화 (기본 KRW). USD면 fxHistory로 KRW 환산 후 비교. */
+  benchmarkCurrency?: "KRW" | "USD";
+  /** 일별 환율 이력 — USD 지수의 KRW 환산용 */
+  fxHistory?: FxPoint[];
 }): BenchmarkComparison | null {
   const { twr, benchmarkLabel } = params;
   if (twr.length === 0) return null;
@@ -62,11 +67,24 @@ export function buildBenchmarkComparison(params: {
     .sort((a, b) => a.date.localeCompare(b.date));
   if (benchSorted.length === 0) return null;
 
-  // 공통 시작일: 포트와 지수 둘 다 데이터가 있는 첫 TWR 날짜
+  // USD 지수(S&P500/QQQ 등)는 KRW 투자자 관점에서 환율 변동까지 반영해야 공정한 α다.
+  // 지수포인트만 비교하면 원/달러가 5% 움직일 때 α가 통째로 5%p 틀어진다 (KOSPI는 원화라 무관).
+  // 일별 환율로 KRW 환산한 지수와 비교하고, 환율이 없는 날은 환산 불가라 그 점을 생략한다.
+  const isUsd = params.benchmarkCurrency === "USD";
+  const fxHistory = params.fxHistory ?? [];
+  const benchCloseKrwAsOf = (date: string): number | null => {
+    const c = closeAsOf(benchSorted, date);
+    if (c == null) return null;
+    if (!isUsd) return c;
+    const fx = fxAsOf(fxHistory, date);
+    return fx != null && fx > 0 ? c * fx : null;
+  };
+
+  // 공통 시작일: 포트와 (KRW 환산) 지수 둘 다 데이터가 있는 첫 TWR 날짜
   let startIdx = -1;
   let benchBase = 0;
   for (let i = 0; i < twr.length; i += 1) {
-    const b = closeAsOf(benchSorted, twr[i].date);
+    const b = benchCloseKrwAsOf(twr[i].date);
     if (b != null && b > 0) {
       startIdx = i;
       benchBase = b;
@@ -78,7 +96,7 @@ export function buildBenchmarkComparison(params: {
   const portBase = twr[startIdx].returnIndex || 100;
   const series: BenchmarkPoint[] = [];
   for (let i = startIdx; i < twr.length; i += 1) {
-    const b = closeAsOf(benchSorted, twr[i].date);
+    const b = benchCloseKrwAsOf(twr[i].date);
     if (b == null || b <= 0) continue;
     series.push({
       date: twr[i].date,

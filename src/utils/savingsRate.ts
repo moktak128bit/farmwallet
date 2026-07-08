@@ -13,6 +13,7 @@ import type { LedgerEntry } from "../types";
 import { isRealExpenseEntry } from "./category";
 import { computeRealIncome, isIncomeExcludedFromTotals } from "./realIncome";
 import { computeDatePartnerShare } from "./dateAccounting";
+import { toKrwByRate } from "./currency";
 
 /** 이체 기준 저축률 = 재테크 이체(저축+투자) / 수입 × 100. 수입 ≤ 0 이면 null. */
 export function computeTransferSavingsRate(income: number, investing: number): number | null {
@@ -88,7 +89,7 @@ export function computeMonthlyRealFlows(
     if (startMonth && month < startMonth) continue;
     if (endMonth && month > endMonth) continue;
     const amount = Number(l.amount);
-    const toKrw = l.currency === "USD" && fxRate ? amount * fxRate : amount;
+    const toKrw = toKrwByRate(amount, l.currency, fxRate);
     const normalized: LedgerEntry = { ...l, amount: toKrw };
     const bucket = byMonth.get(month);
     if (bucket) bucket.push(normalized);

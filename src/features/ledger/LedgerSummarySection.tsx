@@ -10,6 +10,8 @@ import type { LedgerDisplayRow } from "../../utils/ledgerHelpers";
 import { isCreditPayment, isInvestmentEntry, makeIsSavingsExpense } from "../../utils/category";
 import { EXPENSE_BOX_EXCLUDED_NAMES } from "../dashboard/summaryMath";
 import { useFxRateValue } from "../../context/FxRateContext";
+import { toKrwByRate } from "../../utils/currency";
+import type { ActiveFilterChip } from "./ledgerActiveFilters";
 
 type LedgerFilteredSummary = {
   expenseAmount: number;
@@ -26,38 +28,14 @@ type LedgerFilteredSummary = {
   prevDayCap: number | null;
 };
 
-type SetStr = React.Dispatch<React.SetStateAction<string | undefined>>;
-type SetNum = React.Dispatch<React.SetStateAction<number | undefined>>;
-
 interface Props {
   hasFilter: boolean;
   viewMode: "all" | "monthly";
   selectedMonthsLabel: string;
   summaryTabLabel: string;
   filteredSummary: LedgerFilteredSummary;
-  filterMainCategory?: string;
-  filterSubCategory?: string;
-  filterDetailCategory?: string;
-  filterFromAccountId?: string;
-  filterToAccountId?: string;
-  filterFromAccountName: string | null;
-  filterToAccountName: string | null;
-  setFilterMainCategory: SetStr;
-  setFilterSubCategory: SetStr;
-  setFilterDetailCategory: SetStr;
-  setFilterFromAccountId: SetStr;
-  setFilterToAccountId: SetStr;
-  hasDateFilter: boolean;
-  dateFilter: { startDate?: string; endDate?: string };
-  clearDateFilter: () => void;
-  hasAmountFilter: boolean;
-  filterAmountMin?: number;
-  filterAmountMax?: number;
-  setFilterAmountMin: SetNum;
-  setFilterAmountMax: SetNum;
-  hasTagFilter: boolean;
-  filterTagsInput: string;
-  setFilterTagsInput: React.Dispatch<React.SetStateAction<string>>;
+  /** 활성 필터 칩 (단일 소스 — LedgerFilterCard와 공유, buildLedgerActiveChips) */
+  activeFilterChips: ActiveFilterChip[];
   clearAllFilters: () => void;
   selectedMonths: Set<string>;
   filteredLedger: LedgerDisplayRow[];
@@ -82,29 +60,7 @@ export const LedgerSummarySection: React.FC<Props> = React.memo(function LedgerS
   selectedMonthsLabel,
   summaryTabLabel,
   filteredSummary,
-  filterMainCategory,
-  filterSubCategory,
-  filterDetailCategory,
-  filterFromAccountId,
-  filterToAccountId,
-  filterFromAccountName,
-  filterToAccountName,
-  setFilterMainCategory,
-  setFilterSubCategory,
-  setFilterDetailCategory,
-  setFilterFromAccountId,
-  setFilterToAccountId,
-  hasDateFilter,
-  dateFilter,
-  clearDateFilter,
-  hasAmountFilter,
-  filterAmountMin,
-  filterAmountMax,
-  setFilterAmountMin,
-  setFilterAmountMax,
-  hasTagFilter,
-  filterTagsInput,
-  setFilterTagsInput,
+  activeFilterChips,
   clearAllFilters,
   selectedMonths,
   filteredLedger,
@@ -118,7 +74,7 @@ export const LedgerSummarySection: React.FC<Props> = React.memo(function LedgerS
   const monthSummaries = useMemo(() => {
     if (viewMode !== "monthly" || selectedMonths.size < 2) return null;
     const isSavings = makeIsSavingsExpense(categoryPresets);
-    const toKrw = (l: LedgerDisplayRow) => (l.currency === "USD" && fxRate ? l.amount * fxRate : l.amount);
+    const toKrw = (l: LedgerDisplayRow) => toKrwByRate(l.amount, l.currency, fxRate);
     const sortedMonths = Array.from(selectedMonths).sort();
     return sortedMonths.map((monthKey) => {
       const entries = filteredLedger.filter((l) => l.date && l.date.startsWith(monthKey));
@@ -251,8 +207,8 @@ export const LedgerSummarySection: React.FC<Props> = React.memo(function LedgerS
               </span></span>
             </div>
           )}
-          {/* 필터 칩: 적용된 조건 한 줄에 표시 */}
-          {hasFilter && (
+          {/* 필터 칩: 적용된 조건 한 줄에 표시 — 단일 소스(activeFilterChips) 렌더 */}
+          {hasFilter && activeFilterChips.length > 0 && (
             <div style={{
               display: "flex",
               flexWrap: "wrap",
@@ -262,88 +218,11 @@ export const LedgerSummarySection: React.FC<Props> = React.memo(function LedgerS
               borderTop: "1px solid var(--border)"
             }}>
               <span style={{ fontSize: 11, color: "var(--text-muted)", marginRight: 4 }}>필터:</span>
-              {filterMainCategory && (
-                <button
-                  type="button"
-                  onClick={() => { setFilterMainCategory(undefined); setFilterSubCategory(undefined); setFilterDetailCategory(undefined); }}
-                  style={chipStyle}
-                >
-                  {filterMainCategory} ×
+              {activeFilterChips.map((chip) => (
+                <button key={chip.key} type="button" onClick={chip.clear} style={chipStyle}>
+                  {chip.label} ×
                 </button>
-              )}
-              {filterSubCategory && (
-                <button
-                  type="button"
-                  onClick={() => { setFilterSubCategory(undefined); setFilterDetailCategory(undefined); }}
-                  style={chipStyle}
-                >
-                  {filterSubCategory} ×
-                </button>
-              )}
-              {filterDetailCategory && (
-                <button
-                  type="button"
-                  onClick={() => { setFilterDetailCategory(undefined); }}
-                  style={chipStyle}
-                >
-                  {filterDetailCategory} ×
-                </button>
-              )}
-              {filterFromAccountId && (
-                <button
-                  type="button"
-                  onClick={() => { setFilterFromAccountId(undefined); }}
-                  style={chipStyle}
-                >
-                  출금: {filterFromAccountName} ×
-                </button>
-              )}
-              {filterToAccountId && (
-                <button
-                  type="button"
-                  onClick={() => { setFilterToAccountId(undefined); }}
-                  style={chipStyle}
-                >
-                  입금: {filterToAccountName} ×
-                </button>
-              )}
-              {hasDateFilter && (
-                <button
-                  type="button"
-                  onClick={clearDateFilter}
-                  style={chipStyle}
-                >
-                  {dateFilter.startDate && dateFilter.endDate
-                    ? `${dateFilter.startDate} ~ ${dateFilter.endDate}`
-                    : dateFilter.startDate
-                      ? `${dateFilter.startDate} ~`
-                      : `~ ${dateFilter.endDate}`} ×
-                </button>
-              )}
-              {hasAmountFilter && (
-                <button
-                  type="button"
-                  onClick={() => { setFilterAmountMin(undefined); setFilterAmountMax(undefined); }}
-                  style={chipStyle}
-                >
-                  금액: {filterAmountMin != null && filterAmountMax != null
-                    ? `${formatKRW(filterAmountMin)} ~ ${formatKRW(filterAmountMax)}`
-                    : filterAmountMin != null
-                      ? `${formatKRW(filterAmountMin)} 이상`
-                      : filterAmountMax != null
-                        ? `${formatKRW(filterAmountMax)} 이하`
-                        : ""} ×
-                </button>
-              )}
-              {hasTagFilter && (
-                <button
-                  type="button"
-                  onClick={() => setFilterTagsInput("")}
-                  style={chipStyle}
-                >
-                  태그: {filterTagsInput.trim()} ×
-                </button>
-              )}
+              ))}
               <button
                 type="button"
                 onClick={clearAllFilters}

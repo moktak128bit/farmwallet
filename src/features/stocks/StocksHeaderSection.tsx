@@ -21,6 +21,8 @@ interface Props {
   onLoadTickers: () => Promise<void>;
   /** 전체 매매 기록 CSV 내보내기 (부모 useCallback) */
   onExportTradesCsv: () => void;
+  /** 종목 조회 모달 열기 — 미보유 종목 주가·배당 조회 (부모 useCallback) */
+  onOpenLookup: () => void;
 }
 
 export const StocksHeaderSection: React.FC<Props> = React.memo(function StocksHeaderSection({
@@ -32,7 +34,8 @@ export const StocksHeaderSection: React.FC<Props> = React.memo(function StocksHe
   onRefreshHoldings,
   onRefreshFull,
   onLoadTickers,
-  onExportTradesCsv
+  onExportTradesCsv,
+  onOpenLookup
 }) {
   return (
     <div className="section-header">
@@ -56,6 +59,14 @@ export const StocksHeaderSection: React.FC<Props> = React.memo(function StocksHe
           </span>
         )}
 
+        <button
+          type="button"
+          className="secondary"
+          onClick={onOpenLookup}
+          title="보유 여부와 무관하게 종목의 과거 주가·배당 이력 조회"
+        >
+          종목 조회
+        </button>
         <button
           type="button"
           className="secondary"

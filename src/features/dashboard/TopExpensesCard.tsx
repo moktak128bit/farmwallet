@@ -7,6 +7,7 @@ import React, { useMemo } from "react";
 import type { Account, CategoryPresets, LedgerEntry } from "../../types";
 import { formatKRW } from "../../utils/formatter";
 import { isSavingsExpenseEntry } from "../../utils/category";
+import { toKrwByRate } from "../../utils/currency";
 
 interface Props {
   currentMonth: string;
@@ -24,8 +25,7 @@ export const TopExpensesCard: React.FC<Props> = React.memo(function TopExpensesC
   fxRate,
 }) {
   const topCategoriesThisMonth = useMemo(() => {
-    const toKrw = (entry: LedgerEntry) =>
-      entry.currency === "USD" && fxRate ? entry.amount * fxRate : entry.amount;
+    const toKrw = (entry: LedgerEntry) => toKrwByRate(entry.amount, entry.currency, fxRate);
     const catMap = new Map<string, number>();
     ledger.forEach((entry) => {
       if (!entry.date?.startsWith(currentMonth)) return;

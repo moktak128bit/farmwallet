@@ -54,8 +54,8 @@ const SetDetailRowInner: React.FC<Props> = ({
     <div style={{
       display: "flex", flexDirection: "column", gap: 6,
       padding: "10px 10px", borderRadius: 10,
-      background: set.done ? "rgba(16,185,129,0.14)" : "var(--surface)",
-      border: `1px solid ${set.done ? "#10b98160" : "var(--border)"}`,
+      background: set.done ? "var(--success-light)" : "var(--surface)",
+      border: `1px solid ${set.done ? "var(--success)" : "var(--border)"}`,
     }}>
       <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
         <button
@@ -64,8 +64,8 @@ const SetDetailRowInner: React.FC<Props> = ({
           aria-label={set.done ? "완료 해제" : "완료로 표시"}
           style={{
             width: 44, height: 44, borderRadius: 10,
-            border: `2px solid ${set.done ? "#10b981" : "var(--border)"}`,
-            background: set.done ? "#10b981" : "var(--surface)",
+            border: `2px solid ${set.done ? "var(--success)" : "var(--border)"}`,
+            background: set.done ? "var(--success)" : "var(--surface)",
             color: set.done ? "#fff" : "transparent",
             cursor: "pointer", fontSize: 22, fontWeight: 900,
             display: "flex", alignItems: "center", justifyContent: "center",
@@ -83,8 +83,8 @@ const SetDetailRowInner: React.FC<Props> = ({
             <div style={{ display: "flex", flexDirection: "column", gap: 6, flex: 1, minWidth: 240 }}>
               <div style={{ display: "flex", alignItems: "center", gap: 6, flexWrap: "wrap" }}>
                 <span style={{
-                  fontSize: 11, fontWeight: 700, color: "#dc2626",
-                  padding: "2px 8px", borderRadius: 4, background: "rgba(220,38,38,0.12)",
+                  fontSize: 11, fontWeight: 700, color: "var(--danger)",
+                  padding: "2px 8px", borderRadius: 4, background: "var(--danger-light)",
                   minWidth: 24, textAlign: "center",
                 }}>강</span>
                 <Stepper value={set.intervalStrongSpeed ?? 0} unit="km/h" step={0.5} min={0} max={30}
@@ -94,8 +94,8 @@ const SetDetailRowInner: React.FC<Props> = ({
               </div>
               <div style={{ display: "flex", alignItems: "center", gap: 6, flexWrap: "wrap" }}>
                 <span style={{
-                  fontSize: 11, fontWeight: 700, color: "#2563eb",
-                  padding: "2px 8px", borderRadius: 4, background: "rgba(37,99,235,0.12)",
+                  fontSize: 11, fontWeight: 700, color: "var(--accent)",
+                  padding: "2px 8px", borderRadius: 4, background: "var(--accent-light)",
                   minWidth: 24, textAlign: "center",
                 }}>약</span>
                 <Stepper value={set.intervalWeakSpeed ?? 0} unit="km/h" step={0.5} min={0} max={30}
@@ -170,10 +170,10 @@ const SetDetailRowInner: React.FC<Props> = ({
       {showCountdown && (
         <div style={{
           display: "flex", alignItems: "center", gap: 8, padding: "4px 10px", borderRadius: 8,
-          background: isRestOver ? "rgba(16,185,129,0.14)" : "rgba(59,130,246,0.10)",
-          border: `1px solid ${isRestOver ? "#10b98160" : "rgba(59,130,246,0.3)"}`,
+          background: isRestOver ? "var(--success-light)" : "var(--accent-light)",
+          border: `1px solid ${isRestOver ? "var(--success)" : "var(--accent)"}`,
           fontSize: 12, fontWeight: 700,
-          color: isRestOver ? "#10b981" : "#3b82f6",
+          color: isRestOver ? "var(--success)" : "var(--accent)",
         }}>
           {isRestOver
             ? `🔔 휴식 끝 (${restTargetSec}s 경과 — 다음 세트 시작)`
@@ -189,7 +189,7 @@ const SetDetailRowInner: React.FC<Props> = ({
             }}
             style={{
               marginLeft: "auto", padding: "2px 8px", fontSize: 11, fontWeight: 600,
-              background: "transparent", border: `1px solid ${isRestOver ? "#10b98180" : "#3b82f680"}`,
+              background: "transparent", border: `1px solid ${isRestOver ? "var(--success)" : "var(--accent)"}`,
               borderRadius: 4, cursor: "pointer", color: "inherit",
             }}
             title="휴식 시간 변경"
@@ -202,9 +202,9 @@ const SetDetailRowInner: React.FC<Props> = ({
       <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
         {set.done && completedClock && (
           <span style={{
-            fontSize: 11, fontWeight: 700, color: "#10b981",
+            fontSize: 11, fontWeight: 700, color: "var(--success)",
             padding: "2px 8px", borderRadius: 6,
-            background: "rgba(16,185,129,0.10)",
+            background: "var(--success-light)",
           }}>
             {completedClock}{gapLabel ? ` (+${gapLabel})` : ""}
           </span>

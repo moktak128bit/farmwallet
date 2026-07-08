@@ -66,9 +66,11 @@ export const IncomeSummarySection: React.FC<Props> = React.memo(function IncomeS
       </div>
 
       {tab === "dividend" && byTicker.length > 0 && (
-        <>
-          <h3>종목별 누적 배당</h3>
-          <table className="data-table compact">
+        <details style={{ marginBottom: 16 }}>
+          <summary style={{ cursor: "pointer", fontSize: 20, fontWeight: 700, color: "var(--text)" }}>
+            종목별 누적 배당
+          </summary>
+          <table className="data-table compact" style={{ marginTop: 12 }}>
             <thead>
               <tr>
                 <th>티커</th>
@@ -90,13 +92,15 @@ export const IncomeSummarySection: React.FC<Props> = React.memo(function IncomeS
               ))}
             </tbody>
           </table>
-        </>
+        </details>
       )}
 
       {tab === "dividend" && (
-        <>
-          <h3>월별 배당 합계</h3>
-          <table className="data-table compact">
+        <details style={{ marginBottom: 16 }}>
+          <summary style={{ cursor: "pointer", fontSize: 20, fontWeight: 700, color: "var(--text)" }}>
+            월별 배당 합계
+          </summary>
+          <table className="data-table compact" style={{ marginTop: 12 }}>
             <thead>
               <tr>
                 <th>월</th>
@@ -121,13 +125,15 @@ export const IncomeSummarySection: React.FC<Props> = React.memo(function IncomeS
               )}
             </tbody>
           </table>
-        </>
+        </details>
       )}
 
       {tab === "interest" && (
-        <>
-          <h3>월별 이자 합계</h3>
-          <table className="data-table compact">
+        <details style={{ marginBottom: 16 }}>
+          <summary style={{ cursor: "pointer", fontSize: 20, fontWeight: 700, color: "var(--text)" }}>
+            월별 이자 합계
+          </summary>
+          <table className="data-table compact" style={{ marginTop: 12 }}>
             <thead>
               <tr>
                 <th>월</th>
@@ -152,7 +158,7 @@ export const IncomeSummarySection: React.FC<Props> = React.memo(function IncomeS
               )}
             </tbody>
           </table>
-        </>
+        </details>
       )}
     </>
   );

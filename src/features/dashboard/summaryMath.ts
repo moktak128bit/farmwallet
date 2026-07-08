@@ -8,10 +8,11 @@ import type { CategoryPresets, LedgerEntry } from "../../types";
 import { isCreditPayment, isSavingsExpenseEntry, isInvestmentPnlEntry, isInvestmentLossEntry } from "../../utils/category";
 import { INVESTMENT_TRANSFER_SUBS } from "../../utils/categoryUtils";
 import { isIncomeExcludedFromTotals } from "../../utils/realIncome";
+import { toKrwByRate } from "../../utils/currency";
 
-/** USD 항목은 환율로 원화 환산. 환율이 없으면 액면 그대로 (대시보드 공통 정책) */
+/** USD 항목은 환율로 원화 환산 — 단일 소스 toKrwByRate에 위임 (환율 없으면 액면 그대로, 대시보드 공통 정책) */
 export const toKrwAmount = (entry: LedgerEntry, fxRate: number | null): number =>
-  entry.currency === "USD" && fxRate ? entry.amount * fxRate : entry.amount;
+  toKrwByRate(entry.amount, entry.currency, fxRate);
 
 /**
  * '지출 박스'에서 "제외 후" 금액을 함께 보여줄 분류명(고정).

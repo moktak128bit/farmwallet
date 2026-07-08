@@ -6,8 +6,10 @@
 import React from "react";
 import type { Account, LedgerEntry } from "../../types";
 import { LedgerFilterBar } from "./LedgerFilterBar";
+import type { ActiveFilterChip } from "./ledgerActiveFilters";
 
 type SetStr = React.Dispatch<React.SetStateAction<string | undefined>>;
+type SetNum = React.Dispatch<React.SetStateAction<number | undefined>>;
 
 interface Props {
   ledger: LedgerEntry[];
@@ -28,11 +30,16 @@ interface Props {
   setFilterDetailCategory: SetStr;
   setFilterFromAccountId: SetStr;
   setFilterToAccountId: SetStr;
-  filterAccountId: string | null;
   filterAmountMin?: number;
   filterAmountMax?: number;
+  setFilterAmountMin: SetNum;
+  setFilterAmountMax: SetNum;
   filterTagsInput: string;
+  setFilterTagsInput: React.Dispatch<React.SetStateAction<string>>;
   dateFilter: { startDate?: string; endDate?: string };
+  setDateFilter: React.Dispatch<React.SetStateAction<{ startDate?: string; endDate?: string }>>;
+  /** 활성 필터 칩 (단일 소스 — LedgerSummarySection과 공유) */
+  activeFilterChips: ActiveFilterChip[];
   viewMode: "all" | "monthly";
   setViewMode: React.Dispatch<React.SetStateAction<"all" | "monthly">>;
   clearAllFilters: () => void;
@@ -56,30 +63,30 @@ export const LedgerFilterCard: React.FC<Props> = React.memo(function LedgerFilte
   setFilterDetailCategory,
   setFilterFromAccountId,
   setFilterToAccountId,
-  filterAccountId,
   filterAmountMin,
   filterAmountMax,
+  setFilterAmountMin,
+  setFilterAmountMax,
   filterTagsInput,
+  setFilterTagsInput,
   dateFilter,
+  setDateFilter,
+  activeFilterChips,
   viewMode,
   setViewMode,
   clearAllFilters
 }) {
-  // 활성 필터 카운트 계산 — 사용자가 적용한 좁히기 개수 (월별/종류 탭은 별도)
-  const activeChips: string[] = [];
-  if (searchQuery) activeChips.push(`"${searchQuery}"`);
-  if (filterMainCategory) activeChips.push(filterMainCategory);
-  if (filterSubCategory) activeChips.push(filterSubCategory);
-  if (filterDetailCategory) activeChips.push(filterDetailCategory);
-  if (filterFromAccountId) activeChips.push(`출금:${accounts.find(a => a.id === filterFromAccountId)?.name ?? filterFromAccountId}`);
-  if (filterToAccountId) activeChips.push(`입금:${accounts.find(a => a.id === filterToAccountId)?.name ?? filterToAccountId}`);
-  if (filterAccountId) activeChips.push(accounts.find(a => a.id === filterAccountId)?.name ?? filterAccountId);
-  if (filterAmountMin != null) activeChips.push(`≥${filterAmountMin.toLocaleString()}`);
-  if (filterAmountMax != null) activeChips.push(`≤${filterAmountMax.toLocaleString()}`);
-  if (filterTagsInput) activeChips.push(`#${filterTagsInput}`);
-  if (dateFilter.startDate || dateFilter.endDate) activeChips.push(`${dateFilter.startDate ?? "?"}~${dateFilter.endDate ?? "?"}`);
-  const activeCount = activeChips.length;
-  const summaryText = activeCount === 0 ? "" : activeChips.slice(0, 3).join(" · ") + (activeChips.length > 3 ? ` 외 ${activeChips.length - 3}` : "");
+  // 활성 필터 카운트·요약은 단일 소스(activeFilterChips)에서 — LedgerSummarySection 칩과 항상 일치.
+  const activeCount = activeFilterChips.length;
+  const summaryText = activeCount === 0 ? "" : activeFilterChips.slice(0, 3).map((c) => c.label).join(" · ") + (activeCount > 3 ? ` 외 ${activeCount - 3}` : "");
+
+  // 금액 입력 파싱 — 빈 문자열이면 undefined(필터 해제), 숫자면 음수 방지 후 정수.
+  const onAmountChange = (setter: SetNum) => (e: React.ChangeEvent<HTMLInputElement>) => {
+    const raw = e.target.value.replace(/[,\s]/g, "");
+    if (raw === "") { setter(undefined); return; }
+    const n = Number(raw);
+    setter(Number.isFinite(n) ? Math.max(0, Math.trunc(n)) : undefined);
+  };
 
   return (
     <div className="card" style={{ padding: showFilters ? 16 : 10, marginBottom: 16 }}>
@@ -125,7 +132,7 @@ export const LedgerFilterCard: React.FC<Props> = React.memo(function LedgerFilte
 
         {/* 접힌 상태에서 활성 필터 요약 칩 */}
         {!showFilters && activeCount > 0 && (
-          <span style={{ flex: 1, fontSize: 12, color: "var(--text-muted)", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", minWidth: 0 }} title={activeChips.join(" · ")}>
+          <span style={{ flex: 1, fontSize: 12, color: "var(--text-muted)", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", minWidth: 0 }} title={activeFilterChips.map((c) => c.label).join(" · ")}>
             {summaryText}
           </span>
         )}
@@ -231,8 +238,89 @@ export const LedgerFilterCard: React.FC<Props> = React.memo(function LedgerFilte
               </button>
             )}
           </div>
+
+          {/* 상세 필터: 금액 범위 / 날짜 범위 / 태그 — 입력 비우면 해당 필터 해제 */}
+          <div style={{ display: "flex", flexWrap: "wrap", gap: 12, marginTop: 12 }}>
+            <label style={detailFieldStyle}>
+              <span style={detailLabelStyle}>금액(원)</span>
+              <span style={{ display: "inline-flex", alignItems: "center", gap: 4 }}>
+                <input
+                  type="text"
+                  inputMode="numeric"
+                  value={filterAmountMin != null ? filterAmountMin.toLocaleString() : ""}
+                  onChange={onAmountChange(setFilterAmountMin)}
+                  placeholder="최소"
+                  style={{ ...detailInputStyle, width: 96 }}
+                />
+                <span style={{ color: "var(--text-muted)" }}>~</span>
+                <input
+                  type="text"
+                  inputMode="numeric"
+                  value={filterAmountMax != null ? filterAmountMax.toLocaleString() : ""}
+                  onChange={onAmountChange(setFilterAmountMax)}
+                  placeholder="최대"
+                  style={{ ...detailInputStyle, width: 96 }}
+                />
+              </span>
+            </label>
+
+            <label style={detailFieldStyle}>
+              <span style={detailLabelStyle}>기간</span>
+              <span style={{ display: "inline-flex", alignItems: "center", gap: 4 }}>
+                <input
+                  type="date"
+                  value={dateFilter.startDate ?? ""}
+                  max={dateFilter.endDate || undefined}
+                  onChange={(e) => setDateFilter((d) => ({ ...d, startDate: e.target.value || undefined }))}
+                  style={detailInputStyle}
+                />
+                <span style={{ color: "var(--text-muted)" }}>~</span>
+                <input
+                  type="date"
+                  value={dateFilter.endDate ?? ""}
+                  min={dateFilter.startDate || undefined}
+                  onChange={(e) => setDateFilter((d) => ({ ...d, endDate: e.target.value || undefined }))}
+                  style={detailInputStyle}
+                />
+              </span>
+            </label>
+
+            <label style={{ ...detailFieldStyle, flex: 1, minWidth: 160 }}>
+              <span style={detailLabelStyle}>태그</span>
+              <input
+                type="text"
+                value={filterTagsInput}
+                onChange={(e) => setFilterTagsInput(e.target.value)}
+                placeholder="쉼표로 구분 (모두 포함)"
+                style={{ ...detailInputStyle, width: "100%", minWidth: 0 }}
+              />
+            </label>
+          </div>
         </div>
       )}
     </div>
   );
 });
+
+const detailFieldStyle: React.CSSProperties = {
+  display: "inline-flex",
+  alignItems: "center",
+  gap: 8,
+};
+
+const detailLabelStyle: React.CSSProperties = {
+  fontSize: 11,
+  color: "var(--text-muted)",
+  whiteSpace: "nowrap",
+};
+
+const detailInputStyle: React.CSSProperties = {
+  padding: "7px 10px",
+  fontSize: 13,
+  borderRadius: 8,
+  border: "1px solid var(--border)",
+  background: "var(--surface)",
+  color: "var(--text)",
+  boxSizing: "border-box",
+  outline: "none",
+};

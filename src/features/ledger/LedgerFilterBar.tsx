@@ -1,5 +1,7 @@
 import React, { useMemo } from "react";
 import type { Account, LedgerEntry } from "../../types";
+import { isInvestmentKind } from "../../utils/category";
+import { FilterChipRow } from "../../components/ui/FilterChipRow";
 
 interface LedgerFilterBarProps {
   ledger: LedgerEntry[];
@@ -18,68 +20,12 @@ interface LedgerFilterBarProps {
   setFilterToAccountId: (v: string | undefined) => void;
 }
 
-interface ChipRowProps {
-  label: string;
-  options: { value: string; display: string }[];
-  selected: string | undefined;
-  onSelect: (v: string | undefined) => void;
-}
-
-const chipBaseStyle: React.CSSProperties = {
-  padding: "6px 12px",
-  fontSize: 12,
-  border: "1px solid var(--border)",
-  borderRadius: 16,
-  background: "var(--surface)",
-  color: "var(--text)",
-  cursor: "pointer",
-  transition: "all 0.15s",
-  whiteSpace: "nowrap",
-};
-
-const chipActiveStyle: React.CSSProperties = {
-  ...chipBaseStyle,
-  fontWeight: 600,
-  background: "var(--primary-light)",
-  color: "var(--primary)",
-  border: "1px solid var(--primary)",
-};
-
 /**
- * "전체"는 명시적 buttons[0]. 활성 칩 클릭 시 토글로 해제 (= "전체" 활성).
- * 옵션 0개면 row 자체 hidden (cascading 상위가 잠궜을 때).
+ * 대분류가 "재테크"일 때는 category 일치가 아니라 매처(isInvestmentKind)로 판정해야
+ * LedgerPage.filteredLedger의 필터링과 옵션이 일치한다. transfer/income 등 흩어진 형태 포함.
  */
-const ChipRow: React.FC<ChipRowProps> = ({ label, options, selected, onSelect }) => {
-  if (options.length === 0) return null;
-  const isAll = !selected;
-  return (
-    <div style={{ display: "flex", alignItems: "flex-start", gap: 8, flexWrap: "wrap" }}>
-      <span style={{ fontSize: 11, color: "var(--text-muted)", minWidth: 56, paddingTop: 7 }}>{label}</span>
-      <div style={{ display: "flex", flexWrap: "wrap", gap: 6, flex: 1, minWidth: 0 }}>
-        <button
-          type="button"
-          onClick={() => onSelect(undefined)}
-          style={isAll ? chipActiveStyle : chipBaseStyle}
-        >
-          전체
-        </button>
-        {options.map((opt) => {
-          const active = selected === opt.value;
-          return (
-            <button
-              key={opt.value}
-              type="button"
-              onClick={() => onSelect(active ? undefined : opt.value)}
-              style={active ? chipActiveStyle : chipBaseStyle}
-            >
-              {opt.display}
-            </button>
-          );
-        })}
-      </div>
-    </div>
-  );
-};
+const matchesMain = (l: LedgerEntry, main: string): boolean =>
+  main === "재테크" ? isInvestmentKind(l) : l.category === main;
 
 /**
  * 가계부 리스트 전용 필터 바 — 폼과 완전히 독립.
@@ -102,17 +48,23 @@ export const LedgerFilterBar: React.FC<LedgerFilterBarProps> = ({
   setFilterFromAccountId,
   setFilterToAccountId,
 }) => {
-  // 카테고리 옵션은 현재 탭(tabLedger) 기준 — 탭에 없는 카테고리는 노출하지 않음
+  // 카테고리 옵션은 현재 탭(tabLedger) 기준 — 탭에 없는 카테고리는 노출하지 않음.
+  // "재테크"는 distinct category만으론 누락(transfer 저축/투자이체·income 투자수익) → 매처와 동일 정의로 합성 옵션 주입.
   const mainOptions = useMemo(() => {
     const set = new Set<string>();
-    for (const l of tabLedger) if (l.category) set.add(l.category);
+    let hasInvestment = false;
+    for (const l of tabLedger) {
+      if (l.category) set.add(l.category);
+      if (!hasInvestment && isInvestmentKind(l)) hasInvestment = true;
+    }
+    if (hasInvestment) set.add("재테크");
     return [...set].sort((a, b) => a.localeCompare(b, "ko")).map((v) => ({ value: v, display: v }));
   }, [tabLedger]);
 
   const subOptions = useMemo(() => {
     const set = new Set<string>();
     for (const l of tabLedger) {
-      if (filterMainCategory && l.category !== filterMainCategory) continue;
+      if (filterMainCategory && !matchesMain(l, filterMainCategory)) continue;
       if (l.subCategory) set.add(l.subCategory);
     }
     return [...set].sort((a, b) => a.localeCompare(b, "ko")).map((v) => ({ value: v, display: v }));
@@ -121,7 +73,7 @@ export const LedgerFilterBar: React.FC<LedgerFilterBarProps> = ({
   const detailOptions = useMemo(() => {
     const set = new Set<string>();
     for (const l of tabLedger) {
-      if (filterMainCategory && l.category !== filterMainCategory) continue;
+      if (filterMainCategory && !matchesMain(l, filterMainCategory)) continue;
       if (filterSubCategory && l.subCategory !== filterSubCategory) continue;
       if (l.detailCategory) set.add(l.detailCategory);
     }
@@ -169,11 +121,11 @@ export const LedgerFilterBar: React.FC<LedgerFilterBarProps> = ({
         marginBottom: 10,
       }}
     >
-      <ChipRow label="대분류" options={mainOptions} selected={filterMainCategory} onSelect={onChangeMain} />
-      <ChipRow label="중분류" options={subOptions} selected={filterSubCategory} onSelect={onChangeSub} />
-      <ChipRow label="소분류" options={detailOptions} selected={filterDetailCategory} onSelect={setFilterDetailCategory} />
-      <ChipRow label="출금계좌" options={accountOptions} selected={filterFromAccountId} onSelect={setFilterFromAccountId} />
-      <ChipRow label="입금계좌" options={accountOptions} selected={filterToAccountId} onSelect={setFilterToAccountId} />
+      <FilterChipRow label="대분류" options={mainOptions} selected={filterMainCategory} onSelect={onChangeMain} />
+      <FilterChipRow label="중분류" options={subOptions} selected={filterSubCategory} onSelect={onChangeSub} />
+      <FilterChipRow label="소분류" options={detailOptions} selected={filterDetailCategory} onSelect={setFilterDetailCategory} />
+      <FilterChipRow label="출금계좌" options={accountOptions} selected={filterFromAccountId} onSelect={setFilterFromAccountId} />
+      <FilterChipRow label="입금계좌" options={accountOptions} selected={filterToAccountId} onSelect={setFilterToAccountId} />
     </div>
   );
 };

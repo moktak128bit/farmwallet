@@ -18,7 +18,8 @@ import type { Account, HistoricalDailyClose, LedgerEntry, StockPrice, StockTrade
 import { computePositions } from "../calculations";
 import { formatKRW } from "../utils/formatter";
 import { isKRWStock, isUSDStock, canonicalTickerForMatch, extractTickerFromText } from "../utils/finance";
-import { isDividendEntryLoose, isInterestEntryLoose } from "../utils/categoryMatch";
+import { isDividendEntryLoose, isInterestEntryLoose, isInterestEntry } from "../utils/categoryMatch";
+import { toKrwByRate } from "../utils/currency";
 import { parseExDateFromNote, parseQuantityFromNote } from "../utils/dividend";
 import { getKrNames } from "../storage";
 import { STORAGE_KEYS } from "../constants/config";
@@ -78,6 +79,16 @@ export const DividendsView: React.FC<Props> = ({ accounts, ledger, trades, price
   const positions = useMemo(() => {
     return computePositions(trades, adjustedPrices, accounts, { fxRate: fxRate ?? undefined });
   }, [trades, adjustedPrices, accounts, fxRate]);
+
+  // 선행 배당 보유 반영용 — canonical 티커 → 현재 보유 수량 합계
+  const currentQtyByTicker = useMemo(() => {
+    const m = new Map<string, number>();
+    for (const p of positions) {
+      const k = canonicalTickerForMatch(p.ticker);
+      m.set(k, (m.get(k) ?? 0) + p.quantity);
+    }
+    return m;
+  }, [positions]);
 
   // canonical 티커별 최신 시세 (updatedAt 기준) — 평가/표시 일관성
   const latestPriceByCanonicalTicker = useMemo(() => {
@@ -216,14 +227,17 @@ export const DividendsView: React.FC<Props> = ({ accounts, ledger, trades, price
         quantityAtDate = ticker && l.date ? getQuantityAtDate(ticker, l.date, accountIdForPosition) : undefined;
       }
       const quantity = quantityAtDate;
-      // USD 배당/이자는 원화로 환산해야 합계·수익률(KRW 원가 대비)이 일관 (불변식 #5). 환율 미로드 시 raw 폴백.
-      const amount = l.currency === "USD" && fxRate ? l.amount * fxRate : l.amount;
+      // USD 배당/이자는 원화로 환산해야 합계·수익률(KRW 원가 대비)이 일관 (불변식 #5). 단일 소스 toKrwByRate.
+      const amount = toKrwByRate(l.amount, l.currency, fxRate);
       const dividendPerShare = quantity != null && quantity > 0 ? amount / quantity : undefined;
       const dateForCost = parseExDateFromNote(l.note) || l.date || "";
       const costBasis = ticker && dateForCost ? getCostBasisAtDate(ticker, dateForCost, accountIdForPosition) : 0;
       const yieldRate =
         amount > 0 && costBasis > 0 ? amount / costBasis : undefined;
-      const isInterest = (l.category ?? "") === "이자" || ((desc.includes("이자") || (l.category ?? "").includes("이자")) && !ticker);
+      // 배당/이자 분리는 categoryMatch 단일소스로 — isInterestEntry는 subCategory도 검사하므로
+      // 현행 스키마(category="수입", subCategory="이자")의 이자가 배당표로 새지 않는다.
+      // 정확 매칭 우선, 그 외 description 기반 이자는 배당(loose)이 아닐 때만 이자로 본다.
+      const isInterest = isInterestEntry(l) || (isInterestEntryLoose(l) && !isDividendEntryLoose(l));
       rows.push({
         id: l.id,
         month,
@@ -255,8 +269,9 @@ export const DividendsView: React.FC<Props> = ({ accounts, ledger, trades, price
   }, [incomeRows]);
 
   // 배당과 이자 분리 (ledger category/description 기준 이자면 배당 테이블에 노출 안 함)
+  // incomeRows는 이미 배당-또는-이자만 포함(isDividend 필터) → isInterest로만 분기하면 충분.
   const dividendRows = useMemo(() => {
-    return incomeRows.filter(r => !r.isInterest && (r.source.includes("배당") || !!r.ticker));
+    return incomeRows.filter(r => !r.isInterest);
   }, [incomeRows]);
 
   const interestRows = useMemo(() => {
@@ -356,7 +371,7 @@ export const DividendsView: React.FC<Props> = ({ accounts, ledger, trades, price
       <ComprehensiveTaxCard ledger={ledger} fxRate={fxRate} />
 
       {/* 배당 캘린더 & 목표 (C1·C2) — 향후 12개월 예상 배당 + 목표 진행률 */}
-      <DividendCalendarCard ledger={ledger} fxRate={fxRate} />
+      <DividendCalendarCard ledger={ledger} fxRate={fxRate} currentQtyByTicker={currentQtyByTicker} />
 
       {/* 단일 탭 — 선택한 쪽의 입력 폼·표·차트만 노출 */}
       <div style={{ display: "flex", gap: 8, marginBottom: 16 }}>

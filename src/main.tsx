@@ -25,11 +25,28 @@ async function restoreLatestBackup(): Promise<void> {
   if (latest.source === "server" && latest.fileName) {
     backupData = await storage.loadServerBackupData(latest.fileName);
   } else {
-    backupData = storage.loadBackupData(latest.id);
+    // 로컬 백업은 SHA-256 무결성 검증 — 손상 감지 시 사용자 확인 후에만 진행.
+    // (에러 화면의 최후 복원 경로가 손상 백업을 무경고로 정식 데이터로 승격시키던 유실 경로 차단)
+    const verified = await storage.loadBackupDataVerified(latest.id);
+    if (verified.status === "mismatch") {
+      const proceed = window.confirm(
+        "최신 백업의 무결성 검증에 실패했습니다(손상 가능성).\n그래도 이 백업으로 복원하시겠습니까? 취소하면 복원을 중단합니다."
+      );
+      if (!proceed) throw new Error("백업 무결성 검증 실패 — 복원을 취소했습니다.");
+    }
+    backupData = verified.data;
   }
 
   if (!backupData) {
     throw new Error("최신 백업 데이터를 읽을 수 없습니다.");
+  }
+
+  // 덮어쓰기 전 현재 상태를 안전 스냅샷으로 (best-effort) — 복원이 더 나쁜 상태를 만들어도 되돌릴 수 있게.
+  // 현재 데이터가 손상돼 loadData가 throw해도 복원 자체는 진행한다.
+  try {
+    await storage.saveSafetySnapshot(storage.loadData(), "에러화면 자동복원 직전");
+  } catch {
+    /* 현재 데이터 읽기 실패 시 스냅샷 건너뜀 */
   }
 
   const normalized = storage.normalizeImportedData(backupData);

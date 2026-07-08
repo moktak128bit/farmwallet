@@ -24,7 +24,7 @@ const MonthStatsInner: React.FC<Props> = ({ stats }) => {
         </div>
         <div style={{ textAlign: "center" }}>
           <div style={{ fontSize: 12, color: "var(--text-muted)", marginBottom: 4 }}>휴식일</div>
-          <div style={{ fontSize: 22, fontWeight: 700, color: "#3b82f6" }}>{stats.restDays}일</div>
+          <div style={{ fontSize: 22, fontWeight: 700, color: "var(--accent)" }}>{stats.restDays}일</div>
         </div>
         <div style={{ textAlign: "center" }}>
           <div style={{ fontSize: 12, color: "var(--text-muted)", marginBottom: 4 }}>월간 볼륨</div>

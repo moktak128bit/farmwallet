@@ -8,6 +8,7 @@ import type { Account, CategoryPresets, LedgerEntry } from "../../types";
 import { formatKRW } from "../../utils/formatter";
 import { shiftMonth } from "../../utils/date";
 import { isSavingsExpenseEntry, isCreditPayment } from "../../utils/category";
+import { toKrwByRate } from "../../utils/currency";
 
 interface Props {
   currentMonth: string;
@@ -34,8 +35,7 @@ export const MonthPaceCard: React.FC<Props> = React.memo(function MonthPaceCard(
     const totalDays = new Date(year, monthNum, 0).getDate();
     const todayDay = parseInt(today.slice(8, 10), 10);
     const elapsed = Math.min(Math.max(todayDay, 1), totalDays);
-    const toKrw = (entry: LedgerEntry) =>
-      entry.currency === "USD" && fxRate ? entry.amount * fxRate : entry.amount;
+    const toKrw = (entry: LedgerEntry) => toKrwByRate(entry.amount, entry.currency, fxRate);
     const sumMonth = (m: string) => {
       let total = 0;
       ledger.forEach((entry) => {

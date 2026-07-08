@@ -9,6 +9,7 @@ import { formatKRW } from "../../utils/formatter";
 import { shiftMonth } from "../../utils/date";
 import { getCategoryType, isSavingsExpenseEntry, isCreditPayment } from "../../utils/category";
 import { isDividendEntryLoose } from "../../utils/categoryMatch";
+import { toKrwByRate } from "../../utils/currency";
 
 function isDividendIncome(entry: LedgerEntry): boolean {
   // 분류 단일소스(categoryMatch) — cat/sub 정확 매칭 + description fallback (includes("배당") 직접 사용 금지)
@@ -34,8 +35,7 @@ export const DividendCoverageCard: React.FC<Props> = React.memo(function Dividen
     // 진행 중인 이번달을 넣으면 평균이 체계적으로 과소 — 완결된 직전 3개월만 사용
     const months = [shiftMonth(currentMonth, -3), shiftMonth(currentMonth, -2), shiftMonth(currentMonth, -1)];
     const monthSetRecent = new Set(months);
-    const toKrw = (entry: LedgerEntry) =>
-      entry.currency === "USD" && fxRate ? entry.amount * fxRate : entry.amount;
+    const toKrw = (entry: LedgerEntry) => toKrwByRate(entry.amount, entry.currency, fxRate);
     const dividendByMonth = new Map<string, number>();
     const fixedByMonth = new Map<string, number>();
 

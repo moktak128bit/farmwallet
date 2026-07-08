@@ -39,9 +39,13 @@ const ExercisePickerInner: React.FC<Props> = ({
   customExercises, recentExercises, alreadyAddedNames, onAddExercise,
 }) => {
   const [openParts, setOpenParts] = useState<Set<WorkoutBodyPart>>(() => loadOpenParts());
+  const [query, setQuery] = useState("");
   const [customInputs, setCustomInputs] = useState<Record<WorkoutBodyPart, string>>(() => ({
     "가슴": "", "등": "", "어깨": "", "팔": "", "하체": "", "코어": "", "유산소": "", "기타": "",
   }));
+
+  const q = query.trim().toLowerCase();
+  const matchesQuery = (name: string) => !q || name.toLowerCase().includes(q);
 
   useEffect(() => {
     saveOpenParts(openParts);
@@ -63,19 +67,55 @@ const ExercisePickerInner: React.FC<Props> = ({
     }}>
       <div style={{ fontSize: 14, fontWeight: 700, marginBottom: 10 }}>운동 추가</div>
 
+      <div style={{ position: "relative", marginBottom: 10 }}>
+        <input
+          type="text"
+          value={query}
+          onChange={(e) => setQuery(e.target.value)}
+          placeholder="운동 검색 (모든 부위에서)"
+          style={{
+            width: "100%", padding: "9px 12px", paddingRight: query ? 34 : 12,
+            borderRadius: 8, fontSize: 13, boxSizing: "border-box",
+            background: "var(--surface)", border: "1px solid var(--border)", color: "var(--text)",
+          }}
+        />
+        {query && (
+          <button
+            type="button"
+            onClick={() => setQuery("")}
+            style={{
+              position: "absolute", right: 8, top: "50%", transform: "translateY(-50%)",
+              background: "none", border: "none", cursor: "pointer", fontSize: 16,
+              color: "var(--text-muted)", lineHeight: 1, padding: "0 4px",
+            }}
+            aria-label="검색어 지우기"
+          >
+            ×
+          </button>
+        )}
+      </div>
+
       <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
         {BODY_PARTS.map((part) => {
           const color = BODY_PART_COLORS[part];
-          const presets = EXERCISE_PRESETS[part];
-          const customs = customExercises.filter((c) => c.bodyPart === part);
-          const customNames = new Set(customs.map((c) => c.name));
-          const presetNames = new Set(presets);
+          const customsAll = customExercises.filter((c) => c.bodyPart === part);
+          const customNames = new Set(customsAll.map((c) => c.name));
+          const presetNames = new Set(EXERCISE_PRESETS[part]);
           // 최근 사용 중 프리셋/커스텀에 없는 것만 "최근" 구획에 노출
-          const recentOnly = (recentExercises[part] ?? []).filter(
+          const recentAll = (recentExercises[part] ?? []).filter(
             (n) => !presetNames.has(n) && !customNames.has(n)
           );
+          // 검색어 적용 — 매치되는 것만
+          const presets = EXERCISE_PRESETS[part].filter(matchesQuery);
+          const customs = customsAll.filter((c) => matchesQuery(c.name));
+          const recentOnly = recentAll.filter(matchesQuery);
           const total = presets.length + customs.length + recentOnly.length;
-          const isOpen = openParts.has(part);
+          // 검색 중엔 매치가 있는 부위만 펼쳐 노출, 매치 0이면 부위 자체 숨김
+          if (q && total === 0) return null;
+          const isOpen = q ? true : openParts.has(part);
+          // 검색 시 전체 매치 노출, 평상시엔 최근 10개로 제한(나머지는 검색으로 접근)
+          const recentToShow = q ? recentOnly : recentOnly.slice(0, 10);
+          const recentHiddenCount = q ? 0 : recentOnly.length - recentToShow.length;
           const customInput = customInputs[part];
 
           const handleAddCustom = () => {
@@ -128,8 +168,8 @@ const ExercisePickerInner: React.FC<Props> = ({
                       <div style={{ fontSize: 11, color: "var(--text-muted)", marginBottom: 6, fontWeight: 600 }}>
                         최근 사용
                       </div>
-                      <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
-                        {recentOnly.slice(0, 10).map((name) => (
+                      <div style={{ display: "flex", gap: 6, flexWrap: "wrap", alignItems: "center" }}>
+                        {recentToShow.map((name) => (
                           <ExerciseChip
                             key={name}
                             name={name}
@@ -139,6 +179,11 @@ const ExercisePickerInner: React.FC<Props> = ({
                             onClick={() => onAddExercise(name, part)}
                           />
                         ))}
+                        {recentHiddenCount > 0 && (
+                          <span style={{ fontSize: 11, color: "var(--text-muted)" }}>
+                            외 {recentHiddenCount}개 — 위 검색으로 찾기
+                          </span>
+                        )}
                       </div>
                     </div>
                   )}
@@ -236,7 +281,7 @@ const ExerciseChip: React.FC<ChipProps> = ({ name, color, emphasized, badge, alr
         opacity: alreadyAdded ? 0.55 : 1,
         display: "inline-flex", alignItems: "center", gap: 6,
       }}
-      title={alreadyAdded ? "이미 추가됨" : "클릭하여 오늘 기록에 추가"}
+      title={alreadyAdded ? "이미 추가됨 · 다시 누르면 한 번 더 추가됩니다" : "클릭하여 오늘 기록에 추가"}
     >
       {name}
       {badge && (

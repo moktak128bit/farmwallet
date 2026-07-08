@@ -29,7 +29,7 @@ export const MigrationToolsCards: React.FC<Props> = React.memo(function Migratio
 }) {
   return (
     <>
-      <div className="card" style={{ borderLeft: "3px solid #2563eb" }}>
+      <div className="card" style={{ borderLeft: "3px solid var(--accent)" }}>
         <div className="card-title">⏱ 임시 1단계: 새 항목 구조 정렬 (cat을 지출/수입/이체로 통일)</div>
         <p className="hint" style={{ marginBottom: 8 }}>
           새 폼으로 잘못 입력된 16건 정도의 항목 (예: <code>cat="식비" sub="시장/마트"</code>)을
@@ -77,12 +77,12 @@ export const MigrationToolsCards: React.FC<Props> = React.memo(function Migratio
             onChangeData(next);
             toast.success(`1단계 완료: ${preview.affected}건 정렬 — 이제 2단계(유류교통비 통합) 가능`);
           }}
-          style={{ padding: "8px 16px", fontSize: 13, fontWeight: 600, background: "#2563eb", color: "white", border: "none" }}
+          style={{ padding: "8px 16px", fontSize: 13, fontWeight: 600, background: "var(--accent)", color: "#fff", border: "none" }}
         >
           🔧 1단계: 구조 정렬 실행 (먼저 클릭)
         </button>
       </div>
-      <div className="card" style={{ borderLeft: "3px solid #f59e0b" }}>
+      <div className="card" style={{ borderLeft: "3px solid var(--warning)" }}>
         <div className="card-title">⏱ 임시 2단계: 유류교통비 분류 6개로 통합 (구조 보존)</div>
         <p className="hint" style={{ marginBottom: 8 }}>
           14개 → <strong>6개</strong> ({NEW_TRANSPORT_SUBS.join(" / ")})로 압축합니다.

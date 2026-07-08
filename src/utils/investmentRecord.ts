@@ -1,5 +1,6 @@
 import type { Account, StockTrade } from "../types";
 import { canonicalTickerForMatch, isUSDStock } from "./finance";
+import { consumeFifoLots, type FifoLot } from "./fifoLots";
 
 /** 청산(매도)된 단일 거래 한 건의 실현 수익 기록. USD 종목은 거래시점 환율로 원화 환산. */
 interface ClosedTradeRecord {
@@ -104,7 +105,7 @@ export function buildClosedTradeRecords(
       return 0;
     });
 
-    type Lot = { qty: number; totalAmountKRW: number; dateMs: number };
+    type Lot = FifoLot & { dateMs: number };
     const queue: Lot[] = [];
 
     for (const t of sorted) {
@@ -116,32 +117,21 @@ export function buildClosedTradeRecords(
       if (t.side === "buy") {
         queue.push({
           qty: t.quantity,
-          totalAmountKRW: toKRW,
+          value: toKRW,
           dateMs: parseDayMs(t.date),
         });
         continue;
       }
 
-      let remaining = t.quantity;
-      let costBasisKRW = 0;
+      // FIFO 소비 + 콜백으로 가중 매수일 집계
       let weightSum = 0;
       let weightedDateMs = 0;
-
-      while (remaining > 0 && queue.length > 0) {
-        const lot = queue[0];
-        const use = Math.min(remaining, lot.qty);
-        const unitCost = lot.qty > 0 ? lot.totalAmountKRW / lot.qty : 0;
-        const cost = unitCost * use;
-        costBasisKRW += cost;
+      const { consumedValue: costBasisKRW } = consumeFifoLots(queue, t.quantity, (lot, used) => {
         if (Number.isFinite(lot.dateMs)) {
-          weightedDateMs += lot.dateMs * use;
-          weightSum += use;
+          weightedDateMs += lot.dateMs * used;
+          weightSum += used;
         }
-        remaining -= use;
-        lot.qty -= use;
-        lot.totalAmountKRW = unitCost * lot.qty;
-        if (lot.qty <= 0) queue.shift();
-      }
+      });
 
       const sellDateMs = parseDayMs(t.date);
       const buyDateMs = weightSum > 0 ? weightedDateMs / weightSum : sellDateMs;

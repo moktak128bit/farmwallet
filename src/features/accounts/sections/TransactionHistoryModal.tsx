@@ -143,7 +143,15 @@ export const TransactionHistoryModal = React.memo(function TransactionHistoryMod
   accountTransactions.forEach((r, idx) => {
     if (r.isUsd && isSecuritiesAccount) return;
     const amt = amounts[idx];
-    const krw = r.isUsd && effectiveFxRate ? amt * effectiveFxRate : amt;
+    let krw: number;
+    if (r.isUsd) {
+      // 환율 미로드 시 원화 환산 불가 → 잔액 계산(위 runningBalances)과 동일하게 요약에서도 제외.
+      // (raw USD 금액을 원화 합계에 그대로 더하던 정합성 버그 방지)
+      if (effectiveFxRate == null) return;
+      krw = amt * effectiveFxRate;
+    } else {
+      krw = amt;
+    }
     if (krw > 0) { inflowCount++; inflowTotal += krw; }
     else if (krw < 0) { outflowCount++; outflowTotal += -krw; }
   });

@@ -18,6 +18,7 @@ import { formatKRW } from "../../utils/formatter";
 import { getTodayKST } from "../../utils/date";
 import { xirr } from "../../utils/irr";
 import { downloadAsExcel } from "../../utils/excelExport";
+import { toKrwByRate } from "../../utils/currency";
 
 interface Props {
   trades: StockTrade[];
@@ -61,7 +62,7 @@ export const InvestmentRecordCard: React.FC<Props> = React.memo(function Investm
       if (e.kind !== "income") continue;
       if (!isDividend(e)) continue;
       if (!inPeriod(e.date)) continue;
-      const krw = e.currency === "USD" && fxRate ? e.amount * fxRate : e.amount;
+      const krw = toKrwByRate(e.amount, e.currency, fxRate);
       sum += krw;
     }
     return sum;

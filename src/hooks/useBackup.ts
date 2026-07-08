@@ -13,6 +13,7 @@ import {
   AUTO_SAVE_DELAY,
   BACKUP_CONFIG,
   BACKUP_WARNING_HOURS,
+  DATA_SCHEMA_VERSION,
   STORAGE_KEYS
 } from "../constants/config";
 import { ERROR_MESSAGES } from "../constants/errorMessages";
@@ -145,6 +146,10 @@ export function useBackup(data: AppData, options?: UseBackupOptions) {
         try {
           // 동기 저장만 — async retry 루프는 unload 도중 잘릴 수 있음.
           window.localStorage.setItem(STORAGE_KEYS.DATA, userDataStr);
+          // 스키마 버전도 함께 기록 — 신규 사용자가 첫 변경 직후 정상 저장 없이 종료하면
+          // 다음 부팅에서 스키마 버전 키가 비어(=1) v3 등 마이그레이션이 현행 데이터에 재실행돼
+          // 비-idempotent한 v3 할인 차감이 금액을 한 번 더 깎는 손상을 방지한다.
+          window.localStorage.setItem(STORAGE_KEYS.DATA_SCHEMA_VERSION, String(DATA_SCHEMA_VERSION));
         } catch (writeErr) {
           // 본 저장 실패(quota 등) — 드래프트 슬롯에라도 기록을 시도해 다음 부팅에서 복구 가능하게.
           // 캐시 제외한 user payload(userDataStr)로 — full payload는 더 커서 quota 상황에서 또 실패.

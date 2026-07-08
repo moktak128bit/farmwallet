@@ -422,13 +422,13 @@ export const TotalAssetTrendCard: React.FC<Props> = React.memo(function TotalAss
           <div style={{ display: "flex", gap: 20, alignItems: "flex-end", flexWrap: "wrap" }}>
             <div style={{ textAlign: "right" }}>
               <div className="hint" style={{ fontSize: 12, marginBottom: 2 }}>현금+원가</div>
-              <div style={{ fontSize: 18, fontWeight: 700, color: "#f59e0b" }}>
+              <div style={{ fontSize: 18, fontWeight: 700, color: "var(--warning)" }}>
                 {formatKRW(Math.round(latest.cashPlusCost))}
               </div>
             </div>
             <div style={{ textAlign: "right" }}>
               <div className="hint" style={{ fontSize: 12, marginBottom: 2 }}>현금+평가액</div>
-              <div style={{ fontSize: 18, fontWeight: 700, color: "#2563eb" }}>
+              <div style={{ fontSize: 18, fontWeight: 700, color: "var(--accent)" }}>
                 {formatKRW(Math.round(latest.cashPlusMarket))}
               </div>
             </div>
@@ -504,9 +504,9 @@ const SnapshotDetail: React.FC<SnapshotDetailProps> = ({ row, detail, isLatest, 
             <span className="hint">현금 </span>
             <span style={{ fontWeight: 700 }}>{formatKRW(Math.round(detail.cashKrw))}</span>
             <span className="hint" style={{ marginLeft: 8 }}>원가 </span>
-            <span style={{ color: "#f59e0b", fontWeight: 700 }}>{formatKRW(Math.round(detail.costKrw))}</span>
+            <span style={{ color: "var(--warning)", fontWeight: 700 }}>{formatKRW(Math.round(detail.costKrw))}</span>
             <span className="hint" style={{ marginLeft: 8 }}>평가 </span>
-            <span style={{ color: "#2563eb", fontWeight: 700 }}>{formatKRW(Math.round(detail.marketKrw))}</span>
+            <span style={{ color: "var(--accent)", fontWeight: 700 }}>{formatKRW(Math.round(detail.marketKrw))}</span>
             <span style={{ marginLeft: 8, color: pnlColor, fontWeight: 700 }}>
               ({pnl >= 0 ? "+" : ""}{formatKRW(Math.round(pnl))} · {pnl >= 0 ? "+" : ""}{pnlPct.toFixed(1)}%)
             </span>
@@ -548,10 +548,10 @@ const SnapshotDetail: React.FC<SnapshotDetailProps> = ({ row, detail, isLatest, 
                     <td style={{ textAlign: "left", padding: "6px 8px", fontWeight: 600 }}>{a.accountName}</td>
                     <td style={{ textAlign: "left", padding: "6px 8px", color: "var(--text-muted)" }}>{a.isPension ? "연금" : (ACCOUNT_TYPE_LABEL[a.type] ?? a.type)}</td>
                     <td style={{ padding: "6px 8px" }}>{formatKRW(Math.round(a.cashKrw))}</td>
-                    <td style={{ padding: "6px 8px", color: isInvest ? "#f59e0b" : "var(--text-muted)" }}>
+                    <td style={{ padding: "6px 8px", color: isInvest ? "var(--warning)" : "var(--text-muted)" }}>
                       {isInvest ? formatKRW(Math.round(a.costKrw)) : "-"}
                     </td>
-                    <td style={{ padding: "6px 8px", color: isInvest ? "#2563eb" : "var(--text-muted)" }}>
+                    <td style={{ padding: "6px 8px", color: isInvest ? "var(--accent)" : "var(--text-muted)" }}>
                       {isInvest ? formatKRW(Math.round(a.marketKrw)) : "-"}
                     </td>
                     <td style={{ padding: "6px 8px", color: isInvest ? aColor : "var(--text-muted)", fontWeight: isInvest ? 600 : 400 }}>

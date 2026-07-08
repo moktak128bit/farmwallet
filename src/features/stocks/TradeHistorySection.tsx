@@ -11,6 +11,7 @@ import { formatNumber, formatKRW, formatUSD, formatShortDate } from "../../utils
 import { showDeleteUndoToast } from "../../utils/undoToast";
 import { saveSafetySnapshot } from "../../services/backupService";
 import { useAppStore } from "../../store/appStore";
+import { FilterChipRow } from "../../components/ui/FilterChipRow";
 
 const sideLabel: Record<TradeSide, string> = {
   buy: "매수",
@@ -53,6 +54,15 @@ const formatPriceWithCurrency = (value: number, currency?: string, ticker?: stri
 const sortIndicator = (activeKey: string, key: string, direction: "asc" | "desc") => {
   if (activeKey !== key) return "";
   return direction === "asc" ? "^" : "v";
+};
+
+const tradeFilterDateStyle: React.CSSProperties = {
+  padding: "6px 10px",
+  fontSize: 13,
+  borderRadius: 8,
+  border: "1px solid var(--border)",
+  background: "var(--surface)",
+  color: "var(--text)",
 };
 
 export const TradeHistorySection: React.FC<TradeHistorySectionProps> = ({
@@ -129,20 +139,60 @@ export const TradeHistorySection: React.FC<TradeHistorySectionProps> = ({
     fee: string;
   } | null>(null);
   const [inlineEditField, setInlineEditField] = useState<"date" | "accountId" | "quantity" | "price" | "fee" | "totalAmount" | null>(null);
-  /** 계좌별 보기: null = 전체, 값 있으면 해당 계좌만 */
-  const [filterAccountId, setFilterAccountId] = useState<string | null>(null);
+  /** 계좌별 보기: undefined = 전체, 값 있으면 해당 계좌만 (필터 센티넬 앱 전역 통일: string|undefined) */
+  const [filterAccountId, setFilterAccountId] = useState<string | undefined>();
+  const [filterSide, setFilterSide] = useState<string | undefined>();      // "buy" | "sell"
+  const [filterTicker, setFilterTicker] = useState<string | undefined>();  // canonical 티커 키
+  const [filterDateFrom, setFilterDateFrom] = useState<string>("");
+  const [filterDateTo, setFilterDateTo] = useState<string>("");
   // 렌더당 1회 평가 — 터치(coarse) 포인터에서는 더블클릭 대신 단일 탭으로 인라인 편집 진입
   const coarsePointer = isCoarsePointer();
 
   const tradesFiltered = useMemo(() => {
-    if (!filterAccountId) return trades;
-    return trades.filter((t) => t.accountId === filterAccountId);
-  }, [trades, filterAccountId]);
+    return trades.filter((t) => {
+      if (filterAccountId && t.accountId !== filterAccountId) return false;
+      if (filterSide && t.side !== filterSide) return false;
+      if (filterTicker && canonicalTickerForMatch(t.ticker) !== filterTicker) return false;
+      if (filterDateFrom && (t.date ?? "") < filterDateFrom) return false;
+      if (filterDateTo && (t.date ?? "") > filterDateTo) return false;
+      return true;
+    });
+  }, [trades, filterAccountId, filterSide, filterTicker, filterDateFrom, filterDateTo]);
 
-  const accountIdsWithTrades = useMemo(() => {
-    const ids = new Set(trades.map((t) => t.accountId));
-    return accounts.filter((a) => ids.has(a.id));
+  // 계좌별 거래 수 — 매 렌더 trades.filter() 반복(칩마다 O(N)) 대신 단일 패스 카운트맵.
+  const accountFilterOptions = useMemo(() => {
+    const counts = new Map<string, number>();
+    for (const t of trades) counts.set(t.accountId, (counts.get(t.accountId) ?? 0) + 1);
+    return accounts
+      .filter((a) => counts.has(a.id))
+      .map((a) => ({ value: a.id, display: a.name, count: counts.get(a.id) ?? 0 }));
   }, [trades, accounts]);
+
+  // 매수/매도·종목 옵션 (개수 배지). 종목은 canonical 티커로 그룹(표시는 첫 등장 raw).
+  const sideFilterOptions = useMemo(() => {
+    let buy = 0, sell = 0;
+    for (const t of trades) { if (t.side === "buy") buy++; else if (t.side === "sell") sell++; }
+    const opts: { value: string; display: string; count: number }[] = [];
+    if (buy) opts.push({ value: "buy", display: "매수", count: buy });
+    if (sell) opts.push({ value: "sell", display: "매도", count: sell });
+    return opts;
+  }, [trades]);
+
+  const tickerFilterOptions = useMemo(() => {
+    const map = new Map<string, { display: string; count: number }>();
+    for (const t of trades) {
+      const key = canonicalTickerForMatch(t.ticker);
+      const cur = map.get(key);
+      map.set(key, { display: cur?.display ?? t.ticker, count: (cur?.count ?? 0) + 1 });
+    }
+    return [...map.entries()].sort((a, b) => b[1].count - a[1].count).map(([key, v]) => ({ value: key, display: v.display, count: v.count }));
+  }, [trades]);
+
+  const hasTradeFilter = !!filterAccountId || !!filterSide || !!filterTicker || !!filterDateFrom || !!filterDateTo;
+  const clearTradeFilters = () => {
+    setFilterAccountId(undefined); setFilterSide(undefined); setFilterTicker(undefined);
+    setFilterDateFrom(""); setFilterDateTo("");
+  };
 
   // canonical 티커별 최신 시세 (updatedAt 기준)
   const latestPriceByCanonicalTicker = useMemo(() => {
@@ -217,7 +267,7 @@ export const TradeHistorySection: React.FC<TradeHistorySectionProps> = ({
   const hasMore = visibleCount < sortedTrades.length;
 
   // 정렬·필터 변경 시 표시 개수 리셋
-  useEffect(() => { setVisibleCount(TRADE_PAGE_SIZE); }, [tradeSort, filterAccountId]);
+  useEffect(() => { setVisibleCount(TRADE_PAGE_SIZE); }, [tradeSort, filterAccountId, filterSide, filterTicker, filterDateFrom, filterDateTo]);
 
   const highlightClearTimerRef = useRef<number | null>(null);
   useEffect(() => {
@@ -521,70 +571,107 @@ export const TradeHistorySection: React.FC<TradeHistorySectionProps> = ({
     const currentInFull = fullSorted.findIndex((t) => t.id === id);
     if (currentInFull === -1) return;
     const [item] = fullSorted.splice(currentInFull, 1);
+    // 보이는 목록(tradesFiltered)과 동일 술어로 인덱스 정렬 — 계좌뿐 아니라 구분/종목/기간 필터도 반영해야
+    // 필터 적용 중 드롭 위치가 어긋나지 않는다.
     const filteredIndices = fullSorted
       .map((t, i) => ({ t, i }))
-      .filter(({ t }) => !filterAccountId || t.accountId === filterAccountId);
+      .filter(({ t }) => (
+        (!filterAccountId || t.accountId === filterAccountId) &&
+        (!filterSide || t.side === filterSide) &&
+        (!filterTicker || canonicalTickerForMatch(t.ticker) === filterTicker) &&
+        (!filterDateFrom || (t.date ?? "") >= filterDateFrom) &&
+        (!filterDateTo || (t.date ?? "") <= filterDateTo)
+      ));
     const insertAt = clamped >= filteredIndices.length ? fullSorted.length : filteredIndices[clamped].i;
     fullSorted.splice(insertAt, 0, item);
     onChangeTrades(fullSorted);
   };
 
   // Aggregate summary by currency (filtered by selected account).
-  // 성능: 기존엔 8회 filter+reduce로 배열 순회. 단일 for 루프로 통합.
-  let krwBuyAmount = 0;
-  let krwSellAmount = 0;
-  let krwFee = 0;
-  let krwRealizedPnl = 0;
-  let usdBuyAmount = 0;
-  let usdSellAmount = 0;
-  let usdFee = 0;
-  let usdRealizedPnl = 0;
-  for (const t of tradesFiltered) {
-    const isUsd = isUSDStock(t.ticker);
-    if (isUsd) {
-      usdFee += t.fee;
-      if (t.side === "buy") usdBuyAmount += t.totalAmount;
-      else {
-        usdSellAmount += t.totalAmount;
-        usdRealizedPnl += realizedPnlByTradeId.get(t.id) ?? 0;
-      }
-    } else {
-      krwFee += t.fee;
-      if (t.side === "buy") krwBuyAmount += t.totalAmount;
-      else {
-        krwSellAmount += t.totalAmount;
-        krwRealizedPnl += realizedPnlByTradeId.get(t.id) ?? 0;
+  // 통화 분류는 행 표시와 동일 기준(inferTradeCurrency: fxRateAtTrade>0 / price.currency==="USD" / isUSDStock).
+  // isUSDStock(ticker)만 쓰면 ticker가 인식 안 되는 USD 거래(fxRateAtTrade·가격으로만 USD)가 KRW 합계로 섞인다.
+  const {
+    krwBuyAmount, krwSellAmount, krwFee, krwRealizedPnl,
+    usdBuyAmount, usdSellAmount, usdFee, usdRealizedPnl,
+  } = useMemo(() => {
+    let krwBuyAmount = 0, krwSellAmount = 0, krwFee = 0, krwRealizedPnl = 0;
+    let usdBuyAmount = 0, usdSellAmount = 0, usdFee = 0, usdRealizedPnl = 0;
+    for (const t of tradesFiltered) {
+      const priceInfo = latestPriceByCanonicalTicker.get(canonicalTickerForMatch(t.ticker));
+      const isUsd = inferTradeCurrency(t, priceInfo?.currency) === "USD";
+      if (isUsd) {
+        usdFee += t.fee;
+        if (t.side === "buy") usdBuyAmount += t.totalAmount;
+        else {
+          usdSellAmount += t.totalAmount;
+          usdRealizedPnl += realizedPnlByTradeId.get(t.id) ?? 0;
+        }
+      } else {
+        krwFee += t.fee;
+        if (t.side === "buy") krwBuyAmount += t.totalAmount;
+        else {
+          krwSellAmount += t.totalAmount;
+          krwRealizedPnl += realizedPnlByTradeId.get(t.id) ?? 0;
+        }
       }
     }
-  }
+    return {
+      krwBuyAmount, krwSellAmount, krwFee, krwRealizedPnl,
+      usdBuyAmount, usdSellAmount, usdFee, usdRealizedPnl,
+    };
+  }, [tradesFiltered, latestPriceByCanonicalTicker, realizedPnlByTradeId]);
 
   return (
     <>
       <h3>매매 내역</h3>
-      {accountIdsWithTrades.length > 1 && (
-        <div style={{ marginBottom: 12, display: "flex", gap: 6, alignItems: "center", flexWrap: "wrap" }}>
-          <button
-            type="button"
-            className={filterAccountId === null ? "primary" : "secondary"}
-            style={{ fontSize: 13, padding: "8px 16px" }}
-            onClick={() => setFilterAccountId(null)}
-          >
-            전체 <span style={{ opacity: 0.7 }}>({trades.length})</span>
-          </button>
-          {accountIdsWithTrades.map((acc) => {
-            const count = trades.filter((t) => t.accountId === acc.id).length;
-            return (
+      {trades.length > 0 && (
+        <div style={{ display: "flex", flexDirection: "column", gap: 8, marginBottom: 12 }}>
+          {accountFilterOptions.length > 1 && (
+            <FilterChipRow
+              label="계좌"
+              options={accountFilterOptions}
+              selected={filterAccountId}
+              onSelect={setFilterAccountId}
+              allLabel={`전체 (${trades.length})`}
+            />
+          )}
+          {sideFilterOptions.length > 1 && (
+            <FilterChipRow label="구분" options={sideFilterOptions} selected={filterSide} onSelect={setFilterSide} />
+          )}
+          {tickerFilterOptions.length > 1 && (
+            <FilterChipRow label="종목" options={tickerFilterOptions} selected={filterTicker} onSelect={setFilterTicker} />
+          )}
+          <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
+            <span style={{ fontSize: 11, color: "var(--text-muted)", minWidth: 56 }}>기간</span>
+            <input
+              type="date"
+              value={filterDateFrom}
+              max={filterDateTo || undefined}
+              onChange={(e) => setFilterDateFrom(e.target.value)}
+              style={tradeFilterDateStyle}
+            />
+            <span style={{ color: "var(--text-muted)" }}>~</span>
+            <input
+              type="date"
+              value={filterDateTo}
+              min={filterDateFrom || undefined}
+              onChange={(e) => setFilterDateTo(e.target.value)}
+              style={tradeFilterDateStyle}
+            />
+            {hasTradeFilter && (
               <button
-                key={acc.id}
                 type="button"
-                className={filterAccountId === acc.id ? "primary" : "secondary"}
-                style={{ fontSize: 13, padding: "8px 16px" }}
-                onClick={() => setFilterAccountId(filterAccountId === acc.id ? null : acc.id)}
+                onClick={clearTradeFilters}
+                style={{
+                  marginLeft: "auto", padding: "6px 12px", fontSize: 12, fontWeight: 600,
+                  borderRadius: 8, border: "1px solid var(--border)",
+                  background: "var(--surface)", color: "var(--text-muted)", cursor: "pointer",
+                }}
               >
-                {acc.name} <span style={{ opacity: 0.7 }}>({count})</span>
+                🔄 필터 초기화 ({tradesFiltered.length}/{trades.length})
               </button>
-            );
-          })}
+            )}
+          </div>
         </div>
       )}
       {tradesFiltered.length > 0 && (
@@ -594,11 +681,12 @@ export const TradeHistorySection: React.FC<TradeHistorySectionProps> = ({
             <>
               <div>
                 <span style={{ color: "var(--text-muted)", marginRight: 8 }}>총 매수 (원):</span>
-                <span className="negative">{formatKRW(Math.round(krwBuyAmount))}</span>
+                {/* 국내 관례: 매수=빨강(.positive), 매도=파랑(.negative) — 거래 배지와 통일 */}
+                <span className="positive">{formatKRW(Math.round(krwBuyAmount))}</span>
               </div>
               <div>
                 <span style={{ color: "var(--text-muted)", marginRight: 8 }}>총 매도 (원):</span>
-                <span className="positive">{formatKRW(Math.round(krwSellAmount))}</span>
+                <span className="negative">{formatKRW(Math.round(krwSellAmount))}</span>
               </div>
               <div>
                 <span style={{ color: "var(--text-muted)", marginRight: 8 }}>총 수수료 (원):</span>
@@ -616,11 +704,11 @@ export const TradeHistorySection: React.FC<TradeHistorySectionProps> = ({
             <>
               <div>
                 <span style={{ color: "var(--text-muted)", marginRight: 8 }}>총 매수 (달러):</span>
-                <span className="negative">{formatUSD(usdBuyAmount)}</span>
+                <span className="positive">{formatUSD(usdBuyAmount)}</span>
               </div>
               <div>
                 <span style={{ color: "var(--text-muted)", marginRight: 8 }}>총 매도 (달러):</span>
-                <span className="positive">{formatUSD(usdSellAmount)}</span>
+                <span className="negative">{formatUSD(usdSellAmount)}</span>
               </div>
               <div>
                 <span style={{ color: "var(--text-muted)", marginRight: 8 }}>총 수수료 (달러):</span>
@@ -1023,7 +1111,7 @@ export const TradeHistorySection: React.FC<TradeHistorySectionProps> = ({
                         type="button"
                         className="secondary"
                         style={{ fontSize: 13, padding: "6px 12px" }}
-                        onClick={() => setFilterAccountId(null)}
+                        onClick={() => setFilterAccountId(undefined)}
                       >
                         전체 보기
                       </button>

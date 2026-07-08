@@ -71,24 +71,24 @@ export const ForecastView: React.FC<Props> = ({ ledger, recurring, formatNumber 
               {formatNumber(Math.round(result.totalLower))} ~ {formatNumber(Math.round(result.totalUpper))}
             </div>
           </div>
-          <div style={{ padding: "14px 16px", background: "#f0f8ff", borderRadius: 10, border: "1px solid #bde" }}>
-            <div style={{ fontSize: 11, color: "#666", fontWeight: 600 }}>반복 고정 지출</div>
-            <div style={{ fontSize: 22, fontWeight: 800, color: "#0f3460", marginTop: 4 }}>{formatNumber(Math.round(totalRecurring))}</div>
-            <div style={{ fontSize: 11, color: "#999", marginTop: 4 }}>
+          <div style={{ padding: "14px 16px", background: "var(--accent-light)", borderRadius: 10, border: "1px solid var(--border-light)" }}>
+            <div style={{ fontSize: 11, color: "var(--text-muted)", fontWeight: 600 }}>반복 고정 지출</div>
+            <div style={{ fontSize: 22, fontWeight: 800, color: "var(--accent)", marginTop: 4 }}>{formatNumber(Math.round(totalRecurring))}</div>
+            <div style={{ fontSize: 11, color: "var(--text-faint)", marginTop: 4 }}>
               {fixedRecurring.length}개 항목 · 확정
             </div>
           </div>
-          <div style={{ padding: "14px 16px", background: "#fdf5e6", borderRadius: 10, border: "1px solid #f0c040" }}>
-            <div style={{ fontSize: 11, color: "#666", fontWeight: 600 }}>변동 지출 평균</div>
-            <div style={{ fontSize: 22, fontWeight: 800, color: "#d97706", marginTop: 4 }}>{formatNumber(Math.round(totalVariable))}</div>
-            <div style={{ fontSize: 11, color: "#999", marginTop: 4 }}>
+          <div style={{ padding: "14px 16px", background: "var(--warning-light)", borderRadius: 10, border: "1px solid var(--warning)" }}>
+            <div style={{ fontSize: 11, color: "var(--text-muted)", fontWeight: 600 }}>변동 지출 평균</div>
+            <div style={{ fontSize: 22, fontWeight: 800, color: "var(--warning)", marginTop: 4 }}>{formatNumber(Math.round(totalVariable))}</div>
+            <div style={{ fontSize: 11, color: "var(--text-faint)", marginTop: 4 }}>
               직전 {lookback}개월(완결 월) 평균
             </div>
           </div>
-          <div style={{ padding: "14px 16px", background: uncertaintyPct > 30 ? "#fff5f5" : "#f0fdf4", borderRadius: 10, border: `1px solid ${uncertaintyPct > 30 ? "#fcc" : "#86efac"}` }}>
-            <div style={{ fontSize: 11, color: "#666", fontWeight: 600 }}>불확실성</div>
-            <div style={{ fontSize: 22, fontWeight: 800, color: uncertaintyPct > 30 ? "#e94560" : "#059669", marginTop: 4 }}>±{uncertaintyPct}%</div>
-            <div style={{ fontSize: 11, color: "#999", marginTop: 4 }}>
+          <div style={{ padding: "14px 16px", background: uncertaintyPct > 30 ? "var(--danger-light)" : "var(--success-light)", borderRadius: 10, border: `1px solid ${uncertaintyPct > 30 ? "var(--danger)" : "var(--success)"}` }}>
+            <div style={{ fontSize: 11, color: "var(--text-muted)", fontWeight: 600 }}>불확실성</div>
+            <div style={{ fontSize: 22, fontWeight: 800, color: uncertaintyPct > 30 ? "var(--danger)" : "var(--success)", marginTop: 4 }}>±{uncertaintyPct}%</div>
+            <div style={{ fontSize: 11, color: "var(--text-faint)", marginTop: 4 }}>
               {uncertaintyPct > 30 ? "변동 큼" : uncertaintyPct > 15 ? "보통" : "안정"}
             </div>
           </div>
@@ -115,11 +115,11 @@ export const ForecastView: React.FC<Props> = ({ ledger, recurring, formatNumber 
                 return (
                   <tr key={c.category} style={{ borderBottom: "1px solid var(--border-light)" }}>
                     <td style={{ padding: "10px 12px", fontWeight: 600 }}>{c.category}</td>
-                    <td style={{ padding: "10px 12px", textAlign: "right", color: c.recurringAmount > 0 ? "#0f3460" : "var(--text-faint)" }}>{formatNumber(Math.round(c.recurringAmount))}</td>
-                    <td style={{ padding: "10px 12px", textAlign: "right", color: "#d97706" }}>{formatNumber(Math.round(c.variableAverage))}</td>
+                    <td style={{ padding: "10px 12px", textAlign: "right", color: c.recurringAmount > 0 ? "var(--accent)" : "var(--text-faint)" }}>{formatNumber(Math.round(c.recurringAmount))}</td>
+                    <td style={{ padding: "10px 12px", textAlign: "right", color: "var(--warning)" }}>{formatNumber(Math.round(c.variableAverage))}</td>
                     <td style={{ padding: "10px 12px", textAlign: "right", fontWeight: 700, color: "var(--text)" }}>{formatNumber(Math.round(c.forecast))}</td>
                     <td style={{ padding: "10px 12px", textAlign: "right", fontSize: 12 }}>
-                      <span style={{ color: pct > 100 ? "#e94560" : pct > 80 ? "#f0c040" : "#059669", fontWeight: 700 }}>
+                      <span style={{ color: pct > 100 ? "var(--danger)" : pct > 80 ? "var(--warning)" : "var(--success)", fontWeight: 700 }}>
                         {formatNumber(Math.round(cur))}
                       </span>
                       <div style={{ fontSize: 10, color: "var(--text-faint)" }}>{pct.toFixed(0)}%</div>
@@ -130,18 +130,18 @@ export const ForecastView: React.FC<Props> = ({ ledger, recurring, formatNumber 
                           position: "absolute",
                           left: `${(c.lower / maxAmount) * 100}%`,
                           width: `${((c.upper - c.lower) / maxAmount) * 100}%`,
-                          height: "100%", background: "#999", opacity: 0.4, borderRadius: 4
+                          height: "100%", background: "var(--text-faint)", opacity: 0.4, borderRadius: 4
                         }} />
                         <div style={{
                           position: "absolute",
                           left: `${(c.forecast / maxAmount) * 100}%`,
-                          width: 3, height: "100%", background: "#e94560"
+                          width: 3, height: "100%", background: "var(--danger)"
                         }} />
                         {cur > 0 && (
                           <div style={{
                             position: "absolute",
                             left: `${(cur / maxAmount) * 100}%`,
-                            width: 3, height: "100%", background: "#059669"
+                            width: 3, height: "100%", background: "var(--success)"
                           }} title={`현재월 실적: ${formatNumber(cur)}`} />
                         )}
                       </div>
@@ -170,11 +170,11 @@ export const ForecastView: React.FC<Props> = ({ ledger, recurring, formatNumber 
             </div>
             <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(220px, 1fr))", gap: 8 }}>
               {fixedRecurring.map((r) => (
-                <div key={r.id} style={{ padding: "10px 12px", background: "#f0f8ff", borderRadius: 8, border: "1px solid #bde", fontSize: 12 }}>
+                <div key={r.id} style={{ padding: "10px 12px", background: "var(--accent-light)", borderRadius: 8, border: "1px solid var(--border-light)", fontSize: 12 }}>
                   <div style={{ fontWeight: 700 }}>{r.title}{r.frequency === "weekly" ? " (매주)" : ""}</div>
-                  <div style={{ display: "flex", justifyContent: "space-between", marginTop: 4, color: "#666" }}>
+                  <div style={{ display: "flex", justifyContent: "space-between", marginTop: 4, color: "var(--text-muted)" }}>
                     <span>{r.category}</span>
-                    <span style={{ fontWeight: 700, color: "#0f3460" }}>{formatNumber(Math.round(r.amount))}</span>
+                    <span style={{ fontWeight: 700, color: "var(--accent)" }}>{formatNumber(Math.round(r.amount))}</span>
                   </div>
                 </div>
               ))}

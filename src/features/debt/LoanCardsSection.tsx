@@ -8,14 +8,16 @@
 import React from "react";
 import type { Loan, RepaymentMethod } from "../../types";
 import { formatKRW } from "../../utils/formatter";
-import { getTodayKST } from "../../utils/date";
+import { getTodayKST, parseIsoLocal } from "../../utils/date";
 import { useAppStore } from "../../store/appStore";
 import { buildRestoreById, showDeleteUndoToast } from "../../utils/undoToast";
 import { graceEndDate } from "./debtShared";
 
+// KST 기준 일수 차 — new Date("YYYY-MM-DD")는 UTC 파싱이라 자정 경계에서 ±1일 어긋남(KST 규약 위반).
 const daysBetween = (date1: string, date2: string): number => {
-  const d1 = new Date(date1);
-  const d2 = new Date(date2);
+  const d1 = parseIsoLocal(date1);
+  const d2 = parseIsoLocal(date2);
+  if (!d1 || !d2) return NaN; // 잘못된/누락 날짜 — 기존 new Date() Invalid 동작과 동일하게 NaN 전파
   return Math.floor((d2.getTime() - d1.getTime()) / (1000 * 60 * 60 * 24));
 };
 

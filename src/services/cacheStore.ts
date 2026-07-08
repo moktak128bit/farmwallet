@@ -110,15 +110,34 @@ export async function loadCacheFromDB(): Promise<CacheData> {
   }
 }
 
-/** IndexedDB에 캐시 저장. 실패해도 throw하지 않고 warn만. */
+/** IndexedDB에 캐시 저장. 실패해도 throw하지 않고 warn만.
+ *
+ * 빈 배열로 기존 캐시를 덮어쓰지 않는다 — prices/tickerDatabase/historicalDailyCloses는
+ * 모두 API로 재수집 가능한 캐시라 "빈 값"은 항상 "아직 미로드"를 의미한다.
+ * (loadData가 스키마 마이그레이션 직후 빈 localStorage 캐시로 saveData를 호출하면,
+ *  IndexedDB에만 남아 있던 과거 종가(historicalDailyCloses)가 통째로 소실되는 회귀 방지.)
+ * get→put을 같은 readwrite 트랜잭션에서 수행해 원자적으로 병합. */
 export async function saveCacheToDB(cache: CacheData): Promise<void> {
   try {
     const db = await openDB();
-    const enriched: CacheData = { ...cache, cachedAt: new Date().toISOString() };
     await new Promise<void>((resolve) => {
       const tx = db.transaction(STORE_NAME, "readwrite");
       const store = tx.objectStore(STORE_NAME);
-      store.put(enriched, CACHE_KEY);
+      const getReq = store.get(CACHE_KEY);
+      getReq.onsuccess = () => {
+        const existing = getReq.result as Partial<CacheData> | undefined;
+        const exPrices = Array.isArray(existing?.prices) ? existing!.prices : [];
+        const exTicker = Array.isArray(existing?.tickerDatabase) ? existing!.tickerDatabase : [];
+        const exHist = Array.isArray(existing?.historicalDailyCloses) ? existing!.historicalDailyCloses : [];
+        const merged: CacheData = {
+          prices: cache.prices.length > 0 ? cache.prices : exPrices,
+          tickerDatabase: cache.tickerDatabase.length > 0 ? cache.tickerDatabase : exTicker,
+          historicalDailyCloses:
+            cache.historicalDailyCloses.length > 0 ? cache.historicalDailyCloses : exHist,
+          cachedAt: new Date().toISOString(),
+        };
+        store.put(merged, CACHE_KEY);
+      };
       tx.oncomplete = () => resolve();
       tx.onerror = () => resolve();
       tx.onabort = () => resolve();

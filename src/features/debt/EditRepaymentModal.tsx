@@ -79,20 +79,20 @@ export const EditRepaymentModal: React.FC<Props> = React.memo(function EditRepay
   const handleSaveEditRepayment = () => {
     const amount = Number(editAmount.replace(/[^0-9]/g, "")) || 0;
     if (amount <= 0) {
-      alert("상환 금액을 입력해주세요.");
+      toast.error("상환 금액을 입력해주세요.");
       return;
     }
     if (!editFromAccountId) {
-      alert("출금 계좌를 선택해주세요.");
+      toast.error("출금 계좌를 선택해주세요.");
       return;
     }
     if (!editSubCategory) {
-      alert("세부 항목을 선택해주세요.");
+      toast.error("세부 항목을 선택해주세요.");
       return;
     }
     // 날짜 빈값 거부 — date input은 지우기로 빈 문자열이 될 수 있다
     if (!editDate) {
-      alert("날짜를 입력해주세요.");
+      toast.error("날짜를 입력해주세요.");
       return;
     }
 

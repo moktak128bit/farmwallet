@@ -2,7 +2,6 @@ import type { Account, LedgerEntry, StockPrice, StockTrade } from "../types";
 import {
   computeAccountBalances,
   computePositions,
-  computeRealizedPnlDetailByTradeId,
   positionMarketValueKRW
 } from "../calculations";
 import { buildClosedTradeRecords } from "./investmentRecord";
@@ -10,6 +9,7 @@ import { getTodayKST } from "./date";
 import { isSavingsExpenseEntry, isCreditPayment } from "./category";
 import { isDividendEntry, isInterestEntry } from "./categoryMatch";
 import { canonicalTickerForMatch, isUSDStock } from "./finance";
+import { toKrwByRate } from "./currency";
 import { computeMonthlyRealFlows, computeRealSavingsRate } from "./savingsRate";
 import { isNonRealIncomeSub } from "./realIncome";
 import { xirr, type CashFlowItem } from "./irr";
@@ -145,8 +145,7 @@ export interface ConsumptionImpactMonthlyRow {
 const INVESTING_ACCOUNT_TYPES = new Set<Account["type"]>(["savings", "securities", "crypto"]);
 
 function toKrwAmount(amount: number, currency?: string, fxRate?: number): number {
-  if (currency === "USD" && fxRate) return amount * fxRate;
-  return amount;
+  return toKrwByRate(amount, currency, fxRate);
 }
 
 function parseIsoLocal(date: string): Date {
@@ -275,7 +274,7 @@ export function generateMonthlyReport(
   endMonth?: string,
   fxRate?: number | null
 ): MonthlyReport[] {
-  const toKrw = (e: LedgerEntry) => (e.currency === "USD" && fxRate ? e.amount * fxRate : e.amount);
+  const toKrw = (e: LedgerEntry) => toKrwByRate(e.amount, e.currency, fxRate);
   const reports = new Map<string, { income: number; expense: number; transfer: number }>();
 
   for (const entry of ledger) {
@@ -289,7 +288,10 @@ export function generateMonthlyReport(
 
     const report = reports.get(month)!;
     if (entry.kind === "income") report.income += toKrw(entry);
-    if (entry.kind === "expense" && !isCreditPayment(entry)) report.expense += toKrw(entry);
+    // 지출 분류 단일 소스와 통일 — 신용결제(이중계상) + 저축성지출(자산 축적, 실소비 아님) 제외.
+    // (일별 리포트·대시보드·인사이트와 같은 기준. accounts는 isSavingsExpenseEntry 내부 미사용.)
+    if (entry.kind === "expense" && !isCreditPayment(entry) && !isSavingsExpenseEntry(entry, []))
+      report.expense += toKrw(entry);
     if (entry.kind === "transfer") report.transfer += toKrw(entry);
   }
 
@@ -305,7 +307,7 @@ export function generateMonthlyReport(
 }
 
 export function generateYearlyReport(ledger: LedgerEntry[], fxRate?: number | null): MonthlyReport[] {
-  const toKrw = (e: LedgerEntry) => (e.currency === "USD" && fxRate ? e.amount * fxRate : e.amount);
+  const toKrw = (e: LedgerEntry) => toKrwByRate(e.amount, e.currency, fxRate);
   const reports = new Map<string, { income: number; expense: number; transfer: number }>();
 
   for (const entry of ledger) {
@@ -317,7 +319,10 @@ export function generateYearlyReport(ledger: LedgerEntry[], fxRate?: number | nu
 
     const report = reports.get(year)!;
     if (entry.kind === "income") report.income += toKrw(entry);
-    if (entry.kind === "expense" && !isCreditPayment(entry)) report.expense += toKrw(entry);
+    // 지출 분류 단일 소스와 통일 — 신용결제(이중계상) + 저축성지출(자산 축적, 실소비 아님) 제외.
+    // (일별 리포트·대시보드·인사이트와 같은 기준. accounts는 isSavingsExpenseEntry 내부 미사용.)
+    if (entry.kind === "expense" && !isCreditPayment(entry) && !isSavingsExpenseEntry(entry, []))
+      report.expense += toKrw(entry);
     if (entry.kind === "transfer") report.transfer += toKrw(entry);
   }
 
@@ -1090,7 +1095,17 @@ export function computeInvestmentReconciliation(
   accountRows.sort((a, b) => b.currentValue - a.currentValue);
 
   // 거래 활동량 + 실현손익 이익/손실 분리 + 확정 거래 목록 + 월별 추이
-  const realizedDetailByTradeId = computeRealizedPnlDetailByTradeId(trades);
+  // 실현손익·매수/매도 활동량 모두 '거래시점 환율(fxRateAtTrade)' 기준 KRW로 산출한다.
+  // accountRows.realizedPnl(perf)·대시보드·투자기록 카드와 동일 정의 — 과거 USD 매도를
+  // '현재' 환율로 환산하면 환변동분이 손익에 섞여 같은 화면 안에서도 값이 어긋난다(불변식: 과거손익 보존).
+  const closedRecords = buildClosedTradeRecords(trades, accounts, fxRate ?? undefined);
+  const closedByTradeId = new Map(closedRecords.map((r) => [r.tradeId, r]));
+  // 거래 한 건의 totalAmount를 거래시점 환율로 환산 (USD 종목만; 없으면 현재 환율 폴백).
+  const tradeAmountKRW = (t: StockTrade): number => {
+    if (!isUSDStock(t.ticker)) return t.totalAmount;
+    const fx = t.fxRateAtTrade && t.fxRateAtTrade > 0 ? t.fxRateAtTrade : (fxRate && fxRate > 0 ? fxRate : 0);
+    return fx > 0 ? t.totalAmount * fx : 0;
+  };
   let buyVolume = 0;
   let sellVolume = 0;
   let tradeCount = 0;
@@ -1102,17 +1117,15 @@ export function computeInvestmentReconciliation(
   for (const t of trades) {
     if (!investingIds.has(t.accountId)) continue;
     const account = accountById.get(t.accountId);
-    const amount = convertPositionAmount(t.totalAmount, t.ticker, account, fxRate);
     tradeCount += 1;
     if (t.side === "buy") {
-      buyVolume += amount;
+      buyVolume += tradeAmountKRW(t);
       continue;
     }
-    sellVolume += amount;
-    const detail = realizedDetailByTradeId.get(t.id);
-    const rawPnl = detail?.pnl ?? 0;
-    const costBasis = detail?.costBasis ?? 0;
-    const pnl = convertPositionAmount(rawPnl, t.ticker, account, fxRate);
+    sellVolume += tradeAmountKRW(t);
+    const rec = closedByTradeId.get(t.id);
+    const pnl = rec?.realizedPnlKRW ?? 0;
+    const costBasis = rec?.costBasisKRW ?? 0;
     const month = t.date.slice(0, 7);
     const bucket = monthlyPnlMap.get(month) ?? { gain: 0, loss: 0 };
     if (pnl >= 0) {
@@ -1129,7 +1142,7 @@ export function computeInvestmentReconciliation(
       ticker: t.ticker,
       name: t.name,
       pnl,
-      returnRate: costBasis > 0 ? rawPnl / costBasis : 0
+      returnRate: costBasis > 0 ? pnl / costBasis : 0
     };
     if (pnl >= 0) winningTrades.push(tradeRow);
     else losingTrades.push(tradeRow);
@@ -1254,10 +1267,8 @@ export function generateConsumptionImpactMonthlyReport(
       if (isCreditPayment(entry)) continue;
       if (isSavingsExpenseEntry(entry, accounts)) {
         row.actualInvested += amount;
-      } else if (entry.category === "재테크") {
-        // 투자손실
-        row.consumptionExpense += amount;
       } else {
+        // 일반 소비지출 + 투자손실(category="재테크", isSavingsExpenseEntry가 false 반환)도 소비로 집계
         row.consumptionExpense += amount;
       }
       continue;

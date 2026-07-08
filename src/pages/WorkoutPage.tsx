@@ -504,8 +504,21 @@ export const WorkoutView: React.FC<Props> = ({
   };
 
   const deleteRoutine = (routineId: string) => {
+    const index = workoutRoutines.findIndex((r) => r.id === routineId);
+    const deleted = index >= 0 ? workoutRoutines[index] : null;
     onChangeWorkoutRoutines(workoutRoutines.filter((r) => r.id !== routineId));
     if (editingRoutineId === routineId) setEditingRoutineId(null);
+    if (deleted) {
+      showDeleteUndoToast(`"${deleted.name}" 루틴을 삭제했습니다.`, () => {
+        const list = useAppStore.getState().data.workoutRoutines ?? [];
+        if (list.some((r) => r.id === deleted.id)) return false;
+        const next = [...list];
+        if (index >= 0 && index <= next.length) next.splice(index, 0, deleted);
+        else next.push(deleted);
+        onChangeWorkoutRoutines(next);
+        return true;
+      });
+    }
   };
 
   const addRoutineExercise = (routineId: string) => {
@@ -535,6 +548,9 @@ export const WorkoutView: React.FC<Props> = ({
   };
 
   const removeRoutineExercise = (routineId: string, exerciseId: string) => {
+    const routine = workoutRoutines.find((r) => r.id === routineId);
+    const exIndex = routine ? routine.exercises.findIndex((ex) => ex.id === exerciseId) : -1;
+    const deletedEx = routine && exIndex >= 0 ? routine.exercises[exIndex] : null;
     onChangeWorkoutRoutines(
       workoutRoutines.map((r) =>
         r.id === routineId
@@ -542,6 +558,19 @@ export const WorkoutView: React.FC<Props> = ({
           : r
       )
     );
+    if (deletedEx) {
+      // 중첩 복원 — 해당 루틴의 exercises 배열 원위치에 재삽입 (루틴이 그새 삭제됐으면 복원 불가)
+      showDeleteUndoToast(`"${deletedEx.name}" 운동을 루틴에서 삭제했습니다.`, () => {
+        const list = useAppStore.getState().data.workoutRoutines ?? [];
+        const target = list.find((r) => r.id === routineId);
+        if (!target || target.exercises.some((ex) => ex.id === deletedEx.id)) return false;
+        const nextExercises = [...target.exercises];
+        if (exIndex >= 0 && exIndex <= nextExercises.length) nextExercises.splice(exIndex, 0, deletedEx);
+        else nextExercises.push(deletedEx);
+        onChangeWorkoutRoutines(list.map((r) => (r.id === routineId ? { ...r, exercises: nextExercises } : r)));
+        return true;
+      });
+    }
   };
 
   const updateRoutineExercise = (

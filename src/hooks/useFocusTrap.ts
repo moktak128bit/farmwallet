@@ -23,8 +23,10 @@ export function useFocusTrap<T extends HTMLElement>(isOpen: boolean) {
         'button:not([disabled]), [href], input:not([disabled]), select:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex="-1"])',
       );
 
-    // 첫 포커스 가능 요소에 포커스
+    // 첫 포커스 가능 요소에 포커스 — autoFocus 등으로 이미 트랩 내부에 포커스가 있으면 존중
+    // (검색 input의 autoFocus가 첫 버튼에 뺏기는 문제 방지)
     requestAnimationFrame(() => {
+      if (document.activeElement && container.contains(document.activeElement)) return;
       const els = focusables();
       if (els.length > 0) els[0].focus();
     });

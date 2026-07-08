@@ -36,6 +36,12 @@ const PERIODS_PER_YEAR = 365;
 /** 벤치마크 티커 정규화 — 지수 심볼(^KS11 등)은 단순 대문자 트림 (stock canonical 매칭 미사용) */
 const normBench = (t: string): string => (t ?? "").trim().toUpperCase();
 
+/** 벤치마크 지수 통화 — 한국 지수(^KS·^KQ 접두)는 KRW, 그 외(^GSPC·QQQ·^IXIC 등)는 USD. */
+function benchmarkCurrencyOf(ticker: string): "KRW" | "USD" {
+  const k = normBench(ticker);
+  return k.startsWith("^KS") || k.startsWith("^KQ") ? "KRW" : "USD";
+}
+
 /** 비교에 쓰는 표준 시장 지수 — UI 드롭다운과 자동 적립 레코더가 공유하는 단일 소스 */
 export const STANDARD_BENCHMARKS = [
   { ticker: "^KS11", label: "KOSPI" },
@@ -125,6 +131,8 @@ export function buildPortfolioPerformance(params: {
       twr,
       benchmarkCloses,
       benchmarkLabel: params.benchmarkLabel ?? params.benchmarkTicker,
+      benchmarkCurrency: benchmarkCurrencyOf(key),
+      fxHistory,
     });
     if (benchmark) {
       const portReturns: number[] = [];

@@ -139,9 +139,16 @@ function readStoredBackups(): StoredBackup[] {
   if (typeof window === "undefined") return [];
   const raw = window.localStorage.getItem(STORAGE_KEYS.BACKUPS);
   if (!raw) return [];
-  const parsed = JSON.parse(raw);
-  if (!Array.isArray(parsed)) return [];
-  return parsed as StoredBackup[];
+  // 손상된 BACKUPS JSON이 throw하면 saveLocalBackup 전체가 실패해 이후 모든 자동 백업이
+  // 영구 무력화된다 — 안전망이 통째로 죽지 않도록 파싱 실패는 빈 목록으로 흡수한다.
+  try {
+    const parsed = JSON.parse(raw);
+    if (!Array.isArray(parsed)) return [];
+    return parsed as StoredBackup[];
+  } catch (e) {
+    console.warn("[FarmWallet] 백업 목록(BACKUPS) 파싱 실패 — 빈 목록으로 복구", e);
+    return [];
+  }
 }
 
 function writeStoredBackups(backups: StoredBackup[]): void {

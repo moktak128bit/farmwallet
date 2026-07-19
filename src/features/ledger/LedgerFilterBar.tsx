@@ -13,11 +13,14 @@ interface LedgerFilterBarProps {
   filterDetailCategory: string | undefined;
   filterFromAccountId: string | undefined;
   filterToAccountId: string | undefined;
+  /** 입금/출금 상관없이 해당 계좌가 관련된 모든 거래 (from 또는 to) */
+  filterAccountId: string | null;
   setFilterMainCategory: (v: string | undefined) => void;
   setFilterSubCategory: (v: string | undefined) => void;
   setFilterDetailCategory: (v: string | undefined) => void;
   setFilterFromAccountId: (v: string | undefined) => void;
   setFilterToAccountId: (v: string | undefined) => void;
+  setFilterAccountId: (v: string | null) => void;
 }
 
 /**
@@ -29,9 +32,11 @@ const matchesMain = (l: LedgerEntry, main: string): boolean =>
 
 /**
  * 가계부 리스트 전용 필터 바 — 폼과 완전히 독립.
- * 5개 row: 대분류 / 중분류 / 소분류 / 출금계좌 / 입금계좌.
+ * 6개 row: 대분류 / 중분류 / 소분류 / 계좌(입출금 무관) / 출금계좌 / 입금계좌.
  * 카테고리는 cascading: 중분류는 선택된 대분류의 항목만, 소분류는 선택된 중분류의 항목만.
  * 옵션은 실제 ledger 데이터에서 distinct 추출 — 사용 중인 값만 노출.
+ * 계좌(입출금 무관) ↔ 출금/입금계좌는 상호 배타: 동시에 걸면 AND로 좁혀져 결과가 헷갈리므로
+ * 한쪽을 선택하면 반대쪽을 자동 해제한다.
  */
 export const LedgerFilterBar: React.FC<LedgerFilterBarProps> = ({
   ledger,
@@ -42,11 +47,13 @@ export const LedgerFilterBar: React.FC<LedgerFilterBarProps> = ({
   filterDetailCategory,
   filterFromAccountId,
   filterToAccountId,
+  filterAccountId,
   setFilterMainCategory,
   setFilterSubCategory,
   setFilterDetailCategory,
   setFilterFromAccountId,
   setFilterToAccountId,
+  setFilterAccountId,
 }) => {
   // 카테고리 옵션은 현재 탭(tabLedger) 기준 — 탭에 없는 카테고리는 노출하지 않음.
   // "재테크"는 distinct category만으론 누락(transfer 저축/투자이체·income 투자수익) → 매처와 동일 정의로 합성 옵션 주입.
@@ -107,6 +114,19 @@ export const LedgerFilterBar: React.FC<LedgerFilterBarProps> = ({
     setFilterSubCategory(v);
     setFilterDetailCategory(undefined);
   };
+  const onChangeAccountId = (v: string | undefined) => {
+    setFilterAccountId(v ?? null);
+    setFilterFromAccountId(undefined);
+    setFilterToAccountId(undefined);
+  };
+  const onChangeFromAccountId = (v: string | undefined) => {
+    setFilterFromAccountId(v);
+    setFilterAccountId(null);
+  };
+  const onChangeToAccountId = (v: string | undefined) => {
+    setFilterToAccountId(v);
+    setFilterAccountId(null);
+  };
 
   return (
     <div
@@ -124,8 +144,9 @@ export const LedgerFilterBar: React.FC<LedgerFilterBarProps> = ({
       <FilterChipRow label="대분류" options={mainOptions} selected={filterMainCategory} onSelect={onChangeMain} />
       <FilterChipRow label="중분류" options={subOptions} selected={filterSubCategory} onSelect={onChangeSub} />
       <FilterChipRow label="소분류" options={detailOptions} selected={filterDetailCategory} onSelect={setFilterDetailCategory} />
-      <FilterChipRow label="출금계좌" options={accountOptions} selected={filterFromAccountId} onSelect={setFilterFromAccountId} />
-      <FilterChipRow label="입금계좌" options={accountOptions} selected={filterToAccountId} onSelect={setFilterToAccountId} />
+      <FilterChipRow label="계좌" options={accountOptions} selected={filterAccountId ?? undefined} onSelect={onChangeAccountId} />
+      <FilterChipRow label="출금계좌" options={accountOptions} selected={filterFromAccountId} onSelect={onChangeFromAccountId} />
+      <FilterChipRow label="입금계좌" options={accountOptions} selected={filterToAccountId} onSelect={onChangeToAccountId} />
     </div>
   );
 };

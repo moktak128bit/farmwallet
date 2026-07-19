@@ -1060,6 +1060,12 @@ label {
 .recharts-default-tooltip .recharts-tooltip-label {
   color: var(--text) !important;
 }
+/* 툴팁이 마우스를 즉시 따라오도록 위치 슬라이드 애니메이션 제거.
+   recharts는 wrapper에 `transition: transform 400ms`를 인라인으로 붙여 미끄러지게 함
+   → !important로 인라인 스타일을 이겨서 끈다(모든 차트 툴팁 일괄 적용, 규칙 #3의 취지). */
+.recharts-tooltip-wrapper {
+  transition: none !important;
+}
 
 /* =========================================
    Components: Search Modal

@@ -25,11 +25,14 @@ interface Props {
   filterDetailCategory?: string;
   filterFromAccountId?: string;
   filterToAccountId?: string;
+  /** 입금/출금 상관없이 해당 계좌가 관련된 모든 거래 (from 또는 to) */
+  filterAccountId: string | null;
   setFilterMainCategory: SetStr;
   setFilterSubCategory: SetStr;
   setFilterDetailCategory: SetStr;
   setFilterFromAccountId: SetStr;
   setFilterToAccountId: SetStr;
+  setFilterAccountId: (v: string | null) => void;
   filterAmountMin?: number;
   filterAmountMax?: number;
   setFilterAmountMin: SetNum;
@@ -58,11 +61,13 @@ export const LedgerFilterCard: React.FC<Props> = React.memo(function LedgerFilte
   filterDetailCategory,
   filterFromAccountId,
   filterToAccountId,
+  filterAccountId,
   setFilterMainCategory,
   setFilterSubCategory,
   setFilterDetailCategory,
   setFilterFromAccountId,
   setFilterToAccountId,
+  setFilterAccountId,
   filterAmountMin,
   filterAmountMax,
   setFilterAmountMin,
@@ -190,11 +195,13 @@ export const LedgerFilterCard: React.FC<Props> = React.memo(function LedgerFilte
             filterDetailCategory={filterDetailCategory}
             filterFromAccountId={filterFromAccountId}
             filterToAccountId={filterToAccountId}
+            filterAccountId={filterAccountId}
             setFilterMainCategory={setFilterMainCategory}
             setFilterSubCategory={setFilterSubCategory}
             setFilterDetailCategory={setFilterDetailCategory}
             setFilterFromAccountId={setFilterFromAccountId}
             setFilterToAccountId={setFilterToAccountId}
+            setFilterAccountId={setFilterAccountId}
           />
           <div style={{ position: "relative", marginTop: 4 }}>
             <input

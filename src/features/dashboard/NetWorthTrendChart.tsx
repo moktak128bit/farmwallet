@@ -17,6 +17,7 @@ interface Props {
 export const NetWorthTrendChart: React.FC<Props> = React.memo(function NetWorthTrendChart({ data }) {
   const svgRef = useRef<SVGSVGElement>(null);
   const [hoverIdx, setHoverIdx] = useState<number | null>(null);
+  const [mousePos, setMousePos] = useState<{ x: number; y: number } | null>(null);
   const [excludePension, setExcludePension] = useState(false);
 
   // 빈 상태 — 카드가 통째로 사라지면 위젯이 있는 줄도 모르므로 안내를 보여준다
@@ -76,15 +77,21 @@ export const NetWorthTrendChart: React.FC<Props> = React.memo(function NetWorthT
   const gradId = "nwt-grad";
 
   // 호버 인터랙션 — 마우스 x좌표로 가장 가까운 데이터 포인트 찾기
+  // ⚠ preserveAspectRatio(xMidYMid meet) 레터박스 보정: 넓은 화면에서 maxHeight에 걸리면
+  //   SVG 드로잉이 가운데 정렬되고 좌우 여백이 생긴다. 단순 너비 비율 변환은 크게 어긋남.
   const handleMove = (e: React.MouseEvent<SVGSVGElement>) => {
     const svg = svgRef.current;
     if (!svg) return;
     const rect = svg.getBoundingClientRect();
-    if (rect.width <= 0) return;
-    const xRatio = (e.clientX - rect.left) / rect.width;
-    const svgX = xRatio * W;
+    if (rect.width <= 0 || rect.height <= 0) return;
+    const scale = Math.min(rect.width / W, rect.height / H);
+    const offX = (rect.width - W * scale) / 2;
+    const offY = (rect.height - H * scale) / 2;
+    const svgX = (e.clientX - rect.left - offX) / scale;
+    const svgY = (e.clientY - rect.top - offY) / scale;
     if (svgX < PAD_L - 8 || svgX > W - PAD_R + 8) {
       setHoverIdx(null);
+      setMousePos(null);
       return;
     }
     let nearest = 0;
@@ -97,14 +104,25 @@ export const NetWorthTrendChart: React.FC<Props> = React.memo(function NetWorthT
       }
     }
     setHoverIdx(nearest);
+    setMousePos({ x: svgX, y: svgY });
   };
-  const handleLeave = () => setHoverIdx(null);
+  const handleLeave = () => {
+    setHoverIdx(null);
+    setMousePos(null);
+  };
 
   const hover = hoverIdx != null ? pts[hoverIdx] : null;
   const TT_W = 178;
   const TT_H = showLiquid ? 104 : 84;
-  const ttX = hover ? (hover.x < W / 2 ? hover.x + 12 : hover.x - 12 - TT_W) : 0;
-  const ttY = hover ? Math.max(PAD_T, Math.min(hover.y - TT_H / 2, PAD_T + chartH - TT_H)) : 0;
+  // 툴팁은 데이터 포인트가 아니라 마우스 커서를 따라간다 (오른쪽 공간 없으면 왼쪽으로 반전)
+  const anchorX = mousePos?.x ?? hover?.x ?? 0;
+  const anchorY = mousePos?.y ?? hover?.y ?? 0;
+  const ttX = hover
+    ? anchorX + 14 + TT_W <= W - PAD_R
+      ? anchorX + 14
+      : Math.max(PAD_L, anchorX - 14 - TT_W)
+    : 0;
+  const ttY = hover ? Math.max(PAD_T, Math.min(anchorY - TT_H / 2, PAD_T + chartH - TT_H)) : 0;
   const fmt = (v: number) => (v >= 0 ? "" : "-") + Math.abs(v).toLocaleString() + "만원";
 
   return (

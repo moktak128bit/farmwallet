@@ -5,6 +5,7 @@ import {
   positionMarketValueKRW
 } from "../calculations";
 import { buildClosedTradeRecords } from "./investmentRecord";
+import { usdBalanceModeDelta } from "./tradeCashImpact";
 import { getTodayKST } from "./date";
 import { isSavingsExpenseEntry, isCreditPayment } from "./category";
 import { isDividendEntry, isInterestEntry } from "./categoryMatch";
@@ -243,7 +244,21 @@ function accountValueMapAtDate(
   fxRate?: number
 ): Map<string, number> {
   const filteredLedger = ledger.filter((entry) => entry.date <= date);
-  const filteredTrades = trades.filter((trade) => trade.date <= date);
+  // ⚠ account.usdBalance는 '현재' 달러 보유량(거래마다 갱신되는 러닝 값)이다. 과거 시점 평가액을 구하려면
+  //   그 이후 잔액모드 거래분을 되돌려야 한다. 되돌리지 않으면 매수대금이 초기자본에서 미리 빠져
+  //   currentValue와 상쇄되고, 매수액이 통째로 '수익'으로 둔갑한다(총성과·IRR 왜곡).
+  //   이 함수는 타임라인 날짜마다 호출되므로 분할과 롤백을 한 번의 순회로 처리한다.
+  const filteredTrades: StockTrade[] = [];
+  const usdRollback = new Map<string, number>();
+  for (const trade of trades) {
+    if (trade.date <= date) {
+      filteredTrades.push(trade);
+      continue;
+    }
+    const delta = usdBalanceModeDelta(trade);
+    if (delta === 0) continue;
+    usdRollback.set(trade.accountId, (usdRollback.get(trade.accountId) ?? 0) + delta);
+  }
   const balances = computeAccountBalances(accounts, filteredLedger, filteredTrades);
   const positions = computePositions(filteredTrades, prices, accounts);
   const accountById = new Map(accounts.map((account) => [account.id, account]));
@@ -259,7 +274,7 @@ function accountValueMapAtDate(
   for (const row of balances) {
     const usdCash =
       (row.account.type === "securities" || row.account.type === "crypto") && fxRate
-        ? ((row.account.usdBalance ?? 0) + (row.usdTransferNet ?? 0)) * fxRate
+        ? ((row.account.usdBalance ?? 0) - (usdRollback.get(row.account.id) ?? 0) + (row.usdTransferNet ?? 0)) * fxRate
         : 0;
     const stockValue = stockByAccount.get(row.account.id) ?? 0;
     result.set(row.account.id, row.currentBalance + usdCash + stockValue);
@@ -943,6 +958,26 @@ export interface InvestmentPositionPnlRow {
   pnlRate: number;
 }
 
+/**
+ * 분류 외 차이(residual) 원인 분해. 다섯 항목의 합은 residual과 정확히 일치한다.
+ *
+ * 근거 항등식 — 초기자본과 이체는 currentValue·netContributed 양쪽에 같은 금액으로 들어가 상쇄되므로
+ *   totalReturn = Σ(계좌 입금 수입 − 계좌 직접 지출 + 저축성지출 유입 + 매매 현금영향 + 보유 평가액)
+ * 이고, 여기서 pnlSum(실현+미실현+배당)을 빼면 남는 것이 아래 다섯 갈래다.
+ */
+export interface InvestmentResidualBreakdown {
+  /** 투자계좌에서 이체가 아닌 지출(expense)로 직접 빠져나간 돈 — 보통 음수 */
+  accountExpense: number;
+  /** 배당이 아닌 수입(이자·환급 등)이 투자계좌로 들어온 것 — 보통 양수 */
+  nonDividendIncome: number;
+  /** 배당의 원화 환산 차이 — 계좌 잔액은 표기금액, 배당 집계는 환율 환산이라 생기는 간극 */
+  dividendFxGap: number;
+  /** USD 종목 매매·평가의 환율 환산 차이 — 원금에 붙은 환차손익은 실현·미실현 어디에도 안 들어간다 */
+  fxTranslation: number;
+  /** 위 넷으로 설명되지 않는 나머지 (수수료·초기 보유분·기록 누락 등). 정상 데이터면 0에 가깝다 */
+  unexplained: number;
+}
+
 /** 월별 실현손익 (이익·손실 분리) */
 export interface InvestmentMonthlyPnlRow {
   month: string; // yyyy-mm
@@ -981,6 +1016,8 @@ export interface InvestmentReconciliation {
   pnlSum: number;
   /** totalReturn − pnlSum: 초기 보유분·계좌 입금 수입 등으로 설명되지 않는 차이 */
   residual: number;
+  /** residual을 원인별로 분해 (합계 = residual) */
+  residualBreakdown: InvestmentResidualBreakdown;
   // ── 이익/손실 총액 (상계 전) ──
   realizedGain: number;     // 이익 본 매도 합계 (≥ 0)
   realizedLoss: number;     // 손실 본 매도 합계 (≤ 0)
@@ -1015,6 +1052,9 @@ export function computeInvestmentReconciliation(
     initialCapital: 0, deposits: 0, withdrawals: 0, netContributed: 0,
     currentValue: 0, totalReturn: 0, returnRate: null, irr: null,
     realizedPnl: 0, unrealizedPnl: 0, dividendIncome: 0, pnlSum: 0, residual: 0,
+    residualBreakdown: {
+      accountExpense: 0, nonDividendIncome: 0, dividendFxGap: 0, fxTranslation: 0, unexplained: 0
+    },
     realizedGain: 0, realizedLoss: 0, unrealizedGain: 0, unrealizedLoss: 0,
     winningTrades: [], losingTrades: [],
     winningPositions: [], losingPositions: [], monthlyPnl: [],
@@ -1044,6 +1084,10 @@ export function computeInvestmentReconciliation(
   const netFlowByDate = new Map<string, number>(); // 투자 세계로의 순유입 (IRR용)
   for (const entry of ledger) {
     if (entry.kind !== "transfer") continue;
+    // 환율 미로드 시 USD 이체는 건너뛴다 — toKrwByRate는 fxRate가 없으면 달러 액면을 그대로 원화로
+    // 돌려주는데, 평가액 쪽 usdCash는 fxRate 없으면 통째로 0이라 한쪽만 세면 순투입원금이 부풀어
+    // 없던 손실이 잡힌다. 양쪽을 같은 조건으로 묶어 대칭을 유지한다.
+    if (entry.currency === "USD" && !fxRate) continue;
     const amount = toKrwAmount(entry.amount, entry.currency, fxRate);
     if (!(amount > 0)) continue;
     const fromInv = !!entry.fromAccountId && investingIds.has(entry.fromAccountId);
@@ -1158,7 +1202,8 @@ export function computeInvestmentReconciliation(
   let unrealizedLoss = 0;
   const winningPositions: InvestmentPositionPnlRow[] = [];
   const losingPositions: InvestmentPositionPnlRow[] = [];
-  for (const p of computePositions(trades, prices, accounts)) {
+  const positions = computePositions(trades, prices, accounts);
+  for (const p of positions) {
     if (!investingIds.has(p.accountId)) continue;
     const account = accountById.get(p.accountId);
     const pnl = convertPositionAmount(p.pnl, p.ticker, account, fxRate);
@@ -1183,6 +1228,69 @@ export function computeInvestmentReconciliation(
   const netContributed = initialCapital + deposits - withdrawals;
   const totalReturn = currentValue - netContributed;
   const pnlSum = realizedPnl + unrealizedPnl + dividendIncome;
+  const residual = totalReturn - pnlSum;
+
+  // ── 분류 외 차이(residual) 원인 분해 ──
+  // 이체가 아닌 경로로 투자계좌 잔액이 변한 것들이 residual에 쌓인다. 아래 넷을 정확히 계산하고
+  // 나머지는 unexplained로 남겨 합계가 항상 residual과 일치하게 만든다(표가 어긋나지 않도록).
+  //
+  // ⚠ 계좌 잔액(computeAccountBalances)은 income/expense를 '표기금액 그대로' 더한다(환산 없음).
+  //    반면 배당 집계(dividendIncome)는 toKrwAmount로 환산한다 → USD 배당이 있으면 그 차이가
+  //    dividendFxGap으로 드러난다. 여기서 임의로 맞추지 말 것 — 진단 대상 그 자체다.
+  let accountIncomeRaw = 0;
+  let dividendIncomeRaw = 0;
+  let accountExpense = 0;
+  for (const entry of ledger) {
+    if (entry.kind === "income") {
+      if (!entry.toAccountId || !investingIds.has(entry.toAccountId)) continue;
+      accountIncomeRaw += entry.amount;
+      if (isDividendIncomeEntry(entry)) dividendIncomeRaw += entry.amount;
+    } else if (entry.kind === "expense") {
+      // 저축성지출은 투자계좌로 '들어오는' 지출이라 잔액을 늘린다(computeAccountBalances와 동일 부호)
+      if (entry.fromAccountId && investingIds.has(entry.fromAccountId)) accountExpense -= entry.amount;
+      if (entry.toAccountId && investingIds.has(entry.toAccountId)) accountExpense += entry.amount;
+    }
+  }
+
+  // USD 종목 버킷 — 매매 현금영향(과거 환율 기준)과 평가액(현재 환율 기준)의 간극이 곧 환차.
+  // 판정은 convertPositionAmount와 같은 기준(티커 또는 계좌 통화)을 쓴다.
+  const isUsdBucket = (ticker: string, account: Account | undefined) =>
+    isUSDStock(ticker) || account?.currency === "USD";
+  // 매매로 실제 오간 원금(KRW). 두 모드는 상호 배타적이라 나란히 더해도 이중계상되지 않는다:
+  //   원화 현금모드 → cashImpact(거래시점 환율 원화), 델타 0
+  //   달러 잔액모드 → cashImpact 0, 달러 증감 × 현재 환율
+  // 잔액모드를 빼먹으면 매수가 '0원'으로 잡혀 분해가 통째로 어긋난다.
+  let usdPrincipalFlow = 0;
+  let usdRealized = 0;
+  for (const t of trades) {
+    if (!investingIds.has(t.accountId)) continue;
+    const account = accountById.get(t.accountId);
+    if (!isUsdBucket(t.ticker, account)) continue;
+    const impact = Number(t.cashImpact);
+    usdPrincipalFlow += Number.isFinite(impact) ? impact : 0;
+    usdPrincipalFlow += usdBalanceModeDelta(t) * (fxRate ?? 0);
+    if (t.side === "sell") usdRealized += closedByTradeId.get(t.id)?.realizedPnlKRW ?? 0;
+  }
+  let usdStockValue = 0;
+  let usdUnrealized = 0;
+  for (const p of positions) {
+    if (!investingIds.has(p.accountId)) continue;
+    const account = accountById.get(p.accountId);
+    if (!isUsdBucket(p.ticker, account)) continue;
+    usdStockValue += convertPositionAmount(p.marketValue, p.ticker, account, fxRate);
+    usdUnrealized += convertPositionAmount(p.pnl, p.ticker, account, fxRate);
+  }
+
+  const nonDividendIncome = accountIncomeRaw - dividendIncomeRaw;
+  const dividendFxGap = dividendIncomeRaw - dividendIncome;
+  const fxTranslation = usdPrincipalFlow + usdStockValue - usdRealized - usdUnrealized;
+  const residualBreakdown: InvestmentResidualBreakdown = {
+    accountExpense,
+    nonDividendIncome,
+    dividendFxGap,
+    fxTranslation,
+    unexplained: residual - accountExpense - nonDividendIncome - dividendFxGap - fxTranslation
+  };
 
   // 포트폴리오 IRR — 초기자본·이체 순유입을 음(−), 현재 평가액을 양(+)으로
   const today = getTodayKST();
@@ -1211,7 +1319,8 @@ export function computeInvestmentReconciliation(
     unrealizedPnl,
     dividendIncome,
     pnlSum,
-    residual: totalReturn - pnlSum,
+    residual,
+    residualBreakdown,
     realizedGain,
     realizedLoss,
     winningTrades,

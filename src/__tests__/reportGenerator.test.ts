@@ -1,5 +1,7 @@
 import { describe, it, expect } from "vitest";
 import {
+  computeInvestmentReconciliation,
+  generateAccountPerformanceBreakdown,
   generateClosingReportData,
   generateComprehensiveMonthlyReport,
   generateDailyReport,
@@ -173,5 +175,189 @@ describe("generateLedgerMarkdownReport — 구버전 재테크 분류 + 표 셀 
     const md = generateLedgerMarkdownReport(ledger, accounts);
     expect(md).toContain("김밥\\|라면");
     expect(md).not.toContain("| 김밥|라면 |");
+  });
+});
+
+describe("computeInvestmentReconciliation — 분류 외 차이(residual) 원인 분해", () => {
+  const reconcile = (
+    accounts: Account[],
+    ledger: LedgerEntry[],
+    trades: StockTrade[],
+    prices: StockPrice[],
+    fxRate?: number
+  ) => {
+    const perf = generateAccountPerformanceBreakdown(accounts, ledger, trades, prices, fxRate);
+    return computeInvestmentReconciliation(accounts, ledger, trades, prices, perf, fxRate);
+  };
+  /** 항등식: 다섯 갈래의 합은 언제나 residual과 일치해야 한다 (표가 어긋나면 안 됨) */
+  const expectBreakdownSumsToResidual = (rec: ReturnType<typeof reconcile>) => {
+    const b = rec.residualBreakdown;
+    const sum =
+      b.accountExpense + b.nonDividendIncome + b.dividendFxGap + b.fxTranslation + b.unexplained;
+    expect(sum).toBeCloseTo(rec.residual, 6);
+    expect(rec.pnlSum + rec.residual).toBeCloseTo(rec.totalReturn, 6);
+  };
+
+  it("깨끗한 KRW 매매만 있으면 residual = 0 (다섯 갈래 모두 0)", () => {
+    const accounts = [account({ id: "sec1", type: "securities", initialBalance: 1_000_000 })];
+    const trades: StockTrade[] = [
+      { id: "t1", date: "2026-01-10", accountId: "sec1", ticker: "005930", name: "삼성전자", side: "buy", quantity: 10, price: 70_000, fee: 0, totalAmount: 700_000, cashImpact: -700_000 },
+    ];
+    const prices: StockPrice[] = [
+      { ticker: "005930", price: 80_000, currency: "KRW", updatedAt: "2026-07-01T00:00:00Z" } as StockPrice,
+    ];
+    const rec = reconcile(accounts, [], trades, prices);
+    expectBreakdownSumsToResidual(rec);
+    expect(Math.round(rec.residual)).toBe(0);
+    expect(Math.round(rec.unrealizedPnl)).toBe(100_000);
+    expect(Math.round(rec.totalReturn)).toBe(100_000);
+  });
+
+  it("투자계좌에서 직접 나간 지출은 accountExpense로 잡힌다 (이체가 아니라 출금에 안 잡힘)", () => {
+    const accounts = [account({ id: "sec1", type: "securities", initialBalance: 1_000_000 })];
+    const ledger = [
+      entry({ id: "e1", kind: "expense", subCategory: "세금", fromAccountId: "sec1", amount: 300_000 }),
+    ];
+    const rec = reconcile(accounts, ledger, [], []);
+    expectBreakdownSumsToResidual(rec);
+    expect(rec.residualBreakdown.accountExpense).toBe(-300_000);
+    expect(Math.round(rec.residualBreakdown.unexplained)).toBe(0);
+    // 지출 30만이 그대로 '총성과 −30만'으로 둔갑하는 상황 — 손익은 0인데 총성과는 마이너스
+    expect(Math.round(rec.pnlSum)).toBe(0);
+    expect(Math.round(rec.totalReturn)).toBe(-300_000);
+  });
+
+  it("배당 외 수입(이자)은 nonDividendIncome으로 분리된다", () => {
+    const accounts = [account({ id: "sec1", type: "securities" })];
+    const ledger = [
+      entry({ id: "e1", kind: "income", category: "수입", subCategory: "이자", toAccountId: "sec1", amount: 50_000 }),
+      entry({ id: "e2", kind: "income", category: "수입", subCategory: "배당", toAccountId: "sec1", amount: 20_000 }),
+    ];
+    const rec = reconcile(accounts, ledger, [], []);
+    expectBreakdownSumsToResidual(rec);
+    expect(rec.residualBreakdown.nonDividendIncome).toBe(50_000);
+    expect(rec.dividendIncome).toBe(20_000);
+    expect(rec.residualBreakdown.dividendFxGap).toBe(0);
+  });
+
+  it("USD 배당의 원화 환산 간극이 dividendFxGap으로 드러난다", () => {
+    // 계좌 잔액은 표기금액($100)을 그대로 더하는데 배당 집계는 환율 환산(13만원)한다.
+    // 이 간극을 '나머지'에 묻지 않고 별도 항목으로 세운다 — 원인 지목이 가능해야 하므로.
+    const accounts = [account({ id: "sec1", type: "securities" })];
+    const ledger = [
+      entry({ id: "e1", kind: "income", category: "수입", subCategory: "배당", currency: "USD", toAccountId: "sec1", amount: 100 }),
+    ];
+    const rec = reconcile(accounts, ledger, [], [], 1300);
+    expectBreakdownSumsToResidual(rec);
+    expect(rec.dividendIncome).toBe(130_000);
+    expect(rec.residualBreakdown.dividendFxGap).toBe(100 - 130_000);
+    expect(rec.residualBreakdown.nonDividendIncome).toBe(0);
+  });
+
+  it("환율 미로드 시 USD 이체를 원화처럼 세지 않는다 (순투입원금 부풀림 방지)", () => {
+    // toKrwByRate는 fxRate가 없으면 달러 액면을 그대로 반환한다. 평가액 쪽 usdCash는 fxRate가
+    // 없으면 0이므로, 이체만 세면 순투입원금이 부풀어 없던 손실이 잡힌다.
+    const accounts = [
+      account({ id: "bank", type: "checking" }),
+      account({ id: "sec1", type: "securities", currency: "USD" }),
+    ];
+    const ledger = [
+      entry({ id: "e1", kind: "transfer", currency: "USD", fromAccountId: "bank", toAccountId: "sec1", amount: 1000 }),
+    ];
+    const rec = reconcile(accounts, ledger, [], [], undefined);
+    expectBreakdownSumsToResidual(rec);
+    expect(rec.deposits).toBe(0);
+    expect(rec.netContributed).toBe(0);
+    expect(rec.totalReturn).toBe(0);
+  });
+
+  it("여러 원인이 겹쳐도 분해 합계는 residual과 일치한다 (교차항 검증)", () => {
+    // 단일 원인 테스트만으로는 버킷 간 이중계상·누락을 못 잡는다.
+    // 계좌 지출 + 이자 수입 + USD 환차 + KRW 매매를 한꺼번에 섞는다.
+    const accounts = [account({ id: "sec1", type: "securities", initialBalance: 5_000_000 })];
+    const ledger = [
+      entry({ id: "e1", kind: "expense", subCategory: "세금", fromAccountId: "sec1", amount: 200_000 }),
+      entry({ id: "e2", kind: "income", category: "수입", subCategory: "이자", toAccountId: "sec1", amount: 30_000 }),
+      entry({ id: "e3", kind: "income", category: "수입", subCategory: "배당", toAccountId: "sec1", amount: 40_000 }),
+    ];
+    const trades: StockTrade[] = [
+      { id: "t1", date: "2026-01-10", accountId: "sec1", ticker: "005930", name: "삼성전자", side: "buy", quantity: 10, price: 70_000, fee: 0, totalAmount: 700_000, cashImpact: -700_000 },
+      { id: "t2", date: "2026-01-20", accountId: "sec1", ticker: "AAPL", name: "Apple", side: "buy", quantity: 10, price: 100, fee: 0, totalAmount: 1000, cashImpact: -1_000_000, fxRateAtTrade: 1000 },
+      { id: "t3", date: "2026-02-20", accountId: "sec1", ticker: "AAPL", name: "Apple", side: "sell", quantity: 5, price: 120, fee: 0, totalAmount: 600, cashImpact: 720_000, fxRateAtTrade: 1200 },
+    ];
+    const prices: StockPrice[] = [
+      { ticker: "005930", price: 80_000, currency: "KRW", updatedAt: "2026-07-01T00:00:00Z" } as StockPrice,
+      { ticker: "AAPL", price: 130, currency: "USD", updatedAt: "2026-07-01T00:00:00Z" } as StockPrice,
+    ];
+    const rec = reconcile(accounts, ledger, trades, prices, 1300);
+    expectBreakdownSumsToResidual(rec);
+    // 각 원인이 자기 버킷에만 잡히는지 — 서로 새어나가면 아래가 깨진다
+    expect(rec.residualBreakdown.accountExpense).toBe(-200_000);
+    expect(rec.residualBreakdown.nonDividendIncome).toBe(30_000);
+    expect(rec.residualBreakdown.dividendFxGap).toBe(0);
+    // KRW 매매는 환차 버킷에 들어가지 않는다
+    expect(Math.round(rec.residualBreakdown.unexplained)).toBe(0);
+  });
+
+  it("USD 종목 원금의 환차는 fxTranslation으로 잡힌다 (실현·미실현 어디에도 안 들어감)", () => {
+    const accounts = [account({ id: "sec1", type: "securities", initialBalance: 2_000_000 })];
+    // $1,000어치 매수, 당시 환율 1,000 → 현금 100만원 차감. 현재 환율 1,300, 주가는 그대로 $1,000.
+    const trades: StockTrade[] = [
+      { id: "t1", date: "2026-01-10", accountId: "sec1", ticker: "AAPL", name: "Apple", side: "buy", quantity: 10, price: 100, fee: 0, totalAmount: 1000, cashImpact: -1_000_000, fxRateAtTrade: 1000 },
+    ];
+    const prices: StockPrice[] = [
+      { ticker: "AAPL", price: 100, currency: "USD", updatedAt: "2026-07-01T00:00:00Z" } as StockPrice,
+    ];
+    const rec = reconcile(accounts, [], trades, prices, 1300);
+    expectBreakdownSumsToResidual(rec);
+    // 달러 기준 손익 0 → 미실현 0. 그런데 평가액은 130만, 나간 현금은 100만 → 환차 30만.
+    expect(Math.round(rec.unrealizedPnl)).toBe(0);
+    expect(Math.round(rec.residualBreakdown.fxTranslation)).toBe(300_000);
+    expect(Math.round(rec.residualBreakdown.unexplained)).toBe(0);
+  });
+
+  it("USD 잔액모드 거래(cashImpact=0)도 매수원금이 정산에 잡힌다 — 회귀: 매수액이 수익으로 둔갑하던 버그", () => {
+    // account.usdBalance는 매수분이 이미 차감된 '현재' 러닝 값(-1000).
+    // 초기자본 계산이 이걸 그대로 '초기 USD 현금'으로 읽으면 currentValue와 상쇄돼
+    // 매수대금 $1,000×1,300 = 130만원이 통째로 총성과로 잡혔다(주가 무변동인데 +130만).
+    const accounts = [account({ id: "sec1", type: "securities", currency: "USD", usdBalance: -1000 })];
+    const ledger = [
+      entry({ id: "e1", kind: "transfer", currency: "USD", toAccountId: "sec1", amount: 1000, category: "이체" }),
+    ];
+    const trades: StockTrade[] = [
+      { id: "t1", date: "2026-01-10", accountId: "sec1", ticker: "AAPL", name: "Apple", side: "buy", quantity: 10, price: 100, fee: 0, totalAmount: 1000, cashImpact: 0, fxRateAtTrade: 1300 },
+    ];
+    const prices: StockPrice[] = [
+      { ticker: "AAPL", price: 100, currency: "USD", updatedAt: "2026-07-01T00:00:00Z" } as StockPrice,
+    ];
+    const rec = reconcile(accounts, ledger, trades, prices, 1300);
+    expectBreakdownSumsToResidual(rec);
+    // $1,000 입금 → $1,000 매수, 주가 그대로 → 순투입 130만, 평가 130만, 총성과 0
+    expect(Math.round(rec.initialCapital)).toBe(0);
+    expect(Math.round(rec.netContributed)).toBe(1_300_000);
+    expect(Math.round(rec.currentValue)).toBe(1_300_000);
+    expect(Math.round(rec.totalReturn)).toBe(0);
+    expect(Math.round(rec.unrealizedPnl)).toBe(0);
+    expect(Math.round(rec.residual)).toBe(0);
+    expect(Math.round(rec.residualBreakdown.fxTranslation)).toBe(0);
+  });
+
+  it("USD 잔액모드 + 주가 상승분만 손익으로 잡힌다 (환율 동일)", () => {
+    // 매수 후 주가 $1,000 → $1,200. 순수 평가이익 $200×1,300 = 260,000원만 총성과여야 한다.
+    const accounts = [account({ id: "sec1", type: "securities", currency: "USD", usdBalance: -1000 })];
+    const ledger = [
+      entry({ id: "e1", kind: "transfer", currency: "USD", toAccountId: "sec1", amount: 1000, category: "이체" }),
+    ];
+    const trades: StockTrade[] = [
+      { id: "t1", date: "2026-01-10", accountId: "sec1", ticker: "AAPL", name: "Apple", side: "buy", quantity: 10, price: 100, fee: 0, totalAmount: 1000, cashImpact: 0, fxRateAtTrade: 1300 },
+    ];
+    const prices: StockPrice[] = [
+      { ticker: "AAPL", price: 120, currency: "USD", updatedAt: "2026-07-01T00:00:00Z" } as StockPrice,
+    ];
+    const rec = reconcile(accounts, ledger, trades, prices, 1300);
+    expectBreakdownSumsToResidual(rec);
+    expect(Math.round(rec.unrealizedPnl)).toBe(260_000);
+    expect(Math.round(rec.totalReturn)).toBe(260_000);
+    expect(Math.round(rec.residual)).toBe(0);
   });
 });

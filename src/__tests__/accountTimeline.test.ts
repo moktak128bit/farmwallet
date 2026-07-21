@@ -215,3 +215,66 @@ describe("buildTimelineMonthRange", () => {
     expect(buildTimelineMonthRange([], [], "2026-06")).toEqual(["2026-06"]);
   });
 });
+
+describe("computeAccountTimelineRows — USD 잔액모드 거래의 과거 시점 복원", () => {
+  // account.usdBalance는 '현재' 값(매수분 이미 차감). 과거 월에 그대로 쓰면 매수액이 미리 빠져
+  // 없던 계단이 생긴다. 2월 매수 → 1월 자산은 매수 전 상태여야 한다.
+  const usdAccounts = [
+    acc({ id: "SEC", name: "증권", type: "securities", currency: "USD", usdBalance: -1000 }),
+  ];
+  const usdLedger = [
+    entry({ id: "tr", date: "2026-01-05", kind: "transfer", currency: "USD", toAccountId: "SEC", amount: 1000 }),
+  ];
+  const usdTrades = [
+    trade({ id: "t1", date: "2026-02-10", accountId: "SEC", ticker: "AAPL", name: "Apple", quantity: 10, price: 100, totalAmount: 1000, cashImpact: 0 }),
+  ];
+  const usdPrices: StockPrice[] = [
+    { ticker: "AAPL", price: 130_000, currency: "KRW", updatedAt: "2026-02-28T00:00:00Z" } as StockPrice,
+  ];
+
+  it("매수 전 월의 달러 현금이 매수액만큼 깎이지 않는다", () => {
+    const rows = run({
+      accounts: usdAccounts,
+      ledger: usdLedger,
+      trades: usdTrades,
+      adjustedPrices: usdPrices,
+      fxRate: 1300,
+    });
+    // 1월: $1,000 입금만 있었음 → 현금 130만, 주식 0
+    const jan = rows.find((r) => r.month === "2026-01");
+    expect(Math.round(jan?.asset ?? 0)).toBe(1_300_000);
+    expect(Math.round(jan?.stock ?? 0)).toBe(0);
+  });
+
+  it("매수 후에도 총자산은 그대로 — 달러 현금이 주식으로 바뀔 뿐", () => {
+    const rows = run({
+      accounts: usdAccounts,
+      ledger: usdLedger,
+      trades: usdTrades,
+      adjustedPrices: usdPrices,
+      fxRate: 1300,
+    });
+    const feb = rows.find((r) => r.month === "2026-02");
+    // 달러 현금 $0 + 주식 10주 × 130,000원 = 130만 (1월과 동일)
+    expect(Math.round(feb?.stock ?? 0)).toBe(1_300_000);
+    expect(Math.round(feb?.asset ?? 0)).toBe(1_300_000);
+  });
+
+  it("원화 현금모드 USD 거래는 원화 잔액에서 차감된다 (현금↔주식 이동, 총자산 불변)", () => {
+    // cashImpact가 0이 아닌 USD 거래를 건너뛰면 현금과 주식이 동시에 잡혀 자산이 부풀었다.
+    const rows = run({
+      accounts: [acc({ id: "SEC", name: "증권", type: "securities", initialBalance: 2_000_000 })],
+      trades: [
+        trade({ id: "t1", date: "2026-01-10", accountId: "SEC", ticker: "AAPL", name: "Apple", quantity: 10, price: 100, totalAmount: 1000, cashImpact: -1_300_000, fxRateAtTrade: 1300 }),
+      ],
+      adjustedPrices: [
+        { ticker: "AAPL", price: 130_000, currency: "KRW", updatedAt: "2026-01-31T00:00:00Z" } as StockPrice,
+      ],
+      fxRate: 1300,
+    });
+    const jan = rows.find((r) => r.month === "2026-01");
+    // 현금 200만 − 130만 = 70만, 주식 130만 → 총 200만 (매수 전과 동일)
+    expect(Math.round(jan?.stock ?? 0)).toBe(1_300_000);
+    expect(Math.round(jan?.asset ?? 0)).toBe(2_000_000);
+  });
+});

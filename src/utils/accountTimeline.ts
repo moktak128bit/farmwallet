@@ -7,7 +7,7 @@
 import type { Account, LedgerEntry, Loan, StockPrice, StockTrade } from "../types";
 import { computeLoanBalanceAt, computePositions, positionMarketValueKRW } from "../calculations";
 import { buildMonthRange, getMonthEndDate } from "./date";
-import { isUSDStock } from "./finance";
+import { usdBalanceModeDelta } from "./tradeCashImpact";
 
 export type AccountTimelineRow = {
   month: string;
@@ -33,7 +33,6 @@ export function computeAccountTimelineRows(params: {
 }): AccountTimelineRow[] {
   const { accounts, ledger, trades, adjustedPrices, fxRate, currentMonth, monthRange, loans } = params;
 
-  const accountById = new Map(accounts.map((account) => [account.id, account]));
   const ledgerByMonth = new Map<string, LedgerEntry[]>();
   const tradesByMonth = new Map<string, StockTrade[]>();
 
@@ -53,7 +52,16 @@ export function computeAccountTimelineRows(params: {
   });
 
   const runningBalanceByAccount = new Map<string, number>();
-  const runningUsdTransferNetByAccount = new Map<string, number>();
+  const runningUsdByAccount = new Map<string, number>();
+  // account.usdBalance는 모든 잔액모드 거래가 이미 반영된 '현재' 달러 보유량이다.
+  // 타임라인은 과거부터 쌓아 올리므로, 전체 거래분을 빼서 '최초' 달러 보유량으로 되돌린 뒤 시작한다.
+  // (monthRange는 장부·거래 첫 월부터 연속 생성되므로 모든 거래가 아래 루프에서 다시 더해진다.)
+  const usdModeDeltaTotal = new Map<string, number>();
+  for (const trade of trades) {
+    const delta = usdBalanceModeDelta(trade);
+    if (delta === 0) continue;
+    usdModeDeltaTotal.set(trade.accountId, (usdModeDeltaTotal.get(trade.accountId) ?? 0) + delta);
+  }
   accounts.forEach((account) => {
     const baseBalance =
       account.type === "securities" || account.type === "crypto"
@@ -63,7 +71,10 @@ export function computeAccountTimelineRows(params: {
       account.id,
       baseBalance + (account.cashAdjustment ?? 0) + (account.savings ?? 0)
     );
-    runningUsdTransferNetByAccount.set(account.id, 0);
+    runningUsdByAccount.set(
+      account.id,
+      (account.usdBalance ?? 0) - (usdModeDeltaTotal.get(account.id) ?? 0)
+    );
   });
 
   const runningTrades: StockTrade[] = [];
@@ -97,15 +108,15 @@ export function computeAccountTimelineRows(params: {
       if (entry.kind === "transfer") {
         if (entry.currency === "USD") {
           if (entry.fromAccountId) {
-            runningUsdTransferNetByAccount.set(
+            runningUsdByAccount.set(
               entry.fromAccountId,
-              (runningUsdTransferNetByAccount.get(entry.fromAccountId) ?? 0) - entry.amount
+              (runningUsdByAccount.get(entry.fromAccountId) ?? 0) - entry.amount
             );
           }
           if (entry.toAccountId) {
-            runningUsdTransferNetByAccount.set(
+            runningUsdByAccount.set(
               entry.toAccountId,
-              (runningUsdTransferNetByAccount.get(entry.toAccountId) ?? 0) + entry.amount
+              (runningUsdByAccount.get(entry.toAccountId) ?? 0) + entry.amount
             );
           }
         } else {
@@ -129,12 +140,20 @@ export function computeAccountTimelineRows(params: {
     const monthTrades = tradesByMonth.get(month) ?? [];
     for (const trade of monthTrades) {
       runningTrades.push(trade);
-      const account = accountById.get(trade.accountId);
-      if ((account?.type === "securities" || account?.type === "crypto") && isUSDStock(trade.ticker)) continue;
+      // 원화 현금모드는 cashImpact로, 달러 잔액모드는 달러 증감으로 — 둘은 상호 배타적이라
+      // 나란히 적용해도 이중 차감되지 않는다(잔액모드면 cashImpact=0, 현금모드면 델타=0).
+      // computeAccountBalances가 통화 구분 없이 cashImpact를 전부 반영하는 것과 같은 기준.
       runningBalanceByAccount.set(
         trade.accountId,
         (runningBalanceByAccount.get(trade.accountId) ?? 0) + trade.cashImpact
       );
+      const usdDelta = usdBalanceModeDelta(trade);
+      if (usdDelta !== 0) {
+        runningUsdByAccount.set(
+          trade.accountId,
+          (runningUsdByAccount.get(trade.accountId) ?? 0) + usdDelta
+        );
+      }
     }
 
     const monthEndDate = getMonthEndDate(month);
@@ -167,7 +186,7 @@ export function computeAccountTimelineRows(params: {
       const cash = runningBalanceByAccount.get(account.id) ?? 0;
       const usdCash =
         account.type === "securities" || account.type === "crypto"
-          ? (account.usdBalance ?? 0) + (runningUsdTransferNetByAccount.get(account.id) ?? 0)
+          ? (runningUsdByAccount.get(account.id) ?? 0)
           : 0;
       const usdToKrw = fxRate && usdCash !== 0 ? usdCash * fxRate : 0;
       const stock = stockByAccount.get(account.id) ?? 0;

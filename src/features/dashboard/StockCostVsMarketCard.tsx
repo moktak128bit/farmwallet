@@ -71,6 +71,20 @@ export const StockCostVsMarketCard: React.FC<Props> = React.memo(function StockC
     return m;
   }, [accounts]);
 
+  // 연금계좌(isPension) — 퇴직연금·연금저축. 묶이는 돈이라 '지금 굴리는 주식'만 보고 싶을 때 제외한다.
+  const pensionAccountIds = useMemo(() => {
+    const set = new Set<string>();
+    for (const a of accounts) if (a.isPension) set.add(a.id);
+    return set;
+  }, [accounts]);
+  const [excludePension, setExcludePension] = useState(false);
+  // 연금계좌에 실제 거래가 있을 때만 토글 노출 — 아무것도 안 바뀌는 버튼을 두지 않는다
+  const hasPensionTrades = useMemo(
+    () => pensionAccountIds.size > 0 && trades.some((t) => pensionAccountIds.has(t.accountId)),
+    [pensionAccountIds, trades]
+  );
+  const pensionExcluded = excludePension && hasPensionTrades;
+
   const priceIndex = useMemo(() => buildPriceIndex(prices), [prices]);
 
   const { rows, holdingsByDate } = useMemo(() => {
@@ -152,6 +166,7 @@ export const StockCostVsMarketCard: React.FC<Props> = React.memo(function StockC
         const meta = metaByKey.get(key);
         if (!meta) continue;
         if (!securitiesAccountIds.has(meta.accountId)) continue;
+        if (pensionExcluded && pensionAccountIds.has(meta.accountId)) continue;
 
         const qty = q.reduce((s, lot) => s + lot.qty, 0);
         if (qty <= 0) continue;
@@ -202,7 +217,7 @@ export const StockCostVsMarketCard: React.FC<Props> = React.memo(function StockC
     }
 
     return { rows: out, holdingsByDate: byDate };
-  }, [today, trades, fxRate, securitiesAccountIds, accountNameById, priceIndex]);
+  }, [today, trades, fxRate, securitiesAccountIds, accountNameById, priceIndex, pensionExcluded, pensionAccountIds]);
 
   // 상세는 차트 점 클릭 시에만 표시. 자동으로 최신을 선택하지 않음.
   const [selectedDate, setSelectedDate] = useState<string | null>(null);
@@ -228,7 +243,34 @@ export const StockCostVsMarketCard: React.FC<Props> = React.memo(function StockC
         }}
       >
         <div>
-          <div className="card-title" style={{ marginBottom: 4 }}>주식 매입액 vs 평가액 (월 1일·15일)</div>
+          <div style={{ display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap", marginBottom: 4 }}>
+            <div className="card-title" style={{ marginBottom: 0 }}>
+              주식 매입액 vs 평가액 (월 1일·15일)
+              {pensionExcluded && (
+                <span style={{ fontSize: 13, color: "var(--text-muted)", fontWeight: 400 }}> (연금 제외)</span>
+              )}
+            </div>
+            {hasPensionTrades && (
+              <button
+                type="button"
+                onClick={() => setExcludePension((v) => !v)}
+                aria-pressed={pensionExcluded}
+                style={{
+                  fontSize: 12,
+                  padding: "3px 10px",
+                  borderRadius: 6,
+                  border: `1px solid ${pensionExcluded ? "var(--primary)" : "var(--border)"}`,
+                  background: pensionExcluded ? "var(--primary-light)" : "var(--surface)",
+                  color: pensionExcluded ? "var(--primary)" : "var(--text)",
+                  fontWeight: pensionExcluded ? 700 : 400,
+                  cursor: "pointer",
+                }}
+                title="연금계좌(퇴직연금·연금저축) 보유분을 매입액·평가액에서 제외하고 봅니다"
+              >
+                연금 제외
+              </button>
+            )}
+          </div>
           <div className="hint" style={{ fontSize: 13 }}>
             매월 1일·15일 스냅샷 · 매입액 = 그 시점 보유 종목의 원가 · 평가액 = 그 보유 종목을 현재 시세로 환산
             · 매도하면 판 수량의 원가가 매입액에서 빠집니다 (보유분 기준)

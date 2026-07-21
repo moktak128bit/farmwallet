@@ -31,6 +31,15 @@ export const InvestmentReconciliationSection: React.FC<Props> = React.memo(funct
   }
   const positive = rec.totalReturn >= 0;
   const returnColor = positive ? "var(--danger)" : "var(--accent)";
+  // 분류 외 차이 원인 분해 — 0원 항목은 숨겨 표를 짧게 유지 (합계는 항상 residual과 일치)
+  const rb = rec.residualBreakdown;
+  const residualRows = [
+    { label: "투자계좌에서 직접 지출", hint: "이체가 아닌 지출로 빠져나감", value: rb.accountExpense },
+    { label: "배당 외 계좌 입금 수입", hint: "이자·환급 등", value: rb.nonDividendIncome },
+    { label: "배당 원화 환산 차이", hint: "USD 배당의 잔액 반영 ↔ 환산 집계 간극", value: rb.dividendFxGap },
+    { label: "USD 환율 환산 차이", hint: "원금 환차손익 — 실현·미실현 어디에도 안 들어감", value: rb.fxTranslation },
+    { label: "설명되지 않는 나머지", hint: "수수료·초기 보유분·기록 누락", value: rb.unexplained }
+  ].filter((row) => Math.round(row.value) !== 0);
   return (
     <div>
       <h3>투자 정산</h3>
@@ -133,9 +142,19 @@ export const InvestmentReconciliationSection: React.FC<Props> = React.memo(funct
               <td className="number">{signedKRW(rec.pnlSum)}</td>
             </tr>
             <tr style={{ color: "var(--text-muted)" }}>
-              <td>분류 외 차이 <span style={{ fontSize: 12 }}>(초기 보유분·계좌 입금 수입 등)</span></td>
+              <td>분류 외 차이 <span style={{ fontSize: 12 }}>(투자 성과가 아닌 잔액 변동)</span></td>
               <td className="number">{signedKRW(rec.residual)}</td>
             </tr>
+            {residualRows.map((row) => (
+              <tr key={row.label} style={{ color: "var(--text-muted)", fontSize: 13 }}>
+                <td style={{ paddingLeft: 20 }}>
+                  <span style={{ opacity: 0.6 }}>└ </span>
+                  {row.label}{" "}
+                  <span style={{ fontSize: 11, opacity: 0.75 }}>{row.hint}</span>
+                </td>
+                <td className="number">{signedKRW(row.value)}</td>
+              </tr>
+            ))}
           </tbody>
         </table>
         <p className="hint" style={{ fontSize: 12, margin: "10px 0 0" }}>

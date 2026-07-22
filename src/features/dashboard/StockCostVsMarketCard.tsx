@@ -1,7 +1,10 @@
 import React, { Suspense, lazy, useMemo, useState } from "react";
-import type { Account, StockPrice, StockTrade } from "../../types";
-import { buildHalfMonthSnapshotDates } from "../../utils/date";
-import { canonicalTickerForMatch, isUSDStock } from "../../utils/finance";
+import type { Account, MarketEnvSnapshot, StockPrice, StockTrade } from "../../types";
+import {
+  buildStockCostSnapshots,
+  type StockSnapshotHolding,
+  type StockSnapshotPoint,
+} from "../../utils/stockCostSnapshots";
 import { formatKRW } from "../../utils/formatter";
 import type { CostVsMarketRow } from "./DashboardInlineCharts";
 
@@ -15,38 +18,12 @@ interface Props {
   trades: StockTrade[];
   prices: StockPrice[];
   fxRate: number | null;
-}
-
-interface HoldingDetail {
-  ticker: string;
-  name: string;
-  accountName: string;
-  quantity: number;
-  avgPriceNative: number; // 매입 평단가 (USD 종목=USD, KRW 종목=KRW)
-  currentPriceNative: number | null; // 현재 시세 (USD 또는 KRW, 없으면 null)
-  isUsd: boolean;
-  costKrw: number;
-  marketKrw: number;
+  /** 월 1일·15일 시세 환경 박제 — 과거 점을 그 날짜의 시세·환율로 고정 (TotalAssetTrendCard와 동일 소스) */
+  marketEnvSnapshots?: MarketEnvSnapshot[];
 }
 
 function labelFor(dateStr: string): string {
   return dateStr.slice(2, 4) + "-" + dateStr.slice(5, 7) + "-" + dateStr.slice(8, 10);
-}
-
-function buildPriceIndex(prices: StockPrice[]): Map<string, { price: number; currency?: string }> {
-  const map = new Map<string, { price: number; currency?: string; updatedAt?: string }>();
-  for (const p of prices) {
-    const key = canonicalTickerForMatch(p.ticker) ?? p.ticker.toUpperCase();
-    if (!key) continue;
-    if (typeof p.price !== "number" || !Number.isFinite(p.price)) continue;
-    const prev = map.get(key);
-    if (!prev || (p.updatedAt ?? "") >= (prev.updatedAt ?? "")) {
-      map.set(key, { price: p.price, currency: p.currency, updatedAt: p.updatedAt });
-    }
-  }
-  const out = new Map<string, { price: number; currency?: string }>();
-  map.forEach((v, k) => out.set(k, { price: v.price, currency: v.currency }));
-  return out;
 }
 
 // React.memo — 부모(DashboardPage)가 넘기는 props는 안정적(store 참조·원시값)이어야 한다.
@@ -56,22 +33,9 @@ export const StockCostVsMarketCard: React.FC<Props> = React.memo(function StockC
   trades,
   prices,
   fxRate,
+  marketEnvSnapshots,
 }) {
-  const securitiesAccountIds = useMemo(() => {
-    const set = new Set<string>();
-    for (const a of accounts) {
-      if (a.type === "securities" || a.type === "crypto") set.add(a.id);
-    }
-    return set;
-  }, [accounts]);
-
-  const accountNameById = useMemo(() => {
-    const m = new Map<string, string>();
-    for (const a of accounts) m.set(a.id, a.name ?? a.id);
-    return m;
-  }, [accounts]);
-
-  // 연금계좌(isPension) — 퇴직연금·연금저축. 묶이는 돈이라 '지금 굴리는 주식'만 보고 싶을 때 제외한다.
+  // 연금계좌(isPension) — 묶이는 돈이라 '지금 굴리는 주식'만 보고 싶을 때 제외한다.
   const pensionAccountIds = useMemo(() => {
     const set = new Set<string>();
     for (const a of accounts) if (a.isPension) set.add(a.id);
@@ -85,147 +49,37 @@ export const StockCostVsMarketCard: React.FC<Props> = React.memo(function StockC
   );
   const pensionExcluded = excludePension && hasPensionTrades;
 
-  const priceIndex = useMemo(() => buildPriceIndex(prices), [prices]);
+  // 계산은 순수 모듈(buildStockCostSnapshots) — 박제 시세·환율 우선, 과거 점 불변
+  const points = useMemo<StockSnapshotPoint[]>(
+    () =>
+      buildStockCostSnapshots({
+        trades,
+        accounts,
+        prices,
+        marketEnvSnapshots,
+        fxRate,
+        today,
+        excludePension: pensionExcluded,
+      }),
+    [trades, accounts, prices, marketEnvSnapshots, fxRate, today, pensionExcluded]
+  );
 
-  const { rows, holdingsByDate } = useMemo(() => {
-    const emptyResult = { rows: [] as CostVsMarketRow[], holdingsByDate: new Map<string, HoldingDetail[]>() };
-    if (securitiesAccountIds.size === 0) return emptyResult;
-
-    const sortedTrades = [...trades]
-      .filter((t) => !!t.date && !!t.ticker)
-      .sort((a, b) => {
-        const d = a.date.localeCompare(b.date);
-        if (d !== 0) return d;
-        if (a.side === "buy" && b.side === "sell") return -1;
-        if (a.side === "sell" && b.side === "buy") return 1;
-        return a.id.localeCompare(b.id);
-      });
-
-    if (sortedTrades.length === 0) return emptyResult;
-    const firstTradeDate = sortedTrades[0].date.slice(0, 10);
-    const dates = buildHalfMonthSnapshotDates(firstTradeDate, today);
-    if (dates.length === 0) dates.push(today);
-
-    type Lot = { qty: number; totalAmount: number; fxRateAtTrade?: number };
-    type GroupMeta = { accountId: string; tickerNorm: string; name: string; usd: boolean };
-    const queues = new Map<string, Lot[]>();
-    const metaByKey = new Map<string, GroupMeta>();
-
-    let tradeIdx = 0;
-    const applyTradesThrough = (upTo: string) => {
-      while (tradeIdx < sortedTrades.length && sortedTrades[tradeIdx].date.slice(0, 10) <= upTo) {
-        const t = sortedTrades[tradeIdx];
-        const norm = canonicalTickerForMatch(t.ticker) ?? t.ticker.toUpperCase();
-        const key = `${t.accountId}::${norm}`;
-        let q = queues.get(key);
-        if (!q) {
-          q = [];
-          queues.set(key, q);
-        }
-        const existingMeta = metaByKey.get(key);
-        if (!existingMeta) {
-          metaByKey.set(key, {
-            accountId: t.accountId,
-            tickerNorm: norm,
-            name: t.name || norm,
-            usd: isUSDStock(norm),
-          });
-        } else if (t.name) {
-          existingMeta.name = t.name;
-        }
-        if (t.side === "buy") {
-          q.push({ qty: t.quantity, totalAmount: t.totalAmount, fxRateAtTrade: t.fxRateAtTrade });
-        } else {
-          let remaining = t.quantity;
-          while (remaining > 0 && q.length > 0) {
-            const lot = q[0];
-            const use = Math.min(remaining, lot.qty);
-            const unitCost = lot.qty > 0 ? lot.totalAmount / lot.qty : 0;
-            lot.qty -= use;
-            lot.totalAmount = unitCost * lot.qty;
-            remaining -= use;
-            if (lot.qty <= 0) q.shift();
-          }
-        }
-        tradeIdx += 1;
-      }
-    };
-
-    const out: CostVsMarketRow[] = [];
-    const byDate = new Map<string, HoldingDetail[]>();
-
-    for (const snapDate of dates) {
-      applyTradesThrough(snapDate);
-
-      let cost = 0;
-      let market = 0;
-      const holdings: HoldingDetail[] = [];
-
-      for (const [key, q] of queues.entries()) {
-        if (q.length === 0) continue;
-        const meta = metaByKey.get(key);
-        if (!meta) continue;
-        if (!securitiesAccountIds.has(meta.accountId)) continue;
-        if (pensionExcluded && pensionAccountIds.has(meta.accountId)) continue;
-
-        const qty = q.reduce((s, lot) => s + lot.qty, 0);
-        if (qty <= 0) continue;
-        const totalNative = q.reduce((s, lot) => s + lot.totalAmount, 0);
-        const avgPriceNative = qty > 0 ? totalNative / qty : 0;
-
-        // 원가(KRW) — USD는 로트별 매입 당시 환율(없으면 현재 환율), KRW는 그대로
-        const costKrw = meta.usd
-          ? q.reduce((s, lot) => {
-              const fx = lot.fxRateAtTrade && lot.fxRateAtTrade > 0 ? lot.fxRateAtTrade : (fxRate ?? 0);
-              return s + lot.totalAmount * fx;
-            }, 0)
-          : totalNative;
-
-        // 현재 시세 (USD/KRW 원통화) 조회
-        const priceInfo = priceIndex.get(meta.tickerNorm);
-        const currentPriceNative = priceInfo ? priceInfo.price : null;
-
-        // 평가액(KRW) — 현재가 × 수량, 통화 환산 적용.
-        // 시세 없거나 USD인데 환율 없으면 원가와 동일 처리(손익 0) — TotalAssetTrendCard와 일관
-        let marketKrw: number;
-        if (currentPriceNative == null) {
-          marketKrw = costKrw;
-        } else if (meta.usd) {
-          marketKrw = fxRate ? currentPriceNative * qty * fxRate : costKrw;
-        } else {
-          marketKrw = currentPriceNative * qty;
-        }
-
-        cost += costKrw;
-        market += marketKrw;
-        holdings.push({
-          ticker: meta.tickerNorm,
-          name: meta.name,
-          accountName: accountNameById.get(meta.accountId) ?? meta.accountId,
-          quantity: qty,
-          avgPriceNative,
-          currentPriceNative,
-          isUsd: meta.usd,
-          costKrw,
-          marketKrw,
-        });
-      }
-
-      holdings.sort((a, b) => b.marketKrw - a.marketKrw);
-      byDate.set(snapDate, holdings);
-      out.push({ date: snapDate, label: labelFor(snapDate), cost, market });
-    }
-
-    return { rows: out, holdingsByDate: byDate };
-  }, [today, trades, fxRate, securitiesAccountIds, accountNameById, priceIndex, pensionExcluded, pensionAccountIds]);
+  const rows = useMemo<CostVsMarketRow[]>(
+    () => points.map((p) => ({ date: p.date, label: labelFor(p.date), cost: p.cost, market: p.market })),
+    [points]
+  );
+  const pointByDate = useMemo(() => {
+    const m = new Map<string, StockSnapshotPoint>();
+    for (const p of points) m.set(p.date, p);
+    return m;
+  }, [points]);
+  const pinnedCount = useMemo(() => points.filter((p) => p.fxSource === "snapshot").length, [points]);
 
   // 상세는 차트 점 클릭 시에만 표시. 자동으로 최신을 선택하지 않음.
   const [selectedDate, setSelectedDate] = useState<string | null>(null);
-  const activeDate = selectedDate && holdingsByDate.has(selectedDate) ? selectedDate : null;
-  const activeRow = activeDate ? rows.find((r) => r.date === activeDate) : undefined;
-  const activeHoldings = activeDate ? holdingsByDate.get(activeDate) ?? [] : [];
+  const activePoint = selectedDate ? pointByDate.get(selectedDate) ?? null : null;
 
-  const latest = rows[rows.length - 1];
+  const latest = points[points.length - 1];
   const unrealized = latest ? latest.market - latest.cost : 0;
   const unrealizedPct = latest && latest.cost > 0 ? (unrealized / latest.cost) * 100 : 0;
   const pnlColor = unrealized >= 0 ? "var(--success, #059669)" : "var(--danger, #dc2626)";
@@ -272,8 +126,9 @@ export const StockCostVsMarketCard: React.FC<Props> = React.memo(function StockC
             )}
           </div>
           <div className="hint" style={{ fontSize: 13 }}>
-            매월 1일·15일 스냅샷 · 매입액 = 그 시점 보유 종목의 원가 · 평가액 = 그 보유 종목을 현재 시세로 환산
-            · 매도하면 판 수량의 원가가 매입액에서 빠집니다 (보유분 기준)
+            매월 1일·15일 진짜 스냅샷 · 그 날짜에 들고 있던 종목을 그 날짜의 박제 시세·환율로 평가
+            (박제 없는 옛 날짜만 현재 시세 폴백) · 과거 점은 바뀌지 않습니다
+            {pinnedCount > 0 && <span> · 박제 {pinnedCount}건</span>}
           </div>
         </div>
         {latest && (
@@ -313,17 +168,16 @@ export const StockCostVsMarketCard: React.FC<Props> = React.memo(function StockC
           <Suspense fallback={<div style={{ height: 300 }} />}>
             <LazyCostVsMarketValueChart
               rows={rows}
-              activeDate={activeDate}
+              activeDate={activePoint?.date ?? null}
               onPointClick={(d) => setSelectedDate(d)}
             />
           </Suspense>
         )}
       </div>
-      {activeRow && activeHoldings.length > 0 && (
+      {activePoint && activePoint.holdings.length > 0 && (
         <SnapshotDetail
-          row={activeRow}
-          holdings={activeHoldings}
-          isLatest={latest?.date === activeRow.date}
+          point={activePoint}
+          isLatest={latest?.date === activePoint.date}
           onReset={() => setSelectedDate(null)}
         />
       )}
@@ -332,8 +186,7 @@ export const StockCostVsMarketCard: React.FC<Props> = React.memo(function StockC
 });
 
 interface SnapshotDetailProps {
-  row: CostVsMarketRow;
-  holdings: HoldingDetail[];
+  point: StockSnapshotPoint;
   isLatest: boolean;
   onReset: () => void;
 }
@@ -343,23 +196,29 @@ const formatNativePrice = (value: number, isUsd: boolean): string => {
   return symbol + value.toLocaleString(undefined, { maximumFractionDigits: 2 });
 };
 
-const SnapshotDetail: React.FC<SnapshotDetailProps> = ({ row, holdings, isLatest, onReset }) => {
-  const pnl = row.market - row.cost;
-  const pnlPct = row.cost > 0 ? (pnl / row.cost) * 100 : 0;
+const priceSourceLabel = (s: StockSnapshotHolding["priceSource"]): string =>
+  s === "snapshot" ? "박제" : s === "current" ? "현재" : "없음";
+
+const SnapshotDetail: React.FC<SnapshotDetailProps> = ({ point, isLatest, onReset }) => {
+  const { holdings } = point;
+  const pnl = point.market - point.cost;
+  const pnlPct = point.cost > 0 ? (pnl / point.cost) * 100 : 0;
   const pnlColor = pnl >= 0 ? "var(--success, #059669)" : "var(--danger, #dc2626)";
   return (
     <div style={{ marginTop: 16, paddingTop: 12, borderTop: "1px solid var(--border)" }}>
       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 10, flexWrap: "wrap", gap: 8 }}>
         <div style={{ display: "flex", alignItems: "baseline", gap: 10 }}>
-          <div style={{ fontSize: 15, fontWeight: 700 }}>{row.date} 보유 종목</div>
-          <div className="hint" style={{ fontSize: 12 }}>{holdings.length}종목 · 평가액은 현재 시세 기준</div>
+          <div style={{ fontSize: 15, fontWeight: 700 }}>{point.date} 보유 종목</div>
+          <div className="hint" style={{ fontSize: 12 }}>
+            {holdings.length}종목 · 평가액은 {point.fxSource === "snapshot" ? "당시 박제 시세" : "현재 시세"} 기준
+          </div>
         </div>
         <div style={{ display: "flex", gap: 16, alignItems: "center" }}>
           <div style={{ fontSize: 13 }}>
             <span className="hint">매입 </span>
-            <span style={{ color: "#f59e0b", fontWeight: 700 }}>{formatKRW(Math.round(row.cost))}</span>
+            <span style={{ color: "#f59e0b", fontWeight: 700 }}>{formatKRW(Math.round(point.cost))}</span>
             <span className="hint" style={{ marginLeft: 8 }}>평가 </span>
-            <span style={{ color: "#2563eb", fontWeight: 700 }}>{formatKRW(Math.round(row.market))}</span>
+            <span style={{ color: "#2563eb", fontWeight: 700 }}>{formatKRW(Math.round(point.market))}</span>
             <span style={{ marginLeft: 8, color: pnlColor, fontWeight: 700 }}>
               ({pnl >= 0 ? "+" : ""}{formatKRW(Math.round(pnl))} · {pnl >= 0 ? "+" : ""}{pnlPct.toFixed(1)}%)
             </span>
@@ -383,7 +242,7 @@ const SnapshotDetail: React.FC<SnapshotDetailProps> = ({ row, holdings, isLatest
               <th style={{ textAlign: "left", padding: "6px 8px" }}>계좌</th>
               <th style={{ padding: "6px 8px" }}>수량</th>
               <th style={{ padding: "6px 8px" }}>평단가</th>
-              <th style={{ padding: "6px 8px" }}>현재가</th>
+              <th style={{ padding: "6px 8px" }}>시세</th>
               <th style={{ padding: "6px 8px" }}>매입액(원)</th>
               <th style={{ padding: "6px 8px" }}>평가액(원)</th>
               <th style={{ padding: "6px 8px" }}>손익</th>
@@ -395,8 +254,8 @@ const SnapshotDetail: React.FC<SnapshotDetailProps> = ({ row, holdings, isLatest
               const hPct = h.costKrw > 0 ? (hPnl / h.costKrw) * 100 : 0;
               const hColor = hPnl >= 0 ? "var(--success, #059669)" : "var(--danger, #dc2626)";
               const priceChangePct =
-                h.currentPriceNative != null && h.avgPriceNative > 0
-                  ? ((h.currentPriceNative - h.avgPriceNative) / h.avgPriceNative) * 100
+                h.priceNative != null && h.avgPriceNative > 0
+                  ? ((h.priceNative - h.avgPriceNative) / h.avgPriceNative) * 100
                   : null;
               return (
                 <tr key={`${h.ticker}-${h.accountName}`} style={{ borderTop: "1px solid var(--border)", textAlign: "right" }}>
@@ -408,11 +267,12 @@ const SnapshotDetail: React.FC<SnapshotDetailProps> = ({ row, holdings, isLatest
                   <td style={{ padding: "6px 8px" }}>{h.quantity.toLocaleString(undefined, { maximumFractionDigits: 4 })}</td>
                   <td style={{ padding: "6px 8px" }}>{formatNativePrice(h.avgPriceNative, h.isUsd)}</td>
                   <td style={{ padding: "6px 8px" }}>
-                    {h.currentPriceNative == null ? (
+                    {h.priceNative == null ? (
                       <span className="hint">-</span>
                     ) : (
                       <>
-                        {formatNativePrice(h.currentPriceNative, h.isUsd)}
+                        {formatNativePrice(h.priceNative, h.isUsd)}
+                        <span className="hint" style={{ marginLeft: 4, fontSize: 11 }}>({priceSourceLabel(h.priceSource)})</span>
                         {priceChangePct != null && (
                           <span
                             style={{
@@ -438,8 +298,8 @@ const SnapshotDetail: React.FC<SnapshotDetailProps> = ({ row, holdings, isLatest
             })}
           </tbody>
         </table>
-        {holdings.some((h) => h.currentPriceNative == null) && (
-          <div className="hint" style={{ fontSize: 11, marginTop: 6 }}>현재 시세가 없는 종목은 평가액을 원가와 동일 처리 (손익 0)</div>
+        {holdings.some((h) => h.priceNative == null) && (
+          <div className="hint" style={{ fontSize: 11, marginTop: 6 }}>시세가 없는 종목은 평가액을 원가와 동일 처리 (손익 0)</div>
         )}
       </div>
     </div>

@@ -452,6 +452,7 @@ export const DashboardView: React.FC<Props> = (props) => {
             trades={trades}
             prices={prices}
             fxRate={fxRate}
+            marketEnvSnapshots={storeData.marketEnvSnapshots}
           />
         )}
 

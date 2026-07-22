@@ -3,6 +3,7 @@ import type { Account, AccountType, LedgerEntry, MarketEnvSnapshot, StockPrice, 
 import { computeAccountBalances } from "../../calculations";
 import { buildHalfMonthSnapshotDates } from "../../utils/date";
 import { canonicalTickerForMatch, isUSDStock } from "../../utils/finance";
+import { buildSnapshotPriceIndex } from "../../utils/stockCostSnapshots";
 import { formatKRW } from "../../utils/formatter";
 import type { TotalAssetRow } from "./DashboardInlineCharts";
 
@@ -82,18 +83,7 @@ function buildCurrentPriceIndex(prices: StockPrice[]): Map<string, { price: numb
   return out;
 }
 
-function buildSnapshotPriceIndex(
-  snap: MarketEnvSnapshot,
-): Map<string, { price: number; currency?: string }> {
-  const out = new Map<string, { price: number; currency?: string }>();
-  for (const p of snap.prices) {
-    const key = canonicalTickerForMatch(p.ticker) ?? p.ticker.toUpperCase();
-    if (!key) continue;
-    if (typeof p.price !== "number" || !Number.isFinite(p.price)) continue;
-    out.set(key, { price: p.price, currency: p.currency });
-  }
-  return out;
-}
+// 박제 시세 인덱싱은 stockCostSnapshots와 공유 — 두 카드가 같은 규칙으로 박제를 읽는다
 
 // React.memo — 부모(DashboardPage)가 넘기는 props는 안정적(store 참조·원시값)이어야 한다.
 export const TotalAssetTrendCard: React.FC<Props> = React.memo(function TotalAssetTrendCard({

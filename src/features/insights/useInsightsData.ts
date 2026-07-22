@@ -10,7 +10,9 @@ import { computePortfolioMetrics, computeUnrealizedPL } from "../../utils/portfo
 import { computeIncomeGrowth, computeSpendingInertia, computeCategoryGrowth } from "../../utils/insightsTrends";
 import { computeEntryOutliers, computePatternStats } from "../../utils/insightsPatterns";
 import { calcTrend, mTotalsFor, computePeriodScope } from "../../utils/insightsHelpers";
-import { isInvestmentEntry, isCreditPayment } from "../../utils/category";
+import { isInvestmentEntry, isCurrencyExchangeEntry, isInvestmentLossEntry } from "../../utils/category";
+import { classifyLedgerFlow, toKrwAmount } from "../dashboard/summaryMath";
+import { expenseMainName } from "../../utils/categoryMerge";
 import { tradeAmountKRW } from "../../utils/finance";
 import { detectSpendAnomalies } from "../../utils/anomaly";
 import { buildClosedTradeRecords, summarizeRecords, summaryToRealPL } from "../../utils/investmentRecord";
@@ -34,18 +36,27 @@ export function useInsightsData(ledger: LedgerEntry[], rawTrades: StockTrade[], 
     const aMap = new Map(accounts.map(a => [a.id, a.name]));
     const invIds = new Set(accounts.filter(a => a.type === "securities" || a.type === "crypto").map(a => a.id));
     const moimIds = getMoimAccountIds(accounts);
+    /** 금액 단일 진입점 — USD는 환율 환산. 원본 amount를 직접 합산하지 말 것
+     *  (예전엔 fxRate를 받고도 전 구간이 원본을 더해 USD 투자이체가 1/1400로 집계됐다). */
+    const amt = (l: LedgerEntry) => toKrwAmount(l, fxRate);
+    /** 흐름 분류 단일 진입점 — 대시보드 classifyLedgerFlow와 동일 기준.
+     *  (예전엔 이 파일이 `category!=="재테크"` 하드코딩 + 투자손실을 지출에 가산해
+     *  대시보드와 "지출" 숫자가 달랐다. 투자손익은 재테크 순집계 — 확정 정책.) */
+    const flowOf = (l: LedgerEntry) => classifyLedgerFlow(l, categoryPresets);
 
     /* ===== monthly (full period) ===== */
     const monthly: Record<string, { income: number; expense: number; investment: number }> = {};
     const em = (m: string) => { if (!monthly[m]) monthly[m] = { income: 0, expense: 0, investment: 0 }; };
     for (const l of ledger) {
       const m = l.date?.slice(0, 7); if (!m) continue; em(m);
-      const a = Number(l.amount); if (a <= 0) continue;
-      // 이월/원래보유·소득 집계 제외(퇴직연금)는 월별 수입에서도 제외 (모든 수입 지표 일관)
-      if (l.kind === "income") { if (!isExcludedIncomeEntry(l)) monthly[m].income += a; }
-      else if (isInvestmentEntry(l)) monthly[m].investment += a; // 저축·투자 이체
-      // 환전은 계좌 간 이동이라 지출 아님 — fExp/pExpense와 동일 기준으로 제외 (월별 추세 ↔ 기간 합계 정합)
-      else if (l.kind === "expense" && !isCreditPayment(l) && l.category !== "환전") monthly[m].expense += a;  // 신용결제는 카드 사용시 이미 잡힘 — 이중계상 방지
+      const a = amt(l); if (a <= 0) continue;
+      const flow = flowOf(l);
+      // 이월/원래보유·소득 집계 제외(퇴직연금)·신용결제·환전은 classifyLedgerFlow가 null로 거른다
+      if (flow === "income") monthly[m].income += a;
+      else if (flow === "expense") monthly[m].expense += a;
+      // 재테크 = 저축·투자 이체 + 투자수익(+) − 투자손실(−) — 대시보드와 동일 순집계
+      else if (flow === "investing") monthly[m].investment += isInvestmentLossEntry(l) ? -a : a;
+      // 인사이트 확장: 증권·코인 계좌로 들어간 일반 이체(계좌이체 등)도 투자 유입으로 본다
       else if (l.kind === "transfer" && l.toAccountId && invIds.has(l.toAccountId)) monthly[m].investment += a;
     }
     const months = Object.keys(monthly).sort();
@@ -55,22 +66,22 @@ export function useInsightsData(ledger: LedgerEntry[], rawTrades: StockTrade[], 
     /* ===== filter for period ===== */
     const fL = selMonth ? ledger.filter(l => l.date?.startsWith(selMonth)) : ledger;
     const fT = selMonth ? rawTrades.filter(t => t.date?.startsWith(selMonth)) : rawTrades;
-    // 일반 지출: expense kind 중 재테크/환전/신용결제 제외 (투자손실은 category=재테크라 자동 제외)
-    // 신용결제 제외 이유: 카드 사용 시점에 이미 expense로 기록됨. 카드 대금 결제까지 합치면 이중계상 → 월 지출 ~2배 부풀려짐.
-    const fExp = fL.filter(l => l.kind === "expense" && Number(l.amount) > 0 && l.category !== "재테크" && l.category !== "환전" && !isCreditPayment(l));
-    // 수입 (투자수익도 kind=income으로 마이그레이션되어 자연 포함). 이월/원래보유자산 제외 — utils/savingsRate 단일 판정.
-    const fInc = fL.filter(l => l.kind === "income" && Number(l.amount) > 0 && !isExcludedIncomeEntry(l));
+    // 일반 지출 = classifyLedgerFlow "expense" — 신용결제·환전·저축성지출·투자손실 제외가 대시보드와 동일 기준.
+    // (신용결제: 카드 사용 시점에 이미 잡힘 — 이중계상 방지. 투자손익: 재테크 순집계로.)
+    const fExp = fL.filter(l => Number(l.amount) > 0 && flowOf(l) === "expense");
+    // 수입 = classifyLedgerFlow "income" — 이월/퇴직연금·투자수익 제외 (투자수익은 재테크로).
+    const fInc = fL.filter(l => Number(l.amount) > 0 && flowOf(l) === "income");
 
     /* period totals */
-    const pIncome = fInc.reduce((s, l) => s + Number(l.amount), 0);
-    // 투자손실은 지출 합계에 포함 (kind=expense, category=재테크, subCategory=투자손실)
-    const pExpense = fExp.reduce((s, l) => s + Number(l.amount), 0) +
-      fL.filter(l => l.kind === "expense" && l.category === "재테크" && l.subCategory === "투자손실" && Number(l.amount) > 0)
-        .reduce((s, l) => s + Number(l.amount), 0);
+    const pIncome = fInc.reduce((s, l) => s + amt(l), 0);
+    const pExpense = fExp.reduce((s, l) => s + amt(l), 0);
+    // 재테크 = 저축·투자 이체 + 투자수익(+) − 투자손실(−) + 증권계좌로의 일반 이체(인사이트 확장)
     let pInvest = 0;
     for (const l of fL) {
-      if (isInvestmentEntry(l)) pInvest += Number(l.amount);
-      else if (l.kind === "transfer" && l.toAccountId && invIds.has(l.toAccountId)) pInvest += Number(l.amount);
+      if (Number(l.amount) <= 0) continue;
+      const flow = flowOf(l);
+      if (flow === "investing") pInvest += isInvestmentLossEntry(l) ? -amt(l) : amt(l);
+      else if (flow === null && l.kind === "transfer" && l.toAccountId && invIds.has(l.toAccountId)) pInvest += amt(l);
     }
     /* ===== 실질 수입/지출 (정산·일시소득 제외, USD 환산, 데이트 50% 분담) — utils/savingsRate 단일 소스 ===== */
     const realFlows = computeMonthlyRealFlows(ledger, { fxRate, dateAccountId, nonRealIncomeOverride: categoryPresets?.categoryTypes?.nonRealIncome });
@@ -87,31 +98,38 @@ export function useInsightsData(ledger: LedgerEntry[], rawTrades: StockTrade[], 
     // D.realSavRate는 number 계약 — 분모 0(실질수입 없음)이면 0 폴백
     const realSavRate = computeRealSavingsRate(realIncome, realExpense) ?? 0;
 
-    /* ===== expenseByCategory (대분류) ===== */
+    /* ===== expenseByCategory (대분류) =====
+     * 대분류는 expenseMainName 단일 소스 — 표준 스키마(cat="지출", sub=식비)에서 category를 직접 키로
+     * 쓰면 전부 "지출" 한 덩어리로 뭉친다 (예전 버그: "총 1개 대분류"). */
     const catM = new Map<string, number>();
-    for (const l of fExp) { const c = l.category || "기타"; catM.set(c, (catM.get(c) ?? 0) + Number(l.amount)); }
+    for (const l of fExp) { const c = expenseMainName(l) || "기타"; catM.set(c, (catM.get(c) ?? 0) + amt(l)); }
     const expByCat = Array.from(catM.entries()).sort((a, b) => b[1] - a[1]);
     const topCats = expByCat.slice(0, 6).map(([c]) => c);
 
-    /* ===== expenseBySubCategory (중분류) ===== */
+    /* ===== expenseBySubCategory (중분류) =====
+     * 중분류 = 대분류 아래 단계(표준: detailCategory). 예전엔 subCategory를 키로 써서
+     * 실제로는 대분류(식비…)가 "중분류"로 표시됐다 — 대분류 축이 고쳐지며 한 단계씩 내린다.
+     * ⚠ expSubName은 아래 subInsights의 항목 매칭에도 쓰인다 — 키가 갈라지면 매칭이 0건이 된다. */
+    const expSubName = (l: LedgerEntry) => l.detailCategory || l.subCategory || l.category || "기타";
     const subM = new Map<string, { cat: string; sub: string; amount: number; count: number }>();
     for (const l of fExp) {
-      const cat = l.category || "기타";
-      const sub = l.subCategory || l.category || "기타";
+      const cat = expenseMainName(l) || "기타";
+      const sub = expSubName(l);
       const key = sub;
       const prev = subM.get(key) ?? { cat, sub, amount: 0, count: 0 };
-      subM.set(key, { cat: prev.cat, sub, amount: prev.amount + Number(l.amount), count: prev.count + 1 });
+      subM.set(key, { cat: prev.cat, sub, amount: prev.amount + amt(l), count: prev.count + 1 });
     }
     const expBySub = Array.from(subM.values()).sort((a, b) => b.amount - a.amount);
 
-    /* monthlyCategoryTrend (full) */
+    /* monthlyCategoryTrend (full) — fExp와 동일 분류 기준(flowOf). 예전엔 신용결제를 안 걸러
+     * 레거시 카드대금이 추이에 이중계상됐다. */
     const monthlyCatTrend: Record<string, Record<string, number>> = {};
     for (const l of ledger) {
-      if (l.kind !== "expense" || Number(l.amount) <= 0 || l.category === "환전" || isInvestmentEntry(l)) continue;
+      if (Number(l.amount) <= 0 || flowOf(l) !== "expense") continue;
       const m = l.date?.slice(0, 7); if (!m) continue;
-      const c = l.category || "기타"; if (!topCats.includes(c)) continue;
+      const c = expenseMainName(l) || "기타"; if (!topCats.includes(c)) continue;
       if (!monthlyCatTrend[m]) monthlyCatTrend[m] = {};
-      monthlyCatTrend[m][c] = (monthlyCatTrend[m][c] ?? 0) + Number(l.amount);
+      monthlyCatTrend[m][c] = (monthlyCatTrend[m][c] ?? 0) + amt(l);
     }
 
     /* accountUsage */
@@ -120,18 +138,18 @@ export function useInsightsData(ledger: LedgerEntry[], rawTrades: StockTrade[], 
       if (!l.fromAccountId) continue;
       const n = aMap.get(l.fromAccountId) || l.fromAccountId;
       const p = auM.get(n) ?? { count: 0, total: 0 };
-      auM.set(n, { count: p.count + 1, total: p.total + Number(l.amount) });
+      auM.set(n, { count: p.count + 1, total: p.total + amt(l) });
     }
     const acctUsage = Array.from(auM.entries()).map(([name, v]) => ({ name, ...v })).sort((a, b) => b.total - a.total);
 
-    /* subcategory breakdown */
+    /* subcategory breakdown — 대분류(expenseMainName) 아래 세부(det→desc 폴백) 그룹 */
     const scM = new Map<string, { cat: string; sub: string; amount: number; count: number }>();
     for (const l of fExp) {
-      const cat = l.category || "기타";
-      const sub = l.subCategory || l.description || "기타";
+      const cat = expenseMainName(l) || "기타";
+      const sub = l.detailCategory || l.description || "기타";
       const key = `${cat}__${sub}`;
       const prev = scM.get(key) ?? { cat, sub, amount: 0, count: 0 };
-      scM.set(key, { cat, sub, amount: prev.amount + Number(l.amount), count: prev.count + 1 });
+      scM.set(key, { cat, sub, amount: prev.amount + amt(l), count: prev.count + 1 });
     }
     const expBySubCat = Array.from(scM.values()).sort((a, b) => b.amount - a.amount);
 
@@ -141,7 +159,7 @@ export function useInsightsData(ledger: LedgerEntry[], rawTrades: StockTrade[], 
       const desc = l.description || l.subCategory || "기타";
       const key = desc;
       const prev = descM.get(key) ?? { desc, cat: l.category || "기타", sub: l.subCategory || "", amount: 0 };
-      descM.set(key, { ...prev, amount: prev.amount + Number(l.amount) });
+      descM.set(key, { ...prev, amount: prev.amount + amt(l) });
     }
     const expByDesc = Array.from(descM.values()).sort((a, b) => b.amount - a.amount).slice(0, 30);
 
@@ -153,7 +171,7 @@ export function useInsightsData(ledger: LedgerEntry[], rawTrades: StockTrade[], 
       if (!d) continue;
       const js = d.getDay();
       const idx = js === 0 ? 6 : js - 1;
-      wdSpend[idx].total += Number(l.amount); wdSpend[idx].count++;
+      wdSpend[idx].total += amt(l); wdSpend[idx].count++;
     }
 
     /* dateExpense — utils/dateAccounting.isDateEntry로 판정 */
@@ -164,7 +182,7 @@ export function useInsightsData(ledger: LedgerEntry[], rawTrades: StockTrade[], 
     let dateMoim = 0, datePersonal = 0;
     for (const l of fL) {
       if (!isDateEntry(l)) continue;
-      const a = Number(l.amount); const m = l.date?.slice(0, 7);
+      const a = amt(l); const m = l.date?.slice(0, 7);
       if (m) dateExpMonthly[m] = (dateExpMonthly[m] ?? 0) + a;
       const desc = l.description || l.subCategory || "기타";
       dateDescM.set(desc, (dateDescM.get(desc) ?? 0) + a);
@@ -186,7 +204,7 @@ export function useInsightsData(ledger: LedgerEntry[], rawTrades: StockTrade[], 
         if (!isDateEntry(l)) continue;
         const m = l.date?.slice(0, 7); if (!m) continue;
         if (selMonth && m === selMonth) continue;
-        dateExpMonthly[m] = (dateExpMonthly[m] ?? 0) + Number(l.amount);
+        dateExpMonthly[m] = (dateExpMonthly[m] ?? 0) + amt(l);
       }
     }
 
@@ -197,7 +215,7 @@ export function useInsightsData(ledger: LedgerEntry[], rawTrades: StockTrade[], 
     const icM = new Map<string, number>();
     for (const l of fInc) {
       const c = l.subCategory || l.category || "기타";
-      icM.set(c, (icM.get(c) ?? 0) + Number(l.amount));
+      icM.set(c, (icM.get(c) ?? 0) + amt(l));
     }
     const incByCat = Array.from(icM.entries()).sort((a, b) => b[1] - a[1]);
 
@@ -225,21 +243,21 @@ export function useInsightsData(ledger: LedgerEntry[], rawTrades: StockTrade[], 
       if (!isSubEntry(l)) continue;
       const n = l.description || l.subCategory || l.category || ""; if (!n) continue;
       const p = sM.get(n) ?? { count: 0, total: 0 };
-      sM.set(n, { count: p.count + 1, total: p.total + Number(l.amount) });
+      sM.set(n, { count: p.count + 1, total: p.total + amt(l) });
     }
     const subs = Array.from(sM.entries()).map(([name, v]) => ({ name, ...v, avg: v.count > 0 ? Math.round(v.total / v.count) : 0 })).filter(s => s.name).sort((a, b) => b.total - a.total);
 
     /* largeExpenses */
-    const largeExp = fExp.filter(l => Number(l.amount) >= 100000).sort((a, b) => Number(b.amount) - Number(a.amount)).slice(0, 20)
-      .map(l => ({ date: l.date, desc: l.description || "", sub: l.subCategory || l.category || "", amount: Number(l.amount) }));
+    const largeExp = fExp.filter(l => amt(l) >= 100000).sort((a, b) => amt(b) - amt(a)).slice(0, 20)
+      .map(l => ({ date: l.date, desc: l.description || "", sub: l.subCategory || l.category || "", amount: amt(l) }));
 
     /* topTransactions (top 10) */
-    const topTx = [...fExp].sort((a, b) => Number(b.amount) - Number(a.amount)).slice(0, 10)
-      .map(l => ({ date: l.date, desc: l.description || "", cat: l.category || "", sub: l.subCategory || "", amount: Number(l.amount) }));
+    const topTx = [...fExp].sort((a, b) => amt(b) - amt(a)).slice(0, 10)
+      .map(l => ({ date: l.date, desc: l.description || "", cat: l.category || "", sub: l.subCategory || "", amount: amt(l) }));
 
     /* spendingByDayOfMonth */
     const spendByDOM = new Array(31).fill(0);
-    for (const l of fExp) { const d = parseInt(l.date?.slice(8, 10) || "0") - 1; if (d >= 0 && d < 31) spendByDOM[d] += Number(l.amount); }
+    for (const l of fExp) { const d = parseInt(l.date?.slice(8, 10) || "0") - 1; if (d >= 0 && d < 31) spendByDOM[d] += amt(l); }
 
     /* ===== 소득 분류 자동 감지 — utils/incomeClassification 단일 소스 (대시보드와 공유) ===== */
     const { salaryKeys, investIncKeys } = computeIncomeNatureKeys(ledger, accounts, categoryPresets?.categoryTypes);
@@ -256,7 +274,7 @@ export function useInsightsData(ledger: LedgerEntry[], rawTrades: StockTrade[], 
       if (l.kind !== "income" || Number(l.amount) <= 0) continue;
       const m = l.date?.slice(0, 7); if (!m || salaryMonthly[m] === undefined) continue;
       if (isExcludedIncomeEntry(l)) continue;
-      if (salaryKeys.has(l.subCategory || l.category || "")) salaryMonthly[m] += Number(l.amount);
+      if (salaryKeys.has(l.subCategory || l.category || "")) salaryMonthly[m] += amt(l);
     }
     const pSalary = (selMonth ? [selMonth] : months).reduce((s, m) => s + (salaryMonthly[m] ?? 0), 0);
     // 월별 실질 수입 — 패시브 비율 추이의 분모(정산·용돈 제외, 배당·이자 포함)로 사용. realFlows 단일 소스.
@@ -286,7 +304,7 @@ export function useInsightsData(ledger: LedgerEntry[], rawTrades: StockTrade[], 
         if (l.kind !== "income" || l.date?.slice(0, 7) !== m || Number(l.amount) <= 0) continue;
         const sub = l.subCategory || l.category || "";
         if (isExcludedIncomeEntry(l)) continue;
-        if (salaryKeys.has(sub)) sal += Number(l.amount); else non += Number(l.amount);
+        if (salaryKeys.has(sub)) sal += amt(l); else non += amt(l);
       }
       return { l: ml[m], salary: sal, nonSalary: non };
     });
@@ -297,12 +315,12 @@ export function useInsightsData(ledger: LedgerEntry[], rawTrades: StockTrade[], 
     const divTrend = months.map(m => {
       let d = 0;
       // subCategory 없으면 category 폴백 — incByCat·investIncKeys 산출과 동일 키 규칙
-      for (const l of ledger) { if (l.kind !== "income" || l.date?.slice(0, 7) !== m) continue; if (investIncKeys.has(l.subCategory || l.category || "")) d += Number(l.amount); }
+      for (const l of ledger) { if (l.kind !== "income" || l.date?.slice(0, 7) !== m) continue; if (investIncKeys.has(l.subCategory || l.category || "")) d += amt(l); }
       return { l: ml[m], amount: d };
     });
     const tradeCntTrend = months.map(m => ({ l: ml[m], count: rawTrades.filter(t => t.date?.slice(0, 7) === m).length }));
     const subTrend = months.map(m => {
-      let a = 0; for (const l of ledger) { if (l.date?.slice(0, 7) !== m || !isSubEntry(l)) continue; a += Number(l.amount); }
+      let a = 0; for (const l of ledger) { if (l.date?.slice(0, 7) !== m || !isSubEntry(l)) continue; a += amt(l); }
       return { l: ml[m], amount: a };
     });
     const txCntTrend = months.map(m => ({ l: ml[m], count: ledger.filter(l => l.date?.slice(0, 7) === m).length }));
@@ -313,8 +331,8 @@ export function useInsightsData(ledger: LedgerEntry[], rawTrades: StockTrade[], 
       const [y, mo] = m.split("-").map(Number); const dim = new Date(y, mo, 0).getDate();
       const daily = new Array(31).fill(0);
       for (const l of ledger) {
-        if (l.kind !== "expense" || l.category === "환전" || isInvestmentEntry(l) || l.date?.slice(0, 7) !== m) continue;
-        const d = parseInt(l.date.slice(8, 10)) - 1; if (d >= 0 && d < 31) daily[d] += Number(l.amount);
+        if (l.kind !== "expense" || isCurrencyExchangeEntry(l) || isInvestmentEntry(l) || l.date?.slice(0, 7) !== m) continue;
+        const d = parseInt(l.date.slice(8, 10)) - 1; if (d >= 0 && d < 31) daily[d] += amt(l);
       }
       const cum: number[] = []; let r = 0;
       for (let d = 0; d < 31; d++) { if (d < dim) r += daily[d]; cum.push(r); }
@@ -349,13 +367,13 @@ export function useInsightsData(ledger: LedgerEntry[], rawTrades: StockTrade[], 
 
     /* weekend vs weekday — parseIsoLocal 로컬 파싱 (요일 밀림 방지) */
     let weekendTot = 0, weekdayTot = 0;
-    for (const l of fExp) { const d = parseIsoLocal(l.date)?.getDay(); if (d == null) continue; if (d === 0 || d === 6) weekendTot += Number(l.amount); else weekdayTot += Number(l.amount); }
+    for (const l of fExp) { const d = parseIsoLocal(l.date)?.getDay(); if (d == null) continue; if (d === 0 || d === 6) weekendTot += amt(l); else weekdayTot += amt(l); }
 
     /* top spend dates */
     const tdM = new Map<string, { total: number; items: { desc: string; amount: number }[] }>();
     for (const l of fExp) {
       if (!tdM.has(l.date)) tdM.set(l.date, { total: 0, items: [] });
-      const e = tdM.get(l.date)!; e.total += Number(l.amount); e.items.push({ desc: l.description || l.category || "기타", amount: Number(l.amount) });
+      const e = tdM.get(l.date)!; e.total += amt(l); e.items.push({ desc: l.description || l.category || "기타", amount: amt(l) });
     }
     const topDates = Array.from(tdM.entries()).map(([date, v]) => ({ date, ...v })).sort((a, b) => b.total - a.total).slice(0, 5);
 
@@ -376,13 +394,14 @@ export function useInsightsData(ledger: LedgerEntry[], rawTrades: StockTrade[], 
       const [y, m] = selMonth.split("-").map(Number); const pd = new Date(y, m - 2, 1);
       const pm = `${pd.getFullYear()}-${String(pd.getMonth() + 1).padStart(2, "0")}`;
       let pi = 0, pe = 0, ps = 0;
+      // 당월(pIncome/pExpense)과 동일한 분류 기준 — 예전엔 전월만 재테크 제외가 빠져
+      // 레거시 저축성지출이 전월 지출에 섞였고, "전월 대비" 배지가 허위 개선률을 표시했다.
       for (const l of ledger) {
         if (l.date?.slice(0, 7) !== pm) continue;
-        const a = Number(l.amount); if (a <= 0) continue;
-        // 이월/원래 보유 자산은 전월 수입에서도 제외 (모든 수입 지표 일관)
-        if (l.kind === "income") { if (!isExcludedIncomeEntry(l)) { pi += a; if (salaryKeys.has(l.subCategory || l.category || "")) ps += a; } }
-        // 지출: 일반 지출 + 투자손실(category=재테크). 환전·신용결제는 제외.
-        else if (l.kind === "expense" && l.category !== "환전" && !isCreditPayment(l)) pe += a;
+        const a = amt(l); if (a <= 0) continue;
+        const flow = flowOf(l);
+        if (flow === "income") { pi += a; if (salaryKeys.has(l.subCategory || l.category || "")) ps += a; }
+        else if (flow === "expense") pe += a;
       }
       if (pi > 0 || pe > 0) prev = { income: pi, expense: pe, salary: ps };
     }
@@ -415,7 +434,7 @@ export function useInsightsData(ledger: LedgerEntry[], rawTrades: StockTrade[], 
       if (l.kind !== "expense" || l.category !== "재테크") continue;
       const sub = l.subCategory || "기타";
       const p = ivSubM.get(sub) ?? { amount: 0, count: 0 };
-      ivSubM.set(sub, { amount: p.amount + Number(l.amount), count: p.count + 1 });
+      ivSubM.set(sub, { amount: p.amount + amt(l), count: p.count + 1 });
     }
     const investBySub = [...ivSubM.entries()].map(([sub, v]) => ({ sub, ...v })).sort((a, b) => b.amount - a.amount);
 
@@ -424,7 +443,7 @@ export function useInsightsData(ledger: LedgerEntry[], rawTrades: StockTrade[], 
     for (const l of fL) {
       if (!isDateEntry(l)) continue;
       const det = l.detailCategory || l.description || "기타";
-      dateDetM.set(det, (dateDetM.get(det) ?? 0) + Number(l.amount));
+      dateDetM.set(det, (dateDetM.get(det) ?? 0) + amt(l));
     }
     const dateByDetail = [...dateDetM.entries()].sort((a, b) => b[1] - a[1]).slice(0, 15);
 
@@ -463,9 +482,9 @@ export function useInsightsData(ledger: LedgerEntry[], rawTrades: StockTrade[], 
 
     /* ===== 지출 중분류별 인사이트 ===== */
     const subInsights: SubInsight[] = expBySub.slice(0, 15).map(s => {
+      // 필터·키·금액 모두 fExp/expBySub와 동일 기준 (flowOf + expSubName + 환산) — 어긋나면 월별 추세가 합계와 안 맞는다
       const mTotals = mTotalsFor(months, ledger, l =>
-        l.kind === "expense" && l.category !== "재테크" && l.category !== "환전" && !isCreditPayment(l) &&
-        (l.subCategory || l.category || "기타") === s.sub
+        flowOf(l) === "expense" && expSubName(l) === s.sub, amt
       );
       // 추세·피크·연속증가는 완결 월만으로 계산 (수입 인사이트와 동일 기준)
       const doneTotals = mTotals.slice(0, doneCnt);
@@ -475,16 +494,16 @@ export function useInsightsData(ledger: LedgerEntry[], rawTrades: StockTrade[], 
       // 해당 중분류 최대 단건
       let maxSingle = 0, maxSingleDesc = "";
       for (const l of fExp) {
-        if ((l.subCategory || l.category || "기타") !== s.sub) continue;
-        const a = Number(l.amount);
+        if (expSubName(l) !== s.sub) continue;
+        const a = amt(l);
         if (a > maxSingle) { maxSingle = a; maxSingleDesc = l.description || l.subCategory || ""; }
       }
       // 해당 중분류 내 최다 지출 항목(description)
       const descMap = new Map<string, number>();
       for (const l of fExp) {
-        if ((l.subCategory || l.category || "기타") !== s.sub) continue;
+        if (expSubName(l) !== s.sub) continue;
         const d = l.description || "기타";
-        descMap.set(d, (descMap.get(d) ?? 0) + Number(l.amount));
+        descMap.set(d, (descMap.get(d) ?? 0) + amt(l));
       }
       const topDescEntry = [...descMap.entries()].sort((a, b) => b[1] - a[1])[0];
       // 연속 증가 월수 (완결 월 기준 — 진행 중인 달이 끼면 항상 끊긴 것으로 보임)
@@ -556,7 +575,7 @@ export function useInsightsData(ledger: LedgerEntry[], rawTrades: StockTrade[], 
     const incSubInsights: IncSubInsight[] = incByCat.slice(0, 12).map(([sub, total]) => {
       const cnt = fInc.filter(l => (l.subCategory || l.category || "기타") === sub).length;
       const fullMTotals = mTotalsFor(months, ledger, l =>
-        l.kind === "income" && (l.subCategory || l.category || "기타") === sub
+        flowOf(l) === "income" && (l.subCategory || l.category || "기타") === sub, amt
       );
       const doneTotals = fullMTotals.slice(0, doneCnt);
       const { monthTrend, mom, nonZero, monthAvg } = calcTrend(doneTotals);
@@ -667,7 +686,7 @@ export function useInsightsData(ledger: LedgerEntry[], rawTrades: StockTrade[], 
       const avg = Math.round(SD(v.amount, v.count));
       // 월별 추이 — 완결 월만으로 추세 계산 (수입·지출 인사이트와 동일 기준)
       const ivMTotals = mTotalsFor(months, ledger, l =>
-        isInvestmentEntry(l) && (l.subCategory || "기타") === v.sub
+        isInvestmentEntry(l) && (l.subCategory || "기타") === v.sub, amt
       );
       const ivDoneTotals = ivMTotals.slice(0, doneCnt);
       const { monthTrend: ivTrend, mom: ivMom, nonZero: ivNonZero, monthAvg } = calcTrend(ivDoneTotals);
@@ -769,7 +788,7 @@ export function useInsightsData(ledger: LedgerEntry[], rawTrades: StockTrade[], 
     /* ===== 재미 통계 ===== */
     // 최고 지출일
     const dayTotals = new Map<string, number>();
-    for (const l of fExp) { const d = l.date; if (d) dayTotals.set(d, (dayTotals.get(d) ?? 0) + Number(l.amount)); }
+    for (const l of fExp) { const d = l.date; if (d) dayTotals.set(d, (dayTotals.get(d) ?? 0) + amt(l)); }
     let biggestSpendDay: { date: string; total: number } | null = null;
     for (const [date, total] of dayTotals) { if (!biggestSpendDay || total > biggestSpendDay.total) biggestSpendDay = { date, total }; }
     // 가장 절약한 달 / 가장 많이 쓴 달
@@ -804,7 +823,7 @@ export function useInsightsData(ledger: LedgerEntry[], rawTrades: StockTrade[], 
       const desc = (l.description || "").trim();
       if (!desc) continue;
       const p = storeMap.get(desc) ?? { total: 0, count: 0 };
-      storeMap.set(desc, { total: p.total + Number(l.amount), count: p.count + 1 });
+      storeMap.set(desc, { total: p.total + amt(l), count: p.count + 1 });
     }
     let topStore: { name: string; total: number; count: number } | null = null;
     for (const [name, v] of storeMap) { if (!topStore || v.count > topStore.count) topStore = { name, ...v }; }

@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { computePositions, computeRealizedPnlByTradeId, isInterestRepayment, computeLoanBalanceAt } from "../calculations";
+import { computePositions, computeRealizedPnlByTradeId, isInterestRepayment, computeLoanBalanceAt, hasLoanRepaymentStructure } from "../calculations";
 import type { Account, LedgerEntry, Loan, StockTrade } from "../types";
 
 function makeTrade(overrides: Partial<StockTrade> & { id: string; side: "buy" | "sell" }): StockTrade {
@@ -173,5 +173,27 @@ describe("computeLoanBalanceAt — 2세대 이자 상환은 잔금에서 차감�
     ];
     // loanId로 l2만 차감 → l1=1,000,000 + l2=400,000 = 1,400,000 (없으면 substring 이중 → 1,300,000)
     expect(computeLoanBalanceAt(twoLoans, ledger)).toBe(1_400_000);
+  });
+});
+
+describe("hasLoanRepaymentStructure — 대출 상환 세대 관용", () => {
+  const e = (o: Partial<LedgerEntry>): LedgerEntry =>
+    ({ id: "x", date: "2026-07-01", kind: "expense", category: "지출", description: "", amount: 1000, ...o } as LedgerEntry);
+
+  it("3세대 전부 인식한다", () => {
+    expect(hasLoanRepaymentStructure(e({ category: "대출", subCategory: "빚" }))).toBe(true);
+    expect(hasLoanRepaymentStructure(e({ category: "대출상환" }))).toBe(true);
+    expect(hasLoanRepaymentStructure(e({ category: "지출", subCategory: "대출상환" }))).toBe(true);
+  });
+
+  it("강등된 형태도 인식한다 — 회귀: 상환 이력이 통째로 사라지던 케이스", () => {
+    // applyDemoteSchema가 category를 한 칸 내리면 세 분기 어디에도 안 걸렸다.
+    expect(hasLoanRepaymentStructure(e({ category: "지출", subCategory: "대출", detailCategory: "빚" }))).toBe(true);
+    expect(hasLoanRepaymentStructure(e({ category: "지출", subCategory: "대출상환", detailCategory: "이자상환" }))).toBe(true);
+  });
+
+  it("무관한 지출은 걸리지 않는다", () => {
+    expect(hasLoanRepaymentStructure(e({ category: "지출", subCategory: "식비" }))).toBe(false);
+    expect(hasLoanRepaymentStructure(e({ category: "지출", subCategory: "대출" }))).toBe(false); // det="빚" 없음
   });
 });

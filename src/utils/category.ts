@@ -17,6 +17,8 @@ import {
   isInvestmentPnlEntry,
   isInvestmentLossEntry,
   isCreditPayment,
+  isCurrencyExchangeEntry,
+  isSettlementEntry,
   isRealExpenseEntry,
 } from "./categoryUtils";
 
@@ -30,5 +32,7 @@ export {
   isInvestmentPnlEntry,
   isInvestmentLossEntry,
   isCreditPayment,
+  isCurrencyExchangeEntry,
+  isSettlementEntry,
   isRealExpenseEntry,
 };

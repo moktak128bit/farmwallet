@@ -4,6 +4,7 @@
  */
 import type { Loan, LedgerEntry } from "../../types";
 import { parseIsoLocal, formatIsoLocal, getLastDayOfMonth } from "../../utils/date";
+import { hasLoanRepaymentStructure } from "../../calculations";
 
 /**
  * 거치기간 만료일: loanDate + gracePeriodYears (소수 허용). 미설정이면 null.
@@ -29,15 +30,7 @@ export function isInGracePeriod(loan: Loan, todayIso: string): boolean {
   return end !== null && todayIso < end;
 }
 
-// 지금까지 갚은 내역.
-// 카테고리 구조 3세대 모두 매칭:
-//  - 최초: (category="대출", subCategory="빚")
-//  - 구버전: (category="대출상환") 플랫 메인
-//  - 현재: (category="지출", subCategory="대출상환") 중첩
+// 지금까지 갚은 내역. 판정은 calculations.hasLoanRepaymentStructure 단일 소스에 위임한다
+// (예전엔 여기와 calculations.ts가 같은 3세대 조건을 따로 들고 있어 한쪽만 고치면 어긋났다).
 export const isLoanRepaymentEntry = (l: LedgerEntry) =>
-  l.kind === "expense" &&
-  (
-    (l.category === "대출" && l.subCategory === "빚") ||
-    l.category === "대출상환" ||
-    (l.category === "지출" && l.subCategory === "대출상환")
-  );
+  l.kind === "expense" && hasLoanRepaymentStructure(l);

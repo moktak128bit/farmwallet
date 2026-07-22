@@ -36,6 +36,26 @@ export function isCreditPayment(entry: LedgerEntry): boolean {
 }
 
 /**
+ * 환전 판별 — 계좌 간 통화 이동이라 지출이 아니다.
+ *
+ * ⚠ category와 subCategory 양쪽을 본다(isCreditPayment와 같은 이유).
+ * "환전"은 평면 category로 저장된 세대와, 대분류가 subCategory로 내려간 세대가 공존한다.
+ * category만 보면 후자를 놓쳐 환전이 실제 소비 지출로 계상된다(월 지출 부풀림).
+ */
+export function isCurrencyExchangeEntry(entry: LedgerEntry): boolean {
+  return entry.category === "환전" || entry.subCategory === "환전";
+}
+
+/**
+ * 정산 판별 — 본인이 결제 후 돌려받는 몫이라 순수 수입/지출이 아니다.
+ * 환전과 같은 이유로 category·subCategory 양쪽을 본다.
+ * (부분일치가 필요한 실질수입 쪽은 realIncome.isSettlementLikeSub를 쓴다 — 여기는 정확 매칭.)
+ */
+export function isSettlementEntry(entry: LedgerEntry): boolean {
+  return entry.category === "정산" || entry.subCategory === "정산";
+}
+
+/**
  * "실질 소비 지출" 판별 — 일반 지출 합계 계산용.
  *
  * 제외 대상:
@@ -54,7 +74,7 @@ export function isRealExpenseEntry(entry: LedgerEntry, categoryPresets?: Categor
   if (entry.kind !== "expense") return false;
   if (Number(entry.amount) <= 0) return false;
   if (isCreditPayment(entry)) return false;
-  if (entry.category === "환전") return false;
+  if (isCurrencyExchangeEntry(entry)) return false;
   // 저축성지출 제외 — 단, 투자손실(category=재테크, subCategory=투자손실)은 실 지출이므로 포함
   if (isSavingsExpenseEntry(entry, [], categoryPresets)) return false;
   return true;

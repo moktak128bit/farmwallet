@@ -135,10 +135,10 @@ export function computeRecheckBreakdown(
     if (entry.kind === "transfer") {
       if (entry.subCategory === "저축이체") sub.저축 += amt;
       else if (entry.subCategory === "투자이체") sub.투자 += amt;
-    } else if (entry.kind === "income" && entry.subCategory === "투자수익") {
-      sub.투자수익 += amt;
-    } else if (entry.kind === "expense" && entry.category === "재테크" && entry.subCategory === "투자손실") {
-      sub.투자손실 += amt;
+    } else if (isInvestmentPnlEntry(entry)) {
+      // 투자손익 판정은 categoryUtils 단일 소스 — 문자열 재나열 금지 (한쪽만 바뀌면 어긋남)
+      if (isInvestmentLossEntry(entry)) sub.투자손실 += amt;
+      else sub.투자수익 += amt;
     }
   }
   return sub;

@@ -13,7 +13,7 @@ import { formatKRW } from "../../utils/formatter";
 import { getTodayKST } from "../../utils/date";
 import { useFocusTrap } from "../../hooks/useFocusTrap";
 import { useModalStackEntry } from "../../utils/modalStack";
-import { isInterestRepayment } from "../../calculations";
+import { isInterestRepayment, isInterestSubName } from "../../calculations";
 import { isLoanRepaymentEntry } from "./debtShared";
 
 interface Props {
@@ -52,12 +52,13 @@ export const EditRepaymentModal: React.FC<Props> = React.memo(function EditRepay
         : entry.category === "대출상환"
           ? entry.subCategory
           : undefined;
-    // 새 체계(원금상환/이자상환)에 있으면 그대로, legacy면 "이자" 키워드로 분류
-    const interestOption = loanRepaymentSubOptions.find((s) => s.includes("이자")) ?? "이자상환";
+    // 새 체계(원금상환/이자상환)에 있으면 그대로, legacy면 이자 분류(calculations 단일 소스)로.
+    // includes("이자")를 직접 재구현하면 isInterestRepayment의 실제 집계 분류와 어긋날 수 있다.
+    const interestOption = loanRepaymentSubOptions.find(isInterestSubName) ?? "이자상환";
     const principalOption = loanRepaymentSubOptions.find((s) => s.includes("원금")) ?? "원금상환";
     return detail && loanRepaymentSubOptions.includes(detail)
       ? detail
-      : (detail || "").includes("이자")
+      : isInterestRepayment(entry)
         ? interestOption
         : principalOption;
   });
@@ -97,7 +98,8 @@ export const EditRepaymentModal: React.FC<Props> = React.memo(function EditRepay
     }
 
     // 원금 상환이 해당 대출의 잔금(이 내역 제외)을 초과하면 경고 (저장은 진행 — 잔금은 0으로 클램프)
-    if (matchRepaymentLoan && !editSubCategory.includes("이자")) {
+    // 저장될 항목(det=editSubCategory)의 이자 여부 예측 — isInterestRepayment와 같은 substring 정책
+    if (matchRepaymentLoan && !isInterestSubName(editSubCategory)) {
       const draft: LedgerEntry = { ...entry, description: editDescription || entry.description };
       const loan = matchRepaymentLoan(draft);
       if (loan) {

@@ -240,7 +240,8 @@ export const LedgerView: React.FC<Props> = ({
     const investmentRelated = (l: LedgerDisplayRow): boolean => {
       if (l._tradeId) return true; // 매수·매도 가상 행
       if (l.kind === "expense") {
-        if (l.category === "재테크") return true;
+        // isInvestmentKind가 expense의 category="재테크" 전체를 커버 (문자열 직접 비교 대체)
+        if (isInvestmentKind(l)) return true;
         return isSavingsExpenseEntry(l, accounts, categoryPresets);
       }
       if (l.kind === "income") {
@@ -248,18 +249,20 @@ export const LedgerView: React.FC<Props> = ({
         return isDividendEntryLoose(l) || isInterestEntryLoose(l) || l.subCategory === "투자수익";
       }
       if (l.kind === "transfer") {
-        const sub = l.subCategory ?? "";
-        return sub === "저축이체" || sub === "투자이체" || sub === "저축" || sub === "투자";
+        // 재테크 이체 집합은 categoryUtils 단일 소스 — 4값 리터럴 재나열 금지
+        return isInvestmentEntry(l);
       }
       return false;
     };
     return combinedLedger.filter((l) => {
       if (ledgerTab === "all") return true;
       if (ledgerTab === "creditPayment") {
-        // 신버전: 이체 > 카드결제이체. 레거시: expense + 신용결제 (미마이그레이션 데이터)
+        // 신버전: 이체 > 카드결제이체. 레거시: expense + 신용결제(isCreditPayment — cat·sub 양 세대).
+        // 예전엔 category만 비교해 sub="신용결제" 레거시가 지출 합계에선 빠지는데(:434 isCreditPayment)
+        // 이 탭 목록엔 안 보이는 비대칭이 있었다.
         return (
           (l.kind === "transfer" && l.subCategory === "카드결제이체") ||
-          (l.kind === "expense" && l.category === "신용결제")
+          (l.kind === "expense" && isCreditPayment(l))
         );
       }
       if (ledgerTab === "savingsExpense") {

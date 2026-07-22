@@ -2,10 +2,13 @@ import { describe, it, expect } from "vitest";
 import {
   computeInvestmentReconciliation,
   generateAccountPerformanceBreakdown,
+  generateCategoryReport,
   generateClosingReportData,
   generateComprehensiveMonthlyReport,
   generateDailyReport,
   generateMonthlyIncomeDetail,
+  generateMonthlyReport,
+  generateYearlyReport,
   generateStockPerformanceReport
 } from "../utils/reportGenerator";
 import { generateLedgerMarkdownReport } from "../utils/ledgerMarkdownReport";
@@ -359,5 +362,38 @@ describe("computeInvestmentReconciliation — 분류 외 차이(residual) 원인
     expect(Math.round(rec.unrealizedPnl)).toBe(260_000);
     expect(Math.round(rec.totalReturn)).toBe(260_000);
     expect(Math.round(rec.residual)).toBe(0);
+  });
+});
+
+describe("P2 단일 소스 수렴 — 보고서 정합 회귀 (2026-07-22)", () => {
+  it("월간·연간 리포트 수입이 이월/원래보유를 제외한다 (시작 월 수입 부풀림 방지)", () => {
+    const ledger = [
+      entry({ id: "c1", kind: "income", category: "수입", subCategory: "이월", amount: 5_000_000, date: "2026-01-02" }),
+      entry({ id: "s1", kind: "income", category: "수입", subCategory: "급여", amount: 3_000_000, date: "2026-01-25" }),
+    ];
+    const monthly = generateMonthlyReport(ledger);
+    expect(monthly.find((r) => r.month === "2026-01")?.income).toBe(3_000_000);
+    const yearly = generateYearlyReport(ledger);
+    expect(yearly.find((r) => r.month === "2026")?.income).toBe(3_000_000);
+  });
+
+  it("카테고리 리포트 — 신용결제·저축성지출 제외 + 대분류:소분류 키 (래퍼 '지출' 해소)", () => {
+    const ledger = [
+      entry({ id: "e1", category: "지출", subCategory: "식비", detailCategory: "시장", amount: 30_000 }),
+      entry({ id: "e2", category: "지출", subCategory: "식비", detailCategory: "외식", amount: 20_000 }),
+      entry({ id: "e3", category: "신용결제", amount: 500_000 }),          // 이중계상 — 제외
+      entry({ id: "e4", category: "저축성지출", amount: 200_000 }),        // 자산 축적 — 제외
+      entry({ id: "e5", category: "식비", subCategory: undefined, amount: 10_000 }), // 레거시 평면
+    ];
+    const rows = generateCategoryReport(ledger);
+    // 예전: 키가 "지출:식비"라 대분류 열이 전부 "지출", 신용결제·저축성지출이 행으로 노출돼
+    // 카테고리 합이 월간 지출 합계보다 컸다.
+    expect(rows.find((r) => r.category === "식비" && r.subCategory === "시장")?.total).toBe(30_000);
+    expect(rows.find((r) => r.category === "식비" && !r.subCategory)?.total).toBe(10_000);
+    expect(rows.some((r) => r.category === "지출")).toBe(false);
+    expect(rows.some((r) => r.category === "신용결제" || r.category === "저축성지출")).toBe(false);
+    const total = rows.reduce((s, r) => s + r.total, 0);
+    const monthlyExpense = generateMonthlyReport(ledger).find((r) => r.month === "2026-01")?.expense ?? 0;
+    expect(total).toBe(monthlyExpense); // 카테고리 합 = 월간 지출 합 (정합)
   });
 });

@@ -4,15 +4,15 @@
  * React.memo로 감싸므로 부모가 넘기는 props는 안정적(store 참조·원시값)이어야 한다.
  */
 import React, { useMemo } from "react";
-import type { Account, CategoryPresets, LedgerEntry } from "../../types";
+import type { CategoryPresets, LedgerEntry } from "../../types";
 import { formatKRW } from "../../utils/formatter";
-import { isSavingsExpenseEntry } from "../../utils/category";
+import { classifyLedgerFlow } from "./summaryMath";
+import { expenseMainName } from "../../utils/categoryMerge";
 import { toKrwByRate } from "../../utils/currency";
 
 interface Props {
   currentMonth: string;
   ledger: LedgerEntry[];
-  accounts: Account[];
   categoryPresets: CategoryPresets;
   fxRate: number | null;
 }
@@ -20,7 +20,6 @@ interface Props {
 export const TopExpensesCard: React.FC<Props> = React.memo(function TopExpensesCard({
   currentMonth,
   ledger,
-  accounts,
   categoryPresets,
   fxRate,
 }) {
@@ -29,17 +28,17 @@ export const TopExpensesCard: React.FC<Props> = React.memo(function TopExpensesC
     const catMap = new Map<string, number>();
     ledger.forEach((entry) => {
       if (!entry.date?.startsWith(currentMonth)) return;
-      if (entry.kind !== "expense") return;
-      // 재테크(투자손실)·신용결제·저축성지출은 생활비 Top 5에서 제외
-      if (entry.category === "재테크" || entry.category === "신용결제") return;
-      if (isSavingsExpenseEntry(entry, accounts, categoryPresets)) return;
-      const cat = entry.subCategory || entry.category || "기타";
+      // 생활비 Top 5 = classifyLedgerFlow "expense" 단일 기준 — 신용결제(양 세대)·환전·
+      // 저축성지출·투자손실 제외가 대시보드 요약과 동일. (예전엔 category만 비교해
+      // sub="신용결제" 레거시가 Top5에 섞였고 환전 제외가 아예 없었다.)
+      if (classifyLedgerFlow(entry, categoryPresets) !== "expense") return;
+      const cat = expenseMainName(entry) || "기타";
       catMap.set(cat, (catMap.get(cat) ?? 0) + toKrw(entry));
     });
     return Array.from(catMap.entries())
       .sort((a, b) => b[1] - a[1])
       .slice(0, 5);
-  }, [ledger, currentMonth, fxRate, accounts, categoryPresets]);
+  }, [ledger, currentMonth, fxRate, categoryPresets]);
 
   return (
     <div className="card">

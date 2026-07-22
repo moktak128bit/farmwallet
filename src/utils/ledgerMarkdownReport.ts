@@ -4,7 +4,8 @@
  */
 
 import type { Account, LedgerEntry } from "../types";
-import { isSavingsExpenseEntry, isCreditPayment } from "./category";
+import { isSavingsExpenseEntry, isCreditPayment, isInvestmentEntry, isInvestmentLossEntry } from "./category";
+import { expenseMainName } from "./categoryMerge";
 
 function formatAmount(amount: number): string {
   return new Intl.NumberFormat("ko-KR").format(amount) + "원";
@@ -33,11 +34,8 @@ export function generateLedgerMarkdownReport(
   for (const e of ledger) {
     if (e.kind === "income") {
       income.push(e);
-    } else if (e.kind === "transfer" && (
-      e.subCategory === "저축이체" || e.subCategory === "투자이체" ||
-      e.subCategory === "저축" || e.subCategory === "투자"
-    )) {
-      // 저축이체/투자이체 → savingsExpense 그룹
+    } else if (e.kind === "transfer" && isInvestmentEntry(e)) {
+      // 저축이체/투자이체 → savingsExpense 그룹 (판정은 categoryUtils 단일 소스)
       savingsExpense.push(e);
     } else if (e.kind === "expense" && isCreditPayment(e)) {
       // 신용결제는 카드 사용 시점에 이미 expense로 잡힘 — 이중계상 방지 (그룹에서 제외)
@@ -46,8 +44,8 @@ export function generateLedgerMarkdownReport(
       // 저축성지출 판정을 재테크 분기보다 먼저 — 구버전(category=재테크, sub=저축/투자)
       // 항목이 실질 지출로 오분류되지 않도록 (종합 월간 보고서와 동일 순서)
       savingsExpense.push(e);
-    } else if (e.kind === "expense" && e.category === "재테크") {
-      // 재테크 지출(투자손실) = 실질 지출
+    } else if (isInvestmentLossEntry(e)) {
+      // 재테크 지출의 잔여(저축성 통과 후)는 투자손실뿐 = 실질 지출
       expense.push(e);
     } else if (e.kind === "transfer") {
       transfer.push(e);
@@ -105,15 +103,13 @@ export function generateLedgerMarkdownReport(
     }
     const row = monthMap.get(m)!;
     if (e.kind === "income") row.income += e.amount;
-    else if (e.kind === "transfer" && (
-      e.subCategory === "저축이체" || e.subCategory === "투자이체" ||
-      e.subCategory === "저축" || e.subCategory === "투자"
-    )) {
-      row.savings += e.amount;
-    }
+    else if (e.kind === "transfer" && isInvestmentEntry(e)) row.savings += e.amount;
+    // 신용결제 제외 — 그룹 분류(위)와 동일. 예전엔 이 월별 루프만 안 걸러
+    // 레거시 카드대금이 월별 지출에 이중계상돼 총계 지출과 어긋났다.
+    else if (e.kind === "expense" && isCreditPayment(e)) { /* skip */ }
     // 저축성지출 판정 먼저 (위 그룹 분류와 동일 순서 — 구버전 재테크 저축/투자 호환)
     else if (isSavingsExpenseEntry(e, accounts)) row.savings += e.amount;
-    else if (e.kind === "expense" && e.category === "재테크") {
+    else if (isInvestmentLossEntry(e)) {
       row.expense += e.amount; // 투자손실 = 실질 지출
     }
     else if (e.kind === "transfer") row.transfer += e.amount;
@@ -135,7 +131,10 @@ export function generateLedgerMarkdownReport(
 
   const categoryMap = new Map<string, number>();
   for (const e of expense) {
-    const key = e.subCategory ? `${e.category} > ${e.subCategory}` : e.category;
+    // 대분류 > 소분류 키 — raw category 키잉은 표준 스키마에서 "지출 > 식비"처럼 래퍼가 섞인다
+    const main = expenseMainName(e) || "기타";
+    const det = (e.detailCategory || "").trim();
+    const key = det ? `${main} > ${det}` : main;
     categoryMap.set(key, (categoryMap.get(key) ?? 0) + e.amount);
   }
   const categoryRows = Array.from(categoryMap.entries()).sort(

@@ -8,9 +8,11 @@
  *
  * 시계(todayDayNum)·이번달(curMonthStr)은 주입받는다 — 순수·테스트 가능.
  */
-import type { LedgerEntry } from "../types";
+import type { CategoryPresets, LedgerEntry } from "../types";
 import { isCarryOverIncomeEntry } from "./savingsRate";
-import { isInvestmentEntry, isCreditPayment, isCurrencyExchangeEntry } from "./category";
+import { isInvestmentEntry, isCreditPayment } from "./category";
+import { classifyLedgerFlow } from "../features/dashboard/summaryMath";
+import { expenseMainName } from "./categoryMerge";
 
 export interface IncomeGrowth {
   series: { l: string; month: string; income: number; momPct: number | null }[];
@@ -157,8 +159,10 @@ export function computeCategoryGrowth(params: {
   curMonthStr: string;
   anomalyTargetMonth: string | null;
   todayDayNum: number;
+  /** 저축성지출 판정용 — 대시보드·인사이트 지출 정의(classifyLedgerFlow)와 통일 */
+  categoryPresets?: CategoryPresets;
 }): CategoryGrowthResult {
-  const { ledger, months, curMonthStr, anomalyTargetMonth, todayDayNum } = params;
+  const { ledger, months, curMonthStr, anomalyTargetMonth, todayDayNum, categoryPresets } = params;
   const emptyRet: CategoryGrowthResult = { up: [], down: [], partialDay: null };
   const targetMonth = anomalyTargetMonth;
   if (!targetMonth) return emptyRet;
@@ -171,8 +175,11 @@ export function computeCategoryGrowth(params: {
   const subMonthly = new Map<string, Map<string, number>>();
   for (const l of ledger) {
     if (l.kind !== "expense" || Number(l.amount) <= 0) continue;
-    if (l.category === "신용결제" || l.category === "재테크" || isCurrencyExchangeEntry(l)) continue;
-    const sub = (l.subCategory || l.category || "").trim(); if (!sub) continue;
+    // classifyLedgerFlow 단일 기준 — category만 보던 신용결제 비교는 sub 레거시를 놓쳤고,
+    // 프리셋 savings(저축성지출) 미차단으로 monthly[].expense와 어긋났다 (113행 주석의 약속 이행)
+    if (classifyLedgerFlow(l, categoryPresets) !== "expense") continue;
+    // 대분류 키는 expenseMainName 단일 소스 — raw 폴백은 표준 스키마에서 "지출" 가짜 버킷을 만든다
+    const sub = expenseMainName(l); if (!sub) continue;
     const mo = l.date?.slice(0, 7); if (!mo) continue;
     if (mo !== targetMonth && !prevMonths.includes(mo)) continue;
     if (partialDay != null && Number(l.date!.slice(8, 10)) > partialDay) continue;

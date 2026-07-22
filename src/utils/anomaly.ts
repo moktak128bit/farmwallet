@@ -1,5 +1,5 @@
-import type { LedgerEntry } from "../types";
-import { isCreditPayment, isCurrencyExchangeEntry } from "./category";
+import type { CategoryPresets, LedgerEntry } from "../types";
+import { classifyLedgerFlow } from "../features/dashboard/summaryMath";
 import { expenseMainName } from "./categoryMerge";
 
 interface AnomalyResult {
@@ -25,7 +25,9 @@ export function detectSpendAnomalies(
   lookbackMonths = 6,
   /** 진행 중인 달과 공정 비교용 — 지정 시 현재월·과거월 모두 1~dayCap일만 합산.
    *  (없으면 전체 월. 부분-월 current를 완결 월 평균과 비교해 월말에만 경고 켜지는 사각 방지) */
-  dayCap?: number
+  dayCap?: number,
+  /** 저축성지출 판정용 (categoryTypes.savings) — 대시보드·인사이트 지출 정의와 통일 */
+  categoryPresets?: CategoryPresets
 ): AnomalyResult[] {
   const months = new Set<string>();
   const [y, m] = currentMonth.split("-").map(Number);
@@ -37,9 +39,9 @@ export function detectSpendAnomalies(
   const byCat = new Map<string, { monthly: Map<string, number>; current: number }>();
   for (const e of ledger) {
     if (e.kind !== "expense" || e.amount <= 0 || !e.date) continue;
-    // 일반 소비 지출만 대상 — 신용결제(이중계상)·재테크(저축성지출)·환전 제외
-    // (useInsightsData의 fExp 필터와 동일 기준 — "주목할 한 가지" 오탐 방지)
-    if (e.category === "재테크" || isCurrencyExchangeEntry(e) || isCreditPayment(e)) continue;
+    // 일반 소비 지출만 대상 — classifyLedgerFlow 단일 기준 (신용결제·환전·저축성지출·투자손실 제외).
+    // useInsightsData의 fExp와 동일 정의 — 문자열 재나열은 프리셋 savings 카테고리를 놓친다.
+    if (classifyLedgerFlow(e, categoryPresets) !== "expense") continue;
     if (dayCap != null && Number(e.date.slice(8, 10)) > dayCap) continue;
     // 대분류는 expenseMainName 단일소스 — 현행 스키마(category="지출")가 한 버킷으로 뭉쳐 이상감지가 무의미해지는 것 방지
     const cat = expenseMainName(e);

@@ -11,6 +11,7 @@
 
 import type { LedgerEntry, DailyBudgetConfig } from "../types";
 import { getTodayKST, parseIsoLocal, formatIsoLocal } from "./date";
+import { expenseMainName } from "./categoryMerge";
 
 export const DEFAULT_DAILY_BUDGET: DailyBudgetConfig = {
   enabled: false,
@@ -25,7 +26,10 @@ export const DEFAULT_DAILY_BUDGET: DailyBudgetConfig = {
 function isCountableExpense(entry: LedgerEntry, config: DailyBudgetConfig): boolean {
   if (entry.kind !== "expense") return false;
   if (config.excludedCategories.includes(entry.category)) return false;
-  if (entry.subCategory && config.excludedSubCategories.includes(entry.subCategory)) return false;
+  // excludedSubCategories는 실질 대분류 목록(통신비·구독비… — 설정 UI·LedgerEntryForm 경고와 동일 기준).
+  // 대분류는 expenseMainName으로 — raw subCategory만 보면 레거시 평면(cat=통신비, sub 없음)을 놓친다.
+  const main = expenseMainName(entry);
+  if (main && config.excludedSubCategories.includes(main)) return false;
   return true;
 }
 

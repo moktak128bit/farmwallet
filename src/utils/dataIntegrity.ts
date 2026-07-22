@@ -6,6 +6,7 @@ import type { Account, LedgerEntry, StockTrade, CategoryPresets } from "../types
 import { computeAccountBalances } from "../calculations";
 import { isUSDStock } from "./finance";
 import { getTodayKST } from "./date";
+import { isCreditPayment } from "./category";
 
 export interface DuplicateTrade {
   type: "ledger" | "trade";
@@ -425,6 +426,10 @@ function checkCategoryConsistency(
   const systemExpenseCategories = new Set(["신용결제"]);
   const incomeWrapperCategories = new Set(["수입"]);
   const transferWrapperCategories = new Set(["이체"]);
+  // 표준 지출 스키마는 category="지출"(래퍼) + subCategory=대분류 + detailCategory=소분류 —
+  // income("수입")·transfer("이체")와 동일한 래퍼 처리가 없으면 표준 항목 전부가
+  // "대분류 '지출'이 프리셋에 없습니다" 오경고를 받는다.
+  const expenseWrapperCategories = new Set(["지출"]);
   const unclassifiedSubCategories = new Set(["(미분류)", "미분류", "-"]);
 
   const normalizeKey = (value: string) => value.replace(/\s+/g, "").trim();
@@ -492,17 +497,26 @@ function checkCategoryConsistency(
     }
 
     if (entry.kind === "expense") {
-      const isKnownExpenseMain =
-        !!main &&
-        (hasCategory(expenseSet, normalizedExpenseSet, main) ||
-          hasCategory(savingsCategories, normalizedSavingsSet, main) ||
-          systemExpenseCategories.has(main));
+      // 신용결제(cat·sub 양 세대)는 시스템 분류 — 프리셋 검사 대상 아님.
+      // (sub 세대를 경고하면 사용자가 sub를 '고치는' 순간 isCreditPayment 매칭이 풀려 이중계상이 생긴다)
+      if (isCreditPayment(entry)) return;
 
-      if (main && !isKnownExpenseMain) {
+      // 래퍼(category="지출")면 한 칸씩 내려 실질 대분류/소분류를 얻는다 — income/transfer와 대칭
+      const usesWrapperMain = !main || expenseWrapperCategories.has(main);
+      const effMain = usesWrapperMain ? sub : main;
+      const effSub = usesWrapperMain ? (entry.detailCategory ?? "").trim() : sub;
+
+      const isKnownExpenseMain =
+        !!effMain &&
+        (hasCategory(expenseSet, normalizedExpenseSet, effMain) ||
+          hasCategory(savingsCategories, normalizedSavingsSet, effMain) ||
+          systemExpenseCategories.has(effMain));
+
+      if (effMain && !isKnownExpenseMain) {
         issues.push({
           type: "category_mismatch",
           severity: "warning",
-          message: `가계부 항목 ${entry.id}: 지출 대분류 "${main}"이(가) 지출 프리셋에 없습니다`,
+          message: `가계부 항목 ${entry.id}: 지출 대분류 "${effMain}"이(가) 지출 프리셋에 없습니다`,
           data: {
             entryId: entry.id,
             kind: "expense",
@@ -515,27 +529,27 @@ function checkCategoryConsistency(
       }
 
       if (
-        !main ||
-        systemExpenseCategories.has(main) ||
-        hasCategory(savingsCategories, normalizedSavingsSet, main)
+        !effMain ||
+        systemExpenseCategories.has(effMain) ||
+        hasCategory(savingsCategories, normalizedSavingsSet, effMain)
       ) {
         return;
       }
 
       if (
-        !sub ||
-        unclassifiedSubCategories.has(sub) ||
-        normalizeKey(main) === normalizeKey(sub)
+        !effSub ||
+        unclassifiedSubCategories.has(effSub) ||
+        normalizeKey(effMain) === normalizeKey(effSub)
       ) {
         return;
       }
 
-      const detailGroup = expenseDetailsByMain.get(normalizeKey(main));
-      if (detailGroup && !hasCategory(detailGroup.subs, detailGroup.normalizedSubs, sub)) {
+      const detailGroup = expenseDetailsByMain.get(normalizeKey(effMain));
+      if (detailGroup && !hasCategory(detailGroup.subs, detailGroup.normalizedSubs, effSub)) {
         issues.push({
           type: "category_mismatch",
           severity: "warning",
-          message: `가계부 항목 ${entry.id}: 지출 중분류 "${main} > ${sub}"이(가) 프리셋에 없습니다`,
+          message: `가계부 항목 ${entry.id}: 지출 중분류 "${effMain} > ${effSub}"이(가) 프리셋에 없습니다`,
           data: {
             entryId: entry.id,
             kind: "expense",

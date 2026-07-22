@@ -7,14 +7,15 @@
  * React.memo로 감싸 표와 무관한 부모 상태 변경 시 재렌더를 건너뛴다.
  * 부모가 넘기는 콜백은 모두 안정적(setState 또는 useCallback)이어야 memo가 효과를 가진다.
  *
- * byMonthSource/byMonthInterest/positions는 부모 memo — 여기서 재계산하지 않는다.
+ * byMonthSource/byMonthInterest는 부모 memo — 여기서 재계산하지 않는다.
  */
 import React, { useState, useMemo } from "react";
 import { toast } from "react-hot-toast";
 import { FilterChipRow } from "../../components/ui/FilterChipRow";
-import type { Account, LedgerEntry, PositionRow } from "../../types";
+import type { Account, LedgerEntry } from "../../types";
 import { formatKRW, formatShortDate } from "../../utils/formatter";
-import { canonicalTickerForMatch, extractTickerFromText } from "../../utils/finance";
+import { extractTickerFromText } from "../../utils/finance";
+import { toKrwByRate } from "../../utils/currency";
 import { buildDividendNote, parseExDateFromNote } from "../../utils/dividend";
 import { useAppStore } from "../../store/appStore";
 import type { DividendRow, TabType } from "./types";
@@ -37,8 +38,8 @@ interface Props {
   tab: TabType;
   accounts: Account[];
   ledger: LedgerEntry[];
-  /** 부모 memo (computePositions) — 편집 중 배당율(현재가 대비) 계산용 */
-  positions: PositionRow[];
+  /** USD 기록 편집 미리보기 환산용 — 표시 행은 부모가 이미 KRW 환산(toKrwByRate) */
+  fxRate: number | null;
   /** 부모 memo — 월별 배당+이자 행 (최신 월 우선) */
   byMonthSource: Array<[string, DividendRow[]]>;
   /** 부모 memo — 월별 이자 행 (최신 월 우선) */
@@ -50,7 +51,7 @@ export const IncomeRecordsSection: React.FC<Props> = React.memo(function IncomeR
   tab,
   accounts,
   ledger,
-  positions,
+  fxRate,
   byMonthSource,
   byMonthInterest,
   onChangeLedger
@@ -224,11 +225,13 @@ export const IncomeRecordsSection: React.FC<Props> = React.memo(function IncomeR
                         // 배당금액 수정
                         const newAmount = editingAmount ? Number(editingAmount) : ledgerEntry.amount;
 
-                        // 보유주식은 note 필드에 저장 — 기존 note의 "배당락일:" 메타는 보존하며 보유주식만 갱신
+                        // 보유주식은 note 필드에 저장 — 기존 note의 "배당락일:" 메타는 보존하며 보유주식만 갱신.
+                        // parseFloat: 미국 소수점 주식(2.5주) 지원 — parseInt는 편집 진입 시 미리 채워진
+                        // "2.5"를 2로 절삭해 다른 칸만 고쳐도 수량이 조용히 손상된다 (입력 폼과 동일 규칙).
                         const existingExDate = parseExDateFromNote(ledgerEntry.note) ?? undefined;
-                        const editedQty = editingQuantity ? parseInt(editingQuantity, 10) : NaN;
+                        const editedQty = editingQuantity ? parseFloat(editingQuantity) : NaN;
                         const newNote =
-                          editingQuantity && Number.isInteger(editedQty) && editedQty >= 0
+                          editingQuantity && Number.isFinite(editedQty) && editedQty >= 0
                             ? buildDividendNote(editedQty, existingExDate)
                             : ledgerEntry.note;
 
@@ -418,7 +421,7 @@ export const IncomeRecordsSection: React.FC<Props> = React.memo(function IncomeR
                                     textAlign: "right"
                                   }}
                                   onClick={(e) => e.stopPropagation()}
-                                  placeholder={q > 0 ? "주당배당금" : "먼저 보유주수 입력"}
+                                  placeholder={q > 0 ? (ledgerEntry?.currency === "USD" ? "주당배당금 ($)" : "주당배당금") : "먼저 보유주수 입력"}
                                   disabled={q <= 0}
                                   min={0}
                                   step={0.0001}
@@ -459,10 +462,10 @@ export const IncomeRecordsSection: React.FC<Props> = React.memo(function IncomeR
                                 onClick={(e) => e.stopPropagation()}
                                 placeholder="보유주수"
                                 min={0}
-                                step={1}
+                                step="any"
                               />
                             ) : (
-                              <span>{r.quantity != null ? `${Math.round(r.quantity).toLocaleString()}주` : "-"}</span>
+                              <span>{r.quantity != null ? `${r.quantity.toLocaleString(undefined, { maximumFractionDigits: 4 })}주` : "-"}</span>
                             )}
                           </td>
                           <td
@@ -496,7 +499,12 @@ export const IncomeRecordsSection: React.FC<Props> = React.memo(function IncomeR
                                   textAlign: "right"
                                 }}
                                 onClick={(e) => e.stopPropagation()}
-                                placeholder="총 배당금"
+                                placeholder={ledgerEntry?.currency === "USD" ? "총 배당금 ($)" : "총 배당금"}
+                                title={
+                                  ledgerEntry?.currency === "USD"
+                                    ? `USD 기록 — 달러 금액으로 입력하세요 (환산 ${formatKRW(Math.round(toKrwByRate(Number(editingAmount) || 0, "USD", fxRate)))})`
+                                    : undefined
+                                }
                                 min={0}
                                 step={0.01}
                               />
@@ -506,17 +514,14 @@ export const IncomeRecordsSection: React.FC<Props> = React.memo(function IncomeR
                           </td>
                           <td className="number" style={{ whiteSpace: "nowrap" }}>
                             {isEditing ? (() => {
-                              const q = Number(editingQuantity) || 0;
+                              // 저장 행과 같은 분모(FIFO KRW 매입원가) — 컬럼 라벨 '배당율(매입대비)' 그대로.
+                              // (이전엔 현재가 대비라 편집 진입 순간 %가 튀었고, USD 기록은 환산 없이 섞였다)
                               const a = Number(editingAmount) || 0;
-                              const tickerForPrice = editingTicker.trim().toUpperCase() || currentTicker || r.ticker;
-                              const pos = tickerForPrice ? positions.find((p) => canonicalTickerForMatch(p.ticker) === canonicalTickerForMatch(tickerForPrice)) : null;
-                              const priceKrw = pos?.marketPrice;
-                              if (q <= 0 || a <= 0 || !priceKrw || priceKrw <= 0) return "-";
-                              const dps = a / q;
-                              const yieldPct = (dps / priceKrw) * 100;
-                              return `${yieldPct.toFixed(2)}%`;
+                              const aKrw = toKrwByRate(a, ledgerEntry?.currency, fxRate);
+                              if (aKrw <= 0 || r.costBasis == null || r.costBasis <= 0) return "-";
+                              return `${((aKrw / r.costBasis) * 100).toFixed(2)}%`;
                             })() : r.yieldRate != null ? (
-                              <span title={`매입금액 ${r.costBasis != null ? formatKRW(Math.round(r.costBasis)) : "?"} ÷ 배당금 ${formatKRW(Math.round(r.amount))} = ${(r.yieldRate * 100).toFixed(2)}%`}>
+                              <span title={`배당금 ${formatKRW(Math.round(r.amount))} ÷ 매입금액 ${r.costBasis != null ? formatKRW(Math.round(r.costBasis)) : "?"} = ${(r.yieldRate * 100).toFixed(2)}%`}>
                                 <span style={{ fontWeight: 600 }}>{(r.yieldRate * 100).toFixed(2)}%</span>
                                 {r.costBasis != null && (
                                   <div className="hint" style={{ fontSize: 10, marginTop: 2 }}>
@@ -810,6 +815,8 @@ export const IncomeRecordsSection: React.FC<Props> = React.memo(function IncomeR
                               onChange={(e) => setEditingAmount(e.target.value)}
                               onBlur={handleSaveInterestEdit}
                               onKeyDown={(e) => { if (e.key === "Escape") cancelInterestEdit(); }}
+                              placeholder={ledgerEntry?.currency === "USD" ? "이자 금액 ($)" : undefined}
+                              title={ledgerEntry?.currency === "USD" ? "USD 기록 — 달러 금액으로 입력하세요" : undefined}
                               style={{ width: "100%", padding: "4px 8px", fontSize: 13, border: "1px solid var(--accent)", borderRadius: 4, backgroundColor: "var(--surface)", textAlign: "right" }}
                             />
                           ) : (

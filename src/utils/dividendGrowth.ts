@@ -11,7 +11,7 @@
  *          → (이번 달이면) 현재 시세 순 폴백
  */
 import type { HistoricalDailyClose, LedgerEntry, MarketEnvSnapshot, StockPrice, StockTrade } from "../types";
-import { canonicalTickerForMatch, isUSDStock } from "./finance";
+import { canonicalTickerForMatch, isUSDStock, tradeAmountKRW } from "./finance";
 import { isDividendEntryLoose } from "./categoryMatch";
 import { parseQuantityFromNote } from "./dividend";
 
@@ -54,7 +54,8 @@ export interface DividendGrowthData {
     lastMonthYield: number | null;
     /** 최근 수령 월의 월 분배율 (%, 내 매입금 대비) */
     lastMonthYoc: number | null;
-    /** 연환산 주당 분배금 (최근 ≤12개월 평균 × 12) */
+    /** 연환산 주당 분배금 — 최근 ≤12개월 창의 known 주당분배금 합 ÷ 유효 월수 × 12
+     *  (무분배 달은 0으로 포함 — 분기·연배당을 '지급 달 평균×12' 하면 3~12배 과대) */
     annualPerShare: number | null;
     /** 분배율 (연환산, 현재가 기준 %) */
     marketYield: number | null;
@@ -96,19 +97,45 @@ interface DividendStory {
 }
 
 /**
+ * 연환산 주당 분배금 — 최근 ≤12개월 창 기준: Σ(known perShare) ÷ 유효 월수 × 12.
+ *  - 무분배 달은 0으로 창에 포함한다. '지급 있는 달만 평균 × 12'는 분기배당 3배·반기 6배·연배당 12배 과대.
+ *  - 분모에서 제외하는 달: ① 지급은 있었으나 주당 분배금 불명(0으로 섞으면 체계적 과소 — 월말 보유
+ *    추정 후에도 남는 보유 0 지급 케이스), ② 보유 0 무지급 달(전량 매도~재매수 갭은 '무배당 달'이 아님).
+ */
+function annualizePerShareWindow(
+  win: { perShare: number | null; received: number; shares: number }[]
+): number | null {
+  const known = win.filter((p) => p.perShare != null);
+  if (known.length === 0) return null;
+  const excluded = win.filter(
+    (p) => (p.received > 0 && p.perShare == null) || (p.received <= 0 && p.shares <= 1e-8)
+  ).length;
+  const denom = win.length - excluded;
+  if (denom <= 0) return null;
+  return (known.reduce((s, p) => s + (p.perShare ?? 0), 0) / denom) * 12;
+}
+
+/**
  * 배당 '모으는 재미' 스토리 — buildDividendGrowth 결과에서 누적 눈덩이·연환산 YOC 여정·연간 런레이트를 파생.
  * 작은 월 퍼센트에 묻힌 배당성장/배당율증가를 큰 숫자와 우상향 곡선으로 드러내기 위한 표시용 가공.
  */
 export function buildDividendStory(data: DividendGrowthData): DividendStory {
   let cum = 0;
-  // 분배금이 월/주/분기로 들쭉날쭉해도 매끄럽게: '최근 ≤12개월 known 주당분배금 평균 × 12'(이동평균 연환산).
-  // buildDividendGrowth의 현재 KPI(annualPerShare)와 동일 기준 → 마지막 점이 KPI와 일치.
-  const knownPerShare: number[] = [];
-  const points: DividendStoryPoint[] = data.points.map((p) => {
+  // 이동 연환산: annualizePerShareWindow(무분배 달 0 포함) — buildDividendGrowth KPI(annualPerShare)와
+  // 동일 기준 → 마지막 점이 KPI와 일치. 첫 분배 이전 구간은 창이 비어 null.
+  const divWindow: { perShare: number | null; received: number; shares: number }[] = [];
+  let seenDiv = false;
+  const points: DividendStoryPoint[] = data.points.map((p, idx) => {
     cum += p.received;
-    if (p.perShare != null) knownPerShare.push(p.perShare);
-    const win = knownPerShare.slice(-12);
-    const annualPerShare = win.length > 0 ? (win.reduce((s, v) => s + v, 0) / win.length) * 12 : null;
+    if (!seenDiv && (p.received > 0 || p.perShare != null)) seenDiv = true;
+    if (seenDiv) divWindow.push({ perShare: p.perShare, received: p.received, shares: p.shares });
+    // 마지막(진행 중) 달이 아직 미지급이면 자기 자신을 창에서 제외 — KPI와 동일 규칙
+    const isLast = idx === data.points.length - 1;
+    const win =
+      isLast && p.received <= 0 && divWindow.length > 1
+        ? divWindow.slice(-13, -1)
+        : divWindow.slice(-12);
+    const annualPerShare = annualizePerShareWindow(win);
     // 런레이트·YOC는 비분배월에도 직전 연환산 추정으로 이어 매끄러운 곡선 (모을수록 우상향)
     const runRate = annualPerShare != null && p.shares > 0 ? p.shares * annualPerShare : null;
     const annualYoc = annualPerShare != null && p.avgCost ? (annualPerShare / p.avgCost) * 100 : null;
@@ -232,41 +259,71 @@ export function buildDividendGrowth(args: {
   if (!canonical) return null;
 
   // USD 종목은 분배금/주가/평단이 모두 달러 → 카드가 "원"으로 표시하면 환율배수(~1400)만큼 왜곡.
-  // 환율로 KRW 정규화한다. (분배율·YOC는 분자/분모가 같은 통화라 비율은 원래도 정확했음 — 절대값만 보정)
+  // 환율로 KRW 정규화한다. 단 매수 원가는 현재 환율이 아닌 '매입 당시 환율'(fxRateAtTrade) 우선 —
+  // 배당 기록은 수령 시점 환율로 KRW 저장되므로 원가만 현재 환율이면 YOC가 환율 따라 출렁인다.
   const isUsd = isUSDStock(canonical);
   const fx = args.fxRate ?? null;
   // USD 종목인데 환율이 없으면 KRW 정규화 불가 → 왜곡된 숫자를 보여주느니 미표시(null).
   if (isUsd && !(fx != null && fx > 0)) return null;
   const toKrwPrice = (v: number): number => (isUsd && fx ? v * fx : v);
 
-  // ── 분배금 기록 (월별 집계)
-  type DivAgg = { received: number; perShare: number; perShareKnown: boolean };
-  const divByMonth = new Map<string, DivAgg>();
+  // ── 분배금 기록 (지급일별 → 월별 집계)
+  // 같은 지급일의 다계좌 기록은 "금액 합 ÷ 계좌별 보유 합"으로 한 번만 주당 분배금을 계산한다 —
+  // 기록별 amount/qty를 그대로 합산하면 계좌 수만큼 주당 분배금이 이중 계상된다.
+  // 계좌별 보유는 max (같은 계좌의 정규+특별 배당이 같은 날 겹쳐도 보유는 한 번).
+  type DayAgg = { amt: number; qtyByAcct: Map<string, number>; recs: number; withQty: number };
+  const daysByMonth = new Map<string, Map<string, DayAgg>>();
   let recordCount = 0;
   let name = "";
   for (const l of args.ledger) {
     if (!isDividendRecord(l)) continue;
     if (tickerFromDividendDesc(l.description) !== canonical) continue;
-    const m = (l.date || "").slice(0, 7);
+    const day = l.date || "";
+    const m = day.slice(0, 7);
     if (!m) continue;
     recordCount += 1;
     if (!name) {
       const nm = (l.description || "").match(/^[A-Za-z0-9.-]+\s*-\s*(.+?)\s*배당\s*$/);
       if (nm) name = nm[1];
     }
-    const agg = divByMonth.get(m) ?? { received: 0, perShare: 0, perShareKnown: false };
     // 분배금: USD 기록이면 환율로 환산 (KRW 기록은 그대로 — 혼재 대비 per-entry 판정)
     const rawAmount = Number(l.amount) || 0;
     const amount = l.currency === "USD" && fx ? rawAmount * fx : rawAmount;
-    agg.received += amount;
+    let days = daysByMonth.get(m);
+    if (!days) {
+      days = new Map();
+      daysByMonth.set(m, days);
+    }
+    const d = days.get(day) ?? { amt: 0, qtyByAcct: new Map(), recs: 0, withQty: 0 };
+    d.amt += amount;
+    d.recs += 1;
     const qty = parseQuantityFromNote(l.note);
     if (qty != null && qty > 0) {
-      agg.perShare += amount / qty;
-      agg.perShareKnown = true;
+      d.withQty += 1;
+      const k = l.toAccountId || `#${d.recs}`; // 계좌 미상은 각자 버킷 (합산 쪽이 과대보다 안전)
+      d.qtyByAcct.set(k, Math.max(d.qtyByAcct.get(k) ?? 0, qty));
     }
-    divByMonth.set(m, agg);
+    days.set(day, d);
   }
   if (recordCount === 0) return null;
+
+  type DivAgg = { received: number; perShare: number; perShareKnown: boolean };
+  const divByMonth = new Map<string, DivAgg>();
+  for (const [m, days] of daysByMonth) {
+    const agg: DivAgg = { received: 0, perShare: 0, perShareKnown: true };
+    for (const d of days.values()) {
+      agg.received += d.amt;
+      const qtySum = [...d.qtyByAcct.values()].reduce((s, v) => s + v, 0);
+      if (d.withQty === d.recs && qtySum > 0) {
+        agg.perShare += d.amt / qtySum;
+      } else {
+        // 보유 미기재 지급일이 섞인 달 → 월 전체를 '불명'으로 두고 아래에서 월말 보유로 추정
+        agg.perShareKnown = false;
+      }
+    }
+    if (!agg.perShareKnown) agg.perShare = 0;
+    divByMonth.set(m, agg);
+  }
 
   // ── 거래 (보유 수량·평단 이동평균, 수수료 포함)
   const myTrades = args.trades
@@ -314,8 +371,12 @@ export function buildDividendGrowth(args: {
       const q = Number(t.quantity) || 0;
       if (t.side === "buy") {
         qty += q;
-        // 원가: USD 거래면 환율로 KRW 환산 (분배금·주가와 같은 단위 — YOC 비율 보존)
-        costBasis += toKrwPrice(Number(t.totalAmount) || q * (Number(t.price) || 0));
+        // 원가: USD 거래는 매입 당시 환율(fxRateAtTrade) 우선 KRW 환산 — finance.tradeAmountKRW 단일 규칙.
+        // 현재 환율로 환산하면 환율이 움직일 때마다 과거 원가·YOC가 소급 변동한다 (KRW 원가 불변식).
+        costBasis += tradeAmountKRW(
+          { ticker: canonical, totalAmount: Number(t.totalAmount) || q * (Number(t.price) || 0), fxRateAtTrade: t.fxRateAtTrade },
+          fx
+        );
       } else {
         const avg = qty > 1e-8 ? costBasis / qty : 0;
         qty = Math.max(0, qty - q);
@@ -337,7 +398,10 @@ export function buildDividendGrowth(args: {
 
     const div = divByMonth.get(m);
     const received = div?.received ?? 0;
-    const perShare = div?.perShareKnown ? div.perShare : null;
+    let perShare = div?.perShareKnown ? div.perShare : null;
+    // 보유주식 미기재 지급월은 월말 보유 수량으로 추정 — 완전 제외하면 연환산 분모가 왜곡된다
+    // (지급 사실은 확실하므로 추정이 제외보다 정확. 월중 보유 변동 시 약간의 오차 가능)
+    if (perShare == null && received > 0 && qty > 1e-8) perShare = received / qty;
     points.push({
       month: m,
       label: `${m.slice(2, 4)}.${m.slice(5, 7)}`,
@@ -354,15 +418,14 @@ export function buildDividendGrowth(args: {
   // ── 현재 KPI
   const last = points[points.length - 1];
   const lastPaid = [...points].reverse().find((p) => p.received > 0) ?? null;
-  // 연환산 주당 분배금: 첫 분배 월부터 최근 12개월 창에서 "주당 분배금을 아는 달"만 평균 × 12.
-  // 보유주식 미기재 기록(perShare 불명) 달을 0으로 섞으면 체계적으로 과소되므로 제외.
-  const sinceFirstDiv = points.filter((p) => p.month >= firstDivMonth);
-  const windowPts = sinceFirstDiv.slice(-12);
-  const knownPerShare = windowPts.filter((p) => p.perShare != null);
-  const annualPerShare =
-    knownPerShare.length > 0
-      ? (knownPerShare.reduce((s, p) => s + (p.perShare ?? 0), 0) / knownPerShare.length) * 12
-      : null;
+  // 연환산 주당 분배금 — annualizePerShareWindow(무분배 달 0 포함, 미기재 지급월 제외) 기준.
+  // 진행 중인 이번 달이 아직 미지급이면 창에서 제외 — 지급일 전의 0이 평균을 끌어내리지 않게.
+  let winSrc = points.filter((p) => p.month >= firstDivMonth);
+  const tail = winSrc[winSrc.length - 1];
+  if (winSrc.length > 1 && tail && tail.received <= 0 && tail.month === args.currentMonth) {
+    winSrc = winSrc.slice(0, -1);
+  }
+  const annualPerShare = annualizePerShareWindow(winSrc.slice(-12));
   // last?.price는 이미 KRW 환산됨 — currentPriceRaw도 동일 단위로 환산해 사용
   const curPrice = currentPriceRaw != null ? toKrwPrice(currentPriceRaw) : last?.price ?? null;
   const curAvgCost = last?.avgCost ?? null;

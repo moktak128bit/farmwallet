@@ -90,11 +90,11 @@ describe("buildDividendGrowth", () => {
     expect(may.perShare).toBeCloseTo(250);
   });
 
-  it("연환산 주당 분배금은 '주당 분배금을 아는 달'만 평균한다 (보유주식 미기재 달이 0으로 섞이지 않음)", () => {
+  it("보유주식 미기재 지급월은 월말 보유 수량으로 주당 분배금을 추정한다 (0으로 섞이지도, 제외되지도 않음)", () => {
     const noNote = { ...div("2026-05-06", "458730", "TIGER 미국배당다우존스", 1000, 1), note: undefined };
     const ledger = [
       div("2026-04-02", "458730", "TIGER 미국배당다우존스", 400, 10), // 주당 40
-      noNote, // 5월: 수령은 있으나 보유주식 미기재 → perShare 불명
+      noNote, // 5월: 수령 1,000원, 보유주식 미기재 → 월말 보유 10주로 추정 = 주당 100
       div("2026-06-02", "458730", "TIGER 미국배당다우존스", 500, 10), // 주당 50
     ];
     const r = buildDividendGrowth({
@@ -104,8 +104,99 @@ describe("buildDividendGrowth", () => {
       prices: [],
       currentMonth: "2026-06",
     });
-    // (40+50)/2 × 12 = 540 — 5월을 0으로 섞은 (40+0+50)/3 × 12 = 360이 아님
-    expect(r!.current.annualPerShare).toBeCloseTo(540);
+    // (40+100+50)/3 × 12 = 760 — 5월을 0으로 섞은 360도, 제외한 540도 아님
+    expect(r!.current.annualPerShare).toBeCloseTo(760);
+  });
+
+  it("다계좌 동일 지급일: 주당 분배금은 '금액 합 ÷ 계좌별 보유 합'으로 한 번만 (이중 계상 방지)", () => {
+    const ledger = [
+      { ...div("2026-05-06", "458730", "TIGER 미국배당다우존스", 25_000, 100), toAccountId: "A" },
+      { ...div("2026-05-06", "458730", "TIGER 미국배당다우존스", 12_500, 50), toAccountId: "B" },
+    ];
+    const r = buildDividendGrowth({
+      ticker: "458730",
+      ledger,
+      trades: [buy("2026-04-15", "458730", 150, 10000)],
+      prices: [],
+      currentMonth: "2026-05",
+    });
+    const may = r!.points.find((p) => p.month === "2026-05")!;
+    expect(may.received).toBe(37_500);
+    expect(may.perShare).toBeCloseTo(250); // 37,500/150 — 기록별 합산(250+250=500)이 아님
+  });
+
+  it("같은 계좌·같은 날 복수 기록(정규+특별)은 보유를 한 번만 세어 주당 분배금이 합산된다", () => {
+    const ledger = [
+      { ...div("2026-05-06", "458730", "TIGER 미국배당다우존스", 25_000, 100), toAccountId: "A" },
+      { ...div("2026-05-06", "458730", "TIGER 미국배당다우존스", 50_000, 100), toAccountId: "A" },
+    ];
+    const r = buildDividendGrowth({
+      ticker: "458730",
+      ledger,
+      trades: [buy("2026-04-15", "458730", 100, 10000)],
+      prices: [],
+      currentMonth: "2026-05",
+    });
+    // 75,000 / 100주 = 750 — 보유를 이중 합산(75,000/200=375)하지 않음
+    expect(r!.points.find((p) => p.month === "2026-05")!.perShare).toBeCloseTo(750);
+  });
+
+  it("전량 매도~재매수 갭(보유 0 무지급 달)은 연환산 분모에서 제외된다", () => {
+    const mk = (d: string) => div(d, "458730", "TIGER 미국배당다우존스", 1000, 10); // 주당 100
+    const ledger = [mk("2026-01-05"), mk("2026-02-05"), mk("2026-03-05"), mk("2026-07-05"), mk("2026-08-05"), mk("2026-09-05")];
+    const trades = [
+      buy("2025-12-15", "458730", 10, 10000),
+      { ...buy("2026-03-20", "458730", 10, 11000), side: "sell" as const }, // 전량 매도
+      buy("2026-07-01", "458730", 10, 11000), // 재매수
+    ];
+    const r = buildDividendGrowth({ ticker: "458730", ledger, trades, prices: [], currentMonth: "2026-09" });
+    // 창 = 1~9월(9개월), 지급 6회 각 주당 100, 4~6월은 보유 0 → 분모 9−3=6 → 100×12=1,200
+    expect(r!.current.annualPerShare).toBeCloseTo(1200);
+  });
+
+  it("분기배당: 무분배 달을 0으로 포함해 연환산한다 ('지급 달 평균×12'로 3배 부풀지 않음)", () => {
+    // 분기마다 주당 750원 (연 3,000원) — 최근 12개월 창(2025-10~2026-09)에 지급 4회
+    const ledger = ["2025-09-02", "2025-12-02", "2026-03-02", "2026-06-02", "2026-09-02"]
+      .map((d) => div(d, "005930", "삼성전자", 7500, 10));
+    const r = buildDividendGrowth({
+      ticker: "005930",
+      ledger,
+      trades: [buy("2025-08-15", "005930", 10, 60000)],
+      prices: [],
+      currentMonth: "2026-09",
+    })!;
+    expect(r.current.annualPerShare).toBeCloseTo(3000); // 750×12=9,000이 아님
+    expect(r.current.yoc).toBeCloseTo((3000 / 60000) * 100); // 5%
+  });
+
+  it("진행 중인 이번 달이 아직 미지급이면 창에서 제외한다 (지급일 전 과소 방지)", () => {
+    const ledger = [
+      div("2026-04-02", "458730", "TIGER 미국배당다우존스", 1000, 10), // 주당 100
+      div("2026-05-06", "458730", "TIGER 미국배당다우존스", 1000, 10),
+      div("2026-06-02", "458730", "TIGER 미국배당다우존스", 1000, 10),
+    ];
+    const r = buildDividendGrowth({
+      ticker: "458730",
+      ledger,
+      trades: [buy("2026-03-15", "458730", 10, 10000)],
+      prices: [],
+      currentMonth: "2026-07", // 7월 지급 전
+    })!;
+    expect(r.current.annualPerShare).toBeCloseTo(1200); // 100×12 — 7월 0을 섞은 900이 아님
+  });
+
+  it("USD 매수 원가는 매입 당시 환율(fxRateAtTrade) — 현재 환율로 소급 재환산하지 않는다", () => {
+    const ledger: LedgerEntry[] = [
+      { id: "ud2", date: "2026-06-03", kind: "income", category: "수입", subCategory: "배당", description: "SCHD - Schwab US Dividend 배당", amount: 5200, note: "보유주식: 10" },
+    ];
+    const trades: StockTrade[] = [
+      { id: "ut2", date: "2026-05-02", accountId: "a1", ticker: "SCHD", name: "SCHD", side: "buy", quantity: 10, price: 80, fee: 0, totalAmount: 800, cashImpact: 0, fxRateAtTrade: 1300 },
+    ];
+    const r = buildDividendGrowth({ ticker: "SCHD", ledger, trades, prices: [], currentMonth: "2026-06", fxRate: 1430 })!;
+    const jun = r.points.find((p) => p.month === "2026-06")!;
+    expect(jun.avgCost).toBeCloseTo(80 * 1300); // 104,000 — 80×1430=114,400 아님
+    // 분배금(수령 시점 환산 KRW 저장)과 원가(매입 환율)가 모두 고정 → YOC가 현재 환율에 흔들리지 않음
+    expect(jun.monthlyYoc).toBeCloseTo((520 / (80 * 1300)) * 100, 4);
   });
 
   it("분배금 기록이 없으면 null", () => {

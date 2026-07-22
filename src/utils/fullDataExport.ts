@@ -6,7 +6,7 @@
 import type { AppData } from "../types";
 import type { SheetData } from "./excelExport";
 import { computePositions } from "../calculations";
-import { isDividendEntryLoose, isInterestEntryLoose } from "./categoryMatch";
+import { isDividendEntryLoose, isInterestEntryLoose, isInterestOverDividend } from "./categoryMatch";
 
 const KIND_LABEL: Record<string, string> = { income: "수입", expense: "지출", transfer: "이체" };
 
@@ -56,7 +56,8 @@ export function buildFullDataSheets(data: AppData): SheetData[] {
     rows: [
       ["날짜", "구분", "내용", "금액", "통화", "입금계좌", "메모"],
       ...divInt.map((l) => [
-        l.date, isDividendEntryLoose(l) ? "배당" : "이자", l.description, l.amount, l.currency ?? "KRW", accName(l.toAccountId), l.note ?? "",
+        // 이자 우선 규칙(categoryMatch 단일 소스) — 배당 탭·세금 카드와 같은 구분이어야 시트 부분합이 화면과 일치
+        l.date, isInterestOverDividend(l) ? "이자" : "배당", l.description, l.amount, l.currency ?? "KRW", accName(l.toAccountId), l.note ?? "",
       ]),
     ],
   });

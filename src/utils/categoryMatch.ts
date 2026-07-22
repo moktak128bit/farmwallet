@@ -48,3 +48,13 @@ export function isDividendEntryLoose(entry: LooseEntry): boolean {
 export function isInterestEntryLoose(entry: LooseEntry): boolean {
   return isInterestEntry(entry) || (entry.description ?? "").includes("이자");
 }
+
+/**
+ * 배당·이자 동시 매칭 시 "이자 우선" 판정 — 배당 탭·내보내기 공용 단일 규칙.
+ * 정확 이자(subCategory="이자" 등)는 description에 "배당"이 있어도 이자
+ * (예: "이자 - OK저축은행 배당"). 그 외 loose 이자는 loose 배당이 아닐 때만 이자.
+ * 화면과 내보내기가 서로 다른 우선순위를 쓰면 같은 항목이 한쪽선 이자, 한쪽선 배당으로 갈린다.
+ */
+export function isInterestOverDividend(entry: LooseEntry): boolean {
+  return isInterestEntry(entry) || (isInterestEntryLoose(entry) && !isDividendEntryLoose(entry));
+}

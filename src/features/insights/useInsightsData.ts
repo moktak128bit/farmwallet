@@ -314,8 +314,14 @@ export function useInsightsData(ledger: LedgerEntry[], rawTrades: StockTrade[], 
     const investTrend = months.map(m => ({ l: ml[m], amount: monthly[m].investment }));
     const divTrend = months.map(m => {
       let d = 0;
-      // subCategory 없으면 category 폴백 — incByCat·investIncKeys 산출과 동일 키 규칙
-      for (const l of ledger) { if (l.kind !== "income" || l.date?.slice(0, 7) !== m) continue; if (investIncKeys.has(l.subCategory || l.category || "")) d += amt(l); }
+      // subCategory 없으면 category 폴백 — incByCat·investIncKeys 산출과 동일 키 규칙.
+      // flowOf "income" 게이트: 투자수익(재테크 순집계 대상)·이월/퇴직연금 제외 + 양수만 —
+      // 패시브 KPI(incByCat 기반 passiveIncome)와 같은 모집단이라 같은 화면의 KPI·차트가 일치한다.
+      for (const l of ledger) {
+        if (l.date?.slice(0, 7) !== m || Number(l.amount) <= 0) continue;
+        if (flowOf(l) !== "income") continue;
+        if (investIncKeys.has(l.subCategory || l.category || "")) d += amt(l);
+      }
       return { l: ml[m], amount: d };
     });
     const tradeCntTrend = months.map(m => ({ l: ml[m], count: rawTrades.filter(t => t.date?.slice(0, 7) === m).length }));

@@ -290,7 +290,7 @@ export const OverviewTab = React.memo(function OverviewTab({ d }: { d: D }) {
             <div style={{ padding: "12px 14px", background: "var(--accent-light)", borderRadius: 10, border: "1px solid var(--border-light)" }}>
               <div style={{ fontSize: 11, color: "var(--text-muted)", marginBottom: 4 }}>패시브 수입</div>
               <div style={{ fontSize: 18, fontWeight: 700, color: "var(--accent)" }}>{F(d.passiveIncome)}</div>
-              <div style={{ fontSize: 11, color: "var(--text-muted)", marginTop: 4 }}>배당·이자 등 투자수익</div>
+              <div style={{ fontSize: 11, color: "var(--text-muted)", marginTop: 4 }}>배당·이자 등 패시브 수입</div>
             </div>
           </div>
           <div style={{ marginTop: 10, fontSize: 11, color: "var(--text-faint)", lineHeight: 1.6, padding: "8px 12px", background: "var(--bg)", borderRadius: 8 }}>

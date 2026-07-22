@@ -18,7 +18,7 @@ import type { Account, HistoricalDailyClose, LedgerEntry, StockPrice, StockTrade
 import { computePositions } from "../calculations";
 import { formatKRW } from "../utils/formatter";
 import { isKRWStock, isUSDStock, canonicalTickerForMatch, extractTickerFromText } from "../utils/finance";
-import { isDividendEntryLoose, isInterestEntryLoose, isInterestEntry } from "../utils/categoryMatch";
+import { isDividendEntryLoose, isInterestEntryLoose, isInterestOverDividend } from "../utils/categoryMatch";
 import { toKrwByRate } from "../utils/currency";
 import { parseExDateFromNote, parseQuantityFromNote } from "../utils/dividend";
 import { getKrNames } from "../storage";
@@ -80,15 +80,23 @@ export const DividendsView: React.FC<Props> = ({ accounts, ledger, trades, price
     return computePositions(trades, adjustedPrices, accounts, { fxRate: fxRate ?? undefined });
   }, [trades, adjustedPrices, accounts, fxRate]);
 
-  // 선행 배당 보유 반영용 — canonical 티커 → 현재 보유 수량 합계
+  // 선행 배당 보유 반영용 — canonical 티커 → 전 거래 순수량.
+  // positions(보유>0만) 대신 전 거래 순수량을 쓰는 이유: 전량 매도 종목도 0으로 맵에 남아야
+  // "매도 → 미래 배당 제외" 판정이 가능하고, 거래 이력이 아예 없는 토큰(티커 오탐 'OK' 등)은
+  // 맵에 없어 forwardDividends가 폴백(과거액 유지)으로 처리한다.
   const currentQtyByTicker = useMemo(() => {
     const m = new Map<string, number>();
-    for (const p of positions) {
-      const k = canonicalTickerForMatch(p.ticker);
-      m.set(k, (m.get(k) ?? 0) + p.quantity);
+    for (const t of trades) {
+      const k = canonicalTickerForMatch(t.ticker);
+      if (!k) continue;
+      const q = Number(t.quantity) || 0;
+      m.set(k, (m.get(k) ?? 0) + (t.side === "buy" ? q : -q));
     }
+    // 부동소수점 잔량 스냅 — 소수점 주식 전량 매도(0.1+0.2−0.3)가 5e-17 잔량으로
+    // '보유 중' 판정되는 것 방지 (finance.getCurrentHoldingsTickers와 동일한 1e-8 안전망)
+    for (const [k, v] of m) if (Math.abs(v) < 1e-8) m.set(k, 0);
     return m;
-  }, [positions]);
+  }, [trades]);
 
   // canonical 티커별 최신 시세 (updatedAt 기준) — 평가/표시 일관성
   const latestPriceByCanonicalTicker = useMemo(() => {
@@ -234,10 +242,9 @@ export const DividendsView: React.FC<Props> = ({ accounts, ledger, trades, price
       const costBasis = ticker && dateForCost ? getCostBasisAtDate(ticker, dateForCost, accountIdForPosition) : 0;
       const yieldRate =
         amount > 0 && costBasis > 0 ? amount / costBasis : undefined;
-      // 배당/이자 분리는 categoryMatch 단일소스로 — isInterestEntry는 subCategory도 검사하므로
-      // 현행 스키마(category="수입", subCategory="이자")의 이자가 배당표로 새지 않는다.
-      // 정확 매칭 우선, 그 외 description 기반 이자는 배당(loose)이 아닐 때만 이자로 본다.
-      const isInterest = isInterestEntry(l) || (isInterestEntryLoose(l) && !isDividendEntryLoose(l));
+      // 배당/이자 분리는 categoryMatch 단일소스(isInterestOverDividend) — 내보내기(fullDataExport)와 공용.
+      // 정확 이자(subCategory="이자")는 description에 "배당"이 있어도 이자, loose 이자는 loose 배당이 아닐 때만.
+      const isInterest = isInterestOverDividend(l);
       rows.push({
         id: l.id,
         month,
@@ -429,7 +436,7 @@ export const DividendsView: React.FC<Props> = ({ accounts, ledger, trades, price
         tab={tab}
         accounts={accounts}
         ledger={ledger}
-        positions={positions}
+        fxRate={fxRate}
         byMonthSource={byMonthSource}
         byMonthInterest={byMonthInterest}
         onChangeLedger={onChangeLedger}

@@ -10,6 +10,7 @@ import {
   isInterestEntry,
   isDividendEntryLoose,
   isInterestEntryLoose,
+  isInterestOverDividend,
 } from "../utils/categoryMatch";
 
 describe("isDividendEntry / isInterestEntry — 정확 매칭", () => {
@@ -45,5 +46,22 @@ describe("isDividendEntryLoose / isInterestEntryLoose — description fallback",
   it("정확 매칭도 아니고 description에도 없으면 false", () => {
     expect(isDividendEntryLoose({ category: "수입", subCategory: "급여", description: "월급" })).toBe(false);
     expect(isInterestEntryLoose({ category: "지출", description: "식비" })).toBe(false);
+  });
+});
+
+describe("isInterestOverDividend — 배당·이자 동시 매칭 시 이자 우선 (화면·내보내기 공용)", () => {
+  it("정확 이자는 description에 '배당'이 있어도 이자", () => {
+    expect(isInterestOverDividend({ category: "수입", subCategory: "이자", description: "이자 - OK저축은행 배당" })).toBe(true);
+  });
+
+  it("loose 이자는 loose 배당이 아닐 때만 이자", () => {
+    // description에 '이자'만 → 이자
+    expect(isInterestOverDividend({ category: "수입", description: "CMA 이자" })).toBe(true);
+    // description에 '배당'도 포함 + 정확 이자 아님 → 배당 우선
+    expect(isInterestOverDividend({ category: "수입", description: "배당형 상품 이자" })).toBe(false);
+  });
+
+  it("배당 항목은 이자가 아니다", () => {
+    expect(isInterestOverDividend({ category: "수입", subCategory: "배당", description: "458730 - TIGER 배당" })).toBe(false);
   });
 });

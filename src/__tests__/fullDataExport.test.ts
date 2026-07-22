@@ -52,6 +52,19 @@ describe("buildFullDataSheets", () => {
     expect(sheet.rows[1][3]).toBe(12000);
   });
 
+  it("정확 이자 + description '배당' 조합은 배당 탭과 같은 '이자'로 라벨링 (이자 우선 규칙)", () => {
+    const withMixed: AppData = {
+      ...base,
+      ledger: [
+        ...base.ledger,
+        { id: "l3", date: "2026-06-03", kind: "income", category: "수입", subCategory: "이자", description: "이자 - OK저축은행 배당", amount: 4619 },
+      ],
+    };
+    const sheet = buildFullDataSheets(withMixed).find((s) => s.name === "배당이자")!;
+    const row = sheet.rows.find((r) => r[2] === "이자 - OK저축은행 배당")!;
+    expect(row[1]).toBe("이자"); // 예전: description '배당' 우선 검사라 '배당'으로 갈려 화면 부분합과 불일치
+  });
+
   it("비어 있는 선택 엔티티(예산·대출·반복지출)는 없으면 시트 생략", () => {
     const minimal: AppData = { ...base, budgetGoals: [], loans: [], recurringExpenses: [] };
     const names = buildFullDataSheets(minimal).map((s) => s.name);

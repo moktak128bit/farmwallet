@@ -299,7 +299,7 @@ export const InvestTab = React.memo(function InvestTab({ d }: { d: D }) {
             </BarChart>
           </ResponsiveContainer>
           <div style={{ fontSize: 11, color: "var(--text-faint)", textAlign: "center", marginTop: 4 }}>
-            투자 계좌에서 발생한 배당·이자·투자수익 월별 합
+            투자 계좌에서 발생한 배당·이자 등 패시브 수입 월별 합 (투자수익은 실현손익·재테크로 별도 집계)
           </div>
         </Card>
       </Section>

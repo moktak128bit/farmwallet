@@ -129,6 +129,36 @@ describe("인사이트 ↔ 대시보드 정의 통일", () => {
     expect(d.pInvest).toBe(500_000);
   });
 
+  it("divTrend(패시브 시리즈)는 패시브 KPI와 같은 모집단 — 투자수익이 배당률을 부풀리지 않는다", () => {
+    const led = [
+      entry({ id: "d1", amount: 100_000, kind: "income", category: "수입", subCategory: "배당", date: "2026-01-10" }),
+      entry({ id: "i1", amount: 50_000, kind: "income", category: "수입", subCategory: "이자", date: "2026-01-11" }),
+      entry({ id: "pnl", amount: 1_000_000, kind: "income", category: "수입", subCategory: "투자수익", date: "2026-01-12" }),
+    ];
+    const d = renderHook(() =>
+      useInsightsData(led, [], [], accounts, [], null, undefined, undefined, null, null, [], led)
+    ).result.current;
+    // 예전: divTrend가 투자수익 100만을 포함 → '배당/이자 수입' KPI·연환산 배당률이 7.7배 부풀고
+    // 같은 화면의 패시브 KPI(passiveIncome, 15만)와 어긋났다.
+    expect(d.divTrend[0].amount).toBe(150_000);
+    expect(d.passiveIncome).toBe(150_000);
+    expect(d.pInvest).toBe(1_000_000); // 투자수익은 재테크 순집계로만
+  });
+
+  it("퇴직연금(제외 수입)이 투자계좌로 들어와도 divTrend에 잡히지 않는다", () => {
+    const led = [
+      entry({ id: "d1", amount: 100_000, kind: "income", category: "수입", subCategory: "배당", date: "2026-01-10", toAccountId: "sec1" }),
+      entry({ id: "pens", amount: 500_000, kind: "income", category: "수입", subCategory: "퇴직연금", date: "2026-01-15", toAccountId: "sec1" }),
+    ];
+    const accts = [acct({ id: "sec1", name: "증권", type: "securities" })];
+    const d = renderHook(() =>
+      useInsightsData(led, [], [], accts, [], null, undefined, undefined, null, null, [], led)
+    ).result.current;
+    // 퇴직연금은 자동감지로 investIncKeys에 편입될 수 있지만, 모든 수입 지표에서 제외되는 돈이
+    // 배당/이자 차트에만 나타나면 안 된다 (isExcludedIncomeEntry 게이트).
+    expect(d.divTrend[0].amount).toBe(100_000);
+  });
+
   it("전월 비교는 당월과 같은 기준 — 레거시 재테크 저축이 전월 지출에 섞이지 않는다", () => {
     const led = [
       // 전월(1월): 소비 150만 + 레거시 재테크 저축 200만

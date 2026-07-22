@@ -4,6 +4,7 @@ import { Section } from "../insights/insightsShared";
 import { useDateAccountId } from "../../hooks/useDateAccountSettings";
 import { getTodayKST, getMonthEndDate, shiftMonth } from "../../utils/date";
 import { newIdWithPrefix } from "../../utils/id";
+import { isSettlementEntry } from "../../utils/category";
 
 interface Props {
   data: AppData;
@@ -69,7 +70,10 @@ export const SettlementView: React.FC<Props> = ({ data, onSettle, formatNumber }
   // 정산 히스토리 (과거 정산 기록)
   const settleHistory = useMemo(() => {
     return data.ledger
-      .filter((l) => l.category === "정산" && (l.subCategory || "").includes("데이트"))
+      // 정산 판정은 categoryUtils 단일 소스 — category="정산"(평면 세대)와
+      // subCategory="정산"(대분류가 한 칸 내려간 세대)이 공존한다. category만 보면 후자를 놓쳐
+      // 정산 히스토리가 통째로 빈 목록이 된다.
+      .filter((l) => isSettlementEntry(l) && `${l.subCategory ?? ""}${l.detailCategory ?? ""}`.includes("데이트"))
       .sort((a, b) => (b.date || "").localeCompare(a.date || ""))
       .slice(0, 10);
   }, [data.ledger]);

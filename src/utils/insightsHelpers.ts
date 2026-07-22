@@ -29,13 +29,15 @@ export function calcTrend(mt: number[]): {
 export function mTotalsFor(
   months: string[],
   ledger: LedgerEntry[],
-  match: (l: LedgerEntry) => boolean
+  match: (l: LedgerEntry) => boolean,
+  /** 금액 변환(예: USD→KRW 환산). 미지정 시 원본 amount — 호출부가 환산 합계와 비교한다면 반드시 전달할 것 */
+  amountOf: (l: LedgerEntry) => number = (l) => Number(l.amount)
 ): number[] {
   return months.map((m) => {
     let t = 0;
     for (const l of ledger) {
       if (l.date?.slice(0, 7) !== m || !match(l)) continue;
-      t += Number(l.amount);
+      t += amountOf(l);
     }
     return t;
   });

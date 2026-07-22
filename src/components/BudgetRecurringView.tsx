@@ -16,10 +16,9 @@
  */
 import React, { useCallback, useMemo, useRef } from "react";
 import type { Account, BudgetGoal, CategoryPresets, RecurringExpense, LedgerEntry, DailyBudgetConfig } from "../types";
-import { BUDGET_ALL_CATEGORY } from "../types";
 import { getTodayKST } from "../utils/date";
-import { expenseMainName } from "../utils/categoryMerge";
-import { isCreditPayment, isSavingsExpenseEntry } from "../utils/category";
+import { computeBudgetGoalSpent } from "../utils/budgetUsage";
+import { useFxRateValue } from "../context/FxRateContext";
 import { DailyBudgetSection } from "../features/budget/DailyBudgetSection";
 import { RecurringFormCard, type RecurringFormCardHandle } from "../features/budget/RecurringFormCard";
 import { BudgetFormCard } from "../features/budget/BudgetFormCard";
@@ -55,6 +54,8 @@ export const BudgetRecurringView: React.FC<Props> = ({
 }) => {
   // KST 기준 현재 월 (UTC 자정 직전 일/월 경계 오차 방지)
   const currentMonth = getTodayKST().slice(0, 7); // yyyy-mm
+  // USD 지출 원화 환산용 — App props 시그니처를 늘리지 않고 컨텍스트에서 직접
+  const fxRate = useFxRateValue();
 
   // 목록에서 항목 삭제 시 폼이 그 항목을 수정 중이면 수정 모드 해제 (ref API 경유)
   const recurringFormRef = useRef<RecurringFormCardHandle>(null);
@@ -66,36 +67,13 @@ export const BudgetRecurringView: React.FC<Props> = ({
     recurringFormRef.current?.startEditRecurring(item);
   }, []);
 
-  // 예산 사용액 계산 — 대분류는 expenseMainName 단일소스(현행 sub + 레거시 cat 직접 둘 다 처리).
-  // 제외: 신용결제(이중계상)·재테크/환전(투자·이동)·저축성지출(자산축적) — 분류 단일소스 헬퍼 사용.
+  // 예산 사용액 — computeBudgetGoalSpent 단일 소스 (대시보드 예산 위젯과 같은 숫자 보장, USD 환산 포함)
   const budgetUsage = useMemo<BudgetUsageRow[]>(() => {
     return budgets.map((b) => {
-      const isTotal = b.category === BUDGET_ALL_CATEGORY;
-      const exclCats = new Set(b.excludeCategories ?? []);
-      const exclAccts = new Set(b.excludeAccountIds ?? []);
-      let spent = 0;
-      for (const l of ledger) {
-        if (l.kind !== "expense") continue;
-        if (!l.date?.startsWith(currentMonth)) continue;
-        if (isCreditPayment(l)) continue;
-        if (l.category === "재테크" || l.category === "환전") continue;
-        if (isSavingsExpenseEntry(l, accounts, categoryPresets)) continue;
-        const mainName = expenseMainName(l);
-        if (!mainName) continue;
-        if (isTotal) {
-          // "전체" 모드 — 사용자 지정 대분류·계좌 제외 후 합산
-          if (exclCats.has(mainName)) continue;
-          if (l.fromAccountId && exclAccts.has(l.fromAccountId)) continue;
-          spent += l.amount;
-        } else {
-          // 개별 카테고리 — 대분류(식비/유류교통비/...) 매칭 (레거시 cat 직접 입력도 포함)
-          if (mainName === b.category) spent += l.amount;
-        }
-      }
-      const remain = b.monthlyLimit - spent;
-      return { ...b, spent, remain };
+      const spent = computeBudgetGoalSpent(b, ledger, currentMonth, { categoryPresets, fxRate });
+      return { ...b, spent, remain: b.monthlyLimit - spent };
     });
-  }, [budgets, ledger, currentMonth, accounts, categoryPresets]);
+  }, [budgets, ledger, currentMonth, categoryPresets, fxRate]);
 
   return (
     <div>

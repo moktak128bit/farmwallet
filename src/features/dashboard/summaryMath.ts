@@ -5,7 +5,7 @@
  * 호출부에서 useMemo로 감싸 재계산을 막는다 (입력: ledger, fxRate, 월 prefix).
  */
 import type { CategoryPresets, LedgerEntry } from "../../types";
-import { isCreditPayment, isSavingsExpenseEntry, isInvestmentPnlEntry, isInvestmentLossEntry } from "../../utils/category";
+import { isCreditPayment, isCurrencyExchangeEntry, isSavingsExpenseEntry, isInvestmentPnlEntry, isInvestmentLossEntry } from "../../utils/category";
 import { INVESTMENT_TRANSFER_SUBS } from "../../utils/categoryUtils";
 import { isIncomeExcludedFromTotals } from "../../utils/realIncome";
 import { toKrwByRate } from "../../utils/currency";
@@ -62,6 +62,9 @@ export function classifyLedgerFlow(
   }
   if (entry.kind === "expense") {
     if (isCreditPayment(entry)) return null;
+    // 환전은 계좌 간 통화 이동 — 소비 지출이 아니다 (인사이트·예측·이상감지와 동일 기준).
+    // 예전엔 여기만 환전을 안 걸러 대시보드 지출이 인사이트보다 환전액만큼 컸다.
+    if (isCurrencyExchangeEntry(entry)) return null;
     if (isSavingsExpenseEntry(entry, [], categoryPresets)) return "investing";
     return "expense";
   }

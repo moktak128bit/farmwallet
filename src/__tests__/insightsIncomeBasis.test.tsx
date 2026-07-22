@@ -82,3 +82,66 @@ describe("수입 추세·지표는 근로소득 기준", () => {
     expect(d.expToIncRatio).toBeCloseTo(33.33, 1);
   });
 });
+
+/**
+ * 인사이트 ↔ 대시보드 정의 통일 회귀 (2026-07-22 감사).
+ * 예전 버그: ① USD를 환산 없이 원본 합산(투자이체 $1,000 → 1,000원) ② 지출 정의가
+ * 문자열 하드코딩이라 저축성지출이 지출로 계상 + 투자손익이 지출/수입에 가산(확정 정책 위반)
+ * ③ 전월 비교만 재테크 제외가 빠져 허위 개선률 표시.
+ */
+describe("인사이트 ↔ 대시보드 정의 통일", () => {
+  it("USD 투자이체는 환율로 환산되어 재테크에 잡힌다", () => {
+    const led = [
+      entry({ id: "t1", amount: 1000, kind: "transfer", category: "이체", subCategory: "투자이체", currency: "USD", toAccountId: "sec1", date: "2026-01-05" }),
+    ];
+    const accts = [acct({ id: "sec1", name: "증권", type: "securities" })];
+    const d = renderHook(() =>
+      useInsightsData(led, [], [], accts, [], null, undefined, undefined, null, 1400, [], led)
+    ).result.current;
+    // 예전: 1,000원(액면) — 대시보드 140만원과 1,400배 어긋남
+    expect(d.pInvest).toBe(1_400_000);
+    expect(d.monthly["2026-01"].investment).toBe(1_400_000);
+  });
+
+  it("투자수익·투자손실은 수입/지출이 아니라 재테크 순액으로 (확정 정책)", () => {
+    const led = [
+      entry({ id: "inc", amount: 500_000, kind: "income", category: "수입", subCategory: "투자수익", date: "2026-01-10" }),
+      entry({ id: "loss", amount: 300_000, kind: "expense", category: "재테크", subCategory: "투자손실", date: "2026-01-11" }),
+      entry({ id: "food", amount: 100_000, kind: "expense", category: "지출", subCategory: "식비", date: "2026-01-12" }),
+    ];
+    const d = renderHook(() =>
+      useInsightsData(led, [], [], accounts, [], null, undefined, undefined, null, null, [], led)
+    ).result.current;
+    expect(d.pExpense).toBe(100_000);          // 투자손실 미포함 (예전: 40만)
+    expect(d.pIncome).toBe(0);                  // 투자수익 미포함 (예전: 50만)
+    expect(d.pInvest).toBe(500_000 - 300_000);  // 재테크 순액 +20만
+  });
+
+  it("저축성지출은 지출이 아니라 재테크로 (대시보드 classifyLedgerFlow와 동일)", () => {
+    const led = [
+      entry({ id: "sav", amount: 500_000, kind: "expense", category: "저축성지출", date: "2026-01-10" }),
+      entry({ id: "food", amount: 1_000_000, kind: "expense", category: "지출", subCategory: "식비", date: "2026-01-12" }),
+    ];
+    const d = renderHook(() =>
+      useInsightsData(led, [], [], accounts, [], null, undefined, undefined, null, null, [], led)
+    ).result.current;
+    expect(d.pExpense).toBe(1_000_000);  // 예전: 150만 (저축성지출 포함)
+    expect(d.pInvest).toBe(500_000);
+  });
+
+  it("전월 비교는 당월과 같은 기준 — 레거시 재테크 저축이 전월 지출에 섞이지 않는다", () => {
+    const led = [
+      // 전월(1월): 소비 150만 + 레거시 재테크 저축 200만
+      entry({ id: "e1", amount: 1_500_000, kind: "expense", category: "지출", subCategory: "식비", date: "2026-01-15" }),
+      entry({ id: "s1", amount: 2_000_000, kind: "expense", category: "재테크", subCategory: "저축", date: "2026-01-20" }),
+      // 당월(2월): 소비 150만
+      entry({ id: "e2", amount: 1_500_000, kind: "expense", category: "지출", subCategory: "식비", date: "2026-02-15" }),
+    ];
+    const d = renderHook(() =>
+      useInsightsData(led, [], [], accounts, [], "2026-02", undefined, undefined, null, null, [], led)
+    ).result.current;
+    // 예전: prev.expense = 350만 → "-57% 개선" 허위 배지. 실제 변화 없음(150만 = 150만).
+    expect(d.prev?.expense).toBe(1_500_000);
+    expect(d.pExpense).toBe(1_500_000);
+  });
+});

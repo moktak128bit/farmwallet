@@ -495,6 +495,7 @@ export const DashboardView: React.FC<Props> = (props) => {
             budgetGoals={storeData.budgetGoals}
             accounts={accounts}
             fxRate={fxRate}
+            categoryPresets={storeData.categoryPresets}
           />
         )}
       </div>

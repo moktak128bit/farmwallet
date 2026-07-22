@@ -1,10 +1,9 @@
 import React, { useMemo } from "react";
-import type { LedgerEntry, BudgetGoal, Account } from "../../types";
+import type { LedgerEntry, BudgetGoal, Account, CategoryPresets } from "../../types";
 import { BUDGET_ALL_CATEGORY } from "../../types";
 import { formatNumber } from "../../utils/formatter";
-import { isCreditPayment } from "../../utils/category";
 import { getThisMonthKST } from "../../utils/date";
-import { toKrwAmount } from "./summaryMath";
+import { computeBudgetGoalSpent } from "../../utils/budgetUsage";
 
 interface Props {
   ledger: LedgerEntry[];
@@ -13,12 +12,13 @@ interface Props {
   accounts?: Account[];
   /** USD 지출 원화 환산용 — 다른 위젯과 동일 기준 */
   fxRate?: number | null;
+  /** 저축성지출 판정용 (categoryTypes.savings) — 예산 탭과 동일 기준 */
+  categoryPresets?: CategoryPresets;
 }
 
-const monthOf = (d: string) => (d || "").slice(0, 7);
 
 // React.memo — 부모(DashboardPage)가 넘기는 props는 안정적(store 참조)이어야 한다.
-export const BudgetAlertWidget: React.FC<Props> = React.memo(function BudgetAlertWidget({ ledger, budgetGoals, accounts, fxRate = null }) {
+export const BudgetAlertWidget: React.FC<Props> = React.memo(function BudgetAlertWidget({ ledger, budgetGoals, accounts, fxRate = null, categoryPresets }) {
   // 이번달 키 — 다른 위젯과 동일하게 KST 기준 (로컬 타임존 new Date() 사용 금지)
   const currentMonth = useMemo(() => getThisMonthKST(), []);
 
@@ -30,49 +30,17 @@ export const BudgetAlertWidget: React.FC<Props> = React.memo(function BudgetAler
 
   const alerts = useMemo(() => {
     if (!budgetGoals || budgetGoals.length === 0) return [];
-    // 이번달 expense만 — 신용결제는 카드 사용 시점에 이미 잡혔으므로 제외 (이중계상 방지).
-    // 이체(kind="transfer")는 expense가 아니라 이 루프에 자연스럽게 포함되지 않음.
-    const monthExp = ledger.filter(
-      (l) => l.kind === "expense" && monthOf(l.date) === currentMonth && !isCreditPayment(l) && Number(l.amount) > 0
-    );
-    const catSpend = new Map<string, number>();
-    let totalExpense = 0;
-    for (const l of monthExp) {
-      // USD 지출은 환율로 원화 환산 (summaryMath.toKrwAmount — 다른 위젯과 동일 정책)
-      const amt = toKrwAmount(l, fxRate);
-      const cat = l.subCategory || l.category || "";
-      if (cat) catSpend.set(cat, (catSpend.get(cat) ?? 0) + amt);
-      if (l.category && l.category !== cat) {
-        catSpend.set(l.category, (catSpend.get(l.category) ?? 0) + amt);
-      }
-      totalExpense += amt;
-    }
+    // 사용액은 computeBudgetGoalSpent 단일 소스 — 예산 탭과 같은 숫자 보장.
+    // (예전엔 이 위젯만 재테크·환전·저축성지출을 안 걸렀고, 금액을 category·subCategory
+    //  양쪽 키에 이중 등록해 같은 예산의 게이지가 탭과 다른 위치에 있었다.)
     return budgetGoals
       .map((g) => {
-        let spent: number;
-        if (g.category === BUDGET_ALL_CATEGORY) {
-          // excludeCategories: category·subCategory 어느 쪽으로도 매칭
-          // excludeAccountIds: fromAccountId 매칭 (모임통장 등 공동 계좌 제외용)
-          const exclCats = new Set(g.excludeCategories ?? []);
-          const exclAccts = new Set(g.excludeAccountIds ?? []);
-          const noFilter = exclCats.size === 0 && exclAccts.size === 0;
-          spent = noFilter
-            ? totalExpense
-            : monthExp
-                .filter((l) =>
-                  !exclCats.has(l.category || "") &&
-                  !exclCats.has(l.subCategory || "") &&
-                  !exclAccts.has(l.fromAccountId || "")
-                )
-                .reduce((s, l) => s + toKrwAmount(l, fxRate), 0);
-        } else {
-          spent = catSpend.get(g.category) ?? 0;
-        }
+        const spent = computeBudgetGoalSpent(g, ledger, currentMonth, { categoryPresets, fxRate });
         const pct = g.monthlyLimit > 0 ? (spent / g.monthlyLimit) * 100 : 0;
         return { ...g, spent, pct };
       })
       .sort((a, b) => b.pct - a.pct);
-  }, [ledger, budgetGoals, currentMonth, fxRate]);
+  }, [ledger, budgetGoals, currentMonth, categoryPresets, fxRate]);
 
   if (alerts.length === 0) {
     return (

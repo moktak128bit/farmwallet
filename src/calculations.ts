@@ -450,13 +450,29 @@ export function positionMarketValueKRW(
  * loanId가 있으면 우선 매칭 — 대출명을 바꿔도 과거 상환이 누락되지 않음 (#13, DebtPage와 동일 정책).
  * loanId가 없는 레거시 엔트리만 description.includes 폴백.
  */
+/**
+ * 대출 상환 항목의 카테고리 구조 판정 — 세대별 형태를 모두 받는다. 단일 소스
+ * (features/debt/debtShared.isLoanRepaymentEntry가 이 함수에 위임한다).
+ *
+ * - 최초:   category="대출",   subCategory="빚"
+ * - 2세대:  category="대출상환" 플랫 메인
+ * - 현행:   category="지출",   subCategory="대출상환"
+ * - 강등형: 위 두 레거시의 대분류가 한 칸 내려간 형태(subCategory="대출"/detailCategory="빚" 등).
+ *   ⚠ 강등형을 빠뜨리면 대출 상환 이력이 통째로 사라져 잔금이 원금 그대로 남는다.
+ */
+export function hasLoanRepaymentStructure(entry: LedgerEntry): boolean {
+  const sub = entry.subCategory;
+  const det = entry.detailCategory;
+  if (sub === "대출상환") return true;          // 현행 + "대출상환" 플랫이 강등된 형태
+  if (entry.category === "대출상환") return true; // 2세대
+  if (entry.category === "대출" && sub === "빚") return true; // 최초
+  if (sub === "대출" && det === "빚") return true;            // 최초가 강등된 형태
+  return false;
+}
+
 function isLoanRepaymentForLoan(entry: LedgerEntry, loan: Loan): boolean {
   if (entry.kind !== "expense") return false;
-  const matchesStructure =
-    (entry.category === "지출" && entry.subCategory === "대출상환") ||
-    entry.category === "대출상환" ||
-    (entry.category === "대출" && entry.subCategory === "빚");
-  if (!matchesStructure) return false;
+  if (!hasLoanRepaymentStructure(entry)) return false;
   if (entry.loanId) return entry.loanId === loan.id;
   return (entry.description || "").includes(loan.loanName);
 }

@@ -10,7 +10,7 @@
  */
 import type { LedgerEntry } from "../types";
 import { isCarryOverIncomeEntry } from "./savingsRate";
-import { isInvestmentEntry, isCreditPayment } from "./category";
+import { isInvestmentEntry, isCreditPayment, isCurrencyExchangeEntry } from "./category";
 
 export interface IncomeGrowth {
   series: { l: string; month: string; income: number; momPct: number | null }[];
@@ -171,7 +171,7 @@ export function computeCategoryGrowth(params: {
   const subMonthly = new Map<string, Map<string, number>>();
   for (const l of ledger) {
     if (l.kind !== "expense" || Number(l.amount) <= 0) continue;
-    if (l.category === "신용결제" || l.category === "재테크" || l.category === "환전") continue;
+    if (l.category === "신용결제" || l.category === "재테크" || isCurrencyExchangeEntry(l)) continue;
     const sub = (l.subCategory || l.category || "").trim(); if (!sub) continue;
     const mo = l.date?.slice(0, 7); if (!mo) continue;
     if (mo !== targetMonth && !prevMonths.includes(mo)) continue;

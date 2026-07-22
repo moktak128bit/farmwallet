@@ -157,7 +157,9 @@ export function computeMoimAccountFlow(
       // 현행 SettlementView는 kind=income으로 기록하지만, 과거 정산 기록(kind=transfer,
       // category=정산)이 남아 있을 수 있어 하위 호환으로 함께 인식한다.
       // (partner_low 이상감지가 정산 입금 누락으로 왜곡되는 것 방지)
-      if ((l.category || "").includes("정산")) row.partnerDeposit += amount;
+      // category·subCategory 양쪽을 본다 — 대분류가 한 칸 내려간 세대에서 category만 보면
+      // 정산 입금이 내 이체로 오분류되어 partner_low 이상감지가 왜곡된다.
+      if ((l.category || "").includes("정산") || (l.subCategory || "").includes("정산")) row.partnerDeposit += amount;
       else row.myTransfer += amount;
     } else if (l.kind === "income" && l.toAccountId === accountId) {
       row.partnerDeposit += amount;

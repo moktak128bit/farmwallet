@@ -167,3 +167,18 @@ describe("computeLedgerSummary", () => {
     expect(s.expense).toBe(200_000);
   });
 });
+
+describe("classifyLedgerFlow — 환전 제외", () => {
+  // 회귀: 환전(계좌 간 통화 이동)을 대시보드만 안 걸러 인사이트·예측과 지출 숫자가 갈렸다.
+  const e = (o: Partial<LedgerEntry>): LedgerEntry =>
+    ({ id: "x", date: "2026-07-01", kind: "expense", category: "지출", description: "", amount: 1000, ...o } as LedgerEntry);
+
+  it("환전 지출은 어느 흐름에도 잡히지 않는다 (평면·강등 세대 모두)", () => {
+    expect(classifyLedgerFlow(e({ category: "환전" }))).toBe(null);
+    expect(classifyLedgerFlow(e({ category: "지출", subCategory: "환전" }))).toBe(null);
+  });
+
+  it("일반 지출은 여전히 expense", () => {
+    expect(classifyLedgerFlow(e({ subCategory: "식비" }))).toBe("expense");
+  });
+});

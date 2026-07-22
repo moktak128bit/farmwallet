@@ -1,6 +1,8 @@
 import { describe, it, expect } from "vitest";
 import {
   isCreditPayment,
+  isCurrencyExchangeEntry,
+  isSettlementEntry,
   isRealExpenseEntry,
   isSavingsExpenseEntry,
   getCategoryType,
@@ -115,5 +117,26 @@ describe("getCategoryType — 고정비 판정 (스키마 회귀: 배당 커버�
 
   it("고정 목록에 없는 대분류 → variable", () => {
     expect(getCategoryType("지출", "식비", "expense", presets)).toBe("variable");
+  });
+});
+
+describe("세대 관용 판정 — 대분류가 한 칸 내려간 형태도 인식", () => {
+  // 설정의 "1단계 구조 정렬"(applyDemoteSchema)은 category를 subCategory로 한 칸 내린다.
+  // 읽는 쪽이 category만 보면 그 항목이 집계에서 조용히 사라진다.
+  const e = (o: Partial<LedgerEntry>): LedgerEntry =>
+    ({ id: "x", date: "2026-07-01", kind: "expense", category: "지출", description: "", amount: 1000, ...o } as LedgerEntry);
+
+  it("환전 — 평면 세대와 강등 세대 모두 지출에서 제외된다", () => {
+    expect(isCurrencyExchangeEntry(e({ category: "환전" }))).toBe(true);
+    expect(isCurrencyExchangeEntry(e({ category: "지출", subCategory: "환전" }))).toBe(true);
+    expect(isCurrencyExchangeEntry(e({ category: "지출", subCategory: "식비" }))).toBe(false);
+    // 실질 소비 지출 판정까지 이어지는지 (환전이 소비로 새어들면 월 지출이 부풀어오른다)
+    expect(isRealExpenseEntry(e({ category: "지출", subCategory: "환전" }))).toBe(false);
+  });
+
+  it("정산 — 평면 세대와 강등 세대 모두 인식된다", () => {
+    expect(isSettlementEntry(e({ kind: "income", category: "정산" }))).toBe(true);
+    expect(isSettlementEntry(e({ kind: "income", category: "수입", subCategory: "정산" }))).toBe(true);
+    expect(isSettlementEntry(e({ kind: "income", category: "수입", subCategory: "급여" }))).toBe(false);
   });
 });

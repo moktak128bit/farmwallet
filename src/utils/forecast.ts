@@ -1,6 +1,6 @@
 import type { LedgerEntry, RecurringExpense } from "../types";
 import { parseIsoLocal } from "./date";
-import { isCreditPayment, isInvestmentEntry } from "./category";
+import { isCreditPayment, isInvestmentEntry, isCurrencyExchangeEntry } from "./category";
 import { expenseMainName } from "./categoryMerge";
 
 interface CategoryForecast {
@@ -37,7 +37,7 @@ export function expenseMainTotalsForMonth(
   for (const e of ledger) {
     if (e.kind !== "expense" || e.amount <= 0 || !e.date) continue;
     if (!e.date.startsWith(monthPrefix)) continue;
-    if (isCreditPayment(e) || isInvestmentEntry(e) || e.category === "환전") continue;
+    if (isCreditPayment(e) || isInvestmentEntry(e) || isCurrencyExchangeEntry(e)) continue;
     const cat = expenseMainName(e);
     if (!cat) continue;
     map.set(cat, (map.get(cat) ?? 0) + e.amount);
@@ -134,7 +134,7 @@ export function forecastNextMonth(
   for (const e of ledger) {
     if (e.kind !== "expense" || e.amount <= 0 || !e.date) continue;
     // 실제 소비만 — 신용결제(이중계상)·재테크(저축/투자)·환전(계좌이동)은 지출 예측에서 제외
-    if (isCreditPayment(e) || isInvestmentEntry(e) || e.category === "환전") continue;
+    if (isCreditPayment(e) || isInvestmentEntry(e) || isCurrencyExchangeEntry(e)) continue;
     // 대분류는 expenseMainName 단일소스 — 현행 스키마(category="지출")가 한 버킷으로 뭉쳐 카테고리 예측이 무의미해지는 것 방지
     const cat = expenseMainName(e);
     if (!cat) continue;

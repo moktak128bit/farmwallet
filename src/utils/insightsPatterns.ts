@@ -8,6 +8,8 @@
  */
 import type { LedgerEntry } from "../types";
 import { parseIsoLocal, formatIsoLocal } from "./date";
+import { isCreditPayment } from "./category";
+import { expenseMainName } from "./categoryMerge";
 
 export interface EntryOutlier {
   date: string;
@@ -21,11 +23,13 @@ export interface EntryOutlier {
 
 /** 단건 지출 이상치 TOP — 중분류별 z-score |z|≥2, 표본 4건 미만 카테고리는 건너뜀. */
 export function computeEntryOutliers(fExp: LedgerEntry[]): EntryOutlier[] {
-  // subCategory별 entries
+  // 대분류별 entries — expenseMainName 단일 소스 (raw 폴백은 표준 스키마에서 "지출" 한 덩어리가
+  // 되어 z-score 표본군이 뭉개진다). 신용결제 방어는 호출부의 fExp 사전 필터와 별개인 독립 계약
+  // (insightsPatterns.test가 필터 안 된 입력으로 직접 검증) — isCreditPayment로 sub 세대까지 커버.
   const bySub = new Map<string, { date: string; desc: string; cat: string; amount: number }[]>();
   for (const l of fExp) {
-    if (l.category === "신용결제") continue;
-    const sub = (l.subCategory || l.category || "").trim(); if (!sub) continue;
+    if (isCreditPayment(l)) continue;
+    const sub = expenseMainName(l); if (!sub) continue;
     if (!bySub.has(sub)) bySub.set(sub, []);
     bySub.get(sub)!.push({ date: l.date || "", desc: l.description || "", cat: l.category || "", amount: Number(l.amount) });
   }

@@ -16,6 +16,7 @@ import { newIdWithPrefix } from "../../utils/id";
 import { useFocusTrap } from "../../hooks/useFocusTrap";
 import { useModalStackEntry } from "../../utils/modalStack";
 import { isInGracePeriod } from "./debtShared";
+import { isInterestSubName } from "../../calculations";
 
 interface Props {
   loan: Loan;
@@ -45,7 +46,7 @@ export const RepayLoanModal: React.FC<Props> = React.memo(function RepayLoanModa
   // 거치기간 중이면 "이자상환" 자동 선택, 아니면 "원금상환" (오늘 날짜는 KST 기준)
   const [repaySubCategory, setRepaySubCategory] = useState(() => {
     const inGrace = isInGracePeriod(loan, getTodayKST());
-    const interestOption = loanRepaymentSubOptions.find((s) => s.includes("이자"));
+    const interestOption = loanRepaymentSubOptions.find(isInterestSubName);
     const principalOption =
       loanRepaymentSubOptions.find((s) => s.includes("원금")) ?? loanRepaymentSubOptions[0] ?? "";
     return inGrace && interestOption ? interestOption : principalOption;
@@ -84,7 +85,7 @@ export const RepayLoanModal: React.FC<Props> = React.memo(function RepayLoanModa
     }
 
     // 원금 상환이 현재 잔금을 초과하면 경고 (저장은 진행 — 잔금은 0으로 클램프되어 집계됨)
-    const isPrincipal = !repaySubCategory.includes("이자");
+    const isPrincipal = !isInterestSubName(repaySubCategory);
     const currentBalance = Math.max(0, loan.loanAmount - (loanRepayments.principal.get(loan.id) || 0));
     if (isPrincipal && amount > currentBalance) {
       toast(

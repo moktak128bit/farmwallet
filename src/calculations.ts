@@ -478,14 +478,21 @@ function isLoanRepaymentForLoan(entry: LedgerEntry, loan: Loan): boolean {
 }
 
 /**
+ * "이자" 세부 항목명 판정 — 대출 상환의 이자/원금 구분 substring 정책의 단일 정의.
+ * (RepayLoanModal·EditRepaymentModal의 옵션 자동 선택·경고와 isInterestRepayment 분류가
+ *  같은 규칙을 공유해야 한다 — 각자 includes("이자")를 재구현하면 어긋난다.)
+ */
+export const isInterestSubName = (name: string): boolean => name.includes("이자");
+
+/**
  * 이자 상환 여부 (아니면 원금 상환).
  * - 현재 구조: detailCategory에 "이자" 포함 (category="지출", subCategory="대출상환")
  * - 2세대 구조: category="대출상환" 플랫 메인 — 세부 항목이 subCategory에 있음
  *   (debtShared.ts의 isLoanRepaymentEntry 매칭 세대와 대칭)
  */
 export function isInterestRepayment(entry: LedgerEntry): boolean {
-  if ((entry.detailCategory || "").includes("이자")) return true;
-  if (entry.category === "대출상환" && (entry.subCategory || "").includes("이자")) return true;
+  if (isInterestSubName(entry.detailCategory || "")) return true;
+  if (entry.category === "대출상환" && isInterestSubName(entry.subCategory || "")) return true;
   return false;
 }
 

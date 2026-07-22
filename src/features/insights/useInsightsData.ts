@@ -860,7 +860,7 @@ export function useInsightsData(ledger: LedgerEntry[], rawTrades: StockTrade[], 
       if (!anomalyTargetMonth) return null;
       // 진행 중인 달이면 과거 달도 같은 기간(1~오늘 일)만 비교 — 월말에만 경고 켜지는 사각 방지
       const anomalyDayCap = anomalyTargetMonth === curMonthStr ? Number(getTodayKST().slice(8, 10)) : undefined;
-      const results = detectSpendAnomalies(ledger, anomalyTargetMonth, 6, anomalyDayCap);
+      const results = detectSpendAnomalies(ledger, anomalyTargetMonth, 6, anomalyDayCap, categoryPresets);
       const triggered = results.filter((a) => a.isAnomaly).sort((a, b) => Math.abs(b.zScore) - Math.abs(a.zScore));
       return triggered[0] ?? null;
     })();
@@ -876,7 +876,7 @@ export function useInsightsData(ledger: LedgerEntry[], rawTrades: StockTrade[], 
 
     /* 카테고리 성장률 TOP — 현재월 중분류 지출 vs 최근 3개월 평균 — utils/insightsTrends 단일 소스.
        진행 중인 달이면 과거 3개월도 같은 기간(1~오늘 일)만 집계 (월중 전부 "감소" 왜곡 방지). */
-    const categoryGrowth = computeCategoryGrowth({ ledger, months, curMonthStr, anomalyTargetMonth, todayDayNum });
+    const categoryGrowth = computeCategoryGrowth({ ledger, months, curMonthStr, anomalyTargetMonth, todayDayNum, categoryPresets });
 
     /* 단건 지출 이상치 TOP — 중분류 내 z-score — utils/insightsPatterns 단일 소스 */
     const entryOutliers = computeEntryOutliers(fExp);

@@ -2,16 +2,18 @@ import type { Account, LedgerEntry, StockPrice, StockTrade } from "../types";
 import {
   computeAccountBalances,
   computePositions,
+  isInterestRepayment,
   positionMarketValueKRW
 } from "../calculations";
 import { buildClosedTradeRecords } from "./investmentRecord";
 import { usdBalanceModeDelta } from "./tradeCashImpact";
 import { getTodayKST } from "./date";
-import { isSavingsExpenseEntry, isCreditPayment } from "./category";
+import { isSavingsExpenseEntry, isCreditPayment, isInvestmentEntry, isInvestmentLossEntry } from "./category";
+import { expenseMainName } from "./categoryMerge";
 import { isDividendEntry, isInterestEntry } from "./categoryMatch";
 import { canonicalTickerForMatch, isUSDStock } from "./finance";
 import { toKrwByRate } from "./currency";
-import { computeMonthlyRealFlows, computeRealSavingsRate } from "./savingsRate";
+import { computeMonthlyRealFlows, computeRealSavingsRate, isExcludedIncomeEntry } from "./savingsRate";
 import { isNonRealIncomeSub } from "./realIncome";
 import { xirr, type CashFlowItem } from "./irr";
 
@@ -302,7 +304,9 @@ export function generateMonthlyReport(
     }
 
     const report = reports.get(month)!;
-    if (entry.kind === "income") report.income += toKrw(entry);
+    // 수입도 대시보드·인사이트와 동일 게이트 — 이월(원래 보유 자산)·퇴직연금은 소득이 아니다
+    // (안 거르면 앱 시작 월의 수입이 이월액만큼 부풀어 순수지가 왜곡됨)
+    if (entry.kind === "income" && !isExcludedIncomeEntry(entry)) report.income += toKrw(entry);
     // 지출 분류 단일 소스와 통일 — 신용결제(이중계상) + 저축성지출(자산 축적, 실소비 아님) 제외.
     // (일별 리포트·대시보드·인사이트와 같은 기준. accounts는 isSavingsExpenseEntry 내부 미사용.)
     if (entry.kind === "expense" && !isCreditPayment(entry) && !isSavingsExpenseEntry(entry, []))
@@ -333,7 +337,8 @@ export function generateYearlyReport(ledger: LedgerEntry[], fxRate?: number | nu
     }
 
     const report = reports.get(year)!;
-    if (entry.kind === "income") report.income += toKrw(entry);
+    // 수입 게이트는 월간 리포트와 동일 (이월·퇴직연금 제외 — 시작 연도 수입 부풀림 방지)
+    if (entry.kind === "income" && !isExcludedIncomeEntry(entry)) report.income += toKrw(entry);
     // 지출 분류 단일 소스와 통일 — 신용결제(이중계상) + 저축성지출(자산 축적, 실소비 아님) 제외.
     // (일별 리포트·대시보드·인사이트와 같은 기준. accounts는 isSavingsExpenseEntry 내부 미사용.)
     if (entry.kind === "expense" && !isCreditPayment(entry) && !isSavingsExpenseEntry(entry, []))
@@ -363,8 +368,14 @@ export function generateCategoryReport(
     if (entry.kind !== "expense") continue;
     if (startDate && entry.date < startDate) continue;
     if (endDate && entry.date > endDate) continue;
+    // 월간·연간 리포트와 동일 게이트 — 안 거르면 카테고리 합이 월간 지출 합계보다 커진다
+    // (레거시 신용결제 = 카드 사용분과 이중계상, 저축성지출 = 실소비 아님)
+    if (isCreditPayment(entry) || isSavingsExpenseEntry(entry, [])) continue;
 
-    const key = entry.subCategory ? `${entry.category}:${entry.subCategory}` : entry.category;
+    // 대분류:소분류 키 — 표준 스키마(cat="지출")를 raw로 키잉하면 전부 "지출" 한 덩어리가 된다
+    const main = expenseMainName(entry) || "기타";
+    const det = (entry.detailCategory || "").trim();
+    const key = det ? `${main}:${det}` : main;
     if (!reports.has(key)) {
       reports.set(key, { total: 0, count: 0 });
     }
@@ -548,22 +559,17 @@ export function generateDailyReport(
       )
       .reduce((sum, entry) => sum + toKrwAmount(entry.amount, entry.currency, fxRate), 0);
 
-    // 저축/투자 이체 + 저축성지출(투자손실 제외 — isSavingsExpenseEntry 내부에서 처리됨)
+    // 저축/투자 이체 + 저축성지출(투자손실 제외 — isSavingsExpenseEntry 내부에서 처리됨).
+    // 재테크 이체 판정은 isInvestmentEntry 단일 소스 — 4값 리터럴 재나열 금지(INVESTMENT_TRANSFER_SUBS 복붙 이력)
     const daySavingsExpense = filteredLedger
       .filter((entry) => entry.date === date && (
-        isSavingsExpenseEntry(entry, accounts) ||
-        (entry.kind === "transfer" && (
-          entry.subCategory === "저축이체" || entry.subCategory === "투자이체" ||
-          entry.subCategory === "저축" || entry.subCategory === "투자"
-        ))
+        isSavingsExpenseEntry(entry, accounts) || isInvestmentEntry(entry)
       ))
       .reduce((sum, entry) => sum + toKrwAmount(entry.amount, entry.currency, fxRate), 0);
 
     // 일반 이체 (저축이체/투자이체 제외 — savings로 따로 집계됨)
     const dayTransfer = filteredLedger
-      .filter((entry) => entry.kind === "transfer" && entry.date === date &&
-        entry.subCategory !== "저축이체" && entry.subCategory !== "투자이체" &&
-        entry.subCategory !== "저축" && entry.subCategory !== "투자")
+      .filter((entry) => entry.kind === "transfer" && entry.date === date && !isInvestmentEntry(entry))
       .reduce((sum, entry) => sum + toKrwAmount(entry.amount, entry.currency, fxRate), 0);
 
     const positions = computePositions(filteredTrades, prices, accounts);
@@ -1383,10 +1389,8 @@ export function generateConsumptionImpactMonthlyReport(
       continue;
     }
 
-    if (entry.kind === "transfer" && (
-      entry.subCategory === "저축이체" || entry.subCategory === "투자이체" ||
-      entry.subCategory === "저축" || entry.subCategory === "투자"
-    )) {
+    // 재테크 이체 판정은 isInvestmentEntry 단일 소스 (kind 가드 유지 — expense 절 도달 방지)
+    if (entry.kind === "transfer" && isInvestmentEntry(entry)) {
       row.actualInvested += amount;
       continue;
     }
@@ -1545,21 +1549,19 @@ export function generateComprehensiveMonthlyReport(
       row.totalExpense += amount;
       const cat = entry.category ?? "";
       const sub = entry.subCategory ?? "";
-      const detail = entry.detailCategory ?? "";
       // 대출상환: 현재 구조 (지출/대출상환/학자금대출 등) + 구버전 (category=대출상환)
       const isLoanRepay =
         cat === "대출상환" ||
         (cat === "지출" && sub === "대출상환");
-      const isInterest =
-        sub.includes("이자") || sub === "주담대이자" ||
-        detail.includes("이자");
+      // 이자/원금 구분은 calculations 단일 소스 — substring 정책 재구현 금지
+      const isInterest = isInterestRepayment(entry);
 
       // 저축성지출 판정을 재테크 분기보다 먼저 — 구버전(kind=expense, category=재테크,
       // sub=저축/투자) 항목이 생활소비로 오분류되지 않도록 (consumptionImpact·daily와 동일 순서)
       if (isSavingsExpenseEntry(entry, accounts)) {
         row.savingsExpense += amount;
-      } else if (cat === "재테크") {
-        // 투자손실 — 실질 지출 성격
+      } else if (isInvestmentLossEntry(entry)) {
+        // 투자손실 — 실질 지출 성격 (isSavingsExpenseEntry 통과 후 cat=재테크의 잔여는 투자손실뿐)
         row.livingExpense += amount;
       } else if (cat === "신용결제" || cat === "신용카드") {
         row.creditPayment += amount;

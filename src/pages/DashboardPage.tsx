@@ -337,7 +337,6 @@ export const DashboardView: React.FC<Props> = (props) => {
               <TopExpensesCard
                 currentMonth={currentMonth}
                 ledger={ledger}
-                accounts={accounts}
                 categoryPresets={categoryPresets}
                 fxRate={fxRate}
               />

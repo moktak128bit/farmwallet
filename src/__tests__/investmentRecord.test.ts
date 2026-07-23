@@ -37,6 +37,19 @@ describe("buildClosedTradeRecords", () => {
     expect(r).toHaveLength(0);
   });
 
+  it("같은 날 동일 side 분할 매수는 id 순으로 로트 소진 — 배열 순서 무관 (화면 간 정합)", () => {
+    // id는 랜덤 UUID + 드래그 재정렬로 배열 순서가 바뀔 수 있다 — computePositions·
+    // computeRealizedPnlByTradeId와 동일한 3차 타이브레이커(id)로 어느 화면에서든 같은 값이어야 한다.
+    const trades = [
+      t({ id: "b2", side: "buy", date: "2026-01-01", quantity: 1, totalAmount: 200 }), // 배열상 먼저지만 id 뒤
+      t({ id: "b1", side: "buy", date: "2026-01-01", quantity: 1, totalAmount: 100 }),
+      t({ id: "s1", side: "sell", date: "2026-02-01", quantity: 1, totalAmount: 150 }),
+    ];
+    const r = buildClosedTradeRecords(trades, [acc]);
+    expect(r).toHaveLength(1);
+    expect(r[0].realizedPnlKRW).toBe(50); // b1(원가 100) 로트 소진 — 배열 순(b2, −50)이 아님
+  });
+
   it("단순 매수→매도 FIFO 실현손익", () => {
     const r = buildClosedTradeRecords(
       [

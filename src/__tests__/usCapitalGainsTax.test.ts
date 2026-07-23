@@ -72,6 +72,14 @@ describe("realizedForeignGainKRW", () => {
     ]);
     expect(g).toBeCloseTo(320_000, 0);
   });
+
+  it("fxRateAtTrade=0(레거시)은 유효 환율이 아님 — fxHistory로 폴백해 원가가 0이 되지 않는다", () => {
+    const b = { ...buy("AAPL", "2026-01-01", 10, 1000, 1300), fxRateAtTrade: 0 };
+    const s = sell("AAPL", "2026-06-01", 10, 1200, 1350);
+    const g = realizedForeignGainKRW([b, s], 2026, [{ date: "2026-01-01", rate: 1300 }]);
+    // 예전: 매수 lot KRW=0 → 실현차익이 매도 전액(162만)으로 과대 → 유령 세금. 이제 원가 130만 인정 → +32만
+    expect(g).toBeCloseTo(320_000, 0);
+  });
 });
 
 describe("buildForeignCapitalGainsTax", () => {

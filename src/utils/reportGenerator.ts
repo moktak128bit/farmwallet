@@ -11,7 +11,7 @@ import { getTodayKST } from "./date";
 import { isSavingsExpenseEntry, isCreditPayment, isInvestmentEntry, isInvestmentLossEntry } from "./category";
 import { expenseMainName } from "./categoryMerge";
 import { isDividendEntry, isInterestEntry } from "./categoryMatch";
-import { canonicalTickerForMatch, isUSDStock } from "./finance";
+import { canonicalTickerForMatch, isUSDStock, tradeAmountKRW as tradeAmountKRWStd } from "./finance";
 import { toKrwByRate } from "./currency";
 import { computeMonthlyRealFlows, computeRealSavingsRate, isExcludedIncomeEntry } from "./savingsRate";
 import { isNonRealIncomeSub } from "./realIncome";
@@ -825,10 +825,23 @@ export function generateAccountPerformanceBreakdown(
     flowsByAccountDate.set(accountId, accountFlows);
   };
 
+  // 외부 현금흐름 정의 (계좌 타입별):
+  //  - 투자계좌(securities/crypto): 이체(transfer)만 — 헤드라인 IRR(computeInvestmentReconciliation)과
+  //    동일 정의. 배당 income까지 flow로 넣으면 '내가 넣은 돈'으로 차감되어 배당 성과가 IRR·TTWR에서
+  //    사라지고, 같은 행의 '합계'(배당 포함)와 다른 정의가 된다.
+  //  - 비투자계좌(입출금·현금 등): income/expense도 외부 흐름 — 월급·생활비를 빼면 그 돈이 전부
+  //    '계좌가 벌어낸 성과'로 계상되어 IRR이 수백 %·TTWR이 −100%로 발산한다.
+  const investingFlowIds = new Set(
+    accounts.filter((a) => a.type === "securities" || a.type === "crypto").map((a) => a.id)
+  );
   for (const entry of ledger) {
     const amount = toKrwAmount(entry.amount, entry.currency, fxRate);
-    if (entry.toAccountId) addFlow(entry.toAccountId, entry.date, amount);
-    if (entry.fromAccountId) addFlow(entry.fromAccountId, entry.date, -amount);
+    if (entry.toAccountId && (entry.kind === "transfer" || !investingFlowIds.has(entry.toAccountId))) {
+      addFlow(entry.toAccountId, entry.date, amount);
+    }
+    if (entry.fromAccountId && (entry.kind === "transfer" || !investingFlowIds.has(entry.fromAccountId))) {
+      addFlow(entry.fromAccountId, entry.date, -amount);
+    }
   }
 
   const realizedByTradeId = realizedPnlKRWByTradeId(trades, accounts, fxRate);
@@ -1601,15 +1614,17 @@ export function generateComprehensiveMonthlyReport(
     const row = rows.get(month);
     if (!row) continue;
 
-    const account = accountById.get(trade.accountId);
-    const amount = convertPositionAmount(trade.totalAmount, trade.ticker, account, fxRate);
+    // 거래시점 환율(fxRateAtTrade) 우선 — 투자 정산의 매수/매도 총액(tradeAmountKRW)과 동일 정의.
+    // 현재 환율로 환산하면 과거 월의 매수/매도 총액이 오늘 환율에 따라 매일 변하고,
+    // 같은 행의 실현손익(거래시점 환율)과 한 행 안에서 환율 기준이 섞인다.
+    const amount = tradeAmountKRWStd(trade, fxRate);
 
     row.tradeCount += 1;
     if (trade.side === "buy") {
       row.buyAmount += amount;
     } else {
       row.sellAmount += amount;
-      // pnl은 이미 거래시점 환율로 KRW 환산됨 — convertPositionAmount(현재환율) 재적용 금지
+      // pnl은 이미 거래시점 환율로 KRW 환산됨 — 현재환율 재적용 금지
       row.realizedPnl += realizedByTradeId.get(trade.id) ?? 0;
     }
   }

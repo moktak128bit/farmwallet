@@ -40,7 +40,7 @@ import { useAppStore } from "../store/appStore";
 import { saveSafetySnapshot } from "../services/backupService";
 import { getKoreaTime, getThisMonthKST, getTodayKST } from "../utils/date";
 import { toast } from "react-hot-toast";
-import { computeRealizedPnlByTradeId } from "../calculations";
+import { buildClosedTradeRecords } from "../utils/investmentRecord";
 import { exportLedgerCsv } from "../utils/csvExport";
 import { QuickCopyModal } from "../features/ledger/QuickCopyModal";
 import { DescriptionMergeModal } from "../features/ledger/DescriptionMergeModal";
@@ -211,14 +211,20 @@ export const LedgerView: React.FC<Props> = ({
     // 월별 보기 / 종류 탭은 사용자가 유지 — 일부러 건드리지 않음
   }, []);
 
-  const realizedPnlByTradeId = useMemo(
-    () => computeRealizedPnlByTradeId(deferredTrades),
-    [deferredTrades]
-  );
+  // KRW 실현손익 맵 — 매수·매도 각각 fxRateAtTrade 환산(buildClosedTradeRecords).
+  // 이전의 computeRealizedPnlByTradeId(동일 통화)는 USD 손익이 표시 시점 환율로 소급 환산되어
+  // 환차손익이 빠지고 투자기록 카드·대시보드와 다른 숫자가 됐다.
+  const realizedPnlKrwByTradeId = useMemo(() => {
+    const m = new Map<string, number>();
+    for (const r of buildClosedTradeRecords(deferredTrades, accounts, fxRate ?? undefined)) {
+      m.set(r.tradeId, r.realizedPnlKRW);
+    }
+    return m;
+  }, [deferredTrades, accounts, fxRate]);
   const tradesAsLedgerRows = useMemo(
     (): LedgerDisplayRow[] =>
-      deferredTrades.filter((t) => t.side === "sell").map((t) => tradeToLedgerRow(t, realizedPnlByTradeId)),
-    [deferredTrades, realizedPnlByTradeId]
+      deferredTrades.filter((t) => t.side === "sell").map((t) => tradeToLedgerRow(t, realizedPnlKrwByTradeId)),
+    [deferredTrades, realizedPnlKrwByTradeId]
   );
   const combinedLedger = useMemo(
     (): LedgerDisplayRow[] =>
@@ -429,6 +435,9 @@ export const LedgerView: React.FC<Props> = ({
     let incomeAmount = 0;
     const excludedNames = new Set(EXPENSE_BOX_EXCLUDED_NAMES);
     for (const l of filteredLedger) {
+      // 주식 매도 가상 행은 요약에서 제외 — 가계부 원본이 아니고(CSV 내보내기와 동일 정책),
+      // 포함하면 대시보드 '재테크'(실제 ledger만)와 어긋나며 수동 투자수익 입력 시 이중 계상된다.
+      if (l._tradeId) continue;
       // 재테크 = 저축성지출 + 저축·투자 이체 + 투자수익(+) − 투자손실(−).
       // 투자 실현손익은 생활 수입/지출을 부풀리지 않도록 재테크로만 집계 (대시보드 summaryMath와 동일 기준).
       const isPnl = isInvestmentPnlEntry(l);
@@ -455,6 +464,7 @@ export const LedgerView: React.FC<Props> = ({
     let prevIncome = 0;
     let prevCount = 0;
     for (const l of ledgerByTab) {
+      if (l._tradeId) continue; // 가상 행 제외 — 위 당월 합계와 동일 기준
       if (!l.date?.startsWith(prevMonth)) continue;
       if (prevDayCap != null && Number(l.date.slice(8, 10)) > prevDayCap) continue;
       prevCount += 1;

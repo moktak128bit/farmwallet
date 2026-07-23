@@ -93,4 +93,15 @@ describe("computeUnrealizedPL", () => {
     expect(r.unrealizedGain).toBe(0);
     expect(r.unrealizedLoss).toBe(390_000); // costKrw 390k − marketKrw 0
   });
+
+  it("시세 미로드 종목(평가 0)은 제외 — 원가 전액이 '미실현 손실'(−100%)로 잡히지 않는다", () => {
+    const ps: PositionRow[] = [
+      pos({ accountId: "a1", name: "신규매수", ticker: "123456", quantity: 10, totalBuyAmount: 5_000_000, marketPrice: 0, marketValue: 0, marketCurrency: "KRW" }),
+      pos({ accountId: "a1", name: "삼성", quantity: 10, totalBuyAmount: 700_000, marketValue: 800_000, marketCurrency: "KRW" }),
+    ];
+    const r = computeUnrealizedPL(ps, 1300);
+    // 예전: 신규매수 500만이 통째로 손실 → 대시보드(0 중립화)와 화면 간 불일치
+    expect(r.unrealizedLoss).toBe(0);
+    expect(r.unrealizedGain).toBe(100_000);
+  });
 });

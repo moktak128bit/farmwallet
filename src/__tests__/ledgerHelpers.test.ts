@@ -100,6 +100,29 @@ describe("tradeToLedgerRow", () => {
     expect(row.toAccountId).toBeUndefined();
   });
 
+  it("USD 매도 가상 행: KRW 실현손익 + currency=KRW (현재 환율 소급 환산 방지)", () => {
+    const row = tradeToLedgerRow(
+      {
+        id: "t5",
+        date: "2026-01-01",
+        accountId: "acc1",
+        ticker: "AAPL",
+        name: "Apple",
+        side: "sell",
+        quantity: 10,
+        price: 110,
+        fee: 0,
+        totalAmount: 1100,
+        cashImpact: 1100,
+      },
+      new Map([["t5", 24_000]]) // buildClosedTradeRecords 기준 KRW 손익 (매수·매도 각각 fxRateAtTrade 환산)
+    );
+    // 예전: USD 손익 액면 + currency:"USD" → 표시 시점 현재 환율로 환산되어 환차손익 누락 + 매일 변동
+    expect(row.currency).toBe("KRW");
+    expect(row.amount).toBe(24_000);
+    expect(row.subCategory).toBe("투자수익");
+  });
+
   it("USD 종목은 currency=USD", () => {
     const row = tradeToLedgerRow(
       {

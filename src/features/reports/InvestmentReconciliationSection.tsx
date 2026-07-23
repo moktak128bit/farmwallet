@@ -311,7 +311,7 @@ export const InvestmentReconciliationSection: React.FC<Props> = React.memo(funct
         <div className="card" style={{ padding: 16, marginBottom: 12 }}>
           <h4 style={{ margin: "0 0 2px" }}>월별 실현손익 추이</h4>
           <p className="hint" style={{ fontSize: 12, margin: "0 0 12px" }}>
-            매도로 확정된 이익(초록)·손실(빨강). 손실이 언제 터졌는지 한눈에 보입니다.
+            매도로 확정된 이익(빨강)·손실(파랑). 손실이 언제 터졌는지 한눈에 보입니다.
           </p>
           <ResponsiveContainer width="100%" height={280}>
             <BarChart data={rec.monthlyPnl}>
@@ -320,8 +320,9 @@ export const InvestmentReconciliationSection: React.FC<Props> = React.memo(funct
               <YAxis />
               <Tooltip formatter={(value: number | undefined) => formatKRW(value ?? 0)} />
               <Legend />
-              <Bar isAnimationActive={false} dataKey="realizedGain" fill="#10b981" name="실현 이익" />
-              <Bar isAnimationActive={false} dataKey="realizedLoss" fill="#f43f5e" name="실현 손실" />
+              {/* 색 관례(국내): 이익=빨강, 손실=파랑 — CSS 변수로 다크모드 대응 */}
+              <Bar isAnimationActive={false} dataKey="realizedGain" fill="var(--chart-income, var(--danger))" name="실현 이익" />
+              <Bar isAnimationActive={false} dataKey="realizedLoss" fill="var(--chart-expense, var(--accent))" name="실현 손실" />
             </BarChart>
           </ResponsiveContainer>
         </div>

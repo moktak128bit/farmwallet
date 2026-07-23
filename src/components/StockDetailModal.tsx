@@ -183,7 +183,15 @@ export const StockDetailModal: React.FC<Props> = ({
             t.accountId === position.accountId &&
             t.date < date
         )
-        .sort((a, b) => a.date.localeCompare(b.date));
+        // 앱 표준 3단 정렬(computePositions·usCapitalGainsTax와 동일) — 같은 날 매도가 매수보다
+        // 먼저 처리되면 빈 큐에서 오버셀이 무시돼 잔존 lot 원가가 부풀려진다
+        .sort((a, b) => {
+          const d = a.date.localeCompare(b.date);
+          if (d !== 0) return d;
+          if (a.side === "buy" && b.side === "sell") return -1;
+          if (a.side === "sell" && b.side === "buy") return 1;
+          return a.id.localeCompare(b.id);
+        });
       const lots: FifoLot[] = [];
       for (const t of relevant) {
         const appliedFx =

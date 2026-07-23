@@ -7,7 +7,7 @@ import React, { useMemo } from "react";
 import { formatKRW } from "../../utils/formatter";
 import type { CategoryPresets } from "../../types";
 import type { LedgerDisplayRow } from "../../utils/ledgerHelpers";
-import { isCreditPayment, isInvestmentEntry, makeIsSavingsExpense } from "../../utils/category";
+import { isCreditPayment, isInvestmentEntry, isInvestmentPnlEntry, makeIsSavingsExpense } from "../../utils/category";
 import { EXPENSE_BOX_EXCLUDED_NAMES } from "../dashboard/summaryMath";
 import { useFxRateValue } from "../../context/FxRateContext";
 import { toKrwByRate } from "../../utils/currency";
@@ -77,18 +77,23 @@ export const LedgerSummarySection: React.FC<Props> = React.memo(function LedgerS
     const toKrw = (l: LedgerDisplayRow) => toKrwByRate(l.amount, l.currency, fxRate);
     const sortedMonths = Array.from(selectedMonths).sort();
     return sortedMonths.map((monthKey) => {
-      const entries = filteredLedger.filter((l) => l.date && l.date.startsWith(monthKey));
+      // 상단 요약(filteredSummary)과 동일 기준: 주식 매도 가상 행(_tradeId) 제외 + 투자 실현손익은
+      // 수입/지출이 아닌 재테크로만 — 안 맞추면 같은 화면의 두 '수입' 숫자가 실현손익만큼 어긋난다
+      const entries = filteredLedger.filter(
+        (l) => l.date && l.date.startsWith(monthKey) && !l._tradeId
+      );
       const expenseAmount = entries
         .filter(
           (l) =>
             l.kind === "expense" &&
             !isCreditPayment(l) &&
             !isInvestmentEntry(l) &&
-            !isSavings(l)
+            !isSavings(l) &&
+            !isInvestmentPnlEntry(l)
         )
         .reduce((s, l) => s + toKrw(l), 0);
       const incomeAmount = entries
-        .filter((l) => l.kind === "income")
+        .filter((l) => l.kind === "income" && !isInvestmentPnlEntry(l))
         .reduce((s, l) => s + toKrw(l), 0);
       const total = incomeAmount - expenseAmount;
       return { monthKey, expenseAmount, incomeAmount, total };

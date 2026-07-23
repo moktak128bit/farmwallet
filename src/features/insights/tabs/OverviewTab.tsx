@@ -409,7 +409,7 @@ export const OverviewTab = React.memo(function OverviewTab({ d }: { d: D }) {
           <div style={{ display: "grid", gridTemplateColumns: "repeat(5,1fr)", gap: 10, marginTop: 10 }}>
             {[
               { label: "순현금흐름", value: F(d.netCashFlow) + "원", sub: `${d.accumLabel} · 근로소득−지출−투자`, color: d.netCashFlow >= 0 ? "var(--success)" : "var(--danger)" },
-              { label: "투자 수익률", value: d.investReturnRate !== 0 ? d.investReturnRate.toFixed(1) + "%" : "-", sub: "전 기간 · 실현손익 / 투자원금", color: d.investReturnRate >= 0 ? "var(--success)" : "var(--danger)" },
+              { label: "투자 수익률", value: d.investReturnRate !== 0 ? d.investReturnRate.toFixed(1) + "%" : "-", sub: "전 기간 · 실현손익 / 청산 매도원가", color: d.investReturnRate >= 0 ? "var(--success)" : "var(--danger)" },
               { label: "고정비", value: F(d.fixedExpense) + "원", sub: `${d.accumLabel} · 지출의 ${Math.round(SD(d.fixedExpense, d.pExpense) * 100)}%`, color: "var(--accent)" },
               { label: "변동비", value: F(d.variableExpense) + "원", sub: `${d.accumLabel} · 지출의 ${Math.round(SD(d.variableExpense, d.pExpense) * 100)}%`, color: "var(--warning)" },
               { label: "근로소득 안정성", value: d.incomeStability !== null ? d.incomeStability + "%" : "-", sub: d.incomeStability !== null && d.incomeStability >= 70 ? "월별 편차 작음" : "월별 편차 큼", color: "var(--accent)" },

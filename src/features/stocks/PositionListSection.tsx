@@ -169,16 +169,42 @@ export const PositionListSection: React.FC<PositionListSectionProps> = ({
 
   const sortPositions = React.useCallback((rows: PositionWithPrice[]) => {
     const dir = positionSort.direction === "asc" ? 1 : -1;
+    const key = positionSort.key as keyof PositionWithPrice;
+    const fx = fxRate && fxRate > 0 ? fxRate : 0;
+    // USD 행의 정렬값은 셀 표시(원화 모드)와 동일 기준으로 환산 — 원시값 비교는 혼재 계좌에서
+    // 실제 크기와 다른 순서가 되고, 원화폐값×현재환율은 원가류(취득환율 기반 표시)와 어긋난다.
+    const conv = (p: PositionWithPrice, v: number): number => {
+      if (!(p.currency === "USD" || isUSDStock(p.ticker))) return v;
+      switch (key) {
+        // 원가류 — 취득환율 KRW(totalBuyAmountKRW) 우선 (셀 표시와 동일)
+        case "totalBuyAmount":
+          return p.totalBuyAmountKRW ?? (fx ? v * fx : v);
+        case "avgPrice":
+          return p.totalBuyAmountKRW != null && p.quantity > 0 ? p.totalBuyAmountKRW / p.quantity : (fx ? v * fx : v);
+        // 손익·수익률 — 평가(현재환율) − 원가(취득환율), 셀의 pnlDisplay·pnlRateDisplay와 동일
+        case "pnl":
+          return p.totalBuyAmountKRW != null && fx ? p.marketValue * fx - p.totalBuyAmountKRW : (fx ? v * fx : v);
+        case "pnlRate":
+          return p.totalBuyAmountKRW != null && p.totalBuyAmountKRW > 0 && fx
+            ? (p.marketValue * fx - p.totalBuyAmountKRW) / p.totalBuyAmountKRW
+            : v;
+        // 평가류 — 현재환율
+        case "marketValue":
+        case "marketPrice":
+          return fx ? v * fx : v;
+        default:
+          return v;
+      }
+    };
     return [...rows].sort((a, b) => {
-      const key = positionSort.key as keyof PositionWithPrice;
       const va = (a[key] as unknown) ?? 0;
       const vb = (b[key] as unknown) ?? 0;
       if (typeof va === "string" || typeof vb === "string") {
         return String(va).localeCompare(String(vb)) * dir;
       }
-      return ((va as number) - (vb as number)) * dir;
+      return (conv(a, va as number) - conv(b, vb as number)) * dir;
     });
-  }, [positionSort]);
+  }, [positionSort, fxRate]);
 
   const togglePositionSort = (key: PositionSortKey) => {
     setPositionSort((prev) => ({
@@ -483,6 +509,14 @@ export const PositionListSection: React.FC<PositionListSectionProps> = ({
                         ? { value: marketValDisplay.value - totalBuyDisplay.value, currency: "KRW" as const }
                         : toDisplayValue(p.pnl, p.currency, p.ticker, displayCurrency, r);
                     const priceDisplay = toDisplayValue(p.displayMarketPrice, p.currency, p.ticker, displayCurrency, r);
+                    // 수익률·색은 표시 중인 평가손익과 같은 기준 — 원화 모드는 환차 포함(현재환율 평가 −
+                    // fxRateAtTrade 원가), 달러 모드는 원화폐 기준. 이전엔 항상 원화폐(p.pnl) 부호라
+                    // 같은 행에서 평가손익 +인데 수익률 −·손실색이 되는 불일치가 났다.
+                    const pnlRateDisplay =
+                      pnlDisplay.currency === totalBuyDisplay.currency && totalBuyDisplay.value > 0
+                        ? pnlDisplay.value / totalBuyDisplay.value
+                        : p.pnlRate;
+                    const pnlPositive = pnlDisplay.value >= 0;
                     return (
                       <tr 
                         key={`${group.accountId}-${p.ticker}`}
@@ -540,7 +574,7 @@ export const PositionListSection: React.FC<PositionListSectionProps> = ({
                         <td
                           className="number"
                           style={{
-                            color: !p.hasQuote ? "var(--text-muted)" : p.pnl >= 0 ? "var(--danger)" : "var(--accent)",
+                            color: !p.hasQuote ? "var(--text-muted)" : pnlPositive ? "var(--danger)" : "var(--accent)",
                             fontWeight: "600"
                           }}
                         >
@@ -549,11 +583,11 @@ export const PositionListSection: React.FC<PositionListSectionProps> = ({
                         <td
                           className="number"
                           style={{
-                            color: !p.hasQuote ? "var(--text-muted)" : p.pnl >= 0 ? "var(--danger)" : "var(--accent)",
+                            color: !p.hasQuote ? "var(--text-muted)" : pnlPositive ? "var(--danger)" : "var(--accent)",
                             fontWeight: "600"
                           }}
                         >
-                          {p.hasQuote ? `${(p.pnlRate * 100).toFixed(2)}%` : "—"}
+                          {p.hasQuote ? `${(pnlRateDisplay * 100).toFixed(2)}%` : "—"}
                         </td>
                         <td className="number">
                           {p.hasQuote ? (
@@ -568,7 +602,7 @@ export const PositionListSection: React.FC<PositionListSectionProps> = ({
                         <td className="number">{p.quantity % 1 === 0 ? formatNumber(p.quantity) : p.quantity.toFixed(6)}</td>
                         <td className="number">{formatByDisplayCurrency(totalBuyDisplay.value, totalBuyDisplay.currency)}</td>
                         <td
-                          className={`number ${!p.hasQuote ? "" : p.marketValue >= p.totalBuyAmount ? "positive" : "negative"}`}
+                          className={`number ${!p.hasQuote ? "" : marketValDisplay.value >= totalBuyDisplay.value ? "positive" : "negative"}`}
                           title={!p.hasQuote ? "시세 없음 — 매입금액 기준" : undefined}
                         >
                           {formatByDisplayCurrency(marketValDisplay.value, marketValDisplay.currency)}

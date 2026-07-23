@@ -299,6 +299,8 @@ export interface D {
   spendByDOM: number[];
   portfolio: { name: string; value: number }[];
   realPL: { total: number; wins: number; losses: number; winCnt: number; lossCnt: number };
+  /** 청산 종목별 FIFO 실현손익(KRW) — 매도일 기준 기간 필터, 원가는 전체 이력 소진. pnl 내림차순. */
+  closedByStock: { name: string; pnl: number; cost: number; proceeds: number; count: number }[];
   /** 투자 손익 4분할 (KRW 환산, 손실은 양의 절대값). 실현=FIFO 청산 누적, 미실현=보유×(현재가-평단). */
   investBreakdown: { realizedGain: number; realizedLoss: number; unrealizedGain: number; unrealizedLoss: number };
   /** 현재 보유 종목별 FIFO 매입원가·평가액(KRW, costKRW 내림차순). 누적 매수액(gross) 아님 — 매도-재매수 중복 방지. */

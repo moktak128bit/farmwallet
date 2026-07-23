@@ -153,6 +153,34 @@ describe("buildDailyPortfolioValueSeries", () => {
     expect(series.map((p) => p.date)).toEqual(["2026-01-02", "2026-01-09", "2026-01-16"]);
   });
 
+  it("weekly 스텝이 endDate를 건너뛰면 마지막 점을 endDate로 스냅한다 (헤더 스탯 최대 6일 낡음 방지)", () => {
+    const trades = [buy("005930", "2026-01-02", 10, 1000)];
+    const closes = [close("005930", "2026-01-02", 1000)];
+    const series = buildDailyPortfolioValueSeries({
+      trades,
+      accounts,
+      historicalDailyCloses: closes,
+      fxHistory: [],
+      endDate: "2026-01-20",
+      step: "weekly",
+    });
+    expect(series.map((p) => p.date)).toEqual(["2026-01-02", "2026-01-09", "2026-01-16", "2026-01-20"]);
+  });
+
+  it("환율이 전혀 없으면 USD 포지션은 제외 — 달러 액면이 KRW 원가에 섞여 가짜 손실이 되지 않는다", () => {
+    const trades = [buy("AAPL", "2026-01-02", 5, 100), buy("005930", "2026-01-02", 10, 1000)];
+    const closes = [close("AAPL", "2026-01-03", 110, "USD"), close("005930", "2026-01-03", 1100)];
+    const series = buildDailyPortfolioValueSeries({
+      trades,
+      accounts,
+      historicalDailyCloses: closes,
+      fxHistory: [], // fallbackFxRate도 없음 — 환율 완전 부재
+      endDate: "2026-01-03",
+    });
+    // 예전: costKRW에 달러 액면 500이 섞이고 평가액은 0 → −500 가짜 손실. 이제 KRW 종목만 집계.
+    expect(at(series, "2026-01-03")).toMatchObject({ valueKRW: 11000, costKRW: 10000, pnlKRW: 1000 });
+  });
+
   it("거래가 없으면 빈 배열", () => {
     expect(
       buildDailyPortfolioValueSeries({

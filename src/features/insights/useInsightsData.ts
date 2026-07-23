@@ -13,7 +13,7 @@ import { calcTrend, mTotalsFor, computePeriodScope } from "../../utils/insightsH
 import { isInvestmentEntry, isCurrencyExchangeEntry, isInvestmentLossEntry } from "../../utils/category";
 import { classifyLedgerFlow, toKrwAmount } from "../dashboard/summaryMath";
 import { expenseMainName } from "../../utils/categoryMerge";
-import { tradeAmountKRW } from "../../utils/finance";
+import { tradeAmountKRW, canonicalTickerForMatch } from "../../utils/finance";
 import { detectSpendAnomalies } from "../../utils/anomaly";
 import { buildClosedTradeRecords, summarizeRecords, summaryToRealPL } from "../../utils/investmentRecord";
 import { computeOriginalAssets, classifyIncomeNature } from "../../utils/realIncome";
@@ -360,6 +360,28 @@ export function useInsightsData(ledger: LedgerEntry[], rawTrades: StockTrade[], 
     const realPL = summaryToRealPL(lifetimeRealizedSummary);
     const { total: plTot, wins: plWin, losses: plLoss, winCnt: plWC, lossCnt: plLC } = realPL;
 
+    /* 청산 종목 손익 — FIFO 기록을 종목별 합산. 매도일 기준 기간 필터, 원가는 전체 이력에서 소진.
+       (기간 필터된 거래의 평균단가로 계산하면 이전 기간 매수 원가가 빠져 부호까지 반전된다)
+       기간 판정은 rawTrades(일 단위 컷오프 적용된 거래) 소속 여부 — 월 단위 근사는 같은 탭의
+       매수/매도 집계(일 단위)와 모집단이 어긋난다. */
+    const periodSellIds = new Set(rawTrades.filter((t) => t.side === "sell").map((t) => t.id));
+    const closedByStock = (() => {
+      const m = new Map<string, { name: string; pnl: number; cost: number; proceeds: number; count: number }>();
+      for (const r of allClosedRecords) {
+        const ym = r.sellDate.slice(0, 7);
+        if (selMonth ? ym !== selMonth : !periodSellIds.has(r.tradeId)) continue;
+        const key = canonicalTickerForMatch(r.ticker) || r.ticker;
+        const cur = m.get(key) ?? { name: r.name || r.ticker, pnl: 0, cost: 0, proceeds: 0, count: 0 };
+        cur.pnl += r.realizedPnlKRW;
+        cur.cost += r.costBasisKRW;
+        cur.proceeds += r.proceedsKRW;
+        cur.count += 1;
+        if (r.name) cur.name = r.name;
+        m.set(key, cur);
+      }
+      return [...m.values()].sort((a, b) => b.pnl - a.pnl);
+    })();
+
     /* zero spend days */
     let zeroDays = 0, totalDays = 0;
     const spendSet = new Set(fExp.map(l => l.date));
@@ -690,9 +712,11 @@ export function useInsightsData(ledger: LedgerEntry[], rawTrades: StockTrade[], 
       const ivTotal = investBySub.reduce((s, x) => s + x.amount, 0);
       const share = Math.round(SD(v.amount, ivTotal) * 100);
       const avg = Math.round(SD(v.amount, v.count));
-      // 월별 추이 — 완결 월만으로 추세 계산 (수입·지출 인사이트와 동일 기준)
+      // 월별 추이 — 완결 월만으로 추세 계산 (수입·지출 인사이트와 동일 기준).
+      // 모집단은 총액(investBySub: expense+재테크)과 반드시 동일해야 한다 — 이전의 isInvestmentEntry는
+      // sub '저축'/'투자'만 참이라 '투자손실' 등의 카드가 총액은 크게, 추세·월평균은 항상 0으로 나왔다.
       const ivMTotals = mTotalsFor(months, ledger, l =>
-        isInvestmentEntry(l) && (l.subCategory || "기타") === v.sub, amt
+        l.kind === "expense" && l.category === "재테크" && (l.subCategory || "기타") === v.sub, amt
       );
       const ivDoneTotals = ivMTotals.slice(0, doneCnt);
       const { monthTrend: ivTrend, mom: ivMom, nonZero: ivNonZero, monthAvg } = calcTrend(ivDoneTotals);
@@ -919,7 +943,7 @@ export function useInsightsData(ledger: LedgerEntry[], rawTrades: StockTrade[], 
       months, ml, selMonth, monthSpan, accumLabel, txCount: fL.length, anomalyTargetMonth, topAnomaly, incomeGrowth, spendingInertia,
       categoryGrowth, entryOutliers, spendByDOMAvg, domOccurrences, patternStats,
       monthly, salaryMonthly, realIncomeMonthly, savRateTrend, salaryTrend, cumIE, investTrend, divTrend, tradeCntTrend, subTrend, txCntTrend, cumSpend, monthlyCatTrend, dateExpMonthly,
-      pIncome, pSalary, pExpense, pInvest, expByCat, expBySub, topCats, acctUsage, wdSpend, dateTop, dateSubCats, dateEntries, dateTxCount, incByCat, trades, subs, largeExp, topTx, expBySubCat, expByDesc, dateMoim, datePersonal, spendByDOM, portfolio, realPL: { total: plTot, wins: plWin, losses: plLoss, winCnt: plWC, lossCnt: plLC },
+      pIncome, pSalary, pExpense, pInvest, expByCat, expBySub, topCats, acctUsage, wdSpend, dateTop, dateSubCats, dateEntries, dateTxCount, incByCat, trades, subs, largeExp, topTx, expBySubCat, expByDesc, dateMoim, datePersonal, spendByDOM, portfolio, realPL: { total: plTot, wins: plWin, losses: plLoss, winCnt: plWC, lossCnt: plLC }, closedByStock,
       investBreakdown, holdingsByStock, totalHoldingsCost,
       zeroDays, totalDays, weekendTot, weekdayTot, topDates,
       score: { total: scorePts, grade, comment: comments[grade] || "" }, prev, avgMonthExp,

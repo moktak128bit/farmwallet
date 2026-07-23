@@ -23,6 +23,7 @@ import {
 } from "../../utils/investmentRecord";
 import { isDividendEntryLoose } from "../../utils/categoryMatch";
 import { toKrwByRate } from "../../utils/currency";
+import { usdBalanceModeDelta } from "../../utils/tradeCashImpact";
 
 interface Props {
   accounts: Account[];
@@ -102,11 +103,21 @@ export const InvestmentSummaryCard: React.FC<Props> = React.memo(function Invest
   );
 
   const principal = useMemo(() => {
+    // 초기 USD 현금 롤백 — usdBalance는 잔액모드 거래가 반영된 '현재' 값이므로 전체 델타를 되감아
+    // 최초 보유분만 원금에 넣는다. 자산(totalInvestmentAssets)에는 포함되는데 원금에 빠지면
+    // 누적 손익이 초기 USD 현금만큼 과대해진다 (보고서 투자 총성과의 initialCapital과 동일 정의).
+    const usdModeDeltaTotal = new Map<string, number>();
+    for (const t of trades) {
+      const delta = usdBalanceModeDelta(t);
+      if (delta !== 0) usdModeDeltaTotal.set(t.accountId, (usdModeDeltaTotal.get(t.accountId) ?? 0) + delta);
+    }
     let p = 0;
     for (const a of accounts) {
       if (!securitiesAccountIds.has(a.id)) continue;
       // 잔액 계산과 동일한 단일 정의 사용 — initialBalance + initialCashBalance 이중계상 방지
       p += baseBalanceForAccount(a);
+      const initialUsd = (a.usdBalance ?? 0) - (usdModeDeltaTotal.get(a.id) ?? 0);
+      if (initialUsd && fxRate) p += initialUsd * fxRate;
     }
     for (const e of ledger) {
       if (e.kind !== "transfer") continue;
@@ -118,7 +129,7 @@ export const InvestmentSummaryCard: React.FC<Props> = React.memo(function Invest
       else if (fromSec) p -= amtKrw;
     }
     return p;
-  }, [accounts, ledger, securitiesAccountIds, fxRate]);
+  }, [accounts, ledger, trades, securitiesAccountIds, fxRate]);
 
   const cumulativePnl = totalInvestmentAssets - principal;
 

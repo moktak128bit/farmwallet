@@ -21,7 +21,7 @@ import type {
   StockTrade,
 } from "../types";
 import { computePositions, positionMarketValueKRW } from "../calculations";
-import { canonicalTickerForMatch } from "./finance";
+import { canonicalTickerForMatch, isUSDStock } from "./finance";
 import { addDaysToIso } from "./date";
 
 export interface DailyPortfolioPoint {
@@ -141,39 +141,47 @@ export function buildDailyPortfolioValueSeries(params: PortfolioHistoryParams): 
   let tradePtr = 0; // date ≤ d 인 거래 개수
   const out: DailyPortfolioPoint[] = [];
 
-  for (let d = startDate; d <= endDate; d = addDaysToIso(d, stepDays)) {
+  let d = startDate;
+  for (;;) {
     while (tradePtr < sortedTrades.length && sortedTrades[tradePtr].date <= d) tradePtr += 1;
     if (tradePtr === 0) {
       out.push({ date: d, valueKRW: 0, costKRW: 0, pnlKRW: 0 });
-      continue;
-    }
-    const tradesUpTo = sortedTrades.slice(0, tradePtr);
+    } else {
+      const tradesUpTo = sortedTrades.slice(0, tradePtr);
 
-    while (fxIdx + 1 < fxSorted.length && fxSorted[fxIdx + 1].date <= d) fxIdx += 1;
-    const fx = fxIdx >= 0 ? fxSorted[fxIdx].rate : (fallbackFxRate ?? null);
+      while (fxIdx + 1 < fxSorted.length && fxSorted[fxIdx + 1].date <= d) fxIdx += 1;
+      const fx = fxIdx >= 0 ? fxSorted[fxIdx].rate : (fallbackFxRate ?? null);
 
-    // 보유 가능 종목들의 'd 시점 종가'로 prices 구성 (없는 종목은 priceFallback="cost"로 중립 처리)
-    const pricesAsOf: StockPrice[] = [];
-    for (const [ticker, arr] of closesByTicker) {
-      let i = closePtr.get(ticker) ?? -1;
-      while (i + 1 < arr.length && arr[i + 1].date <= d) i += 1;
-      closePtr.set(ticker, i);
-      if (i < 0) continue;
-      const c = arr[i];
-      pricesAsOf.push({ ticker, price: c.close, currency: c.currency, updatedAt: c.date });
-    }
+      // 보유 가능 종목들의 'd 시점 종가'로 prices 구성 (없는 종목은 priceFallback="cost"로 중립 처리)
+      const pricesAsOf: StockPrice[] = [];
+      for (const [ticker, arr] of closesByTicker) {
+        let i = closePtr.get(ticker) ?? -1;
+        while (i + 1 < arr.length && arr[i + 1].date <= d) i += 1;
+        closePtr.set(ticker, i);
+        if (i < 0) continue;
+        const c = arr[i];
+        pricesAsOf.push({ ticker, price: c.close, currency: c.currency, updatedAt: c.date });
+      }
 
-    const positions = computePositions(tradesUpTo, pricesAsOf, accounts, {
-      fxRate: fx ?? undefined,
-      priceFallback: "cost"
-    });
-    let valueKRW = 0;
-    let costKRW = 0;
-    for (const p of positions) {
-      valueKRW += positionMarketValueKRW(p, fx);
-      costKRW += p.totalBuyAmountKRW ?? p.totalBuyAmount;
+      const positions = computePositions(tradesUpTo, pricesAsOf, accounts, {
+        fxRate: fx ?? undefined,
+        priceFallback: "cost"
+      });
+      let valueKRW = 0;
+      let costKRW = 0;
+      for (const p of positions) {
+        // 환율이 전혀 없으면 USD 포지션은 제외 — 달러 액면을 원가에 섞고 평가액만 0이 되어
+        // '가짜 대규모 손실'이 그려지는 통화 혼합 방지 (환율 로드 후 자동 복원)
+        if (isUSDStock(p.ticker) && !(fx && fx > 0)) continue;
+        valueKRW += positionMarketValueKRW(p, fx);
+        costKRW += p.totalBuyAmountKRW ?? p.totalBuyAmount;
+      }
+      out.push({ date: d, valueKRW, costKRW, pnlKRW: valueKRW - costKRW });
     }
-    out.push({ date: d, valueKRW, costKRW, pnlKRW: valueKRW - costKRW });
+    if (d >= endDate) break;
+    const next = addDaysToIso(d, stepDays);
+    // 주간 스텝이 endDate를 건너뛰면 마지막 점을 endDate로 스냅 — 헤더 '현재값' 스탯이 최대 6일 낡는 것 방지
+    d = next > endDate ? endDate : next;
   }
 
   return out;

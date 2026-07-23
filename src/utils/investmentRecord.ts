@@ -102,7 +102,10 @@ export function buildClosedTradeRecords(
       if (d !== 0) return d;
       if (a.side === "buy" && b.side === "sell") return -1;
       if (a.side === "sell" && b.side === "buy") return 1;
-      return 0;
+      // computePositions.cmpTrade·computeRealizedPnlByTradeId와 동일 3차 타이브레이커 —
+      // 같은 날 동일 side 분할 매수의 로트 소진 순서가 배열 순서(드래그 재정렬로 변동)에 따라
+      // 화면마다 달라지는 것 방지 (잔여원가 vs 실현손익 정합)
+      return a.id.localeCompare(b.id);
     });
 
     type Lot = FifoLot & { dateMs: number };

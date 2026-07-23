@@ -38,7 +38,8 @@ export function buildFullDataSheets(data: AppData): SheetData[] {
     ],
   });
 
-  const positions = computePositions(data.trades ?? [], data.prices ?? [], data.accounts ?? []);
+  // priceFallback:"cost" — 시세 미로드 종목이 평가액 0·수익률 −100%로 기록되는 것 방지 (대시보드와 동일 중립화)
+  const positions = computePositions(data.trades ?? [], data.prices ?? [], data.accounts ?? [], { priceFallback: "cost" });
   sheets.push({
     name: "보유현황",
     rows: [

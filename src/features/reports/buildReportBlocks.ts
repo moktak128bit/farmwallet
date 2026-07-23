@@ -119,6 +119,10 @@ export function buildReportBlocks(input: ReportBlocksInput): ReportBlocksResult 
             ["미실현 손실", Math.round(rec.unrealizedLoss)],
             ["미실현 손익(순)", Math.round(rec.unrealizedPnl)],
             ["배당 수입", Math.round(rec.dividendIncome)],
+            // 항등식 마감 행 — 화면(InvestmentReconciliationSection)과 동일: 실현+미실현+배당 = 손익 합계,
+            // 손익 합계 + 분류 외 차이 = 투자 총성과. 이 두 행이 없으면 내보낸 표에서 합이 안 맞아 보인다.
+            ["손익 합계 (실현+미실현+배당)", Math.round(rec.pnlSum)],
+            ["분류 외 차이", Math.round(rec.residual)],
             ["매수 총액", Math.round(rec.buyVolume)],
             ["매도 총액", Math.round(rec.sellVolume)]
           ]
@@ -264,7 +268,8 @@ export function buildReportBlocks(input: ReportBlocksInput): ReportBlocksResult 
       filenameBase = "성과_분석";
       subtitle = `${startDate} ~ ${endDate}`;
       blocks.push({
-        title: "계좌별 성과 기여",
+        // IRR·TTWR·손익은 전체 기간 누적 (기간 선택은 아래 소비-투자여력 표에만 적용) — 라벨-계산 일치
+        title: "계좌별 성과 기여 (전체 기간 누적)",
         head: ["계좌", "현재가치", "실현손익", "미실현손익", "배당기여", "총기여", "IRR", "TTWR"],
         rows: accountPerformance.map((r) => [r.accountName, Math.round(r.currentValue), Math.round(r.realizedPnl), Math.round(r.unrealizedPnl), Math.round(r.dividendContribution), Math.round(r.totalContribution), toPercent(r.irr), toPercent(r.ttwr)])
       });

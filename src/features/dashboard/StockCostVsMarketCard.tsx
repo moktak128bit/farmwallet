@@ -82,7 +82,7 @@ export const StockCostVsMarketCard: React.FC<Props> = React.memo(function StockC
   const latest = points[points.length - 1];
   const unrealized = latest ? latest.market - latest.cost : 0;
   const unrealizedPct = latest && latest.cost > 0 ? (unrealized / latest.cost) * 100 : 0;
-  const pnlColor = unrealized >= 0 ? "var(--success, #059669)" : "var(--danger, #dc2626)";
+  const pnlColor = unrealized >= 0 ? "var(--danger)" : "var(--accent)"; // 이익=빨강, 손실=파랑 (국내 관례)
 
   return (
     <div className="card" style={{ minHeight: 360 }}>
@@ -203,7 +203,7 @@ const SnapshotDetail: React.FC<SnapshotDetailProps> = ({ point, isLatest, onRese
   const { holdings } = point;
   const pnl = point.market - point.cost;
   const pnlPct = point.cost > 0 ? (pnl / point.cost) * 100 : 0;
-  const pnlColor = pnl >= 0 ? "var(--success, #059669)" : "var(--danger, #dc2626)";
+  const pnlColor = pnl >= 0 ? "var(--danger)" : "var(--accent)"; // 이익=빨강, 손실=파랑 (국내 관례)
   return (
     <div style={{ marginTop: 16, paddingTop: 12, borderTop: "1px solid var(--border)" }}>
       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 10, flexWrap: "wrap", gap: 8 }}>
@@ -252,7 +252,7 @@ const SnapshotDetail: React.FC<SnapshotDetailProps> = ({ point, isLatest, onRese
             {holdings.map((h) => {
               const hPnl = h.marketKrw - h.costKrw;
               const hPct = h.costKrw > 0 ? (hPnl / h.costKrw) * 100 : 0;
-              const hColor = hPnl >= 0 ? "var(--success, #059669)" : "var(--danger, #dc2626)";
+              const hColor = hPnl >= 0 ? "var(--danger)" : "var(--accent)"; // 이익=빨강, 손실=파랑
               const priceChangePct =
                 h.priceNative != null && h.avgPriceNative > 0
                   ? ((h.priceNative - h.avgPriceNative) / h.avgPriceNative) * 100
@@ -278,7 +278,7 @@ const SnapshotDetail: React.FC<SnapshotDetailProps> = ({ point, isLatest, onRese
                             style={{
                               marginLeft: 4,
                               fontSize: 11,
-                              color: priceChangePct >= 0 ? "var(--success, #059669)" : "var(--danger, #dc2626)",
+                              color: priceChangePct >= 0 ? "var(--danger)" : "var(--accent)", // 상승=빨강, 하락=파랑
                             }}
                           >
                             ({priceChangePct >= 0 ? "+" : ""}{priceChangePct.toFixed(1)}%)

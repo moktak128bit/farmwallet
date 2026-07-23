@@ -379,7 +379,8 @@ const Kpi: React.FC<{ label: string; value: string; color?: string; sub?: string
 
 const SummaryPanel: React.FC<{ summary: ReturnType<typeof summarizeRecords>; pnlColor: (v: number) => string }> = ({ summary, pnlColor }) => (
   <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(180px, 1fr))", gap: 10, fontSize: 14 }}>
-    <Row label="총 투자원금" value={formatKRW(Math.round(summary.totalCost))} />
+    {/* totalCost = 청산(매도)된 거래들의 FIFO 원가 합 — 투입 원금이 아님 (회전매매 시 반복 합산, 보유분 미포함) */}
+    <Row label="청산 매도원가 합계" value={formatKRW(Math.round(summary.totalCost))} />
     <Row label="평균 수익 거래" value={formatKRW(Math.round(summary.avgWin))} color={pnlColor(summary.avgWin)} />
     <Row label="평균 손실 거래" value={formatKRW(Math.round(summary.avgLoss))} color={pnlColor(summary.avgLoss)} />
     <Row label="수익 거래" value={`${summary.winCount}건`} />

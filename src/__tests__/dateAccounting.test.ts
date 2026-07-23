@@ -7,6 +7,7 @@ import {
   splitDateMoimVsPersonal,
   computeDateAccountUtilization,
   computeMoimAccountFlow,
+  computeSettledLedgerIds,
 } from "../utils/dateAccounting";
 import type { Account, LedgerEntry } from "../types";
 
@@ -271,5 +272,40 @@ describe("computeMoimAccountFlow", () => {
     ];
     const r = computeMoimAccountFlow(ledger, moimId, months);
     expect(r.months[0].myTransfer).toBe(100);
+  });
+});
+
+describe("computeSettledLedgerIds — 정산 표식 단일 소스(회귀)", () => {
+  const settle = (id: string, ids: string[]): LedgerEntry =>
+    entry({ id, kind: "income", category: "정산", subCategory: "데이트통장", amount: 1, settledLedgerIds: ids });
+
+  it("살아있는 정산 income 항목들의 settledLedgerIds 합집합", () => {
+    const ledger = [settle("s1", ["e1", "e2"]), settle("s2", ["e3"]), entry({ id: "e1", amount: 100 })];
+    const set = computeSettledLedgerIds(ledger);
+    expect([...set].sort()).toEqual(["e1", "e2", "e3"]);
+  });
+
+  it("정산 항목을 삭제(undo)하면 그 표식이 사라져 다시 정산 대상이 된다", () => {
+    const before = computeSettledLedgerIds([settle("s1", ["e1", "e2"])]);
+    expect(before.has("e1")).toBe(true);
+    // s1 삭제된 ledger → e1/e2 재청구 가능
+    const after = computeSettledLedgerIds([]);
+    expect(after.has("e1")).toBe(false);
+  });
+
+  it("정산(category='정산')이 아닌 income은 무시", () => {
+    const ledger = [entry({ id: "x", kind: "income", category: "수입", subCategory: "급여", amount: 1, settledLedgerIds: ["e9"] })];
+    expect(computeSettledLedgerIds(ledger).has("e9")).toBe(false);
+  });
+
+  it("legacy localStorage 표식도 union으로 보존(마이그레이션)", () => {
+    const set = computeSettledLedgerIds([settle("s1", ["e1"])], ["e_legacy"]);
+    expect(set.has("e1")).toBe(true);
+    expect(set.has("e_legacy")).toBe(true);
+  });
+
+  it("subCategory='정산' 레거시 세대도 인식", () => {
+    const ledger = [entry({ id: "s1", kind: "income", category: "수입", subCategory: "정산", amount: 1, settledLedgerIds: ["e5"] })];
+    expect(computeSettledLedgerIds(ledger).has("e5")).toBe(true);
   });
 });

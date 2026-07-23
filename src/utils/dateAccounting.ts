@@ -1,4 +1,5 @@
 import type { Account, LedgerEntry } from "../types";
+import { isSettlementEntry } from "./categoryUtils";
 
 /**
  * 데이트성 지출 판정.
@@ -26,6 +27,28 @@ export function isMoimAccount(a: Account): boolean {
 /** 모임 계좌 id Set — 다회 매칭 빠르게. */
 export function getMoimAccountIds(accounts: Account[]): Set<string> {
   return new Set(accounts.filter(isMoimAccount).map((a) => a.id));
+}
+
+/**
+ * 이미 정산 완료된 지출 항목 id 집합 — **단일 소스 = 살아있는 정산 income 항목들의 settledLedgerIds 합집합**.
+ * 정산 항목을 삭제/Ctrl+Z로 되돌리면 그 항목의 settledLedgerIds가 사라져 해당 지출이 자연스럽게
+ * 다시 정산 대상이 되고, Gist 동기화·백업에도 정산 항목과 함께 실린다.
+ * (과거엔 localStorage 별도 키에만 있어 삭제/undo 시 영구 재청구 불가 + 타 기기 이중청구였다.)
+ *
+ * @param legacyIds 이 기기 localStorage(fw-date-account-settled-ids)에만 있던 과거 표식 — 마이그레이션 보존용.
+ */
+export function computeSettledLedgerIds(
+  ledger: LedgerEntry[],
+  legacyIds?: Iterable<string>
+): Set<string> {
+  const set = new Set<string>();
+  for (const l of ledger) {
+    if (l.kind === "income" && isSettlementEntry(l) && Array.isArray(l.settledLedgerIds)) {
+      for (const id of l.settledLedgerIds) if (typeof id === "string") set.add(id);
+    }
+  }
+  if (legacyIds) for (const id of legacyIds) if (typeof id === "string") set.add(id);
+  return set;
 }
 
 interface DatePartnerShare {

@@ -5,6 +5,7 @@ import { useDateAccountId } from "../../hooks/useDateAccountSettings";
 import { getTodayKST, getMonthEndDate, shiftMonth } from "../../utils/date";
 import { newIdWithPrefix } from "../../utils/id";
 import { isSettlementEntry } from "../../utils/category";
+import { computeSettledLedgerIds } from "../../utils/dateAccounting";
 
 interface Props {
   data: AppData;
@@ -23,16 +24,20 @@ export const SettlementView: React.FC<Props> = ({ data, onSettle, formatNumber }
   );
   // 이미 정산한 지출 항목 id 집합 — 날짜 경계 대신 id로 이중청구를 막아
   // '정산 당일 지출 누락'(date>sinceDate + sinceDate=today 조합)과 '시작일 과거 변경 이중청구'를 동시에 해결.
-  const [settledIds, setSettledIds] = useState<Set<string>>(() => {
-    if (typeof window === "undefined") return new Set();
-    try {
-      const raw = localStorage.getItem(SETTLED_IDS_KEY);
-      const arr = raw ? (JSON.parse(raw) as unknown) : [];
-      return new Set(Array.isArray(arr) ? arr.filter((x): x is string => typeof x === "string") : []);
-    } catch {
-      return new Set();
+  // 단일 소스 = 살아있는 정산 income 항목들의 settledLedgerIds 합집합. 정산 항목을 삭제/undo하면
+  // 그 지출들이 자연스럽게 다시 정산 대상이 되고, Gist 동기화·백업에도 함께 실린다.
+  // + 레거시: 이 기기 localStorage(fw-date-account-settled-ids)에만 있던 과거 정산 표식도 union(마이그레이션 보존).
+  const settledIds = useMemo(() => {
+    let legacy: string[] = [];
+    if (typeof window !== "undefined") {
+      try {
+        const raw = localStorage.getItem(SETTLED_IDS_KEY);
+        const arr = raw ? (JSON.parse(raw) as unknown) : [];
+        if (Array.isArray(arr)) legacy = arr.filter((x): x is string => typeof x === "string");
+      } catch { /* 파싱 실패 무시 */ }
     }
-  });
+    return computeSettledLedgerIds(data.ledger, legacy);
+  }, [data.ledger]);
   const [settling, setSettling] = useState(false);
 
   const dateAccount: Account | undefined = data.accounts.find((a) => a.id === dateAccountId);
@@ -111,6 +116,10 @@ export const SettlementView: React.FC<Props> = ({ data, onSettle, formatNumber }
     );
     if (!ok) return;
     setSettling(true);
+    // 이번에 정산한 지출 id를 정산 항목 자체에 기록 → 날짜 무관 재청구 방지 + 삭제/undo/동기화 시
+    // 자연 복원. (localStorage 별도 키에 쓰던 방식은 정산 삭제/Ctrl+Z로 되돌려도 표식이 남아
+    // 영구 재청구 불가였고, 타 기기엔 표식이 없어 이중청구됐다.)
+    const settledNow = settlement.items.map((l) => l.id);
     // kind=income + toAccountId — computeMoimAccountFlow(dateAccounting)가 "상대 입금"으로
     // 인식하는 형태. subCategory "데이트통장"은 실질 수입 계산(realIncome)에서 정산성
     // 회수로 자동 차감되므로 수입 이중계상이 없다.
@@ -123,24 +132,12 @@ export const SettlementView: React.FC<Props> = ({ data, onSettle, formatNumber }
       description: `${sinceDate} 이후 정산 (상대 부담분 입금)`,
       amount,
       toAccountId: dateAccount.id,
-      note: `합계 ${settlement.total.toLocaleString()}원 / 본인비율 ${ratio}%`
+      note: `합계 ${settlement.total.toLocaleString()}원 / 본인비율 ${ratio}%`,
+      settledLedgerIds: settledNow
     };
+    // onSettle이 ledger에 추가하면 settledIds useMemo가 이 항목의 settledLedgerIds를 반영해
+    // 정산 대상 목록에서 자동 제외된다(수동 setState 불필요).
     onSettle(entry);
-    // 이번에 정산한 지출 id를 기록 → 날짜 무관 재청구 방지. ledger에 존재하는 id만 유지(무한 증식 방지).
-    const settledNow = settlement.items.map((l) => l.id);
-    setSettledIds((prev) => {
-      const liveIds = new Set(data.ledger.map((l) => l.id));
-      const merged = [...prev, ...settledNow].filter((id) => liveIds.has(id));
-      const next = new Set(merged);
-      if (typeof window !== "undefined") {
-        try {
-          localStorage.setItem(SETTLED_IDS_KEY, JSON.stringify([...next]));
-        } catch {
-          /* quota 무시 */
-        }
-      }
-      return next;
-    });
     if (typeof window !== "undefined") localStorage.setItem(SETTLE_LAST_KEY, today);
     setLastSettleAt(today);
     setSettling(false);

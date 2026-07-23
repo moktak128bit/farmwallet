@@ -1,5 +1,4 @@
 import type { LedgerEntry } from "../types";
-import { toKrwByRate } from "./currency";
 
 /**
  * 가계부 항목들의 description을 유사한 것끼리 묶는 도구.
@@ -117,8 +116,7 @@ type VariantsByContext = Map<string, DescriptionVariant[]>;
  */
 export function findDescriptionGroups(
   ledger: LedgerEntry[],
-  maxDistance = 2,
-  fxRate?: number | null
+  maxDistance = 2
 ): DescriptionGroup[] {
   // 1. (kind, category, subCategory) 별로 description 변형 수집
   type Bucket = Map<string, DescriptionVariant>;
@@ -135,8 +133,9 @@ export function findDescriptionGroups(
     }
     const v = bucket.get(desc)!;
     v.count++;
-    // USD 항목은 원화 환산 후 합산 — 액면 달러를 원화와 섞으면 합계·정렬 순위가 왜곡된다(불변식 #5)
-    v.totalAmount += toKrwByRate(Number(l.amount), l.currency, fxRate);
+    // totalAmount는 미환산 액면 — 정렬·리셋 안정용. USD 원화 환산 표시는 소비측(DescriptionMergeModal)이
+    // ledgerIds로 렌더 시점에 처리한다(환율 변화가 그룹 정렬·uiState를 흔들지 않도록).
+    v.totalAmount += Number(l.amount);
     v.ledgerIds.push(l.id);
   }
 
@@ -188,7 +187,7 @@ export function findDescriptionGroups(
  * 자동 그룹핑이 못 잡는 케이스(예: 휘발유/휘발류는 짧은 단어라 보수적 알고리즘에서 제외됨)를
  * 사용자가 수동으로 추가할 수 있게 하기 위함. UI는 contextKey로 조회.
  */
-export function buildVariantsByContext(ledger: LedgerEntry[], fxRate?: number | null): VariantsByContext {
+export function buildVariantsByContext(ledger: LedgerEntry[]): VariantsByContext {
   const out: VariantsByContext = new Map();
   const buckets = new Map<string, Map<string, DescriptionVariant>>();
   for (const l of ledger) {
@@ -202,8 +201,8 @@ export function buildVariantsByContext(ledger: LedgerEntry[], fxRate?: number | 
     }
     const v = bucket.get(desc)!;
     v.count++;
-    // USD 항목은 원화 환산 후 합산 (불변식 #5)
-    v.totalAmount += toKrwByRate(Number(l.amount), l.currency, fxRate);
+    // totalAmount는 미환산 액면 — 소비측이 ledgerIds로 표시 시점 환산(위 findDescriptionGroups 참조)
+    v.totalAmount += Number(l.amount);
     v.ledgerIds.push(l.id);
   }
   for (const [k, bucket] of buckets) {

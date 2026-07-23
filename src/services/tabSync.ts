@@ -102,23 +102,27 @@ export function subscribeDataChanges(handler: TabSyncHandler): () => void {
     if (!current) return;
     const currentHash = djb2Hash(current);
     if (currentHash === lastSeenHash) return;
-    lastSeenHash = currentHash;
-    lastHandledAt = now;
-    // hashHint가 주어졌는데 localStorage 값과 다르면 (드물지만) 그냥 localStorage 우선
+    // hashHint가 주어졌는데 localStorage 값과 다르면 write 반영 지연일 수 있어 한 틱 뒤 재시도.
+    // 이 경로에서는 lastSeenHash를 '미리' 소비하지 않는다 — 소비해 두면 재시도가 실패했을 때
+    // 뒤이어 오는 storage 이벤트 폴백(deliver(null))이 dedup에 걸려 변경이 영구 드롭된다.
     if (hashHint != null && hashHint !== currentHash) {
-      // write 직후 localStorage 반영 지연일 수 있어 한 틱 뒤 재시도
       setTimeout(() => {
         const retry = readCurrent();
-        if (djb2Hash(retry) === hashHint) {
+        const retryHash = djb2Hash(retry);
+        if (retryHash === lastSeenHash) return; // 그새 다른 경로가 이미 처리함
+        if (retryHash === hashHint) {
           // 재시도 성공 — 처리 상태를 실제 적용한 payload 기준으로 갱신
           // (갱신하지 않으면 같은 변경이 다음 방송에서 중복 처리됨)
           lastSeenHash = hashHint;
           lastHandledAt = Date.now();
           handler(retry);
         }
+        // 여전히 불일치면 lastSeenHash를 소비하지 않아 이후 storage 이벤트가 다시 시도 가능
       }, 50);
       return;
     }
+    lastSeenHash = currentHash;
+    lastHandledAt = now;
     handler(current);
   };
 

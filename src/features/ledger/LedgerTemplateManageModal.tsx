@@ -6,25 +6,28 @@
 import { useEffect } from "react";
 import type { LedgerTemplate } from "../../types";
 import { useFocusTrap } from "../../hooks/useFocusTrap";
+import { useModalStackEntry } from "../../utils/modalStack";
 
 const kindLabel: Record<LedgerTemplate["kind"], string> = { income: "수입", expense: "지출", transfer: "이체" };
 
 interface Props {
   templates: LedgerTemplate[];
   onClose: () => void;
-  onApply: (t: LedgerTemplate) => void;   // 적용 후 모달 닫기는 이 컴포넌트가 onClose 호출
-  onDelete: (t: LedgerTemplate) => void;  // confirm+toast는 부모(폼)의 deleteTemplate이 수행
+  /** 적용 성공 여부 반환 — false(사용자가 confirm 취소)면 모달을 닫지 않는다 */
+  onApply: (t: LedgerTemplate) => boolean;
+  onDelete: (t: LedgerTemplate) => void;  // confirm+undo 토스트는 부모(폼)의 deleteTemplate이 수행
 }
 
 export function LedgerTemplateManageModal({ templates, onClose, onApply, onDelete }: Props) {
   const trapRef = useFocusTrap<HTMLDivElement>(true);
+  const isTopModal = useModalStackEntry(true);
 
-  // ESC로 닫기
+  // ESC로 닫기 — 모달 중첩 시 최상위만
   useEffect(() => {
-    const handler = (e: KeyboardEvent) => { if (e.key === "Escape") onClose(); };
+    const handler = (e: KeyboardEvent) => { if (e.key === "Escape" && isTopModal()) onClose(); };
     window.addEventListener("keydown", handler);
     return () => window.removeEventListener("keydown", handler);
-  }, [onClose]);
+  }, [onClose, isTopModal]);
 
   return (
     <div className="modal-backdrop" onClick={onClose}>
@@ -73,8 +76,9 @@ export function LedgerTemplateManageModal({ templates, onClose, onApply, onDelet
                           type="button"
                           className="secondary"
                           onClick={() => {
-                            onApply(t);
-                            onClose();
+                            // 적용 성공 시에만 닫는다 — 수정/입력 중 confirm을 취소했는데도 모달이
+                            // 닫혀 작업 흐름이 끊기던 문제 수정
+                            if (onApply(t)) onClose();
                           }}
                           style={{ marginRight: 6, fontSize: 13, padding: "6px 12px" }}
                         >

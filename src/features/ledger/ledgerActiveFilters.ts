@@ -91,8 +91,12 @@ export function buildLedgerActiveChips(v: LedgerFilterValues, s: LedgerFilterSet
   if (v.filterAmountMin != null || v.filterAmountMax != null) {
     chips.push({ key: "amount", label: amountLabel(v.filterAmountMin, v.filterAmountMax), clear: () => { s.setFilterAmountMin(undefined); s.setFilterAmountMax(undefined); } });
   }
-  if (v.filterTagsInput.trim()) {
-    chips.push({ key: "tag", label: `태그: ${v.filterTagsInput.trim()}`, clear: () => s.setFilterTagsInput("") });
+  // 실제 적용 로직과 동일 기준으로 판정 — "," 나 ", "만 입력하면 trim은 truthy지만
+  // split(",").map(trim).filter(Boolean)은 빈 배열이라 아무것도 걸러지지 않는다.
+  // trim 기준으로 칩·필터배지·"필터 적용" 라벨만 켜지던 유령 활성 상태를 제거.
+  const parsedTags = v.filterTagsInput.split(",").map((t) => t.trim()).filter(Boolean);
+  if (parsedTags.length > 0) {
+    chips.push({ key: "tag", label: `태그: ${parsedTags.join(", ")}`, clear: () => s.setFilterTagsInput("") });
   }
   return chips;
 }

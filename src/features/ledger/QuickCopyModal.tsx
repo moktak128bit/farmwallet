@@ -1,6 +1,7 @@
 import React, { useEffect, useRef } from "react";
 import { formatShortDate } from "../../utils/formatter";
 import { useFocusTrap } from "../../hooks/useFocusTrap";
+import { useModalStackEntry } from "../../utils/modalStack";
 
 interface Props {
   kindLabel: string;
@@ -33,6 +34,7 @@ export const QuickCopyModal: React.FC<Props> = ({
   onClose,
 }) => {
   const trapRef = useFocusTrap<HTMLDivElement>(true);
+  const isTopModal = useModalStackEntry(true);
   const inputRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
@@ -41,10 +43,11 @@ export const QuickCopyModal: React.FC<Props> = ({
   }, []);
 
   useEffect(() => {
-    const handler = (e: KeyboardEvent) => { if (e.key === "Escape") onClose(); };
+    // 모달 중첩 시 최상위 모달만 ESC로 닫힘 (SearchModal 등이 위에 뜬 상태에서 동시 닫힘 방지)
+    const handler = (e: KeyboardEvent) => { if (e.key === "Escape" && isTopModal()) onClose(); };
     window.addEventListener("keydown", handler);
     return () => window.removeEventListener("keydown", handler);
-  }, [onClose]);
+  }, [onClose, isTopModal]);
 
   const infoRow = (label: string, value?: string) =>
     value ? (

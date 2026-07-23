@@ -62,9 +62,13 @@ export const AccountsView: React.FC<Props> = ({
   const safeAccounts = useMemo(() => accounts ?? [], [accounts]);
   const safeBalances = useMemo(() => balances ?? [], [balances]);
   const safePositions = useMemo(() => positions ?? [], [positions]);
+  const [localFxRate, setLocalFxRate] = useState<number | null>(null);
+  const effectiveFxRate = fxRate ?? localFxRate;
 
   const handleExportAllCsv = useCallback(() => {
-    const unified = buildUnifiedCsv(storeData.ledger, storeData.trades, storeData.accounts, storeData.categoryPresets);
+    // fxRate 전달 — 레거시 USD 매도 실현손익(fxRateAtTrade 없는 매수 로트)이 CSV에서 매도대금 전액/0으로
+    // 붕괴되지 않도록. 화면(LedgerPage)은 live fxRate로 계산하므로 CSV도 같은 숫자를 내게 맞춘다.
+    const unified = buildUnifiedCsv(storeData.ledger, storeData.trades, storeData.accounts, storeData.categoryPresets, effectiveFxRate);
     const bom = "\uFEFF";
     const blob = new Blob([bom + unified], { type: "text/csv;charset=utf-8" });
     const url = URL.createObjectURL(blob);
@@ -73,15 +77,13 @@ export const AccountsView: React.FC<Props> = ({
     a.href = url; a.download = `farmwallet-all-${today}.csv`; a.click();
     URL.revokeObjectURL(url);
     toast.success("전체 데이터 CSV 다운로드 완료");
-  }, [storeData]);
+  }, [storeData, effectiveFxRate]);
   const [showForm, setShowForm] = useState(false);
   const [adjustingAccount, setAdjustingAccount] = useState<{
     id: string;
     type: AccountType;
   } | null>(null);
   const [selectedAccount, setSelectedAccount] = useState<Account | null>(null);
-  const [localFxRate, setLocalFxRate] = useState<number | null>(null);
-  const effectiveFxRate = fxRate ?? localFxRate;
   const realizedPnlByTradeId = useMemo(
     () => computeRealizedPnlByTradeId(trades ?? []),
     [trades]

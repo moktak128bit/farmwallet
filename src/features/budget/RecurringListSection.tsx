@@ -7,7 +7,7 @@
  * 부모가 넘기는 콜백은 모두 안정적(setState 또는 useCallback)이어야 memo가 효과를 가진다.
  *   - onRecurringDeleted: 항목 삭제 시 부모 경유로 RecurringFormCard 수정 모드를 해제하는 ref 브리지
  */
-import React, { useMemo, useState } from "react";
+import React, { useEffect, useMemo, useRef, useState } from "react";
 import { toast } from "react-hot-toast";
 import { ERROR_MESSAGES } from "../../constants/errorMessages";
 import type { Account, CategoryPresets, LedgerEntry, Recurrence, RecurringExpense } from "../../types";
@@ -59,6 +59,15 @@ export const RecurringListSection: React.FC<Props> = React.memo(function Recurri
   const [editingValue, setEditingValue] = useState<string>("");
   const [selectedRecurringIds, setSelectedRecurringIds] = useState<Set<string>>(new Set());
   const [previewEntries, setPreviewEntries] = useState<LedgerEntry[] | null>(null);
+  // 미리보기 생성 시점의 원본 occurrences(주기 포함) — 확인 시 현재 ledger로 재중복검사에 사용.
+  // previewEntries(LedgerEntry[])만으로는 weekly/monthly 판정에 필요한 frequency가 없다.
+  const previewOccurrencesRef = useRef<RecurringOccurrence[] | null>(null);
+
+  // 반복 목록이 편집·삭제되면 열려 있던 미리보기는 stale — 무효화(구 값으로 확인 시 오생성 방지)
+  useEffect(() => {
+    setPreviewEntries(null);
+    previewOccurrencesRef.current = null;
+  }, [recurring]);
 
   const formatNextRun = (item: RecurringExpense): string => {
     const start = item.startDate || "";
@@ -159,14 +168,24 @@ export const RecurringListSection: React.FC<Props> = React.memo(function Recurri
       return;
     }
 
+    previewOccurrencesRef.current = occurrences;
     setPreviewEntries(toCreate);
   };
 
   const confirmGenerateEntries = () => {
     if (!previewEntries || previewEntries.length === 0) return;
-    onChangeLedger([...previewEntries, ...ledger]);
-    toast.success(`${previewEntries.length}건의 반복 지출이 가계부에 추가되었습니다.`);
+    // 미리보기 생성 후 다른 경로(선택 반영·수동 입력·탭 동기화)로 이미 들어온 항목과 재대조 —
+    // stale 스냅샷을 재검증 없이 삽입해 같은 달 고정지출이 이중 생성되던 문제 수정.
+    const source = previewOccurrencesRef.current;
+    const toInsert = source ? filterDuplicateOccurrences(source, ledger, currentMonth) : previewEntries;
     setPreviewEntries(null);
+    previewOccurrencesRef.current = null;
+    if (toInsert.length === 0) {
+      toast.error("이미 모두 반영되어 추가할 항목이 없습니다.");
+      return;
+    }
+    onChangeLedger([...toInsert, ...ledger]);
+    toast.success(`${toInsert.length}건의 반복 지출이 가계부에 추가되었습니다.`);
   };
 
   const handleApplyCurrentMonth = () => {
@@ -184,6 +203,9 @@ export const RecurringListSection: React.FC<Props> = React.memo(function Recurri
     }
     onChangeLedger([...deduped, ...ledger]);
     setSelectedRecurringIds(new Set());
+    // 열려 있던 미리보기는 이제 stale — 무효화(이어서 '확인'을 눌러 이중 생성되던 경로 차단)
+    setPreviewEntries(null);
+    previewOccurrencesRef.current = null;
     const skipped = occurrences.length - deduped.length;
     toast.success(
       skipped > 0
@@ -206,13 +228,19 @@ export const RecurringListSection: React.FC<Props> = React.memo(function Recurri
     const monthLedger = existingLedger.filter((l) => l.date?.startsWith(month));
     const result: LedgerEntry[] = [];
     for (const { entry: occ, frequency } of occurrences) {
+      // occ.subCategory = r.category(중분류), occ.detailCategory = r.title(소분류/구체항목)
+      const occDetail = (occ.detailCategory ?? "").trim();
       const dup = monthLedger.some((l) => {
         if (frequency === "weekly" && l.date !== occ.date) return false;
-        return (
-          l.subCategory === occ.subCategory &&
-          (l.detailCategory ?? "") === (occ.detailCategory ?? "") &&
-          Math.abs(Number(l.amount) - occ.amount) < 100
-        );
+        if (Math.abs(Number(l.amount) - occ.amount) >= 100) return false;
+        const lDetail = (l.detailCategory ?? "").trim();
+        // 소분류(title) 일치 또는 설명에 title 포함 → 같은 반복 (recurringAlert.matchesRecurringEntry titleMatch와 동일)
+        const titleMatch = !!occDetail && (lDetail === occDetail || (l.description ?? "").includes(occDetail));
+        if (titleMatch) return true;
+        // 수동 입력이 소분류를 아예 안 적었으면 중분류+금액만으로 중복 인정 — 알림(subMatch)은 '기록됨'인데
+        // 생성 dedup은 detailCategory 동등을 요구해 중복을 만들던 판정 이원화를 해소.
+        if (l.subCategory === occ.subCategory && !lDetail) return true;
+        return false;
       });
       if (!dup) result.push(occ);
     }

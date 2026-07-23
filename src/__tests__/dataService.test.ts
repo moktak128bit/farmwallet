@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeEach } from "vitest";
-import { toUserDataJson, loadData, saveData, normalizeImportedData } from "../services/dataService";
+import { toUserDataJson, loadData, saveData, saveDataSerialized, normalizeImportedData } from "../services/dataService";
 import { STORAGE_KEYS } from "../constants/config";
 import type { AppData, DailyBudgetConfig } from "../types";
 
@@ -63,6 +63,21 @@ describe("toUserDataJson", () => {
     const parsed = JSON.parse(json);
     expect(parsed.accounts).toEqual([]);
     expect(parsed.ledger).toEqual([]);
+  });
+
+  it("saveDataSerialized가 DATA 키에 쓰는 문자열과 정확히 일치 (탭 동기화 해시 계약 — 회귀)", () => {
+    // useBackup/useAppData가 dedup·broadcast·충돌비교에 toUserDataJson을 쓰는데, 이 값이
+    // localStorage DATA(= saveDataSerialized가 캐시 3필드 제외 후 쓰는 값)와 문자열이 다르면
+    // 방송 해시가 영원히 불일치해 다른 탭이 변경을 못 받는다.
+    window.localStorage.clear();
+    const data = makeAppData({
+      accounts: [{ id: "a1", name: "주거래", institution: "은행", type: "checking" as const, initialBalance: 100 }],
+      ledger: [{ id: "l1", date: "2026-01-01", kind: "expense" as const, category: "식비", description: "점심", amount: 10000 }],
+      prices: [{ ticker: "AAPL", price: 100 }],
+      tickerDatabase: [{ ticker: "AAPL", name: "Apple", market: "US" as const }],
+    });
+    saveDataSerialized(JSON.stringify(data));
+    expect(window.localStorage.getItem(STORAGE_KEYS.DATA)).toBe(toUserDataJson(data));
   });
 
   it("investmentGoals(대시보드 목표)도 export에 포함 — gist 동기화 누락 회귀 방지", () => {

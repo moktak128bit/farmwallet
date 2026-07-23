@@ -5,7 +5,7 @@ import {
   validateAccountExists,
   validateTransfer,
 } from "../../utils/validation";
-import { getTodayKST } from "../../utils/date";
+import { getTodayKST, parseIsoLocal } from "../../utils/date";
 
 export interface LedgerFormSnapshot {
   date: string;
@@ -47,8 +47,10 @@ export function validateLedgerForm({
 }: ValidateLedgerFormArgs): Record<string, string> {
   const errors: Record<string, string> = {};
 
-  const todayStr = getTodayKST();
-  const todayDate = new Date(todayStr + "T00:00:00+09:00");
+  // parseIsoLocal로 만들면 maxDate의 로컬 성분이 KST 날짜와 일치 — validateDate가
+  // getFullYear/Month/Date(로컬)로 상한을 재구성하므로, KST 자정 인스턴트를 넘기면
+  // 비-KST 머신(UTC·유럽·미주)에서 상한이 하루 당겨져 오늘(KST) 날짜가 거부된다.
+  const todayDate = parseIsoLocal(getTodayKST()) ?? undefined;
 
   const dateValidation = validateDate(form.date, todayDate);
   if (!dateValidation.valid) errors.date = dateValidation.error || "";

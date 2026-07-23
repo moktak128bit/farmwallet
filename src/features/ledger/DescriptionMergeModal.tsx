@@ -32,7 +32,10 @@ export const DescriptionMergeModal: React.FC<Props> = ({ ledger, onApply, onClos
   const trapRef = useFocusTrap<HTMLDivElement>(true);
   const isTopModal = useModalStackEntry(true);
 
-  // 머지가 누적되면서 그룹이 줄어들 수 있도록 ledger 변화에 반응
+  // 머지가 누적되면서 그룹이 줄어들 수 있도록 ledger 변화에 반응.
+  // fxRate는 deps에서 제외 — 시간당 환율 갱신 때 groups 참조가 바뀌면 [groups] 리셋 effect가
+  // 진행 중인 선택/이름 편집을 초기화하고, USD 환산이 그룹 정렬을 뒤바꿔 index-keyed uiState가
+  // 어긋날 위험이 있다. (USD 합계 환산은 rarely-used 모달의 표시 정확도 문제라 여기선 절충.)
   const groups = useMemo(() => findDescriptionGroups(ledger), [ledger]);
   // 같은 (kind/cat/sub) 컨텍스트의 모든 distinct description — 수동 추가 dropdown용
   const variantsByContext = useMemo(() => buildVariantsByContext(ledger), [ledger]);

@@ -10,6 +10,7 @@ import {
 } from "../../utils/dailyBudget";
 import { getTodayKST } from "../../utils/date";
 import { formatKRW } from "../../utils/formatter";
+import { useFxRateValue } from "../../context/FxRateContext";
 
 interface Props {
   ledger: LedgerEntry[];
@@ -21,6 +22,8 @@ interface Props {
  * config.enabled === false면 null 반환.
  */
 export const DailyBudgetBar: React.FC<Props> = ({ ledger, config }) => {
+  // hooks는 조기 return 이전에 — USD 항목(환전 수수료 등) 원화 환산용 환율
+  const fxRate = useFxRateValue();
   if (!config.enabled) return null;
 
   const today = getTodayKST();
@@ -30,8 +33,8 @@ export const DailyBudgetBar: React.FC<Props> = ({ ledger, config }) => {
   const limit = isWeekly ? weeklyLimit(config) : config.dailyLimit;
   const range = isWeekly ? getCurrentWeekRange(today) : null;
   const spent = isWeekly && range
-    ? weeklySpend(ledger, range.start, range.end, config)
-    : todaySpend(ledger, config);
+    ? weeklySpend(ledger, range.start, range.end, config, fxRate)
+    : todaySpend(ledger, config, fxRate);
 
   const ratio = limit > 0 ? spent / limit : 0;
   const remaining = limit - spent;
@@ -40,8 +43,8 @@ export const DailyBudgetBar: React.FC<Props> = ({ ledger, config }) => {
   const barColor = ratio >= 1 ? "#dc2626" : ratio >= 0.7 ? "#f59e0b" : "#10b981";
   const bgColor = ratio >= 1 ? "rgba(220,38,38,0.12)" : ratio >= 0.7 ? "rgba(245,158,11,0.12)" : "rgba(16,185,129,0.12)";
 
-  const streak = computeStreak(ledger, config, today);
-  const stats = monthlyBudgetStats(ledger, monthKey, config, today);
+  const streak = computeStreak(ledger, config, today, fxRate);
+  const stats = monthlyBudgetStats(ledger, monthKey, config, today, fxRate);
 
   const periodLabel = isWeekly ? `이번 주 (${range?.start.slice(5)} ~ ${range?.end.slice(5)})` : "오늘";
 

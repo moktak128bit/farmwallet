@@ -275,4 +275,17 @@ describe("buildVariantsByContext", () => {
     const m = buildVariantsByContext(ledger);
     expect(m.get("expense|지출|식비")![0].ledgerIds.sort()).toEqual(["x", "y"]);
   });
+
+  it("USD 항목은 totalAmount를 원화 환산해 합산 (액면 달러 혼입 방지, 회귀)", () => {
+    const ledger = [
+      entry({ id: "a", amount: 500, description: "달러환전", currency: "USD" }),
+      entry({ id: "b", amount: 700_000, description: "달러 환전" }),
+    ];
+    // fxRate 1,400 → USD 500 = 700,000원. 그룹 합계 1,400,000
+    const groups = findDescriptionGroups(ledger, 2, 1_400);
+    expect(groups).toHaveLength(1);
+    expect(groups[0].totalAmount).toBe(1_400_000);
+    // 환율 미전달이면 USD 액면 그대로(하위호환) → 700,500
+    expect(findDescriptionGroups(ledger, 2)[0].totalAmount).toBe(700_500);
+  });
 });

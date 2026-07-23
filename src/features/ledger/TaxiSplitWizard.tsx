@@ -2,6 +2,7 @@ import React, { useEffect, useMemo, useState } from "react";
 import { Check, X, AlertTriangle } from "lucide-react";
 import type { CategoryPresets, LedgerEntry } from "../../types";
 import { useFocusTrap } from "../../hooks/useFocusTrap";
+import { useModalStackEntry } from "../../utils/modalStack";
 import { formatKRW } from "../../utils/formatter";
 import {
   addTaxiToPresets,
@@ -29,6 +30,7 @@ export const TaxiSplitWizard: React.FC<Props> = ({
   onClose,
 }) => {
   const trapRef = useFocusTrap<HTMLDivElement>(true);
+  const isTopModal = useModalStackEntry(true);
 
   const candidates = useMemo(() => findTaxiCandidates(ledger), [ledger]);
   const hasTaxiInPresets = useMemo(() => presetHasTaxi(categoryPresets), [categoryPresets]);
@@ -46,10 +48,11 @@ export const TaxiSplitWizard: React.FC<Props> = ({
   }, [ledger]);
 
   useEffect(() => {
-    const handler = (e: KeyboardEvent) => { if (e.key === "Escape") onClose(); };
+    // 모달 중첩 시 최상위 모달만 ESC로 닫힘 (위에 다른 모달이 뜬 채 동시 닫힘·입력 소실 방지)
+    const handler = (e: KeyboardEvent) => { if (e.key === "Escape" && isTopModal()) onClose(); };
     window.addEventListener("keydown", handler);
     return () => window.removeEventListener("keydown", handler);
-  }, [onClose]);
+  }, [onClose, isTopModal]);
 
   const toggle = (id: string) => {
     setExcluded((prev) => {

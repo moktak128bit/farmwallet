@@ -1,6 +1,6 @@
 import { useEffect, useState, useCallback, useRef } from "react";
 import { toast } from "react-hot-toast";
-import { loadData, preloadKrNames, applyKoreanStockNames, saveData, normalizeImportedData, consumeSanitizeReport } from "../storage";
+import { loadData, preloadKrNames, applyKoreanStockNames, saveData, normalizeImportedData, consumeSanitizeReport, toUserDataJson } from "../storage";
 import { useAppStore } from "../store/appStore";
 import { loadCacheFromDB, mergeCacheIntoAppData } from "../services/cacheStore";
 import {
@@ -296,7 +296,10 @@ export function useAppData() {
         const ui = useUIStore.getState();
         if (ui.hasDirtyChanges) {
           // 우리도 편집 중 + 다른 탭이 저장 → 사용자가 결정해야 함
-          const localDataJson = JSON.stringify(useAppStore.getState().data);
+          // payload는 tabSync가 읽은 localStorage DATA(캐시 제외 user-only)이므로 비교도
+          // 같은 표현으로 — full payload(JSON.stringify(data))로 비교하면 prices 키 유무 때문에
+          // 절대 같아질 수 없어 동일 데이터로 수렴해도 항상 충돌 모달로 에스컬레이션된다.
+          const localDataJson = toUserDataJson(useAppStore.getState().data);
           // 양쪽 동일 데이터면 (서로 같은 결과로 수렴) 그냥 dirty만 정리하고 적용
           if (localDataJson === payload) {
             const reloaded = loadData();

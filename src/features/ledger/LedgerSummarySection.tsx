@@ -7,7 +7,7 @@ import React, { useMemo } from "react";
 import { formatKRW } from "../../utils/formatter";
 import type { CategoryPresets } from "../../types";
 import type { LedgerDisplayRow } from "../../utils/ledgerHelpers";
-import { isCreditPayment, isInvestmentEntry, isInvestmentPnlEntry, makeIsSavingsExpense } from "../../utils/category";
+import { isCreditPayment, isInvestmentEntry, isInvestmentPnlEntry, isCurrencyExchangeEntry, makeIsSavingsExpense } from "../../utils/category";
 import { EXPENSE_BOX_EXCLUDED_NAMES } from "../dashboard/summaryMath";
 import { useFxRateValue } from "../../context/FxRateContext";
 import { toKrwByRate } from "../../utils/currency";
@@ -22,6 +22,11 @@ type LedgerFilteredSummary = {
   total: number;
   prevExpense: number;
   prevIncome: number;
+  /** 비교 행 전용 현재 측 지출 — this-month면 1~오늘 일로 캡, 아니면 expenseAmount와 동일 */
+  compareExpense: number;
+  /** 비교 행 전용 현재 측 수입 — this-month면 1~오늘 일로 캡, 아니면 incomeAmount와 동일 */
+  compareIncome: number;
+  /** 단일 월(정확히 1개 선택) 보기에서만 true — 비대칭 기간 비교 방지 */
   hasPrev: boolean;
   prevMonth: string;
   /** 진행 중인 이번 달 비교 시 오늘 일자 — 전월도 같은 기간(1~N일)만 합산됐음을 의미 */
@@ -87,6 +92,7 @@ export const LedgerSummarySection: React.FC<Props> = React.memo(function LedgerS
           (l) =>
             l.kind === "expense" &&
             !isCreditPayment(l) &&
+            !isCurrencyExchangeEntry(l) &&
             !isInvestmentEntry(l) &&
             !isSavings(l) &&
             !isInvestmentPnlEntry(l)
@@ -198,17 +204,17 @@ export const LedgerSummarySection: React.FC<Props> = React.memo(function LedgerS
             }}>
               <span>전월 {filteredSummary.prevDayCap != null ? `동기(1~${filteredSummary.prevDayCap}일) ` : ""}대비 지출: <span style={{
                 fontWeight: 700,
-                color: filteredSummary.expenseAmount > filteredSummary.prevExpense ? "var(--danger)" : "var(--success)"
+                color: filteredSummary.compareExpense > filteredSummary.prevExpense ? "var(--danger)" : "var(--success)"
               }}>
-                {filteredSummary.expenseAmount > filteredSummary.prevExpense ? "+" : ""}
-                {formatKRW(filteredSummary.expenseAmount - filteredSummary.prevExpense)}
+                {filteredSummary.compareExpense > filteredSummary.prevExpense ? "+" : ""}
+                {formatKRW(filteredSummary.compareExpense - filteredSummary.prevExpense)}
               </span></span>
               <span>전월 {filteredSummary.prevDayCap != null ? `동기(1~${filteredSummary.prevDayCap}일) ` : ""}대비 수입: <span style={{
                 fontWeight: 700,
-                color: filteredSummary.incomeAmount >= filteredSummary.prevIncome ? "var(--success)" : "var(--danger)"
+                color: filteredSummary.compareIncome >= filteredSummary.prevIncome ? "var(--success)" : "var(--danger)"
               }}>
-                {filteredSummary.incomeAmount >= filteredSummary.prevIncome ? "+" : ""}
-                {formatKRW(filteredSummary.incomeAmount - filteredSummary.prevIncome)}
+                {filteredSummary.compareIncome >= filteredSummary.prevIncome ? "+" : ""}
+                {formatKRW(filteredSummary.compareIncome - filteredSummary.prevIncome)}
               </span></span>
             </div>
           )}

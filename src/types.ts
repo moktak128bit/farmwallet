@@ -49,6 +49,10 @@ export interface LedgerEntry {
   tags?: string[]; // 태그 시스템
   /** 대출 상환 엔트리의 대상 대출 id — 대출명이 바뀌어도 매칭이 깨지지 않게 (없으면 description 텍스트 폴백) */
   loanId?: string;
+  /** 데이트 정산 입금 항목이 이번 정산으로 청산한 지출 항목 id들 — 정산의 단일 소스.
+   * settledIds를 localStorage 대신 정산 항목 자체에 담아, 정산 삭제/undo/Gist 동기화/백업 시
+   * 재청구 상태가 자연스럽게 복원되게 한다(정산 항목이 사라지면 그 지출들이 다시 정산 대상). */
+  settledLedgerIds?: string[];
 }
 
 export type TradeSide = "buy" | "sell";

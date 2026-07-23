@@ -1,8 +1,10 @@
-import React, { useEffect, useMemo, useState } from "react";
+import React, { useCallback, useEffect, useMemo, useState } from "react";
 import { Check, X, Plus } from "lucide-react";
 import type { LedgerEntry } from "../../types";
 import { useFocusTrap } from "../../hooks/useFocusTrap";
 import { useModalStackEntry } from "../../utils/modalStack";
+import { useFxRateValue } from "../../context/FxRateContext";
+import { toKrwByRate } from "../../utils/currency";
 import { formatKRW } from "../../utils/formatter";
 import {
   applyDescriptionMerge,
@@ -31,14 +33,31 @@ interface GroupUIState {
 export const DescriptionMergeModal: React.FC<Props> = ({ ledger, onApply, onClose }) => {
   const trapRef = useFocusTrap<HTMLDivElement>(true);
   const isTopModal = useModalStackEntry(true);
+  const fxRate = useFxRateValue();
 
   // 머지가 누적되면서 그룹이 줄어들 수 있도록 ledger 변화에 반응.
-  // fxRate는 deps에서 제외 — 시간당 환율 갱신 때 groups 참조가 바뀌면 [groups] 리셋 effect가
-  // 진행 중인 선택/이름 편집을 초기화하고, USD 환산이 그룹 정렬을 뒤바꿔 index-keyed uiState가
-  // 어긋날 위험이 있다. (USD 합계 환산은 rarely-used 모달의 표시 정확도 문제라 여기선 절충.)
+  // fxRate는 groups 계산에서 제외 — deps에 넣으면 시간당 환율 갱신 때 groups 참조가 바뀌어
+  // [groups] 리셋 effect가 진행 중인 선택/이름 편집을 초기화하고, USD 환산이 그룹 정렬을 뒤바꿔
+  // index-keyed uiState가 어긋난다. 대신 표시 합계만 아래 convVariant로 환산(정렬·구조는 불변).
   const groups = useMemo(() => findDescriptionGroups(ledger), [ledger]);
   // 같은 (kind/cat/sub) 컨텍스트의 모든 distinct description — 수동 추가 dropdown용
   const variantsByContext = useMemo(() => buildVariantsByContext(ledger), [ledger]);
+
+  // 변형의 표시 합계를 원화 환산 — USD 항목(환전 등)을 액면 달러로 섞지 않는다(불변식 #5).
+  // groups.totalAmount(미환산)는 정렬·리셋 안정용으로 두고, 표시에는 이 값을 쓴다.
+  const ledgerById = useMemo(() => {
+    const m = new Map<string, LedgerEntry>();
+    for (const l of ledger) m.set(l.id, l);
+    return m;
+  }, [ledger]);
+  const convVariant = useCallback(
+    (v: { ledgerIds: string[] }) =>
+      v.ledgerIds.reduce((s, id) => {
+        const e = ledgerById.get(id);
+        return s + (e ? toKrwByRate(e.amount, e.currency, fxRate) : 0);
+      }, 0),
+    [ledgerById, fxRate]
+  );
 
   // 각 그룹의 UI 상태 — 초기엔 모든 변형 선택 + suggestedCanonical, extras 비어있음
   const [uiState, setUiState] = useState<Record<number, GroupUIState>>(() => {
@@ -198,7 +217,10 @@ export const DescriptionMergeModal: React.FC<Props> = ({ ledger, onApply, onClos
                         </span>
                       </div>
                       <div style={{ fontSize: 13, fontWeight: 700, color: "#dc2626" }}>
-                        {formatKRW(g.totalAmount + Array.from(state.extras.values()).reduce((s, v) => s + v.totalAmount, 0))}
+                        {formatKRW(
+                          g.variants.reduce((s, v) => s + convVariant(v), 0) +
+                            Array.from(state.extras.values()).reduce((s, v) => s + convVariant(v), 0)
+                        )}
                       </div>
                     </div>
 
@@ -233,7 +255,7 @@ export const DescriptionMergeModal: React.FC<Props> = ({ ledger, onApply, onClos
                               {v.count}건
                             </span>
                             <span style={{ fontSize: 12, fontWeight: 600, minWidth: 90, textAlign: "right" }}>
-                              {formatKRW(v.totalAmount)}
+                              {formatKRW(convVariant(v))}
                             </span>
                           </label>
                         );
@@ -271,7 +293,7 @@ export const DescriptionMergeModal: React.FC<Props> = ({ ledger, onApply, onClos
                               {v.count}건
                             </span>
                             <span style={{ fontSize: 12, fontWeight: 600, minWidth: 90, textAlign: "right" }}>
-                              {formatKRW(v.totalAmount)}
+                              {formatKRW(convVariant(v))}
                             </span>
                           </label>
                         );
@@ -311,7 +333,7 @@ export const DescriptionMergeModal: React.FC<Props> = ({ ledger, onApply, onClos
                               <Plus size={12} color="rgb(168, 85, 247)" />
                               <span style={{ flex: 1, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{v.description}</span>
                               <span style={{ fontSize: 11, color: "var(--text-muted)", minWidth: 50, textAlign: "right" }}>{v.count}건</span>
-                              <span style={{ fontSize: 11, color: "var(--text-muted)", minWidth: 80, textAlign: "right" }}>{formatKRW(v.totalAmount)}</span>
+                              <span style={{ fontSize: 11, color: "var(--text-muted)", minWidth: 80, textAlign: "right" }}>{formatKRW(convVariant(v))}</span>
                             </button>
                           ))}
                         </div>

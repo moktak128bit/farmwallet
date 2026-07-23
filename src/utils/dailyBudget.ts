@@ -12,6 +12,7 @@
 import type { LedgerEntry, DailyBudgetConfig } from "../types";
 import { getTodayKST, parseIsoLocal, formatIsoLocal } from "./date";
 import { expenseMainName } from "./categoryMerge";
+import { toKrwByRate } from "./currency";
 
 export const DEFAULT_DAILY_BUDGET: DailyBudgetConfig = {
   enabled: false,
@@ -33,13 +34,15 @@ function isCountableExpense(entry: LedgerEntry, config: DailyBudgetConfig): bool
   return true;
 }
 
+// USD 항목(환전 수수료 등)은 원화 환산 후 합산 — 액면 달러를 원화 한도와 비교하면 과소 계상된다(불변식 #5).
+// fxRate 미전달 시 toKrwByRate가 USD를 액면 그대로 두므로 KRW 데이터엔 영향 없음(하위호환).
 /** 특정 일자(YYYY-MM-DD) 사용액 합 */
-export function dailySpend(ledger: LedgerEntry[], dateIso: string, config: DailyBudgetConfig): number {
+export function dailySpend(ledger: LedgerEntry[], dateIso: string, config: DailyBudgetConfig, fxRate?: number | null): number {
   let sum = 0;
   for (const e of ledger) {
     if (!e.date || !e.date.startsWith(dateIso)) continue;
     if (!isCountableExpense(e, config)) continue;
-    sum += e.amount;
+    sum += toKrwByRate(e.amount, e.currency, fxRate);
   }
   return sum;
 }
@@ -49,31 +52,32 @@ export function weeklySpend(
   ledger: LedgerEntry[],
   weekStartIso: string,
   weekEndIso: string,
-  config: DailyBudgetConfig
+  config: DailyBudgetConfig,
+  fxRate?: number | null
 ): number {
   let sum = 0;
   for (const e of ledger) {
     if (!e.date) continue;
     if (e.date < weekStartIso || e.date > weekEndIso) continue;
     if (!isCountableExpense(e, config)) continue;
-    sum += e.amount;
+    sum += toKrwByRate(e.amount, e.currency, fxRate);
   }
   return sum;
 }
 
 /** 오늘 사용액 (간편 헬퍼) */
-export function todaySpend(ledger: LedgerEntry[], config: DailyBudgetConfig): number {
-  return dailySpend(ledger, getTodayKST(), config);
+export function todaySpend(ledger: LedgerEntry[], config: DailyBudgetConfig, fxRate?: number | null): number {
+  return dailySpend(ledger, getTodayKST(), config, fxRate);
 }
 
 /** 사용된 일자별 합계 Map (yyyy-mm-dd → amount) */
-function buildDailyTotalMap(ledger: LedgerEntry[], config: DailyBudgetConfig): Map<string, number> {
+function buildDailyTotalMap(ledger: LedgerEntry[], config: DailyBudgetConfig, fxRate?: number | null): Map<string, number> {
   const map = new Map<string, number>();
   for (const e of ledger) {
     if (!e.date) continue;
     if (!isCountableExpense(e, config)) continue;
     const day = e.date.slice(0, 10);
-    map.set(day, (map.get(day) ?? 0) + e.amount);
+    map.set(day, (map.get(day) ?? 0) + toKrwByRate(e.amount, e.currency, fxRate));
   }
   return map;
 }
@@ -87,9 +91,10 @@ function buildDailyTotalMap(ledger: LedgerEntry[], config: DailyBudgetConfig): M
 export function computeStreak(
   ledger: LedgerEntry[],
   config: DailyBudgetConfig,
-  todayIso: string = getTodayKST()
+  todayIso: string = getTodayKST(),
+  fxRate?: number | null
 ): number {
-  const totals = buildDailyTotalMap(ledger, config);
+  const totals = buildDailyTotalMap(ledger, config, fxRate);
   const limit = config.dailyLimit;
   let streak = 0;
   const cursor = parseIsoLocal(todayIso);
@@ -128,9 +133,10 @@ export function monthlyBudgetStats(
   ledger: LedgerEntry[],
   monthKey: string,
   config: DailyBudgetConfig,
-  todayIso: string = getTodayKST()
+  todayIso: string = getTodayKST(),
+  fxRate?: number | null
 ): MonthlyBudgetStats {
-  const totals = buildDailyTotalMap(ledger, config);
+  const totals = buildDailyTotalMap(ledger, config, fxRate);
   const limit = config.dailyLimit;
   const [year, month] = monthKey.split("-").map(Number);
   const lastDayOfMonth = new Date(year, month, 0).getDate();

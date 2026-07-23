@@ -29,6 +29,8 @@ import {
 } from "../../utils/ledgerHelpers";
 import { LedgerTemplateChips } from "./LedgerTemplateChips";
 import { LedgerTemplateManageModal } from "./LedgerTemplateManageModal";
+import { buildRestoreById, showDeleteUndoToast } from "../../utils/undoToast";
+import { useFxRateValue } from "../../context/FxRateContext";
 
 export type LedgerTab = "all" | "income" | "expense" | "savingsExpense" | "transfer" | "creditPayment";
 
@@ -89,6 +91,8 @@ interface Props {
   setFilterDetailCategory: React.Dispatch<React.SetStateAction<string | undefined>>;
   setFilterFromAccountId: React.Dispatch<React.SetStateAction<string | undefined>>;
   setFilterToAccountId: React.Dispatch<React.SetStateAction<string | undefined>>;
+  /** 계좌(통합) 필터 — 출금/입금 선택 시 상호 배타 규칙 적용(LedgerFilterBar와 동일) */
+  setFilterAccountId: React.Dispatch<React.SetStateAction<string | null>>;
   /** 외부(검색 등)에서 복사 요청 — 폼에 적재 후 onCopyComplete 호출 */
   copyRequest?: LedgerEntry | null;
   onCopyComplete?: () => void;
@@ -112,6 +116,7 @@ export const LedgerEntryForm = React.memo(React.forwardRef<LedgerEntryFormHandle
     setFilterDetailCategory,
     setFilterFromAccountId,
     setFilterToAccountId,
+    setFilterAccountId,
     copyRequest,
     onCopyComplete,
     onEntryAdded,
@@ -120,6 +125,8 @@ export const LedgerEntryForm = React.memo(React.forwardRef<LedgerEntryFormHandle
   }, ref) {
     // dailyBudget 설정 — store에서 직접 읽음 (props로 안 받음)
     const dailyBudgetConfig = useAppStore((s) => s.data.dailyBudget) ?? DEFAULT_DAILY_BUDGET;
+    // 하루 예산 사전 경고의 USD 환산용 환율 (DailyBudgetBar와 동일 기준)
+    const fxRate = useFxRateValue();
     const [form, setForm] = useState(createDefaultForm);
     const [formKindWhenAll, setFormKindWhenAll] = useState<"income"|"expense"|"transfer">("expense");
     const effectiveFormKind: LedgerKind =
@@ -269,6 +276,8 @@ export const LedgerEntryForm = React.memo(React.forwardRef<LedgerEntryFormHandle
         mainCategory:
           effectiveFormKind === "transfer" ? "이체" : "",
         subCategory: "",
+        // 복사로 들어온 태그가 종류 전환 후에도 잔존해 이후 항목에 붙는 것을 방지 (보이지 않는 오염)
+        tags: [],
         fromAccountId: kindForTab === "income" ? "" : prev.fromAccountId,
         toAccountId: kindForTab === "expense" ? "" : prev.toAccountId
       }));
@@ -324,15 +333,20 @@ export const LedgerEntryForm = React.memo(React.forwardRef<LedgerEntryFormHandle
         return;
       }
 
-      const isFixed = false;
+      // 폼에 복원된 isFixedExpense(복사 경로에서 채워짐)를 보존 — 하드코딩 false는 반복 지출
+      // 복사 시 고정비 플래그를 버려 고정/변동 분해·배당커버리지에서 변동비로 오분류됐다.
+      const isFixed = form.isFixedExpense ?? false;
 
       // 하루 예산 사전 경고: kindForTab=expense이고 dailyBudget enabled일 때만
-      // 이 거래로 인해 한도 초과 시 confirm 표시 (취소 시 입력 안 됨)
+      // 이 거래로 인해 한도 초과 시 confirm 표시 (취소 시 입력 안 됨).
+      // 재테크 탭(투자손실)은 kindForTab=expense지만 category="재테크"로 저장돼 예산 집계에서
+      // 제외되므로(dailyBudget excludedCategories 기본값) 경고 대상이 아니다 — 오탐 confirm 방지.
       if (
         dailyBudgetConfig.enabled &&
         dailyBudgetConfig.warnOnExceed &&
         kindForTab === "expense" &&
-        ledgerTab !== "creditPayment"
+        ledgerTab !== "creditPayment" &&
+        ledgerTab !== "savingsExpense"
       ) {
         const isExcludedCat = dailyBudgetConfig.excludedCategories.includes("지출");
         const subToCheck = form.mainCategory?.trim() || "";
@@ -342,9 +356,9 @@ export const LedgerEntryForm = React.memo(React.forwardRef<LedgerEntryFormHandle
           const limit = isWeekly ? weeklyLimit(dailyBudgetConfig) : dailyBudgetConfig.dailyLimit;
           const range = isWeekly ? getCurrentWeekRange(form.date) : null;
           const currentSpent = isWeekly && range
-            ? weeklySpend(ledger, range.start, range.end, dailyBudgetConfig)
+            ? weeklySpend(ledger, range.start, range.end, dailyBudgetConfig, fxRate)
             // 입력 폼의 날짜(form.date) 기준 — 과거/미래 날짜 입력 시 '오늘' 합계와 비교하던 오류 수정
-            : dailySpend(ledger, form.date, dailyBudgetConfig);
+            : dailySpend(ledger, form.date, dailyBudgetConfig, fxRate);
           const projected = currentSpent + amount;
           if (projected > limit) {
             const periodLabel = isWeekly ? "이번 주" : "오늘";
@@ -440,22 +454,25 @@ export const LedgerEntryForm = React.memo(React.forwardRef<LedgerEntryFormHandle
         toast.success(msg);
       }
 
-      // 같은 구분/카테고리/계좌를 유지하고 금액·설명만 비우기 (연속 입력 최적화)
+      // 같은 구분/카테고리/계좌를 유지하고 금액·설명만 비우기 (연속 입력 최적화).
+      // tags·isFixedExpense는 복사 1건에만 적용 — 다음 연속 입력엔 보이지 않게 잔존하지 않도록 초기화
+      // (폼에 태그/고정비 입력 UI가 없어 사용자가 잔존값을 보거나 지울 수 없다).
       setForm((prev) => ({
         ...prev,
         id: undefined,
         date: form.date,
         kind: kindForTab,
-        isFixedExpense: isFixed,
+        isFixedExpense: false,
         mainCategory: form.mainCategory,
         subCategory: form.subCategory,
         description: "",
         fromAccountId: form.fromAccountId,
         toAccountId: form.toAccountId,
         amount: "",
+        tags: [],
         ...(allowLedgerDiscount ? { discountAmount: "" } : {})
       }));
-    }, [isFormValid, validateForm, kindForTab, form, parseAmount, effectiveFormKind, ledger, onChangeLedger, onEntryAdded, ledgerTab, dailyBudgetConfig]);
+    }, [isFormValid, validateForm, kindForTab, form, parseAmount, effectiveFormKind, ledger, onChangeLedger, onEntryAdded, ledgerTab, dailyBudgetConfig, fxRate]);
 
     const handleSubmit = (e: React.FormEvent) => {
       e.preventDefault();
@@ -464,33 +481,48 @@ export const LedgerEntryForm = React.memo(React.forwardRef<LedgerEntryFormHandle
 
     const startCopy = useCallback((entry: LedgerEntry) => {
       try {
-        const nextTab: LedgerTab =
-          entry.kind === "income"
+        // 재테크(투자손실/투자수익/배당/이자)는 재테크 탭에서 자동 매핑(savingsInvestStored)으로 저장된다.
+        // 이걸 expense/income 탭으로 실으면 폼이 dead-end(중분류 후보 없음)가 되거나 일반 지출로 오분류된다.
+        const savingsSubs = SAVINGS_INVEST_SUBS as readonly string[];
+        const isSavingsInvestCopy =
+          (entry.category === "재테크" && entry.subCategory === "투자손실") ||
+          (entry.kind === "income" && !!entry.subCategory && savingsSubs.includes(entry.subCategory));
+        // 현행 지출 스키마: category="지출", subCategory=중분류, detailCategory=소분류.
+        // 레거시 지출: category=대분류 직접, subCategory=소분류 (→ 폼엔 mainCategory=category/subCategory=subCategory).
+        const isCurrentExpenseSchema = entry.category === "지출";
+
+        const nextTab: LedgerTab = isSavingsInvestCopy
+          ? "savingsExpense"
+          : entry.kind === "income"
             ? "income"
             : entry.kind === "transfer"
               ? "transfer"
               : "expense";
 
         // 폼 데이터 준비 — 저장 스키마 → 폼 스키마 매핑
-        //   지출 저장: category="지출", subCategory=중분류, detailCategory=소분류
-        //   폼:        mainCategory=중분류,  subCategory=소분류
         const newForm = {
           id: undefined as string | undefined,
           date: entry.date,
           kind: entry.kind,
           isFixedExpense: entry.isFixedExpense ?? false,
-          mainCategory:
-            entry.kind === "income"
+          mainCategory: isSavingsInvestCopy
+            ? "재테크"
+            : entry.kind === "income"
               ? ""
               : entry.kind === "transfer"
                 ? "이체"
-                : (entry.subCategory || ""),
-          subCategory:
-            entry.kind === "income"
+                : isCurrentExpenseSchema
+                  ? (entry.subCategory || "")
+                  : (entry.category || ""), // 레거시: 대분류가 category에
+          subCategory: isSavingsInvestCopy
+            ? (entry.subCategory || SAVINGS_INVEST_DEFAULT)
+            : entry.kind === "income"
               ? (entry.subCategory || entry.category || "")
               : entry.kind === "transfer"
                 ? (entry.subCategory || "")
-                : (entry.detailCategory || ""),
+                : isCurrentExpenseSchema
+                  ? (entry.detailCategory || "")
+                  : (entry.subCategory || ""), // 레거시: 소분류가 subCategory에
           description: entry.description || "",
           fromAccountId: entry.fromAccountId ?? "",
           toAccountId: entry.toAccountId ?? "",
@@ -537,12 +569,24 @@ export const LedgerEntryForm = React.memo(React.forwardRef<LedgerEntryFormHandle
 
     // ── 자주 쓰는 거래 템플릿 ──────────────────────────────
     // 템플릿 적용 — startCopy 호출 금지(저장 스키마 경로). isCopyingRef + setTimeout 가드 패턴 재사용.
-    const applyTemplate = useCallback((t: LedgerTemplate) => {
-      if (latestFormRef.current.id) {
-        if (!confirm(`수정 중인 항목이 있습니다. 템플릿 "${t.name}"을(를) 적용하면 수정 내용이 사라집니다. 계속할까요?`)) return;
+    // 반환값: 적용 성공 여부 — 관리 모달이 이 값으로 onClose 여부를 결정한다(취소 시 모달 유지).
+    const applyTemplate = useCallback((t: LedgerTemplate): boolean => {
+      const f = latestFormRef.current;
+      // 수정 중이거나(폼 id 존재), 신규 입력 드래프트(금액·설명)가 있으면 확인 — 드래프트는
+      // 히스토리 밖이라 경고 없이 덮어쓰면 Ctrl+Z로도 복구할 수 없다.
+      const hasEditingOrDraft = Boolean(f.id) || !!(f.amount?.trim() || f.description?.trim());
+      if (hasEditingOrDraft) {
+        const what = f.id ? "수정 중인 항목" : "입력 중인 내용";
+        if (!confirm(`${what}이 있습니다. 템플릿 "${t.name}"을(를) 적용하면 사라집니다. 계속할까요?`)) return false;
       }
       const { form: nextForm, clearedAccountIds } = ledgerTemplateToForm(t, accounts);
-      const nextTab: LedgerTab = t.kind; // income|expense|transfer ⊂ LedgerTab
+      // 재테크(투자손실/투자수익/배당/이자) 템플릿은 재테크 탭으로 — expense 탭으로 적재하면
+      // submitForm이 {category:"지출", subCategory:"재테크"}로 오분류 저장한다(재테크 순집계 누락).
+      const savingsSubs = SAVINGS_INVEST_SUBS as readonly string[];
+      const isSavingsTemplate =
+        (t.mainCategory === "재테크" && t.subCategory === "투자손실") ||
+        (t.kind === "income" && !!t.subCategory && savingsSubs.includes(t.subCategory));
+      const nextTab: LedgerTab = isSavingsTemplate ? "savingsExpense" : t.kind;
       isCopyingRef.current = true;
       setFormKindWhenAll(t.kind); // "전체" 복귀 시 kind 유지 — 종류 토글 버튼과 동일 규칙
       if (nextTab !== ledgerTab) {
@@ -558,6 +602,7 @@ export const LedgerEntryForm = React.memo(React.forwardRef<LedgerEntryFormHandle
         toast(`계좌 "${accountId}"가 없어 해당 항목을 비웠습니다.`);
       }
       toast.success(`템플릿 "${t.name}" 적용됨`);
+      return true;
     }, [accounts, ledgerTab, setLedgerTab, clearListFilters]);
 
     // 현재 입력을 템플릿으로 저장 — form은 latestFormRef로 읽음 (deps에 form 금지: 칩 memo 계약)
@@ -579,12 +624,23 @@ export const LedgerEntryForm = React.memo(React.forwardRef<LedgerEntryFormHandle
       toast.success(`템플릿 "${t.name}" 저장됨`);
     }, [ledgerTemplates, onChangeTemplates, effectiveFormKind]);
 
-    // 템플릿 삭제 — confirm + 성공 토스트 (기존 행 삭제 UX와 동일)
+    // 템플릿 삭제 — confirm + showDeleteUndoToast(restore-by-id) (삭제 계약 #8, 행 삭제와 동일 UX).
+    // 기존엔 성공 토스트만 있어 실수 삭제 후 실행취소 버튼이 없었고, Ctrl+Z는 이후 다른 변경까지 되돌렸다.
     const deleteTemplate = useCallback((t: LedgerTemplate) => {
       if (!onChangeTemplates) return;
       if (!confirm(`템플릿 "${t.name}"을(를) 삭제하시겠습니까?`)) return;
-      onChangeTemplates((ledgerTemplates ?? EMPTY_TEMPLATES).filter((x) => x.id !== t.id));
-      toast.success(`템플릿 "${t.name}" 삭제됨`);
+      const list = ledgerTemplates ?? EMPTY_TEMPLATES;
+      const deletedIndex = list.findIndex((x) => x.id === t.id);
+      onChangeTemplates(list.filter((x) => x.id !== t.id));
+      showDeleteUndoToast(
+        `템플릿 "${t.name}" 삭제됨`,
+        buildRestoreById(
+          () => useAppStore.getState().data.ledgerTemplates ?? [],
+          onChangeTemplates,
+          t,
+          deletedIndex >= 0 ? deletedIndex : undefined
+        )
+      );
     }, [ledgerTemplates, onChangeTemplates]);
 
     const openTemplateManage = useCallback(() => setShowTemplateManage(true), []);
@@ -673,11 +729,14 @@ export const LedgerEntryForm = React.memo(React.forwardRef<LedgerEntryFormHandle
       const off = form.fromAccountId === id;
       setForm((prev) => ({ ...prev, fromAccountId: off ? "" : id }));
       setFilterFromAccountId(off ? undefined : id);
+      // 계좌(통합) 필터와 상호 배타 — 동시에 걸면 AND로 좁혀져 빈 목록이 된다(LedgerFilterBar 규칙과 통일)
+      if (!off) setFilterAccountId(null);
     };
     const pickToAccount = (id: string) => {
       const off = form.toAccountId === id;
       setForm((prev) => ({ ...prev, toAccountId: off ? "" : id }));
       setFilterToAccountId(off ? undefined : id);
+      if (!off) setFilterAccountId(null);
     };
 
     return (

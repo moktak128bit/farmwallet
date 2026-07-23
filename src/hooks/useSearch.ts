@@ -69,7 +69,7 @@ export function useSearch(data: AppData, fxRate?: number | null) {
       title: l.description || l.category || l.kind,
       amount: l.amount,
       currency: l.currency ?? "KRW",
-      meta: `${l.kind} ${l.category ?? ""} ${l.subCategory ?? ""} ${l.description ?? ""}`.toLowerCase(),
+      meta: `${l.kind} ${l.category ?? ""} ${l.subCategory ?? ""} ${l.detailCategory ?? ""} ${l.description ?? ""} ${(l.tags ?? []).join(" ")}`.toLowerCase(),
       accounts: [l.fromAccountId, l.toAccountId].filter(Boolean).join(" / "),
       ticker: "",
       accountId: l.toAccountId || l.fromAccountId || ""

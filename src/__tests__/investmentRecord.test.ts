@@ -264,3 +264,34 @@ describe("summaryToRealPL", () => {
     expect(realPL.losses).toBe(0);
   });
 });
+
+describe("buildClosedTradeRecords — USD 환율 미확보 시 fxUnreliable 플래그 (회귀)", () => {
+  // 레거시 USD 매수(fxRateAtTrade 없음)를 fallbackFx 없이 매칭하면 매수 로트가 0원 평가돼
+  // 실현손익 = 매도대금 전액이라는 왜곡값이 나온다 → fxUnreliable로 표시측이 중립 처리하도록.
+  const usdBuy = { id: "b1", side: "buy" as const, date: "2026-01-01", quantity: 1, totalAmount: 1000, ticker: "AAPL", name: "Apple" };
+  const usdSell = { id: "s1", side: "sell" as const, date: "2026-02-01", quantity: 1, totalAmount: 1100, ticker: "AAPL", name: "Apple", fxRateAtTrade: 1300 };
+
+  it("fallbackFx 없고 매수 로트 fxRateAtTrade 없으면 fxUnreliable=true", () => {
+    const r = buildClosedTradeRecords([t(usdBuy), t(usdSell)], [acc]); // fallbackFx 미전달
+    expect(r).toHaveLength(1);
+    expect(r[0].isUsd).toBe(true);
+    expect(r[0].fxUnreliable).toBe(true);
+  });
+
+  it("fallbackFx가 있으면 매수 로트가 환산돼 fxUnreliable=false", () => {
+    const r = buildClosedTradeRecords([t(usdBuy), t(usdSell)], [acc], 1300);
+    expect(r).toHaveLength(1);
+    expect(r[0].fxUnreliable).toBe(false);
+  });
+
+  it("KRW 종목은 환율과 무관하게 항상 fxUnreliable=false", () => {
+    const r = buildClosedTradeRecords(
+      [
+        t({ id: "b1", side: "buy", date: "2026-01-01", quantity: 10, totalAmount: 1000 }),
+        t({ id: "s1", side: "sell", date: "2026-02-01", quantity: 10, totalAmount: 1500 }),
+      ],
+      [acc]
+    );
+    expect(r[0].fxUnreliable).toBe(false);
+  });
+});

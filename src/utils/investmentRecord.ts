@@ -17,6 +17,12 @@ interface ClosedTradeRecord {
   realizedPnlKRW: number;
   returnPct: number;
   isUsd: boolean;
+  /**
+   * USD 거래인데 환율을 전혀 못 구해(fxRateAtTrade 없음 + fallbackFx 없음) KRW 환산이 신뢰 불가.
+   * 이때 realizedPnlKRW는 소진 로트가 0원 평가돼 매도대금 전액이 손익으로 잡히는 왜곡값이므로,
+   * 표시측(가계부 매도 가상 행 등)은 이 플래그를 보고 중립 처리해야 한다.
+   */
+  fxUnreliable: boolean;
 }
 
 interface PeriodSummary {
@@ -108,13 +114,14 @@ export function buildClosedTradeRecords(
       return a.id.localeCompare(b.id);
     });
 
-    type Lot = FifoLot & { dateMs: number };
+    type Lot = FifoLot & { dateMs: number; fxMissing: boolean };
     const queue: Lot[] = [];
 
     for (const t of sorted) {
       const usd = isUSDStock(t.ticker);
       const tradeFx = t.fxRateAtTrade ?? 0;
       const fx = tradeFx > 0 ? tradeFx : (fallbackFx && fallbackFx > 0 ? fallbackFx : 0);
+      const fxMissing = usd && !(fx > 0); // USD인데 취득·현재 환율 모두 없음 → KRW 환산 불가
       const toKRW = usd ? (fx > 0 ? t.totalAmount * fx : 0) : t.totalAmount;
 
       if (t.side === "buy") {
@@ -122,14 +129,17 @@ export function buildClosedTradeRecords(
           qty: t.quantity,
           value: toKRW,
           dateMs: parseDayMs(t.date),
+          fxMissing,
         });
         continue;
       }
 
-      // FIFO 소비 + 콜백으로 가중 매수일 집계
+      // FIFO 소비 + 콜백으로 가중 매수일 집계 + 환율 신뢰 불가 로트 소진 여부 추적
       let weightSum = 0;
       let weightedDateMs = 0;
+      let consumedFxMissing = false;
       const { consumedValue: costBasisKRW } = consumeFifoLots(queue, t.quantity, (lot, used) => {
+        if (lot.fxMissing) consumedFxMissing = true;
         if (Number.isFinite(lot.dateMs)) {
           weightedDateMs += lot.dateMs * used;
           weightSum += used;
@@ -162,6 +172,8 @@ export function buildClosedTradeRecords(
         realizedPnlKRW,
         returnPct,
         isUsd: usd,
+        // 매도 자신 또는 소진된 매수 로트 중 환율 미확보 USD가 있으면 KRW 손익 신뢰 불가
+        fxUnreliable: fxMissing || consumedFxMissing,
       });
     }
   }

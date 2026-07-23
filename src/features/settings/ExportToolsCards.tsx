@@ -10,6 +10,7 @@ import type { Account, CategoryPresets, LedgerEntry, StockTrade } from "../../ty
 import { getKoreaTime } from "../../utils/date";
 import { useUIStore } from "../../store/uiStore";
 import { useAppStore } from "../../store/appStore";
+import { useFxRateValue } from "../../context/FxRateContext";
 import { ERROR_MESSAGES } from "../../constants/errorMessages";
 
 interface Props {
@@ -25,6 +26,7 @@ export const ExportToolsCards: React.FC<Props> = React.memo(function ExportTools
   trades,
   categoryPresets
 }) {
+  const fxRate = useFxRateValue();
   const handleExportAllExcel = useCallback(async () => {
     try {
       const [{ downloadAsExcel }, { buildFullDataSheets }] = await Promise.all([
@@ -65,11 +67,13 @@ export const ExportToolsCards: React.FC<Props> = React.memo(function ExportTools
   const handleExportUnifiedCsv = useCallback(async () => {
     try {
       const { buildUnifiedCsv } = await import("../../utils/unifiedCsvExport");
+      // fxRate 전달 — 레거시 USD 매도 실현손익이 CSV에서 매도대금 전액/0으로 붕괴되지 않도록(화면과 동일 숫자)
       const csvContent = buildUnifiedCsv(
         ledger,
         trades,
         accounts,
-        categoryPresets
+        categoryPresets,
+        fxRate
       );
       const blob = new Blob(["\uFEFF" + csvContent], { type: "text/csv;charset=utf-8" });
       const url = URL.createObjectURL(blob);
@@ -89,7 +93,7 @@ export const ExportToolsCards: React.FC<Props> = React.memo(function ExportTools
       if (import.meta.env.DEV) console.error("통합 CSV 내보내기 실패:", err);
       toast.error("CSV 내보내기 중 오류가 발생했습니다.");
     }
-  }, [ledger, trades, accounts, categoryPresets]);
+  }, [ledger, trades, accounts, categoryPresets, fxRate]);
 
   return (
     <>

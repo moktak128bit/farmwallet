@@ -30,7 +30,7 @@ import React, { useEffect, useMemo, useState, useRef, useCallback, useDeferredVa
 import type { Account, AccountBalanceRow, CategoryPresets, LedgerEntry, LedgerTemplate, StockTrade } from "../types";
 import { formatKRW } from "../utils/formatter";
 import { shortcutManager, type ShortcutAction } from "../utils/shortcuts";
-import { isSavingsExpenseEntry, makeIsSavingsExpense, isCreditPayment, isInvestmentKind, isInvestmentEntry, isInvestmentPnlEntry, isInvestmentLossEntry } from "../utils/category";
+import { isSavingsExpenseEntry, makeIsSavingsExpense, isCreditPayment, isInvestmentKind, isInvestmentEntry, isInvestmentPnlEntry, isInvestmentLossEntry, isCurrencyExchangeEntry } from "../utils/category";
 import { isDividendEntryLoose, isInterestEntryLoose } from "../utils/categoryMatch";
 import { parseAmount as sharedParseAmount } from "../utils/parseAmount";
 import { newIdWithPrefix } from "../utils/id";
@@ -217,7 +217,10 @@ export const LedgerView: React.FC<Props> = ({
   const realizedPnlKrwByTradeId = useMemo(() => {
     const m = new Map<string, number>();
     for (const r of buildClosedTradeRecords(deferredTrades, accounts, fxRate ?? undefined)) {
-      m.set(r.tradeId, r.realizedPnlKRW);
+      // 환율 미확보(fxRateAtTrade 없는 레거시 USD + 현재 환율도 없음) 매도는 KRW 손익이 왜곡값
+      // (매도대금 전액이 수익으로 잡힘) → 중립 0으로 표시. tradeToLedgerRow는 맵에 없으면 오히려
+      // t.totalAmount(달러 액면)로 폴백하므로 반드시 0을 명시적으로 넣어야 한다. 환율 로드 후 재계산됨.
+      m.set(r.tradeId, r.fxUnreliable ? 0 : r.realizedPnlKRW);
     }
     return m;
   }, [deferredTrades, accounts, fxRate]);
@@ -366,6 +369,7 @@ export const LedgerView: React.FC<Props> = ({
           (l.date || "").toLowerCase().includes(q) ||
           (l.category || "").toLowerCase().includes(q) ||
           (l.subCategory || "").toLowerCase().includes(q) ||
+          (l.detailCategory || "").toLowerCase().includes(q) ||
           (l.description || "").toLowerCase().includes(q) ||
           (l.fromAccountId || "").toLowerCase().includes(q) ||
           (l.toAccountId || "").toLowerCase().includes(q) ||
@@ -382,9 +386,11 @@ export const LedgerView: React.FC<Props> = ({
       if (key === "date") {
         return (a.date < b.date ? -1 : a.date > b.date ? 1 : 0) * dir;
       } else if (key === "amount") {
-        return ((a.amount ?? 0) - (b.amount ?? 0)) * dir;
+        // USD 항목은 원화 환산 후 비교 — 금액 범위 필터(toKrwByRate)와 통일. 액면 비교하면
+        // $1,000(약 140만원)이 KRW 2,000원보다 아래로 정렬되는 필터-정렬 모순이 생긴다.
+        return (toKrwByRate(a.amount, a.currency, fxRate) - toKrwByRate(b.amount, b.currency, fxRate)) * dir;
       } else if (key === "grossAmount") {
-        return (ledgerEntryGross(a) - ledgerEntryGross(b)) * dir;
+        return (toKrwByRate(ledgerEntryGross(a), a.currency, fxRate) - toKrwByRate(ledgerEntryGross(b), b.currency, fxRate)) * dir;
       } else if (key === "discountAmount") {
         return ((a.discountAmount ?? 0) - (b.discountAmount ?? 0)) * dir;
       } else if (key === "category") {
@@ -429,56 +435,76 @@ export const LedgerView: React.FC<Props> = ({
     // USD 항목은 환율로 KRW 환산 후 합산 — 대시보드 summaryMath.toKrw와 동일 정책(단일 소스)
     const toKrw = (l: LedgerDisplayRow) => toKrwByRate(l.amount, l.currency, fxRate);
 
+    // 전월 대비 비교는 "정확히 한 달 vs 직전 한 달"일 때만 의미가 있다.
+    // 전체 보기(현재 측이 전 기간 합)나 다중 월 선택(현재 측이 여러 달 합)에서 켜면
+    // '수년치 합 − 지난달 1개월' 같은 무의미한 증감액을 1:1 비교처럼 보여준다.
+    const compareEligible = viewMode === "monthly" && sortedSelected.length === 1;
+    // 진행 중인 이번 달을 보는 중이면 현재 측·전월 측 모두 같은 기간(1~오늘 일)만 합산 —
+    // 부분 월 vs 완전한 월 비교 왜곡 방지 (월급 25일이면 월중 내내 수입이 급감으로 보임).
+    // 반대로 현재 측만 월 전체를 합하면(선입력·반복 생성분) 증감액이 미래 일자만큼 부풀었다.
+    const prevDayCap =
+      compareEligible && baseMonth === getThisMonthKST() ? Number(getTodayKST().slice(8, 10)) : null;
+
     let savingsAmount = 0;
     let expenseAmount = 0;
     let excludedExpenseAmount = 0; // 지출 중 데이터비 등 제외 대상 합계 ('제외 후' 표시용)
     let incomeAmount = 0;
+    // 비교 전용 현재 측 합계 — this-month면 prevDayCap까지만(전월과 동일 기간).
+    // 그 외에는 요약 카드 합계(expenseAmount/incomeAmount)와 동일해진다.
+    let compareExpense = 0;
+    let compareIncome = 0;
     const excludedNames = new Set(EXPENSE_BOX_EXCLUDED_NAMES);
     for (const l of filteredLedger) {
       // 주식 매도 가상 행은 요약에서 제외 — 가계부 원본이 아니고(CSV 내보내기와 동일 정책),
       // 포함하면 대시보드 '재테크'(실제 ledger만)와 어긋나며 수동 투자수익 입력 시 이중 계상된다.
       if (l._tradeId) continue;
+      const inCompareWindow =
+        compareEligible && (prevDayCap == null || Number(l.date.slice(8, 10)) <= prevDayCap);
       // 재테크 = 저축성지출 + 저축·투자 이체 + 투자수익(+) − 투자손실(−).
       // 투자 실현손익은 생활 수입/지출을 부풀리지 않도록 재테크로만 집계 (대시보드 summaryMath와 동일 기준).
       const isPnl = isInvestmentPnlEntry(l);
       if (isInvestmentEntry(l) || isSavings(l) || isPnl) {
         savingsAmount += isInvestmentLossEntry(l) ? -toKrw(l) : toKrw(l);
-      } else if (l.kind === "expense" && !isCreditPayment(l)) {
-        // 신용결제는 카드 사용 시점에 이미 expense로 잡힘 — 이중계상 방지
-        expenseAmount += toKrw(l);
-        if (isExcludedExpenseName(l, excludedNames)) excludedExpenseAmount += toKrw(l);
+      } else if (l.kind === "expense" && !isCreditPayment(l) && !isCurrencyExchangeEntry(l)) {
+        // 신용결제는 카드 사용 시점에 이미 expense로 잡힘 — 이중계상 방지.
+        // 환전은 계좌 간 통화 이동이라 지출 아님 — 대시보드/예산/인사이트(classifyLedgerFlow)와 통일.
+        const v = toKrw(l);
+        expenseAmount += v;
+        if (isExcludedExpenseName(l, excludedNames)) excludedExpenseAmount += v;
+        if (inCompareWindow) compareExpense += v;
       }
       // 투자수익(income)은 수입에서 제외 — 재테크로만
       if (l.kind === "income" && !isPnl) {
-        incomeAmount += toKrw(l);
+        const v = toKrw(l);
+        incomeAmount += v;
+        if (inCompareWindow) compareIncome += v;
       }
     }
 
     // 전월 대비 비교 — 현재 합계와 동일한 데이터 소스(ledgerByTab: 탭 필터 + trade 가상 행 포함)와
-    // 동일한 분류 기준(재테크 제외·신용결제 제외)으로 1회 순회.
-    // 진행 중인 이번 달을 보는 중이면 전월도 같은 기간(1~오늘 일)만 합산 —
-    // 부분 월 vs 완전한 월 비교 왜곡 방지 (월급 25일이면 월중 내내 수입이 급감으로 보임)
-    const prevDayCap =
-      viewMode === "monthly" && baseMonth === getThisMonthKST() ? Number(getTodayKST().slice(8, 10)) : null;
+    // 동일한 분류 기준(재테크·신용결제·환전 제외)으로 1회 순회. compareEligible일 때만 계산.
     let prevExpense = 0;
     let prevIncome = 0;
     let prevCount = 0;
-    for (const l of ledgerByTab) {
-      if (l._tradeId) continue; // 가상 행 제외 — 위 당월 합계와 동일 기준
-      if (!l.date?.startsWith(prevMonth)) continue;
-      if (prevDayCap != null && Number(l.date.slice(8, 10)) > prevDayCap) continue;
-      prevCount += 1;
-      // 현재 합계와 동일 기준 — 투자수익은 수입 제외, 투자손익은 지출 제외(재테크로만)
-      if (l.kind === "income" && !isInvestmentPnlEntry(l)) {
-        prevIncome += toKrw(l);
-      } else if (
-        l.kind === "expense" &&
-        !isInvestmentEntry(l) &&
-        !isSavings(l) &&
-        !isInvestmentPnlEntry(l) &&
-        !isCreditPayment(l)
-      ) {
-        prevExpense += toKrw(l);
+    if (compareEligible) {
+      for (const l of ledgerByTab) {
+        if (l._tradeId) continue; // 가상 행 제외 — 위 당월 합계와 동일 기준
+        if (!l.date?.startsWith(prevMonth)) continue;
+        if (prevDayCap != null && Number(l.date.slice(8, 10)) > prevDayCap) continue;
+        prevCount += 1;
+        // 현재 합계와 동일 기준 — 투자수익은 수입 제외, 투자손익은 지출 제외(재테크로만)
+        if (l.kind === "income" && !isInvestmentPnlEntry(l)) {
+          prevIncome += toKrw(l);
+        } else if (
+          l.kind === "expense" &&
+          !isInvestmentEntry(l) &&
+          !isSavings(l) &&
+          !isInvestmentPnlEntry(l) &&
+          !isCreditPayment(l) &&
+          !isCurrencyExchangeEntry(l)
+        ) {
+          prevExpense += toKrw(l);
+        }
       }
     }
 
@@ -490,7 +516,10 @@ export const LedgerView: React.FC<Props> = ({
       total: incomeAmount - expenseAmount,
       prevExpense,
       prevIncome,
-      hasPrev: prevCount > 0,
+      // 비교 행 전용 현재 측 값 — this-month면 1~오늘 일로 캡, 아니면 카드 합계와 동일.
+      compareExpense,
+      compareIncome,
+      hasPrev: compareEligible && prevCount > 0,
       prevMonth,
       prevDayCap,
     };
@@ -507,10 +536,21 @@ export const LedgerView: React.FC<Props> = ({
       balanceById.set(row.account.id, row.currentBalance);
     }
     type Event = { type: "ledger"; id: string; date: string; l: LedgerEntry } | { type: "trade"; id: string; date: string; t: StockTrade };
+    // 같은 날짜 내 잔액 귀속 순서 = 표시 순서와 동일 기준이라야 표를 위→아래로 읽을 때 잔액이 맞는다.
+    // id 사전순 tie-break는 ☰ 드래그/▲▼로 행 순서를 바꿔도 반영되지 않아 잔액 열이 모순됐다.
+    // 표시 순서: combinedLedger가 [...ledger, ...trades]라 같은 날짜면 ledger가 trade보다 먼저,
+    // 각 그룹 내부는 원본 배열 인덱스 순.
+    const ledgerIndex = new Map(deferredLedger.map((l, i) => [l.id, i]));
+    const tradeIndex = new Map(deferredTrades.map((t, i) => [t.id, i]));
     const events: Event[] = [
       ...deferredLedger.map((l) => ({ type: "ledger" as const, id: l.id, date: l.date, l })),
       ...deferredTrades.map((t) => ({ type: "trade" as const, id: t.id, date: t.date, t }))
-    ].sort((a, b) => (a.date !== b.date ? a.date.localeCompare(b.date) : a.id.localeCompare(b.id)));
+    ].sort((a, b) => {
+      if (a.date !== b.date) return a.date.localeCompare(b.date);
+      if (a.type !== b.type) return a.type === "ledger" ? -1 : 1;
+      if (a.type === "ledger") return (ledgerIndex.get(a.id) ?? 0) - (ledgerIndex.get(b.id) ?? 0);
+      return (tradeIndex.get(a.id) ?? 0) - (tradeIndex.get(b.id) ?? 0);
+    });
     const futureImpact = new Map<string, number>();
     const addImpact = (accId: string, delta: number) =>
       futureImpact.set(accId, (futureImpact.get(accId) ?? 0) + delta);
@@ -592,38 +632,62 @@ export const LedgerView: React.FC<Props> = ({
     ]
   );
 
-  // 필터 변경 시 선택 합계 초기화
+  // 필터/보기 변경 시 선택 합계 초기화 — 필터 지문(ledgerScrollKey)에 반응.
+  // filteredLedger.length로만 감지하면 건수가 우연히 같은 필터 전환(6월 120건 → 7월 120건)에서
+  // effect가 발화하지 않아 이전 월의 선택 id가 그대로 남고, 되돌아오면 합계 박스가 부활한다.
   useEffect(() => {
     setSelectedLedgerIdsForSum(new Set());
-  }, [filteredLedger.length]);
+  }, [ledgerScrollKey]);
 
-  // 검색에서 이동: 해당 행으로 스크롤
+  // 검색(Ctrl+K)에서 이동: 대상 항목의 월을 선택 목록에 포함시켜 filteredLedger에 들어오게 한다.
+  // 탭 리마운트 시 selectedMonths가 항상 당월로 초기화돼, 다른 달 항목은 필터에 걸려 안 보였다.
+  // 항목이 아예 없으면(이미 삭제 등) 하이라이트를 즉시 해제해 stale로 남지 않게 한다.
   useEffect(() => {
     if (!highlightLedgerId) return;
-    const el = document.querySelector(`tr[data-ledger-id="${highlightLedgerId}"]`);
-    if (el) el.scrollIntoView({ behavior: "smooth", block: "center" });
-  }, [highlightLedgerId]);
+    const entry = ledger.find((l) => l.id === highlightLedgerId);
+    if (!entry) {
+      onClearHighlightLedger?.();
+      return;
+    }
+    if (viewMode === "monthly" && entry.date && entry.date.length >= 7) {
+      const m = entry.date.slice(0, 7);
+      setSelectedMonths((prev) => (prev.has(m) ? prev : new Set([...prev, m])));
+    }
+  }, [highlightLedgerId, ledger, viewMode, onClearHighlightLedger]);
 
-  // 검색에서 이동: 행 하이라이트 후 해제 (DOM 반영 후 실행)
-  const highlightClearTimerRef = useRef<number | null>(null);
+  // 검색에서 이동: 대상 행으로 스크롤 + 하이라이트. 월 선택·페이지 점프가 비동기로 반영되므로
+  // 즉시 DOM에 없을 수 있어 짧게 재시도한다. 끝내 못 찾으면 하이라이트를 해제해 영구 stale 방지.
   useEffect(() => {
-    if (!highlightLedgerId || !onClearHighlightLedger) return;
-    const t1 = window.setTimeout(() => {
+    if (!highlightLedgerId) return;
+    let cancelled = false;
+    let attempts = 0;
+    let retryTimer: number | null = null;
+    let clearTimer: number | null = null;
+    const tryHighlight = () => {
+      if (cancelled) return;
       const el = document.querySelector(`tr[data-ledger-id="${highlightLedgerId}"]`);
-      if (!el) return;
-      el.classList.add("ledger-row-highlight");
-      highlightClearTimerRef.current = window.setTimeout(() => {
-        el.classList.remove("ledger-row-highlight");
-        onClearHighlightLedger();
-        highlightClearTimerRef.current = null;
-      }, 2500);
-    }, 150);
-    return () => {
-      window.clearTimeout(t1);
-      if (highlightClearTimerRef.current !== null) {
-        window.clearTimeout(highlightClearTimerRef.current);
-        highlightClearTimerRef.current = null;
+      if (el) {
+        el.scrollIntoView({ behavior: "smooth", block: "center" });
+        el.classList.add("ledger-row-highlight");
+        clearTimer = window.setTimeout(() => {
+          el.classList.remove("ledger-row-highlight");
+          onClearHighlightLedger?.();
+        }, 2500);
+        return;
       }
+      attempts += 1;
+      if (attempts > 30) {
+        // ~3s 동안 못 찾음 (필터로 가려짐 등) → stale 방지 위해 해제
+        onClearHighlightLedger?.();
+        return;
+      }
+      retryTimer = window.setTimeout(tryHighlight, 100);
+    };
+    retryTimer = window.setTimeout(tryHighlight, 120);
+    return () => {
+      cancelled = true;
+      if (retryTimer !== null) window.clearTimeout(retryTimer);
+      if (clearTimer !== null) window.clearTimeout(clearTimer);
     };
   }, [highlightLedgerId, onClearHighlightLedger]);
 
@@ -757,7 +821,8 @@ export const LedgerView: React.FC<Props> = ({
   const hasCategoryFilter = !!(filterMainCategory || filterSubCategory || filterDetailCategory || filterFromAccountId || filterToAccountId);
   const hasDateFilter = !!(dateFilter.startDate || dateFilter.endDate);
   const hasAmountFilter = filterAmountMin != null || filterAmountMax != null;
-  const hasTagFilter = filterTagsInput.trim() !== "";
+  // 실제 적용(위 selectedTags)과 동일 기준 — "," 만 입력한 유령 활성 상태 방지
+  const hasTagFilter = filterTagsInput.split(",").map((t) => t.trim()).filter(Boolean).length > 0;
   const hasFilter = hasCategoryFilter || hasDateFilter || hasAmountFilter || hasTagFilter || !!filterAccountId || searchQuery.trim() !== "";
 
   const filterFromAccount = filterFromAccountId ? accounts.find((a) => a.id === filterFromAccountId) : null;
@@ -943,6 +1008,7 @@ export const LedgerView: React.FC<Props> = ({
         setFilterDetailCategory={setFilterDetailCategory}
         setFilterFromAccountId={setFilterFromAccountId}
         setFilterToAccountId={setFilterToAccountId}
+        setFilterAccountId={setFilterAccountId}
         copyRequest={copyRequest}
         onCopyComplete={onCopyComplete}
         onEntryAdded={setLastAddedEntryId}
@@ -1077,10 +1143,10 @@ export const LedgerView: React.FC<Props> = ({
         dragSumEndIndex={dragSumEndIndex}
         handleDragSumStart={handleDragSumStart}
         selectedLedgerIdsForSum={selectedLedgerIdsForSum}
-        setSelectedLedgerIdsForSum={setSelectedLedgerIdsForSum}
         onChangeLedger={onChangeLedger}
         setQuickCopyEntry={setQuickCopyEntry}
         setQuickCopyAmount={setQuickCopyAmount}
+        highlightLedgerId={highlightLedgerId}
       />
 
       {/* 빠른 복사 모달 */}

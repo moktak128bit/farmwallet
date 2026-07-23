@@ -90,6 +90,21 @@ describe("findOverdueRecurring — 만기 판정", () => {
     // 한 달 이상 지나면 종료(과도한 알림 방지)
     expect(findOverdueRecurring(recurring, [], "2026-07-20")).toHaveLength(0);
   });
+
+  it("yearly: 연말 기념일의 grace가 연 경계를 넘어 유지 (회귀 — 1/1에 즉시 소멸하던 버그)", () => {
+    // 과거 버그: due를 당해 연도로만 계산 → 12월 기념일은 1월에 미래가 돼 grace(31일) 도달 불능
+    const recurring = [rec({ id: "r1", title: "자동차보험", amount: 800_000, frequency: "yearly", startDate: "2020-12-28" })];
+    // 마감(2025-12-28) 8일 후 — grace 이내라 여전히 알림, dueDate는 전년도 기념일
+    const jan = findOverdueRecurring(recurring, [], "2026-01-05");
+    expect(jan).toHaveLength(1);
+    expect(jan[0].dueDate).toBe("2025-12-28");
+    // 마감 당해 연말도 그대로 (2025-12-30)
+    expect(findOverdueRecurring(recurring, [], "2025-12-30")[0].dueDate).toBe("2025-12-28");
+    // grace(31일) 초과하면 종료 — 2월 초는 더 이상 알림 없음
+    expect(findOverdueRecurring(recurring, [], "2026-02-05")).toHaveLength(0);
+    // 연중(기념일과 무관한 시점)엔 알림 없음
+    expect(findOverdueRecurring(recurring, [], "2026-06-15")).toHaveLength(0);
+  });
 });
 
 describe("findOverdueRecurring — alreadyLogged (실제 생성 스키마와 매칭)", () => {

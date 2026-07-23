@@ -49,9 +49,16 @@ const computeDueDate = (r: RecurringExpense, refDate: string): string | null => 
     occ.setDate(ref.getDate() - diff);
     due = formatIsoLocal(occ);
   } else if (r.frequency === "yearly") {
-    const lastDay = getLastDayOfMonth(ref.getFullYear(), start.getMonth() + 1);
-    const dueDay = Math.min(start.getDate(), lastDay);
-    due = `${ref.getFullYear()}-${pad(start.getMonth() + 1)}-${pad(dueDay)}`;
+    // 당해 연도 기념일이 미래면(예: 1월에 보는 12월 기념일) 전년도 기념일로 폴백 —
+    // 당해 연도로만 계산하면 연말 기념일이 1월 1일에 즉시 미래가 돼 grace(31일)가 도달 불능이었다.
+    const anniversaryFor = (year: number): string => {
+      const lastDay = getLastDayOfMonth(year, start.getMonth() + 1);
+      const dueDay = Math.min(start.getDate(), lastDay);
+      return `${year}-${pad(start.getMonth() + 1)}-${pad(dueDay)}`;
+    };
+    const thisYear = anniversaryFor(ref.getFullYear());
+    const thisYearDt = parseIsoLocal(thisYear);
+    due = thisYearDt && thisYearDt <= ref ? thisYear : anniversaryFor(ref.getFullYear() - 1);
   }
   if (!due) return null;
 

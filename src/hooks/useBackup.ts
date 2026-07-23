@@ -4,6 +4,7 @@ import {
   getLatestLocalBackupIntegrity,
   saveBackupSnapshot,
   saveDataSerialized,
+  toUserDataJson,
   clearOldBackups
 } from "../storage";
 import type { AppData } from "../types";
@@ -137,12 +138,12 @@ export function useBackup(data: AppData, options?: UseBackupOptions) {
         autoSaveTimerRef.current = null;
       }
       try {
-        const payload = JSON.stringify(dataRef.current);
-        if (!payload || payload === lastSavedPayloadRef.current) return;
         // 분리 저장 정책 준수: DATA 키에는 캐시(prices/tickerDatabase/historicalDailyCloses)를
         // 제외한 사용자 데이터만 기록 (full payload를 넣으면 다음 정상 저장까지 키 용량이 부풀음).
-        const { prices: _p, tickerDatabase: _t, historicalDailyCloses: _h, ...userFields } = dataRef.current;
-        const userDataStr = JSON.stringify(userFields);
+        // dedup·broadcast·dirty 비교는 모두 이 user-only 문자열 기준으로 통일 — tabSync가 읽는
+        // localStorage DATA 값과 동일 표현이라야 해시가 일치한다 (full payload면 항상 불일치).
+        const userDataStr = toUserDataJson(dataRef.current);
+        if (!userDataStr || userDataStr === lastSavedPayloadRef.current) return;
         try {
           // 동기 저장만 — async retry 루프는 unload 도중 잘릴 수 있음.
           window.localStorage.setItem(STORAGE_KEYS.DATA, userDataStr);
@@ -160,7 +161,7 @@ export function useBackup(data: AppData, options?: UseBackupOptions) {
           console.warn("[useBackup] unload flush 저장 실패 — 드래프트 기록 시도", writeErr);
           return;
         }
-        lastSavedPayloadRef.current = payload;
+        lastSavedPayloadRef.current = userDataStr;
         // unload flush가 성공했다면 드래프트 슬롯도 정리 — 다음 boot에서 거짓 복구 방지
         try {
           window.localStorage.removeItem(STORAGE_KEYS.DRAFT);
@@ -184,23 +185,28 @@ export function useBackup(data: AppData, options?: UseBackupOptions) {
    * 최신 dataRef를 직렬화 → dedup → saveStatus("saving") → setItem → 드래프트 클리어 →
    * saveStatus("saved") → broadcast + (옵션) 백업.
    */
-  const runAutoSave = useCallback((knownPayload?: string) => {
+  const runAutoSave = useCallback((knownUserPayload?: string) => {
     if (typeof window === "undefined") return;
     // 로드 실패 상태에서는 저장 금지 — 복구 가능한 원본 localStorage 보호
     if (disabledRef.current) return;
     const ui = useUIStore.getState();
-    // 디바운스 경로는 effect에서 직렬화한 payload를 재사용해 중복 stringify를 피한다.
-    const payload = knownPayload ?? JSON.stringify(dataRef.current);
-    if (!payload || payload === lastSavedPayloadRef.current) {
+    // dedup·broadcast·dirty 비교는 user-only 문자열(캐시 3필드 제외) 기준으로 통일한다.
+    // tabSync가 읽는 localStorage DATA 값과 동일 표현이라야 방송 해시가 일치하고,
+    // full payload(prices 등 포함)를 넣으면 수신 탭이 영원히 불일치로 판정해 변경이 드롭된다.
+    // 디바운스 경로는 effect에서 만든 user payload를 재사용해 중복 stringify를 피한다.
+    const userPayload = knownUserPayload ?? toUserDataJson(dataRef.current);
+    if (!userPayload || userPayload === lastSavedPayloadRef.current) {
       // dedup: 저장할 게 없음 → 상태 깜빡임 없이 종료. dirty 신호만 정리.
       ui.setHasDirtyChanges(false);
       return;
     }
+    // 실제 저장·백업에는 캐시 포함 full payload가 필요 (saveDataSerialized가 IDB 캐시 분리 저장).
+    const fullPayload = JSON.stringify(dataRef.current);
 
     ui.setSaveStatus("saving");
     try {
-      saveDataSerialized(payload);
-      lastSavedPayloadRef.current = payload;
+      saveDataSerialized(fullPayload);
+      lastSavedPayloadRef.current = userPayload;
       // 정상 저장 → 드래프트 슬롯 정리
       try {
         window.localStorage.removeItem(STORAGE_KEYS.DRAFT);
@@ -208,7 +214,7 @@ export function useBackup(data: AppData, options?: UseBackupOptions) {
       } catch { /* quota·access 무시 */ }
       ui.setHasDirtyChanges(false);
       ui.setSaveStatus("saved");
-      notifyDataChanged(payload);
+      notifyDataChanged(userPayload);
     } catch (error) {
       console.warn("[useBackup] auto save failed", error);
       const message = error instanceof Error ? error.message : "자동 저장에 실패했습니다.";
@@ -218,15 +224,15 @@ export function useBackup(data: AppData, options?: UseBackupOptions) {
         const removed = clearOldBackups(3);
         if (removed > 0) {
           try {
-            saveDataSerialized(payload);
-            lastSavedPayloadRef.current = payload;
+            saveDataSerialized(fullPayload);
+            lastSavedPayloadRef.current = userPayload;
             try {
               window.localStorage.removeItem(STORAGE_KEYS.DRAFT);
               window.localStorage.removeItem(STORAGE_KEYS.DRAFT_AT);
             } catch { /* */ }
             ui.setHasDirtyChanges(false);
             ui.setSaveStatus("saved");
-            notifyDataChanged(payload);
+            notifyDataChanged(userPayload);
             void refreshLatestBackup();
             toast.success(`저장 공간이 부족해 오래된 백업 ${removed}개를 정리하고 저장했습니다.`, {
               id: AUTO_SAVE_ERROR_TOAST_ID
@@ -256,7 +262,7 @@ export function useBackup(data: AppData, options?: UseBackupOptions) {
     isAutoBackupRunningRef.current = true;
     void saveBackupSnapshot(dataRef.current, {
       skipHash: true,
-      dataJson: payload,
+      dataJson: fullPayload,
       timeoutMs: BACKUP_CONFIG.API_TIMEOUT_MS
     })
       .then(async (result) => {
@@ -294,8 +300,11 @@ export function useBackup(data: AppData, options?: UseBackupOptions) {
     }
 
     // 디스크 마지막 값과 다르면 dirty 윈도우 진입 — 탭 충돌 감지의 신호.
-    const pendingPayload = JSON.stringify(data);
-    const isDirty = Boolean(pendingPayload) && pendingPayload !== lastSavedPayloadRef.current;
+    // user-only 표현으로 비교 — lastSavedPayloadRef(부팅 시 localStorage DATA로 초기화)와 같은
+    // 형태라야 한다. full payload로 비교하면 캐시 하이드레이션마다 항상 dirty로 오판해
+    // 무변경 데이터를 재저장·방송하고 다른 탭에 가짜 충돌 모달을 띄운다.
+    const pendingUserPayload = toUserDataJson(data);
+    const isDirty = Boolean(pendingUserPayload) && pendingUserPayload !== lastSavedPayloadRef.current;
     if (isDirty) {
       useUIStore.getState().setHasDirtyChanges(true);
     }
@@ -310,12 +319,11 @@ export function useBackup(data: AppData, options?: UseBackupOptions) {
           // 드래프트에도 캐시(prices/tickerDatabase/historicalDailyCloses)는 제외 — full payload는
           // 메인 DATA보다 커서 quota 압박 시 드래프트 write까지 동반 실패한다. 캐시는 부팅 시
           // IndexedDB에서 하이드레이션되므로 복구에 불필요. (메인 DATA와 같은 형태라 stale 비교도 정상 동작)
-          const { prices: _p, tickerDatabase: _t, historicalDailyCloses: _h, ...userFields } = data;
-          window.localStorage.setItem(STORAGE_KEYS.DRAFT, JSON.stringify(userFields));
+          window.localStorage.setItem(STORAGE_KEYS.DRAFT, pendingUserPayload);
           window.localStorage.setItem(STORAGE_KEYS.DRAFT_AT, Date.now().toString());
         } catch { /* quota·access 무시 — 드래프트는 best-effort */ }
       }
-      runAutoSave(pendingPayload);
+      runAutoSave(pendingUserPayload);
     }, AUTO_SAVE_DELAY);
 
     return () => {

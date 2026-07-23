@@ -10,12 +10,13 @@ import type { Account, CategoryPresets, LedgerEntry } from "../../types";
 import { formatShortDate, formatUSD, formatKRW } from "../../utils/formatter";
 import { ledgerEntryGross, type LedgerDisplayRow } from "../../utils/ledgerHelpers";
 import { isCoarsePointer } from "../../utils/pointer";
+import { isCreditPayment } from "../../utils/category";
 import { useAppStore } from "../../store/appStore";
 import { useLedgerColumnResize } from "./useLedgerColumnResize";
 import { useFxRateValue } from "../../context/FxRateContext";
 import { toKrwByRate } from "../../utils/currency";
 import { validateDate } from "../../utils/validation";
-import { getTodayKST } from "../../utils/date";
+import { getTodayKST, parseIsoLocal } from "../../utils/date";
 
 // ─── 삭제 토스트 [실행 취소] — "삭제 항목 재삽입" 복원 ───────────────────
 // 풀 스냅샷 undo가 아니다:
@@ -72,11 +73,12 @@ interface Props {
   dragSumEndIndex: number | null;
   handleDragSumStart: (index: number) => void;
   selectedLedgerIdsForSum: Set<string>;
-  setSelectedLedgerIdsForSum: React.Dispatch<React.SetStateAction<Set<string>>>;
   onChangeLedger: (next: LedgerEntry[]) => void;
   /** 빠른 복사 모달은 부모에서 렌더 */
   setQuickCopyEntry: React.Dispatch<React.SetStateAction<LedgerEntry | null>>;
   setQuickCopyAmount: React.Dispatch<React.SetStateAction<string>>;
+  /** 검색(Ctrl+K)에서 이동한 대상 행 — 다른 페이지에 있으면 해당 페이지로 점프 */
+  highlightLedgerId?: string | null;
 }
 
 export const LedgerTable: React.FC<Props> = React.memo(function LedgerTable({
@@ -98,10 +100,10 @@ export const LedgerTable: React.FC<Props> = React.memo(function LedgerTable({
   dragSumEndIndex,
   handleDragSumStart,
   selectedLedgerIdsForSum,
-  setSelectedLedgerIdsForSum,
   onChangeLedger,
   setQuickCopyEntry,
-  setQuickCopyAmount
+  setQuickCopyAmount,
+  highlightLedgerId
 }) {
   const ledgerScrollRef = useRef<HTMLDivElement>(null);
   const ledgerTableRef = useRef<HTMLTableElement>(null);
@@ -136,6 +138,25 @@ export const LedgerTable: React.FC<Props> = React.memo(function LedgerTable({
     }
     return m;
   }, [filteredLedger, coarsePointer, canReorder]);
+
+  // 일별 소계는 filteredLedger '전체' 기준으로 선계산한다 — 페이지(50행) 안에서만 누적하면
+  // 하루가 페이지 경계에 걸릴 때 앞/뒤 페이지에 각각 '부분합'이 그 날의 소계처럼 찍힌다.
+  // 신용결제(레거시 category="신용결제")는 카드 사용일에 이미 지출로 잡혀 이중계상 → 제외.
+  // (주식 매도 가상 행 _tradeId 포함은 확정 설계 — 제외하지 않는다.)
+  const dailyTotals = useMemo(() => {
+    const m = new Map<string, { income: number; expense: number; count: number }>();
+    if (!showDailySummary || ledgerSort.key !== "date") return m;
+    const toKrw = (l: LedgerDisplayRow) => toKrwByRate(l.amount, l.currency, fxRate);
+    for (const l of filteredLedger) {
+      if (!l.date) continue;
+      const cur = m.get(l.date) ?? { income: 0, expense: 0, count: 0 };
+      cur.count += 1;
+      if (l.kind === "income") cur.income += toKrw(l);
+      else if (l.kind === "expense" && !isCreditPayment(l)) cur.expense += toKrw(l);
+      m.set(l.date, cur);
+    }
+    return m;
+  }, [filteredLedger, showDailySummary, ledgerSort.key, fxRate]);
 
   // 컬럼 너비 상태 (localStorage에서 로드; 10개 = 데이터 9 + 작업 1: 할인 전·할인·최종)
   const [columnWidths, setColumnWidths] = useState<number[]>(() => {
@@ -227,9 +248,11 @@ export const LedgerTable: React.FC<Props> = React.memo(function LedgerTable({
 
     const updated: LedgerEntry = { ...entry };
     if (field === "date") {
-      // 폼과 동일 검증 — 빈 값·형식 오류·미래 날짜 거부 (KST 기준 오늘까지)
-      const todayStr = getTodayKST();
-      const dv = validateDate(editingValue, new Date(todayStr + "T00:00:00+09:00"));
+      // 폼과 동일 검증 — 빈 값·형식 오류·미래 날짜 거부 (KST 기준 오늘까지).
+      // parseIsoLocal로 만들면 maxDate의 로컬 성분이 KST 날짜와 일치 — validateDate가
+      // getFullYear/Month/Date(로컬)로 상한을 재구성하므로, KST 자정 인스턴트를 넘기면
+      // KST보다 서쪽 타임존에서 상한이 하루 당겨져 오늘 날짜가 거부된다.
+      const dv = validateDate(editingValue, parseIsoLocal(getTodayKST()) ?? undefined);
       if (!dv.valid) {
         toast.error(dv.error || "유효하지 않은 날짜입니다");
         setEditingField(null);
@@ -251,11 +274,11 @@ export const LedgerTable: React.FC<Props> = React.memo(function LedgerTable({
       updated.toAccountId = editingValue || undefined;
     } else if (field === "grossAmount") {
       const isUSD = entry.currency === "USD";
-      // KRW 도 소수점 허용해서 파싱 후 반올림 — float 쓰레기 값 들어와도 안전
-      const gross = isUSD
-        ? parseFloat(editingValue.replace(/[^\d.]/g, ""))
-        : Math.round(parseFloat(editingValue.replace(/[^\d.]/g, "")) || 0);
-      if (!Number.isFinite(gross) || isNaN(gross)) {
+      // 빈 값·0은 폼과 동일하게 거부 — `|| 0` 폴백은 빈 KRW 입력을 0원으로 무경고 저장했다.
+      const parsed = parseFloat(editingValue.replace(/[^\d.]/g, ""));
+      const gross = isUSD ? parsed : Math.round(parsed);
+      if (!Number.isFinite(gross) || gross <= 0) {
+        toast.error("금액을 입력해주세요.");
         setEditingField(null);
         setEditingValue("");
         return;
@@ -271,19 +294,21 @@ export const LedgerTable: React.FC<Props> = React.memo(function LedgerTable({
       updated.amount = gross - disc;
     } else if (field === "amount") {
       const isUSD = entry.currency === "USD";
-      // KRW 도 소수점 허용해서 파싱 후 반올림 — float 쓰레기 값 들어와도 안전
-      const amount = isUSD
-        ? parseFloat(editingValue.replace(/[^\d.]/g, ""))
-        : Math.round(parseFloat(editingValue.replace(/[^\d.]/g, "")) || 0);
-      if (Number.isFinite(amount) && !isNaN(amount)) {
-        updated.amount = amount;
-        if ((entry.kind === "expense" || entry.kind === "income") && (entry.discountAmount ?? 0) > 0) {
-          updated.discountAmount = undefined;
-        }
-      } else {
+      // 빈 값·0은 폼과 동일하게 거부 — `|| 0` 폴백은 빈 KRW 입력을 0원으로 무경고 저장했다(USD는 거부되던 비대칭).
+      const parsed = parseFloat(editingValue.replace(/[^\d.]/g, ""));
+      const amount = isUSD ? parsed : Math.round(parsed);
+      if (!Number.isFinite(amount) || amount <= 0) {
+        toast.error("금액을 입력해주세요.");
         setEditingField(null);
         setEditingValue("");
         return;
+      }
+      updated.amount = amount;
+      if ((entry.kind === "expense" || entry.kind === "income") && (entry.discountAmount ?? 0) > 0) {
+        // 최종(net) 금액을 직접 고치면 기존 할인액과 정합이 깨져 할인 기록을 제거한다 —
+        // 무경고 소거였던 것을 안내 토스트로 알린다 (할인 유지는 '할인 전' 열에서 재입력).
+        updated.discountAmount = undefined;
+        toast("할인 정보가 제거되었습니다 — 할인을 유지하려면 '할인 전' 열을 수정하세요.", { icon: "ℹ️" });
       }
     } else if (field === "discountAmount") {
       if (entry.kind !== "income" && entry.kind !== "expense") {
@@ -340,10 +365,37 @@ export const LedgerTable: React.FC<Props> = React.memo(function LedgerTable({
     setEditingValue("");
   };
 
-  // 필터 변경 시 페이지 초기화
+  // 항목 수 변화 대응 (같은 필터 안에서 추가/삭제):
+  //  - 추가 → 새 행(date desc면 page 0)이 보이도록 첫 페이지로
+  //  - 삭제 → 현재 페이지가 범위를 벗어나면 clamp. 마지막 행 삭제 후 listPage가 남아 slice가 빈
+  //    배열이 되고 페이지 컨트롤(length>PAGE_SIZE)까지 사라져 빈 표에 갇히던 회귀 방지.
+  // ledgerScrollKey 리셋보다 먼저 둔다 — 필터+건수 동시 변경 시 뒤의 →0 effect가 이겨 page 0이 된다.
+  const prevFilteredLenRef = useRef(filteredLedger.length);
+  useEffect(() => {
+    const prev = prevFilteredLenRef.current;
+    const cur = filteredLedger.length;
+    prevFilteredLenRef.current = cur;
+    if (cur > prev) setListPage(0);
+    else if (cur < prev) setListPage((p) => Math.min(p, Math.max(0, Math.ceil(cur / PAGE_SIZE) - 1)));
+  }, [filteredLedger.length]);
+
+  // 필터/보기 변경 시 페이지 초기화 — 필터 지문(ledgerScrollKey)에 반응.
+  // filteredLedger.length로만 감지하면 건수가 우연히 같은 필터 전환(6월 120건 → 7월 120건)에서
+  // effect가 발화하지 않아 이전 페이지(예: 3페이지)가 그대로 남는다.
   useEffect(() => {
     setListPage(0);
-  }, [filteredLedger.length]);
+  }, [ledgerScrollKey]);
+
+  // 검색(Ctrl+K) 이동 대상이 다른 페이지에 있으면 그 페이지로 점프.
+  // (부모가 대상 월을 selectedMonths에 포함시켜 filteredLedger에 들어온 뒤 여기서 페이지를 맞춘다.)
+  // 위 초기화 effect보다 뒤에 두어 같은 커밋에서 page 0 리셋을 덮어쓴다.
+  useEffect(() => {
+    if (!highlightLedgerId) return;
+    const idx = filteredLedger.findIndex((l) => l.id === highlightLedgerId);
+    if (idx < 0) return;
+    const targetPage = Math.floor(idx / PAGE_SIZE);
+    setListPage((p) => (p === targetPage ? p : targetPage));
+  }, [highlightLedgerId, filteredLedger]);
 
   // 헤더·본문 열 너비 — 리사이즈 중에는 liveColumnWidths(widthsForRender)로 실시간 반영
   const ledgerColumnWidthStyles = useMemo(() => {
@@ -548,22 +600,26 @@ export const LedgerTable: React.FC<Props> = React.memo(function LedgerTable({
             const enableDaySummary = showDailySummary && ledgerSort.key === "date";
             const rows: React.ReactNode[] = [];
             let prevDate: string | null = null;
-            let dayIncome = 0, dayExpense = 0, dayCount = 0, dayDate = "";
-            // USD 항목은 환율로 KRW 환산 후 소계 합산 (요약 카드와 동일 정책 — 단일 소스)
-            const toKrw = (l: LedgerDisplayRow) => toKrwByRate(l.amount, l.currency, fxRate);
+            // dayPageCount = 이 페이지에 나타난 그 날의 행 수 (전체 대비 적으면 페이지 경계로 잘린 것)
+            let dayPageCount = 0, dayDate = "";
 
             const flushDaySummary = () => {
-              if (!enableDaySummary || !dayDate || dayCount === 0) return;
-              const net = dayIncome - dayExpense;
+              if (!enableDaySummary || !dayDate || dayPageCount === 0) return;
+              // 합계·건수는 filteredLedger 전체 기준(dailyTotals) — 페이지 부분합이 아니다.
+              const full = dailyTotals.get(dayDate) ?? { income: 0, expense: 0, count: dayPageCount };
+              const isPartial = dayPageCount < full.count; // 이 페이지엔 일부만 보임
+              const net = full.income - full.expense;
               rows.push(
                 <tr key={`ds-${dayDate}`} style={{ background: "var(--bg)", borderTop: "1px solid var(--border)" }}>
                   <td colSpan={11} style={{ padding: "5px 12px", fontSize: 12 }}>
                     <div style={{ display: "flex", alignItems: "center", gap: 12, flexWrap: "wrap" }}>
-                      <span style={{ fontWeight: 600, color: "var(--text)" }}>{formatShortDate(dayDate)}</span>
-                      <span style={{ color: "var(--text-muted)" }}>{dayCount}건</span>
+                      <span style={{ fontWeight: 600, color: "var(--text)" }}>
+                        {formatShortDate(dayDate)}{isPartial ? " (계속)" : ""}
+                      </span>
+                      <span style={{ color: "var(--text-muted)" }}>{full.count}건</span>
                       {/* 국내 관례: 수입=빨강(chart-income), 지출=파랑(chart-expense) */}
-                      {dayIncome > 0 && <span style={{ color: "var(--chart-income)", fontWeight: 500 }}>+{formatKRW(dayIncome)}</span>}
-                      {dayExpense > 0 && <span style={{ color: "var(--chart-expense)", fontWeight: 500 }}>-{formatKRW(dayExpense)}</span>}
+                      {full.income > 0 && <span style={{ color: "var(--chart-income)", fontWeight: 500 }}>+{formatKRW(full.income)}</span>}
+                      {full.expense > 0 && <span style={{ color: "var(--chart-expense)", fontWeight: 500 }}>-{formatKRW(full.expense)}</span>}
                       <span style={{ fontWeight: 600, color: net >= 0 ? "var(--chart-income)" : "var(--chart-expense)" }}>
                         = {net >= 0 ? "+" : ""}{formatKRW(net)}
                       </span>
@@ -578,13 +634,11 @@ export const LedgerTable: React.FC<Props> = React.memo(function LedgerTable({
             const index = listPage * PAGE_SIZE + pageIndex;
             if (enableDaySummary && prevDate !== null && l.date !== prevDate) {
               flushDaySummary();
-              dayIncome = 0; dayExpense = 0; dayCount = 0;
+              dayPageCount = 0;
             }
             if (enableDaySummary) {
               dayDate = l.date;
-              dayCount++;
-              if (l.kind === "income") dayIncome += toKrw(l);
-              else if (l.kind === "expense") dayExpense += toKrw(l);
+              dayPageCount++;
             }
             prevDate = l.date;
 
@@ -664,21 +718,12 @@ export const LedgerTable: React.FC<Props> = React.memo(function LedgerTable({
               draggable={canReorder && !(l as LedgerDisplayRow)._tradeId}
               onMouseDown={(e) => {
                 if (e.shiftKey) {
+                  // 단일 Shift+클릭도 handleDragSumStart가 등록하는 document mouseup(onUp)에서
+                  // 1행 slice로 토글된다. 여기에 별도 onClick 토글을 두면 mouseup→click 순으로
+                  // 같은 행이 두 번 토글돼 순효과 0(아무것도 선택 안 됨)이 됐다 — onClick 제거.
                   e.preventDefault();
                   e.stopPropagation();
                   handleDragSumStart(index);
-                }
-              }}
-              onClick={(e) => {
-                if (e.shiftKey) {
-                  e.preventDefault();
-                  e.stopPropagation();
-                  setSelectedLedgerIdsForSum((prev) => {
-                    const next = new Set(prev);
-                    if (next.has(l.id)) next.delete(l.id);
-                    else next.add(l.id);
-                    return next;
-                  });
                 }
               }}
               onDragStart={(e) => {
@@ -794,7 +839,9 @@ export const LedgerTable: React.FC<Props> = React.memo(function LedgerTable({
                       if (v === "이체") {
                         updated = { ...updated, kind: "transfer" };
                       } else if (v === "수입") {
-                        updated = { ...updated, kind: "income" };
+                        // income은 입금계좌(toAccountId)만 의미 — 출금계좌 잔존 시 계좌 잔액이 조용히
+                        // 어긋나고 표에 "+0 · 잔액"이 표시된다 (정산 계약: income=toAccountId만).
+                        updated = { ...updated, kind: "income", fromAccountId: undefined };
                       } else {
                         updated = { ...updated, kind: "expense" };
                       }

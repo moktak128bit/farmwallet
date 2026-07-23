@@ -2,6 +2,7 @@ import React, { useEffect, useMemo, useState } from "react";
 import { Check, X, AlertTriangle } from "lucide-react";
 import type { CategoryPresets, LedgerEntry } from "../../types";
 import { useFocusTrap } from "../../hooks/useFocusTrap";
+import { useModalStackEntry } from "../../utils/modalStack";
 import { formatKRW } from "../../utils/formatter";
 import {
   applyTollParkingSplit,
@@ -39,6 +40,7 @@ export const TollParkingSplitWizard: React.FC<Props> = ({
   onClose,
 }) => {
   const trapRef = useFocusTrap<HTMLDivElement>(true);
+  const isTopModal = useModalStackEntry(true);
 
   const candidates = useMemo(() => findTollParkingCandidates(ledger), [ledger]);
   const hasSplitInPresets = useMemo(() => presetHasTollParking(categoryPresets), [categoryPresets]);
@@ -59,10 +61,11 @@ export const TollParkingSplitWizard: React.FC<Props> = ({
   }, [ledger]);
 
   useEffect(() => {
-    const handler = (e: KeyboardEvent) => { if (e.key === "Escape") onClose(); };
+    // 모달 중첩 시 최상위 모달만 ESC로 닫힘 (위에 다른 모달이 뜬 채 동시 닫힘·입력 소실 방지)
+    const handler = (e: KeyboardEvent) => { if (e.key === "Escape" && isTopModal()) onClose(); };
     window.addEventListener("keydown", handler);
     return () => window.removeEventListener("keydown", handler);
-  }, [onClose]);
+  }, [onClose, isTopModal]);
 
   const toggle = (id: string) => {
     setExcluded((prev) => {
@@ -95,8 +98,11 @@ export const TollParkingSplitWizard: React.FC<Props> = ({
       (l) => l.kind === "expense" && l.subCategory === TP_PARENT && l.detailCategory === TP_SOURCE
     );
 
-    // 1. 프리셋 업데이트 (톨비·주차비 추가, 잔여 없으면 통행·주차 제거) — 먼저(별도 undo 단계)
-    onChangeCategoryPresets(applyTollParkingToPresets(categoryPresets, !sourceRemains));
+    // 1. 프리셋 업데이트 (톨비·주차비 추가, 잔여 없으면 통행·주차 제거) — 먼저(별도 undo 단계).
+    //    프리셋 무변경(이미 톨비·주차비 존재 + 잔여도 그대로)이면 호출하지 않는다 — 무조건 호출은
+    //    허위 성공 토스트 + no-op undo 스텝 + redo 스택 소실을 유발했다(TaxiSplitWizard와 동일 가드).
+    const nextPresets = applyTollParkingToPresets(categoryPresets, !sourceRemains);
+    if (nextPresets !== categoryPresets) onChangeCategoryPresets(nextPresets);
     // 2. ledger 재분류
     if (idToTarget.size > 0) onChangeLedger(nextLedger);
   };

@@ -4,7 +4,7 @@ import {
   XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer,
 } from "recharts";
 import type { ValueType } from "recharts/types/component/DefaultTooltipContent";
-import { C, F, W, SD, Card, Kpi, Insight, Section, CT, pieLabel, type D } from "../insightsShared";
+import { C, F, W, Card, Kpi, Insight, Section, CT, pieLabel, type D } from "../insightsShared";
 
 export const InvestTab = React.memo(function InvestTab({ d }: { d: D }) {
   const holdings = d.trades.map((v) => ({
@@ -13,10 +13,11 @@ export const InvestTab = React.memo(function InvestTab({ d }: { d: D }) {
     매수: v.buyTotal,
     매도: v.sellTotal,
     보유수량: v.buyCount - v.sellCount,
-    실현손익: v.sellTotal - (v.sellCount > 0 ? SD(v.buyTotal, v.buyCount) * v.sellCount : 0),
   }));
   const holdOnly = holdings.filter((h) => h.보유수량 > 0);
-  const closedPL = holdings.filter((h) => h.보유수량 === 0 && h.매도 > 0);
+  // 청산 종목 손익 = FIFO 기록(closedByStock) — 기간 필터된 거래의 평균단가로 계산하면
+  // 이전 기간 매수 원가가 빠져 부호까지 반전됐다 (감사 확정). KPI '실현 손익'과 동일 방법론.
+  const closedPL = d.closedByStock;
   const noSellHoldings = holdOnly.filter((h) => h.매도 === 0 && h.매수 > 500000);
   // 보유 규모·원금·집중도는 FIFO 잔여원가(holdingsByStock) 기준 — 누적 매수액(gross)은 매도-재매수 시 부풀려짐.
   const holdCost = d.holdingsByStock;
@@ -61,7 +62,7 @@ export const InvestTab = React.memo(function InvestTab({ d }: { d: D }) {
     <div>
       {/* 상단 배너 */}
       <div style={{ padding: "10px 14px", background: "var(--bg)", borderRadius: 8, marginBottom: 16, fontSize: 12, color: "var(--text-muted)", lineHeight: 1.6 }}>
-        ℹ️ 범위: <strong>{rangeLabel}</strong> ({periodLabel}) · 단위: <strong>원</strong> · 매수/매도 기준 (현재 시가 평가는 대시보드 참조) · 실현손익·배당은 기간 내 체결 기준
+        ℹ️ 범위: <strong>{rangeLabel}</strong> ({periodLabel}) · 단위: <strong>원</strong> · 매수/매도 기준 (현재 시가 평가는 대시보드 참조) · 실현손익 KPI는 라이프타임 누적(FIFO), 청산 목록·배당은 기간 내 체결 기준
       </div>
 
       {/* ============ 한눈에 ============ */}
@@ -266,21 +267,19 @@ export const InvestTab = React.memo(function InvestTab({ d }: { d: D }) {
           </div>
         </Card>
 
-        <Card title="청산 종목 손익 (평균단가 기준)" span={2}>
-          {/* 종목별 매수/매도 합산(평균단가) 기준 — FIFO 기반 KPI '실현 손익'과는 방법론이 달라
-              부분 매도·재매수가 있으면 수치가 다를 수 있음 (D에 종목별 FIFO 기록이 없어 라벨로 명시) */}
+        <Card title="청산 종목 손익 (FIFO 실현)" span={2}>
           <div style={{ fontSize: 11, color: "var(--text-faint)", marginBottom: 6 }}>
-            매도금액 − 평균 매수단가 × 매도수량. FIFO 기준인 상단 "실현 손익" KPI와 다를 수 있습니다.
+            매도 체결 건별 FIFO 실현손익의 종목 합 — 원가는 전체 매수 이력에서 소진. 상단 "실현 손익" KPI와 동일 방법 (기간 필터 시 매도일 기준).
           </div>
           <div style={{ maxHeight: 340, overflow: "auto" }}>
-            {closedPL.length === 0 ? <div style={{ textAlign: "center", padding: 40, color: "var(--text-faint)" }}>청산 종목 없음</div> : closedPL.map(({ fullName, 매수, 매도, 실현손익 }) => (
-              <div key={fullName} style={{ padding: "8px 0", borderBottom: "1px solid var(--border-light)" }}>
-                <div style={{ fontSize: 12, fontWeight: 600 }}>{fullName}</div>
+            {closedPL.length === 0 ? <div style={{ textAlign: "center", padding: 40, color: "var(--text-faint)" }}>기간 내 청산 매도 없음</div> : closedPL.map((s) => (
+              <div key={s.name} style={{ padding: "8px 0", borderBottom: "1px solid var(--border-light)" }}>
+                <div style={{ fontSize: 12, fontWeight: 600 }}>{s.name} <span style={{ color: "var(--text-faint)", fontWeight: 400 }}>({s.count}건)</span></div>
                 <div style={{ display: "flex", gap: 12, fontSize: 11, marginTop: 2 }}>
-                  <span style={{ color: "var(--text-faint)" }}>매수 {F(매수)}원</span>
-                  <span style={{ color: "var(--text-faint)" }}>매도 {F(매도)}원</span>
-                  <span style={{ color: 실현손익 >= 0 ? "#2ecc71" : "#e94560", fontWeight: 700, marginLeft: "auto" }}>
-                    {실현손익 >= 0 ? "+" : ""}{F(Math.round(실현손익))}원
+                  <span style={{ color: "var(--text-faint)" }}>매도원가 {F(Math.round(s.cost))}원</span>
+                  <span style={{ color: "var(--text-faint)" }}>매도금액 {F(Math.round(s.proceeds))}원</span>
+                  <span style={{ color: s.pnl >= 0 ? "var(--danger)" : "var(--accent)", fontWeight: 700, marginLeft: "auto" }}>
+                    {s.pnl >= 0 ? "+" : ""}{F(Math.round(s.pnl))}원
                   </span>
                 </div>
               </div>

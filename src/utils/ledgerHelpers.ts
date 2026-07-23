@@ -15,10 +15,16 @@ export function ledgerEntryGross(l: Pick<LedgerEntry, "kind" | "amount" | "disco
   return l.amount;
 }
 
-/** 주식 거래를 가계부 행 형태로 변환. 매도는 실현손익 있으면 그것 기준, 없으면 totalAmount. */
+/**
+ * 주식 거래를 가계부 행 형태로 변환.
+ * 매도 행의 amount는 **KRW 실현손익** — realizedPnlKrwByTradeId는 buildClosedTradeRecords의
+ * realizedPnlKRW(매수·매도 각각 fxRateAtTrade 환산) 기준이어야 한다. USD 손익을 액면+currency:"USD"로
+ * 넘기면 표시 시점의 현재 환율로 소급 환산되어 환차손익이 빠지고 과거 손익이 매일 변한다.
+ * 맵에 없으면(무효 티커 등) totalAmount 폴백.
+ */
 export function tradeToLedgerRow(
   t: StockTrade,
-  realizedPnlByTradeId: Map<string, number>
+  realizedPnlKrwByTradeId: Map<string, number>
 ): LedgerDisplayRow {
   const isSell = t.side === "sell";
   const isUsd = isUSDStock(t.ticker);
@@ -27,7 +33,7 @@ export function tradeToLedgerRow(
   const label = t.name ? `${t.ticker} ${t.name}` : t.ticker;
   const action = isSell ? "매도" : "매수";
   const description = `${label} ${qty}주 ${priceStr}에 ${action}`;
-  const rawPnl = isSell ? (realizedPnlByTradeId.get(t.id) ?? t.totalAmount) : t.totalAmount;
+  const rawPnl = isSell ? (realizedPnlKrwByTradeId.get(t.id) ?? t.totalAmount) : t.totalAmount;
   if (isSell) {
     const isProfit = rawPnl >= 0;
     // 수익은 income(가계부 일별 소계에 +), 손실은 expense(소계에 -). 둘 다 amount는 절댓값.
@@ -42,7 +48,7 @@ export function tradeToLedgerRow(
       amount: Math.abs(rawPnl),
       toAccountId: isProfit ? t.accountId : undefined,
       fromAccountId: isProfit ? undefined : t.accountId,
-      currency: isUsd ? "USD" : "KRW",
+      currency: "KRW", // 실현손익은 이미 KRW — USD 표기 시 현재 환율로 이중 환산됨
       _tradeId: t.id,
     };
   }

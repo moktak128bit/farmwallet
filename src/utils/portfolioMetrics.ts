@@ -69,7 +69,9 @@ export function computePortfolioMetrics(
 
 /**
  * 미실현 손익 — 보유 종목 × (현재가 − 평단), KRW 환산. 손실은 양의 절대값으로 분리.
- * 입력 positions는 priceFallback 없이 계산된 것(실제 시세만) — 시세 미로드 종목은 cost로 대체하지 않음.
+ * 입력 positions는 priceFallback 없이 계산된 것(실제 시세만). 시세 미로드 종목(marketPrice 0)은
+ * **제외** — 0원 평가로 두면 원가 전액이 '미실현 손실'(−100%)로 잡혀, 같은 보유분을 0으로
+ * 중립화하는 대시보드(priceFallback:"cost")와 화면 간 불일치가 난다.
  * (투자 손익 4분할 카드: 실현=FIFO 청산 누적, 미실현=여기.)
  */
 export function computeUnrealizedPL(
@@ -80,6 +82,7 @@ export function computeUnrealizedPL(
   let unrealizedLoss = 0;
   for (const p of positions) {
     if (!p.quantity || p.quantity <= 0) continue;
+    if (!(Number(p.marketValue) > 0)) continue; // 시세 없음(평가 0) → 손익 판정 불가 (−100% 손실 아님)
     const isUsd = p.marketCurrency === "USD";
     const costKrw = isUsd ? (p.totalBuyAmountKRW ?? p.totalBuyAmount * (fxRate ?? 0)) : p.totalBuyAmount;
     const marketKrw = isUsd ? p.marketValue * (fxRate ?? 0) : p.marketValue;

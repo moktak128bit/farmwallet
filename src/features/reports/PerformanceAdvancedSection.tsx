@@ -34,6 +34,10 @@ export const PerformanceAdvancedSection: React.FC<Props> = React.memo(function P
       <h3>성과 분석 (고급)</h3>
       <DateRangePicker startDate={startDate} endDate={endDate} setStartDate={setStartDate} setEndDate={setEndDate} />
 
+      {/* 기간 선택은 아래 '소비-투자여력' 표에만 적용 — 계좌별 성과는 IRR·TTWR 특성상 전체 기간 누적 */}
+      <div className="hint" style={{ fontSize: 12, margin: "4px 0 8px" }}>
+        계좌별 성과 기여는 <strong>전체 기간 누적</strong>입니다 (기간 선택은 월별 소비-투자여력 표에 적용).
+      </div>
       <div style={{ overflowX: "auto", width: "100%", marginBottom: 16 }}>
         <table className="data-table" style={{ width: "100%", minWidth: 1080 }}>
           <thead>

@@ -206,8 +206,12 @@ export const StocksView: React.FC<Props> = ({
 
   const totals = useMemo(() => {
     const rate = fxRate ?? 0;
-    const toKRW = (p: PositionWithPrice, val: number) =>
-      (p.currency === "USD" || isUSDStock(p.ticker)) && rate ? val * rate : val;
+    const toKRW = (p: PositionWithPrice, val: number) => {
+      if (!(p.currency === "USD" || isUSDStock(p.ticker))) return val;
+      // 환율 미로드 시 USD는 KRW 합계에서 제외(0) — 달러 액면이 원화 합계에 그대로 섞여
+      // 헤드라인 수치가 단위 혼합으로 틀리는 것 방지 (환율 로드 시 자동 복원)
+      return rate > 0 ? val * rate : 0;
+    };
     // 시세 없음 USD 행: 평가금을 현재환율 환산이 아닌 매입원가(KRW)로 잡아 손익 기여를 정확히 0으로
     // (toKRW(달러원가)는 환차분만큼 가짜 손익을 만들어 행의 "—" 표시와 합계가 어긋남)
     const marketValueKRW = (p: PositionWithPrice) =>

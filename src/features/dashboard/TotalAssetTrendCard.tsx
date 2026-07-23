@@ -1,6 +1,7 @@
 import React, { Suspense, lazy, useMemo, useState } from "react";
 import type { Account, AccountType, LedgerEntry, MarketEnvSnapshot, StockPrice, StockTrade } from "../../types";
 import { computeAccountBalances } from "../../calculations";
+import { usdBalanceModeDelta } from "../../utils/tradeCashImpact";
 import { buildHalfMonthSnapshotDates } from "../../utils/date";
 import { canonicalTickerForMatch, isUSDStock } from "../../utils/finance";
 import { buildSnapshotPriceIndex } from "../../utils/stockCostSnapshots";
@@ -166,10 +167,24 @@ export const TotalAssetTrendCard: React.FC<Props> = React.memo(function TotalAss
         return a.id.localeCompare(b.id);
       });
 
+    // USD 잔액모드 롤백 — account.usdBalance는 모든 잔액모드 거래가 반영된 '현재' 달러 보유량이라
+    // 과거 스냅샷에 그대로 쓰면 매도 이전 점이 주식 평가액+미래 매도대금을 동시에 계상한다(이중 계상).
+    // accountTimeline과 동일하게: 초기 보유 = usdBalance − Σ(전체 잔액모드 델타), 스냅샷 시점까지 재누적.
+    const usdModeDeltaTotal = new Map<string, number>();
+    for (const t of trades) {
+      const delta = usdBalanceModeDelta(t);
+      if (delta !== 0) usdModeDeltaTotal.set(t.accountId, (usdModeDeltaTotal.get(t.accountId) ?? 0) + delta);
+    }
+    const usdModeDeltaThrough = new Map<string, number>();
+
     let tradeIdx = 0;
     const applyTradesThrough = (upTo: string) => {
       while (tradeIdx < sortedTrades.length && sortedTrades[tradeIdx].date.slice(0, 10) <= upTo) {
         const t = sortedTrades[tradeIdx];
+        const usdDelta = usdBalanceModeDelta(t);
+        if (usdDelta !== 0) {
+          usdModeDeltaThrough.set(t.accountId, (usdModeDeltaThrough.get(t.accountId) ?? 0) + usdDelta);
+        }
         const norm = canonicalTickerForMatch(t.ticker) ?? t.ticker.toUpperCase();
         const key = `${t.accountId}::${norm}`;
         let q = queues.get(key);
@@ -229,7 +244,10 @@ export const TotalAssetTrendCard: React.FC<Props> = React.memo(function TotalAss
         let accCash = row.currentBalance;
         const usd =
           row.account.type === "securities" || row.account.type === "crypto"
-            ? (row.account.usdBalance ?? 0) + (row.usdTransferNet ?? 0)
+            ? (row.account.usdBalance ?? 0) -
+              (usdModeDeltaTotal.get(row.account.id) ?? 0) +
+              (usdModeDeltaThrough.get(row.account.id) ?? 0) +
+              (row.usdTransferNet ?? 0)
             : 0;
         if (usd && effectiveFx > 0) accCash += usd * effectiveFx;
         cashByAccount.set(row.account.id, accCash);
@@ -383,9 +401,12 @@ export const TotalAssetTrendCard: React.FC<Props> = React.memo(function TotalAss
   const activeDetail = activeDate ? detailByDate.get(activeDate) : undefined;
 
   const latest = rows[rows.length - 1];
+  const latestDetail = latest ? detailByDate.get(latest.date) : undefined;
   const unrealized = latest ? latest.cashPlusMarket - latest.cashPlusCost : 0;
-  const unrealizedPct = latest && latest.cashPlusCost > 0 ? (unrealized / latest.cashPlusCost) * 100 : 0;
-  const pnlColor = unrealized >= 0 ? "var(--success, #059669)" : "var(--danger, #dc2626)";
+  // % 분모는 주식 원가만 — 분자(평가−원가)에서 현금은 상쇄되므로 현금 포함 분모는 %만 희석시킨다
+  // (StockCostVsMarketCard·아래 계좌별/종목별 %와 동일 정의)
+  const unrealizedPct = latestDetail && latestDetail.costKrw > 0 ? (unrealized / latestDetail.costKrw) * 100 : 0;
+  const pnlColor = unrealized >= 0 ? "var(--danger)" : "var(--accent)"; // 이익=빨강, 손실=파랑 (국내 관례)
 
   const savedCount = marketEnvSnapshots?.length ?? 0;
 
@@ -477,8 +498,8 @@ const formatNativePrice = (value: number, isUsd: boolean): string => {
 
 const SnapshotDetail: React.FC<SnapshotDetailProps> = ({ row, detail, isLatest, onReset }) => {
   const pnl = row.cashPlusMarket - row.cashPlusCost;
-  const pnlPct = row.cashPlusCost > 0 ? (pnl / row.cashPlusCost) * 100 : 0;
-  const pnlColor = pnl >= 0 ? "var(--success, #059669)" : "var(--danger, #dc2626)";
+  const pnlPct = detail.costKrw > 0 ? (pnl / detail.costKrw) * 100 : 0; // 분모 = 주식 원가 (헤더·행 %와 동일)
+  const pnlColor = pnl >= 0 ? "var(--danger)" : "var(--accent)"; // 이익=빨강, 손실=파랑 (국내 관례)
   return (
     <div style={{ marginTop: 16, paddingTop: 12, borderTop: "1px solid var(--border)" }}>
       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 10, flexWrap: "wrap", gap: 8 }}>
@@ -532,7 +553,7 @@ const SnapshotDetail: React.FC<SnapshotDetailProps> = ({ row, detail, isLatest, 
                 const isInvest = a.type === "securities" || a.type === "crypto";
                 const aPnl = a.marketKrw - a.costKrw;
                 const aPct = a.costKrw > 0 ? (aPnl / a.costKrw) * 100 : 0;
-                const aColor = aPnl >= 0 ? "var(--success, #059669)" : "var(--danger, #dc2626)";
+                const aColor = aPnl >= 0 ? "var(--danger)" : "var(--accent)"; // 이익=빨강, 손실=파랑
                 return (
                   <tr key={a.accountId} style={{ borderTop: "1px solid var(--border)", textAlign: "right" }}>
                     <td style={{ textAlign: "left", padding: "6px 8px", fontWeight: 600 }}>{a.accountName}</td>
@@ -579,7 +600,7 @@ const SnapshotDetail: React.FC<SnapshotDetailProps> = ({ row, detail, isLatest, 
               {detail.holdings.map((h) => {
                 const hPnl = h.marketKrw - h.costKrw;
                 const hPct = h.costKrw > 0 ? (hPnl / h.costKrw) * 100 : 0;
-                const hColor = hPnl >= 0 ? "var(--success, #059669)" : "var(--danger, #dc2626)";
+                const hColor = hPnl >= 0 ? "var(--danger)" : "var(--accent)"; // 이익=빨강, 손실=파랑
                 const sourceLabel =
                   h.priceSource === "snapshot" ? "박제" : h.priceSource === "current" ? "현재" : "없음";
                 return (

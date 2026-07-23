@@ -32,6 +32,10 @@ interface PositionWithPrice {
   pnl: number;
   pnlRate: number;
   currency?: string;
+  /** USD 종목의 매입 당시 환율 기준 KRW 원가 (computePositions) — 평가손익 KRW 산출용 */
+  totalBuyAmountKRW?: number;
+  /** 시세 수신 여부 — false면 marketValue가 매입가 중립값 */
+  hasQuote?: boolean;
 }
 
 interface PortfolioChartsSectionProps {
@@ -146,11 +150,27 @@ export const PortfolioChartsSection: React.FC<PortfolioChartsSectionProps> = ({
           <h4 style={{ margin: "0 0 12px 0", textAlign: "center" }}>계좌별 자산 비중 (주식+현금)</h4>
           <div style={{ width: "100%", height: 300, minHeight: 300, minWidth: 0 }}>
             {(() => {
-              const accountData = positionsByAccount.map(group => {
+              // 증권·코인 계좌의 USD 현금 포함 + 포지션 없는(전량 매도·현금만) 투자계좌도 포함 —
+              // 누락 시 총자산 추이 카드와 계좌 수치가 어긋난다. (현재 시점 비중이므로 usdBalance 그대로)
+              const cashOf = (balance: (typeof balances)[number] | undefined): number => {
+                if (!balance) return 0;
+                const usdCash =
+                  balance.account.type === "securities" || balance.account.type === "crypto"
+                    ? (balance.account.usdBalance ?? 0) + (balance.usdTransferNet ?? 0)
+                    : 0;
+                return (balance.currentBalance ?? 0) + (usdCash && rate > 0 ? usdCash * rate : 0);
+              };
+              const withPositions = positionsByAccount.map(group => {
                 const balance = balances.find(b => b.account.id === group.accountId);
-                const cash = balance?.currentBalance ?? 0;
+                const cash = cashOf(balance);
                 const stock = group.rows.reduce(
-                  (sum, p) => sum + toKRW(p, p.marketValue, rate),
+                  (sum, p) =>
+                    sum +
+                    // 시세 없음 USD 행은 취득환율 원가(totalBuyAmountKRW) — 중립값(달러 액면)을
+                    // 현재환율로 환산하면 환차만큼 가짜 손익이 섞인다 (보유현황 헤더·총자산 추이와 동일)
+                    (p.hasQuote === false && (p.currency === "USD" || isUSDStock(p.ticker)) && p.totalBuyAmountKRW != null
+                      ? p.totalBuyAmountKRW
+                      : toKRW(p, p.marketValue, rate)),
                   0
                 );
                 return {
@@ -159,7 +179,19 @@ export const PortfolioChartsSection: React.FC<PortfolioChartsSectionProps> = ({
                   cash,
                   stock
                 };
-              }).filter(d => d.value > 0);
+              });
+              const positionAccountIds = new Set(positionsByAccount.map(g => g.accountId));
+              const cashOnly = balances
+                .filter(
+                  b =>
+                    !positionAccountIds.has(b.account.id) &&
+                    (b.account.type === "securities" || b.account.type === "crypto")
+                )
+                .map(b => {
+                  const cash = cashOf(b);
+                  return { name: b.account.name, value: Math.max(0, cash), cash, stock: 0 };
+                });
+              const accountData = [...withPositions, ...cashOnly].filter(d => d.value > 0);
               
               const totalAsset = accountData.reduce((sum, d) => sum + d.value, 0);
               const colors = ["#f59e0b", "#10b981", "#0ea5e9", "#6366f1", "#f43f5e"];
@@ -217,10 +249,15 @@ export const PortfolioChartsSection: React.FC<PortfolioChartsSectionProps> = ({
           </h4>
           <div style={{ width: "100%", height: Math.max(400, positionsWithPrice.length * 30), minHeight: 400, minWidth: 0 }}>
             {positionsWithPrice.length > 0 ? (() => {
-              const withPnlKRW = positionsWithPrice.map(p => ({
-                ...p,
-                pnlKRW: toKRW(p, p.pnl, rate)
-              }));
+              const withPnlKRW = positionsWithPrice.map(p => {
+                const usd = p.currency === "USD" || isUSDStock(p.ticker);
+                // 원가 = 매입 당시 환율(totalBuyAmountKRW), 평가 = 현재 환율. 달러 pnl×현재환율은
+                // 원가를 현재 환율로 소급 재환산하는 것과 동치 — 환차손익이 통째로 빠진다.
+                const costKRW = usd ? (p.totalBuyAmountKRW ?? (rate > 0 ? p.totalBuyAmount * rate : 0)) : p.totalBuyAmount;
+                const marketKRW =
+                  p.hasQuote === false ? costKRW : usd ? (rate > 0 ? p.marketValue * rate : costKRW) : p.marketValue;
+                return { ...p, pnlKRW: marketKRW - costKRW };
+              });
               const sorted = [...withPnlKRW].sort((a, b) => b.pnlKRW - a.pnlKRW);
               // 종목 20개 이하면 중복 없이 전체 표시, 초과 시에만 상위/하위 10개
               const selected =

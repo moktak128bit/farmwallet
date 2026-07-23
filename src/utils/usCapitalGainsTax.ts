@@ -76,7 +76,10 @@ export function realizedForeignGainKRW(
     const sorted = [...ts].sort(tradeCmp);
     const queue: FifoLot[] = [];
     for (const t of sorted) {
-      const fx = t.fxRateAtTrade ?? fxAsOf(fxHistory, t.date, fallbackFxRate) ?? 0;
+      // 앱 표준(tradeAmountKRW)과 동일한 `> 0` 검사 — fxRateAtTrade=0(레거시)을 유효값으로 삼으면
+      // 해당 lot의 KRW가 통째로 0이 되어 실현차익이 원가만큼 과대/과소된다
+      const tradeFx = t.fxRateAtTrade ?? 0;
+      const fx = tradeFx > 0 ? tradeFx : (fxAsOf(fxHistory, t.date, fallbackFxRate) ?? 0);
       if (t.side === "buy") {
         // 양도세는 각 lot을 취득 당시 환율로 KRW 고정 — value에 KRW 비용을 접어 넣는다.
         queue.push({ qty: t.quantity, value: t.totalAmount * fx });

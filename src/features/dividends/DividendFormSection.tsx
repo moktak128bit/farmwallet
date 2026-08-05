@@ -65,9 +65,14 @@ export const DividendFormSection: React.FC<Props> = React.memo(function Dividend
   });
 
   // 티커 자동완성 옵션 — 보유 종목만. 이자는 별도 이자 탭에서 입력.
+  // 계좌를 이미 선택했으면 그 계좌가 보유한 종목만 — 같은 종목을 여러 계좌에서 보유 중일 때
+  // 자동완성에 같은 값(티커)이 계좌별로 다른 평단가/수량으로 중복 노출되는 것을 방지.
   const tickerOptions = useMemo(() => {
     const options: Array<{ value: string; label: string; subLabel?: string }> = [];
-    positions.forEach((pos) => {
+    const relevant = dividendForm.accountId
+      ? positions.filter((p) => p.accountId === dividendForm.accountId)
+      : positions;
+    relevant.forEach((pos) => {
       if (pos.quantity > 0) {
         // USD 종목 평단은 달러로 표기 (원화 단위로 오인 방지)
         const avgLabel = isUSDStock(pos.ticker)
@@ -81,13 +86,23 @@ export const DividendFormSection: React.FC<Props> = React.memo(function Dividend
       }
     });
     return options.sort((a, b) => a.value.localeCompare(b.value));
-  }, [positions]);
+  }, [positions, dividendForm.accountId]);
 
   // 선택한 티커의 보유 정보 (주식 탭과 동일: 원화 기준)
+  // 계좌가 선택돼 있으면 그 계좌의 포지션만 매칭 — 같은 종목을 여러 계좌에서 보유 중일 때
+  // (계좌별 평단가가 다름) 엉뚱한 계좌의 평단가/수량이 섞여 들어가는 것 방지.
   const selectedPosition = useMemo(() => {
     if (!dividendForm.ticker) return null;
-    return positions.find((p) => canonicalTickerForMatch(p.ticker) === canonicalTickerForMatch(dividendForm.ticker) && p.quantity > 0);
-  }, [positions, dividendForm.ticker]);
+    const ct = canonicalTickerForMatch(dividendForm.ticker);
+    return (
+      positions.find(
+        (p) =>
+          canonicalTickerForMatch(p.ticker) === ct &&
+          p.quantity > 0 &&
+          (!dividendForm.accountId || p.accountId === dividendForm.accountId)
+      ) ?? null
+    );
+  }, [positions, dividendForm.ticker, dividendForm.accountId]);
 
   // 티커 선택 시 보유 수량을 폼 기본값으로 채움 (수정 가능하므로 사용자가 바꿀 수 있음)
   // 티커(선택된 포지션)가 실제로 바뀔 때만 초기화 — positions 재계산(객체 참조 변경)이
@@ -229,8 +244,15 @@ export const DividendFormSection: React.FC<Props> = React.memo(function Dividend
   }, [ledger, latestPriceByCanonicalTicker, trades, positions, tickerDatabase]);
 
   // 빠른 입력: 이전 배당 내역 적용 (수정 가능)
+  // 계좌도 함께 매칭 — 같은 종목을 여러 계좌에서 보유 중이면 recent가 기록된 그 계좌의
+  // 포지션(평단가·수량)을 써야 한다 (계좌 무시하면 다른 계좌 수량이 섞여 들어감).
   const applyRecentDividend = (recent: { ticker: string; name: string; amount: number; accountId: string }) => {
-    const matchedPosition = positions.find((p) => canonicalTickerForMatch(p.ticker) === canonicalTickerForMatch(recent.ticker) && p.quantity > 0);
+    const matchedPosition = positions.find(
+      (p) =>
+        canonicalTickerForMatch(p.ticker) === canonicalTickerForMatch(recent.ticker) &&
+        p.quantity > 0 &&
+        (!recent.accountId || p.accountId === recent.accountId)
+    );
     const quantity = matchedPosition?.quantity ?? 0;
     const dividendPerShare = quantity > 0 ? String(Math.round((recent.amount / quantity) * 100) / 100) : "";
     setDividendForm({
@@ -379,7 +401,12 @@ export const DividendFormSection: React.FC<Props> = React.memo(function Dividend
           </p>
           <div style={{ display: "flex", flexWrap: "wrap", gap: 8 }}>
             {recentDividends.map((recent, idx) => {
-              const pos = positions.find((p) => canonicalTickerForMatch(p.ticker) === canonicalTickerForMatch(recent.ticker));
+              // 카드에 보이는 "보유: N주"도 recent가 기록된 계좌 기준 — 계좌 무시하면 다른 계좌 수량이 표시됨.
+              const pos = positions.find(
+                (p) =>
+                  canonicalTickerForMatch(p.ticker) === canonicalTickerForMatch(recent.ticker) &&
+                  (!recent.accountId || p.accountId === recent.accountId)
+              );
               // 통화 정보 가져오기 (최신 시세 기준)
               const originalPriceInfo = latestPriceByCanonicalTicker.get(canonicalTickerForMatch(recent.ticker));
               let currency = originalPriceInfo?.currency;

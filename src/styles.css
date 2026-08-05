@@ -1532,6 +1532,41 @@ label {
   100% { transform: translateX(-100%); width: 40%; }
 }
 
+/* ── 종목 비교 로딩 진행 패널 ── */
+.compare-progress-track {
+  position: relative;
+  height: 8px;
+  border-radius: 4px;
+  background: var(--border);
+  overflow: hidden;
+}
+.compare-progress-fill {
+  position: absolute;
+  left: 0;
+  top: 0;
+  bottom: 0;
+  border-radius: 4px;
+  background: var(--primary);
+  transition: width 0.3s ease-out;
+  overflow: hidden;
+}
+.compare-progress-fill--active::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(90deg, transparent, rgb(255 255 255 / 0.45), transparent);
+  animation: quote-refresh-slide 1.2s ease-in-out infinite;
+}
+.compare-row-spinner {
+  width: 12px;
+  height: 12px;
+  flex: none;
+  border: 2px solid var(--border);
+  border-top-color: var(--primary);
+  border-radius: 50%;
+  animation: spin 0.8s linear infinite;
+}
+
 /* ── Print styles ── */
 @media print {
   body { background: white !important; color: black !important; font-size: 12px; }

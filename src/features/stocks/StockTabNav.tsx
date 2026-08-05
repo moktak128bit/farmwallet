@@ -1,6 +1,6 @@
 import React from "react";
 
-type StockPageTab = "stocks" | "portfolio" | "fx" | "etf";
+type StockPageTab = "stocks" | "portfolio" | "compare" | "fx" | "etf";
 
 interface Props {
   activeTab: StockPageTab;
@@ -33,6 +33,14 @@ export const StockTabNav: React.FC<Props> = ({ activeTab, setActiveTab, showFxTa
         style={btn("portfolio")}
       >
         포트폴리오 분석
+      </button>
+      <button
+        type="button"
+        className={activeTab === "compare" ? "primary" : "secondary"}
+        onClick={() => setActiveTab("compare")}
+        style={btn("compare")}
+      >
+        종목 비교
       </button>
       {showFxTab && (
         <button

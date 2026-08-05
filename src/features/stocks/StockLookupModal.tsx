@@ -11,9 +11,9 @@ import {
 import type { TickerInfo } from "../../types";
 import { fetchStockLookup } from "../../yahooFinanceApi";
 import { buildLookupSummary, type StockLookupData } from "../../utils/stockLookup";
-import { canonicalTickerForMatch, cleanTicker, isKRWStock, isUSDStock } from "../../utils/finance";
+import { isKRWStock } from "../../utils/finance";
+import { searchLookupTargets, type LookupTarget } from "../../utils/lookupSearch";
 import { displayNameForTicker } from "../../utils/stockHelpers";
-import { getKrNames } from "../../storage";
 import { formatKRW } from "../../utils/formatter";
 import { getTodayKST } from "../../utils/date";
 import { useFocusTrap } from "../../hooks/useFocusTrap";
@@ -23,14 +23,6 @@ import { useModalStackEntry } from "../../utils/modalStack";
  * 종목 조회 모달 — 보유 여부와 무관하게 종목을 검색해 과거 주가 추이·배당 이력을 조회.
  * 데이터는 컴포넌트 상태에만 보관(영속화 안 함 — 조회 전용, AppData 무변경).
  */
-
-interface LookupTarget {
-  ticker: string;
-  /** 검색 결과의 종목명 ("" = 직접 입력이라 이름 미상) */
-  name: string;
-  market: "KR" | "US";
-  exchange?: string;
-}
 
 interface Props {
   tickerDatabase: TickerInfo[];
@@ -72,41 +64,10 @@ export const StockLookupModal: React.FC<Props> = ({ tickerDatabase, onClose }) =
   }, [onClose, isTopModal]);
 
   // 로컬 검색: 티커DB(이름·코드) + 전체 상장 한글명(krNames) + 티커 직접 입력
-  const results = useMemo((): LookupTarget[] => {
-    const q = query.trim();
-    if (!q) return [];
-    const Q = q.toUpperCase();
-    const seen = new Set<string>();
-    const out: LookupTarget[] = [];
-    for (const t of tickerDatabase) {
-      if (t.market === "CRYPTO") continue; // 코인은 CoinGecko 경로 — 야후 조회 대상 아님
-      if (!(t.ticker.toUpperCase().includes(Q) || t.name.toUpperCase().includes(Q))) continue;
-      const key = canonicalTickerForMatch(t.ticker);
-      if (seen.has(key)) continue;
-      seen.add(key);
-      out.push({
-        ticker: cleanTicker(t.ticker),
-        name: t.name,
-        market: t.market === "KR" ? "KR" : "US",
-        exchange: t.exchange
-      });
-      if (out.length >= MAX_RESULTS) break;
-    }
-    if (out.length < MAX_RESULTS) {
-      for (const [code, name] of Object.entries(getKrNames())) {
-        if (!(code.includes(Q) || name.toUpperCase().includes(Q))) continue;
-        const key = canonicalTickerForMatch(code);
-        if (seen.has(key)) continue;
-        seen.add(key);
-        out.push({ ticker: code, name, market: "KR" });
-        if (out.length >= MAX_RESULTS) break;
-      }
-    }
-    if (!seen.has(canonicalTickerForMatch(Q)) && (isKRWStock(Q) || isUSDStock(Q))) {
-      out.push({ ticker: cleanTicker(Q), name: "", market: isKRWStock(Q) ? "KR" : "US" });
-    }
-    return out;
-  }, [query, tickerDatabase]);
+  const results = useMemo(
+    () => searchLookupTargets(query, tickerDatabase, MAX_RESULTS),
+    [query, tickerDatabase]
+  );
 
   const handleSelect = (target: LookupTarget) => {
     setSelected(target);

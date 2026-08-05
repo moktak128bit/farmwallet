@@ -44,6 +44,10 @@ const LazyTargetPortfolioSection = lazy(() =>
 const LazyStockLookupModal = lazy(() =>
   import("../features/stocks/StockLookupModal").then((m) => ({ default: m.StockLookupModal }))
 );
+// 종목 비교 섹션 — recharts 포함이라 lazy (초기 번들 제외)
+const LazyStockCompareSection = lazy(() =>
+  import("../features/stocks/StockCompareSection").then((m) => ({ default: m.StockCompareSection }))
+);
 import type { Account, StockPrice, StockTrade, TickerInfo, StockPreset, LedgerEntry, TargetPortfolio, AccountBalanceRow } from "../types";
 import { computePositions } from "../calculations";
 import { buildClosedTradeRecords, summarizeRecords } from "../utils/investmentRecord";
@@ -123,7 +127,7 @@ export const StocksView: React.FC<Props> = ({
     }
   }, [propFxRate]);
   // 탭 관리
-  const [activeTab, setActiveTab] = useState<"stocks" | "portfolio" | "fx" | "etf">("stocks");
+  const [activeTab, setActiveTab] = useState<"stocks" | "portfolio" | "compare" | "fx" | "etf">("stocks");
   const [selectedPosition, setSelectedPosition] = useState<PositionWithPrice | null>(null);
 
   // 거래 입력 폼 상태는 TradeFormSection이 소유 — 외부 접점(거래 수정·빠른 매수/매도·프리셋·Ctrl+S)은 ref API로
@@ -670,6 +674,13 @@ export const StocksView: React.FC<Props> = ({
             </Suspense>
           )}
         </>
+      )}
+
+      {/* 종목 비교 탭 — 여러 종목 정규화 비교 (기간·최대 공통기간) */}
+      {activeTab === "compare" && (
+        <Suspense fallback={<ChartSkeleton height={360} />}>
+          <LazyStockCompareSection tickerDatabase={tickerDatabase} trades={trades} />
+        </Suspense>
       )}
 
       {showPresetModal && (

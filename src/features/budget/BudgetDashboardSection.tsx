@@ -7,6 +7,7 @@
 import React from "react";
 import type { Account, BudgetGoal } from "../../types";
 import { BUDGET_ALL_CATEGORY } from "../../types";
+import { getTodayKST, getLastDayOfMonth } from "../../utils/date";
 
 /** 부모(BudgetRecurringView) budgetUsage memo의 행 타입 — 예산 + 이번 달 사용액/잔여 */
 export type BudgetUsageRow = BudgetGoal & { spent: number; remain: number };
@@ -20,11 +21,10 @@ export const BudgetDashboardSection: React.FC<Props> = React.memo(function Budge
   budgetUsage,
   accounts,
 }) {
-  const now = new Date();
-  const year = now.getFullYear();
-  const month = now.getMonth(); // 0-based
-  const dayOfMonth = now.getDate();
-  const daysInMonth = new Date(year, month + 1, 0).getDate();
+  // '오늘'은 KST 기준 — new Date()(브라우저 로컬/UTC)를 쓰면 KST 자정 전후(UTC 15:00)에 하루 어긋남
+  const today = getTodayKST();
+  const [year, month1, dayOfMonth] = today.split("-").map(Number); // month1: 1-based
+  const daysInMonth = getLastDayOfMonth(year, month1);
   const daysRemaining = daysInMonth - dayOfMonth;
 
   // '전체' 예산은 이미 모든 개별 카테고리를 포함 → 둘을 합치면 이중계상.

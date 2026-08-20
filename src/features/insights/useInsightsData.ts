@@ -386,10 +386,12 @@ export function useInsightsData(ledger: LedgerEntry[], rawTrades: StockTrade[], 
     let zeroDays = 0, totalDays = 0;
     const spendSet = new Set(fExp.map(l => l.date));
     const msCheck = selMonth ? [selMonth] : months;
+    // '오늘'은 KST 기준(getTodayKST) — new Date()는 KST 자정 전후(UTC 15:00)에 하루 어긋나 무지출일 분모가 틀어짐
+    const todayKst = getTodayKST();
     for (const m of msCheck) {
       const [y, mo] = m.split("-").map(Number); const dim = new Date(y, mo, 0).getDate();
-      const now = new Date(); const isCur = now.getFullYear() === y && now.getMonth() + 1 === mo;
-      const md = isCur ? now.getDate() : dim;
+      const isCur = todayKst.slice(0, 7) === m;
+      const md = isCur ? Number(todayKst.slice(8, 10)) : dim;
       for (let d = 1; d <= md; d++) { totalDays++; if (!spendSet.has(`${m}-${String(d).padStart(2, "0")}`)) zeroDays++; }
     }
 

@@ -135,19 +135,88 @@ function capBackups(backups: StoredBackup[]): StoredBackup[] {
   return backups.slice(0, maxCount);
 }
 
+/**
+ * 손상된 BACKUPS 원본을 BACKUPS_CORRUPT 1슬롯으로 옮긴다.
+ * 이미 보존된 슬롯이 있으면 더 오래된 그것을 유지하고 새 손상본은 버린다(1슬롯 정책 —
+ * 첫 손상본이 가장 많은 원본 백업을 담고 있을 가능성이 높고, 이후 손상은 대개 빈 목록에서
+ * 새로 시작한 소량 백업이라 덮어쓰면 오히려 복구 가치가 떨어진다).
+ * 보존에 실패(quota 등)해도 호출부는 빈 목록으로 계속 진행한다.
+ */
+function preserveCorruptBackupsRaw(raw: string): boolean {
+  try {
+    const existing = window.localStorage.getItem(STORAGE_KEYS.BACKUPS_CORRUPT);
+    if (existing) {
+      console.warn(
+        "[FarmWallet] 손상된 백업 원본 슬롯(BACKUPS_CORRUPT)이 이미 있어 기존 것을 유지합니다 — 새 손상본은 버림"
+      );
+      return true;
+    }
+    window.localStorage.setItem(STORAGE_KEYS.BACKUPS_CORRUPT, raw);
+    return true;
+  } catch (e) {
+    console.warn("[FarmWallet] 손상된 백업 원본 보존 실패", e);
+    return false;
+  }
+}
+
 function readStoredBackups(): StoredBackup[] {
   if (typeof window === "undefined") return [];
   const raw = window.localStorage.getItem(STORAGE_KEYS.BACKUPS);
   if (!raw) return [];
   // 손상된 BACKUPS JSON이 throw하면 saveLocalBackup 전체가 실패해 이후 모든 자동 백업이
   // 영구 무력화된다 — 안전망이 통째로 죽지 않도록 파싱 실패는 빈 목록으로 흡수한다.
+  // 단, 빈 목록으로 시작하면 다음 saveLocalBackup이 [새 백업]만 써서 부분 복구 가능했던
+  // 원본 블롭을 덮어쓰므로, 원본 문자열을 BACKUPS_CORRUPT 슬롯으로 먼저 옮겨 둔다.
   try {
     const parsed = JSON.parse(raw);
     if (!Array.isArray(parsed)) return [];
     return parsed as StoredBackup[];
   } catch (e) {
-    console.warn("[FarmWallet] 백업 목록(BACKUPS) 파싱 실패 — 빈 목록으로 복구", e);
+    console.warn("[FarmWallet] 백업 목록(BACKUPS) 파싱 실패 — 원본을 보존 슬롯으로 옮기고 빈 목록으로 복구", e);
+    // 보존(또는 1슬롯 정책에 따른 의도적 스킵)이 끝난 경우에만 손상 원본을 BACKUPS에서 비운다 —
+    // 보존 자체가 실패(quota 등)했으면 그대로 두어 다음 읽기에서 재시도할 여지를 남긴다.
+    if (preserveCorruptBackupsRaw(raw)) {
+      try {
+        window.localStorage.removeItem(STORAGE_KEYS.BACKUPS);
+      } catch {
+        /* 제거 실패해도 다음 쓰기가 덮어쓴다 */
+      }
+    }
     return [];
+  }
+}
+
+/** 손상된 백업 원본 보존 슬롯(BACKUPS_CORRUPT) 정보 — 없으면 null */
+export function getCorruptBackupsInfo(): { sizeBytes: number } | null {
+  if (typeof window === "undefined") return null;
+  try {
+    const raw = window.localStorage.getItem(STORAGE_KEYS.BACKUPS_CORRUPT);
+    if (!raw) return null;
+    return { sizeBytes: new TextEncoder().encode(raw).length };
+  } catch {
+    return null;
+  }
+}
+
+/** 손상된 백업 원본 문자열(JSON 파싱 불가) — 다운로드용. 없으면 null */
+export function getCorruptBackupsRaw(): string | null {
+  if (typeof window === "undefined") return null;
+  try {
+    return window.localStorage.getItem(STORAGE_KEYS.BACKUPS_CORRUPT);
+  } catch {
+    return null;
+  }
+}
+
+/** 손상된 백업 원본 보존 슬롯 삭제 — 삭제했으면 true */
+export function clearCorruptBackups(): boolean {
+  if (typeof window === "undefined") return false;
+  try {
+    if (window.localStorage.getItem(STORAGE_KEYS.BACKUPS_CORRUPT) == null) return false;
+    window.localStorage.removeItem(STORAGE_KEYS.BACKUPS_CORRUPT);
+    return true;
+  } catch {
+    return false;
   }
 }
 

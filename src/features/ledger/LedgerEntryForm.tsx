@@ -21,6 +21,8 @@ import { useAppStore } from "../../store/appStore";
 import { toast } from "react-hot-toast";
 import { ERROR_MESSAGES } from "../../constants/errorMessages";
 import { addDaysToIso, getTodayKST } from "../../utils/date";
+import { STORAGE_KEYS } from "../../constants/config";
+import { parseLedgerFormDraft, serializeLedgerFormDraft } from "../../utils/ledgerFormDraft";
 import { ReceiptScanner, type OcrResult } from "../ocr/ReceiptScanner";
 import {
   createDefaultLedgerForm as createDefaultForm,
@@ -82,6 +84,18 @@ const tabLabel: Record<"income" | "expense" | "transfer", string> = {
 
 // `?? []` 신규 배열 생성으로 인한 LedgerTemplateChips memo 무효화 방지용 안정 참조
 const EMPTY_TEMPLATES: LedgerTemplate[] = [];
+
+/** 폼 드래프트(sessionStorage) 접근 — 프라이빗 모드·쿼터 초과 등 예외는 무시 (드래프트는 편의 기능) */
+const DRAFT_KEY = STORAGE_KEYS.LEDGER_FORM_DRAFT;
+function readLedgerDraftRaw(): string | null {
+  try { return sessionStorage.getItem(DRAFT_KEY); } catch { return null; }
+}
+function writeLedgerDraftRaw(raw: string | null): void {
+  try {
+    if (raw) sessionStorage.setItem(DRAFT_KEY, raw);
+    else sessionStorage.removeItem(DRAFT_KEY);
+  } catch { /* ignore */ }
+}
 
 interface Props {
   accounts: Account[];
@@ -536,6 +550,9 @@ export const LedgerEntryForm = React.memo(React.forwardRef<LedgerEntryFormHandle
         toast.success(msg);
       }
 
+      // 제출됨 — 보존 중이던 드래프트 삭제 (아래 setForm으로 금액·설명이 비어 디바운스 저장도 삭제로 수렴)
+      writeLedgerDraftRaw(null);
+
       // 같은 구분/카테고리/계좌를 유지하고 금액·설명만 비우기 (연속 입력 최적화).
       // tags·isFixedExpense는 복사 1건에만 적용 — 다음 연속 입력엔 보이지 않게 잔존하지 않도록 초기화
       // (폼에 태그/고정비 입력 UI가 없어 사용자가 잔존값을 보거나 지울 수 없다).
@@ -734,7 +751,73 @@ export const LedgerEntryForm = React.memo(React.forwardRef<LedgerEntryFormHandle
         kind: kindForTab,
         isFixedExpense: false
       });
+      writeLedgerDraftRaw(null);
     }, [kindForTab]);
+    // 최신 resetForm 참조 — 복원 토스트의 [비우기]는 마운트 시점이 아니라 클릭 시점의 kind로 초기화해야 한다
+    const resetFormRef = useRef(resetForm);
+    useEffect(() => { resetFormRef.current = resetForm; });
+
+    // ── 폼 드래프트 보존 (탭 전환 시 LedgerView 언마운트 → 입력 유실 방지) ──────────
+    // 마운트 시 1회 복원: 금액/설명 중 하나라도 있으면 폼+종류 탭을 되살리고 토스트 [비우기].
+    // 수정 모드(form.id)는 저장/복원 제외(stale edit 제출 위험), 목록 필터는 복원하지 않음, 24h 만료.
+    const draftRestoredRef = useRef(false);
+    useEffect(() => {
+      if (draftRestoredRef.current) return;
+      draftRestoredRef.current = true;
+      const raw = readLedgerDraftRaw();
+      const draft = parseLedgerFormDraft(raw, Date.now());
+      if (!draft) {
+        if (raw) writeLedgerDraftRaw(null); // 손상·만료 드래프트 정리
+        return;
+      }
+      // applyTemplate과 동일한 적재 패턴 — 탭 변경에 따른 kind 리셋 effect가 복원값을 지우지 않도록 isCopyingRef 가드
+      isCopyingRef.current = true;
+      setFormKindWhenAll(draft.formKind);
+      setLedgerTab(draft.ledgerTab);
+      setTimeout(() => {
+        setForm(draft.form);
+        setTimeout(() => { isCopyingRef.current = false; }, 200);
+      }, 10);
+      toast(
+        (t) => (
+          <span style={{ display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap" }}>
+            <span>입력 중이던 내용을 복원했습니다</span>
+            <button
+              type="button"
+              className="secondary"
+              style={{ padding: "4px 10px", fontSize: 12, flexShrink: 0 }}
+              onClick={() => {
+                toast.dismiss(t.id);
+                resetFormRef.current();
+              }}
+            >
+              비우기
+            </button>
+          </span>
+        ),
+        { id: "ledger-form-draft-restored", duration: 6000 }
+      );
+    }, [setLedgerTab]);
+
+    // 300ms 디바운스 저장. 내용이 없으면 삭제(제출/리셋 후 자연 정리). 수정 모드는 건드리지 않음.
+    useEffect(() => {
+      if (form.id) return;
+      const timer = window.setTimeout(() => {
+        writeLedgerDraftRaw(serializeLedgerFormDraft({ form, ledgerTab, formKind: formKindWhenAll }, Date.now()));
+      }, 300);
+      return () => window.clearTimeout(timer);
+    }, [form, ledgerTab, formKindWhenAll]);
+    // 언마운트(탭 전환) 시 디바운스 대기 중인 마지막 입력을 즉시 플러시 — 300ms 안에 떠나도 잃지 않게
+    const draftCtxRef = useRef({ ledgerTab, formKindWhenAll });
+    useEffect(() => { draftCtxRef.current = { ledgerTab, formKindWhenAll }; });
+    useEffect(() => () => {
+      const f = latestFormRef.current;
+      if (f.id) return;
+      writeLedgerDraftRaw(serializeLedgerFormDraft(
+        { form: f, ledgerTab: draftCtxRef.current.ledgerTab, formKind: draftCtxRef.current.formKindWhenAll },
+        Date.now()
+      ));
+    }, []);
 
     const isEditing = Boolean(form.id);
 

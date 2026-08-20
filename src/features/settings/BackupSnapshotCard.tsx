@@ -9,7 +9,7 @@
  */
 import React, { useCallback, useEffect, useMemo, useState } from "react";
 import { toast } from "react-hot-toast";
-import { clearOldBackups, type BackupEntry } from "../../storage";
+import { clearOldBackups, isBackupOnSaveEnabled, type BackupEntry } from "../../storage";
 import {
   clearCorruptBackups,
   getCorruptBackupsInfo,
@@ -34,10 +34,8 @@ export const BackupSnapshotCard: React.FC<Props> = React.memo(function BackupSna
 }) {
   const latestBackup = useMemo(() => backups[0], [backups]);
 
-  const [backupOnSave, setBackupOnSave] = useState(() => {
-    if (typeof window === "undefined") return false;
-    return localStorage.getItem(STORAGE_KEYS.BACKUP_ON_SAVE) === "true";
-  });
+  // 저장된 설정이 없으면 기본 on (isBackupOnSaveEnabled 단일 판정 — useBackup과 동일)
+  const [backupOnSave, setBackupOnSave] = useState(() => isBackupOnSaveEnabled());
 
   const handleRefreshBackups = useCallback(async () => {
     const toastId = toast.loading("백업 목록을 불러오는 중...");
@@ -88,8 +86,8 @@ export const BackupSnapshotCard: React.FC<Props> = React.memo(function BackupSna
     }
   }, []);
 
-  const handleClearOldBackups = useCallback(() => {
-    const removed = clearOldBackups(1);
+  const handleClearOldBackups = useCallback(async () => {
+    const removed = await clearOldBackups(1);
     if (removed > 0) {
       toast.success(`오래된 백업 ${removed}개를 삭제했습니다. 저장 공간이 확보되었습니다.`);
       void loadBackupList();
@@ -115,10 +113,11 @@ export const BackupSnapshotCard: React.FC<Props> = React.memo(function BackupSna
             }
           }}
         />
-        <span>저장할 때마다 스냅샷 저장 (자동 저장·수동 저장 시 백업 스냅샷 함께 생성)</span>
+        <span>저장할 때마다 스냅샷 저장 (자동 저장·수동 저장 시 백업 스냅샷 함께 생성 — 기본 켜짐, 10분 간격)</span>
       </label>
       <p>
         백업은 KST 기준 <strong>최근 4일 × 하루 최대 5개</strong>(최대 20개)까지 보관됩니다.
+        브라우저 IndexedDB에 사용자 데이터만(시세·티커 캐시 제외) 저장되어 localStorage 용량을 차지하지 않습니다.
         복원·가져오기·초기화 직전에 만들어지는 안전 스냅샷도 이 목록에 포함되며, 아래 백업 기록 표에서 원하는 시점으로 되돌릴 수 있습니다.
       </p>
       <div style={{ display: "flex", gap: 8, flexWrap: "wrap", marginBottom: 8 }}>
@@ -128,7 +127,7 @@ export const BackupSnapshotCard: React.FC<Props> = React.memo(function BackupSna
         <button
           type="button"
           className="secondary"
-          onClick={handleClearOldBackups}
+          onClick={() => { void handleClearOldBackups(); }}
           title="저장 공간 부족 시 브라우저의 오래된 백업을 삭제합니다. 최신 1개만 유지합니다."
         >
           저장 공간 확보 (오래된 백업 삭제)

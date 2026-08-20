@@ -1,6 +1,6 @@
 import { useEffect, useState, useCallback, useRef } from "react";
 import { toast } from "react-hot-toast";
-import { loadData, preloadKrNames, applyKoreanStockNames, saveData, normalizeImportedData, consumeSanitizeReport, toUserDataJson } from "../storage";
+import { loadData, preloadKrNames, applyKoreanStockNames, saveData, normalizeImportedData, consumeSanitizeReport, toUserDataJson, mergeCurrentCaches } from "../storage";
 import { useAppStore } from "../store/appStore";
 import { loadCacheFromDB, mergeCacheIntoAppData } from "../services/cacheStore";
 import {
@@ -120,8 +120,9 @@ export function useAppData() {
         const ledger = asRecord.ledger;
         if (!Array.isArray(ledger) || ledger.length === 0) return;
         try {
-          // 백업 JSON은 외부 소스 — normalizeImportedData로 구조 검증·정규화 후 저장
-          const normalized = normalizeImportedData(backup);
+          // 백업 JSON은 외부 소스 — normalizeImportedData로 구조 검증·정규화 후 저장.
+          // 백업 본문이 user-only(캐시 제외)면 현재 메모리의 캐시를 유지해 빈 캐시로 덮지 않는다.
+          const normalized = mergeCurrentCaches(normalizeImportedData(backup), useAppStore.getState().data);
           saveData(normalized);
           const reloaded = loadData();
           useAppStore.setState({ data: reloaded });

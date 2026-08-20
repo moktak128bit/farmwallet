@@ -8,7 +8,7 @@
 import React, { useCallback } from "react";
 import { toast } from "react-hot-toast";
 import type { AppData } from "../../types";
-import { loadBackupDataVerified, normalizeImportedData, saveSafetySnapshot, type BackupEntry } from "../../storage";
+import { loadBackupDataVerified, mergeCurrentCaches, normalizeImportedData, saveSafetySnapshot, type BackupEntry } from "../../storage";
 import { ERROR_MESSAGES } from "../../constants/errorMessages";
 
 interface Props {
@@ -65,7 +65,8 @@ export const BackupHistoryTable: React.FC<Props> = React.memo(function BackupHis
         }
       }
 
-      const normalized = normalizeImportedData(restored);
+      // 백업 본문은 user-only(시세·티커 캐시 제외) — 빈 캐시가 현재 캐시를 덮지 않게 병합
+      const normalized = mergeCurrentCaches(normalizeImportedData(restored), data);
       onChangeData(normalized);
       setText(JSON.stringify(normalized, null, 2));
       setError(null);

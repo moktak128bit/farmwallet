@@ -80,7 +80,9 @@ export const STORAGE_KEYS = {
   /** 환율 이력 backfill(useFxBackfill) 마지막 시도 시각 (ms epoch) — 12시간 throttle */
   FX_BACKFILL_LAST_AT: "fw-fx-backfill-last-at",
   /** 시세 CORS 프록시별 성공/실패 카운트·마지막 성공 시각 (yahooFinanceApi fetchViaProxies, 소형 JSON) */
-  PROXY_STATUS: "fw-proxy-status-v1"
+  PROXY_STATUS: "fw-proxy-status-v1",
+  /** 마지막으로 보던 최상위 탭(TabId). 부팅 시 복원 — TAB_ORDER 화이트리스트 외 값은 무시 */
+  LAST_TAB: "fw-last-tab"
 } as const;
 
 /** 드래프트 슬롯이 이보다 오래되면 boot 시 무시·삭제 (스테일 복구 안내 방지) */

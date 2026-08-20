@@ -3,6 +3,7 @@ import type { TabId } from "../components/ui/Tabs";
 import type { LedgerEntry } from "../types";
 import { isGistConfigured } from "../services/gistSync";
 import { STORAGE_KEYS } from "../constants/config";
+import { TAB_ORDER } from "../constants/tabs";
 
 interface AppLogEntry {
   id: number;
@@ -62,6 +63,27 @@ interface DraftRecovery {
   draftJson: string;
   /** 드래프트 작성 시각 (ms epoch) */
   draftAt: number;
+}
+
+/** 부팅 시 마지막 탭 복원 — TAB_ORDER 화이트리스트 외 값(구버전·오염)은 무시하고 dashboard */
+function loadLastTab(): TabId {
+  if (typeof window === "undefined") return "dashboard";
+  try {
+    const raw = window.localStorage.getItem(STORAGE_KEYS.LAST_TAB);
+    if (raw && (TAB_ORDER as string[]).includes(raw)) return raw as TabId;
+  } catch {
+    // localStorage 접근 불가(프라이빗 모드 등) — 기본 탭
+  }
+  return "dashboard";
+}
+
+function persistLastTab(tab: TabId): void {
+  if (typeof window === "undefined") return;
+  try {
+    window.localStorage.setItem(STORAGE_KEYS.LAST_TAB, tab);
+  } catch {
+    // quota/접근 불가 — 복원 기능만 비활성, 동작엔 영향 없음
+  }
 }
 
 const APP_LOG_MAX = 200;
@@ -124,6 +146,9 @@ interface UIStore {
   setShowShortcutsHelp: (show: boolean | ((prev: boolean) => boolean)) => void;
   showQuickEntry: boolean;
   setShowQuickEntry: (show: boolean) => void;
+  /** 딥링크(share_target)로 전달된 텍스트 — 빠른 입력 열릴 때 1회 프리필 후 소비. 자동 저장은 하지 않는다. */
+  quickEntryPrefill: string | null;
+  setQuickEntryPrefill: (text: string | null) => void;
   showGistVersionModal: boolean;
   setShowGistVersionModal: (show: boolean) => void;
 
@@ -184,8 +209,11 @@ interface UIStore {
 }
 
 export const useUIStore = create<UIStore>((set) => ({
-  tab: "dashboard",
-  setTab: (tab) => set({ tab }),
+  tab: loadLastTab(),
+  setTab: (tab) => {
+    persistLastTab(tab);
+    set({ tab });
+  },
   mobileDrawerOpen: false,
   setMobileDrawerOpen: (mobileDrawerOpen) => set({ mobileDrawerOpen }),
 
@@ -198,6 +226,8 @@ export const useUIStore = create<UIStore>((set) => ({
     })),
   showQuickEntry: false,
   setShowQuickEntry: (showQuickEntry) => set({ showQuickEntry }),
+  quickEntryPrefill: null,
+  setQuickEntryPrefill: (quickEntryPrefill) => set({ quickEntryPrefill }),
   showGistVersionModal: false,
   setShowGistVersionModal: (showGistVersionModal) => set({ showGistVersionModal }),
 

@@ -46,6 +46,7 @@ import { QuickCopyModal } from "../features/ledger/QuickCopyModal";
 import { DescriptionMergeModal } from "../features/ledger/DescriptionMergeModal";
 import { TaxiSplitWizard } from "../features/ledger/TaxiSplitWizard";
 import { TollParkingSplitWizard } from "../features/ledger/TollParkingSplitWizard";
+import { BulkEditModal } from "../features/ledger/BulkEditModal";
 import {
   ledgerEntryGross,
   tradeToLedgerRow,
@@ -108,6 +109,8 @@ export const LedgerView: React.FC<Props> = ({
   const [showMergeModal, setShowMergeModal] = useState(false);
   const [showTaxiSplitWizard, setShowTaxiSplitWizard] = useState(false);
   const [showTollParkingWizard, setShowTollParkingWizard] = useState(false);
+  // 선택 항목 일괄 편집 모달 (selectedLedgerIdsForSum 재사용)
+  const [showBulkEdit, setShowBulkEdit] = useState(false);
   // 가계부 필터 영역은 기본 접힘 — 화면 너무 차지하던 문제 해결.
   // 접힌 상태에서도 활성 필터 요약 칩이 헤더 한 줄에 표시됨 (LedgerFilterCard).
   const [showFilters, setShowFilters] = useState(false);
@@ -1112,16 +1115,37 @@ export const LedgerView: React.FC<Props> = ({
                 순합계 {formatKRW(sumResultFromSelection.net)}
               </span>
             </div>
-            <button
-              type="button"
-              className="secondary"
-              onClick={() => setSelectedLedgerIdsForSum(new Set())}
-              style={{ fontSize: 12, padding: "6px 12px" }}
-            >
-              선택 해제
-            </button>
+            <div style={{ display: "flex", gap: 8 }}>
+              <button
+                type="button"
+                className="primary"
+                onClick={() => setShowBulkEdit(true)}
+                style={{ fontSize: 12, padding: "6px 12px" }}
+                title="선택한 항목의 분류·계좌·날짜·태그·고정지출을 한 번에 변경"
+              >
+                선택 {sumResultFromSelection.count}건 일괄 편집
+              </button>
+              <button
+                type="button"
+                className="secondary"
+                onClick={() => setSelectedLedgerIdsForSum(new Set())}
+                style={{ fontSize: 12, padding: "6px 12px" }}
+              >
+                선택 해제
+              </button>
+            </div>
           </div>
         </div>
+      )}
+      {showBulkEdit && (
+        <BulkEditModal
+          ledger={ledger}
+          selectedIds={selectedLedgerIdsForSum}
+          accounts={accounts}
+          categoryPresets={categoryPresets}
+          onChangeLedger={onChangeLedger}
+          onClose={() => setShowBulkEdit(false)}
+        />
       )}
       {/* 거래 테이블 — 분리 컴포넌트 (React.memo) */}
       <LedgerTable

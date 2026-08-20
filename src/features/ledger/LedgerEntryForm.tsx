@@ -29,6 +29,7 @@ import { ERROR_MESSAGES } from "../../constants/errorMessages";
 import { addDaysToIso, getTodayKST } from "../../utils/date";
 import { STORAGE_KEYS } from "../../constants/config";
 import { parseLedgerFormDraft, serializeLedgerFormDraft } from "../../utils/ledgerFormDraft";
+import { findProbableDuplicates } from "../../utils/ledgerDuplicate";
 import { ReceiptScanner, type OcrResult } from "../ocr/ReceiptScanner";
 import {
   createDefaultLedgerForm as createDefaultForm,
@@ -102,6 +103,46 @@ function writeLedgerDraftRaw(raw: string | null): void {
     if (raw) sessionStorage.setItem(DRAFT_KEY, raw);
     else sessionStorage.removeItem(DRAFT_KEY);
   } catch { /* ignore */ }
+}
+
+/** 목록의 해당 행으로 스크롤 + 잠시 하이라이트 (LedgerPage의 검색 이동과 동일 클래스). 필터로 가려져 있으면 안내. */
+function flashLedgerRow(id: string): void {
+  const el = document.querySelector(`tr[data-ledger-id="${id}"]`);
+  if (!el) {
+    toast("목록에서 찾을 수 없습니다 — 필터·월 선택을 확인하세요.", { id: "ledger-duplicate-hint" });
+    return;
+  }
+  el.scrollIntoView({ behavior: "smooth", block: "center" });
+  el.classList.add("ledger-row-highlight");
+  window.setTimeout(() => el.classList.remove("ledger-row-highlight"), 2500);
+}
+
+/**
+ * 중복 의심 비차단 토스트 — '같은 날 같은 금액 N건 있음 [보기]'. 저장은 이미 끝난 뒤 호출한다.
+ * (설명까지 같은 경우의 confirm은 호출 측 submit 경로에서 저장 전에 처리.) LedgerPage 빠른 복사도 공유.
+ */
+export function showDuplicateToast(matches: LedgerEntry[]): void {
+  if (matches.length === 0) return;
+  const first = matches[0];
+  toast(
+    (t) => (
+      <span style={{ display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap" }}>
+        <span>같은 날 같은 금액 {matches.length}건 있음</span>
+        <button
+          type="button"
+          className="secondary"
+          style={{ padding: "4px 10px", fontSize: 12, flexShrink: 0 }}
+          onClick={() => {
+            toast.dismiss(t.id);
+            flashLedgerRow(first.id);
+          }}
+        >
+          보기
+        </button>
+      </span>
+    ),
+    { id: "ledger-duplicate-hint", duration: 6000, icon: "⚠️" }
+  );
 }
 
 interface Props {
@@ -571,6 +612,32 @@ export const LedgerEntryForm = React.memo(React.forwardRef<LedgerEntryFormHandle
         ...(form.tags?.length ? { tags: form.tags } : {})
       };
 
+      // 중복 의심(신규 추가만): 같은 날·같은 금액·같은 계좌 → 비차단 토스트(저장은 진행).
+      // 설명까지 같을 때만 confirm (실수 이중 입력 가능성이 높은 경우). 수정 모드는 검사하지 않음.
+      let duplicateHint: LedgerEntry[] | null = null;
+      if (!form.id) {
+        const dup = findProbableDuplicates(
+          {
+            date: base.date,
+            amount: base.amount,
+            kind: base.kind,
+            fromAccountId: base.fromAccountId,
+            toAccountId: base.toAccountId,
+            description: base.description,
+            currency: base.currency,
+          },
+          ledger
+        );
+        if (dup.exactDescription.length > 0) {
+          const msg =
+            `같은 날(${base.date}) 같은 금액·같은 설명 "${base.description}" ${dup.exactDescription.length}건이 이미 있습니다.\n` +
+            `그래도 추가할까요?`;
+          if (!window.confirm(msg)) return;
+        } else if (dup.matches.length > 0) {
+          duplicateHint = dup.matches;
+        }
+      }
+
       if (form.id) {
         const updated = ledger.map((l) => (l.id === form.id ? { ...base, id: l.id } : l));
         onChangeLedger(updated);
@@ -579,6 +646,7 @@ export const LedgerEntryForm = React.memo(React.forwardRef<LedgerEntryFormHandle
         const entry: LedgerEntry = { id, ...base };
         onChangeLedger([entry, ...ledger]);
         onEntryAdded(id);
+        if (duplicateHint) showDuplicateToast(duplicateHint);
         // 필터는 폼과 독립이라 새 항목 추가 시 자동 클리어 안 함 — 사용자가 의도적으로 좁힌 view를 유지
         const amountStr = kindForTab === "transfer" && form.currency === "USD"
           ? `${amount.toLocaleString()} USD`

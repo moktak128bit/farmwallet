@@ -1,3 +1,4 @@
+// @vitest-environment jsdom
 /** 0-4 — 종합과세 트래커/세금 보고서 세전(gross-up) 환산 옵션 */
 import { describe, expect, it, beforeEach } from "vitest";
 import {

@@ -5,6 +5,7 @@ import { useUIStore } from "../store/uiStore";
 export function PWAStatus() {
   const [offline, setOffline] = useState(!navigator.onLine);
   const setNewVersionAvailable = useUIStore((s) => s.setNewVersionAvailable);
+  const setApplyPwaUpdate = useUIStore((s) => s.setApplyPwaUpdate);
   const {
     needRefresh: [needRefresh, setNeedRefresh],
     updateServiceWorker,
@@ -18,9 +19,17 @@ export function PWAStatus() {
   });
 
   // SW의 needRefresh 상태를 uiStore에 반영 — 헤더의 "새 버전 적용" 버튼이 반응
+  // (registerType:"prompt" — waiting SW가 생기면 onNeedRefresh → needRefresh=true)
   useEffect(() => {
     setNewVersionAvailable(needRefresh);
   }, [needRefresh, setNewVersionAvailable]);
+
+  // 헤더 pill이 실제로 업데이트를 적용할 수 있도록 updateServiceWorker를 uiStore에 등록
+  // (prompt 모드에서 단순 location.reload()는 waiting SW를 활성화하지 못한다)
+  useEffect(() => {
+    setApplyPwaUpdate(() => updateServiceWorker(true));
+    return () => setApplyPwaUpdate(null);
+  }, [updateServiceWorker, setApplyPwaUpdate]);
 
   useEffect(() => {
     const on = () => setOffline(false);

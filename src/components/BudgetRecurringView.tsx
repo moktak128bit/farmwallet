@@ -18,6 +18,7 @@ import React, { useCallback, useMemo, useRef } from "react";
 import type { Account, BudgetGoal, CategoryPresets, RecurringExpense, LedgerEntry, DailyBudgetConfig } from "../types";
 import { getTodayKST } from "../utils/date";
 import { computeBudgetGoalSpent } from "../utils/budgetUsage";
+import { computeBudgetPace } from "../utils/budgetPace";
 import { useFxRateValue } from "../context/FxRateContext";
 import { DailyBudgetSection } from "../features/budget/DailyBudgetSection";
 import { RecurringFormCard, type RecurringFormCardHandle } from "../features/budget/RecurringFormCard";
@@ -53,7 +54,8 @@ export const BudgetRecurringView: React.FC<Props> = ({
   onChangeDailyBudget,
 }) => {
   // KST 기준 현재 월 (UTC 자정 직전 일/월 경계 오차 방지)
-  const currentMonth = getTodayKST().slice(0, 7); // yyyy-mm
+  const today = getTodayKST();
+  const currentMonth = today.slice(0, 7); // yyyy-mm
   // USD 지출 원화 환산용 — App props 시그니처를 늘리지 않고 컨텍스트에서 직접
   const fxRate = useFxRateValue();
 
@@ -68,12 +70,14 @@ export const BudgetRecurringView: React.FC<Props> = ({
   }, []);
 
   // 예산 사용액 — computeBudgetGoalSpent 단일 소스 (대시보드 예산 위젯과 같은 숫자 보장, USD 환산 포함)
+  // 페이스(월말 예상·남은 하루 허용액·전월 동기)는 computeBudgetPace — 한도 의미는 그대로, 해석만 얹는다
   const budgetUsage = useMemo<BudgetUsageRow[]>(() => {
     return budgets.map((b) => {
       const spent = computeBudgetGoalSpent(b, ledger, currentMonth, { categoryPresets, fxRate });
-      return { ...b, spent, remain: b.monthlyLimit - spent };
+      const pace = computeBudgetPace(b, ledger, currentMonth, today, { categoryPresets, fxRate });
+      return { ...b, spent, remain: b.monthlyLimit - spent, pace };
     });
-  }, [budgets, ledger, currentMonth, categoryPresets, fxRate]);
+  }, [budgets, ledger, currentMonth, today, categoryPresets, fxRate]);
 
   return (
     <div>

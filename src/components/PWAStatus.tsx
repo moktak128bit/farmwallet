@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { useRegisterSW } from "virtual:pwa-register/react";
+import { useRegisterSW } from "./pwaRegister";
 import { useUIStore } from "../store/uiStore";
 
 export function PWAStatus() {

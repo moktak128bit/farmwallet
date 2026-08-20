@@ -8,7 +8,7 @@ import { useUIStore } from "../store/uiStore";
 const updateServiceWorker = vi.fn(() => Promise.resolve());
 let setNeedRefreshExternal: ((v: boolean) => void) | null = null;
 
-vi.mock("virtual:pwa-register/react", () => ({
+vi.mock("../components/pwaRegister", () => ({
   useRegisterSW: () => {
     const [needRefresh, setNeedRefresh] = useState(false);
     const [offlineReady, setOfflineReady] = useState(false);

@@ -14,8 +14,8 @@ import {
   normalizeDailyBudget,
   normalizeHistoricalDailyCloses,
 } from "./dataNormalizers";
-import { buildTableBackupFile } from "../utils/tableDataBackup";
 import { saveCacheToDB } from "./cacheStore";
+import { saveSafetySnapshot } from "./backupService";
 import { getKoreanNameOverlay } from "./krNameResolver";
 import { cleanTicker } from "../utils/finance";
 import { isDividendEntryLoose } from "../utils/categoryMatch";
@@ -418,9 +418,59 @@ function readStoredSchemaVersion(): number {
   return Number.isFinite(parsed) && parsed > 0 ? Math.floor(parsed) : 1;
 }
 
+/**
+ * 스키마 마커 쓰기. 저장된 마커가 쓰려는 버전보다 **높으면** 내려쓰지 않는다 (되감기 가드).
+ * GitVersionModal 등으로 구버전 앱을 띄웠을 때 마커가 12→10으로 내려가면 복귀 시
+ * 마이그레이션이 재실행되는데, v3 할인차감 같은 비멱등 단계가 데이터를 두 번 변형한다.
+ */
 function writeStoredSchemaVersion(version: number): void {
   if (typeof window === "undefined") return;
+  if (readStoredSchemaVersion() > version) return;
   window.localStorage.setItem(STORAGE_KEYS.DATA_SCHEMA_VERSION, String(version));
+}
+
+/**
+ * 로드 중 발생한 사용자 고지용 경고(예: 저장 데이터 스키마가 앱보다 높음).
+ * UI(useAppData 등)가 getLoadWarnings()로 읽어 토스트/배너로 띄운다. 로드마다 갱신.
+ */
+let loadWarnings: string[] = [];
+
+/** 마지막 loadData에서 기록된 경고 목록(복사본). 없으면 빈 배열. */
+export function getLoadWarnings(): string[] {
+  return [...loadWarnings];
+}
+
+/** 가져오기 파일의 스키마가 앱보다 높을 때 던지는 오류 (가져오기 거부). */
+const SCHEMA_TOO_NEW_ERROR_NAME = "SchemaTooNewError";
+
+export function isSchemaTooNewError(e: unknown): e is Error {
+  return e instanceof Error && e.name === SCHEMA_TOO_NEW_ERROR_NAME;
+}
+
+function schemaTooNewError(fileVersion: number): Error {
+  const err = new Error(`파일 스키마 v${fileVersion}가 앱(v${DATA_SCHEMA_VERSION})보다 높습니다 — 앱 업데이트 후 가져오세요.`);
+  err.name = SCHEMA_TOO_NEW_ERROR_NAME;
+  return err;
+}
+
+/**
+ * sanitize가 손상 항목을 폐기하면 원본을 안전 스냅샷으로 보존 (best-effort).
+ * 자동 백업이 기본 off라 사본이 없을 수 있고, 다음 저장에서 폐기분이 영구 소멸하기 때문.
+ * quota 등 실패는 무시(console.warn) — 로드/가져오기를 막지 않는다.
+ */
+function preserveOriginalBeforeDrop(original: unknown, dropped: { ledger: number; trades: number }): void {
+  if (dropped.ledger + dropped.trades <= 0) return;
+  if (!original || typeof original !== "object") return;
+  try {
+    void saveSafetySnapshot(
+      original as AppData,
+      `손상 항목 폐기 직전 원본 (가계부 ${dropped.ledger}건·거래 ${dropped.trades}건)`
+    ).then((saved) => {
+      if (!saved) console.warn("[FarmWallet] 손상 항목 폐기 직전 원본 스냅샷 저장 실패");
+    });
+  } catch (e) {
+    console.warn("[FarmWallet] 손상 항목 폐기 직전 원본 스냅샷 저장 실패", e);
+  }
 }
 
 function migrateBySchema(
@@ -704,11 +754,16 @@ export function normalizeImportedData(rawData: unknown): AppData {
   validateImportShape(rawData);
   const obj = rawData as Record<string, unknown>;
   const importedVersionRaw = Number(obj.schemaVersion);
-  const fromVersion = Number.isFinite(importedVersionRaw) && importedVersionRaw > 0
-    ? Math.min(Math.floor(importedVersionRaw), DATA_SCHEMA_VERSION)
+  const importedVersion = Number.isFinite(importedVersionRaw) && importedVersionRaw > 0
+    ? Math.floor(importedVersionRaw)
     : DATA_SCHEMA_VERSION;
-  const migrated = migrateBySchema(obj, fromVersion);
-  const { data } = buildAppDataFromMigrated(migrated.data, null);
+  // 미래 버전 파일을 조용히 현행 취급하면 알 수 없는 필드가 유실된다 — 명확히 거부.
+  if (importedVersion > DATA_SCHEMA_VERSION) {
+    throw schemaTooNewError(importedVersion);
+  }
+  const migrated = migrateBySchema(obj, importedVersion);
+  const { data, dropped } = buildAppDataFromMigrated(migrated.data, null);
+  preserveOriginalBeforeDrop(obj, dropped);
   // 한글 종목명 적용은 idempotent — 가져오기 경로에서도 동일하게 적용 (저장은 안 함)
   const { data: withKrNames } = applyKoreanStockNames(data);
   return withKrNames;
@@ -738,7 +793,7 @@ export function consumeSanitizeReport(): { droppedLedger: number; droppedTrades:
 function buildAppDataFromMigrated(
   migratedObject: Record<string, unknown>,
   cache: CacheData | null
-): { data: AppData; needsCacheMigration: boolean } {
+): { data: AppData; needsCacheMigration: boolean; dropped: { ledger: number; trades: number } } {
   const defaults = getDefaultCategoryPresets();
   const parsed = migratedObject as Partial<AppData>;
   const parsedLoans = asArray(parsed.loans) as NonNullable<AppData["loans"]>;
@@ -833,7 +888,7 @@ function buildAppDataFromMigrated(
     // 하루 예산 설정 — loadData 필드 누락으로 새로고침마다 유실되던 회귀 방지
     dailyBudget: normalizeDailyBudget(parsed.dailyBudget)
   };
-  return { data: parsedData, needsCacheMigration };
+  return { data: parsedData, needsCacheMigration, dropped: { ledger: ledgerSan.dropped, trades: tradesSan.dropped } };
 }
 
 export function loadData(): AppData {
@@ -841,6 +896,14 @@ export function loadData(): AppData {
 
   if (typeof window === "undefined") {
     return emptyData;
+  }
+
+  loadWarnings = [];
+  // 구버전이 매 저장마다 쓰던 테이블 백업 사본(읽는 곳 없음, ~1MB) 정리 — 부팅 시 1회 제거
+  try {
+    window.localStorage.removeItem(STORAGE_KEYS.DATA_TABLE_BACKUP);
+  } catch {
+    /* ignore */
   }
 
   try {
@@ -851,12 +914,23 @@ export function loadData(): AppData {
     const parsedUnknown = JSON.parse(raw) as unknown;
     const parsedObject = asObject(parsedUnknown);
     const schemaVersion = readStoredSchemaVersion();
+    // 저장 스키마가 앱보다 높음(구버전 앱 체크아웃) — 마커를 내려쓰지 않고 변경으로도 취급하지 않는다.
+    // 되감긴 마커는 복귀 시 비멱등 마이그레이션(v3 할인차감 등)을 재실행시킨다.
+    const storedAhead = schemaVersion > DATA_SCHEMA_VERSION;
+    if (storedAhead) {
+      const msg = `저장된 데이터 스키마(v${schemaVersion})가 이 앱 버전(v${DATA_SCHEMA_VERSION})보다 높습니다. 최신 앱으로 업데이트하세요 — 이 버전에서 저장하면 새 필드가 유실될 수 있습니다.`;
+      console.warn(`[FarmWallet] ${msg}`);
+      loadWarnings.push(msg);
+    }
     const migratedBySchema = migrateBySchema(parsedObject, schemaVersion);
-    const schemaVersionChanged = migratedBySchema.migrated || schemaVersion !== DATA_SCHEMA_VERSION;
+    const schemaVersionChanged =
+      migratedBySchema.migrated || (!storedAhead && schemaVersion !== DATA_SCHEMA_VERSION);
 
     // 캐시 분리 키에서 로드, 없으면 메인 키의 값으로 마이그레이션
     const cache = loadCacheData();
-    const { data: parsedData, needsCacheMigration } = buildAppDataFromMigrated(migratedBySchema.data, cache);
+    const { data: parsedData, needsCacheMigration, dropped } = buildAppDataFromMigrated(migratedBySchema.data, cache);
+    // 손상 항목 폐기 시 파싱 직후 원본(마이그레이션 전)을 스냅샷으로 보존
+    preserveOriginalBeforeDrop(parsedObject, dropped);
     // krNames는 idle 시간에 비동기 로드되므로, 여기서는 빈 맵일 수 있음.
     // 실제 한글명 적용은 useAppData의 idle 콜백에서 수행.
     const { data: dataWithKrNames, changed: krNamesChanged } = applyKoreanStockNames(parsedData);
@@ -864,6 +938,8 @@ export function loadData(): AppData {
     // 사용자의 계좌·가계부·거래 원본을 그대로 보존. 임시/일회성 마이그레이션은 모두 제거됨.
     const finalData: AppData = dataWithKrNames;
 
+    // (손상 항목 폐기만으로는 여기서 저장하지 않는다 — 저장 시점·순서는 기존과 동일하게 useBackup 자동저장에 맡긴다.
+    //  정리된 데이터는 부팅 직후 dirty로 감지돼 곧 저장되므로 재폐기·스냅샷 중복은 실제로 발생하지 않는다.)
     if (
       schemaVersionChanged ||
       krNamesChanged ||
@@ -949,11 +1025,10 @@ export function saveDataSerialized(serialized: string): void {
   if (typeof window === "undefined") return;
 
   // 전체 데이터를 user 데이터와 API 캐시로 분리
-  let fullData: AppData;
   let userDataStr: string;
   let cacheToSave: CacheData;
   try {
-    fullData = JSON.parse(serialized) as AppData;
+    const fullData = JSON.parse(serialized) as AppData;
     const { prices, tickerDatabase, historicalDailyCloses, ...userFields } = fullData;
     userDataStr = JSON.stringify(userFields);
     cacheToSave = {
@@ -964,7 +1039,6 @@ export function saveDataSerialized(serialized: string): void {
   } catch {
     // 파싱 실패 시 원본 그대로 저장 (안전 폴백)
     userDataStr = serialized;
-    fullData = {} as AppData;
     cacheToSave = { prices: [], tickerDatabase: [], historicalDailyCloses: [] };
   }
 
@@ -978,18 +1052,8 @@ export function saveDataSerialized(serialized: string): void {
       // API 캐시는 별도 키에 저장 (실패해도 앱 동작에 영향 없음)
       saveCacheData(cacheToSave);
 
-      // 테이블 백업은 localStorage용으로만 유지 (내보내기/가져오기 기능에서 사용)
-      try {
-        const tableFile = buildTableBackupFile(fullData);
-        const tableStr = JSON.stringify(tableFile);
-        try {
-          window.localStorage.setItem(STORAGE_KEYS.DATA_TABLE_BACKUP, tableStr);
-        } catch (lsErr) {
-          console.warn("[FarmWallet] table backup localStorage skipped", lsErr);
-        }
-      } catch (tableErr) {
-        console.warn("[FarmWallet] table backup build failed", tableErr);
-      }
+      // (구버전의 DATA_TABLE_BACKUP localStorage 사본 쓰기는 제거됨 — 읽는 곳이 없었고 ~1MB 낭비.
+      //  테이블 백업은 DataBackupCard의 다운로드 버튼에서 필요 시 생성한다.)
 
       // 통합 사용자 데이터 파일 동기화 (dev 서버: data/farmwallet-data.json에 기록)
       // 캐시(prices/tickerDatabase/historicalDailyCloses)는 제외, _exportedAt 포함

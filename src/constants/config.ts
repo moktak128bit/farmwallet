@@ -37,7 +37,7 @@ export const STORAGE_KEYS = {
   LAST_QUOTE_REFRESH_AT: "fw-last-quote-refresh-at",
   /** 시장 지수(벤치마크) 자동 fetch 마지막 시도 시각(epoch ms) — 매 로드마다 야후 호출하지 않도록 throttle */
   BENCHMARK_LAST_FETCH_AT: "fw-benchmark-last-fetch-at",
-  /** 테이블 형태 백업 JSON (일반 DATA와 별도; 저장 시 동기 갱신) */
+  /** @deprecated 테이블 형태 백업 JSON 사본 — 더 이상 쓰지 않음(읽는 곳 0건). 구버전이 매 저장마다 기록하던 키를 loadData가 부팅 시 removeItem으로 정리하기 위해서만 유지. */
   DATA_TABLE_BACKUP: "farmwallet-data-tables-v1",
   /** 마지막으로 성공한 USD/KRW 환율 캐시 */
   LAST_FX_RATE: "fw-last-fx-rate",

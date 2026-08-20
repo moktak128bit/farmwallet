@@ -3,7 +3,11 @@ import ReactDOM from "react-dom/client";
 import { App } from "./App";
 import { AppErrorBoundary } from "./components/AppErrorBoundary";
 import { FxRateProvider } from "./context/FxRateContext";
+import { installGlobalErrorListeners, reportError } from "./utils/errorReporting";
 import "./styles.css";
+
+// 전역 미처리 오류(window.error / unhandledrejection) → 영속 활동 로그. 내부에서 중복 설치를 막는다.
+installGlobalErrorListeners();
 
 const rootElement = document.getElementById("root");
 
@@ -71,7 +75,7 @@ try {
     </React.StrictMode>
   );
 } catch (error) {
-  console.error("앱 렌더링 실패:", error);
+  reportError("main.render", error);
   // innerHTML로 직접 주입하면 error.message가 사용자/외부 의존성 영향을 받을 수 있어 XSS 위험.
   // textContent 기반 DOM 조립으로 escape 보장.
   const wrap = document.createElement("div");

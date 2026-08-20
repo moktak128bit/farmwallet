@@ -4,14 +4,17 @@
  * 기존처럼 클릭 시 dynamic import.
  * React.memo로 감싸므로 부모가 넘기는 props는 data 슬라이스(참조 동일성 유지)뿐이다.
  */
-import React, { useCallback } from "react";
+import React, { useCallback, useMemo } from "react";
 import { toast } from "react-hot-toast";
 import type { Account, CategoryPresets, LedgerEntry, StockTrade } from "../../types";
-import { getKoreaTime } from "../../utils/date";
+import { getKoreaTime, getTodayKST } from "../../utils/date";
 import { useUIStore } from "../../store/uiStore";
 import { useAppStore } from "../../store/appStore";
 import { useFxRateValue } from "../../context/FxRateContext";
 import { ERROR_MESSAGES } from "../../constants/errorMessages";
+
+/** 설정 로그 카드에 표시할 최근 오류 건수 */
+const RECENT_ERRORS_MAX = 5;
 
 interface Props {
   ledger: LedgerEntry[];
@@ -27,6 +30,9 @@ export const ExportToolsCards: React.FC<Props> = React.memo(function ExportTools
   categoryPresets
 }) {
   const fxRate = useFxRateValue();
+  // 최근 오류 로그(읽기 전용) — reportError(utils/errorReporting.ts)가 'error' 타입으로 쌓은 항목
+  const appLog = useUIStore((s) => s.appLog);
+  const recentErrors = useMemo(() => appLog.filter((e) => e.type === "error").slice(-RECENT_ERRORS_MAX).reverse(), [appLog]);
   const handleExportAllExcel = useCallback(async () => {
     try {
       const [{ downloadAsExcel }, { buildFullDataSheets }] = await Promise.all([
@@ -144,7 +150,7 @@ export const ExportToolsCards: React.FC<Props> = React.memo(function ExportTools
             const blob = new Blob([JSON.stringify(payload, null, 2)], { type: "application/json" });
             const url = URL.createObjectURL(blob);
             const a = document.createElement("a");
-            const today = new Date().toISOString().slice(0, 10);
+            const today = getTodayKST();
             a.href = url;
             a.download = `farmwallet-app-log-${today}.json`;
             a.click();
@@ -155,6 +161,24 @@ export const ExportToolsCards: React.FC<Props> = React.memo(function ExportTools
         >
           📥 로그 JSON 다운로드
         </button>
+        {recentErrors.length > 0 && (
+          <div style={{ marginTop: 12 }}>
+            <div style={{ fontSize: 12, fontWeight: 600, color: "var(--danger)", marginBottom: 4 }}>
+              최근 오류 {recentErrors.length}건 (최신순)
+            </div>
+            <ul style={{ margin: 0, paddingLeft: 16, fontSize: 12, color: "var(--text-muted)" }}>
+              {recentErrors.map((e) => (
+                <li
+                  key={e.id}
+                  style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}
+                  title={e.message}
+                >
+                  <span style={{ fontFamily: "monospace" }}>{e.time}</span> {e.message}
+                </li>
+              ))}
+            </ul>
+          </div>
+        )}
       </div>
     </>
   );

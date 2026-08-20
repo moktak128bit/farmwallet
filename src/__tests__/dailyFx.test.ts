@@ -1,7 +1,7 @@
 /** A0-2 — 일별 환율 적립(utils/dailyFx) + 환율 이력 합본(buildFxHistory) + persistence round-trip */
 import { describe, expect, it } from "vitest";
 import type { AppData, HistoricalDailyFx } from "../types";
-import { upsertDailyFx } from "../utils/dailyFx";
+import { fxFetchedAtToKstDate, shouldRecordDailyFx, upsertDailyFx } from "../utils/dailyFx";
 import { buildFxHistory } from "../utils/portfolioHistory";
 import { buildTableBackupFile, appDataFromTableBackupPayload } from "../utils/tableDataBackup";
 
@@ -50,6 +50,78 @@ describe("upsertDailyFx", () => {
     ];
     const r = upsertDailyFx(recent, 1380, "2026-06-12")!;
     expect(r.filter((f) => f.date.startsWith("2026-05"))).toHaveLength(2);
+  });
+});
+
+describe("fxFetchedAtToKstDate — 수신 시각 → KST 날짜", () => {
+  it("UTC 시각을 KST(+9h) 날짜로 환산한다", () => {
+    expect(fxFetchedAtToKstDate("2026-08-20T03:00:00.000Z")).toBe("2026-08-20");
+    expect(fxFetchedAtToKstDate("2026-08-19T15:00:00.000Z")).toBe("2026-08-20"); // KST 00:00 — 자정 경계
+    expect(fxFetchedAtToKstDate("2026-08-19T14:59:59.999Z")).toBe("2026-08-19"); // KST 23:59:59
+  });
+
+  it("오프셋 표기 ISO도 처리한다", () => {
+    expect(fxFetchedAtToKstDate("2026-08-20T00:30:00+09:00")).toBe("2026-08-20");
+  });
+
+  it("빈값·파싱 불가는 null", () => {
+    expect(fxFetchedAtToKstDate(null)).toBeNull();
+    expect(fxFetchedAtToKstDate(undefined)).toBeNull();
+    expect(fxFetchedAtToKstDate("")).toBeNull();
+    expect(fxFetchedAtToKstDate("not-a-date")).toBeNull();
+  });
+});
+
+describe("shouldRecordDailyFx — 환율 stale 박제 방지 (0-1)", () => {
+  const today = "2026-08-20";
+
+  it("①캐시값(어제 이전 fetchedAt)은 오늘 날짜로 적립하지 않는다", () => {
+    expect(
+      shouldRecordDailyFx({ rate: 1380, fetchedAt: "2026-08-17T09:00:00.000Z", today, recordedFor: null })
+    ).toBe(false);
+    // 구형 캐시(fetchedAt 없음 → epoch 0)
+    expect(
+      shouldRecordDailyFx({ rate: 1380, fetchedAt: "1970-01-01T00:00:00.000Z", today, recordedFor: null })
+    ).toBe(false);
+    expect(shouldRecordDailyFx({ rate: 1380, fetchedAt: null, today, recordedFor: null })).toBe(false);
+  });
+
+  it("②같은 날 신선값(fetchedAt=오늘 KST) 도착 시 적립한다", () => {
+    expect(
+      shouldRecordDailyFx({ rate: 1380, fetchedAt: "2026-08-20T01:23:45.000Z", today, recordedFor: null })
+    ).toBe(true);
+  });
+
+  it("같은 날 이미 신선값으로 적립했으면 재적립하지 않는다(하루 1회)", () => {
+    expect(
+      shouldRecordDailyFx({ rate: 1385, fetchedAt: "2026-08-20T05:00:00.000Z", today, recordedFor: today })
+    ).toBe(false);
+  });
+
+  it("③KST 자정 경계 — UTC 전날 15:00 이후 수신은 오늘, 그 전은 어제", () => {
+    expect(
+      shouldRecordDailyFx({ rate: 1380, fetchedAt: "2026-08-19T15:00:00.000Z", today, recordedFor: null })
+    ).toBe(true);
+    expect(
+      shouldRecordDailyFx({ rate: 1380, fetchedAt: "2026-08-19T14:59:59.000Z", today, recordedFor: null })
+    ).toBe(false);
+  });
+
+  it("날짜가 넘어가면(recordedFor=어제) 새 날짜의 신선값은 다시 적립한다", () => {
+    expect(
+      shouldRecordDailyFx({
+        rate: 1380,
+        fetchedAt: "2026-08-20T16:00:00.000Z", // KST 08-21 01:00
+        today: "2026-08-21",
+        recordedFor: "2026-08-20",
+      })
+    ).toBe(true);
+  });
+
+  it("환율 미로드/0/음수는 적립하지 않는다", () => {
+    expect(shouldRecordDailyFx({ rate: null, fetchedAt: "2026-08-20T01:00:00.000Z", today, recordedFor: null })).toBe(false);
+    expect(shouldRecordDailyFx({ rate: 0, fetchedAt: "2026-08-20T01:00:00.000Z", today, recordedFor: null })).toBe(false);
+    expect(shouldRecordDailyFx({ rate: -1, fetchedAt: "2026-08-20T01:00:00.000Z", today, recordedFor: null })).toBe(false);
   });
 });
 

@@ -2,6 +2,7 @@ import { create } from "zustand";
 import type { TabId } from "../components/ui/Tabs";
 import type { LedgerEntry } from "../types";
 import { isGistConfigured } from "../services/gistSync";
+import { STORAGE_KEYS } from "../constants/config";
 
 interface AppLogEntry {
   id: number;
@@ -66,7 +67,7 @@ interface DraftRecovery {
 const APP_LOG_MAX = 200;
 /** localStorage에 보관할 최근 로그 (세션 복원용 + 사용자 내보내기) */
 const APP_LOG_PERSIST_MAX = 500;
-const APP_LOG_STORAGE_KEY = "fw-app-log-v1";
+const APP_LOG_STORAGE_KEY = STORAGE_KEYS.APP_LOG;
 
 function loadPersistedLog(): AppLogEntry[] {
   if (typeof window === "undefined") return [];

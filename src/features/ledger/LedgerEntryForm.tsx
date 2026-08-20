@@ -9,7 +9,7 @@
  *   - startCopy(entry):   빠른 복사 모달 "폼에서 수정" — 기존 항목을 폼에 적재
  * 새 항목 추가 후 행 하이라이트는 부모 소유 — onEntryAdded(id) 콜백으로 알림.
  */
-import React, { useCallback, useEffect, useImperativeHandle, useMemo, useRef, useState } from "react";
+import React, { useCallback, useDeferredValue, useEffect, useImperativeHandle, useMemo, useRef, useState } from "react";
 import { Autocomplete } from "../../components/ui/Autocomplete";
 import type { Account, CategoryPresets, ExpenseDetailGroup, LedgerEntry, LedgerKind, LedgerTemplate } from "../../types";
 import { shortcutManager, type ShortcutAction } from "../../utils/shortcuts";
@@ -31,6 +31,14 @@ import { LedgerTemplateChips } from "./LedgerTemplateChips";
 import { LedgerTemplateManageModal } from "./LedgerTemplateManageModal";
 import { buildRestoreById, showDeleteUndoToast } from "../../utils/undoToast";
 import { useFxRateValue } from "../../context/FxRateContext";
+import {
+  buildDescriptionIndex,
+  describeSuggestion,
+  fillEmptyFormFields,
+  suggestDescriptions,
+  type DescriptionSuggestion,
+} from "../../utils/ledgerSuggest";
+import { recommendCategory, type Recommendation } from "../../utils/categoryRecommendation";
 
 export type LedgerTab = "all" | "income" | "expense" | "savingsExpense" | "transfer" | "creditPayment";
 
@@ -232,6 +240,79 @@ export const LedgerEntryForm = React.memo(React.forwardRef<LedgerEntryFormHandle
     const incomeCategoryOptions = useMemo(() => {
       return categoryPresets?.income ?? [];
     }, [categoryPresets?.income]);
+
+    // ── 설명 자동완성 + 빈 필드 자동 채움 (읽기 전용 — 저장 형태 불변) ──────────
+    // 인덱스는 ledger 참조가 바뀔 때만 재구축. 재테크/신용결제 탭은 분류가 자동 고정이라 채움·추천 칩 생략.
+    const descriptionIndex = useMemo(() => buildDescriptionIndex(ledger), [ledger]);
+    const suggestFillEnabled = ledgerTab !== "savingsExpense" && ledgerTab !== "creditPayment";
+    const descriptionOptions = useMemo(
+      () => suggestDescriptions(descriptionIndex, form.description, effectiveFormKind, { limit: 8 })
+        .map((s) => ({
+          value: s.description,
+          label: `${s.count}회`,
+          subLabel: describeSuggestion(s) || undefined,
+        })),
+      [descriptionIndex, form.description, effectiveFormKind]
+    );
+    // 설명 2자 이상 → 추천 칩 3개 (categoryRecommendation). 타이핑 중 무거운 재계산은 deferred.
+    const deferredDescription = useDeferredValue(form.description);
+    const deferredAmount = useDeferredValue(form.amount);
+    const recommendationChips = useMemo((): Recommendation[] => {
+      if (!suggestFillEnabled) return [];
+      const desc = deferredDescription.trim();
+      if (desc.length < 2) return [];
+      const amount = sharedParseAmount(deferredAmount, { allowDecimal: true });
+      const recs = recommendCategory(desc, amount, effectiveFormKind, ledger);
+      // 같은 분류 라벨(계좌만 다른 조합)은 하나로
+      const seen = new Set<string>();
+      const out: Recommendation[] = [];
+      for (const r of recs) {
+        const key = `${r.subCategory || ""}|${r.detailCategory || ""}`;
+        if (!r.subCategory || seen.has(key)) continue;
+        seen.add(key);
+        out.push(r);
+        if (out.length >= 3) break;
+      }
+      return out;
+    }, [suggestFillEnabled, deferredDescription, deferredAmount, effectiveFormKind, ledger]);
+
+    /**
+     * 자동완성 선택 → 비어 있는 필드만 채움. setForm만 바꾸고 목록 필터는 건드리지 않는다
+     * (applyTemplate과 동일 — '폼 버튼=목록 필터'는 버튼 클릭에만 적용, 자동 채움은 필터 의도가 아님).
+     * 사용자가 이미 고른 값은 절대 덮지 않는다(fillEmptyFormFields).
+     */
+    const applyDescriptionSuggestion = useCallback((s: DescriptionSuggestion) => {
+      if (!suggestFillEnabled) return;
+      const f = latestFormRef.current;
+      const { next, applied } = fillEmptyFormFields(
+        { mainCategory: f.mainCategory, subCategory: f.subCategory, fromAccountId: f.fromAccountId, toAccountId: f.toAccountId },
+        s
+      );
+      if (applied.length === 0) return;
+      setForm((prev) => ({ ...prev, ...next }));
+      const catParts: string[] = [];
+      if (applied.includes("mainCategory") && s.kind === "expense") catParts.push(next.mainCategory);
+      if (applied.includes("subCategory")) catParts.push(next.subCategory);
+      const acctParts: string[] = [];
+      if (applied.includes("fromAccountId")) acctParts.push(next.fromAccountId);
+      if (applied.includes("toAccountId")) acctParts.push(next.toAccountId);
+      const label = [catParts.join(">"), acctParts.join("→")].filter(Boolean).join("·");
+      toast(`지난 ${s.comboCount}회 ${label} 적용`, { id: "ledger-suggest-fill", duration: 2500 });
+    }, [suggestFillEnabled]);
+
+    /** 추천 칩 클릭 — 분류는 명시 선택이므로 덮어쓰고, 계좌는 비어 있을 때만. 필터 미변경(위와 동일 규칙). */
+    const applyRecommendationChip = useCallback((r: Recommendation) => {
+      setForm((prev) => {
+        const isExpense = effectiveFormKind === "expense";
+        return {
+          ...prev,
+          mainCategory: isExpense ? (r.subCategory || "") : prev.mainCategory,
+          subCategory: isExpense ? (r.detailCategory || "") : (r.subCategory || ""),
+          fromAccountId: prev.fromAccountId || (effectiveFormKind !== "income" ? (r.fromAccountId || "") : ""),
+          toAccountId: prev.toAccountId || (effectiveFormKind !== "expense" ? (r.toAccountId || "") : ""),
+        };
+      });
+    }, [effectiveFormKind]);
 
     // parseAmount/formatAmount는 src/utils/parseAmount.ts로 중앙화됨.
     // 기존 (value, allowDecimal) 시그니처를 유지하기 위한 어댑터.
@@ -1157,19 +1238,45 @@ export const LedgerEntryForm = React.memo(React.forwardRef<LedgerEntryFormHandle
                   📷 영수증 스캔
                 </button>
               </span>
-              <input
-                type="text"
+              {/* 설명 자동완성 — 과거 설명(빈도×최근성) 후보. 선택 시 비어 있는 분류/계좌만 채움 */}
+              <Autocomplete
                 value={form.description}
-                onChange={(e) => setForm({ ...form, description: e.target.value })}
-                placeholder="예: 김밥천국, 아파트 관리비 등"
-                style={{
-                  padding: "8px",
-                  fontSize: 13,
-                  width: "100%",
-                  border: "1px solid var(--border)",
-                  borderRadius: "6px"
+                onChange={(val) => setForm((prev) => ({ ...prev, description: val }))}
+                onSelect={(opt) => {
+                  const s = suggestDescriptions(descriptionIndex, opt.value, effectiveFormKind, { limit: 8 })
+                    .find((x) => x.description === opt.value);
+                  if (s) applyDescriptionSuggestion(s);
                 }}
+                options={descriptionOptions}
+                placeholder="예: 김밥천국, 아파트 관리비 등"
+                ariaLabel="상세내역"
               />
+              {recommendationChips.length > 0 && (
+                <div style={{ display: "flex", alignItems: "center", gap: 6, flexWrap: "wrap", marginTop: 6 }}>
+                  <span style={{ fontSize: 10, color: "var(--text-muted)" }}>추천</span>
+                  {recommendationChips.map((r) => {
+                    const label = effectiveFormKind === "expense"
+                      ? [r.subCategory, r.detailCategory].filter(Boolean).join(" > ")
+                      : r.subCategory || "";
+                    const active = effectiveFormKind === "expense"
+                      ? form.mainCategory === r.subCategory && form.subCategory === (r.detailCategory || "")
+                      : form.subCategory === r.subCategory;
+                    return (
+                      <button
+                        key={label}
+                        type="button"
+                        tabIndex={-1}
+                        className={active ? "primary" : "secondary"}
+                        onClick={() => applyRecommendationChip(r)}
+                        title="이 분류 적용 (목록 필터는 바뀌지 않음)"
+                        style={{ fontSize: 11, padding: "3px 8px", borderRadius: 10 }}
+                      >
+                        {label}
+                      </button>
+                    );
+                  })}
+                </div>
+              )}
             </label>
 
             {/* 확장 영역: 할인 · 출금계좌 · 입금계좌 */}

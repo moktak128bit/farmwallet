@@ -8,9 +8,20 @@ import React from "react";
 import type { Account, BudgetGoal } from "../../types";
 import { BUDGET_ALL_CATEGORY } from "../../types";
 import { getTodayKST, getLastDayOfMonth } from "../../utils/date";
+import type { BudgetPace, BudgetPaceStatus } from "../../utils/budgetPace";
 
-/** 부모(BudgetRecurringView) budgetUsage memo의 행 타입 — 예산 + 이번 달 사용액/잔여 */
-export type BudgetUsageRow = BudgetGoal & { spent: number; remain: number };
+/** 부모(BudgetRecurringView) budgetUsage memo의 행 타입 — 예산 + 이번 달 사용액/잔여 + 페이스(월말 예상·허용액·전월 동기) */
+export type BudgetUsageRow = BudgetGoal & { spent: number; remain: number; pace: BudgetPace };
+
+/** 페이스 배지 — 상태색 컨벤션: 초과/초과 예상=danger, 주의=warning, 순조로움=success */
+const PACE_BADGE: Record<BudgetPaceStatus, { label: string; color: string; bg: string }> = {
+  exceeded: { label: "초과", color: "var(--danger)", bg: "var(--danger-light)" },
+  "over-pace": { label: "초과 예상", color: "var(--danger)", bg: "var(--danger-light)" },
+  watch: { label: "주의", color: "var(--warning)", bg: "var(--warning-light)" },
+  ok: { label: "순조로움", color: "var(--success)", bg: "var(--success-light)" },
+};
+
+const signedPct = (pct: number) => `${pct >= 0 ? "+" : "−"}${Math.abs(pct).toFixed(0)}%`;
 
 interface Props {
   budgetUsage: BudgetUsageRow[];
@@ -126,6 +137,22 @@ export const BudgetDashboardSection: React.FC<Props> = React.memo(function Budge
             </strong>
           </span>
         </div>
+
+        {/* '전체' 예산이 있을 때만 총괄 페이스 표시 (개별 예산 합은 단일 페이스가 없다) */}
+        {allBudget && allBudget.monthlyLimit > 0 && (
+          <div
+            style={{
+              marginTop: 8,
+              fontSize: 13,
+              color: allBudget.pace.status === "ok" ? "var(--text-muted, #888)" : PACE_BADGE[allBudget.pace.status].color,
+            }}
+          >
+            {allBudget.pace.message}
+            <span style={{ marginLeft: 8, color: "var(--text-muted, #888)" }}>
+              · 전월 {allBudget.pace.prevSamePeriodLabel} {allBudget.pace.prevSamePeriodSpent.toLocaleString()}원
+            </span>
+          </div>
+        )}
       </div>
 
       {/* Category cards grid */}
@@ -148,12 +175,12 @@ export const BudgetDashboardSection: React.FC<Props> = React.memo(function Budge
               catPct >= 100 ? "var(--danger)" : catPct >= 80 ? "var(--warning)" : "var(--success)";
             const accentColor = cardColors[idx % cardColors.length];
 
-            // Pace: expected spend by today vs actual
-            const expectedSpend =
-              b.monthlyLimit > 0
-                ? (dayOfMonth / daysInMonth) * b.monthlyLimit
-                : 0;
-            const isAhead = b.spent > expectedSpend;
+            // 페이스 — computeBudgetPace(월말 예상·남은 하루 허용액·전월 동기). 예전 '경과일/총일×한도' 선형 판정 대체
+            const badge = PACE_BADGE[b.pace.status];
+            const prevDiffPct =
+              b.pace.prevSamePeriodSpent > 0
+                ? ((b.spent - b.pace.prevSamePeriodSpent) / b.pace.prevSamePeriodSpent) * 100
+                : null;
 
             return (
               <div
@@ -205,15 +232,13 @@ export const BudgetDashboardSection: React.FC<Props> = React.memo(function Budge
                     style={{
                       fontSize: 12,
                       fontWeight: 600,
-                      color: isAhead ? "var(--danger)" : "var(--success)",
-                      background: isAhead
-                        ? "var(--danger-light)"
-                        : "var(--success-light)",
+                      color: badge.color,
+                      background: badge.bg,
                       borderRadius: 20,
                       padding: "2px 8px",
                     }}
                   >
-                    {isAhead ? "속도 초과" : "순조로움"}
+                    {badge.label}
                   </span>
                 </div>
 
@@ -271,15 +296,41 @@ export const BudgetDashboardSection: React.FC<Props> = React.memo(function Budge
                   </span>
                 </div>
 
-                {/* Percentage label */}
+                {/* 페이스 한 줄: 이 페이스면 월말 N원(한도 ±x%) · 남은 N일 하루 N원 */}
+                {b.monthlyLimit > 0 && (
+                  <div
+                    style={{
+                      fontSize: 12,
+                      color: b.pace.status === "ok" ? "var(--text-muted, #888)" : badge.color,
+                      lineHeight: 1.4,
+                    }}
+                  >
+                    {b.pace.message}
+                  </div>
+                )}
+
+                {/* 전월 동기(1~N일) 비교 + 사용률 */}
                 <div
                   style={{
+                    display: "flex",
+                    justifyContent: "space-between",
+                    alignItems: "center",
+                    flexWrap: "wrap",
+                    gap: 4,
                     fontSize: 12,
                     color: "var(--text-muted, #888)",
-                    textAlign: "right",
                   }}
                 >
-                  {catPct.toFixed(1)}% 사용
+                  <span>
+                    전월 {b.pace.prevSamePeriodLabel} {b.pace.prevSamePeriodSpent.toLocaleString()}원
+                    {prevDiffPct != null && (
+                      // 지출 증가=빨강(danger), 감소=파랑(accent) — 국내 관례
+                      <span style={{ marginLeft: 4, color: prevDiffPct > 0 ? "var(--danger)" : "var(--accent)" }}>
+                        ({signedPct(prevDiffPct)})
+                      </span>
+                    )}
+                  </span>
+                  <span>{catPct.toFixed(1)}% 사용</span>
                 </div>
               </div>
             );

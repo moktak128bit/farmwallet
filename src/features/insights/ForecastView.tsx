@@ -2,6 +2,7 @@ import React, { useMemo } from "react";
 import type { LedgerEntry, RecurringExpense } from "../../types";
 import { forecastNextMonth, expenseMainTotalsForMonth } from "../../utils/forecast";
 import { getThisMonthKST } from "../../utils/date";
+import { useFxRateValue } from "../../context/FxRateContext";
 import { Section } from "./insightsShared";
 
 interface Props {
@@ -18,10 +19,12 @@ const monthLabel = (yyyymm: string) => {
 export const ForecastView: React.FC<Props> = ({ ledger, recurring, formatNumber }) => {
   const currentMonth = getThisMonthKST();
   const [lookback, setLookback] = React.useState(6);
+  // USD 지출은 대시보드와 같은 환율로 원화 환산 (환산 없이 액면 합산하면 달러 지출이 1/1400로 과소 예측)
+  const fxRate = useFxRateValue();
 
   const result = useMemo(
-    () => forecastNextMonth(ledger, recurring, currentMonth, lookback),
-    [ledger, recurring, currentMonth, lookback]
+    () => forecastNextMonth(ledger, recurring, currentMonth, lookback, { fxRate }),
+    [ledger, recurring, currentMonth, lookback, fxRate]
   );
 
   const maxAmount = result.byCategory.reduce((m, c) => Math.max(m, c.upper), 0) || 1;
@@ -29,8 +32,8 @@ export const ForecastView: React.FC<Props> = ({ ledger, recurring, formatNumber 
   // 현재월 실제 소진률 (카테고리별) — 예측(byCategory)과 동일한 대분류(expenseMainName) 키·제외 기준 사용.
   // (과거 버그: l.category로 그룹화 → 현행 스키마에선 거의 "지출" 한 값이라 카테고리별 실적이 전부 0%였음)
   const currentMonthSpend = useMemo(
-    () => expenseMainTotalsForMonth(ledger, currentMonth),
-    [ledger, currentMonth]
+    () => expenseMainTotalsForMonth(ledger, currentMonth, { fxRate }),
+    [ledger, currentMonth, fxRate]
   );
 
   const totalRecurring = result.byCategory.reduce((s, c) => s + c.recurringAmount, 0);

@@ -1,6 +1,6 @@
 import { describe, it, expect } from "vitest";
 import { forecastNextMonth, expenseMainTotalsForMonth } from "../utils/forecast";
-import type { LedgerEntry, RecurringExpense } from "../types";
+import type { CategoryPresets, LedgerEntry, RecurringExpense } from "../types";
 
 const mkExpense = (date: string, category: string, amount: number): LedgerEntry => ({
   id: Math.random().toString(36).slice(2),
@@ -213,3 +213,47 @@ describe("forecastNextMonth", () => {
     expect(r.totalForecast).toBe(0);
   });
 });
+
+describe("forecast — 대시보드 지출 정의(classifyLedgerFlow + toKrwAmount)와 통일", () => {
+  const usd = (date: string, amount: number): LedgerEntry =>
+    ({ id: Math.random().toString(36).slice(2), date, kind: "expense", category: "지출", subCategory: "여행", description: "", amount, currency: "USD" });
+
+  it("USD 지출은 fxRate로 원화 환산해 합산 (예측·현재월 실적 모두)", () => {
+    const ledger = [usd("2024-05-10", 100), mkExpense("2024-05-11", "여행", 10_000), usd("2024-06-03", 50)];
+    const r = forecastNextMonth(ledger, [], "2024-06", 1, { fxRate: 1400 });
+    const c = r.byCategory.find((x) => x.category === "여행")!;
+    expect(c.variableAverage).toBe(100 * 1400 + 10_000);
+    const cur = expenseMainTotalsForMonth(ledger, "2024-06", { fxRate: 1400 });
+    expect(cur.get("여행")).toBe(50 * 1400);
+  });
+
+  it("환율 미로드(null/미지정)면 액면 그대로 — 대시보드 공통 정책과 동일", () => {
+    const ledger = [usd("2024-05-10", 100)];
+    expect(forecastNextMonth(ledger, [], "2024-06", 1).byCategory[0].variableAverage).toBe(100);
+    expect(forecastNextMonth(ledger, [], "2024-06", 1, { fxRate: null }).byCategory[0].variableAverage).toBe(100);
+    expect(expenseMainTotalsForMonth(ledger, "2024-05").get("여행")).toBe(100);
+  });
+
+  it("투자손실(재테크 실현손익)은 대시보드처럼 지출이 아닌 재테크로 — 예측에서 제외", () => {
+    const ledger: LedgerEntry[] = [
+      { id: "l1", date: "2024-05-10", kind: "expense", category: "재테크", subCategory: "투자손실", description: "", amount: 900_000 },
+      mkExpense("2024-05-11", "식비", 10_000),
+    ];
+    const r = forecastNextMonth(ledger, [], "2024-06", 1);
+    expect(r.byCategory.map((c) => c.category)).toEqual(["식비"]);
+    expect(expenseMainTotalsForMonth(ledger, "2024-05").has("재테크")).toBe(false);
+  });
+
+  it("categoryPresets의 사용자 저축성지출 카테고리도 제외 (대시보드와 동일 프리셋 적용)", () => {
+    const ledger: LedgerEntry[] = [
+      mkExpense("2024-05-10", "청약저축", 100_000),
+      mkExpense("2024-05-11", "식비", 10_000),
+    ];
+    const presets = { categoryTypes: { savings: ["청약저축"] } } as unknown as CategoryPresets;
+    const withPreset = forecastNextMonth(ledger, [], "2024-06", 1, { categoryPresets: presets });
+    expect(withPreset.byCategory.map((c) => c.category)).toEqual(["식비"]);
+    const without = forecastNextMonth(ledger, [], "2024-06", 1);
+    expect(without.byCategory.map((c) => c.category).sort()).toEqual(["식비", "청약저축"]);
+  });
+});
+

@@ -1009,7 +1009,22 @@ export default defineConfig({
         icons: [
           { src: "icons/icon.svg", sizes: "any", type: "image/svg+xml", purpose: "any" },
           { src: "icons/icon.svg", sizes: "any", type: "image/svg+xml", purpose: "maskable" },
+          { src: "icons/icon-192.png", sizes: "192x192", type: "image/png", purpose: "any" },
+          { src: "icons/icon-512.png", sizes: "512x512", type: "image/png", purpose: "any" },
+          { src: "icons/icon-512-maskable.png", sizes: "512x512", type: "image/png", purpose: "maskable" },
         ],
+        // 홈화면 아이콘 길게 누르기 바로가기 (Android/데스크톱). 쿼리는 utils/deepLink.ts가 처리 후 제거.
+        shortcuts: [
+          { name: "빠른 입력", short_name: "빠른 입력", description: "가계부 한 줄 입력", url: "/farmwallet/?quick=1", icons: [{ src: "icons/icon-192.png", sizes: "192x192", type: "image/png" }] },
+          { name: "가계부", short_name: "가계부", url: "/farmwallet/?tab=ledger", icons: [{ src: "icons/icon-192.png", sizes: "192x192", type: "image/png" }] },
+          { name: "주식", short_name: "주식", url: "/farmwallet/?tab=stocks", icons: [{ src: "icons/icon-192.png", sizes: "192x192", type: "image/png" }] },
+        ],
+        // 다른 앱의 "공유"로 텍스트 받기(Android) — 빠른 입력 프리필만, 자동 저장 없음
+        share_target: {
+          action: "/farmwallet/",
+          method: "GET",
+          params: { title: "title", text: "text", url: "url" },
+        },
       },
     }),
   ],

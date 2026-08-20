@@ -9,6 +9,7 @@ import React, { useCallback } from "react";
 import { toast } from "react-hot-toast";
 import type { AppData } from "../../types";
 import { normalizeImportedData, saveSafetySnapshot } from "../../storage";
+import { isSchemaTooNewError } from "../../services/dataService";
 import { getKoreaTime } from "../../utils/date";
 import { ERROR_MESSAGES } from "../../constants/errorMessages";
 import { DATA_SCHEMA_VERSION } from "../../constants/config";
@@ -128,8 +129,9 @@ export const DataBackupCard: React.FC<Props> = React.memo(function DataBackupCar
         onBackupRestored?.();
         await loadBackupList();
       } catch (error) {
-        setError(ERROR_MESSAGES.TABLE_BACKUP_FILE_INVALID);
-        toast.error(ERROR_MESSAGES.TABLE_BACKUP_FILE_INVALID, { id: toastId });
+        const msg = isSchemaTooNewError(error) ? error.message : ERROR_MESSAGES.TABLE_BACKUP_FILE_INVALID;
+        setError(msg);
+        toast.error(msg, { id: toastId });
         if (import.meta.env.DEV) {
           console.error("테이블 백업 불러오기 오류:", error);
         }
@@ -164,8 +166,9 @@ export const DataBackupCard: React.FC<Props> = React.memo(function DataBackupCar
         onBackupRestored?.();
         await loadBackupList();
       } catch (error) {
-        setError(ERROR_MESSAGES.BACKUP_FILE_INVALID);
-        toast.error(ERROR_MESSAGES.BACKUP_FILE_INVALID, { id: toastId });
+        const msg = isSchemaTooNewError(error) ? error.message : ERROR_MESSAGES.BACKUP_FILE_INVALID;
+        setError(msg);
+        toast.error(msg, { id: toastId });
         if (import.meta.env.DEV) {
           console.error("백업 파일 불러오기 오류:", error);
         }
@@ -186,8 +189,8 @@ export const DataBackupCard: React.FC<Props> = React.memo(function DataBackupCar
         <strong style={{ color: "var(--primary)" }}>권장:</strong> 데이터 안전을 위해 정기적으로 "백업 파일 다운로드"로 JSON 파일을 저장해 두세요.
         <br />
         <strong>테이블 백업:</strong> 같은 데이터를 <code>tables</code> 아래 행 배열로도 저장합니다. 일반 백업 JSON 없이{" "}
-        <strong>테이블 백업 파일만</strong>으로도 복구할 수 있습니다. 데이터를 저장할 때마다 브라우저에 사본이 갱신되고,{" "}
-        <code>npm run dev</code>일 때는 프로젝트 <code>data/farmwallet-data.json</code>에도 기록됩니다.
+        <strong>테이블 백업 파일만</strong>으로도 복구할 수 있습니다.{" "}
+        <code>npm run dev</code>일 때는 저장할 때마다 프로젝트 <code>data/farmwallet-data.json</code>에도 기록됩니다.
       </p>
       <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
         <div>

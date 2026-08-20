@@ -1,7 +1,15 @@
 // @vitest-environment jsdom
-import { describe, it, expect, beforeEach } from "vitest";
-import { toUserDataJson, loadData, saveData, saveDataSerialized, normalizeImportedData } from "../services/dataService";
-import { STORAGE_KEYS } from "../constants/config";
+import { describe, it, expect, beforeEach, vi } from "vitest";
+import { toUserDataJson, loadData, saveData, saveDataSerialized, normalizeImportedData, getLoadWarnings, isSchemaTooNewError } from "../services/dataService";
+import { saveSafetySnapshot } from "../services/backupService";
+import { STORAGE_KEYS, DATA_SCHEMA_VERSION } from "../constants/config";
+
+// sanitize 폐기 시 원본 보존(0-9)은 backupService.saveSafetySnapshot을 호출 — 저장 매체(localStorage/IDB)와
+// 무관하게 호출 계약만 검증하도록 mock. 나머지 export는 원본 유지.
+vi.mock("../services/backupService", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("../services/backupService")>();
+  return { ...actual, saveSafetySnapshot: vi.fn(async () => true) };
+});
 import type { AppData, DailyBudgetConfig } from "../types";
 
 function makeAppData(overrides: Partial<AppData> = {}): AppData {
@@ -464,5 +472,139 @@ describe("v10 migration: 데이트 입금 카테고리 통일", () => {
     const idx = loaded.categoryPresets.income.indexOf("데이트통장");
     const otherIdx = loaded.categoryPresets.income.indexOf("기타수입");
     expect(idx).toBeLessThan(otherIdx);
+  });
+});
+
+describe("0-5 죽은 DATA_TABLE_BACKUP 키 — 쓰기 제거·부팅 정리", () => {
+  beforeEach(() => {
+    window.localStorage.clear();
+  });
+
+  it("저장 후 DATA_TABLE_BACKUP 키가 존재하지 않는다 (DATA·스키마·CACHE는 정상)", () => {
+    saveData(makeAppData({ tickerDatabase: [{ ticker: "AAPL", name: "Apple", market: "US" as const }] }));
+    expect(window.localStorage.getItem(STORAGE_KEYS.DATA_TABLE_BACKUP)).toBeNull();
+    expect(window.localStorage.getItem(STORAGE_KEYS.DATA)).not.toBeNull();
+    expect(window.localStorage.getItem(STORAGE_KEYS.DATA_SCHEMA_VERSION)).toBe(String(DATA_SCHEMA_VERSION));
+    expect(window.localStorage.getItem(STORAGE_KEYS.CACHE)).not.toBeNull();
+  });
+
+  it("loadData가 구버전이 남긴 DATA_TABLE_BACKUP 키를 제거한다 (부팅 1회 정리)", () => {
+    saveData(makeAppData());
+    window.localStorage.setItem(STORAGE_KEYS.DATA_TABLE_BACKUP, '{"tables":{}}');
+    loadData();
+    expect(window.localStorage.getItem(STORAGE_KEYS.DATA_TABLE_BACKUP)).toBeNull();
+  });
+});
+
+describe("0-6 스키마 마커 되감기 가드", () => {
+  beforeEach(() => {
+    window.localStorage.clear();
+  });
+
+  it("저장 마커(13) > 앱(12)이면 로드 시 마커를 내려쓰지 않고 데이터는 정상 로드 + 경고 기록", () => {
+    saveData(makeAppData({
+      ledger: [{ id: "l1", date: "2026-01-01", kind: "expense" as const, category: "식비", description: "점심", amount: 10000 }],
+    }));
+    window.localStorage.setItem(STORAGE_KEYS.DATA_SCHEMA_VERSION, String(DATA_SCHEMA_VERSION + 1));
+    const loaded = loadData();
+    expect(loaded.ledger).toHaveLength(1);
+    expect(loaded.ledger[0].amount).toBe(10000);
+    expect(window.localStorage.getItem(STORAGE_KEYS.DATA_SCHEMA_VERSION)).toBe(String(DATA_SCHEMA_VERSION + 1));
+    const warnings = getLoadWarnings();
+    expect(warnings).toHaveLength(1);
+    expect(warnings[0]).toContain(`v${DATA_SCHEMA_VERSION + 1}`);
+  });
+
+  it("마커가 앱보다 높은 상태에서 이후 saveData도 마커를 내려쓰지 않는다", () => {
+    window.localStorage.setItem(STORAGE_KEYS.DATA_SCHEMA_VERSION, String(DATA_SCHEMA_VERSION + 1));
+    saveData(makeAppData());
+    expect(window.localStorage.getItem(STORAGE_KEYS.DATA_SCHEMA_VERSION)).toBe(String(DATA_SCHEMA_VERSION + 1));
+  });
+
+  it("마커가 앱보다 낮으면(구버전 데이터) 기존대로 현 버전으로 올려 쓴다 — 경고 없음", () => {
+    saveData(makeAppData());
+    window.localStorage.setItem(STORAGE_KEYS.DATA_SCHEMA_VERSION, "9");
+    loadData();
+    expect(window.localStorage.getItem(STORAGE_KEYS.DATA_SCHEMA_VERSION)).toBe(String(DATA_SCHEMA_VERSION));
+    expect(getLoadWarnings()).toEqual([]);
+  });
+
+  it("가져오기 파일 schemaVersion(13) > 앱(12)이면 명확한 오류로 거부 (조용한 현행 취급 금지)", () => {
+    const imported = { ...makeAppData(), schemaVersion: DATA_SCHEMA_VERSION + 1 };
+    let caught: unknown;
+    try {
+      normalizeImportedData(imported);
+    } catch (e) {
+      caught = e;
+    }
+    expect(isSchemaTooNewError(caught)).toBe(true);
+    expect((caught as Error).message).toContain(`v${DATA_SCHEMA_VERSION + 1}`);
+    expect((caught as Error).message).toContain("앱 업데이트");
+  });
+
+  it("가져오기 파일 schemaVersion이 현 버전과 같거나 낮으면 정상 처리", () => {
+    expect(() => normalizeImportedData({ ...makeAppData(), schemaVersion: DATA_SCHEMA_VERSION })).not.toThrow();
+    expect(() => normalizeImportedData({ ...makeAppData(), schemaVersion: 9 })).not.toThrow();
+    expect(isSchemaTooNewError(new Error("x"))).toBe(false);
+  });
+});
+
+describe("0-9 sanitize 폐기 시 원본 보존", () => {
+  const snapshotMock = vi.mocked(saveSafetySnapshot);
+  beforeEach(() => {
+    window.localStorage.clear();
+    snapshotMock.mockClear();
+  });
+
+  it("normalizeImportedData: 손상 항목이 폐기되면 파싱 전 원본으로 안전 스냅샷 1회 호출", () => {
+    const raw = {
+      ...makeAppData(),
+      ledger: [
+        { id: "ok", date: "2026-01-01", kind: "expense", category: "식비", description: "a", amount: 1000 },
+        // 날짜 손상 — validateImportShape(샘플 검증: id/amount만)는 통과하고 sanitizeLedger가 폐기
+        { id: "bad", date: "not-a-date", kind: "expense", category: "식비", description: "b", amount: 500 },
+      ],
+    };
+    const result = normalizeImportedData(raw);
+    expect(result.ledger).toHaveLength(1);
+    expect(snapshotMock).toHaveBeenCalledTimes(1);
+    const [snapData, reason] = snapshotMock.mock.calls[0];
+    expect(snapData).toBe(raw); // 파싱 전 원본 객체 그대로
+    expect(reason).toContain("손상 항목 폐기 직전 원본");
+    expect(reason).toContain("가계부 1건");
+    expect(reason).toContain("거래 0건");
+  });
+
+  it("loadData: 저장 데이터에 손상 항목이 있으면 폐기 전 원본(마이그레이션 전)을 스냅샷", () => {
+    const stored = {
+      ...makeAppData(),
+      trades: [
+        { id: "t1", date: "2026-01-01", accountId: "a1", ticker: "AAPL", name: "Apple", side: "buy", quantity: 1, price: 100, fee: 0, totalAmount: 100, cashImpact: -100 },
+        { id: "t2", date: "2026-01-01", accountId: "a1", ticker: "AAPL", name: "Apple", side: "buy", quantity: "x", price: null, fee: 0, totalAmount: 100, cashImpact: -100 },
+      ],
+    };
+    window.localStorage.setItem(STORAGE_KEYS.DATA, JSON.stringify(stored));
+    window.localStorage.setItem(STORAGE_KEYS.DATA_SCHEMA_VERSION, String(DATA_SCHEMA_VERSION));
+    const loaded = loadData();
+    expect(loaded.trades).toHaveLength(1);
+    expect(snapshotMock).toHaveBeenCalledTimes(1);
+    const [snapData, reason] = snapshotMock.mock.calls[0];
+    expect((snapData as { trades: unknown[] }).trades).toHaveLength(2);
+    expect(reason).toContain("거래 1건");
+    // 폐기 원본은 스냅샷에만 — loadData 자체는 저장 시점을 바꾸지 않는다(정리본 저장은 useBackup 자동저장 몫).
+    // 정리본이 한 번 저장된 뒤에는 재폐기·스냅샷이 없어야 한다.
+    saveData(loaded);
+    snapshotMock.mockClear();
+    expect(loadData().trades).toHaveLength(1);
+    expect(snapshotMock).not.toHaveBeenCalled();
+  });
+
+  it("폐기가 없으면 스냅샷을 만들지 않는다", () => {
+    normalizeImportedData(makeAppData({
+      ledger: [{ id: "ok", date: "2026-01-01", kind: "expense" as const, category: "식비", description: "a", amount: 1000 }],
+    }));
+    saveData(makeAppData());
+    loadData();
+    expect(snapshotMock).not.toHaveBeenCalled();
   });
 });

@@ -17,6 +17,7 @@ export const ISA_PORTFOLIO = [
 export const STORAGE_KEYS = {
   DATA: "farmwallet-data-v1",
   DATA_SCHEMA_VERSION: "farmwallet-data-schema-version",
+  /** 로컬 백업 — 현재는 IndexedDB('farmwallet-backups', services/backupStore.ts)에 저장. 이 키는 IDB 이관 전 레거시 배열·IDB 불가 시 폴백 전용 */
   BACKUPS: "farmwallet-backups-v1",
   THEME: "fw-theme",
   HIGH_CONTRAST: "fw-high-contrast",
@@ -82,7 +83,9 @@ export const STORAGE_KEYS = {
   /** 시세 CORS 프록시별 성공/실패 카운트·마지막 성공 시각 (yahooFinanceApi fetchViaProxies, 소형 JSON) */
   PROXY_STATUS: "fw-proxy-status-v1",
   /** 마지막으로 보던 최상위 탭(TabId). 부팅 시 복원 — TAB_ORDER 화이트리스트 외 값은 무시 */
-  LAST_TAB: "fw-last-tab"
+  LAST_TAB: "fw-last-tab",
+  /** saveSafetySnapshot이 첫 await 전에 동기 기록하는 최신 안전 스냅샷 1슬롯 — IDB 복제가 끝나면 비움 (services/backupStore.ts) */
+  BACKUP_SAFETY_PENDING: "farmwallet-backup-safety-pending-v1"
 } as const;
 
 /** 드래프트 슬롯이 이보다 오래되면 boot 시 무시·삭제 (스테일 복구 안내 방지) */
@@ -119,8 +122,8 @@ export const BACKUP_WARNING_HOURS = {
   CRITICAL: 24
 } as const;
 
-// 자동 백업 간격 (밀리초, 30분)
-export const AUTO_BACKUP_INTERVAL_MS = 30 * 60 * 1000;
+// 자동 백업 간격 (밀리초, 10분) — 저장소가 IndexedDB로 옮겨져 용량 여유가 생겨 30분→10분으로 단축
+export const AUTO_BACKUP_INTERVAL_MS = 10 * 60 * 1000;
 
 // 자동 Gist 저장 디바운스 (밀리초, 5분)
 export const GIST_AUTO_PUSH_DEBOUNCE_MS = 5 * 60 * 1000;

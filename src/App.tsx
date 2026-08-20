@@ -93,6 +93,7 @@ import {
   saveSafetySnapshot,
   getAllBackupList,
   loadBackupDataVerified,
+  mergeCurrentCaches,
   type BackupEntry
 } from "./storage";
 import type { AppData } from "./types";
@@ -287,13 +288,8 @@ export const App: React.FC = () => {
       const current = useAppStore.getState().data;
       // 덮어쓰기 직전 현재 데이터 안전 스냅샷 (best-effort — 실패해도 진행)
       void saveSafetySnapshot(current, "Gist 불러오기 직전 자동 스냅샷");
-      setDataWithHistory({
-        ...normalized,
-        // Gist에는 API 캐시가 없음 — 현재 메모리의 캐시 유지
-        prices: (normalized.prices?.length ?? 0) > 0 ? normalized.prices : current.prices,
-        tickerDatabase: (normalized.tickerDatabase?.length ?? 0) > 0 ? normalized.tickerDatabase : current.tickerDatabase,
-        historicalDailyCloses: (normalized.historicalDailyCloses?.length ?? 0) > 0 ? normalized.historicalDailyCloses : current.historicalDailyCloses,
-      });
+      // Gist에는 API 캐시가 없음 — 현재 메모리의 캐시 유지
+      setDataWithHistory(mergeCurrentCaches(normalized, current));
       addAppLog("Gist에서 데이터 불러오기 완료", "success");
     } catch (err) {
       const msg = err instanceof Error ? err.message : String(err);
@@ -637,7 +633,8 @@ export const App: React.FC = () => {
 
   const applyRecoveredData = useCallback((raw: unknown, sourceLabel: string) => {
     try {
-      const normalized = normalizeImportedData(raw); // 검증 실패 시 throw
+      // 로컬 백업은 user-only(캐시 제외) — 메모리에 남은 캐시가 있으면 유지해 빈 캐시로 덮지 않는다
+      const normalized = mergeCurrentCaches(normalizeImportedData(raw), useAppStore.getState().data); // 검증 실패 시 throw
       persistData(normalized);
       const reloaded = loadData();
       setData(reloaded);

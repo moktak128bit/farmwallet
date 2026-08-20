@@ -85,6 +85,13 @@ async function passDebounce() {
   });
 }
 
+/** 비동기 백업 정리(clearOldBackups → then) 체인 소화 */
+async function flushMicrotasks(n = 4) {
+  await act(async () => {
+    for (let i = 0; i < n; i++) await Promise.resolve();
+  });
+}
+
 type HookProps = { data: AppData; disabled?: boolean };
 
 function renderBackup(initial: AppData, opts?: { disabled?: boolean; onLog?: (m: string, t?: string) => void }) {
@@ -101,10 +108,12 @@ describe("useBackup", () => {
     vi.setSystemTime(new Date("2026-08-20T09:00:00+09:00"));
     vi.clearAllMocks();
     window.localStorage.clear();
+    // 저장 시 스냅샷은 기본 on(설정 없음=on) — 자동저장 본연의 동작 테스트는 명시적으로 끄고, 백업 옵션 테스트에서만 켠다
+    window.localStorage.setItem(STORAGE_KEYS.BACKUP_ON_SAVE, "false");
     mocked.getAllBackupList.mockResolvedValue([]);
     mocked.getLatestLocalBackupIntegrity.mockResolvedValue({ createdAt: null, status: "none" });
     mocked.saveBackupSnapshot.mockResolvedValue({ fileSaved: false, localSaved: true, fileSkipped: true });
-    mocked.clearOldBackups.mockReturnValue(0);
+    mocked.clearOldBackups.mockResolvedValue(0);
     mocked.saveDataSerialized.mockImplementation(() => {});
     useUIStore.setState({ saveStatus: "idle", saveStatusError: null, hasDirtyChanges: false });
   });
@@ -301,10 +310,11 @@ describe("useBackup", () => {
       mocked.saveDataSerialized
         .mockImplementationOnce(() => { throw quotaError(); })
         .mockImplementation(() => {});
-      mocked.clearOldBackups.mockReturnValue(2);
+      mocked.clearOldBackups.mockResolvedValue(2);
       const { rerender } = renderBackup(makeData(1));
       rerender({ data: makeData(2) });
       await passDebounce();
+      await flushMicrotasks();
       expect(mocked.clearOldBackups).toHaveBeenCalledWith(3);
       expect(mocked.saveDataSerialized).toHaveBeenCalledTimes(2);
       expect(useUIStore.getState().saveStatus).toBe("saved");
@@ -315,10 +325,11 @@ describe("useBackup", () => {
 
     it("quota 초과인데 정리할 백업이 없으면 재시도 없이 error + 용량 안내", async () => {
       mocked.saveDataSerialized.mockImplementation(() => { throw quotaError(); });
-      mocked.clearOldBackups.mockReturnValue(0);
+      mocked.clearOldBackups.mockResolvedValue(0);
       const { rerender } = renderBackup(makeData(1));
       rerender({ data: makeData(2) });
       await passDebounce();
+      await flushMicrotasks();
       expect(mocked.saveDataSerialized).toHaveBeenCalledTimes(1);
       expect(useUIStore.getState().saveStatus).toBe("error");
       expect(mockedToast.error).toHaveBeenCalledWith(expect.stringContaining("저장 공간이 가득"), expect.objectContaining({ id: "auto-save-error" }));
@@ -326,14 +337,37 @@ describe("useBackup", () => {
 
     it("quota 재시도도 실패하면 error 상태 유지 + 용량 안내", async () => {
       mocked.saveDataSerialized.mockImplementation(() => { throw quotaError(); });
-      mocked.clearOldBackups.mockReturnValue(1);
+      mocked.clearOldBackups.mockResolvedValue(1);
       const { rerender } = renderBackup(makeData(1));
       rerender({ data: makeData(2) });
       await passDebounce();
+      await flushMicrotasks();
       expect(mocked.saveDataSerialized).toHaveBeenCalledTimes(2);
       expect(useUIStore.getState().saveStatus).toBe("error");
       expect(mockedToast.error).toHaveBeenCalledWith(expect.stringContaining("저장 공간이 가득"), expect.anything());
       expect(mockedNotify).not.toHaveBeenCalled();
+    });
+
+    it("quota 정리 중 더 새로운 변경이 들어오면 오래된 payload로 재시도하지 않는다 (최신 저장 덮어쓰기 방지)", async () => {
+      mocked.saveDataSerialized
+        .mockImplementationOnce(() => { throw quotaError(); })
+        .mockImplementation(() => {});
+      let resolveClear: (n: number) => void = () => {};
+      mocked.clearOldBackups.mockImplementation(() => new Promise<number>((res) => { resolveClear = res; }));
+      const { rerender } = renderBackup(makeData(1));
+      rerender({ data: makeData(2) });
+      await passDebounce();
+      expect(mocked.saveDataSerialized).toHaveBeenCalledTimes(1);
+      // 정리가 끝나기 전에 새 변경 → 그 변경은 자체 디바운스 저장으로 기록된다
+      rerender({ data: makeData(3) });
+      await passDebounce();
+      expect(mocked.saveDataSerialized).toHaveBeenCalledTimes(2);
+      expect(mocked.saveDataSerialized).toHaveBeenLastCalledWith(JSON.stringify(makeData(3)));
+      // 뒤늦게 정리 완료 → 오래된 makeData(2)로 재시도하지 않음
+      act(() => { resolveClear(2); });
+      await flushMicrotasks();
+      expect(mocked.saveDataSerialized).toHaveBeenCalledTimes(2);
+      expect(mockedToast.success).not.toHaveBeenCalledWith(expect.stringContaining("오래된 백업"), expect.anything());
     });
   });
 
@@ -388,7 +422,7 @@ describe("useBackup", () => {
   });
 
   describe("저장 시 자동 백업 옵션", () => {
-    it("BACKUP_ON_SAVE=true면 저장 후 스냅샷(skipHash, full payload) 1회, 30분 간격 가드", async () => {
+    it("BACKUP_ON_SAVE=true면 저장 후 스냅샷(skipHash, 파일용 full payload + 로컬용 user-only) 1회, AUTO_BACKUP_INTERVAL_MS 간격 가드", async () => {
       window.localStorage.setItem(STORAGE_KEYS.BACKUP_ON_SAVE, "true");
       const { rerender } = renderBackup(makeData(1));
       rerender({ data: makeData(2) });
@@ -396,7 +430,7 @@ describe("useBackup", () => {
       expect(mocked.saveBackupSnapshot).toHaveBeenCalledTimes(1);
       expect(mocked.saveBackupSnapshot).toHaveBeenCalledWith(
         makeData(2),
-        expect.objectContaining({ skipHash: true, dataJson: JSON.stringify(makeData(2)) }),
+        expect.objectContaining({ skipHash: true, dataJson: JSON.stringify(makeData(2)), userDataJson: userJson(makeData(2)) }),
       );
       // 간격 내 두 번째 저장 → 백업 생략
       rerender({ data: makeData(3) });
@@ -410,12 +444,21 @@ describe("useBackup", () => {
       expect(mocked.saveBackupSnapshot).toHaveBeenCalledTimes(2);
     });
 
-    it("옵션이 꺼져 있으면 저장만 하고 백업 안 함", async () => {
+    it("옵션을 명시적으로 껐으면 저장만 하고 백업 안 함", async () => {
+      expect(window.localStorage.getItem(STORAGE_KEYS.BACKUP_ON_SAVE)).toBe("false");
       const { rerender } = renderBackup(makeData(1));
       rerender({ data: makeData(2) });
       await passDebounce();
       expect(mocked.saveDataSerialized).toHaveBeenCalledTimes(1);
       expect(mocked.saveBackupSnapshot).not.toHaveBeenCalled();
+    });
+
+    it("설정이 저장된 적 없으면 기본 on — 저장 후 스냅샷이 만들어진다", async () => {
+      window.localStorage.removeItem(STORAGE_KEYS.BACKUP_ON_SAVE);
+      const { rerender } = renderBackup(makeData(1));
+      rerender({ data: makeData(2) });
+      await passDebounce();
+      expect(mocked.saveBackupSnapshot).toHaveBeenCalledTimes(1);
     });
   });
 
@@ -427,7 +470,7 @@ describe("useBackup", () => {
       mocked.getAllBackupList.mockClear();
       await act(async () => { await result.current.handleManualBackup(); });
       expect(mocked.saveDataSerialized).toHaveBeenCalledWith(JSON.stringify(d));
-      expect(mocked.saveBackupSnapshot).toHaveBeenCalledWith(d, expect.objectContaining({ skipHash: false, dataJson: JSON.stringify(d) }));
+      expect(mocked.saveBackupSnapshot).toHaveBeenCalledWith(d, expect.objectContaining({ skipHash: false, dataJson: JSON.stringify(d), userDataJson: userJson(d) }));
       expect(mocked.getAllBackupList).toHaveBeenCalledTimes(1);
       expect(mockedToast.success).toHaveBeenCalledWith("백업 저장 완료", { id: "manual-backup" });
       expect(onLog).toHaveBeenCalledWith("백업 완료.", "success");

@@ -5,7 +5,8 @@ import {
   saveBackupSnapshot,
   saveDataSerialized,
   toUserDataJson,
-  clearOldBackups
+  clearOldBackups,
+  isBackupOnSaveEnabled
 } from "../storage";
 import type { AppData } from "../types";
 import { toast } from "react-hot-toast";
@@ -220,40 +221,53 @@ export function useBackup(data: AppData, options?: UseBackupOptions) {
       const message = error instanceof Error ? error.message : "자동 저장에 실패했습니다.";
       ui.setSaveStatus("error", message);
       // quota 초과: 오래된 백업을 자동 정리하고 1회 재시도 (저장 공간 막힘은 장기 사용자의 가장 현실적인 차단)
+      // 백업 저장소는 비동기(IndexedDB; 폴백 시 localStorage) — 정리가 끝난 뒤 같은 payload로 재시도한다.
       if (isQuotaExceededError(error)) {
-        const removed = clearOldBackups(3);
-        if (removed > 0) {
-          try {
-            saveDataSerialized(fullPayload);
-            lastSavedPayloadRef.current = userPayload;
-            try {
-              window.localStorage.removeItem(STORAGE_KEYS.DRAFT);
-              window.localStorage.removeItem(STORAGE_KEYS.DRAFT_AT);
-            } catch { /* */ }
-            ui.setHasDirtyChanges(false);
-            ui.setSaveStatus("saved");
-            notifyDataChanged(userPayload);
-            void refreshLatestBackup();
-            toast.success(`저장 공간이 부족해 오래된 백업 ${removed}개를 정리하고 저장했습니다.`, {
-              id: AUTO_SAVE_ERROR_TOAST_ID
-            });
-            return;
-          } catch (retryErr) {
-            console.warn("[useBackup] quota 재시도 실패", retryErr);
-          }
-        }
-        toast.error(
-          "저장 공간이 가득 찼습니다. 설정 > 백업에서 오래된 백업·캐시를 비워주세요.",
-          { id: AUTO_SAVE_ERROR_TOAST_ID, duration: 8000 }
-        );
+        const dataAtFailure = dataRef.current;
+        const showQuotaError = () =>
+          toast.error(
+            "저장 공간이 가득 찼습니다. 설정 > 백업에서 오래된 백업·캐시를 비워주세요.",
+            { id: AUTO_SAVE_ERROR_TOAST_ID, duration: 8000 }
+          );
+        void clearOldBackups(3)
+          .then((removed) => {
+            // 정리 중에 더 새로운 변경이 들어왔으면 재시도하지 않는다 — 오래된 payload로 최신 저장을 덮지 않게.
+            // (새 변경은 자체 디바운스 저장에서 다시 시도한다)
+            if (dataRef.current !== dataAtFailure) return;
+            if (removed > 0) {
+              try {
+                saveDataSerialized(fullPayload);
+                lastSavedPayloadRef.current = userPayload;
+                try {
+                  window.localStorage.removeItem(STORAGE_KEYS.DRAFT);
+                  window.localStorage.removeItem(STORAGE_KEYS.DRAFT_AT);
+                } catch { /* */ }
+                ui.setHasDirtyChanges(false);
+                ui.setSaveStatus("saved");
+                notifyDataChanged(userPayload);
+                void refreshLatestBackup();
+                toast.success(`저장 공간이 부족해 오래된 백업 ${removed}개를 정리하고 저장했습니다.`, {
+                  id: AUTO_SAVE_ERROR_TOAST_ID
+                });
+                return;
+              } catch (retryErr) {
+                console.warn("[useBackup] quota 재시도 실패", retryErr);
+              }
+            }
+            showQuotaError();
+          })
+          .catch((clearErr: unknown) => {
+            console.warn("[useBackup] 오래된 백업 정리 실패", clearErr);
+            showQuotaError();
+          });
         return;
       }
       toast.error(message, { id: AUTO_SAVE_ERROR_TOAST_ID });
       return;
     }
 
-    const backupOnSave = window.localStorage.getItem(STORAGE_KEYS.BACKUP_ON_SAVE) === "true";
-    if (!backupOnSave) return;
+    // 저장 시 스냅샷 — 설정이 없으면 기본 on (저장소가 IndexedDB라 용량 부담이 없다)
+    if (!isBackupOnSaveEnabled()) return;
 
     const now = Date.now();
     if (isAutoBackupRunningRef.current) return;
@@ -263,6 +277,8 @@ export function useBackup(data: AppData, options?: UseBackupOptions) {
     void saveBackupSnapshot(dataRef.current, {
       skipHash: true,
       dataJson: fullPayload,
+      // 로컬 백업 본문은 user-only — 이미 만들어 둔 userPayload를 넘겨 재직렬화 생략
+      userDataJson: userPayload,
       timeoutMs: BACKUP_CONFIG.API_TIMEOUT_MS
     })
       .then(async (result) => {
@@ -350,6 +366,7 @@ export function useBackup(data: AppData, options?: UseBackupOptions) {
       const result = await saveBackupSnapshot(data, {
         skipHash: false,
         dataJson: payload,
+        userDataJson: toUserDataJson(data),
         timeoutMs: BACKUP_CONFIG.API_TIMEOUT_MS
       });
 

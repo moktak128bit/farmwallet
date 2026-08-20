@@ -8,7 +8,7 @@
 import React, { useCallback } from "react";
 import { toast } from "react-hot-toast";
 import type { AppData } from "../../types";
-import { normalizeImportedData, saveSafetySnapshot } from "../../storage";
+import { mergeCurrentCaches, normalizeImportedData, saveSafetySnapshot } from "../../storage";
 import { isSchemaTooNewError } from "../../services/dataService";
 import { getKoreaTime } from "../../utils/date";
 import { ERROR_MESSAGES } from "../../constants/errorMessages";
@@ -121,7 +121,8 @@ export const DataBackupCard: React.FC<Props> = React.memo(function DataBackupCar
         const appJson = appDataFromTableBackupPayload(parsed);
         // 복원 직전 현재 데이터 안전 스냅샷
         await saveSafetySnapshot(data, "테이블 백업 복원 직전 자동 스냅샷");
-        const normalized = normalizeImportedData(appJson);
+        // 테이블 백업에는 캐시가 없음 — 현재 메모리의 캐시 유지
+        const normalized = mergeCurrentCaches(normalizeImportedData(appJson), data);
         onChangeData(normalized);
         setText(JSON.stringify(normalized, null, 2));
         setError(null);
@@ -158,7 +159,8 @@ export const DataBackupCard: React.FC<Props> = React.memo(function DataBackupCar
         const parsed = JSON.parse(text);
         // 복원 직전 현재 데이터 안전 스냅샷
         await saveSafetySnapshot(data, "백업 파일 복원 직전 자동 스냅샷");
-        const normalized = normalizeImportedData(parsed);
+        // 백업 파일에 캐시가 없으면(user-only 백업) 현재 메모리의 캐시 유지
+        const normalized = mergeCurrentCaches(normalizeImportedData(parsed), data);
         onChangeData(normalized);
         setText(JSON.stringify(normalized, null, 2));
         setError(null);

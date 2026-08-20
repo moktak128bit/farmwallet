@@ -3,6 +3,7 @@
  * React.memo로 감싸므로 부모가 넘기는 onAdd는 useCallback, existingIds는 useMemo로 안정적이어야 한다.
  */
 import React, { useState } from "react";
+import { toast } from "react-hot-toast";
 import type { Account, AccountType } from "../../../types";
 import { parseAmount } from "../../../utils/parseAmount";
 
@@ -28,11 +29,11 @@ export const AccountForm: React.FC<Props> = React.memo(function AccountForm({ on
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
     if (!form.id.trim() || !form.name.trim()) {
-      alert("계좌 ID와 계좌명을 입력해 주세요.");
+      toast.error("계좌 ID와 계좌명을 입력해 주세요.");
       return;
     }
     if (existingIds.includes(form.id)) {
-      alert("이미 존재하는 계좌 ID입니다.");
+      toast.error("이미 존재하는 계좌 ID입니다.");
       return;
     }
     const amount = parseAmount(form.initialBalance);

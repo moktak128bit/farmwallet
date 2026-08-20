@@ -3,6 +3,8 @@
  * window.print를 활용한 인쇄용 뷰 생성 — 사용자가 "PDF로 저장"을 선택해 저장.
  */
 
+import { toast } from "react-hot-toast";
+
 interface PrintOptions {
   title: string;
   subtitle?: string;
@@ -18,7 +20,7 @@ export function openPrintWindow({ title, subtitle, bodyHtml }: PrintOptions): vo
   // 새 창에 document.write로 내용을 써야 하므로 핸들이 반드시 필요 — 두 옵션을 넣지 않는다.
   const win = window.open("", "_blank", "width=900,height=900");
   if (!win) {
-    alert("팝업이 차단되었습니다. 브라우저 설정을 확인해주세요.");
+    toast.error("팝업이 차단되었습니다. 브라우저 설정을 확인해주세요.");
     return;
   }
   const generatedAt = new Date().toLocaleString("ko-KR");

@@ -9,6 +9,7 @@ import { ConfirmModal } from "./components/ui/ConfirmModal";
 import { QuickEntryModal } from "./components/QuickEntryModal";
 import { RecurringDueBadge } from "./components/RecurringDueBadge";
 import { TabErrorBoundary } from "./components/TabErrorBoundary";
+import { MobileDrawer } from "./components/MobileDrawer";
 
 // 동일 로더를 lazy와 프리페치에서 공유해 탭 호버 시 청크 미리 로드
 const loadDashboard = () => import("./pages/DashboardPage").then((m) => ({ default: m.DashboardView }));
@@ -98,6 +99,7 @@ export const App: React.FC = () => {
   const setTab = useUIStore((s) => s.setTab);
   const mobileDrawerOpen = useUIStore((s) => s.mobileDrawerOpen);
   const setMobileDrawerOpen = useUIStore((s) => s.setMobileDrawerOpen);
+  const closeMobileDrawer = useCallback(() => setMobileDrawerOpen(false), [setMobileDrawerOpen]);
   const pendingAction = useUIStore((s) => s.pendingAction);
   const setPendingAction = useUIStore((s) => s.setPendingAction);
   const showShortcutsHelp = useUIStore((s) => s.showShortcutsHelp);
@@ -981,26 +983,9 @@ export const App: React.FC = () => {
             <aside className="sidebar" role="navigation" aria-label="주 메뉴">
               <Tabs active={tab} onChange={handleTabChange} onPrefetch={handlePrefetchTab} tabBadges={settingsTabBadge ? { settings: settingsTabBadge } : undefined} />
             </aside>
-            {mobileDrawerOpen && (
-              <>
-                <div
-                  className="drawer-overlay"
-                  role="presentation"
-                  onClick={() => setMobileDrawerOpen(false)}
-                  onKeyDown={(e) => e.key === "Escape" && setMobileDrawerOpen(false)}
-                  aria-hidden
-                />
-                <div className="drawer-panel" role="dialog" aria-label="메뉴">
-                  <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 12 }}>
-                    <span style={{ fontWeight: 600 }}>메뉴</span>
-                    <button type="button" className="icon-button" onClick={() => setMobileDrawerOpen(false)} aria-label="닫기">
-                      닫기
-                    </button>
-                  </div>
-                  <Tabs active={tab} onChange={handleTabChange} onPrefetch={handlePrefetchTab} tabBadges={settingsTabBadge ? { settings: settingsTabBadge } : undefined} />
-                </div>
-              </>
-            )}
+            <MobileDrawer open={mobileDrawerOpen} onClose={closeMobileDrawer}>
+              <Tabs active={tab} onChange={handleTabChange} onPrefetch={handlePrefetchTab} tabBadges={settingsTabBadge ? { settings: settingsTabBadge } : undefined} />
+            </MobileDrawer>
             <main id="main-content" className="app-main" role="main">
           <Suspense fallback={<div className="card" style={{ padding: 24, textAlign: "center", color: "var(--text-muted)" }}>로딩 중...</div>}>
           {tab === "dashboard" && (

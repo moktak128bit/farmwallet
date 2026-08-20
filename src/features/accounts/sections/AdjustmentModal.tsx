@@ -87,7 +87,7 @@ export const AdjustmentModal = React.memo(function AdjustmentModal({
           onClose();
           return;
         }
-        alert(isSecurities ? "변경할 금액을 입력하거나 연금 분류를 바꿔주세요." : "USD 또는 KRW 중 하나 이상 0이 아닌 값을 입력해주세요.");
+        toast.error(isSecurities ? "변경할 금액을 입력하거나 연금 분류를 바꿔주세요." : "USD 또는 KRW 중 하나 이상 0이 아닌 값을 입력해주세요.");
         return;
       }
 
@@ -134,16 +134,16 @@ export const AdjustmentModal = React.memo(function AdjustmentModal({
     if (adjustValue.trim() !== "") {
       const parsed = parseSignedAmount(adjustValue);
       if (parsed == null) {
-        alert("금액 형식이 올바르지 않습니다. 예: +100000, -50000");
+        toast.error("금액 형식이 올바르지 않습니다. 예: +100000, -50000");
         return;
       }
       value = parsed;
       if (value === 0 && !isSetDirectly) {
-        alert("0이 아닌 값을 입력해주세요.");
+        toast.error("0이 아닌 값을 입력해주세요.");
         return;
       }
     } else {
-      alert("금액을 입력해주세요.");
+      toast.error("금액을 입력해주세요.");
       return;
     }
 

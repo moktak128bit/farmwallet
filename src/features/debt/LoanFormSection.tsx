@@ -12,6 +12,7 @@
  *   - resetForm():     헤더 토글 버튼 — 폼 초기화 + 수정 모드 해제
  */
 import React, { useImperativeHandle, useState } from "react";
+import { toast } from "react-hot-toast";
 import type { Loan, RepaymentMethod } from "../../types";
 import { parseAmount } from "../../utils/parseAmount";
 import { getTodayKST } from "../../utils/date";
@@ -89,7 +90,7 @@ export const LoanFormSection = React.memo(React.forwardRef<LoanFormSectionHandle
       const gracePeriodYears = form.gracePeriodYears ? Number(form.gracePeriodYears) : undefined;
 
       if (!form.institution || !form.loanName || !form.subCategory || !loanAmount || !form.loanDate || !form.maturityDate) {
-        alert("필수 항목을 모두 입력해주세요.");
+        toast.error("필수 항목을 모두 입력해주세요.");
         return;
       }
 

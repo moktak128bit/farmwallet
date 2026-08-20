@@ -6,6 +6,8 @@
  */
 import React from "react";
 import { formatNumber } from "../../utils/formatter";
+import { fxBandToneColor } from "../../utils/fxBand";
+import { useFxBand } from "./FxBandHint";
 
 interface Props {
   fxRate: number | null;
@@ -37,14 +39,24 @@ export const StocksHeaderSection: React.FC<Props> = React.memo(function StocksHe
   onExportTradesCsv,
   onOpenLookup
 }) {
+  // 환율 밴드(G2, 읽기 전용) — 이력은 스토어에서 직접 구독, 현재값은 pill과 같은 fxRate
+  const fxBand = useFxBand(fxRate);
   return (
     <div className="section-header">
       <h2>주식 거래 & 평가</h2>
 
       <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
         {fxRate && (
-          <span className="pill">
+          <span className="pill" title={fxBand.detail}>
             USD/KRW: {formatNumber(fxRate)} 원
+            {fxBand.label && (
+              <span
+                style={{ marginLeft: 6, fontWeight: 600, color: fxBandToneColor(fxBand.label.tone) }}
+                aria-label={`환율 위치: ${fxBand.label.text}`}
+              >
+                {fxBand.label.text}
+              </span>
+            )}
             {fxUpdatedAt && (
               <span className="muted" style={{ marginLeft: 6 }}>
                 업데이트:{' '}

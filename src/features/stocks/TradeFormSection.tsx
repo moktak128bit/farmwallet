@@ -39,6 +39,7 @@ import { ERROR_MESSAGES } from "../../constants/errorMessages";
 import { getTodayKST } from "../../utils/date";
 import { newIdWithPrefix } from "../../utils/id";
 import { displayNameForTicker, createDefaultTradeForm, type TradeFormState } from "../../utils/stockHelpers";
+import { FxBandHint } from "./FxBandHint";
 
 /** 환율 미로드 시 미국 주식 저장에 사용하는 기본 환율 (저장 차단 대신 사용) */
 const DEFAULT_FX_RATE = 1400;
@@ -777,6 +778,10 @@ export const TradeFormSection = React.memo(React.forwardRef<TradeFormSectionHand
               ? "미국 종목: 단가·수수료를 USD와 원화 중 하나 또는 둘 다 입력할 수 있습니다. 둘 다 입력하면 환율 없이 저장됩니다."
               : "한국 종목은 원화(KRW)로 입력합니다."}
           </p>
+          {/* USD 매수 시 환율 밴드 힌트(읽기 전용) — 이력 부족이면 렌더 안 함 */}
+          {isUSDStock(tradeForm.ticker ?? "") && tradeForm.side !== "sell" && (
+            <FxBandHint current={fxRate} prefix="USD 매수 참고:" style={{ margin: "0 0 8px 0" }} />
+          )}
             {/* 전체 폼 */}
             <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(180px, 1fr))", gap: "10px 12px" }}>
             <label style={{ display: "flex", flexDirection: "column", gap: 4 }}>

@@ -12,6 +12,34 @@ import { formatIsoLocal, parseIsoLocal } from "./date";
 const RECENT_DAYS = 180;
 
 /**
+ * 보존 압축(순수): today 기준 최근 RECENT_DAYS는 일별 유지, 그 이전은 월당 마지막 1건(≈월말)만 남기고
+ * 날짜 오름차순으로 정렬한다. upsertDailyFx(당일 적립)와 fxBackfill(결번 보강)이 같은 정책을 공유한다.
+ * 입력에 같은 날짜가 중복되면 뒤의 항목이 이긴다.
+ */
+export function compactDailyFx(entries: HistoricalDailyFx[], today: string): HistoricalDailyFx[] {
+  const map = new Map<string, HistoricalDailyFx>();
+  for (const f of entries) map.set(f.date, f);
+  const base = parseIsoLocal(today);
+  let cutoff = "";
+  if (base) {
+    base.setDate(base.getDate() - RECENT_DAYS);
+    cutoff = formatIsoLocal(base);
+  }
+  const keepLatestPerMonth = new Map<string, HistoricalDailyFx>(); // YYYY-MM → 최신
+  const recent: HistoricalDailyFx[] = [];
+  for (const f of map.values()) {
+    if (!cutoff || f.date >= cutoff) {
+      recent.push(f);
+      continue;
+    }
+    const mk = f.date.slice(0, 7);
+    const prevMonth = keepLatestPerMonth.get(mk);
+    if (!prevMonth || f.date > prevMonth.date) keepLatestPerMonth.set(mk, f);
+  }
+  return [...keepLatestPerMonth.values(), ...recent].sort((a, b) => a.date.localeCompare(b.date));
+}
+
+/**
  * 당일 환율 적립 + 보존 압축. 변경이 없으면 null을 반환해 호출부가 기존 참조를 유지하게 한다.
  * @param today YYYY-MM-DD (KST)
  */
@@ -36,27 +64,7 @@ export function upsertDailyFx(
     changed = true;
   }
 
-  // 보존 압축: cutoff 이전은 월당 마지막 1건만
-  const base = parseIsoLocal(today);
-  let cutoff = "";
-  if (base) {
-    base.setDate(base.getDate() - RECENT_DAYS);
-    cutoff = formatIsoLocal(base);
-  }
-  const keepLatestPerMonth = new Map<string, HistoricalDailyFx>(); // YYYY-MM → 최신
-  const recent: HistoricalDailyFx[] = [];
-  for (const f of map.values()) {
-    if (!cutoff || f.date >= cutoff) {
-      recent.push(f);
-      continue;
-    }
-    const mk = f.date.slice(0, 7);
-    const prevMonth = keepLatestPerMonth.get(mk);
-    if (!prevMonth || f.date > prevMonth.date) keepLatestPerMonth.set(mk, f);
-  }
-  const next = [...keepLatestPerMonth.values(), ...recent].sort((a, b) =>
-    a.date.localeCompare(b.date)
-  );
+  const next = compactDailyFx([...map.values()], today);
   if (next.length !== map.size) changed = true;
 
   return changed ? next : null;

@@ -19,6 +19,9 @@ interface PortfolioMetrics {
 /** ETF 종목명 정규식 — 국내 주요 ETF 브랜드 접두. 암호화폐는 계좌 타입으로 판정하므로 여기엔 없음. */
 const ETF_NAME_RE = /tiger|kodex|rise|sol |1q |ace |kbstar|hanaro/i;
 
+/** 종목명 기준 ETF 판정 — 배분 차트(portfolio)·배분 X-ray가 같은 규칙을 쓰도록 단일 소스. */
+export const isEtfName = (name: string): boolean => ETF_NAME_RE.test(name);
+
 /** 포지션 원가 KRW — USD 종목은 매입 당시 환율(없으면 현재 환율)로 환산. */
 function positionCostKRW(p: PositionRow, fxRate: number | null): number {
   if (p.marketCurrency === "USD") {
@@ -42,7 +45,7 @@ export function computePortfolioMetrics(
     if (v <= 0) continue;
     let tp = "개별주식";
     if (acctTypeById.get(p.accountId) === "crypto") tp = "암호화폐";
-    else if (ETF_NAME_RE.test(p.name)) tp = "ETF";
+    else if (isEtfName(p.name)) tp = "ETF";
     byType.set(tp, (byType.get(tp) ?? 0) + v);
   }
   const portfolio = Array.from(byType.entries())

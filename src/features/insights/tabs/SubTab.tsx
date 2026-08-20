@@ -6,13 +6,13 @@ import { F, W, Card, Kpi, Insight, Section, CT, type D } from "../insightsShared
 import { getThisMonthKST } from "../../../utils/date";
 
 const CATEGORY_PATTERNS: { label: string; color: string; regex: RegExp }[] = [
-  { label: "AI/생산성", color: "#e94560", regex: /chatgpt|claude|cursor|\bai\b|gpt|copilot|notion|slack|figma/i },
-  { label: "영상/엔터", color: "#0f3460", regex: /유튜브|넷플릭스|왓챠|디즈니|웨이브|티빙|애플tv|apple\s?tv|프리미엄/i },
-  { label: "커머스/배송", color: "#48c9b0", regex: /쿠팡|로켓|네이버플러스|멤버십|ssg|마켓컬리|오아시스/i },
-  { label: "음악", color: "#9b59b6", regex: /멜론|지니|플로|스포티파이|애플뮤직|유튜브\s?뮤직|bugs/i },
-  { label: "클라우드/저장소", color: "#3498db", regex: /icloud|google\s?one|dropbox|onedrive|mega|아이클라우드/i },
-  { label: "독서/학습", color: "#f39c12", regex: /밀리|리디|윌라|교보|yes24|인프런|유데미|udemy/i },
-  { label: "운동/건강", color: "#2ecc71", regex: /헬스|필라테스|요가|짐|피트니스|런데이|gym/i },
+  { label: "AI/생산성", color: "var(--danger)", regex: /chatgpt|claude|cursor|\bai\b|gpt|copilot|notion|slack|figma/i },
+  { label: "영상/엔터", color: "var(--chart-series-b)", regex: /유튜브|넷플릭스|왓챠|디즈니|웨이브|티빙|애플tv|apple\s?tv|프리미엄/i },
+  { label: "커머스/배송", color: "var(--chart-primary)", regex: /쿠팡|로켓|네이버플러스|멤버십|ssg|마켓컬리|오아시스/i },
+  { label: "음악", color: "var(--chart-series-c)", regex: /멜론|지니|플로|스포티파이|애플뮤직|유튜브\s?뮤직|bugs/i },
+  { label: "클라우드/저장소", color: "var(--accent)", regex: /icloud|google\s?one|dropbox|onedrive|mega|아이클라우드/i },
+  { label: "독서/학습", color: "var(--chart-series-d)", regex: /밀리|리디|윌라|교보|yes24|인프런|유데미|udemy/i },
+  { label: "운동/건강", color: "var(--success)", regex: /헬스|필라테스|요가|짐|피트니스|런데이|gym/i },
 ];
 
 export const SubTab = React.memo(function SubTab({ d }: { d: D }) {
@@ -67,10 +67,10 @@ export const SubTab = React.memo(function SubTab({ d }: { d: D }) {
     <>
           {/* ============ 한눈에 ============ */}
           <Section storageKey="sub-section-overview" title="🔄 구독 한눈에 보기">
-            <Card accent><Kpi label="활성 구독 수" value={`${subs.length}개`} sub={`${categorized.length}개 카테고리 + 기타 ${uncategorized.length}`} color="#fff" info="기간 내 한 번 이상 결제된 고유 구독 서비스 수" /></Card>
-            <Card accent><Kpi label="월 구독 비용" value={F(totalMonthly) + "원"} sub={`일 ${W(costPerDay)} · ${subMoM != null ? (subMoM >= 0 ? "+" : "") + subMoM.toFixed(0) + "% MoM" : isPartialMonth ? "이번 달 집계 중" : "변화 없음"}`} color="#f0c040" info="Σ(서비스별 기간 평균). 실제 월마다 달라질 수 있음" /></Card>
-            <Card accent><Kpi label="연간 구독 비용" value={F(totalAnnual) + "원"} sub={totalAnnual >= 1000000 ? "연 100만원 초과" : "적정"} color="#e94560" info="월 구독비 × 12. 실제 총 소요 예상치" /></Card>
-            <Card accent><Kpi label="수입 대비 비율" value={subPctIncome.toFixed(1) + "%"} sub={subPctIncome > 5 ? "⚠ 구독 비중 높음" : "적정 수준"} color={subPctIncome > 5 ? "#e94560" : "#48c9b0"} info="구독 누적 / 총 수입. 5% 이하 권장" /></Card>
+            <Card accent><Kpi label="활성 구독 수" value={`${subs.length}개`} sub={`${categorized.length}개 카테고리 + 기타 ${uncategorized.length}`} color="var(--text)" info="기간 내 한 번 이상 결제된 고유 구독 서비스 수" /></Card>
+            <Card accent><Kpi label="월 구독 비용" value={F(totalMonthly) + "원"} sub={`일 ${W(costPerDay)} · ${subMoM != null ? (subMoM >= 0 ? "+" : "") + subMoM.toFixed(0) + "% MoM" : isPartialMonth ? "이번 달 집계 중" : "변화 없음"}`} color="var(--warning)" info="Σ(서비스별 기간 평균). 실제 월마다 달라질 수 있음" /></Card>
+            <Card accent><Kpi label="연간 구독 비용" value={F(totalAnnual) + "원"} sub={totalAnnual >= 1000000 ? "연 100만원 초과" : "적정"} color="var(--chart-expense)" info="월 구독비 × 12. 실제 총 소요 예상치" /></Card>
+            <Card accent><Kpi label="수입 대비 비율" value={subPctIncome.toFixed(1) + "%"} sub={subPctIncome > 5 ? "⚠ 구독 비중 높음" : "적정 수준"} color={subPctIncome > 5 ? "var(--danger)" : "var(--success)"} info="구독 누적 / 총 수입. 5% 이하 권장" /></Card>
 
             <Card title="월별 구독 지출 추이" span={4}>
               <ResponsiveContainer width="100%" height={240}>
@@ -79,7 +79,7 @@ export const SubTab = React.memo(function SubTab({ d }: { d: D }) {
                   <XAxis dataKey="l" tick={{ fontSize: 12 }} />
                   <YAxis tickFormatter={F} tick={{ fontSize: 11 }} />
                   <Tooltip content={<CT />} />
-                  <Bar isAnimationActive={false} dataKey="amount" fill="#533483" radius={[4, 4, 0, 0]} name="구독비" />
+                  <Bar isAnimationActive={false} dataKey="amount" fill="var(--chart-series-c)" radius={[4, 4, 0, 0]} name="구독비" />
                 </BarChart>
               </ResponsiveContainer>
             </Card>
@@ -95,14 +95,14 @@ export const SubTab = React.memo(function SubTab({ d }: { d: D }) {
                     <div key={name} style={{ background: "var(--bg)", borderRadius: 10, padding: "12px 14px", border: `1px solid ${cat ? cat.color + "33" : "var(--border-light)"}`, borderLeft: `3px solid ${cat?.color ?? "var(--border)"}` }}>
                       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline" }}>
                         <span style={{ fontWeight: 700, fontSize: 14 }}>{name}</span>
-                        <span style={{ fontSize: 11, color: i < 3 ? "#e94560" : "var(--text-faint)", fontWeight: 700 }}>#{i + 1}</span>
+                        <span style={{ fontSize: 11, color: i < 3 ? "var(--danger)" : "var(--text-faint)", fontWeight: 700 }}>#{i + 1}</span>
                       </div>
                       {cat && <div style={{ fontSize: 10, color: cat.color, marginTop: 2, fontWeight: 600 }}>{cat.label}</div>}
                       <div style={{ display: "flex", justifyContent: "space-between", fontSize: 12, color: "var(--text-muted)", marginTop: 6 }}>
                         <span>월 ~{W(avg)}</span>
                         <span>{count}회</span>
                       </div>
-                      <div style={{ fontSize: 12, color: "#e94560", fontWeight: 600, marginTop: 4 }}>누적 {W(total)}</div>
+                      <div style={{ fontSize: 12, color: "var(--chart-expense)", fontWeight: 600, marginTop: 4 }}>누적 {W(total)}</div>
                     </div>
                   );
                 })}
@@ -180,7 +180,7 @@ export const SubTab = React.memo(function SubTab({ d }: { d: D }) {
                     같은 카테고리 내 중복 구독이 없습니다. 효율적으로 관리하고 있어요!
                   </Insight>
                 )}
-                <Insight title="비용 대비 가치" color="#7c3aed" bg="rgba(139,92,246,0.08)">
+                <Insight title="비용 대비 가치" color="var(--chart-series-c)" bg="rgba(139,92,246,0.08)">
                   연간 {F(totalAnnual)}원 지출.
                   {totalAnnual > 1000000 ? " 100만원 초과 — 미사용 구독 정리 시 큰 절감." :
                     totalAnnual > 500000 ? " 50~100만원 수준 — 상위 구독 사용 빈도 점검 권장." :

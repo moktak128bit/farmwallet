@@ -5,12 +5,21 @@
  * comprehensiveMonthly는 부모의 reportWorker 결과 — 여기서 재계산하지 않는다.
  * 선택 월 행(selectedRow)/전월 행(prevRow)은 이 섹션 전용 파생값이라 여기서 find로 뽑는다.
  * selectedMonth 자체는 세금 보고서(taxYear)와 공유되므로 부모 소유.
+ *
+ * 상단 '월간 리뷰' 내러티브(wins/warnings)는 ReportPage props를 늘리지 않고 섹션 안에서
+ * useAppStore 셀렉터·FxRateContext·데이트 계좌를 직접 구독해 buildMonthlyReview(순수)로 계산한다.
  */
-import React, { useMemo } from "react";
+import React, { useCallback, useMemo } from "react";
 import { Bar, BarChart, CartesianGrid, Legend, Tooltip, XAxis, YAxis } from "recharts";
+import { toast } from "react-hot-toast";
 import { DeferredResponsiveContainer as ResponsiveContainer } from "../../components/charts/DeferredResponsiveContainer";
 import type { ComprehensiveMonthlyRow } from "../../utils/reportGenerator";
 import { formatKRW } from "../../utils/formatter";
+import { buildMonthlyReview, buildMonthlyReviewMarkdown } from "../../utils/monthlyReview";
+import { getKoreaTime, getTodayKST } from "../../utils/date";
+import { useAppStore } from "../../store/appStore";
+import { useFxRateValue } from "../../context/FxRateContext";
+import { useDateAccountId } from "../../hooks/useDateAccountSettings";
 import { shiftMonthKey, signedKRW } from "./reportShared";
 
 interface Props {
@@ -24,6 +33,49 @@ export const ComprehensiveMonthlySection: React.FC<Props> = React.memo(function 
   selectedMonth,
   setSelectedMonth
 }) {
+  // ── 월간 리뷰 내러티브 재료 — 부모 props 시그니처 고정(App.tsx 계약), 스토어 직접 구독 ──
+  const ledger = useAppStore((s) => s.data.ledger);
+  const budgetGoals = useAppStore((s) => s.data.budgetGoals);
+  const recurring = useAppStore((s) => s.data.recurringExpenses);
+  const categoryPresets = useAppStore((s) => s.data.categoryPresets);
+  const fxRate = useFxRateValue();
+  const dateAccountId = useDateAccountId();
+  // 오늘(KST)은 selectedMonth가 바뀔 때 다시 읽는다 — 자정 넘김은 월 이동 시 반영(정적 보고서 허용 오차)
+  const review = useMemo(
+    () =>
+      buildMonthlyReview({
+        ledger,
+        month: selectedMonth,
+        todayIso: getTodayKST(),
+        categoryPresets,
+        fxRate,
+        budgetGoals,
+        recurring,
+        dateAccountId
+      }),
+    [ledger, selectedMonth, categoryPresets, fxRate, budgetGoals, recurring, dateAccountId]
+  );
+
+  /** 리뷰 .md 내보내기 — ledgerMarkdownReport(정리.md) 다운로드 패턴과 동일 */
+  const handleExportReviewMd = useCallback(() => {
+    try {
+      const md = buildMonthlyReviewMarkdown(review, getKoreaTime().toLocaleString("ko-KR"));
+      const blob = new Blob([md], { type: "text/markdown;charset=utf-8" });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = `월간리뷰-${review.month}.md`;
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      URL.revokeObjectURL(url);
+      toast.success(`월간리뷰-${review.month}.md를 다운로드했습니다.`);
+    } catch (err) {
+      if (import.meta.env.DEV) console.error("월간 리뷰 내보내기 실패:", err);
+      toast.error("월간 리뷰 내보내기 중 오류가 발생했습니다.");
+    }
+  }, [review]);
+
   /** 선택 월 데이터 */
   const selectedRow: ComprehensiveMonthlyRow | undefined = useMemo(
     () => comprehensiveMonthly.find((r) => r.month === selectedMonth),
@@ -69,6 +121,53 @@ export const ComprehensiveMonthlySection: React.FC<Props> = React.memo(function 
         />
         <button type="button" onClick={() => setSelectedMonth(shiftMonthKey(selectedMonth, 1))}>다음 월 ▶</button>
       </div>
+
+      {/* ── 0. 월간 리뷰 내러티브 (숫자 한 장 위에 잘한 점·주의) ── */}
+      {review.hasData && (
+        <div className="card" style={{ padding: 16, marginBottom: 12, borderLeft: "4px solid var(--primary)" }}>
+          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", gap: 12, flexWrap: "wrap", marginBottom: 8 }}>
+            <div>
+              <h4 style={{ margin: "0 0 4px" }}>월간 리뷰</h4>
+              <div style={{ fontSize: 14, fontWeight: 600 }}>{review.headline}</div>
+              {review.partialDay != null && (
+                <div style={{ fontSize: 12, color: "var(--text-muted)", marginTop: 2 }}>
+                  진행 중인 달 — 모든 비교는 전월·전년·최근 3개월의 같은 기간(1~{review.partialDay}일) 동기 기준입니다.
+                </div>
+              )}
+            </div>
+            <button type="button" onClick={handleExportReviewMd} title="이 달 리뷰를 마크다운 파일로 내보냅니다">
+              리뷰 .md 내보내기
+            </button>
+          </div>
+          <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(260px, 1fr))", gap: 12 }}>
+            <div style={{ background: "var(--success-light)", borderRadius: 8, padding: "10px 12px" }}>
+              <div style={{ fontSize: 13, fontWeight: 700, color: "var(--success)", marginBottom: 6 }}>잘한 점 {review.wins.length > 0 && `(${review.wins.length})`}</div>
+              {review.wins.length === 0 ? (
+                <div style={{ fontSize: 13, color: "var(--text-muted)" }}>이번 달 두드러진 항목이 없습니다.</div>
+              ) : (
+                <ul style={{ margin: 0, paddingLeft: 18, fontSize: 13, lineHeight: 1.6 }}>
+                  {review.wins.map((w, i) => <li key={`${w.kind}-${i}`}>{w.text}</li>)}
+                </ul>
+              )}
+            </div>
+            <div style={{ background: "var(--warning-light)", borderRadius: 8, padding: "10px 12px" }}>
+              <div style={{ fontSize: 13, fontWeight: 700, color: "var(--warning)", marginBottom: 6 }}>주의 {review.warnings.length > 0 && `(${review.warnings.length})`}</div>
+              {review.warnings.length === 0 ? (
+                <div style={{ fontSize: 13, color: "var(--text-muted)" }}>경고할 항목이 없습니다.</div>
+              ) : (
+                <ul style={{ margin: 0, paddingLeft: 18, fontSize: 13, lineHeight: 1.6 }}>
+                  {review.warnings.map((w, i) => <li key={`${w.kind}-${i}`}>{w.text}</li>)}
+                </ul>
+              )}
+            </div>
+          </div>
+          {review.topExpenses.length > 0 && (
+            <div style={{ marginTop: 10, fontSize: 12, color: "var(--text-muted)" }}>
+              지출 TOP: {review.topExpenses.map((t) => `${t.category} ${formatKRW(t.amount)} (${t.share.toFixed(0)}%)`).join(" · ")}
+            </div>
+          )}
+        </div>
+      )}
 
       {!r ? (
         <p style={{ color: "var(--text-muted)", padding: 24 }}>{selectedMonth}에 해당하는 데이터가 없습니다.</p>

@@ -81,6 +81,26 @@ describe("tableDataBackup — 누락 5필드 백업·복원 (workoutRoutines/cus
     expect(restored.dailyBudget).toBeUndefined();
   });
 
+  it("loans는 통째 보존 — 선택 필드 prepaymentFeeRate(중도상환수수료율)도 왕복 유지", () => {
+    const loans: NonNullable<AppData["loans"]> = [
+      {
+        id: "L1",
+        institution: "은행",
+        loanName: "주담대",
+        loanAmount: 100_000_000,
+        annualInterestRate: 4.2,
+        repaymentMethod: "equal_payment",
+        loanDate: "2026-01-01",
+        maturityDate: "2056-01-01",
+        gracePeriodYears: 1,
+        prepaymentFeeRate: 1.2,
+      },
+    ];
+    const file = buildTableBackupFile(makeAppData({ loans }));
+    const restored = appDataFromTableBackupPayload(file);
+    expect(restored.loans).toEqual(loans);
+  });
+
   it("루트 schemaVersion이 복원 객체에 전파되어 마이그레이션 기준으로 사용 가능", () => {
     const file = buildTableBackupFile(fixture);
     const restored = appDataFromTableBackupPayload(file) as AppData & { schemaVersion?: number };

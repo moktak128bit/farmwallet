@@ -150,6 +150,7 @@ export const App: React.FC = () => {
   const isGistSaving = useUIStore((s) => s.isGistSaving);
   const setIsGistSaving = useUIStore((s) => s.setIsGistSaving);
   const newVersionAvailable = useUIStore((s) => s.newVersionAvailable);
+  const applyPwaUpdate = useUIStore((s) => s.applyPwaUpdate);
   const gistConfigured = useUIStore((s) => s.gistConfigured);
   const setGistConfigured = useUIStore((s) => s.setGistConfigured);
   const integritySummary = useUIStore((s) => s.integritySummary);
@@ -827,7 +828,15 @@ export const App: React.FC = () => {
             </button>
           </div>
           {newVersionAvailable && (
-            <div className="pill success" style={{ cursor: "pointer", fontWeight: 600 }} onClick={() => window.location.reload()}>
+            <div
+              className="pill success"
+              style={{ cursor: "pointer", fontWeight: 600 }}
+              onClick={() => {
+                // prompt 모드: waiting SW에 SKIP_WAITING → controlling → 리로드. 폴백은 단순 리로드.
+                if (applyPwaUpdate) void applyPwaUpdate();
+                else window.location.reload();
+              }}
+            >
               새 버전이 배포되었습니다 — 클릭하여 적용
             </div>
           )}
@@ -968,6 +977,8 @@ export const App: React.FC = () => {
             onGitPull={() => {
               if (import.meta.env.DEV) {
                 setShowGitVersionModal(true);
+              } else if (newVersionAvailable && applyPwaUpdate) {
+                void applyPwaUpdate();
               } else {
                 window.location.reload();
               }

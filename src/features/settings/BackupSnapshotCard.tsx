@@ -7,11 +7,17 @@
  * React.memo로 감싸므로 부모가 넘기는 콜백(loadBackupList/onBackupsChanged)은
  * useCallback 등으로 참조가 안정적이어야 한다.
  */
-import React, { useCallback, useMemo, useState } from "react";
+import React, { useCallback, useEffect, useMemo, useState } from "react";
 import { toast } from "react-hot-toast";
 import { clearOldBackups, type BackupEntry } from "../../storage";
+import {
+  clearCorruptBackups,
+  getCorruptBackupsInfo,
+  getCorruptBackupsRaw
+} from "../../services/backupService";
 import { STORAGE_KEYS } from "../../constants/config";
 import { ERROR_MESSAGES } from "../../constants/errorMessages";
+import { getTodayKST } from "../../utils/date";
 
 interface Props {
   backups: BackupEntry[];
@@ -42,6 +48,45 @@ export const BackupSnapshotCard: React.FC<Props> = React.memo(function BackupSna
       toast.error(ERROR_MESSAGES.BACKUP_REFRESH_FAILED, { id: toastId });
     }
   }, [loadBackupList]);
+
+  // 손상된 BACKUPS 원본 보존 슬롯(BACKUPS_CORRUPT) — 백업 목록이 갱신될 때마다 다시 읽는다
+  const [corruptInfo, setCorruptInfo] = useState(() => getCorruptBackupsInfo());
+  useEffect(() => {
+    setCorruptInfo(getCorruptBackupsInfo());
+  }, [backups]);
+
+  const handleDownloadCorruptBackups = useCallback(() => {
+    const raw = getCorruptBackupsRaw();
+    if (!raw) {
+      toast.error("보존된 손상 백업 원본이 없습니다.");
+      return;
+    }
+    try {
+      const blob = new Blob([raw], { type: "application/json;charset=utf-8" });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = `farmwallet-backups-corrupt-${getTodayKST()}.json`;
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      URL.revokeObjectURL(url);
+      toast.success("손상된 백업 원본을 다운로드했습니다.");
+    } catch {
+      toast.error("손상된 백업 원본 다운로드에 실패했습니다.");
+    }
+  }, []);
+
+  const handleClearCorruptBackups = useCallback(() => {
+    if (!window.confirm("보존된 손상 백업 원본을 삭제할까요? 삭제하면 되돌릴 수 없습니다.")) return;
+    if (clearCorruptBackups()) {
+      setCorruptInfo(null);
+      toast.success("손상된 백업 원본을 삭제했습니다.");
+    } else {
+      setCorruptInfo(null);
+      toast("삭제할 손상 백업 원본이 없습니다.");
+    }
+  }, []);
 
   const handleClearOldBackups = useCallback(() => {
     const removed = clearOldBackups(1);
@@ -103,6 +148,33 @@ export const BackupSnapshotCard: React.FC<Props> = React.memo(function BackupSna
             })}`
           : "아직 저장된 백업이 없습니다. 화면 상단 헤더의 '백업' 버튼을 눌러 백업을 만들어 주세요."}
       </div>
+      {corruptInfo && (
+        <div
+          role="status"
+          style={{
+            marginTop: 12,
+            padding: "8px 10px",
+            borderRadius: 8,
+            background: "var(--warning-light)",
+            display: "flex",
+            flexWrap: "wrap",
+            alignItems: "center",
+            gap: 8,
+            fontSize: "0.9em"
+          }}
+        >
+          <span style={{ flex: "1 1 auto" }}>
+            손상된 백업 원본이 보존되어 있습니다 ({Math.max(1, Math.round(corruptInfo.sizeBytes / 1024))} KB).
+            JSON으로 내려받아 수동 복구를 시도할 수 있습니다.
+          </span>
+          <button type="button" className="secondary" onClick={handleDownloadCorruptBackups}>
+            JSON 다운로드
+          </button>
+          <button type="button" className="secondary" onClick={handleClearCorruptBackups}>
+            삭제
+          </button>
+        </div>
+      )}
     </div>
   );
 });

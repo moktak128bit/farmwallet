@@ -1,7 +1,21 @@
-import type { LedgerEntry, RecurringExpense } from "../types";
+import type { CategoryPresets, LedgerEntry, RecurringExpense } from "../types";
 import { parseIsoLocal } from "./date";
-import { isCreditPayment, isInvestmentEntry, isCurrencyExchangeEntry } from "./category";
+import { classifyLedgerFlow, toKrwAmount } from "../features/dashboard/summaryMath";
 import { expenseMainName } from "./categoryMerge";
+
+/**
+ * 예측 집계 옵션 — 대시보드 지출 정의(classifyLedgerFlow + toKrwAmount)와 동일한 입력.
+ * - fxRate: USD 항목 원화 환산 환율 (null/미지정이면 액면 그대로 — 대시보드 공통 정책)
+ * - categoryPresets: 저축성지출(재테크) 판정용 사용자 프리셋
+ */
+interface ForecastOptions {
+  fxRate?: number | null;
+  categoryPresets?: CategoryPresets;
+}
+
+/** 실질 소비 지출인지 — 대시보드 단일 분류(classifyLedgerFlow==="expense")에 위임 */
+const isRealExpense = (e: LedgerEntry, opts?: ForecastOptions): boolean =>
+  e.kind === "expense" && e.amount > 0 && !!e.date && classifyLedgerFlow(e, opts?.categoryPresets) === "expense";
 
 interface CategoryForecast {
   category: string;
@@ -25,22 +39,24 @@ interface ForecastResult {
 const yyyymmOf = (iso: string) => iso.slice(0, 7);
 
 /**
- * 특정 월(YYYY-MM)의 expenseMainName별 실제 소비 합계.
- * forecastNextMonth의 버킷/제외 기준(신용결제·재테크·환전 제외, 대분류=expenseMainName)과
- * 동일하게 계산 — ForecastView '현재월 실적'이 예측과 같은 키를 쓰도록 단일소스.
+ * 특정 월(YYYY-MM)의 expenseMainName별 실제 소비 합계(KRW 환산).
+ * forecastNextMonth의 버킷/제외 기준(대시보드 classifyLedgerFlow==="expense" — 신용결제·재테크·환전·투자손익 제외,
+ * 대분류=expenseMainName, USD는 toKrwAmount 환산)과 동일하게 계산 —
+ * ForecastView '현재월 실적'이 예측과 같은 키·금액 기준을 쓰도록 단일소스.
  */
 export function expenseMainTotalsForMonth(
   ledger: LedgerEntry[],
-  monthPrefix: string
+  monthPrefix: string,
+  opts?: ForecastOptions
 ): Map<string, number> {
   const map = new Map<string, number>();
+  const fxRate = opts?.fxRate ?? null;
   for (const e of ledger) {
-    if (e.kind !== "expense" || e.amount <= 0 || !e.date) continue;
+    if (!isRealExpense(e, opts)) continue;
     if (!e.date.startsWith(monthPrefix)) continue;
-    if (isCreditPayment(e) || isInvestmentEntry(e) || isCurrencyExchangeEntry(e)) continue;
     const cat = expenseMainName(e);
     if (!cat) continue;
-    map.set(cat, (map.get(cat) ?? 0) + e.amount);
+    map.set(cat, (map.get(cat) ?? 0) + toKrwAmount(e, fxRate));
   }
   return map;
 }
@@ -100,14 +116,17 @@ function countWeeklyOccurrencesInMonth(r: RecurringExpense, month: string): numb
  * - lookback은 진행 중인 현재 월을 제외한 "완결된 과거 N개월"만 사용
  *   (현재 월을 포함하면 월초마다 평균이 체계적으로 과소 추정됨 — anomaly.ts와 동일 기준)
  * - 신뢰구간(±1σ) 함께 제공
+ * - 지출 판정·금액은 대시보드와 동일 (classifyLedgerFlow==="expense" + toKrwAmount USD 환산)
  */
 export function forecastNextMonth(
   ledger: LedgerEntry[],
   recurring: RecurringExpense[],
   currentMonth: string,
-  lookbackMonths = 6
+  lookbackMonths = 6,
+  opts?: ForecastOptions
 ): ForecastResult {
   const forecastMonth = offsetMonth(currentMonth, 1);
+  const fxRate = opts?.fxRate ?? null;
 
   const monthSet = new Set<string>();
   const monthOrder: string[] = [];
@@ -132,9 +151,8 @@ export function forecastNextMonth(
 
   const byCatMonth = new Map<string, Map<string, number>>();
   for (const e of ledger) {
-    if (e.kind !== "expense" || e.amount <= 0 || !e.date) continue;
-    // 실제 소비만 — 신용결제(이중계상)·재테크(저축/투자)·환전(계좌이동)은 지출 예측에서 제외
-    if (isCreditPayment(e) || isInvestmentEntry(e) || isCurrencyExchangeEntry(e)) continue;
+    // 실제 소비만 — 신용결제(이중계상)·재테크(저축/투자)·환전(계좌이동)·투자손익은 대시보드 단일 분류로 제외
+    if (!isRealExpense(e, opts)) continue;
     // 대분류는 expenseMainName 단일소스 — 현행 스키마(category="지출")가 한 버킷으로 뭉쳐 카테고리 예측이 무의미해지는 것 방지
     const cat = expenseMainName(e);
     if (!cat) continue;
@@ -145,7 +163,7 @@ export function forecastNextMonth(
       slot = new Map();
       byCatMonth.set(cat, slot);
     }
-    slot.set(ym, (slot.get(ym) ?? 0) + e.amount);
+    slot.set(ym, (slot.get(ym) ?? 0) + toKrwAmount(e, fxRate));
   }
 
   const categories = new Set<string>([...byCatMonth.keys(), ...recurringByCat.keys()]);

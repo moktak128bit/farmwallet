@@ -15,6 +15,12 @@ import type { Account, CategoryPresets, ExpenseDetailGroup, LedgerEntry, LedgerK
 import { shortcutManager, type ShortcutAction } from "../../utils/shortcuts";
 import { validateLedgerForm } from "./validateLedgerForm";
 import { parseAmount as sharedParseAmount, formatAmount as sharedFormatAmount } from "../../utils/parseAmount";
+import {
+  evaluateAmountExpression,
+  isAmountExpression,
+  sanitizeAmountExpressionInput,
+  splitAmountByPeople,
+} from "../../utils/amountExpression";
 import { newIdWithPrefix } from "../../utils/id";
 import { DEFAULT_DAILY_BUDGET, dailySpend, weeklySpend, weeklyLimit, getCurrentWeekRange } from "../../utils/dailyBudget";
 import { useAppStore } from "../../store/appStore";
@@ -332,7 +338,9 @@ export const LedgerEntryForm = React.memo(React.forwardRef<LedgerEntryFormHandle
 
     // parseAmount/formatAmount는 src/utils/parseAmount.ts로 중앙화됨.
     // 기존 (value, allowDecimal) 시그니처를 유지하기 위한 어댑터.
+    // 계산식("12000+3500/2")이면 안전 파서로 평가한 값(실패 시 0) — submitForm·단축키 enabled·할인 미리보기가 모두 이 경로를 탄다.
     const parseAmount = useCallback((value: string, allowDecimal?: boolean): number => {
+      if (isAmountExpression(value)) return evaluateAmountExpression(value, { allowDecimal }) ?? 0;
       return sharedParseAmount(value, { allowDecimal });
     }, []);
 
@@ -342,10 +350,42 @@ export const LedgerEntryForm = React.memo(React.forwardRef<LedgerEntryFormHandle
 
     // 금액 입력 onChange — JSX 속성 안 useCallback(rules-of-hooks 위반 패턴)을 컴포넌트 상단으로 이동
     const handleAmountChange = useCallback((e: React.ChangeEvent<HTMLInputElement>) => {
+      const raw = e.target.value;
+      // 연산자가 섞이면 계산식 모드 — 콤마 포맷 대신 허용 문자만 남겨 그대로 둔다 (blur/제출 시 평가)
+      if (isAmountExpression(raw)) {
+        setForm((prev) => ({ ...prev, amount: sanitizeAmountExpressionInput(raw) }));
+        return;
+      }
       const allowDec = effectiveFormKind === "transfer" && form.currency === "USD";
-      const formatted = formatAmount(e.target.value, allowDec);
+      const formatted = formatAmount(raw, allowDec);
       setForm((prev) => ({ ...prev, amount: formatted }));
     }, [formatAmount, effectiveFormKind, form.currency]);
+
+    // blur 시 계산식 → 숫자 치환 (Enter/Ctrl+Enter 제출은 parseAmount 어댑터가 평가하므로 치환 없이도 정확)
+    const handleAmountBlur = useCallback(() => {
+      const f = latestFormRef.current;
+      if (!isAmountExpression(f.amount)) return;
+      const allowDec = effectiveFormKind === "transfer" && f.currency === "USD";
+      const v = evaluateAmountExpression(f.amount, { allowDecimal: allowDec });
+      if (v === null) return; // 잘못된 식은 그대로 두고 검증 에러로 안내
+      setForm((prev) => ({ ...prev, amount: formatAmount(String(v), allowDec) }));
+    }, [effectiveFormKind, formatAmount]);
+
+    // ÷N(더치페이) — 모바일 numeric 키패드엔 연산자가 없으므로 버튼 경로. 현재 금액을 N명 1인분으로 치환.
+    const splitAmountByN = useCallback(() => {
+      const f = latestFormRef.current;
+      const allowDec = effectiveFormKind === "transfer" && f.currency === "USD";
+      const current = isAmountExpression(f.amount)
+        ? evaluateAmountExpression(f.amount, { allowDecimal: allowDec })
+        : sharedParseAmount(f.amount, { allowDecimal: allowDec });
+      if (!current || current <= 0) { toast.error("먼저 금액을 입력하세요."); return; }
+      const raw = window.prompt(`몇 명이 나눠 내나요? (${current.toLocaleString()}을 N명 1인분으로 바꿉니다)`, "2");
+      if (raw == null) return;
+      const n = Number(raw.trim());
+      const v = splitAmountByPeople(current, n, { allowDecimal: allowDec });
+      if (v === null) { toast.error("2 이상의 정수를 입력하세요."); return; }
+      setForm((prev) => ({ ...prev, amount: formatAmount(String(v), allowDec) }));
+    }, [effectiveFormKind, formatAmount]);
 
     // 종류 탭 전환·"전체" 시 폼-구동 리스트 필터(대/중/소분류 + 출금/입금계좌)를 일괄 해제.
     // 종류마다 카테고리·계좌 의미가 달라(수입엔 출금계좌가 없는 등) 남겨두면 빈 목록이 된다.
@@ -1105,6 +1145,16 @@ export const LedgerEntryForm = React.memo(React.forwardRef<LedgerEntryFormHandle
                   {(effectiveFormKind === "income" || effectiveFormKind === "expense") && (
                     <span style={{ fontWeight: 400, color: "var(--text-muted)" }}>(할인 전) </span>
                   )}
+                  <button
+                    type="button"
+                    tabIndex={-1}
+                    className="secondary"
+                    onClick={splitAmountByN}
+                    title="더치페이 — 금액을 N명으로 나눈 1인분으로 바꿉니다 (계산식 12000+3500/2 도 입력 가능)"
+                    style={{ fontSize: 10, padding: "1px 7px", marginLeft: 6, borderRadius: 10 }}
+                  >
+                    ÷N
+                  </button>
                   {effectiveFormKind === "transfer" && (
                     <span style={{ marginLeft: 8 }}>
                       <button
@@ -1135,6 +1185,7 @@ export const LedgerEntryForm = React.memo(React.forwardRef<LedgerEntryFormHandle
                   placeholder={effectiveFormKind === "transfer" && form.currency === "USD" ? "0.00" : "0"}
                   value={form.amount}
                   onChange={handleAmountChange}
+                  onBlur={handleAmountBlur}
                   onKeyDown={(e) => {
                     if (e.key === "Enter") {
                       e.preventDefault();
@@ -1156,6 +1207,17 @@ export const LedgerEntryForm = React.memo(React.forwardRef<LedgerEntryFormHandle
                 <span id="amount-error" style={{ fontSize: 10, color: "var(--danger)", display: "block", marginTop: 4, visibility: formErrors.amount ? "visible" : "hidden" }}>
                   {formErrors.amount || "\u00A0"}
                 </span>
+                {/* 계산식 미리보기 — 유효할 때만 '= 15,500원' (오류는 위 검증 메시지가 안내) */}
+                {isAmountExpression(form.amount) && (() => {
+                  const allowDec = effectiveFormKind === "transfer" && form.currency === "USD";
+                  const v = evaluateAmountExpression(form.amount, { allowDecimal: allowDec });
+                  if (v === null) return null;
+                  return (
+                    <span style={{ fontSize: 12, color: "var(--text-muted)", display: "block", textAlign: "right", marginTop: 2 }}>
+                      = <strong style={{ color: "var(--text)" }}>{v.toLocaleString()}{allowDec ? " USD" : "원"}</strong>
+                    </span>
+                  );
+                })()}
                 {(effectiveFormKind === "income" || effectiveFormKind === "expense") &&
                   form.discountAmount?.trim() &&
                   parseAmount(form.discountAmount, false) > 0 &&

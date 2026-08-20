@@ -121,6 +121,9 @@ export const GistConflictModal: React.FC<GistConflictModalProps> = ({ conflict, 
         <p style={{ marginTop: 0, color: "var(--text-muted)" }}>
           자동 저장 직전에 원격 Gist가 다른 기기에서 변경되었습니다. 어떻게 처리할지 선택하세요.
         </p>
+        <p style={{ marginTop: 0, fontSize: 12, color: "var(--text-muted)" }}>
+          자동 적립 시계열(환율·지수·스냅샷)은 어느 쪽을 선택해도 양쪽을 합칩니다.
+        </p>
 
         <div
           style={{

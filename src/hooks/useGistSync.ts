@@ -23,6 +23,13 @@ import { toUserDataJson } from "../services/dataService";
 import { saveSafetySnapshot } from "../services/backupService";
 import { GIST_AUTO_PUSH_DEBOUNCE_MS, GIST_STALE_WARNING_HOURS } from "../constants/config";
 import { useUIStore } from "../store/uiStore";
+import { useAppStore } from "../store/appStore";
+import {
+  mergeGistPayloadTimeSeries,
+  mergeDailyFx,
+  mergeBenchmarkCloses,
+  mergeMarketEnvSnapshots,
+} from "../utils/timeSeriesMerge";
 
 const GIST_AUTO_SAVE_ERROR_TOAST_ID = "gist-auto-save-error";
 
@@ -449,15 +456,28 @@ export function useGistSync(
           if (versions[0]?.committedAt) authoritativeRemoteAt = versions[0].committedAt;
         } catch { /* 무시 — 모달의 시각 유지 */ }
 
-        onApplyPulledData(conflict.remoteDataJson, authoritativeRemoteAt);
+        // 자동 적립 시계열(환율·지수 종가·반월 스냅샷)은 폐기하지 않고 원격 payload에 date-union으로 합친다
+        // (id 키 컬렉션은 원격 그대로). 합칠 대상은 지금 덮일 현재 메모리 데이터 — 모달이 열린 뒤
+        // 기록기가 더 적립했을 수 있어 pendingLocalDataJson보다 최신이다.
+        const mergedRemote = mergeGistPayloadTimeSeries(
+          conflict.remoteDataJson,
+          toUserDataJson(dataRef.current)
+        );
+        onApplyPulledData(mergedRemote.json, authoritativeRemoteAt);
         setGistLastPullAt(authoritativeRemoteAt);
         setLastPullAt(authoritativeRemoteAt);
         knownRemoteCommitRef.current = authoritativeRemoteAt;
-        // pendingLocalDataJson이 곧 원격으로 덮여 다음 effect에서 lastPushedPayloadRef와 같아질 가능성 높음.
-        // 즉시 lastPushedPayloadRef를 원격 payload로 맞춰 불필요한 push 방지.
+        // lastPushedPayloadRef/hash는 **원격이 실제로 가진 payload**로 맞춘다.
+        // - 합쳐진 게 없으면: 로컬이 곧 원격과 같아져 불필요한 push 방지(기존 동작).
+        // - 로컬 시계열이 채워졌으면: 로컬이 원격보다 많아 dirty → 다음 자동 push가 union을 원격에 올린다.
         lastPushedPayloadRef.current = conflict.remoteDataJson;
         setGistLastPushedHash(hashGistPayload(conflict.remoteDataJson));
-        onLog?.("Gist 충돌: 원격 데이터를 적용했습니다", "success");
+        onLog?.(
+          mergedRemote.filledFromOther > 0
+            ? `Gist 충돌: 원격 데이터를 적용했습니다 (로컬 자동 적립 시계열 ${mergedRemote.filledFromOther}건 보존)`
+            : "Gist 충돌: 원격 데이터를 적용했습니다",
+          "success"
+        );
       } else if (resolution === "force-push-local") {
         // 로컬 데이터를 원격에 강제 push. 원격(다른 기기) 변경은 폐기 →
         // 폐기되는 원격 데이터를 안전 스냅샷으로 보관해 "다른 기기에서 한 작업"을 되찾을 수 있게 한다.
@@ -469,9 +489,22 @@ export function useGistSync(
         }
         // push 직후 원격 commit 시각을 다시 조회해 knownRemoteCommitRef를 권위 있는 값으로 갱신.
         // (saveToGist의 updatedAt이 GitHub commits API와 다를 수 있는 엣지 보호)
-        const result = await saveToGist(conflict.pendingLocalDataJson);
-        lastPushedPayloadRef.current = conflict.pendingLocalDataJson;
-        setGistLastPushedHash(hashGistPayload(conflict.pendingLocalDataJson));
+        // 원격(다른 기기)이 쌓은 자동 적립 시계열은 폐기하지 않고 로컬 payload에 date-union으로 합쳐 push.
+        // 로컬 스토어에도 같은 union을 반영해 다음 자동 push가 원격 시계열을 다시 지우지 않게 한다
+        // (기록기와 동일한 setData 비-undo 경로 — id 키 컬렉션은 건드리지 않음).
+        const mergedLocal = mergeGistPayloadTimeSeries(conflict.pendingLocalDataJson, conflict.remoteDataJson);
+        if (mergedLocal.filledFromOther > 0 && mergedLocal.fields) {
+          const union = mergedLocal.fields;
+          useAppStore.getState().setData((prev) => ({
+            ...prev,
+            historicalDailyFx: mergeDailyFx(prev.historicalDailyFx, union.historicalDailyFx),
+            benchmarkDailyCloses: mergeBenchmarkCloses(prev.benchmarkDailyCloses, union.benchmarkDailyCloses),
+            marketEnvSnapshots: mergeMarketEnvSnapshots(prev.marketEnvSnapshots, union.marketEnvSnapshots),
+          }));
+        }
+        const result = await saveToGist(mergedLocal.json);
+        lastPushedPayloadRef.current = mergedLocal.json;
+        setGistLastPushedHash(hashGistPayload(mergedLocal.json));
         setGistLastPushAt(result.updatedAt);
         setLastPushAt(result.updatedAt);
         try {
@@ -484,7 +517,12 @@ export function useGistSync(
           // 재조회 실패 시 result.updatedAt으로 fallback (다음 push 사이클에서 재시도)
           knownRemoteCommitRef.current = result.updatedAt;
         }
-        onLog?.("Gist 충돌: 로컬 데이터를 강제 push 했습니다", "success");
+        onLog?.(
+          mergedLocal.filledFromOther > 0
+            ? `Gist 충돌: 로컬 데이터를 강제 push 했습니다 (원격 자동 적립 시계열 ${mergedLocal.filledFromOther}건 보존)`
+            : "Gist 충돌: 로컬 데이터를 강제 push 했습니다",
+          "success"
+        );
       } else {
         // cancel: 모달 닫기만. 다음 변경 시 다시 충돌 가능.
         onLog?.("Gist 충돌 모달: 취소", "info");

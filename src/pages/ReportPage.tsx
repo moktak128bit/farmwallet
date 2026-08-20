@@ -21,6 +21,7 @@ import { useDateAccountId } from "../hooks/useDateAccountSettings";
 import { useAppStore } from "../store/appStore";
 import { useReportWorker } from "../hooks/useReportWorker";
 import { summarizeTaxYear } from "../utils/taxCalculator";
+import { useTaxGrossUp } from "../hooks/useTaxGrossUp";
 import { getTodayKST } from "../utils/date";
 import type { ReportType } from "../features/reports/reportShared";
 import { ReportExportButtons } from "../features/reports/ReportExportButtons";
@@ -93,7 +94,12 @@ export const ReportView: React.FC<Props> = ({ accounts, ledger, trades, prices }
   );
 
   const taxYear = useMemo(() => Number(selectedMonth.slice(0, 4)), [selectedMonth]);
-  const taxSummary = useMemo(() => summarizeTaxYear(ledger, taxYear, fxRate), [ledger, taxYear, fxRate]);
+  // 세전 환산 토글(배당 탭 종합과세 카드와 공유) — 세금 보고서 표·내보내기가 같은 기준을 쓰도록 여기서 옵션만 전달
+  const [taxGrossUp] = useTaxGrossUp();
+  const taxSummary = useMemo(
+    () => summarizeTaxYear(ledger, taxYear, fxRate, { grossUp: taxGrossUp }),
+    [ledger, taxYear, fxRate, taxGrossUp]
+  );
 
   const renderReport = () => {
     // ─── 종합 월간 보고서 ───

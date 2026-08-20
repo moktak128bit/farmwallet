@@ -32,6 +32,7 @@ import { BasicReportTables } from "../features/reports/BasicReportTables";
 import { ClosingReportSection } from "../features/reports/ClosingReportSection";
 import { PerformanceAdvancedSection } from "../features/reports/PerformanceAdvancedSection";
 import { TaxReportSection } from "../features/reports/TaxReportSection";
+import { YearEndTaxPreviewSection } from "../features/reports/YearEndTaxPreviewSection";
 
 interface Props {
   accounts: Account[];
@@ -131,12 +132,16 @@ export const ReportView: React.FC<Props> = ({ accounts, ledger, trades, prices }
     // ─── 세금 시뮬레이션 (한국) ───
     if (reportType === "tax") {
       return (
-        <TaxReportSection
-          taxYear={taxYear}
-          taxSummary={taxSummary}
-          selectedMonth={selectedMonth}
-          setSelectedMonth={setSelectedMonth}
-        />
+        <>
+          <TaxReportSection
+            taxYear={taxYear}
+            taxSummary={taxSummary}
+            selectedMonth={selectedMonth}
+            setSelectedMonth={setSelectedMonth}
+          />
+          {/* 연말정산 미리보기(근로소득 공제) — 세금 보고서와 같은 귀속 연도 공유 */}
+          <YearEndTaxPreviewSection ledger={ledger} accounts={accounts} year={taxYear} />
+        </>
       );
     }
 

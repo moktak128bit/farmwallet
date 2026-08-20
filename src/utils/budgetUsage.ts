@@ -18,6 +18,11 @@ import { expenseMainName } from "./categoryMerge";
 interface BudgetUsageOptions {
   categoryPresets?: CategoryPresets;
   fxRate?: number | null;
+  /**
+   * 동기 비교용 일자 상한(1~31). 지정하면 해당 달의 1~dayCap일 항목만 합산한다
+   * (컨벤션 13: 진행 중인 달 vs 전월은 같은 기간만 비교). 기본 null = 달 전체(기존 동작 불변).
+   */
+  dayCap?: number | null;
 }
 
 /** 한 예산 목표의 이번 달 사용액(KRW). month는 "YYYY-MM". */
@@ -27,7 +32,7 @@ export function computeBudgetGoalSpent(
   month: string,
   opts: BudgetUsageOptions = {}
 ): number {
-  const { categoryPresets, fxRate = null } = opts;
+  const { categoryPresets, fxRate = null, dayCap = null } = opts;
   const isTotal = goal.category === BUDGET_ALL_CATEGORY;
   const exclCats = isTotal ? new Set(goal.excludeCategories ?? []) : null;
   const exclAccts = isTotal ? new Set(goal.excludeAccountIds ?? []) : null;
@@ -35,6 +40,7 @@ export function computeBudgetGoalSpent(
   let spent = 0;
   for (const l of ledger) {
     if (!l.date?.startsWith(month)) continue;
+    if (dayCap != null && Number(l.date.slice(8, 10)) > dayCap) continue;
     if (classifyLedgerFlow(l, categoryPresets) !== "expense") continue;
     const mainName = expenseMainName(l);
     if (!mainName) continue;

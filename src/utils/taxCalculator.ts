@@ -3,11 +3,36 @@ import { isDividendEntry, isInterestEntry } from "./categoryMatch";
 import { addDaysToIso, parseIsoLocal } from "./date";
 import { toKrwByRate } from "./currency";
 
-/** 한국 분리과세 배당·이자소득세율 (소득세 14% + 지방세 1.4%) */
+/** ?쒓뎅 遺꾨━怨쇱꽭 諛곕떦쨌?댁옄?뚮뱷?몄쑉 (?뚮뱷??14% + 吏諛⑹꽭 1.4%) */
 export const SEPARATE_TAX_RATE = 0.154;
 
-/** 종합과세 전환 기준 (배당+이자 합계, 원) */
+/** 醫낇빀怨쇱꽭 ?꾪솚 湲곗? (諛곕떦+?댁옄 ?⑷퀎, ?? */
 export const COMPREHENSIVE_TAX_THRESHOLD = 20_000_000;
+
+/** ?댁쇅(USD) 諛곕떦 ?먯쿇吏뺤닔????誘멸뎅 二쇱떇 諛곕떦? ?꾩??먯꽌 15% ?먯쿇吏뺤닔 ???낃툑 */
+export const US_DIVIDEND_WITHHOLDING_RATE = 0.15;
+
+/** ?멸툑 怨꾩궛 ?듭뀡 */
+interface TaxComputeOptions {
+  /**
+   * ?몄쟾(gross-up) ?섏궛. 媛怨꾨? amount???명썑 ?낃툑???먯쿇吏뺤닔 ????媛?μ꽦???믪???醫낇빀怨쇱꽭
+   * ?꾧퀎(2,000留????몄쟾 湲곗??대?濡?洹몃?濡??곕㈃ ~15% 怨쇱냼 ??寃쎄퀬媛 ??쾶 ?몃┛??
+   * true硫???ぉ蹂꾨줈 ??궛: USD 諛곕떦 첨(1??.15), 洹???援?궡 諛곕떦쨌?댁옄, USD ?댁옄) 첨(1??.154).
+   * 湲곕낯 false = 湲곗〈 ?숈옉(?낅젰 湲덉븸 洹몃?濡? 100% ?좎?.
+   */
+  grossUp?: boolean;
+}
+
+/**
+ * ??ぉ 1嫄댁쓽 怨쇱꽭?쒖? 湲곗뿬遺???. grossUp?대㈃ ?먯쿇吏뺤닔 ??궛(?몄쟾 ?섏궛), ?꾨땲硫??낅젰 湲덉븸(?먰솕 ?섏궛)??洹몃?濡??대떎.
+ * USD ?댁옄??援?궡 湲덉쑖???щ윭 RP쨌?명솕?덇툑 ???먯꽌 15.4% ?먯쿇吏뺤닔?섎뒗 寃쎌슦媛 ?遺遺꾩씠??援?궡?⑥쓣 ?곸슜?쒕떎 ?? * LedgerEntry?먮뒗 醫낅ぉ ?뺣낫媛 ?놁쑝誘濡??댁쇅 ?먯젙? currency==="USD"(諛곕떦)留뚯쑝濡??쒕떎.
+ */
+function taxableKrw(e: LedgerEntry, fxRate: number | null | undefined, grossUp: boolean, isDividend: boolean): number {
+  const krw = toKrwByRate(e.amount, e.currency, fxRate);
+  if (!grossUp) return krw;
+  const rate = isDividend && e.currency === "USD" ? US_DIVIDEND_WITHHOLDING_RATE : SEPARATE_TAX_RATE;
+  return krw / (1 - rate);
+}
 
 export interface TaxYearSummary {
   year: number;
@@ -19,26 +44,39 @@ export interface TaxYearSummary {
   exceedsThreshold: boolean;
   amountOverThreshold: number;
   estimatedAdditionalTaxIfComprehensive: number;
+  /** ?몄쟾 ?섏궛(grossUp) ?곸슜 ?щ? */
+  grossUpApplied: boolean;
+  /** ?낅젰 湲덉븸(?명썑 ?낃툑??媛?? ?⑷퀎 ???섏궛 ??(?? */
+  netTotal: number;
+  /** 怨쇱꽭?쒖??쇰줈 ???⑷퀎 ???섏궛 ??(??. grossUp=false硫?netTotal怨?媛숇떎 */
+  grossTotal: number;
 }
 
 /**
- * 가계부 항목 중 카테고리가 "배당" 또는 "이자"를 포함하는 수입 합계 기준으로
- * 한국 세법에 따른 분리과세/종합과세 시뮬레이션을 수행한다.
+ * 媛怨꾨? ??ぉ 以?移댄뀒怨좊━媛 "諛곕떦" ?먮뒗 "?댁옄"瑜??ы븿?섎뒗 ?섏엯 ?⑷퀎 湲곗??쇰줈
+ * ?쒓뎅 ?몃쾿???곕Ⅸ 遺꾨━怨쇱꽭/醫낇빀怨쇱꽭 ?쒕??덉씠?섏쓣 ?섑뻾?쒕떎.
  *
- * 가계부 amount는 세후 입금액일 가능성이 높지만(은행 자동 차감), 본 계산은
- * 사용자가 입력한 금액을 grossTaxable로 가정하고 표시한다.
+ * 媛怨꾨? amount???명썑 ?낃툑?≪씪 媛?μ꽦???믪?留?????먮룞 李④컧), 蹂?怨꾩궛?
+ * ?ъ슜?먭? ?낅젰??湲덉븸??grossTaxable濡?媛?뺥븯怨??쒖떆?쒕떎.
  */
-export function summarizeTaxYear(ledger: LedgerEntry[], year: number, fxRate?: number | null): TaxYearSummary {
+export function summarizeTaxYear(
+  ledger: LedgerEntry[],
+  year: number,
+  fxRate?: number | null,
+  options?: TaxComputeOptions
+): TaxYearSummary {
   const yearStr = String(year);
-  // USD 배당/이자는 원화로 환산해야 과세표준이 맞다 (환율 미로드 시 액면 폴백 — 합산 정책 일관)
+  const grossUp = options?.grossUp === true;
+  // USD 諛곕떦/?댁옄???먰솕濡??섏궛?댁빞 怨쇱꽭?쒖???留욌떎 (?섏쑉 誘몃줈?????〓㈃ ?대갚 ???⑹궛 ?뺤콉 ?쇨?)
   const toKrw = (e: LedgerEntry) => toKrwByRate(e.amount, e.currency, fxRate);
 
   let dividendGross = 0;
   let interestGross = 0;
+  let netTotal = 0;
   for (const e of ledger) {
     if (e.kind !== "income" || !e.date?.startsWith(yearStr)) continue;
-    if (isDividendEntry(e)) { dividendGross += toKrw(e); continue; }
-    if (isInterestEntry(e)) interestGross += toKrw(e);
+    if (isDividendEntry(e)) { dividendGross += taxableKrw(e, fxRate, grossUp, true); netTotal += toKrw(e); continue; }
+    if (isInterestEntry(e)) { interestGross += taxableKrw(e, fxRate, grossUp, false); netTotal += toKrw(e); }
   }
 
   const totalGross = dividendGross + interestGross;
@@ -48,7 +86,7 @@ export function summarizeTaxYear(ledger: LedgerEntry[], year: number, fxRate?: n
   const exceedsThreshold = totalGross > COMPREHENSIVE_TAX_THRESHOLD;
   const amountOverThreshold = Math.max(0, totalGross - COMPREHENSIVE_TAX_THRESHOLD);
 
-  // 종합과세 누진세율(개략): 초과분에 24% 적용 가정 (1.5억 이하 구간)
+  // 醫낇빀怨쇱꽭 ?꾩쭊?몄쑉(媛쒕왂): 珥덇낵遺꾩뿉 24% ?곸슜 媛??(1.5???댄븯 援ш컙)
   const estimatedAdditionalTaxIfComprehensive = exceedsThreshold
     ? amountOverThreshold * (0.24 - SEPARATE_TAX_RATE)
     : 0;
@@ -62,26 +100,35 @@ export function summarizeTaxYear(ledger: LedgerEntry[], year: number, fxRate?: n
     netIncome,
     exceedsThreshold,
     amountOverThreshold,
-    estimatedAdditionalTaxIfComprehensive
+    estimatedAdditionalTaxIfComprehensive,
+    grossUpApplied: grossUp,
+    netTotal,
+    grossTotal: totalGross
   };
 }
 
 interface ComprehensiveTaxTracker {
   year: number;
-  /** 올해 누적 금융소득 (배당+이자, 원, today까지) */
+  /** ?ы빐 ?꾩쟻 湲덉쑖?뚮뱷 (諛곕떦+?댁옄, ?? today源뚯?) */
   ytdGross: number;
   dividendGross: number;
   interestGross: number;
   threshold: number;
-  /** 임계까지 남은 금액 (max 0) */
+  /** ?꾧퀎源뚯? ?⑥? 湲덉븸 (max 0) */
   remainingToThreshold: number;
   exceeded: boolean;
   /** ytd / threshold (0~) */
   pctOfThreshold: number;
-  /** YTD 페이스로 추정한 연말 금융소득 */
+  /** YTD ?섏씠?ㅻ줈 異붿젙???곕쭚 湲덉쑖?뚮뱷 */
   projectedYearEndGross: number;
-  /** 페이스 기준 임계 도달 예상일 (YYYY-MM-DD). 이미 초과했거나 올해 안에 도달 전망 없으면 null */
+  /** ?섏씠??湲곗? ?꾧퀎 ?꾨떖 ?덉긽??(YYYY-MM-DD). ?대? 珥덇낵?덇굅???ы빐 ?덉뿉 ?꾨떖 ?꾨쭩 ?놁쑝硫?null */
   projectedThresholdDate: string | null;
+  /** ?몄쟾 ?섏궛(grossUp) ?곸슜 ?щ? */
+  grossUpApplied: boolean;
+  /** ?낅젰 湲덉븸(?명썑 ?낃툑??媛?? YTD ?⑷퀎 ???섏궛 ??(?? */
+  netTotal: number;
+  /** ?꾧퀎 鍮꾧탳????YTD ?⑷퀎 ???섏궛 ??(?? = ytdGross). grossUp=false硫?netTotal怨?媛숇떎 */
+  grossTotal: number;
 }
 
 function dayOfYear(today: string): number {
@@ -96,24 +143,27 @@ function daysInYear(year: number): number {
 }
 
 /**
- * 종합과세 임계(2,000만) 실시간 추적 — "올해 얼마 받았고, 임계까지 얼마 남았고, 이대로면 언제 넘는지".
- * 배당 수령 타이밍/규모 조절(절세) 의사결정용. today(KST YYYY-MM-DD)는 호출부가 주입(테스트 결정성).
+ * 醫낇빀怨쇱꽭 ?꾧퀎(2,000留? ?ㅼ떆媛?異붿쟻 ??"?ы빐 ?쇰쭏 諛쏆븯怨? ?꾧퀎源뚯? ?쇰쭏 ?⑥븯怨? ?대?濡쒕㈃ ?몄젣 ?섎뒗吏".
+ * 諛곕떦 ?섎졊 ??대컢/洹쒕え 議곗젅(?덉꽭) ?섏궗寃곗젙?? today(KST YYYY-MM-DD)???몄텧遺媛 二쇱엯(?뚯뒪??寃곗젙??.
  */
 export function buildComprehensiveTaxTracker(
   ledger: LedgerEntry[],
   today: string,
-  fxRate?: number | null
+  fxRate?: number | null,
+  options?: TaxComputeOptions
 ): ComprehensiveTaxTracker {
   const year = parseIsoLocal(today)?.getFullYear() ?? new Date().getFullYear();
   const yearStr = String(year);
+  const grossUp = options?.grossUp === true;
   const toKrw = (e: LedgerEntry) => toKrwByRate(e.amount, e.currency, fxRate);
 
   let dividendGross = 0;
   let interestGross = 0;
+  let netTotal = 0;
   for (const e of ledger) {
     if (e.kind !== "income" || !e.date || e.date < `${yearStr}-01-01` || e.date > today) continue;
-    if (isDividendEntry(e)) { dividendGross += toKrw(e); continue; }
-    if (isInterestEntry(e)) interestGross += toKrw(e);
+    if (isDividendEntry(e)) { dividendGross += taxableKrw(e, fxRate, grossUp, true); netTotal += toKrw(e); continue; }
+    if (isInterestEntry(e)) { interestGross += taxableKrw(e, fxRate, grossUp, false); netTotal += toKrw(e); }
   }
 
   const ytdGross = dividendGross + interestGross;
@@ -144,6 +194,9 @@ export function buildComprehensiveTaxTracker(
     exceeded,
     pctOfThreshold: threshold > 0 ? ytdGross / threshold : 0,
     projectedYearEndGross,
-    projectedThresholdDate
+    projectedThresholdDate,
+    grossUpApplied: grossUp,
+    netTotal,
+    grossTotal: ytdGross
   };
 }

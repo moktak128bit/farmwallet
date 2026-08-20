@@ -8,6 +8,7 @@
 import React from "react";
 import { COMPREHENSIVE_TAX_THRESHOLD, type TaxYearSummary } from "../../utils/taxCalculator";
 import { formatKRW } from "../../utils/formatter";
+import { useTaxGrossUp } from "../../hooks/useTaxGrossUp";
 
 interface Props {
   taxYear: number;
@@ -22,9 +23,11 @@ export const TaxReportSection: React.FC<Props> = React.memo(function TaxReportSe
   selectedMonth,
   setSelectedMonth
 }) {
+  // 세전 환산 토글 — 배당 탭 종합과세 카드와 같은 localStorage 값 (부모 taxSummary memo가 같은 옵션으로 재계산)
+  const [grossUp, setGrossUp] = useTaxGrossUp();
   return (
     <div>
-      <div style={{ display: "flex", gap: 12, alignItems: "center", marginBottom: 16 }}>
+      <div style={{ display: "flex", gap: 12, alignItems: "center", marginBottom: 16, flexWrap: "wrap" }}>
         <label>연도:</label>
         <select value={taxYear} onChange={(e) => {
           const y = e.target.value;
@@ -35,8 +38,23 @@ export const TaxReportSection: React.FC<Props> = React.memo(function TaxReportSe
             return <option key={y} value={y}>{y}년</option>;
           })}
         </select>
+        <label style={{ display: "inline-flex", alignItems: "center", gap: 6, fontSize: 13, cursor: "pointer" }}>
+          <input type="checkbox" checked={grossUp} onChange={(e) => setGrossUp(e.target.checked)} />
+          세전 환산(원천징수 15.4%/15% 역산)
+        </label>
       </div>
-      <h3>세금 시뮬레이션 — {taxYear}년 (한국 세법 기준)</h3>
+      <h3>
+        세금 시뮬레이션 — {taxYear}년 (한국 세법 기준)
+        {taxSummary.grossUpApplied && (
+          <span style={{ marginLeft: 8, fontSize: 13, fontWeight: 600, color: "var(--accent)" }}>세전 환산 기준</span>
+        )}
+      </h3>
+      {taxSummary.grossUpApplied && (
+        <p style={{ fontSize: 12, color: "var(--text-muted)", margin: "0 0 8px" }}>
+          입금액 합계 {formatKRW(Math.round(taxSummary.netTotal))} → 세전 환산 {formatKRW(Math.round(taxSummary.grossTotal))}
+          (국내 배당·이자 ÷(1−15.4%), USD 배당 ÷(1−15%)). 아래 표는 세전 기준입니다.
+        </p>
+      )}
       <table style={{ width: "100%", borderCollapse: "collapse" }}>
         <tbody>
           <tr><td style={{ padding: 6 }}>배당 (총)</td><td style={{ textAlign: "right", padding: 6 }}>{formatKRW(taxSummary.dividendGross)}</td></tr>

@@ -1,6 +1,7 @@
 import React from "react";
 import { STORAGE_KEYS } from "../constants/config";
 import { saveSafetySnapshot } from "../services/backupService";
+import { reportError } from "../utils/errorReporting";
 import type { AppData } from "../types";
 
 interface AppErrorBoundaryProps {
@@ -29,7 +30,8 @@ export class AppErrorBoundary extends React.Component<AppErrorBoundaryProps, App
   }
 
   componentDidCatch(error: Error, errorInfo: React.ErrorInfo): void {
-    console.error("[AppErrorBoundary] uncaught render error", error, errorInfo);
+    // 영속 활동 로그 + console.error (reportError 내부에서 5초 dedup → 렌더 에러 루프 방어)
+    reportError("AppErrorBoundary", error, { componentStack: errorInfo.componentStack ?? undefined });
     this.setState({ componentStack: errorInfo.componentStack ?? null });
   }
 

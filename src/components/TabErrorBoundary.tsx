@@ -1,4 +1,5 @@
 import React from "react";
+import { reportError } from "../utils/errorReporting";
 
 interface TabErrorBoundaryProps {
   /** 탭 표시명 (예: "주식") — 오류 메시지에 표시 */
@@ -24,7 +25,10 @@ export class TabErrorBoundary extends React.Component<TabErrorBoundaryProps, Tab
   }
 
   componentDidCatch(error: Error, errorInfo: React.ErrorInfo): void {
-    console.error(`[TabErrorBoundary:${this.props.tabName}] uncaught render error`, error, errorInfo);
+    // 영속 활동 로그 + console.error (reportError 내부에서 5초 dedup → 렌더 에러 루프 방어)
+    reportError(`TabErrorBoundary:${this.props.tabName}`, error, {
+      componentStack: errorInfo.componentStack ?? undefined
+    });
     this.setState({ componentStack: errorInfo.componentStack ?? null });
   }
 

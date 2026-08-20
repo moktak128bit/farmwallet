@@ -2,8 +2,9 @@ import React, { useMemo } from "react";
 import type { LedgerEntry, BudgetGoal, Account, CategoryPresets } from "../../types";
 import { BUDGET_ALL_CATEGORY } from "../../types";
 import { formatNumber } from "../../utils/formatter";
-import { getThisMonthKST } from "../../utils/date";
+import { getTodayKST } from "../../utils/date";
 import { computeBudgetGoalSpent } from "../../utils/budgetUsage";
+import { computeBudgetPace } from "../../utils/budgetPace";
 
 interface Props {
   ledger: LedgerEntry[];
@@ -19,8 +20,9 @@ interface Props {
 
 // React.memo — 부모(DashboardPage)가 넘기는 props는 안정적(store 참조)이어야 한다.
 export const BudgetAlertWidget: React.FC<Props> = React.memo(function BudgetAlertWidget({ ledger, budgetGoals, accounts, fxRate = null, categoryPresets }) {
-  // 이번달 키 — 다른 위젯과 동일하게 KST 기준 (로컬 타임존 new Date() 사용 금지)
-  const currentMonth = useMemo(() => getThisMonthKST(), []);
+  // 오늘·이번달 키 — 다른 위젯과 동일하게 KST 기준 (로컬 타임존 new Date() 사용 금지)
+  const today = useMemo(() => getTodayKST(), []);
+  const currentMonth = today.slice(0, 7);
 
   const accountNameById = useMemo(() => {
     const m = new Map<string, string>();
@@ -37,10 +39,12 @@ export const BudgetAlertWidget: React.FC<Props> = React.memo(function BudgetAler
       .map((g) => {
         const spent = computeBudgetGoalSpent(g, ledger, currentMonth, { categoryPresets, fxRate });
         const pct = g.monthlyLimit > 0 ? (spent / g.monthlyLimit) * 100 : 0;
-        return { ...g, spent, pct };
+        // 페이스 — 월말 예상·남은 하루 허용액. 초과 전에 '초과 예상'으로 선행 경고 (한도 의미는 그대로)
+        const pace = computeBudgetPace(g, ledger, currentMonth, today, { categoryPresets, fxRate });
+        return { ...g, spent, pct, pace };
       })
       .sort((a, b) => b.pct - a.pct);
-  }, [ledger, budgetGoals, currentMonth, categoryPresets, fxRate]);
+  }, [ledger, budgetGoals, currentMonth, today, categoryPresets, fxRate]);
 
   if (alerts.length === 0) {
     return (
@@ -54,7 +58,10 @@ export const BudgetAlertWidget: React.FC<Props> = React.memo(function BudgetAler
   }
 
   const overBudget = alerts.filter((a) => a.pct >= 100);
-  const nearBudget = alerts.filter((a) => a.pct >= 80 && a.pct < 100);
+  // 아직 안 넘었지만 이 페이스면 월말 초과 — 80% 문턱보다 먼저 잡힌다
+  const projectedOver = alerts.filter((a) => a.pct < 100 && a.pace.status === "over-pace");
+  const nearBudget = alerts.filter((a) => a.pct >= 80 && a.pct < 100 && a.pace.status !== "over-pace");
+  const labelOf = (a: (typeof alerts)[number]) => (a.category === BUDGET_ALL_CATEGORY ? "전체" : a.category);
 
   return (
     <div className="card" style={{ padding: 20 }}>
@@ -65,11 +72,18 @@ export const BudgetAlertWidget: React.FC<Props> = React.memo(function BudgetAler
             {overBudget.length}건 초과
           </span>
         )}
+        {projectedOver.length > 0 && (
+          <span style={{ fontSize: 13, background: "var(--warning-light)", color: "var(--warning)", borderRadius: 10, padding: "3px 10px" }}>
+            {projectedOver.length}건 초과 예상
+          </span>
+        )}
       </h3>
       <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
         {alerts.slice(0, 8).map((a) => {
-          // 상태색 컨벤션: 초과=danger / 임박=warning / 여유=success (테마 변수 — 다크모드 대응)
-          const color = a.pct >= 100 ? "var(--danger)" : a.pct >= 80 ? "var(--warning)" : "var(--success)";
+          // 상태색 컨벤션: 초과=danger / 임박·초과 예상=warning / 여유=success (테마 변수 — 다크모드 대응)
+          const isProjectedOver = a.pct < 100 && a.pace.status === "over-pace";
+          const color =
+            a.pct >= 100 ? "var(--danger)" : a.pct >= 80 || isProjectedOver ? "var(--warning)" : "var(--success)";
           return (
             <div key={a.id}>
               <div style={{ display: "flex", justifyContent: "space-between", fontSize: 15, marginBottom: 6 }}>
@@ -93,6 +107,12 @@ export const BudgetAlertWidget: React.FC<Props> = React.memo(function BudgetAler
                   <span style={{ marginLeft: 6, fontSize: 13 }}>({Math.round(a.pct)}%)</span>
                 </span>
               </div>
+              {/* 페이스 한 줄: 이 페이스면 월말 N원(한도 ±x%) · 남은 N일 하루 N원 */}
+              {a.monthlyLimit > 0 && (
+                <div style={{ fontSize: 12, color: a.pace.status === "ok" ? "var(--text-muted)" : color, marginBottom: 6 }}>
+                  {a.pace.message}
+                </div>
+              )}
               <div
                 role="progressbar"
                 aria-valuemin={0}
@@ -115,7 +135,7 @@ export const BudgetAlertWidget: React.FC<Props> = React.memo(function BudgetAler
           );
         })}
       </div>
-      {(overBudget.length > 0 || nearBudget.length > 0) && (
+      {(overBudget.length > 0 || projectedOver.length > 0 || nearBudget.length > 0) && (
         <div
           role="alert"
           style={{
@@ -129,8 +149,12 @@ export const BudgetAlertWidget: React.FC<Props> = React.memo(function BudgetAler
           }}
         >
           {overBudget.length > 0
-            ? `${overBudget.map((a) => a.category).join(", ")} 예산을 초과했습니다!`
-            : `${nearBudget.map((a) => a.category).join(", ")} 예산의 80%를 넘었습니다.`}
+            ? `${overBudget.map(labelOf).join(", ")} 예산을 초과했습니다!`
+            : projectedOver.length > 0
+              ? `${projectedOver
+                  .map((a) => `${labelOf(a)}(월말 ${a.pace.projectedVsLimitPct == null ? "" : `+${a.pace.projectedVsLimitPct.toFixed(0)}%`})`)
+                  .join(", ")} 예산이 이 페이스면 월말에 초과될 예정입니다.`
+              : `${nearBudget.map(labelOf).join(", ")} 예산의 80%를 넘었습니다.`}
         </div>
       )}
     </div>

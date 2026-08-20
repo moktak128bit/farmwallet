@@ -32,9 +32,9 @@ export const FunTab = React.memo(function FunTab({ d }: { d: D }) {
           <Card key={i} accent>
             <div style={{ textAlign: "center", padding: "8px 0" }}>
               <div style={{ fontSize: 28, marginBottom: 4 }}>{s.icon}</div>
-              <div style={{ fontSize: 11, color: "rgba(255,255,255,0.6)", fontWeight: 600, marginBottom: 6 }}>{s.title}</div>
-              <div style={{ fontSize: 20, fontWeight: 800, color: "#fff" }}>{s.value}</div>
-              <div style={{ fontSize: 11, color: "rgba(255,255,255,0.5)", marginTop: 4 }}>{s.sub}</div>
+              <div style={{ fontSize: 11, color: "var(--ins-faint)", fontWeight: 600, marginBottom: 6 }}>{s.title}</div>
+              <div style={{ fontSize: 20, fontWeight: 800, color: "var(--text)" }}>{s.value}</div>
+              <div style={{ fontSize: 11, color: "var(--ins-faint)", marginTop: 4 }}>{s.sub}</div>
             </div>
           </Card>
         ))}
@@ -48,13 +48,13 @@ export const FunTab = React.memo(function FunTab({ d }: { d: D }) {
                 <span>주말 ({wkPct}%)</span><span style={{ fontWeight: 700 }}>{F(fs.weekendVsWeekday.weekend)}</span>
               </div>
               <div style={{ height: 12, background: "var(--surface-hover)", borderRadius: 6, overflow: "hidden" }}>
-                <div style={{ width: `${wkPct}%`, height: "100%", background: "#e94560", borderRadius: 6 }} />
+                <div style={{ width: `${wkPct}%`, height: "100%", background: "var(--danger)", borderRadius: 6 }} />
               </div>
               <div style={{ display: "flex", justifyContent: "space-between", marginTop: 12, marginBottom: 8, fontSize: 13 }}>
                 <span>평일 ({100 - wkPct}%)</span><span style={{ fontWeight: 700 }}>{F(fs.weekendVsWeekday.weekday)}</span>
               </div>
               <div style={{ height: 12, background: "var(--surface-hover)", borderRadius: 6, overflow: "hidden" }}>
-                <div style={{ width: `${100 - wkPct}%`, height: "100%", background: "#3498db", borderRadius: 6 }} />
+                <div style={{ width: `${100 - wkPct}%`, height: "100%", background: "var(--accent)", borderRadius: 6 }} />
               </div>
             </div>
           </div>
@@ -63,8 +63,8 @@ export const FunTab = React.memo(function FunTab({ d }: { d: D }) {
         {prevComp && (
           <Card title={d.selMonth === getThisMonthKST() ? "전월 대비 변화 (이번 달 진행 중 — 참고용)" : "전월 대비 변화"}>
             <div style={{ fontSize: 13, lineHeight: 2 }}>
-              <div>근로소득: <span style={{ fontWeight: 700, color: prevComp.incDiff >= 0 ? "#48c9b0" : "#e94560" }}>{prevComp.incDiff >= 0 ? "+" : ""}{F(prevComp.incDiff)}</span></div>
-              <div>지출: <span style={{ fontWeight: 700, color: prevComp.expDiff <= 0 ? "#48c9b0" : "#e94560" }}>{prevComp.expDiff >= 0 ? "+" : ""}{F(prevComp.expDiff)}</span>
+              <div>근로소득: <span style={{ fontWeight: 700, color: prevComp.incDiff >= 0 ? "var(--success)" : "var(--danger)" }}>{prevComp.incDiff >= 0 ? "+" : ""}{F(prevComp.incDiff)}</span></div>
+              <div>지출: <span style={{ fontWeight: 700, color: prevComp.expDiff <= 0 ? "var(--success)" : "var(--danger)" }}>{prevComp.expDiff >= 0 ? "+" : ""}{F(prevComp.expDiff)}</span>
                 {prevComp.expDiff > 0 ? " (주의!)" : prevComp.expDiff < 0 ? " (절약!)" : ""}
               </div>
             </div>
@@ -74,7 +74,7 @@ export const FunTab = React.memo(function FunTab({ d }: { d: D }) {
         {fs.monthOverMonthGrowth !== null && (
           <Card title="순자산 월평균 성장">
             <div style={{ textAlign: "center", padding: 16 }}>
-              <div style={{ fontSize: 36, fontWeight: 800, color: fs.monthOverMonthGrowth >= 0 ? "#48c9b0" : "#e94560" }}>
+              <div style={{ fontSize: 36, fontWeight: 800, color: fs.monthOverMonthGrowth >= 0 ? "var(--success)" : "var(--danger)" }}>
                 {fs.monthOverMonthGrowth >= 0 ? "+" : ""}{fs.monthOverMonthGrowth}%
               </div>
               <div style={{ fontSize: 12, color: "var(--text-faint)", marginTop: 8 }}>매월 평균 순자산 변화율</div>
@@ -96,7 +96,7 @@ export const FunTab = React.memo(function FunTab({ d }: { d: D }) {
                   <span>0일</span><span>30일</span>
                 </div>
                 <div style={{ height: 16, background: "var(--surface-hover)", borderRadius: 8, position: "relative", overflow: "hidden" }}>
-                  <div style={{ width: `${Math.min(100, fs.daysToSpendIncome / 30 * 100)}%`, height: "100%", background: fs.daysToSpendIncome >= 30 ? "#48c9b0" : fs.daysToSpendIncome >= 20 ? "#f0c040" : "#e94560", borderRadius: 8, transition: "width 0.5s" }} />
+                  <div style={{ width: `${Math.min(100, fs.daysToSpendIncome / 30 * 100)}%`, height: "100%", background: fs.daysToSpendIncome >= 30 ? "var(--success)" : fs.daysToSpendIncome >= 20 ? "var(--warning)" : "var(--danger)", borderRadius: 8, transition: "width 0.5s" }} />
                 </div>
               </div>
             </div>

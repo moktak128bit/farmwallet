@@ -9,12 +9,12 @@ import type { IncomeNature } from "../../../utils/realIncome";
 
 // 그룹 색은 이름 고정 매핑 — incByGroup은 금액순 정렬이라 인덱스 기반이면 순서 따라 색이 바뀜
 const GROUP_COLOR_BY_NAME: Record<string, string> = {
-  "회사소득": "#f0c040", "투자/패시브": "#48c9b0", "기타수입": "#3498db", "비실질": "#95a5a6",
+  "회사소득": "var(--warning)", "투자/패시브": "var(--success)", "기타수입": "var(--accent)", "비실질": "var(--text-faint)",
 };
 
 const NATURE_COLORS: Record<IncomeNature, string> = {
-  근로: "#3498db", 패시브: "#48c9b0", 기타: "#533483",
-  일시: "#f0c040", 환급: "#95a5a6", 부채: "#e94560",
+  근로: "var(--accent)", 패시브: "var(--success)", 기타: "var(--chart-series-c)",
+  일시: "var(--warning)", 환급: "var(--text-faint)", 부채: "var(--danger)",
 };
 const NATURE_LABELS: Record<IncomeNature, string> = {
   근로: "근로소득", 패시브: "패시브", 기타: "부수입",
@@ -73,10 +73,10 @@ export const IncomeTab = React.memo(function IncomeTab({ d }: { d: D }) {
 
       {/* ============ 한눈에 보기 ============ */}
       <Section storageKey="income-section-overview" title="📊 한눈에 보기">
-        <Card accent><Kpi label="총 수입 (장부)" value={F(totalIncome) + "원"} sub={`실질 ${F(d.realIncome)}원 · ${d.accumLabel}`} color="#f0c040" info="장부 수입 기준. 실질 수입 = 장부 수입 − 정산·환불·일시소득·대출" /></Card>
-        <Card accent><Kpi label="회사소득 의존도" value={salaryPct.toFixed(1) + "%"} sub={`${F(salaryGroupTotal)}원 / 실질 ${F(d.realIncome)}원`} color={salaryPct > 80 ? "#e94560" : salaryPct > 50 ? "#f0c040" : "#48c9b0"} info="회사소득 그룹(급여·수당·상여)이 실질 수입에서 차지하는 비율. 80% 초과 시 다각화 권장" /></Card>
-        <Card accent><Kpi label="패시브 수입 비율" value={passivePct.toFixed(1) + "%"} sub={`월평균 ${F(Math.round(passiveGroupTotal / d.monthSpan))}원`} color={passivePct >= 10 ? "#48c9b0" : "#3498db"} info="배당·이자 등 패시브 수입 합 / 실질 수입. 10%↑ 권장 (투자수익은 재테크 순집계로 별도)" /></Card>
-        <Card accent><Kpi label="실효 수입원 수" value={effectiveSources.toFixed(1) + "개"} sub={`실질 수입원 ${realIncData.length}개 · 집중도 반영`} color="#533483" info="실질 수입원만 대상 1 / HHI. 같은 비율 N개면 N, 한 곳에 몰릴수록 작음" /></Card>
+        <Card accent><Kpi label="총 수입 (장부)" value={F(totalIncome) + "원"} sub={`실질 ${F(d.realIncome)}원 · ${d.accumLabel}`} color="var(--chart-income)" info="장부 수입 기준. 실질 수입 = 장부 수입 − 정산·환불·일시소득·대출" /></Card>
+        <Card accent><Kpi label="회사소득 의존도" value={salaryPct.toFixed(1) + "%"} sub={`${F(salaryGroupTotal)}원 / 실질 ${F(d.realIncome)}원`} color={salaryPct > 80 ? "var(--danger)" : salaryPct > 50 ? "var(--warning)" : "var(--success)"} info="회사소득 그룹(급여·수당·상여)이 실질 수입에서 차지하는 비율. 80% 초과 시 다각화 권장" /></Card>
+        <Card accent><Kpi label="패시브 수입 비율" value={passivePct.toFixed(1) + "%"} sub={`월평균 ${F(Math.round(passiveGroupTotal / d.monthSpan))}원`} color={passivePct >= 10 ? "var(--success)" : "var(--accent)"} info="배당·이자 등 패시브 수입 합 / 실질 수입. 10%↑ 권장 (투자수익은 재테크 순집계로 별도)" /></Card>
+        <Card accent><Kpi label="실효 수입원 수" value={effectiveSources.toFixed(1) + "개"} sub={`실질 수입원 ${realIncData.length}개 · 집중도 반영`} color="var(--chart-series-c)" info="실질 수입원만 대상 1 / HHI. 같은 비율 N개면 N, 한 곳에 몰릴수록 작음" /></Card>
 
         <Card title="수입 구조 (그룹별)" span={2}>
           {d.incByGroup.length === 0 ? (
@@ -124,7 +124,7 @@ export const IncomeTab = React.memo(function IncomeTab({ d }: { d: D }) {
               const top = incData[0]?.value ?? 1;
               return (
                 <div key={name} style={{ display: "flex", alignItems: "center", gap: 10, padding: "6px 0", borderBottom: "1px solid var(--border-light)" }}>
-                  <span style={{ fontSize: 11, color: i < 3 ? "#059669" : "var(--text-faint)", width: 20, textAlign: "right", fontWeight: 700 }}>{i + 1}</span>
+                  <span style={{ fontSize: 11, color: i < 3 ? "var(--chart-income)" : "var(--text-faint)", width: 20, textAlign: "right", fontWeight: 700 }}>{i + 1}</span>
                   <div style={{ flex: 1 }}>
                     <div style={{ fontSize: 13, fontWeight: 600 }}>{name}</div>
                     <div style={{ height: 4, background: "var(--surface-hover)", borderRadius: 2, marginTop: 3 }}>
@@ -132,7 +132,7 @@ export const IncomeTab = React.memo(function IncomeTab({ d }: { d: D }) {
                     </div>
                   </div>
                   <div style={{ textAlign: "right" }}>
-                    <div style={{ fontSize: 13, fontWeight: 700, color: "#059669" }}>{F(value)}원</div>
+                    <div style={{ fontSize: 13, fontWeight: 700, color: "var(--chart-income)" }}>{F(value)}원</div>
                     <div style={{ fontSize: 10, color: "var(--text-faint)" }}>{totalIncome > 0 ? Math.round(value / totalIncome * 100) : 0}%</div>
                   </div>
                 </div>
@@ -144,26 +144,26 @@ export const IncomeTab = React.memo(function IncomeTab({ d }: { d: D }) {
 
         <Card title="장부 vs 실질 수입" span={2}>
           <div style={{ display: "flex", flexDirection: "column", gap: 10, fontSize: 13 }}>
-            <div style={{ padding: "12px 14px", background: "#f0fdf4", borderRadius: 10, border: "1px solid #86efac" }}>
-              <div style={{ fontSize: 11, color: "#666" }}>장부 수입 (총액)</div>
-              <div style={{ fontSize: 22, fontWeight: 800, color: "#059669" }}>{F(d.pIncome)}원</div>
+            <div style={{ padding: "12px 14px", background: "var(--success-light)", borderRadius: 10, border: "1px solid var(--success)" }}>
+              <div style={{ fontSize: 11, color: "var(--text-muted)" }}>장부 수입 (총액)</div>
+              <div style={{ fontSize: 22, fontWeight: 800, color: "var(--chart-income)" }}>{F(d.pIncome)}원</div>
             </div>
             {d.settlementTotal > 0 && (
-              <div style={{ padding: "10px 14px", background: "#fdf5e6", borderRadius: 8, border: "1px solid #f0c040", fontSize: 12 }}>
-                <span style={{ color: "#666" }}>− 정산 (비용분담 회수)</span>
-                <span style={{ float: "right", fontWeight: 700, color: "#d97706" }}>−{F(d.settlementTotal)}원</span>
+              <div style={{ padding: "10px 14px", background: "var(--warning-light)", borderRadius: 8, border: "1px solid var(--warning)", fontSize: 12 }}>
+                <span style={{ color: "var(--text-muted)" }}>− 정산 (비용분담 회수)</span>
+                <span style={{ float: "right", fontWeight: 700, color: "var(--warning)" }}>−{F(d.settlementTotal)}원</span>
               </div>
             )}
             {d.tempIncomeTotal > 0 && (
-              <div style={{ padding: "10px 14px", background: "#f0f8ff", borderRadius: 8, border: "1px solid #bde", fontSize: 12 }}>
-                <span style={{ color: "#666" }}>− 일시소득 (용돈·지원·이월·대출·처분소득)</span>
-                <span style={{ float: "right", fontWeight: 700, color: "#2563eb" }}>−{F(d.tempIncomeTotal)}원</span>
+              <div style={{ padding: "10px 14px", background: "var(--accent-light)", borderRadius: 8, border: "1px solid var(--accent)", fontSize: 12 }}>
+                <span style={{ color: "var(--text-muted)" }}>− 일시소득 (용돈·지원·이월·대출·처분소득)</span>
+                <span style={{ float: "right", fontWeight: 700, color: "var(--accent)" }}>−{F(d.tempIncomeTotal)}원</span>
               </div>
             )}
-            <div style={{ padding: "12px 14px", background: "linear-gradient(135deg, #1a1a2e, #16213e)", borderRadius: 10, color: "#fff" }}>
-              <div style={{ fontSize: 11, color: "rgba(255,255,255,0.6)" }}>= 실질 수입 (진짜 내가 번 돈)</div>
-              <div style={{ fontSize: 24, fontWeight: 800, color: "#f0c040" }}>{F(d.realIncome)}원</div>
-              <div style={{ fontSize: 11, color: "rgba(255,255,255,0.5)", marginTop: 4 }}>
+            <div className="ins-dark-surface" style={{ padding: "12px 14px", borderRadius: 10, color: "var(--text)" }}>
+              <div style={{ fontSize: 11, color: "var(--ins-faint)" }}>= 실질 수입 (진짜 내가 번 돈)</div>
+              <div style={{ fontSize: 24, fontWeight: 800, color: "var(--chart-income)" }}>{F(d.realIncome)}원</div>
+              <div style={{ fontSize: 11, color: "var(--ins-faint)", marginTop: 4 }}>
                 장부 대비 {d.pIncome > 0 ? Math.round((d.realIncome / d.pIncome) * 100) : 0}%
               </div>
             </div>
@@ -182,8 +182,8 @@ export const IncomeTab = React.memo(function IncomeTab({ d }: { d: D }) {
               <YAxis yAxisId="right" orientation="right" tickFormatter={(v) => v + "%"} tick={{ fontSize: 10 }} />
               <Tooltip content={<CT />} />
               <Legend wrapperStyle={{ fontSize: 11 }} />
-              <Bar isAnimationActive={false} yAxisId="left" dataKey="수입" name="근로소득" fill="#f0c040" radius={[4, 4, 0, 0]} />
-              <Line isAnimationActive={false} yAxisId="right" type="monotone" dataKey="momPct" name="MoM%" stroke="#e94560" strokeWidth={2} dot={{ r: 3 }} />
+              <Bar isAnimationActive={false} yAxisId="left" dataKey="수입" name="근로소득" fill="var(--chart-income)" radius={[4, 4, 0, 0]} />
+              <Line isAnimationActive={false} yAxisId="right" type="monotone" dataKey="momPct" name="MoM%" stroke="var(--chart-warning)" strokeWidth={2} dot={{ r: 3 }} />
             </ComposedChart>
           </ResponsiveContainer>
           <div style={{ fontSize: 11, color: "var(--text-faint)", textAlign: "center", marginTop: 4 }}>
@@ -199,8 +199,8 @@ export const IncomeTab = React.memo(function IncomeTab({ d }: { d: D }) {
               <YAxis tickFormatter={F} tick={{ fontSize: 11 }} />
               <Tooltip content={<CT />} />
               <Legend wrapperStyle={{ fontSize: 11 }} />
-              <Bar isAnimationActive={false} dataKey="salary" stackId="a" fill="#f0c040" name="회사소득" />
-              <Bar isAnimationActive={false} dataKey="nonSalary" stackId="a" fill="#48c9b0" name="비회사소득" radius={[4, 4, 0, 0]} />
+              <Bar isAnimationActive={false} dataKey="salary" stackId="a" fill="var(--chart-income)" name="회사소득" />
+              <Bar isAnimationActive={false} dataKey="nonSalary" stackId="a" fill="var(--chart-primary)" name="비회사소득" radius={[4, 4, 0, 0]} />
             </BarChart>
           </ResponsiveContainer>
         </Card>
@@ -212,7 +212,7 @@ export const IncomeTab = React.memo(function IncomeTab({ d }: { d: D }) {
               <XAxis dataKey="l" tick={{ fontSize: 12 }} />
               <YAxis tickFormatter={F} tick={{ fontSize: 11 }} />
               <Tooltip formatter={(v: ValueType | undefined) => W(Number(v ?? 0))} />
-              <Bar isAnimationActive={false} dataKey="amount" fill="#48c9b0" radius={[4, 4, 0, 0]} name="패시브 수입" />
+              <Bar isAnimationActive={false} dataKey="amount" fill="var(--chart-primary)" radius={[4, 4, 0, 0]} name="패시브 수입" />
             </BarChart>
           </ResponsiveContainer>
         </Card>
@@ -224,7 +224,7 @@ export const IncomeTab = React.memo(function IncomeTab({ d }: { d: D }) {
               <XAxis dataKey="l" tick={{ fontSize: 12 }} />
               <YAxis tickFormatter={(v) => v.toFixed(0) + "%"} tick={{ fontSize: 10 }} domain={[0, "auto"]} />
               <Tooltip formatter={(v: ValueType | undefined) => `${Number(v ?? 0).toFixed(1)}%`} />
-              <Line isAnimationActive={false} type="monotone" dataKey="비율" stroke="#48c9b0" strokeWidth={2.5} dot={{ r: 3 }} />
+              <Line isAnimationActive={false} type="monotone" dataKey="비율" stroke="var(--chart-primary)" strokeWidth={2.5} dot={{ r: 3 }} />
             </LineChart>
           </ResponsiveContainer>
           <div style={{ fontSize: 11, color: "var(--text-faint)", textAlign: "center", marginTop: 4 }}>
@@ -252,7 +252,7 @@ export const IncomeTab = React.memo(function IncomeTab({ d }: { d: D }) {
                   : ` 회사소득 의존도 ${salaryPct.toFixed(0)}% — 훌륭한 다각화!`}
               {effectiveSources < 2 && " 실효 수입원이 2 미만 = 사실상 단일 의존. 분산 필요."}
             </Insight>
-            <Insight title="실질 수입 분석" color="#7c3aed" bg="rgba(139,92,246,0.08)">
+            <Insight title="실질 수입 분석" color="var(--chart-series-c)" bg="rgba(139,92,246,0.08)">
               실질 수입 {F(d.realIncome)}원 = 장부 수입 {F(d.pIncome)}원{d.settlementTotal > 0 ? ` − 정산·분담금 ${F(d.settlementTotal)}원 (돌려받은 돈)` : ""}{d.tempIncomeTotal > 0 ? ` − 일시소득·환불·대출 ${F(d.tempIncomeTotal)}원` : ""}.
               {" "}회사소득 {F(salaryGroupTotal)}원과 패시브 {F(passiveGroupTotal)}원이 지속 가능한 재산 형성의 핵심.
               {" "}실질 저축률 {d.realSavRate.toFixed(1)}%{d.datePartnerShare > 0 ? ` (데이트 계좌 ${F(d.dateAccountSpend)}원 중 상대 부담 ${F(Math.round(d.datePartnerShare))}원 반영)` : ""}.

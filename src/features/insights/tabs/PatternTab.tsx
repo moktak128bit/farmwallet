@@ -47,10 +47,10 @@ export const PatternTab = React.memo(function PatternTab({ d }: { d: D }) {
 
       {/* ============ 한눈에 ============ */}
       <Section storageKey="pattern-section-overview" title="📊 한눈에 보기">
-        <Card accent><Kpi label="무지출 일수" value={`${d.zeroDays}일`} sub={`${d.totalDays}일 중 ${d.totalDays > 0 ? Math.round((d.zeroDays / d.totalDays) * 100) : 0}%`} color="#48c9b0" info="기간 내 지출이 0원인 날 수" /></Card>
-        <Card accent><Kpi label="일 평균 지출" value={F(avgDaily) + "원"} sub={`${d.totalDays}일 기준`} color="#f0c040" info="총 지출 / 총 일수 (무지출일 포함)" /></Card>
-        <Card accent><Kpi label="주말 지출 비중" value={weekendPct + "%"} sub={`주말 ${F(d.weekendTot)}원 / 주중 ${F(d.weekdayTot)}원`} color={weekendPct > 40 ? "#e94560" : "#48c9b0"} info="토+일 지출 / (토+일+평일) 지출" /></Card>
-        <Card accent><Kpi label="평균 거래 간격" value={`${ps.avgIntervalDays.toFixed(1)}일`} sub={`총 ${totalExpTx}건 거래`} color="#3498db" info="연속된 지출 발생일 사이의 평균 일수" /></Card>
+        <Card accent><Kpi label="무지출 일수" value={`${d.zeroDays}일`} sub={`${d.totalDays}일 중 ${d.totalDays > 0 ? Math.round((d.zeroDays / d.totalDays) * 100) : 0}%`} color="var(--success)" info="기간 내 지출이 0원인 날 수" /></Card>
+        <Card accent><Kpi label="일 평균 지출" value={F(avgDaily) + "원"} sub={`${d.totalDays}일 기준`} color="var(--chart-expense)" info="총 지출 / 총 일수 (무지출일 포함)" /></Card>
+        <Card accent><Kpi label="주말 지출 비중" value={weekendPct + "%"} sub={`주말 ${F(d.weekendTot)}원 / 주중 ${F(d.weekdayTot)}원`} color={weekendPct > 40 ? "var(--danger)" : "var(--success)"} info="토+일 지출 / (토+일+평일) 지출" /></Card>
+        <Card accent><Kpi label="평균 거래 간격" value={`${ps.avgIntervalDays.toFixed(1)}일`} sub={`총 ${totalExpTx}건 거래`} color="var(--accent)" info="연속된 지출 발생일 사이의 평균 일수" /></Card>
       </Section>
 
       {/* ============ 소비 스트릭 ============ */}
@@ -60,7 +60,7 @@ export const PatternTab = React.memo(function PatternTab({ d }: { d: D }) {
             label="현재 진행 중"
             value={ps.currentStreakType === "none" ? "–" : `${ps.currentStreakDays}일`}
             sub={ps.currentStreakType === "zero" ? "연속 무지출 중" : ps.currentStreakType === "spend" ? "연속 소비 중" : "-"}
-            color={ps.currentStreakType === "zero" ? "#48c9b0" : ps.currentStreakType === "spend" ? "#e94560" : "#999"}
+            color={ps.currentStreakType === "zero" ? "var(--success)" : ps.currentStreakType === "spend" ? "var(--danger)" : "var(--text-faint)"}
             info="기간 마지막 날 기준 진행 중인 연속 스트릭"
           />
         </Card>
@@ -69,7 +69,7 @@ export const PatternTab = React.memo(function PatternTab({ d }: { d: D }) {
             label="최장 무지출"
             value={`${ps.longestZeroStreak}일`}
             sub="연속 무지출 기록"
-            color="#48c9b0"
+            color="var(--success)"
             info="기간 내 가장 오래 이어진 연속 무지출 일수"
           />
         </Card>
@@ -78,7 +78,7 @@ export const PatternTab = React.memo(function PatternTab({ d }: { d: D }) {
             label="최장 연속 소비"
             value={`${ps.longestSpendStreak}일`}
             sub="하루도 안 쉼"
-            color="#e94560"
+            color="var(--danger)"
             info="기간 내 가장 오래 이어진 연속 지출 일수"
           />
         </Card>
@@ -87,7 +87,7 @@ export const PatternTab = React.memo(function PatternTab({ d }: { d: D }) {
             label="무지출 달성률"
             value={d.totalDays > 0 ? `${Math.round((d.zeroDays / d.totalDays) * 100)}%` : "-"}
             sub={d.totalDays > 0 && d.zeroDays / d.totalDays >= 0.2 ? "✅ 통제력 우수" : "목표 20%+"}
-            color={d.totalDays > 0 && d.zeroDays / d.totalDays >= 0.2 ? "#48c9b0" : "#f0c040"}
+            color={d.totalDays > 0 && d.zeroDays / d.totalDays >= 0.2 ? "var(--success)" : "var(--warning)"}
             info="전체 기간 대비 무지출일 비율. 20%↑면 소비 통제력 우수"
           />
         </Card>
@@ -101,7 +101,7 @@ export const PatternTab = React.memo(function PatternTab({ d }: { d: D }) {
               <YAxis yAxisId="right" orientation="right" tickFormatter={(v) => v.toFixed(0) + "%"} tick={{ fontSize: 10 }} domain={[0, 100]} />
               <Tooltip formatter={(v: ValueType | undefined, n) => n === "무지출" ? `${v}일` : `${Number(v ?? 0).toFixed(0)}%`} />
               <Bar isAnimationActive={false} yAxisId="left" dataKey="무지출" radius={[4, 4, 0, 0]}>
-                {zeroTrendData.map((e, i) => <Cell key={i} fill={e.pct >= 20 ? "#48c9b0" : e.pct >= 10 ? "#f0c040" : "#e94560"} />)}
+                {zeroTrendData.map((e, i) => <Cell key={i} fill={e.pct >= 20 ? "var(--success)" : e.pct >= 10 ? "var(--warning)" : "var(--danger)"} />)}
               </Bar>
             </BarChart>
           </ResponsiveContainer>
@@ -121,7 +121,7 @@ export const PatternTab = React.memo(function PatternTab({ d }: { d: D }) {
               <YAxis tick={{ fontSize: 10 }} />
               <Tooltip formatter={(v: ValueType | undefined, _n, p) => [`${v}건`, `건당 평균 ${F(p.payload.avg)}원`]} />
               <Bar isAnimationActive={false} dataKey="count" radius={[4, 4, 0, 0]}>
-                {wdData.map((e, i) => <Cell key={i} fill={i >= 5 ? "#e94560" : "#0f3460"} opacity={0.8} />)}
+                {wdData.map((e, i) => <Cell key={i} fill={i >= 5 ? "var(--danger)" : "var(--chart-series-b)"} opacity={0.8} />)}
               </Bar>
             </BarChart>
           </ResponsiveContainer>
@@ -155,9 +155,9 @@ export const PatternTab = React.memo(function PatternTab({ d }: { d: D }) {
                 <div key={dt.date} style={{ background: idx < 3 ? "rgba(233,69,96,0.08)" : "var(--bg)", borderRadius: 10, padding: "10px 14px", border: idx < 3 ? "1px solid rgba(233,69,96,0.25)" : "1px solid var(--border-light)", position: "relative", overflow: "hidden" }}>
                   <div style={{ position: "absolute", left: 0, top: 0, bottom: 0, width: `${d.topDates[0] ? (dt.total / d.topDates[0].total) * 100 : 0}%`, background: "rgba(233,69,96,0.06)", borderRadius: 10 }} />
                   <div style={{ position: "relative", display: "flex", alignItems: "center", gap: 10 }}>
-                    <span style={{ fontSize: 18, fontWeight: 800, color: idx < 3 ? "#e94560" : "var(--text-faint)", width: 28 }}>{idx + 1}</span>
+                    <span style={{ fontSize: 18, fontWeight: 800, color: idx < 3 ? "var(--danger)" : "var(--text-faint)", width: 28 }}>{idx + 1}</span>
                     <span style={{ fontSize: 13, color: "var(--text-muted)", fontWeight: 600, minWidth: 85 }}>{dt.date}</span>
-                    <span style={{ fontWeight: 700, fontSize: 15, color: "#e94560", marginLeft: "auto" }}>{F(dt.total)}원</span>
+                    <span style={{ fontWeight: 700, fontSize: 15, color: "var(--chart-expense)", marginLeft: "auto" }}>{F(dt.total)}원</span>
                   </div>
                   <div style={{ position: "relative", display: "flex", flexWrap: "wrap", gap: 4, marginTop: 4 }}>
                     {dt.items.slice(0, 4).map((it, j) => (

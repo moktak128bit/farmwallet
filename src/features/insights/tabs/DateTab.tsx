@@ -126,10 +126,10 @@ export const DateTab = React.memo(function DateTab({ d }: { d: D }) {
         <>
           {/* ============ 한눈에 ============ */}
           <Section storageKey="date-section-overview" title="📊 한눈에 보기">
-            <Card accent><Kpi label="총 데이트 지출" value={F(total) + "원"} sub={`${d.dateTxCount}건 · 내 부담 ~${F(Math.round(total / 2))}원 (50%)`} color="#e94560" info="데이트 관련 모든 지출 합계. 50/50 분담이므로 실 부담은 절반" /></Card>
-            <Card accent><Kpi label="월평균" value={F(Math.round(avgPerPeriodMonth)) + "원"} sub={`활성월 ${monthsActive}개 평균 ${F(Math.round(avgPerActiveMonth))}원`} color="#f0c040" info="전체 기간 월 평균 (데이트 없었던 월 포함)" /></Card>
-            <Card accent><Kpi label="건당 평균" value={F(avgPerTx) + "원"} sub={`단일 최고 ${F(bigSingles[0]?.amount ?? 0)}원`} color="#0f3460" info="1건당 평균 지출. 기념일 등 큰 건이 평균을 올릴 수 있음" /></Card>
-            <Card accent><Kpi label="모임 : 개인 비율" value={`${moimPct} : ${100 - moimPct}`} sub={`모임 ${F(d.dateMoim)}원 / 개인 ${F(d.datePersonal)}원`} color="#2ecc71" info="계좌명에 '모임' 포함된 계좌로 결제한 비율" /></Card>
+            <Card accent><Kpi label="총 데이트 지출" value={F(total) + "원"} sub={`${d.dateTxCount}건 · 내 부담 ~${F(Math.round(total / 2))}원 (50%)`} color="var(--chart-expense)" info="데이트 관련 모든 지출 합계. 50/50 분담이므로 실 부담은 절반" /></Card>
+            <Card accent><Kpi label="월평균" value={F(Math.round(avgPerPeriodMonth)) + "원"} sub={`활성월 ${monthsActive}개 평균 ${F(Math.round(avgPerActiveMonth))}원`} color="var(--warning)" info="전체 기간 월 평균 (데이트 없었던 월 포함)" /></Card>
+            <Card accent><Kpi label="건당 평균" value={F(avgPerTx) + "원"} sub={`단일 최고 ${F(bigSingles[0]?.amount ?? 0)}원`} color="var(--chart-series-b)" info="1건당 평균 지출. 기념일 등 큰 건이 평균을 올릴 수 있음" /></Card>
+            <Card accent><Kpi label="모임 : 개인 비율" value={`${moimPct} : ${100 - moimPct}`} sub={`모임 ${F(d.dateMoim)}원 / 개인 ${F(d.datePersonal)}원`} color="var(--success)" info="계좌명에 '모임' 포함된 계좌로 결제한 비율" /></Card>
 
             <Card title="월별 데이트 지출" span={2}>
               <ResponsiveContainer width="100%" height={260}>
@@ -138,8 +138,8 @@ export const DateTab = React.memo(function DateTab({ d }: { d: D }) {
                   <XAxis dataKey="name" tick={{ fontSize: 12 }} />
                   <YAxis tickFormatter={F} tick={{ fontSize: 11 }} />
                   <Tooltip content={<CT />} />
-                  <Bar isAnimationActive={false} dataKey="금액" fill="#e94560" radius={[6, 6, 0, 0]} />
-                  <Line isAnimationActive={false} type="monotone" dataKey="금액" stroke="#f0c040" strokeWidth={2} dot={{ r: 3 }} name="추세" />
+                  <Bar isAnimationActive={false} dataKey="금액" fill="var(--chart-expense)" radius={[6, 6, 0, 0]} />
+                  <Line isAnimationActive={false} type="monotone" dataKey="금액" stroke="var(--chart-warning)" strokeWidth={2} dot={{ r: 3 }} name="추세" />
                 </ComposedChart>
               </ResponsiveContainer>
             </Card>
@@ -165,7 +165,7 @@ export const DateTab = React.memo(function DateTab({ d }: { d: D }) {
                 label="데이트한 날짜"
                 value={`${uniqueDateDays}일`}
                 sub={`총 ${totalDaysSpan}일 중 ${totalDaysSpan > 0 ? Math.round((uniqueDateDays / totalDaysSpan) * 100) : 0}%`}
-                color="#e94560"
+                color="var(--danger)"
                 info="중복 제외 고유 날짜 수. 하루에 여러 건이어도 1일로 카운트"
               />
             </Card>
@@ -174,7 +174,7 @@ export const DateTab = React.memo(function DateTab({ d }: { d: D }) {
                 label="주평균"
                 value={`${datesPerWeek.toFixed(2)}일`}
                 sub={`월평균 ${datesPerMonth.toFixed(1)}일`}
-                color="#f0c040"
+                color="var(--warning)"
                 info="(데이트한 날짜 / 총 일수) × 7"
               />
             </Card>
@@ -183,7 +183,7 @@ export const DateTab = React.memo(function DateTab({ d }: { d: D }) {
                 label="최장 공백"
                 value={`${longestGap}일`}
                 sub="데이트 사이 최장 간격"
-                color={longestGap > 30 ? "#e94560" : longestGap > 14 ? "#f0c040" : "#48c9b0"}
+                color={longestGap > 30 ? "var(--danger)" : longestGap > 14 ? "var(--warning)" : "var(--success)"}
                 info="연속된 데이트 날짜 사이 최대 간격. 30일 초과면 주의 신호"
               />
             </Card>
@@ -192,7 +192,7 @@ export const DateTab = React.memo(function DateTab({ d }: { d: D }) {
                 label="마지막 데이트"
                 value={daysSinceLast == null ? "-" : `${daysSinceLast}일 전`}
                 sub={daysSinceLast == null ? "-" : daysSinceLast === 0 ? "오늘" : daysSinceLast === 1 ? "어제" : ""}
-                color={daysSinceLast == null ? "#999" : daysSinceLast > 14 ? "#e94560" : daysSinceLast > 7 ? "#f0c040" : "#48c9b0"}
+                color={daysSinceLast == null ? "var(--text-faint)" : daysSinceLast > 14 ? "var(--danger)" : daysSinceLast > 7 ? "var(--warning)" : "var(--success)"}
                 info="오늘과 마지막 데이트 날짜 사이의 일수"
               />
             </Card>
@@ -205,7 +205,7 @@ export const DateTab = React.memo(function DateTab({ d }: { d: D }) {
                   <YAxis tickFormatter={F} tick={{ fontSize: 10 }} />
                   <Tooltip formatter={(v: ValueType | undefined, _n, p) => [W(Number(v ?? 0)), `${p.payload.건수}건`]} />
                   <Bar isAnimationActive={false} dataKey="금액" radius={[6, 6, 0, 0]}>
-                    {dowData.map((e, i) => <Cell key={i} fill={e.금액 === Math.max(...dowData.map((x) => x.금액)) ? "#e94560" : "#0f3460"} />)}
+                    {dowData.map((e, i) => <Cell key={i} fill={e.금액 === Math.max(...dowData.map((x) => x.금액)) ? "var(--danger)" : "var(--chart-series-b)"} />)}
                   </Bar>
                 </BarChart>
               </ResponsiveContainer>
@@ -221,7 +221,7 @@ export const DateTab = React.memo(function DateTab({ d }: { d: D }) {
                   <XAxis dataKey="name" tick={{ fontSize: 12 }} />
                   <YAxis tickFormatter={F} tick={{ fontSize: 10 }} />
                   <Tooltip formatter={(v: ValueType | undefined) => W(Number(v ?? 0))} />
-                  <Line isAnimationActive={false} type="monotone" dataKey="건당평균" stroke="#e94560" strokeWidth={2.5} dot={{ r: 3 }} />
+                  <Line isAnimationActive={false} type="monotone" dataKey="건당평균" stroke="var(--chart-expense)" strokeWidth={2.5} dot={{ r: 3 }} />
                 </LineChart>
               </ResponsiveContainer>
               <div style={{ fontSize: 11, color: "var(--text-faint)", textAlign: "center", marginTop: 4 }}>
@@ -236,9 +236,9 @@ export const DateTab = React.memo(function DateTab({ d }: { d: D }) {
               <div style={{ maxHeight: 320, overflow: "auto" }}>
                 {d.dateTop.map(([name, value], i) => (
                   <div key={name} style={{ display: "flex", alignItems: "center", gap: 8, padding: "5px 0", borderBottom: "1px solid var(--border-light)", fontSize: 12 }}>
-                    <span style={{ fontWeight: 700, color: i < 3 ? "#e94560" : "var(--text-faint)", width: 20, textAlign: "right" }}>{i + 1}</span>
+                    <span style={{ fontWeight: 700, color: i < 3 ? "var(--danger)" : "var(--text-faint)", width: 20, textAlign: "right" }}>{i + 1}</span>
                     <span style={{ flex: 1, fontWeight: 500 }}>{name}</span>
-                    <span style={{ fontWeight: 700, color: "#e94560" }}>{F(value)}원</span>
+                    <span style={{ fontWeight: 700, color: "var(--chart-expense)" }}>{F(value)}원</span>
                   </div>
                 ))}
               </div>
@@ -248,12 +248,12 @@ export const DateTab = React.memo(function DateTab({ d }: { d: D }) {
               <div style={{ maxHeight: 320, overflow: "auto" }}>
                 {bigSingles.map((e, i) => (
                   <div key={i} style={{ display: "flex", alignItems: "center", gap: 8, padding: "6px 0", borderBottom: "1px solid var(--border-light)", fontSize: 12 }}>
-                    <span style={{ fontWeight: 700, color: i < 3 ? "#e94560" : "var(--text-faint)", width: 20, textAlign: "right" }}>{i + 1}</span>
+                    <span style={{ fontWeight: 700, color: i < 3 ? "var(--danger)" : "var(--text-faint)", width: 20, textAlign: "right" }}>{i + 1}</span>
                     <div style={{ flex: 1, minWidth: 0 }}>
                       <div style={{ fontWeight: 600, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{e.desc || "(설명 없음)"}</div>
                       <div style={{ fontSize: 10, color: "var(--text-faint)" }}>{e.date} · {e.sub || "-"}</div>
                     </div>
-                    <span style={{ fontWeight: 700, color: "#e94560" }}>{F(e.amount)}원</span>
+                    <span style={{ fontWeight: 700, color: "var(--chart-expense)" }}>{F(e.amount)}원</span>
                   </div>
                 ))}
                 {bigSingles.length === 0 && <div style={{ padding: 20, textAlign: "center", color: "var(--text-faint)" }}>데이터 없음</div>}
@@ -292,7 +292,7 @@ export const DateTab = React.memo(function DateTab({ d }: { d: D }) {
                       <td style={{ padding: "5px 6px", color: "var(--text-muted)" }}>{e.date}</td>
                       <td style={{ padding: "5px 6px", fontWeight: 500 }}>{e.desc || "-"}</td>
                       <td style={{ padding: "5px 6px", color: "var(--text-muted)" }}>{e.sub || "-"}</td>
-                      <td style={{ padding: "5px 6px", textAlign: "right", fontWeight: 700, color: "#e94560" }}>{F(e.amount)}원</td>
+                      <td style={{ padding: "5px 6px", textAlign: "right", fontWeight: 700, color: "var(--chart-expense)" }}>{F(e.amount)}원</td>
                     </tr>
                   ))}</tbody>
                 </table>
@@ -310,7 +310,7 @@ export const DateTab = React.memo(function DateTab({ d }: { d: D }) {
                   <XAxis dataKey="name" tick={{ fontSize: 12 }} />
                   <YAxis tickFormatter={F} tick={{ fontSize: 10 }} />
                   <Tooltip formatter={(v: ValueType | undefined) => W(Number(v ?? 0))} />
-                  <Line isAnimationActive={false} type="monotone" dataKey="누적" stroke="#e94560" strokeWidth={2.5} dot={{ r: 3 }} />
+                  <Line isAnimationActive={false} type="monotone" dataKey="누적" stroke="var(--chart-expense)" strokeWidth={2.5} dot={{ r: 3 }} />
                 </LineChart>
               </ResponsiveContainer>
             </Card>
@@ -322,7 +322,7 @@ export const DateTab = React.memo(function DateTab({ d }: { d: D }) {
                   <XAxis dataKey="name" tick={{ fontSize: 10 }} />
                   <YAxis tickFormatter={(v: number) => v + "%"} tick={{ fontSize: 10 }} />
                   <Tooltip formatter={(v: ValueType | undefined) => v + "%"} />
-                  <Bar isAnimationActive={false} dataKey="비율" fill="#e94560" radius={[4, 4, 0, 0]} />
+                  <Bar isAnimationActive={false} dataKey="비율" fill="var(--chart-expense)" radius={[4, 4, 0, 0]} />
                 </BarChart>
               </ResponsiveContainer>
               <div style={{ fontSize: 11, color: "var(--text-faint)", textAlign: "center", marginTop: 4 }}>
@@ -346,7 +346,7 @@ export const DateTab = React.memo(function DateTab({ d }: { d: D }) {
                 <Insight title="데이트 빈도" tone="warning">
                   {uniqueDateDays > 0 ? `${d.selMonth ? (d.ml[d.selMonth] ?? d.selMonth) : `${d.months.length}개월`} 동안 ${uniqueDateDays}회 데이트 (주평균 ${datesPerWeek.toFixed(2)}회). ${daysSinceLast != null && daysSinceLast > 14 ? `⚠️ 마지막 데이트 ${daysSinceLast}일 전 — 한동안 공백이 있었습니다.` : daysSinceLast != null && daysSinceLast <= 7 ? "최근에 데이트 — 꾸준히 만나는 중!" : ""} 최장 공백 ${longestGap}일.` : "기록 없음"}
                 </Insight>
-                <Insight title="데이트 비중" color="#533483" bg="rgba(83,52,131,0.08)">
+                <Insight title="데이트 비중" color="var(--chart-series-c)" bg="rgba(83,52,131,0.08)">
                   {d.pExpense > 0 ? `전체 지출의 ${Math.round((total / d.pExpense) * 100)}%가 데이트. ${total / d.pExpense > 0.15 ? "비중이 높은 편입니다. 가성비 데이트 고려." : total / d.pExpense > 0.05 ? "적정 수준." : "알뜰 수준."} 월평균 ${F(Math.round(avgPerPeriodMonth))}원 · 건당 ${F(avgPerTx)}원.` : ""}
                 </Insight>
               </div>
@@ -362,7 +362,7 @@ export const DateTab = React.memo(function DateTab({ d }: { d: D }) {
                           <span style={{ width: 10, height: 10, borderRadius: 5, background: C[i % 12], display: "inline-block" }} />
                           {s.sub}
                         </span>
-                        <span style={{ fontSize: 16, fontWeight: 800, color: "#e94560" }}>{F(s.total)}원</span>
+                        <span style={{ fontSize: 16, fontWeight: 800, color: "var(--chart-expense)" }}>{F(s.total)}원</span>
                       </div>
                       <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 4, fontSize: 11, color: "var(--text-secondary)", marginBottom: 4 }}>
                         <span>비중 {s.share}%</span>
@@ -381,10 +381,10 @@ export const DateTab = React.memo(function DateTab({ d }: { d: D }) {
             <Card title="데이트 활동 요약" span={4}>
               <div style={{ display: "grid", gridTemplateColumns: "repeat(4, 1fr)", gap: 10, fontSize: 12 }}>
                 {[
-                  { label: "최대 지출월", value: maxMonth.name ? `${maxMonth.name} (${F(maxMonth.금액)}원)` : "-", color: "#e94560" },
-                  { label: "최소 지출월", value: minMonth.name ? `${minMonth.name} (${F(minMonth.금액)}원)` : "-", color: "#48c9b0" },
-                  { label: "단일 최고", value: bigSingles[0] ? `${bigSingles[0].date} (${F(bigSingles[0].amount)}원)` : "-", color: "#f0c040" },
-                  { label: "활성 월 수", value: `${monthsActive} / ${d.months.length}개월`, color: "#533483" },
+                  { label: "최대 지출월", value: maxMonth.name ? `${maxMonth.name} (${F(maxMonth.금액)}원)` : "-", color: "var(--danger)" },
+                  { label: "최소 지출월", value: minMonth.name ? `${minMonth.name} (${F(minMonth.금액)}원)` : "-", color: "var(--success)" },
+                  { label: "단일 최고", value: bigSingles[0] ? `${bigSingles[0].date} (${F(bigSingles[0].amount)}원)` : "-", color: "var(--warning)" },
+                  { label: "활성 월 수", value: `${monthsActive} / ${d.months.length}개월`, color: "var(--chart-series-c)" },
                 ].map((s) => (
                   <div key={s.label} style={{ padding: "10px 12px", background: "var(--bg)", borderRadius: 8 }}>
                     <div style={{ color: "var(--text-faint)", fontSize: 11, marginBottom: 2 }}>{s.label}</div>

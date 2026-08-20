@@ -181,3 +181,18 @@ describe("ledgerFormToTemplate", () => {
     expect(t.name).toBe("점심");
   });
 });
+
+describe("sortTemplatesByLastUsed — 칩 정렬", () => {
+  it("lastUsed desc → 미사용은 등록순, 원본 불변", async () => {
+    const { sortTemplatesByLastUsed } = await import("../features/ledger/LedgerTemplateChips");
+    const list: LedgerTemplate[] = [
+      { id: "a", name: "A", kind: "expense" },
+      { id: "b", name: "B", kind: "expense", lastUsed: "2026-08-01" },
+      { id: "c", name: "C", kind: "expense" },
+      { id: "d", name: "D", kind: "expense", lastUsed: "2026-08-15" },
+    ];
+    const sorted = sortTemplatesByLastUsed(list);
+    expect(sorted.map((t) => t.id)).toEqual(["d", "b", "a", "c"]);
+    expect(list.map((t) => t.id)).toEqual(["a", "b", "c", "d"]);
+  });
+});

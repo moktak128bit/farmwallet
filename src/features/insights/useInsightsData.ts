@@ -18,7 +18,7 @@ import { detectSpendAnomalies } from "../../utils/anomaly";
 import { buildClosedTradeRecords, summarizeRecords, summaryToRealPL } from "../../utils/investmentRecord";
 import { computeOriginalAssets, classifyIncomeNature } from "../../utils/realIncome";
 import { computeIncomeNatureKeys } from "../../utils/incomeClassification";
-import { classifyExpenses } from "../../utils/expenseClassification";
+import { computeExpenseNatureTotals } from "../../utils/fixedExpense";
 import { isDateEntry, getMoimAccountIds, computeMoimAccountFlow } from "../../utils/dateAccounting";
 import { isExcludedIncomeEntry, computeRealSavingsRate, computeMonthlyRealFlows } from "../../utils/savingsRate";
 import { parseIsoLocal, formatIsoLocal, getTodayKST, getThisMonthKST } from "../../utils/date";
@@ -768,8 +768,11 @@ export function useInsightsData(ledger: LedgerEntry[], rawTrades: StockTrade[], 
       ? lifetimeRealizedSummary.totalPnl / lifetimeRealizedSummary.totalCost * 100
       : 0;
     const subTotal = subs.reduce((a, s) => a + s.total, 0);
-    // 고정비 vs 변동비 — categoryPresets.categoryTypes.fixed 기반
-    const { fixedExpense, variableExpense } = classifyExpenses(fExp, categoryPresets);
+    // 고정비/변동비/재량 3분해 — utils/fixedExpense 단일 정의(대시보드 배당 커버리지 고정비와 동일), USD는 환산(pExpense와 같은 기준)
+    const expenseNature = computeExpenseNatureTotals(fExp, categoryPresets, fxRate);
+    const fixedExpense = expenseNature.fixed;
+    const variableExpense = expenseNature.variable;
+    const discretionaryExpense = expenseNature.discretionary;
 
     /* ===== 순자산/자산 분석 ===== */
     // 월별 순자산 추이 — 대시보드 타임라인(시세·환율·대출 반영)과 동일 계산.
@@ -953,7 +956,7 @@ export function useInsightsData(ledger: LedgerEntry[], rawTrades: StockTrade[], 
       subInsights, incSubInsights, dateSubInsights, investSubInsights,
       realIncome, realExpense, settlementTotal, tempIncomeTotal, dateAccountSpend, datePartnerShare, moimFlow, originalAssets, originalAssetsByAcct,
       netProfit, realSavRate, passiveIncome, expToIncRatio, dailyAvgExp, netCashFlow,
-      incomeStability, investReturnRate, subTotal, fixedExpense, variableExpense,
+      incomeStability, investReturnRate, subTotal, fixedExpense, variableExpense, discretionaryExpense,
       netWorthByMonth, netWorthNow, accountBalances, assetAllocation, funStats,
     };
   }, [ledger, rawTrades, allTrades, accounts, prices, selMonth, categoryPresets, dateAccountId, fxRate, timelineRows, allLedger]);

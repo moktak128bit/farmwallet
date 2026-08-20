@@ -8,6 +8,7 @@ import type { ValueType } from "recharts/types/component/DefaultTooltipContent";
 import { C, F, W, SD, Card, Kpi, Insight, Section, CT, pieLabel, type D } from "../insightsShared";
 import { SubTab } from "./SubTab";
 import { computeDateAccountUtilization } from "../../../utils/dateAccounting";
+import { DISCRETIONARY_MAIN_NAMES, DISCRETIONARY_DETAIL_NAMES } from "../../../utils/fixedExpense";
 
 const WDAY_LABELS = ["월", "화", "수", "목", "금", "토", "일"];
 
@@ -55,12 +56,22 @@ export const ExpenseTab = React.memo(function ExpenseTab({ d }: { d: D }) {
   // 15일 기준선 분석 (텍스트용)
   const midSpend = validMonths.map((m) => ({ m, mid: d.cumSpend[m]?.[14] ?? 0, total: d.cumSpend[m]?.[30] ?? 0 }));
 
-  // 고정 vs 변동 파이
-  const fvData = [
-    { name: "고정비", value: d.fixedExpense },
-    { name: "변동비", value: d.variableExpense },
-  ].filter(x => x.value > 0);
-  const fvColors = ["#0f3460", "#f39c12"];
+  // 고정 / 변동 / 재량 3분해 파이 — utils/fixedExpense 단일 정의 (대시보드 배당 커버리지 고정비와 동일)
+  const natureRows = [
+    { key: "fixed", name: "고정비", value: d.fixedExpense, color: "var(--accent)", hint: "보험·통신·구독·월세·대출 등 (고정 카테고리 + 고정 플래그)" },
+    { key: "variable", name: "변동비", value: d.variableExpense, color: "var(--warning)", hint: "장보기·교통·생활용품·의료 등 필수성 소비" },
+    { key: "discretionary", name: "재량", value: d.discretionaryExpense, color: "var(--danger)", hint: `${DISCRETIONARY_MAIN_NAMES.join("·")} + 식비 중 ${DISCRETIONARY_DETAIL_NAMES.join("·")} (휴리스틱)` },
+  ] as const;
+  const fvData = natureRows.filter(x => x.value > 0);
+  const fixedShare = SD(d.fixedExpense, d.pExpense);
+  const discretionaryShare = SD(d.discretionaryExpense, d.pExpense);
+  const natureComment = fixedShare > 0.5
+    ? "고정비 비중 >50%: 재협상·해지 가능 항목 점검 필요"
+    : discretionaryShare > 0.3
+      ? "재량 지출 비중 >30%: 외식·여가·데이트 등 줄이기 쉬운 항목이 큼 — 예산 통제 효과 큼"
+      : fixedShare > 0.3
+        ? "균형 잡힌 구조"
+        : "변동비 비중 높음: 예산 관리로 통제 효과 큼";
 
   const periodLabel = d.selMonth
     ? d.selMonth
@@ -96,7 +107,7 @@ export const ExpenseTab = React.memo(function ExpenseTab({ d }: { d: D }) {
           </div>
         </Card>
 
-        <Card title="고정비 vs 변동비" span={2}>
+        <Card title="고정비 · 변동비 · 재량" span={2}>
           {fvData.length === 0 ? (
             <div style={{ padding: 20, textAlign: "center", color: "var(--text-faint)", fontSize: 13 }}>데이터 없음</div>
           ) : (
@@ -104,28 +115,25 @@ export const ExpenseTab = React.memo(function ExpenseTab({ d }: { d: D }) {
               <ResponsiveContainer width="100%" height={220}>
                 <PieChart>
                   <Pie isAnimationActive={false} data={fvData} dataKey="value" cx="50%" cy="50%" outerRadius={90} innerRadius={45} label={pieLabel} labelLine={false} style={{ fontSize: 11 }}>
-                    {fvData.map((_, i) => <Cell key={i} fill={fvColors[i]} />)}
+                    {fvData.map((x) => <Cell key={x.key} fill={x.color} />)}
                   </Pie>
                   <Tooltip formatter={(v: ValueType | undefined) => W(Number(v ?? 0))} />
                 </PieChart>
               </ResponsiveContainer>
               <div style={{ fontSize: 13, lineHeight: 1.7 }}>
-                <div style={{ display: "flex", justifyContent: "space-between", padding: "6px 0", borderBottom: "1px solid var(--border-light)" }}>
-                  <span style={{ color: "#0f3460", fontWeight: 700 }}>■ 고정비</span>
-                  <span style={{ fontWeight: 700 }}>{F(d.fixedExpense)}원</span>
-                </div>
-                <div style={{ fontSize: 11, color: "var(--text-muted)", padding: "2px 0 8px", borderBottom: "1px solid var(--border-light)" }}>
-                  {d.pExpense > 0 ? Math.round(SD(d.fixedExpense, d.pExpense) * 100) : 0}% · 보험·통신·구독·월세·대출 등
-                </div>
-                <div style={{ display: "flex", justifyContent: "space-between", padding: "6px 0", borderBottom: "1px solid var(--border-light)" }}>
-                  <span style={{ color: "#f39c12", fontWeight: 700 }}>■ 변동비</span>
-                  <span style={{ fontWeight: 700 }}>{F(d.variableExpense)}원</span>
-                </div>
-                <div style={{ fontSize: 11, color: "var(--text-muted)", padding: "2px 0" }}>
-                  {d.pExpense > 0 ? Math.round(SD(d.variableExpense, d.pExpense) * 100) : 0}% · 나머지 재량 지출
-                </div>
+                {natureRows.map((x) => (
+                  <React.Fragment key={x.key}>
+                    <div style={{ display: "flex", justifyContent: "space-between", padding: "6px 0", borderBottom: "1px solid var(--border-light)" }}>
+                      <span style={{ color: x.color, fontWeight: 700 }}>■ {x.name}</span>
+                      <span style={{ fontWeight: 700 }}>{F(x.value)}원</span>
+                    </div>
+                    <div style={{ fontSize: 11, color: "var(--text-muted)", padding: "2px 0 8px", borderBottom: "1px solid var(--border-light)" }}>
+                      {d.pExpense > 0 ? Math.round(SD(x.value, d.pExpense) * 100) : 0}% · {x.hint}
+                    </div>
+                  </React.Fragment>
+                ))}
                 <div style={{ fontSize: 11, color: "var(--text-faint)", marginTop: 10, padding: "8px 10px", background: "var(--bg)", borderRadius: 6, lineHeight: 1.5 }}>
-                  {SD(d.fixedExpense, d.pExpense) > 0.5 ? "고정비 비중 >50%: 재협상·해지 가능 항목 점검 필요" : SD(d.fixedExpense, d.pExpense) > 0.3 ? "균형 잡힌 구조" : "변동비 비중 높음: 예산 관리로 통제 효과 큼"}
+                  {natureComment}
                 </div>
               </div>
             </div>

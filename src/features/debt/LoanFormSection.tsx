@@ -39,7 +39,8 @@ const createEmptyForm = () => ({
   // KST 기준 오늘 — UTC 변환 시 00:00~08:59에 전날로 기록되는 문제 방지
   loanDate: getTodayKST(),
   maturityDate: "",
-  gracePeriodYears: ""
+  gracePeriodYears: "",
+  prepaymentFeeRate: ""
 });
 
 /** 부모(DebtPage)에서 ref로 호출하는 폼 외부 접점 */
@@ -74,7 +75,8 @@ export const LoanFormSection = React.memo(React.forwardRef<LoanFormSectionHandle
           repaymentMethod: loan.repaymentMethod,
           loanDate: loan.loanDate,
           maturityDate: loan.maturityDate,
-          gracePeriodYears: loan.gracePeriodYears ? String(loan.gracePeriodYears) : ""
+          gracePeriodYears: loan.gracePeriodYears ? String(loan.gracePeriodYears) : "",
+          prepaymentFeeRate: loan.prepaymentFeeRate != null ? String(loan.prepaymentFeeRate) : ""
         });
       },
       resetForm: () => {
@@ -88,6 +90,9 @@ export const LoanFormSection = React.memo(React.forwardRef<LoanFormSectionHandle
       const loanAmount = parseAmount(form.loanAmount);
       const annualInterestRate = Number(form.annualInterestRate) || 0;
       const gracePeriodYears = form.gracePeriodYears ? Number(form.gracePeriodYears) : undefined;
+      // 중도상환수수료율(선택) — 빈 값이면 미설정. 음수/NaN은 저장하지 않는다.
+      const feeParsed = form.prepaymentFeeRate.trim() === "" ? NaN : Number(form.prepaymentFeeRate);
+      const prepaymentFeeRate = Number.isFinite(feeParsed) && feeParsed >= 0 ? feeParsed : undefined;
 
       if (!form.institution || !form.loanName || !form.subCategory || !loanAmount || !form.loanDate || !form.maturityDate) {
         toast.error("필수 항목을 모두 입력해주세요.");
@@ -104,7 +109,8 @@ export const LoanFormSection = React.memo(React.forwardRef<LoanFormSectionHandle
         repaymentMethod: form.repaymentMethod,
         loanDate: form.loanDate,
         maturityDate: form.maturityDate,
-        gracePeriodYears
+        gracePeriodYears,
+        prepaymentFeeRate
       };
 
       if (editingLoan) {
@@ -223,6 +229,17 @@ export const LoanFormSection = React.memo(React.forwardRef<LoanFormSectionHandle
                 value={form.gracePeriodYears}
                 onChange={(e) => setForm({ ...form, gracePeriodYears: e.target.value })}
                 placeholder="예: 2"
+              />
+            </label>
+            <label>
+              <span>중도상환수수료율 % (선택)</span>
+              <input
+                type="number"
+                min="0"
+                step="0.1"
+                value={form.prepaymentFeeRate}
+                onChange={(e) => setForm({ ...form, prepaymentFeeRate: e.target.value })}
+                placeholder="예: 1.2 — 추가 상환 시뮬 수수료 기본값"
               />
             </label>
           </div>

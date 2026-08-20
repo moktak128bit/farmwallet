@@ -225,6 +225,8 @@ export interface Loan {
   loanDate: string; // 대출일 (yyyy-mm-dd)
   maturityDate: string; // 상환만기일 (yyyy-mm-dd)
   gracePeriodYears?: number; // 거치년도 (선택)
+  /** 중도상환수수료율 (%, 선택) — 추가 상환 시뮬(utils/loanPrepay)의 수수료 기본값 */
+  prepaymentFeeRate?: number;
 }
 
 // 운동 기록 (주간: 일요일 Day1 → 월요일 휴식 → 화요일 Day2)

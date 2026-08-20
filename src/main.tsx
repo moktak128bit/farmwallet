@@ -4,6 +4,7 @@ import { App } from "./App";
 import { AppErrorBoundary } from "./components/AppErrorBoundary";
 import { FxRateProvider } from "./context/FxRateContext";
 import { installGlobalErrorListeners, reportError } from "./utils/errorReporting";
+import type { AppData } from "./types";
 import "./styles.css";
 
 // 전역 미처리 오류(window.error / unhandledrejection) → 영속 활동 로그. 내부에서 중복 설치를 막는다.
@@ -47,13 +48,16 @@ async function restoreLatestBackup(): Promise<void> {
 
   // 덮어쓰기 전 현재 상태를 안전 스냅샷으로 (best-effort) — 복원이 더 나쁜 상태를 만들어도 되돌릴 수 있게.
   // 현재 데이터가 손상돼 loadData가 throw해도 복원 자체는 진행한다.
+  let current: AppData | null = null;
   try {
-    await storage.saveSafetySnapshot(storage.loadData(), "에러화면 자동복원 직전");
+    current = storage.loadData();
+    await storage.saveSafetySnapshot(current, "에러화면 자동복원 직전");
   } catch {
     /* 현재 데이터 읽기 실패 시 스냅샷 건너뜀 */
   }
 
-  const normalized = storage.normalizeImportedData(backupData);
+  // 백업 본문은 user-only(시세·티커 캐시 제외) — 현재 캐시를 읽을 수 있으면 병합해 빈 캐시로 덮지 않는다
+  const normalized = storage.mergeCurrentCaches(storage.normalizeImportedData(backupData), current);
   storage.saveData(normalized);
 }
 

@@ -53,7 +53,7 @@ type StorageKeyName = keyof typeof STORAGE_KEYS;
 const KEY_LABELS: Partial<Record<StorageKeyName, string>> = {
   DATA: "앱 데이터(본문)",
   DATA_SCHEMA_VERSION: "스키마 버전",
-  BACKUPS: "자동 백업 스냅샷",
+  BACKUPS: "자동 백업 스냅샷(레거시·IDB 폴백)",
   THEME: "테마",
   HIGH_CONTRAST: "고대비 모드",
   CUSTOM_THEME: "커스텀 테마 색상",
@@ -80,7 +80,8 @@ const KEY_LABELS: Partial<Record<StorageKeyName, string>> = {
   DRAFT: "저장 드래프트(크래시 복구)",
   DRAFT_AT: "드래프트 작성 시각",
   SALARY_TIMER: "월급 타이머 설정",
-  DIVIDENDS_LAST_TAB: "배당 탭 마지막 선택"
+  DIVIDENDS_LAST_TAB: "배당 탭 마지막 선택",
+  BACKUP_SAFETY_PENDING: "안전 스냅샷 동기 슬롯(IDB 복제 대기)"
 };
 
 /** UTF-16 코드 유닛 기준 근사 바이트 */

@@ -14,17 +14,14 @@ export {
 export {
   saveBackupSnapshot,
   saveSafetySnapshot,
-  getBackupList,
-  loadBackupData,
   loadBackupDataVerified,
   getLatestLocalBackupIntegrity,
   getAllBackupList,
   loadServerBackupData,
   clearOldBackups,
-  type BackupMeta,
-  type BackupEntry,
-  type BackupSource,
-  type SaveBackupResult
+  mergeCurrentCaches,
+  isBackupOnSaveEnabled,
+  type BackupEntry
 } from "./services/backupService";
 export {
   loadTickerDatabaseFromBackup,

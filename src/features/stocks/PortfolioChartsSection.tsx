@@ -18,6 +18,7 @@ import { DeferredResponsiveContainer as ResponsiveContainer } from "../../compon
 import type { AccountBalanceRow } from "../../types";
 import { formatKRW, formatUSD } from "../../utils/formatter";
 import { isUSDStock } from "../../utils/finance";
+import { AllocationXrayCard } from "./AllocationXrayCard";
 
 interface PositionWithPrice {
   accountId: string;
@@ -69,6 +70,9 @@ export const PortfolioChartsSection: React.FC<PortfolioChartsSectionProps> = ({
 }) => {
   const rate = fxRate ?? 0;
   return (
+    <>
+    {/* 배분 X-ray — 통화·시장·자산군 3축 + 집중도 (스토어 직접 구독, 분석 탭 상단) */}
+    <AllocationXrayCard />
     <div className="card" style={{ padding: 16 }}>
       <h2 style={{ margin: "0 0 16px 0" }}>주식 포트폴리오 분석</h2>
       
@@ -317,5 +321,6 @@ export const PortfolioChartsSection: React.FC<PortfolioChartsSectionProps> = ({
         </div>
       </div>
     </div>
+    </>
   );
 };

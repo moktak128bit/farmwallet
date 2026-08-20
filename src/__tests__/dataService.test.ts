@@ -1,3 +1,4 @@
+// @vitest-environment jsdom
 import { describe, it, expect, beforeEach } from "vitest";
 import { toUserDataJson, loadData, saveData, saveDataSerialized, normalizeImportedData } from "../services/dataService";
 import { STORAGE_KEYS } from "../constants/config";

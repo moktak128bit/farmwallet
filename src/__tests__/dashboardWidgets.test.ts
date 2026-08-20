@@ -1,3 +1,4 @@
+// @vitest-environment jsdom
 /**
  * 대시보드 위젯 숨김 설정(dashboardWidgets) 테스트 —
  * 저장/로드 왕복, 알 수 없는 ID 필터링, 손상 데이터 폴백.

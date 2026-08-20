@@ -72,7 +72,9 @@ export const STORAGE_KEYS = {
   /** 영속 활동 로그(최대 500건, uiStore.addAppLog) — 오류 리포팅(utils/errorReporting.ts)도 여기에 쌓임 */
   APP_LOG: "fw-app-log-v1",
   /** 연말정산 미리보기 총급여 입력 (JSON: {"2026": 50000000} — 귀속연도별, 기기 로컬) */
-  YEAR_END_GROSS_SALARY: "fw-year-end-gross-salary"
+  YEAR_END_GROSS_SALARY: "fw-year-end-gross-salary",
+  /** FIRE 시뮬레이터 가정 덮어쓰기 (JSON: {monthlySaving?, returnPct?, retireSpendingAnnual?} — 기기 로컬, AppData 무변경) */
+  FIRE_ASSUMPTIONS: "fw-fire-assumptions"
 } as const;
 
 /** 드래프트 슬롯이 이보다 오래되면 boot 시 무시·삭제 (스테일 복구 안내 방지) */

@@ -8,6 +8,7 @@ import { C, F, W, Card, Kpi, Insight, Section, pieLabel, type D } from "../insig
 import { useAppStore } from "../../../store/appStore";
 import { computeLoanBalanceAt } from "../../../calculations";
 import { formatGoalProjectionLine, projectGoal } from "../../../utils/goalProjection";
+import { FireSimulatorCard } from "../FireSimulatorCard";
 
 export const AssetTab = React.memo(function AssetTab({ d }: { d: D }) {
   const goals = useAppStore((s) => s.data.investmentGoals);
@@ -298,6 +299,11 @@ export const AssetTab = React.memo(function AssetTab({ d }: { d: D }) {
             </Insight>
           </div>
         </Card>
+      </Section>
+
+      {/* ============ FIRE ============ */}
+      <Section storageKey="asset-section-fire" title="🔥 FIRE 시뮬레이터">
+        <FireSimulatorCard netWorthKRW={d.netWorthNow?.total ?? null} />
       </Section>
     </div>
   );

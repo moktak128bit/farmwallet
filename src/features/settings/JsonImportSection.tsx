@@ -10,6 +10,7 @@ import React, { useCallback } from "react";
 import { toast } from "react-hot-toast";
 import type { AppData } from "../../types";
 import { normalizeImportedData, saveSafetySnapshot } from "../../storage";
+import { isSchemaTooNewError } from "../../services/dataService";
 import { ERROR_MESSAGES } from "../../constants/errorMessages";
 
 interface Props {
@@ -53,8 +54,10 @@ export const JsonImportSection: React.FC<Props> = React.memo(function JsonImport
       toast.success("데이터를 성공적으로 불러왔습니다.");
       onBackupRestored?.();
     } catch (e) {
-      setError(ERROR_MESSAGES.JSON_FORMAT_INVALID);
-      toast.error(ERROR_MESSAGES.JSON_FORMAT_INVALID);
+      // 스키마가 앱보다 높은 파일은 "형식 오류"가 아니라 앱 업데이트 안내가 맞다
+      const msg = isSchemaTooNewError(e) ? e.message : ERROR_MESSAGES.JSON_FORMAT_INVALID;
+      setError(msg);
+      toast.error(msg);
       if (import.meta.env.DEV) {
         console.error("JSON 파싱 오류:", e);
       }

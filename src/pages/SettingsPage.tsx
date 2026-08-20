@@ -26,6 +26,7 @@ import { BackupHistoryTable } from "../features/settings/BackupHistoryTable";
 import { JsonImportSection } from "../features/settings/JsonImportSection";
 import { DashboardWidgetSettings } from "../features/settings/DashboardWidgetSettings";
 import { StorageUsageCard } from "../features/settings/StorageUsageCard";
+import { MigrationReportCard } from "../features/settings/MigrationReportCard";
 
 const DataIntegrityView = lazy(() => import("./DataIntegrityPage").then((m) => ({ default: m.DataIntegrityView })));
 const SavingsMigrationView = lazy(() => import("./SavingsMigrationPage").then((m) => ({ default: m.SavingsMigrationView })));
@@ -181,6 +182,8 @@ export const SettingsView: React.FC<Props> = ({
 
           {/* 백업 섹션 맨 끝: localStorage 사용량(읽기 전용) */}
           <StorageUsageCard />
+          {/* 마지막 스키마 마이그레이션 리포트(읽기 전용) — 직전 원본 스냅샷 존재 여부는 backups 라벨로 판정 */}
+          <MigrationReportCard backups={backups} />
         </>
       )}
 

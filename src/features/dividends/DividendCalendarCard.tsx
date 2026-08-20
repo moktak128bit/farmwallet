@@ -2,7 +2,7 @@
  * 배당 캘린더 & 목표 (C1·C2) — 향후 12개월 예상 배당 일정/금액(현금흐름) + 목표 배당 대비 진행률.
  * 계산은 utils/forwardDividends(순수). 색: 배당=수입 → 빨강 관례(--chart-income/--danger).
  */
-import React, { useMemo } from "react";
+import React from "react";
 import {
   BarChart,
   Bar,
@@ -12,26 +12,19 @@ import {
   ResponsiveContainer,
   CartesianGrid,
 } from "recharts";
-import type { LedgerEntry } from "../../types";
 import { useAppStore } from "../../store/appStore";
-import { getTodayKST } from "../../utils/date";
 import { formatKRW } from "../../utils/formatter";
-import { buildForwardDividends } from "../../utils/forwardDividends";
+import type { ForwardDividends } from "../../utils/forwardDividends";
 
 interface Props {
-  ledger: LedgerEntry[];
-  fxRate: number | null;
-  /** 현재 보유 수량 (canonical 티커 → 수량). 주면 매도 종목 제외 + 보유비율 스케일 반영 */
-  currentQtyByTicker?: Map<string, number>;
+  /** 부모(DividendsPage)가 buildForwardDividends로 한 번 계산한 결과 — 종합과세 카드(4-6)와 공유해 호출 중복을 피한다 */
+  forward: ForwardDividends;
+  /** 보유 반영 여부(현재 보유 수량 맵을 넘겨 계산했는가) — 안내 문구용 */
+  holdingsApplied: boolean;
 }
 
-export const DividendCalendarCard: React.FC<Props> = ({ ledger, fxRate, currentQtyByTicker }) => {
+export const DividendCalendarCard: React.FC<Props> = ({ forward: fd, holdingsApplied }) => {
   const targetAnnualDividend = useAppStore((s) => s.data.investmentGoals?.targetAnnualDividend);
-  const today = getTodayKST();
-  const fd = useMemo(
-    () => buildForwardDividends(ledger, today, fxRate, { currentQtyByTicker }),
-    [ledger, today, fxRate, currentQtyByTicker]
-  );
 
   const chartData = fd.months.map((m) => ({ label: `${Number(m.month.slice(5, 7))}월`, amount: Math.round(m.amountKRW) }));
   const monthlyAvg = fd.annualTotalKRW / 12;
@@ -55,7 +48,7 @@ export const DividendCalendarCard: React.FC<Props> = ({ ledger, fxRate, currentQ
       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline", flexWrap: "wrap", gap: 8 }}>
         <div className="card-title">배당 캘린더 & 목표 — 향후 12개월</div>
         <div className="hint" style={{ fontSize: 12 }}>
-          {currentQtyByTicker ? "최근 12개월 실적 × 현재 보유 비율 (매도 종목 제외)" : "최근 12개월 실적을 같은 달에 투영 (보유 유지 가정)"}
+          {holdingsApplied ? "최근 12개월 실적 × 현재 보유 비율 (매도 종목 제외)" : "최근 12개월 실적을 같은 달에 투영 (보유 유지 가정)"}
         </div>
       </div>
 

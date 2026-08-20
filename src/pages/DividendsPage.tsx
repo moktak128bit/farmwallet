@@ -17,7 +17,8 @@ import React, { useMemo, useState, useEffect, useDeferredValue } from "react";
 import type { Account, HistoricalDailyClose, LedgerEntry, StockPrice, StockTrade, TickerInfo } from "../types";
 import { computePositions } from "../calculations";
 import { formatKRW } from "../utils/formatter";
-import { getThisMonthKST } from "../utils/date";
+import { getThisMonthKST, getTodayKST } from "../utils/date";
+import { buildForwardDividends } from "../utils/forwardDividends";
 import { isKRWStock, isUSDStock, canonicalTickerForMatch, extractTickerFromText } from "../utils/finance";
 import { isDividendEntryLoose, isInterestEntryLoose, isInterestOverDividend } from "../utils/categoryMatch";
 import { toKrwByRate } from "../utils/currency";
@@ -28,6 +29,7 @@ import type { DividendRow, TabType } from "../features/dividends/types";
 import { DividendFormSection } from "../features/dividends/DividendFormSection";
 import { ComprehensiveTaxCard } from "../features/dividends/ComprehensiveTaxCard";
 import { DividendCalendarCard } from "../features/dividends/DividendCalendarCard";
+import { ShelterContributionCard } from "../features/dividends/ShelterContributionCard";
 import { InterestFormSection } from "../features/dividends/InterestFormSection";
 import { IncomeSummarySection } from "../features/dividends/IncomeSummarySection";
 import { IncomeRecordsSection } from "../features/dividends/IncomeRecordsSection";
@@ -98,6 +100,13 @@ export const DividendsView: React.FC<Props> = ({ accounts, ledger, trades, price
     for (const [k, v] of m) if (Math.abs(v) < 1e-8) m.set(k, 0);
     return m;
   }, [trades]);
+
+  // 선행 배당(향후 12개월) — 캘린더 카드와 종합과세 연말 투영(4-6)이 같은 결과를 공유 (호출 1회)
+  const todayKST = getTodayKST();
+  const forward = useMemo(
+    () => buildForwardDividends(ledger, todayKST, fxRate, { currentQtyByTicker }),
+    [ledger, todayKST, fxRate, currentQtyByTicker]
+  );
 
   // canonical 티커별 최신 시세 (updatedAt 기준) — 평가/표시 일관성
   const latestPriceByCanonicalTicker = useMemo(() => {
@@ -412,11 +421,15 @@ export const DividendsView: React.FC<Props> = ({ accounts, ledger, trades, price
         <span>합계 <strong>{formatKRW(Math.round(totalDividend + totalInterest))}</strong></span>
       </div>
 
-      {/* 종합과세 추적 (B1) — 올해 금융소득 vs 2,000만 임계 */}
-      <ComprehensiveTaxCard ledger={ledger} fxRate={fxRate} />
+      {/* 종합과세 추적 (B1·4-1·4-6) — 올해 금융소득 vs 2,000만 임계(절세계좌 수령분 제외, 선행배당 기반 연말 투영)
+          + 절세계좌 납입·한도·세액공제 카드(4-1, 읽기전용) */}
+      <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(320px, 1fr))", gap: "0 16px" }}>
+        <ComprehensiveTaxCard ledger={ledger} fxRate={fxRate} accounts={accounts} forwardMonths={forward.months} />
+        <ShelterContributionCard accounts={accounts} ledger={ledger} fxRate={fxRate} />
+      </div>
 
       {/* 배당 캘린더 & 목표 (C1·C2) — 향후 12개월 예상 배당 + 목표 진행률 */}
-      <DividendCalendarCard ledger={ledger} fxRate={fxRate} currentQtyByTicker={currentQtyByTicker} />
+      <DividendCalendarCard forward={forward} holdingsApplied={!!currentQtyByTicker} />
 
       {/* 단일 탭 — 선택한 쪽의 입력 폼·표·차트만 노출 */}
       <div style={{ display: "flex", gap: 8, marginBottom: 16 }}>

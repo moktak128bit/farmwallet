@@ -26,7 +26,14 @@ export interface Account {
   /** 연금계좌(퇴직연금 DC·연금저축 등) 표시. type은 securities지만 자산 추이 그래프에서
    * '증권'과 분리해 '연금' 자산군으로 색 구분한다. 순자산 합계엔 일반 증권과 동일하게 포함. */
   isPension?: boolean;
+  /** 세제 성격(선택, 미지정=일반 과세계좌). isa=ISA(비과세·분리과세 9.9%), pension=연금저축,
+   * irp=IRP(개인형 퇴직연금). 납입 한도·세액공제 추정(utils/taxShelter)과 종합과세 임계 합산 제외
+   * (이 계좌로 수령한 배당·이자는 금융소득 2,000만 합산에서 빠짐)에 쓴다. isPension(표시용)과 독립. */
+  taxShelter?: TaxShelterKind;
 }
+
+/** 절세계좌 종류 — Account.taxShelter 값 */
+export type TaxShelterKind = "isa" | "pension" | "irp";
 
 export type LedgerKind = "income" | "expense" | "transfer";
 

@@ -28,13 +28,13 @@ import { toKrwByRate } from "./currency";
 import { extractTickerFromText, canonicalTickerForMatch } from "./finance";
 import { parseQuantityFromNote } from "./dividend";
 
-interface ForwardDividendMonth {
+export interface ForwardDividendMonth {
   /** YYYY-MM (미래) */
   month: string;
   amountKRW: number;
 }
 
-interface ForwardDividends {
+export interface ForwardDividends {
   /** 향후 12개월 */
   months: ForwardDividendMonth[];
   /** 향후 12개월 예상 배당 합계 */

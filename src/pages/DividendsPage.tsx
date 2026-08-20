@@ -17,6 +17,7 @@ import React, { useMemo, useState, useEffect, useDeferredValue } from "react";
 import type { Account, HistoricalDailyClose, LedgerEntry, StockPrice, StockTrade, TickerInfo } from "../types";
 import { computePositions } from "../calculations";
 import { formatKRW } from "../utils/formatter";
+import { getThisMonthKST } from "../utils/date";
 import { isKRWStock, isUSDStock, canonicalTickerForMatch, extractTickerFromText } from "../utils/finance";
 import { isDividendEntryLoose, isInterestEntryLoose, isInterestOverDividend } from "../utils/categoryMatch";
 import { toKrwByRate } from "../utils/currency";
@@ -337,6 +338,43 @@ export const DividendsView: React.FC<Props> = ({ accounts, ledger, trades, price
       .sort((a, b) => b.month.localeCompare(a.month));
   }, [dividendRows]);
 
+  // 월별 배당 차트용 — 오름차순 + 3개월 이동평균 + 진행 중인 달(이번 달) 표시.
+  // 이동평균 창에 진행 중인 달이 섞이면 아직 안 끝난 달이 평균을 낮춰 보이므로 완료월만 사용.
+  const monthlyDividendChart = useMemo(() => {
+    const thisMonth = getThisMonthKST();
+    const ascending = [...monthlyDividendTotal].sort((a, b) => a.month.localeCompare(b.month));
+    return ascending.map((row, i) => {
+      const isPartial = row.month === thisMonth;
+      const windowRows = ascending.slice(Math.max(0, i - 2), i + 1);
+      const movingAvg =
+        !isPartial && windowRows.length === 3
+          ? windowRows.reduce((s, r) => s + r.total, 0) / 3
+          : undefined;
+      return { month: row.month, total: row.total, isPartial, movingAvg };
+    });
+  }, [monthlyDividendTotal]);
+
+  // 차트 옆 요약 지표 — 완료월 평균 · 최근/직전 6개월 비교(스노우볼 속도) · 최근 12개월 합계
+  const monthlyDividendStats = useMemo(() => {
+    const completed = monthlyDividendChart.filter((r) => !r.isPartial);
+    const completedAvg = completed.length > 0
+      ? completed.reduce((s, r) => s + r.total, 0) / completed.length
+      : 0;
+    const recentSix = completed.slice(-6);
+    const priorSix = completed.slice(-12, -6);
+    const last12 = completed.slice(-12);
+    return {
+      completedMonths: completed.length,
+      completedAvg,
+      recentSixTotal: recentSix.reduce((s, r) => s + r.total, 0),
+      recentSixCount: recentSix.length,
+      priorSixTotal: priorSix.reduce((s, r) => s + r.total, 0),
+      priorSixCount: priorSix.length,
+      last12Total: last12.reduce((s, r) => s + r.total, 0),
+      last12Count: last12.length
+    };
+  }, [monthlyDividendChart]);
+
   const monthlyInterestTotal = useMemo(() => {
     const map = new Map<string, number>();
     interestRows.forEach((r) => {
@@ -428,6 +466,8 @@ export const DividendsView: React.FC<Props> = ({ accounts, ledger, trades, price
         totalInterest={totalInterest}
         byTicker={byTicker}
         monthlyDividendTotal={monthlyDividendTotal}
+        monthlyDividendChart={monthlyDividendChart}
+        monthlyDividendStats={monthlyDividendStats}
         monthlyInterestTotal={monthlyInterestTotal}
       />
 

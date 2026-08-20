@@ -7,6 +7,7 @@ import type { ValueType } from "recharts/types/component/DefaultTooltipContent";
 import { C, F, W, Card, Kpi, Insight, Section, pieLabel, type D } from "../insightsShared";
 import { useAppStore } from "../../../store/appStore";
 import { computeLoanBalanceAt } from "../../../calculations";
+import { formatGoalProjectionLine, projectGoal } from "../../../utils/goalProjection";
 
 export const AssetTab = React.memo(function AssetTab({ d }: { d: D }) {
   const goals = useAppStore((s) => s.data.investmentGoals);
@@ -36,6 +37,10 @@ export const AssetTab = React.memo(function AssetTab({ d }: { d: D }) {
   // 목표 대비 진척률
   const target = goals?.finalTotalAssetTarget ?? null;
   const targetProgress = target && target > 0 ? (current / target) * 100 : null;
+  // 목표 ETA — 최근 6/12개월 순자산 페이스 (읽기 전용, 기간 필터 슬라이스 기준이라 범위를 좁히면 '데이터 부족'일 수 있음)
+  const goalSeries = React.useMemo(() => nw.map((n) => ({ month: n.month, value: n.total })), [nw]);
+  const eta6 = React.useMemo(() => (target ? projectGoal({ series: goalSeries, target, method: "trailing6" }) : null), [goalSeries, target]);
+  const eta12 = React.useMemo(() => (target ? projectGoal({ series: goalSeries, target, method: "trailing12" }) : null), [goalSeries, target]);
 
 
   // 자산 집중도 (HHI 기반 실효 자산 카테고리 수)
@@ -128,8 +133,21 @@ export const AssetTab = React.memo(function AssetTab({ d }: { d: D }) {
                   <div style={{ color: "var(--text-faint)", fontSize: 11 }}>잔여 목표</div>
                   <div style={{ fontWeight: 700 }}>{F(Math.max(0, target - current))}원</div>
                 </div>
+                {eta6 && (
+                  <div style={{ padding: "8px 10px", background: "var(--bg)", borderRadius: 6 }}>
+                    <div style={{ color: "var(--text-faint)", fontSize: 11 }}>도달 예상 (ETA)</div>
+                    <div style={{ fontWeight: 700, color: eta6.status === "projected" || eta6.status === "achieved" ? "var(--text)" : "var(--warning)" }}>
+                      {formatGoalProjectionLine(eta6, (n) => F(n) + "원")}
+                    </div>
+                    {eta12 && eta12.windowMonths > eta6.windowMonths && (
+                      <div style={{ fontSize: 11, color: "var(--text-muted)", marginTop: 2 }}>
+                        12개월 페이스 기준: {formatGoalProjectionLine(eta12, (n) => F(n) + "원")}
+                      </div>
+                    )}
+                  </div>
+                )}
                 <div style={{ fontSize: 10, color: "var(--text-faint)" }}>
-                  현재 월 순자산 증가 페이스 {F(monthlyGrowth)}원/월
+                  현재 월 순자산 증가 페이스 {F(monthlyGrowth)}원/월 (추적 전체 평균) · ETA는 최근 페이스가 유지된다는 가정의 단순 투영
                 </div>
               </div>
             </div>

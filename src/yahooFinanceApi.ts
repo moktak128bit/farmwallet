@@ -3,6 +3,7 @@ import { getKrNames } from "./storage";
 import { parseEtfItemList, type EtfDiscountRow } from "./utils/etfDiscount";
 import { parseHistoricalCloses } from "./utils/yahooChartParse";
 import { parseChartWithDividends, type StockLookupData } from "./utils/stockLookup";
+import { STORAGE_KEYS } from "./constants/config";
 
 interface YahooQuoteResult {
   ticker: string;
@@ -329,6 +330,249 @@ const getEnv = (): Record<string, string | boolean | undefined> =>
     : undefined) ?? {};
 const useCorsProxy = (): boolean => getEnv().DEV === true || getEnv().MODE === "development";
 
+// ─────────────────────────────────────────────────────────────────────────────
+// CORS 프록시 체인 (단일 진입점) — Naver/Yahoo/Stooq/네이버 ETF 목록 등 모든 외부 GET이 공유한다.
+// 개발 서버(vite) 프록시가 있으면 맨 앞, 그 뒤 공개 프록시 3종을 "최근 성적" 순으로 시도한다.
+// 성공/실패 카운트·마지막 성공 시각은 메모리 + localStorage(PROXY_STATUS) 소형 JSON으로 기억해
+// 설정 > 가격 API 카드에 읽기전용으로 표시하고, 다음 호출의 선순위에 반영한다.
+// ─────────────────────────────────────────────────────────────────────────────
+
+/** 프록시 식별자 — 상태 저장 키. 공개 프록시는 선순위 정렬 대상, dev는 항상 맨 앞. */
+type ProxyId = "dev" | "allorigins" | "corsproxy" | "codetabs";
+
+interface PublicProxyDef {
+  id: Exclude<ProxyId, "dev">;
+  label: string;
+  /** innerUrl → 프록시 URL */
+  build: (innerUrl: string) => string;
+}
+
+/** 기본 순서(성적 동률 시 이 순서) */
+const PUBLIC_PROXIES: readonly PublicProxyDef[] = [
+  { id: "allorigins", label: "allorigins", build: (u) => `https://api.allorigins.win/raw?url=${encodeURIComponent(u)}` },
+  { id: "corsproxy", label: "corsproxy.io", build: (u) => `https://corsproxy.io/?url=${encodeURIComponent(u)}` },
+  { id: "codetabs", label: "codetabs", build: (u) => `https://api.codetabs.com/v1/proxy?quest=${encodeURIComponent(u)}` }
+];
+
+const PROXY_LABELS: Record<ProxyId, string> = {
+  dev: "개발 서버",
+  allorigins: "allorigins",
+  corsproxy: "corsproxy.io",
+  codetabs: "codetabs"
+};
+
+/** 프록시 1종의 누적 성적 */
+interface ProxyStatusEntry {
+  id: ProxyId;
+  label: string;
+  /** 누적 성공 횟수 */
+  ok: number;
+  /** 누적 실패 횟수 (네트워크 오류·timeout·429·비정상 본문) */
+  fail: number;
+  /** 연속 실패 횟수 — 성공하면 0으로 리셋. 선순위 정렬 기준(낮을수록 먼저) */
+  streak: number;
+  lastOkAt: number | null;
+  lastFailAt: number | null;
+}
+
+/** 설정 카드용 읽기전용 스냅샷 — 참조는 상태가 바뀔 때만 교체된다(useSyncExternalStore 호환) */
+interface ProxyStatusSnapshot {
+  /** 어떤 프록시든 마지막으로 성공한 시각(ms epoch). 한 번도 없으면 null */
+  lastSuccessAt: number | null;
+  /** dev(카운트가 있을 때만) + 공개 프록시 3종, 현재 시도 순서대로 */
+  proxies: ProxyStatusEntry[];
+}
+
+type ProxyStat = Omit<ProxyStatusEntry, "id" | "label">;
+
+interface ProxyStatusState {
+  lastSuccessAt: number | null;
+  byId: Partial<Record<ProxyId, ProxyStat>>;
+}
+
+const emptyStat = (): ProxyStat => ({ ok: 0, fail: 0, streak: 0, lastOkAt: null, lastFailAt: null });
+
+function loadProxyStatusState(): ProxyStatusState {
+  const fallback: ProxyStatusState = { lastSuccessAt: null, byId: {} };
+  if (typeof localStorage === "undefined") return fallback;
+  try {
+    const raw = localStorage.getItem(STORAGE_KEYS.PROXY_STATUS);
+    if (!raw) return fallback;
+    const parsed: unknown = JSON.parse(raw);
+    if (!parsed || typeof parsed !== "object") return fallback;
+    const obj = parsed as { lastSuccessAt?: unknown; byId?: unknown };
+    const state: ProxyStatusState = {
+      lastSuccessAt: typeof obj.lastSuccessAt === "number" ? obj.lastSuccessAt : null,
+      byId: {}
+    };
+    const byId = obj.byId && typeof obj.byId === "object" ? (obj.byId as Record<string, unknown>) : {};
+    const num = (x: unknown): number => (typeof x === "number" && Number.isFinite(x) && x >= 0 ? x : 0);
+    for (const id of Object.keys(PROXY_LABELS) as ProxyId[]) {
+      const v = byId[id];
+      if (!v || typeof v !== "object") continue;
+      const e = v as Record<string, unknown>;
+      state.byId[id] = {
+        ok: num(e.ok),
+        fail: num(e.fail),
+        streak: num(e.streak),
+        lastOkAt: typeof e.lastOkAt === "number" ? e.lastOkAt : null,
+        lastFailAt: typeof e.lastFailAt === "number" ? e.lastFailAt : null
+      };
+    }
+    return state;
+  } catch {
+    return fallback;
+  }
+}
+
+let proxyStatusState: ProxyStatusState | null = null;
+let proxyStatusSnapshot: ProxyStatusSnapshot | null = null;
+const proxyStatusListeners = new Set<() => void>();
+
+function getProxyState(): ProxyStatusState {
+  if (!proxyStatusState) proxyStatusState = loadProxyStatusState();
+  return proxyStatusState;
+}
+
+/** 공개 프록시를 최근 성적 순으로 정렬 — 연속 실패 적은 순 → 마지막 성공 최신 순 → 기본 순서 */
+function orderedPublicProxies(): PublicProxyDef[] {
+  const state = getProxyState();
+  return PUBLIC_PROXIES.map((def, idx) => ({ def, idx, stat: state.byId[def.id] ?? emptyStat() }))
+    .sort((a, b) => {
+      if (a.stat.streak !== b.stat.streak) return a.stat.streak - b.stat.streak;
+      const aOk = a.stat.lastOkAt ?? 0;
+      const bOk = b.stat.lastOkAt ?? 0;
+      if (aOk !== bOk) return bOk - aOk;
+      return a.idx - b.idx;
+    })
+    .map((x) => x.def);
+}
+
+function buildProxySnapshot(): ProxyStatusSnapshot {
+  const state = getProxyState();
+  const entries: ProxyStatusEntry[] = [];
+  const dev = state.byId.dev;
+  if (dev && (dev.ok > 0 || dev.fail > 0)) entries.push({ id: "dev", label: PROXY_LABELS.dev, ...dev });
+  for (const def of orderedPublicProxies()) {
+    entries.push({ id: def.id, label: def.label, ...(state.byId[def.id] ?? emptyStat()) });
+  }
+  return { lastSuccessAt: state.lastSuccessAt, proxies: entries };
+}
+
+function recordProxyResult(id: ProxyId, ok: boolean): void {
+  const state = getProxyState();
+  const prev = state.byId[id] ?? emptyStat();
+  const now = Date.now();
+  state.byId[id] = ok
+    ? { ...prev, ok: prev.ok + 1, streak: 0, lastOkAt: now }
+    : { ...prev, fail: prev.fail + 1, streak: prev.streak + 1, lastFailAt: now };
+  if (ok) state.lastSuccessAt = now;
+  proxyStatusSnapshot = null;
+  if (typeof localStorage !== "undefined") {
+    try {
+      localStorage.setItem(STORAGE_KEYS.PROXY_STATUS, JSON.stringify(state));
+    } catch {
+      /* 저장소 꽉 참 등 — 상태 표시는 메모리로만 */
+    }
+  }
+  for (const l of proxyStatusListeners) l();
+}
+
+/** 설정 카드용 — 프록시별 성공/실패·마지막 성공 시각 스냅샷 (상태 불변 시 같은 참조) */
+export function getProxyStatusSnapshot(): ProxyStatusSnapshot {
+  if (!proxyStatusSnapshot) proxyStatusSnapshot = buildProxySnapshot();
+  return proxyStatusSnapshot;
+}
+
+/** 프록시 상태 변경 구독 (useSyncExternalStore용). 반환값은 해제 함수 */
+export function subscribeProxyStatus(listener: () => void): () => void {
+  proxyStatusListeners.add(listener);
+  return () => {
+    proxyStatusListeners.delete(listener);
+  };
+}
+
+interface FetchViaProxiesOptions {
+  /** 프록시 1개당 timeout (ms) — 기본 8000 */
+  timeoutMs?: number;
+  /**
+   * 개발 서버 프록시 URL. undefined면 dev 환경에서 `/api/external/raw?url=` 자동 사용,
+   * null이면 dev 프록시를 쓰지 않음(공개 프록시만), 문자열이면 그 URL을 dev 환경에서 맨 앞에 둔다.
+   * 프로덕션(정적 배포)에서는 항상 무시된다.
+   */
+  devProxyUrl?: string | null;
+  /** 본문 디코딩 — 기본 "utf-8"(res.text()). EUC-KR 레거시 응답(네이버 ETF 목록)은 "euc-kr" */
+  encoding?: "utf-8" | "euc-kr";
+  /**
+   * 응답 수용 판정 — true면 이 본문으로 확정하고 남은 프록시를 시도하지 않는다.
+   * 기본: res.ok && 본문 비어있지 않음 && "Not Found" 미포함.
+   * (429는 accept 이전에 가로채 다음 프록시로 넘어간다)
+   */
+  accept?: (res: { ok: boolean; status: number }, body: string) => boolean;
+}
+
+interface FetchViaProxiesResult {
+  /** 수용된 본문. 전부 실패면 "" */
+  body: string;
+  /** 체인 중 하나라도 429를 돌려줬는지 — 전부 실패 시 호출부가 RateLimitError로 승격 */
+  saw429: boolean;
+}
+
+const defaultAccept = (res: { ok: boolean; status: number }, body: string): boolean =>
+  res.ok && body.length > 0 && !body.includes("Not Found");
+
+/**
+ * innerUrl을 프록시 체인으로 GET — 개발 서버 프록시(있으면) → 공개 프록시(최근 성적 순).
+ * 네트워크 오류·timeout·429·accept 거부는 모두 해당 프록시 실패로 기록하고 다음으로 넘어간다.
+ * 모두 실패하면 body "" (throw하지 않음 — 429 승격 여부는 호출부가 saw429로 결정).
+ */
+export async function fetchViaProxies(
+  innerUrl: string,
+  options: FetchViaProxiesOptions = {}
+): Promise<FetchViaProxiesResult> {
+  const timeoutMs = options.timeoutMs ?? 8000;
+  const accept = options.accept ?? defaultAccept;
+  const chain: Array<{ id: ProxyId; url: string }> = [];
+  if (useCorsProxy() && options.devProxyUrl !== null) {
+    chain.push({
+      id: "dev",
+      url: options.devProxyUrl ?? `/api/external/raw?url=${encodeURIComponent(innerUrl)}`
+    });
+  }
+  for (const def of orderedPublicProxies()) chain.push({ id: def.id, url: def.build(innerUrl) });
+
+  let saw429 = false;
+  for (const { id, url } of chain) {
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), timeoutMs);
+    try {
+      const res = await fetch(url, { signal: controller.signal });
+      if (res.status === 429) {
+        saw429 = true; // 다음 예비 프록시 시도 — 전부 실패하면 호출부가 RateLimitError
+        recordProxyResult(id, false);
+        continue;
+      }
+      let body: string;
+      if (options.encoding === "euc-kr") {
+        // 원본 바이트를 EUC-KR로 직접 디코딩해야 한글이 정상 복원됨 (res.text()는 UTF-8 가정)
+        body = new TextDecoder("euc-kr").decode(await res.arrayBuffer());
+      } else {
+        body = await res.text();
+      }
+      if (accept({ ok: res.ok, status: res.status }, body)) {
+        recordProxyResult(id, true);
+        return { body, saw429 };
+      }
+      recordProxyResult(id, false);
+    } catch {
+      recordProxyResult(id, false); // 네트워크 오류·timeout — 조용히 다음 프록시로
+    } finally {
+      clearTimeout(timeoutId);
+    }
+  }
+  return { body: "", saw429 };
+}
+
 
 /** exchange: 사용자가 지정한 거래소(KOSPI/KOSDAQ)가 있으면 그 suffix만 사용 */
 const buildLookupCandidates = (symbol: string, exchange?: string) => {
@@ -405,54 +649,14 @@ const fetchFromNaverPolling = async (
   if (requestedSymbols.length === 0) return results;
   const codes = requestedSymbols.map((s) => cleanTicker(s)).join(",");
 
-  let payloadStr = "";
-  // 개발 환경: vite 프록시 (CORS 우회 + 10초 캐시)
-  if (useCorsProxy()) {
-    const controller = new AbortController();
-    const timeoutId = setTimeout(() => controller.abort(), 6000);
-    try {
-      const res = await fetch(`/api/naver-quote?codes=${encodeURIComponent(codes)}`, {
-        signal: controller.signal
-      });
-      if (res.status === 429) throw new RateLimitError();
-      if (res.ok) payloadStr = await res.text();
-    } catch (err) {
-      if (err instanceof RateLimitError) throw err;
-      // 네트워크 오류·timeout 등: 아래 공개 프록시 경로로 폴백
-    } finally {
-      clearTimeout(timeoutId);
-    }
-  }
-
-  // 프로덕션(정적 배포) 또는 dev 프록시 실패: 공개 CORS 프록시 경유
+  // 개발 환경: vite 프록시(/api/naver-quote, CORS 우회 + 10초 캐시)를 맨 앞에, 그 뒤 공개 CORS 프록시.
   // (Naver는 브라우저 외부 출처 직접 호출 시 'Invalid CORS request' 403)
-  if (!payloadStr) {
-    const innerUrl = `${NAVER_POLLING_BASE}/${codes}`;
-    const proxyUrls = [
-      `https://api.allorigins.win/raw?url=${encodeURIComponent(innerUrl)}`,
-      `https://corsproxy.io/?url=${encodeURIComponent(innerUrl)}`,
-      `https://api.codetabs.com/v1/proxy?quest=${encodeURIComponent(innerUrl)}`
-    ];
-    let saw429 = false;
-    for (const proxyUrl of proxyUrls) {
-      const controller = new AbortController();
-      const timeoutId = setTimeout(() => controller.abort(), 6000);
-      try {
-        const res = await fetch(proxyUrl, { signal: controller.signal });
-        if (res.status === 429) {
-          saw429 = true; // 다음 예비 프록시 시도 — 전부 실패하면 RateLimitError
-        } else if (res.ok) {
-          payloadStr = await res.text();
-          if (payloadStr) break;
-        }
-      } catch {
-        // 조용히 다음 예비 프록시로
-      } finally {
-        clearTimeout(timeoutId);
-      }
-    }
-    if (!payloadStr && saw429) throw new RateLimitError();
-  }
+  const { body: payloadStr, saw429 } = await fetchViaProxies(`${NAVER_POLLING_BASE}/${codes}`, {
+    timeoutMs: 6000,
+    devProxyUrl: `/api/naver-quote?codes=${encodeURIComponent(codes)}`,
+    accept: (res, body) => res.ok && body.length > 0
+  });
+  if (!payloadStr && saw429) throw new RateLimitError();
 
   if (!payloadStr) return results;
 
@@ -510,33 +714,7 @@ const fetchFromYahooChart = async (
   });
   const innerUrl = `${YAHOO_CHART_BASE}/${encodeURIComponent(lookupSymbol)}?${params.toString()}`;
 
-  const proxyUrls = [
-    // 개발 환경: vite 서버 프록시 우선 (불안정한 공개 프록시 의존 제거 + 10초 캐시)
-    ...(useCorsProxy() ? [`/api/external/raw?url=${encodeURIComponent(innerUrl)}`] : []),
-    `https://api.allorigins.win/raw?url=${encodeURIComponent(innerUrl)}`,
-    `https://corsproxy.io/?url=${encodeURIComponent(innerUrl)}`,
-    `https://api.codetabs.com/v1/proxy?quest=${encodeURIComponent(innerUrl)}`
-  ];
-
-  let payloadStr = "";
-  let saw429 = false;
-  for (const proxyUrl of proxyUrls) {
-    const controller = new AbortController();
-    const timeoutId = setTimeout(() => controller.abort(), 5000);
-    try {
-      const res = await fetch(proxyUrl, { signal: controller.signal });
-      if (res.status === 429) {
-        saw429 = true; // 다음 예비 프록시 시도 — 전부 실패하면 RateLimitError
-      } else if (res.ok) {
-        payloadStr = await res.text();
-        if (payloadStr && !payloadStr.includes("Not Found")) break;
-      }
-    } catch {
-    } finally {
-      clearTimeout(timeoutId);
-    }
-  }
-
+  const { body: payloadStr, saw429 } = await fetchViaProxies(innerUrl, { timeoutMs: 5000 });
   if (!payloadStr) {
     // 모든 프록시 실패 + 429 발생 → 호출부 429 분기(해당 종목 스킵)가 동작하도록 throw
     if (saw429) throw new RateLimitError();
@@ -588,31 +766,17 @@ const fetchFromYahooChart = async (
  * "Not Found" 본문은 실패로 보고 다음 프록시 시도. 전부 실패하면 "".
  */
 async function fetchChartPayloadViaProxies(innerUrl: string, timeoutMs = 8000): Promise<string> {
-  const proxyUrls = [
-    ...(useCorsProxy() ? [`/api/external/raw?url=${encodeURIComponent(innerUrl)}`] : []),
-    `https://api.allorigins.win/raw?url=${encodeURIComponent(innerUrl)}`,
-    `https://corsproxy.io/?url=${encodeURIComponent(innerUrl)}`,
-    `https://api.codetabs.com/v1/proxy?quest=${encodeURIComponent(innerUrl)}`
-  ];
-  for (const proxyUrl of proxyUrls) {
-    const controller = new AbortController();
-    const timeoutId = setTimeout(() => controller.abort(), timeoutMs);
-    try {
-      const res = await fetch(proxyUrl, { signal: controller.signal });
-      if (res.ok || res.status === 404) {
-        const payloadStr = await res.text();
-        // Yahoo chart JSON이면(정상 또는 symbol Not Found 에러 페이로드) 확정 응답으로 즉시 반환 —
-        // 심볼 미존재는 프록시 탓이 아니므로 남은 프록시를 재시도하지 않는다 (.KS→.KQ 폴백 지연 단축)
-        if (payloadStr.includes('"chart"')) return payloadStr;
-        if (res.ok && payloadStr && !payloadStr.includes("Not Found")) return payloadStr;
-      }
-    } catch {
-      // 다음 프록시 시도
-    } finally {
-      clearTimeout(timeoutId);
+  const { body } = await fetchViaProxies(innerUrl, {
+    timeoutMs,
+    accept: (res, payloadStr) => {
+      if (!res.ok && res.status !== 404) return false;
+      // Yahoo chart JSON이면(정상 또는 symbol Not Found 에러 페이로드) 확정 응답으로 즉시 반환 —
+      // 심볼 미존재는 프록시 탓이 아니므로 남은 프록시를 재시도하지 않는다 (.KS→.KQ 폴백 지연 단축)
+      if (payloadStr.includes('"chart"')) return true;
+      return res.ok && payloadStr.length > 0 && !payloadStr.includes("Not Found");
     }
-  }
-  return "";
+  });
+  return body;
 }
 
 const buildChartInnerUrl = (symbol: string, range: string, withDividends: boolean): string => {
@@ -693,34 +857,32 @@ export async function fetchStockLookup(
 const fetchFromStooq = async (requestedSymbol: string): Promise<YahooQuoteResult | null> => {
   const sym = `${requestedSymbol.toLowerCase()}.us`;
   const query = `s=${encodeURIComponent(sym)}&f=sd2t2ohlcv&h&e=json`;
-  const url = useCorsProxy() ? `/api/stooq?${query}` : `${STOOQ_BASE}?${query}`;
-  const controller = new AbortController();
-  const timeoutId = setTimeout(() => controller.abort(), 5000);
-  try {
-    const res = await fetch(url, { signal: controller.signal });
-    // 429면 throw — 호출부의 RateLimitError 분기(재throw·스킵)가 동작
-    if (res.status === 429) throw new RateLimitError();
-    if (!res.ok) return null;
-    const json = (await res.json()) as {
-      symbols?: Array<{ symbol: string; name?: string; close?: string }>;
-    };
-    const item = json.symbols?.[0];
-    const price = item?.close ? Number(item.close) : NaN;
-    if (!item?.symbol || !(price > 0)) return null; // 0/NaN 시세는 실패로 취급
-    return {
-      ticker: requestedSymbol,
-      name: item.name ?? requestedSymbol,
-      price,
-      updatedAt: new Date().toISOString()
-    };
-  } catch (err) {
-    if (err instanceof Error && err.name === 'AbortError') {
-      throw new Error('Request timeout');
-    }
-    throw err;
-  } finally {
-    clearTimeout(timeoutId);
+  // dev: vite /api/stooq 프록시, 프로덕션: 공개 CORS 프록시 경유 (stooq 직접 호출은 CORS 차단)
+  const { body, saw429 } = await fetchViaProxies(`${STOOQ_BASE}?${query}`, {
+    timeoutMs: 5000,
+    devProxyUrl: `/api/stooq?${query}`,
+    accept: (res, payload) => res.ok && payload.length > 0
+  });
+  // 429면 throw — 호출부의 RateLimitError 분기(재throw·스킵)가 동작
+  if (!body) {
+    if (saw429) throw new RateLimitError();
+    return null;
   }
+  let json: { symbols?: Array<{ symbol: string; name?: string; close?: string }> };
+  try {
+    json = JSON.parse(body);
+  } catch {
+    return null;
+  }
+  const item = json.symbols?.[0];
+  const price = item?.close ? Number(item.close) : NaN;
+  if (!item?.symbol || !(price > 0)) return null; // 0/NaN 시세는 실패로 취급
+  return {
+    ticker: requestedSymbol,
+    name: item.name ?? requestedSymbol,
+    price,
+    updatedAt: new Date().toISOString()
+  };
 };
 
 // 네이버 ETF 목록(전 종목 NAV·현재가) — 괴리율 스캔용. 공개 CORS 프록시 경유(브라우저 직접 호출은 403).
@@ -732,33 +894,15 @@ const ETF_LIST_URL = "https://finance.naver.com/api/sise/etfItemList.nhn";
  * @throws RateLimitError 프록시가 모두 429일 때. 그 외 네트워크/파싱 실패는 일반 Error.
  */
 export async function fetchKoreanEtfDiscounts(): Promise<EtfDiscountRow[]> {
-  const proxyUrls = [
-    `https://api.allorigins.win/raw?url=${encodeURIComponent(ETF_LIST_URL)}`,
-    `https://corsproxy.io/?url=${encodeURIComponent(ETF_LIST_URL)}`,
-    `https://api.codetabs.com/v1/proxy?quest=${encodeURIComponent(ETF_LIST_URL)}`
-  ];
-  let payloadStr = "";
-  let saw429 = false;
-  for (const proxyUrl of proxyUrls) {
-    const controller = new AbortController();
-    const timeoutId = setTimeout(() => controller.abort(), 8000);
-    try {
-      const res = await fetch(proxyUrl, { signal: controller.signal });
-      if (res.status === 429) {
-        saw429 = true; // 다음 예비 프록시 시도
-      } else if (res.ok) {
-        // etfItemList(.nhn)는 EUC-KR 레거시 응답 — res.text()(UTF-8)로 읽으면 한글 종목명이 깨진다.
-        // 원본 바이트를 EUC-KR로 직접 디코딩해야 종목명이 정상 복원됨 (숫자·코드는 ASCII라 무관).
-        const buf = await res.arrayBuffer();
-        payloadStr = new TextDecoder("euc-kr").decode(buf);
-        if (payloadStr) break;
-      }
-    } catch {
-      // 조용히 다음 예비 프록시로
-    } finally {
-      clearTimeout(timeoutId);
-    }
-  }
+  // etfItemList(.nhn)는 EUC-KR 레거시 응답 — res.text()(UTF-8)로 읽으면 한글 종목명이 깨진다.
+  // 원본 바이트를 EUC-KR로 직접 디코딩해야 종목명이 정상 복원됨 (숫자·코드는 ASCII라 무관).
+  // dev 서버 프록시(/api/external)는 UTF-8로 재인코딩하므로 공개 프록시만 사용한다.
+  const { body: payloadStr, saw429 } = await fetchViaProxies(ETF_LIST_URL, {
+    timeoutMs: 8000,
+    devProxyUrl: null,
+    encoding: "euc-kr",
+    accept: (res, body) => res.ok && body.length > 0
+  });
   if (!payloadStr) {
     if (saw429) throw new RateLimitError();
     throw new Error("ETF 목록을 불러오지 못했습니다 (네트워크 또는 프록시 오류).");
@@ -955,27 +1099,11 @@ async function searchYahooSymbol(
   for (const q of queries) {
     try {
       const innerUrl = `https://query1.finance.yahoo.com/v1/finance/search?q=${encodeURIComponent(q)}&quotesCount=15&newsCount=0`;
-      const proxyUrls = [
-        `https://api.allorigins.win/raw?url=${encodeURIComponent(innerUrl)}`,
-        `https://corsproxy.io/?url=${encodeURIComponent(innerUrl)}`,
-        `https://api.codetabs.com/v1/proxy?quest=${encodeURIComponent(innerUrl)}`
-      ];
-
-      let payloadStr = "";
-      for (const proxyUrl of proxyUrls) {
-        const controller = new AbortController();
-        const timeoutId = setTimeout(() => controller.abort(), 4000);
-        try {
-          const res = await fetch(proxyUrl, { signal: controller.signal });
-          if (res.ok) {
-            payloadStr = await res.text();
-            if (payloadStr) break;
-          }
-        } catch {
-        } finally {
-          clearTimeout(timeoutId);
-        }
-      }
+      const { body: payloadStr } = await fetchViaProxies(innerUrl, {
+        timeoutMs: 4000,
+        devProxyUrl: null,
+        accept: (res, body) => res.ok && body.length > 0
+      });
 
       if (!payloadStr) continue;
 

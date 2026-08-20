@@ -30,7 +30,7 @@ import {
   ledgerFormToTemplate,
   type LedgerFormState,
 } from "../../utils/ledgerHelpers";
-import { LedgerTemplateChips } from "./LedgerTemplateChips";
+import { LedgerRecentChips, LedgerTemplateChips } from "./LedgerTemplateChips";
 import { LedgerTemplateManageModal } from "./LedgerTemplateManageModal";
 import { buildRestoreById, showDeleteUndoToast } from "../../utils/undoToast";
 import { useFxRateValue } from "../../context/FxRateContext";
@@ -38,6 +38,7 @@ import {
   buildDescriptionIndex,
   describeSuggestion,
   fillEmptyFormFields,
+  recentDescriptionGroups,
   suggestDescriptions,
   type DescriptionSuggestion,
 } from "../../utils/ledgerSuggest";
@@ -701,8 +702,32 @@ export const LedgerEntryForm = React.memo(React.forwardRef<LedgerEntryFormHandle
         toast(`계좌 "${accountId}"가 없어 해당 항목을 비웠습니다.`);
       }
       toast.success(`템플릿 "${t.name}" 적용됨`);
+      // lastUsed 기록(칩 정렬용 메타데이터). onChangeTemplates는 setDataWithHistory(App.tsx) → undo 히스토리에
+      // 섞여 Ctrl+Z가 '템플릿 적용'이라는 보이지 않는 단계를 되돌리게 되므로, 비-undo 경로(store.setData)로 쓴다.
+      // 같은 날 재적용은 쓰기 생략(불필요한 자동저장 방지). 날짜는 getTodayKST (toISOString 금지).
+      const today = getTodayKST();
+      if (t.lastUsed !== today) {
+        useAppStore.getState().setData((prev) => ({
+          ...prev,
+          ledgerTemplates: (prev.ledgerTemplates ?? []).map((x) => (x.id === t.id ? { ...x, lastUsed: today } : x)),
+        }));
+      }
       return true;
     }, [accounts, ledgerTab, setLedgerTab, clearListFilters]);
+
+    // ── 최근 거래 칩 — 설명 인덱스에서 최근 30일 상위 6건. 클릭 = startCopy 재사용 (재테크 재라우팅 규칙 포함) ──
+    const recentGroups = useMemo(() => recentDescriptionGroups(descriptionIndex, { days: 30, limit: 6 }), [descriptionIndex]);
+    const pickRecentGroup = useCallback((g: DescriptionSuggestion) => {
+      const f = latestFormRef.current;
+      const hasEditingOrDraft = Boolean(f.id) || !!(f.amount?.trim() || f.description?.trim());
+      if (hasEditingOrDraft) {
+        const what = f.id ? "수정 중인 항목" : "입력 중인 내용";
+        if (!confirm(`${what}이 있습니다. "${g.description}"을(를) 불러오면 사라집니다. 계속할까요?`)) return;
+      }
+      setFormKindWhenAll(g.kind); // "전체" 복귀 시 kind 유지 — 템플릿과 동일 규칙
+      if (g.kind !== effectiveFormKind) clearListFilters(); // kind가 바뀌면 하위 필터 초기화 (빈 목록 방지)
+      startCopy(g.lastEntry);
+    }, [effectiveFormKind, clearListFilters, startCopy]);
 
     // 현재 입력을 템플릿으로 저장 — form은 latestFormRef로 읽음 (deps에 form 금지: 칩 memo 계약)
     const saveCurrentAsTemplate = useCallback(() => {
@@ -999,6 +1024,7 @@ export const LedgerEntryForm = React.memo(React.forwardRef<LedgerEntryFormHandle
                 onOpenManage={openTemplateManage}
               />
             )}
+            <LedgerRecentChips groups={recentGroups} onPick={pickRecentGroup} />
             {/* 상단: 날짜와 금액을 한 줄에 */}
             <div style={{ display: "grid", gridTemplateColumns: "1fr 2fr", gap: "12px", alignItems: "start" }}>
               {/* 날짜 + 빠른 칩 (오늘·어제·그제·−1일·+1일). 미래일 검증은 validateLedgerForm 그대로 */}

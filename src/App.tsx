@@ -10,6 +10,9 @@ import { QuickEntryModal } from "./components/QuickEntryModal";
 import { RecurringDueBadge } from "./components/RecurringDueBadge";
 import { TabErrorBoundary } from "./components/TabErrorBoundary";
 import { MobileDrawer } from "./components/MobileDrawer";
+import { MobileBottomNav } from "./components/MobileBottomNav";
+import { useDeepLink } from "./utils/deepLink";
+import { useHistoryNav } from "./utils/historyNav";
 
 // 동일 로더를 lazy와 프리페치에서 공유해 탭 호버 시 청크 미리 로드
 const loadDashboard = () => import("./pages/DashboardPage").then((m) => ({ default: m.DashboardView }));
@@ -181,6 +184,10 @@ export const App: React.FC = () => {
     setTab(id);
     setMobileDrawerOpen(false);
   };
+
+  // 딥링크(?tab=/?quick=/share_target) 적용 → 그 다음 뒤로가기 히스토리 연동 설치(순서 고정)
+  useDeepLink();
+  useHistoryNav();
 
   const handlePrefetchTab = useCallback((id: TabId) => {
     TAB_PREFETCH[id]?.();
@@ -1000,6 +1007,7 @@ export const App: React.FC = () => {
             <MobileDrawer open={mobileDrawerOpen} onClose={closeMobileDrawer}>
               <Tabs active={tab} onChange={handleTabChange} onPrefetch={handlePrefetchTab} tabBadges={settingsTabBadge ? { settings: settingsTabBadge } : undefined} />
             </MobileDrawer>
+            <MobileBottomNav />
             <main id="main-content" className="app-main" role="main">
           <Suspense fallback={<div className="card" style={{ padding: 24, textAlign: "center", color: "var(--text-muted)" }}>로딩 중...</div>}>
           {tab === "dashboard" && (

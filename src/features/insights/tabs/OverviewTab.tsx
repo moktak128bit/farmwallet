@@ -406,12 +406,13 @@ export const OverviewTab = React.memo(function OverviewTab({ d }: { d: D }) {
               </div>
             ))}
           </div>
-          <div style={{ display: "grid", gridTemplateColumns: "repeat(5,1fr)", gap: 10, marginTop: 10 }}>
+          <div style={{ display: "grid", gridTemplateColumns: "repeat(6,1fr)", gap: 10, marginTop: 10 }}>
             {[
               { label: "순현금흐름", value: F(d.netCashFlow) + "원", sub: `${d.accumLabel} · 근로소득−지출−투자`, color: d.netCashFlow >= 0 ? "var(--success)" : "var(--danger)" },
               { label: "투자 수익률", value: d.investReturnRate !== 0 ? d.investReturnRate.toFixed(1) + "%" : "-", sub: "전 기간 · 실현손익 / 청산 매도원가", color: d.investReturnRate >= 0 ? "var(--success)" : "var(--danger)" },
               { label: "고정비", value: F(d.fixedExpense) + "원", sub: `${d.accumLabel} · 지출의 ${Math.round(SD(d.fixedExpense, d.pExpense) * 100)}%`, color: "var(--accent)" },
               { label: "변동비", value: F(d.variableExpense) + "원", sub: `${d.accumLabel} · 지출의 ${Math.round(SD(d.variableExpense, d.pExpense) * 100)}%`, color: "var(--warning)" },
+              { label: "재량", value: F(d.discretionaryExpense) + "원", sub: `${d.accumLabel} · 지출의 ${Math.round(SD(d.discretionaryExpense, d.pExpense) * 100)}% · 외식·여가·데이트`, color: "var(--danger)" },
               { label: "근로소득 안정성", value: d.incomeStability !== null ? d.incomeStability + "%" : "-", sub: d.incomeStability !== null && d.incomeStability >= 70 ? "월별 편차 작음" : "월별 편차 큼", color: "var(--accent)" },
             ].map(m => (
               <div key={m.label} style={{ padding: "10px 12px", background: "var(--bg)", borderRadius: 8, border: "1px solid var(--border-light)", textAlign: "center" }}>
@@ -504,9 +505,9 @@ export const OverviewTab = React.memo(function OverviewTab({ d }: { d: D }) {
                 : ` 적자 상태입니다. 매월 ${F(Math.abs(Math.round(SD(d.netProfit, d.monthSpan))))}씩 자산이 감소하고 있습니다. 고정비 점검이 시급합니다.`}
               {d.pInvest > 0 && d.netProfit > 0 ? ` 투자(${F(d.pInvest)})를 포함하면 실질 자산배분 여력이 충분합니다.` : ""}
             </Insight>
-            <Insight title="고정비 vs 변동비" color="#7c3aed" bg="rgba(124,58,237,0.06)">
-              고정비 {F(d.fixedExpense)} ({Math.round(SD(d.fixedExpense, d.pExpense) * 100)}%), 변동비 {F(d.variableExpense)} ({Math.round(SD(d.variableExpense, d.pExpense) * 100)}%).
-              {SD(d.fixedExpense, d.pExpense) > 0.5 ? " 고정비 비중이 50%를 초과합니다. 통신비, 구독, 보험 등 재협상 가능한 항목을 점검하세요." : SD(d.fixedExpense, d.pExpense) > 0.3 ? " 고정비와 변동비가 균형 잡혀 있습니다." : " 변동비 비중이 높아 지출 통제 여지가 큽니다. 예산 관리로 효과적인 절약이 가능합니다."}
+            <Insight title="고정비 · 변동비 · 재량" color="#7c3aed" bg="rgba(124,58,237,0.06)">
+              고정비 {F(d.fixedExpense)} ({Math.round(SD(d.fixedExpense, d.pExpense) * 100)}%), 변동비 {F(d.variableExpense)} ({Math.round(SD(d.variableExpense, d.pExpense) * 100)}%), 재량 {F(d.discretionaryExpense)} ({Math.round(SD(d.discretionaryExpense, d.pExpense) * 100)}%).
+              {SD(d.fixedExpense, d.pExpense) > 0.5 ? " 고정비 비중이 50%를 초과합니다. 통신비, 구독, 보험 등 재협상 가능한 항목을 점검하세요." : SD(d.discretionaryExpense, d.pExpense) > 0.3 ? " 재량 지출(외식·여가·데이트) 비중이 30%를 넘습니다. 줄이기 쉬운 항목부터 예산을 잡아보세요." : SD(d.fixedExpense, d.pExpense) > 0.3 ? " 고정비와 변동비가 균형 잡혀 있습니다." : " 변동비 비중이 높아 지출 통제 여지가 큽니다. 예산 관리로 효과적인 절약이 가능합니다."}
               {d.subTotal > 0 ? ` 구독 비용만 ${F(d.subTotal)}로 근로소득 대비 ${(SD(d.subTotal, d.pSalary) * 100).toFixed(1)}%.` : ""}
             </Insight>
           </div>

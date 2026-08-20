@@ -20,6 +20,12 @@ import { getKoreanNameOverlay } from "./krNameResolver";
 import { cleanTicker } from "../utils/finance";
 import { isDividendEntryLoose } from "../utils/categoryMatch";
 import { sanitizeLedger, sanitizeTrades } from "../utils/dataSanitize";
+import {
+  diffAppData,
+  buildMigrationReport,
+  migrationSnapshotLabel,
+  writeLastMigrationReport
+} from "./migrationReport";
 
 // dataService 내부에서만 쓰는 느슨한 한국 주식 판정 (6+자).
 // finance.ts의 isKRWStock은 더 엄격(6자 정확)하므로 별도 유지.
@@ -470,6 +476,43 @@ function preserveOriginalBeforeDrop(original: unknown, dropped: { ledger: number
     });
   } catch (e) {
     console.warn("[FarmWallet] 손상 항목 폐기 직전 원본 스냅샷 저장 실패", e);
+  }
+}
+
+/**
+ * 스키마 마이그레이션이 실제로 적용됐을 때(저장 마커 < 앱 버전) 직전 원본을 라벨 스냅샷으로 보존하고
+ * 원본 vs 마이그레이션 결과 diff 리포트를 LAST_MIGRATION_REPORT에 기록 (둘 다 best-effort, 로드를 막지 않음).
+ *
+ * - 원본은 migrateBySchema 호출 **전** 문자열(raw)을 다시 파싱해 얻는다. migrateBySchema는 얕은 복사라
+ *   v9/v12 블록이 categoryPresets 하위 객체를 제자리에서 고치므로 파싱 객체를 그대로 쓰면 원본이 아니다.
+ * - diff의 after는 migrateBySchema 결과(정규화·sanitize·시드 주입 전) — "마이그레이션이 무엇을 바꿨나"만 담는다.
+ *   (buildAppDataFromMigrated의 기본값 주입·캐시 병합까지 넣으면 매 부팅 노이즈가 섞인다.)
+ * - 0-9(손상 항목 폐기 직전 원본)와 같은 부팅에 둘 다 일어나면 스냅샷이 2개 생긴다 — 의도. 시점이 다르고
+ *   (이쪽은 마이그레이션 전 순수 원본, 0-9는 마이그레이션 후 폐기 전) 라벨이 달라 각자 보존 보호를 받는다.
+ *   합치면 라벨 하나가 두 의미를 져야 해 복원 판단이 흐려진다.
+ * - 되돌리기(롤백) UI는 제공하지 않는다: 원본을 그대로 복원하면 마커가 이미 현행이라 재마이그레이션이 없어
+ *   구형태가 영구 잔존한다(기획서 1-3). 복원은 마커 되감기와 함께 설계돼야 하므로 여기선 보존+리포트까지만.
+ */
+function recordSchemaMigration(
+  rawJson: string,
+  migrated: Record<string, unknown>,
+  fromVersion: number,
+  toVersion: number
+): void {
+  try {
+    const original = asObject(JSON.parse(rawJson) as unknown);
+    const label = migrationSnapshotLabel(fromVersion, toVersion);
+    try {
+      void saveSafetySnapshot(original as unknown as AppData, label).then((saved) => {
+        if (!saved) console.warn(`[FarmWallet] ${label} 스냅샷 저장 실패`);
+      });
+    } catch (e) {
+      console.warn(`[FarmWallet] ${label} 스냅샷 저장 실패`, e);
+    }
+    const report = buildMigrationReport(fromVersion, toVersion, diffAppData(original, migrated));
+    writeLastMigrationReport(report);
+  } catch (e) {
+    console.warn("[FarmWallet] 마이그레이션 직전 원본 보존/리포트 기록 실패", e);
   }
 }
 
@@ -925,6 +968,10 @@ export function loadData(): AppData {
     const migratedBySchema = migrateBySchema(parsedObject, schemaVersion);
     const schemaVersionChanged =
       migratedBySchema.migrated || (!storedAhead && schemaVersion !== DATA_SCHEMA_VERSION);
+    // 실제 마이그레이션(마커 < 앱 버전 && 변경 있음)이면 saveData 전에 직전 원본 보존 + diff 리포트 기록
+    if (!storedAhead && schemaVersion < DATA_SCHEMA_VERSION && migratedBySchema.migrated) {
+      recordSchemaMigration(raw, migratedBySchema.data, schemaVersion, DATA_SCHEMA_VERSION);
+    }
 
     // 캐시 분리 키에서 로드, 없으면 메인 키의 값으로 마이그레이션
     const cache = loadCacheData();

@@ -62,6 +62,7 @@ const FULL: Required<AppData> = {
       usdBalance: 1_200.5,
       krwBalance: 300_000,
       isPension: false,
+      taxShelter: "isa",
     },
     {
       id: "A3",
@@ -488,6 +489,13 @@ describe("AppData 계약 — 왕복 (a) saveData → loadData", () => {
     const loaded = loadData();
     // 캐시 3종은 CACHE 키로 분리 저장되지만 loadData가 다시 합쳐 돌려준다 — allowlist 없음
     expectRoundTrip(loaded, {});
+  });
+
+  it("Account.taxShelter(ISA·연금저축·IRP 세제 성격, 4-1)가 saveData→loadData 왕복에서 보존된다", () => {
+    saveData(FULL);
+    const loaded = loadData();
+    expect(loaded.accounts.find((a) => a.id === "A2")?.taxShelter).toBe("isa");
+    expect(loaded.accounts.find((a) => a.id === "A1")?.taxShelter).toBeUndefined();
   });
 
   it("DATA 키(사용자 데이터)에는 캐시 3종이 빠지고 CACHE 키에 들어간다 (용량 분리 계약)", () => {

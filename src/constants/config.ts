@@ -74,7 +74,9 @@ export const STORAGE_KEYS = {
   /** 연말정산 미리보기 총급여 입력 (JSON: {"2026": 50000000} — 귀속연도별, 기기 로컬) */
   YEAR_END_GROSS_SALARY: "fw-year-end-gross-salary",
   /** 마지막 스키마 마이그레이션 리포트(services/migrationReport.ts — from→to·시각·컬렉션별 변경 건수 요약, 소형 JSON) */
-  LAST_MIGRATION_REPORT: "fw-last-migration-report"
+  LAST_MIGRATION_REPORT: "fw-last-migration-report",
+  /** 연금계좌 세액공제율 선택 ("0.132"|"0.165", 기본 0.132 — 총급여 5,500만 초과 가정). 배당 탭 절세계좌 카드 전용 */
+  TAX_CREDIT_RATE: "fw-tax-credit-rate"
 } as const;
 
 /** 드래프트 슬롯이 이보다 오래되면 boot 시 무시·삭제 (스테일 복구 안내 방지) */

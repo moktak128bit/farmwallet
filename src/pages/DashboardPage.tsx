@@ -269,6 +269,12 @@ export const DashboardView: React.FC<Props> = (props) => {
     loans
   });
 
+  /** 목표 ETA용 월별 순자산(KRW) — InvestmentSummaryCard 최종 총자산 목표 행 */
+  const netWorthSeriesKrw = useMemo(
+    () => accountTimelineRows.map((row) => ({ month: row.month, value: row.total })),
+    [accountTimelineRows]
+  );
+
   /** 순자산 추이: accountTimelineRows에서 month, total 추출 (만원 단위) */
   const netWorthTrendData = useMemo(() => {
     if (accountTimelineRows.length === 0) return [] as Array<{ month: string; value: number; asset: number; debt: number; pension: number }>;
@@ -314,6 +320,7 @@ export const DashboardView: React.FC<Props> = (props) => {
             balances={balances}
             positions={positions}
             fxRate={fxRate}
+            netWorthSeries={netWorthSeriesKrw}
           />
         )}
 

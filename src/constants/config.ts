@@ -66,7 +66,9 @@ export const STORAGE_KEYS = {
   /** 배당/이자 탭의 마지막 선택 (dividend|interest). 다음 방문 시 복원. */
   DIVIDENDS_LAST_TAB: "fw-dividends-last-tab",
   /** 종합과세 트래커/세금 보고서 세전(gross-up) 환산 토글 ("true"면 켜짐, 기본 off) */
-  TAX_GROSS_UP: "fw-tax-gross-up"
+  TAX_GROSS_UP: "fw-tax-gross-up",
+  /** BACKUPS JSON 파싱 실패 시 원본 문자열을 보존하는 1슬롯 (부분 복구용; 기존 슬롯이 있으면 덮지 않음) */
+  BACKUPS_CORRUPT: "farmwallet-backups-corrupt-v1"
 } as const;
 
 /** 드래프트 슬롯이 이보다 오래되면 boot 시 무시·삭제 (스테일 복구 안내 방지) */

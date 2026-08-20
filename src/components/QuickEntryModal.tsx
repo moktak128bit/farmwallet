@@ -7,6 +7,11 @@ import { getTodayKST } from "../utils/date";
 import { newIdWithPrefix } from "../utils/id";
 import { useFocusTrap } from "../hooks/useFocusTrap";
 import { useModalStackEntry } from "../utils/modalStack";
+import {
+  buildQuickEntryLedgerEntry,
+  quickEntryStoredCategory,
+  resolveQuickEntryAccounts,
+} from "../utils/quickEntryBuild";
 
 interface Props {
   open: boolean;
@@ -37,10 +42,6 @@ export const parseQuickInput = (text: string): { description: string; amount: nu
     : body.trim();
   return { description, amount, kind };
 };
-
-/** 추천이 없을 때 폼 저장 경로와 동일한 대분류 (category="" 저장 방지) */
-const fallbackCategoryOf = (kind: LedgerKind): string =>
-  kind === "income" ? "수입" : kind === "transfer" ? "이체" : "지출";
 
 export const QuickEntryModal: React.FC<Props> = ({ open, onClose, data, onAdd }) => {
   const [text, setText] = useState("");
@@ -79,37 +80,29 @@ export const QuickEntryModal: React.FC<Props> = ({ open, onClose, data, onAdd })
       ?? data.accounts[0];
   }, [data.accounts, recommendation]);
 
+  /** 저장될 분류 3단 미리보기 (저장 빌더와 같은 매핑) */
+  const storedCategory = useMemo(
+    () => quickEntryStoredCategory(parsed.kind, recommendation),
+    [parsed.kind, recommendation]
+  );
+
   const submit = () => {
     if (!parsed.description || parsed.amount <= 0) return;
 
     // 계좌 결정 — 이체는 출금·입금 둘 다 필요. 빠른 입력으로 입금 계좌를 정할 수 없으면 거부.
-    let fromAccountId: string | undefined;
-    let toAccountId: string | undefined;
-    if (parsed.kind === "income") {
-      toAccountId = defaultAccount?.id;
-    } else if (parsed.kind === "transfer") {
-      fromAccountId = recommendation?.fromAccountId ?? defaultAccount?.id;
-      toAccountId = recommendation?.toAccountId;
-      if (!fromAccountId || !toAccountId || fromAccountId === toAccountId) {
-        toast.error("이체는 입금 계좌를 정할 수 없어 빠른 입력으로 추가할 수 없습니다. 가계부 폼에서 입력해주세요.");
-        return;
-      }
-    } else {
-      fromAccountId = defaultAccount?.id;
+    const accounts = resolveQuickEntryAccounts(parsed.kind, recommendation, defaultAccount?.id);
+    if (!accounts.ok) {
+      toast.error("이체는 입금 계좌를 정할 수 없어 빠른 입력으로 추가할 수 없습니다. 가계부 폼에서 입력해주세요.");
+      return;
     }
 
-    const entry: LedgerEntry = {
+    // 저장 형태는 LedgerEntryForm.submitForm과 동일(3단: category=지출/subCategory=대분류/detailCategory=소분류)
+    const entry: LedgerEntry = buildQuickEntryLedgerEntry(parsed, recommendation, {
       id: newIdWithPrefix("L"),
       date: getTodayKST(),
-      kind: parsed.kind,
-      // 추천이 없으면 폼 저장 경로와 동일한 스키마로 저장 (category="" 방지)
-      category: recommendation?.category || fallbackCategoryOf(parsed.kind),
-      subCategory: recommendation?.subCategory || "(미분류)",
-      description: parsed.description,
-      amount: parsed.amount,
-      fromAccountId,
-      toAccountId
-    };
+      fromAccountId: accounts.fromAccountId,
+      toAccountId: accounts.toAccountId,
+    });
     onAdd(entry);
     onClose();
   };
@@ -155,7 +148,10 @@ export const QuickEntryModal: React.FC<Props> = ({ open, onClose, data, onAdd })
           <div style={{ marginTop: 12, fontSize: 13, color: "var(--text-muted)" }}>
             <div><strong>{parsed.kind === "income" ? "수입" : parsed.kind === "transfer" ? "이체" : "지출"}</strong>: {parsed.description}</div>
             <div>금액: {parsed.amount.toLocaleString()}원</div>
-            <div>카테고리: {recommendation?.category || fallbackCategoryOf(parsed.kind)} › {recommendation?.subCategory || "(미분류)"}</div>
+            <div>
+              카테고리: {storedCategory.category} › {storedCategory.subCategory}
+              {storedCategory.detailCategory ? ` › ${storedCategory.detailCategory}` : ""}
+            </div>
             <div>계좌: {defaultAccount?.name ?? "(없음)"}</div>
           </div>
         )}

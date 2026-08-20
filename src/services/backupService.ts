@@ -1,17 +1,17 @@
 import type { AppData } from "../types";
 import { STORAGE_KEYS, BACKUP_CONFIG } from "../constants/config";
 import { getKoreaTime } from "../utils/date";
+import {
+  getBackupStore,
+  readPendingSafetySnapshot,
+  writePendingSafetySnapshotSync,
+  clearPendingSafetySnapshot,
+  toBackupMeta,
+  type BackupRecord,
+  type BackupRecordMeta
+} from "./backupStore";
 
-interface StoredBackup {
-  id: string;
-  createdAt: string;
-  data: AppData;
-  hash?: string;
-  /** 백업 생성 사유 (위험 작업 직전 안전 스냅샷 등). 없으면 일반 자동/수동 백업. */
-  label?: string;
-}
-
-export interface BackupMeta {
+interface BackupMeta {
   id: string;
   createdAt: string;
   hash?: string;
@@ -26,12 +26,20 @@ export interface BackupEntry extends BackupMeta {
   fileName?: string;
 }
 
+/** 보존 정책·정렬이 필요로 하는 최소 필드 */
+interface RetentionItem {
+  id: string;
+  createdAt: string;
+  label?: string;
+}
+
 /** KST 기준, 백업이 있는 서로 다른 날짜 최대 개수(오늘 포함 4일치) */
 const BACKUP_RETENTION_DAY_SLOTS = 4;
 /**
  * 같은 KST 날짜 안에 보관할 최대 백업 수 (최신순).
- * 일별 1개만 남기면 "실수 후 30분 내 자동백업"이 당일의 정상 백업을 대체해
+ * 일별 1개만 남기면 "실수 후 자동백업"이 당일의 정상 백업을 대체해
  * 복구 지점이 사라지는 문제가 있어 복수 보관한다 (4일 × 5개 = 최대 20개).
+ * 저장소가 IndexedDB라 20개(user-only ≈ 15MB)를 실제로 유지할 수 있다.
  */
 const BACKUP_RETENTION_PER_DAY = 5;
 /**
@@ -57,7 +65,7 @@ function parseCreatedAtMs(createdAt: string): number | null {
   return Number.isFinite(ms) ? ms : null;
 }
 
-function sortBackupsNewestFirst(backups: StoredBackup[]): StoredBackup[] {
+function sortBackupsNewestFirst<T extends RetentionItem>(backups: T[]): T[] {
   return [...backups].sort((a, b) => {
     const aMs = parseCreatedAtMs(a.createdAt);
     const bMs = parseCreatedAtMs(b.createdAt);
@@ -85,20 +93,20 @@ function getSeoulDayKeyFromCreatedAt(createdAt: string): string {
  * 날짜만 유지하고, 같은 KST 날 안에서는 createdAt이 최신인 항목을 perDay개까지 남긴다.
  * (이전 정책의 "일별 1개"는 같은 날 안전 백업을 파괴해 복구 지점을 없앴음.)
  */
-function applyBackupRetentionPolicy(
-  backups: StoredBackup[],
+function applyBackupRetentionPolicy<T extends RetentionItem>(
+  backups: T[],
   perDay: number = BACKUP_RETENTION_PER_DAY,
   labeledKeep: number = BACKUP_RETENTION_LABELED_KEEP
-): StoredBackup[] {
+): T[] {
   // 라벨 스냅샷(안전 스냅샷)은 perDay/day-slot 한도와 별개로 최근 K개를 항상 보존 (#10)
   const protectedLabeled = sortBackupsNewestFirst(backups.filter((b) => !!b.label)).slice(
     0,
     Math.max(0, labeledKeep)
   );
-  const keptById = new Map<string, StoredBackup>();
+  const keptById = new Map<string, T>();
   for (const b of protectedLabeled) keptById.set(b.id, b);
 
-  const byDay = new Map<string, StoredBackup[]>();
+  const byDay = new Map<string, T[]>();
   for (const backup of backups) {
     const dayKey = getSeoulDayKeyFromCreatedAt(backup.createdAt);
     if (dayKey === "unknown") continue;
@@ -125,65 +133,14 @@ function applyBackupRetentionPolicy(
   return sortBackupsNewestFirst([...keptById.values()]);
 }
 
-/** quota 부족 fallback — 일별 최신 1개 + 안전 스냅샷 1개만 남겨 용량을 최소화 (복구망 1개는 유지) */
-function keepRecentBackups(backups: StoredBackup[]): StoredBackup[] {
+/** 저장 실패(quota 등) fallback — 일별 최신 1개 + 안전 스냅샷 1개만 남겨 용량을 최소화 (복구망 1개는 유지) */
+function keepRecentBackups<T extends RetentionItem>(backups: T[]): T[] {
   return applyBackupRetentionPolicy(backups, 1, 1);
 }
 
-function capBackups(backups: StoredBackup[]): StoredBackup[] {
+function capBackups<T>(backups: T[]): T[] {
   const maxCount = Math.max(1, BACKUP_CONFIG.MAX_LOCAL_BACKUPS);
   return backups.slice(0, maxCount);
-}
-
-/**
- * 손상된 BACKUPS 원본을 BACKUPS_CORRUPT 1슬롯으로 옮긴다.
- * 이미 보존된 슬롯이 있으면 더 오래된 그것을 유지하고 새 손상본은 버린다(1슬롯 정책 —
- * 첫 손상본이 가장 많은 원본 백업을 담고 있을 가능성이 높고, 이후 손상은 대개 빈 목록에서
- * 새로 시작한 소량 백업이라 덮어쓰면 오히려 복구 가치가 떨어진다).
- * 보존에 실패(quota 등)해도 호출부는 빈 목록으로 계속 진행한다.
- */
-function preserveCorruptBackupsRaw(raw: string): boolean {
-  try {
-    const existing = window.localStorage.getItem(STORAGE_KEYS.BACKUPS_CORRUPT);
-    if (existing) {
-      console.warn(
-        "[FarmWallet] 손상된 백업 원본 슬롯(BACKUPS_CORRUPT)이 이미 있어 기존 것을 유지합니다 — 새 손상본은 버림"
-      );
-      return true;
-    }
-    window.localStorage.setItem(STORAGE_KEYS.BACKUPS_CORRUPT, raw);
-    return true;
-  } catch (e) {
-    console.warn("[FarmWallet] 손상된 백업 원본 보존 실패", e);
-    return false;
-  }
-}
-
-function readStoredBackups(): StoredBackup[] {
-  if (typeof window === "undefined") return [];
-  const raw = window.localStorage.getItem(STORAGE_KEYS.BACKUPS);
-  if (!raw) return [];
-  // 손상된 BACKUPS JSON이 throw하면 saveLocalBackup 전체가 실패해 이후 모든 자동 백업이
-  // 영구 무력화된다 — 안전망이 통째로 죽지 않도록 파싱 실패는 빈 목록으로 흡수한다.
-  // 단, 빈 목록으로 시작하면 다음 saveLocalBackup이 [새 백업]만 써서 부분 복구 가능했던
-  // 원본 블롭을 덮어쓰므로, 원본 문자열을 BACKUPS_CORRUPT 슬롯으로 먼저 옮겨 둔다.
-  try {
-    const parsed = JSON.parse(raw);
-    if (!Array.isArray(parsed)) return [];
-    return parsed as StoredBackup[];
-  } catch (e) {
-    console.warn("[FarmWallet] 백업 목록(BACKUPS) 파싱 실패 — 원본을 보존 슬롯으로 옮기고 빈 목록으로 복구", e);
-    // 보존(또는 1슬롯 정책에 따른 의도적 스킵)이 끝난 경우에만 손상 원본을 BACKUPS에서 비운다 —
-    // 보존 자체가 실패(quota 등)했으면 그대로 두어 다음 읽기에서 재시도할 여지를 남긴다.
-    if (preserveCorruptBackupsRaw(raw)) {
-      try {
-        window.localStorage.removeItem(STORAGE_KEYS.BACKUPS);
-      } catch {
-        /* 제거 실패해도 다음 쓰기가 덮어쓴다 */
-      }
-    }
-    return [];
-  }
 }
 
 /** 손상된 백업 원본 보존 슬롯(BACKUPS_CORRUPT) 정보 — 없으면 null */
@@ -220,11 +177,6 @@ export function clearCorruptBackups(): boolean {
   }
 }
 
-function writeStoredBackups(backups: StoredBackup[]): void {
-  if (typeof window === "undefined") return;
-  window.localStorage.setItem(STORAGE_KEYS.BACKUPS, JSON.stringify(backups));
-}
-
 async function computeBackupHashFromText(text: string): Promise<string> {
   const encoder = new TextEncoder();
   const bytes = encoder.encode(text);
@@ -234,14 +186,73 @@ async function computeBackupHashFromText(text: string): Promise<string> {
     .join("");
 }
 
-interface SaveBackupOptions {
-  skipHash?: boolean;
-  folder?: string;
-  timeoutMs?: number;
-  dataJson?: string;
+/**
+ * 백업 본문 직렬화 — dataService.toUserDataJson과 동일 규칙(캐시 3종 prices/tickerDatabase/
+ * historicalDailyCloses 제외, 키 순서 보존). 백업 해시도 이 문자열로 계산한다.
+ * (dataService ↔ backupService 순환 import를 피하려고 여기서 같은 규칙을 적용한다 —
+ *  backupService.test가 toUserDataJson과의 동일성을 고정한다.)
+ */
+function toBackupDataJson(data: AppData): string {
+  const { prices: _p, tickerDatabase: _t, historicalDailyCloses: _h, ...userData } = data;
+  return JSON.stringify(userData);
 }
 
-export interface SaveBackupResult {
+/**
+ * 복원 데이터(user-only 백업이라 캐시가 비어 있을 수 있음)에 현재 메모리의 API 캐시를 병합.
+ * 백업/Gist 본문에 캐시가 들어 있으면(구 백업) 그것을 쓰고, 비어 있으면 현재 캐시를 유지해
+ * 빈 배열이 localStorage CACHE(saveDataSerialized는 무조건 덮어씀)를 지우지 않게 한다.
+ */
+export function mergeCurrentCaches(normalized: AppData, current: AppData | null | undefined): AppData {
+  if (!current) return normalized;
+  return {
+    ...normalized,
+    prices: (normalized.prices?.length ?? 0) > 0 ? normalized.prices : current.prices,
+    tickerDatabase:
+      (normalized.tickerDatabase?.length ?? 0) > 0 ? normalized.tickerDatabase : current.tickerDatabase,
+    historicalDailyCloses:
+      (normalized.historicalDailyCloses?.length ?? 0) > 0
+        ? normalized.historicalDailyCloses
+        : current.historicalDailyCloses
+  };
+}
+
+/** 저장 시 스냅샷(BACKUP_ON_SAVE) 설정 — 저장된 값이 없으면 기본 on */
+export function isBackupOnSaveEnabled(): boolean {
+  if (typeof window === "undefined") return false;
+  try {
+    const stored = window.localStorage.getItem(STORAGE_KEYS.BACKUP_ON_SAVE);
+    if (stored === null) return true;
+    return stored === "true";
+  } catch {
+    return true;
+  }
+}
+
+function newBackupId(): string {
+  return `B${Date.now()}-${Math.floor(Math.random() * 1000)}`;
+}
+
+function buildRecord(dataJson: string, options?: { hash?: string; label?: string }): BackupRecord {
+  const record: BackupRecord = {
+    id: newBackupId(),
+    createdAt: getKoreaTime().toISOString(),
+    dataJson
+  };
+  if (options?.hash !== undefined) record.hash = options.hash;
+  if (options?.label !== undefined) record.label = options.label;
+  return record;
+}
+
+interface SaveBackupOptions {
+  skipHash?: boolean;
+  timeoutMs?: number;
+  /** 파일(dev 서버 /api/backup) 백업용 전체 payload — 없으면 JSON.stringify(data) */
+  dataJson?: string;
+  /** 로컬 백업 본문(user-only, toUserDataJson과 동일 규칙) — 호출부가 이미 만들어 둔 경우 재직렬화 생략 */
+  userDataJson?: string;
+}
+
+interface SaveBackupResult {
   fileSaved: boolean;
   localSaved: boolean;
   /** 프로덕션 등 백업 API가 없는 환경에서 파일 저장 단계를 의도적으로 생략한 경우 true */
@@ -286,41 +297,35 @@ async function saveFileBackup(payload: string, timeoutMs: number): Promise<{ sav
   }
 }
 
-async function saveLocalBackup(
-  data: AppData,
-  payload: string,
-  options?: { skipHash?: boolean; label?: string }
-): Promise<{ saved: boolean; error?: string }> {
+/**
+ * 레코드를 저장소(IDB 또는 localStorage 폴백)에 기록하고 보존 정책으로 정리.
+ * 쓰기 실패(quota 등) 시 더 공격적으로 정리해 재시도 → 최후엔 새 백업 1개만 남긴다.
+ */
+async function saveLocalBackupRecord(record: BackupRecord): Promise<{ saved: boolean; error?: string }> {
   try {
-    const current = readStoredBackups();
-    const koreaTime = getKoreaTime();
-    const nowISO = koreaTime.toISOString();
-    const hash = options?.skipHash ? undefined : await computeBackupHashFromText(payload);
-    const backup: StoredBackup = {
-      id: `B${Date.now()}-${Math.floor(Math.random() * 1000)}`,
-      createdAt: nowISO,
-      data,
-      hash,
-      label: options?.label
-    };
-
-    const merged = [backup, ...current];
+    const store = await getBackupStore();
+    const existing = (await store.listMeta()).filter((m) => m.id !== record.id);
+    const merged: BackupRecordMeta[] = [toBackupMeta(record), ...existing];
     const retained = capBackups(applyBackupRetentionPolicy(merged));
+    const keepIds = new Set(retained.map((m) => m.id));
+    keepIds.add(record.id);
+    const deleteIds = existing.filter((m) => !keepIds.has(m.id)).map((m) => m.id);
 
     try {
-      writeStoredBackups(retained);
+      await store.write([record], deleteIds);
       return { saved: true };
-    } catch (quotaError) {
-      const recentOnly = capBackups(keepRecentBackups(merged));
+    } catch (firstError) {
+      const recentIds = new Set(capBackups(keepRecentBackups(merged)).map((m) => m.id));
+      recentIds.add(record.id);
       try {
-        writeStoredBackups(recentOnly);
+        await store.write([record], existing.filter((m) => !recentIds.has(m.id)).map((m) => m.id));
         return { saved: true, error: "저장 공간 부족 — 오래된 백업을 정리하고 저장했습니다" };
       } catch (retryError) {
         try {
-          writeStoredBackups([backup]);
+          await store.write([record], existing.map((m) => m.id));
           return { saved: true, error: "저장 공간 부족 — 최신 백업 1개만 보관했습니다" };
         } catch (finalError) {
-          console.warn("[backupService] local backup write failed", quotaError, retryError, finalError);
+          console.warn("[backupService] local backup write failed", firstError, retryError, finalError);
           return { saved: false, error: toErrorMessage(finalError) };
         }
       }
@@ -336,20 +341,33 @@ async function saveLocalBackup(
  * 현재 데이터를 로컬 백업으로 보존하는 안전 스냅샷.
  * - 파일 API 호출 없음 (프로덕션에서도 동작)
  * - 해시 생략으로 빠르게 완료
+ * - **첫 await 전에** 본문을 직렬화하고 localStorage 동기 1슬롯(BACKUP_SAFETY_PENDING)에 기록한다 —
+ *   호출 직후 리로드/크래시가 나도 원본이 남는다(dataService 0-9·1-3 계약). IDB 복제가 끝나면 슬롯을 비운다.
  * - 실패해도 throw하지 않고 false 반환 — 호출부가 진행 여부를 결정
  */
 export async function saveSafetySnapshot(data: AppData, reason: string): Promise<boolean> {
   if (typeof window === "undefined") return false;
+  let record: BackupRecord;
   try {
-    const payload = JSON.stringify(data);
-    const result = await saveLocalBackup(data, payload, { skipHash: true, label: reason });
-    if (!result.saved) {
-      console.warn("[backupService] safety snapshot not saved:", result.error);
+    record = buildRecord(toBackupDataJson(data), { label: reason });
+  } catch (error) {
+    console.warn("[backupService] safety snapshot serialize failed", error);
+    return false;
+  }
+  // 1) 동기 슬롯 — 이 줄까지는 await 없음
+  const slotWritten = writePendingSafetySnapshotSync(record);
+  // 2) 본 저장소(IDB/폴백)에 비동기 복제
+  try {
+    const result = await saveLocalBackupRecord(record);
+    if (result.saved) {
+      clearPendingSafetySnapshot(record.id);
+      return true;
     }
-    return result.saved;
+    console.warn("[backupService] safety snapshot not saved to store:", result.error);
+    return slotWritten;
   } catch (error) {
     console.warn("[backupService] safety snapshot failed", error);
-    return false;
+    return slotWritten;
   }
 }
 
@@ -365,8 +383,9 @@ export async function saveBackupSnapshot(
     };
   }
 
-  const payload = options?.dataJson ?? JSON.stringify(data);
-  const payloadBytes = new TextEncoder().encode(payload).length;
+  // 로컬 백업 본문은 user-only(캐시 제외) — 해시도 같은 문자열로
+  const userJson = options?.userDataJson ?? toBackupDataJson(data);
+  const payloadBytes = new TextEncoder().encode(userJson).length;
   if (payloadBytes > BACKUP_CONFIG.MAX_BACKUP_PAYLOAD_BYTES) {
     const reason = `백업 용량 초과 (${payloadBytes.toLocaleString()} bytes / 최대 ${BACKUP_CONFIG.MAX_BACKUP_PAYLOAD_BYTES.toLocaleString()} bytes)`;
     return {
@@ -379,14 +398,22 @@ export async function saveBackupSnapshot(
 
   const timeoutMs = options?.timeoutMs ?? BACKUP_CONFIG.API_TIMEOUT_MS;
   // 백업 파일 API(/api/backup)는 dev 서버 전용 — 프로덕션에서는 호출 자체를 생략해
-  // 매 백업마다 "파일 저장 실패" 노이즈가 나는 것을 방지한다.
+  // 매 백업마다 "파일 저장 실패" 노이즈가 나는 것을 방지한다. (파일에는 기존대로 전체 payload)
   const filePromise: Promise<{ saved: boolean; error?: string; skipped?: boolean }> = import.meta.env.DEV
-    ? saveFileBackup(payload, timeoutMs)
+    ? saveFileBackup(options?.dataJson ?? JSON.stringify(data), timeoutMs)
     : Promise.resolve({ saved: false, skipped: true });
-  const [fileResult, localResult] = await Promise.all([
-    filePromise,
-    saveLocalBackup(data, payload, { skipHash: options?.skipHash })
-  ]);
+
+  const localPromise = (async () => {
+    try {
+      const hash = options?.skipHash ? undefined : await computeBackupHashFromText(userJson);
+      return await saveLocalBackupRecord(buildRecord(userJson, { hash }));
+    } catch (error) {
+      console.warn("[backupService] local backup failed", error);
+      return { saved: false, error: toErrorMessage(error) };
+    }
+  })();
+
+  const [fileResult, localResult] = await Promise.all([filePromise, localPromise]);
 
   return {
     fileSaved: fileResult.saved,
@@ -397,26 +424,44 @@ export async function saveBackupSnapshot(
   };
 }
 
-export function getBackupList(): BackupMeta[] {
-  if (typeof window === "undefined") return [];
+/** 저장소 목록 + (아직 복제되지 않은) 동기 슬롯 안전 스냅샷을 병합해 최신순으로 */
+async function listAllMeta(): Promise<BackupRecordMeta[]> {
+  const store = await getBackupStore();
+  const metas = await store.listMeta();
+  const pending = readPendingSafetySnapshot();
+  if (pending && !metas.some((m) => m.id === pending.id)) {
+    metas.push(toBackupMeta(pending));
+  }
+  return sortBackupsNewestFirst(metas);
+}
+
+async function findRecord(id: string): Promise<BackupRecord | null> {
+  const store = await getBackupStore();
+  const found = await store.get(id);
+  if (found) return found;
+  const pending = readPendingSafetySnapshot();
+  return pending && pending.id === id ? pending : null;
+}
+
+function parseRecordData(record: BackupRecord): AppData | null {
   try {
-    const current = sortBackupsNewestFirst(readStoredBackups());
-    return current.map((b) => ({ id: b.id, createdAt: b.createdAt, hash: b.hash, label: b.label }));
+    const parsed = JSON.parse(record.dataJson) as unknown;
+    if (!parsed || typeof parsed !== "object") return null;
+    return parsed as AppData;
   } catch (error) {
-    console.warn("[backupService] failed to load backup list", error);
-    return [];
+    console.warn("[backupService] backup payload parse failed", { id: record.id }, error);
+    return null;
   }
 }
 
-export function loadBackupData(id: string): AppData | null {
-  if (typeof window === "undefined") return null;
+export async function getBackupList(): Promise<BackupMeta[]> {
+  if (typeof window === "undefined") return [];
   try {
-    const current = readStoredBackups();
-    const found = current.find((b) => b.id === id);
-    return found ? found.data : null;
+    const metas = await listAllMeta();
+    return metas.map((b) => ({ id: b.id, createdAt: b.createdAt, hash: b.hash, label: b.label }));
   } catch (error) {
-    console.warn("[backupService] failed to load backup data", error);
-    return null;
+    console.warn("[backupService] failed to load backup list", error);
+    return [];
   }
 }
 
@@ -431,19 +476,19 @@ export async function loadBackupDataVerified(
 ): Promise<{ data: AppData | null; status: "valid" | "missing-hash" | "mismatch" | "not-found" }> {
   if (typeof window === "undefined") return { data: null, status: "not-found" };
   try {
-    const current = readStoredBackups();
-    const found = current.find((b) => b.id === id);
+    const found = await findRecord(id);
     if (!found) return { data: null, status: "not-found" };
-    if (!found.hash) return { data: found.data, status: "missing-hash" };
+    const data = parseRecordData(found);
+    if (!data) return { data: null, status: "not-found" };
+    if (!found.hash) return { data, status: "missing-hash" };
 
-    const text = JSON.stringify(found.data);
-    const hash = await computeBackupHashFromText(text);
+    const hash = await computeBackupHashFromText(found.dataJson);
     if (hash !== found.hash) {
       console.warn("[backupService] backup hash mismatch", { id, expected: found.hash, actual: hash });
       onCorrupt?.({ id: found.id, createdAt: found.createdAt });
-      return { data: found.data, status: "mismatch" };
+      return { data, status: "mismatch" };
     }
-    return { data: found.data, status: "valid" };
+    return { data, status: "valid" };
   } catch (error) {
     console.warn("[backupService] failed to verify backup", error);
     return { data: null, status: "not-found" };
@@ -457,13 +502,13 @@ export async function getLatestLocalBackupIntegrity(): Promise<{
   if (typeof window === "undefined") return { createdAt: null, status: "none" };
 
   try {
-    const current = sortBackupsNewestFirst(readStoredBackups());
-    const latest = current[0];
+    const latest = (await listAllMeta())[0];
     if (!latest) return { createdAt: null, status: "none" };
     if (!latest.hash) return { createdAt: latest.createdAt, status: "missing-hash" };
 
-    const text = JSON.stringify(latest.data);
-    const hash = await computeBackupHashFromText(text);
+    const record = await findRecord(latest.id);
+    if (!record) return { createdAt: latest.createdAt, status: "mismatch" };
+    const hash = await computeBackupHashFromText(record.dataJson);
     const status = hash === latest.hash ? "valid" : "mismatch";
     return { createdAt: latest.createdAt, status };
   } catch (error) {
@@ -473,21 +518,23 @@ export async function getLatestLocalBackupIntegrity(): Promise<{
 }
 
 export async function getAllBackupList(): Promise<BackupEntry[]> {
-  const browserBackups: BackupEntry[] = getBackupList().map((b) => ({
+  const browserBackups: BackupEntry[] = (await getBackupList()).map((b) => ({
     ...b,
     source: "browser" as const
   }));
   return browserBackups.sort((a, b) => b.createdAt.localeCompare(a.createdAt));
 }
 
-export function clearOldBackups(keepCount: number = 1): number {
+/** 최신 keepCount개만 남기고 삭제. 삭제한 개수 반환. */
+export async function clearOldBackups(keepCount: number = 1): Promise<number> {
   if (typeof window === "undefined") return 0;
   try {
-    const current = sortBackupsNewestFirst(readStoredBackups());
+    const store = await getBackupStore();
+    const current = sortBackupsNewestFirst(await store.listMeta());
     if (current.length <= keepCount) return 0;
-    const kept = current.slice(0, keepCount);
-    writeStoredBackups(kept);
-    return current.length - kept.length;
+    const deleteIds = current.slice(keepCount).map((m) => m.id);
+    await store.write([], deleteIds);
+    return deleteIds.length;
   } catch (error) {
     console.warn("[backupService] failed to clear old backups", error);
     return 0;

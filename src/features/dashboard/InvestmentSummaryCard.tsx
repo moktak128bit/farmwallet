@@ -24,6 +24,7 @@ import {
 import { isDividendEntryLoose } from "../../utils/categoryMatch";
 import { toKrwByRate } from "../../utils/currency";
 import { usdBalanceModeDelta } from "../../utils/tradeCashImpact";
+import { formatGoalProjectionLine, projectGoal } from "../../utils/goalProjection";
 
 interface Props {
   accounts: Account[];
@@ -33,6 +34,8 @@ interface Props {
   balances: AccountBalanceRow[];
   positions: PositionRow[];
   fxRate: number | null;
+  /** 월별 순자산 시계열(KRW, 부모 accountTimelineRows total) — 최종 총자산 목표 ETA용. 없으면 ETA 생략 */
+  netWorthSeries?: { month: string; value: number }[];
 }
 
 function daysBetween(fromIso: string, toIso: string): number {
@@ -63,6 +66,7 @@ export const InvestmentSummaryCard: React.FC<Props> = React.memo(function Invest
   balances,
   positions,
   fxRate,
+  netWorthSeries,
 }) {
   const setData = useAppStore((s) => s.setData);
   const goalsRaw = useAppStore((s) => s.data.investmentGoals);
@@ -101,6 +105,15 @@ export const InvestmentSummaryCard: React.FC<Props> = React.memo(function Invest
     () => computeTotalNetWorth(balances, positions, fxRate, loans, ledger),
     [balances, positions, fxRate, loans, ledger]
   );
+  // 최종 총자산 목표 ETA — 최근 6개월 순자산 페이스 (읽기 전용). investmentGoals에 기한이 없어 ETA만 표시
+  const finalTotalEtaHint = useMemo(() => {
+    const target = goals.finalTotalAssetTarget;
+    if (!target || target <= 0 || !netWorthSeries || netWorthSeries.length === 0) return undefined;
+    return formatGoalProjectionLine(
+      projectGoal({ series: netWorthSeries, target, method: "trailing6" }),
+      (n) => formatKRW(n)
+    );
+  }, [goals.finalTotalAssetTarget, netWorthSeries]);
 
   const principal = useMemo(() => {
     // 초기 USD 현금 롤백 — usdBalance는 잔액모드 거래가 반영된 '현재' 값이므로 전체 델타를 되감아
@@ -286,6 +299,7 @@ export const InvestmentSummaryCard: React.FC<Props> = React.memo(function Invest
           label="최종 총자산 목표 (전 계좌 − 부채)"
           progress={totalNetWorth}
           target={goals.finalTotalAssetTarget}
+          hint={finalTotalEtaHint}
           isEditing={editing === "finalTotal"}
           draft={draft}
           onStartEdit={() => startEdit("finalTotal")}
@@ -411,6 +425,8 @@ interface GoalRowProps {
   label: string;
   progress: number;
   target?: number;
+  /** 진행 막대 아래 보조 문구 (예: 목표 ETA). 읽기 전용 */
+  hint?: string;
   isEditing: boolean;
   draft: string;
   onStartEdit: () => void;
@@ -426,6 +442,7 @@ const GoalRow: React.FC<GoalRowProps> = ({
   label,
   progress,
   target,
+  hint,
   isEditing,
   draft,
   onStartEdit,
@@ -504,6 +521,9 @@ const GoalRow: React.FC<GoalRowProps> = ({
             : "목표를 설정하면 진행률이 표시됩니다"
         }
       />
+      {hint && (
+        <div style={{ fontSize: 11, color: "var(--text-muted)" }}>{hint}</div>
+      )}
     </div>
   );
 };

@@ -95,4 +95,35 @@ describe("validateLedgerForm — 날짜·금액", () => {
     const errors = validateExpense(baseForm({ amount: "0" }));
     expect(errors.amount).toBe("금액은 0보다 커야 합니다");
   });
+
+  it("숫자·콤마 외 문자는 거부 (계산식 아님)", () => {
+    expect(validateExpense(baseForm({ amount: "12a00" })).amount).toBe("숫자와 콤마만 입력 가능합니다");
+    expect(validateExpense(baseForm({ amount: "만원" })).amount).toBe("숫자와 콤마만 입력 가능합니다");
+  });
+});
+
+describe("validateLedgerForm — 금액 계산식", () => {
+  it("유효한 계산식은 통과하고 평가값으로 할인 검증", () => {
+    expect(validateExpense(baseForm({ amount: "12,000+3,500/2" })).amount).toBeUndefined();
+    expect(validateExpense(baseForm({ amount: "(10000+2000)*2" })).amount).toBeUndefined();
+    // 평가값 13,750 < 할인 20,000 → 할인 초과 에러 (계산식 결과가 검증에 쓰임)
+    expect(validateExpense(baseForm({ amount: "12,000+3,500/2", discountAmount: "20,000" })).discountAmount).toBeTruthy();
+  });
+
+  it("잘못된 계산식·0 나누기·0 이하 결과는 계산식 에러", () => {
+    expect(validateExpense(baseForm({ amount: "1200+" })).amount).toBe("계산식이 올바르지 않습니다 (예: 12000+3500/2)");
+    expect(validateExpense(baseForm({ amount: "100/0" })).amount).toBe("계산식이 올바르지 않습니다 (예: 12000+3500/2)");
+    expect(validateExpense(baseForm({ amount: "100-100" })).amount).toBe("계산식이 올바르지 않습니다 (예: 12000+3500/2)");
+  });
+
+  it("USD 이체 계산식은 소수 허용", () => {
+    const errors = validateLedgerForm({
+      form: baseForm({ amount: "100/3", currency: "USD", fromAccountId: "농협", toAccountId: "카카오", mainCategory: "이체", subCategory: "환전" }),
+      kindForTab: "transfer",
+      effectiveFormKind: "transfer",
+      accounts,
+      parseAmount,
+    });
+    expect(errors.amount).toBeUndefined();
+  });
 });

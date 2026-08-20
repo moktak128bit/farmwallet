@@ -6,6 +6,7 @@ import {
   validateTransfer,
 } from "../../utils/validation";
 import { getTodayKST, parseIsoLocal } from "../../utils/date";
+import { evaluateAmountExpression, isAmountExpression } from "../../utils/amountExpression";
 
 export interface LedgerFormSnapshot {
   date: string;
@@ -31,7 +32,7 @@ interface ValidateLedgerFormArgs {
 /**
  * 가계부 입력 폼 검증. 순수 함수 — 에러 Record 반환.
  * - 날짜: 미래 날짜 금지 (KST 기준 오늘까지)
- * - 금액: > 0 (USD 이체는 소수점 허용)
+ * - 금액: > 0 (USD 이체는 소수점 허용). 계산식("12000+3500/2")은 evaluateAmountExpression으로 평가 — 평가 불가면 에러
  * - 계좌: kind별 from/to 필수
  * - 이체: from ≠ to
  * - 할인: 금액(할인 전) 초과 금지 (수입·지출 공통), 수입은 순액 > 0
@@ -56,12 +57,17 @@ export function validateLedgerForm({
   if (!dateValidation.valid) errors.date = dateValidation.error || "";
 
   const allowDecimal = kindForTab === "transfer" && form.currency === "USD";
-  const parsedAmount = parseAmount(form.amount, allowDecimal);
   const trimmedAmount = (form.amount ?? "").trim();
+  // 계산식 입력(연산자 포함)은 안전 파서로 평가한 값을 금액으로 본다 — 폼의 parseAmount 어댑터와 동일 규칙
+  const amountIsExpression = isAmountExpression(trimmedAmount);
+  const evaluated = amountIsExpression ? evaluateAmountExpression(trimmedAmount, { allowDecimal }) : null;
+  const parsedAmount = amountIsExpression ? (evaluated ?? 0) : parseAmount(form.amount, allowDecimal);
   // 숫자·콤마·(허용 시) 점 외의 문자가 섞이면 명시적 에러 (공백만/이모지/한글 거부)
   const amountPattern = allowDecimal ? /^[\d.,]+$/ : /^[\d,]+$/;
   if (!trimmedAmount) {
     errors.amount = "금액을 입력해주세요";
+  } else if (amountIsExpression) {
+    if (evaluated === null) errors.amount = "계산식이 올바르지 않습니다 (예: 12000+3500/2)";
   } else if (!amountPattern.test(trimmedAmount)) {
     errors.amount = allowDecimal
       ? "숫자·소수점·콤마만 입력 가능합니다"

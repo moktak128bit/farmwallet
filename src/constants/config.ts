@@ -76,7 +76,11 @@ export const STORAGE_KEYS = {
   /** 마지막 스키마 마이그레이션 리포트(services/migrationReport.ts — from→to·시각·컬렉션별 변경 건수 요약, 소형 JSON) */
   LAST_MIGRATION_REPORT: "fw-last-migration-report",
   /** 연금계좌 세액공제율 선택 ("0.132"|"0.165", 기본 0.132 — 총급여 5,500만 초과 가정). 배당 탭 절세계좌 카드 전용 */
-  TAX_CREDIT_RATE: "fw-tax-credit-rate"
+  TAX_CREDIT_RATE: "fw-tax-credit-rate",
+  /** 환율 이력 backfill(useFxBackfill) 마지막 시도 시각 (ms epoch) — 12시간 throttle */
+  FX_BACKFILL_LAST_AT: "fw-fx-backfill-last-at",
+  /** 시세 CORS 프록시별 성공/실패 카운트·마지막 성공 시각 (yahooFinanceApi fetchViaProxies, 소형 JSON) */
+  PROXY_STATUS: "fw-proxy-status-v1"
 } as const;
 
 /** 드래프트 슬롯이 이보다 오래되면 boot 시 무시·삭제 (스테일 복구 안내 방지) */

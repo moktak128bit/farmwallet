@@ -6,7 +6,8 @@
  * React.memo로 감싸므로 부모가 넘기는 콜백(onClose)은 안정적(useCallback)이어야 한다.
  */
 import React, { useEffect, useState } from "react";
-import type { Account, AccountType, LedgerEntry, AccountBalanceRow } from "../../../types";
+import type { Account, AccountType, LedgerEntry, AccountBalanceRow, TaxShelterKind } from "../../../types";
+import { TAX_SHELTER_OPTIONS } from "../../../utils/taxShelter";
 import { formatNumber, formatKRW, formatUSD } from "../../../utils/formatter";
 import { ACCOUNT_TYPE_LABEL, parseSignedAmount, sanitizeSignedNumericInput } from "../accountsShared";
 import { CardPaymentSection } from "./CardPaymentSection";
@@ -47,6 +48,10 @@ export const AdjustmentModal = React.memo(function AdjustmentModal({
   const [pendingPension, setPendingPension] = useState(
     () => !!safeAccounts.find((a) => a.id === adjustingAccount.id)?.isPension
   );
+  // 세제 성격(ISA·연금저축·IRP, 4-1) — 연금 분류와 같은 방식으로 버튼에서 함께 커밋
+  const [pendingShelter, setPendingShelter] = useState<TaxShelterKind | "">(
+    () => safeAccounts.find((a) => a.id === adjustingAccount.id)?.taxShelter ?? ""
+  );
 
   // 접근성: 포커스 트랩 + window 레벨 ESC (입력 포커스 여부와 무관하게 닫힘)
   // 모달 중첩 시 최상위 모달만 ESC로 닫히도록 모달 스택을 사용한다.
@@ -75,19 +80,25 @@ export const AdjustmentModal = React.memo(function AdjustmentModal({
       const isSecurities = adjustingAccount.type === "securities";
       const pensionTarget = pendingPension ? true : undefined;
       const pensionChanged = isSecurities && pendingPension !== !!account.isPension;
+      const shelterTarget = pendingShelter || undefined;
+      const shelterChanged = isSecurities && shelterTarget !== account.taxShelter;
       const hasAmountChange = isSetDirectly || inputUsd !== 0 || inputKrw !== 0;
 
-      // 금액 변경 없이 연금 분류만 저장 — 금액 입력 강제하지 않음
+      // 금액 변경 없이 연금 분류·세제 성격만 저장 — 금액 입력 강제하지 않음
       if (!hasAmountChange) {
-        if (pensionChanged) {
+        if (pensionChanged || shelterChanged) {
           onChangeAccounts(
-            safeAccounts.map((a) => (a.id === adjustingAccount.id ? { ...a, isPension: pensionTarget } : a))
+            safeAccounts.map((a) => (a.id === adjustingAccount.id ? { ...a, isPension: pensionTarget, taxShelter: shelterTarget } : a))
           );
-          toast.success(pendingPension ? "연금 계좌로 분류했습니다." : "연금 분류를 해제했습니다.");
+          toast.success(
+            pensionChanged
+              ? (pendingPension ? "연금 계좌로 분류했습니다." : "연금 분류를 해제했습니다.")
+              : (shelterTarget ? "세제 성격을 저장했습니다." : "세제 성격을 일반으로 바꿨습니다.")
+          );
           onClose();
           return;
         }
-        toast.error(isSecurities ? "변경할 금액을 입력하거나 연금 분류를 바꿔주세요." : "USD 또는 KRW 중 하나 이상 0이 아닌 값을 입력해주세요.");
+        toast.error(isSecurities ? "변경할 금액을 입력하거나 연금 분류·세제 성격을 바꿔주세요." : "USD 또는 KRW 중 하나 이상 0이 아닌 값을 입력해주세요.");
         return;
       }
 
@@ -115,8 +126,8 @@ export const AdjustmentModal = React.memo(function AdjustmentModal({
             usdBalance: newUsdBalance,
             initialCashBalance: newInitialCashBalance,
             cashAdjustment: 0,
-            // securities면 연금 분류도 함께 반영 (금액+분류 동시 변경 지원)
-            ...(isSecurities ? { isPension: pensionTarget } : {})
+            // securities면 연금 분류·세제 성격도 함께 반영 (금액+분류 동시 변경 지원)
+            ...(isSecurities ? { isPension: pensionTarget, taxShelter: shelterTarget } : {})
           };
         })
       );
@@ -346,6 +357,29 @@ export const AdjustmentModal = React.memo(function AdjustmentModal({
                     연금 계좌로 분류 (퇴직연금·연금저축 — 자산 추이에서 '연금'으로 구분)
                     <span style={{ color: "var(--text-muted)" }}> · 금액 입력 없이 아래 버튼만 눌러도 저장됩니다</span>
                   </span>
+                </label>
+              )}
+              {adjustingAccount.type === "securities" && onChangeAccounts && (
+                <label style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 12, padding: "8px 10px", background: "var(--bg)", borderRadius: 8, border: "1px solid var(--border)", flexWrap: "wrap" }}>
+                  <span style={{ fontSize: 13, flex: "1 1 160px" }}>
+                    세제 성격 (ISA·연금)
+                    <span style={{ color: "var(--text-muted)" }}> · 납입 한도·세액공제 추정, 종합과세 합산 제외에 사용</span>
+                  </span>
+                  <select
+                    aria-label="세제 성격"
+                    value={pendingShelter}
+                    onChange={(e) => {
+                      const v = e.target.value as TaxShelterKind | "";
+                      setPendingShelter(v);
+                      // 연금저축·IRP 선택 시 표시용 연금 분류도 함께 켠다 (사용자가 해제 가능)
+                      if (v === "pension" || v === "irp") setPendingPension(true);
+                    }}
+                    style={{ fontSize: 13 }}
+                  >
+                    {TAX_SHELTER_OPTIONS.map((o) => (
+                      <option key={o.value} value={o.value}>{o.label}</option>
+                    ))}
+                  </select>
                 </label>
               )}
               <label style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 8 }}>

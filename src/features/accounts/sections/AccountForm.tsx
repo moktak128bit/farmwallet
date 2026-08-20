@@ -4,8 +4,9 @@
  */
 import React, { useState } from "react";
 import { toast } from "react-hot-toast";
-import type { Account, AccountType } from "../../../types";
+import type { Account, AccountType, TaxShelterKind } from "../../../types";
 import { parseAmount } from "../../../utils/parseAmount";
+import { TAX_SHELTER_OPTIONS, TAX_SHELTER_ELIGIBLE_TYPES } from "../../../utils/taxShelter";
 
 interface Props {
   onAdd: (account: Account) => void;
@@ -23,6 +24,7 @@ export const AccountForm: React.FC<Props> = React.memo(function AccountForm({ on
     cashAdjustment: "",
     initialCashBalance: "",
     isPension: false,
+    taxShelter: "" as TaxShelterKind | "",
     note: "",
   });
 
@@ -52,6 +54,8 @@ export const AccountForm: React.FC<Props> = React.memo(function AccountForm({ on
       cashAdjustment: (form.type === "securities" || form.type === "crypto") ? cashAdjustment : undefined,
       initialCashBalance: (form.type === "securities" || form.type === "crypto") && initialCashBalance > 0 ? initialCashBalance : undefined,
       isPension: form.type === "securities" && form.isPension ? true : undefined,
+      // 세제 성격(4-1) — 적격 유형에서만 저장. 편집(AdjustmentModal)도 같은 필드를 쓴다
+      taxShelter: TAX_SHELTER_ELIGIBLE_TYPES.has(form.type) && form.taxShelter ? form.taxShelter : undefined,
       note: form.note.trim() || undefined,
     };
     onAdd(account);
@@ -65,6 +69,7 @@ export const AccountForm: React.FC<Props> = React.memo(function AccountForm({ on
       cashAdjustment: "",
       initialCashBalance: "",
       isPension: false,
+      taxShelter: "",
       note: "",
     });
   };
@@ -154,6 +159,24 @@ export const AccountForm: React.FC<Props> = React.memo(function AccountForm({ on
             />
           </label>
         </>
+      )}
+      {TAX_SHELTER_ELIGIBLE_TYPES.has(form.type) && (
+        <label>
+          <span>세제 성격 (ISA·연금)</span>
+          <select
+            value={form.taxShelter}
+            onChange={(e) => {
+              const v = e.target.value as TaxShelterKind | "";
+              // 연금저축·IRP를 고르면 표시용 '연금 계좌'도 같이 켠다 (증권 유형만 해당, 사용자가 해제 가능)
+              const autoPension = form.type === "securities" && (v === "pension" || v === "irp");
+              setForm({ ...form, taxShelter: v, isPension: autoPension ? true : form.isPension });
+            }}
+          >
+            {TAX_SHELTER_OPTIONS.map((o) => (
+              <option key={o.value} value={o.value}>{o.label}</option>
+            ))}
+          </select>
+        </label>
       )}
       {form.type === "securities" && (
         <label className="wide" style={{ flexDirection: "row", alignItems: "center", gap: 8 }}>

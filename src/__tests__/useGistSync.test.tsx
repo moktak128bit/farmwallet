@@ -6,6 +6,8 @@ import * as gistSync from "../services/gistSync";
 import { GIST_AUTO_PUSH_DEBOUNCE_MS } from "../constants/config";
 import type { AppData } from "../types";
 import { useUIStore } from "../store/uiStore";
+import { useAppStore } from "../store/appStore";
+import { getEmptyData } from "../services/dataService";
 
 vi.mock("../services/gistSync", async () => {
   const actual = await vi.importActual<typeof gistSync>("../services/gistSync");
@@ -393,6 +395,153 @@ describe("useGistSync", () => {
     expect(mocked.saveToGist).not.toHaveBeenCalled();
     expect(mocked.saveToGistWithRetry).not.toHaveBeenCalled();
     expect(useUIStore.getState().gistConflict).toBeNull();
+  });
+});
+
+describe("useGistSync — 충돌 해소 시 날짜키 시계열 date-union (1-7)", () => {
+  beforeEach(() => {
+    vi.useFakeTimers();
+    vi.clearAllMocks();
+    window.localStorage.clear();
+    useUIStore.getState().setGistConflict(null);
+    useAppStore.setState({ data: getEmptyData() });
+    mocked.getGistAutoSync.mockReturnValue(true);
+    mocked.getGistToken.mockReturnValue("test-token");
+    mocked.getGistId.mockReturnValue("test-gist-id");
+    mocked.getGistLastPushAt.mockReturnValue("");
+    mocked.getGistLastPullAt.mockReturnValue("");
+    mocked.getGistVersions.mockResolvedValue([]);
+    mocked.saveToGist.mockResolvedValue({ gistId: "test-gist-id", updatedAt: "2026-04-20T00:00:00Z", committedAt: "2026-04-20T00:00:00Z" });
+    mocked.saveToGistWithRetry.mockResolvedValue({ gistId: "test-gist-id", updatedAt: "2026-04-20T00:00:00Z", committedAt: "2026-04-20T00:00:00Z" });
+    mocked.loadFromGist.mockResolvedValue({ dataJson: "{}", updatedAt: "2026-04-20T00:00:00Z" });
+  });
+
+  afterEach(() => {
+    vi.useRealTimers();
+    useUIStore.getState().setGistConflict(null);
+    useAppStore.setState({ data: getEmptyData() });
+  });
+
+  const localSeries = {
+    historicalDailyFx: [{ date: "2026-04-19", rate: 1400 }, { date: "2026-04-20", rate: 1405 }],
+    benchmarkDailyCloses: [{ ticker: "^KS11", date: "2026-04-20", close: 2700 }],
+    marketEnvSnapshots: [{ date: "2026-04-15", fxRate: 1398, prices: [{ ticker: "AAPL", price: 200, currency: "USD" }], recordedAt: "2026-04-15T01:00:00Z" }],
+  };
+  const remoteJson = JSON.stringify({
+    accounts: [],
+    ledger: [{ id: "REMOTE", date: "2026-04-21", kind: "expense", category: "x", description: "r", amount: 99 }],
+    trades: [],
+    // 다른 기기가 다른 날 열어 쌓은 시계열 — 같은 날짜(04-20)는 값이 다름
+    historicalDailyFx: [{ date: "2026-04-20", rate: 1410 }, { date: "2026-04-21", rate: 1412 }],
+    benchmarkDailyCloses: [{ ticker: "^GSPC", date: "2026-04-21", close: 5500 }],
+    marketEnvSnapshots: [{ date: "2026-04-01", fxRate: 1390, prices: [], recordedAt: "2026-04-01T01:00:00Z" }],
+  });
+
+  it("apply-remote: 원격 id 컬렉션은 그대로, 로컬 자동 적립 시계열은 보존(원격 우선 union)되어 적용된다", async () => {
+    const onApply = vi.fn();
+    const localData: AppData = { ...makeData(7), ...localSeries };
+    const { result } = renderHook(() => useGistSync(localData, onApply));
+    await flush();
+    onApply.mockClear();
+    mocked.saveToGist.mockClear();
+
+    useUIStore.getState().setGistConflict({
+      remoteDataJson: remoteJson,
+      remoteUpdatedAt: "2026-04-21T07:00:00Z",
+      pendingLocalDataJson: JSON.stringify(localData),
+    });
+    await act(async () => {
+      await result.current.resolveGistConflict("apply-remote");
+    });
+
+    expect(onApply).toHaveBeenCalledTimes(1);
+    const applied = JSON.parse(onApply.mock.calls[0][0] as string);
+    expect(onApply.mock.calls[0][1]).toBe("2026-04-21T07:00:00Z");
+    // id 키 컬렉션은 원격 그대로 (로컬 ledger L7은 폐기)
+    expect(applied.ledger).toEqual([{ id: "REMOTE", date: "2026-04-21", kind: "expense", category: "x", description: "r", amount: 99 }]);
+    // 시계열은 date-union, 같은 날짜는 원격(선택한 쪽) 우선
+    expect(applied.historicalDailyFx).toEqual([
+      { date: "2026-04-19", rate: 1400 },
+      { date: "2026-04-20", rate: 1410 },
+      { date: "2026-04-21", rate: 1412 },
+    ]);
+    expect(applied.benchmarkDailyCloses).toEqual([
+      { ticker: "^GSPC", date: "2026-04-21", close: 5500 },
+      { ticker: "^KS11", date: "2026-04-20", close: 2700 },
+    ]);
+    expect(applied.marketEnvSnapshots.map((s: { date: string }) => s.date)).toEqual(["2026-04-01", "2026-04-15"]);
+    expect(mocked.saveToGist).not.toHaveBeenCalled();
+    expect(useUIStore.getState().gistConflict).toBeNull();
+    // lastPushed 해시는 원격 원본 기준 — 로컬이 원격보다 많아진 상태(dirty)를 다음 push가 올리도록
+    expect(window.localStorage.getItem("fw-gist-last-push-hash")).toBe(gistSync.hashGistPayload(remoteJson));
+  });
+
+  it("force-push-local: 원격 시계열을 로컬 payload에 union해 push하고, 로컬 스토어에도 같은 union을 반영한다", async () => {
+    const localData: AppData = { ...makeData(7), ...localSeries };
+    useAppStore.setState({ data: localData });
+    const { result } = renderHook(() => useGistSync(localData, vi.fn()));
+    await flush();
+    mocked.saveToGist.mockClear();
+
+    useUIStore.getState().setGistConflict({
+      remoteDataJson: remoteJson,
+      remoteUpdatedAt: "2026-04-21T07:00:00Z",
+      pendingLocalDataJson: JSON.stringify(localData),
+    });
+    await act(async () => {
+      await result.current.resolveGistConflict("force-push-local");
+    });
+
+    expect(mocked.saveToGist).toHaveBeenCalledTimes(1);
+    const pushed = JSON.parse(mocked.saveToGist.mock.calls[0][0]);
+    // id 컬렉션은 로컬 그대로
+    expect(pushed.ledger.map((l: { id: string }) => l.id)).toEqual(["L7"]);
+    // 시계열 union, 같은 날짜는 로컬(선택한 쪽) 우선
+    expect(pushed.historicalDailyFx).toEqual([
+      { date: "2026-04-19", rate: 1400 },
+      { date: "2026-04-20", rate: 1405 },
+      { date: "2026-04-21", rate: 1412 },
+    ]);
+    expect(pushed.benchmarkDailyCloses).toHaveLength(2);
+    expect(pushed.marketEnvSnapshots.map((s: { date: string }) => s.date)).toEqual(["2026-04-01", "2026-04-15"]);
+    // 로컬 스토어에도 반영 — 다음 자동 push가 원격 시계열을 다시 지우지 않도록
+    const store = useAppStore.getState().data;
+    expect(store.historicalDailyFx?.map((f) => f.date)).toEqual(["2026-04-19", "2026-04-20", "2026-04-21"]);
+    expect(store.historicalDailyFx?.[1].rate).toBe(1405);
+    expect(store.benchmarkDailyCloses).toHaveLength(2);
+    expect(store.marketEnvSnapshots?.length).toBe(2);
+    // ledger는 손대지 않음
+    expect(store.ledger.map((l) => l.id)).toEqual(["L7"]);
+    expect(window.localStorage.getItem("fw-gist-last-push-hash")).toBe(gistSync.hashGistPayload(mocked.saveToGist.mock.calls[0][0]));
+  });
+
+  it("시계열이 없는 충돌은 기존 동작 그대로 (payload 재직렬화 없음·스토어 무변경)", async () => {
+    const onApply = vi.fn();
+    const { result } = renderHook(() => useGistSync(makeData(0), onApply));
+    await flush();
+    onApply.mockClear();
+    const before = useAppStore.getState().data;
+
+    useUIStore.getState().setGistConflict({
+      remoteDataJson: '{"x":1}',
+      remoteUpdatedAt: "2026-04-20T07:00:00Z",
+      pendingLocalDataJson: '{"y":2}',
+    });
+    await act(async () => {
+      await result.current.resolveGistConflict("apply-remote");
+    });
+    expect(onApply).toHaveBeenCalledWith('{"x":1}', "2026-04-20T07:00:00Z");
+
+    useUIStore.getState().setGistConflict({
+      remoteDataJson: '{"x":1}',
+      remoteUpdatedAt: "2026-04-20T07:00:00Z",
+      pendingLocalDataJson: '{"y":2}',
+    });
+    await act(async () => {
+      await result.current.resolveGistConflict("force-push-local");
+    });
+    expect(mocked.saveToGist).toHaveBeenLastCalledWith('{"y":2}');
+    expect(useAppStore.getState().data).toBe(before);
   });
 });
 

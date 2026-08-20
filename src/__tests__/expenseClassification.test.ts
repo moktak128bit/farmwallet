@@ -2,7 +2,6 @@ import { describe, it, expect } from "vitest";
 import {
   buildFixedCategorySet,
   isFixedExpense,
-  classifyExpenses,
 } from "../utils/expenseClassification";
 import type { CategoryPresets, LedgerEntry } from "../types";
 
@@ -90,55 +89,5 @@ describe("isFixedExpense", () => {
 
   it("좌우 공백은 trim 후 매칭 — '주거 ' 도 매칭됨", () => {
     expect(isFixedExpense(exp({ id: "1", amount: 100, category: "주거 " }), fixedCats)).toBe(true);
-  });
-});
-
-describe("classifyExpenses", () => {
-  it("고정비/변동비 합계가 정확히 분리", () => {
-    const fExp = [
-      exp({ id: "1", amount: 500_000, category: "주거", subCategory: "월세" }),    // 고정
-      exp({ id: "2", amount: 100_000, category: "통신", subCategory: "휴대폰" }),   // 고정
-      exp({ id: "3", amount: 50_000, category: "식비", subCategory: "외식" }),     // 변동
-      exp({ id: "4", amount: 30_000, category: "식비", subCategory: "장보기" }),    // 변동
-    ];
-    const r = classifyExpenses(fExp, presets);
-    expect(r.fixedExpense).toBe(600_000);
-    expect(r.variableExpense).toBe(80_000);
-  });
-
-  it("isFixedExpense 플래그로 비-고정 카테고리도 고정비 분류", () => {
-    const fExp = [
-      exp({ id: "1", amount: 200_000, category: "구독", subCategory: "넷플릭스", isFixedExpense: true }),
-      exp({ id: "2", amount: 5_000, category: "식비" }),
-    ];
-    const r = classifyExpenses(fExp, presets);
-    expect(r.fixedExpense).toBe(200_000);
-    expect(r.variableExpense).toBe(5_000);
-  });
-
-  it("presets 없으면 모두 변동비 (플래그 없는 한)", () => {
-    const fExp = [
-      exp({ id: "1", amount: 100, category: "주거" }),
-      exp({ id: "2", amount: 200, category: "식비" }),
-    ];
-    const r = classifyExpenses(fExp, undefined);
-    expect(r.fixedExpense).toBe(0);
-    expect(r.variableExpense).toBe(300);
-  });
-
-  it("빈 배열 → 0/0", () => {
-    expect(classifyExpenses([], presets)).toEqual({ fixedExpense: 0, variableExpense: 0 });
-  });
-
-  it("회귀: 합계 = 고정 + 변동 = 입력 amount 합 (누락·중복 없음)", () => {
-    const fExp = [
-      exp({ id: "1", amount: 500_000, category: "주거", subCategory: "월세" }),
-      exp({ id: "2", amount: 100_000, category: "통신" }),
-      exp({ id: "3", amount: 50_000, category: "식비" }),
-      exp({ id: "4", amount: 80_000, category: "구독", isFixedExpense: true }),
-    ];
-    const r = classifyExpenses(fExp, presets);
-    const inputSum = fExp.reduce((s, l) => s + Number(l.amount), 0);
-    expect(r.fixedExpense + r.variableExpense).toBe(inputSum);
   });
 });

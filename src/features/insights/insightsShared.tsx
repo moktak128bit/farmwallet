@@ -346,8 +346,10 @@ export interface D {
   incomeStability: number | null;
   investReturnRate: number;
   subTotal: number;
+  /** 고정비/변동비/재량 — utils/fixedExpense 3분해(서로 배타, 합 = pExpense) */
   fixedExpense: number;
   variableExpense: number;
+  discretionaryExpense: number;
 
   netWorthByMonth: { month: string; label: string; total: number; income: number; expense: number; savings: number }[];
   /** 현재 순자산/총자산/총부채 — 대시보드 타임라인 마지막 행 (시세·환율·대출 반영). 데이터 없으면 null */

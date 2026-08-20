@@ -7,9 +7,9 @@ import React, { useMemo } from "react";
 import type { Account, CategoryPresets, LedgerEntry } from "../../types";
 import { formatKRW } from "../../utils/formatter";
 import { shiftMonth } from "../../utils/date";
-import { getCategoryType, isSavingsExpenseEntry, isCreditPayment } from "../../utils/category";
 import { isDividendEntryLoose } from "../../utils/categoryMatch";
 import { toKrwByRate } from "../../utils/currency";
+import { computeExpenseNatureSeries } from "../../utils/fixedExpense";
 
 function isDividendIncome(entry: LedgerEntry): boolean {
   // 분류 단일소스(categoryMatch) — cat/sub 정확 매칭 + description fallback (includes("배당") 직접 사용 금지)
@@ -18,6 +18,7 @@ function isDividendIncome(entry: LedgerEntry): boolean {
 
 interface Props {
   ledger: LedgerEntry[];
+  /** 부모(App/DashboardPage) props 시그니처 유지용 — 고정비 판정이 fixedExpense 단일 모듈로 옮겨가며 더는 쓰지 않는다 */
   accounts: Account[];
   categoryPresets: CategoryPresets;
   fxRate: number | null;
@@ -26,7 +27,6 @@ interface Props {
 
 export const DividendCoverageCard: React.FC<Props> = React.memo(function DividendCoverageCard({
   ledger,
-  accounts,
   categoryPresets,
   fxRate,
   currentMonth,
@@ -37,36 +37,20 @@ export const DividendCoverageCard: React.FC<Props> = React.memo(function Dividen
     const monthSetRecent = new Set(months);
     const toKrw = (entry: LedgerEntry) => toKrwByRate(entry.amount, entry.currency, fxRate);
     const dividendByMonth = new Map<string, number>();
-    const fixedByMonth = new Map<string, number>();
 
     for (const entry of ledger) {
       const month = entry.date?.slice(0, 7);
       if (!month || !monthSetRecent.has(month)) continue;
-
       if (isDividendIncome(entry)) {
         dividendByMonth.set(month, (dividendByMonth.get(month) ?? 0) + toKrw(entry));
-        continue;
-      }
-      if (entry.kind !== "expense") continue;
-      // 신용결제(카드 청구액 결제 이체)는 실제 지출의 중복 — 고정비 집계에서 제외 (subCategory 레거시 포함)
-      if (isCreditPayment(entry)) continue;
-      if (isSavingsExpenseEntry(entry, accounts, categoryPresets)) continue;
-      const categoryType = getCategoryType(
-        entry.category,
-        entry.subCategory,
-        entry.kind,
-        categoryPresets,
-        entry,
-        accounts
-      );
-      if (categoryType === "fixed" || entry.isFixedExpense) {
-        fixedByMonth.set(month, (fixedByMonth.get(month) ?? 0) + toKrw(entry));
       }
     }
+    // 고정비 = utils/fixedExpense 단일 정의(인사이트 고정/변동/재량 분해와 동일) — 신용결제·저축성지출·환전·투자손실 제외 내장
+    const natureByMonth = computeExpenseNatureSeries(ledger, months, categoryPresets, fxRate);
 
     const rows = months.map((month) => {
       const dividend = dividendByMonth.get(month) ?? 0;
-      const fixedExpense = fixedByMonth.get(month) ?? 0;
+      const fixedExpense = natureByMonth[month]?.fixed ?? 0;
       return {
         month,
         dividend,
@@ -91,7 +75,7 @@ export const DividendCoverageCard: React.FC<Props> = React.memo(function Dividen
       monthlyFixedExpenseAvg,
       coverageRate
     };
-  }, [ledger, fxRate, accounts, categoryPresets, currentMonth]);
+  }, [ledger, fxRate, categoryPresets, currentMonth]);
 
   const isCovered =
     dividendCoverage.coverageRate != null && dividendCoverage.coverageRate >= 100;

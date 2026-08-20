@@ -3,6 +3,9 @@ import { describe, it, expect, vi, afterEach } from "vitest";
 import { render, screen, fireEvent } from "@testing-library/react";
 import { useState } from "react";
 import { TabErrorBoundary } from "../components/TabErrorBoundary";
+import { reportError } from "../utils/errorReporting";
+
+vi.mock("../utils/errorReporting", () => ({ reportError: vi.fn() }));
 
 function Bomb({ shouldThrow }: { shouldThrow: boolean }): React.ReactNode {
   if (shouldThrow) throw new Error("boom in tab");
@@ -13,6 +16,7 @@ describe("TabErrorBoundary", () => {
   const originalError = console.error;
   afterEach(() => {
     console.error = originalError;
+    vi.mocked(reportError).mockClear();
   });
 
   it("자식이 정상이면 그대로 렌더", () => {
@@ -33,6 +37,22 @@ describe("TabErrorBoundary", () => {
     );
     expect(screen.getByText(/주식 탭 렌더 오류/)).toBeInTheDocument();
     expect(screen.getByText(/boom in tab/)).toBeInTheDocument();
+  });
+
+  it("componentDidCatch가 reportError(scope=TabErrorBoundary:탭명, error, componentStack)를 호출", () => {
+    console.error = vi.fn();
+    render(
+      <TabErrorBoundary tabName="주식">
+        <Bomb shouldThrow />
+      </TabErrorBoundary>
+    );
+    // React 18 StrictMode 없음 → 1회 (개발 모드 재시도 렌더와 무관하게 최소 1회)
+    expect(reportError).toHaveBeenCalled();
+    const [scope, err, extra] = vi.mocked(reportError).mock.calls[0];
+    expect(scope).toBe("TabErrorBoundary:주식");
+    expect(err).toBeInstanceOf(Error);
+    expect((err as Error).message).toBe("boom in tab");
+    expect(extra).toEqual(expect.objectContaining({ componentStack: expect.stringContaining("Bomb") }));
   });
 
   it("다시 시도 버튼이 boundary 상태를 리셋", () => {

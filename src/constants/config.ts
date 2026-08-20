@@ -68,7 +68,9 @@ export const STORAGE_KEYS = {
   /** 종합과세 트래커/세금 보고서 세전(gross-up) 환산 토글 ("true"면 켜짐, 기본 off) */
   TAX_GROSS_UP: "fw-tax-gross-up",
   /** BACKUPS JSON 파싱 실패 시 원본 문자열을 보존하는 1슬롯 (부분 복구용; 기존 슬롯이 있으면 덮지 않음) */
-  BACKUPS_CORRUPT: "farmwallet-backups-corrupt-v1"
+  BACKUPS_CORRUPT: "farmwallet-backups-corrupt-v1",
+  /** 영속 활동 로그(최대 500건, uiStore.addAppLog) — 오류 리포팅(utils/errorReporting.ts)도 여기에 쌓임 */
+  APP_LOG: "fw-app-log-v1"
 } as const;
 
 /** 드래프트 슬롯이 이보다 오래되면 boot 시 무시·삭제 (스테일 복구 안내 방지) */

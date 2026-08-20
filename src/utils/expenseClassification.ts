@@ -34,30 +34,3 @@ export function isFixedExpense(l: LedgerEntry, fixedCats: Set<string>): boolean 
   if (fixedCats.has((l.category || "").trim())) return true;
   return false;
 }
-
-interface ExpenseClassification {
-  fixedExpense: number;
-  variableExpense: number;
-}
-
-/**
- * 지출 항목들을 고정비/변동비로 분류해 합계 반환.
- * fExp는 이미 재테크/환전 등 비-실지출이 제거된 상태여야 함.
- *
- * @param fExp 분류 대상 지출 항목들. amount > 0 가정.
- * @param presets categoryTypes.fixed + expenseDetails로 fixed 집합 구성
- */
-export function classifyExpenses(
-  fExp: LedgerEntry[],
-  presets: CategoryPresets | undefined
-): ExpenseClassification {
-  const fixedCats = buildFixedCategorySet(presets);
-  let fixedExpense = 0;
-  let variableExpense = 0;
-  for (const l of fExp) {
-    const amount = Number(l.amount);
-    if (isFixedExpense(l, fixedCats)) fixedExpense += amount;
-    else variableExpense += amount;
-  }
-  return { fixedExpense, variableExpense };
-}

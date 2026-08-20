@@ -168,6 +168,10 @@ interface UIStore {
   // Misc UI
   newVersionAvailable: boolean;
   setNewVersionAvailable: (val: boolean) => void;
+  /** PWA 새 버전 적용 함수(vite-plugin-pwa updateServiceWorker). prompt 모드에서 waiting SW에 SKIP_WAITING을 보내
+   *  controlling 이벤트 → 리로드로 이어진다. 단순 location.reload()는 waiting SW를 활성화하지 못한다. */
+  applyPwaUpdate: (() => Promise<void>) | null;
+  setApplyPwaUpdate: (fn: (() => Promise<void>) | null) => void;
   gistConfigured: boolean;
   setGistConfigured: (val: boolean) => void;
   integritySummary: IntegritySummary | null;
@@ -231,6 +235,8 @@ export const useUIStore = create<UIStore>((set) => ({
 
   newVersionAvailable: false,
   setNewVersionAvailable: (newVersionAvailable) => set({ newVersionAvailable }),
+  applyPwaUpdate: null,
+  setApplyPwaUpdate: (applyPwaUpdate) => set({ applyPwaUpdate }),
   gistConfigured: typeof window !== "undefined" ? isGistConfigured() : false,
   setGistConfigured: (gistConfigured) => set({ gistConfigured }),
   integritySummary: null,

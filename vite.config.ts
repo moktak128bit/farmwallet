@@ -974,7 +974,10 @@ export default defineConfig({
     backupApiPlugin(),
     buildMetaPlugin(buildHash),
     VitePWA({
-      registerType: "autoUpdate",
+      // prompt: 새 SW는 waiting 상태로 대기 → 헤더 pill/PWAStatus의 "업데이트" 클릭(updateServiceWorker) 시에만
+      // SKIP_WAITING → controlling → reload. autoUpdate였을 때는 activated 즉시 강제 리로드되어 입력 중 폼이 유실되고
+      // onNeedRefresh가 호출되지 않아 "새 버전" pill이 뜰 수 없었다.
+      registerType: "prompt",
       workbox: {
         globPatterns: ["**/*.{js,css,html,svg,png,woff2}"],
         runtimeCaching: [

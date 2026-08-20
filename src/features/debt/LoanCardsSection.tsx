@@ -12,6 +12,7 @@ import { getTodayKST, parseIsoLocal } from "../../utils/date";
 import { useAppStore } from "../../store/appStore";
 import { buildRestoreById, showDeleteUndoToast } from "../../utils/undoToast";
 import { graceEndDate } from "./debtShared";
+import { LoanPrepaySimulator } from "./LoanPrepaySimulator";
 
 // KST 기준 일수 차 — new Date("YYYY-MM-DD")는 UTC 파싱이라 자정 경계에서 ±1일 어긋남(KST 규약 위반).
 const daysBetween = (date1: string, date2: string): number => {
@@ -285,6 +286,9 @@ export const LoanCardsSection: React.FC<Props> = React.memo(function LoanCardsSe
                 </span>
               </div>
             </div>
+
+            {/* 추가 상환 시뮬 — 접이식, 로컬 state. 내부에서 클릭/키 전파를 막아 카드 토글과 분리 */}
+            <LoanPrepaySimulator loan={loan} currentBalance={currentBalance} />
 
             {canRepay && (
               <button

@@ -257,7 +257,7 @@ describe("loadData round-trip — 필드 보존 (dailyBudget 포함)", () => {
       trades: [{ id: "t1", date: "2026-01-01", accountId: "a1", ticker: "AAPL", name: "Apple", side: "buy" as const, quantity: 1, price: 100, fee: 0, totalAmount: 100, cashImpact: -100 }],
       recurringExpenses: [{ id: "r1", title: "넷플", amount: 17000, category: "구독비", frequency: "monthly" as const, startDate: "2026-01-01" }],
       budgetGoals: [{ id: "b1", category: "식비", monthlyLimit: 300000 }],
-      loans: [{ id: "L1", institution: "은행", loanName: "주담대", loanAmount: 1, annualInterestRate: 4, repaymentMethod: "equal_payment" as const, loanDate: "2026-01-01", maturityDate: "2056-01-01" }],
+      loans: [{ id: "L1", institution: "은행", loanName: "주담대", loanAmount: 1, annualInterestRate: 4, repaymentMethod: "equal_payment" as const, loanDate: "2026-01-01", maturityDate: "2056-01-01", prepaymentFeeRate: 1.2 }],
       workoutWeeks: [{ id: "w1", weekStart: "2026-01-05", entries: [] }],
       customExercises: [{ name: "케이블 크런치", bodyPart: "코어" as const, addedAt: "2026-01-01T00:00:00.000Z" }],
       targetNetWorthCurve: { "2026-12-31": 100000000 },

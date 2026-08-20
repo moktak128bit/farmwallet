@@ -61,3 +61,39 @@ export function upsertDailyFx(
 
   return changed ? next : null;
 }
+
+/** 환율 수신 시각(ISO)을 KST 날짜(YYYY-MM-DD)로 환산. 파싱 불가면 null. */
+export function fxFetchedAtToKstDate(fetchedAt: string | null | undefined): string | null {
+  if (!fetchedAt) return null;
+  const ms = new Date(fetchedAt).getTime();
+  if (!Number.isFinite(ms)) return null;
+  const kst = new Date(ms + 9 * 60 * 60_000);
+  const y = kst.getUTCFullYear();
+  const m = String(kst.getUTCMonth() + 1).padStart(2, "0");
+  const d = String(kst.getUTCDate()).padStart(2, "0");
+  return `${y}-${m}-${d}`;
+}
+
+interface DailyFxRecordInput {
+  /** 현재 컨텍스트 환율 (null=미로드) */
+  rate: number | null;
+  /** 환율 수신 시각 ISO (localStorage 캐시면 며칠 전일 수 있음) */
+  fetchedAt: string | null;
+  /** 오늘 YYYY-MM-DD (KST) */
+  today: string;
+  /** 이번 세션에서 '신선값'으로 이미 적립한 날짜 (없으면 null) */
+  recordedFor: string | null;
+}
+
+/**
+ * 오늘자 환율을 historicalDailyFx에 적립할지 판정.
+ * - fetchedAt이 **오늘(KST)** 인 신선값만 적립 — localStorage 캐시(어제 이전 수신)를 오늘 날짜로 박제하지 않는다.
+ * - 같은 날 이미 신선값으로 적립했으면 재적립하지 않는다(하루 1회). 날짜가 넘어가면(KST 자정) 다시 적립 대상.
+ */
+export function shouldRecordDailyFx(input: DailyFxRecordInput): boolean {
+  const { rate, fetchedAt, today, recordedFor } = input;
+  if (!(Number(rate) > 0)) return false;
+  if (recordedFor === today) return false;
+  const fetchedDate = fxFetchedAtToKstDate(fetchedAt);
+  return fetchedDate !== null && fetchedDate === today;
+}

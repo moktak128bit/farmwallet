@@ -3,6 +3,7 @@ import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 import { renderHook, act } from "@testing-library/react";
 import { useGistSync } from "../hooks/useGistSync";
 import * as gistSync from "../services/gistSync";
+import { hashGistPayload } from "../services/gistSync";
 import { GIST_AUTO_PUSH_DEBOUNCE_MS } from "../constants/config";
 import type { AppData } from "../types";
 import { useUIStore } from "../store/uiStore";
@@ -473,7 +474,7 @@ describe("useGistSync — 충돌 해소 시 날짜키 시계열 date-union (1-7)
     expect(mocked.saveToGist).not.toHaveBeenCalled();
     expect(useUIStore.getState().gistConflict).toBeNull();
     // lastPushed 해시는 원격 원본 기준 — 로컬이 원격보다 많아진 상태(dirty)를 다음 push가 올리도록
-    expect(window.localStorage.getItem("fw-gist-last-push-hash")).toBe(gistSync.hashGistPayload(remoteJson));
+    expect(window.localStorage.getItem("fw-gist-last-push-hash")).toBe(hashGistPayload(remoteJson));
   });
 
   it("force-push-local: 원격 시계열을 로컬 payload에 union해 push하고, 로컬 스토어에도 같은 union을 반영한다", async () => {
@@ -512,7 +513,7 @@ describe("useGistSync — 충돌 해소 시 날짜키 시계열 date-union (1-7)
     expect(store.marketEnvSnapshots?.length).toBe(2);
     // ledger는 손대지 않음
     expect(store.ledger.map((l) => l.id)).toEqual(["L7"]);
-    expect(window.localStorage.getItem("fw-gist-last-push-hash")).toBe(gistSync.hashGistPayload(mocked.saveToGist.mock.calls[0][0]));
+    expect(window.localStorage.getItem("fw-gist-last-push-hash")).toBe(hashGistPayload(mocked.saveToGist.mock.calls[0][0]));
   });
 
   it("시계열이 없는 충돌은 기존 동작 그대로 (payload 재직렬화 없음·스토어 무변경)", async () => {

@@ -77,7 +77,7 @@ export function getGistToken(): string {
   return "";
 }
 
-export interface SetGistTokenOptions {
+interface SetGistTokenOptions {
   /** true면 localStorage에도 저장(영속). 기본 false (sessionStorage만) */
   persist?: boolean;
 }
@@ -365,16 +365,6 @@ export async function loadFromGistVersion(versionUrl: string): Promise<{ dataJso
     throw new Error("해당 버전 파일 내용을 읽을 수 없습니다.");
   }
   return { dataJson: content, committedAt: data.updated_at ?? versionUrl };
-}
-
-/** 토큰 유효성 확인 */
-export async function validateToken(token: string): Promise<boolean> {
-  try {
-    const res = await fetchWithTimeout(`${API_BASE}/user`, { headers: headers(token) });
-    return res.ok;
-  } catch {
-    return false;
-  }
 }
 
 /** 자동 동기화 ON/OFF */

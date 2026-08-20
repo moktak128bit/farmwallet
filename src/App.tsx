@@ -75,7 +75,7 @@ import { useBenchmarkRecorder } from "./hooks/useBenchmarkRecorder";
 import { GistVersionModal } from "./components/GistVersionModal";
 import { GitVersionModal } from "./components/GitVersionModal";
 import { GistConflictModal } from "./components/GistConflictModal";
-import { isGistConfigured } from "./services/gistSync";
+import { isGistConfigured, GIST_CONFIG_CHANGE_EVENT } from "./services/gistSync";
 import { toUserDataJson } from "./services/dataService";
 import { useUIStore, type PendingAction } from "./store/uiStore";
 import { useAppStore } from "./store/appStore";
@@ -224,8 +224,8 @@ export const App: React.FC = () => {
   // Gist 설정 변경 이벤트 구독
   useEffect(() => {
     const handler = () => setGistConfigured(isGistConfigured());
-    window.addEventListener("farmwallet:gist-config-change", handler);
-    return () => window.removeEventListener("farmwallet:gist-config-change", handler);
+    window.addEventListener(GIST_CONFIG_CHANGE_EVENT, handler);
+    return () => window.removeEventListener(GIST_CONFIG_CHANGE_EVENT, handler);
   }, [setGistConfigured]);
 
   // Zustand store 사용

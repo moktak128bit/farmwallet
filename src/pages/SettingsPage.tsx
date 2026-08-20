@@ -25,6 +25,7 @@ import { DateAccountCard } from "../features/settings/DateAccountCard";
 import { BackupHistoryTable } from "../features/settings/BackupHistoryTable";
 import { JsonImportSection } from "../features/settings/JsonImportSection";
 import { DashboardWidgetSettings } from "../features/settings/DashboardWidgetSettings";
+import { StorageUsageCard } from "../features/settings/StorageUsageCard";
 
 const DataIntegrityView = lazy(() => import("./DataIntegrityPage").then((m) => ({ default: m.DataIntegrityView })));
 const SavingsMigrationView = lazy(() => import("./SavingsMigrationPage").then((m) => ({ default: m.SavingsMigrationView })));
@@ -177,6 +178,9 @@ export const SettingsView: React.FC<Props> = ({
             onChangeData={onChangeData}
             onBackupRestored={onBackupRestored}
           />
+
+          {/* 백업 섹션 맨 끝: localStorage 사용량(읽기 전용) */}
+          <StorageUsageCard />
         </>
       )}
 

@@ -811,6 +811,7 @@ export const App: React.FC = () => {
               recurring={data.recurringExpenses}
               ledger={data.ledger}
               onClick={() => setTab("budget")}
+              onChangeLedger={handleChangeLedger}
             />
             <button
               type="button"

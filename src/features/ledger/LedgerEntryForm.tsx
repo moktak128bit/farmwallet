@@ -20,6 +20,7 @@ import { DEFAULT_DAILY_BUDGET, dailySpend, weeklySpend, weeklyLimit, getCurrentW
 import { useAppStore } from "../../store/appStore";
 import { toast } from "react-hot-toast";
 import { ERROR_MESSAGES } from "../../constants/errorMessages";
+import { addDaysToIso, getTodayKST } from "../../utils/date";
 import { ReceiptScanner, type OcrResult } from "../ocr/ReceiptScanner";
 import {
   createDefaultLedgerForm as createDefaultForm,
@@ -917,27 +918,76 @@ export const LedgerEntryForm = React.memo(React.forwardRef<LedgerEntryFormHandle
             )}
             {/* 상단: 날짜와 금액을 한 줄에 */}
             <div style={{ display: "grid", gridTemplateColumns: "1fr 2fr", gap: "12px", alignItems: "start" }}>
-              {/* 날짜 */}
-              <label style={{ margin: 0 }}>
-                <span style={{ fontSize: 11, marginBottom: 4, display: "block", color: "var(--text-muted)" }}>날짜 *</span>
-                <input
-                  type="date"
-                  value={form.date}
-                  onChange={(e) => setForm({ ...form, date: e.target.value })}
-                  style={{
-                    padding: "10px",
-                    fontSize: 14,
-                    width: "100%",
-                    border: formErrors.date ? "2px solid var(--danger)" : "1px solid var(--border)",
-                    borderRadius: "6px"
-                  }}
-                  aria-invalid={!!formErrors.date}
-                  aria-describedby={formErrors.date ? "date-error" : undefined}
-                />
+              {/* 날짜 + 빠른 칩 (오늘·어제·그제·−1일·+1일). 미래일 검증은 validateLedgerForm 그대로 */}
+              <div>
+                <label style={{ margin: 0 }}>
+                  <span style={{ fontSize: 11, marginBottom: 4, display: "block", color: "var(--text-muted)" }}>날짜 *</span>
+                  <input
+                    type="date"
+                    value={form.date}
+                    onChange={(e) => setForm({ ...form, date: e.target.value })}
+                    style={{
+                      padding: "10px",
+                      fontSize: 14,
+                      width: "100%",
+                      border: formErrors.date ? "2px solid var(--danger)" : "1px solid var(--border)",
+                      borderRadius: "6px"
+                    }}
+                    aria-invalid={!!formErrors.date}
+                    aria-describedby={formErrors.date ? "date-error" : undefined}
+                  />
+                </label>
+                <div style={{ display: "flex", gap: 4, flexWrap: "wrap", marginTop: 4 }} aria-label="날짜 빠른 선택">
+                  {(() => {
+                    const today = getTodayKST();
+                    const chips: { label: string; date: string; title: string }[] = [
+                      { label: "오늘", date: today, title: today },
+                      { label: "어제", date: addDaysToIso(today, -1), title: addDaysToIso(today, -1) },
+                      { label: "그제", date: addDaysToIso(today, -2), title: addDaysToIso(today, -2) },
+                    ];
+                    return (
+                      <>
+                        {chips.map((c) => (
+                          <button
+                            key={c.label}
+                            type="button"
+                            tabIndex={-1}
+                            className={form.date === c.date ? "primary" : "secondary"}
+                            onClick={() => setForm((prev) => ({ ...prev, date: c.date }))}
+                            title={c.title}
+                            style={{ fontSize: 10, padding: "2px 7px", borderRadius: 10 }}
+                          >
+                            {c.label}
+                          </button>
+                        ))}
+                        <button
+                          type="button"
+                          tabIndex={-1}
+                          className="secondary"
+                          onClick={() => setForm((prev) => ({ ...prev, date: addDaysToIso(prev.date || today, -1) }))}
+                          title="하루 전"
+                          style={{ fontSize: 10, padding: "2px 7px", borderRadius: 10 }}
+                        >
+                          −1일
+                        </button>
+                        <button
+                          type="button"
+                          tabIndex={-1}
+                          className="secondary"
+                          onClick={() => setForm((prev) => ({ ...prev, date: addDaysToIso(prev.date || today, 1) }))}
+                          title="하루 후"
+                          style={{ fontSize: 10, padding: "2px 7px", borderRadius: 10 }}
+                        >
+                          +1일
+                        </button>
+                      </>
+                    );
+                  })()}
+                </div>
                 <span id="date-error" style={{ fontSize: 10, color: "var(--danger)", display: "block", marginTop: 4, visibility: formErrors.date ? "visible" : "hidden" }}>
                   {formErrors.date || "\u00A0"}
                 </span>
-              </label>
+              </div>
 
               {/* 금액 */}
               <label style={{ margin: 0 }}>

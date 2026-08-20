@@ -1,15 +1,23 @@
+// @vitest-environment jsdom
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 import { renderHook, act } from "@testing-library/react";
 import { useBackup } from "../hooks/useBackup";
-import * as storage from "../storage";
+import {
+  saveDataSerialized,
+  saveBackupSnapshot,
+  getAllBackupList,
+  getLatestLocalBackupIntegrity,
+  clearOldBackups,
+  toUserDataJson,
+} from "../storage";
 import * as tabSync from "../services/tabSync";
 import { toast } from "react-hot-toast";
 import { useUIStore } from "../store/uiStore";
 import { AUTO_SAVE_DELAY, AUTO_BACKUP_INTERVAL_MS, DATA_SCHEMA_VERSION, STORAGE_KEYS } from "../constants/config";
 import type { AppData } from "../types";
 
-vi.mock("../storage", async () => {
-  const actual = await vi.importActual<typeof storage>("../storage");
+vi.mock("../storage", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("../storage")>();
   return {
     ...actual,
     saveDataSerialized: vi.fn(),
@@ -34,7 +42,14 @@ vi.mock("react-hot-toast", () => {
   return { toast: t, default: t };
 });
 
-const mocked = vi.mocked(storage);
+// 네임스페이스 import(import * as) 대신 named import — knip이 배럴의 나머지 re-export를 미사용으로 오판하지 않게
+const mocked = {
+  saveDataSerialized: vi.mocked(saveDataSerialized),
+  saveBackupSnapshot: vi.mocked(saveBackupSnapshot),
+  getAllBackupList: vi.mocked(getAllBackupList),
+  getLatestLocalBackupIntegrity: vi.mocked(getLatestLocalBackupIntegrity),
+  clearOldBackups: vi.mocked(clearOldBackups),
+};
 const mockedNotify = vi.mocked(tabSync.notifyDataChanged);
 const mockedToast = vi.mocked(toast);
 
@@ -54,7 +69,7 @@ function makeData(stamp: number, extra: Partial<AppData> = {}): AppData {
 }
 
 function userJson(d: AppData) {
-  return storage.toUserDataJson(d);
+  return toUserDataJson(d);
 }
 
 function quotaError(): DOMException {

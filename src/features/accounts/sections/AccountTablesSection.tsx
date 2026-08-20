@@ -113,7 +113,7 @@ export const AccountTablesSection: React.FC<Props> = React.memo(function Account
     const raw = editingCellValue.trim();
     if (field === "id") {
       if (!raw) {
-        alert("계좌 ID를 입력해 주세요.");
+        toast.error("계좌 ID를 입력해 주세요.");
         return;
       }
       const nextId = raw.toUpperCase().replace(/\s/g, "_");
@@ -124,7 +124,7 @@ export const AccountTablesSection: React.FC<Props> = React.memo(function Account
       }
       const exists = safeAccounts.some((a) => a.id === nextId && a.id !== id);
       if (exists) {
-        alert("이미 사용 중인 계좌 ID입니다. 다른 ID를 입력해주세요.");
+        toast.error("이미 사용 중인 계좌 ID입니다. 다른 ID를 입력해주세요.");
         return;
       }
       onRenameAccountId(id, nextId);

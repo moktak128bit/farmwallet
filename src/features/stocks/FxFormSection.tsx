@@ -6,6 +6,7 @@ import { formatKRW, formatUSD } from "../../utils/formatter";
 import { getTodayKST } from "../../utils/date";
 import { newIdWithPrefix } from "../../utils/id";
 import { ERROR_MESSAGES } from "../../constants/errorMessages";
+import { FxBandHint } from "./FxBandHint";
 
 type FxCurrency = "KRW" | "USD";
 
@@ -263,6 +264,9 @@ export const FxFormSection: React.FC<FxFormSectionProps> = ({ accounts, ledger, 
         />
         <span>다른 계좌로 환전 (예: 은행 → 증권). 체크 안 하면 같은 계좌 내 환전 (KRW ↔ USD).</span>
       </label>
+
+      {/* 환율 밴드 힌트(읽기 전용) — 지금 환율이 최근 1년 분포의 어디인지 한 줄. 이력 부족이면 렌더 안 함 */}
+      <FxBandHint current={fxRate} prefix="참고:" style={{ marginBottom: 12 }} />
 
       <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(200px, 1fr))", gap: "12px" }}>
         <label style={{ display: "flex", flexDirection: "column", gap: 4 }}>

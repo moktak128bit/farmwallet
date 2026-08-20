@@ -64,7 +64,9 @@ export const STORAGE_KEYS = {
   /** 월급 실시간 타이머 설정 (월급일·월급액). 대시보드 위젯 전용, 로컬 저장. */
   SALARY_TIMER: "fw-salary-timer",
   /** 배당/이자 탭의 마지막 선택 (dividend|interest). 다음 방문 시 복원. */
-  DIVIDENDS_LAST_TAB: "fw-dividends-last-tab"
+  DIVIDENDS_LAST_TAB: "fw-dividends-last-tab",
+  /** 종합과세 트래커/세금 보고서 세전(gross-up) 환산 토글 ("true"면 켜짐, 기본 off) */
+  TAX_GROSS_UP: "fw-tax-gross-up"
 } as const;
 
 /** 드래프트 슬롯이 이보다 오래되면 boot 시 무시·삭제 (스테일 복구 안내 방지) */

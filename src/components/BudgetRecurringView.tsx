@@ -24,6 +24,7 @@ import { DailyBudgetSection } from "../features/budget/DailyBudgetSection";
 import { RecurringFormCard, type RecurringFormCardHandle } from "../features/budget/RecurringFormCard";
 import { BudgetFormCard } from "../features/budget/BudgetFormCard";
 import { RecurringListSection } from "../features/budget/RecurringListSection";
+import { RecurringSuggestionsSection } from "../features/budget/RecurringSuggestionsSection";
 import { BudgetDashboardSection, type BudgetUsageRow } from "../features/budget/BudgetDashboardSection";
 import { BudgetGoalsTable } from "../features/budget/BudgetGoalsTable";
 
@@ -68,6 +69,10 @@ export const BudgetRecurringView: React.FC<Props> = ({
   const handleRequestEditRecurring = useCallback((item: RecurringExpense) => {
     recurringFormRef.current?.startEditRecurring(item);
   }, []);
+  // 감지된 정기 결제 "반복지출로 등록" → 상단 폼에 값만 채움 (저장은 사용자가 "추가"로 확정)
+  const handlePrefillRecurring = useCallback((partial: Partial<Omit<RecurringExpense, "id">>) => {
+    recurringFormRef.current?.prefillNew(partial);
+  }, []);
 
   // 예산 사용액 — computeBudgetGoalSpent 단일 소스 (대시보드 예산 위젯과 같은 숫자 보장, USD 환산 포함)
   // 페이스(월말 예상·남은 하루 허용액·전월 동기)는 computeBudgetPace — 한도 의미는 그대로, 해석만 얹는다
@@ -107,6 +112,15 @@ export const BudgetRecurringView: React.FC<Props> = ({
           onChangeBudgets={onChangeBudgets}
         />
       </div>
+
+      {/* 감지된 정기 결제(구독·반복결제) → 등록 제안. 읽기전용 감지 + 폼 prefill만 (자동 생성 없음) */}
+      <RecurringSuggestionsSection
+        accounts={accounts}
+        recurring={recurring}
+        ledger={ledger}
+        categoryPresets={categoryPresets}
+        onPrefill={handlePrefillRecurring}
+      />
 
       {/* 고정 지출/구독 목록 — 분리 컴포넌트 (React.memo). 셀 편집·선택·미리보기 상태는 자식 소유 */}
       <RecurringListSection

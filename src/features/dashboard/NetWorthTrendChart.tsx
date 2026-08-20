@@ -1,4 +1,6 @@
-import React, { useRef, useState } from "react";
+import React, { useMemo, useRef, useState } from "react";
+import { useAppStore } from "../../store/appStore";
+import { buildTargetNetWorthSeries } from "./targetNetWorthCurve";
 
 interface NetWorthTrendPoint {
   month: string;
@@ -19,6 +21,12 @@ export const NetWorthTrendChart: React.FC<Props> = React.memo(function NetWorthT
   const [hoverIdx, setHoverIdx] = useState<number | null>(null);
   const [mousePos, setMousePos] = useState<{ x: number; y: number } | null>(null);
   const [excludePension, setExcludePension] = useState(false);
+  // 목표 자산 곡선(설정 탭 입력) — 스토어에서 직접 읽어 DashboardPage props 시그니처는 그대로 둔다.
+  const targetCurve = useAppStore((s) => s.data.targetNetWorthCurve);
+  const targetSeries = useMemo(
+    () => buildTargetNetWorthSeries(targetCurve, data.map((d) => d.month)),
+    [targetCurve, data]
+  );
 
   // 빈 상태 — 카드가 통째로 사라지면 위젯이 있는 줄도 모르므로 안내를 보여준다
   if (data.length < 2) {
@@ -38,8 +46,11 @@ export const NetWorthTrendChart: React.FC<Props> = React.memo(function NetWorthT
   const showLiquid = excludePension && hasPension;
   const eff = (d: NetWorthTrendPoint) => d.value - (showLiquid ? (d.pension ?? 0) : 0);
   const values = data.map(eff);
-  const minVal = Math.min(...values);
-  const maxVal = Math.max(...values);
+  // 목표선도 y축 범위에 포함 — 목표가 실제보다 훨씬 높아도 잘리지 않게
+  const targetValues = targetSeries.filter((v): v is number => v != null);
+  const hasTarget = targetValues.length > 0;
+  const minVal = Math.min(...values, ...targetValues);
+  const maxVal = Math.max(...values, ...targetValues);
   const range = maxVal - minVal || 1;
   const PAD_L = 64;
   const PAD_R = 20;
@@ -54,8 +65,11 @@ export const NetWorthTrendChart: React.FC<Props> = React.memo(function NetWorthT
   const toX = (i: number) => PAD_L + (i / (n - 1)) * chartW;
   const toY = (v: number) => PAD_T + chartH - ((v - minVal) / range) * chartH;
 
-  const pts = data.map((d, i) => ({ x: toX(i), y: toY(eff(d)), v: eff(d), ...d }));
+  const pts = data.map((d, i) => ({ x: toX(i), y: toY(eff(d)), v: eff(d), target: targetSeries[i] ?? null, ...d }));
   const polyline = pts.map((p) => `${p.x},${p.y}`).join(" ");
+  // 목표선: 값이 있는 달만(첫 목표일 이전 구간은 비움) — 점선 오버레이
+  const targetPts = pts.filter((p): p is typeof p & { target: number } => p.target != null);
+  const targetPolyline = targetPts.map((p) => `${p.x},${toY(p.target)}`).join(" ");
   const areaPath =
     `M${pts[0].x},${PAD_T + chartH} ` +
     pts.map((p) => `L${p.x},${p.y}`).join(" ") +
@@ -68,6 +82,10 @@ export const NetWorthTrendChart: React.FC<Props> = React.memo(function NetWorthT
   const nwDeltaPct = Number.isFinite(prevWorth) && prevWorth !== 0 ? (nwDelta / prevWorth) * 100 : 0;
   const nwDeltaColor = nwDelta > 0 ? "var(--success)" : nwDelta < 0 ? "var(--danger)" : "var(--text-muted)";
   const nwArrow = nwDelta > 0 ? "▲" : nwDelta < 0 ? "▼" : "–";
+  // 현재 달의 목표 대비 달성률 — 목표가 0 이하면 비율 표시 생략
+  const currentTarget = currentPt.target;
+  const targetPct =
+    currentTarget != null && currentTarget > 0 ? (currentWorth / currentTarget) * 100 : null;
 
   // 값 범위가 좁으면 min/중간/max가 겹침 — 중복 제거 (React key 중복 방지)
   const yTicks = Array.from(new Set([minVal, Math.round((minVal + maxVal) / 2), maxVal]));
@@ -113,7 +131,11 @@ export const NetWorthTrendChart: React.FC<Props> = React.memo(function NetWorthT
 
   const hover = hoverIdx != null ? pts[hoverIdx] : null;
   const TT_W = 178;
-  const TT_H = showLiquid ? 104 : 84;
+  // 툴팁 행 배치: 자산·부채·(연금) → 구분선 → 순자산 → (목표)
+  const hoverHasTarget = hover?.target != null;
+  const ttDividerY = showLiquid ? 82 : 62;
+  const ttNetY = ttDividerY + 14;
+  const TT_H = ttNetY + 8 + (hoverHasTarget ? 18 : 0);
   // 툴팁은 데이터 포인트가 아니라 마우스 커서를 따라간다 (오른쪽 공간 없으면 왼쪽으로 반전)
   const anchorX = mousePos?.x ?? hover?.x ?? 0;
   const anchorY = mousePos?.y ?? hover?.y ?? 0;
@@ -168,6 +190,12 @@ export const NetWorthTrendChart: React.FC<Props> = React.memo(function NetWorthT
             </span>
           </div>
           <div className="hint" style={{ fontSize: 13 }}>현재 순자산 · 전월 대비</div>
+          {currentTarget != null && (
+            <div style={{ fontSize: 12, color: "var(--text-muted)", marginTop: 2 }}>
+              목표 {fmt(currentTarget)}
+              {targetPct != null && ` · 달성률 ${targetPct.toFixed(0)}%`}
+            </div>
+          )}
         </div>
       </div>
       <div style={{ width: "100%", overflowX: "auto" }}>
@@ -220,6 +248,28 @@ export const NetWorthTrendChart: React.FC<Props> = React.memo(function NetWorthT
             strokeLinejoin="round"
             strokeLinecap="round"
           />
+
+          {/* 목표 순자산 점선(설정 → 목표 자산 곡선). 값이 있는 구간만 그린다 */}
+          {hasTarget && targetPts.length >= 2 && (
+            <polyline
+              points={targetPolyline}
+              fill="none"
+              stroke="var(--text-faint, #9ca3af)"
+              strokeWidth={1.5}
+              strokeDasharray="6 4"
+              strokeLinejoin="round"
+              strokeLinecap="round"
+              aria-label="목표 순자산"
+            />
+          )}
+          {hasTarget && targetPts.map((p) => (
+            <circle
+              key={`target-${p.month}`}
+              cx={p.x} cy={toY(p.target)} r={2.5}
+              fill="var(--bg, #fff)"
+              stroke="var(--text-faint, #9ca3af)" strokeWidth={1.5}
+            />
+          ))}
 
           {pts.map((p, i) => (
             <circle
@@ -294,18 +344,24 @@ export const NetWorthTrendChart: React.FC<Props> = React.memo(function NetWorthT
                     </tspan>
                   </text>
                 )}
-                <line x1={8} y1={showLiquid ? 82 : 62} x2={TT_W - 8} y2={showLiquid ? 82 : 62} stroke="var(--border, #e5e7eb)" strokeWidth={1} />
-                <text x={10} y={showLiquid ? 96 : 76} fontSize={12} fontWeight={700} fill="var(--primary, #2563eb)">
+                <line x1={8} y1={ttDividerY} x2={TT_W - 8} y2={ttDividerY} stroke="var(--border, #e5e7eb)" strokeWidth={1} />
+                <text x={10} y={ttNetY} fontSize={12} fontWeight={700} fill="var(--primary, #2563eb)">
                   {showLiquid ? "유동순자산" : "순자산"}
                   <tspan x={TT_W - 10} textAnchor="end">{fmt(hover.v)}</tspan>
                 </text>
+                {hover.target != null && (
+                  <text x={10} y={ttNetY + 18} fontSize={12} fill="var(--text-muted, #9ca3af)">
+                    목표
+                    <tspan x={TT_W - 10} textAnchor="end" fontWeight={600}>{fmt(hover.target)}</tspan>
+                  </text>
+                )}
               </g>
             </g>
           )}
         </svg>
       </div>
       <div className="hint" style={{ fontSize: 13, marginTop: 6, textAlign: "right" }}>
-        단위: 만원 · {data[0]?.month} ~ {data[data.length - 1]?.month}
+        단위: 만원{hasTarget ? " · 점선 = 목표 순자산(설정 → 목표 자산 곡선)" : ""} · {data[0]?.month} ~ {data[data.length - 1]?.month}
       </div>
     </div>
   );

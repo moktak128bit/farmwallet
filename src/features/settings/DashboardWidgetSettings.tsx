@@ -1,6 +1,7 @@
 /**
- * 대시보드 위젯 설정 탭 — 위젯 표시/숨김, 배당 추적 티커, ISA 목표 포트폴리오,
+ * 대시보드 위젯 설정 탭 — 위젯 표시/숨김, 배당 추적 티커,
  * 자산 스냅샷·목표 자산 곡선 편집기. SettingsPage에서 분리.
+ * (ISA 목표 포트폴리오 편집기는 읽는 위젯이 없어 제거 — AppData.isaPortfolio 필드·배선은 유지)
  * 위젯 목록·저장은 features/dashboard/dashboardWidgets 단일 정의를 공유한다
  * (DashboardPage가 같은 정의를 읽어 마운트 시 숨김을 적용 — 탭 전환 시 재마운트되므로 즉시 반영).
  * 순서 변경 UI는 제거 — 대시보드는 고정 레이아웃(그리드 묶음 포함)이라 표시/숨김만 제공한다.
@@ -12,7 +13,6 @@ import type {
   AssetSnapshotAccountBreakdown,
   AssetSnapshotPoint
 } from "../../types";
-import { ISA_PORTFOLIO } from "../../constants/config";
 import {
   DASHBOARD_WIDGETS,
   loadHiddenDashboardWidgets,
@@ -309,109 +309,6 @@ export const DashboardWidgetSettings: React.FC<Props> = React.memo(function Dash
           </label>
         </div>
       ))}
-      <h3 style={{ marginTop: 24, marginBottom: 12 }}>ISA 목표 포트폴리오</h3>
-      <p style={{ fontSize: 12, color: "var(--text-muted)", marginBottom: 12 }}>
-        대시보드 ISA 위젯에 표시될 목표 비중을 편집합니다. 비중 합계는 100%가 되도록 조정하세요.
-      </p>
-      <div style={{ overflowX: "auto" }}>
-        <table className="data-table compact" style={{ fontSize: 13 }}>
-          <thead>
-            <tr>
-              <th>라벨</th>
-              <th>티커</th>
-              <th>종목명</th>
-              <th style={{ width: 80 }}>비중 (%)</th>
-              <th style={{ width: 60 }}></th>
-            </tr>
-          </thead>
-          <tbody>
-            {(data.isaPortfolio ?? ISA_PORTFOLIO.map((item) => ({ ticker: item.ticker, name: item.name, weight: item.weight, label: item.label }))).map((item, index) => (
-              <tr key={`${item.ticker}-${index}`}>
-                <td>
-                  <input
-                    type="text"
-                    value={item.label}
-                    onChange={(e) => {
-                      const list = [...(data.isaPortfolio ?? ISA_PORTFOLIO.map((i) => ({ ticker: i.ticker, name: i.name, weight: i.weight, label: i.label })))];
-                      list[index] = { ...list[index], label: e.target.value };
-                      onChangeData({ ...data, isaPortfolio: list });
-                    }}
-                    style={{ width: "100%", padding: "4px 8px", fontSize: 12 }}
-                  />
-                </td>
-                <td>
-                  <input
-                    type="text"
-                    value={item.ticker}
-                    onChange={(e) => {
-                      const list = [...(data.isaPortfolio ?? ISA_PORTFOLIO.map((i) => ({ ticker: i.ticker, name: i.name, weight: i.weight, label: i.label })))];
-                      list[index] = { ...list[index], ticker: e.target.value };
-                      onChangeData({ ...data, isaPortfolio: list });
-                    }}
-                    style={{ width: "100%", padding: "4px 8px", fontSize: 12 }}
-                  />
-                </td>
-                <td>
-                  <input
-                    type="text"
-                    value={item.name}
-                    onChange={(e) => {
-                      const list = [...(data.isaPortfolio ?? ISA_PORTFOLIO.map((i) => ({ ticker: i.ticker, name: i.name, weight: i.weight, label: i.label })))];
-                      list[index] = { ...list[index], name: e.target.value };
-                      onChangeData({ ...data, isaPortfolio: list });
-                    }}
-                    style={{ width: "100%", padding: "4px 8px", fontSize: 12 }}
-                  />
-                </td>
-                <td>
-                  <input
-                    type="number"
-                    min={0}
-                    max={100}
-                    step={1}
-                    value={item.weight}
-                    onChange={(e) => {
-                      const list = [...(data.isaPortfolio ?? ISA_PORTFOLIO.map((i) => ({ ticker: i.ticker, name: i.name, weight: i.weight, label: i.label })))];
-                      list[index] = { ...list[index], weight: Number(e.target.value) || 0 };
-                      onChangeData({ ...data, isaPortfolio: list });
-                    }}
-                    style={{ width: "100%", padding: "4px 8px", fontSize: 12 }}
-                  />
-                </td>
-                <td>
-                  <button
-                    type="button"
-                    className="secondary"
-                    style={{ padding: "4px 8px", fontSize: 11 }}
-                    onClick={() => {
-                      const list = (data.isaPortfolio ?? ISA_PORTFOLIO.map((i) => ({ ticker: i.ticker, name: i.name, weight: i.weight, label: i.label }))).filter((_, i) => i !== index);
-                      onChangeData({ ...data, isaPortfolio: list });
-                    }}
-                    title="삭제"
-                  >
-                    삭제
-                  </button>
-                </td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
-      </div>
-      <button
-        type="button"
-        className="secondary"
-        style={{ marginTop: 8 }}
-        onClick={() => {
-          const list = data.isaPortfolio ?? ISA_PORTFOLIO.map((i) => ({ ticker: i.ticker, name: i.name, weight: i.weight, label: i.label }));
-          onChangeData({
-            ...data,
-            isaPortfolio: [...list, { ticker: "", name: "", weight: 0, label: "" }]
-          });
-        }}
-      >
-        + 종목 추가
-      </button>
-
       <h3 style={{ marginTop: 24, marginBottom: 12 }}>자산 스냅샷(반월/일별)</h3>
       <p style={{ fontSize: 12, color: "var(--text-muted)", marginBottom: 8 }}>
         표를 그대로 붙여넣거나(JSON 배열도 가능) 날짜별 자산 스냅샷을 저장합니다. 저장된 값은 대시보드에서
@@ -424,7 +321,8 @@ export const DashboardWidgetSettings: React.FC<Props> = React.memo(function Dash
 
       <h3 style={{ marginTop: 24, marginBottom: 12 }}>목표 자산 곡선</h3>
       <p style={{ fontSize: 12, color: "var(--text-muted)", marginBottom: 8 }}>
-        2026년 1월 이전 구간에서 참고용으로 표시할 목표 자산 금액. 날짜(YYYY-MM-DD)를 키로, 금액을 값으로 하는 JSON. 비워두면 해당 구간은 0원으로 표시됩니다.
+        대시보드 "순자산 추이" 차트에 점선으로 겹쳐 표시되는 목표 순자산. 날짜(YYYY-MM-DD)를 키로, 금액(원)을 값으로 하는 JSON.
+        첫 날짜 이전 달은 표시되지 않고, 날짜 사이는 선형 보간, 마지막 날짜 이후는 마지막 값을 유지합니다. 비워두면 목표선이 표시되지 않습니다.
       </p>
       <TargetNetWorthCurveEditor
         value={data.targetNetWorthCurve ?? {}}

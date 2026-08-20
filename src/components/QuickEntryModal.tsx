@@ -7,6 +7,7 @@ import { getTodayKST } from "../utils/date";
 import { newIdWithPrefix } from "../utils/id";
 import { useFocusTrap } from "../hooks/useFocusTrap";
 import { useModalStackEntry } from "../utils/modalStack";
+import { useUIStore } from "../store/uiStore";
 
 interface Props {
   open: boolean;
@@ -50,7 +51,10 @@ export const QuickEntryModal: React.FC<Props> = ({ open, onClose, data, onAdd })
 
   useEffect(() => {
     if (open) {
-      setText("");
+      // 딥링크(share_target) 프리필 — 1회 소비. 사용자가 내용을 확인하고 직접 추가해야 저장된다.
+      const prefill = useUIStore.getState().quickEntryPrefill;
+      setText(prefill ?? "");
+      if (prefill != null) useUIStore.getState().setQuickEntryPrefill(null);
       setTimeout(() => inputRef.current?.focus(), 30);
     }
   }, [open]);

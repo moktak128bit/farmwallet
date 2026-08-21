@@ -25,6 +25,8 @@ export const AccountForm: React.FC<Props> = React.memo(function AccountForm({ on
     initialCashBalance: "",
     isPension: false,
     taxShelter: "" as TaxShelterKind | "",
+    billingCycleStart: "",
+    paymentDay: "",
     note: "",
   });
 
@@ -43,6 +45,9 @@ export const AccountForm: React.FC<Props> = React.memo(function AccountForm({ on
     const debt = rawDebt;
     const cashAdjustment = parseAmount(form.cashAdjustment);
     const initialCashBalance = parseAmount(form.initialCashBalance);
+    // 신용카드 청구주기 시작일·결제일(1~31, 3-4) — 카드 유형에서만 저장
+    const billingCycleStartNum = Number(form.billingCycleStart);
+    const paymentDayNum = Number(form.paymentDay);
     const account: Account = {
       id: form.id.trim(),
       name: form.name.trim(),
@@ -56,6 +61,13 @@ export const AccountForm: React.FC<Props> = React.memo(function AccountForm({ on
       isPension: form.type === "securities" && form.isPension ? true : undefined,
       // 세제 성격(4-1) — 적격 유형에서만 저장. 편집(AdjustmentModal)도 같은 필드를 쓴다
       taxShelter: TAX_SHELTER_ELIGIBLE_TYPES.has(form.type) && form.taxShelter ? form.taxShelter : undefined,
+      // 카드 청구 예정액(3-4)에 쓰임 — 카드 유형에서만, 1~31 유효값일 때만 저장
+      billingCycleStart:
+        form.type === "card" && billingCycleStartNum >= 1 && billingCycleStartNum <= 31
+          ? billingCycleStartNum
+          : undefined,
+      paymentDay:
+        form.type === "card" && paymentDayNum >= 1 && paymentDayNum <= 31 ? paymentDayNum : undefined,
       note: form.note.trim() || undefined,
     };
     onAdd(account);
@@ -70,6 +82,8 @@ export const AccountForm: React.FC<Props> = React.memo(function AccountForm({ on
       initialCashBalance: "",
       isPension: false,
       taxShelter: "",
+      billingCycleStart: "",
+      paymentDay: "",
       note: "",
     });
   };
@@ -158,6 +172,35 @@ export const AccountForm: React.FC<Props> = React.memo(function AccountForm({ on
               onChange={(e) => setForm({ ...form, cashAdjustment: e.target.value })}
             />
           </label>
+        </>
+      )}
+      {form.type === "card" && (
+        <>
+          <label>
+            <span>청구주기 시작일 (1~31, 선택)</span>
+            <input
+              type="number"
+              min={1}
+              max={31}
+              placeholder="예: 13 (13일~익월 12일)"
+              value={form.billingCycleStart}
+              onChange={(e) => setForm({ ...form, billingCycleStart: e.target.value })}
+            />
+          </label>
+          <label>
+            <span>결제일 (1~31, 선택)</span>
+            <input
+              type="number"
+              min={1}
+              max={31}
+              placeholder="예: 25"
+              value={form.paymentDay}
+              onChange={(e) => setForm({ ...form, paymentDay: e.target.value })}
+            />
+          </label>
+          {(!form.billingCycleStart || !form.paymentDay) && (
+            <div className="hint">둘 다 설정하면 대시보드에 다음 카드 결제 예정액이 표시됩니다.</div>
+          )}
         </>
       )}
       {TAX_SHELTER_ELIGIBLE_TYPES.has(form.type) && (

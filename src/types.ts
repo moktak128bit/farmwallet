@@ -116,6 +116,10 @@ export interface RecurringExpense {
   endDate?: string;
   fromAccountId?: string;
   toAccountId?: string; // 입금계좌 (저축성지출/이체용)
+  /** 미지정(기존 데이터) = 지출 또는 이체(toAccountId 존재 여부로 판정, 레거시 동작 유지).
+   * "income" = 정기 수입(월급 등) — 반드시 toAccountId(입금계좌) 필요. generate/alert/forecast는
+   * kind="income"을 지출류와 다르게 처리(가드) — 3-4. */
+  kind?: "expense" | "transfer" | "income";
 }
 
 /** 예산 sentinel — category 필드에 이 값이 들어오면 "전체 지출 예산"으로 해석 */

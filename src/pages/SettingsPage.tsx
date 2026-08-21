@@ -27,6 +27,7 @@ import { JsonImportSection } from "../features/settings/JsonImportSection";
 import { DashboardWidgetSettings } from "../features/settings/DashboardWidgetSettings";
 import { StorageUsageCard } from "../features/settings/StorageUsageCard";
 import { MigrationReportCard } from "../features/settings/MigrationReportCard";
+import { StatementImportCard } from "../features/settings/StatementImportCard";
 
 const DataIntegrityView = lazy(() => import("./DataIntegrityPage").then((m) => ({ default: m.DataIntegrityView })));
 const SavingsMigrationView = lazy(() => import("./SavingsMigrationPage").then((m) => ({ default: m.SavingsMigrationView })));
@@ -179,6 +180,9 @@ export const SettingsView: React.FC<Props> = ({
             onChangeData={onChangeData}
             onBackupRestored={onBackupRestored}
           />
+
+          {/* 카드 명세 CSV/붙여넣기 임포트 — 카드 계좌 한정, dry-run 기본, 적용 시 단일 undo */}
+          <StatementImportCard data={data} onChangeData={onChangeData} />
 
           {/* 백업 섹션 맨 끝: localStorage 사용량(읽기 전용) */}
           <StorageUsageCard />

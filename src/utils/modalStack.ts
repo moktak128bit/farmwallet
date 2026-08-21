@@ -15,14 +15,29 @@ import { useCallback, useEffect, useRef, useSyncExternalStore } from "react";
 let stack: number[] = [];
 let seq = 0;
 const listeners = new Set<() => void>();
+let notifyScheduled = false;
 
+/**
+ * 구독자 알림은 microtask로 한 틱 모아서 보낸다(동기 호출 아님).
+ * React 18 StrictMode는 개발 모드에서 신규 마운트 시 effect를 "설정→해제→재설정"으로 한 번 더
+ * 검증 실행하는데, useModalStackEntry가 이 사이클마다 pushModal/popModal을 그대로 호출하면
+ * 구독자(historyNav 등)가 0→1→0→1로 깜빡이는 중간값(0)을 실제 변화로 오인해 반응한다.
+ * historyNav는 깊이 감소를 "X 버튼/ESC로 자체 닫힘"으로 해석해 history.back()까지 호출하므로,
+ * 이 오인 신호 하나가 방금 연 모달을 즉시 저절로 닫아버리는 결과로 이어진다(재현: 가계부 일괄편집,
+ * 반복지출 미등록 팝오버). push/pop이 같은 동기 구간에서 상쇄되면 구독자는 최종값만 봐야 한다.
+ */
 function notify(): void {
-  listeners.forEach((fn) => {
-    try {
-      fn();
-    } catch {
-      // 구독자 오류가 다른 구독자/모달 동작을 막지 않게
-    }
+  if (notifyScheduled) return;
+  notifyScheduled = true;
+  queueMicrotask(() => {
+    notifyScheduled = false;
+    listeners.forEach((fn) => {
+      try {
+        fn();
+      } catch {
+        // 구독자 오류가 다른 구독자/모달 동작을 막지 않게
+      }
+    });
   });
 }
 

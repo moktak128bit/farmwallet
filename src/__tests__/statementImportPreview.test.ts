@@ -108,6 +108,31 @@ describe("buildImportPreview — 중복 판정", () => {
     const [r] = buildImportPreview(rows, MAPPING, { ...baseOptions, cardAccountId: "acc-other", ledger: [existing] });
     expect(r.status).toBe("new");
   });
+
+  it("같은 배치 안에 완전 동일한 행이 나란히 있으면 두 번째는 duplicate-exact", () => {
+    const rows = [
+      ["2026.08.01", "스타벅스 강남점", "5,500"],
+      ["2026.08.02", "GS25", "3,200"],
+      ["2026.08.01", "스타벅스 강남점", "5,500"],
+    ];
+    const [first, second, third] = buildImportPreview(rows, MAPPING, baseOptions);
+    expect(first.status).toBe("new");
+    expect(first.included).toBe(true);
+    expect(second.status).toBe("new");
+    expect(third.status).toBe("duplicate-exact");
+    expect(third.included).toBe(false);
+  });
+
+  it("같은 배치 내 날짜 ±1일 + 금액 일치(설명 다름)도 duplicate-probable로 잡는다", () => {
+    const rows = [
+      ["2026.08.01", "스타벅스 강남점", "5,500"],
+      ["2026.08.02", "스타벅스코리아 강남2호점", "5,500"],
+    ];
+    const [first, second] = buildImportPreview(rows, MAPPING, baseOptions);
+    expect(first.status).toBe("new");
+    expect(second.status).toBe("duplicate-probable");
+    expect(second.included).toBe(false);
+  });
 });
 
 describe("buildImportPreview — USD 열", () => {

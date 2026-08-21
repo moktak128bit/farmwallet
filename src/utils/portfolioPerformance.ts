@@ -164,6 +164,25 @@ export function buildPortfolioPerformance(params: {
   };
 }
 
+/**
+ * fetch 배치 하나가 통째로 오염됐는지(다른 심볼 응답·CORS 프록시 오류 등) 판정하는 관대한 sanity check.
+ * 지수(KOSPI·S&P500·QQQ)는 2년 구간에서도 최댓값/최솟값 비율이 이 범위를 벗어나는 실사례가 없다
+ * (극단적 상승장도 2년 +150%를 넘지 않고, 2008/2020급 폭락도 -60%를 넘지 않음) — 값 자체가 아니라
+ * "배치 내부 일관성"만 보므로 실제 급등락 구간을 오탐하지 않는다(day-over-day 임계값과 달리
+ * 완만하지만 누적으로 비현실적인 드리프트도 잡아낸다).
+ */
+const BENCHMARK_BATCH_MAX_RATIO = 2.5; // 배치 내 최댓값/최솟값 상한(+150%)
+const BENCHMARK_BATCH_MIN_RATIO = 0.4; // 배치 내 최댓값/최솟값 하한(-60%)
+
+function isPlausibleBenchmarkBatch(closes: number[]): boolean {
+  if (closes.length < 2) return true;
+  const max = Math.max(...closes);
+  const min = Math.min(...closes);
+  if (min <= 0) return false;
+  const ratio = max / min;
+  return ratio <= BENCHMARK_BATCH_MAX_RATIO && ratio >= BENCHMARK_BATCH_MIN_RATIO;
+}
+
 /** 새로 fetch한 벤치마크 종가로 해당 티커 분을 통째 교체 (refetch 시 무한 증가 방지) */
 export function upsertBenchmarkCloses(
   existing: HistoricalDailyClose[] | undefined,
@@ -172,9 +191,15 @@ export function upsertBenchmarkCloses(
 ): HistoricalDailyClose[] {
   const key = normBench(ticker);
   const kept = (existing ?? []).filter((c) => normBench(c.ticker) !== key);
-  const add: HistoricalDailyClose[] = fetched
-    .filter((f) => f?.date && Number(f.close) > 0)
-    .map((f) => ({ ticker: key, date: f.date, close: f.close }));
+  const valid = fetched.filter((f) => f?.date && Number(f.close) > 0);
+  if (!isPlausibleBenchmarkBatch(valid.map((f) => f.close))) {
+    // 오염 의심 배치 — 이번 fetch는 버리고 기존 데이터를 그대로 보존한다(최신화 실패는 다음 시도에서 재시도).
+    console.warn(
+      `[upsertBenchmarkCloses] ${key}: 비정상적인 가격 범위(fetch 배치 최댓값/최솟값 비율 이상) — 이번 갱신을 건너뜁니다.`
+    );
+    return existing ?? [];
+  }
+  const add: HistoricalDailyClose[] = valid.map((f) => ({ ticker: key, date: f.date, close: f.close }));
   return [...kept, ...add].sort(
     (a, b) => a.ticker.localeCompare(b.ticker) || a.date.localeCompare(b.date)
   );

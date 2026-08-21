@@ -126,6 +126,31 @@ describe("upsertBenchmarkCloses", () => {
     expect(next.find((x) => x.ticker === "^KS11")!.date).toBe("2026-02-01");
     expect(next.filter((x) => x.ticker === "^GSPC")).toHaveLength(1);
   });
+
+  it("배치 내 최댓값/최솟값 비율이 비정상(다른 심볼 응답·프록시 오류 등 오염 의심)이면 기존 데이터를 보존하고 버린다", () => {
+    const existing: HistoricalDailyClose[] = [{ ticker: "^KS11", date: "2026-01-01", close: 3000 }];
+    // 실사례 재현: 2년치 응답 안에서 완만하지만 비현실적으로 누적 상승(3,141→8,471, 약 2.7배)
+    const fetched = [
+      { date: "2025-08-21", close: 3141.74 },
+      { date: "2025-12-01", close: 4800 },
+      { date: "2026-03-01", close: 6500 },
+      { date: "2026-06-24", close: 8471.02 },
+    ];
+    const next = upsertBenchmarkCloses(existing, "^KS11", fetched);
+    // 오염 의심 배치는 버리고 기존 데이터를 그대로 유지 — 다음 refetch에서 재시도
+    expect(next).toEqual(existing);
+  });
+
+  it("정상 범위(2년 최대 변동 150% 이내)의 fetch는 그대로 적용된다", () => {
+    const existing: HistoricalDailyClose[] = [{ ticker: "^KS11", date: "2026-01-01", close: 3000 }];
+    const fetched = [
+      { date: "2025-08-21", close: 3141.74 },
+      { date: "2026-06-24", close: 3800 }, // +21% — 정상 범위
+    ];
+    const next = upsertBenchmarkCloses(existing, "^KS11", fetched);
+    expect(next.filter((x) => x.ticker === "^KS11")).toHaveLength(2);
+    expect(next.find((x) => x.date === "2026-06-24")!.close).toBe(3800);
+  });
 });
 
 describe("parseHistoricalCloses", () => {

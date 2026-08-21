@@ -47,13 +47,18 @@ const CANCEL_STATUS_RE = /(취소|환불)/;
  *  - exact: 날짜·금액·설명(trim)까지 완전 일치
  *  - probable: 날짜 ±1일 이내 + 금액 일치(설명은 무시 — "스타벅스" vs "스타벅스커피(주)강남점" 같은
  *    표기 차이를 못 잡으므로 이쪽을 넓게 잡고 기본 제외해 사용자가 눈으로 확인하게 한다)
+ *
+ * pool은 기존 저장 가계부(ledger)뿐 아니라 같은 붙여넣기 배치에서 이미 "신규"로 판정된 이전 행들
+ * (batchDrafts)도 함께 본다 — 카드사 CSV가 겹치는 기간을 포함해 재업로드되거나 사용자가 같은 행을
+ * 실수로 두 번 붙여넣었을 때, 배치 내부의 완전 동일한 행끼리는 서로를 걸러내지 못하던 문제 방지.
  */
 function findDuplicateStatus(
   candidate: { date: string; amount: number; description: string },
   cardAccountId: string,
-  ledger: LedgerEntry[]
+  ledger: LedgerEntry[],
+  batchDrafts: LedgerEntry[] = []
 ): "new" | "duplicate-exact" | "duplicate-probable" {
-  const pool = ledger.filter(
+  const pool = [...ledger, ...batchDrafts].filter(
     (l) => l.kind === "expense" && l.fromAccountId === cardAccountId && !isCreditPayment(l)
   );
   const descNorm = candidate.description.trim();
@@ -84,6 +89,8 @@ export function buildImportPreview(
   options: BuildImportPreviewOptions
 ): ImportPreviewRow[] {
   const { cardAccountId, ledger, fxRate, today } = options;
+  // 이 배치 안에서 이미 "신규"로 확정된 초안 — 뒤 행의 중복 판정 pool에 함께 넣는다(id는 판정에 안 쓰임).
+  const batchDrafts: LedgerEntry[] = [];
 
   return rows.map((row, rowIndex): ImportPreviewRow => {
     const rawDate = row[mapping.dateCol] ?? "";
@@ -121,7 +128,12 @@ export function buildImportPreview(
       };
     }
 
-    const status = findDuplicateStatus({ date, amount: parsedAmount, description }, cardAccountId, ledger);
+    const status = findDuplicateStatus(
+      { date, amount: parsedAmount, description },
+      cardAccountId,
+      ledger,
+      batchDrafts
+    );
     const recs = recommendCategory(description, parsedAmount, "expense", ledger);
     const stored = quickEntryStoredCategory("expense", recs[0] ?? null);
 
@@ -141,6 +153,8 @@ export function buildImportPreview(
       fromAccountId: cardAccountId,
       ...(isUsd ? { currency: "USD" as const } : {}),
     };
+
+    if (status === "new") batchDrafts.push({ ...draft, id: "" });
 
     return {
       rowIndex,

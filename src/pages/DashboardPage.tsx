@@ -37,7 +37,8 @@ import { StockCostVsMarketCard } from "../features/dashboard/StockCostVsMarketCa
 import { TotalAssetTrendCard } from "../features/dashboard/TotalAssetTrendCard";
 import { computeLedgerSummary, computeRecheckBreakdown, EXPENSE_BOX_EXCLUDED_NAMES } from "../features/dashboard/summaryMath";
 import { computeIncomeNatureKeys } from "../utils/incomeClassification";
-import { loadHiddenDashboardWidgets } from "../features/dashboard/dashboardWidgets";
+import { isDashboardWidgetVisible, loadHiddenDashboardWidgets } from "../features/dashboard/dashboardWidgets";
+import { TaxActionsCard } from "../features/dashboard/TaxActionsCard";
 import { buildDividendGrowth, resolveTrackedTickers } from "../utils/dividendGrowth";
 import { useAccountTimelineRows } from "../hooks/useAccountTimelineRows";
 import { buildAdjustedPrices, buildTimelineMonthRange } from "../utils/accountTimeline";
@@ -111,7 +112,7 @@ export const DashboardView: React.FC<Props> = (props) => {
   // 위젯 표시/숨김 — 설정 탭에서 저장한 숨김 목록을 마운트 시 적용
   // (대시보드 탭은 전환 시 언마운트/재마운트되므로 설정 변경 후 돌아오면 즉시 반영됨)
   const [hiddenWidgets] = useState<Set<string>>(() => loadHiddenDashboardWidgets());
-  const show = (id: string) => !hiddenWidgets.has(id);
+  const show = (id: string) => isDashboardWidgetVisible(id, hiddenWidgets, today);
 
   const monthRange = useMemo(() => buildTimelineMonthRange(ledger, trades, currentMonth), [ledger, trades, currentMonth]);
 
@@ -511,6 +512,10 @@ export const DashboardView: React.FC<Props> = (props) => {
             categoryPresets={storeData.categoryPresets}
           />
         )}
+
+        {/* 절세 액션 (4-2) — 종합과세·해외주식 양도세·절세계좌를 한 목록으로. 10~12월엔 기본 표시,
+            그 외엔 위젯 설정에서 켜야 보임(연중 위젯 피로 방지) */}
+        {show("taxActions") && <TaxActionsCard />}
       </div>
     </div>
   );

@@ -6,6 +6,7 @@
 import React, { useMemo } from "react";
 import type { LedgerTemplate } from "../../types";
 import { describeSuggestion, type DescriptionSuggestion } from "../../utils/ledgerSuggest";
+import { formatNumber } from "../../utils/formatter";
 
 const kindLabel: Record<LedgerTemplate["kind"], string> = { income: "수입", expense: "지출", transfer: "이체" };
 
@@ -55,7 +56,7 @@ export const LedgerTemplateChips = React.memo(function LedgerTemplateChips({
               {t.name}
             </span>
             {t.amount ? (
-              <span style={{ color: "var(--text-muted)", fontWeight: 400 }}>· {t.amount.toLocaleString()}원</span>
+              <span style={{ color: "var(--text-muted)", fontWeight: 400 }}>· {formatNumber(t.amount)}원</span>
             ) : null}
           </button>
         );

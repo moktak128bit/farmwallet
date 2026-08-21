@@ -1,5 +1,5 @@
-import { describe, it, expect } from "vitest";
-import { formatNumber, formatKRW, formatUSD, formatShortDate } from "../utils/formatter";
+import { describe, it, expect, afterEach } from "vitest";
+import { formatNumber, formatKRW, formatUSD, formatShortDate, formatDecimal, setAmountMask, isAmountMasked } from "../utils/formatter";
 
 describe("formatNumber", () => {
   it("정수를 천 단위 쉼표로 포맷", () => {
@@ -69,5 +69,59 @@ describe("formatShortDate", () => {
 
   it("ISO 타임스탬프는 날짜 부분만 사용", () => {
     expect(formatShortDate("2026-04-07T15:30:00")).toBe("26.04.07");
+  });
+});
+
+describe("프라이버시 블러 — setAmountMask", () => {
+  afterEach(() => {
+    // 다른 테스트 파일에 누수되지 않도록 항상 off로 복귀
+    setAmountMask(false);
+  });
+
+  it("기본값은 off", () => {
+    expect(isAmountMasked()).toBe(false);
+  });
+
+  it("on이면 formatNumber가 숫자 부분을 가린다", () => {
+    setAmountMask(true);
+    expect(formatNumber(1234567)).toBe("••••");
+    expect(formatNumber(0)).toBe("••••");
+  });
+
+  it("on이면 formatKRW가 부호·단위는 유지하고 숫자만 가린다", () => {
+    setAmountMask(true);
+    expect(formatKRW(50000)).toBe("•••• 원");
+  });
+
+  it("on이면 formatUSD가 통화기호·부호는 유지하고 숫자만 가린다", () => {
+    setAmountMask(true);
+    expect(formatUSD(123.4567)).toBe("$••••");
+    expect(formatUSD(-5.5)).toBe("-$••••");
+  });
+
+  it("on이면 formatDecimal도 마스킹된다", () => {
+    setAmountMask(true);
+    expect(formatDecimal(1.2345, 4)).toBe("••••");
+  });
+
+  it("off로 되돌리면 정상 표기로 복귀", () => {
+    setAmountMask(true);
+    setAmountMask(false);
+    expect(formatNumber(1234567)).toBe("1,234,567");
+    expect(formatKRW(50000)).toBe("50,000 원");
+    expect(formatUSD(123.4567)).toBe("$123.457");
+  });
+});
+
+describe("formatDecimal", () => {
+  it("소수점 자리수를 제한해 표기", () => {
+    expect(formatDecimal(1.23456, 4)).toBe("1.2346");
+    expect(formatDecimal(3, 2)).toBe("3");
+  });
+
+  it("null/undefined/NaN은 '0' 반환", () => {
+    expect(formatDecimal(null)).toBe("0");
+    expect(formatDecimal(undefined)).toBe("0");
+    expect(formatDecimal(NaN)).toBe("0");
   });
 });

@@ -21,6 +21,7 @@
 import type { BudgetGoal, CategoryPresets, LedgerEntry } from "../types";
 import { computeBudgetGoalSpent } from "./budgetUsage";
 import { getLastDayOfMonth, shiftMonth } from "./date";
+import { formatNumber } from "./formatter";
 
 export type BudgetPaceStatus = "ok" | "watch" | "over-pace" | "exceeded";
 
@@ -56,7 +57,7 @@ const HISTORY_MONTHS = 3;
 /** 월말 예상이 한도의 이 비율을 넘으면 'watch' */
 const WATCH_RATIO = 0.9;
 
-const won = (n: number) => `${Math.round(n).toLocaleString()}원`;
+const won = (n: number) => `${formatNumber(n)}원`;
 const signedPct = (pct: number) => `${pct >= 0 ? "+" : "−"}${Math.abs(pct).toFixed(0)}%`;
 
 /** 경과일: 보고 있는 달과 오늘(KST ISO)의 관계로 결정 */

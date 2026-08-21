@@ -45,7 +45,8 @@ const shortcutGroups: ShortcutGroup[] = [
     title: "기타",
     shortcuts: [
       { key: "Esc", description: "모달/폼 닫기" },
-      { key: "Ctrl+/", description: "단축키 도움말" }
+      { key: "Ctrl+/", description: "단축키 도움말" },
+      { key: "Ctrl+Shift+H", description: "프라이버시 블러 토글" }
     ]
   }
 ];

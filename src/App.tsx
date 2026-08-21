@@ -1,6 +1,6 @@
 import React, { useCallback, useEffect, useMemo, useState, lazy, Suspense } from "react";
 import { Toaster, toast } from "react-hot-toast";
-import { Moon, Sun, Menu } from "lucide-react";
+import { Moon, Sun, Menu, Eye, EyeOff } from "lucide-react";
 import { Tabs, type TabId } from "./components/ui/Tabs";
 import { ShortcutsHelp } from "./components/ShortcutsHelp";
 import { SearchModal } from "./components/SearchModal";
@@ -104,6 +104,8 @@ export const App: React.FC = () => {
   // UI 상태는 모두 uiStore에서 관리 (App.tsx에서 useState 17개를 슬라이스로 이전)
   const tab = useUIStore((s) => s.tab);
   const setTab = useUIStore((s) => s.setTab);
+  const privacyMode = useUIStore((s) => s.privacyMode);
+  const setPrivacyMode = useUIStore((s) => s.setPrivacyMode);
   const mobileDrawerOpen = useUIStore((s) => s.mobileDrawerOpen);
   const setMobileDrawerOpen = useUIStore((s) => s.setMobileDrawerOpen);
   const closeMobileDrawer = useCallback(() => setMobileDrawerOpen(false), [setMobileDrawerOpen]);
@@ -441,7 +443,8 @@ export const App: React.FC = () => {
       setTab("ledger");
       window.dispatchEvent(new CustomEvent("farmwallet:focus-ledger-form"));
     },
-    onQuickEntry: () => setShowQuickEntry(true)
+    onQuickEntry: () => setShowQuickEntry(true),
+    onTogglePrivacy: () => setPrivacyMode((prev) => !prev)
   });
 
   const handleQuickEntryAdd = useCallback((entry: import("./types").LedgerEntry) => {
@@ -839,6 +842,15 @@ export const App: React.FC = () => {
               style={{ fontSize: 12, padding: "4px 10px", border: "1px solid var(--border)", borderRadius: 6, background: "var(--surface)", cursor: "pointer" }}
             >
               ＋ 빠른 입력
+            </button>
+            <button
+              onClick={() => setPrivacyMode((prev) => !prev)}
+              className="icon-button"
+              title={`${privacyMode ? "프라이버시 모드 끄기" : "프라이버시 모드 켜기"} (Ctrl+Shift+H)`}
+              aria-pressed={privacyMode}
+              style={{ width: 32, height: 32, border: "1px solid var(--border)" }}
+            >
+              {privacyMode ? <EyeOff size={16} /> : <Eye size={16} />}
             </button>
             <button
               onClick={toggleTheme}

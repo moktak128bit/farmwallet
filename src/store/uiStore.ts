@@ -5,6 +5,7 @@ import { isGistConfigured } from "../services/gistSync";
 import { STORAGE_KEYS } from "../constants/config";
 import { TAB_ORDER } from "../constants/tabs";
 import type { ApplySummary } from "../utils/applySummary";
+import { setAmountMask } from "../utils/formatter";
 
 interface AppLogEntry {
   id: number;
@@ -93,6 +94,29 @@ function loadLastTab(): TabId {
     // localStorage 접근 불가(프라이빗 모드 등) — 기본 탭
   }
   return "dashboard";
+}
+
+/** 부팅 시 프라이버시 모드 복원 — 저장값 없으면 기본 off. formatter의 마스킹 플래그를 즉시 동기화. */
+function loadPrivacyMode(): boolean {
+  if (typeof window === "undefined") return false;
+  try {
+    const raw = window.localStorage.getItem(STORAGE_KEYS.PRIVACY_MODE);
+    const on = raw === "true";
+    setAmountMask(on);
+    return on;
+  } catch {
+    // localStorage 접근 불가(프라이빗 모드 등) — 기본 off
+    return false;
+  }
+}
+
+function persistPrivacyMode(on: boolean): void {
+  if (typeof window === "undefined") return;
+  try {
+    window.localStorage.setItem(STORAGE_KEYS.PRIVACY_MODE, on ? "true" : "false");
+  } catch {
+    // quota/접근 불가 — 이번 세션 동안만 유지
+  }
 }
 
 function persistLastTab(tab: TabId): void {
@@ -228,6 +252,10 @@ interface UIStore {
   // App log
   appLog: AppLogEntry[];
   addAppLog: (message: string, type?: AppLogEntry["type"]) => void;
+
+  /** 프라이버시 블러(5-1) — 켜지면 화면 금액을 마스킹. formatter.setAmountMask와 동기화되어 있다. */
+  privacyMode: boolean;
+  setPrivacyMode: (on: boolean | ((prev: boolean) => boolean)) => void;
 }
 
 export const useUIStore = create<UIStore>((set) => ({
@@ -311,5 +339,14 @@ export const useUIStore = create<UIStore>((set) => ({
       // 백그라운드 영속화 — quota 초과 시 조용히 실패
       schedulePersist(() => useUIStore.getState().appLog);
       return { appLog: next };
+    }),
+
+  privacyMode: loadPrivacyMode(),
+  setPrivacyMode: (on) =>
+    set((state) => {
+      const next = typeof on === "function" ? on(state.privacyMode) : on;
+      setAmountMask(next);
+      persistPrivacyMode(next);
+      return { privacyMode: next };
     }),
 }));

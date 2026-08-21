@@ -21,6 +21,7 @@ import {
 import { isCoarsePointer } from "../../utils/pointer";
 import { buildRestoreById, showDeleteUndoToast } from "../../utils/undoToast";
 import { useAppStore } from "../../store/appStore";
+import { formatNumber } from "../../utils/formatter";
 
 const freqLabel: Record<Recurrence, string> = {
   monthly: "매월",
@@ -248,7 +249,7 @@ export const RecurringListSection: React.FC<Props> = React.memo(function Recurri
           <ul style={{ margin: "8px 0", paddingLeft: 20, fontSize: 14 }}>
             {previewEntries.map((e) => (
               <li key={e.id}>
-                {e.date} · {e.description} — {e.amount.toLocaleString()}원 ({e.subCategory || e.category})
+                {e.date} · {e.description} — {formatNumber(e.amount)}원 ({e.subCategory || e.category})
               </li>
             ))}
           </ul>
@@ -362,7 +363,7 @@ export const RecurringListSection: React.FC<Props> = React.memo(function Recurri
                     style={{ width: "100%", padding: "4px", fontSize: 14 }}
                   />
                 ) : (
-                  `${Math.round(r.amount).toLocaleString()} 원`
+                  `${formatNumber(r.amount)} 원`
                 )}
               </td>
               <td

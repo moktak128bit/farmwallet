@@ -2,6 +2,7 @@ import React, { useCallback, useEffect, useMemo, useRef, useState } from "react"
 import type { LedgerEntry } from "../../types";
 import { STORAGE_KEYS } from "../../constants/config";
 import { toKrwAmount } from "./summaryMath";
+import { formatNumber, isAmountMasked } from "../../utils/formatter";
 
 interface SalaryTimerSettings {
   /** 월급 받는 날 (1~31). 짧은 달은 말일로 자동 보정 */
@@ -62,12 +63,13 @@ function loadSettings(): SalaryTimerSettings | null {
 }
 
 /** 정수부는 천 단위 콤마 */
-const fmtInt = (n: number): string => Math.floor(Math.max(0, n)).toLocaleString("ko-KR");
+const fmtInt = (n: number): string => formatNumber(Math.floor(Math.max(0, n)));
 /** ".XX" 소수부 (2자리) */
-const fmtFrac = (n: number): string => (Math.max(0, n) % 1).toFixed(2).slice(1);
+const fmtFrac = (n: number): string => (isAmountMasked() ? "" : (Math.max(0, n) % 1).toFixed(2).slice(1));
 
 /** 단가 표시: 100원 미만이면 소수 2자리, 그 이상은 정수 콤마 */
 function fmtRate(n: number): string {
+  if (isAmountMasked()) return "••••";
   if (n < 100) return n.toFixed(2);
   return Math.round(n).toLocaleString("ko-KR");
 }
@@ -187,7 +189,7 @@ export const SalaryTimerCard: React.FC<Props> = React.memo(function SalaryTimerC
             onClick={() => setSalaryInput(String(ledgerSalary.avg))}
             style={{ marginTop: 12, padding: "5px 12px", fontSize: 13 }}
           >
-            가계부 급여 기록에서 불러오기 (월평균 {ledgerSalary.avg.toLocaleString("ko-KR")}원 · {ledgerSalary.months}개월)
+            가계부 급여 기록에서 불러오기 (월평균 {formatNumber(ledgerSalary.avg)}원 · {ledgerSalary.months}개월)
           </button>
         )}
       </div>

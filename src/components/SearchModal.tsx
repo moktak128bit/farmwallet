@@ -2,6 +2,7 @@ import React, { useEffect, useRef, useState } from "react";
 import type { SearchQuery, SavedFilter } from "../hooks/useSearch";
 import { useFocusTrap } from "../hooks/useFocusTrap";
 import { useModalStackEntry } from "../utils/modalStack";
+import { formatNumber } from "../utils/formatter";
 
 interface SearchModalProps {
   isOpen: boolean;
@@ -229,7 +230,7 @@ export const SearchModal: React.FC<SearchModalProps> = ({
                 <div className="search-row-meta">
                   <span>{r.date}</span>
                   <span>{r.accounts || r.accountId}</span>
-                  <span>{displayAmount(r).value.toLocaleString()} {displayAmount(r).unit}</span>
+                  <span>{formatNumber(displayAmount(r).value)} {displayAmount(r).unit}</span>
                 </div>
               </div>
             ))}

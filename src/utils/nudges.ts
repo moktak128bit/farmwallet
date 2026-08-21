@@ -29,6 +29,7 @@ import type { TabId } from "../components/ui/Tabs";
 import { findOverdueRecurring } from "./recurringAlert";
 import { computeBudgetPace } from "./budgetPace";
 import { buildComprehensiveTaxTracker } from "./taxCalculator";
+import { formatNumber } from "./formatter";
 import { buildForwardDividends } from "./forwardDividends";
 import { buildShelterAccountMap } from "./taxShelter";
 import { buildFxHistory } from "./portfolioHistory";
@@ -74,7 +75,7 @@ export interface NudgeContext {
   lastMigrationReport?: { at: string; toVersion: number; hasChanges: boolean } | null;
 }
 
-const won = (n: number) => `${Math.round(n).toLocaleString()}원`;
+const won = (n: number) => `${formatNumber(n)}원`;
 
 /** a, b(둘 다 YYYY-MM-DD) 사이 일수. b - a. 파싱 실패 시 null */
 function diffDays(a: string, b: string): number | null {

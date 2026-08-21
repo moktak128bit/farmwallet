@@ -7,6 +7,7 @@ import { useEffect } from "react";
 import type { LedgerTemplate } from "../../types";
 import { useFocusTrap } from "../../hooks/useFocusTrap";
 import { useModalStackEntry } from "../../utils/modalStack";
+import { formatNumber } from "../../utils/formatter";
 
 const kindLabel: Record<LedgerTemplate["kind"], string> = { income: "수입", expense: "지출", transfer: "이체" };
 
@@ -68,7 +69,7 @@ export function LedgerTemplateManageModal({ templates, onClose, onApply, onDelet
                       <td>{t.name}</td>
                       <td>{kindLabel[t.kind]}</td>
                       <td>{[t.mainCategory, t.subCategory].filter(Boolean).join(" > ") || "-"}</td>
-                      <td className="number">{t.amount?.toLocaleString() ?? "-"}</td>
+                      <td className="number">{t.amount != null ? formatNumber(t.amount) : "-"}</td>
                       <td>{t.fromAccountId || "-"}</td>
                       <td>{t.toAccountId || "-"}</td>
                       <td>

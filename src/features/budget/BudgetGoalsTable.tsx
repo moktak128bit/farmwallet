@@ -22,6 +22,7 @@ import type { BudgetUsageRow } from "./BudgetDashboardSection";
 // 전제: appStore.setData는 동기(zustand) — 클릭 시점 getState() 재조회가 항상 최신.
 // useAppStore는 핸들러 내부 getState()만 사용 — 훅 구독 금지(재렌더 유발·memo 무력화 방지).
 import { buildRestoreById, showDeleteUndoToast } from "../../utils/undoToast";
+import { formatNumber } from "../../utils/formatter";
 
 interface Props {
   budgetUsage: BudgetUsageRow[];
@@ -165,14 +166,14 @@ export const BudgetGoalsTable: React.FC<Props> = React.memo(function BudgetGoals
                     style={{ width: "100%", padding: "4px", fontSize: 14 }}
                   />
                 ) : (
-                  `${Math.round(b.monthlyLimit).toLocaleString()} 원`
+                  `${formatNumber(b.monthlyLimit)} 원`
                 )}
               </td>
               <td className={`number ${b.remain < 0 ? "negative" : "positive"}`}>
-                {Math.round(b.spent).toLocaleString()} 원
+                {formatNumber(b.spent)} 원
               </td>
               <td className={`number ${b.remain < 0 ? "negative" : "positive"}`}>
-                {Math.round(b.remain).toLocaleString()} 원
+                {formatNumber(b.remain)} 원
                 {isOver && (
                   <span style={{ marginLeft: 6, fontSize: 11, fontWeight: 600, background: "var(--danger)", color: "white", padding: "2px 6px", borderRadius: 4 }}>
                     초과

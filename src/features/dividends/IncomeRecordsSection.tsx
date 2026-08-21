@@ -13,7 +13,7 @@ import React, { useState, useMemo } from "react";
 import { toast } from "react-hot-toast";
 import { FilterChipRow } from "../../components/ui/FilterChipRow";
 import type { Account, LedgerEntry } from "../../types";
-import { formatKRW, formatShortDate } from "../../utils/formatter";
+import { formatKRW, formatShortDate, formatDecimal } from "../../utils/formatter";
 import { extractTickerFromText } from "../../utils/finance";
 import { toKrwByRate } from "../../utils/currency";
 import { buildDividendNote, parseExDateFromNote } from "../../utils/dividend";
@@ -465,7 +465,7 @@ export const IncomeRecordsSection: React.FC<Props> = React.memo(function IncomeR
                                 step="any"
                               />
                             ) : (
-                              <span>{r.quantity != null ? `${r.quantity.toLocaleString(undefined, { maximumFractionDigits: 4 })}주` : "-"}</span>
+                              <span>{r.quantity != null ? `${formatDecimal(r.quantity, 4)}주` : "-"}</span>
                             )}
                           </td>
                           <td

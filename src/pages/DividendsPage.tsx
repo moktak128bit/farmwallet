@@ -28,6 +28,7 @@ import { STORAGE_KEYS } from "../constants/config";
 import type { DividendRow, TabType } from "../features/dividends/types";
 import { DividendFormSection } from "../features/dividends/DividendFormSection";
 import { ComprehensiveTaxCard } from "../features/dividends/ComprehensiveTaxCard";
+import { TaxActionsCard } from "../features/dashboard/TaxActionsCard";
 import { DividendCalendarCard } from "../features/dividends/DividendCalendarCard";
 import { ShelterContributionCard } from "../features/dividends/ShelterContributionCard";
 import { InterestFormSection } from "../features/dividends/InterestFormSection";
@@ -427,6 +428,9 @@ export const DividendsView: React.FC<Props> = ({ accounts, ledger, trades, price
         <ComprehensiveTaxCard ledger={ledger} fxRate={fxRate} accounts={accounts} forwardMonths={forward.months} />
         <ShelterContributionCard accounts={accounts} ledger={ledger} fxRate={fxRate} />
       </div>
+
+      {/* 절세 액션 (4-2) — 위 두 카드+해외주식 양도세를 우선순위 목록으로. 대시보드와 같은 카드 재사용 */}
+      <TaxActionsCard forwardMonths={forward.months} />
 
       {/* 배당 캘린더 & 목표 (C1·C2) — 향후 12개월 예상 배당 + 목표 진행률 */}
       <DividendCalendarCard forward={forward} holdingsApplied={!!currentQtyByTicker} />

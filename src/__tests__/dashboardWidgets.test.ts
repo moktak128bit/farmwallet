@@ -7,6 +7,7 @@ import { beforeEach, describe, expect, it } from "vitest";
 import { STORAGE_KEYS } from "../constants/config";
 import {
   DASHBOARD_WIDGETS,
+  isDashboardWidgetVisible,
   loadHiddenDashboardWidgets,
   saveHiddenDashboardWidgets,
 } from "../features/dashboard/dashboardWidgets";
@@ -45,5 +46,30 @@ describe("dashboardWidgets", () => {
   it("손상된 JSON이면 빈 집합으로 폴백", () => {
     window.localStorage.setItem(STORAGE_KEYS.DASHBOARD_HIDDEN_WIDGETS, "{broken");
     expect(loadHiddenDashboardWidgets().size).toBe(0);
+  });
+
+  describe("isDashboardWidgetVisible (4-2 seasonalOnly)", () => {
+    it("일반 위젯은 저장 없으면 표시, 숨김 집합에 있으면 숨김 (기존 동작 그대로)", () => {
+      expect(isDashboardWidgetVisible("budgetAlert", new Set(), "2026-03-01")).toBe(true);
+      expect(isDashboardWidgetVisible("budgetAlert", new Set(["budgetAlert"]), "2026-03-01")).toBe(false);
+    });
+
+    it("taxActions는 계절(10~12월) 밖엔 기본 숨김", () => {
+      expect(isDashboardWidgetVisible("taxActions", new Set(), "2026-03-01")).toBe(false);
+      expect(isDashboardWidgetVisible("taxActions", new Set(), "2026-09-30")).toBe(false);
+    });
+
+    it("taxActions는 10~12월엔 기본 표시", () => {
+      expect(isDashboardWidgetVisible("taxActions", new Set(), "2026-10-01")).toBe(true);
+      expect(isDashboardWidgetVisible("taxActions", new Set(), "2026-12-31")).toBe(true);
+    });
+
+    it("taxActions — 비계절에 설정에서 켜면(뒤집힘) 표시된다", () => {
+      expect(isDashboardWidgetVisible("taxActions", new Set(["taxActions"]), "2026-03-01")).toBe(true);
+    });
+
+    it("taxActions — 계절에 설정에서 끄면(뒤집힘) 숨겨진다", () => {
+      expect(isDashboardWidgetVisible("taxActions", new Set(["taxActions"]), "2026-11-01")).toBe(false);
+    });
   });
 });

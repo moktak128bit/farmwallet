@@ -402,6 +402,23 @@ const FULL: Required<AppData> = {
     excludedSubCategories: ["통신비"],
     warnOnExceed: false,
   },
+  savingsGoals: [
+    {
+      id: "SG1",
+      name: "비상금 1000만",
+      targetAmount: 10_000_000,
+      targetDate: "2027-01-01",
+      linkedAccountIds: ["A1"],
+      createdAt: "2026-01-01T00:00:00.000Z",
+    },
+    {
+      id: "SG2",
+      name: "여행 자금",
+      targetAmount: 3_000_000,
+      linkedCategory: "저축이체",
+      createdAt: "2026-02-01T00:00:00.000Z",
+    },
+  ],
 };
 
 const ALL_KEYS = Object.keys(FULL) as AppDataKey[];
@@ -578,7 +595,7 @@ describe("AppData 계약 — getEmptyData / 테이블 백업 tables 키 집합",
     for (const key of [
       "loans", "usTickers", "tickerDatabase", "ledgerTemplates", "stockPresets", "targetPortfolios",
       "workoutWeeks", "workoutRoutines", "customExercises", "targetNetWorthCurve", "assetSnapshots",
-      "historicalDailyCloses", "dividendTrackingTicker", "isaPortfolio",
+      "historicalDailyCloses", "dividendTrackingTicker", "isaPortfolio", "savingsGoals",
     ] as const) {
       expect(empty[key], `getEmptyData().${key}가 undefined`).not.toBeUndefined();
     }
@@ -617,6 +634,7 @@ describe("AppData 계약 — getEmptyData / 테이블 백업 tables 키 집합",
         "meta_kv",
         "net_worth_curve",
         "recurring_expenses",
+        "savings_goals",
         "stock_presets",
         "stock_prices",
         "stock_trades",

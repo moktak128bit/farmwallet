@@ -6,6 +6,7 @@ import {
   normalizeInvestmentGoals,
   normalizeDailyBudget,
   normalizeHistoricalDailyCloses,
+  normalizeSavingsGoals,
 } from "../services/dataNormalizers";
 import { DEFAULT_DAILY_BUDGET } from "../utils/dailyBudget";
 
@@ -328,5 +329,79 @@ describe("dataNormalizers — normalizeHistoricalDailyCloses", () => {
   it("멱등성", () => {
     const once = normalizeHistoricalDailyCloses([{ ticker: "tsla", date: "2026-01-02", close: "1,000" }]);
     expect(normalizeHistoricalDailyCloses(once)).toEqual(once);
+  });
+});
+
+describe("dataNormalizers — normalizeSavingsGoals", () => {
+  it("배열이 아닌 입력은 빈 배열", () => {
+    for (const g of GARBAGE_TOPLEVEL) expect(normalizeSavingsGoals(g)).toEqual([]);
+  });
+
+  it("id/name/targetAmount 중 하나라도 무효면 해당 항목만 폐기(부분 복원)", () => {
+    const out = normalizeSavingsGoals([
+      null,
+      42,
+      { id: "", name: "무효-id없음", targetAmount: 1000 },
+      { id: "SG1", name: "", targetAmount: 1000 },
+      { id: "SG2", name: "무효-금액없음", targetAmount: 0 },
+      { id: "SG3", name: "무효-음수", targetAmount: -100 },
+      { id: "SG4", name: "무효-NaN", targetAmount: NaN },
+      { id: "SG5", name: "유효", targetAmount: 1_000_000, createdAt: "2026-01-01T00:00:00.000Z" },
+    ]);
+    expect(out).toEqual([
+      { id: "SG5", name: "유효", targetAmount: 1_000_000, createdAt: "2026-01-01T00:00:00.000Z" },
+    ]);
+  });
+
+  it("targetDate는 YYYY-MM-DD 형식만 허용, linkedAccountIds는 문자열만 필터링, linkedCategory는 trim", () => {
+    const out = normalizeSavingsGoals([
+      {
+        id: "SG1",
+        name: "비상금",
+        targetAmount: 5_000_000,
+        targetDate: "2026/01/01", // 형식 오류 → 제거
+        linkedAccountIds: ["A1", 42, null, "A2"],
+        linkedCategory: "  저축이체  ",
+        createdAt: "2026-01-01T00:00:00.000Z",
+      },
+      {
+        id: "SG2",
+        name: "여행 자금",
+        targetAmount: 3_000_000,
+        targetDate: "2027-06-30",
+        linkedAccountIds: [],
+        linkedCategory: "",
+        createdAt: "2026-02-01T00:00:00.000Z",
+      },
+    ]);
+    expect(out[0]).toEqual({
+      id: "SG1",
+      name: "비상금",
+      targetAmount: 5_000_000,
+      linkedAccountIds: ["A1", "A2"],
+      linkedCategory: "저축이체",
+      createdAt: "2026-01-01T00:00:00.000Z",
+    });
+    // 빈 배열/빈 문자열은 미설정으로 떨어짐 (undefined 프로퍼티 없음)
+    expect(out[1]).toEqual({
+      id: "SG2",
+      name: "여행 자금",
+      targetAmount: 3_000_000,
+      targetDate: "2027-06-30",
+      createdAt: "2026-02-01T00:00:00.000Z",
+    });
+  });
+
+  it("createdAt 누락 시 현재 시각 ISO로 채워짐(멱등 재정규화에는 영향 없음)", () => {
+    const out = normalizeSavingsGoals([{ id: "SG1", name: "목표", targetAmount: 1000 }]);
+    expect(typeof out[0].createdAt).toBe("string");
+    expect(() => new Date(out[0].createdAt).toISOString()).not.toThrow();
+  });
+
+  it("멱등성", () => {
+    const once = normalizeSavingsGoals([
+      { id: "SG1", name: "비상금", targetAmount: 1_000_000, linkedAccountIds: ["A1"], createdAt: "2026-01-01T00:00:00.000Z" },
+    ]);
+    expect(normalizeSavingsGoals(once)).toEqual(once);
   });
 });

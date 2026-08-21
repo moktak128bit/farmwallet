@@ -67,13 +67,13 @@ export const InvestTab = React.memo(function InvestTab({ d }: { d: D }) {
 
       {/* ============ 한눈에 ============ */}
       <Section storageKey="invest-section-overview" title="📊 한눈에 보기">
-        <Card accent><Kpi label="보유 종목 매입원가" value={F(totalInvested) + "원"} sub={`누적 매수(청산 포함) ${F(totalBuy)}원`} color="#f0c040" info="현재 보유분의 매입원가(FIFO 잔여원가). 매도분·재매수 중복을 제외 — 누적 매수액과 다름" /></Card>
+        <Card accent><Kpi label="보유 종목 매입원가" value={F(totalInvested) + "원"} sub={`누적 매수(청산 포함) ${F(totalBuy)}원`} color="var(--warning)" info="현재 보유분의 매입원가(FIFO 잔여원가). 매도분·재매수 중복을 제외 — 누적 매수액과 다름" /></Card>
         <Card accent>
           <Kpi
             label="실현 손익 (전체 누적)"
             value={(d.realPL.total >= 0 ? "+" : "") + F(Math.round(d.realPL.total)) + "원"}
             sub={d.investReturnRate !== 0 ? `수익률 ${d.investReturnRate.toFixed(1)}%` : "매도 내역 없음"}
-            color={d.realPL.total >= 0 ? "#48c9b0" : "#e94560"}
+            color={d.realPL.total >= 0 ? "var(--success)" : "var(--danger)"}
             info="FIFO 매칭으로 계산한 청산 거래의 실현손익 합. 라이프타임 누적 (기간 필터 무관). 대시보드 '투자 기록'과 동일 로직, 미실현·배당 제외"
           />
         </Card>
@@ -82,7 +82,7 @@ export const InvestTab = React.memo(function InvestTab({ d }: { d: D }) {
             label="배당/이자 수입"
             value={F(totalDiv) + "원"}
             sub={totalInvested > 0 ? `연환산 배당률 ${divYieldAnnualized.toFixed(2)}%` : "투자 원금 없음"}
-            color="#48c9b0"
+            color="var(--success)"
             info="투자 계좌 배당·이자 수입 합 · 연환산 = (합/원금) × (12/개월수)"
           />
         </Card>
@@ -91,7 +91,7 @@ export const InvestTab = React.memo(function InvestTab({ d }: { d: D }) {
             label="보유 종목 수"
             value={`${holdCost.length}종목`}
             sub={`청산 ${closedPL.length} · 실효 ${effectiveHoldings.toFixed(1)}개`}
-            color="#fff"
+            color="var(--text)"
             info="실효 종목 수 = 1 / HHI — 한 종목에 몰릴수록 작아짐"
           />
         </Card>
@@ -104,7 +104,7 @@ export const InvestTab = React.memo(function InvestTab({ d }: { d: D }) {
                 <XAxis type="number" tickFormatter={F} tick={{ fontSize: 11 }} />
                 <YAxis dataKey="name" type="category" width={150} tick={{ fontSize: 10 }} />
                 <Tooltip formatter={(v: ValueType | undefined) => W(Number(v ?? 0))} />
-                <Bar isAnimationActive={false} dataKey="costKRW" fill="#0f3460" radius={[0, 6, 6, 0]} name="매입원가" />
+                <Bar isAnimationActive={false} dataKey="costKRW" fill="var(--chart-series-b)" radius={[0, 6, 6, 0]} name="매입원가" />
               </BarChart>
             </ResponsiveContainer>
           )}
@@ -131,7 +131,7 @@ export const InvestTab = React.memo(function InvestTab({ d }: { d: D }) {
             label="실현 수익"
             value={"+" + F(Math.round(d.investBreakdown.realizedGain)) + "원"}
             sub={`청산 중 이익 매도 ${d.realPL.winCnt}건`}
-            color="#48c9b0"
+            color="var(--success)"
             info="FIFO 매칭으로 청산된 거래 중 이익 본 매도의 합 (양수). 라이프타임 누적"
           />
         </Card>
@@ -140,7 +140,7 @@ export const InvestTab = React.memo(function InvestTab({ d }: { d: D }) {
             label="미실현 수익"
             value={"+" + F(Math.round(d.investBreakdown.unrealizedGain)) + "원"}
             sub="보유 중 현재가 > 평단"
-            color="#48c9b0"
+            color="var(--success)"
             info="보유 종목별 (현재가 − 평단) × 수량 중 양수만 합. USD 종목은 현재 환율로 KRW 환산"
           />
         </Card>
@@ -149,7 +149,7 @@ export const InvestTab = React.memo(function InvestTab({ d }: { d: D }) {
             label="실현 손실"
             value={"-" + F(Math.round(d.investBreakdown.realizedLoss)) + "원"}
             sub={`청산 중 손실 매도 ${d.realPL.lossCnt}건`}
-            color="#e94560"
+            color="var(--danger)"
             info="FIFO 매칭으로 청산된 거래 중 손실 본 매도의 절대값 합. 라이프타임 누적"
           />
         </Card>
@@ -158,7 +158,7 @@ export const InvestTab = React.memo(function InvestTab({ d }: { d: D }) {
             label="미실현 손실"
             value={"-" + F(Math.round(d.investBreakdown.unrealizedLoss)) + "원"}
             sub="보유 중 현재가 < 평단"
-            color="#e94560"
+            color="var(--danger)"
             info="보유 종목별 (현재가 − 평단) × 수량 중 음수만 절대값 합. USD 종목은 현재 환율로 KRW 환산"
           />
         </Card>
@@ -171,7 +171,7 @@ export const InvestTab = React.memo(function InvestTab({ d }: { d: D }) {
             label="실효 종목 수"
             value={effectiveHoldings.toFixed(1) + "개"}
             sub={`실제 ${holdCost.length}종목 · HHI ${(hhi * 100).toFixed(1)}`}
-            color={effectiveHoldings >= 10 ? "#48c9b0" : effectiveHoldings >= 5 ? "#f0c040" : "#e94560"}
+            color={effectiveHoldings >= 10 ? "var(--success)" : effectiveHoldings >= 5 ? "var(--warning)" : "var(--danger)"}
             info="1 / Σ(비중²). 같은 비율 N개면 N, 한 종목에 몰릴수록 작음. 10개↑ 권장"
           />
         </Card>
@@ -180,7 +180,7 @@ export const InvestTab = React.memo(function InvestTab({ d }: { d: D }) {
             label="최대 종목 비중"
             value={topShare.toFixed(1) + "%"}
             sub={holdCost[0]?.name ?? "-"}
-            color={topShare > 50 ? "#e94560" : topShare > 30 ? "#f0c040" : "#48c9b0"}
+            color={topShare > 50 ? "var(--danger)" : topShare > 30 ? "var(--warning)" : "var(--success)"}
             info="단일 종목 집중 위험 지표. 30% 이하 권장, 50% 초과면 집중 위험"
           />
         </Card>
@@ -189,7 +189,7 @@ export const InvestTab = React.memo(function InvestTab({ d }: { d: D }) {
             label="매매 회전율 (연환산)"
             value={turnoverAnnualized.toFixed(2) + "x"}
             sub={`기간 거래 ${F(totalBuy + totalSell)}원`}
-            color={turnoverAnnualized > 2 ? "#e94560" : turnoverAnnualized > 1 ? "#f0c040" : "#48c9b0"}
+            color={turnoverAnnualized > 2 ? "var(--danger)" : turnoverAnnualized > 1 ? "var(--warning)" : "var(--success)"}
             info="연간 (매수+매도)/2 / 평균 원금. 1↓ 장기보유형, 2↑ 빈번 매매"
           />
         </Card>
@@ -198,7 +198,7 @@ export const InvestTab = React.memo(function InvestTab({ d }: { d: D }) {
             label="매도 없는 종목"
             value={`${noSellHoldings.length}종목`}
             sub={`매수 50만원↑ · 총 ${F(noSellHoldings.reduce((s, h) => s + h.매수, 0))}원`}
-            color={noSellHoldings.length > 5 ? "#e94560" : noSellHoldings.length > 2 ? "#f0c040" : "#48c9b0"}
+            color={noSellHoldings.length > 5 ? "var(--danger)" : noSellHoldings.length > 2 ? "var(--warning)" : "var(--success)"}
             info="매수 후 한 번도 매도 안 한 종목 (50만원 이상만). 장기 보유 or 리밸런싱 검토 대상"
           />
         </Card>
@@ -210,10 +210,10 @@ export const InvestTab = React.memo(function InvestTab({ d }: { d: D }) {
                 <div key={h.fullName} style={{ padding: "10px 14px", background: "var(--danger-light)", borderRadius: 8, border: "1px solid var(--border-light)", fontSize: 12, color: "var(--text)" }}>
                   <div style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline" }}>
                     <span style={{ fontWeight: 700 }}>
-                      <span style={{ color: "#e94560", marginRight: 6 }}>{i + 1}</span>
+                      <span style={{ color: "var(--danger)", marginRight: 6 }}>{i + 1}</span>
                       {h.fullName}
                     </span>
-                    <span style={{ fontWeight: 800, color: "#e94560" }}>{F(h.매수)}원</span>
+                    <span style={{ fontWeight: 800, color: "var(--danger)" }}>{F(h.매수)}원</span>
                   </div>
                   <div style={{ fontSize: 11, color: "var(--text-muted)", marginTop: 3 }}>
                     포트폴리오 비중 {totalInvested > 0 ? ((h.매수 / totalInvested) * 100).toFixed(1) : 0}%
@@ -250,13 +250,13 @@ export const InvestTab = React.memo(function InvestTab({ d }: { d: D }) {
             <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8, fontSize: 12 }}>
               <div style={{ padding: "8px 10px", background: "var(--bg)", borderRadius: 6, textAlign: "center" }}>
                 <div style={{ color: "var(--text-faint)" }}>승률</div>
-                <div style={{ fontWeight: 700, color: winRate != null && winRate >= 50 ? "#2ecc71" : "#e94560" }}>
+                <div style={{ fontWeight: 700, color: winRate != null && winRate >= 50 ? "var(--success)" : "var(--danger)" }}>
                   {winRate == null ? "-" : winRate.toFixed(0) + "%"}
                 </div>
               </div>
               <div style={{ padding: "8px 10px", background: "var(--bg)", borderRadius: 6, textAlign: "center" }}>
                 <div style={{ color: "var(--text-faint)" }}>수익:손실 배수</div>
-                <div style={{ fontWeight: 700, color: winLossRatio != null && winLossRatio >= 1 ? "#2ecc71" : "#e94560" }}>
+                <div style={{ fontWeight: 700, color: winLossRatio != null && winLossRatio >= 1 ? "var(--success)" : "var(--danger)" }}>
                   {winLossRatio == null ? "-" : winLossRatio.toFixed(2) + "x"}
                 </div>
               </div>
@@ -294,7 +294,7 @@ export const InvestTab = React.memo(function InvestTab({ d }: { d: D }) {
               <XAxis dataKey="l" tick={{ fontSize: 11 }} />
               <YAxis tickFormatter={F} tick={{ fontSize: 10 }} />
               <Tooltip content={<CT />} />
-              <Bar isAnimationActive={false} dataKey="amount" fill="#f0c040" radius={[4, 4, 0, 0]} name="배당/이자" />
+              <Bar isAnimationActive={false} dataKey="amount" fill="var(--chart-income)" radius={[4, 4, 0, 0]} name="배당/이자" />
             </BarChart>
           </ResponsiveContainer>
           <div style={{ fontSize: 11, color: "var(--text-faint)", textAlign: "center", marginTop: 4 }}>
@@ -347,7 +347,7 @@ export const InvestTab = React.memo(function InvestTab({ d }: { d: D }) {
               {topShare > 50 ? " ⚠️ 단일 종목 비중 50% 초과 — 분산 투자 고려 권장." : ""}
               {holdCost.length > 1 ? ` 2위: ${holdCost[1].name}(${F(holdCost[1].costKRW)}원).` : ""}
             </Insight>}
-            <Insight title="포트폴리오 분산" color="#7c3aed" bg="rgba(124,58,237,0.08)">
+            <Insight title="포트폴리오 분산" color="var(--chart-series-c)" bg="rgba(124,58,237,0.08)">
               {holdCost.length}종목 보유, 실효 {effectiveHoldings.toFixed(1)}개.
               {effectiveHoldings < 5 ? " 분산 부족 — 5개 이상 실효 종목 권장. 한두 종목 실패가 전체에 큰 타격." :
                 effectiveHoldings < 10 ? " 적당한 수준. 10개↑로 더 분산하면 안정성 상승." :

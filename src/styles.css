@@ -46,6 +46,11 @@
   --chart-warning: var(--warning);
   --chart-series-a: #0284c7;
   --chart-series-b: #0c4a6e;
+  --chart-series-c: #7c3aed;   /* 보라 — 3번째 범주 시리즈(구독·중분류 등) */
+  --chart-series-d: #ea580c;   /* 주황 — 4번째 범주 시리즈 */
+  --chart-series-e: #db2777;   /* 분홍 — 5번째 범주 시리즈 */
+  --chart-series-f: #65a30d;   /* 연두 — 6번째 범주 시리즈 */
+  --text-on-color: #ffffff;    /* 채색 배경(배지·진행바·배너) 위 텍스트 */
   --font-kr: "Noto Sans KR", "Malgun Gothic", "Apple SD Gothic Neo", -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
 
   /* Spacing scale — 인라인 스타일 매직넘버(8, 12, 14, 20) 대체 */
@@ -119,6 +124,11 @@
   --chart-warning: var(--warning);
   --chart-series-a: #38bdf8;
   --chart-series-b: #7dd3fc;
+  --chart-series-c: #a78bfa;
+  --chart-series-d: #fb923c;
+  --chart-series-e: #f472b6;
+  --chart-series-f: #a3e635;
+  --text-on-color: #0f172a;
 
   /* Semantic tint backgrounds — 다크모드 */
   --warning-bg: rgba(217, 119, 6, 0.18);
@@ -126,6 +136,50 @@
   --warning-light: rgba(251, 191, 36, 0.15);
   --accent-light: rgba(56, 189, 248, 0.15);
   --success-light: rgba(52, 211, 153, 0.15);
+}
+
+/* 인사이트 고정 다크 표면(강조 카드·차트 툴팁) — 라이트/다크 테마와 무관하게 항상 어두운 배경이므로
+   하위 트리의 시맨틱 토큰을 다크 팔레트 값으로 스코프 재정의한다(인라인 hex 없이 가독성 유지). */
+.ins-dark-surface {
+  --surface: #1e293b;
+  --surface-hover: #334155;
+  --text: #f1f5f9;
+  --text-secondary: #cbd5e1;
+  --text-muted: #94a3b8;
+  --text-faint: #64748b;
+  --border: #334155;
+  --border-light: #334155;
+  --primary: #2dd4bf;
+  --accent: #38bdf8;
+  --danger: #f87171;
+  --warning: #fbbf24;
+  --success: #34d399;
+  --chart-series-a: #38bdf8;
+  --chart-series-b: #7dd3fc;
+  --chart-series-c: #a78bfa;
+  --chart-series-d: #fb923c;
+  --chart-series-e: #f472b6;
+  --chart-series-f: #a3e635;
+  --text-on-color: #0f172a;
+  --danger-light: rgba(248, 113, 113, 0.15);
+  --warning-light: rgba(251, 191, 36, 0.15);
+  --accent-light: rgba(56, 189, 248, 0.15);
+  --success-light: rgba(52, 211, 153, 0.15);
+  --primary-light: rgba(45, 212, 191, 0.15);
+  /* 카드 내부 보조색(Kpi 라벨·부제) — 어두운 표면 위 흰색 계열 고정 */
+  --ins-muted: rgba(255, 255, 255, 0.7);
+  --ins-faint: rgba(255, 255, 255, 0.55);
+  --ins-chip-bg: rgba(255, 255, 255, 0.15);
+  background: linear-gradient(135deg, #1a1a2e 0%, #16213e 100%);
+  color: var(--text);
+}
+.ins-card-accent {
+  box-shadow: 0 8px 32px rgba(233, 69, 96, 0.15);
+  border: 1px solid rgba(233, 69, 96, 0.3);
+}
+.ins-tooltip-dark {
+  background: #1a1a2e;
+  border: 1px solid #334155;
 }
 
 /* =========================================

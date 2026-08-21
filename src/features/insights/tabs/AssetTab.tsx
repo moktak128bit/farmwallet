@@ -71,14 +71,14 @@ export const AssetTab = React.memo(function AssetTab({ d }: { d: D }) {
       {/* ============ 한눈에 ============ */}
       <Section storageKey="asset-section-overview" title="🎯 한눈에">
         <Card accent>
-          <Kpi label="현재 순자산" value={F(current) + "원"} sub={`${nw.length}개월 추적`} color="#48c9b0" info="계좌 현재 잔액 − account.debt − 대출 잔금" />
+          <Kpi label="현재 순자산" value={F(current) + "원"} sub={`${nw.length}개월 추적`} color="var(--success)" info="계좌 현재 잔액 − account.debt − 대출 잔금" />
         </Card>
         <Card accent>
           <Kpi
             label={growthPct !== null ? "총 성장률" : "순자산 증가액"}
             value={growthPct !== null ? `${growthPct >= 0 ? "+" : ""}${growthPct}%` : `${growthAbs >= 0 ? "+" : "−"}${F(Math.abs(growthAbs))}원`}
             sub={`시작 ${F(first)}원 → 현재 ${F(current)}원${first <= 0 && current > 0 ? " · 적자 → 흑자 전환" : ""}`}
-            color={growthAbs >= 0 ? "#48c9b0" : "#e94560"}
+            color={growthAbs >= 0 ? "var(--success)" : "var(--danger)"}
             info="추적 시작 월 대비. 시작 순자산이 0 이하(부채로 출발)면 비율이 정의되지 않아 증가액으로 표시"
           />
         </Card>
@@ -87,7 +87,7 @@ export const AssetTab = React.memo(function AssetTab({ d }: { d: D }) {
             label="목표 달성률"
             value={targetProgress == null ? "–" : targetProgress.toFixed(1) + "%"}
             sub={target ? `목표 ${F(target)}원` : "목표 미설정"}
-            color={targetProgress == null ? "#999" : targetProgress >= 100 ? "#48c9b0" : targetProgress >= 50 ? "#f0c040" : "#3498db"}
+            color={targetProgress == null ? "var(--text-faint)" : targetProgress >= 100 ? "var(--success)" : targetProgress >= 50 ? "var(--warning)" : "var(--accent)"}
             info="투자 요약의 최종 총자산 목표 대비 현재 순자산"
           />
         </Card>
@@ -96,7 +96,7 @@ export const AssetTab = React.memo(function AssetTab({ d }: { d: D }) {
             label="월평균 순자산 증가"
             value={F(monthlyGrowth) + "원"}
             sub={`추적 기간 ${nw.length}개월 평균`}
-            color={monthlyGrowth >= 0 ? "#48c9b0" : "#e94560"}
+            color={monthlyGrowth >= 0 ? "var(--success)" : "var(--danger)"}
             info="(최근 순자산 − 시작 순자산) / 기간 개월 수"
           />
         </Card>
@@ -113,7 +113,7 @@ export const AssetTab = React.memo(function AssetTab({ d }: { d: D }) {
                 <span style={{ fontSize: 13, fontWeight: 600, color: "var(--text-muted)" }}>
                   {F(current)}원 / {F(target)}원
                 </span>
-                <span style={{ fontSize: 22, fontWeight: 800, color: (targetProgress ?? 0) >= 100 ? "#48c9b0" : "#f0c040" }}>
+                <span style={{ fontSize: 22, fontWeight: 800, color: (targetProgress ?? 0) >= 100 ? "var(--success)" : "var(--warning)" }}>
                   {(targetProgress ?? 0).toFixed(1)}%
                 </span>
               </div>
@@ -122,10 +122,10 @@ export const AssetTab = React.memo(function AssetTab({ d }: { d: D }) {
                   height: "100%",
                   width: `${Math.min(100, targetProgress ?? 0)}%`,
                   background: (targetProgress ?? 0) >= 100
-                    ? "linear-gradient(90deg, #48c9b0, #10b981)"
+                    ? "var(--success)"
                     : (targetProgress ?? 0) >= 50
-                      ? "linear-gradient(90deg, #f0c040, #f59e0b)"
-                      : "linear-gradient(90deg, #3498db, #2563eb)",
+                      ? "var(--warning)"
+                      : "var(--accent)",
                   transition: "width 0.6s",
                 }} />
               </div>
@@ -163,7 +163,7 @@ export const AssetTab = React.memo(function AssetTab({ d }: { d: D }) {
             label="총 자산"
             value={F(totalAssets) + "원"}
             sub="계좌 잔액 합계 (부채 포함)"
-            color="#f0c040"
+            color="var(--warning)"
             info="account 잔액 합 — 부채(account.debt)와 대출을 빼기 전 금액"
           />
         </Card>
@@ -172,7 +172,7 @@ export const AssetTab = React.memo(function AssetTab({ d }: { d: D }) {
             label="총 부채"
             value={F(totalDebt) + "원"}
             sub={`신용 ${F(accountDebtSum)}원 + 대출 ${F(loanDebtSum)}원`}
-            color="#e94560"
+            color="var(--danger)"
             info="account.debt (신용카드 등) + 대출 잔금 (이자만 내는 동안 loanAmount 그대로)"
           />
         </Card>
@@ -181,7 +181,7 @@ export const AssetTab = React.memo(function AssetTab({ d }: { d: D }) {
             label="현금성 비율"
             value={liquidPct.toFixed(1) + "%"}
             sub={`유동자산 ${F(liquidAssets)}원`}
-            color={liquidPct >= 20 ? "#48c9b0" : liquidPct >= 10 ? "#f0c040" : "#e94560"}
+            color={liquidPct >= 20 ? "var(--success)" : liquidPct >= 10 ? "var(--warning)" : "var(--danger)"}
             info="입출금+저축+현금 / 총자산. 20% 이상이면 유동성 여유, 10% 미만이면 위험"
           />
         </Card>
@@ -190,7 +190,7 @@ export const AssetTab = React.memo(function AssetTab({ d }: { d: D }) {
             label="실효 자산 카테고리 수"
             value={effectiveCategories.toFixed(1) + "개"}
             sub={`실제 ${d.assetAllocation.length}개 · HHI 기반`}
-            color="#533483"
+            color="var(--chart-series-c)"
             info="1 / Σ(비중²). 같은 비율 N개면 N, 한 유형에 몰릴수록 작음"
           />
         </Card>
@@ -213,7 +213,7 @@ export const AssetTab = React.memo(function AssetTab({ d }: { d: D }) {
             {d.accountBalances.filter((a) => a.balance !== 0).map((a) => (
               <div key={a.name} style={{ display: "flex", justifyContent: "space-between", padding: "8px 0", borderBottom: "1px solid var(--border-light)", fontSize: 13 }}>
                 <span>{a.name} <span style={{ fontSize: 10, color: "var(--text-faint)" }}>({a.type})</span></span>
-                <span style={{ fontWeight: 700, color: a.balance >= 0 ? "var(--text)" : "#e94560" }}>{F(a.balance)}원</span>
+                <span style={{ fontWeight: 700, color: a.balance >= 0 ? "var(--text)" : "var(--danger)" }}>{F(a.balance)}원</span>
               </div>
             ))}
             {d.accountBalances.filter((a) => a.balance !== 0).length === 0 && (
@@ -231,15 +231,15 @@ export const AssetTab = React.memo(function AssetTab({ d }: { d: D }) {
               <AreaChart data={nw}>
                 <defs>
                   <linearGradient id="nwGrad" x1="0" y1="0" x2="0" y2="1">
-                    <stop offset="5%" stopColor="#48c9b0" stopOpacity={0.3} />
-                    <stop offset="95%" stopColor="#48c9b0" stopOpacity={0} />
+                    <stop offset="5%" stopColor="var(--chart-positive)" stopOpacity={0.3} />
+                    <stop offset="95%" stopColor="var(--chart-positive)" stopOpacity={0} />
                   </linearGradient>
                 </defs>
                 <CartesianGrid strokeDasharray="3 3" stroke="var(--chart-grid)" />
                 <XAxis dataKey="label" tick={{ fontSize: 11 }} />
                 <YAxis tickFormatter={F} tick={{ fontSize: 11 }} domain={[Math.max(0, minNW * 0.9), maxNW * 1.05]} />
                 <Tooltip formatter={(v: ValueType | undefined) => W(Number(v ?? 0))} />
-                <Area isAnimationActive={false} type="monotone" dataKey="total" stroke="#48c9b0" fill="url(#nwGrad)" strokeWidth={2} name="순자산 추이" />
+                <Area isAnimationActive={false} type="monotone" dataKey="total" stroke="var(--chart-positive)" fill="url(#nwGrad)" strokeWidth={2} name="순자산 추이" />
               </AreaChart>
             </ResponsiveContainer>
           </Card>

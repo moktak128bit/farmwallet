@@ -17,12 +17,15 @@
     "test": "vitest run",
     "test:watch": "vitest",
     "test:smoke": "node scripts/smoke-test.mjs",
-    "ci": "npm run -s check-text && npm run -s lint && npm run -s test && npm run -s build && npm run -s test:smoke",
+    "ci": "npm run -s check-text && npm run -s check-conventions && npm run -s lint && npm run -s test && npm run -s build && npm run -s test:smoke",
     "knip": "knip",
     "knip:report": "knip --reporter compact",
     "check-text": "node scripts/check-text-integrity.mjs",
     "check-text:report": "node scripts/check-text-integrity.mjs --report",
-    "check-text:update-baseline": "node scripts/check-text-integrity.mjs --update-baseline"
+    "check-text:update-baseline": "node scripts/check-text-integrity.mjs --update-baseline",
+    "check-conventions": "node scripts/check-conventions.mjs",
+    "check-conventions:list": "node scripts/check-conventions.mjs --list",
+    "check-conventions:update-baseline": "node scripts/check-conventions.mjs --update-baseline"
   },
   "dependencies": {
     "lucide-react": "^0.562.0",

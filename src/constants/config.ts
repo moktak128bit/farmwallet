@@ -89,7 +89,9 @@ export const STORAGE_KEYS = {
   /** 가계부 메인 폼 입력 드래프트 (sessionStorage — 탭별, 24h 만료; utils/ledgerFormDraft.ts) */
   LEDGER_FORM_DRAFT: "fw-ledger-form-draft",
   /** FIRE 시뮬레이터 가정 덮어쓰기 (JSON: {monthlySaving?, returnPct?, retireSpendingAnnual?} — 기기 로컬, AppData 무변경) */
-  FIRE_ASSUMPTIONS: "fw-fire-assumptions"
+  FIRE_ASSUMPTIONS: "fw-fire-assumptions",
+  /** 알림 센터(3-11) 스누즈 상태 (JSON: {[dedupeKey]: untilIsoInstant} — 기기 로컬, 7일 스누즈) */
+  NUDGE_DISMISSED: "fw-nudge-dismissed"
 } as const;
 
 /** 드래프트 슬롯이 이보다 오래되면 boot 시 무시·삭제 (스테일 복구 안내 방지) */

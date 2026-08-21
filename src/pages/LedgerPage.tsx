@@ -56,7 +56,8 @@ import { MonthNavigator } from "../components/ledger/MonthNavigator";
 import { EXPENSE_BOX_EXCLUDED_NAMES, isExcludedExpenseName } from "../features/dashboard/summaryMath";
 import { useFxRateValue } from "../context/FxRateContext";
 import { toKrwByRate } from "../utils/currency";
-import { LedgerEntryForm, type LedgerEntryFormHandle, type LedgerTab } from "../features/ledger/LedgerEntryForm";
+import { LedgerEntryForm, showDuplicateToast, type LedgerEntryFormHandle, type LedgerTab } from "../features/ledger/LedgerEntryForm";
+import { findProbableDuplicates } from "../utils/ledgerDuplicate";
 import { LedgerFilterCard } from "../features/ledger/LedgerFilterCard";
 import { LedgerSummarySection } from "../features/ledger/LedgerSummarySection";
 import { buildLedgerActiveChips } from "../features/ledger/ledgerActiveFilters";
@@ -152,6 +153,25 @@ export const LedgerView: React.FC<Props> = ({
       toast.error("금액을 입력해주세요.");
       return;
     }
+    // 중복 의심 — 폼 제출과 동일 규칙: 설명까지 같으면 confirm, 아니면 저장 후 비차단 토스트
+    const dup = findProbableDuplicates(
+      {
+        date: quickCopyEntry.date,
+        amount: parsed,
+        kind: quickCopyEntry.kind,
+        fromAccountId: quickCopyEntry.fromAccountId,
+        toAccountId: quickCopyEntry.toAccountId,
+        description: quickCopyEntry.description,
+        currency: quickCopyEntry.currency,
+      },
+      ledger
+    );
+    if (dup.exactDescription.length > 0) {
+      const msg =
+        `같은 날(${quickCopyEntry.date}) 같은 금액·같은 설명 "${quickCopyEntry.description}" ${dup.exactDescription.length}건이 이미 있습니다.\n` +
+        `그래도 추가할까요?`;
+      if (!window.confirm(msg)) return;
+    }
     const id = newIdWithPrefix("L");
     const entry: LedgerEntry = {
       ...quickCopyEntry,
@@ -161,6 +181,7 @@ export const LedgerView: React.FC<Props> = ({
     };
     onChangeLedger([entry, ...ledger]);
     setLastAddedEntryId(id);
+    if (dup.exactDescription.length === 0 && dup.matches.length > 0) showDuplicateToast(dup.matches);
     // 필터는 폼과 독립이라 빠른 복사 후에도 유지
     const amountStr = quickCopyEntry.currency === "USD"
       ? `${parsed.toLocaleString()} USD`

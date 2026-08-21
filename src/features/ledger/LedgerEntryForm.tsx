@@ -9,17 +9,27 @@
  *   - startCopy(entry):   빠른 복사 모달 "폼에서 수정" — 기존 항목을 폼에 적재
  * 새 항목 추가 후 행 하이라이트는 부모 소유 — onEntryAdded(id) 콜백으로 알림.
  */
-import React, { useCallback, useEffect, useImperativeHandle, useMemo, useRef, useState } from "react";
+import React, { useCallback, useDeferredValue, useEffect, useImperativeHandle, useMemo, useRef, useState } from "react";
 import { Autocomplete } from "../../components/ui/Autocomplete";
 import type { Account, CategoryPresets, ExpenseDetailGroup, LedgerEntry, LedgerKind, LedgerTemplate } from "../../types";
 import { shortcutManager, type ShortcutAction } from "../../utils/shortcuts";
 import { validateLedgerForm } from "./validateLedgerForm";
 import { parseAmount as sharedParseAmount, formatAmount as sharedFormatAmount } from "../../utils/parseAmount";
+import {
+  evaluateAmountExpression,
+  isAmountExpression,
+  sanitizeAmountExpressionInput,
+  splitAmountByPeople,
+} from "../../utils/amountExpression";
 import { newIdWithPrefix } from "../../utils/id";
 import { DEFAULT_DAILY_BUDGET, dailySpend, weeklySpend, weeklyLimit, getCurrentWeekRange } from "../../utils/dailyBudget";
 import { useAppStore } from "../../store/appStore";
 import { toast } from "react-hot-toast";
 import { ERROR_MESSAGES } from "../../constants/errorMessages";
+import { addDaysToIso, getTodayKST } from "../../utils/date";
+import { STORAGE_KEYS } from "../../constants/config";
+import { parseLedgerFormDraft, serializeLedgerFormDraft } from "../../utils/ledgerFormDraft";
+import { findProbableDuplicates } from "../../utils/ledgerDuplicate";
 import { ReceiptScanner, type OcrResult } from "../ocr/ReceiptScanner";
 import {
   createDefaultLedgerForm as createDefaultForm,
@@ -27,10 +37,19 @@ import {
   ledgerFormToTemplate,
   type LedgerFormState,
 } from "../../utils/ledgerHelpers";
-import { LedgerTemplateChips } from "./LedgerTemplateChips";
+import { LedgerRecentChips, LedgerTemplateChips } from "./LedgerTemplateChips";
 import { LedgerTemplateManageModal } from "./LedgerTemplateManageModal";
 import { buildRestoreById, showDeleteUndoToast } from "../../utils/undoToast";
 import { useFxRateValue } from "../../context/FxRateContext";
+import {
+  buildDescriptionIndex,
+  describeSuggestion,
+  fillEmptyFormFields,
+  recentDescriptionGroups,
+  suggestDescriptions,
+  type DescriptionSuggestion,
+} from "../../utils/ledgerSuggest";
+import { recommendCategory, type Recommendation } from "../../utils/categoryRecommendation";
 
 export type LedgerTab = "all" | "income" | "expense" | "savingsExpense" | "transfer" | "creditPayment";
 
@@ -73,6 +92,58 @@ const tabLabel: Record<"income" | "expense" | "transfer", string> = {
 
 // `?? []` 신규 배열 생성으로 인한 LedgerTemplateChips memo 무효화 방지용 안정 참조
 const EMPTY_TEMPLATES: LedgerTemplate[] = [];
+
+/** 폼 드래프트(sessionStorage) 접근 — 프라이빗 모드·쿼터 초과 등 예외는 무시 (드래프트는 편의 기능) */
+const DRAFT_KEY = STORAGE_KEYS.LEDGER_FORM_DRAFT;
+function readLedgerDraftRaw(): string | null {
+  try { return sessionStorage.getItem(DRAFT_KEY); } catch { return null; }
+}
+function writeLedgerDraftRaw(raw: string | null): void {
+  try {
+    if (raw) sessionStorage.setItem(DRAFT_KEY, raw);
+    else sessionStorage.removeItem(DRAFT_KEY);
+  } catch { /* ignore */ }
+}
+
+/** 목록의 해당 행으로 스크롤 + 잠시 하이라이트 (LedgerPage의 검색 이동과 동일 클래스). 필터로 가려져 있으면 안내. */
+function flashLedgerRow(id: string): void {
+  const el = document.querySelector(`tr[data-ledger-id="${id}"]`);
+  if (!el) {
+    toast("목록에서 찾을 수 없습니다 — 필터·월 선택을 확인하세요.", { id: "ledger-duplicate-hint" });
+    return;
+  }
+  el.scrollIntoView({ behavior: "smooth", block: "center" });
+  el.classList.add("ledger-row-highlight");
+  window.setTimeout(() => el.classList.remove("ledger-row-highlight"), 2500);
+}
+
+/**
+ * 중복 의심 비차단 토스트 — '같은 날 같은 금액 N건 있음 [보기]'. 저장은 이미 끝난 뒤 호출한다.
+ * (설명까지 같은 경우의 confirm은 호출 측 submit 경로에서 저장 전에 처리.) LedgerPage 빠른 복사도 공유.
+ */
+export function showDuplicateToast(matches: LedgerEntry[]): void {
+  if (matches.length === 0) return;
+  const first = matches[0];
+  toast(
+    (t) => (
+      <span style={{ display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap" }}>
+        <span>같은 날 같은 금액 {matches.length}건 있음</span>
+        <button
+          type="button"
+          className="secondary"
+          style={{ padding: "4px 10px", fontSize: 12, flexShrink: 0 }}
+          onClick={() => {
+            toast.dismiss(t.id);
+            flashLedgerRow(first.id);
+          }}
+        >
+          보기
+        </button>
+      </span>
+    ),
+    { id: "ledger-duplicate-hint", duration: 6000, icon: "⚠️" }
+  );
+}
 
 interface Props {
   accounts: Account[];
@@ -233,9 +304,84 @@ export const LedgerEntryForm = React.memo(React.forwardRef<LedgerEntryFormHandle
       return categoryPresets?.income ?? [];
     }, [categoryPresets?.income]);
 
+    // ── 설명 자동완성 + 빈 필드 자동 채움 (읽기 전용 — 저장 형태 불변) ──────────
+    // 인덱스는 ledger 참조가 바뀔 때만 재구축. 재테크/신용결제 탭은 분류가 자동 고정이라 채움·추천 칩 생략.
+    const descriptionIndex = useMemo(() => buildDescriptionIndex(ledger), [ledger]);
+    const suggestFillEnabled = ledgerTab !== "savingsExpense" && ledgerTab !== "creditPayment";
+    const descriptionOptions = useMemo(
+      () => suggestDescriptions(descriptionIndex, form.description, effectiveFormKind, { limit: 8 })
+        .map((s) => ({
+          value: s.description,
+          label: `${s.count}회`,
+          subLabel: describeSuggestion(s) || undefined,
+        })),
+      [descriptionIndex, form.description, effectiveFormKind]
+    );
+    // 설명 2자 이상 → 추천 칩 3개 (categoryRecommendation). 타이핑 중 무거운 재계산은 deferred.
+    const deferredDescription = useDeferredValue(form.description);
+    const deferredAmount = useDeferredValue(form.amount);
+    const recommendationChips = useMemo((): Recommendation[] => {
+      if (!suggestFillEnabled) return [];
+      const desc = deferredDescription.trim();
+      if (desc.length < 2) return [];
+      const amount = sharedParseAmount(deferredAmount, { allowDecimal: true });
+      const recs = recommendCategory(desc, amount, effectiveFormKind, ledger);
+      // 같은 분류 라벨(계좌만 다른 조합)은 하나로
+      const seen = new Set<string>();
+      const out: Recommendation[] = [];
+      for (const r of recs) {
+        const key = `${r.subCategory || ""}|${r.detailCategory || ""}`;
+        if (!r.subCategory || seen.has(key)) continue;
+        seen.add(key);
+        out.push(r);
+        if (out.length >= 3) break;
+      }
+      return out;
+    }, [suggestFillEnabled, deferredDescription, deferredAmount, effectiveFormKind, ledger]);
+
+    /**
+     * 자동완성 선택 → 비어 있는 필드만 채움. setForm만 바꾸고 목록 필터는 건드리지 않는다
+     * (applyTemplate과 동일 — '폼 버튼=목록 필터'는 버튼 클릭에만 적용, 자동 채움은 필터 의도가 아님).
+     * 사용자가 이미 고른 값은 절대 덮지 않는다(fillEmptyFormFields).
+     */
+    const applyDescriptionSuggestion = useCallback((s: DescriptionSuggestion) => {
+      if (!suggestFillEnabled) return;
+      const f = latestFormRef.current;
+      const { next, applied } = fillEmptyFormFields(
+        { mainCategory: f.mainCategory, subCategory: f.subCategory, fromAccountId: f.fromAccountId, toAccountId: f.toAccountId },
+        s
+      );
+      if (applied.length === 0) return;
+      setForm((prev) => ({ ...prev, ...next }));
+      const catParts: string[] = [];
+      if (applied.includes("mainCategory") && s.kind === "expense") catParts.push(next.mainCategory);
+      if (applied.includes("subCategory")) catParts.push(next.subCategory);
+      const acctParts: string[] = [];
+      if (applied.includes("fromAccountId")) acctParts.push(next.fromAccountId);
+      if (applied.includes("toAccountId")) acctParts.push(next.toAccountId);
+      const label = [catParts.join(">"), acctParts.join("→")].filter(Boolean).join("·");
+      toast(`지난 ${s.comboCount}회 ${label} 적용`, { id: "ledger-suggest-fill", duration: 2500 });
+    }, [suggestFillEnabled]);
+
+    /** 추천 칩 클릭 — 분류는 명시 선택이므로 덮어쓰고, 계좌는 비어 있을 때만. 필터 미변경(위와 동일 규칙). */
+    const applyRecommendationChip = useCallback((r: Recommendation) => {
+      setForm((prev) => {
+        const isExpense = effectiveFormKind === "expense";
+        return {
+          ...prev,
+          mainCategory: isExpense ? (r.subCategory || "") : prev.mainCategory,
+          subCategory: isExpense ? (r.detailCategory || "") : (r.subCategory || ""),
+          fromAccountId: prev.fromAccountId || (effectiveFormKind !== "income" ? (r.fromAccountId || "") : ""),
+          toAccountId: prev.toAccountId || (effectiveFormKind !== "expense" ? (r.toAccountId || "") : ""),
+        };
+      });
+    }, [effectiveFormKind]);
+
     // parseAmount/formatAmount는 src/utils/parseAmount.ts로 중앙화됨.
     // 기존 (value, allowDecimal) 시그니처를 유지하기 위한 어댑터.
+    // 계산식("12000+3500/2")이면 안전 파서로 평가한 값(실패 시 0) — submitForm·단축키 enabled·할인 미리보기가 모두 이 경로를 탄다.
     const parseAmount = useCallback((value: string, allowDecimal?: boolean): number => {
+      if (isAmountExpression(value)) return evaluateAmountExpression(value, { allowDecimal }) ?? 0;
       return sharedParseAmount(value, { allowDecimal });
     }, []);
 
@@ -245,10 +391,42 @@ export const LedgerEntryForm = React.memo(React.forwardRef<LedgerEntryFormHandle
 
     // 금액 입력 onChange — JSX 속성 안 useCallback(rules-of-hooks 위반 패턴)을 컴포넌트 상단으로 이동
     const handleAmountChange = useCallback((e: React.ChangeEvent<HTMLInputElement>) => {
+      const raw = e.target.value;
+      // 연산자가 섞이면 계산식 모드 — 콤마 포맷 대신 허용 문자만 남겨 그대로 둔다 (blur/제출 시 평가)
+      if (isAmountExpression(raw)) {
+        setForm((prev) => ({ ...prev, amount: sanitizeAmountExpressionInput(raw) }));
+        return;
+      }
       const allowDec = effectiveFormKind === "transfer" && form.currency === "USD";
-      const formatted = formatAmount(e.target.value, allowDec);
+      const formatted = formatAmount(raw, allowDec);
       setForm((prev) => ({ ...prev, amount: formatted }));
     }, [formatAmount, effectiveFormKind, form.currency]);
+
+    // blur 시 계산식 → 숫자 치환 (Enter/Ctrl+Enter 제출은 parseAmount 어댑터가 평가하므로 치환 없이도 정확)
+    const handleAmountBlur = useCallback(() => {
+      const f = latestFormRef.current;
+      if (!isAmountExpression(f.amount)) return;
+      const allowDec = effectiveFormKind === "transfer" && f.currency === "USD";
+      const v = evaluateAmountExpression(f.amount, { allowDecimal: allowDec });
+      if (v === null) return; // 잘못된 식은 그대로 두고 검증 에러로 안내
+      setForm((prev) => ({ ...prev, amount: formatAmount(String(v), allowDec) }));
+    }, [effectiveFormKind, formatAmount]);
+
+    // ÷N(더치페이) — 모바일 numeric 키패드엔 연산자가 없으므로 버튼 경로. 현재 금액을 N명 1인분으로 치환.
+    const splitAmountByN = useCallback(() => {
+      const f = latestFormRef.current;
+      const allowDec = effectiveFormKind === "transfer" && f.currency === "USD";
+      const current = isAmountExpression(f.amount)
+        ? evaluateAmountExpression(f.amount, { allowDecimal: allowDec })
+        : sharedParseAmount(f.amount, { allowDecimal: allowDec });
+      if (!current || current <= 0) { toast.error("먼저 금액을 입력하세요."); return; }
+      const raw = window.prompt(`몇 명이 나눠 내나요? (${current.toLocaleString()}을 N명 1인분으로 바꿉니다)`, "2");
+      if (raw == null) return;
+      const n = Number(raw.trim());
+      const v = splitAmountByPeople(current, n, { allowDecimal: allowDec });
+      if (v === null) { toast.error("2 이상의 정수를 입력하세요."); return; }
+      setForm((prev) => ({ ...prev, amount: formatAmount(String(v), allowDec) }));
+    }, [effectiveFormKind, formatAmount]);
 
     // 종류 탭 전환·"전체" 시 폼-구동 리스트 필터(대/중/소분류 + 출금/입금계좌)를 일괄 해제.
     // 종류마다 카테고리·계좌 의미가 달라(수입엔 출금계좌가 없는 등) 남겨두면 빈 목록이 된다.
@@ -434,6 +612,32 @@ export const LedgerEntryForm = React.memo(React.forwardRef<LedgerEntryFormHandle
         ...(form.tags?.length ? { tags: form.tags } : {})
       };
 
+      // 중복 의심(신규 추가만): 같은 날·같은 금액·같은 계좌 → 비차단 토스트(저장은 진행).
+      // 설명까지 같을 때만 confirm (실수 이중 입력 가능성이 높은 경우). 수정 모드는 검사하지 않음.
+      let duplicateHint: LedgerEntry[] | null = null;
+      if (!form.id) {
+        const dup = findProbableDuplicates(
+          {
+            date: base.date,
+            amount: base.amount,
+            kind: base.kind,
+            fromAccountId: base.fromAccountId,
+            toAccountId: base.toAccountId,
+            description: base.description,
+            currency: base.currency,
+          },
+          ledger
+        );
+        if (dup.exactDescription.length > 0) {
+          const msg =
+            `같은 날(${base.date}) 같은 금액·같은 설명 "${base.description}" ${dup.exactDescription.length}건이 이미 있습니다.\n` +
+            `그래도 추가할까요?`;
+          if (!window.confirm(msg)) return;
+        } else if (dup.matches.length > 0) {
+          duplicateHint = dup.matches;
+        }
+      }
+
       if (form.id) {
         const updated = ledger.map((l) => (l.id === form.id ? { ...base, id: l.id } : l));
         onChangeLedger(updated);
@@ -442,6 +646,7 @@ export const LedgerEntryForm = React.memo(React.forwardRef<LedgerEntryFormHandle
         const entry: LedgerEntry = { id, ...base };
         onChangeLedger([entry, ...ledger]);
         onEntryAdded(id);
+        if (duplicateHint) showDuplicateToast(duplicateHint);
         // 필터는 폼과 독립이라 새 항목 추가 시 자동 클리어 안 함 — 사용자가 의도적으로 좁힌 view를 유지
         const amountStr = kindForTab === "transfer" && form.currency === "USD"
           ? `${amount.toLocaleString()} USD`
@@ -453,6 +658,9 @@ export const LedgerEntryForm = React.memo(React.forwardRef<LedgerEntryFormHandle
             : `지출 - ${normalizedMainCategory} - ${normalizedSubCategory} ${amountStr} 추가 되었습니다.`;
         toast.success(msg);
       }
+
+      // 제출됨 — 보존 중이던 드래프트 삭제 (아래 setForm으로 금액·설명이 비어 디바운스 저장도 삭제로 수렴)
+      writeLedgerDraftRaw(null);
 
       // 같은 구분/카테고리/계좌를 유지하고 금액·설명만 비우기 (연속 입력 최적화).
       // tags·isFixedExpense는 복사 1건에만 적용 — 다음 연속 입력엔 보이지 않게 잔존하지 않도록 초기화
@@ -602,8 +810,32 @@ export const LedgerEntryForm = React.memo(React.forwardRef<LedgerEntryFormHandle
         toast(`계좌 "${accountId}"가 없어 해당 항목을 비웠습니다.`);
       }
       toast.success(`템플릿 "${t.name}" 적용됨`);
+      // lastUsed 기록(칩 정렬용 메타데이터). onChangeTemplates는 setDataWithHistory(App.tsx) → undo 히스토리에
+      // 섞여 Ctrl+Z가 '템플릿 적용'이라는 보이지 않는 단계를 되돌리게 되므로, 비-undo 경로(store.setData)로 쓴다.
+      // 같은 날 재적용은 쓰기 생략(불필요한 자동저장 방지). 날짜는 getTodayKST (toISOString 금지).
+      const today = getTodayKST();
+      if (t.lastUsed !== today) {
+        useAppStore.getState().setData((prev) => ({
+          ...prev,
+          ledgerTemplates: (prev.ledgerTemplates ?? []).map((x) => (x.id === t.id ? { ...x, lastUsed: today } : x)),
+        }));
+      }
       return true;
     }, [accounts, ledgerTab, setLedgerTab, clearListFilters]);
+
+    // ── 최근 거래 칩 — 설명 인덱스에서 최근 30일 상위 6건. 클릭 = startCopy 재사용 (재테크 재라우팅 규칙 포함) ──
+    const recentGroups = useMemo(() => recentDescriptionGroups(descriptionIndex, { days: 30, limit: 6 }), [descriptionIndex]);
+    const pickRecentGroup = useCallback((g: DescriptionSuggestion) => {
+      const f = latestFormRef.current;
+      const hasEditingOrDraft = Boolean(f.id) || !!(f.amount?.trim() || f.description?.trim());
+      if (hasEditingOrDraft) {
+        const what = f.id ? "수정 중인 항목" : "입력 중인 내용";
+        if (!confirm(`${what}이 있습니다. "${g.description}"을(를) 불러오면 사라집니다. 계속할까요?`)) return;
+      }
+      setFormKindWhenAll(g.kind); // "전체" 복귀 시 kind 유지 — 템플릿과 동일 규칙
+      if (g.kind !== effectiveFormKind) clearListFilters(); // kind가 바뀌면 하위 필터 초기화 (빈 목록 방지)
+      startCopy(g.lastEntry);
+    }, [effectiveFormKind, clearListFilters, startCopy]);
 
     // 현재 입력을 템플릿으로 저장 — form은 latestFormRef로 읽음 (deps에 form 금지: 칩 memo 계약)
     const saveCurrentAsTemplate = useCallback(() => {
@@ -652,7 +884,73 @@ export const LedgerEntryForm = React.memo(React.forwardRef<LedgerEntryFormHandle
         kind: kindForTab,
         isFixedExpense: false
       });
+      writeLedgerDraftRaw(null);
     }, [kindForTab]);
+    // 최신 resetForm 참조 — 복원 토스트의 [비우기]는 마운트 시점이 아니라 클릭 시점의 kind로 초기화해야 한다
+    const resetFormRef = useRef(resetForm);
+    useEffect(() => { resetFormRef.current = resetForm; });
+
+    // ── 폼 드래프트 보존 (탭 전환 시 LedgerView 언마운트 → 입력 유실 방지) ──────────
+    // 마운트 시 1회 복원: 금액/설명 중 하나라도 있으면 폼+종류 탭을 되살리고 토스트 [비우기].
+    // 수정 모드(form.id)는 저장/복원 제외(stale edit 제출 위험), 목록 필터는 복원하지 않음, 24h 만료.
+    const draftRestoredRef = useRef(false);
+    useEffect(() => {
+      if (draftRestoredRef.current) return;
+      draftRestoredRef.current = true;
+      const raw = readLedgerDraftRaw();
+      const draft = parseLedgerFormDraft(raw, Date.now());
+      if (!draft) {
+        if (raw) writeLedgerDraftRaw(null); // 손상·만료 드래프트 정리
+        return;
+      }
+      // applyTemplate과 동일한 적재 패턴 — 탭 변경에 따른 kind 리셋 effect가 복원값을 지우지 않도록 isCopyingRef 가드
+      isCopyingRef.current = true;
+      setFormKindWhenAll(draft.formKind);
+      setLedgerTab(draft.ledgerTab);
+      setTimeout(() => {
+        setForm(draft.form);
+        setTimeout(() => { isCopyingRef.current = false; }, 200);
+      }, 10);
+      toast(
+        (t) => (
+          <span style={{ display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap" }}>
+            <span>입력 중이던 내용을 복원했습니다</span>
+            <button
+              type="button"
+              className="secondary"
+              style={{ padding: "4px 10px", fontSize: 12, flexShrink: 0 }}
+              onClick={() => {
+                toast.dismiss(t.id);
+                resetFormRef.current();
+              }}
+            >
+              비우기
+            </button>
+          </span>
+        ),
+        { id: "ledger-form-draft-restored", duration: 6000 }
+      );
+    }, [setLedgerTab]);
+
+    // 300ms 디바운스 저장. 내용이 없으면 삭제(제출/리셋 후 자연 정리). 수정 모드는 건드리지 않음.
+    useEffect(() => {
+      if (form.id) return;
+      const timer = window.setTimeout(() => {
+        writeLedgerDraftRaw(serializeLedgerFormDraft({ form, ledgerTab, formKind: formKindWhenAll }, Date.now()));
+      }, 300);
+      return () => window.clearTimeout(timer);
+    }, [form, ledgerTab, formKindWhenAll]);
+    // 언마운트(탭 전환) 시 디바운스 대기 중인 마지막 입력을 즉시 플러시 — 300ms 안에 떠나도 잃지 않게
+    const draftCtxRef = useRef({ ledgerTab, formKindWhenAll });
+    useEffect(() => { draftCtxRef.current = { ledgerTab, formKindWhenAll }; });
+    useEffect(() => () => {
+      const f = latestFormRef.current;
+      if (f.id) return;
+      writeLedgerDraftRaw(serializeLedgerFormDraft(
+        { form: f, ledgerTab: draftCtxRef.current.ledgerTab, formKind: draftCtxRef.current.formKindWhenAll },
+        Date.now()
+      ));
+    }, []);
 
     const isEditing = Boolean(form.id);
 
@@ -834,29 +1132,79 @@ export const LedgerEntryForm = React.memo(React.forwardRef<LedgerEntryFormHandle
                 onOpenManage={openTemplateManage}
               />
             )}
+            <LedgerRecentChips groups={recentGroups} onPick={pickRecentGroup} />
             {/* 상단: 날짜와 금액을 한 줄에 */}
             <div style={{ display: "grid", gridTemplateColumns: "1fr 2fr", gap: "12px", alignItems: "start" }}>
-              {/* 날짜 */}
-              <label style={{ margin: 0 }}>
-                <span style={{ fontSize: 11, marginBottom: 4, display: "block", color: "var(--text-muted)" }}>날짜 *</span>
-                <input
-                  type="date"
-                  value={form.date}
-                  onChange={(e) => setForm({ ...form, date: e.target.value })}
-                  style={{
-                    padding: "10px",
-                    fontSize: 14,
-                    width: "100%",
-                    border: formErrors.date ? "2px solid var(--danger)" : "1px solid var(--border)",
-                    borderRadius: "6px"
-                  }}
-                  aria-invalid={!!formErrors.date}
-                  aria-describedby={formErrors.date ? "date-error" : undefined}
-                />
+              {/* 날짜 + 빠른 칩 (오늘·어제·그제·−1일·+1일). 미래일 검증은 validateLedgerForm 그대로 */}
+              <div>
+                <label style={{ margin: 0 }}>
+                  <span style={{ fontSize: 11, marginBottom: 4, display: "block", color: "var(--text-muted)" }}>날짜 *</span>
+                  <input
+                    type="date"
+                    value={form.date}
+                    onChange={(e) => setForm({ ...form, date: e.target.value })}
+                    style={{
+                      padding: "10px",
+                      fontSize: 14,
+                      width: "100%",
+                      border: formErrors.date ? "2px solid var(--danger)" : "1px solid var(--border)",
+                      borderRadius: "6px"
+                    }}
+                    aria-invalid={!!formErrors.date}
+                    aria-describedby={formErrors.date ? "date-error" : undefined}
+                  />
+                </label>
+                <div style={{ display: "flex", gap: 4, flexWrap: "wrap", marginTop: 4 }} aria-label="날짜 빠른 선택">
+                  {(() => {
+                    const today = getTodayKST();
+                    const chips: { label: string; date: string; title: string }[] = [
+                      { label: "오늘", date: today, title: today },
+                      { label: "어제", date: addDaysToIso(today, -1), title: addDaysToIso(today, -1) },
+                      { label: "그제", date: addDaysToIso(today, -2), title: addDaysToIso(today, -2) },
+                    ];
+                    return (
+                      <>
+                        {chips.map((c) => (
+                          <button
+                            key={c.label}
+                            type="button"
+                            tabIndex={-1}
+                            className={form.date === c.date ? "primary" : "secondary"}
+                            onClick={() => setForm((prev) => ({ ...prev, date: c.date }))}
+                            title={c.title}
+                            style={{ fontSize: 10, padding: "2px 7px", borderRadius: 10 }}
+                          >
+                            {c.label}
+                          </button>
+                        ))}
+                        <button
+                          type="button"
+                          tabIndex={-1}
+                          className="secondary"
+                          onClick={() => setForm((prev) => ({ ...prev, date: addDaysToIso(prev.date || today, -1) }))}
+                          title="하루 전"
+                          style={{ fontSize: 10, padding: "2px 7px", borderRadius: 10 }}
+                        >
+                          −1일
+                        </button>
+                        <button
+                          type="button"
+                          tabIndex={-1}
+                          className="secondary"
+                          onClick={() => setForm((prev) => ({ ...prev, date: addDaysToIso(prev.date || today, 1) }))}
+                          title="하루 후"
+                          style={{ fontSize: 10, padding: "2px 7px", borderRadius: 10 }}
+                        >
+                          +1일
+                        </button>
+                      </>
+                    );
+                  })()}
+                </div>
                 <span id="date-error" style={{ fontSize: 10, color: "var(--danger)", display: "block", marginTop: 4, visibility: formErrors.date ? "visible" : "hidden" }}>
                   {formErrors.date || "\u00A0"}
                 </span>
-              </label>
+              </div>
 
               {/* 금액 */}
               <label style={{ margin: 0 }}>
@@ -865,6 +1213,16 @@ export const LedgerEntryForm = React.memo(React.forwardRef<LedgerEntryFormHandle
                   {(effectiveFormKind === "income" || effectiveFormKind === "expense") && (
                     <span style={{ fontWeight: 400, color: "var(--text-muted)" }}>(할인 전) </span>
                   )}
+                  <button
+                    type="button"
+                    tabIndex={-1}
+                    className="secondary"
+                    onClick={splitAmountByN}
+                    title="더치페이 — 금액을 N명으로 나눈 1인분으로 바꿉니다 (계산식 12000+3500/2 도 입력 가능)"
+                    style={{ fontSize: 10, padding: "1px 7px", marginLeft: 6, borderRadius: 10 }}
+                  >
+                    ÷N
+                  </button>
                   {effectiveFormKind === "transfer" && (
                     <span style={{ marginLeft: 8 }}>
                       <button
@@ -895,6 +1253,7 @@ export const LedgerEntryForm = React.memo(React.forwardRef<LedgerEntryFormHandle
                   placeholder={effectiveFormKind === "transfer" && form.currency === "USD" ? "0.00" : "0"}
                   value={form.amount}
                   onChange={handleAmountChange}
+                  onBlur={handleAmountBlur}
                   onKeyDown={(e) => {
                     if (e.key === "Enter") {
                       e.preventDefault();
@@ -916,6 +1275,17 @@ export const LedgerEntryForm = React.memo(React.forwardRef<LedgerEntryFormHandle
                 <span id="amount-error" style={{ fontSize: 10, color: "var(--danger)", display: "block", marginTop: 4, visibility: formErrors.amount ? "visible" : "hidden" }}>
                   {formErrors.amount || "\u00A0"}
                 </span>
+                {/* 계산식 미리보기 — 유효할 때만 '= 15,500원' (오류는 위 검증 메시지가 안내) */}
+                {isAmountExpression(form.amount) && (() => {
+                  const allowDec = effectiveFormKind === "transfer" && form.currency === "USD";
+                  const v = evaluateAmountExpression(form.amount, { allowDecimal: allowDec });
+                  if (v === null) return null;
+                  return (
+                    <span style={{ fontSize: 12, color: "var(--text-muted)", display: "block", textAlign: "right", marginTop: 2 }}>
+                      = <strong style={{ color: "var(--text)" }}>{v.toLocaleString()}{allowDec ? " USD" : "원"}</strong>
+                    </span>
+                  );
+                })()}
                 {(effectiveFormKind === "income" || effectiveFormKind === "expense") &&
                   form.discountAmount?.trim() &&
                   parseAmount(form.discountAmount, false) > 0 &&
@@ -1157,19 +1527,45 @@ export const LedgerEntryForm = React.memo(React.forwardRef<LedgerEntryFormHandle
                   📷 영수증 스캔
                 </button>
               </span>
-              <input
-                type="text"
+              {/* 설명 자동완성 — 과거 설명(빈도×최근성) 후보. 선택 시 비어 있는 분류/계좌만 채움 */}
+              <Autocomplete
                 value={form.description}
-                onChange={(e) => setForm({ ...form, description: e.target.value })}
-                placeholder="예: 김밥천국, 아파트 관리비 등"
-                style={{
-                  padding: "8px",
-                  fontSize: 13,
-                  width: "100%",
-                  border: "1px solid var(--border)",
-                  borderRadius: "6px"
+                onChange={(val) => setForm((prev) => ({ ...prev, description: val }))}
+                onSelect={(opt) => {
+                  const s = suggestDescriptions(descriptionIndex, opt.value, effectiveFormKind, { limit: 8 })
+                    .find((x) => x.description === opt.value);
+                  if (s) applyDescriptionSuggestion(s);
                 }}
+                options={descriptionOptions}
+                placeholder="예: 김밥천국, 아파트 관리비 등"
+                ariaLabel="상세내역"
               />
+              {recommendationChips.length > 0 && (
+                <div style={{ display: "flex", alignItems: "center", gap: 6, flexWrap: "wrap", marginTop: 6 }}>
+                  <span style={{ fontSize: 10, color: "var(--text-muted)" }}>추천</span>
+                  {recommendationChips.map((r) => {
+                    const label = effectiveFormKind === "expense"
+                      ? [r.subCategory, r.detailCategory].filter(Boolean).join(" > ")
+                      : r.subCategory || "";
+                    const active = effectiveFormKind === "expense"
+                      ? form.mainCategory === r.subCategory && form.subCategory === (r.detailCategory || "")
+                      : form.subCategory === r.subCategory;
+                    return (
+                      <button
+                        key={label}
+                        type="button"
+                        tabIndex={-1}
+                        className={active ? "primary" : "secondary"}
+                        onClick={() => applyRecommendationChip(r)}
+                        title="이 분류 적용 (목록 필터는 바뀌지 않음)"
+                        style={{ fontSize: 11, padding: "3px 8px", borderRadius: 10 }}
+                      >
+                        {label}
+                      </button>
+                    );
+                  })}
+                </div>
+              )}
             </label>
 
             {/* 확장 영역: 할인 · 출금계좌 · 입금계좌 */}

@@ -85,7 +85,9 @@ export const STORAGE_KEYS = {
   /** 마지막으로 보던 최상위 탭(TabId). 부팅 시 복원 — TAB_ORDER 화이트리스트 외 값은 무시 */
   LAST_TAB: "fw-last-tab",
   /** saveSafetySnapshot이 첫 await 전에 동기 기록하는 최신 안전 스냅샷 1슬롯 — IDB 복제가 끝나면 비움 (services/backupStore.ts) */
-  BACKUP_SAFETY_PENDING: "farmwallet-backup-safety-pending-v1"
+  BACKUP_SAFETY_PENDING: "farmwallet-backup-safety-pending-v1",
+  /** 가계부 메인 폼 입력 드래프트 (sessionStorage — 탭별, 24h 만료; utils/ledgerFormDraft.ts) */
+  LEDGER_FORM_DRAFT: "fw-ledger-form-draft"
 } as const;
 
 /** 드래프트 슬롯이 이보다 오래되면 boot 시 무시·삭제 (스테일 복구 안내 방지) */

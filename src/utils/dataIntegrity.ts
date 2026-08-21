@@ -2,7 +2,7 @@
  * 데이터 무결성 검증 유틸리티
  */
 
-import type { Account, LedgerEntry, StockTrade, CategoryPresets } from "../types";
+import type { Account, LedgerEntry, StockTrade, CategoryPresets, Loan } from "../types";
 import { computeAccountBalances } from "../calculations";
 import { isUSDStock } from "./finance";
 import { getTodayKST } from "./date";
@@ -28,7 +28,8 @@ export interface BalanceMismatch {
 }
 
 export interface MissingReference {
-  type: "account" | "ticker";
+  /** 어떤 종류의 참조 대상이 누락됐는지. "loan"=대출(loanId), "ledger"=가계부 항목(settledLedgerIds) */
+  type: "account" | "ticker" | "loan" | "ledger";
   id: string;
   usedIn: Array<{ type: "ledger" | "trade"; id: string; field: string }>;
 }
@@ -213,6 +214,75 @@ function checkMissingReferences(
     });
   });
 
+  return issues;
+}
+
+/**
+ * 대출 상환 항목(loanId)이 존재하지 않는 대출을 참조하는지 검사 (1-10).
+ * loanId는 선택 필드(레거시는 description↔loanName 폴백)라 없는 것은 정상 — 값이 "있는데" 대상이
+ * 없는 경우만 손상으로 본다(대출 삭제 후 참조가 끊긴 경우 등).
+ */
+function checkLoanReferences(ledger: LedgerEntry[], loans: Loan[]): MissingReference[] {
+  const issues: MissingReference[] = [];
+  const loanIds = new Set(loans.map((l) => l.id));
+  const missing = new Map<string, Array<{ type: "ledger" | "trade"; id: string; field: string }>>();
+
+  ledger.forEach((entry) => {
+    if (!entry.loanId || loanIds.has(entry.loanId)) return;
+    if (!missing.has(entry.loanId)) missing.set(entry.loanId, []);
+    missing.get(entry.loanId)!.push({ type: "ledger", id: entry.id, field: "loanId" });
+  });
+
+  missing.forEach((usedIn, loanId) => {
+    issues.push({ type: "loan", id: loanId, usedIn });
+  });
+
+  return issues;
+}
+
+/**
+ * 데이트 정산 입금 항목의 settledLedgerIds가 존재하지 않는 가계부 항목을 참조하는지 검사 (1-10).
+ * 정산 후 해당 지출 항목이 (재청구 등으로) 사라지면 참조가 끊길 수 있다 — 데이트 정산 재청구 상태가
+ * 깨졌을 수 있으니 경고로만 취급한다.
+ */
+function checkSettledLedgerReferences(ledger: LedgerEntry[]): MissingReference[] {
+  const issues: MissingReference[] = [];
+  const ledgerIds = new Set(ledger.map((l) => l.id));
+  const missing = new Map<string, Array<{ type: "ledger" | "trade"; id: string; field: string }>>();
+
+  ledger.forEach((entry) => {
+    (entry.settledLedgerIds ?? []).forEach((refId) => {
+      if (ledgerIds.has(refId)) return;
+      if (!missing.has(refId)) missing.set(refId, []);
+      missing.get(refId)!.push({ type: "ledger", id: entry.id, field: "settledLedgerIds" });
+    });
+  });
+
+  missing.forEach((usedIn, ledgerId) => {
+    issues.push({ type: "ledger", id: ledgerId, usedIn });
+  });
+
+  return issues;
+}
+
+/**
+ * USD 종목 거래의 매입 당시 환율(fxRateAtTrade)이 값을 가지고 있는데 0 이하인지 검사 (1-10).
+ * 값이 없는 것(레거시 데이터 — 필드 도입 전 거래)은 정상이라 검사하지 않는다. 이 필드는 과거 손익
+ * 계산에 직접 쓰이므로(CLAUDE.md: 편집 시 보존) 0 이하 값이 들어가면 손익이 왜곡된다.
+ */
+function checkFxRateAtTradeValidity(trades: StockTrade[]): IntegrityIssue[] {
+  const issues: IntegrityIssue[] = [];
+  trades.forEach((t) => {
+    if (!isUSDStock(t.ticker)) return;
+    if (t.fxRateAtTrade == null) return;
+    if (t.fxRateAtTrade > 0) return;
+    issues.push({
+      type: "amount_consistency",
+      severity: "warning",
+      message: `주식 거래 ${t.id}: 매입 당시 환율(fxRateAtTrade)이 올바르지 않습니다 (${t.fxRateAtTrade})`,
+      data: { tradeId: t.id, fxRateAtTrade: t.fxRateAtTrade }
+    });
+  });
   return issues;
 }
 /**
@@ -565,15 +635,23 @@ function checkCategoryConsistency(
 
   return issues;
 }
+/** runStructuralChecks 입력 — AppData 중 구조 검사에 필요한 부분만 (잔액 계산에 쓰이는 prices 등은 불필요) */
+interface StructuralCheckInput {
+  accounts: Account[];
+  ledger: LedgerEntry[];
+  trades: StockTrade[];
+  loans?: Loan[];
+  categoryPresets?: CategoryPresets;
+}
+
 /**
- * 무결성 검사 전체 실행 진입점
+ * 계좌 잔액 계산(computeAccountBalances) 없이 빠르게 실행되는 구조 검사만 모음 (1-6/1-10).
+ * ApplyConfirmModal처럼 "적용 전/후 데이터를 자주(모달 열릴 때마다) 비교"해야 하는 곳에서
+ * 잔액 계산 비용 없이 무결성 오류 수를 셀 때 사용한다. runIntegrityCheck는 이 결과 + USD 증권
+ * 잔액 검사(computeAccountBalances 필요)를 합친 전체 집합이다.
  */
-export function runIntegrityCheck(
-  accounts: Account[],
-  ledger: LedgerEntry[],
-  trades: StockTrade[],
-  categoryPresets?: CategoryPresets
-): IntegrityIssue[] {
+export function runStructuralChecks(data: StructuralCheckInput): IntegrityIssue[] {
+  const { accounts, ledger, trades, loans, categoryPresets } = data;
   const issues: IntegrityIssue[] = [];
 
   // 중복 거래 탐지
@@ -602,6 +680,31 @@ export function runIntegrityCheck(
     });
   });
 
+  if (loans) {
+    const loanRefs = checkLoanReferences(ledger, loans);
+    loanRefs.forEach((ref) => {
+      issues.push({
+        type: "missing_reference",
+        severity: "error",
+        message: `존재하지 않는 대출 참조(loanId): ${ref.id}`,
+        data: ref
+      });
+    });
+  }
+
+  const settledRefs = checkSettledLedgerReferences(ledger);
+  settledRefs.forEach((ref) => {
+    issues.push({
+      type: "missing_reference",
+      severity: "warning",
+      message: `정산 항목이 참조하는 가계부 항목이 존재하지 않습니다(settledLedgerIds): ${ref.id}`,
+      data: ref
+    });
+  });
+
+  const fxRateIssues = checkFxRateAtTradeValidity(trades);
+  issues.push(...fxRateIssues);
+
   const dateIssues = validateDateOrder(ledger, trades);
   issues.push(...dateIssues);
 
@@ -614,17 +717,33 @@ export function runIntegrityCheck(
   const transferRefIssues = validateTransferRequiredFields(ledger);
   issues.push(...transferRefIssues);
 
+  if (categoryPresets) {
+    const categoryIssues = checkCategoryConsistency(ledger, categoryPresets);
+    issues.push(...categoryIssues);
+  }
+
+  return issues;
+}
+
+/**
+ * 무결성 검사 전체 실행 진입점. runStructuralChecks(잔액 계산 없음) + USD 증권 계좌 잔액 검사(계산 필요).
+ * loans는 선택 — 넘기지 않으면 대출 참조(loanId) 검사는 건너뛴다(기존 호출부 하위 호환).
+ */
+export function runIntegrityCheck(
+  accounts: Account[],
+  ledger: LedgerEntry[],
+  trades: StockTrade[],
+  categoryPresets?: CategoryPresets,
+  loans?: Loan[]
+): IntegrityIssue[] {
+  const issues = runStructuralChecks({ accounts, ledger, trades, loans, categoryPresets });
+
   const usdSecuritiesIssues = validateUsdSecuritiesConsistency(
     accounts,
     ledger,
     trades
   );
   issues.push(...usdSecuritiesIssues);
-
-  if (categoryPresets) {
-    const categoryIssues = checkCategoryConsistency(ledger, categoryPresets);
-    issues.push(...categoryIssues);
-  }
 
   return issues;
 }

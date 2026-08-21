@@ -14,6 +14,7 @@ import { getKoreaTime } from "../../utils/date";
 import { ERROR_MESSAGES } from "../../constants/errorMessages";
 import { DATA_SCHEMA_VERSION } from "../../constants/config";
 import { appDataFromTableBackupPayload, buildTableBackupFile } from "../../utils/tableDataBackup";
+import { requestApply } from "../../components/ApplyConfirmModal";
 
 interface Props {
   data: AppData;
@@ -111,28 +112,44 @@ export const DataBackupCard: React.FC<Props> = React.memo(function DataBackupCar
       const file = (e.target as HTMLInputElement).files?.[0];
       if (!file) return;
 
-      if (!window.confirm("선택한 테이블 백업 파일의 데이터로 현재 데이터를 덮어씁니다.\n복원 직전 현재 데이터는 안전 스냅샷으로 보관됩니다. 계속할까요?")) {
-        return;
-      }
-      const toastId = toast.loading("테이블 백업에서 복원하는 중...");
       try {
         const text = await file.text();
         const parsed = JSON.parse(text) as unknown;
         const appJson = appDataFromTableBackupPayload(parsed);
-        // 복원 직전 현재 데이터 안전 스냅샷
-        await saveSafetySnapshot(data, "테이블 백업 복원 직전 자동 스냅샷");
         // 테이블 백업에는 캐시가 없음 — 현재 메모리의 캐시 유지
         const normalized = mergeCurrentCaches(normalizeImportedData(appJson), data);
-        onChangeData(normalized);
-        setText(JSON.stringify(normalized, null, 2));
-        setError(null);
-        toast.success("테이블 백업에서 데이터를 복원했습니다.", { id: toastId });
-        onBackupRestored?.();
-        await loadBackupList();
+
+        requestApply({
+          title: "테이블 백업에서 복원",
+          before: data,
+          after: normalized,
+          onConfirm: () => {
+            void (async () => {
+              const toastId = toast.loading("테이블 백업에서 복원하는 중...");
+              try {
+                // 복원 직전 현재 데이터 안전 스냅샷
+                await saveSafetySnapshot(data, "테이블 백업 복원 직전 자동 스냅샷");
+                onChangeData(normalized);
+                setText(JSON.stringify(normalized, null, 2));
+                setError(null);
+                toast.success("테이블 백업에서 데이터를 복원했습니다.", { id: toastId });
+                onBackupRestored?.();
+                await loadBackupList();
+              } catch (error) {
+                const msg = isSchemaTooNewError(error) ? error.message : ERROR_MESSAGES.TABLE_BACKUP_FILE_INVALID;
+                setError(msg);
+                toast.error(msg, { id: toastId });
+                if (import.meta.env.DEV) {
+                  console.error("테이블 백업 불러오기 오류:", error);
+                }
+              }
+            })();
+          }
+        });
       } catch (error) {
         const msg = isSchemaTooNewError(error) ? error.message : ERROR_MESSAGES.TABLE_BACKUP_FILE_INVALID;
         setError(msg);
-        toast.error(msg, { id: toastId });
+        toast.error(msg);
         if (import.meta.env.DEV) {
           console.error("테이블 백업 불러오기 오류:", error);
         }
@@ -150,27 +167,43 @@ export const DataBackupCard: React.FC<Props> = React.memo(function DataBackupCar
       const file = (e.target as HTMLInputElement).files?.[0];
       if (!file) return;
 
-      if (!window.confirm("선택한 백업 파일의 데이터로 현재 데이터를 덮어씁니다.\n복원 직전 현재 데이터는 안전 스냅샷으로 보관됩니다. 계속할까요?")) {
-        return;
-      }
-      const toastId = toast.loading("백업 파일을 불러오는 중...");
       try {
         const text = await file.text();
         const parsed = JSON.parse(text);
-        // 복원 직전 현재 데이터 안전 스냅샷
-        await saveSafetySnapshot(data, "백업 파일 복원 직전 자동 스냅샷");
         // 백업 파일에 캐시가 없으면(user-only 백업) 현재 메모리의 캐시 유지
         const normalized = mergeCurrentCaches(normalizeImportedData(parsed), data);
-        onChangeData(normalized);
-        setText(JSON.stringify(normalized, null, 2));
-        setError(null);
-        toast.success("백업 파일을 성공적으로 불러왔습니다.", { id: toastId });
-        onBackupRestored?.();
-        await loadBackupList();
+
+        requestApply({
+          title: "백업 파일에서 복원",
+          before: data,
+          after: normalized,
+          onConfirm: () => {
+            void (async () => {
+              const toastId = toast.loading("백업 파일을 불러오는 중...");
+              try {
+                // 복원 직전 현재 데이터 안전 스냅샷
+                await saveSafetySnapshot(data, "백업 파일 복원 직전 자동 스냅샷");
+                onChangeData(normalized);
+                setText(JSON.stringify(normalized, null, 2));
+                setError(null);
+                toast.success("백업 파일을 성공적으로 불러왔습니다.", { id: toastId });
+                onBackupRestored?.();
+                await loadBackupList();
+              } catch (error) {
+                const msg = isSchemaTooNewError(error) ? error.message : ERROR_MESSAGES.BACKUP_FILE_INVALID;
+                setError(msg);
+                toast.error(msg, { id: toastId });
+                if (import.meta.env.DEV) {
+                  console.error("백업 파일 불러오기 오류:", error);
+                }
+              }
+            })();
+          }
+        });
       } catch (error) {
         const msg = isSchemaTooNewError(error) ? error.message : ERROR_MESSAGES.BACKUP_FILE_INVALID;
         setError(msg);
-        toast.error(msg, { id: toastId });
+        toast.error(msg);
         if (import.meta.env.DEV) {
           console.error("백업 파일 불러오기 오류:", error);
         }

@@ -79,6 +79,7 @@ import { useBenchmarkRecorder } from "./hooks/useBenchmarkRecorder";
 import { GistVersionModal } from "./components/GistVersionModal";
 import { GitVersionModal } from "./components/GitVersionModal";
 import { GistConflictModal } from "./components/GistConflictModal";
+import { ApplyConfirmModal, requestApply } from "./components/ApplyConfirmModal";
 import { isGistConfigured, GIST_CONFIG_CHANGE_EVENT } from "./services/gistSync";
 import { toUserDataJson } from "./services/dataService";
 import { useUIStore, type PendingAction } from "./store/uiStore";
@@ -358,17 +359,28 @@ export const App: React.FC = () => {
     try {
       const parsed = JSON.parse(recovery.draftJson) as unknown;
       const normalized = normalizeImportedData(parsed);
-      persistData(normalized);
-      const reloaded = loadData();
-      setData(reloaded);
-      addAppLog("미저장 변경 복구됨", "success");
-      toast.success("미저장 변경을 복구했습니다.");
-      // 드래프트 삭제·배너 제거는 "성공 경로에서만" — 복구 실패 시 드래프트가 유일한 사본이므로 보존
-      try {
-        window.localStorage.removeItem(STORAGE_KEYS.DRAFT);
-        window.localStorage.removeItem(STORAGE_KEYS.DRAFT_AT);
-      } catch { /* */ }
-      setDraftRecovery(null);
+      const current = useAppStore.getState().data;
+      // 드래프트 복구는 "복구" 성격 — 차이 요약만 보여주고 [적용]에 기본 포커스 (1-6).
+      // 차이가 없으면(디바운스 도중 크래시가 났지만 마지막 저장과 동일) 모달 없이 즉시 복구된다.
+      requestApply({
+        title: "미저장 변경 복구",
+        before: current,
+        after: normalized,
+        defaultFocusConfirm: true,
+        onConfirm: () => {
+          persistData(normalized);
+          const reloaded = loadData();
+          setData(reloaded);
+          addAppLog("미저장 변경 복구됨", "success");
+          toast.success("미저장 변경을 복구했습니다.");
+          // 드래프트 삭제·배너 제거는 "성공 경로에서만" — 복구 실패 시 드래프트가 유일한 사본이므로 보존
+          try {
+            window.localStorage.removeItem(STORAGE_KEYS.DRAFT);
+            window.localStorage.removeItem(STORAGE_KEYS.DRAFT_AT);
+          } catch { /* */ }
+          setDraftRecovery(null);
+        }
+      });
     } catch (err) {
       const message = err instanceof Error ? err.message : "복구 실패";
       console.error("[FarmWallet] draft 복구 실패", err);
@@ -1262,6 +1274,7 @@ export const App: React.FC = () => {
       />
 
       <GistConflictModal conflict={gistConflict} onResolve={(r) => void resolveGistConflict(r)} />
+      <ApplyConfirmModal />
       <TabConflictModal
         conflict={tabConflict}
         onResolve={handleResolveTabConflict}

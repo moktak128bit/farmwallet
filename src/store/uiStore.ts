@@ -4,6 +4,7 @@ import type { LedgerEntry } from "../types";
 import { isGistConfigured } from "../services/gistSync";
 import { STORAGE_KEYS } from "../constants/config";
 import { TAB_ORDER } from "../constants/tabs";
+import type { ApplySummary } from "../utils/applySummary";
 
 interface AppLogEntry {
   id: number;
@@ -63,6 +64,23 @@ interface DraftRecovery {
   draftJson: string;
   /** 드래프트 작성 시각 (ms epoch) */
   draftAt: number;
+}
+
+/**
+ * '덮어쓰기 적용' 게이트(ApplyConfirmModal)가 열려 있을 때의 대기 요청 (1-6).
+ * 백업 복원·JSON/파일 가져오기·드래프트 복구·Gist 수동 pull이 utils/applySummary의
+ * requestApply를 통해 여기 세팅한다 — 차이가 없으면 이 상태를 거치지 않고 즉시 onConfirm이 실행된다.
+ */
+interface PendingApply {
+  /** 모달 제목 — 게이트별 문구 ("백업 파일에서 복원" 등) */
+  title: string;
+  summary: ApplySummary;
+  /** [적용] 클릭 시 실행 — 각 게이트가 소유한 스냅샷·정규화된 데이터 반영 로직 */
+  onConfirm: () => void;
+  /** [취소]/ESC 시 실행 (선택) */
+  onCancel?: () => void;
+  /** true면 드래프트 복구처럼 "복구" 성격 — [적용] 버튼에 기본 포커스 */
+  defaultFocusConfirm?: boolean;
 }
 
 /** 부팅 시 마지막 탭 복원 — TAB_ORDER 화이트리스트 외 값(구버전·오염)은 무시하고 dashboard */
@@ -173,6 +191,10 @@ interface UIStore {
   draftRecovery: DraftRecovery | null;
   setDraftRecovery: (recovery: DraftRecovery | null) => void;
 
+  // 적용 게이트 diff 확인 모달 (1-6)
+  pendingApply: PendingApply | null;
+  setPendingApply: (pending: PendingApply | null) => void;
+
   // Cross-page navigation
   copyRequest: LedgerEntry | null;
   setCopyRequest: (entry: LedgerEntry | null) => void;
@@ -247,6 +269,9 @@ export const useUIStore = create<UIStore>((set) => ({
   setTabConflict: (tabConflict) => set({ tabConflict }),
   draftRecovery: null,
   setDraftRecovery: (draftRecovery) => set({ draftRecovery }),
+
+  pendingApply: null,
+  setPendingApply: (pendingApply) => set({ pendingApply }),
 
   copyRequest: null,
   setCopyRequest: (copyRequest) => set({ copyRequest }),

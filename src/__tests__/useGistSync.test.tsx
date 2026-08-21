@@ -201,6 +201,14 @@ describe("useGistSync", () => {
       await result.current.manualPull();
     });
 
+    // 1-6: before/after 데이터가 다르면 즉시 반영되지 않고 ApplyConfirmModal 게이트(uiStore.pendingApply)를
+    // 거친다 — [적용]에 해당하는 onConfirm을 호출해야 실제 반영된다.
+    const pending = useUIStore.getState().pendingApply;
+    expect(pending).not.toBeNull();
+    act(() => {
+      pending?.onConfirm();
+    });
+
     expect(onApply).toHaveBeenCalledWith('{"accounts":[],"ledger":[{"id":"PULL"}]}', "2026-04-21T00:00:00Z");
     expect(mocked.setGistLastPullAt).toHaveBeenCalledWith("2026-04-21T00:00:00Z");
     expect(result.current.lastPullAt).toBe("2026-04-21T00:00:00Z");

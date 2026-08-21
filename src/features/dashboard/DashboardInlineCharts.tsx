@@ -410,3 +410,71 @@ export function TotalAssetValueChart({ rows, activeDate, onPointClick }: TotalAs
     </ResponsiveContainer>
   );
 }
+
+// ─── 통합 현금흐름 — 12개월 잔고 곡선 (3-5) ─────────────────────────────────
+
+export interface CashFlowProjectionRow {
+  month: string; // YYYY-MM
+  label: string; // "8월" 등
+  balance: number;
+}
+
+interface CashFlowProjectionChartProps {
+  rows: CashFlowProjectionRow[];
+  minBalanceMonth?: string | null;
+  firstNegativeMonth?: string | null;
+}
+
+/** 잔고가 한 번이라도 마이너스면 곡선 아래 채움을 위험색으로, 아니면 안전색으로 */
+export function CashFlowProjectionChart({ rows, minBalanceMonth, firstNegativeMonth }: CashFlowProjectionChartProps) {
+  const hasNegative = rows.some((r) => r.balance < 0);
+  const strokeColor = hasNegative ? "var(--danger)" : "var(--chart-primary)";
+  return (
+    <ResponsiveContainer width="100%" height="100%">
+      <AreaChart data={rows} margin={{ top: 12, right: 16, left: 8, bottom: 8 }}>
+        <defs>
+          <linearGradient id="cashFlowProjectionGrad" x1="0" y1="0" x2="0" y2="1">
+            <stop offset="5%" stopColor={strokeColor} stopOpacity={0.35} />
+            <stop offset="95%" stopColor={strokeColor} stopOpacity={0.03} />
+          </linearGradient>
+        </defs>
+        <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="var(--border)" />
+        <XAxis dataKey="label" fontSize={12} axisLine={false} tickLine={false} />
+        <YAxis fontSize={12} tickFormatter={(v) => `${Math.round(Number(v) / 10000)}만`} axisLine={false} tickLine={false} width={56} />
+        <Tooltip
+          formatter={(val: number | string | undefined) => [formatKRW(Math.round(Number(val ?? 0))), "예상 잔고"]}
+          contentStyle={{ fontSize: 13, fontWeight: 600 }}
+          labelFormatter={(_, payload) => payload?.[0]?.payload?.month ?? ""}
+        />
+        <ReferenceLine y={0} stroke="var(--danger)" strokeDasharray="4 4" strokeOpacity={0.6} />
+        {minBalanceMonth && (
+          <ReferenceLine
+            x={rows.find((r) => r.month === minBalanceMonth)?.label}
+            stroke="var(--text-muted)"
+            strokeDasharray="3 3"
+            strokeOpacity={0.5}
+            label={{ value: "최저", position: "insideTopLeft", fontSize: 11, fill: "var(--text-muted)" }}
+          />
+        )}
+        {firstNegativeMonth && (
+          <ReferenceLine
+            x={rows.find((r) => r.month === firstNegativeMonth)?.label}
+            stroke="var(--danger)"
+            strokeDasharray="3 3"
+            label={{ value: "마이너스 예상", position: "insideTopRight", fontSize: 11, fill: "var(--danger)" }}
+          />
+        )}
+        <Area
+          isAnimationActive={false}
+          type="monotone"
+          dataKey="balance"
+          name="예상 잔고"
+          stroke={strokeColor}
+          strokeWidth={2.5}
+          fill="url(#cashFlowProjectionGrad)"
+          dot={{ r: 3, fill: strokeColor }}
+        />
+      </AreaChart>
+    </ResponsiveContainer>
+  );
+}

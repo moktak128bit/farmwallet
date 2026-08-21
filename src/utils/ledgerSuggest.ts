@@ -33,7 +33,7 @@ export interface DescriptionSuggestion {
   comboCount: number;
 }
 
-export interface DescriptionIndex {
+interface DescriptionIndex {
   /** 그룹 목록 (순서 비보장 — 조회 함수가 정렬) */
   groups: DescriptionSuggestion[];
 }
@@ -223,7 +223,7 @@ export function recentDescriptionGroups(
 }
 
 /** 폼에 채울 수 있는 필드 (LedgerFormState의 부분집합) */
-export interface SuggestionFormFields {
+interface SuggestionFormFields {
   mainCategory: string;
   subCategory: string;
   fromAccountId: string;
@@ -256,7 +256,7 @@ export function suggestionToFormFields(s: Pick<DescriptionSuggestion, "kind" | "
   };
 }
 
-export interface FillEmptyResult {
+interface FillEmptyResult {
   next: SuggestionFormFields;
   /** 실제로 채워진 필드 (비어 있던 것만) — 비면 토스트 생략 */
   applied: (keyof SuggestionFormFields)[];

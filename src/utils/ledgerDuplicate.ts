@@ -7,7 +7,7 @@
 import type { LedgerEntry, LedgerKind } from "../types";
 import { normalizeMerchant } from "./categoryRecommendation";
 
-export interface DuplicateProbe {
+interface DuplicateProbe {
   date: string;
   /** 저장될 금액(할인 반영 후) — 기존 항목의 amount와 같은 기준 */
   amount: number;
@@ -20,14 +20,14 @@ export interface DuplicateProbe {
   excludeId?: string;
 }
 
-export interface DuplicateOptions {
+interface DuplicateOptions {
   /** 같은 날만 (기본 true) */
   sameDay?: boolean;
   /** 같은 출금/입금 계좌만 (기본 true) */
   sameAccount?: boolean;
 }
 
-export interface DuplicateResult {
+interface DuplicateResult {
   matches: LedgerEntry[];
   exactDescription: LedgerEntry[];
 }

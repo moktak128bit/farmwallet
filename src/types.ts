@@ -472,6 +472,27 @@ export interface AppData {
   investmentGoals?: InvestmentGoals;
   /** "하루 N원" 절약 원칙 — 가계부 상단 진행 바·streak·월간 달성률에 사용 */
   dailyBudget?: DailyBudgetConfig;
+  /** 이름 있는 저축 목표 (예산 탭). 진행률은 utils/savingsGoalProgress 단일 소스 (3-7) */
+  savingsGoals?: SavingsGoal[];
+}
+
+/**
+ * 이름 있는 저축 목표 — investmentGoals(대시보드 투자 요약 카드, 단일 설정)와 별개로
+ * 여러 개를 만들 수 있는 목표 리스트 (예산 탭). 진행률 계산은 utils/savingsGoalProgress.ts.
+ */
+export interface SavingsGoal {
+  id: string;
+  name: string;
+  /** 목표 금액 (KRW, > 0) */
+  targetAmount: number;
+  /** 목표 기한 (YYYY-MM-DD). 미설정이면 ETA만 표시(기한 역산 없음) */
+  targetDate?: string;
+  /** 진행률 산정 방식 A: 이 계좌들의 현재 잔액 합(증권/암호화폐 계좌는 평가액 미포함이라 대상에서 제외). */
+  linkedAccountIds?: string[];
+  /** 진행률 산정 방식 B: linkedAccountIds 대신, 이 대분류/중분류에 해당하는 재테크(저축·투자) 이체 누적. */
+  linkedCategory?: string;
+  /** 생성 시각 (ISO) */
+  createdAt: string;
 }
 
 export interface DailyBudgetConfig {

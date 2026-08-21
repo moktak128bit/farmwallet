@@ -27,6 +27,7 @@ import { RecurringListSection } from "../features/budget/RecurringListSection";
 import { RecurringSuggestionsSection } from "../features/budget/RecurringSuggestionsSection";
 import { BudgetDashboardSection, type BudgetUsageRow } from "../features/budget/BudgetDashboardSection";
 import { BudgetGoalsTable } from "../features/budget/BudgetGoalsTable";
+import { SavingsGoalsSection } from "../features/budget/SavingsGoalsSection";
 
 interface Props {
   accounts: Account[];
@@ -140,6 +141,9 @@ export const BudgetRecurringView: React.FC<Props> = ({
 
       {/* 예산/목표 테이블 — 분리 컴포넌트 (React.memo). 셀 편집 상태는 자식 소유 */}
       <BudgetGoalsTable budgetUsage={budgetUsage} budgets={budgets} onChangeBudgets={onChangeBudgets} />
+
+      {/* 🎯 이름 있는 저축 목표(3-7) — 데이터는 useAppStore 직접 구독(App props 시그니처 불변) */}
+      <SavingsGoalsSection />
     </div>
   );
 };

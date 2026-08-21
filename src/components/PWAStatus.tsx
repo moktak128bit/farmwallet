@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useRegisterSW } from "./pwaRegister";
 import { useUIStore } from "../store/uiStore";
 
@@ -26,10 +26,15 @@ export function PWAStatus() {
 
   // 헤더 pill이 실제로 업데이트를 적용할 수 있도록 updateServiceWorker를 uiStore에 등록
   // (prompt 모드에서 단순 location.reload()는 waiting SW를 활성화하지 못한다)
+  // ⚠ updateServiceWorker를 effect deps에 직접 넣지 말 것 — 개발 모드(devOptions 미설정)에서 이 값이
+  // 매 렌더 새 참조로 나와 setApplyPwaUpdate→리렌더→effect 재실행이 무한 반복되며 앱이 크래시했다
+  // (AppErrorBoundary로 확인). ref로 최신값만 추적하고 effect는 마운트 1회만 실행한다.
+  const updateServiceWorkerRef = useRef(updateServiceWorker);
+  updateServiceWorkerRef.current = updateServiceWorker;
   useEffect(() => {
-    setApplyPwaUpdate(() => updateServiceWorker(true));
+    setApplyPwaUpdate(() => updateServiceWorkerRef.current(true));
     return () => setApplyPwaUpdate(null);
-  }, [updateServiceWorker, setApplyPwaUpdate]);
+  }, [setApplyPwaUpdate]);
 
   useEffect(() => {
     const on = () => setOffline(false);

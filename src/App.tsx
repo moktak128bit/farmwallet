@@ -8,6 +8,7 @@ import { PWAStatus } from "./components/PWAStatus";
 import { ConfirmModal } from "./components/ui/ConfirmModal";
 import { QuickEntryModal } from "./components/QuickEntryModal";
 import { RecurringDueBadge } from "./components/RecurringDueBadge";
+import { NotificationCenter } from "./components/NotificationCenter";
 import { TabErrorBoundary } from "./components/TabErrorBoundary";
 import { MobileDrawer } from "./components/MobileDrawer";
 import { MobileBottomNav } from "./components/MobileBottomNav";
@@ -835,6 +836,7 @@ export const App: React.FC = () => {
             >
               {theme === "light" ? <Moon size={16} /> : <Sun size={16} />}
             </button>
+            <NotificationCenter latestBackupAt={latestBackupAt} />
           </div>
           {newVersionAvailable && (
             <div

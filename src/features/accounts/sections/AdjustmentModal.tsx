@@ -39,6 +39,13 @@ export const AdjustmentModal = React.memo(function AdjustmentModal({
   onClose,
 }: Props) {
   const [targetDebtInput, setTargetDebtInput] = useState("");
+  // 카드 청구주기 시작일·결제일(3-4) — 모달 열릴 때 계좌 현재값으로 초기화, "저장"에서만 커밋
+  const [billingCycleStartInput, setBillingCycleStartInput] = useState(
+    () => String(safeAccounts.find((a) => a.id === adjustingAccount.id)?.billingCycleStart ?? "")
+  );
+  const [paymentDayInput, setPaymentDayInput] = useState(
+    () => String(safeAccounts.find((a) => a.id === adjustingAccount.id)?.paymentDay ?? "")
+  );
   // 조정 입력 상태 — 모달 마운트 시 항상 빈 값 (이전엔 부모가 열 때마다 초기화하던 동작과 동일)
   const [adjustValue, setAdjustValue] = useState("");
   const [isSetDirectly, setIsSetDirectly] = useState(false);
@@ -237,6 +244,65 @@ export const AdjustmentModal = React.memo(function AdjustmentModal({
               }}
               formatKRW={formatKRW}
             />
+          )}
+
+          {adjustingAccount.type === "card" && onChangeAccounts && (
+            <div style={{ marginBottom: 20, padding: 16, background: "var(--surface-hover)", borderRadius: 8, border: "1px solid var(--border)" }}>
+              <div style={{ fontSize: 13, fontWeight: 600, marginBottom: 8 }}>청구주기·결제일 설정</div>
+              <div style={{ fontSize: 12, color: "var(--text-muted)", marginBottom: 10 }}>
+                둘 다 설정하면 대시보드에 다음 카드 결제 예정액이 표시됩니다.
+              </div>
+              <div style={{ display: "flex", gap: 8, marginBottom: 10, flexWrap: "wrap" }}>
+                <label style={{ flex: "1 1 140px" }}>
+                  <span style={{ display: "block", fontSize: 12, marginBottom: 4 }}>청구주기 시작일 (1~31)</span>
+                  <input
+                    type="number"
+                    min={1}
+                    max={31}
+                    placeholder="예: 13"
+                    value={billingCycleStartInput}
+                    onChange={(e) => setBillingCycleStartInput(e.target.value)}
+                    style={{ width: "100%", padding: 8, borderRadius: 6 }}
+                  />
+                </label>
+                <label style={{ flex: "1 1 140px" }}>
+                  <span style={{ display: "block", fontSize: 12, marginBottom: 4 }}>결제일 (1~31)</span>
+                  <input
+                    type="number"
+                    min={1}
+                    max={31}
+                    placeholder="예: 25"
+                    value={paymentDayInput}
+                    onChange={(e) => setPaymentDayInput(e.target.value)}
+                    style={{ width: "100%", padding: 8, borderRadius: 6 }}
+                  />
+                </label>
+              </div>
+              <button
+                type="button"
+                className="secondary"
+                onClick={() => {
+                  const cycleNum = Number(billingCycleStartInput);
+                  const payNum = Number(paymentDayInput);
+                  const validCycle = billingCycleStartInput.trim() !== "" && cycleNum >= 1 && cycleNum <= 31;
+                  const validPay = paymentDayInput.trim() !== "" && payNum >= 1 && payNum <= 31;
+                  if (!validCycle && !validPay) {
+                    toast.error("청구주기 시작일·결제일을 1~31 사이 값으로 입력해주세요.");
+                    return;
+                  }
+                  onChangeAccounts(
+                    safeAccounts.map((a) =>
+                      a.id === adjustingAccount.id
+                        ? { ...a, billingCycleStart: validCycle ? cycleNum : undefined, paymentDay: validPay ? payNum : undefined }
+                        : a
+                    )
+                  );
+                  toast.success("청구주기·결제일을 저장했습니다.");
+                }}
+              >
+                저장
+              </button>
+            </div>
           )}
 
           {(() => {

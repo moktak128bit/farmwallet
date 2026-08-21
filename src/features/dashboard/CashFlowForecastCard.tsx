@@ -4,10 +4,11 @@
  * 로직은 순수 모듈에 있고 이 카드는 표시만 — React.memo(부모가 넘기는 recurring은 store 참조로 안정적).
  */
 import React, { useMemo } from "react";
-import type { LedgerEntry, RecurringExpense } from "../../types";
+import type { Account, CategoryPresets, LedgerEntry, RecurringExpense } from "../../types";
 import { formatKRW } from "../../utils/formatter";
 import { getTodayKST, parseIsoLocal } from "../../utils/date";
 import { computeCashFlowForecast } from "../../utils/cashFlowForecast";
+import { computeCardBillForecast } from "../../utils/cardBillForecast";
 
 const WD = ["일", "월", "화", "수", "목", "금", "토"];
 const HORIZON = 60;
@@ -26,22 +27,48 @@ function daysAway(iso: string, todayIso: string): number {
   return Math.round((a.getTime() - b.getTime()) / 86400000);
 }
 
+function formatDday(days: number): string {
+  if (days === 0) return "D-day";
+  return days > 0 ? `D-${days}` : `D+${-days}`;
+}
+
 interface Props {
   recurring: RecurringExpense[];
   /** 이미 납부(기록)한 반복지출 사이클을 '남은'에서 제외하기 위한 가계부 */
   ledger: LedgerEntry[];
+  /** 카드 결제 예정액 힌트(3-4) 계산에 사용 — 없으면 힌트를 표시하지 않는다 */
+  accounts?: Account[];
+  fxRate?: number | null;
+  categoryPresets?: CategoryPresets;
 }
 
-export const CashFlowForecastCard: React.FC<Props> = React.memo(function CashFlowForecastCard({ recurring, ledger }) {
+export const CashFlowForecastCard: React.FC<Props> = React.memo(function CashFlowForecastCard({
+  recurring,
+  ledger,
+  accounts,
+  fxRate,
+  categoryPresets,
+}) {
   const todayIso = getTodayKST();
   const f = useMemo(
     () => computeCashFlowForecast(recurring, { todayIso, horizonDays: HORIZON, ledger }),
     [recurring, todayIso, ledger]
   );
+  const nextCardBill = useMemo(() => {
+    if (!accounts || accounts.length === 0) return null;
+    const entries = computeCardBillForecast(accounts, ledger, todayIso, { fxRate, categoryPresets });
+    if (entries.length === 0) return null;
+    return entries.reduce((min, e) => (e.paymentDate < min.paymentDate ? e : min), entries[0]);
+  }, [accounts, ledger, todayIso, fxRate, categoryPresets]);
 
   return (
     <div className="card">
       <div className="card-title">다가오는 고정 지출 ({HORIZON}일)</div>
+      {nextCardBill && (
+        <div style={{ fontSize: 12, color: "var(--text-muted)", marginTop: 4 }}>
+          다음 카드 결제 {formatKRW(Math.round(nextCardBill.remainingKRW))} · {fmtDate(nextCardBill.paymentDate)} ({formatDday(daysAway(nextCardBill.paymentDate, todayIso))})
+        </div>
+      )}
       {f.events.length === 0 ? (
         <div className="hint" style={{ marginTop: 12 }}>
           예정된 반복 지출이 없습니다. (예산·반복 탭에서 고정지출/구독을 등록하면 표시됩니다.)

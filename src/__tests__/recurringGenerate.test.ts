@@ -96,6 +96,46 @@ describe("generateOccurrencesForMonthFromRecurring — 생성 스키마", () => 
   });
 });
 
+describe("generateOccurrencesForMonthFromRecurring — kind='income'(정기 수입, 3-4)", () => {
+  it("kind=income + toAccountId 있으면 kind=income, category=수입, subCategory=r.category", () => {
+    const occ = gen(
+      [rec({ id: "r1", title: "월급", amount: 3_000_000, kind: "income", category: "월급", toAccountId: "A1" })],
+      "2026-06"
+    );
+    expect(occ).toHaveLength(1);
+    const e = occ[0].entry;
+    expect(e.kind).toBe("income");
+    expect(e.category).toBe("수입");
+    expect(e.subCategory).toBe("월급");
+    expect(e.detailCategory).toBe("월급");
+    expect(e.toAccountId).toBe("A1");
+    expect(e.isFixedExpense).toBe(false); // "고정 지출" 플래그는 수입에 세우지 않음
+  });
+
+  it("kind=income인데 toAccountId 없으면 생성하지 않음 (입금계좌 필수 가드)", () => {
+    const occ = gen(
+      [rec({ id: "r1", title: "월급", amount: 3_000_000, kind: "income", category: "월급" })],
+      "2026-06"
+    );
+    expect(occ).toHaveLength(0);
+  });
+
+  it("kind=income + category 공란이면 '월급' 기본값", () => {
+    const occ = gen(
+      [rec({ id: "r1", title: "부수입", amount: 100_000, kind: "income", category: "", toAccountId: "A1" })],
+      "2026-06"
+    );
+    expect(occ[0].entry.subCategory).toBe("월급");
+  });
+
+  it("kind 미지정(기존 데이터)은 여전히 toAccountId 유무로 transfer/expense 판정(레거시 동작 유지)", () => {
+    const occTransfer = gen([rec({ id: "r1", title: "적금", amount: 1, toAccountId: "S1" })], "2026-06");
+    expect(occTransfer[0].entry.kind).toBe("transfer");
+    const occExpense = gen([rec({ id: "r2", title: "월세", amount: 1 })], "2026-06");
+    expect(occExpense[0].entry.kind).toBe("expense");
+  });
+});
+
 describe("generateOccurrencesForMonthFromRecurring — monthly", () => {
   it("시작 일자가 그 달에 발생, 말일 클램프(31일 시작 → 4월 30일, 2월 28일)", () => {
     const r = rec({ id: "r1", title: "월세", amount: 500_000, startDate: "2026-01-31" });

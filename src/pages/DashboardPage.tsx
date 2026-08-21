@@ -379,7 +379,13 @@ export const DashboardView: React.FC<Props> = (props) => {
         )}
 
         {show("cashFlow") && (
-          <CashFlowForecastCard recurring={storeData.recurringExpenses ?? []} ledger={ledger} />
+          <CashFlowForecastCard
+            recurring={storeData.recurringExpenses ?? []}
+            ledger={ledger}
+            accounts={accounts}
+            fxRate={fxRate}
+            categoryPresets={categoryPresets}
+          />
         )}
 
         {show("portfolioCharts") && (

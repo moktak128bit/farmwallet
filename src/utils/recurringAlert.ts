@@ -76,7 +76,8 @@ const computeDueDate = (r: RecurringExpense, refDate: string): string | null => 
  * 기간(어느 사이클) 필터는 호출부 책임. recurringAlert(미등록 배지)와 cashFlowForecast(이미납부 차감)가 공유.
  */
 export function matchesRecurringEntry(l: LedgerEntry, r: RecurringExpense): boolean {
-  const expectedKind = r.toAccountId ? "transfer" : "expense";
+  // kind="income"(정기 수입, 3-4)은 별도 스키마(kind=income) — 지출/이체 가정과 분리해 가드
+  const expectedKind = r.kind === "income" ? "income" : r.toAccountId ? "transfer" : "expense";
   if (l.kind !== expectedKind) return false;
   if (Math.abs(Number(l.amount) - r.amount) >= 1) return false;
   const subMatch = !!r.category && l.subCategory === r.category;

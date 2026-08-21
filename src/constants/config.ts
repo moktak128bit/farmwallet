@@ -87,7 +87,9 @@ export const STORAGE_KEYS = {
   /** saveSafetySnapshot이 첫 await 전에 동기 기록하는 최신 안전 스냅샷 1슬롯 — IDB 복제가 끝나면 비움 (services/backupStore.ts) */
   BACKUP_SAFETY_PENDING: "farmwallet-backup-safety-pending-v1",
   /** 가계부 메인 폼 입력 드래프트 (sessionStorage — 탭별, 24h 만료; utils/ledgerFormDraft.ts) */
-  LEDGER_FORM_DRAFT: "fw-ledger-form-draft"
+  LEDGER_FORM_DRAFT: "fw-ledger-form-draft",
+  /** FIRE 시뮬레이터 가정 덮어쓰기 (JSON: {monthlySaving?, returnPct?, retireSpendingAnnual?} — 기기 로컬, AppData 무변경) */
+  FIRE_ASSUMPTIONS: "fw-fire-assumptions"
 } as const;
 
 /** 드래프트 슬롯이 이보다 오래되면 boot 시 무시·삭제 (스테일 복구 안내 방지) */

@@ -2,6 +2,7 @@ import { useEffect } from "react";
 import type { StockPreset } from "../../types";
 import { useFocusTrap } from "../../hooks/useFocusTrap";
 import { useModalStackEntry } from "../../utils/modalStack";
+import { formatNumber } from "../../utils/formatter";
 
 interface Props {
   presets: StockPreset[];
@@ -95,7 +96,7 @@ export function PresetModal({
                       <td>{preset.ticker}</td>
                       <td>{preset.stockName || "-"}</td>
                       <td className="number">{preset.quantity ? preset.quantity : "-"}</td>
-                      <td className="number">{preset.fee ? Math.round(preset.fee).toLocaleString() : "-"}</td>
+                      <td className="number">{preset.fee ? formatNumber(preset.fee) : "-"}</td>
                       <td>{preset.lastUsed ? new Date(preset.lastUsed).toLocaleDateString() : "-"}</td>
                       <td>
                         <button

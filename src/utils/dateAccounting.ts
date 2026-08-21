@@ -1,5 +1,6 @@
 import type { Account, LedgerEntry } from "../types";
 import { isSettlementEntry } from "./categoryUtils";
+import { formatNumber } from "./formatter";
 
 /**
  * 데이트성 지출 판정.
@@ -211,7 +212,7 @@ export function computeMoimAccountFlow(
         anomalies.push({
           month: r.month,
           type: "partner_low",
-          message: `상대 입금 ${r.partnerDeposit.toLocaleString()}원 (평균 ${Math.round(avg).toLocaleString()}원의 ${Math.round((r.partnerDeposit / avg) * 100)}%)`,
+          message: `상대 입금 ${formatNumber(r.partnerDeposit)}원 (평균 ${formatNumber(avg)}원의 ${Math.round((r.partnerDeposit / avg) * 100)}%)`,
         });
       }
     }

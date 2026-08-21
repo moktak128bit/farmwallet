@@ -9,6 +9,7 @@ import type { Account, BudgetGoal } from "../../types";
 import { BUDGET_ALL_CATEGORY } from "../../types";
 import { getTodayKST, getLastDayOfMonth } from "../../utils/date";
 import type { BudgetPace, BudgetPaceStatus } from "../../utils/budgetPace";
+import { formatNumber } from "../../utils/formatter";
 
 /** 부모(BudgetRecurringView) budgetUsage memo의 행 타입 — 예산 + 이번 달 사용액/잔여 + 페이스(월말 예상·허용액·전월 동기) */
 export type BudgetUsageRow = BudgetGoal & { spent: number; remain: number; pace: BudgetPace };
@@ -116,9 +117,9 @@ export const BudgetDashboardSection: React.FC<Props> = React.memo(function Budge
         >
           <span>
             총 예산{" "}
-            <strong>{totalLimit.toLocaleString()}원</strong> 중{" "}
+            <strong>{formatNumber(totalLimit)}원</strong> 중{" "}
             <strong style={{ color: overallBarColor }}>
-              {totalSpent.toLocaleString()}원
+              {formatNumber(totalSpent)}원
             </strong>{" "}
             사용{" "}
             <span
@@ -133,7 +134,7 @@ export const BudgetDashboardSection: React.FC<Props> = React.memo(function Budge
           <span style={{ color: "var(--text-muted, #888)", fontSize: 13 }}>
             잔여{" "}
             <strong style={{ color: totalLimit - totalSpent >= 0 ? "var(--success)" : "var(--danger)" }}>
-              {(totalLimit - totalSpent).toLocaleString()}원
+              {formatNumber(totalLimit - totalSpent)}원
             </strong>
           </span>
         </div>
@@ -149,7 +150,7 @@ export const BudgetDashboardSection: React.FC<Props> = React.memo(function Budge
           >
             {allBudget.pace.message}
             <span style={{ marginLeft: 8, color: "var(--text-muted, #888)" }}>
-              · 전월 {allBudget.pace.prevSamePeriodLabel} {allBudget.pace.prevSamePeriodSpent.toLocaleString()}원
+              · 전월 {allBudget.pace.prevSamePeriodLabel} {formatNumber(allBudget.pace.prevSamePeriodSpent)}원
             </span>
           </div>
         )}
@@ -277,10 +278,10 @@ export const BudgetDashboardSection: React.FC<Props> = React.memo(function Budge
                 >
                   <span>
                     <span style={{ color: barColor, fontWeight: 600 }}>
-                      {b.spent.toLocaleString()}
+                      {formatNumber(b.spent)}
                     </span>
                     <span style={{ color: "var(--text-muted, #888)" }}>
-                      {" "}/ {b.monthlyLimit.toLocaleString()}원
+                      {" "}/ {formatNumber(b.monthlyLimit)}원
                     </span>
                   </span>
                   <span
@@ -291,8 +292,8 @@ export const BudgetDashboardSection: React.FC<Props> = React.memo(function Budge
                     }}
                   >
                     {b.remain >= 0
-                      ? `잔여 ${b.remain.toLocaleString()}원`
-                      : `초과 ${Math.abs(b.remain).toLocaleString()}원`}
+                      ? `잔여 ${formatNumber(b.remain)}원`
+                      : `초과 ${formatNumber(Math.abs(b.remain))}원`}
                   </span>
                 </div>
 
@@ -322,7 +323,7 @@ export const BudgetDashboardSection: React.FC<Props> = React.memo(function Budge
                   }}
                 >
                   <span>
-                    전월 {b.pace.prevSamePeriodLabel} {b.pace.prevSamePeriodSpent.toLocaleString()}원
+                    전월 {b.pace.prevSamePeriodLabel} {formatNumber(b.pace.prevSamePeriodSpent)}원
                     {prevDiffPct != null && (
                       // 지출 증가=빨강(danger), 감소=파랑(accent) — 국내 관례
                       <span style={{ marginLeft: 4, color: prevDiffPct > 0 ? "var(--danger)" : "var(--accent)" }}>

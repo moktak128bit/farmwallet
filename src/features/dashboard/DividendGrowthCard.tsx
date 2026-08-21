@@ -15,8 +15,9 @@ import {
   ResponsiveContainer, Tooltip, XAxis, YAxis,
 } from "recharts";
 import { buildDividendStory, type DividendGrowthData } from "../../utils/dividendGrowth";
+import { formatNumber, formatDecimal } from "../../utils/formatter";
 
-const fmtWon = (n: number) => `${Math.round(n).toLocaleString()}원`;
+const fmtWon = (n: number) => `${formatNumber(n)}원`;
 const fmtPct = (n: number, digits = 2) => `${n.toFixed(digits)}%`;
 const fmtAxisWon = (v: number) => (v >= 10000 ? `${(v / 10000).toFixed(1)}만` : String(Math.round(v)));
 
@@ -60,7 +61,7 @@ export const DividendGrowthCard: React.FC<{ data: DividendGrowthData }> = React.
         <div className="card-title" style={{ margin: 0, fontSize: 16 }}>
           {data.name} <span style={{ color: "var(--text-faint)", fontWeight: 500, fontSize: 12 }}>({data.ticker})</span>
         </div>
-        <span style={{ fontSize: 11, color: "var(--text-faint)" }}>분배금 기록 {data.recordCount}건 · 보유 {cur.shares.toLocaleString()}주</span>
+        <span style={{ fontSize: 11, color: "var(--text-faint)" }}>분배금 기록 {data.recordCount}건 · 보유 {formatDecimal(cur.shares, 4)}주</span>
       </div>
 
       {/* 🌟 히어로 — 모으는 재미 3종 */}
@@ -186,7 +187,7 @@ export const DividendGrowthCard: React.FC<{ data: DividendGrowthData }> = React.
                 formatter={(v: number | string | undefined, key: string | undefined) => {
                   const n = Number(v ?? 0);
                   const per1m = Math.round(n * 10000);
-                  return [`${fmtPct(n)} (100만원당 ${per1m.toLocaleString()}원)`, key ?? ""] as [string, string];
+                  return [`${fmtPct(n)} (100만원당 ${formatNumber(per1m)}원)`, key ?? ""] as [string, string];
                 }}
               />
               <Line isAnimationActive={false} type="monotone" dataKey="monthlyYield" name="지금 주가 기준" stroke="var(--chart-accent)" strokeWidth={3} connectNulls dot={{ r: 4, strokeWidth: 0, fill: "var(--chart-accent)" }} />

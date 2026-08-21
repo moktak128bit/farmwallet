@@ -18,6 +18,7 @@ import {
   type RecurringCandidate,
   type RecurringCandidateStatus,
 } from "../../utils/recurringDetection";
+import { formatNumber } from "../../utils/formatter";
 
 const STATUS_PILL: Record<RecurringCandidateStatus, string> = {
   new: "danger", // 새 고정비 = 지출 증가 주의
@@ -26,7 +27,7 @@ const STATUS_PILL: Record<RecurringCandidateStatus, string> = {
   active: "success",
 };
 
-const fmtKrw = (n: number) => Math.round(n).toLocaleString() + "원";
+const fmtKrw = (n: number) => formatNumber(n) + "원";
 
 export function RecurringCandidateList({
   candidates,

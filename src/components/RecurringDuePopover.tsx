@@ -12,6 +12,7 @@ import { toast } from "react-hot-toast";
 import type { LedgerEntry, RecurringExpense } from "../types";
 import { useFocusTrap } from "../hooks/useFocusTrap";
 import { useModalStackEntry } from "../utils/modalStack";
+import { formatNumber } from "../utils/formatter";
 import { useAppStore } from "../store/appStore";
 import {
   filterDuplicateOccurrences,
@@ -199,7 +200,7 @@ export const RecurringDuePopover: React.FC<Props> = ({ isOpen, items, onClose, o
                   </div>
                 </div>
                 <div style={{ fontWeight: 600, whiteSpace: "nowrap", color: "var(--accent)" }}>
-                  {Math.round(item.recurring.amount).toLocaleString()}원
+                  {formatNumber(item.recurring.amount)}원
                 </div>
               </li>
             );

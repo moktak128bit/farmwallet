@@ -7,7 +7,7 @@
 import React, { useEffect, useMemo, useRef, useState } from "react";
 import { toast } from "react-hot-toast";
 import type { Account, CategoryPresets, LedgerEntry } from "../../types";
-import { formatShortDate, formatUSD, formatKRW } from "../../utils/formatter";
+import { formatShortDate, formatUSD, formatKRW, formatNumber } from "../../utils/formatter";
 import { ledgerEntryGross, type LedgerDisplayRow } from "../../utils/ledgerHelpers";
 import { isCoarsePointer } from "../../utils/pointer";
 import { isCreditPayment } from "../../utils/category";
@@ -286,7 +286,7 @@ export const LedgerTable: React.FC<Props> = React.memo(function LedgerTable({
       const disc = entry.discountAmount ?? 0;
       // 할인 전 금액이 할인액보다 작으면 net이 음수가 되어 집계가 깨짐 → 거부
       if (disc > 0 && gross < disc) {
-        toast.error(`할인 전 금액은 할인액(${disc.toLocaleString()})보다 작을 수 없습니다`);
+        toast.error(`할인 전 금액은 할인액(${formatNumber(disc)})보다 작을 수 없습니다`);
         setEditingField(null);
         setEditingValue("");
         return;
@@ -1132,7 +1132,7 @@ export const LedgerTable: React.FC<Props> = React.memo(function LedgerTable({
                 ) : l.currency === "USD" ? (
                   formatUSD(ledgerEntryGross(l))
                 ) : (
-                  Math.round(ledgerEntryGross(l)).toLocaleString()
+                  formatNumber(ledgerEntryGross(l))
                 )}
               </td>
               <td
@@ -1163,7 +1163,7 @@ export const LedgerTable: React.FC<Props> = React.memo(function LedgerTable({
                   l.currency === "USD" ? (
                     formatUSD(l.discountAmount ?? 0)
                   ) : (
-                    Math.round(l.discountAmount ?? 0).toLocaleString()
+                    formatNumber(l.discountAmount ?? 0)
                   )
                 ) : (
                   "—"
@@ -1196,7 +1196,7 @@ export const LedgerTable: React.FC<Props> = React.memo(function LedgerTable({
                 ) : (
                   l.currency === "USD"
                     ? formatUSD(l.amount)
-                    : Math.round(l.amount).toLocaleString()
+                    : formatNumber(l.amount)
                 )}
               </td>
               <td style={{ width: ledgerColumnWidthStyles[10] }}>

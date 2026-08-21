@@ -93,7 +93,9 @@ export const STORAGE_KEYS = {
   /** 알림 센터(3-11) 스누즈 상태 (JSON: {[dedupeKey]: untilIsoInstant} — 기기 로컬, 7일 스누즈) */
   NUDGE_DISMISSED: "fw-nudge-dismissed",
   /** 카드 명세 임포트(StatementImportCard) 마지막 컬럼 매핑 (JSON — 다음 붙여넣기에 재사용, 기기 로컬) */
-  STATEMENT_IMPORT_MAPPING: "fw-statement-import-mapping"
+  STATEMENT_IMPORT_MAPPING: "fw-statement-import-mapping",
+  /** 프라이버시 블러(5-1) — 화면 금액 마스킹 on/off ("true"|"false", 기기 로컬) */
+  PRIVACY_MODE: "fw-privacy-mode"
 } as const;
 
 /** 드래프트 슬롯이 이보다 오래되면 boot 시 무시·삭제 (스테일 복구 안내 방지) */

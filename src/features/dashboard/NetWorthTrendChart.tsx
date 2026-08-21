@@ -1,6 +1,7 @@
 import React, { useMemo, useRef, useState } from "react";
 import { useAppStore } from "../../store/appStore";
 import { buildTargetNetWorthSeries } from "./targetNetWorthCurve";
+import { formatNumber } from "../../utils/formatter";
 
 interface NetWorthTrendPoint {
   month: string;
@@ -145,7 +146,7 @@ export const NetWorthTrendChart: React.FC<Props> = React.memo(function NetWorthT
       : Math.max(PAD_L, anchorX - 14 - TT_W)
     : 0;
   const ttY = hover ? Math.max(PAD_T, Math.min(anchorY - TT_H / 2, PAD_T + chartH - TT_H)) : 0;
-  const fmt = (v: number) => (v >= 0 ? "" : "-") + Math.abs(v).toLocaleString() + "만원";
+  const fmt = (v: number) => (v >= 0 ? "" : "-") + formatNumber(Math.abs(v)) + "만원";
 
   return (
     <div className="card" style={{ padding: 20 }}>
@@ -179,11 +180,11 @@ export const NetWorthTrendChart: React.FC<Props> = React.memo(function NetWorthT
         </div>
         <div style={{ textAlign: "right" }}>
           <div style={{ fontWeight: 700, fontSize: 30, color: "var(--primary)" }}>
-            {currentWorth >= 0 ? "" : "-"}{Math.abs(currentWorth).toLocaleString()}만원
+            {currentWorth >= 0 ? "" : "-"}{formatNumber(Math.abs(currentWorth))}만원
           </div>
           <div style={{ display: "flex", gap: 6, alignItems: "center", justifyContent: "flex-end", marginTop: 4 }}>
             <span style={{ fontSize: 14, fontWeight: 700, color: nwDeltaColor }}>
-              {nwArrow} {Math.abs(nwDelta).toLocaleString()}만원
+              {nwArrow} {formatNumber(Math.abs(nwDelta))}만원
             </span>
             <span style={{ fontSize: 13, color: nwDeltaColor }}>
               ({nwDelta >= 0 ? "+" : ""}{nwDeltaPct.toFixed(1)}%)
@@ -218,8 +219,8 @@ export const NetWorthTrendChart: React.FC<Props> = React.memo(function NetWorthT
           {yTicks.map((tick) => {
             const y = toY(tick);
             const label = tick >= 0
-              ? `${tick.toLocaleString()}`
-              : `-${Math.abs(tick).toLocaleString()}`;
+              ? formatNumber(tick)
+              : `-${formatNumber(Math.abs(tick))}`;
             return (
               <g key={tick}>
                 <line
@@ -333,14 +334,14 @@ export const NetWorthTrendChart: React.FC<Props> = React.memo(function NetWorthT
                     fontWeight={600}
                     fill={hover.debt === 0 ? "var(--text, #111)" : "var(--danger, #dc2626)"}
                   >
-                    {hover.debt === 0 ? "0만원" : `−${Math.abs(hover.debt).toLocaleString()}만원`}
+                    {hover.debt === 0 ? "0만원" : `−${formatNumber(Math.abs(hover.debt))}만원`}
                   </tspan>
                 </text>
                 {showLiquid && (
                   <text x={10} y={74} fontSize={12} fill="var(--text, #111)">
                     연금(제외)
                     <tspan x={TT_W - 10} textAnchor="end" fontWeight={600} fill="var(--text-muted, #9ca3af)">
-                      {`−${Math.abs(hover.pension).toLocaleString()}만원`}
+                      {`−${formatNumber(Math.abs(hover.pension))}만원`}
                     </tspan>
                   </text>
                 )}

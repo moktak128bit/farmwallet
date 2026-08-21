@@ -24,6 +24,7 @@ import { classifyLedgerFlow } from "../features/dashboard/summaryMath";
 import { expenseMainName } from "./categoryMerge";
 import { computeIncomeNatureKeys } from "./incomeClassification";
 import { toKrwByRate } from "./currency";
+import { formatNumber } from "./formatter";
 import { getTodayKST } from "./date";
 
 /**
@@ -189,11 +190,11 @@ function buildAdvice(
   if (!salaryKnown) return "총급여를 입력하면 25% 문턱과 공제 한도를 계산합니다.";
   if (c.capReached) return "카드 공제 한도를 모두 채웠습니다 — 추가 카드 소비는 소득공제 효과가 없습니다.";
   if (c.toThreshold > 0) {
-    return `총급여 25% 문턱까지 ${Math.round(c.toThreshold).toLocaleString("ko-KR")}원 남음 — 문턱을 넘긴 소비부터 공제되니 그 전까진 결제수단 차이가 없습니다.`;
+    return `총급여 25% 문턱까지 ${formatNumber(c.toThreshold)}원 남음 — 문턱을 넘긴 소비부터 공제되니 그 전까진 결제수단 차이가 없습니다.`;
   }
   // 문턱은 넘었고 한도는 남음 → 체크·현금 우선
   const moreCheck = Math.ceil(c.remainingCap / rules.card.checkCashRate);
-  return `문턱 초과 구간 — 체크카드·현금영수증은 신용카드의 2배(30%)로 공제됩니다. 체크·현금으로 약 ${moreCheck.toLocaleString("ko-KR")}원 더 쓰면 한도(${c.deductionCap.toLocaleString("ko-KR")}원)에 도달합니다.`;
+  return `문턱 초과 구간 — 체크카드·현금영수증은 신용카드의 2배(30%)로 공제됩니다. 체크·현금으로 약 ${formatNumber(moreCheck)}원 더 쓰면 한도(${formatNumber(c.deductionCap)}원)에 도달합니다.`;
 }
 
 /**

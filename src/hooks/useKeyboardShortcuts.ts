@@ -12,6 +12,7 @@ interface UseKeyboardShortcutsOptions {
   onSave?: () => void;
   onAddLedger?: () => void;
   onQuickEntry?: () => void;
+  onTogglePrivacy?: () => void;
 }
 
 export function useKeyboardShortcuts({
@@ -23,7 +24,8 @@ export function useKeyboardShortcuts({
   onShortcutsHelp,
   onSave,
   onAddLedger,
-  onQuickEntry
+  onQuickEntry,
+  onTogglePrivacy
 }: UseKeyboardShortcutsOptions) {
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
@@ -100,7 +102,14 @@ export function useKeyboardShortcuts({
         onQuickEntry?.();
         return;
       }
-      
+
+      // Ctrl+Shift+H (프라이버시 블러 토글)
+      if ((e.ctrlKey || e.metaKey) && e.shiftKey && (e.key === "H" || e.key === "h")) {
+        e.preventDefault();
+        onTogglePrivacy?.();
+        return;
+      }
+
       // Ctrl+/ (단축키 도움말)
       if ((e.ctrlKey || e.metaKey) && e.key === "/") {
         e.preventDefault();
@@ -136,5 +145,5 @@ export function useKeyboardShortcuts({
     return () => {
       window.removeEventListener("keydown", handleKeyDown);
     };
-  }, [tab, setTab, onUndo, onRedo, onSearch, onShortcutsHelp, onSave, onAddLedger, onQuickEntry]);
+  }, [tab, setTab, onUndo, onRedo, onSearch, onShortcutsHelp, onSave, onAddLedger, onQuickEntry, onTogglePrivacy]);
 }

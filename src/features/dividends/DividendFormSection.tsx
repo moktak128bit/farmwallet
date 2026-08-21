@@ -14,7 +14,7 @@ import React, { useEffect, useMemo, useState } from "react";
 import { toast } from "react-hot-toast";
 import { Autocomplete } from "../../components/ui/Autocomplete";
 import type { Account, LedgerEntry, PositionRow, StockPrice, StockTrade, TickerInfo } from "../../types";
-import { formatKRW, formatUSD } from "../../utils/formatter";
+import { formatKRW, formatUSD, formatNumber } from "../../utils/formatter";
 import { newIdWithPrefix } from "../../utils/id";
 import { isKRWStock, isUSDStock, canonicalTickerForMatch, extractTickerFromText } from "../../utils/finance";
 import { buildDividendNote } from "../../utils/dividend";
@@ -77,7 +77,7 @@ export const DividendFormSection: React.FC<Props> = React.memo(function Dividend
         // USD 종목 평단은 달러로 표기 (원화 단위로 오인 방지)
         const avgLabel = isUSDStock(pos.ticker)
           ? formatUSD(pos.avgPrice)
-          : `${Math.round(pos.avgPrice).toLocaleString()}원`;
+          : `${formatNumber(pos.avgPrice)}원`;
         options.push({
           value: pos.ticker,
           label: pos.name,

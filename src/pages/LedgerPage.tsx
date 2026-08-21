@@ -28,7 +28,7 @@
  */
 import React, { useEffect, useMemo, useState, useRef, useCallback, useDeferredValue } from "react";
 import type { Account, AccountBalanceRow, CategoryPresets, LedgerEntry, LedgerTemplate, StockTrade } from "../types";
-import { formatKRW } from "../utils/formatter";
+import { formatKRW, formatNumber } from "../utils/formatter";
 import { shortcutManager, type ShortcutAction } from "../utils/shortcuts";
 import { isSavingsExpenseEntry, makeIsSavingsExpense, isCreditPayment, isInvestmentKind, isInvestmentEntry, isInvestmentPnlEntry, isInvestmentLossEntry, isCurrencyExchangeEntry } from "../utils/category";
 import { isDividendEntryLoose, isInterestEntryLoose } from "../utils/categoryMatch";
@@ -184,8 +184,8 @@ export const LedgerView: React.FC<Props> = ({
     if (dup.exactDescription.length === 0 && dup.matches.length > 0) showDuplicateToast(dup.matches);
     // 필터는 폼과 독립이라 빠른 복사 후에도 유지
     const amountStr = quickCopyEntry.currency === "USD"
-      ? `${parsed.toLocaleString()} USD`
-      : `${parsed.toLocaleString()}원`;
+      ? `${formatNumber(parsed)} USD`
+      : `${formatNumber(parsed)}원`;
     toast.success(`${quickCopyEntry.category || "항목"} ${amountStr} 복사 추가`);
     setQuickCopyEntry(null);
     setQuickCopyAmount("");

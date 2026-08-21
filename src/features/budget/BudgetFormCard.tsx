@@ -9,6 +9,7 @@ import React, { useMemo, useState } from "react";
 import type { Account, BudgetGoal, CategoryPresets } from "../../types";
 import { BUDGET_ALL_CATEGORY } from "../../types";
 import { newIdWithPrefix } from "../../utils/id";
+import { formatNumber } from "../../utils/formatter";
 
 const createBudget = (): BudgetGoal => ({
   id: newIdWithPrefix("B"),
@@ -197,7 +198,7 @@ export const BudgetFormCard: React.FC<Props> = React.memo(function BudgetFormCar
         <input value={budForm.note} onChange={(e) => setBudForm({ ...budForm, note: e.target.value })} />
       </label>
       <div className="form-actions">
-        <span className="hint">총 예산: {Math.round(totalBudget).toLocaleString()} 원</span>
+        <span className="hint">총 예산: {formatNumber(totalBudget)} 원</span>
         <button type="button" className="primary" onClick={addBudget}>
           추가
         </button>

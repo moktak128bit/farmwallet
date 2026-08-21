@@ -22,6 +22,7 @@ import {
   splitAmountByPeople,
 } from "../../utils/amountExpression";
 import { newIdWithPrefix } from "../../utils/id";
+import { formatNumber } from "../../utils/formatter";
 import { DEFAULT_DAILY_BUDGET, dailySpend, weeklySpend, weeklyLimit, getCurrentWeekRange } from "../../utils/dailyBudget";
 import { useAppStore } from "../../store/appStore";
 import { toast } from "react-hot-toast";
@@ -649,8 +650,8 @@ export const LedgerEntryForm = React.memo(React.forwardRef<LedgerEntryFormHandle
         if (duplicateHint) showDuplicateToast(duplicateHint);
         // 필터는 폼과 독립이라 새 항목 추가 시 자동 클리어 안 함 — 사용자가 의도적으로 좁힌 view를 유지
         const amountStr = kindForTab === "transfer" && form.currency === "USD"
-          ? `${amount.toLocaleString()} USD`
-          : `${amount.toLocaleString()}원`;
+          ? `${formatNumber(amount)} USD`
+          : `${formatNumber(amount)}원`;
         const msg = effectiveFormKind === "income"
           ? `${normalizedSubCategory || "수입"} ${amountStr} 추가 되었습니다.`
           : effectiveFormKind === "transfer"

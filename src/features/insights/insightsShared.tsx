@@ -6,6 +6,7 @@ import type { MoimFlowAnalysis } from "../../utils/dateAccounting";
 // 추세·패턴 파생 지표 타입은 산출 모듈이 소유 (useInsightsData 점진적 리팩터)
 import type { IncomeGrowth, SpendingInertia, CategoryGrowthRow } from "../../utils/insightsTrends";
 import type { EntryOutlier, PatternStats } from "../../utils/insightsPatterns";
+import { formatNumber, isAmountMasked } from "../../utils/formatter";
 
 /* ================================================================== */
 /*  Constants                                                          */
@@ -23,13 +24,14 @@ export const C = [
 /* ================================================================== */
 
 export const F = (n: number): string => {
+  if (isAmountMasked()) return "••••";
   const abs = Math.abs(n);
   const sign = n < 0 ? "-" : "";
   if (abs >= 10000000) return sign + (abs / 10000000).toFixed(1) + "천만";
   if (abs >= 10000) return sign + Math.round(abs / 10000).toLocaleString() + "만";
   return n.toLocaleString();
 };
-export const W = (n: number) => n.toLocaleString() + "원";
+export const W = (n: number) => formatNumber(n) + "원";
 export const Pct = (n: number) => (n >= 0 ? "+" : "") + n.toFixed(1) + "%";
 export const SD = (a: number, b: number, f = 0): number => (b !== 0 ? a / b : f);
 

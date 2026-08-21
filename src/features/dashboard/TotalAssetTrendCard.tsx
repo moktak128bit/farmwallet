@@ -5,7 +5,7 @@ import { usdBalanceModeDelta } from "../../utils/tradeCashImpact";
 import { buildHalfMonthSnapshotDates } from "../../utils/date";
 import { canonicalTickerForMatch, isUSDStock } from "../../utils/finance";
 import { buildSnapshotPriceIndex } from "../../utils/stockCostSnapshots";
-import { formatKRW } from "../../utils/formatter";
+import { formatKRW, formatDecimal } from "../../utils/formatter";
 import type { TotalAssetRow } from "./DashboardInlineCharts";
 
 const LazyTotalAssetValueChart = lazy(() =>
@@ -493,7 +493,7 @@ interface SnapshotDetailProps {
 
 const formatNativePrice = (value: number, isUsd: boolean): string => {
   const symbol = isUsd ? "$" : "₩";
-  return symbol + value.toLocaleString(undefined, { maximumFractionDigits: 2 });
+  return symbol + formatDecimal(value, 2, isUsd ? "en-US" : "ko-KR");
 };
 
 const SnapshotDetail: React.FC<SnapshotDetailProps> = ({ row, detail, isLatest, onReset }) => {
@@ -610,7 +610,7 @@ const SnapshotDetail: React.FC<SnapshotDetailProps> = ({ row, detail, isLatest, 
                       <span className="hint" style={{ marginLeft: 6, fontWeight: 400 }}>{h.name}</span>
                     </td>
                     <td style={{ textAlign: "left", padding: "6px 8px", color: "var(--text-muted)" }}>{h.accountName}</td>
-                    <td style={{ padding: "6px 8px" }}>{h.quantity.toLocaleString(undefined, { maximumFractionDigits: 4 })}</td>
+                    <td style={{ padding: "6px 8px" }}>{formatDecimal(h.quantity, 4)}</td>
                     <td style={{ padding: "6px 8px" }}>{formatNativePrice(h.avgPriceNative, h.isUsd)}</td>
                     <td style={{ padding: "6px 8px" }}>
                       {h.priceNative == null ? (

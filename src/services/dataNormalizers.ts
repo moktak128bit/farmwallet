@@ -12,6 +12,7 @@ import type {
   HistoricalDailyFx,
   InvestmentGoals,
   MarketEnvSnapshot,
+  SavingsGoal,
 } from "../types";
 import { DEFAULT_DAILY_BUDGET } from "../utils/dailyBudget";
 
@@ -174,6 +175,42 @@ export function normalizeDailyBudget(raw: unknown): DailyBudgetConfig | undefine
       : [...DEFAULT_DAILY_BUDGET.excludedSubCategories],
     warnOnExceed: r.warnOnExceed !== false
   };
+}
+
+/**
+ * 저축 목표(3-7) 정규화 — 화이트리스트·손상 내성. id/name/targetAmount(>0) 중 하나라도
+ * 무효면 해당 항목만 폐기(부분 복원). linkedAccountIds는 문자열만 남기고,
+ * linkedCategory·targetDate는 문자열이 아니면 미설정으로 떨어뜨린다.
+ */
+export function normalizeSavingsGoals(raw: unknown): SavingsGoal[] {
+  if (!Array.isArray(raw)) return [];
+  const rows: SavingsGoal[] = [];
+  for (const item of raw) {
+    if (!item || typeof item !== "object") continue;
+    const obj = item as Record<string, unknown>;
+    const id = String(obj.id ?? "").trim();
+    const name = String(obj.name ?? "").trim();
+    const targetAmount = toNullableNumber(obj.targetAmount);
+    if (!id || !name || targetAmount == null || targetAmount <= 0) continue;
+    const goal: SavingsGoal = {
+      id,
+      name,
+      targetAmount,
+      createdAt: typeof obj.createdAt === "string" && obj.createdAt ? obj.createdAt : new Date().toISOString(),
+    };
+    if (typeof obj.targetDate === "string" && /^\d{4}-\d{2}-\d{2}$/.test(obj.targetDate)) {
+      goal.targetDate = obj.targetDate;
+    }
+    if (Array.isArray(obj.linkedAccountIds)) {
+      const ids = obj.linkedAccountIds.filter((v): v is string => typeof v === "string" && v.length > 0);
+      if (ids.length > 0) goal.linkedAccountIds = ids;
+    }
+    if (typeof obj.linkedCategory === "string" && obj.linkedCategory.trim()) {
+      goal.linkedCategory = obj.linkedCategory.trim();
+    }
+    rows.push(goal);
+  }
+  return rows;
 }
 
 export function normalizeHistoricalDailyCloses(raw: unknown): HistoricalDailyClose[] {

@@ -13,6 +13,7 @@ import {
   normalizeInvestmentGoals,
   normalizeDailyBudget,
   normalizeHistoricalDailyCloses,
+  normalizeSavingsGoals,
 } from "./dataNormalizers";
 import { saveCacheToDB } from "./cacheStore";
 import { saveSafetySnapshot } from "./backupService";
@@ -403,7 +404,8 @@ export function getEmptyData(): AppData {
     assetSnapshots: [],
     historicalDailyCloses: [],
     dividendTrackingTicker: "458730",
-    isaPortfolio: getDefaultIsaPortfolio()
+    isaPortfolio: getDefaultIsaPortfolio(),
+    savingsGoals: []
   };
 }
 
@@ -929,7 +931,8 @@ function buildAppDataFromMigrated(
     isaPortfolio: parsedIsaPortfolio.length > 0 ? parsedIsaPortfolio : getDefaultIsaPortfolio(),
     investmentGoals: normalizeInvestmentGoals(parsed.investmentGoals),
     // 하루 예산 설정 — loadData 필드 누락으로 새로고침마다 유실되던 회귀 방지
-    dailyBudget: normalizeDailyBudget(parsed.dailyBudget)
+    dailyBudget: normalizeDailyBudget(parsed.dailyBudget),
+    savingsGoals: normalizeSavingsGoals(parsed.savingsGoals)
   };
   return { data: parsedData, needsCacheMigration, dropped: { ledger: ledgerSan.dropped, trades: tradesSan.dropped } };
 }

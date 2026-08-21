@@ -8,6 +8,7 @@ import type {
   AssetSnapshotPoint,
   CategoryPresets,
   LedgerEntry,
+  SavingsGoal,
   TargetPortfolio,
   WorkoutWeek,
   WorkoutDayEntry,
@@ -372,6 +373,57 @@ function parseTargetPortfolios(tables: Record<string, unknown>): TargetPortfolio
   });
 }
 
+function buildSavingsGoalsTable(goals: SavingsGoal[]) {
+  return goals.map((g, sort_order) => ({
+    sort_order,
+    id: g.id,
+    name: g.name,
+    target_amount: g.targetAmount,
+    target_date: g.targetDate ?? null,
+    linked_account_ids_json: g.linkedAccountIds && g.linkedAccountIds.length > 0 ? JSON.stringify(g.linkedAccountIds) : null,
+    linked_category: g.linkedCategory ?? null,
+    created_at: g.createdAt
+  }));
+}
+
+function parseSavingsGoals(tables: Record<string, unknown>): SavingsGoal[] {
+  type Row = {
+    sort_order?: number;
+    id?: string;
+    name?: string;
+    target_amount?: number;
+    target_date?: string | null;
+    linked_account_ids_json?: string | null;
+    linked_category?: string | null;
+    created_at?: string;
+  };
+  const rows = sortBySortOrder(asArray<Row>(tables.savings_goals));
+  return rows
+    .filter((r) => r.id && r.name)
+    .map((r) => {
+      const goal: SavingsGoal = {
+        id: String(r.id ?? ""),
+        name: String(r.name ?? ""),
+        targetAmount: Number(r.target_amount ?? 0),
+        createdAt: typeof r.created_at === "string" && r.created_at ? r.created_at : new Date().toISOString()
+      };
+      if (r.target_date) goal.targetDate = String(r.target_date);
+      if (r.linked_category) goal.linkedCategory = String(r.linked_category);
+      if (typeof r.linked_account_ids_json === "string" && r.linked_account_ids_json) {
+        try {
+          const parsed = JSON.parse(r.linked_account_ids_json) as unknown;
+          if (Array.isArray(parsed)) {
+            const ids = parsed.filter((v): v is string => typeof v === "string");
+            if (ids.length > 0) goal.linkedAccountIds = ids;
+          }
+        } catch {
+          /* ignore */
+        }
+      }
+      return goal;
+    });
+}
+
 function defaultIsa(): IsaPortfolioItem[] {
   return ISA_PORTFOLIO.map((item) => ({
     ticker: item.ticker,
@@ -458,6 +510,7 @@ export function buildTableBackupFile(data: AppData): {
       // 단일 객체 설정은 0~1행 테이블로 직렬화
       investment_goals: data.investmentGoals ? [data.investmentGoals] : [],
       daily_budget: data.dailyBudget ? [data.dailyBudget] : [],
+      savings_goals: buildSavingsGoalsTable(data.savingsGoals ?? []),
       ...cp,
       ...tp,
       ...wt,
@@ -609,6 +662,7 @@ export function appDataFromTableBackupPayload(raw: unknown): AppData {
     historicalDailyCloses: asArray(tables.historical_daily_closes),
     dividendTrackingTicker,
     isaPortfolio: isaFinal,
+    savingsGoals: parseSavingsGoals(tables),
     // 루트 schemaVersion을 보존해 normalizeImportedData가 올바른 버전 기준으로 마이그레이션
     ...(typeof root.schemaVersion === "number" ? { schemaVersion: root.schemaVersion } : {}),
     ...optionalFields

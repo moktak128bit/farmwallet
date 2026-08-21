@@ -15,6 +15,7 @@ import type {
 } from "../../types";
 import {
   DASHBOARD_WIDGETS,
+  isDashboardWidgetVisible,
   loadHiddenDashboardWidgets,
   saveHiddenDashboardWidgets
 } from "../dashboard/dashboardWidgets";
@@ -301,7 +302,7 @@ export const DashboardWidgetSettings: React.FC<Props> = React.memo(function Dash
           <input
             type="checkbox"
             id={`settings-widget-${id}`}
-            checked={!hiddenWidgets.has(id)}
+            checked={isDashboardWidgetVisible(id, hiddenWidgets)}
             onChange={() => toggleDashboardWidget(id)}
           />
           <label htmlFor={`settings-widget-${id}`} style={{ flex: 1 }}>

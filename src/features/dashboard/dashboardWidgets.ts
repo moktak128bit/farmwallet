@@ -8,10 +8,25 @@
  *  - 과거의 죽은 기능이 쓰던 fw-dashboard-widgets(표시 목록) 키와 충돌하지 않도록 새 키 사용
  */
 import { STORAGE_KEYS } from "../../constants/config";
+import { getTodayKST } from "../../utils/date";
 
 interface DashboardWidgetDef {
   id: string;
   label: string;
+  /**
+   * true면 기본 표시가 계절부(10~12월)에만 적용된다 — 그 외 달엔 기본 숨김이지만
+   * 설정 탭 체크박스로 언제든 켤 수 있다 (4-2 taxActions — 연말이 아니면 위젯 피로).
+   * 저장된 숨김 집합의 의미를 "기본값에서 뒤집혔는가"로 해석해 일반 위젯과 저장 스키마를 공유한다:
+   * 일반 위젯(기본 표시)은 뒤집히면 숨김(기존 동작 그대로), seasonalOnly 위젯은 비계절엔 기본 숨김이라
+   * 뒤집히면 표시된다.
+   */
+  seasonalOnly?: boolean;
+}
+
+/** seasonalOnly 위젯의 기본 노출 창 — 10~12월 (연말 정산·손실수확 시즌) */
+function isTaxSeasonKST(today: string): boolean {
+  const month = Number(today.slice(5, 7));
+  return month >= 10 && month <= 12;
 }
 
 /** DashboardPage 렌더 순서와 동일 */
@@ -39,6 +54,7 @@ export const DASHBOARD_WIDGETS: DashboardWidgetDef[] = [
   { id: "cmaBalanceTrend", label: "CMA 잔액 추이" },
   { id: "spendingCalendar", label: "소비 캘린더" },
   { id: "budgetAlert", label: "예산 관리 (초과 알림)" },
+  { id: "taxActions", label: "절세 액션 (10~12월 기본 표시)", seasonalOnly: true },
 ];
 
 const KNOWN_IDS = new Set(DASHBOARD_WIDGETS.map((w) => w.id));
@@ -69,4 +85,19 @@ export function saveHiddenDashboardWidgets(hidden: Set<string>): void {
   } catch (e) {
     console.warn("[dashboardWidgets] 위젯 숨김 설정 저장 실패", e);
   }
+}
+
+/**
+ * 위젯 표시 여부 — 저장된 집합의 원소는 "기본값에서 뒤집혔는가"를 뜻한다.
+ * 일반 위젯: 기본 표시=true이므로 뒤집히면 숨김 (기존 `!hidden.has(id)`와 100% 동일).
+ * seasonalOnly 위젯: 계절(10~12월) 밖에선 기본 표시=false라 뒤집히면 표시된다(설정에서 켠 것).
+ */
+export function isDashboardWidgetVisible(
+  id: string,
+  hidden: ReadonlySet<string>,
+  today: string = getTodayKST()
+): boolean {
+  const def = DASHBOARD_WIDGETS.find((w) => w.id === id);
+  const defaultVisible = def?.seasonalOnly ? isTaxSeasonKST(today) : true;
+  return hidden.has(id) ? !defaultVisible : defaultVisible;
 }

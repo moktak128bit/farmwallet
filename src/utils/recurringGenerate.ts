@@ -51,6 +51,9 @@ export function generateOccurrencesForMonthFromRecurring(
 
   for (const r of recurringList) {
     if (!r.startDate || !r.startDate.trim()) continue;
+    // 정기 수입(kind="income", 3-4)은 입금계좌가 필수 — 없으면 어느 계좌로도 들어갈 수 없어 생성하지 않는다(가드).
+    const isIncome = r.kind === "income";
+    if (isIncome && !r.toAccountId) continue;
     const start = parseIsoLocal(r.startDate);
     if (!start) continue;
     const endParsed = r.endDate ? parseIsoLocal(r.endDate) : null;
@@ -62,28 +65,28 @@ export function generateOccurrencesForMonthFromRecurring(
       if (endParsed && date > endParsed) return;
       if (date >= monthStart && date <= monthEnd) {
         // 3-level 구조로 저장:
-        //   - kind = transfer(저축성지출) 또는 expense
-        //   - category = "이체"/"지출" (대분류)
-        //   - subCategory = r.category (예: "구독비") — 사용자가 폼에 적은 카테고리
+        //   - kind = income(정기 수입) 또는 transfer(저축성지출) 또는 expense
+        //   - category = "수입"/"이체"/"지출" (대분류)
+        //   - subCategory = r.category (예: "구독비"/"월급") — 사용자가 폼에 적은 카테고리
         //   - detailCategory = r.title (예: "넷플릭스") — 구체 항목
-        const userCat =
-          (r.category && r.category.trim()) ||
-          (r.toAccountId ? "저축성지출" : defaultExpenseCategory);
-        const isTransfer = !!r.toAccountId;
+        const isTransfer = !isIncome && !!r.toAccountId;
+        const userCat = isIncome
+          ? (r.category && r.category.trim()) || "월급"
+          : (r.category && r.category.trim()) || (r.toAccountId ? "저축성지출" : defaultExpenseCategory);
         occurrences.push({
           frequency: r.frequency,
           entry: {
             id: newIdWithPrefix("L"),
             date: formatIsoLocal(date), // UTC가 아닌 로컬 yyyy-mm-dd
-            kind: isTransfer ? "transfer" : "expense",
-            category: isTransfer ? "이체" : "지출",
+            kind: isIncome ? "income" : isTransfer ? "transfer" : "expense",
+            category: isIncome ? "수입" : isTransfer ? "이체" : "지출",
             subCategory: userCat,
             detailCategory: r.title || undefined,
             description: r.title,
             amount: r.amount,
             fromAccountId: r.fromAccountId,
             toAccountId: r.toAccountId,
-            isFixedExpense: true // LedgerView 이전 달→현재 달 자동 복사에 사용
+            isFixedExpense: !isIncome // "고정 지출" 플래그 — 정기 수입엔 의미 없어 세우지 않음(LedgerView 자동 복사엔 미사용)
           }
         });
       }

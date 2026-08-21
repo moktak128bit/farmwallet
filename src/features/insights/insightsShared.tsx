@@ -12,9 +12,10 @@ import type { EntryOutlier, PatternStats } from "../../utils/insightsPatterns";
 /* ================================================================== */
 
 export const WDN = ["월", "화", "수", "목", "금", "토", "일"];
+/** 범주형 차트 팔레트 — 12색 모두 CSS 토큰(라이트/다크 자동 대응) */
 export const C = [
-  "#e94560", "#0f3460", "#f0c040", "#533483", "#48c9b0", "#f39c12",
-  "#3498db", "#e74c3c", "#2ecc71", "#9b59b6", "#1abc9c", "#d35400",
+  "var(--danger)", "var(--chart-series-b)", "var(--warning)", "var(--chart-series-c)", "var(--success)", "var(--chart-series-d)",
+  "var(--accent)", "var(--chart-series-e)", "var(--chart-primary)", "var(--chart-series-f)", "var(--text-muted)", "var(--text-faint)",
 ];
 
 /* ================================================================== */
@@ -39,32 +40,33 @@ export const SD = (a: number, b: number, f = 0): number => (b !== 0 ? a / b : f)
 export function Card({ title, children, span = 1, accent = false }: {
   title?: string; children: React.ReactNode; span?: number; accent?: boolean;
 }) {
+  /* accent(고정 다크 표면)는 styles.css .ins-dark-surface 가 배경·시맨틱 토큰(--danger 등)을 다크 팔레트로 스코프 재정의 —
+     내부 Kpi/텍스트는 테마와 무관하게 var(--text)·var(--danger) 등 토큰만 쓰면 된다 */
   return (
-    <div style={{
-      background: accent ? "linear-gradient(135deg, #1a1a2e 0%, #16213e 100%)" : "var(--surface)",
+    <div className={accent ? "ins-dark-surface ins-card-accent" : undefined} style={{
+      ...(accent
+        ? {}
+        : { background: "var(--surface)", boxShadow: "0 2px 12px rgba(0,0,0,0.06)", border: "1px solid var(--border-light)", color: "var(--text)" }),
       borderRadius: 16, padding: "20px 24px",
       gridColumn: span > 1 ? `span ${span}` : undefined,
-      boxShadow: accent ? "0 8px 32px rgba(233,69,96,0.15)" : "0 2px 12px rgba(0,0,0,0.06)",
-      border: accent ? "1px solid rgba(233,69,96,0.3)" : "1px solid var(--border-light)",
-      color: accent ? "#fff" : "var(--text)",
-      /* 카드 표면에 맞는 보조색을 로컬 CSS 변수로 주입 — accent(고정 다크)는 흰색 계열 고정 */
+      /* 카드 표면에 맞는 보조색을 로컬 CSS 변수로 주입 — accent는 .ins-dark-surface 가 흰색 계열로 고정 */
       ...(accent
-        ? { "--ins-muted": "rgba(255,255,255,0.7)", "--ins-faint": "rgba(255,255,255,0.55)", "--ins-chip-bg": "rgba(255,255,255,0.15)" }
+        ? {}
         : { "--ins-muted": "var(--text-muted)", "--ins-faint": "var(--text-faint)", "--ins-chip-bg": "var(--surface-hover)" }
       ) as React.CSSProperties,
     }}>
-      {title && <div style={{ fontSize: 13, fontWeight: 700, textTransform: "uppercase" as const, letterSpacing: 1.5, marginBottom: 16, color: accent ? "rgba(255,255,255,0.6)" : "var(--text-faint)" }}>{title}</div>}
+      {title && <div style={{ fontSize: 13, fontWeight: 700, textTransform: "uppercase" as const, letterSpacing: 1.5, marginBottom: 16, color: accent ? "var(--ins-faint)" : "var(--text-faint)" }}>{title}</div>}
       {children}
     </div>
   );
 }
 
-export function Kpi({ label, value, sub, badge, color = "#e94560", info }: {
+export function Kpi({ label, value, sub, badge, color = "var(--danger)", info }: {
   label: string; value: string; sub?: string; badge?: string; color?: string; info?: string;
 }) {
   return (
     <div style={{ textAlign: "center" }}>
-      <div style={{ fontSize: 11, color: "var(--ins-faint, #999)", fontWeight: 600, textTransform: "uppercase" as const, letterSpacing: 1, display: "flex", justifyContent: "center", alignItems: "center", gap: 4 }}>
+      <div style={{ fontSize: 11, color: "var(--ins-faint, var(--text-faint))", fontWeight: 600, textTransform: "uppercase" as const, letterSpacing: 1, display: "flex", justifyContent: "center", alignItems: "center", gap: 4 }}>
         {label}
         {info && (
           <span
@@ -88,8 +90,8 @@ export function Kpi({ label, value, sub, badge, color = "#e94560", info }: {
         )}
       </div>
       <div style={{ fontSize: 28, fontWeight: 800, color, marginTop: 4 }}>{value}</div>
-      {sub && <div style={{ fontSize: 12, color: "var(--ins-muted, #666)", marginTop: 2 }}>{sub}</div>}
-      {badge && <div style={{ fontSize: 11, marginTop: 4, display: "inline-block", padding: "2px 8px", borderRadius: 4, background: badge.startsWith("-") ? "rgba(72,201,176,0.15)" : "rgba(233,69,96,0.15)", color: badge.startsWith("-") ? "#48c9b0" : "#e94560", fontWeight: 700 }}>{badge}</div>}
+      {sub && <div style={{ fontSize: 12, color: "var(--ins-muted, var(--text-muted))", marginTop: 2 }}>{sub}</div>}
+      {badge && <div style={{ fontSize: 11, marginTop: 4, display: "inline-block", padding: "2px 8px", borderRadius: 4, background: badge.startsWith("-") ? "rgba(72,201,176,0.15)" : "rgba(233,69,96,0.15)", color: badge.startsWith("-") ? "var(--success)" : "var(--danger)", fontWeight: 700 }}>{badge}</div>}
     </div>
   );
 }
@@ -168,12 +170,12 @@ interface CTProps {
 export function CT({ active, payload, label }: CTProps) {
   if (!active || !payload?.length) return null;
   return (
-    <div style={{ background: "#1a1a2e", border: "1px solid #333", borderRadius: 10, padding: "10px 14px", color: "#fff", fontSize: 12, maxWidth: 280 }}>
-      <div style={{ fontWeight: 700, marginBottom: 6, color: "#f0c040" }}>{label}</div>
+    <div className="ins-dark-surface ins-tooltip-dark" style={{ borderRadius: 10, padding: "10px 14px", color: "var(--text)", fontSize: 12, maxWidth: 280 }}>
+      <div style={{ fontWeight: 700, marginBottom: 6, color: "var(--warning)" }}>{label}</div>
       {payload.map((p, i) => (
         <div key={i} style={{ display: "flex", alignItems: "center", gap: 6, marginBottom: 2 }}>
           <div style={{ width: 8, height: 8, borderRadius: 4, background: p.color, flexShrink: 0 }} />
-          <span style={{ color: "#aaa" }}>{p.name}:</span>
+          <span style={{ color: "var(--text-muted)" }}>{p.name}:</span>
           <span style={{ fontWeight: 600 }}>{W(Math.round(Number(p.value)))}</span>
         </div>
       ))}

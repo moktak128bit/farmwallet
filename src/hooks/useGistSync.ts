@@ -20,8 +20,9 @@ import {
   setGistLastPushedHash,
   type GistVersion,
 } from "../services/gistSync";
-import { toUserDataJson } from "../services/dataService";
+import { toUserDataJson, normalizeImportedData } from "../services/dataService";
 import { saveSafetySnapshot } from "../services/backupService";
+import { requestApply } from "../components/ApplyConfirmModal";
 import {
   GIST_AUTO_PUSH_DEBOUNCE_MS,
   GIST_REMOTE_CHECK_THROTTLE_MS,
@@ -413,14 +414,39 @@ export function useGistSync(
     try {
       setIsSyncing(true);
       const { dataJson, updatedAt } = await loadFromGist();
-      onApplyPulledData(dataJson, updatedAt);
-      setGistLastPullAt(updatedAt);
-      setLastPullAt(updatedAt);
-      knownRemoteCommitRef.current = updatedAt;
-      restoredRef.current = false;
-      lastPushedPayloadRef.current = dataJson;
-      setGistLastPushedHash(hashGistPayload(dataJson));
-      onLog?.("Gist에서 불러오기 완료", "success");
+
+      const commit = () => {
+        // 검증·안전 스냅샷·실제 반영은 onApplyPulledData(App.handleGistPulledData) 내부에서 수행.
+        onApplyPulledData(dataJson, updatedAt);
+        setGistLastPullAt(updatedAt);
+        setLastPullAt(updatedAt);
+        knownRemoteCommitRef.current = updatedAt;
+        restoredRef.current = false;
+        lastPushedPayloadRef.current = dataJson;
+        setGistLastPushedHash(hashGistPayload(dataJson));
+        onLog?.("Gist에서 불러오기 완료", "success");
+      };
+
+      // diff 미리보기(1-6)를 위한 정규화 — 실패하면 게이트를 건너뛰고 onApplyPulledData가
+      // 검증·오류 toast를 그대로 담당(실패 시 미적용 계약은 거기서 유지됨).
+      let after: AppData | null = null;
+      try {
+        after = normalizeImportedData(JSON.parse(dataJson) as unknown);
+      } catch {
+        after = null;
+      }
+
+      if (after) {
+        requestApply({
+          title: "Gist에서 불러오기",
+          before: dataRef.current,
+          after,
+          onConfirm: commit,
+          onCancel: () => onLog?.("Gist 수동 불러오기: 사용자 취소", "info")
+        });
+      } else {
+        commit();
+      }
     } catch (err) {
       const message = err instanceof Error ? err.message : String(err);
       onLog?.(`Gist 불러오기 실패: ${message}`, "error");

@@ -12,6 +12,7 @@ import type { AppData } from "../../types";
 import { normalizeImportedData, saveSafetySnapshot } from "../../storage";
 import { isSchemaTooNewError } from "../../services/dataService";
 import { ERROR_MESSAGES } from "../../constants/errorMessages";
+import { requestApply } from "../../components/ApplyConfirmModal";
 
 interface Props {
   text: string;
@@ -34,25 +35,32 @@ export const JsonImportSection: React.FC<Props> = React.memo(function JsonImport
   onChangeData,
   onBackupRestored
 }) {
-  const handleImport = useCallback(async () => {
+  const handleImport = useCallback(() => {
     try {
       if (!text || !text.trim()) {
         toast.error(ERROR_MESSAGES.JSON_INPUT_REQUIRED);
         setError(ERROR_MESSAGES.JSON_INPUT_REQUIRED);
         return;
       }
-      if (!window.confirm("입력한 JSON 데이터로 현재 데이터를 덮어씁니다.\n적용 직전 현재 데이터는 안전 스냅샷으로 보관됩니다. 계속할까요?")) {
-        return;
-      }
       const parsed = JSON.parse(text);
-      // 적용 직전 현재 데이터 안전 스냅샷
-      await saveSafetySnapshot(data, "JSON 가져오기 직전 자동 스냅샷");
       const normalized = normalizeImportedData(parsed);
-      onChangeData(normalized);
-      setText(JSON.stringify(normalized, null, 2));
-      setError(null);
-      toast.success("데이터를 성공적으로 불러왔습니다.");
-      onBackupRestored?.();
+
+      requestApply({
+        title: "JSON 데이터 가져오기",
+        before: data,
+        after: normalized,
+        onConfirm: () => {
+          void (async () => {
+            // 적용 직전 현재 데이터 안전 스냅샷
+            await saveSafetySnapshot(data, "JSON 가져오기 직전 자동 스냅샷");
+            onChangeData(normalized);
+            setText(JSON.stringify(normalized, null, 2));
+            setError(null);
+            toast.success("데이터를 성공적으로 불러왔습니다.");
+            onBackupRestored?.();
+          })();
+        }
+      });
     } catch (e) {
       // 스키마가 앱보다 높은 파일은 "형식 오류"가 아니라 앱 업데이트 안내가 맞다
       const msg = isSchemaTooNewError(e) ? e.message : ERROR_MESSAGES.JSON_FORMAT_INVALID;

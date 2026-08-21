@@ -1,7 +1,7 @@
 import { describe, it, expect } from "vitest";
-import { runIntegrityCheck } from "../utils/dataIntegrity";
+import { runIntegrityCheck, runStructuralChecks } from "../utils/dataIntegrity";
 import type { IntegrityIssue, DuplicateTrade, MissingReference, CategoryMismatch } from "../utils/dataIntegrity";
-import type { Account, LedgerEntry, StockTrade, CategoryPresets } from "../types";
+import type { Account, LedgerEntry, StockTrade, CategoryPresets, Loan } from "../types";
 
 /**
  * 무결성 검사(runIntegrityCheck) 행동 테스트.
@@ -404,4 +404,103 @@ describe("dataIntegrity — USD 증권 계좌", () => {
   // USD 1,000 입금 후 USD 1,000 매수(현금 0, 정합) 같은 정상 시나리오도 diff=2,000 으로 경고된다.
   // 의도가 "USD 현금 = 입금 + 매도 − 매수" 검증이라면 비교식이 reportedUsd − tradeUsdNet ≠ usdTransferNet 꼴이어야 한다.
   it.todo("usd_securities_mismatch — USD 입금 1,000 + 매수 1,000(정합)인데 경고되는 비교식 확인 필요");
+});
+
+function loan(partial: Partial<Loan> & Pick<Loan, "id">): Loan {
+  return {
+    institution: "테스트은행",
+    loanName: "테스트대출",
+    loanAmount: 10_000_000,
+    annualInterestRate: 3,
+    repaymentMethod: "equal_payment",
+    loanDate: "2025-01-01",
+    maturityDate: "2030-01-01",
+    ...partial,
+  };
+}
+
+describe("dataIntegrity — 대출 참조(loanId, 1-10)", () => {
+  const LOANS: Loan[] = [loan({ id: "LOAN1" })];
+
+  it("존재하는 대출을 참조하면 이슈 없음", () => {
+    const ledger = [entry({ id: "L1", kind: "expense", loanId: "LOAN1" })];
+    expect(ofType(runIntegrityCheck(ACCOUNTS, ledger, [], PRESETS, LOANS), "missing_reference")).toEqual([]);
+  });
+
+  it("loanId가 없으면(레거시 description 폴백) 이슈 없음", () => {
+    const ledger = [entry({ id: "L1", kind: "expense" })];
+    expect(ofType(runIntegrityCheck(ACCOUNTS, ledger, [], PRESETS, LOANS), "missing_reference")).toEqual([]);
+  });
+
+  it("존재하지 않는 대출을 참조하면 error 1건(type=loan)", () => {
+    const ledger = [entry({ id: "L1", kind: "expense", loanId: "GHOST" })];
+    const issues = ofType(runIntegrityCheck(ACCOUNTS, ledger, [], PRESETS, LOANS), "missing_reference");
+    expect(issues).toHaveLength(1);
+    expect(issues[0].severity).toBe("error");
+    expect((issues[0].data as MissingReference).type).toBe("loan");
+    expect((issues[0].data as MissingReference).id).toBe("GHOST");
+  });
+
+  it("loans를 넘기지 않으면(하위 호환) 대출 참조 검사를 건너뛴다", () => {
+    const ledger = [entry({ id: "L1", kind: "expense", loanId: "GHOST" })];
+    expect(ofType(runIntegrityCheck(ACCOUNTS, ledger, [], PRESETS), "missing_reference")).toEqual([]);
+  });
+});
+
+describe("dataIntegrity — 정산 참조(settledLedgerIds, 1-10)", () => {
+  it("정산 항목이 존재하는 가계부 항목들을 참조하면 이슈 없음", () => {
+    const expense = entry({ id: "EXP1", kind: "expense" });
+    const settlement = entry({ id: "S1", kind: "income", settledLedgerIds: ["EXP1"] });
+    expect(ofType(runIntegrityCheck(ACCOUNTS, [expense, settlement], []), "missing_reference")).toEqual([]);
+  });
+
+  it("정산 항목이 존재하지 않는 가계부 항목을 참조하면 warning 1건(type=ledger)", () => {
+    const settlement = entry({ id: "S1", kind: "income", settledLedgerIds: ["GHOST"] });
+    const issues = ofType(runIntegrityCheck(ACCOUNTS, [settlement], []), "missing_reference");
+    expect(issues).toHaveLength(1);
+    expect(issues[0].severity).toBe("warning");
+    expect((issues[0].data as MissingReference).type).toBe("ledger");
+    expect((issues[0].data as MissingReference).id).toBe("GHOST");
+  });
+});
+
+describe("dataIntegrity — 매입 환율 유효성(fxRateAtTrade, 1-10)", () => {
+  it("USD 종목 거래에 fxRateAtTrade가 없으면(레거시) 이슈 없음", () => {
+    const trades = [trade({ id: "T1", accountId: "S1", ticker: "AAPL" })];
+    expect(ofType(runIntegrityCheck(ACCOUNTS, [], trades), "amount_consistency")).toEqual([]);
+  });
+
+  it("USD 종목 거래에 fxRateAtTrade > 0 이면 이슈 없음", () => {
+    const trades = [trade({ id: "T1", accountId: "S1", ticker: "AAPL", fxRateAtTrade: 1350 })];
+    expect(ofType(runIntegrityCheck(ACCOUNTS, [], trades), "amount_consistency")).toEqual([]);
+  });
+
+  it("USD 종목 거래의 fxRateAtTrade가 0 이하면 warning", () => {
+    const trades = [trade({ id: "T1", accountId: "S1", ticker: "AAPL", fxRateAtTrade: 0 })];
+    const issues = ofType(runIntegrityCheck(ACCOUNTS, [], trades), "amount_consistency");
+    expect(issues).toHaveLength(1);
+    expect(issues[0].severity).toBe("warning");
+    expect(issues[0].data).toEqual({ tradeId: "T1", fxRateAtTrade: 0 });
+  });
+
+  it("KRW 종목(005930)의 fxRateAtTrade는 값이 이상해도 검사하지 않는다", () => {
+    const trades = [trade({ id: "T1", accountId: "S1", ticker: "005930", fxRateAtTrade: -1 })];
+    expect(ofType(runIntegrityCheck(ACCOUNTS, [], trades), "amount_consistency")).toEqual([]);
+  });
+});
+
+describe("dataIntegrity — runStructuralChecks (1-10, 잔액 계산 없음)", () => {
+  it("runIntegrityCheck와 동일 입력이면 usd_securities_mismatch만 빠진 부분집합을 낸다", () => {
+    const structural = runStructuralChecks({ accounts: ACCOUNTS, ledger: CLEAN_LEDGER, trades: CLEAN_TRADES, categoryPresets: PRESETS });
+    expect(structural).toEqual([]);
+    const full = runIntegrityCheck(ACCOUNTS, CLEAN_LEDGER, CLEAN_TRADES, PRESETS);
+    expect(full).toEqual([]);
+  });
+
+  it("USD 증권 잔액 불일치는 runStructuralChecks에는 없고 runIntegrityCheck에만 있다", () => {
+    const SEC = account({ id: "S1", type: "securities", usdBalance: 999 });
+    const trades = [trade({ id: "Z1", accountId: "S1", ticker: "AAPL", quantity: 1, price: 100, cashImpact: 0 })];
+    expect(ofType(runStructuralChecks({ accounts: [SEC], ledger: [], trades }), "usd_securities_mismatch")).toEqual([]);
+    expect(ofType(runIntegrityCheck([SEC], [], trades), "usd_securities_mismatch")).toHaveLength(1);
+  });
 });

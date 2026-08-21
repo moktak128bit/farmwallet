@@ -10,6 +10,7 @@ import { toast } from "react-hot-toast";
 import type { AppData } from "../../types";
 import { loadBackupDataVerified, mergeCurrentCaches, normalizeImportedData, saveSafetySnapshot, type BackupEntry } from "../../storage";
 import { ERROR_MESSAGES } from "../../constants/errorMessages";
+import { requestApply } from "../../components/ApplyConfirmModal";
 
 interface Props {
   backups: BackupEntry[];
@@ -35,27 +36,22 @@ export const BackupHistoryTable: React.FC<Props> = React.memo(function BackupHis
 }) {
   const handleRestoreBackup = useCallback(async (entry: BackupEntry) => {
     const when = new Date(entry.createdAt).toLocaleString("ko-KR", { timeZone: "Asia/Seoul" });
-    if (!window.confirm(`${when} 시점 백업으로 현재 데이터를 덮어씁니다.\n복원 직전 현재 데이터는 안전 스냅샷으로 보관됩니다. 계속할까요?`)) {
-      return;
-    }
-    const toastId = toast.loading("백업을 복원하는 중...");
+    const checkToastId = toast.loading("백업을 확인하는 중...");
     try {
-      // 복원 직전 현재 데이터 안전 스냅샷 (실수 복원 시 되돌릴 수 있게)
-      await saveSafetySnapshot(data, "백업 복원 직전 자동 스냅샷");
-
       // 백업 목록은 로컬(브라우저) 백업만 제공됨 — getAllBackupList 참조.
       // 저장 시 기록한 SHA-256 해시를 읽기 시점에 재계산해 무결성 검증 (손상 감지).
       const { data: restored, status } = await loadBackupDataVerified(entry.id);
 
       if (!restored) {
         setError(ERROR_MESSAGES.BACKUP_SELECTED_NOT_FOUND);
-        toast.error(ERROR_MESSAGES.BACKUP_SELECTED_NOT_FOUND, { id: toastId });
+        toast.error(ERROR_MESSAGES.BACKUP_SELECTED_NOT_FOUND, { id: checkToastId });
         return;
       }
 
-      // 해시 불일치 = 저장 후 손상되었을 수 있음 → 사용자가 복원 여부 결정 (직전 안전 스냅샷은 이미 저장됨)
+      // 해시 불일치 = 저장 후 손상되었을 수 있음 → 사용자가 복원 여부 결정
+      // (이 확인은 "덮어쓰기 적용" diff 게이트와는 별개의 무결성 경고라 window.confirm 유지)
       if (status === "mismatch") {
-        toast.dismiss(toastId);
+        toast.dismiss(checkToastId);
         if (
           !window.confirm(
             "⚠ 이 백업의 무결성 검증에 실패했습니다 (저장 후 데이터가 손상되었을 수 있습니다).\n그래도 이 백업으로 복원할까요?"
@@ -63,19 +59,42 @@ export const BackupHistoryTable: React.FC<Props> = React.memo(function BackupHis
         ) {
           return;
         }
+      } else {
+        toast.dismiss(checkToastId);
       }
 
       // 백업 본문은 user-only(시세·티커 캐시 제외) — 빈 캐시가 현재 캐시를 덮지 않게 병합
       const normalized = mergeCurrentCaches(normalizeImportedData(restored), data);
-      onChangeData(normalized);
-      setText(JSON.stringify(normalized, null, 2));
-      setError(null);
-      toast.success("백업이 성공적으로 복원되었습니다.", { id: toastId });
-      onBackupRestored?.();
-      await loadBackupList();
+
+      requestApply({
+        title: `${when} 시점 백업으로 복원`,
+        before: data,
+        after: normalized,
+        onConfirm: () => {
+          void (async () => {
+            const applyToastId = toast.loading("백업을 복원하는 중...");
+            try {
+              // 복원 직전 현재 데이터 안전 스냅샷 (실수 복원 시 되돌릴 수 있게)
+              await saveSafetySnapshot(data, "백업 복원 직전 자동 스냅샷");
+              onChangeData(normalized);
+              setText(JSON.stringify(normalized, null, 2));
+              setError(null);
+              toast.success("백업이 성공적으로 복원되었습니다.", { id: applyToastId });
+              onBackupRestored?.();
+              await loadBackupList();
+            } catch (e) {
+              setError(ERROR_MESSAGES.BACKUP_RESTORE_FAILED);
+              toast.error(ERROR_MESSAGES.BACKUP_RESTORE_FAILED, { id: applyToastId });
+              if (import.meta.env.DEV) {
+                console.error("백업 복원 오류:", e);
+              }
+            }
+          })();
+        }
+      });
     } catch (e) {
       setError(ERROR_MESSAGES.BACKUP_RESTORE_FAILED);
-      toast.error(ERROR_MESSAGES.BACKUP_RESTORE_FAILED, { id: toastId });
+      toast.error(ERROR_MESSAGES.BACKUP_RESTORE_FAILED, { id: checkToastId });
       if (import.meta.env.DEV) {
         console.error("백업 복원 오류:", e);
       }

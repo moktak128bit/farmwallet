@@ -23,6 +23,7 @@ import { NetWorthTrendChart } from "../features/dashboard/NetWorthTrendChart";
 import { CmaBalanceTrendCard } from "../features/dashboard/CmaBalanceTrendCard";
 import { MonthPaceCard } from "../features/dashboard/MonthPaceCard";
 import { CashFlowForecastCard } from "../features/dashboard/CashFlowForecastCard";
+import { CashFlowProjectionCard } from "../features/dashboard/CashFlowProjectionCard";
 import { SalaryTimerCard } from "../features/dashboard/SalaryTimerCard";
 import { SpendingCalendarCard } from "../features/dashboard/SpendingCalendarCard";
 import { TopExpensesCard } from "../features/dashboard/TopExpensesCard";
@@ -384,6 +385,17 @@ export const DashboardView: React.FC<Props> = (props) => {
             recurring={storeData.recurringExpenses ?? []}
             ledger={ledger}
             accounts={accounts}
+            fxRate={fxRate}
+            categoryPresets={categoryPresets}
+          />
+        )}
+
+        {show("cashFlowProjection") && (
+          <CashFlowProjectionCard
+            accounts={accounts}
+            ledger={ledger}
+            loans={loans}
+            recurring={storeData.recurringExpenses ?? []}
             fxRate={fxRate}
             categoryPresets={categoryPresets}
           />

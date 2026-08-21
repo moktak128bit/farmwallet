@@ -3,7 +3,11 @@ import {
   BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer,
 } from "recharts";
 import { F, W, Card, Kpi, Insight, Section, CT, type D } from "../insightsShared";
-import { getThisMonthKST } from "../../../utils/date";
+import { getThisMonthKST, getTodayKST } from "../../../utils/date";
+import { useAppStore } from "../../../store/appStore";
+import { useFxRateValue } from "../../../context/FxRateContext";
+import { detectRecurringCandidates } from "../../../utils/recurringDetection";
+import { RecurringCandidateList } from "../../budget/RecurringSuggestionsSection";
 
 const CATEGORY_PATTERNS: { label: string; color: string; regex: RegExp }[] = [
   { label: "AI/생산성", color: "#e94560", regex: /chatgpt|claude|cursor|\bai\b|gpt|copilot|notion|slack|figma/i },
@@ -14,6 +18,43 @@ const CATEGORY_PATTERNS: { label: string; color: string; regex: RegExp }[] = [
   { label: "독서/학습", color: "#f39c12", regex: /밀리|리디|윌라|교보|yes24|인프런|유데미|udemy/i },
   { label: "운동/건강", color: "#2ecc71", regex: /헬스|필라테스|요가|짐|피트니스|런데이|gym/i },
 ];
+
+/**
+ * 감지된 정기 결제 — 문자열 '구독' 판정과 별개로 가계부 패턴(간격·금액)으로 찾은 후보.
+ * 읽기전용: 등록은 예산/반복 지출 탭의 "반복지출로 등록"에서 (폼 prefill, 자동 생성 없음).
+ * 데이터는 useAppStore 셀렉터·FxRateContext 직접 — D(필터된 인사이트 데이터)와 독립적으로 최근 12개월 전체를 본다.
+ */
+const DetectedRecurringSection = React.memo(function DetectedRecurringSection() {
+  const ledger = useAppStore((s) => s.data.ledger);
+  const recurring = useAppStore((s) => s.data.recurringExpenses);
+  const accounts = useAppStore((s) => s.data.accounts);
+  const categoryPresets = useAppStore((s) => s.data.categoryPresets);
+  const fxRate = useFxRateValue();
+  const today = getTodayKST();
+  const candidates = React.useMemo(
+    () => detectRecurringCandidates(ledger, recurring ?? [], today, { lookbackMonths: 12, fxRate, categoryPresets }),
+    [ledger, recurring, today, fxRate, categoryPresets]
+  );
+  const newCount = candidates.filter((c) => c.status === "new").length;
+  const stoppedCount = candidates.filter((c) => c.status === "stopped").length;
+  const changedCount = candidates.filter((c) => c.status === "amountChanged").length;
+  const unregistered = candidates.filter((c) => !c.alreadyRegistered).length;
+  const summary =
+    candidates.length === 0
+      ? "감지된 정기 결제 없음"
+      : `${candidates.length}개 감지 · 신규 ${newCount} · 금액변경 ${changedCount} · 해지추정 ${stoppedCount} · 미등록 ${unregistered}`;
+  return (
+    <Section storageKey="sub-section-detected" title="🔍 감지된 정기 결제" defaultOpen={candidates.length > 0}>
+      <Card title={summary} span={4}>
+        <div style={{ fontSize: 12, color: "var(--text-muted)", marginBottom: 10, lineHeight: 1.6 }}>
+          최근 12개월 가계부에서 같은 상호·출금계좌로 매주/매월/매년 간격, ±10% 금액으로 3회 이상 반복된 지출입니다.
+          '구독' 분류 여부와 무관하게 찾으며, 등록은 <b>예산/반복 지출</b> 탭의 "반복지출로 등록"에서 할 수 있습니다(자동 생성 없음).
+        </div>
+        <RecurringCandidateList candidates={candidates} accounts={accounts} />
+      </Card>
+    </Section>
+  );
+});
 
 export const SubTab = React.memo(function SubTab({ d }: { d: D }) {
   const subs = d.subs;
@@ -36,7 +77,7 @@ export const SubTab = React.memo(function SubTab({ d }: { d: D }) {
   const top3Monthly = topSubs.reduce((s, x) => s + x.avg, 0);
   const top3Share = totalMonthly > 0 ? (top3Monthly / totalMonthly) * 100 : 0;
 
-  // 신규/해지 구독 감지는 미구현 — subs에 월별 결제 정보가 없어 월간 비교 불가.
+  // 신규/해지/금액변경 감지는 DetectedRecurringSection(utils/recurringDetection, 가계부 패턴 기반)이 담당.
   const currentMonth = d.anomalyTargetMonth;
   // 월별 구독비 변화 감지 (이번달 vs 이전달)
   // subTrend는 d.months와 평행 배열 — YYYY-MM 인덱스로 조회 ("6월" 라벨 find는 다른 해와 충돌)
@@ -53,13 +94,16 @@ export const SubTab = React.memo(function SubTab({ d }: { d: D }) {
 
   if (subs.length === 0) {
     return (
-      <Section storageKey="sub-section-empty" title="🔄 구독 관리">
-        <div style={{ gridColumn: "span 4", textAlign: "center", padding: "40px 20px", color: "var(--text-faint)" }}>
-          <div style={{ fontSize: 13, lineHeight: 1.8 }}>
-            구독 데이터가 없습니다. 가계부 항목의 <b>대분류</b> 또는 <b>중분류</b>에 "구독"이 포함되어 있으면 자동 감지됩니다.
+      <>
+        <Section storageKey="sub-section-empty" title="🔄 구독 관리">
+          <div style={{ gridColumn: "span 4", textAlign: "center", padding: "40px 20px", color: "var(--text-faint)" }}>
+            <div style={{ fontSize: 13, lineHeight: 1.8 }}>
+              구독 데이터가 없습니다. 가계부 항목의 <b>대분류</b> 또는 <b>중분류</b>에 "구독"이 포함되어 있으면 자동 감지됩니다.
+            </div>
           </div>
-        </div>
-      </Section>
+        </Section>
+        <DetectedRecurringSection />
+      </>
     );
   }
 
@@ -84,6 +128,9 @@ export const SubTab = React.memo(function SubTab({ d }: { d: D }) {
               </ResponsiveContainer>
             </Card>
           </Section>
+
+          {/* ============ 감지된 정기 결제 (패턴 기반) ============ */}
+          <DetectedRecurringSection />
 
           {/* ============ 구독 상세 ============ */}
           <Section storageKey="sub-section-details" title="📋 구독 상세" defaultOpen={false}>

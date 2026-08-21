@@ -8,8 +8,10 @@
  * 부모 → 폼 외부 접점은 ref API(RecurringFormCardHandle)로 노출:
  *   - notifyRecurringDeleted(id): 목록에서 항목 삭제 시 — 해당 항목을 수정 중이었다면 수정 모드 해제
  *   - startEditRecurring(item): 목록의 "수정" 버튼 → 폼을 해당 항목 수정 모드로 전환
+ *   - prefillNew(partial): 감지된 정기 결제(RecurringSuggestionsSection) → 새 항목 폼에 값만 채움
+ *     (추가 모드 — 저장은 사용자가 "추가"를 눌러야 한다. 자동 생성 금지)
  */
-import React, { useImperativeHandle, useState } from "react";
+import React, { useImperativeHandle, useRef, useState } from "react";
 import type { Account, Recurrence, RecurringExpense } from "../../types";
 import { getTodayKST } from "../../utils/date";
 import { newIdWithPrefix } from "../../utils/id";
@@ -29,6 +31,7 @@ const createRecurring = (): RecurringExpense => ({
 export interface RecurringFormCardHandle {
   notifyRecurringDeleted: (id: string) => void;
   startEditRecurring: (item: RecurringExpense) => void;
+  prefillNew: (partial: Partial<Omit<RecurringExpense, "id">>) => void;
 }
 
 interface Props {
@@ -41,6 +44,7 @@ export const RecurringFormCard = React.memo(React.forwardRef<RecurringFormCardHa
   function RecurringFormCard({ accounts, recurring, onChangeRecurring }, ref) {
     const [recForm, setRecForm] = useState<RecurringExpense>(createRecurring);
     const [editingRecurringId, setEditingRecurringId] = useState<string | null>(null);
+    const titleInputRef = useRef<HTMLInputElement>(null);
 
     const addRecurring = () => {
       if (!recForm.title || !recForm.amount) return;
@@ -71,6 +75,16 @@ export const RecurringFormCard = React.memo(React.forwardRef<RecurringFormCardHa
       startEditRecurring: (item: RecurringExpense) => {
         setRecForm({ ...item });
         setEditingRecurringId(item.id);
+      },
+      // 감지 후보 → 추가 모드 prefill (새 id). 폼으로 스크롤·포커스해 "확인 후 추가" 흐름을 안내
+      prefillNew: (partial) => {
+        setRecForm({ ...createRecurring(), ...partial });
+        setEditingRecurringId(null);
+        const el = titleInputRef.current;
+        if (el) {
+          el.scrollIntoView?.({ behavior: "smooth", block: "center" });
+          el.focus();
+        }
       }
     }), [editingRecurringId]);
 
@@ -80,6 +94,7 @@ export const RecurringFormCard = React.memo(React.forwardRef<RecurringFormCardHa
         <label>
           <span>제목</span>
           <input
+            ref={titleInputRef}
             value={recForm.title}
             onChange={(e) => setRecForm({ ...recForm, title: e.target.value })}
             placeholder="예: 넷플릭스"

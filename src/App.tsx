@@ -108,7 +108,17 @@ export const App: React.FC = () => {
   const setPrivacyMode = useUIStore((s) => s.setPrivacyMode);
   const mobileDrawerOpen = useUIStore((s) => s.mobileDrawerOpen);
   const setMobileDrawerOpen = useUIStore((s) => s.setMobileDrawerOpen);
-  const closeMobileDrawer = useCallback(() => setMobileDrawerOpen(false), [setMobileDrawerOpen]);
+  const closeMobileDrawer = useCallback(() => {
+    setMobileDrawerOpen(false);
+    // MobileBottomNav는 모달 열림 중(modalDepth>0) 언마운트되므로 드로어가 열릴 때
+    // useFocusTrap이 저장해 둔 햄버거 버튼 DOM 노드는 드로어가 열려 있는 동안 detach된 상태다.
+    // 닫힘 후 재마운트를 기다렸다가 명시적으로 다시 찾아 포커스를 복귀시킨다.
+    requestAnimationFrame(() => {
+      document
+        .querySelector<HTMLButtonElement>('.bottom-nav .bottom-nav-item[aria-haspopup="dialog"]')
+        ?.focus();
+    });
+  }, [setMobileDrawerOpen]);
   const pendingAction = useUIStore((s) => s.pendingAction);
   const setPendingAction = useUIStore((s) => s.setPendingAction);
   const showShortcutsHelp = useUIStore((s) => s.showShortcutsHelp);

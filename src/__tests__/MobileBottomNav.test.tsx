@@ -48,7 +48,7 @@ describe("MobileBottomNav", () => {
     expect(screen.queryByRole("button", { name: "대시보드" })).not.toHaveAttribute("aria-current");
   });
 
-  it("모달(modalStack)이 열려 있으면 숨긴다", () => {
+  it("모달(modalStack)이 열려 있으면 숨긴다", async () => {
     const { rerender } = render(
       <>
         <FakeModal open={false} />
@@ -62,6 +62,10 @@ describe("MobileBottomNav", () => {
         <MobileBottomNav />
       </>
     );
+    // modalStack 구독 알림은 microtask로 한 틱 모아 보낸다(StrictMode 이중 마운트 방지) — 플러시 후 확인.
+    await act(async () => {
+      await Promise.resolve();
+    });
     expect(screen.queryByRole("navigation", { name: "하단 탭" })).toBeNull();
     expect(screen.queryByRole("button", { name: "빠른 입력" })).toBeNull();
     rerender(
@@ -70,6 +74,9 @@ describe("MobileBottomNav", () => {
         <MobileBottomNav />
       </>
     );
+    await act(async () => {
+      await Promise.resolve();
+    });
     expect(screen.queryByRole("navigation", { name: "하단 탭" })).toBeInTheDocument();
   });
 

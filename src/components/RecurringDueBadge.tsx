@@ -21,16 +21,8 @@ export const RecurringDueBadge: React.FC<Props> = ({ recurring, ledger, onClick 
       type="button"
       onClick={onClick}
       title={`오늘 등록 안 된 반복지출 ${missing.length}건: ${titleList}`}
-      style={{
-        background: "var(--danger)",
-        color: "white",
-        borderRadius: 12,
-        padding: "2px 8px",
-        fontSize: 11,
-        fontWeight: 600,
-        border: "none",
-        cursor: onClick ? "pointer" : "default"
-      }}
+      className="pill danger"
+      style={{ cursor: onClick ? "pointer" : "default" }}
     >
       반복지출 {missing.length}건 미등록
     </button>

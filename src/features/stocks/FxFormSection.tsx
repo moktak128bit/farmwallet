@@ -4,6 +4,8 @@ import type { Account, LedgerEntry } from "../../types";
 import { fetchYahooQuotes } from "../../yahooFinanceApi";
 import { formatKRW, formatUSD } from "../../utils/formatter";
 import { ERROR_MESSAGES } from "../../constants/errorMessages";
+import { MoneyField, NumericInput } from "../../components/ui/fields";
+import { parseAmount, formatAmount } from "../../utils/parseAmount";
 
 type FxCurrency = "KRW" | "USD";
 
@@ -56,7 +58,7 @@ export const FxFormSection: React.FC<FxFormSectionProps> = ({ accounts, ledger, 
       : "USD";
 
   // 환율: 1 USD = rate KRW
-  const rateNum = parseFloat(form.rate) || 0;
+  const rateNum = parseAmount(form.rate, { allowDecimal: true });
   const computeToFromFrom = (fromAmt: number) =>
     fromCurrency === "KRW" && toCurrency === "USD"
       ? fromAmt / rateNum
@@ -71,15 +73,18 @@ export const FxFormSection: React.FC<FxFormSectionProps> = ({ accounts, ledger, 
         : toAmt;
 
   const handleRateChange = (newRate: string) => {
-    const rate = parseFloat(newRate) || 0;
+    const rate = parseAmount(newRate, { allowDecimal: true });
     setForm((prev) => {
       if (prev.fromAmount && rate > 0) {
-        const fromAmount = parseFloat(prev.fromAmount) || 0;
+        const fromAmount = parseAmount(prev.fromAmount, { allowDecimal: true });
         const toAmount = computeToFromFrom(fromAmount);
         return {
           ...prev,
           rate: newRate,
-          toAmount: toCurrency === "USD" ? String(Math.round(toAmount * 100) / 100) : String(Math.round(toAmount))
+          toAmount: formatAmount(
+            toCurrency === "USD" ? String(Math.round(toAmount * 100) / 100) : String(Math.round(toAmount)),
+            { allowDecimal: toCurrency === "USD" }
+          )
         };
       }
       return { ...prev, rate: newRate };
@@ -87,29 +92,35 @@ export const FxFormSection: React.FC<FxFormSectionProps> = ({ accounts, ledger, 
   };
 
   const handleFromAmountChange = (value: string) => {
-    const amount = parseFloat(value) || 0;
+    const amount = parseAmount(value, { allowDecimal: true });
     setForm((prev) => ({
       ...prev,
       fromAmount: value,
       toAmount:
         rateNum > 0
-          ? toCurrency === "USD"
-            ? String(Math.round(computeToFromFrom(amount) * 100) / 100)
-            : String(Math.round(computeToFromFrom(amount)))
+          ? formatAmount(
+              toCurrency === "USD"
+                ? String(Math.round(computeToFromFrom(amount) * 100) / 100)
+                : String(Math.round(computeToFromFrom(amount))),
+              { allowDecimal: toCurrency === "USD" }
+            )
           : prev.toAmount
     }));
   };
 
   const handleToAmountChange = (value: string) => {
-    const amount = parseFloat(value) || 0;
+    const amount = parseAmount(value, { allowDecimal: true });
     setForm((prev) => ({
       ...prev,
       toAmount: value,
       fromAmount:
         rateNum > 0
-          ? fromCurrency === "USD"
-            ? String(Math.round(computeFromFromTo(amount) * 100) / 100)
-            : String(Math.round(computeFromFromTo(amount)))
+          ? formatAmount(
+              fromCurrency === "USD"
+                ? String(Math.round(computeFromFromTo(amount) * 100) / 100)
+                : String(Math.round(computeFromFromTo(amount))),
+              { allowDecimal: fromCurrency === "USD" }
+            )
           : prev.fromAmount
     }));
   };
@@ -122,9 +133,9 @@ export const FxFormSection: React.FC<FxFormSectionProps> = ({ accounts, ledger, 
       return;
     }
 
-    const fromAmount = parseFloat(form.fromAmount) || 0;
-    const toAmount = parseFloat(form.toAmount) || 0;
-    const rate = parseFloat(form.rate) || 0;
+    const fromAmount = parseAmount(form.fromAmount, { allowDecimal: true });
+    const toAmount = parseAmount(form.toAmount, { allowDecimal: true });
+    const rate = parseAmount(form.rate, { allowDecimal: true });
 
     if (fromAmount <= 0 || toAmount <= 0 || rate <= 0) {
       toast.error(ERROR_MESSAGES.FX_AMOUNT_RATE_REQUIRED);
@@ -294,29 +305,23 @@ export const FxFormSection: React.FC<FxFormSectionProps> = ({ accounts, ledger, 
           </>
         )}
 
-        <label style={{ display: "flex", flexDirection: "column", gap: 4 }}>
-          <span style={{ fontSize: 13, fontWeight: 500 }}>출발 금액 ({fromCurrency})</span>
-          <input
-            type="number"
-            min={0}
-            step={fromCurrency === "USD" ? "0.01" : "1"}
-            value={form.fromAmount}
-            onChange={(e) => handleFromAmountChange(e.target.value)}
-            style={{ padding: "6px 8px", fontSize: 14 }}
-            required
-          />
-        </label>
+        <MoneyField
+          label="출발 금액"
+          currency={fromCurrency}
+          allowDecimal
+          required
+          value={form.fromAmount}
+          onChange={handleFromAmountChange}
+        />
 
         <label style={{ display: "flex", flexDirection: "column", gap: 4 }}>
           <span style={{ fontSize: 13, fontWeight: 500 }}>환율 (1 USD = ? KRW)</span>
           <div style={{ display: "flex", gap: 4 }}>
-            <input
-              type="number"
-              min={0}
-              step="0.01"
+            <NumericInput
+              allowDecimal
               value={form.rate}
-              onChange={(e) => handleRateChange(e.target.value)}
-              style={{ padding: "6px 8px", fontSize: 14, flex: 1 }}
+              onChange={handleRateChange}
+              style={{ flex: 1 }}
               required
             />
             {loadingRate ? (
@@ -350,18 +355,14 @@ export const FxFormSection: React.FC<FxFormSectionProps> = ({ accounts, ledger, 
           </div>
         </label>
 
-        <label style={{ display: "flex", flexDirection: "column", gap: 4 }}>
-          <span style={{ fontSize: 13, fontWeight: 500 }}>도착 금액 ({toCurrency})</span>
-          <input
-            type="number"
-            min={0}
-            step={toCurrency === "USD" ? "0.01" : "1"}
-            value={form.toAmount}
-            onChange={(e) => handleToAmountChange(e.target.value)}
-            style={{ padding: "6px 8px", fontSize: 14 }}
-            required
-          />
-        </label>
+        <MoneyField
+          label="도착 금액"
+          currency={toCurrency}
+          allowDecimal
+          required
+          value={form.toAmount}
+          onChange={handleToAmountChange}
+        />
 
         <label style={{ display: "flex", flexDirection: "column", gap: 4, gridColumn: "1 / -1" }}>
           <span style={{ fontSize: 13, fontWeight: 500 }}>메모 (선택)</span>

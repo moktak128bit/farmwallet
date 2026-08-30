@@ -1,4 +1,5 @@
 import { ChevronDown, ChevronRight } from "lucide-react";
+import { NumericInput } from "../../../components/ui/fields";
 import type { AccountBalanceRow } from "../../../types";
 
 type EditField = "initialBalance" | "debt" | "savings" | "cashAdjustment" | "initialCashBalance";
@@ -132,12 +133,11 @@ export function BalanceBreakdownSection({
                       </td>
                       {isEditingBase ? (
                         <td style={{ textAlign: "right" }}>
-                          <input
-                            type="text"
-                            inputMode="numeric"
+                          <NumericInput
+                            allowNegative={baseField === "initialBalance"}
                             value={editValue}
                             autoFocus
-                            onChange={(e) => setEditValue(e.target.value)}
+                            onChange={setEditValue}
                             onBlur={saveNumber}
                             onKeyDown={(e) => {
                               if (e.key === "Enter") saveNumber();

@@ -1,4 +1,5 @@
 import React, { useEffect, useRef } from "react";
+import { NumericInput } from "../../components/ui/fields";
 import { formatShortDate } from "../../utils/formatter";
 import { useFocusTrap } from "../../hooks/useFocusTrap";
 
@@ -96,13 +97,11 @@ export const QuickCopyModal: React.FC<Props> = ({
 
         <div style={{ marginBottom: 20 }}>
           <label style={{ display: "block", fontSize: 13, fontWeight: 600, marginBottom: 6 }}>금액</label>
-          <input
+          <NumericInput
             ref={inputRef}
-            type="text"
-            inputMode="numeric"
             placeholder="금액 입력"
             value={amount}
-            onChange={(e) => onAmountChange(e.target.value.replace(/[^0-9,]/g, ""))}
+            onChange={onAmountChange}
             onKeyDown={(e) => { if (e.key === "Enter") onSubmit(); }}
             style={{
               width: "100%",

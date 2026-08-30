@@ -6,7 +6,7 @@ import { EmptyState } from "../components/ui/EmptyState";
 import { Wallet, Download } from "lucide-react";
 import { toast } from "react-hot-toast";
 import { computeRealizedPnlByTradeId, positionMarketValueKRW } from "../calculations";
-import { parseAmount } from "../utils/parseAmount";
+import { parseAmount, formatAmount } from "../utils/parseAmount";
 import { useAppStore } from "../store/appStore";
 import { buildUnifiedCsv } from "../utils/unifiedCsvExport";
 import { ACCOUNT_TYPE_LABEL, parseSignedAmount } from "../features/accounts/accountsShared";
@@ -260,12 +260,15 @@ export const AccountsView: React.FC<Props> = ({
     // 소수점 쓰레기(부동소수점 오차) 가 있으면 정수로 반올림해 편집 입력에 넣는다.
     // (parseAmount 기본값이 정수만 허용하므로, "123.45" 가 들어가면 소수점이 지워지며 12345로 저장되는 버그 방지)
     const safe = Number.isFinite(currentValue) ? Math.round(currentValue) : 0;
-    setEditValue(String(safe));
+    setEditValue(formatAmount(String(safe), { allowNegative: true }));
   };
 
   const saveNumber = () => {
     if (!editingNumber) return;
-    const value = parseAmount(editValue);
+    // 현금 조정·초기 잔액은 잔액에 그대로 더해지는 값이라 음수가 정상 (카드 미결제 등)
+    const value = parseAmount(editValue, {
+      allowNegative: editingNumber.field === "cashAdjustment" || editingNumber.field === "initialBalance"
+    });
     const updated = accounts.map((a) => {
       if (a.id === editingNumber.id) {
         if (editingNumber.field === "cashAdjustment") {
@@ -385,7 +388,7 @@ export const AccountsView: React.FC<Props> = ({
   const reversedInitialBalance = (accountId: string): number | null => {
     const inputStr = actualCurrentInput[accountId];
     if (inputStr == null || inputStr.trim() === "") return null;
-    const desired = Number(String(inputStr).replace(/[^\d.-]/g, "")) || 0;
+    const desired = parseAmount(inputStr, { allowDecimal: true, allowNegative: true });
     const row = safeBalances.find((b) => b.account.id === accountId);
     const account = safeAccounts.find((a) => a.id === accountId);
     if (!row || !account) return null;

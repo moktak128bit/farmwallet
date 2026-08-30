@@ -31,10 +31,13 @@ import {
   isKRWStock,
   isCryptoStock,
   canonicalTickerForMatch,
+  canonicalTickerForInput,
   getUniqueTickersFromTrades,
   getCurrentHoldingsTickers
 } from "../utils/finance";
 import { shouldUseUsdBalanceMode as shouldUseUsdBalanceModeUtil, computeTradeCashImpact } from "../utils/tradeCashImpact";
+import { parseAmount, formatAmount } from "../utils/parseAmount";
+import { DateField, AccountSelect, MoneyField, QuantityField } from "../components/ui/fields";
 import { toast } from "react-hot-toast";
 import { validateDate, validateTicker, validateRequired, validateQuantity, validateAmount, validateAccountTickerCurrency } from "../utils/validation";
 import { ERROR_MESSAGES } from "../constants/errorMessages";
@@ -43,6 +46,13 @@ import { usePriceAutoRefresh } from "../hooks/usePriceAutoRefresh";
 
 /** 환율 미로드 시 미국 주식 저장에 사용하는 기본 환율 (저장 차단 대신 사용) */
 const DEFAULT_FX_RATE = 1400;
+
+/**
+ * 거래 폼 입력값(콤마 포함 문자열) → 숫자.
+ * 입력은 사람이 읽는 형식("110,890,000")으로 두고 계산 직전에만 숫자로 바꾼다.
+ */
+const formNum = (value?: string | null, maxDecimals = 8): number =>
+  parseAmount(value ?? "", { allowDecimal: true, maxDecimals });
 
 interface Props {
   accounts: Account[];
@@ -941,10 +951,31 @@ export const StocksView: React.FC<Props> = ({
   };
 
 
+  /**
+   * 거래 폼의 canonical 티커. 시장 버튼에서 "코인"을 고르면 BTC → bitcoin 으로 정규화.
+   * (티커 문자열 휴리스틱만 쓰면 BTC·ETH 같은 3~4자 심볼이 미국 주식으로 잡힌다)
+   */
+  const tradeTickerClean = useMemo(
+    () => canonicalTickerForInput(tradeForm.ticker, tradeForm.market),
+    [tradeForm.ticker, tradeForm.market]
+  );
+  /** 수량 소수 자릿수 — 코인 8, 미국 6(소수점 매수), 국내 0 */
+  const tradeQuantityDecimals = useMemo(() => {
+    if (tradeForm.market === "CRYPTO" || isCryptoStock(tradeTickerClean)) return 8;
+    return isUSDStock(tradeTickerClean) || tradeForm.market === "US" ? 6 : 0;
+  }, [tradeForm.market, tradeTickerClean]);
+
+  /** 폼 입력 통화: 사용자가 고른 시장이 최우선, 미선택일 때만 티커 휴리스틱 */
+  const tradeInputIsUSD = useMemo(() => {
+    if (tradeForm.market === "CRYPTO" || tradeForm.market === "KR") return false;
+    if (tradeForm.market === "US") return true;
+    return isUSDStock(tradeTickerClean);
+  }, [tradeForm.market, tradeTickerClean]);
+
   // 거래 폼 검증
   const tradeFormValidation = useMemo(() => {
     const errors: Record<string, string> = {};
-    const tickerClean = canonicalTickerForMatch(tradeForm.ticker);
+    const tickerClean = tradeTickerClean;
     
     // 날짜 검증
     // 주의: 주식 거래는 미래 날짜도 허용합니다 (과거 거래 기록 입력, 예약 주문 등)
@@ -971,14 +1002,15 @@ export const StocksView: React.FC<Props> = ({
     }
     
     // 수량 검증 (암호화폐·미국주식/ETF는 소수점 허용)
-    const allowDecimalQuantity = isCryptoStock(tradeForm.ticker ?? "") || isUSDStock(tradeForm.ticker ?? "");
+    const allowDecimalQuantity =
+      tradeForm.market === "CRYPTO" || isCryptoStock(tickerClean) || isUSDStock(tickerClean);
     const quantityValidation = validateQuantity(tradeForm.quantity, allowDecimalQuantity);
     if (!quantityValidation.valid) {
       errors.quantity = quantityValidation.error || "";
     }
     // 매도 시: 보유 수량 초과 여부
     if (tradeForm.side === "sell" && tradeForm.accountId && tickerClean && !errors.quantity) {
-      const q = Number(tradeForm.quantity);
+      const q = formNum(tradeForm.quantity);
       if (!Number.isNaN(q) && q > 0) {
         const pos = positions.find(
           (p) => p.accountId === tradeForm.accountId && canonicalTickerForMatch(p.ticker) === tickerClean
@@ -992,11 +1024,11 @@ export const StocksView: React.FC<Props> = ({
     }
 
     // 가격 검증 (소수점 허용). 미국 주식은 단가(USD) 또는 단가(원) 중 하나만 있어도 됨
-    const isUSD = tickerClean ? isUSDStock(tickerClean) : false;
+    const isUSD = tickerClean ? tradeInputIsUSD : false;
     const priceVal = validateAmount(tradeForm.price, false, 0.001, undefined, true);
     const priceKRWVal = validateAmount(tradeForm.priceKRW ?? "", false, 1, undefined, true);
-    const hasPriceUSD = priceVal.valid && Number(tradeForm.price) > 0;
-    const hasPriceKRW = priceKRWVal.valid && Number(tradeForm.priceKRW || 0) > 0;
+    const hasPriceUSD = priceVal.valid && formNum(tradeForm.price) > 0;
+    const hasPriceKRW = priceKRWVal.valid && formNum(tradeForm.priceKRW) > 0;
     if (isUSD) {
       if (!hasPriceUSD && !hasPriceKRW) {
         errors.price = "단가(USD) 또는 단가(원)을 입력하세요.";
@@ -1012,17 +1044,17 @@ export const StocksView: React.FC<Props> = ({
     // 수수료 검증 (선택적이지만 입력되면 유효해야 함)
     const feeTrimmed = tradeForm.fee?.trim() || "";
     if (feeTrimmed && feeTrimmed !== "0") {
-      const feeValidation = validateAmount(feeTrimmed, false, 0);
+      const feeValidation = validateAmount(feeTrimmed, false, 0, undefined, true);
       if (!feeValidation.valid) errors.fee = feeValidation.error || "";
     }
     const feeKRWTrimmed = (tradeForm.feeKRW ?? "").trim();
     if (feeKRWTrimmed && feeKRWTrimmed !== "0") {
-      const feeKRWValidation = validateAmount(feeKRWTrimmed, false, 0);
+      const feeKRWValidation = validateAmount(feeKRWTrimmed, false, 0, undefined, true);
       if (!feeKRWValidation.valid) errors.feeKRW = feeKRWValidation.error || "";
     }
 
     return errors;
-  }, [tradeForm, positions]);
+  }, [tradeForm, positions, tradeTickerClean, tradeInputIsUSD]);
   
   const isTradeFormValid = Object.keys(tradeFormValidation).length === 0;
 
@@ -1039,17 +1071,17 @@ export const StocksView: React.FC<Props> = ({
       if (firstError) toast.error(firstError);
       return;
     }
-    const tickerClean = canonicalTickerForMatch(tradeForm.ticker);
-    const quantityRaw = Number(tradeForm.quantity);
-    const quantity = isCryptoStock(tickerClean)
+    const tickerClean = tradeTickerClean;
+    const quantityRaw = formNum(tradeForm.quantity);
+    const quantity = tradeForm.market === "CRYPTO" || isCryptoStock(tickerClean)
       ? Number(quantityRaw.toFixed(8))
       : isUSDStock(tickerClean)
         ? Number(quantityRaw.toFixed(6))
         : quantityRaw;
-    let price = Number(tradeForm.price);
-    let fee = Number(tradeForm.fee || "0");
-    const priceKRWEarly = Number(tradeForm.priceKRW ?? 0);
-    const isUSDTicker = isUSDStock(tickerClean);
+    let price = formNum(tradeForm.price);
+    let fee = formNum(tradeForm.fee);
+    const priceKRWEarly = formNum(tradeForm.priceKRW);
+    const isUSDTicker = tradeInputIsUSD;
     const accountId = tradeForm.accountId || (trades.length > 0 ? trades[trades.length - 1].accountId : accounts.filter((a) => a.type === "securities" || a.type === "crypto")[0]?.id || "");
     const date = tradeForm.date || new Date().toISOString().slice(0, 10);
     const hasAnyPrice = price > 0 || (isUSDTicker && priceKRWEarly > 0);
@@ -1075,13 +1107,14 @@ export const StocksView: React.FC<Props> = ({
       return;
     }
     const isSecuritiesAccount = selectedAccount.type === "securities" || selectedAccount.type === "crypto";
-    const isUSD = isUSDStock(tickerClean);
-    const currency = priceInfo?.currency || (isUSD ? "USD" : "KRW");
+    const isUSD = tradeInputIsUSD;
+    // 시장 선택이 통화를 결정 (코인·국내는 원화). priceInfo는 통화가 비어있을 때만 참고
+    const currency = isUSD ? (priceInfo?.currency || "USD") : "KRW";
     const isUSDCurrency = currency === "USD";
     const useUsdBalanceMode = shouldUseUsdBalanceMode(accountId, isSecuritiesAccount, isUSDCurrency);
 
-    const priceKRWNum = Number(tradeForm.priceKRW ?? 0);
-    const feeKRWNum = Number(tradeForm.feeKRW ?? 0);
+    const priceKRWNum = formNum(tradeForm.priceKRW);
+    const feeKRWNum = formNum(tradeForm.feeKRW);
     const hasUSDInput = price > 0;
     const hasKRWInput = priceKRWNum > 0;
 
@@ -1228,6 +1261,8 @@ export const StocksView: React.FC<Props> = ({
     setTradeForm((prev) => ({ ...createDefaultTradeForm(), side: "buy", accountId: prev.accountId || accountId || "" }));
   }, [
     tradeForm,
+    tradeTickerClean,
+    tradeInputIsUSD,
     trades,
     accounts,
     fxRate,
@@ -1260,11 +1295,11 @@ export const StocksView: React.FC<Props> = ({
       market: db?.market,
       exchange: db?.exchange,
       side: t.side,
-      quantity: String(t.quantity),
-      price: String(t.price),
-      fee: String(t.fee),
-      priceKRW: isUSD && rate > 0 ? String(Math.round(t.price * rate)) : "",
-      feeKRW: isUSD && rate > 0 ? String(Math.round(t.fee * rate)) : ""
+      quantity: formatAmount(String(t.quantity), { allowDecimal: true, maxDecimals: 8 }),
+      price: formatAmount(String(t.price), { allowDecimal: true, maxDecimals: 8 }),
+      fee: formatAmount(String(t.fee), { allowDecimal: true, maxDecimals: 8 }),
+      priceKRW: isUSD && rate > 0 ? formatAmount(String(Math.round(t.price * rate))) : "",
+      feeKRW: isUSD && rate > 0 ? formatAmount(String(Math.round(t.fee * rate))) : ""
     });
   };
 
@@ -1283,8 +1318,8 @@ export const StocksView: React.FC<Props> = ({
       accountId: preset.accountId || prev.accountId,
       ticker: preset.ticker || prev.ticker,
       name: preset.stockName || prev.name,
-      quantity: preset.quantity ? String(preset.quantity) : prev.quantity,
-      fee: preset.fee ? String(preset.fee) : prev.fee || "0"
+      quantity: preset.quantity ? formatAmount(String(preset.quantity), { allowDecimal: true, maxDecimals: 8 }) : prev.quantity,
+      fee: preset.fee ? formatAmount(String(preset.fee), { allowDecimal: true, maxDecimals: 8 }) : prev.fee || "0"
     }));
 
     // 프리셋 사용 기록 업데이트
@@ -1306,8 +1341,8 @@ export const StocksView: React.FC<Props> = ({
       accountId: tradeForm.accountId,
       ticker: tradeForm.ticker,
       stockName: tradeForm.name || undefined,
-      quantity: tradeForm.quantity ? Number(tradeForm.quantity) : undefined,
-      fee: tradeForm.fee ? Number(tradeForm.fee) : undefined
+      quantity: tradeForm.quantity ? formNum(tradeForm.quantity) : undefined,
+      fee: tradeForm.fee ? formNum(tradeForm.fee) : undefined
     };
 
     if (onChangePresets) {
@@ -1508,60 +1543,29 @@ export const StocksView: React.FC<Props> = ({
             )}
           </div>
           <p className="hint" style={{ margin: "0 0 8px 0", fontSize: 12 }}>
-            {isUSDStock(tradeForm.ticker ?? "")
+            {tradeInputIsUSD
               ? "미국 종목: 단가·수수료를 USD와 원화 중 하나 또는 둘 다 입력할 수 있습니다. 둘 다 입력하면 환율 없이 저장됩니다."
-              : "한국 종목은 원화(KRW)로 입력합니다."}
+              : "국내 주식·코인은 원화(KRW)로 입력합니다."}
           </p>
             {/* 전체 폼 */}
             <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(180px, 1fr))", gap: "10px 12px" }}>
-            <label style={{ display: "flex", flexDirection: "column", gap: 4 }}>
-              <span style={{ fontSize: 13, fontWeight: 500 }}>거래일</span>
-            <input
-              type="date"
+            <DateField
+              label="거래일"
               value={tradeForm.date}
-              onChange={(e) => setTradeForm({ ...tradeForm, date: e.target.value })}
-                style={{ 
-                  padding: "6px 8px", 
-                  fontSize: 14,
-                  borderColor: tradeFormValidation.date ? "var(--danger)" : undefined
-                }}
-                aria-invalid={!!tradeFormValidation.date}
-                aria-describedby={tradeFormValidation.date ? "trade-date-error" : undefined}
+              onChange={(date) => setTradeForm({ ...tradeForm, date })}
+              error={tradeFormValidation.date}
+              required
             />
-            {tradeFormValidation.date && (
-              <span id="trade-date-error" style={{ fontSize: 11, color: "var(--danger)", display: "block", marginTop: 2 }}>
-                {tradeFormValidation.date}
-              </span>
-            )}
-          </label>
-            <label style={{ display: "flex", flexDirection: "column", gap: 4 }}>
-              <span style={{ fontSize: 13, fontWeight: 500 }}>증권계좌</span>
-            <select
+            <AccountSelect
+              label="증권계좌"
               value={tradeForm.accountId}
-              onChange={(e) => setTradeForm({ ...tradeForm, accountId: e.target.value })}
-                style={{ 
-                  padding: "6px 8px", 
-                  fontSize: 14,
-                  borderColor: tradeFormValidation.accountId ? "var(--danger)" : undefined
-                }}
-                aria-invalid={!!tradeFormValidation.accountId}
-                aria-describedby={tradeFormValidation.accountId ? "trade-account-error" : undefined}
-            >
-              <option value="">선택</option>
-              {accounts
-                .filter((a) => a.type === "securities" || a.type === "crypto")
-                .map((a) => (
-                  <option key={a.id} value={a.id}>
-                    {a.id}
-                  </option>
-                ))}
-            </select>
-            {tradeFormValidation.accountId && (
-              <span id="trade-account-error" style={{ fontSize: 11, color: "var(--danger)", display: "block", marginTop: 2 }}>
-                {tradeFormValidation.accountId}
-              </span>
-            )}
-          </label>
+              onChange={(accountId) => setTradeForm({ ...tradeForm, accountId })}
+              accounts={accounts}
+              types={["securities", "crypto"]}
+              labelBy="id"
+              error={tradeFormValidation.accountId}
+              required
+            />
             <label style={{ display: "flex", flexDirection: "column", gap: 4, gridColumn: "1 / -1" }}>
               <span style={{ fontSize: 13, fontWeight: 500 }}>
                 티커
@@ -1653,140 +1657,69 @@ export const StocksView: React.FC<Props> = ({
                 })}
               </div>
             </label>
-            <label style={{ display: "flex", flexDirection: "column", gap: 4 }}>
-              <span style={{ fontSize: 13, fontWeight: 500 }}>수량</span>
-            <input
-              type="number"
-              min={0}
-              step="any"
+            <QuantityField
+              label="수량"
               value={tradeForm.quantity}
-              onChange={(e) => setTradeForm({ ...tradeForm, quantity: e.target.value })}
-                style={{ 
-                  padding: "6px 8px", 
-                  fontSize: 14,
-                  borderColor: tradeFormValidation.quantity ? "var(--danger)" : undefined
-                }}
-                aria-invalid={!!tradeFormValidation.quantity}
-                aria-describedby={tradeFormValidation.quantity ? "trade-quantity-error" : undefined}
+              onChange={(quantity) => setTradeForm({ ...tradeForm, quantity })}
+              maxDecimals={tradeQuantityDecimals}
+              error={tradeFormValidation.quantity}
+              required
             />
-            {tradeFormValidation.quantity && (
-              <span id="trade-quantity-error" style={{ fontSize: 11, color: "var(--danger)", display: "block", marginTop: 2 }}>
-                {tradeFormValidation.quantity}
-              </span>
-            )}
-          </label>
-            {isUSDStock(tradeForm.ticker ?? "") ? (
+            {tradeInputIsUSD ? (
               <>
-                <label style={{ display: "flex", flexDirection: "column", gap: 4 }}>
-                  <span style={{ fontSize: 13, fontWeight: 500 }}>단가 (USD)</span>
-                  <input
-                    type="number"
-                    min={0}
-                    step="any"
-                    value={tradeForm.price}
-                    onChange={(e) => setTradeForm({ ...tradeForm, price: e.target.value })}
-                    style={{
-                      padding: "6px 8px",
-                      fontSize: 14,
-                      borderColor: tradeFormValidation.price ? "var(--danger)" : undefined
-                    }}
-                    aria-invalid={!!tradeFormValidation.price}
-                    placeholder="달러"
-                  />
-                  {tradeFormValidation.price && (
-                    <span style={{ fontSize: 11, color: "var(--danger)", display: "block", marginTop: 2 }}>
-                      {tradeFormValidation.price}
-                    </span>
-                  )}
-                </label>
-                <label style={{ display: "flex", flexDirection: "column", gap: 4 }}>
-                  <span style={{ fontSize: 13, fontWeight: 500 }}>단가 (원)</span>
-                  <input
-                    type="number"
-                    min={0}
-                    step="1"
-                    value={tradeForm.priceKRW ?? ""}
-                    onChange={(e) => setTradeForm({ ...tradeForm, priceKRW: e.target.value })}
-                    style={{
-                      padding: "6px 8px",
-                      fontSize: 14,
-                      borderColor: tradeFormValidation.priceKRW ? "var(--danger)" : undefined
-                    }}
-                    placeholder="원화"
-                  />
-                  {tradeFormValidation.priceKRW && (
-                    <span style={{ fontSize: 11, color: "var(--danger)", display: "block", marginTop: 2 }}>
-                      {tradeFormValidation.priceKRW}
-                    </span>
-                  )}
-                </label>
-                <label style={{ display: "flex", flexDirection: "column", gap: 4 }}>
-                  <span style={{ fontSize: 13, fontWeight: 500 }}>수수료+세금 (USD)</span>
-                  <input
-                    type="number"
-                    min={0}
-                    step="any"
-                    value={tradeForm.fee}
-                    onChange={(e) => setTradeForm({ ...tradeForm, fee: e.target.value })}
-                    style={{ padding: "6px 8px", fontSize: 14 }}
-                  />
-                </label>
-                <label style={{ display: "flex", flexDirection: "column", gap: 4 }}>
-                  <span style={{ fontSize: 13, fontWeight: 500 }}>수수료+세금 (원)</span>
-                  <input
-                    type="number"
-                    min={0}
-                    step="1"
-                    value={tradeForm.feeKRW ?? ""}
-                    onChange={(e) => setTradeForm({ ...tradeForm, feeKRW: e.target.value })}
-                    style={{
-                      padding: "6px 8px",
-                      fontSize: 14,
-                      borderColor: tradeFormValidation.feeKRW ? "var(--danger)" : undefined
-                    }}
-                    placeholder="원화"
-                  />
-                  {tradeFormValidation.feeKRW && (
-                    <span style={{ fontSize: 11, color: "var(--danger)", display: "block", marginTop: 2 }}>
-                      {tradeFormValidation.feeKRW}
-                    </span>
-                  )}
-                </label>
+                <MoneyField
+                  label="단가"
+                  currency="USD"
+                  value={tradeForm.price}
+                  onChange={(price) => setTradeForm({ ...tradeForm, price })}
+                  error={tradeFormValidation.price}
+                  placeholder="달러"
+                />
+                <MoneyField
+                  label="단가 (원)"
+                  currency="KRW"
+                  allowDecimal
+                  value={tradeForm.priceKRW ?? ""}
+                  onChange={(priceKRW) => setTradeForm({ ...tradeForm, priceKRW })}
+                  error={tradeFormValidation.priceKRW}
+                  placeholder="원화"
+                />
+                <MoneyField
+                  label="수수료+세금"
+                  currency="USD"
+                  value={tradeForm.fee}
+                  onChange={(fee) => setTradeForm({ ...tradeForm, fee })}
+                  error={tradeFormValidation.fee}
+                />
+                <MoneyField
+                  label="수수료+세금 (원)"
+                  currency="KRW"
+                  allowDecimal
+                  value={tradeForm.feeKRW ?? ""}
+                  onChange={(feeKRW) => setTradeForm({ ...tradeForm, feeKRW })}
+                  error={tradeFormValidation.feeKRW}
+                  placeholder="원화"
+                />
               </>
             ) : (
               <>
-                <label style={{ display: "flex", flexDirection: "column", gap: 4 }}>
-                  <span style={{ fontSize: 13, fontWeight: 500 }}>단가 (KRW)</span>
-                  <input
-                    type="number"
-                    min={0}
-                    step="any"
-                    value={tradeForm.price}
-                    onChange={(e) => setTradeForm({ ...tradeForm, price: e.target.value })}
-                    style={{
-                      padding: "6px 8px",
-                      fontSize: 14,
-                      borderColor: tradeFormValidation.price ? "var(--danger)" : undefined
-                    }}
-                    aria-invalid={!!tradeFormValidation.price}
-                  />
-                  {tradeFormValidation.price && (
-                    <span style={{ fontSize: 11, color: "var(--danger)", display: "block", marginTop: 2 }}>
-                      {tradeFormValidation.price}
-                    </span>
-                  )}
-                </label>
-                <label style={{ display: "flex", flexDirection: "column", gap: 4 }}>
-                  <span style={{ fontSize: 13, fontWeight: 500 }}>수수료+세금 (KRW)</span>
-                  <input
-                    type="number"
-                    min={0}
-                    step="any"
-                    value={tradeForm.fee}
-                    onChange={(e) => setTradeForm({ ...tradeForm, fee: e.target.value })}
-                    style={{ padding: "6px 8px", fontSize: 14 }}
-                  />
-                </label>
+                <MoneyField
+                  label="단가"
+                  currency="KRW"
+                  allowDecimal
+                  value={tradeForm.price}
+                  onChange={(price) => setTradeForm({ ...tradeForm, price })}
+                  error={tradeFormValidation.price}
+                  required
+                />
+                <MoneyField
+                  label="수수료+세금"
+                  currency="KRW"
+                  allowDecimal
+                  value={tradeForm.fee}
+                  onChange={(fee) => setTradeForm({ ...tradeForm, fee })}
+                  error={tradeFormValidation.fee}
+                />
               </>
             )}
           </div>

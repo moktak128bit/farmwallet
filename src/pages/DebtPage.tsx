@@ -1,8 +1,9 @@
 import React, { useState, useMemo, useCallback } from "react";
+import { MoneyField, QuantityField, NumericInput } from "../components/ui/fields";
 import { ChevronDown, ChevronUp, Pencil, Trash2 } from "lucide-react";
 import type { Loan, RepaymentMethod, LedgerEntry, Account, CategoryPresets } from "../types";
 import { formatKRW } from "../utils/formatter";
-import { parseAmount } from "../utils/parseAmount";
+import { parseAmount, formatAmount } from "../utils/parseAmount";
 import { isInterestRepayment } from "../calculations";
 
 /** 거치기간 만료일: loanDate + gracePeriodYears (소수 허용). 미설정이면 null. */
@@ -86,8 +87,10 @@ export const DebtView: React.FC<Props> = ({
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
     const loanAmount = parseAmount(form.loanAmount);
-    const annualInterestRate = Number(form.annualInterestRate) || 0;
-    const gracePeriodYears = form.gracePeriodYears ? Number(form.gracePeriodYears) : undefined;
+    const annualInterestRate = parseAmount(form.annualInterestRate, { allowDecimal: true });
+    const gracePeriodYears = form.gracePeriodYears
+      ? parseAmount(form.gracePeriodYears, { allowDecimal: true, maxDecimals: 1 })
+      : undefined;
 
     if (!form.institution || !form.loanName || !form.subCategory || !loanAmount || !form.loanDate || !form.maturityDate) {
       alert("필수 항목을 모두 입력해주세요.");
@@ -135,7 +138,7 @@ export const DebtView: React.FC<Props> = ({
       institution: loan.institution,
       loanName: loan.loanName,
       subCategory: sub ? mapLegacyLoanType(sub) : LOAN_TYPE_OPTIONS[0],
-      loanAmount: String(loan.loanAmount),
+      loanAmount: formatAmount(String(loan.loanAmount)),
       annualInterestRate: String(loan.annualInterestRate),
       repaymentMethod: loan.repaymentMethod,
       loanDate: loan.loanDate,
@@ -478,30 +481,22 @@ export const DebtView: React.FC<Props> = ({
                   ))}
                 </select>
               </label>
-              <label>
-                <span>대출금액 *</span>
-                <input
-                  type="text"
-                  value={form.loanAmount}
-                  onChange={(e) => {
-                    const val = e.target.value.replace(/[^0-9]/g, "");
-                    setForm({ ...form, loanAmount: val });
-                  }}
-                  placeholder="예: 300000000"
-                  required
-                />
-              </label>
-              <label>
-                <span>연이자율 (%) *</span>
-                <input
-                  type="number"
-                  step="0.01"
-                  value={form.annualInterestRate}
-                  onChange={(e) => setForm({ ...form, annualInterestRate: e.target.value })}
-                  placeholder="예: 3.5"
-                  required
-                />
-              </label>
+              <MoneyField
+                label="대출금액"
+                required
+                value={form.loanAmount}
+                onChange={(loanAmount) => setForm({ ...form, loanAmount })}
+                placeholder="예: 300,000,000"
+              />
+              <QuantityField
+                label="연이자율 (%)"
+                required
+                maxDecimals={2}
+                unit="%"
+                value={form.annualInterestRate}
+                onChange={(annualInterestRate) => setForm({ ...form, annualInterestRate })}
+                placeholder="예: 3.5"
+              />
               <label>
                 <span>상환방법 *</span>
                 <select
@@ -532,17 +527,14 @@ export const DebtView: React.FC<Props> = ({
                   required
                 />
               </label>
-              <label>
-                <span>거치년도 (선택)</span>
-                <input
-                  type="number"
-                  min="0"
-                  step="0.5"
-                  value={form.gracePeriodYears}
-                  onChange={(e) => setForm({ ...form, gracePeriodYears: e.target.value })}
-                  placeholder="예: 2"
-                />
-              </label>
+              <QuantityField
+                label="거치년도 (선택)"
+                maxDecimals={1}
+                unit="년"
+                value={form.gracePeriodYears}
+                onChange={(gracePeriodYears) => setForm({ ...form, gracePeriodYears })}
+                placeholder="예: 2"
+              />
             </div>
             <div className="form-actions">
               {editingLoan && (
@@ -1041,12 +1033,10 @@ export const DebtView: React.FC<Props> = ({
               )}
               <label style={{ display: "block", marginBottom: 16 }}>
                 <span style={{ fontSize: 14, fontWeight: 600, display: "block", marginBottom: 8 }}>상환 금액 *</span>
-                <input
-                  type="text"
-                  inputMode="numeric"
+                <NumericInput
                   value={repayAmount}
-                  onChange={(e) => setRepayAmount(e.target.value.replace(/[^0-9]/g, ""))}
-                  placeholder="예: 1000000"
+                  onChange={setRepayAmount}
+                  placeholder="예: 1,000,000"
                   style={{ width: "100%", padding: "10px 12px", fontSize: 16 }}
                   autoFocus
                 />
@@ -1151,12 +1141,10 @@ export const DebtView: React.FC<Props> = ({
               </label>
               <label style={{ display: "block", marginBottom: 16 }}>
                 <span style={{ fontSize: 14, fontWeight: 600, display: "block", marginBottom: 8 }}>상환 금액 *</span>
-                <input
-                  type="text"
-                  inputMode="numeric"
+                <NumericInput
                   value={editAmount}
-                  onChange={(e) => setEditAmount(e.target.value.replace(/[^0-9]/g, ""))}
-                  placeholder="예: 1000000"
+                  onChange={setEditAmount}
+                  placeholder="예: 1,000,000"
                   style={{ width: "100%", padding: "10px 12px", fontSize: 16 }}
                   autoFocus
                 />

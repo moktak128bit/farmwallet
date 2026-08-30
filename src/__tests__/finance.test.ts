@@ -1,5 +1,12 @@
 import { describe, it, expect } from "vitest";
-import { tradeAmountKRW, isUSDStock, getCurrentHoldingsTickers, cryptoDisplaySymbol } from "../utils/finance";
+import {
+  tradeAmountKRW,
+  isUSDStock,
+  getCurrentHoldingsTickers,
+  cryptoDisplaySymbol,
+  cryptoIdFromSymbol,
+  canonicalTickerForInput
+} from "../utils/finance";
 
 describe("tradeAmountKRW", () => {
   it("KRW 종목은 totalAmount 그대로 (환율 무시)", () => {
@@ -130,5 +137,31 @@ describe("getCurrentHoldingsTickers", () => {
     const holdings = getCurrentHoldingsTickers(trades);
     expect(holdings).toContain("0167B0");
     expect(holdings).not.toContain("RKLB");
+  });
+});
+
+describe("거래소 심볼 → CoinGecko ID", () => {
+  it("BTC·SOL 같은 short 심볼을 canonical ID로 되돌린다", () => {
+    expect(cryptoIdFromSymbol("BTC")).toBe("bitcoin");
+    expect(cryptoIdFromSymbol("sol")).toBe("solana");
+    expect(cryptoIdFromSymbol("bitcoin")).toBe("bitcoin");
+    expect(cryptoIdFromSymbol("MSFT")).toBeNull();
+  });
+
+  it("회귀: 시장=코인이면 BTC가 미국 주식(USD)으로 잡히지 않는다", () => {
+    // 휴리스틱만 쓰면 3자 영문 BTC → isUSDStock true → 폼이 달러로 표시되던 버그
+    expect(isUSDStock("BTC")).toBe(true);
+    const canonical = canonicalTickerForInput("BTC", "CRYPTO");
+    expect(canonical).toBe("bitcoin");
+    expect(isUSDStock(canonical)).toBe(false);
+  });
+
+  it("코인 시장이라도 매핑에 없으면 소문자 그대로 (CoinGecko ID 관행)", () => {
+    expect(canonicalTickerForInput("PEPE", "CRYPTO")).toBe("pepe");
+  });
+
+  it("주식 시장은 기존 canonical 규칙 유지", () => {
+    expect(canonicalTickerForInput("AAPL", "US")).toBe("AAPL");
+    expect(canonicalTickerForInput("5930", "KR")).toBe("005930");
   });
 });

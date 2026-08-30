@@ -1,4 +1,5 @@
 import type { Account, AccountBalanceRow, LedgerEntry } from "../../../types";
+import { NumericInput } from "../../../components/ui/fields";
 
 interface Props {
   orderedRowsForInitialReverse: AccountBalanceRow[];
@@ -161,12 +162,10 @@ export function InitialReversePanel({
                   {row.account.name} ({row.account.institution || "-"})
                 </td>
                 <td style={{ textAlign: "right" }}>
-                  <input
-                    type="text"
-                    inputMode="numeric"
+                  <NumericInput
+                    allowNegative
                     value={actualCurrentInput[row.account.id] ?? ""}
-                    onChange={(e) => {
-                      const value = e.target.value;
+                    onChange={(value) => {
                       setActualCurrentInput((prev) => ({
                         ...prev,
                         [row.account.id]: value

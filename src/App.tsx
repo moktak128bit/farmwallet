@@ -1,7 +1,8 @@
 import React, { useCallback, useEffect, useMemo, useState, lazy, Suspense } from "react";
 import { Toaster, toast } from "react-hot-toast";
-import { Moon, Sun, Menu } from "lucide-react";
-import { Tabs, type TabId } from "./components/ui/Tabs";
+import { Moon, Sun, Menu, Plus, Search } from "lucide-react";
+import { Tabs, TAB_LABELS, type TabId } from "./components/ui/Tabs";
+import { StatusMenu, type StatusTone } from "./components/ui/StatusMenu";
 import { ShortcutsHelp } from "./components/ShortcutsHelp";
 import { SearchModal } from "./components/SearchModal";
 import { PWAStatus } from "./components/PWAStatus";
@@ -142,6 +143,7 @@ export const App: React.FC = () => {
   const setIntegritySummary = useUIStore((s) => s.setIntegritySummary);
   const appLog = useUIStore((s) => s.appLog);
   const addAppLog = useUIStore((s) => s.addAppLog);
+  const saveStatus = useUIStore((s) => s.saveStatus);
 
   const appLogListRef = React.useRef<HTMLDivElement>(null);
 
@@ -263,6 +265,22 @@ export const App: React.FC = () => {
   );
 
   useMarketEnvSnapshotRecorder();
+
+  /**
+   * 헤더 상태 점: 자동저장·백업·Gist·무결성을 한 신호로 합친다.
+   * 평소엔 "정상" 한 줄만 보이고, 문제가 있을 때만 색과 문구로 알린다.
+   */
+  const appStatus = useMemo((): { tone: StatusTone; summary: string } => {
+    if (saveStatus === "error") return { tone: "danger", summary: "저장 실패" };
+    if (backupIntegrity.status === "mismatch") return { tone: "danger", summary: "백업 불일치" };
+    if (gistStaleWarning?.type === "critical") return { tone: "danger", summary: "동기화 필요" };
+    if (gistStaleWarning) return { tone: "warn", summary: "동기화 권장" };
+    if (backupWarning) return { tone: "warn", summary: "백업 권장" };
+    if (backupIntegrity.status === "missing-hash") return { tone: "warn", summary: "무결성 미확인" };
+    if (newVersionAvailable) return { tone: "warn", summary: "새 버전" };
+    if (saveStatus === "saving") return { tone: "ok", summary: "저장 중" };
+    return { tone: "ok", summary: "정상" };
+  }, [saveStatus, backupIntegrity.status, gistStaleWarning, backupWarning, newVersionAvailable]);
 
   // 저장소 사용률 85% 초과 시 1회 경고 (세션당 1회)
   const storageQuota = useStorageQuota();
@@ -511,7 +529,7 @@ export const App: React.FC = () => {
         </div>
       )}
       <header className="app-header">
-        <div style={{ display: "flex", alignItems: "center", gap: 12, flex: 1, minWidth: 0 }}>
+        <div className="app-header-left">
           <button
             type="button"
             className="mobile-menu-btn"
@@ -519,53 +537,51 @@ export const App: React.FC = () => {
             aria-label="메뉴 열기"
             title="메뉴"
           >
-            <Menu size={24} />
+            <Menu size={22} />
           </button>
-          <div>
-          <h1>FarmWallet <span style={{ fontSize: "0.6em", fontWeight: "normal", color: "var(--text-muted)", marginLeft: "8px" }}>v{APP_VERSION}</span></h1>
-          <p className="subtitle">자산 및 주식 관리</p>
-          </div>
-          <div className="app-log-panel" aria-live="polite">
-            <div className="app-log-panel-title">로그</div>
-            <div ref={appLogListRef} className="app-log-panel-list">
-              {appLog.length === 0 ? (
-                <div className="app-log-panel-empty">저장·시세·종목 불러오기 시 여기에 표시됩니다.</div>
-              ) : (
-                // 성능: 200개까지 쌓이는 로그 중 최신 8개만 DOM에 렌더.
-                // 전체는 store(uiStore.appLog)에 유지되어 나중에 확장 UI로 열어볼 수 있음.
-                appLog.slice(-8).map((e) => (
-                  <div key={e.id} className={`app-log-panel-item app-log-${e.type}`}>
-                    <span className="app-log-time">{e.time}</span> {e.message}
-                  </div>
-                ))
-              )}
-            </div>
+          <div className="app-brand">
+            <span className="app-brand-name">FarmWallet</span>
+            <span className="app-brand-sep" aria-hidden>/</span>
+            <span className="app-brand-tab">{TAB_LABELS[tab]}</span>
           </div>
         </div>
-        <div className="app-header-right" style={{ display: "flex", flexDirection: "column", alignItems: "flex-end", gap: 6 }}>
-          <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
-            <RecurringDueBadge
-              recurring={data.recurringExpenses}
-              ledger={data.ledger}
-              onClick={() => setTab("budget")}
-            />
-            <button
-              type="button"
-              onClick={() => setShowQuickEntry(true)}
-              title="빠른 입력 (Ctrl+Shift+K)"
-              style={{ fontSize: 12, padding: "4px 10px", border: "1px solid var(--border)", borderRadius: 6, background: "var(--surface)", cursor: "pointer" }}
-            >
-              ＋ 빠른 입력
-            </button>
-            <button
-              onClick={toggleTheme}
-              className="icon-button"
-              title="테마 변경"
-              style={{ width: 32, height: 32, border: "1px solid var(--border)" }}
-            >
-              {theme === "light" ? <Moon size={16} /> : <Sun size={16} />}
-            </button>
-          </div>
+        <div className="app-header-right">
+          <RecurringDueBadge
+            recurring={data.recurringExpenses}
+            ledger={data.ledger}
+            onClick={() => setTab("budget")}
+          />
+          <button
+            type="button"
+            className="header-action"
+            onClick={() => setIsSearchOpen(true)}
+            title="전체 검색 (Ctrl+K)"
+          >
+            <Search size={14} />
+            <span>검색</span>
+          </button>
+          <button
+            type="button"
+            className="header-action strong"
+            onClick={() => setShowQuickEntry(true)}
+            title="빠른 입력 (Ctrl+Shift+K)"
+          >
+            <Plus size={14} />
+            <span>빠른 입력</span>
+          </button>
+          <button
+            onClick={toggleTheme}
+            className="icon-button"
+            title="테마 변경"
+            aria-label="테마 변경"
+          >
+            {theme === "light" ? <Moon size={16} /> : <Sun size={16} />}
+          </button>
+          <StatusMenu tone={appStatus.tone} summary={appStatus.summary}>
+          <div className="status-block">
+            <div className="status-block-title">
+              상태 <span className="status-version">v{APP_VERSION}</span>
+            </div>
           {newVersionAvailable && (
             <div className="pill success" style={{ cursor: "pointer", fontWeight: 600 }} onClick={() => window.location.reload()}>
               새 버전이 배포되었습니다 — 클릭하여 적용
@@ -601,6 +617,9 @@ export const App: React.FC = () => {
           {backupIntegrity.status === "mismatch" && (
             <div className="pill danger">최근 로컬 백업 해시 불일치. 백업을 다시 생성하세요.</div>
           )}
+          </div>
+          <div className="status-block">
+            <div className="status-block-title">동기화</div>
           <SyncActionBar
             data={data}
             latestBackupAt={latestBackupAt}
@@ -706,6 +725,24 @@ export const App: React.FC = () => {
             }}
             onSearch={() => setIsSearchOpen(true)}
           />
+          </div>
+          <div className="status-block">
+            <div className="status-block-title">로그</div>
+            <div ref={appLogListRef} className="app-log-panel-list" aria-live="polite">
+              {appLog.length === 0 ? (
+                <div className="app-log-panel-empty">저장·시세·종목 불러오기 시 여기에 표시됩니다.</div>
+              ) : (
+                // 성능: 200개까지 쌓이는 로그 중 최신 8개만 DOM에 렌더.
+                // 전체는 store(uiStore.appLog)에 유지되어 나중에 확장 UI로 열어볼 수 있음.
+                appLog.slice(-8).map((e) => (
+                  <div key={e.id} className={`app-log-panel-item app-log-${e.type}`}>
+                    <span className="app-log-time">{e.time}</span> {e.message}
+                  </div>
+                ))
+              )}
+            </div>
+          </div>
+          </StatusMenu>
         </div>
       </header>
 

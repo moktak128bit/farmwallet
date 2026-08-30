@@ -57,8 +57,16 @@ import { toKrwByRate } from "../utils/currency";
 import { newIdWithPrefix } from "../utils/id";
 import { getTodayKST } from "../utils/date";
 import { isDividendEntryLoose } from "../utils/categoryMatch";
+import { parseAmount } from "../utils/parseAmount";
 import { toast } from "react-hot-toast";
 import { blocksToCsv, type ReportBlock } from "../utils/reportExport";
+
+/**
+ * 거래 폼 입력값(콤마 포함 문자열) → 숫자.
+ * 입력은 사람이 읽는 형식("110,890,000")으로 두고 계산 직전에만 숫자로 바꾼다.
+ */
+const formNum = (value?: string | null, maxDecimals = 8): number =>
+  parseAmount(value ?? "", { allowDecimal: true, maxDecimals });
 
 interface Props {
   accounts: Account[];
@@ -494,8 +502,8 @@ export const StocksView: React.FC<Props> = ({
       accountId: tradeForm.accountId,
       ticker: tradeForm.ticker,
       stockName: tradeForm.name || undefined,
-      quantity: tradeForm.quantity ? Number(tradeForm.quantity) : undefined,
-      fee: tradeForm.fee ? Number(tradeForm.fee) : undefined
+      quantity: tradeForm.quantity ? formNum(tradeForm.quantity) : undefined,
+      fee: tradeForm.fee ? formNum(tradeForm.fee) : undefined
     };
 
     if (onChangePresets) {

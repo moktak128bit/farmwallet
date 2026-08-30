@@ -1,4 +1,6 @@
 import React, { memo } from "react";
+import { NumericInput } from "../../components/ui/fields";
+import { parseAmount } from "../../utils/parseAmount";
 import type { WorkoutRoutine, WorkoutRoutineExercise } from "../../types";
 import { BODY_PARTS, BODY_PART_COLORS } from "./constants";
 import { CommitInput } from "../../components/ui/CommitInput";
@@ -193,14 +195,11 @@ const RoutineManagerInner: React.FC<Props> = ({
                                     borderRadius: 4, fontSize: 13, fontWeight: 600,
                                   }}
                                 />
-                                <input
-                                  type="number"
-                                  min={1}
-                                  max={100}
-                                  value={rex.targetSets}
-                                  onChange={(e) => {
-                                    const v = parseInt(e.target.value, 10);
-                                    if (Number.isFinite(v) && v >= 1) {
+                                <NumericInput
+                                  value={String(rex.targetSets)}
+                                  onChange={(raw) => {
+                                    const v = Math.min(100, parseAmount(raw));
+                                    if (v >= 1) {
                                       onUpdateRoutineExercise(routine.id, rex.id, { targetSets: v });
                                     }
                                   }}
@@ -208,13 +207,11 @@ const RoutineManagerInner: React.FC<Props> = ({
                                   title="세트"
                                 />
                                 <span style={{ fontSize: 11, color: "var(--text-muted)" }}>세트</span>
-                                <input
-                                  type="number"
-                                  min={1}
-                                  value={rex.targetReps}
-                                  onChange={(e) => {
-                                    const v = parseInt(e.target.value, 10);
-                                    if (Number.isFinite(v) && v >= 1) {
+                                <NumericInput
+                                  value={String(rex.targetReps)}
+                                  onChange={(raw) => {
+                                    const v = parseAmount(raw);
+                                    if (v >= 1) {
                                       onUpdateRoutineExercise(routine.id, rex.id, { targetReps: v });
                                     }
                                   }}
@@ -222,17 +219,15 @@ const RoutineManagerInner: React.FC<Props> = ({
                                   title="횟수"
                                 />
                                 <span style={{ fontSize: 11, color: "var(--text-muted)" }}>회</span>
-                                <input
-                                  type="number"
-                                  min={0}
-                                  step={0.5}
-                                  value={rex.targetWeightKg}
-                                  onChange={(e) => {
-                                    const v = parseFloat(e.target.value);
-                                    if (Number.isFinite(v) && v >= 0) {
-                                      onUpdateRoutineExercise(routine.id, rex.id, { targetWeightKg: v });
-                                    }
-                                  }}
+                                <NumericInput
+                                  allowDecimal
+                                  maxDecimals={1}
+                                  value={String(rex.targetWeightKg)}
+                                  onChange={(raw) =>
+                                    onUpdateRoutineExercise(routine.id, rex.id, {
+                                      targetWeightKg: parseAmount(raw, { allowDecimal: true, maxDecimals: 1 })
+                                    })
+                                  }
                                   style={{ width: 60, padding: "4px 6px", borderRadius: 4, fontSize: 12, textAlign: "center" }}
                                   title="중량 (kg)"
                                 />
@@ -293,30 +288,25 @@ const RoutineManagerInner: React.FC<Props> = ({
                             placeholder="운동 이름"
                             style={{ flex: 1, minWidth: 140, padding: "6px 10px", borderRadius: 6, fontSize: 13 }}
                           />
-                          <input
-                            type="number"
-                            min={1}
+                          <NumericInput
                             value={routineExerciseDraft.sets}
-                            onChange={(e) => onChangeRoutineExerciseDraft((d) => ({ ...d, sets: e.target.value }))}
+                            onChange={(sets) => onChangeRoutineExerciseDraft((d) => ({ ...d, sets }))}
                             placeholder="세트"
                             style={{ width: 56, padding: "6px 8px", borderRadius: 6, fontSize: 13, textAlign: "center" }}
                           />
                           <span style={{ fontSize: 13 }}>×</span>
-                          <input
-                            type="number"
-                            min={1}
+                          <NumericInput
                             value={routineExerciseDraft.reps}
-                            onChange={(e) => onChangeRoutineExerciseDraft((d) => ({ ...d, reps: e.target.value }))}
+                            onChange={(reps) => onChangeRoutineExerciseDraft((d) => ({ ...d, reps }))}
                             placeholder="횟수"
                             style={{ width: 56, padding: "6px 8px", borderRadius: 6, fontSize: 13, textAlign: "center" }}
                           />
                           <span style={{ fontSize: 13 }}>×</span>
-                          <input
-                            type="number"
-                            min={0}
-                            step={0.5}
+                          <NumericInput
+                            allowDecimal
+                            maxDecimals={1}
                             value={routineExerciseDraft.weight}
-                            onChange={(e) => onChangeRoutineExerciseDraft((d) => ({ ...d, weight: e.target.value }))}
+                            onChange={(weight) => onChangeRoutineExerciseDraft((d) => ({ ...d, weight }))}
                             placeholder="kg"
                             style={{ width: 70, padding: "6px 8px", borderRadius: 6, fontSize: 13, textAlign: "center" }}
                           />

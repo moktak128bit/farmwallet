@@ -9,6 +9,7 @@ import React, { useEffect, useMemo, useState } from "react";
 import { toast } from "react-hot-toast";
 import type { Account, AccountBalanceRow, LedgerEntry } from "../../../types";
 import { newIdWithPrefix } from "../../../utils/id";
+import { NumericInput } from "../../../components/ui/fields";
 
 interface Props {
   /** 카드 제외 잔액 행 (부모 memo — "계좌별 잔액 구성" 표와 순서 공유) */
@@ -363,12 +364,10 @@ export const InitialReversePanel: React.FC<Props> = React.memo(function InitialR
                   {row.account.name} ({row.account.institution || "-"})
                 </td>
                 <td style={{ textAlign: "right" }}>
-                  <input
-                    type="text"
-                    inputMode="numeric"
+                  <NumericInput
+                    allowNegative
                     value={actualCurrentInput[row.account.id] ?? ""}
-                    onChange={(e) => {
-                      const value = e.target.value;
+                    onChange={(value) => {
                       setActualCurrentInput((prev) => ({
                         ...prev,
                         [row.account.id]: value

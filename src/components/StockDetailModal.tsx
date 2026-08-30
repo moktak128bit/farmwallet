@@ -1,4 +1,5 @@
 import React, { useCallback, useMemo, useState, useEffect } from "react";
+import { QuantityField, NumericInput } from "./ui/fields";
 import type { Account, LedgerEntry, StockPrice, StockTrade, TickerInfo } from "../types";
 import { formatKRW, formatNumber, formatDecimal } from "../utils/formatter";
 import { isKRWStock, isUSDStock, extractTickerFromText, canonicalTickerForMatch } from "../utils/finance";
@@ -237,8 +238,8 @@ export const StockDetailModal: React.FC<Props> = ({
 
   // 주당배당금 × 보유주식수 = 총 배당금 자동 계산
   const calculatedAmount = useMemo(() => {
-    const qty = Number(dividendForm.quantity);
-    const dps = Number(dividendForm.dividendPerShare);
+    const qty = parseAmount(dividendForm.quantity, { allowDecimal: true, maxDecimals: 6 });
+    const dps = parseAmount(dividendForm.dividendPerShare, { allowDecimal: true, maxDecimals: 4 });
     if (!qty || !dps || qty <= 0 || dps <= 0) return null;
     return qty * dps;
   }, [dividendForm.quantity, dividendForm.dividendPerShare]);
@@ -247,8 +248,8 @@ export const StockDetailModal: React.FC<Props> = ({
   const dividendYield = useMemo(() => {
     if (calculatedAmount == null || !position) return null;
     let amount = calculatedAmount;
-    const tax = dividendForm.tax ? Number(dividendForm.tax) : 0;
-    const fee = dividendForm.fee ? Number(dividendForm.fee) : 0;
+    const tax = parseAmount(dividendForm.tax, { allowDecimal: true });
+    const fee = parseAmount(dividendForm.fee, { allowDecimal: true });
 
     if (amount <= 0 || position.avgPrice <= 0 || position.quantity <= 0) return null;
 
@@ -284,10 +285,10 @@ export const StockDetailModal: React.FC<Props> = ({
   // 배당 입력 처리
   const handleDividendSubmit = (e: React.FormEvent) => {
     e.preventDefault();
-    const qty = Number(dividendForm.quantity);
-    const dps = Number(dividendForm.dividendPerShare);
-    const tax = dividendForm.tax ? Number(dividendForm.tax) : 0;
-    const fee = dividendForm.fee ? Number(dividendForm.fee) : 0;
+    const qty = parseAmount(dividendForm.quantity, { allowDecimal: true, maxDecimals: 6 });
+    const dps = parseAmount(dividendForm.dividendPerShare, { allowDecimal: true, maxDecimals: 4 });
+    const tax = parseAmount(dividendForm.tax, { allowDecimal: true });
+    const fee = parseAmount(dividendForm.fee, { allowDecimal: true });
 
     if (!position) return;
     if (!dividendForm.date || !dividendForm.accountId || !qty || qty <= 0 || !dps || dps <= 0) {
@@ -627,31 +628,25 @@ export const StockDetailModal: React.FC<Props> = ({
                         ))}
                       </select>
                     </label>
-                    <label style={{ display: "flex", flexDirection: "column", gap: 4 }}>
-                      <span style={{ fontSize: 13, fontWeight: 500 }}>보유주식수</span>
-                      <input
-                        type="number"
-                        min={0}
-                        step={1}
-                        value={dividendForm.quantity}
-                        onChange={(e) => setDividendForm({ ...dividendForm, quantity: e.target.value })}
-                        placeholder="주식 수"
-                        style={{ padding: "6px 8px", fontSize: 14 }}
-                        required
-                      />
-                    </label>
+                    <QuantityField
+                      label="보유주식수"
+                      required
+                      maxDecimals={6}
+                      value={dividendForm.quantity}
+                      onChange={(quantity) => setDividendForm({ ...dividendForm, quantity })}
+                      placeholder="주식 수"
+                    />
                     <label style={{ display: "flex", flexDirection: "column", gap: 4 }}>
                       <span style={{ fontSize: 13, fontWeight: 500 }}>
                         주당배당금
                         {selectedTickerCurrency === "USD" && showUSD && " (USD)"}
                         {selectedTickerCurrency === "USD" && !showUSD && " (원화)"}
                       </span>
-                      <input
-                        type="number"
-                        min={0}
-                        step={0.01}
+                      <NumericInput
+                        allowDecimal
+                        maxDecimals={4}
                         value={dividendForm.dividendPerShare}
-                        onChange={(e) => setDividendForm({ ...dividendForm, dividendPerShare: e.target.value })}
+                        onChange={(dividendPerShare) => setDividendForm({ ...dividendForm, dividendPerShare })}
                         placeholder={selectedTickerCurrency === "USD" && showUSD ? "USD로 입력" : "원화로 입력"}
                         style={{ padding: "6px 8px", fontSize: 14 }}
                         required
@@ -683,12 +678,10 @@ export const StockDetailModal: React.FC<Props> = ({
                         {selectedTickerCurrency === "USD" && showUSD && " (USD)"}
                         {selectedTickerCurrency === "USD" && !showUSD && " (원화)"}
                       </span>
-                      <input
-                        type="number"
-                        min={0}
-                        step={0.01}
+                      <NumericInput
+                        allowDecimal
                         value={dividendForm.tax}
-                        onChange={(e) => setDividendForm({ ...dividendForm, tax: e.target.value })}
+                        onChange={(tax) => setDividendForm({ ...dividendForm, tax })}
                         placeholder="선택사항"
                         style={{ padding: "6px 8px", fontSize: 14 }}
                       />
@@ -699,12 +692,10 @@ export const StockDetailModal: React.FC<Props> = ({
                         {selectedTickerCurrency === "USD" && showUSD && " (USD)"}
                         {selectedTickerCurrency === "USD" && !showUSD && " (원화)"}
                       </span>
-                      <input
-                        type="number"
-                        min={0}
-                        step={0.01}
+                      <NumericInput
+                        allowDecimal
                         value={dividendForm.fee}
-                        onChange={(e) => setDividendForm({ ...dividendForm, fee: e.target.value })}
+                        onChange={(fee) => setDividendForm({ ...dividendForm, fee })}
                         placeholder="선택사항"
                         style={{ padding: "6px 8px", fontSize: 14 }}
                       />
@@ -768,18 +759,16 @@ export const StockDetailModal: React.FC<Props> = ({
                           </td>
                           <td className="number positive" style={{ fontWeight: 600 }}>
                             {isEditing ? (
-                              <input
-                                type="number"
-                                min={0}
-                                step={0.01}
+                              <NumericInput
+                                allowDecimal
                                 value={editingDividendValues.amount}
-                                onChange={(e) =>
-                                  setEditingDividendValues((prev) => ({ ...prev, amount: e.target.value }))
+                                onChange={(amount) =>
+                                  setEditingDividendValues((prev) => ({ ...prev, amount }))
                                 }
                                 style={{ padding: "4px 8px", fontSize: 13, width: "100%" }}
                               />
                             ) : (
-                              formatKRW(Math.round(dividend.amount))
+                              formatKRW(dividend.amount, { exact: true })
                             )}
                           </td>
                           <td className="number" style={{ fontSize: 13, color: "var(--primary)" }}>

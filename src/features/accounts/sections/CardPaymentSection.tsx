@@ -1,4 +1,5 @@
 import { useState } from "react";
+import { NumericInput } from "../../../components/ui/fields";
 import { toast } from "react-hot-toast";
 import type { Account, LedgerEntry } from "../../../types";
 import { parseAmount } from "../../../utils/parseAmount";
@@ -68,12 +69,10 @@ export function CardPaymentSection({
             ))}
           </select>
           <label style={{ display: "block", fontSize: 12, marginBottom: 4 }}>결제 금액</label>
-          <input
-            type="text"
-            inputMode="numeric"
+          <NumericInput
             placeholder={debtAmount > 0 ? `전액 ${formatKRW(debtAmount)}` : "0"}
             value={payAmount}
-            onChange={(e) => setPayAmount(e.target.value.replace(/[^0-9,]/g, ""))}
+            onChange={setPayAmount}
             style={{ width: "100%", padding: 8, marginBottom: 10, borderRadius: 6 }}
           />
           <button

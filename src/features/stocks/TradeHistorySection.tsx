@@ -3,11 +3,13 @@ import { toast } from "react-hot-toast";
 import type { Account, AccountBalanceRow, StockPrice, StockTrade, TradeSide } from "../../types";
 import { computeRealizedPnlByTradeId, computeRealizedPnlDetailByTradeId } from "../../calculations";
 import { isUSDStock, canonicalTickerForMatch, cryptoDisplaySymbol } from "../../utils/finance";
+import { NumericInput } from "../../components/ui/fields";
+import { parseAmount, formatAmount } from "../../utils/parseAmount";
 import { computeTradeCashImpact } from "../../utils/tradeCashImpact";
 import { validateAccountTickerCurrency } from "../../utils/validation";
 import { ERROR_MESSAGES } from "../../constants/errorMessages";
 import { isCoarsePointer } from "../../utils/pointer";
-import { formatNumber, formatKRW, formatUSD, formatShortDate } from "../../utils/formatter";
+import { formatKRW, formatUSD, formatQuantity, formatShortDate } from "../../utils/formatter";
 import { showDeleteUndoToast } from "../../utils/undoToast";
 import { saveSafetySnapshot } from "../../services/backupService";
 import { useAppStore } from "../../store/appStore";
@@ -43,12 +45,16 @@ const inferTradeCurrency = (trade: StockTrade, priceCurrency?: string): "USD" | 
       ? "USD"
       : "KRW";
 
+/**
+ * 거래 표의 금액 — 사용자가 입력한 단가·수수료·그 합계라서 소수를 반올림하지 않는다.
+ * (수수료 212.25원을 넣고 목록에서 212원으로 보이면 값이 사라진 것처럼 읽힌다)
+ */
 const formatPriceWithCurrency = (value: number, currency?: string, ticker?: string) => {
   const isUSD = currency === "USD" || isUSDStock(ticker);
   if (isUSD) {
-    return formatUSD(value);
+    return formatUSD(value, { exact: true });
   }
-  return formatKRW(value);
+  return formatKRW(value, { exact: true });
 };
 
 const sortIndicator = (activeKey: string, key: string, direction: "asc" | "desc") => {
@@ -374,9 +380,9 @@ export const TradeHistorySection: React.FC<TradeHistorySectionProps> = ({
       ticker: t.ticker,
       name: t.name,
       side: t.side,
-      quantity: String(t.quantity),
-      price: String(t.price),
-      fee: String(t.fee)
+      quantity: formatAmount(String(t.quantity), { allowDecimal: true, maxDecimals: 8 }),
+      price: formatAmount(String(t.price), { allowDecimal: true, maxDecimals: 8 }),
+      fee: formatAmount(String(t.fee), { allowDecimal: true, maxDecimals: 8 })
     });
     setInlineEditField(field || null);
   };
@@ -406,9 +412,9 @@ export const TradeHistorySection: React.FC<TradeHistorySectionProps> = ({
     if (!inlineEdit) return;
     // Enter(keydown 저장)와 blur 저장이 같은 편집을 두 번 실행하는 것 방지
     if (inlineSavingRef.current) return;
-    const quantity = Number(inlineEdit.quantity);
-    const price = Number(inlineEdit.price);
-    const fee = Number(inlineEdit.fee || "0");
+    const quantity = parseAmount(inlineEdit.quantity, { allowDecimal: true, maxDecimals: 8 });
+    const price = parseAmount(inlineEdit.price, { allowDecimal: true, maxDecimals: 8 });
+    const fee = parseAmount(inlineEdit.fee, { allowDecimal: true, maxDecimals: 8 });
     if (!inlineEdit.date || !inlineEdit.accountId || !inlineEdit.ticker || !quantity || !price) {
       // 어떤 항목 때문에 저장되지 않았는지 항상 알려준다 (편집 상태는 유지)
       const reason = !inlineEdit.date
@@ -941,22 +947,21 @@ export const TradeHistorySection: React.FC<TradeHistorySectionProps> = ({
                     title="더블클릭하여 수정"
                   >
                     {inlineEdit?.id === t.id ? (
-                      <input
-                        type="number"
-                        min={0}
-                        step="any"
+                      <NumericInput
+                        allowDecimal
+                        maxDecimals={8}
                         value={inlineEdit.quantity}
-                        onChange={(e) => setInlineEdit({ ...inlineEdit, quantity: e.target.value })}
+                        onChange={(quantity) => setInlineEdit({ ...inlineEdit, quantity })}
                         onBlur={saveInlineEdit}
                         onKeyDown={(e) => {
                           if (e.key === "Enter") saveInlineEdit();
                           if (e.key === "Escape") cancelInlineEdit();
                         }}
                         autoFocus={inlineEditField === "quantity"}
-                        style={{ width: "80px", padding: "2px 4px", fontSize: 13, textAlign: "right" }}
+                        style={{ width: "80px", padding: "2px 4px", fontSize: 13 }}
                       />
                     ) : (
-                      t.quantity % 1 === 0 ? formatNumber(t.quantity) : t.quantity.toFixed(6)
+                      formatQuantity(t.quantity)
                     )}
                   </td>
                   <td
@@ -967,19 +972,18 @@ export const TradeHistorySection: React.FC<TradeHistorySectionProps> = ({
                     title="더블클릭하여 수정"
                   >
                     {inlineEdit?.id === t.id ? (
-                      <input
-                        type="number"
-                        min={0}
-                        step="any"
+                      <NumericInput
+                        allowDecimal
+                        maxDecimals={8}
                         value={inlineEdit.price}
-                        onChange={(e) => setInlineEdit({ ...inlineEdit, price: e.target.value })}
+                        onChange={(price) => setInlineEdit({ ...inlineEdit, price })}
                         onBlur={saveInlineEdit}
                         onKeyDown={(e) => {
                           if (e.key === "Enter") saveInlineEdit();
                           if (e.key === "Escape") cancelInlineEdit();
                         }}
                         autoFocus={inlineEditField === "price"}
-                        style={{ width: "100px", padding: "2px 4px", fontSize: 13, textAlign: "right" }}
+                        style={{ width: "100px", padding: "2px 4px", fontSize: 13 }}
                       />
                     ) : (
                       (() => {
@@ -997,19 +1001,18 @@ export const TradeHistorySection: React.FC<TradeHistorySectionProps> = ({
                     title="더블클릭하여 수정"
                   >
                     {inlineEdit?.id === t.id ? (
-                      <input
-                        type="number"
-                        min={0}
-                        step="any"
+                      <NumericInput
+                        allowDecimal
+                        maxDecimals={8}
                         value={inlineEdit.fee}
-                        onChange={(e) => setInlineEdit({ ...inlineEdit, fee: e.target.value })}
+                        onChange={(fee) => setInlineEdit({ ...inlineEdit, fee })}
                         onBlur={saveInlineEdit}
                         onKeyDown={(e) => {
                           if (e.key === "Enter") saveInlineEdit();
                           if (e.key === "Escape") cancelInlineEdit();
                         }}
                         autoFocus={inlineEditField === "fee"}
-                        style={{ width: "100px", padding: "2px 4px", fontSize: 13, textAlign: "right" }}
+                        style={{ width: "100px", padding: "2px 4px", fontSize: 13 }}
                       />
                     ) : (
                       (() => {
@@ -1027,20 +1030,33 @@ export const TradeHistorySection: React.FC<TradeHistorySectionProps> = ({
                     title="더블클릭하여 수정 (수량 자동 조정)"
                   >
                     {inlineEdit?.id === t.id && inlineEditField === "totalAmount" ? (
-                      <input
-                        type="number"
-                        value={Math.round(
-                          Number(inlineEdit.quantity) * Number(inlineEdit.price) +
-                          (inlineEdit.side === "sell" ? -1 : 1) * Number(inlineEdit.fee || 0)
+                      <NumericInput
+                        allowDecimal
+                        maxDecimals={2}
+                        value={formatAmount(
+                          String(
+                            Math.round(
+                              parseAmount(inlineEdit.quantity, { allowDecimal: true, maxDecimals: 8 }) *
+                                parseAmount(inlineEdit.price, { allowDecimal: true, maxDecimals: 8 }) +
+                                (inlineEdit.side === "sell" ? -1 : 1) *
+                                  parseAmount(inlineEdit.fee, { allowDecimal: true, maxDecimals: 8 })
+                            )
+                          )
                         )}
-                        onChange={(e) => {
-                          const newTotal = Number(e.target.value);
-                          const fee = Number(inlineEdit.fee || 0);
-                          const price = Number(inlineEdit.price);
+                        onChange={(total) => {
+                          const newTotal = parseAmount(total, { allowDecimal: true });
+                          const fee = parseAmount(inlineEdit.fee, { allowDecimal: true, maxDecimals: 8 });
+                          const price = parseAmount(inlineEdit.price, { allowDecimal: true, maxDecimals: 8 });
                           if (price > 0) {
                             // 매수 total=q*p+fee → q=(total−fee)/p / 매도 total=q*p−fee → q=(total+fee)/p (저장공식과 일치)
                             const newQuantity = (newTotal + (inlineEdit.side === "sell" ? fee : -fee)) / price;
-                            setInlineEdit({ ...inlineEdit, quantity: String(Math.max(0, Math.round(newQuantity * 100) / 100)) });
+                            setInlineEdit({
+                              ...inlineEdit,
+                              quantity: formatAmount(String(Math.max(0, Math.round(newQuantity * 100) / 100)), {
+                                allowDecimal: true,
+                                maxDecimals: 8
+                              })
+                            });
                           }
                         }}
                         onBlur={saveInlineEdit}
@@ -1049,7 +1065,7 @@ export const TradeHistorySection: React.FC<TradeHistorySectionProps> = ({
                           if (e.key === "Escape") cancelInlineEdit();
                         }}
                         autoFocus
-                        style={{ width: "120px", padding: "2px 4px", fontSize: 13, textAlign: "right" }}
+                        style={{ width: "120px", padding: "2px 4px", fontSize: 13 }}
                       />
                     ) : (
                       (() => {

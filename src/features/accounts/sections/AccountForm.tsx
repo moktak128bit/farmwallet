@@ -7,6 +7,7 @@ import { toast } from "react-hot-toast";
 import type { Account, AccountType, TaxShelterKind } from "../../../types";
 import { parseAmount } from "../../../utils/parseAmount";
 import { TAX_SHELTER_OPTIONS, TAX_SHELTER_ELIGIBLE_TYPES } from "../../../utils/taxShelter";
+import { MoneyField } from "../../../components/ui/fields";
 
 interface Props {
   onAdd: (account: Account) => void;
@@ -43,7 +44,7 @@ export const AccountForm: React.FC<Props> = React.memo(function AccountForm({ on
     const amount = parseAmount(form.initialBalance);
     const rawDebt = parseAmount(form.debt);
     const debt = rawDebt;
-    const cashAdjustment = parseAmount(form.cashAdjustment);
+    const cashAdjustment = parseAmount(form.cashAdjustment, { allowNegative: true });
     const initialCashBalance = parseAmount(form.initialCashBalance);
     // 신용카드 청구주기 시작일·결제일(1~31, 3-4) — 카드 유형에서만 저장
     const billingCycleStartNum = Number(form.billingCycleStart);
@@ -131,47 +132,31 @@ export const AccountForm: React.FC<Props> = React.memo(function AccountForm({ on
           <option value="other">기타</option>
         </select>
       </label>
-      <label>
-        <span>초기 잔액</span>
-        <input
-          type="number"
-          min={0}
-          placeholder="0"
-          value={form.initialBalance}
-          onChange={(e) => setForm({ ...form, initialBalance: e.target.value })}
-        />
-      </label>
-      <label>
-        {/* 부채는 양수로 입력 — 파서(parseAmount)가 부호를 제거하므로 음수 표기 안내는 오해를 부른다 */}
-        <span>부채 (갚을 금액, 양수)</span>
-        <input
-          type="number"
-          min={0}
-          placeholder="예: 100000"
-          value={form.debt}
-          onChange={(e) => setForm({ ...form, debt: e.target.value })}
-        />
-      </label>
+      <MoneyField
+        label="초기 잔액"
+        value={form.initialBalance}
+        onChange={(initialBalance) => setForm({ ...form, initialBalance })}
+      />
+      <MoneyField
+        label="부채 (갚을 금액, 양수)"
+        hint="금액만 입력 (부호 없이)"
+        value={form.debt}
+        onChange={(debt) => setForm({ ...form, debt })}
+      />
       {(form.type === "securities" || form.type === "crypto") && (
         <>
-          <label>
-            <span>초기 현금 잔액</span>
-            <input
-              type="number"
-              placeholder="0"
-              value={form.initialCashBalance}
-              onChange={(e) => setForm({ ...form, initialCashBalance: e.target.value })}
-            />
-          </label>
-          <label>
-            <span>현금 조정 (선택)</span>
-            <input
-              type="number"
-              placeholder="0"
-              value={form.cashAdjustment}
-              onChange={(e) => setForm({ ...form, cashAdjustment: e.target.value })}
-            />
-          </label>
+          <MoneyField
+            label="초기 현금 잔액"
+            value={form.initialCashBalance}
+            onChange={(initialCashBalance) => setForm({ ...form, initialCashBalance })}
+          />
+          <MoneyField
+            label="현금 조정 (선택)"
+            hint="잔액에 그대로 더해진다 — 차감은 -1000 처럼 음수로"
+            allowNegative
+            value={form.cashAdjustment}
+            onChange={(cashAdjustment) => setForm({ ...form, cashAdjustment })}
+          />
         </>
       )}
       {form.type === "card" && (

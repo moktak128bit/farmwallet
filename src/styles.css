@@ -1,59 +1,73 @@
 /* =========================================
-   Design System: Modern & High Visibility
+   Design System — 숫자 중심 미니멀 (PC 우선)
+   원칙: 색은 데이터에만, 구분은 선으로, 밀도는 높게.
    ========================================= */
 
 :root {
+  color-scheme: light;
+
   /* 모바일 하단 탭바 높이(safe-area 제외) — .app-root padding-bottom 보정·FAB 위치에 공유 */
   --bottom-nav-h: 56px;
-  /* Color Palette - Light Mode */
-  --bg: #f8fafc;
+
+  /* ── Ground: 중립 회색. 색은 데이터에만 쓴다 ── */
+  --bg: #f7f7f8;
   --surface: #ffffff;
-  --surface-hover: #f1f5f9;
-  
-  /* Primary Colors - Teal/Cyan based but deeper for contrast */
-  --primary: #0d9488;
-  --primary-hover: #0f766e;
-  --primary-light: #ccfbf1;
+  --surface-hover: #f2f3f5;
+  --surface-sunken: #fafafa;
+
+  /* ── Primary = 잉크. 버튼/활성 상태는 색이 아니라 대비로 ── */
+  --primary: #18181b;
+  --primary-hover: #000000;
+  --primary-light: #ececee;
   --primary-text: #ffffff;
 
-  /* Semantic Colors */
-  --accent: #0284c7;
-  --danger: #dc2626;
-  --warning: #d97706;
-  --success: #059669;
-  
-  /* Text Colors - High Contrast */
-  --text: #0f172a;       /* Almost black for main text */
-  --text-secondary: #334155; /* Dark gray for secondary */
-  --text-muted: #475569;     /* Medium gray for meta info - darker than before */
+  /* ── 단 하나의 강조색 (링크·포커스·선택) ── */
+  --accent: #2563eb;
+  --accent-light: #e8effd;
   --text-faint: #94a3b8;     /* 가장 옅은 보조 텍스트 (캡션·순위·작은 라벨) */
-
-  /* Borders & Shadows */
-  --border: #cbd5e1;     /* Distinct border color */
-  --border-light: #e2e8f0;
   --chart-grid: #e2e8f0;     /* recharts CartesianGrid 라인 */
-  --shadow-sm: 0 1px 2px 0 rgb(0 0 0 / 0.05);
-  --shadow: 0 4px 6px -1px rgb(0 0 0 / 0.1), 0 2px 4px -2px rgb(0 0 0 / 0.1);
-  --shadow-lg: 0 10px 15px -3px rgb(0 0 0 / 0.1), 0 4px 6px -4px rgb(0 0 0 / 0.1);
 
-  /* Chart Colors - 테마 대응 (수입=빨강, 지출=파랑) */
+  /* ── 의미색: 채도를 낮춰 숫자를 방해하지 않게 ── */
+  --danger: #dc2626;
+  --danger-light: #fdeaea;
+  --warning: #b45309;
+  --warning-light: #fdf3e3;
+  --success: #047857;
+  --success-light: #e6f4ef;
+
+  /* ── 텍스트 위계: 3단계로 고정 ── */
+  --text: #18181b;
+  --text-secondary: #52525b;
+  --text-muted: #6b7280; /* 12px 라벨에도 AA 대비 확보 */
+
+  /* ── 경계선: 그림자 대신 선으로 구분 ── */
+  --border: #e4e4e7;
+  --border-strong: #d4d4d8;
+  --border-light: #efeff1;
+  --shadow-sm: 0 1px 2px 0 rgb(0 0 0 / 0.04);
+  --shadow: 0 1px 3px 0 rgb(0 0 0 / 0.06);
+  --shadow-lg: 0 8px 24px -6px rgb(0 0 0 / 0.14);
+
+  /* ── 차트: 한국 관행(수입=빨강, 지출=파랑) 유지, 톤만 정돈 ── */
   --chart-income: var(--danger);
   --chart-expense: var(--accent);
   --chart-positive: var(--success);
   --chart-negative: var(--danger);
   --chart-accent: var(--accent);
-  --chart-primary: var(--primary);
+  --chart-primary: #3f3f46;
   --chart-warning: var(--warning);
-  --chart-series-a: #0284c7;
-  --chart-series-b: #0c4a6e;
+  --chart-series-a: #2563eb;
+  --chart-series-b: #7c8598;
   --chart-series-c: #7c3aed;   /* 보라 — 3번째 범주 시리즈(구독·중분류 등) */
   --chart-series-d: #ea580c;   /* 주황 — 4번째 범주 시리즈 */
   --chart-series-e: #db2777;   /* 분홍 — 5번째 범주 시리즈 */
   --chart-series-f: #65a30d;   /* 연두 — 6번째 범주 시리즈 */
   --text-on-color: #ffffff;    /* 채색 배경(배지·진행바·배너) 위 텍스트 */
-  --font-kr: "Noto Sans KR", "Malgun Gothic", "Apple SD Gothic Neo", -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
 
-  /* Spacing scale — 인라인 스타일 매직넘버(8, 12, 14, 20) 대체 */
+  --font-kr: "Noto Sans KR", "Malgun Gothic", "Apple SD Gothic Neo", -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+  --font-num: "SF Mono", ui-monospace, "Cascadia Mono", "Segoe UI Mono", Menlo, Consolas, monospace;
+
+  /* Spacing scale */
   --space-1: 4px;
   --space-2: 8px;
   --space-3: 10px;
@@ -63,14 +77,21 @@
   --space-8: 20px;
   --space-10: 24px;
 
-  /* Border radius scale — 6/8/10/12 계열 인라인 매직넘버 대체 */
-  --radius-sm: 6px;
-  --radius-md: 8px;
-  --radius-lg: 10px;
-  --radius-xl: 12px;
+  /* Border radius — 미니멀: 각을 덜 굴린다 */
+  --radius-sm: 4px;
+  --radius-md: 6px;
+  --radius-lg: 8px;
+  --radius-xl: 10px;
 
-  /* Modal overlay 공용 */
-  --overlay-bg: rgba(0, 0, 0, 0.45);
+  /* ── 별칭: 코드 곳곳에서 쓰이지만 정의가 없던 변수들 (미정의 → 색 깨짐) ── */
+  --muted: var(--text-muted);
+  --surface-alt: var(--surface-sunken);
+  --primary-muted: var(--primary-light);
+  --chart-secondary: var(--chart-series-b);
+  --positive: var(--success);
+  --negative: var(--danger);
+
+  --overlay-bg: rgba(9, 9, 11, 0.45);
   --z-modal: 9998;
   --z-toast: 9999;
 
@@ -83,47 +104,50 @@
 }
 
 :root.dark {
-  /* Color Palette - Dark Mode */
-  --bg: #0f172a;
-  --surface: #1e293b;
-  --surface-hover: #334155;
-  
-  /* Primary Colors */
-  --primary: #2dd4bf;
-  --primary-hover: #14b8a6;
-  --primary-light: rgba(45, 212, 191, 0.15);
-  --primary-text: #0f172a;
+  color-scheme: dark;
 
-  /* Semantic Colors */
-  --accent: #38bdf8;
+  --bg: #0b0b0d;
+  --surface: #151518;
+  --surface-hover: #1f1f24;
+  --surface-sunken: #101013;
+
+  --primary: #fafafa;
+  --primary-hover: #ffffff;
+  --primary-light: #26262b;
+  --primary-text: #18181b;
+
+  --accent: #60a5fa;
+  --accent-light: #16233a;
+
   --danger: #f87171;
+  --danger-light: #331b1b;
   --warning: #fbbf24;
+  --warning-light: #33280f;
   --success: #34d399;
-  
-  /* Text Colors */
-  --text: #f1f5f9;
-  --text-secondary: #cbd5e1;
-  --text-muted: #94a3b8;
+  --success-light: #122a22;
+
+  --text: #f4f4f5;
+  --text-secondary: #b8b8c0;
+  --text-muted: #9a9aa6;
   --text-faint: #64748b;
 
-  /* Borders & Shadows */
-  --border: #334155;
-  --border-light: #1e293b;
+  --border: #2a2a30;
+  --border-strong: #3a3a42;
+  --border-light: #1e1e23;
   --chart-grid: #334155;
-  --shadow-sm: 0 1px 2px 0 rgb(0 0 0 / 0.3);
-  --shadow: 0 4px 6px -1px rgb(0 0 0 / 0.3);
-  --shadow-lg: 0 10px 15px -3px rgb(0 0 0 / 0.3);
+  --shadow-sm: 0 1px 2px 0 rgb(0 0 0 / 0.4);
+  --shadow: 0 1px 3px 0 rgb(0 0 0 / 0.5);
+  --shadow-lg: 0 8px 24px -6px rgb(0 0 0 / 0.6);
 
-  /* Chart Colors - 테마 대응 (수입=빨강, 지출=파랑) */
   --chart-income: var(--danger);
   --chart-expense: var(--accent);
   --chart-positive: var(--success);
   --chart-negative: var(--danger);
   --chart-accent: var(--accent);
-  --chart-primary: var(--primary);
+  --chart-primary: #a1a1aa;
   --chart-warning: var(--warning);
-  --chart-series-a: #38bdf8;
-  --chart-series-b: #7dd3fc;
+  --chart-series-a: #60a5fa;
+  --chart-series-b: #94a3b8;
   --chart-series-c: #a78bfa;
   --chart-series-d: #fb923c;
   --chart-series-e: #f472b6;
@@ -195,8 +219,11 @@ body {
   font-family: var(--font-kr);
   background-color: var(--bg);
   color: var(--text);
-  font-size: 16px;
-  line-height: 1.6;
+  font-size: 14px;
+  line-height: 1.5;
+  /* 금액이 세로로 정렬되도록 앱 전체에 고정폭 숫자 */
+  font-variant-numeric: tabular-nums;
+  font-feature-settings: "tnum";
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
 }
@@ -223,17 +250,17 @@ h1, h2, h3, h4, h5, h6 {
   line-height: 1.3;
 }
 
-h1 { font-size: 28px; }
-h2 { font-size: 24px; margin-bottom: 24px; }
-h3 { font-size: 20px; margin-bottom: 16px; }
-h4 { font-size: 18px; margin-bottom: 12px; }
+h1 { font-size: 18px; letter-spacing: -0.01em; }
+h2 { font-size: 17px; margin-bottom: 14px; letter-spacing: -0.01em; }
+h3 { font-size: 15px; margin-bottom: 10px; }
+h4 { font-size: 14px; margin-bottom: 8px; }
 
 p {
-  margin: 0 0 16px;
+  margin: 0 0 12px;
 }
 
 a {
-  color: var(--primary);
+  color: var(--accent);
   text-decoration: none;
 }
 
@@ -267,45 +294,173 @@ a:hover {
 .app-root {
   max-width: 1600px;
   margin: 0 auto;
-  padding: 24px;
+  padding: 0 20px 28px;
   min-height: 100vh;
 }
 
+/* 헤더: 한 줄 고정. 위치 표시 + 자주 쓰는 동작 3개 + 상태 점 */
 .app-header {
+  position: sticky;
+  top: 0;
+  z-index: 30;
   display: flex;
   justify-content: space-between;
   align-items: center;
-  margin-bottom: 32px;
-  padding-bottom: 24px;
+  gap: 16px;
+  height: 52px;
+  margin: 0 -20px 18px;
+  padding: 0 20px;
+  background: var(--bg);
   border-bottom: 1px solid var(--border);
 }
 
-/* FarmWallet 옆 로그 패널 - 휠로 전체 스크롤 */
-.app-log-panel {
-  flex: 0 1 320px;
-  max-width: 360px;
-  min-width: 200px;
-  margin-left: 16px;
-  padding: 8px 12px;
-  background: var(--surface);
-  border: 1px solid var(--border);
-  border-radius: 8px;
-  font-size: 12px;
-  max-height: 320px;
+.app-header-left {
   display: flex;
-  flex-direction: column;
-  overflow: hidden;
+  align-items: center;
+  gap: 10px;
+  min-width: 0;
 }
-.app-log-panel-title {
-  font-weight: 600;
+
+.app-brand {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  min-width: 0;
+}
+.app-brand-name {
+  font-size: 14px;
+  font-weight: 700;
+  letter-spacing: -0.01em;
+  color: var(--text);
+  white-space: nowrap;
+}
+.app-brand-sep {
+  color: var(--border-strong);
+}
+.app-brand-tab {
+  font-size: 14px;
+  font-weight: 500;
   color: var(--text-muted);
-  margin-bottom: 6px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.app-header-right {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+/* 헤더 액션: 작고 조용하게, 빠른 입력만 잉크로 강조 */
+.header-action {
+  padding: 5px 10px;
+  font-size: 12.5px;
+  font-weight: 500;
+  border-radius: var(--radius-md);
+  border: 1px solid var(--border);
+  background: var(--surface);
+  color: var(--text-secondary);
+  gap: 5px;
+}
+.header-action:hover:not(:disabled) {
+  border-color: var(--border-strong);
+  color: var(--text);
+}
+.header-action.strong {
+  background: var(--primary);
+  border-color: var(--primary);
+  color: var(--primary-text);
+}
+.header-action.strong:hover:not(:disabled) {
+  background: var(--primary-hover);
+  border-color: var(--primary-hover);
+  color: var(--primary-text);
+}
+
+/* 상태 점: 저장·백업·동기화·로그를 접어 둔 트리거 */
+.status-menu {
+  position: relative;
+}
+.status-trigger {
+  padding: 5px 10px;
+  font-size: 12.5px;
+  font-weight: 500;
+  gap: 6px;
+  border-radius: var(--radius-md);
+  border: 1px solid var(--border);
+  background: var(--surface);
+  color: var(--text-secondary);
+}
+.status-trigger:hover:not(:disabled),
+.status-trigger.open {
+  border-color: var(--border-strong);
+  color: var(--text);
+}
+.status-dot {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: var(--success);
   flex-shrink: 0;
 }
+.status-trigger.tone-warn .status-dot { background: var(--warning); }
+.status-trigger.tone-danger .status-dot { background: var(--danger); }
+.status-trigger.tone-danger { color: var(--danger); border-color: var(--danger); }
+
+.status-popover {
+  position: absolute;
+  top: calc(100% + 8px);
+  right: 0;
+  width: min(460px, calc(100vw - 32px));
+  max-height: min(70vh, 560px);
+  overflow-y: auto;
+  padding: 14px;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  box-shadow: var(--shadow-lg);
+  z-index: 40;
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+.status-block {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 8px;
+}
+.status-block + .status-block {
+  border-top: 1px solid var(--border-light);
+  padding-top: 14px;
+}
+.status-block-title {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--text-muted);
+}
+.status-version {
+  font-family: var(--font-num);
+  font-size: 11px;
+  font-weight: 500;
+  letter-spacing: 0;
+  text-transform: none;
+  color: var(--text-muted);
+}
+
+/* 로그: 상태 팝오버 안에서만 표시 */
 .app-log-panel-list {
+  width: 100%;
+  max-height: 200px;
+  font-size: 12px;
   overflow-y: auto;
   overflow-x: hidden;
-  flex: 1;
   min-height: 0;
   overscroll-behavior: contain;
 }
@@ -332,30 +487,46 @@ a:hover {
   flex-shrink: 0;
 }
 
-@media (max-width: 900px) {
-  .app-log-panel {
-    display: none;
-  }
-}
+
 
 .layout {
   display: grid;
-  grid-template-columns: 220px 1fr;
-  gap: 32px;
+  grid-template-columns: 188px 1fr;
+  gap: 28px;
   align-items: flex-start;
 }
 
 .sidebar {
   position: sticky;
-  top: 24px;
-  background: var(--surface);
-  border-radius: 12px;
-  border: 1px solid var(--border);
-  box-shadow: var(--shadow-sm);
-  padding: 12px;
+  top: 68px;
+  padding: 0 8px 0 0;
+  border-right: 1px solid var(--border);
+  min-height: calc(100vh - 100px);
   display: flex;
   flex-direction: column;
   gap: 6px;
+}
+
+.tabs {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  width: 100%;
+}
+
+.nav-group {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+}
+
+.nav-group-title {
+  padding: 0 8px 4px;
+  font-size: 10.5px;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--text-muted);
 }
 
 .app-main {
@@ -368,53 +539,50 @@ a:hover {
 
 .card {
   background: var(--surface);
-  border-radius: 12px;
+  border-radius: var(--radius-lg);
   border: 1px solid var(--border);
-  box-shadow: var(--shadow);
-  padding: 24px;
-  margin-bottom: 24px;
-  transition: transform 0.2s, box-shadow 0.2s;
-}
-
-.card:hover {
-  box-shadow: var(--shadow-lg);
+  padding: 16px;
+  margin-bottom: 16px;
 }
 
 .card.highlight {
-  background: linear-gradient(135deg, var(--primary), var(--primary-hover));
+  background: var(--primary);
   color: var(--primary-text);
-  border: none;
+  border: 1px solid var(--primary);
 }
 
 .card.highlight .card-title {
-  color: rgba(255, 255, 255, 0.9);
+  color: var(--primary-text);
+  opacity: 0.7;
 }
 
 .card.highlight .card-value {
-  color: #ffffff;
+  color: var(--primary-text);
 }
 
 .cards-row {
   display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
-  gap: 24px;
-  margin-bottom: 24px;
+  grid-template-columns: repeat(auto-fit, minmax(210px, 1fr));
+  gap: 12px;
+  margin-bottom: 16px;
 }
 
+/* 지표 카드: 라벨은 작고 조용하게, 숫자가 주인공 */
 .card-title {
-  font-size: 15px;
+  font-size: 11.5px;
   font-weight: 600;
-  color: var(--text-secondary);
-  text-transform: uppercase;
-  letter-spacing: 0.5px;
-  margin-bottom: 10px;
+  color: var(--text-muted);
+  text-transform: none;
+  letter-spacing: 0;
+  margin-bottom: 6px;
 }
 
 .card-value {
-  font-size: 26px;
-  font-weight: 700;
+  font-size: 24px;
+  font-weight: 650;
   color: var(--text);
-  letter-spacing: -0.5px;
+  letter-spacing: -0.02em;
+  line-height: 1.15;
 }
 
 /* =========================================
@@ -424,12 +592,16 @@ a:hover {
 .data-table {
   width: 100%;
   border-collapse: collapse;
-  font-size: 14px;
+  font-size: 13px;
   border: 1px solid var(--border);
-  border-radius: 8px;
+  border-radius: var(--radius-md);
   overflow: hidden;
-  margin-bottom: 24px;
+  margin-bottom: 16px;
   table-layout: fixed;
+}
+
+.data-table tbody tr:hover td {
+  background: var(--surface-hover);
 }
 
 .data-table.compact,
@@ -439,7 +611,7 @@ a:hover {
 }
 
 .data-table thead {
-  background-color: var(--surface-hover);
+  background-color: var(--surface-sunken);
   position: sticky;
   top: 0;
   z-index: 5;
@@ -447,16 +619,16 @@ a:hover {
 }
 
 .data-table th {
-  padding: 10px 8px; /* 좌우 패딩을 줄여서 공간 확보 */
+  padding: 7px 8px;
   text-align: left;
   font-weight: 600;
-  color: var(--text-secondary);
+  color: var(--text-muted);
   border-bottom: 1px solid var(--border);
-  border-right: 1px solid var(--border); /* 컬럼 구분선 추가 */
+  border-right: 1px solid var(--border-light);
   white-space: nowrap;
   position: relative;
   line-height: 1.4;
-  font-size: 12px; /* 헤더 폰트 크기 약간 축소 */
+  font-size: 11.5px;
 }
 
 .data-table th:last-child {
@@ -548,7 +720,7 @@ td.cell-editable:hover {
 /* 리사이즈 중인 컬럼 강조는 JavaScript로 처리 (브라우저 호환성을 위해 :has() 제거) */
 
 .data-table td {
-  padding: 10px 8px;
+  padding: 6px 8px;
   border-bottom: 1px solid var(--border-light);
   border-right: 1px solid var(--border-light);
   color: var(--text);
@@ -879,7 +1051,7 @@ td.cell-editable:hover {
   text-align: right;
   font-feature-settings: "tnum";
   font-variant-numeric: tabular-nums;
-  font-weight: 600;
+  font-weight: 550;
 }
 
 .positive { color: var(--danger); font-weight: 600; } /* Red for up in Korea */
@@ -891,45 +1063,56 @@ td.cell-editable:hover {
 
 button {
   font-family: inherit;
-  font-size: 14px;
-  font-weight: 600;
-  padding: 10px 18px;
-  border-radius: 8px;
+  font-size: 13px;
+  font-weight: 500;
+  padding: 7px 12px;
+  border-radius: var(--radius-md);
   border: 1px solid var(--border);
   background: var(--surface);
   color: var(--text-secondary);
   cursor: pointer;
-  transition: all 0.2s;
+  transition: background-color 0.12s, border-color 0.12s, color 0.12s;
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  gap: 8px;
+  gap: 6px;
   line-height: 1.2;
 }
 
 button:hover:not(:disabled) {
   background: var(--surface-hover);
-  border-color: var(--text-muted);
+  border-color: var(--border-strong);
+  color: var(--text);
 }
 
 button.primary {
   background: var(--primary);
   color: var(--primary-text);
-  border: 1px solid var(--primary-hover);
+  border: 1px solid var(--primary);
+  font-weight: 600;
 }
 
 button.primary:hover:not(:disabled) {
   background: var(--primary-hover);
+  border-color: var(--primary-hover);
+  color: var(--primary-text);
+}
+
+button.secondary {
+  background: var(--surface);
+  color: var(--text-secondary);
 }
 
 button.danger {
-  background: #fff;
+  background: var(--surface);
   color: var(--danger);
-  border-color: var(--danger);
+  border-color: var(--border);
 }
 
 button.danger:hover:not(:disabled) {
-  background: #fef2f2;
+  background: var(--danger-light);
+  border-color: var(--danger);
+  color: var(--danger);
 }
 
 button:disabled {
@@ -938,27 +1121,38 @@ button:disabled {
 }
 
 button:focus-visible {
-  outline: 2px solid var(--primary);
+  outline: 2px solid var(--accent);
   outline-offset: 2px;
 }
 
 input:not([type="checkbox"]):not([type="radio"]), select, textarea {
   font-family: inherit;
-  font-size: 15px;
-  padding: 10px 12px;
-  border-radius: 8px;
-  border: 1px solid var(--border);
+  font-size: 13.5px;
+  padding: 7px 10px;
+  border-radius: var(--radius-md);
+  border: 1px solid var(--border-strong);
   background: var(--surface);
   color: var(--text);
   width: 100%;
-  transition: border-color 0.2s, box-shadow 0.2s;
+  transition: border-color 0.12s, box-shadow 0.12s;
+}
+
+/* 금액·수량 입력은 숫자가 세로로 맞게 */
+input[type="number"],
+input[inputmode="numeric"],
+input[inputmode="decimal"] {
+  font-variant-numeric: tabular-nums;
 }
 
 input:not([type="checkbox"]):not([type="radio"]):focus, select:focus, textarea:focus {
-  outline: 2px solid var(--primary);
-  outline-offset: 2px;
-  border-color: var(--primary);
-  box-shadow: 0 0 0 3px var(--primary-light);
+  outline: none;
+  border-color: var(--accent);
+  box-shadow: 0 0 0 3px var(--accent-light);
+}
+
+input:not([type="checkbox"]):not([type="radio"])::placeholder,
+textarea::placeholder {
+  color: var(--text-muted);
 }
 
 /* Checkbox: 앱 테마 통일 */
@@ -980,11 +1174,11 @@ input[type="checkbox"] {
   transition: border-color 0.2s, background-color 0.2s, box-shadow 0.2s;
 }
 input[type="checkbox"]:hover {
-  border-color: var(--primary);
+  border-color: var(--accent);
 }
 input[type="checkbox"]:focus {
   outline: none;
-  box-shadow: 0 0 0 3px var(--primary-light);
+  box-shadow: 0 0 0 3px var(--accent-light);
 }
 input[type="checkbox"]:checked {
   background: var(--primary);
@@ -1005,17 +1199,153 @@ input[type="checkbox"]:disabled {
 
 label {
   display: block;
-  font-size: 14px;
-  font-weight: 600;
-  color: var(--text-secondary);
-  margin-bottom: 6px;
+  font-size: 12.5px;
+  font-weight: 500;
+  color: var(--text-muted);
+  margin-bottom: 4px;
 }
 
 .form-grid {
   display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(250px, 1fr));
-  gap: 20px;
-  margin-bottom: 24px;
+  grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
+  gap: 12px;
+  margin-bottom: 16px;
+}
+
+/* =========================================
+   입력 킷 (src/components/ui/fields)
+   라벨·에러·숫자 입력 규칙을 여기서만 정의한다.
+   ========================================= */
+
+.field {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  margin-bottom: 0;
+  min-width: 0;
+}
+
+.field-label {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  font-size: 12px;
+  font-weight: 500;
+  color: var(--text-muted);
+  line-height: 1.4;
+}
+
+/* .field-label 안의 <label> — 전역 label 스타일(블록·아래여백)을 상쇄 */
+.field-label-text {
+  display: inline;
+  margin: 0;
+  font-size: inherit;
+  font-weight: inherit;
+  color: inherit;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.field-required {
+  color: var(--danger);
+}
+
+.field-action {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  flex-shrink: 0;
+}
+
+/* 라벨 옆 보조 버튼(오늘·KRW/USD 전환 등) */
+.field-action-btn {
+  padding: 1px 7px;
+  font-size: 11px;
+  font-weight: 500;
+  border-radius: var(--radius-sm);
+  border: 1px solid var(--border);
+  background: var(--surface);
+  color: var(--text-muted);
+}
+.field-action-btn:hover:not(:disabled) {
+  color: var(--text);
+  border-color: var(--border-strong);
+}
+.field-action-btn.active {
+  background: var(--primary);
+  border-color: var(--primary);
+  color: var(--primary-text);
+}
+
+.field-error {
+  font-size: 11px;
+  line-height: 1.4;
+  color: var(--danger);
+  min-height: 15px;
+}
+
+.field-hint {
+  font-size: 11px;
+  line-height: 1.4;
+  color: var(--text-muted);
+}
+
+/* 에러 상태: 테두리로 즉시 알린다 */
+.field.has-error input,
+.field.has-error select,
+.field.has-error textarea {
+  border-color: var(--danger);
+}
+.field.has-error input:focus,
+.field.has-error select:focus,
+.field.has-error textarea:focus {
+  box-shadow: 0 0 0 3px var(--danger-light);
+}
+
+/* 단위(원/$)를 입력 안쪽 오른쪽에 붙인다 */
+.input-affix {
+  position: relative;
+  display: block;
+  width: 100%;
+}
+
+.input-suffix {
+  position: absolute;
+  right: 10px;
+  top: 50%;
+  transform: translateY(-50%);
+  font-size: 12px;
+  color: var(--text-muted);
+  pointer-events: none;
+}
+
+/* 금액·수량: 오른쪽 정렬 + 고정폭 숫자 */
+.money-input {
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+  font-feature-settings: "tnum";
+}
+
+/* 단위(원/$)가 붙는 경우에만 그만큼 오른쪽 여백 확보 */
+.input-affix .money-input {
+  padding-right: 26px;
+}
+
+.money-input.lg {
+  font-size: 17px;
+  font-weight: 600;
+  padding-top: 9px;
+  padding-bottom: 9px;
+}
+
+/* 폼 그리드: 라벨 폭이 아니라 내용 폭으로 나눈다 */
+.field-row {
+  display: grid;
+  gap: 10px;
+  align-items: start;
+  margin-bottom: 10px;
 }
 
 /* =========================================
@@ -1024,27 +1354,41 @@ label {
 
 .tab-button {
   width: 100%;
-  padding: 10px 12px;
+  padding: 6px 8px;
   text-align: left;
-  border: none;
+  border: 1px solid transparent;
   background: transparent;
-  border-radius: 8px;
-  color: var(--text-muted);
+  border-radius: var(--radius-md);
+  color: var(--text-secondary);
   font-weight: 500;
-  font-size: 14px;
+  font-size: 13px;
   justify-content: flex-start;
-  margin-bottom: 2px;
+  gap: 8px;
 }
 
-.tab-button:hover {
+.tab-button:hover:not(:disabled) {
   background: var(--surface-hover);
+  border-color: transparent;
   color: var(--text);
 }
 
+/* 활성 탭: 색이 아니라 대비로 표시 */
 .tab-button.active {
   background: var(--primary-light);
-  color: var(--primary-hover);
-  font-weight: 700;
+  color: var(--text);
+  font-weight: 600;
+}
+
+.tab-button svg {
+  color: var(--text-muted);
+  flex-shrink: 0;
+}
+.tab-button.active svg {
+  color: var(--text);
+}
+
+.tab-label {
+  margin-left: 0;
 }
 
 /* 월별 보기 - 월 탭 (다중 선택) */
@@ -1055,10 +1399,10 @@ label {
 }
 
 .month-tab {
-  padding: 6px 12px;
-  font-size: 13px;
+  padding: 4px 10px;
+  font-size: 12.5px;
   font-weight: 500;
-  border-radius: 8px;
+  border-radius: var(--radius-md);
   border: 1px solid var(--border);
   background: var(--surface);
   color: var(--text-secondary);
@@ -1080,10 +1424,6 @@ label {
   opacity: 0.5;
 }
 
-.tab-label {
-  margin-left: 8px;
-}
-
 /* =========================================
    Components: Badges & Chips
    ========================================= */
@@ -1091,17 +1431,21 @@ label {
 .pill {
   display: inline-flex;
   align-items: center;
-  padding: 4px 10px;
+  gap: 6px;
+  padding: 3px 9px;
   border-radius: 9999px;
-  font-size: 13px;
-  font-weight: 600;
-  line-height: 1;
+  font-size: 12px;
+  font-weight: 500;
+  line-height: 1.4;
+  border: 1px solid var(--border);
+  background: var(--surface);
+  color: var(--text-secondary);
 }
 
 .pill.muted { background: var(--surface-hover); color: var(--text-muted); }
-.pill.success { background: #dcfce7; color: #166534; }
-.pill.warning { background: #fef3c7; color: #92400e; }
-.pill.danger { background: #fee2e2; color: #b91c1c; }
+.pill.success { background: var(--success-light); color: var(--success); border-color: transparent; }
+.pill.warning { background: var(--warning-light); color: var(--warning); border-color: transparent; }
+.pill.danger { background: var(--danger-light); color: var(--danger); border-color: transparent; }
 
 /* 다크모드 pill — 라이트 전용 파스텔 배경 교체 */
 :root.dark .pill.success { background: rgba(52, 211, 153, 0.18); color: #6ee7b7; }
@@ -1174,15 +1518,17 @@ label {
   display: flex;
   justify-content: space-between;
   align-items: center;
-  margin-bottom: 24px;
-  padding-bottom: 16px;
-  border-bottom: 1px solid var(--border-light);
+  gap: 12px;
+  flex-wrap: wrap;
+  margin-bottom: 14px;
+  padding-bottom: 10px;
+  border-bottom: 1px solid var(--border);
 }
 
 .section-header h2 {
   margin: 0;
-  font-size: 24px;
-  font-weight: 700;
+  font-size: 16px;
+  font-weight: 650;
   color: var(--text);
 }
 
@@ -1202,7 +1548,7 @@ label {
 .modal-backdrop {
   position: fixed;
   inset: 0;
-  background: rgba(0, 0, 0, 0.5);
+  background: var(--overlay-bg);
   display: flex;
   align-items: center;
   justify-content: center;
@@ -1212,9 +1558,10 @@ label {
 
 .modal {
   background: var(--surface);
-  border-radius: 16px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-xl);
   box-shadow: var(--shadow-lg);
-  padding: 32px;
+  padding: 20px;
   width: 100%;
   max-width: 600px;
   max-height: 90vh;
@@ -1225,7 +1572,7 @@ label {
   display: flex;
   justify-content: space-between;
   align-items: center;
-  margin-bottom: 24px;
+  margin-bottom: 16px;
 }
 
 /* 셀 슬라이더 애니메이션 */
@@ -1434,7 +1781,17 @@ label {
 
 .drawer-panel .tabs {
   flex-direction: column;
-  gap: 4px;
+  gap: 14px;
+}
+
+.drawer-panel .nav-group {
+  flex-direction: column;
+  align-items: stretch;
+  gap: 1px;
+}
+
+.drawer-panel .nav-group-title {
+  padding: 0 8px 4px;
 }
 
 .drawer-panel .tab-separator {
@@ -1459,7 +1816,26 @@ label {
     position: static;
     flex-direction: row;
     overflow-x: auto;
-    padding: 12px;
+    padding: 8px 0;
+    min-height: 0;
+    border-right: none;
+    border-bottom: 1px solid var(--border);
+  }
+
+  .tabs {
+    flex-direction: row;
+    gap: 16px;
+  }
+
+  .nav-group {
+    flex-direction: row;
+    align-items: center;
+    gap: 2px;
+  }
+
+  .nav-group-title {
+    padding: 0 6px 0 0;
+    white-space: nowrap;
   }
   
   .tab-button {

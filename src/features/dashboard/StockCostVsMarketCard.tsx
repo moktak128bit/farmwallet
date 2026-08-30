@@ -2,7 +2,7 @@ import React, { Suspense, lazy, useMemo, useState } from "react";
 import type { Account, StockPrice, StockTrade } from "../../types";
 import { buildHalfMonthSnapshotDates } from "../../utils/date";
 import { canonicalTickerForMatch, isUSDStock } from "../../utils/finance";
-import { formatKRW } from "../../utils/formatter";
+import { formatKRW, formatQuantity } from "../../utils/formatter";
 import type { CostVsMarketRow } from "./DashboardInlineCharts";
 
 const LazyCostVsMarketValueChart = lazy(() =>
@@ -361,7 +361,7 @@ const SnapshotDetail: React.FC<SnapshotDetailProps> = ({ row, holdings, isLatest
                     <span className="hint" style={{ marginLeft: 6, fontWeight: 400 }}>{h.name}</span>
                   </td>
                   <td style={{ textAlign: "left", padding: "6px 8px", color: "var(--text-muted)" }}>{h.accountName}</td>
-                  <td style={{ padding: "6px 8px" }}>{h.quantity.toLocaleString(undefined, { maximumFractionDigits: 4 })}</td>
+                  <td style={{ padding: "6px 8px" }}>{formatQuantity(h.quantity)}</td>
                   <td style={{ padding: "6px 8px" }}>{formatNativePrice(h.avgPriceNative, h.isUsd)}</td>
                   <td style={{ padding: "6px 8px" }}>
                     {h.currentPriceNative == null ? (

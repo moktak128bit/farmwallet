@@ -3,7 +3,7 @@ import type { Account, AccountType, LedgerEntry, MarketEnvSnapshot, StockPrice, 
 import { computeAccountBalances } from "../../calculations";
 import { buildHalfMonthSnapshotDates } from "../../utils/date";
 import { canonicalTickerForMatch, isUSDStock } from "../../utils/finance";
-import { formatKRW } from "../../utils/formatter";
+import { formatKRW, formatQuantity } from "../../utils/formatter";
 import type { TotalAssetRow } from "./DashboardInlineCharts";
 
 const LazyTotalAssetValueChart = lazy(() =>
@@ -571,7 +571,7 @@ const SnapshotDetail: React.FC<SnapshotDetailProps> = ({ row, detail, isLatest, 
                       <span className="hint" style={{ marginLeft: 6, fontWeight: 400 }}>{h.name}</span>
                     </td>
                     <td style={{ textAlign: "left", padding: "6px 8px", color: "var(--text-muted)" }}>{h.accountName}</td>
-                    <td style={{ padding: "6px 8px" }}>{h.quantity.toLocaleString(undefined, { maximumFractionDigits: 4 })}</td>
+                    <td style={{ padding: "6px 8px" }}>{formatQuantity(h.quantity)}</td>
                     <td style={{ padding: "6px 8px" }}>{formatNativePrice(h.avgPriceNative, h.isUsd)}</td>
                     <td style={{ padding: "6px 8px" }}>
                       {h.priceNative == null ? (

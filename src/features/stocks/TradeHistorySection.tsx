@@ -872,7 +872,8 @@ export const TradeHistorySection: React.FC<TradeHistorySectionProps> = ({
                             const newQuantity = (newTotal - fee) / price;
                             setInlineEdit({
                               ...inlineEdit,
-                              quantity: formatAmount(String(Math.max(0, Math.round(newQuantity * 100) / 100)), {
+                              // 8자리까지 살린다 — 2자리로 반올림하면 BTC 0.0038이 0이 된다
+                              quantity: formatAmount(String(Math.max(0, Number(newQuantity.toFixed(8)))), {
                                 allowDecimal: true,
                                 maxDecimals: 8
                               })

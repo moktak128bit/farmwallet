@@ -2,7 +2,7 @@ import React, { useMemo, useState, useEffect, useDeferredValue } from "react";
 import { Autocomplete } from "../components/ui/Autocomplete";
 import type { Account, HistoricalDailyClose, LedgerEntry, StockPrice, StockTrade, TickerInfo } from "../types";
 import { computePositions } from "../calculations";
-import { formatKRW, formatShortDate } from "../utils/formatter";
+import { formatKRW, formatQuantity, formatShortDate } from "../utils/formatter";
 import { MoneyField, QuantityField, NumericInput } from "../components/ui/fields";
 import { parseAmount, formatAmount } from "../utils/parseAmount";
 import { isKRWStock, isUSDStock, canonicalTickerForMatch, extractTickerFromText } from "../utils/finance";
@@ -1479,7 +1479,7 @@ export const DividendsView: React.FC<Props> = ({ accounts, ledger, trades, price
                                 placeholder="보유주수"
                               />
                             ) : (
-                              <span>{r.quantity != null ? `${Math.round(r.quantity).toLocaleString()}주` : "-"}</span>
+                              <span>{r.quantity != null ? `${formatQuantity(r.quantity, 6)}주` : "-"}</span>
                             )}
                           </td>
                           <td 

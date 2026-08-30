@@ -1,4 +1,6 @@
 import React, { useEffect, useState } from "react";
+import { NumericInput } from "./ui/fields";
+import { parseAmount, formatAmount } from "../utils/parseAmount";
 import type { SearchQuery, SavedFilter } from "../hooks/useSearch";
 import { useFocusTrap } from "../hooks/useFocusTrap";
 
@@ -89,13 +91,12 @@ export const SearchModal: React.FC<SearchModalProps> = ({
             </label>
             <label>
               <span>최소 금액</span>
-              <input
-                type="number"
-                value={searchQuery.minAmount ?? ""}
-                onChange={(e) =>
+              <NumericInput
+                value={searchQuery.minAmount != null ? formatAmount(String(searchQuery.minAmount)) : ""}
+                onChange={(raw) =>
                   setSearchQuery((prev) => ({
                     ...prev,
-                    minAmount: e.target.value ? Number(e.target.value) : undefined
+                    minAmount: raw ? parseAmount(raw) : undefined
                   }))
                 }
                 placeholder="0"
@@ -103,13 +104,12 @@ export const SearchModal: React.FC<SearchModalProps> = ({
             </label>
             <label>
               <span>최대 금액</span>
-              <input
-                type="number"
-                value={searchQuery.maxAmount ?? ""}
-                onChange={(e) =>
+              <NumericInput
+                value={searchQuery.maxAmount != null ? formatAmount(String(searchQuery.maxAmount)) : ""}
+                onChange={(raw) =>
                   setSearchQuery((prev) => ({
                     ...prev,
-                    maxAmount: e.target.value ? Number(e.target.value) : undefined
+                    maxAmount: raw ? parseAmount(raw) : undefined
                   }))
                 }
                 placeholder="무제한"

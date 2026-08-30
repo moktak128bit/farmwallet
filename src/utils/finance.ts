@@ -167,3 +167,37 @@ export function extractTickerFromText(text: string): string | null {
   return m ? m[1] : null;
 }
 
+
+/** short 심볼("BTC") → CoinGecko ID("bitcoin") 역매핑 */
+const CRYPTO_ID_BY_SYMBOL: Record<string, string> = Object.fromEntries(
+  Object.entries(CRYPTO_DISPLAY_SYMBOL).map(([id, symbol]) => [symbol.toLowerCase(), id])
+);
+
+/**
+ * 사용자가 거래소 표기(BTC, SOL…)로 입력해도 내부 canonical인 CoinGecko ID로 되돌린다.
+ * 알려진 코인이 아니면 null — 호출부에서 "그냥 소문자" 같은 fallback을 정한다.
+ */
+export function cryptoIdFromSymbol(raw?: string): string | null {
+  if (!raw) return null;
+  const key = raw.trim().toLowerCase();
+  if (!key) return null;
+  if (KNOWN_CRYPTO_IDS.has(key)) return key;
+  return CRYPTO_ID_BY_SYMBOL[key] ?? null;
+}
+
+/**
+ * 거래 입력용 canonical 티커. 시장 선택이 "CRYPTO"면 티커 문자열 휴리스틱(BTC=3자 영문 → 미국주식)
+ * 대신 사용자의 명시적 선택을 따라 CoinGecko ID로 정규화한다.
+ */
+export function canonicalTickerForInput(raw: string, market?: "KR" | "US" | "CRYPTO"): string {
+  if (market === "CRYPTO") {
+    return cryptoIdFromSymbol(raw) ?? (raw || "").trim().toLowerCase();
+  }
+  if (market === "KR") {
+    // "5930" 같은 4~5자리 숫자는 휴리스틱상 코인으로 잡히므로, 국내 선택 시엔 0 패딩만 적용
+    const c = cleanTicker((raw || "").trim());
+    if (c.length >= 4 && c.length <= 5 && /^\d+$/.test(c)) return c.padStart(6, "0");
+    return c;
+  }
+  return canonicalTickerForMatch(raw);
+}

@@ -3,6 +3,8 @@ import { Autocomplete } from "../components/ui/Autocomplete";
 import type { Account, HistoricalDailyClose, LedgerEntry, StockPrice, StockTrade, TickerInfo } from "../types";
 import { computePositions } from "../calculations";
 import { formatKRW, formatShortDate } from "../utils/formatter";
+import { MoneyField, QuantityField, NumericInput } from "../components/ui/fields";
+import { parseAmount, formatAmount } from "../utils/parseAmount";
 import { isKRWStock, isUSDStock, canonicalTickerForMatch, extractTickerFromText } from "../utils/finance";
 import { parseExDateFromNote, parseQuantityFromNote, buildDividendNote } from "../utils/dividend";
 import { getKrNames } from "../storage";
@@ -200,11 +202,11 @@ export const DividendsView: React.FC<Props> = ({ accounts, ledger, trades, price
   // 배당율 계산 (주식 탭과 동일: 항상 원화 기준, 순 배당금 기준. 수량은 폼 값 우선)
   const dividendYield = useMemo(() => {
     if (!selectedPosition) return null;
-    const quantity = dividendForm.quantity !== "" ? Number(dividendForm.quantity) || 0 : selectedPosition.quantity;
-    const dividendPerShare = dividendForm.dividendPerShare ? Number(dividendForm.dividendPerShare) : 0;
+    const quantity = dividendForm.quantity !== "" ? parseAmount(dividendForm.quantity, { allowDecimal: true, maxDecimals: 6 }) : selectedPosition.quantity;
+    const dividendPerShare = parseAmount(dividendForm.dividendPerShare, { allowDecimal: true, maxDecimals: 6 });
     let amount = dividendPerShare > 0 && quantity > 0 ? dividendPerShare * quantity : 0;
-    const tax = dividendForm.tax ? Number(dividendForm.tax) : 0;
-    const fee = dividendForm.fee ? Number(dividendForm.fee) : 0;
+    const tax = parseAmount(dividendForm.tax, { allowDecimal: true, maxDecimals: 6 });
+    const fee = parseAmount(dividendForm.fee, { allowDecimal: true, maxDecimals: 6 });
 
     if (amount <= 0 || selectedPosition.avgPrice <= 0 || quantity <= 0) return null;
 
@@ -294,9 +296,9 @@ export const DividendsView: React.FC<Props> = ({ accounts, ledger, trades, price
 
   const handleDividendSubmit = (e: React.FormEvent) => {
     e.preventDefault();
-    let amount = Number(dividendForm.amount);
-    const tax = dividendForm.tax ? Number(dividendForm.tax) : 0;
-    const fee = dividendForm.fee ? Number(dividendForm.fee) : 0;
+    let amount = parseAmount(dividendForm.amount, { allowDecimal: true, maxDecimals: 6 });
+    const tax = parseAmount(dividendForm.tax, { allowDecimal: true, maxDecimals: 6 });
+    const fee = parseAmount(dividendForm.fee, { allowDecimal: true, maxDecimals: 6 });
     
     if (!dividendForm.date || !dividendForm.accountId) {
       return;
@@ -333,8 +335,8 @@ export const DividendsView: React.FC<Props> = ({ accounts, ledger, trades, price
       });
       return;
     }
-    const quantityForCalc = dividendForm.quantity !== "" ? Number(dividendForm.quantity) || 0 : selectedPosition?.quantity ?? 0;
-    const dividendPerShare = dividendForm.dividendPerShare ? Number(dividendForm.dividendPerShare) : 0;
+    const quantityForCalc = dividendForm.quantity !== "" ? parseAmount(dividendForm.quantity, { allowDecimal: true, maxDecimals: 6 }) : selectedPosition?.quantity ?? 0;
+    const dividendPerShare = parseAmount(dividendForm.dividendPerShare, { allowDecimal: true, maxDecimals: 6 });
     if (quantityForCalc <= 0 || dividendPerShare <= 0) {
       return;
     }
@@ -396,9 +398,9 @@ export const DividendsView: React.FC<Props> = ({ accounts, ledger, trades, price
 
   const handleInterestSubmit = (e: React.FormEvent) => {
     e.preventDefault();
-    const amount = Number(interestForm.amount);
-    const rate = interestForm.rate ? Number(interestForm.rate) : null;
-    const tax = interestForm.tax ? Number(interestForm.tax) : 0;
+    const amount = parseAmount(interestForm.amount, { allowDecimal: true, maxDecimals: 6 });
+    const rate = interestForm.rate ? parseAmount(interestForm.rate, { allowDecimal: true, maxDecimals: 6 }) : null;
+    const tax = parseAmount(interestForm.tax, { allowDecimal: true, maxDecimals: 6 });
     
     if (!interestForm.date || !interestForm.accountId || !amount || amount <= 0) {
       return;
@@ -876,18 +878,14 @@ export const DividendsView: React.FC<Props> = ({ accounts, ledger, trades, price
                       style={{ padding: "6px 8px", fontSize: 14, backgroundColor: "#f5f5f5" }}
                     />
                   </label>
-                  <label style={{ display: "flex", flexDirection: "column", gap: 4 }}>
-                    <span style={{ fontSize: 13, fontWeight: 500 }}>보유 수량 <span style={{ fontWeight: 400, color: "var(--text-muted)" }}>(기본: 해당 종목 보유, 수정 가능)</span></span>
-                    <input
-                      type="number"
-                      min={0}
-                      step={1}
-                      value={dividendForm.quantity}
-                      onChange={(e) => setDividendForm({ ...dividendForm, quantity: e.target.value })}
-                      placeholder={String(selectedPosition.quantity)}
-                      style={{ padding: "6px 8px", fontSize: 14 }}
-                    />
-                  </label>
+                  <QuantityField
+                    label="보유 수량"
+                    hint="기본: 해당 종목 보유 수량 (수정 가능)"
+                    maxDecimals={6}
+                    value={dividendForm.quantity}
+                    onChange={(quantity) => setDividendForm({ ...dividendForm, quantity })}
+                    placeholder={String(selectedPosition.quantity)}
+                  />
                   <label style={{ display: "flex", flexDirection: "column", gap: 4 }}>
                     <span style={{ fontSize: 13, fontWeight: 500 }}>총 매입 금액</span>
                     <input
@@ -901,30 +899,23 @@ export const DividendsView: React.FC<Props> = ({ accounts, ledger, trades, price
               )}
               {dividendForm.ticker && dividendForm.ticker !== "이자" ? (
                 <>
-                  <label style={{ display: "flex", flexDirection: "column", gap: 4 }}>
-                    <span style={{ fontSize: 13, fontWeight: 500 }}>
-                      주당 배당금
-                      {selectedTickerCurrency === "USD" && showUSD && " (USD)"}
-                      {selectedTickerCurrency === "USD" && !showUSD && " (원화)"}
-                    </span>
-                    <input
-                      type="number"
-                      min={0}
-                      step={0.0001}
-                      value={dividendForm.dividendPerShare}
-                      onChange={(e) => setDividendForm({ ...dividendForm, dividendPerShare: e.target.value })}
-                      placeholder={selectedTickerCurrency === "USD" && showUSD ? "USD로 입력" : "원화로 입력"}
-                      style={{ padding: "6px 8px", fontSize: 14 }}
-                      required
-                    />
-                  </label>
+                  <MoneyField
+                    label="주당 배당금"
+                    currency={selectedTickerCurrency === "USD" && showUSD ? "USD" : "KRW"}
+                    allowDecimal
+                    maxDecimals={4}
+                    required
+                    value={dividendForm.dividendPerShare}
+                    onChange={(dividendPerShare) => setDividendForm({ ...dividendForm, dividendPerShare })}
+                    placeholder={selectedTickerCurrency === "USD" && showUSD ? "USD로 입력" : "원화로 입력"}
+                  />
                   <label style={{ display: "flex", flexDirection: "column", gap: 4 }}>
                     <span style={{ fontSize: 13, fontWeight: 500 }}>총 배당금 (자동 계산)</span>
                     <input
                       type="text"
                       value={(() => {
-                        const q = dividendForm.quantity !== "" ? Number(dividendForm.quantity) || 0 : selectedPosition?.quantity ?? 0;
-                        const dps = dividendForm.dividendPerShare ? Number(dividendForm.dividendPerShare) : 0;
+                        const q = dividendForm.quantity !== "" ? parseAmount(dividendForm.quantity, { allowDecimal: true, maxDecimals: 6 }) : selectedPosition?.quantity ?? 0;
+                        const dps = parseAmount(dividendForm.dividendPerShare, { allowDecimal: true, maxDecimals: 6 });
                         const total = q > 0 && dps > 0 ? q * dps : 0;
                         if (total <= 0) return "-";
                         if (selectedTickerCurrency === "USD" && showUSD) {
@@ -938,56 +929,32 @@ export const DividendsView: React.FC<Props> = ({ accounts, ledger, trades, price
                   </label>
                 </>
               ) : (
-                <label style={{ display: "flex", flexDirection: "column", gap: 4 }}>
-                  <span style={{ fontSize: 13, fontWeight: 500 }}>
-                    이자 금액
-                    {selectedTickerCurrency === "USD" && showUSD && " (USD)"}
-                    {selectedTickerCurrency === "USD" && !showUSD && " (원화)"}
-                  </span>
-                  <input
-                    type="number"
-                    min={0}
-                    step={0.01}
-                    value={dividendForm.amount}
-                    onChange={(e) => setDividendForm({ ...dividendForm, amount: e.target.value })}
-                    placeholder={selectedTickerCurrency === "USD" && showUSD ? "USD로 입력" : "원화로 입력"}
-                    style={{ padding: "6px 8px", fontSize: 14 }}
-                    required
-                  />
-                </label>
+                <MoneyField
+                  label="이자 금액"
+                  currency={selectedTickerCurrency === "USD" && showUSD ? "USD" : "KRW"}
+                  allowDecimal
+                  required
+                  value={dividendForm.amount}
+                  onChange={(amount) => setDividendForm({ ...dividendForm, amount })}
+                  placeholder={selectedTickerCurrency === "USD" && showUSD ? "USD로 입력" : "원화로 입력"}
+                />
               )}
-              <label style={{ display: "flex", flexDirection: "column", gap: 4 }}>
-                <span style={{ fontSize: 13, fontWeight: 500 }}>
-                  세금
-                  {selectedTickerCurrency === "USD" && showUSD && " (USD)"}
-                  {selectedTickerCurrency === "USD" && !showUSD && " (원화)"}
-                </span>
-                <input
-                  type="number"
-                  min={0}
-                  step={0.01}
-                  value={dividendForm.tax}
-                  onChange={(e) => setDividendForm({ ...dividendForm, tax: e.target.value })}
-                  placeholder="선택사항"
-                  style={{ padding: "6px 8px", fontSize: 14 }}
-                />
-              </label>
-              <label style={{ display: "flex", flexDirection: "column", gap: 4 }}>
-                <span style={{ fontSize: 13, fontWeight: 500 }}>
-                  수수료
-                  {selectedTickerCurrency === "USD" && showUSD && " (USD)"}
-                  {selectedTickerCurrency === "USD" && !showUSD && " (원화)"}
-                </span>
-                <input
-                  type="number"
-                  min={0}
-                  step={0.01}
-                  value={dividendForm.fee}
-                  onChange={(e) => setDividendForm({ ...dividendForm, fee: e.target.value })}
-                  placeholder="선택사항"
-                  style={{ padding: "6px 8px", fontSize: 14 }}
-                />
-              </label>
+              <MoneyField
+                label="세금"
+                currency={selectedTickerCurrency === "USD" && showUSD ? "USD" : "KRW"}
+                allowDecimal
+                value={dividendForm.tax}
+                onChange={(tax) => setDividendForm({ ...dividendForm, tax })}
+                placeholder="선택사항"
+              />
+              <MoneyField
+                label="수수료"
+                currency={selectedTickerCurrency === "USD" && showUSD ? "USD" : "KRW"}
+                allowDecimal
+                value={dividendForm.fee}
+                onChange={(fee) => setDividendForm({ ...dividendForm, fee })}
+                placeholder="선택사항"
+              />
               {dividendYield != null && (
                 <label style={{ display: "flex", flexDirection: "column", gap: 4 }}>
                   <span style={{ fontSize: 13, fontWeight: 500 }}>배당율</span>
@@ -1045,42 +1012,28 @@ export const DividendsView: React.FC<Props> = ({ accounts, ledger, trades, price
                   ))}
                 </select>
               </label>
-              <label style={{ display: "flex", flexDirection: "column", gap: 4 }}>
-                <span style={{ fontSize: 13, fontWeight: 500 }}>이자 금액</span>
-                <input
-                  type="number"
-                  min={0}
-                  step={0.01}
-                  value={interestForm.amount}
-                  onChange={(e) => setInterestForm({ ...interestForm, amount: e.target.value })}
-                  style={{ padding: "6px 8px", fontSize: 14 }}
-                  required
-                />
-              </label>
-              <label style={{ display: "flex", flexDirection: "column", gap: 4 }}>
-                <span style={{ fontSize: 13, fontWeight: 500 }}>이율 (%)</span>
-                <input
-                  type="number"
-                  min={0}
-                  step={0.01}
-                  value={interestForm.rate}
-                  onChange={(e) => setInterestForm({ ...interestForm, rate: e.target.value })}
-                  placeholder="선택사항"
-                  style={{ padding: "6px 8px", fontSize: 14 }}
-                />
-              </label>
-              <label style={{ display: "flex", flexDirection: "column", gap: 4 }}>
-                <span style={{ fontSize: 13, fontWeight: 500 }}>세금</span>
-                <input
-                  type="number"
-                  min={0}
-                  step={0.01}
-                  value={interestForm.tax}
-                  onChange={(e) => setInterestForm({ ...interestForm, tax: e.target.value })}
-                  placeholder="선택사항"
-                  style={{ padding: "6px 8px", fontSize: 14 }}
-                />
-              </label>
+              <MoneyField
+                label="이자 금액"
+                allowDecimal
+                required
+                value={interestForm.amount}
+                onChange={(amount) => setInterestForm({ ...interestForm, amount })}
+              />
+              <QuantityField
+                label="이율 (%)"
+                maxDecimals={2}
+                unit="%"
+                value={interestForm.rate}
+                onChange={(rate) => setInterestForm({ ...interestForm, rate })}
+                placeholder="선택사항"
+              />
+              <MoneyField
+                label="세금"
+                allowDecimal
+                value={interestForm.tax}
+                onChange={(tax) => setInterestForm({ ...interestForm, tax })}
+                placeholder="선택사항"
+              />
             </div>
             <div style={{ display: "flex", gap: 8, marginTop: 12, justifyContent: "flex-end" }}>
               <button type="submit" className="primary" style={{ padding: "8px 16px", fontSize: 14 }}>
@@ -1329,10 +1282,13 @@ export const DividendsView: React.FC<Props> = ({ accounts, ledger, trades, price
                           : `${newTicker}${restPart}`;
                         
                         // 배당금액 수정
-                        const newAmount = editingAmount ? Number(editingAmount) : ledgerEntry.amount;
+                        const newAmount = editingAmount ? parseAmount(editingAmount, { allowDecimal: true, maxDecimals: 6 }) : ledgerEntry.amount;
                         
                         // 보유주식은 note 필드에 저장 (나중에 참조용)
-                        const newNote = editingQuantity ? `보유주식: ${editingQuantity}` : ledgerEntry.note;
+                        // note에는 숫자만 남긴다 (콤마가 들어가면 parseQuantityFromNote가 잘못 읽는다)
+                        const newNote = editingQuantity
+                          ? `보유주식: ${parseAmount(editingQuantity, { allowDecimal: true, maxDecimals: 6 })}`
+                          : ledgerEntry.note;
                         
                         // 날짜, 계좌 수정
                         const newDate = editingDate || ledgerEntry.date || "";
@@ -1456,7 +1412,7 @@ export const DividendsView: React.FC<Props> = ({ accounts, ledger, trades, price
                                 onKeyDown={(e) => {
                                   if (e.key === "Enter") {
                                     e.preventDefault();
-                                    const quantityInput = e.currentTarget.closest("tr")?.querySelector("input[type='number']:nth-of-type(1)") as HTMLInputElement;
+                                    const quantityInput = e.currentTarget.closest("tr")?.querySelector("input[data-edit-field='quantity']") as HTMLInputElement;
                                     quantityInput?.focus();
                                   } else if (e.key === "Escape") cancelEdit();
                                   else if (e.key === "Tab") { /* 기본 동작 */ }
@@ -1495,15 +1451,17 @@ export const DividendsView: React.FC<Props> = ({ accounts, ledger, trades, price
                             style={{ position: "relative" }}
                           >
                             {isEditing ? (
-                              <input
-                                type="number"
+                              <NumericInput
+                                data-edit-field="quantity"
+                                allowDecimal
+                                maxDecimals={6}
                                 value={editingQuantity}
-                                onChange={(e) => setEditingQuantity(e.target.value)}
+                                onChange={setEditingQuantity}
                                 onBlur={(e) => handleSaveEdit(e)}
                                 onKeyDown={(e) => {
                                   if (e.key === "Enter") {
                                     e.preventDefault();
-                                    const amountInput = e.currentTarget.closest("tr")?.querySelector("input[type='number']:nth-of-type(2)") as HTMLInputElement;
+                                    const amountInput = e.currentTarget.closest("tr")?.querySelector("input[data-edit-field='amount']") as HTMLInputElement;
                                     amountInput?.focus();
                                   } else if (e.key === "Escape") cancelEdit();
                                   else if (e.key === "Tab") { /* 기본 동작 */ }
@@ -1519,8 +1477,6 @@ export const DividendsView: React.FC<Props> = ({ accounts, ledger, trades, price
                                 }}
                                 onClick={(e) => e.stopPropagation()}
                                 placeholder="보유주수"
-                                min={0}
-                                step={1}
                               />
                             ) : (
                               <span>{r.quantity != null ? `${Math.round(r.quantity).toLocaleString()}주` : "-"}</span>
@@ -1535,10 +1491,11 @@ export const DividendsView: React.FC<Props> = ({ accounts, ledger, trades, price
                             }}
                           >
                             {isEditing ? (
-                              <input
-                                type="number"
+                              <NumericInput
+                                data-edit-field="amount"
+                                allowDecimal
                                 value={editingAmount}
-                                onChange={(e) => setEditingAmount(e.target.value)}
+                                onChange={setEditingAmount}
                                 onBlur={(e) => handleSaveEdit(e)}
                                 onKeyDown={(e) => {
                                   if (e.key === "Enter") {
@@ -1558,11 +1515,9 @@ export const DividendsView: React.FC<Props> = ({ accounts, ledger, trades, price
                                 }}
                                 onClick={(e) => e.stopPropagation()}
                                 placeholder="총 배당금"
-                                min={0}
-                                step={0.01}
                               />
                             ) : (
-                              <span>{formatKRW(Math.round(r.amount))}</span>
+                              <span>{formatKRW(r.amount, { exact: true })}</span>
                             )}
                           </td>
                           <td className="number" style={{ whiteSpace: "nowrap" }}>
@@ -1630,8 +1585,8 @@ export const DividendsView: React.FC<Props> = ({ accounts, ledger, trades, price
                                       setEditingEntryId(ledgerEntry.id);
                                       setEditingTicker(currentTicker);
                                       setEditingName(currentName);
-                                      setEditingQuantity(r.quantity != null ? r.quantity.toString() : "");
-                                      setEditingAmount(ledgerEntry.amount.toString());
+                                      setEditingQuantity(r.quantity != null ? formatAmount(r.quantity.toString(), { allowDecimal: true, maxDecimals: 6 }) : "");
+                                      setEditingAmount(formatAmount(ledgerEntry.amount.toString(), { allowDecimal: true }));
                                       setEditingDate(ledgerEntry.date || r.date || "");
                                       setEditingAccountId(ledgerEntry.toAccountId || r.accountId || "");
                                     }}
@@ -1761,7 +1716,7 @@ export const DividendsView: React.FC<Props> = ({ accounts, ledger, trades, price
                       }
                       const newDate = editingDate || ledgerEntry.date || "";
                       const newDescription = ((editingName ?? ledgerEntry.description ?? "").trim() || (ledgerEntry.description ?? ""));
-                      const newAmount = editingAmount ? Number(editingAmount) : ledgerEntry.amount;
+                      const newAmount = editingAmount ? parseAmount(editingAmount, { allowDecimal: true, maxDecimals: 6 }) : ledgerEntry.amount;
                       const newToAccountId = editingAccountId ?? ledgerEntry.toAccountId ?? "";
                       const newLedger = ledger.map(l =>
                         l.id === ledgerEntry.id
@@ -1816,16 +1771,17 @@ export const DividendsView: React.FC<Props> = ({ accounts, ledger, trades, price
                         </td>
                         <td className="number positive" style={{ fontWeight: 600, fontSize: 15, position: "relative" }}>
                           {isEditing ? (
-                            <input
-                              type="number"
+                            <NumericInput
+                              data-edit-field="amount"
+                              allowDecimal
                               value={editingAmount}
-                              onChange={(e) => setEditingAmount(e.target.value)}
+                              onChange={setEditingAmount}
                               onBlur={handleSaveInterestEdit}
                               onKeyDown={(e) => { if (e.key === "Escape") cancelInterestEdit(); }}
                               style={{ width: "100%", padding: "4px 8px", fontSize: 13, border: "1px solid var(--accent)", borderRadius: 4, backgroundColor: "var(--surface)", textAlign: "right" }}
                             />
                           ) : (
-                            formatKRW(Math.round(r.amount))
+                            formatKRW(r.amount, { exact: true })
                           )}
                         </td>
                         <td style={{ fontSize: 13, color: "#666", position: "relative" }}>

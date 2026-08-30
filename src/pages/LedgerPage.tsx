@@ -23,7 +23,8 @@ import { formatShortDate, formatUSD, formatKRW } from "../utils/formatter";
 import { shortcutManager, type ShortcutAction } from "../utils/shortcuts";
 import { validateLedgerForm } from "../features/ledger/validateLedgerForm";
 import { isSavingsExpenseEntry, makeIsSavingsExpense, isCreditPayment, isInvestmentKind } from "../utils/category";
-import { parseAmount as sharedParseAmount, formatAmount as sharedFormatAmount } from "../utils/parseAmount";
+import { parseAmount as sharedParseAmount, formatAmount } from "../utils/parseAmount";
+import { DateField, MoneyField, NumericInput } from "../components/ui/fields";
 import { newIdWithPrefix } from "../utils/id";
 import { DailyBudgetBar } from "../features/ledger/DailyBudgetBar";
 import { DEFAULT_DAILY_BUDGET, todaySpend, weeklySpend, weeklyLimit, getCurrentWeekRange } from "../utils/dailyBudget";
@@ -334,10 +335,6 @@ export const LedgerView: React.FC<Props> = ({
     return sharedParseAmount(value, { allowDecimal });
   }, []);
 
-  const formatAmount = useCallback((value: string, allowDecimal?: boolean): string => {
-    return sharedFormatAmount(value, { allowDecimal });
-  }, []);
-
   useEffect(() => {
     // 복사 중일 때는 폼을 초기화하지 않음
     if (isCopyingRef.current) {
@@ -623,7 +620,10 @@ export const LedgerView: React.FC<Props> = ({
       return;
     }
     setEditingField({ id, field });
-    setEditingValue(String(currentValue));
+    const isAmountField = field === "amount" || field === "grossAmount" || field === "discountAmount";
+    setEditingValue(
+      isAmountField ? formatAmount(String(currentValue), { allowDecimal: true }) : String(currentValue)
+    );
   };
 
   const saveEditField = () => {
@@ -650,9 +650,8 @@ export const LedgerView: React.FC<Props> = ({
     } else if (field === "grossAmount") {
       const isUSD = entry.currency === "USD";
       // KRW 도 소수점 허용해서 파싱 후 반올림 — float 쓰레기 값 들어와도 안전
-      const gross = isUSD
-        ? parseFloat(editingValue.replace(/[^\d.]/g, ""))
-        : Math.round(parseFloat(editingValue.replace(/[^\d.]/g, "")) || 0);
+      const parsedGross = sharedParseAmount(editingValue, { allowDecimal: true });
+      const gross = isUSD ? parsedGross : Math.round(parsedGross);
       if (!Number.isFinite(gross) || isNaN(gross)) {
         setEditingField(null);
         setEditingValue("");
@@ -663,9 +662,8 @@ export const LedgerView: React.FC<Props> = ({
     } else if (field === "amount") {
       const isUSD = entry.currency === "USD";
       // KRW 도 소수점 허용해서 파싱 후 반올림 — float 쓰레기 값 들어와도 안전
-      const amount = isUSD
-        ? parseFloat(editingValue.replace(/[^\d.]/g, ""))
-        : Math.round(parseFloat(editingValue.replace(/[^\d.]/g, "")) || 0);
+      const parsedAmount = sharedParseAmount(editingValue, { allowDecimal: true });
+      const amount = isUSD ? parsedAmount : Math.round(parsedAmount);
       if (Number.isFinite(amount) && !isNaN(amount)) {
         updated.amount = amount;
         if ((entry.kind === "expense" || entry.kind === "income") && (entry.discountAmount ?? 0) > 0) {
@@ -685,12 +683,8 @@ export const LedgerView: React.FC<Props> = ({
       const isUSD = entry.currency === "USD";
       const trimmed = editingValue.trim();
       // KRW 도 소수점 허용해서 파싱 후 반올림 — float 쓰레기 값 들어와도 안전
-      const disc =
-        trimmed === ""
-          ? 0
-          : isUSD
-            ? parseFloat(editingValue.replace(/[^\d.]/g, ""))
-            : Math.round(parseFloat(editingValue.replace(/[^\d.]/g, "")) || 0);
+      const parsedDisc = sharedParseAmount(editingValue, { allowDecimal: true });
+      const disc = trimmed === "" ? 0 : isUSD ? parsedDisc : Math.round(parsedDisc);
       if (trimmed !== "" && (isNaN(disc) || disc < 0)) {
         toast.error("할인은 0 이상이어야 합니다");
         setEditingField(null);
@@ -1822,94 +1816,58 @@ export const LedgerView: React.FC<Props> = ({
             {/* 상단: 날짜와 금액을 한 줄에 */}
             <div style={{ display: "grid", gridTemplateColumns: "1fr 2fr", gap: "12px", alignItems: "start" }}>
               {/* 날짜 */}
-              <label style={{ margin: 0 }}>
-                <span style={{ fontSize: 11, marginBottom: 4, display: "block", color: "var(--text-muted)" }}>날짜 *</span>
-                <input
-                  type="date"
-                  value={form.date}
-                  onChange={(e) => setForm({ ...form, date: e.target.value })}
-                  style={{ 
-                    padding: "10px", 
-                    fontSize: 14,
-                    width: "100%",
-                    border: formErrors.date ? "2px solid var(--danger)" : "1px solid var(--border)",
-                    borderRadius: "6px"
-                  }}
-                  aria-invalid={!!formErrors.date}
-                  aria-describedby={formErrors.date ? "date-error" : undefined}
-                />
-                <span id="date-error" style={{ fontSize: 10, color: "var(--danger)", display: "block", marginTop: 4, visibility: formErrors.date ? "visible" : "hidden" }}>
-                  {formErrors.date || "\u00A0"}
-                </span>
-              </label>
+              <DateField
+                label="날짜"
+                required
+                value={form.date}
+                onChange={(date) => setForm({ ...form, date })}
+                error={formErrors.date}
+                reserveErrorSpace
+              />
               
               {/* 금액 */}
-              <label style={{ margin: 0 }}>
-                <span style={{ fontSize: 11, marginBottom: 4, display: "block", color: "var(--text-muted)" }}>
-                  금액 *{" "}
-                  {(effectiveFormKind === "income" || effectiveFormKind === "expense") && (
-                    <span style={{ fontWeight: 400, color: "var(--text-muted)" }}>(할인 전) </span>
-                  )}
-                  {effectiveFormKind === "transfer" && (
-                    <span style={{ marginLeft: 8 }}>
-                      <button
-                        type="button"
-                        tabIndex={-1}
-                        className={form.currency === "KRW" ? "primary" : "secondary"}
-                        onClick={() => setForm((prev) => ({ ...prev, currency: "KRW" }))}
-                        style={{ fontSize: 11, padding: "2px 8px" }}
-                      >
-                        KRW
-                      </button>
-                      <button
-                        type="button"
-                        tabIndex={-1}
-                        className={form.currency === "USD" ? "primary" : "secondary"}
-                        onClick={() => setForm((prev) => ({ ...prev, currency: "USD" }))}
-                        style={{ fontSize: 11, padding: "2px 8px", marginLeft: 4 }}
-                      >
-                        USD
-                      </button>
-                    </span>
-                  )}
-                </span>
-                <input
-                  data-ledger-focus="amount"
-                  type="text"
-                  inputMode={effectiveFormKind === "transfer" && form.currency === "USD" ? "decimal" : "numeric"}
-                  placeholder={effectiveFormKind === "transfer" && form.currency === "USD" ? "0.00" : "0"}
-                  value={form.amount}
-                  onChange={useCallback((e: React.ChangeEvent<HTMLInputElement>) => {
-                    const allowDec = effectiveFormKind === "transfer" && form.currency === "USD";
-                    const formatted = formatAmount(e.target.value, allowDec);
-                    setForm((prev) => ({ ...prev, amount: formatted }));
-                  }, [formatAmount, effectiveFormKind, form.currency])}
-                  onKeyDown={(e) => {
-                    if (e.key === "Enter") {
-                      e.preventDefault();
-                      submitForm(true);
-                    }
-                  }}
-                  style={{ 
-                    padding: "12px", 
-                    fontSize: 18, 
-                    fontWeight: 600,
-                    textAlign: "right",
-                    width: "100%",
-                    border: formErrors.amount ? "2px solid var(--danger)" : "1px solid var(--border)",
-                    borderRadius: "6px"
-                  }}
-                  aria-invalid={!!formErrors.amount}
-                  aria-describedby={formErrors.amount ? "amount-error" : undefined}
-                />
-                <span id="amount-error" style={{ fontSize: 10, color: "var(--danger)", display: "block", marginTop: 4, visibility: formErrors.amount ? "visible" : "hidden" }}>
-                  {formErrors.amount || "\u00A0"}
-                </span>
-                {(effectiveFormKind === "income" || effectiveFormKind === "expense") &&
+              <MoneyField
+                label={
+                  effectiveFormKind === "income" || effectiveFormKind === "expense"
+                    ? "금액 (할인 전)"
+                    : "금액"
+                }
+                required
+                size="lg"
+                focusKey="amount"
+                currency={effectiveFormKind === "transfer" && form.currency === "USD" ? "USD" : "KRW"}
+                allowDecimal={effectiveFormKind === "transfer" && form.currency === "USD"}
+                value={form.amount}
+                onChange={(amount) => setForm((prev) => ({ ...prev, amount }))}
+                onEnter={() => submitForm(true)}
+                error={formErrors.amount}
+                reserveErrorSpace
+                action={
+                  effectiveFormKind === "transfer" ? (
+                    <>
+                      {(["KRW", "USD"] as const).map((c) => (
+                        <button
+                          key={c}
+                          type="button"
+                          tabIndex={-1}
+                          className={`field-action-btn${form.currency === c ? " active" : ""}`}
+                          onClick={(e) => {
+                            e.preventDefault();
+                            setForm((prev) => ({ ...prev, currency: c }));
+                          }}
+                        >
+                          {c}
+                        </button>
+                      ))}
+                    </>
+                  ) : undefined
+                }
+                hint={
+                  (effectiveFormKind === "income" || effectiveFormKind === "expense") &&
                   form.discountAmount?.trim() &&
                   parseAmount(form.discountAmount, false) > 0 &&
-                  parseAmount(form.amount, false) > 0 && (
-                    <span style={{ fontSize: 10, color: "var(--text-muted)", display: "block", marginTop: 4 }}>
+                  parseAmount(form.amount, false) > 0 ? (
+                    <>
                       {effectiveFormKind === "income" ? "실제 수입액" : "실제 지출액"}:{" "}
                       <strong style={{ color: "var(--text)" }}>
                         {(
@@ -1917,9 +1875,10 @@ export const LedgerView: React.FC<Props> = ({
                         ).toLocaleString()}
                         원
                       </strong>
-                    </span>
-                  )}
-              </label>
+                    </>
+                  ) : undefined
+                }
+              />
             </div>
 
             {/* 2. 대분류 (지출/이체만) 또는 수입 중분류 */}
@@ -2148,29 +2107,13 @@ export const LedgerView: React.FC<Props> = ({
             {(<>
             {/* 할인 (수입·지출, 선택) — 저장 시 금액−할인이 실제 반영액 */}
             {(effectiveFormKind === "income" || effectiveFormKind === "expense") && (
-              <label style={{ margin: 0 }}>
-                <span style={{ fontSize: 10, marginBottom: 4, display: "block", color: "var(--text-muted)" }}>
-                  할인 (선택)
-                </span>
-                <input
-                  type="text"
-                  inputMode="numeric"
-                  value={form.discountAmount}
-                  onChange={(e) => {
-                    const formatted = formatAmount(e.target.value, false);
-                    setForm((prev) => ({ ...prev, discountAmount: formatted }));
-                  }}
-                  placeholder="0"
-                  style={{ 
-                    padding: "8px", 
-                    fontSize: 13,
-                    width: "100%",
-                    border: formErrors.discountAmount ? "2px solid var(--danger)" : "1px solid var(--border)",
-                    borderRadius: "6px"
-                  }}
-                />
-                <span style={{ fontSize: 10, color: "var(--danger)", display: "block", marginTop: 4, visibility: formErrors.discountAmount ? "visible" : "hidden" }}>{formErrors.discountAmount || "\u00A0"}</span>
-              </label>
+              <MoneyField
+                label="할인 (선택)"
+                value={form.discountAmount}
+                onChange={(discountAmount) => setForm((prev) => ({ ...prev, discountAmount }))}
+                error={formErrors.discountAmount}
+                reserveErrorSpace
+              />
             )}
 
             {/* 5. 출금계좌 (지출/이체/신용결제) */}
@@ -3191,14 +3134,10 @@ export const LedgerView: React.FC<Props> = ({
                 title="할인 적용 전 금액 · 더블클릭하여 수정"
               >
                 {editingField?.id === l.id && editingField.field === "grossAmount" ? (
-                  <input
-                    type="text"
-                    inputMode={l.currency === "USD" ? "decimal" : "numeric"}
+                  <NumericInput
+                    allowDecimal={l.currency === "USD"}
                     value={editingValue}
-                    onChange={(e) => {
-                      const re = l.currency === "USD" ? /[^\d.]/g : /[^\d]/g;
-                      setEditingValue(e.target.value.replace(re, ""));
-                    }}
+                    onChange={setEditingValue}
                     onBlur={saveEditField}
                     onKeyDown={(e) => {
                       if (e.key === "Enter") saveEditField();
@@ -3237,14 +3176,10 @@ export const LedgerView: React.FC<Props> = ({
                 title="할인액 · 더블클릭하여 수정"
               >
                 {editingField?.id === l.id && editingField.field === "discountAmount" ? (
-                  <input
-                    type="text"
-                    inputMode={l.currency === "USD" ? "decimal" : "numeric"}
+                  <NumericInput
+                    allowDecimal={l.currency === "USD"}
                     value={editingValue}
-                    onChange={(e) => {
-                      const re = l.currency === "USD" ? /[^\d.]/g : /[^\d]/g;
-                      setEditingValue(e.target.value.replace(re, ""));
-                    }}
+                    onChange={setEditingValue}
                     onBlur={saveEditField}
                     onKeyDown={(e) => {
                       if (e.key === "Enter") saveEditField();
@@ -3273,14 +3208,10 @@ export const LedgerView: React.FC<Props> = ({
                 title="할인 반영 후 금액 · 더블클릭하여 수정"
               >
                 {editingField?.id === l.id && editingField.field === "amount" ? (
-                  <input
-                    type="text"
-                    inputMode={l.currency === "USD" ? "decimal" : "numeric"}
+                  <NumericInput
+                    allowDecimal={l.currency === "USD"}
                     value={editingValue}
-                    onChange={(e) => {
-                      const re = l.currency === "USD" ? /[^\d.]/g : /[^\d]/g;
-                      setEditingValue(e.target.value.replace(re, ""));
-                    }}
+                    onChange={setEditingValue}
                     onBlur={saveEditField}
                     onKeyDown={(e) => {
                       if (e.key === "Enter") saveEditField();
@@ -3409,7 +3340,7 @@ export const LedgerView: React.FC<Props> = ({
           setForm((prev) => ({
             ...prev,
             description: result.merchant ?? prev.description,
-            amount: result.amount != null ? String(result.amount) : prev.amount,
+            amount: result.amount != null ? formatAmount(String(result.amount)) : prev.amount,
             date: result.date ?? prev.date
           }));
           toast.success("영수증 인식 완료 — 폼에 채워졌습니다.");

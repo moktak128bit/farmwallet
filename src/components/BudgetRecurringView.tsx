@@ -1,4 +1,6 @@
 import React, { useMemo, useState } from "react";
+import { NumericInput } from "./ui/fields";
+import { parseAmount, formatAmount } from "../utils/parseAmount";
 import { toast } from "react-hot-toast";
 import { ERROR_MESSAGES } from "../constants/errorMessages";
 import type { Account, BudgetGoal, CategoryPresets, RecurringExpense, Recurrence, LedgerEntry, DailyBudgetConfig } from "../types";
@@ -117,7 +119,7 @@ export const BudgetRecurringView: React.FC<Props> = ({
 
   const startEditField = (id: string, field: string, currentValue: string | number) => {
     setEditingField({ id, field });
-    setEditingValue(String(currentValue));
+    setEditingValue(field === "amount" ? formatAmount(String(currentValue)) : String(currentValue));
   };
 
   const saveEditField = () => {
@@ -130,7 +132,7 @@ export const BudgetRecurringView: React.FC<Props> = ({
     if (field === "title") {
       updated.title = editingValue;
     } else if (field === "amount") {
-      updated.amount = Number(editingValue) || 0;
+      updated.amount = parseAmount(editingValue);
     } else if (field === "category") {
       updated.category = editingValue;
     } else if (field === "frequency") {
@@ -167,7 +169,7 @@ export const BudgetRecurringView: React.FC<Props> = ({
 
   const startEditBudgetField = (id: string, field: string, currentValue: string | number) => {
     setEditingBudgetField({ id, field });
-    setEditingBudgetValue(String(currentValue));
+    setEditingBudgetValue(field === "monthlyLimit" ? formatAmount(String(currentValue)) : String(currentValue));
   };
 
   const saveEditBudgetField = () => {
@@ -180,7 +182,7 @@ export const BudgetRecurringView: React.FC<Props> = ({
     if (field === "category") {
       updated.category = editingBudgetValue;
     } else if (field === "monthlyLimit") {
-      updated.monthlyLimit = Number(editingBudgetValue) || 0;
+      updated.monthlyLimit = parseAmount(editingBudgetValue);
     } else if (field === "note") {
       updated.note = editingBudgetValue || undefined;
     }
@@ -414,15 +416,9 @@ export const BudgetRecurringView: React.FC<Props> = ({
               <div style={{ display: "flex", gap: 12, flexWrap: "wrap", alignItems: "center" }}>
                 <label style={{ display: "flex", alignItems: "center", gap: 6 }}>
                   <span>일 한도 (원)</span>
-                  <input
-                    type="number"
-                    min={0}
-                    step={1000}
-                    value={cfg.dailyLimit}
-                    onChange={(e) => {
-                      const n = Number(e.target.value);
-                      if (Number.isFinite(n) && n >= 0) update({ dailyLimit: n });
-                    }}
+                  <NumericInput
+                    value={cfg.dailyLimit ? formatAmount(String(cfg.dailyLimit)) : ""}
+                    onChange={(v) => update({ dailyLimit: parseAmount(v) })}
                     style={{ width: 120, padding: "6px 10px", borderRadius: 6 }}
                   />
                 </label>
@@ -485,11 +481,10 @@ export const BudgetRecurringView: React.FC<Props> = ({
           </label>
           <label>
             <span>금액</span>
-            <input
-              type="number"
-              value={recForm.amount || ""}
-              onChange={(e) => setRecForm({ ...recForm, amount: Number(e.target.value) || 0 })}
-              placeholder="17000"
+            <NumericInput
+              value={recForm.amount ? formatAmount(String(recForm.amount)) : ""}
+              onChange={(v) => setRecForm({ ...recForm, amount: parseAmount(v) })}
+              placeholder="17,000"
             />
           </label>
           <label>
@@ -700,11 +695,10 @@ export const BudgetRecurringView: React.FC<Props> = ({
           )}
           <label>
             <span>월 예산</span>
-            <input
-              type="number"
-              value={budForm.monthlyLimit || ""}
-              onChange={(e) => setBudForm({ ...budForm, monthlyLimit: Number(e.target.value) || 0 })}
-              placeholder="400000"
+            <NumericInput
+              value={budForm.monthlyLimit ? formatAmount(String(budForm.monthlyLimit)) : ""}
+              onChange={(v) => setBudForm({ ...budForm, monthlyLimit: parseAmount(v) })}
+              placeholder="400,000"
             />
           </label>
           <label className="wide">
@@ -844,10 +838,9 @@ export const BudgetRecurringView: React.FC<Props> = ({
                 title="더블클릭하여 수정"
               >
                 {editingField?.id === r.id && editingField.field === "amount" ? (
-                  <input
-                    type="number"
+                  <NumericInput
                     value={editingValue}
-                    onChange={(e) => setEditingValue(e.target.value)}
+                    onChange={setEditingValue}
                     onBlur={saveEditField}
                     onKeyDown={(e) => {
                       if (e.key === "Enter") saveEditField();
@@ -1354,10 +1347,9 @@ export const BudgetRecurringView: React.FC<Props> = ({
                 title="더블클릭하여 수정"
               >
                 {editingBudgetField?.id === b.id && editingBudgetField.field === "monthlyLimit" ? (
-                  <input
-                    type="number"
+                  <NumericInput
                     value={editingBudgetValue}
-                    onChange={(e) => setEditingBudgetValue(e.target.value)}
+                    onChange={setEditingBudgetValue}
                     onBlur={saveEditBudgetField}
                     onKeyDown={(e) => {
                       if (e.key === "Enter") saveEditBudgetField();

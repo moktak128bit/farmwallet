@@ -1,4 +1,6 @@
 import React, { useCallback, useEffect, useState, useMemo, useRef, lazy, Suspense } from "react";
+import { NumericInput } from "../components/ui/fields";
+import { parseAmount, formatAmount } from "../utils/parseAmount";
 import { toast } from "react-hot-toast";
 import type {
   AppData,
@@ -1272,13 +1274,10 @@ export const SettingsView: React.FC<Props> = ({
           </label>
           <label style={{ display: "flex", alignItems: "center", gap: 8 }}>
             <span style={{ minWidth: 80 }}>본인 부담</span>
-            <input
-              type="number"
-              min={0}
-              max={100}
-              value={dateAccountRatio}
-              onChange={(e) => {
-                const v = Math.min(100, Math.max(0, Number(e.target.value) || 0));
+            <NumericInput
+              value={dateAccountRatio ? String(dateAccountRatio) : ""}
+              onChange={(raw) => {
+                const v = Math.min(100, Math.max(0, parseAmount(raw)));
                 setDateAccountRatio(v);
                 localStorage.setItem(STORAGE_KEYS.DATE_ACCOUNT_RATIO, String(v));
                 notifyDateAccountChange();
@@ -1516,15 +1515,11 @@ export const SettingsView: React.FC<Props> = ({
                       />
                     </td>
                     <td>
-                      <input
-                        type="number"
-                        min={0}
-                        max={100}
-                        step={1}
-                        value={item.weight}
-                        onChange={(e) => {
+                      <NumericInput
+                        value={item.weight ? formatAmount(String(item.weight)) : ""}
+                        onChange={(raw) => {
                           const list = [...(data.isaPortfolio ?? ISA_PORTFOLIO.map((i) => ({ ticker: i.ticker, name: i.name, weight: i.weight, label: i.label })))];
-                          list[index] = { ...list[index], weight: Number(e.target.value) || 0 };
+                          list[index] = { ...list[index], weight: Math.min(100, parseAmount(raw)) };
                           onChangeData({ ...data, isaPortfolio: list });
                         }}
                         style={{ width: "100%", padding: "4px 8px", fontSize: 12 }}

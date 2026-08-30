@@ -1,4 +1,6 @@
 import React, { useMemo, useState, useRef, useEffect } from "react";
+import { NumericInput } from "../../components/ui/fields";
+import { parseAmount, formatAmount } from "../../utils/parseAmount";
 import {
   PieChart,
   Pie,
@@ -413,13 +415,11 @@ export const TargetPortfolioSection: React.FC<TargetPortfolioSectionProps> = ({
                   title="그래프에 표시할 별칭 (예: 삼성, 내 애플)"
                   style={{ width: 100, padding: "4px 6px", fontSize: 12, border: "1px solid var(--border)", borderRadius: 4 }}
                 />
-                <input
-                  type="number"
-                  min={0}
-                  max={100}
-                  step={0.5}
-                  value={item.targetPercent}
-                  onChange={(e) => handleUpdateItemPercent(i, Number(e.target.value) || 0)}
+                <NumericInput
+                  allowDecimal
+                  maxDecimals={1}
+                  value={item.targetPercent ? formatAmount(String(item.targetPercent), { allowDecimal: true, maxDecimals: 1 }) : ""}
+                  onChange={(v) => handleUpdateItemPercent(i, parseAmount(v, { allowDecimal: true, maxDecimals: 1 }))}
                   style={{ width: 64, padding: "4px 6px", fontSize: 12, border: "1px solid var(--border)", borderRadius: 4 }}
                 />
                 <span style={{ fontSize: 12 }}>%</span>
@@ -720,7 +720,7 @@ function AddItemForm({
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
-    const p = Number(percent) || 0;
+    const p = parseAmount(percent, { allowDecimal: true, maxDecimals: 1 });
     if (!ticker.trim() || p <= 0 || p > 100 || exists) return;
     const chosen = searchPool.find((t) => normTicker(t.ticker) === normalized(ticker)) ?? { ticker: ticker.trim(), name: "" };
     onAdd(chosen.ticker, p);
@@ -803,13 +803,11 @@ function AddItemForm({
           </ul>
         )}
       </div>
-      <input
-        type="number"
-        min={0.5}
-        max={100}
-        step={0.5}
+      <NumericInput
+        allowDecimal
+        maxDecimals={1}
         value={percent}
-        onChange={(e) => setPercent(e.target.value)}
+        onChange={setPercent}
         style={{ width: 56, padding: "6px 8px", fontSize: 13, border: "1px solid var(--border)", borderRadius: 6 }}
       />
       <span style={{ fontSize: 13 }}>%</span>

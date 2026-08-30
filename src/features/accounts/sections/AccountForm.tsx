@@ -1,6 +1,7 @@
 import React, { useState } from "react";
 import type { Account, AccountType } from "../../../types";
 import { parseAmount } from "../../../utils/parseAmount";
+import { MoneyField } from "../../../components/ui/fields";
 
 interface Props {
   onAdd: (account: Account) => void;
@@ -35,7 +36,7 @@ export const AccountForm: React.FC<Props> = ({ onAdd, existingIds }) => {
     const rawDebt = parseAmount(form.debt);
     const debt = rawDebt;
     const savings = parseAmount(form.savings);
-    const cashAdjustment = parseAmount(form.cashAdjustment);
+    const cashAdjustment = parseAmount(form.cashAdjustment, { allowNegative: true });
     const initialCashBalance = parseAmount(form.initialCashBalance);
     const account: Account = {
       id: form.id.trim(),
@@ -107,55 +108,36 @@ export const AccountForm: React.FC<Props> = ({ onAdd, existingIds }) => {
           <option value="other">기타</option>
         </select>
       </label>
-      <label>
-        <span>초기 잔액</span>
-        <input
-          type="number"
-          min={0}
-          placeholder="0"
-          value={form.initialBalance}
-          onChange={(e) => setForm({ ...form, initialBalance: e.target.value })}
-        />
-      </label>
-      <label>
-        <span>부채</span>
-        <input
-          type="number"
-          placeholder="-100000"
-          value={form.debt}
-          onChange={(e) => setForm({ ...form, debt: e.target.value })}
-        />
-      </label>
-      <label>
-        <span>저축</span>
-        <input
-          type="number"
-          min={0}
-          placeholder="0"
-          value={form.savings}
-          onChange={(e) => setForm({ ...form, savings: e.target.value })}
-        />
-      </label>
+      <MoneyField
+        label="초기 잔액"
+        value={form.initialBalance}
+        onChange={(initialBalance) => setForm({ ...form, initialBalance })}
+      />
+      <MoneyField
+        label="부채"
+        hint="금액만 입력 (부호 없이)"
+        value={form.debt}
+        onChange={(debt) => setForm({ ...form, debt })}
+      />
+      <MoneyField
+        label="저축"
+        value={form.savings}
+        onChange={(savings) => setForm({ ...form, savings })}
+      />
       {(form.type === "securities" || form.type === "crypto") && (
         <>
-          <label>
-            <span>초기 현금 잔액</span>
-            <input
-              type="number"
-              placeholder="0"
-              value={form.initialCashBalance}
-              onChange={(e) => setForm({ ...form, initialCashBalance: e.target.value })}
-            />
-          </label>
-          <label>
-            <span>현금 조정 (선택)</span>
-            <input
-              type="number"
-              placeholder="0"
-              value={form.cashAdjustment}
-              onChange={(e) => setForm({ ...form, cashAdjustment: e.target.value })}
-            />
-          </label>
+          <MoneyField
+            label="초기 현금 잔액"
+            value={form.initialCashBalance}
+            onChange={(initialCashBalance) => setForm({ ...form, initialCashBalance })}
+          />
+          <MoneyField
+            label="현금 조정 (선택)"
+            hint="잔액에 그대로 더해진다 — 차감은 -1000 처럼 음수로"
+            allowNegative
+            value={form.cashAdjustment}
+            onChange={(cashAdjustment) => setForm({ ...form, cashAdjustment })}
+          />
         </>
       )}
       <label className="wide">

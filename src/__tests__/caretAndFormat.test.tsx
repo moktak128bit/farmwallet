@@ -29,22 +29,22 @@ describe("커서 위치 계산", () => {
 });
 
 const Harness: React.FC = () => {
-  const [value, setValue] = useState("1234567");
+  const [value, setValue] = useState("1,234,567");
   return <MoneyField label="금액" value={value} onChange={setValue} />;
 };
 
 describe("MoneyField 커서 유지", () => {
-  it("금액 중간을 고쳐도 커서가 맨 뒤로 튀지 않는다", () => {
+  it("금액 중간에서 지워도 커서가 맨 뒤로 튀지 않는다", () => {
     render(<Harness />);
     const input = screen.getByLabelText(/금액/) as HTMLInputElement;
     input.focus();
 
-    // "1234567"에서 4번째 숫자 뒤를 편집 중인 상황
-    fireEvent.change(input, { target: { value: "1234567", selectionStart: 4 } });
+    // "1,234|,567"에서 백스페이스 → DOM은 "1,23,567", 커서 4
+    fireEvent.change(input, { target: { value: "1,23,567", selectionStart: 4 } });
 
-    expect(input.value).toBe("1,234,567");
-    // 숫자 4개("1234")를 지난 위치 = "1,234|,567"
-    expect(input.selectionStart).toBe(5);
+    expect(input.value).toBe("123,567");
+    // 커서 앞 숫자 3개("123")를 지난 위치 = "123|,567"
+    expect(input.selectionStart).toBe(3);
   });
 });
 

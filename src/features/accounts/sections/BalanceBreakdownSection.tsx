@@ -6,8 +6,9 @@
  */
 import React, { useState } from "react";
 import { ChevronDown, ChevronRight } from "lucide-react";
+import { NumericInput } from "../../../components/ui/fields";
 import type { Account, AccountBalanceRow } from "../../../types";
-import { parseSignedAmount, sanitizeSignedNumericInput } from "../accountsShared";
+import { parseSignedAmount } from "../accountsShared";
 
 // 실제 편집 진입점은 시작금액(initialBalance/initialCashBalance)뿐 — 나머지 필드는 dead code라 제거
 type EditField = "initialBalance" | "initialCashBalance";
@@ -171,12 +172,11 @@ export const BalanceBreakdownSection: React.FC<Props> = React.memo(function Bala
                       </td>
                       {isEditingBase ? (
                         <td style={{ textAlign: "right" }}>
-                          <input
-                            type="text"
-                            inputMode="numeric"
+                          <NumericInput
+                            allowNegative={baseField === "initialBalance"}
                             value={editValue}
                             autoFocus
-                            onChange={(e) => setEditValue(sanitizeSignedNumericInput(e.target.value))}
+                            onChange={setEditValue}
                             onBlur={saveNumber}
                             onKeyDown={(e) => {
                               if (e.key === "Enter") saveNumber();

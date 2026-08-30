@@ -5,13 +5,18 @@ export function parseExDateFromNote(note: string | undefined): string | null {
   return m ? m[1] : null;
 }
 
-/** ledger note에서 보유주식 수 추출. "보유주식: 254" 또는 "보유주식: 2.5"(미국 소수 주식) 형식 */
+/**
+ * ledger note에서 보유주식 수 추출. "보유주식: 254" 또는 "보유주식: 2.5"(미국 소수 주식) 형식.
+ *
+ * 콤마·소수점도 받아들인다 — 입력 킷이 "1,000"처럼 포맷된 값을 note에 남길 수 있는데
+ * \d+ 만 보면 "1,000"이 1로 읽히며 배당수익률이 통째로 틀어진다.
+ */
 export function parseQuantityFromNote(note: string | undefined): number | null {
   if (!note || typeof note !== "string") return null;
-  const m = note.match(/보유주식\s*:\s*(\d+(?:\.\d+)?)/);
+  const m = note.match(/보유주식\s*:\s*([\d,]+(?:\.\d+)?)/);
   if (!m) return null;
-  const q = parseFloat(m[1]);
-  return Number.isFinite(q) ? q : null;
+  const n = Number(m[1].replace(/,/g, ""));
+  return Number.isFinite(n) ? n : null;
 }
 
 /** 배당 입력 시 note 생성: 보유주식(입력값) + 배당락일. 소수 주식(미국 소수점 매수) 허용 */

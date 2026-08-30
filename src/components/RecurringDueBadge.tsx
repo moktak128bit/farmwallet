@@ -87,5 +87,6 @@ export const RecurringDueBadge: React.FC<Props> = ({ recurring, ledger, onClick,
         />
       )}
     </>
+
   );
 };

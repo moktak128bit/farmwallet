@@ -1,7 +1,7 @@
 import React, { useState, useMemo, useEffect } from "react";
 import type { Account, StockPrice, AccountBalanceRow, PositionRow, TickerInfo } from "../../types";
 import { isUSDStock, canonicalTickerForMatch, cryptoDisplaySymbol } from "../../utils/finance";
-import { formatNumber, formatKRW, formatUSD } from "../../utils/formatter";
+import { formatKRW, formatUSD, formatNumber } from "../../utils/formatter";
 
 type PositionSortKey =
   | "ticker"

@@ -1,4 +1,6 @@
 import React, { useEffect, useRef, useState } from "react";
+import { NumericInput } from "../../components/ui/fields";
+import { parseAmount } from "../../utils/parseAmount";
 import { toast } from "react-hot-toast";
 
 interface Props {
@@ -40,7 +42,7 @@ export const Stepper: React.FC<Props> = ({ value, step, min = 0, max = 9999, uni
   }, [editing, value]);
 
   const commit = () => {
-    const n = parseFloat(draft);
+    const n = draft.trim() ? parseAmount(draft, { allowDecimal: true, maxDecimals: 1 }) : NaN;
     if (!Number.isFinite(n) || n < min || n > max) {
       toast.error(`${min}~${max} 범위의 숫자로 입력하세요`);
       setEditing(false);
@@ -73,12 +75,12 @@ export const Stepper: React.FC<Props> = ({ value, step, min = 0, max = 9999, uni
       )}
       <button type="button" onClick={dec} aria-label={`${unit} 감소`} style={btnBase}>−</button>
       {editing ? (
-        <input
+        <NumericInput
           ref={inputRef}
-          type="number"
-          inputMode="decimal"
+          allowDecimal
+          maxDecimals={1}
           value={draft}
-          onChange={(e) => setDraft(e.target.value)}
+          onChange={setDraft}
           onBlur={commit}
           onKeyDown={(e) => {
             if (e.key === "Enter") { e.preventDefault(); commit(); }

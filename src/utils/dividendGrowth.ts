@@ -13,7 +13,7 @@
 import type { HistoricalDailyClose, LedgerEntry, MarketEnvSnapshot, StockPrice, StockTrade } from "../types";
 import { canonicalTickerForMatch, isUSDStock, tradeAmountKRW } from "./finance";
 import { isDividendEntryLoose } from "./categoryMatch";
-import { parseQuantityFromNote } from "./dividend";
+import { parseExDateFromNote, parseQuantityFromNote } from "./dividend";
 
 export interface DividendGrowthPoint {
   month: string; // YYYY-MM
@@ -271,7 +271,7 @@ export function buildDividendGrowth(args: {
   // 같은 지급일의 다계좌 기록은 "금액 합 ÷ 계좌별 보유 합"으로 한 번만 주당 분배금을 계산한다 —
   // 기록별 amount/qty를 그대로 합산하면 계좌 수만큼 주당 분배금이 이중 계상된다.
   // 계좌별 보유는 max (같은 계좌의 정규+특별 배당이 같은 날 겹쳐도 보유는 한 번).
-  type DayAgg = { amt: number; qtyByAcct: Map<string, number>; recs: number; withQty: number };
+  type DayAgg = { amt: number; qtyByAcct: Map<string, number>; recs: number; withQty: number; refDate: string };
   const daysByMonth = new Map<string, Map<string, DayAgg>>();
   let recordCount = 0;
   let name = "";
@@ -294,9 +294,13 @@ export function buildDividendGrowth(args: {
       days = new Map();
       daysByMonth.set(m, days);
     }
-    const d = days.get(day) ?? { amt: 0, qtyByAcct: new Map(), recs: 0, withQty: 0 };
+    const d = days.get(day) ?? { amt: 0, qtyByAcct: new Map(), recs: 0, withQty: 0, refDate: day };
     d.amt += amount;
     d.recs += 1;
+    // 보유 추정 기준일: 배당락일(권리 확정 시점) 우선, 없으면 지급일. 가장 이른 값을 쓴다
+    // (같은 날 여러 기록의 락일이 다르면 보수적으로 앞선 시점 = 매도 전 보유).
+    const ex = parseExDateFromNote(l.note);
+    if (ex && ex < d.refDate) d.refDate = ex;
     const qty = parseQuantityFromNote(l.note);
     if (qty != null && qty > 0) {
       d.withQty += 1;
@@ -306,6 +310,22 @@ export function buildDividendGrowth(args: {
     days.set(day, d);
   }
   if (recordCount === 0) return null;
+
+  // ── 거래 (보유 수량·평단 이동평균, 수수료 포함)
+  const myTrades = args.trades
+    .filter((t) => canonicalTickerForMatch(t.ticker) === canonical && t.date)
+    .sort((a, b) => a.date.localeCompare(b.date));
+  if (!name && myTrades.length > 0) name = myTrades[myTrades.length - 1].name || "";
+
+  /** date 시점(포함) 누적 보유 수량 — 전 계좌 합. 배당 기준일 보유 추정용. */
+  const sharesAsOf = (date: string): number => {
+    let q = 0;
+    for (const t of myTrades) {
+      if (t.date > date) break;
+      q += (t.side === "sell" ? -1 : 1) * (Number(t.quantity) || 0);
+    }
+    return Math.max(0, q);
+  };
 
   type DivAgg = { received: number; perShare: number; perShareKnown: boolean };
   const divByMonth = new Map<string, DivAgg>();
@@ -317,19 +337,18 @@ export function buildDividendGrowth(args: {
       if (d.withQty === d.recs && qtySum > 0) {
         agg.perShare += d.amt / qtySum;
       } else {
-        // 보유 미기재 지급일이 섞인 달 → 월 전체를 '불명'으로 두고 아래에서 월말 보유로 추정
-        agg.perShareKnown = false;
+        // 보유 미기재 지급일 → **기준일(배당락일 ?? 지급일) 시점 보유**로 추정.
+        // 월말 보유로 나누면 그 달에 매도/매수가 있을 때 주당 분배금이 통째로 틀어진다
+        // (실측: 4월 배당 10,800원을 월말 3주로 나눠 3,600원/주 → 연환산 YOC 25.8%로 폭주.
+        //  배당락일 보유 300주로 나누면 36원/주 = 정상). 기준일 보유가 0이면 불명 처리.
+        const est = sharesAsOf(d.refDate);
+        if (est > 1e-8) agg.perShare += d.amt / est;
+        else agg.perShareKnown = false;
       }
     }
     if (!agg.perShareKnown) agg.perShare = 0;
     divByMonth.set(m, agg);
   }
-
-  // ── 거래 (보유 수량·평단 이동평균, 수수료 포함)
-  const myTrades = args.trades
-    .filter((t) => canonicalTickerForMatch(t.ticker) === canonical && t.date)
-    .sort((a, b) => a.date.localeCompare(b.date));
-  if (!name && myTrades.length > 0) name = myTrades[myTrades.length - 1].name || "";
 
   // ── 주가 폴백 체인 데이터 준비
   const closesByMonth = new Map<string, { date: string; close: number }>();

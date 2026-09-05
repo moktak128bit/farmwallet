@@ -1,6 +1,7 @@
 import type { AppData } from "../types";
 import { STORAGE_KEYS, BACKUP_CONFIG } from "../constants/config";
 import { getKoreaTime } from "../utils/date";
+import { newIdWithPrefix } from "../utils/id";
 import {
   getBackupStore,
   readPendingSafetySnapshot,
@@ -229,7 +230,8 @@ export function isBackupOnSaveEnabled(): boolean {
 }
 
 function newBackupId(): string {
-  return `B${Date.now()}-${Math.floor(Math.random() * 1000)}`;
+  // utils/id 단일 규약(규약 #6). `B${Date.now()}-rand`는 같은 ms 다중 호출 시 충돌 가능.
+  return newIdWithPrefix("B");
 }
 
 function buildRecord(dataJson: string, options?: { hash?: string; label?: string }): BackupRecord {

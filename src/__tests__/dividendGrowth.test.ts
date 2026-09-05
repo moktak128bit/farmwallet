@@ -90,11 +90,11 @@ describe("buildDividendGrowth", () => {
     expect(may.perShare).toBeCloseTo(250);
   });
 
-  it("보유주식 미기재 지급월은 월말 보유 수량으로 주당 분배금을 추정한다 (0으로 섞이지도, 제외되지도 않음)", () => {
+  it("보유주식 미기재 지급월은 기준일 시점 보유 수량으로 추정한다 (0으로 섞이지도, 제외되지도 않음)", () => {
     const noNote = { ...div("2026-05-06", "458730", "TIGER 미국배당다우존스", 1000, 1), note: undefined };
     const ledger = [
       div("2026-04-02", "458730", "TIGER 미국배당다우존스", 400, 10), // 주당 40
-      noNote, // 5월: 수령 1,000원, 보유주식 미기재 → 월말 보유 10주로 추정 = 주당 100
+      noNote, // 5월: 수령 1,000원, 보유주식 미기재 → 지급일 보유 10주로 추정 = 주당 100
       div("2026-06-02", "458730", "TIGER 미국배당다우존스", 500, 10), // 주당 50
     ];
     const r = buildDividendGrowth({
@@ -106,6 +106,48 @@ describe("buildDividendGrowth", () => {
     });
     // (40+100+50)/3 × 12 = 760 — 5월을 0으로 섞은 360도, 제외한 540도 아님
     expect(r!.current.annualPerShare).toBeCloseTo(760);
+  });
+
+  it("보유 미기재 + 그 달 전량 매도: 월말(3주)이 아니라 배당락일(300주) 보유로 나눈다", () => {
+    // 실데이터 회귀: 2026-04-02 배당 10,800원(note에 배당락일만) → 4/27 300주 전량 매도로
+    // 월말 보유가 3주만 남아, 월말 기준이면 주당 3,600원(정상의 100배)이 되어
+    // 연환산 YOC가 2.8% → 25.8%로 폭주했다.
+    const exOnly = {
+      ...div("2026-04-02", "458730", "TIGER 미국배당다우존스", 10_800, 1),
+      note: "배당락일:2026-03-30",
+    };
+    const r = buildDividendGrowth({
+      ticker: "458730",
+      ledger: [exOnly],
+      trades: [
+        buy("2026-02-27", "458730", 300, 14_000),
+        buy("2026-04-20", "458730", 3, 14_500),
+        { ...buy("2026-04-27", "458730", 300, 14_645), side: "sell" as const },
+      ],
+      prices: [],
+      currentMonth: "2026-04",
+    });
+    const apr = r!.points.find((p) => p.month === "2026-04")!;
+    expect(apr.shares).toBe(3);          // 월말 보유는 3주
+    expect(apr.perShare).toBeCloseTo(36); // 그래도 주당은 10,800 ÷ 300 = 36원
+    expect(r!.current.annualPerShare).toBeCloseTo(36 * 12);
+  });
+
+  it("배당락일이 없으면 지급일 시점 보유로 추정한다", () => {
+    const noNote = { ...div("2026-02-03", "458730", "TIGER 미국배당다우존스", 3488, 1), note: undefined };
+    const r = buildDividendGrowth({
+      ticker: "458730",
+      ledger: [noNote],
+      trades: [
+        buy("2025-11-10", "458730", 109, 12_000),
+        buy("2026-02-12", "458730", 191, 14_500), // 지급일 '이후' 매수 → 추정에 포함되면 안 됨
+      ],
+      prices: [],
+      currentMonth: "2026-02",
+    });
+    const feb = r!.points.find((p) => p.month === "2026-02")!;
+    expect(feb.shares).toBe(300);        // 월말 보유 300주
+    expect(feb.perShare).toBeCloseTo(32); // 지급일 기준 109주 → 3,488 ÷ 109 = 32원
   });
 
   it("다계좌 동일 지급일: 주당 분배금은 '금액 합 ÷ 계좌별 보유 합'으로 한 번만 (이중 계상 방지)", () => {

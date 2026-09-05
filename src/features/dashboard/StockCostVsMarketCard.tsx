@@ -5,7 +5,7 @@ import {
   type StockSnapshotHolding,
   type StockSnapshotPoint,
 } from "../../utils/stockCostSnapshots";
-import { formatKRW, formatDecimal } from "../../utils/formatter";
+import { formatKRW, formatDecimal, formatQuantity } from "../../utils/formatter";
 import type { CostVsMarketRow } from "./DashboardInlineCharts";
 
 const LazyCostVsMarketValueChart = lazy(() =>
@@ -264,7 +264,7 @@ const SnapshotDetail: React.FC<SnapshotDetailProps> = ({ point, isLatest, onRese
                     <span className="hint" style={{ marginLeft: 6, fontWeight: 400 }}>{h.name}</span>
                   </td>
                   <td style={{ textAlign: "left", padding: "6px 8px", color: "var(--text-muted)" }}>{h.accountName}</td>
-                  <td style={{ padding: "6px 8px" }}>{formatDecimal(h.quantity, 4)}</td>
+                  <td style={{ padding: "6px 8px" }}>{formatQuantity(h.quantity)}</td>
                   <td style={{ padding: "6px 8px" }}>{formatNativePrice(h.avgPriceNative, h.isUsd)}</td>
                   <td style={{ padding: "6px 8px" }}>
                     {h.priceNative == null ? (

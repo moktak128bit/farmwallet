@@ -1,7 +1,7 @@
 import React, { useCallback, useMemo, useState, useEffect } from "react";
 import { QuantityField, NumericInput } from "./ui/fields";
 import type { Account, LedgerEntry, StockPrice, StockTrade, TickerInfo } from "../types";
-import { formatKRW, formatNumber, formatDecimal } from "../utils/formatter";
+import { formatKRW, formatNumber, formatQuantity } from "../utils/formatter";
 import { isKRWStock, isUSDStock, extractTickerFromText, canonicalTickerForMatch } from "../utils/finance";
 import { parseExDateFromNote, buildDividendNote } from "../utils/dividend";
 import { isDividendEntryLoose } from "../utils/categoryMatch";
@@ -459,7 +459,7 @@ export const StockDetailModal: React.FC<Props> = ({
             <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(150px, 1fr))", gap: 12 }}>
               <div>
                 <div style={{ fontSize: 12, color: "var(--text-muted)", marginBottom: 4 }}>보유 수량</div>
-                <div style={{ fontSize: 16, fontWeight: 600 }}>{formatDecimal(position.quantity, 4)}주</div>
+                <div style={{ fontSize: 16, fontWeight: 600 }}>{formatQuantity(position.quantity)}주</div>
               </div>
               <div>
                 <div style={{ fontSize: 12, color: "var(--text-muted)", marginBottom: 4 }}>평균 단가</div>
@@ -548,7 +548,7 @@ export const StockDetailModal: React.FC<Props> = ({
                         <td style={{ color: trade.side === "buy" ? "var(--danger)" : "var(--accent)", fontWeight: 600 }}>
                           {trade.side === "buy" ? "매수" : "매도"}
                         </td>
-                        <td className="number">{formatDecimal(trade.quantity, 4)}주</td>
+                        <td className="number">{formatQuantity(trade.quantity)}주</td>
                         <td className="number">
                           {selectedTickerCurrency === "USD" && showUSD
                             ? `$${formatNumber(trade.price)}`

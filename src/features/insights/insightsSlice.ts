@@ -283,7 +283,7 @@ export function sliceInsightsForMonth(base: InsightsBase, selMonth: string | nul
   const comments: Record<string, string> = { "A+": "완벽한 재무 습관!", A: "훌륭하게 관리 중!", "B+": "꽤 건강한 재무 상태!", B: "나쁘지 않아요!", "C+": "개선의 여지가 있어요.", C: "소비 조절이 필요해요.", D: "재무 점검이 필요해요!" };
 
   /* prev month */
-  let prev: { income: number; expense: number; salary: number } | null = null;
+  let prev: { income: number; expense: number; salary: number; realExpense: number } | null = null;
   if (selMonth) {
     const [y, m] = selMonth.split("-").map(Number); const pd = new Date(y, m - 2, 1);
     const pm = `${pd.getFullYear()}-${String(pd.getMonth() + 1).padStart(2, "0")}`;
@@ -297,7 +297,10 @@ export function sliceInsightsForMonth(base: InsightsBase, selMonth: string | nul
       if (flow === "income") { pi += a; if (salaryKeys.has(l.subCategory || l.category || "")) ps += a; }
       else if (flow === "expense") pe += a;
     }
-    if (pi > 0 || pe > 0) prev = { income: pi, expense: pe, salary: ps };
+    // 전월 실질 지출도 realFlows 단일 소스에서 가져온다 — 없으면 pe(장부 지출)로 대체.
+    // (당월 값은 실질 지출인데 전월만 장부 지출과 비교하면 "실질 지출" 배지가 엉뚱한 방향을 가리킨다)
+    const prevRealExpense = realFlows.get(pm)?.realExpense ?? pe;
+    if (pi > 0 || pe > 0) prev = { income: pi, expense: pe, salary: ps, realExpense: prevRealExpense };
   }
 
   /* ===== 소득 그룹별 분류 ===== */

@@ -12,7 +12,7 @@ import { formatKRW, formatUSD } from "../../../utils/formatter";
 import { toast } from "react-hot-toast";
 import { isCoarsePointer } from "../../../utils/pointer";
 import { useAppStore } from "../../../store/appStore";
-import { ACCOUNT_TYPE_LABEL } from "../accountsShared";
+import { ACCOUNT_TYPE_LABEL, parseSignedAmount, sanitizeSignedNumericInput } from "../accountsShared";
 
 // ─── 삭제 토스트 [실행 취소] — "삭제 항목 재삽입" 복원 ───────────────────
 // 풀 스냅샷 undo가 아니다:
@@ -129,6 +129,15 @@ export const AccountTablesSection: React.FC<Props> = React.memo(function Account
       }
       onRenameAccountId(id, nextId);
     } else {
+      let usdBalance: number | undefined;
+      if (field === "usdBalance") {
+        const parsed = raw === "" ? 0 : parseSignedAmount(raw);
+        if (parsed == null) {
+          toast.error("금액 형식이 올바르지 않습니다. 예: 1000.50, -50000");
+          return;
+        }
+        usdBalance = parsed;
+      }
       const updated = safeAccounts.map((a) =>
         a.id === id
           ? {
@@ -136,7 +145,7 @@ export const AccountTablesSection: React.FC<Props> = React.memo(function Account
               [field]: field === "type"
                 ? (editingCellValue as AccountType)
                 : field === "usdBalance"
-                ? Number(raw.replace(/[^\d.-]/g, "")) || 0
+                ? usdBalance
                 : editingCellValue
             }
           : a
@@ -315,10 +324,7 @@ export const AccountTablesSection: React.FC<Props> = React.memo(function Account
                     type="text"
                     value={editingCellValue}
                     autoFocus
-                    onChange={(e) => {
-                      const val = e.target.value.replace(/[^\d.-]/g, "");
-                      setEditingCellValue(val);
-                    }}
+                    onChange={(e) => setEditingCellValue(sanitizeSignedNumericInput(e.target.value))}
                     onBlur={saveCell}
                     onKeyDown={(e) => {
                       if (e.key === "Enter") saveCell();

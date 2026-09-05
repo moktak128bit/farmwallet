@@ -50,6 +50,18 @@ describe("computeRealizedPnlByTradeId (FIFO)", () => {
     const result = computeRealizedPnlByTradeId(trades);
     expect(result.get("s1")).toBe(-200); // (80-100) * 10
   });
+
+  it("오버셀(매수 기록 삭제 등으로 보유량보다 많이 매도)은 부족분을 손익 0으로 중립화 — 허위 수익 방지 (회귀)", () => {
+    const trades = [
+      makeTrade({ id: "b1", side: "buy", date: "2026-01-01", quantity: 10, price: 100, totalAmount: 1000 }),
+      // 10주만 매수했는데 15주 매도 — 뒤늦게 매수 거래를 지운 것 같은 데이터 정합 문제 시뮬레이션
+      makeTrade({ id: "s1", side: "sell", date: "2026-02-01", quantity: 15, price: 200, totalAmount: 3000 }),
+    ];
+    const result = computeRealizedPnlByTradeId(trades);
+    // 소진된 10주분만 (200-100)*10=1000 이익. 부족한 5주(대금 1000)는 원가=대금으로 잡아 0 기여.
+    // 고치기 전엔 costBasis=1000(10주분)만 잡혀 pnl=3000-1000=2000 (5주가 허위로 100% 이익 처리됨).
+    expect(result.get("s1")).toBe(1000);
+  });
 });
 
 function makeRepayment(overrides: Partial<LedgerEntry> & { id: string }): LedgerEntry {
@@ -172,6 +184,20 @@ describe("computeLoanBalanceAt — 2세대 이자 상환은 잔금에서 차감�
       makeRepayment({ id: "1", category: "지출", subCategory: "대출상환", detailCategory: "원금", description: "주담대2 상환", amount: 100_000, loanId: "l2" }),
     ];
     // loanId로 l2만 차감 → l1=1,000,000 + l2=400,000 = 1,400,000 (없으면 substring 이중 → 1,300,000)
+    expect(computeLoanBalanceAt(twoLoans, ledger)).toBe(1_400_000);
+  });
+
+  it("loanId 없는 레거시 상환도 접두 관계 대출명에서 이중 차감되지 않는다 (단일 승자 매칭)", () => {
+    const twoLoans: Loan[] = [
+      loans[0],
+      { ...loans[0], id: "l2", loanName: "주담대2", loanAmount: 500_000 },
+    ];
+    const ledger: LedgerEntry[] = [
+      // loanId 없음 — description만으로 매칭. "주담대2 상환"은 "주담대"와 "주담대2" 둘 다에
+      // .includes()가 참이지만, 가장 긴 이름("주담대2")만 승자여야 한다.
+      makeRepayment({ id: "1", category: "지출", subCategory: "대출상환", detailCategory: "원금", description: "주담대2 상환", amount: 100_000 }),
+    ];
+    // l2만 차감 → l1=1,000,000 + l2=400,000 = 1,400,000 (양쪽 다 차감되면 1,300,000)
     expect(computeLoanBalanceAt(twoLoans, ledger)).toBe(1_400_000);
   });
 });

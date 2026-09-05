@@ -137,8 +137,10 @@ export function generateYearlyReport(ledger: LedgerEntry[], fxRate?: number | nu
 export function generateCategoryReport(
   ledger: LedgerEntry[],
   startDate?: string,
-  endDate?: string
+  endDate?: string,
+  fxRate?: number | null
 ): CategoryReport[] {
+  const toKrw = (e: LedgerEntry) => toKrwByRate(e.amount, e.currency, fxRate);
   const reports = new Map<string, { total: number; count: number }>();
 
   for (const entry of ledger) {
@@ -158,7 +160,9 @@ export function generateCategoryReport(
     }
 
     const row = reports.get(key)!;
-    row.total += entry.amount;
+    // USD 등 비KRW 항목을 원화 환산 없이 더하면(구버전) 해외카드 결제 같은 항목이
+    // 액면가로 합산돼 월별/종합 리포트의 지출 합계와 어긋난다 (수십% 과소집계).
+    row.total += toKrw(entry);
     row.count += 1;
   }
 
@@ -257,7 +261,8 @@ export function generateMonthlyIncomeDetail(
   ledger: LedgerEntry[],
   accounts: Account[],
   startMonth?: string,
-  endMonth?: string
+  endMonth?: string,
+  fxRate?: number | null
 ): MonthlyIncomeDetail[] {
   const accountMap = new Map(accounts.map((account) => [account.id, account]));
 
@@ -279,7 +284,8 @@ export function generateMonthlyIncomeDetail(
       description: entry.description,
       accountId: entry.toAccountId,
       accountName: entry.toAccountId ? accountMap.get(entry.toAccountId)?.name : undefined,
-      amount: entry.amount
+      // USD 배당(미국주식)을 액면가 그대로 두면 KRW 항목들과 단위 없이 섞여 표에 나간다 — 원화 환산.
+      amount: toKrwByRate(entry.amount, entry.currency, fxRate)
     }))
     .sort((a, b) => (a.month === b.month ? a.date.localeCompare(b.date) : a.month.localeCompare(b.month)));
 }

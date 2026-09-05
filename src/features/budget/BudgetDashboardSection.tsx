@@ -171,7 +171,9 @@ export const BudgetDashboardSection: React.FC<Props> = React.memo(function Budge
               b.monthlyLimit > 0
                 ? (b.spent / b.monthlyLimit) * 100
                 : 0;
-            const isOver = b.spent > b.monthlyLimit && b.monthlyLimit > 0;
+            // budgetPace.ts의 "exceeded" 판정(spent >= limit)·진행바 색(catPct >= 100)과 통일 —
+            // >만 쓰면 정확히 한도에 도달한 달이 카드 배경만 강조 안 돼 서로 모순된 신호를 보인다.
+            const isOver = b.spent >= b.monthlyLimit && b.monthlyLimit > 0;
             const barColor =
               catPct >= 100 ? "var(--danger)" : catPct >= 80 ? "var(--warning)" : "var(--success)";
             const accentColor = cardColors[idx % cardColors.length];

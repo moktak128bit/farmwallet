@@ -2,7 +2,7 @@ import React, { useState, useMemo, useEffect, useRef } from "react";
 import { toast } from "react-hot-toast";
 import type { Account, AccountBalanceRow, StockPrice, StockTrade, TradeSide } from "../../types";
 import { computeRealizedPnlByTradeId, computeRealizedPnlDetailByTradeId } from "../../calculations";
-import { isUSDStock, canonicalTickerForMatch, cryptoDisplaySymbol } from "../../utils/finance";
+import { isUSDStock, isCryptoStock, canonicalTickerForMatch, cryptoDisplaySymbol } from "../../utils/finance";
 import { NumericInput } from "../../components/ui/fields";
 import { parseAmount, formatAmount } from "../../utils/parseAmount";
 import { computeTradeCashImpact } from "../../utils/tradeCashImpact";
@@ -14,6 +14,9 @@ import { showDeleteUndoToast } from "../../utils/undoToast";
 import { saveSafetySnapshot } from "../../services/backupService";
 import { useAppStore } from "../../store/appStore";
 import { FilterChipRow } from "../../components/ui/FilterChipRow";
+import { TradeQuickCopyPanel } from "./TradeQuickCopyPanel";
+import { newIdWithPrefix } from "../../utils/id";
+import { getTodayKST } from "../../utils/date";
 
 const sideLabel: Record<TradeSide, string> = {
   buy: "매수",
@@ -145,6 +148,9 @@ export const TradeHistorySection: React.FC<TradeHistorySectionProps> = ({
     fee: string;
   } | null>(null);
   const [inlineEditField, setInlineEditField] = useState<"date" | "accountId" | "quantity" | "price" | "fee" | "totalAmount" | null>(null);
+  // 빠른 복사 패널 — 대상 거래 바로 아래에 표 행으로 렌더 (같은 종목·계좌·매매구분, 날짜·수량·단가·수수료만 조정)
+  const [quickCopyTrade, setQuickCopyTrade] = useState<StockTrade | null>(null);
+  const [quickCopyForm, setQuickCopyForm] = useState({ date: "", quantity: "", price: "", fee: "" });
   /** 계좌별 보기: undefined = 전체, 값 있으면 해당 계좌만 (필터 센티넬 앱 전역 통일: string|undefined) */
   const [filterAccountId, setFilterAccountId] = useState<string | undefined>();
   const [filterSide, setFilterSide] = useState<string | undefined>();      // "buy" | "sell"
@@ -559,6 +565,91 @@ export const TradeHistorySection: React.FC<TradeHistorySectionProps> = ({
     });
   };
 
+  const startQuickCopyTrade = (t: StockTrade) => {
+    setQuickCopyTrade(t);
+    setQuickCopyForm({
+      date: getTodayKST(),
+      quantity: formatAmount(String(t.quantity), { allowDecimal: true, maxDecimals: 8 }),
+      price: formatAmount(String(t.price), { allowDecimal: true, maxDecimals: 8 }),
+      fee: formatAmount(String(t.fee), { allowDecimal: true, maxDecimals: 8 })
+    });
+  };
+
+  const submitQuickCopyTrade = () => {
+    if (!quickCopyTrade) return;
+    const quantity = parseAmount(quickCopyForm.quantity, { allowDecimal: true, maxDecimals: 8 });
+    const price = parseAmount(quickCopyForm.price, { allowDecimal: true, maxDecimals: 8 });
+    const fee = parseAmount(quickCopyForm.fee, { allowDecimal: true, maxDecimals: 8 });
+    if (!quickCopyForm.date || !quantity || !price) {
+      toast.error(
+        !quickCopyForm.date ? "날짜를 입력해주세요." : !quantity ? "수량을 올바르게 입력해주세요." : "단가를 올바르게 입력해주세요."
+      );
+      return;
+    }
+    const selectedAccount = accounts.find((a) => a.id === quickCopyTrade.accountId);
+    if (!selectedAccount) {
+      toast.error(ERROR_MESSAGES.ACCOUNT_REQUIRED);
+      return;
+    }
+    const side = quickCopyTrade.side;
+    // 매도 복사 시 보유 수량 초과 검증 (메인 폼·인라인 편집과 동일 규칙)
+    if (side === "sell") {
+      const key = canonicalTickerForMatch(quickCopyTrade.ticker);
+      let available = 0;
+      for (const t of trades) {
+        if (canonicalTickerForMatch(t.ticker) !== key || t.accountId !== quickCopyTrade.accountId) continue;
+        available += t.side === "buy" ? t.quantity : -t.quantity;
+      }
+      if (quantity > available + 1e-8) {
+        toast.error(`보유 수량(${Number(Math.max(0, available).toFixed(8))}주)을 초과할 수 없습니다.`);
+        return;
+      }
+    }
+    const priceInfo = latestPriceByCanonicalTicker.get(canonicalTickerForMatch(quickCopyTrade.ticker));
+    const isUSDCurrency = priceInfo?.currency === "USD" || isUSDStock(quickCopyTrade.ticker);
+    // 복사 대상 거래와 동일한 계좌·종목이므로 USD잔액모드 여부도 그 거래를 기준으로 판정
+    const useUsdBalanceMode =
+      (selectedAccount.type === "securities" || selectedAccount.type === "crypto") &&
+      isUSDCurrency &&
+      Math.abs(quickCopyTrade.cashImpact ?? 0) < 0.000001;
+    let exchangeRate = 1;
+    if (isUSDCurrency) {
+      if (useUsdBalanceMode) {
+        exchangeRate = 0; // cashImpact=0, usdBalance만 반영 (메인 폼과 동일 규칙)
+      } else if (fxRate && fxRate > 0) {
+        exchangeRate = fxRate;
+      } else {
+        // 새로 발생하는 거래라 과거 환율을 보존할 수 없음 — 미로드 시 저장 차단
+        toast.error("환율을 불러오지 못해 저장할 수 없습니다. 잠시 후 다시 시도해주세요.");
+        return;
+      }
+    }
+    const totalAmount = side === "buy" ? quantity * price + fee : quantity * price - fee;
+    const totalAmountKRW = isUSDCurrency ? totalAmount * exchangeRate : totalAmount;
+    const cashImpact = computeTradeCashImpact(side, totalAmountKRW, useUsdBalanceMode);
+    const newTrade: StockTrade = {
+      id: newIdWithPrefix("T"),
+      date: quickCopyForm.date,
+      accountId: quickCopyTrade.accountId,
+      ticker: quickCopyTrade.ticker,
+      name: quickCopyTrade.name,
+      side,
+      quantity,
+      price,
+      fee,
+      totalAmount,
+      cashImpact,
+      fxRateAtTrade: isUSDCurrency && exchangeRate > 0 ? exchangeRate : undefined
+    };
+    onChangeTrades((prevTrades) => [newTrade, ...prevTrades]);
+    if (useUsdBalanceMode) {
+      applyUsdBalanceDelta(quickCopyTrade.accountId, side === "buy" ? -totalAmount : totalAmount);
+    }
+    const nm = quickCopyTrade.name || quickCopyTrade.ticker;
+    toast.success(`${nm} ${sideLabel[side]} 거래 복사 추가`);
+    setQuickCopyTrade(null);
+  };
+
   const handleReorderTrade = (id: string, newIndex: number) => {
     const currentIndex = tradeIndexById.get(id);
     if (currentIndex == null) return;
@@ -813,8 +904,8 @@ export const TradeHistorySection: React.FC<TradeHistorySectionProps> = ({
             {visibleTrades.map((t, index) => {
               const actualIndex = index;
               return (
+                <React.Fragment key={t.id}>
                 <tr
-                  key={t.id}
                   data-trade-id={t.id}
                   draggable
                   onDragOver={(e) => {
@@ -1103,16 +1194,53 @@ export const TradeHistorySection: React.FC<TradeHistorySectionProps> = ({
                     })() : "-"}
                   </td>
                   <td style={{ padding: "4px" }}>
-                    <button
-                      type="button"
-                      className="danger"
-                      onClick={() => handleDeleteTrade(t.id)}
-                      style={{ padding: "6px 12px", fontSize: 13 }}
-                    >
-                      삭제
-                    </button>
+                    <div style={{ display: "flex", gap: 4 }}>
+                      <button
+                        type="button"
+                        onClick={() => startQuickCopyTrade(t)}
+                        style={{ padding: "6px 12px", fontSize: 13 }}
+                      >
+                        복사
+                      </button>
+                      <button
+                        type="button"
+                        className="danger"
+                        onClick={() => handleDeleteTrade(t.id)}
+                        style={{ padding: "6px 12px", fontSize: 13 }}
+                      >
+                        삭제
+                      </button>
+                    </div>
                   </td>
                 </tr>
+                {quickCopyTrade?.id === t.id && (
+                  <tr>
+                    <td colSpan={columnWidths.length} style={{ padding: 0 }}>
+                      <TradeQuickCopyPanel
+                        tickerLabel={`${t.name || t.ticker}${isCryptoStock(t.ticker) ? ` (${cryptoDisplaySymbol(t.ticker)})` : ""}`}
+                        accountName={accounts.find((a) => a.id === t.accountId)?.name ?? t.accountId}
+                        sideLabel={sideLabel[t.side]}
+                        currency={
+                          (latestPriceByCanonicalTicker.get(canonicalTickerForMatch(t.ticker))?.currency === "USD" ||
+                            isUSDStock(t.ticker))
+                            ? "USD"
+                            : "KRW"
+                        }
+                        date={quickCopyForm.date}
+                        quantity={quickCopyForm.quantity}
+                        price={quickCopyForm.price}
+                        fee={quickCopyForm.fee}
+                        onDateChange={(v) => setQuickCopyForm((prev) => ({ ...prev, date: v }))}
+                        onQuantityChange={(v) => setQuickCopyForm((prev) => ({ ...prev, quantity: v }))}
+                        onPriceChange={(v) => setQuickCopyForm((prev) => ({ ...prev, price: v }))}
+                        onFeeChange={(v) => setQuickCopyForm((prev) => ({ ...prev, fee: v }))}
+                        onSubmit={submitQuickCopyTrade}
+                        onClose={() => setQuickCopyTrade(null)}
+                      />
+                    </td>
+                  </tr>
+                )}
+                </React.Fragment>
               );
             })}
             {sortedTrades.length === 0 && (

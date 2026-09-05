@@ -1721,7 +1721,7 @@ export const LedgerEntryForm = React.memo(React.forwardRef<LedgerEntryFormHandle
           setForm((prev) => ({
             ...prev,
             description: result.merchant ?? prev.description,
-            amount: result.amount != null ? String(result.amount) : prev.amount,
+            amount: result.amount != null ? formatAmount(String(result.amount)) : prev.amount,
             date: result.date ?? prev.date
           }));
           toast.success("영수증 인식 완료 — 폼에 채워졌습니다.");

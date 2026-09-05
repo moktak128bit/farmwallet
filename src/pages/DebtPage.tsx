@@ -17,7 +17,7 @@
  */
 import React, { useState, useMemo, useCallback, useRef } from "react";
 import type { Loan, LedgerEntry, Account, CategoryPresets } from "../types";
-import { isInterestRepayment } from "../calculations";
+import { isInterestRepayment, matchLoanForRepayment } from "../calculations";
 import { isLoanRepaymentEntry } from "../features/debt/debtShared";
 import { LoanFormSection, type LoanFormSectionHandle } from "../features/debt/LoanFormSection";
 import { LoanCardsSection } from "../features/debt/LoanCardsSection";
@@ -60,24 +60,12 @@ export const DebtView: React.FC<Props> = ({
     return subs && subs.length > 0 ? subs : DEFAULT_LOAN_REPAYMENT_SUBS;
   }, [categoryPresets]);
 
-  // 대출 매칭: ① 설명이 대출명과 정확히 일치하면 우선, ② 부분 포함이면 가장 긴 이름 우선.
-  // (단순 includes 첫 매칭은 "주택대출"/"주택대출2"처럼 접두 관계인 이름에서 혼선을 일으킨다)
-  const matchRepaymentLoan = useCallback((entry: LedgerEntry): Loan | null => {
-    // loanId가 있으면 우선 매칭 — 대출명을 바꿔도 과거 상환이 누락되지 않음 (#13)
-    if (entry.loanId) {
-      const byId = loans.find((loan) => loan.id === entry.loanId);
-      if (byId) return byId;
-    }
-    const description = entry.description || "";
-    const exact = loans.find((loan) => description === loan.loanName);
-    if (exact) return exact;
-    let best: Loan | null = null;
-    for (const loan of loans) {
-      if (!loan.loanName || !description.includes(loan.loanName)) continue;
-      if (!best || loan.loanName.length > best.loanName.length) best = loan;
-    }
-    return best;
-  }, [loans]);
+  // 대출 매칭 — calculations.ts의 matchLoanForRepayment 단일 소스(computeLoanBalanceAt과 규칙 공유).
+  // 독립적으로 재구현하면 "주택대출"/"주택대출2"처럼 접두 관계인 이름에서 두 곳이 서로 다르게 집계된다.
+  const matchRepaymentLoan = useCallback(
+    (entry: LedgerEntry): Loan | null => matchLoanForRepayment(entry, loans),
+    [loans]
+  );
 
   // 대출별 원금/이자 상환 누적. 현재 잔금은 원금 상환분만 차감한다.
   const loanRepayments = useMemo(() => {

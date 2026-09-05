@@ -10,6 +10,7 @@ import { toast } from "react-hot-toast";
 import type { Account, AccountBalanceRow, LedgerEntry } from "../../../types";
 import { newIdWithPrefix } from "../../../utils/id";
 import { NumericInput } from "../../../components/ui/fields";
+import { parseAmount } from "../../../utils/parseAmount";
 
 interface Props {
   /** 카드 제외 잔액 행 (부모 memo — "계좌별 잔액 구성" 표와 순서 공유) */
@@ -92,7 +93,7 @@ export const InitialReversePanel: React.FC<Props> = React.memo(function InitialR
   const reversedInitialBalance = (accountId: string): number | null => {
     const inputStr = actualCurrentInput[accountId];
     if (inputStr == null || inputStr.trim() === "") return null;
-    const desired = Number(String(inputStr).replace(/[^\d.-]/g, "")) || 0;
+    const desired = parseAmount(inputStr, { allowNegative: true });
     const row = safeBalances.find((b) => b.account.id === accountId);
     const account = safeAccounts.find((a) => a.id === accountId);
     if (!row || !account) return null;

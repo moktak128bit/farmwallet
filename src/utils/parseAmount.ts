@@ -4,6 +4,8 @@
  * 정책:
  * - 숫자만 유지 (콤마·원 등 장식 제거).
  * - 과학표기(1e3) 입력은 `[^\d]` 필터로 자연스럽게 차단됨.
+ * - allowDecimal=false에서 소수점이 섞여 들어오면(붙여넣기 등) 소수부를 버리고 정수부만 취함
+ *   ("123.45" → 123). 점만 제거하고 자리를 이어붙이면 "123.45"가 12345로 100배 부풀려진다.
  * - 다중 소수점("1.2.3")은 첫 번째 점만 유지하고 나머지 자리를 이어 붙임.
  * - NaN/Infinity는 0 반환.
  * - allowDecimal=true는 외화·수수료 등 소수점이 실제 필요한 경우에만.
@@ -53,7 +55,7 @@ export function parseAmount(value: string | null | undefined, options?: ParseAmo
     return Number.isFinite(parsed) && parsed >= 0 ? sign * parsed : 0;
   }
 
-  const numeric = rest.replace(/[^\d]/g, "");
+  const numeric = splitDecimal(rest, 0).int;
   if (!numeric) return 0;
   const n = Number(numeric);
   return Number.isFinite(n) && n >= 0 ? sign * n : 0;
@@ -81,7 +83,7 @@ export function formatAmount(value: string | null | undefined, options?: ParseAm
     return `${prefix}${withThousands(int)}.${frac}`;
   }
 
-  const numeric = rest.replace(/[^\d]/g, "");
+  const numeric = splitDecimal(rest, 0).int;
   if (!numeric) return prefix;
   const n = Number(numeric);
   if (!Number.isFinite(n)) return "";

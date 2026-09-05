@@ -42,8 +42,8 @@ import { getKoreaTime, getThisMonthKST, getTodayKST } from "../utils/date";
 import { toast } from "react-hot-toast";
 import { buildClosedTradeRecords } from "../utils/investmentRecord";
 import { exportLedgerCsv } from "../utils/csvExport";
-import { QuickCopyModal } from "../features/ledger/QuickCopyModal";
 import { DescriptionMergeModal } from "../features/ledger/DescriptionMergeModal";
+import { ScreenshotImportExample } from "../features/ledger/ScreenshotImportExample";
 import { TaxiSplitWizard } from "../features/ledger/TaxiSplitWizard";
 import { TollParkingSplitWizard } from "../features/ledger/TollParkingSplitWizard";
 import { BulkEditModal } from "../features/ledger/BulkEditModal";
@@ -109,6 +109,7 @@ export const LedgerView: React.FC<Props> = ({
   const [quickCopyAmount, setQuickCopyAmount] = useState("");
   const [showMergeModal, setShowMergeModal] = useState(false);
   const [showTaxiSplitWizard, setShowTaxiSplitWizard] = useState(false);
+  const [showScreenshotImportExample, setShowScreenshotImportExample] = useState(false);
   const [showTollParkingWizard, setShowTollParkingWizard] = useState(false);
   // 선택 항목 일괄 편집 모달 (selectedLedgerIdsForSum 재사용)
   const [showBulkEdit, setShowBulkEdit] = useState(false);
@@ -145,7 +146,7 @@ export const LedgerView: React.FC<Props> = ({
   const dragSumStartRef = useRef<number>(0);
   const dragSumEndRef = useRef<number>(0);
 
-  const submitQuickCopy = () => {
+  const submitQuickCopy = useCallback(() => {
     if (!quickCopyEntry) return;
     // USD 항목은 소수점 입력 허용 (폼의 USD 이체 입력과 동일 규칙)
     const parsed = sharedParseAmount(quickCopyAmount, { allowDecimal: quickCopyEntry.currency === "USD" });
@@ -189,7 +190,21 @@ export const LedgerView: React.FC<Props> = ({
     toast.success(`${quickCopyEntry.category || "항목"} ${amountStr} 복사 추가`);
     setQuickCopyEntry(null);
     setQuickCopyAmount("");
-  };
+  }, [quickCopyEntry, quickCopyAmount, ledger, onChangeLedger]);
+
+  const handleQuickCopyEditInForm = useCallback(() => {
+    // 폼 적재는 LedgerEntryForm 소유 — ref API로 위임
+    setQuickCopyEntry((cur) => {
+      if (cur) ledgerFormRef.current?.startCopy(cur);
+      return null;
+    });
+    setQuickCopyAmount("");
+  }, []);
+
+  const handleCloseQuickCopy = useCallback(() => {
+    setQuickCopyEntry(null);
+    setQuickCopyAmount("");
+  }, []);
 
   // 셀 편집 취소 — ESC 단축키(부모)와 memo된 LedgerTable 양쪽에서 쓰므로 useCallback으로 참조 고정
   const cancelEditField = useCallback(() => {
@@ -884,6 +899,15 @@ export const LedgerView: React.FC<Props> = ({
             type="button"
             className="secondary"
             style={{ fontSize: 12, padding: "6px 12px" }}
+            onClick={() => setShowScreenshotImportExample(true)}
+            title="은행 스크린샷을 가계부로 옮기는 기능 예시 (기획 확인용, 실제 저장 없음)"
+          >
+            📷 스크린샷 가져오기 (예시)
+          </button>
+          <button
+            type="button"
+            className="secondary"
+            style={{ fontSize: 12, padding: "6px 12px" }}
             onClick={() => setShowTaxiSplitWizard(true)}
             title="유류교통비에서 택시를 별도 소분류로 분리"
           >
@@ -941,6 +965,15 @@ export const LedgerView: React.FC<Props> = ({
             }
           }}
           onClose={() => setShowMergeModal(false)}
+        />
+      )}
+
+      {showScreenshotImportExample && (
+        <ScreenshotImportExample
+          ledger={ledger}
+          categoryPresets={categoryPresets}
+          accounts={accounts}
+          onClose={() => setShowScreenshotImportExample(false)}
         />
       )}
 
@@ -1189,40 +1222,15 @@ export const LedgerView: React.FC<Props> = ({
         handleDragSumStart={handleDragSumStart}
         selectedLedgerIdsForSum={selectedLedgerIdsForSum}
         onChangeLedger={onChangeLedger}
+        quickCopyEntry={quickCopyEntry}
+        quickCopyAmount={quickCopyAmount}
         setQuickCopyEntry={setQuickCopyEntry}
         setQuickCopyAmount={setQuickCopyAmount}
+        onSubmitQuickCopy={submitQuickCopy}
+        onQuickCopyEditInForm={handleQuickCopyEditInForm}
+        onCloseQuickCopy={handleCloseQuickCopy}
         highlightLedgerId={highlightLedgerId}
       />
-
-      {/* 빠른 복사 모달 */}
-      {quickCopyEntry && (() => {
-        const qe = quickCopyEntry;
-        const fromName = accounts.find((a) => a.id === qe.fromAccountId)?.name ?? qe.fromAccountId;
-        const toName = accounts.find((a) => a.id === qe.toAccountId)?.name ?? qe.toAccountId;
-        const categoryLabel = [qe.category, qe.subCategory, qe.detailCategory].filter(Boolean).join(" > ");
-        const kindLabel = qe.kind === "income" ? "수입" : qe.kind === "transfer" ? "이체" : "지출";
-        return (
-          <QuickCopyModal
-            kindLabel={kindLabel}
-            date={qe.date}
-            categoryLabel={categoryLabel}
-            description={qe.description}
-            fromName={fromName}
-            toName={toName}
-            amount={quickCopyAmount}
-            allowDecimal={qe.currency === "USD"}
-            onAmountChange={setQuickCopyAmount}
-            onSubmit={submitQuickCopy}
-            onEditInForm={() => {
-              // 폼 적재는 LedgerEntryForm 소유 — ref API로 위임
-              ledgerFormRef.current?.startCopy(quickCopyEntry);
-              setQuickCopyEntry(null);
-              setQuickCopyAmount("");
-            }}
-            onClose={() => { setQuickCopyEntry(null); setQuickCopyAmount(""); }}
-          />
-        );
-      })()}
     </div>
   );
 };

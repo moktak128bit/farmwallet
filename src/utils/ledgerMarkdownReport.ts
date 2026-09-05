@@ -6,6 +6,7 @@
 import type { Account, LedgerEntry } from "../types";
 import { isSavingsExpenseEntry, isCreditPayment, isInvestmentEntry, isInvestmentLossEntry } from "./category";
 import { expenseMainName } from "./categoryMerge";
+import { toKrwByRate } from "./currency";
 
 function formatAmount(amount: number): string {
   return new Intl.NumberFormat("ko-KR").format(amount) + "원";
@@ -24,8 +25,12 @@ function accountName(accounts: Account[], id: string | undefined): string {
 
 export function generateLedgerMarkdownReport(
   ledger: LedgerEntry[],
-  accounts: Account[]
+  accounts: Account[],
+  fxRate?: number | null
 ): string {
+  // USD 항목(해외주식 배당 등)을 액면가 그대로 더하면 "원" 단위 표에서 KRW 항목과 섞여
+  // 액수가 뒤죽박죽된다 — 모든 합계·표시는 원화 환산 기준으로 통일.
+  const toKrw = (e: LedgerEntry): number => toKrwByRate(e.amount, e.currency, fxRate);
   const income: LedgerEntry[] = [];
   const expense: LedgerEntry[] = [];
   const savingsExpense: LedgerEntry[] = [];
@@ -62,10 +67,10 @@ export function generateLedgerMarkdownReport(
   md += `총 ${ledger.length}건 (수입 ${income.length} / 지출 ${expense.length} / 저축성 지출 ${savingsExpense.length} / 이체 ${transfer.length})\n\n`;
   md += `> 아래 통계는 원장(수입·지출·이체) 합계만 포함합니다. 앱에서 보이는 계좌 잔액·총액과 다를 수 있습니다.\n\n`;
 
-  const totalIncome = income.reduce((s, e) => s + e.amount, 0);
-  const totalExpense = expense.reduce((s, e) => s + e.amount, 0);
-  const totalSavings = savingsExpense.reduce((s, e) => s + e.amount, 0);
-  const totalTransfer = transfer.reduce((s, e) => s + e.amount, 0);
+  const totalIncome = income.reduce((s, e) => s + toKrw(e), 0);
+  const totalExpense = expense.reduce((s, e) => s + toKrw(e), 0);
+  const totalSavings = savingsExpense.reduce((s, e) => s + toKrw(e), 0);
+  const totalTransfer = transfer.reduce((s, e) => s + toKrw(e), 0);
   const net = totalIncome - totalExpense - totalSavings;
 
   md += `## 통계\n\n`;
@@ -102,18 +107,18 @@ export function generateLedgerMarkdownReport(
       monthMap.set(m, { income: 0, expense: 0, savings: 0, transfer: 0 });
     }
     const row = monthMap.get(m)!;
-    if (e.kind === "income") row.income += e.amount;
-    else if (e.kind === "transfer" && isInvestmentEntry(e)) row.savings += e.amount;
+    if (e.kind === "income") row.income += toKrw(e);
+    else if (e.kind === "transfer" && isInvestmentEntry(e)) row.savings += toKrw(e);
     // 신용결제 제외 — 그룹 분류(위)와 동일. 예전엔 이 월별 루프만 안 걸러
     // 레거시 카드대금이 월별 지출에 이중계상돼 총계 지출과 어긋났다.
     else if (e.kind === "expense" && isCreditPayment(e)) { /* skip */ }
     // 저축성지출 판정 먼저 (위 그룹 분류와 동일 순서 — 구버전 재테크 저축/투자 호환)
-    else if (isSavingsExpenseEntry(e, accounts)) row.savings += e.amount;
+    else if (isSavingsExpenseEntry(e, accounts)) row.savings += toKrw(e);
     else if (isInvestmentLossEntry(e)) {
-      row.expense += e.amount; // 투자손실 = 실질 지출
+      row.expense += toKrw(e); // 투자손실 = 실질 지출
     }
-    else if (e.kind === "transfer") row.transfer += e.amount;
-    else row.expense += e.amount;
+    else if (e.kind === "transfer") row.transfer += toKrw(e);
+    else row.expense += toKrw(e);
   }
 
   const months = Array.from(monthMap.entries()).sort((a, b) =>
@@ -135,7 +140,7 @@ export function generateLedgerMarkdownReport(
     const main = expenseMainName(e) || "기타";
     const det = (e.detailCategory || "").trim();
     const key = det ? `${main} > ${det}` : main;
-    categoryMap.set(key, (categoryMap.get(key) ?? 0) + e.amount);
+    categoryMap.set(key, (categoryMap.get(key) ?? 0) + toKrw(e));
   }
   const categoryRows = Array.from(categoryMap.entries()).sort(
     (a, b) => b[1] - a[1]
@@ -165,7 +170,7 @@ export function generateLedgerMarkdownReport(
       acc = `${accountName(accounts, e.fromAccountId)} → ${accountName(accounts, e.toAccountId)}`;
     else acc = accountName(accounts, e.fromAccountId ?? e.toAccountId);
     const note = escapeCell(e.note || "-");
-    return `| ${e.date} | ${kindLabel}${fix} | ${cat} | ${sub} | ${desc} | ${formatAmount(e.amount)} | ${escapeCell(acc)} | ${note} |\n`;
+    return `| ${e.date} | ${kindLabel}${fix} | ${cat} | ${sub} | ${desc} | ${formatAmount(toKrw(e))} | ${escapeCell(acc)} | ${note} |\n`;
   }
 
   md += `## 수입 내역\n\n`;

@@ -317,7 +317,7 @@ export interface D {
   weekdayTot: number;
   topDates: { date: string; total: number; items: { desc: string; amount: number }[] }[];
   score: { total: number; grade: string; comment: string };
-  prev: { income: number; expense: number; salary: number } | null;
+  prev: { income: number; expense: number; salary: number; realExpense: number } | null;
   avgMonthExp: number;
 
   incByGroup: { name: string; value: number; items: [string, number][] }[];

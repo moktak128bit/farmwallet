@@ -16,7 +16,12 @@ export const OverviewTab = React.memo(function OverviewTab({ d }: { d: D }) {
     : d.months;
   // 순현금흐름 = 근로소득 − 지출 − 투자. "월급으로 지출·투자를 감당하는가"를 현실적으로 (비근로 유입 제외)
   const flowData = flowMonths.map(m => ({ name: d.ml[m], 순현금흐름: (d.salaryMonthly[m] ?? 0) - d.monthly[m].expense - d.monthly[m].investment }));
-  const expBadge = d.prev ? Pct(SD(d.pExpense - d.prev.expense, d.prev.expense) * 100) + " vs 전월" : undefined;
+  // "실질 지출" 카드의 배지 — 카드 본문 값(d.realExpense)과 같은 기준(실질)으로 비교해야 한다.
+  // 장부 지출(pExpense/prev.expense)로 비교하면 데이트 분담 등으로 실질과 장부가 갈릴 때
+  // 배지가 실제 추세와 반대 방향을 가리킨다.
+  const expBadge = d.prev
+    ? (d.prev.realExpense > 0 ? Pct(SD(d.realExpense - d.prev.realExpense, d.prev.realExpense) * 100) + " vs 전월" : "N/A vs 전월")
+    : undefined;
   const top3Sub = d.expBySub.filter(s => s.sub !== "신용결제" && s.cat !== "신용결제").slice(0, 3);
   const top3pct = d.pExpense > 0 ? Math.round(top3Sub.reduce((s, x) => s + x.amount, 0) / d.pExpense * 100) : 0;
 

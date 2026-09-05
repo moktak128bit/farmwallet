@@ -16583,10 +16583,6 @@
       "name": "ETHA"
     },
     {
-      "ticker": "ETHEREUM",
-      "name": "ETH"
-    },
-    {
       "ticker": "ETHM",
       "name": "ETHM"
     },
@@ -33349,14 +33345,6 @@
     {
       "ticker": "SOJF",
       "name": "SOJF"
-    },
-    {
-      "ticker": "SOL",
-      "name": "SOL"
-    },
-    {
-      "ticker": "SOLANA",
-      "name": "SOL"
     },
     {
       "ticker": "SOLV",

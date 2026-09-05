@@ -8,6 +8,7 @@ import type {
   StockTrade
 } from "./types";
 import { isKRWStock, isUSDStock, canonicalTickerForMatch, isCryptoStock } from "./utils/finance";
+import { consumeFifoLots, type FifoLot } from "./utils/fifoLots";
 
 
 // ---------------------------------------------------------------------------
@@ -55,28 +56,21 @@ function fifoRealizedPnlDetailBySell(
   sortedTrades: StockTrade[],
   toKrw?: (amount: number) => number
 ): Map<string, RealizedPnlDetail> {
-  type Lot = { qty: number; totalAmount: number };
   const result = new Map<string, RealizedPnlDetail>();
-  const queue: Lot[] = [];
+  const queue: FifoLot[] = [];
   const convert = toKrw ?? ((x: number) => x);
 
   for (const t of sortedTrades) {
     if (t.side === "buy") {
-      queue.push({ qty: t.quantity, totalAmount: t.totalAmount });
+      queue.push({ qty: t.quantity, value: t.totalAmount });
     } else {
-      let remaining = t.quantity;
-      let costBasis = 0;
-      while (remaining > 0 && queue.length > 0) {
-        const lot = queue[0];
-        const use = Math.min(remaining, lot.qty);
-        const unitCost = lot.totalAmount / lot.qty;
-        const cost = unitCost * use;
-        costBasis += cost;
-        remaining -= use;
-        lot.qty -= use;
-        lot.totalAmount = unitCost * lot.qty;
-        if (lot.qty <= 0) queue.shift();
-      }
+      const { consumedValue, consumedQty } = consumeFifoLots(queue, t.quantity);
+      // oversell(매수 기록 삭제/수정 등으로 보유량보다 많이 매도됨) — 소진 못 한 잔여 수량의
+      // 매도대금을 그대로 원가로 잡아 손익 0으로 중립화한다. 원가를 0으로 두면 매도대금 전액이
+      // 허위 수익으로 잡히므로, 데이터 정합 문제는 왜곡값보다 중립값이 안전하다 (fxUnreliable과 동일 원칙).
+      const shortfall = t.quantity - consumedQty;
+      const unitPrice = t.quantity > 0 ? t.totalAmount / t.quantity : 0;
+      const costBasis = consumedValue + shortfall * unitPrice;
       const realizedPnl = t.totalAmount - costBasis;
       result.set(t.id, {
         pnl: convert(realizedPnl),
@@ -470,11 +464,25 @@ export function hasLoanRepaymentStructure(entry: LedgerEntry): boolean {
   return false;
 }
 
-function isLoanRepaymentForLoan(entry: LedgerEntry, loan: Loan): boolean {
-  if (entry.kind !== "expense") return false;
-  if (!hasLoanRepaymentStructure(entry)) return false;
-  if (entry.loanId) return entry.loanId === loan.id;
-  return (entry.description || "").includes(loan.loanName);
+/**
+ * 상환 항목 → 대출 단일 매칭. loanId 우선, 없으면 설명 문자열: 정확히 일치 > 가장 긴 부분일치.
+ * (DebtPage.tsx의 matchRepaymentLoan과 규칙을 공유하는 단일 소스 — 각자 독립적으로 `.includes()`만
+ *  쓰면 "주택대출"/"주택대출2"처럼 접두 관계인 이름에서 한 상환액이 여러 대출에 중복 집계된다.)
+ */
+export function matchLoanForRepayment(entry: LedgerEntry, loans: Loan[]): Loan | null {
+  if (entry.loanId) {
+    const byId = loans.find((loan) => loan.id === entry.loanId);
+    if (byId) return byId;
+  }
+  const description = entry.description || "";
+  const exact = loans.find((loan) => description === loan.loanName);
+  if (exact) return exact;
+  let best: Loan | null = null;
+  for (const loan of loans) {
+    if (!loan.loanName || !description.includes(loan.loanName)) continue;
+    if (!best || loan.loanName.length > best.loanName.length) best = loan;
+  }
+  return best;
 }
 
 /**
@@ -508,14 +516,22 @@ export function computeLoanBalanceAt(
 ): number {
   if (!loans || loans.length === 0) return 0;
   const entries = ledger ?? [];
+  // 상환 항목을 대출별로 독립적으로 매칭하면(구 버전) "주택대출"/"주택대출2"처럼 접두 관계인
+  // loanId 없는 레거시 항목이 두 대출 모두에 `.includes()` 매칭돼 원금이 이중 차감된다.
+  // 항목마다 단일 승자(matchLoanForRepayment)를 먼저 정하고 그 대출에만 누적한다.
+  const principalByLoanId = new Map<string, number>();
+  for (const e of entries) {
+    if (e.kind !== "expense") continue;
+    if (!hasLoanRepaymentStructure(e)) continue;
+    if (isInterestRepayment(e)) continue;
+    if (asOfDate && e.date && e.date > asOfDate) continue;
+    const loan = matchLoanForRepayment(e, loans);
+    if (!loan) continue;
+    principalByLoanId.set(loan.id, (principalByLoanId.get(loan.id) ?? 0) + (e.amount || 0));
+  }
   return loans.reduce((sum, loan) => {
     if (asOfDate && loan.loanDate && loan.loanDate > asOfDate) return sum;
-    const principalRepaid = entries.reduce((s, e) => {
-      if (!isLoanRepaymentForLoan(e, loan)) return s;
-      if (isInterestRepayment(e)) return s;
-      if (asOfDate && e.date && e.date > asOfDate) return s;
-      return s + (e.amount || 0);
-    }, 0);
+    const principalRepaid = principalByLoanId.get(loan.id) ?? 0;
     return sum + Math.max(0, (loan.loanAmount ?? 0) - principalRepaid);
   }, 0);
 }

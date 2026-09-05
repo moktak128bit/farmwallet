@@ -138,13 +138,18 @@ export function buildClosedTradeRecords(
       let weightSum = 0;
       let weightedDateMs = 0;
       let consumedFxMissing = false;
-      const { consumedValue: costBasisKRW } = consumeFifoLots(queue, t.quantity, (lot, used) => {
+      const { consumedValue, consumedQty } = consumeFifoLots(queue, t.quantity, (lot, used) => {
         if (lot.fxMissing) consumedFxMissing = true;
         if (Number.isFinite(lot.dateMs)) {
           weightedDateMs += lot.dateMs * used;
           weightSum += used;
         }
       });
+      // oversell(매수 기록 삭제/수정 등으로 보유량보다 많이 매도됨) — 소진 못 한 잔여 수량의
+      // 매도대금을 그대로 원가로 잡아 손익 0으로 중립화한다(fxUnreliable과 동일 원칙: 왜곡값보다 중립값).
+      const oversellShortfall = t.quantity - consumedQty;
+      const unitProceedsKRW = t.quantity > 0 ? toKRW / t.quantity : 0;
+      const costBasisKRW = consumedValue + oversellShortfall * unitProceedsKRW;
 
       const sellDateMs = parseDayMs(t.date);
       const buyDateMs = weightSum > 0 ? weightedDateMs / weightSum : sellDateMs;

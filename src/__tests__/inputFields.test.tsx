@@ -58,7 +58,7 @@ describe("MoneyField", () => {
     render(<MoneyHarness />);
     const input = screen.getByLabelText(/금액/) as HTMLInputElement;
     fireEvent.change(input, { target: { value: "1234.56" } });
-    expect(input.value).toBe("123,456");
+    expect(input.value).toBe("1,234");
   });
 
   it("USD는 기본으로 소수 2자리까지", () => {
@@ -88,7 +88,7 @@ describe("QuantityField", () => {
     render(<QuantityHarness maxDecimals={0} />);
     const input = screen.getByLabelText(/수량/) as HTMLInputElement;
     fireEvent.change(input, { target: { value: "10.5" } });
-    expect(input.value).toBe("105");
+    expect(input.value).toBe("10");
   });
 });
 

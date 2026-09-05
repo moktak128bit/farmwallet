@@ -1,5 +1,6 @@
 import React, { useMemo, useState, useCallback } from "react";
 import { toast } from "react-hot-toast";
+import { parseAmount } from "../utils/parseAmount";
 import type { WorkoutWeek, WorkoutDayEntry, WorkoutExercise, WorkoutSet, WorkoutBodyPart, WorkoutRoutine, WorkoutRoutineExercise, CustomExercise } from "../types";
 import { MonthCalendar, type EntryRef } from "../features/workout/MonthCalendar";
 import { MonthStats } from "../features/workout/MonthStats";
@@ -523,9 +524,9 @@ export const WorkoutView: React.FC<Props> = ({
 
   const addRoutineExercise = (routineId: string) => {
     const name = routineExerciseDraft.name.trim();
-    const sets = parseInt(routineExerciseDraft.sets, 10);
-    const reps = parseInt(routineExerciseDraft.reps, 10);
-    const weight = parseFloat(routineExerciseDraft.weight);
+    const sets = parseAmount(routineExerciseDraft.sets);
+    const reps = parseAmount(routineExerciseDraft.reps);
+    const weight = parseAmount(routineExerciseDraft.weight, { allowDecimal: true, maxDecimals: 1 });
     if (!name) { toast.error("운동 이름을 입력하세요"); return; }
     if (!Number.isFinite(sets) || sets < 1) { toast.error("세트 수는 1 이상"); return; }
     if (!Number.isFinite(reps) || reps < 1) { toast.error("횟수는 1 이상"); return; }

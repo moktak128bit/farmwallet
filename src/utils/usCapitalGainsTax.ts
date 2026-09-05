@@ -85,8 +85,13 @@ export function realizedForeignGainKRW(
         queue.push({ qty: t.quantity, value: t.totalAmount * fx });
         continue;
       }
-      const { consumedValue: costKRW } = consumeFifoLots(queue, t.quantity);
+      const { consumedValue, consumedQty } = consumeFifoLots(queue, t.quantity);
       const proceedsKRW = t.totalAmount * fx;
+      // oversell(매수 기록 삭제/수정 등으로 보유량보다 많이 매도됨) — 소진 못 한 잔여 수량의
+      // 매도대금을 그대로 원가로 잡아 과세 대상 차익에서 중립화한다(왜곡값보다 중립값이 안전).
+      const oversellShortfall = t.quantity - consumedQty;
+      const unitProceedsKRW = t.quantity > 0 ? proceedsKRW / t.quantity : 0;
+      const costKRW = consumedValue + oversellShortfall * unitProceedsKRW;
       if (t.date.startsWith(yearStr)) total += proceedsKRW - costKRW;
     }
   }

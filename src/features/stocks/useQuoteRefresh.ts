@@ -15,7 +15,8 @@ import {
   isKRWStock,
   isCryptoStock,
   canonicalTickerForMatch,
-  getCurrentHoldingsTickers
+  getCurrentHoldingsTickers,
+  cryptoIdFromSymbol
 } from "../../utils/finance";
 import { displayNameForTicker } from "../../utils/stockHelpers";
 import { usePriceAutoRefresh } from "../../hooks/usePriceAutoRefresh";
@@ -102,7 +103,9 @@ export function useQuoteRefresh({
     [holdingsOnlyTickers, isHoldingsCrypto]
   );
   const holdingsCryptoTickers = useMemo(() =>
-    holdingsOnlyTickers.filter((t) => isHoldingsCrypto(t)).map((t) => t.toLowerCase()),
+    // 거래소 표기("BTC")가 섞여 들어와도 CoinGecko ID("bitcoin")로 되돌려 조회 —
+    // 아니면 /simple/price?ids=btc 가 매치 없이 조용히 빈 결과를 반환해 "시세 없음"이 된다.
+    holdingsOnlyTickers.filter((t) => isHoldingsCrypto(t)).map((t) => cryptoIdFromSymbol(t) ?? t.toLowerCase()),
     [holdingsOnlyTickers, isHoldingsCrypto]
   );
 

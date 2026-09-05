@@ -120,7 +120,9 @@ export const BudgetGoalsTable: React.FC<Props> = React.memo(function BudgetGoals
         <tbody>
           {budgetUsage.map((b) => {
             const pct = b.monthlyLimit > 0 ? Math.min(100, (b.spent / b.monthlyLimit) * 100) : 0;
-            const isOver = b.spent > b.monthlyLimit && b.monthlyLimit > 0;
+            // budgetPace.ts의 "exceeded" 판정(spent >= limit)과 통일 — >만 쓰면 정확히 한도에 도달한
+            // 달이 이 표에서만 "초과" 표시가 안 돼 페이스 배지·진행바 색과 모순된다.
+            const isOver = b.spent >= b.monthlyLimit && b.monthlyLimit > 0;
             return (
             <tr key={b.id} style={isOver ? { backgroundColor: "var(--danger-light, rgba(244, 63, 94, 0.08))" } : undefined}>
               <td

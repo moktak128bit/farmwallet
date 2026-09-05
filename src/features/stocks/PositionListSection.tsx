@@ -1,7 +1,7 @@
 import React, { useState, useMemo, useEffect } from "react";
 import type { Account, StockPrice, AccountBalanceRow, PositionRow, TickerInfo } from "../../types";
 import { isUSDStock, canonicalTickerForMatch, cryptoDisplaySymbol } from "../../utils/finance";
-import { formatKRW, formatUSD, formatNumber } from "../../utils/formatter";
+import { formatKRW, formatUSD, formatQuantity } from "../../utils/formatter";
 
 type PositionSortKey =
   | "ticker"
@@ -599,7 +599,7 @@ export const PositionListSection: React.FC<PositionListSectionProps> = ({
                           )}
                         </td>
                         <td className="number">{formatByDisplayCurrency(avgDisplay.value, avgDisplay.currency)}</td>
-                        <td className="number">{p.quantity % 1 === 0 ? formatNumber(p.quantity) : p.quantity.toFixed(6)}</td>
+                        <td className="number">{formatQuantity(p.quantity)}</td>
                         <td className="number">{formatByDisplayCurrency(totalBuyDisplay.value, totalBuyDisplay.currency)}</td>
                         <td
                           className={`number ${!p.hasQuote ? "" : marketValDisplay.value >= totalBuyDisplay.value ? "positive" : "negative"}`}

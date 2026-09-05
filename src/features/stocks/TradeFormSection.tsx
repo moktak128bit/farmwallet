@@ -31,7 +31,7 @@ import type {
 import { fetchYahooQuotes } from "../../yahooFinanceApi";
 import { saveTickerToJson } from "../../storage";
 import { formatKRW, formatUSD } from "../../utils/formatter";
-import { isUSDStock, isKRWStock, isCryptoStock, canonicalTickerForMatch } from "../../utils/finance";
+import { isUSDStock, isKRWStock, isCryptoStock, canonicalTickerForMatch, canonicalTickerForInput } from "../../utils/finance";
 import { shouldUseUsdBalanceMode as shouldUseUsdBalanceModeUtil, computeTradeCashImpact } from "../../utils/tradeCashImpact";
 import { toast } from "react-hot-toast";
 import { validateDate, validateTicker, validateRequired, validateQuantity, validateAmount, validateAccountTickerCurrency } from "../../utils/validation";
@@ -215,7 +215,9 @@ export const TradeFormSection = React.memo(React.forwardRef<TradeFormSectionHand
     // 거래 폼 검증
     const tradeFormValidation = useMemo(() => {
       const errors: Record<string, string> = {};
-      const tickerClean = canonicalTickerForMatch(tradeForm.ticker);
+      // 시장 선택(코인 버튼)을 우선한다 — "BTC" 같은 거래소 표기가 문자열 휴리스틱만으로는
+      // 미국 주식으로 오분류되어 보유 종목 매칭·통화 판정이 어긋난다.
+      const tickerClean = canonicalTickerForInput(tradeForm.ticker, tradeForm.market);
 
       // 날짜 검증
       // 주의: 주식 거래는 미래 날짜도 허용합니다 (과거 거래 기록 입력, 예약 주문 등)
@@ -242,7 +244,7 @@ export const TradeFormSection = React.memo(React.forwardRef<TradeFormSectionHand
       }
 
       // 수량 검증 (암호화폐·미국주식/ETF는 소수점 허용)
-      const allowDecimalQuantity = isCryptoStock(tradeForm.ticker ?? "") || isUSDStock(tradeForm.ticker ?? "");
+      const allowDecimalQuantity = isCryptoStock(tickerClean) || isUSDStock(tickerClean);
       const quantityValidation = validateQuantity(tradeForm.quantity, allowDecimalQuantity);
       if (!quantityValidation.valid) {
         errors.quantity = quantityValidation.error || "";
@@ -324,7 +326,9 @@ export const TradeFormSection = React.memo(React.forwardRef<TradeFormSectionHand
         if (firstError) toast.error(firstError);
         return;
       }
-      const tickerClean = canonicalTickerForMatch(tradeForm.ticker);
+      // 시장 선택(코인 버튼)을 우선한다 — 문자열 휴리스틱만으로는 "BTC" 같은 거래소 표기가
+      // 미국 주식으로 오분류되어 보유종목 키가 갈리고 시세 매칭이 실패한다.
+      const tickerClean = canonicalTickerForInput(tradeForm.ticker, tradeForm.market);
       const quantityRaw = Number(tradeForm.quantity);
       const quantity = isCryptoStock(tickerClean)
         ? Number(quantityRaw.toFixed(8))
@@ -696,6 +700,12 @@ export const TradeFormSection = React.memo(React.forwardRef<TradeFormSectionHand
         setQuoteError("티커를 입력하세요.");
         return;
       }
+      // 이 검색은 야후 파이낸스 경유 — 코인은 CoinGecko 경로라 여기서 조회 불가.
+      // 막지 않으면 "ethereum" 같은 입력이 시세를 못 찾은 채 market="US"로 ticker.json에 잘못 저장된다.
+      if (isCryptoStock(symbol)) {
+        setQuoteError("코인 시세는 이 검색으로 조회할 수 없습니다. 위 '시장'에서 코인을 선택하고 티커를 입력하세요.");
+        return;
+      }
 
       setIsSearchingQuote(true);
       setQuoteError(null);
@@ -774,12 +784,12 @@ export const TradeFormSection = React.memo(React.forwardRef<TradeFormSectionHand
             )}
           </div>
           <p className="hint" style={{ margin: "0 0 8px 0", fontSize: 12 }}>
-            {isUSDStock(tradeForm.ticker ?? "")
+            {isUSDStock(canonicalTickerForInput(tradeForm.ticker ?? "", tradeForm.market))
               ? "미국 종목: 단가·수수료를 USD와 원화 중 하나 또는 둘 다 입력할 수 있습니다. 둘 다 입력하면 환율 없이 저장됩니다."
-              : "한국 종목은 원화(KRW)로 입력합니다."}
+              : "한국 종목·코인은 원화(KRW)로 입력합니다."}
           </p>
           {/* USD 매수 시 환율 밴드 힌트(읽기 전용) — 이력 부족이면 렌더 안 함 */}
-          {isUSDStock(tradeForm.ticker ?? "") && tradeForm.side !== "sell" && (
+          {isUSDStock(canonicalTickerForInput(tradeForm.ticker ?? "", tradeForm.market)) && tradeForm.side !== "sell" && (
             <FxBandHint current={fxRate} prefix="USD 매수 참고:" style={{ margin: "0 0 8px 0" }} />
           )}
             {/* 전체 폼 */}
@@ -849,8 +859,10 @@ export const TradeFormSection = React.memo(React.forwardRef<TradeFormSectionHand
                       ...prev,
                       ticker: val.toUpperCase(),
                       name: "",
-                      market: undefined,
-                      exchange: undefined
+                      // 코인은 "시장" 버튼이 유일한 명시적 신호 — 버튼을 먼저 누르고 티커를 입력하는
+                      // 순서에서 타이핑마다 지우면 선택이 날아간다. KR/US는 기존대로 재입력 시 초기화.
+                      market: prev.market === "CRYPTO" ? prev.market : undefined,
+                      exchange: prev.market === "CRYPTO" ? prev.exchange : undefined
                     }))
                   }
                   options={tickerSuggestions.map((t) => ({
@@ -931,6 +943,7 @@ export const TradeFormSection = React.memo(React.forwardRef<TradeFormSectionHand
               step="any"
               value={tradeForm.quantity}
               onChange={(e) => setTradeForm({ ...tradeForm, quantity: e.target.value })}
+              onWheel={(e) => e.currentTarget.blur()}
                 style={{
                   padding: "6px 8px",
                   fontSize: 14,
@@ -945,7 +958,7 @@ export const TradeFormSection = React.memo(React.forwardRef<TradeFormSectionHand
               </span>
             )}
           </label>
-            {isUSDStock(tradeForm.ticker ?? "") ? (
+            {isUSDStock(canonicalTickerForInput(tradeForm.ticker ?? "", tradeForm.market)) ? (
               <>
                 <label style={{ display: "flex", flexDirection: "column", gap: 4 }}>
                   <span style={{ fontSize: 13, fontWeight: 500 }}>단가 (USD)</span>
@@ -955,6 +968,7 @@ export const TradeFormSection = React.memo(React.forwardRef<TradeFormSectionHand
                     step="any"
                     value={tradeForm.price}
                     onChange={(e) => setTradeForm({ ...tradeForm, price: e.target.value })}
+                    onWheel={(e) => e.currentTarget.blur()}
                     style={{
                       padding: "6px 8px",
                       fontSize: 14,
@@ -977,6 +991,7 @@ export const TradeFormSection = React.memo(React.forwardRef<TradeFormSectionHand
                     step="1"
                     value={tradeForm.priceKRW ?? ""}
                     onChange={(e) => setTradeForm({ ...tradeForm, priceKRW: e.target.value })}
+                    onWheel={(e) => e.currentTarget.blur()}
                     style={{
                       padding: "6px 8px",
                       fontSize: 14,
@@ -998,6 +1013,7 @@ export const TradeFormSection = React.memo(React.forwardRef<TradeFormSectionHand
                     step="any"
                     value={tradeForm.fee}
                     onChange={(e) => setTradeForm({ ...tradeForm, fee: e.target.value })}
+                    onWheel={(e) => e.currentTarget.blur()}
                     style={{ padding: "6px 8px", fontSize: 14 }}
                   />
                 </label>
@@ -1009,6 +1025,7 @@ export const TradeFormSection = React.memo(React.forwardRef<TradeFormSectionHand
                     step="1"
                     value={tradeForm.feeKRW ?? ""}
                     onChange={(e) => setTradeForm({ ...tradeForm, feeKRW: e.target.value })}
+                    onWheel={(e) => e.currentTarget.blur()}
                     style={{
                       padding: "6px 8px",
                       fontSize: 14,
@@ -1033,6 +1050,7 @@ export const TradeFormSection = React.memo(React.forwardRef<TradeFormSectionHand
                     step="any"
                     value={tradeForm.price}
                     onChange={(e) => setTradeForm({ ...tradeForm, price: e.target.value })}
+                    onWheel={(e) => e.currentTarget.blur()}
                     style={{
                       padding: "6px 8px",
                       fontSize: 14,
@@ -1054,6 +1072,7 @@ export const TradeFormSection = React.memo(React.forwardRef<TradeFormSectionHand
                     step="any"
                     value={tradeForm.fee}
                     onChange={(e) => setTradeForm({ ...tradeForm, fee: e.target.value })}
+                    onWheel={(e) => e.currentTarget.blur()}
                     style={{ padding: "6px 8px", fontSize: 14 }}
                   />
                 </label>

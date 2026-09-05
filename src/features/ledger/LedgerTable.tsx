@@ -17,6 +17,7 @@ import { useFxRateValue } from "../../context/FxRateContext";
 import { toKrwByRate } from "../../utils/currency";
 import { validateDate } from "../../utils/validation";
 import { getTodayKST, parseIsoLocal } from "../../utils/date";
+import { QuickCopyPanel } from "./QuickCopyPanel";
 
 // ─── 삭제 토스트 [실행 취소] — "삭제 항목 재삽입" 복원 ───────────────────
 // 풀 스냅샷 undo가 아니다:
@@ -74,9 +75,14 @@ interface Props {
   handleDragSumStart: (index: number) => void;
   selectedLedgerIdsForSum: Set<string>;
   onChangeLedger: (next: LedgerEntry[]) => void;
-  /** 빠른 복사 모달은 부모에서 렌더 */
+  /** 빠른 복사 패널 — 대상 행 바로 아래에 표 행으로 렌더 (상태·제출 로직은 부모 소유) */
+  quickCopyEntry: LedgerEntry | null;
+  quickCopyAmount: string;
   setQuickCopyEntry: React.Dispatch<React.SetStateAction<LedgerEntry | null>>;
   setQuickCopyAmount: React.Dispatch<React.SetStateAction<string>>;
+  onSubmitQuickCopy: () => void;
+  onQuickCopyEditInForm: () => void;
+  onCloseQuickCopy: () => void;
   /** 검색(Ctrl+K)에서 이동한 대상 행 — 다른 페이지에 있으면 해당 페이지로 점프 */
   highlightLedgerId?: string | null;
 }
@@ -101,8 +107,13 @@ export const LedgerTable: React.FC<Props> = React.memo(function LedgerTable({
   handleDragSumStart,
   selectedLedgerIdsForSum,
   onChangeLedger,
+  quickCopyEntry,
+  quickCopyAmount,
   setQuickCopyEntry,
   setQuickCopyAmount,
+  onSubmitQuickCopy,
+  onQuickCopyEditInForm,
+  onCloseQuickCopy,
   highlightLedgerId
 }) {
   const ledgerScrollRef = useRef<HTMLDivElement>(null);
@@ -1265,6 +1276,34 @@ export const LedgerTable: React.FC<Props> = React.memo(function LedgerTable({
             </tr>
             );
             rows.push(row);
+            if (quickCopyEntry && quickCopyEntry.id === l.id) {
+              const fromName = accounts.find((a) => a.id === quickCopyEntry.fromAccountId)?.name ?? quickCopyEntry.fromAccountId;
+              const toName = accounts.find((a) => a.id === quickCopyEntry.toAccountId)?.name ?? quickCopyEntry.toAccountId;
+              const categoryLabel = [quickCopyEntry.category, quickCopyEntry.subCategory, quickCopyEntry.detailCategory]
+                .filter(Boolean)
+                .join(" > ");
+              const kindLabel = quickCopyEntry.kind === "income" ? "수입" : quickCopyEntry.kind === "transfer" ? "이체" : "지출";
+              rows.push(
+                <tr key={`quick-copy-${quickCopyEntry.id}`}>
+                  <td colSpan={11} style={{ padding: 0 }}>
+                    <QuickCopyPanel
+                      kindLabel={kindLabel}
+                      date={quickCopyEntry.date}
+                      categoryLabel={categoryLabel}
+                      description={quickCopyEntry.description}
+                      fromName={fromName}
+                      toName={toName}
+                      amount={quickCopyAmount}
+                      allowDecimal={quickCopyEntry.currency === "USD"}
+                      onAmountChange={setQuickCopyAmount}
+                      onSubmit={onSubmitQuickCopy}
+                      onEditInForm={onQuickCopyEditInForm}
+                      onClose={onCloseQuickCopy}
+                    />
+                  </td>
+                </tr>
+              );
+            }
             });
             // flush last day group
             flushDaySummary();

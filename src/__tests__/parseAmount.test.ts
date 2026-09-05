@@ -38,8 +38,11 @@ describe("parseAmount", () => {
     expect(parseAmount("1.2.3", { allowDecimal: true })).toBe(1.23);
   });
 
-  it("allowDecimal=false: 소수점도 제거", () => {
-    expect(parseAmount("1.5")).toBe(15);
+  it("allowDecimal=false: 소수점 이하는 버리고 정수부만 취함 (자리 이어붙임 금지)", () => {
+    // 회귀: 점만 지우고 이어붙이면 "123.45"가 12345로 100배 부풀려진다
+    expect(parseAmount("1.5")).toBe(1);
+    expect(parseAmount("123.45")).toBe(123);
+    expect(parseAmount("15,000.50")).toBe(15000);
   });
 
   it("매우 큰 수", () => {
@@ -70,5 +73,10 @@ describe("formatAmount", () => {
 
   it("숫자 없으면 빈 문자열", () => {
     expect(formatAmount("abc")).toBe("");
+  });
+
+  it("allowDecimal=false: 소수점 이하는 버리고 정수부만 취함 (자리 이어붙임 금지)", () => {
+    expect(formatAmount("123.45")).toBe("123");
+    expect(formatAmount("15,000.50")).toBe("15,000");
   });
 });

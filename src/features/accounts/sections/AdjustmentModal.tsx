@@ -80,8 +80,14 @@ export const AdjustmentModal = React.memo(function AdjustmentModal({
       const account = safeAccounts.find((a) => a.id === adjustingAccount.id);
       if (!account || !balanceRow) return;
 
-      const inputUsd = Number(editUsdBalance.replace(/[^\d.-]/g, "")) || 0;
-      const inputKrw = Number(editKrwBalance.replace(/[^\d.-]/g, "")) || 0;
+      const parsedUsd = editUsdBalance.trim() === "" ? 0 : parseSignedAmount(editUsdBalance);
+      const parsedKrw = editKrwBalance.trim() === "" ? 0 : parseSignedAmount(editKrwBalance);
+      if (parsedUsd == null || parsedKrw == null) {
+        toast.error("금액 형식이 올바르지 않습니다. 예: 1000.50, -50000");
+        return;
+      }
+      const inputUsd = parsedUsd;
+      const inputKrw = parsedKrw;
 
       // 연금 분류 변경분 (securities 전용 — crypto는 연금 옵션 없음)
       const isSecurities = adjustingAccount.type === "securities";
@@ -465,10 +471,7 @@ export const AdjustmentModal = React.memo(function AdjustmentModal({
                 <input
                   type="text"
                   value={editUsdBalance}
-                  onChange={(e) => {
-                    const val = e.target.value.replace(/[^\d.-]/g, "");
-                    setEditUsdBalance(val);
-                  }}
+                  onChange={(e) => setEditUsdBalance(sanitizeSignedNumericInput(e.target.value))}
                   placeholder={isSetDirectly ? "USD 잔액 (예: 1000.50)" : "USD 증감 (예: 100 또는 -50)"}
                   autoFocus
                   style={{ width: "100%", padding: "10px", fontSize: "16px" }}
@@ -496,10 +499,7 @@ export const AdjustmentModal = React.memo(function AdjustmentModal({
                 <input
                   type="text"
                   value={editKrwBalance}
-                  onChange={(e) => {
-                    const val = e.target.value.replace(/[^\d.-]/g, "");
-                    setEditKrwBalance(val);
-                  }}
+                  onChange={(e) => setEditKrwBalance(sanitizeSignedNumericInput(e.target.value))}
                   placeholder={isSetDirectly ? "KRW 잔액 (예: 1000000)" : "KRW 증감 (예: 100000 또는 -50000)"}
                   style={{ width: "100%", padding: "10px", fontSize: "16px" }}
                   onKeyDown={(e) => {

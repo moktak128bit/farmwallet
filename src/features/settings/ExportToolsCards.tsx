@@ -53,7 +53,7 @@ export const ExportToolsCards: React.FC<Props> = React.memo(function ExportTools
   const handleExportLedgerMd = useCallback(async () => {
     try {
       const { generateLedgerMarkdownReport } = await import("../../utils/ledgerMarkdownReport");
-      const md = generateLedgerMarkdownReport(ledger, accounts);
+      const md = generateLedgerMarkdownReport(ledger, accounts, fxRate);
       const blob = new Blob([md], { type: "text/markdown;charset=utf-8" });
       const url = URL.createObjectURL(blob);
       const a = document.createElement("a");
@@ -68,7 +68,7 @@ export const ExportToolsCards: React.FC<Props> = React.memo(function ExportTools
       if (import.meta.env.DEV) console.error("정리.md 내보내기 실패:", err);
       toast.error(ERROR_MESSAGES.EXPORT_MARKDOWN_FAILED);
     }
-  }, [ledger, accounts]);
+  }, [ledger, accounts, fxRate]);
 
   const handleExportUnifiedCsv = useCallback(async () => {
     try {

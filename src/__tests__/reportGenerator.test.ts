@@ -396,4 +396,18 @@ describe("P2 단일 소스 수렴 — 보고서 정합 회귀 (2026-07-22)", () 
     const monthlyExpense = generateMonthlyReport(ledger).find((r) => r.month === "2026-01")?.expense ?? 0;
     expect(total).toBe(monthlyExpense); // 카테고리 합 = 월간 지출 합 (정합)
   });
+
+  it("카테고리 리포트 — USD 지출도 원화 환산 (액면가 그대로 더하면 월간 지출 합과 어긋남, 회귀)", () => {
+    const ledger = [
+      entry({ id: "e1", category: "지출", subCategory: "식비", detailCategory: "해외", amount: 50, currency: "USD" }),
+      entry({ id: "e2", category: "지출", subCategory: "식비", detailCategory: "시장", amount: 30_000 }),
+    ];
+    const fxRate = 1_350;
+    const rows = generateCategoryReport(ledger, undefined, undefined, fxRate);
+    // 고치기 전: USD 항목이 액면가(50)로 더해져 "해외" 합계가 50 → 67,500이어야 할 값의 1/1350
+    expect(rows.find((r) => r.subCategory === "해외")?.total).toBe(50 * fxRate);
+    const total = rows.reduce((s, r) => s + r.total, 0);
+    const monthlyExpense = generateMonthlyReport(ledger, undefined, undefined, fxRate).find((r) => r.month === "2026-01")?.expense ?? 0;
+    expect(total).toBe(monthlyExpense); // 카테고리 합 = 월간 지출 합 (환율 반영 후에도 정합)
+  });
 });

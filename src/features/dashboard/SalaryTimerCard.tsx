@@ -155,6 +155,7 @@ export const SalaryTimerCard: React.FC<Props> = React.memo(function SalaryTimerC
                 max={31}
                 value={paydayInput}
                 onChange={(e) => setPaydayInput(e.target.value)}
+                onWheel={(e) => e.currentTarget.blur()}
                 style={{ width: 70, padding: "6px 8px" }}
               />
               <span className="hint" style={{ fontSize: 13 }}>일</span>

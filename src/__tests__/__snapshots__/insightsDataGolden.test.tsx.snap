@@ -1441,6 +1441,7 @@ exports[`useInsightsData 골든 스냅샷 (동작 불변 리팩터 기준선) > 
   "prev": {
     "expense": 758000,
     "income": 12080000,
+    "realExpense": 726000,
     "salary": 3000000,
   },
   "realExpense": 2145400,
@@ -3149,6 +3150,7 @@ exports[`useInsightsData 골든 스냅샷 (동작 불변 리팩터 기준선) > 
   "prev": {
     "expense": 2145400,
     "income": 3415000,
+    "realExpense": 2145400,
     "salary": 3000000,
   },
   "realExpense": 757500,

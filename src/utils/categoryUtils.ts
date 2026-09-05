@@ -107,19 +107,27 @@ export function isInvestmentKind(entry: LedgerEntry): boolean {
 }
 
 /**
- * 투자 실현손익 엔트리 — 투자수익(수입) 또는 투자손실(지출, category="재테크").
+ * v12에서 "재테크"(expense) 아래 추가된, 실질 지출로 취급해야 할 subCategory.
+ * dataService.ts v12 마이그레이션 코멘트: "실제 재테크 지출(수수료/세금/환차손 등)".
+ * ⚠ dataService.ts의 defaultRecheckSubs와 동기화할 것 — 여기 빠지면 재테크 순집계에
+ *   +로 더해져(번 돈처럼 집계) 실제로는 나간 돈인데 순자산이 부풀어 보인다.
+ */
+const REAL_INVESTING_EXPENSE_SUBS = new Set(["투자손실", "수수료", "세금", "환차손", "기타"]);
+
+/**
+ * 투자 실현손익 엔트리 — 투자수익(수입) 또는 투자관련 실비용(지출, category="재테크").
  * 일반 수입/지출 집계에서 제외하고 '재테크' 순집계에 넣기 위한 단일 판정.
- * 재테크 합계에서 투자수익은 +, 투자손실은 − (isInvestmentLossEntry로 부호 구분).
+ * 재테크 합계에서 투자수익은 +, 투자손실·수수료·세금·환차손 등은 − (isInvestmentLossEntry로 부호 구분).
  */
 export function isInvestmentPnlEntry(entry: LedgerEntry): boolean {
   if (entry.kind === "income") return entry.subCategory === "투자수익";
-  if (entry.kind === "expense") return entry.category === "재테크" && entry.subCategory === "투자손실";
+  if (entry.kind === "expense") return entry.category === "재테크" && REAL_INVESTING_EXPENSE_SUBS.has(entry.subCategory ?? "");
   return false;
 }
 
-/** 투자손실 — 재테크 순집계에서 음수로 반영 (번 돈 − 잃은 돈) */
+/** 투자손실·수수료·세금·환차손 등 — 재테크 순집계에서 음수로 반영 (번 돈 − 나간 돈) */
 export function isInvestmentLossEntry(entry: LedgerEntry): boolean {
-  return entry.kind === "expense" && entry.category === "재테크" && entry.subCategory === "투자손실";
+  return entry.kind === "expense" && entry.category === "재테크" && REAL_INVESTING_EXPENSE_SUBS.has(entry.subCategory ?? "");
 }
 
 type CategoryType = "income" | "transfer" | "savings" | "fixed" | "variable";
@@ -189,7 +197,8 @@ function getSavingsSet(categoryPresets?: CategoryPresets): Set<string> {
 /**
  * 가계부 단일 소스: 저축성지출 여부 (= 자산 계좌로 이동한 지출, 실질 소비 아님).
  * kind === "expense" && 대분류가 저축성지출 카테고리.
- * 단, subCategory === "투자손실"은 실질 지출이므로 false 반환 (부풀려 집계 방지).
+ * 단, subCategory가 투자손실·수수료·세금·환차손 등(REAL_INVESTING_EXPENSE_SUBS)이면
+ * 실질 지출이므로 false 반환 (재테크 순집계로 빠지지 않고 이중 완충되는 것 방지).
  */
 export function isSavingsExpenseEntry(
   entry: LedgerEntry,
@@ -197,7 +206,7 @@ export function isSavingsExpenseEntry(
   categoryPresets?: CategoryPresets
 ): boolean {
   if (entry.kind !== "expense") return false;
-  if (entry.subCategory === "투자손실") return false;
+  if (REAL_INVESTING_EXPENSE_SUBS.has(entry.subCategory ?? "")) return false;
   return getSavingsSet(categoryPresets).has(entry.category);
 }
 
@@ -217,7 +226,7 @@ export function makeIsSavingsExpense(
   const savingsSet = getSavingsSet(categoryPresets);
   return (entry) =>
     entry.kind === "expense" &&
-    entry.subCategory !== "투자손실" &&
+    !REAL_INVESTING_EXPENSE_SUBS.has(entry.subCategory ?? "") &&
     savingsSet.has(entry.category);
 }
 

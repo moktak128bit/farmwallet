@@ -27,6 +27,10 @@ export const isCryptoStock = (ticker?: string): boolean => {
   if (KNOWN_CRYPTO_IDS.has(lower)) return true;
   // 2~5자 순영문은 미국 주식/ETF로 간주 (BITX, IBIT, COIN 등)
   if (/^[a-z]{2,5}$/.test(lower)) return false;
+  // 클래스 접미사 티커(BRK-B, BRK.A, BF-B 등)도 미국 주식 — isUSDStock의 허용 규칙과 동일.
+  // 이 가드가 없으면 아래 [a-z0-9-]+ 규칙이 "brk-b"를 코인 id로 오인해, isUSDStock이 false가 되고
+  // canonicalTickerForMatch가 소문자를 돌려줘 시세 매칭·USD 환산이 통째로 어긋난다.
+  if (/^[a-z]{1,5}[.-][a-z]$/.test(lower)) return false;
   // 한국 6자 종목코드(숫자+영문 혼합 등)는 암호화폐가 아님
   if (isLikelyKoreanSixCharCode(ticker)) return false;
   return (/^[a-z0-9-]+$/.test(lower) && lower.length >= 2 && lower.length <= 30 && !/^\d{6}$/.test(lower));

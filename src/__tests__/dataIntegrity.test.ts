@@ -504,3 +504,46 @@ describe("dataIntegrity — runStructuralChecks (1-10, 잔액 계산 없음)", (
     expect(ofType(runIntegrityCheck([SEC], [], trades), "usd_securities_mismatch")).toHaveLength(1);
   });
 });
+
+describe("dataIntegrity — 이체를 지출로 입력 (expense_with_destination)", () => {
+  /** 실데이터 회귀: 카드 대금(농협→삼성페이카드 620,466)이 kind=expense로 들어가 있었다.
+   * 지출 이중계상 + 카드 부채 과대를 동시에 만드는 형태라 error로 잡아야 한다. */
+  it("카드 계좌로 들어간 지출은 error로 잡고 카드 안내 문구를 붙인다", () => {
+    const ledger = [
+      entry({ id: "L9", kind: "expense", category: "지출", fromAccountId: "A1", toAccountId: "C1", amount: 620_466 }),
+    ];
+    const issues = ofType(runIntegrityCheck(ACCOUNTS, ledger, [], PRESETS), "expense_with_destination");
+    expect(issues).toHaveLength(1);
+    expect(issues[0].severity).toBe("error");
+    expect(issues[0].message).toContain("카드결제이체");
+    expect(issues[0].data).toMatchObject({ entryId: "L9", toAccountId: "C1", toIsCard: true });
+  });
+
+  it("카드가 아닌 계좌로 들어간 지출도 잡되 카드 문구는 없다", () => {
+    const ledger = [
+      entry({ id: "L9", kind: "expense", category: "지출", subCategory: "식비", fromAccountId: "A1", toAccountId: "A2" }),
+    ];
+    const issues = ofType(runIntegrityCheck(ACCOUNTS, ledger, [], PRESETS), "expense_with_destination");
+    expect(issues).toHaveLength(1);
+    expect(issues[0].message).not.toContain("카드결제이체");
+    expect(issues[0].data).toMatchObject({ toIsCard: false });
+  });
+
+  it("저축성지출(레거시)은 정상 — to가 있어도 잡지 않는다", () => {
+    const ledger = [
+      entry({ id: "L9", kind: "expense", category: "재테크", subCategory: "저축", fromAccountId: "A1", toAccountId: "A2" }),
+    ];
+    expect(ofType(runIntegrityCheck(ACCOUNTS, ledger, [], PRESETS), "expense_with_destination")).toEqual([]);
+  });
+
+  it("신용결제(레거시)는 정상 — to가 카드여도 잡지 않는다", () => {
+    const ledger = [
+      entry({ id: "L9", kind: "expense", category: "신용결제", fromAccountId: "A1", toAccountId: "C1" }),
+    ];
+    expect(ofType(runIntegrityCheck(ACCOUNTS, ledger, [], PRESETS), "expense_with_destination")).toEqual([]);
+  });
+
+  it("to가 없는 일반 지출은 잡지 않는다", () => {
+    expect(ofType(runIntegrityCheck(ACCOUNTS, CLEAN_LEDGER, CLEAN_TRADES, PRESETS), "expense_with_destination")).toEqual([]);
+  });
+});

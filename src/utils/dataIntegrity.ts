@@ -6,7 +6,7 @@ import type { Account, LedgerEntry, StockTrade, CategoryPresets, Loan } from "..
 import { computeAccountBalances } from "../calculations";
 import { isUSDStock } from "./finance";
 import { getTodayKST } from "./date";
-import { isCreditPayment } from "./category";
+import { isCreditPayment, makeIsSavingsExpense } from "./category";
 
 export interface DuplicateTrade {
   type: "ledger" | "trade";
@@ -44,7 +44,7 @@ export interface CategoryMismatch {
 }
 
 export interface IntegrityIssue {
-  type: "duplicate" | "balance_mismatch" | "missing_reference" | "date_order" | "amount_consistency" | "category_mismatch" | "transfer_pair_mismatch" | "transfer_invalid_reference" | "usd_securities_mismatch";
+  type: "duplicate" | "balance_mismatch" | "missing_reference" | "date_order" | "amount_consistency" | "category_mismatch" | "transfer_pair_mismatch" | "transfer_invalid_reference" | "usd_securities_mismatch" | "expense_with_destination";
   severity: "error" | "warning" | "info";
   message: string;
   data: DuplicateTrade | BalanceMismatch | MissingReference | CategoryMismatch | unknown;
@@ -405,6 +405,55 @@ function validateTransferPairConsistency(
 }
 
 /**
+ * 지출인데 입금계좌(toAccountId)까지 있는 항목 검사.
+ *
+ * 정상 케이스는 두 가지뿐이다.
+ *  - 저축성지출(레거시): 자산 계좌로 옮겨진 지출 — computeAccountBalances가 expenseByTo로 더해준다.
+ *  - 신용결제(레거시): 카드 계좌로 들어간 대금 납부.
+ *
+ * 그 외에 to가 붙어 있으면 "이체를 지출로 잘못 입력한 것"이다. 이 경우 손실이 두 겹으로 난다.
+ *  1) 계좌 간 이동일 뿐인데 소비 지출로 집계됨 → 그 달 지출이 이중계상
+ *  2) 상대가 카드 계좌면 대금 납부로 인정되지 않아(cardDebtMap은 transfer·레거시신용결제만 결제로 셈)
+ *     카드 부채가 그만큼 과대 표시됨
+ * 실데이터에서 카드 대금(농협→삼성페이카드 620,466)이 이 형태로 들어가 있던 것을 잡아낸 검사다.
+ */
+function validateExpenseWithDestination(
+  ledger: LedgerEntry[],
+  accounts: Account[],
+  categoryPresets?: CategoryPresets
+): IntegrityIssue[] {
+  const issues: IntegrityIssue[] = [];
+  const isSavings = makeIsSavingsExpense(categoryPresets);
+  const cardIds = new Set(accounts.filter((a) => a.type === "card").map((a) => a.id));
+
+  ledger.forEach((entry) => {
+    if (entry.kind !== "expense") return;
+    if (!entry.toAccountId) return;
+    if (isSavings(entry) || isCreditPayment(entry)) return;
+
+    const toCard = cardIds.has(entry.toAccountId);
+    issues.push({
+      type: "expense_with_destination",
+      severity: "error",
+      message:
+        `가계부 항목 ${entry.id} (${entry.date}, ${entry.amount.toLocaleString()}원): ` +
+        `지출인데 입금계좌가 지정돼 있습니다. 이체를 지출로 입력한 것으로 보입니다 — 지출이 이중계상됩니다` +
+        (toCard ? " (카드 대금이면 이체·카드결제이체로 바꿔야 부채에서 차감됩니다)" : ""),
+      data: {
+        entryId: entry.id,
+        date: entry.date,
+        amount: entry.amount,
+        fromAccountId: entry.fromAccountId,
+        toAccountId: entry.toAccountId,
+        toIsCard: toCard
+      }
+    });
+  });
+
+  return issues;
+}
+
+/**
  * 이체 항목 쌍 검증: kind=transfer일 때 fromAccountId 또는 toAccountId가 없으면 검사 */
 function validateTransferRequiredFields(
   ledger: LedgerEntry[]
@@ -716,6 +765,9 @@ export function runStructuralChecks(data: StructuralCheckInput): IntegrityIssue[
 
   const transferRefIssues = validateTransferRequiredFields(ledger);
   issues.push(...transferRefIssues);
+
+  const expenseDestIssues = validateExpenseWithDestination(ledger, accounts, categoryPresets);
+  issues.push(...expenseDestIssues);
 
   if (categoryPresets) {
     const categoryIssues = checkCategoryConsistency(ledger, categoryPresets);

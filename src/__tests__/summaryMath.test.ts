@@ -7,6 +7,7 @@ import type { CategoryPresets, LedgerEntry } from "../types";
 import {
   classifyLedgerFlow,
   computeLedgerSummary,
+  computeRecheckBreakdown,
   isWealthBuildingEntry,
   toKrwAmount,
 } from "../features/dashboard/summaryMath";
@@ -180,5 +181,41 @@ describe("classifyLedgerFlow — 환전 제외", () => {
 
   it("일반 지출은 여전히 expense", () => {
     expect(classifyLedgerFlow(e({ subCategory: "식비" }))).toBe("expense");
+  });
+});
+
+describe("computeRecheckBreakdown — 레거시 저축/투자 표기", () => {
+  /** 실데이터 회귀: 이체 76건(저축 23·투자 53, 약 2,810만원)이 subCategory="저축"/"투자"(레거시)로
+   * 남아 있어 재테크 총액(computeLedgerSummary.investing)에는 잡히는데 세부 분해에는 0으로 빠졌다.
+   * 총액과 세부의 합이 어긋나면 대시보드 카드 간 수치가 안 맞는다. */
+  const legacy = [
+    entry({ kind: "transfer", category: "이체", subCategory: "저축", amount: 700_000 }),
+    entry({ kind: "transfer", category: "이체", subCategory: "투자", amount: 500_000 }),
+  ];
+  const current = [
+    entry({ kind: "transfer", category: "이체", subCategory: "저축이체", amount: 300_000 }),
+    entry({ kind: "transfer", category: "이체", subCategory: "투자이체", amount: 100_000 }),
+  ];
+
+  it("레거시 '저축'/'투자'도 현행 '저축이체'/'투자이체'와 같은 칸에 들어간다", () => {
+    const r = computeRecheckBreakdown([...legacy, ...current], null, "2026-06");
+    expect(r.저축).toBe(1_000_000);
+    expect(r.투자).toBe(600_000);
+  });
+
+  it("세부 합계가 재테크 총액(computeLedgerSummary.investing)과 일치한다", () => {
+    const ledger = [...legacy, ...current];
+    const { investing } = computeLedgerSummary(ledger, null, "2026-06");
+    const r = computeRecheckBreakdown(ledger, null, "2026-06");
+    expect(r.저축 + r.투자 + r.투자수익 - r.투자손실).toBe(investing);
+  });
+
+  it("카드결제이체는 어느 칸에도 들어가지 않는다", () => {
+    const r = computeRecheckBreakdown(
+      [entry({ kind: "transfer", category: "이체", subCategory: "카드결제이체", amount: 900_000 })],
+      null,
+      "2026-06"
+    );
+    expect(r.저축 + r.투자).toBe(0);
   });
 });

@@ -230,18 +230,23 @@ export const AccountsView: React.FC<Props> = ({
 
   return (
     <div>
-      <div className="card" style={{ padding: "12px 16px", marginBottom: 16, display: "flex", alignItems: "center", gap: 12, flexWrap: "wrap" }}>
-        <button type="button" className="primary" onClick={handleExportAllCsv} style={{ display: "flex", alignItems: "center", gap: 6 }}>
-          <Download size={16} /> 전체 데이터 CSV 내보내기
-        </button>
-        <span style={{ fontSize: 12, color: "var(--text-muted)" }}>가계부 + 주식거래 통합 CSV 1개 파일</span>
-      </div>
-
+      {/* 내보내기는 유틸리티 — 예전엔 페이지 최상단 카드 한 장을 통째로 차지해 정작 계좌 요약이
+          첫 화면 밖으로 밀렸다. 섹션 헤더 우측에 다른 액션과 함께 둔다. */}
       <div className="section-header">
         <h2>계좌</h2>
-        <button type="button" className="primary" onClick={() => setShowForm((v) => !v)}>
-          {showForm ? "폼 닫기" : "계좌 추가"}
-        </button>
+        <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+          <button
+            type="button"
+            onClick={handleExportAllCsv}
+            title="가계부 + 주식거래를 통합 CSV 1개 파일로 내려받습니다"
+            style={{ display: "flex", alignItems: "center", gap: 6 }}
+          >
+            <Download size={15} /> CSV 내보내기
+          </button>
+          <button type="button" className="primary" onClick={() => setShowForm((v) => !v)}>
+            {showForm ? "폼 닫기" : "계좌 추가"}
+          </button>
+        </div>
       </div>
 
       {safeBalances.length > 0 && <TypeSummarySection summary={typeSummary} formatKRW={formatKRW} />}

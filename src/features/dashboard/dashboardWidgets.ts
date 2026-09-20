@@ -32,7 +32,7 @@ function isTaxSeasonKST(today: string): boolean {
 /** DashboardPage 렌더 순서와 동일 */
 export const DASHBOARD_WIDGETS: DashboardWidgetDef[] = [
   { id: "summary", label: "이번 달 요약 카드 (수입·지출·재테크·수지)" },
-  { id: "salaryTimer", label: "월급 실시간 타이머" },
+  { id: "dividendPortfolio", label: "배당 포트폴리오 (총 배당률·월 배당·성장)" },
   { id: "monthCompare", label: "전월·전년 대비 (지출/수입)" },
   { id: "investmentSummary", label: "투자 자산 요약·목표" },
   { id: "investmentPerformance", label: "투자 성적표 (시장 대비 — TWR·벤치마크·리스크)" },
@@ -42,6 +42,7 @@ export const DASHBOARD_WIDGETS: DashboardWidgetDef[] = [
   { id: "monthlyTrend", label: "월별 추이 (최근 6개월)" },
   { id: "investmentBreakdown", label: "재테크 세부 (저축·투자)" },
   { id: "monthPace", label: "이번 달 페이스 예측" },
+  { id: "salaryTimer", label: "월급 실시간 타이머" },
   { id: "cashFlow", label: "다가오는 고정 지출 (현금흐름 예측)" },
   { id: "cashFlowProjection", label: "통합 현금흐름 (12개월 잔고 곡선)" },
   { id: "portfolioCharts", label: "포트폴리오 차트" },

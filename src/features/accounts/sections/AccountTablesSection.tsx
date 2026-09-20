@@ -7,6 +7,7 @@
  * 무거운 memo(stockMap/cardDebtMap/accountsByType)는 부모에서 계산해 props로 받는다.
  */
 import React, { useRef, useState } from "react";
+import { Eye, EyeOff, Trash2 } from "lucide-react";
 import type { Account, AccountType, LedgerEntry, AccountBalanceRow, StockTrade } from "../../../types";
 import { formatKRW, formatUSD } from "../../../utils/formatter";
 import { toast } from "react-hot-toast";
@@ -202,11 +203,11 @@ export const AccountTablesSection: React.FC<Props> = React.memo(function Account
       onDragStart={() => setDraggingId(row.account.id)}
       onDragEnd={() => setDraggingId(null)}
     >
-      <td className="drag-cell">
+      <td className="drag-cell col-hide-mobile">
         <span className="drag-handle" title="드래그하여 순서 변경">☰</span>
       </td>
       <td
-        className="cell-editable"
+        className="cell-editable col-hide-mobile"
         onDoubleClick={() => startEditCell(row.account.id, "id", row.account.id)}
         onClick={tapToEditCell(row.account.id, "id", row.account.id)}
         style={{ cursor: "pointer" }}
@@ -384,7 +385,7 @@ export const AccountTablesSection: React.FC<Props> = React.memo(function Account
       ) : (
         <>
           <td
-            className="cell-editable"
+            className="cell-editable col-hide-mobile"
             onDoubleClick={() => startEditCell(row.account.id, "type", row.account.type)}
             onClick={tapToEditCell(row.account.id, "type", row.account.type)}
             style={{ cursor: "pointer" }}
@@ -462,17 +463,21 @@ export const AccountTablesSection: React.FC<Props> = React.memo(function Account
         return null;
       })()}
       <td style={{ whiteSpace: "nowrap" }}>
-        <div style={{ display: "flex", gap: "8px", alignItems: "center" }}>
+        {/* 주 동작(수정)만 텍스트, 저빈도·파괴적 동작은 아이콘 — 24행 × 버튼 3개가 만들던
+            시각적 소음과 열 폭(약 180px → 90px)을 줄인다. 삭제는 confirm + 실행취소 토스트로 보호됨. */}
+        <div className="account-row-actions">
           <button
             type="button"
             className="primary"
             onClick={() => onOpenAdjust({ id: row.account.id, type: accountType })}
-            style={{ fontSize: "14px", padding: "8px 16px" }}
+            style={{ fontSize: "13px", padding: "6px 12px" }}
           >
             수정
           </button>
           <button
             type="button"
+            className="icon-action"
+            aria-label={row.account.archived ? "계좌 다시 표시" : "계좌 숨김"}
             onClick={() => {
               const isArchiving = !row.account.archived;
               const updated = safeAccounts.map((a) =>
@@ -485,19 +490,19 @@ export const AccountTablesSection: React.FC<Props> = React.memo(function Account
                   : `"${row.account.name}" 다시 표시됩니다`
               );
             }}
-            style={{ fontSize: "14px", padding: "8px 16px" }}
             title={row.account.archived ? "가계부·배당 입력 폼에 다시 노출" : "가계부·배당 입력 폼에서 숨김 (과거 기록은 그대로 유지)"}
           >
-            {row.account.archived ? "표시" : "숨김"}
+            {row.account.archived ? <Eye size={15} /> : <EyeOff size={15} />}
           </button>
           <button
             type="button"
-            className="danger"
+            className="icon-action danger"
+            aria-label="계좌 삭제"
+            title="계좌 삭제"
             // 삭제 확인은 handleDeleteAccount 한 곳에서만 수행 (confirm 중복 방지)
             onClick={() => handleDeleteAccount(row.account.id)}
-            style={{ fontSize: "14px", padding: "8px 16px" }}
           >
-            삭제
+            <Trash2 size={15} />
           </button>
         </div>
       </td>
@@ -518,8 +523,8 @@ export const AccountTablesSection: React.FC<Props> = React.memo(function Account
             <table className="data-table">
         <thead>
           <tr>
-            <th style={{ width: 60 }}>순서</th>
-            <th>계좌 ID</th>
+            <th className="col-hide-mobile" style={{ width: 60 }}>순서</th>
+            <th className="col-hide-mobile">계좌 ID</th>
             <th>계좌명</th>
             <th>기관</th>
             {(type === "securities" || type === "crypto") ? (
@@ -532,7 +537,7 @@ export const AccountTablesSection: React.FC<Props> = React.memo(function Account
               </>
             ) : (
               <>
-                <th style={{ width: "60px" }}>유형</th>
+                <th className="col-hide-mobile" style={{ width: "60px" }}>유형</th>
               </>
             )}
             {type === "card" ? (

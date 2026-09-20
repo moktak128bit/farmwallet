@@ -29,15 +29,12 @@ export const TypeSummarySection = React.memo(function TypeSummarySection({ summa
       padding: "16px 20px",
       background: "var(--surface)",
       borderRadius: "8px",
-      border: "2px solid var(--primary)",
-      boxShadow: "0 2px 8px rgba(0,0,0,0.1)",
+      // 디자인 시스템 원칙(구분은 선으로, 색은 데이터에만) — 혼자 2px 잉크 테두리라 튀었다.
+      // 하드코딩 검정 그림자는 다크모드에서 보이지 않아 토큰으로 교체.
+      border: "1px solid var(--border)",
+      boxShadow: "var(--shadow)",
     }}>
-      <div style={{
-        display: "grid",
-        gridTemplateColumns: "repeat(auto-fit, minmax(140px, 1fr))",
-        gap: "16px 24px",
-        alignItems: "center",
-      }}>
+      <div className="type-summary-grid">
         <div style={{ display: "flex", flexDirection: "column", gap: 4 }}>
           <span style={{ fontSize: 12, color: "var(--text-muted)", fontWeight: 600 }}>현금</span>
           <span style={{ fontSize: 18, fontWeight: 700, color: "var(--primary)" }}>
@@ -75,14 +72,7 @@ export const TypeSummarySection = React.memo(function TypeSummarySection({ summa
             </span>
           </div>
         )}
-        <div style={{
-          display: "flex",
-          flexDirection: "column",
-          gap: 4,
-          paddingLeft: "24px",
-          borderLeft: "2px solid var(--border)",
-          gridColumn: "span 1",
-        }}>
+        <div className="type-summary-total">
           <span style={{ fontSize: 12, color: "var(--text-muted)", fontWeight: 600 }}>순자산</span>
           <span style={{ fontSize: 20, fontWeight: 700, color: summary.total >= 0 ? "var(--primary)" : "var(--danger)" }}>
             {formatKRW(summary.total)}

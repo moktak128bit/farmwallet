@@ -38,7 +38,8 @@ const ISSUE_TYPE_LABEL: Record<IntegrityIssue["type"], string> = {
   category_mismatch: "카테고리 불일치",
   transfer_pair_mismatch: "이체 쌍 불일치",
   transfer_invalid_reference: "이체 참조 누락",
-  usd_securities_mismatch: "USD 증권 잔액 불일치"
+  usd_securities_mismatch: "USD 증권 잔액 불일치",
+  expense_with_destination: "이체를 지출로 입력"
 };
 
 const SEVERITY_LABEL: Record<IntegrityIssue["severity"], string> = {
@@ -202,6 +203,16 @@ export const DataIntegrityView: React.FC<Props> = ({
       case "transfer_invalid_reference": {
         const data = issue.data as { entryId?: string };
         return data.entryId ? [buildLedgerGuide(data.entryId, "이체 계좌(from/to) 누락 확인")] : [];
+      }
+      case "expense_with_destination": {
+        const data = issue.data as { entryId?: string; date?: string; toIsCard?: boolean };
+        if (!data.entryId) return [];
+        const guide = buildLedgerGuide(
+          data.entryId,
+          data.toIsCard ? "이체 · 카드결제이체로 변경 필요" : "이체로 변경 필요"
+        );
+        if (!guide.date && data.date) guide.date = data.date;
+        return [guide];
       }
       case "balance_mismatch": {
         const data = issue.data as {

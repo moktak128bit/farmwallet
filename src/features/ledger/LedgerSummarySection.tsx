@@ -153,12 +153,13 @@ export const LedgerSummarySection: React.FC<Props> = React.memo(function LedgerS
               flexDirection: "column",
               gap: 2,
               padding: "12px 16px",
-              background: "rgba(239, 68, 68, 0.08)",
+              background: "var(--accent-light)",
               borderRadius: "8px",
-              border: "1px solid rgba(239, 68, 68, 0.2)"
+              border: "1px solid var(--border)",
+              borderLeft: "4px solid var(--chart-expense)"
             }}>
               <span style={{ fontSize: 11, color: "var(--text-muted)", fontWeight: 600 }}>지출</span>
-              <span style={{ fontSize: 18, fontWeight: 700, color: "var(--danger)" }}>
+              <span style={{ fontSize: 18, fontWeight: 700, color: "var(--chart-expense)" }}>
                 {formatKRW(filteredSummary.expenseAmount)}
               </span>
               {(filteredSummary.excludedExpenseAmount ?? 0) > 0 && (
@@ -172,9 +173,10 @@ export const LedgerSummarySection: React.FC<Props> = React.memo(function LedgerS
               flexDirection: "column",
               gap: 2,
               padding: "12px 16px",
-              background: "rgba(245, 158, 11, 0.08)",
+              background: "var(--warning-light)",
               borderRadius: "8px",
-              border: "1px solid rgba(245, 158, 11, 0.24)"
+              border: "1px solid var(--border)",
+              borderLeft: "4px solid var(--warning)"
             }}>
               <span style={{ fontSize: 11, color: "var(--text-muted)", fontWeight: 600 }}>재테크</span>
               <span style={{ fontSize: 18, fontWeight: 700, color: "var(--warning)" }}>
@@ -186,12 +188,13 @@ export const LedgerSummarySection: React.FC<Props> = React.memo(function LedgerS
               flexDirection: "column",
               gap: 2,
               padding: "12px 16px",
-              background: "rgba(34, 197, 94, 0.08)",
+              background: "var(--danger-light)",
               borderRadius: "8px",
-              border: "1px solid rgba(34, 197, 94, 0.2)"
+              border: "1px solid var(--border)",
+              borderLeft: "4px solid var(--chart-income)"
             }}>
               <span style={{ fontSize: 11, color: "var(--text-muted)", fontWeight: 600 }}>수입</span>
-              <span style={{ fontSize: 18, fontWeight: 700, color: "var(--success)" }}>
+              <span style={{ fontSize: 18, fontWeight: 700, color: "var(--chart-income)" }}>
                 {formatKRW(filteredSummary.incomeAmount)}
               </span>
             </div>
@@ -280,8 +283,9 @@ export const LedgerSummarySection: React.FC<Props> = React.memo(function LedgerS
                 }}
               >
                 <div style={{ fontSize: 13, fontWeight: 700, marginBottom: 10, color: "var(--primary)" }}>{monthKey}</div>
-                <div style={{ fontSize: 11, color: "var(--danger)", marginBottom: 4 }}>지출 {formatKRW(expenseAmount)}</div>
-                <div style={{ fontSize: 11, color: "var(--success)", marginBottom: 4 }}>수입 {formatKRW(incomeAmount)}</div>
+                {/* 색 의미 단일 기준(CLAUDE.md #4): 지출=파랑, 수입=빨강 — 위 요약 박스·대시보드와 동일 */}
+                <div style={{ fontSize: 11, color: "var(--chart-expense)", marginBottom: 4 }}>지출 {formatKRW(expenseAmount)}</div>
+                <div style={{ fontSize: 11, color: "var(--chart-income)", marginBottom: 4 }}>수입 {formatKRW(incomeAmount)}</div>
                 <div style={{ fontSize: 13, fontWeight: 700, color: total >= 0 ? "var(--primary)" : "var(--danger)", borderTop: "1px solid var(--border)", paddingTop: 8, marginTop: 8 }}>
                   순액 {formatKRW(total)}
                 </div>

@@ -6,7 +6,9 @@ import {
   cryptoDisplaySymbol,
   extractTickerFromText,
   cryptoIdFromSymbol,
-  canonicalTickerForInput
+  canonicalTickerForInput,
+  isCryptoStock,
+  canonicalTickerForMatch
 } from "../utils/finance";
 
 describe("tradeAmountKRW", () => {
@@ -56,6 +58,17 @@ describe("tradeAmountKRW", () => {
   it("회귀: isUSDStock — 5자 티커(GOOGL)·클래스 접미사(BRK.B)도 USD", () => {
     expect(isUSDStock("GOOGL")).toBe(true);
     expect(isUSDStock("BRK.B")).toBe(true);
+    // 하이픈형 클래스 접미사(BRK-B) — 점(.)형만 검증하던 구멍. 하이픈은 코인 id 정규식
+    // /^[a-z0-9-]+$/ 에 걸려 isCryptoStock이 true를 돌려주고, 그 결과 isUSDStock이 false가 되어
+    // 달러 금액이 원화로 취급되고 canonicalTickerForMatch가 "brk-b" 소문자를 반환해 시세 매칭도 깨졌다.
+    expect(isCryptoStock("BRK-B")).toBe(false);
+    expect(isUSDStock("BRK-B")).toBe(true);
+    expect(canonicalTickerForMatch("BRK-B")).toBe("BRK-B");
+    expect(isUSDStock("BF-B")).toBe(true);
+    // 진짜 하이픈 코인 id는 그대로 코인
+    expect(isCryptoStock("usd-coin")).toBe(true);
+    expect(isCryptoStock("matic-network")).toBe(true);
+    expect(isCryptoStock("avalanche-2")).toBe(true);
     expect(isUSDStock("AAPL")).toBe(true);
     // 한국 6자 코드는 KRW
     expect(isUSDStock("005930")).toBe(false);

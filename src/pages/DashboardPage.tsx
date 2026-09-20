@@ -32,6 +32,7 @@ import { InvestmentBreakdownCard } from "../features/dashboard/InvestmentBreakdo
 import { SavingsRatioCard } from "../features/dashboard/SavingsRatioCard";
 import { DividendCoverageCard } from "../features/dashboard/DividendCoverageCard";
 import { DividendGrowthCard } from "../features/dashboard/DividendGrowthCard";
+import { DividendPortfolioCard } from "../features/dashboard/DividendPortfolioCard";
 import { AssetCompositionCard } from "../features/dashboard/AssetCompositionCard";
 import { AccountBalanceTrendCard } from "../features/dashboard/AccountBalanceTrendCard";
 import { StockCostVsMarketCard } from "../features/dashboard/StockCostVsMarketCard";
@@ -41,6 +42,7 @@ import { computeIncomeNatureKeys } from "../utils/incomeClassification";
 import { isDashboardWidgetVisible, loadHiddenDashboardWidgets } from "../features/dashboard/dashboardWidgets";
 import { TaxActionsCard } from "../features/dashboard/TaxActionsCard";
 import { buildDividendGrowth, resolveTrackedTickers } from "../utils/dividendGrowth";
+import { buildDividendPortfolio } from "../utils/dividendPortfolio";
 import { useAccountTimelineRows } from "../hooks/useAccountTimelineRows";
 import { buildAdjustedPrices, buildTimelineMonthRange } from "../utils/accountTimeline";
 import type {
@@ -119,10 +121,22 @@ export const DashboardView: React.FC<Props> = (props) => {
 
   const adjustedPrices = useMemo(() => buildAdjustedPrices(prices, fxRate), [prices, fxRate]);
 
+  // 배당 위젯이 공유하는 추적 종목 — 설정('배당 성장 추적 티커') + 자동 보충.
+  // 포트폴리오 합계와 종목별 성장 카드가 같은 목록을 봐야 두 위젯의 숫자가 서로 설명된다.
+  const trackedDividendTickers = useMemo(
+    () => resolveTrackedTickers(storeData.dividendTrackingTicker, ledger, trades),
+    [storeData.dividendTrackingTicker, ledger, trades]
+  );
+
+  // 배당 포트폴리오 합계 — 추적 종목의 원금 대비 배당률·월 수령액
+  const dividendPortfolio = useMemo(
+    () => buildDividendPortfolio({ ledger, trades, currentMonth, fxRate, tickers: trackedDividendTickers }),
+    [ledger, trades, currentMonth, fxRate, trackedDividendTickers]
+  );
+
   // 배당 성장 추적 — 설정 티커(쉼표 구분 복수 가능) + 자동 보충(보유 중 & 분배 기록 ≥2건, 최근 수령 순)
   const dividendGrowthData = useMemo(() => {
-    const tickers = resolveTrackedTickers(storeData.dividendTrackingTicker, ledger, trades);
-    return tickers
+    return trackedDividendTickers
       .map((t) =>
         buildDividendGrowth({
           ticker: t,
@@ -137,7 +151,7 @@ export const DashboardView: React.FC<Props> = (props) => {
       )
       .filter((d): d is NonNullable<typeof d> => d != null);
   }, [
-    storeData.dividendTrackingTicker,
+    trackedDividendTickers,
     storeData.historicalDailyCloses,
     storeData.marketEnvSnapshots,
     ledger,
@@ -302,7 +316,9 @@ export const DashboardView: React.FC<Props> = (props) => {
           <MonthlySummaryCards monthlySummary={monthlySummary} allTimeSummary={allTimeSummary} />
         )}
 
-        {show("salaryTimer") && <SalaryTimerCard ledger={ledger} fxRate={fxRate} />}
+        {show("dividendPortfolio") && dividendPortfolio && (
+          <DividendPortfolioCard data={dividendPortfolio} />
+        )}
 
         {show("monthCompare") && (
           <ExpenseIncomeCompareCard
@@ -379,6 +395,8 @@ export const DashboardView: React.FC<Props> = (props) => {
             fxRate={fxRate}
           />
         )}
+
+        {show("salaryTimer") && <SalaryTimerCard ledger={ledger} fxRate={fxRate} />}
 
         {show("cashFlow") && (
           <CashFlowForecastCard

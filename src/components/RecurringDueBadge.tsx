@@ -63,18 +63,14 @@ export const RecurringDueBadge: React.FC<Props> = ({ recurring, ledger, onClick,
         title={`오늘 등록 안 된 반복지출 ${missing.length}건: ${titleList}`}
         aria-haspopup={onChangeLedger ? "dialog" : undefined}
         aria-expanded={onChangeLedger ? open : undefined}
-        style={{
-          background: "var(--danger)",
-          color: "white",
-          borderRadius: 12,
-          padding: "2px 8px",
-          fontSize: 11,
-          fontWeight: 600,
-          border: "none",
-          cursor: interactive ? "pointer" : "default"
-        }}
+        className="recurring-due-badge"
+        style={{ cursor: interactive ? "pointer" : "default" }}
       >
-        반복지출 {missing.length}건 미등록
+        {/* 모바일에선 헤더 한 줄을 지키려고 짧은 쪽만 보인다 (CSS로 전환) */}
+        <span className="recurring-due-badge-full">반복지출 {missing.length}건 미등록</span>
+        <span className="recurring-due-badge-short" aria-hidden>
+          반복 {missing.length}
+        </span>
       </button>
       {/* 닫힌 동안엔 마운트하지 않음 — 팝오버의 ledger 구독·후보 계산이 헤더 렌더마다 돌지 않게 */}
       {onChangeLedger && open && (

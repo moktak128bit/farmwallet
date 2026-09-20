@@ -482,14 +482,33 @@ export const LedgerEntryForm = React.memo(React.forwardRef<LedgerEntryFormHandle
       [form, effectiveFormKind, parseAmount, accounts, kindForTab, ledgerTab]
     );
 
-    // formErrors를 직접 사용 (useEffect 제거로 성능 개선)
-    const formErrors = validateForm;
-    const isFormValid = Object.keys(formErrors).length === 0;
+    const isFormValid = Object.keys(validateForm).length === 0;
+
+    /**
+     * 제출을 한 번이라도 시도했는지 — 에러 "표시" 시점만 제어한다(제출 차단은 isFormValid 그대로).
+     * 이게 없으면 폼이 열리자마자 금액칸이 빨갛게 테두리 잡히고 "금액을 입력해주세요"·
+     * "대분류를 입력해주세요"가 뜬다. 아직 아무것도 안 한 사용자를 실패자로 취급하는 화면이라
+     * 빨강의 의미가 닳고, 실제로 틀렸을 때 눈에 안 들어온다.
+     */
+    const [submitAttempted, setSubmitAttempted] = useState(false);
+
+    /** 화면에 보여줄 에러 — 제출 시도 전에는 "이미 입력한 값이 틀린 경우"만 즉시 알린다. */
+    const formErrors = useMemo(() => {
+      if (submitAttempted) return validateForm;
+      const shown: typeof validateForm = {};
+      const filled = (v: unknown) => String(v ?? "").trim().length > 0;
+      if (filled(form.amount) && validateForm.amount) shown.amount = validateForm.amount;
+      if (filled(form.date) && validateForm.date) shown.date = validateForm.date;
+      if (filled(form.discountAmount) && validateForm.discountAmount)
+        shown.discountAmount = validateForm.discountAmount;
+      return shown;
+    }, [submitAttempted, validateForm, form.amount, form.date, form.discountAmount]);
 
     // 제출 후에는 항상 컨텍스트 유지(구분/카테고리/계좌) + 금액·설명만 비움 — 모든 제출 경로 동일 동작
     const submitForm = useCallback(() => {
-      // 검증 실패 시 제출 방지
+      // 검증 실패 시 제출 방지 — 이 시점부터 모든 필드 에러를 화면에 표시한다
       if (!isFormValid) {
+        setSubmitAttempted(true);
         const firstError = Object.values(validateForm)[0];
         if (firstError) {
           toast.error(firstError);
@@ -681,6 +700,8 @@ export const LedgerEntryForm = React.memo(React.forwardRef<LedgerEntryFormHandle
         tags: [],
         ...(allowLedgerDiscount ? { discountAmount: "" } : {})
       }));
+      // 다음 연속 입력은 다시 깨끗한 폼에서 시작 — 방금 비운 금액칸이 빨갛게 남지 않게
+      setSubmitAttempted(false);
     }, [isFormValid, validateForm, kindForTab, form, parseAmount, effectiveFormKind, ledger, onChangeLedger, onEntryAdded, ledgerTab, dailyBudgetConfig, fxRate]);
 
     const handleSubmit = (e: React.FormEvent) => {

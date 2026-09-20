@@ -20,25 +20,28 @@ interface Props {
 // React.memo — 부모(DashboardPage)가 넘기는 props는 안정적(useMemo 결과)이어야 한다.
 export const MonthlySummaryCards: React.FC<Props> = React.memo(function MonthlySummaryCards({ monthlySummary, allTimeSummary }) {
   const balance = monthlySummary.income - monthlySummary.expense;
+  /**
+   * 이번 달 급여가 아직 안 들어온 상태 — 과거엔 받았는데 이번 달만 0.
+   * 월급일(보통 25일) 전에는 정상인데, 큰 빨강 "0 원" + 빨간 마이너스 수지가 경보처럼 보인다.
+   * 의미색은 값이 있을 때만 쓰고, 0인 이유를 한 줄로 밝힌다.
+   */
+  const beforePayday = monthlySummary.income === 0 && allTimeSummary.income > 0;
   return (
-    <div
-      style={{
-        display: "grid",
-        gridTemplateColumns: "repeat(auto-fit, minmax(220px, 1fr))",
-        gap: 16
-      }}
-    >
-      <div className="card" style={{ minHeight: 124, borderLeft: "4px solid var(--chart-income)" }}>
+    <div className="kpi-grid">
+      <div className="card" style={{ borderLeft: `4px solid ${beforePayday ? "var(--border-strong)" : "var(--chart-income)"}` }}>
         <div className="card-title">이번 달 수입 (근로소득)</div>
-        <div className="card-value" style={{ color: "var(--chart-income)", fontSize: 28 }}>
+        <div className="card-value" style={{ color: beforePayday ? "var(--text-muted)" : "var(--chart-income)" }}>
           {formatKRW(Math.round(monthlySummary.income))}
         </div>
+        {beforePayday && (
+          <div className="hint kpi-note" style={{ marginTop: 6, fontWeight: 600 }}>이번 달 급여 아직 없음</div>
+        )}
         <div className="hint" style={{ marginTop: 8 }}>전체 기간: {formatKRW(allTimeSummary.income)} · 월급·수당·상여만</div>
       </div>
 
-      <div className="card" style={{ minHeight: 124, borderLeft: "4px solid var(--chart-expense)" }}>
+      <div className="card" style={{ borderLeft: "4px solid var(--chart-expense)" }}>
         <div className="card-title">이번 달 지출</div>
-        <div className="card-value" style={{ color: "var(--chart-expense)", fontSize: 28 }}>
+        <div className="card-value" style={{ color: "var(--chart-expense)" }}>
           {formatKRW(Math.round(monthlySummary.expense))}
         </div>
         {(monthlySummary.excludedExpense ?? 0) > 0 && (
@@ -51,20 +54,27 @@ export const MonthlySummaryCards: React.FC<Props> = React.memo(function MonthlyS
         </div>
       </div>
 
-      <div className="card" style={{ minHeight: 124, borderLeft: "4px solid var(--chart-primary)" }}>
+      <div className="card" style={{ borderLeft: "4px solid var(--chart-primary)" }}>
         <div className="card-title">이번 달 재테크</div>
-        <div className="card-value" style={{ color: "var(--chart-primary)", fontSize: 28 }}>
+        <div className="card-value" style={{ color: "var(--chart-primary)" }}>
           {formatKRW(Math.round(monthlySummary.investing))}
         </div>
         <div className="hint" style={{ marginTop: 8 }}>전체 기간: {formatKRW(allTimeSummary.investing)}</div>
       </div>
 
-      <div className="card" style={{ minHeight: 124, borderLeft: "4px solid var(--success)" }}>
+      <div className="card" style={{ borderLeft: `4px solid ${beforePayday ? "var(--border-strong)" : "var(--success)"}` }}>
         <div className="card-title">이번 달 수지</div>
-        <div className="card-value" style={{ color: balance >= 0 ? "var(--success)" : "var(--danger)", fontSize: 28 }}>
+        <div
+          className="card-value"
+          style={{
+            color: beforePayday ? "var(--text-muted)" : balance >= 0 ? "var(--success)" : "var(--danger)"
+          }}
+        >
           {formatKRW(Math.round(balance))}
         </div>
-        <div className="hint" style={{ marginTop: 8 }}>근로소득 − 지출</div>
+        <div className={`hint${beforePayday ? " kpi-note" : ""}`} style={{ marginTop: 8 }}>
+          {beforePayday ? "급여 입금 전 · 지출만 반영" : "근로소득 − 지출"}
+        </div>
       </div>
     </div>
   );

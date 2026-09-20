@@ -85,7 +85,29 @@ export function isRealExpenseEntry(entry: LedgerEntry, categoryPresets?: Categor
  * summaryMath.classifyLedgerFlow와 isInvestmentEntry가 같은 정의를 공유한다(한쪽만 바꾸면 대시보드 수치 어긋남).
  * ⚠ categoryTypes.transfer union을 쓰지 말 것 — 카드결제이체까지 재테크로 오분류된다.
  */
-export const INVESTMENT_TRANSFER_SUBS = new Set(["저축이체", "투자이체", "저축", "투자"]);
+/** 저축 성격 이체 subCategory — "저축"은 레거시 표기(현행 "저축이체") */
+const SAVINGS_TRANSFER_SUBS = new Set(["저축이체", "저축"]);
+/** 투자 성격 이체 subCategory — "투자"는 레거시 표기(현행 "투자이체") */
+const INVESTING_TRANSFER_SUBS = new Set(["투자이체", "투자"]);
+
+export const INVESTMENT_TRANSFER_SUBS = new Set([
+  ...SAVINGS_TRANSFER_SUBS,
+  ...INVESTING_TRANSFER_SUBS
+]);
+
+/**
+ * 재테크 이체를 저축/투자 중 어디로 집계할지 판정 — 세부 분해(computeRecheckBreakdown)의 단일 소스.
+ * ⚠ "저축이체"/"투자이체" 두 문자열만 직접 비교하지 말 것: 레거시 "저축"/"투자" 표기가 실데이터에
+ * 다수 존재해(총액은 INVESTMENT_TRANSFER_SUBS로 잡히므로) 총액에는 들어가고 세부에는 빠져
+ * 대시보드 카드 간 수치가 어긋난다.
+ */
+export function investmentTransferBucket(entry: LedgerEntry): "저축" | "투자" | null {
+  if (entry.kind !== "transfer") return null;
+  const sub = entry.subCategory ?? "";
+  if (SAVINGS_TRANSFER_SUBS.has(sub)) return "저축";
+  if (INVESTING_TRANSFER_SUBS.has(sub)) return "투자";
+  return null;
+}
 
 export function isInvestmentEntry(entry: LedgerEntry): boolean {
   const sub = entry.subCategory;

@@ -172,13 +172,14 @@ export function buildDividendStory(data: DividendGrowthData): DividendStory {
 }
 
 /** description "458730 - TIGER 미국배당다우존스 배당"에서 티커 추출 */
-const tickerFromDividendDesc = (desc: string | undefined): string | null => {
+/** 배당 기록 설명("TICKER - 이름 배당")에서 티커 추출 — 배당 집계의 단일 소스 */
+export const tickerFromDividendDesc = (desc: string | undefined): string | null => {
   const m = (desc || "").match(/^([A-Za-z0-9.-]+)\s*-/);
   return m ? canonicalTickerForMatch(m[1]) : null;
 };
 
 /** 배당 수입 기록 판정 — 분류 단일소스(categoryMatch.isDividendEntryLoose) + 양수 금액 */
-const isDividendRecord = (l: LedgerEntry): boolean =>
+export const isDividendRecord = (l: LedgerEntry): boolean =>
   l.kind === "income" && Number(l.amount) > 0 && isDividendEntryLoose(l);
 
 const monthSeq = (from: string, to: string): string[] => {

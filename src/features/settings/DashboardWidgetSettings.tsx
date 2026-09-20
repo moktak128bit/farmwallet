@@ -287,8 +287,11 @@ export const DashboardWidgetSettings: React.FC<Props> = React.memo(function Dash
           style={{ width: "100%", maxWidth: 320, padding: "8px 12px" }}
         />
         <p style={{ fontSize: 12, color: "var(--text-muted)", marginTop: 4 }}>
-          대시보드 "배당 성장 추적" 위젯에 표시할 종목 — 쉼표로 여러 개 지정 가능 (종목당 차트 1개).
-          2개 미만이면 보유 중이면서 분배금 기록이 2건 이상인 종목을 최근 수령 순으로 자동 보충합니다.
+          대시보드 "배당 포트폴리오"(합계 배당률·월 배당)와 "배당 성장 추적"(종목당 차트 1개)이
+          함께 쓰는 목록입니다 — 쉼표로 여러 개 지정 가능.
+          여기 적은 종목만 총 배당률에 들어갑니다. 성장 ETF의 소액 분배금까지 섞으면 배당주의
+          배당률이 희석돼 읽기 어려워집니다. 2개 미만이면 보유 중이면서 분배금 기록이 2건 이상인
+          종목을 최근 수령 순으로 자동 보충합니다.
         </p>
       </div>
       <p style={{ fontSize: 12, color: "var(--text-muted)", marginBottom: 12 }}>

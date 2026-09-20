@@ -81,7 +81,9 @@ function pad2(n: number): string {
 // React.memo — 부모(DashboardPage)가 넘기는 props는 안정적(store 참조)이어야 한다.
 export const SalaryTimerCard: React.FC<Props> = React.memo(function SalaryTimerCard({ ledger, fxRate }) {
   const [settings, setSettings] = useState<SalaryTimerSettings | null>(() => loadSettings());
-  const [editing, setEditing] = useState<boolean>(() => loadSettings() === null);
+  // 미설정이어도 폼을 자동으로 펼치지 않는다 — 대시보드 상단을 빈 입력폼이 차지하던 문제.
+  // 접힌 한 줄을 눌러야 폼이 열린다.
+  const [editing, setEditing] = useState<boolean>(false);
   const [paydayInput, setPaydayInput] = useState<string>(() => String(loadSettings()?.payday ?? 25));
   const [salaryInput, setSalaryInput] = useState<string>(() => {
     const v = loadSettings()?.monthlySalary;
@@ -133,6 +135,19 @@ export const SalaryTimerCard: React.FC<Props> = React.memo(function SalaryTimerC
     }
   }, [paydayInput, salaryInput]);
 
+  // ── 미설정 상태: 접힌 한 줄 ────────────────────────────────────────────────
+  // 아직 아무 값도 없는 위젯이 큰 카드로 자리를 차지하지 않게. 기능 발견성은 남긴다.
+  if (!settings && !editing) {
+    return (
+      <button type="button" className="widget-collapsed" onClick={() => setEditing(true)}>
+        <span className="widget-collapsed-title">💰 월급 실시간 타이머 설정하기</span>
+        <span className="widget-collapsed-hint">
+          월급일과 월급액을 넣으면 다음 월급까지 1초마다 쌓이는 금액이 보여요
+        </span>
+      </button>
+    );
+  }
+
   // ── 설정 폼 ──────────────────────────────────────────────────────────────
   if (editing || !settings) {
     const paydayNum = Number(paydayInput);
@@ -178,11 +193,9 @@ export const SalaryTimerCard: React.FC<Props> = React.memo(function SalaryTimerC
           <button type="button" className="primary" onClick={handleSave} disabled={!valid} style={{ padding: "7px 16px" }}>
             시작
           </button>
-          {settings && (
-            <button type="button" onClick={() => setEditing(false)} style={{ padding: "7px 16px" }}>
-              취소
-            </button>
-          )}
+          <button type="button" onClick={() => setEditing(false)} style={{ padding: "7px 16px" }}>
+            취소
+          </button>
         </div>
         {ledgerSalary && (
           <button

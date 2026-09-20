@@ -6,7 +6,7 @@
  */
 import type { CategoryPresets, LedgerEntry } from "../../types";
 import { isCreditPayment, isCurrencyExchangeEntry, isSavingsExpenseEntry, isInvestmentPnlEntry, isInvestmentLossEntry } from "../../utils/category";
-import { INVESTMENT_TRANSFER_SUBS } from "../../utils/categoryUtils";
+import { INVESTMENT_TRANSFER_SUBS, investmentTransferBucket } from "../../utils/categoryUtils";
 import { isIncomeExcludedFromTotals } from "../../utils/realIncome";
 import { toKrwByRate } from "../../utils/currency";
 
@@ -133,8 +133,9 @@ export function computeRecheckBreakdown(
     if (!entry.date?.startsWith(monthPrefix)) continue;
     const amt = toKrwAmount(entry, fxRate);
     if (entry.kind === "transfer") {
-      if (entry.subCategory === "저축이체") sub.저축 += amt;
-      else if (entry.subCategory === "투자이체") sub.투자 += amt;
+      // 레거시 "저축"/"투자" 표기 포함 — categoryUtils 단일 소스 (문자열 직접 비교 금지)
+      const bucket = investmentTransferBucket(entry);
+      if (bucket) sub[bucket] += amt;
     } else if (isInvestmentPnlEntry(entry)) {
       // 투자손익 판정은 categoryUtils 단일 소스 — 문자열 재나열 금지 (한쪽만 바뀌면 어긋남)
       if (isInvestmentLossEntry(entry)) sub.투자손실 += amt;

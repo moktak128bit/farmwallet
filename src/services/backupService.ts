@@ -1,6 +1,5 @@
 import type { AppData } from "../types";
 import { STORAGE_KEYS, BACKUP_CONFIG } from "../constants/config";
-import { getKoreaTime } from "../utils/date";
 import { newIdWithPrefix } from "../utils/id";
 import {
   getBackupStore,
@@ -237,7 +236,11 @@ function newBackupId(): string {
 function buildRecord(dataJson: string, options?: { hash?: string; label?: string }): BackupRecord {
   const record: BackupRecord = {
     id: newBackupId(),
-    createdAt: getKoreaTime().toISOString(),
+    // ⚠ getKoreaTime()을 쓰면 안 된다. 그건 "로컬 필드가 KST처럼 읽히는" Date라
+    // KST 기기에서만 toISOString()이 맞고, UTC 기기(예: CI 러너)에선 9시간 앞선
+    // 시각이 찍힌다. createdAt은 날짜가 아니라 시점이고, 보존 정책의 날짜 묶음은
+    // getSeoulDayKeyFromCreatedAt이 Asia/Seoul 포매터로 따로 환산한다.
+    createdAt: new Date().toISOString(),
     dataJson
   };
   if (options?.hash !== undefined) record.hash = options.hash;

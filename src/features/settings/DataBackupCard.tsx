@@ -215,37 +215,31 @@ export const DataBackupCard: React.FC<Props> = React.memo(function DataBackupCar
   return (
     <div className="card">
       <div className="card-title">데이터 백업</div>
-      <p>
-        <strong style={{ color: "var(--warning)" }}>⚠️ 중요:</strong> 웹 브라우저와 Cursor 내부 브라우저는 서로 다른 저장소(localStorage)를 사용합니다.
-        웹에서 저장한 백업은 Cursor 내부에서 보이지 않으며, 그 반대도 마찬가지입니다.
+      <p className="hint" style={{ marginBottom: 12 }}>
+        정기적으로 <strong>백업 파일 다운로드</strong>로 JSON을 저장해 두세요. 다른 기기·브라우저로 옮길 때도 이 파일을 씁니다
+        — 브라우저마다 저장소가 따로라 자동으로 공유되지 않습니다.
         <br />
-        <strong>다른 환경에서 백업을 사용하려면:</strong> "백업 파일 다운로드"로 파일을 저장한 후, 다른 환경에서 "백업 파일 불러오기"로 불러오세요.
-        <br />
-        <strong style={{ color: "var(--primary)" }}>권장:</strong> 데이터 안전을 위해 정기적으로 "백업 파일 다운로드"로 JSON 파일을 저장해 두세요.
-        <br />
-        <strong>테이블 백업:</strong> 같은 데이터를 <code>tables</code> 아래 행 배열로도 저장합니다. 일반 백업 JSON 없이{" "}
-        <strong>테이블 백업 파일만</strong>으로도 복구할 수 있습니다.{" "}
-        <code>npm run dev</code>일 때는 저장할 때마다 프로젝트 <code>data/farmwallet-data.json</code>에도 기록됩니다.
+        <strong>테이블 백업</strong>은 같은 데이터를 행 배열로 저장한 것이라, 일반 백업 없이 이 파일만으로도 복구됩니다.
       </p>
       <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
         <div>
-          <div style={{ fontSize: 12, fontWeight: 700, color: "var(--chart-income)", marginBottom: 6 }}>💾 내보내기 (안전)</div>
+          <div style={{ fontSize: 12, fontWeight: 700, color: "var(--text-muted)", marginBottom: 6 }}>💾 내보내기 (안전)</div>
           <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
-            <button type="button" className="primary" onClick={handleDownloadBackup} style={{ background: "var(--chart-income)", border: "none", color: "white" }}>
+            <button type="button" className="primary" onClick={handleDownloadBackup}>
               백업 파일 다운로드
             </button>
-            <button type="button" onClick={handleDownloadTableBackup} style={{ background: "var(--surface)", border: "1px solid var(--chart-income)", color: "var(--chart-income)" }}>
+            <button type="button" onClick={handleDownloadTableBackup}>
               테이블 백업 다운로드
             </button>
           </div>
         </div>
         <div>
-          <div style={{ fontSize: 12, fontWeight: 700, color: "var(--warning, orange)", marginBottom: 6 }}>⚠️ 불러오기 (현재 데이터 덮어쓰기)</div>
+          <div style={{ fontSize: 12, fontWeight: 700, color: "var(--warning)", marginBottom: 6 }}>⚠️ 불러오기 (현재 데이터 덮어쓰기)</div>
           <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
-            <button type="button" onClick={handleUploadBackup} style={{ background: "var(--surface)", border: "2px solid orange", color: "var(--text)" }}>
+            <button type="button" onClick={handleUploadBackup} style={{ background: "var(--surface)", border: "1px solid var(--warning)", color: "var(--text)" }}>
               백업 파일에서 복원
             </button>
-            <button type="button" onClick={handleUploadTableBackup} style={{ background: "var(--surface)", border: "2px solid orange", color: "var(--text)" }}>
+            <button type="button" onClick={handleUploadTableBackup} style={{ background: "var(--surface)", border: "1px solid var(--warning)", color: "var(--text)" }}>
               테이블 백업에서 복원
             </button>
             <button type="button" onClick={handleExport} style={{ background: "var(--surface)", border: "1px solid var(--border)", color: "var(--text-muted)", fontSize: 12 }}>

@@ -54,7 +54,32 @@ interface Props {
   onGistManualPull?: () => Promise<void>;
 }
 
-type SettingsTab = "backup" | "integrity" | "theme" | "accessibility" | "dashboard" | "savingsMigration";
+type SettingsTab = "backup" | "transfer" | "sync" | "integrity" | "display" | "advanced";
+
+/** 탭 6개 유지하되 균형을 맞춘다 — 예전엔 "백업/복원" 하나에 17개 섹션이 몰려 있었다. */
+const SETTINGS_TABS = [
+  ["backup", "백업 / 복원"],
+  ["transfer", "가져오기 / 내보내기"],
+  ["sync", "동기화"],
+  ["integrity", "데이터 무결성"],
+  ["display", "화면 설정"],
+  ["advanced", "고급 / 진단"],
+] as const;
+
+/** 기본 접힘 섹션. 제목은 summary가 맡고 자식 카드의 .card-title은 CSS로 숨긴다. */
+const Collapsible: React.FC<{ title: string; hint?: string; children: React.ReactNode }> = ({
+  title,
+  hint,
+  children
+}) => (
+  <details className="settings-collapsible">
+    <summary>
+      {title}
+      {hint && <span className="hint">{hint}</span>}
+    </summary>
+    <div className="settings-collapsible-body">{children}</div>
+  </details>
+);
 
 export const SettingsView: React.FC<Props> = ({
   data,
@@ -94,7 +119,7 @@ export const SettingsView: React.FC<Props> = ({
   }, []);
 
   useEffect(() => {
-    if (activeTab !== "backup") return;
+    if (activeTab !== "backup" && activeTab !== "advanced") return;
     void loadBackupList();
   }, [activeTab, backupVersion, loadBackupList]);
 
@@ -103,14 +128,7 @@ export const SettingsView: React.FC<Props> = ({
       <h2>백업 / 복원 / 설정</h2>
 
       <div style={{ display: "flex", gap: 8, marginBottom: 16, flexWrap: "wrap" }}>
-        {([
-          ["backup", "백업/복원"],
-          ["integrity", "데이터 무결성"],
-          ["theme", "테마 설정"],
-          ["accessibility", "접근성"],
-          ["dashboard", "대시보드 위젯"],
-          ["savingsMigration", "저축성지출 수정"],
-        ] as const).map(([tab, label]) => (
+        {SETTINGS_TABS.map(([tab, label]) => (
           <button
             key={tab}
             type="button"
@@ -126,7 +144,7 @@ export const SettingsView: React.FC<Props> = ({
       {activeTab === "backup" && (
         <>
           <PWAInstallCard />
-          <div className="cards-row">
+          <div className="settings-grid">
             <DataBackupCard
               data={data}
               onChangeData={onChangeData}
@@ -135,32 +153,12 @@ export const SettingsView: React.FC<Props> = ({
               onBackupRestored={onBackupRestored}
               loadBackupList={loadBackupList}
             />
-            <ExportToolsCards
-              ledger={data.ledger}
-              accounts={data.accounts}
-              trades={data.trades}
-              categoryPresets={data.categoryPresets}
-            />
-            <MigrationToolsCards data={data} onChangeData={onChangeData} />
-            <DataResetCard data={data} onChangeData={onChangeData} setText={setText} setError={setError} />
-            {/* 💰 하루 예산 한도 카드는 가계부 상단 "예산 / 반복 지출" 탭으로 이동됨. */}
             <BackupSnapshotCard
               backups={backups}
               loadBackupList={loadBackupList}
               onBackupsChanged={onBackupsChanged}
             />
-            <PriceApiCard />
-            <GistSyncCard
-              autoSyncEnabled={autoSyncEnabled}
-              onAutoSyncChange={onAutoSyncChange}
-              gistLastPushAt={gistLastPushAt}
-              gistLastPullAt={gistLastPullAt}
-              onManualPush={onGistManualPush}
-              onManualPull={onGistManualPull}
-            />
-            <DateAccountCard accounts={data.accounts} />
           </div>
-
           <BackupHistoryTable
             backups={backups}
             data={data}
@@ -170,24 +168,107 @@ export const SettingsView: React.FC<Props> = ({
             onBackupRestored={onBackupRestored}
             loadBackupList={loadBackupList}
           />
+        </>
+      )}
 
-          <JsonImportSection
-            text={text}
-            setText={setText}
-            error={error}
-            setError={setError}
-            data={data}
-            onChangeData={onChangeData}
-            onBackupRestored={onBackupRestored}
-          />
-
+      {activeTab === "transfer" && (
+        <>
+          <div className="settings-grid">
+            <ExportToolsCards
+              ledger={data.ledger}
+              accounts={data.accounts}
+              trades={data.trades}
+              categoryPresets={data.categoryPresets}
+            />
+          </div>
+          <Collapsible title="JSON 가져오기" hint="파일 선택 · 끌어다 놓기 · 붙여넣기">
+            <JsonImportSection
+              text={text}
+              setText={setText}
+              error={error}
+              setError={setError}
+              data={data}
+              onChangeData={onChangeData}
+              onBackupRestored={onBackupRestored}
+            />
+          </Collapsible>
           {/* 카드 명세 CSV/붙여넣기 임포트 — 카드 계좌 한정, dry-run 기본, 적용 시 단일 undo */}
-          <StatementImportCard data={data} onChangeData={onChangeData} />
+          <Collapsible title="카드 명세 가져오기" hint="CSV/TSV → 가계부 지출">
+            <StatementImportCard data={data} onChangeData={onChangeData} />
+          </Collapsible>
+        </>
+      )}
 
-          {/* 백업 섹션 맨 끝: localStorage 사용량(읽기 전용) */}
-          <StorageUsageCard />
-          {/* 마지막 스키마 마이그레이션 리포트(읽기 전용) — 직전 원본 스냅샷 존재 여부는 backups 라벨로 판정 */}
-          <MigrationReportCard backups={backups} />
+      {activeTab === "sync" && (
+        <div className="settings-grid">
+          <GistSyncCard
+            autoSyncEnabled={autoSyncEnabled}
+            onAutoSyncChange={onAutoSyncChange}
+            gistLastPushAt={gistLastPushAt}
+            gistLastPullAt={gistLastPullAt}
+            onManualPush={onGistManualPush}
+            onManualPull={onGistManualPull}
+          />
+          <PriceApiCard />
+        </div>
+      )}
+
+      {activeTab === "display" && (
+        <>
+          <div className="settings-grid">
+            <div className="card">
+              <div className="card-title">테마</div>
+              <button type="button" className="primary" onClick={() => setShowThemeCustomizer(true)}>
+                테마 커스터마이저 열기
+              </button>
+            </div>
+            <div className="card">
+              <div className="card-title">접근성</div>
+              <label style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                <input
+                  type="checkbox"
+                  checked={highContrast}
+                  onChange={(e) => {
+                    const next = e.target.checked;
+                    setHighContrast(next);
+                    if (typeof document !== "undefined") {
+                      document.documentElement.classList.toggle("high-contrast", next);
+                      try {
+                        localStorage.setItem(STORAGE_KEYS.HIGH_CONTRAST, next ? "true" : "false");
+                      } catch { /* 저장 실패해도 토글 자체는 유지 */ }
+                    }
+                  }}
+                />
+                <span>고대비 모드</span>
+              </label>
+              <p className="hint" style={{ marginTop: 8 }}>시각적 대비를 높여 가독성을 올립니다.</p>
+            </div>
+            <DateAccountCard accounts={data.accounts} />
+          </div>
+          <DashboardWidgetSettings data={data} onChangeData={onChangeData} />
+        </>
+      )}
+
+      {activeTab === "advanced" && (
+        <>
+          <div className="settings-grid">
+            <MigrationToolsCards data={data} onChangeData={onChangeData} />
+          </div>
+          <Collapsible title="저축성지출 수정" hint="레거시 지출 → 저축/투자 이체 일괄 전환">
+            <Suspense fallback={<div style={{ padding: 16, color: "var(--text-muted)" }}>로딩 중...</div>}>
+              <SavingsMigrationView data={data} onChangeData={onChangeData} />
+            </Suspense>
+          </Collapsible>
+          <Collapsible title="저장 공간 사용량" hint="localStorage (읽기 전용)">
+            <StorageUsageCard />
+          </Collapsible>
+          <Collapsible title="마지막 마이그레이션 리포트" hint="스키마 변환 결과 (읽기 전용)">
+            <MigrationReportCard backups={backups} />
+          </Collapsible>
+          <div className="settings-danger">
+            <div className="settings-danger-title">⚠️ 위험 구역 — 되돌리기 어려운 작업</div>
+            <DataResetCard data={data} onChangeData={onChangeData} setText={setText} setError={setError} />
+          </div>
         </>
       )}
 
@@ -202,58 +283,9 @@ export const SettingsView: React.FC<Props> = ({
         </Suspense>
       )}
 
-      {activeTab === "theme" && (
-        <div className="card">
-          <h3>테마 및 표시 설정</h3>
-          <button
-            type="button"
-            className="primary"
-            onClick={() => setShowThemeCustomizer(true)}
-          >
-            테마 커스터마이저 열기
-          </button>
-        </div>
-      )}
-
       {showThemeCustomizer && (
         <Suspense fallback={<div style={{ padding: 24, textAlign: "center" }}>로딩 중...</div>}>
           <ThemeCustomizer onClose={() => setShowThemeCustomizer(false)} />
-        </Suspense>
-      )}
-
-      {activeTab === "accessibility" && (
-        <div className="card">
-          <h3>접근성 설정</h3>
-          <label style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 12 }}>
-            <input
-              type="checkbox"
-              checked={highContrast}
-              onChange={(e) => {
-                const next = e.target.checked;
-                setHighContrast(next);
-                if (typeof document !== "undefined") {
-                  document.documentElement.classList.toggle("high-contrast", next);
-                  try {
-                    localStorage.setItem(STORAGE_KEYS.HIGH_CONTRAST, next ? "true" : "false");
-                  } catch { /* 저장 실패해도 토글 자체는 유지 */ }
-                }
-              }}
-            />
-            <span>고대비 모드 활성화</span>
-          </label>
-          <p style={{ fontSize: 12, color: "var(--text-muted)", marginTop: 8 }}>
-            고대비 모드는 시각적 대비를 높여 가독성을 향상시킵니다.
-          </p>
-        </div>
-      )}
-
-      {activeTab === "dashboard" && (
-        <DashboardWidgetSettings data={data} onChangeData={onChangeData} />
-      )}
-
-      {activeTab === "savingsMigration" && (
-        <Suspense fallback={<div className="card" style={{ padding: 24, textAlign: "center", color: "var(--text-muted)" }}>로딩 중...</div>}>
-          <SavingsMigrationView data={data} onChangeData={onChangeData} />
         </Suspense>
       )}
 

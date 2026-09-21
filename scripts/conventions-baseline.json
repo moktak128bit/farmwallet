@@ -1,11 +1,11 @@
 {
   "version": 1,
-  "generatedAt": "2026-08-20T23:37:44.267Z",
-  "totalIssues": 161,
+  "generatedAt": "2026-09-21T08:06:46.916Z",
+  "totalIssues": 160,
   "byRule": {
     "category-match": 1,
     "inline-hex": 155,
-    "date-now-id": 2,
+    "date-now-id": 1,
     "utc-date": 3
   },
   "signatures": {
@@ -148,7 +148,6 @@
     "src/hooks/useTheme.ts|inline-hex|document.querySelector('meta[name=\"theme-color\"]')?.setAttribute(\"content\", dark ? \"#0f172a\" : \"#0d9488\");": 1,
     "src/pages/WorkoutPage.tsx|inline-hex|<strong style={{ color: \"#b45309\" }}>이번 주 균형 알림</strong>": 1,
     "src/pages/WorkoutPage.tsx|inline-hex|borderLeft: \"3px solid #f59e0b\",": 1,
-    "src/services/backupService.ts|date-now-id|id: `B${Date.now()}-${Math.floor(Math.random() * 1000)}`,": 1,
     "src/services/tabSync.ts|date-now-id|: `tab-${Math.random().toString(36).slice(2)}-${Date.now()}`;": 1,
     "src/utils/dailyCloses.ts|utc-date|const closeDay = new Date(updatedMs + 9 * 60 * 60 * 1000).toISOString().slice(0, 10);": 1,
     "src/utils/pdfExport.ts|inline-hex|.footer { margin-top: 32px; color: #999; font-size: 11px; text-align: right; }": 1,

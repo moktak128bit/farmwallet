@@ -102,11 +102,14 @@ export const BackupHistoryTable: React.FC<Props> = React.memo(function BackupHis
   }, [data, onChangeData, setText, setError, loadBackupList, onBackupRestored]);
 
   return (
-    <table className="data-table compact">
+    // 모바일 390px에서 3열 + 버튼이 443px로 삐져나갔다 — 저장 위치는 항상 같은 값이라 좁은 화면에선 숨긴다.
+    <div className="card">
+      <div className="card-title">백업 기록</div>
+      <table className="data-table compact">
       <thead>
         <tr>
           <th style={{ width: "55%" }}>백업 시각</th>
-          <th style={{ width: "25%" }}>저장 위치</th>
+          <th className="col-hide-mobile" style={{ width: "25%" }}>저장 위치</th>
           <th>복원</th>
         </tr>
       </thead>
@@ -133,15 +136,16 @@ export const BackupHistoryTable: React.FC<Props> = React.memo(function BackupHis
                 <div style={{ fontSize: 11, color: "var(--text-muted)", marginTop: 2 }}>{b.label}</div>
               )}
             </td>
-            <td>브라우저 저장소</td>
+            <td className="col-hide-mobile">브라우저 저장소</td>
             <td>
-              <button type="button" onClick={() => handleRestoreBackup(b)}>
-                이 시점으로 복원
+              <button type="button" onClick={() => handleRestoreBackup(b)} style={{ whiteSpace: "nowrap" }}>
+                복원
               </button>
             </td>
           </tr>
         ))}
       </tbody>
-    </table>
+      </table>
+    </div>
   );
 });

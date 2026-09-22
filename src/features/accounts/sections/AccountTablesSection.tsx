@@ -468,9 +468,9 @@ export const AccountTablesSection: React.FC<Props> = React.memo(function Account
         <div className="account-row-actions">
           <button
             type="button"
-            className="primary"
+            className="secondary"
             onClick={() => onOpenAdjust({ id: row.account.id, type: accountType })}
-            style={{ fontSize: "13px", padding: "6px 12px" }}
+            style={{ fontSize: "13px", padding: "5px 10px" }}
           >
             수정
           </button>

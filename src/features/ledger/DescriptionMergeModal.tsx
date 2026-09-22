@@ -287,7 +287,7 @@ export const DescriptionMergeModal: React.FC<Props> = ({ ledger, onApply, onClos
                             />
                             <span style={{ flex: 1, fontWeight: 500, color: "var(--text)", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
                               {v.description}
-                              <span style={{ fontSize: 10, marginLeft: 6, color: "rgb(168, 85, 247)", fontWeight: 700 }}>+추가</span>
+                              <span style={{ fontSize: 11, marginLeft: 6, color: "rgb(168, 85, 247)", fontWeight: 700 }}>+추가</span>
                             </span>
                             <span style={{ fontSize: 12, color: "var(--text-muted)", minWidth: 60, textAlign: "right" }}>
                               {v.count}건
@@ -390,7 +390,7 @@ export const DescriptionMergeModal: React.FC<Props> = ({ ledger, onApply, onClos
 
         {/* Footer */}
         <div style={{ padding: "12px 24px", borderTop: "1px solid var(--border)", display: "flex", justifyContent: "space-between", alignItems: "center", fontSize: 12, color: "var(--text-muted)" }}>
-          <span>💡 실수로 통합했다면 Ctrl+Z (Undo) 가능합니다.</span>
+          <span>실수로 통합했다면 Ctrl+Z (Undo) 가능합니다.</span>
           <button
             type="button"
             onClick={onClose}

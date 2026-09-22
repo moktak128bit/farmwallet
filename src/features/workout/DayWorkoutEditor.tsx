@@ -257,7 +257,7 @@ const DayWorkoutEditorInner: React.FC<Props> = ({
                     aria-label="위로 이동"
                     title="위로 이동"
                     style={{
-                      width: 22, height: 18, padding: 0, fontSize: 10, lineHeight: 1,
+                      width: 22, height: 18, padding: 0, fontSize: 11, lineHeight: 1,
                       background: "var(--surface)", border: "1px solid var(--border)", borderRadius: 4,
                       cursor: canMoveUp ? "pointer" : "not-allowed",
                       opacity: canMoveUp ? 1 : 0.35, color: "var(--text-muted)",
@@ -270,7 +270,7 @@ const DayWorkoutEditorInner: React.FC<Props> = ({
                     aria-label="아래로 이동"
                     title="아래로 이동"
                     style={{
-                      width: 22, height: 18, padding: 0, fontSize: 10, lineHeight: 1,
+                      width: 22, height: 18, padding: 0, fontSize: 11, lineHeight: 1,
                       background: "var(--surface)", border: "1px solid var(--border)", borderRadius: 4,
                       cursor: canMoveDown ? "pointer" : "not-allowed",
                       opacity: canMoveDown ? 1 : 0.35, color: "var(--text-muted)",
@@ -311,7 +311,7 @@ const DayWorkoutEditorInner: React.FC<Props> = ({
                       border: "1px solid #d97706",
                     }}
                   >
-                    🏆 PR{isWeightPR ? " 중량" : ""}{isVolumePR ? " 볼륨" : ""}{is1RMPR ? " 1RM" : ""}
+                    PR{isWeightPR ? " 중량" : ""}{isVolumePR ? " 볼륨" : ""}{is1RMPR ? " 1RM" : ""}
                   </span>
                 )}
                 {totalCount > 0 && (
@@ -334,7 +334,7 @@ const DayWorkoutEditorInner: React.FC<Props> = ({
                     }}
                     title={timing?.isLive ? "이 종목 경과 (진행 중)" : "이 종목 소요 시간"}
                   >
-                    ⏱ {durLabel}
+                    {durLabel}
                   </span>
                 )}
                 {volume > 0 && (
@@ -352,7 +352,7 @@ const DayWorkoutEditorInner: React.FC<Props> = ({
                     onClick={() => onOpenHistory(exercise.name)}
                     title="이 종목의 과거 진행 기록 보기"
                   >
-                    📈 이력
+                    이력
                   </button>
                 )}
                 <button

@@ -102,7 +102,8 @@ function ruleRecurringOverdue(ctx: NudgeContext): Nudge[] {
     const overdueDays = diffDays(m.dueDate, ctx.today) ?? 0;
     return {
       id: `recurring:${m.recurring.id}:${m.dueDate}`,
-      severity: "critical" as const,
+      // 기록 리마인더일 뿐 데이터 위험이 아니다 — critical이면 헤더 벨 배지가 상시 빨강이 된다
+      severity: "warn" as const,
       title: `반복지출 미등록 — ${m.recurring.title || "(제목 없음)"}`,
       detail:
         overdueDays > 0

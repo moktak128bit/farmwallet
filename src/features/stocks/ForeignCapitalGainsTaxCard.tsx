@@ -60,7 +60,7 @@ export const ForeignCapitalGainsTaxCard: React.FC = () => {
       ) : tax.harvestCandidates.length > 0 ? (
         <div style={{ fontSize: 13 }}>
           <div style={{ marginBottom: 6 }}>
-            💡 평가손실 종목을 연내 매도하면 손익통산으로 절세 가능 —{" "}
+            평가손실 종목을 연내 매도하면 손익통산으로 절세 가능 —{" "}
             <strong style={{ color: "var(--danger)" }}>최대 {formatKRW(Math.round(tax.taxSavingIfHarvestAll))} 절감</strong>
             {" "}(손실 {formatKRW(Math.round(tax.harvestableLossKRW))} 실현 시).
           </div>

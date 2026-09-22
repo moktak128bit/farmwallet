@@ -150,7 +150,7 @@ export const SettlementView: React.FC<Props> = ({ data, onSettle, formatNumber }
         {lastSettleAt && <> · 마지막 정산: <strong>{lastSettleAt}</strong></>}
       </div>
 
-      <Section storageKey="settle-section-overview" title="💰 현재 정산 대상">
+      <Section storageKey="settle-section-overview" title="현재 정산 대상">
         {settlement && (
           <div style={{ gridColumn: "span 4" }}>
             <div style={{ marginBottom: 16, padding: "12px 14px", background: "var(--accent-light)", borderRadius: 10, border: "1px solid var(--border)" }}>
@@ -190,7 +190,7 @@ export const SettlementView: React.FC<Props> = ({ data, onSettle, formatNumber }
                 cursor: settlement.partnerShare > 0 ? "pointer" : "not-allowed",
               }}
             >
-              💸 상대 부담분 {formatNumber(Math.round(settlement.partnerShare))} 정산 입금 기록
+              상대 부담분 {formatNumber(Math.round(settlement.partnerShare))} 정산 입금 기록
             </button>
             <div style={{ fontSize: 11, color: "var(--text-faint)", marginTop: 6, textAlign: "center" }}>
               클릭 시 가계부에 "수입 / 정산 / 데이트통장" 항목(실질 수입에서는 자동 제외)으로 추가되고 마지막 정산일이 갱신됩니다
@@ -200,7 +200,7 @@ export const SettlementView: React.FC<Props> = ({ data, onSettle, formatNumber }
       </Section>
 
       {settlement && settlement.items.length > 0 && (
-        <Section storageKey="settle-section-items" title={`📋 정산 대상 내역 (${settlement.items.length}건)`} defaultOpen={false}>
+        <Section storageKey="settle-section-items" title={`정산 대상 내역 (${settlement.items.length}건)`} defaultOpen={false}>
           <div style={{ gridColumn: "span 4" }}>
             <div style={{ maxHeight: 360, overflow: "auto", background: "var(--surface)", borderRadius: 10, border: "1px solid var(--border-light)" }}>
               <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 12 }}>
@@ -232,7 +232,7 @@ export const SettlementView: React.FC<Props> = ({ data, onSettle, formatNumber }
         </Section>
       )}
 
-      <Section storageKey="settle-section-history" title="🗂️ 정산 히스토리">
+      <Section storageKey="settle-section-history" title="정산 히스토리">
         <div style={{ gridColumn: "span 4" }}>
           {settleHistory.length === 0 ? (
             <div style={{ padding: 20, textAlign: "center", color: "var(--text-faint)", fontSize: 13 }}>

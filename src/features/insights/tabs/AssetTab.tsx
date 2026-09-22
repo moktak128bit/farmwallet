@@ -69,7 +69,7 @@ export const AssetTab = React.memo(function AssetTab({ d }: { d: D }) {
       </div>
 
       {/* ============ 한눈에 ============ */}
-      <Section storageKey="asset-section-overview" title="🎯 한눈에">
+      <Section storageKey="asset-section-overview" title="한눈에">
         <Card accent>
           <Kpi label="현재 순자산" value={F(current) + "원"} sub={`${nw.length}개월 추적`} color="var(--success)" info="계좌 현재 잔액 − account.debt − 대출 잔금" />
         </Card>
@@ -101,7 +101,7 @@ export const AssetTab = React.memo(function AssetTab({ d }: { d: D }) {
           />
         </Card>
 
-        <Card title={target ? `🎯 목표 자산 진척 (${F(target)}원)` : "🎯 목표 자산 진척"} span={4}>
+        <Card title={target ? `목표 자산 진척 (${F(target)}원)` : "목표 자산 진척"} span={4}>
           {target == null ? (
             <div style={{ padding: 20, textAlign: "center", color: "var(--text-muted)", fontSize: 13, lineHeight: 1.7 }}>
               최종 총자산 목표가 설정되지 않았습니다.<br />
@@ -147,7 +147,7 @@ export const AssetTab = React.memo(function AssetTab({ d }: { d: D }) {
                     )}
                   </div>
                 )}
-                <div style={{ fontSize: 10, color: "var(--text-faint)" }}>
+                <div style={{ fontSize: 11, color: "var(--text-faint)" }}>
                   현재 월 순자산 증가 페이스 {F(monthlyGrowth)}원/월 (추적 전체 평균) · ETA는 최근 페이스가 유지된다는 가정의 단순 투영
                 </div>
               </div>
@@ -157,7 +157,7 @@ export const AssetTab = React.memo(function AssetTab({ d }: { d: D }) {
       </Section>
 
       {/* ============ 자산 구성 ============ */}
-      <Section storageKey="asset-section-composition" title="🏦 자산 구성">
+      <Section storageKey="asset-section-composition" title="자산 구성">
         <Card accent>
           <Kpi
             label="총 자산"
@@ -199,7 +199,7 @@ export const AssetTab = React.memo(function AssetTab({ d }: { d: D }) {
           <Card title="자산 유형별 배분" span={2}>
             <ResponsiveContainer width="100%" height={280}>
               <PieChart>
-                <Pie isAnimationActive={false} data={d.assetAllocation} dataKey="value" cx="50%" cy="50%" outerRadius={100} innerRadius={50} label={pieLabel} labelLine={false} style={{ fontSize: 10 }}>
+                <Pie isAnimationActive={false} data={d.assetAllocation} dataKey="value" cx="50%" cy="50%" outerRadius={100} innerRadius={50} label={pieLabel} labelLine={false} style={{ fontSize: 11 }}>
                   {d.assetAllocation.map((_, i) => <Cell key={i} fill={C[i % C.length]} />)}
                 </Pie>
                 <Tooltip formatter={(v: ValueType | undefined) => W(Number(v ?? 0))} />
@@ -212,7 +212,7 @@ export const AssetTab = React.memo(function AssetTab({ d }: { d: D }) {
           <div style={{ maxHeight: 300, overflow: "auto" }}>
             {d.accountBalances.filter((a) => a.balance !== 0).map((a) => (
               <div key={a.name} style={{ display: "flex", justifyContent: "space-between", padding: "8px 0", borderBottom: "1px solid var(--border-light)", fontSize: 13 }}>
-                <span>{a.name} <span style={{ fontSize: 10, color: "var(--text-faint)" }}>({a.type})</span></span>
+                <span>{a.name} <span style={{ fontSize: 11, color: "var(--text-faint)" }}>({a.type})</span></span>
                 <span style={{ fontWeight: 700, color: a.balance >= 0 ? "var(--text)" : "var(--danger)" }}>{F(a.balance)}원</span>
               </div>
             ))}
@@ -224,7 +224,7 @@ export const AssetTab = React.memo(function AssetTab({ d }: { d: D }) {
       </Section>
 
       {/* ============ 추이 ============ */}
-      <Section storageKey="asset-section-trend" title="📈 추이">
+      <Section storageKey="asset-section-trend" title="추이">
         {nw.length >= 2 && (
           <Card title="순자산 추이" span={4}>
             <ResponsiveContainer width="100%" height={300}>
@@ -247,7 +247,7 @@ export const AssetTab = React.memo(function AssetTab({ d }: { d: D }) {
       </Section>
 
       {/* ============ 인사이트 ============ */}
-      <Section storageKey="asset-section-insights" title="💡 인사이트">
+      <Section storageKey="asset-section-insights" title="인사이트">
         <Card title="자산 건강 체크리스트" span={2}>
           <div style={{ display: "flex", flexDirection: "column", gap: 8, fontSize: 13 }}>
             {(() => {
@@ -302,7 +302,7 @@ export const AssetTab = React.memo(function AssetTab({ d }: { d: D }) {
       </Section>
 
       {/* ============ FIRE ============ */}
-      <Section storageKey="asset-section-fire" title="🔥 FIRE 시뮬레이터">
+      <Section storageKey="asset-section-fire" title="FIRE 시뮬레이터">
         <FireSimulatorCard netWorthKRW={d.netWorthNow?.total ?? null} />
       </Section>
     </div>

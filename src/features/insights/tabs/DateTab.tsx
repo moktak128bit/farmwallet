@@ -125,7 +125,7 @@ export const DateTab = React.memo(function DateTab({ d }: { d: D }) {
       ) : (
         <>
           {/* ============ 한눈에 ============ */}
-          <Section storageKey="date-section-overview" title="📊 한눈에 보기">
+          <Section storageKey="date-section-overview" title="한눈에 보기">
             <Card accent><Kpi label="총 데이트 지출" value={F(total) + "원"} sub={`${d.dateTxCount}건 · 내 부담 ~${F(Math.round(total / 2))}원 (50%)`} color="var(--chart-expense)" info="데이트 관련 모든 지출 합계. 50/50 분담이므로 실 부담은 절반" /></Card>
             <Card accent><Kpi label="월평균" value={F(Math.round(avgPerPeriodMonth)) + "원"} sub={`활성월 ${monthsActive}개 평균 ${F(Math.round(avgPerActiveMonth))}원`} color="var(--warning)" info="전체 기간 월 평균 (데이트 없었던 월 포함)" /></Card>
             <Card accent><Kpi label="건당 평균" value={F(avgPerTx) + "원"} sub={`단일 최고 ${F(bigSingles[0]?.amount ?? 0)}원`} color="var(--chart-series-b)" info="1건당 평균 지출. 기념일 등 큰 건이 평균을 올릴 수 있음" /></Card>
@@ -148,7 +148,7 @@ export const DateTab = React.memo(function DateTab({ d }: { d: D }) {
               {subPie.length > 0 ? (
                 <ResponsiveContainer width="100%" height={260}>
                   <PieChart>
-                    <Pie isAnimationActive={false} data={subPie} dataKey="value" cx="50%" cy="50%" outerRadius={100} innerRadius={45} label={pieLabel} labelLine={false} style={{ fontSize: 10 }}>
+                    <Pie isAnimationActive={false} data={subPie} dataKey="value" cx="50%" cy="50%" outerRadius={100} innerRadius={45} label={pieLabel} labelLine={false} style={{ fontSize: 11 }}>
                       {subPie.map((_, i) => <Cell key={i} fill={C[i]} />)}
                     </Pie>
                     <Tooltip formatter={(v: ValueType | undefined) => W(Number(v ?? 0))} />
@@ -159,7 +159,7 @@ export const DateTab = React.memo(function DateTab({ d }: { d: D }) {
           </Section>
 
           {/* ============ 빈도·패턴 ============ */}
-          <Section storageKey="date-section-frequency" title="💕 데이트 빈도·패턴">
+          <Section storageKey="date-section-frequency" title="데이트 빈도·패턴">
             <Card accent>
               <Kpi
                 label="데이트한 날짜"
@@ -202,7 +202,7 @@ export const DateTab = React.memo(function DateTab({ d }: { d: D }) {
                 <BarChart data={dowData}>
                   <CartesianGrid strokeDasharray="3 3" stroke="var(--chart-grid)" />
                   <XAxis dataKey="name" tick={{ fontSize: 12 }} />
-                  <YAxis tickFormatter={F} tick={{ fontSize: 10 }} />
+                  <YAxis tickFormatter={F} tick={{ fontSize: 11 }} />
                   <Tooltip formatter={(v: ValueType | undefined, _n, p) => [W(Number(v ?? 0)), `${p.payload.건수}건`]} />
                   <Bar isAnimationActive={false} dataKey="금액" radius={[6, 6, 0, 0]}>
                     {dowData.map((e, i) => <Cell key={i} fill={e.금액 === Math.max(...dowData.map((x) => x.금액)) ? "var(--danger)" : "var(--chart-series-b)"} />)}
@@ -219,7 +219,7 @@ export const DateTab = React.memo(function DateTab({ d }: { d: D }) {
                 <LineChart data={avgPerTxTrend}>
                   <CartesianGrid strokeDasharray="3 3" stroke="var(--chart-grid)" />
                   <XAxis dataKey="name" tick={{ fontSize: 12 }} />
-                  <YAxis tickFormatter={F} tick={{ fontSize: 10 }} />
+                  <YAxis tickFormatter={F} tick={{ fontSize: 11 }} />
                   <Tooltip formatter={(v: ValueType | undefined) => W(Number(v ?? 0))} />
                   <Line isAnimationActive={false} type="monotone" dataKey="건당평균" stroke="var(--chart-expense)" strokeWidth={2.5} dot={{ r: 3 }} />
                 </LineChart>
@@ -231,7 +231,7 @@ export const DateTab = React.memo(function DateTab({ d }: { d: D }) {
           </Section>
 
           {/* ============ 구성·상세 ============ */}
-          <Section storageKey="date-section-breakdown" title="🔍 구성·상세">
+          <Section storageKey="date-section-breakdown" title="구성·상세">
             <Card title="지출처 TOP 20" span={2}>
               <div style={{ maxHeight: 320, overflow: "auto" }}>
                 {d.dateTop.map(([name, value], i) => (
@@ -244,14 +244,14 @@ export const DateTab = React.memo(function DateTab({ d }: { d: D }) {
               </div>
             </Card>
 
-            <Card title="🎁 단일 건 TOP 10 (기념일 감지)" span={2}>
+            <Card title="단일 건 TOP 10 (기념일 감지)" span={2}>
               <div style={{ maxHeight: 320, overflow: "auto" }}>
                 {bigSingles.map((e, i) => (
                   <div key={i} style={{ display: "flex", alignItems: "center", gap: 8, padding: "6px 0", borderBottom: "1px solid var(--border-light)", fontSize: 12 }}>
                     <span style={{ fontWeight: 700, color: i < 3 ? "var(--danger)" : "var(--text-faint)", width: 20, textAlign: "right" }}>{i + 1}</span>
                     <div style={{ flex: 1, minWidth: 0 }}>
                       <div style={{ fontWeight: 600, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{e.desc || "(설명 없음)"}</div>
-                      <div style={{ fontSize: 10, color: "var(--text-faint)" }}>{e.date} · {e.sub || "-"}</div>
+                      <div style={{ fontSize: 11, color: "var(--text-faint)" }}>{e.date} · {e.sub || "-"}</div>
                     </div>
                     <span style={{ fontWeight: 700, color: "var(--chart-expense)" }}>{F(e.amount)}원</span>
                   </div>
@@ -270,7 +270,7 @@ export const DateTab = React.memo(function DateTab({ d }: { d: D }) {
                         <span style={{ display: "flex", alignItems: "center", gap: 8 }}>
                           <span style={{ width: 10, height: 10, borderRadius: 5, background: C[i % 12], display: "inline-block" }} />{name}
                         </span>
-                        <span style={{ fontWeight: 700 }}>{F(value)}원 <span style={{ fontSize: 10, color: "var(--text-faint)" }}>({dtTotal > 0 ? Math.round((value / dtTotal) * 100) : 0}%)</span></span>
+                        <span style={{ fontWeight: 700 }}>{F(value)}원 <span style={{ fontSize: 11, color: "var(--text-faint)" }}>({dtTotal > 0 ? Math.round((value / dtTotal) * 100) : 0}%)</span></span>
                       </div>
                     );
                   })}
@@ -302,13 +302,13 @@ export const DateTab = React.memo(function DateTab({ d }: { d: D }) {
           </Section>
 
           {/* ============ 추이·비중 ============ */}
-          <Section storageKey="date-section-trends" title="📈 추이·비중">
+          <Section storageKey="date-section-trends" title="추이·비중">
             <Card title="누적 데이트 지출" span={2}>
               <ResponsiveContainer width="100%" height={240}>
                 <LineChart data={cumDate}>
                   <CartesianGrid strokeDasharray="3 3" stroke="var(--chart-grid)" />
                   <XAxis dataKey="name" tick={{ fontSize: 12 }} />
-                  <YAxis tickFormatter={F} tick={{ fontSize: 10 }} />
+                  <YAxis tickFormatter={F} tick={{ fontSize: 11 }} />
                   <Tooltip formatter={(v: ValueType | undefined) => W(Number(v ?? 0))} />
                   <Line isAnimationActive={false} type="monotone" dataKey="누적" stroke="var(--chart-expense)" strokeWidth={2.5} dot={{ r: 3 }} />
                 </LineChart>
@@ -319,8 +319,8 @@ export const DateTab = React.memo(function DateTab({ d }: { d: D }) {
               <ResponsiveContainer width="100%" height={240}>
                 <BarChart data={dateVsTotal}>
                   <CartesianGrid strokeDasharray="3 3" stroke="var(--chart-grid)" />
-                  <XAxis dataKey="name" tick={{ fontSize: 10 }} />
-                  <YAxis tickFormatter={(v: number) => v + "%"} tick={{ fontSize: 10 }} />
+                  <XAxis dataKey="name" tick={{ fontSize: 11 }} />
+                  <YAxis tickFormatter={(v: number) => v + "%"} tick={{ fontSize: 11 }} />
                   <Tooltip formatter={(v: ValueType | undefined) => v + "%"} />
                   <Bar isAnimationActive={false} dataKey="비율" fill="var(--chart-expense)" radius={[4, 4, 0, 0]} />
                 </BarChart>
@@ -332,7 +332,7 @@ export const DateTab = React.memo(function DateTab({ d }: { d: D }) {
           </Section>
 
           {/* ============ 인사이트 ============ */}
-          <Section storageKey="date-section-insights" title="💡 인사이트">
+          <Section storageKey="date-section-insights" title="인사이트">
             <Card title="데이트비 종합 인사이트" span={4}>
               <div className="grid-2" style={{ gap: 12 }}>
                 <Insight title="지출처 분석" tone="danger">
@@ -344,7 +344,7 @@ export const DateTab = React.memo(function DateTab({ d }: { d: D }) {
                   {splitTotal > 0 ? `모임통장 ${F(d.dateMoim)}원 (${moimPct}%), 개인 ${F(d.datePersonal)}원 (${100 - moimPct}%). ${moimPct >= 50 ? "모임통장 적극 활용 중 — 분담이 잘 되고 있습니다." : moimPct >= 30 ? "활용도 적당. 더 늘리면 개인 부담이 줄어듭니다." : "개인 결제 비중이 높음. 공동 지출을 모임통장으로 돌리면 정산·관리가 편해집니다."}` : "모임통장 사용 내역 없음. 모임통장을 만들면 데이트 비용 관리가 편해집니다."}
                 </Insight>
                 <Insight title="데이트 빈도" tone="warning">
-                  {uniqueDateDays > 0 ? `${d.selMonth ? (d.ml[d.selMonth] ?? d.selMonth) : `${d.months.length}개월`} 동안 ${uniqueDateDays}회 데이트 (주평균 ${datesPerWeek.toFixed(2)}회). ${daysSinceLast != null && daysSinceLast > 14 ? `⚠️ 마지막 데이트 ${daysSinceLast}일 전 — 한동안 공백이 있었습니다.` : daysSinceLast != null && daysSinceLast <= 7 ? "최근에 데이트 — 꾸준히 만나는 중!" : ""} 최장 공백 ${longestGap}일.` : "기록 없음"}
+                  {uniqueDateDays > 0 ? `${d.selMonth ? (d.ml[d.selMonth] ?? d.selMonth) : `${d.months.length}개월`} 동안 ${uniqueDateDays}회 데이트 (주평균 ${datesPerWeek.toFixed(2)}회). ${daysSinceLast != null && daysSinceLast > 14 ? `마지막 데이트 ${daysSinceLast}일 전 — 한동안 공백이 있었습니다.` : daysSinceLast != null && daysSinceLast <= 7 ? "최근에 데이트 — 꾸준히 만나는 중!" : ""} 최장 공백 ${longestGap}일.` : "기록 없음"}
                 </Insight>
                 <Insight title="데이트 비중" color="var(--chart-series-c)" bg="rgba(83,52,131,0.08)">
                   {d.pExpense > 0 ? `전체 지출의 ${Math.round((total / d.pExpense) * 100)}%가 데이트. ${total / d.pExpense > 0.15 ? "비중이 높은 편입니다. 가성비 데이트 고려." : total / d.pExpense > 0.05 ? "적정 수준." : "알뜰 수준."} 월평균 ${F(Math.round(avgPerPeriodMonth))}원 · 건당 ${F(avgPerTx)}원.` : ""}

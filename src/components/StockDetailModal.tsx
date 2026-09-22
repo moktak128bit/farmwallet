@@ -776,7 +776,7 @@ export const StockDetailModal: React.FC<Props> = ({
                               <span title={costBasis > 0 ? `매입 ${formatKRW(Math.round(costBasis))}, 주당 ${dividendPerShare != null ? formatKRW(Math.round(dividendPerShare)) : "-"}` : ""}>
                                 <span style={{ fontWeight: 600 }}>{yieldRate.toFixed(2)}%</span>
                                 {costBasis > 0 && quantity > 0 && (
-                                  <div className="hint" style={{ fontSize: 10, marginTop: 2 }}>
+                                  <div className="hint" style={{ fontSize: 11, marginTop: 2 }}>
                                     평단 {formatKRW(Math.round(avgPrice!))} · 주당 {formatKRW(Math.round(dividendPerShare!))}
                                   </div>
                                 )}

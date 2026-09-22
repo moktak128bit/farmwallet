@@ -86,21 +86,21 @@ export const ExpenseTab = React.memo(function ExpenseTab({ d }: { d: D }) {
       </div>
 
       {/* ============ 한눈에 보기 ============ */}
-      <Section storageKey="expense-section-overview" title="📊 한눈에 보기">
+      <Section storageKey="expense-section-overview" title="한눈에 보기">
         <Card title={`중분류 지출 순위 (${d.accumLabel})`} span={2}>
           <div style={{ maxHeight: 380, overflow: "auto" }}>
             {subs.slice(0, 20).map((s, i) => (
               <div key={s.sub} style={{ display: "flex", alignItems: "center", gap: 10, padding: "5px 0", borderBottom: "1px solid var(--border-light)" }}>
                 <span style={{ fontSize: 11, color: i < 3 ? "var(--danger)" : "var(--text-faint)", width: 20, textAlign: "right", fontWeight: 700 }}>{i + 1}</span>
                 <div style={{ flex: 1 }}>
-                  <div style={{ fontSize: 13, fontWeight: 600 }}>{s.sub} <span style={{ fontSize: 10, color: "var(--text-faint)" }}>({s.cat})</span></div>
+                  <div style={{ fontSize: 13, fontWeight: 600 }}>{s.sub} <span style={{ fontSize: 11, color: "var(--text-faint)" }}>({s.cat})</span></div>
                   <div style={{ height: 4, background: "var(--surface-hover)", borderRadius: 2, marginTop: 3 }}>
                     <div style={{ height: 4, background: C[i % 12], borderRadius: 2, width: `${topSub ? s.amount / topSub.amount * 100 : 0}%` }} />
                   </div>
                 </div>
                 <div style={{ textAlign: "right" }}>
                   <div style={{ fontSize: 13, fontWeight: 700, color: "var(--chart-expense)" }}>{F(s.amount)}원</div>
-                  <div style={{ fontSize: 10, color: "var(--text-faint)" }}>{s.count}건</div>
+                  <div style={{ fontSize: 11, color: "var(--text-faint)" }}>{s.count}건</div>
                 </div>
               </div>
             ))}
@@ -140,7 +140,7 @@ export const ExpenseTab = React.memo(function ExpenseTab({ d }: { d: D }) {
           )}
         </Card>
 
-        <Card title="🔄 분담 통장 활용률 (데이트)" span={4}>
+        <Card title="분담 통장 활용률 (데이트)" span={4}>
           {(() => {
             const u = computeDateAccountUtilization({ dateMoim: d.dateMoim, datePersonal: d.datePersonal });
             const span = d.monthSpan;
@@ -159,10 +159,10 @@ export const ExpenseTab = React.memo(function ExpenseTab({ d }: { d: D }) {
                   <div style={{ fontSize: 36, fontWeight: 800, color: rateColor, lineHeight: 1.1 }}>{ratePct}%</div>
                   <div style={{ fontSize: 12, color: rateColor, fontWeight: 600, marginBottom: 12 }}>{rateLabel}</div>
                   <div style={{ height: 14, background: "var(--border)", borderRadius: 7, overflow: "hidden", display: "flex" }}>
-                    <div style={{ width: `${ratePct}%`, background: "var(--success)", display: "flex", alignItems: "center", justifyContent: "center", color: "var(--text-on-color)", fontSize: 10, fontWeight: 700 }}>
+                    <div style={{ width: `${ratePct}%`, background: "var(--success)", display: "flex", alignItems: "center", justifyContent: "center", color: "var(--text-on-color)", fontSize: 11, fontWeight: 700 }}>
                       {ratePct >= 15 ? "분담통장" : ""}
                     </div>
-                    <div style={{ width: `${personalPct}%`, background: "var(--danger)", display: "flex", alignItems: "center", justifyContent: "center", color: "var(--text-on-color)", fontSize: 10, fontWeight: 700 }}>
+                    <div style={{ width: `${personalPct}%`, background: "var(--danger)", display: "flex", alignItems: "center", justifyContent: "center", color: "var(--text-on-color)", fontSize: 11, fontWeight: 700 }}>
                       {personalPct >= 15 ? "본인 카드" : ""}
                     </div>
                   </div>
@@ -179,12 +179,12 @@ export const ExpenseTab = React.memo(function ExpenseTab({ d }: { d: D }) {
                     <div>
                       <div style={{ fontSize: 11, color: "var(--text-faint)" }}>현재 본인 부담</div>
                       <div style={{ fontSize: 18, fontWeight: 800, color: "var(--text)" }}>{F(Math.round(u.currentSelfBurden))}원</div>
-                      <div style={{ fontSize: 10, color: "var(--text-faint)" }}>월 {F(Math.round(u.currentSelfBurden / span))}원</div>
+                      <div style={{ fontSize: 11, color: "var(--text-faint)" }}>월 {F(Math.round(u.currentSelfBurden / span))}원</div>
                     </div>
                     <div>
                       <div style={{ fontSize: 11, color: "var(--text-faint)" }}>100% 활용 시 (50/50)</div>
                       <div style={{ fontSize: 18, fontWeight: 800, color: "var(--success)" }}>{F(Math.round(u.optimalSelfBurden))}원</div>
-                      <div style={{ fontSize: 10, color: "var(--text-faint)" }}>월 {F(Math.round(u.optimalSelfBurden / span))}원</div>
+                      <div style={{ fontSize: 11, color: "var(--text-faint)" }}>월 {F(Math.round(u.optimalSelfBurden / span))}원</div>
                     </div>
                   </div>
                   {u.lostShareSavings > 0 && (
@@ -193,14 +193,14 @@ export const ExpenseTab = React.memo(function ExpenseTab({ d }: { d: D }) {
                       <strong>{F(Math.round(u.lostShareSavings))}원</strong>
                       {" "}(<strong>월 {F(Math.round(u.lostShareSavings / span))}원</strong>)
                       <div style={{ fontSize: 11, color: "var(--text-muted)", marginTop: 6 }}>
-                        💡 본인 카드 결제 데이트의 절반은 분담통장 카드를 사용했다면 상대가 부담했을 금액입니다.
+                        본인 카드 결제 데이트의 절반은 분담통장 카드를 사용했다면 상대가 부담했을 금액입니다.
                         지갑에 분담통장 체크카드를 디폴트로 두면 자동으로 줄어듭니다.
                       </div>
                     </div>
                   )}
                   {u.lostShareSavings === 0 && (
                     <div style={{ padding: "10px 12px", background: "var(--surface)", borderRadius: 8, fontSize: 12, color: "var(--success)" }}>
-                      ✓ 분담 시스템 100% 가동 중. 추가 손실 없음.
+                      분담 시스템 100% 가동 중. 추가 손실 없음.
                     </div>
                   )}
                 </div>
@@ -209,7 +209,7 @@ export const ExpenseTab = React.memo(function ExpenseTab({ d }: { d: D }) {
           })()}
         </Card>
 
-        <Card title="📐 가계부 raw vs 실 부담 — 정산·분담 반영" span={4}>
+        <Card title="가계부 raw vs 실 부담 — 정산·분담 반영" span={4}>
           {(() => {
             const raw = d.pExpense;
             const afterSplit = raw - d.datePartnerShare;          // 모임통장 50% 차감 (= realExpense)
@@ -253,10 +253,10 @@ export const ExpenseTab = React.memo(function ExpenseTab({ d }: { d: D }) {
                     />
                   )}
                   <div style={{ height: 1, background: "var(--border)", margin: "8px 0" }} />
-                  <Row label={hasOneOff ? "💰 일상 실 부담 (정산·분담·일회성 차감)" : "💰 실 부담 (정산·분담 차감)"} value={hasOneOff ? afterOneOff : afterSettle} bold bg="var(--warning-bg)" />
+                  <Row label={hasOneOff ? "일상 실 부담 (정산·분담·일회성 차감)" : "실 부담 (정산·분담 차감)"} value={hasOneOff ? afterOneOff : afterSettle} bold bg="var(--warning-bg)" />
                 </div>
                 <div style={{ padding: "12px 14px", background: "var(--bg)", borderRadius: 8, fontSize: 12, color: "var(--text-secondary)", lineHeight: 1.7 }}>
-                  <div style={{ fontWeight: 700, marginBottom: 8, color: "var(--text)" }}>📖 왜 라벨마다 숫자가 다른가요?</div>
+                  <div style={{ fontWeight: 700, marginBottom: 8, color: "var(--text)" }}>왜 라벨마다 숫자가 다른가요?</div>
                   <div style={{ marginBottom: 6 }}>
                     <strong>① raw</strong>: 가계부에 입력된 그대로의 지출 합. <span style={{ color: "var(--text-faint)" }}>실은 "이 정도 결제했음" 통계.</span>
                   </div>
@@ -272,7 +272,7 @@ export const ExpenseTab = React.memo(function ExpenseTab({ d }: { d: D }) {
                     </div>
                   )}
                   <div style={{ marginTop: 10, padding: "8px 10px", background: "var(--warning-bg)", borderRadius: 6, color: "var(--text)", fontWeight: 600 }}>
-                    💡 "내가 진짜 한 달에 쓴 돈"은 마지막 줄로 보세요.
+                    "내가 진짜 한 달에 쓴 돈"은 마지막 줄로 보세요.
                   </div>
                 </div>
               </div>
@@ -283,9 +283,9 @@ export const ExpenseTab = React.memo(function ExpenseTab({ d }: { d: D }) {
       </Section>
 
       {/* ============ 드릴다운 ============ */}
-      <Section storageKey="expense-section-drilldown" title="🔍 드릴다운">
+      <Section storageKey="expense-section-drilldown" title="드릴다운">
         {d.moimFlow.months.length > 0 && d.moimFlow.months.some(m => m.myTransfer + m.partnerDeposit + m.spending > 0) && (
-          <Card title="💸 분담 통장 자금 흐름 (월별)" span={4}>
+          <Card title="분담 통장 자금 흐름 (월별)" span={4}>
             <div style={{ overflowX: "auto" }}>
               <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 12 }}>
                 <thead>
@@ -362,7 +362,7 @@ export const ExpenseTab = React.memo(function ExpenseTab({ d }: { d: D }) {
                   </div>
                   {csubs.slice(0, 8).map((s, si) => (
                     <div key={si} style={{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: "4px 0 4px 16px", borderBottom: "1px solid var(--border-light)", fontSize: 12 }}>
-                      <span style={{ color: "var(--text-secondary)" }}>{s.sub} <span style={{ color: "var(--text-faint)", fontSize: 10 }}>({s.count}건)</span></span>
+                      <span style={{ color: "var(--text-secondary)" }}>{s.sub} <span style={{ color: "var(--text-faint)", fontSize: 11 }}>({s.count}건)</span></span>
                       <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
                         <div style={{ width: 60, height: 4, background: "var(--surface-hover)", borderRadius: 2 }}>
                           <div style={{ height: 4, background: C[ci % 12], borderRadius: 2, width: `${catTotal > 0 ? s.amount / catTotal * 100 : 0}%`, opacity: 0.7 }} />
@@ -384,7 +384,7 @@ export const ExpenseTab = React.memo(function ExpenseTab({ d }: { d: D }) {
                 <span style={{ fontWeight: 700, color: i < 3 ? "var(--danger)" : "var(--text-faint)", width: 20, textAlign: "right" }}>{i + 1}</span>
                 <div style={{ flex: 1 }}>
                   <div style={{ fontWeight: 600 }}>{item.desc}</div>
-                  <div style={{ fontSize: 10, color: "var(--text-faint)" }}>{item.cat}{item.sub ? ` · ${item.sub}` : ""}</div>
+                  <div style={{ fontSize: 11, color: "var(--text-faint)" }}>{item.cat}{item.sub ? ` · ${item.sub}` : ""}</div>
                 </div>
                 <span style={{ fontWeight: 700, color: "var(--chart-expense)" }}>{F(item.amount)}원</span>
               </div>
@@ -397,8 +397,8 @@ export const ExpenseTab = React.memo(function ExpenseTab({ d }: { d: D }) {
           <ResponsiveContainer width="100%" height={320}>
             <BarChart data={subAvg} layout="vertical">
               <CartesianGrid strokeDasharray="3 3" stroke="var(--chart-grid)" />
-              <XAxis type="number" tickFormatter={F} tick={{ fontSize: 10 }} />
-              <YAxis dataKey="name" type="category" width={90} tick={{ fontSize: 10 }} />
+              <XAxis type="number" tickFormatter={F} tick={{ fontSize: 11 }} />
+              <YAxis dataKey="name" type="category" width={90} tick={{ fontSize: 11 }} />
               <Tooltip formatter={(v: ValueType | undefined) => W(Number(v ?? 0))} />
               <Bar isAnimationActive={false} dataKey="avg" fill="var(--chart-series-c)" radius={[0, 4, 4, 0]} name="월평균 (원)" />
             </BarChart>
@@ -430,15 +430,15 @@ export const ExpenseTab = React.memo(function ExpenseTab({ d }: { d: D }) {
       </Section>
 
       {/* ============ 패턴·트렌드 ============ */}
-      <Section storageKey="expense-section-patterns" title="📈 패턴·트렌드">
-        <Card title="📏 월별 누적 지출 속도 비교" span={3}>
+      <Section storageKey="expense-section-patterns" title="패턴·트렌드">
+        <Card title="월별 누적 지출 속도 비교" span={3}>
           {validMonths.length === 0 ? (
             <div style={{ textAlign: "center", padding: 40, color: "var(--text-faint)" }}>데이터 없음</div>
           ) : (
             <ResponsiveContainer width="100%" height={300}>
               <LineChart data={velocityLineData}>
                 <CartesianGrid strokeDasharray="3 3" stroke="var(--chart-grid)" />
-                <XAxis dataKey="day" tick={{ fontSize: 11 }} label={{ value: "일차", position: "insideBottomRight", fontSize: 10 }} />
+                <XAxis dataKey="day" tick={{ fontSize: 11 }} label={{ value: "일차", position: "insideBottomRight", fontSize: 11 }} />
                 <YAxis tickFormatter={F} tick={{ fontSize: 11 }} />
                 <Tooltip content={<CT />} />
                 <Legend wrapperStyle={{ fontSize: 11 }} />
@@ -491,7 +491,7 @@ export const ExpenseTab = React.memo(function ExpenseTab({ d }: { d: D }) {
             <BarChart data={wdData}>
               <CartesianGrid strokeDasharray="3 3" stroke="var(--chart-grid)" />
               <XAxis dataKey="name" tick={{ fontSize: 12 }} />
-              <YAxis tickFormatter={F} tick={{ fontSize: 10 }} />
+              <YAxis tickFormatter={F} tick={{ fontSize: 11 }} />
               <Tooltip formatter={(v: ValueType | undefined, _n, p) => [W(Number(v ?? 0)), `${p.payload.건수}건 · 총 ${W(p.payload.총액)}`]} />
               <Bar isAnimationActive={false} dataKey="일평균" radius={[4, 4, 0, 0]}>
                 {wdData.map((e, i) => <Cell key={i} fill={i >= 5 ? "var(--danger)" : "var(--chart-series-b)"} opacity={0.8} />)}
@@ -507,8 +507,8 @@ export const ExpenseTab = React.memo(function ExpenseTab({ d }: { d: D }) {
           <ResponsiveContainer width="100%" height={220}>
             <BarChart data={domData}>
               <CartesianGrid strokeDasharray="3 3" stroke="var(--chart-grid)" />
-              <XAxis dataKey="day" tick={{ fontSize: 9 }} interval={2} />
-              <YAxis tickFormatter={F} tick={{ fontSize: 10 }} />
+              <XAxis dataKey="day" tick={{ fontSize: 11 }} interval={2} />
+              <YAxis tickFormatter={F} tick={{ fontSize: 11 }} />
               <Tooltip
                 formatter={(v: ValueType | undefined, _n, p) => [W(Number(v ?? 0)), `${p.payload.월수}개월 평균`]}
               />
@@ -524,8 +524,8 @@ export const ExpenseTab = React.memo(function ExpenseTab({ d }: { d: D }) {
       </Section>
 
       {/* ============ 인사이트·이상치 ============ */}
-      <Section storageKey="expense-section-insights" title="💡 인사이트·이상치">
-        <Card title={`📈 카테고리 성장률 TOP (vs 최근 3개월 ${d.categoryGrowth.partialDay != null ? `동기 1~${d.categoryGrowth.partialDay}일 ` : ""}평균)`} span={2}>
+      <Section storageKey="expense-section-insights" title="인사이트·이상치">
+        <Card title={`카테고리 성장률 TOP (vs 최근 3개월 ${d.categoryGrowth.partialDay != null ? `동기 1~${d.categoryGrowth.partialDay}일 ` : ""}평균)`} span={2}>
           {d.categoryGrowth.up.length === 0 && d.categoryGrowth.down.length === 0 ? (
             <div style={{ padding: 20, textAlign: "center", color: "var(--text-faint)", fontSize: 13 }}>
               비교할 과거 데이터가 부족합니다.
@@ -542,7 +542,7 @@ export const ExpenseTab = React.memo(function ExpenseTab({ d }: { d: D }) {
                         {r.isNew ? "NEW" : `+${r.pctChange.toFixed(0)}%`}
                       </span>
                     </div>
-                    <div style={{ fontSize: 10, color: "var(--text-faint)" }}>{F(r.avg3)}원 → {F(r.cur)}원</div>
+                    <div style={{ fontSize: 11, color: "var(--text-faint)" }}>{F(r.avg3)}원 → {F(r.cur)}원</div>
                   </div>
                 ))}
                 {d.categoryGrowth.up.length === 0 && <div style={{ fontSize: 11, color: "var(--text-faint)" }}>해당 없음</div>}
@@ -555,7 +555,7 @@ export const ExpenseTab = React.memo(function ExpenseTab({ d }: { d: D }) {
                       <span>{r.sub}</span>
                       <span style={{ color: "var(--success)", fontWeight: 800 }}>{r.pctChange.toFixed(0)}%</span>
                     </div>
-                    <div style={{ fontSize: 10, color: "var(--text-faint)" }}>{F(r.avg3)}원 → {F(r.cur)}원</div>
+                    <div style={{ fontSize: 11, color: "var(--text-faint)" }}>{F(r.avg3)}원 → {F(r.cur)}원</div>
                   </div>
                 ))}
                 {d.categoryGrowth.down.length === 0 && <div style={{ fontSize: 11, color: "var(--text-faint)" }}>해당 없음</div>}
@@ -564,7 +564,7 @@ export const ExpenseTab = React.memo(function ExpenseTab({ d }: { d: D }) {
           )}
         </Card>
 
-        <Card title="⚠️ 단건 이상치 TOP 10 (카테고리 평균 대비 z≥2)" span={2}>
+        <Card title="단건 이상치 TOP 10 (카테고리 평균 대비 z≥2)" span={2}>
           {d.entryOutliers.length === 0 ? (
             <div style={{ padding: 20, textAlign: "center", color: "var(--text-faint)", fontSize: 13 }}>
               이상치가 감지되지 않았습니다.
@@ -573,12 +573,12 @@ export const ExpenseTab = React.memo(function ExpenseTab({ d }: { d: D }) {
             <div style={{ maxHeight: 340, overflow: "auto" }}>
               {d.entryOutliers.map((e, i) => (
                 <div key={i} style={{ display: "flex", alignItems: "center", gap: 8, padding: "6px 0", borderBottom: "1px solid var(--border-light)", fontSize: 12 }}>
-                  <span style={{ padding: "2px 6px", borderRadius: 10, background: Math.abs(e.zScore) >= 3 ? "var(--danger)" : "var(--warning)", color: "var(--text-on-color)", fontSize: 10, fontWeight: 700, minWidth: 44, textAlign: "center" }}>
+                  <span style={{ padding: "2px 6px", borderRadius: 10, background: Math.abs(e.zScore) >= 3 ? "var(--danger)" : "var(--warning)", color: "var(--text-on-color)", fontSize: 11, fontWeight: 700, minWidth: 44, textAlign: "center" }}>
                     z {e.zScore.toFixed(1)}
                   </span>
                   <div style={{ flex: 1, minWidth: 0 }}>
                     <div style={{ fontWeight: 600, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{e.desc || "(설명 없음)"}</div>
-                    <div style={{ fontSize: 10, color: "var(--text-faint)" }}>{e.date} · {e.sub} (평균 {F(Math.round(e.avg))}원)</div>
+                    <div style={{ fontSize: 11, color: "var(--text-faint)" }}>{e.date} · {e.sub} (평균 {F(Math.round(e.avg))}원)</div>
                   </div>
                   <span style={{ fontWeight: 700, color: "var(--chart-expense)" }}>{F(e.amount)}원</span>
                 </div>

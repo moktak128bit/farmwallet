@@ -205,7 +205,7 @@ export const FireSimulatorCard: React.FC<Props> = ({ netWorthKRW }) => {
   const spendMaxMan = Math.max(10_000, Math.ceil((baseline.annualRealExpense * 2) / MAN / 100) * 100);
 
   return (
-    <Card title="🔥 FIRE 시뮬레이터 (가정 기반 추정 — 보장 아님)" span={4}>
+    <Card title="FIRE 시뮬레이터 (가정 기반 추정 — 보장 아님)" span={4}>
       <div style={{ fontSize: 12, color: "var(--text-muted)", lineHeight: 1.6, marginBottom: 12 }}>
         기준선: 최근 {baseline.coveredMonths > 0 ? `${baseline.coveredMonths}개 완료월` : "장부 없음"} ({baseline.windowStartMonth}~{baseline.windowEndMonth})
         · 연 실질 지출 <strong>{W(Math.round(baseline.annualRealExpense))}</strong>
@@ -358,7 +358,7 @@ export const FireSimulatorCard: React.FC<Props> = ({ netWorthKRW }) => {
       </ResponsiveContainer>
 
       <div style={{ fontSize: 11, color: "var(--text-faint)", lineHeight: 1.6, marginTop: 8 }}>
-        ⚠️ 가정 기반 추정 — 보장 아님. 보수/낙관 = 수익률 ∓2%p·저축 ∓10%. 순자산은 연 단위 복리(저축은 연말 일괄 적립, 명목 고정),
+        가정 기반 추정 — 보장 아님. 보수/낙관 = 수익률 ∓2%p·저축 ∓10%. 순자산은 연 단위 복리(저축은 연말 일괄 적립, 명목 고정),
         FIRE 숫자는 인플레 {base.assumptions.inflationPct}%로 매년 상승. 세금·건보료·연금·주택은 반영하지 않음.
         슬라이더 값은 이 기기에만 저장되며 백업/동기화에 포함되지 않습니다.
       </div>

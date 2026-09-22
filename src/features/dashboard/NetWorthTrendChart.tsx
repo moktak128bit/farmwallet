@@ -1,4 +1,5 @@
 import React, { useMemo, useRef, useState } from "react";
+import { Money } from "../../components/ui/Money";
 import { useAppStore } from "../../store/appStore";
 import { buildTargetNetWorthSeries } from "./targetNetWorthCurve";
 import { formatNumber } from "../../utils/formatter";
@@ -180,7 +181,7 @@ export const NetWorthTrendChart: React.FC<Props> = React.memo(function NetWorthT
         </div>
         <div style={{ textAlign: "right" }}>
           <div style={{ fontWeight: 700, fontSize: 30, color: "var(--primary)" }}>
-            {currentWorth >= 0 ? "" : "-"}{formatNumber(Math.abs(currentWorth))}만원
+            <Money value={currentWorth * 10000} compact />
           </div>
           <div style={{ display: "flex", gap: 6, alignItems: "center", justifyContent: "flex-end", marginTop: 4 }}>
             <span style={{ fontSize: 14, fontWeight: 700, color: nwDeltaColor }}>

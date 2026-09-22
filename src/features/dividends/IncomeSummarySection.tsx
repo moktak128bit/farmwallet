@@ -92,7 +92,7 @@ const MonthTick: React.FC<MonthTickProps> = ({ x = 0, y = 0, index = 0, payload 
     <g transform={`translate(${x},${y})`}>
       <text x={0} y={0} dy={12} textAnchor="middle" fontSize={11} fill="var(--text-muted)">{mm}월</text>
       {showYear && (
-        <text x={0} y={0} dy={25} textAnchor="middle" fontSize={10} fill="var(--text-faint)">{month.slice(0, 4)}</text>
+        <text x={0} y={0} dy={25} textAnchor="middle" fontSize={11} fill="var(--text-faint)">{month.slice(0, 4)}</text>
       )}
     </g>
   );

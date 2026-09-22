@@ -50,6 +50,28 @@ export const formatNumber = (value?: number | null, locale: string = "ko-KR"): s
   return rounded.toLocaleString(locale);
 };
 
+/**
+ * 히어로 숫자용 만·억 단위 — "3,963만", "1억 2,346만", "1.5만" (단위 "원"은 붙이지 않는다 → <Money>가 붙임).
+ * 잔액·평가액처럼 시세 따라 흔들리는 '스톡' 숫자에 쓴다. 가계부와 원 단위로 대조하는 '흐름' 숫자(이번 달 지출 등)는 쓰지 않는다.
+ *  - 1만 미만: 원 그대로 · 100만 미만: 소수 1자리 만 · 1억 미만: 정수 만 · 이상: 억 + 만
+ */
+export const formatKrwCompact = (value: number): string => {
+  if (typeof value !== "number" || Number.isNaN(value) || !Number.isFinite(value)) return "0";
+  if (maskAmounts) return MASK_DOTS;
+  const sign = value < 0 ? "-" : "";
+  const abs = Math.abs(value);
+  if (abs < 10_000) return sign + Math.round(abs).toLocaleString("ko-KR");
+  if (abs < 1_000_000) {
+    const man = Math.round(abs / 1_000) / 10; // 소수 1자리
+    return sign + (Number.isInteger(man) ? man.toString() : man.toFixed(1)) + "만";
+  }
+  const manTotal = Math.round(abs / 10_000); // 반올림으로 1억에 닿으면 억 표기로 올라간다
+  if (manTotal < 10_000) return sign + manTotal.toLocaleString("ko-KR") + "만";
+  const eok = Math.floor(manTotal / 10_000);
+  const man = manTotal % 10_000;
+  return sign + eok.toLocaleString("ko-KR") + "억" + (man > 0 ? " " + man.toLocaleString("ko-KR") + "만" : "");
+};
+
 export const formatKRW = (value: number, options?: FormatOptions): string => {
   if (typeof value !== "number" || Number.isNaN(value)) return "0 원";
   if (options?.exact) return `${trimDecimals(value, options.maxDecimals ?? 2)} 원`;

@@ -137,7 +137,7 @@ export const EtfDiscountSection: React.FC = () => {
                       <td style={{ textAlign: "right", fontWeight: 700, color: gapColor(r.gapPct) }}>
                         {fmtGap(r.gapPct)}
                         {r.gapPct < 0 && (
-                          <span style={{ marginLeft: 6, fontSize: 10, fontWeight: 700, color: "var(--accent)", border: "1px solid var(--accent)", borderRadius: 6, padding: "0 4px" }}>저평가</span>
+                          <span style={{ marginLeft: 6, fontSize: 11, fontWeight: 700, color: "var(--accent)", border: "1px solid var(--accent)", borderRadius: 6, padding: "0 4px" }}>저평가</span>
                         )}
                       </td>
                       <td style={{ textAlign: "right", color: r.changeRate < 0 ? "var(--accent)" : r.changeRate > 0 ? "var(--danger)" : "var(--text-muted)" }}>

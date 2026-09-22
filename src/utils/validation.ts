@@ -224,12 +224,19 @@ export function validateAccountExists(
  * @param value 입력값
  * @param fieldName 필드 이름 (에러 메시지용)
  */
+/** 목적격 조사 — 마지막 글자 받침 유무로 을/를. 한글이 아니면 "을(를)" 폴백 */
+export function koObjectParticle(word: string): string {
+  const code = word.charCodeAt(word.length - 1);
+  if (!(code >= 0xac00 && code <= 0xd7a3)) return "을(를)";
+  return (code - 0xac00) % 28 === 0 ? "를" : "을";
+}
+
 export function validateRequired(
   value: string | undefined | null,
   fieldName: string
 ): ValidationResult {
   if (!value || value.trim() === "") {
-    return { valid: false, error: `${fieldName}을(를) 입력해주세요` };
+    return { valid: false, error: `${fieldName}${koObjectParticle(fieldName)} 입력해주세요` };
   }
   return { valid: true };
 }

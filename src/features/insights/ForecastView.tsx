@@ -65,12 +65,12 @@ export const ForecastView: React.FC<Props> = ({ ledger, recurring, formatNumber 
         </span>
       </div>
 
-      <Section storageKey="forecast-section-kpis" title="🔮 예측 요약">
+      <Section storageKey="forecast-section-kpis" title="예측 요약">
         <div style={{ display: "grid", gridTemplateColumns: "repeat(4, 1fr)", gap: 12 }}>
-          <div style={{ padding: "14px 16px", background: "linear-gradient(135deg, #1a1a2e, #16213e)", borderRadius: 10, color: "#fff" }}>
-            <div style={{ fontSize: 11, color: "rgba(255,255,255,0.6)", fontWeight: 600 }}>예상 총 지출</div>
-            <div style={{ fontSize: 26, fontWeight: 800, color: "#f0c040", marginTop: 4 }}>{formatNumber(Math.round(result.totalForecast))}</div>
-            <div style={{ fontSize: 11, color: "rgba(255,255,255,0.5)", marginTop: 4 }}>
+          <div className="card highlight" style={{ padding: "14px 16px", margin: 0 }}>
+            <div className="card-title">예상 총 지출</div>
+            <div className="card-value" style={{ fontSize: 26 }}>{formatNumber(Math.round(result.totalForecast))}</div>
+            <div style={{ fontSize: 11, opacity: 0.7, marginTop: 4 }}>
               {formatNumber(Math.round(result.totalLower))} ~ {formatNumber(Math.round(result.totalUpper))}
             </div>
           </div>
@@ -98,7 +98,7 @@ export const ForecastView: React.FC<Props> = ({ ledger, recurring, formatNumber 
         </div>
       </Section>
 
-      <Section storageKey="forecast-section-breakdown" title="📋 카테고리별 예측">
+      <Section storageKey="forecast-section-breakdown" title="카테고리별 예측">
         <div style={{ gridColumn: "span 4" }}>
           <table style={{ width: "100%", fontSize: 13, borderCollapse: "collapse", background: "var(--surface)", borderRadius: 10, overflow: "hidden" }}>
             <thead>
@@ -125,7 +125,7 @@ export const ForecastView: React.FC<Props> = ({ ledger, recurring, formatNumber 
                       <span style={{ color: pct > 100 ? "var(--danger)" : pct > 80 ? "var(--warning)" : "var(--success)", fontWeight: 700 }}>
                         {formatNumber(Math.round(cur))}
                       </span>
-                      <div style={{ fontSize: 10, color: "var(--text-faint)" }}>{pct.toFixed(0)}%</div>
+                      <div style={{ fontSize: 11, color: "var(--text-faint)" }}>{pct.toFixed(0)}%</div>
                     </td>
                     <td style={{ padding: "10px 12px" }}>
                       <div style={{ position: "relative", height: 8, background: "var(--surface-hover)", borderRadius: 4 }}>
@@ -166,7 +166,7 @@ export const ForecastView: React.FC<Props> = ({ ledger, recurring, formatNumber 
       </Section>
 
       {fixedRecurring.length > 0 && (
-        <Section storageKey="forecast-section-recurring" title="🔁 반복지출 명세" defaultOpen={false}>
+        <Section storageKey="forecast-section-recurring" title="반복지출 명세" defaultOpen={false}>
           <div style={{ gridColumn: "span 4" }}>
             <div style={{ fontSize: 12, color: "var(--text-muted)", marginBottom: 8 }}>
               예측의 고정 부분에 포함되는 반복지출 {fixedRecurring.length}개 (합계 {formatNumber(Math.round(totalRecurring))}) — 매주 항목은 예측 월 발생 횟수로 환산

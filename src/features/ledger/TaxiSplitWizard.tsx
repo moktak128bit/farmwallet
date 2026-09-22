@@ -108,7 +108,7 @@ export const TaxiSplitWizard: React.FC<Props> = ({
         {/* Header */}
         <div style={{ padding: "20px 24px", borderBottom: "1px solid var(--border)", display: "flex", justifyContent: "space-between", alignItems: "center" }}>
           <div>
-            <h3 id="taxi-split-title" style={{ margin: 0, fontSize: 18, fontWeight: 700 }}>🚕 택시 소분류 분리</h3>
+            <h3 id="taxi-split-title" style={{ margin: 0, fontSize: 18, fontWeight: 700 }}>택시 소분류 분리</h3>
             <div style={{ fontSize: 12, color: "var(--text-muted)", marginTop: 4 }}>
               유류교통비 안에서 "택시"를 별도 소분류로 분리. 프리셋 추가 + 기존 항목 재분류를 한 번에.
             </div>
@@ -158,7 +158,7 @@ export const TaxiSplitWizard: React.FC<Props> = ({
                 </div>
                 {hasTaxiInPresets ? (
                   <div style={{ color: "var(--success)" }}>
-                    ✓ 이미 유류교통비.subs에 '택시' 있음 — 변경 없음
+                    이미 유류교통비.subs에 '택시' 있음 — 변경 없음
                   </div>
                 ) : (
                   <div style={{ color: "var(--accent)", lineHeight: 1.6 }}>
@@ -174,7 +174,7 @@ export const TaxiSplitWizard: React.FC<Props> = ({
                 </div>
                 {candidates.length === 0 ? (
                   <div style={{ color: "var(--success)" }}>
-                    ✓ 재분류할 택시 항목이 없습니다 — 이미 모두 처리됨 또는 해당 항목 없음
+                    재분류할 택시 항목이 없습니다 — 이미 모두 처리됨 또는 해당 항목 없음
                   </div>
                 ) : (
                   <div style={{ color: "var(--text)", lineHeight: 1.6 }}>
@@ -236,7 +236,7 @@ export const TaxiSplitWizard: React.FC<Props> = ({
         {/* Footer */}
         <div style={{ padding: "12px 24px", borderTop: "1px solid var(--border)", display: "flex", justifyContent: "space-between", alignItems: "center", gap: 8 }}>
           <span style={{ fontSize: 11, color: "var(--text-muted)" }}>
-            {!fullyMigrated && hasTransportGroup && "💡 적용 후 Ctrl+Z로 단계별 되돌리기 가능"}
+            {!fullyMigrated && hasTransportGroup && "적용 후 Ctrl+Z로 단계별 되돌리기 가능"}
           </span>
           <div style={{ display: "flex", gap: 8 }}>
             <button

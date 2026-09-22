@@ -197,10 +197,6 @@
   background: linear-gradient(135deg, #1a1a2e 0%, #16213e 100%);
   color: var(--text);
 }
-.ins-card-accent {
-  box-shadow: 0 8px 32px rgba(233, 69, 96, 0.15);
-  border: 1px solid rgba(233, 69, 96, 0.3);
-}
 .ins-tooltip-dark {
   background: #1a1a2e;
   border: 1px solid #334155;
@@ -358,7 +354,7 @@ a:hover {
 /* 헤더 액션: 작고 조용하게, 빠른 입력만 잉크로 강조 */
 .header-action {
   padding: 5px 10px;
-  font-size: 12.5px;
+  font-size: 13px;
   font-weight: 500;
   border-radius: var(--radius-md);
   border: 1px solid var(--border);
@@ -422,6 +418,37 @@ a:hover {
   }
 }
 
+/* 부채 탭 — 합계 줄·대출 표 */
+.loan-summary {
+  display: flex;
+  align-items: flex-end; /* 보조 문구를 숫자 줄에 맞춘다 (baseline은 라벨 줄에 붙었다) */
+  gap: 20px;
+  flex-wrap: wrap;
+  padding: 14px 18px;
+}
+.loan-summary > .hint { padding-bottom: 4px; }
+.loan-table tbody tr[role="button"] { cursor: pointer; }
+.data-table tbody tr.selected td { background: var(--primary-light); }
+.loan-detail-row td { background: var(--surface-sunken); }
+.loan-detail {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+  gap: 8px 20px;
+  padding: 4px 0 10px;
+}
+.loan-detail .card-title { margin-bottom: 2px; }
+/* 진행 바 — 대출은 시간 축 상품이라 "남은 기간" 글자보다 갚은 비율 막대가 넷을 한눈에 비교하게 한다 */
+.loan-progress {
+  flex: 1;
+  height: 6px;
+  min-width: 80px;
+  border-radius: 3px;
+  background: var(--border-light);
+  overflow: hidden;
+}
+.loan-progress-fill { height: 100%; background: var(--primary); }
+.loan-row-actions { display: flex; gap: 6px; justify-content: flex-end; align-items: center; }
+
 .account-row-actions {
   display: flex;
   gap: 4px;
@@ -439,7 +466,8 @@ a:hover {
   color: var(--text);
 }
 .icon-action.danger {
-  color: var(--danger);
+  /* 기본은 중립 — 행마다 빨간 휴지통이 반복되면 표 전체가 경보처럼 읽힌다. 빨강은 hover에서만. */
+  color: var(--text-muted);
   border-color: var(--border);
   background: var(--surface);
 }
@@ -447,6 +475,120 @@ a:hover {
   background: var(--danger-light);
   border-color: var(--danger);
   color: var(--danger);
+}
+
+/* 금액 단위 "원" — 숫자보다 한 단계 작고 가볍게. 색은 숫자를 따르되 살짝 물러난다 */
+.money { white-space: nowrap; }
+.money-unit {
+  font-size: 0.6em;
+  font-weight: 500;
+  margin-left: 0.15em;
+  opacity: 0.75;
+}
+
+/* 대시보드 접이식 섹션 헤더 — 카드가 아니라 구분선 한 줄. 접힌 줄에 대표 숫자를 남긴다 */
+.dash-section-toggle {
+  width: 100%;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 10px 2px;
+  background: transparent;
+  border: none;
+  border-bottom: 1px solid var(--border);
+  border-radius: 0;
+  text-align: left;
+  color: var(--text);
+}
+.dash-section-toggle:hover:not(:disabled) {
+  background: transparent;
+  border-color: var(--border-strong);
+  color: var(--text);
+}
+.dash-section-toggle svg { color: var(--text-muted); flex-shrink: 0; }
+.dash-section-title { font-size: 15px; font-weight: 700; }
+.dash-section-summary {
+  font-size: 13px;
+  color: var(--text-secondary);
+  font-variant-numeric: tabular-nums;
+  margin-left: 6px;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.dash-section-hint { margin-left: auto; font-size: 12px; color: var(--text-muted); flex-shrink: 0; }
+
+/* 드롭다운 메뉴(네이티브 details) — 저빈도 도구를 헤더 한 버튼 뒤로 */
+.menu { position: relative; }
+.menu > summary {
+  list-style: none;
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 12px;
+  font-size: 13px;
+  font-weight: 500;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  background: var(--surface);
+  color: var(--text-secondary);
+  user-select: none;
+}
+.menu > summary::-webkit-details-marker { display: none; }
+.menu > summary:hover, .menu[open] > summary { border-color: var(--border-strong); color: var(--text); background: var(--surface-hover); }
+.menu-list {
+  position: absolute;
+  right: 0;
+  top: calc(100% + 6px);
+  min-width: 220px;
+  padding: 6px;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  box-shadow: var(--shadow-lg);
+  z-index: 40;
+}
+.menu-list > button {
+  width: 100%;
+  justify-content: flex-start;
+  border: none;
+  background: transparent;
+  padding: 8px 10px;
+  font-size: 13px;
+  color: var(--text);
+  text-align: left;
+}
+.menu-list > button:hover:not(:disabled) { background: var(--surface-hover); border: none; }
+
+/* 가계부 입력 폼 접힘 — 종류 탭(전체/수입/지출…)은 목록 필터도 겸하므로 첫 줄만 남기고 나머지를 숨긴다 */
+.ledger-form-collapsed form.card > div > *:not(:first-child) { display: none !important; } /* 폼 내부 블록이 inline display를 가져 !important */
+
+/* 가계부 요약 타일(지출·재테크·수입) — 좁은 화면에선 minmax(0) 없이는 3칸이 내용 폭만큼 커져 가로 스크롤이 생겼다 */
+.ledger-summary-tiles {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 12px;
+  align-items: stretch;
+}
+.ledger-summary-tile {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+  padding: 10px 14px;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+}
+@media (max-width: 768px) {
+  .ledger-summary-tiles { gap: 8px; }
+  .ledger-summary-tile { padding: 8px 10px; }
+  .ledger-summary-tile > span:nth-child(2) { font-size: 15px; white-space: nowrap; }
 }
 
 /* 아직 설정 안 된 위젯의 접힌 한 줄 — 카드처럼 보이되 높이는 한 줄.
@@ -515,16 +657,32 @@ a:hover {
   }
 }
 
-/* 반복지출 미등록 배지 — 채색 배경 위 텍스트는 --text-on-color (다크모드에서 흰 글씨는 대비 부족) */
+/* 반복지출 미등록 배지 — 헤더의 다른 동작(.header-action)과 같은 중립 필. 빨강은 데이터에만.
+   주의 신호는 앞의 작은 점 하나로 충분하다 (헤더에 상시 빨간 알약이 있으면 경보가 경보로 안 읽힘). */
 .recurring-due-badge {
-  background: var(--danger);
-  color: var(--text-on-color);
-  border: none;
-  border-radius: 12px;
-  padding: 3px 9px;
-  font-size: 11px;
-  font-weight: 600;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  background: var(--surface);
+  color: var(--text-secondary);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  padding: 5px 10px;
+  font-size: 12px;
+  font-weight: 500;
   white-space: nowrap;
+}
+.recurring-due-badge::before {
+  content: "";
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--warning);
+  flex-shrink: 0;
+}
+.recurring-due-badge:hover:not(:disabled) {
+  border-color: var(--border-strong);
+  color: var(--text);
 }
 .recurring-due-badge-short {
   display: none;
@@ -536,7 +694,7 @@ a:hover {
 }
 .status-trigger {
   padding: 5px 10px;
-  font-size: 12.5px;
+  font-size: 13px;
   font-weight: 500;
   gap: 6px;
   border-radius: var(--radius-md);
@@ -674,7 +832,7 @@ a:hover {
 
 .nav-group-title {
   padding: 0 8px 4px;
-  font-size: 10.5px;
+  font-size: 11px;
   font-weight: 700;
   letter-spacing: 0.08em;
   text-transform: uppercase;
@@ -804,7 +962,7 @@ a:hover {
 
 /* 지표 카드: 라벨은 작고 조용하게, 숫자가 주인공 */
 .card-title {
-  font-size: 11.5px;
+  font-size: 12px;
   font-weight: 600;
   color: var(--text-muted);
   text-transform: none;
@@ -863,7 +1021,7 @@ a:hover {
   white-space: nowrap;
   position: relative;
   line-height: 1.4;
-  font-size: 11.5px;
+  font-size: 12px;
 }
 
 .data-table th:last-child {
@@ -944,7 +1102,7 @@ td.cell-editable:hover {
   display: flex;
   flex-wrap: wrap;
   gap: 4px 16px;
-  font-size: 12.5px;
+  font-size: 13px;
 }
 .inline-row-panel-info-item {
   display: flex;
@@ -1494,7 +1652,7 @@ input[type="checkbox"]:disabled {
 
 label {
   display: block;
-  font-size: 12.5px;
+  font-size: 13px;
   font-weight: 500;
   color: var(--text-muted);
   margin-bottom: 4px;
@@ -1693,7 +1851,7 @@ label {
   border-radius: 10px;
   background: var(--danger);
   color: var(--text-on-color);
-  font-size: 10px;
+  font-size: 11px;
   font-weight: 600;
   line-height: 1.4;
   flex-shrink: 0;
@@ -1708,7 +1866,7 @@ label {
 
 .month-tab {
   padding: 4px 10px;
-  font-size: 12.5px;
+  font-size: 13px;
   font-weight: 500;
   border-radius: var(--radius-md);
   border: 1px solid var(--border);
@@ -1979,12 +2137,17 @@ label {
   height: 16px;
   padding: 0 3px;
   border-radius: 8px;
-  background: var(--danger);
-  color: #fff;
-  font-size: 10px;
+  background: var(--primary);
+  color: var(--primary-text);
+  font-size: 11px;
   font-weight: 700;
   line-height: 16px;
   text-align: center;
+}
+/* 위험 등급 알림이 하나라도 있을 때만 빨강 */
+.notif-badge.critical {
+  background: var(--danger);
+  color: var(--text-on-color);
 }
 
 .notif-panel-overlay {
@@ -2040,7 +2203,7 @@ label {
 .notif-item-badge {
   flex-shrink: 0;
   color: #fff;
-  font-size: 10px;
+  font-size: 11px;
   font-weight: 700;
   padding: 2px 6px;
   border-radius: 8px;
@@ -2250,6 +2413,7 @@ label {
 
   /* 좁은 화면에선 '수정'(잔액 조정)만 남긴다 — 숨김·삭제는 열 폭이 모자라 잘려 보였고,
      가로 스크롤 밖의 파괴적 동작을 손끝에 두는 것보다 데스크톱에서 하는 편이 낫다. */
+  .loan-row-actions .icon-action { display: none; }
   .account-row-actions .icon-action {
     display: none;
   }
@@ -2496,7 +2660,7 @@ label {
   .app-layout { display: block !important; }
   main { padding: 0 !important; max-width: 100% !important; }
   .card { break-inside: avoid; border: 1px solid #ddd !important; box-shadow: none !important; margin-bottom: 12px; }
-  table { font-size: 10px; }
+  table { font-size: 11px; }
   .data-table th, .data-table td { padding: 4px 6px; }
 }
 

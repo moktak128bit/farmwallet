@@ -100,7 +100,7 @@ export const SyncActionBar: React.FC<Props> = ({
               isPushingToGit
                 ? "푸시 중..."
                 : isOnRestoreBranch
-                  ? "⚠ 이전 버전"
+                  ? "이전 버전"
                   : "푸시"
             }
             sub={isOnRestoreBranch ? gitCurrentBranch.replace("restore/", "") : formatTimeAgo(gitLastPushAt)}
@@ -143,7 +143,7 @@ export const SyncActionBar: React.FC<Props> = ({
         }}
         title="전체 검색 (Ctrl+K)"
       >
-        <span style={labelStyle}>🔍 검색</span>
+        <span style={labelStyle}>검색</span>
       </button>
     </div>
   );
@@ -174,7 +174,7 @@ const GroupLabel: React.FC<{ children: React.ReactNode }> = ({ children }) => (
       alignItems: "center",
       justifyContent: "center",
       padding: "0 8px",
-      fontSize: 10,
+      fontSize: 11,
       fontWeight: 700,
       color: "var(--text-muted)",
       textTransform: "uppercase",
@@ -244,7 +244,7 @@ const labelStyle: React.CSSProperties = {
 };
 
 const subStyle: React.CSSProperties = {
-  fontSize: 10,
+  fontSize: 11,
   opacity: 0.8,
   lineHeight: 1,
   whiteSpace: "nowrap",

@@ -167,14 +167,14 @@ const StatCard: React.FC<{ label: string; value: string; sub?: string; color: st
   }}>
     <div style={{ fontSize: 11, color: "var(--text-muted)", marginBottom: 2 }}>{label}</div>
     <div style={{ fontSize: 16, fontWeight: 700, color }}>{value}</div>
-    {sub && <div style={{ fontSize: 10, color: "var(--text-muted)", marginTop: 2 }}>{sub}</div>}
+    {sub && <div style={{ fontSize: 11, color: "var(--text-muted)", marginTop: 2 }}>{sub}</div>}
   </div>
 );
 
 const Badge: React.FC<{ color: string; children: React.ReactNode }> = ({ color, children }) => (
   <span style={{
     display: "inline-block", padding: "1px 6px", marginRight: 3,
-    fontSize: 10, fontWeight: 700, borderRadius: 4,
+    fontSize: 11, fontWeight: 700, borderRadius: 4,
     background: color + "20", color,
   }}>
     {children}

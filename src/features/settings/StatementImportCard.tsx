@@ -481,7 +481,7 @@ export const StatementImportCard: React.FC<Props> = React.memo(function Statemen
                           </td>
                           <td style={{ padding: "6px 8px", whiteSpace: "nowrap" }}>
                             <span style={{ color: STATUS_COLOR[r.status] }}>{STATUS_LABEL[r.status]}</span>
-                            {r.reason && <div style={{ color: "var(--text-muted)", fontSize: 10 }}>{r.reason}</div>}
+                            {r.reason && <div style={{ color: "var(--text-muted)", fontSize: 11 }}>{r.reason}</div>}
                           </td>
                         </tr>
                       );

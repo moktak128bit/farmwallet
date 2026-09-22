@@ -528,7 +528,7 @@ const TradesPanel: React.FC<{
         )}
         {records.map((r) => (
           <tr key={r.tradeId} style={{ borderBottom: "1px dashed var(--border)" }}>
-            <td style={{ padding: "3px 6px", fontWeight: 600 }}>{r.name || r.ticker}{r.isUsd && <span style={{ marginLeft: 4, fontSize: 9, color: "var(--text-muted)" }}>USD</span>}</td>
+            <td style={{ padding: "3px 6px", fontWeight: 600 }}>{r.name || r.ticker}{r.isUsd && <span style={{ marginLeft: 4, fontSize: 11, color: "var(--text-muted)" }}>USD</span>}</td>
             <td style={{ padding: "3px 6px", color: "var(--text-muted)" }}>{accountNameById.get(r.accountId) ?? "-"}</td>
             <td style={{ padding: "3px 6px" }}>{r.buyDateWeighted}</td>
             <td style={{ padding: "3px 6px" }}>{r.sellDate}</td>

@@ -6,6 +6,7 @@
  */
 import React, { useEffect, useMemo, useRef, useState } from "react";
 import { toast } from "react-hot-toast";
+import { Copy, Trash2 } from "lucide-react";
 import type { Account, CategoryPresets, LedgerEntry } from "../../types";
 import { formatShortDate, formatUSD, formatKRW, formatNumber } from "../../utils/formatter";
 import { ledgerEntryGross, type LedgerDisplayRow } from "../../utils/ledgerHelpers";
@@ -1048,7 +1049,7 @@ export const LedgerTable: React.FC<Props> = React.memo(function LedgerTable({
                       return (
                         <div
                           style={{
-                            fontSize: 10,
+                            fontSize: 11,
                             color: info.amount >= 0 ? "var(--danger)" : "var(--primary)",
                             marginTop: 2
                           }}
@@ -1104,7 +1105,7 @@ export const LedgerTable: React.FC<Props> = React.memo(function LedgerTable({
                       return (
                         <div
                           style={{
-                            fontSize: 10,
+                            fontSize: 11,
                             color: info.amount >= 0 ? "var(--danger)" : "var(--primary)",
                             marginTop: 2
                           }}
@@ -1219,31 +1220,41 @@ export const LedgerTable: React.FC<Props> = React.memo(function LedgerTable({
                         aria-label="위로 이동"
                         disabled={!moveability.get(l.id)?.up}
                         onClick={(e) => { e.stopPropagation(); handleMove(l.id, "up"); }}
-                        style={{ padding: "0 6px", fontSize: 10, lineHeight: 1.3, opacity: moveability.get(l.id)?.up ? 1 : 0.25 }}
+                        style={{ padding: "0 6px", fontSize: 11, lineHeight: 1.3, opacity: moveability.get(l.id)?.up ? 1 : 0.25 }}
                       >▲</button>
                       <button
                         type="button"
                         aria-label="아래로 이동"
                         disabled={!moveability.get(l.id)?.down}
                         onClick={(e) => { e.stopPropagation(); handleMove(l.id, "down"); }}
-                        style={{ padding: "0 6px", fontSize: 10, lineHeight: 1.3, opacity: moveability.get(l.id)?.down ? 1 : 0.25 }}
+                        style={{ padding: "0 6px", fontSize: 11, lineHeight: 1.3, opacity: moveability.get(l.id)?.down ? 1 : 0.25 }}
                       >▼</button>
                     </div>
                   )}
-                  <button type="button" onClick={(e) => {
-                    e.stopPropagation();
-                    if ((l as LedgerDisplayRow)._tradeId) {
-                      toast("주식 거래는 복사할 수 없습니다.");
-                      return;
-                    }
-                    setQuickCopyEntry(l as LedgerEntry);
-                    setQuickCopyAmount("");
-                  }}>
-                    복사
+                  {/* 행마다 반복되는 동작은 아이콘 + 중립색 — 빨간 "삭제" 텍스트 50개가 표 전체를 경보처럼 보이게 했다.
+                      hover에서만 빨강(.icon-action.danger). 삭제는 confirm + 실행취소 토스트로 보호됨. */}
+                  <button
+                    type="button"
+                    className="icon-action"
+                    aria-label="복사"
+                    title="복사 — 같은 내용으로 새 항목"
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      if ((l as LedgerDisplayRow)._tradeId) {
+                        toast("주식 거래는 복사할 수 없습니다.");
+                        return;
+                      }
+                      setQuickCopyEntry(l as LedgerEntry);
+                      setQuickCopyAmount("");
+                    }}
+                  >
+                    <Copy size={14} />
                   </button>
-                  <button 
-                    type="button" 
-                    className="danger"
+                  <button
+                    type="button"
+                    className="icon-action danger"
+                    aria-label="삭제"
+                    title="삭제"
                     onClick={(e) => {
                       e.stopPropagation();
                       if ((l as LedgerDisplayRow)._tradeId) {
@@ -1269,7 +1280,7 @@ export const LedgerTable: React.FC<Props> = React.memo(function LedgerTable({
                       }
                     }}
                   >
-                    삭제
+                    <Trash2 size={14} />
                   </button>
                 </div>
               </td>

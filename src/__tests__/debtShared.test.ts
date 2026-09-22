@@ -1,6 +1,6 @@
 import { describe, it, expect } from "vitest";
 import { graceEndDate, isInGracePeriod } from "../features/debt/debtShared";
-import { calculateTotalInterest } from "../features/debt/LoanCardsSection";
+import { calculateTotalInterest } from "../features/debt/LoanTableSection";
 import type { Loan } from "../types";
 
 function makeLoan(overrides: Partial<Loan>): Loan {

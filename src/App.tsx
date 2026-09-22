@@ -335,7 +335,7 @@ export const App: React.FC = () => {
     if (gistStaleWarning?.type === "critical") return { tone: "danger", summary: "동기화 필요" };
     if (gistStaleWarning) return { tone: "warn", summary: "동기화 권장" };
     if (backupWarning) return { tone: "warn", summary: "백업 권장" };
-    if (backupIntegrity.status === "missing-hash") return { tone: "warn", summary: "무결성 미확인" };
+    // missing-hash(해시 없는 옛 백업)는 상시 주황 점으로 띄우지 않는다 — 팝오버의 pill warning이 안내. 상시 경보는 경보를 무디게 한다.
     if (newVersionAvailable) return { tone: "warn", summary: "새 버전" };
     if (saveStatus === "saving") return { tone: "ok", summary: "저장 중" };
     return { tone: "ok", summary: "정상" };
@@ -720,7 +720,7 @@ export const App: React.FC = () => {
     if (
       status === "mismatch" &&
       !window.confirm(
-        "⚠ 이 백업의 무결성 검증에 실패했습니다 (손상되었을 수 있습니다).\n그래도 이 백업으로 복구할까요?"
+        "이 백업의 무결성 검증에 실패했습니다 (손상되었을 수 있습니다).\n그래도 이 백업으로 복구할까요?"
       )
     ) {
       return;
@@ -820,7 +820,7 @@ export const App: React.FC = () => {
             textAlign: "center",
           }}
         >
-          ⚠ 복구 브랜치({gitCurrentBranch}) 상태입니다 — git 업로드는 잠겨 있습니다. 작업 후 main으로 돌아가세요.
+          복구 브랜치({gitCurrentBranch}) 상태입니다 — git 업로드는 잠겨 있습니다. 작업 후 main으로 돌아가세요.
         </div>
       )}
       <header className="app-header">

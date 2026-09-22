@@ -1,6 +1,6 @@
 import React, { useCallback, useEffect, useMemo, useState, lazy, Suspense } from "react";
 import { Toaster, toast } from "react-hot-toast";
-import { Moon, Sun, Menu, Eye, EyeOff, Plus, Search } from "lucide-react";
+import { Moon, Sun, Menu, Eye, EyeOff, Plus, Search, CloudUpload } from "lucide-react";
 import { Tabs, TAB_LABELS, type TabId } from "./components/ui/Tabs";
 import { StatusMenu, type StatusTone } from "./components/ui/StatusMenu";
 import { ShortcutsHelp } from "./components/ShortcutsHelp";
@@ -72,7 +72,7 @@ import { APP_VERSION, STORAGE_KEYS } from "./constants/config";
 import { SyncActionBar } from "./components/SyncActionBar";
 import { runIntegrityCheck } from "./utils/dataIntegrity";
 import { upsertDailyCloses } from "./utils/dailyCloses";
-import { getTodayKST } from "./utils/date";
+import { getTodayKST, formatTimeAgo } from "./utils/date";
 import { useGistSync } from "./hooks/useGistSync";
 import { useMarketEnvSnapshotRecorder } from "./hooks/useMarketEnvSnapshotRecorder";
 import { useDailyFxRecorder } from "./hooks/useDailyFxRecorder";
@@ -865,6 +865,23 @@ export const App: React.FC = () => {
             <Plus size={14} />
             <span>빠른 입력</span>
           </button>
+          {gistConfigured && (
+            <button
+              type="button"
+              className="header-action"
+              disabled={isGistSaving}
+              onClick={() => withConfirm({
+                title: "Gist 저장",
+                message: "현재 데이터를 Gist에 저장합니다.",
+                confirmLabel: "저장",
+                onConfirm: () => { void handleGistManualSave(); },
+              })}
+              title={gistLastPushAt ? `Gist 저장 (마지막 ${formatTimeAgo(gistLastPushAt)})` : "Gist 저장"}
+            >
+              <CloudUpload size={14} />
+              <span>{isGistSaving ? "저장 중" : "Gist"}</span>
+            </button>
+          )}
           <button
             onClick={() => setPrivacyMode((prev) => !prev)}
             className="icon-button"

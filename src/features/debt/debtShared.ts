@@ -34,3 +34,60 @@ export function isInGracePeriod(loan: Loan, todayIso: string): boolean {
 // (예전엔 여기와 calculations.ts가 같은 3세대 조건을 따로 들고 있어 한쪽만 고치면 어긋났다).
 export const isLoanRepaymentEntry = (l: LedgerEntry) =>
   l.kind === "expense" && hasLoanRepaymentStructure(l);
+
+// KST 기준 일수 차 — new Date("YYYY-MM-DD")는 UTC 파싱이라 자정 경계에서 ±1일 어긋남(KST 규약 위반).
+export const daysBetween = (date1: string, date2: string): number => {
+  const d1 = parseIsoLocal(date1);
+  const d2 = parseIsoLocal(date2);
+  if (!d1 || !d2) return NaN; // 잘못된/누락 날짜 — NaN 전파
+  return Math.floor((d2.getTime() - d1.getTime()) / (1000 * 60 * 60 * 24));
+};
+
+/** DebtPage memo — 대출별 원금/이자 상환 누적 */
+export interface LoanRepayments {
+  principal: Map<string, number>;
+  interest: Map<string, number>;
+}
+
+interface LoanRow {
+  loan: Loan;
+  /** 대출금액 − 원금 상환 (0 미만 없음) */
+  balance: number;
+  principalPaid: number;
+  interestPaid: number;
+  /** 갚은 원금 비율 0~1 */
+  progress: number;
+  /** 만기까지 남은 일수 (만기 지남 = 음수) */
+  remainingDays: number;
+  graceEnd: string | null;
+  inGrace: boolean;
+}
+
+/**
+ * 부채 탭 표·합계 줄의 단일 소스 — 잔금 큰 순 정렬, 합계, 잔금 가중 평균 금리.
+ * 가중 금리는 잔금 기준이라 다 갚은 대출의 금리는 영향이 없다 (잔금 0이면 null).
+ */
+export function summarizeLoans(loans: Loan[], repayments: LoanRepayments, todayIso: string) {
+  const rows: LoanRow[] = loans.map((loan) => {
+    const principalPaid = repayments.principal.get(loan.id) || 0;
+    const interestPaid = repayments.interest.get(loan.id) || 0;
+    const balance = Math.max(0, loan.loanAmount - principalPaid);
+    const graceEnd = graceEndDate(loan);
+    return {
+      loan,
+      balance,
+      principalPaid,
+      interestPaid,
+      progress: loan.loanAmount > 0 ? Math.min(1, principalPaid / loan.loanAmount) : 1,
+      remainingDays: daysBetween(todayIso, loan.maturityDate),
+      graceEnd,
+      inGrace: graceEnd !== null && todayIso < graceEnd,
+    };
+  });
+  rows.sort((a, b) => b.balance - a.balance);
+  const totalBalance = rows.reduce((s, r) => s + r.balance, 0);
+  const totalAmount = rows.reduce((s, r) => s + r.loan.loanAmount, 0);
+  const weightedRate =
+    totalBalance > 0 ? rows.reduce((s, r) => s + r.balance * r.loan.annualInterestRate, 0) / totalBalance : null;
+  return { rows, totalBalance, totalAmount, count: loans.length, weightedRate };
+}

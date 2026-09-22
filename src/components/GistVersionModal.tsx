@@ -98,7 +98,7 @@ export const GistVersionModal: React.FC<Props> = ({ isOpen, onClose, onLoad, onL
         </p>
         {hasDirtyChanges && (
           <p style={{ margin: "-8px 0 16px", fontSize: 12, color: "var(--danger)", fontWeight: 600 }}>
-            ⚠ 저장하지 않은 변경이 있습니다 — 불러오면 사라집니다.
+            저장하지 않은 변경이 있습니다 — 불러오면 사라집니다.
           </p>
         )}
 

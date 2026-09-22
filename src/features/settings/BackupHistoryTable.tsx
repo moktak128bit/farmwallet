@@ -54,7 +54,7 @@ export const BackupHistoryTable: React.FC<Props> = React.memo(function BackupHis
         toast.dismiss(checkToastId);
         if (
           !window.confirm(
-            "⚠ 이 백업의 무결성 검증에 실패했습니다 (저장 후 데이터가 손상되었을 수 있습니다).\n그래도 이 백업으로 복원할까요?"
+            "이 백업의 무결성 검증에 실패했습니다 (저장 후 데이터가 손상되었을 수 있습니다).\n그래도 이 백업으로 복원할까요?"
           )
         ) {
           return;

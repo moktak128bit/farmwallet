@@ -11,7 +11,7 @@
  *   - EditRepaymentModal      : 상환 내역 수정 입력 상태
  *   - RepaymentHistorySection : 부채별 그룹/필터 파생값 (이 섹션 전용 memo)
  * 부모는 폼 열림(showForm)·어떤 모달이 열렸는지(repayingLoan/editingRepayment)와
- * 카드↔상환 내역이 공유하는 상태(showRepaymentHistory/repaymentFilterDebtId)만 소유한다.
+ * 표 행↔상환 내역이 공유하는 상태(showRepaymentHistory/repaymentFilterDebtId)만 소유한다.
  *
  * 자식은 모두 React.memo — 부모가 넘기는 콜백은 setState 그대로 또는 useCallback으로 참조 고정.
  */
@@ -19,8 +19,9 @@ import React, { useState, useMemo, useCallback, useRef } from "react";
 import type { Loan, LedgerEntry, Account, CategoryPresets } from "../types";
 import { isInterestRepayment, matchLoanForRepayment } from "../calculations";
 import { isLoanRepaymentEntry } from "../features/debt/debtShared";
+import { getThisMonthKST } from "../utils/date";
 import { LoanFormSection, type LoanFormSectionHandle } from "../features/debt/LoanFormSection";
-import { LoanCardsSection } from "../features/debt/LoanCardsSection";
+import { LoanTableSection } from "../features/debt/LoanTableSection";
 import { RepaymentHistorySection } from "../features/debt/RepaymentHistorySection";
 import { RepayLoanModal } from "../features/debt/RepayLoanModal";
 import { EditRepaymentModal } from "../features/debt/EditRepaymentModal";
@@ -82,6 +83,14 @@ export const DebtView: React.FC<Props> = ({
     return { principal, interest };
   }, [ledger, matchRepaymentLoan]);
 
+  // 이번 달(KST) 납입 이자 합 — 합계 줄 보조 문구 ("이번 달 갚은 이자")
+  const monthInterestPaid = useMemo(() => {
+    const month = getThisMonthKST();
+    return ledger
+      .filter((l) => isLoanRepaymentEntry(l) && (l.date ?? "").startsWith(month) && isInterestRepayment(l) && matchRepaymentLoan(l))
+      .reduce((s, l) => s + l.amount, 0);
+  }, [ledger, matchRepaymentLoan]);
+
   // 숨김(archived) 계좌는 출금 계좌 드롭다운에서 제외 — "입력 드롭다운에서 제외" 안내와 일치
   const cashAccounts = useMemo(
     () => accounts.filter((a) => (a.type === "checking" || a.type === "savings" || a.type === "other") && !a.archived),
@@ -123,10 +132,11 @@ export const DebtView: React.FC<Props> = ({
         setShowForm={setShowForm}
       />
 
-      {/* 대출 카드 그리드 — 분리 컴포넌트 (React.memo). 카드 클릭은 상환 내역 필터와 공유 상태 */}
-      <LoanCardsSection
+      {/* 대출 표 + 합계 줄 — 분리 컴포넌트 (React.memo). 행 선택은 상환 내역 필터와 공유 상태 */}
+      <LoanTableSection
         loans={loans}
         loanRepayments={loanRepayments}
+        monthInterestPaid={monthInterestPaid}
         repaymentFilterDebtId={repaymentFilterDebtId}
         setRepaymentFilterDebtId={setRepaymentFilterDebtId}
         setShowRepaymentHistory={setShowRepaymentHistory}

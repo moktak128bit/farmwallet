@@ -40,7 +40,7 @@ const loan = (over: Partial<Loan> & { id: string }): Loan => ({
 });
 
 describe("buildNudges — 반복지출 미등록", () => {
-  it("마감일이 지났고 아직 기록 안 됐으면 critical 넛지", () => {
+  it("마감일이 지났고 아직 기록 안 됐으면 warn 넛지 (기록 리마인더 — 데이터 위험이 아니라 critical 아님)", () => {
     const ctx: NudgeContext = {
       ...baseCtx,
       today: "2026-07-10",
@@ -49,7 +49,7 @@ describe("buildNudges — 반복지출 미등록", () => {
     const out = buildNudges(ctx);
     const n = out.find((x) => x.dedupeKey.startsWith("recurring:r1"));
     expect(n).toBeDefined();
-    expect(n?.severity).toBe("critical");
+    expect(n?.severity).toBe("warn");
     expect(n?.tab).toBe("budget");
   });
 

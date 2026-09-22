@@ -4,6 +4,7 @@
  * summary는 부모 useMemo(typeSummary) 결과를 그대로 받아야 memo가 효과를 가진다.
  */
 import React from "react";
+import { Money } from "../../../components/ui/Money";
 
 interface TypeSummary {
   checking: number;
@@ -13,6 +14,8 @@ interface TypeSummary {
   cardNet: number;
   cardDebt: number;
   cardCredit: number;
+  /** 대출 잔금 합 (부채 탭 대출) — 순자산에서 차감 */
+  loanDebt: number;
   securities: number;
   total: number;
 }
@@ -38,19 +41,20 @@ export const TypeSummarySection = React.memo(function TypeSummarySection({ summa
         <div style={{ display: "flex", flexDirection: "column", gap: 4 }}>
           <span style={{ fontSize: 12, color: "var(--text-muted)", fontWeight: 600 }}>현금</span>
           <span style={{ fontSize: 18, fontWeight: 700, color: "var(--primary)" }}>
-            {formatKRW(summary.checking)}
+            <Money value={summary.checking} compact />
           </span>
         </div>
         <div style={{ display: "flex", flexDirection: "column", gap: 4 }}>
           <span style={{ fontSize: 12, color: "var(--text-muted)", fontWeight: 600 }}>저축</span>
           <span style={{ fontSize: 18, fontWeight: 700, color: "var(--primary)" }}>
-            {formatKRW(summary.savings)}
+            <Money value={summary.savings} compact />
           </span>
         </div>
         <div style={{ display: "flex", flexDirection: "column", gap: 4 }}>
-          <span style={{ fontSize: 12, color: "var(--text-muted)", fontWeight: 600 }}>부채</span>
-          <span style={{ fontSize: 18, fontWeight: 700, color: summary.cardDebt > 0 ? "var(--danger)" : "var(--text-muted)" }}>
-            {formatKRW(summary.cardDebt)}
+          {/* 카드 빚만 가리키던 "부채" → 이름을 정직하게. 대출은 옆 칸 */}
+          <span style={{ fontSize: 12, color: "var(--text-muted)", fontWeight: 600 }}>카드 부채</span>
+          <span style={{ fontSize: 18, fontWeight: 700, color: summary.cardDebt > 0 ? "var(--text)" : "var(--text-muted)" }}>
+            <Money value={summary.cardDebt} compact />
           </span>
           {summary.cardCredit > 0 && (
             <span style={{ fontSize: 12, color: "var(--text-muted)" }}>
@@ -61,21 +65,29 @@ export const TypeSummarySection = React.memo(function TypeSummarySection({ summa
         <div style={{ display: "flex", flexDirection: "column", gap: 4 }}>
           <span style={{ fontSize: 12, color: "var(--text-muted)", fontWeight: 600 }}>주식</span>
           <span style={{ fontSize: 18, fontWeight: 700, color: "var(--primary)" }}>
-            {formatKRW(summary.securities)}
+            <Money value={summary.securities} compact />
           </span>
         </div>
+        {summary.loanDebt > 0 && (
+          <div style={{ display: "flex", flexDirection: "column", gap: 4 }}>
+            <span style={{ fontSize: 12, color: "var(--text-muted)", fontWeight: 600 }}>대출</span>
+            <span style={{ fontSize: 18, fontWeight: 700, color: "var(--text)" }}>
+              <Money value={summary.loanDebt} compact />
+            </span>
+          </div>
+        )}
         {summary.other !== 0 && (
           <div style={{ display: "flex", flexDirection: "column", gap: 4 }}>
             <span style={{ fontSize: 12, color: "var(--text-muted)", fontWeight: 600 }}>기타</span>
             <span style={{ fontSize: 18, fontWeight: 700, color: "var(--primary)" }}>
-              {formatKRW(summary.other)}
+              <Money value={summary.other} compact />
             </span>
           </div>
         )}
         <div className="type-summary-total">
           <span style={{ fontSize: 12, color: "var(--text-muted)", fontWeight: 600 }}>순자산</span>
           <span style={{ fontSize: 20, fontWeight: 700, color: summary.total >= 0 ? "var(--primary)" : "var(--danger)" }}>
-            {formatKRW(summary.total)}
+            <Money value={summary.total} compact />
           </span>
         </div>
       </div>

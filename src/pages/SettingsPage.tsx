@@ -266,7 +266,7 @@ export const SettingsView: React.FC<Props> = ({
             <MigrationReportCard backups={backups} />
           </Collapsible>
           <div className="settings-danger">
-            <div className="settings-danger-title">⚠️ 위험 구역 — 되돌리기 어려운 작업</div>
+            <div className="settings-danger-title">위험 구역 — 되돌리기 어려운 작업</div>
             <DataResetCard data={data} onChangeData={onChangeData} setText={setText} setError={setError} />
           </div>
         </>

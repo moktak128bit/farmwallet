@@ -189,7 +189,7 @@ export const ScreenshotImportExample: React.FC<Props> = ({ ledger, categoryPrese
         <div style={{ padding: "20px 24px", borderBottom: "1px solid var(--border)", display: "flex", justifyContent: "space-between", alignItems: "flex-start" }}>
           <div>
             <h3 id="screenshot-import-title" style={{ margin: 0, fontSize: 18, fontWeight: 700 }}>
-              📷 은행 스크린샷 가져오기 <span style={{ fontSize: 12, fontWeight: 500, color: "var(--warning)" }}>(예시 페이지)</span>
+              은행 스크린샷 가져오기 <span style={{ fontSize: 12, fontWeight: 500, color: "var(--warning)" }}>(예시 페이지)</span>
             </h3>
             <div style={{ fontSize: 12, color: "var(--text-muted)", marginTop: 6, maxWidth: 700 }}>
               은행 앱 거래내역 스크린샷을 올리면 날짜·내용·금액과, 화면 상단의 은행/카드사 표기로 계좌까지
@@ -212,7 +212,7 @@ export const ScreenshotImportExample: React.FC<Props> = ({ ledger, categoryPrese
             }}
             title="예시 페이지 — 실제 이미지 업로드는 다음 단계에서 연결합니다"
           >
-            🖼️ 스크린샷 여러 장 선택 (예시 — 아래는 이미 인식됐다고 가정한 결과)
+            스크린샷 여러 장 선택 (예시 — 아래는 이미 인식됐다고 가정한 결과)
             <input type="file" accept="image/*" multiple disabled style={{ display: "none" }} />
           </label>
         </div>
@@ -222,7 +222,7 @@ export const ScreenshotImportExample: React.FC<Props> = ({ ledger, categoryPrese
             <span>전체 {analyzed.length}건 중 포함 <strong>{includedCount}건</strong></span>
             {needsReviewCount > 0 ? (
               <span style={{ color: "var(--warning)" }}>
-                ⚠ 확인 필요 {needsReviewCount}건
+                확인 필요 {needsReviewCount}건
                 {(categoryReviewCount > 0 || accountReviewCount > 0) && (
                   <span style={{ color: "var(--text-muted)" }}>
                     {" "}(분류 {categoryReviewCount}·계좌 {accountReviewCount})
@@ -230,7 +230,7 @@ export const ScreenshotImportExample: React.FC<Props> = ({ ledger, categoryPrese
                 )}
               </span>
             ) : (
-              <span style={{ color: "var(--success)" }}>✓ 모든 포함 항목의 분류·계좌가 채워졌습니다</span>
+              <span style={{ color: "var(--success)" }}>모든 포함 항목의 분류·계좌가 채워졌습니다</span>
             )}
           </div>
 
@@ -262,7 +262,7 @@ export const ScreenshotImportExample: React.FC<Props> = ({ ledger, categoryPrese
                       </td>
                       <td style={{ padding: "6px 8px", whiteSpace: "nowrap", color: "var(--text-muted)" }}>
                         {row.sourceLabel}
-                        <div style={{ fontSize: 10, color: "var(--text-muted)" }} title="스크린샷에서 인식된 은행/카드사 표기(가정)">
+                        <div style={{ fontSize: 11, color: "var(--text-muted)" }} title="스크린샷에서 인식된 은행/카드사 표기(가정)">
                           &quot;{row.accountHint}&quot;
                         </div>
                       </td>
@@ -288,11 +288,11 @@ export const ScreenshotImportExample: React.FC<Props> = ({ ledger, categoryPrese
                             {activeAccounts.map((a) => <option key={a.id} value={a.id}>{a.name}</option>)}
                           </select>
                           {isUnconfirmedAccount ? (
-                            <span style={{ fontSize: 10, color: "var(--warning)", whiteSpace: "nowrap" }} title="계좌 표기를 등록된 계좌와 확실히 매칭하지 못했습니다">
-                              ⚠ 확인 필요
+                            <span style={{ fontSize: 11, color: "var(--warning)", whiteSpace: "nowrap" }} title="계좌 표기를 등록된 계좌와 확실히 매칭하지 못했습니다">
+                              확인 필요
                             </span>
                           ) : (
-                            <span style={{ fontSize: 10, color: "var(--success)", whiteSpace: "nowrap" }} title="은행/카드사 표기가 등록된 계좌와 일치해 자동으로 채웠습니다">
+                            <span style={{ fontSize: 11, color: "var(--success)", whiteSpace: "nowrap" }} title="은행/카드사 표기가 등록된 계좌와 일치해 자동으로 채웠습니다">
                               자동 인식
                             </span>
                           )}
@@ -321,15 +321,15 @@ export const ScreenshotImportExample: React.FC<Props> = ({ ledger, categoryPrese
                             </select>
                           )}
                           {isUnconfirmedCategory ? (
-                            <span style={{ fontSize: 10, color: "var(--warning)", whiteSpace: "nowrap" }} title="자동 분류를 확신하지 못했습니다">
-                              ⚠ 확인 필요
+                            <span style={{ fontSize: 11, color: "var(--warning)", whiteSpace: "nowrap" }} title="자동 분류를 확신하지 못했습니다">
+                              확인 필요
                             </span>
                           ) : !confidentCategory ? (
-                            <span style={{ fontSize: 10, color: "var(--text-muted)", whiteSpace: "nowrap" }} title="자동 추천이 낮은 확신도라 직접 채웠습니다">
+                            <span style={{ fontSize: 11, color: "var(--text-muted)", whiteSpace: "nowrap" }} title="자동 추천이 낮은 확신도라 직접 채웠습니다">
                               직접 선택됨
                             </span>
                           ) : (
-                            <span style={{ fontSize: 10, color: "var(--success)", whiteSpace: "nowrap" }} title="과거 기록과 유사해 자동으로 채웠습니다">
+                            <span style={{ fontSize: 11, color: "var(--success)", whiteSpace: "nowrap" }} title="과거 기록과 유사해 자동으로 채웠습니다">
                               자동 인식
                             </span>
                           )}

@@ -1109,7 +1109,7 @@ export const LedgerEntryForm = React.memo(React.forwardRef<LedgerEntryFormHandle
                 style={{ fontSize: 13, padding: "6px 12px" }}
                 title="재테크 — 배당/이자/매매/저축·투자 이체를 한 화면에 모음 (입력은 본래 위치에서)"
               >
-                📊 재테크
+                재테크
               </button>
               {/* 신용결제 — 별도 탭. 이체로 저장 (kind=transfer, 이체 > 카드결제이체) */}
               <button
@@ -1123,7 +1123,7 @@ export const LedgerEntryForm = React.memo(React.forwardRef<LedgerEntryFormHandle
                 style={{ fontSize: 13, padding: "6px 12px" }}
                 title="신용카드 결제 (은행 → 카드)"
               >
-                💳 신용결제
+                신용결제
               </button>
             </div>
             {ledgerTab === "savingsExpense" && (
@@ -1139,7 +1139,7 @@ export const LedgerEntryForm = React.memo(React.forwardRef<LedgerEntryFormHandle
                   marginBottom: 8
                 }}
               >
-                <strong>📊 재테크 입력</strong> — 투자수익·투자손실·배당·이자를 직접 기록합니다.
+                <strong>재테크 입력</strong> — 투자수익·투자손실·배당·이자를 직접 기록합니다.
                 매수·매도는 <strong>주식</strong> 탭, 저축·투자 이체는 <strong>이체</strong> 탭에서.
                 아래 표에 재테크 항목이 모여 보입니다.
               </div>
@@ -1194,7 +1194,7 @@ export const LedgerEntryForm = React.memo(React.forwardRef<LedgerEntryFormHandle
                             className={form.date === c.date ? "primary" : "secondary"}
                             onClick={() => setForm((prev) => ({ ...prev, date: c.date }))}
                             title={c.title}
-                            style={{ fontSize: 10, padding: "2px 7px", borderRadius: 10 }}
+                            style={{ fontSize: 11, padding: "2px 7px", borderRadius: 10 }}
                           >
                             {c.label}
                           </button>
@@ -1205,7 +1205,7 @@ export const LedgerEntryForm = React.memo(React.forwardRef<LedgerEntryFormHandle
                           className="secondary"
                           onClick={() => setForm((prev) => ({ ...prev, date: addDaysToIso(prev.date || today, -1) }))}
                           title="하루 전"
-                          style={{ fontSize: 10, padding: "2px 7px", borderRadius: 10 }}
+                          style={{ fontSize: 11, padding: "2px 7px", borderRadius: 10 }}
                         >
                           −1일
                         </button>
@@ -1215,7 +1215,7 @@ export const LedgerEntryForm = React.memo(React.forwardRef<LedgerEntryFormHandle
                           className="secondary"
                           onClick={() => setForm((prev) => ({ ...prev, date: addDaysToIso(prev.date || today, 1) }))}
                           title="하루 후"
-                          style={{ fontSize: 10, padding: "2px 7px", borderRadius: 10 }}
+                          style={{ fontSize: 11, padding: "2px 7px", borderRadius: 10 }}
                         >
                           +1일
                         </button>
@@ -1223,7 +1223,7 @@ export const LedgerEntryForm = React.memo(React.forwardRef<LedgerEntryFormHandle
                     );
                   })()}
                 </div>
-                <span id="date-error" style={{ fontSize: 10, color: "var(--danger)", display: "block", marginTop: 4, visibility: formErrors.date ? "visible" : "hidden" }}>
+                <span id="date-error" style={{ fontSize: 11, color: "var(--danger)", display: "block", marginTop: 4, visibility: formErrors.date ? "visible" : "hidden" }}>
                   {formErrors.date || "\u00A0"}
                 </span>
               </div>
@@ -1241,7 +1241,7 @@ export const LedgerEntryForm = React.memo(React.forwardRef<LedgerEntryFormHandle
                     className="secondary"
                     onClick={splitAmountByN}
                     title="더치페이 — 금액을 N명으로 나눈 1인분으로 바꿉니다 (계산식 12000+3500/2 도 입력 가능)"
-                    style={{ fontSize: 10, padding: "1px 7px", marginLeft: 6, borderRadius: 10 }}
+                    style={{ fontSize: 11, padding: "1px 7px", marginLeft: 6, borderRadius: 10 }}
                   >
                     ÷N
                   </button>
@@ -1294,7 +1294,7 @@ export const LedgerEntryForm = React.memo(React.forwardRef<LedgerEntryFormHandle
                   aria-invalid={!!formErrors.amount}
                   aria-describedby={formErrors.amount ? "amount-error" : undefined}
                 />
-                <span id="amount-error" style={{ fontSize: 10, color: "var(--danger)", display: "block", marginTop: 4, visibility: formErrors.amount ? "visible" : "hidden" }}>
+                <span id="amount-error" style={{ fontSize: 11, color: "var(--danger)", display: "block", marginTop: 4, visibility: formErrors.amount ? "visible" : "hidden" }}>
                   {formErrors.amount || "\u00A0"}
                 </span>
                 {/* 계산식 미리보기 — 유효할 때만 '= 15,500원' (오류는 위 검증 메시지가 안내) */}
@@ -1312,7 +1312,7 @@ export const LedgerEntryForm = React.memo(React.forwardRef<LedgerEntryFormHandle
                   form.discountAmount?.trim() &&
                   parseAmount(form.discountAmount, false) > 0 &&
                   parseAmount(form.amount, false) > 0 && (
-                    <span style={{ fontSize: 10, color: "var(--text-muted)", display: "block", marginTop: 4 }}>
+                    <span style={{ fontSize: 11, color: "var(--text-muted)", display: "block", marginTop: 4 }}>
                       {effectiveFormKind === "income" ? "실제 수입액" : "실제 지출액"}:{" "}
                       <strong style={{ color: "var(--text)" }}>
                         {(
@@ -1356,7 +1356,7 @@ export const LedgerEntryForm = React.memo(React.forwardRef<LedgerEntryFormHandle
                         }}
                       >
                         {c}
-                        <span style={{ display: "block", fontSize: 10, color: "var(--text-muted)", marginTop: 2, fontWeight: 400 }}>
+                        <span style={{ display: "block", fontSize: 11, color: "var(--text-muted)", marginTop: 2, fontWeight: 400 }}>
                           {c === "투자손실" ? "지출" : "수입"}
                         </span>
                       </button>
@@ -1409,7 +1409,7 @@ export const LedgerEntryForm = React.memo(React.forwardRef<LedgerEntryFormHandle
               </label>
             ) : ledgerTab === "creditPayment" ? (
               <div style={{ marginBottom: 8 }}>
-                <span style={{ fontSize: 12, marginBottom: 8, display: "block", fontWeight: 600 }}>💳 신용결제 (자동)</span>
+                <span style={{ fontSize: 12, marginBottom: 8, display: "block", fontWeight: 600 }}>신용결제 (자동)</span>
                 <div style={{
                   padding: "10px 12px",
                   background: "var(--primary-light)",
@@ -1538,15 +1538,15 @@ export const LedgerEntryForm = React.memo(React.forwardRef<LedgerEntryFormHandle
 
             {/* 4. 상세내역 (선택) - 작게 */}
             <label style={{ margin: 0 }}>
-              <span style={{ fontSize: 10, marginBottom: 4, display: "flex", alignItems: "center", justifyContent: "space-between", color: "var(--text-muted)" }}>
+              <span style={{ fontSize: 11, marginBottom: 4, display: "flex", alignItems: "center", justifyContent: "space-between", color: "var(--text-muted)" }}>
                 <span>상세내역 (선택)</span>
                 <button
                   type="button"
                   onClick={(e) => { e.preventDefault(); setShowReceiptScanner(true); }}
-                  style={{ fontSize: 10, padding: "2px 8px", border: "1px solid var(--border)", borderRadius: 10, background: "var(--surface)", cursor: "pointer" }}
+                  style={{ fontSize: 11, padding: "2px 8px", border: "1px solid var(--border)", borderRadius: 10, background: "var(--surface)", cursor: "pointer" }}
                   title="영수증 사진을 OCR로 자동 인식"
                 >
-                  📷 영수증 스캔
+                  영수증 스캔
                 </button>
               </span>
               {/* 설명 자동완성 — 과거 설명(빈도×최근성) 후보. 선택 시 비어 있는 분류/계좌만 채움 */}
@@ -1564,7 +1564,7 @@ export const LedgerEntryForm = React.memo(React.forwardRef<LedgerEntryFormHandle
               />
               {recommendationChips.length > 0 && (
                 <div style={{ display: "flex", alignItems: "center", gap: 6, flexWrap: "wrap", marginTop: 6 }}>
-                  <span style={{ fontSize: 10, color: "var(--text-muted)" }}>추천</span>
+                  <span style={{ fontSize: 11, color: "var(--text-muted)" }}>추천</span>
                   {recommendationChips.map((r) => {
                     const label = effectiveFormKind === "expense"
                       ? [r.subCategory, r.detailCategory].filter(Boolean).join(" > ")
@@ -1595,7 +1595,7 @@ export const LedgerEntryForm = React.memo(React.forwardRef<LedgerEntryFormHandle
             {/* 할인 (수입·지출, 선택) — 저장 시 금액−할인이 실제 반영액 */}
             {(effectiveFormKind === "income" || effectiveFormKind === "expense") && (
               <label style={{ margin: 0 }}>
-                <span style={{ fontSize: 10, marginBottom: 4, display: "block", color: "var(--text-muted)" }}>
+                <span style={{ fontSize: 11, marginBottom: 4, display: "block", color: "var(--text-muted)" }}>
                   할인 (선택)
                 </span>
                 <input
@@ -1615,7 +1615,7 @@ export const LedgerEntryForm = React.memo(React.forwardRef<LedgerEntryFormHandle
                     borderRadius: "6px"
                   }}
                 />
-                <span style={{ fontSize: 10, color: "var(--danger)", display: "block", marginTop: 4, visibility: formErrors.discountAmount ? "visible" : "hidden" }}>{formErrors.discountAmount || "\u00A0"}</span>
+                <span style={{ fontSize: 11, color: "var(--danger)", display: "block", marginTop: 4, visibility: formErrors.discountAmount ? "visible" : "hidden" }}>{formErrors.discountAmount || "\u00A0"}</span>
               </label>
             )}
 
@@ -1623,9 +1623,9 @@ export const LedgerEntryForm = React.memo(React.forwardRef<LedgerEntryFormHandle
             {(form.kind === "transfer" || form.kind === "expense") && (
               <div>
                 <div style={{ fontSize: 11, marginBottom: 8, color: "var(--text-muted)", display: "flex", alignItems: "center", gap: 4 }}>
-                  <span>{ledgerTab === "creditPayment" ? "🏦 결제할 계좌 (출금/은행) *" : "출금계좌 *"}</span>
+                  <span>{ledgerTab === "creditPayment" ? "결제할 계좌 (출금/은행) *" : "출금계좌 *"}</span>
                   {(formErrors.fromAccountId || formErrors.transfer) && (
-                    <span style={{ fontSize: 10, color: "var(--danger)" }}>({(formErrors.fromAccountId || formErrors.transfer)})</span>
+                    <span style={{ fontSize: 11, color: "var(--danger)" }}>({(formErrors.fromAccountId || formErrors.transfer)})</span>
                   )}
                 </div>
                 <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(120px, 1fr))", gap: 8 }}>
@@ -1670,9 +1670,9 @@ export const LedgerEntryForm = React.memo(React.forwardRef<LedgerEntryFormHandle
             {(form.kind === "income" || form.kind === "transfer" || ledgerTab === "creditPayment") && (
               <div>
                 <div style={{ fontSize: 11, marginBottom: 8, color: "var(--text-muted)", display: "flex", alignItems: "center", gap: 4 }}>
-                  <span>{ledgerTab === "creditPayment" ? "💳 갚을 카드 (입금계좌) *" : "입금계좌 *"}</span>
+                  <span>{ledgerTab === "creditPayment" ? "갚을 카드 (입금계좌) *" : "입금계좌 *"}</span>
                   {(formErrors.toAccountId || formErrors.transfer) && (
-                    <span style={{ fontSize: 10, color: "var(--danger)" }}>({(formErrors.toAccountId || formErrors.transfer)})</span>
+                    <span style={{ fontSize: 11, color: "var(--danger)" }}>({(formErrors.toAccountId || formErrors.transfer)})</span>
                   )}
                 </div>
                 <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(120px, 1fr))", gap: 8 }}>

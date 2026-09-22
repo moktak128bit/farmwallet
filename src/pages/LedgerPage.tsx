@@ -27,6 +27,8 @@
  * 외부 접점(필터 일괄 초기화·복사 적재)은 ledgerFormRef의 patchForm/startCopy로 처리.
  */
 import React, { useEffect, useMemo, useState, useRef, useCallback, useDeferredValue } from "react";
+import { ChevronDown } from "lucide-react";
+import { STORAGE_KEYS } from "../constants/config";
 import type { Account, AccountBalanceRow, CategoryPresets, LedgerEntry, LedgerTemplate, StockTrade } from "../types";
 import { formatKRW, formatNumber } from "../utils/formatter";
 import { shortcutManager, type ShortcutAction } from "../utils/shortcuts";
@@ -110,6 +112,22 @@ export const LedgerView: React.FC<Props> = ({
   const [showMergeModal, setShowMergeModal] = useState(false);
   const [showTaxiSplitWizard, setShowTaxiSplitWizard] = useState(false);
   const [showScreenshotImportExample, setShowScreenshotImportExample] = useState(false);
+  // 입력 폼 접힘 — 기본 접힘(목록이 먼저), 상태는 기억. Alt+N·복사·검색 적재는 자동으로 펼친다.
+  const [formOpen, setFormOpen] = useState<boolean>(() => {
+    try { return localStorage.getItem(STORAGE_KEYS.LEDGER_FORM_OPEN) === "1"; } catch { return false; }
+  });
+  useEffect(() => {
+    try { localStorage.setItem(STORAGE_KEYS.LEDGER_FORM_OPEN, formOpen ? "1" : "0"); } catch { /* ignore */ }
+  }, [formOpen]);
+  useEffect(() => {
+    const open = () => setFormOpen(true);
+    window.addEventListener("farmwallet:focus-ledger-form", open);
+    return () => window.removeEventListener("farmwallet:focus-ledger-form", open);
+  }, []);
+  // 검색 모달 등에서 온 복사 적재(copyRequest prop) → 접혀 있으면 펼친다
+  useEffect(() => {
+    if (copyRequest) setFormOpen(true);
+  }, [copyRequest]);
   const [showTollParkingWizard, setShowTollParkingWizard] = useState(false);
   // 선택 항목 일괄 편집 모달 (selectedLedgerIdsForSum 재사용)
   const [showBulkEdit, setShowBulkEdit] = useState(false);
@@ -193,7 +211,8 @@ export const LedgerView: React.FC<Props> = ({
   }, [quickCopyEntry, quickCopyAmount, ledger, onChangeLedger]);
 
   const handleQuickCopyEditInForm = useCallback(() => {
-    // 폼 적재는 LedgerEntryForm 소유 — ref API로 위임
+    // 폼 적재는 LedgerEntryForm 소유 — ref API로 위임 (접혀 있으면 먼저 펼친다)
+    setFormOpen(true);
     setQuickCopyEntry((cur) => {
       if (cur) ledgerFormRef.current?.startCopy(cur);
       return null;
@@ -892,57 +911,53 @@ export const LedgerView: React.FC<Props> = ({
   return (
     <div>
       <DailyBudgetBar ledger={ledger} config={dailyBudgetConfig} />
-      <div className="section-header" style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
-        <h2>가계부 (거래 입력)</h2>
-        <div style={{ display: "flex", gap: 8 }}>
+      <div className="section-header">
+        <h2>가계부</h2>
+        <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
+          {/* 저빈도 정리 도구 5개는 드롭다운 뒤로 — 헤더 한 줄을 차지하고 모바일에선 글자가 세로로 쪼개졌다 */}
+          <details className="menu">
+            <summary aria-haspopup="menu">
+              정리 도구 <ChevronDown size={14} aria-hidden />
+            </summary>
+            <div
+              className="menu-list"
+              role="menu"
+              onClick={(e) => (e.currentTarget.closest("details") as HTMLDetailsElement | null)?.removeAttribute("open")}
+            >
+              <button type="button" role="menuitem" onClick={() => setShowScreenshotImportExample(true)} title="은행 스크린샷을 가계부로 옮기는 기능 예시 (기획 확인용, 실제 저장 없음)">
+                스크린샷 가져오기 (예시)
+              </button>
+              <button type="button" role="menuitem" onClick={() => setShowTaxiSplitWizard(true)} title="유류교통비에서 택시를 별도 소분류로 분리">
+                택시 분리
+              </button>
+              <button type="button" role="menuitem" onClick={() => setShowTollParkingWizard(true)} title="유류교통비 '통행·주차'를 톨비/주차비로 분리">
+                통행·주차 분리
+              </button>
+              <button type="button" role="menuitem" onClick={() => setShowMergeModal(true)} title="유사한 description을 한 번에 통합">
+                유사 설명 통합
+              </button>
+              <button
+                type="button"
+                role="menuitem"
+                onClick={() => {
+                  // 주식 매매 가상 행(_tradeId)은 가계부 원본이 아니므로 제외 — 주식 탭 CSV에서 따로 내보냄
+                  const entries = filteredLedger.filter((l) => !l._tradeId);
+                  exportLedgerCsv(entries, accounts);
+                  toast.success(`${entries.length}건 CSV 내보내기 완료`);
+                }}
+              >
+                CSV 내보내기
+              </button>
+            </div>
+          </details>
           <button
             type="button"
-            className="secondary"
-            style={{ fontSize: 12, padding: "6px 12px" }}
-            onClick={() => setShowScreenshotImportExample(true)}
-            title="은행 스크린샷을 가계부로 옮기는 기능 예시 (기획 확인용, 실제 저장 없음)"
+            className={formOpen ? "secondary" : "primary"}
+            aria-expanded={formOpen}
+            onClick={() => setFormOpen((v) => !v)}
+            title="Alt+N: 새 항목 입력"
           >
-            📷 스크린샷 가져오기 (예시)
-          </button>
-          <button
-            type="button"
-            className="secondary"
-            style={{ fontSize: 12, padding: "6px 12px" }}
-            onClick={() => setShowTaxiSplitWizard(true)}
-            title="유류교통비에서 택시를 별도 소분류로 분리"
-          >
-            🚕 택시 분리
-          </button>
-          <button
-            type="button"
-            className="secondary"
-            style={{ fontSize: 12, padding: "6px 12px" }}
-            onClick={() => setShowTollParkingWizard(true)}
-            title="유류교통비 '통행·주차'를 톨비/주차비로 분리"
-          >
-            🅿️ 통행·주차 분리
-          </button>
-          <button
-            type="button"
-            className="secondary"
-            style={{ fontSize: 12, padding: "6px 12px" }}
-            onClick={() => setShowMergeModal(true)}
-            title="유사한 description을 한 번에 통합"
-          >
-            🔀 유사 설명 통합
-          </button>
-          <button
-            type="button"
-            className="secondary"
-            style={{ fontSize: 12, padding: "6px 12px" }}
-            onClick={() => {
-              // 주식 매매 가상 행(_tradeId)은 가계부 원본이 아니므로 제외 — 주식 탭 CSV에서 따로 내보냄
-              const entries = filteredLedger.filter((l) => !l._tradeId);
-              exportLedgerCsv(entries, accounts);
-              toast.success(`${entries.length}건 CSV 내보내기 완료`);
-            }}
-          >
-            CSV 내보내기
+            {formOpen ? "입력 폼 접기" : "+ 거래 입력"}
           </button>
         </div>
       </div>
@@ -1051,7 +1066,9 @@ export const LedgerView: React.FC<Props> = ({
         categoryPresets={categoryPresets}
       />
 
-      {/* 입력 폼 — 분리 컴포넌트 (React.memo + forwardRef). 폼 상태는 자식 소유 */}
+      {/* 입력 폼 — 분리 컴포넌트 (React.memo + forwardRef). 폼 상태는 자식 소유.
+          접힘은 CSS로(첫 줄의 종류 탭은 목록 필터도 겸하므로 남긴다) — ref API·드래프트·단축키 배선은 그대로 산다 */}
+      <div className={formOpen ? undefined : "ledger-form-collapsed"}>
       <LedgerEntryForm
         ref={ledgerFormRef}
         accounts={accounts}
@@ -1072,6 +1089,7 @@ export const LedgerView: React.FC<Props> = ({
         ledgerTemplates={ledgerTemplates}
         onChangeTemplates={onChangeTemplates}
       />
+      </div>
 
       {/* ── 필터 영역 (기본 접힘 — 너무 큰 영역 차지하던 문제 해결) ── */}
       <LedgerFilterCard

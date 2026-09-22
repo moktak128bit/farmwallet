@@ -110,8 +110,8 @@ export const SecuritiesValueTrendCard: React.FC = () => {
                   </linearGradient>
                 </defs>
                 <CartesianGrid strokeDasharray="3 3" stroke="var(--chart-grid)" vertical={false} />
-                <XAxis dataKey="date" tickFormatter={tickFmt} tick={{ fontSize: 10 }} minTickGap={32} />
-                <YAxis tick={{ fontSize: 10 }} width={52} tickFormatter={fmtAxisWon} domain={["auto", "auto"]} />
+                <XAxis dataKey="date" tickFormatter={tickFmt} tick={{ fontSize: 11 }} minTickGap={32} />
+                <YAxis tick={{ fontSize: 11 }} width={52} tickFormatter={fmtAxisWon} domain={["auto", "auto"]} />
                 <Tooltip
                   labelFormatter={(d) => String(d)}
                   formatter={(v: number | string | undefined, name: string | undefined) => [formatKRW(Math.round(Number(v ?? 0))), name ?? ""] as [string, string]}

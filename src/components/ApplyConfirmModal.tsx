@@ -174,7 +174,7 @@ export const ApplyConfirmModal: React.FC = () => {
               marginBottom: "var(--space-4)"
             }}
           >
-            ⚠ 적용하면 새로 생기는 무결성 오류 {summary.newIntegrityErrorCount}건 (기존에 있던 경고는 제외한
+            적용하면 새로 생기는 무결성 오류 {summary.newIntegrityErrorCount}건 (기존에 있던 경고는 제외한
             수치입니다)
           </div>
         )}

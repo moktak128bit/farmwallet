@@ -41,6 +41,8 @@ import { computeLedgerSummary, computeRecheckBreakdown, EXPENSE_BOX_EXCLUDED_NAM
 import { computeIncomeNatureKeys } from "../utils/incomeClassification";
 import { isDashboardWidgetVisible, loadHiddenDashboardWidgets } from "../features/dashboard/dashboardWidgets";
 import { TaxActionsCard } from "../features/dashboard/TaxActionsCard";
+import { DashboardSection } from "../features/dashboard/DashboardSection";
+import { formatKRW, formatKrwCompact } from "../utils/formatter";
 import { buildDividendGrowth, resolveTrackedTickers } from "../utils/dividendGrowth";
 import { buildDividendPortfolio } from "../utils/dividendPortfolio";
 import { useAccountTimelineRows } from "../hooks/useAccountTimelineRows";
@@ -64,6 +66,7 @@ import { useAppStore } from "../store/appStore";
 import {
   getTodayKST,
   getMonthEndDate,
+  shiftMonth,
 } from "../utils/date";
 import { isUSDStock } from "../utils/finance";
 const LazyPortfolioDashboardCharts = lazy(() =>
@@ -305,248 +308,269 @@ export const DashboardView: React.FC<Props> = (props) => {
 
   const cmaAccount = useMemo(() => accounts.find((a) => a.id === "CMA") ?? null, [accounts]);
 
+  /** 전월 근로소득 — 요약 카드의 "급여 아직 없음" 기준선 */
+  const prevMonthIncome = useMemo(
+    () => computeLedgerSummary(ledger, fxRate, shiftMonth(currentMonth, -1), categoryPresets, salaryKeys, EXPENSE_BOX_EXCLUDED_NAMES).income,
+    [ledger, fxRate, currentMonth, categoryPresets, salaryKeys]
+  );
+
+  /** 섹션 안 위젯이 모두 숨김이면 섹션 헤더도 그리지 않는다 */
+  const anyShown = (ids: string[]) => ids.some(show);
+
   return (
-    <div>
-      <div className="section-header">
-        <h2>대시보드</h2>
-      </div>
+    <div style={{ display: "flex", flexDirection: "column", gap: 28 }}>
+      {/* ── 핵심: 항상 펼침 — 이번 달 4숫자 · 배당 포트폴리오 · 전월 대비 · 투자 자산 ── */}
+      {show("summary") && (
+        <MonthlySummaryCards monthlySummary={monthlySummary} allTimeSummary={allTimeSummary} prevMonthIncome={prevMonthIncome} />
+      )}
 
-      <div style={{ display: "flex", flexDirection: "column", gap: 28 }}>
-        {show("summary") && (
-          <MonthlySummaryCards monthlySummary={monthlySummary} allTimeSummary={allTimeSummary} />
-        )}
+      {show("dividendPortfolio") && dividendPortfolio && (
+        <DividendPortfolioCard data={dividendPortfolio} />
+      )}
 
-        {show("dividendPortfolio") && dividendPortfolio && (
-          <DividendPortfolioCard data={dividendPortfolio} />
-        )}
+      {show("monthCompare") && (
+        <ExpenseIncomeCompareCard
+          ledger={ledger}
+          month={currentMonth}
+          fxRate={fxRate}
+          categoryPresets={categoryPresets}
+          salaryKeys={salaryKeys}
+        />
+      )}
 
-        {show("monthCompare") && (
-          <ExpenseIncomeCompareCard
-            ledger={ledger}
-            month={currentMonth}
-            fxRate={fxRate}
-            categoryPresets={categoryPresets}
-            salaryKeys={salaryKeys}
-          />
-        )}
+      {show("investmentSummary") && (
+        <InvestmentSummaryCard
+          accounts={accounts}
+          ledger={ledger}
+          trades={trades}
+          balances={balances}
+          positions={positions}
+          fxRate={fxRate}
+          netWorthSeries={netWorthSeriesKrw}
+        />
+      )}
 
-        {show("investmentSummary") && (
-          <InvestmentSummaryCard
-            accounts={accounts}
-            ledger={ledger}
-            trades={trades}
-            balances={balances}
-            positions={positions}
-            fxRate={fxRate}
-            netWorthSeries={netWorthSeriesKrw}
-          />
-        )}
+      {/* ── 자산·투자: 성과·추이·구성 차트 (기본 접힘, 접힌 줄에 순자산) ── */}
+      {anyShown(["investmentPerformance", "securitiesValueTrend", "netWorthTrend", "assetComposition", "portfolioCharts", "accountBalanceTrend", "stockCostVsMarket", "totalAssetTrend", "cmaBalanceTrend"]) && (
+        <DashboardSection id="assets" title="자산·투자" summary={`순자산 ${formatKrwCompact(totalNetWorth)}원`}>
+          {show("investmentPerformance") && (
+            <Suspense fallback={<div className="card" style={{ minHeight: 360 }} />}>
+              <LazyPortfolioPerformanceSection />
+            </Suspense>
+          )}
 
-        {show("investmentPerformance") && (
-          <Suspense fallback={<div className="card" style={{ minHeight: 360 }} />}>
-            <LazyPortfolioPerformanceSection />
-          </Suspense>
-        )}
+          {show("securitiesValueTrend") && (
+            <Suspense fallback={<div className="card" style={{ minHeight: 320 }} />}>
+              <LazySecuritiesValueTrendCard />
+            </Suspense>
+          )}
 
-        {show("securitiesValueTrend") && (
-          <Suspense fallback={<div className="card" style={{ minHeight: 320 }} />}>
-            <LazySecuritiesValueTrendCard />
-          </Suspense>
-        )}
+          {show("netWorthTrend") && <NetWorthTrendChart data={netWorthTrendData} />}
 
-        {show("netWorthTrend") && <NetWorthTrendChart data={netWorthTrendData} />}
-
-        {(show("topExpenses") || show("monthlyTrend")) && (
-          <div className="dashboard-two-col" style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 16 }}>
-            {show("topExpenses") && (
-              <TopExpensesCard
-                currentMonth={currentMonth}
-                ledger={ledger}
-                categoryPresets={categoryPresets}
-                fxRate={fxRate}
-              />
-            )}
-            {show("monthlyTrend") && (
-              <MonthlyTrendCard
-                ledger={ledger}
-                categoryPresets={categoryPresets}
-                fxRate={fxRate}
-                salaryKeys={salaryKeys}
-              />
-            )}
-          </div>
-        )}
-
-        {show("investmentBreakdown") && (
-          <InvestmentBreakdownCard
-            month={monthlySummary.month}
-            monthlyRecheckBreakdown={monthlyRecheckBreakdown}
-            totalRealizedPnl={totalRealizedPnl}
-          />
-        )}
-
-        {show("monthPace") && (
-          <MonthPaceCard
-            currentMonth={currentMonth}
-            today={today}
-            ledger={ledger}
-            accounts={accounts}
-            categoryPresets={categoryPresets}
-            fxRate={fxRate}
-          />
-        )}
-
-        {show("salaryTimer") && <SalaryTimerCard ledger={ledger} fxRate={fxRate} />}
-
-        {show("cashFlow") && (
-          <CashFlowForecastCard
-            recurring={storeData.recurringExpenses ?? []}
-            ledger={ledger}
-            accounts={accounts}
-            fxRate={fxRate}
-            categoryPresets={categoryPresets}
-          />
-        )}
-
-        {show("cashFlowProjection") && (
-          <CashFlowProjectionCard
-            accounts={accounts}
-            ledger={ledger}
-            loans={loans}
-            recurring={storeData.recurringExpenses ?? []}
-            fxRate={fxRate}
-            categoryPresets={categoryPresets}
-          />
-        )}
-
-        {show("portfolioCharts") && (
-          <Suspense
-            fallback={
-              <div className="card" style={{ padding: 24, textAlign: "center", color: "var(--text-muted)", minHeight: 120 }}>
-                포트폴리오 차트 로딩 중…
-              </div>
-            }
-          >
-            <LazyPortfolioDashboardCharts
-              positionsWithPrice={positionsWithPrice}
-              positionsByAccount={positionsByAccount}
+          {show("assetComposition") && (
+            <AssetCompositionCard
               balances={balances}
+              positions={positions}
               fxRate={fxRate}
+              totalNetWorth={totalNetWorth}
+              totalDebt={totalDebt}
             />
-          </Suspense>
-        )}
+          )}
 
-        {(show("savingsRatio") || show("dividendCoverage")) && (
-          <div
-            style={{
-              display: "grid",
-              gridTemplateColumns: "repeat(auto-fit, minmax(280px, 1fr))",
-              gap: 16,
-              alignItems: "stretch"
-            }}
-          >
-            {show("savingsRatio") && (
-              <SavingsRatioCard
-                ledger={ledger}
+          {show("portfolioCharts") && (
+            <Suspense
+              fallback={
+                <div className="card" style={{ padding: 24, textAlign: "center", color: "var(--text-muted)", minHeight: 120 }}>
+                  포트폴리오 차트 로딩 중…
+                </div>
+              }
+            >
+              <LazyPortfolioDashboardCharts
+                positionsWithPrice={positionsWithPrice}
+                positionsByAccount={positionsByAccount}
+                balances={balances}
                 fxRate={fxRate}
-                currentMonth={currentMonth}
-                categoryPresets={categoryPresets}
-                salaryKeys={salaryKeys}
               />
-            )}
+            </Suspense>
+          )}
 
-            {show("dividendCoverage") && (
-              <DividendCoverageCard
-                ledger={ledger}
-                accounts={accounts}
-                categoryPresets={categoryPresets}
-                fxRate={fxRate}
-                currentMonth={currentMonth}
-              />
-            )}
-          </div>
-        )}
+          {show("accountBalanceTrend") && (
+            <AccountBalanceTrendCard
+              accountBalanceSnapshots={accountBalanceSnapshots}
+              accounts={accounts}
+            />
+          )}
 
-        {/* 배당 성장 추적 — 장기 적립 종목별 분배금·분배율·주가. 한 행에 카드 1개 (차트 가독성) */}
-        {show("dividendGrowth") &&
-          dividendGrowthData.map((d) => <DividendGrowthCard key={d.ticker} data={d} />)}
+          {show("stockCostVsMarket") && (
+            <StockCostVsMarketCard
+              today={today}
+              accounts={accounts}
+              trades={trades}
+              prices={prices}
+              fxRate={fxRate}
+              marketEnvSnapshots={storeData.marketEnvSnapshots}
+            />
+          )}
 
-        {show("assetComposition") && (
-          <AssetCompositionCard
-            balances={balances}
-            positions={positions}
-            fxRate={fxRate}
-            totalNetWorth={totalNetWorth}
-            totalDebt={totalDebt}
-          />
-        )}
+          {show("totalAssetTrend") && (
+            <TotalAssetTrendCard
+              today={today}
+              accounts={accounts}
+              ledger={ledger}
+              trades={trades}
+              prices={prices}
+              fxRate={fxRate}
+              marketEnvSnapshots={storeData.marketEnvSnapshots}
+            />
+          )}
 
-        {show("accountBalanceTrend") && (
-          <AccountBalanceTrendCard
-            accountBalanceSnapshots={accountBalanceSnapshots}
-            accounts={accounts}
-          />
-        )}
-
-        {show("stockCostVsMarket") && (
-          <StockCostVsMarketCard
-            today={today}
-            accounts={accounts}
-            trades={trades}
-            prices={prices}
-            fxRate={fxRate}
-            marketEnvSnapshots={storeData.marketEnvSnapshots}
-          />
-        )}
-
-        {show("totalAssetTrend") && (
-          <TotalAssetTrendCard
-            today={today}
-            accounts={accounts}
-            ledger={ledger}
-            trades={trades}
-            prices={prices}
-            fxRate={fxRate}
-            marketEnvSnapshots={storeData.marketEnvSnapshots}
-          />
-        )}
-
-        {cmaAccount && show("cmaBalanceTrend") && (
-          <div style={{ marginTop: 16 }}>
+          {cmaAccount && show("cmaBalanceTrend") && (
             <CmaBalanceTrendCard
               accountBalanceSnapshots={accountBalanceSnapshots}
               accountId={cmaAccount.id}
               accountName={cmaAccount.name || cmaAccount.id}
             />
-          </div>
-        )}
+          )}
+        </DashboardSection>
+      )}
 
-        {show("spendingCalendar") && (
-          <SpendingCalendarCard
-            ledger={ledger}
-            accounts={accounts}
-            categoryPresets={categoryPresets}
-            fxRate={fxRate}
-            currentMonth={currentMonth}
-            today={today}
-          />
-        )}
+      {/* ── 이번 달 소비·현금흐름 (기본 접힘, 접힌 줄에 이번 달 지출) ── */}
+      {anyShown(["topExpenses", "monthlyTrend", "investmentBreakdown", "monthPace", "salaryTimer", "cashFlow", "cashFlowProjection", "spendingCalendar", "budgetAlert"]) && (
+        <DashboardSection id="spending" title="이번 달 소비·현금흐름" summary={`지출 ${formatKRW(Math.round(monthlySummary.expense))}`}>
+          {(show("topExpenses") || show("monthlyTrend")) && (
+            <div className="dashboard-two-col" style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 16 }}>
+              {show("topExpenses") && (
+                <TopExpensesCard
+                  currentMonth={currentMonth}
+                  ledger={ledger}
+                  categoryPresets={categoryPresets}
+                  fxRate={fxRate}
+                />
+              )}
+              {show("monthlyTrend") && (
+                <MonthlyTrendCard
+                  ledger={ledger}
+                  categoryPresets={categoryPresets}
+                  fxRate={fxRate}
+                  salaryKeys={salaryKeys}
+                />
+              )}
+            </div>
+          )}
 
-        {/* 예산 초과 알림 */}
-        {show("budgetAlert") && (
-          <BudgetAlertWidget
-            ledger={ledger}
-            budgetGoals={storeData.budgetGoals}
-            accounts={accounts}
-            fxRate={fxRate}
-            categoryPresets={storeData.categoryPresets}
-          />
-        )}
+          {show("investmentBreakdown") && (
+            <InvestmentBreakdownCard
+              month={monthlySummary.month}
+              monthlyRecheckBreakdown={monthlyRecheckBreakdown}
+              totalRealizedPnl={totalRealizedPnl}
+            />
+          )}
 
-        {/* 절세 액션 (4-2) — 종합과세·해외주식 양도세·절세계좌를 한 목록으로. 10~12월엔 기본 표시,
-            그 외엔 위젯 설정에서 켜야 보임(연중 위젯 피로 방지) */}
-        {show("taxActions") && <TaxActionsCard />}
-      </div>
+          {show("monthPace") && (
+            <MonthPaceCard
+              currentMonth={currentMonth}
+              today={today}
+              ledger={ledger}
+              accounts={accounts}
+              categoryPresets={categoryPresets}
+              fxRate={fxRate}
+            />
+          )}
+
+          {show("salaryTimer") && <SalaryTimerCard ledger={ledger} fxRate={fxRate} />}
+
+          {show("cashFlow") && (
+            <CashFlowForecastCard
+              recurring={storeData.recurringExpenses ?? []}
+              ledger={ledger}
+              accounts={accounts}
+              fxRate={fxRate}
+              categoryPresets={categoryPresets}
+            />
+          )}
+
+          {show("cashFlowProjection") && (
+            <CashFlowProjectionCard
+              accounts={accounts}
+              ledger={ledger}
+              loans={loans}
+              recurring={storeData.recurringExpenses ?? []}
+              fxRate={fxRate}
+              categoryPresets={categoryPresets}
+            />
+          )}
+
+          {show("spendingCalendar") && (
+            <SpendingCalendarCard
+              ledger={ledger}
+              accounts={accounts}
+              categoryPresets={categoryPresets}
+              fxRate={fxRate}
+              currentMonth={currentMonth}
+              today={today}
+            />
+          )}
+
+          {/* 예산 초과 알림 */}
+          {show("budgetAlert") && (
+            <BudgetAlertWidget
+              ledger={ledger}
+              budgetGoals={storeData.budgetGoals}
+              accounts={accounts}
+              fxRate={fxRate}
+              categoryPresets={storeData.categoryPresets}
+            />
+          )}
+        </DashboardSection>
+      )}
+
+      {/* ── 배당·저축·세금 (기본 접힘, 접힌 줄에 최근 12개월 배당) ── */}
+      {anyShown(["savingsRatio", "dividendCoverage", "dividendGrowth", "taxActions"]) && (
+        <DashboardSection
+          id="dividends"
+          title="배당·저축·세금"
+          summary={dividendPortfolio ? `최근 12개월 배당 ${formatKrwCompact(dividendPortfolio.received12)}원` : undefined}
+        >
+          {(show("savingsRatio") || show("dividendCoverage")) && (
+            <div
+              style={{
+                display: "grid",
+                gridTemplateColumns: "repeat(auto-fit, minmax(280px, 1fr))",
+                gap: 16,
+                alignItems: "stretch"
+              }}
+            >
+              {show("savingsRatio") && (
+                <SavingsRatioCard
+                  ledger={ledger}
+                  fxRate={fxRate}
+                  currentMonth={currentMonth}
+                  categoryPresets={categoryPresets}
+                  salaryKeys={salaryKeys}
+                />
+              )}
+
+              {show("dividendCoverage") && (
+                <DividendCoverageCard
+                  ledger={ledger}
+                  accounts={accounts}
+                  categoryPresets={categoryPresets}
+                  fxRate={fxRate}
+                  currentMonth={currentMonth}
+                />
+              )}
+            </div>
+          )}
+
+          {/* 배당 성장 추적 — 장기 적립 종목별 분배금·분배율·주가. 한 행에 카드 1개 (차트 가독성) */}
+          {show("dividendGrowth") &&
+            dividendGrowthData.map((d) => <DividendGrowthCard key={d.ticker} data={d} />)}
+
+          {/* 절세 액션 (4-2) — 종합과세·해외주식 양도세·절세계좌를 한 목록으로. 10~12월엔 기본 표시,
+              그 외엔 위젯 설정에서 켜야 보임(연중 위젯 피로 방지) */}
+          {show("taxActions") && <TaxActionsCard />}
+        </DashboardSection>
+      )}
     </div>
   );
 };

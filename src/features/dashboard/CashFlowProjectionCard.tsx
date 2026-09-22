@@ -73,7 +73,7 @@ export const CashFlowProjectionCard: React.FC<Props> = React.memo(function CashF
       </div>
       {projection.firstNegativeDate ? (
         <div style={{ fontSize: 13, color: "var(--danger)", marginBottom: 8 }}>
-          ⚠ {projection.firstNegativeDate} 무렵 잔고가 마이너스로 예상됩니다.
+          {projection.firstNegativeDate} 무렵 잔고가 마이너스로 예상됩니다.
         </div>
       ) : (
         <div style={{ fontSize: 13, color: "var(--success)", marginBottom: 8 }}>12개월 동안 마이너스 없이 유지될 것으로 예상됩니다.</div>

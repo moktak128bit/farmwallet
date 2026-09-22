@@ -95,7 +95,7 @@ export const DividendPortfolioCard: React.FC<Props> = React.memo(function Divide
     <div className="card">
       <div style={{ display: "flex", alignItems: "baseline", justifyContent: "space-between", gap: 12, flexWrap: "wrap" }}>
         <div className="card-title">
-          💰 배당 포트폴리오
+          배당 포트폴리오
           <span style={{ fontSize: 11, fontWeight: 500, color: "var(--text-muted)", marginLeft: 8 }}>
             {data.tickers.length}종목 · {data.tickers.map((t) => t.name).join(" + ")}
           </span>
@@ -209,7 +209,7 @@ export const DividendPortfolioCard: React.FC<Props> = React.memo(function Divide
               <tr key={t.ticker}>
                 <td>
                   <div style={{ fontWeight: 600 }}>{t.name}</div>
-                  <div style={{ fontSize: 10, color: "var(--text-muted)" }}>
+                  <div style={{ fontSize: 11, color: "var(--text-muted)" }}>
                     {t.ticker}
                     {t.months < 12 && ` · ${t.months}개월 연환산`}
                     {t.excluded === "sold" && " · 전량 매도 (총계 제외)"}

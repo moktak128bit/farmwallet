@@ -49,7 +49,7 @@ export const DataResetCard: React.FC<Props> = React.memo(function DataResetCard(
     <div className="card">
       <div className="card-title">데이터 초기화</div>
       <p>
-        <strong style={{ color: "var(--danger)" }}>⚠️ 주의:</strong> 가계부, 주식 거래, 계좌, 예산, 배당·이자 등 <strong>모든 앱 데이터를 삭제</strong>하고 빈 상태로 되돌립니다. 복구할 수 없으니 필요 시 먼저 "백업 파일 다운로드"로 저장해 두세요.
+        <strong style={{ color: "var(--danger)" }}>주의:</strong> 가계부, 주식 거래, 계좌, 예산, 배당·이자 등 <strong>모든 앱 데이터를 삭제</strong>하고 빈 상태로 되돌립니다. 복구할 수 없으니 필요 시 먼저 "백업 파일 다운로드"로 저장해 두세요.
         <br />
         <strong style={{ color: "var(--danger)" }}>Gist 자동 동기화가 켜져 있으면 초기화된 빈 데이터가 원격(Gist)에 push되어 다른 기기 데이터도 덮어쓸 수 있습니다.</strong>
       </p>
@@ -58,7 +58,7 @@ export const DataResetCard: React.FC<Props> = React.memo(function DataResetCard(
         onClick={() => { void handleResetAllData(); }}
         style={{ background: "var(--danger)", color: "white", border: "none", fontWeight: 700, padding: "10px 20px", fontSize: 14 }}
       >
-        🗑️ 모든 데이터 초기화하고 처음부터 다시 하기
+        모든 데이터 초기화하고 처음부터 다시 하기
       </button>
     </div>
   );

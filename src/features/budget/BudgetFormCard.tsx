@@ -64,7 +64,7 @@ export const BudgetFormCard: React.FC<Props> = React.memo(function BudgetFormCar
           style={{ width: "100%" }}
         >
           <option value="">선택하세요</option>
-          <option value={BUDGET_ALL_CATEGORY}>⭐ 전체 (제외 카테고리 지정)</option>
+          <option value={BUDGET_ALL_CATEGORY}>전체 (제외 카테고리 지정)</option>
           {(categoryPresets?.expense ?? []).map((c) => (
             <option key={c} value={c}>{c}</option>
           ))}

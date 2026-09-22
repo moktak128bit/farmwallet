@@ -1,4 +1,5 @@
 import React from "react";
+import { Money } from "../../components/ui/Money";
 import { formatKRW, formatUSD } from "../../utils/formatter";
 
 interface StockStatsCardProps {
@@ -47,7 +48,7 @@ export const StockStatsCard: React.FC<StockStatsCardProps> = ({
       <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(200px, 1fr))", gap: 12 }}>
         <div style={statBox}>
           <div style={{ color: "var(--text-muted)", fontSize: 14, fontWeight: 600, marginBottom: 4 }}>원금</div>
-          <div style={{ fontSize: 24, fontWeight: 700, color: "var(--text)" }}>{formatKRW(totalCost)}</div>
+          <div style={{ fontSize: 24, fontWeight: 700, color: "var(--text)" }}><Money value={totalCost} compact /></div>
           {fxRate != null && fxRate > 0 && (
             <div style={{ fontSize: 12, color: "var(--text-muted)", marginTop: 2 }}>≈ {formatUSD(totalCost / fxRate)}</div>
           )}
@@ -55,7 +56,7 @@ export const StockStatsCard: React.FC<StockStatsCardProps> = ({
 
         <div style={statBox}>
           <div style={{ color: "var(--text-muted)", fontSize: 14, fontWeight: 600, marginBottom: 4 }}>평가금</div>
-          <div style={{ fontSize: 24, fontWeight: 700, color: valueColor(totalMarketValue) }}>{formatKRW(totalMarketValue)}</div>
+          <div style={{ fontSize: 24, fontWeight: 700, color: "var(--text)" }}><Money value={totalMarketValue} compact /></div>
           {fxRate != null && fxRate > 0 && totalMarketValueUSD != null && totalMarketValueUSD > 0 && (
             <div style={{ fontSize: 12, color: "var(--text-muted)", marginTop: 2 }}>≈ {formatUSD(totalMarketValueUSD)}</div>
           )}
@@ -63,7 +64,7 @@ export const StockStatsCard: React.FC<StockStatsCardProps> = ({
 
         <div style={statBox}>
           <div style={{ color: "var(--text-muted)", fontSize: 14, fontWeight: 600, marginBottom: 4 }}>배당금</div>
-          <div style={{ fontSize: 24, fontWeight: 700, color: "var(--success)" }}>{formatKRW(totalDividend)}</div>
+          <div style={{ fontSize: 24, fontWeight: 700, color: "var(--text)" }}><Money value={totalDividend} compact /></div>
         </div>
 
         <div

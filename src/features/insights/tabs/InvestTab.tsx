@@ -66,7 +66,7 @@ export const InvestTab = React.memo(function InvestTab({ d }: { d: D }) {
       </div>
 
       {/* ============ 한눈에 ============ */}
-      <Section storageKey="invest-section-overview" title="📊 한눈에 보기">
+      <Section storageKey="invest-section-overview" title="한눈에 보기">
         <Card accent><Kpi label="보유 종목 매입원가" value={F(totalInvested) + "원"} sub={`누적 매수(청산 포함) ${F(totalBuy)}원`} color="var(--warning)" info="현재 보유분의 매입원가(FIFO 잔여원가). 매도분·재매수 중복을 제외 — 누적 매수액과 다름" /></Card>
         <Card accent>
           <Kpi
@@ -102,7 +102,7 @@ export const InvestTab = React.memo(function InvestTab({ d }: { d: D }) {
               <BarChart data={holdCost.slice(0, 10)} layout="vertical">
                 <CartesianGrid strokeDasharray="3 3" stroke="var(--chart-grid)" />
                 <XAxis type="number" tickFormatter={F} tick={{ fontSize: 11 }} />
-                <YAxis dataKey="name" type="category" width={150} tick={{ fontSize: 10 }} />
+                <YAxis dataKey="name" type="category" width={150} tick={{ fontSize: 11 }} />
                 <Tooltip formatter={(v: ValueType | undefined) => W(Number(v ?? 0))} />
                 <Bar isAnimationActive={false} dataKey="costKRW" fill="var(--chart-series-b)" radius={[0, 6, 6, 0]} name="매입원가" />
               </BarChart>
@@ -114,7 +114,7 @@ export const InvestTab = React.memo(function InvestTab({ d }: { d: D }) {
           {d.portfolio.length > 0 ? (
             <ResponsiveContainer width="100%" height={280}>
               <PieChart>
-                <Pie isAnimationActive={false} data={d.portfolio} dataKey="value" cx="50%" cy="50%" outerRadius={100} innerRadius={45} label={pieLabel} labelLine={false} style={{ fontSize: 10 }}>
+                <Pie isAnimationActive={false} data={d.portfolio} dataKey="value" cx="50%" cy="50%" outerRadius={100} innerRadius={45} label={pieLabel} labelLine={false} style={{ fontSize: 11 }}>
                   {d.portfolio.map((_, i) => <Cell key={i} fill={C[i]} />)}
                 </Pie>
                 <Tooltip formatter={(v: ValueType | undefined) => W(Number(v ?? 0))} />
@@ -125,7 +125,7 @@ export const InvestTab = React.memo(function InvestTab({ d }: { d: D }) {
       </Section>
 
       {/* ============ 손익 분해 (실현/미실현 × 수익/손실) ============ */}
-      <Section storageKey="invest-section-pnl-breakdown" title="📊 손익 분해 (실현/미실현 × 수익/손실)">
+      <Section storageKey="invest-section-pnl-breakdown" title="손익 분해 (실현/미실현 × 수익/손실)">
         <Card accent>
           <Kpi
             label="실현 수익"
@@ -165,7 +165,7 @@ export const InvestTab = React.memo(function InvestTab({ d }: { d: D }) {
       </Section>
 
       {/* ============ 포트폴리오 분산 ============ */}
-      <Section storageKey="invest-section-diversification" title="🎯 포트폴리오 분산">
+      <Section storageKey="invest-section-diversification" title="포트폴리오 분산">
         <Card accent>
           <Kpi
             label="실효 종목 수"
@@ -226,7 +226,7 @@ export const InvestTab = React.memo(function InvestTab({ d }: { d: D }) {
       </Section>
 
       {/* ============ 수익·매매 성과 ============ */}
-      <Section storageKey="invest-section-performance" title="💰 수익·매매 성과">
+      <Section storageKey="invest-section-performance" title="수익·매매 성과">
         <Card title="매매 성과 요약" span={2}>
           <div style={{ display: "flex", flexDirection: "column", gap: 10, fontSize: 13 }}>
             <div style={{ display: "flex", justifyContent: "space-between", padding: "12px 14px", background: d.realPL.total >= 0 ? "var(--primary-light)" : "var(--danger-light)", borderRadius: 8, color: "var(--text)" }}>
@@ -239,12 +239,12 @@ export const InvestTab = React.memo(function InvestTab({ d }: { d: D }) {
               <div style={{ padding: "10px 12px", background: "var(--primary-light)", borderRadius: 8, textAlign: "center", color: "var(--text)" }}>
                 <div style={{ fontSize: 11, color: "var(--text-muted)" }}>수익 ({d.realPL.winCnt}건)</div>
                 <div style={{ fontWeight: 700, color: "var(--success)" }}>+{F(Math.round(d.realPL.wins))}원</div>
-                <div style={{ fontSize: 10, color: "var(--text-muted)", marginTop: 2 }}>평균 {F(Math.round(avgWin))}원</div>
+                <div style={{ fontSize: 11, color: "var(--text-muted)", marginTop: 2 }}>평균 {F(Math.round(avgWin))}원</div>
               </div>
               <div style={{ padding: "10px 12px", background: "var(--danger-light)", borderRadius: 8, textAlign: "center", color: "var(--text)" }}>
                 <div style={{ fontSize: 11, color: "var(--text-muted)" }}>손실 ({d.realPL.lossCnt}건)</div>
                 <div style={{ fontWeight: 700, color: "var(--danger)" }}>−{F(Math.round(d.realPL.losses))}원</div>
-                <div style={{ fontSize: 10, color: "var(--text-muted)", marginTop: 2 }}>평균 {F(Math.round(avgLoss))}원</div>
+                <div style={{ fontSize: 11, color: "var(--text-muted)", marginTop: 2 }}>평균 {F(Math.round(avgLoss))}원</div>
               </div>
             </div>
             <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8, fontSize: 12 }}>
@@ -292,7 +292,7 @@ export const InvestTab = React.memo(function InvestTab({ d }: { d: D }) {
             <BarChart data={d.divTrend}>
               <CartesianGrid strokeDasharray="3 3" stroke="var(--chart-grid)" />
               <XAxis dataKey="l" tick={{ fontSize: 11 }} />
-              <YAxis tickFormatter={F} tick={{ fontSize: 10 }} />
+              <YAxis tickFormatter={F} tick={{ fontSize: 11 }} />
               <Tooltip content={<CT />} />
               <Bar isAnimationActive={false} dataKey="amount" fill="var(--chart-income)" radius={[4, 4, 0, 0]} name="배당/이자" />
             </BarChart>
@@ -304,7 +304,7 @@ export const InvestTab = React.memo(function InvestTab({ d }: { d: D }) {
       </Section>
 
       {/* ============ 인사이트 ============ */}
-      <Section storageKey="invest-section-insights" title="💡 인사이트">
+      <Section storageKey="invest-section-insights" title="인사이트">
         {d.investBySub.length > 0 && (() => {
           const pieData = d.investBySub.map((v) => ({ name: v.sub, value: v.amount }));
           const investSubTotal = d.investBySub.reduce((s, x) => s + x.amount, 0);
@@ -313,7 +313,7 @@ export const InvestTab = React.memo(function InvestTab({ d }: { d: D }) {
               <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 16, alignItems: "center" }}>
                 <ResponsiveContainer width="100%" height={240}>
                   <PieChart>
-                    <Pie isAnimationActive={false} data={pieData} dataKey="value" cx="50%" cy="50%" outerRadius={90} innerRadius={40} label={pieLabel} labelLine={false} style={{ fontSize: 10 }}>
+                    <Pie isAnimationActive={false} data={pieData} dataKey="value" cx="50%" cy="50%" outerRadius={90} innerRadius={40} label={pieLabel} labelLine={false} style={{ fontSize: 11 }}>
                       {d.investBySub.map((_, i) => <Cell key={i} fill={C[i]} />)}
                     </Pie>
                     <Tooltip formatter={(v: ValueType | undefined) => W(Number(v ?? 0))} />
@@ -324,11 +324,11 @@ export const InvestTab = React.memo(function InvestTab({ d }: { d: D }) {
                     <div key={v.sub} style={{ display: "flex", justifyContent: "space-between", padding: "6px 0", borderBottom: "1px solid var(--border-light)", fontSize: 13 }}>
                       <span style={{ display: "flex", alignItems: "center", gap: 8 }}>
                         <span style={{ width: 10, height: 10, borderRadius: 5, background: C[i], display: "inline-block" }} />
-                        {v.sub} <span style={{ fontSize: 10, color: "var(--text-faint)" }}>({v.count}건)</span>
+                        {v.sub} <span style={{ fontSize: 11, color: "var(--text-faint)" }}>({v.count}건)</span>
                       </span>
                       <span style={{ fontWeight: 700 }}>
                         {F(v.amount)}원
-                        <span style={{ fontSize: 10, color: "var(--text-faint)", marginLeft: 4 }}>
+                        <span style={{ fontSize: 11, color: "var(--text-faint)", marginLeft: 4 }}>
                           ({investSubTotal > 0 ? Math.round((v.amount / investSubTotal) * 100) : 0}%)
                         </span>
                       </span>
@@ -344,7 +344,7 @@ export const InvestTab = React.memo(function InvestTab({ d }: { d: D }) {
           <div className="grid-2" style={{ gap: 12 }}>
             {holdCost[0] && <Insight title="최대 보유 종목 분석" tone="info">
               {holdCost[0].name} — 매입원가 {F(holdCost[0].costKRW)}원 (FIFO 보유 기준). 포트폴리오 비중 {topShare.toFixed(1)}%.
-              {topShare > 50 ? " ⚠️ 단일 종목 비중 50% 초과 — 분산 투자 고려 권장." : ""}
+              {topShare > 50 ? " 단일 종목 비중 50% 초과 — 분산 투자 고려 권장." : ""}
               {holdCost.length > 1 ? ` 2위: ${holdCost[1].name}(${F(holdCost[1].costKRW)}원).` : ""}
             </Insight>}
             <Insight title="포트폴리오 분산" color="var(--chart-series-c)" bg="rgba(124,58,237,0.08)">

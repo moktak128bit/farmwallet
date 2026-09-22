@@ -72,7 +72,7 @@ export const IncomeTab = React.memo(function IncomeTab({ d }: { d: D }) {
       </div>
 
       {/* ============ 한눈에 보기 ============ */}
-      <Section storageKey="income-section-overview" title="📊 한눈에 보기">
+      <Section storageKey="income-section-overview" title="한눈에 보기">
         <Card accent><Kpi label="총 수입 (장부)" value={F(totalIncome) + "원"} sub={`실질 ${F(d.realIncome)}원 · ${d.accumLabel}`} color="var(--chart-income)" info="장부 수입 기준. 실질 수입 = 장부 수입 − 정산·환불·일시소득·대출" /></Card>
         <Card accent><Kpi label="회사소득 의존도" value={salaryPct.toFixed(1) + "%"} sub={`${F(salaryGroupTotal)}원 / 실질 ${F(d.realIncome)}원`} color={salaryPct > 80 ? "var(--danger)" : salaryPct > 50 ? "var(--warning)" : "var(--success)"} info="회사소득 그룹(급여·수당·상여)이 실질 수입에서 차지하는 비율. 80% 초과 시 다각화 권장" /></Card>
         <Card accent><Kpi label="패시브 수입 비율" value={passivePct.toFixed(1) + "%"} sub={`월평균 ${F(Math.round(passiveGroupTotal / d.monthSpan))}원`} color={passivePct >= 10 ? "var(--success)" : "var(--accent)"} info="배당·이자 등 패시브 수입 합 / 실질 수입. 10%↑ 권장 (투자수익은 재테크 순집계로 별도)" /></Card>
@@ -84,7 +84,7 @@ export const IncomeTab = React.memo(function IncomeTab({ d }: { d: D }) {
           ) : (
             <ResponsiveContainer width="100%" height={260}>
               <PieChart>
-                <Pie isAnimationActive={false} data={d.incByGroup} dataKey="value" cx="50%" cy="50%" outerRadius={95} innerRadius={45} label={pieLabel} labelLine={false} style={{ fontSize: 10 }}>
+                <Pie isAnimationActive={false} data={d.incByGroup} dataKey="value" cx="50%" cy="50%" outerRadius={95} innerRadius={45} label={pieLabel} labelLine={false} style={{ fontSize: 11 }}>
                   {d.incByGroup.map((g, i) => <Cell key={i} fill={GROUP_COLOR_BY_NAME[g.name] ?? C[i]} />)}
                 </Pie>
                 <Tooltip formatter={(v: ValueType | undefined) => W(Number(v ?? 0))} />
@@ -117,7 +117,7 @@ export const IncomeTab = React.memo(function IncomeTab({ d }: { d: D }) {
       </Section>
 
       {/* ============ 구성 분해 ============ */}
-      <Section storageKey="income-section-composition" title="🎯 구성 분해">
+      <Section storageKey="income-section-composition" title="구성 분해">
         <Card title="수입원 순위 (중분류)" span={2}>
           <div style={{ maxHeight: 340, overflow: "auto" }}>
             {incData.map(({ name, value }, i) => {
@@ -133,7 +133,7 @@ export const IncomeTab = React.memo(function IncomeTab({ d }: { d: D }) {
                   </div>
                   <div style={{ textAlign: "right" }}>
                     <div style={{ fontSize: 13, fontWeight: 700, color: "var(--chart-income)" }}>{F(value)}원</div>
-                    <div style={{ fontSize: 10, color: "var(--text-faint)" }}>{totalIncome > 0 ? Math.round(value / totalIncome * 100) : 0}%</div>
+                    <div style={{ fontSize: 11, color: "var(--text-faint)" }}>{totalIncome > 0 ? Math.round(value / totalIncome * 100) : 0}%</div>
                   </div>
                 </div>
               );
@@ -172,14 +172,14 @@ export const IncomeTab = React.memo(function IncomeTab({ d }: { d: D }) {
       </Section>
 
       {/* ============ 추이·성장 ============ */}
-      <Section storageKey="income-section-trends" title="📈 추이·성장">
-        <Card title={`📈 근로소득 성장률 — MoM ${d.incomeGrowth.mom != null ? Pct(d.incomeGrowth.mom) : "–"} · YoY ${d.incomeGrowth.yoy != null ? Pct(d.incomeGrowth.yoy) : "–"} · 3M평균 ${d.incomeGrowth.avg3MoM != null ? Pct(d.incomeGrowth.avg3MoM) : "–"}${d.incomeGrowth.partialDay != null ? ` (이번 달 1~${d.incomeGrowth.partialDay}일 동기 비교)` : ""}`} span={4}>
+      <Section storageKey="income-section-trends" title="추이·성장">
+        <Card title={`근로소득 성장률 — MoM ${d.incomeGrowth.mom != null ? Pct(d.incomeGrowth.mom) : "–"} · YoY ${d.incomeGrowth.yoy != null ? Pct(d.incomeGrowth.yoy) : "–"} · 3M평균 ${d.incomeGrowth.avg3MoM != null ? Pct(d.incomeGrowth.avg3MoM) : "–"}${d.incomeGrowth.partialDay != null ? ` (이번 달 1~${d.incomeGrowth.partialDay}일 동기 비교)` : ""}`} span={4}>
           <ResponsiveContainer width="100%" height={240}>
             <ComposedChart data={monthlyInc}>
               <CartesianGrid strokeDasharray="3 3" stroke="var(--chart-grid)" />
               <XAxis dataKey="name" tick={{ fontSize: 12 }} />
               <YAxis yAxisId="left" tickFormatter={F} tick={{ fontSize: 11 }} />
-              <YAxis yAxisId="right" orientation="right" tickFormatter={(v) => v + "%"} tick={{ fontSize: 10 }} />
+              <YAxis yAxisId="right" orientation="right" tickFormatter={(v) => v + "%"} tick={{ fontSize: 11 }} />
               <Tooltip content={<CT />} />
               <Legend wrapperStyle={{ fontSize: 11 }} />
               <Bar isAnimationActive={false} yAxisId="left" dataKey="수입" name="근로소득" fill="var(--chart-income)" radius={[4, 4, 0, 0]} />
@@ -222,7 +222,7 @@ export const IncomeTab = React.memo(function IncomeTab({ d }: { d: D }) {
             <LineChart data={passiveRatioTrend}>
               <CartesianGrid strokeDasharray="3 3" stroke="var(--chart-grid)" />
               <XAxis dataKey="l" tick={{ fontSize: 12 }} />
-              <YAxis tickFormatter={(v) => v.toFixed(0) + "%"} tick={{ fontSize: 10 }} domain={[0, "auto"]} />
+              <YAxis tickFormatter={(v) => v.toFixed(0) + "%"} tick={{ fontSize: 11 }} domain={[0, "auto"]} />
               <Tooltip formatter={(v: ValueType | undefined) => `${Number(v ?? 0).toFixed(1)}%`} />
               <Line isAnimationActive={false} type="monotone" dataKey="비율" stroke="var(--chart-primary)" strokeWidth={2.5} dot={{ r: 3 }} />
             </LineChart>
@@ -234,7 +234,7 @@ export const IncomeTab = React.memo(function IncomeTab({ d }: { d: D }) {
       </Section>
 
       {/* ============ 인사이트 ============ */}
-      <Section storageKey="income-section-insights" title="💡 인사이트">
+      <Section storageKey="income-section-insights" title="인사이트">
         <Card title="수입 종합 인사이트" span={4}>
           <div className="grid-2" style={{ gap: 10 }}>
             <Insight title="수입 안정성" tone="info">
@@ -273,8 +273,8 @@ export const IncomeTab = React.memo(function IncomeTab({ d }: { d: D }) {
                       <span style={{ fontWeight: 700, fontSize: 14, display: "flex", alignItems: "center", gap: 6 }}>
                         <span style={{ width: 10, height: 10, borderRadius: 5, background: natureColor, display: "inline-block" }} />
                         {s.sub}
-                        <span style={{ fontSize: 10, fontWeight: 700, color: natureColor, border: `1px solid ${natureColor}`, borderRadius: 8, padding: "1px 6px" }}>{NATURE_LABELS[s.nature] ?? s.nature}</span>
-                        {!s.isReal && <span style={{ fontSize: 10, fontWeight: 600, color: "var(--text-muted)", background: "var(--surface-hover)", borderRadius: 8, padding: "1px 6px" }}>실질 수입 제외</span>}
+                        <span style={{ fontSize: 11, fontWeight: 700, color: natureColor, border: `1px solid ${natureColor}`, borderRadius: 8, padding: "1px 6px" }}>{NATURE_LABELS[s.nature] ?? s.nature}</span>
+                        {!s.isReal && <span style={{ fontSize: 11, fontWeight: 600, color: "var(--text-muted)", background: "var(--surface-hover)", borderRadius: 8, padding: "1px 6px" }}>실질 수입 제외</span>}
                       </span>
                       <span style={{ fontSize: 16, fontWeight: 800, color: s.isReal ? "var(--success)" : "var(--text-faint)" }}>{F(s.total)}원</span>
                     </div>

@@ -1,5 +1,5 @@
 import { describe, it, expect, afterEach } from "vitest";
-import { formatNumber, formatKRW, formatUSD, formatShortDate, formatDecimal, setAmountMask, isAmountMasked } from "../utils/formatter";
+import { formatNumber, formatKRW, formatKrwCompact, formatUSD, formatShortDate, formatDecimal, setAmountMask, isAmountMasked } from "../utils/formatter";
 
 describe("formatNumber", () => {
   it("정수를 천 단위 쉼표로 포맷", () => {
@@ -123,5 +123,48 @@ describe("formatDecimal", () => {
     expect(formatDecimal(null)).toBe("0");
     expect(formatDecimal(undefined)).toBe("0");
     expect(formatDecimal(NaN)).toBe("0");
+  });
+});
+
+describe("formatKrwCompact — 히어로 숫자용 만·억 단위 (원 단위 없이 숫자만)", () => {
+  afterEach(() => setAmountMask(false));
+
+  it("1만 미만은 원 단위 그대로", () => {
+    expect(formatKrwCompact(3)).toBe("3");
+    expect(formatKrwCompact(9999)).toBe("9,999");
+    expect(formatKrwCompact(0)).toBe("0");
+  });
+
+  it("1만~100만 미만은 소수 1자리 만 (.0은 생략)", () => {
+    expect(formatKrwCompact(15400)).toBe("1.5만");
+    expect(formatKrwCompact(900000)).toBe("90만");
+    expect(formatKrwCompact(10000)).toBe("1만");
+  });
+
+  it("100만~1억 미만은 정수 만 (천 단위 쉼표)", () => {
+    expect(formatKrwCompact(1197213)).toBe("120만");
+    expect(formatKrwCompact(39634949)).toBe("3,963만");
+    expect(formatKrwCompact(65022180)).toBe("6,502만");
+  });
+
+  it("1억 이상은 억 + 만 (만이 0이면 억만)", () => {
+    expect(formatKrwCompact(150000000)).toBe("1억 5,000만");
+    expect(formatKrwCompact(100000000)).toBe("1억");
+    expect(formatKrwCompact(123456789)).toBe("1억 2,346만");
+  });
+
+  it("음수는 앞에 - 하나, 반올림으로 자리가 올라가도 표기가 맞다", () => {
+    expect(formatKrwCompact(-2706808)).toBe("-271만");
+    expect(formatKrwCompact(999999)).toBe("100만");
+    expect(formatKrwCompact(99999999)).toBe("1억");
+  });
+
+  it("마스킹 중이면 점으로 가린다", () => {
+    setAmountMask(true);
+    expect(formatKrwCompact(39634949)).toBe("••••");
+  });
+
+  it("NaN/비수치는 0", () => {
+    expect(formatKrwCompact(NaN)).toBe("0");
   });
 });

@@ -125,7 +125,7 @@ export const GitVersionModal: React.FC<Props> = ({ isOpen, onClose, onSelect, on
           )}
           {isOnRestoreBranch && (
             <div style={{ marginTop: 4, fontSize: 11, color: "var(--warning, #b45309)" }}>
-              ⚠ 이전 버전 상태입니다. "최신 main" 을 선택해 되돌아갈 수 있습니다.
+              이전 버전 상태입니다. "최신 main" 을 선택해 되돌아갈 수 있습니다.
             </div>
           )}
         </div>
@@ -168,7 +168,7 @@ export const GitVersionModal: React.FC<Props> = ({ isOpen, onClose, onSelect, on
             }}>
               <div>
                 <div style={{ fontSize: 14, fontWeight: 600 }}>
-                  🔄 최신 main (기본)
+                  최신 main (기본)
                 </div>
                 <div style={{ fontSize: 11, color: "var(--text-muted)", marginTop: 2 }}>
                   main 브랜치로 복귀 후 `git pull origin main` 실행
@@ -218,12 +218,12 @@ export const GitVersionModal: React.FC<Props> = ({ isOpen, onClose, onSelect, on
                       <code style={{ fontSize: 11, color: "var(--text-muted)" }}>{c.hash.slice(0, 7)}</code>
                       <span style={{ fontSize: 11, color: "var(--text-muted)" }}>{dateLabel}</span>
                       {i === 0 && (
-                        <span style={{ fontSize: 10, color: "var(--accent)", fontWeight: 600 }}>
+                        <span style={{ fontSize: 11, color: "var(--accent)", fontWeight: 600 }}>
                           HEAD
                         </span>
                       )}
                       {isCurrent && (
-                        <span style={{ fontSize: 10, color: "var(--success, #059669)", fontWeight: 600 }}>
+                        <span style={{ fontSize: 11, color: "var(--success)", fontWeight: 600 }}>
                           ← 현재
                         </span>
                       )}

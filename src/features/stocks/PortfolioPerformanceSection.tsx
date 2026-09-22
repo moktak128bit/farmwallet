@@ -198,7 +198,7 @@ export const PortfolioPerformanceSection: React.FC = () => {
                   label="초과수익 (α)"
                   value={pct(perf.benchmark.excessReturnPct)}
                   color={gainColor(perf.benchmark.excessReturnPct)}
-                  sub={perf.benchmark.excessReturnPct >= 0 ? "시장을 이기는 중 🎉" : "시장에 뒤처짐"}
+                  sub={perf.benchmark.excessReturnPct >= 0 ? "시장을 이기는 중" : "시장에 뒤처짐"}
                 />
               </>
             ) : (
@@ -272,6 +272,6 @@ const RiskCard: React.FC<{ label: string; value: string; color?: string; hint: s
   <div style={{ border: "1px solid var(--border)", borderRadius: 8, padding: "10px 12px", background: "var(--surface)" }}>
     <div className="hint" style={{ fontSize: 11, marginBottom: 4 }}>{label}</div>
     <div style={{ fontSize: 18, fontWeight: 700, color: color ?? "var(--text)" }}>{value}</div>
-    <div className="hint" style={{ fontSize: 10, marginTop: 2 }}>{hint}</div>
+    <div className="hint" style={{ fontSize: 11, marginTop: 2 }}>{hint}</div>
   </div>
 );

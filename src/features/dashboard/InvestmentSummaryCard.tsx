@@ -1,4 +1,5 @@
 import React, { useMemo, useState } from "react";
+import { Money } from "../../components/ui/Money";
 import { Pencil, Check, X } from "lucide-react";
 import type {
   Account,
@@ -261,7 +262,7 @@ export const InvestmentSummaryCard: React.FC<Props> = React.memo(function Invest
       <div style={{ display: "flex", alignItems: "baseline", gap: 12, flexWrap: "wrap" }}>
         <div className="card-title">투자 자산</div>
         <div style={{ fontSize: 28, fontWeight: 700, color: "var(--chart-primary)" }}>
-          {formatKRW(Math.round(totalInvestmentAssets))}
+          <Money value={totalInvestmentAssets} compact />
         </div>
         <span
           style={{

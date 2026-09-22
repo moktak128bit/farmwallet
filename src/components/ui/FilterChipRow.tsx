@@ -52,7 +52,7 @@ const chipActiveStyle: React.CSSProperties = {
 
 const countBadgeStyle: React.CSSProperties = {
   marginLeft: 5,
-  fontSize: 10,
+  fontSize: 11,
   opacity: 0.7,
 };
 

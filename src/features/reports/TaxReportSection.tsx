@@ -66,7 +66,7 @@ export const TaxReportSection: React.FC<Props> = React.memo(function TaxReportSe
       </table>
       {taxSummary.exceedsThreshold && (
         <div style={{ marginTop: 16, padding: 12, background: "var(--warning-bg, #fef3c7)", borderLeft: "4px solid var(--warning, #f59e0b)", borderRadius: 6 }}>
-          <strong>⚠ 종합과세 대상 가능</strong>
+          <strong>종합과세 대상 가능</strong>
           <p style={{ fontSize: 13, margin: "8px 0 4px" }}>
             배당+이자 합계가 {COMPREHENSIVE_TAX_THRESHOLD.toLocaleString()}원을 초과합니다.
             초과액 {formatKRW(taxSummary.amountOverThreshold)}에 대해 종합소득세 신고가 필요할 수 있으며,

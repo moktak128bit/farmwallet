@@ -146,7 +146,7 @@ const SimulatorBody: React.FC<Props & { extraKRW: number; feeRate: number }> = (
                         marginLeft: 6,
                         padding: "0 5px",
                         borderRadius: 8,
-                        fontSize: 10,
+                        fontSize: 11,
                         background: "var(--warning-light)",
                         color: "var(--warning)",
                       }}

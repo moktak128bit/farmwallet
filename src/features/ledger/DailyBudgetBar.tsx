@@ -60,7 +60,7 @@ export const DailyBudgetBar: React.FC<Props> = ({ ledger, config }) => {
     >
       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 8, gap: 10, flexWrap: "wrap" }}>
         <div style={{ display: "flex", alignItems: "baseline", gap: 8, flexWrap: "wrap" }}>
-          <span style={{ fontSize: 12, fontWeight: 700, color: barColor }}>💰 {periodLabel}</span>
+          <span style={{ fontSize: 12, fontWeight: 700, color: barColor }}>{periodLabel}</span>
           <span style={{ fontSize: 18, fontWeight: 800, color: "var(--text)" }}>
             {formatKRW(Math.round(spent))}
           </span>
@@ -77,7 +77,7 @@ export const DailyBudgetBar: React.FC<Props> = ({ ledger, config }) => {
                 background: "linear-gradient(135deg, #f97316, #ea580c)", color: "#fff",
               }}
             >
-              🔥 {streak}일 연속
+              {streak}일 연속
             </span>
           )}
           <span

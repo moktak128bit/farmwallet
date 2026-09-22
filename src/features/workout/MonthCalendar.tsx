@@ -127,7 +127,7 @@ const MonthCalendarInner: React.FC<Props> = ({
                           />
                         ))}
                       </div>
-                      <div style={{ fontSize: 10, color: "var(--text-muted)" }}>
+                      <div style={{ fontSize: 11, color: "var(--text-muted)" }}>
                         {(entry.exercises?.length ?? 0)}종목
                       </div>
                     </>

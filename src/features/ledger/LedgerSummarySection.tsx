@@ -5,6 +5,7 @@
  */
 import React, { useMemo } from "react";
 import { formatKRW } from "../../utils/formatter";
+import { Money } from "../../components/ui/Money";
 import type { CategoryPresets } from "../../types";
 import type { LedgerDisplayRow } from "../../utils/ledgerHelpers";
 import { isCreditPayment, isInvestmentEntry, isInvestmentPnlEntry, isCurrencyExchangeEntry, makeIsSavingsExpense } from "../../utils/category";
@@ -109,14 +110,7 @@ export const LedgerSummarySection: React.FC<Props> = React.memo(function LedgerS
   return (
     <>
       {/* 요약 카드: 항상 표시, 필터 적용 시 해당 결과 합계 */}
-      <div style={{
-        marginBottom: "16px",
-        padding: "20px 24px",
-        background: "var(--surface)",
-        borderRadius: "12px",
-        border: "2px solid var(--border)",
-        boxShadow: "0 2px 8px rgba(0,0,0,0.06)"
-      }}>
+      <div className="card" style={{ padding: "16px 20px" }}>
         <div style={{
           display: "flex",
           flexDirection: "column",
@@ -138,29 +132,16 @@ export const LedgerSummarySection: React.FC<Props> = React.memo(function LedgerS
               color: filteredSummary.total >= 0 ? "var(--primary)" : "var(--danger)",
               letterSpacing: "-0.5px"
             }}>
-              {formatKRW(filteredSummary.total)}
+              <Money value={filteredSummary.total} />
             </span>
           </div>
           {/* 지출 / 수입: 나란히, 색상·크기로 구분 */}
-          <div style={{
-            display: "grid",
-            gridTemplateColumns: "1fr 1fr 1fr",
-            gap: "16px",
-            alignItems: "center"
-          }}>
-            <div style={{
-              display: "flex",
-              flexDirection: "column",
-              gap: 2,
-              padding: "12px 16px",
-              background: "var(--accent-light)",
-              borderRadius: "8px",
-              border: "1px solid var(--border)",
-              borderLeft: "4px solid var(--chart-expense)"
-            }}>
+          {/* 지출 / 재테크 / 수입 — 대시보드 요약 카드와 같은 문법(흰 카드 + 의미색 좌측 바). 파스텔 채움은 색 의미를 셋째 언어로 만들었다 */}
+          <div className="ledger-summary-tiles">
+            <div className="ledger-summary-tile" style={{ borderLeft: "4px solid var(--chart-expense)" }}>
               <span style={{ fontSize: 11, color: "var(--text-muted)", fontWeight: 600 }}>지출</span>
               <span style={{ fontSize: 18, fontWeight: 700, color: "var(--chart-expense)" }}>
-                {formatKRW(filteredSummary.expenseAmount)}
+                <Money value={filteredSummary.expenseAmount} />
               </span>
               {(filteredSummary.excludedExpenseAmount ?? 0) > 0 && (
                 <span style={{ fontSize: 11, color: "var(--text-muted)", fontWeight: 600 }}>
@@ -168,34 +149,16 @@ export const LedgerSummarySection: React.FC<Props> = React.memo(function LedgerS
                 </span>
               )}
             </div>
-            <div style={{
-              display: "flex",
-              flexDirection: "column",
-              gap: 2,
-              padding: "12px 16px",
-              background: "var(--warning-light)",
-              borderRadius: "8px",
-              border: "1px solid var(--border)",
-              borderLeft: "4px solid var(--warning)"
-            }}>
+            <div className="ledger-summary-tile" style={{ borderLeft: "4px solid var(--chart-primary)" }}>
               <span style={{ fontSize: 11, color: "var(--text-muted)", fontWeight: 600 }}>재테크</span>
-              <span style={{ fontSize: 18, fontWeight: 700, color: "var(--warning)" }}>
-                {formatKRW(filteredSummary.savingsAmount)}
+              <span style={{ fontSize: 18, fontWeight: 700, color: "var(--chart-primary)" }}>
+                <Money value={filteredSummary.savingsAmount} />
               </span>
             </div>
-            <div style={{
-              display: "flex",
-              flexDirection: "column",
-              gap: 2,
-              padding: "12px 16px",
-              background: "var(--danger-light)",
-              borderRadius: "8px",
-              border: "1px solid var(--border)",
-              borderLeft: "4px solid var(--chart-income)"
-            }}>
+            <div className="ledger-summary-tile" style={{ borderLeft: "4px solid var(--chart-income)" }}>
               <span style={{ fontSize: 11, color: "var(--text-muted)", fontWeight: 600 }}>수입</span>
               <span style={{ fontSize: 18, fontWeight: 700, color: "var(--chart-income)" }}>
-                {formatKRW(filteredSummary.incomeAmount)}
+                <Money value={filteredSummary.incomeAmount} />
               </span>
             </div>
           </div>
@@ -260,14 +223,7 @@ export const LedgerSummarySection: React.FC<Props> = React.memo(function LedgerS
 
       {/* 월별 비교 모드: 2개 이상 월 선택 시 */}
       {monthSummaries && (
-        <div style={{
-          marginBottom: "16px",
-          padding: "16px 20px",
-          background: "var(--surface)",
-          borderRadius: "12px",
-          border: "2px solid var(--border)",
-          overflowX: "auto"
-        }}>
+        <div className="card" style={{ overflowX: "auto" }}>
           <div style={{ fontSize: 12, fontWeight: 700, color: "var(--text-muted)", marginBottom: 12 }}>월별 비교</div>
           <div style={{ display: "flex", gap: 16, minWidth: "max-content" }}>
             {monthSummaries.map(({ monthKey, expenseAmount, incomeAmount, total }) => (

@@ -348,8 +348,7 @@ export const PositionListSection: React.FC<PositionListSectionProps> = ({
                   title="잡고 위/아래로 끌어서 계좌 순서 변경"
                   style={{ cursor: "grab", fontSize: 18, userSelect: "none" }}
                 >
-                  ☰
-                </span>
+                  </span>
               )}
               <span>{group.accountName}</span>
               <span style={{ marginLeft: "auto", display: "flex", alignItems: "center", gap: 6 }}>

@@ -71,7 +71,7 @@ export const DividendCalendarCard: React.FC<Props> = ({ forward: fd, holdingsApp
           </div>
           <div className="hint" style={{ fontSize: 12, marginBottom: 8 }}>
             목표 {formatKRW(targetAnnualDividend!)}
-            {shortfall > 0 ? ` · 목표까지 연 ${formatKRW(Math.round(shortfall))} 부족` : " · 목표 달성 페이스 🎉"}
+            {shortfall > 0 ? ` · 목표까지 연 ${formatKRW(Math.round(shortfall))} 부족` : " · 목표 달성 페이스"}
           </div>
         </>
       )}

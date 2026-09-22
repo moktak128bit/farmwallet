@@ -77,7 +77,7 @@ export const ComprehensiveTaxCard: React.FC<Props> = ({ ledger, fxRate, accounts
 
       {t.exceeded ? (
         <div style={{ fontSize: 13, color: "var(--danger)", fontWeight: 600 }}>
-          ⚠ 종합과세 임계를 넘었습니다 — 초과 {formatKRW(Math.round(t.ytdGross - t.threshold))}.
+          종합과세 임계를 넘었습니다 — 초과 {formatKRW(Math.round(t.ytdGross - t.threshold))}.
           내년 5월 종합소득세 신고 대상일 수 있습니다.
         </div>
       ) : (

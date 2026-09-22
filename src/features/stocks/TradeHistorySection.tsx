@@ -1,4 +1,5 @@
 import React, { useState, useMemo, useEffect, useRef } from "react";
+import { Copy, Trash2 } from "lucide-react";
 import { toast } from "react-hot-toast";
 import type { Account, AccountBalanceRow, StockPrice, StockTrade, TradeSide } from "../../types";
 import { computeRealizedPnlByTradeId, computeRealizedPnlDetailByTradeId } from "../../calculations";
@@ -765,7 +766,7 @@ export const TradeHistorySection: React.FC<TradeHistorySectionProps> = ({
                   background: "var(--surface)", color: "var(--text-muted)", cursor: "pointer",
                 }}
               >
-                🔄 필터 초기화 ({tradesFiltered.length}/{trades.length})
+                필터 초기화 ({tradesFiltered.length}/{trades.length})
               </button>
             )}
           </div>
@@ -923,8 +924,7 @@ export const TradeHistorySection: React.FC<TradeHistorySectionProps> = ({
                 >
                   <td className="drag-cell">
                     <span className="drag-handle" title="드래그하여 순서 변경">
-                      ☰
-                    </span>
+                      </span>
                   </td>
                   <td
                     className="cell-editable"
@@ -984,7 +984,7 @@ export const TradeHistorySection: React.FC<TradeHistorySectionProps> = ({
                         {balanceAfterByTradeId.get(t.id) && (
                           <div
                             style={{
-                              fontSize: 10,
+                              fontSize: 11,
                               color: balanceAfterByTradeId.get(t.id)!.amount >= 0 ? "var(--danger)" : "var(--primary)",
                               marginTop: 2
                             }}
@@ -1199,17 +1199,21 @@ export const TradeHistorySection: React.FC<TradeHistorySectionProps> = ({
                       <button
                         type="button"
                         onClick={() => startQuickCopyTrade(t)}
-                        style={{ padding: "6px 12px", fontSize: 13 }}
+                        className="icon-action"
+                        aria-label="복사"
+                        title="복사 — 같은 내용으로 새 거래"
                       >
-                        복사
+                        <Copy size={14} />
                       </button>
+                      {/* 행마다 빨간 "삭제" 텍스트가 반복되면 표 전체가 경보처럼 읽힌다 — 중립 아이콘, hover에서만 빨강 */}
                       <button
                         type="button"
-                        className="danger"
+                        className="icon-action danger"
+                        aria-label="삭제"
+                        title="삭제"
                         onClick={() => handleDeleteTrade(t.id)}
-                        style={{ padding: "6px 12px", fontSize: 13 }}
                       >
-                        삭제
+                        <Trash2 size={14} />
                       </button>
                     </div>
                   </td>

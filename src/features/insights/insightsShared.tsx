@@ -6,7 +6,7 @@ import type { MoimFlowAnalysis } from "../../utils/dateAccounting";
 // 추세·패턴 파생 지표 타입은 산출 모듈이 소유 (useInsightsData 점진적 리팩터)
 import type { IncomeGrowth, SpendingInertia, CategoryGrowthRow } from "../../utils/insightsTrends";
 import type { EntryOutlier, PatternStats } from "../../utils/insightsPatterns";
-import { formatNumber, isAmountMasked } from "../../utils/formatter";
+import { formatKrwCompact, formatNumber } from "../../utils/formatter";
 
 /* ================================================================== */
 /*  Constants                                                          */
@@ -23,14 +23,8 @@ export const C = [
 /*  Formatters                                                         */
 /* ================================================================== */
 
-export const F = (n: number): string => {
-  if (isAmountMasked()) return "••••";
-  const abs = Math.abs(n);
-  const sign = n < 0 ? "-" : "";
-  if (abs >= 10000000) return sign + (abs / 10000000).toFixed(1) + "천만";
-  if (abs >= 10000) return sign + Math.round(abs / 10000).toLocaleString() + "만";
-  return n.toLocaleString();
-};
+/** 압축 금액 — 대시보드·계좌의 히어로 숫자와 같은 표기(formatKrwCompact: "5,500만", "1억 2,346만"). 단위 원은 붙이지 않는다 */
+export const F = (n: number): string => formatKrwCompact(n);
 export const W = (n: number) => formatNumber(n) + "원";
 export const Pct = (n: number) => (n >= 0 ? "+" : "") + n.toFixed(1) + "%";
 export const SD = (a: number, b: number, f = 0): number => (b !== 0 ? a / b : f);
@@ -39,61 +33,44 @@ export const SD = (a: number, b: number, f = 0): number => (b !== 0 ? a / b : f)
 /*  Shared UI                                                          */
 /* ================================================================== */
 
-export function Card({ title, children, span = 1, accent = false }: {
-  title?: string; children: React.ReactNode; span?: number; accent?: boolean;
+/**
+ * 인사이트 카드 — 앱 공용 .card(선으로 구분, 그림자 없음)와 같은 표면.
+ * accent = KPI 카드: 대시보드 요약 카드와 같은 문법(흰 카드 + 의미색 좌측 4px 바 `bar`).
+ * 과거의 고정 네이비 표면 + 분홍 글로우는 인사이트만 다른 앱처럼 보이게 했다.
+ */
+export function Card({ title, children, span = 1, accent = false, bar }: {
+  title?: string; children: React.ReactNode; span?: number; accent?: boolean; bar?: string;
 }) {
-  /* accent(고정 다크 표면)는 styles.css .ins-dark-surface 가 배경·시맨틱 토큰(--danger 등)을 다크 팔레트로 스코프 재정의 —
-     내부 Kpi/텍스트는 테마와 무관하게 var(--text)·var(--danger) 등 토큰만 쓰면 된다 */
   return (
-    <div className={accent ? "ins-dark-surface ins-card-accent" : undefined} style={{
-      ...(accent
-        ? {}
-        : { background: "var(--surface)", boxShadow: "0 2px 12px rgba(0,0,0,0.06)", border: "1px solid var(--border-light)", color: "var(--text)" }),
-      borderRadius: 16, padding: "20px 24px",
+    <div className="card" style={{
+      marginBottom: 0,
+      padding: 16,
+      borderLeft: accent ? `4px solid ${bar ?? "var(--border-strong)"}` : undefined,
       gridColumn: span > 1 ? `span ${span}` : undefined,
-      /* 카드 표면에 맞는 보조색을 로컬 CSS 변수로 주입 — accent는 .ins-dark-surface 가 흰색 계열로 고정 */
-      ...(accent
-        ? {}
-        : { "--ins-muted": "var(--text-muted)", "--ins-faint": "var(--text-faint)", "--ins-chip-bg": "var(--surface-hover)" }
-      ) as React.CSSProperties,
+      /* 카드 내부 보조색 — 탭 컴포넌트들이 var(--ins-muted, …) 폴백으로 참조 */
+      ...({ "--ins-muted": "var(--text-muted)", "--ins-faint": "var(--text-faint)", "--ins-chip-bg": "var(--surface-hover)" } as React.CSSProperties),
     }}>
-      {title && <div style={{ fontSize: 13, fontWeight: 700, textTransform: "uppercase" as const, letterSpacing: 1.5, marginBottom: 16, color: accent ? "var(--ins-faint)" : "var(--text-faint)" }}>{title}</div>}
+      {title && <div style={{ fontSize: 13, fontWeight: 600, marginBottom: 12, color: "var(--text)" }}>{title}</div>}
       {children}
     </div>
   );
 }
 
-export function Kpi({ label, value, sub, badge, color = "var(--danger)", info }: {
+/** KPI 숫자 — 대시보드 요약 카드와 같은 .card-title/.card-value. 색은 의미가 있을 때만(기본 잉크). */
+export function Kpi({ label, value, sub, badge, color = "var(--text)", info }: {
   label: string; value: string; sub?: string; badge?: string; color?: string; info?: string;
 }) {
   return (
-    <div style={{ textAlign: "center" }}>
-      <div style={{ fontSize: 11, color: "var(--ins-faint, var(--text-faint))", fontWeight: 600, textTransform: "uppercase" as const, letterSpacing: 1, display: "flex", justifyContent: "center", alignItems: "center", gap: 4 }}>
+    <div>
+      <div className="card-title" style={{ display: "flex", alignItems: "center", gap: 4 }}>
         {label}
         {info && (
-          <span
-            title={info}
-            role="img"
-            aria-label={info}
-            style={{
-              cursor: "help",
-              fontSize: 10,
-              width: 14,
-              height: 14,
-              borderRadius: 7,
-              background: "var(--ins-chip-bg, rgba(255,255,255,0.15))",
-              color: "var(--ins-muted, rgba(255,255,255,0.7))",
-              display: "inline-flex",
-              alignItems: "center",
-              justifyContent: "center",
-              fontWeight: 700,
-            }}
-          >ⓘ</span>
+          <span title={info} role="img" aria-label={info} style={{ cursor: "help", color: "var(--text-faint)", fontSize: 12, lineHeight: 1 }}>ⓘ</span>
         )}
       </div>
-      <div style={{ fontSize: 28, fontWeight: 800, color, marginTop: 4 }}>{value}</div>
-      {sub && <div style={{ fontSize: 12, color: "var(--ins-muted, var(--text-muted))", marginTop: 2 }}>{sub}</div>}
-      {badge && <div style={{ fontSize: 11, marginTop: 4, display: "inline-block", padding: "2px 8px", borderRadius: 4, background: badge.startsWith("-") ? "rgba(72,201,176,0.15)" : "rgba(233,69,96,0.15)", color: badge.startsWith("-") ? "var(--success)" : "var(--danger)", fontWeight: 700 }}>{badge}</div>}
+      <div className="card-value" style={{ color }}>{value}</div>
+      {sub && <div className="hint" style={{ marginTop: 4, fontSize: 12 }}>{sub}</div>}
+      {badge && <div style={{ fontSize: 12, marginTop: 4, fontWeight: 600, color: badge.startsWith("-") ? "var(--success)" : "var(--danger)" }}>{badge}</div>}
     </div>
   );
 }

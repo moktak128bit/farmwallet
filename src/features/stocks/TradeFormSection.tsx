@@ -56,6 +56,9 @@ export interface TradeFormSectionHandle {
   getFormSnapshot: () => TradeFormState;
 }
 
+/** 제출 전 빈 오류 맵 — 참조 안정 */
+const EMPTY_ERRORS: Record<string, string> = {};
+
 interface PrefillTradeRequest {
   accountId?: string;
   ticker: string;
@@ -312,6 +315,9 @@ export const TradeFormSection = React.memo(React.forwardRef<TradeFormSectionHand
     }, [tradeForm, positions, trades]);
 
     const isTradeFormValid = Object.keys(tradeFormValidation).length === 0;
+    // 폼이 열리자마자 빨간 테두리 + 오류 문구 4개가 뜨던 문제 — 제출을 시도한 뒤에만 보여준다(차단 로직은 그대로)
+    const [submitAttempted, setSubmitAttempted] = useState(false);
+    const shownErrors = submitAttempted ? tradeFormValidation : EMPTY_ERRORS;
 
     const shouldUseUsdBalanceMode = useCallback(
       (accountId: string, isSecuritiesAccount: boolean, isUSDCurrency: boolean) =>
@@ -321,6 +327,7 @@ export const TradeFormSection = React.memo(React.forwardRef<TradeFormSectionHand
 
     /** 거래 폼 검증 + cashImpact/USD 반영 + 저장. 폼 제출과 Ctrl+S에서 공통 사용 */
     const submitTradeFromForm = useCallback(() => {
+      setSubmitAttempted(true);
       if (!isTradeFormValid) {
         const firstError = Object.values(tradeFormValidation)[0];
         if (firstError) toast.error(firstError);
@@ -510,6 +517,7 @@ export const TradeFormSection = React.memo(React.forwardRef<TradeFormSectionHand
       }
       onLog?.("저장 완료: 거래가 저장되었습니다.", "success");
       setTradeForm((prev) => ({ ...createDefaultTradeForm(), side: "buy", accountId: prev.accountId || accountId || "" }));
+      setSubmitAttempted(false);
     }, [
       tradeForm,
       trades,
@@ -803,14 +811,14 @@ export const TradeFormSection = React.memo(React.forwardRef<TradeFormSectionHand
                 style={{
                   padding: "6px 8px",
                   fontSize: 14,
-                  borderColor: tradeFormValidation.date ? "var(--danger)" : undefined
+                  borderColor: shownErrors.date ? "var(--danger)" : undefined
                 }}
-                aria-invalid={!!tradeFormValidation.date}
-                aria-describedby={tradeFormValidation.date ? "trade-date-error" : undefined}
+                aria-invalid={!!shownErrors.date}
+                aria-describedby={shownErrors.date ? "trade-date-error" : undefined}
             />
-            {tradeFormValidation.date && (
+            {shownErrors.date && (
               <span id="trade-date-error" style={{ fontSize: 11, color: "var(--danger)", display: "block", marginTop: 2 }}>
-                {tradeFormValidation.date}
+                {shownErrors.date}
               </span>
             )}
           </label>
@@ -822,10 +830,10 @@ export const TradeFormSection = React.memo(React.forwardRef<TradeFormSectionHand
                 style={{
                   padding: "6px 8px",
                   fontSize: 14,
-                  borderColor: tradeFormValidation.accountId ? "var(--danger)" : undefined
+                  borderColor: shownErrors.accountId ? "var(--danger)" : undefined
                 }}
-                aria-invalid={!!tradeFormValidation.accountId}
-                aria-describedby={tradeFormValidation.accountId ? "trade-account-error" : undefined}
+                aria-invalid={!!shownErrors.accountId}
+                aria-describedby={shownErrors.accountId ? "trade-account-error" : undefined}
             >
               <option value="">선택</option>
               {accounts
@@ -836,9 +844,9 @@ export const TradeFormSection = React.memo(React.forwardRef<TradeFormSectionHand
                   </option>
                 ))}
             </select>
-            {tradeFormValidation.accountId && (
+            {shownErrors.accountId && (
               <span id="trade-account-error" style={{ fontSize: 11, color: "var(--danger)", display: "block", marginTop: 2 }}>
-                {tradeFormValidation.accountId}
+                {shownErrors.accountId}
               </span>
             )}
           </label>
@@ -846,9 +854,9 @@ export const TradeFormSection = React.memo(React.forwardRef<TradeFormSectionHand
               <span style={{ fontSize: 13, fontWeight: 500 }}>
                 티커
               </span>
-              {tradeFormValidation.ticker && (
+              {shownErrors.ticker && (
                 <span style={{ fontSize: 11, color: "var(--danger)", display: "block" }}>
-                  {tradeFormValidation.ticker}
+                  {shownErrors.ticker}
                 </span>
               )}
               <div style={{ position: "relative" }}>
@@ -868,7 +876,7 @@ export const TradeFormSection = React.memo(React.forwardRef<TradeFormSectionHand
                   options={tickerSuggestions.map((t) => ({
                     value: t.ticker,
                     label: t.name,
-                    subLabel: `${t.market === "KR" ? "🇰🇷 한국" : t.market === "CRYPTO" ? "🪙 코인" : "🇺🇸 미국"} ${t.exchange || ""}`,
+                    subLabel: `${t.market === "KR" ? "🇰🇷 한국" : t.market === "CRYPTO" ? "코인" : "🇺🇸 미국"} ${t.exchange || ""}`,
                     market: t.market,
                     exchange: t.exchange
                   }))}
@@ -947,14 +955,14 @@ export const TradeFormSection = React.memo(React.forwardRef<TradeFormSectionHand
                 style={{
                   padding: "6px 8px",
                   fontSize: 14,
-                  borderColor: tradeFormValidation.quantity ? "var(--danger)" : undefined
+                  borderColor: shownErrors.quantity ? "var(--danger)" : undefined
                 }}
-                aria-invalid={!!tradeFormValidation.quantity}
-                aria-describedby={tradeFormValidation.quantity ? "trade-quantity-error" : undefined}
+                aria-invalid={!!shownErrors.quantity}
+                aria-describedby={shownErrors.quantity ? "trade-quantity-error" : undefined}
             />
-            {tradeFormValidation.quantity && (
+            {shownErrors.quantity && (
               <span id="trade-quantity-error" style={{ fontSize: 11, color: "var(--danger)", display: "block", marginTop: 2 }}>
-                {tradeFormValidation.quantity}
+                {shownErrors.quantity}
               </span>
             )}
           </label>
@@ -972,14 +980,14 @@ export const TradeFormSection = React.memo(React.forwardRef<TradeFormSectionHand
                     style={{
                       padding: "6px 8px",
                       fontSize: 14,
-                      borderColor: tradeFormValidation.price ? "var(--danger)" : undefined
+                      borderColor: shownErrors.price ? "var(--danger)" : undefined
                     }}
-                    aria-invalid={!!tradeFormValidation.price}
+                    aria-invalid={!!shownErrors.price}
                     placeholder="달러"
                   />
-                  {tradeFormValidation.price && (
+                  {shownErrors.price && (
                     <span style={{ fontSize: 11, color: "var(--danger)", display: "block", marginTop: 2 }}>
-                      {tradeFormValidation.price}
+                      {shownErrors.price}
                     </span>
                   )}
                 </label>
@@ -995,13 +1003,13 @@ export const TradeFormSection = React.memo(React.forwardRef<TradeFormSectionHand
                     style={{
                       padding: "6px 8px",
                       fontSize: 14,
-                      borderColor: tradeFormValidation.priceKRW ? "var(--danger)" : undefined
+                      borderColor: shownErrors.priceKRW ? "var(--danger)" : undefined
                     }}
                     placeholder="원화"
                   />
-                  {tradeFormValidation.priceKRW && (
+                  {shownErrors.priceKRW && (
                     <span style={{ fontSize: 11, color: "var(--danger)", display: "block", marginTop: 2 }}>
-                      {tradeFormValidation.priceKRW}
+                      {shownErrors.priceKRW}
                     </span>
                   )}
                 </label>
@@ -1029,13 +1037,13 @@ export const TradeFormSection = React.memo(React.forwardRef<TradeFormSectionHand
                     style={{
                       padding: "6px 8px",
                       fontSize: 14,
-                      borderColor: tradeFormValidation.feeKRW ? "var(--danger)" : undefined
+                      borderColor: shownErrors.feeKRW ? "var(--danger)" : undefined
                     }}
                     placeholder="원화"
                   />
-                  {tradeFormValidation.feeKRW && (
+                  {shownErrors.feeKRW && (
                     <span style={{ fontSize: 11, color: "var(--danger)", display: "block", marginTop: 2 }}>
-                      {tradeFormValidation.feeKRW}
+                      {shownErrors.feeKRW}
                     </span>
                   )}
                 </label>
@@ -1054,13 +1062,13 @@ export const TradeFormSection = React.memo(React.forwardRef<TradeFormSectionHand
                     style={{
                       padding: "6px 8px",
                       fontSize: 14,
-                      borderColor: tradeFormValidation.price ? "var(--danger)" : undefined
+                      borderColor: shownErrors.price ? "var(--danger)" : undefined
                     }}
-                    aria-invalid={!!tradeFormValidation.price}
+                    aria-invalid={!!shownErrors.price}
                   />
-                  {tradeFormValidation.price && (
+                  {shownErrors.price && (
                     <span style={{ fontSize: 11, color: "var(--danger)", display: "block", marginTop: 2 }}>
-                      {tradeFormValidation.price}
+                      {shownErrors.price}
                     </span>
                   )}
                 </label>
@@ -1112,7 +1120,7 @@ export const TradeFormSection = React.memo(React.forwardRef<TradeFormSectionHand
                   options={quoteSearchSuggestions.map((t) => ({
                     value: t.ticker,
                     label: t.name,
-                    subLabel: `${t.market === "KR" ? "🇰🇷 한국" : t.market === "CRYPTO" ? "🪙 코인" : "🇺🇸 미국"} ${t.exchange || ""}`
+                    subLabel: `${t.market === "KR" ? "🇰🇷 한국" : t.market === "CRYPTO" ? "코인" : "🇺🇸 미국"} ${t.exchange || ""}`
                   }))}
                   onSelect={(option) => {
                     setQuoteSearchTicker(option.value);

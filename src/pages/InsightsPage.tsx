@@ -100,7 +100,7 @@ export const InsightsView: React.FC<Props> = ({ accounts, ledger, trades = [], p
   const ActiveTab = TabMap[tab];
 
   return (
-    <div style={{ display: "flex", flexDirection: "column", gap: 0, fontFamily: "'Pretendard Variable', 'Pretendard', -apple-system, sans-serif" }}>
+    <div style={{ display: "flex", flexDirection: "column", gap: 0 }}>
       {/* Header */}
       <InsightsHeader
         dateRange={dateRange}
@@ -117,7 +117,7 @@ export const InsightsView: React.FC<Props> = ({ accounts, ledger, trades = [], p
       <InsightsTabNav tab={tab} onSelectTab={setTab} selMonthLabel={selMonth ? d.ml[selMonth] : null} />
 
       {/* Content — 탭 청크 lazy 로드 (첫 방문 시에만 스켈레톤) */}
-      <div style={{ padding: "20px 24px", maxWidth: 1200, margin: "0 auto", width: "100%", boxSizing: "border-box" }}>
+      <div>
         <Suspense fallback={<ChartSkeleton height={300} />}>
           <ActiveTab d={d} />
           {tab === "overview" && (

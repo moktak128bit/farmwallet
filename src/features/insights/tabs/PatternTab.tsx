@@ -46,7 +46,7 @@ export const PatternTab = React.memo(function PatternTab({ d }: { d: D }) {
       </div>
 
       {/* ============ 한눈에 ============ */}
-      <Section storageKey="pattern-section-overview" title="📊 한눈에 보기">
+      <Section storageKey="pattern-section-overview" title="한눈에 보기">
         <Card accent><Kpi label="무지출 일수" value={`${d.zeroDays}일`} sub={`${d.totalDays}일 중 ${d.totalDays > 0 ? Math.round((d.zeroDays / d.totalDays) * 100) : 0}%`} color="var(--success)" info="기간 내 지출이 0원인 날 수" /></Card>
         <Card accent><Kpi label="일 평균 지출" value={F(avgDaily) + "원"} sub={`${d.totalDays}일 기준`} color="var(--chart-expense)" info="총 지출 / 총 일수 (무지출일 포함)" /></Card>
         <Card accent><Kpi label="주말 지출 비중" value={weekendPct + "%"} sub={`주말 ${F(d.weekendTot)}원 / 주중 ${F(d.weekdayTot)}원`} color={weekendPct > 40 ? "var(--danger)" : "var(--success)"} info="토+일 지출 / (토+일+평일) 지출" /></Card>
@@ -54,7 +54,7 @@ export const PatternTab = React.memo(function PatternTab({ d }: { d: D }) {
       </Section>
 
       {/* ============ 소비 스트릭 ============ */}
-      <Section storageKey="pattern-section-streaks" title="🔥 소비 습관·스트릭">
+      <Section storageKey="pattern-section-streaks" title="소비 습관·스트릭">
         <Card accent>
           <Kpi
             label="현재 진행 중"
@@ -86,7 +86,7 @@ export const PatternTab = React.memo(function PatternTab({ d }: { d: D }) {
           <Kpi
             label="무지출 달성률"
             value={d.totalDays > 0 ? `${Math.round((d.zeroDays / d.totalDays) * 100)}%` : "-"}
-            sub={d.totalDays > 0 && d.zeroDays / d.totalDays >= 0.2 ? "✅ 통제력 우수" : "목표 20%+"}
+            sub={d.totalDays > 0 && d.zeroDays / d.totalDays >= 0.2 ? "통제력 우수" : "목표 20%+"}
             color={d.totalDays > 0 && d.zeroDays / d.totalDays >= 0.2 ? "var(--success)" : "var(--warning)"}
             info="전체 기간 대비 무지출일 비율. 20%↑면 소비 통제력 우수"
           />
@@ -97,8 +97,8 @@ export const PatternTab = React.memo(function PatternTab({ d }: { d: D }) {
             <BarChart data={zeroTrendData}>
               <CartesianGrid strokeDasharray="3 3" stroke="var(--chart-grid)" />
               <XAxis dataKey="name" tick={{ fontSize: 11 }} />
-              <YAxis yAxisId="left" tick={{ fontSize: 10 }} />
-              <YAxis yAxisId="right" orientation="right" tickFormatter={(v) => v.toFixed(0) + "%"} tick={{ fontSize: 10 }} domain={[0, 100]} />
+              <YAxis yAxisId="left" tick={{ fontSize: 11 }} />
+              <YAxis yAxisId="right" orientation="right" tickFormatter={(v) => v.toFixed(0) + "%"} tick={{ fontSize: 11 }} domain={[0, 100]} />
               <Tooltip formatter={(v: ValueType | undefined, n) => n === "무지출" ? `${v}일` : `${Number(v ?? 0).toFixed(0)}%`} />
               <Bar isAnimationActive={false} yAxisId="left" dataKey="무지출" radius={[4, 4, 0, 0]}>
                 {zeroTrendData.map((e, i) => <Cell key={i} fill={e.pct >= 20 ? "var(--success)" : e.pct >= 10 ? "var(--warning)" : "var(--danger)"} />)}
@@ -112,13 +112,13 @@ export const PatternTab = React.memo(function PatternTab({ d }: { d: D }) {
       </Section>
 
       {/* ============ 타이밍 ============ */}
-      <Section storageKey="pattern-section-timing" title="📅 타이밍 패턴">
+      <Section storageKey="pattern-section-timing" title="타이밍 패턴">
         <Card title="요일별 거래 빈도" span={2}>
           <ResponsiveContainer width="100%" height={240}>
             <BarChart data={wdData}>
               <CartesianGrid strokeDasharray="3 3" stroke="var(--chart-grid)" />
               <XAxis dataKey="name" tick={{ fontSize: 12 }} />
-              <YAxis tick={{ fontSize: 10 }} />
+              <YAxis tick={{ fontSize: 11 }} />
               <Tooltip formatter={(v: ValueType | undefined, _n, p) => [`${v}건`, `건당 평균 ${F(p.payload.avg)}원`]} />
               <Bar isAnimationActive={false} dataKey="count" radius={[4, 4, 0, 0]}>
                 {wdData.map((e, i) => <Cell key={i} fill={i >= 5 ? "var(--danger)" : "var(--chart-series-b)"} opacity={0.8} />)}
@@ -135,7 +135,7 @@ export const PatternTab = React.memo(function PatternTab({ d }: { d: D }) {
             <BarChart data={thirdData}>
               <CartesianGrid strokeDasharray="3 3" stroke="var(--chart-grid)" />
               <XAxis dataKey="name" tick={{ fontSize: 11 }} />
-              <YAxis tickFormatter={F} tick={{ fontSize: 10 }} />
+              <YAxis tickFormatter={F} tick={{ fontSize: 11 }} />
               <Tooltip content={<CT />} />
               <Bar isAnimationActive={false} dataKey="지출" radius={[6, 6, 0, 0]}>
                 {thirdData.map((_, i) => <Cell key={i} fill={C[i]} />)}
@@ -161,11 +161,11 @@ export const PatternTab = React.memo(function PatternTab({ d }: { d: D }) {
                   </div>
                   <div style={{ position: "relative", display: "flex", flexWrap: "wrap", gap: 4, marginTop: 4 }}>
                     {dt.items.slice(0, 4).map((it, j) => (
-                      <span key={j} style={{ fontSize: 10, color: "var(--text-faint)", background: "var(--surface)", border: "1px solid var(--border-light)", borderRadius: 4, padding: "1px 6px" }}>
+                      <span key={j} style={{ fontSize: 11, color: "var(--text-faint)", background: "var(--surface)", border: "1px solid var(--border-light)", borderRadius: 4, padding: "1px 6px" }}>
                         {it.desc} {F(it.amount)}원
                       </span>
                     ))}
-                    {dt.items.length > 4 && <span style={{ fontSize: 10, color: "var(--text-faint)" }}>+{dt.items.length - 4}건</span>}
+                    {dt.items.length > 4 && <span style={{ fontSize: 11, color: "var(--text-faint)" }}>+{dt.items.length - 4}건</span>}
                   </div>
                 </div>
               ))}
@@ -175,7 +175,7 @@ export const PatternTab = React.memo(function PatternTab({ d }: { d: D }) {
       </Section>
 
       {/* ============ 인사이트 ============ */}
-      <Section storageKey="pattern-section-insights" title="💡 인사이트">
+      <Section storageKey="pattern-section-insights" title="인사이트">
         <Card title="소비 패턴 종합 분석" span={4}>
           <div className="grid-2" style={{ gap: 12 }}>
             <Insight title="요일 빈도 패턴" tone="danger">
@@ -198,7 +198,7 @@ export const PatternTab = React.memo(function PatternTab({ d }: { d: D }) {
                 " 중순에 집중."}
             </Insight>
             <Insight title="스트릭·소비 통제력" tone="success">
-              {ps.currentStreakType === "zero" ? `🔥 현재 ${ps.currentStreakDays}일 연속 무지출 중!` : ps.currentStreakType === "spend" ? `${ps.currentStreakDays}일 연속 지출 중.` : ""}
+              {ps.currentStreakType === "zero" ? `현재 ${ps.currentStreakDays}일 연속 무지출 중!` : ps.currentStreakType === "spend" ? `${ps.currentStreakDays}일 연속 지출 중.` : ""}
               {" "}최장 무지출 {ps.longestZeroStreak}일, 최장 연속 소비 {ps.longestSpendStreak}일.
               {" "}평균 {ps.avgIntervalDays.toFixed(1)}일에 한 번 지출.
               {d.zeroDays >= d.totalDays * 0.3 ? " 무지출일 30%↑ — 뛰어난 통제력!" :

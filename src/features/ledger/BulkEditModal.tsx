@@ -447,7 +447,7 @@ export const BulkEditModal: React.FC<Props> = ({ ledger, selectedIds, accounts, 
                           {describeChange(c).map((line, i) => <div key={i}>{line}</div>)}
                         </td>
                         <td style={{ padding: "6px 10px", color: "var(--text-muted)" }}>
-                          <span style={{ color: "var(--success)" }}>✓ {fieldChip(c.fields)}</span>
+                          <span style={{ color: "var(--success)" }}>{fieldChip(c.fields)}</span>
                           {c.partialSkips.length > 0 && (
                             <div>{Array.from(new Set(c.partialSkips.map((p) => `${FIELD_LABEL[p.field]} 제외: ${p.reason}`))).join(" / ")}</div>
                           )}

@@ -92,6 +92,10 @@ export const STORAGE_KEYS = {
   FIRE_ASSUMPTIONS: "fw-fire-assumptions",
   /** 알림 센터(3-11) 스누즈 상태 (JSON: {[dedupeKey]: untilIsoInstant} — 기기 로컬, 7일 스누즈) */
   NUDGE_DISMISSED: "fw-nudge-dismissed",
+  /** 가계부 입력 폼 펼침 여부 ("1"=펼침). 기본 접힘 — 목록이 먼저 보이게. Alt+N·복사·수정은 자동으로 펼친다 */
+  LEDGER_FORM_OPEN: "fw-ledger-form-open",
+  /** 대시보드 섹션(자산·소비·배당) 펼침 상태 — { [sectionId]: boolean } JSON. 없으면 기본(핵심만 펼침) */
+  DASHBOARD_SECTIONS: "fw-dashboard-sections",
   /** 카드 명세 임포트(StatementImportCard) 마지막 컬럼 매핑 (JSON — 다음 붙여넣기에 재사용, 기기 로컬) */
   STATEMENT_IMPORT_MAPPING: "fw-statement-import-mapping",
   /** 프라이버시 블러(5-1) — 화면 금액 마스킹 on/off ("true"|"false", 기기 로컬) */

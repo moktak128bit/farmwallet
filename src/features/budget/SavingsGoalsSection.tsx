@@ -133,7 +133,7 @@ export const SavingsGoalsSection: React.FC = React.memo(function SavingsGoalsSec
 
   return (
     <div className="card" style={{ padding: 16, marginTop: 16 }}>
-      <div className="card-title" style={{ marginBottom: 8 }}>🎯 저축 목표</div>
+      <div className="card-title" style={{ marginBottom: 8 }}>저축 목표</div>
       <p className="hint" style={{ marginBottom: 12 }}>
         이름 있는 목표를 만들어 연결 계좌 잔액 합 또는 재테크(저축·투자) 이체 누적으로 진행률과 ETA를 추적합니다.
       </p>

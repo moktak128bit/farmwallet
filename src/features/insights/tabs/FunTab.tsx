@@ -27,7 +27,7 @@ export const FunTab = React.memo(function FunTab({ d }: { d: D }) {
 
   return (
     <>
-      <Section storageKey="fun-section-records" title="🏆 재미 기록">
+      <Section storageKey="fun-section-records" title="재미 기록">
         {statCards.map((s, i) => (
           <Card key={i} accent>
             <div style={{ textAlign: "center", padding: "8px 0" }}>
@@ -40,7 +40,7 @@ export const FunTab = React.memo(function FunTab({ d }: { d: D }) {
         ))}
       </Section>
 
-      <Section storageKey="fun-section-detail" title="🎯 재미 통계 상세" defaultOpen={false}>
+      <Section storageKey="fun-section-detail" title="재미 통계 상세" defaultOpen={false}>
         <Card title="주말 vs 평일 지출">
           <div style={{ display: "flex", alignItems: "center", gap: 16 }}>
             <div style={{ flex: 1 }}>

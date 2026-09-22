@@ -181,7 +181,10 @@ export const NotificationCenter: React.FC<Props> = ({ latestBackupAt }) => {
       >
         <Bell size={16} />
         {active.length > 0 && (
-          <span className="notif-badge" aria-label={`읽지 않은 알림 ${active.length}건`}>
+          <span
+            className={active.some((n) => n.severity === "critical") ? "notif-badge critical" : "notif-badge"}
+            aria-label={`읽지 않은 알림 ${active.length}건`}
+          >
             {active.length > 9 ? "9+" : active.length}
           </span>
         )}

@@ -488,8 +488,7 @@ export const CategoriesView: React.FC<Props> = ({ presets, onChangePresets, ledg
                     <div style={{ display: "flex", flexDirection: "column", gap: 4 }}>
                       <div style={{ display: "flex", alignItems: "center", gap: 4 }}>
                         <span className="col-drag-handle" title="잡아서 좌우로 옮길 수 있습니다.">
-                          ☰
-                        </span>
+                          </span>
                         <input
                           type="text"
                           value={g.main}

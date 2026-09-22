@@ -252,7 +252,7 @@ export const TransactionHistoryModal = React.memo(function TransactionHistoryMod
                       <td style={{ textAlign: "right", color: "var(--chart-income)", fontWeight: 600 }}>
                         {isInflow ? `+${formatAmount(r, cashFlow)}` : <span style={{ color: "var(--text-muted)", fontWeight: 400 }}>—</span>}
                         {isSecuritiesAccount && r.isUsd && isInflow && (
-                          <div style={{ fontSize: 10, marginTop: 2, color: "var(--text-muted)", fontWeight: 400 }}>
+                          <div style={{ fontSize: 11, marginTop: 2, color: "var(--text-muted)", fontWeight: 400 }}>
                             (USD — 예수금 미반영)
                           </div>
                         )}
@@ -260,12 +260,12 @@ export const TransactionHistoryModal = React.memo(function TransactionHistoryMod
                       <td style={{ textAlign: "right", color: "var(--chart-expense)", fontWeight: 600 }}>
                         {isOutflow ? `−${formatAmount(r, -cashFlow)}` : <span style={{ color: "var(--text-muted)", fontWeight: 400 }}>—</span>}
                         {isSecuritiesAccount && r.isUsd && isOutflow && (
-                          <div style={{ fontSize: 10, marginTop: 2, color: "var(--text-muted)", fontWeight: 400 }}>
+                          <div style={{ fontSize: 11, marginTop: 2, color: "var(--text-muted)", fontWeight: 400 }}>
                             (USD — 예수금 미반영)
                           </div>
                         )}
                         {realizedPnl != null && (
-                          <div style={{ fontSize: 10, marginTop: 2, fontWeight: 500, color: realizedPnl >= 0 ? "var(--chart-income)" : "var(--chart-expense)" }}>
+                          <div style={{ fontSize: 11, marginTop: 2, fontWeight: 500, color: realizedPnl >= 0 ? "var(--chart-income)" : "var(--chart-expense)" }}>
                             실현 {realizedPnl >= 0 ? "+" : "−"}{formatKRW(Math.round(Math.abs(realizedPnl)))}
                           </div>
                         )}

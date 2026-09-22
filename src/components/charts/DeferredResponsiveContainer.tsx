@@ -15,10 +15,15 @@ function toCssSize(value: number | string | undefined, fallback: string): string
   return fallback;
 }
 
+/** 스크롤로 진입하기 전 자리 — 빈 흰 카드로 보이지 않게 낮은 채도의 면을 깐다 */
+const DEFAULT_PLACEHOLDER = (
+  <div aria-hidden style={{ width: "100%", height: "100%", minHeight: 100, borderRadius: "var(--radius-md)", background: "var(--surface-sunken)" }} />
+);
+
 export const DeferredResponsiveContainer: React.FC<DeferredResponsiveContainerProps> = ({
   rootMargin = "280px 0px",
   keepMounted = true,
-  placeholder = null,
+  placeholder = DEFAULT_PLACEHOLDER,
   width,
   height,
   minWidth,

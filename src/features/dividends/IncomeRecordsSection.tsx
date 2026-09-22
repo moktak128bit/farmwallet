@@ -524,7 +524,7 @@ export const IncomeRecordsSection: React.FC<Props> = React.memo(function IncomeR
                               <span title={`배당금 ${formatKRW(Math.round(r.amount))} ÷ 매입금액 ${r.costBasis != null ? formatKRW(Math.round(r.costBasis)) : "?"} = ${(r.yieldRate * 100).toFixed(2)}%`}>
                                 <span style={{ fontWeight: 600 }}>{(r.yieldRate * 100).toFixed(2)}%</span>
                                 {r.costBasis != null && (
-                                  <div className="hint" style={{ fontSize: 10, marginTop: 2 }}>
+                                  <div className="hint" style={{ fontSize: 11, marginTop: 2 }}>
                                     매입 {formatKRW(Math.round(r.costBasis))} 기준
                                   </div>
                                 )}
@@ -601,8 +601,7 @@ export const IncomeRecordsSection: React.FC<Props> = React.memo(function IncomeR
                                     }}
                                     title="이 행을 수정"
                                   >
-                                    ✏️
-                                  </button>
+                                    </button>
                                 )}
                                 {!isEditing && (
                                   <button
@@ -859,8 +858,7 @@ export const IncomeRecordsSection: React.FC<Props> = React.memo(function IncomeR
                                   style={{ background: "none", border: "1px solid var(--border)", color: "var(--accent)", cursor: "pointer", fontSize: 12, padding: "4px 8px", borderRadius: 4 }}
                                   title="이 행을 수정"
                                 >
-                                  ✏️
-                                </button>
+                                  </button>
                               ) : null}
                               <button
                                 type="button"

@@ -72,8 +72,7 @@ const SetDetailRowInner: React.FC<Props> = ({
             flexShrink: 0,
           }}
         >
-          ✓
-        </button>
+          </button>
         <span style={{ fontSize: 12, color: "var(--text-muted)", fontWeight: 700, minWidth: 38 }}>
           #{index + 1}
         </span>
@@ -176,8 +175,8 @@ const SetDetailRowInner: React.FC<Props> = ({
           color: isRestOver ? "var(--success)" : "var(--accent)",
         }}>
           {isRestOver
-            ? `🔔 휴식 끝 (${restTargetSec}s 경과 — 다음 세트 시작)`
-            : `⏱ 휴식 ${remainingSec}s / ${restTargetSec}s`}
+            ? `휴식 끝 (${restTargetSec}s 경과 — 다음 세트 시작)`
+            : `휴식 ${remainingSec}s / ${restTargetSec}s`}
           <button
             type="button"
             onClick={() => {
@@ -221,7 +220,7 @@ const SetDetailRowInner: React.FC<Props> = ({
           }}
         />
         {set.noteUpdatedAt && set.note && (
-          <span style={{ fontSize: 10, color: "var(--text-muted)", whiteSpace: "nowrap" }}>
+          <span style={{ fontSize: 11, color: "var(--text-muted)", whiteSpace: "nowrap" }}>
             {formatClockTime(set.noteUpdatedAt)} 저장
           </span>
         )}

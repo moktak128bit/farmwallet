@@ -223,7 +223,7 @@ export const DataBackupCard: React.FC<Props> = React.memo(function DataBackupCar
       </p>
       <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
         <div>
-          <div style={{ fontSize: 12, fontWeight: 700, color: "var(--text-muted)", marginBottom: 6 }}>💾 내보내기 (안전)</div>
+          <div style={{ fontSize: 12, fontWeight: 700, color: "var(--text-muted)", marginBottom: 6 }}>내보내기 (안전)</div>
           <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
             <button type="button" className="primary" onClick={handleDownloadBackup}>
               백업 파일 다운로드
@@ -234,7 +234,7 @@ export const DataBackupCard: React.FC<Props> = React.memo(function DataBackupCar
           </div>
         </div>
         <div>
-          <div style={{ fontSize: 12, fontWeight: 700, color: "var(--warning)", marginBottom: 6 }}>⚠️ 불러오기 (현재 데이터 덮어쓰기)</div>
+          <div style={{ fontSize: 12, fontWeight: 700, color: "var(--warning)", marginBottom: 6 }}>불러오기 (현재 데이터 덮어쓰기)</div>
           <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
             <button type="button" onClick={handleUploadBackup} style={{ background: "var(--surface)", border: "1px solid var(--warning)", color: "var(--text)" }}>
               백업 파일에서 복원

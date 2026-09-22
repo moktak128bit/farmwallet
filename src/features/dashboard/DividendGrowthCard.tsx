@@ -87,7 +87,7 @@ export const DividendGrowthCard: React.FC<{ data: DividendGrowthData }> = React.
           }
         />
         <Hero
-          label="지금까지 받은 배당 ❄️"
+          label="지금까지 받은 배당"
           value={fmtWon(story.totalReceived)}
           tone="var(--chart-warning, var(--warning))"
           sub="모을수록 커지는 눈덩이"
@@ -96,7 +96,7 @@ export const DividendGrowthCard: React.FC<{ data: DividendGrowthData }> = React.
 
       {/* 🎯 메인 콤보 — 월 배당금(막대) + 배당율 YOC(선) + 보유 평가액(배경) */}
       <PanelTitle
-        title="📊 한눈에 — 받은 배당 · 배당률 · 내 보유"
+        title="한눈에 — 받은 배당 · 배당률 · 내 보유"
         desc="막대 = 월 배당금 · 초록선 = 내 배당률(YOC, 원금대비) · 연한 면적 = 보유 평가액(모을수록 우상향)"
       />
       <ResponsiveContainer width="100%" height={240}>
@@ -108,11 +108,11 @@ export const DividendGrowthCard: React.FC<{ data: DividendGrowthData }> = React.
             </linearGradient>
           </defs>
           <CartesianGrid strokeDasharray="3 3" stroke="var(--chart-grid)" vertical={false} />
-          <XAxis dataKey="label" tick={{ fontSize: 10 }} interval="preserveStartEnd" />
+          <XAxis dataKey="label" tick={{ fontSize: 11 }} interval="preserveStartEnd" />
           {/* 좌: 월 배당금(원) */}
-          <YAxis yAxisId="won" tick={{ fontSize: 10 }} width={50} tickFormatter={fmtAxisWon} />
+          <YAxis yAxisId="won" tick={{ fontSize: 11 }} width={50} tickFormatter={fmtAxisWon} />
           {/* 우: 배당률(%) */}
-          <YAxis yAxisId="pct" orientation="right" tick={{ fontSize: 10 }} width={40} domain={[0, "auto"]} tickFormatter={(v: number) => `${v}%`} />
+          <YAxis yAxisId="pct" orientation="right" tick={{ fontSize: 11 }} width={40} domain={[0, "auto"]} tickFormatter={(v: number) => `${v}%`} />
           {/* 숨김: 보유 평가액 — 자체 스케일로 배경 언덕 */}
           <YAxis yAxisId="value" hide domain={[0, "auto"]} />
           <Tooltip
@@ -167,8 +167,8 @@ export const DividendGrowthCard: React.FC<{ data: DividendGrowthData }> = React.
           <ResponsiveContainer width="100%" height={150}>
             <BarChart data={points} syncId={sync} margin={{ top: 4, right: 12, left: 4, bottom: 0 }}>
               <CartesianGrid strokeDasharray="3 3" stroke="var(--chart-grid)" />
-              <XAxis dataKey="label" tick={{ fontSize: 10 }} interval="preserveStartEnd" />
-              <YAxis tick={{ fontSize: 10 }} width={52} tickFormatter={fmtAxisWon} />
+              <XAxis dataKey="label" tick={{ fontSize: 11 }} interval="preserveStartEnd" />
+              <YAxis tick={{ fontSize: 11 }} width={52} tickFormatter={fmtAxisWon} />
               <Tooltip formatter={(v: number | string | undefined) => [fmtWon(Number(v ?? 0)), "받은 분배금"] as [string, string]} />
               <Bar isAnimationActive={false} dataKey="received" name="받은 분배금" fill="var(--chart-warning)" radius={[3, 3, 0, 0]} maxBarSize={36} />
             </BarChart>
@@ -181,8 +181,8 @@ export const DividendGrowthCard: React.FC<{ data: DividendGrowthData }> = React.
           <ResponsiveContainer width="100%" height={170}>
             <LineChart data={points} syncId={sync} margin={{ top: 4, right: 12, left: 4, bottom: 0 }}>
               <CartesianGrid strokeDasharray="3 3" stroke="var(--chart-grid)" />
-              <XAxis dataKey="label" tick={{ fontSize: 10 }} interval="preserveStartEnd" />
-              <YAxis tick={{ fontSize: 10 }} width={52} domain={[0, "auto"]} tickFormatter={(v: number) => `${v}%`} />
+              <XAxis dataKey="label" tick={{ fontSize: 11 }} interval="preserveStartEnd" />
+              <YAxis tick={{ fontSize: 11 }} width={52} domain={[0, "auto"]} tickFormatter={(v: number) => `${v}%`} />
               <Tooltip
                 formatter={(v: number | string | undefined, key: string | undefined) => {
                   const n = Number(v ?? 0);
@@ -204,8 +204,8 @@ export const DividendGrowthCard: React.FC<{ data: DividendGrowthData }> = React.
               <ResponsiveContainer width="100%" height={140}>
                 <ComposedChart data={points} syncId={sync} margin={{ top: 4, right: 12, left: 4, bottom: 0 }}>
                   <CartesianGrid strokeDasharray="3 3" stroke="var(--chart-grid)" />
-                  <XAxis dataKey="label" tick={{ fontSize: 10 }} interval="preserveStartEnd" />
-                  <YAxis domain={["auto", "auto"]} tick={{ fontSize: 10 }} width={52} tickFormatter={fmtAxisWon} />
+                  <XAxis dataKey="label" tick={{ fontSize: 11 }} interval="preserveStartEnd" />
+                  <YAxis domain={["auto", "auto"]} tick={{ fontSize: 11 }} width={52} tickFormatter={fmtAxisWon} />
                   <Tooltip formatter={(v: number | string | undefined, key: string | undefined) => [fmtWon(Number(v ?? 0)), key ?? ""] as [string, string]} />
                   <Area isAnimationActive={false} type="monotone" dataKey="price" name="주가" stroke="var(--chart-primary)" fill="var(--primary-light)" strokeWidth={2} connectNulls dot={false} />
                   <Line isAnimationActive={false} type="stepAfter" dataKey="avgCost" name="내 평단" stroke="var(--text-faint)" strokeDasharray="4 3" strokeWidth={1.5} connectNulls dot={false} />

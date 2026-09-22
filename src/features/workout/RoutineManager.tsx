@@ -146,7 +146,7 @@ const RoutineManagerInner: React.FC<Props> = ({
                                     title="위로 이동"
                                     aria-label="위로 이동"
                                     style={{
-                                      width: 22, height: 18, padding: 0, fontSize: 10, lineHeight: 1,
+                                      width: 22, height: 18, padding: 0, fontSize: 11, lineHeight: 1,
                                       background: "var(--surface)", border: "1px solid var(--border)", borderRadius: 4,
                                       cursor: canUp ? "pointer" : "not-allowed",
                                       opacity: canUp ? 1 : 0.35, color: "var(--text-muted)",
@@ -159,7 +159,7 @@ const RoutineManagerInner: React.FC<Props> = ({
                                     title="아래로 이동"
                                     aria-label="아래로 이동"
                                     style={{
-                                      width: 22, height: 18, padding: 0, fontSize: 10, lineHeight: 1,
+                                      width: 22, height: 18, padding: 0, fontSize: 11, lineHeight: 1,
                                       background: "var(--surface)", border: "1px solid var(--border)", borderRadius: 4,
                                       cursor: canDown ? "pointer" : "not-allowed",
                                       opacity: canDown ? 1 : 0.35, color: "var(--text-muted)",

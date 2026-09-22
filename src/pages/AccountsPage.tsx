@@ -22,7 +22,7 @@ import { fetchYahooQuotes } from "../yahooFinanceApi";
 import { EmptyState } from "../components/ui/EmptyState";
 import { Wallet, Download } from "lucide-react";
 import { toast } from "react-hot-toast";
-import { computeRealizedPnlByTradeId, positionMarketValueKRW } from "../calculations";
+import { computeRealizedPnlByTradeId, positionMarketValueKRW, computeLoanBalanceAt } from "../calculations";
 import { getTodayKST } from "../utils/date";
 import { useAppStore } from "../store/appStore";
 import { buildUnifiedCsv } from "../utils/unifiedCsvExport";
@@ -222,11 +222,14 @@ export const AccountsView: React.FC<Props> = ({
         const usdKrw = effectiveFxRate ? usd * effectiveFxRate : 0;
         return s + stock + krw + usdKrw;
       }, 0);
+    // 대출 잔금 — 대시보드 순자산(computeTotalNetWorth)과 같은 정의. 예전엔 여기 순자산이 카드 빚만 빼서
+    // 대시보드 순자산과 대출 잔금만큼 어긋났고, "부채" 칸은 카드 빚만 가리켰다.
+    const loanDebt = computeLoanBalanceAt(storeData.loans, ledger);
     // 순자산 계산에는 카드 net(초과결제=+, 미결제=-) 그대로 반영
     // 부채는 빼야 순자산 — cardNet은 양수가 부채라 차감.
-    const total = checking + savings + other + securities - cardNet;
-    return { checking, savings, other, cardNet, cardDebt, cardCredit, securities, total };
-  }, [safeBalances, stockMap, cardDebtMap, effectiveFxRate]);
+    const total = checking + savings + other + securities - cardNet - loanDebt;
+    return { checking, savings, other, cardNet, cardDebt, cardCredit, loanDebt, securities, total };
+  }, [safeBalances, stockMap, cardDebtMap, effectiveFxRate, storeData.loans, ledger]);
 
   return (
     <div>

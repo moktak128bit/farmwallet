@@ -67,6 +67,8 @@ main.tsx → App.tsx (탭 셸·전역 모달·콜백 허브, 자식 props 시그
 11. **텍스트 입력 + undo**: 글자마다 setDataWithHistory 금지 — blur 커밋(components/ui/CommitInput.tsx) 사용.
 12. **부호 있는 금액 입력**: parseAmount는 부호를 버림 → 음수 허용 입력은 parseSignedAmount/sanitizeSignedNumericInput.
 13. **진행 중인 달의 비교(MoM 등)**: 완료된 전월 전체와 비교 금지(월급 25일이면 월중 내내 -90%대) — 전월·전년도 **같은 기간(1~오늘 일)**만 합산하고 라벨에 "동기(1~N일)" 명시. compareMonths의 dayCap 옵션, useInsightsData의 partialDay 패턴 참조.
+14. **금액 표기**: 히어로/KPI 숫자는 `components/ui/Money.tsx` — 단위 "원"은 `.money-unit`로 한 단계 작게. 잔액·평가액처럼 시세 따라 흔들리는 **스톡**은 `compact`(만·억, `formatKrwCompact`), 이번 달 수입·지출처럼 가계부와 대조하는 **흐름**은 원 단위 그대로. 표·보조 텍스트는 formatKRW 유지.
+15. **디자인 규율**: 색은 데이터에만(행 반복 동작은 `.icon-action` 중립 아이콘, hover에서만 빨강 · 헤더 상시 경보 금지) · 본문 이모지 아이콘 금지(lucide 라인 아이콘) · 인라인 글자 크기 바닥 11px(12=캡션, 13=본문) · 대시보드 위젯은 핵심 4장 + `DashboardSection` 접이식(순서는 dashboardWidgets.ts와 동기) · 가계부 입력 폼은 기본 접힘(`STORAGE_KEYS.LEDGER_FORM_OPEN`, Alt+N·복사 시 자동 펼침).
 
 ## 레거시 데이터 함정 (사용자 실데이터에 3세대 공존)
 

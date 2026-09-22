@@ -116,7 +116,7 @@ export const LedgerFilterCard: React.FC<Props> = React.memo(function LedgerFilte
             flex: "0 0 auto",
           }}
         >
-          <span>🔍 검색·필터</span>
+          <span>검색·필터</span>
           <span style={{ fontSize: 11, color: "var(--text-muted)" }}>{showFilters ? "▲" : "▼"}</span>
           {activeCount > 0 && (
             <span style={{
@@ -160,7 +160,7 @@ export const LedgerFilterCard: React.FC<Props> = React.memo(function LedgerFilte
                 cursor: "pointer",
               }}
             >
-              🔄 초기화
+              초기화
             </button>
           )}
           <button
@@ -174,7 +174,7 @@ export const LedgerFilterCard: React.FC<Props> = React.memo(function LedgerFilte
               borderRadius: 8,
               border: viewMode === "monthly" ? "2px solid var(--primary)" : "2px solid var(--border)",
               background: viewMode === "monthly" ? "var(--primary)" : "var(--surface)",
-              color: viewMode === "monthly" ? "white" : "var(--text)",
+              color: viewMode === "monthly" ? "var(--primary-text)" : "var(--text)", // 다크에선 primary가 밝은색 — 흰 글자 하드코딩은 안 보였다
               cursor: "pointer",
             }}
           >

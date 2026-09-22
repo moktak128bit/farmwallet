@@ -29,15 +29,24 @@ function isTaxSeasonKST(today: string): boolean {
   return month >= 10 && month <= 12;
 }
 
-/** DashboardPage 렌더 순서와 동일 */
+/** DashboardPage 렌더 순서와 동일 — 핵심(항상 펼침) → 자산·투자 → 이번 달 소비·현금흐름 → 배당·저축·세금 섹션 순 */
 export const DASHBOARD_WIDGETS: DashboardWidgetDef[] = [
+  // 핵심
   { id: "summary", label: "이번 달 요약 카드 (수입·지출·재테크·수지)" },
   { id: "dividendPortfolio", label: "배당 포트폴리오 (총 배당률·월 배당·성장)" },
   { id: "monthCompare", label: "전월·전년 대비 (지출/수입)" },
   { id: "investmentSummary", label: "투자 자산 요약·목표" },
+  // 자산·투자
   { id: "investmentPerformance", label: "투자 성적표 (시장 대비 — TWR·벤치마크·리스크)" },
   { id: "securitiesValueTrend", label: "증권 평가액·매입금액 추이 (일별)" },
   { id: "netWorthTrend", label: "순자산 추이" },
+  { id: "assetComposition", label: "자산 구성" },
+  { id: "portfolioCharts", label: "포트폴리오 차트" },
+  { id: "accountBalanceTrend", label: "계좌별 잔액 추이" },
+  { id: "stockCostVsMarket", label: "주식 매입액 vs 평가액" },
+  { id: "totalAssetTrend", label: "총자산 추이" },
+  { id: "cmaBalanceTrend", label: "CMA 잔액 추이" },
+  // 이번 달 소비·현금흐름
   { id: "topExpenses", label: "이번 달 최대 지출" },
   { id: "monthlyTrend", label: "월별 추이 (최근 6개월)" },
   { id: "investmentBreakdown", label: "재테크 세부 (저축·투자)" },
@@ -45,17 +54,12 @@ export const DASHBOARD_WIDGETS: DashboardWidgetDef[] = [
   { id: "salaryTimer", label: "월급 실시간 타이머" },
   { id: "cashFlow", label: "다가오는 고정 지출 (현금흐름 예측)" },
   { id: "cashFlowProjection", label: "통합 현금흐름 (12개월 잔고 곡선)" },
-  { id: "portfolioCharts", label: "포트폴리오 차트" },
+  { id: "spendingCalendar", label: "소비 캘린더" },
+  { id: "budgetAlert", label: "예산 관리 (초과 알림)" },
+  // 배당·저축·세금
   { id: "savingsRatio", label: "저축률 (저번달)" },
   { id: "dividendCoverage", label: "배당 vs 고정비 커버리지" },
   { id: "dividendGrowth", label: "배당 성장 추적 (종목별 분배금·분배율·주가)" },
-  { id: "assetComposition", label: "자산 구성" },
-  { id: "accountBalanceTrend", label: "계좌별 잔액 추이" },
-  { id: "stockCostVsMarket", label: "주식 매입액 vs 평가액" },
-  { id: "totalAssetTrend", label: "총자산 추이" },
-  { id: "cmaBalanceTrend", label: "CMA 잔액 추이" },
-  { id: "spendingCalendar", label: "소비 캘린더" },
-  { id: "budgetAlert", label: "예산 관리 (초과 알림)" },
   { id: "taxActions", label: "절세 액션 (10~12월 기본 표시)", seasonalOnly: true },
 ];
 

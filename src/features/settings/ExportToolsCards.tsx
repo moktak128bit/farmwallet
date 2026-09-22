@@ -104,7 +104,7 @@ export const ExportToolsCards: React.FC<Props> = React.memo(function ExportTools
   return (
     <>
       <div className="card">
-        <div className="card-title">📊 전체 데이터 한 번에 (엑셀)</div>
+        <div className="card-title">전체 데이터 한 번에 (엑셀)</div>
         <p>
           가계부·주식거래·보유현황·배당이자·계좌·예산·대출·반복지출을 <strong>시트별로 나눈 엑셀 파일 하나</strong>로
           받습니다. 엑셀·구글시트에서 바로 열어 보고 편집하세요.
@@ -159,7 +159,7 @@ export const ExportToolsCards: React.FC<Props> = React.memo(function ExportTools
           }}
           style={{ padding: "8px 16px", fontSize: 13 }}
         >
-          📥 로그 JSON 다운로드
+          로그 JSON 다운로드
         </button>
         {recentErrors.length > 0 && (
           <div style={{ marginTop: 12 }}>

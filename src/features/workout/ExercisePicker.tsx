@@ -286,7 +286,7 @@ const ExerciseChip: React.FC<ChipProps> = ({ name, color, emphasized, badge, alr
       {name}
       {badge && (
         <span style={{
-          fontSize: 9, fontWeight: 700, letterSpacing: 0.5,
+          fontSize: 11, fontWeight: 700, letterSpacing: 0.5,
           padding: "1px 5px", borderRadius: 4,
           background: color + "20", color,
         }}>
@@ -294,7 +294,7 @@ const ExerciseChip: React.FC<ChipProps> = ({ name, color, emphasized, badge, alr
         </span>
       )}
       {alreadyAdded && (
-        <span style={{ fontSize: 10, color: "var(--text-muted)" }}>✓</span>
+        <span style={{ fontSize: 11, color: "var(--text-muted)" }}>✓</span>
       )}
     </button>
   );

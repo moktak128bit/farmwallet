@@ -140,7 +140,7 @@ export const SalaryTimerCard: React.FC<Props> = React.memo(function SalaryTimerC
   if (!settings && !editing) {
     return (
       <button type="button" className="widget-collapsed" onClick={() => setEditing(true)}>
-        <span className="widget-collapsed-title">💰 월급 실시간 타이머 설정하기</span>
+        <span className="widget-collapsed-title">월급 실시간 타이머 설정하기</span>
         <span className="widget-collapsed-hint">
           월급일과 월급액을 넣으면 다음 월급까지 1초마다 쌓이는 금액이 보여요
         </span>
@@ -156,7 +156,7 @@ export const SalaryTimerCard: React.FC<Props> = React.memo(function SalaryTimerC
       Number.isFinite(paydayNum) && paydayNum >= 1 && paydayNum <= 31 && Number.isFinite(salaryNum) && salaryNum > 0;
     return (
       <div className="card">
-        <div className="card-title" style={{ marginBottom: 4 }}>💰 월급 실시간 타이머</div>
+        <div className="card-title" style={{ marginBottom: 4 }}>월급 실시간 타이머</div>
         <div className="hint" style={{ fontSize: 13, marginBottom: 16 }}>
           월급일과 월급액을 입력하면, 다음 월급일까지 1초마다 돈이 쌓이는 모습을 볼 수 있어요.
         </div>
@@ -240,7 +240,7 @@ export const SalaryTimerCard: React.FC<Props> = React.memo(function SalaryTimerC
   return (
     <div className="card">
       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 4 }}>
-        <div className="card-title">💰 월급 실시간 타이머</div>
+        <div className="card-title">월급 실시간 타이머</div>
         <button
           type="button"
           onClick={() => {

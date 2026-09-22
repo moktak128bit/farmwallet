@@ -59,7 +59,7 @@ export const OverviewTab = React.memo(function OverviewTab({ d }: { d: D }) {
   return (
     <div>
       {/* ============ SECTION 1: 이번달 핵심 ============ */}
-      <Section storageKey="overview-section-hero" title="🎯 이번달 핵심">
+      <Section storageKey="overview-section-hero" title="이번달 핵심">
         {/* 이상치 주목 배너 */}
         {d.topAnomaly && d.anomalyTargetMonth && (
           <div style={{
@@ -97,12 +97,12 @@ export const OverviewTab = React.memo(function OverviewTab({ d }: { d: D }) {
           </div>
         )}
 
-        <Card accent><Kpi label="실질 수입" value={F(d.realIncome)} sub={d.settlementTotal > 0 ? `정산 ${F(d.settlementTotal)} 제외` : "근로+투자 소득"} color="var(--chart-income)" info="장부 수입 − 정산 회수액 − 일시소득(용돈·지원·이월·대출·처분소득 등)" /></Card>
-        <Card accent><Kpi label="실질 지출" value={F(d.realExpense)} sub={d.datePartnerShare > 0 ? `데이트 50% (${F(Math.round(d.datePartnerShare))}) 제외` : ""} badge={expBadge} color="var(--chart-expense)" info="장부 지출 − 데이트 계좌 지출의 50% (상대 부담분). 재테크·환전 제외" /></Card>
-        <Card accent><Kpi label="실질 순수익" value={F(d.netProfit)} sub="실질수입 − 실질지출" color={d.netProfit >= 0 ? "var(--success)" : "var(--danger)"} info="실질수입 − 실질지출. 양수=흑자(자산 증가), 음수=적자" /></Card>
-        <Card accent><Kpi label="실질 저축률" value={d.realSavRate.toFixed(1) + "%"} sub={`월평균 지출 ${F(Math.round(d.avgMonthExp))}`} color="var(--text)" info="(실질수입 − 실질지출) / 실질수입 × 100. 30% 이상이 건강한 수준" /></Card>
+        <Card accent bar="var(--chart-income)"><Kpi label="실질 수입" value={F(d.realIncome)} sub={d.settlementTotal > 0 ? `정산 ${F(d.settlementTotal)} 제외` : "근로+투자 소득"} color="var(--chart-income)" info="장부 수입 − 정산 회수액 − 일시소득(용돈·지원·이월·대출·처분소득 등)" /></Card>
+        <Card accent bar="var(--chart-expense)"><Kpi label="실질 지출" value={F(d.realExpense)} sub={d.datePartnerShare > 0 ? `데이트 50% (${F(Math.round(d.datePartnerShare))}) 제외` : ""} badge={expBadge} color="var(--chart-expense)" info="장부 지출 − 데이트 계좌 지출의 50% (상대 부담분). 재테크·환전 제외" /></Card>
+        <Card accent bar={d.netProfit >= 0 ? "var(--success)" : "var(--danger)"}><Kpi label="실질 순수익" value={F(d.netProfit)} sub="실질수입 − 실질지출" color={d.netProfit >= 0 ? "var(--success)" : "var(--danger)"} info="실질수입 − 실질지출. 양수=흑자(자산 증가), 음수=적자" /></Card>
+        <Card accent bar="var(--chart-primary)"><Kpi label="실질 저축률" value={d.realSavRate.toFixed(1) + "%"} sub={`월평균 지출 ${F(Math.round(d.avgMonthExp))}`} color="var(--text)" info="(실질수입 − 실질지출) / 실질수입 × 100. 30% 이상이 건강한 수준" /></Card>
 
-        <Card title="🛫 재정 활주로 — 수입 없이 버틸 수 있는 기간" span={4}>
+        <Card title="재정 활주로 — 수입 없이 버틸 수 있는 기간" span={4}>
           <div style={{ display: "grid", gridTemplateColumns: "1fr 2fr", gap: 16, alignItems: "center" }}>
             <div style={{ textAlign: "center", padding: "16px 0" }}>
               <div style={{ fontSize: 48, fontWeight: 800, color: runwayColor, lineHeight: 1 }}>
@@ -129,7 +129,7 @@ export const OverviewTab = React.memo(function OverviewTab({ d }: { d: D }) {
           </div>
         </Card>
 
-        <Card title={`🎯 저축률 목표 vs 실제 (${targetSavRateSrc})`} span={4}>
+        <Card title={`저축률 목표 vs 실제 (${targetSavRateSrc})`} span={4}>
           <div style={{ display: "grid", gridTemplateColumns: "1fr 2fr", gap: 16, alignItems: "center" }}>
             <div style={{ textAlign: "center" }}>
               <div style={{ fontSize: 13, color: "var(--text-faint)", fontWeight: 600 }}>현재 저축률</div>
@@ -165,10 +165,10 @@ export const OverviewTab = React.memo(function OverviewTab({ d }: { d: D }) {
               </div>
               <div style={{ marginTop: 10, fontSize: 12, color: "var(--text-muted)", lineHeight: 1.6 }}>
                 {savRateOk
-                  ? `✅ 목표 ${targetSavRate.toFixed(0)}%를 달성 중입니다. 월 실질수입 ${F(Math.round(monthlyRealIncome))} 중 ${F(Math.round(monthlyRealIncome * actualSavRate / 100))} 저축.`
+                  ? `목표 ${targetSavRate.toFixed(0)}%를 달성 중입니다. 월 실질수입 ${F(Math.round(monthlyRealIncome))} 중 ${F(Math.round(monthlyRealIncome * actualSavRate / 100))} 저축.`
                   : actualSavRate >= 0
                     ? `목표까지 ${(targetSavRate - actualSavRate).toFixed(1)}%p 부족. 월 ${F(Math.round(monthlyRealIncome * (targetSavRate - actualSavRate) / 100))} 더 절약 or 수입 증가 필요.`
-                    : `⚠️ 현재 적자 상태. 수입보다 지출이 많습니다. 우선 지출 축소가 시급합니다.`}
+                    : `현재 적자 상태. 수입보다 지출이 많습니다. 우선 지출 축소가 시급합니다.`}
                 {!monthlyDepositTarget && (
                   <div style={{ marginTop: 6, fontSize: 11, color: "var(--text-faint)" }}>
                     ℹ️ 대시보드 {">"} 투자 요약에서 연 입금액 목표를 설정하면 개인화된 목표 저축률이 적용됩니다.
@@ -181,9 +181,9 @@ export const OverviewTab = React.memo(function OverviewTab({ d }: { d: D }) {
       </Section>
 
       {/* ============ SECTION 2: 장기 트렌드 ============ */}
-      <Section storageKey="overview-section-trends" title="📊 장기 트렌드">
+      <Section storageKey="overview-section-trends" title="장기 트렌드">
         {/* 수입 성장률 (NEW) — 근로소득 기준 */}
-        <Card title="📈 근로소득 성장률 (MoM · YoY · 3M 평균)" span={4}>
+        <Card title="근로소득 성장률 (MoM · YoY · 3M 평균)" span={4}>
           <div style={{ display: "grid", gridTemplateColumns: "repeat(3, 1fr)", gap: 10, marginBottom: 12 }}>
             <div style={{ padding: "12px 14px", background: "var(--bg)", borderRadius: 10, textAlign: "center" }}>
               <div style={{ fontSize: 11, color: "var(--text-muted)", fontWeight: 600 }}>
@@ -192,7 +192,7 @@ export const OverviewTab = React.memo(function OverviewTab({ d }: { d: D }) {
               <div style={{ fontSize: 22, fontWeight: 800, color: igMomColor, marginTop: 4 }}>
                 {ig.mom == null ? "–" : Pct(ig.mom)}
               </div>
-              <div style={{ fontSize: 10, color: "var(--text-faint)", marginTop: 2 }}>
+              <div style={{ fontSize: 11, color: "var(--text-faint)", marginTop: 2 }}>
                 {ig.prevInc > 0 ? `${F(ig.prevInc)} → ${F(ig.targetInc)}` : ig.partialDay != null ? `전월 1~${ig.partialDay}일 수입 없음` : "비교 데이터 없음"}
               </div>
             </div>
@@ -201,7 +201,7 @@ export const OverviewTab = React.memo(function OverviewTab({ d }: { d: D }) {
               <div style={{ fontSize: 22, fontWeight: 800, color: igYoyColor, marginTop: 4 }}>
                 {ig.yoy == null ? "–" : Pct(ig.yoy)}
               </div>
-              <div style={{ fontSize: 10, color: "var(--text-faint)", marginTop: 2 }}>
+              <div style={{ fontSize: 11, color: "var(--text-faint)", marginTop: 2 }}>
                 {ig.yoy == null ? "1년 전 데이터 없음" : ig.partialDay != null ? `작년 동월 1~${ig.partialDay}일 비교` : "작년 동월 비교"}
               </div>
             </div>
@@ -210,15 +210,15 @@ export const OverviewTab = React.memo(function OverviewTab({ d }: { d: D }) {
               <div style={{ fontSize: 22, fontWeight: 800, color: igAvgColor, marginTop: 4 }}>
                 {ig.avg3MoM == null ? "–" : Pct(ig.avg3MoM)}
               </div>
-              <div style={{ fontSize: 10, color: "var(--text-faint)", marginTop: 2 }}>월평균 MoM</div>
+              <div style={{ fontSize: 11, color: "var(--text-faint)", marginTop: 2 }}>월평균 MoM</div>
             </div>
           </div>
           <ResponsiveContainer width="100%" height={180}>
             <ComposedChart data={ig.series}>
               <CartesianGrid strokeDasharray="3 3" stroke="var(--chart-grid)" />
               <XAxis dataKey="l" tick={{ fontSize: 11 }} />
-              <YAxis yAxisId="left" tickFormatter={F} tick={{ fontSize: 10 }} />
-              <YAxis yAxisId="right" orientation="right" tickFormatter={(v) => v + "%"} tick={{ fontSize: 10 }} />
+              <YAxis yAxisId="left" tickFormatter={F} tick={{ fontSize: 11 }} />
+              <YAxis yAxisId="right" orientation="right" tickFormatter={(v) => v + "%"} tick={{ fontSize: 11 }} />
               <Tooltip content={<CT />} />
               <Legend wrapperStyle={{ fontSize: 11 }} />
               <Bar isAnimationActive={false} yAxisId="left" dataKey="income" name="근로소득" fill="var(--chart-income)" radius={[4, 4, 0, 0]} opacity={0.5} />
@@ -265,7 +265,7 @@ export const OverviewTab = React.memo(function OverviewTab({ d }: { d: D }) {
       </Section>
 
       {/* ============ SECTION 3: 심층 분석 ============ */}
-      <Section storageKey="overview-section-analysis" title="🔬 심층 분석">
+      <Section storageKey="overview-section-analysis" title="심층 분석">
         <Card title="장부 vs 실질 비교 (왜 다른가?)" span={4}>
           <div className="grid-4" style={{ gap: 12, fontSize: 13 }}>
             <div style={{ padding: "12px 14px", background: "var(--success-light)", borderRadius: 10, border: "1px solid var(--success)" }}>
@@ -306,7 +306,7 @@ export const OverviewTab = React.memo(function OverviewTab({ d }: { d: D }) {
         </Card>
 
         {/* 지출 관성 (NEW) */}
-        <Card title="⚡ 지출 관성" span={2}>
+        <Card title="지출 관성" span={2}>
           {si == null ? (
             <div style={{ padding: 20, textAlign: "center", color: "var(--text-faint)", fontSize: 13 }}>
               비교할 과거 데이터가 부족합니다.
@@ -400,14 +400,14 @@ export const OverviewTab = React.memo(function OverviewTab({ d }: { d: D }) {
             {[
               { label: "순수익", value: F(d.netProfit) + "원", sub: `${d.accumLabel} · 실질수입 − 실질지출`, color: d.netProfit >= 0 ? "var(--success)" : "var(--danger)", bg: d.netProfit >= 0 ? "var(--success-light)" : "var(--danger-light)", border: d.netProfit >= 0 ? "var(--success)" : "var(--danger)" },
               { label: "실질 저축률", value: d.realSavRate.toFixed(1) + "%", sub: `${d.accumLabel} 기준`, color: d.realSavRate >= 30 ? "var(--success)" : d.realSavRate >= 0 ? "var(--warning)" : "var(--danger)", bg: "var(--accent-light)", border: "var(--border-light)" },
-              { label: "지출/근로소득 비율", value: d.expToIncRatio.toFixed(1) + "%", sub: d.expToIncRatio > 80 ? "⚠ 지출 비중 높음" : d.accumLabel, color: d.expToIncRatio > 80 ? "var(--danger)" : "var(--accent)", bg: "var(--bg)", border: "var(--border-light)" },
+              { label: "지출/근로소득 비율", value: d.expToIncRatio.toFixed(1) + "%", sub: d.expToIncRatio > 80 ? "지출 비중 높음" : d.accumLabel, color: d.expToIncRatio > 80 ? "var(--danger)" : "var(--accent)", bg: "var(--bg)", border: "var(--border-light)" },
               { label: "패시브 수입", value: F(d.passiveIncome) + "원", sub: `${d.accumLabel} · 실질수입 대비 ${d.realIncome > 0 ? Math.round(SD(d.passiveIncome, d.realIncome) * 100) : 0}%`, color: "var(--success)", bg: "var(--success-light)", border: "var(--success)" },
               { label: "일 평균 지출", value: F(d.dailyAvgExp) + "원", sub: `하루당 · ${d.totalDays}일 기준`, color: "var(--text)", bg: "var(--bg)", border: "var(--border-light)" },
             ].map(m => (
               <div key={m.label} style={{ padding: "12px 14px", background: m.bg, borderRadius: 10, border: `1px solid ${m.border}`, textAlign: "center" }}>
                 <div style={{ fontSize: 11, color: "var(--text-muted)", marginBottom: 4, fontWeight: 600 }}>{m.label}</div>
                 <div style={{ fontSize: 20, fontWeight: 800, color: m.color }}>{m.value}</div>
-                <div style={{ fontSize: 10, color: "var(--text-faint)", marginTop: 4 }}>{m.sub}</div>
+                <div style={{ fontSize: 11, color: "var(--text-faint)", marginTop: 4 }}>{m.sub}</div>
               </div>
             ))}
           </div>
@@ -421,9 +421,9 @@ export const OverviewTab = React.memo(function OverviewTab({ d }: { d: D }) {
               { label: "근로소득 안정성", value: d.incomeStability !== null ? d.incomeStability + "%" : "-", sub: d.incomeStability !== null && d.incomeStability >= 70 ? "월별 편차 작음" : "월별 편차 큼", color: "var(--accent)" },
             ].map(m => (
               <div key={m.label} style={{ padding: "10px 12px", background: "var(--bg)", borderRadius: 8, border: "1px solid var(--border-light)", textAlign: "center" }}>
-                <div style={{ fontSize: 10, color: "var(--text-faint)", fontWeight: 600 }}>{m.label}</div>
+                <div style={{ fontSize: 11, color: "var(--text-faint)", fontWeight: 600 }}>{m.label}</div>
                 <div style={{ fontSize: 16, fontWeight: 800, color: m.color, marginTop: 2 }}>{m.value}</div>
-                <div style={{ fontSize: 10, color: "var(--text-faint)", marginTop: 2 }}>{m.sub}</div>
+                <div style={{ fontSize: 11, color: "var(--text-faint)", marginTop: 2 }}>{m.sub}</div>
               </div>
             ))}
           </div>
@@ -462,7 +462,7 @@ export const OverviewTab = React.memo(function OverviewTab({ d }: { d: D }) {
       </Section>
 
       {/* ============ SECTION 4: 종합 인사이트 ============ */}
-      <Section storageKey="overview-section-insights" title="💡 종합 인사이트" defaultOpen={false}>
+      <Section storageKey="overview-section-insights" title="종합 인사이트" defaultOpen={false}>
         <Card title="종합 인사이트" span={4}>
           <div className="grid-2" style={{ gap: 12 }}>
             <Insight title="실질 저축률 분석" tone="success">

@@ -30,7 +30,7 @@ export const MigrationToolsCards: React.FC<Props> = React.memo(function Migratio
   return (
     <>
       <div className="card" style={{ borderLeft: "3px solid var(--accent)" }}>
-        <div className="card-title">⏱ 임시 1단계: 새 항목 구조 정렬 (cat을 지출/수입/이체로 통일)</div>
+        <div className="card-title">임시 1단계: 새 항목 구조 정렬 (cat을 지출/수입/이체로 통일)</div>
         <p className="hint" style={{ marginBottom: 8 }}>
           새 폼으로 잘못 입력된 16건 정도의 항목 (예: <code>cat="식비" sub="시장/마트"</code>)을
           표준 3-level 구조 (예: <code>cat="지출" sub="식비" det="시장/마트"</code>)로 끌어내립니다.
@@ -79,11 +79,11 @@ export const MigrationToolsCards: React.FC<Props> = React.memo(function Migratio
           }}
           style={{ padding: "8px 16px", fontSize: 13, fontWeight: 600, background: "var(--accent)", color: "#fff", border: "none" }}
         >
-          🔧 1단계: 구조 정렬 실행 (먼저 클릭)
+          1단계: 구조 정렬 실행 (먼저 클릭)
         </button>
       </div>
       <div className="card" style={{ borderLeft: "3px solid var(--warning)" }}>
-        <div className="card-title">⏱ 임시 2단계: 유류교통비 분류 6개로 통합 (구조 보존)</div>
+        <div className="card-title">임시 2단계: 유류교통비 분류 6개로 통합 (구조 보존)</div>
         <p className="hint" style={{ marginBottom: 8 }}>
           14개 → <strong>6개</strong> ({NEW_TRANSPORT_SUBS.join(" / ")})로 압축합니다.
           <br />
@@ -130,7 +130,7 @@ export const MigrationToolsCards: React.FC<Props> = React.memo(function Migratio
               }
             }
             if (preview.unmappedNotices.length > 0) {
-              lines.push(``, `⚠ 매핑 정의에 없는 값 (변경 안 됨):`);
+              lines.push(``, `매핑 정의에 없는 값 (변경 안 됨):`);
               lines.push(`  ${preview.unmappedNotices.join(", ")}`);
             }
             lines.push(``, `원래 분류명은 상세내역에 [원래소분류:...] 로 보존됩니다.`);
@@ -146,7 +146,7 @@ export const MigrationToolsCards: React.FC<Props> = React.memo(function Migratio
           }}
           style={{ padding: "8px 16px", fontSize: 13, fontWeight: 600 }}
         >
-          🔀 유류교통비 통합 실행 (미리보기 후 확인)
+          유류교통비 통합 실행 (미리보기 후 확인)
         </button>
       </div>
     </>

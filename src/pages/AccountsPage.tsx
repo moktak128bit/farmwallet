@@ -17,17 +17,16 @@
 import React, { useMemo, useState, useEffect, useCallback } from "react";
 import type { Account, AccountType, LedgerEntry, AccountBalanceRow, PositionRow, StockTrade } from "../types";
 import { formatKRW } from "../utils/formatter";
-import { isCreditPayment } from "../utils/categoryUtils";
 import { fetchYahooQuotes } from "../yahooFinanceApi";
 import { EmptyState } from "../components/ui/EmptyState";
 import { Wallet, Download } from "lucide-react";
 import { toast } from "react-hot-toast";
-import { computeRealizedPnlByTradeId, positionMarketValueKRW, computeLoanBalanceAt } from "../calculations";
+import { computeRealizedPnlByTradeId, positionMarketValueKRW, computeBalanceSheet, computeCardDebts } from "../calculations";
 import { getTodayKST } from "../utils/date";
 import { useAppStore } from "../store/appStore";
 import { buildUnifiedCsv } from "../utils/unifiedCsvExport";
 import { AccountForm } from "../features/accounts/sections/AccountForm";
-import { TypeSummarySection } from "../features/accounts/sections/TypeSummarySection";
+import { BalanceSheetStrip } from "../components/BalanceSheetStrip";
 import { TransactionHistoryModal } from "../features/accounts/sections/TransactionHistoryModal";
 import { AdjustmentModal } from "../features/accounts/sections/AdjustmentModal";
 import { BalanceBreakdownSection } from "../features/accounts/sections/BalanceBreakdownSection";
@@ -128,47 +127,13 @@ export const AccountsView: React.FC<Props> = ({
     return map;
   }, [safePositions, effectiveFxRate]);
 
+  // 카드별 "지금 갚을 돈" — 잔액 엔진 단일 소스(computeCardDebts). 표 컴포넌트가 쓰는 { total } 모양 유지.
+  // (예전엔 여기서 ledger를 따로 스캔해 category=신용결제만 결제로 인식 → 카테고리 없는 카드 대금 1건이 부채로 남아 62만 과대)
   const cardDebtMap = useMemo(() => {
     const map = new Map<string, { total: number }>();
-    const totalUsage = new Map<string, number>();
-    const totalPayment = new Map<string, number>();
-    const add = (m: Map<string, number>, k: string, v: number) => m.set(k, (m.get(k) ?? 0) + v);
-    const cardIds = new Set(safeBalances.filter((r) => r.account.type === "card").map((r) => r.account.id));
-
-    for (const l of ledger) {
-      // 신용카드 사용 → 부채 증가 (출금계좌가 카드인 지출, 단 레거시 신용결제 expense 제외)
-      // 분류 단일 소스 isCreditPayment 사용 — subCategory="신용결제" 레거시도 함께 제외(직접 비교는 놓침).
-      if (l.kind === "expense" && l.fromAccountId && !isCreditPayment(l)) {
-        add(totalUsage, l.fromAccountId, l.amount);
-      }
-      // 카드 대금 납부 → 부채 탕감: 카드계좌로 들어온 이체(신규 카드결제이체 포함) + 레거시 신용결제 expense
-      if (l.toAccountId && cardIds.has(l.toAccountId)) {
-        const isPayment =
-          l.kind === "transfer" ||
-          (l.kind === "expense" && isCreditPayment(l));
-        if (isPayment) {
-          const amt = l.amount;
-          add(totalPayment, l.toAccountId, amt);
-        }
-      }
-    }
-
-    safeBalances.forEach((row) => {
-      if (row.account.type === "card") {
-        const cardId = row.account.id;
-        const usage = totalUsage.get(cardId) ?? 0;
-        const payment = totalPayment.get(cardId) ?? 0;
-        // total = 현재 카드 부채 (양수=갚을 돈, 음수=선납·환불 잔액).
-        // 초기 부채(account.debt)를 포함해 ledger 사용·결제 차감 → "지금 갚을 돈" 한 줄로 표시 가능.
-        const initialDebt = row.account.debt ?? 0;
-        map.set(cardId, {
-          total: initialDebt + usage - payment
-        });
-      }
-    });
-
+    computeCardDebts(safeBalances).forEach((total, id) => map.set(id, { total }));
     return map;
-  }, [safeBalances, ledger]);
+  }, [safeBalances]);
 
   // 계좌 종류별로 묶어서 표시
   const accountsByType = useMemo(() => {
@@ -196,40 +161,11 @@ export const AccountsView: React.FC<Props> = ({
     [safeBalances]
   );
 
-  // Summary by account type
-  const typeSummary = useMemo(() => {
-    const checking = safeBalances
-      .filter((r) => r.account.type === "checking")
-      .reduce((s, r) => s + r.currentBalance, 0);
-    const savings = safeBalances
-      .filter((r) => r.account.type === "savings")
-      .reduce((s, r) => s + r.currentBalance, 0);
-    // 기타(other) 계좌 잔액 — 대시보드 computeTotalNetWorth와 동일하게 순자산에 포함
-    const other = safeBalances
-      .filter((r) => r.account.type === "other")
-      .reduce((s, r) => s + r.currentBalance, 0);
-    // cardDebtMap.total: 양수=부채, 음수=선납 (account.debt 포함).
-    const cardNet = Array.from(cardDebtMap.values()).reduce((s, v) => s + v.total, 0);
-    const cardDebt = Array.from(cardDebtMap.values()).reduce((s, v) => s + (v.total > 0 ? v.total : 0), 0);
-    const cardCredit = Array.from(cardDebtMap.values()).reduce((s, v) => s + (v.total < 0 ? Math.abs(v.total) : 0), 0);
-    const securities = safeBalances
-      .filter((r) => r.account.type === "securities" || r.account.type === "crypto")
-      .reduce((s, row) => {
-        const stock = stockMap.get(row.account.id) ?? 0;
-        const krw = row.currentBalance;
-        const usd = (row.account.usdBalance ?? 0) + (row.usdTransferNet ?? 0);
-        // effectiveFxRate: prop 미전달 시 로컬 fetch 폴백 포함 — 주식 환산과 동일 기준
-        const usdKrw = effectiveFxRate ? usd * effectiveFxRate : 0;
-        return s + stock + krw + usdKrw;
-      }, 0);
-    // 대출 잔금 — 대시보드 순자산(computeTotalNetWorth)과 같은 정의. 예전엔 여기 순자산이 카드 빚만 빼서
-    // 대시보드 순자산과 대출 잔금만큼 어긋났고, "부채" 칸은 카드 빚만 가리켰다.
-    const loanDebt = computeLoanBalanceAt(storeData.loans, ledger);
-    // 순자산 계산에는 카드 net(초과결제=+, 미결제=-) 그대로 반영
-    // 부채는 빼야 순자산 — cardNet은 양수가 부채라 차감.
-    const total = checking + savings + other + securities - cardNet - loanDebt;
-    return { checking, savings, other, cardNet, cardDebt, cardCredit, loanDebt, securities, total };
-  }, [safeBalances, stockMap, cardDebtMap, effectiveFxRate, storeData.loans, ledger]);
+  // 총자산·총부채·순자산 — 대시보드·인사이트·부채 탭과 같은 단일 소스(computeBalanceSheet)
+  const balanceSheet = useMemo(
+    () => computeBalanceSheet(safeBalances, safePositions, effectiveFxRate, storeData.loans, ledger),
+    [safeBalances, safePositions, effectiveFxRate, storeData.loans, ledger]
+  );
 
   return (
     <div>
@@ -252,7 +188,11 @@ export const AccountsView: React.FC<Props> = ({
         </div>
       </div>
 
-      {safeBalances.length > 0 && <TypeSummarySection summary={typeSummary} formatKRW={formatKRW} />}
+      {safeBalances.length > 0 && (
+        <div style={{ marginBottom: 24 }}>
+          <BalanceSheetStrip bs={balanceSheet} />
+        </div>
+      )}
 
       {showForm && <AccountForm onAdd={handleAddAccount} existingIds={existingIds} />}
 

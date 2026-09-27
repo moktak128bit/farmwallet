@@ -68,8 +68,11 @@ describe("generateStockPerformanceReport — USD 종목 KRW 정규화 (IRR 현�
 
 describe("generateClosingReportData — 정산 스냅샷 부채 부호", () => {
   it("부채가 있는 계좌의 월간 스냅샷에서 debt가 양수로 나온다 (자산 − 순자산)", () => {
+    // 부채는 카드 계좌로 — 대차 정의(computeBalanceSheet)에선 계좌 순가치 부호로 자산/부채를 가르므로
+    // 현금 100만이 있는 입출금 계좌의 debt 20만은 순가치 +80만(자산)으로 합쳐진다.
     const accounts = [
-      account({ id: "a1", initialBalance: 1_000_000, debt: 200_000 }),
+      account({ id: "a1", initialBalance: 1_000_000 }),
+      account({ id: "card", type: "card", initialBalance: 0, debt: 200_000 }),
     ];
     // 과거 완결 월(2026-01)에 항목을 둬서 월간 스냅샷이 반드시 생성되도록 함
     const ledger = [
@@ -87,7 +90,10 @@ describe("generateClosingReportData — 정산 스냅샷 부채 부호", () => {
   });
 
   it("주간 스냅샷도 동일하게 양수 부채", () => {
-    const accounts = [account({ id: "a1", initialBalance: 500_000, debt: 50_000 })];
+    const accounts = [
+      account({ id: "a1", initialBalance: 500_000 }),
+      account({ id: "card", type: "card", initialBalance: 0, debt: 50_000 }),
+    ];
     const ledger = [
       entry({ id: "e1", date: "2026-01-05", fromAccountId: "a1", subCategory: "식비", amount: 1000 }),
     ];

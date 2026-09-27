@@ -51,6 +51,7 @@ main.tsx → App.tsx (탭 셸·전역 모달·콜백 허브, 자식 props 시그
 - **utils/categoryUtils.ts** — `isCreditPayment`(레거시 신용결제 이중계상 방지), `isSavingsExpenseEntry`(저축성지출). 모든 지출 집계는 이 둘을 먼저 거른다. 순서 주의: isSavingsExpenseEntry를 `cat==="재테크"` 분기보다 먼저.
 - **features/dashboard/summaryMath.ts** — `classifyLedgerFlow`/`toKrw`/`isWealthBuildingEntry`("재테크"=저축·투자이체 transfer + 레거시 저축성지출). 대시보드 카드 간 수치는 반드시 이 헬퍼로 통일.
 - **utils/categoryMatch.ts** — 배당/이자 판정 단일 진입점 (`includes("배당")` 직접 사용 금지).
+- **calculations.ts computeBalanceSheet** — 총자산·총부채·순자산·유동자산의 단일 소스 (계좌 탭·대시보드·인사이트·부채 탭 공용, 표시는 components/BalanceSheetStrip). 계좌 순가치 부호로 자산/부채를 가르므로 마이너스 통장·카드 부채는 부채, 자산에 음수 없음. 카드 "지금 갚을 돈"은 `computeCardDebts`(잔액 엔진 기준 — ledger 재스캔 금지). 총자산=빚 빼기 전, 순자산=뺀 후 — 두 이름을 섞어 쓰지 말 것.
 
 ## 필수 컨벤션
 

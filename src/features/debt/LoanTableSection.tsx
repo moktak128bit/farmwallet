@@ -10,12 +10,13 @@
 import React from "react";
 import { Pencil, Trash2 } from "lucide-react";
 import type { Loan, RepaymentMethod } from "../../types";
-import { formatKRW } from "../../utils/formatter";
+import { formatKRW, formatKrwCompact } from "../../utils/formatter";
 import { Money } from "../../components/ui/Money";
 import { getTodayKST } from "../../utils/date";
 import { useAppStore } from "../../store/appStore";
 import { buildRestoreById, showDeleteUndoToast } from "../../utils/undoToast";
 import { daysBetween, summarizeLoans, type LoanRepayments } from "./debtShared";
+import type { BalanceSheet } from "../../calculations";
 import { LoanPrepaySimulator } from "./LoanPrepaySimulator";
 
 const formatPeriod = (days: number): string => {
@@ -90,6 +91,8 @@ interface Props {
   loanRepayments: LoanRepayments;
   /** 이번 달(KST) 납입한 이자 합 — 합계 줄 보조 문구 */
   monthInterestPaid: number;
+  /** 대차 단일 소스 — 총부채(대출 + 마이너스 통장 + 카드) 한 줄 */
+  balanceSheet: BalanceSheet;
   repaymentFilterDebtId: string;
   setRepaymentFilterDebtId: React.Dispatch<React.SetStateAction<string>>;
   setShowRepaymentHistory: React.Dispatch<React.SetStateAction<boolean>>;
@@ -106,6 +109,7 @@ export const LoanTableSection: React.FC<Props> = React.memo(function LoanTableSe
   loans,
   loanRepayments,
   monthInterestPaid,
+  balanceSheet,
   repaymentFilterDebtId,
   setRepaymentFilterDebtId,
   setShowRepaymentHistory,
@@ -150,10 +154,10 @@ export const LoanTableSection: React.FC<Props> = React.memo(function LoanTableSe
 
   return (
     <>
-      {/* 합계 줄 — 부채 페이지의 첫 질문 "얼마 남았나"에 먼저 답한다 */}
+      {/* 합계 줄 — 부채 페이지의 첫 질문 "얼마 남았나"에 먼저 답한다. 이 표는 대출만, 오른쪽에 총부채(대출+마이너스 통장+카드) */}
       <div className="card loan-summary">
         <div>
-          <div className="card-title">총 부채</div>
+          <div className="card-title">대출 잔금</div>
           <div className="card-value">
             <Money value={summary.totalBalance} compact />
           </div>
@@ -163,6 +167,19 @@ export const LoanTableSection: React.FC<Props> = React.memo(function LoanTableSe
           {summary.weightedRate != null && <> · 잔금 가중 금리 {summary.weightedRate.toFixed(1)}%</>}
           {" · 이번 달 갚은 이자 "}
           {formatKRW(Math.round(monthInterestPaid))}
+        </div>
+        <div style={{ marginLeft: "auto", textAlign: "right" }}>
+          <div className="card-title">총부채</div>
+          <div style={{ fontSize: 18, fontWeight: 700 }}>
+            <Money value={balanceSheet.totalLiabilities} compact />
+          </div>
+          <div className="hint" style={{ marginTop: 2, fontSize: 12 }}>
+            {[
+              balanceSheet.loanDebt > 0 ? `대출 ${formatKrwCompact(balanceSheet.loanDebt)}` : null,
+              balanceSheet.overdraft > 0 ? `마이너스 통장 ${formatKrwCompact(balanceSheet.overdraft)}` : null,
+              balanceSheet.cardDebt > 0 ? `카드 ${formatKrwCompact(balanceSheet.cardDebt)}` : null,
+            ].filter(Boolean).join(" · ") || "대출 외 부채 없음"}
+          </div>
         </div>
       </div>
 

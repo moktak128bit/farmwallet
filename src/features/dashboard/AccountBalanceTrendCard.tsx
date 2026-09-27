@@ -46,7 +46,7 @@ export const AccountBalanceTrendCard: React.FC<Props> = React.memo(function Acco
           <div style={{ fontSize: 14, fontWeight: 700, color: abColor }}>
             {abArrow} {formatKRW(Math.round(Math.abs(abDelta)))} ({abDelta >= 0 ? "+" : ""}{abDeltaPct.toFixed(1)}%)
           </div>
-          <div className="hint" style={{ fontSize: 13 }}>현재 합계 · 지난달 대비</div>
+          <div className="hint" style={{ fontSize: 13 }}>{String(lastSnap.date)} 스냅샷 합계 · 지난달 대비</div>
         </div>
       </div>
       <div style={{ display: "flex", flexWrap: "wrap", alignItems: "center", gap: 16, marginBottom: 12 }}>

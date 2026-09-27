@@ -15,6 +15,7 @@ import { useAppStore } from "../store/appStore";
 import { useDateAccountId } from "../hooks/useDateAccountSettings";
 import { useAccountTimelineRows } from "../hooks/useAccountTimelineRows";
 import { buildAdjustedPrices, buildTimelineMonthRange } from "../utils/accountTimeline";
+import { computeAccountBalances, computeBalanceSheet, computePositions, type BalanceSheet } from "../calculations";
 import { getThisMonthKST, getTodayKST, shiftMonth, getLastDayOfMonth } from "../utils/date";
 import { useInsightsData } from "../features/insights/useInsightsData";
 import { InsightsHeader } from "../features/insights/InsightsHeader";
@@ -31,7 +32,7 @@ const PatternTab = lazy(() => import("../features/insights/tabs/PatternTab").the
 const ForecastView = lazy(() => import("../features/insights/ForecastView").then((m) => ({ default: m.ForecastView })));
 const SettlementView = lazy(() => import("../features/dating/SettlementView").then((m) => ({ default: m.SettlementView })));
 
-const TabMap: Record<TabId, React.LazyExoticComponent<React.ComponentType<{ d: D }>>> = {
+const TabMap: Record<TabId, React.LazyExoticComponent<React.ComponentType<{ d: D; bs: BalanceSheet }>>> = {
   overview: OverviewTab, expense: ExpenseTab, income: IncomeTab, asset: AssetTab, invest: InvestTab, date: DateTab, pattern: PatternTab,
 };
 
@@ -87,6 +88,13 @@ export const InsightsView: React.FC<Props> = ({ accounts, ledger, trades = [], p
     loans,
   });
 
+  // 총자산·총부채·순자산 — 계좌 탭·대시보드와 같은 단일 소스(computeBalanceSheet). 기간 필터와 무관한 '지금' 값.
+  const bs = useMemo(() => {
+    const balances = computeAccountBalances(accounts, ledger, trades);
+    const positions = computePositions(trades, adjustedPrices, accounts, { fxRate: fxRate ?? undefined, priceFallback: "cost" });
+    return computeBalanceSheet(balances, positions, fxRate, loans, ledger);
+  }, [accounts, ledger, trades, adjustedPrices, fxRate, loans]);
+
   const d = useInsightsData(filteredLedger, filteredTrades, trades, accounts, prices, selMonth, categoryPresets, budgetGoals, dateAccountId, fxRate, timelineRows, ledger);
 
   const handleSelectPeriod = useCallback((v: number | null) => { setPeriodMonths(v); setSelMonth(null); }, []);
@@ -119,7 +127,7 @@ export const InsightsView: React.FC<Props> = ({ accounts, ledger, trades = [], p
       {/* Content — 탭 청크 lazy 로드 (첫 방문 시에만 스켈레톤) */}
       <div>
         <Suspense fallback={<ChartSkeleton height={300} />}>
-          <ActiveTab d={d} />
+          <ActiveTab d={d} bs={bs} />
           {tab === "overview" && (
             <ForecastView ledger={ledger} recurring={recurringExpenses} formatNumber={W} />
           )}

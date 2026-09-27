@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from "react";
-import type { Account, LedgerEntry, StockPrice, StockTrade } from "../types";
+import type { Account, LedgerEntry, Loan, StockPrice, StockTrade } from "../types";
 import {
   generateAccountPerformanceBreakdown,
   generateAccountReport,
@@ -16,6 +16,8 @@ import {
 
 interface UseReportWorkerParams {
   accounts: Account[];
+  /** 대출 — 리포트 순자산에서 잔금 차감 */
+  loans?: Loan[];
   ledger: LedgerEntry[];
   trades: StockTrade[];
   prices: StockPrice[];
@@ -105,14 +107,16 @@ function computeSynchronously(params: UseReportWorkerParams): ReportWorkerData {
       params.prices,
       params.startDate,
       params.endDate,
-      params.fxRate ?? undefined
+      params.fxRate ?? undefined,
+      params.loans
     ),
     closingReport: generateClosingReportData(
       params.accounts,
       params.ledger,
       params.trades,
       params.prices,
-      params.fxRate ?? undefined
+      params.fxRate ?? undefined,
+      params.loans
     ),
     accountPerformance: generateAccountPerformanceBreakdown(
       params.accounts,
@@ -208,6 +212,7 @@ export function useReportWorker(params: UseReportWorkerParams): UseReportWorkerR
       requestId,
       payload: {
         accounts: params.accounts,
+        loans: params.loans,
         ledger: params.ledger,
         trades: params.trades,
         prices: params.prices,
@@ -221,6 +226,7 @@ export function useReportWorker(params: UseReportWorkerParams): UseReportWorkerR
   }, [
     supportsWorker,
     params.accounts,
+    params.loans,
     params.ledger,
     params.trades,
     params.prices,

@@ -8,8 +8,9 @@ import type { ValueType } from "recharts/types/component/DefaultTooltipContent";
 import { C, F, W, Pct, SD, Card, Kpi, Insight, CT, Section, type D } from "../insightsShared";
 import { useAppStore } from "../../../store/appStore";
 import { getThisMonthKST } from "../../../utils/date";
+import type { BalanceSheet } from "../../../calculations";
 
-export const OverviewTab = React.memo(function OverviewTab({ d }: { d: D }) {
+export const OverviewTab = React.memo(function OverviewTab({ d, bs }: { d: D; bs: BalanceSheet }) {
   // 순현금흐름 차트 — 진행 중인 현재 월만 제외 (마지막 월이 완결 월이면 포함)
   const flowMonths = d.months.length > 0 && d.months[d.months.length - 1] === getThisMonthKST()
     ? d.months.slice(0, -1)
@@ -25,8 +26,9 @@ export const OverviewTab = React.memo(function OverviewTab({ d }: { d: D }) {
   const top3Sub = d.expBySub.filter(s => s.sub !== "신용결제" && s.cat !== "신용결제").slice(0, 3);
   const top3pct = d.pExpense > 0 ? Math.round(top3Sub.reduce((s, x) => s + x.amount, 0) / d.pExpense * 100) : 0;
 
-  /* 재정 활주로 (Financial Runway): 가용 자산(현금 + 증권·코인 평가액) / 월평균 지출 */
-  const liquidAssets = d.accountBalances.reduce((s, b) => s + Math.max(0, b.balance), 0);
+  /* 재정 활주로 (Financial Runway): 유동 자산(총자산 − 연금, 대차 단일 소스) / 월평균 지출.
+     예전엔 계좌별 양수 잔액만 더해 마이너스 통장을 무시하고 연금까지 '가용'으로 셌다. */
+  const liquidAssets = bs.liquidAssets;
   const runwayMonths = d.avgMonthExp > 0 ? liquidAssets / d.avgMonthExp : null;
   const runwayColor = runwayMonths == null ? "var(--text-faint)" : runwayMonths >= 12 ? "var(--success)" : runwayMonths >= 6 ? "var(--warning)" : "var(--danger)";
   const runwayLabel = runwayMonths == null
@@ -113,7 +115,7 @@ export const OverviewTab = React.memo(function OverviewTab({ d }: { d: D }) {
             </div>
             <div style={{ fontSize: 13, lineHeight: 1.7, color: "var(--text-secondary)" }}>
               <div style={{ display: "flex", justifyContent: "space-between", padding: "4px 0", borderBottom: "1px solid var(--border-light)" }}>
-                <span style={{ color: "var(--text-faint)" }}>가용 자산 (전 계좌 + 증권·코인 평가액)</span>
+                <span style={{ color: "var(--text-faint)" }}>유동 자산 (총자산 − 연금)</span>
                 <span style={{ fontWeight: 700 }}>{F(liquidAssets)}</span>
               </div>
               <div style={{ display: "flex", justifyContent: "space-between", padding: "4px 0", borderBottom: "1px solid var(--border-light)" }}>

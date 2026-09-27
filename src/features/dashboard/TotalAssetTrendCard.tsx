@@ -432,7 +432,7 @@ export const TotalAssetTrendCard: React.FC<Props> = React.memo(function TotalAss
         {latest && (
           <div style={{ display: "flex", gap: 20, alignItems: "flex-end", flexWrap: "wrap" }}>
             <div style={{ textAlign: "right" }}>
-              <div className="hint" style={{ fontSize: 12, marginBottom: 2 }}>현금+원가</div>
+              <div className="hint" style={{ fontSize: 12, marginBottom: 2 }}>{latest.date} 스냅샷 · 현금+원가</div>
               <div style={{ fontSize: 18, fontWeight: 700, color: "var(--warning)" }}>
                 {formatKRW(Math.round(latest.cashPlusCost))}
               </div>

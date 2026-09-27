@@ -415,7 +415,7 @@ export const PositionListSection: React.FC<PositionListSectionProps> = ({
                 </span>
               )}
               <span style={{ fontSize: 14, fontWeight: 400, color: "var(--text-muted)" }}>
-                총자산: <span className={totalAsset >= 0 ? "positive" : "negative"}>{formatKRW(Math.round(totalAsset))}</span>
+                계좌 합계: <span className={totalAsset >= 0 ? "positive" : "negative"}>{formatKRW(Math.round(totalAsset))}</span>
                 {rate > 0 && (
                   <span style={{ marginLeft: 4, fontSize: 12 }}>≈ {formatUSD(totalAsset / rate)}</span>
                 )}

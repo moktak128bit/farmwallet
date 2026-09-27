@@ -17,7 +17,10 @@
  */
 import React, { useState, useMemo, useCallback, useRef } from "react";
 import type { Loan, LedgerEntry, Account, CategoryPresets } from "../types";
-import { isInterestRepayment, matchLoanForRepayment } from "../calculations";
+import { computeAccountBalances, computeBalanceSheet, computePositions, isInterestRepayment, matchLoanForRepayment } from "../calculations";
+import { buildAdjustedPrices } from "../utils/accountTimeline";
+import { useAppStore } from "../store/appStore";
+import { useFxRateValue } from "../context/FxRateContext";
 import { isLoanRepaymentEntry } from "../features/debt/debtShared";
 import { getThisMonthKST } from "../utils/date";
 import { LoanFormSection, type LoanFormSectionHandle } from "../features/debt/LoanFormSection";
@@ -91,6 +94,16 @@ export const DebtView: React.FC<Props> = ({
       .reduce((s, l) => s + l.amount, 0);
   }, [ledger, matchRepaymentLoan]);
 
+  // 총부채 한 줄(대출 + 마이너스 통장 + 카드) — 계좌·대시보드·인사이트와 같은 단일 소스
+  const trades = useAppStore((s) => s.data.trades);
+  const prices = useAppStore((s) => s.data.prices);
+  const fxRate = useFxRateValue();
+  const balanceSheet = useMemo(() => {
+    const balances = computeAccountBalances(accounts, ledger, trades);
+    const positions = computePositions(trades, buildAdjustedPrices(prices, fxRate), accounts, { fxRate: fxRate ?? undefined, priceFallback: "cost" });
+    return computeBalanceSheet(balances, positions, fxRate, loans, ledger);
+  }, [accounts, ledger, trades, prices, fxRate, loans]);
+
   // 숨김(archived) 계좌는 출금 계좌 드롭다운에서 제외 — "입력 드롭다운에서 제외" 안내와 일치
   const cashAccounts = useMemo(
     () => accounts.filter((a) => (a.type === "checking" || a.type === "savings" || a.type === "other") && !a.archived),
@@ -137,6 +150,7 @@ export const DebtView: React.FC<Props> = ({
         loans={loans}
         loanRepayments={loanRepayments}
         monthInterestPaid={monthInterestPaid}
+        balanceSheet={balanceSheet}
         repaymentFilterDebtId={repaymentFilterDebtId}
         setRepaymentFilterDebtId={setRepaymentFilterDebtId}
         setShowRepaymentHistory={setShowRepaymentHistory}

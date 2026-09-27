@@ -47,6 +47,8 @@ export const ReportView: React.FC<Props> = ({ accounts, ledger, trades, prices }
   const dateAccountId = useDateAccountId();
   // 설정의 "비실질" 수입 카테고리 — 보고서 실질수입도 인사이트와 동일 기준으로 제외
   const nonRealIncomeOverride = useAppStore((s) => s.data.categoryPresets?.categoryTypes?.nonRealIncome);
+  // 대출 — 리포트 순자산에서 잔금 차감 (계좌·대시보드와 같은 대차 정의). props 시그니처 불변이라 스토어에서 읽는다
+  const loans = useAppStore((s) => s.data.loans);
   const [reportType, setReportType] = useState<ReportType>("comprehensive");
   const [startDate, setStartDate] = useState<string>(() => {
     // KST 기준 11개월 전 — UTC(toISOString) 사용 시 오전 9시 이전에 날짜가 하루 밀림
@@ -78,6 +80,7 @@ export const ReportView: React.FC<Props> = ({ accounts, ledger, trades, prices }
     isComputing
   } = useReportWorker({
     accounts,
+    loans,
     ledger,
     trades,
     prices,

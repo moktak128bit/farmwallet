@@ -6,18 +6,17 @@ import {
 import type { ValueType } from "recharts/types/component/DefaultTooltipContent";
 import { C, F, W, Card, Kpi, Insight, Section, pieLabel, type D } from "../insightsShared";
 import { useAppStore } from "../../../store/appStore";
-import { computeLoanBalanceAt } from "../../../calculations";
+import type { BalanceSheet } from "../../../calculations";
+import { BalanceSheetStrip } from "../../../components/BalanceSheetStrip";
 import { formatGoalProjectionLine, projectGoal } from "../../../utils/goalProjection";
 import { FireSimulatorCard } from "../FireSimulatorCard";
 
-export const AssetTab = React.memo(function AssetTab({ d }: { d: D }) {
+export const AssetTab = React.memo(function AssetTab({ d, bs }: { d: D; bs: BalanceSheet }) {
   const goals = useAppStore((s) => s.data.investmentGoals);
-  const loans = useAppStore((s) => s.data.loans ?? []);
-  const ledger = useAppStore((s) => s.data.ledger);
-  const accounts = useAppStore((s) => s.data.accounts);
 
   const nw = d.netWorthByMonth;
-  const current = d.netWorthNow?.total ?? 0;
+  // 현재 순자산 = 대차 단일 소스(계좌 탭·대시보드와 같은 숫자). 타임라인 마지막 행(현재 월)과 같은 식이라 추이와도 이어진다.
+  const current = bs.netWorth;
   const first = nw.length > 0 ? nw[0].total : 0;
   // 시작 순자산이 0 이하(부채 > 자산으로 출발)면 비율 성장이 정의되지 않음 — 증가액으로 표시
   const growthAbs = current - first;
@@ -26,14 +25,14 @@ export const AssetTab = React.memo(function AssetTab({ d }: { d: D }) {
   const minNW = nw.length > 0 ? Math.min(...nw.map((n) => n.total)) : 0;
   const monthlyGrowth = nw.length >= 2 ? Math.round((current - first) / (nw.length - 1)) : 0;
 
-  // 신용/대출 분해 표시용 (sub 문구·대출 잔금 인사이트). KPI 자체는 타임라인 월말 기준(netWorthNow) —
-  // 미래일자 상환 기록이 있을 때만 분해 합과 미세 차이가 날 수 있음 (표시 전용이라 수용)
-  const accountDebtSum = accounts.reduce((s, a) => s + Math.abs(a.debt ?? 0), 0);
-  const loanDebtSum = computeLoanBalanceAt(loans, ledger);
-
-  // 총 부채/총 자산 — 대시보드 타임라인과 동일 계산 (시세·환율·대출 반영)
-  const totalDebt = d.netWorthNow?.debt ?? 0;
-  const totalAssets = d.netWorthNow?.asset ?? 0;
+  // 총 부채/총 자산 — 대차 단일 소스 (마이너스 통장·카드는 부채, 자산에 음수 없음)
+  const totalDebt = bs.totalLiabilities;
+  const totalAssets = bs.totalAssets;
+  const debtParts = [
+    bs.loanDebt > 0 ? `대출 ${F(bs.loanDebt)}` : null,
+    bs.overdraft > 0 ? `마이너스통장 ${F(bs.overdraft)}` : null,
+    bs.cardDebt > 0 ? `카드 ${F(bs.cardDebt)}` : null,
+  ].filter(Boolean).join(" · ");
 
   // 목표 대비 진척률
   const target = goals?.finalTotalAssetTarget ?? null;
@@ -64,12 +63,15 @@ export const AssetTab = React.memo(function AssetTab({ d }: { d: D }) {
     <div>
       {/* 상단 배너 */}
       <div style={{ padding: "10px 14px", background: "var(--bg)", borderRadius: 8, marginBottom: 16, fontSize: 12, color: "var(--text-muted)", lineHeight: 1.6 }}>
-        ℹ️ 범위: <strong>{rangeLabel}</strong> ({periodLabel}) · 단위: <strong>원</strong> · 순자산 = 계좌잔액 − account.debt − 대출잔금.
+        ℹ️ 범위: <strong>{rangeLabel}</strong> ({periodLabel}) · 단위: <strong>원</strong> · 순자산 = 총자산 − 총부채 (계좌 탭·대시보드와 같은 정의).
         월별 추이는 <strong>대시보드 순자산 추이와 동일 계산</strong> (주식 평가액·환율·대출 반영)
       </div>
 
       {/* ============ 한눈에 ============ */}
       <Section storageKey="asset-section-overview" title="한눈에">
+        <div style={{ gridColumn: "span 4" }}>
+          <BalanceSheetStrip bs={bs} />
+        </div>
         <Card accent>
           <Kpi label="현재 순자산" value={F(current) + "원"} sub={`${nw.length}개월 추적`} color="var(--success)" info="계좌 현재 잔액 − account.debt − 대출 잔금" />
         </Card>
@@ -77,7 +79,7 @@ export const AssetTab = React.memo(function AssetTab({ d }: { d: D }) {
           <Kpi
             label={growthPct !== null ? "총 성장률" : "순자산 증가액"}
             value={growthPct !== null ? `${growthPct >= 0 ? "+" : ""}${growthPct}%` : `${growthAbs >= 0 ? "+" : "−"}${F(Math.abs(growthAbs))}원`}
-            sub={`시작 ${F(first)}원 → 현재 ${F(current)}원${first <= 0 && current > 0 ? " · 적자 → 흑자 전환" : ""}`}
+            sub={`시작 ${F(first)}원 → 현재 ${F(current)}원${first <= 0 && current > 0 ? " · 순부채에서 순자산으로 전환" : ""}`}
             color={growthAbs >= 0 ? "var(--success)" : "var(--danger)"}
             info="추적 시작 월 대비. 시작 순자산이 0 이하(부채로 출발)면 비율이 정의되지 않아 증가액으로 표시"
           />
@@ -88,7 +90,7 @@ export const AssetTab = React.memo(function AssetTab({ d }: { d: D }) {
             value={targetProgress == null ? "–" : targetProgress.toFixed(1) + "%"}
             sub={target ? `목표 ${F(target)}원` : "목표 미설정"}
             color={targetProgress == null ? "var(--text-faint)" : targetProgress >= 100 ? "var(--success)" : targetProgress >= 50 ? "var(--warning)" : "var(--accent)"}
-            info="투자 요약의 최종 총자산 목표 대비 현재 순자산"
+            info="투자 요약의 최종 순자산 목표 대비 현재 순자산"
           />
         </Card>
         <Card accent>
@@ -104,7 +106,7 @@ export const AssetTab = React.memo(function AssetTab({ d }: { d: D }) {
         <Card title={target ? `목표 자산 진척 (${F(target)}원)` : "목표 자산 진척"} span={4}>
           {target == null ? (
             <div style={{ padding: 20, textAlign: "center", color: "var(--text-muted)", fontSize: 13, lineHeight: 1.7 }}>
-              최종 총자산 목표가 설정되지 않았습니다.<br />
+              최종 순자산 목표가 설정되지 않았습니다.<br />
               <span style={{ fontSize: 11, color: "var(--text-faint)" }}>대시보드 → 투자 요약 카드에서 목표를 설정하면 여기에 진척도가 표시됩니다.</span>
             </div>
           ) : (
@@ -171,7 +173,7 @@ export const AssetTab = React.memo(function AssetTab({ d }: { d: D }) {
           <Kpi
             label="총 부채"
             value={F(totalDebt) + "원"}
-            sub={`신용 ${F(accountDebtSum)}원 + 대출 ${F(loanDebtSum)}원`}
+            sub={debtParts || "부채 없음"}
             color="var(--danger)"
             info="account.debt (신용카드 등) + 대출 잔금 (이자만 내는 동안 loanAmount 그대로)"
           />
@@ -180,7 +182,7 @@ export const AssetTab = React.memo(function AssetTab({ d }: { d: D }) {
           <Kpi
             label="현금성 비율"
             value={liquidPct.toFixed(1) + "%"}
-            sub={`유동자산 ${F(liquidAssets)}원`}
+            sub={`현금성 자산 ${F(liquidAssets)}원`}
             color={liquidPct >= 20 ? "var(--success)" : liquidPct >= 10 ? "var(--warning)" : "var(--danger)"}
             info="입출금+저축+현금 / 총자산. 20% 이상이면 유동성 여유, 10% 미만이면 위험"
           />
@@ -288,7 +290,7 @@ export const AssetTab = React.memo(function AssetTab({ d }: { d: D }) {
                 totalDebt > totalAssets * 0.5 ? ` 부채 비중 50% 초과 — 상환 계획 필요.` :
                 totalDebt > totalAssets * 0.2 ? ` 부채 비중 20-50% — 적정 관리 필요.` :
                 ` 부채 비중 20% 이내 — 건강한 수준.`}
-              {loanDebtSum > 0 && ` 대출 잔금 ${F(loanDebtSum)}원은 원금 상환 시 차감됨.`}
+              {bs.loanDebt > 0 && ` 대출 잔금 ${F(bs.loanDebt)}원은 원금 상환 시 차감됨.`}
             </Insight>
             <Insight title="자산 배분" tone="warning">
               {d.assetAllocation.length >= 2 ? (() => {
@@ -303,7 +305,7 @@ export const AssetTab = React.memo(function AssetTab({ d }: { d: D }) {
 
       {/* ============ FIRE ============ */}
       <Section storageKey="asset-section-fire" title="FIRE 시뮬레이터">
-        <FireSimulatorCard netWorthKRW={d.netWorthNow?.total ?? null} />
+        <FireSimulatorCard netWorthKRW={bs.netWorth} />
       </Section>
     </div>
   );

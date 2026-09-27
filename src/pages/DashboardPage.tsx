@@ -56,10 +56,10 @@ import type {
 import {
   computeAccountBalances,
   computeBalanceAtDateForAccounts,
-  computePositions,
-  computeTotalDebt,
-  computeTotalNetWorth
+  computeBalanceSheet,
+  computePositions
 } from "../calculations";
+import { BalanceSheetStrip } from "../components/BalanceSheetStrip";
 import { buildClosedTradeRecords, summarizeRecords } from "../utils/investmentRecord";
 import { useFxRateValue } from "../context/FxRateContext";
 import { useAppStore } from "../store/appStore";
@@ -270,11 +270,12 @@ export const DashboardView: React.FC<Props> = (props) => {
   }, [positionsWithPrice]);
 
   const loans = useMemo(() => storeData.loans ?? [], [storeData.loans]);
-  const totalDebt = useMemo(() => computeTotalDebt(accounts, loans, ledger), [accounts, loans, ledger]);
-  const totalNetWorth = useMemo(
-    () => computeTotalNetWorth(balances, positions, fxRate, loans, ledger),
+  /** 총자산·총부채·순자산 단일 소스 — 계좌 탭·인사이트·부채 탭과 같은 정의 */
+  const balanceSheet = useMemo(
+    () => computeBalanceSheet(balances, positions, fxRate, loans, ledger),
     [balances, positions, fxRate, loans, ledger]
   );
+  const totalNetWorth = balanceSheet.netWorth;
 
   /** 월별 계좌 타임라인 — 무거운 집계는 공용 훅(hooks/useAccountTimelineRows)으로 분리, 호출은 부모 1회 */
   const accountTimelineRows = useAccountTimelineRows({
@@ -353,6 +354,7 @@ export const DashboardView: React.FC<Props> = (props) => {
       {/* ── 자산·투자: 성과·추이·구성 차트 (기본 접힘, 접힌 줄에 순자산) ── */}
       {anyShown(["investmentPerformance", "securitiesValueTrend", "netWorthTrend", "assetComposition", "portfolioCharts", "accountBalanceTrend", "stockCostVsMarket", "totalAssetTrend", "cmaBalanceTrend"]) && (
         <DashboardSection id="assets" title="자산·투자" summary={`순자산 ${formatKrwCompact(totalNetWorth)}원`}>
+          <BalanceSheetStrip bs={balanceSheet} />
           {show("investmentPerformance") && (
             <Suspense fallback={<div className="card" style={{ minHeight: 360 }} />}>
               <LazyPortfolioPerformanceSection />
@@ -372,8 +374,8 @@ export const DashboardView: React.FC<Props> = (props) => {
               balances={balances}
               positions={positions}
               fxRate={fxRate}
-              totalNetWorth={totalNetWorth}
-              totalDebt={totalDebt}
+              totalNetWorth={balanceSheet.netWorth}
+              totalDebt={-balanceSheet.totalLiabilities}
             />
           )}
 

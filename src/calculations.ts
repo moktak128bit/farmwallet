@@ -536,7 +536,98 @@ export function computeLoanBalanceAt(
   }, 0);
 }
 
-/** 전체 순자산: 현금(KRW+USD환산) + 주식 평가액 - account.debt - 대출잔금 */
+/**
+ * 카드별 "지금 갚을 돈" = 초기 부채(account.debt) − 현재 잔액. 양수=부채, 음수=선납·환불 잔액.
+ * 잔액 엔진(computeAccountBalances) 하나만 본다 — 카드로 들어온 결제 이체·캐시백·카테고리 없는 레거시 결제(expense→카드)가
+ * 모두 반영된다. (예전 계좌 탭은 ledger를 따로 스캔해 category=신용결제만 결제로 인식 → 카테고리 없는 결제 1건에 62만 과대.)
+ */
+export function computeCardDebts(balances: AccountBalanceRowLike[]): Map<string, number> {
+  const out = new Map<string, number>();
+  for (const row of balances) {
+    if (row.account.type !== "card") continue;
+    out.set(row.account.id, Math.abs(row.account.debt ?? 0) - row.currentBalance);
+  }
+  return out;
+}
+
+/** 대차 한 장 — 앱 전체가 공유하는 총자산·총부채·순자산 정의 */
+export interface BalanceSheet {
+  /** 입출금·기타 계좌 양수 잔액 */
+  cash: number;
+  /** 저축 계좌 양수 잔액 */
+  savings: number;
+  /** 증권·코인(연금 제외): 예수금 + USD 환산 + 평가액 */
+  securities: number;
+  /** isPension 계좌(연금저축·퇴직연금): 예수금 + 평가액 */
+  pension: number;
+  /** 카드 선납·환불 잔액(음수 부채) — 자산 */
+  cardCredit: number;
+  totalAssets: number;
+  /** 마이너스 통장 — 입출금·저축·기타·증권 계좌의 음수 순가치 절댓값 */
+  overdraft: number;
+  /** 카드 부채(라이브, 양수만) */
+  cardDebt: number;
+  /** 대출 잔금 합 (원금 상환만 차감) */
+  loanDebt: number;
+  totalLiabilities: number;
+  /** = totalAssets − totalLiabilities */
+  netWorth: number;
+  /** 유동 자산 = 총자산 − 연금 (55세까지 묶인 돈 제외) — 재정 활주로용 */
+  liquidAssets: number;
+}
+
+/**
+ * 총자산·총부채·순자산의 단일 소스.
+ * 계좌마다 순가치(현금 + USD 환산 + 평가액 − account.debt)를 구해 양수는 자산 묶음, 음수는 부채 묶음
+ * (카드 → 카드 부채, 그 외 → 마이너스 통장)에 넣고 대출 잔금을 부채에 더한다. 그래서 자산 합에 음수가 섞이지 않고,
+ * 순자산 = 총자산 − 총부채 = Σ계좌 순가치 − 대출 (computeTotalNetWorth와 항등).
+ */
+export function computeBalanceSheet(
+  balances: AccountBalanceRowLike[],
+  positions: PositionRowLike[],
+  fxRate?: number | null,
+  loans?: Loan[],
+  ledger?: LedgerEntry[],
+  /** 일별 리포트용 — 이 날짜 이후 개시된 대출·상환은 제외 */
+  asOfDate?: string
+): BalanceSheet {
+  const stockMap = new Map<string, number>();
+  positions.forEach((p) => {
+    stockMap.set(p.accountId, (stockMap.get(p.accountId) ?? 0) + positionMarketValueKRW(p, fxRate));
+  });
+  let cash = 0, savings = 0, securities = 0, pension = 0, cardCredit = 0, overdraft = 0, cardDebt = 0;
+  for (const row of balances) {
+    const a = row.account;
+    const isSec = a.type === "securities" || a.type === "crypto";
+    const usdCash = isSec ? (a.usdBalance ?? 0) + (row.usdTransferNet ?? 0) : 0;
+    const usdToKrw = fxRate && usdCash !== 0 ? usdCash * fxRate : 0;
+    const value = row.currentBalance + usdToKrw + (stockMap.get(a.id) ?? 0) - Math.abs(a.debt ?? 0);
+    if (a.type === "card") {
+      if (value >= 0) cardCredit += value;
+      else cardDebt -= value;
+      continue;
+    }
+    if (value < 0) {
+      overdraft -= value;
+      continue;
+    }
+    if (a.isPension) pension += value;
+    else if (isSec) securities += value;
+    else if (a.type === "savings") savings += value;
+    else cash += value; // checking · other
+  }
+  const loanDebt = computeLoanBalanceAt(loans, ledger, asOfDate);
+  const totalAssets = cash + savings + securities + pension + cardCredit;
+  const totalLiabilities = overdraft + cardDebt + loanDebt;
+  return {
+    cash, savings, securities, pension, cardCredit, totalAssets,
+    overdraft, cardDebt, loanDebt, totalLiabilities,
+    netWorth: totalAssets - totalLiabilities,
+    liquidAssets: totalAssets - pension,
+  };
+}
+
+/** 전체 순자산 — computeBalanceSheet의 netWorth (현금(KRW+USD환산) + 주식 평가액 − account.debt − 대출잔금) */
 export function computeTotalNetWorth(
   balances: AccountBalanceRowLike[],
   positions: PositionRowLike[],
@@ -544,22 +635,7 @@ export function computeTotalNetWorth(
   loans?: Loan[],
   ledger?: LedgerEntry[]
 ): number {
-  const stockMap = new Map<string, number>();
-  positions.forEach((p) => {
-    stockMap.set(p.accountId, (stockMap.get(p.accountId) ?? 0) + positionMarketValueKRW(p, fxRate));
-  });
-  const assetSide = balances.reduce((sum, row) => {
-    const krwCash = row.currentBalance;
-    const stockAsset = stockMap.get(row.account.id) ?? 0;
-    const debt = Math.abs(row.account.debt ?? 0);
-    const usdCash =
-      row.account.type === "securities" || row.account.type === "crypto"
-        ? (row.account.usdBalance ?? 0) + (row.usdTransferNet ?? 0)
-        : 0;
-    const usdToKrw = fxRate && usdCash !== 0 ? usdCash * fxRate : 0;
-    return sum + krwCash + usdToKrw + stockAsset - debt;
-  }, 0);
-  return assetSide - computeLoanBalanceAt(loans, ledger);
+  return computeBalanceSheet(balances, positions, fxRate, loans, ledger).netWorth;
 }
 
 
@@ -605,16 +681,6 @@ export function computeBalanceAtDateForAccounts(
 
 
 
-/** 부채 합계 (음수=부채, 양수=선결제/환급). account.debt + 대출 잔금 합산. */
-export function computeTotalDebt(
-  accounts: Account[],
-  loans?: Loan[],
-  ledger?: LedgerEntry[]
-): number {
-  const accountDebt = accounts.reduce((s, a) => s + Math.abs(a.debt ?? 0), 0);
-  const loanDebt = computeLoanBalanceAt(loans, ledger);
-  return -(accountDebt + loanDebt);
-}
 
 
 

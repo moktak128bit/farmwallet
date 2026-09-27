@@ -297,7 +297,7 @@ export const InvestmentSummaryCard: React.FC<Props> = React.memo(function Invest
           placeholder="목표 금액 (원)"
         />
         <GoalRow
-          label="최종 총자산 목표 (전 계좌 − 부채)"
+          label="최종 순자산 목표 (총자산 − 총부채)"
           progress={totalNetWorth}
           target={goals.finalTotalAssetTarget}
           hint={finalTotalEtaHint}

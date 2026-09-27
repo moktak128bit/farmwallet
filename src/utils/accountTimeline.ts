@@ -193,8 +193,10 @@ export function computeAccountTimelineRows(params: {
       const debt = Math.abs(account.debt ?? 0);
       const accountAsset = cash + usdToKrw + stock;
       const accountValue = accountAsset - debt;
-      totalAssetValue += accountAsset;
-      totalDebtValue += debt;
+      // 자산/부채 묶음은 계좌 순가치의 부호로 — computeBalanceSheet와 같은 규칙.
+      // (예전엔 자산에 카드 음수 잔액이 섞이고 부채는 초기 account.debt만 세어 "자산 대비 부채 비율"이 두 기준을 섞었다.)
+      if (accountValue >= 0) totalAssetValue += accountValue;
+      else totalDebtValue -= accountValue;
       totalValue += accountValue;
       if (account.isPension) totalPensionValue += accountValue;
 

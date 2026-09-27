@@ -3,8 +3,8 @@
 // (순수 이동만 — 로직 변경 없음. 원본 src/utils/reportGenerator.ts 참조)
 // ---------------------------------------------------------------------------
 
-import type { Account, LedgerEntry, StockPrice, StockTrade } from "../../types";
-import { computeAccountBalances, computePositions } from "../../calculations";
+import type { Account, LedgerEntry, Loan, StockPrice, StockTrade } from "../../types";
+import { computeAccountBalances, computeBalanceSheet, computePositions } from "../../calculations";
 import { getTodayKST } from "../date";
 import { isSavingsExpenseEntry, isCreditPayment, isInvestmentEntry } from "../category";
 import { toKrwAmount, convertPositionAmount } from "./shared";
@@ -115,7 +115,9 @@ export function generateDailyReport(
   prices: StockPrice[],
   startDate?: string,
   endDate?: string,
-  fxRate?: number
+  fxRate?: number,
+  /** 대출 잔금을 순자산에서 빼기 위해 필요 — 없으면 대출 미반영(구버전 호출 호환) */
+  loans?: Loan[]
 ): DailyReport[] {
   const dateSet = new Set<string>();
   for (const trade of trades) {
@@ -205,9 +207,11 @@ export function generateDailyReport(
         .filter((account) => account.type !== "savings")
         .reduce((sum, account) => sum + (account.savings ?? 0), 0);
 
-    const debt = accounts.reduce((sum, account) => sum + Math.abs(account.debt ?? 0), 0);
-    const totalAsset = stockValue + cashValue + savingsValue;
-    const netWorth = totalAsset - debt;
+    // 총자산·순자산은 앱 공용 대차 정의(computeBalanceSheet) — 그날까지의 잔액·포지션·대출 잔금 기준.
+    // (예전엔 대출을 빼지 않고 초기 account.debt만 빼서 대시보드 순자산과 대출 잔금만큼 어긋났고, 카드 사용액도 무시했다.)
+    const sheet = computeBalanceSheet(balances, positions, fxRate, loans, filteredLedger, date);
+    const totalAsset = sheet.totalAssets;
+    const netWorth = sheet.netWorth;
 
     reports.push({
       date,
@@ -231,7 +235,8 @@ export function generateClosingReportData(
   ledger: LedgerEntry[],
   trades: StockTrade[],
   prices: StockPrice[],
-  fxRate?: number
+  fxRate?: number,
+  loans?: Loan[]
 ): ClosingReportData {
   const today = getTodayKST();
   const allDates = [...ledger.map((entry) => entry.date), ...trades.map((trade) => trade.date)]
@@ -240,7 +245,7 @@ export function generateClosingReportData(
   const firstDate = allDates[0] ?? today;
   const latestActivityDate = allDates.length > 0 ? allDates[allDates.length - 1] : undefined;
 
-  const dailyRows = generateDailyReport(accounts, ledger, trades, prices, firstDate, today, fxRate);
+  const dailyRows = generateDailyReport(accounts, ledger, trades, prices, firstDate, today, fxRate, loans);
 
   const monthlyStatusBase: MonthlyClosingStatus = {
     month: today.slice(0, 7),

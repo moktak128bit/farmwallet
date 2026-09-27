@@ -13,10 +13,12 @@ import {
   generateStockPerformanceReport,
   generateYearlyReport
 } from "../utils/reportGenerator";
-import type { Account, LedgerEntry, StockPrice, StockTrade } from "../types";
+import type { Account, LedgerEntry, Loan, StockPrice, StockTrade } from "../types";
 
 interface ReportWorkerPayload {
   accounts: Account[];
+  /** 대출 — 일별·마감 리포트 순자산에서 잔금 차감 (계좌·대시보드와 같은 정의) */
+  loans?: Loan[];
   ledger: LedgerEntry[];
   trades: StockTrade[];
   prices: StockPrice[];
@@ -76,14 +78,16 @@ workerScope.onmessage = (event: MessageEvent<ReportWorkerRequest>) => {
         payload.prices,
         payload.startDate,
         payload.endDate,
-        payload.fxRate ?? undefined
+        payload.fxRate ?? undefined,
+        payload.loans
       ),
       closingReport: generateClosingReportData(
         payload.accounts,
         payload.ledger,
         payload.trades,
         payload.prices,
-        payload.fxRate ?? undefined
+        payload.fxRate ?? undefined,
+        payload.loans
       ),
       accountPerformance: generateAccountPerformanceBreakdown(
         payload.accounts,

@@ -126,6 +126,22 @@ const INSIGHT_TONES: Record<InsightTone, { bg: string; title: string }> = {
   danger: { bg: "var(--danger-light)", title: "var(--danger)" },
 };
 
+/** 인사이트 문장 — 첫 문장만 진하게, 두 줄에서 접고 클릭하면 펼친다 (긴 분석 문단이 화면을 채우던 문제) */
+export function InsightText({ text, style }: { text: string; style?: React.CSSProperties }) {
+  const [open, setOpen] = useState(false);
+  const m = text.match(/^(.+?[.!?])\s+([\s\S]+)$/);
+  return (
+    <div
+      className={open ? undefined : "ins-clamp"}
+      style={{ cursor: "pointer", ...style }}
+      title={open ? "클릭하면 접기" : "클릭하면 전체 보기"}
+      onClick={() => setOpen((v) => !v)}
+    >
+      {m ? (<><strong>{m[1]}</strong> {m[2]}</>) : text}
+    </div>
+  );
+}
+
 export function Insight({ title, color, bg, tone, children }: {
   title: string; color?: string; bg?: string; tone?: InsightTone; children: React.ReactNode;
 }) {
@@ -133,7 +149,7 @@ export function Insight({ title, color, bg, tone, children }: {
   return (
     <div style={{ background: t?.bg ?? bg, padding: 14, borderRadius: 10, fontSize: 13, lineHeight: 1.7, color: "var(--text)" }}>
       <div style={{ fontWeight: 700, color: t?.title ?? color, marginBottom: 4 }}>{title}</div>
-      {children}
+      {typeof children === "string" ? <InsightText text={children} /> : children}
     </div>
   );
 }

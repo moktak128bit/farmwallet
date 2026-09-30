@@ -238,6 +238,17 @@ body {
   font-family: var(--font-kr) !important;
   font-size: 12px;
 }
+/* 차트 축·범례 글자 — 연회색은 읽히지 않았다. 카드가 tick fill을 속성으로 줘도 CSS가 이긴다 */
+.recharts-cartesian-axis-tick-value { fill: var(--text-secondary); }
+.recharts-legend-item-text { color: var(--text-secondary) !important; }
+
+/* 인사이트 문단 — 두 줄 클램프, 클릭으로 펼침 (InsightText) */
+.ins-clamp {
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
 
 h1, h2, h3, h4, h5, h6 {
   margin: 0;
@@ -983,7 +994,7 @@ a:hover {
 .card-title {
   font-size: 12px;
   font-weight: 600;
-  color: var(--text-muted);
+  color: var(--text-secondary); /* 라벨은 조용하되 읽혀야 한다 — 연회색 12px은 큰 숫자 옆에서 사라졌다 */
   text-transform: none;
   letter-spacing: 0;
   margin-bottom: 6px;
@@ -1045,6 +1056,16 @@ a:hover {
 
 .data-table th:last-child {
   border-right: none; /* 마지막 컬럼은 구분선 제거 */
+}
+
+/* 숫자 열 머리글은 값과 같은 오른쪽 정렬 — `.data-table th { left }`가 `.number`(특이성 낮음)를 이겨
+   머리글만 왼쪽에 남아 있었다(배당 표: "원금"은 왼쪽, 3,907,886원은 오른쪽). */
+.data-table th.number {
+  text-align: right;
+}
+.data-table th.number .sort-header {
+  justify-content: flex-end;
+  text-align: right;
 }
 
 /* 정렬 버튼 스타일 — z-index 낮춰 리사이즈 핸들이 클릭되도록 */
@@ -1223,12 +1244,19 @@ td.cell-editable:hover {
   text-overflow: clip;
 }
 
-/* 가계부: 모든 셀 가운데 정렬 */
-/* 가계부 목록: 헤더는 모두 가운데, 본문은 날짜만 가운데·나머지 오른쪽 */
+/* 가계부 목록: 본문이 오른쪽 정렬이므로 머리글도 오른쪽(값과 같은 축). 날짜·작업 열만 가운데 */
 .data-table.ledger-table th {
-  text-align: center;
+  text-align: right;
 }
 .data-table.ledger-table th .sort-header {
+  justify-content: flex-end;
+  text-align: right;
+}
+.data-table.ledger-table th.ledger-col-date,
+.data-table.ledger-table th:last-child {
+  text-align: center;
+}
+.data-table.ledger-table th.ledger-col-date .sort-header {
   justify-content: center;
   text-align: center;
 }
@@ -2512,6 +2540,8 @@ label {
 
   .grid-4 { grid-template-columns: 1fr !important; }
   .grid-2 { grid-template-columns: 1fr !important; }
+  /* 인라인 gridColumn: span N 카드가 1열 그리드에 암시적 열을 만들어 옆 카드를 찌그러뜨린다 → 전부 한 줄 전체폭 */
+  .grid-4 > *, .grid-2 > * { grid-column: 1 / -1 !important; }
 
   .app-header {
     padding-bottom: 10px;

@@ -10,6 +10,17 @@ import { INVESTMENT_TRANSFER_SUBS, investmentTransferBucket } from "../../utils/
 import { isIncomeExcludedFromTotals } from "../../utils/realIncome";
 import { toKrwByRate } from "../../utils/currency";
 
+/**
+ * 이번 달 급여가 아직 안 들어온 상태 — 과거엔 받았는데 이번 달은 (거의) 0.
+ * 정확히 0만 보면 1원 인증송금 같은 푼돈에 뚫리므로 전월 급여의 5% 미만도 '아직 없음'으로 본다.
+ * 대시보드 요약·전월 대비·인사이트 성장률이 같은 판정을 쓴다 (월급 25일이면 월중 내내 빨간 −100%가 뜨던 문제).
+ */
+export function isBeforePayday(currentIncome: number, prevMonthIncome: number, everHadIncome: boolean): boolean {
+  if (!everHadIncome) return false;
+  if (currentIncome <= 0) return true;
+  return prevMonthIncome > 0 && currentIncome < prevMonthIncome * 0.05;
+}
+
 /** USD 항목은 환율로 원화 환산 — 단일 소스 toKrwByRate에 위임 (환율 없으면 액면 그대로, 대시보드 공통 정책) */
 export const toKrwAmount = (entry: LedgerEntry, fxRate: number | null): number =>
   toKrwByRate(entry.amount, entry.currency, fxRate);

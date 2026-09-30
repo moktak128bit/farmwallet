@@ -450,37 +450,37 @@ export const PositionListSection: React.FC<PositionListSectionProps> = ({
                       </button>
                     </th>
                     <th style={{ minWidth: "90px" }}>시장</th>
-                    <th>
+                    <th className="number">
                       <button type="button" className="sort-header" onClick={() => togglePositionSort("pnl")}>
                         평가손익 <span className="arrow">{sortIndicator(positionSort.key, "pnl", positionSort.direction)}</span>
                       </button>
                     </th>
-                    <th>
+                    <th className="number">
                       <button type="button" className="sort-header" onClick={() => togglePositionSort("pnlRate")}>
                         수익률 <span className="arrow">{sortIndicator(positionSort.key, "pnlRate", positionSort.direction)}</span>
                       </button>
                     </th>
-                    <th>
+                    <th className="number">
                       <button type="button" className="sort-header" onClick={() => togglePositionSort("marketPrice")}>
                         현재가 <span className="arrow">{sortIndicator(positionSort.key, "marketPrice", positionSort.direction)}</span>
                       </button>
                     </th>
-                    <th>
+                    <th className="number">
                       <button type="button" className="sort-header" onClick={() => togglePositionSort("avgPrice")}>
                         평균단가 <span className="arrow">{sortIndicator(positionSort.key, "avgPrice", positionSort.direction)}</span>
                       </button>
                     </th>
-                    <th>
+                    <th className="number">
                       <button type="button" className="sort-header" onClick={() => togglePositionSort("quantity")}>
                         보유수량 <span className="arrow">{sortIndicator(positionSort.key, "quantity", positionSort.direction)}</span>
                       </button>
                     </th>
-                    <th>
+                    <th className="number">
                       <button type="button" className="sort-header" onClick={() => togglePositionSort("totalBuyAmount")}>
                         총매입금액 <span className="arrow">{sortIndicator(positionSort.key, "totalBuyAmount", positionSort.direction)}</span>
                       </button>
                     </th>
-                    <th>
+                    <th className="number">
                       <button type="button" className="sort-header" onClick={() => togglePositionSort("marketValue")}>
                         총평가금액 <span className="arrow">{sortIndicator(positionSort.key, "marketValue", positionSort.direction)}</span>
                       </button>

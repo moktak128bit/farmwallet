@@ -14,6 +14,8 @@ interface Props {
   categoryPresets?: CategoryPresets;
   /** 근로소득 키 — 지정 시 수입 비교는 근로소득(월급·수당·상여)만 (정산·용돈·배당 제외) */
   salaryKeys?: Set<string>;
+  /** 부모가 isBeforePayday로 판정 — 급여 전엔 근로소득 비교(−100%)를 그리지 않는다 */
+  beforePayday?: boolean;
 }
 
 // React.memo — 부모(DashboardPage)가 넘기는 props는 안정적(store 참조·원시값)이어야 한다.
@@ -23,6 +25,7 @@ export const ExpenseIncomeCompareCard: React.FC<Props> = React.memo(function Exp
   fxRate,
   categoryPresets,
   salaryKeys,
+  beforePayday = false,
 }) {
   // 진행 중인 이번 달이면 전월·전년도 같은 기간(1~오늘 일)만 비교 —
   // 부분 월 vs 완전한 월 비교 왜곡 방지 (월급 25일이면 월중 내내 수입 -90%대로 보이는 문제)
@@ -48,12 +51,20 @@ export const ExpenseIncomeCompareCard: React.FC<Props> = React.memo(function Exp
           formatNumber={(n) => formatKRW(Math.round(n))}
           kind="expense"
         />
-        <MonthComparisonCard
-          title={`${month} 근로소득`}
-          comparison={incomeComparison}
-          formatNumber={(n) => formatKRW(Math.round(n))}
-          kind="income"
-        />
+        {beforePayday ? (
+          <div style={{ padding: "12px 14px", border: "1px dashed var(--border-strong)", borderRadius: "var(--radius-md)" }}>
+            <div className="card-title">{month} 근로소득</div>
+            <div style={{ fontSize: 18, fontWeight: 700, color: "var(--text-muted)" }}>급여 입금 전</div>
+            <div className="hint" style={{ marginTop: 4, fontSize: 12 }}>급여가 들어오면 전월·전년 동기와 비교합니다</div>
+          </div>
+        ) : (
+          <MonthComparisonCard
+            title={`${month} 근로소득`}
+            comparison={incomeComparison}
+            formatNumber={(n) => formatKRW(Math.round(n))}
+            kind="income"
+          />
+        )}
       </div>
     </div>
   );

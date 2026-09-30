@@ -4,7 +4,7 @@
  */
 import React from "react";
 
-export type TabId = "overview" | "expense" | "income" | "asset" | "invest" | "date" | "pattern";
+export type TabId = "overview" | "expense" | "income" | "asset" | "invest";
 
 const TABS: { id: TabId; label: string }[] = [
   { id: "overview", label: "종합" },
@@ -12,8 +12,6 @@ const TABS: { id: TabId; label: string }[] = [
   { id: "income", label: "수입 구조" },
   { id: "asset", label: "자산 분석" },
   { id: "invest", label: "투자 포트폴리오" },
-  { id: "date", label: "데이트" },
-  { id: "pattern", label: "패턴·재미" },
 ];
 
 interface Props {

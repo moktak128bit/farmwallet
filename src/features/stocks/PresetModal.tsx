@@ -82,8 +82,8 @@ export function PresetModal({
                     <th>계좌</th>
                     <th>티커</th>
                     <th>종목명</th>
-                    <th>수량</th>
-                    <th>수수료</th>
+                    <th className="number">수량</th>
+                    <th className="number">수수료</th>
                     <th>마지막 사용</th>
                     <th>작업</th>
                   </tr>

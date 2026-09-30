@@ -33,7 +33,7 @@ const ForecastView = lazy(() => import("../features/insights/ForecastView").then
 const SettlementView = lazy(() => import("../features/dating/SettlementView").then((m) => ({ default: m.SettlementView })));
 
 const TabMap: Record<TabId, React.LazyExoticComponent<React.ComponentType<{ d: D; bs: BalanceSheet }>>> = {
-  overview: OverviewTab, expense: ExpenseTab, income: IncomeTab, asset: AssetTab, invest: InvestTab, date: DateTab, pattern: PatternTab,
+  overview: OverviewTab, expense: ExpenseTab, income: IncomeTab, asset: AssetTab, invest: InvestTab,
 };
 
 /** loans 미보유(undefined) 시 폴백 — 모듈 상수로 참조 고정 (memo 계약) */
@@ -128,10 +128,15 @@ export const InsightsView: React.FC<Props> = ({ accounts, ledger, trades = [], p
       <div>
         <Suspense fallback={<ChartSkeleton height={300} />}>
           <ActiveTab d={d} bs={bs} />
+          {/* 탭 7→5: 패턴·재미는 종합 아래, 데이트(+정산)는 지출·구독 아래로 — 탭당 내용이 얇던 문제 */}
           {tab === "overview" && (
-            <ForecastView ledger={ledger} recurring={recurringExpenses} formatNumber={W} />
+            <>
+              <ForecastView ledger={ledger} recurring={recurringExpenses} formatNumber={W} />
+              <PatternTab d={d} />
+            </>
           )}
-          {tab === "date" && (
+          {tab === "expense" && <DateTab d={d} />}
+          {tab === "expense" && (
             <SettlementView
               data={{ accounts, ledger, trades, prices: [], categoryPresets, recurringExpenses, budgetGoals: budgetGoals ?? [], customSymbols: [] }}
               onSettle={handleSettle}

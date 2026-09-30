@@ -178,8 +178,8 @@ export const IncomeSummarySection: React.FC<Props> = React.memo(function IncomeS
               <tr>
                 <th>티커</th>
                 <th>종목명</th>
-                <th>횟수</th>
-                <th>총 배당금</th>
+                <th className="number">횟수</th>
+                <th className="number">총 배당금</th>
               </tr>
             </thead>
             <tbody>
@@ -283,7 +283,7 @@ export const IncomeSummarySection: React.FC<Props> = React.memo(function IncomeS
                   <thead>
                     <tr>
                       <th>월</th>
-                      <th>총액</th>
+                      <th className="number">총액</th>
                     </tr>
                   </thead>
                   <tbody>
@@ -312,7 +312,7 @@ export const IncomeSummarySection: React.FC<Props> = React.memo(function IncomeS
             <thead>
               <tr>
                 <th>월</th>
-                <th>이자 합계</th>
+                <th className="number">이자 합계</th>
               </tr>
             </thead>
             <tbody>

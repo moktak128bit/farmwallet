@@ -534,10 +534,10 @@ export const StockDetailModal: React.FC<Props> = ({
                     <tr>
                       <th>날짜</th>
                       <th>구분</th>
-                      <th>수량</th>
-                      <th>단가</th>
-                      <th>수수료</th>
-                      <th>총액</th>
+                      <th className="number">수량</th>
+                      <th className="number">단가</th>
+                      <th className="number">수수료</th>
+                      <th className="number">총액</th>
                     </tr>
                   </thead>
                   <tbody>
@@ -731,8 +731,8 @@ export const StockDetailModal: React.FC<Props> = ({
                   <thead>
                     <tr>
                       <th>날짜</th>
-                      <th>금액</th>
-                      <th style={{ width: "10%" }}>배당율(매입대비)</th>
+                      <th className="number">금액</th>
+                      <th className="number" style={{ width: "10%" }}>배당율(매입대비)</th>
                       <th>계좌</th>
                       <th>설명</th>
                       <th>작업</th>

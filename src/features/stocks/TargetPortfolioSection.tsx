@@ -598,8 +598,8 @@ export const TargetPortfolioSection: React.FC<TargetPortfolioSectionProps> = ({
                   <th>종목</th>
                   <th>목표 비중</th>
                   <th>현재 비중</th>
-                  <th>목표 금액</th>
-                  <th>현재 금액</th>
+                  <th className="number">목표 금액</th>
+                  <th className="number">현재 금액</th>
                   <th>달성도</th>
                   <th>달성을 위해</th>
                 </tr>

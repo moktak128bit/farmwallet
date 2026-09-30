@@ -28,6 +28,8 @@ import { usdBalanceModeDelta } from "../../utils/tradeCashImpact";
 import { formatGoalProjectionLine, projectGoal } from "../../utils/goalProjection";
 
 interface Props {
+  /** summary: 히어로 + 연간 입금 목표 + 손익 한 줄(첫 화면) · details: 나머지 목표·타일·기록(자산 섹션) · 없음: 전부 */
+  variant?: "summary" | "details";
   accounts: Account[];
   ledger: LedgerEntry[];
   trades: StockTrade[];
@@ -68,6 +70,7 @@ export const InvestmentSummaryCard: React.FC<Props> = React.memo(function Invest
   positions,
   fxRate,
   netWorthSeries,
+  variant,
 }) {
   const setData = useAppStore((s) => s.setData);
   const goalsRaw = useAppStore((s) => s.data.investmentGoals);
@@ -259,6 +262,7 @@ export const InvestmentSummaryCard: React.FC<Props> = React.memo(function Invest
         borderLeft: "4px solid var(--chart-primary)",
       }}
     >
+      {variant !== "details" && (
       <div style={{ display: "flex", alignItems: "baseline", gap: 12, flexWrap: "wrap" }}>
         <div className="card-title">투자 자산</div>
         <div style={{ fontSize: 28, fontWeight: 700, color: "var(--chart-primary)" }}>
@@ -280,6 +284,8 @@ export const InvestmentSummaryCard: React.FC<Props> = React.memo(function Invest
           증권·crypto 계좌 현금+포지션 (일반 계좌·부채 제외)
         </span>
       </div>
+      )}
+      {variant === "details" && <div className="card-title">투자 목표·기록</div>}
 
       <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
         <GoalRow
@@ -296,6 +302,7 @@ export const InvestmentSummaryCard: React.FC<Props> = React.memo(function Invest
           formatValue={(v) => formatKRW(Math.round(v))}
           placeholder="목표 금액 (원)"
         />
+        {variant !== "summary" && (
         <GoalRow
           label="최종 순자산 목표 (총자산 − 총부채)"
           progress={totalNetWorth}
@@ -311,6 +318,8 @@ export const InvestmentSummaryCard: React.FC<Props> = React.memo(function Invest
           formatValue={(v) => formatKRW(Math.round(v))}
           placeholder="목표 금액 (원)"
         />
+        )}
+        {variant !== "summary" && (
         <GoalRow
           label="연간 배당금 수령액 목표 (현금 흐름 · 최근 12개월)"
           progress={trailing12MoDividend}
@@ -325,8 +334,19 @@ export const InvestmentSummaryCard: React.FC<Props> = React.memo(function Invest
           formatValue={(v) => formatKRW(Math.round(v))}
           placeholder="목표 금액 (원/년)"
         />
+        )}
       </div>
 
+      {variant === "summary" && (
+        <div className="hint" style={{ marginTop: 0, display: "flex", gap: 14, flexWrap: "wrap" }}>
+          <span>원금 {formatKRW(Math.round(principal))}</span>
+          <span style={{ color: pnlColor(cumulativePnl), fontWeight: 600 }}>
+            누적 손익 {formatKRW(Math.round(cumulativePnl))}{principal > 0 ? ` (${((cumulativePnl / principal) * 100).toFixed(1)}%)` : ""}
+          </span>
+          <span style={{ color: pnlColor(yearlyRealizedPnl), fontWeight: 600 }}>올해 손익 {formatKRW(Math.round(yearlyRealizedPnl))}</span>
+        </div>
+      )}
+      {variant !== "summary" && (
       <div
         style={{
           display: "grid",
@@ -352,7 +372,9 @@ export const InvestmentSummaryCard: React.FC<Props> = React.memo(function Invest
           color={pnlColor(yearlyRealizedPnl)}
         />
       </div>
+      )}
 
+      {variant !== "summary" && (<>
       <div
         style={{
           fontSize: 13,
@@ -418,6 +440,7 @@ export const InvestmentSummaryCard: React.FC<Props> = React.memo(function Invest
           </>
         )}
       </div>
+      </>)}
     </div>
   );
 });

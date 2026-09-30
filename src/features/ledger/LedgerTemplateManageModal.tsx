@@ -57,7 +57,7 @@ export function LedgerTemplateManageModal({ templates, onClose, onApply, onDelet
                     <th>이름</th>
                     <th>종류</th>
                     <th>카테고리</th>
-                    <th>금액</th>
+                    <th className="number">금액</th>
                     <th>출금</th>
                     <th>입금</th>
                     <th>작업</th>

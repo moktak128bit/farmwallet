@@ -529,11 +529,11 @@ export const AccountTablesSection: React.FC<Props> = React.memo(function Account
             <th>기관</th>
             {(type === "securities" || type === "crypto") ? (
               <>
-                <th>USD</th>
-                <th>KRW</th>
-                <th>주식</th>
-                <th>현금</th>
-                <th>합계</th>
+                <th className="number">USD</th>
+                <th className="number">KRW</th>
+                <th className="number">주식</th>
+                <th className="number">현금</th>
+                <th className="number">합계</th>
               </>
             ) : (
               <>
@@ -542,11 +542,11 @@ export const AccountTablesSection: React.FC<Props> = React.memo(function Account
             )}
             {type === "card" ? (
               <>
-                <th>현재 부채</th>
+                <th className="number">현재 부채</th>
               </>
             ) : (type === "securities" || type === "crypto") ? null : (
               // 증권/암호화폐는 위 5열(USD/KRW/주식/현금/합계)이 잔액 — 바디와 동일하게 "현재 잔액" 열 없음
-              <th>현재 잔액</th>
+              <th className="number">현재 잔액</th>
             )}
             <th>작업</th>
           </tr>

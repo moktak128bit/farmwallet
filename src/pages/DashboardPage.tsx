@@ -37,7 +37,8 @@ import { AssetCompositionCard } from "../features/dashboard/AssetCompositionCard
 import { AccountBalanceTrendCard } from "../features/dashboard/AccountBalanceTrendCard";
 import { StockCostVsMarketCard } from "../features/dashboard/StockCostVsMarketCard";
 import { TotalAssetTrendCard } from "../features/dashboard/TotalAssetTrendCard";
-import { computeLedgerSummary, computeRecheckBreakdown, EXPENSE_BOX_EXCLUDED_NAMES } from "../features/dashboard/summaryMath";
+import { computeLedgerSummary, computeRecheckBreakdown, EXPENSE_BOX_EXCLUDED_NAMES, isBeforePayday } from "../features/dashboard/summaryMath";
+import { computeUnrealizedPL } from "../utils/portfolioMetrics";
 import { computeIncomeNatureKeys } from "../utils/incomeClassification";
 import { isDashboardWidgetVisible, loadHiddenDashboardWidgets } from "../features/dashboard/dashboardWidgets";
 import { TaxActionsCard } from "../features/dashboard/TaxActionsCard";
@@ -275,7 +276,6 @@ export const DashboardView: React.FC<Props> = (props) => {
     () => computeBalanceSheet(balances, positions, fxRate, loans, ledger),
     [balances, positions, fxRate, loans, ledger]
   );
-  const totalNetWorth = balanceSheet.netWorth;
 
   /** 월별 계좌 타임라인 — 무거운 집계는 공용 훅(hooks/useAccountTimelineRows)으로 분리, 호출은 부모 1회 */
   const accountTimelineRows = useAccountTimelineRows({
@@ -315,28 +315,46 @@ export const DashboardView: React.FC<Props> = (props) => {
     [ledger, fxRate, currentMonth, categoryPresets, salaryKeys]
   );
 
+  /** 급여 전 판정 — 요약 카드·전월 대비 카드·섹션 요약이 같은 값을 쓴다 */
+  const beforePayday = isBeforePayday(monthlySummary.income, prevMonthIncome, allTimeSummary.income > 0);
+
+  /** 접힌 섹션 줄의 대표 숫자 셋 — 접힌 상태 자체가 요약이 되게 */
+  const unrealizedNet = useMemo(() => {
+    const u = computeUnrealizedPL(positions, fxRate);
+    return u.unrealizedGain - u.unrealizedLoss;
+  }, [positions, fxRate]);
+  const assetsSummary = `순자산 ${formatKrwCompact(balanceSheet.netWorth)}원 · 총자산 ${formatKrwCompact(balanceSheet.totalAssets)}원 · 평가손익 ${unrealizedNet >= 0 ? "+" : "−"}${formatKrwCompact(Math.abs(unrealizedNet))}원`;
+  const spendingSummary = `지출 ${formatKRW(Math.round(monthlySummary.expense))} · 재테크 ${formatKRW(Math.round(monthlySummary.investing))} · ${beforePayday ? "급여 전" : `수지 ${formatKRW(Math.round(monthlySummary.income - monthlySummary.expense))}`}`;
+  const dividendsSummary = dividendPortfolio
+    ? `12개월 배당 ${formatKrwCompact(dividendPortfolio.received12)}원 · 월 배당 ${formatKrwCompact(dividendPortfolio.monthlyAvg)}원${dividendPortfolio.yoc != null ? ` · 배당률 ${dividendPortfolio.yoc.toFixed(2)}%` : ""}`
+    : undefined;
+
   /** 섹션 안 위젯이 모두 숨김이면 섹션 헤더도 그리지 않는다 */
   const anyShown = (ids: string[]) => ids.some(show);
 
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: 28 }}>
-      {/* ── 핵심: 항상 펼침 — 이번 달 4숫자 · 배당 포트폴리오 · 전월 대비 · 투자 자산 ── */}
+      {/* ── 핵심: 항상 펼침 — 네 숫자(지출·수지·순자산·총부채) → 전월 대비 | 배당 요약 → 투자 자산 요약. 상세는 아래 섹션 ── */}
       {show("summary") && (
-        <MonthlySummaryCards monthlySummary={monthlySummary} allTimeSummary={allTimeSummary} prevMonthIncome={prevMonthIncome} />
+        <MonthlySummaryCards monthlySummary={monthlySummary} bs={balanceSheet} beforePayday={beforePayday} />
       )}
 
-      {show("dividendPortfolio") && dividendPortfolio && (
-        <DividendPortfolioCard data={dividendPortfolio} />
-      )}
-
-      {show("monthCompare") && (
-        <ExpenseIncomeCompareCard
-          ledger={ledger}
-          month={currentMonth}
-          fxRate={fxRate}
-          categoryPresets={categoryPresets}
-          salaryKeys={salaryKeys}
-        />
+      {(show("monthCompare") || (show("dividendPortfolio") && !!dividendPortfolio)) && (
+        <div className="dashboard-two-col" style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 16 }}>
+          {show("monthCompare") && (
+            <ExpenseIncomeCompareCard
+              ledger={ledger}
+              month={currentMonth}
+              fxRate={fxRate}
+              categoryPresets={categoryPresets}
+              salaryKeys={salaryKeys}
+              beforePayday={beforePayday}
+            />
+          )}
+          {show("dividendPortfolio") && dividendPortfolio && (
+            <DividendPortfolioCard data={dividendPortfolio} compact />
+          )}
+        </div>
       )}
 
       {show("investmentSummary") && (
@@ -348,13 +366,26 @@ export const DashboardView: React.FC<Props> = (props) => {
           positions={positions}
           fxRate={fxRate}
           netWorthSeries={netWorthSeriesKrw}
+          variant="summary"
         />
       )}
 
       {/* ── 자산·투자: 성과·추이·구성 차트 (기본 접힘, 접힌 줄에 순자산) ── */}
       {anyShown(["investmentPerformance", "securitiesValueTrend", "netWorthTrend", "assetComposition", "portfolioCharts", "accountBalanceTrend", "stockCostVsMarket", "totalAssetTrend", "cmaBalanceTrend"]) && (
-        <DashboardSection id="assets" title="자산·투자" summary={`순자산 ${formatKrwCompact(totalNetWorth)}원`}>
+        <DashboardSection id="assets" title="자산·투자" summary={assetsSummary}>
           <BalanceSheetStrip bs={balanceSheet} />
+          {show("investmentSummary") && (
+            <InvestmentSummaryCard
+              accounts={accounts}
+              ledger={ledger}
+              trades={trades}
+              balances={balances}
+              positions={positions}
+              fxRate={fxRate}
+              netWorthSeries={netWorthSeriesKrw}
+              variant="details"
+            />
+          )}
           {show("investmentPerformance") && (
             <Suspense fallback={<div className="card" style={{ minHeight: 360 }} />}>
               <LazyPortfolioPerformanceSection />
@@ -438,7 +469,7 @@ export const DashboardView: React.FC<Props> = (props) => {
 
       {/* ── 이번 달 소비·현금흐름 (기본 접힘, 접힌 줄에 이번 달 지출) ── */}
       {anyShown(["topExpenses", "monthlyTrend", "investmentBreakdown", "monthPace", "salaryTimer", "cashFlow", "cashFlowProjection", "spendingCalendar", "budgetAlert"]) && (
-        <DashboardSection id="spending" title="이번 달 소비·현금흐름" summary={`지출 ${formatKRW(Math.round(monthlySummary.expense))}`}>
+        <DashboardSection id="spending" title="이번 달 소비·현금흐름" summary={spendingSummary}>
           {(show("topExpenses") || show("monthlyTrend")) && (
             <div className="dashboard-two-col" style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 16 }}>
               {show("topExpenses") && (
@@ -531,8 +562,9 @@ export const DashboardView: React.FC<Props> = (props) => {
         <DashboardSection
           id="dividends"
           title="배당·저축·세금"
-          summary={dividendPortfolio ? `최근 12개월 배당 ${formatKrwCompact(dividendPortfolio.received12)}원` : undefined}
+          summary={dividendsSummary}
         >
+          {show("dividendPortfolio") && dividendPortfolio && <DividendPortfolioCard data={dividendPortfolio} />}
           {(show("savingsRatio") || show("dividendCoverage")) && (
             <div
               style={{

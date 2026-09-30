@@ -1,5 +1,6 @@
 import { describe, it, expect } from "vitest";
 import fs from "node:fs";
+import path from "node:path";
 import {
   computeAccountBalances,
   computeBalanceSheet,
@@ -80,31 +81,36 @@ describe("computeBalanceSheet — 총자산·총부채·순자산 단일 소스"
   });
 });
 
-describe("computeBalanceSheet — 실데이터 정합 (잔액 엔진 기준 · 카테고리 없는 카드 결제도 결제로 인식)", () => {
-  const path = "D:/05farmwallet/backups/2026-09-21/backup-2026-09-21T16-39-49-003KST.json";
-  const has = fs.existsSync(path);
-  it.skipIf(!has)("순자산 27,873,266원 · 총자산 − 총부채 항등 · 묶음 합이 계좌 표와 일치", () => {
-    const data = JSON.parse(fs.readFileSync(path, "utf-8")) as AppData;
+describe("computeBalanceSheet — 실데이터 정합 (backups/ 최신 파일 · 앱이 4일 보존으로 옛 백업을 지우므로 항등식만 고정)", () => {
+  const dir = "D:/05farmwallet/backups";
+  const files = fs.existsSync(dir)
+    ? fs.readdirSync(dir).flatMap((d) => {
+        const sub = path.join(dir, d);
+        return fs.statSync(sub).isDirectory() ? fs.readdirSync(sub).filter((f) => f.startsWith("backup-") && f.endsWith(".json")).map((f) => path.join(sub, f)) : [];
+      }).sort()
+    : [];
+  const latest = files[files.length - 1];
+  it.skipIf(!latest)("총자산 − 총부채 = 순자산 = computeTotalNetWorth · 묶음 합이 계좌별 순가치 합과 일치 · 자산에 음수 없음", () => {
+    const data = JSON.parse(fs.readFileSync(latest, "utf-8")) as AppData;
     const fx = 1372;
     const balances = computeAccountBalances(data.accounts, data.ledger, data.trades);
     const positions = computePositions(data.trades, buildAdjustedPrices(data.prices ?? [], fx), data.accounts, { fxRate: fx, priceFallback: "cost" });
     const bs = computeBalanceSheet(balances, positions, fx, data.loans ?? [], data.ledger);
-    expect(Math.round(bs.netWorth)).toBe(27_873_266);
-    expect(Math.round(bs.loanDebt)).toBe(37_769_380);
-    // 카드: 잔액 엔진 기준. 2025-07-25 농협→삼성페이카드 620,466원 '지출'(카테고리 없음)도 결제로 잡혀 삼성은 선납 상태
+    expect(Math.round(bs.totalAssets - bs.totalLiabilities)).toBe(Math.round(bs.netWorth));
+    expect(Math.round(computeTotalNetWorth(balances, positions, fx, data.loans ?? [], data.ledger))).toBe(Math.round(bs.netWorth));
+    for (const v of [bs.cash, bs.savings, bs.securities, bs.pension, bs.cardCredit, bs.overdraft, bs.cardDebt, bs.loanDebt]) expect(v).toBeGreaterThanOrEqual(0);
+    // 카드: 대차의 (부채 − 선납) = computeCardDebts 합
     const cards = computeCardDebts(balances);
     expect(Math.round(bs.cardDebt - bs.cardCredit)).toBe(Math.round([...cards.values()].reduce((s, v) => s + v, 0)));
-    expect(Math.round(cards.get("삼성페이카드") ?? 0)).toBe(-226_573);
-    // 마이너스 통장(청년사다리 −2,706,808 · 데이트저축 −806 · 카카오페이 −2,763)은 현금이 아니라 부채
-    expect(Math.round(bs.overdraft)).toBe(2_710_377);
-    expect(Math.round(bs.cash)).toBe(17_484_390);
-    expect(Math.round(bs.savings)).toBe(13_221_215);
-    expect(Math.round(bs.totalAssets - bs.totalLiabilities)).toBe(Math.round(bs.netWorth));
-    // 증권+연금 = 계좌 탭 '주식' 합 (포지션 평가 + 예수금 + USD)
-    const stockSum = positions.reduce((s, p) => s + positionMarketValueKRW(p, fx), 0);
-    expect(stockSum).toBeGreaterThan(0);
-    expect(Math.round(bs.securities + bs.pension)).toBe(39_634_949);
-    // 대시보드가 쓰는 순자산 함수와 항등
-    expect(Math.round(computeTotalNetWorth(balances, positions, fx, data.loans ?? [], data.ledger))).toBe(27_873_266);
+    // 계좌별 순가치(현금 + USD 환산 + 평가액 − account.debt) 합 = 총자산 − (총부채 − 대출)
+    const stock = new Map<string, number>();
+    positions.forEach((p) => stock.set(p.accountId, (stock.get(p.accountId) ?? 0) + positionMarketValueKRW(p, fx)));
+    const netByAccount = balances.reduce((s, r) => {
+      const a = r.account;
+      const usd = a.type === "securities" || a.type === "crypto" ? (a.usdBalance ?? 0) + (r.usdTransferNet ?? 0) : 0;
+      return s + r.currentBalance + usd * fx + (stock.get(a.id) ?? 0) - Math.abs(a.debt ?? 0);
+    }, 0);
+    expect(Math.round(netByAccount)).toBe(Math.round(bs.totalAssets - (bs.totalLiabilities - bs.loanDebt)));
+    expect(bs.loanDebt).toBeGreaterThan(0);
   });
 });

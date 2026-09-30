@@ -168,11 +168,11 @@ export const IncomeRecordsSection: React.FC<Props> = React.memo(function IncomeR
                       <th style={{ width: "9%", minWidth: 80 }}>날짜</th>
                       <th style={{ width: "9%", minWidth: 70 }}>티커</th>
                       <th style={{ width: "16%", minWidth: 120 }}>종목명</th>
-                      <th style={{ width: "10%" }}>평단가</th>
-                      <th style={{ width: "10%" }}>주당배당금</th>
-                      <th style={{ width: "8%" }}>보유주수</th>
-                      <th style={{ width: "11%" }}>총 배당금</th>
-                      <th style={{ width: "12%" }}>배당율(매입대비)</th>
+                      <th className="number" style={{ width: "10%" }}>평단가</th>
+                      <th className="number" style={{ width: "10%" }}>주당배당금</th>
+                      <th className="number" style={{ width: "8%" }}>보유주수</th>
+                      <th className="number" style={{ width: "11%" }}>총 배당금</th>
+                      <th className="number" style={{ width: "12%" }}>배당율(매입대비)</th>
                       <th style={{ width: "10%" }}>계좌</th>
                       <th style={{ width: "9%", minWidth: 96 }}>작업</th>
                     </tr>
@@ -733,7 +733,7 @@ export const IncomeRecordsSection: React.FC<Props> = React.memo(function IncomeR
                   <tr>
                     <th style={{ width: "12%" }}>날짜</th>
                     <th style={{ width: "38%" }}>출처</th>
-                    <th style={{ width: "20%" }}>이자금액</th>
+                    <th className="number" style={{ width: "20%" }}>이자금액</th>
                     <th style={{ width: "18%" }}>계좌</th>
                     <th style={{ width: "12%", minWidth: 80 }}>작업</th>
                   </tr>

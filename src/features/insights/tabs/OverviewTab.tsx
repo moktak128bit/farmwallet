@@ -5,9 +5,10 @@ import {
   AreaChart, Area, ComposedChart, Bar,
 } from "recharts";
 import type { ValueType } from "recharts/types/component/DefaultTooltipContent";
-import { C, F, W, Pct, SD, Card, Kpi, Insight, CT, Section, type D } from "../insightsShared";
+import { C, F, W, Pct, SD, Card, Insight, CT, Section, type D } from "../insightsShared";
 import { useAppStore } from "../../../store/appStore";
-import { getThisMonthKST } from "../../../utils/date";
+import { getThisMonthKST, shiftMonth } from "../../../utils/date";
+import { isBeforePayday } from "../../dashboard/summaryMath";
 import type { BalanceSheet } from "../../../calculations";
 
 export const OverviewTab = React.memo(function OverviewTab({ d, bs }: { d: D; bs: BalanceSheet }) {
@@ -17,12 +18,6 @@ export const OverviewTab = React.memo(function OverviewTab({ d, bs }: { d: D; bs
     : d.months;
   // 순현금흐름 = 근로소득 − 지출 − 투자. "월급으로 지출·투자를 감당하는가"를 현실적으로 (비근로 유입 제외)
   const flowData = flowMonths.map(m => ({ name: d.ml[m], 순현금흐름: (d.salaryMonthly[m] ?? 0) - d.monthly[m].expense - d.monthly[m].investment }));
-  // "실질 지출" 카드의 배지 — 카드 본문 값(d.realExpense)과 같은 기준(실질)으로 비교해야 한다.
-  // 장부 지출(pExpense/prev.expense)로 비교하면 데이트 분담 등으로 실질과 장부가 갈릴 때
-  // 배지가 실제 추세와 반대 방향을 가리킨다.
-  const expBadge = d.prev
-    ? (d.prev.realExpense > 0 ? Pct(SD(d.realExpense - d.prev.realExpense, d.prev.realExpense) * 100) + " vs 전월" : "N/A vs 전월")
-    : undefined;
   const top3Sub = d.expBySub.filter(s => s.sub !== "신용결제" && s.cat !== "신용결제").slice(0, 3);
   const top3pct = d.pExpense > 0 ? Math.round(top3Sub.reduce((s, x) => s + x.amount, 0) / d.pExpense * 100) : 0;
 
@@ -47,10 +42,18 @@ export const OverviewTab = React.memo(function OverviewTab({ d, bs }: { d: D; bs
   const actualSavRate = d.realSavRate;
   const savRateOk = actualSavRate >= targetSavRate;
 
-  /* 수입 성장률 요약 */
+  /* 수입 성장률 요약 — 급여 전(월급일 이전)엔 −100%를 그리지 않는다 (대시보드와 같은 판정) */
   const ig = d.incomeGrowth;
-  const igMomColor = ig.mom == null ? "var(--text-faint)" : ig.mom >= 0 ? "var(--success)" : "var(--danger)";
-  const igYoyColor = ig.yoy == null ? "var(--text-faint)" : ig.yoy >= 0 ? "var(--success)" : "var(--danger)";
+  const thisMonth = getThisMonthKST();
+  const beforePayday = isBeforePayday(
+    d.salaryMonthly[thisMonth] ?? 0,
+    d.salaryMonthly[shiftMonth(thisMonth, -1)] ?? 0,
+    Object.values(d.salaryMonthly).some((v) => v > 0)
+  );
+  // 급여 전이면 진행 중인 달의 저축률 막대(급여 0 → −1,900%대)가 차트 축을 망가뜨린다 → 그 달만 제외
+  const savRateData = beforePayday ? d.savRateTrend.filter((e) => e.l !== d.ml[thisMonth]) : d.savRateTrend;
+  const igMomColor = beforePayday || ig.mom == null ? "var(--text-faint)" : ig.mom >= 0 ? "var(--success)" : "var(--danger)";
+  const igYoyColor = beforePayday || ig.yoy == null ? "var(--text-faint)" : ig.yoy >= 0 ? "var(--success)" : "var(--danger)";
   const igAvgColor = ig.avg3MoM == null ? "var(--text-faint)" : ig.avg3MoM >= 0 ? "var(--success)" : "var(--danger)";
 
   /* 지출 관성 */
@@ -99,10 +102,13 @@ export const OverviewTab = React.memo(function OverviewTab({ d, bs }: { d: D; bs
           </div>
         )}
 
-        <Card accent bar="var(--chart-income)"><Kpi label="실질 수입" value={F(d.realIncome)} sub={d.settlementTotal > 0 ? `정산 ${F(d.settlementTotal)} 제외` : "근로+투자 소득"} color="var(--chart-income)" info="장부 수입 − 정산 회수액 − 일시소득(용돈·지원·이월·대출·처분소득 등)" /></Card>
-        <Card accent bar="var(--chart-expense)"><Kpi label="실질 지출" value={F(d.realExpense)} sub={d.datePartnerShare > 0 ? `데이트 50% (${F(Math.round(d.datePartnerShare))}) 제외` : ""} badge={expBadge} color="var(--chart-expense)" info="장부 지출 − 데이트 계좌 지출의 50% (상대 부담분). 재테크·환전 제외" /></Card>
-        <Card accent bar={d.netProfit >= 0 ? "var(--success)" : "var(--danger)"}><Kpi label="실질 순수익" value={F(d.netProfit)} sub="실질수입 − 실질지출" color={d.netProfit >= 0 ? "var(--success)" : "var(--danger)"} info="실질수입 − 실질지출. 양수=흑자(자산 증가), 음수=적자" /></Card>
-        <Card accent bar="var(--chart-primary)"><Kpi label="실질 저축률" value={d.realSavRate.toFixed(1) + "%"} sub={`월평균 지출 ${F(Math.round(d.avgMonthExp))}`} color="var(--text)" info="(실질수입 − 실질지출) / 실질수입 × 100. 30% 이상이 건강한 수준" /></Card>
+        {/* 기간 합계는 한 줄 맥락으로 — 대시보드와 같은 KPI 카드 4장이 여기서 다시 서지 않게 (인사이트는 분석만) */}
+        <div className="hint" style={{ gridColumn: "span 4", marginTop: 0, fontSize: 13 }}>
+          {d.accumLabel} 실질 수입 <strong style={{ color: "var(--chart-income)" }}>{F(d.realIncome)}원</strong>
+          {d.settlementTotal > 0 && ` (정산 ${F(d.settlementTotal)} 제외)`} · 실질 지출 <strong style={{ color: "var(--chart-expense)" }}>{F(d.realExpense)}원</strong>
+          {d.datePartnerShare > 0 && ` (데이트 50% ${F(Math.round(d.datePartnerShare))} 제외)`} · 순수익 <strong style={{ color: d.netProfit >= 0 ? "var(--success)" : "var(--danger)" }}>{F(d.netProfit)}원</strong>
+          {" · 실질 저축률 "}<strong>{d.realSavRate.toFixed(1)}%</strong>
+        </div>
 
         <Card title="재정 활주로 — 수입 없이 버틸 수 있는 기간" span={4}>
           <div style={{ display: "grid", gridTemplateColumns: "1fr 2fr", gap: 16, alignItems: "center" }}>
@@ -186,25 +192,25 @@ export const OverviewTab = React.memo(function OverviewTab({ d, bs }: { d: D; bs
       <Section storageKey="overview-section-trends" title="장기 트렌드">
         {/* 수입 성장률 (NEW) — 근로소득 기준 */}
         <Card title="근로소득 성장률 (MoM · YoY · 3M 평균)" span={4}>
-          <div style={{ display: "grid", gridTemplateColumns: "repeat(3, 1fr)", gap: 10, marginBottom: 12 }}>
+          <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(150px, 1fr))", gap: 10, marginBottom: 12 }}>
             <div style={{ padding: "12px 14px", background: "var(--bg)", borderRadius: 10, textAlign: "center" }}>
               <div style={{ fontSize: 11, color: "var(--text-muted)", fontWeight: 600 }}>
                 {ig.partialDay != null ? `전월 동기 대비 (1~${ig.partialDay}일)` : "전월 대비 (MoM)"}
               </div>
               <div style={{ fontSize: 22, fontWeight: 800, color: igMomColor, marginTop: 4 }}>
-                {ig.mom == null ? "–" : Pct(ig.mom)}
+                {beforePayday ? "급여 전" : ig.mom == null ? "–" : Pct(ig.mom)}
               </div>
               <div style={{ fontSize: 11, color: "var(--text-faint)", marginTop: 2 }}>
-                {ig.prevInc > 0 ? `${F(ig.prevInc)} → ${F(ig.targetInc)}` : ig.partialDay != null ? `전월 1~${ig.partialDay}일 수입 없음` : "비교 데이터 없음"}
+                {beforePayday ? "이번 달 급여 입금 전 · 비교 생략" : ig.prevInc > 0 ? `${F(ig.prevInc)} → ${F(ig.targetInc)}` : ig.partialDay != null ? `전월 1~${ig.partialDay}일 수입 없음` : "비교 데이터 없음"}
               </div>
             </div>
             <div style={{ padding: "12px 14px", background: "var(--bg)", borderRadius: 10, textAlign: "center" }}>
               <div style={{ fontSize: 11, color: "var(--text-muted)", fontWeight: 600 }}>전년 동월 대비 (YoY)</div>
               <div style={{ fontSize: 22, fontWeight: 800, color: igYoyColor, marginTop: 4 }}>
-                {ig.yoy == null ? "–" : Pct(ig.yoy)}
+                {beforePayday ? "급여 전" : ig.yoy == null ? "–" : Pct(ig.yoy)}
               </div>
               <div style={{ fontSize: 11, color: "var(--text-faint)", marginTop: 2 }}>
-                {ig.yoy == null ? "1년 전 데이터 없음" : ig.partialDay != null ? `작년 동월 1~${ig.partialDay}일 비교` : "작년 동월 비교"}
+                {beforePayday ? "급여 입금 후 비교" : ig.yoy == null ? "1년 전 데이터 없음" : ig.partialDay != null ? `작년 동월 1~${ig.partialDay}일 비교` : "작년 동월 비교"}
               </div>
             </div>
             <div style={{ padding: "12px 14px", background: "var(--bg)", borderRadius: 10, textAlign: "center" }}>
@@ -244,9 +250,9 @@ export const OverviewTab = React.memo(function OverviewTab({ d, bs }: { d: D; bs
         <Card title="누적 실질 저축률 추이" span={2}>
           <p style={{ fontSize: 11, color: "var(--text-faint)", margin: "0 0 4px", textAlign: "right" }}>월급이 월말 지급이므로 월별 저축률 대신 누적 기준 표시</p>
           <ResponsiveContainer width="100%" height={210}>
-            <ComposedChart data={d.savRateTrend}><CartesianGrid strokeDasharray="3 3" stroke="var(--chart-grid)" /><XAxis dataKey="l" tick={{ fontSize: 12 }} /><YAxis tickFormatter={(v: number) => v + "%"} tick={{ fontSize: 11 }} /><Tooltip formatter={(v: ValueType | undefined) => Number(v ?? 0).toFixed(1) + "%"} />
+            <ComposedChart data={savRateData}><CartesianGrid strokeDasharray="3 3" stroke="var(--chart-grid)" /><XAxis dataKey="l" tick={{ fontSize: 12 }} /><YAxis tickFormatter={(v: number) => v + "%"} tick={{ fontSize: 11 }} /><Tooltip formatter={(v: ValueType | undefined) => Number(v ?? 0).toFixed(1) + "%"} />
               <Bar isAnimationActive={false} dataKey="rate" name="월별" radius={[4, 4, 0, 0]} opacity={0.35}>
-                {d.savRateTrend.map((e, i) => <Cell key={i} fill={e.rate >= 30 ? "var(--success)" : e.rate >= 0 ? "var(--warning)" : "var(--danger)"} />)}
+                {savRateData.map((e, i) => <Cell key={i} fill={e.rate >= 30 ? "var(--success)" : e.rate >= 0 ? "var(--warning)" : "var(--danger)"} />)}
               </Bar>
               <Line isAnimationActive={false} dataKey="cumRate" name="누적" stroke="var(--chart-series-b)" strokeWidth={2.5} dot={false} />
             </ComposedChart>
@@ -398,7 +404,7 @@ export const OverviewTab = React.memo(function OverviewTab({ d, bs }: { d: D; bs
             ℹ️ 금액 단위는 <strong>원</strong>. 표시 범위는 상단 기간 필터({d.selMonth ? `1개월 (${d.ml[d.selMonth] ?? d.selMonth})` : `${d.months.length}개월, ${d.months[0] ?? "-"} ~ ${d.months[d.months.length - 1] ?? "-"}`})에 해당.
             <strong>{d.selMonth ? "선택 월" : "누적"}</strong> 기준 표기가 기본이며, 일평균·투자수익률은 별도 기준.
           </div>
-          <div style={{ display: "grid", gridTemplateColumns: "repeat(5,1fr)", gap: 10 }}>
+          <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(150px, 1fr))", gap: 10 }}>
             {[
               { label: "순수익", value: F(d.netProfit) + "원", sub: `${d.accumLabel} · 실질수입 − 실질지출`, color: d.netProfit >= 0 ? "var(--success)" : "var(--danger)", bg: d.netProfit >= 0 ? "var(--success-light)" : "var(--danger-light)", border: d.netProfit >= 0 ? "var(--success)" : "var(--danger)" },
               { label: "실질 저축률", value: d.realSavRate.toFixed(1) + "%", sub: `${d.accumLabel} 기준`, color: d.realSavRate >= 30 ? "var(--success)" : d.realSavRate >= 0 ? "var(--warning)" : "var(--danger)", bg: "var(--accent-light)", border: "var(--border-light)" },
@@ -413,7 +419,7 @@ export const OverviewTab = React.memo(function OverviewTab({ d, bs }: { d: D; bs
               </div>
             ))}
           </div>
-          <div style={{ display: "grid", gridTemplateColumns: "repeat(6,1fr)", gap: 10, marginTop: 10 }}>
+          <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(150px, 1fr))", gap: 10, marginTop: 10 }}>
             {[
               { label: "순현금흐름", value: F(d.netCashFlow) + "원", sub: `${d.accumLabel} · 근로소득−지출−투자`, color: d.netCashFlow >= 0 ? "var(--success)" : "var(--danger)" },
               { label: "투자 수익률", value: d.investReturnRate !== 0 ? d.investReturnRate.toFixed(1) + "%" : "-", sub: "전 기간 · 실현손익 / 청산 매도원가", color: d.investReturnRate >= 0 ? "var(--success)" : "var(--danger)" },
@@ -433,7 +439,7 @@ export const OverviewTab = React.memo(function OverviewTab({ d, bs }: { d: D; bs
 
         {d.subInsights.length > 0 && (
           <Card title="중분류별 상세 분석" span={4}>
-            <div style={{ display: "grid", gridTemplateColumns: "repeat(3, 1fr)", gap: 10 }}>
+            <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(150px, 1fr))", gap: 10 }}>
               {d.subInsights.slice(0, 9).map((s, i) => (
                 <div key={s.sub} style={{ padding: "12px 14px", borderRadius: 10, background: s.monthTrend === "up" ? "var(--danger-light)" : s.monthTrend === "down" ? "var(--primary-light)" : "var(--bg)", border: "1px solid var(--border-light)", fontSize: 12, color: "var(--text)" }}>
                   <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 6 }}>

@@ -66,7 +66,7 @@ export const ForecastView: React.FC<Props> = ({ ledger, recurring, formatNumber 
       </div>
 
       <Section storageKey="forecast-section-kpis" title="예측 요약">
-        <div style={{ display: "grid", gridTemplateColumns: "repeat(4, 1fr)", gap: 12 }}>
+        <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(150px, 1fr))", gap: 12 }}>
           <div className="card highlight" style={{ padding: "14px 16px", margin: 0 }}>
             <div className="card-title">예상 총 지출</div>
             <div className="card-value" style={{ fontSize: 26 }}>{formatNumber(Math.round(result.totalForecast))}</div>

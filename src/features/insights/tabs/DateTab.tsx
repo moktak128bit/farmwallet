@@ -5,7 +5,7 @@ import {
   ComposedChart, LineChart,
 } from "recharts";
 import type { ValueType } from "recharts/types/component/DefaultTooltipContent";
-import { WDN, C, F, W, Card, Kpi, Insight, Section, CT, pieLabel, type D } from "../insightsShared";
+import { InsightText, WDN, C, F, W, Card, Kpi, Insight, Section, CT, pieLabel, type D } from "../insightsShared";
 import { parseIsoLocal, getTodayKST } from "../../../utils/date";
 
 export const DateTab = React.memo(function DateTab({ d }: { d: D }) {
@@ -369,9 +369,7 @@ export const DateTab = React.memo(function DateTab({ d }: { d: D }) {
                         <span>{s.count}건</span>
                         <span>건당 {F(s.avg)}원</span>
                       </div>
-                      <div style={{ fontSize: 11, color: "var(--text-muted)", lineHeight: 1.6, borderTop: "1px solid var(--border-light)", paddingTop: 4 }}>
-                        {s.comment}
-                      </div>
+                      <InsightText text={s.comment} style={{ fontSize: 11, color: "var(--text-muted)", lineHeight: 1.6, borderTop: "1px solid var(--border-light)", paddingTop: 4 }} />
                     </div>
                   ))}
                 </div>
@@ -379,7 +377,7 @@ export const DateTab = React.memo(function DateTab({ d }: { d: D }) {
             )}
 
             <Card title="데이트 활동 요약" span={4}>
-              <div style={{ display: "grid", gridTemplateColumns: "repeat(4, 1fr)", gap: 10, fontSize: 12 }}>
+              <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(150px, 1fr))", gap: 10, fontSize: 12 }}>
                 {[
                   { label: "최대 지출월", value: maxMonth.name ? `${maxMonth.name} (${F(maxMonth.금액)}원)` : "-", color: "var(--danger)" },
                   { label: "최소 지출월", value: minMonth.name ? `${minMonth.name} (${F(minMonth.금액)}원)` : "-", color: "var(--success)" },

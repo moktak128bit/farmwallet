@@ -5,7 +5,7 @@ import {
   AreaChart, Area,
 } from "recharts";
 import type { ValueType } from "recharts/types/component/DefaultTooltipContent";
-import { C, F, W, SD, Card, Kpi, Insight, Section, CT, pieLabel, type D } from "../insightsShared";
+import { InsightText, C, F, W, SD, Card, Kpi, Insight, Section, CT, pieLabel, type D } from "../insightsShared";
 import { SubTab } from "./SubTab";
 import { computeDateAccountUtilization } from "../../../utils/dateAccounting";
 import { DISCRETIONARY_MAIN_NAMES, DISCRETIONARY_DETAIL_NAMES } from "../../../utils/fixedExpense";
@@ -634,9 +634,7 @@ export const ExpenseTab = React.memo(function ExpenseTab({ d }: { d: D }) {
                     {s.monthTrend === "up" ? `▲ 전월 대비 ${s.mom}% 증가` : s.monthTrend === "down" ? `▼ 전월 대비 ${Math.abs(s.mom)}% 감소` : "전월과 유사"}
                     {s.streakUp >= 2 && ` · ${s.streakUp}개월 연속 증가!`}
                   </div>
-                  <div style={{ fontSize: 11, color: "var(--text-muted)", lineHeight: 1.6, borderTop: "1px solid var(--border-light)", paddingTop: 4 }}>
-                    {s.comment}
-                  </div>
+                  <InsightText text={s.comment} style={{ fontSize: 11, color: "var(--text-muted)", lineHeight: 1.6, borderTop: "1px solid var(--border-light)", paddingTop: 4 }} />
                 </div>
               ))}
             </div>

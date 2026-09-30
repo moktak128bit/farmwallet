@@ -4,7 +4,7 @@ import {
   XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer, ComposedChart,
 } from "recharts";
 import type { ValueType } from "recharts/types/component/DefaultTooltipContent";
-import { C, F, W, Pct, Card, Kpi, Insight, Section, CT, pieLabel, type D } from "../insightsShared";
+import { InsightText, C, F, W, Pct, Card, Kpi, Insight, Section, CT, pieLabel, type D } from "../insightsShared";
 import type { IncomeNature } from "../../../utils/realIncome";
 
 // 그룹 색은 이름 고정 매핑 — incByGroup은 금액순 정렬이라 인덱스 기반이면 순서 따라 색이 바뀜
@@ -290,9 +290,7 @@ export const IncomeTab = React.memo(function IncomeTab({ d }: { d: D }) {
                         : "비정기 발생"}
                       {s.maxMonth ? ` · 최대: ${s.maxMonth} (${F(s.maxMonthAmt)}원)` : ""}
                     </div>
-                    <div style={{ fontSize: 11, color: "var(--text-muted)", lineHeight: 1.6, borderTop: "1px solid var(--border-light)", paddingTop: 4 }}>
-                      {s.comment}
-                    </div>
+                    <InsightText text={s.comment} style={{ fontSize: 11, color: "var(--text-muted)", lineHeight: 1.6, borderTop: "1px solid var(--border-light)", paddingTop: 4 }} />
                   </div>
                 );
               })}

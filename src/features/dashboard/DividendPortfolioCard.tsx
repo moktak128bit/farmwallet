@@ -27,6 +27,8 @@ import type { DividendPortfolio } from "../../utils/dividendPortfolio";
 import { formatNumber } from "../../utils/formatter";
 
 interface Props {
+  /** 첫 화면용 — 히어로 3 + 작은 추세 차트만, 종목 표·범례는 배당 섹션의 전체 카드에서 */
+  compact?: boolean;
   data: DividendPortfolio;
 }
 
@@ -74,7 +76,7 @@ const Hero: React.FC<{ label: string; value: string; sub?: string; tone?: string
   </div>
 );
 
-export const DividendPortfolioCard: React.FC<Props> = React.memo(function DividendPortfolioCard({ data }) {
+export const DividendPortfolioCard: React.FC<Props> = React.memo(function DividendPortfolioCard({ data, compact = false }) {
   const [showAll, setShowAll] = useState(false);
 
   // 차트는 최근 15개월만 — 그 이상은 모바일에서 막대가 실오라기가 된다
@@ -138,7 +140,7 @@ export const DividendPortfolioCard: React.FC<Props> = React.memo(function Divide
       </div>
 
       {/* ── 차트 ── */}
-      <div style={{ marginTop: 16, height: 260 }}>
+      <div style={{ marginTop: 16, height: compact ? 150 : 260 }}>
         <ResponsiveContainer width="100%" height="100%">
           <ComposedChart data={chartData} margin={{ top: 8, right: 8, left: 0, bottom: 0 }}>
             <CartesianGrid strokeDasharray="3 3" stroke="var(--chart-grid)" vertical={false} />
@@ -161,7 +163,7 @@ export const DividendPortfolioCard: React.FC<Props> = React.memo(function Divide
               width={44}
             />
             <Tooltip formatter={(value, name) => [fmtWon(Number(value) || 0), String(name)]} />
-            <Legend wrapperStyle={{ fontSize: 11 }} />
+            {!compact && <Legend wrapperStyle={{ fontSize: 11 }} />}
             {data.topTickers.map((t, i) => (
               <Bar
                 key={t.key}
@@ -187,6 +189,7 @@ export const DividendPortfolioCard: React.FC<Props> = React.memo(function Divide
           </ComposedChart>
         </ResponsiveContainer>
       </div>
+      {!compact && (<>
       <div className="hint" style={{ fontSize: 11, marginTop: 4 }}>
         막대 = 월 배당 수령액(종목별) · 선 = 그 시점까지 최근 12개월 누적 배당(성장 추세)
         {hasPartial && " · 이번 달은 진행 중이라 추세선에서 제외"}
@@ -238,6 +241,7 @@ export const DividendPortfolioCard: React.FC<Props> = React.memo(function Divide
           </button>
         )}
       </div>
+      </>)}
     </div>
   );
 });

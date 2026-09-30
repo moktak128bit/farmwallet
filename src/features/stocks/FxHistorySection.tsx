@@ -32,7 +32,7 @@ export const FxHistorySection: React.FC<FxHistorySectionProps> = ({ ledger }) =>
             <th>날짜</th>
             <th>출발 계좌</th>
             <th>도착 계좌</th>
-            <th>금액</th>
+            <th className="number">금액</th>
             <th>설명</th>
           </tr>
         </thead>

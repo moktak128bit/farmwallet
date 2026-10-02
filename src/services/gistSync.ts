@@ -255,6 +255,18 @@ async function parseGistResponse(res: Response): Promise<GistApiResponse> {
   }
 }
 
+/**
+ * 불러오기 실패 중 "원격에 덮어쓸 FarmWallet 데이터 자체가 없음"을 뜻하는 경우 — Gist에 데이터 파일이 없거나
+ * Gist가 없다(404). 저장(saveToGist)은 이때 파일을 만들거나 404 → 새 Gist 생성으로 처리하므로,
+ * 호출부가 "잃을 것 없음"으로 보고 업로드를 진행할 수 있게 타입으로 구분한다. 메시지는 기존 문구 그대로.
+ */
+export class GistNoRemoteDataError extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = "GistNoRemoteDataError";
+  }
+}
+
 /** Gist에서 데이터 불러오기 */
 export async function loadFromGist(): Promise<{ dataJson: string; updatedAt: string }> {
   const token = getGistToken();
@@ -267,12 +279,14 @@ export async function loadFromGist(): Promise<{ dataJson: string; updatedAt: str
   });
   if (!res.ok) {
     const err = await res.text();
-    throw new Error(parseApiError(res.status, err, "Gist 불러오기"));
+    const message = parseApiError(res.status, err, "Gist 불러오기");
+    if (res.status === 404) throw new GistNoRemoteDataError(message);
+    throw new Error(message);
   }
   const data = await parseGistResponse(res);
   const file = data.files?.[GIST_FILE_NAME];
   if (!file) {
-    throw new Error("Gist에 FarmWallet 데이터가 없습니다.");
+    throw new GistNoRemoteDataError("Gist에 FarmWallet 데이터가 없습니다.");
   }
   let content: string;
   if (file.raw_url) {

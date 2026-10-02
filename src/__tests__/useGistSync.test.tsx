@@ -1265,6 +1265,8 @@ describe("useGistSync — connectDevice", () => {
     const B_OLDER = { sha: "b", committedAt: "2026-10-01T00:00:00Z", url: "u" };
     /** A의 known보다 새로운 새 Gist 헤드 — 옛 기준이면 복귀 확인이 '외부 변경'으로 보고 적용 */
     const B_NEWER = { sha: "b", committedAt: "2026-10-02T05:00:00Z", url: "u" };
+    /** 새 Gist(P)에 묶인 '아직 맞춰 본 적 없음' 표식 */
+    const MARKER_B = `unsynced:${P.gistId}`;
 
     const setVisibility = (state: "visible" | "hidden") => {
       Object.defineProperty(document, "visibilityState", { configurable: true, get: () => state });
@@ -1307,7 +1309,7 @@ describe("useGistSync — connectDevice", () => {
     }
 
     function expectNeverSyncedBaseline(result: { current: ReturnType<typeof useGistSync> }) {
-      expect(window.localStorage.getItem("fw-gist-last-push-hash")).toBe("unsynced");
+      expect(window.localStorage.getItem("fw-gist-last-push-hash")).toBe(MARKER_B);
       expect(stamps.pull).toBe("");
       expect(stamps.push).toBe("");
       expect(result.current.lastPullAt).toBeNull();
@@ -1347,7 +1349,7 @@ describe("useGistSync — connectDevice", () => {
       expect(onApply).not.toHaveBeenCalled();
     });
 
-    it("취소 후 다시 켜기 (새 Gist가 더 새로움): 복귀 확인이 새 Gist를 미리보기 없이 적용하지 않음", async () => {
+    it("취소 후 다시 켜기 (새 Gist가 더 새로움): 다시 켠 뒤 새 Gist가 또 바뀌어도 복귀 확인이 미리보기 없이 적용하지 않음", async () => {
       const { result, onApply } = await mountSyncedToOld();
       mocked.getGistVersionsWithCredentials.mockResolvedValue([B_NEWER]);
       mocked.getGistVersions.mockResolvedValue([B_NEWER]);
@@ -1361,12 +1363,25 @@ describe("useGistSync — connectDevice", () => {
       expect(useUIStore.getState().gistConflict?.remoteDataJson).toBe(REMOTE);
       await act(async () => { await result.current.resolveGistConflict("cancel"); });
 
-      // 복귀 확인(throttle 경과 후 visible) — 사용자가 거절한 새 Gist 데이터를 조용히 적용하면 안 된다
+      // 다시 켤 때 예약된 자동 업로드(디바운스 = throttle 60초)를 먼저 소진 — 표식이라 업로드 대신 다시 충돌 모달
+      await act(async () => { await vi.advanceTimersByTimeAsync(GIST_AUTO_PUSH_DEBOUNCE_MS + 1000); });
+      expect(useUIStore.getState().gistConflict?.remoteDataJson).toBe(REMOTE);
+      expect(mocked.saveToGistWithRetry).not.toHaveBeenCalled();
+      await act(async () => { await result.current.resolveGistConflict("cancel"); });
+
+      // 그 뒤 다른 기기가 새 Gist를 또 바꿈 → 복귀 확인(throttle 경과 후 visible)이 실제로 원격을 읽는 경로
+      const REMOTE2 = JSON.stringify(makeData(9));
+      mocked.getGistVersions.mockResolvedValue([{ sha: "b2", committedAt: "2026-10-02T06:00:00Z", url: "u" }]);
+      mocked.loadFromGist.mockResolvedValue({ dataJson: REMOTE2, updatedAt: "2026-10-02T06:00:00Z" });
+      mocked.loadFromGist.mockClear();
       await act(async () => { await vi.advanceTimersByTimeAsync(GIST_REMOTE_CHECK_THROTTLE_MS + 1000); });
       await act(async () => {
         setVisibility("visible");
         await flushMicro();
       });
+      expect(mocked.loadFromGist).toHaveBeenCalledTimes(1);
+      // 사용자가 거절한(맞춰 보지 않은) 새 Gist 데이터를 조용히 적용하지 않고 묻는다
+      expect(useUIStore.getState().gistConflict?.remoteDataJson).toBe(REMOTE2);
       expect(onApply).not.toHaveBeenCalled();
       expect(mocked.saveToGistWithRetry).not.toHaveBeenCalled();
     });
@@ -1426,7 +1441,7 @@ describe("useGistSync — connectDevice", () => {
       expect(mocked.getGistVersions).toHaveBeenCalledTimes(2);
       expect(useUIStore.getState().gistConflict?.remoteDataJson).toBe(REMOTE);
       expect(mocked.saveToGistWithRetry).not.toHaveBeenCalled();
-      expect(window.localStorage.getItem("fw-gist-last-push-hash")).toBe("unsynced");
+      expect(window.localStorage.getItem("fw-gist-last-push-hash")).toBe(MARKER_B);
     });
 
     it("같은 Gist로 다시 연결하다 취소하면 기존 동기화 기준점을 유지", async () => {
@@ -1441,5 +1456,166 @@ describe("useGistSync — connectDevice", () => {
       expect(stamps.pull).toBe(pullBefore);
       expect(stamps.push).toBe(pushBefore);
     });
+
+    describe("표식이 갇히지 않음 — 덮어쓸 데이터가 없거나 Gist가 바뀌면 업로드", () => {
+      const NO_FILE = "Gist에 FarmWallet 데이터가 없습니다.";
+      const NOT_FOUND = "Gist 불러오기 실패: Gist를 찾을 수 없습니다. 삭제되었을 수 있습니다.";
+      const NET = "네트워크 연결을 확인해주세요.";
+      const localJson = () => toUserDataJson(makeData(1));
+
+      async function reEnableAndWaitDebounce(result: { current: ReturnType<typeof useGistSync> }) {
+        await act(async () => {
+          result.current.setAutoSyncEnabled(true);
+          await flushMicro();
+        });
+        await act(async () => { await vi.advanceTimersByTimeAsync(GIST_AUTO_PUSH_DEBOUNCE_MS + 1000); });
+      }
+
+      it("(a) 새 Gist에 FarmWallet 파일이 없음(연결 실패) → 다시 켜면 잃을 것이 없으니 업로드해 파일을 만든다", async () => {
+        const { result } = await mountSyncedToOld();
+        mocked.getGistVersionsWithCredentials.mockResolvedValue([B_OLDER]);
+        mocked.getGistVersions.mockResolvedValue([B_OLDER]);
+        mocked.loadFromGist.mockRejectedValue(new gistSync.GistNoRemoteDataError(NO_FILE));
+
+        let outcome: string | undefined;
+        await act(async () => { outcome = await result.current.connectDevice(P); });
+        expect(outcome).toBe("failed");
+        expect(window.localStorage.getItem("fw-gist-last-push-hash")).toBe(MARKER_B);
+
+        await reEnableAndWaitDebounce(result);
+        expect(mocked.saveToGistWithRetry).toHaveBeenCalledTimes(1);
+        expect(mocked.saveToGistWithRetry.mock.calls[0][0]).toBe(localJson());
+        expect(useUIStore.getState().gistConflict).toBeNull();
+        // 표식이 실제 해시로 바뀌어 이후는 정상 동기화
+        expect(window.localStorage.getItem("fw-gist-last-push-hash")).toBe(hashGistPayload(localJson()));
+      });
+
+      it("(b) 연결 취소 후 설정에서 Gist ID를 비우고 저장(새 Gist 생성) → 다른 Gist의 표식은 막지 않는다", async () => {
+        const { result } = await mountSyncedToOld();
+        mocked.getGistVersionsWithCredentials.mockResolvedValue([B_OLDER]);
+        mocked.getGistVersions.mockResolvedValue([B_OLDER]);
+        await connectAndCancel(result);
+        expect(window.localStorage.getItem("fw-gist-last-push-hash")).toBe(MARKER_B);
+
+        // 실제 동작처럼 ID가 없으면 조회·불러오기는 실패 — 저장(saveToGist)만 새 Gist를 만든다
+        mocked.getGistVersions.mockRejectedValue(new Error("토큰 또는 Gist ID가 없습니다."));
+        mocked.loadFromGist.mockRejectedValue(new Error("Gist ID가 설정되지 않았습니다. 먼저 저장을 해주세요."));
+        window.localStorage.removeItem("fw-gist-id"); // GistSyncCard에서 ID를 비움 ("자동 생성됨 (첫 저장 시)")
+
+        await act(async () => { await result.current.manualPush(); });
+        expect(mocked.loadFromGist).not.toHaveBeenCalled();
+        expect(mocked.saveToGistWithRetry).toHaveBeenCalledTimes(1);
+        expect(mocked.saveToGistWithRetry.mock.calls[0][0]).toBe(localJson());
+        expect(window.localStorage.getItem("fw-gist-last-push-hash")).toBe(hashGistPayload(localJson()));
+      });
+
+      it("(b') 연결 취소 후 설정에서 다른 Gist ID로 바꿈 → 표식은 그 Gist와 무관해 막지 않는다", async () => {
+        const { result } = await mountSyncedToOld();
+        mocked.getGistVersionsWithCredentials.mockResolvedValue([B_OLDER]);
+        mocked.getGistVersions.mockResolvedValue([B_OLDER]);
+        await connectAndCancel(result);
+        window.localStorage.setItem("fw-gist-id", "1111111111111111111111111111aaaa");
+
+        await act(async () => { await result.current.manualPush(); });
+        expect(mocked.loadFromGist).not.toHaveBeenCalled();
+        expect(mocked.saveToGistWithRetry).toHaveBeenCalledTimes(1);
+      });
+
+      it("(c) 연결 취소 후 새 Gist가 삭제됨(404) → 잃을 것이 없으니 업로드 진행 (saveToGist의 404 → 새 Gist 생성 경로)", async () => {
+        const { result } = await mountSyncedToOld();
+        mocked.getGistVersionsWithCredentials.mockResolvedValue([B_OLDER]);
+        mocked.getGistVersions.mockResolvedValue([B_OLDER]);
+        await connectAndCancel(result);
+        mocked.getGistVersions.mockRejectedValue(new Error("버전 목록 조회 실패: Gist를 찾을 수 없습니다. 삭제되었을 수 있습니다."));
+        mocked.loadFromGist.mockRejectedValue(new gistSync.GistNoRemoteDataError(NOT_FOUND));
+
+        await reEnableAndWaitDebounce(result);
+        expect(mocked.saveToGistWithRetry).toHaveBeenCalledTimes(1);
+        expect(mocked.saveToGistWithRetry.mock.calls[0][0]).toBe(localJson());
+        expect(useUIStore.getState().gistConflict).toBeNull();
+      });
+
+      it("(d) 표식 상태에서 그 밖의 불러오기 실패 → 올리지 않고 실패 기록, 수동 저장은 토스트", async () => {
+        const toastError = vi.spyOn(toast, "error");
+        try {
+          const { result } = await mountSyncedToOld();
+          mocked.getGistVersionsWithCredentials.mockResolvedValue([B_OLDER]);
+          mocked.getGistVersions.mockResolvedValue([B_OLDER]);
+          await connectAndCancel(result);
+          mocked.loadFromGist.mockRejectedValue(new Error(NET));
+
+          // 자동 업로드: 버전 조회 성공(recordSyncOk로 0) 뒤 불러오기 실패를 기록 → 1, 오류 문구 유지
+          await reEnableAndWaitDebounce(result);
+          expect(mocked.saveToGistWithRetry).not.toHaveBeenCalled();
+          expect(result.current.syncHealth.consecutiveFailures).toBe(1);
+          expect(result.current.syncHealth.lastError).toBe(NET);
+
+          // 수동 저장: 조용히 끝나지 않고 토스트 + 실패 기록
+          toastError.mockClear();
+          await act(async () => { await result.current.manualPush(); });
+          expect(mocked.saveToGistWithRetry).not.toHaveBeenCalled();
+          expect(toastError).toHaveBeenCalledWith(`Gist 저장 실패: ${NET}`, expect.anything());
+          expect(result.current.syncHealth.consecutiveFailures).toBe(1);
+          expect(result.current.syncHealth.lastError).toBe(NET);
+          expect(useUIStore.getState().gistConflict).toBeNull();
+          expect(window.localStorage.getItem("fw-gist-last-push-hash")).toBe(MARKER_B);
+        } finally {
+          toastError.mockRestore();
+        }
+      });
+    });
+  });
+});
+
+describe("loadFromGist — 덮어쓸 원격 데이터 없음 신호", () => {
+  // 모듈 mock과 별개로 실제 구현을 fetch stub으로 검증 (메시지는 기존 문구 그대로)
+  const ID = "0123456789abcdef0123456789abcdef";
+
+  beforeEach(() => {
+    window.localStorage.clear();
+    window.sessionStorage.clear();
+    window.localStorage.setItem("fw-gist-token", "t");
+    window.localStorage.setItem("fw-gist-id", ID);
+  });
+
+  afterEach(() => {
+    vi.unstubAllGlobals();
+    window.localStorage.clear();
+    window.sessionStorage.clear();
+  });
+
+  async function actualLoad() {
+    const actual = await vi.importActual<typeof gistSync>("../services/gistSync");
+    return { load: actual.loadFromGist, NoData: actual.GistNoRemoteDataError };
+  }
+
+  it("404 → GistNoRemoteDataError (기존 문구)", async () => {
+    vi.stubGlobal("fetch", vi.fn().mockResolvedValue(new Response("Not Found", { status: 404 })));
+    const { load, NoData } = await actualLoad();
+    const err = await load().catch((e: unknown) => e);
+    expect(err).toBeInstanceOf(NoData);
+    expect(err).toBeInstanceOf(gistSync.GistNoRemoteDataError);
+    expect((err as Error).message).toBe("Gist 불러오기 실패: Gist를 찾을 수 없습니다. 삭제되었을 수 있습니다.");
+  });
+
+  it("데이터 파일 없음 → GistNoRemoteDataError (기존 문구)", async () => {
+    vi.stubGlobal("fetch", vi.fn().mockResolvedValue(new Response(JSON.stringify({ files: {} }), { status: 200 })));
+    const { load, NoData } = await actualLoad();
+    const err = await load().catch((e: unknown) => e);
+    expect(err).toBeInstanceOf(NoData);
+    expect((err as Error).message).toBe("Gist에 FarmWallet 데이터가 없습니다.");
+  });
+
+  it("그 밖의 실패(401·ID 없음)는 일반 오류", async () => {
+    vi.stubGlobal("fetch", vi.fn().mockResolvedValue(new Response("bad", { status: 401 })));
+    const { load, NoData } = await actualLoad();
+    const authErr = await load().catch((e: unknown) => e);
+    expect(authErr).toBeInstanceOf(Error);
+    expect(authErr).not.toBeInstanceOf(NoData);
+
+    window.localStorage.removeItem("fw-gist-id");
+    const noIdErr = await load().catch((e: unknown) => e);
+    expect(noIdErr).not.toBeInstanceOf(NoData);
+    expect((noIdErr as Error).message).toBe("Gist ID가 설정되지 않았습니다. 먼저 저장을 해주세요.");
   });
 });

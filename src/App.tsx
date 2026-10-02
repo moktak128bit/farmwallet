@@ -82,9 +82,10 @@ import { GistVersionModal } from "./components/GistVersionModal";
 import { GitVersionModal } from "./components/GitVersionModal";
 import { GistConflictModal } from "./components/GistConflictModal";
 import { ConnectConfirmModal } from "./components/ConnectConfirmModal";
+import { ConnectOnboardingCard } from "./components/ConnectOnboardingCard";
 import { ApplyConfirmModal, requestApply } from "./components/ApplyConfirmModal";
 import { isGistConfigured, GIST_CONFIG_CHANGE_EVENT, getGistToken, getGistId } from "./services/gistSync";
-import { takeConnectPayloadFromLocation } from "./services/deviceConnect";
+import { takeConnectPayloadFromLocation, isEmptyLocalData } from "./services/deviceConnect";
 import { deriveGistSyncStatus } from "./services/gistSyncStatus";
 import { toUserDataJson } from "./services/dataService";
 import { useUIStore, type PendingAction } from "./store/uiStore";
@@ -1132,6 +1133,9 @@ export const App: React.FC = () => {
             <MobileBottomNav />
             <main id="main-content" className="app-main" role="main">
           <Suspense fallback={<div className="card" style={{ padding: 24, textAlign: "center", color: "var(--text-muted)" }}>로딩 중...</div>}>
+          {tab === "dashboard" && !isLoading && !loadFailed && !gistConfigured && isEmptyLocalData(data) && (
+            <ConnectOnboardingCard onGoSettings={() => handleTabChange("settings")} />
+          )}
           {tab === "dashboard" && (
             <TabErrorBoundary tabName="대시보드"><DashboardView /></TabErrorBoundary>
           )}

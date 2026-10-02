@@ -139,6 +139,9 @@ export const BACKUP_WARNING_HOURS = {
 // 자동 백업 간격 (밀리초, 10분) — 저장소가 IndexedDB로 옮겨져 용량 여유가 생겨 30분→10분으로 단축
 export const AUTO_BACKUP_INTERVAL_MS = 10 * 60 * 1000;
 
+/** 기기 연결 링크의 기준 주소 (location.origin 사용 금지 — 개발/미리보기 주소가 QR에 박히는 것 방지) */
+export const PUBLIC_APP_URL = "https://moktak128bit.github.io/farmwallet/";
+
 // 자동 Gist 저장 디바운스 (밀리초, 1분)
 export const GIST_AUTO_PUSH_DEBOUNCE_MS = 60 * 1000;
 

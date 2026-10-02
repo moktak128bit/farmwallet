@@ -118,10 +118,14 @@ export const StocksHeaderSection: React.FC<Props> = React.memo(function StocksHe
           const then = new Date(yahooUpdatedAt).getTime();
           const now = Date.now();
           const diffMin = Math.floor((now - then) / 60000);
-          const label = diffMin < 1 ? "방금 전" : diffMin < 60 ? `${diffMin}분 전` : `${Math.floor(diffMin / 60)}시간 전`;
+          const label =
+            diffMin < 1 ? "방금 전"
+            : diffMin < 60 ? `${diffMin}분 전`
+            : diffMin < 24 * 60 ? `${Math.floor(diffMin / 60)}시간 전`
+            : `${Math.floor(diffMin / (24 * 60))}일 전`;
           return (
             <span className="hint" title={new Date(yahooUpdatedAt).toLocaleString("ko-KR")}>
-              마지막 갱신: {label}
+              시세 기준: {label}
             </span>
           );
         })()}

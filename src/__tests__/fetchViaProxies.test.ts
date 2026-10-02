@@ -33,7 +33,7 @@ describe("fetchViaProxies", () => {
       const url = String(input);
       calls.push(url);
       if (url.startsWith("https://api.allorigins.win/")) return Promise.resolve(textRes(500, "boom"));
-      if (url.startsWith("https://corsproxy.io/")) return Promise.resolve(textRes(200, '{"ok":1}'));
+      if (url.startsWith("https://api.codetabs.com/")) return Promise.resolve(textRes(200, '{"ok":1}'));
       return Promise.resolve(textRes(200, "should-not-reach"));
     }) as typeof fetch;
 
@@ -41,17 +41,28 @@ describe("fetchViaProxies", () => {
     expect(r).toEqual({ body: '{"ok":1}', saw429: false });
     expect(calls).toHaveLength(2);
     expect(calls[0]).toContain("allorigins");
-    expect(calls[1]).toContain("corsproxy.io");
+    expect(calls[1]).toContain("codetabs");
     expect(calls[0]).toContain(encodeURIComponent("https://example.com/x"));
 
     const snap = api.getProxyStatusSnapshot();
     const byId = Object.fromEntries(snap.proxies.map((p) => [p.id, p]));
     expect(byId.allorigins).toMatchObject({ ok: 0, fail: 1, streak: 1 });
-    expect(byId.corsproxy).toMatchObject({ ok: 1, fail: 0, streak: 0 });
-    expect(byId.codetabs).toMatchObject({ ok: 0, fail: 0, streak: 0 });
+    expect(byId.codetabs).toMatchObject({ ok: 1, fail: 0, streak: 0 });
     expect(snap.lastSuccessAt).not.toBeNull();
     // 성공한 프록시가 다음 시도의 맨 앞으로 온다
-    expect(snap.proxies.map((p) => p.id)).toEqual(["corsproxy", "codetabs", "allorigins"]);
+    expect(snap.proxies.map((p) => p.id)).toEqual(["codetabs", "allorigins"]);
+  });
+
+  it("corsproxy.io(키 없으면 항상 401)는 체인에 없다", async () => {
+    const api = await loadApi();
+    const calls: string[] = [];
+    globalThis.fetch = vi.fn((input: RequestInfo | URL) => {
+      calls.push(String(input));
+      return Promise.reject(new Error("offline"));
+    }) as typeof fetch;
+    await api.fetchViaProxies("https://example.com/x", { devProxyUrl: null });
+    expect(calls).toHaveLength(2);
+    expect(calls.some((u) => u.includes("corsproxy.io"))).toBe(false);
   });
 
   it("성공 프록시 선순위 기억 — 다음 호출은 직전 성공 프록시부터 시도한다", async () => {
@@ -63,7 +74,6 @@ describe("fetchViaProxies", () => {
       calls.push(url);
       if (phase === 1) {
         if (url.includes("allorigins")) return Promise.reject(new Error("network"));
-        if (url.includes("corsproxy.io")) return Promise.reject(new Error("network"));
         return Promise.resolve(textRes(200, "from-codetabs"));
       }
       return Promise.resolve(textRes(200, "any"));
@@ -71,7 +81,7 @@ describe("fetchViaProxies", () => {
 
     const first = await api.fetchViaProxies("https://example.com/a", { devProxyUrl: null });
     expect(first.body).toBe("from-codetabs");
-    expect(calls).toHaveLength(3);
+    expect(calls).toHaveLength(2);
 
     phase = 2;
     calls.length = 0;
@@ -85,7 +95,6 @@ describe("fetchViaProxies", () => {
     globalThis.fetch = vi.fn((input: RequestInfo | URL) => {
       const url = String(input);
       if (url.includes("allorigins")) return Promise.resolve(textRes(429, ""));
-      if (url.includes("corsproxy.io")) return Promise.reject(new Error("network"));
       return Promise.resolve(textRes(502, "bad gateway"));
     }) as typeof fetch;
 

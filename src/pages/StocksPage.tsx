@@ -374,8 +374,8 @@ export const StocksView: React.FC<Props> = ({
     onLog
   });
 
-  // 주식 탭 진입 시 마지막 갱신 "시도"가 10분+ 지났으면 보유 종목 1회 자동 갱신 —
-  // 자동 갱신(30분 interval)은 기본 꺼짐 + 탭 체류 중에만 동작해 "탭 열면 옛값" 문제가 있었음.
+  // 주식 탭 진입 시 마지막 갱신 "시도"가 10분+ 지났으면 보유 종목 1회 자동 갱신 — 앱 열기·복귀 갱신
+  // (App의 useBackgroundQuoteRefresh)은 앱이 계속 보이는 채로 오래 머문 뒤 탭을 옮기는 경우를 못 잡는다.
   // 판정 기준은 시세 updatedAt(체결 시각)이 아님: 장외엔 체결 시각이 멈춰 매 진입마다 발사된다.
   const autoRefreshOnMountRef = useRef(false);
   useEffect(() => {
@@ -387,6 +387,18 @@ export const StocksView: React.FC<Props> = ({
       void handleRefreshQuotesAuto();
     }
   }, [positions.length, handleRefreshQuotesAuto]);
+
+  // 헤더의 "시세 기준" — 이 화면에서 갱신했으면 그 결과, 아니면(앱 전역 백그라운드 갱신·이전 세션) 보유 종목 시세 중
+  // 가장 최근 체결 시각. 예전엔 이 화면에서 직접 갱신한 경우에만 보여서 시세가 열흘 멈춰도 티가 안 났다.
+  const lastQuoteAt = useMemo(() => {
+    if (yahooUpdatedAt) return yahooUpdatedAt;
+    let latest = "";
+    for (const p of positions) {
+      const at = latestPriceByCanonicalTicker.get(canonicalTickerForMatch(p.ticker))?.updatedAt ?? "";
+      if (at > latest) latest = at;
+    }
+    return latest || null;
+  }, [yahooUpdatedAt, positions, latestPriceByCanonicalTicker]);
 
   const handleLoadTickers = useCallback(async () => {
     onLog?.("종목 불러오기 시작...", "info");
@@ -554,7 +566,7 @@ export const StocksView: React.FC<Props> = ({
           <StocksHeaderSection
             fxRate={fxRate}
             fxUpdatedAt={fxUpdatedAt}
-            yahooUpdatedAt={yahooUpdatedAt}
+            yahooUpdatedAt={lastQuoteAt}
             isLoadingQuotes={isLoadingQuotes}
             isLoadingTickerDatabase={isLoadingTickerDatabase}
             onRefreshHoldings={handleRefreshQuotesHoldings}

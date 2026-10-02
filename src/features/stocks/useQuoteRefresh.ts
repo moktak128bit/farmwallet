@@ -1,5 +1,6 @@
 /**
- * 시세 갱신 훅 — 보유 종목/전체(ticker.json) 시세 갱신 + 재시도 + 진행률 + 자동 갱신(usePriceAutoRefresh).
+ * 시세 갱신 훅 — 보유 종목/전체(ticker.json) 시세 갱신 + 재시도 + 진행률.
+ * 자동 갱신(앱 열기·복귀 stale, 옵트인 30분 interval)은 앱 전역 useBackgroundQuoteRefresh가 이 훅의 자동 경로로 돌린다.
  * StocksPage에서 분리 — 갱신 상태(isLoadingQuotes/진행률/에러/마지막 갱신 시각)와
  * Yahoo/CoinGecko 배치 조회·재시도·prices 머지 로직을 페이지 밖으로 이동.
  * 반환하는 핸들러는 모두 useCallback으로 참조 안정 — memo된 자식(StocksHeaderSection 등)에 그대로 전달 가능.
@@ -19,7 +20,6 @@ import {
   cryptoIdFromSymbol
 } from "../../utils/finance";
 import { displayNameForTicker } from "../../utils/stockHelpers";
-import { usePriceAutoRefresh } from "../../hooks/usePriceAutoRefresh";
 import { STORAGE_KEYS } from "../../constants/config";
 
 /** 유효 시세 판정 — 0/NaN은 실패로 취급해 재시도·머지에서 제외 */
@@ -171,6 +171,8 @@ export function useQuoteRefresh({
       updateTickerDatabase: boolean;
       persistToTickerJson: boolean;
       logLabel: string;
+      /** true면 성공 토스트를 띄우지 않는다 — 앱 열 때마다 도는 백그라운드 갱신용 (로그는 남김) */
+      silent?: boolean;
     }) => {
       const {
         mode,
@@ -178,7 +180,8 @@ export function useQuoteRefresh({
         cryptoTickers: uniqueCryptoTickers,
         updateTickerDatabase,
         persistToTickerJson,
-        logLabel
+        logLabel,
+        silent
       } = params;
 
       const totalSymbols = uniqueStockTickers.length + uniqueCryptoTickers.length;
@@ -347,9 +350,11 @@ export function useQuoteRefresh({
             ? `[${logLabel}] 시세 반영: ${successCount}종목 (실패 ${failedTickers.length}종목: ${failedTickers.slice(0, 3).join(", ")}${failedTickers.length > 3 ? " …" : ""})`
             : `[${logLabel}] 시세 반영: ${successCount}종목`;
         onLog?.(successMsg, "success");
-        toast.success(successMsg.replace(`[${logLabel}] `, ""), {
-          duration: failedTickers.length > 0 ? 5000 : 4000
-        });
+        if (!silent) {
+          toast.success(successMsg.replace(`[${logLabel}] `, ""), {
+            duration: failedTickers.length > 0 ? 5000 : 4000
+          });
+        }
       } catch (err) {
         console.error(err);
         setQuoteError("시세 갱신 중 오류가 발생했습니다. 잠시 후 다시 시도하세요.");
@@ -383,8 +388,9 @@ export function useQuoteRefresh({
   }, [runQuoteRefresh, holdingsStockTickers, holdingsCryptoTickers]);
 
   /**
-   * 자동 갱신 경로 (interval·탭 진입 stale) — 수동 갱신과 달리 tickerDatabase·ticker.json은
-   * 건드리지 않아 사용자 액션 없는 갱신이 undo 히스토리·dev 파일을 오염시키지 않는다.
+   * 자동 갱신 경로 (앱 열기·복귀 stale · 옵트인 interval — useBackgroundQuoteRefresh) — 수동 갱신과 달리
+   * tickerDatabase·ticker.json은 건드리지 않아 사용자 액션 없는 갱신이 undo 히스토리·dev 파일을 오염시키지 않고,
+   * 성공 토스트도 띄우지 않는다(앱을 열 때마다 뜨면 소음).
    */
   const handleRefreshQuotesAuto = useCallback(async () => {
     if (holdingsStockTickers.length === 0 && holdingsCryptoTickers.length === 0) return;
@@ -394,11 +400,10 @@ export function useQuoteRefresh({
       cryptoTickers: holdingsCryptoTickers,
       updateTickerDatabase: false,
       persistToTickerJson: false,
-      logLabel: "자동 갱신"
+      logLabel: "자동 갱신",
+      silent: true
     });
   }, [runQuoteRefresh, holdingsStockTickers, holdingsCryptoTickers]);
-
-  usePriceAutoRefresh({ onRefresh: handleRefreshQuotesAuto });
 
   const handleRefreshQuotesFull = useCallback(async () => {
     const rows = await fetchTickersFromFile();

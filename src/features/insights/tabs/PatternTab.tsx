@@ -1,4 +1,5 @@
 import React from "react";
+import { Info } from "lucide-react";
 import {
   BarChart, Bar, Cell, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer,
 } from "recharts";
@@ -42,7 +43,7 @@ export const PatternTab = React.memo(function PatternTab({ d }: { d: D }) {
   return (
     <div>
       <div style={{ padding: "10px 14px", background: "var(--bg)", borderRadius: 8, marginBottom: 16, fontSize: 12, color: "var(--text-muted)", lineHeight: 1.6 }}>
-        ℹ️ 범위: <strong>{rangeLabel}</strong> ({periodLabel}) · 단위: <strong>원</strong> · 초점: <strong>언제·어떻게</strong> 소비하는지 (타이밍·빈도·스트릭). 금액 심층 분석은 지출 분석 탭 참조
+        <Info size={13} style={{ verticalAlign: "-2px", marginRight: 4 }} aria-hidden />범위: <strong>{rangeLabel}</strong> ({periodLabel}) · 단위: <strong>원</strong> · 초점: <strong>언제·어떻게</strong> 소비하는지 (타이밍·빈도·스트릭). 금액 심층 분석은 지출 분석 탭 참조
       </div>
 
       {/* ============ 한눈에 ============ */}

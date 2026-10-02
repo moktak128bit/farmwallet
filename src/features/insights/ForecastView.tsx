@@ -1,4 +1,5 @@
 import React, { useMemo } from "react";
+import { Info } from "lucide-react";
 import type { LedgerEntry, RecurringExpense } from "../../types";
 import { forecastNextMonth, expenseMainTotalsForMonth } from "../../utils/forecast";
 import { getThisMonthKST } from "../../utils/date";
@@ -48,7 +49,7 @@ export const ForecastView: React.FC<Props> = ({ ledger, recurring, formatNumber 
   return (
     <div>
       <div style={{ padding: "10px 14px", background: "var(--bg)", borderRadius: 8, marginBottom: 16, fontSize: 12, color: "var(--text-muted)", lineHeight: 1.6 }}>
-        ℹ️ 공식: <strong>MAX(반복지출 합, 직전 {lookback}개월 평균)</strong> (진행 중인 이번 달 제외) · 신뢰구간 ±1σ · 기준: {monthLabel(result.baseMonth)} → 예측 <strong>{monthLabel(result.forecastMonth)}</strong>
+        <Info size={13} style={{ verticalAlign: "-2px", marginRight: 4 }} aria-hidden />공식: <strong>MAX(반복지출 합, 직전 {lookback}개월 평균)</strong> (진행 중인 이번 달 제외) · 신뢰구간 ±1σ · 기준: {monthLabel(result.baseMonth)} → 예측 <strong>{monthLabel(result.forecastMonth)}</strong>
         <span style={{ marginLeft: 10 }}>
           lookback:
           {[3, 6, 12].map((n) => (

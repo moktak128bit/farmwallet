@@ -15,7 +15,8 @@ import { useAppStore } from "../store/appStore";
 import { useDateAccountId } from "../hooks/useDateAccountSettings";
 import { useAccountTimelineRows } from "../hooks/useAccountTimelineRows";
 import { buildAdjustedPrices, buildTimelineMonthRange } from "../utils/accountTimeline";
-import { computeAccountBalances, computeBalanceSheet, computePositions, type BalanceSheet } from "../calculations";
+import type { BalanceSheet } from "../calculations";
+import { useBalanceSheet } from "../hooks/useBalanceSheet";
 import { getThisMonthKST, getTodayKST, shiftMonth, getLastDayOfMonth } from "../utils/date";
 import { useInsightsData } from "../features/insights/useInsightsData";
 import { InsightsHeader } from "../features/insights/InsightsHeader";
@@ -89,11 +90,7 @@ export const InsightsView: React.FC<Props> = ({ accounts, ledger, trades = [], p
   });
 
   // 총자산·총부채·순자산 — 계좌 탭·대시보드와 같은 단일 소스(computeBalanceSheet). 기간 필터와 무관한 '지금' 값.
-  const bs = useMemo(() => {
-    const balances = computeAccountBalances(accounts, ledger, trades);
-    const positions = computePositions(trades, adjustedPrices, accounts, { fxRate: fxRate ?? undefined, priceFallback: "cost" });
-    return computeBalanceSheet(balances, positions, fxRate, loans, ledger);
-  }, [accounts, ledger, trades, adjustedPrices, fxRate, loans]);
+  const bs = useBalanceSheet({ accounts, ledger, trades, prices, fxRate, loans });
 
   const d = useInsightsData(filteredLedger, filteredTrades, trades, accounts, prices, selMonth, categoryPresets, budgetGoals, dateAccountId, fxRate, timelineRows, ledger);
 
@@ -135,7 +132,8 @@ export const InsightsView: React.FC<Props> = ({ accounts, ledger, trades = [], p
               <PatternTab d={d} />
             </>
           )}
-          {tab === "expense" && <DateTab d={d} />}
+          {/* 데이트 기록이 있을 때만 — 없으면 지출 분석 아래에 빈 카드가 매번 붙는다 */}
+          {tab === "expense" && d.dateTxCount > 0 && <DateTab d={d} />}
           {tab === "expense" && (
             <SettlementView
               data={{ accounts, ledger, trades, prices: [], categoryPresets, recurringExpenses, budgetGoals: budgetGoals ?? [], customSymbols: [] }}

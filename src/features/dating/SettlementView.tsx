@@ -1,4 +1,5 @@
 import React, { useMemo, useState } from "react";
+import { Info } from "lucide-react";
 import type { Account, AppData, LedgerEntry } from "../../types";
 import { Section } from "../insights/insightsShared";
 import { useDateAccountId } from "../../hooks/useDateAccountSettings";
@@ -146,7 +147,7 @@ export const SettlementView: React.FC<Props> = ({ data, onSettle, formatNumber }
   return (
     <div>
       <div style={{ padding: "10px 14px", background: "var(--bg)", borderRadius: 8, marginBottom: 16, fontSize: 12, color: "var(--text-muted)", lineHeight: 1.6 }}>
-        ℹ️ 데이트 계좌: <strong>{dateAccount.name}</strong> · 분담: <strong>50:50 (나누기 2)</strong> · 단위: <strong>원</strong> · 정산 시작일(<strong>{sinceDate}</strong>) 이후 해당 계좌 expense 기준
+        <Info size={13} style={{ verticalAlign: "-2px", marginRight: 4 }} aria-hidden />데이트 계좌: <strong>{dateAccount.name}</strong> · 분담: <strong>50:50 (나누기 2)</strong> · 단위: <strong>원</strong> · 정산 시작일(<strong>{sinceDate}</strong>) 이후 해당 계좌 expense 기준
         {lastSettleAt && <> · 마지막 정산: <strong>{lastSettleAt}</strong></>}
       </div>
 

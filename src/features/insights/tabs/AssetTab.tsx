@@ -1,4 +1,5 @@
 import React from "react";
+import { AlertTriangle, CheckCircle2, Info } from "lucide-react";
 import {
   AreaChart, Area, PieChart, Pie, Cell,
   XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer,
@@ -43,16 +44,18 @@ export const AssetTab = React.memo(function AssetTab({ d, bs }: { d: D; bs: Bala
   const eta12 = React.useMemo(() => (target ? projectGoal({ series: goalSeries, target, method: "trailing12" }) : null), [goalSeries, target]);
 
 
-  // 자산 집중도 (HHI 기반 실효 자산 카테고리 수)
-  const hhi = totalAssets > 0
-    ? d.assetAllocation.reduce((s, x) => s + Math.pow(x.value / totalAssets, 2), 0)
+  // 자산 집중도 (HHI 기반 실효 자산 카테고리 수) · 현금성 비율 — 분자·분모 모두 배분 합계 기준.
+  // 배분은 대차와 같은 규칙(계좌 순가치 양수만)이라 합계 = 총자산이고, 비중 합이 항상 1이 된다.
+  const allocTotal = d.assetAllocation.reduce((s, x) => s + x.value, 0);
+  const hhi = allocTotal > 0
+    ? d.assetAllocation.reduce((s, x) => s + Math.pow(x.value / allocTotal, 2), 0)
     : 0;
   const effectiveCategories = hhi > 0 ? 1 / hhi : 0;
 
   // 현금성 비율 (입출금 + 저축 계좌)
-  const liquidTypes = new Set(["입출금", "저축", "현금"]);
+  const liquidTypes = new Set(["입출금", "저축"]);
   const liquidAssets = d.assetAllocation.filter((a) => liquidTypes.has(a.name)).reduce((s, x) => s + x.value, 0);
-  const liquidPct = totalAssets > 0 ? (liquidAssets / totalAssets) * 100 : 0;
+  const liquidPct = allocTotal > 0 ? (liquidAssets / allocTotal) * 100 : 0;
 
   const periodLabel = d.selMonth
     ? d.selMonth
@@ -63,7 +66,7 @@ export const AssetTab = React.memo(function AssetTab({ d, bs }: { d: D; bs: Bala
     <div>
       {/* 상단 배너 */}
       <div style={{ padding: "10px 14px", background: "var(--bg)", borderRadius: 8, marginBottom: 16, fontSize: 12, color: "var(--text-muted)", lineHeight: 1.6 }}>
-        ℹ️ 범위: <strong>{rangeLabel}</strong> ({periodLabel}) · 단위: <strong>원</strong> · 순자산 = 총자산 − 총부채 (계좌 탭·대시보드와 같은 정의).
+        <Info size={13} style={{ verticalAlign: "-2px", marginRight: 4 }} aria-hidden />범위: <strong>{rangeLabel}</strong> ({periodLabel}) · 단위: <strong>원</strong> · 순자산 = 총자산 − 총부채 (계좌 탭·대시보드와 같은 정의).
         월별 추이는 <strong>대시보드 순자산 추이와 동일 계산</strong> (주식 평가액·환율·대출 반영)
       </div>
 
@@ -73,7 +76,7 @@ export const AssetTab = React.memo(function AssetTab({ d, bs }: { d: D; bs: Bala
           <BalanceSheetStrip bs={bs} />
         </div>
         <Card accent>
-          <Kpi label="현재 순자산" value={F(current) + "원"} sub={`${nw.length}개월 추적`} color="var(--success)" info="계좌 현재 잔액 − account.debt − 대출 잔금" />
+          <Kpi label="현재 순자산" value={F(current) + "원"} sub={`${nw.length}개월 추적`} color="var(--success)" info="총자산 − 총부채. 계좌 탭·대시보드와 같은 대차 정의" />
         </Card>
         <Card accent>
           <Kpi
@@ -164,9 +167,9 @@ export const AssetTab = React.memo(function AssetTab({ d, bs }: { d: D; bs: Bala
           <Kpi
             label="총 자산"
             value={F(totalAssets) + "원"}
-            sub="계좌 잔액 합계 (부채 포함)"
+            sub="빚 빼기 전"
             color="var(--warning)"
-            info="account 잔액 합 — 부채(account.debt)와 대출을 빼기 전 금액"
+            info="계좌별 순가치(잔액 + 평가액 + 달러 환산 − 계좌 부채)가 플러스인 계좌의 합. 마이너스 통장·카드 부채·대출은 총부채로 따로 센다"
           />
         </Card>
         <Card accent>
@@ -175,7 +178,7 @@ export const AssetTab = React.memo(function AssetTab({ d, bs }: { d: D; bs: Bala
             value={F(totalDebt) + "원"}
             sub={debtParts || "부채 없음"}
             color="var(--danger)"
-            info="account.debt (신용카드 등) + 대출 잔금 (이자만 내는 동안 loanAmount 그대로)"
+            info="대출 잔금(원금 상환만 차감) + 마이너스 통장 + 카드 부채(지금 갚을 돈)"
           />
         </Card>
         <Card accent>
@@ -184,7 +187,7 @@ export const AssetTab = React.memo(function AssetTab({ d, bs }: { d: D; bs: Bala
             value={liquidPct.toFixed(1) + "%"}
             sub={`현금성 자산 ${F(liquidAssets)}원`}
             color={liquidPct >= 20 ? "var(--success)" : liquidPct >= 10 ? "var(--warning)" : "var(--danger)"}
-            info="입출금+저축+현금 / 총자산. 20% 이상이면 유동성 여유, 10% 미만이면 위험"
+            info="입출금 + 저축 계좌 / 총자산. 20% 이상이면 유동성 여유, 10% 미만이면 위험"
           />
         </Card>
         <Card accent>
@@ -262,7 +265,9 @@ export const AssetTab = React.memo(function AssetTab({ d, bs }: { d: D; bs: Bala
               ];
               return items.map((it) => (
                 <div key={it.label} style={{ display: "flex", alignItems: "center", gap: 10, padding: "6px 10px", background: it.pass ? "var(--primary-light)" : "var(--danger-light)", borderRadius: 6 }}>
-                  <span style={{ fontSize: 18 }}>{it.pass ? "✅" : "⚠️"}</span>
+                  {it.pass
+                    ? <CheckCircle2 size={18} style={{ color: "var(--success)", flexShrink: 0 }} aria-label="통과" />
+                    : <AlertTriangle size={18} style={{ color: "var(--danger)", flexShrink: 0 }} aria-label="주의" />}
                   <div style={{ flex: 1 }}>
                     <div style={{ fontWeight: 700, color: it.pass ? "var(--success)" : "var(--danger)" }}>{it.label}</div>
                     <div style={{ fontSize: 11, color: "var(--text-muted)" }}>{it.hint}</div>

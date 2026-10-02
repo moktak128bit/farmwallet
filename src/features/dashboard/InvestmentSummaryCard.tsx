@@ -12,7 +12,6 @@ import type {
 import { useAppStore } from "../../store/appStore";
 import {
   positionMarketValueKRW,
-  computeTotalNetWorth,
   baseBalanceForAccount,
 } from "../../calculations";
 import { formatKRW } from "../../utils/formatter";
@@ -39,6 +38,8 @@ interface Props {
   fxRate: number | null;
   /** 월별 순자산 시계열(KRW, 부모 accountTimelineRows total) — 최종 총자산 목표 ETA용. 없으면 ETA 생략 */
   netWorthSeries?: { month: string; value: number }[];
+  /** 현재 순자산 — 부모가 대차 단일 소스(computeBalanceSheet)로 1회 계산한 값. 카드 인스턴스마다 대차를 재계산하지 않는다 */
+  netWorth: number;
 }
 
 function daysBetween(fromIso: string, toIso: string): number {
@@ -70,6 +71,7 @@ export const InvestmentSummaryCard: React.FC<Props> = React.memo(function Invest
   positions,
   fxRate,
   netWorthSeries,
+  netWorth,
   variant,
 }) {
   const setData = useAppStore((s) => s.setData);
@@ -103,12 +105,6 @@ export const InvestmentSummaryCard: React.FC<Props> = React.memo(function Invest
     return total;
   }, [balances, positions, securitiesAccountIds, fxRate]);
 
-  // 총자산 목표 진행률용: 모든 계좌 + 포지션 - 부채 (= 순자산)
-  const loans = useAppStore((s) => s.data.loans);
-  const totalNetWorth = useMemo(
-    () => computeTotalNetWorth(balances, positions, fxRate, loans, ledger),
-    [balances, positions, fxRate, loans, ledger]
-  );
   // 최종 총자산 목표 ETA — 최근 6개월 순자산 페이스 (읽기 전용). investmentGoals에 기한이 없어 ETA만 표시
   const finalTotalEtaHint = useMemo(() => {
     const target = goals.finalTotalAssetTarget;
@@ -249,8 +245,9 @@ export const InvestmentSummaryCard: React.FC<Props> = React.memo(function Invest
     setDraft("");
   };
 
+  // 손익 색 — 국내 관례(CLAUDE.md 규칙 4): 이익 = 빨강, 손실 = 파랑. 성공/실패 색(--success/--danger)이 아니다.
   const pnlColor = (v: number) =>
-    v > 0 ? "var(--success)" : v < 0 ? "var(--danger)" : "var(--text-muted)";
+    v > 0 ? "var(--danger)" : v < 0 ? "var(--accent)" : "var(--text-muted)";
 
   return (
     <div
@@ -274,7 +271,7 @@ export const InvestmentSummaryCard: React.FC<Props> = React.memo(function Invest
             fontWeight: 700,
             padding: "3px 10px",
             borderRadius: 12,
-            background: monthlyRealizedPnl > 0 ? "rgba(34,197,94,0.12)" : monthlyRealizedPnl < 0 ? "rgba(239,68,68,0.12)" : "var(--border)",
+            background: monthlyRealizedPnl > 0 ? "var(--danger-light)" : monthlyRealizedPnl < 0 ? "var(--accent-light)" : "var(--border)",
             color: pnlColor(monthlyRealizedPnl),
           }}
         >
@@ -288,6 +285,8 @@ export const InvestmentSummaryCard: React.FC<Props> = React.memo(function Invest
       {variant === "details" && <div className="card-title">투자 목표·기록</div>}
 
       <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
+        {/* 연간 입금액 목표는 첫 화면(summary) 전용 — details에도 두면 섹션을 펼칠 때 같은 행·편집기가 두 개가 된다 */}
+        {variant !== "details" && (
         <GoalRow
           label="연간 입금액 목표"
           progress={ytdDeposits}
@@ -302,10 +301,11 @@ export const InvestmentSummaryCard: React.FC<Props> = React.memo(function Invest
           formatValue={(v) => formatKRW(Math.round(v))}
           placeholder="목표 금액 (원)"
         />
+        )}
         {variant !== "summary" && (
         <GoalRow
           label="최종 순자산 목표 (총자산 − 총부채)"
-          progress={totalNetWorth}
+          progress={netWorth}
           target={goals.finalTotalAssetTarget}
           hint={finalTotalEtaHint}
           isEditing={editing === "finalTotal"}

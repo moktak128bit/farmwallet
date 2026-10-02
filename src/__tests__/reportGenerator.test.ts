@@ -150,6 +150,32 @@ describe("generateDailyReport — 신용결제 제외", () => {
   });
 });
 
+describe("generateDailyReport — 주식/현금/저축 분해 = 총자산", () => {
+  it("마이너스 통장·USD 종목(환율 미로드)이 있어도 분해 합이 총자산과 같다", () => {
+    const accounts = [
+      account({ id: "농협", initialBalance: 1_000_000 }),
+      account({ id: "마통", initialBalance: -300_000 }),
+      account({ id: "적금", type: "savings", initialBalance: 500_000 }),
+      account({ id: "증권", type: "securities", initialCashBalance: 400_000 }),
+    ];
+    const trades = [
+      { id: "T1", date: "2026-01-05", accountId: "증권", ticker: "379800", name: "S&P500", side: "buy", quantity: 10, price: 20_000, fee: 0, totalAmount: 200_000, cashImpact: -200_000 },
+      { id: "T2", date: "2026-01-05", accountId: "증권", ticker: "AAPL", name: "Apple", side: "buy", quantity: 1, price: 200, fee: 0, totalAmount: 200, cashImpact: 0 },
+    ] as StockTrade[];
+    const prices = [
+      { ticker: "379800", name: "S&P500", price: 23_000, currency: "KRW", updatedAt: "2026-01-09T00:00:00.000Z" },
+      { ticker: "AAPL", name: "Apple", price: 250, currency: "USD", updatedAt: "2026-01-09T00:00:00.000Z" },
+    ] as StockPrice[];
+    const [row] = generateDailyReport(accounts, [], trades, prices, "2026-01-10", "2026-01-10");
+    // 마통 −30만은 부채라 현금에서 빠지고, 환율이 없으면 AAPL은 0 (총자산과 같은 규칙)
+    expect(row.stockValue).toBe(230_000);
+    expect(row.savingsValue).toBe(500_000);
+    expect(row.cashValue).toBe(1_000_000 + 200_000);
+    expect(row.stockValue + row.cashValue + row.savingsValue).toBe(row.totalAsset);
+    expect(row.netWorth).toBe(row.totalAsset - 300_000);
+  });
+});
+
 describe("generateMonthlyIncomeDetail — 배당·이자 정확 매칭", () => {
   it("subCategory가 정확히 배당/이자인 항목만 포함, substring 위양성 제외", () => {
     const accounts: Account[] = [];

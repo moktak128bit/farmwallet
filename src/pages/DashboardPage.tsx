@@ -366,12 +366,14 @@ export const DashboardView: React.FC<Props> = (props) => {
           positions={positions}
           fxRate={fxRate}
           netWorthSeries={netWorthSeriesKrw}
+          netWorth={balanceSheet.netWorth}
           variant="summary"
         />
       )}
 
       {/* ── 자산·투자: 성과·추이·구성 차트 (기본 접힘, 접힌 줄에 순자산) ── */}
-      {anyShown(["investmentPerformance", "securitiesValueTrend", "netWorthTrend", "assetComposition", "portfolioCharts", "accountBalanceTrend", "stockCostVsMarket", "totalAssetTrend", "cmaBalanceTrend"]) && (
+      {/* 섹션 표시 조건 = 섹션 안에 그려지는 위젯 목록 그대로 (빠지면 그 위젯만 켠 사용자는 도달 경로가 없다) */}
+      {anyShown(["investmentSummary", "investmentPerformance", "securitiesValueTrend", "netWorthTrend", "assetComposition", "portfolioCharts", "accountBalanceTrend", "stockCostVsMarket", "totalAssetTrend", "cmaBalanceTrend"]) && (
         <DashboardSection id="assets" title="자산·투자" summary={assetsSummary}>
           <BalanceSheetStrip bs={balanceSheet} />
           {show("investmentSummary") && (
@@ -383,6 +385,7 @@ export const DashboardView: React.FC<Props> = (props) => {
               positions={positions}
               fxRate={fxRate}
               netWorthSeries={netWorthSeriesKrw}
+              netWorth={balanceSheet.netWorth}
               variant="details"
             />
           )}
@@ -558,7 +561,7 @@ export const DashboardView: React.FC<Props> = (props) => {
       )}
 
       {/* ── 배당·저축·세금 (기본 접힘, 접힌 줄에 최근 12개월 배당) ── */}
-      {anyShown(["savingsRatio", "dividendCoverage", "dividendGrowth", "taxActions"]) && (
+      {(anyShown(["savingsRatio", "dividendCoverage", "dividendGrowth", "taxActions"]) || (show("dividendPortfolio") && !!dividendPortfolio)) && (
         <DashboardSection
           id="dividends"
           title="배당·저축·세금"

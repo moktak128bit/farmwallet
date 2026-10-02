@@ -87,7 +87,11 @@ export function computeUnrealizedPL(
     if (!p.quantity || p.quantity <= 0) continue;
     if (!(Number(p.marketValue) > 0)) continue; // 시세 없음(평가 0) → 손익 판정 불가 (−100% 손실 아님)
     const isUsd = p.marketCurrency === "USD";
-    const costKrw = isUsd ? (p.totalBuyAmountKRW ?? p.totalBuyAmount * (fxRate ?? 0)) : p.totalBuyAmount;
+    // totalBuyAmountKRW는 USD 티커에만 채워진다 — 원화 환산 시세(buildAdjustedPrices)로 만든 포지션은
+    // marketCurrency가 "KRW"여도 totalBuyAmount가 달러라서, 원가는 반드시 원화 환산분을 써야 한다.
+    const costKrw = isUsd
+      ? (p.totalBuyAmountKRW ?? p.totalBuyAmount * (fxRate ?? 0))
+      : (p.totalBuyAmountKRW ?? p.totalBuyAmount);
     const marketKrw = isUsd ? p.marketValue * (fxRate ?? 0) : p.marketValue;
     const pnlKrw = marketKrw - costKrw;
     if (pnlKrw > 0) unrealizedGain += pnlKrw;

@@ -1,4 +1,5 @@
 import React from "react";
+import { AlertTriangle, Info } from "lucide-react";
 import {
   LineChart, Line, Cell,
   XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer,
@@ -50,10 +51,14 @@ export const OverviewTab = React.memo(function OverviewTab({ d, bs }: { d: D; bs
     d.salaryMonthly[shiftMonth(thisMonth, -1)] ?? 0,
     Object.values(d.salaryMonthly).some((v) => v > 0)
   );
-  // 급여 전이면 진행 중인 달의 저축률 막대(급여 0 → −1,900%대)가 차트 축을 망가뜨린다 → 그 달만 제외
-  const savRateData = beforePayday ? d.savRateTrend.filter((e) => e.l !== d.ml[thisMonth]) : d.savRateTrend;
-  const igMomColor = beforePayday || ig.mom == null ? "var(--text-faint)" : ig.mom >= 0 ? "var(--success)" : "var(--danger)";
-  const igYoyColor = beforePayday || ig.yoy == null ? "var(--text-faint)" : ig.yoy >= 0 ? "var(--success)" : "var(--danger)";
+  // 급여 전이면 진행 중인 달의 저축률 막대(급여 0 → −1,900%대)가 차트 축을 망가뜨린다 → 그 달만 제외.
+  // YYYY-MM 키로 거른다 — "N월" 라벨로 거르면 작년·재작년 같은 달 막대까지 사라진다.
+  const savRateData = beforePayday ? d.savRateTrend.filter((e) => e.m !== thisMonth) : d.savRateTrend;
+  // 성장률 카드는 선택 월(없으면 마지막 월)이 대상 — 이번 달을 볼 때만(partialDay 존재) "급여 전"으로 가린다.
+  // 지난달을 고른 경우엔 완결된 비교값이 있으므로 그대로 보여준다.
+  const igBeforePayday = beforePayday && ig.partialDay != null;
+  const igMomColor = igBeforePayday || ig.mom == null ? "var(--text-faint)" : ig.mom >= 0 ? "var(--success)" : "var(--danger)";
+  const igYoyColor = igBeforePayday || ig.yoy == null ? "var(--text-faint)" : ig.yoy >= 0 ? "var(--success)" : "var(--danger)";
   const igAvgColor = ig.avg3MoM == null ? "var(--text-faint)" : ig.avg3MoM >= 0 ? "var(--success)" : "var(--danger)";
 
   /* 지출 관성 */
@@ -82,7 +87,7 @@ export const OverviewTab = React.memo(function OverviewTab({ d, bs }: { d: D; bs
             flexWrap: "wrap",
           }}>
             <div style={{ display: "flex", alignItems: "center", gap: 12, flexWrap: "wrap" }}>
-              <span style={{ fontSize: 22 }}>⚠️</span>
+              <AlertTriangle size={22} style={{ flexShrink: 0 }} aria-hidden />
               <div>
                 <div style={{ fontSize: 12, fontWeight: 600, opacity: 0.85 }}>
                   {d.ml[d.anomalyTargetMonth]} 주목할 한 가지
@@ -179,7 +184,7 @@ export const OverviewTab = React.memo(function OverviewTab({ d, bs }: { d: D; bs
                     : `현재 적자 상태. 수입보다 지출이 많습니다. 우선 지출 축소가 시급합니다.`}
                 {!monthlyDepositTarget && (
                   <div style={{ marginTop: 6, fontSize: 11, color: "var(--text-faint)" }}>
-                    ℹ️ 대시보드 {">"} 투자 요약에서 연 입금액 목표를 설정하면 개인화된 목표 저축률이 적용됩니다.
+                    <Info size={13} style={{ verticalAlign: "-2px", marginRight: 4 }} aria-hidden />대시보드 {">"} 투자 요약에서 연 입금액 목표를 설정하면 개인화된 목표 저축률이 적용됩니다.
                   </div>
                 )}
               </div>
@@ -198,19 +203,19 @@ export const OverviewTab = React.memo(function OverviewTab({ d, bs }: { d: D; bs
                 {ig.partialDay != null ? `전월 동기 대비 (1~${ig.partialDay}일)` : "전월 대비 (MoM)"}
               </div>
               <div style={{ fontSize: 22, fontWeight: 800, color: igMomColor, marginTop: 4 }}>
-                {beforePayday ? "급여 전" : ig.mom == null ? "–" : Pct(ig.mom)}
+                {igBeforePayday ? "급여 전" : ig.mom == null ? "–" : Pct(ig.mom)}
               </div>
               <div style={{ fontSize: 11, color: "var(--text-faint)", marginTop: 2 }}>
-                {beforePayday ? "이번 달 급여 입금 전 · 비교 생략" : ig.prevInc > 0 ? `${F(ig.prevInc)} → ${F(ig.targetInc)}` : ig.partialDay != null ? `전월 1~${ig.partialDay}일 수입 없음` : "비교 데이터 없음"}
+                {igBeforePayday ? "이번 달 급여 입금 전 · 비교 생략" : ig.prevInc > 0 ? `${F(ig.prevInc)} → ${F(ig.targetInc)}` : ig.partialDay != null ? `전월 1~${ig.partialDay}일 수입 없음` : "비교 데이터 없음"}
               </div>
             </div>
             <div style={{ padding: "12px 14px", background: "var(--bg)", borderRadius: 10, textAlign: "center" }}>
               <div style={{ fontSize: 11, color: "var(--text-muted)", fontWeight: 600 }}>전년 동월 대비 (YoY)</div>
               <div style={{ fontSize: 22, fontWeight: 800, color: igYoyColor, marginTop: 4 }}>
-                {beforePayday ? "급여 전" : ig.yoy == null ? "–" : Pct(ig.yoy)}
+                {igBeforePayday ? "급여 전" : ig.yoy == null ? "–" : Pct(ig.yoy)}
               </div>
               <div style={{ fontSize: 11, color: "var(--text-faint)", marginTop: 2 }}>
-                {beforePayday ? "급여 입금 후 비교" : ig.yoy == null ? "1년 전 데이터 없음" : ig.partialDay != null ? `작년 동월 1~${ig.partialDay}일 비교` : "작년 동월 비교"}
+                {igBeforePayday ? "급여 입금 후 비교" : ig.yoy == null ? "1년 전 데이터 없음" : ig.partialDay != null ? `작년 동월 1~${ig.partialDay}일 비교` : "작년 동월 비교"}
               </div>
             </div>
             <div style={{ padding: "12px 14px", background: "var(--bg)", borderRadius: 10, textAlign: "center" }}>
@@ -401,7 +406,7 @@ export const OverviewTab = React.memo(function OverviewTab({ d, bs }: { d: D; bs
 
         <Card title={`핵심 재무 지표 — ${d.accumLabel} 기준`} span={4}>
           <div style={{ fontSize: 11, color: "var(--text-faint)", marginBottom: 10, padding: "6px 10px", background: "var(--bg)", borderRadius: 6, lineHeight: 1.5 }}>
-            ℹ️ 금액 단위는 <strong>원</strong>. 표시 범위는 상단 기간 필터({d.selMonth ? `1개월 (${d.ml[d.selMonth] ?? d.selMonth})` : `${d.months.length}개월, ${d.months[0] ?? "-"} ~ ${d.months[d.months.length - 1] ?? "-"}`})에 해당.
+            <Info size={13} style={{ verticalAlign: "-2px", marginRight: 4 }} aria-hidden />금액 단위는 <strong>원</strong>. 표시 범위는 상단 기간 필터({d.selMonth ? `1개월 (${d.ml[d.selMonth] ?? d.selMonth})` : `${d.months.length}개월, ${d.months[0] ?? "-"} ~ ${d.months[d.months.length - 1] ?? "-"}`})에 해당.
             <strong>{d.selMonth ? "선택 월" : "누적"}</strong> 기준 표기가 기본이며, 일평균·투자수익률은 별도 기준.
           </div>
           <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(150px, 1fr))", gap: 10 }}>

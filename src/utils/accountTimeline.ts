@@ -5,7 +5,7 @@
  * 로직 수정 없이 이동 — 대시보드 숫자가 기준값이므로 본문을 변경하지 않는다.
  */
 import type { Account, LedgerEntry, Loan, StockPrice, StockTrade } from "../types";
-import { computeLoanBalanceAt, computePositions, positionMarketValueKRW } from "../calculations";
+import { accountDebtOffset, computeLoanBalanceAt, computePositions, positionMarketValueKRW } from "../calculations";
 import { buildMonthRange, getMonthEndDate } from "./date";
 import { usdBalanceModeDelta } from "./tradeCashImpact";
 
@@ -190,7 +190,7 @@ export function computeAccountTimelineRows(params: {
           : 0;
       const usdToKrw = fxRate && usdCash !== 0 ? usdCash * fxRate : 0;
       const stock = stockByAccount.get(account.id) ?? 0;
-      const debt = Math.abs(account.debt ?? 0);
+      const debt = accountDebtOffset(account);
       const accountAsset = cash + usdToKrw + stock;
       const accountValue = accountAsset - debt;
       // 자산/부채 묶음은 계좌 순가치의 부호로 — computeBalanceSheet와 같은 규칙.

@@ -1,6 +1,7 @@
 // @vitest-environment jsdom
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 import { renderHook, act } from "@testing-library/react";
+import { toast } from "react-hot-toast";
 import { useGistSync, checkRemoteChanged, isTimeSeriesOnlyDiff } from "../hooks/useGistSync";
 import * as gistSync from "../services/gistSync";
 import { hashGistPayload } from "../services/gistSync";
@@ -18,6 +19,7 @@ vi.mock("../services/gistSync", async () => {
     saveToGistWithRetry: vi.fn(),
     loadFromGist: vi.fn(),
     getGistVersions: vi.fn(),
+    getGistVersionsWithCredentials: vi.fn(),
     getGistToken: vi.fn(() => "test-token"),
     getGistId: vi.fn(() => "test-gist-id"),
     getGistAutoSync: vi.fn(() => true),
@@ -950,5 +952,301 @@ describe("useGistSync — 동기화 건강 상태", () => {
     await visibleCheck();
     expect(result.current.syncHealth.consecutiveFailures).toBe(0);
     expect(result.current.syncHealth.lastCheckAt).not.toBeNull();
+  });
+});
+
+describe("useGistSync — connectDevice", () => {
+  const P = { gistId: "0123456789abcdef0123456789abcdef", token: "ghp_SECRET999" };
+  const REMOTE = JSON.stringify(makeData(5));
+  const VERSION = { sha: "v", committedAt: "2026-10-02T01:00:00Z", url: "u" };
+  const AUTH_ERR = "Gist 불러오기 실패: 토큰이 유효하지 않습니다.";
+
+  const flushMicro = async () => {
+    for (let i = 0; i < 20; i++) await Promise.resolve();
+  };
+
+  function deferred<T>() {
+    let resolve!: (v: T) => void;
+    const promise = new Promise<T>((r) => { resolve = r; });
+    return { promise, resolve };
+  }
+
+  beforeEach(() => {
+    vi.useFakeTimers();
+    vi.clearAllMocks();
+    window.localStorage.clear();
+    window.sessionStorage.clear();
+    useUIStore.getState().setGistConflict(null);
+    useUIStore.getState().setPendingApply(null);
+    useUIStore.getState().setPendingConnect(null);
+    // 미연결 기기로 마운트(토큰·ID 없음) — 연결 후에는 실제 setGistToken/setGistId가 쓴 값을 읽는다
+    mocked.getGistAutoSync.mockReturnValue(false);
+    mocked.getGistToken.mockImplementation(() => window.localStorage.getItem("fw-gist-token") ?? "");
+    mocked.getGistId.mockImplementation(() => window.localStorage.getItem("fw-gist-id") ?? "");
+    mocked.getGistLastPushAt.mockReturnValue("");
+    mocked.getGistLastPullAt.mockReturnValue("");
+    // 연결 후 부팅용 불러오기(Effect 1)가 다시 돈다면 원격이 '새로움'으로 보여 loadFromGist를 한 번 더 부른다
+    mocked.getGistVersions.mockResolvedValue([VERSION]);
+    mocked.getGistVersionsWithCredentials.mockResolvedValue([VERSION]);
+    mocked.loadFromGist.mockResolvedValue({ dataJson: REMOTE, updatedAt: "2026-10-02T00:59:59Z" });
+    mocked.saveToGistWithRetry.mockResolvedValue({ gistId: P.gistId, updatedAt: "2026-10-02T01:05:00Z", committedAt: "2026-10-02T01:05:00Z" });
+  });
+
+  afterEach(() => {
+    vi.useRealTimers();
+    useUIStore.getState().setGistConflict(null);
+    useUIStore.getState().setPendingApply(null);
+    useUIStore.getState().setPendingConnect(null);
+    window.localStorage.clear();
+    window.sessionStorage.clear();
+  });
+
+  it("connectDevice: 연결 테스트 실패 시 아무것도 저장 안 함", async () => {
+    mocked.getGistVersionsWithCredentials.mockRejectedValue(new Error(AUTH_ERR));
+    const onApply = vi.fn();
+    const { result } = renderHook(() => useGistSync(getEmptyData(), onApply));
+    await flush();
+
+    let outcome: string | undefined;
+    await act(async () => { outcome = await result.current.connectDevice(P); });
+
+    expect(outcome).toBe("failed");
+    expect(mocked.getGistVersionsWithCredentials).toHaveBeenCalledWith(P.token, P.gistId, 1);
+    expect(window.localStorage.getItem("fw-gist-token")).toBeNull();
+    expect(window.sessionStorage.getItem("fw-gist-token")).toBeNull();
+    expect(window.localStorage.getItem("fw-gist-id")).toBeNull();
+    expect(mocked.setGistAutoSync).not.toHaveBeenCalled();
+    expect(mocked.loadFromGist).not.toHaveBeenCalled();
+    expect(onApply).not.toHaveBeenCalled();
+    // 아직 설정되지 않은 기기 — 잘못 입력한 링크로 '동기화 오류' 경보를 띄우지 않는다
+    expect(result.current.syncHealth.consecutiveFailures).toBe(0);
+  });
+
+  it("connectDevice: 실패 로그에 토큰 미포함", async () => {
+    const toastError = vi.spyOn(toast, "error");
+    try {
+      mocked.getGistVersionsWithCredentials.mockRejectedValue(new Error(AUTH_ERR));
+      const onLog = vi.fn();
+      const { result } = renderHook(() => useGistSync(getEmptyData(), vi.fn(), { onLog }));
+      await flush();
+
+      await act(async () => { await result.current.connectDevice(P); });
+      expect(onLog).toHaveBeenCalled();
+      expect(toastError).toHaveBeenCalledWith(AUTH_ERR);
+
+      // 오류 메시지가 토큰을 그대로 담고 있어도(응답 본문 echo 등) 로그·토스트에는 남기지 않는다
+      mocked.getGistVersionsWithCredentials.mockRejectedValue(new Error(`bad credentials ${P.token}`));
+      await act(async () => { await result.current.connectDevice(P); });
+
+      for (const args of onLog.mock.calls) {
+        for (const a of args) expect(String(a)).not.toContain("ghp_SECRET999");
+      }
+      for (const args of toastError.mock.calls) {
+        expect(JSON.stringify(args)).not.toContain("ghp_SECRET999");
+      }
+    } finally {
+      toastError.mockRestore();
+    }
+  });
+
+  it("connectDevice: 빈 기기는 미리보기 없이 적용 + 토큰 영속 + 자동 동기화 ON + 이중 불러오기 없음", async () => {
+    // onApplyPulledData가 실제 앱처럼 데이터를 바꾼다 — 연결 직후 자동 업로드가 빈 데이터를 올리지 않는지 함께 확인
+    let current: AppData = getEmptyData();
+    const onApply = vi.fn((json: string) => { current = JSON.parse(json) as AppData; });
+    const { result } = renderHook(() => useGistSync(current, onApply));
+    await flush();
+
+    let outcome: string | undefined;
+    await act(async () => { outcome = await result.current.connectDevice(P); });
+
+    expect(outcome).toBe("connected");
+    expect(onApply).toHaveBeenCalledTimes(1);
+    expect(onApply).toHaveBeenCalledWith(REMOTE, "2026-10-02T01:00:00Z");
+    expect(window.localStorage.getItem("fw-gist-token")).toBe("ghp_SECRET999");
+    expect(window.localStorage.getItem("fw-gist-id")).toBe(P.gistId);
+    expect(mocked.setGistAutoSync).toHaveBeenCalledWith(true);
+    expect(result.current.autoSyncEnabled).toBe(true);
+    expect(useUIStore.getState().pendingApply).toBeNull();
+    // 동기화 상태는 정식 불러오기 경로와 동일하게 갱신
+    expect(mocked.setGistLastPullAt).toHaveBeenCalledWith("2026-10-02T01:00:00Z");
+    expect(result.current.lastPullAt).toBe("2026-10-02T01:00:00Z");
+    expect(window.localStorage.getItem("fw-gist-last-push-hash")).toBe(hashGistPayload(REMOTE));
+    expect(result.current.syncHealth.lastCheckAt).not.toBeNull();
+
+    await act(async () => { await flush(); });
+    expect(mocked.loadFromGist).toHaveBeenCalledTimes(1);
+    expect(onApply).toHaveBeenCalledTimes(1);
+    for (const [json] of mocked.saveToGistWithRetry.mock.calls) {
+      expect(JSON.parse(json).ledger).toHaveLength(1);
+    }
+  });
+
+  it("connectDevice: 데이터 있는 기기는 미리보기, 취소하면 자동 동기화 OFF", async () => {
+    const onApply = vi.fn();
+    const { result } = renderHook(() => useGistSync(makeData(1), onApply));
+    await flush();
+
+    let promise!: Promise<string>;
+    await act(async () => {
+      promise = result.current.connectDevice(P);
+      await flushMicro();
+    });
+    const pending = useUIStore.getState().pendingApply;
+    expect(pending).not.toBeNull();
+    expect(pending?.title).toBe("연결한 Gist에서 불러오기");
+
+    await act(async () => {
+      pending?.onCancel?.();
+      await flushMicro();
+    });
+    await expect(promise).resolves.toBe("cancelled");
+    expect(onApply).not.toHaveBeenCalled();
+    expect(mocked.setGistAutoSync).not.toHaveBeenCalled();
+    expect(result.current.autoSyncEnabled).toBe(false);
+  });
+
+  it("connectDevice: 데이터 있는 기기에서 미리보기 [적용]이면 연결 완료", async () => {
+    const onApply = vi.fn();
+    const { result } = renderHook(() => useGistSync(makeData(1), onApply));
+    await flush();
+
+    let promise!: Promise<string>;
+    await act(async () => {
+      promise = result.current.connectDevice(P);
+      await flushMicro();
+    });
+    const pending = useUIStore.getState().pendingApply;
+    expect(pending).not.toBeNull();
+
+    await act(async () => {
+      pending?.onConfirm();
+      await flushMicro();
+    });
+    await expect(promise).resolves.toBe("connected");
+    expect(onApply).toHaveBeenCalledWith(REMOTE, "2026-10-02T01:00:00Z");
+    expect(mocked.setGistAutoSync).toHaveBeenCalledWith(true);
+    expect(result.current.autoSyncEnabled).toBe(true);
+  });
+
+  it("connectDevice: 적용 중 예외가 나면 실패로 끝내고 자동 동기화를 켜지 않음 (모달이 멈추지 않게)", async () => {
+    const onApply = vi.fn(() => { throw new Error("apply boom"); });
+    const { result } = renderHook(() => useGistSync(makeData(1), onApply));
+    await flush();
+
+    let promise!: Promise<string>;
+    await act(async () => {
+      promise = result.current.connectDevice(P);
+      await flushMicro();
+    });
+    const pending = useUIStore.getState().pendingApply;
+    expect(pending).not.toBeNull();
+    await act(async () => {
+      pending?.onConfirm();
+      await flushMicro();
+    });
+    await expect(promise).resolves.toBe("failed");
+    expect(mocked.setGistAutoSync).not.toHaveBeenCalledWith(true);
+    expect(result.current.autoSyncEnabled).toBe(false);
+  });
+
+  it("connectDevice: 원격 검증 실패 시 자동 동기화를 켜지 않음", async () => {
+    mocked.loadFromGist.mockResolvedValue({ dataJson: "not json", updatedAt: "2026-10-02T00:59:59Z" });
+    const onApply = vi.fn();
+    const { result } = renderHook(() => useGistSync(getEmptyData(), onApply));
+    await flush();
+
+    let outcome: string | undefined;
+    await act(async () => { outcome = await result.current.connectDevice(P); });
+
+    expect(outcome).toBe("failed");
+    expect(onApply).not.toHaveBeenCalled();
+    expect(mocked.setGistAutoSync).not.toHaveBeenCalled();
+    expect(result.current.autoSyncEnabled).toBe(false);
+    // 빈 기기가 빈 데이터를 원격에 덮어쓰지 않는다
+    await act(async () => { await flush(); });
+    expect(mocked.saveToGistWithRetry).not.toHaveBeenCalled();
+    expect(mocked.saveToGist).not.toHaveBeenCalled();
+  });
+
+  it("connectDevice: 충돌 모달이 열려 있으면 연결 테스트도 하지 않고 실패", async () => {
+    const { result } = renderHook(() => useGistSync(getEmptyData(), vi.fn()));
+    await flush();
+    useUIStore.getState().setGistConflict({ remoteDataJson: "{}", remoteUpdatedAt: "x", pendingLocalDataJson: "{}" });
+
+    let outcome: string | undefined;
+    await act(async () => { outcome = await result.current.connectDevice(P); });
+
+    expect(outcome).toBe("failed");
+    expect(mocked.getGistVersionsWithCredentials).not.toHaveBeenCalled();
+    expect(window.localStorage.getItem("fw-gist-id")).toBeNull();
+  });
+
+  it("connectDevice: 다른 Gist에 연결된 기기 — 연결 중 자동 업로드 보류, 취소하면 자동 동기화 OFF", async () => {
+    // 기존 Gist(OLD)에 자동 동기화 ON으로 연결된 기기. 부팅 pull은 건너뛰게(원격 01:00 < lastPull 02:00).
+    window.localStorage.setItem("fw-gist-token", "old-token");
+    window.localStorage.setItem("fw-gist-id", "fedcba9876543210fedcba9876543210");
+    mocked.getGistAutoSync.mockReturnValue(true);
+    mocked.getGistLastPullAt.mockReturnValue("2026-10-02T02:00:00Z");
+    const onApply = vi.fn();
+    const { result } = renderHook(() => useGistSync(makeData(1), onApply));
+    await act(async () => { await flushMicro(); });
+    // 마운트 직후 자동 업로드 디바운스 타이머가 대기 중
+
+    const test = deferred<typeof VERSION[]>();
+    mocked.getGistVersionsWithCredentials.mockReturnValue(test.promise);
+    let promise!: Promise<string>;
+    await act(async () => {
+      promise = result.current.connectDevice(P);
+      await flushMicro();
+    });
+    // 연결 테스트 대기 중 디바운스가 만료돼도 업로드하지 않는다 (재시도가 새 Gist로 옛 데이터를 올리는 사고 방지)
+    await act(async () => { await vi.advanceTimersByTimeAsync(GIST_AUTO_PUSH_DEBOUNCE_MS + 1000); });
+    expect(mocked.saveToGistWithRetry).not.toHaveBeenCalled();
+
+    await act(async () => {
+      test.resolve([VERSION]);
+      await flushMicro();
+    });
+    const pending = useUIStore.getState().pendingApply;
+    expect(pending).not.toBeNull();
+    await act(async () => {
+      pending?.onCancel?.();
+      await flushMicro();
+    });
+    await expect(promise).resolves.toBe("cancelled");
+    expect(window.localStorage.getItem("fw-gist-id")).toBe(P.gistId);
+    expect(mocked.setGistAutoSync).toHaveBeenCalledWith(false);
+    expect(mocked.setGistAutoSync).not.toHaveBeenCalledWith(true);
+    expect(result.current.autoSyncEnabled).toBe(false);
+    await act(async () => { await vi.advanceTimersByTimeAsync(GIST_AUTO_PUSH_DEBOUNCE_MS + 1000); });
+    expect(mocked.saveToGistWithRetry).not.toHaveBeenCalled();
+    expect(onApply).not.toHaveBeenCalled();
+  });
+
+  it("connectDevice: 진행 중이던 부팅 불러오기는 자격증명 전환 후 폐기", async () => {
+    window.localStorage.setItem("fw-gist-token", "old-token");
+    window.localStorage.setItem("fw-gist-id", "fedcba9876543210fedcba9876543210");
+    mocked.getGistAutoSync.mockReturnValue(true);
+    // 부팅 pull의 원격 조회가 느리게 응답
+    const boot = deferred<typeof VERSION[]>();
+    mocked.getGistVersions.mockReturnValueOnce(boot.promise);
+    let current: AppData = getEmptyData();
+    const onApply = vi.fn((json: string) => { current = JSON.parse(json) as AppData; });
+    const { result } = renderHook(() => useGistSync(current, onApply));
+    await act(async () => { await flushMicro(); });
+
+    let outcome: string | undefined;
+    await act(async () => { outcome = await result.current.connectDevice(P); });
+    expect(outcome).toBe("connected");
+    expect(mocked.loadFromGist).toHaveBeenCalledTimes(1);
+
+    // 옛 Gist 기준으로 시작된 부팅 pull이 이제야 응답 — 새 연결 상태를 덮지 않는다
+    await act(async () => {
+      boot.resolve([{ sha: "old", committedAt: "2026-10-02T03:00:00Z", url: "u" }]);
+      await flushMicro();
+    });
+    expect(mocked.loadFromGist).toHaveBeenCalledTimes(1);
+    expect(onApply).toHaveBeenCalledTimes(1);
+    expect(result.current.lastPullAt).toBe("2026-10-02T01:00:00Z");
   });
 });

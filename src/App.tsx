@@ -81,8 +81,10 @@ import { useBenchmarkRecorder } from "./hooks/useBenchmarkRecorder";
 import { GistVersionModal } from "./components/GistVersionModal";
 import { GitVersionModal } from "./components/GitVersionModal";
 import { GistConflictModal } from "./components/GistConflictModal";
+import { ConnectConfirmModal } from "./components/ConnectConfirmModal";
 import { ApplyConfirmModal, requestApply } from "./components/ApplyConfirmModal";
 import { isGistConfigured, GIST_CONFIG_CHANGE_EVENT, getGistToken, getGistId } from "./services/gistSync";
+import { takeConnectPayloadFromLocation } from "./services/deviceConnect";
 import { deriveGistSyncStatus } from "./services/gistSyncStatus";
 import { toUserDataJson } from "./services/dataService";
 import { useUIStore, type PendingAction } from "./store/uiStore";
@@ -254,6 +256,14 @@ export const App: React.FC = () => {
     return () => window.removeEventListener(GIST_CONFIG_CHANGE_EVENT, handler);
   }, [setGistConfigured]);
 
+  // 기기 연결 링크(#fw-connect=) — 마운트 1회, 읽자마자 주소에서 제거하고 확인 모달로 넘긴다.
+  // 데이터 로딩과 무관하게 즉시 처리(토큰이 주소창·히스토리에 남는 시간 최소화). ⚠ 토큰 출력 금지.
+  useEffect(() => {
+    const result = takeConnectPayloadFromLocation();
+    if (result.status === "ok") useUIStore.getState().setPendingConnect(result.payload);
+    else if (result.status === "invalid") toast.error("연결 링크가 올바르지 않아요");
+  }, []);
+
   // Zustand store 사용
   const { data, setData, isLoading, loadFailed, clearLoadFailed } = useAppData();
   const { setDataWithHistory, handleUndo, handleRedo } = useUndoRedo(data, setData);
@@ -315,7 +325,7 @@ export const App: React.FC = () => {
     }
   }, [setDataWithHistory, addAppLog]);
 
-  const { autoSyncEnabled, setAutoSyncEnabled, lastPushAt: gistLastPushAt, lastPullAt: gistLastPullAt, resolveGistConflict, gistStaleWarning, manualPush: gistManualPush, manualPull: gistManualPull, syncStateAfterRestore, syncHealth } = useGistSync(
+  const { autoSyncEnabled, setAutoSyncEnabled, lastPushAt: gistLastPushAt, lastPullAt: gistLastPullAt, resolveGistConflict, gistStaleWarning, manualPush: gistManualPush, manualPull: gistManualPull, syncStateAfterRestore, syncHealth, connectDevice } = useGistSync(
     data,
     handleGistPulledData,
     { onLog: addAppLog, remotePollMs: GIST_REMOTE_POLL_MS }
@@ -378,6 +388,8 @@ export const App: React.FC = () => {
   }, [storageQuota.isNearLimit, storageQuota.usage, storageQuota.quota, storageQuota.ratio, addAppLog]);
 
   const gistConflict = useUIStore((s) => s.gistConflict);
+  const pendingConnect = useUIStore((s) => s.pendingConnect);
+  const setPendingConnect = useUIStore((s) => s.setPendingConnect);
   const tabConflict = useUIStore((s) => s.tabConflict);
   const setTabConflict = useUIStore((s) => s.setTabConflict);
   const setDraftRecovery = useUIStore((s) => s.setDraftRecovery);
@@ -1375,6 +1387,26 @@ export const App: React.FC = () => {
       />
 
       <GistConflictModal conflict={gistConflict} onResolve={(r) => void resolveGistConflict(r)} />
+      {/* 연결 진행 중 미리보기(ApplyConfirmModal)가 위에 겹치도록 ApplyConfirmModal보다 먼저 렌더 */}
+      <ConnectConfirmModal
+        payload={pendingConnect}
+        currentGistId={getGistId()}
+        onConfirm={async () => {
+          if (!pendingConnect) return;
+          // 로드 실패·로딩 중의 메모리 데이터는 '빈 기기'로 오인될 수 있다 — 모달은 열어 둔 채 중단
+          if (loadFailed) {
+            toast.error("데이터 로드에 실패한 상태에서는 연결할 수 없어요");
+            return;
+          }
+          if (isLoading) {
+            toast.error("데이터를 불러오는 중이에요. 잠시 후 다시 시도하세요.");
+            return;
+          }
+          await connectDevice(pendingConnect); // 실패 사유는 connectDevice가 이미 토스트로 알림
+          setPendingConnect(null);
+        }}
+        onCancel={() => setPendingConnect(null)}
+      />
       <ApplyConfirmModal />
       <TabConflictModal
         conflict={tabConflict}

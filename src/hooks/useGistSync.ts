@@ -14,12 +14,16 @@ import {
   getGistLastPullAt,
   setGistLastPullAt,
   getGistVersions,
+  getGistVersionsWithCredentials,
+  setGistToken,
+  setGistId,
   detectConflict,
   hashGistPayload,
   getGistLastPushedHash,
   setGistLastPushedHash,
   type GistVersion,
 } from "../services/gistSync";
+import { isEmptyLocalData, describeConnectTarget, type ConnectPayload } from "../services/deviceConnect";
 import { toUserDataJson, normalizeImportedData } from "../services/dataService";
 import { saveSafetySnapshot } from "../services/backupService";
 import { requestApply } from "../components/ApplyConfirmModal";
@@ -94,6 +98,9 @@ interface UseGistSyncOptions {
 
 export type GistConflictResolution = "apply-remote" | "force-push-local" | "cancel";
 
+/** 기기 연결 결과 — failed는 이미 토스트로 이유를 알린 상태 */
+type ConnectDeviceResult = "connected" | "cancelled" | "failed";
+
 interface GistStaleWarning {
   type: "warning" | "critical";
   message: string;
@@ -126,6 +133,11 @@ interface UseGistSyncReturn {
   syncStateAfterRestore: (dataJson: string, committedAt: string) => void;
   /** 최근 성공 시각·연속 실패 횟수·마지막 오류 — 헤더 상태 메뉴("동기화 오류")용 */
   syncHealth: GistSyncHealth;
+  /**
+   * 연결 링크로 받은 토큰·Gist ID로 이 기기를 연결 — 연결 테스트 → 저장 → 즉시 불러오기 → 자동 동기화 ON.
+   * 원격 데이터가 검증·적용되지 않으면 자동 동기화를 켜지 않는다. ⚠ 토큰은 로그·토스트에 남기지 않는다.
+   */
+  connectDevice: (payload: ConnectPayload) => Promise<ConnectDeviceResult>;
 }
 
 /**
@@ -184,6 +196,13 @@ export function useGistSync(
    * 최신 원격을 '외부 변경'으로 오인해 복원을 조용히 되돌릴 수 있다. 다음 push/pull 성공 때 해제.
    */
   const restoredRef = useRef(false);
+  /**
+   * 기기 연결(connectDevice) 진행 중 true — 자격증명이 바뀌는 사이 자동 업로드·원격 확인이 새로 시작되면
+   * 옛 Gist의 로컬 데이터를 새 Gist로 올리거나(재시도) 새 Gist를 옛 기준으로 판정할 수 있어 보류한다.
+   */
+  const isConnectingRef = useRef(false);
+  /** 기기 연결이 자격증명을 바꿀 때마다 +1 — 그 전에 시작된 부팅 불러오기(Effect 1) 결과를 폐기하는 기준 */
+  const connectGenRef = useRef(0);
   /** runAutoPush가 항상 최신 data를 직렬화하도록 — 디바운스 타이머 + visibility flush 양쪽이 공유 */
   const dataRef = useRef(data);
   dataRef.current = data;
@@ -200,11 +219,14 @@ export function useGistSync(
     if (!getGistToken() || !getGistId()) return;
 
     let cancelled = false;
+    // 대기 중에 기기 연결이 자격증명을 바꾸면 이 pull은 옛 Gist 기준 — 결과를 쓰지 않고 버린다
+    const connectGen = connectGenRef.current;
     (async () => {
       try {
         setIsSyncing(true);
         lastRemoteCheckAtRef.current = Date.now();
         const latest = await fetchLatestVersion();
+        if (connectGen !== connectGenRef.current) return;
         knownRemoteCommitRef.current = latest?.committedAt ?? "";
         const localPull = getGistLastPullAt();
         const localPush = getGistLastPushAt();
@@ -226,6 +248,7 @@ export function useGistSync(
         }
         const { dataJson, updatedAt } = await loadFromGist();
         if (cancelled) return;
+        if (connectGen !== connectGenRef.current) return;
         // 로컬에 push되지 않은 변경이 있으면 무모달 덮어쓰기 금지 — 충돌 모달로 사용자 결정.
         // (마지막 push payload 해시와 현재 로컬 데이터 해시를 비교해 dirty 감지.
         //  해시 기록이 없는 구버전 상태에서는 기존 동작 유지 — 원격 적용.)
@@ -272,6 +295,7 @@ export function useGistSync(
     if (!autoSyncEnabled) return;
     if (!getGistToken() || !getGistId()) return;
     if (isPushingRef.current) return;
+    if (isConnectingRef.current) return;
     if (useUIStore.getState().gistConflict) {
       onLog?.("Gist 충돌 모달이 열려 있어 자동 저장 보류", "info");
       return;
@@ -529,6 +553,7 @@ export function useGistSync(
     if (!hasMountedRef.current) return;
     if (!getGistToken() || !getGistId()) return;
     if (isPushingRef.current || isRemoteCheckingRef.current) return;
+    if (isConnectingRef.current) return;
     if (useUIStore.getState().gistConflict) return;
     if (restoredRef.current) return;
     const now = Date.now();
@@ -682,6 +707,132 @@ export function useGistSync(
     }
   }, []);
 
+  /**
+   * 기기 연결 (받는 쪽) — 연결 링크의 토큰·Gist ID로:
+   *  1) 업로드·원격 확인 중이거나 충돌 모달이 열려 있으면 거절
+   *  2) 저장 전에 주어진 자격증명으로 연결 테스트 — 실패하면 아무것도 저장하지 않는다
+   *  3) 토큰(영속)·Gist ID 저장
+   *  4) 즉시 불러오기 + normalizeImportedData 검증 — 실패하면 적용·자동 동기화 ON 모두 하지 않는다
+   *     (빈 새 기기가 빈 데이터를 원격에 덮어쓰는 사고 방지)
+   *  5) 적용(commit) — 동기화 상태를 정식 불러오기 경로와 동일하게 갱신한 뒤에만 자동 동기화 ON
+   *  6) 로컬이 비어 있으면 미리보기 없이 적용, 데이터가 있으면 requestApply 미리보기(취소 시 자동 동기화 OFF)
+   * ⚠ 토큰은 onLog·토스트에 절대 남기지 않는다 — 오류 메시지도 토큰을 가린 뒤 출력.
+   */
+  const connectDevice = useCallback(async (payload: ConnectPayload): Promise<ConnectDeviceResult> => {
+    const syncBusy = () =>
+      isPushingRef.current ||
+      isRemoteCheckingRef.current ||
+      isConnectingRef.current ||
+      !!useUIStore.getState().gistConflict;
+    if (syncBusy()) {
+      toast.error("동기화 작업이 끝난 뒤 다시 시도하세요.");
+      return "failed";
+    }
+    const { shortId } = describeConnectTarget(getGistId(), payload.gistId);
+    const redact = (message: string) => (payload.token ? message.split(payload.token).join("***") : message);
+    const errorMessage = (err: unknown) => redact(err instanceof Error ? err.message : String(err));
+
+    isConnectingRef.current = true;
+    try {
+      // 2) 연결 테스트 — 아직 이 기기에 설정된 Gist가 아니므로 동기화 건강 상태(실패 카운트)에는 기록하지 않는다
+      let versions: GistVersion[];
+      try {
+        versions = await getGistVersionsWithCredentials(payload.token, payload.gistId, 1);
+      } catch (err) {
+        const message = errorMessage(err);
+        onLog?.(`기기 연결 테스트 실패 — Gist(…${shortId}): ${message}`, "error");
+        toast.error(message);
+        return "failed";
+      }
+      // 테스트 대기 중 부팅 불러오기가 충돌 모달을 열었을 수 있다 — 자격증명을 바꾸기 전에 다시 확인
+      // (isConnectingRef 때문에 새 업로드·원격 확인은 시작되지 않는다)
+      if (useUIStore.getState().gistConflict) {
+        toast.error("동기화 작업이 끝난 뒤 다시 시도하세요.");
+        return "failed";
+      }
+
+      // 3) 자격증명 저장. 다른 Gist에 자동 동기화 중이던 기기면 여기서 끈다 — 적용이 확정될 때만 다시 켠다.
+      if (autoSyncEnabled) setAutoSyncEnabled(false);
+      connectGenRef.current += 1;
+      setGistToken(payload.token, { persist: true });
+      setGistId(payload.gistId);
+
+      // 4) 즉시 불러오기 + 검증
+      let dataJson: string;
+      let updatedAt: string;
+      try {
+        ({ dataJson, updatedAt } = await loadFromGist());
+      } catch (err) {
+        const message = errorMessage(err);
+        onLog?.(`기기 연결: Gist(…${shortId}) 불러오기 실패 — ${message}`, "error");
+        toast.error(message);
+        return "failed";
+      }
+      let after: AppData;
+      try {
+        after = normalizeImportedData(JSON.parse(dataJson) as unknown);
+      } catch (err) {
+        onLog?.(`기기 연결: Gist(…${shortId}) 데이터 검증 실패 — 적용하지 않음 (${errorMessage(err)})`, "error");
+        toast.error("원격 데이터가 올바르지 않아 불러오지 않았어요.");
+        return "failed";
+      }
+
+      // committed_at(getGistVersions와 동일 소스)을 known으로 — 다음 자동 업로드의 가짜 충돌 방지
+      const remoteAt = versions[0]?.committedAt ?? updatedAt;
+      const commit = () => {
+        // 안전 스냅샷·실제 반영은 onApplyPulledData(App.handleGistPulledData) — 같은 검증을 위에서 통과했다
+        onApplyPulledData(dataJson, remoteAt);
+        setGistLastPullAt(remoteAt);
+        setLastPullAt(remoteAt);
+        knownRemoteCommitRef.current = remoteAt;
+        lastPushedPayloadRef.current = dataJson;
+        setGistLastPushedHash(hashGistPayload(dataJson));
+        restoredRef.current = false;
+        recordSyncOk();
+        // 자동 동기화 ON 전환에 부팅용 불러오기(Effect 1)가 다시 반응하지 않도록 먼저 세운다 (이중 불러오기 방지)
+        hasMountedRef.current = true;
+        setAutoSyncEnabled(true);
+        onLog?.(`기기 연결 완료 — Gist(…${shortId})에서 불러옴, 자동 동기화 켬`, "success");
+        toast.success("이 기기를 연결했어요");
+      };
+
+      // 6) 빈 새 기기는 미리보기 없이 적용, 데이터가 있으면 manualPull과 같은 변경 미리보기
+      if (isEmptyLocalData(dataRef.current)) {
+        commit();
+        return "connected";
+      }
+      return await new Promise<ConnectDeviceResult>((resolve, reject) => {
+        requestApply({
+          title: "연결한 Gist에서 불러오기",
+          before: dataRef.current,
+          after,
+          onConfirm: () => {
+            // 적용 중 예외는 모달 클릭 핸들러로 새지 않게 넘겨받아 실패로 끝낸다 (연결 모달이 "연결 중..."에 멈추지 않도록)
+            try {
+              commit();
+              resolve("connected");
+            } catch (err) {
+              reject(err);
+            }
+          },
+          onCancel: () => {
+            onLog?.(`기기 연결: Gist(…${shortId}) 불러오기 취소 — 자동 동기화 꺼 둠`, "info");
+            toast("불러오기를 취소했어요. 자동 동기화는 꺼져 있어요.");
+            resolve("cancelled");
+          },
+        });
+      });
+    } catch (err) {
+      // 예상 밖 예외(적용·미리보기 요약 실패 등) — commit은 반영(onApplyPulledData)이 먼저라 여기 오면 자동 동기화는 꺼진 채다
+      const message = errorMessage(err);
+      onLog?.(`기기 연결 실패 — Gist(…${shortId}): ${message}`, "error");
+      toast.error(`기기 연결 실패: ${message}`);
+      return "failed";
+    } finally {
+      isConnectingRef.current = false;
+    }
+  }, [autoSyncEnabled, setAutoSyncEnabled, onApplyPulledData, onLog, recordSyncOk]);
+
   const resolveGistConflict = useCallback(async (resolution: GistConflictResolution): Promise<void> => {
     const conflict = useUIStore.getState().gistConflict;
     if (!conflict) return;
@@ -818,5 +969,6 @@ export function useGistSync(
     manualPull,
     syncStateAfterRestore,
     syncHealth,
+    connectDevice,
   };
 }

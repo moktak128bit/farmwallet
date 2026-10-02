@@ -36,6 +36,7 @@ import {
   mergeBenchmarkCloses,
   mergeMarketEnvSnapshots,
 } from "../utils/timeSeriesMerge";
+import type { GistSyncHealth } from "../services/gistSyncStatus";
 
 const GIST_AUTO_SAVE_ERROR_TOAST_ID = "gist-auto-save-error";
 const GIST_RESUME_PULL_TOAST_ID = "gist-resume-pull";
@@ -123,6 +124,8 @@ interface UseGistSyncReturn {
   manualPull: () => Promise<void>;
   /** Gist 과거 버전 복원 직후 동기화 상태 갱신 — 자동 push로 인한 조용한 롤백 방지 */
   syncStateAfterRestore: (dataJson: string, committedAt: string) => void;
+  /** 최근 성공 시각·연속 실패 횟수·마지막 오류 — 헤더 상태 메뉴("동기화 오류")용 */
+  syncHealth: GistSyncHealth;
 }
 
 /**
@@ -141,6 +144,31 @@ export function useGistSync(
   const [lastPushAt, setLastPushAt] = useState<string | null>(() => getGistLastPushAt() || null);
   const [lastPullAt, setLastPullAt] = useState<string | null>(() => getGistLastPullAt() || null);
   const [isSyncing, setIsSyncing] = useState(false);
+  const [syncHealth, setSyncHealth] = useState<GistSyncHealth>({
+    lastCheckAt: null,
+    consecutiveFailures: 0,
+    lastError: null,
+  });
+
+  /** 동기화 성공 기록 — 실패 카운트 리셋 (Task 4 connectDevice도 재사용) */
+  const recordSyncOk = useCallback(() => {
+    setSyncHealth({ lastCheckAt: new Date().toISOString(), consecutiveFailures: 0, lastError: null });
+  }, []);
+  /** 동기화 실패 기록 — 연속 실패 +1. 메시지에 토큰을 넣지 말 것. */
+  const recordSyncFail = useCallback((message: string) => {
+    setSyncHealth((prev) => ({ ...prev, consecutiveFailures: prev.consecutiveFailures + 1, lastError: message }));
+  }, []);
+  /** 최신 원격 버전 1건 조회 — 성공/실패를 기록하고, 실패 시 기존 `.catch(() => [])`처럼 undefined로 계속 진행 */
+  const fetchLatestVersion = useCallback(async (): Promise<GistVersion | undefined> => {
+    try {
+      const versions = await getGistVersions(1);
+      recordSyncOk();
+      return versions[0];
+    } catch (err) {
+      recordSyncFail(err instanceof Error ? err.message : String(err));
+      return undefined;
+    }
+  }, [recordSyncOk, recordSyncFail]);
 
   const autoPushTimerRef = useRef<number | null>(null);
   const lastPushedPayloadRef = useRef<string>("");
@@ -176,8 +204,7 @@ export function useGistSync(
       try {
         setIsSyncing(true);
         lastRemoteCheckAtRef.current = Date.now();
-        const versions = await getGistVersions(1).catch(() => []);
-        const latest = versions[0];
+        const latest = await fetchLatestVersion();
         knownRemoteCommitRef.current = latest?.committedAt ?? "";
         const localPull = getGistLastPullAt();
         const localPush = getGistLastPushAt();
@@ -222,9 +249,11 @@ export function useGistSync(
         // pull 적용 후 로컬=원격 — 동일 payload 재push 방지 + 다음 부팅 dirty 기준 갱신
         lastPushedPayloadRef.current = dataJson;
         setGistLastPushedHash(hashGistPayload(dataJson));
+        recordSyncOk();
         onLog?.("Gist 자동 불러오기 성공", "success");
       } catch (err) {
         const message = err instanceof Error ? err.message : String(err);
+        recordSyncFail(message);
         onLog?.(`Gist 자동 불러오기 실패: ${message}`, "error");
       } finally {
         if (!cancelled) setIsSyncing(false);
@@ -232,7 +261,7 @@ export function useGistSync(
     })();
 
     return () => { cancelled = true; };
-  }, [autoSyncEnabled, onApplyPulledData, onLog]);
+  }, [autoSyncEnabled, onApplyPulledData, onLog, fetchLatestVersion, recordSyncOk, recordSyncFail]);
 
   /**
    * 디바운스/즉시 flush 양쪽이 호출하는 실제 push 루틴.
@@ -254,8 +283,7 @@ export function useGistSync(
     isPushingRef.current = true;
     try {
       setIsSyncing(true);
-      const versions = await getGistVersions(1).catch(() => []);
-      const latest = versions[0];
+      const latest = await fetchLatestVersion();
       const known = knownRemoteCommitRef.current || getGistLastPullAt();
       if (detectConflict(latest?.committedAt, known)) {
         // 시각상 원격이 새로 보여도, 내용이 우리가 마지막에 push한 것과 같으면 가짜 충돌
@@ -297,11 +325,13 @@ export function useGistSync(
       // committed_at > updated_at 로 보여 매번 가짜 충돌이 떴음.
       knownRemoteCommitRef.current = result.committedAt || result.updatedAt || nowIso;
       restoredRef.current = false;
+      recordSyncOk();
       onLog?.("Gist 자동 저장 성공", "success");
       // 이전 실패 토스트가 있다면 정리
       toast.dismiss(GIST_AUTO_SAVE_ERROR_TOAST_ID);
     } catch (err) {
       const message = err instanceof Error ? err.message : String(err);
+      recordSyncFail(message);
       onLog?.(`Gist 자동 저장 실패: ${message}`, "error");
       // 토스트로 사용자에게 가시화 — 모바일에서 백그라운드 suspend 등 조용한 실패 방지
       toast.error(`Gist 저장 실패: ${message}`, { id: GIST_AUTO_SAVE_ERROR_TOAST_ID });
@@ -309,7 +339,7 @@ export function useGistSync(
       isPushingRef.current = false;
       setIsSyncing(false);
     }
-  }, [autoSyncEnabled, onLog]);
+  }, [autoSyncEnabled, onLog, fetchLatestVersion, recordSyncOk, recordSyncFail]);
 
   /**
    * 수동 저장 — 사용자가 "저장" 버튼 클릭 시. 디바운스/dirty 체크 없이 즉시 푸시.
@@ -341,8 +371,7 @@ export function useGistSync(
     try {
       setIsSyncing(true);
       // 충돌 감지 (자동 동기화 OFF여도 다른 기기에서 변경됐을 수 있으니 체크)
-      const versions = await getGistVersions(1).catch(() => []);
-      const latest = versions[0];
+      const latest = await fetchLatestVersion();
       const known = knownRemoteCommitRef.current || getGistLastPullAt();
       if (detectConflict(latest?.committedAt, known)) {
         // 시각상 원격이 새로 보여도, 내용이 우리가 마지막에 push한 것과 같으면 가짜 충돌
@@ -384,18 +413,20 @@ export function useGistSync(
       // committed_at > updated_at 로 보여 매번 가짜 충돌이 떴음.
       knownRemoteCommitRef.current = result.committedAt || result.updatedAt || nowIso;
       restoredRef.current = false;
+      recordSyncOk();
       onLog?.("Gist 저장 성공", "success");
       toast.dismiss(GIST_AUTO_SAVE_ERROR_TOAST_ID);
       toast.success("Gist 저장 완료");
     } catch (err) {
       const message = err instanceof Error ? err.message : String(err);
+      recordSyncFail(message);
       onLog?.(`Gist 저장 실패: ${message}`, "error");
       toast.error(`Gist 저장 실패: ${message}`, { id: GIST_AUTO_SAVE_ERROR_TOAST_ID });
     } finally {
       isPushingRef.current = false;
       setIsSyncing(false);
     }
-  }, [onLog]);
+  }, [onLog, fetchLatestVersion, recordSyncOk, recordSyncFail]);
 
   /**
    * 수동 불러오기 — 설정 카드의 "Gist에서 불러오기"용 정식 pull 경로.
@@ -426,6 +457,7 @@ export function useGistSync(
         restoredRef.current = false;
         lastPushedPayloadRef.current = dataJson;
         setGistLastPushedHash(hashGistPayload(dataJson));
+        recordSyncOk();
         onLog?.("Gist에서 불러오기 완료", "success");
       };
 
@@ -451,12 +483,13 @@ export function useGistSync(
       }
     } catch (err) {
       const message = err instanceof Error ? err.message : String(err);
+      recordSyncFail(message);
       onLog?.(`Gist 불러오기 실패: ${message}`, "error");
       toast.error(`Gist 불러오기 실패: ${message}`);
     } finally {
       setIsSyncing(false);
     }
-  }, [onApplyPulledData, onLog]);
+  }, [onApplyPulledData, onLog, recordSyncOk, recordSyncFail]);
 
   /**
    * 원격 payload를 로컬에 적용하되, 자동 적립 시계열(환율·지수 종가·반월 스냅샷)은 폐기하지 않고
@@ -504,8 +537,7 @@ export function useGistSync(
     isRemoteCheckingRef.current = true;
     try {
       setIsSyncing(true);
-      const versions = await getGistVersions(1).catch(() => []);
-      const latest = versions[0];
+      const latest = await fetchLatestVersion();
       const known = knownRemoteCommitRef.current || getGistLastPullAt();
       if (!latest || !checkRemoteChanged(known, latest)) return;
       // 조회 대기 중 push·모달이 시작됐으면 그쪽 경로에 맡긴다 (push는 자체 충돌 감지 보유)
@@ -555,12 +587,13 @@ export function useGistSync(
       );
     } catch (err) {
       const message = err instanceof Error ? err.message : String(err);
+      recordSyncFail(message);
       onLog?.(`Gist 복귀 확인 실패: ${message}`, "error");
     } finally {
       isRemoteCheckingRef.current = false;
       setIsSyncing(false);
     }
-  }, [autoSyncEnabled, applyRemoteWithSeriesUnion, onLog]);
+  }, [autoSyncEnabled, applyRemoteWithSeriesUnion, onLog, fetchLatestVersion, recordSyncFail]);
 
   // Effect 2: 데이터 변경 시 자동 저장 (debounced)
   useEffect(() => {
@@ -701,6 +734,7 @@ export function useGistSync(
         setGistLastPushedHash(hashGistPayload(mergedLocal.json));
         setGistLastPushAt(result.updatedAt);
         setLastPushAt(result.updatedAt);
+        recordSyncOk();
         try {
           const versions = await getGistVersions(1);
           const authoritative = versions[0]?.committedAt ?? result.updatedAt;
@@ -724,13 +758,14 @@ export function useGistSync(
       }
     } catch (err) {
       const message = err instanceof Error ? err.message : String(err);
+      recordSyncFail(message);
       onLog?.(`Gist 충돌 해결 실패: ${message}`, "error");
       // force-push 등 실패가 조용히 모달만 닫히면 사용자가 "해결됐다"고 오해 — 토스트로 가시화
       toast.error(`Gist 충돌 해결 실패: ${message}`);
     } finally {
       setConflict(null);
     }
-  }, [applyRemoteWithSeriesUnion, onLog]);
+  }, [applyRemoteWithSeriesUnion, onLog, recordSyncOk, recordSyncFail]);
 
   /**
    * Gist 과거 버전 복원(GistVersionModal) 직후 동기화 상태를 갱신한다.
@@ -782,5 +817,6 @@ export function useGistSync(
     manualPush,
     manualPull,
     syncStateAfterRestore,
+    syncHealth,
   };
 }

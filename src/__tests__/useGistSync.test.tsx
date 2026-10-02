@@ -971,6 +971,9 @@ describe("useGistSync — connectDevice", () => {
     return { promise, resolve };
   }
 
+  /** 마지막 pull/push 시각 저장소 흉내 — set이 get에 반영돼야 기준점 초기화를 검증할 수 있다 */
+  const stamps = { pull: "", push: "" };
+
   beforeEach(() => {
     vi.useFakeTimers();
     vi.clearAllMocks();
@@ -983,8 +986,12 @@ describe("useGistSync — connectDevice", () => {
     mocked.getGistAutoSync.mockReturnValue(false);
     mocked.getGistToken.mockImplementation(() => window.localStorage.getItem("fw-gist-token") ?? "");
     mocked.getGistId.mockImplementation(() => window.localStorage.getItem("fw-gist-id") ?? "");
-    mocked.getGistLastPushAt.mockReturnValue("");
-    mocked.getGistLastPullAt.mockReturnValue("");
+    stamps.pull = "";
+    stamps.push = "";
+    mocked.getGistLastPullAt.mockImplementation(() => stamps.pull);
+    mocked.setGistLastPullAt.mockImplementation((iso: string) => { stamps.pull = iso; });
+    mocked.getGistLastPushAt.mockImplementation(() => stamps.push);
+    mocked.setGistLastPushAt.mockImplementation((iso: string) => { stamps.push = iso; });
     // 연결 후 부팅용 불러오기(Effect 1)가 다시 돈다면 원격이 '새로움'으로 보여 loadFromGist를 한 번 더 부른다
     mocked.getGistVersions.mockResolvedValue([VERSION]);
     mocked.getGistVersionsWithCredentials.mockResolvedValue([VERSION]);
@@ -999,6 +1006,7 @@ describe("useGistSync — connectDevice", () => {
     useUIStore.getState().setPendingConnect(null);
     window.localStorage.clear();
     window.sessionStorage.clear();
+    Object.defineProperty(document, "visibilityState", { configurable: true, get: () => "visible" });
   });
 
   it("connectDevice: 연결 테스트 실패 시 아무것도 저장 안 함", async () => {
@@ -1076,9 +1084,10 @@ describe("useGistSync — connectDevice", () => {
     await act(async () => { await flush(); });
     expect(mocked.loadFromGist).toHaveBeenCalledTimes(1);
     expect(onApply).toHaveBeenCalledTimes(1);
-    for (const [json] of mocked.saveToGistWithRetry.mock.calls) {
-      expect(JSON.parse(json).ledger).toHaveLength(1);
-    }
+    // 연결 직후 자동 업로드는 정확히 1회(원격 payload에서 캐시 필드를 뺀 정규화본) — 빈 데이터가 아니라 원격 가계부를 올린다
+    expect(mocked.saveToGistWithRetry).toHaveBeenCalledTimes(1);
+    const pushed = JSON.parse(mocked.saveToGistWithRetry.mock.calls[0][0]) as AppData;
+    expect(pushed.ledger).toEqual(makeData(5).ledger);
   });
 
   it("connectDevice: 데이터 있는 기기는 미리보기, 취소하면 자동 동기화 OFF", async () => {
@@ -1186,7 +1195,7 @@ describe("useGistSync — connectDevice", () => {
     window.localStorage.setItem("fw-gist-token", "old-token");
     window.localStorage.setItem("fw-gist-id", "fedcba9876543210fedcba9876543210");
     mocked.getGistAutoSync.mockReturnValue(true);
-    mocked.getGistLastPullAt.mockReturnValue("2026-10-02T02:00:00Z");
+    stamps.pull = "2026-10-02T02:00:00Z";
     const onApply = vi.fn();
     const { result } = renderHook(() => useGistSync(makeData(1), onApply));
     await act(async () => { await flushMicro(); });
@@ -1248,5 +1257,189 @@ describe("useGistSync — connectDevice", () => {
     expect(mocked.loadFromGist).toHaveBeenCalledTimes(1);
     expect(onApply).toHaveBeenCalledTimes(1);
     expect(result.current.lastPullAt).toBe("2026-10-02T01:00:00Z");
+  });
+
+  describe("다른 Gist로 전환 후 적용하지 않음(취소·실패) — 옛 Gist 기준점으로 새 Gist를 판정하지 않는다", () => {
+    const OLD_ID = "fedcba9876543210fedcba9876543210";
+    /** A의 known(첫 업로드 committedAt 01:05)보다 오래된 새 Gist 헤드 — 옛 기준이면 detectConflict가 false */
+    const B_OLDER = { sha: "b", committedAt: "2026-10-01T00:00:00Z", url: "u" };
+    /** A의 known보다 새로운 새 Gist 헤드 — 옛 기준이면 복귀 확인이 '외부 변경'으로 보고 적용 */
+    const B_NEWER = { sha: "b", committedAt: "2026-10-02T05:00:00Z", url: "u" };
+
+    const setVisibility = (state: "visible" | "hidden") => {
+      Object.defineProperty(document, "visibilityState", { configurable: true, get: () => state });
+      document.dispatchEvent(new Event("visibilitychange"));
+    };
+
+    /** 옛 Gist(A)에 자동 동기화 ON으로 맞춰진 기기 — 첫 자동 업로드까지 끝내 A 기준점(known·payload·해시)을 세운다 */
+    async function mountSyncedToOld() {
+      window.localStorage.setItem("fw-gist-token", "old-token");
+      window.localStorage.setItem("fw-gist-id", OLD_ID);
+      mocked.getGistAutoSync.mockReturnValue(true);
+      stamps.pull = "2026-10-02T02:00:00Z"; // 부팅 pull 건너뜀(원격 01:00 < 02:00)
+      const onApply = vi.fn();
+      const hook = renderHook(() => useGistSync(makeData(1), onApply));
+      await act(async () => { await flush(); });
+      expect(mocked.saveToGistWithRetry).toHaveBeenCalledTimes(1);
+      expect(window.localStorage.getItem("fw-gist-last-push-hash")).toBe(hashGistPayload(toUserDataJson(makeData(1))));
+      mocked.saveToGistWithRetry.mockClear();
+      mocked.setGistAutoSync.mockClear();
+      return { ...hook, onApply };
+    }
+
+    /** 연결 → 미리보기 취소. 이후 호출 기록을 비워 '다시 켠 뒤'만 본다 */
+    async function connectAndCancel(result: { current: ReturnType<typeof useGistSync> }, payload = P) {
+      let promise!: Promise<string>;
+      await act(async () => {
+        promise = result.current.connectDevice(payload);
+        await flushMicro();
+      });
+      const pending = useUIStore.getState().pendingApply;
+      expect(pending).not.toBeNull();
+      await act(async () => {
+        pending?.onCancel?.();
+        useUIStore.getState().setPendingApply(null);
+        await flushMicro();
+      });
+      await expect(promise).resolves.toBe("cancelled");
+      mocked.getGistVersions.mockClear();
+      mocked.loadFromGist.mockClear();
+    }
+
+    function expectNeverSyncedBaseline(result: { current: ReturnType<typeof useGistSync> }) {
+      expect(window.localStorage.getItem("fw-gist-last-push-hash")).toBe("unsynced");
+      expect(stamps.pull).toBe("");
+      expect(stamps.push).toBe("");
+      expect(result.current.lastPullAt).toBeNull();
+      expect(result.current.lastPushAt).toBeNull();
+    }
+
+    it("취소 후 다시 켜기 (새 Gist가 옛 기준보다 오래됨): 첫 불러오기로 충돌을 묻고, 로컬을 묻지 않고 올리지 않음", async () => {
+      const { result, onApply } = await mountSyncedToOld();
+      mocked.getGistVersionsWithCredentials.mockResolvedValue([B_OLDER]);
+      mocked.getGistVersions.mockResolvedValue([B_OLDER]);
+      await connectAndCancel(result);
+      expectNeverSyncedBaseline(result);
+
+      // 사용자가 설정에서 자동 동기화를 다시 켬 → 부팅 불러오기(Effect 1) 경로로 새 Gist를 확인
+      await act(async () => {
+        result.current.setAutoSyncEnabled(true);
+        await flushMicro();
+      });
+      expect(mocked.getGistVersions).toHaveBeenCalledTimes(1);
+      expect(mocked.loadFromGist).toHaveBeenCalledTimes(1);
+      expect(useUIStore.getState().gistConflict?.remoteDataJson).toBe(REMOTE);
+      expect(useUIStore.getState().gistConflict?.pendingLocalDataJson).toContain('"amount":1');
+
+      // 디바운스가 지나도 묻지 않은 업로드는 없다
+      await act(async () => { await vi.advanceTimersByTimeAsync(GIST_AUTO_PUSH_DEBOUNCE_MS + 1000); });
+      expect(mocked.saveToGistWithRetry).not.toHaveBeenCalled();
+
+      // 충돌 모달을 [취소]해도 다음 업로드(탭 숨김 flush)는 다시 충돌 확인을 거친다 — 옛 시각 비교로 통과하지 않음
+      await act(async () => { await result.current.resolveGistConflict("cancel"); });
+      await act(async () => {
+        setVisibility("hidden");
+        await flushMicro();
+      });
+      expect(useUIStore.getState().gistConflict?.remoteDataJson).toBe(REMOTE);
+      expect(mocked.saveToGistWithRetry).not.toHaveBeenCalled();
+      expect(mocked.saveToGist).not.toHaveBeenCalled();
+      expect(onApply).not.toHaveBeenCalled();
+    });
+
+    it("취소 후 다시 켜기 (새 Gist가 더 새로움): 복귀 확인이 새 Gist를 미리보기 없이 적용하지 않음", async () => {
+      const { result, onApply } = await mountSyncedToOld();
+      mocked.getGistVersionsWithCredentials.mockResolvedValue([B_NEWER]);
+      mocked.getGistVersions.mockResolvedValue([B_NEWER]);
+      await connectAndCancel(result);
+      expectNeverSyncedBaseline(result);
+
+      await act(async () => {
+        result.current.setAutoSyncEnabled(true);
+        await flushMicro();
+      });
+      expect(useUIStore.getState().gistConflict?.remoteDataJson).toBe(REMOTE);
+      await act(async () => { await result.current.resolveGistConflict("cancel"); });
+
+      // 복귀 확인(throttle 경과 후 visible) — 사용자가 거절한 새 Gist 데이터를 조용히 적용하면 안 된다
+      await act(async () => { await vi.advanceTimersByTimeAsync(GIST_REMOTE_CHECK_THROTTLE_MS + 1000); });
+      await act(async () => {
+        setVisibility("visible");
+        await flushMicro();
+      });
+      expect(onApply).not.toHaveBeenCalled();
+      expect(mocked.saveToGistWithRetry).not.toHaveBeenCalled();
+    });
+
+    it("원격 검증 실패 후 다시 켜기: 첫 불러오기로 충돌을 묻고, 로컬을 묻지 않고 올리지 않음", async () => {
+      const { result, onApply } = await mountSyncedToOld();
+      mocked.getGistVersionsWithCredentials.mockResolvedValue([B_OLDER]);
+      mocked.getGistVersions.mockResolvedValue([B_OLDER]);
+      // 연결 시점의 원격은 깨져 있었고, 나중에 (다른 기기가) 고쳐 둠
+      mocked.loadFromGist.mockResolvedValueOnce({ dataJson: "not json", updatedAt: "2026-10-01T00:00:00Z" });
+
+      let outcome: string | undefined;
+      await act(async () => { outcome = await result.current.connectDevice(P); });
+      expect(outcome).toBe("failed");
+      expect(result.current.autoSyncEnabled).toBe(false);
+      expectNeverSyncedBaseline(result);
+      mocked.getGistVersions.mockClear();
+      mocked.loadFromGist.mockClear();
+
+      await act(async () => {
+        result.current.setAutoSyncEnabled(true);
+        await flushMicro();
+      });
+      expect(mocked.loadFromGist).toHaveBeenCalledTimes(1);
+      expect(useUIStore.getState().gistConflict?.remoteDataJson).toBe(REMOTE);
+      await act(async () => { await vi.advanceTimersByTimeAsync(GIST_AUTO_PUSH_DEBOUNCE_MS + 1000); });
+      expect(mocked.saveToGistWithRetry).not.toHaveBeenCalled();
+      expect(mocked.saveToGist).not.toHaveBeenCalled();
+      expect(onApply).not.toHaveBeenCalled();
+    });
+
+    it("취소 후 수동 저장: 옛 시각 비교로 통과하지 않고 충돌 확인을 거친다", async () => {
+      const { result } = await mountSyncedToOld();
+      mocked.getGistVersionsWithCredentials.mockResolvedValue([B_OLDER]);
+      mocked.getGistVersions.mockResolvedValue([B_OLDER]);
+      await connectAndCancel(result);
+
+      await act(async () => { await result.current.manualPush(); });
+      expect(mocked.saveToGistWithRetry).not.toHaveBeenCalled();
+      expect(useUIStore.getState().gistConflict?.remoteDataJson).toBe(REMOTE);
+    });
+
+    it("취소 후 다시 켰는데 새 Gist 버전 조회가 계속 실패: 빈 기준으로 통과하지 않고 충돌 확인을 거친다", async () => {
+      const { result } = await mountSyncedToOld();
+      mocked.getGistVersionsWithCredentials.mockResolvedValue([B_OLDER]);
+      await connectAndCancel(result);
+      mocked.getGistVersions.mockRejectedValue(new Error("네트워크 연결을 확인해주세요."));
+
+      await act(async () => {
+        result.current.setAutoSyncEnabled(true);
+        await flushMicro();
+      });
+      // 부팅 불러오기는 버전 조회 실패로 아무것도 못 함(known 빈 값) — 충돌 모달 없음
+      expect(useUIStore.getState().gistConflict).toBeNull();
+      await act(async () => { await vi.advanceTimersByTimeAsync(GIST_AUTO_PUSH_DEBOUNCE_MS + 1000); });
+      // 업로드 경로까지 실제로 왔고(버전 조회 2회째), 빈 known 때문에 그냥 올리지 않고 내용 비교 → 충돌 모달
+      expect(mocked.getGistVersions).toHaveBeenCalledTimes(2);
+      expect(useUIStore.getState().gistConflict?.remoteDataJson).toBe(REMOTE);
+      expect(mocked.saveToGistWithRetry).not.toHaveBeenCalled();
+      expect(window.localStorage.getItem("fw-gist-last-push-hash")).toBe("unsynced");
+    });
+
+    it("같은 Gist로 다시 연결하다 취소하면 기존 동기화 기준점을 유지", async () => {
+      const { result } = await mountSyncedToOld();
+      const hashBefore = window.localStorage.getItem("fw-gist-last-push-hash");
+      const pullBefore = stamps.pull;
+      const pushBefore = stamps.push;
+      expect(pushBefore).not.toBe("");
+
+      await connectAndCancel(result, { ...P, gistId: OLD_ID });
+      expect(window.localStorage.getItem("fw-gist-last-push-hash")).toBe(hashBefore);
+      expect(stamps.pull).toBe(pullBefore);
+      expect(stamps.push).toBe(pushBefore);
+    });
   });
 });

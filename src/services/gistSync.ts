@@ -321,7 +321,11 @@ export async function getGistVersions(maxCount = 5): Promise<GistVersion[]> {
   const token = getGistToken();
   const gistId = getGistId();
   if (!token || !gistId) throw new Error("토큰 또는 Gist ID가 없습니다.");
+  return getGistVersionsWithCredentials(token, gistId, maxCount);
+}
 
+/** 저장된 자격증명이 아닌 지정한 토큰·Gist ID로 버전 목록 조회 (기기 연결 시 저장 전 검증용) */
+export async function getGistVersionsWithCredentials(token: string, gistId: string, maxCount = 5): Promise<GistVersion[]> {
   const res = await fetchWithTimeout(`${API_BASE}/gists/${gistId}/commits?per_page=${maxCount}`, {
     headers: headers(token)
   });

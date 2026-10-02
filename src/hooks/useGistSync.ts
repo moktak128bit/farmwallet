@@ -46,6 +46,14 @@ const GIST_AUTO_SAVE_ERROR_TOAST_ID = "gist-auto-save-error";
 const GIST_RESUME_PULL_TOAST_ID = "gist-resume-pull";
 
 /**
+ * 마지막 push 해시 자리에 두는 '이 Gist와는 아직 맞춰 본 적 없음' 표시 (hashGistPayload는 숫자 문자열만 내므로 겹치지 않음).
+ * 기기 연결로 다른 Gist로 바꿨지만 적용하지 않은(취소·실패) 상태에서 쓴다 — 어떤 내용도 '마지막 push와 같음'으로
+ * 보지 않으므로 부팅 불러오기는 충돌 모달로 가고, 업로드는 원격 버전이 있으면 시각과 무관하게 내용 비교(충돌 확인)를 거친다.
+ * 빈 해시는 '구버전 상태 → 원격 그대로 적용' 의미라 이 용도로 쓸 수 없다. 첫 push/pull 성공 시 실제 해시로 바뀐다.
+ */
+const UNSYNCED_PUSH_HASH = "unsynced";
+
+/**
  * 앱 복귀 시 "원격(다른 기기)이 우리가 아는 시점 이후에 바뀌었는가" 순수 판정.
  * - known이 비어 있으면(부팅 때 토큰이 없어 원격 시점을 한 번도 못 봤음) 판단 불가 → false(보수적).
  * - 원격 버전이 없거나 시각 파싱 실패 → false.
@@ -309,7 +317,10 @@ export function useGistSync(
       setIsSyncing(true);
       const latest = await fetchLatestVersion();
       const known = knownRemoteCommitRef.current || getGistLastPullAt();
-      if (detectConflict(latest?.committedAt, known)) {
+      // 기기 연결 후 아직 맞춰 보지 않은 Gist — 시각 비교(옛 기준·빈 기준이면 통과해 버림) 대신 항상 내용 비교부터.
+      // 표시 해시는 어떤 내용과도 같지 않으므로 이 경로는 충돌 모달로만 끝나고, 원격을 못 읽으면 올리지 않는다.
+      const neverSynced = getGistLastPushedHash() === UNSYNCED_PUSH_HASH;
+      if (neverSynced || detectConflict(latest?.committedAt, known)) {
         // 시각상 원격이 새로 보여도, 내용이 우리가 마지막에 push한 것과 같으면 가짜 충돌
         // (gist updated_at vs commit committed_at 소스 차이). 내용 해시로 진짜 외부 변경만 모달 표시 →
         // "PC에서 수정했는데 자꾸 과거로 되돌리라"는 가짜 충돌 제거.
@@ -397,7 +408,9 @@ export function useGistSync(
       // 충돌 감지 (자동 동기화 OFF여도 다른 기기에서 변경됐을 수 있으니 체크)
       const latest = await fetchLatestVersion();
       const known = knownRemoteCommitRef.current || getGistLastPullAt();
-      if (detectConflict(latest?.committedAt, known)) {
+      // 기기 연결 후 아직 맞춰 보지 않은 Gist — runAutoPush와 같은 규칙(항상 내용 비교 → 충돌 모달)
+      const neverSynced = getGistLastPushedHash() === UNSYNCED_PUSH_HASH;
+      if (neverSynced || detectConflict(latest?.committedAt, known)) {
         // 시각상 원격이 새로 보여도, 내용이 우리가 마지막에 push한 것과 같으면 가짜 충돌
         // (gist updated_at vs commit committed_at 소스 차이). 내용 해시로 진짜 외부 변경만 모달 표시 →
         // "PC에서 수정했는데 자꾸 과거로 되돌리라"는 가짜 충돌 제거.
@@ -728,7 +741,8 @@ export function useGistSync(
       toast.error("동기화 작업이 끝난 뒤 다시 시도하세요.");
       return "failed";
     }
-    const { shortId } = describeConnectTarget(getGistId(), payload.gistId);
+    const previousGistId = getGistId();
+    const { shortId } = describeConnectTarget(previousGistId, payload.gistId);
     const redact = (message: string) => (payload.token ? message.split(payload.token).join("***") : message);
     const errorMessage = (err: unknown) => redact(err instanceof Error ? err.message : String(err));
 
@@ -756,6 +770,22 @@ export function useGistSync(
       connectGenRef.current += 1;
       setGistToken(payload.token, { persist: true });
       setGistId(payload.gistId);
+      if (previousGistId !== payload.gistId) {
+        // 다른 Gist로 바뀜 — 옛 Gist 기준점(known commit·마지막 push payload/해시·pull/push 시각)을 그대로 두면,
+        // 적용하지 않고(취소·실패) 나중에 자동 동기화를 켰을 때 로컬이 새 Gist를 묻지 않고 덮거나(업로드)
+        // 새 Gist가 로컬을 묻지 않고 덮는다(복귀 확인). 기준점을 비우고 '아직 맞춰 본 적 없음'으로 표시하고,
+        // 마운트 플래그를 내려 다음 ON 때 부팅 불러오기(Effect 1 — 충돌 확인) 경로를 타게 한다.
+        // 적용이 확정되면 commit()이 새 Gist 기준으로 전부 다시 채운다.
+        knownRemoteCommitRef.current = "";
+        lastPushedPayloadRef.current = "";
+        restoredRef.current = false;
+        setGistLastPullAt("");
+        setLastPullAt(null);
+        setGistLastPushAt("");
+        setLastPushAt(null);
+        setGistLastPushedHash(UNSYNCED_PUSH_HASH);
+        hasMountedRef.current = false;
+      }
 
       // 4) 즉시 불러오기 + 검증
       let dataJson: string;

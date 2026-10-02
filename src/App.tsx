@@ -68,7 +68,7 @@ import { useFxRateValue, useFxRateInfoValue } from "./context/FxRateContext";
 import { useTickerDatabase } from "./hooks/useTickerDatabase";
 import { useKeyboardShortcuts } from "./hooks/useKeyboardShortcuts";
 import { usePortfolioWorker } from "./hooks/usePortfolioWorker";
-import { APP_VERSION, STORAGE_KEYS } from "./constants/config";
+import { APP_VERSION, STORAGE_KEYS, GIST_REMOTE_POLL_MS } from "./constants/config";
 import { SyncActionBar } from "./components/SyncActionBar";
 import { runIntegrityCheck } from "./utils/dataIntegrity";
 import { upsertDailyCloses } from "./utils/dailyCloses";
@@ -317,7 +317,7 @@ export const App: React.FC = () => {
   const { autoSyncEnabled, setAutoSyncEnabled, lastPushAt: gistLastPushAt, lastPullAt: gistLastPullAt, resolveGistConflict, gistStaleWarning, manualPush: gistManualPush, manualPull: gistManualPull, syncStateAfterRestore } = useGistSync(
     data,
     handleGistPulledData,
-    { onLog: addAppLog }
+    { onLog: addAppLog, remotePollMs: GIST_REMOTE_POLL_MS }
   );
 
   useMarketEnvSnapshotRecorder();

@@ -87,6 +87,8 @@ export function isTimeSeriesOnlyDiff(aJson: string, bJson: string): boolean {
 
 interface UseGistSyncOptions {
   onLog?: (message: string, type?: "success" | "error" | "info") => void;
+  /** 주어지면 탭이 표시 중일 때 이 간격(ms)마다 원격 변경을 확인(checkRemoteOnResume 재사용) */
+  remotePollMs?: number;
 }
 
 export type GistConflictResolution = "apply-remote" | "force-push-local" | "cancel";
@@ -126,14 +128,14 @@ interface UseGistSyncReturn {
 /**
  * 자동 Gist 동기화 훅
  * - 앱 시작 시 Gist가 더 최신이면 자동 불러오기
- * - 데이터 변경 후 5분 뒤 자동 Gist 저장
+ * - 데이터 변경 후 1분 뒤 자동 Gist 저장
  */
 export function useGistSync(
   data: AppData,
   onApplyPulledData: (dataJson: string, remoteUpdatedAt: string) => void,
   options?: UseGistSyncOptions
 ): UseGistSyncReturn {
-  const { onLog } = options ?? {};
+  const { onLog, remotePollMs } = options ?? {};
 
   const [autoSyncEnabled, setAutoSyncEnabledState] = useState(() => getGistAutoSync());
   const [lastPushAt, setLastPushAt] = useState<string | null>(() => getGistLastPushAt() || null);
@@ -145,7 +147,7 @@ export function useGistSync(
   const hasMountedRef = useRef(false);
   const isPushingRef = useRef(false);
   const knownRemoteCommitRef = useRef<string>("");
-  /** 복귀 시 원격 확인 마지막 시각(ms) — 부팅 확인·복귀 확인이 공유하는 15분 throttle 기준 */
+  /** 복귀 시 원격 확인 마지막 시각(ms) — 부팅 확인·복귀 확인이 공유하는 throttle 기준 */
   const lastRemoteCheckAtRef = useRef<number>(0);
   /** 복귀 시 원격 확인 재진입 가드 */
   const isRemoteCheckingRef = useRef(false);
@@ -484,7 +486,7 @@ export function useGistSync(
    *  - 로컬 dirty 없음 → 자동 pull(시계열 union 포함), 토스트 '다른 기기 변경 반영됨'
    *  - dirty가 자동 적립 시계열 3종만의 차이(isTimeSeriesOnlyDiff) → 충돌 대신 pull+union으로 조용히 처리
    *  - 그 외 dirty(id 키 컬렉션 변경) → 기존 충돌 모달(1-7 union 포함)
-   * 스킵: 자동 동기화 off·토큰/ID 없음·in-flight push·열린 충돌 모달·복원 직후·15분 throttle·재진입.
+   * 스킵: 자동 동기화 off·토큰/ID 없음·in-flight push·열린 충돌 모달·복원 직후·throttle·재진입.
    * dirty 판정 기준: 세션 내 마지막 push/pull payload(lastPushedPayloadRef). 없으면(부팅 후 첫 push 전)
    * 부팅 pull과 같은 localStorage 해시 기준 — 이 경우 시계열-only 판정은 불가(원문 없음) → 충돌 모달.
    * 둘 다 없으면(한 번도 push/pull 성공 못 함) 판단 불가 → 조용히 덮어쓰지 않고 충돌 모달(보수적).
@@ -588,7 +590,7 @@ export function useGistSync(
 
   // Effect 3: 모바일 백그라운드 suspend 방지용 즉시 flush + 오프라인 복귀 시 재개 + 복귀 시 원격 확인.
   // visibilitychange:hidden — 앱 전환·화면 잠금 시점. setTimeout이 정지·지연되기 전에 push.
-  // visibilitychange:visible — 앱 복귀. 15분 throttle로 원격 변경 확인(checkRemoteOnResume).
+  // visibilitychange:visible — 앱 복귀. throttle로 원격 변경 확인(checkRemoteOnResume).
   // pagehide — 페이지가 실제로 unload되는 시점 (iOS Safari에서 신뢰성 ↑).
   // online — 장시간 오프라인 후 복귀. dirty면 1회 push (다음 변경까지 기다리면 다른 기기 변경에 덮일 위험),
   //          아니면 원격 확인(push가 시작됐으면 push의 자체 충돌 감지에 맡기고 확인은 스킵).
@@ -620,15 +622,23 @@ export function useGistSync(
       void checkRemoteOnResume();
     };
 
+    // 탭을 계속 켜둔 PC가 다른 기기 입력을 받도록 표시 중에만 주기 확인 (가드·throttle은 checkRemoteOnResume이 담당)
+    const pollId = remotePollMs
+      ? window.setInterval(() => {
+          if (document.visibilityState === "visible") void checkRemoteOnResume();
+        }, remotePollMs)
+      : null;
+
     document.addEventListener("visibilitychange", onVisibilityChange);
     window.addEventListener("pagehide", flush);
     window.addEventListener("online", onOnline);
     return () => {
+      if (pollId !== null) window.clearInterval(pollId);
       document.removeEventListener("visibilitychange", onVisibilityChange);
       window.removeEventListener("pagehide", flush);
       window.removeEventListener("online", onOnline);
     };
-  }, [autoSyncEnabled, runAutoPush, checkRemoteOnResume, onLog]);
+  }, [autoSyncEnabled, runAutoPush, checkRemoteOnResume, onLog, remotePollMs]);
 
   const setAutoSyncEnabled = useCallback((enabled: boolean) => {
     setGistAutoSync(enabled);
@@ -725,7 +735,7 @@ export function useGistSync(
   /**
    * Gist 과거 버전 복원(GistVersionModal) 직후 동기화 상태를 갱신한다.
    * 이걸 호출하지 않으면 복원된 (과거) 데이터를 runAutoPush가 '새 로컬 변경'으로 보고
-   * 5분 뒤 조용히 push → 최신 원격이 과거로 롤백된다.
+   * 디바운스 후 조용히 push → 최신 원격이 과거로 롤백된다.
    * - lastPushedPayloadRef/hash = 복원 데이터: 즉시 자동 push 막음(데이터 동일 → no-op).
    * - knownRemoteCommitRef = 복원 버전의 commit 시각(과거): 이후 실제 변경 시 detectConflict가
    *   '원격이 더 최신'을 감지해 충돌 모달로 사용자에게 롤백 여부를 의식적으로 묻게 함.

@@ -169,7 +169,7 @@ export const GistSyncCard: React.FC<Props> = React.memo(function GistSyncCard({
               toast.success(e.target.checked ? "자동 동기화를 켰습니다." : "자동 동기화를 껐습니다.");
             }}
           />
-          <span style={{ fontSize: 13 }}>자동 동기화 사용 (데이터 변경 후 5분 뒤 자동 저장 · 앱 시작 시 자동 불러오기)</span>
+          <span style={{ fontSize: 13 }}>자동 동기화 사용 (데이터 변경 후 1분 뒤 자동 저장 · 앱 시작 시 자동 불러오기)</span>
         </label>
         {(!gistToken || !gistId) && (
           <p className="hint">Token과 Gist ID를 먼저 설정해야 자동 동기화를 사용할 수 있습니다.</p>

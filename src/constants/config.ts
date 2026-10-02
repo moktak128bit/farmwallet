@@ -139,11 +139,14 @@ export const BACKUP_WARNING_HOURS = {
 // 자동 백업 간격 (밀리초, 10분) — 저장소가 IndexedDB로 옮겨져 용량 여유가 생겨 30분→10분으로 단축
 export const AUTO_BACKUP_INTERVAL_MS = 10 * 60 * 1000;
 
-// 자동 Gist 저장 디바운스 (밀리초, 5분)
-export const GIST_AUTO_PUSH_DEBOUNCE_MS = 5 * 60 * 1000;
+// 자동 Gist 저장 디바운스 (밀리초, 1분)
+export const GIST_AUTO_PUSH_DEBOUNCE_MS = 60 * 1000;
 
-/** 앱 복귀(visibilitychange:visible·online) 시 원격 Gist 변경 확인 최소 간격 (밀리초, 15분) */
-export const GIST_REMOTE_CHECK_THROTTLE_MS = 15 * 60 * 1000;
+/** 앱 복귀(visibilitychange:visible·online) 시 원격 Gist 변경 확인 최소 간격 (밀리초, 1분) */
+export const GIST_REMOTE_CHECK_THROTTLE_MS = 60 * 1000;
+
+/** 탭이 표시 중일 때 원격 Gist 변경을 확인하는 폴링 간격 (밀리초, 3분) */
+export const GIST_REMOTE_POLL_MS = 3 * 60 * 1000;
 
 /**
  * Gist 자동 푸시가 N시간 이상 안 됐을 때 사용자에게 경고 (모바일 백그라운드 suspend·연속 실패 감지용).

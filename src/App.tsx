@@ -65,6 +65,7 @@ import { useBackup } from "./hooks/useBackup";
 import { useSearch } from "./hooks/useSearch";
 import { useTheme } from "./hooks/useTheme";
 import { useFxRateValue, useFxRateInfoValue } from "./context/FxRateContext";
+import { useBackgroundQuoteRefresh } from "./features/stocks/useBackgroundQuoteRefresh";
 import { useTickerDatabase } from "./hooks/useTickerDatabase";
 import { useKeyboardShortcuts } from "./hooks/useKeyboardShortcuts";
 import { usePortfolioWorker } from "./hooks/usePortfolioWorker";
@@ -629,6 +630,20 @@ export const App: React.FC = () => {
       }),
     [setData]
   );
+  // 시세는 어느 탭에서든 앱을 열거나 다시 볼 때 갱신 — 주식 탭에서만 돌던 시절 대시보드 숫자가 열흘씩 멈춰 있었다
+  const tickerDatabaseList = useMemo(
+    () => (Array.isArray(data.tickerDatabase) ? data.tickerDatabase : []),
+    [data.tickerDatabase]
+  );
+  useBackgroundQuoteRefresh({
+    trades: data.trades,
+    prices: data.prices,
+    tickerDatabase: tickerDatabaseList,
+    fxRate,
+    onChangePrices: handleChangePrices,
+    onChangeTickerDatabase: handleChangeTickerDatabase,
+    enabled: !isLoading && !loadFailed,
+  });
   const handleChangeStockPresets = useCallback(
     (stockPresets: AppData["stockPresets"]) => setDataWithHistory((prev) => ({ ...prev, stockPresets })),
     [setDataWithHistory]

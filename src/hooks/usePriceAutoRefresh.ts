@@ -16,9 +16,17 @@ export function usePriceAutoRefresh({ enabled, intervalMs = REFRESH_INTERVAL_MS,
 
   useEffect(() => {
     if (typeof window === "undefined") return;
-    const isOn =
-      enabled ?? localStorage.getItem(STORAGE_KEYS.PRICE_API_ENABLED) === "true";
-    if (!isOn) return;
+    if (enabled === false) return;
+    // 옵트인 플래그는 실행 시점마다 읽는다 — 앱 전역(App)에 한 번 마운트되므로, 마운트 때 한 번만 읽으면
+    // 설정에서 켜고 끈 것이 새로고침 전까지 반영되지 않는다.
+    const isOn = () =>
+      enabled ?? (() => {
+        try {
+          return localStorage.getItem(STORAGE_KEYS.PRICE_API_ENABLED) === "true";
+        } catch {
+          return false;
+        }
+      })();
 
     const safeInterval = Math.max(MIN_INTERVAL_MS, intervalMs);
     let cancelled = false;
@@ -27,7 +35,7 @@ export function usePriceAutoRefresh({ enabled, intervalMs = REFRESH_INTERVAL_MS,
     let isRunning = false;
 
     const run = async () => {
-      if (cancelled || isRunning || document.hidden) return;
+      if (cancelled || isRunning || document.hidden || !isOn()) return;
       if (Date.now() - lastRunAt < MIN_INTERVAL_MS) return;
       isRunning = true;
       lastRunAt = Date.now();

@@ -39,7 +39,8 @@ export const PriceApiCard: React.FC = React.memo(function PriceApiCard() {
         <span>가격 API 사용 (외부 API로 주식 가격 배치 갱신)</span>
       </label>
       <p className="hint" style={{ marginTop: 4 }}>
-        켜면 주식 탭에서 보유 종목 가격을 30분마다 자동으로 배치 갱신합니다 (탭이 보일 때만 동작).
+        보유 종목 시세는 앱을 열거나 다시 볼 때 마지막 갱신 후 10분이 지났으면 항상 갱신합니다 (어느 탭에서든).
+        켜면 앱이 열려 있는 동안 30분마다 추가로 갱신합니다 (화면이 보일 때만).
       </p>
 
       <div style={{ marginTop: 14, paddingTop: 12, borderTop: "1px solid var(--border)" }}>

@@ -332,13 +332,13 @@ const useCorsProxy = (): boolean => getEnv().DEV === true || getEnv().MODE === "
 
 // ─────────────────────────────────────────────────────────────────────────────
 // CORS 프록시 체인 (단일 진입점) — Naver/Yahoo/Stooq/네이버 ETF 목록 등 모든 외부 GET이 공유한다.
-// 개발 서버(vite) 프록시가 있으면 맨 앞, 그 뒤 공개 프록시 3종을 "최근 성적" 순으로 시도한다.
+// 개발 서버(vite) 프록시가 있으면 맨 앞, 그 뒤 공개 프록시(allorigins·codetabs)를 "최근 성적" 순으로 시도한다.
 // 성공/실패 카운트·마지막 성공 시각은 메모리 + localStorage(PROXY_STATUS) 소형 JSON으로 기억해
 // 설정 > 가격 API 카드에 읽기전용으로 표시하고, 다음 호출의 선순위에 반영한다.
 // ─────────────────────────────────────────────────────────────────────────────
 
 /** 프록시 식별자 — 상태 저장 키. 공개 프록시는 선순위 정렬 대상, dev는 항상 맨 앞. */
-type ProxyId = "dev" | "allorigins" | "corsproxy" | "codetabs";
+type ProxyId = "dev" | "allorigins" | "codetabs";
 
 interface PublicProxyDef {
   id: Exclude<ProxyId, "dev">;
@@ -347,17 +347,20 @@ interface PublicProxyDef {
   build: (innerUrl: string) => string;
 }
 
-/** 기본 순서(성적 동률 시 이 순서) */
+/**
+ * 기본 순서(성적 동률 시 이 순서).
+ * corsproxy.io는 2026년 현재 API 키 없이는 항상 401("A valid API key is required")이라 뺐다 —
+ * 매 요청 첫 시도를 낭비하고 콘솔을 401로 채웠다. 남은 공개 프록시도 간헐적이라, 정적 배포에서 시세가
+ * 안정적이려면 개인 프록시(Cloudflare Worker 등)가 필요하다.
+ */
 const PUBLIC_PROXIES: readonly PublicProxyDef[] = [
   { id: "allorigins", label: "allorigins", build: (u) => `https://api.allorigins.win/raw?url=${encodeURIComponent(u)}` },
-  { id: "corsproxy", label: "corsproxy.io", build: (u) => `https://corsproxy.io/?url=${encodeURIComponent(u)}` },
   { id: "codetabs", label: "codetabs", build: (u) => `https://api.codetabs.com/v1/proxy?quest=${encodeURIComponent(u)}` }
 ];
 
 const PROXY_LABELS: Record<ProxyId, string> = {
   dev: "개발 서버",
   allorigins: "allorigins",
-  corsproxy: "corsproxy.io",
   codetabs: "codetabs"
 };
 
@@ -379,7 +382,7 @@ interface ProxyStatusEntry {
 interface ProxyStatusSnapshot {
   /** 어떤 프록시든 마지막으로 성공한 시각(ms epoch). 한 번도 없으면 null */
   lastSuccessAt: number | null;
-  /** dev(카운트가 있을 때만) + 공개 프록시 3종, 현재 시도 순서대로 */
+  /** dev(카운트가 있을 때만) + 공개 프록시, 현재 시도 순서대로 */
   proxies: ProxyStatusEntry[];
 }
 

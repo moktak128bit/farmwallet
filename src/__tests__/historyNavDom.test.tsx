@@ -35,15 +35,32 @@ const settle = async () => {
   });
 };
 
+/** popstate가 실제로 올 때까지 기다린다(최대 timeoutMs). 고정 30ms 대기는 병렬 실행 부하에서 jsdom의 비동기
+ *  popstate보다 먼저 끝나 "모달이 아직 열려 있음"으로 간헐 실패했다. 앱 리스너가 먼저 등록돼 있어 이 리스너는 그 뒤에 돈다. */
+const waitForPopstate = (timeoutMs = 1000) =>
+  new Promise<boolean>((resolve) => {
+    const onPop = () => {
+      window.removeEventListener("popstate", onPop);
+      clearTimeout(timer);
+      resolve(true);
+    };
+    const timer = setTimeout(() => {
+      window.removeEventListener("popstate", onPop);
+      resolve(false);
+    }, timeoutMs);
+    window.addEventListener("popstate", onPop);
+  });
+
 /** 브라우저 뒤로가기 — jsdom이 popstate를 못 내면 state를 직접 전달 */
 const userBack = async () => {
-  const before = window.history.length;
-  const stateBefore = window.history.state;
+  let fired = false;
   await act(async () => {
+    const popped = waitForPopstate();
     window.history.back();
+    fired = await popped;
   });
   await settle();
-  if (window.history.length === before && window.history.state === stateBefore) {
+  if (!fired) {
     // fallback: popstate 수동 발화(state는 직전 항목이라고 가정할 수 없으니 테스트가 이 경로에 의존하지 않게 구성)
     window.dispatchEvent(new PopStateEvent("popstate", { state: window.history.state }));
   }

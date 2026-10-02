@@ -4,7 +4,7 @@ import { renderHook, act } from "@testing-library/react";
 import { useGistSync, checkRemoteChanged, isTimeSeriesOnlyDiff } from "../hooks/useGistSync";
 import * as gistSync from "../services/gistSync";
 import { hashGistPayload } from "../services/gistSync";
-import { GIST_AUTO_PUSH_DEBOUNCE_MS } from "../constants/config";
+import { GIST_AUTO_PUSH_DEBOUNCE_MS, GIST_REMOTE_CHECK_THROTTLE_MS } from "../constants/config";
 import type { AppData } from "../types";
 import { useUIStore } from "../store/uiStore";
 import { useAppStore } from "../store/appStore";
@@ -256,9 +256,9 @@ describe("useGistSync", () => {
     mocked.saveToGistWithRetry.mockClear();
 
     rerender({ d: makeData(1) });
-    await vi.advanceTimersByTimeAsync(60_000);
+    await vi.advanceTimersByTimeAsync(GIST_AUTO_PUSH_DEBOUNCE_MS / 2);
     rerender({ d: makeData(2) });
-    await vi.advanceTimersByTimeAsync(60_000);
+    await vi.advanceTimersByTimeAsync(GIST_AUTO_PUSH_DEBOUNCE_MS / 2);
     rerender({ d: makeData(3) });
     await vi.advanceTimersByTimeAsync(GIST_AUTO_PUSH_DEBOUNCE_MS + 1000);
     await flush();
@@ -745,7 +745,7 @@ describe("useGistSync — 앱 복귀 시 원격 변경 확인 (5-7)", () => {
     expect(useUIStore.getState().gistConflict).toBeNull();
   });
 
-  it("visible 복귀: 원격이 새롭지 않으면 경량 조회만 하고 loadFromGist 호출 없음 + 15분 throttle", async () => {
+  it("visible 복귀: 원격이 새롭지 않으면 경량 조회만 하고 loadFromGist 호출 없음 + throttle", async () => {
     const { onApply } = await mountSettled(makeData(0));
 
     await act(async () => {
@@ -756,16 +756,16 @@ describe("useGistSync — 앱 복귀 시 원격 변경 확인 (5-7)", () => {
     expect(mocked.loadFromGist).not.toHaveBeenCalled();
     expect(onApply).not.toHaveBeenCalled();
 
-    // 1분 뒤 다시 복귀 → throttle로 조회조차 안 함
-    await vi.advanceTimersByTimeAsync(60 * 1000);
+    // throttle 직전 다시 복귀 → 조회조차 안 함
+    await vi.advanceTimersByTimeAsync(GIST_REMOTE_CHECK_THROTTLE_MS - 1000);
     await act(async () => {
       setVisibility("visible");
       await flushMicro();
     });
     expect(mocked.getGistVersions).toHaveBeenCalledTimes(1);
 
-    // 15분 경과 후 복귀 → 다시 조회
-    await vi.advanceTimersByTimeAsync(15 * 60 * 1000);
+    // throttle 경과 후 복귀 → 다시 조회
+    await vi.advanceTimersByTimeAsync(2000);
     await act(async () => {
       setVisibility("visible");
       await flushMicro();
@@ -814,5 +814,73 @@ describe("useGistSync — 앱 복귀 시 원격 변경 확인 (5-7)", () => {
     expect(mocked.saveToGistWithRetry).not.toHaveBeenCalled();
     expect(onApply).toHaveBeenCalledTimes(1);
     expect(onApply.mock.calls[0][0]).toBe(REMOTE_JSON);
+  });
+});
+
+describe("useGistSync — 탭 표시 중 원격 폴링", () => {
+  const MOUNT_REMOTE = { sha: "v1", committedAt: "2026-04-20T01:00:00Z", url: "u" };
+  const POLL_MS = 180_000;
+
+  function setVisibilityQuiet(state: "visible" | "hidden") {
+    Object.defineProperty(document, "visibilityState", { configurable: true, get: () => state });
+  }
+
+  // 주의: interval이 있으므로 flush()(runAllTimersAsync)는 쓰지 않는다 — 무한 루프
+  async function mountPolling(withPoll: boolean) {
+    const hook = renderHook(() => useGistSync(makeData(0), vi.fn(), withPoll ? { remotePollMs: POLL_MS } : undefined));
+    // 첫 자동 push까지 소진 (push 충돌 확인용 getGistVersions 호출 포함)
+    await vi.advanceTimersByTimeAsync(GIST_AUTO_PUSH_DEBOUNCE_MS + 1000);
+    mocked.getGistVersions.mockClear();
+    return hook;
+  }
+
+  beforeEach(() => {
+    vi.useFakeTimers();
+    vi.clearAllMocks();
+    window.localStorage.clear();
+    useUIStore.getState().setGistConflict(null);
+    mocked.getGistAutoSync.mockReturnValue(true);
+    mocked.getGistToken.mockReturnValue("test-token");
+    mocked.getGistId.mockReturnValue("test-gist-id");
+    mocked.getGistLastPushAt.mockReturnValue("");
+    mocked.getGistLastPullAt.mockReturnValue("2026-04-20T02:00:00Z");
+    mocked.getGistVersions.mockResolvedValue([MOUNT_REMOTE]);
+    mocked.saveToGist.mockResolvedValue({ gistId: "test-gist-id", updatedAt: "2026-04-20T01:00:00Z", committedAt: "2026-04-20T01:00:00Z" });
+    mocked.saveToGistWithRetry.mockResolvedValue({ gistId: "test-gist-id", updatedAt: "2026-04-20T01:00:00Z", committedAt: "2026-04-20T01:00:00Z" });
+    mocked.loadFromGist.mockResolvedValue({ dataJson: "{}", updatedAt: "2026-04-20T01:00:00Z" });
+    setVisibilityQuiet("visible");
+  });
+
+  afterEach(() => {
+    setVisibilityQuiet("visible");
+    vi.useRealTimers();
+    useUIStore.getState().setGistConflict(null);
+  });
+
+  it("원격 폴링: 표시 중 3분마다 확인", async () => {
+    await mountPolling(true);
+    await vi.advanceTimersByTimeAsync(POLL_MS);
+    expect(mocked.getGistVersions).toHaveBeenCalledTimes(1);
+    await vi.advanceTimersByTimeAsync(POLL_MS);
+    expect(mocked.getGistVersions).toHaveBeenCalledTimes(2);
+  });
+
+  it("원격 폴링: 숨김 탭·충돌 모달 시 건너뜀", async () => {
+    await mountPolling(true);
+
+    setVisibilityQuiet("hidden");
+    await vi.advanceTimersByTimeAsync(POLL_MS);
+    expect(mocked.getGistVersions).toHaveBeenCalledTimes(0);
+
+    setVisibilityQuiet("visible");
+    useUIStore.getState().setGistConflict({ remoteDataJson: "{}", remoteUpdatedAt: "x", pendingLocalDataJson: "{}" });
+    await vi.advanceTimersByTimeAsync(POLL_MS);
+    expect(mocked.getGistVersions).toHaveBeenCalledTimes(0);
+  });
+
+  it("원격 폴링: 옵션 없으면 interval 없음", async () => {
+    await mountPolling(false);
+    await vi.advanceTimersByTimeAsync(600_000);
+    expect(mocked.getGistVersions).toHaveBeenCalledTimes(0);
   });
 });

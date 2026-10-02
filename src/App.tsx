@@ -82,7 +82,8 @@ import { GistVersionModal } from "./components/GistVersionModal";
 import { GitVersionModal } from "./components/GitVersionModal";
 import { GistConflictModal } from "./components/GistConflictModal";
 import { ApplyConfirmModal, requestApply } from "./components/ApplyConfirmModal";
-import { isGistConfigured, GIST_CONFIG_CHANGE_EVENT } from "./services/gistSync";
+import { isGistConfigured, GIST_CONFIG_CHANGE_EVENT, getGistToken, getGistId } from "./services/gistSync";
+import { deriveGistSyncStatus } from "./services/gistSyncStatus";
 import { toUserDataJson } from "./services/dataService";
 import { useUIStore, type PendingAction } from "./store/uiStore";
 import { useAppStore } from "./store/appStore";
@@ -314,10 +315,23 @@ export const App: React.FC = () => {
     }
   }, [setDataWithHistory, addAppLog]);
 
-  const { autoSyncEnabled, setAutoSyncEnabled, lastPushAt: gistLastPushAt, lastPullAt: gistLastPullAt, resolveGistConflict, gistStaleWarning, manualPush: gistManualPush, manualPull: gistManualPull, syncStateAfterRestore } = useGistSync(
+  const { autoSyncEnabled, setAutoSyncEnabled, lastPushAt: gistLastPushAt, lastPullAt: gistLastPullAt, resolveGistConflict, gistStaleWarning, manualPush: gistManualPush, manualPull: gistManualPull, syncStateAfterRestore, syncHealth } = useGistSync(
     data,
     handleGistPulledData,
     { onLog: addAppLog, remotePollMs: GIST_REMOTE_POLL_MS }
+  );
+
+  // 동기화 건강 상태 — gistConfigured는 Gist 설정 변경 이벤트로 바뀌므로 토큰·ID 재조회 트리거로 쓴다
+  const gistSyncStatus = useMemo(
+    () => deriveGistSyncStatus({
+      autoSyncEnabled,
+      hasToken: !!getGistToken(),
+      hasGistId: !!getGistId(),
+      health: syncHealth,
+    }),
+    // gistConfigured: getGistToken()/getGistId() 재조회 트리거(값 자체는 미사용)
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [autoSyncEnabled, gistConfigured, syncHealth]
   );
 
   useMarketEnvSnapshotRecorder();
@@ -333,13 +347,15 @@ export const App: React.FC = () => {
     if (saveStatus === "error") return { tone: "danger", summary: "저장 실패" };
     if (backupIntegrity.status === "mismatch") return { tone: "danger", summary: "백업 불일치" };
     if (gistStaleWarning?.type === "critical") return { tone: "danger", summary: "동기화 필요" };
+    if (gistSyncStatus.kind === "disconnected") return { tone: "warn", summary: "연결 끊김" };
+    if (gistSyncStatus.kind === "error") return { tone: "warn", summary: "동기화 오류" };
     if (gistStaleWarning) return { tone: "warn", summary: "동기화 권장" };
     if (backupWarning) return { tone: "warn", summary: "백업 권장" };
     // missing-hash(해시 없는 옛 백업)는 상시 주황 점으로 띄우지 않는다 — 팝오버의 pill warning이 안내. 상시 경보는 경보를 무디게 한다.
     if (newVersionAvailable) return { tone: "warn", summary: "새 버전" };
     if (saveStatus === "saving") return { tone: "ok", summary: "저장 중" };
     return { tone: "ok", summary: "정상" };
-  }, [saveStatus, backupIntegrity.status, gistStaleWarning, backupWarning, newVersionAvailable]);
+  }, [saveStatus, backupIntegrity.status, gistStaleWarning, gistSyncStatus.kind, backupWarning, newVersionAvailable]);
 
   // 저장소 사용률 85% 초과 시 1회 경고 (세션당 1회)
   const storageQuota = useStorageQuota();
@@ -925,6 +941,14 @@ export const App: React.FC = () => {
               title="환율이 24시간 이상 갱신되지 않았습니다. USD 자산 평가액이 현재 시세와 다를 수 있습니다."
             >
               환율 캐시 {fxStaleAgeText} · USD 평가 주의
+            </div>
+          )}
+          {gistSyncStatus.message && (
+            <div className="pill warning">{gistSyncStatus.message}</div>
+          )}
+          {getGistToken() && getGistId() && (
+            <div className="pill muted">
+              최신 확인 {formatTimeAgo(syncHealth.lastCheckAt)} · 마지막 저장 {formatTimeAgo(gistLastPushAt)}
             </div>
           )}
           {gistStaleWarning && (

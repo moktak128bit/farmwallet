@@ -884,3 +884,71 @@ describe("useGistSync — 탭 표시 중 원격 폴링", () => {
     expect(mocked.getGistVersions).toHaveBeenCalledTimes(0);
   });
 });
+
+describe("useGistSync — 동기화 건강 상태", () => {
+  const MOUNT_REMOTE = { sha: "v1", committedAt: "2026-04-20T01:00:00Z", url: "u" };
+  const NET_ERR = "네트워크 연결을 확인해주세요.";
+
+  const setVisibilityQuiet = (state: "visible" | "hidden") => {
+    Object.defineProperty(document, "visibilityState", { configurable: true, get: () => state });
+  };
+  const flushMicro = async () => {
+    for (let i = 0; i < 10; i++) await Promise.resolve();
+  };
+
+  beforeEach(() => {
+    vi.useFakeTimers();
+    vi.clearAllMocks();
+    window.localStorage.clear();
+    useUIStore.getState().setGistConflict(null);
+    mocked.getGistAutoSync.mockReturnValue(true);
+    mocked.getGistToken.mockReturnValue("test-token");
+    mocked.getGistId.mockReturnValue("test-gist-id");
+    mocked.getGistLastPushAt.mockReturnValue("");
+    mocked.getGistLastPullAt.mockReturnValue("2026-04-20T02:00:00Z");
+    mocked.getGistVersions.mockResolvedValue([MOUNT_REMOTE]);
+    mocked.saveToGistWithRetry.mockResolvedValue({ gistId: "test-gist-id", updatedAt: "2026-04-20T01:00:00Z", committedAt: "2026-04-20T01:00:00Z" });
+    setVisibilityQuiet("visible");
+  });
+
+  afterEach(() => {
+    vi.useRealTimers();
+    useUIStore.getState().setGistConflict(null);
+  });
+
+  it("마운트 확인 실패는 1회로 기록", async () => {
+    mocked.getGistVersions.mockRejectedValue(new Error(NET_ERR));
+    const { result } = renderHook(({ d }: { d: AppData }) => useGistSync(d, vi.fn()), { initialProps: { d: makeData(0) } });
+    await act(async () => { await flushMicro(); });
+    expect(result.current.syncHealth.consecutiveFailures).toBe(1);
+    expect(result.current.syncHealth.lastError).toBe(NET_ERR);
+  });
+
+  it("연속 실패 누적과 성공 시 리셋", async () => {
+    const { result } = renderHook(({ d }: { d: AppData }) => useGistSync(d, vi.fn()), { initialProps: { d: makeData(0) } });
+    await flush();
+    await vi.advanceTimersByTimeAsync(16 * 60 * 1000);
+    await flush();
+
+    const visibleCheck = async () => {
+      await vi.advanceTimersByTimeAsync(GIST_REMOTE_CHECK_THROTTLE_MS + 1000);
+      await act(async () => {
+        setVisibilityQuiet("visible");
+        document.dispatchEvent(new Event("visibilitychange"));
+        await flushMicro();
+      });
+    };
+
+    mocked.getGistVersions.mockRejectedValue(new Error(NET_ERR));
+    await visibleCheck();
+    expect(result.current.syncHealth.consecutiveFailures).toBe(1);
+    await visibleCheck();
+    expect(result.current.syncHealth.consecutiveFailures).toBe(2);
+    expect(result.current.syncHealth.lastError).toBe(NET_ERR);
+
+    mocked.getGistVersions.mockResolvedValue([]);
+    await visibleCheck();
+    expect(result.current.syncHealth.consecutiveFailures).toBe(0);
+    expect(result.current.syncHealth.lastCheckAt).not.toBeNull();
+  });
+});

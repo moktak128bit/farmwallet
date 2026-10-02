@@ -17,8 +17,8 @@
  */
 import React, { useState, useMemo, useCallback, useRef } from "react";
 import type { Loan, LedgerEntry, Account, CategoryPresets } from "../types";
-import { computeAccountBalances, computeBalanceSheet, computePositions, isInterestRepayment, matchLoanForRepayment } from "../calculations";
-import { buildAdjustedPrices } from "../utils/accountTimeline";
+import { isInterestRepayment, matchLoanForRepayment } from "../calculations";
+import { useBalanceSheet } from "../hooks/useBalanceSheet";
 import { useAppStore } from "../store/appStore";
 import { useFxRateValue } from "../context/FxRateContext";
 import { isLoanRepaymentEntry } from "../features/debt/debtShared";
@@ -98,11 +98,7 @@ export const DebtView: React.FC<Props> = ({
   const trades = useAppStore((s) => s.data.trades);
   const prices = useAppStore((s) => s.data.prices);
   const fxRate = useFxRateValue();
-  const balanceSheet = useMemo(() => {
-    const balances = computeAccountBalances(accounts, ledger, trades);
-    const positions = computePositions(trades, buildAdjustedPrices(prices, fxRate), accounts, { fxRate: fxRate ?? undefined, priceFallback: "cost" });
-    return computeBalanceSheet(balances, positions, fxRate, loans, ledger);
-  }, [accounts, ledger, trades, prices, fxRate, loans]);
+  const balanceSheet = useBalanceSheet({ accounts, ledger, trades, prices, fxRate, loans });
 
   // 숨김(archived) 계좌는 출금 계좌 드롭다운에서 제외 — "입력 드롭다운에서 제외" 안내와 일치
   const cashAccounts = useMemo(

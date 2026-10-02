@@ -1,4 +1,5 @@
 import React from "react";
+import { Info } from "lucide-react";
 import {
   BarChart, Bar, LineChart, Line, PieChart, Pie, Cell,
   XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer,
@@ -82,7 +83,7 @@ export const ExpenseTab = React.memo(function ExpenseTab({ d }: { d: D }) {
     <div>
       {/* 상단 기간·단위 배너 */}
       <div style={{ padding: "10px 14px", background: "var(--bg)", borderRadius: 8, marginBottom: 16, fontSize: 12, color: "var(--text-muted)", lineHeight: 1.6 }}>
-        ℹ️ 범위: <strong>{rangeLabel}</strong> ({periodLabel}) · 단위: <strong>원</strong> · 신용결제·재테크·환전 제외 · 이상치/성장률은 <strong>{d.anomalyTargetMonth ?? "-"}</strong> 기준 최근 3개월 비교
+        <Info size={13} style={{ verticalAlign: "-2px", marginRight: 4 }} aria-hidden />범위: <strong>{rangeLabel}</strong> ({periodLabel}) · 단위: <strong>원</strong> · 신용결제·재테크·환전 제외 · 이상치/성장률은 <strong>{d.anomalyTargetMonth ?? "-"}</strong> 기준 최근 3개월 비교
       </div>
 
       {/* ============ 한눈에 보기 ============ */}

@@ -7,7 +7,7 @@ import type { Account, LedgerEntry, Loan, StockPrice, StockTrade } from "../../t
 import { computeAccountBalances, computeBalanceSheet, computePositions } from "../../calculations";
 import { getTodayKST } from "../date";
 import { isSavingsExpenseEntry, isCreditPayment, isInvestmentEntry } from "../category";
-import { toKrwAmount, convertPositionAmount } from "./shared";
+import { toKrwAmount } from "./shared";
 
 export interface DailyReport {
   date: string;
@@ -178,40 +178,15 @@ export function generateDailyReport(
     const positions = computePositions(filteredTrades, prices, accounts);
     const balances = computeAccountBalances(accounts, filteredLedger, filteredTrades);
 
-    const accountById = new Map(accounts.map((account) => [account.id, account]));
-
-    const stockValue = positions.reduce((sum, position) => {
-      const account = accountById.get(position.accountId);
-      return sum + convertPositionAmount(position.marketValue, position.ticker, account, fxRate);
-    }, 0);
-
-    const securitiesCash = balances
-      .filter((balance) => balance.account.type === "securities" || balance.account.type === "crypto")
-      .reduce((sum, balance) => {
-        const usdBalance = (balance.account.usdBalance ?? 0) + (balance.usdTransferNet ?? 0);
-        const convertedUsd = fxRate ? usdBalance * fxRate : 0;
-        return sum + balance.currentBalance + convertedUsd;
-      }, 0);
-
-    const checkingAndOtherCash = balances
-      .filter((balance) => balance.account.type === "checking" || balance.account.type === "other")
-      .reduce((sum, balance) => sum + balance.currentBalance, 0);
-
-    const cashValue = securitiesCash + checkingAndOtherCash;
-
-    const savingsValue =
-      balances
-        .filter((balance) => balance.account.type === "savings")
-        .reduce((sum, balance) => sum + balance.currentBalance, 0) +
-      accounts
-        .filter((account) => account.type !== "savings")
-        .reduce((sum, account) => sum + (account.savings ?? 0), 0);
-
-    // 총자산·순자산은 앱 공용 대차 정의(computeBalanceSheet) — 그날까지의 잔액·포지션·대출 잔금 기준.
-    // (예전엔 대출을 빼지 않고 초기 account.debt만 빼서 대시보드 순자산과 대출 잔금만큼 어긋났고, 카드 사용액도 무시했다.)
+    // 총자산·순자산과 그 분해(주식/현금/저축)는 모두 앱 공용 대차 정의(computeBalanceSheet) 한 장에서 —
+    // 그날까지의 잔액·포지션·대출 잔금 기준. 분해를 계좌 타입별 총액으로 따로 구하면 마이너스 통장(현금에 음수로
+    // 섞임)·account.debt·환율 미로드 USD 처리가 총자산과 달라 "주식+현금+저축 ≠ 총자산"이 된다.
     const sheet = computeBalanceSheet(balances, positions, fxRate, loans, filteredLedger, date);
     const totalAsset = sheet.totalAssets;
     const netWorth = sheet.netWorth;
+    const stockValue = sheet.investedValue;
+    const savingsValue = sheet.savings;
+    const cashValue = totalAsset - stockValue - savingsValue;
 
     reports.push({
       date,

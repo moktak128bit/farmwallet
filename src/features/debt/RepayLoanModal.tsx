@@ -7,6 +7,7 @@
  * loanRepayments/cashAccounts/loanRepaymentSubOptions는 부모 memo — 여기서 재계산하지 않는다.
  */
 import React, { useEffect, useState } from "react";
+import { Info } from "lucide-react";
 import { toast } from "react-hot-toast";
 import type { Account, LedgerEntry, Loan } from "../../types";
 import { formatKRW } from "../../utils/formatter";
@@ -156,7 +157,7 @@ export const RepayLoanModal: React.FC<Props> = React.memo(function RepayLoanModa
                 marginBottom: 16
               }}
             >
-              ℹ️ 거치기간 중 — 세부 항목에 "이자"가 포함된 옵션을 선택하면 원금 잔금이 차감되지 않습니다.
+              <Info size={13} style={{ verticalAlign: "-2px", marginRight: 4 }} aria-hidden />거치기간 중 — 세부 항목에 "이자"가 포함된 옵션을 선택하면 원금 잔금이 차감되지 않습니다.
             </p>
           )}
           <label style={{ display: "block", marginBottom: 16 }}>

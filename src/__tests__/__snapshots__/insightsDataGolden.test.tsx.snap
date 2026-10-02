@@ -48,12 +48,16 @@ exports[`useInsightsData 골든 스냅샷 (동작 불변 리팩터 기준선) > 
       "value": 5100000,
     },
     {
-      "name": "증권",
-      "value": 2178000,
+      "name": "연금",
+      "value": 2000000,
     },
     {
       "name": "입출금",
       "value": 1050000,
+    },
+    {
+      "name": "증권",
+      "value": 178000,
     },
   ],
   "avgMonthExp": 0,
@@ -172,7 +176,6 @@ exports[`useInsightsData 골든 스냅샷 (동작 불변 리팩터 기준선) > 
   "netCashFlow": 0,
   "netProfit": 0,
   "netWorthByMonth": [],
-  "netWorthNow": null,
   "originalAssets": 8050000,
   "originalAssetsByAcct": [
     {
@@ -408,11 +411,15 @@ exports[`useInsightsData 골든 스냅샷 (동작 불변 리팩터 기준선) > 
     },
     {
       "name": "증권",
-      "value": 10039122.5,
+      "value": 7777122.5,
     },
     {
       "name": "저축",
       "value": 6300000,
+    },
+    {
+      "name": "연금",
+      "value": 2262000,
     },
     {
       "name": "암호화폐",
@@ -1362,11 +1369,6 @@ exports[`useInsightsData 골든 스냅샷 (동작 불변 리팩터 기준선) > 
       "total": 15070000,
     },
   ],
-  "netWorthNow": {
-    "asset": 15100000,
-    "debt": 30000,
-    "total": 15070000,
-  },
   "originalAssets": 8050000,
   "originalAssetsByAcct": [
     {
@@ -1492,24 +1494,28 @@ exports[`useInsightsData 골든 스냅샷 (동작 불변 리팩터 기준선) > 
     {
       "cumRate": 76.42857142857142,
       "l": "1월",
+      "m": "2025-01",
       "rate": 76.42857142857142,
       "sav": 2354000,
     },
     {
       "cumRate": 53.42416869424169,
       "l": "2월",
+      "m": "2025-02",
       "rate": 30.457050243111834,
       "sav": 939600,
     },
     {
       "cumRate": 64.84475659966094,
       "l": "3월",
+      "m": "2025-03",
       "rate": 81.77991581479255,
       "sav": 3400000,
     },
     {
       "cumRate": 66.0718144359087,
       "l": "4월",
+      "m": "2025-04",
       "rate": 70.16009295720096,
       "sav": 2173700,
     },
@@ -2163,11 +2169,15 @@ exports[`useInsightsData 골든 스냅샷 (동작 불변 리팩터 기준선) > 
     },
     {
       "name": "증권",
-      "value": 10039122.5,
+      "value": 7777122.5,
     },
     {
       "name": "저축",
       "value": 6300000,
+    },
+    {
+      "name": "연금",
+      "value": 2262000,
     },
     {
       "name": "암호화폐",
@@ -3071,11 +3081,6 @@ exports[`useInsightsData 골든 스냅샷 (동작 불변 리팩터 기준선) > 
       "total": 15070000,
     },
   ],
-  "netWorthNow": {
-    "asset": 15100000,
-    "debt": 30000,
-    "total": 15070000,
-  },
   "originalAssets": 8050000,
   "originalAssetsByAcct": [
     {
@@ -3201,24 +3206,28 @@ exports[`useInsightsData 골든 스냅샷 (동작 불변 리팩터 기준선) > 
     {
       "cumRate": 76.42857142857142,
       "l": "1월",
+      "m": "2025-01",
       "rate": 76.42857142857142,
       "sav": 2354000,
     },
     {
       "cumRate": 53.42416869424169,
       "l": "2월",
+      "m": "2025-02",
       "rate": 30.457050243111834,
       "sav": 939600,
     },
     {
       "cumRate": 64.84475659966094,
       "l": "3월",
+      "m": "2025-03",
       "rate": 81.77991581479255,
       "sav": 3400000,
     },
     {
       "cumRate": 66.0718144359087,
       "l": "4월",
+      "m": "2025-04",
       "rate": 70.16009295720096,
       "sav": 2173700,
     },
@@ -3870,11 +3879,15 @@ exports[`useInsightsData 골든 스냅샷 (동작 불변 리팩터 기준선) > 
     },
     {
       "name": "증권",
-      "value": 10039122.5,
+      "value": 7777122.5,
     },
     {
       "name": "저축",
       "value": 6300000,
+    },
+    {
+      "name": "연금",
+      "value": 2262000,
     },
     {
       "name": "암호화폐",
@@ -5213,11 +5226,6 @@ exports[`useInsightsData 골든 스냅샷 (동작 불변 리팩터 기준선) > 
       "total": 15070000,
     },
   ],
-  "netWorthNow": {
-    "asset": 15100000,
-    "debt": 30000,
-    "total": 15070000,
-  },
   "originalAssets": 8050000,
   "originalAssetsByAcct": [
     {
@@ -5338,24 +5346,28 @@ exports[`useInsightsData 골든 스냅샷 (동작 불변 리팩터 기준선) > 
     {
       "cumRate": 76.42857142857142,
       "l": "1월",
+      "m": "2025-01",
       "rate": 76.42857142857142,
       "sav": 2354000,
     },
     {
       "cumRate": 53.42416869424169,
       "l": "2월",
+      "m": "2025-02",
       "rate": 30.457050243111834,
       "sav": 939600,
     },
     {
       "cumRate": 64.84475659966094,
       "l": "3월",
+      "m": "2025-03",
       "rate": 81.77991581479255,
       "sav": 3400000,
     },
     {
       "cumRate": 66.0718144359087,
       "l": "4월",
+      "m": "2025-04",
       "rate": 70.16009295720096,
       "sav": 2173700,
     },
@@ -6225,7 +6237,6 @@ exports[`useInsightsData 골든 스냅샷 (동작 불변 리팩터 기준선) > 
   "variableExpense",
   "discretionaryExpense",
   "netWorthByMonth",
-  "netWorthNow",
   "accountBalances",
   "assetAllocation",
   "funStats",
@@ -6301,12 +6312,16 @@ exports[`useInsightsData 골든 스냅샷 (동작 불변 리팩터 기준선) > 
       "value": 16145600,
     },
     {
-      "name": "증권",
-      "value": 6595122.5,
-    },
-    {
       "name": "저축",
       "value": 6300000,
+    },
+    {
+      "name": "증권",
+      "value": 4333122.5,
+    },
+    {
+      "name": "연금",
+      "value": 2262000,
     },
     {
       "name": "암호화폐",
@@ -7601,11 +7616,6 @@ exports[`useInsightsData 골든 스냅샷 (동작 불변 리팩터 기준선) > 
       "total": 15070000,
     },
   ],
-  "netWorthNow": {
-    "asset": 15100000,
-    "debt": 30000,
-    "total": 15070000,
-  },
   "originalAssets": 8050000,
   "originalAssetsByAcct": [
     {
@@ -7722,24 +7732,28 @@ exports[`useInsightsData 골든 스냅샷 (동작 불변 리팩터 기준선) > 
     {
       "cumRate": 75.38961038961038,
       "l": "1월",
+      "m": "2025-01",
       "rate": 75.38961038961038,
       "sav": 2322000,
     },
     {
       "cumRate": 52.90510948905109,
       "l": "2월",
+      "m": "2025-02",
       "rate": 30.457050243111834,
       "sav": 939600,
     },
     {
       "cumRate": 64.24167365153608,
       "l": "3월",
+      "m": "2025-03",
       "rate": 81.1232454008291,
       "sav": 3358512.5,
     },
     {
       "cumRate": 65.81095763422388,
       "l": "4월",
+      "m": "2025-04",
       "rate": 71.03059841198115,
       "sav": 2200670,
     },

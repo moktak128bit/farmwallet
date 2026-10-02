@@ -94,6 +94,17 @@ describe("computeUnrealizedPL", () => {
     expect(r.unrealizedLoss).toBe(390_000); // costKrw 390k − marketKrw 0
   });
 
+  it("원화 환산 시세(buildAdjustedPrices)로 만든 USD 포지션 — 원가는 totalBuyAmountKRW (달러 원가를 원화로 빼지 않는다)", () => {
+    // 대시보드는 USD 시세를 원화로 바꾼 adjustedPrices로 포지션을 만든다 → marketCurrency "KRW", marketValue 원화,
+    // totalBuyAmount는 여전히 달러. 예전엔 1,400,000 − 1,000 = +1,399,000이 이익으로 잡혔다.
+    const ps: PositionRow[] = [
+      pos({ accountId: "a2", name: "AAPL", ticker: "AAPL", quantity: 1, totalBuyAmount: 1_000, totalBuyAmountKRW: 1_350_000, marketValue: 1_400_000, marketCurrency: "KRW" }),
+    ];
+    const r = computeUnrealizedPL(ps, 1400);
+    expect(r.unrealizedGain).toBe(50_000);
+    expect(r.unrealizedLoss).toBe(0);
+  });
+
   it("시세 미로드 종목(평가 0)은 제외 — 원가 전액이 '미실현 손실'(−100%)로 잡히지 않는다", () => {
     const ps: PositionRow[] = [
       pos({ accountId: "a1", name: "신규매수", ticker: "123456", quantity: 10, totalBuyAmount: 5_000_000, marketPrice: 0, marketValue: 0, marketCurrency: "KRW" }),

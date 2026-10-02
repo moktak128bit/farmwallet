@@ -5,7 +5,7 @@
  *  - 입력 3개(월 저축·수익률·은퇴 후 연 지출)는 로컬 state. 사용자가 건드린 값만
  *    localStorage(STORAGE_KEYS.FIRE_ASSUMPTIONS)에 덮어쓰기 형태로 저장 — AppData 무변경.
  *  - TWR·선행배당은 useAppStore/FxRateContext 직접 구독(LoanPrepaySimulator.useInvestHints와 같은 패턴,
- *    InsightsPage props 시그니처 불변). 순자산은 부모(AssetTab)가 타임라인 값(d.netWorthNow)을 넘긴다.
+ *    InsightsPage props 시그니처 불변). 순자산은 부모(AssetTab)가 대차 단일 소스 값(bs.netWorth)을 넘긴다.
  *  - 색: 낙관 = --chart-income(상승 빨강), 보수 = --chart-expense(하락 파랑), 기준 = --chart-primary,
  *    FIRE 숫자 = --chart-warning 점선. recharts 전 시리즈 isAnimationActive={false}.
  */

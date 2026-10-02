@@ -258,7 +258,8 @@ export interface D {
   salaryMonthly: Record<string, number>;
   /** 월별 실질 수입(장부−정산−일시소득). 패시브 비율 추이의 분모. */
   realIncomeMonthly: Record<string, number>;
-  savRateTrend: { l: string; rate: number; cumRate: number; sav: number }[];
+  /** m = YYYY-MM (조인·필터 키), l = 표시 라벨 "N월" — 라벨로 거르면 다른 해 같은 달까지 빠진다 */
+  savRateTrend: { m: string; l: string; rate: number; cumRate: number; sav: number }[];
   salaryTrend: { l: string; salary: number; nonSalary: number }[];
   cumIE: { l: string; 누적수입: number; 누적지출: number }[];
   investTrend: { l: string; amount: number }[];
@@ -349,9 +350,8 @@ export interface D {
   discretionaryExpense: number;
 
   netWorthByMonth: { month: string; label: string; total: number; income: number; expense: number; savings: number }[];
-  /** 현재 순자산/총자산/총부채 — 대시보드 타임라인 마지막 행 (시세·환율·대출 반영). 데이터 없으면 null */
-  netWorthNow: { total: number; asset: number; debt: number } | null;
   accountBalances: { name: string; type: string; balance: number }[];
+  /** 자산 유형별 배분 — 계좌 순가치(잔액 − account.debt) 양수만, 합계 = 대차 총자산 (computeBalanceSheet와 같은 규칙) */
   assetAllocation: { name: string; value: number }[];
 
   funStats: {

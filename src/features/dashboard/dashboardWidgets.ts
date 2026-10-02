@@ -31,11 +31,11 @@ function isTaxSeasonKST(today: string): boolean {
 
 /** DashboardPage 렌더 순서와 동일 — 핵심(항상 펼침) → 자산·투자 → 이번 달 소비·현금흐름 → 배당·저축·세금 섹션 순 */
 export const DASHBOARD_WIDGETS: DashboardWidgetDef[] = [
-  // 핵심
-  { id: "summary", label: "이번 달 요약 카드 (수입·지출·재테크·수지)" },
-  { id: "dividendPortfolio", label: "배당 포트폴리오 (총 배당률·월 배당·성장)" },
+  // 핵심 — KPI 4 → 2열(전월 대비 | 배당 요약) → 투자 자산 요약
+  { id: "summary", label: "핵심 숫자 (이번 달 지출·수지·순자산·총부채)" },
   { id: "monthCompare", label: "전월·전년 대비 (지출/수입)" },
-  { id: "investmentSummary", label: "투자 자산 요약·목표" },
+  { id: "dividendPortfolio", label: "배당 포트폴리오 (첫 화면 요약 + 배당 섹션 종목표)" },
+  { id: "investmentSummary", label: "투자 자산 요약·목표 (첫 화면 요약 + 자산 섹션 목표·기록)" },
   // 자산·투자
   { id: "investmentPerformance", label: "투자 성적표 (시장 대비 — TWR·벤치마크·리스크)" },
   { id: "securitiesValueTrend", label: "증권 평가액·매입금액 추이 (일별)" },

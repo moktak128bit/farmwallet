@@ -682,6 +682,6 @@ export function sliceInsightsForMonth(base: InsightsBase, selMonth: string | nul
     realIncome, realExpense, settlementTotal, tempIncomeTotal, dateAccountSpend, datePartnerShare, moimFlow: base.moimFlow, originalAssets: base.originalAssets, originalAssetsByAcct: base.originalAssetsByAcct,
     netProfit, realSavRate, passiveIncome, expToIncRatio, dailyAvgExp, netCashFlow,
     incomeStability: base.incomeStability, investReturnRate: base.investReturnRate, subTotal, fixedExpense, variableExpense, discretionaryExpense,
-    netWorthByMonth: base.netWorthByMonth, netWorthNow: base.netWorthNow, accountBalances: base.accountBalances, assetAllocation: base.assetAllocation, funStats,
+    netWorthByMonth: base.netWorthByMonth, accountBalances: base.accountBalances, assetAllocation: base.assetAllocation, funStats,
   };
 }

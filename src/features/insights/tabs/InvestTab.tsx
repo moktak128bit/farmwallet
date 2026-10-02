@@ -1,4 +1,5 @@
 import React from "react";
+import { Info } from "lucide-react";
 import {
   BarChart, Bar, PieChart, Pie, Cell,
   XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer,
@@ -62,7 +63,7 @@ export const InvestTab = React.memo(function InvestTab({ d }: { d: D }) {
     <div>
       {/* 상단 배너 */}
       <div style={{ padding: "10px 14px", background: "var(--bg)", borderRadius: 8, marginBottom: 16, fontSize: 12, color: "var(--text-muted)", lineHeight: 1.6 }}>
-        ℹ️ 범위: <strong>{rangeLabel}</strong> ({periodLabel}) · 단위: <strong>원</strong> · 매수/매도 기준 (현재 시가 평가는 대시보드 참조) · 실현손익 KPI는 라이프타임 누적(FIFO), 청산 목록·배당은 기간 내 체결 기준
+        <Info size={13} style={{ verticalAlign: "-2px", marginRight: 4 }} aria-hidden />범위: <strong>{rangeLabel}</strong> ({periodLabel}) · 단위: <strong>원</strong> · 매수/매도 기준 (현재 시가 평가는 대시보드 참조) · 실현손익 KPI는 라이프타임 누적(FIFO), 청산 목록·배당은 기간 내 체결 기준
       </div>
 
       {/* ============ 한눈에 ============ */}

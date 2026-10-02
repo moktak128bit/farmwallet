@@ -14,7 +14,7 @@
  *   자정/월 경계를 넘겨도 stale 되지 않게 slice가 매번 계산한다.
  */
 import type { Account, LedgerEntry, StockTrade, StockPrice, CategoryPresets } from "../../types";
-import { computeAccountBalances, computePositions, positionMarketValueKRW } from "../../calculations";
+import { accountDebtOffset, computeAccountBalances, computePositions, positionMarketValueKRW } from "../../calculations";
 import { computePortfolioMetrics, computeUnrealizedPL } from "../../utils/portfolioMetrics";
 import { isInvestmentEntry, isCurrencyExchangeEntry, isInvestmentLossEntry } from "../../utils/category";
 import { classifyLedgerFlow, toKrwAmount } from "../dashboard/summaryMath";
@@ -102,7 +102,6 @@ export interface InsightsBase {
   incomeStability: number | null;
   /* 순자산/자산 */
   netWorthByMonth: D["netWorthByMonth"];
-  netWorthNow: D["netWorthNow"];
   accountBalances: D["accountBalances"];
   assetAllocation: D["assetAllocation"];
   /* 전기간 스칼라 */
@@ -218,6 +217,7 @@ export function buildInsightsBase(input: InsightsBaseInput): InsightsBase {
       const i = rf?.realIncome ?? 0, e = rf?.realExpense ?? 0;
       cumInc += i; cumExp += e;
       savRateTrend.push({
+        m,
         l: ml[m],
         rate: computeRealSavingsRate(i, e) ?? 0,
         cumRate: computeRealSavingsRate(cumInc, cumExp) ?? 0,
@@ -358,11 +358,6 @@ export function buildInsightsBase(input: InsightsBaseInput): InsightsBase {
       savings: cumSav,
     };
   });
-  // 현재 순자산/총자산/총부채 — 타임라인 슬라이스 마지막 행 (대시보드와 동일 숫자)
-  const lastTimelineRow = timelineSlice.length > 0 ? timelineSlice[timelineSlice.length - 1] : null;
-  const netWorthNow = lastTimelineRow
-    ? { total: lastTimelineRow.total, asset: lastTimelineRow.asset, debt: lastTimelineRow.debt }
-    : null;
   // 계좌별 현재 잔액 — 현금(computeAccountBalances) + USD 환산 + 보유 포지션 평가액.
   // 평가액을 빼면 증권/암호화폐 계좌가 예수금 몇 푼으로만 보여 순자산 KPI(타임라인: 시세 반영)와 모순됨
   const stockValueByAccount = new Map<string, number>();
@@ -370,23 +365,27 @@ export function buildInsightsBase(input: InsightsBaseInput): InsightsBase {
     if (p.quantity <= 1e-9) continue;
     stockValueByAccount.set(p.accountId, (stockValueByAccount.get(p.accountId) ?? 0) + positionMarketValueKRW(p, fxRate));
   }
-  const accountBalances = computeAccountBalances(accounts, allLedger, allTrades)
-    .map(row => {
-      const a = row.account;
-      const usdToKrw = a.type === "securities" || a.type === "crypto"
-        ? ((a.usdBalance ?? 0) + row.usdTransferNet) * (fxRate ?? 0)
-        : 0;
-      return { name: a.name, type: a.type || "checking", balance: row.currentBalance + usdToKrw + (stockValueByAccount.get(a.id) ?? 0) };
-    })
+  const balanceRows = computeAccountBalances(accounts, allLedger, allTrades).map(row => {
+    const a = row.account;
+    const usdToKrw = a.type === "securities" || a.type === "crypto"
+      ? ((a.usdBalance ?? 0) + row.usdTransferNet) * (fxRate ?? 0)
+      : 0;
+    return { account: a, balance: row.currentBalance + usdToKrw + (stockValueByAccount.get(a.id) ?? 0) };
+  });
+  const accountBalances = balanceRows
+    .map(({ account: a, balance }) => ({ name: a.name, type: a.type || "checking", balance }))
     .sort((a, b) => b.balance - a.balance);
-  // 자산 유형별 배분
+  // 자산 유형별 배분 — 대차(computeBalanceSheet)와 같은 규칙: 계좌 순가치(잔액 − account.debt)의 양수만 자산.
+  // 마이너스 통장·카드 부채는 부채라 빠지고, 합계 = 총자산이라 비중(HHI·현금성 비율)의 분자·분모가 같은 기준이 된다.
   const typeMap: Record<string, number> = {};
-  const typeLabels: Record<string, string> = { checking: "입출금", savings: "저축", securities: "증권", crypto: "암호화폐", credit: "신용카드", cash: "현금", loan: "대출" };
-  for (const ab of accountBalances) {
-    const label = typeLabels[ab.type] || ab.type;
-    typeMap[label] = (typeMap[label] ?? 0) + ab.balance;
+  const typeLabels: Record<string, string> = { checking: "입출금", savings: "저축", securities: "증권", crypto: "암호화폐", card: "카드 선납", other: "기타" };
+  for (const { account: a, balance } of balanceRows) {
+    const net = balance - accountDebtOffset(a);
+    if (!(net > 0)) continue;
+    const label = a.isPension ? "연금" : typeLabels[a.type] ?? a.type;
+    typeMap[label] = (typeMap[label] ?? 0) + net;
   }
-  const assetAllocation = Object.entries(typeMap).filter(([, v]) => v > 0).map(([name, value]) => ({ name, value })).sort((a, b) => b.value - a.value);
+  const assetAllocation = Object.entries(typeMap).map(([name, value]) => ({ name, value })).sort((a, b) => b.value - a.value);
 
   /* ===== 전기간 스칼라 (재미 통계·평균) ===== */
   const fullMonths = Math.max(months.length, 1);
@@ -447,7 +446,7 @@ export function buildInsightsBase(input: InsightsBaseInput): InsightsBase {
     expSubMonthly, incSubMonthly, investSubMonthly,
     portfolio, holdingsByStock, totalHoldingsCost, allClosedRecords, periodSellIds, realPL, investReturnRate, investBreakdown, stockTrends,
     originalAssets, originalAssetsByAcct, moimFlow, incomeStability,
-    netWorthByMonth, netWorthNow, accountBalances, assetAllocation,
+    netWorthByMonth, accountBalances, assetAllocation,
     avgMonthExp, mostFrugalMonth, mostSpendMonth, monthOverMonthGrowth, bestSavingsMonth, domOccurrences,
   };
 }

@@ -1,7 +1,6 @@
 import { describe, it, expect } from "vitest";
-import fs from "node:fs";
-import path from "node:path";
 import {
+  accountDebtOffset,
   computeAccountBalances,
   computeBalanceSheet,
   computeCardDebts,
@@ -10,7 +9,7 @@ import {
   positionMarketValueKRW,
 } from "../calculations";
 import { buildAdjustedPrices } from "../utils/accountTimeline";
-import type { Account, AppData, LedgerEntry, Loan } from "../types";
+import type { Account, LedgerEntry, Loan, StockPrice, StockTrade } from "../types";
 
 const acc = (over: Partial<Account> & { id: string; type: Account["type"] }): Account => ({
   name: over.id,
@@ -79,38 +78,95 @@ describe("computeBalanceSheet — 총자산·총부채·순자산 단일 소스"
     expect(m.get("선납카드")).toBe(-30_000);
     expect(m.has("농협")).toBe(false);
   });
+
+  it("카드 '현재 부채 직접 설정'이 남긴 음수 account.debt — 부호 그대로 반영해 목표값에 안착", () => {
+    // 장부 사용 50만(잔액 −50만) 카드를 명세서 부채 30만으로 맞추면 AdjustmentModal이
+    // debt = 30만 − 50만 + 0 = −20만을 저장한다. Math.abs로 부호를 버리면 70만이 됐다.
+    const cards: Account[] = [acc({ id: "보정카드", type: "card", debt: -200_000 })];
+    const cardLedger = [entry({ id: "c1", kind: "expense", amount: 500_000, fromAccountId: "보정카드" })];
+    const cardBalances = computeAccountBalances(cards, cardLedger, []);
+    expect(computeCardDebts(cardBalances).get("보정카드")).toBe(300_000);
+    const sheet = computeBalanceSheet(cardBalances, [], null, [], cardLedger);
+    expect(sheet.cardDebt).toBe(300_000);
+    expect(sheet.netWorth).toBe(-300_000);
+  });
+
+  it("카드 외 계좌의 account.debt는 크기만 — 레거시 음수 저장분도 부채로 뺀다", () => {
+    const legacy: Account[] = [acc({ id: "증권신용", type: "securities", debt: -100_000 })];
+    const legacyLedger = [entry({ id: "s1", kind: "income", amount: 400_000, toAccountId: "증권신용", category: "수입" })];
+    const sheet = computeBalanceSheet(computeAccountBalances(legacy, legacyLedger, []), [], null, [], legacyLedger);
+    expect(sheet.securities).toBe(300_000);
+  });
 });
 
-describe("computeBalanceSheet — 실데이터 정합 (backups/ 최신 파일 · 앱이 4일 보존으로 옛 백업을 지우므로 항등식만 고정)", () => {
-  const dir = "D:/05farmwallet/backups";
-  const files = fs.existsSync(dir)
-    ? fs.readdirSync(dir).flatMap((d) => {
-        const sub = path.join(dir, d);
-        return fs.statSync(sub).isDirectory() ? fs.readdirSync(sub).filter((f) => f.startsWith("backup-") && f.endsWith(".json")).map((f) => path.join(sub, f)) : [];
-      }).sort()
-    : [];
-  const latest = files[files.length - 1];
-  it.skipIf(!latest)("총자산 − 총부채 = 순자산 = computeTotalNetWorth · 묶음 합이 계좌별 순가치 합과 일치 · 자산에 음수 없음", () => {
-    const data = JSON.parse(fs.readFileSync(latest, "utf-8")) as AppData;
-    const fx = 1372;
-    const balances = computeAccountBalances(data.accounts, data.ledger, data.trades);
-    const positions = computePositions(data.trades, buildAdjustedPrices(data.prices ?? [], fx), data.accounts, { fxRate: fx, priceFallback: "cost" });
-    const bs = computeBalanceSheet(balances, positions, fx, data.loans ?? [], data.ledger);
+describe("computeBalanceSheet — 항등식 (USD·평가액·음수 debt 섞인 합성 데이터)", () => {
+  const fx = 1372;
+  const accounts: Account[] = [
+    acc({ id: "농협", type: "checking" }),
+    acc({ id: "마통", type: "checking" }),
+    acc({ id: "적금", type: "savings" }),
+    acc({ id: "카드", type: "card", debt: 100_000 }),
+    acc({ id: "보정카드", type: "card", debt: -200_000 }),
+    acc({ id: "증권", type: "securities", usdBalance: 100, debt: 50_000 }),
+    acc({ id: "연금", type: "securities", isPension: true }),
+    acc({ id: "코인", type: "crypto" }),
+  ];
+  const ledger: LedgerEntry[] = [
+    entry({ id: "1", kind: "income", amount: 3_000_000, toAccountId: "농협", category: "수입" }),
+    entry({ id: "2", kind: "expense", amount: 300_000, fromAccountId: "마통" }),
+    entry({ id: "3", kind: "income", amount: 500_000, toAccountId: "적금", category: "수입" }),
+    entry({ id: "4", kind: "expense", amount: 50_000, fromAccountId: "카드" }),
+    entry({ id: "5", kind: "expense", amount: 500_000, fromAccountId: "보정카드" }),
+    entry({ id: "6", kind: "transfer", amount: 2_000_000, fromAccountId: "농협", toAccountId: "증권", category: "이체", subCategory: "투자이체" }),
+    entry({ id: "7", kind: "transfer", amount: 300_000, fromAccountId: "농협", toAccountId: "연금", category: "이체", subCategory: "투자이체" }),
+    entry({ id: "8", kind: "transfer", amount: 400_000, fromAccountId: "농협", toAccountId: "코인", category: "이체", subCategory: "투자이체" }),
+  ];
+  const trades: StockTrade[] = [
+    { id: "T1", date: "2026-09-02", accountId: "증권", ticker: "AAPL", name: "Apple", side: "buy", quantity: 2, price: 200, fee: 0, totalAmount: 400, cashImpact: 0, fxRateAtTrade: 1300 },
+    { id: "T2", date: "2026-09-02", accountId: "증권", ticker: "379800", name: "KODEX 미국S&P500", side: "buy", quantity: 10, price: 20_000, fee: 0, totalAmount: 200_000, cashImpact: -200_000 },
+    { id: "T3", date: "2026-09-03", accountId: "연금", ticker: "379810", name: "KODEX 미국나스닥100", side: "buy", quantity: 5, price: 30_000, fee: 0, totalAmount: 150_000, cashImpact: -150_000 },
+    { id: "T4", date: "2026-09-03", accountId: "코인", ticker: "solana", name: "solana", side: "buy", quantity: 2, price: 150_000, fee: 0, totalAmount: 300_000, cashImpact: -300_000 },
+  ] as StockTrade[];
+  const prices: StockPrice[] = [
+    { ticker: "AAPL", name: "Apple", price: 250, currency: "USD", updatedAt: "2026-10-01T00:00:00.000Z" },
+    { ticker: "379800", name: "KODEX 미국S&P500", price: 23_000, currency: "KRW", updatedAt: "2026-10-01T00:00:00.000Z" },
+    { ticker: "solana", name: "solana", price: 160_000, currency: "KRW", updatedAt: "2026-10-01T00:00:00.000Z" },
+  ] as StockPrice[];
+  const loans: Loan[] = [{ id: "L", institution: "", loanName: "학자금", loanAmount: 1_000_000, annualInterestRate: 2, repaymentMethod: "equal_payment", loanDate: "2026-01-01", maturityDate: "2030-01-01" }];
+
+  const balances = computeAccountBalances(accounts, ledger, trades);
+  // 앱과 같은 경로: USD 시세를 원화로 바꾼 adjustedPrices + 시세 없는 종목은 원가 대체(379810)
+  const positions = computePositions(trades, buildAdjustedPrices(prices, fx), accounts, { fxRate: fx, priceFallback: "cost" });
+  const bs = computeBalanceSheet(balances, positions, fx, loans, ledger);
+
+  it("총자산 − 총부채 = 순자산 = computeTotalNetWorth, 묶음에 음수 없음", () => {
     expect(Math.round(bs.totalAssets - bs.totalLiabilities)).toBe(Math.round(bs.netWorth));
-    expect(Math.round(computeTotalNetWorth(balances, positions, fx, data.loans ?? [], data.ledger))).toBe(Math.round(bs.netWorth));
+    expect(Math.round(computeTotalNetWorth(balances, positions, fx, loans, ledger))).toBe(Math.round(bs.netWorth));
     for (const v of [bs.cash, bs.savings, bs.securities, bs.pension, bs.cardCredit, bs.overdraft, bs.cardDebt, bs.loanDebt]) expect(v).toBeGreaterThanOrEqual(0);
-    // 카드: 대차의 (부채 − 선납) = computeCardDebts 합
+    expect(bs.loanDebt).toBe(1_000_000);
+  });
+
+  it("카드: 대차의 (부채 − 선납) = computeCardDebts 합", () => {
     const cards = computeCardDebts(balances);
+    expect(cards.get("카드")).toBe(150_000);
+    expect(cards.get("보정카드")).toBe(300_000);
     expect(Math.round(bs.cardDebt - bs.cardCredit)).toBe(Math.round([...cards.values()].reduce((s, v) => s + v, 0)));
-    // 계좌별 순가치(현금 + USD 환산 + 평가액 − account.debt) 합 = 총자산 − (총부채 − 대출)
+  });
+
+  it("계좌별 순가치(현금 + USD 환산 + 평가액 − debt) 합 = 총자산 − (총부채 − 대출)", () => {
     const stock = new Map<string, number>();
     positions.forEach((p) => stock.set(p.accountId, (stock.get(p.accountId) ?? 0) + positionMarketValueKRW(p, fx)));
     const netByAccount = balances.reduce((s, r) => {
       const a = r.account;
       const usd = a.type === "securities" || a.type === "crypto" ? (a.usdBalance ?? 0) + (r.usdTransferNet ?? 0) : 0;
-      return s + r.currentBalance + usd * fx + (stock.get(a.id) ?? 0) - Math.abs(a.debt ?? 0);
+      return s + r.currentBalance + usd * fx + (stock.get(a.id) ?? 0) - accountDebtOffset(a);
     }, 0);
     expect(Math.round(netByAccount)).toBe(Math.round(bs.totalAssets - (bs.totalLiabilities - bs.loanDebt)));
-    expect(bs.loanDebt).toBeGreaterThan(0);
+  });
+
+  it("증권: 예수금 + USD 예수금 환산 + 평가액(AAPL 2×250×fx, 379800 10×23,000) − debt", () => {
+    const expected = (2_000_000 - 200_000) + 100 * fx + 2 * 250 * fx + 10 * 23_000 - 50_000 + (400_000 - 300_000) + 2 * 160_000;
+    expect(Math.round(bs.securities)).toBe(Math.round(expected));
+    expect(bs.pension).toBe(300_000); // 예수금 15만 + 나스닥100 원가 대체 15만
   });
 });

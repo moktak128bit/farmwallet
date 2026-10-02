@@ -537,6 +537,18 @@ export function computeLoanBalanceAt(
 }
 
 /**
+ * 계좌 순가치에서 빼는 account.debt 값 — 단일 소스 (잔액 엔진·대차·월별 타임라인 공용).
+ *  - 카드: **부호 그대로**. AdjustmentModal '현재 부채 직접 설정'이 장부 사용액과 명세서 부채의 차이를
+ *    부호 있는 보정값(target − 현재 부채 + 기존 debt)으로 저장하므로 음수가 정상이다. 크기만 쓰면
+ *    장부 50만·목표 30만(debt −20만)이 70만으로 뒤집힌다.
+ *  - 그 외 계좌: 크기만. 계좌 폼은 항상 양수로 저장하고, 레거시 음수 저장분도 부채로 뺀다.
+ */
+export function accountDebtOffset(account: Pick<Account, "type" | "debt">): number {
+  const debt = Number(account.debt ?? 0) || 0;
+  return account.type === "card" ? debt : Math.abs(debt);
+}
+
+/**
  * 카드별 "지금 갚을 돈" = 초기 부채(account.debt) − 현재 잔액. 양수=부채, 음수=선납·환불 잔액.
  * 잔액 엔진(computeAccountBalances) 하나만 본다 — 카드로 들어온 결제 이체·캐시백·카테고리 없는 레거시 결제(expense→카드)가
  * 모두 반영된다. (예전 계좌 탭은 ledger를 따로 스캔해 category=신용결제만 결제로 인식 → 카테고리 없는 결제 1건에 62만 과대.)
@@ -545,7 +557,7 @@ export function computeCardDebts(balances: AccountBalanceRowLike[]): Map<string,
   const out = new Map<string, number>();
   for (const row of balances) {
     if (row.account.type !== "card") continue;
-    out.set(row.account.id, Math.abs(row.account.debt ?? 0) - row.currentBalance);
+    out.set(row.account.id, accountDebtOffset(row.account) - row.currentBalance);
   }
   return out;
 }
@@ -574,6 +586,12 @@ export interface BalanceSheet {
   netWorth: number;
   /** 유동 자산 = 총자산 − 연금 (55세까지 묶인 돈 제외) — 재정 활주로용 */
   liquidAssets: number;
+  /**
+   * 총자산 중 보유 종목 평가액 몫 (증권·코인·연금). 계좌마다 min(평가액, 순가치) — 예수금이 마이너스여도
+   * 계좌 순가치를 넘지 않게 해서, 총자산을 "평가액 + 나머지 현금성"으로 나눌 때 두 몫이 모두 0 이상이고
+   * 합이 총자산과 정확히 맞는다(일별 리포트 주식/현금/저축 분해용).
+   */
+  investedValue: number;
 }
 
 /**
@@ -595,13 +613,14 @@ export function computeBalanceSheet(
   positions.forEach((p) => {
     stockMap.set(p.accountId, (stockMap.get(p.accountId) ?? 0) + positionMarketValueKRW(p, fxRate));
   });
-  let cash = 0, savings = 0, securities = 0, pension = 0, cardCredit = 0, overdraft = 0, cardDebt = 0;
+  let cash = 0, savings = 0, securities = 0, pension = 0, cardCredit = 0, overdraft = 0, cardDebt = 0, investedValue = 0;
   for (const row of balances) {
     const a = row.account;
     const isSec = a.type === "securities" || a.type === "crypto";
     const usdCash = isSec ? (a.usdBalance ?? 0) + (row.usdTransferNet ?? 0) : 0;
     const usdToKrw = fxRate && usdCash !== 0 ? usdCash * fxRate : 0;
-    const value = row.currentBalance + usdToKrw + (stockMap.get(a.id) ?? 0) - Math.abs(a.debt ?? 0);
+    const stock = stockMap.get(a.id) ?? 0;
+    const value = row.currentBalance + usdToKrw + stock - accountDebtOffset(a);
     if (a.type === "card") {
       if (value >= 0) cardCredit += value;
       else cardDebt -= value;
@@ -611,6 +630,7 @@ export function computeBalanceSheet(
       overdraft -= value;
       continue;
     }
+    if (stock > 0 && a.type !== "savings") investedValue += Math.min(stock, value); // 저축 계좌 보유분은 저축 몫에 그대로
     if (a.isPension) pension += value;
     else if (isSec) securities += value;
     else if (a.type === "savings") savings += value;
@@ -624,6 +644,7 @@ export function computeBalanceSheet(
     overdraft, cardDebt, loanDebt, totalLiabilities,
     netWorth: totalAssets - totalLiabilities,
     liquidAssets: totalAssets - pension,
+    investedValue,
   };
 }
 

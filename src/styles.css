@@ -388,47 +388,6 @@ a:hover {
   color: var(--primary-text);
 }
 
-/* 계좌 유형별 요약(현금·저축·부채·주식·순자산) */
-.type-summary-grid {
-  display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
-  gap: 16px 24px;
-  align-items: center;
-}
-.type-summary-grid > div {
-  display: flex;
-  flex-direction: column;
-  gap: 4px;
-  min-width: 0;
-}
-.type-summary-total {
-  padding-left: 24px;
-  border-left: 2px solid var(--border);
-}
-
-@media (max-width: 768px) {
-  /* 좁은 화면에선 칸이 155px 남짓이라 18~20px 볼드 금액의 "원"이 다음 줄로 떨어졌다. */
-  .type-summary-grid {
-    grid-template-columns: 1fr 1fr;
-    gap: 12px 16px;
-  }
-  .type-summary-grid span:last-child,
-  .type-summary-grid > div > span:nth-child(2) {
-    white-space: nowrap;
-  }
-  .type-summary-grid > div > span:nth-child(2) {
-    font-size: 16px;
-  }
-  /* 세로로 쌓이면 왼쪽 구분선은 의미가 없다 — 위쪽 선으로 바꿔 '합계' 성격을 유지 */
-  .type-summary-total {
-    grid-column: 1 / -1;
-    padding-left: 0;
-    padding-top: 10px;
-    border-left: none;
-    border-top: 1px solid var(--border);
-  }
-}
-
 /* 대차 한 줄(총자산·총부채·순자산) — 계좌·대시보드·인사이트·부채 탭 공용. 세 숫자는 항상 같은 순서로 */
 .balance-sheet { display: grid; gap: 6px; padding: 14px 18px; }
 .bs-row {

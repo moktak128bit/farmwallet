@@ -1,4 +1,5 @@
 import React from "react";
+import { Info } from "lucide-react";
 import {
   BarChart, Bar, Line, PieChart, Pie, Cell,
   XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer,
@@ -100,7 +101,8 @@ export const DateTab = React.memo(function DateTab({ d }: { d: D }) {
   const maxMonth = allMonthData.reduce((max, m) => (m.금액 > max.금액 ? m : max), allMonthData[0] || { name: "", 금액: 0 });
   const minMonth = allMonthData.filter((m) => m.금액 > 0).reduce((min, m) => (m.금액 < min.금액 ? m : min), allMonthData.find((m) => m.금액 > 0) || { name: "", 금액: 0 });
 
-  const noData = d.dateTxCount === 0;
+  // 부모(InsightsPage)가 데이트 기록이 있을 때만 그린다 — 방어적으로 빈 데이터면 아무것도 그리지 않는다
+  if (d.dateTxCount === 0) return null;
   const periodLabel = d.selMonth
     ? d.selMonth
     : (d.months.length > 0 ? `${d.months[0]} ~ ${d.months[d.months.length - 1]}` : "-");
@@ -110,20 +112,10 @@ export const DateTab = React.memo(function DateTab({ d }: { d: D }) {
     <div>
       {/* 상단 배너 */}
       <div style={{ padding: "10px 14px", background: "var(--bg)", borderRadius: 8, marginBottom: 16, fontSize: 12, color: "var(--text-muted)", lineHeight: 1.6 }}>
-        ℹ️ 범위: <strong>{rangeLabel}</strong> ({periodLabel}) · 단위: <strong>원</strong> · 감지 조건: 대분류/중분류에 <strong>"데이트"</strong> 포함 · 모임통장: 계좌명에 "모임" 포함
+        <Info size={13} style={{ verticalAlign: "-2px", marginRight: 4 }} aria-hidden />범위: <strong>{rangeLabel}</strong> ({periodLabel}) · 단위: <strong>원</strong> · 감지 조건: 대분류/중분류에 <strong>"데이트"</strong> 포함 · 모임통장: 계좌명에 "모임" 포함
       </div>
 
-      {noData ? (
-        <div className="card" style={{ textAlign: "center", padding: "60px 20px", color: "var(--text-faint)", borderRadius: 12 }}>
-          <div style={{ fontSize: 48, marginBottom: 16 }}>💕</div>
-          <div style={{ fontSize: 17, fontWeight: 700, marginBottom: 8 }}>데이트 지출 데이터가 없습니다</div>
-          <div style={{ fontSize: 13, lineHeight: 1.8 }}>
-            가계부에서 <b>대분류</b> 또는 <b>중분류</b>에 "데이트"가 포함된 항목을 자동 감지합니다.<br />
-            예: category="데이트비" / subCategory="데이트비" 등
-          </div>
-        </div>
-      ) : (
-        <>
+      <>
           {/* ============ 한눈에 ============ */}
           <Section storageKey="date-section-overview" title="한눈에 보기">
             <Card accent><Kpi label="총 데이트 지출" value={F(total) + "원"} sub={`${d.dateTxCount}건 · 내 부담 ~${F(Math.round(total / 2))}원 (50%)`} color="var(--chart-expense)" info="데이트 관련 모든 지출 합계. 50/50 분담이므로 실 부담은 절반" /></Card>
@@ -392,8 +384,7 @@ export const DateTab = React.memo(function DateTab({ d }: { d: D }) {
               </div>
             </Card>
           </Section>
-        </>
-      )}
+      </>
     </div>
   );
 });

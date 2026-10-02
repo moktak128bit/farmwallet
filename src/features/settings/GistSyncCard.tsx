@@ -7,7 +7,7 @@
  * 카드 자체 fetch로 충돌 감지·lastPushAt/lastPullAt 갱신을 우회하지 않는다.
  * React.memo로 감싸므로 부모가 넘기는 콜백은 참조가 안정적이어야 한다.
  */
-import React, { useState } from "react";
+import React, { useEffect, useState } from "react";
 import { toast } from "react-hot-toast";
 import {
   getGistToken,
@@ -16,7 +16,10 @@ import {
   setGistTokenPersisted as gistSetTokenPersisted,
   getGistId,
   setGistId as gistSetId,
+  GIST_CONFIG_CHANGE_EVENT,
 } from "../../services/gistSync";
+import { DeviceConnectModal } from "../../components/DeviceConnectModal";
+import { ConnectLinkPasteField } from "./ConnectLinkPasteField";
 
 interface Props {
   /** 자동 Gist 동기화 ON/OFF */
@@ -44,6 +47,18 @@ export const GistSyncCard: React.FC<Props> = React.memo(function GistSyncCard({
   const [gistId, setGistIdState] = useState(() => getGistId());
   const [gistSyncing, setGistSyncing] = useState(false);
   const [gistLastSync, setGistLastSync] = useState<string | null>(null);
+  const [connectOpen, setConnectOpen] = useState(false);
+
+  // 기기 연결 등으로 토큰·Gist ID가 바뀌면 로컬 state 재독
+  useEffect(() => {
+    const reread = () => {
+      setGistToken(getGistToken());
+      setGistTokenPersist(getGistTokenPersisted());
+      setGistIdState(getGistId());
+    };
+    window.addEventListener(GIST_CONFIG_CHANGE_EVENT, reread);
+    return () => window.removeEventListener(GIST_CONFIG_CHANGE_EVENT, reread);
+  }, []);
 
   return (
     <div className="card">
@@ -95,6 +110,18 @@ export const GistSyncCard: React.FC<Props> = React.memo(function GistSyncCard({
           readOnly={false}
         />
       </label>
+      <div style={{ marginBottom: 12, borderTop: "1px solid var(--border)", paddingTop: 12 }}>
+        <div className="card-title" style={{ fontSize: 13, marginBottom: 6 }}>다른 기기 연결</div>
+        <p className="hint" style={{ marginBottom: 8 }}>
+          폰·다른 PC를 이 Gist에 연결합니다. QR을 찍거나 링크를 붙여넣으면 토큰·Gist ID가 자동으로 들어가요.
+        </p>
+        <div style={{ marginBottom: 8 }}>
+          <button type="button" className="secondary" disabled={!gistToken || !gistId} onClick={() => setConnectOpen(true)}>
+            연결 QR 보기
+          </button>
+        </div>
+        <ConnectLinkPasteField />
+      </div>
       <div style={{ display: "flex", flexDirection: "column", gap: 12, marginTop: 12 }}>
         <div>
           <div style={{ fontSize: 12, fontWeight: 700, color: "var(--chart-income)", marginBottom: 6 }}>Gist에 저장 (안전 — 현재 데이터를 백업)</div>
@@ -152,6 +179,7 @@ export const GistSyncCard: React.FC<Props> = React.memo(function GistSyncCard({
           </button>
         </div>
       </div>
+      <DeviceConnectModal isOpen={connectOpen} onClose={() => setConnectOpen(false)} />
       {gistLastSync && (
         <p className="hint" style={{ marginTop: 8 }}>
           마지막 동기화: {new Date(gistLastSync).toLocaleString("ko-KR")}

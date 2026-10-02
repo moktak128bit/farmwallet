@@ -2818,3 +2818,14 @@ label {
     outline-offset: 2px;
   }
 }
+
+/* 기기 연결 QR — 다크모드에서도 같은 값(스캔 대비) */
+.qr-code {
+  --qr-bg: #ffffff;
+  --qr-fg: #000000;
+  background: var(--qr-bg);
+  border-radius: var(--radius-md);
+}
+.qr-code path {
+  fill: var(--qr-fg);
+}

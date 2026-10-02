@@ -6,6 +6,7 @@ import { STORAGE_KEYS } from "../constants/config";
 import { TAB_ORDER } from "../constants/tabs";
 import type { ApplySummary } from "../utils/applySummary";
 import { setAmountMask } from "../utils/formatter";
+import type { ConnectPayload } from "../services/deviceConnect";
 
 interface AppLogEntry {
   id: number;
@@ -197,6 +198,9 @@ interface UIStore {
   // Gist 충돌
   gistConflict: GistConflict | null;
   setGistConflict: (conflict: GistConflict | null) => void;
+  /** 기기 연결 링크로 받은 토큰·Gist ID — 확인 모달이 소비 */
+  pendingConnect: ConnectPayload | null;
+  setPendingConnect: (p: ConnectPayload | null) => void;
 
   // 자동저장 상태 표시기
   saveStatus: SaveStatus;
@@ -283,6 +287,8 @@ export const useUIStore = create<UIStore>((set) => ({
 
   gistConflict: null,
   setGistConflict: (gistConflict) => set({ gistConflict }),
+  pendingConnect: null,
+  setPendingConnect: (pendingConnect) => set({ pendingConnect }),
 
   saveStatus: "idle",
   saveStatusError: null,

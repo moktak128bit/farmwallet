@@ -1,8 +1,9 @@
 // @vitest-environment jsdom
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 import { renderHook, act } from "@testing-library/react";
+import { StrictMode } from "react";
 import { toast } from "react-hot-toast";
-import { useGistSync, checkRemoteChanged, isTimeSeriesOnlyDiff } from "../hooks/useGistSync";
+import { useGistSync, checkRemoteChanged, isTimeSeriesOnlyDiff, hasUnsyncedLocalData } from "../hooks/useGistSync";
 import * as gistSync from "../services/gistSync";
 import { hashGistPayload } from "../services/gistSync";
 import { GIST_AUTO_PUSH_DEBOUNCE_MS, GIST_REMOTE_CHECK_THROTTLE_MS } from "../constants/config";
@@ -1444,17 +1445,47 @@ describe("useGistSync — connectDevice", () => {
       expect(window.localStorage.getItem("fw-gist-last-push-hash")).toBe(MARKER_B);
     });
 
-    it("같은 Gist로 다시 연결하다 취소하면 기존 동기화 기준점을 유지", async () => {
-      const { result } = await mountSyncedToOld();
+    it("S6 같은 Gist 재연결('연결 끊김' 복구): 미리보기 교체 없이 토큰만 저장·자동 동기화 유지, 끊긴 동안 편집은 충돌 확인으로", async () => {
+      // 토큰이 사라진 채 부팅(연결 끊김) — 이 기기는 올리기만 했고(pull 기록 없음) 마지막 push는 makeData(1)
+      window.localStorage.setItem("fw-gist-id", OLD_ID);
+      window.localStorage.setItem("fw-gist-last-push-hash", hashGistPayload(toUserDataJson(makeData(1))));
+      mocked.getGistAutoSync.mockReturnValue(true);
+      stamps.push = "2026-10-02T00:00:00Z";
+      const onApply = vi.fn();
+      const { result, rerender } = renderHook(({ d }: { d: AppData }) => useGistSync(d, onApply), {
+        initialProps: { d: makeData(1) },
+      });
+      await act(async () => { await flush(); });
+      // 끊긴 동안 로컬 편집 + 다른 기기가 원격을 바꿈
+      rerender({ d: makeData(2) });
+      await act(async () => { await flush(); });
+      expect(mocked.saveToGistWithRetry).not.toHaveBeenCalled();
       const hashBefore = window.localStorage.getItem("fw-gist-last-push-hash");
-      const pullBefore = stamps.pull;
-      const pushBefore = stamps.push;
-      expect(pushBefore).not.toBe("");
 
-      await connectAndCancel(result, { ...P, gistId: OLD_ID });
+      let promise!: Promise<string>;
+      await act(async () => {
+        promise = result.current.connectDevice({ ...P, gistId: OLD_ID });
+        await flushMicro();
+      });
+      expect(useUIStore.getState().pendingApply).toBeNull();
+      await expect(promise).resolves.toBe("connected");
+      expect(mocked.loadFromGist).not.toHaveBeenCalled();
+      expect(onApply).not.toHaveBeenCalled();
+      expect(window.localStorage.getItem("fw-gist-token")).toBe(P.token);
+      expect(mocked.setGistAutoSync).not.toHaveBeenCalled();
+      expect(result.current.autoSyncEnabled).toBe(true);
       expect(window.localStorage.getItem("fw-gist-last-push-hash")).toBe(hashBefore);
-      expect(stamps.pull).toBe(pullBefore);
-      expect(stamps.push).toBe(pushBefore);
+      expect(stamps.push).toBe("2026-10-02T00:00:00Z");
+
+      // 끊긴 동안의 편집은 업로드 전에 원격과 내용 비교 → 다른 기기 변경이 있으니 덮지 않고 충돌 모달
+      await act(async () => {
+        Object.defineProperty(document, "visibilityState", { configurable: true, get: () => "hidden" });
+        document.dispatchEvent(new Event("visibilitychange"));
+        await flushMicro();
+      });
+      expect(mocked.saveToGistWithRetry).not.toHaveBeenCalled();
+      expect(useUIStore.getState().gistConflict?.remoteDataJson).toBe(REMOTE);
+      expect(useUIStore.getState().gistConflict?.pendingLocalDataJson).toBe(toUserDataJson(makeData(2)));
     });
 
     describe("표식이 갇히지 않음 — 덮어쓸 데이터가 없거나 Gist가 바뀌면 업로드", () => {
@@ -1606,6 +1637,16 @@ describe("loadFromGist — 덮어쓸 원격 데이터 없음 신호", () => {
     expect((err as Error).message).toBe("Gist에 FarmWallet 데이터가 없습니다.");
   });
 
+  it("본문을 못 읽은 200(비JSON·빈 객체)은 '원격 없음'이 아니라 일반 오류 — 미동기 표식 상태에서 덮어쓰기 방지", async () => {
+    const { load, NoData } = await actualLoad();
+    for (const body of ["<html>garbage", "{}"]) {
+      vi.stubGlobal("fetch", vi.fn().mockResolvedValue(new Response(body, { status: 200 })));
+      const err = await load().catch((e: unknown) => e);
+      expect(err).toBeInstanceOf(Error);
+      expect(err).not.toBeInstanceOf(NoData);
+    }
+  });
+
   it("그 밖의 실패(401·ID 없음)는 일반 오류", async () => {
     vi.stubGlobal("fetch", vi.fn().mockResolvedValue(new Response("bad", { status: 401 })));
     const { load, NoData } = await actualLoad();
@@ -1617,5 +1658,122 @@ describe("loadFromGist — 덮어쓸 원격 데이터 없음 신호", () => {
     const noIdErr = await load().catch((e: unknown) => e);
     expect(noIdErr).not.toBeInstanceOf(NoData);
     expect((noIdErr as Error).message).toBe("Gist ID가 설정되지 않았습니다. 먼저 저장을 해주세요.");
+  });
+});
+
+describe("useGistSync — 원격을 반영하지 못한 부팅·로드 실패 중 동기화 (데이터 유실 회귀)", () => {
+  /** 다른 기기가 올린 원격 — 이 기기의 마지막 push(makeData(1))와 다르다 */
+  const REMOTE_JSON = toUserDataJson(makeData(5));
+  const REMOTE_V = { sha: "r", committedAt: "2026-04-20T01:00:00Z", url: "u" };
+  const flushMicro = async () => {
+    for (let i = 0; i < 20; i++) await Promise.resolve();
+  };
+
+  beforeEach(() => {
+    vi.useFakeTimers();
+    vi.clearAllMocks();
+    window.localStorage.clear();
+    useUIStore.getState().setGistConflict(null);
+    useUIStore.getState().setPendingApply(null);
+    mocked.getGistAutoSync.mockReturnValue(true);
+    mocked.getGistToken.mockReturnValue("test-token");
+    mocked.getGistId.mockReturnValue("test-gist-id");
+    mocked.getGistLastPushAt.mockReturnValue("");
+    mocked.getGistLastPullAt.mockReturnValue("2026-04-19T00:00:00Z");
+    mocked.getGistVersions.mockResolvedValue([REMOTE_V]);
+    mocked.loadFromGist.mockResolvedValue({ dataJson: REMOTE_JSON, updatedAt: REMOTE_V.committedAt });
+    mocked.saveToGistWithRetry.mockResolvedValue({ gistId: "test-gist-id", updatedAt: "2026-04-20T02:00:00Z", committedAt: "2026-04-20T02:00:00Z" });
+    // 이 기기는 makeData(1)을 마지막으로 올렸고 로컬도 그대로(dirty 아님)
+    window.localStorage.setItem("fw-gist-last-push-hash", hashGistPayload(toUserDataJson(makeData(1))));
+    Object.defineProperty(document, "visibilityState", { configurable: true, get: () => "visible" });
+  });
+
+  afterEach(() => {
+    vi.useRealTimers();
+    useUIStore.getState().setGistConflict(null);
+    useUIStore.getState().setPendingApply(null);
+  });
+
+  it("S1 StrictMode 이중 실행: 첫 실행이 정리돼도 부팅 불러오기가 원격을 적용한다", async () => {
+    const onApply = vi.fn();
+    renderHook(() => useGistSync(makeData(1), onApply), { wrapper: StrictMode });
+    await act(async () => { await flushMicro(); });
+    expect(onApply).toHaveBeenCalledTimes(1);
+    expect(onApply).toHaveBeenCalledWith(REMOTE_JSON, REMOTE_V.committedAt);
+  });
+
+  it("S1 부팅 불러오기 실패(타임아웃): 다음 자동 업로드가 다른 기기 변경을 충돌 확인 없이 덮지 않는다", async () => {
+    mocked.loadFromGist.mockRejectedValueOnce(new Error("요청 시간 초과"));
+    const onApply = vi.fn();
+    renderHook(() => useGistSync(makeData(1), onApply));
+    await act(async () => { await flushMicro(); });
+    expect(mocked.loadFromGist).toHaveBeenCalledTimes(1);
+    expect(onApply).not.toHaveBeenCalled();
+
+    await act(async () => { await vi.advanceTimersByTimeAsync(GIST_AUTO_PUSH_DEBOUNCE_MS + 1000); });
+    expect(mocked.saveToGistWithRetry).not.toHaveBeenCalled();
+    expect(useUIStore.getState().gistConflict?.remoteDataJson).toBe(REMOTE_JSON);
+  });
+
+  it("S1 로컬 시계가 빨라 '우리 push'로 보인 원격(pull 기록 없음): known·lastPullAt을 올리지 않고 업로드 전 내용 비교", async () => {
+    mocked.getGistLastPullAt.mockReturnValue(""); // Gist를 만든 PC — 올리기만 했다
+    mocked.getGistLastPushAt.mockReturnValue("2026-04-20T05:00:00Z"); // 로컬 시계가 빨라 원격 commit(01:00)보다 늦게 찍힘
+    renderHook(() => useGistSync(makeData(1), vi.fn()));
+    await act(async () => { await flushMicro(); });
+    expect(mocked.loadFromGist).not.toHaveBeenCalled();
+    expect(mocked.setGistLastPullAt).not.toHaveBeenCalled();
+
+    await act(async () => { await vi.advanceTimersByTimeAsync(GIST_AUTO_PUSH_DEBOUNCE_MS + 1000); });
+    expect(mocked.saveToGistWithRetry).not.toHaveBeenCalled();
+    expect(useUIStore.getState().gistConflict?.remoteDataJson).toBe(REMOTE_JSON);
+  });
+
+  it("S1 같은 상황에서 원격이 실제로 우리 마지막 push면 내용 비교 후 그대로 업로드 (가짜 충돌 없음)", async () => {
+    mocked.getGistLastPullAt.mockReturnValue("");
+    mocked.getGistLastPushAt.mockReturnValue("2026-04-20T05:00:00Z");
+    mocked.loadFromGist.mockResolvedValue({ dataJson: toUserDataJson(makeData(1)), updatedAt: REMOTE_V.committedAt });
+    renderHook(() => useGistSync(makeData(2), vi.fn()));
+    await act(async () => { await flushMicro(); });
+    await act(async () => { await vi.advanceTimersByTimeAsync(GIST_AUTO_PUSH_DEBOUNCE_MS + 1000); });
+    expect(useUIStore.getState().gistConflict).toBeNull();
+    expect(mocked.saveToGistWithRetry).toHaveBeenCalledTimes(1);
+    expect(mocked.saveToGistWithRetry.mock.calls[0][0]).toBe(toUserDataJson(makeData(2)));
+  });
+
+  it("S2 disabled(로드 실패·로딩 중): 부팅 불러오기·자동 업로드·복귀 확인·수동 저장/불러오기 모두 안 함, 풀리면 부팅 불러오기", async () => {
+    const onApply = vi.fn();
+    const { result, rerender } = renderHook(
+      ({ disabled }: { disabled: boolean }) => useGistSync(getEmptyData(), onApply, { disabled }),
+      { initialProps: { disabled: true } }
+    );
+    await act(async () => { await flushMicro(); });
+    await act(async () => { await vi.advanceTimersByTimeAsync(GIST_AUTO_PUSH_DEBOUNCE_MS + GIST_REMOTE_CHECK_THROTTLE_MS + 1000); });
+    await act(async () => {
+      document.dispatchEvent(new Event("visibilitychange"));
+      window.dispatchEvent(new Event("online"));
+      await flushMicro();
+    });
+    await act(async () => {
+      await result.current.manualPush();
+      await result.current.manualPull();
+    });
+    expect(mocked.getGistVersions).not.toHaveBeenCalled();
+    expect(mocked.loadFromGist).not.toHaveBeenCalled();
+    expect(mocked.saveToGistWithRetry).not.toHaveBeenCalled();
+    expect(onApply).not.toHaveBeenCalled();
+
+    rerender({ disabled: false });
+    await act(async () => { await flushMicro(); });
+    expect(mocked.getGistVersions).toHaveBeenCalledTimes(1);
+    expect(mocked.loadFromGist).toHaveBeenCalledTimes(1);
+  });
+
+  it("S5 hasUnsyncedLocalData: 마지막 동기화 내용·받을 내용과 같으면 false(스냅샷 생략), 미동기화 편집이나 기록 없음은 true", () => {
+    const synced = toUserDataJson(makeData(1));
+    expect(hasUnsyncedLocalData(synced, REMOTE_JSON)).toBe(false);
+    expect(hasUnsyncedLocalData(REMOTE_JSON, REMOTE_JSON)).toBe(false);
+    expect(hasUnsyncedLocalData(toUserDataJson(makeData(2)), REMOTE_JSON)).toBe(true);
+    window.localStorage.removeItem("fw-gist-last-push-hash"); // 구버전 상태 — 판단 불가
+    expect(hasUnsyncedLocalData(synced, REMOTE_JSON)).toBe(true);
   });
 });

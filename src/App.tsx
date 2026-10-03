@@ -74,7 +74,7 @@ import { SyncActionBar } from "./components/SyncActionBar";
 import { runIntegrityCheck } from "./utils/dataIntegrity";
 import { upsertDailyCloses } from "./utils/dailyCloses";
 import { getTodayKST, formatTimeAgo } from "./utils/date";
-import { useGistSync } from "./hooks/useGistSync";
+import { useGistSync, hasUnsyncedLocalData } from "./hooks/useGistSync";
 import { useMarketEnvSnapshotRecorder } from "./hooks/useMarketEnvSnapshotRecorder";
 import { useDailyFxRecorder } from "./hooks/useDailyFxRecorder";
 import { useFxBackfill } from "./hooks/useFxBackfill";
@@ -268,7 +268,7 @@ export const App: React.FC = () => {
 
   // Zustand store 사용
   const { data, setData, isLoading, loadFailed, clearLoadFailed } = useAppData();
-  const { setDataWithHistory, handleUndo, handleRedo } = useUndoRedo(data, setData);
+  const { setDataWithHistory, handleUndo, handleRedo, clearHistory } = useUndoRedo(data, setData);
   const { theme, toggleTheme } = useTheme();
 
   const fxRate = useFxRateValue();
@@ -315,22 +315,29 @@ export const App: React.FC = () => {
       const parsed = JSON.parse(dataJson) as unknown;
       const normalized = normalizeImportedData(parsed); // 검증 실패 시 throw
       const current = useAppStore.getState().data;
-      // 덮어쓰기 직전 현재 데이터 안전 스냅샷 (best-effort — 실패해도 진행)
-      void saveSafetySnapshot(current, "Gist 불러오기 직전 자동 스냅샷");
-      // Gist에는 API 캐시가 없음 — 현재 메모리의 캐시 유지
-      setDataWithHistory(mergeCurrentCaches(normalized, current));
+      // 덮어쓰기 직전 현재 데이터 안전 스냅샷 (best-effort — 실패해도 진행).
+      // 잃을 것이 없으면(받을 내용·마지막 동기화 내용과 같음 = Gist 이력에 있음) 생략 — 주기 확인으로 받을 때마다 쌓이면
+      // 보존 한도(라벨 최근 3개)에서 사용자 작업 직전 스냅샷(JSON 가져오기 등)이 밀려난다.
+      if (hasUnsyncedLocalData(toUserDataJson(current), dataJson)) {
+        void saveSafetySnapshot(current, "Gist 불러오기 직전 자동 스냅샷");
+      }
+      // Gist에는 API 캐시가 없음 — 현재 메모리의 캐시 유지.
+      // undo 기록에 남기지 않고 비운다 — 되돌리기가 받기 이전 상태를 되살리면 그대로 업로드돼 다른 기기 변경이 사라진다.
+      setData(mergeCurrentCaches(normalized, current));
+      clearHistory();
       addAppLog("Gist에서 데이터 불러오기 완료", "success");
     } catch (err) {
       const msg = err instanceof Error ? err.message : String(err);
       addAppLog(`Gist 데이터 검증 실패 — 적용하지 않음: ${msg}`, "error");
       toast.error(`Gist 데이터가 올바르지 않아 적용하지 않았습니다: ${msg}`);
     }
-  }, [setDataWithHistory, addAppLog]);
+  }, [setData, clearHistory, addAppLog]);
 
   const { autoSyncEnabled, setAutoSyncEnabled, lastPushAt: gistLastPushAt, lastPullAt: gistLastPullAt, resolveGistConflict, gistStaleWarning, manualPush: gistManualPush, manualPull: gistManualPull, syncStateAfterRestore, syncHealth, connectDevice } = useGistSync(
     data,
     handleGistPulledData,
-    { onLog: addAppLog, remotePollMs: GIST_REMOTE_POLL_MS }
+    // 로드 실패(메모리는 빈 데이터)·로딩 중엔 동기화 전체 중단 — useBackup의 disabled와 같은 이유 + 빈 데이터 업로드가 전 기기로 번짐
+    { onLog: addAppLog, remotePollMs: GIST_REMOTE_POLL_MS, disabled: loadFailed || isLoading }
   );
 
   // 동기화 건강 상태 — gistConfigured는 Gist 설정 변경 이벤트로 바뀌므로 토큰·ID 재조회 트리거로 쓴다

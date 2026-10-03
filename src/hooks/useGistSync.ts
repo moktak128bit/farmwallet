@@ -67,6 +67,21 @@ function isNeverSyncedWithCurrentGist(): boolean {
 }
 
 /**
+ * '반영한 원격 없음' known 기준 — 어떤 commit보다 이르므로 업로드·복귀 확인이 시각 비교로 통과하지 않고
+ * 원격 내용 비교(우리 마지막 push와 같으면 가짜 충돌로 걸러짐)부터 한다. 빈 known은 '판단 불가 → 통과'라 쓸 수 없다.
+ */
+const NOTHING_ACCOUNTED_AT = new Date(0).toISOString();
+
+/**
+ * Gist 데이터로 덮기 직전 로컬에 잃을 것이 있는지 — 받을 내용과 같거나 마지막 동기화(push/pull) 내용과 같으면
+ * (Gist 버전 이력에 이미 있음) false. 해시 기록이 없으면(구버전 상태) 판단 불가 → true.
+ * 용도: 주기 확인으로 받을 때마다 안전 스냅샷이 쌓여 보존 한도(라벨 최근 3개)에서 사용자 작업 직전 스냅샷을 밀어내지 않게.
+ */
+export function hasUnsyncedLocalData(localJson: string, incomingJson: string): boolean {
+  return localJson !== incomingJson && hashGistPayload(localJson) !== getGistLastPushedHash();
+}
+
+/**
  * 앱 복귀 시 "원격(다른 기기)이 우리가 아는 시점 이후에 바뀌었는가" 순수 판정.
  * - known이 비어 있으면(부팅 때 토큰이 없어 원격 시점을 한 번도 못 봤음) 판단 불가 → false(보수적).
  * - 원격 버전이 없거나 시각 파싱 실패 → false.
@@ -115,6 +130,11 @@ interface UseGistSyncOptions {
   onLog?: (message: string, type?: "success" | "error" | "info") => void;
   /** 주어지면 탭이 표시 중일 때 이 간격(ms)마다 원격 변경을 확인(checkRemoteOnResume 재사용) */
   remotePollMs?: number;
+  /**
+   * true면 어떤 동기화도 하지 않는다(부팅 불러오기·자동 업로드·복귀 확인·수동 저장/불러오기) — 로드 실패(메모리는 빈 데이터)·
+   * 로딩 중에 빈 데이터를 올리면 다른 기기가 주기 확인으로 그대로 받아 전 기기가 비워진다. 풀리면 부팅 불러오기부터.
+   */
+  disabled?: boolean;
 }
 
 export type GistConflictResolution = "apply-remote" | "force-push-local" | "cancel";
@@ -171,7 +191,7 @@ export function useGistSync(
   onApplyPulledData: (dataJson: string, remoteUpdatedAt: string) => void,
   options?: UseGistSyncOptions
 ): UseGistSyncReturn {
-  const { onLog, remotePollMs } = options ?? {};
+  const { onLog, remotePollMs, disabled = false } = options ?? {};
 
   const [autoSyncEnabled, setAutoSyncEnabledState] = useState(() => getGistAutoSync());
   const [lastPushAt, setLastPushAt] = useState<string | null>(() => getGistLastPushAt() || null);
@@ -227,12 +247,23 @@ export function useGistSync(
   /** runAutoPush가 항상 최신 data를 직렬화하도록 — 디바운스 타이머 + visibility flush 양쪽이 공유 */
   const dataRef = useRef(data);
   dataRef.current = data;
+  /** 대기 중이던 타이머·비동기 작업도 최신 disabled를 보도록 */
+  const disabledRef = useRef(disabled);
+  disabledRef.current = disabled;
+  /**
+   * Effect 1 전용 최신 콜백 — 의존성에서 빼 둔다. 미완료 정리 시 재시도(hasMountedRef 리셋)를 하므로
+   * 매 렌더 새로 만들어지는 콜백이 의존성에 있으면 setIsSyncing 리렌더마다 불러오기가 다시 시작된다.
+   */
+  const onApplyRef = useRef(onApplyPulledData);
+  onApplyRef.current = onApplyPulledData;
+  const onLogRef = useRef(onLog);
+  onLogRef.current = onLog;
 
   // Effect 1: 시작 시 자동 불러오기 (자동 동기화 ON 일 때만)
   // - Gist의 마지막 commit 시각이 로컬 lastPullAt 보다 최신이면 자동으로 불러옴
   // - 첫 활성화 시 강제로 풀 백업이 만들어진 뒤 동기화 (loadFromGist 응답을 그대로 적용 콜백에 전달)
   useEffect(() => {
-    if (!autoSyncEnabled) return;
+    if (!autoSyncEnabled || disabled) return;
     if (hasMountedRef.current) return;
     // 토큰 검사보다 먼저 마운트 플래그를 세운다 — 부팅 시 토큰이 없었다가
     // 나중에 입력해도 Effect 2(자동 push)가 영구 비활성되지 않도록.
@@ -240,6 +271,7 @@ export function useGistSync(
     if (!getGistToken() || !getGistId()) return;
 
     let cancelled = false;
+    let settled = false;
     // 대기 중에 기기 연결이 자격증명을 바꾸면 이 pull은 옛 Gist 기준 — 결과를 쓰지 않고 버린다
     const connectGen = connectGenRef.current;
     (async () => {
@@ -247,8 +279,7 @@ export function useGistSync(
         setIsSyncing(true);
         lastRemoteCheckAtRef.current = Date.now();
         const latest = await fetchLatestVersion();
-        if (connectGen !== connectGenRef.current) return;
-        knownRemoteCommitRef.current = latest?.committedAt ?? "";
+        if (cancelled || connectGen !== connectGenRef.current) return;
         const localPull = getGistLastPullAt();
         const localPush = getGistLastPushAt();
         // 1) 원격이 마지막 pull보다 새로움 + 2) 원격이 우리의 마지막 push와 다름 (= 외부 기기가 변경)
@@ -258,13 +289,16 @@ export function useGistSync(
         const remoteIsFromExternalDevice =
           !!latest && (!localPush || new Date(latest.committedAt) > new Date(localPush));
         const remoteIsNewer = remoteIsNewerThanLastPull && remoteIsFromExternalDevice;
+        // known은 원격을 반영한 시점까지만 — 미리 최신으로 올리면 불러오기가 중단(실패·정리)됐을 때 다음 업로드가
+        // 충돌 확인 없이 다른 기기 변경을 덮는다. 아직 반영 못 한 원격이 있으면 마지막 pull(없으면 epoch)에 둬서
+        // 업로드·복귀 확인이 내용 비교부터 하게 한다. 적용에 성공하면 아래에서 원격 시각으로 올린다.
+        knownRemoteCommitRef.current = remoteIsNewerThanLastPull
+          ? localPull || NOTHING_ACCOUNTED_AT
+          : latest?.committedAt ?? "";
         if (!remoteIsNewer) {
-          if (remoteIsNewerThanLastPull && !remoteIsFromExternalDevice) {
-            // lastPushAt == remote.committedAt: 우리 푸시가 최신. lastPullAt을 맞춰 다음부터 불필요한 pull 방지
-            setGistLastPullAt(latest!.committedAt);
-            setLastPullAt(latest!.committedAt);
-          }
-          onLog?.("Gist 자동 동기화: 외부 변경 없음(건너뜀)", "info");
+          // 원격이 마지막 pull보다 새로운데 lastPushAt(로컬 시계)보다 이르면 '우리 push'로 보이지만, 로컬 시계가 빠르면
+          // 다른 기기 변경도 그렇게 보인다 — known·lastPullAt을 올리지 않고 업로드·복귀 확인의 내용 비교에 맡긴다.
+          onLogRef.current?.("Gist 자동 동기화: 외부 변경 없음(건너뜀)", "info");
           return;
         }
         const { dataJson, updatedAt } = await loadFromGist();
@@ -283,10 +317,10 @@ export function useGistSync(
             remoteUpdatedAt: updatedAt,
             pendingLocalDataJson: localJson,
           });
-          onLog?.("Gist 자동 불러오기: 로컬에 push되지 않은 변경 감지 — 충돌 확인 필요", "info");
+          onLogRef.current?.("Gist 자동 불러오기: 로컬에 push되지 않은 변경 감지 — 충돌 확인 필요", "info");
           return;
         }
-        onApplyPulledData(dataJson, updatedAt);
+        onApplyRef.current(dataJson, updatedAt);
         setGistLastPullAt(updatedAt);
         setLastPullAt(updatedAt);
         knownRemoteCommitRef.current = updatedAt;
@@ -294,18 +328,23 @@ export function useGistSync(
         lastPushedPayloadRef.current = dataJson;
         setGistLastPushedHash(hashGistPayload(dataJson));
         recordSyncOk();
-        onLog?.("Gist 자동 불러오기 성공", "success");
+        onLogRef.current?.("Gist 자동 불러오기 성공", "success");
       } catch (err) {
         const message = err instanceof Error ? err.message : String(err);
         recordSyncFail(message);
-        onLog?.(`Gist 자동 불러오기 실패: ${message}`, "error");
+        onLogRef.current?.(`Gist 자동 불러오기 실패: ${message}`, "error");
       } finally {
+        settled = true;
         if (!cancelled) setIsSyncing(false);
       }
     })();
 
-    return () => { cancelled = true; };
-  }, [autoSyncEnabled, onApplyPulledData, onLog, fetchLatestVersion, recordSyncOk, recordSyncFail]);
+    return () => {
+      cancelled = true;
+      // 끝나기 전에 정리됨(StrictMode 이중 실행·자동 동기화 끔) = 원격을 반영 못 함 — 다음 실행이 다시 불러오게
+      if (!settled) hasMountedRef.current = false;
+    };
+  }, [autoSyncEnabled, disabled, fetchLatestVersion, recordSyncOk, recordSyncFail]);
 
   /**
    * 디바운스/즉시 flush 양쪽이 호출하는 실제 push 루틴.
@@ -313,7 +352,7 @@ export function useGistSync(
    * 일시적 오류는 saveToGistWithRetry가 내부 재시도, 영구 오류는 즉시 throw → toast.
    */
   const runAutoPush = useCallback(async () => {
-    if (!autoSyncEnabled) return;
+    if (!autoSyncEnabled || disabledRef.current) return;
     if (!getGistToken() || !getGistId()) return;
     if (isPushingRef.current) return;
     if (isConnectingRef.current) return;
@@ -359,8 +398,12 @@ export function useGistSync(
             // (saveToGist가 파일을 만들거나 404 → 새 Gist 생성으로 처리하고, 성공하면 표식이 실제 해시로 바뀐다)
             onLog?.(`Gist: 원격에 FarmWallet 데이터 없음 — 저장 진행 (${message})`, "info");
           } else {
-            // 표식 상태에서 원격을 못 읽으면 올리지 않는다 — 실패로 기록해 상태 표시(동기화 오류)에 드러낸다
-            if (neverSynced) recordSyncFail(message);
+            // 표식 상태에서 원격을 못 읽으면 올리지 않는다. 직전 fetchLatestVersion 성공이 연속 실패 수를 리셋해
+            // 배지(2회 연속)만으로는 안 드러나므로 일반 자동 저장 실패처럼 토스트도 띄운다 (토큰 미포함 문구)
+            if (neverSynced) {
+              recordSyncFail(message);
+              toast.error(`Gist 저장 실패: ${message}`, { id: GIST_AUTO_SAVE_ERROR_TOAST_ID });
+            }
             onLog?.(`Gist 충돌 후 원격 fetch 실패: ${message}`, "error");
             return;
           }
@@ -403,6 +446,10 @@ export function useGistSync(
    * 동일 payload여도 푸시 — GitHub이 새 commit·새 updated_at 만들어 timestamp가 갱신됨.
    */
   const manualPush = useCallback(async () => {
+    if (disabledRef.current) {
+      toast.error("데이터를 불러오지 못한 상태에서는 Gist에 저장할 수 없어요.");
+      return;
+    }
     // gistId는 없어도 됨 — 첫 저장 시 saveToGist가 새 Gist를 생성하고 ID를 기록한다.
     if (!getGistToken()) {
       onLog?.("Gist 토큰 미설정", "error");
@@ -503,6 +550,10 @@ export function useGistSync(
    * 데이터 검증·안전 스냅샷은 onApplyPulledData(App.handleGistPulledData) 내부에서 수행.
    */
   const manualPull = useCallback(async () => {
+    if (disabledRef.current) {
+      toast.error("데이터를 불러오지 못한 상태에서는 Gist에서 불러올 수 없어요.");
+      return;
+    }
     if (!getGistToken() || !getGistId()) {
       onLog?.("Gist 토큰·ID 미설정", "error");
       toast.error("Gist 토큰과 ID를 먼저 설정하세요.");
@@ -593,7 +644,7 @@ export function useGistSync(
    * 둘 다 없으면(한 번도 push/pull 성공 못 함) 판단 불가 → 조용히 덮어쓰지 않고 충돌 모달(보수적).
    */
   const checkRemoteOnResume = useCallback(async () => {
-    if (!autoSyncEnabled) return;
+    if (!autoSyncEnabled || disabledRef.current) return;
     if (!hasMountedRef.current) return;
     if (!getGistToken() || !getGistId()) return;
     if (isPushingRef.current || isRemoteCheckingRef.current) return;
@@ -666,7 +717,7 @@ export function useGistSync(
 
   // Effect 2: 데이터 변경 시 자동 저장 (debounced)
   useEffect(() => {
-    if (!autoSyncEnabled) return;
+    if (!autoSyncEnabled || disabled) return;
     if (!getGistToken() || !getGistId()) return;
     if (!hasMountedRef.current) return;
 
@@ -688,7 +739,7 @@ export function useGistSync(
         autoPushTimerRef.current = null;
       }
     };
-  }, [autoSyncEnabled, data, runAutoPush]);
+  }, [autoSyncEnabled, disabled, data, runAutoPush]);
 
   // Effect 3: 모바일 백그라운드 suspend 방지용 즉시 flush + 오프라인 복귀 시 재개 + 복귀 시 원격 확인.
   // visibilitychange:hidden — 앱 전환·화면 잠금 시점. setTimeout이 정지·지연되기 전에 push.
@@ -699,7 +750,7 @@ export function useGistSync(
   // flush는 dirty가 있을 때만 작동(runAutoPush의 가드가 재진입 방지), 디바운스 타이머는 cancel 후 즉시 push.
   useEffect(() => {
     if (typeof window === "undefined") return;
-    if (!autoSyncEnabled) return;
+    if (!autoSyncEnabled || disabled) return;
     if (!hasMountedRef.current) return;
 
     const flush = () => {
@@ -740,7 +791,7 @@ export function useGistSync(
       window.removeEventListener("pagehide", flush);
       window.removeEventListener("online", onOnline);
     };
-  }, [autoSyncEnabled, runAutoPush, checkRemoteOnResume, onLog, remotePollMs]);
+  }, [autoSyncEnabled, disabled, runAutoPush, checkRemoteOnResume, onLog, remotePollMs]);
 
   const setAutoSyncEnabled = useCallback((enabled: boolean) => {
     setGistAutoSync(enabled);
@@ -755,6 +806,7 @@ export function useGistSync(
    * 기기 연결 (받는 쪽) — 연결 링크의 토큰·Gist ID로:
    *  1) 업로드·원격 확인 중이거나 충돌 모달이 열려 있으면 거절
    *  2) 저장 전에 주어진 자격증명으로 연결 테스트 — 실패하면 아무것도 저장하지 않는다
+   *  3') 같은 Gist면 토큰만 저장하고 끝 — 미리보기·자동 동기화 변경 없이 정식 동기화 경로(충돌 확인)에 맡긴다
    *  3) 토큰(영속)·Gist ID 저장
    *  4) 즉시 불러오기 + normalizeImportedData 검증 — 실패하면 적용·자동 동기화 ON 모두 하지 않는다
    *     (빈 새 기기가 빈 데이터를 원격에 덮어쓰는 사고 방지)
@@ -794,6 +846,18 @@ export function useGistSync(
       if (useUIStore.getState().gistConflict) {
         toast.error("동기화 작업이 끝난 뒤 다시 시도하세요.");
         return "failed";
+      }
+
+      // 3') 같은 Gist 재연결('연결 끊김' 복구) — 토큰만 저장하고 기준점·자동 동기화 상태는 그대로 둔다.
+      //     원격으로 통째 바꾸는 미리보기는 끊긴 동안의 로컬 편집을 충돌 확인 없이 지우고, 취소·실패하면 자동 동기화가
+      //     꺼진 채 남는다. 원격 반영은 정식 경로(업로드·복귀 확인·부팅 불러오기의 충돌 확인)에 맡긴다.
+      if (previousGistId === payload.gistId) {
+        setGistToken(payload.token, { persist: true });
+        // 부팅 때 토큰이 없어 원격 시점을 못 봤고 pull 기록도 없으면 빈 known — 업로드가 시각 비교로 통과하지 않게
+        if (!knownRemoteCommitRef.current) knownRemoteCommitRef.current = getGistLastPullAt() || NOTHING_ACCOUNTED_AT;
+        onLog?.(`기기 연결: 같은 Gist(…${shortId}) — 토큰만 다시 저장`, "success");
+        toast.success(autoSyncEnabled ? "이 기기를 다시 연결했어요" : "이 기기를 다시 연결했어요. 자동 동기화는 꺼져 있어요.");
+        return "connected";
       }
 
       // 3) 자격증명 저장. 다른 Gist에 자동 동기화 중이던 기기면 여기서 끈다 — 적용이 확정될 때만 다시 켠다.

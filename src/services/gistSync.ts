@@ -286,7 +286,11 @@ export async function loadFromGist(): Promise<{ dataJson: string; updatedAt: str
   const data = await parseGistResponse(res);
   const file = data.files?.[GIST_FILE_NAME];
   if (!file) {
-    throw new GistNoRemoteDataError("Gist에 FarmWallet 데이터가 없습니다.");
+    const message = "Gist에 FarmWallet 데이터가 없습니다.";
+    // '원격 없음'은 본문을 읽었고 files에 우리 파일이 없을 때만. 본문을 못 읽으면(중간 끊김·비JSON — parseGistResponse가 {})
+    // files 자체가 없다 — 이걸 '없음'으로 단정하면 미동기 표식 상태의 업로드가 실제 원격 파일을 덮어쓴다.
+    if (data.files && typeof data.files === "object") throw new GistNoRemoteDataError(message);
+    throw new Error(message);
   }
   let content: string;
   if (file.raw_url) {

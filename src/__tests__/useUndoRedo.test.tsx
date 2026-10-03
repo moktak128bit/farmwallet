@@ -90,4 +90,25 @@ describe("useUndoRedo", () => {
     act(() => { returnValue = result.current.handleUndo(); });
     expect(returnValue).toBe(false);
   });
+
+  it("S4 clearHistory: 다른 기기 데이터 적용 후엔 되돌리기로 적용 이전 상태가 되살아나지 않는다", async () => {
+    const { result } = renderHook(() => useHarness());
+    act(() => { result.current.setDataWithHistory(emptyData(1)); });
+    act(() => { result.current.setDataWithHistory(emptyData(2)); });
+    act(() => { result.current.handleUndo(); }); // undo 스택에 0, redo 스택에 2가 남음
+    await act(async () => { await new Promise((r) => setTimeout(r, 0)); });
+    expect(result.current.data.ledger[0].amount).toBe(1);
+
+    // Gist 원격 적용 — App.handleGistPulledData와 같은 순서(비-기록 setter + clearHistory)
+    act(() => {
+      result.current.clearHistory();
+    });
+    let undone = true;
+    let redone = true;
+    act(() => { undone = result.current.handleUndo(); });
+    act(() => { redone = result.current.handleRedo(); });
+    expect(undone).toBe(false);
+    expect(redone).toBe(false);
+    expect(result.current.data.ledger[0].amount).toBe(1);
+  });
 });

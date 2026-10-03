@@ -1,4 +1,5 @@
 import type { Account, LedgerEntry } from "../types";
+import { baseBalanceForAccount } from "../calculations";
 
 /**
  * "실질 수입에서 빼야 할" 비-실질 수입원 중분류 집합.
@@ -126,13 +127,14 @@ interface OriginalAssetsBreakdown {
 }
 
 /**
- * 사용자가 앱 시작 시 갖고 있던 "원래 보유 자산" — 계좌별 initialBalance 기반.
+ * 사용자가 앱 시작 시 갖고 있던 "원래 보유 자산" — 계좌별 시작 잔액(baseBalanceForAccount) 기반.
  * 실질 수입 계산엔 직접 안 쓰이지만 인사이트 카드(원래보유 vs 실질수입 비교)에서 표시.
  */
 export function computeOriginalAssets(accounts: Account[]): OriginalAssetsBreakdown {
+  // 시작 잔액은 잔액 엔진과 같은 정의(baseBalanceForAccount) — 증권은 initialCashBalance 우선
   const originalAssetsByAcct = accounts
-    .filter((a) => (a.initialBalance ?? 0) > 0)
-    .map((a) => ({ name: a.name, amount: a.initialBalance ?? 0 }))
+    .map((a) => ({ name: a.name, amount: baseBalanceForAccount(a) }))
+    .filter((a) => a.amount > 0)
     .sort((a, b) => b.amount - a.amount);
   const originalAssets = originalAssetsByAcct.reduce((s, a) => s + a.amount, 0);
   return { originalAssetsByAcct, originalAssets };

@@ -2,7 +2,7 @@
 import { describe, it, expect, vi } from "vitest";
 import React, { useState } from "react";
 import { render, screen, fireEvent } from "@testing-library/react";
-import { MoneyField, QuantityField, DateField } from "../components/ui/fields";
+import { MoneyField, QuantityField, DateField, NumericInput } from "../components/ui/fields";
 import { parseAmount, formatAmount } from "../utils/parseAmount";
 
 /** 실제 사용처처럼 상태를 물고 도는 래퍼 — 컨트롤드 입력의 포맷 결과를 확인 */
@@ -134,5 +134,56 @@ describe('음수 허용 (부채·현금 조정)', () => {
 
   it('맨 앞이 아닌 마이너스는 부호가 아니다', () => {
     expect(parseAmount('10-5', { allowNegative: true })).toBe(105);
+  });
+});
+
+describe("NumericInput — 숫자로 되돌려 받는 부모 (회귀)", () => {
+  /** RoutineManager·TargetPortfolio처럼 부모가 number로 저장하고 String(n)으로 돌려주는 경우 */
+  const NumberHarness: React.FC = () => {
+    const [n, setN] = useState(0);
+    return (
+      <>
+        <NumericInput
+          aria-label="중량"
+          allowDecimal
+          maxDecimals={1}
+          value={String(n)}
+          onChange={(raw) => setN(parseAmount(raw, { allowDecimal: true, maxDecimals: 1 }))}
+        />
+        <span data-testid="stored">{n}</span>
+        <button type="button" onClick={() => setN(5)}>리셋</button>
+      </>
+    );
+  };
+
+  it("22.5 입력 중 '22.'의 소수점을 지우지 않는다 (225kg 저장 방지)", () => {
+    render(<NumberHarness />);
+    const input = screen.getByLabelText("중량") as HTMLInputElement;
+    fireEvent.change(input, { target: { value: "22" } });
+    fireEvent.change(input, { target: { value: "22." } });
+    expect(input.value).toBe("22.");
+    fireEvent.change(input, { target: { value: "22.5" } });
+    expect(input.value).toBe("22.5");
+    expect(screen.getByTestId("stored").textContent).toBe("22.5");
+  });
+
+  it("외부에서 값이 숫자로 바뀌면 입력란도 따라간다", () => {
+    render(<NumberHarness />);
+    const input = screen.getByLabelText("중량") as HTMLInputElement;
+    fireEvent.change(input, { target: { value: "22." } });
+    fireEvent.click(screen.getByRole("button", { name: "리셋" }));
+    expect(input.value).toBe("5");
+  });
+
+  it("정수 금액에 '1,234,567.00'을 붙여넣어도 100배가 되지 않는다", () => {
+    const Harness = () => {
+      const [v, setV] = useState("");
+      return <NumericInput aria-label="상환 금액" value={v} onChange={setV} />;
+    };
+    render(<Harness />);
+    const input = screen.getByLabelText("상환 금액") as HTMLInputElement;
+    fireEvent.change(input, { target: { value: "1,234,567.00" } });
+    expect(input.value).toBe("1,234,567");
+    expect(parseAmount(input.value)).toBe(1234567);
   });
 });

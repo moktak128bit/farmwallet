@@ -7,13 +7,13 @@ import React, { useMemo } from "react";
 import type { Account, CategoryPresets, LedgerEntry } from "../../types";
 import { formatKRW } from "../../utils/formatter";
 import { shiftMonth } from "../../utils/date";
-import { isSavingsExpenseEntry, isCreditPayment } from "../../utils/category";
-import { toKrwByRate } from "../../utils/currency";
+import { classifyLedgerFlow, toKrwAmount } from "./summaryMath";
 
 interface Props {
   currentMonth: string;
   today: string;
   ledger: LedgerEntry[];
+  /** 미사용(지출 판정이 계좌와 무관) — DashboardPage 호출 시그니처 유지용 */
   accounts: Account[];
   categoryPresets: CategoryPresets;
   fxRate: number | null;
@@ -23,27 +23,23 @@ export const MonthPaceCard: React.FC<Props> = React.memo(function MonthPaceCard(
   currentMonth,
   today,
   ledger,
-  accounts,
   categoryPresets,
   fxRate,
 }) {
   // 페이스 = 현재까지 지출 추세로 월말 예상 지출 / 과거 3개월 평균 지출 × 100
   // 중요: 과거 3개월과 현재월은 같은 필터 정책을 써야 비교 의미가 있음
-  //   → 저축성지출(재테크/저축 등)·신용결제(카드대금은 실제 지출의 이체) 제외
+  //   → 지출 판정은 KPI '이번 달 지출'과 같은 classifyLedgerFlow (신용결제·환전·저축성지출·투자손실/수수료 제외)
   const data = useMemo(() => {
     const [year, monthNum] = currentMonth.split("-").map(Number);
     const totalDays = new Date(year, monthNum, 0).getDate();
     const todayDay = parseInt(today.slice(8, 10), 10);
     const elapsed = Math.min(Math.max(todayDay, 1), totalDays);
-    const toKrw = (entry: LedgerEntry) => toKrwByRate(entry.amount, entry.currency, fxRate);
     const sumMonth = (m: string) => {
       let total = 0;
       ledger.forEach((entry) => {
         if (!entry.date?.startsWith(m)) return;
-        if (entry.kind !== "expense") return;
-        if (isCreditPayment(entry)) return;
-        if (isSavingsExpenseEntry(entry, accounts, categoryPresets)) return;
-        total += toKrw(entry);
+        if (classifyLedgerFlow(entry, categoryPresets) !== "expense") return;
+        total += toKrwAmount(entry, fxRate);
       });
       return total;
     };
@@ -59,7 +55,7 @@ export const MonthPaceCard: React.FC<Props> = React.memo(function MonthPaceCard(
       totalDays,
       pace: avgPrev3 > 0 ? (projectedExpense / avgPrev3) * 100 : null,
     };
-  }, [currentMonth, today, ledger, fxRate, accounts, categoryPresets]);
+  }, [currentMonth, today, ledger, fxRate, categoryPresets]);
 
   const barMax = data.avgPrev3 * 1.5;
   const projPct = barMax > 0 ? Math.min(100, (data.projectedExpense / barMax) * 100) : 0;

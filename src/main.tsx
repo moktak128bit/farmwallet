@@ -10,6 +10,18 @@ import "./styles.css";
 // 전역 미처리 오류(window.error / unhandledrejection) → 영속 활동 로그. 내부에서 중복 설치를 막는다.
 installGlobalErrorListeners();
 
+// 포커스된 type="number" 입력 위에서 휠을 굴리면 Chrome/Edge가 값을 바꾼다(71,500 → 71,497 저장).
+// 그 입력을 blur하면 값 변경만 막히고 페이지 스크롤은 그대로 — 화면마다 onWheel을 다는 대신 여기 한 곳에서.
+// (단축키 keydown이 아니라 휠이므로 CLAUDE.md 규칙 10과 무관)
+document.addEventListener(
+  "wheel",
+  (e) => {
+    const el = document.activeElement;
+    if (el instanceof HTMLInputElement && el.type === "number" && e.target === el) el.blur();
+  },
+  { capture: true, passive: true }
+);
+
 const rootElement = document.getElementById("root");
 
 if (!rootElement) {

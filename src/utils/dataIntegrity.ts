@@ -4,8 +4,9 @@
 
 import type { Account, LedgerEntry, StockTrade, CategoryPresets, Loan } from "../types";
 import { computeAccountBalances } from "../calculations";
-import { isUSDStock } from "./finance";
+import { isUSDStock, plausibleUsdKrw } from "./finance";
 import { getTodayKST } from "./date";
+import { fxAsOf, type FxPoint } from "./portfolioHistory";
 import { isCreditPayment, makeIsSavingsExpense } from "./category";
 
 export interface DuplicateTrade {
@@ -266,25 +267,49 @@ function checkSettledLedgerReferences(ledger: LedgerEntry[]): MissingReference[]
 }
 
 /**
- * USD 종목 거래의 매입 당시 환율(fxRateAtTrade)이 값을 가지고 있는데 0 이하인지 검사 (1-10).
+ * USD 종목 거래의 매입 당시 환율(fxRateAtTrade)이 값을 가지고 있는데 원/달러로 말이 안 되는지 검사 (1-10).
  * 값이 없는 것(레거시 데이터 — 필드 도입 전 거래)은 정상이라 검사하지 않는다. 이 필드는 과거 손익
- * 계산에 직접 쓰이므로(CLAUDE.md: 편집 시 보존) 0 이하 값이 들어가면 손익이 왜곡된다.
+ * 계산에 직접 쓰이므로(CLAUDE.md: 편집 시 보존) 범위 밖 값(0·1 등, plausibleUsdKrw)은 계산에서 '환율 없음'으로
+ * 무시되지만 원본은 남아 있으므로 사용자가 찾아 고칠 수 있게 표시한다.
  */
 function checkFxRateAtTradeValidity(trades: StockTrade[]): IntegrityIssue[] {
   const issues: IntegrityIssue[] = [];
   trades.forEach((t) => {
     if (!isUSDStock(t.ticker)) return;
     if (t.fxRateAtTrade == null) return;
-    if (t.fxRateAtTrade > 0) return;
+    if (plausibleUsdKrw(t.fxRateAtTrade)) return;
     issues.push({
       type: "amount_consistency",
       severity: "warning",
-      message: `주식 거래 ${t.id}: 매입 당시 환율(fxRateAtTrade)이 올바르지 않습니다 (${t.fxRateAtTrade})`,
+      message: `주식 거래 ${t.date} ${t.ticker} ${t.side === "buy" ? "매수" : "매도"} (${t.id}): 매입 당시 환율(fxRateAtTrade)이 올바르지 않습니다 (${t.fxRateAtTrade}원/$) — 주식 탭 매매 내역에서 종목을 눌러 단가(원)를 실제 체결 원화로 입력해 저장하세요`,
       data: { tradeId: t.id, fxRateAtTrade: t.fxRateAtTrade }
     });
   });
   return issues;
 }
+
+/**
+ * USD 종목 거래 중 매입 환율(fxRateAtTrade)이 없거나 말이 안 되는 것을 채운 거래 목록 (데이터 점검 자동 수정).
+ * 환율이 비면 실현손익 경로들이 '오늘 환율'로 대신 환산해 숫자가 매일 바뀌고 양도세 카드와 어긋난다.
+ * 우선순위: 원화 현금모드 거래는 |cashImpact| ÷ totalAmount(체결 당시 원화 그대로 — 정확),
+ * 잔액모드(cashImpact 0)는 환율 이력의 그날 환율. 둘 다 그럴듯하지 않으면 손대지 않는다.
+ */
+export function fillTradeFxRates(
+  trades: StockTrade[],
+  fxHistory: FxPoint[]
+): { trades: StockTrade[]; filled: number } {
+  let filled = 0;
+  const next = trades.map((t) => {
+    if (!isUSDStock(t.ticker) || plausibleUsdKrw(t.fxRateAtTrade)) return t;
+    const fromCash = t.totalAmount > 0 ? Math.abs(Number(t.cashImpact) || 0) / t.totalAmount : undefined;
+    const fx = plausibleUsdKrw(fromCash) ?? plausibleUsdKrw(fxAsOf(fxHistory, t.date));
+    if (!fx) return t;
+    filled++;
+    return { ...t, fxRateAtTrade: fx };
+  });
+  return { trades: filled > 0 ? next : trades, filled };
+}
+
 /**
  * 날짜 순서 검증 */
 function validateDateOrder(

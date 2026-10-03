@@ -259,7 +259,8 @@ export interface D {
   /** 월별 실질 수입(장부−정산−일시소득). 패시브 비율 추이의 분모. */
   realIncomeMonthly: Record<string, number>;
   /** m = YYYY-MM (조인·필터 키), l = 표시 라벨 "N월" — 라벨로 거르면 다른 해 같은 달까지 빠진다 */
-  savRateTrend: { m: string; l: string; rate: number; cumRate: number; sav: number }[];
+  /** rate·cumRate: 실질 수입 0이면 null(N/A) */
+  savRateTrend: { m: string; l: string; rate: number | null; cumRate: number | null; sav: number }[];
   salaryTrend: { l: string; salary: number; nonSalary: number }[];
   cumIE: { l: string; 누적수입: number; 누적지출: number }[];
   investTrend: { l: string; amount: number }[];
@@ -311,7 +312,8 @@ export interface D {
   weekdayTot: number;
   topDates: { date: string; total: number; items: { desc: string; amount: number }[] }[];
   score: { total: number; grade: string; comment: string };
-  prev: { income: number; expense: number; salary: number; realExpense: number } | null;
+  /** 선택 월의 직전 달 합계. partialDay = 선택 월이 진행 중인 이번 달이면 오늘 일자 — 전월도 1~N일 동기만 합산 */
+  prev: { income: number; expense: number; salary: number; realExpense: number; partialDay: number | null } | null;
   avgMonthExp: number;
 
   incByGroup: { name: string; value: number; items: [string, number][] }[];
@@ -336,7 +338,8 @@ export interface D {
   moimFlow: MoimFlowAnalysis;
 
   netProfit: number;
-  realSavRate: number;
+  /** 실질 수입 0이면 null — UI는 N/A */
+  realSavRate: number | null;
   passiveIncome: number;
   expToIncRatio: number;
   dailyAvgExp: number;

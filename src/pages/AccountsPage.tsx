@@ -21,7 +21,8 @@ import { fetchYahooQuotes } from "../yahooFinanceApi";
 import { EmptyState } from "../components/ui/EmptyState";
 import { Wallet, Download } from "lucide-react";
 import { toast } from "react-hot-toast";
-import { computeRealizedPnlByTradeId, positionMarketValueKRW, computeBalanceSheet, computeCardDebts } from "../calculations";
+import { positionMarketValueKRW, computeBalanceSheet, computeCardDebts } from "../calculations";
+import { buildClosedTradeRecords } from "../utils/investmentRecord";
 import { getTodayKST } from "../utils/date";
 import { useAppStore } from "../store/appStore";
 import { buildUnifiedCsv } from "../utils/unifiedCsvExport";
@@ -83,10 +84,15 @@ export const AccountsView: React.FC<Props> = ({
     type: AccountType;
   } | null>(null);
   const [selectedAccount, setSelectedAccount] = useState<Account | null>(null);
-  const realizedPnlByTradeId = useMemo(
-    () => computeRealizedPnlByTradeId(trades ?? []),
-    [trades]
-  );
+  // KRW 실현손익 — LedgerPage와 같은 정의(buildClosedTradeRecords, 거래시점 환율). 동일 통화 FIFO를 쓰면
+  // USD 매도가 달러 액면으로 나와 모달(formatKRW)에 "실현 +320원"처럼 표시됐다. 환율 미확보 매도는 중립 0.
+  const realizedPnlByTradeId = useMemo(() => {
+    const m = new Map<string, number>();
+    for (const r of buildClosedTradeRecords(trades ?? [], safeAccounts, effectiveFxRate ?? undefined)) {
+      m.set(r.tradeId, r.fxUnreliable ? 0 : r.realizedPnlKRW);
+    }
+    return m;
+  }, [trades, safeAccounts, effectiveFxRate]);
 
   // FX rate (parent에서 미전달 시 로컬 fetch)
   useEffect(() => {

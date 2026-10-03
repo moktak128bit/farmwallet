@@ -15,6 +15,7 @@ import React, { useImperativeHandle, useState } from "react";
 import { toast } from "react-hot-toast";
 import type { Loan, RepaymentMethod } from "../../types";
 import { parseAmount } from "../../utils/parseAmount";
+import { NumericInput } from "../../components/ui/fields";
 import { getTodayKST } from "../../utils/date";
 import { newIdWithPrefix } from "../../utils/id";
 
@@ -168,13 +169,9 @@ export const LoanFormSection = React.memo(React.forwardRef<LoanFormSectionHandle
             </label>
             <label>
               <span>대출금액 *</span>
-              <input
-                type="text"
+              <NumericInput
                 value={form.loanAmount}
-                onChange={(e) => {
-                  const val = e.target.value.replace(/[^0-9]/g, "");
-                  setForm({ ...form, loanAmount: val });
-                }}
+                onChange={(val) => setForm({ ...form, loanAmount: val })}
                 placeholder="예: 300000000"
                 required
               />

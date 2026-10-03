@@ -1,6 +1,7 @@
 import type { Account, StockTrade } from "../types";
-import { canonicalTickerForMatch, isUSDStock } from "./finance";
+import { canonicalTickerForMatch, isUSDStock, plausibleUsdKrw } from "./finance";
 import { consumeFifoLots, type FifoLot } from "./fifoLots";
+import { fxAsOf, type FxPoint } from "./portfolioHistory";
 
 /** 청산(매도)된 단일 거래 한 건의 실현 수익 기록. USD 종목은 거래시점 환율로 원화 환산. */
 interface ClosedTradeRecord {
@@ -79,14 +80,17 @@ function toDateStr(ms: number): string {
 
 /**
  * 매도 거래를 FIFO로 매수 로트와 매칭하여 보유기간·실현손익(KRW)을 산출.
- * - USD 종목: 각 거래의 `fxRateAtTrade`로 개별 환산. 없으면 `fallbackFx`(현재 환율) 사용.
+ * - USD 종목: 각 거래의 `fxRateAtTrade`(plausibleUsdKrw 통과분)로 개별 환산. 없으면 `fxHistory`의
+ *   그날 환율(양도세 카드 realizedForeignGainKRW와 동일 — 오늘 환율 따라 과거 손익이 매일 바뀌지 않게),
+ *   그것도 없으면 `fallbackFx`(현재 환율).
  * - KRW 종목: totalAmount 그대로.
  * - buyDateWeighted = FIFO 소비된 매수 로트 날짜들의 수량 가중평균.
  */
 export function buildClosedTradeRecords(
   trades: StockTrade[],
   accounts: Account[],
-  fallbackFx?: number
+  fallbackFx?: number,
+  fxHistory: FxPoint[] = []
 ): ClosedTradeRecord[] {
   const accountById = new Map<string, Account>();
   for (const a of accounts) accountById.set(a.id, a);
@@ -119,8 +123,7 @@ export function buildClosedTradeRecords(
 
     for (const t of sorted) {
       const usd = isUSDStock(t.ticker);
-      const tradeFx = t.fxRateAtTrade ?? 0;
-      const fx = tradeFx > 0 ? tradeFx : (fallbackFx && fallbackFx > 0 ? fallbackFx : 0);
+      const fx = usd ? (plausibleUsdKrw(t.fxRateAtTrade) ?? fxAsOf(fxHistory, t.date, fallbackFx) ?? 0) : 0;
       const fxMissing = usd && !(fx > 0); // USD인데 취득·현재 환율 모두 없음 → KRW 환산 불가
       const toKRW = usd ? (fx > 0 ? t.totalAmount * fx : 0) : t.totalAmount;
 

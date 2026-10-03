@@ -54,3 +54,26 @@ export function usdBalanceModeDelta(trade: StockTrade): number {
   if (Number.isFinite(impact) && Math.abs(impact) > 0.000001) return 0; // 원화 현금모드 — usdBalance 미반영
   return trade.side === "buy" ? -trade.totalAmount : trade.totalAmount;
 }
+
+/**
+ * dateStr 시점의 usdBalance로 되돌린 계좌 목록 — 그 날짜 이후(또는 날짜 없는) 잔액모드 거래분을 뺀다.
+ * 과거 시점 잔액·대차(computeAccountBalances → computeBalanceSheet 등)에 이 결과를 넘기면
+ * row.account.usdBalance가 그 시점 값이 된다. 롤백할 게 없으면 입력 배열을 그대로 반환(참조 유지).
+ */
+export function accountsWithUsdBalanceAsOf(
+  accounts: Account[],
+  trades: StockTrade[],
+  dateStr: string
+): Account[] {
+  const rollback = new Map<string, number>();
+  for (const t of trades) {
+    if (t.date && t.date <= dateStr) continue;
+    const delta = usdBalanceModeDelta(t);
+    if (delta !== 0) rollback.set(t.accountId, (rollback.get(t.accountId) ?? 0) + delta);
+  }
+  if (rollback.size === 0) return accounts;
+  return accounts.map((a) => {
+    const r = rollback.get(a.id);
+    return r ? { ...a, usdBalance: (a.usdBalance ?? 0) - r } : a;
+  });
+}

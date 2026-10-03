@@ -135,11 +135,21 @@ export const isKRWStock = (ticker?: string): boolean => {
 };
 
 /**
+ * 거래 당시 환율(fxRateAtTrade)이 원/달러로 말이 되면 그 값, 아니면 undefined("환율 없음").
+ * 모든 fxRateAtTrade 읽기 경로의 단일 관문 — 레거시 0, 오입력 1(실데이터: MSFT 매수 fx=1 → 원가 383원,
+ * 허위 실현익 +57만·양도세 과대) 같은 값은 각 경로의 기존 폴백(현재/그날 환율)으로 보낸다.
+ * 범위: 원/달러는 1990년대 최저 ~680, 1997 외환위기 최고 ~1,960 — 500 이하·3000 이상은 오입력.
+ */
+export function plausibleUsdKrw(rate?: number | null): number | undefined {
+  return typeof rate === "number" && rate > 500 && rate < 3000 ? rate : undefined;
+}
+
+/**
  * 거래(StockTrade) 1건의 totalAmount를 KRW로 환산.
  *
  * 규칙:
  *  - KRW 종목: totalAmount 그대로 (이미 원화)
- *  - USD 종목: t.fxRateAtTrade 우선 사용, 없으면 fallbackFx (현재 환율) 적용
+ *  - USD 종목: t.fxRateAtTrade 우선 사용(plausibleUsdKrw 통과분만), 없으면 fallbackFx (현재 환율) 적용
  *  - USD 종목인데 둘 다 없으면 0 반환 — 단위 섞임 방지 ("USD 금액을 KRW 합계에 그대로 더하기" 방지)
  *
  * 인사이트·대시보드 어디서든 동일 규칙을 쓰도록 통합. 기존 인라인 `t.fxRateAtTrade ? ... : t.totalAmount`
@@ -150,8 +160,8 @@ export function tradeAmountKRW(
   fallbackFx?: number | null
 ): number {
   if (!isUSDStock(t.ticker)) return t.totalAmount;
-  const tradeFx = t.fxRateAtTrade ?? 0;
-  if (tradeFx > 0) return t.totalAmount * tradeFx;
+  const tradeFx = plausibleUsdKrw(t.fxRateAtTrade);
+  if (tradeFx) return t.totalAmount * tradeFx;
   if (fallbackFx && fallbackFx > 0) return t.totalAmount * fallbackFx;
   return 0;
 }

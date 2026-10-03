@@ -284,8 +284,9 @@ export const PositionListSection: React.FC<PositionListSectionProps> = ({
         
         const inferredRate = inferFxFromRows(group.rows);
         const rate = (fxRate && fxRate > 0) ? fxRate : inferredRate;
+        // 환율이 없으면 USD는 원화 합계에서 제외(0) — 달러 액면을 원화로 더하지 않는다 (StocksPage 합계와 동일 규칙)
         const toKRW = (p: typeof group.rows[0], val: number) =>
-          (p.currency === "USD" || isUSDStock(p.ticker)) && rate > 0 ? val * rate : val;
+          p.currency === "USD" || isUSDStock(p.ticker) ? (rate > 0 ? val * rate : 0) : val;
         // 시세 없음 USD 행은 매입원가(KRW)로 — 현재환율 환산 시 환차분이 가짜 손익으로 잡힘
         const stockValue = group.rows.reduce(
           (sum, p) =>

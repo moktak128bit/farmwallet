@@ -18,11 +18,13 @@ import type { Account, HistoricalDailyClose, LedgerEntry, StockPrice, StockTrade
 import { computePositions } from "../calculations";
 import { formatKRW } from "../utils/formatter";
 import { getThisMonthKST, getTodayKST } from "../utils/date";
-import { buildForwardDividends } from "../utils/forwardDividends";
-import { isKRWStock, isUSDStock, canonicalTickerForMatch, extractTickerFromText } from "../utils/finance";
+import { buildForwardDividends, buildTaxForwardMonths, netQtyByTicker } from "../utils/forwardDividends";
+import { buildShelterAccountMap } from "../utils/taxShelter";
+import { compareTradesFifo } from "../utils/fifoLots";
+import { isKRWStock, isUSDStock, canonicalTickerForMatch, extractTickerFromText, plausibleUsdKrw } from "../utils/finance";
 import { isDividendEntryLoose, isInterestEntryLoose, isInterestOverDividend } from "../utils/categoryMatch";
 import { toKrwByRate } from "../utils/currency";
-import { parseExDateFromNote, parseQuantityFromNote } from "../utils/dividend";
+import { buildMonthlyDividendSeries, parseExDateFromNote, parseQuantityFromNote } from "../utils/dividend";
 import { getKrNames } from "../storage";
 import { STORAGE_KEYS } from "../constants/config";
 import type { DividendRow, TabType } from "../features/dividends/types";
@@ -84,29 +86,23 @@ export const DividendsView: React.FC<Props> = ({ accounts, ledger, trades, price
     return computePositions(trades, adjustedPrices, accounts, { fxRate: fxRate ?? undefined });
   }, [trades, adjustedPrices, accounts, fxRate]);
 
-  // 선행 배당 보유 반영용 — canonical 티커 → 전 거래 순수량.
-  // positions(보유>0만) 대신 전 거래 순수량을 쓰는 이유: 전량 매도 종목도 0으로 맵에 남아야
-  // "매도 → 미래 배당 제외" 판정이 가능하고, 거래 이력이 아예 없는 토큰(티커 오탐 'OK' 등)은
-  // 맵에 없어 forwardDividends가 폴백(과거액 유지)으로 처리한다.
-  const currentQtyByTicker = useMemo(() => {
-    const m = new Map<string, number>();
-    for (const t of trades) {
-      const k = canonicalTickerForMatch(t.ticker);
-      if (!k) continue;
-      const q = Number(t.quantity) || 0;
-      m.set(k, (m.get(k) ?? 0) + (t.side === "buy" ? q : -q));
-    }
-    // 부동소수점 잔량 스냅 — 소수점 주식 전량 매도(0.1+0.2−0.3)가 5e-17 잔량으로
-    // '보유 중' 판정되는 것 방지 (finance.getCurrentHoldingsTickers와 동일한 1e-8 안전망)
-    for (const [k, v] of m) if (Math.abs(v) < 1e-8) m.set(k, 0);
-    return m;
-  }, [trades]);
+  // 선행 배당 보유 반영용 — canonical 티커 → 전 거래 순수량 (넛지와 같은 단일 소스)
+  const currentQtyByTicker = useMemo(() => netQtyByTicker(trades), [trades]);
 
-  // 선행 배당(향후 12개월) — 캘린더 카드와 종합과세 연말 투영(4-6)이 같은 결과를 공유 (호출 1회)
+  // 선행 배당(향후 12개월) — 캘린더 카드용 (절세계좌 포함: 현금이 언제 들어오는가)
   const todayKST = getTodayKST();
   const forward = useMemo(
     () => buildForwardDividends(ledger, todayKST, fxRate, { currentQtyByTicker }),
     [ledger, todayKST, fxRate, currentQtyByTicker]
+  );
+  // 종합과세 연말 투영(4-6)용 — YTD처럼 절세계좌 수령분을 빼고, 이번 달 미수령 잔여분 포함
+  const taxForwardMonths = useMemo(
+    () =>
+      buildTaxForwardMonths(ledger, todayKST, fxRate, {
+        currentQtyByTicker,
+        excludeAccountIds: new Set(buildShelterAccountMap(accounts).keys())
+      }),
+    [ledger, todayKST, fxRate, currentQtyByTicker, accounts]
   );
 
   // canonical 티커별 최신 시세 (updatedAt 기준) — 평가/표시 일관성
@@ -197,18 +193,13 @@ export const DividendsView: React.FC<Props> = ({ accounts, ledger, trades, price
             t.date < date &&
             (!accountId || t.accountId === accountId)
         )
-        .sort((a, b) => a.date.localeCompare(b.date) || a.id.localeCompare(b.id));
+        .sort(compareTradesFifo); // 같은 날 매수 먼저 — 빈 포지션에 매도가 먼저 적용되면 원가가 2배로 남는다
       type Lot = { qty: number; totalAmount: number };
       const lots: Lot[] = [];
       for (const t of relevant) {
         const side = (t.side ?? "").toString().toLowerCase();
         // 거래 당시 환율(fxRateAtTrade) 우선 — 다른 곳(StockDetailModal·computePositions)과 일관
-        const appliedFx =
-          t.fxRateAtTrade && t.fxRateAtTrade > 0
-            ? t.fxRateAtTrade
-            : fxRate && fxRate > 0
-              ? fxRate
-              : null;
+        const appliedFx = plausibleUsdKrw(t.fxRateAtTrade) ?? (fxRate && fxRate > 0 ? fxRate : null);
         const amtKrW = isUSDStock(ticker) && appliedFx ? t.totalAmount * appliedFx : t.totalAmount;
         if (side === "buy") {
           lots.push({ qty: t.quantity, totalAmount: amtKrW });
@@ -348,42 +339,11 @@ export const DividendsView: React.FC<Props> = ({ accounts, ledger, trades, price
       .sort((a, b) => b.month.localeCompare(a.month));
   }, [dividendRows]);
 
-  // 월별 배당 차트용 — 오름차순 + 3개월 이동평균 + 진행 중인 달(이번 달) 표시.
-  // 이동평균 창에 진행 중인 달이 섞이면 아직 안 끝난 달이 평균을 낮춰 보이므로 완료월만 사용.
-  const monthlyDividendChart = useMemo(() => {
-    const thisMonth = getThisMonthKST();
-    const ascending = [...monthlyDividendTotal].sort((a, b) => a.month.localeCompare(b.month));
-    return ascending.map((row, i) => {
-      const isPartial = row.month === thisMonth;
-      const windowRows = ascending.slice(Math.max(0, i - 2), i + 1);
-      const movingAvg =
-        !isPartial && windowRows.length === 3
-          ? windowRows.reduce((s, r) => s + r.total, 0) / 3
-          : undefined;
-      return { month: row.month, total: row.total, isPartial, movingAvg };
-    });
-  }, [monthlyDividendTotal]);
-
-  // 차트 옆 요약 지표 — 완료월 평균 · 최근/직전 6개월 비교(스노우볼 속도) · 최근 12개월 합계
-  const monthlyDividendStats = useMemo(() => {
-    const completed = monthlyDividendChart.filter((r) => !r.isPartial);
-    const completedAvg = completed.length > 0
-      ? completed.reduce((s, r) => s + r.total, 0) / completed.length
-      : 0;
-    const recentSix = completed.slice(-6);
-    const priorSix = completed.slice(-12, -6);
-    const last12 = completed.slice(-12);
-    return {
-      completedMonths: completed.length,
-      completedAvg,
-      recentSixTotal: recentSix.reduce((s, r) => s + r.total, 0),
-      recentSixCount: recentSix.length,
-      priorSixTotal: priorSix.reduce((s, r) => s + r.total, 0),
-      priorSixCount: priorSix.length,
-      last12Total: last12.reduce((s, r) => s + r.total, 0),
-      last12Count: last12.length
-    };
-  }, [monthlyDividendChart]);
+  // 월별 배당 차트(오름차순 + 3개월 이동평균 + 진행 중인 달) + 요약 지표 — 빈 달은 0으로 채워 집계
+  const { chart: monthlyDividendChart, stats: monthlyDividendStats } = useMemo(
+    () => buildMonthlyDividendSeries(monthlyDividendTotal, getThisMonthKST()),
+    [monthlyDividendTotal]
+  );
 
   const monthlyInterestTotal = useMemo(() => {
     const map = new Map<string, number>();
@@ -425,12 +385,12 @@ export const DividendsView: React.FC<Props> = ({ accounts, ledger, trades, price
       {/* 종합과세 추적 (B1·4-1·4-6) — 올해 금융소득 vs 2,000만 임계(절세계좌 수령분 제외, 선행배당 기반 연말 투영)
           + 절세계좌 납입·한도·세액공제 카드(4-1, 읽기전용) */}
       <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(320px, 1fr))", gap: "0 16px" }}>
-        <ComprehensiveTaxCard ledger={ledger} fxRate={fxRate} accounts={accounts} forwardMonths={forward.months} />
+        <ComprehensiveTaxCard ledger={ledger} fxRate={fxRate} accounts={accounts} forwardMonths={taxForwardMonths} />
         <ShelterContributionCard accounts={accounts} ledger={ledger} fxRate={fxRate} />
       </div>
 
       {/* 절세 액션 (4-2) — 위 두 카드+해외주식 양도세를 우선순위 목록으로. 대시보드와 같은 카드 재사용 */}
-      <TaxActionsCard forwardMonths={forward.months} />
+      <TaxActionsCard forwardMonths={taxForwardMonths} />
 
       {/* 배당 캘린더 & 목표 (C1·C2) — 향후 12개월 예상 배당 + 목표 진행률 */}
       <DividendCalendarCard forward={forward} holdingsApplied={!!currentQtyByTicker} />

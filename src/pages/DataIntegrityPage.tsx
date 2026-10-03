@@ -1,6 +1,7 @@
 import React, { useMemo, useState } from "react";
 import type { AppData, LedgerEntry } from "../types";
 import {
+  fillTradeFxRates,
   runIntegrityCheck,
   type IntegrityIssue,
   type DuplicateTrade,
@@ -8,6 +9,8 @@ import {
 } from "../utils/dataIntegrity";
 import { toast } from "react-hot-toast";
 import { ERROR_MESSAGES } from "../constants/errorMessages";
+import { buildFxHistory } from "../utils/portfolioHistory";
+import { saveSafetySnapshot } from "../services/backupService";
 
 interface Props {
   data: AppData;
@@ -75,6 +78,11 @@ export const DataIntegrityView: React.FC<Props> = ({
   const ledgerById = useMemo(() => new Map(data.ledger.map((entry) => [entry.id, entry])), [data.ledger]);
   const tradeById = useMemo(() => new Map(data.trades.map((trade) => [trade.id, trade])), [data.trades]);
   const accountById = useMemo(() => new Map(data.accounts.map((account) => [account.id, account])), [data.accounts]);
+  // 매입 환율이 비었거나 말이 안 되는 USD 거래 — 채우지 않으면 실현손익이 오늘 환율 따라 매일 바뀐다
+  const fxFill = useMemo(
+    () => fillTradeFxRates(data.trades, buildFxHistory(data.historicalDailyFx, data.marketEnvSnapshots)),
+    [data.trades, data.historicalDailyFx, data.marketEnvSnapshots]
+  );
 
   const runCheck = () => {
     setIsChecking(true);
@@ -392,13 +400,39 @@ export const DataIntegrityView: React.FC<Props> = ({
     recheckWith(next);
   };
 
+  const handleFillTradeFx = async () => {
+    if (fxFill.filled === 0) return;
+    if (!window.confirm(
+      `매입 환율이 비었거나 잘못된 USD 거래 ${fxFill.filled}건에 거래 당시 환율을 채웁니다.
+` +
+      "원화 현금 거래는 체결 원화÷달러 금액, 달러 잔액 거래는 그날 환율 이력을 씁니다. 계속할까요?"
+    )) return;
+    await saveSafetySnapshot(data, `매입 환율 채우기 ${fxFill.filled}건 직전 자동 스냅샷`);
+    const next: AppData = { ...data, trades: fxFill.trades };
+    onChangeData(next);
+    toast.success(`${fxFill.filled}건의 매입 환율을 채웠습니다`);
+    if (issues.length > 0) recheckWith(next);
+  };
+
   return (
     <div>
       <div className="section-header">
         <h2>데이터 무결성 검사</h2>
-        <button type="button" className="primary" onClick={runCheck} disabled={isChecking}>
-          {isChecking ? "검사 중..." : "무결성 검사 실행"}
-        </button>
+        <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+          {fxFill.filled > 0 && (
+            <button
+              type="button"
+              className="secondary"
+              onClick={() => void handleFillTradeFx()}
+              title="환율 없이 저장된 USD 거래는 실현손익이 오늘 환율로 계산돼 매일 바뀝니다"
+            >
+              USD 매입 환율 채우기 ({fxFill.filled}건)
+            </button>
+          )}
+          <button type="button" className="primary" onClick={runCheck} disabled={isChecking}>
+            {isChecking ? "검사 중..." : "무결성 검사 실행"}
+          </button>
+        </div>
       </div>
 
       {issues.length > 0 && (

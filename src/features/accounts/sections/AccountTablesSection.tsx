@@ -137,7 +137,10 @@ export const AccountTablesSection: React.FC<Props> = React.memo(function Account
           toast.error("금액 형식이 올바르지 않습니다. 예: 1000.50, -50000");
           return;
         }
-        usdBalance = parsed;
+        // 셀은 usdBalance + usdTransferNet을 보여주므로 입력값도 그 기준 — 저장은 이체 순액을 뺀 값(AdjustmentModal과 동일)
+        const usdTransferNet =
+          Array.from(accountsByType.values()).flat().find((r) => r.account.id === id)?.usdTransferNet ?? 0;
+        usdBalance = parsed - usdTransferNet;
       }
       const updated = safeAccounts.map((a) =>
         a.id === id
@@ -314,8 +317,8 @@ export const AccountTablesSection: React.FC<Props> = React.memo(function Account
             <>
               {/* USD 잔액 (더블클릭 수정) */}
               <td
-                onDoubleClick={() => startEditCell(row.account.id, "usdBalance", row.account.usdBalance ?? 0)}
-                onClick={tapToEditCell(row.account.id, "usdBalance", row.account.usdBalance ?? 0)}
+                onDoubleClick={() => startEditCell(row.account.id, "usdBalance", usdBalance)}
+                onClick={tapToEditCell(row.account.id, "usdBalance", usdBalance)}
                 style={{ cursor: "pointer", padding: "8px", textAlign: "right" }}
                 title="더블클릭하여 USD 잔액 수정"
                 className="number cell-editable"

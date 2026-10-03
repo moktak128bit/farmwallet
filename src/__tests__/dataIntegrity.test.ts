@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { runIntegrityCheck, runStructuralChecks } from "../utils/dataIntegrity";
+import { fillTradeFxRates, runIntegrityCheck, runStructuralChecks } from "../utils/dataIntegrity";
 import type { IntegrityIssue, DuplicateTrade, MissingReference, CategoryMismatch } from "../utils/dataIntegrity";
 import type { Account, LedgerEntry, StockTrade, CategoryPresets, Loan } from "../types";
 
@@ -483,6 +483,17 @@ describe("dataIntegrity — 매입 환율 유효성(fxRateAtTrade, 1-10)", () =>
     expect(issues[0].data).toEqual({ tradeId: "T1", fxRateAtTrade: 0 });
   });
 
+  it("말이 안 되는 환율(실데이터 MSFT fx=1, 과대값)도 warning — 데이터 점검에서 찾아 고칠 수 있게", () => {
+    const trades = [
+      trade({ id: "T1", accountId: "S1", ticker: "MSFT", date: "2025-03-04", fxRateAtTrade: 1 }),
+      trade({ id: "T2", accountId: "S1", ticker: "AAPL", fxRateAtTrade: 13500 }),
+    ];
+    const issues = ofType(runIntegrityCheck(ACCOUNTS, [], trades), "amount_consistency");
+    expect(issues.map((i) => (i.data as { tradeId: string }).tradeId)).toEqual(["T1", "T2"]);
+    expect(issues[0].message).toContain("MSFT");
+    expect(issues[0].message).toContain("2025-03-04");
+  });
+
   it("KRW 종목(005930)의 fxRateAtTrade는 값이 이상해도 검사하지 않는다", () => {
     const trades = [trade({ id: "T1", accountId: "S1", ticker: "005930", fxRateAtTrade: -1 })];
     expect(ofType(runIntegrityCheck(ACCOUNTS, [], trades), "amount_consistency")).toEqual([]);
@@ -545,5 +556,36 @@ describe("dataIntegrity — 이체를 지출로 입력 (expense_with_destination
 
   it("to가 없는 일반 지출은 잡지 않는다", () => {
     expect(ofType(runIntegrityCheck(ACCOUNTS, CLEAN_LEDGER, CLEAN_TRADES, PRESETS), "expense_with_destination")).toEqual([]);
+  });
+});
+
+describe("fillTradeFxRates — 매입 환율 일괄 채우기", () => {
+  const usd = (p: Partial<StockTrade> & Pick<StockTrade, "id">) =>
+    trade({ ticker: "AAPL", quantity: 10, price: 100, ...p });
+  const history = [
+    { date: "2026-01-05", rate: 1300 },
+    { date: "2026-02-01", rate: 1450 }
+  ];
+
+  it("원화 현금 거래는 |cashImpact|÷totalAmount, 잔액모드는 그날 환율 이력", () => {
+    const trades = [
+      usd({ id: "T1", date: "2026-01-10", cashImpact: -1_320_000 }), // $1000 × 1320
+      usd({ id: "T2", date: "2026-02-03", cashImpact: 0 }),          // 잔액모드 → 이력 1450
+      usd({ id: "T3", date: "2026-01-10", cashImpact: -383, fxRateAtTrade: 1 }) // 말이 안 되는 1 → 이력 1300
+    ];
+    const { trades: out, filled } = fillTradeFxRates(trades, history);
+    expect(filled).toBe(3);
+    expect(out.map((t) => t.fxRateAtTrade)).toEqual([1320, 1450, 1300]);
+  });
+
+  it("그럴듯한 환율·KRW 종목·근거 없는 거래는 그대로 (입력 배열 참조 유지)", () => {
+    const trades = [
+      usd({ id: "T1", fxRateAtTrade: 1350 }),
+      trade({ id: "T2" }),                       // 005930
+      usd({ id: "T3", date: "2025-12-01", cashImpact: 0 }) // 이력보다 이전
+    ];
+    const res = fillTradeFxRates(trades, history);
+    expect(res.filled).toBe(0);
+    expect(res.trades).toBe(trades);
   });
 });

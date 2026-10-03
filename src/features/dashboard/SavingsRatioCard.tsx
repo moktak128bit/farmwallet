@@ -43,10 +43,11 @@ export const SavingsRatioCard: React.FC<Props> = React.memo(function SavingsRati
   );
 
   const lastMonthSavingsRate = useMemo(() => {
-    const { income, investing } = lastMonthSummary;
-    // 저축률(이체 기준) = (transfer 저축이체+투자이체) / 수입. 투자손실(실소비)은 제외. 수입 없으면 null.
-    return computeTransferSavingsRate(income, investing);
-  }, [lastMonthSummary]);
+    // 저축률(이체 기준) = (transfer 저축이체+투자이체) / 수입. 수입 없으면 null.
+    // 재테크 순액(investing)을 쓰면 투자수익(+)·투자손실(−)이 섞여 60%·−10% 같은 허수가 나온다 — 이체 세부만 쓴다.
+    const { 저축, 투자 } = lastMonthRecheckBreakdown;
+    return computeTransferSavingsRate(lastMonthSummary.income, 저축 + 투자);
+  }, [lastMonthSummary, lastMonthRecheckBreakdown]);
 
   const lastMonthInvestingRatio = useMemo(() => {
     const 저축 = lastMonthRecheckBreakdown.저축;

@@ -23,18 +23,20 @@ import type {
   Loan,
   LedgerEntry,
   MarketEnvSnapshot,
-  RecurringExpense
+  RecurringExpense,
+  StockTrade
 } from "../types";
 import type { TabId } from "../components/ui/Tabs";
 import { findOverdueRecurring } from "./recurringAlert";
 import { computeBudgetPace } from "./budgetPace";
 import { buildComprehensiveTaxTracker } from "./taxCalculator";
 import { formatNumber } from "./formatter";
-import { buildForwardDividends } from "./forwardDividends";
+import { buildForwardDividends, buildTaxForwardMonths, netQtyByTicker } from "./forwardDividends";
 import { buildShelterAccountMap } from "./taxShelter";
 import { buildFxHistory } from "./portfolioHistory";
 import { buildFxBand, describeFxBand } from "./fxBand";
 import { parseIsoLocal } from "./date";
+import { computeLoanBalancesById } from "../calculations";
 
 export type NudgeSeverity = "info" | "warn" | "critical";
 
@@ -65,6 +67,8 @@ export interface NudgeContext {
   fxRate?: number | null;
   /** 종합과세 세전 환산(gross-up) 토글 — hooks/useTaxGrossUp 값을 그대로 전달 */
   taxGrossUp?: boolean;
+  /** 주식 거래 — 선행배당 보유 반영(전량 매도 종목 제외)용. 배당 탭과 같은 netQtyByTicker 맵을 만든다 */
+  trades?: StockTrade[];
   historicalDailyFx?: HistoricalDailyFx[];
   marketEnvSnapshots?: MarketEnvSnapshot[];
   /** 마지막 로컬 백업 시각(ISO) — services/backupService 조회 결과. null=백업 없음/미확인 */
@@ -143,7 +147,11 @@ function ruleBudgetPace(ctx: NudgeContext): Nudge[] {
 /** 종합과세 임계 접근 — 80%↑ 주의, 90%↑ 위험 */
 function ruleComprehensiveTax(ctx: NudgeContext): Nudge[] {
   const excludeAccountIds = ctx.accounts ? new Set(buildShelterAccountMap(ctx.accounts).keys()) : undefined;
-  const forwardMonths = buildForwardDividends(ctx.ledger, ctx.today, ctx.fxRate).months;
+  // 배당 탭 종합과세 카드와 같은 투영 — 보유 반영 + 절세계좌 제외 + 이번 달 미수령 잔여분
+  const forwardMonths = buildTaxForwardMonths(ctx.ledger, ctx.today, ctx.fxRate, {
+    currentQtyByTicker: ctx.trades ? netQtyByTicker(ctx.trades) : undefined,
+    excludeAccountIds
+  });
   const t = buildComprehensiveTaxTracker(ctx.ledger, ctx.today, ctx.fxRate, {
     grossUp: ctx.taxGrossUp === true,
     excludeAccountIds,
@@ -168,7 +176,10 @@ function ruleComprehensiveTax(ctx: NudgeContext): Nudge[] {
 
 /** 다가오는 배당 — 선행배당 캘린더의 가장 가까운 미래 달 예상액이 있으면 info로 미리 알림 */
 function ruleUpcomingDividend(ctx: NudgeContext): Nudge[] {
-  const fwd = buildForwardDividends(ctx.ledger, ctx.today, ctx.fxRate);
+  // 보유 반영 — 전량 매도한 종목의 과거 배당이 '다가오는 배당'으로 뜨지 않게 (배당 탭 캘린더와 동일)
+  const fwd = buildForwardDividends(ctx.ledger, ctx.today, ctx.fxRate, {
+    currentQtyByTicker: ctx.trades ? netQtyByTicker(ctx.trades) : undefined
+  });
   const next = fwd.months[0];
   if (!next || next.amountKRW <= 0) return [];
   return [
@@ -210,14 +221,18 @@ function ruleFxBand(ctx: NudgeContext): Nudge[] {
 /** 대출 만기 D-3 — Loan에 월별 상환일 필드가 없어 만기일(maturityDate) 임박으로 대체 */
 function ruleLoanMaturity(ctx: NudgeContext): Nudge[] {
   const out: Nudge[] = [];
+  // 잔금은 상환 반영 값(전체 대출 목록으로 단일 승자 매칭) — 원금(loanAmount)을 찍거나 다 갚은 대출에 알리지 않게
+  const balances = computeLoanBalancesById(ctx.loans, ctx.ledger, ctx.today);
   for (const loan of ctx.loans ?? []) {
     const d = diffDays(ctx.today, loan.maturityDate);
     if (d == null || d < 0 || d > 3) continue;
+    const balance = balances.get(loan.id) ?? 0;
+    if (balance <= 0) continue;
     out.push({
       id: `loan:${loan.id}:maturity`,
       severity: "warn",
       title: `대출 만기 D-${d} — ${loan.loanName || loan.institution}`,
-      detail: `${loan.institution} · 만기 ${loan.maturityDate} · 잔액 기준 ${won(loan.loanAmount)}`,
+      detail: `${loan.institution} · 만기 ${loan.maturityDate} · 잔액 ${won(balance)}`,
       tab: "debt",
       dedupeKey: `loan:${loan.id}:maturity`,
       at: ctx.today

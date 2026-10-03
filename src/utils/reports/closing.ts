@@ -8,6 +8,7 @@ import { computeAccountBalances, computeBalanceSheet, computePositions } from ".
 import { getTodayKST } from "../date";
 import { isSavingsExpenseEntry, isCreditPayment, isInvestmentEntry } from "../category";
 import { toKrwAmount } from "./shared";
+import { accountsWithUsdBalanceAsOf } from "../tradeCashImpact";
 
 export interface DailyReport {
   date: string;
@@ -175,8 +176,10 @@ export function generateDailyReport(
       .filter((entry) => entry.kind === "transfer" && entry.date === date && !isInvestmentEntry(entry))
       .reduce((sum, entry) => sum + toKrwAmount(entry.amount, entry.currency, fxRate), 0);
 
-    const positions = computePositions(filteredTrades, prices, accounts);
-    const balances = computeAccountBalances(accounts, filteredLedger, filteredTrades);
+    // 시세 없는 종목은 원가로 중립 — 대시보드 대차와 같은 입력(평가액 0·−100% 방지)
+    const positions = computePositions(filteredTrades, prices, accounts, { fxRate, priceFallback: "cost" });
+    // usdBalance는 '현재' 값 — 그날 이후 잔액모드 거래분을 되돌린 계좌로 잔액·대차를 구한다
+    const balances = computeAccountBalances(accountsWithUsdBalanceAsOf(accounts, trades, date), filteredLedger, filteredTrades);
 
     // 총자산·순자산과 그 분해(주식/현금/저축)는 모두 앱 공용 대차 정의(computeBalanceSheet) 한 장에서 —
     // 그날까지의 잔액·포지션·대출 잔금 기준. 분해를 계좌 타입별 총액으로 따로 구하면 마이너스 통장(현금에 음수로

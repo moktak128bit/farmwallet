@@ -9,6 +9,7 @@ import {
   computeDateAccountUtilization,
   computeMoimAccountFlow,
   computeSettledLedgerIds,
+  computeSettlementDefaultSince,
 } from "../utils/dateAccounting";
 import type { Account, LedgerEntry } from "../types";
 
@@ -308,5 +309,47 @@ describe("computeSettledLedgerIds — 정산 표식 단일 소스(회귀)", () =
   it("subCategory='정산' 레거시 세대도 인식", () => {
     const ledger = [entry({ id: "s1", kind: "income", category: "수입", subCategory: "정산", amount: 1, settledLedgerIds: ["e5"] })];
     expect(computeSettledLedgerIds(ledger).has("e5")).toBe(true);
+  });
+});
+
+describe("computeSettlementDefaultSince — 정산 시작일 기본값은 ledger에서 파생(회귀)", () => {
+  const DA = "date-acc";
+  const exp = (id: string, date: string, amount = 10000) =>
+    entry({ id, date, amount, kind: "expense", fromAccountId: DA });
+  const settle = (id: string, date: string, ids?: string[]): LedgerEntry =>
+    entry({ id, date, kind: "income", category: "정산", subCategory: "데이트통장", amount: 1, toAccountId: DA, settledLedgerIds: ids });
+  const since = (ledger: LedgerEntry[]) => computeSettlementDefaultSince(ledger, DA, computeSettledLedgerIds(ledger));
+
+  it("정산 기록이 전혀 없으면 null (호출부 기본 범위)", () => {
+    expect(since([exp("e1", "2026-09-10")])).toBeNull();
+  });
+
+  it("정산을 삭제(undo)하면 되살아난 지출의 날짜로 돌아간다 — 마지막 정산일(10/02)에 갇히지 않음", () => {
+    const old = settle("s0", "2026-09-01", ["e0"]);
+    const e0 = exp("e0", "2026-08-20");
+    const e1 = exp("e1", "2026-09-10", 40000);
+    const e2 = exp("e2", "2026-09-20", 20000);
+    // 10/02 정산이 살아 있을 땐 미정산 지출이 없음 → 마지막 정산일
+    expect(since([old, e0, e1, e2, settle("s1", "2026-10-02", ["e1", "e2"])])).toBe("2026-10-02");
+    // 10/02 정산 삭제 → 9/10부터
+    expect(since([old, e0, e1, e2])).toBe("2026-09-10");
+    // 첫 정산 때 범위 밖으로 뺀(정산된 적 없는) 더 오래된 지출은 다시 끌어오지 않는다
+    expect(since([exp("pre", "2026-08-01"), old, e0, e1, e2])).toBe("2026-09-10");
+  });
+
+  it("나중에 입력한 과거 날짜 지출도 시작일 안으로 들어온다", () => {
+    const ledger = [
+      exp("e1", "2026-09-10"),
+      settle("s1", "2026-10-02", ["e1"]),
+      exp("late", "2026-09-25"), // 정산 후에 9/25 날짜로 입력
+    ];
+    expect(since(ledger)).toBe("2026-09-25");
+  });
+
+  it("구세대 날짜 기반 정산(settledLedgerIds 없음)은 그 날까지 정산된 것으로 보고 다음 날부터", () => {
+    const ledger = [exp("e1", "2026-06-01"), exp("e2", "2026-06-30"), settle("legacy", "2026-06-30"), exp("e3", "2026-07-05")];
+    expect(since(ledger)).toBe("2026-07-05");
+    // 이후 지출이 없으면 다음 날
+    expect(since(ledger.slice(0, 3))).toBe("2026-07-01");
   });
 });

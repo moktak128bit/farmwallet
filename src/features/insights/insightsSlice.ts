@@ -29,7 +29,7 @@ import { expSubName, isSubEntry, type InsightsBase } from "./insightsBase";
 export function sliceInsightsForMonth(base: InsightsBase, selMonth: string | null): D {
   const {
     ledger, rawTrades, categoryPresets, fxRate,
-    aMap, invIds, moimIds, amt, flowOf,
+    aMap, moimIds, amt, flowOf, isInvestInflow, krwLedger,
     monthly, months, ml, realFlows,
     salaryKeys, investIncKeys, nonRealKeys, salaryMonthly,
     allClosedRecords, periodSellIds, realPL,
@@ -53,7 +53,7 @@ export function sliceInsightsForMonth(base: InsightsBase, selMonth: string | nul
     if (Number(l.amount) <= 0) continue;
     const flow = flowOf(l);
     if (flow === "investing") pInvest += isInvestmentLossEntry(l) ? -amt(l) : amt(l);
-    else if (flow === null && l.kind === "transfer" && l.toAccountId && invIds.has(l.toAccountId)) pInvest += amt(l);
+    else if (flow === null && isInvestInflow(l)) pInvest += amt(l);
   }
   /* ===== 실질 수입/지출 (정산·일시소득 제외, USD 환산, 데이트 50% 분담) — base.realFlows(utils/savingsRate 단일 소스) ===== */
   let realIncome = 0, realExpense = 0, settlementTotal = 0, tempIncomeTotal = 0, dateAccountSpend = 0, datePartnerShare = 0;
@@ -66,8 +66,8 @@ export function sliceInsightsForMonth(base: InsightsBase, selMonth: string | nul
       dateAccountSpend += rf.dateAccountSpend; datePartnerShare += rf.datePartnerShare;
     }
   }
-  // D.realSavRate는 number 계약 — 분모 0(실질수입 없음)이면 0 폴백
-  const realSavRate = computeRealSavingsRate(realIncome, realExpense) ?? 0;
+  // 분모 0(실질수입 없음)이면 null — UI는 N/A (0%로 폴백하면 '저축 0%' 막대·목표 대비가 거짓으로 그려진다)
+  const realSavRate = computeRealSavingsRate(realIncome, realExpense);
 
   /* ===== expenseByCategory (대분류) =====
    * 대분류는 expenseMainName 단일 소스 — 표준 스키마(cat="지출", sub=식비)에서 category를 직접 키로
@@ -273,7 +273,7 @@ export function sliceInsightsForMonth(base: InsightsBase, selMonth: string | nul
 
   /* financial score — 저축률 항목은 실질 저축률 기준 (정의 통일) */
   let scorePts = 0;
-  const sr = realSavRate;
+  const sr = realSavRate ?? 0; // N/A면 저축률 점수 0
   if (sr >= 50) scorePts += 40; else if (sr >= 30) scorePts += 30; else if (sr >= 20) scorePts += 20; else if (sr >= 10) scorePts += 10;
   if (zeroDays > totalDays * 0.2) scorePts += 20; else if (zeroDays > totalDays * 0.1) scorePts += 10;
   if (pInvest > 0) scorePts += 20; else scorePts += 5;
@@ -283,15 +283,19 @@ export function sliceInsightsForMonth(base: InsightsBase, selMonth: string | nul
   const comments: Record<string, string> = { "A+": "완벽한 재무 습관!", A: "훌륭하게 관리 중!", "B+": "꽤 건강한 재무 상태!", B: "나쁘지 않아요!", "C+": "개선의 여지가 있어요.", C: "소비 조절이 필요해요.", D: "재무 점검이 필요해요!" };
 
   /* prev month */
-  let prev: { income: number; expense: number; salary: number; realExpense: number } | null = null;
+  let prev: D["prev"] = null;
   if (selMonth) {
     const [y, m] = selMonth.split("-").map(Number); const pd = new Date(y, m - 2, 1);
     const pm = `${pd.getFullYear()}-${String(pd.getMonth() + 1).padStart(2, "0")}`;
+    // 선택 월이 진행 중인 이번 달이면 전월도 같은 기간(1~오늘 일)만 — 완결 전월 전체와 비교하면
+    // 월급일 전 내내 "근로소득 −100%, 지출 감소 — 좋은 흐름" 허위 문구가 뜬다 (CLAUDE.md 규칙 13)
+    const partialDay = todayKst.slice(0, 7) === selMonth ? Number(todayKst.slice(8, 10)) : null;
     let pi = 0, pe = 0, ps = 0;
     // 당월(pIncome/pExpense)과 동일한 분류 기준 — 예전엔 전월만 재테크 제외가 빠져
     // 레거시 저축성지출이 전월 지출에 섞였고, "전월 대비" 배지가 허위 개선률을 표시했다.
     for (const l of ledger) {
       if (l.date?.slice(0, 7) !== pm) continue;
+      if (partialDay != null && Number(l.date.slice(8, 10)) > partialDay) continue;
       const a = amt(l); if (a <= 0) continue;
       const flow = flowOf(l);
       if (flow === "income") { pi += a; if (salaryKeys.has(l.subCategory || l.category || "")) ps += a; }
@@ -299,8 +303,9 @@ export function sliceInsightsForMonth(base: InsightsBase, selMonth: string | nul
     }
     // 전월 실질 지출도 realFlows 단일 소스에서 가져온다 — 없으면 pe(장부 지출)로 대체.
     // (당월 값은 실질 지출인데 전월만 장부 지출과 비교하면 "실질 지출" 배지가 엉뚱한 방향을 가리킨다)
-    const prevRealExpense = realFlows.get(pm)?.realExpense ?? pe;
-    if (pi > 0 || pe > 0) prev = { income: pi, expense: pe, salary: ps, realExpense: prevRealExpense };
+    // realFlows는 월 전체 합이라 동기 비교(partialDay)에선 쓸 수 없다 → pe로 대체 (현재 UI 미사용 필드)
+    const prevRealExpense = partialDay != null ? pe : realFlows.get(pm)?.realExpense ?? pe;
+    if (pi > 0 || pe > 0) prev = { income: pi, expense: pe, salary: ps, realExpense: prevRealExpense, partialDay };
   }
 
   /* ===== 소득 그룹별 분류 ===== */
@@ -639,7 +644,8 @@ export function sliceInsightsForMonth(base: InsightsBase, selMonth: string | nul
     if (!anomalyTargetMonth) return null;
     // 진행 중인 달이면 과거 달도 같은 기간(1~오늘 일)만 비교 — 월말에만 경고 켜지는 사각 방지
     const anomalyDayCap = anomalyTargetMonth === curMonthStr ? Number(getTodayKST().slice(8, 10)) : undefined;
-    const results = detectSpendAnomalies(ledger, anomalyTargetMonth, 6, anomalyDayCap, categoryPresets);
+    // krwLedger — detectSpendAnomalies는 amount를 그대로 합산한다 (원본이면 $100 = 100원)
+    const results = detectSpendAnomalies(krwLedger, anomalyTargetMonth, 6, anomalyDayCap, categoryPresets);
     const triggered = results.filter((a) => a.isAnomaly).sort((a, b) => Math.abs(b.zScore) - Math.abs(a.zScore));
     return triggered[0] ?? null;
   })();
@@ -647,18 +653,25 @@ export function sliceInsightsForMonth(base: InsightsBase, selMonth: string | nul
   /* 수입 성장률 시계열·MoM/YoY — utils/insightsTrends 단일 소스.
      진행 중인 달이면 전월·전년의 "같은 기간(1~오늘 일)"과 비교 (월중 -90%대 왜곡 방지). */
   const todayDayNum = Number(getTodayKST().slice(8, 10));
-  const incomeGrowth = computeIncomeGrowth({ ledger, months, ml, salaryMonthly, salaryKeys, curMonthStr, anomalyTargetMonth, todayDayNum });
+  // 아래 셋·이상감지는 amount를 그대로 합산 → 원화 환산본(krwLedger)을 넘긴다 (monthlyReview와 같은 계약)
+  const incomeGrowth = computeIncomeGrowth({ ledger: krwLedger, months, ml, salaryMonthly, salaryKeys, curMonthStr, anomalyTargetMonth, todayDayNum });
 
   /* 지출 관성: 현재월 지출 vs 최근 3개월 평균 — utils/insightsTrends 단일 소스.
      진행 중인 달이면 과거 3개월도 "같은 기간(1~오늘 일)"만 합산 (월중 "절약 모드" 왜곡 방지). */
-  const spendingInertia = computeSpendingInertia({ ledger, months, monthly, curMonthStr, anomalyTargetMonth, todayDayNum });
+  const spendingInertia = computeSpendingInertia({ ledger: krwLedger, months, monthly, curMonthStr, anomalyTargetMonth, todayDayNum, categoryPresets });
 
   /* 카테고리 성장률 TOP — 현재월 중분류 지출 vs 최근 3개월 평균 — utils/insightsTrends 단일 소스.
      진행 중인 달이면 과거 3개월도 같은 기간(1~오늘 일)만 집계 (월중 전부 "감소" 왜곡 방지). */
-  const categoryGrowth = computeCategoryGrowth({ ledger, months, curMonthStr, anomalyTargetMonth, todayDayNum, categoryPresets });
+  const categoryGrowth = computeCategoryGrowth({ ledger: krwLedger, months, curMonthStr, anomalyTargetMonth, todayDayNum, categoryPresets });
 
-  /* 단건 지출 이상치 TOP — 중분류 내 z-score — utils/insightsPatterns 단일 소스 */
-  const entryOutliers = computeEntryOutliers(fExp);
+  /* 단건 지출 이상치 TOP — 중분류 내 z-score — utils/insightsPatterns 단일 소스 (금액은 원화 환산) */
+  const entryOutliers = computeEntryOutliers(fExp.map(l => ({ ...l, amount: amt(l) })));
+
+  /* 재정 활주로 분모 — 완결 월만의 월평균 지출. 진행 중인 달·기간 필터로 잘린 첫 달(부분 월)을 넣으면
+     평균이 내려가 활주로가 ~30% 부풀었다. 완결 월이 없으면(첫 달 사용자) 전 기간으로 폴백. */
+  const doneMonths = months.filter((m, i) => m < curMonthStr && !(i === 0 && base.firstMonthCut));
+  const avgMonths = doneMonths.length > 0 ? doneMonths : months;
+  const avgMonthExp = SD(avgMonths.reduce((s, m) => s + monthly[m].expense, 0), Math.max(avgMonths.length, 1));
 
   /* DOM 월 가중치 보정 — 각 일자(1~31)가 기간 내 며칠만큼 존재했는지 (base.domOccurrences) */
   const spendByDOMAvg = spendByDOM.map((v, i) => base.domOccurrences[i] > 0 ? v / base.domOccurrences[i] : 0);
@@ -676,7 +689,7 @@ export function sliceInsightsForMonth(base: InsightsBase, selMonth: string | nul
     pIncome, pSalary, pExpense, pInvest, expByCat, expBySub, topCats, acctUsage, wdSpend, dateTop, dateSubCats, dateEntries, dateTxCount, incByCat, trades, subs, largeExp, topTx, expBySubCat, expByDesc, dateMoim, datePersonal, spendByDOM, portfolio: base.portfolio, realPL: { total: realPL.total, wins: realPL.wins, losses: realPL.losses, winCnt: realPL.winCnt, lossCnt: realPL.lossCnt }, closedByStock,
     investBreakdown: base.investBreakdown, holdingsByStock: base.holdingsByStock, totalHoldingsCost: base.totalHoldingsCost,
     zeroDays, totalDays, weekendTot, weekdayTot, topDates,
-    score: { total: scorePts, grade, comment: comments[grade] || "" }, prev, avgMonthExp: base.avgMonthExp,
+    score: { total: scorePts, grade, comment: comments[grade] || "" }, prev, avgMonthExp,
     incByGroup, investBySub, dateByDetail, stockTrends: base.stockTrends,
     subInsights, incSubInsights, dateSubInsights, investSubInsights,
     realIncome, realExpense, settlementTotal, tempIncomeTotal, dateAccountSpend, datePartnerShare, moimFlow: base.moimFlow, originalAssets: base.originalAssets, originalAssetsByAcct: base.originalAssetsByAcct,

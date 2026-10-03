@@ -9,6 +9,8 @@
  *  - 분모(원가)는 **KRW 원가**다 (CLAUDE.md: 배당율은 totalBuyAmountKRW 기준).
  *    USD 종목은 매입 당시 환율(fxRateAtTrade) 우선 — 현재 환율로 환산하면 원금이 환율 따라
  *    출렁여 YOC가 배당과 무관하게 흔들린다.
+ *  - 창의 배당은 **지금 보유 기준**으로 환산한다(기록별 금액 × 지금 보유 ÷ 받을 때 보유). 분모가
+ *    지금 원가이므로 분자도 지금 보유가 받을 돈이어야 매도·적립 후에도 YOC가 맞는다.
  *  - 연환산은 "최근 ≤12개월 창의 합 ÷ 유효 월수 × 12". 유효 월수는 그 종목의 첫 수령월부터
  *    세되 최대 12, 무배당 달도 0으로 포함한다. 지급한 달만 평균 내면 분기·연배당이 3~12배
  *    부풀고, 반대로 5개월 전에 시작한 종목을 12로 나누면 절반 이하로 과소평가된다.
@@ -18,6 +20,8 @@
 import type { LedgerEntry, StockTrade } from "../types";
 import { canonicalTickerForMatch, tradeAmountKRW } from "./finance";
 import { isDividendRecord, tickerFromDividendDesc } from "./dividendGrowth";
+import { parseExDateFromNote } from "./dividend";
+import { compareTradesFifo } from "./fifoLots";
 
 /** 차트에서 개별 색을 받는 종목 수 — 나머지는 "기타"로 합친다 */
 const TOP_N = 4;
@@ -114,15 +118,8 @@ const monthDiff = (from: string, to: string): number =>
   (Number(to.slice(0, 4)) - Number(from.slice(0, 4))) * 12 +
   (Number(to.slice(5, 7)) - Number(from.slice(5, 7)));
 
-/**
- * 종목별 월말 KRW 원가(이동평균) 시계열.
- * 매도는 평단을 유지한 채 원가만 비례 차감한다 — dividendGrowth와 같은 규칙(수익률 정의 통일).
- */
-function costByMonth(
-  trades: StockTrade[],
-  months: string[],
-  fxRate?: number | null
-): Map<string, number[]> {
+/** 종목(canonical)별 거래 — 앱 표준 FIFO 순서(같은 날 매수 먼저) */
+function tradesByTicker(trades: StockTrade[]): Map<string, StockTrade[]> {
   const byTicker = new Map<string, StockTrade[]>();
   for (const t of trades) {
     const c = canonicalTickerForMatch(t.ticker);
@@ -131,11 +128,33 @@ function costByMonth(
     list.push(t);
     byTicker.set(c, list);
   }
+  for (const list of byTicker.values()) list.sort(compareTradesFifo);
+  return byTicker;
+}
 
-  const out = new Map<string, number[]>();
-  for (const [ticker, list] of byTicker) {
-    const sorted = [...list].sort((a, b) => (a.date || "").localeCompare(b.date || ""));
+/** date 이전(그날 거래 제외) 전 계좌 보유 수량 — 배당을 받을 때의 보유 */
+function qtyBefore(sorted: StockTrade[], date: string): number {
+  let q = 0;
+  for (const t of sorted) {
+    if ((t.date || "") >= date) break;
+    q += (t.side === "buy" ? 1 : -1) * (Number(t.quantity) || 0);
+  }
+  return Math.max(0, q);
+}
+
+/**
+ * 종목별 월말 KRW 원가(이동평균)·보유 수량 시계열.
+ * 매도는 평단을 유지한 채 원가만 비례 차감한다 — dividendGrowth와 같은 규칙(수익률 정의 통일).
+ */
+function costByMonth(
+  byTicker: Map<string, StockTrade[]>,
+  months: string[],
+  fxRate?: number | null
+): Map<string, { cost: number[]; qty: number[] }> {
+  const out = new Map<string, { cost: number[]; qty: number[] }>();
+  for (const [ticker, sorted] of byTicker) {
     const series: number[] = [];
+    const qtySeries: number[] = [];
     let qty = 0;
     let cost = 0;
     let i = 0;
@@ -157,8 +176,9 @@ function costByMonth(
         i += 1;
       }
       series.push(Math.max(0, cost));
+      qtySeries.push(Math.max(0, qty));
     }
-    out.set(ticker, series);
+    out.set(ticker, { cost: series, qty: qtySeries });
   }
   return out;
 }
@@ -184,8 +204,17 @@ export function buildDividendPortfolio(args: {
     ? new Set(args.tickers.map((t) => canonicalTickerForMatch(t)).filter((t): t is string => !!t))
     : null;
 
+  const tradesSorted = tradesByTicker(trades);
+
   // ── 배당 기록을 (월, 티커)로 집계 ──────────────────────────────────────
   const amountByMonthTicker = new Map<string, Map<string, number>>();
+  /**
+   * `${월}|${티커}` → 받을 때 보유로 나눈 '주당 환산'(units)과 보유를 모르는 금액(rest).
+   * 연환산 창의 배당은 **받을 때의 보유**로 받은 돈인데 분모는 **지금의 원가**다 — 대량 매도 후엔
+   * 과거 1000주분 배당을 10주 원가로 나눠 YOC 352%가, 적립 중엔 반대로 절반 수준이 나왔다.
+   * 그래서 창의 배당을 units × 지금 보유로 환산한다 (보유 0으로 잡힌 기록은 환산 불가 → 그대로).
+   */
+  const unitsByMonthTicker = new Map<string, { units: number; rest: number }>();
   const nameByTicker = new Map<string, string>();
   const firstMonthByTicker = new Map<string, string>();
   let earliest = "";
@@ -217,6 +246,13 @@ export function buildDividendPortfolio(args: {
       amountByMonthTicker.set(month, row);
     }
     row.set(ticker, (row.get(ticker) ?? 0) + amount);
+
+    // 기준일: 배당락일(권리 확정) 우선, 없으면 지급일 — 그날 거래는 권리와 무관하므로 제외
+    const held = qtyBefore(tradesSorted.get(ticker) ?? [], parseExDateFromNote(l.note) || l.date);
+    const u = unitsByMonthTicker.get(`${month}|${ticker}`) ?? { units: 0, rest: 0 };
+    if (held > 1e-8) u.units += amount / held;
+    else u.rest += amount;
+    unitsByMonthTicker.set(`${month}|${ticker}`, u);
   }
 
   if (!earliest) return null;
@@ -226,7 +262,7 @@ export function buildDividendPortfolio(args: {
   for (let m = earliest; monthDiff(m, currentMonth) >= 0; m = addMonths(m, 1)) months.push(m);
   const lastComplete = addMonths(currentMonth, -1);
 
-  const costSeries = costByMonth(trades, months, fx);
+  const costSeries = costByMonth(tradesSorted, months, fx);
 
   /**
    * 특정 시점(asOf 월 인덱스)의 종목별 연환산·원가 스냅샷.
@@ -242,6 +278,8 @@ export function buildDividendPortfolio(args: {
       if (first > asOf) continue; // 그 시점엔 아직 배당을 시작하지 않음
       const span = monthDiff(first, asOf) + 1;
       const window = Math.max(0, Math.min(ANNUALIZE_WINDOW, span));
+      // 지금(asOf 월말) 보유 — 0이면 전량 매도라 환산하지 않고 받은 금액 그대로(표시용, 총계 제외)
+      const heldNow = costSeries.get(ticker)?.qty[asOfIdx] ?? 0;
       let windowSum = 0;
       let total = 0;
       for (const [month, row] of amountByMonthTicker) {
@@ -249,10 +287,12 @@ export function buildDividendPortfolio(args: {
         if (!v) continue;
         if (month <= asOf) total += v;
         const back = monthDiff(month, asOf);
-        if (back >= 0 && back < window) windowSum += v;
+        if (back < 0 || back >= window) continue;
+        const u = unitsByMonthTicker.get(`${month}|${ticker}`);
+        windowSum += heldNow > 1e-8 && u ? u.units * heldNow + u.rest : v;
       }
       const annual = window > 0 ? (windowSum / window) * 12 : 0;
-      const cost = costSeries.get(ticker)?.[asOfIdx] ?? 0;
+      const cost = costSeries.get(ticker)?.cost[asOfIdx] ?? 0;
       const excluded: "sold" | "tooShort" | null =
         cost <= 0 ? "sold" : window < MIN_ANNUALIZE_MONTHS ? "tooShort" : null;
       rows.push({

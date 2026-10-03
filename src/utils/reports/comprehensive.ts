@@ -4,7 +4,7 @@
 // ---------------------------------------------------------------------------
 
 import type { Account, LedgerEntry, StockTrade } from "../../types";
-import { isInterestRepayment } from "../../calculations";
+import { hasLoanRepaymentStructure, isInterestRepayment } from "../../calculations";
 import { isSavingsExpenseEntry, isCreditPayment, isInvestmentLossEntry } from "../category";
 import { tradeAmountKRW as tradeAmountKRWStd } from "../finance";
 import { computeMonthlyRealFlows, computeRealSavingsRate } from "../savingsRate";
@@ -131,10 +131,8 @@ export function generateComprehensiveMonthlyReport(
       row.totalExpense += amount;
       const cat = entry.category ?? "";
       const sub = entry.subCategory ?? "";
-      // 대출상환: 현재 구조 (지출/대출상환/학자금대출 등) + 구버전 (category=대출상환)
-      const isLoanRepay =
-        cat === "대출상환" ||
-        (cat === "지출" && sub === "대출상환");
+      // 대출상환: 세대·강등형 전부 — calculations 단일 소스
+      const isLoanRepay = hasLoanRepaymentStructure(entry);
       // 이자/원금 구분은 calculations 단일 소스 — substring 정책 재구현 금지
       const isInterest = isInterestRepayment(entry);
 

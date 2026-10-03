@@ -32,7 +32,8 @@ interface TaxComputeOptions {
    * 선행배당(utils/forwardDividends.buildForwardDividends().months) — 4-6. 주어지면 트래커의 연말 예상을
    * "YTD + 남은 달(다음 달~12월) 예상 배당 + 이자는 기존 일 페이스"로, 임계 도달 예상일을 "누적이 임계를
    * 넘는 첫 달의 말일"로 계산한다. 미지정이면 기존 선형 페이스(ytd÷경과일×연간일수) 100% 유지.
-   * 이번 달 잔여분(오늘~말일)은 months에 없으므로(다음 달부터 시작) 포함되지 않는다 — 보수적.
+   * 이번 달 항목은 **아직 안 받은 잔여분**으로 가산한다(받은 분은 YTD) — forwardDividends.buildTaxForwardMonths가
+   * 이번 달 이미 지급된 스트림을 0으로 넣는다. 지난 달 항목은 무시.
    */
   forwardMonths?: readonly ForwardDividendMonth[];
 }
@@ -231,14 +232,14 @@ export function buildComprehensiveTaxTracker(
 
   const forward = options?.forwardMonths;
   if (forward) {
-    // 4-6 선행배당 기반: 남은 달(다음 달~12월)은 월별 예상 배당, 이자는 YTD 일 페이스 유지.
+    // 4-6 선행배당 기반: 남은 달(이번 달 미수령 잔여분~12월)은 월별 예상 배당, 이자는 YTD 일 페이스 유지.
     // forwardMonths는 가계부 입금액(세후) 기준이므로 grossUp이면 YTD 배당의 세전/세후 비율로 같이 역산한다.
     projectionBasis = "forward";
     const grossRatio = grossUp && dividendNet > 0 ? dividendGross / dividendNet : 1;
     const interestDaily = interestGross / elapsed;
     const thisMonth = today.slice(0, 7);
     const remaining = forward
-      .filter((m) => m.month.startsWith(`${yearStr}-`) && m.month > thisMonth)
+      .filter((m) => m.month.startsWith(`${yearStr}-`) && m.month >= thisMonth)
       .sort((a, b) => (a.month < b.month ? -1 : a.month > b.month ? 1 : 0));
     let cum = ytdGross;
     for (const m of remaining) {

@@ -21,7 +21,7 @@
  *  - 그룹에 note 없는 기록이 섞이면 스케일 포기(과거액 유지) — 분모 범위가 어긋난 과대 방지.
  *  옵션 미제공 시 v1 동작(과거 패턴 그대로 투영, annualTotalKRW ≈ trailing12KRW)으로 폴백.
  */
-import type { LedgerEntry } from "../types";
+import type { LedgerEntry, StockTrade } from "../types";
 import { isDividendEntryLoose } from "./categoryMatch";
 import { addDaysToIso, parseIsoLocal } from "./date";
 import { toKrwByRate } from "./currency";
@@ -43,12 +43,37 @@ export interface ForwardDividends {
   trailing12KRW: number;
 }
 
+/**
+ * canonical 티커 → 전 거래 순수량. positions(보유>0만)가 아니라 전 거래 순수량이어야 전량 매도 종목이
+ * 0으로 남아 "매도 → 미래 배당 제외"가 되고, 거래 이력이 없는 토큰(티커 오탐)은 맵에 없어 폴백된다.
+ */
+export function netQtyByTicker(trades: StockTrade[]): Map<string, number> {
+  const m = new Map<string, number>();
+  for (const t of trades) {
+    const k = canonicalTickerForMatch(t.ticker);
+    if (!k) continue;
+    const q = Number(t.quantity) || 0;
+    m.set(k, (m.get(k) ?? 0) + (t.side === "buy" ? q : -q));
+  }
+  // 부동소수점 잔량 스냅 — 소수점 주식 전량 매도(0.1+0.2−0.3)가 5e-17 잔량으로
+  // '보유 중' 판정되는 것 방지 (finance.getCurrentHoldingsTickers와 동일한 1e-8 안전망)
+  for (const [k, v] of m) if (Math.abs(v) < 1e-8) m.set(k, 0);
+  return m;
+}
+
 export function buildForwardDividends(
   ledger: LedgerEntry[],
   today: string,
   fxRate?: number | null,
-  opts?: { currentQtyByTicker?: Map<string, number> }
-): ForwardDividends {
+  opts?: {
+    currentQtyByTicker?: Map<string, number>;
+    /** 이 계좌(toAccountId)로 받은 배당은 투영에서 뺀다 — 종합과세 투영 전용(절세계좌). 캘린더는 미지정 */
+    excludeAccountIds?: ReadonlySet<string>;
+  }
+): ForwardDividends & {
+  /** 이번 달 아직 안 받은 예상분 — 이번 달 이미 지급된 스트림은 0, 미지급 스트림만 작년 같은 달로 (months엔 없음) */
+  currentMonthRemainingKRW: number;
+} {
   const toKrw = (e: LedgerEntry) => toKrwByRate(e.amount, e.currency, fxRate);
   const trailingStart = addDaysToIso(today, -365); // 실적 창 (미포함 경계)
   const projStart = `${Number(today.slice(0, 4)) - 1}-${today.slice(5, 7)}-01`; // 투영 수집 창 시작
@@ -68,6 +93,7 @@ export function buildForwardDividends(
     if (e.kind !== "income" || !e.date) continue;
     if (e.date < projStart || e.date > today) continue;
     if (!isDividendEntryLoose(e)) continue;
+    if (e.toAccountId && opts?.excludeAccountIds?.has(e.toAccountId)) continue;
     const krw = toKrw(e);
     if (e.date > trailingStart) trailing12 += krw; // 실적(과거)은 스케일 없이 그대로
 
@@ -127,5 +153,28 @@ export function buildForwardDividends(
     annualTotal += amt;
   }
 
-  return { months, annualTotalKRW: annualTotal, trailing12KRW: trailing12 };
+  // 이번 달: 이미 받은 스트림은 실적(YTD)에 있으므로 0, 아직 안 받은 스트림만 작년 같은 달 버킷
+  const thisYm = today.slice(0, 7);
+  const lastYearYm = `${Number(today.slice(0, 4)) - 1}-${today.slice(5, 7)}`;
+  let currentMonthRemaining = 0;
+  for (const ymMap of streams.values()) {
+    if (!ymMap.has(thisYm)) currentMonthRemaining += ymMap.get(lastYearYm) ?? 0;
+  }
+
+  return { months, annualTotalKRW: annualTotal, trailing12KRW: trailing12, currentMonthRemainingKRW: currentMonthRemaining };
+}
+
+/**
+ * 종합과세 연말 투영용 선행 월 — 절세계좌 수령분 제외 + 맨 앞에 이번 달 미수령 잔여분.
+ * YTD는 절세계좌를 빼는데 투영만 ISA 배당을 넣으면 연말 예상이 부풀고, 이번 달을 통째로 버리면
+ * 아직 안 받은 이번 달 배당이 YTD·투영 어디에도 없었다. 배당 탭 카드와 넛지가 같은 값을 쓰도록 단일화.
+ */
+export function buildTaxForwardMonths(
+  ledger: LedgerEntry[],
+  today: string,
+  fxRate: number | null | undefined,
+  opts: { currentQtyByTicker?: Map<string, number>; excludeAccountIds?: ReadonlySet<string> }
+): ForwardDividendMonth[] {
+  const f = buildForwardDividends(ledger, today, fxRate, opts);
+  return [{ month: today.slice(0, 7), amountKRW: f.currentMonthRemainingKRW }, ...f.months];
 }

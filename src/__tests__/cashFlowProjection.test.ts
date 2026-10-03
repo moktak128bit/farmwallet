@@ -198,6 +198,57 @@ describe("buildCashFlowProjection — 월말 요약점", () => {
   });
 });
 
+describe("buildCashFlowProjection — 이중계상·잔금 회귀", () => {
+  it("대출 잔금은 전체 대출 목록으로 단일 승자 매칭 — '주담대2 상환'(loanId 없음)이 '주담대'를 줄이지 않는다 (D2)", () => {
+    const accounts: Account[] = [acc({ id: "chk", type: "checking", initialBalance: 100_000_000 })];
+    const bullet = { repaymentMethod: "bullet" as const, annualInterestRate: 0, loanDate: "2025-01-10", maturityDate: "2026-09-10" };
+    const loans: Loan[] = [
+      loan({ id: "l1", loanName: "주담대", loanAmount: 5_000_000, ...bullet }),
+      loan({ id: "l2", loanName: "주담대2", loanAmount: 2_000_000, ...bullet }),
+    ];
+    const ledger: LedgerEntry[] = [
+      le({ id: "p1", date: "2026-03-10", category: "지출", subCategory: "대출상환", detailCategory: "원금", description: "주담대2 상환", amount: 1_000_000 }),
+    ];
+    const proj = buildCashFlowProjection(TODAY, accounts, ledger, loans, [], { horizonMonths: 3 });
+    const sumOf = (label: string) => proj.events.filter((e) => e.source === "loan" && e.label === label).reduce((s, e) => s + e.amount, 0);
+    expect(sumOf("주담대 상환")).toBe(-5_000_000);
+    expect(sumOf("주담대2 상환")).toBe(-1_000_000);
+  });
+
+  it("과거 대출상환 지출은 변동 지출 기준선에서 빠진다 — 대출 스케줄과 이중계상 금지 (L1, 계약 4)", () => {
+    const accounts: Account[] = [acc({ id: "chk", type: "checking", initialBalance: 10_000_000 })];
+    const ledger: LedgerEntry[] = ["2026-05-10", "2026-06-10", "2026-07-10"].map((date, i) =>
+      le({ id: `rp${i}`, date, category: "지출", subCategory: "대출상환", detailCategory: "학자금대출", amount: 1_000_000, fromAccountId: "chk" })
+    );
+    const proj = buildCashFlowProjection(TODAY, accounts, ledger, [], [], { horizonMonths: 3 });
+    expect(proj.events.some((e) => e.source === "variable-baseline")).toBe(false);
+  });
+
+  it("가용 현금 계좌(저축)로 가는 반복 이체는 유출이 아니다 — 시작 잔고에 이미 포함 (L2)", () => {
+    const accounts: Account[] = [
+      acc({ id: "chk", type: "checking", initialBalance: 1_000_000 }),
+      acc({ id: "sav", type: "savings", initialBalance: 0 }),
+    ];
+    const recurring: RecurringExpense[] = [
+      recur({ id: "r1", title: "적금", amount: 700_000, frequency: "monthly", startDate: "2025-01-10", fromAccountId: "chk", toAccountId: "sav", kind: "transfer" }),
+    ];
+    const proj = buildCashFlowProjection(TODAY, accounts, [], [], recurring, { horizonMonths: 3 });
+    expect(proj.events.some((e) => e.source === "recurring-expense")).toBe(false);
+    expect(proj.firstNegativeDate).toBeNull();
+  });
+
+  it("반복지출 제목이 대출 종류(subCategory)와 같으면 대출 스케줄만 쓴다 (D6)", () => {
+    const accounts: Account[] = [acc({ id: "chk", type: "checking", initialBalance: 10_000_000 })];
+    const loans: Loan[] = [loan({ id: "l1", institution: "한국장학재단", loanName: "취업후상환", subCategory: "학자금대출", loanDate: "2026-02-15", maturityDate: "2026-11-15" })];
+    const recurring: RecurringExpense[] = [
+      recur({ id: "r1", title: "학자금대출", amount: 150_000, frequency: "monthly", startDate: "2026-02-15" }),
+    ];
+    const proj = buildCashFlowProjection(TODAY, accounts, [], loans, recurring, { horizonMonths: 3 });
+    expect(proj.events.some((e) => e.source === "recurring-expense")).toBe(false);
+    expect(proj.events.some((e) => e.source === "loan")).toBe(true);
+  });
+});
+
 describe("buildCashFlowProjection — 경계", () => {
   it("무효 todayIso는 빈 결과", () => {
     const proj = buildCashFlowProjection("invalid", [], [], [], []);

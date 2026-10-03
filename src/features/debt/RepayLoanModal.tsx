@@ -12,6 +12,7 @@ import { toast } from "react-hot-toast";
 import type { Account, LedgerEntry, Loan } from "../../types";
 import { formatKRW } from "../../utils/formatter";
 import { parseAmount } from "../../utils/parseAmount";
+import { NumericInput } from "../../components/ui/fields";
 import { getTodayKST } from "../../utils/date";
 import { newIdWithPrefix } from "../../utils/id";
 import { useFocusTrap } from "../../hooks/useFocusTrap";
@@ -162,11 +163,9 @@ export const RepayLoanModal: React.FC<Props> = React.memo(function RepayLoanModa
           )}
           <label style={{ display: "block", marginBottom: 16 }}>
             <span style={{ fontSize: 14, fontWeight: 600, display: "block", marginBottom: 8 }}>상환 금액 *</span>
-            <input
-              type="text"
-              inputMode="numeric"
+            <NumericInput
               value={repayAmount}
-              onChange={(e) => setRepayAmount(e.target.value.replace(/[^0-9]/g, ""))}
+              onChange={setRepayAmount}
               placeholder="예: 1000000"
               style={{ width: "100%", padding: "10px 12px", fontSize: 16 }}
               autoFocus

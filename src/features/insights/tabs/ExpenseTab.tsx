@@ -10,6 +10,7 @@ import { InsightText, C, F, W, SD, Card, Kpi, Insight, Section, CT, pieLabel, ty
 import { SubTab } from "./SubTab";
 import { computeDateAccountUtilization } from "../../../utils/dateAccounting";
 import { DISCRETIONARY_MAIN_NAMES, DISCRETIONARY_DETAIL_NAMES } from "../../../utils/fixedExpense";
+import { getThisMonthKST } from "../../../utils/date";
 
 const WDAY_LABELS = ["월", "화", "수", "목", "금", "토", "일"];
 
@@ -41,21 +42,27 @@ export const ExpenseTab = React.memo(function ExpenseTab({ d }: { d: D }) {
 
   // 누적 지출 속도 비교 (velocity 흡수) — 월별 누적 곡선
   const validMonths = d.months.filter((m) => { const c = d.cumSpend[m]; return c && c[30] > 0; });
+  // 시리즈 키는 YYYY-MM — "N월" 라벨로 키를 잡으면 12개월 넘는 기간에서 작년·올해 같은 달이 한 선으로 덮인다
   const velocityLineData = Array.from({ length: 31 }, (_, i) => i + 1).map((day) => {
     const o: Record<string, number> = { day };
-    validMonths.forEach((m) => { o[d.ml[m]] = d.cumSpend[m]?.[day - 1] ?? 0; });
+    validMonths.forEach((m) => { o[m] = d.cumSpend[m]?.[day - 1] ?? 0; });
     return o;
   });
+  // 범례 라벨 — 같은 "N월"이 둘 이상이면 YYYY-MM으로 구분
+  const velocityName = (m: string) => validMonths.some((o) => o !== m && d.ml[o] === d.ml[m]) ? m : d.ml[m];
   const velocityColors = ["var(--danger)", "var(--chart-series-b)", "var(--warning)", "var(--chart-series-c)", "var(--success)", "var(--chart-series-d)", "var(--accent)", "var(--chart-series-e)", "var(--chart-primary)"];
 
-  // 월간 지출 변동계수 (CV) — velocity 흡수
-  const monthlyTotals = validMonths.map((m) => d.cumSpend[m]?.[30] ?? 0);
+  // 월간 지출 변동계수 (CV) — velocity 흡수. 진행 중인 달은 월 합계가 아직 부분이라 CV·15일차 소진율에서 제외
+  // (곡선 차트엔 남긴다 — 이번 달 속도를 지난달들과 겹쳐 보는 용도)
+  const curMonth = getThisMonthKST();
+  const doneVelocityMonths = validMonths.filter((m) => m !== curMonth);
+  const monthlyTotals = doneVelocityMonths.map((m) => d.cumSpend[m]?.[30] ?? 0);
   const monthlyMean = monthlyTotals.length > 0 ? monthlyTotals.reduce((s, v) => s + v, 0) / monthlyTotals.length : 0;
   const monthlyStd = monthlyTotals.length > 0 ? Math.sqrt(monthlyTotals.reduce((s, v) => s + Math.pow(v - monthlyMean, 2), 0) / monthlyTotals.length) : 0;
   const monthlyCV = monthlyMean > 0 ? Math.round((monthlyStd / monthlyMean) * 100) : null;
 
   // 15일 기준선 분석 (텍스트용)
-  const midSpend = validMonths.map((m) => ({ m, mid: d.cumSpend[m]?.[14] ?? 0, total: d.cumSpend[m]?.[30] ?? 0 }));
+  const midSpend = doneVelocityMonths.map((m) => ({ m, mid: d.cumSpend[m]?.[14] ?? 0, total: d.cumSpend[m]?.[30] ?? 0 }));
 
   // 고정 / 변동 / 재량 3분해 파이 — utils/fixedExpense 단일 정의 (대시보드 배당 커버리지 고정비와 동일)
   const natureRows = [
@@ -444,7 +451,7 @@ export const ExpenseTab = React.memo(function ExpenseTab({ d }: { d: D }) {
                 <Tooltip content={<CT />} />
                 <Legend wrapperStyle={{ fontSize: 11 }} />
                 {validMonths.map((m, i) => (
-                  <Line isAnimationActive={false} key={m} type="monotone" dataKey={d.ml[m]} stroke={velocityColors[i % velocityColors.length]} strokeWidth={1.5} dot={false} strokeOpacity={0.7} />
+                  <Line isAnimationActive={false} key={m} type="monotone" dataKey={m} name={velocityName(m)} stroke={velocityColors[i % velocityColors.length]} strokeWidth={1.5} dot={false} strokeOpacity={0.7} />
                 ))}
               </LineChart>
             </ResponsiveContainer>

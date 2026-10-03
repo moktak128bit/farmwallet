@@ -10,7 +10,7 @@ import React, { useMemo, useState } from "react";
 import type { Account, CategoryPresets, LedgerEntry } from "../../types";
 import { formatKRW } from "../../utils/formatter";
 import { addDaysToIso, formatIsoLocal, shiftMonth } from "../../utils/date";
-import { classifyLedgerFlow, toKrwAmount } from "./summaryMath";
+import { classifyLedgerFlow, signedInvestingAmount, toKrwAmount } from "./summaryMath";
 
 type SpendingCalendarRow = {
   id: string;
@@ -130,8 +130,9 @@ export const SpendingCalendarCard: React.FC<Props> = React.memo(function Spendin
       const flow = classifyLedgerFlow(entry, categoryPresets);
       if (!flow) return;
 
-      const amount = toKrwAmount(entry, fxRate);
-      if (amount <= 0) return;
+      if (toKrwAmount(entry, fxRate) <= 0) return;
+      // 재테크는 순액 기여분(투자손실·수수료 −) — 월 합계가 요약 KPI와 같은 부호가 되게
+      const amount = flow === "investing" ? signedInvestingAmount(entry, fxRate) : toKrwAmount(entry, fxRate);
 
       const title = entry.subCategory || entry.description || entry.category || "미분류";
       const category = entry.category || "";
@@ -353,7 +354,7 @@ export const SpendingCalendarCard: React.FC<Props> = React.memo(function Spendin
                   소비 {formatKRW(Math.round(cell.spending))}
                 </div>
               )}
-              {cell.investing > 0 && (
+              {cell.investing !== 0 && (
                 <div style={{ marginTop: 2, fontSize: 12, color: "var(--chart-primary)", fontWeight: 600 }}>
                   재테크 {formatKRW(Math.round(cell.investing))}
                 </div>
@@ -445,7 +446,8 @@ export const SpendingCalendarCard: React.FC<Props> = React.memo(function Spendin
                         fontWeight: 700
                       }}
                     >
-                      {row.type === "income" ? "+" : "-"}{formatKRW(Math.round(row.amount))}
+                      {/* 재테크 행은 순액 기여 부호(손실 −, 이체·수익 +) — 아래 합계와 맞물리게 */}
+                      {row.type === "spending" ? "-" : row.amount >= 0 ? "+" : ""}{formatKRW(Math.round(row.amount))}
                     </td>
                   </tr>
                 ))}

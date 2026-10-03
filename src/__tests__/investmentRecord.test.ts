@@ -295,3 +295,34 @@ describe("buildClosedTradeRecords — USD 환율 미확보 시 fxUnreliable 플�
     expect(r[0].fxUnreliable).toBe(false);
   });
 });
+
+describe("buildClosedTradeRecords — 거래 환율 이상치·누락 (회귀)", () => {
+  it("fxRateAtTrade=1(실데이터 MSFT 오입력)은 '환율 없음'으로 보고 폴백 환율 사용 — 원가 383원·허위 실현익 방지", () => {
+    const r = buildClosedTradeRecords(
+      [
+        t({ id: "b1", side: "buy", date: "2026-01-01", ticker: "MSFT", quantity: 1, totalAmount: 383, fxRateAtTrade: 1 }),
+        t({ id: "s1", side: "sell", date: "2026-02-01", ticker: "MSFT", quantity: 1, totalAmount: 379, fxRateAtTrade: 1500 }),
+      ],
+      [acc],
+      1400
+    );
+    expect(r[0].costBasisKRW).toBe(383 * 1400);
+    expect(r[0].realizedPnlKRW).toBe(379 * 1500 - 383 * 1400);
+  });
+
+  it("fxRateAtTrade 없는 레거시 USD 거래는 환율 이력(그날 환율)으로 환산 — 오늘 환율 따라 매일 바뀌지 않고 양도세 카드와 일치", () => {
+    const trades = [
+      t({ id: "b1", side: "buy", date: "2026-01-10", ticker: "AAPL", quantity: 10, totalAmount: 1000 }),
+      t({ id: "s1", side: "sell", date: "2026-03-10", ticker: "AAPL", quantity: 10, totalAmount: 1100 }),
+    ];
+    const fxHistory = [
+      { date: "2026-01-09", rate: 1300 },
+      { date: "2026-03-10", rate: 1450 },
+    ];
+    const r = buildClosedTradeRecords(trades, [acc], 1400, fxHistory);
+    expect(r[0].realizedPnlKRW).toBe(1100 * 1450 - 1000 * 1300); // 295,000 (이력 없으면 140,000)
+    expect(r[0].fxUnreliable).toBe(false);
+    // 이력 없으면 기존처럼 현재 환율 폴백
+    expect(buildClosedTradeRecords(trades, [acc], 1400)[0].realizedPnlKRW).toBe(140_000);
+  });
+});

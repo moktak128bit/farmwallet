@@ -10,7 +10,6 @@
  */
 import type { CategoryPresets, LedgerEntry } from "../types";
 import { isCarryOverIncomeEntry } from "./savingsRate";
-import { isInvestmentEntry, isCreditPayment } from "./category";
 import { classifyLedgerFlow } from "../features/dashboard/summaryMath";
 import { expenseMainName } from "./categoryMerge";
 
@@ -97,6 +96,7 @@ export interface SpendingInertia {
 /**
  * 지출 관성: 현재월 지출 vs 최근 3개월 평균.
  * 진행 중인 달이면 과거 3개월도 같은 기간(1~오늘 일)만 합산 — 월중 항상 "절약 모드" 왜곡 방지.
+ * ⚠ ledger는 원화 환산본(insightsBase.krwLedger) — monthly[].expense(환산 합)와 같은 단위여야 한다.
  */
 export function computeSpendingInertia(params: {
   ledger: LedgerEntry[];
@@ -105,20 +105,23 @@ export function computeSpendingInertia(params: {
   curMonthStr: string;
   anomalyTargetMonth: string | null;
   todayDayNum: number;
+  /** 저축성지출 판정용 — monthly[].expense의 분류(classifyLedgerFlow)와 통일 */
+  categoryPresets?: CategoryPresets;
 }): SpendingInertia | null {
-  const { ledger, months, monthly, curMonthStr, anomalyTargetMonth, todayDayNum } = params;
+  const { ledger, months, monthly, curMonthStr, anomalyTargetMonth, todayDayNum, categoryPresets } = params;
   const targetMonth = anomalyTargetMonth ?? (months.length ? months[months.length - 1] : null);
   if (!targetMonth) return null;
   const idx = months.indexOf(targetMonth);
   if (idx < 0) return null;
   const partialDay = targetMonth === curMonthStr ? todayDayNum : null;
-  /** month의 1~dayCap일 지출 합 — monthly[].expense와 동일 분류(재테크·신용결제 제외) */
+  /** month의 1~dayCap일 지출 합 — monthly[].expense와 동일 분류(classifyLedgerFlow: 신용결제·환전·저축성지출·투자손익 제외).
+   *  예전엔 재테크 저축/투자·신용결제만 걸러 기준선이 부풀어 매달 같은 소비가 "절약 모드"로 보였다. */
   const expenseUpTo = (month: string, dayCap: number) => {
     let s = 0;
     for (const l of ledger) {
-      if (l.kind !== "expense" || !l.date?.startsWith(month)) continue;
+      if (!l.date?.startsWith(month)) continue;
       const a = Number(l.amount);
-      if (a <= 0 || isInvestmentEntry(l) || isCreditPayment(l)) continue;
+      if (a <= 0 || classifyLedgerFlow(l, categoryPresets) !== "expense") continue;
       if (Number(l.date.slice(8, 10)) > dayCap) continue;
       s += a;
     }

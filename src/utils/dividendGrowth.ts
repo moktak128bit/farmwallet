@@ -14,6 +14,7 @@ import type { HistoricalDailyClose, LedgerEntry, MarketEnvSnapshot, StockPrice, 
 import { canonicalTickerForMatch, isUSDStock, tradeAmountKRW } from "./finance";
 import { isDividendEntryLoose } from "./categoryMatch";
 import { parseExDateFromNote, parseQuantityFromNote } from "./dividend";
+import { compareTradesFifo } from "./fifoLots";
 
 export interface DividendGrowthPoint {
   month: string; // YYYY-MM
@@ -171,10 +172,13 @@ export function buildDividendStory(data: DividendGrowthData): DividendStory {
   };
 }
 
-/** description "458730 - TIGER 미국배당다우존스 배당"에서 티커 추출 */
-/** 배당 기록 설명("TICKER - 이름 배당")에서 티커 추출 — 배당 집계의 단일 소스 */
+/**
+ * 배당 기록 설명에서 티커 추출 — 배당 집계의 단일 소스.
+ * "458730 - TIGER 미국배당다우존스 배당" 외에 이름 없이 티커만 입력한 "SCHD 배당(, 세금: …)"도 받는다
+ * (배당 탭 extractTickerFromText는 세는데 여기서 빠지면 대시보드 위젯·성장 카드에서만 사라졌다).
+ */
 export const tickerFromDividendDesc = (desc: string | undefined): string | null => {
-  const m = (desc || "").match(/^([A-Za-z0-9.-]+)\s*-/);
+  const m = (desc || "").match(/^([A-Za-z0-9.-]+)(?:\s*-|\s+배당)/);
   return m ? canonicalTickerForMatch(m[1]) : null;
 };
 
@@ -268,11 +272,10 @@ export function buildDividendGrowth(args: {
   if (isUsd && !(fx != null && fx > 0)) return null;
   const toKrwPrice = (v: number): number => (isUsd && fx ? v * fx : v);
 
-  // ── 분배금 기록 (지급일별 → 월별 집계)
-  // 같은 지급일의 다계좌 기록은 "금액 합 ÷ 계좌별 보유 합"으로 한 번만 주당 분배금을 계산한다 —
-  // 기록별 amount/qty를 그대로 합산하면 계좌 수만큼 주당 분배금이 이중 계상된다.
+  // ── 분배금 기록 (지급일·계좌별 → 월별 집계)
+  // 다계좌 기록은 주당 분배금을 한 번만 센다 — 기록별 amount/qty를 그대로 합산하면 계좌 수만큼 이중 계상된다.
   // 계좌별 보유는 max (같은 계좌의 정규+특별 배당이 같은 날 겹쳐도 보유는 한 번).
-  type DayAgg = { amt: number; qtyByAcct: Map<string, number>; recs: number; withQty: number; refDate: string };
+  type DayAgg = { amt: number; byAcct: Map<string, { amt: number; qty: number }>; recs: number; withQty: number; refDate: string };
   const daysByMonth = new Map<string, Map<string, DayAgg>>();
   let recordCount = 0;
   let name = "";
@@ -295,7 +298,7 @@ export function buildDividendGrowth(args: {
       days = new Map();
       daysByMonth.set(m, days);
     }
-    const d = days.get(day) ?? { amt: 0, qtyByAcct: new Map(), recs: 0, withQty: 0, refDate: day };
+    const d = days.get(day) ?? { amt: 0, byAcct: new Map(), recs: 0, withQty: 0, refDate: day };
     d.amt += amount;
     d.recs += 1;
     // 보유 추정 기준일: 배당락일(권리 확정 시점) 우선, 없으면 지급일. 가장 이른 값을 쓴다
@@ -305,8 +308,12 @@ export function buildDividendGrowth(args: {
     const qty = parseQuantityFromNote(l.note);
     if (qty != null && qty > 0) {
       d.withQty += 1;
-      const k = l.toAccountId || `#${d.recs}`; // 계좌 미상은 각자 버킷 (합산 쪽이 과대보다 안전)
-      d.qtyByAcct.set(k, Math.max(d.qtyByAcct.get(k) ?? 0, qty));
+      // 계좌 미상("")은 기록마다 다른 보유로 보고 합산 (합산 쪽이 과대보다 안전)
+      const k = l.toAccountId || "";
+      const b = d.byAcct.get(k) ?? { amt: 0, qty: 0 };
+      b.amt += amount;
+      b.qty = k ? Math.max(b.qty, qty) : b.qty + qty;
+      d.byAcct.set(k, b);
     }
     days.set(day, d);
   }
@@ -315,7 +322,7 @@ export function buildDividendGrowth(args: {
   // ── 거래 (보유 수량·평단 이동평균, 수수료 포함)
   const myTrades = args.trades
     .filter((t) => canonicalTickerForMatch(t.ticker) === canonical && t.date)
-    .sort((a, b) => a.date.localeCompare(b.date));
+    .sort(compareTradesFifo);
   if (!name && myTrades.length > 0) name = myTrades[myTrades.length - 1].name || "";
 
   /** date 시점(포함) 누적 보유 수량 — 전 계좌 합. 배당 기준일 보유 추정용. */
@@ -332,9 +339,33 @@ export function buildDividendGrowth(args: {
   const divByMonth = new Map<string, DivAgg>();
   for (const [m, days] of daysByMonth) {
     const agg: DivAgg = { received: 0, perShare: 0, perShareKnown: true };
-    for (const d of days.values()) {
-      agg.received += d.amt;
-      const qtySum = [...d.qtyByAcct.values()].reduce((s, v) => s + v, 0);
+    const dayList = [...days.values()];
+    for (const d of dayList) agg.received += d.amt;
+    if (dayList.every((d) => d.withQty === d.recs)) {
+      // 전 기록에 보유 기재 → **월 단위**: 계좌별 Σ(그날 금액 ÷ 그날 보유) → 보유 가중 평균.
+      // 지급일별로 나눠 합하면 같은 배당을 계좌마다 다른 날(27일·28일) 입금했을 때 계좌 수만큼 부풀었다.
+      // 주배당(같은 계좌 한 달 여러 회)은 계좌 안에서 회차별로 합산된다.
+      const acct = new Map<string, { ps: number; w: number }>();
+      for (const d of dayList) {
+        for (const [k, b] of d.byAcct) {
+          const a = acct.get(k) ?? { ps: 0, w: 0 };
+          a.ps += b.amt / b.qty;
+          a.w = Math.max(a.w, b.qty);
+          acct.set(k, a);
+        }
+      }
+      let num = 0;
+      let wSum = 0;
+      for (const a of acct.values()) {
+        num += a.ps * a.w;
+        wSum += a.w;
+      }
+      agg.perShare = num / wSum;
+      divByMonth.set(m, agg);
+      continue;
+    }
+    for (const d of dayList) {
+      const qtySum = [...d.byAcct.values()].reduce((s, b) => s + b.qty, 0);
       if (d.withQty === d.recs && qtySum > 0) {
         agg.perShare += d.amt / qtySum;
       } else {

@@ -1,6 +1,7 @@
 import { describe, it, expect } from "vitest";
 import {
   tradeAmountKRW,
+  plausibleUsdKrw,
   isUSDStock,
   getCurrentHoldingsTickers,
   cryptoDisplaySymbol,
@@ -36,6 +37,11 @@ describe("tradeAmountKRW", () => {
 
   it("fxRateAtTrade가 fallback보다 우선", () => {
     expect(tradeAmountKRW({ ticker: "MSFT", totalAmount: 100, fxRateAtTrade: 1500 }, 1400)).toBe(150_000);
+  });
+
+  it("말이 안 되는 fxRateAtTrade(실데이터 MSFT fx=1)는 '환율 없음'으로 보고 fallback 사용", () => {
+    expect(tradeAmountKRW({ ticker: "MSFT", totalAmount: 383, fxRateAtTrade: 1 }, 1400)).toBe(536_200);
+    expect(tradeAmountKRW({ ticker: "MSFT", totalAmount: 383, fxRateAtTrade: 1 })).toBe(0);
   });
 
   it("실제 사용자 데이터 회귀 — RKLB sell 4131.78 USD without fxRateAtTrade", () => {
@@ -211,5 +217,15 @@ describe("거래소 심볼 → CoinGecko ID", () => {
   it("주식 시장은 기존 canonical 규칙 유지", () => {
     expect(canonicalTickerForInput("AAPL", "US")).toBe("AAPL");
     expect(canonicalTickerForInput("5930", "KR")).toBe("005930");
+  });
+});
+
+describe("plausibleUsdKrw — fxRateAtTrade 유효성 단일 소스", () => {
+  it("500 초과 3000 미만만 유효, 나머지(0·1·음수·NaN·누락·과대)는 undefined", () => {
+    expect(plausibleUsdKrw(1300)).toBe(1300);
+    expect(plausibleUsdKrw(1999.5)).toBe(1999.5);
+    for (const bad of [undefined, null, 0, 1, -1300, 500, 3000, 13000, Number.NaN, Infinity]) {
+      expect(plausibleUsdKrw(bad)).toBeUndefined();
+    }
   });
 });

@@ -1,6 +1,6 @@
 import { describe, it, expect } from "vitest";
 import { computeIncomeGrowth, computeSpendingInertia, computeCategoryGrowth } from "../utils/insightsTrends";
-import type { LedgerEntry } from "../types";
+import type { CategoryPresets, LedgerEntry } from "../types";
 
 /**
  * useInsightsData에서 분리한 추세 3종(수입성장률·지출관성·카테고리성장률)의 회귀 테스트.
@@ -112,6 +112,24 @@ describe("computeSpendingInertia", () => {
     expect(r!.curExp).toBe(1_000_000);
     expect(r!.deviation).toBe(0);
     expect(r!.partialDay).toBe(15);
+  });
+
+  it("진행 중인 달 기준선도 monthly[].expense와 같은 분류(classifyLedgerFlow) — 환전·저축성지출·투자손실 제외", () => {
+    // 감사 I2: 기준선(expenseUpTo)만 환전·프리셋 저축성지출·투자손실을 더해 매달 같은 소비가 '절약 모드'로 보였다
+    const months = ["2026-07", "2026-08", "2026-09", "2026-10"];
+    const monthly = Object.fromEntries(months.map((m) => [m, { income: 0, expense: 100_000, investment: 0 }]));
+    const ledger = [
+      ...months.map((m, i) => e({ id: `f${i}`, amount: 100_000, kind: "expense", category: "지출", subCategory: "식비", date: `${m}-01` })),
+      e({ id: "fx", amount: 500_000, kind: "expense", category: "지출", subCategory: "환전", date: "2026-07-01" }),
+      e({ id: "sv", amount: 300_000, kind: "expense", category: "적금", date: "2026-08-01" }), // 프리셋 savings
+      e({ id: "ls", amount: 200_000, kind: "expense", category: "재테크", subCategory: "투자손실", date: "2026-09-02" }),
+    ];
+    const categoryPresets = { income: [], expense: [], transfer: [], categoryTypes: { savings: ["적금"] } } as unknown as CategoryPresets;
+    const r = computeSpendingInertia({
+      ledger, months, monthly, curMonthStr: "2026-10", anomalyTargetMonth: "2026-10", todayDayNum: 2, categoryPresets,
+    });
+    expect(r!.avg).toBe(100_000);
+    expect(r!.deviation).toBe(0);
   });
 
   it("lookback 없으면(첫 달이 대상) null", () => {

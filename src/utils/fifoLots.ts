@@ -11,6 +11,20 @@
  *    (consumedQty < qty). 호출부가 부족분을 비용 0으로 볼지 판단.
  */
 
+import type { StockTrade } from "../types";
+
+/**
+ * 앱 표준 거래 정렬(computePositions·FIFO 실현손익과 동일): 날짜 → 같은 날은 매수 먼저 → id.
+ * 거래는 최신순으로 앞에 쌓이므로 날짜만으로 정렬하면 같은 날 [매도, 매수]가 빈 포지션에 매도를 먼저
+ * 적용해 원가가 2배로 남는다.
+ */
+export function compareTradesFifo(a: StockTrade, b: StockTrade): number {
+  if (a.date !== b.date) return (a.date || "").localeCompare(b.date || "");
+  if (a.side === "buy" && b.side === "sell") return -1;
+  if (a.side === "sell" && b.side === "buy") return 1;
+  return a.id.localeCompare(b.id);
+}
+
 export interface FifoLot {
   qty: number;
   /** 이 lot 전체의 비용/가치 (단가 = value / qty) */

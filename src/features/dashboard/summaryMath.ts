@@ -87,6 +87,14 @@ export function classifyLedgerFlow(
   return null;
 }
 
+/**
+ * 재테크(investing) 항목의 순액 기여분 — 저축·투자 이체·투자수익은 +, 투자손실·수수료·세금 등은 −.
+ * 재테크 합계를 내는 곳(요약 KPI·월별 추이·소비 캘린더)이 공유한다
+ * (카드마다 따로 더해 KPI −51만인데 추이 막대 +151만이던 부호 불일치 방지).
+ */
+export const signedInvestingAmount = (entry: LedgerEntry, fxRate: number | null): number =>
+  isInvestmentLossEntry(entry) ? -toKrwAmount(entry, fxRate) : toKrwAmount(entry, fxRate);
+
 /** "재테크" 단일 정의 — 저축·투자 이체 + 레거시 저축성지출. 카드들이 같은 정의를 공유한다. */
 export function isWealthBuildingEntry(
   entry: LedgerEntry,
@@ -119,14 +127,16 @@ export function computeLedgerSummary(
     if (monthPrefix && !entry.date.startsWith(monthPrefix)) continue;
     const flow = classifyLedgerFlow(entry, categoryPresets, salaryKeys);
     if (!flow) continue;
+    // 재테크 = 저축·투자 이체(+) + 투자수익(+) − 투자손실(−). 손실은 재테크 순액을 줄인다.
+    if (flow === "investing") {
+      investing += signedInvestingAmount(entry, fxRate);
+      continue;
+    }
     const amt = toKrwAmount(entry, fxRate);
     if (flow === "income") income += amt;
-    else if (flow === "expense") {
+    else {
       expense += amt;
       if (excluded && isExcludedExpenseName(entry, excluded)) excludedExpense += amt;
-    } else {
-      // 재테크 = 저축·투자 이체(+) + 투자수익(+) − 투자손실(−). 손실은 재테크 순액을 줄인다.
-      investing += isInvestmentLossEntry(entry) ? -amt : amt;
     }
   }
   return { income, expense, investing, excludedExpense };

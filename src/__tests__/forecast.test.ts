@@ -177,6 +177,19 @@ describe("forecastNextMonth", () => {
     expect(r.byCategory).toEqual([]);
   });
 
+  it("반복 수입·이체(toAccountId)는 지출 예측의 고정분이 아니다 (I1)", () => {
+    const recurring: RecurringExpense[] = [
+      mkRecurring("식비", 300_000),
+      mkRecurring("구독", 14_900),
+      { ...mkRecurring("급여", 3_000_000), kind: "income", toAccountId: "chk" },
+      { ...mkRecurring("청약", 100_000), kind: "transfer", toAccountId: "sav" },
+      { ...mkRecurring("적금", 200_000), toAccountId: "sav" }, // 레거시: kind 없이 toAccountId만
+    ];
+    const r = forecastNextMonth([], recurring, "2024-06");
+    expect(r.totalForecast).toBe(314_900);
+    expect(r.byCategory.map((c) => c.category).sort()).toEqual(["구독", "식비"]);
+  });
+
   it("totalForecast = byCategory.forecast 합", () => {
     const recurring = [mkRecurring("A", 10_000), mkRecurring("B", 20_000)];
     const r = forecastNextMonth([], recurring, "2024-06");

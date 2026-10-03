@@ -13,32 +13,51 @@ interface CommitInputProps
   commitOnEnter?: boolean;
 }
 
-export const CommitInput: React.FC<CommitInputProps> = ({
-  value,
-  onCommit,
-  commitOnEnter = true,
-  ...rest
-}) => {
+/** CommitInput·CommitTextarea 공용 draft 로직 */
+function useCommitDraft(value: string, onCommit: (value: string) => void) {
   const [draft, setDraft] = useState(value);
   const focusedRef = useRef(false);
+  // 포커스 시점의 값 — blur 때 draft를 '지금 value'가 아니라 이것과 비교해야, 포커스 중 들어온
+  // 외부 변경(Gist pull·다른 탭)을 손대지 않은 옛 draft로 덮어 조용히 되돌리지 않는다
+  const focusValueRef = useRef(value);
 
   // 외부 값 변경(undo/redo·동기화 등)은 입력 중이 아닐 때만 반영
   useEffect(() => {
     if (!focusedRef.current) setDraft(value);
   }, [value]);
 
+  const onFocus = () => {
+    focusedRef.current = true;
+    focusValueRef.current = value;
+  };
+  const onBlur = () => {
+    focusedRef.current = false;
+    if (draft === value) return;
+    if (draft !== focusValueRef.current) onCommit(draft); // 사용자가 고친 경우만 커밋
+    else setDraft(value); // 안 고쳤는데 그새 외부 값이 바뀜 → 외부 값 반영
+  };
+  return { draft, setDraft, onFocus, onBlur };
+}
+
+export const CommitInput: React.FC<CommitInputProps> = ({
+  value,
+  onCommit,
+  commitOnEnter = true,
+  ...rest
+}) => {
+  const c = useCommitDraft(value, onCommit);
+
   return (
     <input
       {...rest}
-      value={draft}
-      onChange={(e) => setDraft(e.target.value)}
+      value={c.draft}
+      onChange={(e) => c.setDraft(e.target.value)}
       onFocus={(e) => {
-        focusedRef.current = true;
+        c.onFocus();
         rest.onFocus?.(e);
       }}
       onBlur={(e) => {
-        focusedRef.current = false;
-        if (draft !== value) onCommit(draft);
+        c.onBlur();
         rest.onBlur?.(e);
       }}
       onKeyDown={(e) => {
@@ -59,25 +78,19 @@ interface CommitTextareaProps
 }
 
 export const CommitTextarea: React.FC<CommitTextareaProps> = ({ value, onCommit, ...rest }) => {
-  const [draft, setDraft] = useState(value);
-  const focusedRef = useRef(false);
-
-  useEffect(() => {
-    if (!focusedRef.current) setDraft(value);
-  }, [value]);
+  const c = useCommitDraft(value, onCommit);
 
   return (
     <textarea
       {...rest}
-      value={draft}
-      onChange={(e) => setDraft(e.target.value)}
+      value={c.draft}
+      onChange={(e) => c.setDraft(e.target.value)}
       onFocus={(e) => {
-        focusedRef.current = true;
+        c.onFocus();
         rest.onFocus?.(e);
       }}
       onBlur={(e) => {
-        focusedRef.current = false;
-        if (draft !== value) onCommit(draft);
+        c.onBlur();
         rest.onBlur?.(e);
       }}
     />

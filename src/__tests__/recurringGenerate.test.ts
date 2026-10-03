@@ -5,6 +5,7 @@ import {
   generateOccurrencesForMonthFromRecurring,
   getDefaultExpenseCategory
 } from "../utils/recurringGenerate";
+import { classifyLedgerFlow, computeLedgerSummary } from "../features/dashboard/summaryMath";
 
 const DEFAULT_CAT = "생활비";
 
@@ -63,13 +64,24 @@ describe("generateOccurrencesForMonthFromRecurring — 생성 스키마", () => 
     expect(e.isFixedExpense).toBe(true);
   });
 
-  it("toAccountId 있으면 transfer/이체, 카테고리 공란이면 저축성지출", () => {
+  it("toAccountId 있으면 transfer/이체, 카테고리 공란이면 저축이체 (재테크·저축률에 잡히는 형태)", () => {
     const occ = gen([rec({ id: "r1", title: "적금", amount: 300_000, category: "", toAccountId: "S1", fromAccountId: "A1" })], "2026-06");
     const e = occ[0].entry;
     expect(e.kind).toBe("transfer");
     expect(e.category).toBe("이체");
-    expect(e.subCategory).toBe("저축성지출");
+    expect(e.subCategory).toBe("저축이체");
     expect(e.toAccountId).toBe("S1");
+    expect(classifyLedgerFlow(e)).toBe("investing");
+  });
+
+  it("이체 카테고리가 이체 프리셋이 아닌 자유 입력(적금 등)이면 저축이체, 프리셋이면 그대로", () => {
+    const occ = gen([
+      rec({ id: "r1", title: "청년도약계좌", amount: 700_000, category: "적금", toAccountId: "S1" }),
+      rec({ id: "r2", title: "생활비 보내기", amount: 100_000, category: "계좌이체", toAccountId: "A2" }),
+      rec({ id: "r3", title: "ISA", amount: 200_000, category: "투자이체", toAccountId: "S2" }),
+    ], "2026-06");
+    expect(occ.map((o) => o.entry.subCategory)).toEqual(["저축이체", "계좌이체", "투자이체"]);
+    expect(computeLedgerSummary(occ.map((o) => o.entry), null, "2026-06").investing).toBe(900_000);
   });
 
   it("expense + 카테고리 공란이면 주입된 기본 지출 대분류", () => {

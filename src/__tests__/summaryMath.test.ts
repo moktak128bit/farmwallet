@@ -9,6 +9,7 @@ import {
   computeLedgerSummary,
   computeRecheckBreakdown,
   isWealthBuildingEntry,
+  signedInvestingAmount,
   toKrwAmount,
 } from "../features/dashboard/summaryMath";
 
@@ -156,6 +157,17 @@ describe("computeLedgerSummary", () => {
     expect(s.excludedExpense).toBe(0);
   });
 
+  it("현행 스키마 저축성지출({지출, 적금}) — categoryTypes.savings 지정 시 지출이 아니라 재테크", () => {
+    const presets = { income: [], expense: [], transfer: [], categoryTypes: { savings: ["적금"] } } as unknown as CategoryPresets;
+    const l: LedgerEntry[] = [
+      entry({ kind: "expense", category: "지출", subCategory: "적금", amount: 500_000, date: "2026-06-10" }),
+      entry({ kind: "expense", category: "지출", subCategory: "식비", amount: 300_000, date: "2026-06-11" }),
+    ];
+    const s = computeLedgerSummary(l, null, "2026-06", presets);
+    expect(s.expense).toBe(300_000);
+    expect(s.investing).toBe(500_000);
+  });
+
   it("퇴직연금 수입은 income/investing 어디에도 합산되지 않음 (가계부엔 남음)", () => {
     const withPension: LedgerEntry[] = [
       entry({ kind: "income", category: "급여", subCategory: "급여", amount: 3_000_000, date: "2026-06-25" }),
@@ -181,6 +193,19 @@ describe("classifyLedgerFlow — 환전 제외", () => {
 
   it("일반 지출은 여전히 expense", () => {
     expect(classifyLedgerFlow(e({ subCategory: "식비" }))).toBe("expense");
+  });
+});
+
+describe("signedInvestingAmount — 재테크 순액 부호 단일 소스", () => {
+  it("이체·투자수익은 +, 투자손실·수수료는 − (computeLedgerSummary.investing과 같은 합)", () => {
+    const l: LedgerEntry[] = [
+      entry({ kind: "transfer", category: "이체", subCategory: "저축이체", amount: 500_000 }),
+      entry({ kind: "expense", category: "재테크", subCategory: "투자손실", amount: 1_000_000 }),
+      entry({ kind: "expense", category: "재테크", subCategory: "수수료", amount: 10_000 }),
+    ];
+    const sum = l.reduce((s, e) => s + signedInvestingAmount(e, null), 0);
+    expect(sum).toBe(-510_000);
+    expect(computeLedgerSummary(l, null, "2026-06").investing).toBe(sum);
   });
 });
 

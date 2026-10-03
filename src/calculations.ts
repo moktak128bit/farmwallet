@@ -7,8 +7,9 @@ import type {
   StockPrice,
   StockTrade
 } from "./types";
-import { isKRWStock, isUSDStock, canonicalTickerForMatch, isCryptoStock } from "./utils/finance";
+import { isKRWStock, isUSDStock, canonicalTickerForMatch, isCryptoStock, plausibleUsdKrw } from "./utils/finance";
 import { consumeFifoLots, type FifoLot } from "./utils/fifoLots";
+import { accountsWithUsdBalanceAsOf } from "./utils/tradeCashImpact";
 
 
 // ---------------------------------------------------------------------------
@@ -303,7 +304,7 @@ export function computePositions(
       isUsdTicker(tickerNorm) && quantity > 0 && currentFx != null
         ? queue.reduce(
             (s, lot) =>
-              s + lot.totalAmount * (lot.fxRateAtTrade ?? currentFx),
+              s + lot.totalAmount * (plausibleUsdKrw(lot.fxRateAtTrade) ?? currentFx),
             0
           )
         : undefined;
@@ -470,10 +471,9 @@ export function hasLoanRepaymentStructure(entry: LedgerEntry): boolean {
  *  쓰면 "주택대출"/"주택대출2"처럼 접두 관계인 이름에서 한 상환액이 여러 대출에 중복 집계된다.)
  */
 export function matchLoanForRepayment(entry: LedgerEntry, loans: Loan[]): Loan | null {
-  if (entry.loanId) {
-    const byId = loans.find((loan) => loan.id === entry.loanId);
-    if (byId) return byId;
-  }
+  // loanId가 있으면 그것만 본다 — 삭제된 대출(삭제 다이얼로그가 상환 기록은 남김)의 상환이 설명 문자열로
+  // 다른 대출("주담대2 상환"→"주담대", 같은 이름의 새 대출)에 붙어 잔금을 깎는 것을 막는다.
+  if (entry.loanId) return loans.find((loan) => loan.id === entry.loanId) ?? null;
   const description = entry.description || "";
   const exact = loans.find((loan) => description === loan.loanName);
   if (exact) return exact;
@@ -505,16 +505,31 @@ export function isInterestRepayment(entry: LedgerEntry): boolean {
 }
 
 /**
- * 특정 일자 기준 대출 잔금 합계.
- * 각 대출별로 loanAmount − Σ(원금 상환, detailCategory에 "이자" 미포함) 을 합산.
- * asOfDate 이후 개시된 대출은 제외, asOfDate 이후 상환은 차감 대상 아님.
+ * 특정 일자 기준 대출 잔금 합계 — computeLoanBalancesById의 합.
  */
 export function computeLoanBalanceAt(
   loans: Loan[] | undefined,
   ledger: LedgerEntry[] | undefined,
   asOfDate?: string
 ): number {
-  if (!loans || loans.length === 0) return 0;
+  let sum = 0;
+  for (const v of computeLoanBalancesById(loans, ledger, asOfDate).values()) sum += v;
+  return sum;
+}
+
+/**
+ * 특정 일자 기준 대출별 잔금 (loan.id → 잔금).
+ * 각 대출별로 loanAmount − Σ(원금 상환, detailCategory에 "이자" 미포함).
+ * asOfDate 이후 개시된 대출은 맵에서 빠짐(get → undefined), asOfDate 이후 상환은 차감 대상 아님.
+ * ⚠ 대출 하나씩 `[loan]`으로 부르지 말 것 — 단일 승자 매칭은 전체 대출 목록이 있어야 성립한다.
+ */
+export function computeLoanBalancesById(
+  loans: Loan[] | undefined,
+  ledger: LedgerEntry[] | undefined,
+  asOfDate?: string
+): Map<string, number> {
+  const out = new Map<string, number>();
+  if (!loans || loans.length === 0) return out;
   const entries = ledger ?? [];
   // 상환 항목을 대출별로 독립적으로 매칭하면(구 버전) "주택대출"/"주택대출2"처럼 접두 관계인
   // loanId 없는 레거시 항목이 두 대출 모두에 `.includes()` 매칭돼 원금이 이중 차감된다.
@@ -529,11 +544,12 @@ export function computeLoanBalanceAt(
     if (!loan) continue;
     principalByLoanId.set(loan.id, (principalByLoanId.get(loan.id) ?? 0) + (e.amount || 0));
   }
-  return loans.reduce((sum, loan) => {
-    if (asOfDate && loan.loanDate && loan.loanDate > asOfDate) return sum;
+  for (const loan of loans) {
+    if (asOfDate && loan.loanDate && loan.loanDate > asOfDate) continue;
     const principalRepaid = principalByLoanId.get(loan.id) ?? 0;
-    return sum + Math.max(0, (loan.loanAmount ?? 0) - principalRepaid);
-  }, 0);
+    out.set(loan.id, Math.max(0, (loan.loanAmount ?? 0) - principalRepaid));
+  }
+  return out;
 }
 
 /**
@@ -673,7 +689,8 @@ export function computeBalanceAtDateForAccounts(
 ): number {
   const filteredLedger = ledger.filter((l) => l.date && l.date <= dateStr);
   const filteredTrades = trades.filter((t) => t.date && t.date <= dateStr);
-  const bal = computeAccountBalances(accounts, filteredLedger, filteredTrades);
+  // usdBalance는 '현재' 값 — 이후 잔액모드 거래분을 되돌려야 과거 점에서 매수액이 미리 빠지지 않는다
+  const bal = computeAccountBalances(accountsWithUsdBalanceAsOf(accounts, trades, dateStr), filteredLedger, filteredTrades);
   const pos = computePositions(filteredTrades, prices, accounts, {
     fxRate: options?.fxRate ?? undefined,
     priceFallback: options?.priceFallback

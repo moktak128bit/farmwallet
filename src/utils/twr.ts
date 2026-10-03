@@ -10,7 +10,7 @@
  * 매수일에 가격이 그대로면 V_d−V_(d-1) ≈ F_d → r_d ≈ 0 (입금은 수익이 아니다).
  */
 import type { StockTrade } from "../types";
-import { isUSDStock } from "./finance";
+import { isUSDStock, plausibleUsdKrw } from "./finance";
 import { parseIsoLocal } from "./date";
 import { fxAsOf, type DailyPortfolioPoint, type FxPoint } from "./portfolioHistory";
 
@@ -46,10 +46,11 @@ export function buildDailyNetFlowKRW(
     if (!t.date || !(Number(t.totalAmount) > 0)) continue;
     const usd = isUSDStock(t.ticker);
     if (t.side === "buy") {
-      const rate = usd ? (t.fxRateAtTrade ?? fxAsOf(fxHistory, t.date, fallbackFxRate) ?? 0) : 1;
+      // plausibleUsdKrw — 레거시 0·오입력 1이 ??를 통과해 투입액이 0/액면이 되지 않게
+      const rate = usd ? (plausibleUsdKrw(t.fxRateAtTrade) ?? fxAsOf(fxHistory, t.date, fallbackFxRate) ?? 0) : 1;
       m.set(t.date, (m.get(t.date) ?? 0) + t.totalAmount * rate);
     } else {
-      const rate = usd ? (fxAsOf(fxHistory, t.date, fallbackFxRate) ?? t.fxRateAtTrade ?? 0) : 1;
+      const rate = usd ? (fxAsOf(fxHistory, t.date, fallbackFxRate) ?? plausibleUsdKrw(t.fxRateAtTrade) ?? 0) : 1;
       m.set(t.date, (m.get(t.date) ?? 0) - t.totalAmount * rate);
     }
   }

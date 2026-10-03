@@ -1,7 +1,8 @@
 import { describe, it, expect } from "vitest";
-import { graceEndDate, isInGracePeriod } from "../features/debt/debtShared";
+import { graceEndDate, isInGracePeriod, stampLegacyRepaymentLoanIds } from "../features/debt/debtShared";
+import { computeLoanBalanceAt } from "../calculations";
 import { calculateTotalInterest } from "../features/debt/LoanTableSection";
-import type { Loan } from "../types";
+import type { LedgerEntry, Loan } from "../types";
 
 function makeLoan(overrides: Partial<Loan>): Loan {
   return {
@@ -126,5 +127,27 @@ describe("calculateTotalInterest — 거치기간 이자 가산 + 개월수 정�
       gracePeriodYears: 3,
     });
     expect(calculateTotalInterest(loan)).toBeCloseTo(500_000, 0);
+  });
+});
+
+describe("stampLegacyRepaymentLoanIds — 대출명 변경 시 레거시 상환 연결 유지", () => {
+  const repay = (id: string, description: string, extra: Partial<LedgerEntry> = {}): LedgerEntry => ({
+    id, date: "2026-03-01", kind: "expense", category: "지출", subCategory: "대출상환", detailCategory: "원금상환",
+    description, amount: 5_000_000, ...extra
+  });
+
+  it("이름으로만 묶인 상환에 loanId를 박아, 이름을 바꿔도 잔금이 원금으로 되돌아가지 않는다", () => {
+    const before = [makeLoan({ id: "A", loanName: "주담대", loanAmount: 100_000_000 }), makeLoan({ id: "B", loanName: "주담대2" })];
+    const ledger = [repay("r1", "주담대"), repay("r2", "주담대2 상환"), repay("r3", "주담대", { loanId: "B" })];
+    const stamped = stampLegacyRepaymentLoanIds(ledger, before, "A")!;
+    expect(stamped.map((e) => e.loanId)).toEqual(["A", undefined, "B"]);
+
+    const after = [{ ...before[0], loanName: "KB주담대" }, before[1]];
+    expect(computeLoanBalanceAt(after, ledger)).toBe(100_000_000 + 10_000_000 - 5_000_000 - 5_000_000); // 이름 바꾸면 r1 유실(r3만 B 차감)
+    expect(computeLoanBalanceAt(after, stamped)).toBe(95_000_000 + 10_000_000 - 5_000_000 - 5_000_000);
+  });
+
+  it("묶인 항목이 없으면 null", () => {
+    expect(stampLegacyRepaymentLoanIds([repay("r1", "무관한 설명")], [makeLoan({ id: "A", loanName: "주담대" })], "A")).toBeNull();
   });
 });

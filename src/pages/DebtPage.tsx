@@ -21,7 +21,7 @@ import { isInterestRepayment, matchLoanForRepayment } from "../calculations";
 import { useBalanceSheet } from "../hooks/useBalanceSheet";
 import { useAppStore } from "../store/appStore";
 import { useFxRateValue } from "../context/FxRateContext";
-import { isLoanRepaymentEntry } from "../features/debt/debtShared";
+import { isLoanRepaymentEntry, stampLegacyRepaymentLoanIds } from "../features/debt/debtShared";
 import { getThisMonthKST } from "../utils/date";
 import { LoanFormSection, type LoanFormSectionHandle } from "../features/debt/LoanFormSection";
 import { LoanTableSection } from "../features/debt/LoanTableSection";
@@ -63,6 +63,23 @@ export const DebtView: React.FC<Props> = ({
     const subs = g?.subs;
     return subs && subs.length > 0 ? subs : DEFAULT_LOAN_REPAYMENT_SUBS;
   }, [categoryPresets]);
+
+  // 대출 수정 저장 — 이름이 바뀌면 이름으로만 묶여 있던 레거시 상환에 loanId부터 박는다(안 그러면 잔금이 원금으로 복귀).
+  // ledger를 먼저 바꿔야 되돌리기 한 번이 이름 변경만 되돌린다(박힌 loanId는 그대로 유효).
+  const handleChangeLoansFromForm = useCallback(
+    (next: Loan[]) => {
+      const renamed = loans.find((prev) => {
+        const after = next.find((l) => l.id === prev.id);
+        return after != null && after.loanName !== prev.loanName;
+      });
+      if (renamed && onChangeLedger) {
+        const stamped = stampLegacyRepaymentLoanIds(ledger, loans, renamed.id);
+        if (stamped) onChangeLedger(stamped);
+      }
+      onChangeLoans(next);
+    },
+    [loans, ledger, onChangeLoans, onChangeLedger]
+  );
 
   // 대출 매칭 — calculations.ts의 matchLoanForRepayment 단일 소스(computeLoanBalanceAt과 규칙 공유).
   // 독립적으로 재구현하면 "주택대출"/"주택대출2"처럼 접두 관계인 이름에서 두 곳이 서로 다르게 집계된다.
@@ -137,7 +154,7 @@ export const DebtView: React.FC<Props> = ({
         ref={loanFormRef}
         visible={showForm}
         loans={loans}
-        onChangeLoans={onChangeLoans}
+        onChangeLoans={handleChangeLoansFromForm}
         setShowForm={setShowForm}
       />
 

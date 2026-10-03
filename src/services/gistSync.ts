@@ -9,7 +9,7 @@
  * - 기존 사용자(localStorage에만 있는 경우) 호환을 위해 read 시 fallback
  */
 
-import { GIST_PUSH_RETRY, STORAGE_KEYS } from "../constants/config";
+import { DATA_SCHEMA_VERSION, GIST_PUSH_RETRY, STORAGE_KEYS } from "../constants/config";
 
 const GIST_TOKEN_KEY = "fw-gist-token";
 const GIST_TOKEN_PERSIST_KEY = "fw-gist-token-persist";
@@ -187,7 +187,7 @@ export async function saveToGist(dataJson: string): Promise<{ gistId: string; up
 
   const gistId = getGistId();
   const body = {
-    description: "FarmWallet 데이터 백업",
+    description: GIST_DESCRIPTION,
     public: false,
     files: {
       [GIST_FILE_NAME]: { content: dataJson }
@@ -233,6 +233,7 @@ export async function saveToGist(dataJson: string): Promise<{ gistId: string; up
 /** GitHub Gist API 응답의 최소 형태 */
 interface GistApiResponse {
   id?: string;
+  description?: string;
   updated_at?: string;
   /** 커밋 이력 — history[0]이 가장 최근 커밋. committed_at은 getGistVersions의 committedAt와 동일 소스라
    *  push 후 known 갱신에 써야 가짜 충돌(updated_at vs committed_at 시각 차이)이 안 생긴다. */
@@ -267,6 +268,28 @@ export class GistNoRemoteDataError extends Error {
   }
 }
 
+/**
+ * 데이터 스키마 버전은 Gist description에 적는다 — 파일 본문(user-only JSON)은 탭 동기화·해시 비교 계약이라
+ * 필드를 더하면 업데이트 직후 가짜 충돌이 난다. 구버전 description(버전 없음)은 판단 보류(null).
+ */
+const GIST_DESCRIPTION = `FarmWallet 데이터 백업 (schema v${DATA_SCHEMA_VERSION})`;
+
+export function schemaVersionFromDescription(description?: string | null): number | null {
+  const m = /schema v(\d+)/.exec(description ?? "");
+  return m ? Number(m[1]) : null;
+}
+
+/**
+ * 원격이 이 앱보다 새 스키마로 저장됨 — 적용하면 모르는 필드가 정규화에서 빠지고, 그 결과가 다시 업로드돼
+ * 다른 기기의 새 필드까지 지워진다. 호출부는 적용·업로드를 멈춘다(앱 업데이트 전까지).
+ */
+export class GistSchemaTooNewError extends Error {
+  constructor(remoteVersion: number) {
+    super(`다른 기기가 더 새 앱(데이터 v${remoteVersion})으로 저장했습니다. 이 기기 앱을 새로고침·업데이트하세요 — 그 전까지 Gist 동기화를 멈춥니다.`);
+    this.name = "GistSchemaTooNewError";
+  }
+}
+
 /** Gist에서 데이터 불러오기 */
 export async function loadFromGist(): Promise<{ dataJson: string; updatedAt: string }> {
   const token = getGistToken();
@@ -284,6 +307,8 @@ export async function loadFromGist(): Promise<{ dataJson: string; updatedAt: str
     throw new Error(message);
   }
   const data = await parseGistResponse(res);
+  const remoteSchema = schemaVersionFromDescription(data.description);
+  if (remoteSchema != null && remoteSchema > DATA_SCHEMA_VERSION) throw new GistSchemaTooNewError(remoteSchema);
   const file = data.files?.[GIST_FILE_NAME];
   if (!file) {
     const message = "Gist에 FarmWallet 데이터가 없습니다.";

@@ -4,7 +4,26 @@
  */
 import type { Loan, LedgerEntry } from "../../types";
 import { parseIsoLocal, formatIsoLocal, getLastDayOfMonth } from "../../utils/date";
-import { hasLoanRepaymentStructure } from "../../calculations";
+import { hasLoanRepaymentStructure, matchLoanForRepayment } from "../../calculations";
+
+/**
+ * 대출명을 바꾸기 직전, 그 대출에 설명 문자열로만 묶여 있던(loanId 없는) 상환 항목에 loanId를 박는다.
+ * 레거시 상환은 이름으로 매칭되므로 이름을 바꾸는 순간 잔금이 원금으로 되돌아간다. 바뀐 게 없으면 null.
+ */
+export function stampLegacyRepaymentLoanIds(
+  ledger: LedgerEntry[],
+  loansBeforeRename: Loan[],
+  loanId: string
+): LedgerEntry[] | null {
+  let changed = false;
+  const next = ledger.map((e) => {
+    if (e.loanId || e.kind !== "expense" || !hasLoanRepaymentStructure(e)) return e;
+    if (matchLoanForRepayment(e, loansBeforeRename)?.id !== loanId) return e;
+    changed = true;
+    return { ...e, loanId };
+  });
+  return changed ? next : null;
+}
 
 /**
  * 거치기간 만료일: loanDate + gracePeriodYears (소수 허용). 미설정이면 null.

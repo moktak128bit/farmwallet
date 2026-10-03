@@ -8,6 +8,7 @@ import {
   describeConnectTarget
 } from "../services/deviceConnect";
 import { getGistVersionsWithCredentials } from "../services/gistSync";
+import { getEmptyData } from "../services/dataService";
 
 const P = { gistId: "0123456789abcdef0123456789abcdef", token: "ghp_TESTTOKEN123" };
 const b64 = (o: unknown) => btoa(JSON.stringify(o)).replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/, "");
@@ -61,6 +62,15 @@ describe("deviceConnect", () => {
     expect(isEmptyLocalData(empty)).toBe(true);
     expect(isEmptyLocalData({ ...empty, ledger: [{}] as never })).toBe(false);
     expect(isEmptyLocalData({ ...empty, accounts: [{}] as never })).toBe(false);
+  });
+  it("S10 isEmptyLocalData: 운동·대출·예산·목표만 있는 기기도 빈 기기가 아니다", () => {
+    const empty = getEmptyData();
+    expect(isEmptyLocalData(empty)).toBe(true);
+    expect(isEmptyLocalData({ ...empty, workoutWeeks: [{}] as never })).toBe(false);
+    expect(isEmptyLocalData({ ...empty, loans: [{}] as never })).toBe(false);
+    expect(isEmptyLocalData({ ...empty, budgetGoals: [{}] as never })).toBe(false);
+    expect(isEmptyLocalData({ ...empty, savingsGoals: [{}] as never })).toBe(false);
+    expect(isEmptyLocalData({ ...empty, recurringExpenses: [{}] as never })).toBe(false);
   });
   it("describeConnectTarget", () => {
     expect(describeConnectTarget("", P.gistId)).toEqual({ shortId: "abcdef", currentShortId: null, replacesOther: false });

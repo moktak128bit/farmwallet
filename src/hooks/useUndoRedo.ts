@@ -43,6 +43,15 @@ export function useUndoRedo(
     return true;
   }, [data, setData]);
 
+  /**
+   * 외부(다른 기기) 데이터로 통째 바뀐 뒤 호출 — 되돌리기가 바뀌기 이전 상태를 되살리면 그대로 업로드돼
+   * (동기화 기준은 이미 원격 최신) 다른 기기 변경이 충돌 확인 없이 사라진다.
+   */
+  const clearHistory = useCallback(() => {
+    undoStackRef.current = [];
+    redoStackRef.current = [];
+  }, []);
+
   const handleRedo = useCallback(() => {
     if (redoStackRef.current.length === 0) return false;
     const nextData = redoStackRef.current.pop()!;
@@ -59,6 +68,7 @@ export function useUndoRedo(
     setDataWithHistory,
     handleUndo,
     handleRedo,
+    clearHistory,
     canUndo: undoStackRef.current.length > 0,
     canRedo: redoStackRef.current.length > 0
   };

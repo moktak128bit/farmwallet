@@ -25,8 +25,8 @@ export interface ImportPreviewRow {
   reason?: string;
   /** 저장할 LedgerEntry 초안(id 없음) — invalid면 undefined */
   draft?: Omit<LedgerEntry, "id">;
-  /** 표에 표시할 원시 파싱 결과 (invalid여도 채워짐 — 표시용) */
-  preview: { date: string; amount: number; description: string };
+  /** 표에 표시할 원시 파싱 결과 (invalid여도 채워짐 — 표시용). currency="USD"면 amount는 달러 원금 */
+  preview: { date: string; amount: number; description: string; currency?: "USD" };
 }
 
 interface BuildImportPreviewOptions {
@@ -104,7 +104,7 @@ export function buildImportPreview(
     const date = parseStatementDate(rawDate, today);
     const { amount: parsedAmount, isNegative } = parseStatementAmount(rawAmount, { allowDecimal: isUsd });
     const description = rawMerchant.trim();
-    const preview = { date: date ?? rawDate.trim(), amount: parsedAmount, description };
+    const preview = { date: date ?? rawDate.trim(), amount: parsedAmount, description, ...(isUsd ? { currency: "USD" as const } : {}) };
 
     if (isNegative || CANCEL_STATUS_RE.test(rawStatus)) {
       return { rowIndex, status: "invalid", included: false, reason: "취소/환불 거래로 보여 제외했습니다.", preview };
@@ -128,13 +128,17 @@ export function buildImportPreview(
       };
     }
 
+    // 해외결제는 원화로 환산해 저장한다 — 카드 계좌는 USD를 따로 추적하지 않아(잔액 엔진은 USD를 증권·코인 계좌에서만 봄)
+    // currency:"USD"로 두면 $30이 카드 부채 30원으로 잡히고, 원화로 갚으면 선납 자산이 생긴다. 달러 원금은 note에 보존.
+    const amount = isUsd ? Math.round(parsedAmount * (fxRate as number)) : parsedAmount;
+
     const status = findDuplicateStatus(
-      { date, amount: parsedAmount, description },
+      { date, amount, description },
       cardAccountId,
       ledger,
       batchDrafts
     );
-    const recs = recommendCategory(description, parsedAmount, "expense", ledger);
+    const recs = recommendCategory(description, amount, "expense", ledger);
     const stored = quickEntryStoredCategory("expense", recs[0] ?? null);
 
     const installmentText = rawInstallment.trim();
@@ -149,9 +153,9 @@ export function buildImportPreview(
       subCategory: stored.subCategory,
       ...(stored.detailCategory ? { detailCategory: stored.detailCategory } : {}),
       description: description + installmentSuffix,
-      amount: parsedAmount,
+      amount,
       fromAccountId: cardAccountId,
-      ...(isUsd ? { currency: "USD" as const } : {}),
+      ...(isUsd ? { note: `해외결제 $${parsedAmount} × ${fxRate}` } : {}),
     };
 
     if (status === "new") batchDrafts.push({ ...draft, id: "" });

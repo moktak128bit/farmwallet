@@ -136,12 +136,22 @@ describe("buildImportPreview — 중복 판정", () => {
 });
 
 describe("buildImportPreview — USD 열", () => {
-  it("환율 로드됨 → USD 항목 포함", () => {
+  it("환율 로드됨 → 원화로 환산해 저장(카드 잔액에 달러 액면이 원으로 섞이지 않게), 달러 원금은 note·preview", () => {
     const rows = [["2026.08.15", "Amazon", "12.34", "USD"]];
     const [r] = buildImportPreview(rows, MAPPING_WITH_CURRENCY, baseOptions);
     expect(r.status).toBe("new");
-    expect(r.draft?.currency).toBe("USD");
-    expect(r.draft?.amount).toBeCloseTo(12.34);
+    expect(r.draft?.currency).toBeUndefined();
+    expect(r.draft?.amount).toBe(16042); // round(12.34 × 1300)
+    expect(r.draft?.note).toContain("$12.34");
+    expect(r.preview).toMatchObject({ amount: 12.34, currency: "USD" });
+  });
+
+  it("환산 금액으로 중복 판정 — 같은 해외결제를 다시 가져오면 exact", () => {
+    const rows = [["2026.08.15", "Amazon", "12.34", "USD"]];
+    const [first] = buildImportPreview(rows, MAPPING_WITH_CURRENCY, baseOptions);
+    const ledger = [{ ...first.draft!, id: "L1" }] as LedgerEntry[];
+    const [again] = buildImportPreview(rows, MAPPING_WITH_CURRENCY, { ...baseOptions, ledger });
+    expect(again.status).toBe("duplicate-exact");
   });
 
   it("환율 미로드(null) → USD 항목은 invalid로 차단", () => {

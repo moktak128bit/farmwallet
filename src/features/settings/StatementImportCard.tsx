@@ -233,10 +233,11 @@ export const StatementImportCard: React.FC<Props> = React.memo(function Statemen
   );
 
   const includedCount = displayRows.filter((r) => r.included && r.draft).length;
+  // 해외결제(USD) 초안은 이미 원화로 환산돼 있다(buildImportPreview) — 합계에 그대로 포함
   const includedSumKrw = displayRows
-    .filter((r) => r.included && r.draft && r.draft.currency !== "USD")
+    .filter((r) => r.included && r.draft)
     .reduce((s, r) => s + (r.draft?.amount ?? 0), 0);
-  const includedUsdCount = displayRows.filter((r) => r.included && r.draft?.currency === "USD").length;
+  const includedUsdCount = displayRows.filter((r) => r.included && r.draft && r.preview.currency === "USD").length;
 
   const apply = useCallback(() => {
     if (includedCount === 0) {
@@ -404,7 +405,7 @@ export const StatementImportCard: React.FC<Props> = React.memo(function Statemen
               <div style={{ fontSize: 13, marginTop: 10, marginBottom: 6 }}>
                 전체 {displayRows.length}건 중 포함 <strong>{includedCount}건</strong> · 합계{" "}
                 <strong>{formatKRW(includedSumKrw)}</strong>
-                {includedUsdCount > 0 && <span style={{ color: "var(--text-muted)" }}> (USD {includedUsdCount}건 별도)</span>}
+                {includedUsdCount > 0 && <span style={{ color: "var(--text-muted)" }}> (USD {includedUsdCount}건 원화 환산 포함)</span>}
               </div>
               <div style={{ overflowX: "auto", border: "1px solid var(--border)", borderRadius: 8 }}>
                 <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 12 }}>
@@ -439,7 +440,9 @@ export const StatementImportCard: React.FC<Props> = React.memo(function Statemen
                             {(r.draft?.description ?? r.preview.description) || "(내용 없음)"}
                           </td>
                           <td style={{ padding: "6px 8px", textAlign: "right", whiteSpace: "nowrap" }}>
-                            {r.draft?.currency === "USD" ? `$${r.preview.amount}` : formatKRW(r.preview.amount)}
+                            {r.preview.currency === "USD"
+                              ? `$${r.preview.amount}${r.draft ? ` · ${formatKRW(r.draft.amount)}` : ""}`
+                              : formatKRW(r.preview.amount)}
                           </td>
                           <td style={{ padding: "6px 8px" }}>
                             {r.draft ? (

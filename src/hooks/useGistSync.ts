@@ -22,6 +22,7 @@ import {
   getGistLastPushedHash,
   setGistLastPushedHash,
   GistNoRemoteDataError,
+  GistSchemaTooNewError,
   type GistVersion,
 } from "../services/gistSync";
 import { isEmptyLocalData, describeConnectTarget, type ConnectPayload } from "../services/deviceConnect";
@@ -44,6 +45,23 @@ import {
 import type { GistSyncHealth } from "../services/gistSyncStatus";
 
 const GIST_AUTO_SAVE_ERROR_TOAST_ID = "gist-auto-save-error";
+const GIST_SCHEMA_TOAST_ID = "gist-schema-too-new";
+
+/**
+ * 원격 불러오기 — 원격이 더 새 스키마(GistSchemaTooNewError)면 이 세션의 자동 동기화를 멈춘다.
+ * 구버전 앱이 새 필드를 모른 채 적용·재업로드하면 다른 기기의 새 필드가 지워지기 때문(앱 업데이트 전까지).
+ */
+async function loadRemoteGuarded(schemaBlockedRef: { current: boolean }) {
+  try {
+    return await loadFromGist();
+  } catch (err) {
+    if (err instanceof GistSchemaTooNewError) {
+      schemaBlockedRef.current = true;
+      toast.error(err.message, { id: GIST_SCHEMA_TOAST_ID, duration: 10_000 });
+    }
+    throw err;
+  }
+}
 const GIST_RESUME_PULL_TOAST_ID = "gist-resume-pull";
 
 /**
@@ -250,6 +268,8 @@ export function useGistSync(
   /** 대기 중이던 타이머·비동기 작업도 최신 disabled를 보도록 */
   const disabledRef = useRef(disabled);
   disabledRef.current = disabled;
+  /** 원격이 더 새 스키마로 저장됨 — 앱을 업데이트(새로고침)할 때까지 자동 업로드·원격 적용 중단 */
+  const schemaBlockedRef = useRef(false);
   /**
    * Effect 1 전용 최신 콜백 — 의존성에서 빼 둔다. 미완료 정리 시 재시도(hasMountedRef 리셋)를 하므로
    * 매 렌더 새로 만들어지는 콜백이 의존성에 있으면 setIsSyncing 리렌더마다 불러오기가 다시 시작된다.
@@ -301,7 +321,7 @@ export function useGistSync(
           onLogRef.current?.("Gist 자동 동기화: 외부 변경 없음(건너뜀)", "info");
           return;
         }
-        const { dataJson, updatedAt } = await loadFromGist();
+        const { dataJson, updatedAt } = await loadRemoteGuarded(schemaBlockedRef);
         if (cancelled) return;
         if (connectGen !== connectGenRef.current) return;
         // 로컬에 push되지 않은 변경이 있으면 무모달 덮어쓰기 금지 — 충돌 모달로 사용자 결정.
@@ -352,7 +372,7 @@ export function useGistSync(
    * 일시적 오류는 saveToGistWithRetry가 내부 재시도, 영구 오류는 즉시 throw → toast.
    */
   const runAutoPush = useCallback(async () => {
-    if (!autoSyncEnabled || disabledRef.current) return;
+    if (!autoSyncEnabled || disabledRef.current || schemaBlockedRef.current) return;
     if (!getGistToken() || !getGistId()) return;
     if (isPushingRef.current) return;
     if (isConnectingRef.current) return;
@@ -377,7 +397,7 @@ export function useGistSync(
         // (gist updated_at vs commit committed_at 소스 차이). 내용 해시로 진짜 외부 변경만 모달 표시 →
         // "PC에서 수정했는데 자꾸 과거로 되돌리라"는 가짜 충돌 제거.
         try {
-          const remote = await loadFromGist();
+          const remote = await loadRemoteGuarded(schemaBlockedRef);
           const lastPushedHash = getGistLastPushedHash();
           if (lastPushedHash && hashGistPayload(remote.dataJson) === lastPushedHash) {
             knownRemoteCommitRef.current = latest?.committedAt || known;
@@ -450,6 +470,10 @@ export function useGistSync(
       toast.error("데이터를 불러오지 못한 상태에서는 Gist에 저장할 수 없어요.");
       return;
     }
+    if (schemaBlockedRef.current) {
+      toast.error("다른 기기가 더 새 앱으로 저장해 Gist 저장을 멈췄어요. 이 기기 앱을 새로고침·업데이트하세요.", { id: GIST_SCHEMA_TOAST_ID });
+      return;
+    }
     // gistId는 없어도 됨 — 첫 저장 시 saveToGist가 새 Gist를 생성하고 ID를 기록한다.
     if (!getGistToken()) {
       onLog?.("Gist 토큰 미설정", "error");
@@ -483,7 +507,7 @@ export function useGistSync(
         // (gist updated_at vs commit committed_at 소스 차이). 내용 해시로 진짜 외부 변경만 모달 표시 →
         // "PC에서 수정했는데 자꾸 과거로 되돌리라"는 가짜 충돌 제거.
         try {
-          const remote = await loadFromGist();
+          const remote = await loadRemoteGuarded(schemaBlockedRef);
           const lastPushedHash = getGistLastPushedHash();
           if (lastPushedHash && hashGistPayload(remote.dataJson) === lastPushedHash) {
             knownRemoteCommitRef.current = latest?.committedAt || known;
@@ -565,7 +589,7 @@ export function useGistSync(
     }
     try {
       setIsSyncing(true);
-      const { dataJson, updatedAt } = await loadFromGist();
+      const { dataJson, updatedAt } = await loadRemoteGuarded(schemaBlockedRef);
 
       const commit = () => {
         // 검증·안전 스냅샷·실제 반영은 onApplyPulledData(App.handleGistPulledData) 내부에서 수행.
@@ -644,7 +668,7 @@ export function useGistSync(
    * 둘 다 없으면(한 번도 push/pull 성공 못 함) 판단 불가 → 조용히 덮어쓰지 않고 충돌 모달(보수적).
    */
   const checkRemoteOnResume = useCallback(async () => {
-    if (!autoSyncEnabled || disabledRef.current) return;
+    if (!autoSyncEnabled || disabledRef.current || schemaBlockedRef.current) return;
     if (!hasMountedRef.current) return;
     if (!getGistToken() || !getGistId()) return;
     if (isPushingRef.current || isRemoteCheckingRef.current) return;
@@ -662,7 +686,7 @@ export function useGistSync(
       if (!latest || !checkRemoteChanged(known, latest)) return;
       // 조회 대기 중 push·모달이 시작됐으면 그쪽 경로에 맡긴다 (push는 자체 충돌 감지 보유)
       if (isPushingRef.current || useUIStore.getState().gistConflict) return;
-      const remote = await loadFromGist();
+      const remote = await loadRemoteGuarded(schemaBlockedRef);
       if (isPushingRef.current || useUIStore.getState().gistConflict) return;
       const remoteAt = latest.committedAt;
       const lastPushedHash = getGistLastPushedHash();
@@ -886,7 +910,7 @@ export function useGistSync(
       let dataJson: string;
       let updatedAt: string;
       try {
-        ({ dataJson, updatedAt } = await loadFromGist());
+        ({ dataJson, updatedAt } = await loadRemoteGuarded(schemaBlockedRef));
       } catch (err) {
         const message = errorMessage(err);
         onLog?.(`기기 연결: Gist(…${shortId}) 불러오기 실패 — ${message}`, "error");

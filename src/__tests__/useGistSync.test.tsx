@@ -1637,6 +1637,19 @@ describe("loadFromGist — 덮어쓸 원격 데이터 없음 신호", () => {
     expect((err as Error).message).toBe("Gist에 FarmWallet 데이터가 없습니다.");
   });
 
+  it("description의 스키마 버전이 이 앱보다 높으면 GistSchemaTooNewError, 같거나 없으면 정상", async () => {
+    const actual = await vi.importActual<typeof gistSync>("../services/gistSync");
+    expect(actual.schemaVersionFromDescription("FarmWallet 데이터 백업 (schema v12)")).toBe(12);
+    expect(actual.schemaVersionFromDescription("FarmWallet 데이터 백업")).toBeNull();
+    const body = (description: string) =>
+      JSON.stringify({ description, files: { "farmwallet-data.json": { content: "{}" } } });
+    vi.stubGlobal("fetch", vi.fn().mockResolvedValue(new Response(body("FarmWallet 데이터 백업 (schema v999)"), { status: 200 })));
+    const err = await actual.loadFromGist().catch((e: unknown) => e);
+    expect(err).toBeInstanceOf(actual.GistSchemaTooNewError);
+    vi.stubGlobal("fetch", vi.fn().mockResolvedValue(new Response(body("FarmWallet 데이터 백업"), { status: 200 })));
+    await expect(actual.loadFromGist()).resolves.toMatchObject({ dataJson: "{}" });
+  });
+
   it("본문을 못 읽은 200(비JSON·빈 객체)은 '원격 없음'이 아니라 일반 오류 — 미동기 표식 상태에서 덮어쓰기 방지", async () => {
     const { load, NoData } = await actualLoad();
     for (const body of ["<html>garbage", "{}"]) {
@@ -1766,6 +1779,23 @@ describe("useGistSync — 원격을 반영하지 못한 부팅·로드 실패 �
     await act(async () => { await flushMicro(); });
     expect(mocked.getGistVersions).toHaveBeenCalledTimes(1);
     expect(mocked.loadFromGist).toHaveBeenCalledTimes(1);
+  });
+
+  it("원격이 더 새 스키마(GistSchemaTooNewError)면 적용하지 않고, 이후 로컬 편집도 업로드하지 않는다(새 필드 보존)", async () => {
+    mocked.loadFromGist.mockRejectedValue(new gistSync.GistSchemaTooNewError(99));
+    const onApply = vi.fn();
+    const { result, rerender } = renderHook(
+      ({ d }: { d: ReturnType<typeof makeData> }) => useGistSync(d, onApply),
+      { initialProps: { d: makeData(1) } }
+    );
+    await act(async () => { await flushMicro(); });
+    expect(onApply).not.toHaveBeenCalled();
+
+    rerender({ d: makeData(2) }); // 로컬 편집
+    await act(async () => { await vi.advanceTimersByTimeAsync(GIST_AUTO_PUSH_DEBOUNCE_MS + GIST_REMOTE_CHECK_THROTTLE_MS + 1000); });
+    await act(async () => { await result.current.manualPush(); });
+    expect(mocked.saveToGistWithRetry).not.toHaveBeenCalled();
+    expect(useUIStore.getState().gistConflict).toBeNull();
   });
 
   it("S5 hasUnsyncedLocalData: 마지막 동기화 내용·받을 내용과 같으면 false(스냅샷 생략), 미동기화 편집이나 기록 없음은 true", () => {

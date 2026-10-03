@@ -83,6 +83,10 @@ function trimmedMean(values: number[], trimRatio = 0.1): number {
   return sliced.reduce((s, v) => s + v, 0) / sliced.length;
 }
 
+/** 지출 예측의 고정분이 되는 반복 항목 — 정기 수입·이체(저축/투자/카드결제, toAccountId)는 소비가 아니다 */
+export const isForecastRecurringExpense = (r: RecurringExpense): boolean =>
+  r.kind !== "income" && r.kind !== "transfer" && !r.toAccountId;
+
 /**
  * 매주 반복지출이 특정 월("YYYY-MM")에 몇 번 발생하는지 계산.
  * startDate의 요일 기준 7일 간격, 시작일 이전·종료일 이후는 제외.
@@ -138,7 +142,7 @@ export function forecastNextMonth(
 
   const recurringByCat = new Map<string, number>();
   for (const r of recurring) {
-    if (!r.category) continue;
+    if (!r.category || !isForecastRecurringExpense(r)) continue;
     if (r.frequency === "monthly") {
       recurringByCat.set(r.category, (recurringByCat.get(r.category) ?? 0) + r.amount);
     } else if (r.frequency === "weekly") {

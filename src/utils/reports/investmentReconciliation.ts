@@ -12,7 +12,7 @@ import { computeAccountBalances, computePositions } from "../../calculations";
 import { buildClosedTradeRecords } from "../investmentRecord";
 import { usdBalanceModeDelta } from "../tradeCashImpact";
 import { getTodayKST } from "../date";
-import { isUSDStock } from "../finance";
+import { isUSDStock, plausibleUsdKrw } from "../finance";
 import { xirr, type CashFlowItem } from "../irr";
 import { convertPositionAmount, realizedPnlKRWByTradeId, isDividendIncomeEntry, toKrwAmount } from "./shared";
 
@@ -53,7 +53,8 @@ function accountValueMapAtDate(
     usdRollback.set(trade.accountId, (usdRollback.get(trade.accountId) ?? 0) + delta);
   }
   const balances = computeAccountBalances(accounts, filteredLedger, filteredTrades);
-  const positions = computePositions(filteredTrades, prices, accounts);
+  // 시세 없는 종목은 원가로 중립 — 평가액 0으로 두면 매수액이 통째로 손실로 잡힌다 (대시보드와 동일)
+  const positions = computePositions(filteredTrades, prices, accounts, { priceFallback: "cost" });
   const accountById = new Map(accounts.map((account) => [account.id, account]));
 
   const stockByAccount = new Map<string, number>();
@@ -132,7 +133,7 @@ export function generateAccountPerformanceBreakdown(
     realizedByAccount.set(trade.accountId, (realizedByAccount.get(trade.accountId) ?? 0) + pnl);
   }
 
-  const positions = computePositions(trades, prices, accounts);
+  const positions = computePositions(trades, prices, accounts, { priceFallback: "cost" });
   const unrealizedByAccount = new Map<string, number>();
   for (const position of positions) {
     const account = accountById.get(position.accountId);
@@ -437,7 +438,7 @@ export function computeInvestmentReconciliation(
   // 거래 한 건의 totalAmount를 거래시점 환율로 환산 (USD 종목만; 없으면 현재 환율 폴백).
   const tradeAmountKRW = (t: StockTrade): number => {
     if (!isUSDStock(t.ticker)) return t.totalAmount;
-    const fx = t.fxRateAtTrade && t.fxRateAtTrade > 0 ? t.fxRateAtTrade : (fxRate && fxRate > 0 ? fxRate : 0);
+    const fx = plausibleUsdKrw(t.fxRateAtTrade) ?? (fxRate && fxRate > 0 ? fxRate : 0);
     return fx > 0 ? t.totalAmount * fx : 0;
   };
   let buyVolume = 0;
@@ -492,7 +493,7 @@ export function computeInvestmentReconciliation(
   let unrealizedLoss = 0;
   const winningPositions: InvestmentPositionPnlRow[] = [];
   const losingPositions: InvestmentPositionPnlRow[] = [];
-  const positions = computePositions(trades, prices, accounts);
+  const positions = computePositions(trades, prices, accounts, { priceFallback: "cost" });
   for (const p of positions) {
     if (!investingIds.has(p.accountId)) continue;
     const account = accountById.get(p.accountId);

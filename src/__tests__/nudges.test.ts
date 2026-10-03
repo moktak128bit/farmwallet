@@ -207,6 +207,16 @@ describe("buildNudges — 대출 만기 D-3", () => {
     const ctx: NudgeContext = { ...baseCtx, today: "2026-07-15", loans: [loan({ id: "loan1", maturityDate: "2026-07-10" })] };
     expect(buildNudges(ctx).some((x) => x.dedupeKey === "loan:loan1:maturity")).toBe(false);
   });
+
+  it("문구의 '잔액'은 대출 원금이 아니라 상환 반영 잔금, 다 갚은 대출은 넛지 없음 (D7)", () => {
+    const repay = (amount: number) =>
+      ledgerEntry({ id: `p${amount}`, date: "2026-06-01", subCategory: "대출상환", detailCategory: "원금", loanId: "loan1", amount });
+    const loans = [loan({ id: "loan1", maturityDate: "2026-07-17" })];
+    const partial = buildNudges({ ...baseCtx, loans, ledger: [repay(40_000_000)] }).find((x) => x.dedupeKey === "loan:loan1:maturity");
+    expect(partial?.detail).toContain("60,000,000원");
+    const paidOff = buildNudges({ ...baseCtx, loans, ledger: [repay(100_000_000)] });
+    expect(paidOff.some((x) => x.dedupeKey === "loan:loan1:maturity")).toBe(false);
+  });
 });
 
 describe("buildNudges — 백업 경과", () => {
@@ -290,5 +300,21 @@ describe("buildNudges — 규칙 격리·정렬", () => {
     };
     const out = buildNudges(ctx);
     expect(out.some((x) => x.dedupeKey === "storage-usage")).toBe(true);
+  });
+});
+
+describe("buildNudges — 배당 규칙은 보유 반영 (감사 V8)", () => {
+  type Trade = NonNullable<NudgeContext["trades"]>[number];
+  const tr = (side: "buy" | "sell", date: string): Trade =>
+    ({ id: `${side}-${date}`, date, accountId: "S", ticker: "AAPL", name: "AAPL", side, quantity: 10, price: 100, fee: 0, totalAmount: 1000, cashImpact: 0 }) as Trade;
+  const ledger = [
+    { id: "d1", date: "2025-08-15", kind: "income", category: "배당", description: "AAPL 배당", amount: 100_000 } as LedgerEntry
+  ];
+
+  it("전량 매도한 종목은 '다가오는 배당'에 뜨지 않는다 (배당 탭과 같은 보유 맵)", () => {
+    const held: NudgeContext = { ...baseCtx, today: "2026-07-15", ledger, trades: [tr("buy", "2025-01-02")] };
+    expect(buildNudges(held).some((x) => x.dedupeKey.startsWith("dividend-forward:"))).toBe(true);
+    const sold: NudgeContext = { ...held, trades: [tr("buy", "2025-01-02"), tr("sell", "2026-03-02")] };
+    expect(buildNudges(sold).some((x) => x.dedupeKey.startsWith("dividend-forward:"))).toBe(false);
   });
 });

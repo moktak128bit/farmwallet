@@ -1,9 +1,10 @@
 import React, { useMemo } from "react";
 import { Info } from "lucide-react";
 import type { LedgerEntry, RecurringExpense } from "../../types";
-import { forecastNextMonth, expenseMainTotalsForMonth } from "../../utils/forecast";
+import { forecastNextMonth, expenseMainTotalsForMonth, isForecastRecurringExpense } from "../../utils/forecast";
 import { getThisMonthKST } from "../../utils/date";
 import { useFxRateValue } from "../../context/FxRateContext";
+import { useAppStore } from "../../store/appStore";
 import { Section } from "./insightsShared";
 
 interface Props {
@@ -22,10 +23,12 @@ export const ForecastView: React.FC<Props> = ({ ledger, recurring, formatNumber 
   const [lookback, setLookback] = React.useState(6);
   // USD 지출은 대시보드와 같은 환율로 원화 환산 (환산 없이 액면 합산하면 달러 지출이 1/1400로 과소 예측)
   const fxRate = useFxRateValue();
+  // 사용자 저축성지출 프리셋 — 빠지면 청약저축 등이 '변동 지출'로 예측에 섞인다 (대시보드와 같은 분류)
+  const categoryPresets = useAppStore((s) => s.data.categoryPresets);
 
   const result = useMemo(
-    () => forecastNextMonth(ledger, recurring, currentMonth, lookback, { fxRate }),
-    [ledger, recurring, currentMonth, lookback, fxRate]
+    () => forecastNextMonth(ledger, recurring, currentMonth, lookback, { fxRate, categoryPresets }),
+    [ledger, recurring, currentMonth, lookback, fxRate, categoryPresets]
   );
 
   const maxAmount = result.byCategory.reduce((m, c) => Math.max(m, c.upper), 0) || 1;
@@ -33,8 +36,8 @@ export const ForecastView: React.FC<Props> = ({ ledger, recurring, formatNumber 
   // 현재월 실제 소진률 (카테고리별) — 예측(byCategory)과 동일한 대분류(expenseMainName) 키·제외 기준 사용.
   // (과거 버그: l.category로 그룹화 → 현행 스키마에선 거의 "지출" 한 값이라 카테고리별 실적이 전부 0%였음)
   const currentMonthSpend = useMemo(
-    () => expenseMainTotalsForMonth(ledger, currentMonth, { fxRate }),
-    [ledger, currentMonth, fxRate]
+    () => expenseMainTotalsForMonth(ledger, currentMonth, { fxRate, categoryPresets }),
+    [ledger, currentMonth, fxRate, categoryPresets]
   );
 
   const totalRecurring = result.byCategory.reduce((s, c) => s + c.recurringAmount, 0);
@@ -44,7 +47,7 @@ export const ForecastView: React.FC<Props> = ({ ledger, recurring, formatNumber 
     : 0;
 
   // 반복지출 명세 — 예측의 고정 부분에 포함되는 매월·매주 항목 (매주는 월 환산으로 합산됨)
-  const fixedRecurring = recurring.filter((r) => r.frequency === "monthly" || r.frequency === "weekly");
+  const fixedRecurring = recurring.filter((r) => (r.frequency === "monthly" || r.frequency === "weekly") && isForecastRecurringExpense(r));
 
   return (
     <div>

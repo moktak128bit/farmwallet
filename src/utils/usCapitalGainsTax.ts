@@ -9,7 +9,7 @@
  * 손실수확(tax-loss harvesting): 보유 중 평가손실을 연내 실현하면 실현 양도차익과 통산돼 세금이 준다.
  */
 import type { PositionRow, StockTrade } from "../types";
-import { isUSDStock, canonicalTickerForMatch } from "./finance";
+import { isUSDStock, canonicalTickerForMatch, plausibleUsdKrw } from "./finance";
 import { positionMarketValueKRW } from "../calculations";
 import { fxAsOf, type FxPoint } from "./portfolioHistory";
 import { consumeFifoLots, type FifoLot } from "./fifoLots";
@@ -76,10 +76,9 @@ export function realizedForeignGainKRW(
     const sorted = [...ts].sort(tradeCmp);
     const queue: FifoLot[] = [];
     for (const t of sorted) {
-      // 앱 표준(tradeAmountKRW)과 동일한 `> 0` 검사 — fxRateAtTrade=0(레거시)을 유효값으로 삼으면
-      // 해당 lot의 KRW가 통째로 0이 되어 실현차익이 원가만큼 과대/과소된다
-      const tradeFx = t.fxRateAtTrade ?? 0;
-      const fx = tradeFx > 0 ? tradeFx : (fxAsOf(fxHistory, t.date, fallbackFxRate) ?? 0);
+      // 앱 표준(plausibleUsdKrw) — fxRateAtTrade=0(레거시)·1(오입력)을 유효값으로 삼으면
+      // 해당 lot의 KRW가 0/액면이 되어 실현차익이 원가만큼 과대/과소된다
+      const fx = plausibleUsdKrw(t.fxRateAtTrade) ?? fxAsOf(fxHistory, t.date, fallbackFxRate) ?? 0;
       if (t.side === "buy") {
         // 양도세는 각 lot을 취득 당시 환율로 KRW 고정 — value에 KRW 비용을 접어 넣는다.
         queue.push({ qty: t.quantity, value: t.totalAmount * fx });

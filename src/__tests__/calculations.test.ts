@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { computePositions, computeRealizedPnlByTradeId, isInterestRepayment, computeLoanBalanceAt, hasLoanRepaymentStructure } from "../calculations";
+import { computePositions, computeRealizedPnlByTradeId, isInterestRepayment, computeLoanBalanceAt, computeLoanBalancesById, hasLoanRepaymentStructure, matchLoanForRepayment } from "../calculations";
 import type { Account, LedgerEntry, Loan, StockTrade } from "../types";
 
 function makeTrade(overrides: Partial<StockTrade> & { id: string; side: "buy" | "sell" }): StockTrade {
@@ -199,6 +199,28 @@ describe("computeLoanBalanceAt — 2세대 이자 상환은 잔금에서 차감�
     ];
     // l2만 차감 → l1=1,000,000 + l2=400,000 = 1,400,000 (양쪽 다 차감되면 1,300,000)
     expect(computeLoanBalanceAt(twoLoans, ledger)).toBe(1_400_000);
+  });
+
+  it("loanId가 삭제된 대출을 가리키면 설명 문자열로 다른 대출에 폴백하지 않는다 (D1)", () => {
+    const ledger: LedgerEntry[] = [
+      // 삭제된 '주담대2'(l2)의 상환 — 삭제 다이얼로그가 상환 기록은 남긴다
+      makeRepayment({ id: "1", category: "지출", subCategory: "대출상환", detailCategory: "원금", description: "주담대2 상환", amount: 100_000, loanId: "l2" }),
+    ];
+    expect(matchLoanForRepayment(ledger[0], loans)).toBeNull();
+    expect(computeLoanBalanceAt(loans, ledger)).toBe(1_000_000);
+  });
+
+  it("computeLoanBalancesById — 대출별 잔금, 합계는 computeLoanBalanceAt과 같다 (D2)", () => {
+    const twoLoans: Loan[] = [
+      loans[0],
+      { ...loans[0], id: "l2", loanName: "주담대2", loanAmount: 500_000 },
+    ];
+    const ledger: LedgerEntry[] = [
+      makeRepayment({ id: "1", category: "지출", subCategory: "대출상환", detailCategory: "원금", description: "주담대2 상환", amount: 100_000 }),
+    ];
+    const byId = computeLoanBalancesById(twoLoans, ledger);
+    expect(byId.get("l1")).toBe(1_000_000);
+    expect(byId.get("l2")).toBe(400_000);
   });
 });
 

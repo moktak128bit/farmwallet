@@ -11,7 +11,7 @@
  *   — TotalAssetTrendCard와 동일 정책(박제 우선, 폴백 시 출처 표시).
  */
 import type { Account, MarketEnvSnapshot, StockPrice, StockTrade } from "../types";
-import { canonicalTickerForMatch, isUSDStock } from "./finance";
+import { canonicalTickerForMatch, isUSDStock, plausibleUsdKrw } from "./finance";
 import { buildHalfMonthSnapshotDates } from "./date";
 
 export type PriceSource = "snapshot" | "current" | "none";
@@ -188,7 +188,7 @@ export function buildStockCostSnapshots(params: BuildStockCostSnapshotsParams): 
       // 원가(KRW) — USD는 로트별 매입 당시 환율, 없으면 그 날짜의 유효 환율(박제 우선)
       const costKrw = meta.usd
         ? q.reduce((s, lot) => {
-            const fx = lot.fxRateAtTrade && lot.fxRateAtTrade > 0 ? lot.fxRateAtTrade : effectiveFx;
+            const fx = plausibleUsdKrw(lot.fxRateAtTrade) ?? effectiveFx;
             return s + lot.totalAmount * fx;
           }, 0)
         : totalNative;

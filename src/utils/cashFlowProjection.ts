@@ -8,7 +8,7 @@
  * 판정은 이벤트 단위(일 단위)로 한다.
  *
  * 이중계상 계약(ledger-plan G1과 동일 원칙):
- *  1) 대출 상환이 RecurringExpense로도 등록돼 있으면(제목이 대출명/기관명을 포함) 그 반복 항목은
+ *  1) 대출 상환이 RecurringExpense로도 등록돼 있으면(제목이 대출명/기관명/대출 종류를 포함) 그 반복 항목은
  *     제외하고 loanSchedule만 쓴다 — 둘 다 넣으면 같은 상환이 두 번 잡힌다.
  *  2) 카드 계좌로 가는 반복 이체(카드결제이체)도 cardBillForecast가 청구주기 기준으로 이미 계산하므로
  *     반복지출 목록에서는 제외한다.
@@ -22,7 +22,7 @@
  */
 import type { Account, CategoryPresets, LedgerEntry, Loan, RecurringExpense } from "../types";
 import { parseIsoLocal, getMonthEndDate, shiftMonth } from "./date";
-import { computeAccountBalances, computeLoanBalanceAt } from "../calculations";
+import { computeAccountBalances, computeLoanBalancesById, hasLoanRepaymentStructure } from "../calculations";
 import { computeCashFlowForecast } from "./cashFlowForecast";
 import { buildLoanPaymentSchedule } from "./loanSchedule";
 import { computeCardBillForecast } from "./cardBillForecast";
@@ -83,12 +83,14 @@ function isLiquidAccountType(type: Account["type"]): boolean {
   return type === "checking" || type === "savings" || type === "other";
 }
 
-/** 반복지출 제목이 대출명/기관명을 포함하면 같은 상환으로 간주(loanSchedule과 중복 방지) */
+/** 반복지출 제목이 대출명/기관명/대출 종류(학자금대출 등)를 포함하면 같은 상환으로 간주(loanSchedule과 중복 방지) */
 function recurringMatchesLoan(r: RecurringExpense, loan: Loan): boolean {
   const title = (r.title || "").trim();
   if (!title) return false;
   if (loan.loanName && title.includes(loan.loanName)) return true;
   if (loan.institution && title.includes(loan.institution)) return true;
+  // subCategory는 대출 전용 이름(학자금대출·주담대·개인대출·기타대출)뿐이라 일반 지출 제목과 겹치지 않는다
+  if (loan.subCategory && title.includes(loan.subCategory)) return true;
   return false;
 }
 
@@ -136,9 +138,12 @@ export function buildCashFlowProjection(
 
   // 2) 반복지출/이체 — 카드결제이체(toAccountId=카드계좌)·대출상환 매칭 반복은 제외(중복 방지 계약 1·2)
   const cardAccountIds = new Set(accounts.filter((a) => a.type === "card").map((a) => a.id));
+  // 가용 현금 계좌(적금 등)로 가는 이체는 같은 풀 안의 이동 — 유출로 빼면 가짜 마이너스가 생긴다
+  const liquidAccountIds = new Set(accounts.filter((a) => isLiquidAccountType(a.type)).map((a) => a.id));
   const outflowRecurring = recurring.filter((r) => {
     if (r.kind === "income") return false;
     if (r.toAccountId && cardAccountIds.has(r.toAccountId)) return false;
+    if (r.toAccountId && liquidAccountIds.has(r.toAccountId)) return false;
     if (loans.some((loan) => recurringMatchesLoan(r, loan))) return false;
     return true;
   });
@@ -149,15 +154,15 @@ export function buildCashFlowProjection(
 
   // 3) 반복 수입(kind='income', 3-4)
   const incomeRecurring = recurring.filter((r) => r.kind === "income");
-  const income = computeCashFlowForecast(incomeRecurring, { todayIso, horizonDays, ledger });
+  const income = computeCashFlowForecast(incomeRecurring, { todayIso, horizonDays, ledger, includeIncome: true });
   for (const e of income.events) {
     events.push({ date: e.date, label: e.title, amount: e.amount, source: "recurring-income" });
   }
 
-  // 4) 대출 상환 스케줄 (계약 4: 원금·이자 합쳐 한 번만)
+  // 4) 대출 상환 스케줄 (계약 4: 원금·이자 합쳐 한 번만). 잔금은 전체 목록으로 한 번에 — 단일 승자 매칭
+  const loanBalances = computeLoanBalancesById(loans, ledger, todayIso);
   for (const loan of loans) {
-    const loanBalance = computeLoanBalanceAt([loan], ledger, todayIso);
-    const schedule = buildLoanPaymentSchedule(loan, loanBalance, todayIso, endIso);
+    const schedule = buildLoanPaymentSchedule(loan, loanBalances.get(loan.id) ?? 0, todayIso, endIso);
     for (const s of schedule) {
       events.push({ date: s.date, label: `${loan.loanName} 상환`, amount: -s.totalPayment, source: "loan" });
     }
@@ -176,7 +181,9 @@ export function buildCashFlowProjection(
   // 6) 변동 지출 기준선 — 최근 3개월(오늘 이전) variable+discretionary 평균을 매달 15일에 한 번씩
   const trailingMonths: string[] = [];
   for (let i = 3; i >= 1; i--) trailingMonths.push(shiftMonth(todayIso.slice(0, 7), -i));
-  const natureSeries = computeExpenseNatureSeries(ledger, trailingMonths, opts.categoryPresets, opts.fxRate ?? null);
+  // 대출 상환(원금·이자)은 4)의 스케줄이 이미 잡으므로 기준선 표본에서 뺀다(계약 4)
+  const baselineLedger = ledger.filter((e) => !hasLoanRepaymentStructure(e));
+  const natureSeries = computeExpenseNatureSeries(baselineLedger, trailingMonths, opts.categoryPresets, opts.fxRate ?? null);
   const variableSamples = trailingMonths
     .map((m) => natureSeries[m])
     .filter((t): t is NonNullable<typeof t> => !!t)

@@ -1,6 +1,17 @@
-import React, { useCallback, useLayoutEffect, useRef, forwardRef } from "react";
+import React, { useCallback, useLayoutEffect, useRef, useState, forwardRef } from "react";
 import { formatAmount } from "../../../utils/parseAmount";
 import { caretAfterDigits, countDigitsBefore } from "../../../utils/caret";
+
+/**
+ * 입력 중인 draft가 부모 value와 같은 수인지 — "22."↔22, "2.50"↔2.5, "1,000"↔1000, "-"·""↔0.
+ * 부모 value가 빈 값(폼 리셋 등)이면 빈 draft만 같다고 본다.
+ */
+function sameNumber(value: string, draft: string): boolean {
+  if (value === draft) return true;
+  if (value.trim() === "") return false;
+  const num = (s: string) => Number(s.replace(/,/g, "").trim().replace(/^-?\.?$/, "0"));
+  return num(value) === num(draft);
+}
 
 interface Props
   extends Omit<
@@ -25,12 +36,20 @@ interface Props
  * 커서가 맨 뒤로 튄다. ref는 그대로 input에 전달된다(포커스·select 제어용).
  */
 export const NumericInput = forwardRef<HTMLInputElement, Props>(function NumericInput(
-  { value, onChange, allowDecimal = false, maxDecimals = 2, allowNegative = false, className, ...rest },
+  { value, onChange, allowDecimal = false, maxDecimals = 2, allowNegative = false, className, onBlur, ...rest },
   ref
 ) {
   const innerRef = useRef<HTMLInputElement | null>(null);
   /** 다음 렌더에서 복원할 커서 위치 (숫자 개수 기준) */
   const pendingDigits = useRef<number | null>(null);
+  // 화면에 보이는 글자는 로컬 draft — 부모가 number로 저장했다 String(n)으로 돌려주면 "22."가 "22"로
+  // 깎여 소수점을 칠 수 없었다(22.5 → 225kg 저장). 부모 값이 '다른 수'로 바뀔 때만 draft를 교체한다.
+  const [draft, setDraft] = useState(value);
+  const [seenValue, setSeenValue] = useState(value);
+  if (value !== seenValue) {
+    setSeenValue(value);
+    if (!sameNumber(value, draft)) setDraft(value);
+  }
 
   const setRefs = useCallback(
     (node: HTMLInputElement | null) => {
@@ -45,7 +64,9 @@ export const NumericInput = forwardRef<HTMLInputElement, Props>(function Numeric
     (e: React.ChangeEvent<HTMLInputElement>) => {
       const el = e.target;
       pendingDigits.current = countDigitsBefore(el.value, el.selectionStart ?? el.value.length);
-      onChange(formatAmount(el.value, { allowDecimal, maxDecimals, allowNegative }));
+      const next = formatAmount(el.value, { allowDecimal, maxDecimals, allowNegative });
+      setDraft(next);
+      onChange(next);
     },
     [onChange, allowDecimal, maxDecimals, allowNegative]
   );
@@ -62,7 +83,7 @@ export const NumericInput = forwardRef<HTMLInputElement, Props>(function Numeric
     } catch {
       /* number/date 등 selection 미지원 타입 방어 — 여기서는 text라 정상 동작 */
     }
-  }, [value]);
+  }, [draft]);
 
   return (
     <input
@@ -71,8 +92,13 @@ export const NumericInput = forwardRef<HTMLInputElement, Props>(function Numeric
       type="text"
       inputMode={allowDecimal ? "decimal" : "numeric"}
       className={className ? `money-input ${className}` : "money-input"}
-      value={value}
+      value={draft}
       onChange={handleChange}
+      onBlur={(e) => {
+        onBlur?.(e);
+        // 부모가 거부한 입력(예: 반복 1 미만)이 화면에만 남지 않게 — 떠날 때 저장된 값으로 맞춘다
+        if (!sameNumber(value, draft)) setDraft(value);
+      }}
     />
   );
 });

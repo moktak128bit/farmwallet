@@ -80,6 +80,7 @@ export const NotificationCenter: React.FC<Props> = ({ latestBackupAt }) => {
   const categoryPresets = useAppStore((s) => s.data.categoryPresets);
   const accounts = useAppStore((s) => s.data.accounts);
   const loans = useAppStore((s) => s.data.loans);
+  const trades = useAppStore((s) => s.data.trades);
   const historicalDailyFx = useAppStore((s) => s.data.historicalDailyFx);
   const marketEnvSnapshots = useAppStore((s) => s.data.marketEnvSnapshots);
   const fxRate = useFxRateValue();
@@ -104,6 +105,7 @@ export const NotificationCenter: React.FC<Props> = ({ latestBackupAt }) => {
         categoryPresets,
         accounts,
         loans,
+        trades,
         fxRate,
         taxGrossUp,
         historicalDailyFx,
@@ -119,6 +121,7 @@ export const NotificationCenter: React.FC<Props> = ({ latestBackupAt }) => {
       categoryPresets,
       accounts,
       loans,
+      trades,
       fxRate,
       taxGrossUp,
       historicalDailyFx,

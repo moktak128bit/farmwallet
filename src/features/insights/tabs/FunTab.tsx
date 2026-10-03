@@ -1,6 +1,5 @@
 import React from "react";
 import { F, Card, Section, type D } from "../insightsShared";
-import { getThisMonthKST } from "../../../utils/date";
 
 export const FunTab = React.memo(function FunTab({ d }: { d: D }) {
   const fs = d.funStats;
@@ -16,7 +15,7 @@ export const FunTab = React.memo(function FunTab({ d }: { d: D }) {
   statCards.push({ icon: "📝", title: "일 평균 거래", value: `${fs.avgTxPerDay}건`, sub: `총 ${d.txCount.toLocaleString()}건` });
 
   // d.prev는 선택 월(selMonth)의 "직전 달" 합계 — 비교 대상도 선택 월이어야 한다.
-  // (기간 마지막 월과 비교하면 엉뚱한 두 달을 비교하게 됨)
+  // (기간 마지막 월과 비교하면 엉뚱한 두 달을 비교하게 됨). 이번 달이면 전월도 1~오늘 일 동기(prev.partialDay).
   const prevComp = d.prev && d.selMonth ? {
     incDiff: (d.salaryMonthly[d.selMonth] ?? 0) - d.prev.salary,
     expDiff: (d.monthly[d.selMonth]?.expense ?? 0) - d.prev.expense,
@@ -61,7 +60,7 @@ export const FunTab = React.memo(function FunTab({ d }: { d: D }) {
         </Card>
 
         {prevComp && (
-          <Card title={d.selMonth === getThisMonthKST() ? "전월 대비 변화 (이번 달 진행 중 — 참고용)" : "전월 대비 변화"}>
+          <Card title={d.prev?.partialDay != null ? `전월 동기(1~${d.prev.partialDay}일) 대비 변화` : "전월 대비 변화"}>
             <div style={{ fontSize: 13, lineHeight: 2 }}>
               <div>근로소득: <span style={{ fontWeight: 700, color: prevComp.incDiff >= 0 ? "var(--success)" : "var(--danger)" }}>{prevComp.incDiff >= 0 ? "+" : ""}{F(prevComp.incDiff)}</span></div>
               <div>지출: <span style={{ fontWeight: 700, color: prevComp.expDiff <= 0 ? "var(--success)" : "var(--danger)" }}>{prevComp.expDiff >= 0 ? "+" : ""}{F(prevComp.expDiff)}</span>

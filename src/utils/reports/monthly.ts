@@ -4,12 +4,12 @@
 // ---------------------------------------------------------------------------
 
 import type { Account, LedgerEntry, StockPrice, StockTrade } from "../../types";
-import { computeAccountBalances, computePositions, positionMarketValueKRW } from "../../calculations";
+import { baseBalanceForAccount, computeAccountBalances, computePositions, positionMarketValueKRW } from "../../calculations";
 import { getTodayKST } from "../date";
 import { isSavingsExpenseEntry, isCreditPayment } from "../category";
 import { expenseMainName } from "../categoryMerge";
 import { isDividendEntry, isInterestEntry } from "../categoryMatch";
-import { canonicalTickerForMatch } from "../finance";
+import { canonicalTickerForMatch, tradeAmountKRW } from "../finance";
 import { toKrwByRate } from "../currency";
 import { isExcludedIncomeEntry } from "../savingsRate";
 import { xirr, type CashFlowItem } from "../irr";
@@ -187,9 +187,10 @@ export function generateStockPerformanceReport(
   fxRate?: number
 ): StockPerformanceReport[] {
   // fxRate를 넘겨 USD 종목의 매입원가(매입 당시 환율)·평가액(현재 환율)을 모두 KRW로 정규화한다.
-  // cashImpact(현금흐름)는 totalAmountKRW(원화)이므로, 이를 섞지 않으려면 종가도 KRW여야
+  // 현금흐름은 원화(tradeAmountKRW)이므로, 이를 섞지 않으려면 종가도 KRW여야
   // IRR이 'KRW 유출 + USD 종가 유입'으로 환율배수만큼 왜곡되지 않는다.
-  const positions = computePositions(trades, prices, accounts, { fxRate });
+  // priceFallback "cost": 시세 없는 종목은 원가로 중립(손익 0) — −100%로 표시하지 않는다 (대시보드와 동일).
+  const positions = computePositions(trades, prices, accounts, { fxRate, priceFallback: "cost" });
   const today = getTodayKST();
 
   return positions
@@ -208,9 +209,10 @@ export function generateStockPerformanceReport(
       const pnlKRW = currentValueKRW - totalBuyAmountKRW;
       const pnlRateKRW = totalBuyAmountKRW > 0 ? pnlKRW / totalBuyAmountKRW : 0;
 
+      // 흐름 = 거래금액 원화(거래시점 환율) — cashImpact는 USD 잔액모드 매수에서 0이라 원금이 빠져 IRR이 부풀었다
       const flows: CashFlowItem[] = positionTrades.map((trade) => ({
         date: trade.date,
-        amount: trade.cashImpact // KRW (totalAmountKRW) 또는 USD잔액모드 0
+        amount: (trade.side === "buy" ? -1 : 1) * tradeAmountKRW(trade, fxRate)
       }));
       flows.push({ date: today, amount: currentValueKRW });
 
@@ -239,8 +241,9 @@ export function generateAccountReport(
   return balances
     .map((balance) => {
       const account = balance.account;
+      // 잔액 엔진(computeAccountBalances)과 같은 시작점 — initialBalance와 initialCashBalance를 더하면 이중계상
       const initial =
-        account.initialBalance + (account.cashAdjustment ?? 0) + (account.initialCashBalance ?? 0);
+        baseBalanceForAccount(account) + (account.cashAdjustment ?? 0) + (account.savings ?? 0);
       const current = balance.currentBalance;
       const change = current - initial;
       const changeRate = initial !== 0 ? (change / initial) * 100 : 0;

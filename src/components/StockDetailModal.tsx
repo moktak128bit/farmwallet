@@ -2,9 +2,10 @@ import React, { useCallback, useMemo, useState, useEffect } from "react";
 import { QuantityField, NumericInput } from "./ui/fields";
 import type { Account, LedgerEntry, StockPrice, StockTrade, TickerInfo } from "../types";
 import { formatKRW, formatNumber, formatQuantity } from "../utils/formatter";
-import { isKRWStock, isUSDStock, extractTickerFromText, canonicalTickerForMatch } from "../utils/finance";
+import { isKRWStock, isUSDStock, extractTickerFromText, canonicalTickerForMatch, plausibleUsdKrw } from "../utils/finance";
 import { parseExDateFromNote, buildDividendNote } from "../utils/dividend";
 import { isDividendEntryLoose } from "../utils/categoryMatch";
+import { toKrwByRate } from "../utils/currency";
 import { parseAmount } from "../utils/parseAmount";
 import { consumeFifoLots, type FifoLot } from "../utils/fifoLots";
 import { getTodayKST } from "../utils/date";
@@ -152,6 +153,8 @@ export const StockDetailModal: React.FC<Props> = ({
     const isDividend = (l: LedgerEntry) => {
       // 분류 단일소스(categoryMatch.isDividendEntryLoose) — cat/sub 정확 매칭 + description fallback
       if (l.kind !== "income" || !isDividendEntryLoose(l)) return false;
+      // 모달은 계좌별 — 원가·수량이 이 계좌 기준이므로 다른 계좌 배당을 섞으면 배당율이 부풀어 오른다
+      if (l.toAccountId && l.toAccountId !== position.accountId) return false;
       const ledgerTicker = (extractTickerFromText(l.description ?? "") ?? extractTickerFromText(l.category ?? ""))?.toUpperCase() ?? "";
       return Boolean(ledgerTicker) && canonicalTickerForMatch(ledgerTicker) === canonicalTickerForMatch(position.ticker);
     };
@@ -195,12 +198,7 @@ export const StockDetailModal: React.FC<Props> = ({
         });
       const lots: FifoLot[] = [];
       for (const t of relevant) {
-        const appliedFx =
-          t.fxRateAtTrade && t.fxRateAtTrade > 0
-            ? t.fxRateAtTrade
-            : fxRate && fxRate > 0
-              ? fxRate
-              : null;
+        const appliedFx = plausibleUsdKrw(t.fxRateAtTrade) ?? (fxRate && fxRate > 0 ? fxRate : null);
         const amtKrW =
           isUSDStock(position.ticker) && appliedFx
             ? t.totalAmount * appliedFx
@@ -223,18 +221,19 @@ export const StockDetailModal: React.FC<Props> = ({
       const dateForCost = parseExDateFromNote(d.note) || d.date || "";
       const costBasis = position ? getCostBasisAtDate(dateForCost) : 0;
       const quantity = position ? getQuantityAtDate(dateForCost) : 0;
+      const amountKRW = toKrwByRate(d.amount, d.currency, fxRate); // 원가(KRW)와 같은 단위로
       const yieldRate =
-        costBasis > 0 && d.amount > 0 ? (d.amount / costBasis) * 100 : null;
+        costBasis > 0 && amountKRW > 0 ? (amountKRW / costBasis) * 100 : null;
       const avgPrice = quantity > 0 ? costBasis / quantity : null;
-      const dividendPerShare = quantity > 0 ? d.amount / quantity : null;
+      const dividendPerShare = quantity > 0 ? amountKRW / quantity : null;
       return { entry: d, yieldRate, costBasis, quantity, avgPrice, dividendPerShare };
     });
-  }, [positionDividends, position, getCostBasisAtDate, getQuantityAtDate]);
+  }, [positionDividends, position, getCostBasisAtDate, getQuantityAtDate, fxRate]);
 
   // 배당 총액
   const totalDividend = useMemo(() => {
-    return positionDividends.reduce((sum, d) => sum + d.amount, 0);
-  }, [positionDividends]);
+    return positionDividends.reduce((sum, d) => sum + toKrwByRate(d.amount, d.currency, fxRate), 0);
+  }, [positionDividends, fxRate]);
 
   // 주당배당금 × 보유주식수 = 총 배당금 자동 계산
   const calculatedAmount = useMemo(() => {
@@ -552,17 +551,17 @@ export const StockDetailModal: React.FC<Props> = ({
                         <td className="number">
                           {selectedTickerCurrency === "USD" && showUSD
                             ? `$${formatNumber(trade.price)}`
-                            : formatKRW(Math.round((trade.fxRateAtTrade && trade.fxRateAtTrade > 0 ? trade.price * trade.fxRateAtTrade : displayFxRate > 0 ? trade.price * displayFxRate : trade.price)))}
+                            : formatKRW(Math.round(trade.price * (plausibleUsdKrw(trade.fxRateAtTrade) ?? (displayFxRate > 0 ? displayFxRate : 1))))}
                         </td>
                         <td className="number">
                           {selectedTickerCurrency === "USD" && showUSD
                             ? `$${formatNumber(trade.fee)}`
-                            : formatKRW(Math.round((trade.fxRateAtTrade && trade.fxRateAtTrade > 0 ? trade.fee * trade.fxRateAtTrade : displayFxRate > 0 ? trade.fee * displayFxRate : trade.fee)))}
+                            : formatKRW(Math.round(trade.fee * (plausibleUsdKrw(trade.fxRateAtTrade) ?? (displayFxRate > 0 ? displayFxRate : 1))))}
                         </td>
                         <td className="number" style={{ fontWeight: 600 }}>
                           {selectedTickerCurrency === "USD" && showUSD
                             ? `$${formatNumber(trade.totalAmount)}`
-                            : formatKRW(Math.round((trade.fxRateAtTrade && trade.fxRateAtTrade > 0 ? trade.totalAmount * trade.fxRateAtTrade : displayFxRate > 0 ? trade.totalAmount * displayFxRate : trade.totalAmount)))}
+                            : formatKRW(Math.round(trade.totalAmount * (plausibleUsdKrw(trade.fxRateAtTrade) ?? (displayFxRate > 0 ? displayFxRate : 1))))}
                         </td>
                       </tr>
                     ))}

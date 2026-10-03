@@ -102,15 +102,17 @@ describe("forwardMonths — 선행배당 기반 연말 투영 (4-6)", () => {
     expect(r.projectedThresholdDate).toBe("2026-12-31"); // 9월 말 13M, 12월 말 21M > 20M
   });
 
-  it("이번 달(YYYY-MM) 항목은 제외, 정렬 안 된 입력도 달 순서로 누적", () => {
+  it("이번 달(YYYY-MM) 항목은 '미수령 잔여분'으로 가산, 지난 달은 무시, 정렬 안 된 입력도 달 순서로 누적", () => {
+    // 이번 달 항목 = buildTaxForwardMonths가 넣는 잔여 예상분(이미 받은 스트림은 0) — YTD와 겹치지 않는다.
+    // 예전엔 이번 달을 통째로 버려 아직 안 받은 이번 달 배당이 YTD에도 투영에도 없었다.
     const r = buildComprehensiveTaxTracker(
       [mk({ date: "2026-03-15", amount: 10_000_000 })],
       "2026-07-02",
       null,
-      { forwardMonths: [fm("2026-09", 6_000_000), fm("2026-07", 50_000_000), fm("2026-08", 6_000_000)] }
+      { forwardMonths: [fm("2026-09", 6_000_000), fm("2026-07", 1_000_000), fm("2026-06", 50_000_000), fm("2026-08", 6_000_000)] }
     );
-    expect(r.projectedYearEndGross).toBeCloseTo(22_000_000, 3);
-    expect(r.projectedThresholdDate).toBe("2026-09-30"); // 8월 말 16M, 9월 말 22M
+    expect(r.projectedYearEndGross).toBeCloseTo(23_000_000, 3);
+    expect(r.projectedThresholdDate).toBe("2026-09-30"); // 7월 말 11M, 8월 말 17M, 9월 말 23M
   });
 
   it("연말 경계: 12월엔 남은 달이 없어 연말 예상=YTD(+이자 페이스), 임계 미만이면 도달일 null", () => {

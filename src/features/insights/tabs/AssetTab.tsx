@@ -22,8 +22,6 @@ export const AssetTab = React.memo(function AssetTab({ d, bs }: { d: D; bs: Bala
   // 시작 순자산이 0 이하(부채 > 자산으로 출발)면 비율 성장이 정의되지 않음 — 증가액으로 표시
   const growthAbs = current - first;
   const growthPct = first > 0 ? Math.round((current / first - 1) * 100) : null;
-  const maxNW = nw.length > 0 ? Math.max(...nw.map((n) => n.total)) : 0;
-  const minNW = nw.length > 0 ? Math.min(...nw.map((n) => n.total)) : 0;
   const monthlyGrowth = nw.length >= 2 ? Math.round((current - first) / (nw.length - 1)) : 0;
 
   // 총 부채/총 자산 — 대차 단일 소스 (마이너스 통장·카드는 부채, 자산에 음수 없음)
@@ -242,7 +240,8 @@ export const AssetTab = React.memo(function AssetTab({ d, bs }: { d: D; bs: Bala
                 </defs>
                 <CartesianGrid strokeDasharray="3 3" stroke="var(--chart-grid)" />
                 <XAxis dataKey="label" tick={{ fontSize: 11 }} />
-                <YAxis tickFormatter={F} tick={{ fontSize: 11 }} domain={[Math.max(0, minNW * 0.9), maxNW * 1.05]} />
+                {/* 데이터 범위 자동 — 예전 [max(0,min×0.9), max×1.05]는 음수 달을 잘랐고 전부 음수면 [0, 음수]로 뒤집혔다 */}
+                <YAxis tickFormatter={F} tick={{ fontSize: 11 }} domain={["auto", "auto"]} />
                 <Tooltip formatter={(v: ValueType | undefined) => W(Number(v ?? 0))} />
                 <Area isAnimationActive={false} type="monotone" dataKey="total" stroke="var(--chart-positive)" fill="url(#nwGrad)" strokeWidth={2} name="순자산 추이" />
               </AreaChart>

@@ -99,6 +99,18 @@ describe("buildDailyNetFlowKRW", () => {
     expect(flows.get("2026-02-01")).toBe(-200 * 1350); // -270,000
   });
 
+  it("말이 안 되는 매입 환율(0·1)은 무시하고 그날 환율로 — 레거시 0이 ??를 통과해 투입액 0이 되던 회귀", () => {
+    const flows = buildDailyNetFlowKRW(
+      [
+        mk({ id: "1", ticker: "MSFT", side: "buy", totalAmount: 500, fxRateAtTrade: 1, date: "2026-01-02" }),
+        mk({ id: "2", ticker: "MSFT", side: "buy", totalAmount: 100, fxRateAtTrade: 0, date: "2026-01-03" }),
+      ],
+      [{ date: "2026-01-01", rate: 1320 }]
+    );
+    expect(flows.get("2026-01-02")).toBe(500 * 1320);
+    expect(flows.get("2026-01-03")).toBe(100 * 1320);
+  });
+
   it("같은 날 여러 거래는 합산", () => {
     const flows = buildDailyNetFlowKRW(
       [mk({ id: "1", side: "buy", totalAmount: 1000 }), mk({ id: "2", side: "sell", totalAmount: 300 })],

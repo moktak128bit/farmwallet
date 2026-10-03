@@ -17,7 +17,7 @@ interface Props {
   fxRate: number | null;
   /** 절세계좌(taxShelter) 판정용 — 그 계좌로 받은 배당·이자는 임계 합산에서 제외 (4-1). 생략 시 전부 합산 */
   accounts?: Account[];
-  /** 선행배당 월별 예상(buildForwardDividends().months) — 주면 연말 예상·도달일을 이 기준으로 (4-6). 생략 시 선형 페이스 */
+  /** 선행배당 월별 예상(forwardDividends.buildTaxForwardMonths — 절세계좌 제외·이번 달 잔여분 포함) — 주면 연말 예상·도달일을 이 기준으로 (4-6). 생략 시 선형 페이스 */
   forwardMonths?: ForwardDividendMonth[];
 }
 

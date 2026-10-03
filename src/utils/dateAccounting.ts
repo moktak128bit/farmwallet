@@ -1,6 +1,7 @@
 import type { Account, LedgerEntry } from "../types";
 import { isSettlementEntry } from "./categoryUtils";
 import { formatNumber } from "./formatter";
+import { addDaysToIso } from "./date";
 
 /**
  * 데이트성 지출 판정.
@@ -50,6 +51,50 @@ export function computeSettledLedgerIds(
   }
   if (legacyIds) for (const id of legacyIds) if (typeof id === "string") set.add(id);
   return set;
+}
+
+/** 데이트 정산 입금 기록 — 정산 히스토리·마지막 정산일·시작일 기본값 공용 판정 */
+export function isDateSettlementEntry(l: LedgerEntry): boolean {
+  return isSettlementEntry(l) && `${l.subCategory ?? ""}${l.detailCategory ?? ""}`.includes("데이트");
+}
+
+/**
+ * 정산 시작일 기본값 — 이 기기 localStorage(마지막 정산일)가 아니라 **ledger에서 파생**.
+ * (localStorage 값은 정산 삭제/Ctrl+Z로 되돌려도 남아, 되살아난 지출이 시작일 앞으로 밀려 0건이 됐고
+ *  정산 후 과거 날짜로 입력한 지출도 영영 안 보였다.)
+ *
+ * 하한(이 날짜 이전은 정산 범위 밖):
+ *  - 구세대 날짜 기반 정산(settledLedgerIds 없음)이 살아 있으면 그 최신 날짜까지(포함) 정산된 것으로 보고 다음 날.
+ *  - 아니면 id로 정산된 지출 중 가장 이른 날짜 — 그보다 오래된 미정산 지출은 사용자가 첫 정산 때 범위에서 뺀 것.
+ * 하한 이후 미정산 지출 중 가장 이른 날짜를 돌려주고, 없으면 max(하한, 마지막 정산일).
+ *
+ * @returns null = 정산 기록이 전혀 없음(첫 정산) → 호출부가 기본 범위를 정한다.
+ */
+export function computeSettlementDefaultSince(
+  ledger: LedgerEntry[],
+  dateAccountId: string,
+  settledIds: Set<string>
+): string | null {
+  let legacyLast = "";
+  let lastSettle = "";
+  let settledFloor = "";
+  for (const l of ledger) {
+    if (!l.date) continue;
+    if (isDateSettlementEntry(l)) {
+      if (l.date > lastSettle) lastSettle = l.date;
+      if (!Array.isArray(l.settledLedgerIds) && l.date > legacyLast) legacyLast = l.date;
+    } else if (l.kind === "expense" && l.fromAccountId === dateAccountId && settledIds.has(l.id)) {
+      if (!settledFloor || l.date < settledFloor) settledFloor = l.date;
+    }
+  }
+  const floor = legacyLast ? addDaysToIso(legacyLast, 1) : settledFloor;
+  if (!floor) return null;
+  let earliestOpen = "";
+  for (const l of ledger) {
+    if (l.kind !== "expense" || l.fromAccountId !== dateAccountId || !l.date || l.date < floor) continue;
+    if (!settledIds.has(l.id) && (!earliestOpen || l.date < earliestOpen)) earliestOpen = l.date;
+  }
+  return earliestOpen || (lastSettle > floor ? lastSettle : floor);
 }
 
 interface DatePartnerShare {

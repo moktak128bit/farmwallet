@@ -46,7 +46,8 @@ export const MonthlySummaryCards: React.FC<Props> = React.memo(function MonthlyS
             {EXCLUDED_LABEL} 제외: {formatKRW(Math.round(monthlySummary.expense - (monthlySummary.excludedExpense ?? 0)))}
           </div>
         )}
-        <div className="hint" style={{ marginTop: 8 }}>재테크 이체 {formatKRW(Math.round(monthlySummary.investing))} 별도</div>
+        {/* investing은 이체 + 투자수익 − 투자손실·수수료 순액 — "이체"라 부르면 손익이 섞인 숫자를 오해한다 */}
+        <div className="hint" style={{ marginTop: 8 }}>재테크 순액 {formatKRW(Math.round(monthlySummary.investing))} 별도</div>
       </div>
 
       {/* 좌측 바도 숫자와 같은 상태색 — 바는 초록인데 숫자는 빨강이던 불일치 제거 */}

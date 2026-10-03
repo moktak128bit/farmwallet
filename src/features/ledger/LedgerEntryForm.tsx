@@ -76,6 +76,36 @@ export function savingsInvestStored(sub: string): { kind: LedgerKind; category: 
   return { kind: "income", category: "수입", subCategory: sub };
 }
 
+/**
+ * 지출 탭 저장 형태 — {category:"지출", subCategory:대분류, detailCategory:소분류}.
+ * 대분류 "재테크"(지출 탭 picker엔 없고 복사·템플릿·최근 칩으로만 들어옴)는 재테크 탭 투자손실과 같은
+ * {category:"재테크", subCategory:중분류}로 저장 (savingsInvestStored와 동일 형태) — {지출, 재테크, 수수료}로
+ * 저장되면 생활 소비로 집계되고 재테크 필터에서 빠진다.
+ */
+export function expenseStored(main: string, sub: string): { category: string; subCategory: string; detailCategory?: string } {
+  if (main === "재테크") return { category: "재테크", subCategory: sub || "(미분류)", detailCategory: undefined };
+  return { category: "지출", subCategory: main || "(미분류)", detailCategory: sub || undefined };
+}
+
+/**
+ * 수정 저장 — 기존 항목 위에 폼 값을 덮는다. 폼에 없는 필드(note·loanId·settledLedgerIds 등)는 보존하고,
+ * 폼이 다루는 선택 필드는 명시적으로 덮어 종류·분류가 바뀌어도 이전 값이 남지 않게 한다.
+ */
+export function mergeEditedEntry(prev: LedgerEntry, base: Omit<LedgerEntry, "id">): LedgerEntry {
+  return {
+    ...prev,
+    ...base,
+    id: prev.id,
+    detailCategory: base.detailCategory,
+    discountAmount: base.discountAmount,
+    tags: base.tags,
+    fromAccountId: base.fromAccountId,
+    toAccountId: base.toAccountId,
+    // 폼은 이체만 USD를 표현한다 — 수입/지출은 종류가 그대로면 기존 통화 유지($30 지출이 30원으로 둔갑 방지)
+    currency: base.kind === "transfer" ? base.currency : prev.kind === base.kind ? prev.currency : undefined,
+  };
+}
+
 /** 부모(LedgerPage)에서 ref로 호출하는 폼 외부 접점 */
 export interface LedgerEntryFormHandle {
   /** 폼 일부 필드만 갱신 — 필터 일괄 초기화 등에서 사용 */
@@ -601,10 +631,9 @@ export const LedgerEntryForm = React.memo(React.forwardRef<LedgerEntryFormHandle
         storedSubCategory = normalizedSubCategory || "(미분류)";
         storedDetailCategory = undefined;
       } else {
-        // expense
-        storedCategory = "지출";
-        storedSubCategory = normalizedMainCategory || "(미분류)";
-        storedDetailCategory = normalizedSubCategory || undefined;
+        // expense (대분류 "재테크"는 재테크 형태로 — expenseStored)
+        ({ category: storedCategory, subCategory: storedSubCategory, detailCategory: storedDetailCategory } =
+          expenseStored(normalizedMainCategory, normalizedSubCategory));
       }
 
       const base: Omit<LedgerEntry, "id"> = {
@@ -659,7 +688,8 @@ export const LedgerEntryForm = React.memo(React.forwardRef<LedgerEntryFormHandle
       }
 
       if (form.id) {
-        const updated = ledger.map((l) => (l.id === form.id ? { ...base, id: l.id } : l));
+        // 통째 교체 금지 — note·loanId·settledLedgerIds·USD 통화가 수정마다 사라졌다 (mergeEditedEntry)
+        const updated = ledger.map((l) => (l.id === form.id ? mergeEditedEntry(l, base) : l));
         onChangeLedger(updated);
       } else {
         const id = newIdWithPrefix("L");

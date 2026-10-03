@@ -255,6 +255,8 @@ export const DividendFormSection: React.FC<Props> = React.memo(function Dividend
     );
     const quantity = matchedPosition?.quantity ?? 0;
     const dividendPerShare = quantity > 0 ? String(Math.round((recent.amount / quantity) * 100) / 100) : "";
+    // 채우는 주당 배당금은 원화(저장 금액 ÷ 보유) — USD 모드가 켜져 있으면 595원이 $595로 저장된다
+    setShowUSD(false);
     setDividendForm({
       date: getTodayKST(),
       exDate: "",

@@ -1,7 +1,8 @@
 /** C1 — 선행 배당 캘린더 (buildForwardDividends) */
 import { describe, expect, it } from "vitest";
-import type { LedgerEntry } from "../types";
-import { buildForwardDividends } from "../utils/forwardDividends";
+import type { LedgerEntry, StockTrade } from "../types";
+import { buildForwardDividends, buildTaxForwardMonths, netQtyByTicker } from "../utils/forwardDividends";
+import { buildComprehensiveTaxTracker } from "../utils/taxCalculator";
 import { canonicalTickerForMatch } from "../utils/finance";
 
 const div = (date: string, amount: number, currency?: "USD"): LedgerEntry => ({
@@ -230,5 +231,48 @@ describe("buildForwardDividends — 창 경계 (이중 계상·결측 방지)", 
     );
     // 150,000 × (150/150) = 150,000 — 날짜 분리 그룹의 계좌별 이중 스케일(300,000)이 아님
     expect(find(r.months, "2027-06").amountKRW).toBe(150_000);
+  });
+});
+
+describe("종합과세 투영용 선행 월 (감사 V5·V8)", () => {
+  // 매월 10일: ISA 50만 + 일반 10만 (2025-07 ~ 2026-06 수령), 오늘 2026-07-05 → 7월분 아직 미수령
+  const monthly: LedgerEntry[] = [];
+  for (let i = 0; i < 12; i += 1) {
+    const y = i < 6 ? 2025 : 2026;
+    const m = String(i < 6 ? 7 + i : i - 5).padStart(2, "0");
+    monthly.push({ ...divT(`${y}-${m}-10`, 500_000, "458730"), toAccountId: "ISA" });
+    monthly.push({ ...divT(`${y}-${m}-10`, 100_000, "0167B0"), toAccountId: "GEN" });
+  }
+
+  it("excludeAccountIds: 절세계좌 수령분은 선행 투영에서 빠진다 (캘린더 기본값은 그대로 포함)", () => {
+    const all = buildForwardDividends(monthly, "2026-07-05");
+    expect(find(all.months, "2026-08").amountKRW).toBe(600_000);
+    const taxable = buildForwardDividends(monthly, "2026-07-05", null, { excludeAccountIds: new Set(["ISA"]) });
+    expect(find(taxable.months, "2026-08").amountKRW).toBe(100_000);
+  });
+
+  it("buildTaxForwardMonths: 이번 달 미수령 잔여분을 맨 앞에, 이미 받은 스트림은 0 (YTD와 이중 계상 없음)", () => {
+    const before = buildTaxForwardMonths(monthly, "2026-07-05", null, { excludeAccountIds: new Set(["ISA"]) });
+    expect(before[0]).toEqual({ month: "2026-07", amountKRW: 100_000 });
+    expect(before[1].month).toBe("2026-08");
+    const paid = [...monthly, { ...divT("2026-07-10", 100_000, "0167B0"), toAccountId: "GEN" }];
+    const after = buildTaxForwardMonths(paid, "2026-07-15", null, { excludeAccountIds: new Set(["ISA"]) });
+    expect(after[0]).toEqual({ month: "2026-07", amountKRW: 0 });
+  });
+
+  it("연말 투영: ISA 50만/월 + 일반 10만/월 → YTD 60만 + 7~12월 60만 = 120만 (ISA 미래분 섞인 360만 아님)", () => {
+    const ytd = monthly.filter((e) => e.date >= "2026-01-01");
+    const forwardMonths = buildTaxForwardMonths(monthly, "2026-07-05", null, { excludeAccountIds: new Set(["ISA"]) });
+    const t = buildComprehensiveTaxTracker(ytd, "2026-07-05", null, { excludeAccountIds: ["ISA"], forwardMonths });
+    expect(t.ytdGross).toBe(600_000);
+    expect(t.projectedYearEndGross).toBe(1_200_000);
+  });
+
+  it("netQtyByTicker: 전 거래 순수량 — 전량 매도는 0으로 남고 부동소수 잔량은 0으로 스냅", () => {
+    const tr = (ticker: string, side: "buy" | "sell", quantity: number) =>
+      ({ id: Math.random().toString(36), date: "2026-01-01", accountId: "S", ticker, name: ticker, side, quantity, price: 1, fee: 0, totalAmount: quantity, cashImpact: 0 }) as StockTrade;
+    const m = netQtyByTicker([tr("AAPL", "buy", 0.1), tr("AAPL", "buy", 0.2), tr("AAPL", "sell", 0.3), tr("458730", "buy", 10)]);
+    expect(m.get("AAPL")).toBe(0);
+    expect(m.get("458730")).toBe(10);
   });
 });

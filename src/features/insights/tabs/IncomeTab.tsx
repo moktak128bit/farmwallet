@@ -256,7 +256,7 @@ export const IncomeTab = React.memo(function IncomeTab({ d }: { d: D }) {
             <Insight title="실질 수입 분석" color="var(--chart-series-c)" bg="rgba(139,92,246,0.08)">
               실질 수입 {F(d.realIncome)}원 = 장부 수입 {F(d.pIncome)}원{d.settlementTotal > 0 ? ` − 정산·분담금 ${F(d.settlementTotal)}원 (돌려받은 돈)` : ""}{d.tempIncomeTotal > 0 ? ` − 일시소득·환불·대출 ${F(d.tempIncomeTotal)}원` : ""}.
               {" "}회사소득 {F(salaryGroupTotal)}원과 패시브 {F(passiveGroupTotal)}원이 지속 가능한 재산 형성의 핵심.
-              {" "}실질 저축률 {d.realSavRate.toFixed(1)}%{d.datePartnerShare > 0 ? ` (데이트 계좌 ${F(d.dateAccountSpend)}원 중 상대 부담 ${F(Math.round(d.datePartnerShare))}원 반영)` : ""}.
+              {" "}실질 저축률 {d.realSavRate == null ? "N/A" : `${d.realSavRate.toFixed(1)}%`}{d.datePartnerShare > 0 ? ` (데이트 계좌 ${F(d.dateAccountSpend)}원 중 상대 부담 ${F(Math.round(d.datePartnerShare))}원 반영)` : ""}.
             </Insight>
           </div>
         </Card>

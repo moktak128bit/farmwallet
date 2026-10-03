@@ -51,6 +51,8 @@ const LazyStockCompareSection = lazy(() =>
 import type { Account, StockPrice, StockTrade, TickerInfo, StockPreset, LedgerEntry, TargetPortfolio, AccountBalanceRow } from "../types";
 import { computePositions } from "../calculations";
 import { buildClosedTradeRecords, summarizeRecords } from "../utils/investmentRecord";
+import { buildFxHistory } from "../utils/portfolioHistory";
+import { useAppStore } from "../store/appStore";
 import { fetchYahooQuotes } from "../yahooFinanceApi";
 import { isUSDStock, canonicalTickerForMatch } from "../utils/finance";
 import { toKrwByRate } from "../utils/currency";
@@ -278,15 +280,19 @@ export const StocksView: React.FC<Props> = ({
   }, [ledger, fxRate]);
 
   /** FIFO 누적 실현손익 — 리포트 InvestmentRecordCard·인사이트 InvestTab과 동일 로직. */
+  const historicalDailyFx = useAppStore((s) => s.data.historicalDailyFx);
+  const marketEnvSnapshots = useAppStore((s) => s.data.marketEnvSnapshots);
   const realized = useMemo(() => {
-    const records = buildClosedTradeRecords(trades, accounts, fxRate ?? undefined);
+    // 환율 없는 레거시 USD 거래는 그날 환율(이력)로 — 양도세 카드와 같은 숫자, 오늘 환율 따라 매일 변하지 않게
+    const fxHistory = buildFxHistory(historicalDailyFx, marketEnvSnapshots);
+    const records = buildClosedTradeRecords(trades, accounts, fxRate ?? undefined, fxHistory);
     const summary = summarizeRecords(records);
     return {
       pnl: summary.totalPnl,
       returnRate: summary.totalCost > 0 ? summary.totalPnl / summary.totalCost : 0,
       tradeCount: summary.tradeCount,
     };
-  }, [trades, accounts, fxRate]);
+  }, [trades, accounts, fxRate, historicalDailyFx, marketEnvSnapshots]);
 
 
   /** 환율 갱신. 갱신된 환율을 반환해 호출부가 stale 클로저 없이 즉시 사용 가능 (실패 시 null) */

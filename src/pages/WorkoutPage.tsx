@@ -613,7 +613,8 @@ export const WorkoutView: React.FC<Props> = ({
   };
 
   // 루틴 따라하기: 선택 날짜 기록에 루틴 운동 + 목표 세트 일괄 삽입.
-  // 휴식 권장 루틴(restDay)은 휴식 기록으로 전환.
+  // 휴식 권장 루틴(restDay)은 휴식 기록으로 전환 — "휴식으로 변경"과 같이 기존 운동 기록은 보존
+  // (확인 없이 완료 세트를 지우던 문제).
   const applyRoutine = (routineId: string) => {
     const routine = workoutRoutines.find((r) => r.id === routineId);
     if (!routine) return;
@@ -623,7 +624,6 @@ export const WorkoutView: React.FC<Props> = ({
         ...entry,
         type: "rest",
         dayLabel: entry.dayLabel || routine.name,
-        exercises: undefined,
         restNotes: [entry.restNotes, routine.note].filter(Boolean).join("\n") || routine.note || "",
       }));
       toast.success(`"${routine.name}" 적용`);

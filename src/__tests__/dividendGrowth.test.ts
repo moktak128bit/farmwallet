@@ -329,3 +329,57 @@ describe("resolveTrackedTickers", () => {
     expect(resolveTrackedTickers(undefined, ledger, sold)).toEqual(["458730"]);
   });
 });
+
+describe("buildDividendGrowth — 감사 회귀 (V3·V4·V9)", () => {
+  it("다계좌가 같은 배당을 다른 날 입금(27일·28일): 주당 분배금은 한 번만 (월 단위 계좌 가중)", () => {
+    const ledger = [
+      { ...div("2026-05-27", "458730", "TIGER 미국배당다우존스", 59_500, 100), toAccountId: "A" },
+      { ...div("2026-05-28", "458730", "TIGER 미국배당다우존스", 29_750, 50), toAccountId: "B" },
+    ];
+    const r = buildDividendGrowth({
+      ticker: "458730",
+      ledger,
+      trades: [buy("2026-04-15", "458730", 150, 10000)],
+      prices: [],
+      currentMonth: "2026-05",
+    });
+    const may = r!.points.find((p) => p.month === "2026-05")!;
+    expect(may.received).toBe(89_250);
+    expect(may.perShare).toBeCloseTo(595); // 날짜별 합산(595+595=1,190)이 아님
+  });
+
+  it("주배당(같은 계좌 한 달 여러 회)은 주당 분배금을 회차별로 합산한다", () => {
+    const ledger = [
+      { ...div("2026-05-07", "0167B0", "SOL", 1000, 10), toAccountId: "A" },
+      { ...div("2026-05-14", "0167B0", "SOL", 2000, 20), toAccountId: "A" },
+    ];
+    const r = buildDividendGrowth({
+      ticker: "0167B0",
+      ledger,
+      trades: [buy("2026-04-15", "0167B0", 20, 10000)],
+      prices: [],
+      currentMonth: "2026-05",
+    });
+    expect(r!.points.find((p) => p.month === "2026-05")!.perShare).toBeCloseTo(200); // 100 + 100
+  });
+
+  it("티커만 입력한 기록('SCHD 배당')도 배당 성장·추적 티커에 잡힌다", () => {
+    const mk = (d: string) => ({ ...div(d, "458730", "x", 1000, 10), description: "458730 배당" });
+    const ledger = [mk("2026-04-02"), mk("2026-05-02")];
+    const trades = [buy("2026-03-15", "458730", 10, 10000)];
+    expect(buildDividendGrowth({ ticker: "458730", ledger, trades, prices: [], currentMonth: "2026-05" })).not.toBeNull();
+    expect(resolveTrackedTickers(undefined, ledger, trades)).toEqual(["458730"]);
+  });
+
+  it("같은 날 [매도, 매수]가 최신순으로 저장돼 있어도 매수 먼저 처리", () => {
+    const ledger = [div("2026-06-01", "458730", "TIGER 미국배당다우존스", 100, 5)];
+    const trades = [
+      { ...buy("2026-05-02", "458730", 5, 13000), side: "sell" as const },
+      buy("2026-05-02", "458730", 10, 10000),
+    ];
+    const r = buildDividendGrowth({ ticker: "458730", ledger, trades, prices: [], currentMonth: "2026-06" });
+    const may = r!.points.find((p) => p.month === "2026-05")!;
+    expect(may.shares).toBe(5);
+    expect(may.avgCost).toBeCloseTo(10000);
+  });
+});

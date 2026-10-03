@@ -90,4 +90,10 @@ describe("computeCashFlowForecast", () => {
     expect(computeCashFlowForecast([{ id: "ns", title: "x", category: "y", amount: 100, frequency: "monthly", startDate: "" }], { todayIso: TODAY }).events).toEqual([]);
     expect(computeCashFlowForecast([rec({ id: "a", amount: 100, startDate: "2026-06-20" })], { todayIso: "bad-date" }).events).toEqual([]);
   });
+
+  it("반복 수입(kind=income)은 '다가오는 고정 지출'에 넣지 않는다 — includeIncome일 때만 (L9)", () => {
+    const r = [rec({ id: "sal", title: "월급", category: "급여", amount: 3_000_000, startDate: "2026-01-25", kind: "income", toAccountId: "acc1" })];
+    expect(computeCashFlowForecast(r, { todayIso: TODAY, horizonDays: 30 }).events).toEqual([]);
+    expect(computeCashFlowForecast(r, { todayIso: TODAY, horizonDays: 30, includeIncome: true }).totalHorizon).toBe(3_000_000);
+  });
 });

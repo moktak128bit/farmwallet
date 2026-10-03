@@ -4,7 +4,7 @@
  * loanPrepay.ts(4-4)와 같은 모델을 쓴다 — "원 스케줄의 월 납입액/월 원금"은 원금 전체(loanAmount)가
  * 아니라 **기준일(fromIso) 현재 잔금과 그 시점부터 남은 회차**로 정해진다(추가 상환·중도 변제가 있었어도
  * 남은 잔금을 남은 기간에 맞춰 그대로 계속 낸다는 가정 — loanPrepay.simulatePrepayment와 동일 관례).
- * remainingMonthsBetween(회차 올림)·거치 처리도 loanPrepay.ts와 동일 함수를 재사용한다.
+ * 거치 종료일은 loanPrepay.ts와 같은 규칙이지만, 분할 회차는 실제 결제일 수로 센다(아래 repayMonths).
  *
  * 결제일 = loanDate의 일(day-of-month), 매월 클램프 — 대출 실행일과 같은 날짜에 자동이체되는
  * 실무 관행을 따른다(Loan에 별도 결제일 필드가 없음). 만기일시(bullet)는 만기 전까지 매월 이자만
@@ -65,13 +65,20 @@ export function buildLoanPaymentSchedule(
 
   const monthlyRate = Math.max(0, Number(loan.annualInterestRate) || 0) / 100 / 12;
   const graceEnd = graceEndOf(loan);
-  const graceMonthsRemaining = Math.min(
-    remainingMonths,
-    graceEnd && graceEnd > fromIso ? remainingMonthsBetween(fromIso, graceEnd) : 0
-  );
-  const repayMonths = Math.max(1, remainingMonths - graceMonthsRemaining);
   const day = loanDateParsed.getDate();
   const method = loan.repaymentMethod;
+
+  // fromIso 이후 첫 결제일(같은 달의 day가 이미 지났으면 다음 달)
+  let firstPayment = clampedDate(from.getFullYear(), from.getMonth(), day);
+  if (firstPayment < from) firstPayment = nextMonthSameDay(firstPayment, day);
+
+  // 분할 회차 = 거치 이후 실제 결제일(≤ 만기) 수. remainingMonthsBetween은 만기 직전 부분 달도 1회로 세지만
+  // 결제는 loanDate의 일에만 생기므로, 그걸로 나누면 N회분으로 쪼개 N−1회만 내고 1회분이 미상환으로 남는다.
+  let repayMonths = 0;
+  for (let d = firstPayment; d <= maturity; d = nextMonthSameDay(d, day)) {
+    if (graceEnd == null || formatIsoLocal(d) > graceEnd) repayMonths++;
+  }
+  repayMonths = Math.max(1, repayMonths);
 
   let payment = 0;
   let principalPerMonth = 0;
@@ -85,10 +92,7 @@ export function buildLoanPaymentSchedule(
     principalPerMonth = currentBalance / repayMonths;
   }
 
-  // fromIso 이후 첫 결제일(같은 달의 day가 이미 지났으면 다음 달)
-  let cursor = clampedDate(from.getFullYear(), from.getMonth(), day);
-  if (cursor < from) cursor = nextMonthSameDay(cursor, day);
-
+  let cursor = firstPayment;
   const entries: LoanScheduleEntry[] = [];
   let balance = currentBalance;
 

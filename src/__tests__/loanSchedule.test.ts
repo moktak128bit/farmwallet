@@ -130,6 +130,21 @@ describe("buildLoanPaymentSchedule — 거치 기간", () => {
   });
 });
 
+describe("buildLoanPaymentSchedule — 납입액은 실제 결제일 수로 나눈다 (D5)", () => {
+  // 실데이터: 초기창업페키지 2024-01-01→2028-12-31, 거치 4년. 결제일=1일이라 12/31 만기 직전 부분 달은
+  // 결제가 없는데 remainingMonthsBetween은 1회차로 세서 12회분으로 나누고 11회만 생성 → 1회분 미상환.
+  for (const repaymentMethod of ["equal_principal", "equal_payment"] as const) {
+    it(`${repaymentMethod}: 거치 후 마지막 결제일까지 잔금 전액 상환`, () => {
+      const loan = makeLoan({ repaymentMethod, annualInterestRate: 2, loanAmount: 12_958_000, loanDate: "2024-01-01", maturityDate: "2028-12-31", gracePeriodYears: 4 });
+      const entries = buildLoanPaymentSchedule(loan, 12_958_000, "2026-10-02", "2029-06-01");
+      const repaid = entries.filter((e) => e.principal > 0);
+      expect(repaid.length).toBe(11);
+      expect(repaid.reduce((s, e) => s + e.principal, 0)).toBeCloseTo(12_958_000, 0);
+      expect(entries[entries.length - 1].remainingBalance).toBeCloseTo(0, 0);
+    });
+  }
+});
+
 describe("buildLoanPaymentSchedule — 말일 클램프·경계", () => {
   it("loanDate가 31일이면 30일까지인 달은 말일로 클램프", () => {
     const loan = makeLoan({ loanDate: "2026-01-31", maturityDate: "2027-01-31", repaymentMethod: "equal_principal" });

@@ -5,8 +5,9 @@ import { Section } from "../insights/insightsShared";
 import { useDateAccountId } from "../../hooks/useDateAccountSettings";
 import { getTodayKST, getMonthEndDate, shiftMonth } from "../../utils/date";
 import { newIdWithPrefix } from "../../utils/id";
-import { isSettlementEntry } from "../../utils/category";
-import { computeSettledLedgerIds } from "../../utils/dateAccounting";
+import { computeSettledLedgerIds, computeSettlementDefaultSince, isDateSettlementEntry } from "../../utils/dateAccounting";
+import { toKrwByRate } from "../../utils/currency";
+import { useFxRateValue } from "../../context/FxRateContext";
 
 interface Props {
   data: AppData;
@@ -14,15 +15,11 @@ interface Props {
   formatNumber: (n: number) => string;
 }
 
-const SETTLE_LAST_KEY = "fw-date-account-last-settle-at";
 const SETTLED_IDS_KEY = "fw-date-account-settled-ids";
 
 export const SettlementView: React.FC<Props> = ({ data, onSettle, formatNumber }) => {
   const dateAccountId = useDateAccountId() ?? "";
-  // 마지막 정산일을 state로 보관 — 정산 후 배너가 즉시 갱신되도록
-  const [lastSettleAt, setLastSettleAt] = useState<string>(() =>
-    typeof window !== "undefined" ? localStorage.getItem(SETTLE_LAST_KEY) ?? "" : ""
-  );
+  const fxRate = useFxRateValue();
   // 이미 정산한 지출 항목 id 집합 — 날짜 경계 대신 id로 이중청구를 막아
   // '정산 당일 지출 누락'(date>sinceDate + sinceDate=today 조합)과 '시작일 과거 변경 이중청구'를 동시에 해결.
   // 단일 소스 = 살아있는 정산 income 항목들의 settledLedgerIds 합집합. 정산 항목을 삭제/undo하면
@@ -45,14 +42,20 @@ export const SettlementView: React.FC<Props> = ({ data, onSettle, formatNumber }
 
   // 50/50 고정 (데이트 비용은 항상 절반 부담)
   const ratio = 50;
-  const [sinceDate, setSinceDate] = useState(lastSettleAt || (() => {
-    // 기본값: KST 기준 1개월 전 (setMonth 월말 오버플로 없이 — 일자는 전월 말일로 클램프)
+  // 정산 시작일 기본값은 ledger에서 파생(정산 삭제/undo·동기화·과거 날짜 입력에 자동 반응).
+  // 사용자가 날짜를 직접 고르면 그 값을 우선한다.
+  const [pickedSince, setSinceDate] = useState<string | null>(null);
+  const defaultSince = useMemo(() => {
+    const derived = computeSettlementDefaultSince(data.ledger, dateAccountId, settledIds);
+    if (derived) return derived;
+    // 정산 기록이 전혀 없음(첫 정산): KST 기준 1개월 전 (setMonth 월말 오버플로 없이 — 일자는 전월 말일로 클램프)
     const today = getTodayKST();
     const prevMonth = shiftMonth(today.slice(0, 7), -1);
     const lastDay = Number(getMonthEndDate(prevMonth).slice(8, 10));
     const day = Math.min(Number(today.slice(8, 10)), lastDay);
     return `${prevMonth}-${String(day).padStart(2, "0")}`;
-  })());
+  }, [data.ledger, dateAccountId, settledIds]);
+  const sinceDate = pickedSince ?? defaultSince;
 
   const settlement = useMemo(() => {
     if (!dateAccount) return null;
@@ -67,11 +70,12 @@ export const SettlementView: React.FC<Props> = ({ data, onSettle, formatNumber }
           !settledIds.has(l.id)
       )
       .sort((a, b) => (b.date || "").localeCompare(a.date || ""));
-    const total = items.reduce((s, l) => s + l.amount, 0);
+    // USD 지출은 원화 환산 후 합산 ($50을 50원으로 세지 않도록)
+    const total = Math.round(items.reduce((s, l) => s + toKrwByRate(l.amount, l.currency, fxRate), 0));
     const myShare = total * (ratio / 100);
     const partnerShare = total - myShare;
     return { items, total, myShare, partnerShare };
-  }, [data.ledger, dateAccount, sinceDate, ratio, settledIds]);
+  }, [data.ledger, dateAccount, sinceDate, ratio, settledIds, fxRate]);
 
   // 정산 히스토리 (과거 정산 기록)
   const settleHistory = useMemo(() => {
@@ -79,10 +83,12 @@ export const SettlementView: React.FC<Props> = ({ data, onSettle, formatNumber }
       // 정산 판정은 categoryUtils 단일 소스 — category="정산"(평면 세대)와
       // subCategory="정산"(대분류가 한 칸 내려간 세대)이 공존한다. category만 보면 후자를 놓쳐
       // 정산 히스토리가 통째로 빈 목록이 된다.
-      .filter((l) => isSettlementEntry(l) && `${l.subCategory ?? ""}${l.detailCategory ?? ""}`.includes("데이트"))
+      .filter(isDateSettlementEntry)
       .sort((a, b) => (b.date || "").localeCompare(a.date || ""))
       .slice(0, 10);
   }, [data.ledger]);
+  // 마지막 정산일도 ledger 기준 — 정산을 삭제/undo하면 함께 되돌아간다
+  const lastSettleAt = settleHistory[0]?.date ?? "";
 
   const settleTotal = settleHistory.reduce((s, l) => s + l.amount, 0);
   const settleAvg = settleHistory.length > 0 ? settleTotal / settleHistory.length : 0;
@@ -139,8 +145,6 @@ export const SettlementView: React.FC<Props> = ({ data, onSettle, formatNumber }
     // onSettle이 ledger에 추가하면 settledIds useMemo가 이 항목의 settledLedgerIds를 반영해
     // 정산 대상 목록에서 자동 제외된다(수동 setState 불필요).
     onSettle(entry);
-    if (typeof window !== "undefined") localStorage.setItem(SETTLE_LAST_KEY, today);
-    setLastSettleAt(today);
     setSettling(false);
   };
 
@@ -222,7 +226,7 @@ export const SettlementView: React.FC<Props> = ({ data, onSettle, formatNumber }
                         {l.subCategory || l.category || "-"}
                       </td>
                       <td style={{ padding: "8px 12px", textAlign: "right", fontWeight: 700, color: "var(--chart-expense)" }}>
-                        {formatNumber(l.amount)}
+                        {formatNumber(Math.round(toKrwByRate(l.amount, l.currency, fxRate)))}
                       </td>
                     </tr>
                   ))}

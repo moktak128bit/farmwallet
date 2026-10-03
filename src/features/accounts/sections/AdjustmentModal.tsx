@@ -80,8 +80,10 @@ export const AdjustmentModal = React.memo(function AdjustmentModal({
       const account = safeAccounts.find((a) => a.id === adjustingAccount.id);
       if (!account || !balanceRow) return;
 
-      const parsedUsd = editUsdBalance.trim() === "" ? 0 : parseSignedAmount(editUsdBalance);
-      const parsedKrw = editKrwBalance.trim() === "" ? 0 : parseSignedAmount(editKrwBalance);
+      const usdEmpty = editUsdBalance.trim() === "";
+      const krwEmpty = editKrwBalance.trim() === "";
+      const parsedUsd = usdEmpty ? 0 : parseSignedAmount(editUsdBalance);
+      const parsedKrw = krwEmpty ? 0 : parseSignedAmount(editKrwBalance);
       if (parsedUsd == null || parsedKrw == null) {
         toast.error("금액 형식이 올바르지 않습니다. 예: 1000.50, -50000");
         return;
@@ -95,7 +97,7 @@ export const AdjustmentModal = React.memo(function AdjustmentModal({
       const pensionChanged = isSecurities && pendingPension !== !!account.isPension;
       const shelterTarget = pendingShelter || undefined;
       const shelterChanged = isSecurities && shelterTarget !== account.taxShelter;
-      const hasAmountChange = isSetDirectly || inputUsd !== 0 || inputKrw !== 0;
+      const hasAmountChange = (isSetDirectly && (!usdEmpty || !krwEmpty)) || inputUsd !== 0 || inputKrw !== 0;
 
       // 금액 변경 없이 연금 분류·세제 성격만 저장 — 금액 입력 강제하지 않음
       if (!hasAmountChange) {
@@ -117,8 +119,9 @@ export const AdjustmentModal = React.memo(function AdjustmentModal({
 
       const dispUsd = (account.usdBalance ?? 0) + (balanceRow.usdTransferNet ?? 0);
       const currentKrw = balanceRow.currentBalance ?? 0;
-      const targetUsd = isSetDirectly ? inputUsd : dispUsd + inputUsd;
-      const targetKrw = isSetDirectly ? inputKrw : currentKrw + inputKrw;
+      // 직접 설정에서 빈 칸 = 현재값 유지 — USD만 입력했다고 원화 예수금이 0으로 지워지면 안 된다(반대도 동일)
+      const targetUsd = isSetDirectly ? (usdEmpty ? dispUsd : inputUsd) : dispUsd + inputUsd;
+      const targetKrw = isSetDirectly ? (krwEmpty ? currentKrw : inputKrw) : currentKrw + inputKrw;
 
       const usdTransferNet = balanceRow.usdTransferNet ?? 0;
       const newUsdBalance = targetUsd - usdTransferNet;

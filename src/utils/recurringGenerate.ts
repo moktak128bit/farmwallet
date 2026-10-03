@@ -16,6 +16,11 @@
 import type { CategoryPresets, LedgerEntry, Recurrence, RecurringExpense } from "../types";
 import { parseIsoLocal, formatIsoLocal } from "./date";
 import { newIdWithPrefix } from "./id";
+import { INVESTMENT_TRANSFER_SUBS } from "./categoryUtils";
+
+/** 반복 이체가 그대로 쓸 수 있는 이체 중분류 — 기본 이체 프리셋(dataService)·환전이체(FxFormSection) + 재테크 이체(레거시 저축/투자 포함).
+ * ponytail: 사용자 정의 이체 프리셋은 모름(생성기가 categoryPresets를 안 받음) — 필요하면 인자로 넘길 것. */
+const TRANSFER_SUBS = new Set([...INVESTMENT_TRANSFER_SUBS, "계좌이체", "카드결제이체", "데이트이체", "이월이체", "환전이체"]);
 
 /** 월 발생 항목 + 원본 주기 — 중복 판정을 주기별로 다르게 하기 위한 쌍 */
 export interface RecurringOccurrence {
@@ -67,12 +72,17 @@ export function generateOccurrencesForMonthFromRecurring(
         // 3-level 구조로 저장:
         //   - kind = income(정기 수입) 또는 transfer(저축성지출) 또는 expense
         //   - category = "수입"/"이체"/"지출" (대분류)
-        //   - subCategory = r.category (예: "구독비"/"월급") — 사용자가 폼에 적은 카테고리
+        //   - subCategory = r.category (예: "구독비"/"월급") — 사용자가 폼에 적은 카테고리 (이체는 아래 규칙)
         //   - detailCategory = r.title (예: "넷플릭스") — 구체 항목
         const isTransfer = !isIncome && !!r.toAccountId;
+        const typed = r.category?.trim() || "";
+        // 이체는 이체 프리셋 중분류만 그대로 — 공란·자유 입력("적금" 등)은 "저축이체"로.
+        // (예전 "저축성지출"/자유 입력은 INVESTMENT_TRANSFER_SUBS 밖이라 재테크 0·저축률 0%로 빠졌다)
         const userCat = isIncome
-          ? (r.category && r.category.trim()) || "월급"
-          : (r.category && r.category.trim()) || (r.toAccountId ? "저축성지출" : defaultExpenseCategory);
+          ? typed || "월급"
+          : isTransfer
+            ? (TRANSFER_SUBS.has(typed) ? typed : "저축이체")
+            : typed || defaultExpenseCategory;
         occurrences.push({
           frequency: r.frequency,
           entry: {

@@ -8,7 +8,7 @@
 import React, { useMemo } from "react";
 import type { CategoryPresets, LedgerEntry } from "../../types";
 import { formatKRW } from "../../utils/formatter";
-import { classifyLedgerFlow, toKrwAmount } from "./summaryMath";
+import { classifyLedgerFlow, signedInvestingAmount, toKrwAmount } from "./summaryMath";
 
 interface Props {
   ledger: LedgerEntry[];
@@ -35,7 +35,8 @@ export const MonthlyTrendCard: React.FC<Props> = React.memo(function MonthlyTren
       const m = entry.date.slice(0, 7);
       if (!map.has(m)) map.set(m, { income: 0, expense: 0, investing: 0 });
       const row = map.get(m)!;
-      row[flow] += toKrwAmount(entry, fxRate);
+      // 재테크는 순액(투자손실·수수료 −) — 요약 KPI와 같은 부호 (signedInvestingAmount 단일 소스)
+      row[flow] += flow === "investing" ? signedInvestingAmount(entry, fxRate) : toKrwAmount(entry, fxRate);
     });
     return Array.from(map.entries())
       .sort((a, b) => a[0].localeCompare(b[0]))
@@ -47,7 +48,7 @@ export const MonthlyTrendCard: React.FC<Props> = React.memo(function MonthlyTren
   }, [ledger, fxRate, categoryPresets, salaryKeys]);
 
   const maxVal = Math.max(
-    ...monthlyTrendData.map((r) => Math.max(r.income, r.expense + r.investing))
+    ...monthlyTrendData.map((r) => Math.max(r.income, r.expense + Math.max(0, r.investing)))
   );
 
   // 빈 상태 — 집계할 기록이 없으면 범례 대신 안내 문구
@@ -69,7 +70,8 @@ export const MonthlyTrendCard: React.FC<Props> = React.memo(function MonthlyTren
         {monthlyTrendData.map((row) => {
           const incPct = maxVal > 0 ? (row.income / maxVal) * 100 : 0;
           const expPct = maxVal > 0 ? (row.expense / maxVal) * 100 : 0;
-          const invPct = maxVal > 0 ? (row.investing / maxVal) * 100 : 0;
+          // 순손실 달(재테크 음수)은 막대 없음 — 음수 width는 무효 CSS
+          const invPct = maxVal > 0 ? (Math.max(0, row.investing) / maxVal) * 100 : 0;
           return (
             <div key={row.month}>
               <div style={{ display: "flex", justifyContent: "space-between", fontSize: 14, marginBottom: 4 }}>

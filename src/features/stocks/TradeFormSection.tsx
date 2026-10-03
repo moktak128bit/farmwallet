@@ -31,7 +31,7 @@ import type {
 import { fetchYahooQuotes } from "../../yahooFinanceApi";
 import { saveTickerToJson } from "../../storage";
 import { formatKRW, formatUSD } from "../../utils/formatter";
-import { isUSDStock, isKRWStock, isCryptoStock, canonicalTickerForMatch, canonicalTickerForInput } from "../../utils/finance";
+import { isUSDStock, isKRWStock, isCryptoStock, canonicalTickerForMatch, canonicalTickerForInput, plausibleUsdKrw } from "../../utils/finance";
 import { shouldUseUsdBalanceMode as shouldUseUsdBalanceModeUtil, computeTradeCashImpact } from "../../utils/tradeCashImpact";
 import { toast } from "react-hot-toast";
 import { validateDate, validateTicker, validateRequired, validateQuantity, validateAmount, validateAccountTickerCurrency } from "../../utils/validation";
@@ -40,9 +40,6 @@ import { getTodayKST } from "../../utils/date";
 import { newIdWithPrefix } from "../../utils/id";
 import { displayNameForTicker, createDefaultTradeForm, type TradeFormState } from "../../utils/stockHelpers";
 import { FxBandHint } from "./FxBandHint";
-
-/** 환율 미로드 시 미국 주식 저장에 사용하는 기본 환율 (저장 차단 대신 사용) */
-const DEFAULT_FX_RATE = 1400;
 
 /** 부모(StocksPage)에서 ref로 호출하는 폼 외부 접점 */
 export interface TradeFormSectionHandle {
@@ -382,28 +379,35 @@ export const TradeFormSection = React.memo(React.forwardRef<TradeFormSectionHand
       const hasUSDInput = price > 0;
       const hasKRWInput = priceKRWNum > 0;
 
+      // 수정이면 매입 당시 환율 보존(CLAUDE.md) — 현재 환율로 덮으면 과거 원화 손익이 소급 변경된다
+      const editingFx = tradeForm.id
+        ? plausibleUsdKrw(trades.find((t) => t.id === tradeForm.id)?.fxRateAtTrade)
+        : undefined;
+      const inputFx = editingFx ?? (fxRate && fxRate > 0 ? fxRate : undefined);
+
       let exchangeRate: number;
       if (isUSDCurrency) {
         if (hasUSDInput && hasKRWInput) {
-          // 원화·달러 둘 다 입력됨 → 환율 없이 저장, 입력값으로 적용 환율 계산
-          const totalAmountKRWFromInput = quantity * priceKRWNum + feeKRWNum;
-          const totalAmountUSDFromInput = quantity * price + fee;
-          exchangeRate = totalAmountUSDFromInput > 0 ? totalAmountKRWFromInput / totalAmountUSDFromInput : (fxRate ?? DEFAULT_FX_RATE);
-        } else if (hasKRWInput && !hasUSDInput) {
-          // 단가(원)·수수료(원)만 입력 → USD로 변환 필요 (환율 없으면 기본값)
-          const rate = (fxRate && fxRate > 0) ? fxRate : DEFAULT_FX_RATE;
-          price = priceKRWNum / rate;
-          fee = feeKRWNum / rate;
-          exchangeRate = rate;
-        } else if (hasUSDInput) {
-          // 달러로만 매수/매도 → 계좌가 USD 잔액 모드면 환율 불필요(달러만 차감/증가)
-          if (useUsdBalanceMode) {
-            exchangeRate = 0; // cashImpact=0, usdBalance만 반영
-          } else {
-            exchangeRate = (fxRate && fxRate > 0) ? fxRate : DEFAULT_FX_RATE;
-          }
-        } else {
+          // 원화·달러 둘 다 입력됨 → 입력값으로 적용 환율 계산 (수정 폼은 원화 칸을 비워 두므로 사용자가 직접 넣은 값)
+          exchangeRate = (quantity * priceKRWNum + feeKRWNum) / (quantity * price + fee);
+        } else if (!hasUSDInput && !hasKRWInput) {
           toast.error("단가(USD) 또는 단가(원)을 입력하세요.");
+          return;
+        } else if (!inputFx) {
+          // 환율 미로드 — 기본값으로 저장하면 원가·손익이 틀어진다 (CLAUDE.md #5, 빠른 복사와 동일)
+          toast.error("환율을 불러오지 못해 저장할 수 없습니다. 잠시 후 다시 시도해주세요.");
+          return;
+        } else {
+          if (hasKRWInput) {
+            // 단가(원)·수수료(원)만 입력 → USD로 변환
+            price = priceKRWNum / inputFx;
+            fee = feeKRWNum / inputFx;
+          }
+          // USD 잔액 모드도 환율은 기록한다(cashImpact만 0) — 없으면 실현손익이 '오늘 환율'로 매일 바뀐다
+          exchangeRate = inputFx;
+        }
+        if (!plausibleUsdKrw(exchangeRate)) {
+          toast.error(`적용 환율이 비정상입니다 (${Math.round(exchangeRate)}원/$). 단가(원)·단가(USD)를 확인하세요.`);
           return;
         }
       } else {
@@ -540,8 +544,6 @@ export const TradeFormSection = React.memo(React.forwardRef<TradeFormSectionHand
     };
 
     const startEditTrade = useCallback((t: StockTrade) => {
-      const isUSD = isUSDStock(t.ticker);
-      const rate = t.fxRateAtTrade ?? fxRate ?? 0;
       const db = tickerDatabase.find((x) => canonicalTickerForMatch(x.ticker) === canonicalTickerForMatch(t.ticker));
       setTradeForm({
         id: t.id,
@@ -555,10 +557,12 @@ export const TradeFormSection = React.memo(React.forwardRef<TradeFormSectionHand
         quantity: String(Number(t.quantity.toFixed(10))),
         price: String(t.price),
         fee: String(t.fee),
-        priceKRW: isUSD && rate > 0 ? String(Math.round(t.price * rate)) : "",
-        feeKRW: isUSD && rate > 0 ? String(Math.round(t.fee * rate)) : ""
+        // 원화 칸은 비워 둔다 — '옛 단가×환율'을 채워 두면 USD 단가만 고쳐도 저장 시 그 옛 원화로
+        // 환율이 역산돼 fxRateAtTrade가 바뀌었다. 비어 있으면 저장 시 기존 환율을 보존한다.
+        priceKRW: "",
+        feeKRW: ""
       });
-    }, [fxRate, tickerDatabase]);
+    }, [tickerDatabase]);
 
     const resetTradeForm = useCallback(() => {
       setTradeForm((prev) => ({

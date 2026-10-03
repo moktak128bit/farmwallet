@@ -80,6 +80,13 @@ describe("realizedForeignGainKRW", () => {
     // 예전: 매수 lot KRW=0 → 실현차익이 매도 전액(162만)으로 과대 → 유령 세금. 이제 원가 130만 인정 → +32만
     expect(g).toBeCloseTo(320_000, 0);
   });
+
+  it("fxRateAtTrade=1(실데이터 MSFT 오입력)도 유효 환율이 아님 — 원가 1,000원으로 유령 양도차익·세금이 생기지 않는다", () => {
+    const b = { ...buy("MSFT", "2026-01-01", 10, 1000, 1300), fxRateAtTrade: 1 };
+    const s = sell("MSFT", "2026-06-01", 10, 1200, 1350);
+    const g = realizedForeignGainKRW([b, s], 2026, [{ date: "2026-01-01", rate: 1300 }]);
+    expect(g).toBeCloseTo(320_000, 0);
+  });
 });
 
 describe("buildForeignCapitalGainsTax", () => {

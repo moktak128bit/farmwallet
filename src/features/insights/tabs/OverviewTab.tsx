@@ -40,8 +40,8 @@ export const OverviewTab = React.memo(function OverviewTab({ d, bs }: { d: D; bs
     ? (monthlyDepositTarget / monthlyRealIncome) * 100
     : 30;
   const targetSavRateSrc = monthlyDepositTarget ? "목표 설정값" : "기본 벤치마크 30%";
-  const actualSavRate = d.realSavRate;
-  const savRateOk = actualSavRate >= targetSavRate;
+  const actualSavRate = d.realSavRate; // null = 실질 수입 없음(N/A)
+  const savRateOk = actualSavRate != null && actualSavRate >= targetSavRate;
 
   /* 수입 성장률 요약 — 급여 전(월급일 이전)엔 −100%를 그리지 않는다 (대시보드와 같은 판정) */
   const ig = d.incomeGrowth;
@@ -112,7 +112,7 @@ export const OverviewTab = React.memo(function OverviewTab({ d, bs }: { d: D; bs
           {d.accumLabel} 실질 수입 <strong style={{ color: "var(--chart-income)" }}>{F(d.realIncome)}원</strong>
           {d.settlementTotal > 0 && ` (정산 ${F(d.settlementTotal)} 제외)`} · 실질 지출 <strong style={{ color: "var(--chart-expense)" }}>{F(d.realExpense)}원</strong>
           {d.datePartnerShare > 0 && ` (데이트 50% ${F(Math.round(d.datePartnerShare))} 제외)`} · 순수익 <strong style={{ color: d.netProfit >= 0 ? "var(--success)" : "var(--danger)" }}>{F(d.netProfit)}원</strong>
-          {" · 실질 저축률 "}<strong>{d.realSavRate.toFixed(1)}%</strong>
+          {" · 실질 저축률 "}<strong>{d.realSavRate == null ? "N/A" : `${d.realSavRate.toFixed(1)}%`}</strong>
         </div>
 
         <Card title="재정 활주로 — 수입 없이 버틸 수 있는 기간" span={4}>
@@ -130,7 +130,7 @@ export const OverviewTab = React.memo(function OverviewTab({ d, bs }: { d: D; bs
                 <span style={{ fontWeight: 700 }}>{F(liquidAssets)}</span>
               </div>
               <div style={{ display: "flex", justifyContent: "space-between", padding: "4px 0", borderBottom: "1px solid var(--border-light)" }}>
-                <span style={{ color: "var(--text-faint)" }}>월평균 지출</span>
+                <span style={{ color: "var(--text-faint)" }}>월평균 지출 (완결 월)</span>
                 <span style={{ fontWeight: 700 }}>{F(Math.round(d.avgMonthExp))}</span>
               </div>
               <div style={{ padding: "8px 12px", background: "var(--bg)", borderRadius: 6, marginTop: 8, fontSize: 12, color: "var(--text-muted)" }}>
@@ -143,6 +143,11 @@ export const OverviewTab = React.memo(function OverviewTab({ d, bs }: { d: D; bs
         </Card>
 
         <Card title={`저축률 목표 vs 실제 (${targetSavRateSrc})`} span={4}>
+          {actualSavRate == null ? (
+            <div style={{ padding: 20, textAlign: "center", color: "var(--text-faint)", fontSize: 13 }}>
+              실질 수입이 없어 저축률을 계산할 수 없습니다 (N/A).
+            </div>
+          ) : (
           <div style={{ display: "grid", gridTemplateColumns: "1fr 2fr", gap: 16, alignItems: "center" }}>
             <div style={{ textAlign: "center" }}>
               <div style={{ fontSize: 13, color: "var(--text-faint)", fontWeight: 600 }}>현재 저축률</div>
@@ -190,6 +195,7 @@ export const OverviewTab = React.memo(function OverviewTab({ d, bs }: { d: D; bs
               </div>
             </div>
           </div>
+          )}
         </Card>
       </Section>
 
@@ -255,9 +261,10 @@ export const OverviewTab = React.memo(function OverviewTab({ d, bs }: { d: D; bs
         <Card title="누적 실질 저축률 추이" span={2}>
           <p style={{ fontSize: 11, color: "var(--text-faint)", margin: "0 0 4px", textAlign: "right" }}>월급이 월말 지급이므로 월별 저축률 대신 누적 기준 표시</p>
           <ResponsiveContainer width="100%" height={210}>
-            <ComposedChart data={savRateData}><CartesianGrid strokeDasharray="3 3" stroke="var(--chart-grid)" /><XAxis dataKey="l" tick={{ fontSize: 12 }} /><YAxis tickFormatter={(v: number) => v + "%"} tick={{ fontSize: 11 }} /><Tooltip formatter={(v: ValueType | undefined) => Number(v ?? 0).toFixed(1) + "%"} />
+            <ComposedChart data={savRateData}><CartesianGrid strokeDasharray="3 3" stroke="var(--chart-grid)" /><XAxis dataKey="l" tick={{ fontSize: 12 }} /><YAxis tickFormatter={(v: number) => v + "%"} tick={{ fontSize: 11 }} /><Tooltip formatter={(v: ValueType | undefined) => v == null ? "N/A" : Number(v).toFixed(1) + "%"} />
+              {/* rate null(실질 수입 0) 달은 막대를 그리지 않는다 — 0% 막대는 거짓 */}
               <Bar isAnimationActive={false} dataKey="rate" name="월별" radius={[4, 4, 0, 0]} opacity={0.35}>
-                {savRateData.map((e, i) => <Cell key={i} fill={e.rate >= 30 ? "var(--success)" : e.rate >= 0 ? "var(--warning)" : "var(--danger)"} />)}
+                {savRateData.map((e, i) => <Cell key={i} fill={e.rate == null ? "var(--text-faint)" : e.rate >= 30 ? "var(--success)" : e.rate >= 0 ? "var(--warning)" : "var(--danger)"} />)}
               </Bar>
               <Line isAnimationActive={false} dataKey="cumRate" name="누적" stroke="var(--chart-series-b)" strokeWidth={2.5} dot={false} />
             </ComposedChart>
@@ -376,14 +383,14 @@ export const OverviewTab = React.memo(function OverviewTab({ d, bs }: { d: D; bs
             <div style={{ display: "flex", flexDirection: "column", gap: 8, fontSize: 12 }}>
               {(() => {
                 const sr = d.realSavRate;
-                const srPts = sr >= 50 ? 40 : sr >= 30 ? 30 : sr >= 20 ? 20 : sr >= 10 ? 10 : 0;
+                const srPts = sr == null ? 0 : sr >= 50 ? 40 : sr >= 30 ? 30 : sr >= 20 ? 20 : sr >= 10 ? 10 : 0;
                 const zeroRatio = d.totalDays > 0 ? d.zeroDays / d.totalDays : 0;
                 const zPts = zeroRatio > 0.2 ? 20 : zeroRatio > 0.1 ? 10 : 0;
                 const iPts = d.pInvest > 0 ? 20 : 5;
                 const nDiv = d.incByCat.length;
                 const dPts = nDiv >= 5 ? 20 : nDiv >= 3 ? 15 : nDiv >= 2 ? 10 : 5;
                 const items = [
-                  { label: "실질 저축률", pts: srPts, max: 40, hint: `${sr.toFixed(0)}% (50%=만점)`, color: "var(--success)" },
+                  { label: "실질 저축률", pts: srPts, max: 40, hint: `${sr == null ? "N/A" : `${sr.toFixed(0)}%`} (50%=만점)`, color: "var(--success)" },
                   { label: "무지출 비율", pts: zPts, max: 20, hint: `${(zeroRatio * 100).toFixed(0)}% (20%=만점)`, color: "var(--accent)" },
                   { label: "투자 활동", pts: iPts, max: 20, hint: d.pInvest > 0 ? "활성" : "없음", color: "var(--warning)" },
                   { label: "수입 다양성", pts: dPts, max: 20, hint: `${nDiv}개 수입원 (5+=만점)`, color: "var(--danger)" },
@@ -412,7 +419,7 @@ export const OverviewTab = React.memo(function OverviewTab({ d, bs }: { d: D; bs
           <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(150px, 1fr))", gap: 10 }}>
             {[
               { label: "순수익", value: F(d.netProfit) + "원", sub: `${d.accumLabel} · 실질수입 − 실질지출`, color: d.netProfit >= 0 ? "var(--success)" : "var(--danger)", bg: d.netProfit >= 0 ? "var(--success-light)" : "var(--danger-light)", border: d.netProfit >= 0 ? "var(--success)" : "var(--danger)" },
-              { label: "실질 저축률", value: d.realSavRate.toFixed(1) + "%", sub: `${d.accumLabel} 기준`, color: d.realSavRate >= 30 ? "var(--success)" : d.realSavRate >= 0 ? "var(--warning)" : "var(--danger)", bg: "var(--accent-light)", border: "var(--border-light)" },
+              { label: "실질 저축률", value: d.realSavRate == null ? "N/A" : d.realSavRate.toFixed(1) + "%", sub: `${d.accumLabel} 기준`, color: d.realSavRate == null ? "var(--text-faint)" : d.realSavRate >= 30 ? "var(--success)" : d.realSavRate >= 0 ? "var(--warning)" : "var(--danger)", bg: "var(--accent-light)", border: "var(--border-light)" },
               { label: "지출/근로소득 비율", value: d.expToIncRatio.toFixed(1) + "%", sub: d.expToIncRatio > 80 ? "지출 비중 높음" : d.accumLabel, color: d.expToIncRatio > 80 ? "var(--danger)" : "var(--accent)", bg: "var(--bg)", border: "var(--border-light)" },
               { label: "패시브 수입", value: F(d.passiveIncome) + "원", sub: `${d.accumLabel} · 실질수입 대비 ${d.realIncome > 0 ? Math.round(SD(d.passiveIncome, d.realIncome) * 100) : 0}%`, color: "var(--success)", bg: "var(--success-light)", border: "var(--success)" },
               { label: "일 평균 지출", value: F(d.dailyAvgExp) + "원", sub: `하루당 · ${d.totalDays}일 기준`, color: "var(--text)", bg: "var(--bg)", border: "var(--border-light)" },
@@ -479,7 +486,9 @@ export const OverviewTab = React.memo(function OverviewTab({ d, bs }: { d: D; bs
         <Card title="종합 인사이트" span={4}>
           <div className="grid-2" style={{ gap: 12 }}>
             <Insight title="실질 저축률 분석" tone="success">
-              {d.realSavRate >= 30
+              {d.realSavRate == null
+                ? "실질 수입이 없어 저축률을 계산할 수 없습니다 (N/A)."
+                : d.realSavRate >= 30
                 ? `실질 저축률 ${d.realSavRate.toFixed(0)}%로 매우 건강한 수준입니다. 실질 수입 ${F(d.realIncome)} 중 ${F(Math.round(d.netProfit))}을 저축하고 있습니다. 이 속도라면 연간 약 ${F(Math.round(d.netProfit * 12 / d.monthSpan))} 이상 자산 증가가 가능합니다.`
                 : d.realSavRate >= 0
                 ? `실질 저축률 ${d.realSavRate.toFixed(0)}%로 개선 여지가 있습니다. 30% 이상을 목표로 월 ${F(Math.round(d.realExpense * 0.1))} 정도 추가 절약하면 장기적으로 큰 차이를 만들 수 있습니다.`
@@ -505,7 +514,7 @@ export const OverviewTab = React.memo(function OverviewTab({ d, bs }: { d: D; bs
               {d.pExpense > 0 && ` 일 평균 지출 ${F(d.dailyAvgExp)}.`}
             </Insight>
             {d.prev && (
-              <Insight title="전월 대비 변화" tone="info">
+              <Insight title={d.prev.partialDay != null ? `전월 동기(1~${d.prev.partialDay}일) 대비 변화` : "전월 대비 변화"} tone="info">
                 근로소득 {d.pSalary >= d.prev.salary ? "+" : ""}{F(d.pSalary - d.prev.salary)} ({d.prev.salary > 0 ? Pct((d.pSalary - d.prev.salary) / d.prev.salary * 100) : "N/A"}),
                 지출 {d.pExpense >= d.prev.expense ? "+" : ""}{F(d.pExpense - d.prev.expense)} ({d.prev.expense > 0 ? Pct((d.pExpense - d.prev.expense) / d.prev.expense * 100) : "N/A"}).
                 {d.pExpense > d.prev.expense ? ` 지출이 ${F(d.pExpense - d.prev.expense)} 증가했습니다. 어떤 카테고리에서 증가했는지 지출 분석 탭에서 확인하세요.` : ` 지출이 ${F(d.prev.expense - d.pExpense)} 감소했습니다. 좋은 흐름입니다!`}

@@ -43,7 +43,8 @@ export function isCreditPayment(entry: LedgerEntry): boolean {
  * category만 보면 후자를 놓쳐 환전이 실제 소비 지출로 계상된다(월 지출 부풀림).
  */
 export function isCurrencyExchangeEntry(entry: LedgerEntry): boolean {
-  return entry.category === "환전" || entry.subCategory === "환전";
+  // 환전 입력 화면(FxFormSection)은 이체 쌍을 subCategory "환전이체"로 저장한다
+  return entry.category === "환전" || entry.subCategory === "환전" || entry.subCategory === "환전이체";
 }
 
 /**
@@ -217,9 +218,25 @@ function getSavingsSet(categoryPresets?: CategoryPresets): Set<string> {
 }
 
 /**
+ * 대분류 위치가 세대마다 다르다 — 레거시는 category=대분류·subCategory=중분류,
+ * 현행은 category="지출"·subCategory=대분류·detailCategory=소분류. 둘 다 본다(isFixedExpense와 같은 이유:
+ * category만 보면 현행 스키마의 저축성지출이 전부 생활 지출로 집계된다).
+ * 그 아래 칸이 투자손실·수수료 등 실비용(REAL_INVESTING_EXPENSE_SUBS)이면 저축이 아니다
+ * ({지출, 재테크, 수수료}가 +재테크로 뒤집히지 않게).
+ */
+function matchesSavings(entry: LedgerEntry, savingsSet: Set<string>): boolean {
+  if (entry.kind !== "expense") return false;
+  if (savingsSet.has(entry.category)) return !REAL_INVESTING_EXPENSE_SUBS.has(entry.subCategory ?? "");
+  if (entry.subCategory && savingsSet.has(entry.subCategory)) {
+    return !REAL_INVESTING_EXPENSE_SUBS.has(entry.detailCategory ?? "");
+  }
+  return false;
+}
+
+/**
  * 가계부 단일 소스: 저축성지출 여부 (= 자산 계좌로 이동한 지출, 실질 소비 아님).
- * kind === "expense" && 대분류가 저축성지출 카테고리.
- * 단, subCategory가 투자손실·수수료·세금·환차손 등(REAL_INVESTING_EXPENSE_SUBS)이면
+ * kind === "expense" && 대분류(레거시 category / 현행 subCategory)가 저축성지출 카테고리.
+ * 단, 그 아래 칸이 투자손실·수수료·세금·환차손 등(REAL_INVESTING_EXPENSE_SUBS)이면
  * 실질 지출이므로 false 반환 (재테크 순집계로 빠지지 않고 이중 완충되는 것 방지).
  */
 export function isSavingsExpenseEntry(
@@ -227,9 +244,7 @@ export function isSavingsExpenseEntry(
   accounts: Account[],
   categoryPresets?: CategoryPresets
 ): boolean {
-  if (entry.kind !== "expense") return false;
-  if (REAL_INVESTING_EXPENSE_SUBS.has(entry.subCategory ?? "")) return false;
-  return getSavingsSet(categoryPresets).has(entry.category);
+  return matchesSavings(entry, getSavingsSet(categoryPresets));
 }
 
 /**
@@ -246,10 +261,7 @@ export function makeIsSavingsExpense(
   categoryPresets?: CategoryPresets
 ): (entry: LedgerEntry) => boolean {
   const savingsSet = getSavingsSet(categoryPresets);
-  return (entry) =>
-    entry.kind === "expense" &&
-    !REAL_INVESTING_EXPENSE_SUBS.has(entry.subCategory ?? "") &&
-    savingsSet.has(entry.category);
+  return (entry) => matchesSavings(entry, savingsSet);
 }
 
 /**

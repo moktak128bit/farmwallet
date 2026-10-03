@@ -16,7 +16,7 @@
 import type { Account, LedgerEntry, StockTrade, StockPrice, CategoryPresets } from "../../types";
 import { accountDebtOffset, computeAccountBalances, computePositions, positionMarketValueKRW } from "../../calculations";
 import { computePortfolioMetrics, computeUnrealizedPL } from "../../utils/portfolioMetrics";
-import { isInvestmentEntry, isCurrencyExchangeEntry, isInvestmentLossEntry } from "../../utils/category";
+import { isCurrencyExchangeEntry, isInvestmentLossEntry } from "../../utils/category";
 import { classifyLedgerFlow, toKrwAmount } from "../dashboard/summaryMath";
 import { tradeAmountKRW } from "../../utils/finance";
 import { buildClosedTradeRecords, summarizeRecords, summaryToRealPL } from "../../utils/investmentRecord";
@@ -25,7 +25,7 @@ import { computeIncomeNatureKeys } from "../../utils/incomeClassification";
 import { getMoimAccountIds, computeMoimAccountFlow, type MoimFlowAnalysis } from "../../utils/dateAccounting";
 import { isExcludedIncomeEntry, computeRealSavingsRate, computeMonthlyRealFlows } from "../../utils/savingsRate";
 import type { AccountTimelineRow } from "../../utils/accountTimeline";
-import { SD, type D } from "./insightsShared";
+import type { D } from "./insightsShared";
 
 interface InsightsBaseInput {
   /** 기간(periodMonths) 필터된 가계부 — InsightsPage filteredLedger */
@@ -60,6 +60,11 @@ export interface InsightsBase {
   moimIds: Set<string>;
   amt: (l: LedgerEntry) => number;
   flowOf: (l: LedgerEntry) => ReturnType<typeof classifyLedgerFlow>;
+  isInvestInflow: (l: LedgerEntry) => boolean;
+  /** USD를 원화로 바꾼 장부 사본 — amount를 그대로 합산하는 공용 유틸(이상감지·성장률·지출관성)에 넘길 때 */
+  krwLedger: LedgerEntry[];
+  /** 기간 필터 cutoff가 첫 달 중간을 잘랐는지 — 첫 달이 부분 월이라 월평균 분모에서 뺀다 */
+  firstMonthCut: boolean;
   /* 전기간 월 축 */
   monthly: D["monthly"];
   months: string[];
@@ -105,7 +110,6 @@ export interface InsightsBase {
   accountBalances: D["accountBalances"];
   assetAllocation: D["assetAllocation"];
   /* 전기간 스칼라 */
-  avgMonthExp: number;
   mostFrugalMonth: D["funStats"]["mostFrugalMonth"];
   mostSpendMonth: D["funStats"]["mostSpendMonth"];
   monthOverMonthGrowth: number | null;
@@ -163,6 +167,22 @@ export function buildInsightsBase(input: InsightsBaseInput): InsightsBase {
    *  (예전엔 이 파일이 `category!=="재테크"` 하드코딩 + 투자손실을 지출에 가산해
    *  대시보드와 "지출" 숫자가 달랐다. 투자손익은 재테크 순집계 — 확정 정책.) */
   const flowOf = (l: LedgerEntry) => classifyLedgerFlow(l, categoryPresets);
+  // 환전 쌍(FxFormSection `${id}-from`/`${id}-to`)의 도착 다리엔 출발 계좌가 없다 — 짝(-from)에서 찾는다
+  const fxPairFrom = new Map<string, string>();
+  for (const l of ledger) {
+    if (l.kind === "transfer" && l.fromAccountId && !l.toAccountId && l.id?.endsWith("-from")) fxPairFrom.set(l.id.slice(0, -5), l.fromAccountId);
+  }
+  /** 인사이트 확장 재테크 단일 술어 — 증권·코인 계좌로 '투자계좌 밖에서' 들어온 이체(계좌이체 등).
+   *  출발이 투자계좌면(증권→증권 이동·같은 증권계좌 안 환전) 새 투자금이 아니다 — 예전엔 출발을 안 봐
+   *  해외증권 안 ₩→$ 환전의 도착 다리가 재테크로 잡혔다. 출발 미기록 일반 입금은 외부 유입으로 본다. */
+  const isInvestInflow = (l: LedgerEntry) => {
+    if (l.kind !== "transfer" || !l.toAccountId || !invIds.has(l.toAccountId)) return false;
+    const src = l.fromAccountId || fxPairFrom.get(l.id?.replace(/-to$/, "") ?? "");
+    if (src) return !invIds.has(src);
+    return !isCurrencyExchangeEntry(l); // 짝 잃은 환전 다리는 제외
+  };
+  /** USD → 원화 사본 (monthlyReview.toKrwLedger와 같은 규칙). ⚠ 스스로 환산하는 함수엔 원본을 넘길 것(이중 환산) */
+  const krwLedger = ledger.map(l => l.currency === "USD" ? { ...l, amount: amt(l), currency: undefined } : l);
 
   /* ===== monthly (full period) ===== */
   const monthly: Record<string, { income: number; expense: number; investment: number }> = {};
@@ -176,8 +196,8 @@ export function buildInsightsBase(input: InsightsBaseInput): InsightsBase {
     else if (flow === "expense") monthly[m].expense += a;
     // 재테크 = 저축·투자 이체 + 투자수익(+) − 투자손실(−) — 대시보드와 동일 순집계
     else if (flow === "investing") monthly[m].investment += isInvestmentLossEntry(l) ? -a : a;
-    // 인사이트 확장: 증권·코인 계좌로 들어간 일반 이체(계좌이체 등)도 투자 유입으로 본다
-    else if (l.kind === "transfer" && l.toAccountId && invIds.has(l.toAccountId)) monthly[m].investment += a;
+    // 인사이트 확장: 증권·코인 계좌로 들어간 일반 이체(계좌이체 등)도 투자 유입으로 본다 (isInvestInflow 단일 술어)
+    else if (isInvestInflow(l)) monthly[m].investment += a;
   }
   const months = Object.keys(monthly).sort();
   const ml: Record<string, string> = {};
@@ -208,7 +228,7 @@ export function buildInsightsBase(input: InsightsBaseInput): InsightsBase {
   for (const m of months) realIncomeMonthly[m] = realFlows.get(m)?.realIncome ?? 0;
 
   /* ===== trend data (full period) ===== */
-  // 저축률 추이 — 실질 저축률 정의로 통일 (realFlows 기반, 분모 0이면 0)
+  // 저축률 추이 — 실질 저축률 정의로 통일 (realFlows 기반, 분모 0이면 null = N/A — 0%로 그리면 거짓 막대)
   const savRateTrend: D["savRateTrend"] = [];
   {
     let cumInc = 0, cumExp = 0;
@@ -219,8 +239,8 @@ export function buildInsightsBase(input: InsightsBaseInput): InsightsBase {
       savRateTrend.push({
         m,
         l: ml[m],
-        rate: computeRealSavingsRate(i, e) ?? 0,
-        cumRate: computeRealSavingsRate(cumInc, cumExp) ?? 0,
+        rate: computeRealSavingsRate(i, e),
+        cumRate: computeRealSavingsRate(cumInc, cumExp),
         sav: i - e,
       });
     }
@@ -264,7 +284,8 @@ export function buildInsightsBase(input: InsightsBaseInput): InsightsBase {
     const [y, mo] = m.split("-").map(Number); const dim = new Date(y, mo, 0).getDate();
     const daily = new Array(31).fill(0);
     for (const l of ledger) {
-      if (l.kind !== "expense" || isCurrencyExchangeEntry(l) || isInvestmentEntry(l) || l.date?.slice(0, 7) !== m) continue;
+      // monthly[].expense와 같은 분류(flowOf) — 예전엔 환전·재테크 저축/투자만 걸러 레거시 신용결제(이중계상)·투자손실·저축성지출이 곡선에 남았다
+      if (l.date?.slice(0, 7) !== m || Number(l.amount) <= 0 || flowOf(l) !== "expense") continue;
       const d = parseInt(l.date.slice(8, 10)) - 1; if (d >= 0 && d < 31) daily[d] += amt(l);
     }
     const cum: number[] = []; let r = 0;
@@ -388,8 +409,10 @@ export function buildInsightsBase(input: InsightsBaseInput): InsightsBase {
   const assetAllocation = Object.entries(typeMap).map(([name, value]) => ({ name, value })).sort((a, b) => b.value - a.value);
 
   /* ===== 전기간 스칼라 (재미 통계·평균) ===== */
-  const fullMonths = Math.max(months.length, 1);
-  const avgMonthExp = SD(months.reduce((s, m) => s + monthly[m].expense, 0), fullMonths);
+  // 월평균 지출(재정 활주로)은 오늘 의존(진행 중인 달 제외)이라 slice가 계산 — 여기선 첫 달 부분 월 여부만.
+  // 기간 필터가 첫 달 중간을 잘랐으면 전체 장부엔 그 달 항목이 더 있다.
+  const inFirst = (arr: LedgerEntry[]) => arr.reduce((n, l) => n + (months.length > 0 && l.date?.startsWith(months[0]) ? 1 : 0), 0);
+  const firstMonthCut = inFirst(allLedger) > inFirst(ledger);
   // 가장 절약한 달 / 가장 많이 쓴 달
   let mostFrugalMonth: { month: string; expense: number } | null = null;
   let mostSpendMonth: { month: string; expense: number } | null = null;
@@ -439,7 +462,7 @@ export function buildInsightsBase(input: InsightsBaseInput): InsightsBase {
 
   return {
     ledger, rawTrades, accounts, categoryPresets, fxRate,
-    aMap, invIds, moimIds, amt, flowOf,
+    aMap, invIds, moimIds, amt, flowOf, isInvestInflow, krwLedger, firstMonthCut,
     monthly, months, ml, realFlows,
     salaryKeys, investIncKeys, nonRealKeys, salaryMonthly, realIncomeMonthly,
     savRateTrend, salaryTrend, cumIE, investTrend, divTrend, tradeCntTrend, subTrend, txCntTrend, cumSpend,
@@ -447,6 +470,6 @@ export function buildInsightsBase(input: InsightsBaseInput): InsightsBase {
     portfolio, holdingsByStock, totalHoldingsCost, allClosedRecords, periodSellIds, realPL, investReturnRate, investBreakdown, stockTrends,
     originalAssets, originalAssetsByAcct, moimFlow, incomeStability,
     netWorthByMonth, accountBalances, assetAllocation,
-    avgMonthExp, mostFrugalMonth, mostSpendMonth, monthOverMonthGrowth, bestSavingsMonth, domOccurrences,
+    mostFrugalMonth, mostSpendMonth, monthOverMonthGrowth, bestSavingsMonth, domOccurrences,
   };
 }

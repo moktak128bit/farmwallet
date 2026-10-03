@@ -1,9 +1,9 @@
 import React, { useState, useMemo, useEffect, useRef } from "react";
 import { Copy, Trash2 } from "lucide-react";
 import { toast } from "react-hot-toast";
-import type { Account, AccountBalanceRow, StockPrice, StockTrade, TradeSide } from "../../types";
+import type { Account, StockPrice, StockTrade, TradeSide } from "../../types";
 import { computeRealizedPnlByTradeId, computeRealizedPnlDetailByTradeId } from "../../calculations";
-import { isUSDStock, isCryptoStock, canonicalTickerForMatch, cryptoDisplaySymbol } from "../../utils/finance";
+import { isUSDStock, isCryptoStock, canonicalTickerForMatch, cryptoDisplaySymbol, plausibleUsdKrw } from "../../utils/finance";
 import { NumericInput } from "../../components/ui/fields";
 import { parseAmount, formatAmount } from "../../utils/parseAmount";
 import { computeTradeCashImpact } from "../../utils/tradeCashImpact";
@@ -31,7 +31,6 @@ type TradeSortKey = "date" | "accountId" | "ticker" | "name" | "side" | "quantit
 interface TradeHistorySectionProps {
   trades: StockTrade[];
   accounts: Account[];
-  balances?: AccountBalanceRow[];
   prices: StockPrice[];
   fxRate: number | null;
   onChangeTrades: (next: StockTrade[] | ((prev: StockTrade[]) => StockTrade[])) => void;
@@ -78,7 +77,6 @@ const tradeFilterDateStyle: React.CSSProperties = {
 export const TradeHistorySection: React.FC<TradeHistorySectionProps> = ({
   trades,
   accounts,
-  balances = [],
   prices,
   fxRate,
   onChangeTrades,
@@ -229,25 +227,6 @@ export const TradeHistorySection: React.FC<TradeHistorySectionProps> = ({
 
   const realizedPnlByTradeId = useMemo(() => computeRealizedPnlByTradeId(trades), [trades]);
   const realizedPnlDetailByTradeId = useMemo(() => computeRealizedPnlDetailByTradeId(trades), [trades]);
-
-  const balanceAfterByTradeId = useMemo(() => {
-    const result = new Map<string, { amount: number; balance: number }>();
-    const balanceById = new Map<string, number>();
-    for (const row of balances) {
-      balanceById.set(row.account.id, row.currentBalance);
-    }
-    const sorted = [...trades].sort((a, b) =>
-      a.date !== b.date ? a.date.localeCompare(b.date) : a.id.localeCompare(b.id)
-    );
-    const futureImpact = new Map<string, number>();
-    for (let i = sorted.length - 1; i >= 0; i--) {
-      const t = sorted[i];
-      const bal = (balanceById.get(t.accountId) ?? 0) - (futureImpact.get(t.accountId) ?? 0);
-      result.set(t.id, { amount: t.cashImpact, balance: bal });
-      futureImpact.set(t.accountId, (futureImpact.get(t.accountId) ?? 0) + t.cashImpact);
-    }
-    return result;
-  }, [trades, balances]);
 
   const sortedTrades = useMemo(() => {
     const dir = tradeSort.direction === "asc" ? 1 : -1;
@@ -469,11 +448,12 @@ export const TradeHistorySection: React.FC<TradeHistorySectionProps> = ({
     // 역사적 환율(fxRateAtTrade) 보존 — 인라인 수정(날짜·수량 등)이 과거 환율을 현재 환율로
     // 덮어쓰면 원화 실현손익이 소급 변경된다. 기존 환율이 없을 때만 현재 환율로 보완.
     const preservedFx =
-      existingTrade?.fxRateAtTrade && existingTrade.fxRateAtTrade > 0
-        ? existingTrade.fxRateAtTrade
-        : fxRate && fxRate > 0
-          ? fxRate
-          : 0;
+      plausibleUsdKrw(existingTrade?.fxRateAtTrade) ?? (fxRate && fxRate > 0 ? fxRate : 0);
+    if (isUSDCurrency && !preservedFx) {
+      // 환율 미로드 + 기존 환율도 없음 — 0으로 저장하면 cashImpact 0이 되어 잔액모드 거래로 오인된다 (CLAUDE.md #5)
+      toast.error("환율을 불러오지 못해 저장할 수 없습니다. 잠시 후 다시 시도해주세요.");
+      return;
+    }
     const exchangeRate = isUSDCurrency ? preservedFx : 1;
     const totalAmount = side === "buy"
       ? quantity * price + fee
@@ -615,9 +595,8 @@ export const TradeHistorySection: React.FC<TradeHistorySectionProps> = ({
       Math.abs(quickCopyTrade.cashImpact ?? 0) < 0.000001;
     let exchangeRate = 1;
     if (isUSDCurrency) {
-      if (useUsdBalanceMode) {
-        exchangeRate = 0; // cashImpact=0, usdBalance만 반영 (메인 폼과 동일 규칙)
-      } else if (fxRate && fxRate > 0) {
+      // USD 잔액 모드도 환율은 기록(cashImpact만 0 — 메인 폼과 동일 규칙). 없으면 실현손익이 '오늘 환율'로 매일 바뀐다
+      if (fxRate && fxRate > 0) {
         exchangeRate = fxRate;
       } else {
         // 새로 발생하는 거래라 과거 환율을 보존할 수 없음 — 미로드 시 저장 차단
@@ -981,20 +960,17 @@ export const TradeHistorySection: React.FC<TradeHistorySectionProps> = ({
                     ) : (
                       <>
                         <div>{t.accountId}</div>
-                        {balanceAfterByTradeId.get(t.id) && (
-                          <div
-                            style={{
-                              fontSize: 11,
-                              color: balanceAfterByTradeId.get(t.id)!.amount >= 0 ? "var(--danger)" : "var(--primary)",
-                              marginTop: 2
-                            }}
-                          >
-                            {balanceAfterByTradeId.get(t.id)!.amount >= 0 ? "+" : ""}
-                            {formatKRW(Math.round(balanceAfterByTradeId.get(t.id)!.amount))}
-                            {" / "}
-                            {formatKRW(Math.round(balanceAfterByTradeId.get(t.id)!.balance))}
-                          </div>
-                        )}
+                        {/* 현금 증감만 — '거래 후 잔액'은 가계부 현금흐름을 빼고 거래만 역산해 0원·음수가 찍혀 제거 */}
+                        <div
+                          style={{
+                            fontSize: 11,
+                            color: t.cashImpact >= 0 ? "var(--danger)" : "var(--primary)",
+                            marginTop: 2
+                          }}
+                        >
+                          {t.cashImpact >= 0 ? "+" : ""}
+                          {formatKRW(Math.round(t.cashImpact))}
+                        </div>
                       </>
                     )}
                   </td>

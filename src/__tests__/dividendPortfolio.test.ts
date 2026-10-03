@@ -191,3 +191,52 @@ describe("buildDividendPortfolio — 통화·원가", () => {
     expect(buildDividendPortfolio({ ledger: [], trades: [], currentMonth: "2026-07" })).toBeNull();
   });
 });
+
+describe("buildDividendPortfolio — 과거 창 배당을 현재 보유로 환산 (감사 V1·V4·V9)", () => {
+  it("대량 매도·적립 후에도 YOC = 현재 보유 기준 연배당 ÷ 현재 원가", () => {
+    const ledger: LedgerEntry[] = [];
+    const months = [
+      "2025-10", "2025-11", "2025-12", "2026-01", "2026-02", "2026-03",
+      "2026-04", "2026-05", "2026-06", "2026-07", "2026-08", "2026-09",
+    ];
+    // TIGER: 1000주(원가 1,000만) 주당 50원 → 2026-04-20 990주 매도, 10주(원가 10만) 남음
+    const trades = [
+      buy("458730", "2025-09-01", 1000, 10_000_000),
+      sell("458730", "2026-04-20", 990, 9_900_000),
+      // SOL: 500주(250만) → 2026-06-15 500주(250만) 추가 매수, 주당 25원
+      buy("0167B0", "2025-09-01", 500, 2_500_000),
+      buy("0167B0", "2026-06-15", 500, 2_500_000),
+    ];
+    for (const m of months) {
+      ledger.push(div("458730", "TIGER", `${m}-02`, m <= "2026-04" ? 50_000 : 500));
+      ledger.push(div("0167B0", "SOL", `${m}-02`, m <= "2026-06" ? 12_500 : 25_000));
+    }
+    const p = buildDividendPortfolio({ ledger, trades, currentMonth: "2026-10" })!;
+    const tiger = p.tickers.find((t) => t.ticker === "458730")!;
+    const sol = p.tickers.find((t) => t.ticker === "0167B0")!;
+    expect(tiger.cost).toBeCloseTo(100_000, 3);
+    expect(tiger.yoc).toBeCloseTo(6, 6); // 매도 전 배당을 10주 원가로 나눈 352.5%가 아님
+    expect(sol.yoc).toBeCloseTo(6, 6); // 적립 전 반쪽 배당으로 3.75%로 눌리지 않음
+    expect(p.yoc).toBeCloseTo(6, 6);
+    // 누적 수령은 사실 그대로 (환산하지 않음)
+    expect(tiger.total).toBe(7 * 50_000 + 5 * 500);
+  });
+
+  it("같은 날 [매도, 매수]가 최신순으로 저장돼 있어도 매수 먼저 처리 (원가 2배·YOC 반토막 방지)", () => {
+    const trades = [sell("458730", "2025-06-01", 50, 500_000), buy("458730", "2025-06-01", 100, 1_000_000)];
+    const ledger: LedgerEntry[] = [];
+    for (let m = 7; m <= 12; m += 1) ledger.push(div("458730", "TIGER", `2025-${String(m).padStart(2, "0")}-02`, 1000));
+    for (const m of MONTHS_2026) ledger.push(div("458730", "TIGER", `${m}-02`, 1000));
+    const p = buildDividendPortfolio({ ledger, trades, currentMonth: "2026-07" })!;
+    expect(p.totalCost).toBe(500_000);
+    expect(p.yoc).toBeCloseTo(2.4, 6);
+  });
+
+  it("티커만 입력한 기록('SCHD 배당', 이름 없음)도 집계한다", () => {
+    const trades = [buy("458730", "2025-06-01", 100, 1_000_000)];
+    const ledger = MONTHS_2026.map((m) => ({ ...div("458730", "x", `${m}-02`, 1000), description: "458730 배당, 세금: 154원" }));
+    const p = buildDividendPortfolio({ ledger, trades, currentMonth: "2026-07" });
+    expect(p).not.toBeNull();
+    expect(p!.receivedTotal).toBe(6000);
+  });
+});

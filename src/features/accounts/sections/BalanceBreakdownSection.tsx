@@ -9,9 +9,21 @@ import { ChevronDown, ChevronRight } from "lucide-react";
 import { NumericInput } from "../../../components/ui/fields";
 import type { Account, AccountBalanceRow } from "../../../types";
 import { parseSignedAmount } from "../accountsShared";
+import { baseBalanceForAccount } from "../../../calculations";
 
 // 실제 편집 진입점은 시작금액(initialBalance/initialCashBalance)뿐 — 나머지 필드는 dead code라 제거
 type EditField = "initialBalance" | "initialCashBalance";
+
+/**
+ * 잔액 엔진(computeAccountBalances)에서 다른 열로 드러나지 않는 몫 = 레거시 저축성지출 입금 + account.savings.
+ * 잔액에서 나머지 열을 빼서 구하므로 행 합(시작+보정+수입−지출+이체+매매+저축 유입)이 항상 현재 잔액과 일치한다.
+ */
+const savingsInflow = (row: AccountBalanceRow): number =>
+  Math.round(
+    row.currentBalance -
+      (baseBalanceForAccount(row.account) + (row.account.cashAdjustment ?? 0) +
+        row.incomeSum - row.expenseSum + row.transferNet + row.tradeCashImpact)
+  ); // 부동소수점 잔차가 '0 원'으로 보이지 않게 원 단위로
 
 interface Props {
   safeBalances: AccountBalanceRow[];
@@ -111,6 +123,7 @@ export const BalanceBreakdownSection: React.FC<Props> = React.memo(function Bala
                   <th style={{ textAlign: "right" }}>지출</th>
                   <th style={{ textAlign: "right" }}>이체 순액</th>
                   <th style={{ textAlign: "right" }}>매매 영향</th>
+                  <th style={{ textAlign: "right" }} title="레거시 저축성지출 입금(지출→이 계좌) + 저축액(savings)">저축 유입</th>
                   <th style={{
                     textAlign: "right",
                     borderLeft: "2px solid var(--border)",
@@ -122,12 +135,10 @@ export const BalanceBreakdownSection: React.FC<Props> = React.memo(function Bala
               <tbody>
                 {orderedRowsForInitialReverse.map((row) => {
                   const account = row.account;
-                  const baseBalance =
-                    account.type === "securities" || account.type === "crypto"
-                      ? (account.initialCashBalance ?? account.initialBalance ?? 0)
-                      : (account.initialBalance ?? 0);
+                  const baseBalance = baseBalanceForAccount(account);
                   const cashAdj = account.cashAdjustment ?? 0;
                   const { incomeSum, expenseSum, transferNet, tradeCashImpact, currentBalance } = row;
+                  const savingsIn = savingsInflow(row);
 
                   const numCell = (value: number, opts?: { highlight?: boolean; muted?: boolean }) => {
                     const isZero = value === 0;
@@ -217,6 +228,7 @@ export const BalanceBreakdownSection: React.FC<Props> = React.memo(function Bala
                       {numCell(expenseSum)}
                       {numCell(transferNet)}
                       {numCell(tradeCashImpact)}
+                      {numCell(savingsIn)}
                       {numCell(currentBalance, { highlight: true })}
                     </tr>
                   );
@@ -226,21 +238,18 @@ export const BalanceBreakdownSection: React.FC<Props> = React.memo(function Bala
                   const totals = rows.reduce(
                     (acc, row) => {
                       const account = row.account;
-                      const base =
-                        account.type === "securities" || account.type === "crypto"
-                          ? (account.initialCashBalance ?? account.initialBalance ?? 0)
-                          : (account.initialBalance ?? 0);
                       return {
-                        base: acc.base + base,
+                        base: acc.base + baseBalanceForAccount(account),
                         cashAdj: acc.cashAdj + (account.cashAdjustment ?? 0),
                         income: acc.income + row.incomeSum,
                         expense: acc.expense + row.expenseSum,
                         transfer: acc.transfer + row.transferNet,
                         trade: acc.trade + row.tradeCashImpact,
+                        savingsIn: acc.savingsIn + savingsInflow(row),
                         balance: acc.balance + row.currentBalance
                       };
                     },
-                    { base: 0, cashAdj: 0, income: 0, expense: 0, transfer: 0, trade: 0, balance: 0 }
+                    { base: 0, cashAdj: 0, income: 0, expense: 0, transfer: 0, trade: 0, savingsIn: 0, balance: 0 }
                   );
 
                   const totalCell = (value: number, opts?: { highlight?: boolean }) => (
@@ -275,6 +284,7 @@ export const BalanceBreakdownSection: React.FC<Props> = React.memo(function Bala
                       {totalCell(totals.expense)}
                       {totalCell(totals.transfer)}
                       {totalCell(totals.trade)}
+                      {totalCell(totals.savingsIn)}
                       {totalCell(totals.balance, { highlight: true })}
                     </tr>
                   );

@@ -56,7 +56,13 @@ function emptyForecast(horizonDays: number): CashFlowForecast {
 
 export function computeCashFlowForecast(
   recurring: RecurringExpense[],
-  opts: { todayIso: string; horizonDays?: number; ledger?: LedgerEntry[] }
+  opts: {
+    todayIso: string;
+    horizonDays?: number;
+    ledger?: LedgerEntry[];
+    /** true면 kind="income"도 펼친다(cashFlowProjection의 반복 수입 전용). 기본은 지출·이체만 */
+    includeIncome?: boolean;
+  }
 ): CashFlowForecast {
   const horizonDays = opts.horizonDays ?? 60;
   const today = parseIsoLocal(opts.todayIso);
@@ -68,6 +74,7 @@ export function computeCashFlowForecast(
 
   for (const r of recurring) {
     if (!r || !r.startDate || !r.startDate.trim()) continue;
+    if (r.kind === "income" && !opts.includeIncome) continue; // 정기 수입은 '고정 지출' 아님 (types 3-4 가드)
     const start = parseIsoLocal(r.startDate);
     if (!start) continue;
     const endParsed = r.endDate ? parseIsoLocal(r.endDate) : null;

@@ -1,9 +1,9 @@
 import React, { Suspense, lazy, useMemo, useState } from "react";
 import type { Account, AccountType, LedgerEntry, MarketEnvSnapshot, StockPrice, StockTrade } from "../../types";
-import { computeAccountBalances } from "../../calculations";
+import { accountDebtOffset, computeAccountBalances } from "../../calculations";
 import { usdBalanceModeDelta } from "../../utils/tradeCashImpact";
 import { buildHalfMonthSnapshotDates } from "../../utils/date";
-import { canonicalTickerForMatch, isUSDStock } from "../../utils/finance";
+import { canonicalTickerForMatch, isUSDStock, plausibleUsdKrw } from "../../utils/finance";
 import { buildSnapshotPriceIndex } from "../../utils/stockCostSnapshots";
 import { formatKRW, formatDecimal, formatQuantity } from "../../utils/formatter";
 import type { TotalAssetRow } from "./DashboardInlineCharts";
@@ -238,9 +238,13 @@ export const TotalAssetTrendCard: React.FC<Props> = React.memo(function TotalAss
       const filteredTradesForBalance = trades.filter((t) => !!t.date && t.date.slice(0, 10) <= snapDate);
       const balances = computeAccountBalances(accounts, filteredLedger, filteredTradesForBalance);
       let cashKrw = 0;
+      let cardCredit = 0; // 카드 선납·환불 잔액(순가치 양수)은 자산 — computeBalanceSheet와 같은 규칙
       const cashByAccount = new Map<string, number>();
       for (const row of balances) {
-        if (!cashAccountIds.has(row.account.id)) continue;
+        if (!cashAccountIds.has(row.account.id)) {
+          cardCredit += Math.max(0, row.currentBalance - accountDebtOffset(row.account));
+          continue;
+        }
         let accCash = row.currentBalance;
         const usd =
           row.account.type === "securities" || row.account.type === "crypto"
@@ -274,7 +278,7 @@ export const TotalAssetTrendCard: React.FC<Props> = React.memo(function TotalAss
 
         const costKrw = meta.usd
           ? q.reduce((s, lot) => {
-              const fx = lot.fxRateAtTrade && lot.fxRateAtTrade > 0 ? lot.fxRateAtTrade : effectiveFx;
+              const fx = plausibleUsdKrw(lot.fxRateAtTrade) ?? effectiveFx;
               return s + lot.totalAmount * fx;
             }, 0)
           : totalNative;
@@ -328,8 +332,10 @@ export const TotalAssetTrendCard: React.FC<Props> = React.memo(function TotalAss
       holdings.sort((a, b) => b.marketKrw - a.marketKrw);
 
       // 자산군별 합계(연금/증권/현금/저축/기타) — 누적 영역 차트용. 합 = cashPlusMarket
-      // (각 현금계좌는 정확히 한 군에 cash를, 증권/암호화폐/연금은 평가액도 같은 군에 더해 총액 보존)
-      let segPension = 0, segSecurities = 0, segCash = 0, segSavings = 0, segEtc = 0;
+      // 계좌 순가치(현금 + 평가액 − account.debt)의 부호로 자산/부채를 가른다 — computeBalanceSheet(총자산)와 같은 규칙.
+      // 마이너스 통장·account.debt를 자산에 음수로 섞으면 BalanceSheetStrip 총자산과 어긋난다(청년사다리 마통 등).
+      let segPension = 0, segSecurities = 0, segCash = 0, segSavings = 0, segEtc = cardCredit;
+      let assetsAtCost = cardCredit;
       const perAccount: PerAccountRow[] = [];
       for (const account of accounts) {
         if (!cashAccountIds.has(account.id)) continue;
@@ -337,11 +343,14 @@ export const TotalAssetTrendCard: React.FC<Props> = React.memo(function TotalAss
         const accCost = costByAccount.get(account.id) ?? 0;
         const accMarket = marketByAccount.get(account.id) ?? 0;
         const isPension = pensionAccountIds.has(account.id);
-        if (isPension) segPension += accCash + accMarket;
-        else if (account.type === "securities" || account.type === "crypto") segSecurities += accCash + accMarket;
-        else if (account.type === "savings") segSavings += accCash;
-        else if (account.type === "checking") segCash += accCash;
-        else segEtc += accCash; // other
+        const debt = accountDebtOffset(account);
+        const value = Math.max(0, accCash + accMarket - debt);
+        assetsAtCost += Math.max(0, accCash + accCost - debt);
+        if (isPension) segPension += value;
+        else if (account.type === "securities" || account.type === "crypto") segSecurities += value;
+        else if (account.type === "savings") segSavings += value;
+        else if (account.type === "checking") segCash += value;
+        else segEtc += value; // other
         if (accCash === 0 && accCost === 0 && accMarket === 0) continue;
         perAccount.push({
           accountId: account.id,
@@ -369,8 +378,8 @@ export const TotalAssetTrendCard: React.FC<Props> = React.memo(function TotalAss
       outRows.push({
         date: snapDate,
         label: labelFor(snapDate),
-        cashPlusCost: cashKrw + stockCostKrw,
-        cashPlusMarket: cashKrw + stockMarketKrw,
+        cashPlusCost: assetsAtCost,
+        cashPlusMarket: segPension + segSecurities + segCash + segSavings + segEtc,
         pension: segPension,
         securities: segSecurities,
         cash: segCash,

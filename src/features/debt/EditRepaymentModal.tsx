@@ -10,6 +10,8 @@ import React, { useEffect, useState } from "react";
 import { toast } from "react-hot-toast";
 import type { Account, LedgerEntry, Loan } from "../../types";
 import { formatKRW } from "../../utils/formatter";
+import { parseAmount } from "../../utils/parseAmount";
+import { NumericInput } from "../../components/ui/fields";
 import { getTodayKST } from "../../utils/date";
 import { useFocusTrap } from "../../hooks/useFocusTrap";
 import { useModalStackEntry } from "../../utils/modalStack";
@@ -78,7 +80,7 @@ export const EditRepaymentModal: React.FC<Props> = React.memo(function EditRepay
   }, [onClose, isTopModal]);
 
   const handleSaveEditRepayment = () => {
-    const amount = Number(editAmount.replace(/[^0-9]/g, "")) || 0;
+    const amount = parseAmount(editAmount);
     if (amount <= 0) {
       toast.error("상환 금액을 입력해주세요.");
       return;
@@ -177,11 +179,9 @@ export const EditRepaymentModal: React.FC<Props> = React.memo(function EditRepay
           </label>
           <label style={{ display: "block", marginBottom: 16 }}>
             <span style={{ fontSize: 14, fontWeight: 600, display: "block", marginBottom: 8 }}>상환 금액 *</span>
-            <input
-              type="text"
-              inputMode="numeric"
+            <NumericInput
               value={editAmount}
-              onChange={(e) => setEditAmount(e.target.value.replace(/[^0-9]/g, ""))}
+              onChange={setEditAmount}
               placeholder="예: 1000000"
               style={{ width: "100%", padding: "10px 12px", fontSize: 16 }}
               autoFocus

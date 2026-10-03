@@ -1,5 +1,5 @@
 // @vitest-environment jsdom
-import { describe, it, expect } from "vitest";
+import { describe, it, expect, vi, afterEach } from "vitest";
 import { renderHook } from "@testing-library/react";
 import { useInsightsData } from "../features/insights/useInsightsData";
 import type { Account, LedgerEntry } from "../types";
@@ -174,5 +174,122 @@ describe("인사이트 ↔ 대시보드 정의 통일", () => {
     // 예전: prev.expense = 350만 → "-57% 개선" 허위 배지. 실제 변화 없음(150만 = 150만).
     expect(d.prev?.expense).toBe(1_500_000);
     expect(d.pExpense).toBe(1_500_000);
+  });
+});
+
+/**
+ * 인사이트 감사 2026-10-02 (I2~I10) 회귀.
+ * 진행 중인 달 의존 항목은 KST 2026-10-02 12:00으로 시계를 고정한다.
+ */
+describe("인사이트 감사 2026-10-02", () => {
+  const TODAY = new Date("2026-10-02T03:00:00Z"); // KST 2026-10-02 12:00
+  const freeze = () => { vi.useFakeTimers({ toFake: ["Date"] }); vi.setSystemTime(TODAY); };
+  afterEach(() => { vi.useRealTimers(); });
+  const exp = (id: string, amount: number, date: string, o: Partial<LedgerEntry> = {}) =>
+    entry({ id, amount, date, kind: "expense", category: "지출", subCategory: "식비", ...o });
+  const run = (led: LedgerEntry[], sel: string | null = null, accts = accounts, all = led) =>
+    renderHook(() => useInsightsData(led, [], [], accts, [], sel, undefined, undefined, null, 1400, [], all)).result.current;
+
+  it("I2 지출 관성 — 진행 중인 달 기준선도 USD 환산·환전/투자손실 제외 (같은 소비면 0%)", () => {
+    freeze();
+    const led = [
+      ...["2026-07", "2026-08", "2026-09", "2026-10"].flatMap((m, i) => [
+        exp(`f${i}`, 100_000, `${m}-01`),
+        exp(`u${i}`, 100, `${m}-02`, { currency: "USD", subCategory: "쇼핑" }),
+      ]),
+      exp("fx", 500_000, "2026-08-01", { subCategory: "환전" }),
+      exp("loss", 300_000, "2026-09-01", { category: "재테크", subCategory: "투자손실" }),
+    ];
+    const si = run(led).spendingInertia!;
+    expect(si.partialDay).toBe(2);
+    expect(si.curExp).toBe(240_000);
+    expect(si.avg).toBe(240_000);
+    expect(si.deviation).toBe(0);
+  });
+
+  it("I3 환전 쌍의 도착 다리·투자계좌 간 이체는 재테크(증권 유입)가 아니다", () => {
+    const accts = [acct({ id: "a1", name: "급여통장" }), acct({ id: "sec", name: "해외증권", type: "securities" }), acct({ id: "sec2", name: "국내증권", type: "securities" })];
+    const led = [
+      entry({ id: "sal", amount: 3_000_000, kind: "income", category: "수입", subCategory: "급여", date: "2026-01-25" }),
+      // 해외증권 안에서 ₩1,450,000 → $1,000 (FxFormSection 쌍: -from엔 출발만, -to엔 도착만)
+      entry({ id: "fx1-from", amount: 1_450_000, kind: "transfer", category: "이체", subCategory: "환전이체", fromAccountId: "sec", date: "2026-01-10" }),
+      entry({ id: "fx1-to", amount: 1000, currency: "USD", kind: "transfer", category: "이체", subCategory: "환전이체", toAccountId: "sec", date: "2026-01-10" }),
+      entry({ id: "mv", amount: 500_000, kind: "transfer", category: "이체", subCategory: "계좌이체", fromAccountId: "sec", toAccountId: "sec2", date: "2026-01-11" }),
+    ];
+    const d = run(led, null, accts);
+    expect(d.pInvest).toBe(0);
+    expect(d.monthly["2026-01"].investment).toBe(0);
+    expect(d.investTrend[0].amount).toBe(0);
+    expect(d.netCashFlow).toBe(3_000_000);
+    // 은행 → 증권 환전(다른 계좌 모드)·일반 입금은 여전히 증권 유입
+    const led2 = [
+      entry({ id: "fx2-from", amount: 1_400_000, kind: "transfer", category: "이체", subCategory: "환전이체", fromAccountId: "a1", date: "2026-01-10" }),
+      entry({ id: "fx2-to", amount: 1000, currency: "USD", kind: "transfer", category: "이체", subCategory: "환전이체", toAccountId: "sec", date: "2026-01-10" }),
+      entry({ id: "dep", amount: 200_000, kind: "transfer", category: "이체", subCategory: "계좌이체", fromAccountId: "a1", toAccountId: "sec", date: "2026-01-12" }),
+    ];
+    expect(run(led2, null, accts).pInvest).toBe(1_600_000);
+  });
+
+  it("I4 이상감지·카테고리 성장률·단건 이상치는 USD를 원화로 환산해 비교한다", () => {
+    const led = [
+      exp("s1", 100_000, "2026-01-05", { subCategory: "쇼핑" }),
+      exp("s2", 120_000, "2026-02-05", { subCategory: "쇼핑" }),
+      exp("s3", 110_000, "2026-03-05", { subCategory: "쇼핑" }),
+      ...Array.from({ length: 9 }, (_, i) => exp(`a${i}`, 10_000, `2026-04-0${i + 1}`, { subCategory: "쇼핑" })),
+      exp("usd", 1000, "2026-04-10", { subCategory: "쇼핑", currency: "USD" }), // ₩1,400,000
+    ];
+    const d = run(led, "2026-04");
+    expect(d.topAnomaly?.category).toBe("쇼핑");
+    expect(d.topAnomaly?.currentMonthAmount).toBe(1_490_000);
+    expect(d.categoryGrowth.up.find((r) => r.sub === "쇼핑")?.cur).toBe(1_490_000);
+    expect(d.entryOutliers[0].amount).toBe(1_400_000);
+  });
+
+  it("I6 이번 달을 고르면 '전월 대비'는 전월 동기(1~오늘 일)와 비교", () => {
+    freeze();
+    const led = [
+      exp("p1", 50_000, "2026-09-01"),
+      exp("p2", 900_000, "2026-09-20"),
+      entry({ id: "ps", amount: 3_000_000, kind: "income", category: "수입", subCategory: "급여", date: "2026-09-25" }),
+      exp("c1", 50_000, "2026-10-01"),
+    ];
+    const cur = run(led, "2026-10").prev!;
+    expect(cur.partialDay).toBe(2);
+    expect(cur.expense).toBe(50_000);   // 예전: 950,000 → "지출 감소 — 좋은 흐름" 허위
+    expect(cur.salary).toBe(0);         // 예전: 3,000,000 → "근로소득 −100%"
+  });
+
+  it("I7 누적 지출 곡선(cumSpend)은 monthly 지출과 같은 분류 — 레거시 신용결제·투자손실·저축성지출 제외, USD 환산", () => {
+    const led = [
+      exp("f", 100_000, "2026-01-03"),
+      exp("u", 10, "2026-01-04", { currency: "USD" }),
+      entry({ id: "cc", amount: 400_000, kind: "expense", category: "신용결제", date: "2026-01-25" }),
+      exp("loss", 50_000, "2026-01-26", { category: "재테크", subCategory: "투자손실" }),
+      entry({ id: "sav", amount: 200_000, kind: "expense", category: "저축성지출", date: "2026-01-27" }),
+    ];
+    const d = run(led);
+    expect(d.cumSpend["2026-01"][30]).toBe(114_000);
+    expect(d.cumSpend["2026-01"][30]).toBe(d.monthly["2026-01"].expense);
+  });
+
+  it("I8 재정 활주로 월평균 지출은 완결 월만 — 진행 중인 달·기간 필터로 잘린 첫 달 제외", () => {
+    freeze();
+    const all = [
+      exp("j1", 500_000, "2026-07-03"),
+      exp("j2", 500_000, "2026-07-20"),
+      exp("a", 1_000_000, "2026-08-10"),
+      exp("s", 1_000_000, "2026-09-10"),
+      exp("o", 100_000, "2026-10-01"),
+    ];
+    expect(run(all).avgMonthExp).toBe(1_000_000);            // 예전: 3.1M/4 = 775,000
+    const filtered = all.filter((l) => l.date >= "2026-07-15"); // 기간 필터 cutoff 07-15
+    expect(run(filtered, null, accounts, all).avgMonthExp).toBe(1_000_000); // 예전: 2.6M/4 = 650,000
+  });
+
+  it("I10 실질 수입이 0이면 저축률은 0%가 아니라 N/A(null)", () => {
+    const d = run([exp("e", 100_000, "2026-01-10")]);
+    expect(d.realSavRate).toBeNull();
+    expect(d.savRateTrend[0].rate).toBeNull();
+    expect(d.savRateTrend[0].cumRate).toBeNull();
   });
 });

@@ -5,6 +5,7 @@ import {
   isSettlementEntry,
   isRealExpenseEntry,
   isSavingsExpenseEntry,
+  makeIsSavingsExpense,
   getCategoryType,
 } from "../utils/categoryUtils";
 import type { CategoryPresets, LedgerEntry } from "../types";
@@ -130,6 +131,8 @@ describe("세대 관용 판정 — 대분류가 한 칸 내려간 형태도 인�
     expect(isCurrencyExchangeEntry(e({ category: "환전" }))).toBe(true);
     expect(isCurrencyExchangeEntry(e({ category: "지출", subCategory: "환전" }))).toBe(true);
     expect(isCurrencyExchangeEntry(e({ category: "지출", subCategory: "식비" }))).toBe(false);
+    // 환전 입력 화면이 만드는 이체 쌍(이체 > 환전이체)도 환전 — 절세계좌 납입·일괄 편집에서 제외돼야 한다
+    expect(isCurrencyExchangeEntry(e({ kind: "transfer", category: "이체", subCategory: "환전이체" }))).toBe(true);
     // 실질 소비 지출 판정까지 이어지는지 (환전이 소비로 새어들면 월 지출이 부풀어오른다)
     expect(isRealExpenseEntry(e({ category: "지출", subCategory: "환전" }))).toBe(false);
   });
@@ -138,5 +141,22 @@ describe("세대 관용 판정 — 대분류가 한 칸 내려간 형태도 인�
     expect(isSettlementEntry(e({ kind: "income", category: "정산" }))).toBe(true);
     expect(isSettlementEntry(e({ kind: "income", category: "수입", subCategory: "정산" }))).toBe(true);
     expect(isSettlementEntry(e({ kind: "income", category: "수입", subCategory: "급여" }))).toBe(false);
+  });
+
+  it("저축성지출 — 현행 스키마(category=지출, subCategory=대분류)도 인식 (categoryTypes.savings·기본 저축성지출)", () => {
+    const presets = { income: [], expense: [], transfer: [], categoryTypes: { savings: ["적금"] } } as unknown as CategoryPresets;
+    const isSavings = makeIsSavingsExpense(presets);
+    const deposit = e({ category: "지출", subCategory: "적금", amount: 500_000 });
+    expect(isSavingsExpenseEntry(deposit, [], presets)).toBe(true);
+    expect(isSavings(deposit)).toBe(true);
+    expect(isSavingsExpenseEntry(e({ category: "지출", subCategory: "저축성지출" }), [])).toBe(true);
+    expect(isSavingsExpenseEntry(e({ category: "지출", subCategory: "식비" }), [], presets)).toBe(false);
+    // 소분류가 실비용(수수료·투자손실 등)이면 저축이 아니다 — {지출, 재테크, 수수료}가 +재테크로 뒤집히지 않게
+    const fee = e({ category: "지출", subCategory: "재테크", detailCategory: "수수료" });
+    expect(isSavingsExpenseEntry(fee, [])).toBe(false);
+    expect(isSavings(fee)).toBe(false);
+    // 레거시 평면 세대는 그대로
+    expect(isSavingsExpenseEntry(e({ category: "적금" }), [], presets)).toBe(true);
+    expect(isSavingsExpenseEntry(e({ category: "재테크", subCategory: "수수료" }), [])).toBe(false);
   });
 });

@@ -82,9 +82,9 @@ export const InvestTab = React.memo(function InvestTab({ d }: { d: D }) {
           <Kpi
             label="배당/이자 수입"
             value={F(totalDiv) + "원"}
-            sub={totalInvested > 0 ? `연환산 배당률 ${divYieldAnnualized.toFixed(2)}%` : "투자 원금 없음"}
+            sub={totalInvested > 0 ? `원금 대비 연환산 ${divYieldAnnualized.toFixed(2)}% (이자 포함)` : "투자 원금 없음"}
             color="var(--success)"
-            info="투자 계좌 배당·이자 수입 합 · 연환산 = (합/원금) × (12/개월수)"
+            info="배당 + 이자 수입 합(예금·적금 이자 포함) · 연환산 = (합 ÷ 보유 종목 매입원가) × (12/개월수) — 분모는 주식 원가뿐이라 이자가 많으면 순수 배당률보다 높게 나온다"
           />
         </Card>
         <Card accent>
@@ -357,7 +357,7 @@ export const InvestTab = React.memo(function InvestTab({ d }: { d: D }) {
               {turnoverAnnualized > 2 ? " 거래가 잦음 — 수수료·세금 누적 주의." : turnoverAnnualized < 0.3 ? " 장기 보유형 전략." : ""}
             </Insight>
             <Insight title="배당/이자 수입" tone="success">
-              {totalDiv > 0 ? `총 ${F(totalDiv)}원 · 월평균 ${F(Math.round(totalDiv / d.monthSpan))}원. 투자 원금 대비 연환산 배당률 ${divYieldAnnualized.toFixed(2)}%. ${divYieldAnnualized >= 4 ? "배당률 4%↑ — 우수한 패시브 수입 구조!" : divYieldAnnualized >= 2 ? "배당률 2~4% — 안정적 수준." : "배당률 2% 미만 — 배당 ETF·고배당주 비중을 늘리면 패시브 수입이 커집니다."}` : "아직 배당/이자 수입이 없습니다. 배당 ETF·고배당주·CMA 이자 등으로 패시브 수입을 만들어 보세요."}
+              {totalDiv > 0 ? `총 ${F(totalDiv)}원 · 월평균 ${F(Math.round(totalDiv / d.monthSpan))}원. 투자 원금 대비 연환산 ${divYieldAnnualized.toFixed(2)}%(예금 이자 포함).${divYieldAnnualized >= 4 ? "배당률 4%↑ — 우수한 패시브 수입 구조!" : divYieldAnnualized >= 2 ? "배당률 2~4% — 안정적 수준." : "배당률 2% 미만 — 배당 ETF·고배당주 비중을 늘리면 패시브 수입이 커집니다."}` : "아직 배당/이자 수입이 없습니다. 배당 ETF·고배당주·CMA 이자 등으로 패시브 수입을 만들어 보세요."}
             </Insight>
             <Insight title="매매 전략 평가" tone="warning">
               {d.realPL.winCnt + d.realPL.lossCnt > 0

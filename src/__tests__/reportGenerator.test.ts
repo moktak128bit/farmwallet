@@ -135,6 +135,16 @@ describe("generateComprehensiveMonthlyReport — 지출 분류", () => {
     expect(rows[0].livingExpense).toBe(20_000);
     expect(rows[0].totalExpense).toBe(320_000);
   });
+
+  it("최초형(대출/빚)·강등형(지출/대출/빚) 대출상환도 loanRepayment로 — 생활소비 아님 (D4)", () => {
+    const ledger = [
+      entry({ id: "e1", category: "대출", subCategory: "빚", amount: 100_000 }),
+      entry({ id: "e2", category: "지출", subCategory: "대출", detailCategory: "빚", amount: 200_000 }),
+    ];
+    const rows = generateComprehensiveMonthlyReport(ledger, [], [], "2026-01", "2026-01");
+    expect(rows[0].loanRepayment).toBe(300_000);
+    expect(rows[0].livingExpense).toBe(0);
+  });
 });
 
 describe("generateDailyReport — 신용결제 제외", () => {

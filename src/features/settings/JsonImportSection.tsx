@@ -55,6 +55,7 @@ export const JsonImportSection: React.FC<Props> = React.memo(function JsonImport
         title: "JSON 데이터 가져오기",
         before: data,
         after: normalized,
+        propagatesToGist: true,
         onConfirm: () => {
           void (async () => {
             // 적용 직전 현재 데이터 안전 스냅샷

@@ -19,7 +19,7 @@ const shortcutGroups: ShortcutGroup[] = [
     shortcuts: [
       { key: "Ctrl+Z", description: "실행 취소" },
       { key: "Ctrl+Y / Ctrl+Shift+Z", description: "다시 실행" },
-      { key: "Ctrl+S", description: "수동 백업" },
+      { key: "Ctrl+S", description: "저장 (로컬 백업 + Gist)" },
       { key: "Alt+N", description: "새 가계부 항목 (가계부 탭으로 이동 후 입력란 포커스)" },
       { key: "Ctrl+Enter", description: "가계부 폼 제출" }
     ]

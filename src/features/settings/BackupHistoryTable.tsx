@@ -70,6 +70,7 @@ export const BackupHistoryTable: React.FC<Props> = React.memo(function BackupHis
         title: `${when} 시점 백업으로 복원`,
         before: data,
         after: normalized,
+        propagatesToGist: true,
         onConfirm: () => {
           void (async () => {
             const applyToastId = toast.loading("백업을 복원하는 중...");

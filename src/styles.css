@@ -2390,6 +2390,11 @@ label {
     min-width: 32px;
     justify-content: center;
   }
+  /* 프라이버시·테마 아이콘 버튼도 같은 폭으로 — 기본 button 패딩(12px)이면 탭명이 밀려 사라진다 */
+  .app-header-right .icon-button {
+    padding: 7px 8px;
+    min-width: 32px;
+  }
 
   /* 빠른 입력은 하단 탭바 FAB과 중복 — 모바일에선 헤더에서 뺀다 */
   .header-action.strong {
@@ -2401,6 +2406,10 @@ label {
   }
   .recurring-due-badge-short {
     display: inline;
+  }
+  .recurring-due-badge {
+    padding: 5px 8px;
+    gap: 4px;
   }
 
 
@@ -2707,6 +2716,14 @@ label {
     box-shadow: 0 -2px 10px rgba(0, 0, 0, 0.06);
     align-items: stretch;
     justify-content: space-around;
+  }
+
+  /* 시세 갱신 진행바는 탭바 위에 — 바닥에 깔면 탭 라벨을 덮고 터치를 가로챈다 */
+  .quote-refresh-progress {
+    bottom: calc(var(--bottom-nav-h) + env(safe-area-inset-bottom, 0px));
+    /* 표시 전용 — FAB(40)·탭바 아래에 두고 터치를 통과시킨다 */
+    pointer-events: none;
+    z-index: 39;
   }
 
   .bottom-nav-item {

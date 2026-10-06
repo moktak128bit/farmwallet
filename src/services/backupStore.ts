@@ -490,6 +490,11 @@ export function getBackupStore(): Promise<BackupStoreDriver> {
   return _driverPromise;
 }
 
+/** 현재 백업 저장소가 localStorage 폴백인지 — 백업을 지워 localStorage quota를 비울 수 있는 건 이때뿐(IDB는 별도 한도) */
+export async function isLocalStorageBackupStore(): Promise<boolean> {
+  return (await getBackupStore()) === localDriver;
+}
+
 /** 테스트 전용: 모듈 캐시(드라이버·DB 연결) 초기화 */
 export function resetBackupStoreForTests(): void {
   if (_dbPromise) {

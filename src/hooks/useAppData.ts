@@ -99,6 +99,8 @@ export function useAppData() {
   useEffect(() => {
     if (isLoading || dataRecoveryDone.current) return;
     dataRecoveryDone.current = true;
+    // 파일 백업 복원 API는 개발 서버(Vite 미들웨어) 전용 — 정적 배포에선 404만 남는다
+    if (!import.meta.env.DEV) return;
     const currentData = useAppStore.getState().data;
     if (currentData?.ledger && currentData.ledger.length > 0) return;
     if (typeof window !== "undefined") {

@@ -28,6 +28,46 @@ function Harness() {
   return <FakeModal open={open} onClose={() => setOpen(false)} />;
 }
 
+/** busy면 ESC를 무시하고 preventDefault로 거부를 알리는 모달(GistConflictModal·ConnectConfirmModal 패턴) */
+function BusyModal({ open, busy, onClose }: { open: boolean; busy: boolean; onClose: () => void }) {
+  const isTop = useModalStackEntry(open);
+  useEffect(() => {
+    if (!open) return;
+    const h = (e: KeyboardEvent) => {
+      if (e.key !== "Escape" || !isTop()) return;
+      e.stopPropagation();
+      if (busy) e.preventDefault();
+      else onClose();
+    };
+    window.addEventListener("keydown", h);
+    return () => window.removeEventListener("keydown", h);
+  }, [open, busy, onClose, isTop]);
+  if (!open) return null;
+  return <div role="dialog">busy modal</div>;
+}
+
+function BusyHarness() {
+  useHistoryNav();
+  const open = useUIStore((s) => s.showQuickEntry);
+  const setOpen = useUIStore((s) => s.setShowQuickEntry);
+  return <BusyModal open={open} busy onClose={() => setOpen(false)} />;
+}
+
+/** 모달 두 개가 겹쳐 뜨는 경우(GistVersionModal 위 ApplyConfirmModal) — 아래=드로어 플래그, 위=빠른 입력 플래그 재사용 */
+function StackedHarness() {
+  useHistoryNav();
+  const lower = useUIStore((s) => s.mobileDrawerOpen);
+  const upper = useUIStore((s) => s.showQuickEntry);
+  const setLower = useUIStore((s) => s.setMobileDrawerOpen);
+  const setUpper = useUIStore((s) => s.setShowQuickEntry);
+  return (
+    <>
+      <FakeModal open={lower} onClose={() => setLower(false)} />
+      <FakeModal open={upper} onClose={() => setUpper(false)} />
+    </>
+  );
+}
+
 /** jsdom의 history.back()은 비동기(popstate) — 잠깐 기다린다 */
 const settle = async () => {
   await act(async () => {
@@ -117,8 +157,54 @@ describe("useHistoryNav — jsdom 통합", () => {
     expect(useUIStore.getState().tab).toBe("dashboard");
   });
 
+  it("겹친 두 모달이 한 커밋에서 함께 닫혀도(2→0) 히스토리에 유령 항목이 남지 않는다 (K10)", async () => {
+    render(<StackedHarness />);
+    act(() => useUIStore.getState().setTab("ledger"));
+    act(() => useUIStore.getState().setMobileDrawerOpen(true));
+    await settle();
+    act(() => useUIStore.getState().setShowQuickEntry(true));
+    await settle();
+    expect(getModalDepth()).toBe(2);
+    expect(window.history.state).toEqual({ fwIdx: 2 });
+    const goSpy = vi.spyOn(window.history, "go");
+    // [적용] 클릭처럼 한 핸들러 안에서 두 모달을 함께 닫음 → 한 커밋, 깊이 알림 1회
+    await act(async () => {
+      const popped = waitForPopstate();
+      useUIStore.getState().setMobileDrawerOpen(false);
+      useUIStore.getState().setShowQuickEntry(false);
+      await popped;
+    });
+    await settle();
+    expect(getModalDepth()).toBe(0);
+    expect(goSpy).toHaveBeenCalledWith(-2);
+    expect(window.history.state).toEqual({ fwIdx: 0 }); // ledger 탭 항목으로 내려앉음
+    // 다음 뒤로가기는 헛돌지 않고 곧장 대시보드
+    await userBack();
+    expect(useUIStore.getState().tab).toBe("dashboard");
+  });
+
   it("closeTopModal은 열린 모달이 없으면 false", () => {
     expect(getModalDepth()).toBe(0);
     expect(closeTopModal()).toBe(false);
+  });
+
+  it("busy 모달이 합성 ESC를 거부하면 closeTopModal은 \"refused\", 뒤로가기는 즉시 모달 항목을 되살리고 탭을 바꾸지 않는다 (Q4)", async () => {
+    render(<BusyHarness />);
+    act(() => useUIStore.getState().setTab("ledger"));
+    act(() => useUIStore.getState().setShowQuickEntry(true));
+    await settle();
+    expect(getModalDepth()).toBe(1);
+    expect(closeTopModal()).toBe("refused");
+    expect(window.history.state).toEqual({ fwIdx: 1 });
+    await userBack();
+    // 1초 타이머 없이 바로 모달 항목으로 복귀
+    expect(window.history.state).toEqual({ fwIdx: 1 });
+    expect(useUIStore.getState().showQuickEntry).toBe(true);
+    expect(useUIStore.getState().tab).toBe("ledger");
+    // 곧바로 한 번 더 — 모달을 건너뛰고 대시보드로 가면 안 된다
+    await userBack();
+    expect(window.history.state).toEqual({ fwIdx: 1 });
+    expect(useUIStore.getState().showQuickEntry).toBe(true);
+    expect(useUIStore.getState().tab).toBe("ledger");
   });
 });

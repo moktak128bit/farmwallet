@@ -64,7 +64,7 @@ main.tsx → App.tsx (탭 셸·전역 모달·콜백 허브, 자식 props 시그
 7. **모달**: `useFocusTrap` + `useModalStackEntry`(utils/modalStack.ts — 최상위만 ESC) + `role="dialog"`/`aria-modal`.
 8. **삭제**: confirm + `showDeleteUndoToast`(utils/undoToast.tsx, restore-by-id) 패턴.
 9. **위험 작업**(복원·초기화·가져오기·일괄 변경): `window.confirm` + 직전 `saveSafetySnapshot()`.
-10. **단축키 계약**: Ctrl+S=백업, Ctrl+Enter=가계부 폼 제출, Alt+N=새 항목, Ctrl+K=검색, Ctrl+Shift+K=빠른 입력, Alt+←/→=탭. 전역 등록은 utils/shortcuts.ts(shortcutManager) + hooks/useKeyboardShortcuts.ts — 입력 필드 포커스 중 오발동 가드 유지. window keydown 리스너 직접 추가 금지(중복 발화 이력 있음).
+10. **단축키 계약**: Ctrl+S=저장(로컬 백업+Gist, 헤더 [저장]과 동일), Ctrl+Enter=가계부 폼 제출, Alt+N=새 항목, Ctrl+K=검색, Ctrl+Shift+K=빠른 입력, Alt+←/→=탭. 전역 등록은 utils/shortcuts.ts(shortcutManager) + hooks/useKeyboardShortcuts.ts — 입력 필드 포커스 중 오발동 가드 유지. window keydown 리스너 직접 추가 금지(중복 발화 이력 있음).
 11. **텍스트 입력 + undo**: 글자마다 setDataWithHistory 금지 — blur 커밋(components/ui/CommitInput.tsx) 사용.
 12. **부호 있는 금액 입력**: parseAmount는 부호를 버림 → 음수 허용 입력은 parseSignedAmount/sanitizeSignedNumericInput.
 13. **진행 중인 달의 비교(MoM 등)**: 완료된 전월 전체와 비교 금지(월급 25일이면 월중 내내 -90%대) — 전월·전년도 **같은 기간(1~오늘 일)**만 합산하고 라벨에 "동기(1~N일)" 명시. compareMonths의 dayCap 옵션, useInsightsData의 partialDay 패턴 참조.

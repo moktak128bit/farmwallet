@@ -113,7 +113,7 @@ export const BackupSnapshotCard: React.FC<Props> = React.memo(function BackupSna
             }
           }}
         />
-        <span>저장할 때마다 스냅샷 저장 (자동 저장·수동 저장 시 백업 스냅샷 함께 생성 — 기본 켜짐, 10분 간격)</span>
+        <span>자동 저장 중 10분마다 스냅샷 생성 (기본 켜짐 · [저장]은 항상 스냅샷을 만듭니다)</span>
       </label>
       <p>
         백업은 KST 기준 <strong>최근 4일 × 하루 최대 5개</strong>(최대 20개)까지 보관됩니다.
@@ -145,7 +145,7 @@ export const BackupSnapshotCard: React.FC<Props> = React.memo(function BackupSna
               minute: "2-digit",
               timeZone: "Asia/Seoul"
             })}`
-          : "아직 저장된 백업이 없습니다. 화면 상단 헤더의 '백업' 버튼을 눌러 백업을 만들어 주세요."}
+          : "아직 저장된 백업이 없습니다. 상단 [저장] 버튼(PC는 Ctrl+S)을 누르면 백업이 만들어집니다."}
       </div>
       {corruptInfo && (
         <div

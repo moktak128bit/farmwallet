@@ -8,6 +8,7 @@ import {
   loadBackupDataVerified,
   getLatestLocalBackupIntegrity,
   clearOldBackups,
+  isBackupStoreLocalStorage,
   mergeCurrentCaches,
   isBackupOnSaveEnabled,
   getCorruptBackupsInfo,
@@ -81,6 +82,15 @@ afterEach(() => {
 });
 
 describe("backupService — 보존 정책 (일별 최대 5개 × 최근 4일)", () => {
+  // 시드가 "지금 −N분"이라 KST 자정 직후에 돌면 일부가 전날로 넘어가 날짜 버킷이 어긋난다 — 정오로 고정(Date만)
+  beforeEach(() => {
+    vi.useFakeTimers({ toFake: ["Date"] });
+    vi.setSystemTime(new Date("2026-08-15T12:00:00+09:00"));
+  });
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
   it("saveSafetySnapshot이 사유 라벨과 함께 로컬 백업(IDB)으로 저장된다", async () => {
     const ok = await saveSafetySnapshot(makeAppData(), "백업 복원 직전 자동 스냅샷");
     expect(ok).toBe(true);
@@ -319,6 +329,22 @@ describe("backupService — saveSafetySnapshot 동기 슬롯 계약", () => {
     expect((await getBackupList()).map((b) => b.id)).toEqual([pending!.id]);
     expect(idb.rows("farmwallet-backups", "backups")).toHaveLength(1);
     expect(readPendingSafetySnapshot()).toBeNull();
+  });
+});
+
+describe("backupService — isBackupStoreLocalStorage (quota 정리 가드)", () => {
+  it("IndexedDB 드라이버면 false — localStorage quota를 위해 IDB 복원 지점을 지우지 않게", async () => {
+    expect(await isBackupStoreLocalStorage()).toBe(false);
+  });
+
+  it("IndexedDB 열기 실패 → localStorage 폴백이면 true", async () => {
+    idb.options.failOpen = true;
+    expect(await isBackupStoreLocalStorage()).toBe(true);
+  });
+
+  it("IndexedDB 자체가 없으면 true", async () => {
+    idb.uninstall();
+    expect(await isBackupStoreLocalStorage()).toBe(true);
   });
 });
 

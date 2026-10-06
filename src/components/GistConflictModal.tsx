@@ -6,7 +6,8 @@ import { useModalStackEntry } from "../utils/modalStack";
 
 interface GistConflictModalProps {
   conflict: GistConflict | null;
-  onResolve: (resolution: GistConflictResolution) => void;
+  /** Promise를 돌려주면 끝날 때까지 버튼·ESC가 잠긴다(busy) — 해결 대기 중 다른 선택이 겹치지 않게 */
+  onResolve: (resolution: GistConflictResolution) => void | Promise<void>;
 }
 
 interface ConflictSummary {
@@ -66,15 +67,20 @@ export const GistConflictModal: React.FC<GistConflictModalProps> = ({ conflict, 
   useEffect(() => {
     if (!conflict) return;
     const onKeyDown = (e: KeyboardEvent) => {
-      // 모달 중첩 시 최상위 모달만 ESC로 닫힘
+      // 모달 중첩 시 최상위 모달만 ESC로 닫힘. 해결 진행 중(busy)에는 무시 — 원격 적용 대기 중 취소가 겹치지 않게
       if (e.key === "Escape" && isTopModal()) {
         e.stopPropagation();
-        onResolve("cancel");
+        if (busy) {
+          // 거부를 알림 — 뒤로가기(closeTopModal)가 즉시 모달 항목을 되살린다 (Q4)
+          e.preventDefault();
+          return;
+        }
+        void onResolve("cancel");
       }
     };
     window.addEventListener("keydown", onKeyDown);
     return () => window.removeEventListener("keydown", onKeyDown);
-  }, [conflict, onResolve, isTopModal]);
+  }, [conflict, onResolve, isTopModal, busy]);
 
   if (!conflict || !summary) return null;
 
@@ -119,7 +125,11 @@ export const GistConflictModal: React.FC<GistConflictModalProps> = ({ conflict, 
           Gist 동기화 충돌
         </h3>
         <p style={{ marginTop: 0, color: "var(--text-muted)" }}>
-          자동 저장 직전에 원격 Gist가 다른 기기에서 변경되었습니다. 어떻게 처리할지 선택하세요.
+          {conflict.reason === "never-synced"
+            ? "이 기기는 아직 이 Gist에서 데이터를 불러온 적이 없습니다. 보통은 [원격 적용]으로 Gist의 데이터를 받으면 됩니다."
+            : conflict.reason === "restored"
+              ? "Gist 과거 버전을 복원한 상태입니다. 복원본을 Gist에 저장하려면 [이 기기 데이터로 덮어쓰기]를, 복원을 취소하고 최신본으로 돌아가려면 [원격 적용]을 고르세요."
+              : "저장 직전에 원격 Gist가 다른 기기에서 변경되었습니다. 어떻게 처리할지 선택하세요."}
         </p>
         <p style={{ marginTop: 0, fontSize: 12, color: "var(--text-muted)" }}>
           자동 적립 시계열(환율·지수·스냅샷)은 어느 쪽을 선택해도 양쪽을 합칩니다.
@@ -163,7 +173,7 @@ export const GistConflictModal: React.FC<GistConflictModalProps> = ({ conflict, 
           >
             <div style={{ fontWeight: 600, fontSize: 13, marginBottom: "var(--space-1)" }}>로컬 (이 기기 · 현재 화면 데이터)</div>
             <div style={{ fontSize: 12, color: "var(--text-muted)", marginBottom: "var(--space-1)" }}>
-              push 대기 중
+              저장하려던 데이터
             </div>
             <ul style={{ margin: 0, paddingLeft: 18, fontSize: 13 }}>
               <li>가계부: {summary.local.ledger}건</li>
@@ -183,7 +193,8 @@ export const GistConflictModal: React.FC<GistConflictModalProps> = ({ conflict, 
             onClick={() => void handle("apply-remote")}
             style={{ textAlign: "left", padding: "var(--space-3) var(--space-4)" }}
           >
-            <div style={{ fontWeight: 600 }}>원격 적용 (권장)</div>
+            {/* 복원 상태에서 원격 적용 = 복원 취소 — 사용자가 고른 롤백과 반대라 권장하지 않는다 */}
+            <div style={{ fontWeight: 600 }}>{conflict.reason === "restored" ? "원격 적용" : "원격 적용 (권장)"}</div>
             <div style={{ fontSize: 12, opacity: 0.85, marginTop: 2 }}>
               원격 Gist 데이터를 로컬에 반영합니다. 이 기기의 미저장 변경은 폐기됩니다.
             </div>
@@ -195,7 +206,7 @@ export const GistConflictModal: React.FC<GistConflictModalProps> = ({ conflict, 
             onClick={() => void handle("force-push-local")}
             style={{ textAlign: "left", padding: "var(--space-3) var(--space-4)", borderColor: "var(--danger)" }}
           >
-            <div style={{ fontWeight: 600, color: "var(--danger)" }}>로컬 강제 푸시 (주의)</div>
+            <div style={{ fontWeight: 600, color: "var(--danger)" }}>이 기기 데이터로 덮어쓰기 (주의)</div>
             <div style={{ fontSize: 12, opacity: 0.85, marginTop: 2 }}>
               이 기기의 데이터를 원격에 강제 저장합니다. 다른 기기의 최근 변경은 폐기됩니다.
             </div>

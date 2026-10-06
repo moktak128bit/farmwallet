@@ -123,6 +123,7 @@ export const DataBackupCard: React.FC<Props> = React.memo(function DataBackupCar
           title: "테이블 백업에서 복원",
           before: data,
           after: normalized,
+          propagatesToGist: true,
           onConfirm: () => {
             void (async () => {
               const toastId = toast.loading("테이블 백업에서 복원하는 중...");
@@ -177,6 +178,7 @@ export const DataBackupCard: React.FC<Props> = React.memo(function DataBackupCar
           title: "백업 파일에서 복원",
           before: data,
           after: normalized,
+          propagatesToGist: true,
           onConfirm: () => {
             void (async () => {
               const toastId = toast.loading("백업 파일을 불러오는 중...");

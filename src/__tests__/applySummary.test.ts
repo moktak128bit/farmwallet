@@ -1,6 +1,9 @@
 import { describe, it, expect } from "vitest";
 import { buildApplySummary, countNewIntegrityErrors } from "../utils/applySummary";
-import { getEmptyData } from "../services/dataService";
+import { getEmptyData, normalizeImportedData, toUserDataJson } from "../services/dataService";
+import { normalizeAssetSnapshots } from "../services/dataNormalizers";
+import { DATA_SCHEMA_VERSION } from "../constants/config";
+import { buildMaskedLegacyData } from "./fixtures/maskedLegacyData";
 import type { AppData, LedgerEntry } from "../types";
 
 /**
@@ -50,6 +53,96 @@ describe("applySummary — buildApplySummary", () => {
     const summary = buildApplySummary(before, after);
     expect(summary.diff.collections.accounts.removed).toBe(1);
     expect(summary.hasChanges).toBe(true);
+  });
+});
+
+/** 사용자 실데이터 형태(3세대 가계부·거래·구형 프리셋) + 설정·시계열을 채운 "스토어에 있을 법한" 데이터 */
+function realisticStoreData(): AppData {
+  const base = normalizeImportedData({ ...buildMaskedLegacyData(), schemaVersion: 9 });
+  return {
+    ...base,
+    prices: [{ ticker: "005930", price: 70_000, currency: "KRW" } as AppData["prices"][number]],
+    targetNetWorthCurve: { "2026-12-31": 100_000_000, "2027-12-31": 150_000_000 },
+    assetSnapshots: normalizeAssetSnapshots([
+      { date: "2026-09-01", totalAssetEvaluationAmount: 12_345_678, accountBreakdown: [] },
+      { date: "2026-09-15", totalAssetEvaluationAmount: 12_500_000 }
+    ]),
+    marketEnvSnapshots: [{ date: "2026-09-15", fxRate: 1_390, prices: [], recordedAt: "2026-09-15T01:00:00Z" }],
+    historicalDailyFx: [{ date: "2026-09-30", rate: 1_391.5 }],
+    dividendTrackingTicker: "458730",
+    usTickers: ["SCHD", "QQQ"],
+    investmentGoals: { annualDepositTarget: 12_000_000, investmentStartDate: "2024-01-02" },
+    dailyBudget: {
+      enabled: true,
+      dailyLimit: 30_000,
+      mode: "daily",
+      excludedCategories: ["신용결제", "재테크"],
+      excludedSubCategories: ["통신비"],
+      warnOnExceed: true
+    },
+    savingsGoals: [
+      { id: "SG-1", name: "비상금", targetAmount: 5_000_000, createdAt: "2026-08-01T00:00:00.000Z", linkedAccountIds: ["ACC-BANK"] }
+    ]
+  };
+}
+
+/** Gist 왕복과 같은 경로: toUserDataJson으로 올리고(캐시 제외) 내려받아 정규화 */
+function gistRoundTrip(data: AppData): AppData {
+  return normalizeImportedData({ ...JSON.parse(toUserDataJson(data)), schemaVersion: DATA_SCHEMA_VERSION });
+}
+
+describe("applySummary — 컬렉션 밖 사용자 설정(K9)", () => {
+  it("동일 데이터의 Gist 왕복은 변화 없음 — 모달이 뜨지 않는다(오탐 금지)", () => {
+    const d = realisticStoreData();
+    const summary = buildApplySummary(d, gistRoundTrip(d));
+    expect(summary.otherSettingsChanged).toEqual([]);
+    expect(summary.hasChanges).toBe(false);
+  });
+
+  it("빈 데이터도 왕복 후 변화 없음 (정규화가 빈 값을 undefined로 바꾸는 표현 차이 무시)", () => {
+    const d = getEmptyData();
+    expect(buildApplySummary(d, gistRoundTrip(d)).hasChanges).toBe(false);
+    // 빈 투자 목표 객체 ↔ 미설정(normalizeInvestmentGoals가 undefined로)도 같은 상태
+    expect(buildApplySummary({ ...d, investmentGoals: {} }, gistRoundTrip(d)).hasChanges).toBe(false);
+  });
+
+  it("저축 목표만 다르면 hasChanges=true, otherSettingsChanged에 savingsGoals", () => {
+    const local = realisticStoreData();
+    const remote = gistRoundTrip({ ...local, savingsGoals: [] });
+    const summary = buildApplySummary(local, remote);
+    expect(summary.diff.hasChanges).toBe(false);
+    expect(summary.otherSettingsChanged).toEqual(["savingsGoals"]);
+    expect(summary.hasChanges).toBe(true);
+  });
+
+  it("하루 예산·카테고리·배당 추적 종목 변경도 각각 잡힌다", () => {
+    const local = realisticStoreData();
+    const remote = gistRoundTrip({
+      ...local,
+      dailyBudget: { ...local.dailyBudget!, dailyLimit: 50_000 },
+      categoryPresets: { ...local.categoryPresets, income: [...local.categoryPresets.income, "부수입"] },
+      dividendTrackingTicker: "SCHD"
+    });
+    expect(buildApplySummary(local, remote).otherSettingsChanged).toEqual([
+      "categoryPresets",
+      "dailyBudget",
+      "dividendTrackingTicker"
+    ]);
+  });
+
+  it("캐시·자동 적립 시계열만 다르면 변화 없음 (기기마다 달라 매번 모달이 뜨면 안 됨)", () => {
+    const local = realisticStoreData();
+    const remote: AppData = {
+      ...local,
+      prices: [],
+      historicalDailyCloses: [{ ticker: "SPY", date: "2026-09-30", close: 500 }],
+      historicalDailyFx: [{ date: "2026-10-01", rate: 1_400 }],
+      benchmarkDailyCloses: [{ ticker: "^KS11", date: "2026-09-30", close: 3_000 }],
+      marketEnvSnapshots: []
+    };
+    const summary = buildApplySummary(local, remote);
+    expect(summary.otherSettingsChanged).toEqual([]);
+    expect(summary.hasChanges).toBe(false);
   });
 });
 

@@ -15,6 +15,7 @@ import { useUIStore } from "../store/uiStore";
 import { buildApplySummary, type ApplyDiff } from "../utils/applySummary";
 import { useFocusTrap } from "../hooks/useFocusTrap";
 import { useModalStackEntry } from "../utils/modalStack";
+import { getGistAutoSync, getGistId, getGistToken } from "../services/gistSync";
 
 interface RequestApplyOptions {
   /** 모달 제목 — 게이트별 문구 */
@@ -29,6 +30,8 @@ interface RequestApplyOptions {
   onCancel?: () => void;
   /** true면 "복구" 성격(드래프트 복구) — [적용] 버튼에 기본 포커스 */
   defaultFocusConfirm?: boolean;
+  /** true면 이 기기에서 온 데이터(백업 복원·가져오기) — 자동 동기화 중이면 Gist·다른 기기로 퍼진다고 안내. Gist pull엔 넘기지 않는다 */
+  propagatesToGist?: boolean;
 }
 
 /**
@@ -45,7 +48,8 @@ export function requestApply(options: RequestApplyOptions): void {
     summary,
     onConfirm: options.onConfirm,
     onCancel: options.onCancel,
-    defaultFocusConfirm: options.defaultFocusConfirm
+    defaultFocusConfirm: options.defaultFocusConfirm,
+    propagatesToGist: options.propagatesToGist
   });
 }
 
@@ -64,6 +68,18 @@ const COLLECTION_LABEL: Record<string, string> = {
   workoutRoutines: "운동 루틴",
   customExercises: "커스텀 운동",
   isaPortfolio: "ISA 포트폴리오"
+};
+
+/** summary.otherSettingsChanged(컬렉션 밖 사용자 설정 키) 표시명 — 모르는 키는 원래 이름 그대로 */
+const OTHER_SETTING_LABEL: Record<string, string> = {
+  categoryPresets: "카테고리",
+  savingsGoals: "저축 목표",
+  dailyBudget: "하루 예산",
+  investmentGoals: "투자 목표",
+  dividendTrackingTicker: "배당 추적 종목",
+  targetNetWorthCurve: "목표 순자산 곡선",
+  assetSnapshots: "자산 스냅샷",
+  usTickers: "미국 티커 목록"
 };
 
 function formatKrw(n: number): string {
@@ -116,13 +132,14 @@ export const ApplyConfirmModal: React.FC = () => {
 
   if (!pendingApply) return null;
 
-  const { title, summary, defaultFocusConfirm } = pendingApply;
+  const { title, summary, defaultFocusConfirm, propagatesToGist } = pendingApply;
   const { diff } = summary;
   const collectionRows = changedCollectionRows(diff);
   const kindRows = changedKindRows(diff);
   const dateChanged = summary.latestLedgerDateBefore !== summary.latestLedgerDateAfter;
   const totalChanged = diff.ledgerAmountTotal.before !== diff.ledgerAmountTotal.after;
   const tradesTotalChanged = diff.tradesTotalAmount.before !== diff.tradesTotalAmount.after;
+  const otherSettings = summary.otherSettingsChanged ?? [];
 
   return (
     <div
@@ -160,6 +177,11 @@ export const ApplyConfirmModal: React.FC = () => {
         <p style={{ marginTop: 0, color: "var(--text-muted)" }}>
           적용하면 현재 데이터가 아래 내용으로 바뀝니다. 적용 직전 현재 데이터는 안전 스냅샷으로 보관됩니다.
         </p>
+        {propagatesToGist && getGistAutoSync() && getGistToken() && getGistId() && (
+          <p style={{ marginTop: 0, fontSize: 12, color: "var(--warning)" }}>
+            자동 동기화가 켜져 있어 적용하면 1분 안에 Gist와 다른 기기에도 반영됩니다.
+          </p>
+        )}
 
         {summary.newIntegrityErrorCount > 0 && (
           <div
@@ -247,6 +269,9 @@ export const ApplyConfirmModal: React.FC = () => {
             <li>
               주식 거래 금액 합계: {formatKrw(diff.tradesTotalAmount.before)} → {formatKrw(diff.tradesTotalAmount.after)}
             </li>
+          )}
+          {otherSettings.length > 0 && (
+            <li>기타 설정 변경: {otherSettings.map((k) => OTHER_SETTING_LABEL[k] ?? k).join(" · ")}</li>
           )}
         </ul>
 

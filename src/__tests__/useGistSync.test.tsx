@@ -2,7 +2,7 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 import { renderHook, act } from "@testing-library/react";
 import { StrictMode } from "react";
-import { toast } from "react-hot-toast";
+import { toast, useToasterStore } from "react-hot-toast";
 import { useGistSync, checkRemoteChanged, isTimeSeriesOnlyDiff, hasUnsyncedLocalData } from "../hooks/useGistSync";
 import * as gistSync from "../services/gistSync";
 import { hashGistPayload } from "../services/gistSync";
@@ -11,6 +11,7 @@ import type { AppData } from "../types";
 import { useUIStore } from "../store/uiStore";
 import { useAppStore } from "../store/appStore";
 import { getEmptyData, toUserDataJson } from "../services/dataService";
+import { saveSafetySnapshot } from "../services/backupService";
 
 vi.mock("../services/gistSync", async () => {
   const actual = await vi.importActual<typeof gistSync>("../services/gistSync");
@@ -32,6 +33,11 @@ vi.mock("../services/gistSync", async () => {
   };
 });
 
+// 실제 구현을 그대로 감싸 호출 여부만 본다 (강제 덮어쓰기 직전 안전 스냅샷)
+vi.mock("../services/backupService", async () => {
+  const actual = await vi.importActual<typeof import("../services/backupService")>("../services/backupService");
+  return { ...actual, saveSafetySnapshot: vi.fn(actual.saveSafetySnapshot) };
+});
 
 const mocked = vi.mocked(gistSync);
 
@@ -348,6 +354,8 @@ describe("useGistSync", () => {
     mocked.saveToGist.mockClear();
     mocked.saveToGistWithRetry.mockClear();
     onApply.mockClear();
+    // 적용 직전 다시 읽은 원격이 모달의 원격본과 같음 (낡은 모달 아님)
+    mocked.loadFromGist.mockResolvedValue({ dataJson: '{"x":1}', updatedAt: "2026-04-20T07:00:00Z" });
 
     // 충돌 상태를 직접 set
     useUIStore.getState().setGistConflict({
@@ -371,17 +379,20 @@ describe("useGistSync", () => {
     await flush();
     mocked.saveToGist.mockClear();
 
+    // 저장하려던 데이터 = 지금 이 기기 데이터, 덮기 직전 다시 읽은 원격 = 모달의 원격본 (낡은 모달 아님)
+    const localJson = toUserDataJson(makeData(0));
+    mocked.loadFromGist.mockResolvedValue({ dataJson: '{"x":1}', updatedAt: "2026-04-20T07:00:00Z" });
     useUIStore.getState().setGistConflict({
       remoteDataJson: '{"x":1}',
       remoteUpdatedAt: "2026-04-20T07:00:00Z",
-      pendingLocalDataJson: '{"y":2}',
+      pendingLocalDataJson: localJson,
     });
 
     await act(async () => {
       await result.current.resolveGistConflict("force-push-local");
     });
 
-    expect(mocked.saveToGist).toHaveBeenCalledWith('{"y":2}');
+    expect(mocked.saveToGist).toHaveBeenCalledWith(localJson);
     expect(useUIStore.getState().gistConflict).toBeNull();
   });
 
@@ -456,6 +467,7 @@ describe("useGistSync — 충돌 해소 시 날짜키 시계열 date-union (1-7)
     await flush();
     onApply.mockClear();
     mocked.saveToGist.mockClear();
+    mocked.loadFromGist.mockResolvedValue({ dataJson: remoteJson, updatedAt: "2026-04-21T07:00:00Z" });
 
     useUIStore.getState().setGistConflict({
       remoteDataJson: remoteJson,
@@ -494,11 +506,12 @@ describe("useGistSync — 충돌 해소 시 날짜키 시계열 date-union (1-7)
     const { result } = renderHook(() => useGistSync(localData, vi.fn()));
     await flush();
     mocked.saveToGist.mockClear();
+    mocked.loadFromGist.mockResolvedValue({ dataJson: remoteJson, updatedAt: "2026-04-21T07:00:00Z" }); // 낡은 모달 아님
 
     useUIStore.getState().setGistConflict({
       remoteDataJson: remoteJson,
       remoteUpdatedAt: "2026-04-21T07:00:00Z",
-      pendingLocalDataJson: JSON.stringify(localData),
+      pendingLocalDataJson: toUserDataJson(localData),
     });
     await act(async () => {
       await result.current.resolveGistConflict("force-push-local");
@@ -533,11 +546,13 @@ describe("useGistSync — 충돌 해소 시 날짜키 시계열 date-union (1-7)
     await flush();
     onApply.mockClear();
     const before = useAppStore.getState().data;
+    mocked.loadFromGist.mockResolvedValue({ dataJson: '{"x":1}', updatedAt: "2026-04-20T07:00:00Z" });
+    const localJson = toUserDataJson(makeData(0));
 
     useUIStore.getState().setGistConflict({
       remoteDataJson: '{"x":1}',
       remoteUpdatedAt: "2026-04-20T07:00:00Z",
-      pendingLocalDataJson: '{"y":2}',
+      pendingLocalDataJson: localJson,
     });
     await act(async () => {
       await result.current.resolveGistConflict("apply-remote");
@@ -547,12 +562,12 @@ describe("useGistSync — 충돌 해소 시 날짜키 시계열 date-union (1-7)
     useUIStore.getState().setGistConflict({
       remoteDataJson: '{"x":1}',
       remoteUpdatedAt: "2026-04-20T07:00:00Z",
-      pendingLocalDataJson: '{"y":2}',
+      pendingLocalDataJson: localJson,
     });
     await act(async () => {
       await result.current.resolveGistConflict("force-push-local");
     });
-    expect(mocked.saveToGist).toHaveBeenLastCalledWith('{"y":2}');
+    expect(mocked.saveToGist).toHaveBeenLastCalledWith(localJson);
     expect(useAppStore.getState().data).toBe(before);
   });
 });
@@ -1547,8 +1562,18 @@ describe("useGistSync — connectDevice", () => {
         await connectAndCancel(result);
         window.localStorage.setItem("fw-gist-id", "1111111111111111111111111111aaaa");
 
+        // 직접 입력한 Gist도 불러온 적이 없으니 덮기 전에 내용 비교(K13) — 데이터가 있으면 충돌로 묻되,
+        // 다른 Gist에 세운 표식 때문에 never-synced로 취급하지는 않는다
+        mocked.loadFromGist.mockResolvedValueOnce({ dataJson: toUserDataJson(makeData(8)), updatedAt: B_OLDER.committedAt });
         await act(async () => { await result.current.manualPush(); });
-        expect(mocked.loadFromGist).not.toHaveBeenCalled();
+        expect(mocked.saveToGistWithRetry).not.toHaveBeenCalled();
+        expect(useUIStore.getState().gistConflict?.reason).toBeUndefined();
+        expect(useUIStore.getState().gistConflict?.remoteDataJson).toBe(toUserDataJson(makeData(8)));
+        await act(async () => { await result.current.resolveGistConflict("cancel"); });
+
+        // 아직 FarmWallet 데이터가 없는 Gist면 잃을 것이 없으니 그대로 업로드 (표식이 막지 않음)
+        mocked.loadFromGist.mockRejectedValueOnce(new gistSync.GistNoRemoteDataError("데이터 파일 없음"));
+        await act(async () => { await result.current.manualPush(); });
         expect(mocked.saveToGistWithRetry).toHaveBeenCalledTimes(1);
       });
 
@@ -1575,10 +1600,11 @@ describe("useGistSync — connectDevice", () => {
           await connectAndCancel(result);
           mocked.loadFromGist.mockRejectedValue(new Error(NET));
 
-          // 자동 업로드: 버전 조회 성공(recordSyncOk로 0) 뒤 불러오기 실패를 기록 → 1, 오류 문구 유지
+          // 다시 켬: 부팅 불러오기 실패(1) → 자동 업로드의 불러오기 실패(2) — 업로드 경로의 버전 조회 성공은
+          // 실패 수를 되돌리지 않으므로(#9) 연속 실패가 쌓여 상태 배지가 오류를 띄울 수 있다
           await reEnableAndWaitDebounce(result);
           expect(mocked.saveToGistWithRetry).not.toHaveBeenCalled();
-          expect(result.current.syncHealth.consecutiveFailures).toBe(1);
+          expect(result.current.syncHealth.consecutiveFailures).toBe(2);
           expect(result.current.syncHealth.lastError).toBe(NET);
 
           // 수동 저장: 조용히 끝나지 않고 토스트 + 실패 기록
@@ -1586,7 +1612,7 @@ describe("useGistSync — connectDevice", () => {
           await act(async () => { await result.current.manualPush(); });
           expect(mocked.saveToGistWithRetry).not.toHaveBeenCalled();
           expect(toastError).toHaveBeenCalledWith(`Gist 저장 실패: ${NET}`, expect.anything());
-          expect(result.current.syncHealth.consecutiveFailures).toBe(1);
+          expect(result.current.syncHealth.consecutiveFailures).toBe(3);
           expect(result.current.syncHealth.lastError).toBe(NET);
           expect(useUIStore.getState().gistConflict).toBeNull();
           expect(window.localStorage.getItem("fw-gist-last-push-hash")).toBe(MARKER_B);
@@ -1639,8 +1665,6 @@ describe("loadFromGist — 덮어쓸 원격 데이터 없음 신호", () => {
 
   it("description의 스키마 버전이 이 앱보다 높으면 GistSchemaTooNewError, 같거나 없으면 정상", async () => {
     const actual = await vi.importActual<typeof gistSync>("../services/gistSync");
-    expect(actual.schemaVersionFromDescription("FarmWallet 데이터 백업 (schema v12)")).toBe(12);
-    expect(actual.schemaVersionFromDescription("FarmWallet 데이터 백업")).toBeNull();
     const body = (description: string) =>
       JSON.stringify({ description, files: { "farmwallet-data.json": { content: "{}" } } });
     vi.stubGlobal("fetch", vi.fn().mockResolvedValue(new Response(body("FarmWallet 데이터 백업 (schema v999)"), { status: 200 })));
@@ -1718,7 +1742,8 @@ describe("useGistSync — 원격을 반영하지 못한 부팅·로드 실패 �
   it("S1 부팅 불러오기 실패(타임아웃): 다음 자동 업로드가 다른 기기 변경을 충돌 확인 없이 덮지 않는다", async () => {
     mocked.loadFromGist.mockRejectedValueOnce(new Error("요청 시간 초과"));
     const onApply = vi.fn();
-    renderHook(() => useGistSync(makeData(1), onApply));
+    // 마지막 push(makeData(1)) 이후 로컬 편집이 있음 — 편집이 없으면 올릴 것이 없어 업로드 자체를 건너뛴다(G102)
+    renderHook(() => useGistSync(makeData(2), onApply));
     await act(async () => { await flushMicro(); });
     expect(mocked.loadFromGist).toHaveBeenCalledTimes(1);
     expect(onApply).not.toHaveBeenCalled();
@@ -1731,7 +1756,7 @@ describe("useGistSync — 원격을 반영하지 못한 부팅·로드 실패 �
   it("S1 로컬 시계가 빨라 '우리 push'로 보인 원격(pull 기록 없음): known·lastPullAt을 올리지 않고 업로드 전 내용 비교", async () => {
     mocked.getGistLastPullAt.mockReturnValue(""); // Gist를 만든 PC — 올리기만 했다
     mocked.getGistLastPushAt.mockReturnValue("2026-04-20T05:00:00Z"); // 로컬 시계가 빨라 원격 commit(01:00)보다 늦게 찍힘
-    renderHook(() => useGistSync(makeData(1), vi.fn()));
+    renderHook(() => useGistSync(makeData(2), vi.fn())); // 미push 로컬 편집 있음 (없으면 업로드를 건너뜀)
     await act(async () => { await flushMicro(); });
     expect(mocked.loadFromGist).not.toHaveBeenCalled();
     expect(mocked.setGistLastPullAt).not.toHaveBeenCalled();
@@ -1805,5 +1830,818 @@ describe("useGistSync — 원격을 반영하지 못한 부팅·로드 실패 �
     expect(hasUnsyncedLocalData(toUserDataJson(makeData(2)), REMOTE_JSON)).toBe(true);
     window.localStorage.removeItem("fw-gist-last-push-hash"); // 구버전 상태 — 판단 불가
     expect(hasUnsyncedLocalData(synced, REMOTE_JSON)).toBe(true);
+  });
+});
+
+describe("useGistSync — 업로드 실패 집계·탭 간 중복 업로드·다른 탭 설정 반영", () => {
+  const MOUNT_REMOTE = { sha: "v1", committedAt: "2026-04-20T01:00:00Z", url: "u" };
+  const flushMicro = async () => {
+    for (let i = 0; i < 20; i++) await Promise.resolve();
+  };
+  const waitDebounce = async () => {
+    await act(async () => { await vi.advanceTimersByTimeAsync(GIST_AUTO_PUSH_DEBOUNCE_MS + 1000); });
+  };
+
+  /** 마운트 → 첫 자동 업로드(makeData(0))까지 끝내 기준점(known=01:00·payload·해시)을 세운 뒤 호출 기록 초기화 */
+  async function mountSettled(onLog = vi.fn()) {
+    const onApply = vi.fn();
+    const hook = renderHook(({ d }: { d: AppData }) => useGistSync(d, onApply, { onLog }), {
+      initialProps: { d: makeData(0) },
+    });
+    await act(async () => { await flush(); });
+    expect(window.localStorage.getItem("fw-gist-last-push-hash")).toBe(hashGistPayload(toUserDataJson(makeData(0))));
+    mocked.getGistVersions.mockClear();
+    mocked.loadFromGist.mockClear();
+    mocked.saveToGistWithRetry.mockClear();
+    onLog.mockClear();
+    return { ...hook, onApply, onLog };
+  }
+
+  beforeEach(() => {
+    vi.useFakeTimers();
+    vi.clearAllMocks();
+    window.localStorage.clear();
+    useUIStore.getState().setGistConflict(null);
+    mocked.getGistAutoSync.mockReturnValue(true);
+    mocked.getGistToken.mockReturnValue("test-token");
+    mocked.getGistId.mockReturnValue("test-gist-id");
+    mocked.getGistLastPushAt.mockReturnValue("");
+    mocked.getGistLastPullAt.mockReturnValue("2026-04-20T02:00:00Z"); // 부팅 pull 건너뜀(원격 01:00 < 02:00)
+    mocked.getGistVersions.mockResolvedValue([MOUNT_REMOTE]);
+    mocked.saveToGistWithRetry.mockResolvedValue({ gistId: "test-gist-id", updatedAt: "2026-04-20T01:00:00Z", committedAt: "2026-04-20T01:00:00Z" });
+    Object.defineProperty(document, "visibilityState", { configurable: true, get: () => "visible" });
+  });
+
+  afterEach(() => {
+    vi.useRealTimers();
+    useUIStore.getState().setGistConflict(null);
+  });
+
+  it("#9 버전 조회는 성공하고 저장만 연달아 실패하면 연속 실패가 2회로 쌓여 상태가 오류가 된다", async () => {
+    const { result, rerender } = await mountSettled();
+    mocked.saveToGistWithRetry.mockRejectedValue(new Error("Gist 저장 실패: 권한 없음 (403)"));
+
+    rerender({ d: makeData(1) });
+    await waitDebounce();
+    expect(result.current.syncHealth.consecutiveFailures).toBe(1);
+    rerender({ d: makeData(2) });
+    await waitDebounce();
+    expect(mocked.getGistVersions).toHaveBeenCalledTimes(2); // 두 번 모두 조회는 성공
+    expect(result.current.syncHealth.consecutiveFailures).toBe(2);
+
+    const { deriveGistSyncStatus } = await import("../services/gistSyncStatus");
+    expect(
+      deriveGistSyncStatus({ autoSyncEnabled: true, hasToken: true, hasGistId: true, health: result.current.syncHealth }).kind
+    ).toBe("error");
+
+    // 저장이 다시 성공하면 리셋
+    mocked.saveToGistWithRetry.mockResolvedValue({ gistId: "test-gist-id", updatedAt: "2026-04-20T01:00:00Z", committedAt: "2026-04-20T01:00:00Z" });
+    rerender({ d: makeData(3) });
+    await waitDebounce();
+    expect(result.current.syncHealth.consecutiveFailures).toBe(0);
+  });
+
+  /** 주기 확인을 켠 마운트 — interval 때문에 flush()(runAllTimersAsync)는 쓰지 않는다. 첫 자동 업로드까지 소진 */
+  async function mountPolling() {
+    // 적용 콜백은 App처럼 고정 참조 — 렌더마다 새 함수면 주기 확인 interval이 매 렌더 다시 시작된다
+    const onApply = vi.fn();
+    const hook = renderHook(({ d }: { d: AppData }) => useGistSync(d, onApply, { remotePollMs: 180_000 }), {
+      initialProps: { d: makeData(0) },
+    });
+    await act(async () => { await vi.advanceTimersByTimeAsync(GIST_AUTO_PUSH_DEBOUNCE_MS + 1000); });
+    expect(mocked.saveToGistWithRetry).toHaveBeenCalledTimes(1);
+    mocked.getGistVersions.mockClear();
+    mocked.saveToGistWithRetry.mockClear();
+    return hook;
+  }
+
+  it("K2 아직 올리지 못한 변경이 있으면 주기 확인의 조회 성공이 저장 실패 수를 되돌리지 않는다", async () => {
+    const { result, rerender } = await mountPolling(); // t≈61s
+    mocked.saveToGistWithRetry.mockRejectedValue(new Error("Gist 저장 실패: 권한 없음 (403)"));
+    rerender({ d: makeData(1) });
+    await waitDebounce(); // t≈122s 저장 실패
+    expect(result.current.syncHealth.consecutiveFailures).toBe(1);
+
+    await act(async () => { await vi.advanceTimersByTimeAsync(70_000); }); // t≈192s 주기 확인(조회 성공, dirty)
+    expect(mocked.getGistVersions).toHaveBeenCalledTimes(2); // 업로드 조회 1 + 주기 확인 1
+    expect(result.current.syncHealth.consecutiveFailures).toBe(1);
+
+    rerender({ d: makeData(2) });
+    await waitDebounce();
+    expect(result.current.syncHealth.consecutiveFailures).toBe(2);
+  });
+
+  it("K2 깨끗한 기기는 조회 실패 뒤 주기 확인 조회가 성공하면 정상으로 돌아온다", async () => {
+    const { result } = await mountPolling(); // t≈61s
+    mocked.getGistVersions.mockRejectedValue(new Error("네트워크 연결을 확인해주세요."));
+    await act(async () => { await vi.advanceTimersByTimeAsync(180_000); }); // 180s 확인 실패
+    await act(async () => { await vi.advanceTimersByTimeAsync(180_000); }); // 360s 확인 실패
+    expect(result.current.syncHealth.consecutiveFailures).toBe(2);
+
+    mocked.getGistVersions.mockResolvedValue([MOUNT_REMOTE]);
+    await act(async () => { await vi.advanceTimersByTimeAsync(180_000); }); // 540s 확인 성공
+    expect(result.current.syncHealth.consecutiveFailures).toBe(0);
+  });
+
+  it("G102 다른 탭이 이미 같은 내용을 올렸으면(공유 해시 일치) 원격 조회·저장 없이 건너뛴다", async () => {
+    const { rerender } = await mountSettled();
+    // 탭 A가 makeData(1)을 올림 → 공유 해시 갱신, 탭 동기화로 이 탭(B)도 같은 데이터를 받음
+    window.localStorage.setItem("fw-gist-last-push-hash", hashGistPayload(toUserDataJson(makeData(1))));
+    rerender({ d: makeData(1) });
+    await waitDebounce();
+    expect(mocked.getGistVersions).not.toHaveBeenCalled();
+    expect(mocked.loadFromGist).not.toHaveBeenCalled();
+    expect(mocked.saveToGistWithRetry).not.toHaveBeenCalled();
+
+    // 이후 B의 실제 편집은 정상 업로드
+    rerender({ d: makeData(2) });
+    await waitDebounce();
+    expect(mocked.saveToGistWithRetry).toHaveBeenCalledTimes(1);
+    expect(mocked.saveToGistWithRetry.mock.calls[0][0]).toBe(toUserDataJson(makeData(2)));
+  });
+
+  it("#10 시간 초과로 실패 처리됐지만 GitHub은 커밋한 업로드 — 다음 업로드가 자기 커밋을 외부 변경으로 보지 않는다", async () => {
+    const { rerender } = await mountSettled();
+    mocked.saveToGistWithRetry.mockRejectedValueOnce(new Error("요청 시간 초과 (15s)"));
+    rerender({ d: makeData(1) });
+    await waitDebounce();
+    expect(mocked.saveToGistWithRetry).toHaveBeenCalledTimes(1);
+    // 실패한 PATCH 전에는 공유 해시를 기록하지 않는다 (dirty 기준이 깨끗으로 보이면 원격에 덮임)
+    expect(window.localStorage.getItem("fw-gist-last-push-hash")).toBe(hashGistPayload(toUserDataJson(makeData(0))));
+
+    // 실제로는 서버가 makeData(1)을 커밋함
+    mocked.getGistVersions.mockResolvedValue([{ sha: "v2", committedAt: "2026-04-20T03:00:00Z", url: "u" }]);
+    mocked.loadFromGist.mockResolvedValue({ dataJson: toUserDataJson(makeData(1)), updatedAt: "2026-04-20T03:00:00Z" });
+    mocked.saveToGistWithRetry.mockClear();
+
+    rerender({ d: makeData(2) }); // 실패 뒤 추가 편집
+    await waitDebounce();
+    expect(mocked.loadFromGist).toHaveBeenCalledTimes(1); // 시각상 새 원격 → 내용 비교
+    expect(useUIStore.getState().gistConflict).toBeNull(); // 가짜 충돌 모달 없음
+    expect(mocked.saveToGistWithRetry).toHaveBeenCalledTimes(1);
+    expect(mocked.saveToGistWithRetry.mock.calls[0][0]).toBe(toUserDataJson(makeData(2)));
+  });
+
+  it("#10 원격이 우리가 시도한 내용과 다르면 여전히 충돌 모달", async () => {
+    const { rerender } = await mountSettled();
+    mocked.saveToGistWithRetry.mockRejectedValueOnce(new Error("요청 시간 초과 (15s)"));
+    rerender({ d: makeData(1) });
+    await waitDebounce();
+
+    mocked.getGistVersions.mockResolvedValue([{ sha: "v2", committedAt: "2026-04-20T03:00:00Z", url: "u" }]);
+    mocked.loadFromGist.mockResolvedValue({ dataJson: toUserDataJson(makeData(7)), updatedAt: "2026-04-20T03:00:00Z" });
+    mocked.saveToGistWithRetry.mockClear();
+
+    rerender({ d: makeData(2) });
+    await waitDebounce();
+    expect(mocked.saveToGistWithRetry).not.toHaveBeenCalled();
+    expect(useUIStore.getState().gistConflict?.remoteDataJson).toBe(toUserDataJson(makeData(7)));
+  });
+
+  it("R1 시간 초과로 실패 처리됐지만 커밋된 업로드 뒤 편집 — 디바운스 전 주기 확인이 자기 커밋을 '다른 기기 변경' 충돌로 띄우지 않고, 다음 자동 저장이 편집을 올린다", async () => {
+    const { rerender } = await mountPolling(); // t≈61s (주기 확인 180s·360s…)
+    mocked.saveToGistWithRetry.mockRejectedValueOnce(new Error("요청 시간 초과 (15s)"));
+    rerender({ d: makeData(1) });
+    await waitDebounce(); // t≈122s 저장 '실패' — 실제로는 서버가 makeData(1)을 커밋
+    expect(mocked.saveToGistWithRetry).toHaveBeenCalledTimes(1);
+    expect(window.localStorage.getItem("fw-gist-last-push-hash")).toBe(hashGistPayload(toUserDataJson(makeData(0))));
+    mocked.getGistVersions.mockResolvedValue([{ sha: "v2", committedAt: "2026-04-20T03:00:00Z", url: "u" }]);
+    mocked.loadFromGist.mockResolvedValue({ dataJson: toUserDataJson(makeData(1)), updatedAt: "2026-04-20T03:00:00Z" });
+    mocked.saveToGistWithRetry.mockClear();
+    mocked.loadFromGist.mockClear();
+
+    rerender({ d: makeData(2) }); // 실패 뒤 편집 — 디바운스는 t≈182s
+    await act(async () => { await vi.advanceTimersByTimeAsync(59_000); }); // t≈181s: 180s 주기 확인만 실행
+    expect(mocked.loadFromGist).toHaveBeenCalledTimes(1); // 주기 확인이 새 원격 내용을 비교함
+    expect(useUIStore.getState().gistConflict).toBeNull(); // 가짜 충돌 모달 없음
+    expect(mocked.saveToGistWithRetry).not.toHaveBeenCalled();
+    // 직전 PATCH를 성공으로 확정 — 새로고침 뒤 부팅 불러오기의 dirty 기준도 맞는다
+    expect(window.localStorage.getItem("fw-gist-last-push-hash")).toBe(hashGistPayload(toUserDataJson(makeData(1))));
+
+    await act(async () => { await vi.advanceTimersByTimeAsync(2_000); }); // 디바운스 → 편집 업로드
+    expect(useUIStore.getState().gistConflict).toBeNull();
+    expect(mocked.loadFromGist).toHaveBeenCalledTimes(1); // known=원격 커밋 — 다시 내용 비교하지 않음
+    expect(mocked.saveToGistWithRetry).toHaveBeenCalledTimes(1);
+    expect(mocked.saveToGistWithRetry.mock.calls[0][0]).toBe(toUserDataJson(makeData(2)));
+  });
+
+  it("G101 맞춰 본 적 없는 Gist(다른 탭이 기기 연결을 취소) — 복귀 확인이 원격을 자동 적용하지 않는다", async () => {
+    const { onApply } = await mountSettled();
+    window.localStorage.setItem("fw-gist-last-push-hash", "unsynced:test-gist-id");
+    mocked.getGistVersions.mockResolvedValue([{ sha: "v2", committedAt: "2026-04-20T03:00:00Z", url: "u" }]);
+    mocked.loadFromGist.mockResolvedValue({ dataJson: toUserDataJson(makeData(9)), updatedAt: "2026-04-20T03:00:00Z" });
+
+    await act(async () => { await vi.advanceTimersByTimeAsync(GIST_REMOTE_CHECK_THROTTLE_MS + 1000); });
+    await act(async () => {
+      document.dispatchEvent(new Event("visibilitychange"));
+      await flushMicro();
+    });
+    expect(mocked.getGistVersions).not.toHaveBeenCalled();
+    expect(mocked.loadFromGist).not.toHaveBeenCalled();
+    expect(onApply).not.toHaveBeenCalled();
+    expect(window.localStorage.getItem("fw-gist-last-push-hash")).toBe("unsynced:test-gist-id");
+  });
+
+  it("G101 다른 탭에서 자동 동기화를 끄면 이 탭도 꺼지고 대기 중 자동 업로드가 취소된다", async () => {
+    const { result, rerender } = await mountSettled();
+    rerender({ d: makeData(1) }); // 디바운스 대기 중
+
+    // 무관한 키는 무시
+    await act(async () => {
+      window.dispatchEvent(new StorageEvent("storage", { key: "fw-other", newValue: "x" }));
+    });
+    expect(result.current.autoSyncEnabled).toBe(true);
+
+    mocked.getGistAutoSync.mockReturnValue(false);
+    await act(async () => {
+      window.dispatchEvent(new StorageEvent("storage", { key: "fw-gist-auto-sync", newValue: "false" }));
+    });
+    expect(result.current.autoSyncEnabled).toBe(false);
+    await waitDebounce();
+    expect(mocked.saveToGistWithRetry).not.toHaveBeenCalled();
+
+    // 다시 켜면 반영
+    mocked.getGistAutoSync.mockReturnValue(true);
+    await act(async () => {
+      window.dispatchEvent(new StorageEvent("storage", { key: "fw-gist-auto-sync", newValue: "true" }));
+    });
+    expect(result.current.autoSyncEnabled).toBe(true);
+  });
+
+  /** 복귀 확인(visible)으로 다른 기기 변경을 적용 — 로컬이 깨끗해야 조용히 적용된다 */
+  async function applyRemoteViaResume(remote: AppData, committedAt: string) {
+    mocked.getGistVersions.mockResolvedValue([{ sha: committedAt, committedAt, url: "u" }]);
+    mocked.loadFromGist.mockResolvedValue({ dataJson: toUserDataJson(remote), updatedAt: committedAt });
+    await act(async () => { await vi.advanceTimersByTimeAsync(GIST_REMOTE_CHECK_THROTTLE_MS + 1000); });
+    await act(async () => {
+      document.dispatchEvent(new Event("visibilitychange"));
+      await flushMicro();
+    });
+    expect(window.localStorage.getItem("fw-gist-last-push-hash")).toBe(hashGistPayload(toUserDataJson(remote)));
+  }
+
+  it("K0 우리가 올린 X → 다른 기기 Y 적용 → 다른 기기가 원격을 X로 되돌림 → 편집 업로드는 조용히 덮지 않고 충돌 모달", async () => {
+    const { rerender, onApply } = await mountSettled(); // X = makeData(0) 업로드 성공
+    await applyRemoteViaResume(makeData(5), "2026-04-20T03:00:00Z");
+    expect(onApply).toHaveBeenCalledTimes(1);
+    rerender({ d: makeData(5) });
+
+    // 다른 기기가 삭제·과거 버전 복원으로 원격을 X(우리가 예전에 올린 내용)로 되돌림
+    mocked.getGistVersions.mockResolvedValue([{ sha: "v3", committedAt: "2026-04-20T04:00:00Z", url: "u" }]);
+    mocked.loadFromGist.mockResolvedValue({ dataJson: toUserDataJson(makeData(0)), updatedAt: "2026-04-20T04:00:00Z" });
+    mocked.saveToGistWithRetry.mockClear();
+    rerender({ d: makeData(6) });
+    await waitDebounce();
+    expect(mocked.saveToGistWithRetry).not.toHaveBeenCalled();
+    expect(useUIStore.getState().gistConflict?.remoteDataJson).toBe(toUserDataJson(makeData(0)));
+  });
+
+  it("K0 시간 초과로 결과를 모르는 시도 X는 그 뒤 기준이 바뀌면(Y 적용) 더 이상 '우리 커밋'이 아니다", async () => {
+    const { rerender } = await mountSettled();
+    mocked.saveToGistWithRetry.mockRejectedValueOnce(new Error("요청 시간 초과 (15s)"));
+    rerender({ d: makeData(1) }); // X 시도 — 실패 처리(실제 커밋 여부 모름)
+    await waitDebounce();
+    rerender({ d: makeData(0) }); // 편집 되돌림 → 깨끗한 상태
+    await applyRemoteViaResume(makeData(5), "2026-04-20T03:00:00Z");
+    rerender({ d: makeData(5) });
+
+    // 다른 기기가 원격을 우연히 X와 같은 내용으로 만듦
+    mocked.getGistVersions.mockResolvedValue([{ sha: "v3", committedAt: "2026-04-20T04:00:00Z", url: "u" }]);
+    mocked.loadFromGist.mockResolvedValue({ dataJson: toUserDataJson(makeData(1)), updatedAt: "2026-04-20T04:00:00Z" });
+    mocked.saveToGistWithRetry.mockClear();
+    rerender({ d: makeData(6) });
+    await waitDebounce();
+    expect(mocked.saveToGistWithRetry).not.toHaveBeenCalled();
+    expect(useUIStore.getState().gistConflict?.remoteDataJson).toBe(toUserDataJson(makeData(1)));
+  });
+
+  it("#12 자동 업로드 진행 중 수동 저장은 조용히 끝나지 않고 로그·안내를 남긴다", async () => {
+    const { result, rerender, onLog } = await mountSettled();
+    let release!: () => void;
+    mocked.saveToGistWithRetry.mockImplementationOnce(
+      () => new Promise((resolve) => {
+        release = () => resolve({ gistId: "test-gist-id", updatedAt: "2026-04-20T01:00:00Z", committedAt: "2026-04-20T01:00:00Z" });
+      })
+    );
+    rerender({ d: makeData(1) });
+    await waitDebounce(); // 자동 업로드가 PATCH 대기 중
+    expect(mocked.saveToGistWithRetry).toHaveBeenCalledTimes(1);
+
+    await act(async () => { await result.current.manualPush(); });
+    expect(mocked.saveToGistWithRetry).toHaveBeenCalledTimes(1); // 겹쳐 올리지 않음
+    expect(onLog).toHaveBeenCalledWith("Gist 저장: 자동 저장이 진행 중이라 이번 수동 저장은 건너뜀", "info");
+
+    await act(async () => { release(); await flushMicro(); });
+  });
+
+  it("#7 오래 저장되지 않음 경고는 '저장' 용어를 쓴다", () => {
+    mocked.getGistLastPushAt.mockReturnValue(new Date(Date.now() - 50 * 36e5).toISOString());
+    const critical = renderHook(() => useGistSync(makeData(0), vi.fn()));
+    expect(critical.result.current.gistStaleWarning?.type).toBe("critical");
+    expect(critical.result.current.gistStaleWarning?.message).toBe("50시간 동안 Gist에 저장되지 않았어요. 지금 저장하세요.");
+    critical.unmount();
+
+    mocked.getGistLastPushAt.mockReturnValue(new Date(Date.now() - 13 * 36e5).toISOString());
+    const warning = renderHook(() => useGistSync(makeData(0), vi.fn()));
+    expect(warning.result.current.gistStaleWarning?.type).toBe("warning");
+    expect(warning.result.current.gistStaleWarning?.message).toBe("13시간 경과 — Gist 저장 권장");
+    warning.unmount();
+  });
+});
+
+describe("useGistSync — 충돌 모달: 재연결 재시도·안내 사유·낡은 모달·빈 기기 덮어쓰기 확인·결과 토스트", () => {
+  const P = { gistId: "0123456789abcdef0123456789abcdef", token: "ghp_RETRY777" };
+  const REMOTE = JSON.stringify(makeData(5));
+  const VERSION = { sha: "v", committedAt: "2026-10-02T01:00:00Z", url: "u" };
+
+  /** 일반 toast(...) 호출은 spy가 안 돼 토스트 저장소에서 메시지를 읽는다 */
+  const toastMessages = () => {
+    const { result } = renderHook(() => useToasterStore());
+    return result.current.toasts.map((t) => t.message);
+  };
+
+  /** 이 Gist에 연결된 기기 (자동 동기화 OFF — 자동 업로드·부팅 불러오기 잡음 없음) */
+  const connectToGist = () => {
+    window.localStorage.setItem("fw-gist-token", "t");
+    window.localStorage.setItem("fw-gist-id", P.gistId);
+  };
+
+  beforeEach(() => {
+    vi.useFakeTimers();
+    vi.clearAllMocks();
+    window.localStorage.clear();
+    window.sessionStorage.clear();
+    toast.removeAll();
+    useUIStore.getState().setGistConflict(null);
+    useUIStore.getState().setPendingApply(null);
+    useAppStore.setState({ data: getEmptyData() });
+    mocked.getGistAutoSync.mockReturnValue(false);
+    mocked.getGistToken.mockImplementation(() => window.localStorage.getItem("fw-gist-token") ?? "");
+    mocked.getGistId.mockImplementation(() => window.localStorage.getItem("fw-gist-id") ?? "");
+    mocked.getGistLastPushAt.mockReturnValue("");
+    mocked.getGistLastPullAt.mockReturnValue("");
+    mocked.getGistVersions.mockResolvedValue([VERSION]);
+    mocked.getGistVersionsWithCredentials.mockResolvedValue([VERSION]);
+    mocked.loadFromGist.mockResolvedValue({ dataJson: REMOTE, updatedAt: VERSION.committedAt });
+    const saved = { gistId: P.gistId, updatedAt: "2026-10-02T02:00:00Z", committedAt: "2026-10-02T02:00:00Z" };
+    mocked.saveToGist.mockResolvedValue(saved);
+    mocked.saveToGistWithRetry.mockResolvedValue(saved);
+  });
+
+  afterEach(() => {
+    vi.useRealTimers();
+    useUIStore.getState().setGistConflict(null);
+    useUIStore.getState().setPendingApply(null);
+    useAppStore.setState({ data: getEmptyData() });
+    window.localStorage.clear();
+    window.sessionStorage.clear();
+  });
+
+  it("G120 연결이 불러오기 단계에서 실패한 뒤 같은 링크로 다시 시도하면 원격을 불러와 적용한다 (빈 기기 → 미리보기 없이, 자동 동기화 ON)", async () => {
+    const toastError = vi.spyOn(toast, "error");
+    try {
+      let current: AppData = getEmptyData();
+      const onApply = vi.fn((json: string) => { current = JSON.parse(json) as AppData; });
+      const { result } = renderHook(() => useGistSync(current, onApply));
+      await act(async () => { await flush(); });
+
+      mocked.loadFromGist.mockRejectedValueOnce(new Error("네트워크 연결을 확인해주세요."));
+      let outcome: string | undefined;
+      await act(async () => { outcome = await result.current.connectDevice(P); });
+      expect(outcome).toBe("failed");
+      expect(toastError).toHaveBeenCalledWith("네트워크 연결을 확인해주세요. 같은 연결 링크로 다시 시도할 수 있어요.");
+      expect(window.localStorage.getItem("fw-gist-id")).toBe(P.gistId);
+      expect(onApply).not.toHaveBeenCalled();
+
+      // 같은 링크 재시도 — '같은 Gist 재연결(토큰만 저장)'로 삼키지 않고 불러오기부터 다시
+      await act(async () => { outcome = await result.current.connectDevice(P); });
+      expect(outcome).toBe("connected");
+      expect(onApply).toHaveBeenCalledTimes(1);
+      expect(onApply).toHaveBeenCalledWith(REMOTE, VERSION.committedAt);
+      expect(useUIStore.getState().pendingApply).toBeNull();
+      expect(mocked.setGistAutoSync).toHaveBeenCalledWith(true);
+      expect(result.current.autoSyncEnabled).toBe(true);
+      expect(window.localStorage.getItem("fw-gist-last-push-hash")).toBe(hashGistPayload(REMOTE));
+    } finally {
+      toastError.mockRestore();
+    }
+  });
+
+  it("G121 아직 불러온 적 없는 기기의 [저장]은 never-synced 충돌로 열리고, 빈 데이터로 덮어쓰기는 확인을 거절하면 저장하지 않고 모달을 유지한다", async () => {
+    connectToGist();
+    window.localStorage.setItem("fw-gist-last-push-hash", `unsynced:${P.gistId}`);
+    const { result } = renderHook(() => useGistSync(getEmptyData(), vi.fn()));
+    await act(async () => { await flush(); });
+
+    await act(async () => { await result.current.manualPush(); });
+    const conflict = useUIStore.getState().gistConflict;
+    expect(conflict?.reason).toBe("never-synced");
+    expect(conflict?.remoteDataJson).toBe(REMOTE);
+
+    const confirmSpy = vi.spyOn(window, "confirm").mockReturnValue(false);
+    try {
+      await act(async () => { await result.current.resolveGistConflict("force-push-local"); });
+      expect(confirmSpy).toHaveBeenCalledTimes(1);
+      expect(mocked.saveToGist).not.toHaveBeenCalled();
+      expect(useUIStore.getState().gistConflict).toBe(conflict);
+
+      // 확인하면 사용자 선택대로 덮어쓴다
+      confirmSpy.mockReturnValue(true);
+      await act(async () => { await result.current.resolveGistConflict("force-push-local"); });
+      expect(mocked.saveToGist).toHaveBeenCalledTimes(1);
+      expect(useUIStore.getState().gistConflict).toBeNull();
+    } finally {
+      confirmSpy.mockRestore();
+    }
+  });
+
+  it("G110 Gist 과거 버전 복원 뒤 [저장]은 restored 충돌로 열린다 (다른 기기 변경이 아님)", async () => {
+    connectToGist();
+    const restored = makeData(1);
+    const { result } = renderHook(() => useGistSync(restored, vi.fn()));
+    await act(async () => { await flush(); });
+    act(() => { result.current.syncStateAfterRestore(toUserDataJson(restored), "2026-09-01T00:00:00Z"); });
+
+    await act(async () => { await result.current.manualPush(); });
+    expect(mocked.saveToGistWithRetry).not.toHaveBeenCalled();
+    expect(useUIStore.getState().gistConflict?.reason).toBe("restored");
+  });
+
+  it("G100 낡은 모달 — 원격이 그사이 또 바뀌었으면 '원격 적용'은 적용하지 않고 모달을 최신 원격으로 바꿔 다시 묻는다 (다시 읽기 실패면 기존대로 적용)", async () => {
+    connectToGist();
+    const successSpy = vi.spyOn(toast, "success");
+    try {
+      const onApply = vi.fn();
+      const { result } = renderHook(() => useGistSync(makeData(1), onApply));
+      await act(async () => { await flush(); });
+      const conflict = {
+        remoteDataJson: REMOTE,
+        remoteUpdatedAt: VERSION.committedAt,
+        pendingLocalDataJson: toUserDataJson(makeData(1)),
+        reason: "never-synced" as const,
+      };
+
+      useUIStore.getState().setGistConflict(conflict);
+      const NEWER = JSON.stringify(makeData(9));
+      mocked.loadFromGist.mockResolvedValue({ dataJson: NEWER, updatedAt: "2026-10-02T03:00:00Z" });
+      await act(async () => { await result.current.resolveGistConflict("apply-remote"); });
+      expect(onApply).not.toHaveBeenCalled();
+      // 닫고 '다시 확인'을 약속하지 않는다 — 자동 동기화 OFF면 아무것도 다시 확인하지 않는다. 사유(reason)는 유지
+      expect(useUIStore.getState().gistConflict).toEqual({
+        ...conflict,
+        remoteDataJson: NEWER,
+        remoteUpdatedAt: "2026-10-02T03:00:00Z",
+      });
+      expect(toastMessages()).toContain("Gist가 그사이 또 바뀌어 최신본으로 다시 보여 드려요. 다시 선택하세요.");
+      expect(successSpy).not.toHaveBeenCalled();
+
+      // 바뀐 모달에서 다시 고르면 그 최신본을 적용
+      await act(async () => { await result.current.resolveGistConflict("apply-remote"); });
+      expect(onApply).toHaveBeenCalledWith(NEWER, VERSION.committedAt);
+      expect(useUIStore.getState().gistConflict).toBeNull();
+      onApply.mockClear();
+      successSpy.mockClear();
+
+      useUIStore.getState().setGistConflict(conflict);
+      mocked.loadFromGist.mockRejectedValue(new Error("네트워크 연결을 확인해주세요."));
+      await act(async () => { await result.current.resolveGistConflict("apply-remote"); });
+      expect(onApply).toHaveBeenCalledWith(REMOTE, VERSION.committedAt);
+      expect(useUIStore.getState().gistConflict).toBeNull();
+      expect(successSpy).toHaveBeenCalledWith("Gist 최신본을 적용했어요");
+    } finally {
+      successSpy.mockRestore();
+    }
+  });
+
+  it("G100 낡은 모달 — 이 기기 데이터가 그사이 바뀌었으면(다른 탭) '덮어쓰기'는 모달을 연 시점의 데이터를 올리지 않고 최신 로컬로 다시 묻는다", async () => {
+    connectToGist();
+    const { result, rerender } = renderHook(({ d }: { d: AppData }) => useGistSync(d, vi.fn()), {
+      initialProps: { d: makeData(1) },
+    });
+    await act(async () => { await flush(); });
+    const conflict = {
+      remoteDataJson: REMOTE,
+      remoteUpdatedAt: VERSION.committedAt,
+      pendingLocalDataJson: toUserDataJson(makeData(1)),
+      reason: "restored" as const,
+    };
+    useUIStore.getState().setGistConflict(conflict);
+    rerender({ d: makeData(2) }); // 다른 탭의 편집이 탭 동기화로 들어옴
+
+    await act(async () => { await result.current.resolveGistConflict("force-push-local"); });
+    expect(mocked.saveToGist).not.toHaveBeenCalled();
+    expect(useUIStore.getState().gistConflict).toEqual({ ...conflict, pendingLocalDataJson: toUserDataJson(makeData(2)) });
+    expect(toastMessages()).toContain("이 기기 데이터가 그사이 바뀌어 최신 상태로 다시 보여 드려요. 다시 선택하세요.");
+
+    // 바뀐 모달에서 다시 고르면 지금 데이터를 올린다
+    await act(async () => { await result.current.resolveGistConflict("force-push-local"); });
+    expect(mocked.saveToGist).toHaveBeenCalledTimes(1);
+    expect(mocked.saveToGist.mock.calls[0][0]).toBe(toUserDataJson(makeData(2)));
+    expect(useUIStore.getState().gistConflict).toBeNull();
+  });
+
+  it("R0 낡은 모달 — 원격이 그사이 또 바뀌었으면 '덮어쓰기'는 저장하지 않고 모달을 최신 원격으로 바꿔 다시 묻는다 (다시 읽기 실패면 기존대로 저장)", async () => {
+    connectToGist();
+    const { result } = renderHook(() => useGistSync(makeData(1), vi.fn()));
+    await act(async () => { await flush(); });
+    const conflict = {
+      remoteDataJson: REMOTE,
+      remoteUpdatedAt: VERSION.committedAt,
+      pendingLocalDataJson: toUserDataJson(makeData(1)),
+      reason: "restored" as const,
+    };
+    useUIStore.getState().setGistConflict(conflict);
+    // 모달을 연 뒤 다른 기기가 또 저장함
+    const NEWER = JSON.stringify(makeData(9));
+    mocked.loadFromGist.mockResolvedValue({ dataJson: NEWER, updatedAt: "2026-10-02T03:00:00Z" });
+
+    await act(async () => { await result.current.resolveGistConflict("force-push-local"); });
+    expect(mocked.saveToGist).not.toHaveBeenCalled();
+    expect(useUIStore.getState().gistConflict).toEqual({
+      ...conflict,
+      remoteDataJson: NEWER,
+      remoteUpdatedAt: "2026-10-02T03:00:00Z",
+    });
+    expect(toastMessages()).toContain("Gist가 그사이 또 바뀌어 최신본으로 다시 보여 드려요. 다시 선택하세요.");
+
+    // 바뀐 모달(사용자가 본 원격 = 지금 원격)에서 다시 고르면 저장
+    await act(async () => { await result.current.resolveGistConflict("force-push-local"); });
+    expect(mocked.saveToGist).toHaveBeenCalledTimes(1);
+    expect(mocked.saveToGist.mock.calls[0][0]).toBe(toUserDataJson(makeData(1)));
+    expect(useUIStore.getState().gistConflict).toBeNull();
+
+    // 다시 읽기가 실패하면 모달의 원격본 기준으로 기존대로 저장
+    useUIStore.getState().setGistConflict(conflict);
+    mocked.loadFromGist.mockRejectedValue(new Error("네트워크 연결을 확인해주세요."));
+    await act(async () => { await result.current.resolveGistConflict("force-push-local"); });
+    expect(mocked.saveToGist).toHaveBeenCalledTimes(2);
+    expect(useUIStore.getState().gistConflict).toBeNull();
+  });
+
+  it("Q0 모달을 연 뒤 원격이 더 새 앱 버전으로 다시 쓰였으면(GistSchemaTooNewError) 덮어쓰기·원격 적용 모두 진행하지 않고 모달을 유지한다", async () => {
+    connectToGist();
+    const onApply = vi.fn();
+    const { result } = renderHook(() => useGistSync(makeData(1), onApply));
+    await act(async () => { await flush(); });
+    const conflict = {
+      remoteDataJson: REMOTE,
+      remoteUpdatedAt: VERSION.committedAt,
+      pendingLocalDataJson: toUserDataJson(makeData(1)),
+      reason: "restored" as const,
+    };
+    useUIStore.getState().setGistConflict(conflict);
+    mocked.loadFromGist.mockRejectedValue(new gistSync.GistSchemaTooNewError(99));
+    mocked.getGistVersions.mockClear();
+    mocked.setGistLastPullAt.mockClear();
+    vi.mocked(saveSafetySnapshot).mockClear();
+
+    // 덮어쓰기 — 구버전 payload로 새 스키마 원격을 덮지 않고, 폐기될 원격(모달의 낡은 본) 스냅샷도 만들지 않는다
+    await act(async () => { await result.current.resolveGistConflict("force-push-local"); });
+    expect(mocked.saveToGist).not.toHaveBeenCalled();
+    expect(saveSafetySnapshot).not.toHaveBeenCalled();
+    expect(useUIStore.getState().gistConflict).toEqual(conflict);
+
+    // 원격 적용 — 모달의 낡은 원격을 적용하지 않고 기준 시각(known·lastPullAt)도 올리지 않는다
+    await act(async () => { await result.current.resolveGistConflict("apply-remote"); });
+    expect(onApply).not.toHaveBeenCalled();
+    expect(mocked.getGistVersions).not.toHaveBeenCalled();
+    expect(mocked.setGistLastPullAt).not.toHaveBeenCalled();
+    expect(result.current.lastPullAt).toBeNull();
+    expect(useUIStore.getState().gistConflict).toEqual(conflict);
+
+    // 취소는 그대로 닫힌다
+    await act(async () => { await result.current.resolveGistConflict("cancel"); });
+    expect(useUIStore.getState().gistConflict).toBeNull();
+  });
+
+  it("K13 자동 동기화 OFF·불러온 적 없음(known·lastPullAt 빈 값): [저장]은 원격이 우리 마지막 push와 다르면 덮지 않고 충돌 모달", async () => {
+    connectToGist();
+    window.localStorage.setItem("fw-gist-last-push-hash", hashGistPayload(toUserDataJson(makeData(0))));
+    const { result } = renderHook(() => useGistSync(makeData(1), vi.fn()));
+    await act(async () => { await flush(); });
+
+    // 원격 = 다른 기기가 올린 REMOTE(makeData(5)) — 마지막 push(makeData(0))와 다름
+    await act(async () => { await result.current.manualPush(); });
+    expect(mocked.saveToGistWithRetry).not.toHaveBeenCalled();
+    const conflict = useUIStore.getState().gistConflict;
+    expect(conflict?.remoteDataJson).toBe(REMOTE);
+    expect(conflict?.pendingLocalDataJson).toBe(toUserDataJson(makeData(1)));
+    expect(conflict?.reason).toBeUndefined();
+  });
+
+  it("K13 같은 상황에서 원격이 우리 마지막 push와 같으면 그대로 저장", async () => {
+    connectToGist();
+    window.localStorage.setItem("fw-gist-last-push-hash", hashGistPayload(toUserDataJson(makeData(0))));
+    mocked.loadFromGist.mockResolvedValue({ dataJson: toUserDataJson(makeData(0)), updatedAt: VERSION.committedAt });
+    const { result } = renderHook(() => useGistSync(makeData(1), vi.fn()));
+    await act(async () => { await flush(); });
+
+    await act(async () => { await result.current.manualPush(); });
+    expect(useUIStore.getState().gistConflict).toBeNull();
+    expect(mocked.saveToGistWithRetry).toHaveBeenCalledTimes(1);
+    expect(mocked.saveToGistWithRetry.mock.calls[0][0]).toBe(toUserDataJson(makeData(1)));
+  });
+
+  it("K13 [저장]의 원격 확인이 실패하면 저장하지 않고 조용히 끝나지도 않는다(실패 기록·토스트)", async () => {
+    connectToGist();
+    window.localStorage.setItem("fw-gist-last-push-hash", hashGistPayload(toUserDataJson(makeData(0))));
+    mocked.loadFromGist.mockRejectedValue(new Error("네트워크 연결을 확인해주세요."));
+    const toastError = vi.spyOn(toast, "error");
+    try {
+      const { result } = renderHook(() => useGistSync(makeData(1), vi.fn()));
+      await act(async () => { await flush(); });
+      await act(async () => { await result.current.manualPush(); });
+      expect(mocked.saveToGistWithRetry).not.toHaveBeenCalled();
+      expect(toastError).toHaveBeenCalledWith("Gist 저장 실패: 네트워크 연결을 확인해주세요.", { id: "gist-auto-save-error" });
+      expect(result.current.syncHealth.consecutiveFailures).toBe(1);
+    } finally {
+      toastError.mockRestore();
+    }
+  });
+
+  it("R4 같은 상황(known·lastPullAt 빈 값)에서 버전 조회가 실패해도 [저장]은 내용을 비교한다 — 원격이 우리 마지막 push와 다르면 충돌 모달, 같으면 저장", async () => {
+    connectToGist();
+    window.localStorage.setItem("fw-gist-last-push-hash", hashGistPayload(toUserDataJson(makeData(0))));
+    mocked.getGistVersions.mockRejectedValue(new Error("요청 시간 초과 (15s)"));
+    const { result } = renderHook(() => useGistSync(makeData(1), vi.fn()));
+    await act(async () => { await flush(); });
+
+    // 원격 = 다른 기기가 올린 REMOTE — 버전 조회 실패로 시각 비교를 통과시키지 않는다
+    await act(async () => { await result.current.manualPush(); });
+    expect(mocked.loadFromGist).toHaveBeenCalledTimes(1);
+    expect(mocked.saveToGistWithRetry).not.toHaveBeenCalled();
+    expect(useUIStore.getState().gistConflict?.remoteDataJson).toBe(REMOTE);
+
+    // 원격이 우리 마지막 push면 그대로 저장
+    useUIStore.getState().setGistConflict(null);
+    mocked.loadFromGist.mockResolvedValue({ dataJson: toUserDataJson(makeData(0)), updatedAt: VERSION.committedAt });
+    await act(async () => { await result.current.manualPush(); });
+    expect(useUIStore.getState().gistConflict).toBeNull();
+    expect(mocked.saveToGistWithRetry).toHaveBeenCalledTimes(1);
+    expect(mocked.saveToGistWithRetry.mock.calls[0][0]).toBe(toUserDataJson(makeData(1)));
+  });
+
+  it("R4 자동 저장도 같다 — 버전 조회 실패 + 반영한 원격 기준 없음이면 내용 비교 후 충돌 모달", async () => {
+    connectToGist();
+    mocked.getGistAutoSync.mockReturnValue(true);
+    window.localStorage.setItem("fw-gist-last-push-hash", hashGistPayload(toUserDataJson(makeData(0))));
+    mocked.getGistVersions.mockRejectedValue(new Error("요청 시간 초과 (15s)"));
+    renderHook(() => useGistSync(makeData(1), vi.fn()));
+    await act(async () => { await flush(); }); // 부팅 확인 실패 → 디바운스 후 자동 저장
+    expect(mocked.loadFromGist).toHaveBeenCalledTimes(1);
+    expect(mocked.saveToGistWithRetry).not.toHaveBeenCalled();
+    expect(useUIStore.getState().gistConflict?.remoteDataJson).toBe(REMOTE);
+  });
+
+  it("R4 자동 저장도 버전 조회와 원격 읽기가 모두 실패하면 저장하지 않고 첫 실패부터 토스트로 알린다 (실패 집계는 조회 1회만)", async () => {
+    connectToGist();
+    mocked.getGistAutoSync.mockReturnValue(true);
+    window.localStorage.setItem("fw-gist-last-push-hash", hashGistPayload(toUserDataJson(makeData(0))));
+    mocked.getGistVersions.mockRejectedValue(new Error("요청 시간 초과 (15s)"));
+    mocked.loadFromGist.mockRejectedValue(new Error("네트워크 연결을 확인해주세요."));
+    const toastError = vi.spyOn(toast, "error");
+    try {
+      const { result } = renderHook(() => useGistSync(makeData(1), vi.fn()));
+      await act(async () => { await flush(); }); // 부팅 확인 실패 → 디바운스 후 자동 저장
+      expect(mocked.saveToGistWithRetry).not.toHaveBeenCalled();
+      expect(toastError).toHaveBeenCalledWith("Gist 저장 실패: 네트워크 연결을 확인해주세요.", { id: "gist-auto-save-error" });
+      expect(useUIStore.getState().gistConflict).toBeNull();
+      // 부팅 조회 실패 1회 + 자동 저장의 조회 실패 1회 — 원격 읽기 실패를 따로 더 세지 않는다
+      expect(result.current.syncHealth.consecutiveFailures).toBe(2);
+    } finally {
+      toastError.mockRestore();
+    }
+  });
+
+  it("R4 버전 조회와 원격 읽기가 모두 실패하면 [저장]은 저장하지 않고 실패를 알린다", async () => {
+    connectToGist();
+    window.localStorage.setItem("fw-gist-last-push-hash", hashGistPayload(toUserDataJson(makeData(0))));
+    mocked.getGistVersions.mockRejectedValue(new Error("요청 시간 초과 (15s)"));
+    mocked.loadFromGist.mockRejectedValue(new Error("네트워크 연결을 확인해주세요."));
+    const toastError = vi.spyOn(toast, "error");
+    try {
+      const { result } = renderHook(() => useGistSync(makeData(1), vi.fn()));
+      await act(async () => { await flush(); });
+      await act(async () => { await result.current.manualPush(); });
+      expect(mocked.saveToGistWithRetry).not.toHaveBeenCalled();
+      expect(toastError).toHaveBeenCalledWith("Gist 저장 실패: 네트워크 연결을 확인해주세요.", { id: "gist-auto-save-error" });
+      expect(useUIStore.getState().gistConflict).toBeNull();
+    } finally {
+      toastError.mockRestore();
+    }
+  });
+
+  it("K14 이 세션에 정상 저장한 뒤 과거 버전을 복원하고 [저장]하면 — 원격이 그 저장본이어도 restored 충돌로 묻는다", async () => {
+    connectToGist();
+    // 원격 REMOTE는 우리 마지막 push — 첫 [저장]은 가짜 충돌로 그대로 저장
+    window.localStorage.setItem("fw-gist-last-push-hash", hashGistPayload(REMOTE));
+    const { result, rerender } = renderHook(({ d }: { d: AppData }) => useGistSync(d, vi.fn()), {
+      initialProps: { d: makeData(1) },
+    });
+    await act(async () => { await flush(); });
+    await act(async () => { await result.current.manualPush(); });
+    expect(mocked.saveToGistWithRetry).toHaveBeenCalledTimes(1);
+    mocked.saveToGistWithRetry.mockClear();
+
+    // 원격 = 방금 올린 makeData(1). 과거 버전 V 복원 → 편집 → [저장]
+    mocked.getGistVersions.mockResolvedValue([{ sha: "v2", committedAt: "2026-10-02T02:00:00Z", url: "u" }]);
+    mocked.loadFromGist.mockResolvedValue({ dataJson: toUserDataJson(makeData(1)), updatedAt: "2026-10-02T02:00:00Z" });
+    act(() => { result.current.syncStateAfterRestore(toUserDataJson(makeData(3)), "2026-09-01T00:00:00Z"); });
+    rerender({ d: makeData(4) });
+    await act(async () => { await result.current.manualPush(); });
+    expect(mocked.saveToGistWithRetry).not.toHaveBeenCalled();
+    expect(useUIStore.getState().gistConflict?.reason).toBe("restored");
+    expect(useUIStore.getState().gistConflict?.remoteDataJson).toBe(toUserDataJson(makeData(1)));
+  });
+
+  it("K5 덮어쓰기 PATCH가 시간 초과로 실패 처리됐지만 커밋된 경우 — 다음 [저장]이 자기 커밋을 외부 변경으로 보지 않는다", async () => {
+    connectToGist();
+    window.localStorage.setItem("fw-gist-last-push-hash", hashGistPayload(toUserDataJson(makeData(0))));
+    const { result } = renderHook(() => useGistSync(makeData(1), vi.fn()));
+    await act(async () => { await flush(); });
+    useUIStore.getState().setGistConflict({
+      remoteDataJson: REMOTE,
+      remoteUpdatedAt: VERSION.committedAt,
+      pendingLocalDataJson: toUserDataJson(makeData(1)),
+    });
+    mocked.saveToGist.mockRejectedValueOnce(new Error("요청 시간 초과 (15s)"));
+    await act(async () => { await result.current.resolveGistConflict("force-push-local"); });
+    expect(mocked.saveToGist).toHaveBeenCalledTimes(1);
+    expect(window.localStorage.getItem("fw-gist-last-push-hash")).toBe(hashGistPayload(toUserDataJson(makeData(0))));
+
+    // 실제로는 서버가 덮어쓰기를 커밋함
+    mocked.getGistVersions.mockResolvedValue([{ sha: "v2", committedAt: "2026-10-02T03:00:00Z", url: "u" }]);
+    mocked.loadFromGist.mockResolvedValue({ dataJson: toUserDataJson(makeData(1)), updatedAt: "2026-10-02T03:00:00Z" });
+    await act(async () => { await result.current.manualPush(); });
+    expect(useUIStore.getState().gistConflict).toBeNull();
+    expect(mocked.saveToGistWithRetry).toHaveBeenCalledTimes(1);
+  });
+
+  it("K1 해결 진행 중(원격 다시 읽기 대기) 다른 선택이 들어오면 무시하고, 끝나면 다시 받는다", async () => {
+    connectToGist();
+    const onApply = vi.fn();
+    const { result } = renderHook(() => useGistSync(makeData(1), onApply));
+    await act(async () => { await flush(); });
+    const conflict = { remoteDataJson: REMOTE, remoteUpdatedAt: VERSION.committedAt, pendingLocalDataJson: toUserDataJson(makeData(1)) };
+    useUIStore.getState().setGistConflict(conflict);
+
+    let releaseLoad!: () => void;
+    mocked.loadFromGist.mockImplementationOnce(
+      () => new Promise((resolve) => { releaseLoad = () => resolve({ dataJson: REMOTE, updatedAt: VERSION.committedAt }); })
+    );
+    let first!: Promise<void>;
+    act(() => { first = result.current.resolveGistConflict("apply-remote"); });
+    await act(async () => { await result.current.resolveGistConflict("cancel"); });
+    await act(async () => { await result.current.resolveGistConflict("force-push-local"); });
+    expect(useUIStore.getState().gistConflict).toBe(conflict); // 취소가 모달을 닫지 않음
+    expect(toastMessages()).not.toContain("Gist에는 저장하지 않았어요");
+    expect(mocked.saveToGist).not.toHaveBeenCalled();
+
+    await act(async () => { releaseLoad(); await first; });
+    expect(onApply).toHaveBeenCalledTimes(1);
+    expect(useUIStore.getState().gistConflict).toBeNull();
+
+    // 가드가 풀려 다음 충돌은 정상 처리
+    useUIStore.getState().setGistConflict(conflict);
+    await act(async () => { await result.current.resolveGistConflict("cancel"); });
+    expect(useUIStore.getState().gistConflict).toBeNull();
+  });
+
+  it("K3 기기 연결을 취소·실패한 뒤(표식 상태) 자동 동기화를 켜면 부팅 불러오기 충돌은 never-synced 사유로 열린다", async () => {
+    connectToGist();
+    window.localStorage.setItem("fw-gist-last-push-hash", `unsynced:${P.gistId}`);
+    mocked.getGistAutoSync.mockReturnValue(true);
+    const onApply = vi.fn();
+    renderHook(() => useGistSync(makeData(1), onApply));
+    await act(async () => { await flush(); });
+    expect(onApply).not.toHaveBeenCalled();
+    const conflict = useUIStore.getState().gistConflict;
+    expect(conflict?.reason).toBe("never-synced");
+    expect(conflict?.remoteDataJson).toBe(REMOTE);
+  });
+
+  it("G111 덮어쓰기·취소도 결과를 토스트로 알린다", async () => {
+    connectToGist();
+    const successSpy = vi.spyOn(toast, "success");
+    const dismissSpy = vi.spyOn(toast, "dismiss");
+    try {
+      const { result } = renderHook(() => useGistSync(makeData(1), vi.fn()));
+      await act(async () => { await flush(); });
+      const conflict = { remoteDataJson: REMOTE, remoteUpdatedAt: VERSION.committedAt, pendingLocalDataJson: toUserDataJson(makeData(1)) };
+
+      useUIStore.getState().setGistConflict(conflict);
+      await act(async () => { await result.current.resolveGistConflict("force-push-local"); });
+      expect(mocked.saveToGist).toHaveBeenCalledTimes(1);
+      expect(dismissSpy).toHaveBeenCalledWith("gist-auto-save-error");
+      expect(successSpy).toHaveBeenCalledWith("Gist에 저장했어요");
+
+      useUIStore.getState().setGistConflict(conflict);
+      await act(async () => { await result.current.resolveGistConflict("cancel"); });
+      expect(useUIStore.getState().gistConflict).toBeNull();
+      expect(toastMessages()).toContain("Gist에는 저장하지 않았어요");
+    } finally {
+      successSpy.mockRestore();
+      dismissSpy.mockRestore();
+    }
   });
 });

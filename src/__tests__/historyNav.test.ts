@@ -11,6 +11,8 @@ function makeFakeHistory() {
   let idx = 0;
   let ctrl: HistoryNavController | null = null;
   const pendingPops: unknown[] = [];
+  /** go()로 요청된 이동 폭 기록 — 다중 닫힘이 한 번의 traversal로 나가는지 확인용 */
+  const goCalls: number[] = [];
   const hist: HistoryLike = {
     pushState(state) {
       states.splice(idx + 1);
@@ -25,9 +27,18 @@ function makeFakeHistory() {
       idx -= 1;
       pendingPops.push(states[idx]);
     },
+    go(delta) {
+      goCalls.push(delta);
+      // 실제 브라우저처럼 범위 밖이면 무시, 이동하면 popstate 1회(도착 항목의 state)
+      const target = idx + delta;
+      if (delta === 0 || target < 0 || target >= states.length) return;
+      idx = target;
+      pendingPops.push(states[idx]);
+    },
   };
   return {
     hist,
+    goCalls,
     bind(c: HistoryNavController) {
       ctrl = c;
     },
@@ -59,11 +70,15 @@ function setup(initialTab: TabId = "dashboard") {
   const fake = makeFakeHistory();
   let tab: TabId = initialTab;
   let modalDepth = 0;
-  const closeTopModal = vi.fn(() => {
+  /** 합성 ESC에 대한 모달 반응: close=정상 닫힘, refuse=busy라 preventDefault로 거부,
+   *  refuse-but-close=포커스 입력(Stepper)이 ESC를 preventDefault했지만 모달은 그대로 닫힘(오탐 "refused") */
+  let escMode: "close" | "refuse" | "refuse-but-close" = "close";
+  const closeTopModal = vi.fn((): boolean | "refused" => {
     if (modalDepth === 0) return false;
+    if (escMode === "refuse") return "refused";
     // 실제 앱: 합성 ESC → 모달 onClose → 언마운트 → popModal 알림(비동기). 여기선 flushModalClose()로 흉내
     pendingModalCloses += 1;
-    return true;
+    return escMode === "refuse-but-close" ? "refused" : true;
   });
   let pendingModalCloses = 0;
   const setTab = vi.fn((t: TabId) => {
@@ -91,6 +106,9 @@ function setup(initialTab: TabId = "dashboard") {
     get modalDepth() {
       return modalDepth;
     },
+    setEscMode(m: typeof escMode) {
+      escMode = m;
+    },
     /** 사용자가 탭 클릭 */
     userSetTab(t: TabId) {
       setTab(t);
@@ -103,6 +121,11 @@ function setup(initialTab: TabId = "dashboard") {
     /** 사용자가 X/ESC로 모달 닫음 */
     userCloseModal() {
       modalDepth -= 1;
+      ctrl.onModalDepthChange(modalDepth);
+    },
+    /** 한 렌더에서 여러 모달이 함께 열림/닫힘 — modalStack.notify가 microtask로 합쳐 알림 1회 */
+    setModalDepthBatched(depth: number) {
+      modalDepth = depth;
       ctrl.onModalDepthChange(modalDepth);
     },
     /** 뒤로가기로 닫힌 모달의 언마운트 알림 도착 */
@@ -251,20 +274,198 @@ describe("createHistoryNav — 순수 컨트롤러", () => {
     expect(s.ctrl.getEntries().length).toBe(1);
   });
 
-  it("모달이 ESC를 무시해 닫히지 않으면 기대 카운터가 타임아웃으로 풀린다", () => {
+  it("모달이 ESC를 무시해 닫히지 않으면 타임아웃 후 모달 항목을 되살려 다음 뒤로가기가 다시 그 모달을 닫으려 한다 (R3/R6)", () => {
+    const s = setup("dashboard");
+    s.userSetTab("ledger");
+    s.openModal(); // busy 중인 충돌 모달
+    s.fake.userBack();
+    s.fake.flush();
+    expect(s.closeTopModal).toHaveBeenCalledTimes(1);
+    expect(s.fake.index).toBe(1);
+    // 닫힘 알림이 오지 않음(합성 ESC 무시 — 깊이 1 유지)
+    vi.advanceTimersByTime(1100);
+    expect(s.modalDepth).toBe(1);
+    expect(s.ctrl.getEntries().map((e) => (e.kind === "tab" ? e.tab : "modal"))).toEqual(["ledger", "modal"]);
+    expect(s.fake.index).toBe(2);
+    expect(s.fake.state).toEqual({ fwIdx: 1 });
+    // 다음 뒤로가기는 탭을 바꾸지 않고 다시 모달 닫기를 시도한다
+    s.fake.userBack();
+    s.fake.flush();
+    expect(s.closeTopModal).toHaveBeenCalledTimes(2);
+    expect(s.tab).toBe("ledger");
+  });
+
+  it("ESC를 무시해 되살린 모달 항목은 이후 모달이 스스로 닫힐 때 소비된다 — 유령 항목 없음 (R3/R6)", () => {
     const s = setup("dashboard");
     s.userSetTab("ledger");
     s.openModal();
     s.fake.userBack();
     s.fake.flush();
-    expect(s.closeTopModal).toHaveBeenCalledTimes(1);
-    // 닫힘 알림이 오지 않음 — 1초 후 리셋
-    vi.advanceTimersByTime(1100);
-    // 이후 사용자가 X로 닫으면 self-close로 정상 처리(항목이 없으니 back도 없음)
-    const idxBefore = s.fake.index;
+    vi.advanceTimersByTime(1100); // 항목 되살림
+    expect(s.fake.index).toBe(2);
+    // busy가 끝나 모달이 [해결]/X로 닫힘 → self-close가 되살린 항목을 back()으로 소비
     s.userCloseModal();
     s.fake.flush();
-    expect(s.fake.index).toBe(idxBefore);
+    expect(s.fake.index).toBe(1);
+    expect(s.ctrl.getEntries().map((e) => (e.kind === "tab" ? e.tab : "modal"))).toEqual(["ledger"]);
+    // 다음 뒤로가기는 헛돌지 않고 곧장 이전 탭
+    s.fake.userBack();
+    s.fake.flush();
+    expect(s.tab).toBe("dashboard");
+    expect(s.closeTopModal).toHaveBeenCalledTimes(1);
+  });
+
+  it("모달이 ESC를 즉시 거부(\"refused\")하면 타이머 없이 그 자리에서 항목을 되살려 탭이 바뀌지 않는다 (Q4)", () => {
+    const s = setup("dashboard");
+    s.userSetTab("ledger");
+    s.openModal(); // busy 중인 충돌 모달
+    s.setEscMode("refuse");
+    s.fake.userBack();
+    s.fake.flush();
+    expect(s.closeTopModal).toHaveBeenCalledTimes(1);
+    // 타이머를 돌리지 않아도 이미 모달 항목이 되살아나 있다
+    expect(s.ctrl.getEntries().map((e) => (e.kind === "tab" ? e.tab : "modal"))).toEqual(["ledger", "modal"]);
+    expect(s.fake.index).toBe(2);
+    expect(s.fake.state).toEqual({ fwIdx: 1 });
+    expect(s.tab).toBe("ledger");
+    // 1초 안에 다시 뒤로가기 → 모달을 건너뛰지 않고 다시 닫기를 시도, 탭 유지
+    s.fake.userBack();
+    s.fake.flush();
+    expect(s.closeTopModal).toHaveBeenCalledTimes(2);
+    expect(s.tab).toBe("ledger");
+    expect(s.fake.index).toBe(2);
+    // 거부는 기대 카운터를 올리지 않는다 — 타이머가 와도 중복으로 되살리지 않음
+    vi.advanceTimersByTime(1100);
+    expect(s.fake.index).toBe(2);
+    expect(s.ctrl.getEntries().map((e) => (e.kind === "tab" ? e.tab : "modal"))).toEqual(["ledger", "modal"]);
+    // busy가 끝나 모달이 스스로 닫히면 되살린 항목을 소비 → 다음 뒤로가기는 곧장 이전 탭
+    s.userCloseModal();
+    s.fake.flush();
+    expect(s.fake.index).toBe(1);
+    s.fake.userBack();
+    s.fake.flush();
+    expect(s.tab).toBe("dashboard");
+  });
+
+  it("첫 화면 모달(탭 항목 없음)이 거부해도 항목을 되살려 두 번째 뒤로가기가 base로 빠져나가지 않는다 (Q4)", () => {
+    const s = setup("dashboard");
+    s.openModal(); // 부팅 직후 충돌 모달 — entries=[modal]
+    s.setEscMode("refuse");
+    s.fake.userBack();
+    s.fake.flush();
+    expect(s.fake.index).toBe(1);
+    expect(s.fake.state).toEqual({ fwIdx: 0 });
+    s.fake.userBack();
+    s.fake.flush();
+    expect(s.closeTopModal).toHaveBeenCalledTimes(2);
+    expect(s.fake.index).toBe(1); // base(fwIdx -1)에 머물지 않음 — 앱 종료 경로 아님
+    expect(s.setTab).not.toHaveBeenCalled();
+  });
+
+  it("\"refused\" 오탐(입력 필드가 ESC를 preventDefault, 모달은 실제로 닫힘)은 self-close가 되살린 항목을 소비해 회복한다 (Q4)", () => {
+    const s = setup("dashboard");
+    s.userSetTab("ledger");
+    s.openModal(); // 운동 세트 편집 모달 — Stepper 입력에 포커스
+    s.setEscMode("refuse-but-close");
+    s.fake.userBack();
+    s.fake.flush();
+    expect(s.fake.index).toBe(2); // 일단 되살림
+    s.flushModalClose(); // 모달은 실제로 닫힘 → 기대 카운터 0이라 self-close로 처리
+    s.fake.flush();
+    expect(s.modalDepth).toBe(0);
+    expect(s.fake.index).toBe(1);
+    expect(s.ctrl.getEntries().map((e) => (e.kind === "tab" ? e.tab : "modal"))).toEqual(["ledger"]);
+    vi.advanceTimersByTime(1100);
+    expect(s.fake.index).toBe(1); // 타이머가 유령 항목을 만들지 않음
+    s.fake.userBack();
+    s.fake.flush();
+    expect(s.tab).toBe("dashboard");
+  });
+
+  it("뒤로가기로 모달이 지연 시간 안에 정상 닫히면 타임아웃 후에도 항목을 되살리지 않는다", () => {
+    const s = setup("dashboard");
+    s.userSetTab("ledger");
+    s.openModal();
+    s.fake.userBack();
+    s.fake.flush();
+    s.flushModalClose(); // 1초 안에 닫힘 알림 도착
+    vi.advanceTimersByTime(1100);
+    expect(s.fake.index).toBe(1);
+    expect(s.fake.length).toBe(3); // 추가 pushState 없음(forward 항목만 남음)
+    expect(s.ctrl.getEntries().map((e) => (e.kind === "tab" ? e.tab : "modal"))).toEqual(["ledger"]);
+  });
+
+  it("dispose 후 타임아웃이 와도 모달 항목을 되살리지 않는다", () => {
+    const s = setup("dashboard");
+    s.userSetTab("ledger");
+    s.openModal();
+    s.fake.userBack();
+    s.fake.flush();
+    s.ctrl.dispose();
+    vi.advanceTimersByTime(1100);
+    expect(s.fake.length).toBe(3);
+    expect(s.fake.index).toBe(1);
+  });
+
+  it("두 모달이 한 렌더에서 함께 닫히면(2→0) 두 항목을 소비하고 go(-2) 한 번 — 유령 항목 없음 (K10)", () => {
+    const s = setup("dashboard");
+    s.userSetTab("ledger");
+    s.openModal(); // GistVersionModal
+    s.openModal(); // 그 위 ApplyConfirmModal
+    expect(s.fake.index).toBe(3);
+    s.setModalDepthBatched(0); // [적용] — onClose + setPendingApply(null) 한 커밋
+    expect(s.fake.goCalls).toEqual([-2]);
+    expect(s.ctrl.getEntries().some((e) => e.kind === "modal" && !e.stale)).toBe(false);
+    s.fake.flush();
+    expect(s.fake.index).toBe(1);
+    expect(s.ctrl.getEntries().map((e) => (e.kind === "tab" ? e.tab : "modal"))).toEqual(["ledger"]);
+    expect(s.closeTopModal).not.toHaveBeenCalled();
+    // 다음 뒤로가기는 헛돌지 않고 곧장 이전 탭
+    s.fake.userBack();
+    s.fake.flush();
+    expect(s.tab).toBe("dashboard");
+  });
+
+  it("두 모달이 한 렌더에서 함께 열리면(0→2) 항목 두 개를 push한다", () => {
+    const s = setup("dashboard");
+    s.userSetTab("ledger");
+    s.setModalDepthBatched(2);
+    expect(s.fake.length).toBe(4);
+    expect(s.ctrl.getEntries().map((e) => (e.kind === "tab" ? e.tab : "modal"))).toEqual(["ledger", "modal", "modal"]);
+    // 이후 한 번에 닫혀도 짝이 맞는다
+    s.setModalDepthBatched(0);
+    s.fake.flush();
+    expect(s.fake.index).toBe(1);
+    expect(s.ctrl.getEntries().length).toBe(1);
+  });
+
+  it("단일 X/ESC 닫힘은 기존처럼 back() 한 번 — go는 쓰지 않는다", () => {
+    const s = setup("dashboard");
+    s.userSetTab("ledger");
+    s.openModal();
+    s.openModal();
+    s.userCloseModal(); // 2→1
+    expect(s.fake.goCalls).toEqual([]);
+    s.fake.flush();
+    expect(s.fake.index).toBe(2);
+    expect(s.ctrl.getEntries().map((e) => (e.kind === "tab" ? e.tab : "modal"))).toEqual(["ledger", "modal"]);
+  });
+
+  it("뒤로가기로 닫힌 모달과 자체 닫힘이 한 알림에 섞이면 기대 카운터만큼만 상쇄하고 나머지를 소비한다", () => {
+    const s = setup("dashboard");
+    s.userSetTab("ledger");
+    s.openModal();
+    s.openModal();
+    s.fake.userBack(); // 최상위 모달 항목 제거 + closeTopModal(합성 ESC)
+    s.fake.flush();
+    expect(s.closeTopModal).toHaveBeenCalledTimes(1);
+    expect(s.fake.index).toBe(2);
+    // 위 모달이 닫히며 아래 모달도 같은 커밋에서 닫힘 → 알림 1회(2→0)
+    s.setModalDepthBatched(0);
+    expect(s.fake.goCalls).toEqual([]); // 남은 1개는 back()으로
+    s.fake.flush();
+    expect(s.fake.index).toBe(1);
+    expect(s.ctrl.getEntries().map((e) => (e.kind === "tab" ? e.tab : "modal"))).toEqual(["ledger"]);
   });
 
   it("dispose 후에는 아무 동작도 하지 않는다", () => {

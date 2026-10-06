@@ -89,6 +89,20 @@ describe("toUserDataJson", () => {
     expect(window.localStorage.getItem(STORAGE_KEYS.DATA)).toBe(toUserDataJson(data));
   });
 
+  it("saveDataSerialized quota 초과 — 한국어 문구로 던지되 원래 DOMException을 cause로 남긴다 (useBackup 정리·재시도 계약)", () => {
+    const quota = new DOMException("The quota has been exceeded.", "QuotaExceededError");
+    const spy = vi.spyOn(Storage.prototype, "setItem").mockImplementation(() => { throw quota; });
+    try {
+      let thrown: unknown;
+      try { saveDataSerialized(JSON.stringify(makeAppData())); } catch (e) { thrown = e; }
+      expect(thrown).toBeInstanceOf(Error);
+      expect((thrown as Error).message).toContain("저장 공간이 부족합니다");
+      expect((thrown as Error).cause).toBe(quota);
+    } finally {
+      spy.mockRestore();
+    }
+  });
+
   it("investmentGoals(대시보드 목표)도 export에 포함 — gist 동기화 누락 회귀 방지", () => {
     const data = makeAppData({
       investmentGoals: {

@@ -1007,7 +1007,7 @@ export const LedgerEntryForm = React.memo(React.forwardRef<LedgerEntryFormHandle
     const isEditing = Boolean(form.id);
 
     // Ctrl+Enter(submit-form) = 폼 제출 (입력 포커스 중에도 동작 — 핵심 시나리오).
-    // Ctrl+S는 앱 전역 백업 전용. Alt+N(새 항목)은 App이 단독 소유하고 아래 focus 이벤트로 위임받는다
+    // Ctrl+S는 앱 전역 저장(로컬 백업+Gist) 전용. Alt+N(새 항목)은 App이 단독 소유하고 아래 focus 이벤트로 위임받는다
     // (과거: 여기서도 new-entry를 register해 App.onAddLedger와 이중 발화).
     useEffect(() => {
       const handler = {

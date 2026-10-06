@@ -29,7 +29,9 @@ export const ConnectConfirmModal: React.FC<ConnectConfirmModalProps> = ({ payloa
     const onKeyDown = (e: KeyboardEvent) => {
       if (e.key === "Escape" && isTopModal()) {
         e.stopPropagation();
-        if (!busy) onCancel();
+        // busy면 거부를 알림 — 뒤로가기(closeTopModal)가 즉시 모달 항목을 되살린다 (Q4)
+        if (busy) e.preventDefault();
+        else onCancel();
       }
     };
     window.addEventListener("keydown", onKeyDown);

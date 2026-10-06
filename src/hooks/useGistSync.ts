@@ -33,6 +33,7 @@ import {
   GIST_AUTO_PUSH_DEBOUNCE_MS,
   GIST_REMOTE_CHECK_THROTTLE_MS,
   GIST_STALE_WARNING_HOURS,
+  STORAGE_KEYS,
 } from "../constants/config";
 import { useUIStore } from "../store/uiStore";
 import { useAppStore } from "../store/appStore";
@@ -89,6 +90,22 @@ function isNeverSyncedWithCurrentGist(): boolean {
  * 원격 내용 비교(우리 마지막 push와 같으면 가짜 충돌로 걸러짐)부터 한다. 빈 known은 '판단 불가 → 통과'라 쓸 수 없다.
  */
 const NOTHING_ACCOUNTED_AT = new Date(0).toISOString();
+
+/** 결과를 모르는(시간 초과 등으로 실패 처리된) 직전 PATCH — 올린 payload 해시와 그때의 기준(lastPushedHash) */
+interface AttemptedPush {
+  hash: string;
+  base: string;
+}
+
+/**
+ * 원격 내용이 '우리 자신의 커밋'인지 — 마지막 push(pull) 내용과 같거나, 결과를 모르는 직전 PATCH가 실제로 커밋된 경우.
+ * 직전 시도는 기준이 시도 당시 그대로일 때만 인정한다 — 그 뒤 pull·복원·연결·다른 탭 동기화로 기준이 바뀌었으면
+ * 원격이 우연히 그 내용과 같아도(다른 기기가 되돌림·과거 버전 복원 뒤 저장) 외부 변경으로 보고 충돌 모달로 묻는다.
+ */
+function isOwnRemoteContent(remoteHash: string, lastPushedHash: string, attempted: AttemptedPush | null): boolean {
+  if (lastPushedHash && remoteHash === lastPushedHash) return true;
+  return !!attempted && attempted.base === lastPushedHash && remoteHash === attempted.hash;
+}
 
 /**
  * Gist 데이터로 덮기 직전 로컬에 잃을 것이 있는지 — 받을 내용과 같거나 마지막 동기화(push/pull) 내용과 같으면
@@ -229,15 +246,20 @@ export function useGistSync(
   const recordSyncFail = useCallback((message: string) => {
     setSyncHealth((prev) => ({ ...prev, consecutiveFailures: prev.consecutiveFailures + 1, lastError: message }));
   }, []);
-  /** 최신 원격 버전 1건 조회 — 성공/실패를 기록하고, 실패 시 기존 `.catch(() => [])`처럼 undefined로 계속 진행 */
-  const fetchLatestVersion = useCallback(async (): Promise<GistVersion | undefined> => {
+  /**
+   * 최신 원격 버전 1건 조회 — 성공/실패를 기록하고, 실패 시 null로 계속 진행(버전 없음 undefined와 구분 — 업로드의 epoch 내용 비교).
+   * resetOnOk:false(업로드 경로) — 조회 성공이 연속 실패 수를 0으로 되돌리면 '조회 성공 → 저장 실패'가 반복될 때
+   * 1↔0만 오가 상태 배지(2회 연속)가 영영 오류를 못 띄운다. 그 경로는 저장 결과로만 리셋한다.
+   */
+  const fetchLatestVersion = useCallback(async (opts?: { resetOnOk?: boolean }): Promise<GistVersion | null | undefined> => {
     try {
       const versions = await getGistVersions(1);
-      recordSyncOk();
+      if (opts?.resetOnOk === false) setSyncHealth((prev) => ({ ...prev, lastCheckAt: new Date().toISOString() }));
+      else recordSyncOk();
       return versions[0];
     } catch (err) {
       recordSyncFail(err instanceof Error ? err.message : String(err));
-      return undefined;
+      return null;
     }
   }, [recordSyncOk, recordSyncFail]);
 
@@ -245,6 +267,15 @@ export function useGistSync(
   const lastPushedPayloadRef = useRef<string>("");
   const hasMountedRef = useRef(false);
   const isPushingRef = useRef(false);
+  /**
+   * 결과를 모르는 직전 PATCH(메모리 전용) — 타임아웃으로 '실패' 처리됐지만 GitHub은 커밋한 경우
+   * 다음 업로드가 우리 자신의 커밋을 외부 변경으로 오인하지 않게. 모든 PATCH 직전에 세우고 성공하면 비운다
+   * (판정은 isOwnRemoteContent — 기준이 그대로일 때만 유효). ⚠ lastPushedHash(localStorage)는 PATCH 성공 후에만
+   * 기록 — 미리 쓰면 부팅·복귀 확인의 dirty 기준이 되어 실제로 안 올라간 변경이 '깨끗'으로 보여 원격에 덮인다.
+   */
+  const attemptedPushRef = useRef<AttemptedPush | null>(null);
+  /** 충돌 모달 해결 재진입 가드 — 원격 다시 읽기 대기 중 다른 선택(취소·덮어쓰기)이 겹쳐 실행되지 않게 */
+  const resolvingRef = useRef(false);
   const knownRemoteCommitRef = useRef<string>("");
   /** 복귀 시 원격 확인 마지막 시각(ms) — 부팅 확인·복귀 확인이 공유하는 throttle 기준 */
   const lastRemoteCheckAtRef = useRef<number>(0);
@@ -336,6 +367,8 @@ export function useGistSync(
             remoteDataJson: dataJson,
             remoteUpdatedAt: updatedAt,
             pendingLocalDataJson: localJson,
+            // 기기 연결을 취소·실패한 뒤 자동 동기화를 켠 경우가 이 경로의 주 진입로 — '다른 기기 변경'이 아니다
+            reason: isNeverSyncedWithCurrentGist() ? "never-synced" : restoredRef.current ? "restored" : undefined,
           });
           onLogRef.current?.("Gist 자동 불러오기: 로컬에 push되지 않은 변경 감지 — 충돌 확인 필요", "info");
           return;
@@ -383,23 +416,37 @@ export function useGistSync(
 
     const dataJson = toUserDataJson(dataRef.current);
     if (dataJson === lastPushedPayloadRef.current) return;
+    // 다른 탭이 이미 이 내용을 올렸거나 받음(공유 해시) — 탭 동기화로 같은 데이터를 받은 탭마다 원격을 내려받고
+    // 같은 내용을 다시 PATCH하지 않게. 표식(unsynced:)은 어떤 해시와도 같지 않아 맞춰 본 적 없는 Gist 보호는 유지.
+    if (hashGistPayload(dataJson) === getGistLastPushedHash()) {
+      lastPushedPayloadRef.current = dataJson;
+      return;
+    }
 
     isPushingRef.current = true;
     try {
       setIsSyncing(true);
-      const latest = await fetchLatestVersion();
-      const known = knownRemoteCommitRef.current || getGistLastPullAt();
+      const latest = await fetchLatestVersion({ resetOnOk: false });
+      // 반영한 원격 기준이 전혀 없으면(이 세션에 불러온 적 없고 pull 기록도 없음) epoch — 빈 known은 시각 비교를
+      // 통과시켜 다른 기기 변경을 내용 비교 없이 덮는다. epoch면 원격이 우리 마지막 push와 같을 때만 그대로 저장.
+      const known = knownRemoteCommitRef.current || getGistLastPullAt() || NOTHING_ACCOUNTED_AT;
       // 기기 연결 후 아직 맞춰 보지 않은 Gist — 시각 비교(옛 기준·빈 기준이면 통과해 버림) 대신 항상 내용 비교부터.
       // 표식은 어떤 내용과도 같지 않으므로 원격에 데이터가 있으면 충돌 모달로만 끝난다.
       const neverSynced = isNeverSyncedWithCurrentGist();
-      if (neverSynced || detectConflict(latest?.committedAt, known)) {
+      // 버전 조회 실패(null)면 시각 비교가 '판단 불가 → 통과'가 된다 — 반영한 원격 기준도 없으면(epoch) 내용부터 비교.
+      // Gist ID가 없으면(첫 저장으로 새 Gist 생성) 비교할 원격이 없으니 그대로 진행.
+      const mustCompare =
+        neverSynced ||
+        (latest === null && known === NOTHING_ACCOUNTED_AT && !!getGistId()) ||
+        detectConflict(latest?.committedAt, known);
+      if (mustCompare) {
         // 시각상 원격이 새로 보여도, 내용이 우리가 마지막에 push한 것과 같으면 가짜 충돌
         // (gist updated_at vs commit committed_at 소스 차이). 내용 해시로 진짜 외부 변경만 모달 표시 →
         // "PC에서 수정했는데 자꾸 과거로 되돌리라"는 가짜 충돌 제거.
         try {
           const remote = await loadRemoteGuarded(schemaBlockedRef);
-          const lastPushedHash = getGistLastPushedHash();
-          if (lastPushedHash && hashGistPayload(remote.dataJson) === lastPushedHash) {
+          // 직전 PATCH가 시간 초과로 '실패' 처리됐지만 GitHub은 커밋한 경우도 우리 자신의 커밋 — 가짜 충돌
+          if (isOwnRemoteContent(hashGistPayload(remote.dataJson), getGistLastPushedHash(), attemptedPushRef.current)) {
             knownRemoteCommitRef.current = latest?.committedAt || known;
             onLog?.("Gist: 시각만 다른 가짜 충돌(내용 동일) — 저장 진행", "info");
           } else {
@@ -408,20 +455,23 @@ export function useGistSync(
               remoteDataJson: remote.dataJson,
               remoteUpdatedAt: remote.updatedAt,
               pendingLocalDataJson: dataJson,
+              // 모달 안내·권장 표시용 — 아직 불러온 적 없는 기기 / 과거 버전 복원 뒤 저장은 '다른 기기 변경'이 아니다
+              reason: neverSynced ? "never-synced" : restoredRef.current ? "restored" : undefined,
             });
             return;
           }
         } catch (pullErr) {
           const message = pullErr instanceof Error ? pullErr.message : String(pullErr);
-          if (neverSynced && pullErr instanceof GistNoRemoteDataError) {
-            // 맞춰 보지 않은 Gist에 덮어쓸 FarmWallet 데이터 자체가 없음(파일 없음·Gist 삭제) — 잃을 것이 없으니 저장 진행
+          if (pullErr instanceof GistNoRemoteDataError) {
+            // 덮어쓸 FarmWallet 데이터 자체가 없음(파일 없음·Gist 삭제) — 잃을 것이 없으니 저장 진행
             // (saveToGist가 파일을 만들거나 404 → 새 Gist 생성으로 처리하고, 성공하면 표식이 실제 해시로 바뀐다)
             onLog?.(`Gist: 원격에 FarmWallet 데이터 없음 — 저장 진행 (${message})`, "info");
           } else {
-            // 표식 상태에서 원격을 못 읽으면 올리지 않는다. 직전 fetchLatestVersion 성공이 연속 실패 수를 리셋해
-            // 배지(2회 연속)만으로는 안 드러나므로 일반 자동 저장 실패처럼 토스트도 띄운다 (토큰 미포함 문구)
-            if (neverSynced) {
-              recordSyncFail(message);
+            // 표식 상태에서 원격을 못 읽으면 올리지 않는다. 배지는 2회 연속 실패부터라 첫 실패도 보이도록
+            // 일반 자동 저장 실패처럼 토스트도 띄운다 (토큰 미포함 문구)
+            // 버전 조회 실패(R4) 경로는 fetchLatestVersion이 이미 1회 기록했다 — 실패 집계는 표식 상태만, 토스트는 둘 다
+            if (neverSynced) recordSyncFail(message);
+            if (neverSynced || latest === null) {
               toast.error(`Gist 저장 실패: ${message}`, { id: GIST_AUTO_SAVE_ERROR_TOAST_ID });
             }
             onLog?.(`Gist 충돌 후 원격 fetch 실패: ${message}`, "error");
@@ -429,11 +479,13 @@ export function useGistSync(
           }
         }
       }
+      attemptedPushRef.current = { hash: hashGistPayload(dataJson), base: getGistLastPushedHash() };
       const result = await saveToGistWithRetry(dataJson, {
         onAttempt: (attempt, err) => {
           onLog?.(`Gist 푸시 ${attempt}회 실패 (${err.message}) — 재시도`, "info");
         }
       });
+      attemptedPushRef.current = null;
       lastPushedPayloadRef.current = dataJson;
       setGistLastPushedHash(hashGistPayload(dataJson));
       // 로컬 시각 사용 — GitHub updated_at이 약간 지연/stale일 수 있어 "방금 저장" 즉시 반영
@@ -480,7 +532,12 @@ export function useGistSync(
       toast.error("Gist 토큰을 먼저 설정하세요.");
       return;
     }
-    if (isPushingRef.current) return;
+    if (isPushingRef.current) {
+      // 자동 저장과 겹침 — 조용히 끝나면 [저장]이 Gist까지 된 줄 안다
+      onLog?.("Gist 저장: 자동 저장이 진행 중이라 이번 수동 저장은 건너뜀", "info");
+      toast("Gist 자동 저장이 진행 중이에요. 끝나면 반영돼요.");
+      return;
+    }
     if (useUIStore.getState().gistConflict) {
       onLog?.("Gist 충돌 모달이 열려 있어 저장 보류", "info");
       return;
@@ -498,18 +555,26 @@ export function useGistSync(
     try {
       setIsSyncing(true);
       // 충돌 감지 (자동 동기화 OFF여도 다른 기기에서 변경됐을 수 있으니 체크)
-      const latest = await fetchLatestVersion();
-      const known = knownRemoteCommitRef.current || getGistLastPullAt();
+      const latest = await fetchLatestVersion({ resetOnOk: false });
+      // runAutoPush와 같은 epoch 폴백 — 자동 동기화 OFF·이 기기에서 불러온 적 없음(Gist를 여기서 만들었거나
+      // 자격증명 직접 입력)이면 known이 비어 시각 비교를 통과해 다른 기기 변경을 내용 비교 없이 덮는다
+      const known = knownRemoteCommitRef.current || getGistLastPullAt() || NOTHING_ACCOUNTED_AT;
       // 기기 연결 후 아직 맞춰 보지 않은 Gist — runAutoPush와 같은 규칙(항상 내용 비교 → 충돌 모달)
       const neverSynced = isNeverSyncedWithCurrentGist();
-      if (neverSynced || detectConflict(latest?.committedAt, known)) {
+      // 버전 조회 실패(null)면 시각 비교가 '판단 불가 → 통과'가 된다 — 반영한 원격 기준도 없으면(epoch) 내용부터 비교.
+      // Gist ID가 없으면(첫 저장으로 새 Gist 생성) 비교할 원격이 없으니 그대로 진행.
+      const mustCompare =
+        neverSynced ||
+        (latest === null && known === NOTHING_ACCOUNTED_AT && !!getGistId()) ||
+        detectConflict(latest?.committedAt, known);
+      if (mustCompare) {
         // 시각상 원격이 새로 보여도, 내용이 우리가 마지막에 push한 것과 같으면 가짜 충돌
         // (gist updated_at vs commit committed_at 소스 차이). 내용 해시로 진짜 외부 변경만 모달 표시 →
         // "PC에서 수정했는데 자꾸 과거로 되돌리라"는 가짜 충돌 제거.
         try {
           const remote = await loadRemoteGuarded(schemaBlockedRef);
-          const lastPushedHash = getGistLastPushedHash();
-          if (lastPushedHash && hashGistPayload(remote.dataJson) === lastPushedHash) {
+          // 직전 PATCH가 시간 초과로 '실패' 처리됐지만 GitHub은 커밋한 경우도 우리 자신의 커밋 — 가짜 충돌
+          if (isOwnRemoteContent(hashGistPayload(remote.dataJson), getGistLastPushedHash(), attemptedPushRef.current)) {
             knownRemoteCommitRef.current = latest?.committedAt || known;
             onLog?.("Gist: 시각만 다른 가짜 충돌(내용 동일) — 저장 진행", "info");
           } else {
@@ -518,30 +583,32 @@ export function useGistSync(
               remoteDataJson: remote.dataJson,
               remoteUpdatedAt: remote.updatedAt,
               pendingLocalDataJson: dataJson,
+              // 모달 안내·권장 표시용 — 아직 불러온 적 없는 기기 / 과거 버전 복원 뒤 저장은 '다른 기기 변경'이 아니다
+              reason: neverSynced ? "never-synced" : restoredRef.current ? "restored" : undefined,
             });
             return;
           }
         } catch (pullErr) {
           const message = pullErr instanceof Error ? pullErr.message : String(pullErr);
-          if (neverSynced && pullErr instanceof GistNoRemoteDataError) {
+          if (pullErr instanceof GistNoRemoteDataError) {
             // runAutoPush와 동일 — 덮어쓸 FarmWallet 데이터가 없으면(파일 없음·Gist 삭제) 저장 진행
             onLog?.(`Gist: 원격에 FarmWallet 데이터 없음 — 저장 진행 (${message})`, "info");
           } else {
-            if (neverSynced) {
-              // 사용자가 누른 저장이 조용히 끝나지 않도록 — 실패 기록 + 토스트 (메시지는 gistSync 문구, 토큰 없음)
-              recordSyncFail(message);
-              toast.error(`Gist 저장 실패: ${message}`, { id: GIST_AUTO_SAVE_ERROR_TOAST_ID });
-            }
+            // 사용자가 누른 저장이 조용히 끝나지 않도록 — 실패 기록 + 토스트 (메시지는 gistSync 문구, 토큰 없음)
+            recordSyncFail(message);
+            toast.error(`Gist 저장 실패: ${message}`, { id: GIST_AUTO_SAVE_ERROR_TOAST_ID });
             onLog?.(`Gist 충돌 후 원격 fetch 실패: ${message}`, "error");
             return;
           }
         }
       }
+      attemptedPushRef.current = { hash: hashGistPayload(dataJson), base: getGistLastPushedHash() };
       const result = await saveToGistWithRetry(dataJson, {
         onAttempt: (attempt, err) => {
           onLog?.(`Gist 푸시 ${attempt}회 실패 (${err.message}) — 재시도`, "info");
         }
       });
+      attemptedPushRef.current = null;
       lastPushedPayloadRef.current = dataJson;
       setGistLastPushedHash(hashGistPayload(dataJson));
       // 로컬 시각 사용 — GitHub 응답의 updated_at이 stale일 수 있어 사용자 체감과 어긋남 방지
@@ -675,13 +742,20 @@ export function useGistSync(
     if (isConnectingRef.current) return;
     if (useUIStore.getState().gistConflict) return;
     if (restoredRef.current) return;
+    // 기기 연결로 바뀌었지만 아직 맞춰 보지 않은 Gist(다른 탭이 연결을 취소한 경우 등) — 자동 적용 금지,
+    // 업로드 경로의 내용 비교(충돌 모달)에만 맡긴다
+    if (isNeverSyncedWithCurrentGist()) return;
     const now = Date.now();
     if (now - lastRemoteCheckAtRef.current < GIST_REMOTE_CHECK_THROTTLE_MS) return;
     lastRemoteCheckAtRef.current = now;
     isRemoteCheckingRef.current = true;
     try {
       setIsSyncing(true);
-      const latest = await fetchLatestVersion();
+      // 아직 올리지 못한 로컬 변경이 있으면 조회 성공으로 실패 수를 되돌리지 않는다 — '조회는 되고 쓰기만 실패'가
+      // 주기 확인마다 0으로 리셋돼 상태 배지(2회 연속)가 영영 못 뜬다. 깨끗한 기기는 조회 성공으로 복구.
+      const latest = await fetchLatestVersion({
+        resetOnOk: toUserDataJson(dataRef.current) === lastPushedPayloadRef.current,
+      });
       const known = knownRemoteCommitRef.current || getGistLastPullAt();
       if (!latest || !checkRemoteChanged(known, latest)) return;
       // 조회 대기 중 push·모달이 시작됐으면 그쪽 경로에 맡긴다 (push는 자체 충돌 감지 보유)
@@ -690,9 +764,19 @@ export function useGistSync(
       if (isPushingRef.current || useUIStore.getState().gistConflict) return;
       const remoteAt = latest.committedAt;
       const lastPushedHash = getGistLastPushedHash();
-      if (lastPushedHash && hashGistPayload(remote.dataJson) === lastPushedHash) {
-        // 시각만 다르고 내용은 우리 마지막 push와 동일 — 외부 변경 아님
+      const remoteHash = hashGistPayload(remote.dataJson);
+      // 업로드 경로와 같은 판정 — 시간 초과로 '실패' 처리됐지만 GitHub이 커밋한 직전 PATCH도 우리 자신의 커밋
+      if (isOwnRemoteContent(remoteHash, lastPushedHash, attemptedPushRef.current)) {
         knownRemoteCommitRef.current = remoteAt;
+        if (remoteHash !== lastPushedHash) {
+          // 직전 PATCH가 실제로 커밋됨 — 성공으로 확정(저장 성공 경로와 같은 갱신). 남은 로컬 편집은 다음 자동 저장이 올린다
+          attemptedPushRef.current = null;
+          lastPushedPayloadRef.current = remote.dataJson;
+          setGistLastPushedHash(remoteHash);
+          onLog?.("Gist 복귀 확인: 실패 처리됐던 직전 저장이 실제로 커밋됨 — 성공으로 확정", "info");
+          return;
+        }
+        // 시각만 다르고 내용은 우리 마지막 push와 동일 — 외부 변경 아님
         onLog?.("Gist 복귀 확인: 시각만 다른 가짜 변경(내용 동일) — 건너뜀", "info");
         return;
       }
@@ -720,6 +804,8 @@ export function useGistSync(
         return;
       }
       const filled = applyRemoteWithSeriesUnion(remote.dataJson, remoteAt);
+      // 적용 후 로컬=원격 — 위에서 dirty라 리셋을 미뤘어도(시계열만 차이) 여기서 정상으로 되돌린다
+      recordSyncOk();
       toast.success("다른 기기 변경 반영됨", { id: GIST_RESUME_PULL_TOAST_ID });
       onLog?.(
         seriesOnlyDirty
@@ -737,7 +823,7 @@ export function useGistSync(
       isRemoteCheckingRef.current = false;
       setIsSyncing(false);
     }
-  }, [autoSyncEnabled, applyRemoteWithSeriesUnion, onLog, fetchLatestVersion, recordSyncFail]);
+  }, [autoSyncEnabled, applyRemoteWithSeriesUnion, onLog, fetchLatestVersion, recordSyncOk, recordSyncFail]);
 
   // Effect 2: 데이터 변경 시 자동 저장 (debounced)
   useEffect(() => {
@@ -826,11 +912,28 @@ export function useGistSync(
     }
   }, []);
 
+  // 다른 탭에서 자동 동기화를 끄고 켠 것 반영 — 마운트 때 한 번만 읽으면 끈 뒤에도 이 탭이 계속 올리고 받는다
+  // (storage 이벤트는 다른 탭의 변경에만 온다)
+  useEffect(() => {
+    const onStorage = (e: StorageEvent) => {
+      if (e.key !== STORAGE_KEYS.GIST_AUTO_SYNC) return;
+      const enabled = getGistAutoSync();
+      setAutoSyncEnabledState(enabled);
+      if (!enabled && autoPushTimerRef.current) {
+        window.clearTimeout(autoPushTimerRef.current);
+        autoPushTimerRef.current = null;
+      }
+    };
+    window.addEventListener("storage", onStorage);
+    return () => window.removeEventListener("storage", onStorage);
+  }, []);
+
   /**
    * 기기 연결 (받는 쪽) — 연결 링크의 토큰·Gist ID로:
    *  1) 업로드·원격 확인 중이거나 충돌 모달이 열려 있으면 거절
    *  2) 저장 전에 주어진 자격증명으로 연결 테스트 — 실패하면 아무것도 저장하지 않는다
    *  3') 같은 Gist면 토큰만 저장하고 끝 — 미리보기·자동 동기화 변경 없이 정식 동기화 경로(충돌 확인)에 맡긴다
+   *      (아직 이 Gist에서 불러온 적 없는 기기는 예외 — 4)부터 다시 시도)
    *  3) 토큰(영속)·Gist ID 저장
    *  4) 즉시 불러오기 + normalizeImportedData 검증 — 실패하면 적용·자동 동기화 ON 모두 하지 않는다
    *     (빈 새 기기가 빈 데이터를 원격에 덮어쓰는 사고 방지)
@@ -875,7 +978,9 @@ export function useGistSync(
       // 3') 같은 Gist 재연결('연결 끊김' 복구) — 토큰만 저장하고 기준점·자동 동기화 상태는 그대로 둔다.
       //     원격으로 통째 바꾸는 미리보기는 끊긴 동안의 로컬 편집을 충돌 확인 없이 지우고, 취소·실패하면 자동 동기화가
       //     꺼진 채 남는다. 원격 반영은 정식 경로(업로드·복귀 확인·부팅 불러오기의 충돌 확인)에 맡긴다.
-      if (previousGistId === payload.gistId) {
+      //     단 이 Gist에서 아직 한 번도 불러오지 못한 기기(지난 연결이 불러오기·검증 실패나 취소로 끝남)는 재시도 —
+      //     토큰만 저장하면 '다시 연결했어요'만 뜨고 빈 기기는 끝내 데이터를 받지 못한다. 아래 4)부터 다시 탄다.
+      if (previousGistId === payload.gistId && !isNeverSyncedWithCurrentGist()) {
         setGistToken(payload.token, { persist: true });
         // 부팅 때 토큰이 없어 원격 시점을 못 봤고 pull 기록도 없으면 빈 known — 업로드가 시각 비교로 통과하지 않게
         if (!knownRemoteCommitRef.current) knownRemoteCommitRef.current = getGistLastPullAt() || NOTHING_ACCOUNTED_AT;
@@ -914,7 +1019,7 @@ export function useGistSync(
       } catch (err) {
         const message = errorMessage(err);
         onLog?.(`기기 연결: Gist(…${shortId}) 불러오기 실패 — ${message}`, "error");
-        toast.error(message);
+        toast.error(`${message} 같은 연결 링크로 다시 시도할 수 있어요.`);
         return "failed";
       }
       let after: AppData;
@@ -922,7 +1027,7 @@ export function useGistSync(
         after = normalizeImportedData(JSON.parse(dataJson) as unknown);
       } catch (err) {
         onLog?.(`기기 연결: Gist(…${shortId}) 데이터 검증 실패 — 적용하지 않음 (${errorMessage(err)})`, "error");
-        toast.error("원격 데이터가 올바르지 않아 불러오지 않았어요.");
+        toast.error("원격 데이터가 올바르지 않아 불러오지 않았어요. 같은 연결 링크로 다시 시도할 수 있어요.");
         return "failed";
       }
 
@@ -983,87 +1088,163 @@ export function useGistSync(
   }, [autoSyncEnabled, setAutoSyncEnabled, onApplyPulledData, onLog, recordSyncOk]);
 
   const resolveGistConflict = useCallback(async (resolution: GistConflictResolution): Promise<void> => {
+    // 재진입 가드 — 원격 다시 읽기·저장 대기 중 다른 선택(취소·덮어쓰기)이 겹치면 기기와 Gist가 서로 다른 내용인 채
+    // '동기화됨'이 되거나 취소한 뒤 원격이 적용된다. 첫 선택이 끝날 때까지 이후 호출은 무시.
+    if (resolvingRef.current) return;
     const conflict = useUIStore.getState().gistConflict;
     if (!conflict) return;
     const setConflict = useUIStore.getState().setGistConflict;
+    resolvingRef.current = true;
     try {
+      // 아래 가드는 안쪽 try 앞에 둔다 — 안쪽 finally가 항상 모달을 닫는다.
+      // 낡은 모달: 충돌 상태는 탭마다 따로라, 다른 탭에서 이미 해결한 뒤 남은 모달로 고르면 그 선택을 조용히 되돌린다.
+      // 모달을 연 뒤 원격·로컬이 바뀌었으면 적용·저장하지 않고 모달을 최신 내용으로 바꿔 다시 고르게 한다
+      // (닫고 '다시 확인'을 약속하면 자동 동기화 OFF 기기에서는 아무것도 다시 확인하지 않는다). reason은 유지.
       if (resolution === "apply-remote") {
-        // 원격 데이터를 로컬에 반영. 로컬 변경은 폐기.
-        // 모달이 열려있는 동안 원격이 또 갱신됐을 가능성을 보수적으로 처리:
-        // 사용 직전에 commits API로 최신 commit 시각을 한 번 더 권위 확보.
-        let authoritativeRemoteAt = conflict.remoteUpdatedAt;
+        let latestRemote: { dataJson: string; updatedAt: string } | null = null;
         try {
-          const versions = await getGistVersions(1);
-          if (versions[0]?.committedAt) authoritativeRemoteAt = versions[0].committedAt;
-        } catch { /* 무시 — 모달의 시각 유지 */ }
-
-        // 자동 적립 시계열은 폐기하지 않고 원격 payload에 date-union(원격 우선) — applyRemoteWithSeriesUnion 참조
-        const filled = applyRemoteWithSeriesUnion(conflict.remoteDataJson, authoritativeRemoteAt);
-        onLog?.(
-          filled > 0
-            ? `Gist 충돌: 원격 데이터를 적용했습니다 (로컬 자동 적립 시계열 ${filled}건 보존)`
-            : "Gist 충돌: 원격 데이터를 적용했습니다",
-          "success"
-        );
+          latestRemote = await loadRemoteGuarded(schemaBlockedRef);
+        } catch (err) {
+          // 원격이 그사이 더 새 앱 버전으로 다시 쓰였다(모달의 원격은 정상 스키마였다) — 낡은 원격을 적용하고
+          // 기준 시각을 올리면 앱을 업데이트해도 그 변경을 새 원격으로 못 본다. 모달은 열어 둔다(취소 가능, 토스트는 이미 표시).
+          if (err instanceof GistSchemaTooNewError) return;
+          /* 그 외 다시 읽기 실패 — 모달의 원격본으로 진행(기존 동작) */
+        }
+        if (latestRemote && hashGistPayload(latestRemote.dataJson) !== hashGistPayload(conflict.remoteDataJson)) {
+          setConflict({ ...conflict, remoteDataJson: latestRemote.dataJson, remoteUpdatedAt: latestRemote.updatedAt });
+          toast("Gist가 그사이 또 바뀌어 최신본으로 다시 보여 드려요. 다시 선택하세요.");
+          return;
+        }
       } else if (resolution === "force-push-local") {
-        // 로컬 데이터를 원격에 강제 push. 원격(다른 기기) 변경은 폐기 →
-        // 폐기되는 원격 데이터를 안전 스냅샷으로 보관해 "다른 기기에서 한 작업"을 되찾을 수 있게 한다.
+        // 기록기의 자동 적립 시계열만 늘어난 차이는 허용(다음 자동 저장이 올림)
+        const localNow = toUserDataJson(dataRef.current);
+        if (localNow !== conflict.pendingLocalDataJson && !isTimeSeriesOnlyDiff(localNow, conflict.pendingLocalDataJson)) {
+          setConflict({ ...conflict, pendingLocalDataJson: localNow });
+          toast("이 기기 데이터가 그사이 바뀌어 최신 상태로 다시 보여 드려요. 다시 선택하세요.");
+          return;
+        }
+        // 원격도 다시 확인 — 모달을 연 뒤 다른 기기가 올린 변경을 사용자가 본 적 없이 덮지 않게(동의는 모달의 원격 기준).
+        // 같으면 아래 안전 스냅샷·시계열 합치기가 쓰는 conflict.remoteDataJson이 곧 실제로 덮을 원격이다.
+        let latestRemote: { dataJson: string; updatedAt: string } | null = null;
         try {
-          const remoteData = JSON.parse(conflict.remoteDataJson) as AppData;
-          await saveSafetySnapshot(remoteData, "Gist 강제 push 직전 폐기되는 원격 데이터 스냅샷");
-        } catch {
-          /* best-effort — 스냅샷 실패해도 사용자 선택(강제 push)은 진행 */
+          latestRemote = await loadRemoteGuarded(schemaBlockedRef);
+        } catch (err) {
+          // 원격이 그사이 더 새 앱 버전으로 다시 쓰였다 — 구버전 payload로 덮으면 새 필드·본 적 없는 변경이 지워진다.
+          // 모달은 열어 둔다(취소 가능, 스키마 차단 토스트는 loadRemoteGuarded가 이미 표시).
+          if (err instanceof GistSchemaTooNewError) return;
+          /* 그 외 다시 읽기 실패 — 모달의 원격본 기준으로 진행(기존 동작) */
         }
-        // push 직후 원격 commit 시각을 다시 조회해 knownRemoteCommitRef를 권위 있는 값으로 갱신.
-        // (saveToGist의 updatedAt이 GitHub commits API와 다를 수 있는 엣지 보호)
-        // 원격(다른 기기)이 쌓은 자동 적립 시계열은 폐기하지 않고 로컬 payload에 date-union으로 합쳐 push.
-        // 로컬 스토어에도 같은 union을 반영해 다음 자동 push가 원격 시계열을 다시 지우지 않게 한다
-        // (기록기와 동일한 setData 비-undo 경로 — id 키 컬렉션은 건드리지 않음).
-        const mergedLocal = mergeGistPayloadTimeSeries(conflict.pendingLocalDataJson, conflict.remoteDataJson);
-        if (mergedLocal.filledFromOther > 0 && mergedLocal.fields) {
-          const union = mergedLocal.fields;
-          useAppStore.getState().setData((prev) => ({
-            ...prev,
-            historicalDailyFx: mergeDailyFx(prev.historicalDailyFx, union.historicalDailyFx),
-            benchmarkDailyCloses: mergeBenchmarkCloses(prev.benchmarkDailyCloses, union.benchmarkDailyCloses),
-            marketEnvSnapshots: mergeMarketEnvSnapshots(prev.marketEnvSnapshots, union.marketEnvSnapshots),
-          }));
+        if (latestRemote && hashGistPayload(latestRemote.dataJson) !== hashGistPayload(conflict.remoteDataJson)) {
+          setConflict({ ...conflict, remoteDataJson: latestRemote.dataJson, remoteUpdatedAt: latestRemote.updatedAt });
+          toast("Gist가 그사이 또 바뀌어 최신본으로 다시 보여 드려요. 다시 선택하세요.");
+          return;
         }
-        const result = await saveToGist(mergedLocal.json);
-        lastPushedPayloadRef.current = mergedLocal.json;
-        setGistLastPushedHash(hashGistPayload(mergedLocal.json));
-        setGistLastPushAt(result.updatedAt);
-        setLastPushAt(result.updatedAt);
-        recordSyncOk();
-        try {
-          const versions = await getGistVersions(1);
-          const authoritative = versions[0]?.committedAt ?? result.updatedAt;
-          knownRemoteCommitRef.current = authoritative;
-          setGistLastPullAt(authoritative);
-          setLastPullAt(authoritative);
-        } catch {
-          // 재조회 실패 시 result.updatedAt으로 fallback (다음 push 사이클에서 재시도)
-          knownRemoteCommitRef.current = result.updatedAt;
+        // 빈 기기가 원격 데이터를 통째로 지우는 사고 방지 — 거절하면 모달을 그대로 둔다
+        const isEmptyJson = (json: string) => {
+          try {
+            return isEmptyLocalData(JSON.parse(json) as Partial<AppData>);
+          } catch {
+            return false;
+          }
+        };
+        if (
+          isEmptyJson(conflict.pendingLocalDataJson) &&
+          !isEmptyJson(conflict.remoteDataJson) &&
+          !window.confirm("이 기기에는 데이터가 없습니다. 원격 Gist의 데이터를 모두 지우고 빈 상태로 덮어쓸까요?")
+        ) {
+          return;
         }
-        restoredRef.current = false;
-        onLog?.(
-          mergedLocal.filledFromOther > 0
-            ? `Gist 충돌: 로컬 데이터를 강제 push 했습니다 (원격 자동 적립 시계열 ${mergedLocal.filledFromOther}건 보존)`
-            : "Gist 충돌: 로컬 데이터를 강제 push 했습니다",
-          "success"
-        );
-      } else {
-        // cancel: 모달 닫기만. 다음 변경 시 다시 충돌 가능.
-        onLog?.("Gist 충돌 모달: 취소", "info");
       }
-    } catch (err) {
-      const message = err instanceof Error ? err.message : String(err);
-      recordSyncFail(message);
-      onLog?.(`Gist 충돌 해결 실패: ${message}`, "error");
-      // force-push 등 실패가 조용히 모달만 닫히면 사용자가 "해결됐다"고 오해 — 토스트로 가시화
-      toast.error(`Gist 충돌 해결 실패: ${message}`);
+      try {
+        if (resolution === "apply-remote") {
+          // 원격 데이터를 로컬에 반영. 로컬 변경은 폐기.
+          // 모달이 열려있는 동안 원격이 또 갱신됐을 가능성을 보수적으로 처리:
+          // 사용 직전에 commits API로 최신 commit 시각을 한 번 더 권위 확보.
+          let authoritativeRemoteAt = conflict.remoteUpdatedAt;
+          try {
+            const versions = await getGistVersions(1);
+            if (versions[0]?.committedAt) authoritativeRemoteAt = versions[0].committedAt;
+          } catch { /* 무시 — 모달의 시각 유지 */ }
+
+          // 자동 적립 시계열은 폐기하지 않고 원격 payload에 date-union(원격 우선) — applyRemoteWithSeriesUnion 참조
+          const filled = applyRemoteWithSeriesUnion(conflict.remoteDataJson, authoritativeRemoteAt);
+          onLog?.(
+            filled > 0
+              ? `Gist 충돌: 원격 데이터를 적용했습니다 (로컬 자동 적립 시계열 ${filled}건 보존)`
+              : "Gist 충돌: 원격 데이터를 적용했습니다",
+            "success"
+          );
+          // 모달이 조용히 닫히면 [저장] 뒤의 '백업 저장 완료'만 남아 결과를 알 수 없다 — 선택마다 결과를 알린다
+          toast.success("Gist 최신본을 적용했어요");
+        } else if (resolution === "force-push-local") {
+          // 로컬 데이터를 원격에 강제 push. 원격(다른 기기) 변경은 폐기 →
+          // 폐기되는 원격 데이터를 안전 스냅샷으로 보관해 "다른 기기에서 한 작업"을 되찾을 수 있게 한다.
+          try {
+            const remoteData = JSON.parse(conflict.remoteDataJson) as AppData;
+            await saveSafetySnapshot(remoteData, "Gist 강제 push 직전 폐기되는 원격 데이터 스냅샷");
+          } catch {
+            /* best-effort — 스냅샷 실패해도 사용자 선택(강제 push)은 진행 */
+          }
+          // push 직후 원격 commit 시각을 다시 조회해 knownRemoteCommitRef를 권위 있는 값으로 갱신.
+          // (saveToGist의 updatedAt이 GitHub commits API와 다를 수 있는 엣지 보호)
+          // 원격(다른 기기)이 쌓은 자동 적립 시계열은 폐기하지 않고 로컬 payload에 date-union으로 합쳐 push.
+          // 로컬 스토어에도 같은 union을 반영해 다음 자동 push가 원격 시계열을 다시 지우지 않게 한다
+          // (기록기와 동일한 setData 비-undo 경로 — id 키 컬렉션은 건드리지 않음).
+          const mergedLocal = mergeGistPayloadTimeSeries(conflict.pendingLocalDataJson, conflict.remoteDataJson);
+          if (mergedLocal.filledFromOther > 0 && mergedLocal.fields) {
+            const union = mergedLocal.fields;
+            useAppStore.getState().setData((prev) => ({
+              ...prev,
+              historicalDailyFx: mergeDailyFx(prev.historicalDailyFx, union.historicalDailyFx),
+              benchmarkDailyCloses: mergeBenchmarkCloses(prev.benchmarkDailyCloses, union.benchmarkDailyCloses),
+              marketEnvSnapshots: mergeMarketEnvSnapshots(prev.marketEnvSnapshots, union.marketEnvSnapshots),
+            }));
+          }
+          // 시간 초과로 실패 처리돼도 GitHub이 커밋했을 수 있다 — 다음 업로드가 이 커밋을 외부 변경으로 오인하지 않게
+          attemptedPushRef.current = { hash: hashGistPayload(mergedLocal.json), base: getGistLastPushedHash() };
+          const result = await saveToGist(mergedLocal.json);
+          attemptedPushRef.current = null;
+          lastPushedPayloadRef.current = mergedLocal.json;
+          setGistLastPushedHash(hashGistPayload(mergedLocal.json));
+          setGistLastPushAt(result.updatedAt);
+          setLastPushAt(result.updatedAt);
+          recordSyncOk();
+          try {
+            const versions = await getGistVersions(1);
+            const authoritative = versions[0]?.committedAt ?? result.updatedAt;
+            knownRemoteCommitRef.current = authoritative;
+            setGistLastPullAt(authoritative);
+            setLastPullAt(authoritative);
+          } catch {
+            // 재조회 실패 시 result.updatedAt으로 fallback (다음 push 사이클에서 재시도)
+            knownRemoteCommitRef.current = result.updatedAt;
+          }
+          restoredRef.current = false;
+          onLog?.(
+            mergedLocal.filledFromOther > 0
+              ? `Gist 충돌: 로컬 데이터를 강제 push 했습니다 (원격 자동 적립 시계열 ${mergedLocal.filledFromOther}건 보존)`
+              : "Gist 충돌: 로컬 데이터를 강제 push 했습니다",
+            "success"
+          );
+          toast.dismiss(GIST_AUTO_SAVE_ERROR_TOAST_ID);
+          toast.success("Gist에 저장했어요");
+        } else {
+          // cancel: 모달 닫기만. 다음 변경 시 다시 충돌 가능.
+          onLog?.("Gist 충돌 모달: 취소", "info");
+          toast("Gist에는 저장하지 않았어요");
+        }
+      } catch (err) {
+        const message = err instanceof Error ? err.message : String(err);
+        recordSyncFail(message);
+        onLog?.(`Gist 충돌 해결 실패: ${message}`, "error");
+        // force-push 등 실패가 조용히 모달만 닫히면 사용자가 "해결됐다"고 오해 — 토스트로 가시화
+        toast.error(`Gist 충돌 해결 실패: ${message}`);
+      } finally {
+        setConflict(null);
+      }
     } finally {
-      setConflict(null);
+      // confirm 거절·낡은 모달 가드의 조기 반환까지 포함해 항상 해제
+      resolvingRef.current = false;
     }
   }, [applyRemoteWithSeriesUnion, onLog, recordSyncOk, recordSyncFail]);
 
@@ -1093,13 +1274,13 @@ export function useGistSync(
       if (hoursSince >= GIST_STALE_WARNING_HOURS.CRITICAL) {
         gistStaleWarning = {
           type: "critical",
-          message: `${Math.floor(hoursSince)}시간 동안 Gist에 푸시되지 않았습니다. 지금 푸시하세요.`,
+          message: `${Math.floor(hoursSince)}시간 동안 Gist에 저장되지 않았어요. 지금 저장하세요.`,
           hoursSince,
         };
       } else if (hoursSince >= GIST_STALE_WARNING_HOURS.WARNING) {
         gistStaleWarning = {
           type: "warning",
-          message: `${Math.floor(hoursSince)}시간 경과 — Gist 푸시 권장`,
+          message: `${Math.floor(hoursSince)}시간 경과 — Gist 저장 권장`,
           hoursSince,
         };
       }

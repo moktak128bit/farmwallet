@@ -219,32 +219,6 @@ describe("buildNudges — 대출 만기 D-3", () => {
   });
 });
 
-describe("buildNudges — 백업 경과", () => {
-  it("latestBackupAt 미주입(undefined)이면 판단 보류 — 넛지 없음", () => {
-    const ctx: NudgeContext = { ...baseCtx };
-    expect(buildNudges(ctx).some((x) => x.dedupeKey === "backup-stale")).toBe(false);
-  });
-
-  it("백업이 없으면(null) warn 넛지", () => {
-    const ctx: NudgeContext = { ...baseCtx, latestBackupAt: null };
-    const n = buildNudges(ctx).find((x) => x.dedupeKey === "backup-stale");
-    expect(n).toBeDefined();
-    expect(n?.severity).toBe("warn");
-  });
-
-  it("24시간 이상 지났으면 warn 넛지", () => {
-    const old = new Date(Date.now() - 25 * 3_600_000).toISOString();
-    const ctx: NudgeContext = { ...baseCtx, latestBackupAt: old };
-    expect(buildNudges(ctx).some((x) => x.dedupeKey === "backup-stale")).toBe(true);
-  });
-
-  it("24시간 이내면 넛지 없음", () => {
-    const recent = new Date(Date.now() - 1 * 3_600_000).toISOString();
-    const ctx: NudgeContext = { ...baseCtx, latestBackupAt: recent };
-    expect(buildNudges(ctx).some((x) => x.dedupeKey === "backup-stale")).toBe(false);
-  });
-});
-
 describe("buildNudges — 저장공간 사용률", () => {
   it("80% 미만이면 넛지 없음", () => {
     const ctx: NudgeContext = { ...baseCtx, storageRatio: 0.5 };
@@ -279,7 +253,7 @@ describe("buildNudges — 규칙 격리·정렬", () => {
       ...baseCtx,
       today: "2026-07-15",
       storageRatio: 0.97, // critical
-      latestBackupAt: null, // warn
+      loans: [loan({ id: "loan1", maturityDate: "2026-07-17" })], // warn (만기 D-2)
       lastMigrationReport: { at: "2026-07-01T00:00:00.000Z", toVersion: 12, hasChanges: true } // info
     };
     const out = buildNudges(ctx);

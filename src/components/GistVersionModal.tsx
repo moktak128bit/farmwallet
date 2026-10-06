@@ -3,6 +3,9 @@ import { History, X } from "lucide-react";
 import { getGistVersions, loadFromGistVersion, type GistVersion } from "../services/gistSync";
 import { useModalStackEntry } from "../utils/modalStack";
 import { useUIStore } from "../store/uiStore";
+import { useAppStore } from "../store/appStore";
+import { normalizeImportedData } from "../services/dataService";
+import { requestApply } from "./ApplyConfirmModal";
 
 interface Props {
   isOpen: boolean;
@@ -45,21 +48,26 @@ export const GistVersionModal: React.FC<Props> = ({ isOpen, onClose, onLoad, onL
   if (!isOpen) return null;
 
   const handleLoad = async (version: GistVersion, index: number) => {
-    // 미저장(아직 푸시 안 된) 변경이 있으면 확인 — 불러오기는 현재 데이터를 선택 버전으로 덮어쓴다
-    if (hasDirtyChanges) {
-      const when = new Date(version.committedAt).toLocaleString("ko-KR");
-      const ok = window.confirm(
-        `저장하지 않은 변경이 있습니다.\n선택한 버전(${when})으로 교체하면 현재 변경은 사라집니다.\n계속할까요?`
-      );
-      if (!ok) return;
-    }
     setLoadingIndex(index);
     onLog("Gist 버전 불러오는 중...", "info");
     try {
       const result = await loadFromGistVersion(version.url);
-      onLog(`Gist 버전 불러오기 완료 (${new Date(version.committedAt).toLocaleString("ko-KR")})`, "success");
-      onLoad(result.dataJson, result.committedAt);
-      onClose();
+      // 설정 카드 불러오기(manualPull)와 같은 변경 미리보기 게이트 — 덮어쓰기 확인을 대신한다.
+      // 검증 실패는 catch로 가서 모달 안 오류로 표시(onLoad 호출 없음).
+      const after = normalizeImportedData(JSON.parse(result.dataJson) as unknown);
+      const when = new Date(version.committedAt).toLocaleString("ko-KR");
+      requestApply({
+        title: `Gist 버전 불러오기 (${when})`,
+        before: useAppStore.getState().data,
+        after,
+        onConfirm: () => {
+          onLog(`Gist 버전 불러오기 완료 (${when})`, "success");
+          onLoad(result.dataJson, result.committedAt);
+          onClose();
+        },
+        // 취소하면 버전 목록이 그대로 남아 다른 버전을 바로 고를 수 있다
+        onCancel: () => onLog("Gist 버전 불러오기: 사용자 취소", "info")
+      });
     } catch (e) {
       const msg = e instanceof Error ? e.message : "불러오기 실패";
       onLog(`Gist 버전 불러오기 실패: ${msg}`, "error");
@@ -126,7 +134,7 @@ export const GistVersionModal: React.FC<Props> = ({ isOpen, onClose, onLoad, onL
           <div style={{ textAlign: "center", padding: "24px 0", color: "var(--text-muted)", fontSize: 14 }}>
             저장된 버전이 없습니다.
             <div style={{ fontSize: 12, marginTop: 4 }}>
-              먼저 "Gist 저장" 버튼으로 데이터를 저장하세요.
+              먼저 [저장] 버튼으로 Gist에 저장하세요.
             </div>
           </div>
         )}

@@ -29,7 +29,7 @@ export function useKeyboardShortcuts({
 }: UseKeyboardShortcutsOptions) {
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
-      // Ctrl+S (수동 백업) — 입력 필드 포커스 중에도 동작 (브라우저 저장 다이얼로그 방지 위해 preventDefault 필수)
+      // Ctrl+S (저장: 로컬 백업 + Gist, 헤더 [저장]과 동일) — 입력 필드 포커스 중에도 동작 (브라우저 저장 다이얼로그 방지 위해 preventDefault 필수)
       if ((e.ctrlKey || e.metaKey) && e.key === "s") {
         e.preventDefault();
         onSave?.();

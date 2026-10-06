@@ -1107,15 +1107,18 @@ export function saveDataSerialized(serialized: string): void {
 
       // 통합 사용자 데이터 파일 동기화 (dev 서버: data/farmwallet-data.json에 기록)
       // 캐시(prices/tickerDatabase/historicalDailyCloses)는 제외, _exportedAt 포함
-      try {
-        const userFieldsWithMeta = { ...JSON.parse(userDataStr), _exportedAt: new Date().toISOString() };
-        void fetch("/api/farmwallet-data", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify(userFieldsWithMeta)
-        }).catch(() => {});
-      } catch (syncErr) {
-        console.warn("[FarmWallet] farmwallet-data sync failed", syncErr);
+      // 정적 배포(폰)에는 엔드포인트가 없어 매 저장마다 ~1MB가 405로 버려지므로 DEV에서만.
+      if (import.meta.env.DEV) {
+        try {
+          const userFieldsWithMeta = { ...JSON.parse(userDataStr), _exportedAt: new Date().toISOString() };
+          void fetch("/api/farmwallet-data", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify(userFieldsWithMeta)
+          }).catch(() => {});
+        } catch (syncErr) {
+          console.warn("[FarmWallet] farmwallet-data sync failed", syncErr);
+        }
       }
       return;
     } catch (e) {
@@ -1124,11 +1127,12 @@ export function saveDataSerialized(serialized: string): void {
     }
   }
   const message = lastErr instanceof DOMException && lastErr.name === "QuotaExceededError"
-    ? "저장 공간이 부족합니다. 오래된 백업을 지우거나 데이터를 줄여 주세요."
+    ? "저장 공간이 부족합니다. 설정 > 고급 / 진단 > 저장 공간 사용량에서 큰 항목을 확인해 주세요."
     : lastErr instanceof Error
       ? lastErr.message
       : "저장에 실패했습니다.";
-  throw new Error(message);
+  // 원래 오류를 cause로 남긴다 — useBackup이 quota 초과를 알아보고 오래된 백업 정리·재시도를 하도록
+  throw new Error(message, { cause: lastErr });
 }
 
 export function saveData(data: AppData): void {

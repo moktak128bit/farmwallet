@@ -11,6 +11,7 @@
  *
  * 모달이 뒤로가기가 아닌 방법(X 버튼·ESC)으로 닫히면 대응하는 히스토리 항목이 남는다(stale).
  *   - 최상위가 그 모달이면 history.back()으로 즉시 소비 → 다음 뒤로가기가 곧장 이전 탭으로 간다.
+ *     (한 렌더에서 여러 개가 함께 닫히면 닫힌 수만큼 소비하고 history.go(-k) 한 번으로 이동)
  *   - 중간에 끼어 있으면(드로어 열고 탭 전환 등) stale 표시만 해두고, 뒤로가기로 그 위치에 내려앉았을 때
  *     한 번 더 history.back()으로 건너뛴다(사용자는 한 번만 누른다).
  *
@@ -27,6 +28,8 @@ export interface HistoryLike {
   pushState(state: unknown): void;
   replaceState(state: unknown): void;
   back(): void;
+  /** 여러 항목 한 번에 이동 — 모달 여러 개가 한 렌더에서 함께 닫힐 때(go(-k)) */
+  go(delta: number): void;
 }
 
 interface HistoryNavDeps {
@@ -35,8 +38,8 @@ interface HistoryNavDeps {
   getTab: () => TabId;
   setTab: (tab: TabId) => void;
   getModalDepth: () => number;
-  /** 최상위 모달 닫기 시도 — 실제로 닫혔는지는 이후 깊이 변화로 판단 */
-  closeTopModal: () => boolean;
+  /** 최상위 모달 닫기 시도 — 실제로 닫혔는지는 이후 깊이 변화로 판단. "refused" = 모달이 ESC를 preventDefault로 거부 */
+  closeTopModal: () => boolean | "refused";
 }
 
 export interface HistoryNavController {
@@ -63,7 +66,8 @@ function readIdx(state: unknown): number | null {
   return null;
 }
 
-/** closeTopModal 이후 닫힘 알림이 오지 않을 때(모달이 ESC를 무시 등) 기대 카운터를 풀어주는 시간 */
+/** closeTopModal 이후 닫힘 알림이 오지 않을 때(모달이 ESC를 무시 등) 기대 카운터를 풀고,
+ *  아직 열린 모달의 히스토리 항목을 되살리는 시간 */
 const EXPECTED_POP_RESET_MS = 1000;
 
 export function createHistoryNav(deps: HistoryNavDeps): HistoryNavController {
@@ -82,7 +86,12 @@ export function createHistoryNav(deps: HistoryNavDeps): HistoryNavController {
     if (expectedResetTimer) clearTimeout(expectedResetTimer);
     expectedResetTimer = setTimeout(() => {
       expectedResetTimer = null;
+      // 합성 ESC를 거부한 모달(예: 충돌 해결 중 busy인 GistConflictModal)은 열린 채 남는데 항목은 handlePop이
+      // 이미 잘라냈다 → 되살리지 않으면 이후 뒤로가기가 그 모달을 건너뛰고 탭 이동·앱 종료로 간다 (R3/R6).
+      // 되살린 항목은 나중에 모달이 X/해결로 닫힐 때 self-close 경로가 back()으로 소비한다.
+      const unclosed = disposed ? 0 : Math.min(expectedModalPops, deps.getModalDepth());
       expectedModalPops = 0;
+      for (let n = unclosed; n > 0; n--) push({ kind: "modal", stale: false });
     }, EXPECTED_POP_RESET_MS);
   };
 
@@ -126,29 +135,38 @@ export function createHistoryNav(deps: HistoryNavDeps): HistoryNavController {
       if (disposed) return;
       const prev = lastDepth;
       lastDepth = depth;
+      // modalStack.notify는 microtask로 합쳐 알리므로 한 렌더에서 여러 모달이 열리고/닫히면
+      // 깊이가 2 이상 한 번에 변한다(예: 버전 모달 + 적용 확인 모달이 [적용] 한 번에 함께 닫힘) —
+      // 변화 폭만큼 처리해야 유령 항목(헛뒤로가기)이 남지 않는다 (K10)
       if (depth > prev) {
-        push({ kind: "modal", stale: false });
+        for (let n = depth - prev; n > 0; n--) push({ kind: "modal", stale: false });
         return;
       }
       if (depth < prev) {
-        if (expectedModalPops > 0) {
-          // 뒤로가기로 닫힌 모달 — 히스토리 항목은 이미 popstate에서 제거됨
-          expectedModalPops -= 1;
-          return;
-        }
-        // X 버튼/ESC 등 자체 닫힘 — 대응 항목을 stale 처리
-        for (let i = entries.length - 1; i >= 0; i--) {
-          const e = entries[i];
-          if (e.kind === "modal" && !e.stale) {
-            if (i === entries.length - 1) {
-              entries.pop();
-              hist.back(); // 최상위면 즉시 소비
-            } else {
-              e.stale = true; // 중간이면 내려앉을 때 건너뜀
+        let drops = prev - depth;
+        // 뒤로가기로 닫힌 모달 — 히스토리 항목은 이미 popstate에서 제거됨
+        const absorbed = Math.min(drops, expectedModalPops);
+        expectedModalPops -= absorbed;
+        drops -= absorbed;
+        // X 버튼/ESC 등 자체 닫힘 — 닫힌 개수만큼 대응 항목을 소비/stale 처리
+        let poppedTop = 0;
+        for (; drops > 0; drops--) {
+          for (let i = entries.length - 1; i >= 0; i--) {
+            const e = entries[i];
+            if (e.kind === "modal" && !e.stale) {
+              if (i === entries.length - 1) {
+                entries.pop(); // 최상위면 즉시 소비(히스토리 이동은 아래에서 한 번에)
+                poppedTop += 1;
+              } else {
+                e.stale = true; // 중간이면 내려앉을 때 건너뜀
+              }
+              break;
             }
-            break;
           }
         }
+        // 같은 태스크에서 back()을 연달아 부르면 브라우저마다 합쳐지는 방식이 달라 go(-k) 한 번으로 이동
+        if (poppedTop === 1) hist.back();
+        else if (poppedTop > 1) hist.go(-poppedTop);
       }
     },
 
@@ -159,7 +177,13 @@ export function createHistoryNav(deps: HistoryNavDeps): HistoryNavController {
       if (idx >= entries.length) return; // forward 이동·새로고침 잔여 항목 — 관여하지 않음
       const popped = entries.splice(idx + 1);
       const liveModalPopped = popped.some((e) => e.kind === "modal" && !e.stale);
-      if (liveModalPopped && deps.getModalDepth() > 0 && deps.closeTopModal()) {
+      const closed = liveModalPopped && deps.getModalDepth() > 0 ? deps.closeTopModal() : false;
+      if (closed === "refused") {
+        // 모달이 닫기를 즉시 거부(busy) — 1초 타이머를 기다리면 그 사이 뒤로가기가 모달을 건너뛰고 탭 이동·앱 종료로
+        // 간다(Q4). 그 자리에서 항목을 되살려 위치를 모달에 고정한다. 거부가 오탐(입력 필드의 ESC preventDefault)이라
+        // 모달이 실제로 닫히면 기대 카운터가 0이므로 self-close 경로가 이 항목을 back()으로 소비한다.
+        push({ kind: "modal", stale: false });
+      } else if (closed) {
         expectedModalPops += 1;
         armExpectedReset();
       }
@@ -209,6 +233,7 @@ export function useHistoryNav(): void {
         }
       },
       back: () => h.back(),
+      go: (delta) => h.go(delta),
     };
     const ctrl = createHistoryNav({
       hist,

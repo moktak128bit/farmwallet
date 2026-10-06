@@ -3,6 +3,7 @@ import { STORAGE_KEYS, BACKUP_CONFIG } from "../constants/config";
 import { newIdWithPrefix } from "../utils/id";
 import {
   getBackupStore,
+  isLocalStorageBackupStore,
   readPendingSafetySnapshot,
   writePendingSafetySnapshotSync,
   clearPendingSafetySnapshot,
@@ -291,7 +292,7 @@ async function saveFileBackup(payload: string, timeoutMs: number): Promise<{ sav
   } catch (error) {
     const isAbortError = error instanceof DOMException && error.name === "AbortError";
     const message = isAbortError
-      ? `요청 시간 초과 (${timeoutMs}ms)`
+      ? `요청 시간 초과 (${Math.round(timeoutMs / 1000)}초)`
       : toErrorMessage(error);
     console.warn("[backupService] file backup request failed", error);
     return { saved: false, error: message };
@@ -543,6 +544,19 @@ export async function clearOldBackups(keepCount: number = 1): Promise<number> {
   } catch (error) {
     console.warn("[backupService] failed to clear old backups", error);
     return 0;
+  }
+}
+
+/**
+ * 백업이 localStorage 폴백에 들어 있는지. localStorage quota 초과 시 clearOldBackups로 공간을 비울 수 있는 건 이때뿐 —
+ * IndexedDB 백업은 별도 한도라 지워도 DATA 저장이 살아나지 않고 복원 지점만 잃는다. 판정 실패는 false(지우지 않는 쪽).
+ */
+export async function isBackupStoreLocalStorage(): Promise<boolean> {
+  if (typeof window === "undefined") return false;
+  try {
+    return await isLocalStorageBackupStore();
+  } catch {
+    return false;
   }
 }
 

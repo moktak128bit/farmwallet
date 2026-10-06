@@ -1,7 +1,7 @@
 /**
  * 클라우드 동기화 (GitHub Gist) 카드 — 토큰/Gist ID 입력, 수동 저장·불러오기,
  * 자동 동기화 토글. SettingsPage에서 분리.
- * gistToken/gistTokenPersist/gistId/gistSyncing/gistLastSync 상태는 이 카드 전용이라
+ * gistToken/gistTokenPersist/gistId/gistSyncing 상태는 이 카드 전용이라
  * 이 컴포넌트가 소유한다 (입력 타이핑이 부모를 재렌더하지 않음).
  * 저장/불러오기는 useGistSync의 manualPush/manualPull(정식 경로)을 props로 받아 사용 —
  * 카드 자체 fetch로 충돌 감지·lastPushAt/lastPullAt 갱신을 우회하지 않는다.
@@ -25,7 +25,7 @@ interface Props {
   /** 자동 Gist 동기화 ON/OFF */
   autoSyncEnabled: boolean;
   onAutoSyncChange?: (enabled: boolean) => void;
-  /** 마지막 자동 저장/불러오기 시각 */
+  /** 마지막 Gist 저장/불러오기 시각 (자동·수동 모두 — useGistSync가 성공 시에만 갱신) */
   gistLastPushAt?: string | null;
   gistLastPullAt?: string | null;
   /** 정식 push 경로 (충돌 감지·lastPushAt·payload 기록 포함) — useGistSync.manualPush */
@@ -46,7 +46,6 @@ export const GistSyncCard: React.FC<Props> = React.memo(function GistSyncCard({
   const [gistTokenPersist, setGistTokenPersist] = useState(() => getGistTokenPersisted());
   const [gistId, setGistIdState] = useState(() => getGistId());
   const [gistSyncing, setGistSyncing] = useState(false);
-  const [gistLastSync, setGistLastSync] = useState<string | null>(null);
   const [connectOpen, setConnectOpen] = useState(false);
 
   // 기기 연결 등으로 토큰·Gist ID가 바뀌면 로컬 state 재독
@@ -59,6 +58,9 @@ export const GistSyncCard: React.FC<Props> = React.memo(function GistSyncCard({
     window.addEventListener(GIST_CONFIG_CHANGE_EVENT, reread);
     return () => window.removeEventListener(GIST_CONFIG_CHANGE_EVENT, reread);
   }, []);
+
+  // 켤 수 없을 때만 잠근다 — 토큰이 사라져도(탭 닫힘 등) 켜져 있는 자동 동기화는 끌 수 있어야 함
+  const cannotEnableAutoSync = !autoSyncEnabled && (!gistToken || !gistId);
 
   return (
     <div className="card">
@@ -124,7 +126,7 @@ export const GistSyncCard: React.FC<Props> = React.memo(function GistSyncCard({
       </div>
       <div style={{ display: "flex", flexDirection: "column", gap: 12, marginTop: 12 }}>
         <div>
-          <div style={{ fontSize: 12, fontWeight: 700, color: "var(--chart-income)", marginBottom: 6 }}>Gist에 저장 (안전 — 현재 데이터를 백업)</div>
+          <div style={{ fontSize: 12, fontWeight: 700, color: "var(--chart-income)", marginBottom: 6 }}>Gist에 저장 (현재 데이터를 Gist에만 올림)</div>
           <button
             type="button"
             disabled={gistSyncing || !gistToken}
@@ -140,14 +142,13 @@ export const GistSyncCard: React.FC<Props> = React.memo(function GistSyncCard({
                 await onManualPush();
                 // 첫 저장 시 Gist가 새로 생성됐을 수 있어 ID 필드 동기화
                 setGistIdState(getGistId());
-                setGistLastSync(new Date().toISOString());
               } finally {
                 setGistSyncing(false);
               }
             }}
             style={{ background: "var(--chart-income)", border: "none", color: "white", padding: "8px 20px", borderRadius: 8, fontWeight: 600 }}
           >
-            {gistSyncing ? "동기화 중..." : "Gist에 저장"}
+            {gistSyncing ? "진행 중..." : "Gist에 저장"}
           </button>
         </div>
         <div>
@@ -160,15 +161,11 @@ export const GistSyncCard: React.FC<Props> = React.memo(function GistSyncCard({
                 toast.error("동기화 핸들러가 연결되지 않았습니다.");
                 return;
               }
-              if (!window.confirm("Gist의 데이터로 현재 데이터를 덮어씁니다.\n적용 직전 현재 데이터는 안전 스냅샷으로 보관됩니다. 계속할까요?")) {
-                return;
-              }
               setGistSyncing(true);
               try {
-                // 정식 pull 경로 — 데이터 검증·안전 스냅샷·lastPullAt 갱신 포함
-                // (성공/실패 토스트는 manualPull 내부에서 처리)
+                // 정식 pull 경로 — 데이터 검증·변경 미리보기(ApplyConfirmModal)·안전 스냅샷·lastPullAt 갱신 포함
+                // (성공/실패 토스트는 manualPull 내부에서 처리 — 덮어쓰기 확인은 미리보기 모달이 담당)
                 await onManualPull();
-                setGistLastSync(new Date().toISOString());
               } finally {
                 setGistSyncing(false);
               }
@@ -179,19 +176,27 @@ export const GistSyncCard: React.FC<Props> = React.memo(function GistSyncCard({
           </button>
         </div>
       </div>
-      <DeviceConnectModal isOpen={connectOpen} onClose={() => setConnectOpen(false)} />
-      {gistLastSync && (
-        <p className="hint" style={{ marginTop: 8 }}>
-          마지막 동기화: {new Date(gistLastSync).toLocaleString("ko-KR")}
+      <p className="hint" style={{ marginTop: 8 }}>
+        여기 [Gist에 저장]은 Gist에만 올립니다. 상단 [저장]은 로컬 백업과 Gist 저장을 함께 하고, 과거 버전은 상단 [불러오기]에서 고를 수 있습니다.
+      </p>
+      {gistLastPushAt && (
+        <p className="hint" style={{ marginTop: 4 }}>
+          마지막 Gist 저장: {new Date(gistLastPushAt).toLocaleString("ko-KR")}
         </p>
       )}
+      {gistLastPullAt && (
+        <p className="hint" style={{ marginTop: 2 }}>
+          마지막 Gist 불러오기: {new Date(gistLastPullAt).toLocaleString("ko-KR")}
+        </p>
+      )}
+      <DeviceConnectModal isOpen={connectOpen} onClose={() => setConnectOpen(false)} />
       <div style={{ marginTop: 16, borderTop: "1px solid var(--border)", paddingTop: 12 }}>
         <div className="card-title" style={{ fontSize: 13, marginBottom: 8 }}>자동 동기화</div>
-        <label style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 6, cursor: (!gistToken || !gistId) ? "not-allowed" : "pointer" }}>
+        <label style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 6, cursor: cannotEnableAutoSync ? "not-allowed" : "pointer" }}>
           <input
             type="checkbox"
             checked={autoSyncEnabled}
-            disabled={!gistToken || !gistId}
+            disabled={cannotEnableAutoSync}
             onChange={(e) => {
               onAutoSyncChange?.(e.target.checked);
               toast.success(e.target.checked ? "자동 동기화를 켰습니다." : "자동 동기화를 껐습니다.");
@@ -199,18 +204,8 @@ export const GistSyncCard: React.FC<Props> = React.memo(function GistSyncCard({
           />
           <span style={{ fontSize: 13 }}>자동 동기화 사용 (데이터 변경 후 1분 뒤 자동 저장 · 앱 시작 시 자동 불러오기)</span>
         </label>
-        {(!gistToken || !gistId) && (
+        {cannotEnableAutoSync && (
           <p className="hint">Token과 Gist ID를 먼저 설정해야 자동 동기화를 사용할 수 있습니다.</p>
-        )}
-        {gistLastPushAt && (
-          <p className="hint" style={{ marginTop: 4 }}>
-            마지막 자동 저장: {new Date(gistLastPushAt).toLocaleString("ko-KR")}
-          </p>
-        )}
-        {gistLastPullAt && (
-          <p className="hint" style={{ marginTop: 2 }}>
-            마지막 자동 불러오기: {new Date(gistLastPullAt).toLocaleString("ko-KR")}
-          </p>
         )}
       </div>
     </div>

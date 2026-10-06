@@ -78,12 +78,17 @@ export function subscribeModalStack(listener: () => void): () => void {
  * 최상위 모달 닫기 시도(뒤로가기 연동용). 열린 모달이 없으면 false.
  * 합성 Escape keydown을 현재 포커스 요소(없으면 body)에서 버블링 — 각 모달의 ESC 핸들러가 isTopModal()로
  * 최상위만 반응한다. 실제 닫힘 여부는 모달 구현에 달려 있으므로 호출자는 depth 변화로 확인해야 한다.
+ * "refused": 모달이 닫기를 거부한다고 ESC에 preventDefault로 알린 경우(예: busy인 충돌 모달) —
+ * 호출자는 1초 타이머를 기다리지 않고 즉시 모달 히스토리 항목을 되살린다 (Q4).
+ * (포커스 입력 필드가 ESC를 preventDefault하고 모달은 그대로 닫히는 오탐도 있을 수 있음 — 호출자가 self-close로 회복)
  */
-export function closeTopModal(): boolean {
+export function closeTopModal(): boolean | "refused" {
   if (stack.length === 0 || typeof document === "undefined") return false;
   const target = (document.activeElement as HTMLElement | null) ?? document.body;
-  target.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape", code: "Escape", bubbles: true, cancelable: true }));
-  return true;
+  const accepted = target.dispatchEvent(
+    new KeyboardEvent("keydown", { key: "Escape", code: "Escape", bubbles: true, cancelable: true }),
+  );
+  return accepted ? true : "refused";
 }
 
 /** 현재 모달 깊이를 구독하는 훅 (하단 탭바 숨김 등) */

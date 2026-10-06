@@ -20,6 +20,7 @@ import {
 } from "../constants/config";
 import { ERROR_MESSAGES } from "../constants/errorMessages";
 import { notifyDataChanged } from "../services/tabSync";
+import { isBackupStoreLocalStorage } from "../services/backupService";
 import { useUIStore } from "../store/uiStore";
 
 interface BackupIntegrity {
@@ -39,8 +40,27 @@ function isQuotaExceededError(error: unknown): boolean {
       error.code === 1014
     );
   }
+  // saveDataSerialized는 한국어 문구로 감싸 던지고 원래 오류는 cause에 둔다
+  if (error instanceof Error && error.cause !== undefined && isQuotaExceededError(error.cause)) return true;
   const msg = error instanceof Error ? error.message.toLowerCase() : "";
   return msg.includes("quota") || msg.includes("exceeded the storage");
+}
+
+/** 마지막 DATA 본 저장 시각을 기록 — 새로고침 뒤에도 '백업 이후 쓴 내용' 판정이 이어지게 (quota·access 실패는 무시) */
+function persistLastWriteAt(ms: number): void {
+  try {
+    window.localStorage.setItem(STORAGE_KEYS.LAST_DATA_WRITE_AT, String(ms));
+  } catch { /* best-effort */ }
+}
+
+function readLastWriteAt(): number {
+  if (typeof window === "undefined") return 0;
+  try {
+    const n = Number(window.localStorage.getItem(STORAGE_KEYS.LAST_DATA_WRITE_AT));
+    return Number.isFinite(n) && n > 0 ? n : 0;
+  } catch {
+    return 0;
+  }
 }
 
 type UseBackupOptions = {
@@ -58,6 +78,8 @@ export function useBackup(data: AppData, options?: UseBackupOptions) {
   const disabledRef = useRef(options?.disabled === true);
   disabledRef.current = options?.disabled === true;
   const [latestBackupAt, setLatestBackupAt] = useState<string | null>(null);
+  /** 첫 백업 목록 조회가 끝났는지 — 끝나기 전엔 latestBackupAt=null이 '백업 없음'인지 '아직 모름'인지 구분 못 해 경고하지 않는다 */
+  const [backupListLoaded, setBackupListLoaded] = useState(false);
   const [backupVersion, setBackupVersion] = useState<number>(0);
   const [backupIntegrity, setBackupIntegrity] = useState<BackupIntegrity>({
     createdAt: null,
@@ -78,6 +100,12 @@ export function useBackup(data: AppData, options?: UseBackupOptions) {
   );
   const isAutoBackupRunningRef = useRef(false);
   const lastAutoBackupAtRef = useRef(0);
+  /**
+   * 마지막으로 실제 디스크 쓰기가 일어난 시각 — 그 뒤 백업이 있으면 '백업 권장' 경고를 끈다(조회만 한 날 거짓 경고 방지).
+   * 부팅 시 LAST_DATA_WRITE_AT에서 복원 — 0으로 시작하면 지난 세션의 미백업 쓰기가 '안 썼음'으로 판정돼 경고가 사라진다.
+   */
+  const [bootLastWriteAt] = useState(readLastWriteAt); // 렌더마다 localStorage를 읽지 않게 최초 1회만
+  const lastWriteAtRef = useRef(bootLastWriteAt);
   /** 디바운스 타이머/즉시 flush 양쪽이 같은 최신 data를 참조하도록 */
   const dataRef = useRef(data);
   dataRef.current = data;
@@ -86,6 +114,7 @@ export function useBackup(data: AppData, options?: UseBackupOptions) {
     const list = await getAllBackupList();
     const latest = list[0];
     setLatestBackupAt(latest?.createdAt ?? null);
+    setBackupListLoaded(true);
 
     const latestMs = latest?.createdAt ? Date.parse(latest.createdAt) : NaN;
     if (Number.isFinite(latestMs) && latestMs > 0) {
@@ -163,6 +192,10 @@ export function useBackup(data: AppData, options?: UseBackupOptions) {
           return;
         }
         lastSavedPayloadRef.current = userDataStr;
+        // 디바운스 중 닫은 마지막 편집도 '백업 이후 쓴 내용'으로 남긴다
+        const flushedAt = Date.now();
+        lastWriteAtRef.current = flushedAt;
+        persistLastWriteAt(flushedAt);
         // unload flush가 성공했다면 드래프트 슬롯도 정리 — 다음 boot에서 거짓 복구 방지
         try {
           window.localStorage.removeItem(STORAGE_KEYS.DRAFT);
@@ -199,6 +232,8 @@ export function useBackup(data: AppData, options?: UseBackupOptions) {
     if (!userPayload || userPayload === lastSavedPayloadRef.current) {
       // dedup: 저장할 게 없음 → 상태 깜빡임 없이 종료. dirty 신호만 정리.
       ui.setHasDirtyChanges(false);
+      // 실패 뒤 되돌리기로 디스크 내용과 같아졌다면 직전 '저장 실패' 표시도 정리한다
+      if (userPayload && ui.saveStatus === "error") ui.setSaveStatus("saved");
       return;
     }
     // 실제 저장·백업에는 캐시 포함 full payload가 필요 (saveDataSerialized가 IDB 캐시 분리 저장).
@@ -208,6 +243,9 @@ export function useBackup(data: AppData, options?: UseBackupOptions) {
     try {
       saveDataSerialized(fullPayload);
       lastSavedPayloadRef.current = userPayload;
+      const writtenAt = Date.now();
+      lastWriteAtRef.current = writtenAt;
+      persistLastWriteAt(writtenAt);
       // 정상 저장 → 드래프트 슬롯 정리
       try {
         window.localStorage.removeItem(STORAGE_KEYS.DRAFT);
@@ -221,15 +259,17 @@ export function useBackup(data: AppData, options?: UseBackupOptions) {
       const message = error instanceof Error ? error.message : "자동 저장에 실패했습니다.";
       ui.setSaveStatus("error", message);
       // quota 초과: 오래된 백업을 자동 정리하고 1회 재시도 (저장 공간 막힘은 장기 사용자의 가장 현실적인 차단)
-      // 백업 저장소는 비동기(IndexedDB; 폴백 시 localStorage) — 정리가 끝난 뒤 같은 payload로 재시도한다.
+      // 정리는 백업이 localStorage 폴백에 있을 때만 — IndexedDB 백업은 별도 한도라 지워도 DATA 저장은 그대로
+      // 실패하고 복원 지점(안전 스냅샷 포함)만 영구히 잃는다. 그때는 정리 없이 용량 안내만 띄운다.
       if (isQuotaExceededError(error)) {
         const dataAtFailure = dataRef.current;
         const showQuotaError = () =>
           toast.error(
-            "저장 공간이 가득 찼습니다. 설정 > 백업에서 오래된 백업·캐시를 비워주세요.",
+            "저장 공간이 가득 찼습니다. 설정 > 고급 / 진단 > 저장 공간 사용량에서 큰 항목을 확인해 주세요.",
             { id: AUTO_SAVE_ERROR_TOAST_ID, duration: 8000 }
           );
-        void clearOldBackups(3)
+        void isBackupStoreLocalStorage()
+          .then((isLocal) => (isLocal ? clearOldBackups(3) : 0))
           .then((removed) => {
             // 정리 중에 더 새로운 변경이 들어왔으면 재시도하지 않는다 — 오래된 payload로 최신 저장을 덮지 않게.
             // (새 변경은 자체 디바운스 저장에서 다시 시도한다)
@@ -238,6 +278,9 @@ export function useBackup(data: AppData, options?: UseBackupOptions) {
               try {
                 saveDataSerialized(fullPayload);
                 lastSavedPayloadRef.current = userPayload;
+                const retriedAt = Date.now();
+                lastWriteAtRef.current = retriedAt;
+                persistLastWriteAt(retriedAt);
                 try {
                   window.localStorage.removeItem(STORAGE_KEYS.DRAFT);
                   window.localStorage.removeItem(STORAGE_KEYS.DRAFT_AT);
@@ -330,7 +373,8 @@ export function useBackup(data: AppData, options?: UseBackupOptions) {
       // 드래프트 슬롯은 저장 직전 1회만 기록 — 매 변경마다 대용량 write-through 하지 않는다.
       // (크래시 보호 윈도우가 디바운스 길이만큼 늘어나는 대신 localStorage 쓰기 횟수가 줄어듦.
       //  저장 실패(quota 등) 시에는 드래프트가 남아 다음 boot에서 복구 가능.)
-      if (isDirty) {
+      // 대기 중 수동 백업 등이 같은 내용을 이미 썼으면 드래프트도 남기지 않는다(곧 dedup되어 정리되지 않음)
+      if (isDirty && pendingUserPayload !== lastSavedPayloadRef.current) {
         try {
           // 드래프트에도 캐시(prices/tickerDatabase/historicalDailyCloses)는 제외 — full payload는
           // 메인 DATA보다 커서 quota 압박 시 드래프트 write까지 동반 실패한다. 캐시는 부팅 시
@@ -360,13 +404,38 @@ export function useBackup(data: AppData, options?: UseBackupOptions) {
     toast.loading("백업 저장 중...", { id: toastId });
 
     try {
-      const payload = JSON.stringify(data);
+      // 디바운스 타이머·자동저장과 같은 최신 dataRef 기준 — 쓴 본문과 '저장됨' 기록이 같은 객체에서 나오게
+      const current = dataRef.current;
+      const payload = JSON.stringify(current);
+      const userPayload = toUserDataJson(current);
       saveDataSerialized(payload);
+      // 자동저장 성공 경로와 같은 기록 — 안 하면 대기 중인 디바운스가 같은 내용을 백업 뒤에 다시 써서
+      // LAST_DATA_WRITE_AT이 백업보다 새로워지고, 12/24시간 뒤 거짓 '백업 권장'이 뜬다.
+      // 타이머는 취소하지 않는다(그 사이 또 바뀌면 정상 저장, 같으면 dedup).
+      const wroteNew = userPayload !== lastSavedPayloadRef.current;
+      lastSavedPayloadRef.current = userPayload;
+      if (wroteNew) {
+        // '새 내용을 쓴 시각'만 기록(자동저장과 같은 의미) — 내용이 같으면 백업 이후 쓴 것이 없으므로
+        // 갱신하면 스냅샷이 실패했을 때 데이터=백업인데도 '백업 권장' 경고가 새로 켜진다.
+        const writtenAt = Date.now();
+        lastWriteAtRef.current = writtenAt;
+        persistLastWriteAt(writtenAt);
+      }
+      try {
+        window.localStorage.removeItem(STORAGE_KEYS.DRAFT);
+        window.localStorage.removeItem(STORAGE_KEYS.DRAFT_AT);
+      } catch { /* quota·access 무시 */ }
+      const ui = useUIStore.getState();
+      ui.setHasDirtyChanges(false);
+      // 쓰기에 성공했으므로 직전 '저장 실패' 상태는 내용이 같아도 정리한다
+      ui.setSaveStatus("saved");
+      // 디바운스가 dedup되면 방송이 사라지므로 새 내용을 쓴 이 경로가 대신 알린다
+      if (wroteNew) notifyDataChanged(userPayload);
 
-      const result = await saveBackupSnapshot(data, {
+      const result = await saveBackupSnapshot(current, {
         skipHash: false,
         dataJson: payload,
-        userDataJson: toUserDataJson(data),
+        userDataJson: userPayload,
         timeoutMs: BACKUP_CONFIG.API_TIMEOUT_MS
       });
 
@@ -385,11 +454,13 @@ export function useBackup(data: AppData, options?: UseBackupOptions) {
         return;
       }
 
-      const partialReason = result.fileSaved
-        ? `파일 저장 성공, 로컬 저장 실패 (${result.localError ?? "원인 미상"})`
-        : `로컬 저장 성공, 파일 저장 실패 (${result.fileError ?? "원인 미상"})`;
-      onLog?.(`부분 백업 완료: ${partialReason}`, "success");
-      toast.success(`부분 백업 완료: ${partialReason}`, { id: toastId });
+      // 한쪽만 성공 — 초록 성공 토스트에 '실패'를 섞지 않고 중립 토스트로 무엇이 남았는지 앞세운다
+      const partialMessage = result.fileSaved
+        ? `파일 사본 저장, 브라우저 저장 실패: ${result.localError ?? "원인 미상"}`
+        : `백업 저장 완료(브라우저) — 파일 사본 실패: ${result.fileError ?? "원인 미상"}`;
+      // 브라우저 백업(복원에 쓰는 쪽)이 실패했으면 error, 파일 사본만 실패면 info
+      onLog?.(partialMessage, result.localSaved ? "info" : "error");
+      toast(partialMessage, { id: toastId });
     } catch (error) {
       const message =
         error instanceof Error && error.message ? error.message : ERROR_MESSAGES.BACKUP_SAVE_FAILED;
@@ -397,7 +468,7 @@ export function useBackup(data: AppData, options?: UseBackupOptions) {
       console.error("[useBackup] manual backup failed:", error);
       toast.error(message, { id: toastId });
     }
-  }, [data, refreshLatestBackup, onLog]);
+  }, [refreshLatestBackup, onLog]);
 
   /**
    * 대기 중인 디바운스 타이머를 즉시 실행.
@@ -434,7 +505,18 @@ export function useBackup(data: AppData, options?: UseBackupOptions) {
   }, []);
 
   const getBackupWarning = () => {
-    if (!latestBackupAt) return null;
+    // 첫 목록 조회 전에는 판단 보류 — 부팅 직후 latestBackupAt=null로 거짓 경고가 깜빡이지 않게
+    if (!backupListLoaded) return null;
+    if (!latestBackupAt) {
+      // 백업이 하나도 없는데 쓴 내용이 있으면 경고(새 설치·조회만 한 경우는 조용히).
+      // 저장 직후 자동 스냅샷이 도는 동안은 곧 백업이 생기므로 보류.
+      if (lastWriteAtRef.current > 0 && !isAutoBackupRunningRef.current) {
+        return { type: "warning" as const, message: "아직 로컬 백업이 없습니다. [저장]을 눌러 주세요." };
+      }
+      return null;
+    }
+    // 백업 이후 실제로 쓴 내용이 없으면 데이터 = 백업 → 경과 시간과 무관하게 경고하지 않는다
+    if (lastWriteAtRef.current <= Date.parse(latestBackupAt)) return null;
     const diffHours = (Date.now() - new Date(latestBackupAt).getTime()) / 36e5;
     if (diffHours >= BACKUP_WARNING_HOURS.CRITICAL) {
       return { type: "critical" as const, message: "24시간 이상 백업이 없습니다. 지금 백업을 권장합니다." };

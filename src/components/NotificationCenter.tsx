@@ -5,7 +5,7 @@
  * FxRateContext·useTaxGrossUp) + 표시 + 스누즈(7일, localStorage STORAGE_KEYS.NUDGE_DISMISSED)만 한다.
  *
  * DraftRecoveryBanner·SaveStatusPill·탭 충돌/Gist 충돌 모달은 이 패널이 대신하지 않는다 — 헤더에 그대로
- * 유지되고, 이 패널에는 참고용으로 백업 경과 항목만 추가로 노출한다(기존 헤더 pill은 손대지 않음).
+ * 유지된다. 백업 경과도 헤더 상태 메뉴가 맡는다(벨과 중복 경보 금지).
  */
 import React, { useCallback, useEffect, useMemo, useState } from "react";
 import { Bell } from "lucide-react";
@@ -63,12 +63,7 @@ const SEVERITY_COLOR: Record<NudgeSeverity, string> = {
   info: "var(--accent)"
 };
 
-interface Props {
-  /** hooks/useBackup().latestBackupAt — App.tsx가 이미 계산해 둔 값을 그대로 받아 중복 조회하지 않음 */
-  latestBackupAt: string | null;
-}
-
-export const NotificationCenter: React.FC<Props> = ({ latestBackupAt }) => {
+export const NotificationCenter: React.FC = () => {
   const [open, setOpen] = useState(false);
   const trapRef = useFocusTrap<HTMLDivElement>(open);
   const isTopModal = useModalStackEntry(open);
@@ -110,7 +105,6 @@ export const NotificationCenter: React.FC<Props> = ({ latestBackupAt }) => {
         taxGrossUp,
         historicalDailyFx,
         marketEnvSnapshots,
-        latestBackupAt,
         storageRatio,
         lastMigrationReport
       }),
@@ -126,7 +120,6 @@ export const NotificationCenter: React.FC<Props> = ({ latestBackupAt }) => {
       taxGrossUp,
       historicalDailyFx,
       marketEnvSnapshots,
-      latestBackupAt,
       storageRatio,
       lastMigrationReport
     ]

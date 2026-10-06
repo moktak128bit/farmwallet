@@ -39,6 +39,12 @@ export interface GistConflict {
   remoteUpdatedAt: string;
   /** push하려고 시도했던 로컬 데이터 JSON */
   pendingLocalDataJson: string;
+  /**
+   * 모달 문구·권장 선택을 가르는 사유. 없음 = 다른 기기가 원격을 바꿈(일반 충돌).
+   * "never-synced": 이 기기가 아직 이 Gist에서 불러온 적 없음(기기 연결 실패·취소 뒤)
+   * "restored": Gist 과거 버전을 복원한 상태에서 저장하려 함
+   */
+  reason?: "never-synced" | "restored";
 }
 
 /** 자동저장 상태 머신. saving/saved는 디바운스 콜백 진입·완료에 매핑. error는 다음 시도까지 sticky. */
@@ -83,6 +89,8 @@ interface PendingApply {
   onCancel?: () => void;
   /** true면 드래프트 복구처럼 "복구" 성격 — [적용] 버튼에 기본 포커스 */
   defaultFocusConfirm?: boolean;
+  /** true면 이 기기에서 온 데이터(백업 복원·가져오기) — 자동 동기화가 켜져 있으면 Gist·다른 기기로 퍼진다고 안내 */
+  propagatesToGist?: boolean;
 }
 
 /** 부팅 시 마지막 탭 복원 — TAB_ORDER 화이트리스트 외 값(구버전·오염)은 무시하고 dashboard */

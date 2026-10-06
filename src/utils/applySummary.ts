@@ -11,7 +11,7 @@
  * [확인]을 누르게 되는 것을 막을 수 있다(1-10 설계 의도).
  */
 import type { AppData } from "../types";
-import { diffAppData } from "../services/migrationReport";
+import { diffAppData, DIFF_COLLECTIONS } from "../services/migrationReport";
 import { runStructuralChecks, type IntegrityIssue } from "./dataIntegrity";
 
 export type ApplyDiff = ReturnType<typeof diffAppData>;
@@ -24,9 +24,31 @@ export interface ApplySummary {
   latestLedgerDateAfter: string;
   /** before에는 없던, after에서 새로 생기는 무결성 오류(severity=error) 건수 */
   newIntegrityErrorCount: number;
+  /**
+   * diff 컬렉션 밖에서 값이 달라진 사용자 설정 키(categoryPresets·savingsGoals·dailyBudget 등).
+   * 이게 비어 있지 않으면 "설정만 바뀐 덮어쓰기"도 모달을 거친다 (K9 — 확인 없이 덮이던 회귀 방지).
+   */
+  otherSettingsChanged: string[];
   /** 위 항목들 중 하나라도 달라졌으면 true — false면 모달을 생략하고 바로 적용해도 안전 */
   hasChanges: boolean;
 }
+
+/**
+ * otherSettingsChanged 비교에서 빼는 키.
+ *  - DIFF_COLLECTIONS: diffAppData가 이미 건수·내용으로 비교
+ *  - API 캐시(prices·tickerDatabase·historicalDailyCloses): Gist에 안 올라가 기기마다 다름
+ *  - 자동 적립 시계열(환율·벤치마크 종가·시세 환경): 기기마다 적립 시점이 달라 거의 매번 달라짐 →
+ *    넣으면 동일 데이터 pull에도 모달이 떠 습관적 [적용] 클릭을 유발한다
+ */
+const OTHER_SETTINGS_EXCLUDED: ReadonlySet<string> = new Set<string>([
+  ...DIFF_COLLECTIONS,
+  "prices",
+  "tickerDatabase",
+  "historicalDailyCloses",
+  "historicalDailyFx",
+  "benchmarkDailyCloses",
+  "marketEnvSnapshots"
+]);
 
 function latestLedgerDate(ledger: AppData["ledger"]): string {
   if (!Array.isArray(ledger)) return "";
@@ -51,6 +73,48 @@ function stableStringify(value: unknown): string {
   } catch {
     return `[unserializable:${typeof value}]`;
   }
+}
+
+function isEmptySetting(v: unknown): boolean {
+  if (v === undefined || v === null || v === "") return true;
+  if (Array.isArray(v)) return v.length === 0;
+  return typeof v === "object" && Object.keys(v as object).length === 0;
+}
+
+/**
+ * 설정 비교용 정리 — 빈 값(undefined·null·""·[]·{}) 속성을 재귀로 떨군다.
+ * "없음"과 "빈 값"은 사용자에게 같은 상태라, 정규화(normalizeImportedData)가 빈 객체를 undefined로
+ * 바꾸는 등의 표현 차이만으로 모달이 뜨지 않게 한다(동일 데이터 Gist 왕복 = 변화 없음).
+ */
+function pruneEmpty(v: unknown): unknown {
+  if (Array.isArray(v)) return v.map(pruneEmpty);
+  if (v && typeof v === "object") {
+    const out: Record<string, unknown> = {};
+    for (const [k, child] of Object.entries(v as Record<string, unknown>)) {
+      const pruned = pruneEmpty(child);
+      if (!isEmptySetting(pruned)) out[k] = pruned;
+    }
+    return out;
+  }
+  return v;
+}
+
+function settingKey(value: unknown): string {
+  const pruned = pruneEmpty(value);
+  return isEmptySetting(pruned) ? "" : stableStringify(pruned);
+}
+
+/** DIFF_COLLECTIONS·캐시·자동 적립 시계열 밖의 최상위 키 중 값이 달라진 것 (정렬된 키 목록) */
+function diffOtherSettings(before: AppData, after: AppData): string[] {
+  const b = before as unknown as Record<string, unknown>;
+  const a = after as unknown as Record<string, unknown>;
+  const keys = new Set([...Object.keys(b ?? {}), ...Object.keys(a ?? {})]);
+  const changed: string[] = [];
+  for (const key of keys) {
+    if (OTHER_SETTINGS_EXCLUDED.has(key)) continue;
+    if (settingKey(b?.[key]) !== settingKey(a?.[key])) changed.push(key);
+  }
+  return changed.sort();
 }
 
 function issueKey(issue: IntegrityIssue): string {
@@ -103,14 +167,19 @@ export function buildApplySummary(before: AppData, after: AppData): ApplySummary
   const latestLedgerDateBefore = latestLedgerDate(before.ledger);
   const latestLedgerDateAfter = latestLedgerDate(after.ledger);
   const newIntegrityErrorCount = countNewIntegrityErrors(before, after);
+  const otherSettingsChanged = diffOtherSettings(before, after);
   const hasChanges =
-    diff.hasChanges || latestLedgerDateBefore !== latestLedgerDateAfter || newIntegrityErrorCount > 0;
+    diff.hasChanges ||
+    latestLedgerDateBefore !== latestLedgerDateAfter ||
+    newIntegrityErrorCount > 0 ||
+    otherSettingsChanged.length > 0;
 
   return {
     diff,
     latestLedgerDateBefore,
     latestLedgerDateAfter,
     newIntegrityErrorCount,
+    otherSettingsChanged,
     hasChanges
   };
 }

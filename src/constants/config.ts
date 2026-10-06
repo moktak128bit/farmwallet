@@ -62,6 +62,8 @@ export const STORAGE_KEYS = {
   DRAFT: "farmwallet-data-v1__draft",
   /** 드래프트 작성 시각 (ms epoch). 너무 오래된 드래프트는 자동 폐기. */
   DRAFT_AT: "farmwallet-data-v1__draft__at",
+  /** 마지막으로 DATA 본 저장(자동저장·unload flush)이 성공한 시각 (ms epoch) — '백업 권장' 판정이 새로고침 뒤에도 이어지게 (hooks/useBackup.ts) */
+  LAST_DATA_WRITE_AT: "fw-last-data-write-at",
   /** 월급 실시간 타이머 설정 (월급일·월급액). 대시보드 위젯 전용, 로컬 저장. */
   SALARY_TIMER: "fw-salary-timer",
   /** 배당/이자 탭의 마지막 선택 (dividend|interest). 다음 방문 시 복원. */
@@ -109,7 +111,8 @@ export const DRAFT_MAX_AGE_MS = 7 * 24 * 60 * 60 * 1000;
 export const BACKUP_CONFIG = {
   API_PATH: "/api/backup",
   MAX_UNDO_HISTORY: 50,
-  API_TIMEOUT_MS: 3000,
+  // 3초는 1MB+ payload에 dev 서버가 바쁘면(HMR 등) 부족 — 파일은 써졌는데 "파일 저장 실패"로 오보됐음
+  API_TIMEOUT_MS: 15_000,
   MAX_LOCAL_BACKUPS: 120,
   MAX_BACKUP_PAYLOAD_BYTES: 20 * 1024 * 1024
 } as const;

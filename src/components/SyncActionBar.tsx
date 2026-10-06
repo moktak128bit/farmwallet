@@ -1,9 +1,7 @@
 import React from "react";
-import type { AppData } from "../types";
 import { formatTimeAgo } from "../utils/date";
 
 interface Props {
-  data: AppData;
   latestBackupAt: string | null;
   gistLastPushAt: string | null;
   gistLastPullAt: string | null;
@@ -16,19 +14,18 @@ interface Props {
   isOnRestoreBranch: boolean;
   gitCurrentBranch: string;
   newVersionAvailable: boolean;
-  onLocalBackup: () => void;
-  onGistSave: () => void;
+  /** 로컬 백업 + (설정돼 있으면) Gist 저장 */
+  onSave: () => void;
   onGistLoad: () => void;
   onGitPush: () => void;
   onGitPull: () => void;
-  onSearch: () => void;
 }
 
 /**
- * 헤더 동기화 액션 바.
- * - 3개 그룹: 로컬 / Gist(cloud) / git(repo)
- * - 각 push/save 버튼에 "마지막 저장 N분 전" 서브 라벨 표시 → 최신성 즉시 파악
- * - 그룹별 색상: 로컬=primary, Gist=green, git=navy, 불러오기=secondary
+ * 상태 메뉴 동기화 액션.
+ * - [저장] 하나가 로컬 백업 + Gist를 함께 — 서브 라벨에 각각의 마지막 저장 시각
+ * - [불러오기]는 Gist 버전 선택
+ * - git(코드 배포)은 dev 전용, "개발자" 접힘 안에
  */
 export const SyncActionBar: React.FC<Props> = ({
   latestBackupAt,
@@ -43,154 +40,84 @@ export const SyncActionBar: React.FC<Props> = ({
   isOnRestoreBranch,
   gitCurrentBranch,
   newVersionAvailable,
-  onLocalBackup,
-  onGistSave,
+  onSave,
   onGistLoad,
   onGitPush,
   onGitPull,
-  onSearch,
 }) => {
   return (
-    <div className="app-header-actions" style={{ display: "flex", gap: 10, flexWrap: "wrap" }}>
-      {/* ─ 그룹 1: 로컬 ─ */}
-      <Group>
-        <GroupLabel>로컬</GroupLabel>
+    <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+      <div style={rowStyle}>
         <SyncBtn
           variant="primary"
-          icon="💾"
-          label="백업"
-          sub={formatTimeAgo(latestBackupAt)}
-          onClick={onLocalBackup}
-          title="현재 데이터를 백업 파일로 저장"
+          label={isGistSaving ? "저장 중..." : "저장"}
+          sub={gistConfigured
+            ? `로컬 ${formatTimeAgo(latestBackupAt)} · Gist ${formatTimeAgo(gistLastPushAt)}`
+            : formatTimeAgo(latestBackupAt)}
+          onClick={onSave}
+          disabled={isGistSaving}
+          title={gistConfigured ? "로컬 백업과 Gist에 함께 저장" : "현재 데이터를 백업 파일로 저장"}
         />
-      </Group>
-
-      {/* ─ 그룹 2: Gist (cloud) ─ */}
-      {gistConfigured && (
-        <Group>
-          <GroupLabel>Gist</GroupLabel>
-          <SyncBtn
-            variant="success"
-            icon="☁️"
-            label={isGistSaving ? "저장 중..." : "저장"}
-            sub={formatTimeAgo(gistLastPushAt)}
-            onClick={onGistSave}
-            disabled={isGistSaving}
-            title="현재 데이터를 GitHub Gist에 업로드"
-          />
+        {gistConfigured && (
           <SyncBtn
             variant="secondary"
-            icon="⬇"
             label="불러오기"
             sub={gistLastPullAt ? `마지막 ${formatTimeAgo(gistLastPullAt)}` : "버전 선택"}
             onClick={onGistLoad}
             title="Gist 버전 목록에서 선택해서 불러오기"
           />
-        </Group>
-      )}
+        )}
+      </div>
 
-      {/* ─ 그룹 3: git (repo) ─ dev 전용 */}
       {import.meta.env.DEV && (
-        <Group>
-          <GroupLabel>git</GroupLabel>
-          <SyncBtn
-            variant="navy"
-            icon="📦"
-            label={
-              isPushingToGit
-                ? "푸시 중..."
-                : isOnRestoreBranch
-                  ? "이전 버전"
-                  : "푸시"
-            }
-            sub={isOnRestoreBranch ? gitCurrentBranch.replace("restore/", "") : formatTimeAgo(gitLastPushAt)}
-            onClick={onGitPush}
-            disabled={isPushingToGit || isOnRestoreBranch}
-            title={
-              isOnRestoreBranch
-                ? `이전 버전 상태(${gitCurrentBranch})에서는 업로드할 수 없습니다. 최신 main으로 돌아간 뒤 시도하세요.`
-                : "현재 코드·데이터를 git 원격에 push"
-            }
-          />
-          <SyncBtn
-            variant={newVersionAvailable ? "success" : "secondary"}
-            icon="⬇"
-            label={
-              isPullingFromGit
-                ? "받는 중..."
-                : newVersionAvailable
-                  ? "새 버전 적용"
-                  : "내려받기"
-            }
-            sub={formatTimeAgo(gitLastPullAt)}
-            onClick={onGitPull}
-            disabled={isPullingFromGit}
-            title="git 원격의 특정 버전으로 내려받기"
-          />
-        </Group>
+        <details>
+          <summary style={{ fontSize: 12, color: "var(--text-muted)", cursor: "pointer" }}>개발자 (git)</summary>
+          <div style={{ ...rowStyle, marginTop: 6 }}>
+            <SyncBtn
+              variant="navy"
+              label={
+                isPushingToGit
+                  ? "푸시 중..."
+                  : isOnRestoreBranch
+                    ? "이전 버전"
+                    : "푸시"
+              }
+              sub={isOnRestoreBranch ? gitCurrentBranch.replace("restore/", "") : formatTimeAgo(gitLastPushAt)}
+              onClick={onGitPush}
+              disabled={isPushingToGit || isOnRestoreBranch}
+              title={
+                isOnRestoreBranch
+                  ? `이전 버전 상태(${gitCurrentBranch})에서는 업로드할 수 없습니다. 최신 main으로 돌아간 뒤 시도하세요.`
+                  : "커밋된 코드를 GitHub에 올림 (커밋 안 된 변경·데이터 제외)"
+              }
+            />
+            <SyncBtn
+              variant={newVersionAvailable ? "success" : "secondary"}
+              label={
+                isPullingFromGit
+                  ? "받는 중..."
+                  : newVersionAvailable
+                    ? "새 버전 적용"
+                    : "내려받기"
+              }
+              sub={formatTimeAgo(gitLastPullAt)}
+              onClick={onGitPull}
+              disabled={isPullingFromGit}
+              title="git 원격의 특정 버전으로 내려받기"
+            />
+          </div>
+        </details>
       )}
-
-      {/* ─ 검색 (standalone) ─ */}
-      <button
-        type="button"
-        onClick={onSearch}
-        style={{
-          ...btnBaseStyle,
-          background: "var(--surface)",
-          color: "var(--text)",
-          border: "1px solid var(--border)",
-          alignSelf: "stretch",
-        }}
-        title="전체 검색 (Ctrl+K)"
-      >
-        <span style={labelStyle}>검색</span>
-      </button>
     </div>
   );
 };
 
 /* ───────────── 내부 헬퍼 컴포넌트 ───────────── */
 
-const Group: React.FC<{ children: React.ReactNode }> = ({ children }) => (
-  <div
-    style={{
-      display: "flex",
-      gap: 4,
-      alignItems: "stretch",
-      background: "var(--surface)",
-      borderRadius: 10,
-      padding: 4,
-      border: "1px solid var(--border)",
-    }}
-  >
-    {children}
-  </div>
-);
-
-const GroupLabel: React.FC<{ children: React.ReactNode }> = ({ children }) => (
-  <div
-    style={{
-      display: "flex",
-      alignItems: "center",
-      justifyContent: "center",
-      padding: "0 8px",
-      fontSize: 11,
-      fontWeight: 700,
-      color: "var(--text-muted)",
-      textTransform: "uppercase",
-      letterSpacing: 0.5,
-      minWidth: 32,
-    }}
-  >
-    {children}
-  </div>
-);
-
-type Variant = "primary" | "secondary" | "success" | "navy" | "muted";
+type Variant = "primary" | "secondary" | "success" | "navy";
 
 interface SyncBtnProps {
   variant: Variant;
-  icon?: string;
   label: string;
   sub: string;
   onClick: () => void;
@@ -198,7 +125,7 @@ interface SyncBtnProps {
   title?: string;
 }
 
-const SyncBtn: React.FC<SyncBtnProps> = ({ variant, icon, label, sub, onClick, disabled, title }) => {
+const SyncBtn: React.FC<SyncBtnProps> = ({ variant, label, sub, onClick, disabled, title }) => {
   const v = variantStyle(variant, disabled);
   return (
     <button
@@ -212,16 +139,15 @@ const SyncBtn: React.FC<SyncBtnProps> = ({ variant, icon, label, sub, onClick, d
         cursor: disabled ? "not-allowed" : "pointer",
       }}
     >
-      <span style={labelStyle}>
-        {icon && <span style={{ marginRight: 4 }}>{icon}</span>}
-        {label}
-      </span>
+      <span style={labelStyle}>{label}</span>
       <span style={subStyle}>{sub}</span>
     </button>
   );
 };
 
 /* ───────────── 스타일 ───────────── */
+
+const rowStyle: React.CSSProperties = { display: "flex", gap: 6, flexWrap: "wrap" };
 
 const btnBaseStyle: React.CSSProperties = {
   display: "flex",
@@ -269,7 +195,5 @@ function variantStyle(variant: Variant, disabled?: boolean): React.CSSProperties
       return { background: "var(--text)", color: "var(--bg)" };
     case "secondary":
       return { background: "var(--surface)", color: "var(--text)", border: "1px solid var(--border)" };
-    case "muted":
-      return { background: "var(--text-muted)", color: "#fff" };
   }
 }

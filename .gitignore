@@ -36,6 +36,8 @@ data/toss/tx.tsv
 # 실계좌 보정 스크립트 — 제3자 실명·금액·계좌번호가 코드에 박혀 있다(저장소가 공개)
 data/fix/
 data/toss/_*.json
+# 폰에서 넘겨받은 은행·카드 화면 캡처 — 2026-09-20 공개 저장소에 올라가 기록에서 지웠다
+Quick Share/
 
 # Generated source data
 src/data/krNames.json

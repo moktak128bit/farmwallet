@@ -274,7 +274,7 @@ export class GistNoRemoteDataError extends Error {
  */
 const GIST_DESCRIPTION = `FarmWallet 데이터 백업 (schema v${DATA_SCHEMA_VERSION})`;
 
-export function schemaVersionFromDescription(description?: string | null): number | null {
+function schemaVersionFromDescription(description?: string | null): number | null {
   const m = /schema v(\d+)/.exec(description ?? "");
   return m ? Number(m[1]) : null;
 }

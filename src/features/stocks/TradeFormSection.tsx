@@ -762,7 +762,7 @@ export const TradeFormSection = React.memo(React.forwardRef<TradeFormSectionHand
           className="card"
           onSubmit={handleTradeSubmit}
           onKeyDown={(e) => {
-            // Ctrl+Enter: 거래 폼 제출 (폼 스코프 — 전역 Ctrl+S 백업과 충돌하지 않음)
+            // Ctrl+Enter: 거래 폼 제출 (폼 스코프 — 전역 Ctrl+S 저장과 충돌하지 않음)
             if ((e.ctrlKey || e.metaKey) && e.key === "Enter") {
               e.preventDefault();
               submitTradeFromForm();

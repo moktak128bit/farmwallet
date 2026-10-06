@@ -17,6 +17,8 @@ function backupApiPlugin(): Plugin {
       const backupRootPrefix = `${backupRoot.toLowerCase()}${path.sep}`;
       const MAX_BACKUP_BODY_BYTES = 20 * 1024 * 1024;
       const BACKUP_RETENTION_DAY_SLOTS = 4;
+      // 로컬(backupService) 정책과 동일: 하루 1개만 남기면 실수 후 자동 백업이 그날의 정상 파일을 지운다
+      const BACKUP_RETENTION_PER_DAY = 5;
 
       const seoulDayKeyFormatter = new Intl.DateTimeFormat("en-CA", {
         timeZone: "Asia/Seoul",
@@ -180,22 +182,21 @@ function backupApiPlugin(): Plugin {
         const records = await collectBackupFileRecords();
         if (records.length === 0) return;
 
-        const bestByDay = new Map<string, BackupFileRecord>();
+        const recordsByDay = new Map<string, BackupFileRecord[]>();
         for (const rec of records) {
           if (rec.dayKey === "unknown") continue;
-          const prev = bestByDay.get(rec.dayKey);
-          if (!prev || rec.createdAtMs > prev.createdAtMs) {
-            bestByDay.set(rec.dayKey, rec);
-          }
+          const list = recordsByDay.get(rec.dayKey);
+          if (list) list.push(rec);
+          else recordsByDay.set(rec.dayKey, [rec]);
         }
 
-        const candidates = [...bestByDay.values()].sort((a, b) => b.createdAtMs - a.createdAtMs);
-        const keepDayKeys = new Set(candidates.slice(0, BACKUP_RETENTION_DAY_SLOTS).map((c) => c.dayKey));
+        // 날짜별 최신순 정렬 → 각 날짜의 최신 파일 기준으로 최근 N일 선택, 그 날짜마다 최신 5개 유지
+        const days = [...recordsByDay.values()].map((list) => list.sort((a, b) => b.createdAtMs - a.createdAtMs));
+        days.sort((a, b) => b[0].createdAtMs - a[0].createdAtMs);
 
         const pathsToKeep = new Set<string>();
-        for (const dayKey of keepDayKeys) {
-          const best = bestByDay.get(dayKey);
-          if (best) pathsToKeep.add(best.fullPath);
+        for (const list of days.slice(0, BACKUP_RETENTION_DAY_SLOTS)) {
+          for (const rec of list.slice(0, BACKUP_RETENTION_PER_DAY)) pathsToKeep.add(rec.fullPath);
         }
 
         for (const rec of records) {
@@ -821,7 +822,9 @@ function backupApiPlugin(): Plugin {
       const execAsync = (cmd: string, cwd: string) =>
         new Promise<{ stdout: string; stderr: string }>((resolve, reject) => {
           try {
-            const child = exec(cmd, { cwd }, (err, stdout, stderr) => {
+            // timeout: git이 네트워크·자격증명 대기로 멈춰도 child를 죽여 응답이 돌아오게
+            // (클라이언트 push 타임아웃 120s보다 짧게 — 서버 오류 문구가 먼저 보이도록)
+            const child = exec(cmd, { cwd, timeout: 90_000 }, (err, stdout, stderr) => {
               if (err) reject(new Error(stderr || err.message));
               else resolve({ stdout, stderr });
             });
@@ -899,9 +902,15 @@ function backupApiPlugin(): Plugin {
           const ref = typeof body.ref === "string" ? body.ref.trim() : "";
           try {
             if (!ref) {
-              // 최신: main 브랜치로 복귀 후 pull
-              await execAsync("git checkout main", cwd);
-              await execAsync("git pull origin main --no-rebase", cwd);
+              // 최신: main 브랜치로 복귀 후 pull. --ff-only — 갈라졌으면 작업트리를 건드리지 않고 실패
+              // (병합 충돌 상태가 남으면 다음 커밋·푸시가 충돌 마커를 그대로 올린다)
+              try {
+                await execAsync("git checkout main", cwd);
+                await execAsync("git pull origin main --ff-only", cwd);
+              } catch (err) {
+                sendErrorJson(res, "git 내려받기", err);
+                return;
+              }
               res.setHeader("Content-Type", "application/json");
               res.end(JSON.stringify({ ok: true, branch: "main" }));
               return;
@@ -920,23 +929,20 @@ function backupApiPlugin(): Plugin {
         })();
       });
 
-      // 배포 (git push) — 로컬 개발 전용
+      // 배포 (git push) — 로컬 개발 전용. 이미 커밋된 것만 올린다.
+      // 예전엔 'git add -A' + 자동 커밋 + --force-with-lease였다: 작업트리 전체(개인 스크린샷·다른 세션의
+      // 미완성 변경)가 공개 저장소에 올라갔고, git-log의 fetch 뒤엔 lease가 통과해 다른 기기 커밋을 덮었다.
       server.middlewares.use("/api/git-push", (req: IncomingMessage, res: ServerResponse, next) => {
         if (req.method !== "POST") { next(); return; }
         const cwd = process.cwd();
-        const msg = `save: ${new Date().toLocaleString("ko-KR", { timeZone: "Asia/Seoul" })}`;
         void (async () => {
           try {
-            await execAsync("git add -A", cwd);
-          } catch (err) { return sendErrorJson(res, "git add", err); }
-          try {
-            // --allow-empty로 staged 변경 없어도 성공. 메시지에 인용부호가 들어가지 않도록 주의.
-            await execAsync(`git commit -m "${msg.replace(/"/g, "'")}" --allow-empty`, cwd);
-          } catch (err) { return sendErrorJson(res, "git commit", err); }
-          try {
-            await execAsync("git push origin main --force-with-lease", cwd);
+            // --porcelain: 참조별 플래그 '='이면 올릴 게 없었다(최신) — 지역화되지 않아 판정에 안전.
+            // 커밋 없이 누르면 성공처럼 보여 "배포됐다"고 착각하던 문제 차단.
+            const { stdout } = await execAsync("git push --porcelain origin main", cwd);
+            const upToDate = /^=\t/m.test(stdout);
             res.setHeader("Content-Type", "application/json");
-            res.end(JSON.stringify({ ok: true }));
+            res.end(JSON.stringify({ ok: true, upToDate }));
           } catch (err) { sendErrorJson(res, "git push", err); }
         })();
       });

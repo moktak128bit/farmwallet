@@ -8,7 +8,7 @@
  * 규칙 격리: 한 규칙이 예외를 던져도(예: 손상된 항목) 나머지 규칙은 계속 평가되도록 각 규칙 함수를
  * try/catch로 감싼다 (buildNudges 자체가 절대 throw하지 않아야 헤더 벨이 항상 뜬다).
  *
- * 순수성: DOM/localStorage/IndexedDB를 이 파일에서 직접 읽지 않는다. 백업 경과(latestBackupAt)·
+ * 순수성: DOM/localStorage/IndexedDB를 이 파일에서 직접 읽지 않는다.
  * localStorage 사용률(storageRatio)·마이그레이션 리포트·세전환산 토글처럼 브라우저 상태가 필요한 값은
  * 호출부(NotificationCenter)가 미리 읽어 NudgeContext 필드로 주입한다.
  *
@@ -71,8 +71,6 @@ export interface NudgeContext {
   trades?: StockTrade[];
   historicalDailyFx?: HistoricalDailyFx[];
   marketEnvSnapshots?: MarketEnvSnapshot[];
-  /** 마지막 로컬 백업 시각(ISO) — services/backupService 조회 결과. null=백업 없음/미확인 */
-  latestBackupAt?: string | null;
   /** localStorage 사용률 0~1 — utils/storageUsage.measureLocalStorageUsage(...).ratio */
   storageRatio?: number | null;
   /** 마지막 스키마 마이그레이션 리포트 — services/migrationReport.readLastMigrationReport() 결과 */
@@ -241,40 +239,6 @@ function ruleLoanMaturity(ctx: NudgeContext): Nudge[] {
   return out;
 }
 
-const BACKUP_STALE_HOURS = 24;
-
-/** 백업 24시간 이상 경과 — useBackup의 latestBackupAt(이미 계산된 값)을 그대로 판정 */
-function ruleBackupStale(ctx: NudgeContext): Nudge[] {
-  if (ctx.latestBackupAt === undefined) return []; // 값 미주입(호출부가 아직 로드 전) — 판단 보류
-  if (ctx.latestBackupAt === null) {
-    return [
-      {
-        id: "backup-stale",
-        severity: "warn",
-        title: "로컬 백업 없음",
-        detail: "아직 로컬 백업이 없습니다. 지금 백업을 권장합니다.",
-        tab: "settings",
-        dedupeKey: "backup-stale",
-        at: ctx.today
-      }
-    ];
-  }
-  const ms = Date.now() - new Date(ctx.latestBackupAt).getTime();
-  if (!Number.isFinite(ms) || ms < BACKUP_STALE_HOURS * 3_600_000) return [];
-  const hours = Math.floor(ms / 3_600_000);
-  return [
-    {
-      id: "backup-stale",
-      severity: "warn",
-      title: "백업이 오래됨",
-      detail: `마지막 백업 ${hours}시간 전. 지금 백업을 권장합니다.`,
-      tab: "settings",
-      dedupeKey: "backup-stale",
-      at: ctx.today
-    }
-  ];
-}
-
 const STORAGE_WARNING_RATIO = 0.8;
 
 /** localStorage 사용률 80%+ */
@@ -318,7 +282,6 @@ const RULES: Array<(ctx: NudgeContext) => Nudge[]> = [
   ruleUpcomingDividend,
   ruleFxBand,
   ruleLoanMaturity,
-  ruleBackupStale,
   ruleStorageUsage,
   ruleMigrationReport
 ];

@@ -1,6 +1,6 @@
 import React, { useCallback, useEffect, useMemo, useState, lazy, Suspense } from "react";
 import { Toaster, toast } from "react-hot-toast";
-import { Moon, Sun, Menu, Eye, EyeOff, Plus, Search, CloudUpload } from "lucide-react";
+import { Moon, Sun, Menu, Eye, EyeOff, Plus, Search, Save } from "lucide-react";
 import { Tabs, TAB_LABELS, type TabId } from "./components/ui/Tabs";
 import { StatusMenu, type StatusTone } from "./components/ui/StatusMenu";
 import { ShortcutsHelp } from "./components/ShortcutsHelp";
@@ -370,7 +370,6 @@ export const App: React.FC = () => {
     if (gistSyncStatus.kind === "error") return { tone: "warn", summary: "동기화 오류" };
     if (gistStaleWarning) return { tone: "warn", summary: "동기화 권장" };
     if (backupWarning) return { tone: "warn", summary: "백업 권장" };
-    // missing-hash(해시 없는 옛 백업)는 상시 주황 점으로 띄우지 않는다 — 팝오버의 pill warning이 안내. 상시 경보는 경보를 무디게 한다.
     if (newVersionAvailable) return { tone: "warn", summary: "새 버전" };
     if (saveStatus === "saving") return { tone: "ok", summary: "저장 중" };
     return { tone: "ok", summary: "정상" };
@@ -402,6 +401,7 @@ export const App: React.FC = () => {
   const tabConflict = useUIStore((s) => s.tabConflict);
   const setTabConflict = useUIStore((s) => s.setTabConflict);
   const setDraftRecovery = useUIStore((s) => s.setDraftRecovery);
+  const hasDraftRecovery = useUIStore((s) => s.draftRecovery != null);
 
   const handleResolveTabConflict = useCallback((resolution: TabConflictResolution) => {
     if (!tabConflict) return;
@@ -471,19 +471,23 @@ export const App: React.FC = () => {
   }, [handleGistPulledData, syncStateAfterRestore]);
 
   /**
-   * 수동 Gist 저장. useGistSync.manualPush로 위임 — React state(lastPushAt) 동시 갱신해서
-   * 헤더 "N시간 전" 표시가 즉시 반영됨 (이전엔 localStorage만 갱신해서 다음 마운트까지 stale).
-   * 충돌 감지·retry·로깅 모두 manualPush 내부에서 처리.
+   * "저장" 하나 = 로컬 백업 + Gist (헤더·상태 메뉴·Ctrl+S·동기화 경고 공용).
+   * 결과 토스트는 각자, Gist 충돌·retry·로깅은 manualPush 내부(lastPushAt state도 거기서 갱신).
+   * 바쁨 플래그는 두 단계 내내 켜 두고, 재진입(Ctrl+S 연타·두 번 탭)은 ref로 거절 — 클로저 값은 늦게 바뀐다.
    */
-  const handleGistManualSave = useCallback(async () => {
+  const isSavingAllRef = React.useRef(false);
+  const handleSaveAll = useCallback(async () => {
+    if (isSavingAllRef.current) return;
+    isSavingAllRef.current = true;
     setIsGistSaving(true);
     try {
-      await gistManualPush();
-      // toast(성공/실패/충돌)는 manualPush 내부에서 처리
+      await handleManualBackup();
+      if (gistConfigured) await gistManualPush();
     } finally {
+      isSavingAllRef.current = false;
       setIsGistSaving(false);
     }
-  }, [gistManualPush, setIsGistSaving]);
+  }, [handleManualBackup, gistConfigured, gistManualPush, setIsGistSaving]);
 
   // keyboard shortcuts
   useKeyboardShortcuts({
@@ -502,7 +506,7 @@ export const App: React.FC = () => {
     onSearch: () => setIsSearchOpen(true),
     onShortcutsHelp: () => setShowShortcutsHelp((prev) => !prev),
     onSave: () => {
-      void handleManualBackup();
+      void handleSaveAll();
     },
     onAddLedger: () => {
       setTab("ledger");
@@ -874,6 +878,12 @@ export const App: React.FC = () => {
           복구 브랜치({gitCurrentBranch}) 상태입니다 — git 업로드는 잠겨 있습니다. 작업 후 main으로 돌아가세요.
         </div>
       )}
+      {/* 미저장 드래프트 복구 — 상태 메뉴(닫히면 미마운트) 안에 두면 아무도 못 보고 다음 자동저장이 드래프트를 지운다 */}
+      {hasDraftRecovery && (
+        <div style={{ display: "flex", justifyContent: "center", padding: "8px 16px" }}>
+          <DraftRecoveryBanner onRecover={handleRecoverDraft} onDiscard={handleDiscardDraft} />
+        </div>
+      )}
       <header className="app-header">
         <div className="app-header-left">
           <button
@@ -916,23 +926,18 @@ export const App: React.FC = () => {
             <Plus size={14} />
             <span>빠른 입력</span>
           </button>
-          {gistConfigured && (
-            <button
-              type="button"
-              className="header-action"
-              disabled={isGistSaving}
-              onClick={() => withConfirm({
-                title: "Gist 저장",
-                message: "현재 데이터를 Gist에 저장합니다.",
-                confirmLabel: "저장",
-                onConfirm: () => { void handleGistManualSave(); },
-              })}
-              title={gistLastPushAt ? `Gist 저장 (마지막 ${formatTimeAgo(gistLastPushAt)})` : "Gist 저장"}
-            >
-              <CloudUpload size={14} />
-              <span>{isGistSaving ? "저장 중" : "Gist"}</span>
-            </button>
-          )}
+          <button
+            type="button"
+            className="header-action"
+            disabled={isGistSaving}
+            onClick={() => { void handleSaveAll(); }}
+            title={gistConfigured
+              ? `로컬 백업 + Gist 저장 (로컬 ${formatTimeAgo(latestBackupAt)} · Gist ${formatTimeAgo(gistLastPushAt)}) (Ctrl+S)`
+              : `로컬 백업 (${formatTimeAgo(latestBackupAt)}) (Ctrl+S)`}
+          >
+            <Save size={14} />
+            <span>{isGistSaving ? "저장 중" : "저장"}</span>
+          </button>
           <button
             onClick={() => setPrivacyMode((prev) => !prev)}
             className="icon-button"
@@ -949,7 +954,7 @@ export const App: React.FC = () => {
           >
             {theme === "light" ? <Moon size={16} /> : <Sun size={16} />}
           </button>
-          <NotificationCenter latestBackupAt={latestBackupAt} />
+          <NotificationCenter />
           <StatusMenu tone={appStatus.tone} summary={appStatus.summary}>
           <div className="status-block">
             <div className="status-block-title">
@@ -969,7 +974,6 @@ export const App: React.FC = () => {
             </div>
           )}
           <SaveStatusPill />
-          <DraftRecoveryBanner onRecover={handleRecoverDraft} onDiscard={handleDiscardDraft} />
           {fxInfo.isStale && fxInfo.rate != null && (
             <div
               className="pill warning"
@@ -983,7 +987,7 @@ export const App: React.FC = () => {
           )}
           {getGistToken() && getGistId() && (
             <div className="pill muted">
-              최신 확인 {formatTimeAgo(syncHealth.lastCheckAt)} · 마지막 저장 {formatTimeAgo(gistLastPushAt)}
+              {!autoSyncEnabled && "자동 동기화 꺼짐 · "}최신 확인 {formatTimeAgo(syncHealth.lastCheckAt)} · 마지막 저장 {formatTimeAgo(gistLastPushAt)}
             </div>
           )}
           {gistStaleWarning && (
@@ -995,10 +999,11 @@ export const App: React.FC = () => {
               <button
                 type="button"
                 className="primary"
-                onClick={() => { void handleGistManualSave(); }}
+                onClick={() => { void handleSaveAll(); }}
+                disabled={isGistSaving}
                 style={{ padding: "2px 10px", fontSize: 12 }}
               >
-                지금 푸시
+                지금 저장
               </button>
             </div>
           )}
@@ -1007,10 +1012,6 @@ export const App: React.FC = () => {
               {backupWarning.message}
             </div>
           )}
-          {backupIntegrity.status === "valid" && <div className="pill success">최근 로컬 백업 무결성 검사됨 (SHA-256)</div>}
-          {backupIntegrity.status === "missing-hash" && (
-            <div className="pill warning">현재 백업에 해시가 없어 무결성 검사 불가 (다시 백업 권장)</div>
-          )}
           {backupIntegrity.status === "mismatch" && (
             <div className="pill danger">최근 로컬 백업 해시 불일치. 백업을 다시 생성하세요.</div>
           )}
@@ -1018,7 +1019,6 @@ export const App: React.FC = () => {
           <div className="status-block">
             <div className="status-block-title">동기화</div>
           <SyncActionBar
-            data={data}
             latestBackupAt={latestBackupAt}
             gistLastPushAt={gistLastPushAt}
             gistLastPullAt={gistLastPullAt}
@@ -1031,58 +1031,16 @@ export const App: React.FC = () => {
             isOnRestoreBranch={isOnRestoreBranch}
             gitCurrentBranch={gitCurrentBranch}
             newVersionAvailable={newVersionAvailable}
-            onLocalBackup={() => withConfirm({
-              title: "로컬 백업",
-              message: "현재 데이터를 백업 파일로 저장합니다.",
-              confirmLabel: "백업",
-              onConfirm: () => { void handleManualBackup(); },
-            })}
-            onGistSave={() => withConfirm({
-              title: "Gist 저장",
-              message: "현재 데이터를 Gist에 저장합니다.",
-              confirmLabel: "저장",
-              onConfirm: () => { void handleGistManualSave(); },
-            })}
+            onSave={() => { void handleSaveAll(); }}
             onGistLoad={() => setShowGistVersionModal(true)}
             onGitPush={() => withConfirm({
               title: "git에 업로드",
-              message: "현재 코드와 데이터를 git 원격에 push합니다. 약 2분 후 반영됩니다.",
+              message: "커밋된 코드를 GitHub에 올립니다(배포 약 2분). 커밋하지 않은 변경과 가계부 데이터는 올라가지 않습니다.",
               confirmLabel: "업로드",
               confirmStyle: "danger",
               onConfirm: async () => {
                 setIsPushingToGit(true);
-                addAppLog("최신 데이터 저장 중...", "info");
                 try {
-                  // auto-save 디바운스(500ms) 중일 수 있어 data/farmwallet-data.json이 구버전일 수 있음.
-                  // 명시적으로 flush해 최신 데이터가 파일에 반영된 뒤 push.
-                  const userDataStr = toUserDataJson(data);
-                  const userFieldsWithMeta = {
-                    ...JSON.parse(userDataStr),
-                    _exportedAt: new Date().toISOString(),
-                  };
-                  // 두 단계 fetch 각각에 타임아웃 적용 (네트워크 단절·서버 응답 없음 보호)
-                  const flushController = new AbortController();
-                  const flushTimer = setTimeout(() => flushController.abort(), 15_000);
-                  let flushRes: Response;
-                  try {
-                    flushRes = await fetch("/api/farmwallet-data", {
-                      method: "POST",
-                      headers: { "Content-Type": "application/json" },
-                      body: JSON.stringify(userFieldsWithMeta),
-                      signal: flushController.signal,
-                    });
-                  } catch (err) {
-                    if (err instanceof DOMException && err.name === "AbortError") {
-                      throw new Error("데이터 파일 저장 시간 초과 (15s)");
-                    }
-                    throw err;
-                  } finally {
-                    clearTimeout(flushTimer);
-                  }
-                  if (!flushRes.ok) {
-                    const flushJson = await flushRes.json().catch(() => ({}));
-                    throw new Error(flushJson.error ?? "데이터 파일 저장 실패");
-                  }
                   addAppLog("git에 업로드 중...", "info");
                   const pushController = new AbortController();
                   const pushTimer = setTimeout(() => pushController.abort(), 120_000);
@@ -1099,6 +1057,12 @@ export const App: React.FC = () => {
                   }
                   const json = await res.json().catch(() => ({}));
                   if (!res.ok) throw new Error(json.error ?? "git 업로드 실패");
+                  // 올릴 커밋이 없으면 배포도 없다 — 성공으로 표시하지 않음
+                  if (json.upToDate) {
+                    addAppLog("올릴 새 커밋이 없어요 — 먼저 커밋하세요", "info");
+                    toast("올릴 새 커밋이 없어요 (먼저 커밋하세요)");
+                    return;
+                  }
                   const nowIso = new Date().toISOString();
                   try { localStorage.setItem(STORAGE_KEYS.GIT_LAST_PUSH_AT, nowIso); } catch { /* */ }
                   setGitLastPushAt(nowIso);
@@ -1122,7 +1086,6 @@ export const App: React.FC = () => {
                 window.location.reload();
               }
             }}
-            onSearch={() => setIsSearchOpen(true)}
           />
           </div>
           <div className="status-block">
@@ -1412,7 +1375,7 @@ export const App: React.FC = () => {
         onCancel={() => setPendingAction(null)}
       />
 
-      <GistConflictModal conflict={gistConflict} onResolve={(r) => void resolveGistConflict(r)} />
+      <GistConflictModal conflict={gistConflict} onResolve={resolveGistConflict} />
       {/* 연결 진행 중 미리보기(ApplyConfirmModal)가 위에 겹치도록 ApplyConfirmModal보다 먼저 렌더 */}
       <ConnectConfirmModal
         payload={pendingConnect}

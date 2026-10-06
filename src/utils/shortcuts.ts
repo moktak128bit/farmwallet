@@ -10,7 +10,7 @@ interface ShortcutHandler {
 
 /**
  * 액션 → 키 조합 매핑. shortcutManager는 '입력 포커스 중에도 동작해야 하는' 폼 스코프 단축키만 담당한다.
- * 전역 단축키(Ctrl+S 백업, Alt+N 새 항목, Ctrl+K 검색, Ctrl+Z/Y, Ctrl+/, Alt+←/→ 탭, Ctrl+1~9 탭)는
+ * 전역 단축키(Ctrl+S 저장, Alt+N 새 항목, Ctrl+K 검색, Ctrl+Z/Y, Ctrl+/, Alt+←/→ 탭, Ctrl+1~9 탭)는
  * App의 useKeyboardShortcuts가 단독 소유 — 여기에 중복 매핑하면 별개 window 리스너로 이중 발화한다.
  * (과거 undo/redo/global-search/focus-form/show-help 매핑은 아무도 register하지 않는 죽은 매핑이라 제거)
  * - close-modal(escape): 모달/셀 편집 취소 (각 화면이 register).
@@ -67,7 +67,7 @@ class ShortcutManager {
     const handlers = this.handlers.get(key);
 
     if (handlers && handlers.length > 0) {
-      // 입력 필드 포커스 중에는 폼 제출(Ctrl+Enter)·백업(Ctrl+S)·ESC만 허용
+      // 입력 필드 포커스 중에는 폼 제출(Ctrl+Enter)·저장(Ctrl+S)·ESC만 허용
       if (isInputFocused && !INPUT_FOCUS_ALLOWLIST.includes(key)) {
         return;
       }

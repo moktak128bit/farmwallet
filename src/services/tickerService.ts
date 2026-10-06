@@ -1,7 +1,8 @@
 import type { TickerInfo } from "../types";
 
 export async function loadTickerDatabaseFromBackup(): Promise<TickerInfo[] | null> {
-  if (typeof window === "undefined") return null;
+  // 개발 서버(Vite 미들웨어) 전용 API — 정적 배포(GitHub Pages)에는 엔드포인트가 없다
+  if (typeof window === "undefined" || !import.meta.env.DEV) return null;
   try {
     const res = await fetch("/api/ticker-backup");
     if (!res.ok) return null;
@@ -24,7 +25,7 @@ export async function loadTickerDatabaseFromBackup(): Promise<TickerInfo[] | nul
 }
 
 export async function saveTickerDatabaseBackup(tickers: TickerInfo[]): Promise<void> {
-  if (typeof window === "undefined") return;
+  if (typeof window === "undefined" || !import.meta.env.DEV) return;
   try {
     await fetch("/api/ticker-backup", {
       method: "POST",
@@ -37,7 +38,7 @@ export async function saveTickerDatabaseBackup(tickers: TickerInfo[]): Promise<v
 }
 
 export async function saveTickerToJson(ticker: string, name: string, market: 'KR' | 'US'): Promise<void> {
-  if (typeof window === "undefined") return;
+  if (typeof window === "undefined" || !import.meta.env.DEV) return;
   try {
     await fetch("/api/ticker-json", {
       method: "POST",

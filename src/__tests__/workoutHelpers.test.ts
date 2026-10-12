@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { computeExerciseVolume, makeId } from "../features/workout/helpers";
+import { computeExerciseVolume, getCardioKind, makeId } from "../features/workout/helpers";
 import type { WorkoutExercise, WorkoutSet } from "../types";
 
 function mkSet(weight: number, reps: number, done?: boolean): WorkoutSet {
@@ -58,5 +58,16 @@ describe("makeId", () => {
     expect(a.startsWith("ex-")).toBe(true);
     expect(b.startsWith("ex-")).toBe(true);
     expect(a).not.toBe(b);
+  });
+});
+
+describe("getCardioKind", () => {
+  it.each(["버피", "점핑 잭", "제자리 뛰기", "하이 니", "줄넘기"])("%s는 시간·횟수로 기록", (name) => {
+    expect(getCardioKind(name)).toBe("count");
+  });
+  it("기존 거리·강도·인터벌 입력을 유지", () => {
+    expect(getCardioKind("러닝")).toBe("distance");
+    expect(getCardioKind("계단오르기")).toBe("intensity");
+    expect(getCardioKind("인터벌")).toBe("interval");
   });
 });

@@ -1,6 +1,6 @@
 import React, { memo, useEffect, useState } from "react";
 import type { CustomExercise, WorkoutBodyPart } from "../../types";
-import { BODY_PARTS, BODY_PART_COLORS, EXERCISE_PRESETS } from "./constants";
+import { BODY_PARTS, BODY_PART_COLORS, BODYWEIGHT_PRESETS, EXERCISE_PRESETS } from "./constants";
 
 const OPEN_PARTS_STORAGE_KEY = "fw-workout-picker-open-parts";
 
@@ -40,12 +40,15 @@ const ExercisePickerInner: React.FC<Props> = ({
 }) => {
   const [openParts, setOpenParts] = useState<Set<WorkoutBodyPart>>(() => loadOpenParts());
   const [query, setQuery] = useState("");
+  const [bodyweightFilter, setBodyweightFilter] = useState(false);
   const [customInputs, setCustomInputs] = useState<Record<WorkoutBodyPart, string>>(() => ({
     "가슴": "", "등": "", "어깨": "", "팔": "", "하체": "", "코어": "", "유산소": "", "기타": "",
   }));
 
   const q = query.trim().toLowerCase();
-  const matchesQuery = (name: string) => !q || name.toLowerCase().includes(q);
+  const isBodyweightQuery = q.replace(/\s/g, "") === "맨몸" || q.replace(/\s/g, "") === "맨몸운동";
+  const bodyweightOnly = bodyweightFilter || isBodyweightQuery;
+  const matchesQuery = (name: string) => !q || isBodyweightQuery || name.toLowerCase().includes(q);
 
   useEffect(() => {
     saveOpenParts(openParts);
@@ -66,6 +69,14 @@ const ExercisePickerInner: React.FC<Props> = ({
       border: "2px dashed var(--border)", background: "var(--surface)",
     }}>
       <div style={{ fontSize: 14, fontWeight: 700, marginBottom: 10 }}>운동 추가</div>
+
+      <div role="group" aria-label="운동 종류" style={{ display: "flex", gap: 8, marginBottom: 10 }}>
+        <button type="button" className={!bodyweightOnly ? "primary" : "secondary"}
+          aria-pressed={!bodyweightOnly}
+          onClick={() => { setBodyweightFilter(false); if (isBodyweightQuery) setQuery(""); }}>전체 운동</button>
+        <button type="button" className={bodyweightOnly ? "primary" : "secondary"}
+          aria-pressed={bodyweightOnly} onClick={() => setBodyweightFilter(true)}>맨몸운동</button>
+      </div>
 
       <div style={{ position: "relative", marginBottom: 10 }}>
         <input
@@ -98,6 +109,8 @@ const ExercisePickerInner: React.FC<Props> = ({
       <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
         {BODY_PARTS.map((part) => {
           const color = BODY_PART_COLORS[part];
+          const bodyweightNames = new Set(BODYWEIGHT_PRESETS[part]);
+          const matches = (name: string) => matchesQuery(name) && (!bodyweightOnly || bodyweightNames.has(name));
           const customsAll = customExercises.filter((c) => c.bodyPart === part);
           const customNames = new Set(customsAll.map((c) => c.name));
           const presetNames = new Set(EXERCISE_PRESETS[part]);
@@ -106,13 +119,13 @@ const ExercisePickerInner: React.FC<Props> = ({
             (n) => !presetNames.has(n) && !customNames.has(n)
           );
           // 검색어 적용 — 매치되는 것만
-          const presets = EXERCISE_PRESETS[part].filter(matchesQuery);
-          const customs = customsAll.filter((c) => matchesQuery(c.name));
-          const recentOnly = recentAll.filter(matchesQuery);
+          const presets = EXERCISE_PRESETS[part].filter(matches);
+          const customs = customsAll.filter((c) => matches(c.name));
+          const recentOnly = recentAll.filter(matches);
           const total = presets.length + customs.length + recentOnly.length;
           // 검색 중엔 매치가 있는 부위만 펼쳐 노출, 매치 0이면 부위 자체 숨김
-          if (q && total === 0) return null;
-          const isOpen = q ? true : openParts.has(part);
+          if ((q || bodyweightOnly) && total === 0) return null;
+          const isOpen = q || bodyweightOnly ? true : openParts.has(part);
           // 검색 시 전체 매치 노출, 평상시엔 최근 10개로 제한(나머지는 검색으로 접근)
           const recentToShow = q ? recentOnly : recentOnly.slice(0, 10);
           const recentHiddenCount = q ? 0 : recentOnly.length - recentToShow.length;

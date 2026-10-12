@@ -13,6 +13,8 @@ import { CommitInput } from "../../components/ui/CommitInput";
 import { formatKRW } from "../../utils/formatter";
 import { parseAmount } from "../../utils/parseAmount";
 import { buildYearEndTaxHelper, type YearEndTaxHelperResult } from "../../utils/yearEndTaxHelper";
+import type { YearEndTaxPlannerSettings } from "../../utils/yearEndTaxPlanner";
+import { YearEndTaxPlannerCard } from "./YearEndTaxPlannerCard";
 
 interface Props {
   ledger: LedgerEntry[];
@@ -21,6 +23,27 @@ interface Props {
 }
 
 type GrossSalaryMap = Record<string, number>;
+type PlannerMap = Record<string, YearEndTaxPlannerSettings>;
+
+function readPlannerMap(): PlannerMap {
+  if (typeof window === "undefined") return {};
+  try {
+    const parsed: unknown = JSON.parse(window.localStorage.getItem(STORAGE_KEYS.YEAR_END_TAX_PLANNER) ?? "{}");
+    if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) return {};
+    const out: PlannerMap = {};
+    const fields: Array<keyof YearEndTaxPlannerSettings> = ["creditSpend", "checkCashSpend", "eligibleChildren", "paidPension", "paidIrp", "pensionBudget", "plannedSpend", "marginalRate"];
+    for (const [year, value] of Object.entries(parsed)) {
+      if (!/^\d{4}$/.test(year) || !value || typeof value !== "object" || Array.isArray(value)) continue;
+      const settings: YearEndTaxPlannerSettings = {};
+      for (const field of fields) {
+        const n: unknown = (value as Record<string, unknown>)[field];
+        if (typeof n === "number" && Number.isFinite(n) && n >= 0) settings[field] = n;
+      }
+      out[year] = settings;
+    }
+    return out;
+  } catch { return {}; }
+}
 
 function readGrossSalaryMap(): GrossSalaryMap {
   if (typeof window === "undefined") return {};
@@ -81,8 +104,20 @@ export const YearEndTaxPreviewSection: React.FC<Props> = React.memo(function Yea
   const fxRate = useFxRateValue();
   const categoryPresets = useAppStore((s) => s.data.categoryPresets);
   const [salaryMap, setSalaryMap] = useState<GrossSalaryMap>(() => readGrossSalaryMap());
+  const [plannerMap, setPlannerMap] = useState<PlannerMap>(() => readPlannerMap());
   const yearKey = String(year);
   const inputSalary = salaryMap[yearKey];
+  const plannerSettings = plannerMap[yearKey] ?? {};
+  const changePlanner = useCallback((key: keyof YearEndTaxPlannerSettings, value: number | undefined) => {
+    setPlannerMap((prev) => {
+      const settings = { ...prev[yearKey] };
+      if (value == null) delete settings[key];
+      else settings[key] = value;
+      const next = { ...prev, [yearKey]: settings };
+      try { window.localStorage.setItem(STORAGE_KEYS.YEAR_END_TAX_PLANNER, JSON.stringify(next)); } catch { /* 세션 내 설정 유지 */ }
+      return next;
+    });
+  }, [yearKey]);
 
   const commitSalary = useCallback(
     (raw: string) => {
@@ -99,8 +134,8 @@ export const YearEndTaxPreviewSection: React.FC<Props> = React.memo(function Yea
   );
 
   const result = useMemo(
-    () => buildYearEndTaxHelper(ledger, accounts, year, { grossSalary: inputSalary ?? null, categoryPresets, fxRate }),
-    [ledger, accounts, year, inputSalary, categoryPresets, fxRate]
+    () => buildYearEndTaxHelper(ledger, accounts, year, { grossSalary: inputSalary ?? null, eligibleChildren: plannerSettings.eligibleChildren, categoryPresets, fxRate }),
+    [ledger, accounts, year, inputSalary, plannerSettings.eligibleChildren, categoryPresets, fxRate]
   );
   const { cardSpend: c, medical, donation, rent, rules } = result;
   const salaryKnown = result.grossSalary > 0;
@@ -116,7 +151,7 @@ export const YearEndTaxPreviewSection: React.FC<Props> = React.memo(function Yea
       </p>
 
       <div style={{ display: "flex", gap: 12, alignItems: "center", flexWrap: "wrap", marginBottom: 12 }}>
-        <label htmlFor="year-end-gross-salary" style={{ fontSize: 13 }}>총급여(연, 세전):</label>
+        <label htmlFor="year-end-gross-salary" style={{ fontSize: 13 }}>총급여(연, 세전·비과세 제외):</label>
         <CommitInput
           id="year-end-gross-salary"
           inputMode="numeric"
@@ -128,6 +163,11 @@ export const YearEndTaxPreviewSection: React.FC<Props> = React.memo(function Yea
         />
         <span id="year-end-gross-salary-note" style={{ fontSize: 12, color: "var(--text-muted)" }}>{salaryNote(result)}</span>
       </div>
+
+      <YearEndTaxPlannerCard ledger={ledger} accounts={accounts} preview={result} fxRate={fxRate} settings={plannerSettings} onChange={changePlanner} />
+
+      <h4 style={{ fontSize: 14, marginBottom: 6 }}>가계부 기록 기준 공제 내역</h4>
+      <p style={{ fontSize: 12, color: "var(--text-muted)", margin: "0 0 12px" }}>아래는 가계부 지출로 추정한 내역입니다. 실행 가이드에서 수정한 사용액과 추가 납입 계획은 이 내역에 포함되지 않습니다.</p>
 
       <div style={{ display: "flex", gap: 12, flexWrap: "wrap" }}>
         <SubCard title={`카드 소득공제 (신용 ${pct(rules.card.creditRate)} / 체크·현금 ${pct(rules.card.checkCashRate)})`}>

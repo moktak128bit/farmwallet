@@ -29,9 +29,10 @@ import { getTodayKST } from "./date";
 
 /**
  * 연말정산 세법 상수 — 연도 태그 단일 객체.
- * 출처(2025년 귀속 기준 수치를 2026년 귀속에 그대로 적용 — 개정 시 여기만 갱신):
+ * 출처(2026-10-12 국세청 안내·조세특례제한법 확인 — 개정 시 여기만 갱신):
  *  - 신용카드 등 소득공제: 조세특례제한법 §126의2 (문턱 총급여 25%, 신용 15%·직불/선불/현금영수증 30%,
- *    기본 한도 총급여 7천만 이하 300만 / 초과 250만; 문턱은 신용카드 사용분부터 차감 — 시행령 §121의2)
+ *    기본 한도 총급여 7천만 이하 300만 / 초과 250만; 2026년부터 자녀등 최대 2명까지 50만/25만씩 증액.
+ *    문턱은 신용카드 사용분부터 차감 — 시행령 §121의2)
  *  - 의료비 세액공제: 소득세법 §59의4②  (총급여 3% 초과분 15%, 한도 700만 — 본인·65세 이상·장애인·난임 예외 미반영)
  *  - 기부금 세액공제: 소득세법 §59의4④  (15%, 1천만 원 초과분 30% — 종류별 한도 미반영)
  *  - 월세 세액공제: 조세특례제한법 §95의2 (총급여 8천만 이하 무주택 세대주, 월세액 연 1천만 한도,
@@ -43,6 +44,9 @@ export const YEAR_END_TAX_RULES_2026 = {
     thresholdRate: 0.25,
     creditRate: 0.15,
     checkCashRate: 0.3,
+    /** 2026년부터 공제 요건을 충족한 자녀·손자녀(최대 2명)당 기본한도 증가 */
+    childCapLowSalary: 500_000,
+    childCapHighSalary: 250_000,
     /** 총급여 상한(이하) → 기본 공제 한도. 오름차순, 마지막은 Infinity */
     capBySalary: [
       { maxSalary: 70_000_000, cap: 3_000_000 },
@@ -64,6 +68,7 @@ function getYearEndTaxRules(_year: number): YearEndTaxRules {
 interface YearEndTaxHelperOptions {
   /** 사용자 입력 총급여(연). 없으면 salaryKeys YTD 연환산 */
   grossSalary?: number | null;
+  eligibleChildren?: number;
   categoryPresets?: CategoryPresets;
   /** USD 항목 환산용 (없으면 액면 — toKrwByRate 정책) */
   fxRate?: number | null;
@@ -188,13 +193,39 @@ function buildAdvice(
   salaryKnown: boolean
 ): string {
   if (!salaryKnown) return "총급여를 입력하면 25% 문턱과 공제 한도를 계산합니다.";
-  if (c.capReached) return "카드 공제 한도를 모두 채웠습니다 — 추가 카드 소비는 소득공제 효과가 없습니다.";
+  if (c.capReached) return "카드 기본 공제 한도를 모두 채웠습니다. 일반 지출의 추가 공제 효과는 없으며 전통시장·대중교통 등 추가공제는 별도 확인하세요.";
   if (c.toThreshold > 0) {
     return `총급여 25% 문턱까지 ${formatNumber(c.toThreshold)}원 남음 — 문턱을 넘긴 소비부터 공제되니 그 전까진 결제수단 차이가 없습니다.`;
   }
   // 문턱은 넘었고 한도는 남음 → 체크·현금 우선
   const moreCheck = Math.ceil(c.remainingCap / rules.card.checkCashRate);
-  return `문턱 초과 구간 — 체크카드·현금영수증은 신용카드의 2배(30%)로 공제됩니다. 체크·현금으로 약 ${formatNumber(moreCheck)}원 더 쓰면 한도(${formatNumber(c.deductionCap)}원)에 도달합니다.`;
+  return `문턱 초과 구간 — 체크카드·현금영수증 공제율은 30%입니다. 예정된 공제 대상 지출 중 약 ${formatNumber(moreCheck)}원을 체크·현금으로 결제하면 기본 한도(${formatNumber(c.deductionCap)}원)에 도달합니다. 절세만을 위해 소비를 늘리지 마세요.`;
+}
+
+/** 일반 사용분 계산 단일 소스. 시뮬레이션도 문턱 차감 순서를 다시 계산한다. */
+export function calculateYearEndCardSpend(
+  grossSalary: number, credit: number, checkOrCash: number, other = 0, eligibleChildren = 0, year = 2026
+): YearEndCardSpend {
+  const rules = YEAR_END_TAX_RULES_2026;
+  const salaryKnown = Number.isFinite(grossSalary) && grossSalary > 0;
+  const threshold25 = salaryKnown ? grossSalary * rules.card.thresholdRate : 0;
+  const total = credit + checkOrCash;
+  const creditOver = salaryKnown ? Math.max(0, credit - threshold25) : 0;
+  const checkOver = salaryKnown ? Math.max(0, checkOrCash - Math.max(0, threshold25 - credit)) : 0;
+  const childCount = Number.isFinite(eligibleChildren) ? Math.min(2, Math.max(0, Math.floor(eligibleChildren))) : 0;
+  const childCap = year >= 2026 ? childCount * (grossSalary <= 70_000_000 ? rules.card.childCapLowSalary : rules.card.childCapHighSalary) : 0;
+  const deductionCap = salaryKnown ? capForSalary(rules, grossSalary) + childCap : 0;
+  const rawDeduction = creditOver * rules.card.creditRate + checkOver * rules.card.checkCashRate;
+  const estimatedDeduction = salaryKnown ? Math.min(deductionCap, rawDeduction) : 0;
+  const base = {
+    credit, checkOrCash, other, total, threshold25, creditOver, checkOver,
+    overThreshold: creditOver + checkOver,
+    toThreshold: salaryKnown ? Math.max(0, threshold25 - total) : 0,
+    deductionCap, estimatedDeduction,
+    remainingCap: Math.max(0, deductionCap - estimatedDeduction),
+    capReached: salaryKnown && deductionCap > 0 && rawDeduction >= deductionCap
+  };
+  return { ...base, advice: buildAdvice(base, rules, salaryKnown) };
 }
 
 /**
@@ -255,6 +286,7 @@ export function buildYearEndTaxHelper(
 
   for (const l of ledger) {
     if (!l.date?.startsWith(yearPrefix)) continue;
+    if (yearInProgress && l.date > today) continue;
     if (classifyLedgerFlow(l, options.categoryPresets) !== "expense") continue;
     const amt = toKrw(l);
     if (amt <= 0) continue;
@@ -269,23 +301,7 @@ export function buildYearEndTaxHelper(
   }
 
   // ── 카드 공제 ──
-  const threshold25 = salaryKnown ? grossSalary * rules.card.thresholdRate : 0;
-  const total = credit + checkOrCash;
-  const creditOver = salaryKnown ? Math.max(0, credit - threshold25) : 0;
-  const thresholdLeftAfterCredit = Math.max(0, threshold25 - credit);
-  const checkOver = salaryKnown ? Math.max(0, checkOrCash - thresholdLeftAfterCredit) : 0;
-  const overThreshold = creditOver + checkOver;
-  const toThreshold = salaryKnown ? Math.max(0, threshold25 - total) : 0;
-  const deductionCap = salaryKnown ? capForSalary(rules, grossSalary) : 0;
-  const rawDeduction = creditOver * rules.card.creditRate + checkOver * rules.card.checkCashRate;
-  const estimatedDeduction = salaryKnown ? Math.min(deductionCap, rawDeduction) : 0;
-  const remainingCap = Math.max(0, deductionCap - estimatedDeduction);
-  const capReached = salaryKnown && deductionCap > 0 && rawDeduction >= deductionCap;
-  const cardBase: Omit<YearEndCardSpend, "advice"> = {
-    credit, checkOrCash, other, total, threshold25, overThreshold, toThreshold,
-    creditOver, checkOver, estimatedDeduction, deductionCap, remainingCap, capReached
-  };
-  const cardSpend: YearEndCardSpend = { ...cardBase, advice: buildAdvice(cardBase, rules, salaryKnown) };
+  const cardSpend = calculateYearEndCardSpend(grossSalary, credit, checkOrCash, other, options.eligibleChildren, year);
 
   // ── 의료비 ──
   const threshold3 = salaryKnown ? grossSalary * rules.medical.thresholdRate : 0;

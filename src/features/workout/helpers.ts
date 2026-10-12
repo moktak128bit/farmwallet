@@ -83,14 +83,14 @@ export type CardioKind = "distance" | "intensity" | "count" | "interval";
  * 유산소 종목 이름으로 입력 타입 판별.
  * - 인터벌: 강/약 속도 + 시간 + 횟수
  * - 강도형: 시간 + 강도 레벨 (천국의 계단 등)
- * - 횟수형: 시간 + 횟수 (줄넘기, 버피)
+ * - 횟수형: 시간 + 횟수 (줄넘기, 버피, 점핑 잭 등 맨몸 유산소)
  * - 거리형: 시간 + 거리 (러닝, 트레드밀, 사이클, 로잉)
  */
 export function getCardioKind(exerciseName: string): CardioKind {
   const name = exerciseName ?? "";
   if (name.includes("인터벌")) return "interval";
   if (name.includes("계단")) return "intensity";
-  if (name.includes("줄넘기") || name.includes("버피")) return "count";
+  if (/줄넘기|버피|점핑\s*잭|제자리\s*뛰기|하이\s*니/.test(name)) return "count";
   return "distance";
 }
 

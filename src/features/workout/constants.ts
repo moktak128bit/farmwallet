@@ -15,7 +15,19 @@ export const BODY_PART_COLORS: Record<WorkoutBodyPart, string> = {
   "기타": "#64748b",
 };
 
-export const EXERCISE_PRESETS: Record<WorkoutBodyPart, string[]> = {
+/** 별도 기구 없이 하는 운동. 부위 분류와 기존 기록 이름은 그대로 유지한다. */
+export const BODYWEIGHT_PRESETS: Record<WorkoutBodyPart, string[]> = {
+  "가슴": ["푸시업(팔굽혀펴기)", "무릎 푸시업", "와이드 푸시업"],
+  "등": ["슈퍼맨", "리버스 스노우 엔젤"],
+  "어깨": ["파이크 푸시업", "숄더 탭"],
+  "팔": ["다이아몬드 푸시업"],
+  "하체": ["맨몸 스쿼트", "맨몸 런지", "리버스 런지", "사이드 런지", "점프 스쿼트", "글루트 브리지", "카프 레이즈"],
+  "코어": ["크런치", "플랭크", "레그 레이즈", "사이드 플랭크", "버드독", "데드버그", "바이시클 크런치", "마운틴 클라이머"],
+  "유산소": ["버피", "점핑 잭", "제자리 뛰기", "하이 니"],
+  "기타": [],
+};
+
+const BASE_EXERCISE_PRESETS: Record<WorkoutBodyPart, string[]> = {
   "가슴": ["벤치프레스", "인클라인 벤치프레스", "덤벨 프레스", "인클라인 덤벨", "체스트 플라이", "딥스", "케이블 크로스오버", "펙덱 플라이"],
   "등": ["데드리프트", "랫풀다운", "바벨 로우", "시티드 로우", "풀업", "원암 덤벨 로우", "케이블 로우", "티바 로우"],
   "어깨": ["오버헤드 프레스", "사이드 레터럴", "페이스풀", "덤벨 숄더 프레스", "프론트 레이즈", "리어 델트 플라이", "업라이트 로우", "아놀드 프레스"],
@@ -25,3 +37,7 @@ export const EXERCISE_PRESETS: Record<WorkoutBodyPart, string[]> = {
   "유산소": ["러닝", "트레드밀", "사이클", "로잉머신", "줄넘기", "버피", "인터벌", "계단오르기", "풋살", "등산"],
   "기타": [],
 };
+
+export const EXERCISE_PRESETS = Object.fromEntries(
+  BODY_PARTS.map((part) => [part, [...new Set([...BASE_EXERCISE_PRESETS[part], ...BODYWEIGHT_PRESETS[part]])]])
+) as Record<WorkoutBodyPart, string[]>;

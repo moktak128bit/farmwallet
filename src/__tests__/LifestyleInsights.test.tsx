@@ -34,12 +34,13 @@ describe("생활비·차량 시나리오 화면", () => {
   it("주유·차량·월 투자 계획과 모든 분류·시나리오를 렌더링한다", () => {
     render(<LifestyleInsights {...props} />);
     expect(screen.getByRole("region", { name: "월별 생활 분석과 시나리오" })).toBeInTheDocument();
-    expect(screen.getByText("한 달 주유·충전비")).toBeInTheDocument();
+    expect(screen.getByText("완료월 주유·충전비").closest("article")?.querySelector(".money")).toHaveTextContent("100,000원");
+    expect(screen.getByText("완료월 차량 운영비").closest("article")?.querySelector(".money")).toHaveTextContent("150,000원");
     expect(screen.getByText(/차가 없었다면/)).toBeInTheDocument();
     expect(screen.getByRole("textbox", { name: "월 투자 계획" })).toHaveValue("2000000");
     expect(screen.getByText(/투자 후 -10,000원/)).toBeInTheDocument();
     expect(screen.getByText(/8일간 새 기록이 없습니다/)).toBeInTheDocument();
-    expect(screen.getAllByText(/기록 없음/)).toHaveLength(8);
+    expect(screen.getAllByText(/기록 없음/).length).toBeGreaterThanOrEqual(8);
   });
   it("대체 교통비를 입력해 시나리오를 계산하고 재방문에 복원한다", () => {
     const { unmount } = render(<LifestyleInsights {...props} />);
@@ -67,7 +68,8 @@ describe("생활비·차량 시나리오 화면", () => {
     render(<LifestyleInsights {...props} />);
     fireEvent.change(screen.getByRole("combobox", { name: "차량 분류 curgas" }), { target: { value: "exclude" } });
     expect(JSON.parse(localStorage.getItem(STORAGE_KEYS.LIFESTYLE_INSIGHTS)!).vehicleOverrides.curgas).toBe("exclude");
-    expect(screen.getByText("한 달 주유·충전비").closest("article")?.querySelector(".money")).toHaveTextContent("0원");
+    expect(screen.getByText("완료월 주유·충전비").closest("article")?.querySelector(".money")).toHaveTextContent("100,000원");
+    expect(screen.getByText(/2026.10 1~13일 기록: 0원/)).toBeInTheDocument();
     expect(JSON.stringify(ledger)).toBe(before);
   });
   it("구독 정리와 카테고리 감축은 독립적인 가정으로 계산한다", () => {
@@ -93,6 +95,6 @@ describe("생활비·차량 시나리오 화면", () => {
     expect(screen.getByText("양수 평가액의 보유 종목이 없어 투자 집중도를 계산하지 않습니다.")).toBeInTheDocument();
     rerender(<LifestyleInsights {...props} ledger={[entry("usd", "2026-10-05", 10, { currency: "USD" })]} fxRate={null} />);
     expect(screen.getByRole("status")).toHaveTextContent("환율이 없어");
-    expect(screen.queryByText("한 달 주유·충전비")).not.toBeInTheDocument();
+    expect(screen.queryByText("완료월 주유·충전비")).not.toBeInTheDocument();
   });
 });

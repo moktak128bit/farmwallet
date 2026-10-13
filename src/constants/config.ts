@@ -78,6 +78,8 @@ export const STORAGE_KEYS = {
   YEAR_END_GROSS_SALARY: "fw-year-end-gross-salary",
   /** 절세 실행 가이드 설정 (귀속연도별 JSON, 기기 로컬·백업 미포함) */
   YEAR_END_TAX_PLANNER: "fw-year-end-tax-planner",
+  /** 생활 분석 가정·차량 거래 분류 수정 (기기 로컬, 가계부 원본·백업과 별도) */
+  LIFESTYLE_INSIGHTS: "fw-lifestyle-insights",
   /** 마지막 스키마 마이그레이션 리포트(services/migrationReport.ts — from→to·시각·컬렉션별 변경 건수 요약, 소형 JSON) */
   LAST_MIGRATION_REPORT: "fw-last-migration-report",
   /** 연금계좌 세액공제율 선택 ("0.132"|"0.165", 기본 0.132 — 총급여 5,500만 초과 가정). 배당 탭 절세계좌 카드 전용 */

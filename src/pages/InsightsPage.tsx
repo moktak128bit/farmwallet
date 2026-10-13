@@ -21,6 +21,7 @@ import { getThisMonthKST, getTodayKST, shiftMonth, getLastDayOfMonth } from "../
 import { useInsightsData } from "../features/insights/useInsightsData";
 import { InsightsHeader } from "../features/insights/InsightsHeader";
 import { InsightsDecisionBrief } from "../features/insights/InsightsDecisionBrief";
+import { LifestyleInsights } from "../features/insights/LifestyleInsights";
 import { InsightsTabNav, type TabId } from "../features/insights/InsightsTabNav";
 import { ChartSkeleton } from "../components/charts/ChartSkeleton";
 
@@ -125,6 +126,9 @@ export const InsightsView: React.FC<Props> = ({ accounts, ledger, trades = [], p
       {/* Content — 탭 청크 lazy 로드 (첫 방문 시에만 스켈레톤) */}
       <div>
         <Suspense fallback={<ChartSkeleton height={300} />}>
+          {tab === "overview" && <LifestyleInsights ledger={ledger} accounts={accounts}
+            categoryPresets={categoryPresets} fxRate={fxRate}
+            targetMonth={selMonth ?? getThisMonthKST()} holdings={d.holdingsByStock} />}
           {tab === "overview" && <InsightsDecisionBrief
             ledger={ledger}
             targetMonth={selMonth ?? getThisMonthKST()}

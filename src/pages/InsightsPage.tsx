@@ -20,6 +20,7 @@ import { useBalanceSheet } from "../hooks/useBalanceSheet";
 import { getThisMonthKST, getTodayKST, shiftMonth, getLastDayOfMonth } from "../utils/date";
 import { useInsightsData } from "../features/insights/useInsightsData";
 import { InsightsHeader } from "../features/insights/InsightsHeader";
+import { InsightsDecisionBrief } from "../features/insights/InsightsDecisionBrief";
 import { InsightsTabNav, type TabId } from "../features/insights/InsightsTabNav";
 import { ChartSkeleton } from "../components/charts/ChartSkeleton";
 
@@ -124,6 +125,12 @@ export const InsightsView: React.FC<Props> = ({ accounts, ledger, trades = [], p
       {/* Content — 탭 청크 lazy 로드 (첫 방문 시에만 스켈레톤) */}
       <div>
         <Suspense fallback={<ChartSkeleton height={300} />}>
+          {tab === "overview" && <InsightsDecisionBrief
+            ledger={ledger}
+            targetMonth={selMonth ?? getThisMonthKST()}
+            categoryPresets={categoryPresets}
+            fxRate={fxRate}
+          />}
           <ActiveTab d={d} bs={bs} />
           {/* 탭 7→5: 패턴·재미는 종합 아래, 데이트(+정산)는 지출·구독 아래로 — 탭당 내용이 얇던 문제 */}
           {tab === "overview" && (

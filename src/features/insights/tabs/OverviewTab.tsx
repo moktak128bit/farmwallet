@@ -64,7 +64,7 @@ export const OverviewTab = React.memo(function OverviewTab({ d, bs }: { d: D; bs
   /* 지출 관성 */
   const si = d.spendingInertia;
   const siColor = si?.deviation == null ? "var(--text-faint)" : si.deviation > 20 ? "var(--danger)" : si.deviation > 5 ? "var(--warning)" : si.deviation < -10 ? "var(--success)" : "var(--accent)";
-  const siLabel = si?.deviation == null ? "데이터 부족" : si.deviation > 20 ? "과열" : si.deviation > 5 ? "상승세" : si.deviation < -10 ? "절약 모드" : "평상시";
+  const siLabel = si?.deviation == null ? "데이터 부족" : si.deviation > 20 ? "지출 증가" : si.deviation > 5 ? "상승세" : si.deviation < -10 ? "지출 감소" : "평상시";
 
   return (
     <div>
@@ -361,7 +361,7 @@ export const OverviewTab = React.memo(function OverviewTab({ d, bs }: { d: D; bs
                   {si.deviation == null ? "" :
                     si.deviation > 20 ? "지출이 평소보다 크게 늘었어요. 카테고리 점검을 권장합니다." :
                     si.deviation > 5 ? "최근 지출 증가 추세. 이상치 배너도 확인하세요." :
-                    si.deviation < -10 ? "평소보다 절약 중입니다. 좋은 흐름이에요!" :
+                    si.deviation < -10 ? "기록된 지출이 줄었습니다. 결제 시점 변경이나 미입력 거래가 있는지도 확인하세요." :
                     "지출이 평소 수준입니다."}
                 </div>
               </div>
@@ -517,7 +517,7 @@ export const OverviewTab = React.memo(function OverviewTab({ d, bs }: { d: D; bs
               <Insight title={d.prev.partialDay != null ? `전월 동기(1~${d.prev.partialDay}일) 대비 변화` : "전월 대비 변화"} tone="info">
                 근로소득 {d.pSalary >= d.prev.salary ? "+" : ""}{F(d.pSalary - d.prev.salary)} ({d.prev.salary > 0 ? Pct((d.pSalary - d.prev.salary) / d.prev.salary * 100) : "N/A"}),
                 지출 {d.pExpense >= d.prev.expense ? "+" : ""}{F(d.pExpense - d.prev.expense)} ({d.prev.expense > 0 ? Pct((d.pExpense - d.prev.expense) / d.prev.expense * 100) : "N/A"}).
-                {d.pExpense > d.prev.expense ? ` 지출이 ${F(d.pExpense - d.prev.expense)} 증가했습니다. 어떤 카테고리에서 증가했는지 지출 분석 탭에서 확인하세요.` : ` 지출이 ${F(d.prev.expense - d.pExpense)} 감소했습니다. 좋은 흐름입니다!`}
+                {d.pExpense > d.prev.expense ? ` 지출이 ${F(d.pExpense - d.prev.expense)} 증가했습니다. 어떤 카테고리에서 증가했는지 지출 분석 탭에서 확인하세요.` : ` 기록된 지출이 ${F(d.prev.expense - d.pExpense)} 감소했습니다. 결제 시점 변경이나 미입력 거래도 확인하세요.`}
               </Insight>
             )}
             <Insight title="수입 다각화" tone="danger">

@@ -15,6 +15,7 @@ import {
   Legend,
   ResponsiveContainer,
   CartesianGrid,
+  ReferenceLine,
 } from "recharts";
 import { toast } from "react-hot-toast";
 import { useAppStore } from "../../store/appStore";
@@ -117,6 +118,16 @@ export const PortfolioPerformanceSection: React.FC = () => {
     : (perf?.twr ?? []).map((p) => ({ date: p.date, 포트폴리오: p.returnIndex }));
 
   const tickFmt = (d: string) => (typeof d === "string" && d.length >= 10 ? d.slice(2, 7) : d);
+  // Keep 100 on both the axis and the reference line, with readable index ticks.
+  const indexValues = chartData.flatMap(row => Object.values(row).filter((value): value is number => typeof value === "number" && Number.isFinite(value)));
+  const indexMin = Math.min(100, ...indexValues);
+  const indexMax = Math.max(100, ...indexValues);
+  const roughStep = Math.max((indexMax - indexMin) / 4, 1);
+  const magnitude = 10 ** Math.floor(Math.log10(roughStep));
+  const step = ([1, 2, 5, 10].find(multiplier => multiplier * magnitude >= roughStep) ?? 10) * magnitude;
+  const axisMin = Math.floor(indexMin / step) * step - (indexMin === indexMax ? step : 0);
+  const axisMax = Math.ceil(indexMax / step) * step + (indexMin === indexMax ? step : 0);
+  const axisTicks = [...new Set([100, ...Array.from({ length: Math.round((axisMax - axisMin) / step) + 1 }, (_, i) => axisMin + i * step)])].sort((a, b) => a - b);
 
   return (
     <div className="card" style={{ minHeight: 360, marginTop: 16 }}>
@@ -215,6 +226,9 @@ export const PortfolioPerformanceSection: React.FC = () => {
           </div>
 
           {/* 차트 — 시작=100 정규화 */}
+          <div className="hint" style={{ fontSize: 13, marginBottom: 8 }}>
+            기준선 100 = 시작값 (수익률 0%) · 110 = +10% · 90 = −10%
+          </div>
           <div style={{ width: "100%", height: 300 }}>
             {chartData.length < 2 ? (
               <div style={{ display: "flex", alignItems: "center", justifyContent: "center", height: "100%", color: "var(--text-muted)" }}>
@@ -227,7 +241,9 @@ export const PortfolioPerformanceSection: React.FC = () => {
                 <LineChart data={chartData} margin={{ top: 8, right: 12, bottom: 4, left: 4 }}>
                   <CartesianGrid strokeDasharray="3 3" stroke="var(--border)" />
                   <XAxis dataKey="date" tickFormatter={tickFmt} tick={{ fontSize: 11 }} minTickGap={32} />
-                  <YAxis tick={{ fontSize: 11 }} domain={["auto", "auto"]} width={40} />
+                  <YAxis tick={{ fontSize: 11 }} tickFormatter={(value: number) => value.toFixed(0)} domain={[axisMin, axisMax]} ticks={axisTicks} width={48} />
+                  <ReferenceLine y={100} ifOverflow="extendDomain" stroke="var(--text-secondary)" strokeWidth={1.5} strokeDasharray="6 4"
+                    label={{ value: "100 · 수익률 0%", position: "insideTopRight", fill: "var(--text-secondary)", fontSize: 12 }} />
                   <Tooltip
                     formatter={(value: number | string | undefined, name) => [
                       typeof value === "number"
@@ -237,9 +253,9 @@ export const PortfolioPerformanceSection: React.FC = () => {
                     ]}
                   />
                   <Legend wrapperStyle={{ fontSize: 12 }} />
-                  <Line type="monotone" dataKey="포트폴리오" stroke="#6366f1" strokeWidth={2} dot={false} isAnimationActive={false} />
+                  <Line type="monotone" dataKey="포트폴리오" stroke="var(--chart-primary)" strokeWidth={2} dot={false} isAnimationActive={false} />
                   {perf.benchmark && (
-                    <Line type="monotone" dataKey={benchmarkLabel} stroke="#94a3b8" strokeWidth={2} strokeDasharray="5 4" dot={false} isAnimationActive={false} />
+                    <Line type="monotone" dataKey={benchmarkLabel} stroke="var(--text-muted)" strokeWidth={2} strokeDasharray="5 4" dot={false} isAnimationActive={false} />
                   )}
                 </LineChart>
               </ResponsiveContainer>

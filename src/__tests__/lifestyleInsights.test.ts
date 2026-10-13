@@ -28,6 +28,27 @@ const build = (ledger: LedgerEntry[], overrides: Partial<Parameters<typeof build
 });
 
 describe("월별 생활비·차량 시나리오", () => {
+  it("월중 지출을 월 비용의 대표값으로 쓰지 않고 직전 완료월을 사용한다", () => {
+    const result = build([...history, entry("now", "2026-10-05", 1, { description: "주유" })]);
+    expect(result.current.fuel).toBe(1);
+    expect(result.completedMonth).toBe("2026-09");
+    expect(result.completed.fuel).toBe(100_000);
+    expect(result.completedFuelCount).toBe(2);
+    expect(result.fuelAverage3).toBe(100_000);
+  });
+  it("완료월 기록이 없으면 이번 달이나 더 오래된 달로 대체하지 않는다", () => {
+    const result = build([entry("old", "2026-08-05", 50_000, { description: "주유" }), entry("now", "2026-10-05", 40_000, { description: "주유" })]);
+    expect(result.hasCompleted).toBe(false);
+    expect(result.completedMonth).toBe("2026-09");
+    expect(result.fuelAverage3).toBeNull();
+  });
+  it("과거 월 선택과 새해·월말도 완료월 대표값에 반영한다", () => {
+    expect(build(history, { targetMonth: "2026-06" }).completedMonth).toBe("2026-06");
+    const january = build([entry("dec", "2025-12-31", 70_000, { description: "주유" })], { targetMonth: "2026-01", today: "2026-01-01" });
+    expect(january.completedMonth).toBe("2025-12");
+    expect(january.completed.fuel).toBe(70_000);
+    expect(build(history, { today: "2026-10-31" }).completedMonth).toBe("2026-09");
+  });
   it("주유비와 모든 차량 운영비를 구분하고 할부·구입비를 절약액에서 제외한다", () => {
     const result = build([...history, ...annual, entry("now", "2026-10-05", 42_000, { description: "휘발유" })]);
     expect(result.current.fuel).toBe(42_000);

@@ -132,6 +132,13 @@ export function buildLifestyleInsights({ ledger, accounts = [], categoryPresets,
   }
   const partialDay = targetMonth === today.slice(0, 7) ? Number(today.slice(8, 10)) : null;
   const current = byMonth.get(targetMonth) ?? emptyMonth();
+  // Monthly headline costs must describe a finished calendar month, never MTD spending.
+  const completedMonth = targetMonth < today.slice(0, 7) ? targetMonth : shiftMonth(today.slice(0, 7), -1);
+  const completed = byMonth.get(completedMonth) ?? emptyMonth();
+  const fuelReferenceMonths = [0, -1, -2].map(offset => shiftMonth(completedMonth, offset));
+  const fuelReferenceCount = fuelReferenceMonths.filter(month => byMonth.has(month)).length;
+  const fuelAverage3 = fuelReferenceCount === 3 && !missingFx
+    ? fuelReferenceMonths.reduce((sum, month) => sum + byMonth.get(month)!.fuel, 0) / 3 : null;
   const latestRecord = valid.filter(entry => entry.date.slice(0, 7) === targetMonth).map(entry => entry.date).sort().at(-1) ?? null;
   const daysSinceLastRecord = partialDay != null && latestRecord ? partialDay - Number(latestRecord.slice(8, 10)) : null;
   const months = Array.from({ length: 12 }, (_, i) => shiftMonth(targetMonth, i - 11));
@@ -176,6 +183,9 @@ export function buildLifestyleInsights({ ledger, accounts = [], categoryPresets,
   const sanitizedHoldings = holdings.filter(holding => Number.isFinite(holding.valueKRW) && holding.valueKRW > 0).sort((a, b) => b.valueKRW - a.valueKRW);
   const investmentValue = sanitizedHoldings.reduce((sum, holding) => sum + holding.valueKRW, 0);
   return { targetMonth, partialDay, hasCurrent: byMonth.has(targetMonth), current, monthly, baselineMonths, missingFx, latestRecord, daysSinceLastRecord,
+    completedMonth, completed, hasCompleted: byMonth.has(completedMonth),
+    completedFuelCount: completed.records.filter(record => record.vehicle === "fuel").length,
+    fuelAverage3, fuelReferenceCount,
     categories, detailCategories, averageIncome, averageExpense, freeBeforeInvestment, afterPlannedInvestment,
     fuelCount: current.records.filter(record => record.vehicle === "fuel").length,
     averages: { fuel: avg(bucket => bucket.fuel), vehicleOperating: operatingAverage, vehicleCapital: avg(bucket => bucket.vehicleCapital),

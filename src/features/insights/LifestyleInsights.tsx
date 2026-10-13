@@ -63,11 +63,13 @@ export function LifestyleInsights({ ledger, accounts, categoryPresets, fxRate, t
   const cancelledMonthly = model.subscriptions.filter(row => cancelledSubscriptions.has(row.name)).reduce((sum, row) => sum + (row.monthlyAverage ?? 0), 0);
   const referenceLabel = `직전 12개월 중 기록이 있는 ${model.baselineMonths.length}개월의 월평균`;
   const targetLabel = `${targetMonth.replace("-", ".")} ${model.partialDay == null ? "월 전체" : `1~${model.partialDay}일 기록`}`;
+  const completedLabel = `${model.completedMonth.replace("-", ".")} 월 전체`;
   const records = model.current.records.filter(row => [row.main, row.detail, row.entry.description].join(" ").toLowerCase().includes(recordSearch.toLowerCase()));
 
   return <section className="card" aria-label="월별 생활 분석과 시나리오" style={{ padding: 18, marginTop: 16, marginBottom: 20 }}>
     <h2 style={{ fontSize: 18, margin: "0 0 8px" }}>월별 생활 분석과 시나리오</h2>
     <p style={hintStyle}>{targetLabel} · 모든 지출 분류를 정리합니다. 월 선택은 상단에서 바꿀 수 있습니다.
+      주유·차량비 대표값은 {completedLabel} 기록입니다. 진행 중인 달은 월 비용으로 표시하지 않습니다.
       계획용 평균은 기간 버튼과 관계없이 {referenceLabel}을 사용합니다. 기록이 없는 달은 평균에서 제외합니다.</p>
     {error && <p role="alert" style={{ ...hintStyle, color: "var(--danger)" }}>{error}</p>}
     {model.missingFx ? <p role="status">달러 거래의 환율이 없어 생활비 계산을 보류합니다. 환율을 불러온 뒤 확인하세요.</p> : <>
@@ -75,14 +77,19 @@ export function LifestyleInsights({ ledger, accounts, categoryPresets, fxRate, t
         마지막 기록 {model.latestRecord} · {model.daysSinceLastRecord}일간 새 기록이 없습니다. 낮게 표시된 지출을 절약 성과로 단정하지 말고 누락 거래를 확인하세요.
       </p>}
       <div style={gridStyle}>
-        <article style={cardStyle}><h3 style={{ fontSize: 14, marginTop: 0 }}>한 달 주유·충전비</h3>
-          <div style={{ fontSize: 24, fontWeight: 700 }}>{model.hasCurrent ? <Money value={Math.round(model.current.fuel)} /> : "기록 없음"}</div>
-          <p style={hintStyle}>{targetLabel}<br />완료된 기록월 평균 {money(model.averages.fuel)} · 연 환산 {money(model.averages.fuel == null ? null : model.averages.fuel * 12)}</p>
-          <p style={hintStyle}>선택월 {model.fuelCount}건 · 건당 {model.fuelCount > 0 ? money(model.current.fuel / model.fuelCount) : "거래 없음"}. 주행거리·연료량이 없어 km당 비용이나 연비는 추정하지 않습니다.</p>
+        <article style={cardStyle}><h3 style={{ fontSize: 14, marginTop: 0 }}>완료월 주유·충전비</h3>
+          <p style={{ fontSize: 13, fontWeight: 600 }}>{completedLabel}</p>
+          <div style={{ fontSize: 24, fontWeight: 700 }}>{model.hasCompleted ? <Money value={Math.round(model.completed.fuel)} /> : "해당 완료월 기록 없음"}</div>
+          <p style={hintStyle}>최근 3개 완료월 평균 {money(model.fuelAverage3)}{model.fuelAverage3 == null && ` (기록 ${model.fuelReferenceCount}/3개월)`}<br />계획용 기록월 평균 {money(model.averages.fuel)} · 연 환산 {money(model.averages.fuel == null ? null : model.averages.fuel * 12)}</p>
+          <p style={hintStyle}>완료월 {model.completedFuelCount}건 · 건당 {model.completedFuelCount > 0 ? money(model.completed.fuel / model.completedFuelCount) : "거래 없음"}. 주행거리·연료량이 없어 km당 비용이나 연비는 추정하지 않습니다.</p>
+          {model.partialDay != null && <details><summary style={{ fontSize: 12, cursor: "pointer" }}>이번 달 오늘까지 기록 보기</summary>
+            <p style={hintStyle}>{targetLabel}: {model.hasCurrent ? money(model.current.fuel) : "기록 없음"}. 한 달 전체 비용이 아닙니다.</p>
+          </details>}
         </article>
-        <article style={cardStyle}><h3 style={{ fontSize: 14, marginTop: 0 }}>차량 운영비 전체</h3>
-          <div style={{ fontSize: 24, fontWeight: 700 }}>{model.hasCurrent ? <Money value={Math.round(model.current.vehicleOperating)} /> : "기록 없음"}</div>
-          <p style={hintStyle}>주유·정비·보험·세금·주차·통행료·세차<br />완료된 기록월 평균 {money(model.averages.vehicleOperating)}<br />구입·할부는 별도: {model.hasCurrent ? money(model.current.vehicleCapital) : "—"}</p>
+        <article style={cardStyle}><h3 style={{ fontSize: 14, marginTop: 0 }}>완료월 차량 운영비</h3>
+          <p style={{ fontSize: 13, fontWeight: 600 }}>{completedLabel}</p>
+          <div style={{ fontSize: 24, fontWeight: 700 }}>{model.hasCompleted ? <Money value={Math.round(model.completed.vehicleOperating)} /> : "해당 완료월 기록 없음"}</div>
+          <p style={hintStyle}>주유·정비·보험·세금·주차·통행료·세차<br />계획용 기록월 평균 {money(model.averages.vehicleOperating)}<br />완료월 구입·할부는 별도: {model.hasCompleted ? money(model.completed.vehicleCapital) : "—"}</p>
         </article>
         <article style={cardStyle}><h3 style={{ fontSize: 14, marginTop: 0 }}>매달 투자 계획 점검</h3>
           {field("월 투자 계획", "plannedInvestmentMonthly")}

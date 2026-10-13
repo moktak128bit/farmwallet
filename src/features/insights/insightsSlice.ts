@@ -350,7 +350,7 @@ export function sliceInsightsForMonth(base: InsightsBase, selMonth: string | nul
      진행 중인 달은 추세(MoM)·연속증가 계산에서 제외 — 월말까지 안 들어온 달과
      비교하면 월초마다 모든 항목이 "급감"으로 표시되는 왜곡이 생김. KST 기준. */
   const curMonthStr = getThisMonthKST();
-  const doneCnt = months.length > 1 && months[months.length - 1] === curMonthStr ? months.length - 1 : months.length;
+  const doneCnt = months.filter(m => m < curMonthStr && (!selMonth || m <= selMonth)).length;
   // 키별 월별 합계 조회 — base에서 1패스로 만든 맵(mTotalsFor와 동일 값). 없는 키면 0 배열(= 매칭 0건)
   const zeroTotals = () => months.map(() => 0);
 
@@ -361,7 +361,6 @@ export function sliceInsightsForMonth(base: InsightsBase, selMonth: string | nul
     // 추세·피크·연속증가는 완결 월만으로 계산 (수입 인사이트와 동일 기준)
     const doneTotals = mTotals.slice(0, doneCnt);
     const { monthTrend, mom, nonZero, monthAvg } = calcTrend(doneTotals);
-    const last2 = doneTotals.slice(-2);
     const peakIdx = doneTotals.length > 0 ? doneTotals.indexOf(Math.max(...doneTotals)) : -1;
     // 해당 중분류 최대 단건
     let maxSingle = 0, maxSingleDesc = "";
@@ -390,15 +389,17 @@ export function sliceInsightsForMonth(base: InsightsBase, selMonth: string | nul
     const mStd = nonZero.length >= 2 ? Math.sqrt(nonZero.reduce((ss, v) => ss + (v - monthAvg) ** 2, 0) / nonZero.length) : 0;
     const mCV = monthAvg > 0 ? Math.round(mStd / monthAvg * 100) : 0;
     // 지출 빈도 (월당 평균 건수)
-    const freqPerMonth = nonZero.length > 0 ? Math.round(s.count / nonZero.length * 10) / 10 : 0;
+    const historyCount = ledger.filter(l => Number(l.amount) > 0 && flowOf(l) === "expense" && expSubName(l) === s.sub
+      && l.date?.slice(0, 7) < curMonthStr && (!selMonth || l.date?.slice(0, 7) <= selMonth)).length;
+    const freqPerMonth = doneCnt > 0 ? Math.round(historyCount / doneCnt * 10) / 10 : 0;
     // 자동 코멘트 생성
     const comments: string[] = [];
     // 추세 코멘트
-    if (monthTrend === "up" && mom > 50) comments.push(`전월 대비 ${mom}% 급증했습니다. 일시적 지출인지 구조적 증가인지 확인이 필요합니다. 이 속도가 계속되면 연간 ${F(Math.round(last2[1] * 12))} 이상 지출될 수 있습니다.`);
+    if (monthTrend === "up" && mom > 50) comments.push(`전월 대비 ${mom}% 증가했습니다. 큰 단건이나 반복 결제의 변화가 있는지 거래 내역에서 확인하세요.`);
     else if (monthTrend === "up" && mom > 30) comments.push(`전월 대비 ${mom}% 증가했습니다. 특정 이벤트나 구매가 있었는지 확인해 보세요.`);
     else if (monthTrend === "up") comments.push(`전월 대비 ${mom}% 소폭 증가 추세입니다.`);
-    else if (monthTrend === "down" && Math.abs(mom) > 50) comments.push(`전월 대비 ${Math.abs(mom)}% 대폭 감소! 훌륭한 절약입니다. 이 습관을 유지하세요.`);
-    else if (monthTrend === "down" && Math.abs(mom) > 30) comments.push(`전월 대비 ${Math.abs(mom)}% 감소했습니다. 좋은 흐름이에요!`);
+    else if (monthTrend === "down" && Math.abs(mom) > 50) comments.push(`전월 대비 ${Math.abs(mom)}% 감소했습니다. 결제 시점 변경이나 미입력 거래가 있는지도 확인하세요.`);
+    else if (monthTrend === "down" && Math.abs(mom) > 30) comments.push(`전월 대비 ${Math.abs(mom)}% 감소했습니다. 일시적인 변화인지 다음 달에도 확인하세요.`);
     else if (monthTrend === "down") comments.push(`전월 대비 ${Math.abs(mom)}% 소폭 감소 중입니다.`);
     else comments.push("전월과 비슷한 수준을 유지하고 있습니다.");
     // 연속 증가 경고
@@ -492,10 +493,12 @@ export function sliceInsightsForMonth(base: InsightsBase, selMonth: string | nul
       }
       if (nature === "패시브") {
         cs.push(`자산이 일해서 번 패시브 수입입니다.`);
-        if (monthTrend === "up") cs.push(`증가 추세 — 투자 자산 축적 효과가 나타나고 있습니다.`);
+        if (monthTrend === "up") cs.push(`수입이 증가했습니다. 보유량 변화·지급 일정·일회성 배당 중 어떤 영향인지 확인하세요.`);
       }
-      if (nature === "근로" && !recurring && nonZero.length >= 1) {
-        cs.push(`상여·수당처럼 비정기로 들어오는 근로소득입니다. 고정 지출은 정기 급여 기준으로 계획하고, 이런 목돈은 저축·투자로 돌리세요.`);
+      if (doneCnt < 3) {
+        cs.push(`완료된 월 기록이 ${doneCnt}개월이어서 정기성·안정성 판단을 보류합니다.`);
+      } else if (nature === "근로" && !recurring && nonZero.length >= 1) {
+        cs.push(`관측 기간에 매달 발생하지 않은 근로소득입니다. 급여 누락이나 상여·수당 여부를 확인하세요.`);
       }
       // 안정성·추세는 정기적으로 들어오는 수입원에만 의미가 있음
       if (recurring) {
@@ -506,7 +509,7 @@ export function sliceInsightsForMonth(base: InsightsBase, selMonth: string | nul
         }
         if (monthTrend === "up" && mom > 30) cs.push(`전월 대비 ${mom}% 급증했습니다.`);
         else if (monthTrend === "down" && Math.abs(mom) > 30) cs.push(`전월 대비 ${Math.abs(mom)}% 급감 — 일시적인지 구조적인지 확인해 보세요.`);
-      } else if (nonZero.length >= 1 && nature !== "근로") {
+      } else if (doneCnt >= 3 && nonZero.length >= 1 && nature !== "근로") {
         cs.push(`${doneCnt}개월 중 ${nonZero.length}개월 발생한 비정기 수입 — 보너스로 보고 계획에는 넣지 않는 것이 좋습니다.`);
       }
       if (maxMonth && monthAvg > 0 && maxMonthAmt > monthAvg * 2) cs.push(`최대 수입월 ${maxMonth}(${F(maxMonthAmt)})은 발생월 평균(${F(monthAvg)})의 ${Math.round(SD(maxMonthAmt, monthAvg))}배였습니다.`);

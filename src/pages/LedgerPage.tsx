@@ -442,7 +442,14 @@ export const LedgerView: React.FC<Props> = ({
       const key = ledgerSort.key;
       
       if (key === "date") {
-        return (a.date < b.date ? -1 : a.date > b.date ? 1 : 0) * dir;
+        // 같은 날은 time("HH:mm")을 2차 키로 — 날짜만 비교하면 동점이라 배열에 들어간 순서대로
+        // 표시돼, 통장 스크린샷을 나눠 입력하면 실제 시각과 뒤섞여 보인다.
+        // time 없는 항목은 ""이라 내림차순에서 그 날의 맨 아래로 간다(시각 미상 → 뒤).
+        if (a.date !== b.date) return (a.date < b.date ? -1 : 1) * dir;
+        const at = a.time ?? "";
+        const bt = b.time ?? "";
+        if (at !== bt) return (at < bt ? -1 : 1) * dir;
+        return 0;
       } else if (key === "amount") {
         // USD 항목은 원화 환산 후 비교 — 금액 범위 필터(toKrwByRate)와 통일. 액면 비교하면
         // $1,000(약 140만원)이 KRW 2,000원보다 아래로 정렬되는 필터-정렬 모순이 생긴다.

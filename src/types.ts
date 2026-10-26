@@ -40,6 +40,12 @@ export type LedgerKind = "income" | "expense" | "transfer";
 export interface LedgerEntry {
   id: string;
   date: string; // ISO yyyy-mm-dd
+  /**
+   * 체결 시각 "HH:mm" (KST, 선택). 날짜만으로는 같은 날 안에서 정렬 기준이 없어 배열에 들어간
+   * 순서대로 표시된다 — 통장 스크린샷을 나눠 입력하면 실제 시각과 뒤섞인다.
+   * 가계부 날짜 정렬의 2차 키. 없는 항목은 그 날의 맨 아래(내림차순 기준)로 간다.
+   */
+  time?: string;
   kind: LedgerKind;
   category: string;
   subCategory?: string;

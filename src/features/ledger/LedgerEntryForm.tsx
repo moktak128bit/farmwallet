@@ -638,6 +638,8 @@ export const LedgerEntryForm = React.memo(React.forwardRef<LedgerEntryFormHandle
 
       const base: Omit<LedgerEntry, "id"> = {
         date: form.date,
+        // 빈 문자열은 넣지 않는다 — 정렬이 ""와 미지정을 같게 보므로 필드 자체를 생략
+        ...(form.time ? { time: form.time } : {}),
         kind: kindForTab,
         isFixedExpense: isFixed,
         category: storedCategory,
@@ -763,6 +765,7 @@ export const LedgerEntryForm = React.memo(React.forwardRef<LedgerEntryFormHandle
         const newForm = {
           id: undefined as string | undefined,
           date: entry.date,
+          time: entry.time ?? "",
           kind: entry.kind,
           isFixedExpense: entry.isFixedExpense ?? false,
           mainCategory: isSavingsInvestCopy
@@ -1204,6 +1207,24 @@ export const LedgerEntryForm = React.memo(React.forwardRef<LedgerEntryFormHandle
                     }}
                     aria-invalid={!!formErrors.date}
                     aria-describedby={formErrors.date ? "date-error" : undefined}
+                  />
+                </label>
+                <label style={{ margin: "6px 0 0", display: "block" }}>
+                  <span style={{ fontSize: 11, marginBottom: 4, display: "block", color: "var(--text-muted)" }}>
+                    시각 (선택)
+                  </span>
+                  <input
+                    type="time"
+                    value={form.time ?? ""}
+                    onChange={(e) => setForm({ ...form, time: e.target.value })}
+                    style={{
+                      padding: "10px",
+                      fontSize: 14,
+                      width: "100%",
+                      border: "1px solid var(--border)",
+                      borderRadius: "6px"
+                    }}
+                    aria-label="체결 시각 (선택)"
                   />
                 </label>
                 <div style={{ display: "flex", gap: 4, flexWrap: "wrap", marginTop: 4 }} aria-label="날짜 빠른 선택">

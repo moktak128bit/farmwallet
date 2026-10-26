@@ -42,6 +42,26 @@ export function getLastQuoteRefreshAt(): number {
   }
 }
 
+/**
+ * 주식 탭 진입 자동 갱신의 최소 간격 — 탭을 빠르게 오갈 때 연속 발사만 막는 용도.
+ * 앱 열기·복귀용(useBackgroundQuoteRefresh)의 10분과는 목적이 달라 따로 둔다.
+ */
+export const STOCKS_TAB_REFRESH_GATE_MS = 60 * 1000;
+
+/**
+ * 주식 탭에 들어왔을 때 보유 종목 시세를 자동 갱신할지.
+ * 판정 기준은 시세 updatedAt(체결 시각)이 아니라 마지막 "시도" 시각 — 장외엔 체결 시각이 멈춰
+ * 매 진입마다 발사된다.
+ */
+export function shouldRefreshOnStocksTabEnter(
+  hasPositions: boolean,
+  lastAttemptAt: number,
+  now: number = Date.now()
+): boolean {
+  if (!hasPositions) return false;
+  return now - lastAttemptAt > STOCKS_TAB_REFRESH_GATE_MS;
+}
+
 function markQuoteRefreshAttempt(): void {
   try {
     localStorage.setItem(STORAGE_KEYS.LAST_QUOTE_REFRESH_AT, String(Date.now()));

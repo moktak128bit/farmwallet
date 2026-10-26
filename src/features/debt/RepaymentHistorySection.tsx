@@ -8,13 +8,14 @@
  * 펼침(showRepaymentHistory)·필터(repaymentFilterDebtId)는 대출 카드 클릭과 공유되어 부모 소유 상태.
  * 수정 모달(EditRepaymentModal)은 부모에서 렌더 — 여기서는 onEditRepayment(setState)로 열기만 한다.
  */
-import React, { useMemo } from "react";
+import React, { useMemo, useState } from "react";
 import { ChevronDown, ChevronUp, Pencil, Trash2 } from "lucide-react";
 import type { Account, LedgerEntry, Loan } from "../../types";
 import { formatKRW } from "../../utils/formatter";
 import { isInterestRepayment } from "../../calculations";
 import { useAppStore } from "../../store/appStore";
 import { isLoanRepaymentEntry } from "./debtShared";
+import { FilterChipRow } from "../../components/ui/FilterChipRow";
 
 // ─── 삭제 토스트 [실행 취소] — "삭제 항목 재삽입" 복원 ───────────────────
 // 풀 스냅샷 undo가 아니다:
@@ -97,6 +98,17 @@ export const RepaymentHistorySection: React.FC<Props> = React.memo(function Repa
 
     return all;
   }, [repaymentByDebt, loans]);
+
+  // 전체 보기에서 대출 4건이 세로로 이어 붙어 긴 스크롤이 됐다 — 기본 접힘으로 요약 줄만 보이게 한다.
+  // 칩으로 한 부채만 고르면 그룹이 하나뿐이라 자동으로 펼친다.
+  const [expandedDebtIds, setExpandedDebtIds] = useState<ReadonlySet<string>>(() => new Set<string>());
+  const toggleDebtGroup = (id: string) =>
+    setExpandedDebtIds((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
 
   const visibleRepaymentGroups = useMemo(() => {
     if (repaymentFilterDebtId) {
@@ -194,30 +206,17 @@ export const RepaymentHistorySection: React.FC<Props> = React.memo(function Repa
                 background: "var(--bg)"
               }}
             >
-              <label style={{ display: "flex", flexDirection: "column", gap: 8 }}>
-                <span style={{ fontSize: 13, color: "var(--text-muted)", fontWeight: 600 }}>부채별 보기</span>
-                <select
-                  value={repaymentFilterDebtId}
-                  onChange={(e) => setRepaymentFilterDebtId(e.target.value)}
-                  style={{
-                    width: "100%",
-                    maxWidth: 360,
-                    padding: "12px 14px",
-                    borderRadius: 8,
-                    border: "1px solid var(--border)",
-                    background: "var(--surface)",
-                    fontSize: 14,
-                    fontWeight: 500
-                  }}
-                >
-                  <option value="">전체 부채</option>
-                  {debtFilterOptions.map((opt) => (
-                    <option key={opt.id} value={opt.id}>
-                      {opt.label} · {opt.count}건 · {formatKRW(Math.round(opt.total))}
-                    </option>
-                  ))}
-                </select>
-              </label>
+              <FilterChipRow
+                label="부채별 보기"
+                options={debtFilterOptions.map((opt) => ({
+                  value: opt.id,
+                  display: opt.label,
+                  count: opt.count
+                }))}
+                selected={repaymentFilterDebtId || undefined}
+                onSelect={(v) => setRepaymentFilterDebtId(v ?? "")}
+                allLabel="전체 부채"
+              />
             </div>
           )}
           <div
@@ -255,6 +254,8 @@ export const RepaymentHistorySection: React.FC<Props> = React.memo(function Repa
                   (s, e) => (isInterestRepayment(e) ? s + e.amount : s),
                   0
                 );
+                // 그룹이 하나뿐이면(칩으로 한 부채 선택) 자동 펼침 — 한 번 더 누르게 하지 않는다
+                const isGroupOpen = visibleRepaymentGroups.length === 1 || expandedDebtIds.has(debtId);
                 return (
                   <div
                     key={debtId}
@@ -263,10 +264,17 @@ export const RepaymentHistorySection: React.FC<Props> = React.memo(function Repa
                       marginBottom: 0
                     }}
                   >
-                    <div
+                    <button
+                      type="button"
+                      onClick={() => toggleDebtGroup(debtId)}
+                      aria-expanded={isGroupOpen}
                       style={{
+                        width: "100%",
                         padding: "14px 20px",
                         background: "var(--surface)",
+                        border: "none",
+                        cursor: "pointer",
+                        textAlign: "left",
                         fontWeight: 700,
                         fontSize: 15,
                         color: "var(--primary)",
@@ -278,13 +286,17 @@ export const RepaymentHistorySection: React.FC<Props> = React.memo(function Repa
                         borderBottom: "1px solid var(--border)"
                       }}
                     >
-                      <span>{group.label}</span>
+                      <span style={{ display: "flex", alignItems: "center", gap: 6 }}>
+                        {isGroupOpen ? <ChevronUp size={16} /> : <ChevronDown size={16} />}
+                        {group.label}
+                      </span>
                       <span style={{ fontSize: 13, color: "var(--text-muted)", fontWeight: 600, display: "flex", gap: 12, flexWrap: "wrap" }}>
                         <span>{entries.length}건 · {formatKRW(Math.round(group.total))}</span>
                         <span style={{ color: "var(--text)" }}>원금 {formatKRW(Math.round(principalTotal))}</span>
                         <span style={{ color: "var(--chart-expense)" }}>이자 {formatKRW(Math.round(interestTotal))}</span>
                       </span>
-                    </div>
+                    </button>
+                    {isGroupOpen && (
                     <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 14 }}>
                       <thead>
                         <tr style={{ background: "var(--bg)" }}>
@@ -384,6 +396,7 @@ export const RepaymentHistorySection: React.FC<Props> = React.memo(function Repa
                         ))}
                       </tbody>
                     </table>
+                    )}
                   </div>
                 );
               })

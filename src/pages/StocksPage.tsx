@@ -26,7 +26,11 @@ import { QuoteErrorBanner } from "../features/stocks/QuoteErrorBanner";
 import { QuoteRefreshProgress } from "../features/stocks/QuoteRefreshProgress";
 import { StocksHeaderSection } from "../features/stocks/StocksHeaderSection";
 import { TradeFormSection, type TradeFormSectionHandle } from "../features/stocks/TradeFormSection";
-import { useQuoteRefresh, getLastQuoteRefreshAt } from "../features/stocks/useQuoteRefresh";
+import {
+  useQuoteRefresh,
+  getLastQuoteRefreshAt,
+  shouldRefreshOnStocksTabEnter
+} from "../features/stocks/useQuoteRefresh";
 
 const LazyPortfolioChartsSection = lazy(() =>
   import("../features/stocks/PortfolioChartsSection").then((m) => ({ default: m.PortfolioChartsSection }))
@@ -380,16 +384,17 @@ export const StocksView: React.FC<Props> = ({
     onLog
   });
 
-  // 주식 탭 진입 시 마지막 갱신 "시도"가 10분+ 지났으면 보유 종목 1회 자동 갱신 — 앱 열기·복귀 갱신
-  // (App의 useBackgroundQuoteRefresh)은 앱이 계속 보이는 채로 오래 머문 뒤 탭을 옮기는 경우를 못 잡는다.
-  // 판정 기준은 시세 updatedAt(체결 시각)이 아님: 장외엔 체결 시각이 멈춰 매 진입마다 발사된다.
+  // 주식 탭 진입 시 보유 종목 1회 자동 갱신 — [시세 조회 (보유)]를 손으로 누르지 않아도 되게.
+  // 앱 열기·복귀 갱신(App의 useBackgroundQuoteRefresh)은 앱이 계속 보이는 채로 오래 머문 뒤
+  // 탭만 옮기는 경우를 못 잡는다.
+  // 게이트가 10분이던 시절엔 "들어가도 아무 일 없다"가 대부분이었다(앱 연 직후 진입이면 늘 걸림).
+  // 탭 진입은 명시적 의도라 60초로 줄인다 — 판정은 shouldRefreshOnStocksTabEnter 단일 소스.
   const autoRefreshOnMountRef = useRef(false);
   useEffect(() => {
     if (autoRefreshOnMountRef.current) return;
     if (positions.length === 0) return;
     autoRefreshOnMountRef.current = true;
-    const STALE_MS = 10 * 60 * 1000;
-    if (Date.now() - getLastQuoteRefreshAt() > STALE_MS) {
+    if (shouldRefreshOnStocksTabEnter(true, getLastQuoteRefreshAt())) {
       void handleRefreshQuotesAuto();
     }
   }, [positions.length, handleRefreshQuotesAuto]);

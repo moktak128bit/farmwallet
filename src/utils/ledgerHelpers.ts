@@ -70,6 +70,8 @@ export function tradeToLedgerRow(
 export interface LedgerFormState {
   id?: string;
   date: string;
+  /** 체결 시각 "HH:mm" (선택) — 같은 날 정렬 2차 키 */
+  time?: string;
   kind: LedgerKind;
   isFixedExpense: boolean;
   mainCategory: string;

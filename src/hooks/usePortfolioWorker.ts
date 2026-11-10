@@ -65,28 +65,22 @@ export function usePortfolioWorker(params: UsePortfolioWorkerParams): PortfolioS
   /** 우리가 보낸 request id 중 가장 큰 값. 응답이 이 값과 다르면 stale로 간주 */
   const latestPostedRequestRef = useRef(0);
 
-  const syncResult = useMemo(() => {
+  // GAS(워커 없음): 입력이 실제로 바뀔 때만 다시 계산하고 결과를 그대로 돌려준다.
+  // ⚠ 예전엔 deps가 [params](App이 매 렌더 새로 만드는 객체)라 매 렌더 재계산 → effect의 setState → 다시 렌더…
+  // 무한 루프였다(대시보드 10초에 2만 회 커밋, 가계부 useDeferredValue가 영영 못 따라와 편집이 화면에 안 보임).
+  const { accounts, ledger, trades, prices, fxRate, needsBalances, needsPortfolioAggregation } = params;
+  const syncState = useMemo((): PortfolioState | null => {
     if (supportsWorker) return null;
-    return computeSynchronously(params);
-  }, [supportsWorker, params]);
+    return {
+      ...computeSynchronously({ accounts, ledger, trades, prices, fxRate, needsBalances, needsPortfolioAggregation }),
+      isComputing: false,
+    };
+  }, [supportsWorker, accounts, ledger, trades, prices, fxRate, needsBalances, needsPortfolioAggregation]);
 
-  const [state, setState] = useState<PortfolioState>(() => {
-    if (syncResult) {
-      return { ...syncResult, isComputing: false };
-    }
-    return { balances: [], positions: [], isComputing: false };
-  });
+  const [state, setState] = useState<PortfolioState>({ balances: [], positions: [], isComputing: false });
 
   useEffect(() => {
-    if (!supportsWorker) {
-      if (!syncResult) return;
-      setState({
-        balances: syncResult.balances,
-        positions: syncResult.positions,
-        isComputing: false
-      });
-      return;
-    }
+    if (!supportsWorker) return;
 
     const worker = new Worker(new URL("../workers/portfolioWorker.ts", import.meta.url), {
       type: "module"
@@ -126,7 +120,7 @@ export function usePortfolioWorker(params: UsePortfolioWorkerParams): PortfolioS
       worker.terminate();
       workerRef.current = null;
     };
-  }, [supportsWorker, syncResult]);
+  }, [supportsWorker]);
 
   useEffect(() => {
     if (!supportsWorker) return;
@@ -160,5 +154,5 @@ export function usePortfolioWorker(params: UsePortfolioWorkerParams): PortfolioS
     params.needsPortfolioAggregation
   ]);
 
-  return state;
+  return syncState ?? state;
 }

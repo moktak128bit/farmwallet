@@ -156,22 +156,26 @@ export function useReportWorker(params: UseReportWorkerParams): UseReportWorkerR
   const workerRef = useRef<Worker | null>(null);
   const requestIdRef = useRef(0);
   const latestHandledRequestRef = useRef(0);
-  const fallback = useMemo(() => {
+  // GAS(워커 없음): 입력이 실제로 바뀔 때만 다시 계산하고 결과를 그대로 돌려준다.
+  // ⚠ 예전엔 deps가 [params](호출부가 매 렌더 새로 만드는 객체)라 매 렌더 재계산 → effect의 setState →
+  // 다시 렌더… 무한 루프였다(대시보드 10초에 2만 회 커밋, 가계부 useDeferredValue가 영영 못 따라와 편집이 화면에 안 보임).
+  const {
+    accounts, loans, ledger, trades, prices, startDate, endDate, fxRate, dateAccountId, nonRealIncomeOverride, fxHistory,
+  } = params;
+  const fallback = useMemo((): UseReportWorkerResult | null => {
     if (supportsWorker) return null;
-    return computeSynchronously(params);
-  }, [supportsWorker, params]);
+    return {
+      ...computeSynchronously({
+        accounts, loans, ledger, trades, prices, startDate, endDate, fxRate, dateAccountId, nonRealIncomeOverride, fxHistory,
+      }),
+      isComputing: false,
+    };
+  }, [supportsWorker, accounts, loans, ledger, trades, prices, startDate, endDate, fxRate, dateAccountId, nonRealIncomeOverride, fxHistory]);
 
-  const [state, setState] = useState<UseReportWorkerResult>(() => ({
-    ...(fallback ?? createEmptyData()),
-    isComputing: false
-  }));
+  const [state, setState] = useState<UseReportWorkerResult>(() => ({ ...createEmptyData(), isComputing: false }));
 
   useEffect(() => {
-    if (!supportsWorker) {
-      if (!fallback) return;
-      setState({ ...fallback, isComputing: false });
-      return;
-    }
+    if (!supportsWorker) return;
 
     const worker = new Worker(new URL("../workers/reportWorker.ts", import.meta.url), {
       type: "module"
@@ -204,7 +208,7 @@ export function useReportWorker(params: UseReportWorkerParams): UseReportWorkerR
       worker.terminate();
       workerRef.current = null;
     };
-  }, [supportsWorker, fallback]);
+  }, [supportsWorker]);
 
   useEffect(() => {
     if (!supportsWorker) return;
@@ -245,5 +249,5 @@ export function useReportWorker(params: UseReportWorkerParams): UseReportWorkerR
     params.fxHistory
   ]);
 
-  return state;
+  return fallback ?? state;
 }

@@ -3059,3 +3059,36 @@ label {
 }
 .photo-upload-panel .spin { animation: spin 1s linear infinite; }
 .photo-upload-btn .spin { animation: spin 1s linear infinite; }
+
+/* ── PC 탭 목록 접기 (App.tsx sidebarCollapsed · STORAGE_KEYS.SIDEBAR_COLLAPSED) ──
+   접으면 사이드바를 빼고 본문이 화면 전체 폭(1600px 상한도 해제). 탭 이동은 햄버거(서랍)·Alt+←/→. */
+.sidebar-toggle-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 32px;
+  height: 32px;
+  padding: 0;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--surface);
+  color: var(--text-secondary);
+  cursor: pointer;
+  flex: 0 0 auto;
+}
+.sidebar-toggle-btn:hover { background: var(--surface-hover); color: var(--text); }
+.app-root.sidebar-collapsed { max-width: none; }
+.app-root.sidebar-collapsed .layout { grid-template-columns: minmax(0, 1fr); }
+.app-root.sidebar-collapsed .sidebar { display: none; }
+.app-root.sidebar-collapsed .mobile-menu-btn { display: flex; width: 32px; height: 32px; }
+/* 1024px 이하는 탭이 위쪽 가로줄·휴대폰은 서랍이라 접기 버튼이 필요 없다 */
+@media (max-width: 1024px) {
+  .sidebar-toggle-btn { display: none; }
+  .app-root.sidebar-collapsed { max-width: 1600px; }
+  .app-root.sidebar-collapsed .sidebar { display: flex; }
+  .app-root.sidebar-collapsed .mobile-menu-btn { display: none; }
+}
+@media (max-width: 768px) {
+  .app-root.sidebar-collapsed .sidebar { display: none; }
+  .app-root.sidebar-collapsed .mobile-menu-btn { display: flex; width: 40px; height: 40px; }
+}

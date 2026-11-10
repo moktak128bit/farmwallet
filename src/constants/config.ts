@@ -104,6 +104,8 @@ export const STORAGE_KEYS = {
   NUDGE_DISMISSED: "fw-nudge-dismissed",
   /** 가계부 입력 폼 펼침 여부 ("1"=펼침). 기본 접힘 — 목록이 먼저 보이게. Alt+N·복사·수정은 자동으로 펼친다 */
   LEDGER_FORM_OPEN: "fw-ledger-form-open",
+  /** PC 왼쪽 탭 목록 접기 ("1"=접힘 — 본문을 화면 전체 폭으로, 기기 로컬). 휴대폰은 원래 서랍 메뉴라 무관 */
+  SIDEBAR_COLLAPSED: "fw-sidebar-collapsed",
   /**
    * 가계부 목록 열 너비 (JSON number[11] — 작업 열 제외 10칸 비율 + 자리표시 1, 기기 로컬).
    * v2(2026-11-09): 작업 열 축소·상세내역 확대로 기본값을 바꾸며 키를 올려 옛 저장 너비를 한 번 초기화.

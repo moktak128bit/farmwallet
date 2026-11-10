@@ -1,7 +1,7 @@
 import React, { useCallback, useEffect, useMemo, useState, lazy, Suspense } from "react";
 import { Toaster, ToastBar, toast } from "react-hot-toast";
 import { isGas, remoteText } from "./services/gas";
-import { Moon, Sun, Menu, Eye, EyeOff, Plus, Search, Save } from "lucide-react";
+import { Moon, Sun, Menu, Eye, EyeOff, Plus, Search, Save, PanelLeftClose, PanelLeftOpen } from "lucide-react";
 import { Tabs, TAB_LABELS, type TabId } from "./components/ui/Tabs";
 import { StatusMenu, type StatusTone } from "./components/ui/StatusMenu";
 import { ShortcutsHelp } from "./components/ShortcutsHelp";
@@ -123,6 +123,26 @@ export const App: React.FC = () => {
   const privacyMode = useUIStore((s) => s.privacyMode);
   const setPrivacyMode = useUIStore((s) => s.setPrivacyMode);
   const mobileDrawerOpen = useUIStore((s) => s.mobileDrawerOpen);
+  // PC 왼쪽 탭 목록 접기 — 접으면 본문이 화면 전체 폭. 접힌 동안 탭 이동은 햄버거(서랍)·Alt+←/→
+  const [sidebarCollapsed, setSidebarCollapsed] = useState<boolean>(() => {
+    try {
+      return localStorage.getItem(STORAGE_KEYS.SIDEBAR_COLLAPSED) === "1";
+    } catch {
+      return false;
+    }
+  });
+  const toggleSidebar = useCallback(() => {
+    setSidebarCollapsed((prev) => {
+      const next = !prev;
+      try {
+        if (next) localStorage.setItem(STORAGE_KEYS.SIDEBAR_COLLAPSED, "1");
+        else localStorage.removeItem(STORAGE_KEYS.SIDEBAR_COLLAPSED);
+      } catch {
+        /* 저장 못 해도 이번 화면에선 적용 */
+      }
+      return next;
+    });
+  }, []);
   const setMobileDrawerOpen = useUIStore((s) => s.setMobileDrawerOpen);
   const closeMobileDrawer = useCallback(() => {
     setMobileDrawerOpen(false);
@@ -913,7 +933,7 @@ export const App: React.FC = () => {
   }
 
   return (
-    <div className="app-root">
+    <div className={sidebarCollapsed ? "app-root sidebar-collapsed" : "app-root"}>
       <a href="#main-content" className="skip-link">본문으로 건너뛰기</a>
       {isGas() && <PhotoUploadPanel />}
       <Toaster
@@ -971,6 +991,16 @@ export const App: React.FC = () => {
             title="메뉴"
           >
             <Menu size={22} />
+          </button>
+          <button
+            type="button"
+            className="sidebar-toggle-btn"
+            onClick={toggleSidebar}
+            aria-label={sidebarCollapsed ? "탭 목록 펼치기" : "탭 목록 접기 (화면 넓게)"}
+            title={sidebarCollapsed ? "탭 목록 펼치기" : "탭 목록 접기 (화면 넓게)"}
+            aria-pressed={sidebarCollapsed}
+          >
+            {sidebarCollapsed ? <PanelLeftOpen size={18} /> : <PanelLeftClose size={18} />}
           </button>
           <div className="app-brand">
             <span className="app-brand-name">FarmWallet</span>

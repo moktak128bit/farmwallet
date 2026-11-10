@@ -29,7 +29,7 @@ npm run knip         # 미사용 파일/export 검사 (클린 상태 유지할 �
 
 1. Drive 사진 폴더에서 **미처리** 사진만 읽는다.
 2. **시트의 최신 장부**(`_meta` revision 포함)를 먼저 읽고 중복·취소·계좌 매핑을 확인한 거래를 만든다. 금액·계좌가 불확실하면 추정하지 말고 묻는다.
-3. **변경분 파일**(`farmwallet-delta-v1`, utils/ledgerDelta.ts)을 만든다: `{format, ledger:{add,update,remove}, trades:{add,remove}, accounts:{patch}, sourcePhotos:[Drive 사진 파일 이름]}`. id는 `newIdWithPrefix` 규칙과 같은 형식. 사용자가 **설정 → 백업 / 복원 → 가계부 파일 불러오기**로 적용(미리보기 확인)하면 자동 동기화가 시트에 저장하고 sourcePhotos가 처리 완료로 옮겨진다. `_data`/`_meta` 셀을 Sheets API로 직접 쓰지 않는다(잠금·보기용 탭·일일 백업 우회).
+3. **변경분 파일**(`farmwallet-delta-v1`, utils/ledgerDelta.ts)을 만든다: `{format, ledger:{add,update,remove}, trades:{add,remove}, accounts:{patch}, sourcePhotos:[Drive 사진 파일 이름]}`. id는 `newIdWithPrefix` 규칙과 같은 형식. 사용자가 **설정 → 백업 / 복원 → 가계부 파일 불러오기**로 적용(미리보기 확인)하면 자동 동기화가 시트에 저장하고 sourcePhotos가 처리 완료로 옮겨진다. **Claude가 직접 반영할 때(기본)**: `gas/Inbox.html`(gitignore, `[{id,title,delta}]`)에 넣고 `npm run build:gas` 후 clasp push·새 버전 배포 → 앱이 열릴 때 시트 채택 뒤 자동 적용(hooks/useGasInbox, 안전 스냅샷)·자동 저장, 다음 열기에서 시트에 다 들어간 게 확인되면 서버가 적용 완료로 기억(pendingDeltas/markDeltaApplied). 사용자가 채팅에 스크린샷을 직접 붙이면 sourcePhotos는 비운다. `_data`/`_meta` 셀을 Sheets API로 직접 쓰지 않는다(잠금·보기용 탭·일일 백업 우회).
 4. 적용 후 시트를 **다시 읽어** 추가 건수·revision 증가·기존 건수 보존을 확인한다(Drive 접근이 없으면 사용자 화면의 적용 결과 토스트 "추가 N · 건너뜀 M"으로 확인).
 
 파일 작성이나 JSON 준비만으로 완료 처리하지 않는다. 인증정보·폴더/스크립트 ID는 코드·장부·로그·이 저장소(공개)에 넣지 않는다. (`npm run ledger:sync`의 Gist 경로는 이전 방식 — 원본이 아니므로 쓰지 않는다.)

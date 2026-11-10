@@ -57,4 +57,5 @@ posts_inventory.csv
 gas/.clasp.json
 gas/Config.js
 gas/Seed.html
+gas/Inbox.html
 gas/index.html

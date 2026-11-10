@@ -9,6 +9,7 @@
 | `index.html` | 제외 | 화면 — `npm run build:gas`가 `src/`로 생성(단일 HTML). 직접 고치지 않는다 |
 | `Config.js` | 제외 | Drive 데이터·사진 폴더 ID |
 | `Seed.html` | 제외 | **실제 장부 JSON**(이관용 초기 데이터, 시트가 비었을 때만 쓰임). 절대 커밋·공유 금지 |
+| `Inbox.html` | 제외 | **Claude 받은 편지함** — 변경분(farmwallet-delta-v1) 배열 `[{id,title,delta}]`. 앱이 열릴 때 시트 채택 뒤 자동 반영(hooks/useGasInbox), 시트에 들어간 게 확인되면 서버가 적용 완료로 기억. 실장부 거래라 커밋 금지 |
 | `.clasp.json` | 제외 | 운영 스크립트 ID |
 
 ## 화면 소스

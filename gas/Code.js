@@ -406,3 +406,39 @@ function photoIdsByName(names) {
   listPhotos().forEach(function (p) { byName[p.name] = p.id; });
   return (names || []).map(function (n) { return byName[String(n)] || ''; });
 }
+
+// ───────────────────────── Claude 받은 편지함 ─────────────────────────
+
+/**
+ * Claude가 만든 변경분(farmwallet-delta-v1) 목록 — 배포에 Inbox.html(JSON 배열 [{id,title,delta}])이 함께 올라온다
+ * (실장부 거래라 gitignore). 이미 적용 완료로 표시된 id는 뺀다. 앱(hooks/useGasInbox)이 시트 채택 뒤 받아 적용하고,
+ * 다음 열기에서 "더 바뀌는 게 없음"이 확인되면 markDeltaApplied로 표시한다. Inbox.html이 없으면 빈 목록.
+ */
+function pendingDeltas() {
+  var raw = '';
+  try { raw = HtmlService.createHtmlOutputFromFile('Inbox').getContent(); } catch (e) { return []; }
+  if (!raw) return [];
+  var list;
+  try { list = JSON.parse(raw); } catch (e) { return []; }
+  if (!Array.isArray(list)) return [];
+  var done = appliedDeltas_();
+  return list.filter(function (x) { return x && x.id && !done[String(x.id)]; });
+}
+
+function appliedDeltas_() {
+  try { return JSON.parse(props_().getProperty('APPLIED_DELTAS') || '{}'); } catch (e) { return {}; }
+}
+
+/** 변경분 적용 완료 표시 (시트 장부에 이미 다 들어 있음이 확인된 뒤) */
+function markDeltaApplied(id, summary) {
+  var lock = LockService.getScriptLock();
+  lock.waitLock(30000);
+  try {
+    var done = appliedDeltas_();
+    done[String(id)] = { at: new Date().toISOString(), summary: String(summary || '') };
+    props_().setProperty('APPLIED_DELTAS', JSON.stringify(done));
+  } finally {
+    lock.releaseLock();
+  }
+  return true;
+}

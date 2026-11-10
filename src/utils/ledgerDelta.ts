@@ -40,14 +40,18 @@ export function isLedgerDelta(raw: unknown): raw is LedgerDelta {
   return !!raw && typeof raw === "object" && (raw as { format?: unknown }).format === LEDGER_DELTA_FORMAT;
 }
 
-/** 같은 거래로 볼 조건 — id가 달라도 날짜·종류·금액·통화·계좌가 모두 같으면 중복 */
+/**
+ * 같은 거래로 볼 조건 — id가 달라도 날짜·종류·금액·통화·계좌가 모두 같으면 중복.
+ * 단 둘 다 시각이 있고 시각이 다르면 다른 거래(같은 곳에서 7,000원을 15:55·15:58에 두 번 낸 경우).
+ */
 const sameLedgerTxn = (a: LedgerEntry, b: LedgerEntry): boolean =>
   a.date === b.date &&
   a.kind === b.kind &&
   a.amount === b.amount &&
   (a.currency ?? "KRW") === (b.currency ?? "KRW") &&
   (a.fromAccountId ?? "") === (b.fromAccountId ?? "") &&
-  (a.toAccountId ?? "") === (b.toAccountId ?? "");
+  (a.toAccountId ?? "") === (b.toAccountId ?? "") &&
+  !(a.time && b.time && a.time !== b.time);
 
 /** 순서: 가계부 수정 → 삭제 → 추가, 주식 삭제 → 추가, 계좌 패치. 입력 data는 바꾸지 않는다. */
 export function applyLedgerDelta(data: AppData, delta: LedgerDelta): { next: AppData; report: LedgerDeltaReport } {
@@ -69,8 +73,18 @@ export function applyLedgerDelta(data: AppData, delta: LedgerDelta): { next: App
     if (ledger.length === before) report.missing.push(id);
     else report.removed++;
   }
+  // 중복 대조는 적용 전부터 있던 거래와만, 한 건당 한 번씩 — 같은 변경분 안의 똑같은 거래 두 건(시각 없는 같은 금액
+  // 두 번 결제)이 서로를 중복으로 지우지 않고, 다시 적용하면 이미 있는 두 건이 각각 하나씩 짝지어 둘 다 건너뛴다.
+  const existing = [...ledger];
+  const consumed = new Set<number>();
   for (const entry of delta.ledger?.add ?? []) {
-    if (ledger.some((l) => l.id === entry.id || sameLedgerTxn(l, entry))) {
+    if (ledger.some((l) => l.id === entry.id)) {
+      report.skippedDuplicates.push(entry);
+      continue;
+    }
+    const match = existing.findIndex((l, i) => !consumed.has(i) && sameLedgerTxn(l, entry));
+    if (match >= 0) {
+      consumed.add(match);
       report.skippedDuplicates.push(entry);
       continue;
     }

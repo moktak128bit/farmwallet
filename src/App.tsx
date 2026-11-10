@@ -103,6 +103,7 @@ import { TabConflictModal, type TabConflictResolution } from "./components/TabCo
 import { DraftRecoveryBanner } from "./components/DraftRecoveryBanner";
 import { BootSkeleton, PageSkeleton } from "./components/BootSkeleton";
 import { PhotoUploadPanel } from "./components/PhotoUploadPanel";
+import { useGasInbox } from "./hooks/useGasInbox";
 import {
   normalizeImportedData,
   saveData as persistData,
@@ -734,6 +735,8 @@ export const App: React.FC = () => {
     // 실제 디스크 기록은 자동 저장 디바운스(500ms) 후 — "저장 완료"로 표기하지 않는다
     addAppLog("데이터 변경 적용됨 — 자동 저장 대기 중", "info");
   }, [setDataWithHistory, addAppLog]);
+  // GAS: Claude가 서버 받은 편지함(gas/Inbox.html)에 넣어 둔 변경분을 시트 채택 뒤 반영 — hooks/useGasInbox
+  useGasInbox(!persistenceBlocked && !sheetBootPending, handleSettingsChangeData);
 
   // ─────────────────────────────────────────────────────────────
   // 로드 실패(loadFailed) 복구 — 이 화면에서 직접 백업 파일/로컬 백업으로 복구 가능

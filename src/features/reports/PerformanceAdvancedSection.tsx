@@ -9,7 +9,7 @@ import React from "react";
 import { Bar, BarChart, CartesianGrid, Legend, Tooltip, XAxis, YAxis } from "recharts";
 import { DeferredResponsiveContainer as ResponsiveContainer } from "../../components/charts/DeferredResponsiveContainer";
 import type { AccountPerformanceBreakdownRow, ConsumptionImpactMonthlyRow } from "../../utils/reportGenerator";
-import { formatKRW } from "../../utils/formatter";
+import { formatKRW, formatKrwCompact } from "../../utils/formatter";
 import { DateRangePicker, toPercent } from "./reportShared";
 
 interface Props {
@@ -53,7 +53,8 @@ export const PerformanceAdvancedSection: React.FC<Props> = React.memo(function P
             </tr>
           </thead>
           <tbody>
-            {accountPerformance.map((row) => (
+            {/* 은행·카드·빈 계좌의 IRR은 의미가 없다 — 증권·코인이면서 평가액이 있는 계좌만 */}
+            {accountPerformance.filter((row) => row.isInvesting && Math.abs(row.currentValue) >= 1).map((row) => (
               <tr key={row.accountId}>
                 <td>{row.accountName}</td>
                 <td className="number">{formatKRW(row.currentValue)}</td>
@@ -74,7 +75,7 @@ export const PerformanceAdvancedSection: React.FC<Props> = React.memo(function P
         <BarChart data={accountPerformance.slice(0, 10)}>
           <CartesianGrid strokeDasharray="3 3" />
           <XAxis dataKey="accountName" interval={0} angle={-20} textAnchor="end" height={70} />
-          <YAxis />
+          <YAxis tickFormatter={(v: number) => formatKrwCompact(v)} width={64} />
           <Tooltip formatter={(value: number | undefined) => formatKRW(value ?? 0)} />
           <Legend />
           <Bar isAnimationActive={false} dataKey="realizedPnl" stackId="p" fill="#0ea5e9" name="실현손익" />
@@ -88,7 +89,7 @@ export const PerformanceAdvancedSection: React.FC<Props> = React.memo(function P
         <BarChart data={consumptionImpact}>
           <CartesianGrid strokeDasharray="3 3" />
           <XAxis dataKey="month" />
-          <YAxis />
+          <YAxis tickFormatter={(v: number) => formatKrwCompact(v)} width={64} />
           <Tooltip formatter={(value: number | undefined) => formatKRW(value ?? 0)} />
           <Legend />
           <Bar isAnimationActive={false} dataKey="consumptionExpense" fill="#f43f5e" name="소비 지출" />

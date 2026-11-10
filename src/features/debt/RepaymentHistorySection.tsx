@@ -12,7 +12,7 @@ import React, { useMemo, useState } from "react";
 import { ChevronDown, ChevronUp, Pencil, Trash2 } from "lucide-react";
 import type { Account, LedgerEntry, Loan } from "../../types";
 import { formatKRW } from "../../utils/formatter";
-import { isInterestRepayment } from "../../calculations";
+import { accountDebtOffset, computeAccountBalances, isInterestRepayment } from "../../calculations";
 import { useAppStore } from "../../store/appStore";
 import { isLoanRepaymentEntry } from "./debtShared";
 import { FilterChipRow } from "../../components/ui/FilterChipRow";
@@ -26,6 +26,13 @@ import { FilterChipRow } from "../../components/ui/FilterChipRow";
 // 전제: appStore.setData는 동기(zustand) — 클릭 시점 getState() 재조회가 항상 최신.
 // useAppStore는 핸들러 내부 getState()만 사용 — 훅 구독 금지(재렌더 유발·memo 무력화 방지).
 import { buildRestoreById, showDeleteUndoToast } from "../../utils/undoToast";
+
+/** 그룹 순서 — 대출 목록 순 → 마이너스 통장 이자 → 매칭 안 됨 */
+function groupOrder(id: string, loans: Loan[]): number {
+  if (id === "__unmatched__") return 1_000_001;
+  if (id === "__overdraft__") return 1_000_000;
+  return loans.findIndex((l) => l.id === id);
+}
 
 interface Props {
   loans: Loan[];
@@ -60,6 +67,17 @@ export const RepaymentHistorySection: React.FC<Props> = React.memo(function Repa
       .sort((a, b) => (b.date || "").localeCompare(a.date || ""));
   }, [ledger]);
 
+  // 마이너스 통장 계좌 — 카드가 아닌데 지금 순가치가 음수인 계좌(대차의 overdraft와 같은 판정).
+  // 대출 목록에 없는 마이너스 통장 이자가 "매칭 안 됨"에 섞여 확인할 일처럼 보이던 것을 따로 묶는다.
+  const overdraftAccountIds = useMemo(() => {
+    const ids = new Set<string>();
+    for (const row of computeAccountBalances(accounts, ledger, [])) {
+      if (row.account.type === "card") continue;
+      if (row.currentBalance - accountDebtOffset(row.account) < 0) ids.add(row.account.id);
+    }
+    return ids;
+  }, [accounts, ledger]);
+
   const repaymentByDebt = useMemo(() => {
     const map = new Map<string, { label: string; entries: LedgerEntry[]; total: number }>();
 
@@ -69,8 +87,10 @@ export const RepaymentHistorySection: React.FC<Props> = React.memo(function Repa
 
     repaymentEntries.forEach((entry) => {
       const loan = matchRepaymentLoan(entry);
-      const debtId = loan?.id ?? "__unmatched__";
-      const label = loan?.loanName ?? "매칭 안 됨";
+      const isOverdraftInterest =
+        !loan && isInterestRepayment(entry) && !!entry.fromAccountId && overdraftAccountIds.has(entry.fromAccountId);
+      const debtId = loan?.id ?? (isOverdraftInterest ? "__overdraft__" : "__unmatched__");
+      const label = loan?.loanName ?? (isOverdraftInterest ? "마이너스 통장 이자" : "매칭 안 됨");
       const current = map.get(debtId) ?? { label, entries: [], total: 0 };
       current.entries.push(entry);
       current.total += entry.amount;
@@ -78,7 +98,7 @@ export const RepaymentHistorySection: React.FC<Props> = React.memo(function Repa
     });
 
     return map;
-  }, [repaymentEntries, loans, matchRepaymentLoan]);
+  }, [repaymentEntries, loans, matchRepaymentLoan, overdraftAccountIds]);
 
   const debtFilterOptions = useMemo(() => {
     const all = Array.from(repaymentByDebt.entries()).map(([id, group]) => ({
@@ -88,13 +108,7 @@ export const RepaymentHistorySection: React.FC<Props> = React.memo(function Repa
       total: group.total
     }));
 
-    all.sort((a, b) => {
-      if (a.id === "__unmatched__") return 1;
-      if (b.id === "__unmatched__") return -1;
-      const ia = loans.findIndex((l) => l.id === a.id);
-      const ib = loans.findIndex((l) => l.id === b.id);
-      return ia - ib;
-    });
+    all.sort((a, b) => groupOrder(a.id, loans) - groupOrder(b.id, loans));
 
     return all;
   }, [repaymentByDebt, loans]);
@@ -118,13 +132,7 @@ export const RepaymentHistorySection: React.FC<Props> = React.memo(function Repa
 
     return Array.from(repaymentByDebt.entries())
       .filter(([, group]) => group.entries.length > 0)
-      .sort((a, b) => {
-        if (a[0] === "__unmatched__") return 1;
-        if (b[0] === "__unmatched__") return -1;
-        const ia = loans.findIndex((l) => l.id === a[0]);
-        const ib = loans.findIndex((l) => l.id === b[0]);
-        return ia - ib;
-      });
+      .sort((a, b) => groupOrder(a[0], loans) - groupOrder(b[0], loans));
   }, [repaymentByDebt, repaymentFilterDebtId, loans]);
 
   const accountName = (id: string) => accounts.find((a) => a.id === id)?.name ?? id;
@@ -297,13 +305,13 @@ export const RepaymentHistorySection: React.FC<Props> = React.memo(function Repa
                       </span>
                     </button>
                     {isGroupOpen && (
-                    <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 14 }}>
+                    <table className="repay-table" style={{ width: "100%", borderCollapse: "collapse", fontSize: 14 }}>
                       <thead>
                         <tr style={{ background: "var(--bg)" }}>
-                          <th style={{ padding: "10px 20px", textAlign: "left", fontWeight: 600, fontSize: 12, color: "var(--text-muted)" }}>날짜</th>
-                          <th style={{ padding: "10px 20px", textAlign: "left", fontWeight: 600, fontSize: 12, color: "var(--text-muted)" }}>상세</th>
-                          <th style={{ padding: "10px 20px", textAlign: "right", fontWeight: 600, fontSize: 12, color: "var(--text-muted)" }}>금액</th>
-                          {onChangeLedger && <th style={{ padding: "10px 20px", width: 72 }} />}
+                          <th style={{ padding: "10px var(--repay-pad)", textAlign: "left", fontWeight: 600, fontSize: 12, color: "var(--text-muted)" }}>날짜</th>
+                          <th style={{ padding: "10px var(--repay-pad)", textAlign: "left", fontWeight: 600, fontSize: 12, color: "var(--text-muted)", minWidth: 140 }}>상세</th>
+                          <th className="number" style={{ padding: "10px var(--repay-pad)", textAlign: "right", fontWeight: 600, fontSize: 12, color: "var(--text-muted)" }}>금액</th>
+                          {onChangeLedger && <th style={{ padding: "10px var(--repay-pad)", width: 64 }} />}
                         </tr>
                       </thead>
                       <tbody>
@@ -317,10 +325,10 @@ export const RepaymentHistorySection: React.FC<Props> = React.memo(function Repa
                             onMouseEnter={(ev) => (ev.currentTarget.style.background = "var(--surface)")}
                             onMouseLeave={(ev) => (ev.currentTarget.style.background = "transparent")}
                           >
-                            <td style={{ padding: "14px 20px", verticalAlign: "top", whiteSpace: "nowrap", color: "var(--text-muted)" }}>
+                            <td style={{ padding: "14px var(--repay-pad)", verticalAlign: "top", whiteSpace: "nowrap", color: "var(--text-muted)" }}>
                               {e.date}
                             </td>
-                            <td style={{ padding: "14px 20px", verticalAlign: "top" }}>
+                            <td style={{ padding: "14px var(--repay-pad)", verticalAlign: "top", minWidth: 140 }}>
                               <div>
                                 <span style={{ fontWeight: 500 }}>{e.description || "(상환)"}</span>
                                 {(() => {
@@ -333,6 +341,8 @@ export const RepaymentHistorySection: React.FC<Props> = React.memo(function Repa
                                         fontWeight: 700,
                                         padding: "2px 8px",
                                         borderRadius: 10,
+                                        whiteSpace: "nowrap",
+                                        display: "inline-block",
                                         background: isInterest ? "var(--chart-expense)" : "var(--primary)",
                                         color: "white"
                                       }}
@@ -353,18 +363,18 @@ export const RepaymentHistorySection: React.FC<Props> = React.memo(function Repa
                                 )}
                               </div>
                             </td>
-                            <td style={{ padding: "14px 20px", verticalAlign: "top", textAlign: "right", fontWeight: 700, color: "var(--chart-expense)", fontSize: 15 }}>
+                            <td className="number" style={{ padding: "14px var(--repay-pad)", verticalAlign: "top", textAlign: "right", fontWeight: 700, color: "var(--chart-expense)", fontSize: 15, whiteSpace: "nowrap" }}>
                               {formatKRW(Math.round(e.amount))}
                             </td>
                             {onChangeLedger && (
-                              <td style={{ padding: "10px 20px", verticalAlign: "top" }}>
-                                <div style={{ display: "flex", gap: 4 }}>
+                              <td style={{ padding: "10px var(--repay-pad)", verticalAlign: "top" }}>
+                                <div style={{ display: "flex", gap: 2 }}>
                                   <button
                                     type="button"
                                     onClick={() => onEditRepayment(e)}
                                     title="수정"
                                     style={{
-                                      padding: 8,
+                                      padding: 6,
                                       border: "none",
                                       background: "var(--surface)",
                                       cursor: "pointer",
@@ -379,7 +389,7 @@ export const RepaymentHistorySection: React.FC<Props> = React.memo(function Repa
                                     onClick={() => handleDeleteRepayment(e)}
                                     title="삭제"
                                     style={{
-                                      padding: 8,
+                                      padding: 6,
                                       border: "none",
                                       background: "var(--surface)",
                                       cursor: "pointer",

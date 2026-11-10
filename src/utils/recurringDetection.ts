@@ -175,18 +175,27 @@ function largestAmountCluster(occs: Occ[]): Occ[] {
   return best.sort((a, b) => (a.date < b.date ? -1 : a.date > b.date ? 1 : 0));
 }
 
-/** 설명(없으면 소분류)을 정규화한 식별 키. 빈 문자열이면 감지 불가 */
+/**
+ * 소분류(없으면 설명)를 정규화한 식별 키. 빈 문자열이면 감지 불가.
+ * 소분류 우선 — 같은 결제라도 설명은 달마다 바뀐다(실장부 유튜브: 9·10월 결제 설명이 달라 그룹이 갈라져
+ * 8/11 이후 "해지 추정"으로 나왔다).
+ */
 function merchantKeyOf(l: LedgerEntry): string {
-  const src = (l.description || "").trim() || (l.detailCategory || "").trim();
+  const src = (l.detailCategory || "").trim() || (l.description || "").trim();
   return src ? normalizeMerchant(src) : "";
 }
+
+/** 주유·충전은 매주 비슷한 금액이어도 소비지 구독·고정비가 아니다 (실장부 휘발유 매주 48,000원) */
+const VARIABLE_FUEL = /휘발유|경유|주유|유류|충전소|lpg/i;
+const isFuelLike = (l: LedgerEntry) =>
+  VARIABLE_FUEL.test(l.detailCategory || "") || VARIABLE_FUEL.test(l.description || "") || VARIABLE_FUEL.test(l.subCategory || "");
 
 /**
  * 기존 반복지출과의 느슨 매칭 — 제목 정규화 동일/포함, 또는 제목이 후보 항목의 소분류/설명에 등장.
  * 금액은 보지 않는다(인상·환율 변동에 깨짐). 종료일이 지난 반복은 '등록됨'으로 치지 않는다.
  */
 export function isCandidateRegistered(
-  cand: Pick<RecurringCandidate, "key" | "label" | "detailCategory">,
+  cand: Pick<RecurringCandidate, "key" | "label" | "detailCategory"> & Partial<Pick<RecurringCandidate, "subCategory" | "amountMedian" | "lastAmount" | "cadence">>,
   entries: Pick<LedgerEntry, "description" | "detailCategory">[],
   recurring: RecurringExpense[],
   todayIso: string
@@ -194,6 +203,13 @@ export function isCandidateRegistered(
   const normKey = cand.key.split("|")[0];
   for (const r of recurring) {
     if (r.endDate && r.endDate < todayIso) continue;
+    // 금액·분류 매칭 — 제목이 오타("유트브")거나 상호와 달라도("학자금대출" vs 한국장학재단) 같은 주기·같은 중분류에
+    // 금액이 ±10% 안이면 같은 결제로 본다
+    if (
+      r.category && cand.subCategory && r.category === cand.subCategory &&
+      (!cand.cadence || r.frequency === cand.cadence) &&
+      [cand.amountMedian, cand.lastAmount].some((a) => a != null && withinTolerance(a, r.amount))
+    ) return true;
     const title = (r.title || "").trim();
     if (!title) continue;
     const normTitle = normalizeMerchant(title);
@@ -237,6 +253,7 @@ export function detectRecurringCandidates(
   for (const l of ledger) {
     if (!l.date || l.date < startIso || l.date > todayIso) continue;
     if (classifyLedgerFlow(l, options.categoryPresets) !== "expense") continue;
+    if (isFuelLike(l)) continue;
     const amount = Number(l.amount);
     if (!Number.isFinite(amount) || amount <= 0) continue;
     const mk = merchantKeyOf(l);

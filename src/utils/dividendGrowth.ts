@@ -200,7 +200,12 @@ const monthSeq = (from: string, to: string): string[] => {
 
 /**
  * 추적 대상 티커 결정: 설정값(쉼표·공백 구분 복수 허용) 우선, min개 미만이면
- * "현재 보유 중 + 분배금 기록 ≥2건" 종목을 최근 수령일 순으로 보충. 최대 max개.
+ * "현재 보유 중 + 분배금 기록 ≥2건" 종목을 **배당 수익률 순**으로 보충. 최대 max개.
+ *
+ * 수익률 = 최근 12개월 분배금 합 ÷ 현재 보유 원가(이동평균, 원화). 기준일은 마지막 배당 기록일 —
+ * '최근 수령일 순'이던 시절엔 분배율 0.5%대 성장 ETF(KODEX 미국나스닥100)가 하루 늦게 받은
+ * 커버드콜(SOL 200타겟위클리커버드콜)을 밀어냈다. 배당 위젯은 '배당주' 위젯이라 배당 성격으로 고른다.
+ * 원가를 원화로 못 구하는 종목(USD인데 매입 환율 없음)은 수익률 미상 → 뒤로.
  */
 export function resolveTrackedTickers(
   configured: string | undefined,
@@ -218,29 +223,63 @@ export function resolveTrackedTickers(
   }
   if (out.length >= min) return out;
 
-  // 보유 중 수량
-  const held = new Map<string, number>();
-  for (const t of trades) {
+  // 보유 수량·원가(이동평균, 원화) — 날짜순. 매도는 평단 그대로 원가를 비례 차감.
+  const pos = new Map<string, { qty: number; costKrw: number; costKnown: boolean }>();
+  const sortedTrades = [...trades].sort(compareTradesFifo);
+  for (const t of sortedTrades) {
     const c = canonicalTickerForMatch(t.ticker);
     if (!c) continue;
     const q = Number(t.quantity) || 0;
-    held.set(c, (held.get(c) ?? 0) + (t.side === "buy" ? q : -q));
+    if (q <= 0) continue;
+    const cur = pos.get(c) ?? { qty: 0, costKrw: 0, costKnown: true };
+    if (t.side === "buy") {
+      // 매입 원화 원가 단일 소스(tradeAmountKRW) — USD인데 매입 환율이 없으면 0 → 수익률 미상
+      const krw = tradeAmountKRW({ ticker: c, totalAmount: Number(t.totalAmount) || Number(t.price) * q, fxRateAtTrade: t.fxRateAtTrade });
+      if (!(krw > 0)) cur.costKnown = false;
+      cur.costKrw += krw;
+      cur.qty += q;
+    } else {
+      const ratio = cur.qty > 0 ? Math.min(1, q / cur.qty) : 1;
+      cur.costKrw *= 1 - ratio;
+      cur.qty = Math.max(0, cur.qty - q);
+    }
+    pos.set(c, cur);
   }
-  // 분배금 기록 수·최근 수령일
-  const stats = new Map<string, { count: number; last: string }>();
+
+  // 분배금 기록 수·최근 수령일·최근 12개월 합
+  const divs: { c: string; date: string; amount: number }[] = [];
+  let refDate = "";
   for (const l of ledger) {
     if (!isDividendRecord(l)) continue;
     const c = tickerFromDividendDesc(l.description);
     if (!c) continue;
-    const cur = stats.get(c) ?? { count: 0, last: "" };
+    const d = l.date || "";
+    divs.push({ c, date: d, amount: Number(l.amount) || 0 });
+    if (d > refDate) refDate = d;
+  }
+  const windowStart = refDate ? `${Number(refDate.slice(0, 4)) - 1}${refDate.slice(4)}` : "";
+  const stats = new Map<string, { count: number; last: string; sum12: number }>();
+  for (const { c, date, amount } of divs) {
+    const cur = stats.get(c) ?? { count: 0, last: "", sum12: 0 };
     cur.count += 1;
-    if ((l.date || "") > cur.last) cur.last = l.date || "";
+    if (date > cur.last) cur.last = date;
+    if (date > windowStart) cur.sum12 += amount;
     stats.set(c, cur);
   }
+  const yieldOf = (c: string, sum12: number): number | null => {
+    const p = pos.get(c);
+    if (!p || !p.costKnown || !(p.costKrw > 0)) return null;
+    return sum12 / p.costKrw;
+  };
   const candidates = [...stats.entries()]
-    .filter(([c, s]) => (held.get(c) ?? 0) > 1e-8 && s.count >= 2 && !seen.has(c))
-    .sort((a, b) => (b[1].last !== a[1].last ? b[1].last.localeCompare(a[1].last) : b[1].count - a[1].count));
-  for (const [c] of candidates) {
+    .filter(([c, s]) => (pos.get(c)?.qty ?? 0) > 1e-8 && s.count >= 2 && !seen.has(c))
+    .map(([c, s]) => ({ c, s, y: yieldOf(c, s.sum12) }))
+    .sort((a, b) => {
+      if (a.y != null && b.y != null && a.y !== b.y) return b.y - a.y;
+      if ((a.y == null) !== (b.y == null)) return a.y == null ? 1 : -1;
+      return b.s.last !== a.s.last ? b.s.last.localeCompare(a.s.last) : b.s.count - a.s.count;
+    });
+  for (const { c } of candidates) {
     if (out.length >= min) break;
     out.push(c);
   }

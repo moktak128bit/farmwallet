@@ -10,6 +10,16 @@
  */
 
 import { DATA_SCHEMA_VERSION, GIST_PUSH_RETRY, STORAGE_KEYS } from "../constants/config";
+import { deviceLabel, isGas, runServer, type GasLoadResult, recordGasSheetInfo } from "./gas";
+import { canonicalUserPayload } from "../utils/timeSeriesMerge";
+
+/**
+ * GAS 웹앱(services/gas.ts)에서는 같은 함수들이 Drive 시트 서버(gas/Code.js)로 간다 — 토큰·Gist ID는
+ * 자리표시 값을 돌려줘 "설정됨"으로 보이게 하고, 저장/불러오기/버전 목록만 google.script.run으로 바꾼다.
+ * 충돌 감지(버전 목록[0] 시각 비교)·자동 동기화·해시 계약은 Gist와 그대로 공유한다.
+ */
+const GAS_TOKEN_PLACEHOLDER = "gas-sheet";
+const GAS_ID_PLACEHOLDER = "sheet";
 
 const GIST_TOKEN_KEY = "fw-gist-token";
 const GIST_TOKEN_PERSIST_KEY = "fw-gist-token-persist";
@@ -61,6 +71,7 @@ export function getGistTokenPersisted(): boolean {
 }
 
 export function getGistToken(): string {
+  if (isGas()) return GAS_TOKEN_PLACEHOLDER;
   // 우선순위: sessionStorage → localStorage (영속 옵션 사용자만)
   try {
     const ss = sessionStorage.getItem(GIST_TOKEN_KEY);
@@ -83,6 +94,7 @@ interface SetGistTokenOptions {
 }
 
 export function setGistToken(token: string, opts: SetGistTokenOptions = {}): void {
+  if (isGas()) return;
   const persist = opts.persist ?? getGistTokenPersisted();
   try {
     if (token) sessionStorage.setItem(GIST_TOKEN_KEY, token);
@@ -103,10 +115,12 @@ export function setGistTokenPersisted(persist: boolean): void {
 }
 
 export function getGistId(): string {
+  if (isGas()) return GAS_ID_PLACEHOLDER;
   try { return localStorage.getItem(GIST_ID_KEY) ?? ""; } catch { return ""; }
 }
 
 export function setGistId(id: string): void {
+  if (isGas()) return;
   try {
     if (id) localStorage.setItem(GIST_ID_KEY, id);
     else localStorage.removeItem(GIST_ID_KEY);
@@ -150,6 +164,8 @@ function isTransientGistError(err: unknown): boolean {
   const msg = err instanceof Error ? err.message : String(err);
   if (msg.includes("네트워크 연결")) return true;
   if (msg.includes("시간 초과")) return true;
+  // GAS: google.script.run 일시 오류(실행 시간 초과·스크립트 잠금 대기·호출 한도)
+  if (/NetworkError|Exceeded maximum execution|Lock timeout|Service invoked too many|잠시 후|timed out/i.test(msg)) return true;
   // parseApiError 5xx default 케이스 — "(5xx)" 형태로 status 포함됨
   return /\((5\d\d)\)/.test(msg);
 }
@@ -182,6 +198,13 @@ export async function saveToGistWithRetry(
 
 /** Gist에 데이터 저장. Gist ID가 없으면 새로 생성. */
 export async function saveToGist(dataJson: string): Promise<{ gistId: string; updatedAt: string; committedAt: string }> {
+  if (isGas()) {
+    // 서버 saveData(json, schemaVersion, device) — 빈 데이터 덮기 거절·하루 첫 저장 전 백업은 서버가 한다.
+    // updatedAt은 서버 meta.updatedAt = listVersions()[0].committedAt 이라 충돌 감지 기준과 같은 소스.
+    const res = await runServer<{ updatedAt: string; revision: number }>("saveData", dataJson, DATA_SCHEMA_VERSION, deviceLabel());
+    recordGasSheetInfo("save", res, payloadContentHash(dataJson));
+    return { gistId: GAS_ID_PLACEHOLDER, updatedAt: res.updatedAt, committedAt: res.updatedAt };
+  }
   const token = getGistToken();
   if (!token) throw new Error("GitHub 토큰이 설정되지 않았습니다.");
 
@@ -292,6 +315,13 @@ export class GistSchemaTooNewError extends Error {
 
 /** Gist에서 데이터 불러오기 */
 export async function loadFromGist(): Promise<{ dataJson: string; updatedAt: string }> {
+  if (isGas()) {
+    const res = await runServer<GasLoadResult>("loadData");
+    recordGasSheetInfo("load", res, payloadContentHash(res.dataJson));
+    if (res.schemaVersion > DATA_SCHEMA_VERSION) throw new GistSchemaTooNewError(res.schemaVersion);
+    if (!res.dataJson) throw new GistNoRemoteDataError("시트에 FarmWallet 데이터가 아직 없습니다.");
+    return { dataJson: res.dataJson, updatedAt: res.updatedAt };
+  }
   const token = getGistToken();
   const gistId = getGistId();
   if (!token) throw new Error("GitHub 토큰이 설정되지 않았습니다.");
@@ -361,6 +391,8 @@ interface GistCommitApiItem {
 
 /** 최근 N개의 Gist 버전 목록 반환 (PATCH할 때마다 자동으로 쌓임) */
 export async function getGistVersions(maxCount = 5): Promise<GistVersion[]> {
+  // GAS: [0]은 현재 원본(충돌 감지용), 그 뒤로 Drive 백업 파일(최신순) — 서버 listVersions 계약
+  if (isGas()) return runServer<GistVersion[]>("listVersions", maxCount);
   const token = getGistToken();
   const gistId = getGistId();
   if (!token || !gistId) throw new Error("토큰 또는 Gist ID가 없습니다.");
@@ -389,6 +421,7 @@ export async function getGistVersionsWithCredentials(token: string, gistId: stri
 
 /** 특정 버전의 Gist 데이터 불러오기 (버전 url 사용) */
 export async function loadFromGistVersion(versionUrl: string): Promise<{ dataJson: string; committedAt: string }> {
+  if (isGas()) return runServer<{ dataJson: string; committedAt: string }>("loadVersion", versionUrl);
   const token = getGistToken();
   if (!token) throw new Error("GitHub 토큰이 설정되지 않았습니다.");
 
@@ -416,7 +449,12 @@ export async function loadFromGistVersion(versionUrl: string): Promise<{ dataJso
 
 /** 자동 동기화 ON/OFF */
 export function getGistAutoSync(): boolean {
-  try { return localStorage.getItem(STORAGE_KEYS.GIST_AUTO_SYNC) === "true"; } catch { return false; }
+  // GAS는 시트가 원본 — 자동 동기화를 끄는 선택지가 없다(끄면 편집이 기기에만 남는다)
+  if (isGas()) return true;
+  try {
+    const preference = localStorage.getItem(STORAGE_KEYS.GIST_AUTO_SYNC);
+    return preference === null ? isGistConfigured() : preference === "true";
+  } catch { return false; }
 }
 
 export function setGistAutoSync(enabled: boolean): void {
@@ -454,6 +492,11 @@ export function hashGistPayload(payload: string): string {
     hash = ((hash << 5) + hash + payload.charCodeAt(i)) | 0;
   }
   return String(hash);
+}
+
+/** payload '내용' 해시 — 최상위 키 순서·자동 적립 시계열 차이를 무시(canonicalUserPayload). 파싱 불가면 원문 해시 */
+export function payloadContentHash(payload: string): string {
+  return hashGistPayload(canonicalUserPayload(payload) ?? payload);
 }
 
 /** 마지막으로 push(또는 pull로 동기화)된 payload 해시 */

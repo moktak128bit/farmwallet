@@ -7,13 +7,39 @@ import {
 import type { ValueType } from "recharts/types/component/DefaultTooltipContent";
 import { C, F, W, Card, Kpi, Insight, Section, pieLabel, type D } from "../insightsShared";
 import { useAppStore } from "../../../store/appStore";
-import type { BalanceSheet } from "../../../calculations";
+import { computeLoanBalancesById, type BalanceSheet } from "../../../calculations";
+import { getTodayKST } from "../../../utils/date";
 import { BalanceSheetStrip } from "../../../components/BalanceSheetStrip";
 import { formatGoalProjectionLine, projectGoal } from "../../../utils/goalProjection";
+
+/** 이보다 먼 ETA는 투영으로서 의미가 없다 — "범위 밖"으로 표시 */
+const ETA_HORIZON_MONTHS = 50 * 12;
+type Projection = ReturnType<typeof projectGoal>;
+function etaLine(p: Projection): string {
+  if (p.status === "projected" && p.monthsToTarget != null && p.monthsToTarget > ETA_HORIZON_MONTHS) {
+    const pace = p.monthlyDelta != null ? `월 +${F(Math.round(p.monthlyDelta))}원` : "현재";
+    return `최근 ${p.windowMonths}개월 페이스(${pace})로는 50년 안에 닿지 않습니다`;
+  }
+  return formatGoalProjectionLine(p, (n) => F(n) + "원");
+}
+const REQUIRED_YEARS = [10, 20, 30] as const;
 import { FireSimulatorCard } from "../FireSimulatorCard";
 
 export const AssetTab = React.memo(function AssetTab({ d, bs }: { d: D; bs: BalanceSheet }) {
   const goals = useAppStore((s) => s.data.investmentGoals);
+  const loans = useAppStore((s) => s.data.loans);
+  const ledger = useAppStore((s) => s.data.ledger);
+  // 대출별 잔금·금리·만기 — 부채 문장의 근거 (대차 loanDebt와 같은 computeLoanBalancesById)
+  const loanRows = React.useMemo(() => {
+    const today = getTodayKST();
+    const bal = computeLoanBalancesById(loans, ledger, today);
+    return (loans ?? [])
+      .map((l) => ({ name: l.loanName || l.institution || "대출", institution: l.institution, remaining: bal.get(l.id) ?? 0, rate: Number(l.annualInterestRate) || 0, maturity: l.maturityDate || "" }))
+      .filter((l) => l.remaining > 0)
+      .sort((a, b) => b.rate - a.rate || b.remaining - a.remaining);
+  }, [loans, ledger]);
+  const annualInterest = loanRows.reduce((s, l) => s + l.remaining * l.rate / 100, 0);
+  const nearestMaturity = loanRows.filter((l) => l.maturity).sort((a, b) => a.maturity.localeCompare(b.maturity))[0] ?? null;
 
   const nw = d.netWorthByMonth;
   // 현재 순자산 = 대차 단일 소스(계좌 탭·대시보드와 같은 숫자). 타임라인 마지막 행(현재 월)과 같은 식이라 추이와도 이어진다.
@@ -22,7 +48,15 @@ export const AssetTab = React.memo(function AssetTab({ d, bs }: { d: D; bs: Bala
   // 시작 순자산이 0 이하(부채 > 자산으로 출발)면 비율 성장이 정의되지 않음 — 증가액으로 표시
   const growthAbs = current - first;
   const growthPct = first > 0 ? Math.round((current / first - 1) * 100) : null;
-  const monthlyGrowth = nw.length >= 2 ? Math.round((current - first) / (nw.length - 1)) : 0;
+  // 변화는 같은 기준끼리(changeValue — 원가 평가 구간이 섞이면 전 구간 원가 기준). 과거 점은 원가, 현재 점은 시가로
+  // 빼면 보유 종목 평가손익 전체가 "증가"로 몰린다. 시작 + 증가 = 현재를 지키려고 총 증가액(growthAbs)은 그대로 두고
+  // 그중 평가손익 몫(valuationPart)을 따로 밝힌다.
+  const sameBasisDelta = nw.length >= 2 ? nw[nw.length - 1].changeValue - nw[0].changeValue : 0;
+  const valuationPart = nw.length >= 2 ? growthAbs - sameBasisDelta : 0;
+  const showValuation = d.netWorthChangeBasis === "cost" && Math.abs(valuationPart) >= 10_000;
+  const monthlyGrowth = nw.length >= 2 ? Math.round(sameBasisDelta / (nw.length - 1)) : 0;
+  /** i개월 전 대비 같은 기준 변화 */
+  const changeOver = (months: number) => (nw.length > months ? nw[nw.length - 1].changeValue - nw[nw.length - 1 - months].changeValue : null);
 
   // 총 부채/총 자산 — 대차 단일 소스 (마이너스 통장·카드는 부채, 자산에 음수 없음)
   const totalDebt = bs.totalLiabilities;
@@ -37,7 +71,12 @@ export const AssetTab = React.memo(function AssetTab({ d, bs }: { d: D; bs: Bala
   const target = goals?.finalTotalAssetTarget ?? null;
   const targetProgress = target && target > 0 ? (current / target) * 100 : null;
   // 목표 ETA — 최근 6/12개월 순자산 페이스 (읽기 전용, 기간 필터 슬라이스 기준이라 범위를 좁히면 '데이터 부족'일 수 있음)
-  const goalSeries = React.useMemo(() => nw.map((n) => ({ month: n.month, value: n.total })), [nw]);
+  // 목표 페이스도 같은 기준 시계열 — 마지막 점만 지금 순자산(시가)에 맞춰 평행이동 (대시보드 netWorthSeriesKrw와 같은 방식)
+  const goalSeries = React.useMemo(() => {
+    if (nw.length === 0) return [];
+    const offset = current - nw[nw.length - 1].changeValue;
+    return nw.map((n) => ({ month: n.month, value: n.changeValue + offset }));
+  }, [nw, current]);
   const eta6 = React.useMemo(() => (target ? projectGoal({ series: goalSeries, target, method: "trailing6" }) : null), [goalSeries, target]);
   const eta12 = React.useMemo(() => (target ? projectGoal({ series: goalSeries, target, method: "trailing12" }) : null), [goalSeries, target]);
 
@@ -80,9 +119,9 @@ export const AssetTab = React.memo(function AssetTab({ d, bs }: { d: D; bs: Bala
           <Kpi
             label={growthPct !== null ? "총 성장률" : "순자산 증가액"}
             value={growthPct !== null ? `${growthPct >= 0 ? "+" : ""}${growthPct}%` : `${growthAbs >= 0 ? "+" : "−"}${F(Math.abs(growthAbs))}원`}
-            sub={`시작 ${F(first)}원 → 현재 ${F(current)}원${first <= 0 && current > 0 ? " · 순부채에서 순자산으로 전환" : ""}`}
+            sub={`시작 ${F(first)}원 → 현재 ${F(current)}원${showValuation ? ` · 증가 ${growthAbs >= 0 ? "+" : "−"}${F(Math.abs(growthAbs))}원 중 평가손익 ${valuationPart >= 0 ? "+" : "−"}${F(Math.abs(valuationPart))}원` : ""}${first <= 0 && current > 0 ? " · 순부채에서 순자산으로 전환" : ""}`}
             color={growthAbs >= 0 ? "var(--success)" : "var(--danger)"}
-            info="추적 시작 월 대비. 시작 순자산이 0 이하(부채로 출발)면 비율이 정의되지 않아 증가액으로 표시"
+            info="추적 시작 월 대비. 시작 + 증가 = 현재. 지난 월말이 매입원가로 평가된 구간이 있으면 증가액 중 보유 종목 평가손익 몫을 따로 표시. 시작 순자산이 0 이하면 비율 대신 증가액"
           />
         </Card>
         <Card accent>
@@ -90,7 +129,7 @@ export const AssetTab = React.memo(function AssetTab({ d, bs }: { d: D; bs: Bala
             label="목표 달성률"
             value={targetProgress == null ? "–" : targetProgress.toFixed(1) + "%"}
             sub={target ? `목표 ${F(target)}원` : "목표 미설정"}
-            color={targetProgress == null ? "var(--text-faint)" : targetProgress >= 100 ? "var(--success)" : targetProgress >= 50 ? "var(--warning)" : "var(--accent)"}
+            color={targetProgress == null ? "var(--text-faint)" : "var(--text)"}
             info="투자 요약의 최종 순자산 목표 대비 현재 순자산"
           />
         </Card>
@@ -98,9 +137,9 @@ export const AssetTab = React.memo(function AssetTab({ d, bs }: { d: D; bs: Bala
           <Kpi
             label="월평균 순자산 증가"
             value={F(monthlyGrowth) + "원"}
-            sub={`추적 기간 ${nw.length}개월 평균`}
+            sub={`추적 기간 ${nw.length}개월 평균${d.netWorthChangeBasis === "cost" ? " · 원가 기준(평가손익 제외)" : ""}`}
             color={monthlyGrowth >= 0 ? "var(--success)" : "var(--danger)"}
-            info="(최근 순자산 − 시작 순자산) / 기간 개월 수"
+            info="같은 기준(지난 월말이 원가 평가면 매입원가 기준) 순자산 변화 ÷ 기간 개월 수 — 평가손익은 빠진다"
           />
         </Card>
 
@@ -141,17 +180,25 @@ export const AssetTab = React.memo(function AssetTab({ d, bs }: { d: D; bs: Bala
                   <div style={{ padding: "8px 10px", background: "var(--bg)", borderRadius: 6 }}>
                     <div style={{ color: "var(--text-faint)", fontSize: 11 }}>도달 예상 (ETA)</div>
                     <div style={{ fontWeight: 700, color: eta6.status === "projected" || eta6.status === "achieved" ? "var(--text)" : "var(--warning)" }}>
-                      {formatGoalProjectionLine(eta6, (n) => F(n) + "원")}
+                      {etaLine(eta6)}
                     </div>
                     {eta12 && eta12.windowMonths > eta6.windowMonths && (
                       <div style={{ fontSize: 11, color: "var(--text-muted)", marginTop: 2 }}>
-                        12개월 페이스 기준: {formatGoalProjectionLine(eta12, (n) => F(n) + "원")}
+                        12개월 페이스 기준: {etaLine(eta12)}
                       </div>
                     )}
                   </div>
                 )}
+                {target - current > 0 && (
+                  <div style={{ padding: "8px 10px", background: "var(--bg)", borderRadius: 6 }}>
+                    <div style={{ color: "var(--text-faint)", fontSize: 11 }}>목표까지 필요한 월 순자산 증가 (수익률 0 가정, 단순 분할)</div>
+                    <div style={{ fontWeight: 700 }}>
+                      {REQUIRED_YEARS.map((y) => `${y}년 안에: 월 ${F(Math.round((target - current) / (y * 12)))}원`).join(" · ")}
+                    </div>
+                  </div>
+                )}
                 <div style={{ fontSize: 11, color: "var(--text-faint)" }}>
-                  현재 월 순자산 증가 페이스 {F(monthlyGrowth)}원/월 (추적 전체 평균) · ETA는 최근 페이스가 유지된다는 가정의 단순 투영
+                  추적 전체 평균 페이스 {F(monthlyGrowth)}원/월{d.netWorthChangeBasis === "cost" ? " (매입원가 기준 — 평가손익 제외)" : ""} · ETA는 최근 페이스가 유지된다는 가정의 단순 투영
                 </div>
               </div>
             </div>
@@ -184,8 +231,8 @@ export const AssetTab = React.memo(function AssetTab({ d, bs }: { d: D; bs: Bala
             label="현금성 비율"
             value={liquidPct.toFixed(1) + "%"}
             sub={`현금성 자산 ${F(liquidAssets)}원`}
-            color={liquidPct >= 20 ? "var(--success)" : liquidPct >= 10 ? "var(--warning)" : "var(--danger)"}
-            info="입출금 + 저축 계좌 / 총자산. 20% 이상이면 유동성 여유, 10% 미만이면 위험"
+            color="var(--text)"
+            info="입출금 + 저축 계좌 / 총자산"
           />
         </Card>
         <Card accent>
@@ -255,12 +302,14 @@ export const AssetTab = React.memo(function AssetTab({ d, bs }: { d: D; bs: Bala
         <Card title="자산 건강 체크리스트" span={2}>
           <div style={{ display: "flex", flexDirection: "column", gap: 8, fontSize: 13 }}>
             {(() => {
+              const shortDebt = bs.overdraft + Math.max(0, bs.cardDebt);
+              const monthsCovered = d.avgMonthExp > 0 ? liquidAssets / d.avgMonthExp : null;
+              const delta3 = changeOver(3);
               const items: { label: string; pass: boolean; hint: string }[] = [
-                { label: "순자산 플러스", pass: current > 0, hint: "빚이 자산보다 많지 않음" },
-                { label: "유동성 ≥ 10%", pass: liquidPct >= 10, hint: "비상자금 최소 확보 (현금성 자산)" },
-                { label: "자산 다각화 (실효 2개 이상)", pass: effectiveCategories >= 2, hint: "한 유형에만 쏠려있지 않음" },
-                { label: "최근 3개월 순자산 증가", pass: nw.length >= 4 && nw[nw.length - 1].total > nw[nw.length - 4].total, hint: "최근 추세가 상승세" },
-                { label: "목표 달성률 > 0%", pass: (targetProgress ?? 0) > 0, hint: "목표 설정 + 진행 중" },
+                { label: "순자산 플러스", pass: current > 0, hint: `총자산 ${F(totalAssets)}원 − 총부채 ${F(totalDebt)}원 = ${F(current)}원` },
+                ...(monthsCovered != null ? [{ label: "현금성 자산으로 3개월 생활비", pass: monthsCovered >= 3, hint: `입출금·저축 ${F(liquidAssets)}원 ÷ 월평균 지출 ${F(Math.round(d.avgMonthExp))}원 = ${monthsCovered.toFixed(1)}개월` }] : []),
+                ...(shortDebt > 0 ? [{ label: "카드·마이너스 통장을 현금으로 갚을 수 있음", pass: liquidAssets >= shortDebt, hint: `갚을 돈 ${F(shortDebt)}원 · 현금성 자산 ${F(liquidAssets)}원` }] : []),
+                ...(delta3 != null ? [{ label: "최근 3개월 순자산 증가", pass: delta3 > 0, hint: `${nw[nw.length - 4].label} → ${nw[nw.length - 1].label} ${delta3 >= 0 ? "+" : "−"}${F(Math.abs(delta3))}원${d.netWorthChangeBasis === "cost" ? " (매입원가 기준)" : " (시세 변동 포함)"}` }] : []),
               ];
               return items.map((it) => (
                 <div key={it.label} style={{ display: "flex", alignItems: "center", gap: 10, padding: "6px 10px", background: it.pass ? "var(--primary-light)" : "var(--danger-light)", borderRadius: 6 }}>
@@ -282,26 +331,30 @@ export const AssetTab = React.memo(function AssetTab({ d, bs }: { d: D; bs: Bala
             <Insight title="순자산 추세" tone="success">
               {nw.length >= 2 ? (() => {
                 const last3 = nw.slice(-3);
-                const trend3 = last3.length >= 2 ? last3[last3.length - 1].total - last3[0].total : 0;
-                if (trend3 > 0) return `최근 3개월 동안 ${F(trend3)}원 증가 추세입니다. 이 속도로 ${monthlyGrowth > 0 ? `연간 ${F(monthlyGrowth * 12)}원 자산 형성 예상` : ""}.`;
-                if (trend3 < 0) return `최근 3개월 동안 ${F(Math.abs(trend3))}원 감소했습니다. 지출 점검·수입 증대가 필요합니다.`;
-                return "최근 3개월간 순자산이 거의 변동 없습니다. 저축률 점검을 권장합니다.";
+                const trend3 = last3.length >= 2 ? last3[last3.length - 1].changeValue - last3[0].changeValue : 0;
+                const span = last3.length >= 2 ? `${last3[0].label} → ${last3[last3.length - 1].label}` : "";
+                return `${span} ${trend3 >= 0 ? "+" : "−"}${F(Math.abs(trend3))}원 · 추적 ${nw.length}개월 평균 월 ${monthlyGrowth >= 0 ? "+" : "−"}${F(Math.abs(monthlyGrowth))}원. ${d.netWorthChangeBasis === "cost" ? "지난 월말 일부가 매입원가로만 평가돼 있어 보유 종목은 원가 기준으로 비교했습니다(평가손익 제외)." : "주식 평가액·환율 변동이 함께 들어 있습니다."}`;
               })() : "추적 기간이 2개월 미만입니다."}
             </Insight>
-            <Insight title="부채 건강도" tone={totalDebt > totalAssets * 0.5 ? "danger" : "info"}>
-              총 부채 {F(totalDebt)}원 (자산 대비 {totalAssets > 0 ? Math.round((totalDebt / totalAssets) * 100) : 0}%).
-              {totalDebt === 0 ? " 부채 없음 — 안정적." :
-                totalDebt > totalAssets * 0.5 ? ` 부채 비중 50% 초과 — 상환 계획 필요.` :
-                totalDebt > totalAssets * 0.2 ? ` 부채 비중 20-50% — 적정 관리 필요.` :
-                ` 부채 비중 20% 이내 — 건강한 수준.`}
-              {bs.loanDebt > 0 && ` 대출 잔금 ${F(bs.loanDebt)}원은 원금 상환 시 차감됨.`}
+            <Insight title="부채 구성" tone={totalDebt > 0 ? "warning" : "info"}>
+              {totalDebt === 0 ? "부채가 없습니다." : (
+                <>
+                  총부채 {F(totalDebt)}원 (총자산의 {totalAssets > 0 ? Math.round((totalDebt / totalAssets) * 100) : 0}%) = {debtParts}.
+                  {loanRows.length > 0 && (
+                    <>
+                      {" "}대출 {loanRows.length}건: {loanRows.map((l) => `${l.name} ${F(l.remaining)}원(연 ${l.rate}%${l.maturity ? `, 만기 ${l.maturity.slice(0, 7)}` : ""})`).join(" · ")}.
+                      {annualInterest > 0 && ` 지금 잔금 기준 연 이자 약 ${F(Math.round(annualInterest))}원(월 ${F(Math.round(annualInterest / 12))}원).`}
+                      {loanRows[0].rate > 0 && loanRows.length > 1 && ` 금리가 가장 높은 건 ${loanRows[0].name}(${loanRows[0].rate}%).`}
+                      {nearestMaturity && ` 가장 가까운 만기 ${nearestMaturity.name} ${nearestMaturity.maturity}.`}
+                    </>
+                  )}
+                </>
+              )}
             </Insight>
-            <Insight title="자산 배분" tone="warning">
-              {d.assetAllocation.length >= 2 ? (() => {
-                const top = d.assetAllocation[0];
-                const share = totalAssets > 0 ? Math.round((top.value / totalAssets) * 100) : 0;
-                return `자산의 ${share}%가 ${top.name}에 집중. ${share > 70 ? "한 곳에 쏠림 — 분산 투자 고려." : share > 40 ? "주력 자산 유형이 명확." : "비교적 분산되어 있음."}`;
-              })() : "자산 유형이 단일합니다. 분산 필요."}
+            <Insight title="자산 배분" tone="info">
+              {d.assetAllocation.length >= 1 && totalAssets > 0
+                ? d.assetAllocation.slice(0, 3).map((a) => `${a.name} ${Math.round((a.value / allocTotal) * 100)}%(${F(a.value)}원)`).join(" · ") + `. 금액 집중도로 보면 같은 비중 ${effectiveCategories.toFixed(1)}개 유형과 같습니다.`
+                : "자산 기록이 없습니다."}
             </Insight>
           </div>
         </Card>

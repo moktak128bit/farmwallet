@@ -3,6 +3,7 @@ import {
   computeAccountTimelineRows,
   buildAdjustedPrices,
   buildTimelineMonthRange,
+  netWorthChangeSeries,
 } from "../utils/accountTimeline";
 import { computeAccountBalances, computePositions, computeTotalNetWorth } from "../calculations";
 import type { Account, LedgerEntry, Loan, StockPrice, StockTrade } from "../types";
@@ -114,6 +115,42 @@ describe("computeAccountTimelineRows — 월말 시세 컷오프·currentMonth �
     const rows = run({ accounts, trades, adjustedPrices: prices });
     expect(rows[1].stock).toBe(20_000);
     expect(rows[1].total).toBe(40_000 + 20_000);
+  });
+});
+
+describe("computeAccountTimelineRows — 지난 월말 종가 평가·원가 대체 표시", () => {
+  const accounts = [acc({ id: "SEC", name: "증권", type: "securities", initialBalance: 0, initialCashBalance: 50_000 })];
+  const trades = [trade({ id: "t1", date: "2026-01-10" })]; // 1주 @10,000
+  const prices: StockPrice[] = [{ ticker: "005930", price: 6_000, currency: "KRW", updatedAt: "2026-02-10T09:00:00" }];
+
+  it("일별 종가가 있으면 지난 월말을 그날 시가로 평가 — 원가 대체 0", () => {
+    const rows = run({
+      accounts, trades, adjustedPrices: prices,
+      historicalDailyCloses: [{ ticker: "005930", date: "2026-01-30", close: 7_000 }],
+    });
+    expect(rows[0].stock).toBe(7_000);
+    expect(rows[0].stockAtCost).toBe(0);
+    expect(rows[0].costBasisTotal).toBe(40_000 + 10_000);
+  });
+
+  it("종가가 없으면 원가 대체분을 표시하고, 변화 시계열은 전 구간 원가 기준으로 맞춘다", () => {
+    const rows = run({ accounts, trades, adjustedPrices: prices });
+    expect(rows[0].stockAtCost).toBe(10_000);
+    // 시가 기준이면 −4,000(평가손익)이 이번 달 변화로 몰린다 → 원가 기준이면 변화 0
+    expect(rows[1].total - rows[0].total).toBe(-4_000);
+    const change = netWorthChangeSeries(rows);
+    expect(change.basis).toBe("cost");
+    expect(change.series[1].value - change.series[0].value).toBe(0);
+  });
+
+  it("지난 점이 모두 시가면 시가 기준 그대로", () => {
+    const rows = run({
+      accounts, trades, adjustedPrices: prices,
+      historicalDailyCloses: [{ ticker: "005930", date: "2026-01-30", close: 7_000 }],
+    });
+    const change = netWorthChangeSeries(rows);
+    expect(change.basis).toBe("market");
+    expect(change.series[1].value - change.series[0].value).toBe(-1_000);
   });
 });
 

@@ -59,15 +59,24 @@ export interface PatternStats {
 
 /**
  * 소비 스트릭·월별 무지출일·거래 간격.
- * 루프 끝을 오늘(todayIso)로 캡 — 미래 날짜를 무지출일로 세지 않음.
+ * 집계 구간 = [max(첫 달 1일, firstSpendIso), min(마지막 달 말일, 오늘, lastRecordedIso)].
+ * - 첫 지출 전(초기 잔액 이체만 있던 달)은 "무지출"이 아니라 "기록 전" — 예전엔 2025-06 한 달이 31일 무지출로 잡혀
+ *   재미 기록(첫~마지막 지출일 기준 4일)과 최장 무지출이 31일 vs 4일로 어긋났다.
+ * - 마지막 기록일 이후(캡처를 모았다가 한꺼번에 입력)도 무지출이 아니다 — "현재 5일 연속 무지출"은 기록 공백이었다.
  */
 export function computePatternStats(params: {
   fExp: LedgerEntry[];
   months: string[];
   ml: Record<string, string>;
   todayIso: string;
+  /** 장부 첫 지출일 — 이전 날짜는 집계하지 않음 */
+  firstSpendIso?: string | null;
+  /** 오늘 이하 마지막 기록일(지출·수입·이체 무관) — 이후 날짜는 집계하지 않음 */
+  lastRecordedIso?: string | null;
 }): PatternStats {
   const { fExp, months, ml, todayIso } = params;
+  const capIso = params.lastRecordedIso && params.lastRecordedIso < todayIso ? params.lastRecordedIso : todayIso;
+  const floorIso = params.firstSpendIso ?? null;
   const emptyStats: PatternStats = {
     longestSpendStreak: 0,
     longestZeroStreak: 0,
@@ -79,12 +88,16 @@ export function computePatternStats(params: {
   const spendDaySet = new Set<string>();
   for (const l of fExp) if (l.date) spendDaySet.add(l.date);
   if (months.length === 0) return emptyStats;
-  const todayDate = parseIsoLocal(todayIso)!;
-  const start = parseIsoLocal(months[0] + "-01");
+  const capDate = parseIsoLocal(capIso)!;
+  let start = parseIsoLocal(months[0] + "-01");
+  const floorDate = floorIso ? parseIsoLocal(floorIso) : null;
+  if (start && floorDate && floorDate > start) start = floorDate;
   const [ly, lm] = months[months.length - 1].split("-").map(Number);
   let end = new Date(ly, lm, 0); // 마지막 월의 말일
-  if (end > todayDate) end = todayDate; // 오늘로 캡 — 미래 일자는 집계 대상 아님
+  if (end > capDate) end = capDate; // 오늘·마지막 기록일로 캡 — 기록 없는 날은 집계 대상 아님
   if (!start || end < start) return emptyStats;
+  const startIso = formatIsoLocal(start);
+  const endIso = formatIsoLocal(end);
   let longestSpend = 0, longestZero = 0, curSpend = 0, curZero = 0;
   for (let cur = new Date(start); cur <= end; cur.setDate(cur.getDate() + 1)) {
     const iso = formatIsoLocal(cur);
@@ -95,20 +108,18 @@ export function computePatternStats(params: {
   const currentStreakType: "none" | "spend" | "zero" = spendDaySet.has(lastIso) ? "spend" : "zero";
   const currentStreakDays = currentStreakType === "spend" ? curSpend : curZero;
 
-  const curMonthIso = todayIso.slice(0, 7);
+  // 월별 무지출일 — 같은 집계 구간(첫 지출일 ~ 마지막 기록일)만 센다. totalDays = 그 달의 집계 일수
   const zeroDaysPerMonth = months.map((m) => {
     const [y, mo] = m.split("-").map(Number);
     const daysInMonth = new Date(y, mo, 0).getDate();
-    // 진행 중인 달은 오늘까지만, 미래 달은 0일 — 미래를 무지출로 세지 않음
-    const lastDay = m > curMonthIso ? 0
-      : m === curMonthIso ? Math.min(daysInMonth, Number(todayIso.slice(8, 10)))
-      : daysInMonth;
-    let zd = 0;
-    for (let dd = 1; dd <= lastDay; dd++) {
+    let zd = 0, td = 0;
+    for (let dd = 1; dd <= daysInMonth; dd++) {
       const iso = `${m}-${String(dd).padStart(2, "0")}`;
+      if (iso < startIso || iso > endIso) continue;
+      td++;
       if (!spendDaySet.has(iso)) zd++;
     }
-    return { month: m, label: ml[m], zeroDays: zd, totalDays: lastDay };
+    return { month: m, label: ml[m], zeroDays: zd, totalDays: td };
   });
 
   const sortedSpendDays = Array.from(spendDaySet).sort();

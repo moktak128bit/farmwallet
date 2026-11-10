@@ -47,16 +47,20 @@ export const DateTab = React.memo(function DateTab({ d }: { d: D }) {
   const uniqueDateDays = dateSet.size;
 
   // selMonth 활성 시 dateEntries는 그 달 내역만 — 빈도도 그 달 일수 기준이어야 함
+  // 끝은 마지막 기록일(오늘 이하)까지 — 진행 중인 달의 남은 날·미래 날짜를 넣으면 실장부 "총 548일"처럼 분모가 부풀어
+  // 주당 데이트 횟수가 낮게 나온다.
+  const lastRecorded = d.recorded.lastDate ? parseIsoLocal(d.recorded.lastDate) : null;
   const totalDaysSpan = (() => {
     if (d.dateEntries.length === 0 || d.months.length === 0) return 0;
-    if (d.selMonth) {
-      const [y, mo] = d.selMonth.split("-").map(Number);
-      return new Date(y, mo, 0).getDate();
-    }
-    const start = parseIsoLocal(d.months[0] + "-01")!;
-    const [y, mo] = d.months[d.months.length - 1].split("-").map(Number);
-    const end = new Date(y, mo, 0);
-    return Math.max(1, Math.round((end.getTime() - start.getTime()) / (1000 * 60 * 60 * 24)) + 1);
+    const DAY = 1000 * 60 * 60 * 24;
+    const startIso = d.selMonth ? d.selMonth + "-01" : d.months[0] + "-01";
+    const endMonth = d.selMonth ?? d.months[d.months.length - 1];
+    const start = parseIsoLocal(startIso)!;
+    const [y, mo] = endMonth.split("-").map(Number);
+    let end = new Date(y, mo, 0);
+    if (lastRecorded && lastRecorded < end) end = lastRecorded;
+    if (end < start) return 0;
+    return Math.max(1, Math.round((end.getTime() - start.getTime()) / DAY) + 1);
   })();
   const datesPerWeek = totalDaysSpan > 0 ? (uniqueDateDays / totalDaysSpan) * 7 : 0;
   const datesPerMonth = uniqueDateDays / d.monthSpan;
@@ -339,7 +343,7 @@ export const DateTab = React.memo(function DateTab({ d }: { d: D }) {
                   {uniqueDateDays > 0 ? `${d.selMonth ? (d.ml[d.selMonth] ?? d.selMonth) : `${d.months.length}개월`} 동안 ${uniqueDateDays}회 데이트 (주평균 ${datesPerWeek.toFixed(2)}회). ${daysSinceLast != null && daysSinceLast > 14 ? `마지막 데이트 ${daysSinceLast}일 전 — 한동안 공백이 있었습니다.` : daysSinceLast != null && daysSinceLast <= 7 ? "최근에 데이트 — 꾸준히 만나는 중!" : ""} 최장 공백 ${longestGap}일.` : "기록 없음"}
                 </Insight>
                 <Insight title="데이트 비중" color="var(--chart-series-c)" bg="rgba(83,52,131,0.08)">
-                  {d.pExpense > 0 ? `전체 지출의 ${Math.round((total / d.pExpense) * 100)}%가 데이트. ${total / d.pExpense > 0.15 ? "비중이 높은 편입니다. 가성비 데이트 고려." : total / d.pExpense > 0.05 ? "적정 수준." : "알뜰 수준."} 월평균 ${F(Math.round(avgPerPeriodMonth))}원 · 건당 ${F(avgPerTx)}원.` : ""}
+                  {d.pExpense > 0 ? `전체 지출의 ${Math.round((total / d.pExpense) * 100)}%가 데이트. 월평균 ${F(Math.round(avgPerPeriodMonth))}원 · 건당 ${F(avgPerTx)}원.` : ""}
                 </Insight>
               </div>
             </Card>

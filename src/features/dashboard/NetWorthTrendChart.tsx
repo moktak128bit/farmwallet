@@ -11,14 +11,18 @@ interface NetWorthTrendPoint {
   debt: number;
   /** 연금계좌(isPension) 순기여분 (만원). '연금 제외' 토글 시 value에서 차감. */
   pension: number;
+  /** 변화 비교용 값(만원) — 지난 월말이 원가로 평가된 구간이 섞이면 원가 기준 순자산(netWorthChangeSeries) */
+  changeValue?: number;
 }
 
 interface Props {
   data: NetWorthTrendPoint[];
+  /** 전월 대비가 어느 평가 기준인지 — cost면 평가손익 제외(원가 기준)로 라벨에 밝힌다 */
+  changeBasis?: "market" | "cost";
 }
 
 // React.memo — 부모(DashboardPage)가 넘기는 data는 안정적(useMemo 결과)이어야 한다.
-export const NetWorthTrendChart: React.FC<Props> = React.memo(function NetWorthTrendChart({ data }) {
+export const NetWorthTrendChart: React.FC<Props> = React.memo(function NetWorthTrendChart({ data, changeBasis = "market" }) {
   const svgRef = useRef<SVGSVGElement>(null);
   const [hoverIdx, setHoverIdx] = useState<number | null>(null);
   const [mousePos, setMousePos] = useState<{ x: number; y: number } | null>(null);
@@ -79,8 +83,11 @@ export const NetWorthTrendChart: React.FC<Props> = React.memo(function NetWorthT
 
   const currentPt = pts[pts.length - 1];
   const currentWorth = eff(data[data.length - 1]);
-  const prevWorth = data[data.length - 2] ? eff(data[data.length - 2]) : currentWorth;
-  const nwDelta = currentWorth - prevWorth;
+  // 전월 대비는 두 점이 같은 평가 기준이어야 한다 — 지난 월말이 원가 평가면 원가 기준 값끼리 비교
+  const effChange = (d: NetWorthTrendPoint) => (d.changeValue ?? d.value) - (showLiquid ? (d.pension ?? 0) : 0);
+  const curChange = effChange(data[data.length - 1]);
+  const prevWorth = data[data.length - 2] ? effChange(data[data.length - 2]) : curChange;
+  const nwDelta = curChange - prevWorth;
   const nwDeltaPct = Number.isFinite(prevWorth) && prevWorth !== 0 ? (nwDelta / prevWorth) * 100 : 0;
   const nwDeltaColor = nwDelta > 0 ? "var(--success)" : nwDelta < 0 ? "var(--danger)" : "var(--text-muted)";
   const nwArrow = nwDelta > 0 ? "▲" : nwDelta < 0 ? "▼" : "–";
@@ -191,7 +198,9 @@ export const NetWorthTrendChart: React.FC<Props> = React.memo(function NetWorthT
               ({nwDelta >= 0 ? "+" : ""}{nwDeltaPct.toFixed(1)}%)
             </span>
           </div>
-          <div className="hint" style={{ fontSize: 13 }}>현재 순자산 · 전월 대비</div>
+          <div className="hint" style={{ fontSize: 13 }}>
+            현재 순자산 · 전월 대비{changeBasis === "cost" ? " (원가 기준 · 평가손익 제외)" : ""}
+          </div>
           {currentTarget != null && (
             <div style={{ fontSize: 12, color: "var(--text-muted)", marginTop: 2 }}>
               목표 {fmt(currentTarget)}

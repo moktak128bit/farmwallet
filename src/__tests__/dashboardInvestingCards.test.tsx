@@ -83,4 +83,20 @@ describe("MonthPaceCard — 현재 지출 = KPI 이번 달 지출", () => {
     );
     expect(html).toContain(`현재 지출</div><div style="font-weight:700;font-size:22px">${formatKRW(200_000)}`);
   });
+
+  it("경과일은 마지막 기록일까지, 환산은 최근 3달 같은 기간 비중으로 (실장부 회귀 2026-11)", () => {
+    // 지난 3달: 1~5일 10만 + 25일 30만 = 월 40만 → 1~5일 비중 25%. 이번 달 1~5일 10만, 오늘 9일(6~9일 미기록)
+    const months = ["2026-08", "2026-09", "2026-10"];
+    const ledger = [
+      ...months.flatMap((m) => [e({ subCategory: "식비", amount: 100_000, date: `${m}-03` }), e({ subCategory: "식비", amount: 300_000, date: `${m}-25` })]),
+      e({ subCategory: "식비", amount: 100_000, date: "2026-11-05" }),
+    ];
+    const html = renderToStaticMarkup(
+      <MonthPaceCard currentMonth="2026-11" today="2026-11-09" ledger={ledger} accounts={[]} categoryPresets={presets} fxRate={null} />
+    );
+    expect(html).toContain("1~5일 기록 / 30일");
+    expect(html).toContain(formatKRW(400_000)); // 일할(10만/5×30=60만)이 아니라 비중 환산 40만
+    expect(html).toContain("월 전체의 25%");
+    expect(html).not.toContain(formatKRW(600_000));
+  });
 });

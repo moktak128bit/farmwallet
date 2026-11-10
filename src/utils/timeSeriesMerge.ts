@@ -176,3 +176,25 @@ export function mergeGistPayloadTimeSeries(baseJson: string, otherJson: string):
   out.marketEnvSnapshots = merged.fields.marketEnvSnapshots;
   return { json: JSON.stringify(out), filledFromOther: merged.filledFromOther, fields: merged.fields };
 }
+
+/** 자동 적립 시계열(환율·지수 종가·반월 스냅샷) — 앱이 열릴 때마다 기록기가 채우므로 '사용자 편집'으로 보지 않는다 */
+const AUTO_SERIES_KEYS = ["historicalDailyFx", "benchmarkDailyCloses", "marketEnvSnapshots"] as const;
+
+/**
+ * payload의 '내용' 정규형 — 자동 적립 시계열을 빼고 최상위 키를 정렬해 직렬화. 파싱 실패·객체 아님이면 null.
+ * 부팅 때 저장소에서 다시 읽으며 최상위 키 순서가 바뀌거나 기록기가 시계열을 덧붙여도 같은 내용이면 같은 문자열.
+ */
+export function canonicalUserPayload(json: string): string | null {
+  let raw: unknown;
+  try {
+    raw = JSON.parse(json);
+  } catch {
+    return null;
+  }
+  if (!raw || typeof raw !== "object" || Array.isArray(raw)) return null;
+  const r = { ...(raw as Record<string, unknown>) };
+  for (const k of AUTO_SERIES_KEYS) delete r[k];
+  const sorted: Record<string, unknown> = {};
+  for (const k of Object.keys(r).sort()) sorted[k] = r[k];
+  return JSON.stringify(sorted);
+}

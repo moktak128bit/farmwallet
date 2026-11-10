@@ -133,6 +133,10 @@ describe("formatKrwCompact — 히어로 숫자용 만·억 단위 (원 단위 �
     expect(formatKrwCompact(3)).toBe("3");
     expect(formatKrwCompact(9999)).toBe("9,999");
     expect(formatKrwCompact(0)).toBe("0");
+    // 반올림 후 0인 음수는 부호 없이 — 계좌별 잔액 "-0원" 회귀
+    expect(formatKrwCompact(-0.4)).toBe("0");
+    expect(formatKrwCompact(-0)).toBe("0");
+    expect(formatKrwCompact(-3)).toBe("-3");
   });
 
   it("1만~100만 미만은 소수 1자리 만 (.0은 생략)", () => {

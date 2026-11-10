@@ -227,6 +227,32 @@ describe("forecastNextMonth", () => {
   });
 });
 
+describe("forecast — 일회성·비정기 지출이 다음 달 예측을 부풀리지 않는다 (실장부 회귀 2026-11)", () => {
+  it("비정기 항목(6개월 중 1개월)은 예측 합계에서 빠지고 월 준비금으로 분리 + 최대 단건을 근거로 남긴다", () => {
+    const ledger: LedgerEntry[] = [
+      { ...mkExpense("2026-09-25", "경조사비", 2_000_000), description: "추석 용돈" },
+      mkExpense("2026-05-10", "식비", 200_000), mkExpense("2026-06-10", "식비", 220_000),
+      mkExpense("2026-07-10", "식비", 210_000), mkExpense("2026-08-10", "식비", 230_000),
+      mkExpense("2026-09-10", "식비", 900_000), // 한 달 큰 회식 — 중앙값엔 영향 거의 없음
+      mkExpense("2026-10-10", "식비", 240_000),
+    ];
+    const r = forecastNextMonth(ledger, [], "2026-11", 6);
+    const gift = r.byCategory.find((c) => c.category === "경조사비")!;
+    expect(gift.regular).toBe(false);
+    expect(gift.forecast).toBe(0);
+    expect(gift.reserve).toBeCloseTo(2_000_000 / 6);
+    expect(gift.largest).toEqual({ description: "추석 용돈", amount: 2_000_000, date: "2026-09-25" });
+    const food = r.byCategory.find((c) => c.category === "식비")!;
+    expect(food.regular).toBe(true);
+    expect(food.forecast).toBe(225_000); // 중앙값 (220k+230k)/2 — 평균(333k)이 아님
+    expect(food.lower).toBeLessThanOrEqual(food.forecast);
+    expect(food.upper).toBeGreaterThanOrEqual(food.forecast);
+    expect(r.totalForecast).toBe(225_000);
+    expect(r.totalReserve).toBeCloseTo(2_000_000 / 6);
+    expect(r.regularMinMonths).toBe(4);
+  });
+});
+
 describe("forecast — 대시보드 지출 정의(classifyLedgerFlow + toKrwAmount)와 통일", () => {
   const usd = (date: string, amount: number): LedgerEntry =>
     ({ id: Math.random().toString(36).slice(2), date, kind: "expense", category: "지출", subCategory: "여행", description: "", amount, currency: "USD" });

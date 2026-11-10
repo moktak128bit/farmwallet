@@ -34,19 +34,26 @@ export const AccountBalanceTrendCard: React.FC<Props> = React.memo(function Acco
   const abDeltaPct = prevTotal !== 0 ? (abDelta / prevTotal) * 100 : 0;
   const abColor = abDelta > 0 ? "var(--success)" : abDelta < 0 ? "var(--danger)" : "var(--text-muted)";
   const abArrow = abDelta > 0 ? "▲" : abDelta < 0 ? "▼" : "–";
+  // 지난 점 중 종가가 없어 매입원가로 평가한 보유 종목이 있으면 그 사실을 밝힌다(평가 기준 혼합)
+  const anyAtCost = accountBalanceSnapshots.slice(0, -1).some((s) => Number(s.atCost) > 0);
 
   return (
     <div className="card" style={{ marginTop: 16, padding: 20 }}>
       <div style={{ display: "flex", flexWrap: "wrap", alignItems: "center", justifyContent: "space-between", gap: 16, marginBottom: 12 }}>
         <div className="card-title" style={{ margin: 0, fontSize: 17 }}>
-          계좌별 잔액 추이 <span style={{ fontSize: 13, color: "var(--text-muted)", fontWeight: 400 }}>(매월 15·월말, 부채 미차감)</span>
+          계좌별 잔액 추이 <span style={{ fontSize: 13, color: "var(--text-muted)", fontWeight: 400 }}>(매월 15·월말·오늘 · 계좌 순가치, 합계 = 총자산·대출 미차감)</span>
         </div>
         <div style={{ textAlign: "right" }}>
           <div style={{ fontWeight: 700, fontSize: 26, color: "var(--chart-primary)" }}>{formatKRW(Math.round(lastTotal))}</div>
           <div style={{ fontSize: 14, fontWeight: 700, color: abColor }}>
             {abArrow} {formatKRW(Math.round(Math.abs(abDelta)))} ({abDelta >= 0 ? "+" : ""}{abDeltaPct.toFixed(1)}%)
           </div>
-          <div className="hint" style={{ fontSize: 13 }}>{String(lastSnap.date)} 스냅샷 합계 · 지난달 대비</div>
+          <div className="hint" style={{ fontSize: 13 }}>{String(lastSnap.date)} 총자산 · 지난달 대비</div>
+          {anyAtCost && (
+            <div className="hint" style={{ fontSize: 12 }} title="그날 종가 기록이 없는 종목은 매입원가로 평가했습니다. 지난 점과 오늘(현재 시세)의 차이에 평가손익이 섞일 수 있습니다.">
+              지난 점 일부 원가 기준
+            </div>
+          )}
         </div>
       </div>
       <div style={{ display: "flex", flexWrap: "wrap", alignItems: "center", gap: 16, marginBottom: 12 }}>

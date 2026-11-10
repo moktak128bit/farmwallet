@@ -29,7 +29,7 @@ describe("upsertDailyFx", () => {
     expect(upsertDailyFx([], 1380, "bad-date")).toBeNull();
   });
 
-  it("180일 이전은 월당 마지막 1건으로 압축한다", () => {
+  it("180일 이전 일별 환율도 보존해 해외자산의 일별 성과를 유지한다", () => {
     const old: HistoricalDailyFx[] = [
       { date: "2025-10-05", rate: 1300 },
       { date: "2025-10-15", rate: 1310 },
@@ -37,9 +37,7 @@ describe("upsertDailyFx", () => {
     ];
     const r = upsertDailyFx(old, 1380, "2026-06-12")!;
     const oct = r.filter((f) => f.date.startsWith("2025-10"));
-    expect(oct).toHaveLength(1);
-    expect(oct[0].date).toBe("2025-10-30");
-    expect(oct[0].rate).toBe(1320);
+    expect(oct).toEqual(old);
     expect(r.some((f) => f.date === "2026-06-12" && f.rate === 1380)).toBe(true);
   });
 

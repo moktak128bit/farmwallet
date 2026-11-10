@@ -14,6 +14,8 @@ import type { Account, LedgerEntry, StockTrade, StockPrice, CategoryPresets, Bud
 import type { AccountTimelineRow } from "../../utils/accountTimeline";
 import type { D } from "./insightsShared";
 import { buildInsightsBase } from "./insightsBase";
+import { useAppStore } from "../../store/appStore";
+import { buildFxHistory } from "../../utils/portfolioHistory";
 import { sliceInsightsForMonth } from "./insightsSlice";
 
 // _budgetGoals: 예산 vs 실적 파생 제거(대시보드 BudgetAlertWidget 단일화) 후 미사용 — 호출부 시그니처 유지용
@@ -21,9 +23,13 @@ import { sliceInsightsForMonth } from "./insightsSlice";
 // allLedger: 기간 필터 전 전체 가계부 — 계좌별 현재 잔액(누적)의 정확성을 위해 별도 전달
 export function useInsightsData(ledger: LedgerEntry[], rawTrades: StockTrade[], allTrades: StockTrade[], accounts: Account[], prices: StockPrice[], selMonth: string | null, categoryPresets: CategoryPresets | undefined, _budgetGoals: BudgetGoal[] | undefined, dateAccountId: string | null, fxRate: number | null, timelineRows: AccountTimelineRow[], allLedger: LedgerEntry[]): D {
   // dateAccountId는 실질 흐름(realFlows)·분담 통장 흐름(moimFlow) 등 전기간 집계의 입력이라 base deps에 둔다(설정값 — 드물게 변경).
+  // 환율 없는 레거시 USD 거래의 실현손익은 그날 환율(이력)로 — 주식 탭 StocksPage와 같은 입력. 없으면 오늘 환율에 따라 매일 흔들린다.
+  const historicalDailyFx = useAppStore((s) => s.data.historicalDailyFx);
+  const marketEnvSnapshots = useAppStore((s) => s.data.marketEnvSnapshots);
+  const fxHistory = useMemo(() => buildFxHistory(historicalDailyFx, marketEnvSnapshots), [historicalDailyFx, marketEnvSnapshots]);
   const base = useMemo(
-    () => buildInsightsBase({ ledger, rawTrades, allTrades, accounts, prices, categoryPresets, dateAccountId, fxRate, timelineRows, allLedger }),
-    [ledger, rawTrades, allTrades, accounts, prices, categoryPresets, dateAccountId, fxRate, timelineRows, allLedger],
+    () => buildInsightsBase({ ledger, rawTrades, allTrades, accounts, prices, categoryPresets, dateAccountId, fxRate, timelineRows, allLedger, fxHistory }),
+    [ledger, rawTrades, allTrades, accounts, prices, categoryPresets, dateAccountId, fxRate, timelineRows, allLedger, fxHistory],
   );
   return useMemo(() => sliceInsightsForMonth(base, selMonth), [base, selMonth]);
 }

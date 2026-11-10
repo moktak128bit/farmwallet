@@ -1,31 +1,38 @@
 import React from "react";
-import { AlertTriangle, Info } from "lucide-react";
+import { AlertTriangle, CheckCircle2, Info } from "lucide-react";
 import {
   LineChart, Line, Cell,
   XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer,
-  AreaChart, Area, ComposedChart, Bar,
+  ComposedChart, Bar,
 } from "recharts";
 import type { ValueType } from "recharts/types/component/DefaultTooltipContent";
 import { C, F, W, Pct, SD, Card, Insight, CT, Section, type D } from "../insightsShared";
 import { useAppStore } from "../../../store/appStore";
 import { getThisMonthKST, shiftMonth } from "../../../utils/date";
+import { dayCapLabel } from "../../../utils/ledgerFreshness";
 import { isBeforePayday } from "../../dashboard/summaryMath";
 import type { BalanceSheet } from "../../../calculations";
 
 export const OverviewTab = React.memo(function OverviewTab({ d, bs }: { d: D; bs: BalanceSheet }) {
-  // 순현금흐름 차트 — 진행 중인 현재 월만 제외 (마지막 월이 완결 월이면 포함)
+  // 잉여·재테크 차트 — 진행 중인 현재 월만 제외 (마지막 월이 완결 월이면 포함)
   const flowMonths = d.months.length > 0 && d.months[d.months.length - 1] === getThisMonthKST()
     ? d.months.slice(0, -1)
     : d.months;
-  // 순현금흐름 = 근로소득 − 지출 − 투자. "월급으로 지출·투자를 감당하는가"를 현실적으로 (비근로 유입 제외)
-  const flowData = flowMonths.map(m => ({ name: d.ml[m], 순현금흐름: (d.salaryMonthly[m] ?? 0) - d.monthly[m].expense - d.monthly[m].investment }));
+  // 근로소득 잉여(근로소득 − 지출)와 재테크를 나란히 — 예전 "근로소득−지출−투자" 한 줄은 대출·용돈으로 한 투자까지
+  // 월급에서 뺀 것처럼 그려 18개월 누적 −8,514만 같은 숫자를 만들었다.
+  const flowData = flowMonths.map(m => ({ name: d.ml[m], 근로소득잉여: (d.salaryMonthly[m] ?? 0) - d.monthly[m].expense, 재테크: d.monthly[m].investment }));
   const top3Sub = d.expBySub.filter(s => s.sub !== "신용결제" && s.cat !== "신용결제").slice(0, 3);
   const top3pct = d.pExpense > 0 ? Math.round(top3Sub.reduce((s, x) => s + x.amount, 0) / d.pExpense * 100) : 0;
+  // 진행 중인 달 동기 비교 라벨 — "1~5일 · 5일까지 기록"
+  const capText = (n: number) => dayCapLabel(n);
 
-  /* 재정 활주로 (Financial Runway): 유동 자산(총자산 − 연금, 대차 단일 소스) / 월평균 지출.
-     예전엔 계좌별 양수 잔액만 더해 마이너스 통장을 무시하고 연금까지 '가용'으로 셌다. */
+  /* 재정 활주로 (Financial Runway): 순유동자산(유동 자산 − 카드 대금 − 마이너스 통장) / 월평균 지출.
+     예전엔 유동 자산(총자산 − 연금)만 보고 단기 부채를 무시해 부채 4천만이 있어도 34.6개월 "매우 여유"였다.
+     대출 잔금은 만기까지 나눠 갚는 장기 부채라 차감하지 않고, 매달 갚는 원금·이자는 장부 지출(대출상환)로 월평균에 들어간다. */
   const liquidAssets = bs.liquidAssets;
-  const runwayMonths = d.avgMonthExp > 0 ? liquidAssets / d.avgMonthExp : null;
+  const shortTermDebt = bs.cardDebt + bs.overdraft;
+  const netLiquid = liquidAssets - shortTermDebt;
+  const runwayMonths = d.avgMonthExp > 0 ? Math.max(0, netLiquid) / d.avgMonthExp : null;
   const runwayColor = runwayMonths == null ? "var(--text-faint)" : runwayMonths >= 12 ? "var(--success)" : runwayMonths >= 6 ? "var(--warning)" : "var(--danger)";
   const runwayLabel = runwayMonths == null
     ? "-"
@@ -65,6 +72,26 @@ export const OverviewTab = React.memo(function OverviewTab({ d, bs }: { d: D; bs
   const si = d.spendingInertia;
   const siColor = si?.deviation == null ? "var(--text-faint)" : si.deviation > 20 ? "var(--danger)" : si.deviation > 5 ? "var(--warning)" : si.deviation < -10 ? "var(--success)" : "var(--accent)";
   const siLabel = si?.deviation == null ? "데이터 부족" : si.deviation > 20 ? "지출 증가" : si.deviation > 5 ? "상승세" : si.deviation < -10 ? "지출 감소" : "평상시";
+
+  /* 실질 지출 대조 — 실질 지출(realFlows)은 투자손실을 포함하고 장부 지출은 재테크로 뺀다. 남는 차이는 분류 차이로 그대로 노출 */
+  const reconResidual = d.realExpense - (d.pExpense + d.investLossInPeriod - d.datePartnerShare);
+
+  /* 재무 기초 체크 — 등급·칭찬 대신 사실. 실질 기준(대출·용돈·정산은 수입 아님), 부채 반영 */
+  // 실질 수입원 — 대출·용돈·정산(비실질)은 수입원이 아니다 (incSubInsights.isReal = 근로·패시브·기타, slice 단일 분류)
+  const realSources = d.incSubInsights.filter(s => s.isReal);
+  const debtRatio = bs.totalAssets > 0 ? bs.totalLiabilities / bs.totalAssets * 100 : null;
+  const checks: { label: string; ok: boolean | null; fact: string }[] = [
+    { label: "실질 저축률 20% 이상", ok: d.realSavRate == null ? null : d.realSavRate >= 20,
+      fact: d.realSavRate == null ? "실질 수입 없음" : `${d.realSavRate.toFixed(1)}% (${d.accumLabel})` },
+    { label: "순유동자산으로 지출 6개월 이상", ok: runwayMonths == null ? null : runwayMonths >= 6,
+      fact: runwayMonths == null ? "월평균 지출 없음" : `${runwayMonths.toFixed(1)}개월 (${F(Math.max(0, netLiquid))}원 ÷ 월 ${F(Math.round(d.avgMonthExp))}원)` },
+    { label: "부채가 자산의 50% 미만", ok: debtRatio == null ? null : debtRatio < 50,
+      fact: debtRatio == null ? "자산 없음" : `총부채 ${F(bs.totalLiabilities)}원 / 총자산 ${F(bs.totalAssets)}원 = ${debtRatio.toFixed(0)}%` },
+    { label: "단기 부채(카드·마이너스 통장)가 월 지출 이하", ok: d.avgMonthExp > 0 ? shortTermDebt <= d.avgMonthExp : null,
+      fact: `카드 ${F(bs.cardDebt)}원 + 마이너스 통장 ${F(bs.overdraft)}원` },
+    { label: "근로소득으로 지출을 감당", ok: d.pSalary > 0 ? d.salarySurplus >= 0 : null,
+      fact: d.pSalary > 0 ? `근로소득 ${F(d.pSalary)}원 − 지출 ${F(d.pExpense)}원 = ${d.salarySurplus >= 0 ? "+" : "−"}${F(Math.abs(d.salarySurplus))}원` : "근로소득 기록 없음" },
+  ];
 
   return (
     <div>
@@ -113,9 +140,14 @@ export const OverviewTab = React.memo(function OverviewTab({ d, bs }: { d: D; bs
           {d.settlementTotal > 0 && ` (정산 ${F(d.settlementTotal)} 제외)`} · 실질 지출 <strong style={{ color: "var(--chart-expense)" }}>{F(d.realExpense)}원</strong>
           {d.datePartnerShare > 0 && ` (데이트 50% ${F(Math.round(d.datePartnerShare))} 제외)`} · 순수익 <strong style={{ color: d.netProfit >= 0 ? "var(--success)" : "var(--danger)" }}>{F(d.netProfit)}원</strong>
           {" · 실질 저축률 "}<strong>{d.realSavRate == null ? "N/A" : `${d.realSavRate.toFixed(1)}%`}</strong>
+          {d.recorded.lastDate && d.recorded.daysSince != null && d.recorded.daysSince > 0 && (
+            <div style={{ marginTop: 4, fontSize: 12, color: "var(--text-muted)" }}>
+              마지막 기록 {d.recorded.lastDate} ({d.recorded.daysSince}일 전) — 이번 달 비교·스트릭은 이 날짜까지만 셉니다. 그 뒤는 '무지출'이 아니라 아직 입력 전입니다.
+            </div>
+          )}
         </div>
 
-        <Card title="재정 활주로 — 수입 없이 버틸 수 있는 기간" span={4}>
+        <Card title="재정 활주로 — 수입이 끊기면 버틸 수 있는 기간" span={4}>
           <div style={{ display: "grid", gridTemplateColumns: "1fr 2fr", gap: 16, alignItems: "center" }}>
             <div style={{ textAlign: "center", padding: "16px 0" }}>
               <div style={{ fontSize: 48, fontWeight: 800, color: runwayColor, lineHeight: 1 }}>
@@ -125,18 +157,20 @@ export const OverviewTab = React.memo(function OverviewTab({ d, bs }: { d: D; bs
               <div style={{ fontSize: 13, fontWeight: 700, color: runwayColor, marginTop: 6 }}>{runwayLabel}</div>
             </div>
             <div style={{ fontSize: 13, lineHeight: 1.7, color: "var(--text-secondary)" }}>
-              <div style={{ display: "flex", justifyContent: "space-between", padding: "4px 0", borderBottom: "1px solid var(--border-light)" }}>
-                <span style={{ color: "var(--text-faint)" }}>유동 자산 (총자산 − 연금)</span>
-                <span style={{ fontWeight: 700 }}>{F(liquidAssets)}</span>
-              </div>
-              <div style={{ display: "flex", justifyContent: "space-between", padding: "4px 0", borderBottom: "1px solid var(--border-light)" }}>
-                <span style={{ color: "var(--text-faint)" }}>월평균 지출 (완결 월)</span>
-                <span style={{ fontWeight: 700 }}>{F(Math.round(d.avgMonthExp))}</span>
-              </div>
+              {[
+                { k: "유동 자산 (총자산 − 연금)", v: F(liquidAssets) + "원" },
+                { k: "− 카드 대금", v: F(bs.cardDebt) + "원" },
+                { k: "− 마이너스 통장", v: F(bs.overdraft) + "원" },
+                { k: "= 순유동자산", v: F(netLiquid) + "원", strong: true },
+                { k: "÷ 월평균 지출 (완결 월 · 장부의 대출 상환 포함)", v: F(Math.round(d.avgMonthExp)) + "원" },
+              ].map(r => (
+                <div key={r.k} style={{ display: "flex", justifyContent: "space-between", gap: 8, padding: "4px 0", borderBottom: "1px solid var(--border-light)" }}>
+                  <span style={{ color: "var(--text-faint)" }}>{r.k}</span>
+                  <span style={{ fontWeight: r.strong ? 800 : 700 }}>{r.v}</span>
+                </div>
+              ))}
               <div style={{ padding: "8px 12px", background: "var(--bg)", borderRadius: 6, marginTop: 8, fontSize: 12, color: "var(--text-muted)" }}>
-                수입이 갑자기 끊겨도 현재 지출 수준으로 {runwayMonths != null ? `약 ${runwayMonths.toFixed(1)}개월` : "—"} 유지 가능.
-                일반적으로 <strong>6개월 이상</strong>은 안전, 12개월 이상이면 여유 있음.
-                {runwayMonths != null && runwayMonths < 6 && " 비상자금 확보를 권장합니다."}
+                대출 잔금 {F(bs.loanDebt)}원은 만기까지 나눠 갚는 장기 부채라 빼지 않았습니다. 유동 자산엔 주식·코인 평가액이 들어 있어 급히 팔면 시세만큼 달라집니다.
               </div>
             </div>
           </div>
@@ -185,8 +219,8 @@ export const OverviewTab = React.memo(function OverviewTab({ d, bs }: { d: D; bs
                 {savRateOk
                   ? `목표 ${targetSavRate.toFixed(0)}%를 달성 중입니다. 월 실질수입 ${F(Math.round(monthlyRealIncome))} 중 ${F(Math.round(monthlyRealIncome * actualSavRate / 100))} 저축.`
                   : actualSavRate >= 0
-                    ? `목표까지 ${(targetSavRate - actualSavRate).toFixed(1)}%p 부족. 월 ${F(Math.round(monthlyRealIncome * (targetSavRate - actualSavRate) / 100))} 더 절약 or 수입 증가 필요.`
-                    : `현재 적자 상태. 수입보다 지출이 많습니다. 우선 지출 축소가 시급합니다.`}
+                    ? `목표까지 ${(targetSavRate - actualSavRate).toFixed(1)}%p — 월 실질수입 ${F(Math.round(monthlyRealIncome))}원 기준 월 ${F(Math.round(monthlyRealIncome * (targetSavRate - actualSavRate) / 100))}원 차이.`
+                    : `실질 지출이 실질 수입보다 ${F(Math.abs(d.netProfit))}원 많습니다.`}
                 {!monthlyDepositTarget && (
                   <div style={{ marginTop: 6, fontSize: 11, color: "var(--text-faint)" }}>
                     <Info size={13} style={{ verticalAlign: "-2px", marginRight: 4 }} aria-hidden />대시보드 {">"} 투자 요약에서 연 입금액 목표를 설정하면 개인화된 목표 저축률이 적용됩니다.
@@ -206,7 +240,7 @@ export const OverviewTab = React.memo(function OverviewTab({ d, bs }: { d: D; bs
           <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(150px, 1fr))", gap: 10, marginBottom: 12 }}>
             <div style={{ padding: "12px 14px", background: "var(--bg)", borderRadius: 10, textAlign: "center" }}>
               <div style={{ fontSize: 11, color: "var(--text-muted)", fontWeight: 600 }}>
-                {ig.partialDay != null ? `전월 동기 대비 (1~${ig.partialDay}일)` : "전월 대비 (MoM)"}
+                {ig.partialDay != null ? `전월 동기 대비 (${capText(ig.partialDay)})` : "전월 대비 (MoM)"}
               </div>
               <div style={{ fontSize: 22, fontWeight: 800, color: igMomColor, marginTop: 4 }}>
                 {igBeforePayday ? "급여 전" : ig.mom == null ? "–" : Pct(ig.mom)}
@@ -249,13 +283,18 @@ export const OverviewTab = React.memo(function OverviewTab({ d, bs }: { d: D; bs
           </div>
         </Card>
 
-        <Card title="순 현금흐름 (근로소득 - 지출 - 투자)" span={2}>
+        <Card title="근로소득 잉여 vs 재테크 (월별)" span={2}>
           <ResponsiveContainer width="100%" height={220}>
-            <AreaChart data={flowData}><CartesianGrid strokeDasharray="3 3" stroke="var(--chart-grid)" /><XAxis dataKey="name" tick={{ fontSize: 12 }} /><YAxis tickFormatter={F} tick={{ fontSize: 11 }} /><Tooltip content={<CT />} />
-              <defs><linearGradient id="fg" x1="0" y1="0" x2="0" y2="1"><stop offset="5%" stopColor="var(--chart-primary)" stopOpacity={0.3} /><stop offset="95%" stopColor="var(--chart-primary)" stopOpacity={0} /></linearGradient></defs>
-              <Area isAnimationActive={false} dataKey="순현금흐름" stroke="var(--chart-primary)" fill="url(#fg)" strokeWidth={2.5} />
-            </AreaChart>
+            <ComposedChart data={flowData}><CartesianGrid strokeDasharray="3 3" stroke="var(--chart-grid)" /><XAxis dataKey="name" tick={{ fontSize: 12 }} /><YAxis tickFormatter={F} tick={{ fontSize: 11 }} /><Tooltip content={<CT />} /><Legend wrapperStyle={{ fontSize: 11 }} />
+              <Bar isAnimationActive={false} dataKey="근로소득잉여" name="근로소득 − 지출" radius={[4, 4, 0, 0]} opacity={0.6}>
+                {flowData.map((e, i) => <Cell key={i} fill={e.근로소득잉여 >= 0 ? "var(--chart-income)" : "var(--chart-expense)"} />)}
+              </Bar>
+              <Line isAnimationActive={false} type="monotone" dataKey="재테크" name="재테크(순)" stroke="var(--chart-series-b)" strokeWidth={2} dot={{ r: 2 }} />
+            </ComposedChart>
           </ResponsiveContainer>
+          <div style={{ fontSize: 11, color: "var(--text-faint)", textAlign: "center", marginTop: 4 }}>
+            재테크가 막대보다 크면 그 달 투자는 월급 밖 재원(대출·용돈·기존 자산)으로 채운 것입니다.
+          </div>
         </Card>
 
         <Card title="누적 실질 저축률 추이" span={2}>
@@ -289,7 +328,7 @@ export const OverviewTab = React.memo(function OverviewTab({ d, bs }: { d: D; bs
         <Card title="장부 vs 실질 비교 (왜 다른가?)" span={4}>
           <div className="grid-4" style={{ gap: 12, fontSize: 13 }}>
             <div style={{ padding: "12px 14px", background: "var(--success-light)", borderRadius: 10, border: "1px solid var(--success)" }}>
-              <div style={{ fontSize: 11, color: "var(--text-muted)", marginBottom: 4 }}>장부 수입 (전체)</div>
+              <div style={{ fontSize: 11, color: "var(--text-muted)", marginBottom: 4 }}>장부 수입 (전체 · 퇴직연금·투자수익 제외)</div>
               <div style={{ fontSize: 18, fontWeight: 700, color: "var(--success)" }}>{F(d.pIncome)}</div>
               <div style={{ fontSize: 11, color: "var(--text-muted)", marginTop: 4 }}>→ 실질 수입: {F(d.realIncome)}</div>
             </div>
@@ -318,10 +357,20 @@ export const OverviewTab = React.memo(function OverviewTab({ d, bs }: { d: D; bs
               <div style={{ fontSize: 11, color: "var(--text-muted)", marginTop: 4 }}>배당·이자 등 패시브 수입</div>
             </div>
           </div>
-          <div style={{ marginTop: 10, fontSize: 11, color: "var(--text-faint)", lineHeight: 1.6, padding: "8px 12px", background: "var(--bg)", borderRadius: 8 }}>
-            <strong>실질 수입</strong> = 장부 수입 − 정산(상대가 돌려준 돈) − 일시소득(용돈·지원·이월·대출·처분소득).{" "}
-            <strong>실질 지출</strong> = 장부 지출 − 데이트 계좌 지출 × 50%(상대 부담분).{" "}
-            저축률은 실질 기준으로 계산해야 실제 재산 형성 능력을 반영합니다.
+          <div style={{ marginTop: 10, fontSize: 12, color: "var(--text-secondary)", lineHeight: 1.7, padding: "8px 12px", background: "var(--bg)", borderRadius: 8 }}>
+            <div><strong>실질 수입</strong> = 장부 수입 {F(d.pIncome)} − 정산 {F(d.settlementTotal)} − 일시소득(용돈·지원·이월·대출·처분소득) {F(d.tempIncomeTotal)}{d.carryOverIncome > 0 ? ` − 이월·원래 보유 ${F(d.carryOverIncome)}` : ""}{d.incomeOutsideLedger !== 0 ? ` ${d.incomeOutsideLedger > 0 ? "+" : "−"} 투자수익 ${F(Math.abs(d.incomeOutsideLedger))}` : ""} = <strong>{F(d.realIncome)}</strong></div>
+            <div>
+              <strong>실질 지출</strong> = 장부 지출 {F(d.pExpense)}
+              {d.investLossInPeriod > 0 && <> + 투자손실 {F(d.investLossInPeriod)}</>}
+              {d.datePartnerShare > 0 && <> − 데이트 상대 부담 {F(Math.round(d.datePartnerShare))}</>}
+              {Math.abs(reconResidual) >= 1 && <> {reconResidual > 0 ? "+" : "−"} 분류 차이 {F(Math.abs(Math.round(reconResidual)))}</>}
+              {" "}= <strong>{F(d.realExpense)}</strong>
+            </div>
+            {d.investLossInPeriod > 0 && (
+              <div style={{ fontSize: 11, color: "var(--text-faint)" }}>
+                투자손실은 장부 지출에선 재테크(순액)로 빠지지만, 실질 지출·저축률 계산(utils/savingsRate)에는 들어갑니다 — 그래서 실질 지출이 장부보다 클 수 있습니다.
+              </div>
+            )}
           </div>
         </Card>
 
@@ -336,7 +385,7 @@ export const OverviewTab = React.memo(function OverviewTab({ d, bs }: { d: D; bs
               <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: "12px 0" }}>
                 <div>
                   <div style={{ fontSize: 11, color: "var(--text-faint)", fontWeight: 600 }}>
-                    이번달 지출{si.partialDay != null ? ` (1~${si.partialDay}일)` : ""}
+                    이번달 지출{si.partialDay != null ? ` (${capText(si.partialDay)})` : ""}
                   </div>
                   <div style={{ fontSize: 20, fontWeight: 800, color: "var(--text)" }}>{F(Math.round(si.curExp))}</div>
                 </div>
@@ -359,54 +408,30 @@ export const OverviewTab = React.memo(function OverviewTab({ d, bs }: { d: D; bs
                 <div style={{ fontSize: 13, fontWeight: 700, color: siColor, marginTop: 2 }}>{siLabel}</div>
                 <div style={{ fontSize: 11, color: "var(--text-muted)", marginTop: 6, lineHeight: 1.5 }}>
                   {si.deviation == null ? "" :
-                    si.deviation > 20 ? "지출이 평소보다 크게 늘었어요. 카테고리 점검을 권장합니다." :
-                    si.deviation > 5 ? "최근 지출 증가 추세. 이상치 배너도 확인하세요." :
-                    si.deviation < -10 ? "기록된 지출이 줄었습니다. 결제 시점 변경이나 미입력 거래가 있는지도 확인하세요." :
-                    "지출이 평소 수준입니다."}
+                    `평균 대비 ${si.curExp >= si.avg ? "+" : "−"}${F(Math.abs(Math.round(si.curExp - si.avg)))}원. 어느 항목이 움직였는지는 위 "지출 변화와 확인할 항목"에 있습니다.`}
                 </div>
               </div>
             </div>
           )}
         </Card>
 
-        <Card title="재무 건강 점수" span={2}>
-          <div style={{ display: "grid", gridTemplateColumns: "140px 1fr", gap: 16, alignItems: "center" }}>
-            <div style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: 8 }}>
-              <div style={{ position: "relative", width: 120, height: 120, borderRadius: "50%", background: `conic-gradient(${d.score.total >= 70 ? "var(--success)" : d.score.total >= 40 ? "var(--warning)" : "var(--danger)"} ${d.score.total * 3.6}deg, var(--surface-hover) ${d.score.total * 3.6}deg)`, display: "flex", alignItems: "center", justifyContent: "center" }}>
-                <div style={{ width: 96, height: 96, borderRadius: "50%", background: "var(--surface)", display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center" }}>
-                  <span style={{ fontSize: 28, fontWeight: 800 }}>{d.score.total}</span>
-                  <span style={{ fontSize: 14, fontWeight: 700, color: "var(--danger)" }}>{d.score.grade}</span>
+        <Card title="재무 기초 체크 — 숫자로 확인" span={2}>
+          <div style={{ display: "flex", flexDirection: "column", gap: 10, fontSize: 13 }}>
+            {checks.map((c) => (
+              <div key={c.label} style={{ display: "flex", gap: 8, alignItems: "flex-start" }}>
+                {c.ok === true
+                  ? <CheckCircle2 size={16} style={{ color: "var(--success)", flexShrink: 0, marginTop: 2 }} aria-label="충족" />
+                  : c.ok === false
+                    ? <AlertTriangle size={16} style={{ color: "var(--danger)", flexShrink: 0, marginTop: 2 }} aria-label="미충족" />
+                    : <Info size={16} style={{ color: "var(--text-faint)", flexShrink: 0, marginTop: 2 }} aria-label="판단 보류" />}
+                <div>
+                  <div style={{ fontWeight: 600 }}>{c.label}</div>
+                  <div style={{ fontSize: 12, color: "var(--text-muted)" }}>{c.fact}</div>
                 </div>
               </div>
-              <span style={{ fontSize: 12, fontWeight: 600, textAlign: "center" }}>{d.score.comment}</span>
-            </div>
-            <div style={{ display: "flex", flexDirection: "column", gap: 8, fontSize: 12 }}>
-              {(() => {
-                const sr = d.realSavRate;
-                const srPts = sr == null ? 0 : sr >= 50 ? 40 : sr >= 30 ? 30 : sr >= 20 ? 20 : sr >= 10 ? 10 : 0;
-                const zeroRatio = d.totalDays > 0 ? d.zeroDays / d.totalDays : 0;
-                const zPts = zeroRatio > 0.2 ? 20 : zeroRatio > 0.1 ? 10 : 0;
-                const iPts = d.pInvest > 0 ? 20 : 5;
-                const nDiv = d.incByCat.length;
-                const dPts = nDiv >= 5 ? 20 : nDiv >= 3 ? 15 : nDiv >= 2 ? 10 : 5;
-                const items = [
-                  { label: "실질 저축률", pts: srPts, max: 40, hint: `${sr == null ? "N/A" : `${sr.toFixed(0)}%`} (50%=만점)`, color: "var(--success)" },
-                  { label: "무지출 비율", pts: zPts, max: 20, hint: `${(zeroRatio * 100).toFixed(0)}% (20%=만점)`, color: "var(--accent)" },
-                  { label: "투자 활동", pts: iPts, max: 20, hint: d.pInvest > 0 ? "활성" : "없음", color: "var(--warning)" },
-                  { label: "수입 다양성", pts: dPts, max: 20, hint: `${nDiv}개 수입원 (5+=만점)`, color: "var(--danger)" },
-                ];
-                return items.map((it) => (
-                  <div key={it.label}>
-                    <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 3 }}>
-                      <span style={{ fontWeight: 600 }}>{it.label} <span style={{ color: "var(--text-faint)", fontWeight: 400, marginLeft: 4 }}>{it.hint}</span></span>
-                      <span style={{ fontWeight: 700 }}>{it.pts} / {it.max}</span>
-                    </div>
-                    <div style={{ height: 8, background: "var(--surface-hover)", borderRadius: 4, overflow: "hidden" }}>
-                      <div style={{ height: "100%", width: `${(it.pts / it.max) * 100}%`, background: it.color, transition: "width 0.4s" }} />
-                    </div>
-                  </div>
-                ));
-              })()}
+            ))}
+            <div style={{ fontSize: 11, color: "var(--text-faint)", lineHeight: 1.6 }}>
+              등급·점수는 매기지 않습니다. 기준선(20%·6개월·50%)은 흔히 쓰는 경험칙이며 개인 사정에 따라 다릅니다.
             </div>
           </div>
         </Card>
@@ -422,7 +447,7 @@ export const OverviewTab = React.memo(function OverviewTab({ d, bs }: { d: D; bs
               { label: "실질 저축률", value: d.realSavRate == null ? "N/A" : d.realSavRate.toFixed(1) + "%", sub: `${d.accumLabel} 기준`, color: d.realSavRate == null ? "var(--text-faint)" : d.realSavRate >= 30 ? "var(--success)" : d.realSavRate >= 0 ? "var(--warning)" : "var(--danger)", bg: "var(--accent-light)", border: "var(--border-light)" },
               { label: "지출/근로소득 비율", value: d.expToIncRatio.toFixed(1) + "%", sub: d.expToIncRatio > 80 ? "지출 비중 높음" : d.accumLabel, color: d.expToIncRatio > 80 ? "var(--danger)" : "var(--accent)", bg: "var(--bg)", border: "var(--border-light)" },
               { label: "패시브 수입", value: F(d.passiveIncome) + "원", sub: `${d.accumLabel} · 실질수입 대비 ${d.realIncome > 0 ? Math.round(SD(d.passiveIncome, d.realIncome) * 100) : 0}%`, color: "var(--success)", bg: "var(--success-light)", border: "var(--success)" },
-              { label: "일 평균 지출", value: F(d.dailyAvgExp) + "원", sub: `하루당 · ${d.totalDays}일 기준`, color: "var(--text)", bg: "var(--bg)", border: "var(--border-light)" },
+              { label: "일 평균 지출", value: F(d.dailyAvgExp) + "원", sub: `하루당 · 기록된 ${d.totalDays}일 기준`, color: "var(--text)", bg: "var(--bg)", border: "var(--border-light)" },
             ].map(m => (
               <div key={m.label} style={{ padding: "12px 14px", background: m.bg, borderRadius: 10, border: `1px solid ${m.border}`, textAlign: "center" }}>
                 <div style={{ fontSize: 11, color: "var(--text-muted)", marginBottom: 4, fontWeight: 600 }}>{m.label}</div>
@@ -433,7 +458,7 @@ export const OverviewTab = React.memo(function OverviewTab({ d, bs }: { d: D; bs
           </div>
           <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(150px, 1fr))", gap: 10, marginTop: 10 }}>
             {[
-              { label: "순현금흐름", value: F(d.netCashFlow) + "원", sub: `${d.accumLabel} · 근로소득−지출−투자`, color: d.netCashFlow >= 0 ? "var(--success)" : "var(--danger)" },
+              { label: "근로소득 잉여", value: F(d.salarySurplus) + "원", sub: `${d.accumLabel} · 근로소득−지출 · 재테크 ${F(d.pInvest)}${d.loanInflow > 0 ? ` (대출 유입 ${F(d.loanInflow)})` : ""}`, color: d.salarySurplus >= 0 ? "var(--success)" : "var(--danger)" },
               { label: "투자 수익률", value: d.investReturnRate !== 0 ? d.investReturnRate.toFixed(1) + "%" : "-", sub: "전 기간 · 실현손익 / 청산 매도원가", color: d.investReturnRate >= 0 ? "var(--success)" : "var(--danger)" },
               { label: "고정비", value: F(d.fixedExpense) + "원", sub: `${d.accumLabel} · 지출의 ${Math.round(SD(d.fixedExpense, d.pExpense) * 100)}%`, color: "var(--accent)" },
               { label: "변동비", value: F(d.variableExpense) + "원", sub: `${d.accumLabel} · 지출의 ${Math.round(SD(d.variableExpense, d.pExpense) * 100)}%`, color: "var(--warning)" },
@@ -465,10 +490,10 @@ export const OverviewTab = React.memo(function OverviewTab({ d, bs }: { d: D; bs
                     <span>비중: {s.share}%</span>
                     <span>건수: {s.count}건</span>
                     <span>건당 평균: {F(s.avg)}</span>
-                    <span>월평균: {F(s.monthAvg)}</span>
+                    <span title="지출이 있었던 완결 월만의 평균">발생월 평균: {F(s.monthAvg)} ({s.activeMonths}/{s.doneMonths}개월)</span>
                   </div>
                   <div style={{ marginTop: 4, fontSize: 11, color: s.monthTrend === "up" ? "var(--danger)" : s.monthTrend === "down" ? "var(--success)" : "var(--text-faint)", fontWeight: 600 }}>
-                    {s.monthTrend === "up" ? `▲ 전월 대비 ${s.mom}% 증가` : s.monthTrend === "down" ? `▼ 전월 대비 ${Math.abs(s.mom)}% 감소` : "전월과 유사"}
+                    {s.trendLabel}
                     {s.streakUp >= 2 && ` · ${s.streakUp}개월 연속 증가`}
                   </div>
                   <div style={{ marginTop: 6, fontSize: 11, color: "var(--text-muted)", lineHeight: 1.6, borderTop: "1px solid var(--border-light)", paddingTop: 6 }}>
@@ -481,61 +506,44 @@ export const OverviewTab = React.memo(function OverviewTab({ d, bs }: { d: D; bs
         )}
       </Section>
 
-      {/* ============ SECTION 4: 종합 인사이트 ============ */}
+      {/* ============ SECTION 4: 종합 인사이트 ============
+          사실·대조만. 예전 문단은 "ETF 적립식 투자를 시작해 보세요", "무지출 챌린지", "부업으로 다각화" 같은
+          누구에게나 같은 조언과, 대출·용돈까지 센 "14개 수입원" 같은 숫자를 붙였다. */}
       <Section storageKey="overview-section-insights" title="종합 인사이트" defaultOpen={false}>
         <Card title="종합 인사이트" span={4}>
           <div className="grid-2" style={{ gap: 12 }}>
-            <Insight title="실질 저축률 분석" tone="success">
+            <Insight title="실질 저축률" tone="success">
               {d.realSavRate == null
                 ? "실질 수입이 없어 저축률을 계산할 수 없습니다 (N/A)."
-                : d.realSavRate >= 30
-                ? `실질 저축률 ${d.realSavRate.toFixed(0)}%로 매우 건강한 수준입니다. 실질 수입 ${F(d.realIncome)} 중 ${F(Math.round(d.netProfit))}을 저축하고 있습니다. 이 속도라면 연간 약 ${F(Math.round(d.netProfit * 12 / d.monthSpan))} 이상 자산 증가가 가능합니다.`
-                : d.realSavRate >= 0
-                ? `실질 저축률 ${d.realSavRate.toFixed(0)}%로 개선 여지가 있습니다. 30% 이상을 목표로 월 ${F(Math.round(d.realExpense * 0.1))} 정도 추가 절약하면 장기적으로 큰 차이를 만들 수 있습니다.`
-                : `마이너스 실질 저축률! 실질 수입보다 지출이 ${F(d.realExpense - d.realIncome)} 더 많습니다. 고정비와 변동비를 점검하고, 상위 지출 카테고리부터 줄여보세요.`}
+                : `${d.accumLabel} 실질 수입 ${F(d.realIncome)}원 − 실질 지출 ${F(d.realExpense)}원 = ${d.netProfit >= 0 ? "+" : "−"}${F(Math.abs(d.netProfit))}원 (저축률 ${d.realSavRate.toFixed(1)}%). 월평균 ${d.netProfit >= 0 ? "+" : "−"}${F(Math.abs(Math.round(SD(d.netProfit, d.monthSpan))))}원.`}
             </Insight>
-            <Insight title="지출 집중도 분석" tone="warning">
-              상위 3개 중분류({top3Sub.map(s => s.sub).join(", ")})가 전체 지출의 {top3pct}%를 차지합니다.
-              {top3pct > 70 ? ` 지출이 소수 카테고리에 집중되어 있어 해당 항목의 절약이 전체 지출 감소에 큰 효과를 줍니다. 특히 1위 ${top3Sub[0]?.sub}(${F(top3Sub[0]?.amount ?? 0)})에 집중해 보세요.` : ` 비교적 골고루 분산되어 있어 특정 항목보다 전반적인 소비 습관 개선이 효과적입니다.`}
-              {top3Sub[0] && d.pExpense > 0 && ` 1위 ${top3Sub[0].sub}만 10% 줄여도 월 ${F(Math.round(top3Sub[0].amount * 0.1 / d.monthSpan))} 절약.`}
+            <Insight title="지출 집중도" tone="warning">
+              {top3Sub.length > 0
+                ? `상위 3개 중분류(${top3Sub.map(s => `${s.sub} ${F(s.amount)}원`).join(", ")})가 지출의 ${top3pct}%.`
+                : "지출 기록 없음."}
             </Insight>
-            <Insight title="투자 현황" tone="info">
-              {d.pSalary > 0
-                ? `근로소득 대비 투자 비율 ${Math.round(d.pInvest / d.pSalary * 100)}%. 총 ${F(d.pInvest)}를 투자에 할당했습니다.`
-                : ""}
+            <Insight title="재테크 재원" tone="info">
               {d.pInvest > 0
-                ? ` 월평균 ${F(Math.round(d.pInvest / d.monthSpan))} 투자. ${d.pInvest / Math.max(d.pSalary, 1) > 0.2 ? "적극적으로 투자하고 있어 장기적 자산 성장이 기대됩니다." : "투자 비중을 근로소득의 20% 이상으로 높이면 복리 효과가 커집니다."}`
-                : " 투자 활동이 없습니다. 소액이라도 ETF 적립식 투자를 시작해 보세요."}
+                ? `재테크(순) ${F(d.pInvest)}원 · 근로소득 잉여 ${d.salarySurplus >= 0 ? "+" : "−"}${F(Math.abs(d.salarySurplus))}원${d.loanInflow > 0 ? ` · 대출 유입 ${F(d.loanInflow)}원` : ""}.${d.pInvest > Math.max(0, d.salarySurplus) ? ` 잉여보다 ${F(d.pInvest - Math.max(0, d.salarySurplus))}원 더 투자 — 대출·용돈·기존 자산이 채운 몫입니다.` : ""}`
+                : "기간 내 재테크 기록이 없습니다."}
             </Insight>
-            <Insight title="소비 습관" color="var(--chart-series-c)" bg="rgba(139,92,246,0.08)">
-              {d.zeroDays > 0 ? `${d.totalDays}일 중 ${d.zeroDays}일 무지출 달성 (${Math.round(d.zeroDays / Math.max(d.totalDays, 1) * 100)}%).` : "무지출일이 없습니다."}
+            <Insight title="소비 타이밍" color="var(--chart-series-c)" bg="var(--accent-light)">
+              {d.totalDays > 0 ? `기록된 ${d.totalDays}일 중 ${d.zeroDays}일 무지출 (${Math.round(d.zeroDays / d.totalDays * 100)}%).` : "기록된 날이 없습니다."}
               {d.weekendTot + d.weekdayTot > 0 && ` 주말 지출 ${Math.round(d.weekendTot / (d.weekendTot + d.weekdayTot) * 100)}%, 주중 ${Math.round(d.weekdayTot / (d.weekendTot + d.weekdayTot) * 100)}%.`}
-              {d.zeroDays > d.totalDays * 0.2 ? " 무지출 비율이 높아 소비 통제력이 좋습니다!" : d.zeroDays > 0 ? " 무지출일을 더 늘려보세요. 주 1~2일 무지출 챌린지를 추천합니다." : " 주 1일이라도 무지출 챌린지를 시작해 보세요."}
-              {d.pExpense > 0 && ` 일 평균 지출 ${F(d.dailyAvgExp)}.`}
+              {d.pExpense > 0 && ` 일 평균 ${F(d.dailyAvgExp)}원.`}
             </Insight>
             {d.prev && (
-              <Insight title={d.prev.partialDay != null ? `전월 동기(1~${d.prev.partialDay}일) 대비 변화` : "전월 대비 변화"} tone="info">
-                근로소득 {d.pSalary >= d.prev.salary ? "+" : ""}{F(d.pSalary - d.prev.salary)} ({d.prev.salary > 0 ? Pct((d.pSalary - d.prev.salary) / d.prev.salary * 100) : "N/A"}),
-                지출 {d.pExpense >= d.prev.expense ? "+" : ""}{F(d.pExpense - d.prev.expense)} ({d.prev.expense > 0 ? Pct((d.pExpense - d.prev.expense) / d.prev.expense * 100) : "N/A"}).
-                {d.pExpense > d.prev.expense ? ` 지출이 ${F(d.pExpense - d.prev.expense)} 증가했습니다. 어떤 카테고리에서 증가했는지 지출 분석 탭에서 확인하세요.` : ` 기록된 지출이 ${F(d.prev.expense - d.pExpense)} 감소했습니다. 결제 시점 변경이나 미입력 거래도 확인하세요.`}
+              <Insight title={d.prev.partialDay != null ? `전월 동기(${capText(d.prev.partialDay)}) 대비` : "전월 대비"} tone="info">
+                {`근로소득 ${d.pSalary >= d.prev.salary ? "+" : "−"}${F(Math.abs(d.pSalary - d.prev.salary))}원${d.prev.salary > 0 ? ` (${Pct((d.pSalary - d.prev.salary) / d.prev.salary * 100)})` : ""}, 지출 ${d.pExpense >= d.prev.expense ? "+" : "−"}${F(Math.abs(d.pExpense - d.prev.expense))}원${d.prev.expense > 0 ? ` (${Pct((d.pExpense - d.prev.expense) / d.prev.expense * 100)})` : ""}. 항목별 원인은 중분류 카드의 건수·건당 분해를 보세요.`}
               </Insight>
             )}
-            <Insight title="수입 다각화" tone="danger">
-              {d.incByCat.length}개 수입원 보유.
-              {d.incByCat.length >= 5 ? " 수입 다각화가 잘 되어 있습니다. 하나의 수입원이 줄어도 타격이 적습니다." : d.incByCat.length >= 3 ? " 수입원이 적당히 분산되어 있습니다." : " 수입원이 1~2개로 집중되어 있어 리스크가 있습니다. 부업이나 투자 수입을 늘려보세요."}
-              {d.incByCat[0] && d.pIncome > 0 && ` 최대 수입원: ${d.incByCat[0][0]}(${Math.round(SD(d.incByCat[0][1], d.pIncome) * 100)}%).`}
+            <Insight title="수입원" tone="danger">
+              {realSources.length > 0
+                ? `실질 수입원 ${realSources.length}개 (대출·용돈·정산 제외). 최대: ${realSources[0].sub} ${F(realSources[0].total)}원${realSources[0].realShare != null ? ` (실질 수입의 ${realSources[0].realShare}%)` : ""}.`
+                : "실질 수입 기록이 없습니다."}
             </Insight>
-            <Insight title="순수익 분석" tone="success">
-              순수익(실질수입-실질지출) {d.netProfit >= 0 ? "+" : ""}{F(d.netProfit)}.
-              {d.netProfit > 0
-                ? ` 매월 평균 ${F(Math.round(SD(d.netProfit, d.monthSpan)))} 흑자 구조입니다. 연간 환산 시 약 ${F(Math.round(d.netProfit * SD(12, d.monthSpan)))} 순자산 증가가 예상됩니다.`
-                : ` 적자 상태입니다. 매월 ${F(Math.abs(Math.round(SD(d.netProfit, d.monthSpan))))}씩 자산이 감소하고 있습니다. 고정비 점검이 시급합니다.`}
-              {d.pInvest > 0 && d.netProfit > 0 ? ` 투자(${F(d.pInvest)})를 포함하면 실질 자산배분 여력이 충분합니다.` : ""}
-            </Insight>
-            <Insight title="고정비 · 변동비 · 재량" color="var(--chart-series-c)" bg="rgba(124,58,237,0.06)">
-              고정비 {F(d.fixedExpense)} ({Math.round(SD(d.fixedExpense, d.pExpense) * 100)}%), 변동비 {F(d.variableExpense)} ({Math.round(SD(d.variableExpense, d.pExpense) * 100)}%), 재량 {F(d.discretionaryExpense)} ({Math.round(SD(d.discretionaryExpense, d.pExpense) * 100)}%).
-              {SD(d.fixedExpense, d.pExpense) > 0.5 ? " 고정비 비중이 50%를 초과합니다. 통신비, 구독, 보험 등 재협상 가능한 항목을 점검하세요." : SD(d.discretionaryExpense, d.pExpense) > 0.3 ? " 재량 지출(외식·여가·데이트) 비중이 30%를 넘습니다. 줄이기 쉬운 항목부터 예산을 잡아보세요." : SD(d.fixedExpense, d.pExpense) > 0.3 ? " 고정비와 변동비가 균형 잡혀 있습니다." : " 변동비 비중이 높아 지출 통제 여지가 큽니다. 예산 관리로 효과적인 절약이 가능합니다."}
-              {d.subTotal > 0 ? ` 구독 비용만 ${F(d.subTotal)}로 근로소득 대비 ${(SD(d.subTotal, d.pSalary) * 100).toFixed(1)}%.` : ""}
+            <Insight title="고정비 · 변동비 · 재량" color="var(--chart-series-c)" bg="var(--accent-light)">
+              {`고정비 ${F(d.fixedExpense)}원 (${Math.round(SD(d.fixedExpense, d.pExpense) * 100)}%), 변동비 ${F(d.variableExpense)}원 (${Math.round(SD(d.variableExpense, d.pExpense) * 100)}%), 재량 ${F(d.discretionaryExpense)}원 (${Math.round(SD(d.discretionaryExpense, d.pExpense) * 100)}%).${d.subTotal > 0 && d.pSalary > 0 ? ` 구독 ${F(d.subTotal)}원 = 근로소득의 ${(SD(d.subTotal, d.pSalary) * 100).toFixed(1)}%.` : ""}`}
             </Insight>
           </div>
         </Card>

@@ -125,6 +125,24 @@ describe("generateComprehensiveMonthlyReport — 지출 분류", () => {
     expect(rows[0].savingsExpense).toBe(0);
   });
 
+  it("현행 저축·투자 이체(transfer 저축이체/투자이체·레거시 저축/투자)도 저축성지출 — 일반 이체는 제외", () => {
+    // 실데이터 회귀: 청년도약 70만(transfer 저축이체)이 있는데 리포트 저축성지출이 0원으로 나왔다.
+    // 일별 리포트(closing.ts)는 isInvestmentEntry로 이미 세고 있어 월간만 빠졌던 것.
+    const accounts = [account({ id: "nh" }), account({ id: "youth", type: "savings" })];
+    const ledger = [
+      entry({ id: "t1", kind: "transfer", category: "이체", subCategory: "저축이체", amount: 700_000, fromAccountId: "nh", toAccountId: "youth" }),
+      entry({ id: "t2", kind: "transfer", category: "이체", subCategory: "투자이체", amount: 300_000, fromAccountId: "nh", toAccountId: "youth" }),
+      entry({ id: "t3", kind: "transfer", category: "이체", subCategory: "저축", amount: 50_000, fromAccountId: "nh", toAccountId: "youth" }),
+      entry({ id: "t4", kind: "transfer", category: "이체", subCategory: "계좌이체", amount: 999_000, fromAccountId: "nh", toAccountId: "youth" }),
+    ];
+    const rows = generateComprehensiveMonthlyReport(ledger, [], accounts, "2026-01", "2026-01");
+    expect(rows[0].savingsExpense).toBe(1_050_000);
+    // 이체는 여전히 이체 총액에도 잡히고, 장부 지출(expense 기록 합)에는 섞이지 않는다
+    expect(rows[0].transferTotal).toBe(2_049_000);
+    expect(rows[0].totalExpense).toBe(0);
+    expect(rows[0].livingExpense).toBe(0);
+  });
+
   it("대출상환은 loanRepayment에만 집계 — livingExpense에 이중 가산되지 않음", () => {
     const ledger = [
       entry({ id: "e1", category: "지출", subCategory: "대출상환", detailCategory: "학자금대출", amount: 300_000 }),

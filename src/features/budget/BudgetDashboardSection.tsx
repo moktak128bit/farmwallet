@@ -38,6 +38,8 @@ export const BudgetDashboardSection: React.FC<Props> = React.memo(function Budge
   const [year, month1, dayOfMonth] = today.split("-").map(Number); // month1: 1-based
   const daysInMonth = getLastDayOfMonth(year, month1);
   const daysRemaining = daysInMonth - dayOfMonth;
+  // 페이스의 비교·예상 기준일(마지막 기록일) — 오늘보다 이르면 그 사실을 밝힌다
+  const recordedDay = budgetUsage[0]?.pace.elapsedDays ?? null;
 
   // '전체' 예산은 이미 모든 개별 카테고리를 포함 → 둘을 합치면 이중계상.
   // '전체' 예산이 있으면 그것을 총괄로, 없으면 개별 예산의 합을 총괄로 사용.
@@ -81,6 +83,7 @@ export const BudgetDashboardSection: React.FC<Props> = React.memo(function Budge
           </span>
           <span style={{ fontSize: 13, color: "var(--text-muted, #888)" }}>
             {daysRemaining}일 남음 ({dayOfMonth}/{daysInMonth}일차)
+            {recordedDay != null && recordedDay < dayOfMonth && ` · 비교·예상은 기록된 ${recordedDay}일까지 기준`}
           </span>
         </div>
 

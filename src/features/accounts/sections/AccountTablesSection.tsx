@@ -340,7 +340,7 @@ export const AccountTablesSection: React.FC<Props> = React.memo(function Account
                     style={{ padding: "4px", fontSize: "13px", width: "100%", textAlign: "right" }}
                   />
                 ) : (
-                  <span style={{ fontWeight: 500, color: usdBalance >= 0 ? "var(--primary)" : "var(--danger)" }}>
+                  <span style={{ fontWeight: 500, color: usdBalance > -0.0005 ? "var(--primary)" : "var(--danger)" }}>
                     {formatUSD(usdBalance)}
                   </span>
                 )}
@@ -351,12 +351,12 @@ export const AccountTablesSection: React.FC<Props> = React.memo(function Account
                 title="KRW 잔액 (원장에서 자동 반영)"
                 className="number"
               >
-                <span style={{ fontWeight: 500, color: krwBalance >= 0 ? "var(--primary)" : "var(--danger)" }}>
+                <span style={{ fontWeight: 500, color: krwBalance > -0.5 ? "var(--primary)" : "var(--danger)" }}>
                   {formatKRW(krwBalance)}
                 </span>
               </td>
               {/* 주식자산 */}
-              <td className={`number ${stockAsset >= 0 ? "positive" : "negative"}`}>
+              <td className={`number ${stockAsset > -0.5 ? "positive" : "negative"}`}>
                 <div>{formatKRW(stockAsset)}</div>
                 {stockAssetUSD != null && (
                   <div style={{ fontSize: "11px", color: "var(--text-muted)", marginTop: "2px" }}>
@@ -365,7 +365,7 @@ export const AccountTablesSection: React.FC<Props> = React.memo(function Account
                 )}
               </td>
               {/* 현금자산 (주식 제외) */}
-              <td className={`number ${cashAsset >= 0 ? "positive" : "negative"}`}>
+              <td className={`number ${cashAsset > -0.5 ? "positive" : "negative"}`}>
                 <div>{formatKRW(cashAsset)}</div>
                 {cashAssetUSD != null && (
                   <div style={{ fontSize: "11px", color: "var(--text-muted)", marginTop: "2px" }}>
@@ -374,7 +374,7 @@ export const AccountTablesSection: React.FC<Props> = React.memo(function Account
                 )}
               </td>
               {/* 총 자산 */}
-              <td className={`number ${totalAsset >= 0 ? "positive" : "negative"}`}>
+              <td className={`number ${totalAsset > -0.5 ? "positive" : "negative"}`}>
                 <div>{formatKRW(totalAsset)}</div>
                 {totalAssetUSD != null && (
                   <div style={{ fontSize: "11px", color: "var(--text-muted)", marginTop: "2px" }}>
@@ -436,7 +436,7 @@ export const AccountTablesSection: React.FC<Props> = React.memo(function Account
         const cashAsset = row.currentBalance;
 
         return (
-          <td className={`number ${cashAsset >= 0 ? "positive" : "negative"}`}>
+          <td className={`number ${cashAsset > -0.5 ? "positive" : "negative"}`}>
             {formatAmount(cashAsset)}
           </td>
         );
@@ -581,14 +581,16 @@ export const AccountTablesSection: React.FC<Props> = React.memo(function Account
 
                     return (
                       <tr key="total" style={{ backgroundColor: "var(--bg)", fontWeight: "bold", borderTop: "2px solid var(--border)" }}>
-                        <td colSpan={4} style={{ textAlign: "right", padding: "12px" }}>합계</td>
-                        <td className={`number ${totalUsdBalance >= 0 ? "positive" : "negative"}`}>
+                        {/* 모바일에서 숨는 열(순서·계좌 ID)은 따로 — colSpan이 숨은 열까지 세면 합계가 한 칸씩 밀린다 */}
+                        <td colSpan={2} className="col-hide-mobile" />
+                        <td colSpan={2} style={{ textAlign: "right", padding: "12px" }}>합계</td>
+                        <td className={`number ${totalUsdBalance > -0.0005 ? "positive" : "negative"}`}>
                           {formatUSD(totalUsdBalance)}
                         </td>
-                        <td className={`number ${totalKrwBalance >= 0 ? "positive" : "negative"}`}>
+                        <td className={`number ${totalKrwBalance > -0.5 ? "positive" : "negative"}`}>
                           {formatKRW(totalKrwBalance)}
                         </td>
-                        <td className={`number ${totalStock >= 0 ? "positive" : "negative"}`}>
+                        <td className={`number ${totalStock > -0.5 ? "positive" : "negative"}`}>
                           <div>{formatKRW(totalStock)}</div>
                           {totalStockUSD != null && (
                             <div style={{ fontSize: "11px", color: "var(--text-muted)", marginTop: "2px" }}>
@@ -596,7 +598,7 @@ export const AccountTablesSection: React.FC<Props> = React.memo(function Account
                             </div>
                           )}
                         </td>
-                        <td className={`number ${totalCash >= 0 ? "positive" : "negative"}`}>
+                        <td className={`number ${totalCash > -0.5 ? "positive" : "negative"}`}>
                           <div>{formatKRW(totalCash)}</div>
                           {totalCashUSD != null && (
                             <div style={{ fontSize: "11px", color: "var(--text-muted)", marginTop: "2px" }}>
@@ -604,7 +606,7 @@ export const AccountTablesSection: React.FC<Props> = React.memo(function Account
                             </div>
                           )}
                         </td>
-                        <td className={`number ${totalAsset >= 0 ? "positive" : "negative"}`}>
+                        <td className={`number ${totalAsset > -0.5 ? "positive" : "negative"}`}>
                           <div>{formatKRW(totalAsset)}</div>
                           {totalAssetUSD != null && (
                             <div style={{ fontSize: "11px", color: "var(--text-muted)", marginTop: "2px" }}>
@@ -622,7 +624,9 @@ export const AccountTablesSection: React.FC<Props> = React.memo(function Account
                     }, 0);
                     return (
                       <tr key="total" style={{ backgroundColor: "var(--bg)", fontWeight: "bold", borderTop: "2px solid var(--border)" }}>
-                        <td colSpan={5} style={{ textAlign: "right", padding: "12px" }}>합계</td>
+                        <td colSpan={2} className="col-hide-mobile" />
+                        <td colSpan={2} style={{ textAlign: "right", padding: "12px" }}>합계</td>
+                        <td className="col-hide-mobile" />
                         <td className="number" style={{ whiteSpace: "nowrap" }}>
                           {net > 0 ? (
                             <div className="negative">부채 {formatKRW(Math.round(net))}</div>
@@ -642,8 +646,10 @@ export const AccountTablesSection: React.FC<Props> = React.memo(function Account
                     }, 0);
                     return (
                       <tr key="total" style={{ backgroundColor: "var(--bg)", fontWeight: "bold", borderTop: "2px solid var(--border)" }}>
-                        <td colSpan={5} style={{ textAlign: "right", padding: "12px" }}>합계</td>
-                        <td className={`number ${sumCurrentBalanceByType >= 0 ? "positive" : "negative"}`}>
+                        <td colSpan={2} className="col-hide-mobile" />
+                        <td colSpan={2} style={{ textAlign: "right", padding: "12px" }}>합계</td>
+                        <td className="col-hide-mobile" />
+                        <td className={`number ${sumCurrentBalanceByType > -0.5 ? "positive" : "negative"}`}>
                           {formatKRW(Math.round(sumCurrentBalanceByType))}
                         </td>
                         <td></td>

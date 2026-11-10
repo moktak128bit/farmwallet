@@ -669,10 +669,12 @@ export const TradeHistorySection: React.FC<TradeHistorySectionProps> = ({
   // isUSDStock(ticker)만 쓰면 ticker가 인식 안 되는 USD 거래(fxRateAtTrade·가격으로만 USD)가 KRW 합계로 섞인다.
   const {
     krwBuyAmount, krwSellAmount, krwFee, krwRealizedPnl,
-    usdBuyAmount, usdSellAmount, usdFee, usdRealizedPnl,
+    usdBuyAmount, usdSellAmount, usdFee, usdRealizedPnl, usdRealizedPnlKrw, usdUnconverted,
   } = useMemo(() => {
     let krwBuyAmount = 0, krwSellAmount = 0, krwFee = 0, krwRealizedPnl = 0;
     let usdBuyAmount = 0, usdSellAmount = 0, usdFee = 0, usdRealizedPnl = 0;
+    // 달러 실현손익의 원화 환산 — 매도 당시 환율 우선, 없으면 현재 환율. 둘 다 없으면 환산 불가 건수로 센다.
+    let usdRealizedPnlKrw = 0, usdUnconverted = 0;
     for (const t of tradesFiltered) {
       const priceInfo = latestPriceByCanonicalTicker.get(canonicalTickerForMatch(t.ticker));
       const isUsd = inferTradeCurrency(t, priceInfo?.currency) === "USD";
@@ -681,7 +683,11 @@ export const TradeHistorySection: React.FC<TradeHistorySectionProps> = ({
         if (t.side === "buy") usdBuyAmount += t.totalAmount;
         else {
           usdSellAmount += t.totalAmount;
-          usdRealizedPnl += realizedPnlByTradeId.get(t.id) ?? 0;
+          const pnlUsd = realizedPnlByTradeId.get(t.id) ?? 0;
+          usdRealizedPnl += pnlUsd;
+          const rate = plausibleUsdKrw(t.fxRateAtTrade) ?? (fxRate && fxRate > 0 ? fxRate : null);
+          if (rate != null) usdRealizedPnlKrw += pnlUsd * rate;
+          else if (pnlUsd !== 0) usdUnconverted += 1;
         }
       } else {
         krwFee += t.fee;
@@ -694,9 +700,10 @@ export const TradeHistorySection: React.FC<TradeHistorySectionProps> = ({
     }
     return {
       krwBuyAmount, krwSellAmount, krwFee, krwRealizedPnl,
-      usdBuyAmount, usdSellAmount, usdFee, usdRealizedPnl,
+      usdBuyAmount, usdSellAmount, usdFee, usdRealizedPnl, usdRealizedPnlKrw, usdUnconverted,
     };
-  }, [tradesFiltered, latestPriceByCanonicalTicker, realizedPnlByTradeId]);
+  }, [tradesFiltered, latestPriceByCanonicalTicker, realizedPnlByTradeId, fxRate]);
+  const totalRealizedKrw = krwRealizedPnl + usdRealizedPnlKrw;
 
   return (
     <>
@@ -798,6 +805,15 @@ export const TradeHistorySection: React.FC<TradeHistorySectionProps> = ({
                 </span>
               </div>
             </>
+          )}
+          {usdBuyAmount + usdSellAmount + usdFee > 0 && krwBuyAmount + krwSellAmount + krwFee > 0 && (
+            <div title="원화 실현손익 + 달러 실현손익 × 매도 당시 환율(없으면 현재 환율)">
+              <span style={{ color: "var(--text-muted)", marginRight: 8 }}>실현 손익 합계 (원화 환산):</span>
+              <strong className={totalRealizedKrw >= 0 ? "positive" : "negative"}>
+                {totalRealizedKrw >= 0 ? "+" : ""}{formatKRW(Math.round(totalRealizedKrw))}
+              </strong>
+              {usdUnconverted > 0 && <span style={{ color: "var(--text-muted)", fontSize: 12 }}> · 환율 없는 {usdUnconverted}건 제외</span>}
+            </div>
           )}
         </div>
       </div>

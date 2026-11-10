@@ -15,7 +15,7 @@ import type {
   MonthlyReport,
   StockPerformanceReport
 } from "../../utils/reportGenerator";
-import { formatKRW } from "../../utils/formatter";
+import { formatKRW, formatKrwCompact } from "../../utils/formatter";
 import {
   DateRangePicker,
   MonthRangePicker,
@@ -50,6 +50,9 @@ export const BasicReportTables: React.FC<Props> = React.memo(function BasicRepor
   setStartDate,
   setEndDate
 }) {
+  // 주식 성과 표의 계좌 열 — 같은 종목이 계좌마다 한 줄씩 나오므로 어느 계좌인지 밝힌다
+  const accountNameById = React.useMemo(() => new Map(accountReport.map((r) => [r.accountId, r.accountName])), [accountReport]);
+
   /** 빈 데이터 안내 문구 — 기간 선택은 유지한 채 표/차트 대신 표시 */
   const emptyHint = (
     <p className="hint" style={{ padding: 24, textAlign: "center", color: "var(--text-muted)" }}>
@@ -76,7 +79,7 @@ export const BasicReportTables: React.FC<Props> = React.memo(function BasicRepor
           <BarChart data={monthlyReport}>
             <CartesianGrid strokeDasharray="3 3" />
             <XAxis dataKey="month" />
-            <YAxis />
+            <YAxis tickFormatter={(v: number) => formatKrwCompact(v)} width={64} />
             <Tooltip formatter={(value: number | undefined) => formatKRW(value ?? 0)} />
             <Legend />
             <Bar isAnimationActive={false} dataKey="income" fill="var(--chart-income)" name="수입" />
@@ -209,6 +212,7 @@ export const BasicReportTables: React.FC<Props> = React.memo(function BasicRepor
               <tr>
                 <th>종목코드</th>
                 <th>종목명</th>
+                <th>계좌</th>
                 <th className="number">현재가치</th>
                 <th className="number">손익</th>
                 <th className="number">IRR</th>
@@ -219,6 +223,7 @@ export const BasicReportTables: React.FC<Props> = React.memo(function BasicRepor
                 <tr key={`${row.accountId}-${row.ticker}`}>
                   <td>{row.ticker}</td>
                   <td>{row.name}</td>
+                  <td>{accountNameById.get(row.accountId) ?? row.accountId}</td>
                   <td className="number">{formatKRW(row.currentValue)}</td>
                   <td className={`number ${row.pnl >= 0 ? "positive" : "negative"}`}>{formatKRW(row.pnl)}</td>
                   {/* IRR 계산 불가(null)는 손실이 아님 — 중립색 "-" */}
@@ -251,7 +256,7 @@ export const BasicReportTables: React.FC<Props> = React.memo(function BasicRepor
               <tr>
                 <th>계좌명</th>
                 <th className="number">초기잔액</th>
-                <th className="number">현재잔액</th>
+                <th className="number">현재 현금잔액</th>
                 <th className="number">변동</th>
                 <th className="number">변동률</th>
               </tr>
@@ -259,15 +264,18 @@ export const BasicReportTables: React.FC<Props> = React.memo(function BasicRepor
             <tbody>
               {accountReport.map((row) => (
                 <tr key={row.accountId}>
-                  <td>{row.accountName}</td>
+                  <td>{row.accountName}{row.cashOnly && <span style={{ fontSize: 12, color: "var(--text-muted)" }}> (예수금만)</span>}</td>
                   <td className="number">{formatKRW(row.initialBalance)}</td>
                   <td className="number">{formatKRW(row.currentBalance)}</td>
                   <td className={`number ${row.change >= 0 ? "positive" : "negative"}`}>{formatKRW(row.change)}</td>
-                  <td className={`number ${row.changeRate >= 0 ? "positive" : "negative"}`}>{row.changeRate.toFixed(2)}%</td>
+                  <td className={`number ${row.changeRate == null ? "" : row.changeRate >= 0 ? "positive" : "negative"}`}>{row.changeRate == null ? "—" : `${row.changeRate.toFixed(2)}%`}</td>
                 </tr>
               ))}
             </tbody>
           </table>
+        </div>
+        <div className="hint" style={{ fontSize: 12, marginTop: 6 }}>
+          증권·코인 계좌의 현재 잔액은 예수금(현금)만입니다 — 보유 종목 평가액은 성과 분석·투자 정산을 보세요. 초기잔액이 10만 원 미만이면 변동률은 "—"로 둡니다.
         </div>
       </div>
     );
@@ -291,7 +299,7 @@ export const BasicReportTables: React.FC<Props> = React.memo(function BasicRepor
         <LineChart data={dailyReport}>
           <CartesianGrid strokeDasharray="3 3" />
           <XAxis dataKey="date" />
-          <YAxis />
+          <YAxis tickFormatter={(v: number) => formatKrwCompact(v)} width={64} />
           <Tooltip formatter={(value: number | undefined) => formatKRW(value ?? 0)} />
           <Legend />
           <Line isAnimationActive={false} type="monotone" dataKey="totalAsset" name="총 자산" stroke="#6366f1" />

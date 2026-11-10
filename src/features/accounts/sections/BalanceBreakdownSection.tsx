@@ -89,6 +89,8 @@ export const BalanceBreakdownSection: React.FC<Props> = React.memo(function Bala
       <button
         type="button"
         onClick={() => setShowBalanceBreakdown((v) => !v)}
+        aria-expanded={showBalanceBreakdown}
+        aria-controls="balance-breakdown-body"
         style={{
           width: "100%",
           display: "flex",
@@ -104,11 +106,11 @@ export const BalanceBreakdownSection: React.FC<Props> = React.memo(function Bala
           textAlign: "left"
         }}
       >
-        {showBalanceBreakdown ? <ChevronDown size={18} /> : <ChevronRight size={18} />}
+        {showBalanceBreakdown ? <ChevronDown size={18} aria-hidden /> : <ChevronRight size={18} aria-hidden />}
         계좌별 잔액 구성
       </button>
       {showBalanceBreakdown && (
-        <div style={{ padding: "0 20px 20px" }}>
+        <div id="balance-breakdown-body" style={{ padding: "0 20px 20px" }}>
           <p style={{ margin: "0 0 16px", fontSize: 13, color: "var(--text-muted)" }}>
             각 계좌의 현재 잔액이 어떻게 구성되었는지 항목별로 보여줍니다.
           </p>

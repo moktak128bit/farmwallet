@@ -6,6 +6,7 @@
  * 구분해 완료된 달과 나란히 놓여도 "역대 최고"처럼 오해되지 않게 한다. 정확한 숫자는 details 표로 유지.
  * React.memo로 감싸 표시 자료와 무관한 부모 상태 변경 시 재렌더를 건너뛴다.
  */
+import { getThisMonthKST } from "../../utils/date";
 import React from "react";
 import {
   Bar,
@@ -121,6 +122,37 @@ const MonthlyTooltip: React.FC<MonthlyTooltipProps> = ({ active, payload }) => {
   );
 };
 
+/**
+ * 최근 '완료' 월과 진행 중인 이번 달을 분리 — 11월 9일에 "최근 월 배당"이 11월(진행 중) 값이면
+ * 아직 덜 받은 달이 완료월처럼 보인다(CLAUDE.md #13).
+ */
+function splitRecentMonth(rows: Array<{ month: string; total: number }>): {
+  done: { month: string; total: number } | null;
+  current: { month: string; total: number } | null;
+} {
+  const thisMonth = getThisMonthKST();
+  const sorted = [...rows].sort((a, b) => b.month.localeCompare(a.month));
+  return {
+    done: sorted.find((r) => r.month < thisMonth) ?? null,
+    current: sorted.find((r) => r.month === thisMonth) ?? null,
+  };
+}
+
+const RecentMonthCard: React.FC<{ label: string; rows: Array<{ month: string; total: number }> }> = ({ label, rows }) => {
+  const { done, current } = splitRecentMonth(rows);
+  return (
+    <div className="card">
+      <div className="card-title">최근 완료 월 {label}{done ? ` (${done.month})` : ""}</div>
+      <div className="card-value">{formatKRW(Math.round(done?.total ?? 0))}</div>
+      {current && (
+        <div className="hint" style={{ fontSize: 12, marginTop: 4 }}>
+          이번 달(진행 중) {formatKRW(Math.round(current.total))}
+        </div>
+      )}
+    </div>
+  );
+};
+
 export const IncomeSummarySection: React.FC<Props> = React.memo(function IncomeSummarySection({
   tab,
   totalDividend,
@@ -142,12 +174,7 @@ export const IncomeSummarySection: React.FC<Props> = React.memo(function IncomeS
                 {formatKRW(Math.round(totalDividend))}
               </div>
             </div>
-            <div className="card">
-              <div className="card-title">최근 월 배당</div>
-              <div className="card-value">
-                {formatKRW(Math.round(monthlyDividendTotal[0]?.total ?? 0))}
-              </div>
-            </div>
+            <RecentMonthCard label="배당" rows={monthlyDividendTotal} />
           </>
         )}
         {tab === "interest" && (
@@ -158,12 +185,7 @@ export const IncomeSummarySection: React.FC<Props> = React.memo(function IncomeS
                 {formatKRW(Math.round(totalInterest))}
               </div>
             </div>
-            <div className="card">
-              <div className="card-title">최근 월 이자</div>
-              <div className="card-value">
-                {formatKRW(Math.round(monthlyInterestTotal[0]?.total ?? 0))}
-              </div>
-            </div>
+            <RecentMonthCard label="이자" rows={monthlyInterestTotal} />
           </>
         )}
       </div>

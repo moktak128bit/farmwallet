@@ -480,6 +480,11 @@ export interface AppData {
   dailyBudget?: DailyBudgetConfig;
   /** 이름 있는 저축 목표 (예산 탭). 진행률은 utils/savingsGoalProgress 단일 소스 (3-7) */
   savingsGoals?: SavingsGoal[];
+  /**
+   * 데이트통장 계좌 id — 그 계좌 지출은 50:50 분담(실질 지출 = 50%). 시트와 함께 동기화되는 장부 설정.
+   * undefined = 아직 설정 안 함(경고 대상), "" = 명시적으로 "선택 안 함". (예전엔 기기 localStorage에만 있어 새 기기에서 빠졌다)
+   */
+  dateAccountId?: string;
 }
 
 /**

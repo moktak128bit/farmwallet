@@ -1,6 +1,6 @@
 import { useEffect, useState, useCallback, useRef } from "react";
 import { toast } from "react-hot-toast";
-import { loadData, preloadKrNames, applyKoreanStockNames, saveData, normalizeImportedData, consumeSanitizeReport, toUserDataJson, mergeCurrentCaches } from "../storage";
+import { loadData, preloadKrNames, applyKoreanStockNames, saveData, consumeSanitizeReport, toUserDataJson } from "../storage";
 import { useAppStore } from "../store/appStore";
 import { loadCacheFromDB, mergeCacheIntoAppData } from "../services/cacheStore";
 import {
@@ -93,57 +93,7 @@ export function useAppData() {
     }
   }, [isLoading]);
 
-  // "처음 방문"일 때만(localStorage 앱 키가 아예 없고 ledger도 비어있음) 최신 백업에서 복원.
-  // 사용자가 의도적으로 데이터를 지운 경우(localStorage에 빈 AppData를 저장)는 복원하지 않음.
-  const dataRecoveryDone = useRef(false);
-  useEffect(() => {
-    if (isLoading || dataRecoveryDone.current) return;
-    dataRecoveryDone.current = true;
-    // 파일 백업 복원 API는 개발 서버(Vite 미들웨어) 전용 — 정적 배포에선 404만 남는다
-    if (!import.meta.env.DEV) return;
-    const currentData = useAppStore.getState().data;
-    if (currentData?.ledger && currentData.ledger.length > 0) return;
-    if (typeof window !== "undefined") {
-      // 사용자가 한 번이라도 저장한 흔적이 있으면 자동 복원 안 함 (의도적 wipe 존중)
-      if (window.localStorage.getItem(STORAGE_KEYS.DATA) !== null) return;
-    }
-    // 자동 복원은 "최초 방문" 한정이라 사용자 UI를 방해하지 않지만,
-    // 콘솔 로그는 남겨 디버깅·감사 가능하도록.
-    const controller = new AbortController();
-    const timeoutId = setTimeout(() => controller.abort(), 10_000);
-    fetch("/api/restore-latest-backup", { signal: controller.signal })
-      .then((r) => {
-        if (!r.ok) throw new Error(`백업 API 응답 오류 (${r.status})`);
-        return r.json();
-      })
-      .then((backup: unknown) => {
-        if (!backup || typeof backup !== "object") return;
-        const asRecord = backup as Record<string, unknown>;
-        const ledger = asRecord.ledger;
-        if (!Array.isArray(ledger) || ledger.length === 0) return;
-        try {
-          // 백업 JSON은 외부 소스 — normalizeImportedData로 구조 검증·정규화 후 저장.
-          // 백업 본문이 user-only(캐시 제외)면 현재 메모리의 캐시를 유지해 빈 캐시로 덮지 않는다.
-          const normalized = mergeCurrentCaches(normalizeImportedData(backup), useAppStore.getState().data);
-          saveData(normalized);
-          const reloaded = loadData();
-          useAppStore.setState({ data: reloaded });
-          setLoadFailed(false);
-          console.info("[FarmWallet] 백업 자동 복원 성공");
-        } catch (e) {
-          console.error("[FarmWallet] 백업 복원 파싱/검증 실패", e);
-        }
-      })
-      .catch((err: unknown) => {
-        if (err instanceof DOMException && err.name === "AbortError") {
-          console.warn("[FarmWallet] 백업 복원 시간 초과 (10s)");
-        } else {
-          // dev 서버 미기동 등 정상 케이스 포함이라 warn 수준만
-          console.warn("[FarmWallet] 백업 복원 건너뜀:", err instanceof Error ? err.message : err);
-        }
-      })
-      .finally(() => clearTimeout(timeoutId));
-  }, [isLoading]);
+  // 파일 복구 제안은 useLocalFileRecovery가 담당한다. 사용자 확인 전 자동 적용하지 않는다.
 
   // 초기 로드 후 IndexedDB에서 캐시 하이드레이션.
   // localStorage 캐시가 비어 있어도 IndexedDB에 저장된 prices/tickerDatabase/

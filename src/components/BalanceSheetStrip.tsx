@@ -18,7 +18,7 @@ export const BalanceSheetStrip: React.FC<Props> = ({ bs }) => {
   const assets = [
     part("현금", bs.cash),
     part("저축", bs.savings),
-    part("주식", bs.securities),
+    part("증권·코인", bs.securities),
     part("연금", bs.pension),
     part("카드 선납", bs.cardCredit),
   ].filter(Boolean).join(" · ");

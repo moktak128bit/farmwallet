@@ -15,6 +15,7 @@ import { useAppStore } from "../store/appStore";
 import { useDateAccountId } from "../hooks/useDateAccountSettings";
 import { useAccountTimelineRows } from "../hooks/useAccountTimelineRows";
 import { buildAdjustedPrices, buildTimelineMonthRange } from "../utils/accountTimeline";
+import { buildFxHistory } from "../utils/portfolioHistory";
 import type { BalanceSheet } from "../calculations";
 import { useBalanceSheet } from "../hooks/useBalanceSheet";
 import { getThisMonthKST, getTodayKST, shiftMonth, getLastDayOfMonth } from "../utils/date";
@@ -24,6 +25,7 @@ import { InsightsDecisionBrief } from "../features/insights/InsightsDecisionBrie
 import { LifestyleInsights } from "../features/insights/LifestyleInsights";
 import { InsightsTabNav, type TabId } from "../features/insights/InsightsTabNav";
 import { ChartSkeleton } from "../components/charts/ChartSkeleton";
+import { DateAccountUnsetNotice } from "../features/settings/DateAccountUnsetNotice";
 
 const OverviewTab = lazy(() => import("../features/insights/tabs/OverviewTab").then((m) => ({ default: m.OverviewTab })));
 const ExpenseTab = lazy(() => import("../features/insights/tabs/ExpenseTab").then((m) => ({ default: m.ExpenseTab })));
@@ -77,6 +79,11 @@ export const InsightsView: React.FC<Props> = ({ accounts, ledger, trades = [], p
   // 순자산 타임라인 — 대시보드와 동일 계산(시세·환율·대출 반영). 누적 정확성을 위해
   // 기간 필터 전의 전체 ledger/trades를 사용한다.
   const loans = useAppStore((s) => s.data.loans) ?? EMPTY_LOANS;
+  // 지난 월말 평가에 일별 종가·환율 이력 — 대시보드(DashboardPage)와 같은 입력이어야 순자산 추이가 같은 숫자가 된다
+  const historicalDailyCloses = useAppStore((s) => s.data.historicalDailyCloses);
+  const historicalDailyFx = useAppStore((s) => s.data.historicalDailyFx);
+  const marketEnvSnapshots = useAppStore((s) => s.data.marketEnvSnapshots);
+  const fxHistory = useMemo(() => buildFxHistory(historicalDailyFx, marketEnvSnapshots), [historicalDailyFx, marketEnvSnapshots]);
   const currentMonth = useMemo(() => getThisMonthKST(), []);
   const adjustedPrices = useMemo(() => buildAdjustedPrices(prices, fxRate), [prices, fxRate]);
   const timelineMonthRange = useMemo(() => buildTimelineMonthRange(ledger, trades, currentMonth), [ledger, trades, currentMonth]);
@@ -89,6 +96,8 @@ export const InsightsView: React.FC<Props> = ({ accounts, ledger, trades = [], p
     currentMonth,
     monthRange: timelineMonthRange,
     loans,
+    historicalDailyCloses,
+    fxHistory,
   });
 
   // 총자산·총부채·순자산 — 계좌 탭·대시보드와 같은 단일 소스(computeBalanceSheet). 기간 필터와 무관한 '지금' 값.
@@ -119,6 +128,8 @@ export const InsightsView: React.FC<Props> = ({ accounts, ledger, trades = [], p
         onSelectPeriod={handleSelectPeriod}
         onSelectMonth={handleSelectMonth}
       />
+
+      <DateAccountUnsetNotice where="실질 지출·저축률" />
 
       {/* Tabs */}
       <InsightsTabNav tab={tab} onSelectTab={setTab} selMonthLabel={selMonth ? d.ml[selMonth] : null} />

@@ -38,6 +38,8 @@ export const STORAGE_KEYS = {
   LAST_QUOTE_REFRESH_AT: "fw-last-quote-refresh-at",
   /** 시장 지수(벤치마크) 자동 fetch 마지막 시도 시각(epoch ms) — 매 로드마다 야후 호출하지 않도록 throttle */
   BENCHMARK_LAST_FETCH_AT: "fw-benchmark-last-fetch-at",
+  /** 종목별 과거 일별 시세 조회 시각·조회 구간 — 성과 차트 재진입 시 중복 요청 방지 */
+  PORTFOLIO_HISTORY_FETCH: "fw-portfolio-history-fetch-v1",
   /** @deprecated 테이블 형태 백업 JSON 사본 — 더 이상 쓰지 않음(읽는 곳 0건). 구버전이 매 저장마다 기록하던 키를 loadData가 부팅 시 removeItem으로 정리하기 위해서만 유지. */
   DATA_TABLE_BACKUP: "farmwallet-data-tables-v1",
   /** 마지막으로 성공한 USD/KRW 환율 캐시 */
@@ -46,8 +48,10 @@ export const STORAGE_KEYS = {
   DATE_ACCOUNT_ID: "fw-date-account-id",
   /** 데이트통장 본인 부담 비율 (0~100, 기본 50) */
   DATE_ACCOUNT_RATIO: "fw-date-account-ratio",
-  /** 자동 Gist 동기화 ON/OFF (기본: false) */
+  /** 자동 Gist 동기화 ON/OFF (최초 연결 뒤 기본 켜짐, 사용자가 끈 설정은 유지) */
   GIST_AUTO_SYNC: "fw-gist-auto-sync",
+  /** GAS: 시트 원본 최종 저장 정보(rev·시각)와 이 기기에서 마지막으로 불러온 시각 — 설정 저장 위치 카드 표시용 */
+  GAS_SHEET_INFO: "fw-gas-sheet-info",
   /** 마지막 자동 Gist 저장 성공 시각 (ISO 8601) */
   GIST_LAST_PUSH_AT: "fw-gist-last-push-at",
   /** 마지막 자동 Gist 불러오기 성공 시각 (ISO 8601) */
@@ -100,6 +104,11 @@ export const STORAGE_KEYS = {
   NUDGE_DISMISSED: "fw-nudge-dismissed",
   /** 가계부 입력 폼 펼침 여부 ("1"=펼침). 기본 접힘 — 목록이 먼저 보이게. Alt+N·복사·수정은 자동으로 펼친다 */
   LEDGER_FORM_OPEN: "fw-ledger-form-open",
+  /**
+   * 가계부 목록 열 너비 (JSON number[11] — 작업 열 제외 10칸 비율 + 자리표시 1, 기기 로컬).
+   * v2(2026-11-09): 작업 열 축소·상세내역 확대로 기본값을 바꾸며 키를 올려 옛 저장 너비를 한 번 초기화.
+   */
+  LEDGER_COLUMN_WIDTHS: "fw-ledger-column-widths-v2",
   /** 대시보드 섹션(자산·소비·배당) 펼침 상태 — { [sectionId]: boolean } JSON. 없으면 기본(핵심만 펼침) */
   DASHBOARD_SECTIONS: "fw-dashboard-sections",
   /** 카드 명세 임포트(StatementImportCard) 마지막 컬럼 매핑 (JSON — 다음 붙여넣기에 재사용, 기기 로컬) */
@@ -151,6 +160,10 @@ export const PUBLIC_APP_URL = "https://moktak128bit.github.io/farmwallet/";
 
 // 자동 Gist 저장 디바운스 (밀리초, 1분)
 export const GIST_AUTO_PUSH_DEBOUNCE_MS = 60 * 1000;
+
+/** GAS 웹앱 자동 저장 디바운스 (밀리초, 5초) — 시트가 원본이라 1분을 기다리면 그사이 앱을 닫거나 다른 기기에서
+ *  열었을 때 "저장이 된 건지" 알 수 없다. GAS saveData는 잠금으로 직렬화되므로 짧아도 안전하다. */
+export const GAS_AUTO_SAVE_DEBOUNCE_MS = 5 * 1000;
 
 /** 앱 복귀(visibilitychange:visible·online) 시 원격 Gist 변경 확인 최소 간격 (밀리초, 1분) */
 export const GIST_REMOTE_CHECK_THROTTLE_MS = 60 * 1000;

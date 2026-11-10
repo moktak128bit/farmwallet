@@ -23,7 +23,7 @@ describe("인사이트의 다기간 지출 비교", () => {
   it("이번 달과 과거 월의 같은 기간을 비교하고 미래 거래를 제외한다", () => {
     const result = build([...history, entry("2026-09-25", 9000), entry("2026-10-05", 400), entry("2026-10-20", 8000)]);
     expect(result.target.amount).toBe(400);
-    expect(result.partialDay).toBe(13);
+    expect(result.partialDay).toBe(5); // 오늘 13일, 마지막 기록 5일(미래 10-20 제외) — 기록일까지만 비교
     expect(result.comparisons[0].amount).toBe(300);
     expect(result.comparisons[1].amount).toBe(200);
     expect(result.comparisons[1].percent).toBe(100);
@@ -77,23 +77,26 @@ describe("인사이트의 다기간 지출 비교", () => {
     expect(screen.getByRole("region", { name: "지출 변화와 확인할 항목" })).toBeInTheDocument();
     expect(screen.getByText("직전 12개월 평균")).toBeInTheDocument();
     expect(screen.getByText("전년 동월")).toBeInTheDocument();
-    expect(screen.getByText(/반복 결제·큰 단건·구매 횟수/)).toBeInTheDocument();
+    // 같은 조언 반복 대신 근거 — 건수 효과/건당 효과 분해
+    expect(screen.getByText(/건수 변화로 .*건당 금액 변화로/)).toBeInTheDocument();
     expect(screen.getByText(/기록 3\/6개월/)).toBeInTheDocument();
-    expect(screen.getByText(/동기\(1~13일\).*기간 필터/)).toBeInTheDocument();
-    expect(screen.getByText(/8일간 새 기록이 없어/)).toBeInTheDocument();
+    expect(screen.getByText(/동기\(1~5일 · 5일까지 기록\).*기간 필터/)).toBeInTheDocument();
+    expect(screen.getByText(/2026-10-05\(8일 전\)/)).toBeInTheDocument();
   });
   it("선택한 과거 월의 세부 추세가 이후 월 때문에 바뀌지 않는다", () => {
-    const ledger = [entry("2025-01-05", 100), entry("2025-02-05", 200), entry("2025-03-05", 10000)];
+    const ledger = [entry("2025-01-05", 10_000), entry("2025-02-05", 20_000), entry("2025-03-05", 1_000_000)];
     const { result } = renderHook(() => useInsightsData(ledger, [], [], [], [], "2025-02", undefined, undefined, null, null, [], ledger));
-    expect(result.current.subInsights[0]).toMatchObject({ mom: 100, monthAvg: 150, peak: "2월" });
+    expect(result.current.subInsights[0]).toMatchObject({ mom: 100, monthAvg: 15_000, peak: "2월", trendLabel: "2월 vs 1월: +100% (1만원 → 2만원)" });
     expect(result.current.subInsights[0].comment).not.toContain("연간");
   });
   it("선택월의 거래 1건만으로 월별 빈도·급여 정기성을 단정하지 않는다", () => {
     const ledger = [entry("2025-01-05", 100), entry("2025-02-05", 100), entry("2025-01-25", 3000, { kind: "income", category: "수입", subCategory: "급여" }),
       entry("2025-02-25", 3000, { kind: "income", category: "수입", subCategory: "급여" })];
     const { result } = renderHook(() => useInsightsData(ledger, [], [], [], [], "2025-02", undefined, undefined, null, null, [], ledger));
-    expect(result.current.subInsights[0].comment).toContain("월평균 1건");
-    expect(result.current.incSubInsights[0].comment).toContain("판단을 보류");
-    expect(result.current.incSubInsights[0].comment).not.toContain("상여·수당처럼");
+    // 빈도는 완결 월 기준(2/2개월) — 선택월 1건으로 "비정기"라 단정하지 않는다
+    expect(result.current.subInsights[0]).toMatchObject({ activeMonths: 2, doneMonths: 2 });
+    expect(result.current.subInsights[0].comment).not.toContain("비정기");
+    // 완결 월 1개(2025-01)뿐 — 정기성을 단정하지 않는다 (문구 대신 recurring 플래그로 검증)
+    expect(result.current.incSubInsights[0].recurring).toBe(false);
   });
 });

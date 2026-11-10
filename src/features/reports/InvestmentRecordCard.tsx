@@ -19,6 +19,8 @@ import { getTodayKST } from "../../utils/date";
 import { xirr } from "../../utils/irr";
 import { downloadAsExcel } from "../../utils/excelExport";
 import { toKrwByRate } from "../../utils/currency";
+import { useAppStore } from "../../store/appStore";
+import { buildFxHistory } from "../../utils/portfolioHistory";
 
 interface Props {
   trades: StockTrade[];
@@ -37,10 +39,17 @@ export const InvestmentRecordCard: React.FC<Props> = React.memo(function Investm
   const [filter, setFilter] = useState<PeriodFilter>({ kind: "year", year: currentYear });
   const [tab, setTab] = useState<Tab>("summary");
 
-  const all = useMemo(
-    () => buildClosedTradeRecords(trades, accounts, fxRate ?? undefined),
-    [trades, accounts, fxRate]
+  // 환율 이력 — fxRateAtTrade 없는 달러 매도를 거래일 환율로 (대시보드·주식 탭과 같은 입력. 예전엔 오늘 환율 폴백이라
+  // 리포트 실현손익이 대시보드와 6만 원 이상 어긋났다). 이력에서도 못 찾은 매도(fxUnreliable)는 목록·합계에서 뺀다.
+  const historicalDailyFx = useAppStore((s) => s.data.historicalDailyFx);
+  const marketEnvSnapshots = useAppStore((s) => s.data.marketEnvSnapshots);
+  const fxHistory = useMemo(() => buildFxHistory(historicalDailyFx, marketEnvSnapshots), [historicalDailyFx, marketEnvSnapshots]);
+  const allRaw = useMemo(
+    () => buildClosedTradeRecords(trades, accounts, fxRate ?? undefined, fxHistory),
+    [trades, accounts, fxRate, fxHistory]
   );
+  const all = useMemo(() => allRaw.filter((r) => !r.fxUnreliable), [allRaw]);
+  const excludedInPeriod = useMemo(() => filterByPeriod(allRaw, filter).filter((r) => r.fxUnreliable).length, [allRaw, filter]);
   const filtered = useMemo(() => filterByPeriod(all, filter), [all, filter]);
   const summary = useMemo(() => summarizeRecords(filtered), [filtered]);
 
@@ -251,6 +260,11 @@ export const InvestmentRecordCard: React.FC<Props> = React.memo(function Investm
         ))}
       </div>
 
+      {excludedInPeriod > 0 && (
+        <div className="hint" style={{ fontSize: 12, marginBottom: 8 }}>
+          거래 환율·환율 이력이 없어 실현손익을 확정할 수 없는 달러 매도 {excludedInPeriod}건은 집계에서 뺐습니다.
+        </div>
+      )}
       {tab === "summary" && <SummaryPanel summary={summary} pnlColor={pnlColor} />}
       {tab === "year" && <YearPanel yearGroups={yearGroups} pnlColor={pnlColor} />}
       {tab === "month" && <MonthPanel monthGroups={monthGroups} pnlColor={pnlColor} />}

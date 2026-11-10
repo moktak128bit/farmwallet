@@ -6,6 +6,7 @@ import { useUIStore } from "../store/uiStore";
 import { useAppStore } from "../store/appStore";
 import { normalizeImportedData } from "../services/dataService";
 import { requestApply } from "./ApplyConfirmModal";
+import { remoteText } from "../services/gas";
 
 interface Props {
   isOpen: boolean;
@@ -57,7 +58,7 @@ export const GistVersionModal: React.FC<Props> = ({ isOpen, onClose, onLoad, onL
       const after = normalizeImportedData(JSON.parse(result.dataJson) as unknown);
       const when = new Date(version.committedAt).toLocaleString("ko-KR");
       requestApply({
-        title: `Gist 버전 불러오기 (${when})`,
+        title: remoteText(`Gist 버전 불러오기 (${when})`),
         before: useAppStore.getState().data,
         after,
         onConfirm: () => {
@@ -88,13 +89,13 @@ export const GistVersionModal: React.FC<Props> = ({ isOpen, onClose, onLoad, onL
         className="modal"
         role="dialog"
         aria-modal="true"
-        aria-label="Gist 버전 선택"
+        aria-label={remoteText("Gist 버전 선택")}
         style={{ maxWidth: 460, padding: "24px 28px" }}
       >
         <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 16 }}>
           <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
             <History size={18} style={{ color: "var(--accent)" }} />
-            <h3 style={{ margin: 0, fontSize: 16, fontWeight: 700 }}>Gist 버전 선택</h3>
+            <h3 style={{ margin: 0, fontSize: 16, fontWeight: 700 }}>{remoteText("Gist 버전 선택")}</h3>
           </div>
           <button type="button" className="icon-button" onClick={onClose} aria-label="닫기">
             <X size={18} />
@@ -134,7 +135,7 @@ export const GistVersionModal: React.FC<Props> = ({ isOpen, onClose, onLoad, onL
           <div style={{ textAlign: "center", padding: "24px 0", color: "var(--text-muted)", fontSize: 14 }}>
             저장된 버전이 없습니다.
             <div style={{ fontSize: 12, marginTop: 4 }}>
-              먼저 [저장] 버튼으로 Gist에 저장하세요.
+              {remoteText("먼저 [저장] 버튼으로 Gist에 저장하세요.")}
             </div>
           </div>
         )}

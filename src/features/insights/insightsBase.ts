@@ -18,13 +18,14 @@ import { accountDebtOffset, computeAccountBalances, computePositions, positionMa
 import { computePortfolioMetrics, computeUnrealizedPL } from "../../utils/portfolioMetrics";
 import { isCurrencyExchangeEntry, isInvestmentLossEntry } from "../../utils/category";
 import { classifyLedgerFlow, toKrwAmount } from "../dashboard/summaryMath";
-import { tradeAmountKRW } from "../../utils/finance";
+import { tradeAmountKRW, canonicalTickerForMatch } from "../../utils/finance";
 import { buildClosedTradeRecords, summarizeRecords, summaryToRealPL } from "../../utils/investmentRecord";
 import { computeOriginalAssets } from "../../utils/realIncome";
 import { computeIncomeNatureKeys } from "../../utils/incomeClassification";
 import { getMoimAccountIds, computeMoimAccountFlow, type MoimFlowAnalysis } from "../../utils/dateAccounting";
 import { isExcludedIncomeEntry, computeRealSavingsRate, computeMonthlyRealFlows } from "../../utils/savingsRate";
-import type { AccountTimelineRow } from "../../utils/accountTimeline";
+import { netWorthChangeSeries, type AccountTimelineRow } from "../../utils/accountTimeline";
+import type { FxPoint } from "../../utils/portfolioHistory";
 import type { D } from "./insightsShared";
 
 interface InsightsBaseInput {
@@ -42,6 +43,8 @@ interface InsightsBaseInput {
   timelineRows: AccountTimelineRow[];
   /** 기간 필터 전 전체 가계부 — 계좌별 현재 잔액(누적) 정확성용 */
   allLedger: LedgerEntry[];
+  /** 일별 환율 이력 — fxRateAtTrade 없는 USD 거래의 FIFO 원가·대금 환산 (주식 탭과 같은 입력) */
+  fxHistory?: FxPoint[];
 }
 
 /** 월별 합계 배열 맵 — key → months 인덱스 순 합계(mTotalsFor와 동일 합산 순서: ledger 순서대로 월 버킷에 누적) */
@@ -50,6 +53,8 @@ export type MonthlyTotalsByKey = Map<string, number[]>;
 export interface InsightsBase {
   /* 원본 참조 (slice가 선택월 필터에 사용) */
   ledger: LedgerEntry[];
+  /** 기간 필터 전 전체 가계부 — 기록 신선도(마지막 기록일)는 기간 필터와 무관해야 한다 */
+  allLedger: LedgerEntry[];
   rawTrades: StockTrade[];
   accounts: Account[];
   categoryPresets: CategoryPresets | undefined;
@@ -89,7 +94,6 @@ export interface InsightsBase {
   /* 중분류별 월별 합계(전기간) — sub 인사이트가 월별 재스캔 대신 조회 */
   expSubMonthly: MonthlyTotalsByKey;
   incSubMonthly: MonthlyTotalsByKey;
-  investSubMonthly: MonthlyTotalsByKey;
   /* 포지션·실현손익 */
   portfolio: D["portfolio"];
   holdingsByStock: D["holdingsByStock"];
@@ -107,13 +111,11 @@ export interface InsightsBase {
   incomeStability: number | null;
   /* 순자산/자산 */
   netWorthByMonth: D["netWorthByMonth"];
+  netWorthChangeBasis: D["netWorthChangeBasis"];
   accountBalances: D["accountBalances"];
   assetAllocation: D["assetAllocation"];
-  /* 전기간 스칼라 */
-  mostFrugalMonth: D["funStats"]["mostFrugalMonth"];
-  mostSpendMonth: D["funStats"]["mostSpendMonth"];
+  /* 전기간 스칼라 (가장 절약한 달·최고 저축률 달은 진행 중인 달 제외가 오늘 의존이라 slice가 계산) */
   monthOverMonthGrowth: number | null;
-  bestSavingsMonth: D["funStats"]["bestSavingsMonth"];
   domOccurrences: number[];
 }
 
@@ -156,7 +158,7 @@ function monthlyTotalsByKey(
 }
 
 export function buildInsightsBase(input: InsightsBaseInput): InsightsBase {
-  const { ledger, rawTrades, allTrades, accounts, prices, categoryPresets, dateAccountId, fxRate, timelineRows, allLedger } = input;
+  const { ledger, rawTrades, allTrades, accounts, prices, categoryPresets, dateAccountId, fxRate, timelineRows, allLedger, fxHistory = [] } = input;
   const aMap = new Map(accounts.map(a => [a.id, a.name]));
   const invIds = new Set(accounts.filter(a => a.type === "securities" || a.type === "crypto").map(a => a.id));
   const moimIds = getMoimAccountIds(accounts);
@@ -201,7 +203,8 @@ export function buildInsightsBase(input: InsightsBaseInput): InsightsBase {
   }
   const months = Object.keys(monthly).sort();
   const ml: Record<string, string> = {};
-  months.forEach(m => { ml[m] = parseInt(m.slice(5)) + "월"; });
+  const spansYears = new Set(months.map(m => m.slice(0, 4))).size > 1;
+  months.forEach(m => { ml[m] = spansYears ? m.replace("-", ".") : parseInt(m.slice(5)) + "월"; });
 
   /* ===== 실질 수입/지출 월별 (정산·일시소득 제외, USD 환산, 데이트 50% 분담) — utils/savingsRate 단일 소스 ===== */
   const realFlows = computeMonthlyRealFlows(ledger, { fxRate, dateAccountId, nonRealIncomeOverride: categoryPresets?.categoryTypes?.nonRealIncome });
@@ -298,9 +301,6 @@ export function buildInsightsBase(input: InsightsBaseInput): InsightsBase {
   // 지출: fExp/expBySub와 동일 기준(flowOf + expSubName + 환산) — 어긋나면 월별 추세가 합계와 안 맞는다
   const expSubMonthly = monthlyTotalsByKey(ledger, months, l => flowOf(l) === "expense" ? expSubName(l) : null, amt);
   const incSubMonthly = monthlyTotalsByKey(ledger, months, l => flowOf(l) === "income" ? (l.subCategory || l.category || "기타") : null, amt);
-  // 모집단은 총액(investBySub: expense+재테크)과 반드시 동일해야 한다 — 이전의 isInvestmentEntry는
-  // sub '저축'/'투자'만 참이라 '투자손실' 등의 카드가 총액은 크게, 추세·월평균은 항상 0으로 나왔다.
-  const investSubMonthly = monthlyTotalsByKey(ledger, months, l => l.kind === "expense" && l.category === "재테크" ? (l.subCategory || "기타") : null, amt);
 
   /* portfolio allocation — 현재 보유 포지션의 시세 평가액 기준.
      기존 buyTotal(누적 매수금액) 합산은 ① 이미 매도한 종목이 계속 잡히고(이름이 "BTC"/"bitcoin"처럼
@@ -312,7 +312,7 @@ export function buildInsightsBase(input: InsightsBaseInput): InsightsBase {
   const { portfolio, holdingsByStock, totalHoldingsCost } = computePortfolioMetrics(curPositions, accounts, fxRate);
 
   /* realized PL — FIFO 매칭 (리포트 InvestmentRecordCard와 동일 로직). 라이프타임 기준 (전체 trades) */
-  const allClosedRecords = buildClosedTradeRecords(allTrades, accounts, fxRate ?? undefined);
+  const allClosedRecords = buildClosedTradeRecords(allTrades, accounts, fxRate ?? undefined, fxHistory);
   const lifetimeRealizedSummary = summarizeRecords(allClosedRecords);
   const realPL = summaryToRealPL(lifetimeRealizedSummary);
   // 기간 판정은 rawTrades(일 단위 컷오프 적용된 거래) 소속 여부 — closedByStock(slice)에서 사용
@@ -322,23 +322,27 @@ export function buildInsightsBase(input: InsightsBaseInput): InsightsBase {
     ? lifetimeRealizedSummary.totalPnl / lifetimeRealizedSummary.totalCost * 100
     : 0;
 
-  /* ===== 종목별 누적 매수금액 추이 (상위 종목 자동 감지) ===== */
+  /* ===== 종목별 누적 매수금액 추이 (상위 종목 자동 감지) =====
+     ticker(canonicalTickerForMatch)로 묶고 이름은 표시용 — 예전엔 이름 앞 두 단어 prefix로 매칭해
+     표기가 다른 같은 종목은 갈라지고, 앞 두 단어가 같은 다른 종목("TIGER 미국…")은 섞였다. */
+  const tickerKey = (t: StockTrade) => canonicalTickerForMatch(t.ticker) || t.ticker || t.name || "";
   const stockBuyTotals = new Map<string, number>();
+  const stockNames = new Map<string, string>();
   for (const t of rawTrades) {
+    const key = tickerKey(t);
+    if (!key) continue;
+    if (t.name) stockNames.set(key, t.name);
     if (t.side !== "buy") continue;
-    const name = t.name || t.ticker || "";
-    if (!name) continue;
-    stockBuyTotals.set(name, (stockBuyTotals.get(name) ?? 0) + tradeAmountKRW(t, fxRate));
+    stockBuyTotals.set(key, (stockBuyTotals.get(key) ?? 0) + tradeAmountKRW(t, fxRate));
   }
   const trackedStocks = [...stockBuyTotals.entries()].sort((a, b) => b[1] - a[1]).slice(0, 5).map(e => e[0]);
-  const stockTrends = trackedStocks.map(stockName => {
-    const prefix = stockName.split(" ").slice(0, 2).join(" ");
+  const stockTrends = trackedStocks.map(key => {
     const cumByMonth = new Map<string, number>();
     let cum = 0;
     for (const m of months) {
       for (const t of rawTrades) {
         if (t.date?.slice(0, 7) !== m) continue;
-        if (!t.name?.includes(prefix)) continue;
+        if (tickerKey(t) !== key) continue;
         const kr = tradeAmountKRW(t, fxRate);
         if (t.side === "buy") cum += kr; else cum -= kr;
       }
@@ -346,7 +350,7 @@ export function buildInsightsBase(input: InsightsBaseInput): InsightsBase {
     }
     const data = months.filter(m => cumByMonth.get(m) !== 0 || months.indexOf(m) >= months.findIndex(mm => (cumByMonth.get(mm) ?? 0) !== 0))
       .map(m => ({ l: ml[m], 누적매수: cumByMonth.get(m) ?? 0 }));
-    return { name: stockName, data };
+    return { name: stockNames.get(key) ?? key, data };
   }).filter(s => s.data.length > 0);
 
   /* ===== 원래 보유 자산·분담 통장 흐름 (실질 수입/지출은 realFlows 소유) ===== */
@@ -367,13 +371,18 @@ export function buildInsightsBase(input: InsightsBaseInput): InsightsBase {
   // 월별 순자산 추이 — 대시보드 타임라인(시세·환율·대출 반영)과 동일 계산.
   // 기간 필터 시 '전체 기간 누적의 윈도우 절단' — 끝은 자르지 않음(마지막 행 = currentMonth, 대시보드 현재값과 정합).
   const timelineSlice = months.length === 0 ? [] : timelineRows.filter(r => r.month >= months[0]);
+  // changeValue — 변화 비교용 같은 기준 값. 지난 월말이 원가로 평가된 구간이 섞이면 전 구간 원가 기준
+  // (netWorthChangeSeries, 대시보드와 같은 규칙). total끼리 빼면 평가손익 전체가 마지막 달 변화로 몰린다.
+  const nwChange = netWorthChangeSeries(timelineSlice);
+  const netWorthChangeBasis = nwChange.basis;
   let cumSav = 0;
-  const netWorthByMonth = timelineSlice.map(r => {
+  const netWorthByMonth = timelineSlice.map((r, i) => {
     cumSav += monthly[r.month]?.investment ?? 0;
     return {
       month: r.month,
       label: ml[r.month] ?? `${parseInt(r.month.slice(5))}월`,
       total: r.total,
+      changeValue: nwChange.series[i]?.value ?? r.total,
       income: monthly[r.month]?.income ?? 0,
       expense: monthly[r.month]?.expense ?? 0,
       savings: cumSav,
@@ -393,8 +402,10 @@ export function buildInsightsBase(input: InsightsBaseInput): InsightsBase {
       : 0;
     return { account: a, balance: row.currentBalance + usdToKrw + (stockValueByAccount.get(a.id) ?? 0) };
   });
+  // 계좌 순가치 = 잔액 − account.debt (계좌 탭·대차와 같은 accountDebtOffset). 빼지 않으면 카드 부채가
+  // 잔액으로 보여 실장부 삼성페이카드가 +425만(순가치 −2.4만)으로 나왔다.
   const accountBalances = balanceRows
-    .map(({ account: a, balance }) => ({ name: a.name, type: a.type || "checking", balance }))
+    .map(({ account: a, balance }) => ({ name: a.name, type: a.type || "checking", balance: balance - accountDebtOffset(a) }))
     .sort((a, b) => b.balance - a.balance);
   // 자산 유형별 배분 — 대차(computeBalanceSheet)와 같은 규칙: 계좌 순가치(잔액 − account.debt)의 양수만 자산.
   // 마이너스 통장·카드 부채는 부채라 빠지고, 합계 = 총자산이라 비중(HHI·현금성 비율)의 분자·분모가 같은 기준이 된다.
@@ -413,14 +424,6 @@ export function buildInsightsBase(input: InsightsBaseInput): InsightsBase {
   // 기간 필터가 첫 달 중간을 잘랐으면 전체 장부엔 그 달 항목이 더 있다.
   const inFirst = (arr: LedgerEntry[]) => arr.reduce((n, l) => n + (months.length > 0 && l.date?.startsWith(months[0]) ? 1 : 0), 0);
   const firstMonthCut = inFirst(allLedger) > inFirst(ledger);
-  // 가장 절약한 달 / 가장 많이 쓴 달
-  let mostFrugalMonth: { month: string; expense: number } | null = null;
-  let mostSpendMonth: { month: string; expense: number } | null = null;
-  for (const m of months) {
-    const e = monthly[m].expense;
-    if (e > 0 && (!mostFrugalMonth || e < mostFrugalMonth.expense)) mostFrugalMonth = { month: m, expense: e };
-    if (!mostSpendMonth || e > mostSpendMonth.expense) mostSpendMonth = { month: m, expense: e };
-  }
   // 순자산 월평균 성장률 — 분모는 구간 수(개월 수 − 1). N개월이면 월간 변화는 N−1번.
   let monthOverMonthGrowth: number | null = null;
   if (netWorthByMonth.length >= 2) {
@@ -428,17 +431,6 @@ export function buildInsightsBase(input: InsightsBaseInput): InsightsBase {
     const last = netWorthByMonth[netWorthByMonth.length - 1].total;
     if (first > 0) monthOverMonthGrowth = Math.round((last / first - 1) / (netWorthByMonth.length - 1) * 100 * 10) / 10;
   }
-  // 최고 실질 저축률 달 — realFlows 기반 (savRateTrend와 동일 정의)
-  let bestSavingsMonth: { month: string; rate: number } | null = null;
-  for (const m of months) {
-    const rf = realFlows.get(m);
-    const rawRate = rf ? computeRealSavingsRate(rf.realIncome, rf.realExpense) : null;
-    if (rawRate != null) {
-      const rate = Math.round(rawRate);
-      if (!bestSavingsMonth || rate > bestSavingsMonth.rate) bestSavingsMonth = { month: m, rate };
-    }
-  }
-
   /* DOM 월 가중치 보정 — 각 일자(1~31)가 기간 내 며칠만큼 존재했는지 */
   const domOccurrences = new Array(31).fill(0);
   for (const m of months) {
@@ -461,15 +453,15 @@ export function buildInsightsBase(input: InsightsBaseInput): InsightsBase {
   };
 
   return {
-    ledger, rawTrades, accounts, categoryPresets, fxRate,
+    ledger, allLedger, rawTrades, accounts, categoryPresets, fxRate,
     aMap, invIds, moimIds, amt, flowOf, isInvestInflow, krwLedger, firstMonthCut,
     monthly, months, ml, realFlows,
     salaryKeys, investIncKeys, nonRealKeys, salaryMonthly, realIncomeMonthly,
     savRateTrend, salaryTrend, cumIE, investTrend, divTrend, tradeCntTrend, subTrend, txCntTrend, cumSpend,
-    expSubMonthly, incSubMonthly, investSubMonthly,
+    expSubMonthly, incSubMonthly,
     portfolio, holdingsByStock, totalHoldingsCost, allClosedRecords, periodSellIds, realPL, investReturnRate, investBreakdown, stockTrends,
     originalAssets, originalAssetsByAcct, moimFlow, incomeStability,
-    netWorthByMonth, accountBalances, assetAllocation,
-    mostFrugalMonth, mostSpendMonth, monthOverMonthGrowth, bestSavingsMonth, domOccurrences,
+    netWorthByMonth, netWorthChangeBasis, accountBalances, assetAllocation,
+    monthOverMonthGrowth, domOccurrences,
   };
 }

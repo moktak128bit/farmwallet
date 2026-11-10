@@ -7,6 +7,7 @@
  * 카드 전용 토글(backupOnSave/priceApi/gist/데이트통장/대시보드 위젯)은 각 카드가 소유하고,
  * 백업 탭 재진입 시 재마운트로 localStorage를 다시 읽는다 (기존 탭 전환 effect와 동일 동작).
  */
+import { consumeSettingsTabRequest } from "../utils/settingsTabRequest";
 import React, { useCallback, useEffect, useState, lazy, Suspense } from "react";
 import { toast } from "react-hot-toast";
 import type { AppData } from "../types";
@@ -28,6 +29,10 @@ import { DashboardWidgetSettings } from "../features/settings/DashboardWidgetSet
 import { StorageUsageCard } from "../features/settings/StorageUsageCard";
 import { MigrationReportCard } from "../features/settings/MigrationReportCard";
 import { StatementImportCard } from "../features/settings/StatementImportCard";
+import { LedgerFileImportCard } from "../features/settings/LedgerFileImportCard";
+import { GasPhotosCard } from "../features/settings/GasPhotosCard";
+import { GasStorageCard } from "../features/settings/GasStorageCard";
+import { isGas } from "../services/gas";
 
 const DataIntegrityView = lazy(() => import("./DataIntegrityPage").then((m) => ({ default: m.DataIntegrityView })));
 const SavingsMigrationView = lazy(() => import("./SavingsMigrationPage").then((m) => ({ default: m.SavingsMigrationView })));
@@ -54,11 +59,12 @@ interface Props {
   onGistManualPull?: () => Promise<void>;
 }
 
-type SettingsTab = "backup" | "transfer" | "sync" | "integrity" | "display" | "advanced";
+type SettingsTab = "backup" | "photos" | "transfer" | "sync" | "integrity" | "display" | "advanced";
 
-/** 탭 6개 유지하되 균형을 맞춘다 — 예전엔 "백업/복원" 하나에 17개 섹션이 몰려 있었다. */
+/** 탭 균형 유지 — 예전엔 "백업/복원" 하나에 17개 섹션이 몰려 있었다. "사진 올리기"는 GAS 운영(스크린샷 → Claude 입력)용 */
 const SETTINGS_TABS = [
   ["backup", "백업 / 복원"],
+  ["photos", "사진 올리기"],
   ["transfer", "가져오기 / 내보내기"],
   ["sync", "동기화"],
   ["integrity", "데이터 무결성"],
@@ -96,7 +102,11 @@ export const SettingsView: React.FC<Props> = ({
   onGistManualPush,
   onGistManualPull
 }) => {
-  const [activeTab, setActiveTab] = useState<SettingsTab>("backup");
+  // 다른 화면이 요청한 하위 탭(예: 대시보드 "처리 전 사진" → 사진 올리기)이 있으면 그 탭으로 연다
+  const [activeTab, setActiveTab] = useState<SettingsTab>(() => {
+    const requested = consumeSettingsTabRequest();
+    return SETTINGS_TABS.some(([id]) => id === requested) ? (requested as SettingsTab) : "backup";
+  });
   const [showThemeCustomizer, setShowThemeCustomizer] = useState(false);
   const [text, setText] = useState("");
   const [error, setError] = useState<string | null>(null);
@@ -143,7 +153,16 @@ export const SettingsView: React.FC<Props> = ({
 
       {activeTab === "backup" && (
         <>
-          <PWAInstallCard />
+          {!isGas() && <PWAInstallCard />}
+          {/* Claude 변경분(스크린샷 입력) 적용 진입점 — 맨 위 */}
+          <LedgerFileImportCard
+            data={data}
+            onChangeData={onChangeData}
+            setText={setText}
+            setError={setError}
+            onBackupRestored={onBackupRestored}
+            loadBackupList={loadBackupList}
+          />
           <div className="settings-grid">
             <DataBackupCard
               data={data}
@@ -170,6 +189,8 @@ export const SettingsView: React.FC<Props> = ({
           />
         </>
       )}
+
+      {activeTab === "photos" && <GasPhotosCard />}
 
       {activeTab === "transfer" && (
         <>
@@ -201,14 +222,23 @@ export const SettingsView: React.FC<Props> = ({
 
       {activeTab === "sync" && (
         <div className="settings-grid">
-          <GistSyncCard
-            autoSyncEnabled={autoSyncEnabled}
-            onAutoSyncChange={onAutoSyncChange}
-            gistLastPushAt={gistLastPushAt}
-            gistLastPullAt={gistLastPullAt}
-            onManualPush={onGistManualPush}
-            onManualPull={onGistManualPull}
-          />
+          {isGas() ? (
+            <GasStorageCard
+              gistLastPushAt={gistLastPushAt}
+              gistLastPullAt={gistLastPullAt}
+              onManualPush={onGistManualPush}
+              onManualPull={onGistManualPull}
+            />
+          ) : (
+            <GistSyncCard
+              autoSyncEnabled={autoSyncEnabled}
+              onAutoSyncChange={onAutoSyncChange}
+              gistLastPushAt={gistLastPushAt}
+              gistLastPullAt={gistLastPullAt}
+              onManualPush={onGistManualPush}
+              onManualPull={onGistManualPull}
+            />
+          )}
           <PriceApiCard />
         </div>
       )}

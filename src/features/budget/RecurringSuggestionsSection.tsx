@@ -130,7 +130,8 @@ export const RecurringSuggestionsSection: React.FC<SectionProps> = React.memo(fu
     () => detectRecurringCandidates(ledger, recurring, today, { lookbackMonths: 12, fxRate, categoryPresets }),
     [ledger, recurring, today, fxRate, categoryPresets]
   );
-  const unregistered = useMemo(() => candidates.filter((c) => !c.alreadyRegistered), [candidates]);
+  // 해지 추정은 등록 대상이 아니다 — 미등록 수·기본 목록에서 뺀다
+  const unregistered = useMemo(() => candidates.filter((c) => !c.alreadyRegistered && c.status !== "stopped"), [candidates]);
   const visible = showRegistered ? candidates : unregistered;
 
   // 후보가 전혀 없으면 화면을 차지하지 않는다
@@ -145,7 +146,7 @@ export const RecurringSuggestionsSection: React.FC<SectionProps> = React.memo(fu
         {candidates.length !== unregistered.length && (
           <label style={{ fontSize: 12, color: "var(--text-muted)", display: "flex", alignItems: "center", gap: 4 }}>
             <input type="checkbox" checked={showRegistered} onChange={(e) => setShowRegistered(e.target.checked)} />
-            등록된 항목도 보기 ({candidates.length - unregistered.length})
+            등록됨·해지 추정도 보기 ({candidates.length - unregistered.length})
           </label>
         )}
       </div>

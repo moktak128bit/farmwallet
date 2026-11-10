@@ -8,6 +8,7 @@ import React, { useCallback } from "react";
 import { toast } from "react-hot-toast";
 import type { AppData } from "../../types";
 import { getEmptyData, saveData, saveSafetySnapshot } from "../../storage";
+import { isGas } from "../../services/gas";
 
 interface Props {
   /** 현재 데이터 — 초기화 직전 안전 스냅샷용 */
@@ -25,9 +26,13 @@ export const DataResetCard: React.FC<Props> = React.memo(function DataResetCard(
 }) {
   const handleResetAllData = useCallback(async () => {
     const confirmed = window.confirm(
-      "가계부, 주식, 계좌 등 모든 데이터가 삭제됩니다. 복구할 수 없습니다.\n" +
-      "Gist 자동 동기화가 켜져 있으면 초기화된 빈 데이터가 원격(Gist)에도 push됩니다.\n" +
-      "초기화 직전 현재 데이터는 안전 스냅샷으로 보관됩니다.\n\n정말 초기화하시겠습니까?"
+      isGas()
+        ? "이 기기 화면의 장부를 모두 비웁니다.\n" +
+          "Drive 시트 원본은 서버가 빈 데이터 저장을 거절하므로 지워지지 않고, 앱을 다시 열면 시트 장부로 돌아옵니다.\n" +
+          "초기화 직전 현재 데이터는 안전 스냅샷으로 보관됩니다.\n\n정말 초기화하시겠습니까?"
+        : "가계부, 주식, 계좌 등 모든 데이터가 삭제됩니다. 복구할 수 없습니다.\n" +
+          "Gist 자동 동기화가 켜져 있으면 초기화된 빈 데이터가 원격(Gist)에도 push됩니다.\n" +
+          "초기화 직전 현재 데이터는 안전 스냅샷으로 보관됩니다.\n\n정말 초기화하시겠습니까?"
     );
     if (!confirmed) return;
     try {
@@ -51,7 +56,11 @@ export const DataResetCard: React.FC<Props> = React.memo(function DataResetCard(
       <p>
         <strong style={{ color: "var(--danger)" }}>주의:</strong> 가계부, 주식 거래, 계좌, 예산, 배당·이자 등 <strong>모든 앱 데이터를 삭제</strong>하고 빈 상태로 되돌립니다. 복구할 수 없으니 필요 시 먼저 "백업 파일 다운로드"로 저장해 두세요.
         <br />
-        <strong style={{ color: "var(--danger)" }}>Gist 자동 동기화가 켜져 있으면 초기화된 빈 데이터가 원격(Gist)에 push되어 다른 기기 데이터도 덮어쓸 수 있습니다.</strong>
+        {isGas() ? (
+          <strong>Google 웹앱에서는 이 기기 화면만 비웁니다 — Drive 시트 원본은 서버가 빈 데이터 저장을 거절해 그대로 남고, 앱을 다시 열면 시트 장부로 돌아옵니다.</strong>
+        ) : (
+          <strong style={{ color: "var(--danger)" }}>Gist 자동 동기화가 켜져 있으면 초기화된 빈 데이터가 원격(Gist)에 push되어 다른 기기 데이터도 덮어쓸 수 있습니다.</strong>
+        )}
       </p>
       <button
         type="button"

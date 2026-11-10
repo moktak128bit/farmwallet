@@ -276,3 +276,31 @@ describe("종합과세 투영용 선행 월 (감사 V5·V8)", () => {
     expect(m.get("458730")).toBe(10);
   });
 });
+
+describe("buildForwardDividends — 월배당 신규 종목·극소 분모 (실장부 감사 2026-11)", () => {
+  it("올해 시작한 월배당 종목(3회 이상 연속)은 작년 기록이 없는 달도 최근 주당분배 × 현재 보유로 채운다", () => {
+    // 0167B0: 2026-08~10 매월 100주 × 주당 100원 = 10,000원, 현재 200주 → 월 20,000원
+    const ledger = ["2026-08-05", "2026-09-05", "2026-10-05"].map((d) => divT(d, 10_000, "0167B0", 100));
+    const qty = new Map([[canonicalTickerForMatch("0167B0")!, 200]]);
+    const r = buildForwardDividends(ledger, "2026-11-10", null, { currentQtyByTicker: qty });
+    expect(find(r.months, "2026-12").amountKRW).toBe(20_000);
+    expect(find(r.months, "2027-04").amountKRW).toBe(20_000);
+    expect(find(r.months, "2027-08").amountKRW).toBe(20_000); // 작년(2026-08) 버킷도 같은 스케일
+    expect(r.currentMonthRemainingKRW).toBe(20_000); // 이번 달 아직 미지급
+  });
+
+  it("보유가 현재의 10% 미만이던 때 받은 배당은 현재 수량으로 늘리지 않는다 (2,000원 × 575/8 = 143,750 방지)", () => {
+    const ledger = [divT("2026-05-05", 2_000, "0167B0", 8)];
+    const qty = new Map([[canonicalTickerForMatch("0167B0")!, 575]]);
+    const r = buildForwardDividends(ledger, "2026-11-10", null, { currentQtyByTicker: qty });
+    expect(find(r.months, "2027-05").amountKRW).toBe(2_000);
+  });
+
+  it("연속 3회 미만(분기·연배당)은 빈 달을 채우지 않는다", () => {
+    const ledger = [divT("2026-07-05", 30_000, "SCHD", 100), divT("2026-10-05", 30_000, "SCHD", 100)];
+    const qty = new Map([[canonicalTickerForMatch("SCHD")!, 100]]);
+    const r = buildForwardDividends(ledger, "2026-11-10", null, { currentQtyByTicker: qty });
+    expect(find(r.months, "2026-12").amountKRW).toBe(0);
+    expect(find(r.months, "2027-07").amountKRW).toBe(30_000);
+  });
+});

@@ -2,6 +2,7 @@ import { create } from "zustand";
 import type { TabId } from "../components/ui/Tabs";
 import type { LedgerEntry } from "../types";
 import { isGistConfigured } from "../services/gistSync";
+import { remoteText } from "../services/gas";
 import { STORAGE_KEYS } from "../constants/config";
 import { TAB_ORDER } from "../constants/tabs";
 import type { ApplySummary } from "../utils/applySummary";
@@ -349,7 +350,8 @@ export const useUIStore = create<UIStore>((set) => ({
         minute: "2-digit",
         second: "2-digit",
       });
-      const next = [...state.appLog.slice(-(APP_LOG_MAX - 1)), { id, message, type, time }];
+      // GAS 웹앱에서는 동기화 로그의 "Gist"를 "시트"로 (동기화 코드는 공용이라 문구를 여기서 한 번에 바꾼다)
+      const next = [...state.appLog.slice(-(APP_LOG_MAX - 1)), { id, message: remoteText(message), type, time }];
       // 백그라운드 영속화 — quota 초과 시 조용히 실패
       schedulePersist(() => useUIStore.getState().appLog);
       return { appLog: next };

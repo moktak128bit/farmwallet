@@ -81,6 +81,7 @@ describe("performanceStartDate", () => {
   it("기간이 첫 거래일보다 길면 첫 거래일로 클램프", () => {
     expect(performanceStartDate("1Y", "2026-06-22", "2026-05-01")).toBe("2026-05-01");
     expect(performanceStartDate("3M", "2026-06-22", "2025-01-01")).toBe("2026-03-24");
+    expect(performanceStartDate("1M", "2026-06-22", "2025-01-01")).toBe("2026-05-23");
     expect(performanceStartDate("ALL", "2026-06-22", "2025-01-01")).toBe("2025-01-01");
   });
 });

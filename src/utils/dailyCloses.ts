@@ -4,18 +4,14 @@
  *
  * 무게 관리 (10년 누적해도 수백 KB 수준):
  *  - 보유 종목만, 종목·날짜당 1건 (같은 날 재갱신 시 마지막 값으로 교체)
- *  - 최근 RECENT_DAYS는 일별 유지, 그 이전은 종목·월당 마지막 1건(≈월말 종가)으로 압축
+ *  - 과거 일별 값도 보존 — 월말 압축하면 1년·전체 투자 성과가 월 단위로 뭉개진다
  *  - 저장은 캐시 슬롯(farmwallet-cache-v1)으로 분리 — 메인 데이터·백업·Gist 무게에 영향 없음
  */
 import type { HistoricalDailyClose, StockPrice, StockTrade } from "../types";
 import { canonicalTickerForMatch, getCurrentHoldingsTickers } from "./finance";
-import { formatIsoLocal, parseIsoLocal } from "./date";
-
-/** 이 일수 이내는 일별 보존, 그보다 오래되면 월당 1건으로 압축 */
-const RECENT_DAYS = 120;
 
 /**
- * 당일 종가 적립 + 보존 압축. 변경이 없으면 null을 반환해 호출부가 기존 참조를 유지하게 한다.
+ * 당일 가격 적립. 변경이 없으면 null을 반환해 호출부가 기존 참조를 유지하게 한다.
  * @param today YYYY-MM-DD (KST)
  */
 export function upsertDailyCloses(
@@ -51,30 +47,14 @@ export function upsertDailyCloses(
     if (closeDay > today) continue; // 시계 왜곡 방어
     const key = `${t}|${closeDay}`;
     const prev = map.get(key);
+    // 보강한 과거 종가를 캐시에 남아 있던 오래된 장중 가격으로 다시 덮지 않는다.
+    if (prev && closeDay < today) continue;
     if (prev && prev.close === close) continue;
     map.set(key, { ticker: t, date: closeDay, close, currency: p.currency });
     changed = true;
   }
 
-  // 보존 압축: cutoff 이전은 종목·월당 마지막 1건만
-  const base = parseIsoLocal(today);
-  let cutoff = "";
-  if (base) {
-    base.setDate(base.getDate() - RECENT_DAYS);
-    cutoff = formatIsoLocal(base);
-  }
-  const keepLatestPerMonth = new Map<string, HistoricalDailyClose>(); // ticker|YYYY-MM → 최신
-  const recent: HistoricalDailyClose[] = [];
-  for (const c of map.values()) {
-    if (!cutoff || c.date >= cutoff) {
-      recent.push(c);
-      continue;
-    }
-    const mk = `${c.ticker}|${c.date.slice(0, 7)}`;
-    const prev = keepLatestPerMonth.get(mk);
-    if (!prev || c.date > prev.date) keepLatestPerMonth.set(mk, c);
-  }
-  const next = [...keepLatestPerMonth.values(), ...recent].sort(
+  const next = [...map.values()].sort(
     (a, b) => a.date.localeCompare(b.date) || a.ticker.localeCompare(b.ticker)
   );
   if (next.length !== map.size) changed = true;

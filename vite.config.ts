@@ -6,6 +6,7 @@ import path from "path";
 import https from "https";
 import { exec } from "child_process";
 import type { IncomingMessage, ServerResponse } from "http";
+import { hasUserRecords, wouldEraseUserRecords } from "./src/utils/userDataPresence";
 
 function backupApiPlugin(): Plugin {
   return {
@@ -376,11 +377,14 @@ function backupApiPlugin(): Plugin {
               .filter((f: string) => f.endsWith(".json"))
               .sort()
               .reverse();
-            if (files.length > 0) {
-              const raw = fs.readFileSync(path.join(dirPath, files[0]), "utf-8");
-              res.setHeader("Content-Type", "application/json");
-              res.end(raw);
-              return;
+            for (const file of files) {
+              try {
+                const raw = fs.readFileSync(path.join(dirPath, file), "utf-8");
+                if (!hasUserRecords(JSON.parse(raw))) continue;
+                res.setHeader("Content-Type", "application/json");
+                res.end(raw);
+                return;
+              } catch { /* 깨진 최신 백업은 건너뛰고 이전 정상 파일을 찾는다. */ }
             }
           }
           res.setHeader("Content-Type", "application/json");
@@ -438,13 +442,21 @@ function backupApiPlugin(): Plugin {
             if (tooLarge) return;
             const body = Buffer.concat(chunks).toString("utf-8");
             try {
-              // JSON 유효성 검사만 수행 (형식은 클라이언트가 책임)
-              JSON.parse(body);
+              const incoming: unknown = JSON.parse(body);
+              if (fs.existsSync(unifiedDataFile)) {
+                const existing: unknown = JSON.parse(fs.readFileSync(unifiedDataFile, "utf-8"));
+                if (wouldEraseUserRecords(existing, incoming)) {
+                  res.statusCode = 409;
+                  res.setHeader("Content-Type", "application/json");
+                  res.end(JSON.stringify({ error: "빈 브라우저 데이터로 기존 가계부 파일을 덮어쓸 수 없습니다." }));
+                  return;
+                }
+              }
               if (!fs.existsSync(dataDir)) {
                 fs.mkdirSync(dataDir, { recursive: true });
               }
               // 사람이 읽기 좋게 포맷팅해서 저장 (git diff 가독성)
-              const formatted = JSON.stringify(JSON.parse(body), null, 2);
+              const formatted = JSON.stringify(incoming, null, 2);
               fs.writeFileSync(unifiedDataFile, formatted, "utf-8");
 
               res.setHeader("Content-Type", "application/json");

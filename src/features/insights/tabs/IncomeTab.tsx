@@ -5,8 +5,14 @@ import {
   XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer, ComposedChart,
 } from "recharts";
 import type { ValueType } from "recharts/types/component/DefaultTooltipContent";
-import { InsightText, C, F, W, Pct, Card, Kpi, Insight, Section, CT, pieLabel, type D } from "../insightsShared";
+import { C, F, W, Pct, Card, Kpi, Insight, Section, CT, pieLabel, type D } from "../insightsShared";
 import type { IncomeNature } from "../../../utils/realIncome";
+import type { LedgerEntry } from "../../../types";
+import { useAppStore } from "../../../store/appStore";
+import { useFxRateValue } from "../../../context/FxRateContext";
+import { toKrwAmount } from "../../dashboard/summaryMath";
+import { isExcludedIncomeEntry } from "../../../utils/savingsRate";
+import { getThisMonthKST } from "../../../utils/date";
 
 // 그룹 색은 이름 고정 매핑 — incByGroup은 금액순 정렬이라 인덱스 기반이면 순서 따라 색이 바뀜
 const GROUP_COLOR_BY_NAME: Record<string, string> = {
@@ -21,8 +27,106 @@ const NATURE_LABELS: Record<IncomeNature, string> = {
   근로: "근로소득", 패시브: "패시브", 기타: "부수입",
   일시: "일시·이전", 환급: "환급·정산", 부채: "부채",
 };
+/** 실질 수입에서 빼는 이유 — 성격별 한 줄 (조언 아님) */
+const NON_REAL_REASON: Partial<Record<IncomeNature, string>> = {
+  부채: "갚아야 할 돈이라 실질 수입에서 뺍니다.",
+  환급: "내가 먼저 쓴 돈을 돌려받은 것이라 실질 수입에서 뺍니다.",
+  일시: "반복이 보장되지 않는 이전성 입금이라 실질 수입에서 뺍니다.",
+};
+
+const median = (xs: number[]) => {
+  if (xs.length === 0) return 0;
+  const a = [...xs].sort((x, y) => x - y);
+  const mid = Math.floor(a.length / 2);
+  return a.length % 2 ? a[mid] : (a[mid - 1] + a[mid]) / 2;
+};
+const fmtMonth = (m: string) => m.replace("-", ".");
+
+interface IncomeFacts {
+  lastDate: string;
+  /** 완료월 중 발생한 달 수 / 완료월 수 */
+  activeMonths: number;
+  doneMonths: number;
+  /** 직전 완료월 두 개 [그 전월, 직전월] 금액 (0 포함) */
+  prevPair: [{ m: string; v: number }, { m: string; v: number }] | null;
+  /** 최근 3건 건당 평균 vs 그 이전 건당 평균 (6건 이상일 때만) */
+  recentAvg: number | null;
+  earlierAvg: number | null;
+  /** 평소 달(발생월 중앙값)보다 4배 이상 큰 달 — 분류·금액 확인 필요 */
+  outlier: { m: string; v: number; med: number } | null;
+}
+
+/**
+ * 수입원별 사실(마지막 발생일·발생 패턴·건당 금액 변화·이상치). slice의 incSubInsights와 같은 키(sub‖category)·기간.
+ * curMonth(진행 중인 달)는 완료월 통계에서 뺀다.
+ */
+export function buildIncomeFacts(ledger: LedgerEntry[], months: string[], fxRate: number | null, curMonth: string = getThisMonthKST()): Map<string, IncomeFacts> {
+  const done = months.filter((m) => m < curMonth);
+  const inRange = new Set(months);
+  const bySub = new Map<string, LedgerEntry[]>();
+  for (const l of ledger) {
+    if (l.kind !== "income" || !(Number(l.amount) > 0) || !l.date || !inRange.has(l.date.slice(0, 7)) || isExcludedIncomeEntry(l)) continue;
+    const sub = l.subCategory || l.category || "기타";
+    const arr = bySub.get(sub) ?? [];
+    arr.push(l);
+    bySub.set(sub, arr);
+  }
+  const out = new Map<string, IncomeFacts>();
+  for (const [sub, list] of bySub) {
+    list.sort((a, b) => a.date.localeCompare(b.date));
+    const amt = (l: LedgerEntry) => toKrwAmount(l, fxRate);
+    const byMonth = new Map<string, number>();
+    for (const l of list) byMonth.set(l.date.slice(0, 7), (byMonth.get(l.date.slice(0, 7)) ?? 0) + amt(l));
+    const doneVals = done.map((m) => byMonth.get(m) ?? 0);
+    const nonZero = doneVals.filter((v) => v > 0);
+    const prevPair: IncomeFacts["prevPair"] = done.length >= 2
+      ? [{ m: done[done.length - 2], v: doneVals[done.length - 2] }, { m: done[done.length - 1], v: doneVals[done.length - 1] }]
+      : null;
+    let recentAvg: number | null = null;
+    let earlierAvg: number | null = null;
+    if (list.length >= 6) {
+      const recent = list.slice(-3);
+      const earlier = list.slice(0, -3);
+      recentAvg = recent.reduce((s, l) => s + amt(l), 0) / recent.length;
+      earlierAvg = earlier.reduce((s, l) => s + amt(l), 0) / earlier.length;
+    }
+    let outlier: IncomeFacts["outlier"] = null;
+    if (nonZero.length >= 3) {
+      const med = median(nonZero);
+      const maxV = Math.max(...nonZero);
+      if (med > 0 && maxV >= med * 4) outlier = { m: done[doneVals.indexOf(maxV)], v: maxV, med };
+    }
+    out.set(sub, { lastDate: list[list.length - 1].date, activeMonths: nonZero.length, doneMonths: done.length, prevPair, recentAvg, earlierAvg, outlier });
+  }
+  return out;
+}
+
+/** 두 달 비교 — 기준이 0이거나 변화가 4배를 넘으면 %를 숨기고 금액만 (103900% 같은 숫자 방지) */
+export function pairText(p: NonNullable<IncomeFacts["prevPair"]>): string {
+  const [a, b] = p;
+  const base = `${fmtMonth(a.m)} ${a.v > 0 ? F(a.v) + "원" : "없음"} → ${fmtMonth(b.m)} ${b.v > 0 ? F(b.v) + "원" : "없음"}`;
+  if (a.v <= 0 || b.v <= 0) return base;
+  const pct = (b.v / a.v - 1) * 100;
+  if (Math.abs(pct) < 5) return `${base} (비슷)`;
+  if (Math.abs(pct) > 300) return base;
+  return `${base} (${pct > 0 ? "+" : ""}${pct.toFixed(0)}%)`;
+}
 
 export const IncomeTab = React.memo(function IncomeTab({ d }: { d: D }) {
+  const ledger = useAppStore((s) => s.data.ledger);
+  const fxRate = useFxRateValue();
+  const facts = React.useMemo(() => buildIncomeFacts(ledger ?? [], d.months, fxRate), [ledger, d.months, fxRate]);
+  // 근로소득 완료월 범위 (최소·최대 달) — 안정성 문장의 근거
+  const curMonth = getThisMonthKST();
+  const salaryDone = d.months.filter((m) => m < curMonth).map((m) => ({ m, v: d.salaryMonthly[m] ?? 0 })).filter((x) => x.v > 0);
+  const salaryMin = salaryDone.length > 0 ? salaryDone.reduce((a, b) => (b.v < a.v ? b : a)) : null;
+  const salaryMax = salaryDone.length > 0 ? salaryDone.reduce((a, b) => (b.v > a.v ? b : a)) : null;
+  const otherRealGroup = d.incByGroup.find((g) => g.name === "기타수입")?.value ?? 0;
+  // 최근 완료월 3개의 배당·이자 (divTrend는 d.months 평행 배열 — 진행 중인 달 제외)
+  const recentDiv = d.months
+    .map((m, i) => ({ m, l: d.divTrend[i]?.l ?? fmtMonth(m), amount: d.divTrend[i]?.amount ?? 0 }))
+    .filter((x) => x.m < curMonth)
+    .slice(-3);
   const incData = d.incByCat.map(([name, value]) => ({ name, value }));
   const totalIncome = incData.reduce((s, x) => s + x.value, 0);
 
@@ -61,6 +165,9 @@ export const IncomeTab = React.memo(function IncomeTab({ d }: { d: D }) {
     ? d.selMonth
     : (d.months.length > 0 ? `${d.months[0]} ~ ${d.months[d.months.length - 1]}` : "-");
   const rangeLabel = d.selMonth ? `1개월 (${d.ml[d.selMonth] ?? d.selMonth})` : `${d.months.length}개월`;
+  const monthsWithoutIncome = d.salaryTrend
+    .filter(m => m.salary === 0 && m.nonSalary === 0)
+    .map(m => m.l);
 
   return (
     <div>
@@ -74,9 +181,9 @@ export const IncomeTab = React.memo(function IncomeTab({ d }: { d: D }) {
 
       {/* ============ 한눈에 보기 ============ */}
       <Section storageKey="income-section-overview" title="한눈에 보기">
-        <Card accent><Kpi label="총 수입 (장부)" value={F(totalIncome) + "원"} sub={`실질 ${F(d.realIncome)}원 · ${d.accumLabel}`} color="var(--chart-income)" info="장부 수입 기준. 실질 수입 = 장부 수입 − 정산·환불·일시소득·대출" /></Card>
-        <Card accent><Kpi label="회사소득 의존도" value={salaryPct.toFixed(1) + "%"} sub={`${F(salaryGroupTotal)}원 / 실질 ${F(d.realIncome)}원`} color={salaryPct > 80 ? "var(--danger)" : salaryPct > 50 ? "var(--warning)" : "var(--success)"} info="회사소득 그룹(급여·수당·상여)이 실질 수입에서 차지하는 비율. 80% 초과 시 다각화 권장" /></Card>
-        <Card accent><Kpi label="패시브 수입 비율" value={passivePct.toFixed(1) + "%"} sub={`월평균 ${F(Math.round(passiveGroupTotal / d.monthSpan))}원`} color={passivePct >= 10 ? "var(--success)" : "var(--accent)"} info="배당·이자 등 패시브 수입 합 / 실질 수입. 10%↑ 권장 (투자수익은 재테크 순집계로 별도)" /></Card>
+        <Card accent><Kpi label="총 수입 (장부)" value={F(totalIncome) + "원"} sub={`실질 ${F(d.realIncome)}원 · ${d.accumLabel}`} color="var(--chart-income)" info="장부 수입(퇴직연금·투자수익 제외) 기준. 실질 수입 = 장부 수입 − 정산·환불·일시소득·대출 + 투자수익" /></Card>
+        <Card accent><Kpi label="회사소득 의존도" value={salaryPct.toFixed(1) + "%"} sub={`${F(salaryGroupTotal)}원 / 실질 ${F(d.realIncome)}원`} color="var(--text)" info="회사소득 그룹(급여·수당·상여)이 실질 수입에서 차지하는 비율" /></Card>
+        <Card accent><Kpi label="패시브 수입 비율" value={passivePct.toFixed(1) + "%"} sub={`월평균 ${F(Math.round(passiveGroupTotal / d.monthSpan))}원`} color="var(--text)" info="배당·이자 등 패시브 수입 합 / 실질 수입 (투자 매매 수익은 재테크 순집계로 별도)" /></Card>
         <Card accent><Kpi label="실효 수입원 수" value={effectiveSources.toFixed(1) + "개"} sub={`실질 수입원 ${realIncData.length}개 · 집중도 반영`} color="var(--chart-series-c)" info="실질 수입원만 대상 1 / HHI. 같은 비율 N개면 N, 한 곳에 몰릴수록 작음" /></Card>
 
         <Card title="수입 구조 (그룹별)" span={2}>
@@ -146,7 +253,7 @@ export const IncomeTab = React.memo(function IncomeTab({ d }: { d: D }) {
         <Card title="장부 vs 실질 수입" span={2}>
           <div style={{ display: "flex", flexDirection: "column", gap: 10, fontSize: 13 }}>
             <div style={{ padding: "12px 14px", background: "var(--success-light)", borderRadius: 10, border: "1px solid var(--success)" }}>
-              <div style={{ fontSize: 11, color: "var(--text-muted)" }}>장부 수입 (총액)</div>
+              <div style={{ fontSize: 11, color: "var(--text-muted)" }}>장부 수입 (퇴직연금·투자수익 제외)</div>
               <div style={{ fontSize: 22, fontWeight: 800, color: "var(--chart-income)" }}>{F(d.pIncome)}원</div>
             </div>
             {d.settlementTotal > 0 && (
@@ -159,6 +266,18 @@ export const IncomeTab = React.memo(function IncomeTab({ d }: { d: D }) {
               <div style={{ padding: "10px 14px", background: "var(--accent-light)", borderRadius: 8, border: "1px solid var(--accent)", fontSize: 12 }}>
                 <span style={{ color: "var(--text-muted)" }}>− 일시소득 (용돈·지원·이월·대출·처분소득)</span>
                 <span style={{ float: "right", fontWeight: 700, color: "var(--accent)" }}>−{F(d.tempIncomeTotal)}원</span>
+              </div>
+            )}
+            {d.carryOverIncome > 0 && (
+              <div style={{ padding: "10px 14px", background: "var(--bg)", borderRadius: 8, border: "1px solid var(--border)", fontSize: 12 }}>
+                <span style={{ color: "var(--text-muted)" }}>− 이월·원래 보유 자산 (번 돈이 아님)</span>
+                <span style={{ float: "right", fontWeight: 700 }}>−{F(d.carryOverIncome)}원</span>
+              </div>
+            )}
+            {d.incomeOutsideLedger !== 0 && (
+              <div style={{ padding: "10px 14px", background: "var(--bg)", borderRadius: 8, border: "1px solid var(--border)", fontSize: 12 }}>
+                <span style={{ color: "var(--text-muted)" }}>{d.incomeOutsideLedger > 0 ? "+" : "−"} 투자수익 (장부 수입에선 재테크로 빠짐)</span>
+                <span style={{ float: "right", fontWeight: 700 }}>{d.incomeOutsideLedger > 0 ? "+" : "−"}{F(Math.abs(d.incomeOutsideLedger))}원</span>
               </div>
             )}
             <div className="ins-dark-surface" style={{ padding: "12px 14px", borderRadius: 10, color: "var(--text)" }}>
@@ -204,6 +323,11 @@ export const IncomeTab = React.memo(function IncomeTab({ d }: { d: D }) {
               <Bar isAnimationActive={false} dataKey="nonSalary" stackId="a" fill="var(--chart-primary)" name="비회사소득" radius={[4, 4, 0, 0]} />
             </BarChart>
           </ResponsiveContainer>
+          {monthsWithoutIncome.length > 0 && (
+            <div className="hint" style={{ marginTop: 8, fontSize: 12 }}>
+              집계 대상 수입 기록 없음: {monthsWithoutIncome.join(", ")}. 계좌이체·초기잔액은 수입에 포함하지 않습니다.
+            </div>
+          )}
         </Card>
 
         <Card title="패시브 수입 월별 (배당·이자)" span={2}>
@@ -238,24 +362,22 @@ export const IncomeTab = React.memo(function IncomeTab({ d }: { d: D }) {
       <Section storageKey="income-section-insights" title="인사이트">
         <Card title="수입 종합 인사이트" span={4}>
           <div className="grid-2" style={{ gap: 10 }}>
-            <Insight title="수입 안정성" tone="info">
-              {d.incomeStability !== null ? `안정성 지수 ${d.incomeStability}% (1 − 표준편차/평균). ${d.incomeStability >= 70 ? "매우 안정적인 수입 흐름. 지출 계획과 투자 전략 세우기 좋은 환경." : d.incomeStability >= 40 ? "수입에 변동이 있지만 관리 가능 수준. 변동 원인 파악하면 더 안정화 가능." : "수입 변동이 큼. 비상자금(재정 활주로 6개월 이상) 확보 필수, 안정 수입원 늘리기 권장."}` : "데이터 부족 (최소 2개월 이상 필요)"}
+            <Insight title="근로소득이 얼마나 일정한가" tone="info">
+              {d.incomeStability !== null
+                ? `안정성 지수 ${d.incomeStability}% (1 − 표준편차/평균, 상여 포함).${salaryMin && salaryMax && salaryMin.m !== salaryMax.m ? ` 가장 적은 달 ${fmtMonth(salaryMin.m)} ${F(salaryMin.v)}원 · 가장 많은 달 ${fmtMonth(salaryMax.m)} ${F(salaryMax.v)}원.` : ""}`
+                : "완료된 달이 2개월 이상 쌓이면 계산합니다."}
             </Insight>
-            <Insight title="패시브 수입 현황" tone="success">
-              {d.passiveIncome > 0 ? `배당·이자 등 패시브 수입 합산 ${F(d.passiveIncome)}원 (실질 수입의 ${passivePct.toFixed(1)}%). 월평균 ${F(Math.round(d.passiveIncome / d.monthSpan))}원의 패시브 수입이 발생. ${passivePct >= 10 ? "패시브 비중 10% 달성. 자산이 돈을 벌어주는 구조!" : "10% 이상으로 늘리면 FIRE 가능성이 커집니다. 배당 ETF 적립식 투자가 시작점."}` : "패시브 수입 없음. 배당주/ETF/예금 이자 등 소액부터 시작해 보세요. 월 1만원도 의미 있는 첫걸음."}
+            <Insight title="배당·이자" tone="success">
+              {d.passiveIncome > 0
+                ? `${d.accumLabel} ${F(d.passiveIncome)}원 · 실질 수입의 ${passivePct.toFixed(1)}% · 월평균 ${F(Math.round(d.passiveIncome / d.monthSpan))}원.${recentDiv.length > 0 ? ` 최근 완료월: ${recentDiv.map((x) => `${x.l} ${x.amount > 0 ? F(x.amount) + "원" : "없음"}`).join(" · ")}.` : ""}`
+                : "기간 내 배당·이자 기록이 없습니다."}
             </Insight>
-            <Insight title="수입 다각화 점검" tone="warning">
-              실질 수입원 {realIncData.length}개 · 실효 {effectiveSources.toFixed(1)}개.
-              {salaryPct > 80
-                ? ` 회사소득 의존도 ${salaryPct.toFixed(0)}%로 매우 높습니다. 비회사 실질 수입 ${F(Math.max(0, d.realIncome - salaryGroupTotal))}원에 불과. 부업·투자 수입·프리랜서로 다각화 권장.`
-                : salaryPct > 50
-                  ? ` 회사소득 ${salaryPct.toFixed(0)}%로 적정. 비회사 실질 수입(${F(Math.max(0, d.realIncome - salaryGroupTotal))}원)이 버퍼 역할.`
-                  : ` 회사소득 의존도 ${salaryPct.toFixed(0)}% — 훌륭한 다각화!`}
-              {effectiveSources < 2 && " 실효 수입원이 2 미만 = 사실상 단일 의존. 분산 필요."}
+            <Insight title="회사 밖에서 들어온 돈" tone="warning">
+              실질 수입 중 회사소득 {salaryPct.toFixed(0)}%. 나머지 {F(Math.max(0, d.realIncome - salaryGroupTotal))}원 = 배당·이자 {F(passiveGroupTotal)}원 + 부수입(캐시백 등) {F(otherRealGroup)}원.
+              {" "}실질 수입원 {realIncData.length}개지만 금액 집중도로 보면 실효 {effectiveSources.toFixed(1)}개입니다.
             </Insight>
-            <Insight title="실질 수입 분석" color="var(--chart-series-c)" bg="rgba(139,92,246,0.08)">
-              실질 수입 {F(d.realIncome)}원 = 장부 수입 {F(d.pIncome)}원{d.settlementTotal > 0 ? ` − 정산·분담금 ${F(d.settlementTotal)}원 (돌려받은 돈)` : ""}{d.tempIncomeTotal > 0 ? ` − 일시소득·환불·대출 ${F(d.tempIncomeTotal)}원` : ""}.
-              {" "}회사소득 {F(salaryGroupTotal)}원과 패시브 {F(passiveGroupTotal)}원이 지속 가능한 재산 형성의 핵심.
+            <Insight title="실질 수입 분석" color="var(--chart-series-c)" bg="var(--bg)">
+              실질 수입 {F(d.realIncome)}원 = 장부 수입 {F(d.pIncome)}원{d.settlementTotal > 0 ? ` − 정산·분담금 ${F(d.settlementTotal)}원 (돌려받은 돈)` : ""}{d.tempIncomeTotal > 0 ? ` − 일시소득·환불·대출 ${F(d.tempIncomeTotal)}원` : ""}{d.carryOverIncome > 0 ? ` − 이월·원래 보유 ${F(d.carryOverIncome)}원` : ""}{d.incomeOutsideLedger !== 0 ? ` ${d.incomeOutsideLedger > 0 ? "+" : "−"} 투자수익 ${F(Math.abs(d.incomeOutsideLedger))}원` : ""}.
               {" "}실질 저축률 {d.realSavRate == null ? "N/A" : `${d.realSavRate.toFixed(1)}%`}{d.datePartnerShare > 0 ? ` (데이트 계좌 ${F(d.dateAccountSpend)}원 중 상대 부담 ${F(Math.round(d.datePartnerShare))}원 반영)` : ""}.
             </Insight>
           </div>
@@ -266,10 +388,9 @@ export const IncomeTab = React.memo(function IncomeTab({ d }: { d: D }) {
             <div className="grid-2" style={{ gap: 10 }}>
               {d.incSubInsights.map((s) => {
                 const natureColor = NATURE_COLORS[s.nature] ?? "var(--text-faint)";
-                // 추세 색 배경은 정기 수입원에만 — 비정기·환급·부채에 "급감" 빨강은 노이즈
-                const tinted = s.isReal && s.recurring;
+                const f = facts.get(s.sub);
                 return (
-                  <div key={s.sub} style={{ padding: "12px 14px", borderRadius: 10, background: tinted && s.monthTrend === "up" ? "var(--primary-light)" : tinted && s.monthTrend === "down" ? "var(--danger-light)" : "var(--bg)", border: "1px solid var(--border-light)", fontSize: 12, color: "var(--text)", opacity: s.isReal ? 1 : 0.85 }}>
+                  <div key={s.sub} style={{ padding: "12px 14px", borderRadius: 10, background: "var(--bg)", border: "1px solid var(--border-light)", fontSize: 12, color: "var(--text)", opacity: s.isReal ? 1 : 0.85 }}>
                     <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 6 }}>
                       <span style={{ fontWeight: 700, fontSize: 14, display: "flex", alignItems: "center", gap: 6 }}>
                         <span style={{ width: 10, height: 10, borderRadius: 5, background: natureColor, display: "inline-block" }} />
@@ -282,16 +403,21 @@ export const IncomeTab = React.memo(function IncomeTab({ d }: { d: D }) {
                     <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 4, fontSize: 11, color: "var(--text-secondary)", marginBottom: 4 }}>
                       <span>{s.isReal && s.realShare !== null ? `실질 수입 대비 ${s.realShare}%` : `장부 비중 ${s.share}%`}</span>
                       <span>{s.count}건 · 건당 {F(s.avg)}원</span>
-                      <span>발생월 평균: {F(s.monthAvg)}원</span>
-                      <span>안정성: {s.stability === null ? "— (표본 부족)" : `${s.stability}%`}</span>
+                      <span>{f ? `완료월 ${f.doneMonths}개월 중 ${f.activeMonths}개월 발생` : `발생월 평균 ${F(s.monthAvg)}원`}</span>
+                      <span>{f ? `마지막 ${f.lastDate}` : ""}</span>
                     </div>
-                    <div style={{ fontSize: 11, color: tinted && s.monthTrend === "up" ? "var(--success)" : tinted && s.monthTrend === "down" ? "var(--danger)" : "var(--text-faint)", fontWeight: 600, marginBottom: 4 }}>
-                      {tinted
-                        ? (s.monthTrend === "up" ? `▲ 전월 대비 ${s.mom}% 증가` : s.monthTrend === "down" ? `▼ 전월 대비 ${Math.abs(s.mom)}% 감소` : "전월과 유사")
-                        : "비정기 발생"}
-                      {s.maxMonth ? ` · 최대: ${s.maxMonth} (${F(s.maxMonthAmt)}원)` : ""}
+                    <div style={{ fontSize: 11, color: "var(--text-muted)", lineHeight: 1.6, borderTop: "1px solid var(--border-light)", paddingTop: 4 }}>
+                      {f?.prevPair && s.isReal && <div>{pairText(f.prevPair)}</div>}
+                      {f?.recentAvg != null && f.earlierAvg != null && f.earlierAvg > 0 && Math.abs(f.recentAvg / f.earlierAvg - 1) >= 0.15 && (
+                        <div>최근 3건 건당 {F(Math.round(f.recentAvg))}원 · 그 이전 건당{F(Math.round(f.earlierAvg))}원</div>
+                      )}
+                      {!s.isReal && NON_REAL_REASON[s.nature] && <div>{NON_REAL_REASON[s.nature]}</div>}
+                      {f?.outlier && (
+                        <div style={{ color: "var(--warning)", fontWeight: 600 }}>
+                          확인 필요: {fmtMonth(f.outlier.m)} {F(f.outlier.v)}원은 평소 달(중앙값 {F(Math.round(f.outlier.med))}원)의 {Math.round(f.outlier.v / f.outlier.med)}배 — 분류·금액이 맞는지 확인하세요.
+                        </div>
+                      )}
                     </div>
-                    <InsightText text={s.comment} style={{ fontSize: 11, color: "var(--text-muted)", lineHeight: 1.6, borderTop: "1px solid var(--border-light)", paddingTop: 4 }} />
                   </div>
                 );
               })}

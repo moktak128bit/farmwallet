@@ -1,5 +1,6 @@
 // @vitest-environment jsdom
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
+import { useAppStore } from "../store/appStore";
 import React from "react";
 import { render, screen, cleanup } from "@testing-library/react";
 import type { AppData, LedgerEntry } from "../types";
@@ -30,7 +31,8 @@ describe("SettlementView — 정산 시작일·합계 (회귀)", () => {
     vi.useFakeTimers({ toFake: ["Date"] });
     vi.setSystemTime(new Date("2026-10-02T03:00:00Z")); // KST 10/02 정오
     localStorage.clear();
-    localStorage.setItem("fw-date-account-id", DA);
+    // 데이트통장은 장부(AppData.dateAccountId) 단일 소스 — 예전 기기 localStorage 키가 아님
+    useAppStore.setState((st) => ({ data: { ...st.data, dateAccountId: DA } }));
   });
   afterEach(() => {
     cleanup();

@@ -37,6 +37,9 @@ function normalizePath(value) {
 
 function collectFiles(targetPath, files) {
   if (!fs.existsSync(targetPath)) return;
+  // 개인 장부의 과거 사본은 앱 소스가 아니다. 원래 제외하던 백업이 old로 이동해도 검사하지 않는다.
+  const relativePath = normalizePath(path.relative(rootDir, targetPath));
+  if (relativePath === "data/old" || relativePath.startsWith("data/old/")) return;
   const stat = fs.statSync(targetPath);
 
   if (stat.isFile()) {

@@ -28,6 +28,14 @@ import { toKrwByRate } from "./currency";
 import { extractTickerFromText, canonicalTickerForMatch } from "./finance";
 import { parseQuantityFromNote } from "./dividend";
 
+/** 배당 당시 보유가 현재 보유의 이 비율 미만이면 현재 보유로 스케일하지 않는다 */
+const MIN_SCALE_BASE_RATIO = 0.1;
+/** 이 횟수 이상 연속 월 지급이면 월배당 종목으로 보고 빈 달을 채운다 */
+const MONTHLY_STREAK = 3;
+
+const monthsBetween = (from: string, to: string): number =>
+  (Number(to.slice(0, 4)) - Number(from.slice(0, 4))) * 12 + (Number(to.slice(5, 7)) - Number(from.slice(5, 7)));
+
 export interface ForwardDividendMonth {
   /** YYYY-MM (미래) */
   month: string;
@@ -108,9 +116,12 @@ export function buildForwardDividends(
 
   // 그룹별 미래 투영액 → 스트림별 YYYY-MM 버킷
   const streams = new Map<string, Map<string, number>>();
+  /** 티커 스트림별 월 투영액(스케일 여부 포함) — 월배당 빈 달 채우기용 */
+  const tickerMonths = new Map<string, Array<{ ym: string; forward: number; scaled: boolean }>>();
   for (const g of groups.values()) {
     const groupKrw = g.recs.reduce((s, r) => s + r.krw, 0);
     let forward = groupKrw;
+    let scaled = false;
     if (qtyByTicker && g.ticker && qtyByTicker.has(g.ticker)) {
       const currentQty = qtyByTicker.get(g.ticker) ?? 0;
       if (currentQty <= 0) {
@@ -123,7 +134,12 @@ export function buildForwardDividends(
           byAcct.set(k, Math.max(byAcct.get(k) ?? 0, r.qtyAt ?? 0));
         });
         const qtyAtSum = [...byAcct.values()].reduce((s, v) => s + v, 0);
-        if (qtyAtSum > 0) forward = groupKrw * (currentQty / qtyAtSum);
+        // 극소 분모는 스케일하지 않는다 — 8주일 때 받은 2,000원을 지금 575주로 늘리면 143,750원이 된다.
+        // 보유가 현재의 10% 미만이던 때의 배당은 주당 분배를 대표하지 못한다(소수점 반올림·첫 회 일할).
+        if (qtyAtSum >= currentQty * MIN_SCALE_BASE_RATIO) {
+          forward = groupKrw * (currentQty / qtyAtSum);
+          scaled = true;
+        }
       }
       // note 혼재/부재 → 스케일 포기, 과거액 유지
     }
@@ -134,6 +150,38 @@ export function buildForwardDividends(
       streams.set(g.stream, ymMap);
     }
     ymMap.set(g.ym, (ymMap.get(g.ym) ?? 0) + forward);
+    if (g.ticker) {
+      const list = tickerMonths.get(g.stream) ?? [];
+      list.push({ ym: g.ym, forward, scaled });
+      tickerMonths.set(g.stream, list);
+    }
+  }
+
+  // 월배당 종목 run-rate — "작년 같은 달"만 보면 올해 5월에 시작한 월배당 ETF의 12~4월이 0이 되고,
+  // 소량 보유 때 받은 달은 극소 분모라 미래를 대표하지 못한다(5월 18만 과대·6월 과소).
+  // 최근 3개월 이상 연속 지급(가장 최근 지급이 지난달 이전 2개월 안)인 종목은 미래 모든 달을
+  // 최근 주당 분배 × 현재 보유(= 스케일된 최근 3회 평균)로 둔다. 분기·연배당은 연속 조건에 걸리지 않는다.
+  const monthlyFill = new Map<string, number>();
+  const thisYmForFill = today.slice(0, 7);
+  for (const [stream, list] of tickerMonths) {
+    const byYm = new Map<string, { forward: number; scaled: boolean }>();
+    for (const r of list) {
+      const cur = byYm.get(r.ym);
+      byYm.set(r.ym, { forward: (cur?.forward ?? 0) + r.forward, scaled: (cur?.scaled ?? true) && r.scaled });
+    }
+    // 진행 중인 달은 아직 덜 받았을 수 있어 연속 판정·평균에서 뺀다
+    const done = [...byYm.keys()].filter((ym) => ym < thisYmForFill).sort();
+    if (done.length < MONTHLY_STREAK) continue;
+    const latest = done[done.length - 1];
+    if (monthsBetween(latest, thisYmForFill) > 2) continue; // 지급이 끊긴 종목
+    let streak = 1;
+    for (let i = done.length - 1; i > 0 && monthsBetween(done[i - 1], done[i]) === 1; i -= 1) streak += 1;
+    if (streak < MONTHLY_STREAK) continue;
+    const recent = done.slice(-MONTHLY_STREAK).map((ym) => byYm.get(ym)!);
+    // 현재 보유로 스케일된 회차만 대표값으로 (극소 분모 회차는 제외) — 하나도 없으면 실제 받은 금액 평균
+    const pool = qtyByTicker && recent.some((r) => r.scaled) ? recent.filter((r) => r.scaled) : recent;
+    const avg = pool.reduce((x, r) => x + r.forward, 0) / pool.length;
+    if (avg > 0) monthlyFill.set(stream, avg);
   }
 
   const base = parseIsoLocal(today) ?? new Date();
@@ -144,8 +192,15 @@ export function buildForwardDividends(
     const fy = d.getFullYear();
     const mm = String(d.getMonth() + 1).padStart(2, "0");
     let amt = 0;
-    for (const ymMap of streams.values()) {
+    for (const [stream, ymMap] of streams) {
       // 스트림 단위 최신 우선: 올해 같은 달 지급이 이미 있으면 그것(1년 전), 없으면 작년 것(2년 전)
+      // 월배당 종목은 모든 달을 최근 run-rate로 — 작년 같은 달은 보유가 작거나(극소 분모로 스케일 포기)
+      // 분배율이 지금과 달라(커버드콜 초기 고분배) 미래 한 달을 대표하지 못한다.
+      const fill = monthlyFill.get(stream);
+      if (fill != null) {
+        amt += fill;
+        continue;
+      }
       const v = ymMap.get(`${fy - 1}-${mm}`) ?? ymMap.get(`${fy - 2}-${mm}`);
       if (v != null) amt += v;
     }
@@ -157,8 +212,8 @@ export function buildForwardDividends(
   const thisYm = today.slice(0, 7);
   const lastYearYm = `${Number(today.slice(0, 4)) - 1}-${today.slice(5, 7)}`;
   let currentMonthRemaining = 0;
-  for (const ymMap of streams.values()) {
-    if (!ymMap.has(thisYm)) currentMonthRemaining += ymMap.get(lastYearYm) ?? 0;
+  for (const [stream, ymMap] of streams) {
+    if (!ymMap.has(thisYm)) currentMonthRemaining += monthlyFill.get(stream) ?? ymMap.get(lastYearYm) ?? 0;
   }
 
   return { months, annualTotalKRW: annualTotal, trailing12KRW: trailing12, currentMonthRemainingKRW: currentMonthRemaining };

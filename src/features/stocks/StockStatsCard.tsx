@@ -1,6 +1,7 @@
 import React from "react";
 import { Money } from "../../components/ui/Money";
 import { formatKRW, formatUSD } from "../../utils/formatter";
+import { dayPnlPercent } from "./dayPnl";
 
 interface StockStatsCardProps {
   totalMarketValue: number;
@@ -17,6 +18,8 @@ interface StockStatsCardProps {
   realizedReturnRate?: number;
   /** 청산 건수 (참고 표시용) */
   realizedTradeCount?: number;
+  /** 환율을 확정할 수 없어 실현손익 합계에서 뺀 청산 건수 (summarizeRecords.excludedUnreliable) */
+  realizedExcludedCount?: number;
 }
 
 export const StockStatsCard: React.FC<StockStatsCardProps> = ({
@@ -30,9 +33,11 @@ export const StockStatsCard: React.FC<StockStatsCardProps> = ({
   totalDividend = 0,
   realizedPnl = 0,
   realizedReturnRate = 0,
-  realizedTradeCount = 0
+  realizedTradeCount = 0,
+  realizedExcludedCount = 0
 }) => {
   // 색 컨벤션(국내 관례): 이익/상승=빨강(var(--danger)), 손실/하락=파랑(var(--accent))
+  const dayPct = dayPnlPercent(totalMarketValue, dayPnl);
   const valueColor = (value: number) => (value >= 0 ? "var(--danger)" : "var(--accent)");
   // 다크모드 대응: 하드코딩 라이트 팔레트 대신 테마 변수 사용
   const statBox: React.CSSProperties = {
@@ -47,7 +52,7 @@ export const StockStatsCard: React.FC<StockStatsCardProps> = ({
     <div className="card" style={{ padding: 16, marginBottom: 16 }}>
       <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(200px, 1fr))", gap: 12 }}>
         <div style={statBox}>
-          <div style={{ color: "var(--text-muted)", fontSize: 14, fontWeight: 600, marginBottom: 4 }}>원금</div>
+          <div style={{ color: "var(--text-muted)", fontSize: 14, fontWeight: 600, marginBottom: 4 }} title="지금 보유 중인 종목의 매입원가(FIFO). 대시보드의 '순입금 원금'과 다른 값입니다.">매입원가 (보유분)</div>
           <div style={{ fontSize: 24, fontWeight: 700, color: "var(--text)" }}><Money value={totalCost} compact /></div>
           {fxRate != null && fxRate > 0 && (
             <div style={{ fontSize: 12, color: "var(--text-muted)", marginTop: 2 }}>≈ {formatUSD(totalCost / fxRate)}</div>
@@ -76,7 +81,7 @@ export const StockStatsCard: React.FC<StockStatsCardProps> = ({
             {formatKRW(totalPnl)} ({(totalReturnRate * 100).toFixed(2)}%)
           </div>
           <div style={{ color: "var(--text-muted)", fontSize: 12, marginTop: 4 }}>
-            일일손익 {formatKRW(dayPnl)} ({totalMarketValue ? ((dayPnl / totalMarketValue) * 100).toFixed(2) : "0.00"}%)
+            일일손익 {formatKRW(dayPnl)} ({dayPct != null ? dayPct.toFixed(2) : "0.00"}%)
           </div>
         </div>
 
@@ -90,6 +95,7 @@ export const StockStatsCard: React.FC<StockStatsCardProps> = ({
           </div>
           <div style={{ color: "var(--text-muted)", fontSize: 12, marginTop: 4 }}>
             {realizedTradeCount > 0 ? `청산 ${realizedTradeCount}건 · FIFO 기준` : "청산 내역 없음"}
+            {realizedExcludedCount > 0 && ` · 환율 미확보 ${realizedExcludedCount}건 제외`}
           </div>
         </div>
       </div>

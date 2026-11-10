@@ -4,7 +4,7 @@
  * 부모가 넘기는 콜백은 모두 안정적(setState 또는 useCallback)이어야 memo가 효과를 가진다.
  */
 import React, { useMemo } from "react";
-import { formatKRW } from "../../utils/formatter";
+import { formatKRW, formatKrwCompact } from "../../utils/formatter";
 import { Money } from "../../components/ui/Money";
 import type { CategoryPresets } from "../../types";
 import type { LedgerDisplayRow } from "../../utils/ledgerHelpers";
@@ -13,6 +13,7 @@ import { EXPENSE_BOX_EXCLUDED_NAMES } from "../dashboard/summaryMath";
 import { useFxRateValue } from "../../context/FxRateContext";
 import { toKrwByRate } from "../../utils/currency";
 import type { ActiveFilterChip } from "./ledgerActiveFilters";
+import { computeRealIncome } from "../../utils/realIncome";
 
 type LedgerFilteredSummary = {
   expenseAmount: number;
@@ -107,6 +108,18 @@ export const LedgerSummarySection: React.FC<Props> = React.memo(function LedgerS
     });
   }, [viewMode, selectedMonths, filteredLedger, categoryPresets, fxRate]);
 
+  // 수입 중 비실질(정산·데이트통장 분담 입금·환불·용돈·대출 등) — 요약 '수입'과 같은 모집단(주식 가상 행·투자손익 제외)에서
+  // utils/realIncome 단일 분류로 나눈다. 순액(수입 − 지출)에 이런 돈이 섞여 있다는 걸 숫자로 보여주기 위함.
+  const nonRealIncome = useMemo(() => {
+    const incomeRows = filteredLedger
+      .filter((l) => !l._tradeId && l.kind === "income" && !isInvestmentPnlEntry(l))
+      .map((l) => ({ ...l, amount: toKrwByRate(l.amount, l.currency, fxRate) }));
+    const total = incomeRows.reduce((s, l) => s + l.amount, 0);
+    const extra = new Set(categoryPresets?.categoryTypes?.nonRealIncome ?? []);
+    const r = computeRealIncome(incomeRows, total, extra);
+    return { settlement: r.settlementTotal, temp: r.tempIncomeTotal };
+  }, [filteredLedger, fxRate, categoryPresets]);
+
   return (
     <>
       {/* 요약 카드: 항상 표시, 필터 적용 시 해당 결과 합계 */}
@@ -125,6 +138,7 @@ export const LedgerSummarySection: React.FC<Props> = React.memo(function LedgerS
                 : viewMode === "monthly"
                   ? `${selectedMonthsLabel || "월 선택"} ${summaryTabLabel}`
                   : `전체 ${summaryTabLabel}`}
+              {" · 수입 − 지출 (재테크 제외)"}
             </span>
             <span style={{
               fontSize: 28,
@@ -160,6 +174,14 @@ export const LedgerSummarySection: React.FC<Props> = React.memo(function LedgerS
               <span style={{ fontSize: 18, fontWeight: 700, color: "var(--chart-income)" }}>
                 <Money value={filteredSummary.incomeAmount} />
               </span>
+              {nonRealIncome.settlement + nonRealIncome.temp > 0 && (
+                <span style={{ fontSize: 11, color: "var(--text-muted)", fontWeight: 600 }}
+                  title="정산·데이트통장 분담 입금은 돌려받은 돈, 용돈·환불·대출 등은 일시·비실질 유입 — 번 돈이 아닙니다">
+                  {/* 좁은 타일에 들어가게 압축 표기 — 정확한 원 단위는 툴팁·인사이트에서 */}
+                  비실질 {formatKrwCompact(nonRealIncome.settlement + nonRealIncome.temp)} 포함
+                  {nonRealIncome.settlement > 0 && nonRealIncome.temp > 0 && ` (정산·분담 ${formatKrwCompact(nonRealIncome.settlement)})`}
+                </span>
+              )}
             </div>
           </div>
           {/* 전월 대비 비교 */}

@@ -230,6 +230,26 @@ describe("useBackup", () => {
   });
 
   describe("disabled(loadFailed) 차단", () => {
+    it("복구 확인이 끝나면 데이터 객체가 그대로여도 자동저장을 재개함", async () => {
+      const data = makeData(1);
+      const { rerender } = renderBackup(data, { disabled: true });
+      await passDebounce();
+      expect(mocked.saveDataSerialized).not.toHaveBeenCalled();
+      rerender({ data, disabled: false });
+      await passDebounce();
+      expect(mocked.saveDataSerialized).toHaveBeenCalledWith(JSON.stringify(data));
+    });
+
+    it("예약된 저장도 복구 보호가 켜지면 취소함", async () => {
+      const { rerender } = renderBackup(makeData(1));
+      const data = makeData(2);
+      rerender({ data, disabled: false });
+      rerender({ data, disabled: true });
+      await passDebounce();
+      expect(mocked.saveDataSerialized).not.toHaveBeenCalled();
+      expect(window.localStorage.getItem(STORAGE_KEYS.DRAFT)).toBeNull();
+    });
+
     it("disabled=true면 변경돼도 자동저장·드래프트·방송 없음", async () => {
       const { rerender } = renderBackup(makeData(1), { disabled: true });
       rerender({ data: makeData(2), disabled: true });

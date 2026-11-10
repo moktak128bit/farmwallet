@@ -21,6 +21,8 @@ import { toast } from "react-hot-toast";
 import { useAppStore } from "../../store/appStore";
 import { useFxRateValue } from "../../context/FxRateContext";
 import { fetchHistoricalCloses } from "../../yahooFinanceApi";
+import { usePortfolioHistoryBackfill } from "../../hooks/usePortfolioHistoryBackfill";
+import { canonicalTickerForMatch } from "../../utils/finance";
 import {
   buildPortfolioPerformance,
   upsertBenchmarkCloses,
@@ -31,6 +33,7 @@ import {
 const BENCHMARKS = STANDARD_BENCHMARKS;
 
 const PERIODS: Array<{ key: PerformancePeriod; label: string }> = [
+  { key: "1M", label: "1개월" },
   { key: "3M", label: "3개월" },
   { key: "6M", label: "6개월" },
   { key: "1Y", label: "1년" },
@@ -51,6 +54,7 @@ export const PortfolioPerformanceSection: React.FC = () => {
   const benchmarkDailyCloses = useAppStore((s) => s.data.benchmarkDailyCloses);
   const setData = useAppStore((s) => s.setData);
   const fxRate = useFxRateValue();
+  const history = usePortfolioHistoryBackfill();
 
   const [benchmarkTicker, setBenchmarkTicker] = useState<string>("^KS11");
   const [period, setPeriod] = useState<PerformancePeriod>("1Y");
@@ -117,7 +121,11 @@ export const PortfolioPerformanceSection: React.FC = () => {
     ? perf.benchmark.series.map((p) => ({ date: p.date, 포트폴리오: p.portfolio, [benchmarkLabel]: p.benchmark }))
     : (perf?.twr ?? []).map((p) => ({ date: p.date, 포트폴리오: p.returnIndex }));
 
-  const tickFmt = (d: string) => (typeof d === "string" && d.length >= 10 ? d.slice(2, 7) : d);
+  const tickFmt = (d: string) => (typeof d === "string" && d.length >= 10 ? d.slice(2).replace(/-/g, ".") : d);
+  const tradedTickers = new Set(trades.map((t) => canonicalTickerForMatch(t.ticker)));
+  const recordedDates = [...new Set((historicalDailyCloses ?? []).filter((c) =>
+    tradedTickers.has(canonicalTickerForMatch(c.ticker)) && Number.isFinite(c.close) && c.close > 0
+    && (!perf || (c.date >= perf.startDate && c.date <= perf.endDate))).map((c) => c.date))].sort();
   // Keep 100 on both the axis and the reference line, with readable index ticks.
   const indexValues = chartData.flatMap(row => Object.values(row).filter((value): value is number => typeof value === "number" && Number.isFinite(value)));
   const indexMin = Math.min(100, ...indexValues);
@@ -139,6 +147,9 @@ export const PortfolioPerformanceSection: React.FC = () => {
           </div>
         </div>
         <div style={{ display: "flex", gap: 8, flexWrap: "wrap", alignItems: "center" }}>
+          <button type="button" onClick={() => void history.refresh(true)} disabled={history.loading}>
+            {history.loading ? `일별 시세 ${history.completed}/${history.total}` : "일별 시세 갱신"}
+          </button>
           <select
             value={benchmarkTicker}
             onChange={(e) => setBenchmarkTicker(e.target.value)}
@@ -158,6 +169,14 @@ export const PortfolioPerformanceSection: React.FC = () => {
           </button>
         </div>
       </div>
+
+      {history.loading && <p className="hint" role="status">거래했던 종목의 과거 일별 가격을 불러오고 있습니다. 완료 전 수익률은 잠정치입니다.</p>}
+      {!history.loading && history.failed > 0 && <p className="hint" role="status" style={{ color: "var(--warning)" }}>
+        {history.failed}개 종목의 일별 가격을 받지 못했습니다. 해당 구간은 직전 가격·매입가를 사용하며, ‘일별 시세 갱신’으로 다시 조회할 수 있습니다.
+      </p>}
+      {!history.loading && history.fxFailed && <p className="hint" role="status" style={{ color: "var(--warning)" }}>
+        과거 일별 환율 조회에 실패했습니다. 해외자산의 원화 환산은 저장된 환율을 사용합니다.
+      </p>}
 
       {/* 기간 선택 */}
       <div style={{ display: "flex", gap: 6, marginBottom: 14, flexWrap: "wrap" }}>
@@ -192,10 +211,13 @@ export const PortfolioPerformanceSection: React.FC = () => {
           <div style={{ display: "flex", gap: 24, flexWrap: "wrap", marginBottom: 16 }}>
             <Summary
               label="내 수익률 (TWR)"
-              value={pct(perf.benchmark ? perf.benchmark.portfolioReturnPct : perf.twrReturnPct)}
-              color={gainColor(perf.benchmark ? perf.benchmark.portfolioReturnPct : perf.twrReturnPct)}
+              // 일별 시세 로딩 중엔 잠정치가 화면마다 다르게 보인다(대시보드 −13.6% vs 여기 −14.3%) — 완료 전엔 숨긴다
+              value={history.loading ? "—" : pct(perf.benchmark ? perf.benchmark.portfolioReturnPct : perf.twrReturnPct)}
+              color={history.loading ? "var(--text-muted)" : gainColor(perf.benchmark ? perf.benchmark.portfolioReturnPct : perf.twrReturnPct)}
               sub={
-                perf.benchmark
+                history.loading
+                  ? `일별 시세 로딩 ${history.completed}/${history.total}`
+                  : perf.benchmark
                   ? `${perf.benchmark.startDate}부터 (지수와 동일 기간)`
                   : perf.annualizedPct != null
                     ? `연율 ${pct(perf.annualizedPct)}`
@@ -245,6 +267,7 @@ export const PortfolioPerformanceSection: React.FC = () => {
                   <ReferenceLine y={100} ifOverflow="extendDomain" stroke="var(--text-secondary)" strokeWidth={1.5} strokeDasharray="6 4"
                     label={{ value: "100 · 수익률 0%", position: "insideTopRight", fill: "var(--text-secondary)", fontSize: 12 }} />
                   <Tooltip
+                    labelFormatter={(date) => `날짜 ${String(date)}`}
                     formatter={(value: number | string | undefined, name) => [
                       typeof value === "number"
                         ? `${value.toFixed(1)} (${value >= 100 ? "+" : ""}${(value - 100).toFixed(1)}%)`
@@ -253,9 +276,9 @@ export const PortfolioPerformanceSection: React.FC = () => {
                     ]}
                   />
                   <Legend wrapperStyle={{ fontSize: 12 }} />
-                  <Line type="monotone" dataKey="포트폴리오" stroke="var(--chart-primary)" strokeWidth={2} dot={false} isAnimationActive={false} />
+                  <Line type="linear" dataKey="포트폴리오" stroke="var(--chart-primary)" strokeWidth={2} dot={false} isAnimationActive={false} />
                   {perf.benchmark && (
-                    <Line type="monotone" dataKey={benchmarkLabel} stroke="var(--text-muted)" strokeWidth={2} strokeDasharray="5 4" dot={false} isAnimationActive={false} />
+                    <Line type="linear" dataKey={benchmarkLabel} stroke="var(--text-muted)" strokeWidth={2} strokeDasharray="5 4" dot={false} isAnimationActive={false} />
                   )}
                 </LineChart>
               </ResponsiveContainer>
@@ -268,7 +291,8 @@ export const PortfolioPerformanceSection: React.FC = () => {
           )}
           <div className="hint" style={{ fontSize: 11, marginTop: 8, lineHeight: 1.5 }}>
             ⓘ <strong>시간가중수익률(TWR)</strong> — 입금·출금 효과를 뺀 '전략' 수익률이라 증권사 표시(단순·자금가중)와 다를 수 있어요.
-            기록된 일별 종가 {perf.risk.observations}일 기준 — 시세 갱신을 자주 할수록 정확해집니다.
+            선택 기간에 종가가 기록된 날짜 {recordedDates.length}일{recordedDates.length > 0 ? ` · 마지막 기록 ${recordedDates[recordedDates.length - 1]}` : ""}.
+            휴장일에는 직전 가격을 사용하며, 종목별 일별 가격이 부족한 구간의 성과는 잠정치입니다.
           </div>
         </>
       )}

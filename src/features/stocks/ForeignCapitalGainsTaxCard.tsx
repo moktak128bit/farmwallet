@@ -5,33 +5,13 @@
  *
  * 색: 세금 = 부담(주의) → warning, 절세 가능액 = 이득 → danger(이익=빨강 관례, CLAUDE.md #4).
  */
-import React, { useMemo } from "react";
-import { useAppStore } from "../../store/appStore";
-import { useFxRateValue } from "../../context/FxRateContext";
-import { computePositions } from "../../calculations";
-import { isUSDStock } from "../../utils/finance";
+import React from "react";
+import { useForeignCapitalGainsTax } from "./useForeignCapitalGainsTax";
 import { getTodayKST } from "../../utils/date";
 import { formatKRW } from "../../utils/formatter";
-import { buildFxHistory } from "../../utils/portfolioHistory";
-import { buildForeignCapitalGainsTax } from "../../utils/usCapitalGainsTax";
 
 export const ForeignCapitalGainsTaxCard: React.FC = () => {
-  const trades = useAppStore((s) => s.data.trades);
-  const accounts = useAppStore((s) => s.data.accounts);
-  const prices = useAppStore((s) => s.data.prices);
-  const historicalDailyFx = useAppStore((s) => s.data.historicalDailyFx);
-  const marketEnvSnapshots = useAppStore((s) => s.data.marketEnvSnapshots);
-  const fxRate = useFxRateValue();
-
-  const hasUsd = useMemo(() => trades.some((t) => isUSDStock(t.ticker)), [trades]);
-
-  const tax = useMemo(() => {
-    if (!hasUsd) return null;
-    const positions = computePositions(trades, prices, accounts, { fxRate: fxRate ?? undefined });
-    const fxHistory = buildFxHistory(historicalDailyFx, marketEnvSnapshots);
-    const year = Number(getTodayKST().slice(0, 4));
-    return buildForeignCapitalGainsTax({ trades, positions, year, fxHistory, fxRate });
-  }, [hasUsd, trades, prices, accounts, historicalDailyFx, marketEnvSnapshots, fxRate]);
+  const tax = useForeignCapitalGainsTax(Number(getTodayKST().slice(0, 4)));
 
   if (!tax) return null;
 

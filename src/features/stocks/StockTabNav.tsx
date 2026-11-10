@@ -14,10 +14,13 @@ export const StockTabNav: React.FC<Props> = ({ activeTab, setActiveTab, showFxTa
     fontSize: 14,
     borderRadius: "6px 6px 0 0",
     borderBottom: activeTab === tab ? "2px solid var(--primary)" : "none",
+    // 모바일(390px)에서 "주/식"·"환/전"처럼 글자 단위로 꺾이던 문제 — 줄바꿈 금지, 넘치면 가로 스크롤
+    whiteSpace: "nowrap" as const,
+    flexShrink: 0,
   });
 
   return (
-    <div style={{ display: "flex", gap: 8, marginBottom: 16, borderBottom: "1px solid var(--border)" }}>
+    <div role="tablist" aria-label="주식 하위 탭" style={{ display: "flex", gap: 8, marginBottom: 16, borderBottom: "1px solid var(--border)", flexWrap: "nowrap", overflowX: "auto" }}>
       <button
         type="button"
         className={activeTab === "stocks" ? "primary" : "secondary"}

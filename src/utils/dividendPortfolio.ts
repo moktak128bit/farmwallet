@@ -21,7 +21,7 @@ import type { LedgerEntry, StockTrade } from "../types";
 import { canonicalTickerForMatch, tradeAmountKRW } from "./finance";
 import { isDividendRecord, tickerFromDividendDesc } from "./dividendGrowth";
 import { parseExDateFromNote } from "./dividend";
-import { compareTradesFifo } from "./fifoLots";
+import { compareTradesFifo, consumeFifoLots, type FifoLot } from "./fifoLots";
 
 /** 차트에서 개별 색을 받는 종목 수 — 나머지는 "기타"로 합친다 */
 const TOP_N = 4;
@@ -55,15 +55,19 @@ export interface DividendPortfolioMonth {
 export interface DividendPortfolioTicker {
   ticker: string;
   name: string;
-  /** 현재 보유 원가 (KRW) */
+  /** 현재 보유 원가 (KRW, 오늘까지 모든 거래 · 계좌별 FIFO — 주식 탭 원가와 같은 정의) */
   cost: number;
-  /** 연환산 배당 (KRW) */
+  /** 연 배당 = 최근 완료 3개월 실수령 × 4 (KRW) — 실제 받은 돈 기준 */
   annual: number;
   /** 누적 수령 (KRW) */
   total: number;
-  /** YOC (%, 연환산 ÷ 원가) — 원가가 0이면 null */
+  /** 배당률 (%, 실수령 연환산 ÷ 현재 원가) — 원가가 0이거나 집계 제외면 null */
   yoc: number | null;
-  /** 연환산 계산에 쓴 유효 월수 */
+  /** 참고: 연환산 추정 = 최근 ≤12개월 주당 분배 × 현재 보유 × 12/창 (KRW) */
+  estAnnual: number;
+  /** 참고: 추정 배당률 (%) */
+  estYoc: number | null;
+  /** 추정 연환산에 쓴 유효 월수 */
   months: number;
   /** 첫 수령월 */
   firstMonth: string;
@@ -84,10 +88,19 @@ export interface DividendPortfolio {
   topTickers: Array<{ key: string; name: string }>;
   /** 배당주 원가 합 (KRW) */
   totalCost: number;
-  /** 연환산 배당 합 (KRW) */
+  /** 연 배당 합 = 집계 종목의 최근 완료 3개월 실수령 × 4 (KRW) */
   annualTotal: number;
-  /** 총 배당률 (%, 연환산 ÷ 배당주 원가) — 집계 제외 종목은 분자·분모 모두에서 빠짐 */
+  /** 총 배당률 (%, 실수령 연환산 ÷ 현재 원가) — 집계 제외 종목은 분자·분모 모두에서 빠짐 */
   yoc: number | null;
+  /**
+   * 참고용 추정 — 최근 ≤12개월 주당 분배 × 현재 보유로 환산한 연 배당.
+   * 커버드콜처럼 주당 분배가 출렁이는 종목은 높았던 달이 그대로 12배 되어 크게 부풀 수 있다
+   * (실장부 2026-11: 0167B0 5~7월 주당 217~250원 → 추정 10.46% vs 실수령 기준 6%대). 주 지표로 쓰지 않는다.
+   */
+  estimatedAnnual: number;
+  estimatedYoc: number | null;
+  /** 실수령 연환산에 쓴 완료월 범위 (예: 2026-08 ~ 2026-10) */
+  realizedWindow: { from: string; to: string } | null;
   /** 집계에서 빠진 종목 수 (매도 완료 / 관측 부족) */
   excludedCount: number;
   /**
@@ -143,42 +156,36 @@ function qtyBefore(sorted: StockTrade[], date: string): number {
 }
 
 /**
- * 종목별 월말 KRW 원가(이동평균)·보유 수량 시계열.
- * 매도는 평단을 유지한 채 원가만 비례 차감한다 — dividendGrowth와 같은 규칙(수익률 정의 통일).
+ * 종목별 **현재** 보유 수량·KRW 원가 — 계좌별 FIFO 잔여 lot의 합 (computePositions·주식 탭과 같은 정의).
+ * 예전엔 직전 완료월 말 기준 이동평균이라 이번 달 매수가 빠지고(11-03 매수 누락) 매도 후 원가도 주식 탭과 갈렸다.
  */
-function costByMonth(
-  byTicker: Map<string, StockTrade[]>,
-  months: string[],
-  fxRate?: number | null
-): Map<string, { cost: number[]; qty: number[] }> {
-  const out = new Map<string, { cost: number[]; qty: number[] }>();
-  for (const [ticker, sorted] of byTicker) {
-    const series: number[] = [];
-    const qtySeries: number[] = [];
-    let qty = 0;
-    let cost = 0;
-    let i = 0;
-    for (const m of months) {
-      const end = `${m}-31`;
-      while (i < sorted.length && (sorted[i].date || "") <= end) {
-        const t = sorted[i];
-        const q = Number(t.quantity) || 0;
-        if (t.side === "buy") {
-          qty += q;
-          cost += tradeAmountKRW(t, fxRate);
-        } else {
-          // 매도: 평단 유지, 원가만 비례 차감 (전량 매도면 0)
-          const unit = qty > 0 ? cost / qty : 0;
-          const use = Math.min(q, qty);
-          qty -= use;
-          cost = qty > 0 ? unit * qty : 0;
-        }
-        i += 1;
-      }
-      series.push(Math.max(0, cost));
-      qtySeries.push(Math.max(0, qty));
+function currentFifoHoldings(trades: StockTrade[], fxRate?: number | null): Map<string, { qty: number; cost: number }> {
+  const byKey = new Map<string, StockTrade[]>();
+  for (const t of trades) {
+    const c = canonicalTickerForMatch(t.ticker);
+    if (!c) continue;
+    const key = `${t.accountId}::${c}`;
+    const list = byKey.get(key) ?? [];
+    list.push(t);
+    byKey.set(key, list);
+  }
+  const out = new Map<string, { qty: number; cost: number }>();
+  for (const [key, list] of byKey) {
+    list.sort(compareTradesFifo);
+    const queue: FifoLot[] = [];
+    for (const t of list) {
+      const q = Number(t.quantity) || 0;
+      if (q <= 0) continue;
+      if (t.side === "buy") queue.push({ qty: q, value: tradeAmountKRW(t, fxRate) });
+      else consumeFifoLots(queue, q);
     }
-    out.set(ticker, { cost: series, qty: qtySeries });
+    const ticker = key.slice(key.indexOf("::") + 2);
+    const cur = out.get(ticker) ?? { qty: 0, cost: 0 };
+    for (const lot of queue) {
+      cur.qty += lot.qty;
+      cur.cost += lot.value;
+    }
+    out.set(ticker, cur);
   }
   return out;
 }
@@ -262,14 +269,17 @@ export function buildDividendPortfolio(args: {
   for (let m = earliest; monthDiff(m, currentMonth) >= 0; m = addMonths(m, 1)) months.push(m);
   const lastComplete = addMonths(currentMonth, -1);
 
-  const costSeries = costByMonth(tradesSorted, months, fx);
+  const holdingsNow = currentFifoHoldings(trades, fx);
+  /** 실수령 연환산 창 — 최근 완료 3개월 (규칙 6·7: 진행 중인 달 제외, 월 배당 KPI와 같은 창) */
+  const REALIZED_MONTHS = 3;
 
   /**
-   * 특정 시점(asOf 월 인덱스)의 종목별 연환산·원가 스냅샷.
-   *
-   * 월별 배당률 선과 상단 히어로가 **같은 함수**를 쓴다. 예전엔 선만 "롤링합 ÷ 창 × 12"로
-   * 따로 계산해서, 이력이 1~2개월뿐인 초기 구간이 12배로 뻥튀기돼 2025-10에 8% 스파이크가
-   * 생겼고(실제로는 비트코인 ETF 배당 1회), 선의 끝값과 히어로 숫자도 서로 달랐다.
+   * 직전 완료월(asOf) 기준 종목별 스냅샷 — 히어로·종목표의 단일 소스.
+   *  - 원가·보유 = 오늘 기준 FIFO (주식 탭과 같은 숫자)
+   *  - 연 배당(주 지표) = 최근 완료 3개월 **실수령** × 4. 받은 돈 그대로라 과대 추정이 없다.
+   *    대신 최근에 늘린 보유분은 아직 배당이 안 들어와 낮게 나올 수 있다 — 화면에 근거를 적는다.
+   *  - 추정(참고) = 창(≤12, 첫 수령월부터) 주당 분배 × 현재 보유 × 12/창 (규칙 4)
+   *  - 집계 제외: 전량 매도(원가 0) · 관측 3개월 미만 (규칙 1·2)
    */
   const snapshotAt = (asOfIdx: number) => {
     const asOf = months[asOfIdx];
@@ -278,21 +288,25 @@ export function buildDividendPortfolio(args: {
       if (first > asOf) continue; // 그 시점엔 아직 배당을 시작하지 않음
       const span = monthDiff(first, asOf) + 1;
       const window = Math.max(0, Math.min(ANNUALIZE_WINDOW, span));
-      // 지금(asOf 월말) 보유 — 0이면 전량 매도라 환산하지 않고 받은 금액 그대로(표시용, 총계 제외)
-      const heldNow = costSeries.get(ticker)?.qty[asOfIdx] ?? 0;
+      const now = holdingsNow.get(ticker);
+      const heldNow = now?.qty ?? 0;
       let windowSum = 0;
+      let recentSum = 0;
       let total = 0;
       for (const [month, row] of amountByMonthTicker) {
         const v = row.get(ticker) ?? 0;
         if (!v) continue;
         if (month <= asOf) total += v;
         const back = monthDiff(month, asOf);
-        if (back < 0 || back >= window) continue;
+        if (back < 0) continue;
+        if (back < REALIZED_MONTHS) recentSum += v;
+        if (back >= window) continue;
         const u = unitsByMonthTicker.get(`${month}|${ticker}`);
         windowSum += heldNow > 1e-8 && u ? u.units * heldNow + u.rest : v;
       }
-      const annual = window > 0 ? (windowSum / window) * 12 : 0;
-      const cost = costSeries.get(ticker)?.cost[asOfIdx] ?? 0;
+      const estAnnual = window > 0 ? (windowSum / window) * 12 : 0;
+      const annual = recentSum * (12 / REALIZED_MONTHS);
+      const cost = heldNow > 1e-8 ? now?.cost ?? 0 : 0;
       const excluded: "sold" | "tooShort" | null =
         cost <= 0 ? "sold" : window < MIN_ANNUALIZE_MONTHS ? "tooShort" : null;
       rows.push({
@@ -302,6 +316,8 @@ export function buildDividendPortfolio(args: {
         annual,
         total,
         yoc: cost > 0 && !excluded ? (annual / cost) * 100 : null,
+        estAnnual,
+        estYoc: cost > 0 && !excluded ? (estAnnual / cost) * 100 : null,
         months: window,
         firstMonth: first,
         excluded,
@@ -310,7 +326,18 @@ export function buildDividendPortfolio(args: {
     const counted = rows.filter((t) => !t.excluded);
     const cost = counted.reduce((x, t) => x + t.cost, 0);
     const annual = counted.reduce((x, t) => x + t.annual, 0);
-    return { rows, counted, cost, annual, yoc: cost > 0 ? (annual / cost) * 100 : null };
+    const estAnnual = counted.reduce((x, t) => x + t.estAnnual, 0);
+    return {
+      rows,
+      counted,
+      cost,
+      annual,
+      estAnnual,
+      yoc: cost > 0 ? (annual / cost) * 100 : null,
+      estYoc: cost > 0 ? (estAnnual / cost) * 100 : null,
+      from: addMonths(asOf, -(REALIZED_MONTHS - 1)),
+      to: asOf,
+    };
   };
 
   /** 실제 받은 누적 (진행 중인 달 포함) — 표의 '누적' 열과 헤더의 누적 수령이 쓰는 값.
@@ -377,6 +404,7 @@ export function buildDividendPortfolio(args: {
   // 총 배당률은 "지금 보유 중이고 충분히 관측된" 종목만으로 낸다 — 분자·분모 기준을 같게 유지.
   const totalCost = snap.cost;
   const annualTotal = snap.annual;
+  const realizedWindow = lastCompleteIdx >= 0 ? { from: snap.from < months[0] ? months[0] : snap.from, to: snap.to } : null;
   let receivedTotal = 0;
   for (const v of cumulativeByTicker.values()) receivedTotal += v;
 
@@ -406,7 +434,10 @@ export function buildDividendPortfolio(args: {
     topTickers,
     totalCost,
     annualTotal,
-    yoc: totalCost > 0 ? (annualTotal / totalCost) * 100 : null,
+    yoc: snap.yoc,
+    estimatedAnnual: snap.estAnnual,
+    estimatedYoc: snap.estYoc,
+    realizedWindow,
     monthlyAvg,
     excludedCount: tickers.length - snap.counted.length,
     lastMonth,

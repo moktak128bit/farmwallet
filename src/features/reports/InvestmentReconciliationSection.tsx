@@ -8,7 +8,7 @@ import React from "react";
 import { Bar, BarChart, CartesianGrid, Legend, Tooltip, XAxis, YAxis } from "recharts";
 import { DeferredResponsiveContainer as ResponsiveContainer } from "../../components/charts/DeferredResponsiveContainer";
 import type { InvestmentReconciliation } from "../../utils/reportGenerator";
-import { formatKRW } from "../../utils/formatter";
+import { formatKRW, formatKrwCompact } from "../../utils/formatter";
 import { signedKRW, toPercent } from "./reportShared";
 
 interface Props {
@@ -35,7 +35,7 @@ export const InvestmentReconciliationSection: React.FC<Props> = React.memo(funct
   const rb = rec.residualBreakdown;
   const residualRows = [
     { label: "투자계좌에서 직접 지출", hint: "이체가 아닌 지출로 빠져나감", value: rb.accountExpense },
-    { label: "배당 외 계좌 입금 수입", hint: "이자·환급 등", value: rb.nonDividendIncome },
+    { label: "배당 외 계좌 입금 수입", hint: "이자·환급 등 (퇴직연금 이전·이월 같은 이전성 입금은 원금으로 따로 셈)", value: rb.nonDividendIncome },
     { label: "배당 원화 환산 차이", hint: "USD 배당의 잔액 반영 ↔ 환산 집계 간극", value: rb.dividendFxGap },
     { label: "USD 환율 환산 차이", hint: "원금 환차손익 — 실현·미실현 어디에도 안 들어감", value: rb.fxTranslation },
     { label: "설명되지 않는 나머지", hint: "수수료·초기 보유분·기록 누락", value: rb.unexplained }
@@ -118,7 +118,7 @@ export const InvestmentReconciliationSection: React.FC<Props> = React.memo(funct
               <td className="number negative">{signedKRW(rec.realizedLoss)}</td>
             </tr>
             <tr style={{ borderTop: "1px solid var(--border)" }}>
-              <td>실현 손익 (순)</td>
+              <td>실현 손익 (순){rec.fxExcludedSells > 0 && <span style={{ fontSize: 12, color: "var(--text-muted)" }}> (환율 미확보 달러 매도 {rec.fxExcludedSells}건 제외)</span>}</td>
               <td className={`number ${rec.realizedPnl >= 0 ? "positive" : "negative"}`}>{signedKRW(rec.realizedPnl)}</td>
             </tr>
             <tr>
@@ -317,7 +317,7 @@ export const InvestmentReconciliationSection: React.FC<Props> = React.memo(funct
             <BarChart data={rec.monthlyPnl}>
               <CartesianGrid strokeDasharray="3 3" />
               <XAxis dataKey="month" />
-              <YAxis />
+              <YAxis tickFormatter={(v: number) => formatKrwCompact(v)} width={64} />
               <Tooltip formatter={(value: number | undefined) => formatKRW(value ?? 0)} />
               <Legend />
               {/* 색 관례(국내): 이익=빨강, 손실=파랑 — CSS 변수로 다크모드 대응 */}

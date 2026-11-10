@@ -15,6 +15,7 @@ import { ERROR_MESSAGES } from "../../constants/errorMessages";
 import { DATA_SCHEMA_VERSION } from "../../constants/config";
 import { appDataFromTableBackupPayload, buildTableBackupFile } from "../../utils/tableDataBackup";
 import { requestApply } from "../../components/ApplyConfirmModal";
+import { isGas } from "../../services/gas";
 
 interface Props {
   data: AppData;
@@ -218,8 +219,17 @@ export const DataBackupCard: React.FC<Props> = React.memo(function DataBackupCar
     <div className="card">
       <div className="card-title">데이터 백업</div>
       <p className="hint" style={{ marginBottom: 12 }}>
-        정기적으로 <strong>백업 파일 다운로드</strong>로 JSON을 저장해 두세요. 다른 기기·브라우저로 옮길 때도 이 파일을 씁니다
-        — 브라우저마다 저장소가 따로라 자동으로 공유되지 않습니다.
+        {isGas() ? (
+          <>
+            휴대폰·PC는 Drive의 &quot;FarmWallet 데이터&quot; 시트로 자동으로 같은 장부를 봅니다. <strong>백업 파일 다운로드</strong>는
+            시트와 별도로 손에 쥐고 있을 사본입니다(시트 서버도 하루 첫 저장 전에 Drive 백업을 남깁니다).
+          </>
+        ) : (
+          <>
+            정기적으로 <strong>백업 파일 다운로드</strong>로 JSON을 저장해 두세요. 다른 기기·브라우저로 옮길 때도 이 파일을 씁니다
+            — 브라우저마다 저장소가 따로라 자동으로 공유되지 않습니다.
+          </>
+        )}
         <br />
         <strong>테이블 백업</strong>은 같은 데이터를 행 배열로 저장한 것이라, 일반 백업 없이 이 파일만으로도 복구됩니다.
       </p>

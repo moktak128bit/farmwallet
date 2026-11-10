@@ -87,6 +87,36 @@ const CRYPTO_DISPLAY_SYMBOL: Record<string, string> = {
   "ethereum-classic": "ETC",
 };
 
+/** CoinGecko ID → 한글 종목명. 업비트 표기와 같은 이름으로 거래·시세 이름을 하나로 맞춘다
+ *  (실장부: 같은 solana가 name "SOL"·"solana"로, bitcoin이 "BTC"·"bitcoin"으로 섞여 인사이트에서 두 종목으로 갈림). */
+const CRYPTO_KR_NAME: Record<string, string> = {
+  bitcoin: "비트코인",
+  ethereum: "이더리움",
+  solana: "솔라나",
+  ripple: "리플",
+  "usd-coin": "USD코인",
+  tether: "테더",
+  binancecoin: "BNB",
+  cardano: "에이다",
+  dogecoin: "도지코인",
+  "avalanche-2": "아발란체",
+  "matic-network": "폴리곤",
+  polkadot: "폴카닷",
+  chainlink: "체인링크",
+  litecoin: "라이트코인",
+  uniswap: "유니스왑",
+  stellar: "스텔라루멘",
+  monero: "모네로",
+  cosmos: "코스모스",
+  "ethereum-classic": "이더리움클래식",
+};
+
+/** 코인 티커(CoinGecko ID 또는 BTC 같은 심볼)면 한글 종목명, 아니면 null */
+export function cryptoKoreanName(ticker?: string): string | null {
+  const id = cryptoIdFromSymbol(ticker);
+  return id ? CRYPTO_KR_NAME[id] ?? null : null;
+}
+
 /**
  * CoinGecko ID 형태(소문자 풀네임)면 깔끔한 short symbol 반환, 그 외엔 입력 그대로.
  * 예: "solana" → "SOL", "MSFT" → "MSFT", "005930" → "005930"

@@ -27,13 +27,15 @@ const e = (o: Partial<LedgerEntry> & { id: string; date: string }): LedgerEntry 
   ({ kind: "expense", category: "지출", subCategory: "식비", description: "", amount: 10_000, ...o } as LedgerEntry);
 
 const FOOD: BudgetGoal = { id: "b1", category: "식비", monthlyLimit: 300_000 };
+/** 오늘(8/10)까지 기록됨 — 페이스 경과일이 마지막 기록일 캡(ledgerFreshness)에 걸리지 않게 하는 무관한 수입 1원 */
+const FRESH = e({ id: "fresh", date: "2026-08-10", kind: "income", category: "수입", subCategory: "급여", amount: 1 });
 
 describe("BudgetAlertWidget — 초과 예상 선행 경고", () => {
   it("사용 33%(80% 문턱 미만)여도 페이스상 월말 초과면 '초과 예상' 배지+경고", () => {
     freeze(TODAY);
     // 10일간 100,000원 → 선형 310,000 > 한도 300,000
     const ledger = [e({ id: "1", date: "2026-08-03", amount: 60_000 }), e({ id: "2", date: "2026-08-09", amount: 40_000 })];
-    const { container } = render(<BudgetAlertWidget ledger={ledger} budgetGoals={[FOOD]} />);
+    const { container } = render(<BudgetAlertWidget ledger={[...ledger, FRESH]} budgetGoals={[FOOD]} />);
     const text = container.textContent ?? "";
     expect(text).toContain("1건 초과 예상");
     expect(text).toContain("월말 310,000원");
@@ -44,7 +46,7 @@ describe("BudgetAlertWidget — 초과 예상 선행 경고", () => {
   it("페이스가 한도 안이면 경고 없음 (기존 80%/100% 문턱 동작 보존)", () => {
     freeze(TODAY);
     const ledger = [e({ id: "1", date: "2026-08-03", amount: 30_000 })]; // 선형 93,000
-    const { container } = render(<BudgetAlertWidget ledger={ledger} budgetGoals={[FOOD]} />);
+    const { container } = render(<BudgetAlertWidget ledger={[...ledger, FRESH]} budgetGoals={[FOOD]} />);
     expect(container.querySelector('[role="alert"]')).toBeNull();
     expect(container.textContent).not.toContain("초과 예상");
     expect(container.textContent).toContain("남은 21일 하루");
@@ -53,7 +55,7 @@ describe("BudgetAlertWidget — 초과 예상 선행 경고", () => {
   it("이미 초과(100%↑)면 '초과'가 우선 — 초과 예상 배지는 붙지 않는다", () => {
     freeze(TODAY);
     const ledger = [e({ id: "1", date: "2026-08-03", amount: 300_000 })];
-    const { container } = render(<BudgetAlertWidget ledger={ledger} budgetGoals={[FOOD]} />);
+    const { container } = render(<BudgetAlertWidget ledger={[...ledger, FRESH]} budgetGoals={[FOOD]} />);
     expect(container.textContent).toContain("1건 초과");
     expect(container.textContent).not.toContain("초과 예상");
     expect(container.textContent).toContain("식비 예산을 초과했습니다!");
@@ -69,7 +71,7 @@ describe("BudgetDashboardSection — 카드 페이스 줄·전월 동기", () =>
       e({ id: "p1", date: "2026-07-05", amount: 50_000 }),
       e({ id: "p2", date: "2026-07-20", amount: 500_000 }), // 동기 밖 — 전월 동기에 안 들어감, 이력(월말 예상)엔 반영
     ];
-    const pace = computeBudgetPace(FOOD, ledger, "2026-08", "2026-08-10");
+    const pace = computeBudgetPace(FOOD, [...ledger, FRESH], "2026-08", "2026-08-10");
     const rows = [{ ...FOOD, spent: pace.spent, remain: FOOD.monthlyLimit - pace.spent, pace }];
     const { container } = render(<BudgetDashboardSection budgetUsage={rows} accounts={[]} />);
     const text = container.textContent ?? "";

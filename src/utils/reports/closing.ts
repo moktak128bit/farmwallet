@@ -7,7 +7,7 @@ import type { Account, LedgerEntry, Loan, StockPrice, StockTrade } from "../../t
 import { computeAccountBalances, computeBalanceSheet, computePositions } from "../../calculations";
 import { getTodayKST } from "../date";
 import { isSavingsExpenseEntry, isCreditPayment, isInvestmentEntry } from "../category";
-import { toKrwAmount } from "./shared";
+import { isReportIncomeEntry, toKrwAmount } from "./shared";
 import { accountsWithUsdBalanceAsOf } from "../tradeCashImpact";
 
 export interface DailyReport {
@@ -43,6 +43,9 @@ export interface MonthlyCloseComment {
   previousMonth: string;
   assetDelta: number;
   netWorthDelta: number;
+  /** 이번 달 현금흐름 = 수입 − 지출 − 저축성지출 (실제 값) */
+  cashflow: number;
+  /** 전월 대비 현금흐름 증감 */
   cashflowDelta: number;
   summary: string;
 }
@@ -149,7 +152,7 @@ export function generateDailyReport(
     const filteredLedger = ledger.filter((entry) => entry.date && entry.date <= date);
 
     const dayIncome = filteredLedger
-      .filter((entry) => entry.kind === "income" && entry.date === date)
+      .filter((entry) => isReportIncomeEntry(entry) && entry.date === date)
       .reduce((sum, entry) => sum + toKrwAmount(entry.amount, entry.currency, fxRate), 0);
 
     // 신용결제(레거시)는 카드 사용 시점에 이미 잡힘 — 월별/연간과 동일 기준으로 제외 (이중계상 방지)
@@ -317,6 +320,7 @@ export function generateClosingReportData(
       previousMonth: previous.periodKey,
       assetDelta,
       netWorthDelta,
+      cashflow: current.cashflow,
       cashflowDelta,
       summary:
         netWorthDelta >= 0

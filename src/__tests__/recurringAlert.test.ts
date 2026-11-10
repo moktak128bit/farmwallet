@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { findOverdueRecurring } from "../utils/recurringAlert";
+import { findOverdueRecurring, findStoppedRecurring } from "../utils/recurringAlert";
 import type { LedgerEntry, RecurringExpense } from "../types";
 
 function entry(o: Partial<LedgerEntry> & { id: string; amount: number }): LedgerEntry {
@@ -150,6 +150,7 @@ describe("findOverdueRecurring — alreadyLogged (실제 생성 스키마와 매
   it("마감 윈도우(마감일~오늘) 밖 기록은 무시 — 이전 달 기록은 미기록", () => {
     const ledger = [
       entry({ id: "l1", date: "2026-05-15", kind: "expense", category: "지출", subCategory: "구독비", detailCategory: "넷플릭스", amount: 17_000 }),
+      entry({ id: "l2", date: "2026-06-15", kind: "expense", category: "지출", subCategory: "식비", amount: 3_000 }),
     ];
     const r = findOverdueRecurring([netflix], ledger, "2026-06-15");
     expect(r[0].alreadyLogged).toBe(false);
@@ -163,5 +164,54 @@ describe("findOverdueRecurring — alreadyLogged (실제 생성 스키마와 매
     const r = findOverdueRecurring([rent], ledger, "2026-06-16");
     expect(r).toHaveLength(1);
     expect(r[0].alreadyLogged).toBe(true);
+  });
+});
+
+describe("findOverdueRecurring — 허위 미등록 방지 (실장부 회귀: 4건 중 3건 허위)", () => {
+  const food = (date: string) => entry({ id: `f${date}`, date, kind: "expense", category: "지출", subCategory: "식비", amount: 5_000 });
+
+  it("마감일이 마지막 기록일보다 뒤면 아직 알 수 없어 제외 (카톡서랍 10일 · 기록 5일까지)", () => {
+    const drawer = rec({ id: "r1", title: "카카오톡서랍", amount: 3_850, startDate: "2025-01-10" });
+    expect(findOverdueRecurring([drawer], [food("2026-11-05")], "2026-11-10")).toHaveLength(0);
+    expect(findOverdueRecurring([drawer], [food("2026-11-10")], "2026-11-10")).toHaveLength(1);
+  });
+
+  it("예전엔 결제됐지만 최근 2주기 결제가 없으면 중지 추정 — 배지에서 빠지고 findStoppedRecurring에 나온다 (주택청약·CursorAI)", () => {
+    const cursor = rec({ id: "r2", title: "CursorAI", amount: 30_000, startDate: "2025-06-05" });
+    const ledger = [
+      entry({ id: "c1", date: "2025-11-05", subCategory: "구독비", detailCategory: "CursorAI", amount: 30_000 }),
+      entry({ id: "c2", date: "2025-12-05", subCategory: "구독비", detailCategory: "CursorAI", amount: 30_000 }),
+      food("2026-11-09"),
+    ];
+    expect(findOverdueRecurring([cursor], ledger, "2026-11-10")).toHaveLength(0);
+    expect(findStoppedRecurring([cursor], ledger, "2026-11-10")).toEqual([{ recurring: cursor, lastPaid: "2025-12-05" }]);
+  });
+
+  it("한 번도 매칭된 적 없으면 중지로 보지 않는다 (증거 없음)", () => {
+    const fresh = rec({ id: "r3", title: "넷플릭스", amount: 17_000, startDate: "2025-01-15" });
+    expect(findOverdueRecurring([fresh], [food("2026-06-16")], "2026-06-16")).toHaveLength(1);
+    expect(findStoppedRecurring([fresh], [food("2026-06-16")], "2026-06-16")).toHaveLength(0);
+  });
+
+  it("금액은 ±10%까지 같은 결제로 본다 (학자금 등록 4,059 vs 실제 3,928)", () => {
+    const loan = rec({ id: "r4", title: "학자금", amount: 4_059, category: "대출상환", startDate: "2025-09-29" });
+    const ledger = [entry({ id: "s1", date: "2026-10-29", subCategory: "대출상환", detailCategory: "학자금", amount: 3_928 })];
+    const r = findOverdueRecurring([loan], ledger, "2026-10-30");
+    expect(r[0].alreadyLogged).toBe(true);
+  });
+});
+
+describe("findLastActualPayment — 낡은 등록값 드러내기 (핸드폰 13,770/24일/삼성페이 vs 21,000/19일/NH)", () => {
+  it("제목이 같은 최근 결제와 등록값의 차이(금액·결제일·계좌)를 돌려준다", async () => {
+    const { findLastActualPayment } = await import("../utils/recurringAlert");
+    const phone = rec({ id: "p", title: "핸드폰", amount: 13_770, category: "통신비", startDate: "2025-01-24", fromAccountId: "samsung" });
+    const ledger = [
+      entry({ id: "a", date: "2026-09-19", subCategory: "통신비", detailCategory: "핸드폰", amount: 21_000, fromAccountId: "nh" }),
+      entry({ id: "b", date: "2026-10-19", subCategory: "통신비", detailCategory: "핸드폰", amount: 21_000, fromAccountId: "nh" }),
+    ];
+    const a = findLastActualPayment(phone, ledger, "2026-11-10")!;
+    expect(a.date).toBe("2026-10-19");
+    expect(a.amount).toBe(21_000);
+    expect(a.diffs).toEqual(["금액 +53%", "결제일 19일(등록 24일)", "계좌 다름"]);
   });
 });

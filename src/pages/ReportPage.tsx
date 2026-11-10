@@ -19,6 +19,7 @@ import { computeInvestmentReconciliation } from "../utils/reportGenerator";
 import { useFxRateValue } from "../context/FxRateContext";
 import { useDateAccountId } from "../hooks/useDateAccountSettings";
 import { useAppStore } from "../store/appStore";
+import { buildFxHistory } from "../utils/portfolioHistory";
 import { useReportWorker } from "../hooks/useReportWorker";
 import { summarizeTaxYear } from "../utils/taxCalculator";
 import { useTaxGrossUp } from "../hooks/useTaxGrossUp";
@@ -33,6 +34,7 @@ import { ClosingReportSection } from "../features/reports/ClosingReportSection";
 import { PerformanceAdvancedSection } from "../features/reports/PerformanceAdvancedSection";
 import { TaxReportSection } from "../features/reports/TaxReportSection";
 import { YearEndTaxPreviewSection } from "../features/reports/YearEndTaxPreviewSection";
+import { DateAccountUnsetNotice } from "../features/settings/DateAccountUnsetNotice";
 
 interface Props {
   accounts: Account[];
@@ -49,6 +51,10 @@ export const ReportView: React.FC<Props> = ({ accounts, ledger, trades, prices }
   const nonRealIncomeOverride = useAppStore((s) => s.data.categoryPresets?.categoryTypes?.nonRealIncome);
   // 대출 — 리포트 순자산에서 잔금 차감 (계좌·대시보드와 같은 대차 정의). props 시그니처 불변이라 스토어에서 읽는다
   const loans = useAppStore((s) => s.data.loans);
+  // 일별 환율 이력 — 달러 매도 실현손익을 거래일 환율로 (대시보드·주식 탭과 같은 입력)
+  const historicalDailyFx = useAppStore((s) => s.data.historicalDailyFx);
+  const marketEnvSnapshots = useAppStore((s) => s.data.marketEnvSnapshots);
+  const fxHistory = useMemo(() => buildFxHistory(historicalDailyFx, marketEnvSnapshots), [historicalDailyFx, marketEnvSnapshots]);
   const [reportType, setReportType] = useState<ReportType>("comprehensive");
   const [startDate, setStartDate] = useState<string>(() => {
     // KST 기준 11개월 전 — UTC(toISOString) 사용 시 오전 9시 이전에 날짜가 하루 밀림
@@ -88,13 +94,14 @@ export const ReportView: React.FC<Props> = ({ accounts, ledger, trades, prices }
     endDate,
     fxRate,
     dateAccountId,
-    nonRealIncomeOverride
+    nonRealIncomeOverride,
+    fxHistory
   });
 
   /** 투자 정산 — 전체 기간 누적, 주식·코인 계좌 기준 */
   const reconciliation = useMemo(
-    () => computeInvestmentReconciliation(accounts, ledger, trades, prices, accountPerformance, fxRate ?? undefined),
-    [accounts, ledger, trades, prices, accountPerformance, fxRate]
+    () => computeInvestmentReconciliation(accounts, ledger, trades, prices, accountPerformance, fxRate ?? undefined, fxHistory),
+    [accounts, ledger, trades, prices, accountPerformance, fxRate, fxHistory]
   );
 
   const taxYear = useMemo(() => Number(selectedMonth.slice(0, 4)), [selectedMonth]);
@@ -211,6 +218,7 @@ export const ReportView: React.FC<Props> = ({ accounts, ledger, trades, prices }
           taxSummary={taxSummary}
         />
       </div>
+      <DateAccountUnsetNotice where="리포트 실질 지출" />
 
       <div style={{ display: "flex", gap: 8, marginBottom: 16, flexWrap: "wrap" }}>
         <button type="button" className={reportType === "comprehensive" ? "primary" : ""} onClick={() => setReportType("comprehensive")}>종합 월간</button>

@@ -61,6 +61,7 @@ exports[`useInsightsData 골든 스냅샷 (동작 불변 리팩터 기준선) > 
     },
   ],
   "avgMonthExp": 0,
+  "carryOverIncome": 0,
   "categoryGrowth": {
     "down": [],
     "partialDay": null,
@@ -151,6 +152,7 @@ exports[`useInsightsData 골든 스냅샷 (동작 불변 리팩터 기준선) > 
     "targetInc": 0,
     "yoy": null,
   },
+  "incomeOutsideLedger": 0,
   "incomeStability": null,
   "investBreakdown": {
     "realizedGain": 0,
@@ -159,10 +161,11 @@ exports[`useInsightsData 골든 스냅샷 (동작 불변 리팩터 기준선) > 
     "unrealizedLoss": 0,
   },
   "investBySub": [],
+  "investLossInPeriod": 0,
   "investReturnRate": 0,
-  "investSubInsights": [],
   "investTrend": [],
   "largeExp": [],
+  "loanInflow": 0,
   "ml": {},
   "moimFlow": {
     "anomalies": [],
@@ -173,9 +176,9 @@ exports[`useInsightsData 골든 스냅샷 (동작 불변 리팩터 기준선) > 
   "monthly": {},
   "monthlyCatTrend": {},
   "months": [],
-  "netCashFlow": 0,
   "netProfit": 0,
   "netWorthByMonth": [],
+  "netWorthChangeBasis": "market",
   "originalAssets": 8050000,
   "originalAssetsByAcct": [
     {
@@ -221,14 +224,15 @@ exports[`useInsightsData 골든 스냅샷 (동작 불변 리팩터 기준선) > 
     "wins": 0,
   },
   "realSavRate": null,
+  "recorded": {
+    "dayCap": null,
+    "daysSince": null,
+    "lastDate": null,
+  },
   "salaryMonthly": {},
+  "salarySurplus": 0,
   "salaryTrend": [],
   "savRateTrend": [],
-  "score": {
-    "comment": "재무 점검이 필요해요!",
-    "grade": "D",
-    "total": 10,
-  },
   "selMonth": null,
   "settlementTotal": 0,
   "spendByDOM": [
@@ -300,8 +304,10 @@ exports[`useInsightsData 골든 스냅샷 (동작 불변 리팩터 기준선) > 
   "spendingInertia": null,
   "stockTrends": [],
   "subInsights": [],
+  "subMonthly": 0,
   "subTotal": 0,
   "subTrend": [],
+  "subWindow": null,
   "subs": [],
   "tempIncomeTotal": 0,
   "topAnomaly": null,
@@ -427,8 +433,16 @@ exports[`useInsightsData 골든 스냅샷 (동작 불변 리팩터 기준선) > 
     },
   ],
   "avgMonthExp": 1148600,
+  "carryOverIncome": 0,
   "categoryGrowth": {
     "down": [
+      {
+        "avg3": 95500,
+        "cur": 64500,
+        "isNew": false,
+        "pctChange": -32.460732984293195,
+        "sub": "식비",
+      },
       {
         "avg3": 59500,
         "cur": 55000,
@@ -442,13 +456,6 @@ exports[`useInsightsData 골든 스냅샷 (동작 불변 리팩터 기준선) > 
         "isNew": false,
         "pctChange": 0,
         "sub": "주거비",
-      },
-      {
-        "avg3": 63500,
-        "cur": 64500,
-        "isNew": false,
-        "pctChange": 1.574803149606299,
-        "sub": "식비",
       },
       {
         "avg3": 86000,
@@ -475,13 +482,6 @@ exports[`useInsightsData 골든 스냅샷 (동작 불변 리팩터 기준선) > 
         "sub": "데이트",
       },
       {
-        "avg3": 63500,
-        "cur": 64500,
-        "isNew": false,
-        "pctChange": 1.574803149606299,
-        "sub": "식비",
-      },
-      {
         "avg3": 500000,
         "cur": 500000,
         "isNew": false,
@@ -494,6 +494,13 @@ exports[`useInsightsData 골든 스냅샷 (동작 불변 리팩터 기준선) > 
         "isNew": false,
         "pctChange": -7.563025210084033,
         "sub": "교통",
+      },
+      {
+        "avg3": 95500,
+        "cur": 64500,
+        "isNew": false,
+        "pctChange": -32.460732984293195,
+        "sub": "식비",
       },
     ],
   },
@@ -689,7 +696,7 @@ exports[`useInsightsData 골든 스냅샷 (동작 불변 리팩터 기준선) > 
     {
       "avg": 150000,
       "avgPerVisit": 150000,
-      "comment": "데이트 지출의 100%로 압도적 비중! 이 카테고리가 데이트비의 핵심입니다. 총 1건 발생, 건당 평균 15만. 1일에 걸쳐 이용, 이용일당 평균 15만. 건당 평균이 높은 편입니다. 할인 혜택이나 가성비 좋은 대안을 찾아보세요.",
+      "comment": "데이트 지출의 100%. 총 1건 발생, 건당 평균 15만. 1일에 걸쳐 이용, 이용일당 평균 15만.",
       "count": 1,
       "maxSingle": 150000,
       "maxSingleDesc": "발렌타인 선물",
@@ -784,7 +791,7 @@ exports[`useInsightsData 골든 스냅샷 (동작 불변 리팩터 기준선) > 
       17000,
     ],
     [
-      "편의점",
+      "생활",
       8900,
     ],
   ],
@@ -883,7 +890,7 @@ exports[`useInsightsData 골든 스냅샷 (동작 불변 리팩터 기준선) > 
     },
     {
       "amount": 8900,
-      "cat": "편의점",
+      "cat": "생활",
       "count": 1,
       "sub": "편의점",
     },
@@ -933,7 +940,7 @@ exports[`useInsightsData 골든 스냅샷 (동작 불변 리팩터 기준선) > 
     },
     {
       "amount": 8900,
-      "cat": "편의점",
+      "cat": "생활",
       "count": 1,
       "sub": "GS25",
     },
@@ -950,14 +957,14 @@ exports[`useInsightsData 골든 스냅샷 (동작 불변 리팩터 기준선) > 
     "avgTxPerDay": 0.7,
     "bestSavingsMonth": {
       "month": "2025-03",
-      "rate": 82,
+      "rate": 83,
     },
     "biggestSpendDay": {
       "date": "2025-02-15",
       "total": 1350000,
     },
     "daysToSpendIncome": 39,
-    "longestZeroStreak": 2,
+    "longestZeroStreak": 8,
     "monthOverMonthGrowth": 9,
     "mostFrugalMonth": {
       "expense": 751500,
@@ -1061,7 +1068,6 @@ exports[`useInsightsData 골든 스냅샷 (동작 불변 리팩터 기준선) > 
   "incSubInsights": [
     {
       "avg": 3000000,
-      "comment": "실질 수입의 97%를 책임지는 핵심 수입원입니다. 이 수입이 줄어들면 가계에 직접 타격이 옵니다. 완료된 월 기록이 2개월이어서 정기성·안정성 판단을 보류합니다. 총 1건, 건당 평균 300만.",
       "count": 1,
       "isReal": true,
       "maxMonth": "1월",
@@ -1079,7 +1085,6 @@ exports[`useInsightsData 골든 스냅샷 (동작 불변 리팩터 기준선) > 
     },
     {
       "avg": 85000,
-      "comment": "실질 수입의 3%인 소규모 수입원입니다. 자산이 일해서 번 패시브 수입입니다. 완료된 월 기록이 2개월이어서 정기성·안정성 판단을 보류합니다. 총 1건, 건당 평균 8.5만.",
       "count": 1,
       "isReal": true,
       "maxMonth": "2월",
@@ -1097,7 +1102,6 @@ exports[`useInsightsData 골든 스냅샷 (동작 불변 리팩터 기준선) > 
     },
     {
       "avg": 150000,
-      "comment": "용돈 같은 일시·이전성 소득은 반복된다는 보장이 없습니다. 실질 수입에서 제외되며, 고정 지출 계획의 근거로 삼지 마세요. 2개월 중 1개월 발생, 총 15만. 들어올 때 저축·투자로 돌리는 것이 안전합니다.",
       "count": 1,
       "isReal": false,
       "maxMonth": "2월",
@@ -1115,7 +1119,6 @@ exports[`useInsightsData 골든 스냅샷 (동작 불변 리팩터 기준선) > 
     },
     {
       "avg": 180000,
-      "comment": "데이트 통장 분담금 입금입니다. 상대 부담분은 실질 지출에서 이미 차감되므로 수입으로 집계하지 않습니다. 총 1건, 18만 회수.",
       "count": 1,
       "isReal": false,
       "maxMonth": "2월",
@@ -1166,6 +1169,7 @@ exports[`useInsightsData 골든 스냅샷 (동작 불변 리팩터 기준선) > 
     "targetInc": 3000000,
     "yoy": null,
   },
+  "incomeOutsideLedger": 0,
   "incomeStability": 87,
   "investBreakdown": {
     "realizedGain": 228744,
@@ -1180,20 +1184,8 @@ exports[`useInsightsData 골든 스냅샷 (동작 불변 리팩터 기준선) > 
       "sub": "투자",
     },
   ],
+  "investLossInPeriod": 0,
   "investReturnRate": 18.72545542420194,
-  "investSubInsights": [
-    {
-      "amount": 300000,
-      "avg": 300000,
-      "comment": "재테크 지출의 100%로 가장 큰 투자 카테고리입니다. 총 1건 거래, 건당 평균 30만. 월평균 30만 투자. 연간으로 환산하면 약 360만. 최근 안정적인 투자 금액을 유지하고 있습니다. 단 1번만 투자한 항목입니다.",
-      "count": 1,
-      "mom": 0,
-      "monthAvg": 300000,
-      "monthTrend": "flat",
-      "share": 100,
-      "sub": "투자",
-    },
-  ],
   "investTrend": [
     {
       "amount": 1500000,
@@ -1232,6 +1224,7 @@ exports[`useInsightsData 골든 스냅샷 (동작 불변 리팩터 기준선) > 
       "sub": "데이트",
     },
   ],
+  "loanInflow": 0,
   "ml": {
     "2025-01": "1월",
     "2025-02": "2월",
@@ -1300,7 +1293,7 @@ exports[`useInsightsData 골든 스냅샷 (동작 불변 리팩터 기준선) > 
       "교통": 59500,
       "구독": 17000,
       "데이트": 86000,
-      "식비": 63500,
+      "식비": 95500,
       "주거비": 500000,
     },
     "2025-02": {
@@ -1333,10 +1326,10 @@ exports[`useInsightsData 골든 스냅샷 (동작 불변 리팩터 기준선) > 
     "2025-03",
     "2025-04",
   ],
-  "netCashFlow": -1245400,
   "netProfit": 939600,
   "netWorthByMonth": [
     {
+      "changeValue": 11880000,
       "expense": 758000,
       "income": 12080000,
       "label": "1월",
@@ -1345,6 +1338,7 @@ exports[`useInsightsData 골든 스냅샷 (동작 불변 리팩터 기준선) > 
       "total": 11880000,
     },
     {
+      "changeValue": 12810000,
       "expense": 2145400,
       "income": 3415000,
       "label": "2월",
@@ -1353,6 +1347,7 @@ exports[`useInsightsData 골든 스냅샷 (동작 불변 리팩터 기준선) > 
       "total": 12810000,
     },
     {
+      "changeValue": 14140000,
       "expense": 751500,
       "income": 4107500,
       "label": "3월",
@@ -1361,6 +1356,7 @@ exports[`useInsightsData 골든 스냅샷 (동작 불변 리팩터 기준선) > 
       "total": 14140000,
     },
     {
+      "changeValue": 15070000,
       "expense": 939500,
       "income": 3098200,
       "label": "4월",
@@ -1369,6 +1365,7 @@ exports[`useInsightsData 골든 스냅샷 (동작 불변 리팩터 기준선) > 
       "total": 15070000,
     },
   ],
+  "netWorthChangeBasis": "market",
   "originalAssets": 8050000,
   "originalAssetsByAcct": [
     {
@@ -1395,34 +1392,16 @@ exports[`useInsightsData 골든 스냅샷 (동작 불변 리팩터 기준선) > 
   "passiveIncome": 85000,
   "patternStats": {
     "avgIntervalDays": 2.375,
-    "currentStreakDays": 69,
+    "currentStreakDays": 8,
     "currentStreakType": "zero",
     "longestSpendStreak": 2,
-    "longestZeroStreak": 69,
+    "longestZeroStreak": 8,
     "zeroDaysPerMonth": [
-      {
-        "label": "1월",
-        "month": "2025-01",
-        "totalDays": 31,
-        "zeroDays": 31,
-      },
       {
         "label": "2월",
         "month": "2025-02",
         "totalDays": 28,
         "zeroDays": 19,
-      },
-      {
-        "label": "3월",
-        "month": "2025-03",
-        "totalDays": 31,
-        "zeroDays": 31,
-      },
-      {
-        "label": "4월",
-        "month": "2025-04",
-        "totalDays": 30,
-        "zeroDays": 30,
       },
     ],
   },
@@ -1463,12 +1442,18 @@ exports[`useInsightsData 골든 스냅샷 (동작 불변 리팩터 기준선) > 
     "wins": 228744,
   },
   "realSavRate": 30.457050243111834,
+  "recorded": {
+    "dayCap": null,
+    "daysSince": 563,
+    "lastDate": "2025-04-26",
+  },
   "salaryMonthly": {
     "2025-01": 3000000,
     "2025-02": 3000000,
     "2025-03": 4000000,
     "2025-04": 3000000,
   },
+  "salarySurplus": 854600,
   "salaryTrend": [
     {
       "l": "1월",
@@ -1507,25 +1492,20 @@ exports[`useInsightsData 골든 스냅샷 (동작 불변 리팩터 기준선) > 
       "sav": 939600,
     },
     {
-      "cumRate": 64.84475659966094,
+      "cumRate": 65.13538387018649,
       "l": "3월",
       "m": "2025-03",
-      "rate": 81.77991581479255,
-      "sav": 3400000,
+      "rate": 82.501503307276,
+      "sav": 3430000,
     },
     {
-      "cumRate": 66.0718144359087,
+      "cumRate": 66.29534972095345,
       "l": "4월",
       "m": "2025-04",
       "rate": 70.16009295720096,
       "sav": 2173700,
     },
   ],
-  "score": {
-    "comment": "훌륭하게 관리 중!",
-    "grade": "A",
-    "total": 85,
-  },
   "selMonth": "2025-02",
   "settlementTotal": 180000,
   "spendByDOM": [
@@ -1674,10 +1654,12 @@ exports[`useInsightsData 골든 스냅샷 (동작 불변 리팩터 기준선) > 
   ],
   "subInsights": [
     {
+      "activeMonths": 1,
       "avg": 1350000,
       "cat": "쇼핑",
-      "comment": "전월과 비슷한 수준을 유지하고 있습니다. 전체 지출의 63%로 압도적 비중입니다. 이 카테고리를 10%만 줄여도 월 13.5만 절약 효과가 있습니다. 월평균 0.5건으로 비정기 지출입니다. 고액 지출이 간헐적으로 발생하는 패턴입니다. 건당 평균 135만으로 고단가 지출입니다. 구매 전 필요성을 한 번 더 확인하는 습관이 도움됩니다. 주요 지출처: 노트북(135만, 100%). 지출 최고월: 2월(135만).",
+      "comment": "1월엔 기록이 없던 항목 — 2월 1건. 새 지출처: 노트북(135만원). 최대 단건 노트북(135만원, 2025-02-15)이 증가분의 100%. 기간 지출의 63%. 주요 지출처 노트북(135만원, 100%).",
       "count": 1,
+      "doneMonths": 2,
       "mTotals": [
         0,
         1350000,
@@ -1688,7 +1670,7 @@ exports[`useInsightsData 골든 스냅샷 (동작 불변 리팩터 기준선) > 
       "maxSingleDesc": "노트북",
       "mom": 0,
       "monthAvg": 1350000,
-      "monthTrend": "flat",
+      "monthTrend": "up",
       "peak": "2월",
       "share": 63,
       "streakUp": 1,
@@ -1696,12 +1678,15 @@ exports[`useInsightsData 골든 스냅샷 (동작 불변 리팩터 기준선) > 
       "topDesc": "노트북",
       "topDescAmt": 1350000,
       "total": 1350000,
+      "trendLabel": "2월 vs 1월: 새로 발생 (135만원)",
     },
     {
+      "activeMonths": 2,
       "avg": 500000,
       "cat": "주거비",
-      "comment": "전월과 비슷한 수준을 유지하고 있습니다. 전체 지출의 23%로 주요 지출 카테고리입니다. 월평균 1건으로 비정기 지출입니다. 고액 지출이 간헐적으로 발생하는 패턴입니다. 건당 평균 50만으로 고단가 지출입니다. 구매 전 필요성을 한 번 더 확인하는 습관이 도움됩니다. 주요 지출처: 월세(50만, 100%). 지출 최고월: 1월(50만).",
+      "comment": "기간 지출의 23%. 주요 지출처 월세(50만원, 100%).",
       "count": 1,
+      "doneMonths": 2,
       "mTotals": [
         500000,
         500000,
@@ -1720,12 +1705,15 @@ exports[`useInsightsData 골든 스냅샷 (동작 불변 리팩터 기준선) > 
       "topDesc": "월세",
       "topDescAmt": 500000,
       "total": 500000,
+      "trendLabel": "2월 vs 1월: 비슷 (±0원)",
     },
     {
+      "activeMonths": 1,
       "avg": 150000,
       "cat": "데이트",
-      "comment": "전월과 비슷한 수준을 유지하고 있습니다. 전체 지출의 7%를 차지합니다. 월평균 0.5건으로 비정기 지출입니다. 고액 지출이 간헐적으로 발생하는 패턴입니다. 건당 평균 15만으로 고단가 지출입니다. 구매 전 필요성을 한 번 더 확인하는 습관이 도움됩니다. 주요 지출처: 발렌타인 선물(15만, 100%). 지출 최고월: 2월(15만).",
+      "comment": "1월엔 기록이 없던 항목 — 2월 1건. 새 지출처: 발렌타인 선물(15만원). 최대 단건 발렌타인 선물(15만원, 2025-02-14)이 증가분의 100%. 기간 지출의 7%. 주요 지출처 발렌타인 선물(15만원, 100%).",
       "count": 1,
+      "doneMonths": 2,
       "mTotals": [
         0,
         150000,
@@ -1736,7 +1724,7 @@ exports[`useInsightsData 골든 스냅샷 (동작 불변 리팩터 기준선) > 
       "maxSingleDesc": "발렌타인 선물",
       "mom": 0,
       "monthAvg": 150000,
-      "monthTrend": "flat",
+      "monthTrend": "up",
       "peak": "2월",
       "share": 7,
       "streakUp": 1,
@@ -1744,12 +1732,15 @@ exports[`useInsightsData 골든 스냅샷 (동작 불변 리팩터 기준선) > 
       "topDesc": "발렌타인 선물",
       "topDescAmt": 150000,
       "total": 150000,
+      "trendLabel": "2월 vs 1월: 새로 발생 (15만원)",
     },
     {
+      "activeMonths": 2,
       "avg": 29000,
       "cat": "식비",
-      "comment": "전월과 비슷한 수준을 유지하고 있습니다. 주요 지출처: 삼겹살집(4.5만, 78%). 2위: 김밥천국(1.3만). 지출 최고월: 2월(5.8만).",
+      "comment": "주요 지출처 삼겹살집(4.5만원, 78%).",
       "count": 2,
+      "doneMonths": 2,
       "mTotals": [
         57000,
         58000,
@@ -1758,7 +1749,7 @@ exports[`useInsightsData 골든 스냅샷 (동작 불변 리팩터 기준선) > 
       ],
       "maxSingle": 45000,
       "maxSingleDesc": "삼겹살집",
-      "mom": 2,
+      "mom": 0,
       "monthAvg": 57500,
       "monthTrend": "flat",
       "peak": "2월",
@@ -1768,12 +1759,15 @@ exports[`useInsightsData 골든 스냅샷 (동작 불변 리팩터 기준선) > 
       "topDesc": "삼겹살집",
       "topDescAmt": 45000,
       "total": 58000,
+      "trendLabel": "2월 vs 1월: 비슷 (+1,000원)",
     },
     {
+      "activeMonths": 2,
       "avg": 55000,
       "cat": "교통",
-      "comment": "전월과 비슷한 수준을 유지하고 있습니다. 월평균 1건으로 비정기 지출입니다. 고액 지출이 간헐적으로 발생하는 패턴입니다. 건당 평균 5.5만 수준입니다. 주요 지출처: 교통카드 충전(5.5만, 100%). 지출 최고월: 1월(5.5만).",
+      "comment": "주요 지출처 교통카드 충전(5.5만원, 100%).",
       "count": 1,
+      "doneMonths": 2,
       "mTotals": [
         55000,
         55000,
@@ -1792,12 +1786,15 @@ exports[`useInsightsData 골든 스냅샷 (동작 불변 리팩터 기준선) > 
       "topDesc": "교통카드 충전",
       "topDescAmt": 55000,
       "total": 55000,
+      "trendLabel": "2월 vs 1월: 비슷 (±0원)",
     },
     {
+      "activeMonths": 2,
       "avg": 17000,
       "cat": "구독",
-      "comment": "전월과 비슷한 수준을 유지하고 있습니다. 월평균 1건으로 비정기 지출입니다. 고액 지출이 간헐적으로 발생하는 패턴입니다. 주요 지출처: 넷플릭스(1.7만, 100%). 지출 최고월: 1월(1.7만).",
+      "comment": "주요 지출처 넷플릭스(1.7만원, 100%).",
       "count": 1,
+      "doneMonths": 2,
       "mTotals": [
         17000,
         17000,
@@ -1816,12 +1813,15 @@ exports[`useInsightsData 골든 스냅샷 (동작 불변 리팩터 기준선) > 
       "topDesc": "넷플릭스",
       "topDescAmt": 17000,
       "total": 17000,
+      "trendLabel": "2월 vs 1월: 비슷 (±0원)",
     },
     {
+      "activeMonths": 1,
       "avg": 8900,
-      "cat": "편의점",
-      "comment": "전월과 비슷한 수준을 유지하고 있습니다. 월평균 0.5건으로 비정기 지출입니다. 고액 지출이 간헐적으로 발생하는 패턴입니다. 주요 지출처: GS25(8,900, 100%). 지출 최고월: 2월(8,900).",
+      "cat": "생활",
+      "comment": "1월엔 기록이 없던 항목 — 2월 1건. 새 지출처: GS25(8,900원). 최대 단건 GS25(8,900원, 2025-02-20)이 증가분의 100%. 주요 지출처 GS25(8,900원, 100%).",
       "count": 1,
+      "doneMonths": 2,
       "mTotals": [
         0,
         8900,
@@ -1832,7 +1832,7 @@ exports[`useInsightsData 골든 스냅샷 (동작 불변 리팩터 기준선) > 
       "maxSingleDesc": "GS25",
       "mom": 0,
       "monthAvg": 8900,
-      "monthTrend": "flat",
+      "monthTrend": "up",
       "peak": "2월",
       "share": 0,
       "streakUp": 1,
@@ -1840,12 +1840,15 @@ exports[`useInsightsData 골든 스냅샷 (동작 불변 리팩터 기준선) > 
       "topDesc": "GS25",
       "topDescAmt": 8900,
       "total": 8900,
+      "trendLabel": "2월 vs 1월: 새로 발생 (8,900원)",
     },
     {
+      "activeMonths": 2,
       "avg": 6500,
       "cat": "식비",
-      "comment": "전월 대비 89% 감소했습니다. 결제 시점 변경이나 미입력 거래가 있는지도 확인하세요. 월별 변동성이 81%로 큽니다. 비정기 대량 구매가 영향을 줍니다. 주요 지출처: 스타벅스(6,500, 100%). 지출 최고월: 1월(6.1만).",
+      "comment": "건수 3→1건(−4만원), 건당 2만→6,500원(−1.4만원). 빠진 지출처: 투썸(3.2만원), 디저트카페(2.2만원). 주요 지출처 스타벅스(6,500원, 100%).",
       "count": 1,
+      "doneMonths": 2,
       "mTotals": [
         60500,
         6500,
@@ -1864,8 +1867,10 @@ exports[`useInsightsData 골든 스냅샷 (동작 불변 리팩터 기준선) > 
       "topDesc": "스타벅스",
       "topDescAmt": 6500,
       "total": 6500,
+      "trendLabel": "2월 vs 1월: -89% (6.1만원 → 6,500원)",
     },
   ],
+  "subMonthly": 0,
   "subTotal": 17000,
   "subTrend": [
     {
@@ -1885,10 +1890,18 @@ exports[`useInsightsData 골든 스냅샷 (동작 불변 리팩터 기준선) > 
       "l": "4월",
     },
   ],
+  "subWindow": {
+    "end": "2026-10",
+    "months": 12,
+    "start": "2025-11",
+  },
   "subs": [
     {
+      "active": false,
       "avg": 17000,
       "count": 1,
+      "lastMonth": "2025-04",
+      "monthly": 0,
       "name": "넷플릭스",
       "total": 17000,
     },
@@ -2186,6 +2199,7 @@ exports[`useInsightsData 골든 스냅샷 (동작 불변 리팩터 기준선) > 
     },
   ],
   "avgMonthExp": 1148600,
+  "carryOverIncome": 0,
   "categoryGrowth": {
     "down": [
       {
@@ -2217,20 +2231,20 @@ exports[`useInsightsData 골든 스냅샷 (동작 불변 리팩터 기준선) > 
         "sub": "주거비",
       },
       {
-        "avg3": 64000,
+        "avg3": 80000,
         "cur": 103500,
         "isNew": false,
-        "pctChange": 61.71875,
+        "pctChange": 29.375,
         "sub": "식비",
       },
     ],
     "partialDay": null,
     "up": [
       {
-        "avg3": 64000,
+        "avg3": 80000,
         "cur": 103500,
         "isNew": false,
-        "pctChange": 61.71875,
+        "pctChange": 29.375,
         "sub": "식비",
       },
       {
@@ -2463,7 +2477,7 @@ exports[`useInsightsData 골든 스냅샷 (동작 불변 리팩터 기준선) > 
     {
       "avg": 48000,
       "avgPerVisit": 48000,
-      "comment": "데이트 지출의 100%로 압도적 비중! 이 카테고리가 데이트비의 핵심입니다. 총 1건 발생, 건당 평균 4.8만. 1일에 걸쳐 이용, 이용일당 평균 4.8만.",
+      "comment": "데이트 지출의 100%. 총 1건 발생, 건당 평균 4.8만. 1일에 걸쳐 이용, 이용일당 평균 4.8만.",
       "count": 1,
       "maxSingle": 48000,
       "maxSingleDesc": "초밥",
@@ -2708,14 +2722,14 @@ exports[`useInsightsData 골든 스냅샷 (동작 불변 리팩터 기준선) > 
     "avgTxPerDay": 0.7,
     "bestSavingsMonth": {
       "month": "2025-03",
-      "rate": 82,
+      "rate": 83,
     },
     "biggestSpendDay": {
       "date": "2025-03-01",
       "total": 538000,
     },
     "daysToSpendIncome": 165,
-    "longestZeroStreak": 6,
+    "longestZeroStreak": 13,
     "monthOverMonthGrowth": 9,
     "mostFrugalMonth": {
       "expense": 751500,
@@ -2805,7 +2819,6 @@ exports[`useInsightsData 골든 스냅샷 (동작 불변 리팩터 기준선) > 
   "incSubInsights": [
     {
       "avg": 3000000,
-      "comment": "실질 수입의 72%를 책임지는 핵심 수입원입니다. 이 수입이 줄어들면 가계에 직접 타격이 옵니다. 안정성 100%로 매우 안정적 — 재무 계획의 기준으로 삼을 수 있습니다. 총 1건, 건당 평균 300만.",
       "count": 1,
       "isReal": true,
       "maxMonth": "1월",
@@ -2823,7 +2836,6 @@ exports[`useInsightsData 골든 스냅샷 (동작 불변 리팩터 기준선) > 
     },
     {
       "avg": 1000000,
-      "comment": "실질 수입의 24%를 차지하는 중요한 수입원입니다. 관측 기간에 매달 발생하지 않은 근로소득입니다. 급여 누락이나 상여·수당 여부를 확인하세요. 총 1건, 건당 평균 100만.",
       "count": 1,
       "isReal": true,
       "maxMonth": "3월",
@@ -2841,7 +2853,6 @@ exports[`useInsightsData 골든 스냅샷 (동작 불변 리팩터 기준선) > 
     },
     {
       "avg": 53750,
-      "comment": "실질 수입의 3%인 소규모 수입원입니다. 자산이 일해서 번 패시브 수입입니다. 수입이 증가했습니다. 보유량 변화·지급 일정·일회성 배당 중 어떤 영향인지 확인하세요. 안정성 87%로 매우 안정적 — 재무 계획의 기준으로 삼을 수 있습니다. 총 2건, 건당 평균 5.4만.",
       "count": 2,
       "isReal": true,
       "maxMonth": "3월",
@@ -2892,6 +2903,7 @@ exports[`useInsightsData 골든 스냅샷 (동작 불변 리팩터 기준선) > 
     "targetInc": 4000000,
     "yoy": null,
   },
+  "incomeOutsideLedger": 50000,
   "incomeStability": 87,
   "investBreakdown": {
     "realizedGain": 228744,
@@ -2906,20 +2918,8 @@ exports[`useInsightsData 골든 스냅샷 (동작 불변 리팩터 기준선) > 
       "sub": "투자손실",
     },
   ],
+  "investLossInPeriod": 30000,
   "investReturnRate": 18.72545542420194,
-  "investSubInsights": [
-    {
-      "amount": 30000,
-      "avg": 30000,
-      "comment": "재테크 지출의 100%로 가장 큰 투자 카테고리입니다. 총 1건 거래, 건당 평균 3만. 월평균 3만 투자. 연간으로 환산하면 약 36만. 최근 안정적인 투자 금액을 유지하고 있습니다. 단 1번만 투자한 항목입니다.",
-      "count": 1,
-      "mom": 0,
-      "monthAvg": 30000,
-      "monthTrend": "flat",
-      "share": 100,
-      "sub": "투자손실",
-    },
-  ],
   "investTrend": [
     {
       "amount": 1500000,
@@ -2946,6 +2946,7 @@ exports[`useInsightsData 골든 스냅샷 (동작 불변 리팩터 기준선) > 
       "sub": "주거비",
     },
   ],
+  "loanInflow": 0,
   "ml": {
     "2025-01": "1월",
     "2025-02": "2월",
@@ -3014,7 +3015,7 @@ exports[`useInsightsData 골든 스냅샷 (동작 불변 리팩터 기준선) > 
       "교통": 59500,
       "구독": 17000,
       "데이트": 86000,
-      "식비": 63500,
+      "식비": 95500,
       "주거비": 500000,
     },
     "2025-02": {
@@ -3046,10 +3047,10 @@ exports[`useInsightsData 골든 스냅샷 (동작 불변 리팩터 기준선) > 
     "2025-03",
     "2025-04",
   ],
-  "netCashFlow": 1788500,
-  "netProfit": 3400000,
+  "netProfit": 3430000,
   "netWorthByMonth": [
     {
+      "changeValue": 11880000,
       "expense": 758000,
       "income": 12080000,
       "label": "1월",
@@ -3058,6 +3059,7 @@ exports[`useInsightsData 골든 스냅샷 (동작 불변 리팩터 기준선) > 
       "total": 11880000,
     },
     {
+      "changeValue": 12810000,
       "expense": 2145400,
       "income": 3415000,
       "label": "2월",
@@ -3066,6 +3068,7 @@ exports[`useInsightsData 골든 스냅샷 (동작 불변 리팩터 기준선) > 
       "total": 12810000,
     },
     {
+      "changeValue": 14140000,
       "expense": 751500,
       "income": 4107500,
       "label": "3월",
@@ -3074,6 +3077,7 @@ exports[`useInsightsData 골든 스냅샷 (동작 불변 리팩터 기준선) > 
       "total": 14140000,
     },
     {
+      "changeValue": 15070000,
       "expense": 939500,
       "income": 3098200,
       "label": "4월",
@@ -3082,6 +3086,7 @@ exports[`useInsightsData 골든 스냅샷 (동작 불변 리팩터 기준선) > 
       "total": 15070000,
     },
   ],
+  "netWorthChangeBasis": "market",
   "originalAssets": 8050000,
   "originalAssetsByAcct": [
     {
@@ -3108,34 +3113,16 @@ exports[`useInsightsData 골든 스냅샷 (동작 불변 리팩터 기준선) > 
   "passiveIncome": 107500,
   "patternStats": {
     "avgIntervalDays": 2.8333333333333335,
-    "currentStreakDays": 43,
+    "currentStreakDays": 13,
     "currentStreakType": "zero",
     "longestSpendStreak": 3,
-    "longestZeroStreak": 59,
+    "longestZeroStreak": 13,
     "zeroDaysPerMonth": [
-      {
-        "label": "1월",
-        "month": "2025-01",
-        "totalDays": 31,
-        "zeroDays": 31,
-      },
-      {
-        "label": "2월",
-        "month": "2025-02",
-        "totalDays": 28,
-        "zeroDays": 28,
-      },
       {
         "label": "3월",
         "month": "2025-03",
         "totalDays": 31,
         "zeroDays": 24,
-      },
-      {
-        "label": "4월",
-        "month": "2025-04",
-        "totalDays": 30,
-        "zeroDays": 30,
       },
     ],
   },
@@ -3160,7 +3147,7 @@ exports[`useInsightsData 골든 스냅샷 (동작 불변 리팩터 기준선) > 
     "realExpense": 2145400,
     "salary": 3000000,
   },
-  "realExpense": 757500,
+  "realExpense": 727500,
   "realIncome": 4157500,
   "realIncomeMonthly": {
     "2025-01": 3080000,
@@ -3175,13 +3162,19 @@ exports[`useInsightsData 골든 스냅샷 (동작 불변 리팩터 기준선) > 
     "winCnt": 1,
     "wins": 228744,
   },
-  "realSavRate": 81.77991581479255,
+  "realSavRate": 82.501503307276,
+  "recorded": {
+    "dayCap": null,
+    "daysSince": 563,
+    "lastDate": "2025-04-26",
+  },
   "salaryMonthly": {
     "2025-01": 3000000,
     "2025-02": 3000000,
     "2025-03": 4000000,
     "2025-04": 3000000,
   },
+  "salarySurplus": 3248500,
   "salaryTrend": [
     {
       "l": "1월",
@@ -3220,25 +3213,20 @@ exports[`useInsightsData 골든 스냅샷 (동작 불변 리팩터 기준선) > 
       "sav": 939600,
     },
     {
-      "cumRate": 64.84475659966094,
+      "cumRate": 65.13538387018649,
       "l": "3월",
       "m": "2025-03",
-      "rate": 81.77991581479255,
-      "sav": 3400000,
+      "rate": 82.501503307276,
+      "sav": 3430000,
     },
     {
-      "cumRate": 66.0718144359087,
+      "cumRate": 66.29534972095345,
       "l": "4월",
       "m": "2025-04",
       "rate": 70.16009295720096,
       "sav": 2173700,
     },
   ],
-  "score": {
-    "comment": "완벽한 재무 습관!",
-    "grade": "A+",
-    "total": 95,
-  },
   "selMonth": "2025-03",
   "settlementTotal": 0,
   "spendByDOM": [
@@ -3387,10 +3375,12 @@ exports[`useInsightsData 골든 스냅샷 (동작 불변 리팩터 기준선) > 
   ],
   "subInsights": [
     {
+      "activeMonths": 3,
       "avg": 500000,
       "cat": "주거비",
-      "comment": "전월과 비슷한 수준을 유지하고 있습니다. 전체 지출의 67%로 압도적 비중입니다. 이 카테고리를 10%만 줄여도 월 5만 절약 효과가 있습니다. 월평균 1건으로 비정기 지출입니다. 고액 지출이 간헐적으로 발생하는 패턴입니다. 건당 평균 50만으로 고단가 지출입니다. 구매 전 필요성을 한 번 더 확인하는 습관이 도움됩니다. 월별 변동성이 0%로 매우 안정적인 지출 패턴입니다. 주요 지출처: 월세(50만, 100%). 지출 최고월: 1월(50만).",
+      "comment": "기간 지출의 67%. 주요 지출처 월세(50만원, 100%). 최고월 1월(50만원).",
       "count": 1,
+      "doneMonths": 3,
       "mTotals": [
         500000,
         500000,
@@ -3409,12 +3399,15 @@ exports[`useInsightsData 골든 스냅샷 (동작 불변 리팩터 기준선) > 
       "topDesc": "월세",
       "topDescAmt": 500000,
       "total": 500000,
+      "trendLabel": "3월 vs 2월: 비슷 (±0원)",
     },
     {
+      "activeMonths": 3,
       "avg": 32333,
       "cat": "식비",
-      "comment": "전월 대비 67% 증가했습니다. 큰 단건이나 반복 결제의 변화가 있는지 거래 내역에서 확인하세요. 2개월 연속 증가 추세입니다. 전체 지출의 13%를 차지합니다. 건당 평균 3.2만 수준입니다. 주요 지출처: 삼겹살집(4.5만, 46%). 2위: 주말 브런치(3.8만). 지출 최고월: 3월(9.7만).",
+      "comment": "건수 2→3건(+2.9만원), 건당 2.9만→3.2만원(+1만원). 새 지출처: 주말 브런치(3.8만원). 최대 단건 삼겹살집(4.5만원, 2025-03-11)이 증가분의 100%. 기간 지출의 13%. 주요 지출처 삼겹살집(4.5만원, 46%). 최고월 3월(9.7만원).",
       "count": 3,
+      "doneMonths": 3,
       "mTotals": [
         57000,
         58000,
@@ -3433,12 +3426,15 @@ exports[`useInsightsData 골든 스냅샷 (동작 불변 리팩터 기준선) > 
       "topDesc": "삼겹살집",
       "topDescAmt": 45000,
       "total": 97000,
+      "trendLabel": "3월 vs 2월: +67% (5.8만원 → 9.7만원)",
     },
     {
+      "activeMonths": 3,
       "avg": 55000,
       "cat": "교통",
-      "comment": "전월과 비슷한 수준을 유지하고 있습니다. 전체 지출의 7%를 차지합니다. 월평균 1건으로 비정기 지출입니다. 고액 지출이 간헐적으로 발생하는 패턴입니다. 건당 평균 5.5만 수준입니다. 월별 변동성이 0%로 매우 안정적인 지출 패턴입니다. 주요 지출처: 교통카드 충전(5.5만, 100%). 지출 최고월: 1월(5.5만).",
+      "comment": "기간 지출의 7%. 주요 지출처 교통카드 충전(5.5만원, 100%). 최고월 1월(5.5만원).",
       "count": 1,
+      "doneMonths": 3,
       "mTotals": [
         55000,
         55000,
@@ -3457,12 +3453,15 @@ exports[`useInsightsData 골든 스냅샷 (동작 불변 리팩터 기준선) > 
       "topDesc": "교통카드 충전",
       "topDescAmt": 55000,
       "total": 55000,
+      "trendLabel": "3월 vs 2월: 비슷 (±0원)",
     },
     {
+      "activeMonths": 2,
       "avg": 48000,
       "cat": "데이트",
-      "comment": "전월과 비슷한 수준을 유지하고 있습니다. 전체 지출의 6%를 차지합니다. 월평균 0.7건으로 비정기 지출입니다. 고액 지출이 간헐적으로 발생하는 패턴입니다. 건당 평균 4.8만 수준입니다. 주요 지출처: 초밥(4.8만, 100%). 지출 최고월: 1월(6.4만).",
+      "comment": "2월엔 기록이 없던 항목 — 3월 1건. 새 지출처: 초밥(4.8만원). 최대 단건 초밥(4.8만원, 2025-03-08)이 증가분의 100%. 기간 지출의 6%. 주요 지출처 초밥(4.8만원, 100%).",
       "count": 1,
+      "doneMonths": 3,
       "mTotals": [
         64000,
         0,
@@ -3473,7 +3472,7 @@ exports[`useInsightsData 골든 스냅샷 (동작 불변 리팩터 기준선) > 
       "maxSingleDesc": "초밥",
       "mom": 0,
       "monthAvg": 56000,
-      "monthTrend": "flat",
+      "monthTrend": "up",
       "peak": "1월",
       "share": 6,
       "streakUp": 1,
@@ -3481,12 +3480,15 @@ exports[`useInsightsData 골든 스냅샷 (동작 불변 리팩터 기준선) > 
       "topDesc": "초밥",
       "topDescAmt": 48000,
       "total": 48000,
+      "trendLabel": "3월 vs 2월: 새로 발생 (4.8만원)",
     },
     {
+      "activeMonths": 1,
       "avg": 28000,
       "cat": "여가",
-      "comment": "전월과 비슷한 수준을 유지하고 있습니다. 월평균 0.3건으로 비정기 지출입니다. 고액 지출이 간헐적으로 발생하는 패턴입니다. 주요 지출처: CGV(2.8만, 100%). 지출 최고월: 3월(2.8만).",
+      "comment": "2월엔 기록이 없던 항목 — 3월 1건. 새 지출처: CGV(2.8만원). 최대 단건 CGV(2.8만원, 2025-03-02)이 증가분의 100%. 완결 3개월 중 1개월만 발생한 비정기 지출. 주요 지출처 CGV(2.8만원, 100%).",
       "count": 1,
+      "doneMonths": 3,
       "mTotals": [
         0,
         0,
@@ -3497,7 +3499,7 @@ exports[`useInsightsData 골든 스냅샷 (동작 불변 리팩터 기준선) > 
       "maxSingleDesc": "CGV",
       "mom": 0,
       "monthAvg": 28000,
-      "monthTrend": "flat",
+      "monthTrend": "up",
       "peak": "3월",
       "share": 4,
       "streakUp": 1,
@@ -3505,12 +3507,15 @@ exports[`useInsightsData 골든 스냅샷 (동작 불변 리팩터 기준선) > 
       "topDesc": "CGV",
       "topDescAmt": 28000,
       "total": 28000,
+      "trendLabel": "3월 vs 2월: 새로 발생 (2.8만원)",
     },
     {
+      "activeMonths": 3,
       "avg": 17000,
       "cat": "구독",
-      "comment": "전월과 비슷한 수준을 유지하고 있습니다. 월평균 1건으로 비정기 지출입니다. 고액 지출이 간헐적으로 발생하는 패턴입니다. 월별 변동성이 0%로 매우 안정적인 지출 패턴입니다. 주요 지출처: 넷플릭스(1.7만, 100%). 지출 최고월: 1월(1.7만).",
+      "comment": "주요 지출처 넷플릭스(1.7만원, 100%). 최고월 1월(1.7만원).",
       "count": 1,
+      "doneMonths": 3,
       "mTotals": [
         17000,
         17000,
@@ -3529,12 +3534,15 @@ exports[`useInsightsData 골든 스냅샷 (동작 불변 리팩터 기준선) > 
       "topDesc": "넷플릭스",
       "topDescAmt": 17000,
       "total": 17000,
+      "trendLabel": "3월 vs 2월: 비슷 (±0원)",
     },
     {
+      "activeMonths": 3,
       "avg": 6500,
       "cat": "식비",
-      "comment": "전월과 비슷한 수준을 유지하고 있습니다. 월평균 1.7건으로 비정기 지출입니다. 고액 지출이 간헐적으로 발생하는 패턴입니다. 월별 변동성이 104%로 큽니다. 비정기 대량 구매가 영향을 줍니다. 주요 지출처: 스타벅스(6,500, 100%). 지출 최고월: 1월(6.1만).",
+      "comment": "주요 지출처 스타벅스(6,500원, 100%). 최고월 1월(6.1만원).",
       "count": 1,
+      "doneMonths": 3,
       "mTotals": [
         60500,
         6500,
@@ -3553,8 +3561,10 @@ exports[`useInsightsData 골든 스냅샷 (동작 불변 리팩터 기준선) > 
       "topDesc": "스타벅스",
       "topDescAmt": 6500,
       "total": 6500,
+      "trendLabel": "3월 vs 2월: 비슷 (±0원)",
     },
   ],
+  "subMonthly": 0,
   "subTotal": 17000,
   "subTrend": [
     {
@@ -3574,25 +3584,24 @@ exports[`useInsightsData 골든 스냅샷 (동작 불변 리팩터 기준선) > 
       "l": "4월",
     },
   ],
+  "subWindow": {
+    "end": "2026-10",
+    "months": 12,
+    "start": "2025-11",
+  },
   "subs": [
     {
+      "active": false,
       "avg": 17000,
       "count": 1,
+      "lastMonth": "2025-04",
+      "monthly": 0,
       "name": "넷플릭스",
       "total": 17000,
     },
   ],
   "tempIncomeTotal": 0,
-  "topAnomaly": {
-    "averageAmount": 64000,
-    "category": "식비",
-    "currentMonthAmount": 103500,
-    "isAnomaly": true,
-    "percentChange": 61.71875,
-    "severity": "extreme",
-    "stdDev": 500,
-    "zScore": 79,
-  },
+  "topAnomaly": null,
   "topCats": [
     "주거비",
     "식비",
@@ -3897,6 +3906,7 @@ exports[`useInsightsData 골든 스냅샷 (동작 불변 리팩터 기준선) > 
     },
   ],
   "avgMonthExp": 1148600,
+  "carryOverIncome": 9000000,
   "categoryGrowth": {
     "down": [
       {
@@ -3914,18 +3924,18 @@ exports[`useInsightsData 골든 스냅샷 (동작 불변 리팩터 기준선) > 
         "sub": "데이트",
       },
       {
+        "avg3": 87833.33333333333,
+        "cur": 75500,
+        "isNew": false,
+        "pctChange": -14.041745730550279,
+        "sub": "식비",
+      },
+      {
         "avg3": 56500,
         "cur": 55000,
         "isNew": false,
         "pctChange": -2.6548672566371683,
         "sub": "교통",
-      },
-      {
-        "avg3": 77166.66666666667,
-        "cur": 75500,
-        "isNew": false,
-        "pctChange": -2.1598272138229,
-        "sub": "식비",
       },
       {
         "avg3": 500000,
@@ -3952,18 +3962,18 @@ exports[`useInsightsData 골든 스냅샷 (동작 불변 리팩터 기준선) > 
         "sub": "주거비",
       },
       {
-        "avg3": 77166.66666666667,
-        "cur": 75500,
-        "isNew": false,
-        "pctChange": -2.1598272138229,
-        "sub": "식비",
-      },
-      {
         "avg3": 56500,
         "cur": 55000,
         "isNew": false,
         "pctChange": -2.6548672566371683,
         "sub": "교통",
+      },
+      {
+        "avg3": 87833.33333333333,
+        "cur": 75500,
+        "isNew": false,
+        "pctChange": -14.041745730550279,
+        "sub": "식비",
       },
       {
         "avg3": 94666.66666666667,
@@ -4146,7 +4156,7 @@ exports[`useInsightsData 골든 스냅샷 (동작 불변 리팩터 기준선) > 
       939500,
     ],
   },
-  "dailyAvgExp": 38287,
+  "dailyAvgExp": 39607,
   "dateAccountSpend": 142000,
   "dateByDetail": [
     [
@@ -4217,7 +4227,7 @@ exports[`useInsightsData 골든 스냅샷 (동작 불변 리팩터 기준선) > 
     {
       "avg": 62800,
       "avgPerVisit": 78500,
-      "comment": "데이트 지출의 100%로 압도적 비중! 이 카테고리가 데이트비의 핵심입니다. 총 5건 발생, 건당 평균 6.3만. 4일에 걸쳐 이용, 이용일당 평균 7.9만. 최대 단건: 발렌타인 선물(15만). 건당 평균이 높은 편입니다. 할인 혜택이나 가성비 좋은 대안을 찾아보세요.",
+      "comment": "데이트 지출의 100%. 총 5건 발생, 건당 평균 6.3만. 4일에 걸쳐 이용, 이용일당 평균 7.9만. 최대 단건 발렌타인 선물(15만원).",
       "count": 5,
       "maxSingle": 150000,
       "maxSingleDesc": "발렌타인 선물",
@@ -4322,12 +4332,12 @@ exports[`useInsightsData 골든 스냅샷 (동작 불변 리팩터 기준선) > 
       1392000,
     ],
     [
-      "데이트",
-      314000,
+      "식비",
+      339000,
     ],
     [
-      "식비",
-      307000,
+      "데이트",
+      314000,
     ],
     [
       "교통",
@@ -4342,15 +4352,11 @@ exports[`useInsightsData 골든 스냅샷 (동작 불변 리팩터 기준선) > 
       68000,
     ],
     [
-      "카페",
-      32000,
-    ],
-    [
       "여가",
       28000,
     ],
     [
-      "편의점",
+      "생활",
       8900,
     ],
   ],
@@ -4551,7 +4557,7 @@ exports[`useInsightsData 골든 스냅샷 (동작 불변 리팩터 기준선) > 
     },
     {
       "amount": 8900,
-      "cat": "편의점",
+      "cat": "생활",
       "count": 1,
       "sub": "편의점",
     },
@@ -4619,7 +4625,7 @@ exports[`useInsightsData 골든 스냅샷 (동작 불변 리팩터 기준선) > 
     },
     {
       "amount": 32000,
-      "cat": "카페",
+      "cat": "식비",
       "count": 1,
       "sub": "투썸",
     },
@@ -4655,7 +4661,7 @@ exports[`useInsightsData 골든 스냅샷 (동작 불변 리팩터 기준선) > 
     },
     {
       "amount": 8900,
-      "cat": "편의점",
+      "cat": "생활",
       "count": 1,
       "sub": "GS25",
     },
@@ -4672,13 +4678,13 @@ exports[`useInsightsData 골든 스냅샷 (동작 불변 리팩터 기준선) > 
     "avgTxPerDay": 0.6,
     "bestSavingsMonth": {
       "month": "2025-03",
-      "rate": 82,
+      "rate": 83,
     },
     "biggestSpendDay": {
       "date": "2025-02-15",
       "total": 1350000,
     },
-    "daysToSpendIncome": 85,
+    "daysToSpendIncome": 82,
     "longestZeroStreak": 13,
     "monthOverMonthGrowth": 9,
     "mostFrugalMonth": {
@@ -4813,7 +4819,6 @@ exports[`useInsightsData 골든 스냅샷 (동작 불변 리팩터 기준선) > 
   "incSubInsights": [
     {
       "avg": 3000000,
-      "comment": "실질 수입의 89%를 책임지는 핵심 수입원입니다. 이 수입이 줄어들면 가계에 직접 타격이 옵니다. 안정성 100%로 매우 안정적 — 재무 계획의 기준으로 삼을 수 있습니다. 총 4건, 건당 평균 300만.",
       "count": 4,
       "isReal": true,
       "maxMonth": "1월",
@@ -4831,7 +4836,6 @@ exports[`useInsightsData 골든 스냅샷 (동작 불변 리팩터 기준선) > 
     },
     {
       "avg": 1000000,
-      "comment": "실질 수입의 7%를 차지합니다. 관측 기간에 매달 발생하지 않은 근로소득입니다. 급여 누락이나 상여·수당 여부를 확인하세요. 총 1건, 건당 평균 100만.",
       "count": 1,
       "isReal": true,
       "maxMonth": "3월",
@@ -4849,7 +4853,6 @@ exports[`useInsightsData 골든 스냅샷 (동작 불변 리팩터 기준선) > 
     },
     {
       "avg": 73500,
-      "comment": "실질 수입의 3%인 소규모 수입원입니다. 자산이 일해서 번 패시브 수입입니다. 안정성 89%로 매우 안정적 — 재무 계획의 기준으로 삼을 수 있습니다. 총 5건, 건당 평균 7.4만.",
       "count": 5,
       "isReal": true,
       "maxMonth": "3월",
@@ -4867,7 +4870,6 @@ exports[`useInsightsData 골든 스냅샷 (동작 불변 리팩터 기준선) > 
     },
     {
       "avg": 3200,
-      "comment": "실질 수입의 0%인 소규모 수입원입니다. 4개월 중 1개월 발생한 비정기 수입 — 보너스로 보고 계획에는 넣지 않는 것이 좋습니다. 총 1건, 건당 평균 3,200.",
       "count": 1,
       "isReal": true,
       "maxMonth": "4월",
@@ -4885,7 +4887,6 @@ exports[`useInsightsData 골든 스냅샷 (동작 불변 리팩터 기준선) > 
     },
     {
       "avg": 9000000,
-      "comment": "이월 같은 일시·이전성 소득은 반복된다는 보장이 없습니다. 실질 수입에서 제외되며, 고정 지출 계획의 근거로 삼지 마세요. 4개월 중 1개월 발생, 총 900만. 들어올 때 저축·투자로 돌리는 것이 안전합니다.",
       "count": 1,
       "isReal": false,
       "maxMonth": "1월",
@@ -4903,7 +4904,6 @@ exports[`useInsightsData 골든 스냅샷 (동작 불변 리팩터 기준선) > 
     },
     {
       "avg": 150000,
-      "comment": "용돈 같은 일시·이전성 소득은 반복된다는 보장이 없습니다. 실질 수입에서 제외되며, 고정 지출 계획의 근거로 삼지 마세요. 4개월 중 1개월 발생, 총 15만. 들어올 때 저축·투자로 돌리는 것이 안전합니다.",
       "count": 1,
       "isReal": false,
       "maxMonth": "2월",
@@ -4921,7 +4921,6 @@ exports[`useInsightsData 골든 스냅샷 (동작 불변 리팩터 기준선) > 
     },
     {
       "avg": 180000,
-      "comment": "데이트 통장 분담금 입금입니다. 상대 부담분은 실질 지출에서 이미 차감되므로 수입으로 집계하지 않습니다. 총 1건, 18만 회수.",
       "count": 1,
       "isReal": false,
       "maxMonth": "2월",
@@ -4972,6 +4971,7 @@ exports[`useInsightsData 골든 스냅샷 (동작 불변 리팩터 기준선) > 
     "targetInc": 3000000,
     "yoy": null,
   },
+  "incomeOutsideLedger": 50000,
   "incomeStability": 87,
   "investBreakdown": {
     "realizedGain": 228744,
@@ -4996,42 +4996,8 @@ exports[`useInsightsData 골든 스냅샷 (동작 불변 리팩터 기준선) > 
       "sub": "투자손실",
     },
   ],
+  "investLossInPeriod": 30000,
   "investReturnRate": 18.72545542420194,
-  "investSubInsights": [
-    {
-      "amount": 300000,
-      "avg": 300000,
-      "comment": "재테크 지출의 57%로 가장 큰 투자 카테고리입니다. 총 1건 거래, 건당 평균 30만. 월평균 30만 투자. 연간으로 환산하면 약 360만. 최근 안정적인 투자 금액을 유지하고 있습니다. 단 1번만 투자한 항목입니다.",
-      "count": 1,
-      "mom": 0,
-      "monthAvg": 300000,
-      "monthTrend": "flat",
-      "share": 57,
-      "sub": "투자",
-    },
-    {
-      "amount": 200000,
-      "avg": 200000,
-      "comment": "재테크 지출의 38%로 주요 투자 항목입니다. 총 1건 거래, 건당 평균 20만. 월평균 20만 투자. 연간으로 환산하면 약 240만. 최근 안정적인 투자 금액을 유지하고 있습니다. 단 1번만 투자한 항목입니다.",
-      "count": 1,
-      "mom": 0,
-      "monthAvg": 200000,
-      "monthTrend": "flat",
-      "share": 38,
-      "sub": "저축",
-    },
-    {
-      "amount": 30000,
-      "avg": 30000,
-      "comment": "재테크 지출의 6%를 차지합니다. 총 1건 거래, 건당 평균 3만. 월평균 3만 투자. 연간으로 환산하면 약 36만. 최근 100% 투자 금액이 급감했습니다. 시장 상황이나 자금 사정 변화를 확인하세요. 단 1번만 투자한 항목입니다.",
-      "count": 1,
-      "mom": -100,
-      "monthAvg": 30000,
-      "monthTrend": "down",
-      "share": 6,
-      "sub": "투자손실",
-    },
-  ],
   "investTrend": [
     {
       "amount": 1500000,
@@ -5094,6 +5060,7 @@ exports[`useInsightsData 골든 스냅샷 (동작 불변 리팩터 기준선) > 
       "sub": "데이트",
     },
   ],
+  "loanInflow": 0,
   "ml": {
     "2025-01": "1월",
     "2025-02": "2월",
@@ -5161,7 +5128,7 @@ exports[`useInsightsData 골든 스냅샷 (동작 불변 리팩터 기준선) > 
     "2025-01": {
       "교통": 59500,
       "데이트": 86000,
-      "식비": 63500,
+      "식비": 95500,
       "주거비": 500000,
     },
     "2025-02": {
@@ -5192,10 +5159,10 @@ exports[`useInsightsData 골든 스냅샷 (동작 불변 리팩터 기준선) > 
     "2025-03",
     "2025-04",
   ],
-  "netCashFlow": 1795600,
-  "netProfit": 8867300,
+  "netProfit": 8897300,
   "netWorthByMonth": [
     {
+      "changeValue": 11880000,
       "expense": 758000,
       "income": 12080000,
       "label": "1월",
@@ -5204,6 +5171,7 @@ exports[`useInsightsData 골든 스냅샷 (동작 불변 리팩터 기준선) > 
       "total": 11880000,
     },
     {
+      "changeValue": 12810000,
       "expense": 2145400,
       "income": 3415000,
       "label": "2월",
@@ -5212,6 +5180,7 @@ exports[`useInsightsData 골든 스냅샷 (동작 불변 리팩터 기준선) > 
       "total": 12810000,
     },
     {
+      "changeValue": 14140000,
       "expense": 751500,
       "income": 4107500,
       "label": "3월",
@@ -5220,6 +5189,7 @@ exports[`useInsightsData 골든 스냅샷 (동작 불변 리팩터 기준선) > 
       "total": 14140000,
     },
     {
+      "changeValue": 15070000,
       "expense": 939500,
       "income": 3098200,
       "label": "4월",
@@ -5228,6 +5198,7 @@ exports[`useInsightsData 골든 스냅샷 (동작 불변 리팩터 기준선) > 
       "total": 15070000,
     },
   ],
+  "netWorthChangeBasis": "market",
   "originalAssets": 8050000,
   "originalAssetsByAcct": [
     {
@@ -5254,7 +5225,7 @@ exports[`useInsightsData 골든 스냅샷 (동작 불변 리팩터 기준선) > 
   "passiveIncome": 367500,
   "patternStats": {
     "avgIntervalDays": 3.272727272727273,
-    "currentStreakDays": 11,
+    "currentStreakDays": 7,
     "currentStreakType": "zero",
     "longestSpendStreak": 3,
     "longestZeroStreak": 13,
@@ -5280,8 +5251,8 @@ exports[`useInsightsData 골든 스냅샷 (동작 불변 리팩터 기준선) > 
       {
         "label": "4월",
         "month": "2025-04",
-        "totalDays": 30,
-        "zeroDays": 21,
+        "totalDays": 26,
+        "zeroDays": 17,
       },
     ],
   },
@@ -5300,7 +5271,7 @@ exports[`useInsightsData 골든 스냅샷 (동작 불변 리팩터 기준선) > 
     },
   ],
   "prev": null,
-  "realExpense": 4553400,
+  "realExpense": 4523400,
   "realIncome": 13420700,
   "realIncomeMonthly": {
     "2025-01": 3080000,
@@ -5315,13 +5286,19 @@ exports[`useInsightsData 골든 스냅샷 (동작 불변 리팩터 기준선) > 
     "winCnt": 1,
     "wins": 228744,
   },
-  "realSavRate": 66.0718144359087,
+  "realSavRate": 66.29534972095345,
+  "recorded": {
+    "dayCap": null,
+    "daysSince": 563,
+    "lastDate": "2025-04-26",
+  },
   "salaryMonthly": {
     "2025-01": 3000000,
     "2025-02": 3000000,
     "2025-03": 4000000,
     "2025-04": 3000000,
   },
+  "salarySurplus": 8405600,
   "salaryTrend": [
     {
       "l": "1월",
@@ -5360,25 +5337,20 @@ exports[`useInsightsData 골든 스냅샷 (동작 불변 리팩터 기준선) > 
       "sav": 939600,
     },
     {
-      "cumRate": 64.84475659966094,
+      "cumRate": 65.13538387018649,
       "l": "3월",
       "m": "2025-03",
-      "rate": 81.77991581479255,
-      "sav": 3400000,
+      "rate": 82.501503307276,
+      "sav": 3430000,
     },
     {
-      "cumRate": 66.0718144359087,
+      "cumRate": 66.29534972095345,
       "l": "4월",
       "m": "2025-04",
       "rate": 70.16009295720096,
       "sav": 2173700,
     },
   ],
-  "score": {
-    "comment": "완벽한 재무 습관!",
-    "grade": "A+",
-    "total": 100,
-  },
   "selMonth": null,
   "settlementTotal": 180000,
   "spendByDOM": [
@@ -5527,10 +5499,12 @@ exports[`useInsightsData 골든 스냅샷 (동작 불변 리팩터 기준선) > 
   ],
   "subInsights": [
     {
+      "activeMonths": 4,
       "avg": 500000,
       "cat": "주거비",
-      "comment": "전월과 비슷한 수준을 유지하고 있습니다. 전체 지출의 44%로 압도적 비중입니다. 이 카테고리를 10%만 줄여도 월 5만 절약 효과가 있습니다. 월평균 1건으로 비정기 지출입니다. 고액 지출이 간헐적으로 발생하는 패턴입니다. 건당 평균 50만으로 고단가 지출입니다. 구매 전 필요성을 한 번 더 확인하는 습관이 도움됩니다. 월별 변동성이 0%로 매우 안정적인 지출 패턴입니다. 주요 지출처: 월세(200만, 100%). 지출 최고월: 1월(50만).",
+      "comment": "기간 지출의 44%. 주요 지출처 월세(200만원, 100%). 최고월 1월(50만원).",
       "count": 4,
+      "doneMonths": 4,
       "mTotals": [
         500000,
         500000,
@@ -5549,12 +5523,15 @@ exports[`useInsightsData 골든 스냅샷 (동작 불변 리팩터 기준선) > 
       "topDesc": "월세",
       "topDescAmt": 2000000,
       "total": 2000000,
+      "trendLabel": "4월 vs 3월: 비슷 (±0원)",
     },
     {
+      "activeMonths": 1,
       "avg": 1350000,
       "cat": "쇼핑",
-      "comment": "전월과 비슷한 수준을 유지하고 있습니다. 전체 지출의 29%로 주요 지출 카테고리입니다. 월평균 0.3건으로 비정기 지출입니다. 고액 지출이 간헐적으로 발생하는 패턴입니다. 건당 평균 135만으로 고단가 지출입니다. 구매 전 필요성을 한 번 더 확인하는 습관이 도움됩니다. 주요 지출처: 노트북(135만, 100%). 지출 최고월: 2월(135만).",
+      "comment": "기간 지출의 29%. 완결 4개월 중 1개월만 발생한 비정기 지출. 주요 지출처 노트북(135만원, 100%).",
       "count": 1,
+      "doneMonths": 4,
       "mTotals": [
         0,
         1350000,
@@ -5573,12 +5550,15 @@ exports[`useInsightsData 골든 스냅샷 (동작 불변 리팩터 기준선) > 
       "topDesc": "노트북",
       "topDescAmt": 1350000,
       "total": 1350000,
+      "trendLabel": "4월 vs 3월: 기록 없음",
     },
     {
+      "activeMonths": 4,
       "avg": 30222,
       "cat": "식비",
-      "comment": "전월 대비 38% 감소했습니다. 일시적인 변화인지 다음 달에도 확인하세요. 전체 지출의 6%를 차지합니다. 건당 평균 3만 수준입니다. 주요 지출처: 삼겹살집(18만, 66%). 2위: 김밥천국(5.4만). 지출 최고월: 3월(9.7만).",
+      "comment": "건수 3→2건(−3.2만원), 건당 3.2만→3만원(−4,667원). 빠진 지출처: 주말 브런치(3.8만원). 기간 지출의 6%. 주요 지출처 삼겹살집(18만원, 66%). 최고월 3월(9.7만원).",
       "count": 9,
+      "doneMonths": 4,
       "mTotals": [
         57000,
         58000,
@@ -5597,12 +5577,15 @@ exports[`useInsightsData 골든 스냅샷 (동작 불변 리팩터 기준선) > 
       "topDesc": "삼겹살집",
       "topDescAmt": 180000,
       "total": 272000,
+      "trendLabel": "4월 vs 3월: -38% (9.7만원 → 6만원)",
     },
     {
+      "activeMonths": 4,
       "avg": 55000,
       "cat": "교통",
-      "comment": "전월과 비슷한 수준을 유지하고 있습니다. 월평균 1건으로 비정기 지출입니다. 고액 지출이 간헐적으로 발생하는 패턴입니다. 건당 평균 5.5만 수준입니다. 월별 변동성이 0%로 매우 안정적인 지출 패턴입니다. 주요 지출처: 교통카드 충전(22만, 100%). 지출 최고월: 1월(5.5만).",
+      "comment": "기간 지출의 5%. 주요 지출처 교통카드 충전(22만원, 100%). 최고월 1월(5.5만원).",
       "count": 4,
+      "doneMonths": 4,
       "mTotals": [
         55000,
         55000,
@@ -5621,12 +5604,15 @@ exports[`useInsightsData 골든 스냅샷 (동작 불변 리팩터 기준선) > 
       "topDesc": "교통카드 충전",
       "topDescAmt": 220000,
       "total": 220000,
+      "trendLabel": "4월 vs 3월: 비슷 (±0원)",
     },
     {
+      "activeMonths": 1,
       "avg": 220000,
       "cat": "의료",
-      "comment": "전월과 비슷한 수준을 유지하고 있습니다. 월평균 0.3건으로 비정기 지출입니다. 고액 지출이 간헐적으로 발생하는 패턴입니다. 건당 평균 22만으로 고단가 지출입니다. 구매 전 필요성을 한 번 더 확인하는 습관이 도움됩니다. 주요 지출처: 치과(22만, 100%). 지출 최고월: 4월(22만).",
+      "comment": "3월엔 기록이 없던 항목 — 4월 1건. 새 지출처: 치과(22만원). 최대 단건 치과(22만원, 2025-04-19)이 증가분의 100%. 기간 지출의 5%. 완결 4개월 중 1개월만 발생한 비정기 지출. 주요 지출처 치과(22만원, 100%).",
       "count": 1,
+      "doneMonths": 4,
       "mTotals": [
         0,
         0,
@@ -5637,7 +5623,7 @@ exports[`useInsightsData 골든 스냅샷 (동작 불변 리팩터 기준선) > 
       "maxSingleDesc": "치과",
       "mom": 0,
       "monthAvg": 220000,
-      "monthTrend": "flat",
+      "monthTrend": "up",
       "peak": "4월",
       "share": 5,
       "streakUp": 1,
@@ -5645,12 +5631,15 @@ exports[`useInsightsData 골든 스냅샷 (동작 불변 리팩터 기준선) > 
       "topDesc": "치과",
       "topDescAmt": 220000,
       "total": 220000,
+      "trendLabel": "4월 vs 3월: 새로 발생 (22만원)",
     },
     {
+      "activeMonths": 1,
       "avg": 150000,
       "cat": "데이트",
-      "comment": "전월과 비슷한 수준을 유지하고 있습니다. 월평균 0.3건으로 비정기 지출입니다. 고액 지출이 간헐적으로 발생하는 패턴입니다. 건당 평균 15만으로 고단가 지출입니다. 구매 전 필요성을 한 번 더 확인하는 습관이 도움됩니다. 주요 지출처: 발렌타인 선물(15만, 100%). 지출 최고월: 2월(15만).",
+      "comment": "완결 4개월 중 1개월만 발생한 비정기 지출. 주요 지출처 발렌타인 선물(15만원, 100%).",
       "count": 1,
+      "doneMonths": 4,
       "mTotals": [
         0,
         150000,
@@ -5669,12 +5658,15 @@ exports[`useInsightsData 골든 스냅샷 (동작 불변 리팩터 기준선) > 
       "topDesc": "발렌타인 선물",
       "topDescAmt": 150000,
       "total": 150000,
+      "trendLabel": "4월 vs 3월: 기록 없음",
     },
     {
+      "activeMonths": 2,
       "avg": 56000,
       "cat": "데이트",
-      "comment": "전월 대비 100% 감소했습니다. 결제 시점 변경이나 미입력 거래가 있는지도 확인하세요. 월평균 0.5건으로 비정기 지출입니다. 고액 지출이 간헐적으로 발생하는 패턴입니다. 건당 평균 5.6만 수준입니다. 주요 지출처: 파스타집(6.4만, 57%). 2위: 초밥(4.8만). 지출 최고월: 1월(6.4만).",
+      "comment": "4월엔 기록 없음 (3월 1건). 빠진 지출처: 초밥(4.8만원). 주요 지출처 파스타집(6.4만원, 57%).",
       "count": 2,
+      "doneMonths": 4,
       "mTotals": [
         64000,
         0,
@@ -5683,7 +5675,7 @@ exports[`useInsightsData 골든 스냅샷 (동작 불변 리팩터 기준선) > 
       ],
       "maxSingle": 64000,
       "maxSingleDesc": "파스타집",
-      "mom": -100,
+      "mom": 0,
       "monthAvg": 56000,
       "monthTrend": "down",
       "peak": "1월",
@@ -5693,12 +5685,15 @@ exports[`useInsightsData 골든 스냅샷 (동작 불변 리팩터 기준선) > 
       "topDesc": "파스타집",
       "topDescAmt": 64000,
       "total": 112000,
+      "trendLabel": "4월 vs 3월: 없음 (이전 4.8만원)",
     },
     {
+      "activeMonths": 4,
       "avg": 13333,
       "cat": "식비",
-      "comment": "전월과 비슷한 수준을 유지하고 있습니다. 월평균 1.5건으로 비정기 지출입니다. 고액 지출이 간헐적으로 발생하는 패턴입니다. 월별 변동성이 117%로 큽니다. 비정기 대량 구매가 영향을 줍니다. 주요 지출처: 투썸(3.2만, 40%). 2위: 스타벅스(2.6만). 지출 최고월: 1월(6.1만).",
+      "comment": "주요 지출처 투썸(3.2만원, 40%). 최고월 1월(6.1만원).",
       "count": 6,
+      "doneMonths": 4,
       "mTotals": [
         60500,
         6500,
@@ -5717,12 +5712,15 @@ exports[`useInsightsData 골든 스냅샷 (동작 불변 리팩터 기준선) > 
       "topDesc": "투썸",
       "topDescAmt": 32000,
       "total": 80000,
+      "trendLabel": "4월 vs 3월: 비슷 (±0원)",
     },
     {
+      "activeMonths": 4,
       "avg": 17000,
       "cat": "구독",
-      "comment": "전월과 비슷한 수준을 유지하고 있습니다. 월평균 1건으로 비정기 지출입니다. 고액 지출이 간헐적으로 발생하는 패턴입니다. 월별 변동성이 0%로 매우 안정적인 지출 패턴입니다. 주요 지출처: 넷플릭스(6.8만, 100%). 지출 최고월: 1월(1.7만).",
+      "comment": "주요 지출처 넷플릭스(6.8만원, 100%). 최고월 1월(1.7만원).",
       "count": 4,
+      "doneMonths": 4,
       "mTotals": [
         17000,
         17000,
@@ -5741,12 +5739,15 @@ exports[`useInsightsData 골든 스냅샷 (동작 불변 리팩터 기준선) > 
       "topDesc": "넷플릭스",
       "topDescAmt": 68000,
       "total": 68000,
+      "trendLabel": "4월 vs 3월: 비슷 (±0원)",
     },
     {
+      "activeMonths": 2,
       "avg": 29000,
       "cat": "여가",
-      "comment": "전월과 비슷한 수준을 유지하고 있습니다. 2개월 연속 증가 추세입니다. 월평균 0.5건으로 비정기 지출입니다. 고액 지출이 간헐적으로 발생하는 패턴입니다. 주요 지출처: 메가박스(3만, 52%). 2위: CGV(2.8만). 지출 최고월: 4월(3만).",
+      "comment": "주요 지출처 메가박스(3만원, 52%).",
       "count": 2,
+      "doneMonths": 4,
       "mTotals": [
         0,
         0,
@@ -5755,7 +5756,7 @@ exports[`useInsightsData 골든 스냅샷 (동작 불변 리팩터 기준선) > 
       ],
       "maxSingle": 30000,
       "maxSingleDesc": "메가박스",
-      "mom": 7,
+      "mom": 0,
       "monthAvg": 29000,
       "monthTrend": "flat",
       "peak": "4월",
@@ -5765,12 +5766,15 @@ exports[`useInsightsData 골든 스냅샷 (동작 불변 리팩터 기준선) > 
       "topDesc": "메가박스",
       "topDescAmt": 30000,
       "total": 58000,
+      "trendLabel": "4월 vs 3월: 비슷 (+2,000원)",
     },
     {
+      "activeMonths": 1,
       "avg": 42000,
       "cat": "쇼핑",
-      "comment": "전월과 비슷한 수준을 유지하고 있습니다. 월평균 0.3건으로 비정기 지출입니다. 고액 지출이 간헐적으로 발생하는 패턴입니다. 건당 평균 4.2만 수준입니다. 주요 지출처: 아마존(4.2만, 100%). 지출 최고월: 4월(4.2만).",
+      "comment": "3월엔 기록이 없던 항목 — 4월 1건. 새 지출처: 아마존(4.2만원). 최대 단건 아마존(4.2만원, 2025-04-07)이 증가분의 100%. 완결 4개월 중 1개월만 발생한 비정기 지출. 주요 지출처 아마존(4.2만원, 100%).",
       "count": 1,
+      "doneMonths": 4,
       "mTotals": [
         0,
         0,
@@ -5781,7 +5785,7 @@ exports[`useInsightsData 골든 스냅샷 (동작 불변 리팩터 기준선) > 
       "maxSingleDesc": "아마존",
       "mom": 0,
       "monthAvg": 42000,
-      "monthTrend": "flat",
+      "monthTrend": "up",
       "peak": "4월",
       "share": 1,
       "streakUp": 1,
@@ -5789,12 +5793,15 @@ exports[`useInsightsData 골든 스냅샷 (동작 불변 리팩터 기준선) > 
       "topDesc": "아마존",
       "topDescAmt": 42000,
       "total": 42000,
+      "trendLabel": "4월 vs 3월: 새로 발생 (4.2만원)",
     },
     {
+      "activeMonths": 1,
       "avg": 9000,
       "cat": "식비",
-      "comment": "전월과 비슷한 수준을 유지하고 있습니다. 월평균 0.3건으로 비정기 지출입니다. 고액 지출이 간헐적으로 발생하는 패턴입니다. 주요 지출처: 배민(9,000, 100%). 지출 최고월: 4월(9,000).",
+      "comment": "3월엔 기록이 없던 항목 — 4월 1건. 새 지출처: 배민(9,000원). 최대 단건 배민(9,000원, 2025-04-08)이 증가분의 100%. 완결 4개월 중 1개월만 발생한 비정기 지출. 주요 지출처 배민(9,000원, 100%).",
       "count": 1,
+      "doneMonths": 4,
       "mTotals": [
         0,
         0,
@@ -5805,7 +5812,7 @@ exports[`useInsightsData 골든 스냅샷 (동작 불변 리팩터 기준선) > 
       "maxSingleDesc": "배민",
       "mom": 0,
       "monthAvg": 9000,
-      "monthTrend": "flat",
+      "monthTrend": "up",
       "peak": "4월",
       "share": 0,
       "streakUp": 1,
@@ -5813,12 +5820,15 @@ exports[`useInsightsData 골든 스냅샷 (동작 불변 리팩터 기준선) > 
       "topDesc": "배민",
       "topDescAmt": 9000,
       "total": 9000,
+      "trendLabel": "4월 vs 3월: 새로 발생 (9,000원)",
     },
     {
+      "activeMonths": 1,
       "avg": 8900,
-      "cat": "편의점",
-      "comment": "전월과 비슷한 수준을 유지하고 있습니다. 월평균 0.3건으로 비정기 지출입니다. 고액 지출이 간헐적으로 발생하는 패턴입니다. 주요 지출처: GS25(8,900, 100%). 지출 최고월: 2월(8,900).",
+      "cat": "생활",
+      "comment": "완결 4개월 중 1개월만 발생한 비정기 지출. 주요 지출처 GS25(8,900원, 100%).",
       "count": 1,
+      "doneMonths": 4,
       "mTotals": [
         0,
         8900,
@@ -5837,12 +5847,15 @@ exports[`useInsightsData 골든 스냅샷 (동작 불변 리팩터 기준선) > 
       "topDesc": "GS25",
       "topDescAmt": 8900,
       "total": 8900,
+      "trendLabel": "4월 vs 3월: 기록 없음",
     },
     {
+      "activeMonths": 1,
       "avg": 4500,
       "cat": "교통",
-      "comment": "전월과 비슷한 수준을 유지하고 있습니다. 월평균 0.3건으로 비정기 지출입니다. 고액 지출이 간헐적으로 발생하는 패턴입니다. 주요 지출처: 버스(4,500, 100%). 지출 최고월: 1월(4,500).",
+      "comment": "완결 4개월 중 1개월만 발생한 비정기 지출. 주요 지출처 버스(4,500원, 100%).",
       "count": 1,
+      "doneMonths": 4,
       "mTotals": [
         4500,
         0,
@@ -5861,8 +5874,10 @@ exports[`useInsightsData 골든 스냅샷 (동작 불변 리팩터 기준선) > 
       "topDesc": "버스",
       "topDescAmt": 4500,
       "total": 4500,
+      "trendLabel": "4월 vs 3월: 기록 없음",
     },
   ],
+  "subMonthly": 0,
   "subTotal": 68000,
   "subTrend": [
     {
@@ -5882,10 +5897,18 @@ exports[`useInsightsData 골든 스냅샷 (동작 불변 리팩터 기준선) > 
       "l": "4월",
     },
   ],
+  "subWindow": {
+    "end": "2026-10",
+    "months": 12,
+    "start": "2025-11",
+  },
   "subs": [
     {
+      "active": false,
       "avg": 17000,
       "count": 4,
+      "lastMonth": "2025-04",
+      "monthly": 0,
       "name": "넷플릭스",
       "total": 68000,
     },
@@ -5895,8 +5918,8 @@ exports[`useInsightsData 골든 스냅샷 (동작 불변 리팩터 기준선) > 
   "topCats": [
     "주거비",
     "쇼핑",
-    "데이트",
     "식비",
+    "데이트",
     "교통",
     "의료",
   ],
@@ -6028,7 +6051,7 @@ exports[`useInsightsData 골든 스냅샷 (동작 불변 리팩터 기준선) > 
       "sub": "교통",
     },
   ],
-  "totalDays": 120,
+  "totalDays": 116,
   "totalHoldingsCost": 4225154,
   "tradeCntTrend": [
     {
@@ -6137,7 +6160,7 @@ exports[`useInsightsData 골든 스냅샷 (동작 불변 리팩터 기준선) > 
   ],
   "weekdayTot": 1684900,
   "weekendTot": 2909500,
-  "zeroDays": 86,
+  "zeroDays": 82,
 }
 `;
 
@@ -6206,9 +6229,11 @@ exports[`useInsightsData 골든 스냅샷 (동작 불변 리팩터 기준선) > 
   "weekendTot",
   "weekdayTot",
   "topDates",
-  "score",
+  "recorded",
   "prev",
   "avgMonthExp",
+  "investLossInPeriod",
+  "loanInflow",
   "incByGroup",
   "investBySub",
   "dateByDetail",
@@ -6216,8 +6241,9 @@ exports[`useInsightsData 골든 스냅샷 (동작 불변 리팩터 기준선) > 
   "subInsights",
   "incSubInsights",
   "dateSubInsights",
-  "investSubInsights",
   "realIncome",
+  "incomeOutsideLedger",
+  "carryOverIncome",
   "realExpense",
   "settlementTotal",
   "tempIncomeTotal",
@@ -6231,14 +6257,17 @@ exports[`useInsightsData 골든 스냅샷 (동작 불변 리팩터 기준선) > 
   "passiveIncome",
   "expToIncRatio",
   "dailyAvgExp",
-  "netCashFlow",
+  "salarySurplus",
   "incomeStability",
   "investReturnRate",
   "subTotal",
+  "subMonthly",
+  "subWindow",
   "fixedExpense",
   "variableExpense",
   "discretionaryExpense",
   "netWorthByMonth",
+  "netWorthChangeBasis",
   "accountBalances",
   "assetAllocation",
   "funStats",
@@ -6331,6 +6360,7 @@ exports[`useInsightsData 골든 스냅샷 (동작 불변 리팩터 기준선) > 
     },
   ],
   "avgMonthExp": 1138107.5,
+  "carryOverIncome": 9000000,
   "categoryGrowth": {
     "down": [
       {
@@ -6348,18 +6378,18 @@ exports[`useInsightsData 골든 스냅샷 (동작 불변 리팩터 기준선) > 
         "sub": "데이트",
       },
       {
+        "avg3": 87833.33333333333,
+        "cur": 75500,
+        "isNew": false,
+        "pctChange": -14.041745730550279,
+        "sub": "식비",
+      },
+      {
         "avg3": 56500,
         "cur": 55000,
         "isNew": false,
         "pctChange": -2.6548672566371683,
         "sub": "교통",
-      },
-      {
-        "avg3": 77166.66666666667,
-        "cur": 75500,
-        "isNew": false,
-        "pctChange": -2.1598272138229,
-        "sub": "식비",
       },
       {
         "avg3": 500000,
@@ -6386,18 +6416,18 @@ exports[`useInsightsData 골든 스냅샷 (동작 불변 리팩터 기준선) > 
         "sub": "주거비",
       },
       {
-        "avg3": 77166.66666666667,
-        "cur": 75500,
-        "isNew": false,
-        "pctChange": -2.1598272138229,
-        "sub": "식비",
-      },
-      {
         "avg3": 56500,
         "cur": 55000,
         "isNew": false,
         "pctChange": -2.6548672566371683,
         "sub": "교통",
+      },
+      {
+        "avg3": 87833.33333333333,
+        "cur": 75500,
+        "isNew": false,
+        "pctChange": -14.041745730550279,
+        "sub": "식비",
       },
       {
         "avg3": 94666.66666666667,
@@ -6580,7 +6610,7 @@ exports[`useInsightsData 골든 스냅샷 (동작 불변 리팩터 기준선) > 
       897530,
     ],
   },
-  "dailyAvgExp": 37937,
+  "dailyAvgExp": 39245,
   "dateAccountSpend": 0,
   "dateByDetail": [
     [
@@ -6651,7 +6681,7 @@ exports[`useInsightsData 골든 스냅샷 (동작 불변 리팩터 기준선) > 
     {
       "avg": 62800,
       "avgPerVisit": 78500,
-      "comment": "데이트 지출의 100%로 압도적 비중! 이 카테고리가 데이트비의 핵심입니다. 총 5건 발생, 건당 평균 6.3만. 4일에 걸쳐 이용, 이용일당 평균 7.9만. 최대 단건: 발렌타인 선물(15만). 건당 평균이 높은 편입니다. 할인 혜택이나 가성비 좋은 대안을 찾아보세요.",
+      "comment": "데이트 지출의 100%. 총 5건 발생, 건당 평균 6.3만. 4일에 걸쳐 이용, 이용일당 평균 7.9만. 최대 단건 발렌타인 선물(15만원).",
       "count": 5,
       "maxSingle": 150000,
       "maxSingleDesc": "발렌타인 선물",
@@ -6756,12 +6786,12 @@ exports[`useInsightsData 골든 스냅샷 (동작 불변 리팩터 기준선) > 
       1350030,
     ],
     [
-      "데이트",
-      314000,
+      "식비",
+      339000,
     ],
     [
-      "식비",
-      307000,
+      "데이트",
+      314000,
     ],
     [
       "교통",
@@ -6776,15 +6806,11 @@ exports[`useInsightsData 골든 스냅샷 (동작 불변 리팩터 기준선) > 
       68000,
     ],
     [
-      "카페",
-      32000,
-    ],
-    [
       "여가",
       28000,
     ],
     [
-      "편의점",
+      "생활",
       8900,
     ],
   ],
@@ -6979,7 +7005,7 @@ exports[`useInsightsData 골든 스냅샷 (동작 불변 리팩터 기준선) > 
     },
     {
       "amount": 8900,
-      "cat": "편의점",
+      "cat": "생활",
       "count": 1,
       "sub": "편의점",
     },
@@ -7047,7 +7073,7 @@ exports[`useInsightsData 골든 스냅샷 (동작 불변 리팩터 기준선) > 
     },
     {
       "amount": 32000,
-      "cat": "카페",
+      "cat": "식비",
       "count": 1,
       "sub": "투썸",
     },
@@ -7083,7 +7109,7 @@ exports[`useInsightsData 골든 스냅샷 (동작 불변 리팩터 기준선) > 
     },
     {
       "amount": 8900,
-      "cat": "편의점",
+      "cat": "생활",
       "count": 1,
       "sub": "GS25",
     },
@@ -7106,13 +7132,13 @@ exports[`useInsightsData 골든 스냅샷 (동작 불변 리팩터 기준선) > 
     "avgTxPerDay": 0.6,
     "bestSavingsMonth": {
       "month": "2025-03",
-      "rate": 81,
+      "rate": 82,
     },
     "biggestSpendDay": {
       "date": "2025-02-15",
       "total": 1350000,
     },
-    "daysToSpendIncome": 86,
+    "daysToSpendIncome": 83,
     "longestZeroStreak": 13,
     "monthOverMonthGrowth": 9,
     "mostFrugalMonth": {
@@ -7232,7 +7258,6 @@ exports[`useInsightsData 골든 스냅샷 (동작 불변 리팩터 기준선) > 
   "incSubInsights": [
     {
       "avg": 3000000,
-      "comment": "실질 수입의 90%를 책임지는 핵심 수입원입니다. 이 수입이 줄어들면 가계에 직접 타격이 옵니다. 안정성 100%로 매우 안정적 — 재무 계획의 기준으로 삼을 수 있습니다. 총 4건, 건당 평균 300만.",
       "count": 4,
       "isReal": true,
       "maxMonth": "1월",
@@ -7250,7 +7275,6 @@ exports[`useInsightsData 골든 스냅샷 (동작 불변 리팩터 기준선) > 
     },
     {
       "avg": 1000000,
-      "comment": "실질 수입의 7%를 차지합니다. 관측 기간에 매달 발생하지 않은 근로소득입니다. 급여 누락이나 상여·수당 여부를 확인하세요. 총 1건, 건당 평균 100만.",
       "count": 1,
       "isReal": true,
       "maxMonth": "3월",
@@ -7268,7 +7292,6 @@ exports[`useInsightsData 골든 스냅샷 (동작 불변 리팩터 기준선) > 
     },
     {
       "avg": 70003,
-      "comment": "실질 수입의 3%인 소규모 수입원입니다. 자산이 일해서 번 패시브 수입입니다. 안정성 94%로 매우 안정적 — 재무 계획의 기준으로 삼을 수 있습니다. 총 5건, 건당 평균 7만.",
       "count": 5,
       "isReal": true,
       "maxMonth": "4월",
@@ -7286,7 +7309,6 @@ exports[`useInsightsData 골든 스냅샷 (동작 불변 리팩터 기준선) > 
     },
     {
       "avg": 3200,
-      "comment": "실질 수입의 0%인 소규모 수입원입니다. 4개월 중 1개월 발생한 비정기 수입 — 보너스로 보고 계획에는 넣지 않는 것이 좋습니다. 총 1건, 건당 평균 3,200.",
       "count": 1,
       "isReal": true,
       "maxMonth": "4월",
@@ -7304,7 +7326,6 @@ exports[`useInsightsData 골든 스냅샷 (동작 불변 리팩터 기준선) > 
     },
     {
       "avg": 9000000,
-      "comment": "이월 같은 일시·이전성 소득은 반복된다는 보장이 없습니다. 실질 수입에서 제외되며, 고정 지출 계획의 근거로 삼지 마세요. 4개월 중 1개월 발생, 총 900만. 들어올 때 저축·투자로 돌리는 것이 안전합니다.",
       "count": 1,
       "isReal": false,
       "maxMonth": "1월",
@@ -7322,7 +7343,6 @@ exports[`useInsightsData 골든 스냅샷 (동작 불변 리팩터 기준선) > 
     },
     {
       "avg": 150000,
-      "comment": "용돈 같은 일시·이전성 소득은 반복된다는 보장이 없습니다. 실질 수입에서 제외되며, 고정 지출 계획의 근거로 삼지 마세요. 4개월 중 1개월 발생, 총 15만. 들어올 때 저축·투자로 돌리는 것이 안전합니다.",
       "count": 1,
       "isReal": false,
       "maxMonth": "2월",
@@ -7340,7 +7360,6 @@ exports[`useInsightsData 골든 스냅샷 (동작 불변 리팩터 기준선) > 
     },
     {
       "avg": 180000,
-      "comment": "데이트 통장 분담금 입금입니다. 상대 부담분은 실질 지출에서 이미 차감되므로 수입으로 집계하지 않습니다. 총 1건, 18만 회수.",
       "count": 1,
       "isReal": false,
       "maxMonth": "2월",
@@ -7391,6 +7410,7 @@ exports[`useInsightsData 골든 스냅샷 (동작 불변 리팩터 기준선) > 
     "targetInc": 3000000,
     "yoy": null,
   },
+  "incomeOutsideLedger": 50000,
   "incomeStability": 87,
   "investBreakdown": {
     "realizedGain": 228744,
@@ -7415,42 +7435,8 @@ exports[`useInsightsData 골든 스냅샷 (동작 불변 리팩터 기준선) > 
       "sub": "투자손실",
     },
   ],
+  "investLossInPeriod": 30000,
   "investReturnRate": 18.72545542420194,
-  "investSubInsights": [
-    {
-      "amount": 300000,
-      "avg": 300000,
-      "comment": "재테크 지출의 57%로 가장 큰 투자 카테고리입니다. 총 1건 거래, 건당 평균 30만. 월평균 30만 투자. 연간으로 환산하면 약 360만. 최근 안정적인 투자 금액을 유지하고 있습니다. 단 1번만 투자한 항목입니다.",
-      "count": 1,
-      "mom": 0,
-      "monthAvg": 300000,
-      "monthTrend": "flat",
-      "share": 57,
-      "sub": "투자",
-    },
-    {
-      "amount": 200000,
-      "avg": 200000,
-      "comment": "재테크 지출의 38%로 주요 투자 항목입니다. 총 1건 거래, 건당 평균 20만. 월평균 20만 투자. 연간으로 환산하면 약 240만. 최근 안정적인 투자 금액을 유지하고 있습니다. 단 1번만 투자한 항목입니다.",
-      "count": 1,
-      "mom": 0,
-      "monthAvg": 200000,
-      "monthTrend": "flat",
-      "share": 38,
-      "sub": "저축",
-    },
-    {
-      "amount": 30000,
-      "avg": 30000,
-      "comment": "재테크 지출의 6%를 차지합니다. 총 1건 거래, 건당 평균 3만. 월평균 3만 투자. 연간으로 환산하면 약 36만. 최근 100% 투자 금액이 급감했습니다. 시장 상황이나 자금 사정 변화를 확인하세요. 단 1번만 투자한 항목입니다.",
-      "count": 1,
-      "mom": -100,
-      "monthAvg": 30000,
-      "monthTrend": "down",
-      "share": 6,
-      "sub": "투자손실",
-    },
-  ],
   "investTrend": [
     {
       "amount": 1500000,
@@ -7513,6 +7499,7 @@ exports[`useInsightsData 골든 스냅샷 (동작 불변 리팩터 기준선) > 
       "sub": "데이트",
     },
   ],
+  "loanInflow": 0,
   "ml": {
     "2025-01": "1월",
     "2025-02": "2월",
@@ -7551,7 +7538,7 @@ exports[`useInsightsData 골든 스냅샷 (동작 불변 리팩터 기준선) > 
     "2025-01": {
       "교통": 59500,
       "데이트": 86000,
-      "식비": 63500,
+      "식비": 95500,
       "주거비": 500000,
     },
     "2025-02": {
@@ -7582,10 +7569,10 @@ exports[`useInsightsData 골든 스냅샷 (동작 불변 리팩터 기준선) > 
     "2025-03",
     "2025-04",
   ],
-  "netCashFlow": 1977470,
-  "netProfit": 8820782.5,
+  "netProfit": 8850782.5,
   "netWorthByMonth": [
     {
+      "changeValue": 11880000,
       "expense": 758000,
       "income": 12080000,
       "label": "1월",
@@ -7594,6 +7581,7 @@ exports[`useInsightsData 골든 스냅샷 (동작 불변 리팩터 기준선) > 
       "total": 11880000,
     },
     {
+      "changeValue": 12810000,
       "expense": 2145400,
       "income": 3415000,
       "label": "2월",
@@ -7602,6 +7590,7 @@ exports[`useInsightsData 골든 스냅샷 (동작 불변 리팩터 기준선) > 
       "total": 12810000,
     },
     {
+      "changeValue": 14140000,
       "expense": 751500,
       "income": 4090012.5,
       "label": "3월",
@@ -7610,6 +7599,7 @@ exports[`useInsightsData 골든 스냅샷 (동작 불변 리팩터 기준선) > 
       "total": 14140000,
     },
     {
+      "changeValue": 15070000,
       "expense": 897530,
       "income": 3098200,
       "label": "4월",
@@ -7618,6 +7608,7 @@ exports[`useInsightsData 골든 스냅샷 (동작 불변 리팩터 기준선) > 
       "total": 15070000,
     },
   ],
+  "netWorthChangeBasis": "market",
   "originalAssets": 8050000,
   "originalAssetsByAcct": [
     {
@@ -7644,7 +7635,7 @@ exports[`useInsightsData 골든 스냅샷 (동작 불변 리팩터 기준선) > 
   "passiveIncome": 350012.5,
   "patternStats": {
     "avgIntervalDays": 3.272727272727273,
-    "currentStreakDays": 11,
+    "currentStreakDays": 7,
     "currentStreakType": "zero",
     "longestSpendStreak": 3,
     "longestZeroStreak": 13,
@@ -7670,8 +7661,8 @@ exports[`useInsightsData 골든 스냅샷 (동작 불변 리팩터 기준선) > 
       {
         "label": "4월",
         "month": "2025-04",
-        "totalDays": 30,
-        "zeroDays": 21,
+        "totalDays": 26,
+        "zeroDays": 17,
       },
     ],
   },
@@ -7686,7 +7677,7 @@ exports[`useInsightsData 골든 스냅샷 (동작 불변 리팩터 기준선) > 
     },
   ],
   "prev": null,
-  "realExpense": 4582430,
+  "realExpense": 4552430,
   "realIncome": 13403212.5,
   "realIncomeMonthly": {
     "2025-01": 3080000,
@@ -7701,13 +7692,19 @@ exports[`useInsightsData 골든 스냅샷 (동작 불변 리팩터 기준선) > 
     "winCnt": 1,
     "wins": 228744,
   },
-  "realSavRate": 65.81095763422388,
+  "realSavRate": 66.03478457123619,
+  "recorded": {
+    "dayCap": null,
+    "daysSince": 563,
+    "lastDate": "2025-04-26",
+  },
   "salaryMonthly": {
     "2025-01": 3000000,
     "2025-02": 3000000,
     "2025-03": 4000000,
     "2025-04": 3000000,
   },
+  "salarySurplus": 8447570,
   "salaryTrend": [
     {
       "l": "1월",
@@ -7746,25 +7743,20 @@ exports[`useInsightsData 골든 스냅샷 (동작 불변 리팩터 기준선) > 
       "sav": 939600,
     },
     {
-      "cumRate": 64.24167365153608,
+      "cumRate": 64.53279411354426,
       "l": "3월",
       "m": "2025-03",
-      "rate": 81.1232454008291,
-      "sav": 3358512.5,
+      "rate": 81.84788089407942,
+      "sav": 3388512.5,
     },
     {
-      "cumRate": 65.81095763422388,
+      "cumRate": 66.03478457123619,
       "l": "4월",
       "m": "2025-04",
       "rate": 71.03059841198115,
       "sav": 2200670,
     },
   ],
-  "score": {
-    "comment": "완벽한 재무 습관!",
-    "grade": "A+",
-    "total": 100,
-  },
   "selMonth": null,
   "settlementTotal": 180000,
   "spendByDOM": [
@@ -7913,10 +7905,12 @@ exports[`useInsightsData 골든 스냅샷 (동작 불변 리팩터 기준선) > 
   ],
   "subInsights": [
     {
+      "activeMonths": 4,
       "avg": 500000,
       "cat": "주거비",
-      "comment": "전월과 비슷한 수준을 유지하고 있습니다. 전체 지출의 44%로 압도적 비중입니다. 이 카테고리를 10%만 줄여도 월 5만 절약 효과가 있습니다. 월평균 1건으로 비정기 지출입니다. 고액 지출이 간헐적으로 발생하는 패턴입니다. 건당 평균 50만으로 고단가 지출입니다. 구매 전 필요성을 한 번 더 확인하는 습관이 도움됩니다. 월별 변동성이 0%로 매우 안정적인 지출 패턴입니다. 주요 지출처: 월세(200만, 100%). 지출 최고월: 1월(50만).",
+      "comment": "기간 지출의 44%. 주요 지출처 월세(200만원, 100%). 최고월 1월(50만원).",
       "count": 4,
+      "doneMonths": 4,
       "mTotals": [
         500000,
         500000,
@@ -7935,12 +7929,15 @@ exports[`useInsightsData 골든 스냅샷 (동작 불변 리팩터 기준선) > 
       "topDesc": "월세",
       "topDescAmt": 2000000,
       "total": 2000000,
+      "trendLabel": "4월 vs 3월: 비슷 (±0원)",
     },
     {
+      "activeMonths": 1,
       "avg": 1350000,
       "cat": "쇼핑",
-      "comment": "전월과 비슷한 수준을 유지하고 있습니다. 전체 지출의 30%로 주요 지출 카테고리입니다. 월평균 0.3건으로 비정기 지출입니다. 고액 지출이 간헐적으로 발생하는 패턴입니다. 건당 평균 135만으로 고단가 지출입니다. 구매 전 필요성을 한 번 더 확인하는 습관이 도움됩니다. 주요 지출처: 노트북(135만, 100%). 지출 최고월: 2월(135만).",
+      "comment": "기간 지출의 30%. 완결 4개월 중 1개월만 발생한 비정기 지출. 주요 지출처 노트북(135만원, 100%).",
       "count": 1,
+      "doneMonths": 4,
       "mTotals": [
         0,
         1350000,
@@ -7959,12 +7956,15 @@ exports[`useInsightsData 골든 스냅샷 (동작 불변 리팩터 기준선) > 
       "topDesc": "노트북",
       "topDescAmt": 1350000,
       "total": 1350000,
+      "trendLabel": "4월 vs 3월: 기록 없음",
     },
     {
+      "activeMonths": 4,
       "avg": 30222,
       "cat": "식비",
-      "comment": "전월 대비 38% 감소했습니다. 일시적인 변화인지 다음 달에도 확인하세요. 전체 지출의 6%를 차지합니다. 건당 평균 3만 수준입니다. 주요 지출처: 삼겹살집(18만, 66%). 2위: 김밥천국(5.4만). 지출 최고월: 3월(9.7만).",
+      "comment": "건수 3→2건(−3.2만원), 건당 3.2만→3만원(−4,667원). 빠진 지출처: 주말 브런치(3.8만원). 기간 지출의 6%. 주요 지출처 삼겹살집(18만원, 66%). 최고월 3월(9.7만원).",
       "count": 9,
+      "doneMonths": 4,
       "mTotals": [
         57000,
         58000,
@@ -7983,12 +7983,15 @@ exports[`useInsightsData 골든 스냅샷 (동작 불변 리팩터 기준선) > 
       "topDesc": "삼겹살집",
       "topDescAmt": 180000,
       "total": 272000,
+      "trendLabel": "4월 vs 3월: -38% (9.7만원 → 6만원)",
     },
     {
+      "activeMonths": 4,
       "avg": 55000,
       "cat": "교통",
-      "comment": "전월과 비슷한 수준을 유지하고 있습니다. 월평균 1건으로 비정기 지출입니다. 고액 지출이 간헐적으로 발생하는 패턴입니다. 건당 평균 5.5만 수준입니다. 월별 변동성이 0%로 매우 안정적인 지출 패턴입니다. 주요 지출처: 교통카드 충전(22만, 100%). 지출 최고월: 1월(5.5만).",
+      "comment": "기간 지출의 5%. 주요 지출처 교통카드 충전(22만원, 100%). 최고월 1월(5.5만원).",
       "count": 4,
+      "doneMonths": 4,
       "mTotals": [
         55000,
         55000,
@@ -8007,12 +8010,15 @@ exports[`useInsightsData 골든 스냅샷 (동작 불변 리팩터 기준선) > 
       "topDesc": "교통카드 충전",
       "topDescAmt": 220000,
       "total": 220000,
+      "trendLabel": "4월 vs 3월: 비슷 (±0원)",
     },
     {
+      "activeMonths": 1,
       "avg": 220000,
       "cat": "의료",
-      "comment": "전월과 비슷한 수준을 유지하고 있습니다. 월평균 0.3건으로 비정기 지출입니다. 고액 지출이 간헐적으로 발생하는 패턴입니다. 건당 평균 22만으로 고단가 지출입니다. 구매 전 필요성을 한 번 더 확인하는 습관이 도움됩니다. 주요 지출처: 치과(22만, 100%). 지출 최고월: 4월(22만).",
+      "comment": "3월엔 기록이 없던 항목 — 4월 1건. 새 지출처: 치과(22만원). 최대 단건 치과(22만원, 2025-04-19)이 증가분의 100%. 기간 지출의 5%. 완결 4개월 중 1개월만 발생한 비정기 지출. 주요 지출처 치과(22만원, 100%).",
       "count": 1,
+      "doneMonths": 4,
       "mTotals": [
         0,
         0,
@@ -8023,7 +8029,7 @@ exports[`useInsightsData 골든 스냅샷 (동작 불변 리팩터 기준선) > 
       "maxSingleDesc": "치과",
       "mom": 0,
       "monthAvg": 220000,
-      "monthTrend": "flat",
+      "monthTrend": "up",
       "peak": "4월",
       "share": 5,
       "streakUp": 1,
@@ -8031,12 +8037,15 @@ exports[`useInsightsData 골든 스냅샷 (동작 불변 리팩터 기준선) > 
       "topDesc": "치과",
       "topDescAmt": 220000,
       "total": 220000,
+      "trendLabel": "4월 vs 3월: 새로 발생 (22만원)",
     },
     {
+      "activeMonths": 1,
       "avg": 150000,
       "cat": "데이트",
-      "comment": "전월과 비슷한 수준을 유지하고 있습니다. 월평균 0.3건으로 비정기 지출입니다. 고액 지출이 간헐적으로 발생하는 패턴입니다. 건당 평균 15만으로 고단가 지출입니다. 구매 전 필요성을 한 번 더 확인하는 습관이 도움됩니다. 주요 지출처: 발렌타인 선물(15만, 100%). 지출 최고월: 2월(15만).",
+      "comment": "완결 4개월 중 1개월만 발생한 비정기 지출. 주요 지출처 발렌타인 선물(15만원, 100%).",
       "count": 1,
+      "doneMonths": 4,
       "mTotals": [
         0,
         150000,
@@ -8055,12 +8064,15 @@ exports[`useInsightsData 골든 스냅샷 (동작 불변 리팩터 기준선) > 
       "topDesc": "발렌타인 선물",
       "topDescAmt": 150000,
       "total": 150000,
+      "trendLabel": "4월 vs 3월: 기록 없음",
     },
     {
+      "activeMonths": 2,
       "avg": 56000,
       "cat": "데이트",
-      "comment": "전월 대비 100% 감소했습니다. 결제 시점 변경이나 미입력 거래가 있는지도 확인하세요. 월평균 0.5건으로 비정기 지출입니다. 고액 지출이 간헐적으로 발생하는 패턴입니다. 건당 평균 5.6만 수준입니다. 주요 지출처: 파스타집(6.4만, 57%). 2위: 초밥(4.8만). 지출 최고월: 1월(6.4만).",
+      "comment": "4월엔 기록 없음 (3월 1건). 빠진 지출처: 초밥(4.8만원). 주요 지출처 파스타집(6.4만원, 57%).",
       "count": 2,
+      "doneMonths": 4,
       "mTotals": [
         64000,
         0,
@@ -8069,7 +8081,7 @@ exports[`useInsightsData 골든 스냅샷 (동작 불변 리팩터 기준선) > 
       ],
       "maxSingle": 64000,
       "maxSingleDesc": "파스타집",
-      "mom": -100,
+      "mom": 0,
       "monthAvg": 56000,
       "monthTrend": "down",
       "peak": "1월",
@@ -8079,12 +8091,15 @@ exports[`useInsightsData 골든 스냅샷 (동작 불변 리팩터 기준선) > 
       "topDesc": "파스타집",
       "topDescAmt": 64000,
       "total": 112000,
+      "trendLabel": "4월 vs 3월: 없음 (이전 4.8만원)",
     },
     {
+      "activeMonths": 4,
       "avg": 13333,
       "cat": "식비",
-      "comment": "전월과 비슷한 수준을 유지하고 있습니다. 월평균 1.5건으로 비정기 지출입니다. 고액 지출이 간헐적으로 발생하는 패턴입니다. 월별 변동성이 117%로 큽니다. 비정기 대량 구매가 영향을 줍니다. 주요 지출처: 투썸(3.2만, 40%). 2위: 스타벅스(2.6만). 지출 최고월: 1월(6.1만).",
+      "comment": "주요 지출처 투썸(3.2만원, 40%). 최고월 1월(6.1만원).",
       "count": 6,
+      "doneMonths": 4,
       "mTotals": [
         60500,
         6500,
@@ -8103,12 +8118,15 @@ exports[`useInsightsData 골든 스냅샷 (동작 불변 리팩터 기준선) > 
       "topDesc": "투썸",
       "topDescAmt": 32000,
       "total": 80000,
+      "trendLabel": "4월 vs 3월: 비슷 (±0원)",
     },
     {
+      "activeMonths": 4,
       "avg": 17000,
       "cat": "구독",
-      "comment": "전월과 비슷한 수준을 유지하고 있습니다. 월평균 1건으로 비정기 지출입니다. 고액 지출이 간헐적으로 발생하는 패턴입니다. 월별 변동성이 0%로 매우 안정적인 지출 패턴입니다. 주요 지출처: 넷플릭스(6.8만, 100%). 지출 최고월: 1월(1.7만).",
+      "comment": "주요 지출처 넷플릭스(6.8만원, 100%). 최고월 1월(1.7만원).",
       "count": 4,
+      "doneMonths": 4,
       "mTotals": [
         17000,
         17000,
@@ -8127,12 +8145,15 @@ exports[`useInsightsData 골든 스냅샷 (동작 불변 리팩터 기준선) > 
       "topDesc": "넷플릭스",
       "topDescAmt": 68000,
       "total": 68000,
+      "trendLabel": "4월 vs 3월: 비슷 (±0원)",
     },
     {
+      "activeMonths": 2,
       "avg": 29000,
       "cat": "여가",
-      "comment": "전월과 비슷한 수준을 유지하고 있습니다. 2개월 연속 증가 추세입니다. 월평균 0.5건으로 비정기 지출입니다. 고액 지출이 간헐적으로 발생하는 패턴입니다. 주요 지출처: 메가박스(3만, 52%). 2위: CGV(2.8만). 지출 최고월: 4월(3만).",
+      "comment": "주요 지출처 메가박스(3만원, 52%).",
       "count": 2,
+      "doneMonths": 4,
       "mTotals": [
         0,
         0,
@@ -8141,7 +8162,7 @@ exports[`useInsightsData 골든 스냅샷 (동작 불변 리팩터 기준선) > 
       ],
       "maxSingle": 30000,
       "maxSingleDesc": "메가박스",
-      "mom": 7,
+      "mom": 0,
       "monthAvg": 29000,
       "monthTrend": "flat",
       "peak": "4월",
@@ -8151,12 +8172,15 @@ exports[`useInsightsData 골든 스냅샷 (동작 불변 리팩터 기준선) > 
       "topDesc": "메가박스",
       "topDescAmt": 30000,
       "total": 58000,
+      "trendLabel": "4월 vs 3월: 비슷 (+2,000원)",
     },
     {
+      "activeMonths": 1,
       "avg": 9000,
       "cat": "식비",
-      "comment": "전월과 비슷한 수준을 유지하고 있습니다. 월평균 0.3건으로 비정기 지출입니다. 고액 지출이 간헐적으로 발생하는 패턴입니다. 주요 지출처: 배민(9,000, 100%). 지출 최고월: 4월(9,000).",
+      "comment": "3월엔 기록이 없던 항목 — 4월 1건. 새 지출처: 배민(9,000원). 최대 단건 배민(9,000원, 2025-04-08)이 증가분의 100%. 완결 4개월 중 1개월만 발생한 비정기 지출. 주요 지출처 배민(9,000원, 100%).",
       "count": 1,
+      "doneMonths": 4,
       "mTotals": [
         0,
         0,
@@ -8167,7 +8191,7 @@ exports[`useInsightsData 골든 스냅샷 (동작 불변 리팩터 기준선) > 
       "maxSingleDesc": "배민",
       "mom": 0,
       "monthAvg": 9000,
-      "monthTrend": "flat",
+      "monthTrend": "up",
       "peak": "4월",
       "share": 0,
       "streakUp": 1,
@@ -8175,12 +8199,15 @@ exports[`useInsightsData 골든 스냅샷 (동작 불변 리팩터 기준선) > 
       "topDesc": "배민",
       "topDescAmt": 9000,
       "total": 9000,
+      "trendLabel": "4월 vs 3월: 새로 발생 (9,000원)",
     },
     {
+      "activeMonths": 1,
       "avg": 8900,
-      "cat": "편의점",
-      "comment": "전월과 비슷한 수준을 유지하고 있습니다. 월평균 0.3건으로 비정기 지출입니다. 고액 지출이 간헐적으로 발생하는 패턴입니다. 주요 지출처: GS25(8,900, 100%). 지출 최고월: 2월(8,900).",
+      "cat": "생활",
+      "comment": "완결 4개월 중 1개월만 발생한 비정기 지출. 주요 지출처 GS25(8,900원, 100%).",
       "count": 1,
+      "doneMonths": 4,
       "mTotals": [
         0,
         8900,
@@ -8199,12 +8226,15 @@ exports[`useInsightsData 골든 스냅샷 (동작 불변 리팩터 기준선) > 
       "topDesc": "GS25",
       "topDescAmt": 8900,
       "total": 8900,
+      "trendLabel": "4월 vs 3월: 기록 없음",
     },
     {
+      "activeMonths": 1,
       "avg": 4500,
       "cat": "교통",
-      "comment": "전월과 비슷한 수준을 유지하고 있습니다. 월평균 0.3건으로 비정기 지출입니다. 고액 지출이 간헐적으로 발생하는 패턴입니다. 주요 지출처: 버스(4,500, 100%). 지출 최고월: 1월(4,500).",
+      "comment": "완결 4개월 중 1개월만 발생한 비정기 지출. 주요 지출처 버스(4,500원, 100%).",
       "count": 1,
+      "doneMonths": 4,
       "mTotals": [
         4500,
         0,
@@ -8223,12 +8253,15 @@ exports[`useInsightsData 골든 스냅샷 (동작 불변 리팩터 기준선) > 
       "topDesc": "버스",
       "topDescAmt": 4500,
       "total": 4500,
+      "trendLabel": "4월 vs 3월: 기록 없음",
     },
     {
+      "activeMonths": 1,
       "avg": 30,
       "cat": "쇼핑",
-      "comment": "전월과 비슷한 수준을 유지하고 있습니다. 월평균 0.3건으로 비정기 지출입니다. 고액 지출이 간헐적으로 발생하는 패턴입니다. 주요 지출처: 아마존(30, 100%). 지출 최고월: 4월(30).",
+      "comment": "3월엔 기록이 없던 항목 — 4월 1건. 새 지출처: 아마존(30원). 최대 단건 아마존(30원, 2025-04-07)이 증가분의 100%. 완결 4개월 중 1개월만 발생한 비정기 지출. 주요 지출처 아마존(30원, 100%).",
       "count": 1,
+      "doneMonths": 4,
       "mTotals": [
         0,
         0,
@@ -8239,7 +8272,7 @@ exports[`useInsightsData 골든 스냅샷 (동작 불변 리팩터 기준선) > 
       "maxSingleDesc": "아마존",
       "mom": 0,
       "monthAvg": 30,
-      "monthTrend": "flat",
+      "monthTrend": "up",
       "peak": "4월",
       "share": 0,
       "streakUp": 1,
@@ -8247,8 +8280,10 @@ exports[`useInsightsData 골든 스냅샷 (동작 불변 리팩터 기준선) > 
       "topDesc": "아마존",
       "topDescAmt": 30,
       "total": 30,
+      "trendLabel": "4월 vs 3월: 새로 발생 (30원)",
     },
   ],
+  "subMonthly": 0,
   "subTotal": 68000,
   "subTrend": [
     {
@@ -8268,10 +8303,18 @@ exports[`useInsightsData 골든 스냅샷 (동작 불변 리팩터 기준선) > 
       "l": "4월",
     },
   ],
+  "subWindow": {
+    "end": "2026-10",
+    "months": 12,
+    "start": "2025-11",
+  },
   "subs": [
     {
+      "active": false,
       "avg": 17000,
       "count": 4,
+      "lastMonth": "2025-04",
+      "monthly": 0,
       "name": "넷플릭스",
       "total": 68000,
     },
@@ -8281,8 +8324,8 @@ exports[`useInsightsData 골든 스냅샷 (동작 불변 리팩터 기준선) > 
   "topCats": [
     "주거비",
     "쇼핑",
-    "데이트",
     "식비",
+    "데이트",
     "교통",
     "의료",
   ],
@@ -8414,7 +8457,7 @@ exports[`useInsightsData 골든 스냅샷 (동작 불변 리팩터 기준선) > 
       "sub": "교통",
     },
   ],
-  "totalDays": 120,
+  "totalDays": 116,
   "totalHoldingsCost": 600050,
   "tradeCntTrend": [
     {
@@ -8523,6 +8566,6 @@ exports[`useInsightsData 골든 스냅샷 (동작 불변 리팩터 기준선) > 
   ],
   "weekdayTot": 1642930,
   "weekendTot": 2909500,
-  "zeroDays": 86,
+  "zeroDays": 82,
 }
 `;

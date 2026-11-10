@@ -1,7 +1,7 @@
 import { describe, it, expect } from "vitest";
 import {
   buildMergeCandidates, buildMergeMapper, countMergeTargets, mergePresets,
-  subPairKey, splitSubPairKey,
+  subPairKey, splitSubPairKey, expenseMainName, expenseDetailName,
 } from "../utils/categoryMerge";
 import type { CategoryPresets, LedgerEntry } from "../types";
 
@@ -163,5 +163,18 @@ describe("buildMergeCandidates", () => {
     expect(item?.inPreset).toBe(false);
     const key = subPairKey("유류교통비", "차량 유지보수");
     expect(splitSubPairKey(key)).toEqual({ main: "유류교통비", sub: "차량 유지보수" });
+  });
+});
+
+describe("expenseMainName / expenseDetailName — 레거시(category=대분류) 행", () => {
+  const legacy = { id: "x", date: "2026-01-01", kind: "expense", category: "재테크", subCategory: "투자손실", amount: 1000 } as LedgerEntry;
+  const std = { id: "y", date: "2026-01-01", kind: "expense", category: "지출", subCategory: "식비", detailCategory: "간식", amount: 1000 } as LedgerEntry;
+  it("레거시 '재테크 > 투자손실'은 대분류 재테크·세부 투자손실 (사용 중인 카테고리가 '미사용'으로 뜨지 않게)", () => {
+    expect(expenseMainName(legacy)).toBe("재테크");
+    expect(expenseDetailName(legacy)).toBe("투자손실");
+  });
+  it("표준(category=지출)은 subCategory=대분류, detailCategory=세부", () => {
+    expect(expenseMainName(std)).toBe("식비");
+    expect(expenseDetailName(std)).toBe("간식");
   });
 });

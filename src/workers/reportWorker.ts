@@ -14,6 +14,7 @@ import {
   generateYearlyReport
 } from "../utils/reportGenerator";
 import type { Account, LedgerEntry, Loan, StockPrice, StockTrade } from "../types";
+import type { FxPoint } from "../utils/portfolioHistory";
 
 interface ReportWorkerPayload {
   accounts: Account[];
@@ -29,6 +30,8 @@ interface ReportWorkerPayload {
   dateAccountId: string | null;
   /** 설정에서 "비실질"로 지정한 수입 카테고리 — 실질수입 제외 (인사이트와 동일 기준) */
   nonRealIncomeOverride?: string[];
+  /** 일별 환율 이력 — 달러 매도 실현손익의 거래일 환율 */
+  fxHistory?: FxPoint[];
 }
 
 interface ReportWorkerRequest {
@@ -94,7 +97,8 @@ workerScope.onmessage = (event: MessageEvent<ReportWorkerRequest>) => {
         payload.ledger,
         payload.trades,
         payload.prices,
-        payload.fxRate ?? undefined
+        payload.fxRate ?? undefined,
+        payload.fxHistory
       ),
       consumptionImpact: generateConsumptionImpactMonthlyReport(
         payload.ledger,
@@ -111,7 +115,8 @@ workerScope.onmessage = (event: MessageEvent<ReportWorkerRequest>) => {
         payload.endDate.slice(0, 7),
         payload.fxRate ?? undefined,
         payload.dateAccountId,
-        payload.nonRealIncomeOverride
+        payload.nonRealIncomeOverride,
+        payload.fxHistory
       )
     };
 

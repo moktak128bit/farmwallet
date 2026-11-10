@@ -8,6 +8,7 @@ import { getTodayKST } from "../../utils/date";
 import { buildLifestyleInsights, parseLifestyleAssumptions, VEHICLE_COST_LABELS,
   type LifestyleAssumptions, type VehicleOverride } from "../../utils/lifestyleInsights";
 import { W } from "./insightsShared";
+import { remoteText } from "../../services/gas";
 
 const cardStyle: React.CSSProperties = { border: "1px solid var(--border)", borderRadius: 10, padding: 16 };
 const gridStyle: React.CSSProperties = { display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(min(100%, 270px), 1fr))", gap: 12 };
@@ -62,7 +63,7 @@ export function LifestyleInsights({ ledger, accounts, categoryPresets, fxRate, t
   const category = scenarioCategories.find(row => row.name === categoryChoice) ?? scenarioCategories[0];
   const cancelledMonthly = model.subscriptions.filter(row => cancelledSubscriptions.has(row.name)).reduce((sum, row) => sum + (row.monthlyAverage ?? 0), 0);
   const referenceLabel = `직전 12개월 중 기록이 있는 ${model.baselineMonths.length}개월의 월평균`;
-  const targetLabel = `${targetMonth.replace("-", ".")} ${model.partialDay == null ? "월 전체" : `1~${model.partialDay}일 기록`}`;
+  const targetLabel = `${targetMonth.replace("-", ".")} ${model.partialDay == null ? "월 전체" : model.partialDay === 0 ? "기록 전" : `1~${model.partialDay}일 기록`}`;
   const completedLabel = `${model.completedMonth.replace("-", ".")} 월 전체`;
   const records = model.current.records.filter(row => [row.main, row.detail, row.entry.description].join(" ").toLowerCase().includes(recordSearch.toLowerCase()));
 
@@ -73,8 +74,8 @@ export function LifestyleInsights({ ledger, accounts, categoryPresets, fxRate, t
       계획용 평균은 기간 버튼과 관계없이 {referenceLabel}을 사용합니다. 기록이 없는 달은 평균에서 제외합니다.</p>
     {error && <p role="alert" style={{ ...hintStyle, color: "var(--danger)" }}>{error}</p>}
     {model.missingFx ? <p role="status">달러 거래의 환율이 없어 생활비 계산을 보류합니다. 환율을 불러온 뒤 확인하세요.</p> : <>
-      {model.daysSinceLastRecord != null && model.daysSinceLastRecord >= 7 && <p style={{ ...hintStyle, background: "var(--warning-light)", padding: 12, borderRadius: 8 }}>
-        마지막 기록 {model.latestRecord} · {model.daysSinceLastRecord}일간 새 기록이 없습니다. 낮게 표시된 지출을 절약 성과로 단정하지 말고 누락 거래를 확인하세요.
+      {model.daysSinceLastRecord != null && model.daysSinceLastRecord >= 3 && <p style={{ ...hintStyle, background: "var(--warning-light)", padding: 12, borderRadius: 8 }}>
+        마지막 기록 후 {model.daysSinceLastRecord}일간 새 기록이 없습니다. 이번 달 숫자는 {model.partialDay}일까지의 기록입니다.
       </p>}
       <div style={gridStyle}>
         <article style={cardStyle}><h3 style={{ fontSize: 14, marginTop: 0 }}>완료월 주유·충전비</h3>
@@ -82,7 +83,7 @@ export function LifestyleInsights({ ledger, accounts, categoryPresets, fxRate, t
           <div style={{ fontSize: 24, fontWeight: 700 }}>{model.hasCompleted ? <Money value={Math.round(model.completed.fuel)} /> : "해당 완료월 기록 없음"}</div>
           <p style={hintStyle}>최근 3개 완료월 평균 {money(model.fuelAverage3)}{model.fuelAverage3 == null && ` (기록 ${model.fuelReferenceCount}/3개월)`}<br />계획용 기록월 평균 {money(model.averages.fuel)} · 연 환산 {money(model.averages.fuel == null ? null : model.averages.fuel * 12)}</p>
           <p style={hintStyle}>완료월 {model.completedFuelCount}건 · 건당 {model.completedFuelCount > 0 ? money(model.completed.fuel / model.completedFuelCount) : "거래 없음"}. 주행거리·연료량이 없어 km당 비용이나 연비는 추정하지 않습니다.</p>
-          {model.partialDay != null && <details><summary style={{ fontSize: 12, cursor: "pointer" }}>이번 달 오늘까지 기록 보기</summary>
+          {model.partialDay != null && <details><summary style={{ fontSize: 12, cursor: "pointer" }}>이번 달 기록 보기</summary>
             <p style={hintStyle}>{targetLabel}: {model.hasCurrent ? money(model.current.fuel) : "기록 없음"}. 한 달 전체 비용이 아닙니다.</p>
           </details>}
         </article>
@@ -208,7 +209,7 @@ export function LifestyleInsights({ ledger, accounts, categoryPresets, fxRate, t
         <div style={gridStyle}>{[10, 20, 30].map(pct => <article key={pct} style={cardStyle}><strong>{pct}% 하락 가정</strong><p>감소액 {money(model.investmentValue * pct / 100)}<br />남는 평가액 {money(model.investmentValue * (1 - pct / 100))}</p></article>)}</div>
       </> : <p style={hintStyle}>양수 평가액의 보유 종목이 없어 투자 집중도를 계산하지 않습니다.</p>}
     </details>
-    <p style={{ ...hintStyle, marginBottom: 0, marginTop: 18 }}>가정과 차량 분류 수정은 이 기기에 저장되며 Gist·데이터 백업에는 포함되지 않습니다.
+    <p style={{ ...hintStyle, marginBottom: 0, marginTop: 18 }}>가정과 차량 분류 수정은 이 기기에 저장되며 {remoteText("Gist")}·데이터 백업에는 포함되지 않습니다.
       실제 기록과 시나리오는 구분됩니다. 미입력·분류 오류가 있으면 결과가 달라지며, 별도 표시된 부분합·시나리오를 서로 더하지 마세요.</p>
   </section>;
 }

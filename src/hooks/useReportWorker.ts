@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import type { Account, LedgerEntry, Loan, StockPrice, StockTrade } from "../types";
+import type { FxPoint } from "../utils/portfolioHistory";
 import {
   generateAccountPerformanceBreakdown,
   generateAccountReport,
@@ -28,6 +29,8 @@ interface UseReportWorkerParams {
   dateAccountId: string | null;
   /** 설정에서 "비실질"로 지정한 수입 카테고리 — 실질수입에서 제외 (인사이트와 동일 기준) */
   nonRealIncomeOverride?: string[];
+  /** 일별 환율 이력 — fxRateAtTrade 없는 달러 매도의 실현손익을 거래일 환율로 (대시보드와 같은 입력) */
+  fxHistory?: FxPoint[];
 }
 
 interface ReportWorkerData {
@@ -123,7 +126,8 @@ function computeSynchronously(params: UseReportWorkerParams): ReportWorkerData {
       params.ledger,
       params.trades,
       params.prices,
-      params.fxRate ?? undefined
+      params.fxRate ?? undefined,
+      params.fxHistory
     ),
     consumptionImpact: generateConsumptionImpactMonthlyReport(
       params.ledger,
@@ -140,13 +144,15 @@ function computeSynchronously(params: UseReportWorkerParams): ReportWorkerData {
       params.endDate.slice(0, 7),
       params.fxRate ?? undefined,
       params.dateAccountId,
-      params.nonRealIncomeOverride
+      params.nonRealIncomeOverride,
+      params.fxHistory
     )
   };
 }
 
 export function useReportWorker(params: UseReportWorkerParams): UseReportWorkerResult {
-  const supportsWorker = typeof Worker !== "undefined";
+  // GAS 빌드(단일 HTML)는 워커 파일을 따로 서빙할 수 없어 메인 스레드 계산으로 — scripts/build-gas.mjs
+  const supportsWorker = typeof Worker !== "undefined" && import.meta.env.VITE_GAS_BUILD !== "1";
   const workerRef = useRef<Worker | null>(null);
   const requestIdRef = useRef(0);
   const latestHandledRequestRef = useRef(0);
@@ -220,7 +226,8 @@ export function useReportWorker(params: UseReportWorkerParams): UseReportWorkerR
         endDate: params.endDate,
         fxRate: params.fxRate,
         dateAccountId: params.dateAccountId,
-        nonRealIncomeOverride: params.nonRealIncomeOverride
+        nonRealIncomeOverride: params.nonRealIncomeOverride,
+        fxHistory: params.fxHistory
       }
     });
   }, [
@@ -234,7 +241,8 @@ export function useReportWorker(params: UseReportWorkerParams): UseReportWorkerR
     params.endDate,
     params.fxRate,
     params.dateAccountId,
-    params.nonRealIncomeOverride
+    params.nonRealIncomeOverride,
+    params.fxHistory
   ]);
 
   return state;

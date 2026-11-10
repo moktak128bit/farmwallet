@@ -17,6 +17,7 @@ import {
   applyDemoteSchema,
 } from "../../utils/demoteSchema";
 import { saveSafetySnapshot } from "../../services/backupService";
+import { isGas } from "../../services/gas";
 
 interface Props {
   data: AppData;
@@ -27,6 +28,9 @@ export const MigrationToolsCards: React.FC<Props> = React.memo(function Migratio
   data,
   onChangeData
 }) {
+  // GAS 운영(시트가 원본)에선 숨긴다 — 1회용 일괄 변경 도구라 잘못 누르면 시트 장부 전체에 바로 퍼진다.
+  // (2026-11-10 실장부 미리보기: 1단계 2건(이자→수입/이자), 2단계 23건 이름 변경(택시→대중교통·주차비→통행·주차) — 필요하면 PC 로컬 앱에서)
+  if (isGas()) return null;
   return (
     <>
       <div className="card" style={{ borderLeft: "3px solid var(--accent)" }}>

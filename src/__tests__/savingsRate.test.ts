@@ -101,7 +101,7 @@ describe("computeMonthlyRealFlows", () => {
     expect(rf.realIncome).toBe(2_000_000);
   });
 
-  it("환전·신용결제·재테크(저축성지출 포함)는 실질지출 제외, 투자손실은 포함", () => {
+  it("환전·신용결제·재테크(저축성지출·투자손실 포함)는 실질지출 제외 — 투자손익은 재테크 순액", () => {
     const flows = computeMonthlyRealFlows(
       [
         entry({ id: "1", amount: 100_000, category: "식비" }),
@@ -113,7 +113,7 @@ describe("computeMonthlyRealFlows", () => {
       ],
       NO_OPTS
     );
-    expect(flows.get("2026-01")!.realExpense).toBe(100_000 + 30_000);
+    expect(flows.get("2026-01")!.realExpense).toBe(100_000);
   });
 
   it("데이트 계좌 지출의 50%는 상대 부담분으로 차감", () => {
@@ -224,10 +224,10 @@ describe("generateComprehensiveMonthlyReport — 실질 저축률 = computeMonth
       expect(row.realNet).toBe(row.realIncome - row.realExpense);
       expect(row.realSavingsRate).toBe(computeRealSavingsRate(row.realIncome, row.realExpense));
     }
-    // 스폿 체크: 1월 = (2,000,000) / (500,000×0.5 + 50,000)
+    // 스폿 체크: 1월 = (2,000,000) / (500,000×0.5) — 투자손실은 재테크 순액이라 실질 지출 아님
     const jan = report[0];
     expect(jan.realIncome).toBe(2_000_000);
-    expect(jan.realExpense).toBe(300_000);
+    expect(jan.realExpense).toBe(250_000);
     // 3월: 실질수입 0 → null
     expect(report[2].realSavingsRate).toBeNull();
   });

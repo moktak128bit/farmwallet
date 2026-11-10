@@ -69,7 +69,8 @@ describe("생활비·차량 시나리오 화면", () => {
     fireEvent.change(screen.getByRole("combobox", { name: "차량 분류 curgas" }), { target: { value: "exclude" } });
     expect(JSON.parse(localStorage.getItem(STORAGE_KEYS.LIFESTYLE_INSIGHTS)!).vehicleOverrides.curgas).toBe("exclude");
     expect(screen.getByText("완료월 주유·충전비").closest("article")?.querySelector(".money")).toHaveTextContent("100,000원");
-    expect(screen.getByText(/2026.10 1~13일 기록: 0원/)).toBeInTheDocument();
+    // 오늘(13일)이 아니라 마지막 기록일(5일)까지 — utils/ledgerFreshness
+    expect(screen.getByText(/2026.10 1~5일 기록: 0원/)).toBeInTheDocument();
     expect(JSON.stringify(ledger)).toBe(before);
   });
   it("구독 정리와 카테고리 감축은 독립적인 가정으로 계산한다", () => {

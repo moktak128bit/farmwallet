@@ -40,8 +40,9 @@ export const DailyBudgetBar: React.FC<Props> = ({ ledger, config }) => {
   const remaining = limit - spent;
   const pct = Math.min(100, Math.round(ratio * 100));
   // 색상: 0~70% 초록 / 70~100% 노랑 / 100%+ 빨강
-  const barColor = ratio >= 1 ? "#dc2626" : ratio >= 0.7 ? "#f59e0b" : "#10b981";
-  const bgColor = ratio >= 1 ? "rgba(220,38,38,0.12)" : ratio >= 0.7 ? "rgba(245,158,11,0.12)" : "rgba(16,185,129,0.12)";
+  // CSS 변수 — 다크모드 대응 (하드코딩 hex 금지 컨벤션)
+  const barColor = ratio >= 1 ? "var(--danger)" : ratio >= 0.7 ? "var(--warning)" : "var(--success)";
+  const bgColor = ratio >= 1 ? "var(--danger-light)" : ratio >= 0.7 ? "var(--warning-light)" : "var(--success-light)";
 
   const streak = computeStreak(ledger, config, today, fxRate);
   const stats = monthlyBudgetStats(ledger, monthKey, config, today, fxRate);
@@ -55,7 +56,7 @@ export const DailyBudgetBar: React.FC<Props> = ({ ledger, config }) => {
         padding: 14,
         marginBottom: 12,
         background: bgColor,
-        border: `2px solid ${barColor}40`,
+        border: `2px solid ${barColor}`,
       }}
     >
       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 8, gap: 10, flexWrap: "wrap" }}>
@@ -74,7 +75,7 @@ export const DailyBudgetBar: React.FC<Props> = ({ ledger, config }) => {
               title={`${streak}일 연속 한도 이하 (한도: ${formatKRW(config.dailyLimit)}/일)`}
               style={{
                 padding: "3px 8px", fontSize: 12, fontWeight: 700, borderRadius: 6,
-                background: "linear-gradient(135deg, #f97316, #ea580c)", color: "#fff",
+                background: "var(--warning)", color: "var(--surface)",
               }}
             >
               {streak}일 연속

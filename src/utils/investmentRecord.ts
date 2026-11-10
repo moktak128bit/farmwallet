@@ -1,7 +1,27 @@
 import type { Account, StockTrade } from "../types";
 import { canonicalTickerForMatch, isUSDStock, plausibleUsdKrw } from "./finance";
 import { consumeFifoLots, type FifoLot } from "./fifoLots";
-import { fxAsOf, type FxPoint } from "./portfolioHistory";
+import type { FxPoint } from "./portfolioHistory";
+
+/** 거래일과 환율 이력의 최대 허용 간격(일) — 이보다 멀면 그 날 환율로 볼 수 없어 fxUnreliable */
+export const FX_HISTORY_MAX_GAP_DAYS = 7;
+
+/** date에 가장 가까운(앞뒤 모두) 이력 환율. maxGapDays를 넘으면 null. */
+export function nearestFxRate(fxHistory: FxPoint[], date: string, maxGapDays = FX_HISTORY_MAX_GAP_DAYS): number | null {
+  const target = parseDayMs(date);
+  if (!Number.isFinite(target)) return null;
+  let best: number | null = null;
+  let bestGap = Infinity;
+  for (const f of fxHistory) {
+    const r = Number(f?.rate);
+    if (!f?.date || !(r > 0)) continue;
+    const ms = parseDayMs(f.date);
+    if (!Number.isFinite(ms)) continue;
+    const gap = Math.abs(ms - target) / 86_400_000;
+    if (gap < bestGap || (gap === bestGap && f.date <= date)) { best = r; bestGap = gap; }
+  }
+  return bestGap <= maxGapDays ? best : null;
+}
 
 /** 청산(매도)된 단일 거래 한 건의 실현 수익 기록. USD 종목은 거래시점 환율로 원화 환산. */
 interface ClosedTradeRecord {
@@ -38,6 +58,8 @@ interface PeriodSummary {
   avgLoss: number;
   profitLossRatio: number;
   avgHoldingDays: number;
+  /** 환율 미확보(fxUnreliable)라 합계·승패에서 뺀 매도 건수. 0이 아니면 표시측은 "환율 확인 후 확정"을 알린다. */
+  excludedUnreliable: number;
 }
 
 type HoldingBucket = "1주 이하" | "1주~1개월" | "1~3개월" | "3~12개월" | "1년 이상";
@@ -80,9 +102,10 @@ function toDateStr(ms: number): string {
 
 /**
  * 매도 거래를 FIFO로 매수 로트와 매칭하여 보유기간·실현손익(KRW)을 산출.
- * - USD 종목: 각 거래의 `fxRateAtTrade`(plausibleUsdKrw 통과분)로 개별 환산. 없으면 `fxHistory`의
- *   그날 환율(양도세 카드 realizedForeignGainKRW와 동일 — 오늘 환율 따라 과거 손익이 매일 바뀌지 않게),
- *   그것도 없으면 `fallbackFx`(현재 환율).
+ * - USD 종목: 각 거래의 `fxRateAtTrade`(plausibleUsdKrw 통과분)로 개별 환산. 없으면:
+ *   · `fxHistory`를 넘긴 경우 — 거래일에 가장 가까운 이력 환율(±7일 이내). 그보다 멀면 환산 불가(fxUnreliable).
+ *     오늘 환율로 대신하지 않는다 — 과거 손익이 매일 환율 따라 움직이고, 화면마다 값이 달라진다.
+ *   · `fxHistory`가 비어 있는 경우(이력 미전달 호출부 호환) — `fallbackFx`(현재 환율).
  * - KRW 종목: totalAmount 그대로.
  * - buyDateWeighted = FIFO 소비된 매수 로트 날짜들의 수량 가중평균.
  */
@@ -123,7 +146,11 @@ export function buildClosedTradeRecords(
 
     for (const t of sorted) {
       const usd = isUSDStock(t.ticker);
-      const fx = usd ? (plausibleUsdKrw(t.fxRateAtTrade) ?? fxAsOf(fxHistory, t.date, fallbackFx) ?? 0) : 0;
+      const fx = usd
+        ? (plausibleUsdKrw(t.fxRateAtTrade)
+          ?? (fxHistory.length > 0 ? nearestFxRate(fxHistory, t.date) : (fallbackFx ?? null))
+          ?? 0)
+        : 0;
       const fxMissing = usd && !(fx > 0); // USD인데 취득·현재 환율 모두 없음 → KRW 환산 불가
       const toKRW = usd ? (fx > 0 ? t.totalAmount * fx : 0) : t.totalAmount;
 
@@ -190,8 +217,14 @@ export function buildClosedTradeRecords(
   return records;
 }
 
-/** 승/패 집계. 0원 손익 거래는 승패에서 제외하되 총합/건수엔 포함. */
-export function summarizeRecords(records: ClosedTradeRecord[]): PeriodSummary {
+/**
+ * 승/패 집계. 0원 손익 거래는 승패에서 제외하되 총합/건수엔 포함.
+ * fxUnreliable(USD인데 환율을 못 구해 로트가 0원 평가된) 기록은 손익이 매도대금 전액·원가 전액 같은
+ * 왜곡값이라 합계·승패·건수에서 모두 뺀다 — 환율 로드 전후로 실현손익이 수백만 원씩 흔들리던 원인.
+ */
+export function summarizeRecords(allRecords: ClosedTradeRecord[]): PeriodSummary {
+  const records = allRecords.filter((r) => !r.fxUnreliable);
+  const excludedUnreliable = allRecords.length - records.length;
   let totalPnl = 0;
   let totalCost = 0;
   let winCount = 0;
@@ -237,6 +270,7 @@ export function summarizeRecords(records: ClosedTradeRecord[]): PeriodSummary {
     avgLoss,
     profitLossRatio,
     avgHoldingDays,
+    excludedUnreliable,
   };
 }
 

@@ -33,6 +33,7 @@ import {
   isUSDStock
 } from "../../utils/finance";
 import { displayNameForTicker } from "../../utils/stockHelpers";
+import { STOCK_SERIES_COLORS } from "./chartPalette";
 
 interface Props {
   tickerDatabase: TickerInfo[];
@@ -60,7 +61,7 @@ const MAX_CHART_POINTS = 600;
 const MAX_HOLDING_CHIPS = 12;
 
 // 시리즈 식별 색 — 라이트/다크 공용 (TargetPortfolioSection CHART_COLORS와 같은 방식)
-const COMPARE_COLORS = ["#2563eb", "#dc2626", "#059669", "#7c3aed", "#d97706", "#0891b2"];
+const COMPARE_COLORS = STOCK_SERIES_COLORS.slice(0, 6);
 
 const pillStyle = (active: boolean): React.CSSProperties => ({
   fontSize: 12,
@@ -496,7 +497,7 @@ export const StockCompareSection: React.FC<Props> = ({ tickerDatabase, trades })
                   ]}
                   contentStyle={{ fontSize: 13, fontWeight: 600 }}
                 />
-                <ReferenceLine y={1} stroke="var(--text-faint, #94a3b8)" strokeDasharray="4 4" />
+                <ReferenceLine y={1} stroke="var(--text-faint)" strokeDasharray="4 4" />
                 {selections.map((sel) =>
                   compare.bases[sel.target.ticker] ? (
                     <Line

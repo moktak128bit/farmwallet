@@ -11,7 +11,7 @@ import { expenseMainName } from "../categoryMerge";
 import { isDividendEntry, isInterestEntry } from "../categoryMatch";
 import { canonicalTickerForMatch, tradeAmountKRW } from "../finance";
 import { toKrwByRate } from "../currency";
-import { isExcludedIncomeEntry } from "../savingsRate";
+import { isReportIncomeEntry } from "./shared";
 import { xirr, type CashFlowItem } from "../irr";
 
 export interface MonthlyReport {
@@ -59,7 +59,10 @@ export interface AccountReport {
   initialBalance: number;
   currentBalance: number;
   change: number;
-  changeRate: number;
+  /** 변동률(%) — 초기잔액이 0 이하이거나 10만 원 미만이면 null(−26,460,640% 같은 무의미한 값 방지) */
+  changeRate: number | null;
+  /** 증권·코인 계좌 — currentBalance는 현금(예수금)만, 보유 종목 평가액은 빠진다 */
+  cashOnly: boolean;
 }
 
 export function generateMonthlyReport(
@@ -81,9 +84,9 @@ export function generateMonthlyReport(
     }
 
     const report = reports.get(month)!;
-    // 수입도 대시보드·인사이트와 동일 게이트 — 이월(원래 보유 자산)·퇴직연금은 소득이 아니다
+    // 수입 게이트 단일 소스(shared.isReportIncomeEntry) — 이월(원래 보유 자산)·퇴직연금·대출 실행은 소득이 아니다
     // (안 거르면 앱 시작 월의 수입이 이월액만큼 부풀어 순수지가 왜곡됨)
-    if (entry.kind === "income" && !isExcludedIncomeEntry(entry)) report.income += toKrw(entry);
+    if (isReportIncomeEntry(entry)) report.income += toKrw(entry);
     // 지출 분류 단일 소스와 통일 — 신용결제(이중계상) + 저축성지출(자산 축적, 실소비 아님) 제외.
     // (일별 리포트·대시보드·인사이트와 같은 기준. accounts는 isSavingsExpenseEntry 내부 미사용.)
     if (entry.kind === "expense" && !isCreditPayment(entry) && !isSavingsExpenseEntry(entry, []))
@@ -115,7 +118,7 @@ export function generateYearlyReport(ledger: LedgerEntry[], fxRate?: number | nu
 
     const report = reports.get(year)!;
     // 수입 게이트는 월간 리포트와 동일 (이월·퇴직연금 제외 — 시작 연도 수입 부풀림 방지)
-    if (entry.kind === "income" && !isExcludedIncomeEntry(entry)) report.income += toKrw(entry);
+    if (isReportIncomeEntry(entry)) report.income += toKrw(entry);
     // 지출 분류 단일 소스와 통일 — 신용결제(이중계상) + 저축성지출(자산 축적, 실소비 아님) 제외.
     // (일별 리포트·대시보드·인사이트와 같은 기준. accounts는 isSavingsExpenseEntry 내부 미사용.)
     if (entry.kind === "expense" && !isCreditPayment(entry) && !isSavingsExpenseEntry(entry, []))
@@ -231,6 +234,9 @@ export function generateStockPerformanceReport(
     .sort((a, b) => b.pnl - a.pnl);
 }
 
+/** 변동률 분모 하한 — 이보다 작은 초기잔액 대비 %는 의미가 없다 */
+const MIN_RATE_BASE = 100_000;
+
 export function generateAccountReport(
   accounts: Account[],
   ledger: LedgerEntry[],
@@ -246,7 +252,7 @@ export function generateAccountReport(
         baseBalanceForAccount(account) + (account.cashAdjustment ?? 0) + (account.savings ?? 0);
       const current = balance.currentBalance;
       const change = current - initial;
-      const changeRate = initial !== 0 ? (change / initial) * 100 : 0;
+      const changeRate = initial >= MIN_RATE_BASE ? (change / initial) * 100 : null;
 
       return {
         accountId: account.id,
@@ -254,7 +260,8 @@ export function generateAccountReport(
         initialBalance: initial,
         currentBalance: current,
         change,
-        changeRate
+        changeRate,
+        cashOnly: account.type === "securities" || account.type === "crypto"
       };
     })
     .sort((a, b) => b.currentBalance - a.currentBalance);

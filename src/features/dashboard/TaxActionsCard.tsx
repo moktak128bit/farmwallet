@@ -14,11 +14,8 @@ import { useUIStore } from "../../store/uiStore";
 import { useFxRateValue } from "../../context/FxRateContext";
 import { useTaxGrossUp } from "../../hooks/useTaxGrossUp";
 import { getTodayKST } from "../../utils/date";
-import { isUSDStock } from "../../utils/finance";
-import { computePositions } from "../../calculations";
 import { buildComprehensiveTaxTracker } from "../../utils/taxCalculator";
-import { buildForeignCapitalGainsTax } from "../../utils/usCapitalGainsTax";
-import { buildFxHistory } from "../../utils/portfolioHistory";
+import { useForeignCapitalGainsTax } from "../stocks/useForeignCapitalGainsTax";
 import {
   buildShelterAccountMap,
   buildShelterContributions,
@@ -55,10 +52,6 @@ const SEVERITY_DOT_COLOR: Record<TaxAction["severity"], string> = {
 export const TaxActionsCard: React.FC<Props> = ({ forwardMonths }) => {
   const ledger = useAppStore((s) => s.data.ledger);
   const accounts = useAppStore((s) => s.data.accounts);
-  const trades = useAppStore((s) => s.data.trades);
-  const prices = useAppStore((s) => s.data.prices);
-  const historicalDailyFx = useAppStore((s) => s.data.historicalDailyFx);
-  const marketEnvSnapshots = useAppStore((s) => s.data.marketEnvSnapshots);
   const fxRate = useFxRateValue();
   const setTab = useUIStore((s) => s.setTab);
   // 배당 탭 ComprehensiveTaxCard와 같은 설정을 공유 — 같은 화면에서 두 카드 숫자가 어긋나지 않게
@@ -74,13 +67,8 @@ export const TaxActionsCard: React.FC<Props> = ({ forwardMonths }) => {
     [ledger, today, fxRate, grossUp, excludeAccountIds, forwardMonths]
   );
 
-  const hasUsd = useMemo(() => trades.some((t) => isUSDStock(t.ticker)), [trades]);
-  const foreignTax = useMemo(() => {
-    if (!hasUsd) return null;
-    const positions = computePositions(trades, prices, accounts, { fxRate: fxRate ?? undefined });
-    const fxHistory = buildFxHistory(historicalDailyFx, marketEnvSnapshots);
-    return buildForeignCapitalGainsTax({ trades, positions, year, fxHistory, fxRate });
-  }, [hasUsd, trades, prices, accounts, historicalDailyFx, marketEnvSnapshots, fxRate, year]);
+  // 양도세는 주식 탭 카드와 같은 훅(단일 계산) — 카드마다 따로 계산하면 숫자가 갈렸다
+  const foreignTax = useForeignCapitalGainsTax(year);
 
   const hasShelter = useMemo(() => accounts.some((a) => a.taxShelter), [accounts]);
   const shelter = useMemo(() => {

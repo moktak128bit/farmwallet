@@ -38,7 +38,7 @@ const DetectedRecurringSection = React.memo(function DetectedRecurringSection() 
   const newCount = candidates.filter((c) => c.status === "new").length;
   const stoppedCount = candidates.filter((c) => c.status === "stopped").length;
   const changedCount = candidates.filter((c) => c.status === "amountChanged").length;
-  const unregistered = candidates.filter((c) => !c.alreadyRegistered).length;
+  const unregistered = candidates.filter((c) => !c.alreadyRegistered && c.status !== "stopped").length;
   const summary =
     candidates.length === 0
       ? "감지된 정기 결제 없음"
@@ -58,23 +58,28 @@ const DetectedRecurringSection = React.memo(function DetectedRecurringSection() 
 
 export const SubTab = React.memo(function SubTab({ d }: { d: D }) {
   const subs = d.subs;
-  const totalMonthly = subs.reduce((a, s) => a + s.avg, 0);
+  // 월 비용 = 최근 완료 12개월 실제 결제 합 ÷ 개월 수 (slice subMonthly). 서비스별 건당 평균을 더하면
+  // 해지·일회성 결제까지 매달 내는 것처럼 잡혀 실장부에서 월 118만(실제 25.6만)이 나왔다.
+  const totalMonthly = d.subMonthly;
   const totalAnnual = totalMonthly * 12;
+  const activeSubs = subs.filter((s) => s.active);
+  const stoppedSubs = subs.filter((s) => !s.active);
   const totalSubsSum = subs.reduce((a, s) => a + s.total, 0);
   const subPctIncome = d.pIncome > 0 ? (totalSubsSum / d.pIncome) * 100 : 0;
   const costPerDay = totalMonthly > 0 ? Math.round(totalMonthly / 30) : 0;
+  const windowLabel = d.subWindow ? `${d.subWindow.start.replace("-", ".")}~${d.subWindow.end.replace("-", ".")} ${d.subWindow.months}개월` : "최근 완료월 없음";
 
-  // 카테고리 분류 (다중 키워드 지원)
+  // 카테고리 분류 (다중 키워드 지원) — 지금 결제 중인 서비스만, 월 비용은 최근 12개월 평균
   const categorized = CATEGORY_PATTERNS.map((cat) => {
-    const items = subs.filter((s) => cat.regex.test(s.name));
-    const monthly = items.reduce((sum, s) => sum + s.avg, 0);
+    const items = activeSubs.filter((s) => cat.regex.test(s.name));
+    const monthly = items.reduce((sum, s) => sum + s.monthly, 0);
     return { ...cat, items, monthly };
   }).filter((c) => c.items.length > 0);
-  const uncategorized = subs.filter((s) => !CATEGORY_PATTERNS.some((c) => c.regex.test(s.name)));
+  const uncategorized = activeSubs.filter((s) => !CATEGORY_PATTERNS.some((c) => c.regex.test(s.name)));
 
-  // 상위 3개 집중도 — 월비용 기준
-  const topSubs = [...subs].sort((a, b) => b.avg - a.avg).slice(0, 3);
-  const top3Monthly = topSubs.reduce((s, x) => s + x.avg, 0);
+  // 상위 3개 집중도 — 지금 결제 중인 서비스의 월비용 기준
+  const topSubs = [...activeSubs].sort((a, b) => b.monthly - a.monthly).slice(0, 3);
+  const top3Monthly = topSubs.reduce((s, x) => s + x.monthly, 0);
   const top3Share = totalMonthly > 0 ? (top3Monthly / totalMonthly) * 100 : 0;
 
   // 신규/해지/금액변경 감지는 DetectedRecurringSection(utils/recurringDetection, 가계부 패턴 기반)이 담당.
@@ -90,7 +95,6 @@ export const SubTab = React.memo(function SubTab({ d }: { d: D }) {
 
   // 절약 시나리오
   const savingsIfCutTop3 = top3Monthly * 12;
-  const savingsIfCutHalf = totalMonthly * 0.5 * 12;
 
   if (subs.length === 0) {
     return (
@@ -111,10 +115,10 @@ export const SubTab = React.memo(function SubTab({ d }: { d: D }) {
     <>
           {/* ============ 한눈에 ============ */}
           <Section storageKey="sub-section-overview" title="구독 한눈에 보기">
-            <Card accent><Kpi label="활성 구독 수" value={`${subs.length}개`} sub={`${categorized.length}개 카테고리 + 기타 ${uncategorized.length}`} color="var(--text)" info="기간 내 한 번 이상 결제된 고유 구독 서비스 수" /></Card>
-            <Card accent><Kpi label="월 구독 비용" value={F(totalMonthly) + "원"} sub={`일 ${W(costPerDay)} · ${subMoM != null ? (subMoM >= 0 ? "+" : "") + subMoM.toFixed(0) + "% MoM" : isPartialMonth ? "이번 달 집계 중" : "변화 없음"}`} color="var(--warning)" info="Σ(서비스별 기간 평균). 실제 월마다 달라질 수 있음" /></Card>
-            <Card accent><Kpi label="연간 구독 비용" value={F(totalAnnual) + "원"} sub={totalAnnual >= 1000000 ? "연 100만원 초과" : "적정"} color="var(--chart-expense)" info="월 구독비 × 12. 실제 총 소요 예상치" /></Card>
-            <Card accent><Kpi label="수입 대비 비율" value={subPctIncome.toFixed(1) + "%"} sub={subPctIncome > 5 ? "구독 비중 높음" : "적정 수준"} color={subPctIncome > 5 ? "var(--danger)" : "var(--success)"} info="구독 누적 / 총 수입. 5% 이하 권장" /></Card>
+            <Card accent><Kpi label="지금 결제 중인 구독" value={`${activeSubs.length}개`} sub={`기간 내 결제 기록 ${subs.length}개 중 · 끊긴 것 ${stoppedSubs.length}개`} color="var(--text)" info="최근 2개 완료월 또는 이번 달에 결제가 있는 서비스(설명 문구 기준)" /></Card>
+            <Card accent><Kpi label="월 구독 비용" value={F(totalMonthly) + "원"} sub={`${windowLabel} 평균 · 일 ${W(costPerDay)}${subMoM != null ? ` · 전월 대비 ${subMoM >= 0 ? "+" : ""}${subMoM.toFixed(0)}%` : isPartialMonth ? " · 이번 달 집계 중" : ""}`} color="var(--text)" info="최근 완료 12개월 구독 결제 합 ÷ 개월 수 (전체 장부, 기간 필터 무관). 해지한 서비스는 결제가 있던 달만 들어간다" /></Card>
+            <Card accent><Kpi label="연간 구독 비용" value={F(totalAnnual) + "원"} sub="월 구독 비용 × 12" color="var(--text)" info="최근 12개월 평균이 유지된다는 가정" /></Card>
+            <Card accent><Kpi label="수입 대비 비율" value={subPctIncome.toFixed(1) + "%"} sub={`기간 구독 결제 ${F(totalSubsSum)}원 / 장부 수입`} color="var(--text)" info="기간 내 구독 결제 합 / 장부 수입 합" /></Card>
 
             <Card title="월별 구독 지출 추이" span={4}>
               <ResponsiveContainer width="100%" height={240}>
@@ -134,9 +138,9 @@ export const SubTab = React.memo(function SubTab({ d }: { d: D }) {
 
           {/* ============ 구독 상세 ============ */}
           <Section storageKey="sub-section-details" title="구독 상세" defaultOpen={false}>
-            <Card title={`구독 서비스 ${subs.length}개 (월 비용 순)`} span={4}>
+            <Card title={`구독 서비스 ${subs.length}개 (지금 결제 중 → 월 비용 순)`} span={4}>
               <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(220px, 1fr))", gap: 10 }}>
-                {[...subs].sort((a, b) => b.avg - a.avg).map(({ name, count, total, avg }, i) => {
+                {[...subs].sort((a, b) => Number(b.active) - Number(a.active) || b.monthly - a.monthly).map(({ name, count, total, avg, monthly, lastMonth, active }, i) => {
                   const cat = CATEGORY_PATTERNS.find((c) => c.regex.test(name));
                   return (
                     <div key={name} style={{ background: "var(--bg)", borderRadius: 10, padding: "12px 14px", border: `1px solid ${cat ? cat.color + "33" : "var(--border-light)"}`, borderLeft: `3px solid ${cat?.color ?? "var(--border)"}` }}>
@@ -146,10 +150,12 @@ export const SubTab = React.memo(function SubTab({ d }: { d: D }) {
                       </div>
                       {cat && <div style={{ fontSize: 11, color: cat.color, marginTop: 2, fontWeight: 600 }}>{cat.label}</div>}
                       <div style={{ display: "flex", justifyContent: "space-between", fontSize: 12, color: "var(--text-muted)", marginTop: 6 }}>
-                        <span>월 ~{W(avg)}</span>
-                        <span>{count}회</span>
+                        <span>{active ? `월 평균 ${W(monthly)}` : "최근 2개월 결제 없음"}</span>
+                        <span>{count}회 · 건당 {W(avg)}</span>
                       </div>
-                      <div style={{ fontSize: 12, color: "var(--chart-expense)", fontWeight: 600, marginTop: 4 }}>누적 {W(total)}</div>
+                      <div style={{ fontSize: 12, color: "var(--text-muted)", marginTop: 4 }}>
+                        누적 {W(total)}{lastMonth ? ` · 마지막 ${lastMonth.replace("-", ".")}` : ""}
+                      </div>
                     </div>
                   );
                 })}
@@ -194,20 +200,20 @@ export const SubTab = React.memo(function SubTab({ d }: { d: D }) {
                     {topSubs.map((s) => s.name).join(" · ")} · 월 {W(top3Monthly)}
                   </div>
                 </div>
-                <div style={{ padding: "10px 12px", background: "var(--primary-light)", borderRadius: 8, borderLeft: "4px solid var(--success)" }}>
-                  <div style={{ fontWeight: 700, color: "var(--success)", marginBottom: 4 }}>절약 시나리오</div>
+                <div style={{ padding: "10px 12px", background: "var(--bg)", borderRadius: 8, borderLeft: "4px solid var(--border)" }}>
+                  <div style={{ fontWeight: 700, marginBottom: 4 }}>상위 3개를 끊는다면</div>
                   <div style={{ fontSize: 12, color: "var(--text-secondary)", lineHeight: 1.7 }}>
-                    상위 3개 해지 시 연 <strong>{W(savingsIfCutTop3)}</strong> 절약<br />
-                    전체 구독 50% 정리 시 연 <strong>{W(Math.round(savingsIfCutHalf))}</strong> 절약
+                    최근 12개월 평균 기준 연 <strong>{W(savingsIfCutTop3)}</strong> (계산일 뿐 — 약정·환불 조건은 직접 확인)
                   </div>
                 </div>
-                <div style={{ padding: "10px 12px", background: "var(--danger-light)", borderRadius: 8, borderLeft: "4px solid var(--danger)" }}>
-                  <div style={{ fontWeight: 700, color: "var(--danger)", marginBottom: 4 }}>일·주·월 환산</div>
-                  <div style={{ fontSize: 12, color: "var(--text-secondary)", lineHeight: 1.7 }}>
-                    일 {W(costPerDay)} · 주 {W(costPerDay * 7)} · 월 {W(totalMonthly)}<br />
-                    {costPerDay > 3000 ? "하루 커피 한 잔 이상 구독에 지출 중" : "하루 커피 한 잔 미만"}
+                {stoppedSubs.length > 0 && (
+                  <div style={{ padding: "10px 12px", background: "var(--bg)", borderRadius: 8, borderLeft: "4px solid var(--border)" }}>
+                    <div style={{ fontWeight: 700, marginBottom: 4 }}>최근 2개월 결제가 없는 서비스</div>
+                    <div style={{ fontSize: 12, color: "var(--text-secondary)", lineHeight: 1.7 }}>
+                      {stoppedSubs.map((x) => `${x.name}(마지막 ${x.lastMonth.replace("-", ".")})`).join(" · ")}
+                    </div>
                   </div>
-                </div>
+                )}
               </div>
             </Card>
           </Section>
@@ -218,27 +224,10 @@ export const SubTab = React.memo(function SubTab({ d }: { d: D }) {
               <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(280px, 1fr))", gap: 12 }}>
                 {categorized.filter((g) => g.items.length > 1).map((g) => (
                   <Insight key={g.label} title={`${g.label} 중복 점검`} color={g.color} bg={g.color + "15"}>
-                    <strong>{g.items.map((s) => `${s.name}(${F(s.avg)}원)`).join(" + ")}</strong>
-                    <br />합계 월 {F(g.monthly)}원. 모두 필요한지, 하나로 통합 가능한지 점검.
+                    <strong>{g.items.map((s) => `${s.name}(월 ${F(s.monthly)}원)`).join(" + ")}</strong>
+                    <br />같은 종류 {g.items.length}개, 합계 월 {F(g.monthly)}원.
                   </Insight>
                 ))}
-                {categorized.filter((g) => g.items.length > 1).length === 0 && (
-                  <Insight title="카테고리 중복 없음" tone="success">
-                    같은 카테고리 내 중복 구독이 없습니다. 효율적으로 관리하고 있어요!
-                  </Insight>
-                )}
-                <Insight title="비용 대비 가치" color="var(--chart-series-c)" bg="rgba(139,92,246,0.08)">
-                  연간 {F(totalAnnual)}원 지출.
-                  {totalAnnual > 1000000 ? " 100만원 초과 — 미사용 구독 정리 시 큰 절감." :
-                    totalAnnual > 500000 ? " 50~100만원 수준 — 상위 구독 사용 빈도 점검 권장." :
-                    " 적정 수준 — 관리 잘 되고 있음."}
-                  {" "}수입 대비 {subPctIncome.toFixed(1)}%.
-                </Insight>
-                <Insight title="집중도 경고" tone="warning">
-                  {top3Share >= 70
-                    ? `상위 3개(${topSubs.map((s) => s.name).join(", ")})가 ${top3Share.toFixed(0)}% 차지 — 이 3개가 핵심. 필요성 재검토 시 큰 절약 가능.`
-                    : `상위 3개가 ${top3Share.toFixed(0)}% — 비교적 분산되어 있음. 작은 구독들을 일괄 정리하는 것도 방법.`}
-                </Insight>
                 {subMoM != null && Math.abs(subMoM) >= 20 && (
                   <Insight title={subMoM > 0 ? "구독비 급증" : "구독비 감소"} tone={subMoM > 0 ? "danger" : "success"}>
                     전월 대비 <strong>{subMoM >= 0 ? "+" : ""}{subMoM.toFixed(0)}%</strong>

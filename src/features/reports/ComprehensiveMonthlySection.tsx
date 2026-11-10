@@ -14,7 +14,7 @@ import { Bar, BarChart, CartesianGrid, Legend, Tooltip, XAxis, YAxis } from "rec
 import { toast } from "react-hot-toast";
 import { DeferredResponsiveContainer as ResponsiveContainer } from "../../components/charts/DeferredResponsiveContainer";
 import type { ComprehensiveMonthlyRow } from "../../utils/reportGenerator";
-import { formatKRW } from "../../utils/formatter";
+import { formatKRW, formatKrwCompact } from "../../utils/formatter";
 import { buildMonthlyReview, buildMonthlyReviewMarkdown } from "../../utils/monthlyReview";
 import { getKoreaTime, getTodayKST } from "../../utils/date";
 import { useAppStore } from "../../store/appStore";
@@ -82,6 +82,9 @@ export const ComprehensiveMonthlySection: React.FC<Props> = React.memo(function 
     [comprehensiveMonthly, selectedMonth]
   );
 
+  /** 진행 중인 달 — 표의 전월 비교는 전월 '전체'라 라벨로 밝힌다 (동기 비교는 위 월간 리뷰) */
+  const partialMonth = selectedMonth === getTodayKST().slice(0, 7);
+
   /** 전월 데이터 (MoM 비교용) */
   const prevMonth = shiftMonthKey(selectedMonth, -1);
   const prevRow: ComprehensiveMonthlyRow | undefined = useMemo(
@@ -131,7 +134,7 @@ export const ComprehensiveMonthlySection: React.FC<Props> = React.memo(function 
               <div style={{ fontSize: 14, fontWeight: 600 }}>{review.headline}</div>
               {review.partialDay != null && (
                 <div style={{ fontSize: 12, color: "var(--text-muted)", marginTop: 2 }}>
-                  진행 중인 달 — 모든 비교는 전월·전년·최근 3개월의 같은 기간(1~{review.partialDay}일) 동기 기준입니다.
+                  진행 중인 달 — 이 리뷰의 비교는 전월·전년·최근 3개월의 같은 기간(1~{review.partialDay}일) 동기 기준입니다. 아래 표의 '전월 비교'는 전월 전체 대비입니다.
                 </div>
               )}
             </div>
@@ -181,14 +184,19 @@ export const ComprehensiveMonthlySection: React.FC<Props> = React.memo(function 
                 <tr>
                   <th>구분</th>
                   <th className="number">금액</th>
-                  <th className="number">전월 비교</th>
+                  <th className="number">{partialMonth ? "전월(전체) 대비" : "전월 비교"}</th>
                 </tr>
               </thead>
               <tbody>
                 <tr>
-                  <td><strong>근로소득</strong> <span style={{ fontSize: 12, color: "var(--text-muted)" }}>(급여/수당/상여/부수익)</span></td>
+                  <td><strong>근로소득</strong> <span style={{ fontSize: 12, color: "var(--text-muted)" }}>(급여/수당/상여)</span></td>
                   <td className="number positive">{formatKRW(r.earnedIncome)}</td>
                   <td className="number">{delta(r.earnedIncome, prevRow?.earnedIncome)}</td>
+                </tr>
+                <tr>
+                  <td>부수입 <span style={{ fontSize: 12, color: "var(--text-muted)" }}>(캐시백/기타수입 등)</span></td>
+                  <td className="number">{formatKRW(r.otherIncome)}</td>
+                  <td className="number">{delta(r.otherIncome, prevRow?.otherIncome)}</td>
                 </tr>
                 <tr>
                   <td><strong>자본소득</strong> <span style={{ fontSize: 12, color: "var(--text-muted)" }}>(배당/이자/투자수익)</span></td>
@@ -196,7 +204,7 @@ export const ComprehensiveMonthlySection: React.FC<Props> = React.memo(function 
                   <td className="number">{delta(r.capitalIncome, prevRow?.capitalIncome)}</td>
                 </tr>
                 <tr style={{ color: "var(--text-muted)" }}>
-                  <td>일시·비실질 수입 <span style={{ fontSize: 12 }}>(정산/용돈/지원/대출/처분소득)</span></td>
+                  <td>일시·비실질 수입 <span style={{ fontSize: 12 }}>(정산/용돈/지원/대출/처분소득/퇴직연금/이월)</span></td>
                   <td className="number">{formatKRW(r.nonRealIncome)}</td>
                   <td className="number">{delta(r.nonRealIncome, prevRow?.nonRealIncome)}</td>
                 </tr>
@@ -217,12 +225,12 @@ export const ComprehensiveMonthlySection: React.FC<Props> = React.memo(function 
                 <tr>
                   <th>구분</th>
                   <th className="number">금액</th>
-                  <th className="number">전월 비교</th>
+                  <th className="number">{partialMonth ? "전월(전체) 대비" : "전월 비교"}</th>
                 </tr>
               </thead>
               <tbody>
                 <tr>
-                  <td><strong>생활소비</strong> <span style={{ fontSize: 12, color: "var(--text-muted)" }}>(식비/교통/주거/의료 등)</span></td>
+                  <td><strong>생활소비</strong> <span style={{ fontSize: 12, color: "var(--text-muted)" }}>(식비/교통/주거/의료 등 · 레거시 투자손실 기록 포함, 리포트 기준)</span></td>
                   <td className="number negative">{formatKRW(r.livingExpense)}</td>
                   <td className="number">{delta(r.livingExpense, prevRow?.livingExpense)}</td>
                 </tr>
@@ -246,16 +254,6 @@ export const ComprehensiveMonthlySection: React.FC<Props> = React.memo(function 
                   <td className="number">{formatKRW(r.totalExpense)}</td>
                   <td className="number">{delta(r.totalExpense, prevRow?.totalExpense)}</td>
                 </tr>
-                {r.nonRealIncome > 0 && (() => {
-                  const realExp = r.livingExpense - Math.min(r.nonRealIncome, r.livingExpense);
-                  return (
-                    <tr style={{ fontWeight: 700, color: "var(--chart-expense)" }}>
-                      <td>실질 생활 지출 <span style={{ fontSize: 12, fontWeight: 400, color: "var(--text-muted)" }}>(비실질 수입분 차감)</span></td>
-                      <td className="number">{formatKRW(realExp)}</td>
-                      <td className="number"></td>
-                    </tr>
-                  );
-                })()}
               </tbody>
             </table>
           </div>
@@ -268,7 +266,7 @@ export const ComprehensiveMonthlySection: React.FC<Props> = React.memo(function 
                 <tr>
                   <th>구분</th>
                   <th className="number">금액</th>
-                  <th className="number">전월 비교</th>
+                  <th className="number">{partialMonth ? "전월(전체) 대비" : "전월 비교"}</th>
                 </tr>
               </thead>
               <tbody>
@@ -366,7 +364,7 @@ export const ComprehensiveMonthlySection: React.FC<Props> = React.memo(function 
               <BarChart data={comprehensiveMonthly.slice(-6)}>
                 <CartesianGrid strokeDasharray="3 3" />
                 <XAxis dataKey="month" />
-                <YAxis />
+                <YAxis tickFormatter={(v: number) => formatKrwCompact(v)} width={64} />
                 <Tooltip formatter={(value: number | undefined) => formatKRW(value ?? 0)} />
                 <Legend />
                 {/* 국내 색 관례: 수입=빨강, 지출=파랑 (서구식 초록/빨강 역전 수정) + 다크모드 CSS 변수 */}

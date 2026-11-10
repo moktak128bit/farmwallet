@@ -29,14 +29,12 @@ function isTaxSeasonKST(today: string): boolean {
   return month >= 10 && month <= 12;
 }
 
-/** DashboardPage 렌더 순서와 동일 — 핵심(항상 펼침) → 자산·투자 → 이번 달 소비·현금흐름 → 배당·저축·세금 섹션 순 */
+/** DashboardPage 렌더 순서와 동일 — 첫 화면(항상 펼침) → 자산·투자 → 이번 달 소비·현금흐름 → 배당·저축·세금 섹션 순 */
 export const DASHBOARD_WIDGETS: DashboardWidgetDef[] = [
-  // 핵심 — KPI 4 → 2열(전월 대비 | 배당 요약) → 투자 자산 요약
-  { id: "summary", label: "핵심 숫자 (이번 달 지출·수지·순자산·총부채)" },
-  { id: "monthCompare", label: "전월·전년 대비 (지출/수입)" },
-  { id: "dividendPortfolio", label: "배당 포트폴리오 (첫 화면 요약 + 배당 섹션 종목표)" },
-  { id: "investmentSummary", label: "투자 자산 요약·목표 (첫 화면 요약 + 자산 섹션 목표·기록)" },
+  // 첫 화면 — 질문 3열(이번 달 얼마 썼나 · 내 자산은 · 투자·배당은) + 확인할 일
+  { id: "summary", label: "첫 화면 한눈에 보기 (이번 달·내 자산·투자·배당 + 확인할 일)" },
   // 자산·투자
+  { id: "investmentSummary", label: "투자 자산·목표·기록" },
   { id: "investmentPerformance", label: "투자 성적표 (시장 대비 — TWR·벤치마크·리스크)" },
   { id: "securitiesValueTrend", label: "증권 평가액·매입금액 추이 (일별)" },
   { id: "netWorthTrend", label: "순자산 추이" },
@@ -47,6 +45,7 @@ export const DASHBOARD_WIDGETS: DashboardWidgetDef[] = [
   { id: "totalAssetTrend", label: "총자산 추이" },
   { id: "cmaBalanceTrend", label: "CMA 잔액 추이" },
   // 이번 달 소비·현금흐름
+  { id: "monthCompare", label: "전월·전년 대비 (지출/수입)" },
   { id: "topExpenses", label: "이번 달 최대 지출" },
   { id: "monthlyTrend", label: "월별 추이 (최근 6개월)" },
   { id: "investmentBreakdown", label: "재테크 세부 (저축·투자)" },
@@ -57,6 +56,7 @@ export const DASHBOARD_WIDGETS: DashboardWidgetDef[] = [
   { id: "spendingCalendar", label: "소비 캘린더" },
   { id: "budgetAlert", label: "예산 관리 (초과 알림)" },
   // 배당·저축·세금
+  { id: "dividendPortfolio", label: "배당 포트폴리오 (종목표·월별 수령)" },
   { id: "savingsRatio", label: "저축률 (저번달)" },
   { id: "dividendCoverage", label: "배당 vs 고정비 커버리지" },
   { id: "dividendGrowth", label: "배당 성장 추적 (종목별 분배금·분배율·주가)" },

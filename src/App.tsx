@@ -1,5 +1,6 @@
 import React, { useCallback, useEffect, useMemo, useState, lazy, Suspense } from "react";
-import { Toaster, toast } from "react-hot-toast";
+import { Toaster, ToastBar, toast } from "react-hot-toast";
+import { isGas, remoteText } from "./services/gas";
 import { Moon, Sun, Menu, Eye, EyeOff, Plus, Search, Save } from "lucide-react";
 import { Tabs, TAB_LABELS, type TabId } from "./components/ui/Tabs";
 import { StatusMenu, type StatusTone } from "./components/ui/StatusMenu";
@@ -59,6 +60,9 @@ const TAB_PREFETCH: Record<TabId, () => Promise<unknown>> = {
   insights: loadInsights
 };
 import { useAppData } from "./hooks/useAppData";
+import { useLocalFileRecovery } from "./hooks/useLocalFileRecovery";
+import { LocalFileRecoveryBanner } from "./components/LocalFileRecoveryBanner";
+import { ImportedLedgerSyncPanel } from "./components/ImportedLedgerSyncPanel";
 import { useStorageQuota } from "./hooks/useStorageQuota";
 import { useUndoRedo } from "./hooks/useUndoRedo";
 import { useBackup } from "./hooks/useBackup";
@@ -71,6 +75,9 @@ import { useKeyboardShortcuts } from "./hooks/useKeyboardShortcuts";
 import { usePortfolioWorker } from "./hooks/usePortfolioWorker";
 import { APP_VERSION, STORAGE_KEYS, GIST_REMOTE_POLL_MS } from "./constants/config";
 import { SyncActionBar } from "./components/SyncActionBar";
+import { GasPhotoButton } from "./components/GasPhotoButton";
+import { GasSaveIndicator } from "./components/GasSaveIndicator";
+import { useSheetBootAdoption } from "./hooks/useSheetBootAdoption";
 import { runIntegrityCheck } from "./utils/dataIntegrity";
 import { upsertDailyCloses } from "./utils/dailyCloses";
 import { getTodayKST, formatTimeAgo } from "./utils/date";
@@ -94,6 +101,8 @@ import { useAppStore } from "./store/appStore";
 import { SaveStatusPill } from "./components/SaveStatusPill";
 import { TabConflictModal, type TabConflictResolution } from "./components/TabConflictModal";
 import { DraftRecoveryBanner } from "./components/DraftRecoveryBanner";
+import { BootSkeleton, PageSkeleton } from "./components/BootSkeleton";
+import { PhotoUploadPanel } from "./components/PhotoUploadPanel";
 import {
   normalizeImportedData,
   saveData as persistData,
@@ -268,6 +277,8 @@ export const App: React.FC = () => {
 
   // Zustand store 사용
   const { data, setData, isLoading, loadFailed, clearLoadFailed } = useAppData();
+  const localFileRecovery = useLocalFileRecovery(data, isLoading, loadFailed, gistConfigured);
+  const persistenceBlocked = isLoading || loadFailed || localFileRecovery.blocksSaving;
   const { setDataWithHistory, handleUndo, handleRedo, clearHistory } = useUndoRedo(data, setData);
   const { theme, toggleTheme } = useTheme();
 
@@ -304,13 +315,13 @@ export const App: React.FC = () => {
     discardPendingSaveAndApply
     // loadFailed 동안 자동저장·unload flush·수동 백업 차단 — 손상됐지만 복구 가능한
     // 원본 localStorage를 빈/불완전 데이터로 덮어쓰지 않도록.
-  } = useBackup(data, { onLog: addAppLog, disabled: loadFailed });
+  } = useBackup(data, { onLog: addAppLog, disabled: persistenceBlocked });
 
   const { isLoadingTickerDatabase, handleLoadInitialTickers } = useTickerDatabase(data, setDataWithHistory, { onLog: addAppLog });
 
   // Gist 동기화 훅 — 수신 JSON은 normalizeImportedData로 구조 검증·정규화 후에만 적용.
   // 잘못된 Gist(깨진 구조·타입 오류)는 toast로 거부해 자동저장이 손상 데이터를 굳히는 것을 방지.
-  const handleGistPulledData = useCallback((dataJson: string, _remoteUpdatedAt: string) => {
+  const handleGistPulledData = useCallback((dataJson: string, _remoteUpdatedAt: string, opts?: { skipSnapshot?: boolean }) => {
     try {
       const parsed = JSON.parse(dataJson) as unknown;
       const normalized = normalizeImportedData(parsed); // 검증 실패 시 throw
@@ -318,8 +329,9 @@ export const App: React.FC = () => {
       // 덮어쓰기 직전 현재 데이터 안전 스냅샷 (best-effort — 실패해도 진행).
       // 잃을 것이 없으면(받을 내용·마지막 동기화 내용과 같음 = Gist 이력에 있음) 생략 — 주기 확인으로 받을 때마다 쌓이면
       // 보존 한도(라벨 최근 3개)에서 사용자 작업 직전 스냅샷(JSON 가져오기 등)이 밀려난다.
-      if (hasUnsyncedLocalData(toUserDataJson(current), dataJson)) {
-        void saveSafetySnapshot(current, "Gist 불러오기 직전 자동 스냅샷");
+      // skipSnapshot: 호출부가 내용 기준으로 이미 판단함(GAS 부팅 채택 — useSheetBootAdoption)
+      if (!opts?.skipSnapshot && hasUnsyncedLocalData(toUserDataJson(current), dataJson)) {
+        void saveSafetySnapshot(current, remoteText("Gist 불러오기 직전 자동 스냅샷"));
       }
       // Gist에는 API 캐시가 없음 — 현재 메모리의 캐시 유지.
       // undo 기록에 남기지 않고 비운다 — 되돌리기가 받기 이전 상태를 되살리면 그대로 업로드돼 다른 기기 변경이 사라진다.
@@ -333,11 +345,14 @@ export const App: React.FC = () => {
     }
   }, [setData, clearHistory, addAppLog]);
 
-  const { autoSyncEnabled, setAutoSyncEnabled, lastPushAt: gistLastPushAt, lastPullAt: gistLastPullAt, resolveGistConflict, gistStaleWarning, manualPush: gistManualPush, manualPull: gistManualPull, syncStateAfterRestore, syncHealth, connectDevice } = useGistSync(
+  // GAS: 캐시로 먼저 그린 뒤 백그라운드로 받은 시트 장부를 데이터 준비 후 한 번 채택. 확인 중엔 자동 저장 정지
+  const sheetBootPending = useSheetBootAdoption(!persistenceBlocked, handleGistPulledData);
+
+  const { autoSyncEnabled, setAutoSyncEnabled, lastPushAt: gistLastPushAt, lastPullAt: gistLastPullAt, isSyncing: gistIsSyncing, resolveGistConflict, gistStaleWarning, manualPush: gistManualPush, manualPull: gistManualPull, markLocalImport, syncStateAfterRestore, syncHealth, connectDevice } = useGistSync(
     data,
     handleGistPulledData,
     // 로드 실패(메모리는 빈 데이터)·로딩 중엔 동기화 전체 중단 — useBackup의 disabled와 같은 이유 + 빈 데이터 업로드가 전 기기로 번짐
-    { onLog: addAppLog, remotePollMs: GIST_REMOTE_POLL_MS, disabled: loadFailed || isLoading }
+    { onLog: addAppLog, remotePollMs: GIST_REMOTE_POLL_MS, disabled: persistenceBlocked || sheetBootPending }
   );
 
   // 동기화 건강 상태 — gistConfigured는 Gist 설정 변경 이벤트로 바뀌므로 토큰·ID 재조회 트리거로 쓴다
@@ -365,10 +380,12 @@ export const App: React.FC = () => {
   const appStatus = useMemo((): { tone: StatusTone; summary: string } => {
     if (saveStatus === "error") return { tone: "danger", summary: "저장 실패" };
     if (backupIntegrity.status === "mismatch") return { tone: "danger", summary: "백업 불일치" };
-    if (gistStaleWarning?.type === "critical") return { tone: "danger", summary: "동기화 필요" };
+    // GAS: 경과 시간 경고(Gist 시절 1분 디바운스용) 대신 헤더 저장 상태(GasSaveIndicator)가 저장 여부를 말한다
+    const staleWarning = isGas() ? null : gistStaleWarning;
+    if (staleWarning?.type === "critical") return { tone: "danger", summary: "동기화 필요" };
     if (gistSyncStatus.kind === "disconnected") return { tone: "warn", summary: "연결 끊김" };
     if (gistSyncStatus.kind === "error") return { tone: "warn", summary: "동기화 오류" };
-    if (gistStaleWarning) return { tone: "warn", summary: "동기화 권장" };
+    if (staleWarning) return { tone: "warn", summary: "동기화 권장" };
     if (backupWarning) return { tone: "warn", summary: "백업 권장" };
     if (newVersionAvailable) return { tone: "warn", summary: "새 버전" };
     if (saveStatus === "saving") return { tone: "ok", summary: "저장 중" };
@@ -482,12 +499,13 @@ export const App: React.FC = () => {
     setIsGistSaving(true);
     try {
       await handleManualBackup();
-      if (gistConfigured) await gistManualPush();
+      // 토큰만 있어도 첫 저장에서 Gist를 만들 수 있다.
+      if (getGistToken()) await gistManualPush();
     } finally {
       isSavingAllRef.current = false;
       setIsGistSaving(false);
     }
-  }, [handleManualBackup, gistConfigured, gistManualPush, setIsGistSaving]);
+  }, [handleManualBackup, gistManualPush, setIsGistSaving]);
 
   // keyboard shortcuts
   useKeyboardShortcuts({
@@ -740,12 +758,61 @@ export const App: React.FC = () => {
       clearLoadFailed();
       addAppLog(`${sourceLabel}에서 데이터 복구 완료`, "success");
       toast.success("데이터를 복구했습니다.");
+      return true;
     } catch (err) {
       const msg = err instanceof Error ? err.message : String(err);
       addAppLog(`데이터 복구 실패: ${msg}`, "error");
       toast.error(`복구 실패: ${msg}`);
+      return false;
     }
   }, [setData, clearLoadFailed, addAppLog]);
+
+  const [showImportedSyncPanel, setShowImportedSyncPanel] = useState(false);
+  const [importUploadQueued, setImportUploadQueued] = useState(false);
+  const importUploadPendingRef = React.useRef(false);
+  useEffect(() => {
+    // 복구 직후 같은 콜스택에서 push하면 이전 빈 dataRef·disabledRef를 보게 된다.
+    // 새 장부가 렌더된 뒤 정식 업로드 경로를 한 번만 실행한다.
+    if (!importUploadQueued || persistenceBlocked || !importUploadPendingRef.current) return;
+    importUploadPendingRef.current = false;
+    setImportUploadQueued(false);
+    if (!getGistToken()) {
+      toast("장부를 불러왔습니다. 아래 Gist 연결 설정을 완료한 뒤 업로드하세요.");
+      return;
+    }
+    void gistManualPush();
+  }, [importUploadQueued, persistenceBlocked, gistManualPush]);
+
+  const handleLocalFileRecovery = useCallback((uploadAfterImport = false) => {
+    if (localFileRecovery.state.status !== "ready") return;
+    const candidate = localFileRecovery.state.candidate;
+    const current = useAppStore.getState().data;
+    const normalized = mergeCurrentCaches(candidate.data, current);
+    requestApply({
+      title: uploadAfterImport ? "가계부 불러오기 후 Gist 업로드" : "저장된 가계부 파일 불러오기",
+      before: current,
+      after: normalized,
+      propagatesToGist: true,
+      onConfirm: () => {
+        void (async () => {
+          const saved = await saveSafetySnapshot(current, "장부 파일 불러오기 직전 자동 스냅샷");
+          if (!saved) {
+            toast.error("현재 상태를 백업하지 못했습니다. 다시 시도해 주세요.");
+            return;
+          }
+          markLocalImport();
+          if (applyRecoveredData(normalized, candidate.source)) {
+            clearHistory();
+            setShowImportedSyncPanel(true);
+            if (uploadAfterImport) {
+              importUploadPendingRef.current = true;
+              setImportUploadQueued(true);
+            }
+          }
+        })().catch(() => toast.error("장부 파일을 불러오지 못했습니다. 다시 시도해 주세요."));
+      },
+    });
+  }, [localFileRecovery.state, applyRecoveredData, clearHistory, markLocalImport]);
 
   const handleRecoveryFileSelect = useCallback(() => {
     const input = document.createElement("input");
@@ -784,17 +851,15 @@ export const App: React.FC = () => {
   }, [applyRecoveredData]);
 
   if (isLoading) {
-    return (
-      <div className="app-root" style={{ display: "flex", alignItems: "center", justifyContent: "center", minHeight: "100vh" }}>
-        <p style={{ color: "var(--text-muted)", fontSize: 15 }}>로딩 중...</p>
-      </div>
-    );
+    return <BootSkeleton />;
   }
 
   if (loadFailed) {
     return (
       <div className="app-root" style={{ display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", minHeight: "100vh", padding: 24, textAlign: "center" }}>
         <Toaster position="top-center" />
+        <ApplyConfirmModal />
+        <LocalFileRecoveryBanner recovery={localFileRecovery} onRestore={() => handleLocalFileRecovery()} onRestoreAndUpload={() => handleLocalFileRecovery(true)} />
         <p style={{ color: "var(--danger)", fontSize: 16, fontWeight: 600, marginBottom: 8 }}>데이터를 불러오지 못했습니다.</p>
         <p style={{ color: "var(--text-muted)", fontSize: 14, marginBottom: 16, maxWidth: 460 }}>
           저장된 데이터가 손상되었거나 읽을 수 없습니다. 아래에서 바로 복구할 수 있습니다.
@@ -847,6 +912,7 @@ export const App: React.FC = () => {
   return (
     <div className="app-root">
       <a href="#main-content" className="skip-link">본문으로 건너뛰기</a>
+      {isGas() && <PhotoUploadPanel />}
       <Toaster
         position="top-center"
         toastOptions={{
@@ -860,8 +926,12 @@ export const App: React.FC = () => {
           }
         }}
         containerStyle={{ top: 12, zIndex: 9999 }}
-      />
-      <PWAStatus />
+      >
+        {/* GAS 웹앱에서는 동기화 토스트의 "Gist"를 "시트"로 — 동기화 코드가 Gist와 공용이다 */}
+        {(t) => <ToastBar toast={typeof t.message === "string" ? { ...t, message: remoteText(t.message) } : t} />}
+      </Toaster>
+      {/* GAS(iframe)에는 서비스 워커가 없다 — 오프라인·새 버전 안내 숨김 */}
+      {!isGas() && <PWAStatus />}
       {isOnRestoreBranch && (
         <div
           role="alert"
@@ -878,6 +948,10 @@ export const App: React.FC = () => {
           복구 브랜치({gitCurrentBranch}) 상태입니다 — git 업로드는 잠겨 있습니다. 작업 후 main으로 돌아가세요.
         </div>
       )}
+      <LocalFileRecoveryBanner recovery={localFileRecovery} onRestore={() => handleLocalFileRecovery()} onRestoreAndUpload={() => handleLocalFileRecovery(true)} />
+      {showImportedSyncPanel && <ImportedLedgerSyncPanel ledgerCount={data.ledger.length} tradeCount={data.trades.length}
+        isSyncing={gistIsSyncing} autoSyncEnabled={autoSyncEnabled} lastPushAt={gistLastPushAt} lastPullAt={gistLastPullAt}
+        onAutoSyncChange={setAutoSyncEnabled} onPush={gistManualPush} onPull={gistManualPull} />}
       {/* 미저장 드래프트 복구 — 상태 메뉴(닫히면 미마운트) 안에 두면 아무도 못 보고 다음 자동저장이 드래프트를 지운다 */}
       {hasDraftRecovery && (
         <div style={{ display: "flex", justifyContent: "center", padding: "8px 16px" }}>
@@ -900,8 +974,28 @@ export const App: React.FC = () => {
             <span className="app-brand-sep" aria-hidden>/</span>
             <span className="app-brand-tab">{TAB_LABELS[tab]}</span>
           </div>
+          {/* GAS: 캡처 사진은 가장 자주 쓰는 입력 — 왼쪽 위 고정 (설정 탭까지 들어가지 않게) */}
+          <GasPhotoButton />
         </div>
         <div className="app-header-right">
+          {isGas() && (
+            <GasSaveIndicator
+              data={data}
+              sheetBootPending={sheetBootPending}
+              blockedReason={
+                loadFailed
+                  ? "장부를 불러오지 못해 자동 저장을 멈췄습니다 — 상태 메뉴에서 복구를 확인하세요"
+                  : localFileRecovery.blocksSaving
+                    ? "장부 파일 복구 확인 전이라 저장을 멈췄습니다"
+                    : null
+              }
+              autoSyncEnabled={autoSyncEnabled}
+              isSyncing={gistIsSyncing}
+              health={syncHealth}
+              lastPushAt={gistLastPushAt}
+              onRetry={() => { void handleSaveAll(); }}
+            />
+          )}
           <RecurringDueBadge
             recurring={data.recurringExpenses}
             ledger={data.ledger}
@@ -928,11 +1022,11 @@ export const App: React.FC = () => {
           </button>
           <button
             type="button"
-            className="header-action"
+            className={isGas() ? "header-action gas-mobile-hide" : "header-action"}
             disabled={isGistSaving}
             onClick={() => { void handleSaveAll(); }}
             title={gistConfigured
-              ? `로컬 백업 + Gist 저장 (로컬 ${formatTimeAgo(latestBackupAt)} · Gist ${formatTimeAgo(gistLastPushAt)}) (Ctrl+S)`
+              ? remoteText(`로컬 백업 + Gist 저장 (로컬 ${formatTimeAgo(latestBackupAt)} · Gist ${formatTimeAgo(gistLastPushAt)}) (Ctrl+S)`)
               : `로컬 백업 (${formatTimeAgo(latestBackupAt)}) (Ctrl+S)`}
           >
             <Save size={14} />
@@ -948,7 +1042,7 @@ export const App: React.FC = () => {
           </button>
           <button
             onClick={toggleTheme}
-            className="icon-button"
+            className={isGas() ? "icon-button gas-mobile-hide" : "icon-button"}
             title="테마 변경"
             aria-label="테마 변경"
           >
@@ -990,7 +1084,7 @@ export const App: React.FC = () => {
               {!autoSyncEnabled && "자동 동기화 꺼짐 · "}최신 확인 {formatTimeAgo(syncHealth.lastCheckAt)} · 마지막 저장 {formatTimeAgo(gistLastPushAt)}
             </div>
           )}
-          {gistStaleWarning && (
+          {gistStaleWarning && !isGas() && (
             <div
               className={`pill ${gistStaleWarning.type === "critical" ? "danger" : "warning"}`}
               style={{ display: "flex", alignItems: "center", gap: "var(--space-2)" }}
@@ -1117,7 +1211,7 @@ export const App: React.FC = () => {
             </MobileDrawer>
             <MobileBottomNav />
             <main id="main-content" className="app-main" role="main">
-          <Suspense fallback={<div className="card" style={{ padding: 24, textAlign: "center", color: "var(--text-muted)" }}>로딩 중...</div>}>
+          <Suspense fallback={<PageSkeleton />}>
           {tab === "dashboard" && !isLoading && !loadFailed && !gistConfigured && isEmptyLocalData(data) && (
             <ConnectOnboardingCard onGoSettings={() => handleTabChange("settings")} />
           )}

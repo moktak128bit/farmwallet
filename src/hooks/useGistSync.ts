@@ -23,6 +23,7 @@ import {
   setGistLastPushedHash,
   GistNoRemoteDataError,
   GistSchemaTooNewError,
+  GIST_CONFIG_CHANGE_EVENT,
   type GistVersion,
 } from "../services/gistSync";
 import { isEmptyLocalData, describeConnectTarget, type ConnectPayload } from "../services/deviceConnect";
@@ -31,17 +32,20 @@ import { saveSafetySnapshot } from "../services/backupService";
 import { requestApply } from "../components/ApplyConfirmModal";
 import {
   GIST_AUTO_PUSH_DEBOUNCE_MS,
+  GAS_AUTO_SAVE_DEBOUNCE_MS,
   GIST_REMOTE_CHECK_THROTTLE_MS,
   GIST_STALE_WARNING_HOURS,
   STORAGE_KEYS,
 } from "../constants/config";
 import { useUIStore } from "../store/uiStore";
+import { isGas } from "../services/gas";
 import { useAppStore } from "../store/appStore";
 import {
   mergeGistPayloadTimeSeries,
   mergeDailyFx,
   mergeBenchmarkCloses,
   mergeMarketEnvSnapshots,
+  canonicalUserPayload,
 } from "../utils/timeSeriesMerge";
 import type { GistSyncHealth } from "../services/gistSyncStatus";
 
@@ -131,34 +135,16 @@ export function checkRemoteChanged(
   return detectConflict(latestVersion.committedAt, knownRemoteCommit);
 }
 
-/** Gist payload 중 기기별 자동 적립(기록기)만으로 달라질 수 있는 날짜키 시계열 3종 */
-const AUTO_SERIES_KEYS = ["historicalDailyFx", "benchmarkDailyCloses", "marketEnvSnapshots"] as const;
-
 /**
  * 두 Gist payload의 차이가 자동 적립 시계열 3종 **만**인지 순수 판정.
- * 시계열을 제외한 나머지 필드를 최상위 키 정렬 후 직렬화해 비교한다(최상위 키 순서 차이 무시).
+ * 시계열을 제외한 나머지 필드를 최상위 키 정렬 후 직렬화해 비교한다(최상위 키 순서 차이 무시 — utils/timeSeriesMerge.canonicalUserPayload).
  * 파싱 실패·객체가 아니면 false(= 실제 변경으로 간주 → 보수적으로 충돌 모달 경로).
  * 용도: 복귀 시 로컬 dirty가 환율·지수·스냅샷 적립뿐이면 충돌 모달 대신 pull+union으로 조용히 처리.
  */
 export function isTimeSeriesOnlyDiff(aJson: string, bJson: string): boolean {
-  let a: unknown;
-  let b: unknown;
-  try {
-    a = JSON.parse(aJson);
-    b = JSON.parse(bJson);
-  } catch {
-    return false;
-  }
-  if (!a || typeof a !== "object" || Array.isArray(a)) return false;
-  if (!b || typeof b !== "object" || Array.isArray(b)) return false;
-  const strip = (raw: object): string => {
-    const r = { ...(raw as Record<string, unknown>) };
-    for (const k of AUTO_SERIES_KEYS) delete r[k];
-    const sorted: Record<string, unknown> = {};
-    for (const k of Object.keys(r).sort()) sorted[k] = r[k];
-    return JSON.stringify(sorted);
-  };
-  return strip(a) === strip(b);
+  const a = canonicalUserPayload(aJson);
+  const b = canonicalUserPayload(bJson);
+  return a !== null && b !== null && a === b;
 }
 
 interface UseGistSyncOptions {
@@ -199,6 +185,8 @@ interface UseGistSyncReturn {
    * 자동 동기화 OFF 상태에서도 사용 가능 (사용자 의도 우선).
    */
   manualPush: () => Promise<void>;
+  /** 파일을 불러온 직후 원격 자동 pull이 복구한 장부를 되돌리지 않게 한다. */
+  markLocalImport: () => void;
   /**
    * 수동 불러오기 — Gist 최신 데이터를 onApplyPulledData로 적용하고
    * lastPullAt·knownRemoteCommit·lastPushedPayload를 정식 경로와 동일하게 갱신.
@@ -319,6 +307,8 @@ export function useGistSync(
     // 토큰 검사보다 먼저 마운트 플래그를 세운다 — 부팅 시 토큰이 없었다가
     // 나중에 입력해도 Effect 2(자동 push)가 영구 비활성되지 않도록.
     hasMountedRef.current = true;
+    // 파일 복구 뒤에는 업로드의 충돌 확인 경로에 맡긴다. 빈 브라우저의 첫 pull로 되돌리지 않는다.
+    if (restoredRef.current) return;
     if (!getGistToken() || !getGistId()) return;
 
     let cancelled = false;
@@ -574,7 +564,7 @@ export function useGistSync(
         try {
           const remote = await loadRemoteGuarded(schemaBlockedRef);
           // 직전 PATCH가 시간 초과로 '실패' 처리됐지만 GitHub은 커밋한 경우도 우리 자신의 커밋 — 가짜 충돌
-          if (isOwnRemoteContent(hashGistPayload(remote.dataJson), getGistLastPushedHash(), attemptedPushRef.current)) {
+          if (remote.dataJson === dataJson || isOwnRemoteContent(hashGistPayload(remote.dataJson), getGistLastPushedHash(), attemptedPushRef.current)) {
             knownRemoteCommitRef.current = latest?.committedAt || known;
             onLog?.("Gist: 시각만 다른 가짜 충돌(내용 동일) — 저장 진행", "info");
           } else {
@@ -841,7 +831,7 @@ export function useGistSync(
     autoPushTimerRef.current = window.setTimeout(() => {
       autoPushTimerRef.current = null;
       void runAutoPush();
-    }, GIST_AUTO_PUSH_DEBOUNCE_MS);
+    }, isGas() ? GAS_AUTO_SAVE_DEBOUNCE_MS : GIST_AUTO_PUSH_DEBOUNCE_MS);
 
     return () => {
       if (autoPushTimerRef.current) {
@@ -925,7 +915,17 @@ export function useGistSync(
       }
     };
     window.addEventListener("storage", onStorage);
-    return () => window.removeEventListener("storage", onStorage);
+    // 이 탭에서 최초 연결을 마친 경우도 즉시 반영한다. 명시적으로 끈 설정은 유지한다.
+    const onCredentialsChanged = () => {
+      // 연결 미리보기를 취소·검증 실패했을 때는 connectDevice가 끈 상태를 유지한다.
+      if (isConnectingRef.current) return;
+      setAutoSyncEnabledState(getGistAutoSync());
+    };
+    window.addEventListener(GIST_CONFIG_CHANGE_EVENT, onCredentialsChanged);
+    return () => {
+      window.removeEventListener("storage", onStorage);
+      window.removeEventListener(GIST_CONFIG_CHANGE_EVENT, onCredentialsChanged);
+    };
   }, []);
 
   /**
@@ -1256,6 +1256,13 @@ export function useGistSync(
    * - knownRemoteCommitRef = 복원 버전의 commit 시각(과거): 이후 실제 변경 시 detectConflict가
    *   '원격이 더 최신'을 감지해 충돌 모달로 사용자에게 롤백 여부를 의식적으로 묻게 함.
    */
+  const markLocalImport = useCallback(() => {
+    restoredRef.current = true;
+    knownRemoteCommitRef.current = NOTHING_ACCOUNTED_AT;
+    // 실제로 업로드한 것처럼 해시를 기록하지 않는다. 파일 내용은 다음 push에서 비교한다.
+    lastPushedPayloadRef.current = "";
+  }, []);
+
   const syncStateAfterRestore = useCallback((dataJson: string, committedAt: string) => {
     lastPushedPayloadRef.current = dataJson;
     setGistLastPushedHash(hashGistPayload(dataJson));
@@ -1296,6 +1303,7 @@ export function useGistSync(
     resolveGistConflict,
     gistStaleWarning,
     manualPush,
+    markLocalImport,
     manualPull,
     syncStateAfterRestore,
     syncHealth,

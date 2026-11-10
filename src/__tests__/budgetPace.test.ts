@@ -15,6 +15,14 @@ const e = (o: Partial<LedgerEntry> & { id: string; date: string }): LedgerEntry 
 
 const FOOD = goal({ category: "식비" });
 
+/**
+ * 오늘 날짜의 무관한 기록(수입 1원)을 붙여 "오늘까지 기록됨" 상태로 계산 — 경과일이 마지막 기록일 캡
+ * (ledgerFreshness)에 걸리지 않게 해 달력 경과일 규칙만 검증한다. 캡 자체는 아래 별도 테스트.
+ */
+const paceAt = (g: BudgetGoal, ledger: LedgerEntry[], month: string, today: string, opts?: Parameters<typeof computeBudgetPace>[4]) =>
+  computeBudgetPace(g, [...ledger, e({ id: "fresh", date: today, kind: "income", category: "수입", subCategory: "급여", amount: 1 })], month, today, opts);
+
+
 describe("computeBudgetGoalSpent — dayCap 옵션", () => {
   it("dayCap 지정 시 1~dayCap일만 합산, 미지정(기본)은 달 전체", () => {
     const ledger = [
@@ -31,7 +39,7 @@ describe("computeBudgetGoalSpent — dayCap 옵션", () => {
 describe("computeBudgetPace — 경과일·남은 일수·선형 예상(이력 없음)", () => {
   it("8월 10일, 10일간 100,000원 → 선형 월말 310,000원(한도 +3%), 남은 21일 하루 허용액", () => {
     const ledger = [e({ id: "1", date: "2026-08-03", amount: 60_000 }), e({ id: "2", date: "2026-08-09", amount: 40_000 })];
-    const p = computeBudgetPace(FOOD, ledger, "2026-08", "2026-08-10");
+    const p = paceAt(FOOD, ledger, "2026-08", "2026-08-10");
     expect(p.spent).toBe(100_000);
     expect(p.elapsedDays).toBe(10);
     expect(p.totalDays).toBe(31);
@@ -47,7 +55,7 @@ describe("computeBudgetPace — 경과일·남은 일수·선형 예상(이력 �
 
   it("월초(1일) 경계 — 경과일 1, 남은 30일, 전월 동기(1~1일)", () => {
     const ledger = [e({ id: "1", date: "2026-08-01", amount: 5_000 }), e({ id: "p", date: "2026-07-01", amount: 7_000 })];
-    const p = computeBudgetPace(FOOD, ledger, "2026-08", "2026-08-01");
+    const p = paceAt(FOOD, ledger, "2026-08", "2026-08-01");
     expect(p.elapsedDays).toBe(1);
     expect(p.remainingDays).toBe(30);
     expect(p.prevSamePeriodSpent).toBe(7_000);
@@ -57,7 +65,7 @@ describe("computeBudgetPace — 경과일·남은 일수·선형 예상(이력 �
 
   it("월말(마지막 날) 경계 — 남은 0일, 허용액 분모 1(오늘), 예상 = 실적", () => {
     const ledger = [e({ id: "1", date: "2026-08-15", amount: 200_000 })];
-    const p = computeBudgetPace(FOOD, ledger, "2026-08", "2026-08-31");
+    const p = paceAt(FOOD, ledger, "2026-08", "2026-08-31");
     expect(p.elapsedDays).toBe(31);
     expect(p.remainingDays).toBe(0);
     expect(p.projectedMonthEnd).toBe(200_000);
@@ -67,8 +75,8 @@ describe("computeBudgetPace — 경과일·남은 일수·선형 예상(이력 �
   });
 
   it("2월(28일) 총일수·윤년 2월(29일)", () => {
-    expect(computeBudgetPace(FOOD, [], "2026-02", "2026-02-14").totalDays).toBe(28);
-    expect(computeBudgetPace(FOOD, [], "2028-02", "2028-02-14").totalDays).toBe(29);
+    expect(paceAt(FOOD, [], "2026-02", "2026-02-14").totalDays).toBe(28);
+    expect(paceAt(FOOD, [], "2028-02", "2028-02-14").totalDays).toBe(29);
   });
 
   it("지난 달을 보면 경과=총일수, 예상=실적, 전월 비교는 '전월 전체'(dayCap 없음)", () => {
@@ -77,7 +85,7 @@ describe("computeBudgetPace — 경과일·남은 일수·선형 예상(이력 �
       e({ id: "2", date: "2026-05-31", amount: 30_000 }), // 5월 31일 — dayCap 30이었다면 빠졌을 항목
       e({ id: "3", date: "2026-05-02", amount: 20_000 }),
     ];
-    const p = computeBudgetPace(FOOD, ledger, "2026-06", "2026-08-20");
+    const p = paceAt(FOOD, ledger, "2026-06", "2026-08-20");
     expect(p.elapsedDays).toBe(30);
     expect(p.remainingDays).toBe(0);
     expect(p.projectedMonthEnd).toBe(100_000);
@@ -88,7 +96,7 @@ describe("computeBudgetPace — 경과일·남은 일수·선형 예상(이력 �
 
   it("아직 안 온 달 — 경과일 0, 전월 동기 0, 예상은 최근 3개월 평균(이력 가중 1.0)", () => {
     const ledger = [e({ id: "1", date: "2026-07-10", amount: 90_000 }), e({ id: "2", date: "2026-06-10", amount: 30_000 })];
-    const p = computeBudgetPace(FOOD, ledger, "2026-09", "2026-08-20");
+    const p = paceAt(FOOD, ledger, "2026-09", "2026-08-20");
     expect(p.elapsedDays).toBe(0);
     expect(p.remainingDays).toBe(30);
     expect(p.prevSamePeriodSpent).toBe(0);
@@ -106,7 +114,7 @@ describe("computeBudgetPace — 이력 혼합(고정비성 1회 결제 과대추
       e({ id: "c", date: "2026-06-01", amount: 100_000 }),
       e({ id: "d", date: "2026-05-01", amount: 100_000 }),
     ];
-    const p = computeBudgetPace(goal({ category: "식비", monthlyLimit: 150_000 }), ledger, "2026-08", "2026-08-02");
+    const p = paceAt(goal({ category: "식비", monthlyLimit: 150_000 }), ledger, "2026-08", "2026-08-02");
     const linear = (100_000 / 2) * 31; // 1,550,000
     const history = 100_000 + 0; // 이력상 2일 이후 추가 지출 0
     const w = 2 / 31;
@@ -123,7 +131,7 @@ describe("computeBudgetPace — 이력 혼합(고정비성 1회 결제 과대추
       e({ id: "b", date: "2026-07-05", amount: 50_000 }),
       e({ id: "c", date: "2026-07-25", amount: 100_000 }),
     ];
-    const p = computeBudgetPace(FOOD, ledger, "2026-08", "2026-08-10");
+    const p = paceAt(FOOD, ledger, "2026-08", "2026-08-10");
     const linear = (50_000 / 10) * 31; // 155,000
     const history = 50_000 + 100_000; // 150,000
     const w = 10 / 31;
@@ -136,7 +144,7 @@ describe("computeBudgetPace — 이력 혼합(고정비성 1회 결제 과대추
       e({ id: "old", date: "2026-04-20", amount: 900_000 }), // 4개월 전 — 제외
       e({ id: "b", date: "2026-07-20", amount: 60_000 }), // 7월만 이력 (6·5월은 0 → 제외)
     ];
-    const p = computeBudgetPace(FOOD, ledger, "2026-08", "2026-08-10");
+    const p = paceAt(FOOD, ledger, "2026-08", "2026-08-10");
     const linear = (50_000 / 10) * 31;
     const history = 50_000 + 60_000;
     const w = 10 / 31;
@@ -160,7 +168,7 @@ describe("computeBudgetPace — 전체 예산·제외 조합·USD·상태", () =
       excludeCategories: ["데이트비"],
       excludeAccountIds: ["moim"],
     });
-    const p = computeBudgetPace(g, ledger, "2026-08", "2026-08-10");
+    const p = paceAt(g, ledger, "2026-08", "2026-08-10");
     expect(p.spent).toBe(100_000);
     expect(p.prevSamePeriodSpent).toBe(40_000);
     const linear = (100_000 / 10) * 31;
@@ -173,7 +181,7 @@ describe("computeBudgetPace — 전체 예산·제외 조합·USD·상태", () =
     const ledger = [
       e({ id: "1", date: "2026-08-05", amount: 100, currency: "USD" } as Partial<LedgerEntry> & { id: string; date: string }),
     ];
-    const p = computeBudgetPace(FOOD, ledger, "2026-08", "2026-08-10", { fxRate: 1_300 });
+    const p = paceAt(FOOD, ledger, "2026-08", "2026-08-10", { fxRate: 1_300 });
     expect(p.spent).toBe(130_000);
     expect(p.projectedMonthEnd).toBeCloseTo(13_000 * 31, 5);
     expect(p.dailyAllowanceRemaining).toBeCloseTo(170_000 / 21, 5);
@@ -183,7 +191,7 @@ describe("computeBudgetPace — 전체 예산·제외 조합·USD·상태", () =
     const lim = goal({ category: "식비", monthlyLimit: 310_000 });
     // 8/10, 31일 → 선형 = spent×3.1
     const mk = (amt: number) =>
-      computeBudgetPace(lim, [e({ id: "1", date: "2026-08-02", amount: amt })], "2026-08", "2026-08-10");
+      paceAt(lim, [e({ id: "1", date: "2026-08-02", amount: amt })], "2026-08", "2026-08-10");
     expect(mk(310_000).status).toBe("exceeded");
     expect(mk(101_000).status).toBe("over-pace"); // 313,100
     expect(mk(95_000).status).toBe("watch"); // 294,500 ≥ 279,000
@@ -192,7 +200,7 @@ describe("computeBudgetPace — 전체 예산·제외 조합·USD·상태", () =
   });
 
   it("한도 0이면 ok·예상 대비 null·'한도 미설정'", () => {
-    const p = computeBudgetPace(
+    const p = paceAt(
       goal({ category: "식비", monthlyLimit: 0 }),
       [e({ id: "1", date: "2026-08-02" })],
       "2026-08",
@@ -209,8 +217,24 @@ describe("computeBudgetPace — 전체 예산·제외 조합·USD·상태", () =
       e({ id: "2", date: "2026-07-10", amount: 30_000 }),
       e({ id: "3", date: "2026-07-11", amount: 500_000 }), // 동기 밖
     ];
-    const p = computeBudgetPace(FOOD, ledger, "2026-08", "2026-08-10");
+    const p = paceAt(FOOD, ledger, "2026-08", "2026-08-10");
     expect(p.prevSamePeriodSpent).toBe(30_000);
     expect(p.prevSamePeriodLabel).toBe("동기(1~10일)");
+  });
+});
+
+describe("computeBudgetPace — 마지막 기록일 캡 (실장부 회귀: 10일인데 기록은 5일까지)", () => {
+  it("비교·예상은 1~마지막 기록일 기준, 남은 일수는 달력 기준", () => {
+    const ledger = [
+      e({ id: "c1", date: "2026-11-03", amount: 50_000 }),
+      e({ id: "c2", date: "2026-11-05", amount: 30_000 }),
+      e({ id: "p1", date: "2026-10-04", amount: 100_000 }),
+      e({ id: "p2", date: "2026-10-09", amount: 500_000 }), // 전월 6~10일 — 동기(1~5일)에 들어가면 안 됨
+    ];
+    const p = computeBudgetPace(FOOD, ledger, "2026-11", "2026-11-10");
+    expect(p.elapsedDays).toBe(5);
+    expect(p.remainingDays).toBe(20);
+    expect(p.prevSamePeriodSpent).toBe(100_000);
+    expect(p.prevSamePeriodLabel).toBe("동기(1~5일 · 5일까지 기록)");
   });
 });

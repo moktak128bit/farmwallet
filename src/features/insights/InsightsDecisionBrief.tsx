@@ -2,6 +2,7 @@ import React, { useMemo } from "react";
 import type { CategoryPresets, LedgerEntry } from "../../types";
 import { buildInsightsDecisionBrief } from "../../utils/insightsDecisionBrief";
 import { getTodayKST } from "../../utils/date";
+import { dayCapLabel } from "../../utils/ledgerFreshness";
 import { W, Pct } from "./insightsShared";
 
 export function InsightsDecisionBrief({ ledger, targetMonth, categoryPresets, fxRate }: {
@@ -15,7 +16,7 @@ export function InsightsDecisionBrief({ ledger, targetMonth, categoryPresets, fx
     [ledger, targetMonth, categoryPresets, fxRate, today]);
   const baseline = brief.comparisons.find(row => row.id === "average3")!;
   const increases = brief.drivers.filter(row => row.delta > 0);
-  const period = brief.partialDay != null ? `동기(1~${brief.partialDay}일)` : "월 전체";
+  const period = brief.partialDay != null && brief.partialDay > 0 ? `동기(${dayCapLabel(brief.partialDay, today)})` : "월 전체";
   const signedMoney = (amount: number) => `${amount > 0 ? "+" : amount < 0 ? "−" : ""}${W(Math.round(Math.abs(amount)))}`;
   return (
     <section className="card" aria-label="지출 변화와 확인할 항목" style={{ marginTop: 16, marginBottom: 20, padding: 18 }}>
@@ -24,11 +25,11 @@ export function InsightsDecisionBrief({ ledger, targetMonth, categoryPresets, fx
         {targetMonth.replace("-", ".")} · {period}. 비교는 기간 필터와 관계없이 전체 가계부 기록을 사용합니다.
         {brief.partialDay != null && " 과거 월도 같은 일자까지 비교합니다."}
       </p>
-      {!brief.hasTarget ? <p className="hint">선택한 달에 기록이 없어 분석을 보류합니다.</p> : brief.missingFx ? (
+      {!brief.hasTarget ? <p className="hint">{brief.partialDay === 0 ? "이번 달 기록이 아직 없어 비교를 보류합니다." : "선택한 달에 기록이 없어 분석을 보류합니다."}</p> : brief.missingFx ? (
         <p style={{ color: "var(--warning)", fontSize: 13 }}>달러 지출의 환율이 없어 비교를 보류합니다. 환율을 불러온 뒤 다시 확인하세요.</p>
       ) : <>
-        {brief.daysSinceLastRecord != null && brief.daysSinceLastRecord >= 7 && <p style={{ background: "var(--warning-light)", padding: 12, borderRadius: 8, fontSize: 13, lineHeight: 1.6 }}>
-          마지막 기록은 {brief.latestRecordDate}입니다. {brief.daysSinceLastRecord}일간 새 기록이 없어 지출 감소를 절약 성과로 판단하기 어렵습니다. 빠진 거래부터 확인하세요.
+        {brief.daysSinceLastRecord != null && brief.daysSinceLastRecord > 0 && <p style={{ background: "var(--warning-light)", padding: 12, borderRadius: 8, fontSize: 13, lineHeight: 1.6 }}>
+          마지막 기록은 {brief.latestRecordDate}({brief.daysSinceLastRecord}일 전)입니다. 과거 달도 {brief.partialDay}일까지만 잘라 같은 조건으로 비교합니다.
         </p>}
         <p style={{ fontSize: 14, lineHeight: 1.7 }}>
           {baseline.delta == null ? "직전 3개월 기록이 모두 있어야 평소 지출과 비교할 수 있습니다." : (
@@ -61,17 +62,22 @@ export function InsightsDecisionBrief({ ledger, targetMonth, categoryPresets, fx
                 최대 단건: <strong>{row.largestEntry.description} · {W(Math.round(row.largestEntry.amount))}</strong> ({row.largestEntry.date})
               </p>}
               <div style={{ fontSize: 13, lineHeight: 1.6 }}>
-                {row.delta > 0 ? row.averageCount === 0
-                  ? "이전 3개월에 없던 지출입니다. 새 고정비인지 일회성 거래인지 가계부에서 확인하세요."
-                  : "가계부에서 이 분류의 거래를 확인하고, 반복 결제·큰 단건·구매 횟수 중 무엇이 달라졌는지 점검하세요."
-                  : "지출이 줄어든 항목입니다. 결제가 다음 달로 미뤄졌거나 기록이 빠진 것은 아닌지 확인하세요."}
+                {row.averageCount === 0
+                  ? "직전 3개월엔 없던 지출입니다."
+                  : row.count === 0
+                    ? `이번 ${period}엔 거래가 없습니다 (평소 월 ${row.averageCount.toFixed(1)}건).`
+                    : row.countEffect != null && row.ticketEffect != null
+                      ? `건수 변화로 ${signedMoney(row.countEffect)}, 건당 금액 변화로 ${signedMoney(row.ticketEffect)}.`
+                      : null}
+                {row.delta > 0 && row.largestEntry && row.largestEntry.amount / row.delta >= 0.5
+                  && ` 최대 단건이 증가분의 ${Math.min(100, Math.round(row.largestEntry.amount / row.delta * 100))}%.`}
               </div>
             </article>)}
           </div>
         </div>}
       </>}
       <p style={{ fontSize: 12, color: "var(--text-muted)", lineHeight: 1.6, margin: "14px 0 0" }}>
-        기록이 없는 달은 0원으로 간주하지 않습니다. 기록이 있는 달도 미입력 거래가 있으면 결과가 달라집니다.
+        기록이 없는 달은 0원으로 간주하지 않습니다. 기록이 있는 달도 미입력 거래가 있으면 결과가 달라집니다 — 줄어든 항목은 결제가 다음 달로 넘어갔거나 아직 입력하지 않은 거래일 수 있습니다.
         카드대금 이체·저축·투자·환전은 소비 지출에서 제외합니다. 증감액은 절약 가능한 금액을 뜻하지 않습니다.
       </p>
     </section>

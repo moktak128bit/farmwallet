@@ -3,6 +3,7 @@ import type { GistConflict } from "../store/uiStore";
 import type { GistConflictResolution } from "../hooks/useGistSync";
 import { useFocusTrap } from "../hooks/useFocusTrap";
 import { useModalStackEntry } from "../utils/modalStack";
+import { remoteText } from "../services/gas";
 
 interface GistConflictModalProps {
   conflict: GistConflict | null;
@@ -122,14 +123,14 @@ export const GistConflictModal: React.FC<GistConflictModalProps> = ({ conflict, 
         }}
       >
         <h3 id="gist-conflict-title" style={{ marginTop: 0, marginBottom: "var(--space-2)" }}>
-          Gist 동기화 충돌
+          {remoteText("Gist 동기화 충돌")}
         </h3>
         <p style={{ marginTop: 0, color: "var(--text-muted)" }}>
           {conflict.reason === "never-synced"
-            ? "이 기기는 아직 이 Gist에서 데이터를 불러온 적이 없습니다. 보통은 [원격 적용]으로 Gist의 데이터를 받으면 됩니다."
+            ? remoteText("이 기기는 아직 이 Gist에서 데이터를 불러온 적이 없습니다. 보통은 [원격 적용]으로 Gist의 데이터를 받으면 됩니다.")
             : conflict.reason === "restored"
-              ? "Gist 과거 버전을 복원한 상태입니다. 복원본을 Gist에 저장하려면 [이 기기 데이터로 덮어쓰기]를, 복원을 취소하고 최신본으로 돌아가려면 [원격 적용]을 고르세요."
-              : "저장 직전에 원격 Gist가 다른 기기에서 변경되었습니다. 어떻게 처리할지 선택하세요."}
+              ? remoteText("Gist 과거 버전을 복원한 상태입니다. 복원본을 Gist에 저장하려면 [이 기기 데이터로 덮어쓰기]를, 복원을 취소하고 최신본으로 돌아가려면 [원격 적용]을 고르세요.")
+              : remoteText("저장 직전에 원격 Gist가 다른 기기에서 변경되었습니다. 어떻게 처리할지 선택하세요.")}
         </p>
         <p style={{ marginTop: 0, fontSize: 12, color: "var(--text-muted)" }}>
           자동 적립 시계열(환율·지수·스냅샷)은 어느 쪽을 선택해도 양쪽을 합칩니다.
@@ -151,7 +152,7 @@ export const GistConflictModal: React.FC<GistConflictModalProps> = ({ conflict, 
               background: "var(--bg)",
             }}
           >
-            <div style={{ fontWeight: 600, fontSize: 13, marginBottom: "var(--space-1)" }}>원격 (Gist)</div>
+            <div style={{ fontWeight: 600, fontSize: 13, marginBottom: "var(--space-1)" }}>{remoteText("원격 (Gist)")}</div>
             <div style={{ fontSize: 12, color: "var(--text-muted)", marginBottom: "var(--space-1)" }}>
               {new Date(conflict.remoteUpdatedAt).toLocaleString("ko-KR")}
             </div>
@@ -196,7 +197,7 @@ export const GistConflictModal: React.FC<GistConflictModalProps> = ({ conflict, 
             {/* 복원 상태에서 원격 적용 = 복원 취소 — 사용자가 고른 롤백과 반대라 권장하지 않는다 */}
             <div style={{ fontWeight: 600 }}>{conflict.reason === "restored" ? "원격 적용" : "원격 적용 (권장)"}</div>
             <div style={{ fontSize: 12, opacity: 0.85, marginTop: 2 }}>
-              원격 Gist 데이터를 로컬에 반영합니다. 이 기기의 미저장 변경은 폐기됩니다.
+              {remoteText("원격 Gist 데이터를 로컬에 반영합니다. 이 기기의 미저장 변경은 폐기됩니다.")}
             </div>
           </button>
           <button

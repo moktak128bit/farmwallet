@@ -58,6 +58,8 @@ export const CmaBalanceTrendCard: React.FC<Props> = React.memo(function CmaBalan
   const totalDelta = latest.balance - first.balance;
   const totalRate = first.balance !== 0 ? (totalDelta / Math.abs(first.balance)) * 100 : 0;
 
+  // 시작값이 너무 작으면(%가 수천~수십만 %로 폭주) 비율 대신 금액만 — "+214452.0%" 같은 무의미한 값 방지
+  const MIN_PCT_BASE = 100_000;
   const colorOf = (v: number) => (v > 0 ? "var(--success)" : v < 0 ? "var(--danger)" : "var(--text-muted)");
   const arrowOf = (v: number) => (v > 0 ? "▲" : v < 0 ? "▼" : "–");
 
@@ -80,13 +82,13 @@ export const CmaBalanceTrendCard: React.FC<Props> = React.memo(function CmaBalan
           <div style={{ display: "flex", flexDirection: "column", gap: 8, fontSize: 15 }}>
             <div style={{ color: colorOf(momDelta) }}>
               전월 대비 {arrowOf(momDelta)} {formatKRW(Math.round(Math.abs(momDelta)))}
-              {prevForMoM.balance !== 0 && (
+              {Math.abs(prevForMoM.balance) >= MIN_PCT_BASE && (
                 <span> ({momDelta >= 0 ? "+" : ""}{momRate.toFixed(1)}%)</span>
               )}
             </div>
             <div style={{ color: colorOf(totalDelta) }}>
               기간 시작 대비 {arrowOf(totalDelta)} {formatKRW(Math.round(Math.abs(totalDelta)))}
-              {first.balance !== 0 && (
+              {Math.abs(first.balance) >= MIN_PCT_BASE && (
                 <span> ({totalDelta >= 0 ? "+" : ""}{totalRate.toFixed(1)}%)</span>
               )}
             </div>

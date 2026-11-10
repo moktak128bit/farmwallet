@@ -4,10 +4,18 @@
     <meta charset="UTF-8" />
     <meta http-equiv="Content-Type" content="text/html; charset=utf-8" />
     <title>FarmWallet</title>
+    <script>
+      // 다크 모드를 첫 페인트 전에 — 골격 화면이 흰색으로 번쩍였다가 어두워지지 않게.
+      // 기본은 라이트, 직접 다크를 고른 경우만 (hooks/useTheme과 같은 규칙)
+      try {
+        if (localStorage.getItem("fw-theme") === "dark") document.documentElement.classList.add("dark");
+      } catch (e) {}
+    </script>
     <link rel="preconnect" href="https://fonts.googleapis.com" />
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
-    <link href="https://fonts.googleapis.com/css2?family=Noto+Sans+KR:wght@400;500;600;700&display=swap" rel="stylesheet" />
-    <link href="https://cdn.jsdelivr.net/gh/orioncactus/pretendard@v1.3.9/dist/web/variable/pretendardvariable-dynamic-subset.min.css" rel="stylesheet" />
+    <!-- 웹 글꼴은 첫 페인트를 막지 않게 (print→all) — 글꼴이 오기 전엔 시스템 글꼴로 먼저 그린다 -->
+    <link href="https://fonts.googleapis.com/css2?family=Noto+Sans+KR:wght@400;500;600;700&display=swap" rel="stylesheet" media="print" onload="this.media='all'" />
+    <link href="https://cdn.jsdelivr.net/gh/orioncactus/pretendard@v1.3.9/dist/web/variable/pretendardvariable-dynamic-subset.min.css" rel="stylesheet" media="print" onload="this.media='all'" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <meta name="theme-color" content="#0d9488" />
     <meta name="mobile-web-app-capable" content="yes" />
@@ -17,7 +25,43 @@
     <link rel="apple-touch-icon" sizes="180x180" href="%BASE_URL%icons/apple-touch-icon.png" />
   </head>
   <body>
-    <div id="root"></div>
+    <script>
+      // GAS 웹앱: 시트 장부 요청을 앱 코드(수 MB)를 읽기 전에 미리 시작한다 — 서버 왕복과 코드 로딩이 겹친다.
+      // 결과는 services/gas.ts loadSheetForBoot()가 한 번만 가져다 쓴다. 일반 브라우저에서는 조용히 거절된다.
+      (function () {
+        window.__fwSheetPrefetch = new Promise(function (resolve, reject) {
+          var tries = 0;
+          (function attempt() {
+            var run = window.google && window.google.script && window.google.script.run;
+            if (run) {
+              run.withSuccessHandler(resolve).withFailureHandler(reject).loadData();
+            } else if (++tries > 40) {
+              reject(new Error("no-gas"));
+            } else {
+              setTimeout(attempt, 50);
+            }
+          })();
+        });
+        window.__fwSheetPrefetch.catch(function () {});
+      })();
+    </script>
+    <!-- 시작 골격 화면: React가 첫 화면을 그리면 통째로 교체된다 (components/BootSkeleton과 같은 모양) -->
+    <div id="root"><div class="boot" id="boot-splash" data-step="1" aria-busy="true">
+      <div class="boot-head"><span class="boot-brand">FarmWallet</span><i></i></div>
+      <div class="boot-tabs" aria-hidden="true"><i></i><i></i><i></i><i></i><i></i><i></i></div>
+      <div class="boot-main">
+        <div class="boot-status" role="status">
+          <ol class="boot-steps"><li data-s="1">앱 열기</li><li data-s="2">시트에서 장부 받기</li><li data-s="3">화면 그리기</li></ol>
+          <span class="boot-detail" id="boot-detail"></span>
+        </div>
+        <div class="boot-grid" aria-hidden="true">
+          <div class="boot-card"><p>이번 달 지출</p><b></b><i></i><i></i><i></i></div>
+          <div class="boot-card"><p>내 자산</p><b></b><i></i><i></i><i></i></div>
+          <div class="boot-card"><p>투자·배당</p><b></b><i></i><i></i><i></i></div>
+        </div>
+        <div class="boot-card" aria-hidden="true"><i></i><i></i><i></i></div>
+      </div>
+    </div></div>
     <script type="module" src="/src/main.tsx"></script>
   </body>
 </html>

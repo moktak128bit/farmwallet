@@ -24,6 +24,16 @@ const income = (date: string, amount: number): LedgerEntry =>
 
 const TODAY = "2026-08-21";
 
+/**
+ * 오늘 날짜의 무관한 계좌이체(흐름 분류 없음)를 붙여 "오늘까지 기록됨" 상태로 계산 — 진행 중인 달의 동기 일자가
+ * 마지막 기록일 캡(ledgerFreshness)에 걸리지 않게 해 기존 규칙만 검증한다. 캡 자체는 아래 별도 테스트.
+ */
+const review = (input: Parameters<typeof buildMonthlyReview>[0]) =>
+  buildMonthlyReview({
+    ...input,
+    ledger: [...input.ledger, entry({ date: input.todayIso, amount: 1, kind: "transfer", category: "이체", subCategory: "계좌이체", fromAccountId: "x1", toAccountId: "x2" })]
+  });
+
 describe("buildMonthlyReview — 동기 비교(진행 중인 달)", () => {
   const ledger = [
     entry({ date: "2026-08-10", amount: 120_000 }),
@@ -37,7 +47,7 @@ describe("buildMonthlyReview — 동기 비교(진행 중인 달)", () => {
   ];
 
   it("partialDay·라벨에 '동기(1~N일)'가 붙고 전월·전년도 1~N일만 합산한다", () => {
-    const r = buildMonthlyReview({ ledger, month: "2026-08", todayIso: TODAY, fxRate: null });
+    const r = review({ ledger, month: "2026-08", todayIso: TODAY, fxRate: null });
     expect(r.partialDay).toBe(21);
     expect(r.compareLabel.prevMonth).toBe("전월 동기(1~21일)");
     expect(r.compareLabel.prevYear).toBe("전년 동월 동기(1~21일)");
@@ -56,7 +66,7 @@ describe("buildMonthlyReview — 동기 비교(진행 중인 달)", () => {
   });
 
   it("완결 월은 전체 월 비교 — partialDay null, 라벨에 동기 없음", () => {
-    const r = buildMonthlyReview({ ledger, month: "2026-07", todayIso: TODAY, fxRate: null });
+    const r = review({ ledger, month: "2026-07", todayIso: TODAY, fxRate: null });
     expect(r.partialDay).toBeNull();
     expect(r.compareLabel.prevMonth).toBe("전월");
     expect(r.numbers.expense).toBe(600_000);
@@ -67,7 +77,7 @@ describe("buildMonthlyReview — 동기 비교(진행 중인 달)", () => {
   });
 
   it("무지출일 전월 비교 — 전월 같은 기간(1~N일)의 무지출일과 차이를 붙인다", () => {
-    const r = buildMonthlyReview({
+    const r = review({
       ledger: [...ledger, entry({ date: "2026-07-15", amount: 1_000 }), entry({ date: "2026-07-16", amount: 1_000 })],
       month: "2026-08", todayIso: TODAY, fxRate: null
     });
@@ -77,7 +87,7 @@ describe("buildMonthlyReview — 동기 비교(진행 중인 달)", () => {
 
 describe("buildMonthlyReview — 빈 데이터", () => {
   it("기록이 없으면 hasData=false, 모든 수치 0, wins/warnings 비어 있음", () => {
-    const r = buildMonthlyReview({ ledger: [], month: "2026-06", todayIso: TODAY, fxRate: null, budgetGoals: [{ id: "b1", category: "식비", monthlyLimit: 100_000 }] });
+    const r = review({ ledger: [], month: "2026-06", todayIso: TODAY, fxRate: null, budgetGoals: [{ id: "b1", category: "식비", monthlyLimit: 100_000 }] });
     expect(r.hasData).toBe(false);
     expect(r.headline).toBe("2026년 6월 기록이 없습니다.");
     expect(r.numbers.income).toBe(0);
@@ -93,7 +103,7 @@ describe("buildMonthlyReview — 빈 데이터", () => {
   });
 
   it("다른 달에만 기록이 있어도 대상 월은 빈 달로 본다", () => {
-    const r = buildMonthlyReview({ ledger: [entry({ date: "2026-05-10", amount: 10_000 })], month: "2026-06", todayIso: TODAY, fxRate: null });
+    const r = review({ ledger: [entry({ date: "2026-05-10", amount: 10_000 })], month: "2026-06", todayIso: TODAY, fxRate: null });
     expect(r.hasData).toBe(false);
     expect(r.numbers.vsPrevMonth.expense.base).toBe(10_000);
   });
@@ -107,7 +117,7 @@ describe("buildMonthlyReview — USD 환산", () => {
       entry({ date: "2026-06-10", amount: 100_000 }),
       entry({ date: "2026-07-10", amount: 100, currency: "USD" }) // 1400원 → 140,000원 = +40%
     ];
-    const r = buildMonthlyReview({ ledger, month: "2026-07", todayIso: TODAY, fxRate: 1400 });
+    const r = review({ ledger, month: "2026-07", todayIso: TODAY, fxRate: 1400 });
     expect(r.numbers.expense).toBe(140_000);
     expect(r.topExpenses[0]).toEqual({ category: "식비", amount: 140_000, share: 100 });
     const g = r.warnings.find((w) => w.kind === "growth-top");
@@ -117,7 +127,7 @@ describe("buildMonthlyReview — USD 환산", () => {
 
   it("환율 미로드(null)면 액면 그대로 — 대시보드 공통 정책", () => {
     const ledger = [entry({ date: "2026-07-10", amount: 100, currency: "USD" })];
-    const r = buildMonthlyReview({ ledger, month: "2026-07", todayIso: TODAY, fxRate: null });
+    const r = review({ ledger, month: "2026-07", todayIso: TODAY, fxRate: null });
     expect(r.numbers.expense).toBe(100);
   });
 });
@@ -130,7 +140,7 @@ describe("buildMonthlyReview — wins/warnings", () => {
       entry({ date: "2026-07-05", amount: 300_000 }),
       entry({ date: "2026-07-06", amount: 80_000, subCategory: "교통" })
     ];
-    const r = buildMonthlyReview({
+    const r = review({
       ledger, month: "2026-07", todayIso: TODAY, fxRate: null,
       budgetGoals: [goal({ category: "식비", monthlyLimit: 500_000 }), goal({ category: "교통", monthlyLimit: 50_000 })]
     });
@@ -138,30 +148,30 @@ describe("buildMonthlyReview — wins/warnings", () => {
     expect(r.warnings.find((w) => w.kind === "budget-over")?.text).toContain("교통 예산 초과 — 80,000원 / 50,000원 (160%)");
   });
 
-  it("진행 중인 달: 경과 비율 이하 사용이면 페이스 양호, 초과면 'N일 만에' 경고", () => {
+  it("진행 중인 달: 예산 탭과 같은 computeBudgetPace로 순조/초과 예상, 이미 넘었으면 'N일 만에' 경고", () => {
     const ledger = [
       entry({ date: "2026-08-05", amount: 100_000 }), // 식비 20% vs 경과 68%
       entry({ date: "2026-08-06", amount: 90_000, subCategory: "교통" })
     ];
-    const r = buildMonthlyReview({
+    const r = review({
       ledger, month: "2026-08", todayIso: TODAY, fxRate: null,
       budgetGoals: [goal({ category: "식비", monthlyLimit: 500_000 }), goal({ category: "교통", monthlyLimit: 50_000 })]
     });
-    expect(r.wins.find((w) => w.kind === "budget-pace")?.text).toContain("식비 예산 페이스 양호 — 사용 20% (경과 68%)");
+    expect(r.wins.find((w) => w.kind === "budget-pace")?.text).toMatch(/^식비 예산 순조로움 — 월말 예상 [\d,]+원 \(한도 −\d+%\)$/);
     expect(r.warnings.find((w) => w.kind === "budget-over")?.text).toContain("21일 만에");
     expect(r.wins.find((w) => w.kind === "budget-kept")).toBeUndefined();
   });
 
   it("실질 저축률 상승은 win, 하락은 warning (전월 대비 %p)", () => {
     const base = [income("2026-06-01", 1_000_000), income("2026-07-01", 1_000_000)];
-    const up = buildMonthlyReview({
+    const up = review({
       ledger: [...base, entry({ date: "2026-06-10", amount: 500_000 }), entry({ date: "2026-07-10", amount: 300_000 })],
       month: "2026-07", todayIso: TODAY, fxRate: null
     });
     expect(up.numbers.realSavingsRate).toBeCloseTo(70);
     expect(up.numbers.prevRealSavingsRate).toBeCloseTo(50);
     expect(up.wins.find((w) => w.kind === "savings-rate-up")?.text).toContain("+20.0%p");
-    const down = buildMonthlyReview({
+    const down = review({
       ledger: [...base, entry({ date: "2026-06-10", amount: 300_000 }), entry({ date: "2026-07-10", amount: 500_000 })],
       month: "2026-07", todayIso: TODAY, fxRate: null
     });
@@ -179,7 +189,7 @@ describe("buildMonthlyReview — wins/warnings", () => {
     }
     ledger.push(entry({ date: "2026-07-10", amount: 20_000, subCategory: "교통" }));
     ledger.push(entry({ date: "2026-07-11", amount: 400_000, subCategory: "식비" }));
-    const r = buildMonthlyReview({ ledger, month: "2026-07", todayIso: TODAY, fxRate: null });
+    const r = review({ ledger, month: "2026-07", todayIso: TODAY, fxRate: null });
     expect(r.wins.find((w) => w.kind === "decrease-top")?.text).toContain("교통 지출 감소 — 20,000원");
     expect(r.warnings.find((w) => w.kind === "growth-top")?.text).toContain("식비 지출 증가 — 400,000원");
     expect(r.warnings.filter((w) => w.kind === "anomaly")).toEqual([]);
@@ -194,10 +204,10 @@ describe("buildMonthlyReview — wins/warnings", () => {
       entry({ date: "2026-06-03", amount: 10_000, subCategory: "문화", description: "넷플릭스 구독" }),
       entry({ date: "2026-07-03", amount: 15_000, subCategory: "문화", description: "넷플릭스 구독" })
     ];
-    const r = buildMonthlyReview({ ledger, month: "2026-07", todayIso: TODAY, fxRate: null, recurring });
+    const r = review({ ledger, month: "2026-07", todayIso: TODAY, fxRate: null, recurring });
     expect(r.warnings.find((w) => w.kind === "subscription-spike")?.text).toContain("구독비 급증 — 15,000원");
     // recurring 없이 description만으로는 구독으로 보지 않음 (문자열 '구독' 규칙은 카테고리 기준)
-    const r2 = buildMonthlyReview({ ledger, month: "2026-07", todayIso: TODAY, fxRate: null });
+    const r2 = review({ ledger, month: "2026-07", todayIso: TODAY, fxRate: null });
     expect(r2.warnings.find((w) => w.kind === "subscription-spike")).toBeUndefined();
   });
 });
@@ -205,7 +215,7 @@ describe("buildMonthlyReview — wins/warnings", () => {
 describe("buildMonthlyReviewMarkdown", () => {
   it("진행 중인 달은 동기 안내를 포함하고 표·잘한 점·주의·지출 TOP을 담는다", () => {
     const ledger = [income("2026-08-01", 1_000_000), entry({ date: "2026-08-10", amount: 120_000 }), entry({ date: "2026-07-10", amount: 100_000 })];
-    const r = buildMonthlyReview({ ledger, month: "2026-08", todayIso: TODAY, fxRate: null });
+    const r = review({ ledger, month: "2026-08", todayIso: TODAY, fxRate: null });
     const md = buildMonthlyReviewMarkdown(r, "2026-08-21 10:00");
     expect(md).toContain("1~21일 동기 기준");
     expect(md).toContain("| 구분 | 이번 달 | 전월 동기(1~21일) 대비 | 전년 동월 동기(1~21일) 대비 |");
@@ -214,5 +224,33 @@ describe("buildMonthlyReviewMarkdown", () => {
     expect(md).toContain("## 주의");
     expect(md).toContain("| 식비 | 120,000원 | 100.0% |");
     expect(md).toContain("## 한 줄 회고");
+  });
+});
+
+describe("buildMonthlyReview — 마지막 기록일 캡·급여 전 가드 (실장부 회귀)", () => {
+  it("오늘이 10일이어도 기록이 5일까지면 1~5일 동기로 비교하고 라벨에 밝힌다", () => {
+    const ledger = [
+      entry({ date: "2026-11-03", amount: 50_000 }),
+      entry({ date: "2026-11-05", amount: 30_000 }),
+      entry({ date: "2026-10-04", amount: 100_000 }),
+      entry({ date: "2026-10-09", amount: 500_000 }),
+      income("2026-10-25", 3_000_000),
+    ];
+    const r = buildMonthlyReview({ ledger, month: "2026-11", todayIso: "2026-11-10", fxRate: null });
+    expect(r.partialDay).toBe(5);
+    expect(r.compareLabel.prevMonth).toBe("전월 동기(1~5일 · 5일까지 기록)");
+    expect(r.numbers.vsPrevMonth.expense.base).toBe(100_000);
+  });
+
+  it("급여 전이면 실질 저축률 전월 비교를 하지 않는다 (+758%p 방지)", () => {
+    const ledger = [
+      entry({ date: "2026-11-03", amount: 50_000 }),
+      entry({ date: "2026-10-03", amount: 400_000 }),
+      income("2026-10-02", 10_000),
+      income("2026-10-25", 3_000_000),
+      income("2026-11-02", 3),
+    ];
+    const r = buildMonthlyReview({ ledger, month: "2026-11", todayIso: "2026-11-05", fxRate: null });
+    expect([...r.wins, ...r.warnings].some((w) => w.kind === "savings-rate-up" || w.kind === "savings-rate-down")).toBe(false);
   });
 });

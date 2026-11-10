@@ -240,3 +240,30 @@ describe("buildDividendPortfolio — 과거 창 배당을 현재 보유로 환�
     expect(p!.receivedTotal).toBe(6000);
   });
 });
+
+describe("buildDividendPortfolio — 실수령 기준 배당률·현재 FIFO 원가 (실장부 대조 2026-11)", () => {
+  it("주 지표는 최근 완료 3개월 실수령 × 4 — 초기 고분배 달이 12배 되어 부풀지 않는다 (추정은 참고값)", () => {
+    const trades = [buy("0167B0", "2026-04-01", 1000, 10_000_000)];
+    // 5~7월 주당 250원(고분배), 8~10월 주당 80원
+    const ledger = ["2026-05", "2026-06", "2026-07", "2026-08", "2026-09", "2026-10"].map((m) =>
+      div("0167B0", "SOL", `${m}-04`, m <= "2026-07" ? 250_000 : 80_000)
+    );
+    const p = buildDividendPortfolio({ ledger, trades, currentMonth: "2026-11" })!;
+    expect(Math.round(p.annualTotal)).toBe(80_000 * 3 * 4);
+    expect(p.yoc).toBeCloseTo(9.6, 6); // 960,000 / 10,000,000
+    expect(p.estimatedYoc).toBeCloseTo(19.8, 6); // (750k+240k)/6×12 ÷ 1,000만 — 참고값
+    expect(p.realizedWindow).toEqual({ from: "2026-08", to: "2026-10" });
+  });
+
+  it("원가는 오늘까지의 거래로 계좌별 FIFO — 이번 달 매수도 포함 (주식 탭 원가와 같은 정의)", () => {
+    const trades = [
+      buy("458730", "2026-01-02", 100, 1_000_000),
+      buy("458730", "2026-02-02", 100, 1_400_000),
+      sell("458730", "2026-06-02", 100, 1_300_000), // FIFO → 첫 lot(100만) 소진, 남은 원가 140만 (이동평균이면 120만)
+      buy("458730", "2026-11-03", 50, 600_000), // 진행 중인 달 매수
+    ];
+    const ledger = MONTHS_2026.concat(["2026-07", "2026-08", "2026-09", "2026-10"]).map((m) => div("458730", "TIGER", `${m}-02`, 1000));
+    const p = buildDividendPortfolio({ ledger, trades, currentMonth: "2026-11" })!;
+    expect(p.totalCost).toBe(2_000_000);
+  });
+});

@@ -16,6 +16,7 @@ import { buildApplySummary, type ApplyDiff } from "../utils/applySummary";
 import { useFocusTrap } from "../hooks/useFocusTrap";
 import { useModalStackEntry } from "../utils/modalStack";
 import { getGistAutoSync, getGistId, getGistToken } from "../services/gistSync";
+import { remoteText } from "../services/gas";
 
 interface RequestApplyOptions {
   /** 모달 제목 — 게이트별 문구 */
@@ -77,6 +78,7 @@ const OTHER_SETTING_LABEL: Record<string, string> = {
   dailyBudget: "하루 예산",
   investmentGoals: "투자 목표",
   dividendTrackingTicker: "배당 추적 종목",
+  dateAccountId: "데이트통장",
   targetNetWorthCurve: "목표 순자산 곡선",
   assetSnapshots: "자산 스냅샷",
   usTickers: "미국 티커 목록"
@@ -179,7 +181,7 @@ export const ApplyConfirmModal: React.FC = () => {
         </p>
         {propagatesToGist && getGistAutoSync() && getGistToken() && getGistId() && (
           <p style={{ marginTop: 0, fontSize: 12, color: "var(--warning)" }}>
-            자동 동기화가 켜져 있어 적용하면 1분 안에 Gist와 다른 기기에도 반영됩니다.
+            {remoteText("자동 동기화가 켜져 있어 적용하면 1분 안에 Gist와 다른 기기에도 반영됩니다.")}
           </p>
         )}
 

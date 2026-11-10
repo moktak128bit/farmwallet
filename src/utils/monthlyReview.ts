@@ -17,7 +17,9 @@
  */
 import type { BudgetGoal, CategoryPresets, LedgerEntry, RecurringExpense } from "../types";
 import { BUDGET_ALL_CATEGORY } from "../types";
-import { classifyLedgerFlow, toKrwAmount } from "../features/dashboard/summaryMath";
+import { classifyLedgerFlow, isBeforePayday, toKrwAmount } from "../features/dashboard/summaryMath";
+import { recordedDayCap } from "./ledgerFreshness";
+import { computeBudgetPace } from "./budgetPace";
 import { isInvestmentLossEntry } from "./category";
 import { expenseMainName } from "./categoryMerge";
 import { compareMonths } from "./monthComparison";
@@ -143,18 +145,20 @@ export function buildMonthlyReview(input: MonthlyReviewInput): MonthlyReview {
   const curMonthStr = todayIso.slice(0, 7);
   const todayDayNum = dayOf(todayIso);
   const isCurrent = month === curMonthStr;
-  const partialDay = isCurrent ? todayDayNum : null;
+  // 진행 중인 달은 오늘이 아니라 마지막 기록일까지 — 캡처를 모아 입력하므로 오늘 기준이면
+  // "−92%·무지출 7/10일·데이트비 −100%" 같은 허위 결론이 나온다 (ledgerFreshness)
+  const partialDay = isCurrent ? (recordedDayCap(ledger, month, todayIso) ?? todayDayNum) : null;
   const [y, m] = month.split("-").map(Number);
   const daysInMonth = getLastDayOfMonth(y, m);
   /** 집계 마지막 일자 — 진행 중인 달은 오늘, 완결 월은 말일 */
   const lastDay = partialDay != null ? Math.min(partialDay, daysInMonth) : daysInMonth;
   const prevMonth = shiftMonth(month, -1);
   const dayCap = partialDay;
-  const sameLabel = partialDay != null ? ` 동기(1~${partialDay}일)` : "";
+  const sameLabel = partialDay != null ? ` 동기(1~${partialDay}일${partialDay < todayDayNum ? ` · ${partialDay}일까지 기록` : ""})` : "";
   const compareLabel = {
     prevMonth: `전월${sameLabel}`,
     prevYear: `전년 동월${sameLabel}`,
-    avg3: `최근 3개월${partialDay != null ? ` 동기(1~${partialDay}일)` : ""} 평균`
+    avg3: `최근 3개월${sameLabel} 평균`
   };
 
   /** 진행 중인 달이면 전 기간을 1~N일로 잘라낸 장부 — 동기 비교용(저축률·무지출일·구독) */
@@ -231,10 +235,14 @@ export function buildMonthlyReview(input: MonthlyReviewInput): MonthlyReview {
     } else if (partialDay == null) {
       wins.push({ kind: "budget-kept", text: `${name} 예산 지킴 — ${fmtWon(spent)} / ${fmtWon(g.monthlyLimit)} (${usedPct.toFixed(0)}%)` });
     } else {
-      // 진행 중인 달: 경과일 비율 이하로 쓰고 있으면 페이스 양호 (선형 페이스 — 3-1 computeBudgetPace와 무관한 단순 판정)
-      const elapsedPct = (lastDay / daysInMonth) * 100;
-      if (usedPct <= elapsedPct) {
-        wins.push({ kind: "budget-pace", text: `${name} 예산 페이스 양호 — 사용 ${usedPct.toFixed(0)}% (경과 ${elapsedPct.toFixed(0)}%)` });
+      // 진행 중인 달: 예산 탭과 같은 computeBudgetPace(월말 예상) — 예전 자체 선형 판정은 예산 탭 "초과 예상 +94%"와
+      // 정반대로 "페이스 양호 13%(경과 33%)"를 냈다
+      const pace = computeBudgetPace(g, ledger, month, todayIso, { categoryPresets, fxRate });
+      const vs = pace.projectedVsLimitPct != null ? ` (한도 ${pace.projectedVsLimitPct >= 0 ? "+" : "−"}${Math.abs(pace.projectedVsLimitPct).toFixed(0)}%)` : "";
+      if (pace.status === "ok") {
+        wins.push({ kind: "budget-pace", text: `${name} 예산 순조로움 — 월말 예상 ${fmtWon(Math.round(pace.projectedMonthEnd))}${vs}` });
+      } else if (pace.status === "over-pace" || pace.status === "watch") {
+        warnings.push({ kind: "budget-pace", text: `${name} 예산 ${pace.status === "over-pace" ? "초과 예상" : "주의"} — 월말 예상 ${fmtWon(Math.round(pace.projectedMonthEnd))}${vs}` });
       }
     }
   }
@@ -260,7 +268,11 @@ export function buildMonthlyReview(input: MonthlyReviewInput): MonthlyReview {
   }
 
   // ── 6. 저축률 변화 ──
-  if (realSavingsRate != null && prevRealSavingsRate != null) {
+  // 급여 전이면 비교하지 않는다(summaryMath.isBeforePayday 단일 판정) — 월급 25일이면 1~N일 동기는 양쪽 다
+  // 지출만 있어 저축률이 극단값이 된다(실장부 "+758.6%p")
+  const fullPrevIncome = isCurrent ? compareMonths(ledger, month, "income", fxRate, categoryPresets, null).previousMonth : 0;
+  const beforePayday = isCurrent && isBeforePayday(income, fullPrevIncome, fullPrevIncome > 0);
+  if (!beforePayday && realSavingsRate != null && prevRealSavingsRate != null) {
     const pp = realSavingsRate - prevRealSavingsRate;
     if (pp >= SAVINGS_RATE_PP) {
       wins.push({ kind: "savings-rate-up", text: `실질 저축률 ${realSavingsRate.toFixed(1)}% — ${compareLabel.prevMonth} 대비 ${fmtPp(pp)}` });
@@ -275,7 +287,7 @@ export function buildMonthlyReview(input: MonthlyReviewInput): MonthlyReview {
     months: [shiftMonth(month, -3), shiftMonth(month, -2), prevMonth, month],
     curMonthStr,
     anomalyTargetMonth: month,
-    todayDayNum,
+    todayDayNum: partialDay ?? todayDayNum,
     categoryPresets
   });
   const down = growth.down.find((r) => !r.isNew && r.pctChange <= -DECREASE_WIN_PCT && r.cur < r.avg3);

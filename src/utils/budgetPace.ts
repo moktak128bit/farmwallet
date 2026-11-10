@@ -22,13 +22,14 @@ import type { BudgetGoal, CategoryPresets, LedgerEntry } from "../types";
 import { computeBudgetGoalSpent } from "./budgetUsage";
 import { getLastDayOfMonth, shiftMonth } from "./date";
 import { formatNumber } from "./formatter";
+import { recordedDayCap } from "./ledgerFreshness";
 
 export type BudgetPaceStatus = "ok" | "watch" | "over-pace" | "exceeded";
 
 export interface BudgetPace {
   spent: number;
   limit: number;
-  /** 1~총일수. 달이 아직 안 왔으면 0, 지났으면 총일수 */
+  /** 비교·예상 기준 경과일 — 진행 중인 달은 마지막 기록일까지(0 = 이번 달 기록 전). 달이 안 왔으면 0, 지났으면 총일수 */
   elapsedDays: number;
   totalDays: number;
   /** 오늘을 제외한 남은 일수 (총일수 − 경과일) */
@@ -60,11 +61,22 @@ const WATCH_RATIO = 0.9;
 const won = (n: number) => `${formatNumber(n)}원`;
 const signedPct = (pct: number) => `${pct >= 0 ? "+" : "−"}${Math.abs(pct).toFixed(0)}%`;
 
-/** 경과일: 보고 있는 달과 오늘(KST ISO)의 관계로 결정 */
-function elapsedDaysOf(month: string, todayIso: string, totalDays: number): number {
+/** 달력상 오늘이 몇 일째인가 (남은 일수·하루 허용액용) */
+function calendarDayOf(month: string, todayIso: string, totalDays: number): number {
   const todayMonth = todayIso.slice(0, 7);
   if (todayMonth === month) return Math.min(totalDays, Math.max(1, Number(todayIso.slice(8, 10)) || 1));
   return todayMonth < month ? 0 : totalDays;
+}
+
+/**
+ * 비교·예상에 쓰는 경과일 — 진행 중인 달은 오늘이 아니라 마지막 기록일까지(ledgerFreshness.recordedDayCap).
+ * 캡처를 모아 입력하므로 오늘이 10일이어도 기록은 5일까지일 수 있다. 오늘 기준이면 전월 1~10일(다 기록됨)과
+ * 이번 달 1~5일을 비교해 실장부에서 "전월 동기 −91%·월말 예상 116만"(실제 1~5일 기준 −62%·약 187만)이 나왔다.
+ */
+function elapsedDaysOf(month: string, todayIso: string, totalDays: number, ledger: LedgerEntry[]): number {
+  const cap = recordedDayCap(ledger, month, todayIso);
+  if (cap != null) return Math.min(totalDays, cap);
+  return calendarDayOf(month, todayIso, totalDays);
 }
 
 export function computeBudgetPace(
@@ -78,8 +90,9 @@ export function computeBudgetPace(
   const usage = { categoryPresets, fxRate };
   const [y, m] = month.split("-").map(Number);
   const totalDays = getLastDayOfMonth(y, m);
-  const elapsedDays = elapsedDaysOf(month, todayIso, totalDays);
-  const remainingDays = totalDays - elapsedDays;
+  const elapsedDays = elapsedDaysOf(month, todayIso, totalDays, ledger);
+  // 남은 일수는 달력 기준 — 아직 기록 안 된 날도 이미 지나간 날이다
+  const remainingDays = totalDays - calendarDayOf(month, todayIso, totalDays);
   /** 보고 있는 달이 이미 지났는가 (오늘이 다음 달 이후) */
   const monthDone = todayIso.slice(0, 7) > month;
   const limit = goal.monthlyLimit > 0 ? goal.monthlyLimit : 0;
@@ -117,7 +130,12 @@ export function computeBudgetPace(
     elapsedDays === 0
       ? 0
       : computeBudgetGoalSpent(goal, ledger, prevMonth, monthDone ? usage : { ...usage, dayCap: elapsedDays });
-  const prevSamePeriodLabel = monthDone ? "전월 전체" : `동기(1~${elapsedDays}일)`;
+  const calendarDay = calendarDayOf(month, todayIso, totalDays);
+  const prevSamePeriodLabel = monthDone
+    ? "전월 전체"
+    : elapsedDays < calendarDay
+      ? `동기(1~${elapsedDays}일 · ${elapsedDays}일까지 기록)`
+      : `동기(1~${elapsedDays}일)`;
 
   // ── 상태 ──
   let status: BudgetPaceStatus = "ok";

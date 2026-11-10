@@ -8,6 +8,10 @@ import React from "react";
 import { formatNumber } from "../../utils/formatter";
 import { fxBandToneColor } from "../../utils/fxBand";
 import { useFxBand } from "./FxBandHint";
+import { isGas } from "../../services/gas";
+
+/** 전 종목 시세 갱신은 개발 서버(/api/ticker-json) 전용 */
+const FULL_REFRESH_AVAILABLE = import.meta.env.DEV && !isGas();
 
 interface Props {
   fxRate: number | null;
@@ -88,15 +92,18 @@ export const StocksHeaderSection: React.FC<Props> = React.memo(function StocksHe
         >
           {isLoadingQuotes ? "갱신 중..." : "시세 조회 (보유)"}
         </button>
+        {/* 전 종목 갱신은 개발 서버의 /api/ticker-json이 있어야 동작 — GAS 웹앱·정적 배포에선 항상 실패해 숨긴다 */}
+        {FULL_REFRESH_AVAILABLE && (
         <button
           type="button"
           className="secondary"
           onClick={() => void onRefreshFull()}
           disabled={isLoadingQuotes}
-          title="data/ticker.json의 KR+US 전 종목 (개발 서버 필요). prices만 갱신"
+          title="data/ticker.json의 KR+US 전 종목 (개발 서버 전용). prices만 갱신"
         >
           {isLoadingQuotes ? "갱신 중..." : "시세 갱신 (전체)"}
         </button>
+        )}
         <button
           type="button"
           className="secondary"

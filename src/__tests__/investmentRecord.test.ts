@@ -8,6 +8,8 @@ import {
   groupByHoldingBucket,
   filterByPeriod,
   holdingRange,
+  nearestFxRate,
+  FX_HISTORY_MAX_GAP_DAYS,
 } from "../utils/investmentRecord";
 import type { StockTrade, Account } from "../types";
 
@@ -284,6 +286,21 @@ describe("buildClosedTradeRecords — USD 환율 미확보 시 fxUnreliable 플�
     expect(r[0].fxUnreliable).toBe(false);
   });
 
+  it("summarizeRecords는 fxUnreliable 기록을 합계·승패에서 뺀다 — 환율 로드 전후로 실현손익이 흔들리지 않게 (실장부 +93.8만→+40.8만 회귀)", () => {
+    const krw = [
+      t({ id: "kb", side: "buy", date: "2026-01-01", quantity: 10, totalAmount: 1000 }),
+      t({ id: "ks", side: "sell", date: "2026-02-01", quantity: 10, totalAmount: 1200 }), // +200
+    ];
+    const noFx = summarizeRecords(buildClosedTradeRecords([t(usdBuy), t(usdSell), ...krw], [acc]));
+    expect(noFx.totalPnl).toBe(200); // 왜곡값(매도대금 1,430,000 전액 이익) 미포함
+    expect(noFx.tradeCount).toBe(1);
+    expect(noFx.winCount).toBe(1);
+    expect(noFx.excludedUnreliable).toBe(1);
+    const withFx = summarizeRecords(buildClosedTradeRecords([t(usdBuy), t(usdSell), ...krw], [acc], 1300));
+    expect(withFx.excludedUnreliable).toBe(0);
+    expect(withFx.totalPnl).toBe(200 + 1100 * 1300 - 1000 * 1300);
+  });
+
   it("KRW 종목은 환율과 무관하게 항상 fxUnreliable=false", () => {
     const r = buildClosedTradeRecords(
       [
@@ -324,5 +341,27 @@ describe("buildClosedTradeRecords — 거래 환율 이상치·누락 (회귀)",
     expect(r[0].fxUnreliable).toBe(false);
     // 이력 없으면 기존처럼 현재 환율 폴백
     expect(buildClosedTradeRecords(trades, [acc], 1400)[0].realizedPnlKRW).toBe(140_000);
+  });
+
+  it("이력이 있으면 거래일에 가장 가까운 날(앞뒤 7일 이내) 환율 — 7일보다 멀면 오늘 환율로 메우지 않고 fxUnreliable", () => {
+    const trades = [
+      t({ id: "b1", side: "buy", date: "2026-01-10", ticker: "AAPL", quantity: 10, totalAmount: 1000 }),
+      t({ id: "s1", side: "sell", date: "2026-03-10", ticker: "AAPL", quantity: 10, totalAmount: 1100 }),
+    ];
+    // 매수일 이전 이력 없음 · 이틀 뒤 이력 있음 → 뒤쪽 이력도 쓴다
+    const near = buildClosedTradeRecords(trades, [acc], 1400, [{ date: "2026-01-12", rate: 1310 }, { date: "2026-03-09", rate: 1440 }]);
+    expect(near[0].realizedPnlKRW).toBe(1100 * 1440 - 1000 * 1310);
+    expect(near[0].fxUnreliable).toBe(false);
+    // 매수일과 가장 가까운 이력이 20일 떨어짐 → 환산 불가 (오늘 환율 1400 사용 안 함)
+    const far = buildClosedTradeRecords(trades, [acc], 1400, [{ date: "2026-01-30", rate: 1310 }, { date: "2026-03-10", rate: 1450 }]);
+    expect(far[0].fxUnreliable).toBe(true);
+    expect(summarizeRecords(far).excludedUnreliable).toBe(1);
+  });
+
+  it("nearestFxRate — 같은 간격이면 이전 날짜 우선, 상한 초과는 null", () => {
+    const h = [{ date: "2026-05-01", rate: 1300 }, { date: "2026-05-05", rate: 1350 }];
+    expect(nearestFxRate(h, "2026-05-03")).toBe(1300);
+    expect(nearestFxRate(h, "2026-05-04")).toBe(1350);
+    expect(nearestFxRate(h, "2026-05-20", FX_HISTORY_MAX_GAP_DAYS)).toBeNull();
   });
 });

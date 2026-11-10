@@ -1,5 +1,6 @@
 import React from "react";
 import { formatTimeAgo } from "../utils/date";
+import { remoteText } from "../services/gas";
 
 interface Props {
   latestBackupAt: string | null;
@@ -52,11 +53,11 @@ export const SyncActionBar: React.FC<Props> = ({
           variant="primary"
           label={isGistSaving ? "저장 중..." : "저장"}
           sub={gistConfigured
-            ? `로컬 ${formatTimeAgo(latestBackupAt)} · Gist ${formatTimeAgo(gistLastPushAt)}`
+            ? remoteText(`로컬 ${formatTimeAgo(latestBackupAt)} · Gist ${formatTimeAgo(gistLastPushAt)}`)
             : formatTimeAgo(latestBackupAt)}
           onClick={onSave}
           disabled={isGistSaving}
-          title={gistConfigured ? "로컬 백업과 Gist에 함께 저장" : "현재 데이터를 백업 파일로 저장"}
+          title={gistConfigured ? remoteText("로컬 백업과 Gist에 함께 저장") : "현재 데이터를 백업 파일로 저장"}
         />
         {gistConfigured && (
           <SyncBtn
@@ -64,7 +65,7 @@ export const SyncActionBar: React.FC<Props> = ({
             label="불러오기"
             sub={gistLastPullAt ? `마지막 ${formatTimeAgo(gistLastPullAt)}` : "버전 선택"}
             onClick={onGistLoad}
-            title="Gist 버전 목록에서 선택해서 불러오기"
+            title={remoteText("Gist 버전 목록에서 선택해서 불러오기")}
           />
         )}
       </div>

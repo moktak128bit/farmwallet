@@ -2,7 +2,8 @@
  * 배당 포트폴리오 카드 — 대시보드 2번 칸.
  *
  * 한 화면에서 세 가지에 답한다.
- *   ① 원금 대비 몇 %?  → 히어로: 총 배당률(연환산 ÷ 배당주 KRW 원가)
+ *   ① 원금 대비 몇 %?  → 히어로: 총 배당률(최근 완료 3개월 실수령 × 4 ÷ 현재 FIFO 원가).
+ *      주당 분배 × 현재 보유 추정치는 참고로만 — 커버드콜의 높았던 달이 12배 되어 부풀었다(10.46% vs 실수령 6%대).
  *   ② 월에 얼마?       → 히어로: 월 평균 + 최근 완료 월 실수령
  *   ③ 자라고 있나?     → 차트: 월배당 스택 막대(종목별) + 총 배당률 추이 선(우축)
  *
@@ -92,6 +93,10 @@ export const DividendPortfolioCard: React.FC<Props> = React.memo(function Divide
 
   const visibleTickers = showAll ? data.tickers : data.tickers.slice(0, 5);
   const hasPartial = data.months.some((m) => m.partial && m.total > 0);
+  const rw = data.realizedWindow;
+  const realizedLabel = rw
+    ? rw.from === rw.to ? `${Number(rw.to.slice(5, 7))}월` : `${Number(rw.from.slice(5, 7))}~${Number(rw.to.slice(5, 7))}월`
+    : "최근 3개월";
 
   return (
     <div className="card">
@@ -103,7 +108,7 @@ export const DividendPortfolioCard: React.FC<Props> = React.memo(function Divide
           </span>
         </div>
         <div className="hint" style={{ fontSize: 11 }}>
-          원가 {fmtWon(data.totalCost)} 기준 · 누적 수령 {fmtWon(data.receivedTotal)}
+          원가 {fmtWon(data.totalCost)} (오늘 기준 FIFO · 주식 탭과 같음) · 누적 수령 {fmtWon(data.receivedTotal)}
           {data.excludedCount > 0 && ` · 총계 제외 ${data.excludedCount}종목`}
         </div>
       </div>
@@ -118,9 +123,9 @@ export const DividendPortfolioCard: React.FC<Props> = React.memo(function Divide
         }}
       >
         <Hero
-          label="총 배당률 (원금 대비)"
+          label="총 배당률 (실수령 기준)"
           value={data.yoc != null ? `${data.yoc.toFixed(2)}%` : "—"}
-          sub={`연 ${fmtWon(data.annualTotal)} 기준`}
+          sub={`${realizedLabel} 실수령 × 4 = 연 ${fmtWon(data.annualTotal)}${data.estimatedYoc != null ? ` · 참고 추정 ${data.estimatedYoc.toFixed(2)}%` : ""}`}
           tone="var(--chart-income)"
         />
         <Hero
@@ -202,8 +207,9 @@ export const DividendPortfolioCard: React.FC<Props> = React.memo(function Divide
             <tr>
               <th>종목</th>
               <th className="number">원금</th>
-              <th className="number">연 배당</th>
+              <th className="number">연 배당 (실수령×4)</th>
               <th className="number">배당률</th>
+              <th className="number">참고 추정</th>
               <th className="number">누적</th>
             </tr>
           </thead>
@@ -214,7 +220,7 @@ export const DividendPortfolioCard: React.FC<Props> = React.memo(function Divide
                   <div style={{ fontWeight: 600 }}>{t.name}</div>
                   <div style={{ fontSize: 11, color: "var(--text-muted)" }}>
                     {t.ticker}
-                    {t.months < 12 && ` · ${t.months}개월 연환산`}
+                    {t.months < 12 && ` · 추정은 ${t.months}개월 창`}
                     {t.excluded === "sold" && " · 전량 매도 (총계 제외)"}
                     {t.excluded === "tooShort" && " · 관측 부족 (총계 제외)"}
                   </div>
@@ -225,6 +231,9 @@ export const DividendPortfolioCard: React.FC<Props> = React.memo(function Divide
                 </td>
                 <td className="number" style={{ fontWeight: 700, color: t.yoc != null ? "var(--chart-income)" : "var(--text-muted)" }}>
                   {t.yoc != null ? `${t.yoc.toFixed(2)}%` : "—"}
+                </td>
+                <td className="number" style={{ color: "var(--text-muted)" }} title="최근 창의 주당 분배 × 현재 보유 × 12 — 분배가 출렁이는 종목은 부풀 수 있음">
+                  {t.estYoc != null ? `${t.estYoc.toFixed(2)}%` : "—"}
                 </td>
                 <td className="number">{fmtWon(t.total)}</td>
               </tr>

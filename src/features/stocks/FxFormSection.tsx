@@ -47,6 +47,12 @@ export const FxFormSection: React.FC<FxFormSectionProps> = ({ accounts, ledger, 
     }
   }, [fxRate, form.rate]);
 
+  // 환전 대상이 될 수 없는 계좌(신용카드)·숨김 계좌는 드롭다운에서 뺀다 — 이미 고른 값은 유지
+  const selectableAccounts = useMemo(
+    () => accounts.filter((a) => a.id === form.fromAccountId || a.id === form.toAccountId || (!a.archived && a.type !== "card")),
+    [accounts, form.fromAccountId, form.toAccountId]
+  );
+
   const krwAccounts = useMemo(() => {
     return accounts.filter((a) => {
       const name = (a.name + a.id).toLowerCase();
@@ -305,7 +311,7 @@ export const FxFormSection: React.FC<FxFormSectionProps> = ({ accounts, ledger, 
               required
             >
               <option value="">선택</option>
-              {accounts.map((a) => (
+              {selectableAccounts.map((a) => (
                 <option key={a.id} value={a.id}>
                   {a.id} {a.name ? `(${a.name})` : ""}
                 </option>
@@ -335,7 +341,7 @@ export const FxFormSection: React.FC<FxFormSectionProps> = ({ accounts, ledger, 
                 required
               >
                 <option value="">선택</option>
-                {accounts.map((a) => (
+                {selectableAccounts.map((a) => (
                   <option key={a.id} value={a.id}>
                     {a.id} {a.name ? `(${a.name})` : ""}
                   </option>
@@ -362,7 +368,7 @@ export const FxFormSection: React.FC<FxFormSectionProps> = ({ accounts, ledger, 
                 required
               >
                 <option value="">선택</option>
-                {accounts.map((a) => (
+                {selectableAccounts.map((a) => (
                   <option key={a.id} value={a.id}>
                     {a.id} {a.name ? `(${a.name})` : ""}
                   </option>

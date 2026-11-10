@@ -59,8 +59,12 @@ describe("BudgetDashboardSection — 'N/M일차' 오늘 일자는 KST", () => {
 });
 
 describe("useInsightsData — 무지출일 분모(totalDays)는 KST 오늘까지", () => {
+  // 집계 구간 끝 = min(KST 오늘, 마지막 기록일) — 기록 공백은 무지출이 아님(ledgerFreshness).
+  // 그래서 8/19·8/20 수입 기록을 둬 KST 경계만 결과를 가르게 한다(8/20은 KST 자정 전엔 미래 기록이라 무시).
   const ledger: LedgerEntry[] = [
     { id: "e1", date: "2026-08-01", kind: "expense", category: "지출", subCategory: "식비", description: "", amount: 10_000 },
+    { id: "i1", date: "2026-08-19", kind: "income", category: "수입", subCategory: "기타수입", description: "", amount: 1_000 },
+    { id: "i2", date: "2026-08-20", kind: "income", category: "수입", subCategory: "기타수입", description: "", amount: 1_000 },
   ];
   const run = () =>
     renderHook(() =>
@@ -82,7 +86,7 @@ describe("useInsightsData — 무지출일 분모(totalDays)는 KST 오늘까지
     freeze(AFTER_KST_MIDNIGHT);
     const prev = renderHook(() =>
       useInsightsData(
-        [{ ...ledger[0], date: "2026-07-01" }], [], [], [], [], "2026-07", undefined, undefined, null, null, [], [{ ...ledger[0], date: "2026-07-01" }]
+        [{ ...ledger[0], date: "2026-07-01" }], [], [], [], [], "2026-07", undefined, undefined, null, null, [], [{ ...ledger[0], date: "2026-07-01" }, ledger[2]]
       )
     ).result.current;
     expect(prev.totalDays).toBe(31);

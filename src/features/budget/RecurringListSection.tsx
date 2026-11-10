@@ -22,6 +22,7 @@ import { isCoarsePointer } from "../../utils/pointer";
 import { buildRestoreById, showDeleteUndoToast } from "../../utils/undoToast";
 import { useAppStore } from "../../store/appStore";
 import { formatNumber } from "../../utils/formatter";
+import { findLastActualPayment, findStoppedRecurring } from "../../utils/recurringAlert";
 
 const freqLabel: Record<Recurrence, string> = {
   monthly: "매월",
@@ -68,6 +69,15 @@ export const RecurringListSection: React.FC<Props> = React.memo(function Recurri
     setPreviewEntries(null);
     previewOccurrencesRef.current = null;
   }, [recurring]);
+
+  // 등록값 vs 최근 실제 결제 — 낡은 등록(금액·결제일·계좌)과 중지 추정을 드러낸다. 데이터는 바꾸지 않는다.
+  const actualById = useMemo(() => {
+    const m = new Map<string, ReturnType<typeof findLastActualPayment>>();
+    for (const r of recurring) m.set(r.id, findLastActualPayment(r, ledger));
+    return m;
+  }, [recurring, ledger]);
+  const stoppedById = useMemo(() => new Map(findStoppedRecurring(recurring, ledger).map((x) => [x.recurring.id, x.lastPaid])), [recurring, ledger]);
+  const accountName = (id: string | undefined) => (id ? accounts.find((a) => a.id === id)?.name ?? id : "계좌 없음");
 
   const formatNextRun = (item: RecurringExpense): string => {
     const start = item.startDate || "";
@@ -299,6 +309,7 @@ export const RecurringListSection: React.FC<Props> = React.memo(function Recurri
             <th>출금 계좌</th>
             <th>입금 계좌</th>
             <th>다음 예정</th>
+            <th>최근 실제 결제</th>
             <th>작업</th>
           </tr>
         </thead>
@@ -514,6 +525,20 @@ export const RecurringListSection: React.FC<Props> = React.memo(function Recurri
                   formatNextRun(r)
                 )}
               </td>
+              <td style={{ fontSize: 12 }}>
+                {(() => {
+                  const a = actualById.get(r.id);
+                  const stopped = stoppedById.get(r.id);
+                  if (!a) return <span style={{ color: "var(--text-faint)" }}>기록 없음</span>;
+                  return (
+                    <>
+                      <div>{a.date.slice(5).replace("-", "/")} · {formatNumber(a.amount)}원 · {accountName(a.accountId)}</div>
+                      {stopped && <div style={{ color: "var(--warning)", fontWeight: 600 }}>중지 추정 — 최근 2주기 결제 없음</div>}
+                      {a.diffs.length > 0 && <div style={{ color: "var(--warning)" }}>등록값과 다름: {a.diffs.join(" · ")}</div>}
+                    </>
+                  );
+                })()}
+              </td>
               <td>
                 <div style={{ display: "flex", gap: 4 }}>
                   <button type="button" className="secondary" onClick={() => onRequestEdit(r)} title="상단 폼에서 수정">
@@ -528,7 +553,7 @@ export const RecurringListSection: React.FC<Props> = React.memo(function Recurri
           ))}
           {recurring.length === 0 && (
             <tr>
-              <td colSpan={9} style={{ textAlign: "center" }}>
+              <td colSpan={10} style={{ textAlign: "center" }}>
                 등록된 고정 지출이 없습니다 — 위 폼에서 구독·고정 지출을 추가해 보세요.
               </td>
             </tr>

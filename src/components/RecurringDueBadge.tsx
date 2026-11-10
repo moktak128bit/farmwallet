@@ -5,6 +5,9 @@ import { showDeleteUndoToast } from "../utils/undoToast";
 import { useAppStore } from "../store/appStore";
 import { RecurringDuePopover } from "./RecurringDuePopover";
 
+/** 헤더 밖(대시보드 "확인할 일" 칩)에서 미등록 체크리스트를 열 때 쓰는 이벤트 — 모달 상태는 배지가 소유 */
+export const OPEN_RECURRING_DUE_EVENT = "farmwallet:open-recurring-due";
+
 interface Props {
   recurring: RecurringExpense[];
   ledger: LedgerEntry[];
@@ -30,6 +33,17 @@ export const RecurringDueBadge: React.FC<Props> = ({ recurring, ledger, onClick,
   useEffect(() => {
     if (missing.length === 0) setOpen(false);
   }, [missing.length]);
+
+  // 대시보드 칩 → 같은 체크리스트 열기 (반영 경로를 하나로 유지)
+  useEffect(() => {
+    const open = () => {
+      if (missing.length === 0) return;
+      if (onChangeLedger) setOpen(true);
+      else onClick?.();
+    };
+    window.addEventListener(OPEN_RECURRING_DUE_EVENT, open);
+    return () => window.removeEventListener(OPEN_RECURRING_DUE_EVENT, open);
+  }, [missing.length, onChangeLedger, onClick]);
 
   // 생성된 항목 일괄 삽입(setDataWithHistory 1회) + [실행 취소] 토스트(삽입한 id만 제거 — 이후 변경 보존)
   const handleApply = useCallback(

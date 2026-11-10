@@ -5,7 +5,8 @@
  * 계산 본문은 utils/accountTimeline의 순수 함수 — 여기서는 useMemo로 감싸기만 한다.
  */
 import { useMemo } from "react";
-import type { Account, LedgerEntry, Loan, StockPrice, StockTrade } from "../types";
+import type { Account, HistoricalDailyClose, LedgerEntry, Loan, StockPrice, StockTrade } from "../types";
+import type { FxPoint } from "../utils/portfolioHistory";
 import { computeAccountTimelineRows, type AccountTimelineRow } from "../utils/accountTimeline";
 
 export function useAccountTimelineRows(params: {
@@ -18,11 +19,14 @@ export function useAccountTimelineRows(params: {
   currentMonth: string;
   monthRange: string[];
   loans: Loan[];
+  /** 일별 종가·환율 — 지난 월말을 그 시점 시가로 평가 (없으면 원가 대체, stockAtCost에 표시) */
+  historicalDailyCloses?: HistoricalDailyClose[];
+  fxHistory?: FxPoint[];
 }): AccountTimelineRow[] {
-  const { accounts, ledger, trades, adjustedPrices, fxRate, currentMonth, monthRange, loans } = params;
+  const { accounts, ledger, trades, adjustedPrices, fxRate, currentMonth, monthRange, loans, historicalDailyCloses, fxHistory } = params;
 
   return useMemo(
-    () => computeAccountTimelineRows({ accounts, ledger, trades, adjustedPrices, fxRate, currentMonth, monthRange, loans }),
-    [monthRange, ledger, trades, adjustedPrices, accounts, fxRate, currentMonth, loans]
+    () => computeAccountTimelineRows({ accounts, ledger, trades, adjustedPrices, fxRate, currentMonth, monthRange, loans, historicalDailyCloses, fxHistory }),
+    [monthRange, ledger, trades, adjustedPrices, accounts, fxRate, currentMonth, loans, historicalDailyCloses, fxHistory]
   );
 }

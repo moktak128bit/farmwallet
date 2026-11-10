@@ -274,3 +274,27 @@ describe("candidateToRecurringPrefill", () => {
     expect(candidateToRecurringPrefill(c).category).toBe("구독비");
   });
 });
+
+describe("detectRecurringCandidates — 실장부 오탐 회귀", () => {
+  it("설명이 달마다 달라도 소분류가 같으면 한 흐름 — 해지 추정으로 잘못 나오지 않는다 (유튜브)", () => {
+    const ledger = [
+      ...series(["2026-04-11", "2026-05-11", "2026-06-11"], 14900, { description: "Google YouTube", detailCategory: "유튜브" }),
+      ...series(["2026-07-11", "2026-08-11"], 14900, { description: "유튜브 프리미엄", detailCategory: "유튜브" }),
+    ];
+    const [c] = detectRecurringCandidates(ledger, [], TODAY);
+    expect(c.occurrences).toBe(5);
+    expect(c.status).toBe("active");
+  });
+
+  it("제목이 오타·다른 이름이어도 같은 주기·중분류에 금액 ±10%면 등록됨 (유트브·학자금대출)", () => {
+    const ledger = series(MONTHLY_DATES, 3928, { subCategory: "대출상환", description: "한국장학재단", detailCategory: "" });
+    const [c] = detectRecurringCandidates(ledger, [rec({ title: "학자금대출", category: "대출상환", amount: 4059 })], TODAY);
+    expect(c.alreadyRegistered).toBe(true);
+  });
+
+  it("매주 주유는 구독·고정비 후보가 아니다 (휘발유 48,000)", () => {
+    const weekly = ["2026-07-04", "2026-07-11", "2026-07-18", "2026-07-25", "2026-08-01", "2026-08-08"];
+    const ledger = series(weekly, 48000, { subCategory: "유류교통비", detailCategory: "휘발유", description: "휘발유" });
+    expect(detectRecurringCandidates(ledger, [], TODAY)).toHaveLength(0);
+  });
+});

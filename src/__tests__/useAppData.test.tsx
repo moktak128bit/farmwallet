@@ -84,43 +84,14 @@ describe("useAppData", () => {
     consoleSpy.mockRestore();
   });
 
-  it("ledger 비어 있으면 /api/restore-latest-backup 호출", async () => {
-    mocked.loadData.mockReturnValue(makeData()); // ledger 빈 상태
-
-    const fetchSpy = vi.fn(() =>
-      Promise.resolve({ ok: true, json: () => Promise.resolve(null) } as Response)
-    );
+  it("빈 장부를 로드해도 파일 백업을 자동 적용하지 않음", async () => {
+    mocked.loadData.mockReturnValue(makeData());
+    const fetchSpy = vi.fn();
     globalThis.fetch = fetchSpy as typeof fetch;
-
-    renderHook(() => useAppData());
-    await waitFor(() =>
-      expect(fetchSpy).toHaveBeenCalledWith(
-        "/api/restore-latest-backup",
-        expect.objectContaining({ signal: expect.anything() })
-      )
-    );
-  });
-
-  it("백업이 ledger를 포함하면 saveData + reload로 복원", async () => {
-    mocked.loadData
-      .mockReturnValueOnce(makeData()) // 첫 호출 (빈 데이터)
-      .mockReturnValueOnce(
-        makeData({
-          ledger: [{ id: "B1", date: "2026-01-01", kind: "income", category: "x", description: "n", amount: 1 }],
-        })
-      );
-
-    const backupBody = makeData({
-      ledger: [{ id: "B1", date: "2026-01-01", kind: "income", category: "x", description: "n", amount: 1 }],
-    });
-    globalThis.fetch = vi.fn(() =>
-      Promise.resolve({ ok: true, json: () => Promise.resolve(backupBody) } as Response)
-    ) as typeof fetch;
-
-    renderHook(() => useAppData());
-    await waitFor(() => expect(mocked.saveData).toHaveBeenCalled());
-    await waitFor(() => expect(useAppStore.getState().data.ledger).toHaveLength(1));
-    expect(useAppStore.getState().data.ledger[0].id).toBe("B1");
+    const { result } = renderHook(() => useAppData());
+    await waitFor(() => expect(result.current.isLoading).toBe(false));
+    expect(mocked.saveData).not.toHaveBeenCalled();
+    expect(fetchSpy).not.toHaveBeenCalledWith("/api/restore-latest-backup", expect.anything());
   });
 
   it("ledger가 이미 있으면 백업 복원 시도하지 않음", async () => {

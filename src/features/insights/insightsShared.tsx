@@ -29,6 +29,33 @@ export const W = (n: number) => formatNumber(n) + "원";
 export const Pct = (n: number) => (n >= 0 ? "+" : "") + n.toFixed(1) + "%";
 export const SD = (a: number, b: number, f = 0): number => (b !== 0 ? a / b : f);
 
+type ChangeKind = "none" | "new" | "gone" | "surge" | "up" | "down" | "flat";
+/**
+ * 두 금액의 변화를 사람이 믿을 수 있는 말로 — 기준이 작을 때 "+4,501%" 같은 비율을 내세우지 않는다.
+ * - 이전 0 → "새로 발생", 이번 0 → "없음"
+ * - 3배 이상 → 비율 대신 "급증 a → b"
+ * - 차이가 1만원 미만이거나 이전의 10% 미만 → "비슷"
+ */
+export function describeChange(prev: number, cur: number, minAbs = 10000): { kind: ChangeKind; pct: number | null; diff: number; text: string } {
+  const diff = cur - prev;
+  const sign = diff > 0 ? "+" : diff < 0 ? "−" : "±";
+  if (prev <= 0 && cur <= 0) return { kind: "none", pct: null, diff, text: "기록 없음" };
+  if (prev <= 0) return { kind: "new", pct: null, diff, text: `새로 발생 (${F(cur)}원)` };
+  if (cur <= 0) return { kind: "gone", pct: null, diff, text: `없음 (이전 ${F(prev)}원)` };
+  if (Math.abs(diff) < Math.max(minAbs, prev * 0.1)) return { kind: "flat", pct: null, diff, text: `비슷 (${sign}${F(Math.abs(diff))}원)` };
+  if (cur >= prev * 3) return { kind: "surge", pct: null, diff, text: `급증 ${F(prev)}원 → ${F(cur)}원` };
+  const pct = Math.round(diff / prev * 100);
+  return { kind: diff > 0 ? "up" : "down", pct, diff, text: `${pct > 0 ? "+" : ""}${pct}% (${F(prev)}원 → ${F(cur)}원)` };
+}
+
+/** 지출처로 내세울 수 없는 설명 — 빈 값·"기타"·"지출"·분류명 그대로 */
+const MEANINGLESS_DESC = new Set(["", "기타", "지출", "수입", "이체", "-"]);
+export function isMeaningfulDesc(desc: string | undefined | null, ...categoryNames: (string | undefined)[]): boolean {
+  const d = (desc ?? "").trim();
+  if (MEANINGLESS_DESC.has(d)) return false;
+  return !categoryNames.some((c) => c && c.trim() === d);
+}
+
 /* ================================================================== */
 /*  Shared UI                                                          */
 /* ================================================================== */
@@ -185,7 +212,12 @@ export function CT({ active, payload, label }: CTProps) {
 export interface SubInsight {
   sub: string; cat: string; total: number; count: number; avg: number;
   monthTrend: "up" | "down" | "flat"; mom: number; peak: string; share: number;
+  /** 발생월 평균 — 지출이 있었던 완결 월만의 평균(0원 달 제외). activeMonths/doneMonths와 함께 표기할 것 */
   monthAvg: number; maxSingle: number; maxSingleDesc: string;
+  /** 완결 월 중 지출이 있었던 달 수 / 완결 월 수 */
+  activeMonths: number; doneMonths: number;
+  /** 직전 두 완결 월 비교 문구(describeChange) — "2026.10 vs 2026.09: +32% (…)" */
+  trendLabel: string;
   streakUp: number;
   topDesc: string; topDescAmt: number;
   comment: string;
@@ -207,20 +239,12 @@ export interface IncSubInsight {
   realShare: number | null;
   /** 정기성 — 완결월의 50% 이상 & 3개월 이상 발생. 추세 표시는 이 경우에만 의미. */
   recurring: boolean;
-  comment: string;
 }
 
 export interface DateSubInsight {
   sub: string; total: number; count: number; avg: number; share: number;
   maxSingle: number; maxSingleDesc: string;
   avgPerVisit: number;
-  comment: string;
-}
-
-export interface InvestSubInsight {
-  sub: string; amount: number; count: number; avg: number; share: number;
-  monthAvg: number;
-  monthTrend: "up" | "down" | "flat"; mom: number;
   comment: string;
 }
 
@@ -288,7 +312,16 @@ export interface D {
   dateTxCount: number;
   incByCat: [string, number][];
   trades: { name: string; buyCount: number; sellCount: number; buyTotal: number; sellTotal: number }[];
-  subs: { name: string; count: number; total: number; avg: number }[];
+  /**
+   * 구독 서비스(설명 문구별). total·count·avg는 기간 필터 기준.
+   * monthly = 최근 완료 12개월(전체 장부) 결제 합 ÷ 그 창의 기록 개월 수 — 해지·일회성 결제가 월 비용을 부풀리지 않게.
+   * lastMonth = 마지막 결제 달, active = 최근 2개 완료월(또는 이번 달) 안에 결제가 있음.
+   */
+  subs: { name: string; count: number; total: number; avg: number; monthly: number; lastMonth: string; active: boolean }[];
+  /** 구독 월 비용 = 최근 완료 12개월 구독 결제 합 ÷ 창 개월 수 (= Σ subs.monthly) */
+  subMonthly: number;
+  /** subMonthly 계산 창 ("YYYY-MM" ~ "YYYY-MM", 개월 수) */
+  subWindow: { start: string; end: string; months: number } | null;
   largeExp: { date: string; desc: string; sub: string; amount: number }[];
   topTx: { date: string; desc: string; cat: string; sub: string; amount: number }[];
   expBySubCat: { cat: string; sub: string; amount: number; count: number }[];
@@ -311,10 +344,18 @@ export interface D {
   weekendTot: number;
   weekdayTot: number;
   topDates: { date: string; total: number; items: { desc: string; amount: number }[] }[];
-  score: { total: number; grade: string; comment: string };
-  /** 선택 월의 직전 달 합계. partialDay = 선택 월이 진행 중인 이번 달이면 오늘 일자 — 전월도 1~N일 동기만 합산 */
+  /**
+   * 기록 신선도 — 진행 중인 달의 비교는 오늘이 아니라 마지막 기록일까지만(utils/ledgerFreshness).
+   * dayCap: 이번 달 비교 기준 일자(0 = 이번 달 기록 전), lastDate: 오늘 이하 최근 기록일, daysSince: 그 후 경과일.
+   */
+  recorded: { lastDate: string | null; daysSince: number | null; dayCap: number | null };
+  /** 선택 월의 직전 달 합계. partialDay = 선택 월이 진행 중인 이번 달이면 마지막 기록 일자 — 전월도 1~N일 동기만 합산 */
   prev: { income: number; expense: number; salary: number; realExpense: number; partialDay: number | null } | null;
   avgMonthExp: number;
+  /** 기간 내 투자손실(재테크 순집계 대상) — 실질 지출(realFlows)에는 포함돼 장부 지출과 차이 나는 몫 */
+  investLossInPeriod: number;
+  /** 기간 내 대출 유입(수입 성격 "부채") — 재테크 재원 설명용 */
+  loanInflow: number;
 
   incByGroup: { name: string; value: number; items: [string, number][] }[];
   investBySub: { sub: string; amount: number; count: number }[];
@@ -323,8 +364,14 @@ export interface D {
   subInsights: SubInsight[];
   incSubInsights: IncSubInsight[];
   dateSubInsights: DateSubInsight[];
-  investSubInsights: InvestSubInsight[];
   realIncome: number;
+  /**
+   * 실질 수입에는 들어가지만 장부 수입(pIncome — 퇴직연금·투자수익 제외)에는 없는 수입 = 투자수익 등.
+   * realIncome = pIncome − settlementTotal − tempIncomeTotal − carryOverIncome + incomeOutsideLedger 가 항상 성립하도록 잔차로 계산.
+   */
+  incomeOutsideLedger: number;
+  /** 장부 수입에 들어 있지만 실질 수입 계산에서 통째로 빠지는 이월·원래 보유 자산·퇴직연금 */
+  carryOverIncome: number;
   realExpense: number;
   settlementTotal: number;
   originalAssets: number;
@@ -343,7 +390,8 @@ export interface D {
   passiveIncome: number;
   expToIncRatio: number;
   dailyAvgExp: number;
-  netCashFlow: number;
+  /** 근로소득 잉여 = 근로소득 − 지출 (재테크는 빼지 않는다 — 재테크는 대출·용돈 등 다른 재원으로도 채워진다) */
+  salarySurplus: number;
   incomeStability: number | null;
   investReturnRate: number;
   subTotal: number;
@@ -352,7 +400,10 @@ export interface D {
   variableExpense: number;
   discretionaryExpense: number;
 
-  netWorthByMonth: { month: string; label: string; total: number; income: number; expense: number; savings: number }[];
+  /** total = 그 달 순자산(시가 평가 가능한 만큼). changeValue = 변화 비교용 같은 기준 값(netWorthChangeBasis) — 증감·페이스·ETA는 이걸로 */
+  netWorthByMonth: { month: string; label: string; total: number; changeValue: number; income: number; expense: number; savings: number }[];
+  /** changeValue 기준 — market: 모든 점이 시가, cost: 원가 평가 구간이 섞여 전 구간 매입원가 기준 */
+  netWorthChangeBasis: "market" | "cost";
   accountBalances: { name: string; type: string; balance: number }[];
   /** 자산 유형별 배분 — 계좌 순가치(잔액 − account.debt) 양수만, 합계 = 대차 총자산 (computeBalanceSheet와 같은 규칙) */
   assetAllocation: { name: string; value: number }[];
@@ -361,8 +412,10 @@ export interface D {
     biggestSpendDay: { date: string; total: number } | null;
     mostFrugalMonth: { month: string; expense: number } | null;
     mostSpendMonth: { month: string; expense: number } | null;
+    /** patternStats.longestZeroStreak와 같은 값(단일 소스) */
     longestZeroStreak: number;
     weekendVsWeekday: { weekend: number; weekday: number };
+    /** 기록일(무지출일 분모와 같은 일수)당 장부 기록 건수 — 지출·수입·이체 모두 포함 */
     avgTxPerDay: number;
     topStore: { name: string; total: number; count: number } | null;
     monthOverMonthGrowth: number | null;

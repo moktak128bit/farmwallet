@@ -17,7 +17,10 @@
 import React, { lazy, Suspense, useEffect, useMemo, useState } from "react";
 import { BudgetAlertWidget } from "../features/dashboard/BudgetAlertWidget";
 import { InvestmentSummaryCard } from "../features/dashboard/InvestmentSummaryCard";
-import { MonthlySummaryCards } from "../features/dashboard/MonthlySummaryCards";
+import { DashboardGlance } from "../features/dashboard/DashboardGlance";
+import { computeInvestmentTotals, computeMonthPace, nearestLoanMaturity } from "../features/dashboard/glanceMath";
+import { findOverdueRecurring } from "../utils/recurringAlert";
+import { buildFxHistory, fxAsOf } from "../utils/portfolioHistory";
 import { ExpenseIncomeCompareCard } from "../features/dashboard/ExpenseIncomeCompareCard";
 import { NetWorthTrendChart } from "../features/dashboard/NetWorthTrendChart";
 import { CmaBalanceTrendCard } from "../features/dashboard/CmaBalanceTrendCard";
@@ -47,7 +50,7 @@ import { formatKRW, formatKrwCompact } from "../utils/formatter";
 import { buildDividendGrowth, resolveTrackedTickers } from "../utils/dividendGrowth";
 import { buildDividendPortfolio } from "../utils/dividendPortfolio";
 import { useAccountTimelineRows } from "../hooks/useAccountTimelineRows";
-import { buildAdjustedPrices, buildTimelineMonthRange } from "../utils/accountTimeline";
+import { buildAdjustedPrices, buildTimelineMonthRange, netWorthChangeSeries } from "../utils/accountTimeline";
 import type {
   Account,
   LedgerEntry,
@@ -56,8 +59,9 @@ import type {
 } from "../types";
 import {
   computeAccountBalances,
-  computeBalanceAtDateForAccounts,
+  computeAccountValuesAtDate,
   computeBalanceSheet,
+  computeLoanBalancesById,
   computePositions
 } from "../calculations";
 import { BalanceSheetStrip } from "../components/BalanceSheetStrip";
@@ -69,7 +73,8 @@ import {
   getMonthEndDate,
   shiftMonth,
 } from "../utils/date";
-import { isUSDStock } from "../utils/finance";
+import { canonicalTickerForMatch, isUSDStock } from "../utils/finance";
+import { latestRecordedDate } from "../utils/ledgerFreshness";
 const LazyPortfolioDashboardCharts = lazy(() =>
   import("../features/stocks/PortfolioDashboardCharts").then((m) => ({ default: m.PortfolioDashboardCharts }))
 );
@@ -165,48 +170,90 @@ export const DashboardView: React.FC<Props> = (props) => {
     fxRate,
   ]);
 
-  /** 매월 15일·월말 스냅샷 날짜 (오늘 이전만) */
+  /** 일별 환율 이력 — fxRateAtTrade 없는 USD 매도를 거래일 환율로 환산(주식 탭과 같은 소스).
+   *  없으면 현재 환율로 환산돼 실현손익이 날마다 흔들린다. */
+  const fxHistory = useMemo(
+    () => buildFxHistory(storeData.historicalDailyFx, storeData.marketEnvSnapshots),
+    [storeData.historicalDailyFx, storeData.marketEnvSnapshots]
+  );
+
+  /** 매월 15일·월말 스냅샷 날짜 (오늘 이전만) + 마지막 점 = 오늘(현재 시세 — 계좌 탭과 같은 값) */
   const balanceSnapshotDates = useMemo(() => {
     const out: string[] = [];
     monthRange.forEach((month) => {
       const d15 = `${month}-15`;
       const dEnd = getMonthEndDate(month);
-      if (d15 <= today) out.push(d15);
-      if (dEnd <= today) out.push(dEnd);
+      if (d15 < today) out.push(d15);
+      if (dEnd < today) out.push(dEnd);
     });
+    out.push(today);
     return out.sort();
   }, [monthRange, today]);
 
-  /** 계좌별 잔액 스냅샷 (매월 15·월말): 그 시점 현금+주식평가금+USD환산. 가격은 해당 일자 이전 시세 사용, 없으면 매입원가로 평가 */
+  /** 일별 종가 인덱스(canonical ticker → 날짜 오름차순) — 지난 스냅샷을 그날 시가로 평가 */
+  const historicalDailyCloses = storeData.historicalDailyCloses;
+  const closesByTicker = useMemo(() => {
+    const m = new Map<string, Array<{ date: string; close: number; currency?: string }>>();
+    for (const c of historicalDailyCloses ?? []) {
+      const t = canonicalTickerForMatch(c.ticker);
+      if (!t || !c.date || !(Number(c.close) > 0)) continue;
+      const arr = m.get(t);
+      if (arr) arr.push(c);
+      else m.set(t, [c]);
+    }
+    for (const arr of m.values()) arr.sort((a, b) => a.date.localeCompare(b.date));
+    return m;
+  }, [historicalDailyCloses]);
+
+  /** 계좌별 잔액 스냅샷 (매월 15·월말 + 오늘): 계좌 순가치(현금+주식평가+USD환산−계좌 부채).
+   *  total = 양수 계좌 합(총자산 — 계좌 탭 대차와 같은 정의, 대출 미차감).
+   *  지난 점은 그날 종가·환율로, 종가가 없는 종목만 원가 — atCost=원가 대체 금액(라벨용).
+   *  (예전엔 오늘 갱신된 시세가 'updatedAt ≤ 과거 날짜'에 걸려 전부 원가로 대체되고, 카드 잔액을 부채 차감 없이 더했다) */
   const accountBalanceSnapshots = useMemo(() => {
     if (balanceSnapshotDates.length === 0 || accounts.length === 0) return [];
     return balanceSnapshotDates.map((dateStr) => {
-      const pricesAsOfDate = adjustedPrices.filter((p) => {
-        if (!p.updatedAt) return false;
-        return p.updatedAt.slice(0, 10) <= dateStr;
+      const isToday = dateStr === today;
+      const fxAt = isToday ? fxRate : (fxAsOf(fxHistory, dateStr, fxRate) ?? fxRate);
+      let prices = adjustedPrices;
+      if (!isToday) {
+        const fromCloses = new Set<string>();
+        const closePrices: StockPrice[] = [];
+        for (const [ticker, arr] of closesByTicker) {
+          let c: (typeof arr)[number] | null = null;
+          for (const x of arr) {
+            if (x.date > dateStr) break;
+            c = x;
+          }
+          if (!c) continue;
+          const usd = c.currency === "USD" || (c.currency !== "KRW" && isUSDStock(ticker));
+          if (usd && !(fxAt && fxAt > 0)) continue;
+          fromCloses.add(ticker);
+          closePrices.push({ ticker, price: usd ? c.close * (fxAt as number) : c.close, currency: "KRW", updatedAt: c.date });
+        }
+        prices = [
+          ...closePrices,
+          ...adjustedPrices.filter((p) => !!p.updatedAt && p.updatedAt.slice(0, 10) <= dateStr && !fromCloses.has(canonicalTickerForMatch(p.ticker))),
+        ];
+      }
+      const { byAccount, stockAtCost } = computeAccountValuesAtDate(accounts, ledger, trades, dateStr, prices, {
+        fxRate: fxAt ?? null,
+        priceFallback: "cost",
       });
       const row: Record<string, number | string> = {
         date: dateStr,
-        label: dateStr.slice(5, 7) + "-" + dateStr.slice(8, 10)
+        label: dateStr.slice(5, 7) + "-" + dateStr.slice(8, 10),
       };
       let total = 0;
-      accounts.forEach((account) => {
-        const bal = computeBalanceAtDateForAccounts(
-          accounts,
-          ledger,
-          trades,
-          dateStr,
-          new Set([account.id]),
-          pricesAsOfDate,
-          { fxRate: fxRate ?? null, priceFallback: "cost" }
-        );
-        row[account.id] = bal;
-        total += bal;
-      });
+      for (const account of accounts) {
+        const v = byAccount.get(account.id) ?? 0;
+        row[account.id] = v;
+        if (v > 0) total += v;
+      }
       row.total = total;
+      row.atCost = stockAtCost;
       return row;
     });
-  }, [balanceSnapshotDates, accounts, ledger, trades, adjustedPrices, fxRate]);
+  }, [balanceSnapshotDates, accounts, ledger, trades, adjustedPrices, fxRate, fxHistory, closesByTicker, today]);
 
   /** 근로소득(월급·수당·상여) 키 — 인사이트와 동일한 단일 소스. 수입 카드·추이·비교·저축률이 공유.
    *  이 키가 지정되면 정산·용돈·배당 등 비근로 유입은 "수입"에서 제외된다. */
@@ -228,10 +275,13 @@ export const DashboardView: React.FC<Props> = (props) => {
     [ledger, fxRate, currentMonth]
   );
 
-  /** 누적 실현손익: 매도 건 FIFO 실현손익 합계 (KRW, 거래시점 환율 — 투자기록 카드·리포트와 동일 정의) */
-  const totalRealizedPnl = useMemo(() => {
-    return summarizeRecords(buildClosedTradeRecords(trades, accounts, fxRate ?? undefined)).totalPnl;
-  }, [trades, accounts, fxRate]);
+
+  /** 누적 실현손익: 매도 건 FIFO 실현손익 합계 (KRW, 거래시점 환율 — 투자기록 카드·리포트와 동일 정의).
+   *  환율을 확정할 수 없는 기록(fxUnreliable)은 summarizeRecords가 빼고 건수를 돌려준다. */
+  const { totalRealizedPnl, excludedUnreliable } = useMemo(() => {
+    const summary = summarizeRecords(buildClosedTradeRecords(trades, accounts, fxRate ?? undefined, fxHistory));
+    return { totalRealizedPnl: summary.totalPnl, excludedUnreliable: summary.excludedUnreliable };
+  }, [trades, accounts, fxRate, fxHistory]);
 
   const balances = useMemo(
     () => computeAccountBalances(accounts, ledger, trades),
@@ -286,26 +336,36 @@ export const DashboardView: React.FC<Props> = (props) => {
     fxRate,
     currentMonth,
     monthRange,
-    loans
+    loans,
+    historicalDailyCloses: storeData.historicalDailyCloses,
+    fxHistory
   });
 
-  /** 목표 ETA용 월별 순자산(KRW) — InvestmentSummaryCard 최종 총자산 목표 행 */
-  const netWorthSeriesKrw = useMemo(
-    () => accountTimelineRows.map((row) => ({ month: row.month, value: row.total })),
-    [accountTimelineRows]
-  );
+  /** 순자산 변화용 월별 시계열(KRW) — 목표 ETA 페이스·첫 화면 스파크라인·전월 대비가 공유.
+   *  지난 월말이 원가로 평가된 구간이 섞이면 전 구간을 원가 기준으로 맞춘다(netWorthChangeSeries) —
+   *  안 그러면 평가손익 전체가 이번 달 변화로 몰린다. */
+  const netWorthChange = useMemo(() => netWorthChangeSeries(accountTimelineRows), [accountTimelineRows]);
+  // 마지막 점은 지금 순자산(시가)으로 맞춘다 — 변화량(페이스·증감)은 같은 기준, 목표까지 남은 금액은 현재 시가 기준
+  const netWorthSeriesKrw = useMemo(() => {
+    const { series } = netWorthChange;
+    const lastRow = accountTimelineRows[accountTimelineRows.length - 1];
+    if (!lastRow || series.length === 0) return series;
+    const offset = lastRow.total - series[series.length - 1].value;
+    return offset === 0 ? series : series.map((p) => ({ month: p.month, value: p.value + offset }));
+  }, [netWorthChange, accountTimelineRows]);
 
   /** 순자산 추이: accountTimelineRows에서 month, total 추출 (만원 단위) */
   const netWorthTrendData = useMemo(() => {
-    if (accountTimelineRows.length === 0) return [] as Array<{ month: string; value: number; asset: number; debt: number; pension: number }>;
-    return accountTimelineRows.map((row) => ({
+    if (accountTimelineRows.length === 0) return [] as Array<{ month: string; value: number; asset: number; debt: number; pension: number; changeValue: number }>;
+    return accountTimelineRows.map((row, i) => ({
       month: String(row.month),
       value: Math.round(Number(row.total) / 10000),
+      changeValue: Math.round(netWorthChange.series[i].value / 10000),
       asset: Math.round(Number(row.asset) / 10000),
       debt: Math.round(Number(row.debt) / 10000),
       pension: Math.round(Number(row.pension) / 10000)
     }));
-  }, [accountTimelineRows]);
+  }, [accountTimelineRows, netWorthChange]);
 
   const cmaAccount = useMemo(() => accounts.find((a) => a.id === "CMA") ?? null, [accounts]);
 
@@ -318,12 +378,54 @@ export const DashboardView: React.FC<Props> = (props) => {
   /** 급여 전 판정 — 요약 카드·전월 대비 카드·섹션 요약이 같은 값을 쓴다 */
   const beforePayday = isBeforePayday(monthlySummary.income, prevMonthIncome, allTimeSummary.income > 0);
 
+  /** 마지막 기록일 — 캡처를 모아 입력하므로 '오늘'과 다를 수 있다. 첫 화면 KPI가 어느 날까지의 기록인지 밝힌다. */
+  const lastRecordDate = useMemo(() => latestRecordedDate(ledger), [ledger]);
+
+  /** 첫 화면(한눈에 보기) 값 — 상세 카드와 같은 계산(glanceMath)을 부모에서 1회 */
+  const monthPace = useMemo(
+    () => computeMonthPace(ledger, currentMonth, today, categoryPresets, fxRate),
+    [ledger, currentMonth, today, categoryPresets, fxRate]
+  );
+  const investmentTotals = useMemo(
+    () => computeInvestmentTotals({ accounts, ledger, trades, balances, positions, fxRate }),
+    [accounts, ledger, trades, balances, positions, fxRate]
+  );
+  const nextLoan = useMemo(
+    () => nearestLoanMaturity(loans, computeLoanBalancesById(loans, ledger, today)),
+    [loans, ledger, today]
+  );
+  const recurringExpenses = storeData.recurringExpenses;
+  const recurringMissing = useMemo(
+    () => findOverdueRecurring(recurringExpenses ?? [], ledger).filter((i) => !i.alreadyLogged).length,
+    [recurringExpenses, ledger]
+  );
+
   /** 접힌 섹션 줄의 대표 숫자 셋 — 접힌 상태 자체가 요약이 되게 */
   const unrealizedNet = useMemo(() => {
     const u = computeUnrealizedPL(positions, fxRate);
     return u.unrealizedGain - u.unrealizedLoss;
   }, [positions, fxRate]);
-  const assetsSummary = `순자산 ${formatKrwCompact(balanceSheet.netWorth)}원 · 총자산 ${formatKrwCompact(balanceSheet.totalAssets)}원 · 평가손익 ${unrealizedNet >= 0 ? "+" : "−"}${formatKrwCompact(Math.abs(unrealizedNet))}원`;
+  /** 보유 중인데 시세가 없는 종목 수 — positions는 priceFallback:"cost"라 시세가 없으면 평가손익이 0으로
+   *  보인다("평가손익 +0원"). 미반영 종목을 세어 0을 사실처럼 표시하지 않는다(시세 미로드 = 중립 표기). */
+  const { openPositionCount, unpricedCount } = useMemo(() => {
+    const priced = new Set<string>();
+    for (const p of adjustedPrices) {
+      if (typeof p.price === "number" && Number.isFinite(p.price) && p.price > 0) priced.add(canonicalTickerForMatch(p.ticker));
+    }
+    let open = 0;
+    let unpriced = 0;
+    for (const p of positions) {
+      if (!(p.quantity > 0)) continue;
+      open++;
+      if (!priced.has(canonicalTickerForMatch(p.ticker))) unpriced++;
+    }
+    return { openPositionCount: open, unpricedCount: unpriced };
+  }, [positions, adjustedPrices]);
+  const unrealizedLabel =
+    openPositionCount > 0 && unpricedCount === openPositionCount
+      ? "평가손익 시세 불러오는 중"
+      : `평가손익 ${Math.round(unrealizedNet) === 0 ? "" : unrealizedNet > 0 ? "+" : "−"}${formatKrwCompact(Math.abs(unrealizedNet))}원${unpricedCount > 0 ? ` (시세 없는 ${unpricedCount}종목 제외)` : ""}`;
+  const assetsSummary = `순자산 ${formatKrwCompact(balanceSheet.netWorth)}원 · 총자산 ${formatKrwCompact(balanceSheet.totalAssets)}원 · ${unrealizedLabel}`;
   const spendingSummary = `지출 ${formatKRW(Math.round(monthlySummary.expense))} · 재테크 ${formatKRW(Math.round(monthlySummary.investing))} · ${beforePayday ? "급여 전" : `수지 ${formatKRW(Math.round(monthlySummary.income - monthlySummary.expense))}`}`;
   const dividendsSummary = dividendPortfolio
     ? `12개월 배당 ${formatKrwCompact(dividendPortfolio.received12)}원 · 월 배당 ${formatKrwCompact(dividendPortfolio.monthlyAvg)}원${dividendPortfolio.yoc != null ? ` · 배당률 ${dividendPortfolio.yoc.toFixed(2)}%` : ""}`
@@ -334,40 +436,29 @@ export const DashboardView: React.FC<Props> = (props) => {
 
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: 28 }}>
-      {/* ── 핵심: 항상 펼침 — 네 숫자(지출·수지·순자산·총부채) → 전월 대비 | 배당 요약 → 투자 자산 요약. 상세는 아래 섹션 ── */}
+      {/* ── 첫 화면: 질문 3열(이번 달 얼마 썼나 · 내 자산은 · 투자·배당은) + 확인할 일. 상세는 아래 접이식 섹션 ── */}
       {show("summary") && (
-        <MonthlySummaryCards monthlySummary={monthlySummary} bs={balanceSheet} beforePayday={beforePayday} />
-      )}
-
-      {(show("monthCompare") || (show("dividendPortfolio") && !!dividendPortfolio)) && (
-        <div className="dashboard-two-col" style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 16 }}>
-          {show("monthCompare") && (
-            <ExpenseIncomeCompareCard
-              ledger={ledger}
-              month={currentMonth}
-              fxRate={fxRate}
-              categoryPresets={categoryPresets}
-              salaryKeys={salaryKeys}
-              beforePayday={beforePayday}
-            />
-          )}
-          {show("dividendPortfolio") && dividendPortfolio && (
-            <DividendPortfolioCard data={dividendPortfolio} compact />
-          )}
-        </div>
-      )}
-
-      {show("investmentSummary") && (
-        <InvestmentSummaryCard
-          accounts={accounts}
-          ledger={ledger}
-          trades={trades}
-          balances={balances}
-          positions={positions}
-          fxRate={fxRate}
-          netWorthSeries={netWorthSeriesKrw}
-          netWorth={balanceSheet.netWorth}
-          variant="summary"
+        <DashboardGlance
+          today={today}
+          lastRecordDate={lastRecordDate}
+          monthExpense={monthlySummary.expense}
+          monthIncome={monthlySummary.income}
+          monthInvesting={monthlySummary.investing}
+          beforePayday={beforePayday}
+          pace={monthPace}
+          bs={balanceSheet}
+          // 평행이동 전 시계열 — 첫 화면은 "시작(실제) + 증가 = 지금(시가)"이 맞아야 하고,
+          // 마지막 점(원가)과 지금의 차이를 평가손익으로 따로 밝힌다(DashboardGlance)
+          netWorthSeries={netWorthChange.series}
+          netWorthBasis={netWorthChange.basis}
+          nextLoan={nextLoan}
+          invest={investmentTotals}
+          allUnpriced={openPositionCount > 0 && unpricedCount === openPositionCount}
+          unpricedCount={unpricedCount}
+          unrealizedPnl={openPositionCount > 0 && unpricedCount === openPositionCount ? null : unrealizedNet}
+          excludedUnreliable={excludedUnreliable}
+          dividend={dividendPortfolio}
+          recurringMissing={recurringMissing}
         />
       )}
 
@@ -386,7 +477,8 @@ export const DashboardView: React.FC<Props> = (props) => {
               fxRate={fxRate}
               netWorthSeries={netWorthSeriesKrw}
               netWorth={balanceSheet.netWorth}
-              variant="details"
+              unpricedCount={unpricedCount}
+              fxHistory={fxHistory}
             />
           )}
           {show("investmentPerformance") && (
@@ -401,7 +493,7 @@ export const DashboardView: React.FC<Props> = (props) => {
             </Suspense>
           )}
 
-          {show("netWorthTrend") && <NetWorthTrendChart data={netWorthTrendData} />}
+          {show("netWorthTrend") && <NetWorthTrendChart data={netWorthTrendData} changeBasis={netWorthChange.basis} />}
 
           {show("assetComposition") && (
             <AssetCompositionCard
@@ -471,8 +563,18 @@ export const DashboardView: React.FC<Props> = (props) => {
       )}
 
       {/* ── 이번 달 소비·현금흐름 (기본 접힘, 접힌 줄에 이번 달 지출) ── */}
-      {anyShown(["topExpenses", "monthlyTrend", "investmentBreakdown", "monthPace", "salaryTimer", "cashFlow", "cashFlowProjection", "spendingCalendar", "budgetAlert"]) && (
+      {anyShown(["monthCompare", "topExpenses", "monthlyTrend", "investmentBreakdown", "monthPace", "salaryTimer", "cashFlow", "cashFlowProjection", "spendingCalendar", "budgetAlert"]) && (
         <DashboardSection id="spending" title="이번 달 소비·현금흐름" summary={spendingSummary}>
+          {show("monthCompare") && (
+            <ExpenseIncomeCompareCard
+              ledger={ledger}
+              month={currentMonth}
+              fxRate={fxRate}
+              categoryPresets={categoryPresets}
+              salaryKeys={salaryKeys}
+              beforePayday={beforePayday}
+            />
+          )}
           {(show("topExpenses") || show("monthlyTrend")) && (
             <div className="dashboard-two-col" style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 16 }}>
               {show("topExpenses") && (

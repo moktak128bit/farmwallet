@@ -11,6 +11,8 @@
  * fxRate·positions·prices처럼 여러 영역이 공유하는 상태/메모는 이 페이지가 소유한다.
  */
 import React, { lazy, Suspense, useMemo, useState, useCallback, useEffect, useRef } from "react";
+import { useFxRateInfoValue } from "../context/FxRateContext";
+import { dayChangePerShare } from "../features/stocks/dayPnl";
 import { StockDetailModal } from "../components/StockDetailModal";
 import { FxFormSection } from "../features/stocks/FxFormSection";
 import { FxHistorySection } from "../features/stocks/FxHistorySection";
@@ -57,12 +59,11 @@ import { computePositions } from "../calculations";
 import { buildClosedTradeRecords, summarizeRecords } from "../utils/investmentRecord";
 import { buildFxHistory } from "../utils/portfolioHistory";
 import { useAppStore } from "../store/appStore";
-import { fetchYahooQuotes } from "../yahooFinanceApi";
 import { isUSDStock, canonicalTickerForMatch } from "../utils/finance";
 import { toKrwByRate } from "../utils/currency";
 import { newIdWithPrefix } from "../utils/id";
 import { getTodayKST } from "../utils/date";
-import { isDividendEntryLoose } from "../utils/categoryMatch";
+import { isDividendEntryLoose, isInterestOverDividend } from "../utils/categoryMatch";
 import { parseAmount } from "../utils/parseAmount";
 import { toast } from "react-hot-toast";
 import { blocksToCsv, type ReportBlock } from "../utils/reportExport";
@@ -131,15 +132,11 @@ export const StocksView: React.FC<Props> = ({
       return [];
     }
   });
-  const [fxRate, setFxRate] = useState<number | null>(propFxRate);
-  const [fxUpdatedAt, setFxUpdatedAt] = useState<string | null>(null);
-
-  // props에서 전달받은 환율 업데이트
-  useEffect(() => {
-    if (propFxRate !== null) {
-      setFxRate(propFxRate);
-    }
-  }, [propFxRate]);
+  // 환율 단일 소스 = FxRateContext (계좌 탭·대시보드와 같은 숫자). 예전엔 이 탭이 따로 조회한 환율을
+  // 자체 상태로 들고 있어 계좌 탭과 17원 차이가 났고, 같은 거래의 실현손익·양도세가 탭마다 달랐다.
+  const fxInfo = useFxRateInfoValue();
+  const fxRate = fxInfo.rate ?? propFxRate;
+  const fxUpdatedAt = fxInfo.fetchedAt;
   // 탭 관리
   const [activeTab, setActiveTab] = useState<"stocks" | "portfolio" | "compare" | "fx" | "etf">("stocks");
   const [selectedPosition, setSelectedPosition] = useState<PositionWithPrice | null>(null);
@@ -258,7 +255,7 @@ export const StocksView: React.FC<Props> = ({
     const dayPnl = positionsWithPrice.reduce((sum, p) => {
       if (!p.hasQuote) return sum; // 시세 없음 행의 잔존 change가 일일손익을 오염시키지 않게
       const priceInfo = latestPriceByCanonicalTicker.get(canonicalTickerForMatch(p.ticker));
-      const change = priceInfo?.change ?? 0;
+      const change = dayChangePerShare(priceInfo);
       const dayPnlPos = change * p.quantity;
       return sum + toKRW(p, dayPnlPos);
     }, 0);
@@ -277,8 +274,9 @@ export const StocksView: React.FC<Props> = ({
   );
 
   const totalDividend = useMemo(() => {
-    // 분류 단일소스(categoryMatch.isDividendEntryLoose) — cat/sub 정확 매칭 + description fallback
-    const isDividend = (l: LedgerEntry) => l.kind === "income" && isDividendEntryLoose(l);
+    // 분류 단일소스(categoryMatch) — 배당 탭과 같은 규칙: loose 배당이되 "이자 우선"에 걸리면 이자.
+    // description fallback만 쓰면 "이자 - OK저축은행 배당" 같은 예금 이자 2건이 배당으로 섞였다(52.8만 vs 실제 52.3만).
+    const isDividend = (l: LedgerEntry) => l.kind === "income" && isDividendEntryLoose(l) && !isInterestOverDividend(l);
     const toKrw = (l: LedgerEntry) => toKrwByRate(l.amount, l.currency, fxRate);
     return ledger.filter(isDividend).reduce((s, l) => s + toKrw(l), 0);
   }, [ledger, fxRate]);
@@ -295,35 +293,14 @@ export const StocksView: React.FC<Props> = ({
       pnl: summary.totalPnl,
       returnRate: summary.totalCost > 0 ? summary.totalPnl / summary.totalCost : 0,
       tradeCount: summary.tradeCount,
+      excluded: summary.excludedUnreliable,
     };
   }, [trades, accounts, fxRate, historicalDailyFx, marketEnvSnapshots]);
 
 
-  /** 환율 갱신. 갱신된 환율을 반환해 호출부가 stale 클로저 없이 즉시 사용 가능 (실패 시 null) */
-  const updateFxRate = useCallback(async (): Promise<number | null> => {
-    try {
-      const res = await fetchYahooQuotes(["USDKRW=X"]);
-      const r = res[0];
-      if (r?.price) {
-        setFxRate(r.price);
-        setFxUpdatedAt(r.updatedAt ?? new Date().toISOString());
-        return r.price;
-      }
-    } catch (err) {
-      console.warn("환율 조회 실패", err);
-    }
-    return null;
-  }, []);
-
-  // (removed) "기존 달러 거래 cashImpact 원화 재계산" 자동 effect.
-  // 현재 환율(fxRate)로 과거 거래를 재계산해 사용자의 역사적 환율 기록(fxRateAtTrade)을
-  // 덮어쓰던 코드. 새 거래는 submitTradeFromForm에서 올바른 cashImpact를 직접 저장.
-
-  React.useEffect(() => {
-    updateFxRate().catch((err) => {
-      console.warn("환율 갱신 실패:", err);
-    });
-  }, [updateFxRate]);
+  /** 시세 갱신 경로(useQuoteRefresh)가 환율이 필요할 때 — 표시 환율은 컨텍스트 값을 그대로 쓰고
+   *  여기서는 지금 값을 돌려줄 뿐 별도 상태를 만들지 않는다(두 환율 공존 방지). */
+  const updateFxRate = useCallback(async (): Promise<number | null> => fxRate ?? null, [fxRate]);
 
   /** 전체 매매 기록을 CSV로 내보내기 (날짜 최신순). */
   const exportTradesCsv = useCallback(() => {
@@ -599,6 +576,7 @@ export const StocksView: React.FC<Props> = ({
             realizedPnl={realized.pnl}
             realizedReturnRate={realized.returnRate}
             realizedTradeCount={realized.tradeCount}
+            realizedExcludedCount={realized.excluded}
           />
 
           {/* 프리셋 버튼 영역 */}

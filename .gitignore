@@ -26,6 +26,7 @@ backups/**
 # Personal user data — Gist sync가 데이터 채널을 담당하므로 git는 코드만 추적
 # ticker.json/ticker-backup.json/ticker.md는 공개 참조 데이터이므로 tracked 유지
 data/farmwallet-data.json
+data/old/
 data/app-data.json
 data/app-data-tables.json
 data/전체계좌.csv
@@ -51,3 +52,9 @@ posts_inventory.csv
 
 # Claude Code 임시 워크트리
 .claude/worktrees/
+
+# GAS 운영 프로젝트(gas/) — 장부 데이터·Drive ID·스크립트 ID·빌드 산출물은 공개 저장소에 올리지 않는다
+gas/.clasp.json
+gas/Config.js
+gas/Seed.html
+gas/index.html

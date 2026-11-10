@@ -19,6 +19,7 @@ import type { AccountBalanceRow } from "../../types";
 import { formatKRW, formatUSD } from "../../utils/formatter";
 import { isUSDStock } from "../../utils/finance";
 import { AllocationXrayCard } from "./AllocationXrayCard";
+import { STOCK_SERIES_COLORS } from "./chartPalette";
 
 interface PositionWithPrice {
   accountId: string;
@@ -105,7 +106,7 @@ export const PortfolioChartsSection: React.FC<PortfolioChartsSectionProps> = ({
                 }] : [])
               ];
               
-              const colors = ["#0ea5e9", "#6366f1", "#f43f5e", "#10b981", "#f59e0b", "#8b5cf6", "#ec4899", "#14b8a6", "#64748b"];
+              const colors = STOCK_SERIES_COLORS;
               
               return (
                 <ResponsiveContainer width="100%" height="100%" minHeight={300} minWidth={0}>
@@ -116,7 +117,7 @@ export const PortfolioChartsSection: React.FC<PortfolioChartsSectionProps> = ({
                       cx="50%"
                       cy="50%"
                       outerRadius={80}
-                      fill="#8884d8"
+                      fill="var(--chart-series-a)"
                       dataKey="value"
                       label={({ percent }) => percent ? `${(percent * 100).toFixed(1)}%` : "0%"}
                       labelLine={false}
@@ -198,7 +199,7 @@ export const PortfolioChartsSection: React.FC<PortfolioChartsSectionProps> = ({
               const accountData = [...withPositions, ...cashOnly].filter(d => d.value > 0);
               
               const totalAsset = accountData.reduce((sum, d) => sum + d.value, 0);
-              const colors = ["#f59e0b", "#10b981", "#0ea5e9", "#6366f1", "#f43f5e"];
+              const colors = STOCK_SERIES_COLORS;
               
               return (
                 <ResponsiveContainer width="100%" height="100%" minHeight={300} minWidth={0}>
@@ -210,7 +211,7 @@ export const PortfolioChartsSection: React.FC<PortfolioChartsSectionProps> = ({
                       cy="50%"
                       innerRadius={60}
                       outerRadius={80}
-                      fill="#8884d8"
+                      fill="var(--chart-series-a)"
                       dataKey="value"
                       label={({ percent }) => percent ? `${(percent * 100).toFixed(1)}%` : "0%"}
                       labelLine={false}

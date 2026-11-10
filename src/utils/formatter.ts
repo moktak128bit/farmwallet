@@ -58,8 +58,10 @@ export const formatNumber = (value?: number | null, locale: string = "ko-KR"): s
 export const formatKrwCompact = (value: number): string => {
   if (typeof value !== "number" || Number.isNaN(value) || !Number.isFinite(value)) return "0";
   if (maskAmounts) return MASK_DOTS;
-  const sign = value < 0 ? "-" : "";
   const abs = Math.abs(value);
+  // 반올림 후 0이면 부호를 붙이지 않는다 — 잔액 -0.4원이 "-0원"으로 보이던 문제(계좌별 잔액 '토스증권 -0원')
+  if (Math.round(abs) === 0) return "0";
+  const sign = value < 0 ? "-" : "";
   if (abs < 10_000) return sign + Math.round(abs).toLocaleString("ko-KR");
   if (abs < 1_000_000) {
     const man = Math.round(abs / 1_000) / 10; // 소수 1자리
@@ -91,8 +93,10 @@ export const formatDecimal = (
 
 export const formatUSD = (value: number, options?: FormatOptions): string => {
   if (typeof value !== "number" || Number.isNaN(value) || !Number.isFinite(value)) return "$0.000";
-  // 음수는 "-$1,234.567" 형태 (기존 "$-1,234.567"·"$-5.500" 표기 교정)
-  const sign = value < 0 ? "-" : "";
+  // 음수는 "-$1,234.567" 형태 (기존 "$-1,234.567"·"$-5.500" 표기 교정).
+  // 부호는 표시 자릿수로 반올림한 뒤 정한다 — 부동소수 잔여(-0.0001)가 "-$0.000"로 보이지 않게.
+  const digits = options?.exact ? (options.maxDecimals ?? 4) : 3;
+  const sign = value < 0 && Number(Math.abs(value).toFixed(digits)) !== 0 ? "-" : "";
   if (maskAmounts) return `${sign}$${MASK_DOTS}`;
   if (options?.exact) return `${sign}$${trimDecimals(Math.abs(value), options.maxDecimals ?? 4)}`;
   const formatted = Math.abs(value).toFixed(3);

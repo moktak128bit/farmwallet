@@ -99,15 +99,12 @@ export function useTheme() {
   const [theme, setTheme] = useState<"light" | "dark">("light");
 
   useEffect(() => {
+    // 기본은 라이트 — 기기 다크 모드를 따르지 않는다(사용자 결정 2026-11-10). 직접 다크를 고른 경우만 다크.
     const saved = localStorage.getItem(STORAGE_KEYS.THEME) as "light" | "dark" | null;
     if (saved) {
       setTheme(saved);
       document.documentElement.classList.toggle("dark", saved === "dark");
       applyThemeColor(saved === "dark");
-    } else if (window.matchMedia("(prefers-color-scheme: dark)").matches) {
-      setTheme("dark");
-      document.documentElement.classList.add("dark");
-      applyThemeColor(true);
     }
 
     // 고대비 모드 초기화

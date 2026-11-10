@@ -86,6 +86,62 @@ describe("useGistSync", () => {
     useUIStore.getState().setGistConflict(null);
   });
 
+  it("같은 탭에서 처음 Gist를 연결하면 자동 동기화 상태를 즉시 다시 읽음", async () => {
+    mocked.getGistAutoSync.mockReturnValue(false);
+    const { result } = renderHook(() => useGistSync(getEmptyData(), vi.fn()));
+    expect(result.current.autoSyncEnabled).toBe(false);
+    mocked.getGistAutoSync.mockReturnValue(true);
+    await act(async () => { window.dispatchEvent(new CustomEvent(gistSync.GIST_CONFIG_CHANGE_EVENT)); });
+    expect(result.current.autoSyncEnabled).toBe(true);
+  });
+
+  it("파일 복구 후 첫 자동 pull을 막고 새 장부를 수동 업로드함", async () => {
+    const imported = makeData(9876);
+    const onApply = vi.fn();
+    const { result, rerender } = renderHook(({ d, disabled }) => useGistSync(d, onApply, { disabled }), {
+      initialProps: { d: getEmptyData(), disabled: true },
+    });
+    act(() => { result.current.markLocalImport(); });
+    expect(gistSync.getGistLastPushedHash()).toBe("");
+    await act(async () => { rerender({ d: imported, disabled: false }); });
+    expect(onApply).not.toHaveBeenCalled();
+    expect(mocked.loadFromGist).not.toHaveBeenCalled();
+    await act(async () => { await result.current.manualPush(); });
+    expect(mocked.saveToGistWithRetry).toHaveBeenCalledWith(toUserDataJson(imported), expect.anything());
+    expect(mocked.setGistLastPushAt).toHaveBeenCalled();
+  });
+
+  it("처음 불러온 파일이 원격과 같으면 충돌 없이 업로드함", async () => {
+    const imported = makeData(9876);
+    mocked.getGistVersions.mockResolvedValue([{ sha: "remote", committedAt: "2026-10-23T00:00:00Z", url: "u" }]);
+    mocked.loadFromGist.mockResolvedValue({ dataJson: toUserDataJson(imported), updatedAt: "2026-10-23T00:00:00Z" });
+    const { result, rerender } = renderHook(({ d, disabled }) => useGistSync(d, vi.fn(), { disabled }), {
+      initialProps: { d: getEmptyData(), disabled: true },
+    });
+    act(() => { result.current.markLocalImport(); });
+    await act(async () => { rerender({ d: imported, disabled: false }); });
+    await act(async () => { await result.current.manualPush(); });
+    expect(useUIStore.getState().gistConflict).toBeNull();
+    expect(mocked.saveToGistWithRetry).toHaveBeenCalledWith(toUserDataJson(imported), expect.anything());
+  });
+
+  it("복구한 장부와 원격이 다르면 자동 덮어쓰기 대신 업로드 전 비교함", async () => {
+    const imported = makeData(9876);
+    const remote = makeData(100);
+    mocked.getGistVersions.mockResolvedValue([{ sha: "remote", committedAt: "2026-10-23T00:00:00Z", url: "u" }]);
+    mocked.loadFromGist.mockResolvedValue({ dataJson: toUserDataJson(remote), updatedAt: "2026-10-23T00:00:00Z" });
+    const onApply = vi.fn();
+    const { result, rerender } = renderHook(({ d, disabled }) => useGistSync(d, onApply, { disabled }), {
+      initialProps: { d: getEmptyData(), disabled: true },
+    });
+    act(() => { result.current.markLocalImport(); });
+    await act(async () => { rerender({ d: imported, disabled: false }); });
+    await act(async () => { await result.current.manualPush(); });
+    expect(onApply).not.toHaveBeenCalled();
+    expect(mocked.saveToGistWithRetry).not.toHaveBeenCalled();
+    expect(useUIStore.getState().gistConflict?.pendingLocalDataJson).toBe(toUserDataJson(imported));
+  });
+
   it("초기 마운트 시 원격이 더 새로우면 자동 pull", async () => {
     mocked.getGistVersions.mockResolvedValue([
       { sha: "abc", committedAt: "2026-04-20T01:00:00Z", url: "https://api.github.com/gists/x/abc" },

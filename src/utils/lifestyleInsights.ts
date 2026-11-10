@@ -3,6 +3,7 @@ import { classifyLedgerFlow, toKrwAmount } from "../features/dashboard/summaryMa
 import { classifyExpenseNature } from "./fixedExpense";
 import { expenseMainName } from "./categoryMerge";
 import { getTodayKST, parseIsoLocal, shiftMonth } from "./date";
+import { daysSinceLastRecord as daysSinceLastRecordAny, recordedDayCap } from "./ledgerFreshness";
 import { computeIncomeNatureKeys } from "./incomeClassification";
 import { isInvestmentPnlEntry } from "./category";
 
@@ -130,7 +131,8 @@ export function buildLifestyleInsights({ ledger, accounts = [], categoryPresets,
     if (subscription) bucket.subscription += amount;
     bucket.records.push({ entry, amount, main, detail, vehicle, subscription });
   }
-  const partialDay = targetMonth === today.slice(0, 7) ? Number(today.slice(8, 10)) : null;
+  // 진행 중인 달의 "1~N일 기록" — 오늘이 아니라 마지막 기록일까지 (utils/ledgerFreshness). 이번 달 기록 전이면 0
+  const partialDay = recordedDayCap(ledger, targetMonth, today);
   const current = byMonth.get(targetMonth) ?? emptyMonth();
   // Monthly headline costs must describe a finished calendar month, never MTD spending.
   const completedMonth = targetMonth < today.slice(0, 7) ? targetMonth : shiftMonth(today.slice(0, 7), -1);
@@ -140,7 +142,7 @@ export function buildLifestyleInsights({ ledger, accounts = [], categoryPresets,
   const fuelAverage3 = fuelReferenceCount === 3 && !missingFx
     ? fuelReferenceMonths.reduce((sum, month) => sum + byMonth.get(month)!.fuel, 0) / 3 : null;
   const latestRecord = valid.filter(entry => entry.date.slice(0, 7) === targetMonth).map(entry => entry.date).sort().at(-1) ?? null;
-  const daysSinceLastRecord = partialDay != null && latestRecord ? partialDay - Number(latestRecord.slice(8, 10)) : null;
+  const daysSinceLastRecord = partialDay != null ? daysSinceLastRecordAny(ledger, today) : null;
   const months = Array.from({ length: 12 }, (_, i) => shiftMonth(targetMonth, i - 11));
   const monthly = months.map(month => ({ month, recorded: byMonth.has(month), partial: month === today.slice(0, 7), ...byMonth.get(month) ?? emptyMonth() }));
   // Planning references use only prior calendar months with records, never the partial current month.

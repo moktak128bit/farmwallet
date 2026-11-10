@@ -8,12 +8,13 @@ import React, { useEffect, useMemo, useRef, useState } from "react";
 import { toast } from "react-hot-toast";
 import { Copy, Trash2 } from "lucide-react";
 import type { Account, CategoryPresets, LedgerEntry } from "../../types";
-import { formatShortDate, formatUSD, formatKRW, formatNumber } from "../../utils/formatter";
+import { formatShortDate, formatUSD, formatKRW, formatNumber, isAmountMasked } from "../../utils/formatter";
 import { ledgerEntryGross, type LedgerDisplayRow } from "../../utils/ledgerHelpers";
 import { isCoarsePointer } from "../../utils/pointer";
 import { isCreditPayment } from "../../utils/category";
 import { useAppStore } from "../../store/appStore";
 import { useLedgerColumnResize } from "./useLedgerColumnResize";
+import { STORAGE_KEYS } from "../../constants/config";
 import { useFxRateValue } from "../../context/FxRateContext";
 import { toKrwByRate } from "../../utils/currency";
 import { validateDate } from "../../utils/validation";
@@ -46,10 +47,35 @@ export type LedgerSortKey =
 export type LedgerSortState = { key: LedgerSortKey; direction: "asc" | "desc" };
 
 /** 출금/입금 셀에 표시할 계좌별 금액·잔액 맵 (부모 memo에서 계산) */
-type BalanceAfterMap = Map<
-  string,
-  { from?: { amount: number; balance: number }; to?: { amount: number; balance: number } }
->;
+import type { BalanceCell } from "./balanceAfter";
+type BalanceAfterMap = Map<string, { from?: BalanceCell; to?: BalanceCell }>;
+
+/** 좁은 화면에서 남기는 열 — 0 날짜 · 2 중분류 · 4 상세내역 · 9 금액 · 10 작업 */
+const NARROW_VISIBLE_COLS = new Set([0, 2, 4, 9, 10]);
+const NARROW_QUERY = "(max-width: 640px)";
+
+/** 뷰포트가 좁은지(≤640px) — 회전·창 크기 변화에 반응 */
+function useNarrowViewport(): boolean {
+  const [narrow, setNarrow] = useState(() => typeof window !== "undefined" && typeof window.matchMedia === "function" && window.matchMedia(NARROW_QUERY).matches);
+  useEffect(() => {
+    if (typeof window === "undefined" || typeof window.matchMedia !== "function") return;
+    const mq = window.matchMedia(NARROW_QUERY);
+    const on = () => setNarrow(mq.matches);
+    on();
+    mq.addEventListener?.("change", on);
+    return () => mq.removeEventListener?.("change", on);
+  }, []);
+  return narrow;
+}
+
+/** 입·출금 셀의 금액·잔액 — 셀이 계산된 통화 그대로. USD는 소수 2자리 (원화 잔액에 $를 붙이지 않는다) */
+function formatBalanceCell(n: number, currency: BalanceCell["currency"]): string {
+  if (currency === "KRW") return formatKRW(Math.round(n));
+  if (isAmountMasked()) return formatUSD(n);
+  const abs = Math.abs(n);
+  const sign = n < 0 && abs >= 0.005 ? "-" : "";
+  return `${sign}$${abs.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+}
 
 const PAGE_SIZE = 50;
 
@@ -170,52 +196,28 @@ export const LedgerTable: React.FC<Props> = React.memo(function LedgerTable({
     return m;
   }, [filteredLedger, showDailySummary, ledgerSort.key, fxRate]);
 
-  // 컬럼 너비 상태 (localStorage에서 로드; 10개 = 데이터 9 + 작업 1: 할인 전·할인·최종)
+  // 컬럼 너비 상태 (localStorage에서 로드; 11칸 = 데이터 10 비율 + 작업 자리표시 1 — 작업 열은 px 고정)
   const [columnWidths, setColumnWidths] = useState<number[]>(() => {
     if (typeof window !== "undefined") {
-      const saved = localStorage.getItem("ledger-column-widths");
-      if (saved) {
-        try {
-          const parsed = JSON.parse(saved);
-          if (Array.isArray(parsed) && parsed.length > 0) {
-            const normalize = (arr: number[]) => {
-              const t = arr.reduce((sum, w) => sum + w, 0);
-              return t > 0 ? arr.map((w) => w * (100 / t)) : arr;
-            };
-            let w = [...parsed];
-            // 아주 옛 10열(앞 2칸 순서·구분)만 제거
-            if (w.length === 10 && w[0] < 6 && w[1] < 6) {
-              w = w.slice(2);
-            }
-            if (w.length === 8) {
-              w = [...w.slice(0, 7), 6, w[7]];
-              w = normalize(w);
-            }
-            if (w.length === 9) {
-              w = [...w.slice(0, 8), 9, w[8]];
-              w = normalize(w);
-            }
-            // 10열(소분류 없음) → 11열(소분류 추가)
-            if (w.length === 10) {
-              w = [...w.slice(0, 3), w[2], ...w.slice(3)];
-              w = normalize(w);
-            }
-            if (w.length === 11) {
-              return normalize(w);
-            }
-          }
-        } catch {
-          // 파싱 실패 시 기본값 사용
+      try {
+        const parsed = JSON.parse(localStorage.getItem(STORAGE_KEYS.LEDGER_COLUMN_WIDTHS) ?? "null");
+        if (Array.isArray(parsed) && parsed.length === 11 && parsed.every((w) => Number.isFinite(w) && w > 0)) {
+          const t = parsed.reduce((sum: number, w: number) => sum + w, 0);
+          return parsed.map((w: number) => w * (100 / t));
         }
+      } catch {
+        // 파싱 실패 시 기본값 사용
       }
     }
-    // 날짜, 대분류, 중분류, 소분류, 상세내역, 출금, 입금, 할인 전, 할인, 최종, 작업
-    return [8, 9, 9, 9, 19, 9, 9, 9, 5, 8, 9];
+    // 날짜, 대분류, 중분류, 소분류, 상세내역, 출금, 입금, 할인 전, 할인, 최종, 작업(자리표시)
+    // 상세내역은 "통장 이자(9/28~11/5 누적, …)"처럼 긴 설명이 3줄로 접히지 않게 가장 넓게.
+    return [8, 8, 8, 8, 26, 9, 9, 8, 4, 8, 4];
   });
   const { resizingColumn, liveColumnWidths, handleResizeStart } = useLedgerColumnResize({
     columnWidths,
     setColumnWidths,
     tableRef: ledgerTableRef,
+    storageKey: STORAGE_KEYS.LEDGER_COLUMN_WIDTHS,
   });
 
   const widthsForRender =
@@ -224,7 +226,7 @@ export const LedgerTable: React.FC<Props> = React.memo(function LedgerTable({
   // 컬럼 너비 변경 시 localStorage에 저장
   useEffect(() => {
     if (typeof window !== "undefined") {
-      localStorage.setItem("ledger-column-widths", JSON.stringify(columnWidths));
+      localStorage.setItem(STORAGE_KEYS.LEDGER_COLUMN_WIDTHS, JSON.stringify(columnWidths));
     }
   }, [columnWidths]);
 
@@ -410,15 +412,33 @@ export const LedgerTable: React.FC<Props> = React.memo(function LedgerTable({
   }, [highlightLedgerId, filteredLedger]);
 
   // 헤더·본문 열 너비 — 리사이즈 중에는 liveColumnWidths(widthsForRender)로 실시간 반영
+  // 작업 열은 아이콘 2개(복사·삭제, 각 ~32px)만 담는다 — 예전 168px은 절반이 빈칸이었다.
+  // 터치 기기는 같은 날 순서 이동(▲▼) 버튼이 한 칸 더 붙는다.
+  const workColPx = coarsePointer && canReorder ? 120 : 88;
+  // 좁은 화면(≤640px, 휴대폰 390 등) — 11열을 다 그리면 금액 열이 화면 밖으로 밀리고 상세내역이 ~40px로
+  // 한 글자씩 줄바꿈된다. 날짜·중분류·상세내역·금액·작업만 남기고 고정 비율로 나눈다(열 너비 조절은 넓은 화면 전용).
+  const narrow = useNarrowViewport();
   const ledgerColumnWidthStyles = useMemo(() => {
-    const workColPx = 168;
+    if (narrow) {
+      const pct: Record<number, number> = { 0: 0.17, 2: 0.2, 4: 0.36, 9: 0.27 };
+      return widthsForRender.map((_, index) => {
+        if (index === 10) return `${workColPx}px`;
+        return pct[index] != null ? `calc((100% - ${workColPx}px) * ${pct[index]})` : "0px";
+      });
+    }
     return widthsForRender.map((width, index) => {
       if (index === 10) return `${workColPx}px`;
       const sumFirst10 = widthsForRender.slice(0, 10).reduce((s, w) => s + w, 0);
       const pct = sumFirst10 > 0 ? (width / sumFirst10) * 100 : 100 / 10;
       return `calc((100% - ${workColPx}px) * ${pct / 100})`;
     });
-  }, [widthsForRender]);
+  }, [widthsForRender, workColPx, narrow]);
+  /** 열 i가 화면에 보이는지 — 좁은 화면에선 대분류·소분류·출금·입금·할인 전·할인 열을 숨긴다 */
+  const colVisible = (i: number) => !narrow || NARROW_VISIBLE_COLS.has(i);
+  /** th/td 공통 스타일 — 숨긴 열은 display:none (colgroup도 같은 열을 빼서 순서가 맞는다) */
+  const colStyle = (i: number): React.CSSProperties =>
+    colVisible(i) ? { width: ledgerColumnWidthStyles[i] } : { display: "none" };
+  const visibleColCount = narrow ? NARROW_VISIBLE_COLS.size : 11;
 
   const scrollToLedgerTop = () => {
     ledgerScrollRef.current?.scrollIntoView({ behavior: "smooth", block: "start" });
@@ -479,19 +499,13 @@ export const LedgerTable: React.FC<Props> = React.memo(function LedgerTable({
         <div key={ledgerScrollKey}>
         <table ref={ledgerTableRef} className="data-table ledger-table" style={{ width: "100%", minWidth: 0, tableLayout: "fixed" }}>
           <colgroup>
-            {widthsForRender.map((width, index) => {
-              const workColPx = 168;
-              if (index === 10) {
-                return <col key={index} style={{ width: `${workColPx}px` }} />;
-              }
-              const sumFirst10 = widthsForRender.slice(0, 10).reduce((s, w) => s + w, 0);
-              const pct = sumFirst10 > 0 ? (width / sumFirst10) * 100 : 100 / 10;
-              return <col key={index} style={{ width: `calc((100% - ${workColPx}px) * ${pct / 100})` }} />;
-            })}
+            {ledgerColumnWidthStyles.map((width, index) => colVisible(index) && (
+              <col key={index} style={{ width }} />
+            ))}
           </colgroup>
           <thead>
           <tr>
-            <th className="ledger-col-date" style={{ position: "relative", width: ledgerColumnWidthStyles[0] }}>
+            <th className="ledger-col-date" style={{ position: "relative", ...colStyle(0) }}>
               <button type="button" className="sort-header" onClick={() => toggleLedgerSort("date")}>
                 날짜 <span className="arrow">{sortIndicator(ledgerSort.key, "date", ledgerSort.direction)}</span>
               </button>
@@ -502,7 +516,7 @@ export const LedgerTable: React.FC<Props> = React.memo(function LedgerTable({
                 title="컬럼 너비 조절"
               />
             </th>
-            <th style={{ position: "relative", width: ledgerColumnWidthStyles[1] }}>
+            <th style={{ position: "relative", ...colStyle(1) }}>
               <button type="button" className="sort-header" onClick={() => toggleLedgerSort("category")}>
                 대분류 <span className="arrow">{sortIndicator(ledgerSort.key, "category", ledgerSort.direction)}</span>
               </button>
@@ -513,7 +527,7 @@ export const LedgerTable: React.FC<Props> = React.memo(function LedgerTable({
                 title="컬럼 너비 조절"
               />
             </th>
-            <th style={{ position: "relative", width: ledgerColumnWidthStyles[2] }}>
+            <th style={{ position: "relative", ...colStyle(2) }}>
               <button type="button" className="sort-header" onClick={() => toggleLedgerSort("subCategory")}>
                 중분류 <span className="arrow">{sortIndicator(ledgerSort.key, "subCategory", ledgerSort.direction)}</span>
               </button>
@@ -524,7 +538,7 @@ export const LedgerTable: React.FC<Props> = React.memo(function LedgerTable({
                 title="컬럼 너비 조절"
               />
             </th>
-            <th style={{ position: "relative", width: ledgerColumnWidthStyles[3] }}>
+            <th style={{ position: "relative", ...colStyle(3) }}>
               <button type="button" className="sort-header" onClick={() => toggleLedgerSort("detailCategory")}>
                 소분류 <span className="arrow">{sortIndicator(ledgerSort.key, "detailCategory", ledgerSort.direction)}</span>
               </button>
@@ -535,7 +549,7 @@ export const LedgerTable: React.FC<Props> = React.memo(function LedgerTable({
                 title="컬럼 너비 조절"
               />
             </th>
-            <th style={{ position: "relative", width: ledgerColumnWidthStyles[4] }}>
+            <th style={{ position: "relative", ...colStyle(4) }}>
               <button type="button" className="sort-header" onClick={() => toggleLedgerSort("description")}>
                 상세내역 <span className="arrow">{sortIndicator(ledgerSort.key, "description", ledgerSort.direction)}</span>
               </button>
@@ -546,7 +560,7 @@ export const LedgerTable: React.FC<Props> = React.memo(function LedgerTable({
                 title="컬럼 너비 조절"
               />
             </th>
-            <th style={{ position: "relative", width: ledgerColumnWidthStyles[5] }}>
+            <th style={{ position: "relative", ...colStyle(5) }}>
               <button type="button" className="sort-header" onClick={() => toggleLedgerSort("fromAccountId")}>
                 출금 <span className="arrow">{sortIndicator(ledgerSort.key, "fromAccountId", ledgerSort.direction)}</span>
               </button>
@@ -557,7 +571,7 @@ export const LedgerTable: React.FC<Props> = React.memo(function LedgerTable({
                 title="컬럼 너비 조절"
               />
             </th>
-            <th style={{ position: "relative", width: ledgerColumnWidthStyles[6] }}>
+            <th style={{ position: "relative", ...colStyle(6) }}>
               <button type="button" className="sort-header" onClick={() => toggleLedgerSort("toAccountId")}>
                 입금 <span className="arrow">{sortIndicator(ledgerSort.key, "toAccountId", ledgerSort.direction)}</span>
               </button>
@@ -568,7 +582,7 @@ export const LedgerTable: React.FC<Props> = React.memo(function LedgerTable({
                 title="컬럼 너비 조절"
               />
             </th>
-            <th style={{ position: "relative", width: ledgerColumnWidthStyles[7] }}>
+            <th style={{ position: "relative", ...colStyle(7) }}>
               <button type="button" className="sort-header" onClick={() => toggleLedgerSort("grossAmount")}>
                 할인 전 <span className="arrow">{sortIndicator(ledgerSort.key, "grossAmount", ledgerSort.direction)}</span>
               </button>
@@ -579,7 +593,7 @@ export const LedgerTable: React.FC<Props> = React.memo(function LedgerTable({
                 title="컬럼 너비 조절"
               />
             </th>
-            <th style={{ position: "relative", width: ledgerColumnWidthStyles[8] }}>
+            <th style={{ position: "relative", ...colStyle(8) }}>
               <button type="button" className="sort-header" onClick={() => toggleLedgerSort("discountAmount")}>
                 할인 <span className="arrow">{sortIndicator(ledgerSort.key, "discountAmount", ledgerSort.direction)}</span>
               </button>
@@ -590,7 +604,7 @@ export const LedgerTable: React.FC<Props> = React.memo(function LedgerTable({
                 title="컬럼 너비 조절"
               />
             </th>
-            <th style={{ position: "relative", width: ledgerColumnWidthStyles[9] }}>
+            <th style={{ position: "relative", ...colStyle(9) }}>
               <button type="button" className="sort-header" onClick={() => toggleLedgerSort("amount")}>
                 최종 <span className="arrow">{sortIndicator(ledgerSort.key, "amount", ledgerSort.direction)}</span>
               </button>
@@ -601,7 +615,7 @@ export const LedgerTable: React.FC<Props> = React.memo(function LedgerTable({
                 title="컬럼 너비 조절"
               />
             </th>
-            <th style={{ position: "relative", width: ledgerColumnWidthStyles[10] }}>
+            <th style={{ position: "relative", ...colStyle(10) }}>
               작업
             </th>
           </tr>
@@ -623,7 +637,7 @@ export const LedgerTable: React.FC<Props> = React.memo(function LedgerTable({
               const net = full.income - full.expense;
               rows.push(
                 <tr key={`ds-${dayDate}`} style={{ background: "var(--bg)", borderTop: "1px solid var(--border)" }}>
-                  <td colSpan={11} style={{ padding: "5px 12px", fontSize: 12 }}>
+                  <td colSpan={visibleColCount} style={{ padding: "5px 12px", fontSize: 12 }}>
                     <div style={{ display: "flex", alignItems: "center", gap: 12, flexWrap: "wrap" }}>
                       <span style={{ fontWeight: 600, color: "var(--text)" }}>
                         {formatShortDate(dayDate)}{isPartial ? " (계속)" : ""}
@@ -779,7 +793,7 @@ export const LedgerTable: React.FC<Props> = React.memo(function LedgerTable({
                 className="ledger-col-date cell-editable"
                 onDoubleClick={editDateCell}
                 onClick={tapEdit("date", editDateCell)}
-                style={{ cursor: "pointer", position: "relative", width: ledgerColumnWidthStyles[0] }}
+                style={{ cursor: "pointer", position: "relative", ...colStyle(0) }}
                 title="더블클릭하여 수정"
               >
                 {editingField?.id === l.id && editingField.field === "date" ? (
@@ -815,7 +829,7 @@ export const LedgerTable: React.FC<Props> = React.memo(function LedgerTable({
                 className="cell-editable"
                 onDoubleClick={editCategoryCell}
                 onClick={tapEdit("category", editCategoryCell)}
-                style={{ cursor: "pointer", width: ledgerColumnWidthStyles[1] }}
+                style={{ cursor: "pointer", ...colStyle(1) }}
                 title={l.category ? l.category + " (더블클릭하여 수정)" : "더블클릭하여 수정"}
               >
                 {editingField?.id === l.id && editingField.field === "category" ? (
@@ -891,7 +905,7 @@ export const LedgerTable: React.FC<Props> = React.memo(function LedgerTable({
                 className="cell-editable"
                 onDoubleClick={editSubCategoryCell}
                 onClick={tapEdit("subCategory", editSubCategoryCell)}
-                style={{ cursor: "pointer", width: ledgerColumnWidthStyles[2] }}
+                style={{ cursor: "pointer", ...colStyle(2) }}
                 title={l.subCategory ? l.subCategory + " (더블클릭하여 수정)" : "더블클릭하여 수정"}
               >
                 {editingField?.id === l.id && editingField.field === "subCategory" ? (
@@ -943,7 +957,7 @@ export const LedgerTable: React.FC<Props> = React.memo(function LedgerTable({
                 className="cell-editable"
                 onDoubleClick={editDetailCategoryCell}
                 onClick={tapEdit("detailCategory", editDetailCategoryCell)}
-                style={{ cursor: "pointer", width: ledgerColumnWidthStyles[3] }}
+                style={{ cursor: "pointer", ...colStyle(3) }}
                 title={l.detailCategory ? l.detailCategory + " (더블클릭하여 수정)" : "더블클릭하여 수정"}
               >
                 {editingField?.id === l.id && editingField.field === "detailCategory" ? (
@@ -985,7 +999,7 @@ export const LedgerTable: React.FC<Props> = React.memo(function LedgerTable({
                 className="cell-editable"
                 onDoubleClick={editDescriptionCell}
                 onClick={tapEdit("description", editDescriptionCell)}
-                style={{ cursor: "pointer", whiteSpace: "normal", wordBreak: "break-word", width: ledgerColumnWidthStyles[4] }}
+                style={{ cursor: "pointer", whiteSpace: "normal", wordBreak: "keep-all", overflowWrap: "anywhere", minWidth: 96, ...colStyle(4) }}
                 title={l.description ? l.description + " (더블클릭하여 수정)" : "더블클릭하여 수정"}
               >
                 {editingField?.id === l.id && editingField.field === "description" ? (
@@ -1009,7 +1023,7 @@ export const LedgerTable: React.FC<Props> = React.memo(function LedgerTable({
                 className="cell-editable"
                 onDoubleClick={editFromAccountCell}
                 onClick={tapEdit("fromAccountId", editFromAccountCell)}
-                style={{ cursor: "pointer", width: ledgerColumnWidthStyles[5] }}
+                style={{ cursor: "pointer", ...colStyle(5) }}
                 title={l.fromAccountId ? l.fromAccountId + " (더블클릭하여 수정)" : "더블클릭하여 수정"}
               >
                 {editingField?.id === l.id && editingField.field === "fromAccountId" ? (
@@ -1042,10 +1056,8 @@ export const LedgerTable: React.FC<Props> = React.memo(function LedgerTable({
                   <>
                     <div>{l.fromAccountId ?? "-"}</div>
                     {l.fromAccountId && balanceAfterByLedgerId.get(balanceKey)?.from && (() => {
-                      const fromAcc = accounts.find((a) => a.id === l.fromAccountId);
-                      const isUsd = l.currency === "USD" || fromAcc?.currency === "USD";
-                      const fmt = (n: number) => isUsd ? formatUSD(n) : formatKRW(Math.round(n));
                       const info = balanceAfterByLedgerId.get(balanceKey)!.from!;
+                      const fmt = (n: number) => formatBalanceCell(n, info.currency);
                       return (
                         <div
                           style={{
@@ -1065,7 +1077,7 @@ export const LedgerTable: React.FC<Props> = React.memo(function LedgerTable({
                 className="cell-editable"
                 onDoubleClick={editToAccountCell}
                 onClick={tapEdit("toAccountId", editToAccountCell)}
-                style={{ cursor: "pointer", width: ledgerColumnWidthStyles[6] }}
+                style={{ cursor: "pointer", ...colStyle(6) }}
                 title={l.toAccountId ? l.toAccountId + " (더블클릭하여 수정)" : "더블클릭하여 수정"}
               >
                 {editingField?.id === l.id && editingField.field === "toAccountId" ? (
@@ -1098,10 +1110,8 @@ export const LedgerTable: React.FC<Props> = React.memo(function LedgerTable({
                   <>
                     <div>{l.toAccountId ?? "-"}</div>
                     {l.toAccountId && balanceAfterByLedgerId.get(balanceKey)?.to && (() => {
-                      const toAcc = accounts.find((a) => a.id === l.toAccountId);
-                      const isUsd = l.currency === "USD" || toAcc?.currency === "USD";
-                      const fmt = (n: number) => isUsd ? formatUSD(n) : formatKRW(Math.round(n));
                       const info = balanceAfterByLedgerId.get(balanceKey)!.to!;
+                      const fmt = (n: number) => formatBalanceCell(n, info.currency);
                       return (
                         <div
                           style={{
@@ -1121,7 +1131,7 @@ export const LedgerTable: React.FC<Props> = React.memo(function LedgerTable({
                 className="number cell-editable"
                 onDoubleClick={editGrossAmountCell}
                 onClick={tapEdit("grossAmount", editGrossAmountCell)}
-                style={{ cursor: "pointer", width: ledgerColumnWidthStyles[7] }}
+                style={{ cursor: "pointer", ...colStyle(7) }}
                 title="할인 적용 전 금액 · 더블클릭하여 수정"
               >
                 {editingField?.id === l.id && editingField.field === "grossAmount" ? (
@@ -1151,7 +1161,7 @@ export const LedgerTable: React.FC<Props> = React.memo(function LedgerTable({
                 className="number cell-editable"
                 onDoubleClick={editDiscountCell}
                 onClick={tapEdit("discountAmount", editDiscountCell)}
-                style={{ cursor: "pointer", width: ledgerColumnWidthStyles[8], color: "var(--text-muted)" }}
+                style={{ cursor: "pointer", ...colStyle(8), color: "var(--text-muted)" }}
                 title="할인액 · 더블클릭하여 수정"
               >
                 {editingField?.id === l.id && editingField.field === "discountAmount" ? (
@@ -1185,7 +1195,7 @@ export const LedgerTable: React.FC<Props> = React.memo(function LedgerTable({
                 className="number cell-editable"
                 onDoubleClick={editAmountCell}
                 onClick={tapEdit("amount", editAmountCell)}
-                style={{ cursor: "pointer", width: ledgerColumnWidthStyles[9], fontWeight: 600 }}
+                style={{ cursor: "pointer", ...colStyle(9), fontWeight: 600 }}
                 title="할인 반영 후 금액 · 더블클릭하여 수정"
               >
                 {editingField?.id === l.id && editingField.field === "amount" ? (
@@ -1211,8 +1221,8 @@ export const LedgerTable: React.FC<Props> = React.memo(function LedgerTable({
                     : formatNumber(l.amount)
                 )}
               </td>
-              <td style={{ width: ledgerColumnWidthStyles[10] }}>
-                <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
+              <td style={{ ...colStyle(10) }}>
+                <div style={{ display: "flex", gap: 6, alignItems: "center", justifyContent: "center" }}>
                   {coarsePointer && canReorder && !(l as LedgerDisplayRow)._tradeId && (
                     <div style={{ display: "flex", flexDirection: "column", gap: 1 }} title="같은 날짜 안에서 순서 이동">
                       <button
@@ -1296,7 +1306,7 @@ export const LedgerTable: React.FC<Props> = React.memo(function LedgerTable({
               const kindLabel = quickCopyEntry.kind === "income" ? "수입" : quickCopyEntry.kind === "transfer" ? "이체" : "지출";
               rows.push(
                 <tr key={`quick-copy-${quickCopyEntry.id}`}>
-                  <td colSpan={11} style={{ padding: 0 }}>
+                  <td colSpan={visibleColCount} style={{ padding: 0 }}>
                     <QuickCopyPanel
                       kindLabel={kindLabel}
                       date={quickCopyEntry.date}

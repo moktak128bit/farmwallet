@@ -76,7 +76,8 @@ export function isRealExpenseEntry(entry: LedgerEntry, categoryPresets?: Categor
   if (Number(entry.amount) <= 0) return false;
   if (isCreditPayment(entry)) return false;
   if (isCurrencyExchangeEntry(entry)) return false;
-  // 저축성지출 제외 — 단, 투자손실(category=재테크, subCategory=투자손실)은 실 지출이므로 포함
+  // 투자손실은 생활 지출이 아니라 재테크 순액(−)으로만 집계 (사용자 결정 2026-06-16, summaryMath.classifyLedgerFlow와 동일)
+  if (isInvestmentPnlEntry(entry)) return false;
   if (isSavingsExpenseEntry(entry, [], categoryPresets)) return false;
   return true;
 }

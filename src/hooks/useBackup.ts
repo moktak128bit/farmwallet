@@ -348,11 +348,11 @@ export function useBackup(data: AppData, options?: UseBackupOptions) {
 
   useEffect(() => {
     if (typeof window === "undefined") return;
-    if (disabledRef.current) return; // 로드 실패 상태 — 자동저장 예약 금지
     if (!hasMountedRef.current) {
       hasMountedRef.current = true;
       return;
     }
+    if (disabledRef.current) return; // 로드·파일 복구 확인 중 — 자동저장 예약 금지
 
     if (autoSaveTimerRef.current) {
       window.clearTimeout(autoSaveTimerRef.current);
@@ -392,7 +392,7 @@ export function useBackup(data: AppData, options?: UseBackupOptions) {
         autoSaveTimerRef.current = null;
       }
     };
-  }, [data, runAutoSave]);
+  }, [data, runAutoSave, options?.disabled]);
 
   const handleManualBackup = useCallback(async () => {
     if (disabledRef.current) {

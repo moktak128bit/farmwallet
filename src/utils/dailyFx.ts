@@ -2,41 +2,19 @@
  * 일별 USD/KRW 환율 적립 — 하루 1회, 그날의 환율을 historicalDailyFx에 쌓는다.
  * 과거 시점 USD 평가액을 일별로 복원(portfolioHistory)하기 위한 환율 백본.
  *
- * 보존 압축(utils/dailyCloses와 동일 정책): 최근 RECENT_DAYS는 일별 유지, 그 이전은
- * 월당 마지막 1건(≈월말 환율)으로 압축 — 10년 누적해도 수 KB. marketEnvSnapshots(반월)와
- * 함께 메인 데이터에 저장되어 Gist·백업에 그대로 동기화된다.
+ * 과거 일별 환율도 보존한다. 월말 압축하면 1년·전체 성과의 해외자산 환산이 계단식으로 바뀐다.
+ * marketEnvSnapshots(반월)와 함께 메인 데이터에 저장되어 Gist·백업에 동기화된다.
  */
 import type { HistoricalDailyFx } from "../types";
-import { formatIsoLocal, parseIsoLocal } from "./date";
-
-const RECENT_DAYS = 180;
 
 /**
- * 보존 압축(순수): today 기준 최근 RECENT_DAYS는 일별 유지, 그 이전은 월당 마지막 1건(≈월말)만 남기고
- * 날짜 오름차순으로 정렬한다. upsertDailyFx(당일 적립)와 fxBackfill(결번 보강)이 같은 정책을 공유한다.
+ * 일별 환율 중복 제거·정렬(순수). 호출부 호환성을 위해 기존 함수명을 유지한다.
  * 입력에 같은 날짜가 중복되면 뒤의 항목이 이긴다.
  */
-export function compactDailyFx(entries: HistoricalDailyFx[], today: string): HistoricalDailyFx[] {
+export function compactDailyFx(entries: HistoricalDailyFx[], _today: string): HistoricalDailyFx[] {
   const map = new Map<string, HistoricalDailyFx>();
   for (const f of entries) map.set(f.date, f);
-  const base = parseIsoLocal(today);
-  let cutoff = "";
-  if (base) {
-    base.setDate(base.getDate() - RECENT_DAYS);
-    cutoff = formatIsoLocal(base);
-  }
-  const keepLatestPerMonth = new Map<string, HistoricalDailyFx>(); // YYYY-MM → 최신
-  const recent: HistoricalDailyFx[] = [];
-  for (const f of map.values()) {
-    if (!cutoff || f.date >= cutoff) {
-      recent.push(f);
-      continue;
-    }
-    const mk = f.date.slice(0, 7);
-    const prevMonth = keepLatestPerMonth.get(mk);
-    if (!prevMonth || f.date > prevMonth.date) keepLatestPerMonth.set(mk, f);
-  }
-  return [...keepLatestPerMonth.values(), ...recent].sort((a, b) => a.date.localeCompare(b.date));
+  return [...map.values()].sort((a, b) => a.date.localeCompare(b.date));
 }
 
 /**

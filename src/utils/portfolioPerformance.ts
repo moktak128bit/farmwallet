@@ -14,7 +14,7 @@ import { buildDailyNetFlowKRW, buildTwrReturnSeries, summarizeTwr, type TwrPoint
 import { buildBenchmarkComparison, type BenchmarkComparison } from "./portfolioBenchmark";
 import { computeBeta, computeRiskMetrics, type RiskMetrics } from "./riskMetrics";
 
-export type PerformancePeriod = "3M" | "6M" | "1Y" | "ALL";
+export type PerformancePeriod = "1M" | "3M" | "6M" | "1Y" | "ALL";
 
 interface PortfolioPerformance {
   valueSeries: DailyPortfolioPoint[];
@@ -29,7 +29,7 @@ interface PortfolioPerformance {
   endDate: string;
 }
 
-const PERIOD_DAYS: Record<Exclude<PerformancePeriod, "ALL">, number> = { "3M": 90, "6M": 180, "1Y": 365 };
+const PERIOD_DAYS: Record<Exclude<PerformancePeriod, "ALL">, number> = { "1M": 30, "3M": 90, "6M": 180, "1Y": 365 };
 /** 달력일 일별 그리드 기준 연율화 */
 const PERIODS_PER_YEAR = 365;
 

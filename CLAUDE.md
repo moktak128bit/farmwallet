@@ -1,6 +1,15 @@
 # FarmWallet — Claude 작업 지도
 
-한국어 개인 재무 PWA (가계부·계좌·주식·예산·운동). React 18 + TypeScript + Vite + Zustand + recharts + react-hot-toast. **서버 없음** — 모든 데이터는 localStorage(+IndexedDB 캐시), 동기화는 GitHub Gist.
+한국어 개인 재무 앱 (가계부·계좌·주식·예산·운동). React 18 + TypeScript + Vite + Zustand + recharts + react-hot-toast.
+
+## 운영 방식 (2026-11-08~, Google Apps Script)
+
+- **원본 = Drive의 "FarmWallet 데이터" 시트**(GAS 웹앱 v7). 기기 localStorage는 원본이 아니라 시트의 캐시다 — 앱을 열면 시트로 덮는다(기기 미저장 편집은 안전 스냅샷 후). Gist·PC 장부 파일은 더 이상 원본이 아니다.
+- **v7은 의도된 배포다.** apps-script-poc/의 safe 서버(v5·v6, 기기 장부 보존 설계)는 현재 방침과 다른 실험이므로 다시 배포하지 않는다.
+- **GAS 프로젝트는 `gas/`에서 관리한다**(gas/README.md). 서버 `Code.js`는 여기가 소스. `Seed.html`(실장부)·`Config.js`·`.clasp.json`·`index.html`은 gitignore — 공개 저장소라 절대 커밋 금지.
+- **화면은 `npm run build:gas`로 `src/`에서 빌드**(2026-11-09 v7 번들에서 GAS 계층을 `src/`로 역복원 — 목록은 gas/README.md). GAS 전용 분기는 `services/gas.ts`의 `isGas()` 한 곳으로만 가른다. push·배포 전에는 scratch에 `clasp pull`해 운영이 gas/와 같은지 확인하고, 배포는 기존 웹앱 배포 ID를 새 버전으로 갱신(URL 유지).
+- 서버 `saveData`는 revision을 검증하지 않는다(앱이 저장 직전 시트 최신 시각만 비교). 두 기기 동시 저장은 늦은 쪽이 이긴다.
+- 기기 화면의 데이터·Gist만 보고 장부 상태를 판단하지 말 것 — 시트 `_meta`(revision·updatedAt·ledgerCount)가 기준.
 
 ## 명령어
 
@@ -13,6 +22,17 @@ npm run knip         # 미사용 파일/export 검사 (클린 상태 유지할 �
 ```
 
 ## 아키텍처 한 장
+
+### 스크린샷 거래 입력 완료 기준
+
+흐름: 사용자가 GAS 웹앱 **설정 → 사진 올리기**로 토스·카톡 캡처를 올린다(Drive 사진 폴더의 날짜별 폴더) → 나중에 Claude에게 입력을 맡긴다.
+
+1. Drive 사진 폴더에서 **미처리** 사진만 읽는다.
+2. **시트의 최신 장부**(`_meta` revision 포함)를 먼저 읽고 중복·취소·계좌 매핑을 확인한 거래를 만든다. 금액·계좌가 불확실하면 추정하지 말고 묻는다.
+3. **변경분 파일**(`farmwallet-delta-v1`, utils/ledgerDelta.ts)을 만든다: `{format, ledger:{add,update,remove}, trades:{add,remove}, accounts:{patch}, sourcePhotos:[Drive 사진 파일 이름]}`. id는 `newIdWithPrefix` 규칙과 같은 형식. 사용자가 **설정 → 백업 / 복원 → 가계부 파일 불러오기**로 적용(미리보기 확인)하면 자동 동기화가 시트에 저장하고 sourcePhotos가 처리 완료로 옮겨진다. `_data`/`_meta` 셀을 Sheets API로 직접 쓰지 않는다(잠금·보기용 탭·일일 백업 우회).
+4. 적용 후 시트를 **다시 읽어** 추가 건수·revision 증가·기존 건수 보존을 확인한다(Drive 접근이 없으면 사용자 화면의 적용 결과 토스트 "추가 N · 건너뜀 M"으로 확인).
+
+파일 작성이나 JSON 준비만으로 완료 처리하지 않는다. 인증정보·폴더/스크립트 ID는 코드·장부·로그·이 저장소(공개)에 넣지 않는다. (`npm run ledger:sync`의 Gist 경로는 이전 방식 — 원본이 아니므로 쓰지 않는다.)
 
 ```
 main.tsx → App.tsx (탭 셸·전역 모달·콜백 허브, 자식 props 시그니처 바꾸지 말 것)
@@ -69,7 +89,7 @@ main.tsx → App.tsx (탭 셸·전역 모달·콜백 허브, 자식 props 시그
 12. **부호 있는 금액 입력**: parseAmount는 부호를 버림 → 음수 허용 입력은 parseSignedAmount/sanitizeSignedNumericInput.
 13. **진행 중인 달의 비교(MoM 등)**: 완료된 전월 전체와 비교 금지(월급 25일이면 월중 내내 -90%대) — 전월·전년도 **같은 기간(1~오늘 일)**만 합산하고 라벨에 "동기(1~N일)" 명시. compareMonths의 dayCap 옵션, useInsightsData의 partialDay 패턴 참조.
 14. **금액 표기**: 히어로/KPI 숫자는 `components/ui/Money.tsx` — 단위 "원"은 `.money-unit`로 한 단계 작게. 잔액·평가액처럼 시세 따라 흔들리는 **스톡**은 `compact`(만·억, `formatKrwCompact`), 이번 달 수입·지출처럼 가계부와 대조하는 **흐름**은 원 단위 그대로. 표·보조 텍스트는 formatKRW 유지.
-15. **디자인 규율**: 색은 데이터에만(행 반복 동작은 `.icon-action` 중립 아이콘, hover에서만 빨강 · 헤더 상시 경보 금지) · 본문 이모지 아이콘 금지(lucide 라인 아이콘) · 인라인 글자 크기 바닥 11px(12=캡션, 13=본문) · 대시보드 첫 화면 = KPI 4(지출·수지·순자산·총부채) → 2열(전월 대비 | 배당 compact) → 투자 자산 summary, 나머지는 `DashboardSection` 접이식(접힌 줄에 대표 숫자 3개, 순서는 dashboardWidgets.ts와 동기) · 급여 전 판정은 `summaryMath.isBeforePayday` 단일 소스(요약·전월 대비·인사이트 성장률 공용) · 인사이트는 분석만(대시보드 KPI 재노출 금지, 탭 5개) · 가계부 입력 폼은 기본 접힘(`STORAGE_KEYS.LEDGER_FORM_OPEN`, Alt+N·복사 시 자동 펼침). · **표 숫자 열은 th·td 모두 `.number`**(머리글이 값과 같은 오른쪽 정렬 — `.data-table th.number`).
+15. **디자인 규율**: 색은 데이터에만(행 반복 동작은 `.icon-action` 중립 아이콘, hover에서만 빨강 · 헤더 상시 경보 금지) · 본문 이모지 아이콘 금지(lucide 라인 아이콘) · 인라인 글자 크기 바닥 11px(12=캡션, 13=본문) · 대시보드 첫 화면 = `DashboardGlance` 질문 3열(이번 달 얼마 썼나 · 내 자산은 · 투자·배당은 — 기둥마다 큰 숫자 1 + 보조 2~3줄, 기둥 클릭=가계부/계좌/주식 탭) + 확인할 일 칩(미등록 반복지출·카드 갚을 돈·기록 공백 3일+·처리 전 사진), 값은 부모가 `glanceMath`로 1회 계산(상세 카드와 같은 정의), 이번 달 비교 기준일은 마지막 기록일(`ledgerFreshness`), 나머지는 `DashboardSection` 접이식(접힌 줄에 대표 숫자 3개, 순서는 dashboardWidgets.ts와 동기) · 급여 전 판정은 `summaryMath.isBeforePayday` 단일 소스(요약·전월 대비·인사이트 성장률 공용) · 인사이트는 분석만(대시보드 KPI 재노출 금지, 탭 5개) · 가계부 입력 폼은 기본 접힘(`STORAGE_KEYS.LEDGER_FORM_OPEN`, Alt+N·복사 시 자동 펼침). · **표 숫자 열은 th·td 모두 `.number`**(머리글이 값과 같은 오른쪽 정렬 — `.data-table th.number`).
 
 ## 레거시 데이터 함정 (사용자 실데이터에 3세대 공존)
 

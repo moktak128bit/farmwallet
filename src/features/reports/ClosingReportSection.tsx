@@ -7,7 +7,7 @@ import React from "react";
 import { CartesianGrid, Legend, Line, LineChart, Tooltip, XAxis, YAxis } from "recharts";
 import { DeferredResponsiveContainer as ResponsiveContainer } from "../../components/charts/DeferredResponsiveContainer";
 import type { ClosingReportData } from "../../utils/reportGenerator";
-import { formatKRW } from "../../utils/formatter";
+import { formatKRW, formatKrwCompact } from "../../utils/formatter";
 import { signedKRW } from "./reportShared";
 
 interface Props {
@@ -56,9 +56,11 @@ export const ClosingReportSection: React.FC<Props> = React.memo(function Closing
           <h4 style={{ marginBottom: 8 }}>전월 대비 자동 코멘트</h4>
           <p style={{ margin: 0, color: "var(--text-secondary)" }}>{closingReport.latestComment.summary}</p>
           <div style={{ marginTop: 8, display: "flex", gap: 14, flexWrap: "wrap" }}>
-            <span>자산: {signedKRW(closingReport.latestComment.assetDelta)}</span>
-            <span>순자산: {signedKRW(closingReport.latestComment.netWorthDelta)}</span>
-            <span>현금흐름: {signedKRW(closingReport.latestComment.cashflowDelta)}</span>
+            <span>자산 증감: {signedKRW(closingReport.latestComment.assetDelta)}</span>
+            <span>순자산 증감: {signedKRW(closingReport.latestComment.netWorthDelta)}</span>
+            <span title="수입 − 지출 − 저축성지출">
+              이번 달 현금흐름: {signedKRW(closingReport.latestComment.cashflow)} (전월 대비 {signedKRW(closingReport.latestComment.cashflowDelta)})
+            </span>
           </div>
         </div>
       )}
@@ -67,7 +69,7 @@ export const ClosingReportSection: React.FC<Props> = React.memo(function Closing
         <LineChart data={monthly}>
           <CartesianGrid strokeDasharray="3 3" />
           <XAxis dataKey="periodKey" />
-          <YAxis />
+          <YAxis tickFormatter={(v: number) => formatKrwCompact(v)} width={64} />
           <Tooltip formatter={(value: number | undefined) => formatKRW(value ?? 0)} />
           <Legend />
           <Line isAnimationActive={false} type="monotone" dataKey="asset" name="자산" stroke="#3b82f6" />

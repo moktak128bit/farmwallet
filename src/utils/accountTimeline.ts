@@ -4,10 +4,12 @@
  * computeAccountTimelineRows 본문은 기존 대시보드 훅(useAccountTimelineRows)에서
  * 로직 수정 없이 이동 — 대시보드 숫자가 기준값이므로 본문을 변경하지 않는다.
  */
-import type { Account, LedgerEntry, Loan, StockPrice, StockTrade } from "../types";
+import type { Account, HistoricalDailyClose, LedgerEntry, Loan, StockPrice, StockTrade } from "../types";
 import { accountDebtOffset, computeLoanBalanceAt, computePositions, positionMarketValueKRW } from "../calculations";
 import { buildMonthRange, getMonthEndDate } from "./date";
 import { usdBalanceModeDelta } from "./tradeCashImpact";
+import { canonicalTickerForMatch, isUSDStock } from "./finance";
+import { fxAsOf, type FxPoint } from "./portfolioHistory";
 
 export type AccountTimelineRow = {
   month: string;
@@ -18,6 +20,10 @@ export type AccountTimelineRow = {
   total: number;
   /** 연금계좌(isPension)의 순기여분 합계 (자산−계좌부채). 순자산에서 '연금 제외' 보기에 사용. */
   pension: number;
+  /** 그 시점 시세(종가)가 없어 매입원가로 평가한 보유 종목 금액 — stock 중 원가 대체분 */
+  stockAtCost?: number;
+  /** 보유 종목을 모두 매입원가로 평가한 순자산 — 시세 기준이 섞인 구간의 변화를 같은 기준으로 비교할 때 사용 */
+  costBasisTotal?: number;
 };
 
 export function computeAccountTimelineRows(params: {
@@ -30,8 +36,25 @@ export function computeAccountTimelineRows(params: {
   currentMonth: string;
   monthRange: string[];
   loans: Loan[];
+  /** 일별 종가 — 지난 월말 보유 종목을 그날 시가로 평가. 없는 종목만 원가 대체(stockAtCost) */
+  historicalDailyCloses?: HistoricalDailyClose[];
+  /** 일별 환율 — 지난 월말 USD 종가·달러 현금 환산 (없으면 현재 환율) */
+  fxHistory?: FxPoint[];
 }): AccountTimelineRow[] {
   const { accounts, ledger, trades, adjustedPrices, fxRate, currentMonth, monthRange, loans } = params;
+  const fxHistory = params.fxHistory ?? [];
+
+  // 종가 인덱스: canonical ticker → 날짜 오름차순. 월은 오름차순으로 돌므로 포인터로 전진.
+  const closesByTicker = new Map<string, HistoricalDailyClose[]>();
+  for (const c of params.historicalDailyCloses ?? []) {
+    const t = canonicalTickerForMatch(c.ticker);
+    if (!t || !c.date || !(Number(c.close) > 0)) continue;
+    const arr = closesByTicker.get(t);
+    if (arr) arr.push(c);
+    else closesByTicker.set(t, [c]);
+  }
+  for (const arr of closesByTicker.values()) arr.sort((a, b) => a.date.localeCompare(b.date));
+  const closePtr = new Map<string, number>();
 
   const ledgerByMonth = new Map<string, LedgerEntry[]>();
   const tradesByMonth = new Map<string, StockTrade[]>();
@@ -157,22 +180,48 @@ export function computeAccountTimelineRows(params: {
     }
 
     const monthEndDate = getMonthEndDate(month);
-    const monthPrices = adjustedPrices.filter((price) => {
-      if (month === currentMonth) return true;
-      if (!price.updatedAt) return false;
-      return price.updatedAt.slice(0, 10) <= monthEndDate;
-    });
+    const isCurrent = month === currentMonth;
+    // 지난 월말은 그 시점 환율·종가로 — 현재 시세로 과거를 평가하거나(시세 기준 혼합) 원가로만 두면
+    // 평가손익 전체가 "이번 달 변화"로 몰린다(전월 대비 ▼1,310만 같은 착시).
+    const monthFx = isCurrent ? fxRate : (fxAsOf(fxHistory, monthEndDate, fxRate) ?? fxRate);
+    const snapshotPrices = isCurrent
+      ? adjustedPrices
+      : adjustedPrices.filter((price) => !!price.updatedAt && price.updatedAt.slice(0, 10) <= monthEndDate);
+    let monthPrices: StockPrice[] = snapshotPrices;
+    if (!isCurrent && closesByTicker.size > 0) {
+      const closePrices: StockPrice[] = [];
+      const fromCloses = new Set<string>();
+      for (const [ticker, arr] of closesByTicker) {
+        let i = closePtr.get(ticker) ?? -1;
+        while (i + 1 < arr.length && arr[i + 1].date <= monthEndDate) i += 1;
+        closePtr.set(ticker, i);
+        if (i < 0) continue;
+        const c = arr[i];
+        const usd = c.currency === "USD" || (c.currency !== "KRW" && isUSDStock(ticker));
+        if (usd && !(monthFx && monthFx > 0)) continue;
+        fromCloses.add(ticker);
+        closePrices.push({ ticker, price: usd ? c.close * (monthFx as number) : c.close, currency: "KRW", updatedAt: c.date });
+      }
+      // 같은 종목은 그날 종가가 우선, 종가가 없는 종목만 시세 스냅샷을 쓴다
+      monthPrices = [...closePrices, ...snapshotPrices.filter((p) => !fromCloses.has(canonicalTickerForMatch(p.ticker)))];
+    }
+    const pricedTickers = new Set<string>();
+    for (const p of monthPrices) if (Number(p.price) > 0) pricedTickers.add(canonicalTickerForMatch(p.ticker));
     const monthPositions = computePositions(runningTrades, monthPrices, accounts, {
-      fxRate: fxRate ?? undefined,
+      fxRate: monthFx ?? undefined,
       priceFallback: "cost"
     });
     const stockByAccount = new Map<string, number>();
+    let stockAtCost = 0;
+    let stockMarketMinusCost = 0;
     monthPositions.forEach((position) => {
-      stockByAccount.set(
-        position.accountId,
-        (stockByAccount.get(position.accountId) ?? 0) +
-          positionMarketValueKRW(position, fxRate)
-      );
+      const value = positionMarketValueKRW(position, monthFx);
+      stockByAccount.set(position.accountId, (stockByAccount.get(position.accountId) ?? 0) + value);
+      if (!(position.quantity > 0)) return;
+      const usd = isUSDStock(position.ticker);
+      const costKrw = position.totalBuyAmountKRW ?? (usd ? position.totalBuyAmount * (monthFx ?? 0) : position.totalBuyAmount);
+      if (!pricedTickers.has(canonicalTickerForMatch(position.ticker))) stockAtCost += value;
+      else stockMarketMinusCost += value - costKrw;
     });
 
     let totalStockValue = 0;
@@ -181,14 +230,14 @@ export function computeAccountTimelineRows(params: {
     let totalAssetValue = 0;
     let totalDebtValue = 0;
     let totalPensionValue = 0;
-    const row: AccountTimelineRow = { month, stock: 0, savings: 0, asset: 0, debt: 0, total: 0, pension: 0 };
+    const row: AccountTimelineRow = { month, stock: 0, savings: 0, asset: 0, debt: 0, total: 0, pension: 0, stockAtCost: 0, costBasisTotal: 0 };
     accounts.forEach((account) => {
       const cash = runningBalanceByAccount.get(account.id) ?? 0;
       const usdCash =
         account.type === "securities" || account.type === "crypto"
           ? (runningUsdByAccount.get(account.id) ?? 0)
           : 0;
-      const usdToKrw = fxRate && usdCash !== 0 ? usdCash * fxRate : 0;
+      const usdToKrw = monthFx && usdCash !== 0 ? usdCash * monthFx : 0;
       const stock = stockByAccount.get(account.id) ?? 0;
       const debt = accountDebtOffset(account);
       const accountAsset = cash + usdToKrw + stock;
@@ -218,10 +267,25 @@ export function computeAccountTimelineRows(params: {
     row.debt = totalDebtValue;
     row.total = totalValue;
     row.pension = totalPensionValue;
+    row.stockAtCost = stockAtCost;
+    row.costBasisTotal = totalValue - stockMarketMinusCost;
     rows.push(row);
   });
 
   return rows;
+}
+
+/**
+ * 순자산 "변화"(전월 대비·페이스·스파크라인)용 시계열 — 모든 점이 같은 평가 기준이어야 한다.
+ * 지난 월말 중 원가 대체 비중(stockAtCost/stock)이 20%를 넘는 점이 있으면 시가 기준이 섞인 것이므로
+ * 전 구간을 원가 기준(costBasisTotal, 평가손익 제외)으로 비교한다. 아니면 시가 기준(total).
+ */
+export function netWorthChangeSeries(rows: AccountTimelineRow[]): { series: { month: string; value: number }[]; basis: "market" | "cost" } {
+  const mixed = rows.slice(0, -1).some((r) => r.stock > 0 && (r.stockAtCost ?? 0) / r.stock > 0.2);
+  return {
+    basis: mixed ? "cost" : "market",
+    series: rows.map((r) => ({ month: r.month, value: mixed ? (r.costBasisTotal ?? r.total) : r.total })),
+  };
 }
 
 /** USD 시세를 원화 환산한 가격 목록. fxRate 없으면 동일 참조 반환 (memo 계약 유지). */

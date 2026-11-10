@@ -6,8 +6,7 @@
 import React, { useEffect } from "react";
 import type { Account, LedgerEntry, StockTrade, AccountBalanceRow } from "../../../types";
 import { formatShortDate, formatKRW, formatUSD } from "../../../utils/formatter";
-import { isUSDStock } from "../../../utils/finance";
-import { shouldUseUsdBalanceMode } from "../../../utils/tradeCashImpact";
+import { usdBalanceModeDelta } from "../../../utils/tradeCashImpact";
 import { useFocusTrap } from "../../../hooks/useFocusTrap";
 import { useModalStackEntry } from "../../../utils/modalStack";
 
@@ -26,7 +25,6 @@ export const TransactionHistoryModal = React.memo(function TransactionHistoryMod
   account: selectedAccount,
   ledger,
   trades,
-  safeAccounts,
   safeBalances,
   realizedPnlByTradeId,
   effectiveFxRate,
@@ -55,21 +53,16 @@ export const TransactionHistoryModal = React.memo(function TransactionHistoryMod
       amount: l.fromAccountId === selectedAccount.id ? -l.amount : l.amount,
       isUsd: l.currency === "USD",
     }));
+  const isSecuritiesAccountForTrades = selectedAccount.type === "securities" || selectedAccount.type === "crypto";
   const tradeRows = trades
     .filter((t) => t.accountId === selectedAccount.id)
     .map((t) => {
-      const usdTicker = isUSDStock(t.ticker);
-      const useUsdBalanceMode = shouldUseUsdBalanceMode(
-        t.accountId,
-        selectedAccount.type === "securities" || selectedAccount.type === "crypto",
-        usdTicker,
-        safeAccounts,
-        ledger
-      );
-      const signedUsdAmount = t.side === "buy" ? -t.totalAmount : t.totalAmount;
-      const amount = useUsdBalanceMode
-        ? signedUsdAmount
-        : (Number(t.cashImpact) || 0);
+      // 거래마다 판정 — 계좌 단위(shouldUseUsdBalanceMode)로 가르면 cashImpact가 있는 원화 현금모드
+      // USD 거래까지 달러 잔액모드로 보고 원화 러닝밸런스에서 빠져 시작 잔액이 틀어진다(토스 −393만 사례).
+      // 판정 규칙은 잔액 엔진·타임라인과 같은 usdBalanceModeDelta(USD 종목 + cashImpact 0).
+      const usdDelta = isSecuritiesAccountForTrades ? usdBalanceModeDelta(t) : 0;
+      const useUsdBalanceMode = usdDelta !== 0;
+      const amount = useUsdBalanceMode ? usdDelta : (Number(t.cashImpact) || 0);
       const realizedPnl = t.side === "sell" ? (realizedPnlByTradeId.get(t.id) ?? amount) : undefined;
       const sellLabel = realizedPnl != null && realizedPnl >= 0 ? "투자수익" : "투자손실";
       const sellKind = t.side === "sell" ? (realizedPnl != null && realizedPnl >= 0 ? "stock_sell_profit" : "stock_sell_loss") : "stock_buy";

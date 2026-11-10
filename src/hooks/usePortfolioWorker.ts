@@ -57,7 +57,8 @@ function computeSynchronously(params: UsePortfolioWorkerParams): Omit<PortfolioS
 }
 
 export function usePortfolioWorker(params: UsePortfolioWorkerParams): PortfolioState {
-  const supportsWorker = typeof Worker !== "undefined";
+  // GAS 빌드(단일 HTML)는 워커 파일을 따로 서빙할 수 없어 메인 스레드 계산으로 — scripts/build-gas.mjs
+  const supportsWorker = typeof Worker !== "undefined" && import.meta.env.VITE_GAS_BUILD !== "1";
   const workerRef = useRef<Worker | null>(null);
   const requestIdRef = useRef(0);
   const latestHandledRequestRef = useRef(0);

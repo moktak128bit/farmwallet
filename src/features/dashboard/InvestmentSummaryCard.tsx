@@ -10,10 +10,6 @@ import type {
   StockTrade,
 } from "../../types";
 import { useAppStore } from "../../store/appStore";
-import {
-  positionMarketValueKRW,
-  baseBalanceForAccount,
-} from "../../calculations";
 import { formatKRW } from "../../utils/formatter";
 import { formatIsoLocal, getTodayKST, parseIsoLocal } from "../../utils/date";
 import {
@@ -23,7 +19,9 @@ import {
 } from "../../utils/investmentRecord";
 import { isDividendEntryLoose } from "../../utils/categoryMatch";
 import { toKrwByRate } from "../../utils/currency";
-import { usdBalanceModeDelta } from "../../utils/tradeCashImpact";
+import { isCurrencyExchangeEntry } from "../../utils/categoryUtils";
+import type { FxPoint } from "../../utils/portfolioHistory";
+import { computeInvestmentTotals } from "./glanceMath";
 import { formatGoalProjectionLine, projectGoal } from "../../utils/goalProjection";
 
 interface Props {
@@ -40,6 +38,10 @@ interface Props {
   netWorthSeries?: { month: string; value: number }[];
   /** 현재 순자산 — 부모가 대차 단일 소스(computeBalanceSheet)로 1회 계산한 값. 카드 인스턴스마다 대차를 재계산하지 않는다 */
   netWorth: number;
+  /** 보유 중이지만 시세가 없는 종목 수 — 원가로 평가되어 누적 손익에 손익 0으로 들어간다(부모 계산) */
+  unpricedCount?: number;
+  /** 일별 환율 이력 — fxRateAtTrade 없는 USD 거래를 거래일 환율로 환산(주식 탭과 같은 소스). 부모가 1회 계산 */
+  fxHistory?: FxPoint[];
 }
 
 function daysBetween(fromIso: string, toIso: string): number {
@@ -54,6 +56,9 @@ function formatPct(num: number, den: number): string {
   if (den <= 0) return "0%";
   return `${Math.round((num / den) * 100)}%`;
 }
+
+const CUMULATIVE_PNL_HINT = "증권·crypto 계좌의 지금 평가액(현금+보유 종목) − 순입금 원금. 평가손익·매도 실현손익·배당·이자·수수료가 모두 들어간 투자 총성과";
+const REALIZED_HINT = "올해 매도한 종목의 FIFO 실현손익만 (평가손익·배당 제외)";
 
 type EditKey = "annualDeposit" | "finalTotal" | "annualDividend" | "startDate";
 
@@ -72,7 +77,9 @@ export const InvestmentSummaryCard: React.FC<Props> = React.memo(function Invest
   fxRate,
   netWorthSeries,
   netWorth,
+  unpricedCount = 0,
   variant,
+  fxHistory,
 }) {
   const setData = useAppStore((s) => s.setData);
   const goalsRaw = useAppStore((s) => s.data.investmentGoals);
@@ -90,20 +97,11 @@ export const InvestmentSummaryCard: React.FC<Props> = React.memo(function Invest
     return set;
   }, [accounts]);
 
-  const totalInvestmentAssets = useMemo(() => {
-    let total = 0;
-    for (const row of balances) {
-      if (!securitiesAccountIds.has(row.account.id)) continue;
-      total += row.currentBalance;
-      const usdCash = (row.account.usdBalance ?? 0) + (row.usdTransferNet ?? 0);
-      if (usdCash && fxRate) total += usdCash * fxRate;
-    }
-    for (const p of positions) {
-      if (!securitiesAccountIds.has(p.accountId)) continue;
-      total += positionMarketValueKRW(p, fxRate);
-    }
-    return total;
-  }, [balances, positions, securitiesAccountIds, fxRate]);
+  // 평가액·순입금 원금·총 손익 — 첫 화면(DashboardGlance)과 같은 단일 정의(glanceMath)
+  const { totalInvestmentAssets, principal, cumulativePnl } = useMemo(
+    () => computeInvestmentTotals({ accounts, ledger, trades, balances, positions, fxRate }),
+    [accounts, ledger, trades, balances, positions, fxRate]
+  );
 
   // 최종 총자산 목표 ETA — 최근 6개월 순자산 페이스 (읽기 전용). investmentGoals에 기한이 없어 ETA만 표시
   const finalTotalEtaHint = useMemo(() => {
@@ -115,46 +113,16 @@ export const InvestmentSummaryCard: React.FC<Props> = React.memo(function Invest
     );
   }, [goals.finalTotalAssetTarget, netWorthSeries]);
 
-  const principal = useMemo(() => {
-    // 초기 USD 현금 롤백 — usdBalance는 잔액모드 거래가 반영된 '현재' 값이므로 전체 델타를 되감아
-    // 최초 보유분만 원금에 넣는다. 자산(totalInvestmentAssets)에는 포함되는데 원금에 빠지면
-    // 누적 손익이 초기 USD 현금만큼 과대해진다 (보고서 투자 총성과의 initialCapital과 동일 정의).
-    const usdModeDeltaTotal = new Map<string, number>();
-    for (const t of trades) {
-      const delta = usdBalanceModeDelta(t);
-      if (delta !== 0) usdModeDeltaTotal.set(t.accountId, (usdModeDeltaTotal.get(t.accountId) ?? 0) + delta);
-    }
-    let p = 0;
-    for (const a of accounts) {
-      if (!securitiesAccountIds.has(a.id)) continue;
-      // 잔액 계산과 동일한 단일 정의 사용 — initialBalance + initialCashBalance 이중계상 방지
-      p += baseBalanceForAccount(a);
-      const initialUsd = (a.usdBalance ?? 0) - (usdModeDeltaTotal.get(a.id) ?? 0);
-      if (initialUsd && fxRate) p += initialUsd * fxRate;
-    }
-    for (const e of ledger) {
-      if (e.kind !== "transfer") continue;
-      const toSec = e.toAccountId ? securitiesAccountIds.has(e.toAccountId) : false;
-      const fromSec = e.fromAccountId ? securitiesAccountIds.has(e.fromAccountId) : false;
-      if (toSec === fromSec) continue;
-      const amtKrw = toKrwByRate(e.amount, e.currency, fxRate);
-      if (toSec) p += amtKrw;
-      else if (fromSec) p -= amtKrw;
-    }
-    return p;
-  }, [accounts, ledger, trades, securitiesAccountIds, fxRate]);
-
-  const cumulativePnl = totalInvestmentAssets - principal;
 
   const closedRecords = useMemo(
-    () => buildClosedTradeRecords(trades, accounts, fxRate ?? undefined),
-    [trades, accounts, fxRate]
+    () => buildClosedTradeRecords(trades, accounts, fxRate ?? undefined, fxHistory),
+    [trades, accounts, fxRate, fxHistory]
   );
 
-  const monthlyRealizedPnl = useMemo(() => {
+  const { monthlyRealizedPnl, monthlyClosedCount } = useMemo(() => {
     const [y, m] = currentMonth.split("-").map(Number);
     const filtered = filterByPeriod(closedRecords, { kind: "month", year: y, month: m });
-    return summarizeRecords(filtered).totalPnl;
+    return { monthlyRealizedPnl: summarizeRecords(filtered).totalPnl, monthlyClosedCount: filtered.length };
   }, [closedRecords, currentMonth]);
 
   const yearlyRealizedPnl = useMemo(() => {
@@ -167,6 +135,7 @@ export const InvestmentSummaryCard: React.FC<Props> = React.memo(function Invest
     let amt = 0;
     for (const e of ledger) {
       if (e.kind !== "transfer") continue;
+      if (isCurrencyExchangeEntry(e)) continue; // 환전 다리는 계좌 안 통화 이동 — 입금 아님 (glanceMath 원금과 같은 정의)
       if (!e.date?.startsWith(currentYear)) continue;
       const toSec = e.toAccountId ? securitiesAccountIds.has(e.toAccountId) : false;
       const fromSec = e.fromAccountId ? securitiesAccountIds.has(e.fromAccountId) : false;
@@ -265,6 +234,8 @@ export const InvestmentSummaryCard: React.FC<Props> = React.memo(function Invest
         <div style={{ fontSize: 28, fontWeight: 700, color: "var(--chart-primary)" }}>
           <Money value={totalInvestmentAssets} compact />
         </div>
+        {/* 이번 달 매도 실현손익 — 매도가 없으면 "– 이번달 0 원"이 손익이 0인 것처럼 읽혀 숨긴다 */}
+        {monthlyClosedCount > 0 && (
         <span
           style={{
             fontSize: 14,
@@ -275,8 +246,9 @@ export const InvestmentSummaryCard: React.FC<Props> = React.memo(function Invest
             color: pnlColor(monthlyRealizedPnl),
           }}
         >
-          {monthlyRealizedPnl > 0 ? "▲" : monthlyRealizedPnl < 0 ? "▼" : "–"} 이번달 {formatKRW(Math.round(Math.abs(monthlyRealizedPnl)))}
+          이번 달 매도 실현 {Math.round(monthlyRealizedPnl) > 0 ? "+" : Math.round(monthlyRealizedPnl) < 0 ? "−" : ""}{formatKRW(Math.abs(Math.round(monthlyRealizedPnl)))}
         </span>
+        )}
         <span style={{ fontSize: 13, color: "var(--text-muted)" }}>
           증권·crypto 계좌 현금+포지션 (일반 계좌·부채 제외)
         </span>
@@ -337,15 +309,19 @@ export const InvestmentSummaryCard: React.FC<Props> = React.memo(function Invest
         )}
       </div>
 
-      {variant === "summary" && (
+      {variant === "summary" && (<>
         <div className="hint" style={{ marginTop: 0, display: "flex", gap: 14, flexWrap: "wrap" }}>
-          <span>원금 {formatKRW(Math.round(principal))}</span>
-          <span style={{ color: pnlColor(cumulativePnl), fontWeight: 600 }}>
-            누적 손익 {formatKRW(Math.round(cumulativePnl))}{principal > 0 ? ` (${((cumulativePnl / principal) * 100).toFixed(1)}%)` : ""}
+          <span title="투자 계좌로 넣은 돈 − 뺀 돈 (+ 시작 잔액)">순입금 원금 {formatKRW(Math.round(principal))}</span>
+          <span style={{ color: pnlColor(cumulativePnl), fontWeight: 600 }} title={CUMULATIVE_PNL_HINT}>
+            총 손익 {formatKRW(Math.round(cumulativePnl))}{principal > 0 ? ` (${((cumulativePnl / principal) * 100).toFixed(1)}%)` : ""}
           </span>
-          <span style={{ color: pnlColor(yearlyRealizedPnl), fontWeight: 600 }}>올해 손익 {formatKRW(Math.round(yearlyRealizedPnl))}</span>
+          <span style={{ color: pnlColor(yearlyRealizedPnl), fontWeight: 600 }} title={REALIZED_HINT}>올해 매도 실현 {formatKRW(Math.round(yearlyRealizedPnl))}</span>
         </div>
-      )}
+        <div className="hint" style={{ marginTop: -8, fontSize: 12 }}>
+          총 손익 = 지금 평가액 − 순입금 원금 (평가손익·매도 실현·배당·수수료 모두 포함) · 매도 실현 = 판 종목의 FIFO 차익만
+          {unpricedCount > 0 && ` · 시세 없는 ${unpricedCount}종목은 원가로 계산`}
+        </div>
+      </>)}
       {variant !== "summary" && (
       <div
         style={{
@@ -354,20 +330,20 @@ export const InvestmentSummaryCard: React.FC<Props> = React.memo(function Invest
           gap: 12,
         }}
       >
-        <MiniStat label="원금" value={formatKRW(Math.round(principal))} color="var(--text-muted)" />
+        <MiniStat label="순입금 원금" value={formatKRW(Math.round(principal))} color="var(--text-muted)" />
         <MiniStat
-          label="누적 손익"
+          label="총 손익 (평가액 − 원금)"
           value={formatKRW(Math.round(cumulativePnl))}
           color={pnlColor(cumulativePnl)}
-          sub={principal > 0 ? `${((cumulativePnl / principal) * 100).toFixed(1)}%` : undefined}
+          sub={principal > 0 ? `${((cumulativePnl / principal) * 100).toFixed(1)}%${unpricedCount > 0 ? ` · 시세 없는 ${unpricedCount}종목 원가` : ""}` : undefined}
         />
         <MiniStat
-          label="이번달 손익"
+          label="이번 달 매도 실현"
           value={formatKRW(Math.round(monthlyRealizedPnl))}
           color={pnlColor(monthlyRealizedPnl)}
         />
         <MiniStat
-          label="올해 손익"
+          label="올해 매도 실현"
           value={formatKRW(Math.round(yearlyRealizedPnl))}
           color={pnlColor(yearlyRealizedPnl)}
         />

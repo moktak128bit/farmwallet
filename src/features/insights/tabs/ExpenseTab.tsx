@@ -11,6 +11,7 @@ import { SubTab } from "./SubTab";
 import { computeDateAccountUtilization } from "../../../utils/dateAccounting";
 import { DISCRETIONARY_MAIN_NAMES, DISCRETIONARY_DETAIL_NAMES } from "../../../utils/fixedExpense";
 import { getThisMonthKST } from "../../../utils/date";
+import { dayCapLabel } from "../../../utils/ledgerFreshness";
 
 const WDAY_LABELS = ["월", "화", "수", "목", "금", "토", "일"];
 
@@ -250,7 +251,7 @@ export const ExpenseTab = React.memo(function ExpenseTab({ d }: { d: D }) {
                 <div>
                   <Row label="① 가계부 raw 지출" sub="신용결제·재테크·환전 제외" value={raw} bg="var(--bg)" />
                   <Row label="② 모임통장 50% (상대 부담)" sub={d.datePartnerShare > 0 ? `데이트 계좌 출금 ${F(Math.round(d.dateAccountSpend))}원의 절반` : "데이트 계좌 미설정 또는 출금 없음"} value={afterSplit} delta={-d.datePartnerShare} bg="var(--primary-light)" />
-                  <Row label="③ 정산 income 회수" sub={d.settlementTotal > 0 ? "subCategory에 '정산' 포함된 수입" : "정산 내역 없음"} value={afterSettle} delta={-d.settlementTotal} bg="var(--primary-light)" />
+                  <Row label="③ 정산·분담금 회수" sub={d.settlementTotal > 0 ? "중분류에 '정산'이 들어간 수입 + 데이트통장 분담금 입금" : "정산 내역 없음"} value={afterSettle} delta={-d.settlementTotal} bg="var(--primary-light)" />
                   {hasOneOff && (
                     <Row
                       label="④ 일회성 큰 단건 제외"
@@ -533,7 +534,7 @@ export const ExpenseTab = React.memo(function ExpenseTab({ d }: { d: D }) {
 
       {/* ============ 인사이트·이상치 ============ */}
       <Section storageKey="expense-section-insights" title="인사이트·이상치">
-        <Card title={`카테고리 성장률 TOP (vs 최근 3개월 ${d.categoryGrowth.partialDay != null ? `동기 1~${d.categoryGrowth.partialDay}일 ` : ""}평균)`} span={2}>
+        <Card title={`카테고리 성장률 TOP (vs 최근 3개월 ${d.categoryGrowth.partialDay != null ? `동기 ${dayCapLabel(d.categoryGrowth.partialDay)} ` : ""}평균)`} span={2}>
           {d.categoryGrowth.up.length === 0 && d.categoryGrowth.down.length === 0 ? (
             <div style={{ padding: 20, textAlign: "center", color: "var(--text-faint)", fontSize: 13 }}>
               비교할 과거 데이터가 부족합니다.
@@ -547,7 +548,7 @@ export const ExpenseTab = React.memo(function ExpenseTab({ d }: { d: D }) {
                     <div style={{ display: "flex", justifyContent: "space-between", fontWeight: 600 }}>
                       <span>{r.sub}</span>
                       <span style={{ color: "var(--danger)", fontWeight: 800 }}>
-                        {r.isNew ? "NEW" : `+${r.pctChange.toFixed(0)}%`}
+                        {r.isNew ? "새로 발생" : r.avg3 > 0 && r.cur >= r.avg3 * 3 ? "급증" : `+${r.pctChange.toFixed(0)}%`}
                       </span>
                     </div>
                     <div style={{ fontSize: 11, color: "var(--text-faint)" }}>{F(r.avg3)}원 → {F(r.cur)}원</div>
@@ -598,7 +599,7 @@ export const ExpenseTab = React.memo(function ExpenseTab({ d }: { d: D }) {
         <Card title="지출 분석 인사이트" span={4}>
           <div className="grid-2" style={{ gap: 10 }}>
             <Insight title="최다 지출 중분류" tone="danger">
-              {topSub ? `${topSub.sub}에 총 ${F(topSub.amount)}원 (${topSub.count}건, 건당 평균 ${F(Math.round(SD(topSub.amount, topSub.count)))}원). ${d.pExpense > 0 ? `전체 지출의 ${Math.round(SD(topSub.amount, d.pExpense) * 100)}%를 차지합니다.` : ""} ${topSub.count > 10 ? "잦은 소비가 누적되고 있습니다. 건수를 줄이는 것만으로도 효과적입니다." : "고단가 지출이 비중을 높이고 있습니다."}` : "데이터 없음"}
+              {topSub ? `${topSub.sub}에 총 ${F(topSub.amount)}원 (${topSub.count}건, 건당 평균 ${F(Math.round(SD(topSub.amount, topSub.count)))}원). ${d.pExpense > 0 ? `전체 지출의 ${Math.round(SD(topSub.amount, d.pExpense) * 100)}%.` : ""}` : "데이터 없음"}
             </Insight>
             <Insight title="최다 지출 항목(설명)" tone="info">
               {topDescs.length > 0 ? `${topDescs[0].desc}에 총 ${F(topDescs[0].amount)}원을 사용했습니다 (${topDescs[0].cat} · ${topDescs[0].sub || "기타"}). ${topDescs.length > 1 ? `2위 ${topDescs[1].desc}(${F(topDescs[1].amount)}원), 3위 ${topDescs.length > 2 ? `${topDescs[2].desc}(${F(topDescs[2].amount)}원)` : "없음"}.` : ""}` : "데이터 없음"}
@@ -611,8 +612,8 @@ export const ExpenseTab = React.memo(function ExpenseTab({ d }: { d: D }) {
                 return `가장 많이 쓰는 요일: ${top.name}요일 (일평균 ${F(top.일평균)}원). 가장 적게 쓰는 요일: ${bot.name}요일 (${F(bot.일평균)}원).`;
               })()}
             </Insight>
-            <Insight title="지출 효율성" tone="success">
-              {d.pExpense > 0 && d.totalDays > 0 ? `일 평균 ${F(Math.round(d.pExpense / d.totalDays))}원 지출. 총 ${d.expByCat.length}개 대분류, ${subs.length}개 중분류에 분산. ${subs.length > 15 ? "지출처가 많아 관리가 복잡합니다. 통합할 수 있는 항목이 있는지 확인하세요." : subs.length > 8 ? "적당한 수의 카테고리에 분산되어 있습니다." : "소수 카테고리에 집중되어 있어 관리가 용이합니다."}` : "데이터 없음"}
+            <Insight title="기록 규모" tone="success">
+              {d.pExpense > 0 && d.totalDays > 0 ? `기록된 ${d.totalDays}일 기준 일 평균 ${F(Math.round(d.pExpense / d.totalDays))}원. 대분류 ${d.expByCat.length}개, 중분류 ${subs.length}개.` : "데이터 없음"}
             </Insight>
           </div>
         </Card>
@@ -634,13 +635,13 @@ export const ExpenseTab = React.memo(function ExpenseTab({ d }: { d: D }) {
                     <span>비중 {s.share}%</span>
                     <span>{s.count}건</span>
                     <span>건당 {F(s.avg)}원</span>
-                    <span>월평균 {F(s.monthAvg)}원</span>
+                    <span title="지출이 있었던 완결 월만의 평균">발생월 평균 {F(s.monthAvg)}원 ({s.activeMonths}/{s.doneMonths})</span>
                     <span>피크 {s.peak || "-"}</span>
                     <span>최대건 {F(s.maxSingle)}원</span>
                   </div>
                   <div style={{ fontSize: 11, color: s.monthTrend === "up" ? "var(--danger)" : s.monthTrend === "down" ? "var(--success)" : "var(--text-faint)", fontWeight: 600, marginBottom: 4 }}>
-                    {s.monthTrend === "up" ? `▲ 전월 대비 ${s.mom}% 증가` : s.monthTrend === "down" ? `▼ 전월 대비 ${Math.abs(s.mom)}% 감소` : "전월과 유사"}
-                    {s.streakUp >= 2 && ` · ${s.streakUp}개월 연속 증가!`}
+                    {s.trendLabel}
+                    {s.streakUp >= 2 && ` · ${s.streakUp}개월 연속 증가`}
                   </div>
                   <InsightText text={s.comment} style={{ fontSize: 11, color: "var(--text-muted)", lineHeight: 1.6, borderTop: "1px solid var(--border-light)", paddingTop: 4 }} />
                 </div>

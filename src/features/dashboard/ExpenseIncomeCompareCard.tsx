@@ -3,7 +3,7 @@ import type { CategoryPresets, LedgerEntry } from "../../types";
 import { formatKRW } from "../../utils/formatter";
 import { compareMonths } from "../../utils/monthComparison";
 import { MonthComparisonCard } from "../../components/MonthComparisonCard";
-import { getThisMonthKST, getTodayKST } from "../../utils/date";
+import { dayCapLabel, recordedDayCap } from "../../utils/ledgerFreshness";
 
 interface Props {
   ledger: LedgerEntry[];
@@ -27,9 +27,10 @@ export const ExpenseIncomeCompareCard: React.FC<Props> = React.memo(function Exp
   salaryKeys,
   beforePayday = false,
 }) {
-  // 진행 중인 이번 달이면 전월·전년도 같은 기간(1~오늘 일)만 비교 —
-  // 부분 월 vs 완전한 월 비교 왜곡 방지 (월급 25일이면 월중 내내 수입 -90%대로 보이는 문제)
-  const dayCap = month === getThisMonthKST() ? Number(getTodayKST().slice(8, 10)) : null;
+  // 진행 중인 이번 달이면 전월·전년도 같은 기간만 비교 — 부분 월 vs 완전한 월 비교 왜곡 방지.
+  // 기간 끝은 '오늘'이 아니라 '마지막 기록일'(ledgerFreshness) — 캡처를 모아 입력하므로
+  // 오늘 기준이면 미입력 며칠이 "지출 -86%"로 보인다. 이번 달 기록이 없으면 0 → 비교 생략.
+  const dayCap = useMemo(() => recordedDayCap(ledger, month), [ledger, month]);
   const expenseComparison = useMemo(
     () => compareMonths(ledger, month, "expense", fxRate, categoryPresets, dayCap),
     [ledger, month, fxRate, categoryPresets, dayCap]
@@ -39,10 +40,19 @@ export const ExpenseIncomeCompareCard: React.FC<Props> = React.memo(function Exp
     [ledger, month, fxRate, categoryPresets, dayCap, salaryKeys]
   );
 
+  if (dayCap === 0) {
+    return (
+      <div className="card" style={{ padding: 16, display: "flex", flexDirection: "column", gap: 8 }}>
+        <div className="card-title" style={{ margin: 0, fontSize: 17 }}>{month} 전월·전년 대비</div>
+        <div className="hint" style={{ fontSize: 13 }}>이번 달 기록 전 — 기록이 들어오면 전월·전년 같은 기간과 비교합니다.</div>
+      </div>
+    );
+  }
+
   return (
     <div className="card" style={{ padding: 16, display: "flex", flexDirection: "column", gap: 12 }}>
       <div className="card-title" style={{ margin: 0, fontSize: 17 }}>
-        {month} 전월·전년 대비{dayCap != null ? ` (1~${dayCap}일 동기 비교)` : ""}
+        {month} 전월·전년 대비{dayCap != null ? ` (${dayCapLabel(dayCap)} 동기 비교)` : ""}
       </div>
       <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(220px, 1fr))", gap: 12 }}>
         <MonthComparisonCard

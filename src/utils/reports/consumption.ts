@@ -5,7 +5,7 @@
 
 import type { Account, LedgerEntry } from "../../types";
 import { isSavingsExpenseEntry, isCreditPayment, isInvestmentEntry } from "../category";
-import { INVESTING_ACCOUNT_TYPES, toKrwAmount, buildMonthRange } from "./shared";
+import { INVESTING_ACCOUNT_TYPES, toKrwAmount, buildMonthRange, isReportIncomeEntry } from "./shared";
 
 export interface ConsumptionImpactMonthlyRow {
   month: string;
@@ -47,7 +47,8 @@ export function generateConsumptionImpactMonthlyReport(
     const amount = toKrwAmount(entry.amount, entry.currency, fxRate);
 
     if (entry.kind === "income") {
-      row.income += amount;
+      // 대출 실행·퇴직연금·이월은 소비·투자 여력의 재원이 아니다 (isReportIncomeEntry 단일 게이트)
+      if (isReportIncomeEntry(entry)) row.income += amount;
       continue;
     }
 

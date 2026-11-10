@@ -37,13 +37,22 @@ const matchesIncomeOrTransfer = (l: LedgerEntry, kind: "income" | "transfer", na
 const matchesExpenseMain = (l: LedgerEntry, main: string) =>
   l.kind === "expense" && (l.subCategory === main || l.category === main);
 
-/** 지출 항목의 실효 대분류 — subCategory 우선, 구세대(재테크 등)는 category.
+/** 지출 항목의 실효 대분류 — 표준(category="지출")은 subCategory, 레거시(category에 대분류 직접 — 재테크 등)는 category.
+ * 예전엔 subCategory를 먼저 봐서 레거시 "재테크 > 투자손실"의 대분류가 "투자손실"이 됐고,
+ * 카테고리 탭이 실제로 쓰는 "재테크 > 투자손실"을 '사용하지 않는 카테고리'로 띄웠다.
  * (CategoriesPage 사용 통계 등 분류 집계의 단일 소스로 export) */
 export const expenseMainName = (l: LedgerEntry): string => {
-  const sub = (l.subCategory || "").trim();
-  if (sub) return sub;
   const cat = (l.category || "").trim();
-  return cat !== "지출" ? cat : "";
+  if (cat && cat !== "지출") return cat;
+  return (l.subCategory || "").trim();
+};
+
+/** 지출 항목의 실효 세부(소분류) — 표준은 detailCategory, 레거시(category=대분류)는 subCategory가 세부 자리. */
+export const expenseDetailName = (l: LedgerEntry): string => {
+  const cat = (l.category || "").trim();
+  const det = (l.detailCategory || "").trim();
+  if (cat && cat !== "지출") return det || (l.subCategory || "").trim();
+  return det;
 };
 
 /** spec에 해당하는 가계부 항목 수 — 실행 전 미리보기용. */

@@ -1,9 +1,16 @@
 // @vitest-environment jsdom
-import { describe, it, expect } from "vitest";
+import { describe, it, expect, vi } from "vitest";
 import { renderHook } from "@testing-library/react";
 import { useInsightsData } from "../features/insights/useInsightsData";
 import type { Account, CategoryPresets, LedgerEntry, StockPrice, StockTrade } from "../types";
 import type { AccountTimelineRow } from "../utils/accountTimeline";
+
+// 오늘을 고정 — recorded.daysSince(마지막 기록 후 경과일)는 오늘에 의존한다. 고정하지 않으면 스냅샷이 매일 깨진다.
+vi.mock("../utils/date", async (importOriginal) => ({
+  ...await importOriginal<typeof import("../utils/date")>(),
+  getTodayKST: () => "2026-11-10",
+  getThisMonthKST: () => "2026-11",
+}));
 
 /**
  * useInsightsData 골든 스냅샷 — 2단 분층(buildInsightsBase + sliceInsightsForMonth) 리팩터의

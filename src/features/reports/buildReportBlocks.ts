@@ -232,7 +232,7 @@ export function buildReportBlocks(input: ReportBlocksInput): ReportBlocksResult 
       blocks.push({
         title: "계좌 요약",
         head: ["계좌명", "초기잔액", "현재잔액", "변동", "변동률"],
-        rows: accountReport.map((r) => [r.accountName, Math.round(r.initialBalance), Math.round(r.currentBalance), Math.round(r.change), `${r.changeRate.toFixed(2)}%`])
+        rows: accountReport.map((r) => [r.accountName, Math.round(r.initialBalance), Math.round(r.currentBalance), Math.round(r.change), r.changeRate == null ? "—" : `${r.changeRate.toFixed(2)}%`])
       });
       break;
     }

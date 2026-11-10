@@ -48,7 +48,7 @@ export function missingFxDates(
 }
 
 interface FxBackfillMergeResult {
-  /** 압축 정책(compactDailyFx)까지 적용된 다음 배열 */
+  /** 날짜 중복 제거·정렬까지 적용된 다음 배열 */
   next: HistoricalDailyFx[];
   /** 새로 append된 날짜 수 */
   added: number;
@@ -58,7 +58,7 @@ interface FxBackfillMergeResult {
  * Yahoo에서 받은 (date, close) 목록을 historicalDailyFx에 병합한다.
  * - 기존 날짜의 값은 **불변** (신선 적립값 > 종가).
  * - 없는 날짜만 append. today 이후(오늘 포함)·0/NaN·형식 불량은 무시.
- * - 결과는 upsertDailyFx와 같은 보존 압축을 거친다.
+ * - 결과는 upsertDailyFx와 같이 날짜 중복 제거·정렬하며 과거 일별 값도 보존한다.
  * @returns 추가된 것이 없으면 null (호출부가 기존 참조를 유지)
  */
 export function mergeFxBackfill(

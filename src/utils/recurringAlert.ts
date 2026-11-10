@@ -1,5 +1,6 @@
 import type { LedgerEntry, Recurrence, RecurringExpense } from "../types";
-import { getTodayKST, getLastDayOfMonth, parseIsoLocal, formatIsoLocal } from "./date";
+import { getTodayKST, getLastDayOfMonth, parseIsoLocal, formatIsoLocal, addDaysToIso, shiftMonth } from "./date";
+import { latestRecordedDate } from "./ledgerFreshness";
 
 interface RecurringDueItem {
   recurring: RecurringExpense;
@@ -71,15 +72,19 @@ const computeDueDate = (r: RecurringExpense, refDate: string): string | null => 
   return due;
 };
 
+/** 금액 허용 오차 — 실제 청구액은 환율·부가세·할인으로 조금씩 달라진다(실장부 학자금 4,059 등록 vs 3,928 결제) */
+const AMOUNT_TOLERANCE = 0.1;
+
 /**
- * ledger 엔트리가 반복지출 r의 생성 스키마와 일치하는지 — kind(transfer/expense)+금액(±1)+분류/제목.
+ * ledger 엔트리가 반복지출 r의 생성 스키마와 일치하는지 — kind(transfer/expense)+금액(±10%)+분류/제목.
  * 기간(어느 사이클) 필터는 호출부 책임. recurringAlert(미등록 배지)와 cashFlowForecast(이미납부 차감)가 공유.
  */
 export function matchesRecurringEntry(l: LedgerEntry, r: RecurringExpense): boolean {
   // kind="income"(정기 수입, 3-4)은 별도 스키마(kind=income) — 지출/이체 가정과 분리해 가드
   const expectedKind = r.kind === "income" ? "income" : r.toAccountId ? "transfer" : "expense";
   if (l.kind !== expectedKind) return false;
-  if (Math.abs(Number(l.amount) - r.amount) >= 1) return false;
+  const amount = Number(l.amount);
+  if (!(amount > 0) || Math.abs(amount - r.amount) > Math.max(1, Math.abs(r.amount) * AMOUNT_TOLERANCE)) return false;
   const subMatch = !!r.category && l.subCategory === r.category;
   const titleMatch =
     !!r.title && (l.detailCategory === r.title || (l.description ?? "").includes(r.title));
@@ -97,19 +102,114 @@ export function matchesRecurringEntry(l: LedgerEntry, r: RecurringExpense): bool
  *  - subCategory = r.category, detailCategory = r.title (category는 "지출"/"이체" 대분류)
  *  - description은 r.title 또는 "[반복] {title}" 형태 → 포함 일치로 허용
  */
+/** due 기준 n주기 전 날짜 */
+function cyclesBefore(r: RecurringExpense, due: string, n: number): string {
+  if (r.frequency === "weekly") return addDaysToIso(due, -7 * n);
+  if (r.frequency === "yearly") return `${Number(due.slice(0, 4)) - n}${due.slice(4)}`;
+  const m = shiftMonth(due.slice(0, 7), -n);
+  const [y, mo] = m.split("-").map(Number);
+  return `${m}-${pad(Math.min(Number(due.slice(8, 10)), getLastDayOfMonth(y, mo)))}`;
+}
+
+interface StoppedRecurringItem {
+  recurring: RecurringExpense;
+  /** 마지막으로 매칭된 결제일 */
+  lastPaid: string;
+}
+
+/**
+ * 중지 추정 — 예전엔 결제됐는데(매칭 기록 있음) 최근 2주기 동안 결제가 없는 반복지출.
+ * 한 번도 매칭된 적 없는 항목은 증거가 없으므로 중지로 보지 않는다(새로 등록했거나 기록 방식이 다른 경우).
+ */
+function stoppedLastPaid(r: RecurringExpense, ledger: LedgerEntry[], due: string): string | null {
+  const windowStart = cyclesBefore(r, due, 2);
+  if (r.startDate > windowStart) return null; // 2주기가 아직 안 지남
+  let last: string | null = null;
+  for (const l of ledger) {
+    if (!l.date || l.date > due || !matchesRecurringEntry(l, r)) continue;
+    if (l.date >= windowStart) return null; // 최근 2주기 안에 결제 있음
+    if (last == null || l.date > last) last = l.date;
+  }
+  return last;
+}
+
+/** 중지 추정 반복지출 목록 — 배지·원클릭 반영에서 빠지고, 반복 지출 목록에 "중지 추정"으로 표시된다 */
+export function findStoppedRecurring(
+  recurring: RecurringExpense[],
+  ledger: LedgerEntry[],
+  refDate: string = getTodayKST()
+): StoppedRecurringItem[] {
+  const out: StoppedRecurringItem[] = [];
+  for (const r of recurring) {
+    const due = computeDueDate(r, refDate) ?? refDate;
+    if (r.endDate && r.endDate < refDate) continue;
+    const lastPaid = stoppedLastPaid(r, ledger, due);
+    if (lastPaid) out.push({ recurring: r, lastPaid });
+  }
+  return out;
+}
+
+/**
+ * 제외 규칙(허위 "미등록" 방지 — 실장부에서 4건 중 3건이 허위였다):
+ *  - 마감일이 마지막 기록일보다 뒤 → 아직 알 수 없음(캡처를 모아 입력하므로 기록이 오늘보다 늦다).
+ *  - 중지 추정(findStoppedRecurring) → 해지했을 가능성이 커 원클릭 반영 시 유령 거래가 된다.
+ */
 export function findOverdueRecurring(
   recurring: RecurringExpense[],
   ledger: LedgerEntry[],
   refDate: string = getTodayKST()
 ): RecurringDueItem[] {
   const items: RecurringDueItem[] = [];
+  const lastRecorded = latestRecordedDate(ledger, refDate);
   for (const r of recurring) {
     const due = computeDueDate(r, refDate);
     if (!due) continue;
+    if (lastRecorded != null && due > lastRecorded) continue;
+    if (stoppedLastPaid(r, ledger, due)) continue;
     // 마감일~오늘 구간의 기록을 검사 (당일만 보면 마감 당일 등록을 놓침)
     const windowEntries = ledger.filter((l) => l.date >= due && l.date <= refDate);
     const alreadyLogged = windowEntries.some((l) => matchesRecurringEntry(l, r));
     items.push({ recurring: r, dueDate: due, alreadyLogged });
   }
   return items;
+}
+
+interface ActualPayment {
+  date: string;
+  amount: number;
+  accountId: string | undefined;
+  /** 등록값과 다른 점 — 금액(±10% 초과)·결제일(3일 초과, 월간)·계좌. 비어 있으면 일치 */
+  diffs: string[];
+}
+
+/**
+ * 등록된 반복지출과 같은 항목(제목 일치 — detailCategory 또는 설명 포함)의 가장 최근 실제 결제.
+ * 금액은 보지 않는다 — 등록값이 낡아 금액이 달라진 경우를 드러내는 게 목적(실장부 핸드폰 등록 13,770/24일/삼성페이
+ * vs 실제 21,000/19일/NH). 데이터는 바꾸지 않는다.
+ */
+export function findLastActualPayment(r: RecurringExpense, ledger: LedgerEntry[], refDate: string = getTodayKST()): ActualPayment | null {
+  if (!r.title) return null;
+  const expectedKind = r.kind === "income" ? "income" : r.toAccountId ? "transfer" : "expense";
+  let best: LedgerEntry | null = null;
+  for (const l of ledger) {
+    if (l.kind !== expectedKind || !l.date || l.date > refDate || !(Number(l.amount) > 0)) continue;
+    if (!(l.detailCategory === r.title || (l.description ?? "").includes(r.title))) continue;
+    if (!best || l.date > best.date) best = l;
+  }
+  if (!best) return null;
+  const amount = Number(best.amount);
+  const accountId = expectedKind === "income" ? best.toAccountId : best.fromAccountId;
+  const diffs: string[] = [];
+  if (r.amount > 0 && Math.abs(amount - r.amount) > r.amount * AMOUNT_TOLERANCE) {
+    const pct = Math.round((amount / r.amount - 1) * 100);
+    diffs.push(`금액 ${pct > 0 ? "+" : ""}${pct}%`);
+  }
+  if (r.frequency === "monthly" && r.startDate) {
+    const regDay = Number(r.startDate.slice(8, 10));
+    const paidDay = Number(best.date.slice(8, 10));
+    if (Math.abs(regDay - paidDay) > 3) diffs.push(`결제일 ${paidDay}일(등록 ${regDay}일)`);
+  }
+  const regAccount = expectedKind === "income" ? r.toAccountId : r.fromAccountId;
+  if (regAccount && accountId && regAccount !== accountId) diffs.push("계좌 다름");
+  return { date: best.date, amount, accountId, diffs };
 }

@@ -7,8 +7,6 @@ import {
   buildFireBaseline,
   fireBaselineWindow,
   DEFAULT_RETURN_PCT,
-  RETURN_CAP_PCT,
-  RETURN_FLOOR_PCT,
 } from "../utils/fireBaseline";
 import { computeExpenseNatureSeries } from "../utils/fixedExpense";
 import type { CategoryPresets, LedgerEntry } from "../types";
@@ -97,6 +95,32 @@ describe("buildFireBaseline — 월 저축(재테크 유입)", () => {
   });
 });
 
+describe("buildFireBaseline — 반복 가능한 월 저축", () => {
+  it("대출·용돈으로 넣은 재테크 유입은 실질 흑자(실질 수입 − 실질 지출)로 상한 (실장부 유입 468만 vs 흑자 ~150만)", () => {
+    const ledger = [
+      ...everyMonth((m) => [
+        entry({ date: `${m}-25`, kind: "income", category: "수입", subCategory: "급여", amount: 3_000_000, toAccountId: "A1" }),
+        entry({ date: `${m}-10`, amount: 1_500_000 }),
+        entry({ date: `${m}-26`, kind: "transfer", category: "이체", subCategory: "투자이체", amount: 1_000_000, toAccountId: "B1" }),
+      ]),
+      // 대출 2,400만을 받아 한 번에 투자 — 재테크 유입엔 잡히지만 반복되는 저축이 아니다
+      entry({ date: "2026-03-02", kind: "income", category: "수입", subCategory: "대출", amount: 24_000_000, toAccountId: "A1" }),
+      entry({ date: "2026-03-03", kind: "transfer", category: "이체", subCategory: "투자이체", amount: 24_000_000, toAccountId: "B1" }),
+    ];
+    const b = buildFireBaseline({ ledger, todayIso: TODAY, categoryPresets: presets, fxRate: null, netWorthKRW: 0 });
+    expect(b.monthlySavingKRW).toBeCloseTo(3_000_000, 6); // (100만×12 + 2,400만) / 12
+    expect(b.monthlySurplusKRW).toBeCloseTo(1_500_000, 6);
+    expect(b.sustainableMonthlySavingKRW).toBeCloseTo(1_500_000, 6);
+  });
+
+  it("창에 실질 수입 기록이 없으면 재테크 유입 그대로", () => {
+    const ledger = everyMonth((m) => [entry({ date: `${m}-25`, kind: "transfer", category: "이체", subCategory: "저축이체", amount: 700_000, toAccountId: "S1" })]);
+    const b = buildFireBaseline({ ledger, todayIso: TODAY, categoryPresets: presets, fxRate: null, netWorthKRW: 0 });
+    expect(b.monthlySurplusKRW).toBeNull();
+    expect(b.sustainableMonthlySavingKRW).toBeCloseTo(700_000, 6);
+  });
+});
+
 describe("buildFireBaseline — 지출·USD·12개월 환산", () => {
   it("USD 지출은 환율로 환산해 연 실질 지출에 넣는다", () => {
     const ledger = everyMonth((m) => [
@@ -142,22 +166,14 @@ describe("buildFireBaseline — 지출·USD·12개월 환산", () => {
 describe("buildFireBaseline — 기대수익률·배당수익률", () => {
   const base = { ledger: [] as LedgerEntry[], todayIso: TODAY, categoryPresets: presets, fxRate: 1400 };
 
-  it("TWR + 배당수익률(순자산 대비)을 더하고 출처를 twr로 표시한다", () => {
-    const b = buildFireBaseline({ ...base, netWorthKRW: 100_000_000, twrAnnualPct: 6, dividendAnnualKRW: 2_000_000 });
-    expect(b.dividendYieldPct).toBeCloseTo(2, 9);
-    expect(b.expectedReturnPct).toBeCloseTo(8, 9);
-    expect(b.returnSource).toBe("twr");
-  });
-
-  it("TWR이 없으면 기본값(DEFAULT_RETURN_PCT)을 쓰고 출처는 default", () => {
-    const b = buildFireBaseline({ ...base, netWorthKRW: 100_000_000, twrAnnualPct: null, dividendAnnualKRW: 1_000_000 });
-    expect(b.returnSource).toBe("default");
-    expect(b.expectedReturnPct).toBeCloseTo(DEFAULT_RETURN_PCT + 1, 9);
-  });
-
-  it("상한/하한으로 클램프한다 (단기 TWR 급등·급락의 장기 투영 방지)", () => {
-    expect(buildFireBaseline({ ...base, netWorthKRW: 1, twrAnnualPct: 48 }).expectedReturnPct).toBe(RETURN_CAP_PCT);
-    expect(buildFireBaseline({ ...base, netWorthKRW: 1, twrAnnualPct: -33 }).expectedReturnPct).toBe(RETURN_FLOOR_PCT);
+  it("기대수익률은 장기 가정(DEFAULT_RETURN_PCT) — 최근 1년 TWR은 참고값으로만 (실장부 TWR −21% → −5% 캡 → 40년 내 미도달 회귀)", () => {
+    const crash = buildFireBaseline({ ...base, netWorthKRW: 100_000_000, twrAnnualPct: -21.4, dividendAnnualKRW: 2_000_000 });
+    expect(crash.expectedReturnPct).toBe(DEFAULT_RETURN_PCT);
+    expect(crash.recentTwrPct).toBeCloseTo(-21.4, 9);
+    expect(crash.dividendYieldPct).toBeCloseTo(2, 9); // 표시용 — 총수익 가정에 이미 포함되어 더하지 않는다
+    const boom = buildFireBaseline({ ...base, netWorthKRW: 1, twrAnnualPct: 48 });
+    expect(boom.expectedReturnPct).toBe(DEFAULT_RETURN_PCT);
+    expect(buildFireBaseline({ ...base, netWorthKRW: 1, twrAnnualPct: null }).recentTwrPct).toBeNull();
   });
 
   it("순자산 ≤ 0 이거나 배당 없음이면 배당수익률 0 (분모 0 보호)", () => {

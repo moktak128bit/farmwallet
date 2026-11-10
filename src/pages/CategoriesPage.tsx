@@ -1,9 +1,10 @@
 import React, { useMemo, useState, useEffect, useRef } from "react";
 import { toast } from "react-hot-toast";
+import { Trash2 } from "lucide-react";
 import type { CategoryPresets, ExpenseDetailGroup, LedgerEntry } from "../types";
 import {
   buildMergeCandidates, buildMergeMapper, countMergeTargets, mergePresets,
-  subPairKey, splitSubPairKey, effectiveSubName, expenseMainName,
+  subPairKey, splitSubPairKey, effectiveSubName, expenseMainName, expenseDetailName,
   type MergeKind, type MergeSpec,
 } from "../utils/categoryMerge";
 
@@ -334,7 +335,7 @@ export const CategoriesView: React.FC<Props> = ({ presets, onChangePresets, ledg
           (l) =>
             l.kind === "expense" &&
             expenseMainName(l) === group.main &&
-            (l.detailCategory ?? "").trim() === sub
+            expenseDetailName(l) === sub
         ).length;
         if (count > 0) usage.set(`expense:${group.main}:${sub}`, count);
       });
@@ -814,8 +815,10 @@ export const CategoriesView: React.FC<Props> = ({ presets, onChangePresets, ledg
               .sort((a, b) => b[1] - a[1])
               .slice(0, 20)
               .map(([key, count]) => {
-                const [, , ...parts] = key.split(":");
+                // 키 = "income:급여" | "expense:식비" | "expense:식비:간식" — 종류 접두만 떼고 "식비 > 간식"으로
+                const [kind, ...parts] = key.split(":");
                 const name = parts.join(" > ");
+                const kindLabel = kind === "income" ? "수입" : "지출";
                 return (
                   <div
                     key={key}
@@ -829,7 +832,7 @@ export const CategoriesView: React.FC<Props> = ({ presets, onChangePresets, ledg
                   >
                     <div style={{ fontWeight: 500 }}>{name}</div>
                     <div style={{ fontSize: 11, color: "var(--text-muted)", marginTop: 2 }}>
-                      {count}회 사용
+                      {kindLabel} · {count}회 사용
                     </div>
                   </div>
                 );
@@ -885,17 +888,11 @@ export const CategoriesView: React.FC<Props> = ({ presets, onChangePresets, ledg
                         }
                       }
                     }}
-                    style={{
-                      background: "var(--danger)",
-                      color: "white",
-                      border: "none",
-                      borderRadius: "4px",
-                      padding: "2px 6px",
-                      fontSize: 11,
-                      cursor: "pointer"
-                    }}
+                    className="icon-action danger"
+                    aria-label={`${item.path} 카테고리 삭제`}
+                    title="삭제"
                   >
-                    삭제
+                    <Trash2 size={14} aria-hidden />
                   </button>
                 </div>
               ))}

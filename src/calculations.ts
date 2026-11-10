@@ -677,7 +677,52 @@ export function computeTotalNetWorth(
 
 
 
-/** 특정 일자·계좌 집합 기준 잔액: 현금 + 주식평가액 + USD환산 (저축·증권 합계용) */
+/**
+ * dateStr 시점 계좌별 순가치(현금 + 달러 현금 환산 + 보유 종목 평가 − 계좌 부채 offset) 한 번에.
+ * 계좌 탭 대차(computeBalanceSheet)와 같은 규칙으로 계좌 부채(카드 이용액·마이너스)를 빼므로
+ * 양수 합 = 그 시점 총자산. stockAtCost = 시세가 없어 매입원가로 평가한 보유 종목 금액(원가 대체 표시용).
+ */
+export function computeAccountValuesAtDate(
+  accounts: Account[],
+  ledger: LedgerEntry[],
+  trades: StockTrade[],
+  dateStr: string,
+  prices: StockPrice[],
+  options?: { fxRate?: number | null; priceFallback?: "cost" | "zero" }
+): { byAccount: Map<string, number>; stockAtCost: number } {
+  const filteredLedger = ledger.filter((l) => l.date && l.date <= dateStr);
+  const filteredTrades = trades.filter((t) => t.date && t.date <= dateStr);
+  // usdBalance는 '현재' 값 — 이후 잔액모드 거래분을 되돌려야 과거 점에서 매수액이 미리 빠지지 않는다
+  const bal = computeAccountBalances(accountsWithUsdBalanceAsOf(accounts, trades, dateStr), filteredLedger, filteredTrades);
+  const pos = computePositions(filteredTrades, prices, accounts, {
+    fxRate: options?.fxRate ?? undefined,
+    priceFallback: options?.priceFallback
+  });
+  const fxRate = options?.fxRate;
+  const priced = new Set<string>();
+  for (const p of prices) if (Number(p.price) > 0) priced.add(canonicalTickerForMatch(p.ticker));
+  const stockMap = new Map<string, number>();
+  let stockAtCost = 0;
+  pos.forEach((p) => {
+    const v = positionMarketValueKRW(p, fxRate);
+    stockMap.set(p.accountId, (stockMap.get(p.accountId) ?? 0) + v);
+    if (p.quantity > 0 && !priced.has(canonicalTickerForMatch(p.ticker))) stockAtCost += v;
+  });
+  const byAccount = new Map<string, number>();
+  for (const row of bal) {
+    const cash = row.currentBalance;
+    const stock = stockMap.get(row.account.id) ?? 0;
+    const usd =
+      row.account.type === "securities" || row.account.type === "crypto"
+        ? (row.account.usdBalance ?? 0) + (row.usdTransferNet ?? 0)
+        : 0;
+    const usdKrw = fxRate && usd ? usd * fxRate : 0;
+    byAccount.set(row.account.id, cash + usdKrw + stock - accountDebtOffset(row.account));
+  }
+  return { byAccount, stockAtCost };
+}
+
+/** 선택 계좌들의 dateStr 시점 순가치 합 — computeAccountValuesAtDate의 합 (계좌 부채 offset 차감). */
 export function computeBalanceAtDateForAccounts(
   accounts: Account[],
   ledger: LedgerEntry[],
@@ -687,34 +732,10 @@ export function computeBalanceAtDateForAccounts(
   prices: StockPrice[],
   options?: { fxRate?: number | null; priceFallback?: "cost" | "zero" }
 ): number {
-  const filteredLedger = ledger.filter((l) => l.date && l.date <= dateStr);
-  const filteredTrades = trades.filter((t) => t.date && t.date <= dateStr);
-  // usdBalance는 '현재' 값 — 이후 잔액모드 거래분을 되돌려야 과거 점에서 매수액이 미리 빠지지 않는다
-  const bal = computeAccountBalances(accountsWithUsdBalanceAsOf(accounts, trades, dateStr), filteredLedger, filteredTrades);
-  const pos = computePositions(filteredTrades, prices, accounts, {
-    fxRate: options?.fxRate ?? undefined,
-    priceFallback: options?.priceFallback
-  });
-  const stockMap = new Map<string, number>();
-  const fxRate = options?.fxRate;
-  pos.forEach((p) => {
-    if (!accountIds.has(p.accountId)) return;
-    stockMap.set(
-      p.accountId,
-      (stockMap.get(p.accountId) ?? 0) + positionMarketValueKRW(p, fxRate)
-    );
-  });
-  return bal.reduce((sum, row) => {
-    if (!accountIds.has(row.account.id)) return sum;
-    const cash = row.currentBalance;
-    const stock = stockMap.get(row.account.id) ?? 0;
-    const usd =
-      row.account.type === "securities" || row.account.type === "crypto"
-        ? (row.account.usdBalance ?? 0) + (row.usdTransferNet ?? 0)
-        : 0;
-    const usdKrw = fxRate && usd ? usd * fxRate : 0;
-    return sum + cash + usdKrw + stock;
-  }, 0);
+  const { byAccount } = computeAccountValuesAtDate(accounts, ledger, trades, dateStr, prices, options);
+  let sum = 0;
+  for (const [id, v] of byAccount) if (accountIds.has(id)) sum += v;
+  return sum;
 }
 
 

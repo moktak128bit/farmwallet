@@ -5,11 +5,14 @@
 
 import type { Account, LedgerEntry, StockTrade } from "../../types";
 import { hasLoanRepaymentStructure, isInterestRepayment } from "../../calculations";
-import { isSavingsExpenseEntry, isCreditPayment, isInvestmentLossEntry } from "../category";
+import { isSavingsExpenseEntry, isCreditPayment, isInvestmentLossEntry, isInvestmentEntry } from "../category";
 import { tradeAmountKRW as tradeAmountKRWStd } from "../finance";
 import { computeMonthlyRealFlows, computeRealSavingsRate } from "../savingsRate";
 import { isNonRealIncomeSub } from "../realIncome";
 import { INVESTING_ACCOUNT_TYPES, toKrwAmount, buildMonthRange, realizedPnlKRWByTradeId, isDividendIncomeEntry } from "./shared";
+import type { FxPoint } from "../portfolioHistory";
+import { computeIncomeNatureKeys } from "../incomeClassification";
+import { isExcludedIncomeEntry } from "../savingsRate";
 
 /** 수입 카테고리 분류: 허수(정산/환불/용돈/대출 등)를 걸러낸 진짜 수입 — utils/realIncome 단일 소스 */
 
@@ -23,9 +26,10 @@ export interface ComprehensiveMonthlyRow {
 
   // ── 수입 ──
   totalIncome: number;          // 전체 수입 (장부 기준)
-  earnedIncome: number;         // 근로소득 (급여/수당/상여/부수익/기타수입)
+  earnedIncome: number;         // 근로소득 (급여/수당/상여 — incomeClassification salaryKeys 단일 소스)
+  otherIncome: number;          // 부수입 (캐시백·기타수입 등 — 근로·자본·허수 어디에도 안 드는 실질 수입)
   capitalIncome: number;        // 자본소득 (배당/이자/투자수익)
-  nonRealIncome: number;        // 허수 수입 (정산/용돈/원래 보유 자산/대출/처분소득/지원)
+  nonRealIncome: number;        // 허수 수입 (정산/용돈/원래 보유 자산/대출/처분소득/지원/퇴직연금)
 
   // ── 지출 ──
   totalExpense: number;         // 전체 지출 (장부 기준)
@@ -65,7 +69,8 @@ export function generateComprehensiveMonthlyReport(
   endMonth?: string,
   fxRate?: number,
   dateAccountId?: string | null,
-  nonRealIncomeOverride?: string[]
+  nonRealIncomeOverride?: string[],
+  fxHistory: FxPoint[] = []
 ): ComprehensiveMonthlyRow[] {
   const accountById = new Map(accounts.map((a) => [a.id, a]));
 
@@ -85,13 +90,18 @@ export function generateComprehensiveMonthlyReport(
   const rows = new Map<string, Accum>();
   for (const m of months) {
     rows.set(m, {
-      totalIncome: 0, earnedIncome: 0, capitalIncome: 0, nonRealIncome: 0,
+      totalIncome: 0, earnedIncome: 0, otherIncome: 0, capitalIncome: 0, nonRealIncome: 0,
       totalExpense: 0, livingExpense: 0, savingsExpense: 0, creditPayment: 0,
       transferTotal: 0, investingIn: 0, investingOut: 0,
       realizedPnl: 0, dividendIncome: 0, tradeCount: 0, buyAmount: 0, sellAmount: 0,
       loanRepayment: 0, loanInterest: 0
     });
   }
+
+  // 근로소득 판정 — 대시보드·인사이트와 같은 단일 소스(incomeClassification). 예전엔 "허수·자본 아니면 근로"라
+  // 캐시백·기타수입까지 근로소득으로 잡았다.
+  const { salaryKeys } = computeIncomeNatureKeys(ledger, accounts, { nonRealIncome: nonRealIncomeOverride });
+  const nonRealOverride = new Set(nonRealIncomeOverride ?? []);
 
   // 가계부 집계
   for (const entry of ledger) {
@@ -107,7 +117,7 @@ export function generateComprehensiveMonthlyReport(
       const cat = entry.category ?? "";
       const sub = entry.subCategory ?? "";
 
-      if (isNonRealIncomeSub(cat) || isNonRealIncomeSub(sub)) {
+      if (isNonRealIncomeSub(cat) || isNonRealIncomeSub(sub) || isExcludedIncomeEntry(entry) || nonRealOverride.has(sub || cat)) {
         row.nonRealIncome += amount;
       } else if (CAPITAL_INCOME_CATEGORIES.has(cat) || CAPITAL_INCOME_CATEGORIES.has(sub)) {
         row.capitalIncome += amount;
@@ -116,7 +126,8 @@ export function generateComprehensiveMonthlyReport(
           row.dividendIncome += amount;
         }
       } else {
-        row.earnedIncome += amount;
+        if (salaryKeys.has(sub || cat)) row.earnedIncome += amount;
+        else row.otherIncome += amount;
         // 비표준 표기(예: "수입-배당")가 카테고리에 남아있을 수 있음
         if (isDividendIncomeEntry(entry) && cat !== "배당") {
           row.dividendIncome += amount;
@@ -160,6 +171,10 @@ export function generateComprehensiveMonthlyReport(
 
     if (entry.kind === "transfer") {
       row.transferTotal += amount;
+      // 현행 재테크(저축이체·투자이체, 레거시 "저축"/"투자" 표기 포함)도 저축성 지출 — 일별 리포트(closing)와
+      // 같은 isInvestmentEntry 단일 소스. 예전엔 expense 기록만 세어 청년도약 70만 같은 이체가 0원으로 나왔다.
+      // 장부 지출(totalExpense)에는 넣지 않는다 — 이체는 지출 기록이 아니다(totalNet 정의 유지).
+      if (isInvestmentEntry(entry)) row.savingsExpense += amount;
       const fromAccount = entry.fromAccountId ? accountById.get(entry.fromAccountId) : undefined;
       const toAccount = entry.toAccountId ? accountById.get(entry.toAccountId) : undefined;
       // 카드 계좌로의 이체 = 신용결제 (카드 대금 납부)
@@ -174,7 +189,7 @@ export function generateComprehensiveMonthlyReport(
   }
 
   // 매매 집계 (월별)
-  const realizedByTradeId = realizedPnlKRWByTradeId(trades, accounts, fxRate);
+  const realizedByTradeId = realizedPnlKRWByTradeId(trades, accounts, fxRate, fxHistory);
   for (const trade of trades) {
     const month = trade.date.slice(0, 7);
     if (month < rangeStart || month > rangeEnd) continue;

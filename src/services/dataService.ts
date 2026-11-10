@@ -18,7 +18,7 @@ import {
 import { saveCacheToDB } from "./cacheStore";
 import { saveSafetySnapshot } from "./backupService";
 import { getKoreanNameOverlay } from "./krNameResolver";
-import { cleanTicker } from "../utils/finance";
+import { cleanTicker, cryptoKoreanName } from "../utils/finance";
 import { isDividendEntryLoose } from "../utils/categoryMatch";
 import { sanitizeLedger, sanitizeTrades } from "../utils/dataSanitize";
 import {
@@ -114,6 +114,13 @@ export function applyKoreanStockNames(data: AppData): { data: AppData; changed: 
     if (!Array.isArray(trades)) return trades;
     return trades.map((t) => {
       if (!t?.ticker) return t;
+      const coinName = cryptoKoreanName(t.ticker);
+      if (coinName) {
+        // 코인: 같은 ID가 "SOL"/"solana"처럼 이름이 갈리면 종목이 둘로 보인다 → 한글명 하나로
+        if (t.name === coinName || hasKoreanChars(t.name)) return t;
+        changed = true;
+        return { ...t, name: coinName };
+      }
       const key = cleanTicker(t.ticker);
       if (!shouldApplyKrName(map, key)) return t;
       const krName = getKrName(map, key);
@@ -128,6 +135,12 @@ export function applyKoreanStockNames(data: AppData): { data: AppData; changed: 
     if (!Array.isArray(prices)) return prices;
     return prices.map((p) => {
       if (!p?.ticker) return p;
+      const coinName = cryptoKoreanName(p.ticker);
+      if (coinName) {
+        if (p.name === coinName || hasKoreanChars(p.name)) return p;
+        changed = true;
+        return { ...p, name: coinName };
+      }
       const key = cleanTicker(p.ticker);
       if (!shouldApplyKrName(map, key)) return p;
       const krName = getKrName(map, key);
@@ -932,9 +945,25 @@ function buildAppDataFromMigrated(
     investmentGoals: normalizeInvestmentGoals(parsed.investmentGoals),
     // 하루 예산 설정 — loadData 필드 누락으로 새로고침마다 유실되던 회귀 방지
     dailyBudget: normalizeDailyBudget(parsed.dailyBudget),
-    savingsGoals: normalizeSavingsGoals(parsed.savingsGoals)
+    savingsGoals: normalizeSavingsGoals(parsed.savingsGoals),
+    // 데이트통장 — 문자열만(""=명시적 선택 안 함). 누락 시 undefined → loadData가 기기 레거시 키에서 1회 이관
+    dateAccountId: typeof parsed.dateAccountId === "string" ? parsed.dateAccountId : undefined
   };
   return { data: parsedData, needsCacheMigration, dropped: { ledger: ledgerSan.dropped, trades: tradesSan.dropped } };
+}
+
+/**
+ * 데이트통장 레거시 이관 — 장부에 dateAccountId가 없고(undefined) 이 기기 localStorage(fw-date-account-id)에
+ * 값이 있으면 장부로 옮긴다. 장부에 이미 값이 있으면(다른 기기에서 설정해 시트로 받은 경우) 장부가 우선.
+ */
+export function migrateLegacyDateAccount(data: AppData): { data: AppData; migrated: boolean } {
+  if (data.dateAccountId !== undefined) return { data, migrated: false };
+  let legacy: string | null = null;
+  try { legacy = typeof localStorage !== "undefined" ? localStorage.getItem(STORAGE_KEYS.DATE_ACCOUNT_ID) : null; } catch { legacy = null; }
+  if (legacy == null) return { data, migrated: false };
+  // 이미 없는 계좌를 가리키면 "선택 안 함"으로 — 존재하지 않는 id로 분담 계산하지 않게
+  const id = legacy && data.accounts.some((a) => a.id === legacy) ? legacy : "";
+  return { data: { ...data, dateAccountId: id }, migrated: true };
 }
 
 export function loadData(): AppData {
@@ -986,14 +1015,16 @@ export function loadData(): AppData {
     const { data: dataWithKrNames, changed: krNamesChanged } = applyKoreanStockNames(parsedData);
 
     // 사용자의 계좌·가계부·거래 원본을 그대로 보존. 임시/일회성 마이그레이션은 모두 제거됨.
-    const finalData: AppData = dataWithKrNames;
+    // 예외: 데이트통장 설정을 기기 localStorage(레거시)에서 장부(AppData)로 1회 이관 — 시트와 동기화되도록.
+    const { data: finalData, migrated: dateAccountMigrated } = migrateLegacyDateAccount(dataWithKrNames);
 
     // (손상 항목 폐기만으로는 여기서 저장하지 않는다 — 저장 시점·순서는 기존과 동일하게 useBackup 자동저장에 맡긴다.
     //  정리된 데이터는 부팅 직후 dirty로 감지돼 곧 저장되므로 재폐기·스냅샷 중복은 실제로 발생하지 않는다.)
     if (
       schemaVersionChanged ||
       krNamesChanged ||
-      needsCacheMigration
+      needsCacheMigration ||
+      dateAccountMigrated
     ) {
       try {
         saveData(finalData);

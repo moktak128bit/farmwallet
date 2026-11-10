@@ -11,6 +11,7 @@ import type { AppData } from "../../types";
 import { loadBackupDataVerified, mergeCurrentCaches, normalizeImportedData, saveSafetySnapshot, type BackupEntry } from "../../storage";
 import { ERROR_MESSAGES } from "../../constants/errorMessages";
 import { requestApply } from "../../components/ApplyConfirmModal";
+import { remoteText } from "../../services/gas";
 
 interface Props {
   backups: BackupEntry[];
@@ -134,7 +135,7 @@ export const BackupHistoryTable: React.FC<Props> = React.memo(function BackupHis
                 timeZone: "Asia/Seoul"
               })}
               {b.label && (
-                <div style={{ fontSize: 11, color: "var(--text-muted)", marginTop: 2 }}>{b.label}</div>
+                <div style={{ fontSize: 11, color: "var(--text-muted)", marginTop: 2 }}>{remoteText(b.label)}</div>
               )}
             </td>
             <td className="col-hide-mobile">브라우저 저장소</td>

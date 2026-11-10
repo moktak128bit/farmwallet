@@ -2,6 +2,7 @@ import type { CategoryPresets, LedgerEntry } from "../types";
 import { classifyLedgerFlow, toKrwAmount } from "../features/dashboard/summaryMath";
 import { expenseMainName } from "./categoryMerge";
 import { getTodayKST, parseIsoLocal, shiftMonth } from "./date";
+import { daysSinceLastRecord as daysSinceLast, latestRecordedDate, recordedDayCap } from "./ledgerFreshness";
 
 interface SpendingBucket {
   amount: number;
@@ -15,7 +16,9 @@ export function buildInsightsDecisionBrief({ ledger, targetMonth, categoryPreset
   fxRate: number | null;
   today?: string;
 }) {
-  const partialDay = targetMonth === today.slice(0, 7) ? Number(today.slice(8, 10)) : null;
+  // 진행 중인 달은 오늘이 아니라 마지막 기록일까지만 — 캡처를 모았다가 입력하면 아직 안 넣은 날이 '지출 감소'로 보인다.
+  // 이번 달 기록이 하나도 없으면 0 → hasTarget=false(비교 보류)
+  const partialDay = recordedDayCap(ledger, targetMonth, today);
   const buckets = new Map<string, SpendingBucket>();
   const categories = new Map<string, Map<string, SpendingBucket>>();
   const largestEntries = new Map<string, Map<string, { date: string; description: string; amount: number }>>();
@@ -52,7 +55,7 @@ export function buildInsightsDecisionBrief({ ledger, targetMonth, categoryPreset
     largestEntries.set(month, largest);
   }
   const target = buckets.get(targetMonth) ?? { amount: 0, count: 0 };
-  const hasTarget = recordedMonths.has(targetMonth) && targetMonth <= today.slice(0, 7);
+  const hasTarget = recordedMonths.has(targetMonth) && targetMonth <= today.slice(0, 7) && partialDay !== 0;
   const definitions = [
     { id: "previous", label: "전월", offsets: [1] },
     { id: "average3", label: "직전 3개월 평균", offsets: [1, 2, 3] },
@@ -78,13 +81,18 @@ export function buildInsightsDecisionBrief({ ledger, targetMonth, categoryPreset
     const previous = baseline.months.map(month => categories.get(month)?.get(name) ?? { amount: 0, count: 0 });
     const averageAmount = previous.reduce((sum, bucket) => sum + bucket.amount, 0) / previous.length;
     const averageCount = previous.reduce((sum, bucket) => sum + bucket.count, 0) / previous.length;
+    // 변화 = 건수 효과 (n − 평균n)×기준 건당 + 건당 효과 n×(이번 건당 − 기준 건당) — 두 항의 합이 정확히 delta
+    const baseTicket = averageCount > 0 ? averageAmount / averageCount : null;
+    const countEffect = baseTicket != null && current.count > 0 ? (current.count - averageCount) * baseTicket : null;
+    const ticketEffect = countEffect != null ? (current.amount - averageAmount) - countEffect : null;
     return { name, amount: current.amount, count: current.count, averageAmount, averageCount,
-      delta: current.amount - averageAmount,
+      delta: current.amount - averageAmount, countEffect, ticketEffect,
       largestEntry: largestEntries.get(targetMonth)?.get(name) ?? null,
       averageTicket: current.count > 0 ? current.amount / current.count : null,
       baselineTicket: averageCount > 0 ? averageAmount / averageCount : null };
   }).filter(row => Math.abs(row.delta) > 0.01).sort((a, b) => Math.abs(b.delta) - Math.abs(a.delta)).slice(0, 5);
-  const daysSinceLastRecord = partialDay != null && latestRecordDate
-    ? partialDay - Number(latestRecordDate.slice(8, 10)) : null;
-  return { targetMonth, partialDay, target, hasTarget, missingFx, comparisons, drivers, latestRecordDate, daysSinceLastRecord };
+  // 마지막 기록 후 경과일 — 진행 중인 달만 의미가 있다(비교는 이미 그 날짜까지로 잘랐음)
+  const lastAny = latestRecordedDate(ledger, today);
+  const daysSinceLastRecord = partialDay != null ? daysSinceLast(ledger, today) : null;
+  return { targetMonth, partialDay, target, hasTarget, missingFx, comparisons, drivers, latestRecordDate: partialDay != null ? lastAny : latestRecordDate, daysSinceLastRecord };
 }

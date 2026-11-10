@@ -29,6 +29,9 @@ function entry(o: Partial<LedgerEntry> & { id: string; amount: number; date: str
   return { kind: "expense", category: "지출", description: "", ...o } as LedgerEntry;
 }
 
+/** 기록 신선도 확보용 — 마감일(6/15 등)보다 뒤 날짜의 무관한 기록. 없으면 "아직 알 수 없음"으로 배지에서 빠진다 */
+const FRESH = entry({ id: "Lfresh", date: "2026-06-19", amount: 3_000, subCategory: "식비" });
+
 let changeCalls: LedgerEntry[][] = [];
 const goBudget = vi.fn();
 
@@ -96,7 +99,7 @@ describe("RecurringDueBadge — 원클릭 반영 팝오버", () => {
 
   it("'가계부에 반영' → 생성기 스키마로 onChangeLedger 1회(prepend) + undo 토스트", async () => {
     const netflix = rec({ id: "r1", title: "넷플릭스", amount: 17_000, fromAccountId: "A1" });
-    const other = entry({ id: "L0", date: "2026-06-01", amount: 5_000, subCategory: "식비" });
+    const other = entry({ id: "L0", date: "2026-06-19", amount: 5_000, subCategory: "식비" });
     setup([netflix], [other]);
     fireEvent.click(screen.getByRole("button", { name: /미등록/ }));
     await flush();
@@ -127,11 +130,11 @@ describe("RecurringDueBadge — 원클릭 반영 팝오버", () => {
   });
 
   it("배지는 미등록이라도 같은 달 dedup(±100원·날짜 무관)에 걸리면 생성 불가로 비활성 — 배지 목록 직접 삽입 금지 검증", async () => {
-    // 6/3에 17,050원(소분류 넷플릭스)으로 기록 → 배지(±1원, 마감일~오늘 윈도우)는 미등록으로 보지만
+    // 6/3에 17,050원(소분류 넷플릭스)으로 기록 → 배지(마감일~오늘 윈도우)는 미등록으로 보지만
     // 생성 dedup(같은 달 + 소분류 + ±100원)은 중복으로 본다 → 반영하면 이중 생성이므로 차단돼야 함
     const netflix = rec({ id: "r1", title: "넷플릭스", amount: 17_000 });
     const logged = entry({ id: "L1", date: "2026-06-03", amount: 17_050, subCategory: "구독비", detailCategory: "넷플릭스" });
-    setup([netflix], [logged]);
+    setup([netflix], [logged, FRESH]);
     fireEvent.click(screen.getByRole("button", { name: /반복지출 1건 미등록/ }));
     await flush();
     const box = screen.getByRole("checkbox", { name: "넷플릭스 반영" }) as HTMLInputElement;
@@ -146,7 +149,7 @@ describe("RecurringDueBadge — 원클릭 반영 팝오버", () => {
   it("체크 해제한 항목은 반영되지 않는다", async () => {
     const netflix = rec({ id: "r1", title: "넷플릭스", amount: 17_000 });
     const rent = rec({ id: "r2", title: "월세", amount: 500_000, startDate: "2026-01-05", category: "주거" });
-    setup([netflix, rent], []);
+    setup([netflix, rent], [FRESH]);
     fireEvent.click(screen.getByRole("button", { name: /미등록/ }));
     await flush();
     fireEvent.click(screen.getByRole("checkbox", { name: "넷플릭스 반영" }));
@@ -192,7 +195,7 @@ describe("RecurringDueBadge — 원클릭 반영 팝오버", () => {
       useAppStore.setState((s) => ({
         data: {
           ...s.data,
-          ledger: [entry({ id: "Lx", date: "2026-06-02", amount: 17_050, subCategory: "구독비", detailCategory: "넷플릭스" })]
+          ledger: [entry({ id: "Lx", date: "2026-06-02", amount: 17_050, subCategory: "구독비", detailCategory: "넷플릭스" }), FRESH]
         }
       }));
     });

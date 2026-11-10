@@ -4,6 +4,7 @@ import { parseEtfItemList, type EtfDiscountRow } from "./utils/etfDiscount";
 import { parseHistoricalCloses } from "./utils/yahooChartParse";
 import { parseChartWithDividends, type StockLookupData } from "./utils/stockLookup";
 import { STORAGE_KEYS } from "./constants/config";
+import { isGas, runServer } from "./services/gas";
 
 interface YahooQuoteResult {
   ticker: string;
@@ -338,10 +339,10 @@ const useCorsProxy = (): boolean => getEnv().DEV === true || getEnv().MODE === "
 // ─────────────────────────────────────────────────────────────────────────────
 
 /** 프록시 식별자 — 상태 저장 키. 공개 프록시는 선순위 정렬 대상, dev는 항상 맨 앞. */
-type ProxyId = "dev" | "allorigins" | "codetabs";
+type ProxyId = "gas" | "dev" | "allorigins" | "codetabs";
 
 interface PublicProxyDef {
-  id: Exclude<ProxyId, "dev">;
+  id: Exclude<ProxyId, "dev" | "gas">;
   label: string;
   /** innerUrl → 프록시 URL */
   build: (innerUrl: string) => string;
@@ -359,6 +360,7 @@ const PUBLIC_PROXIES: readonly PublicProxyDef[] = [
 ];
 
 const PROXY_LABELS: Record<ProxyId, string> = {
+  gas: "GAS 서버",
   dev: "개발 서버",
   allorigins: "allorigins",
   codetabs: "codetabs"
@@ -454,6 +456,8 @@ function orderedPublicProxies(): PublicProxyDef[] {
 function buildProxySnapshot(): ProxyStatusSnapshot {
   const state = getProxyState();
   const entries: ProxyStatusEntry[] = [];
+  const gas = state.byId.gas;
+  if (gas && (gas.ok > 0 || gas.fail > 0)) entries.push({ id: "gas", label: PROXY_LABELS.gas, ...gas });
   const dev = state.byId.dev;
   if (dev && (dev.ok > 0 || dev.fail > 0)) entries.push({ id: "dev", label: PROXY_LABELS.dev, ...dev });
   for (const def of orderedPublicProxies()) {
@@ -535,6 +539,23 @@ export async function fetchViaProxies(
 ): Promise<FetchViaProxiesResult> {
   const timeoutMs = options.timeoutMs ?? 8000;
   const accept = options.accept ?? defaultAccept;
+  let saw429 = false;
+
+  // GAS 웹앱: 서버 proxyFetch(UrlFetchApp — 허용 호스트만, 60초 캐시)가 1순위. 공개 CORS 프록시는 예비.
+  if (isGas()) {
+    try {
+      const res = await runServer<{ status: number; body: string }>("proxyFetch", innerUrl, options.encoding ?? "utf-8");
+      if (res.status === 429) saw429 = true;
+      else if (accept({ ok: res.status >= 200 && res.status < 300, status: res.status }, res.body)) {
+        recordProxyResult("gas", true);
+        return { body: res.body, saw429 };
+      }
+      recordProxyResult("gas", false);
+    } catch {
+      recordProxyResult("gas", false);
+    }
+  }
+
   const chain: Array<{ id: ProxyId; url: string }> = [];
   if (useCorsProxy() && options.devProxyUrl !== null) {
     chain.push({
@@ -544,7 +565,6 @@ export async function fetchViaProxies(
   }
   for (const def of orderedPublicProxies()) chain.push({ id: def.id, url: def.build(innerUrl) });
 
-  let saw429 = false;
   for (const { id, url } of chain) {
     const controller = new AbortController();
     const timeoutId = setTimeout(() => controller.abort(), timeoutMs);

@@ -40,7 +40,8 @@ import { DailyBudgetBar } from "../features/ledger/DailyBudgetBar";
 import { DEFAULT_DAILY_BUDGET } from "../utils/dailyBudget";
 import { useAppStore } from "../store/appStore";
 import { saveSafetySnapshot } from "../services/backupService";
-import { getKoreaTime, getThisMonthKST, getTodayKST } from "../utils/date";
+import { getKoreaTime, getThisMonthKST } from "../utils/date";
+import { recordedDayCap } from "../utils/ledgerFreshness";
 import { toast } from "react-hot-toast";
 import { buildClosedTradeRecords } from "../utils/investmentRecord";
 import { exportLedgerCsv } from "../utils/csvExport";
@@ -58,6 +59,8 @@ import { MonthNavigator } from "../components/ledger/MonthNavigator";
 import { EXPENSE_BOX_EXCLUDED_NAMES, isExcludedExpenseName } from "../features/dashboard/summaryMath";
 import { useFxRateValue } from "../context/FxRateContext";
 import { toKrwByRate } from "../utils/currency";
+import { isCoarsePointer } from "../utils/pointer";
+import { computeBalanceAfterByLedgerId } from "../features/ledger/balanceAfter";
 import { LedgerEntryForm, showDuplicateToast, type LedgerEntryFormHandle, type LedgerTab } from "../features/ledger/LedgerEntryForm";
 import { findProbableDuplicates } from "../utils/ledgerDuplicate";
 import { LedgerFilterCard } from "../features/ledger/LedgerFilterCard";
@@ -507,8 +510,9 @@ export const LedgerView: React.FC<Props> = ({
     // 진행 중인 이번 달을 보는 중이면 현재 측·전월 측 모두 같은 기간(1~오늘 일)만 합산 —
     // 부분 월 vs 완전한 월 비교 왜곡 방지 (월급 25일이면 월중 내내 수입이 급감으로 보임).
     // 반대로 현재 측만 월 전체를 합하면(선입력·반복 생성분) 증감액이 미래 일자만큼 부풀었다.
-    const prevDayCap =
-      compareEligible && baseMonth === getThisMonthKST() ? Number(getTodayKST().slice(8, 10)) : null;
+    // 기간 끝 = 마지막 기록일(ledgerFreshness) — 오늘 기준이면 미입력 며칠이 급감으로 보인다.
+    // 이번 달 기록이 0건이면 0 → 현재·전월 모두 빈 창(0 vs 0)이라 허위 증감이 생기지 않는다.
+    const prevDayCap = compareEligible ? recordedDayCap(ledger, baseMonth) : null;
 
     let savingsAmount = 0;
     let expenseAmount = 0;
@@ -588,70 +592,16 @@ export const LedgerView: React.FC<Props> = ({
       prevMonth,
       prevDayCap,
     };
-  }, [filteredLedger, categoryPresets, ledgerByTab, viewMode, selectedMonths, fxRate]);
+  }, [filteredLedger, categoryPresets, ledgerByTab, viewMode, selectedMonths, fxRate, ledger]);
 
   // 출금/입금 셀에 표시할 계좌별 금액·잔액 (ledger + trades 혼합, 날짜순 역산)
-  const balanceAfterByLedgerId = useMemo(() => {
-    const result = new Map<
-      string,
-      { from?: { amount: number; balance: number }; to?: { amount: number; balance: number } }
-    >();
-    const balanceById = new Map<string, number>();
-    for (const row of balances) {
-      balanceById.set(row.account.id, row.currentBalance);
-    }
-    type Event = { type: "ledger"; id: string; date: string; l: LedgerEntry } | { type: "trade"; id: string; date: string; t: StockTrade };
-    // 같은 날짜 내 잔액 귀속 순서 = 표시 순서와 동일 기준이라야 표를 위→아래로 읽을 때 잔액이 맞는다.
-    // id 사전순 tie-break는 ☰ 드래그/▲▼로 행 순서를 바꿔도 반영되지 않아 잔액 열이 모순됐다.
-    // 표시 순서: combinedLedger가 [...ledger, ...trades]라 같은 날짜면 ledger가 trade보다 먼저,
-    // 각 그룹 내부는 원본 배열 인덱스 순.
-    const ledgerIndex = new Map(deferredLedger.map((l, i) => [l.id, i]));
-    const tradeIndex = new Map(deferredTrades.map((t, i) => [t.id, i]));
-    const events: Event[] = [
-      ...deferredLedger.map((l) => ({ type: "ledger" as const, id: l.id, date: l.date, l })),
-      ...deferredTrades.map((t) => ({ type: "trade" as const, id: t.id, date: t.date, t }))
-    ].sort((a, b) => {
-      if (a.date !== b.date) return a.date.localeCompare(b.date);
-      if (a.type !== b.type) return a.type === "ledger" ? -1 : 1;
-      if (a.type === "ledger") return (ledgerIndex.get(a.id) ?? 0) - (ledgerIndex.get(b.id) ?? 0);
-      return (tradeIndex.get(a.id) ?? 0) - (tradeIndex.get(b.id) ?? 0);
-    });
-    const futureImpact = new Map<string, number>();
-    const addImpact = (accId: string, delta: number) =>
-      futureImpact.set(accId, (futureImpact.get(accId) ?? 0) + delta);
-    for (let i = events.length - 1; i >= 0; i--) {
-      const e = events[i];
-      if (e.type === "ledger") {
-        const l = e.l;
-        let fromImpact = 0;
-        let toImpact = 0;
-        if (l.kind === "income" && l.toAccountId) toImpact = l.amount;
-        else if (l.kind === "expense") {
-          if (l.fromAccountId) fromImpact = -l.amount;
-          if (l.toAccountId) toImpact = l.amount;
-        } else if (l.kind === "transfer") {
-          if (l.fromAccountId) fromImpact = -l.amount;
-          if (l.toAccountId) toImpact = l.amount;
-        }
-        const fromBalance = l.fromAccountId
-          ? (balanceById.get(l.fromAccountId) ?? 0) - (futureImpact.get(l.fromAccountId) ?? 0)
-          : 0;
-        const toBalance = l.toAccountId
-          ? (balanceById.get(l.toAccountId) ?? 0) - (futureImpact.get(l.toAccountId) ?? 0)
-          : 0;
-        result.set(e.id, {
-          from: l.fromAccountId ? { amount: fromImpact, balance: fromBalance } : undefined,
-          to: l.toAccountId ? { amount: toImpact, balance: toBalance } : undefined
-        });
-        if (l.fromAccountId) addImpact(l.fromAccountId, fromImpact);
-        if (l.toAccountId) addImpact(l.toAccountId, toImpact);
-      } else {
-        const t = e.t;
-        addImpact(t.accountId, t.cashImpact);
-      }
-    }
-    return result;
-  }, [deferredLedger, deferredTrades, balances]);
+  // 통화별로 따로 역산한다 — 잔액 엔진(computeAccountBalances)과 같은 규칙: USD 이체(환전 도착 다리 등)는
+  // 계좌의 달러 잔고(usdBalance + usdTransferNet)에만, 나머지는 원화 잔고에. 예전엔 원화 잔액 94,611에
+  // $41.19를 섞어 "CMA +$41.190 · $94,652.000"처럼 원화 숫자를 달러로 찍었다.
+  const balanceAfterByLedgerId = useMemo(
+    () => computeBalanceAfterByLedgerId(deferredLedger, deferredTrades, balances),
+    [deferredLedger, deferredTrades, balances]
+  );
 
   const filteredLedgerRef = useRef<LedgerDisplayRow[]>([]);
   useEffect(() => {
@@ -1142,12 +1092,15 @@ export const LedgerView: React.FC<Props> = ({
           />
         )}
 
-      <p style={{ fontSize: 12, color: "var(--text-muted)", marginBottom: 8 }}>
-        <strong>Shift+드래그</strong>로 구간 토글(선택된 건 해제), <strong>Shift+클릭</strong>으로 1건 토글. 합계는 아래에 고정 표시됩니다.
-        {viewMode === "all" && ledgerSort.key === "date" && (
-          <> 행 앞 ☰를 드래그하면 같은 날짜 안에서 순서를 바꿀 수 있습니다.</>
-        )}
-      </p>
+      {/* 키보드 조작 안내는 마우스·키보드 기기에서만 — 터치 기기엔 Shift가 없다 */}
+      {!isCoarsePointer() && (
+        <p style={{ fontSize: 12, color: "var(--text-muted)", marginBottom: 8 }}>
+          <strong>Shift+드래그</strong>로 구간 토글(선택된 건 해제), <strong>Shift+클릭</strong>으로 1건 토글. 합계는 아래에 고정 표시됩니다.
+          {viewMode === "all" && ledgerSort.key === "date" && (
+            <> 행 앞 ☰를 드래그하면 같은 날짜 안에서 순서를 바꿀 수 있습니다.</>
+          )}
+        </p>
+      )}
       {dragSumStartIndex != null && (
         <div
           style={{

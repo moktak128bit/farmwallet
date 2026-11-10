@@ -37,11 +37,35 @@ describe("computeIncomeNatureKeys — 근로소득/패시브 자동 감지 (인�
     expect(salaryKeys.has("보너스금")).toBe(false);  // 1회 발생 → 빈도 미달
   });
 
+  it("잡수입 묶음(기타수입·기타)은 매월 나와도 근로소득 아님 — 사용자 지정 시에만 근로 (실장부 회귀)", () => {
+    const misc = [
+      ...ledger,
+      ...MONTHS.map((m, i) => entry({ id: `misc${i}`, amount: 50_000, subCategory: "기타수입", date: `${m}-12` })),
+    ];
+    expect(computeIncomeNatureKeys(misc, accounts).salaryKeys.has("기타수입")).toBe(false);
+    expect(computeIncomeNatureKeys(misc, accounts, { salary: ["기타수입"] }).salaryKeys.has("기타수입")).toBe(true);
+  });
+
   it("패시브: 명시 배당 + 투자계좌 입금 중분류, 급여성은 제외", () => {
     const { investIncKeys } = computeIncomeNatureKeys(ledger, accounts);
     expect(investIncKeys.has("배당")).toBe(true);    // ALWAYS_INVEST_INCOME
     expect(investIncKeys.has("분배금")).toBe(true);  // 증권계좌 입금 감지
     expect(investIncKeys.has("급여")).toBe(false);
+  });
+
+  it("투자계좌에 한 건 들어왔다고 카테고리 전체를 패시브로 보지 않는다 — 금액 과반 규칙 (실장부 1원송금 3원→ISA 회귀)", () => {
+    const l2 = [
+      ...ledger,
+      entry({ id: "side", amount: 1_500_000, subCategory: "부업", date: "2026-03-08", toAccountId: "chk" }), // 1개월만 → 급여 자동감지 아님
+      entry({ id: "side-isa", amount: 3, subCategory: "부업", date: "2026-03-09", toAccountId: "sec1" }),
+      entry({ id: "misc-isa", amount: 3, subCategory: "기타수입", date: "2026-03-09", toAccountId: "sec1" }),
+      entry({ id: "reward", amount: 900_000, subCategory: "펀드분배", date: "2026-03-10", toAccountId: "sec1" }),
+      entry({ id: "reward2", amount: 100_000, subCategory: "펀드분배", date: "2026-03-11", toAccountId: "chk" }),
+    ];
+    const { investIncKeys } = computeIncomeNatureKeys(l2, accounts);
+    expect(investIncKeys.has("부업")).toBe(false);    // 투자계좌 3원 / 150만
+    expect(investIncKeys.has("기타수입")).toBe(false); // NEVER_INVEST_INCOME
+    expect(investIncKeys.has("펀드분배")).toBe(true);    // 90% 투자계좌
   });
 });
 

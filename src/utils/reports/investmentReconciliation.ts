@@ -14,11 +14,14 @@ import { usdBalanceModeDelta } from "../tradeCashImpact";
 import { getTodayKST } from "../date";
 import { isUSDStock, plausibleUsdKrw } from "../finance";
 import { xirr, type CashFlowItem } from "../irr";
-import { convertPositionAmount, realizedPnlKRWByTradeId, isDividendIncomeEntry, toKrwAmount } from "./shared";
+import { convertPositionAmount, realizedPnlKRWByTradeId, isDividendIncomeEntry, isPrincipalLikeIncomeEntry, toKrwAmount } from "./shared";
+import type { FxPoint } from "../portfolioHistory";
 
 export interface AccountPerformanceBreakdownRow {
   accountId: string;
   accountName: string;
+  /** 증권·코인 계좌 여부 — 성과(IRR·TTWR) 표는 투자 계좌만 보여 준다 */
+  isInvesting: boolean;
   currentValue: number;
   irr?: number | null;
   ttwr?: number | null;
@@ -82,7 +85,8 @@ export function generateAccountPerformanceBreakdown(
   ledger: LedgerEntry[],
   trades: StockTrade[],
   prices: StockPrice[],
-  fxRate?: number
+  fxRate?: number,
+  fxHistory: FxPoint[] = []
 ): AccountPerformanceBreakdownRow[] {
   const accountById = new Map(accounts.map((account) => [account.id, account]));
   const today = getTodayKST();
@@ -124,7 +128,7 @@ export function generateAccountPerformanceBreakdown(
     }
   }
 
-  const realizedByTradeId = realizedPnlKRWByTradeId(trades, accounts, fxRate);
+  const realizedByTradeId = realizedPnlKRWByTradeId(trades, accounts, fxRate, fxHistory);
   const realizedByAccount = new Map<string, number>();
   for (const trade of trades) {
     if (trade.side !== "sell") continue;
@@ -208,6 +212,7 @@ export function generateAccountPerformanceBreakdown(
     rows.push({
       accountId: account.id,
       accountName: account.name,
+      isInvesting: investingFlowIds.has(account.id),
       currentValue: endValue,
       irr,
       ttwr,
@@ -323,6 +328,8 @@ export interface InvestmentReconciliation {
   buyVolume: number;
   sellVolume: number;
   tradeCount: number;
+  /** 거래 환율도 환율 이력도 없어 실현손익을 확정 못 해 제외한 매도 건수 */
+  fxExcludedSells: number;
   accounts: InvestmentReconciliationAccountRow[];
 }
 
@@ -336,7 +343,8 @@ export function computeInvestmentReconciliation(
   trades: StockTrade[],
   prices: StockPrice[],
   accountPerformance: AccountPerformanceBreakdownRow[],
-  fxRate?: number
+  fxRate?: number,
+  fxHistory: FxPoint[] = []
 ): InvestmentReconciliation {
   const empty: InvestmentReconciliation = {
     hasData: false,
@@ -349,7 +357,7 @@ export function computeInvestmentReconciliation(
     realizedGain: 0, realizedLoss: 0, unrealizedGain: 0, unrealizedLoss: 0,
     winningTrades: [], losingTrades: [],
     winningPositions: [], losingPositions: [], monthlyPnl: [],
-    buyVolume: 0, sellVolume: 0, tradeCount: 0, accounts: []
+    buyVolume: 0, sellVolume: 0, tradeCount: 0, fxExcludedSells: 0, accounts: []
   };
 
   const investingAccounts = accounts.filter((a) => RECONCILIATION_ACCOUNT_TYPES.has(a.type));
@@ -374,6 +382,17 @@ export function computeInvestmentReconciliation(
   let withdrawals = 0;
   const netFlowByDate = new Map<string, number>(); // 투자 세계로의 순유입 (IRR용)
   for (const entry of ledger) {
+    // 투자계좌로 들어온 이전성 수입(퇴직연금 이전·이월·지원 등)은 번 돈이 아니라 넣은 돈 → 입금(원금).
+    // 대시보드 glanceMath와 같은 규칙 — 예전엔 "배당 외 계좌 입금 수입"으로 성과에 잡혀 총성과가 425만 어긋났다.
+    if (entry.kind === "income" && entry.toAccountId && investingIds.has(entry.toAccountId) && isPrincipalLikeIncomeEntry(entry)) {
+      if (entry.currency === "USD" && !fxRate) continue;
+      const amount = toKrwAmount(entry.amount, entry.currency, fxRate);
+      if (!(amount > 0)) continue;
+      contributedByAccount.set(entry.toAccountId, (contributedByAccount.get(entry.toAccountId) ?? 0) + amount);
+      deposits += amount;
+      netFlowByDate.set(entry.date, (netFlowByDate.get(entry.date) ?? 0) + amount);
+      continue;
+    }
     if (entry.kind !== "transfer") continue;
     // 환율 미로드 시 USD 이체는 건너뛴다 — toKrwByRate는 fxRate가 없으면 달러 액면을 그대로 원화로
     // 돌려주는데, 평가액 쪽 usdCash는 fxRate 없으면 통째로 0이라 한쪽만 세면 순투입원금이 부풀어
@@ -433,7 +452,10 @@ export function computeInvestmentReconciliation(
   // 실현손익·매수/매도 활동량 모두 '거래시점 환율(fxRateAtTrade)' 기준 KRW로 산출한다.
   // accountRows.realizedPnl(perf)·대시보드·투자기록 카드와 동일 정의 — 과거 USD 매도를
   // '현재' 환율로 환산하면 환변동분이 손익에 섞여 같은 화면 안에서도 값이 어긋난다(불변식: 과거손익 보존).
-  const closedRecords = buildClosedTradeRecords(trades, accounts, fxRate ?? undefined);
+  // 환율 이력으로 거래일 환율 — 대시보드와 같은 입력. 이력에서도 못 찾은 매도(fxUnreliable)는 손익 목록·합계에서 뺀다
+  const closedRecordsAll = buildClosedTradeRecords(trades, accounts, fxRate ?? undefined, fxHistory);
+  const closedRecords = closedRecordsAll.filter((r) => !r.fxUnreliable);
+  const fxExcludedSells = closedRecordsAll.length - closedRecords.length;
   const closedByTradeId = new Map(closedRecords.map((r) => [r.tradeId, r]));
   // 거래 한 건의 totalAmount를 거래시점 환율로 환산 (USD 종목만; 없으면 현재 환율 폴백).
   const tradeAmountKRW = (t: StockTrade): number => {
@@ -534,6 +556,7 @@ export function computeInvestmentReconciliation(
   for (const entry of ledger) {
     if (entry.kind === "income") {
       if (!entry.toAccountId || !investingIds.has(entry.toAccountId)) continue;
+      if (isPrincipalLikeIncomeEntry(entry)) continue; // 위에서 원금(입금)으로 처리
       accountIncomeRaw += entry.amount;
       if (isDividendIncomeEntry(entry)) dividendIncomeRaw += entry.amount;
     } else if (entry.kind === "expense") {
@@ -624,6 +647,7 @@ export function computeInvestmentReconciliation(
     buyVolume,
     sellVolume,
     tradeCount,
+    fxExcludedSells,
     accounts: accountRows
   };
 }

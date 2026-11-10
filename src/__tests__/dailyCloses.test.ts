@@ -1,4 +1,4 @@
-/** 일별 종가 적립(utils/dailyCloses) — 보유 종목만·종목당 1건/일·월말 압축 보존 정책 */
+/** 일별 종가 적립 — 보유 종목만·종목당 1건/일·과거 일별 보존 */
 import { describe, expect, it } from "vitest";
 import type { HistoricalDailyClose, StockPrice, StockTrade } from "../types";
 import { upsertDailyCloses } from "../utils/dailyCloses";
@@ -45,8 +45,7 @@ describe("upsertDailyCloses", () => {
     expect(upsertDailyCloses(first, [px("458730", 15550)], trades, "2026-06-12")).toBeNull();
   });
 
-  it("120일 이전 데이터는 종목·월당 마지막 1건(월말 종가)으로 압축한다", () => {
-    // 2025-10월에 일별 3건 → 오늘(2026-06-12) 기준 cutoff 이전이므로 10-30 한 건만 남아야 함
+  it("120일 이전 데이터도 일별로 보존해 1년 성과가 월 단위로 뭉개지지 않는다", () => {
     const old: HistoricalDailyClose[] = [
       { ticker: "458730", date: "2025-10-05", close: 12000 },
       { ticker: "458730", date: "2025-10-15", close: 12100 },
@@ -54,9 +53,7 @@ describe("upsertDailyCloses", () => {
     ];
     const r = upsertDailyCloses(old, [px("458730", 15550)], trades, "2026-06-12")!;
     const oct = r.filter((c) => c.date.startsWith("2025-10"));
-    expect(oct).toHaveLength(1);
-    expect(oct[0].date).toBe("2025-10-30");
-    expect(oct[0].close).toBe(12165);
+    expect(oct).toEqual(old);
     // 오늘 항목은 추가됨
     expect(r.some((c) => c.date === "2026-06-12" && c.close === 15550)).toBe(true);
   });
@@ -82,5 +79,12 @@ describe("upsertDailyCloses", () => {
 
   it("price=0 시세는 적립하지 않는다 (종가 히스토리 0 오염 방지)", () => {
     expect(upsertDailyCloses([], [px("458730", 0)], trades, "2026-06-12")).toBeNull();
+  });
+
+  it("보강된 과거 종가를 오래된 장중 시세로 다시 덮어쓰지 않는다", () => {
+    const existing: HistoricalDailyClose[] = [{ ticker: "458730", date: "2026-06-11", close: 15550, currency: "KRW" }];
+    const staleIntraday = px("458730", 15100, "2026-06-11T09:30:00+09:00");
+    expect(upsertDailyCloses(existing, [staleIntraday], trades, "2026-06-12")).toBeNull();
+    expect(existing[0].close).toBe(15550);
   });
 });

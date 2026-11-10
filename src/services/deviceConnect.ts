@@ -6,6 +6,7 @@
 
 import type { AppData } from "../types";
 import { PUBLIC_APP_URL } from "../constants/config";
+import { hasUserRecords, USER_COLLECTION_KEYS } from "../utils/userDataPresence";
 
 export interface ConnectPayload {
   gistId: string;
@@ -73,15 +74,9 @@ export function takeConnectPayloadFromLocation(): TakeConnectResult {
   return payload ? { status: "ok", payload } : { status: "invalid" };
 }
 
-/** 사용자가 직접 입력하는 컬렉션 — 기본값(분류·루틴)·자동 적립 시계열·시세 캐시는 새 기기에도 있어 제외 */
-const USER_COLLECTION_KEYS = [
-  "ledger", "accounts", "trades", "loans", "recurringExpenses", "budgetGoals", "savingsGoals",
-  "workoutWeeks", "customExercises", "ledgerTemplates", "stockPresets", "targetPortfolios",
-] as const;
-
 /** 로컬에 사용자 데이터가 전혀 없는(새 기기) 상태인지 — 운동·대출·예산·목표만 있어도 빈 기기가 아니다 */
 export function isEmptyLocalData(data: Partial<Pick<AppData, (typeof USER_COLLECTION_KEYS)[number]>>): boolean {
-  return USER_COLLECTION_KEYS.every((key) => !data[key]?.length);
+  return !hasUserRecords(data);
 }
 
 /** 연결 확인 화면용 요약 — Gist ID는 끝 6자리만 노출 */

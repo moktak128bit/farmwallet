@@ -4,7 +4,7 @@ interface UseLedgerColumnResizeArgs {
   columnWidths: number[];
   setColumnWidths: (widths: number[]) => void;
   tableRef: RefObject<HTMLTableElement | null>;
-  storageKey?: string;
+  storageKey: string;
 }
 
 interface UseLedgerColumnResizeReturn {
@@ -21,7 +21,7 @@ export function useLedgerColumnResize({
   columnWidths,
   setColumnWidths,
   tableRef,
-  storageKey = "ledger-column-widths",
+  storageKey,
 }: UseLedgerColumnResizeArgs): UseLedgerColumnResizeReturn {
   const [resizingColumn, setResizingColumn] = useState<number | null>(null);
   const [liveColumnWidths, setLiveColumnWidths] = useState<number[] | null>(null);

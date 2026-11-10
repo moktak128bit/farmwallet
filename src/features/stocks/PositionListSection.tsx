@@ -393,7 +393,7 @@ export const PositionListSection: React.FC<PositionListSectionProps> = ({
               </span>
               {stockCost > 0 && (
                 <span style={{ fontSize: 14, fontWeight: 400, color: "var(--text-muted)" }}>
-                  원금: <span>{formatKRW(Math.round(stockCost))}</span>
+                  매입원가(보유분): <span>{formatKRW(Math.round(stockCost))}</span>
                 </span>
               )}
               <span style={{ fontSize: 14, fontWeight: 400, color: "var(--text-muted)" }}>

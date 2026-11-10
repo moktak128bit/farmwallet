@@ -388,6 +388,49 @@ a:hover {
   color: var(--primary-text);
 }
 
+/* GAS 헤더 왼쪽 "사진 올리기" — 다른 헤더 액션과 같은 중립 필, 처리 전 수만 작은 배지 */
+.photo-upload-btn {
+  display: inline-flex;
+  align-items: center;
+  flex: 0 0 auto;
+  white-space: nowrap;
+}
+.photo-upload-badge {
+  min-width: 16px;
+  padding: 0 4px;
+  border-radius: 8px;
+  background: var(--primary-light);
+  color: var(--text);
+  font-size: 11px;
+  font-weight: 700;
+  line-height: 16px;
+  text-align: center;
+}
+
+/* GAS 헤더 저장 상태 — 평소엔 조용한 글자, 실패·멈춤만 경고색 */
+.gas-save-status {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 5px 8px;
+  font-size: 12px;
+  font-weight: 500;
+  color: var(--text-muted);
+  white-space: nowrap;
+  border: 1px solid transparent;
+  border-radius: var(--radius-md);
+  background: transparent;
+}
+.gas-save-status.warn { color: var(--warning); }
+.gas-save-status.error {
+  color: var(--danger);
+  border-color: var(--danger);
+  background: var(--danger-light);
+  cursor: pointer;
+}
+.gas-save-status .spin { animation: spin 1s linear infinite; }
+.gas-save-short { display: none; }
+
 /* 대차 한 줄(총자산·총부채·순자산) — 계좌·대시보드·인사이트·부채 탭 공용. 세 숫자는 항상 같은 순서로 */
 .balance-sheet { display: grid; gap: 6px; padding: 14px 18px; }
 .bs-row {
@@ -609,41 +652,99 @@ a:hover {
   font-weight: 400;
 }
 
-/* 대시보드 상단 KPI 4장.
-   인라인 스타일로는 미디어쿼리를 못 걸어 모바일에서 1열로 떨어졌고, 카드 한 장이 화면의 1/5를
-   차지해 4장을 보려면 스크롤만 두 번 해야 했다 → 좁은 화면은 2×2. */
-.kpi-grid {
-  display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
-  gap: 16px;
-}
-.kpi-grid > .card {
-  min-height: 124px;
-}
-.kpi-grid .card-value {
-  font-size: 28px;
+/* 부채 상환 내역 표 — 모바일에선 셀 좌우 여백을 줄여 '상세' 열이 한두 글자 폭으로 눌리지 않게 */
+.repay-table { --repay-pad: 20px; }
+@media (max-width: 768px) {
+  .repay-table { --repay-pad: 8px; }
 }
 
-@media (max-width: 768px) {
-  .kpi-grid {
-    grid-template-columns: 1fr 1fr;
-    gap: 10px;
-  }
-  .kpi-grid > .card {
-    min-height: 0;
-    padding: 12px;
-  }
-  .kpi-grid .card-value {
-    font-size: 20px;
-  }
-  /* 4장이 2×2로 붙으면 보조 설명은 소음이 된다 — 값과 라벨만 남긴다.
-     단 kpi-note는 "왜 이 값인지"를 설명하는 문장(예: 급여 전이라 0원)이라 숨기면 안 된다. */
-  .kpi-grid .hint:not(.kpi-note) {
-    display: none;
-  }
-  .kpi-grid .kpi-note {
-    font-size: 11px;
-  }
+/* 대시보드 첫 화면 — 질문 3열(이번 달 · 내 자산 · 투자·배당) + 확인할 일.
+   기둥마다 큰 숫자 하나 + 보조 2~3줄. 기둥 전체가 해당 탭으로 가는 버튼이라 전역 button 스타일을 되돌린다. */
+.glance { display: flex; flex-direction: column; gap: 10px; }
+.glance-caption { align-self: flex-end; font-size: 12px; color: var(--text-muted); }
+.glance-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 16px;
+}
+.glance-col {
+  display: flex;
+  flex-direction: column;
+  align-items: stretch;
+  justify-content: flex-start;
+  gap: 8px;
+  min-width: 0;
+  padding: 18px 20px;
+  text-align: left;
+  font-weight: 400;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  color: var(--text);
+}
+.glance-col:hover:not(:disabled) { background: var(--surface); border-color: var(--border-strong); color: var(--text); }
+.glance-col:hover .glance-q svg { color: var(--text); }
+.glance-q {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--text-muted);
+}
+.glance-q svg { color: var(--text-faint); }
+.glance-big {
+  font-size: 30px;
+  font-weight: 800;
+  line-height: 1.15;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+.glance-big-row { display: flex; align-items: center; gap: 12px; min-width: 0; }
+.glance-spark { flex: 1; min-width: 60px; max-width: 160px; height: 40px; margin-left: auto; }
+.glance-line,
+.glance-sub {
+  font-size: 13px;
+  color: var(--text-secondary);
+  font-variant-numeric: tabular-nums;
+  line-height: 1.45;
+}
+.glance-line b, .glance-sub b { font-weight: 700; }
+.glance-sub { font-size: 12px; color: var(--text-muted); }
+.glance-faint { color: var(--text-faint); font-size: 12px; }
+.glance-ellipsis { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.glance-bar {
+  position: relative;
+  display: block;
+  height: 8px;
+  background: var(--border);
+  border-radius: 4px;
+  overflow: visible;
+}
+.glance-bar-fill { position: absolute; left: 0; top: 0; bottom: 0; border-radius: 4px; }
+.glance-bar-mark {
+  position: absolute;
+  top: -3px;
+  bottom: -3px;
+  width: 2px;
+  margin-left: -1px;
+  background: var(--text-secondary);
+  border-radius: 1px;
+}
+.glance-chips { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
+.glance-chips-title { font-size: 12px; font-weight: 600; color: var(--text-muted); margin-right: 2px; }
+.glance-chip {
+  font-size: 12px;
+  padding: 4px 10px;
+  border-radius: 999px;
+  gap: 5px;
+}
+.glance-chip.warn { color: var(--warning); border-color: var(--warning); }
+@media (max-width: 900px) {
+  .glance-grid { grid-template-columns: 1fr; gap: 10px; }
+  .glance-col { padding: 14px 16px; gap: 6px; }
+  .glance-big { font-size: 26px; }
+  .glance-caption { align-self: flex-start; }
 }
 
 /* 반복지출 미등록 배지 — 헤더의 다른 동작(.header-action)과 같은 중립 필. 빨강은 데이터에만.
@@ -2404,6 +2505,19 @@ label {
   .recurring-due-badge-full {
     display: none;
   }
+  /* GAS 휴대폰: 자동 저장 + 저장 상태 표시가 있어 [저장] 버튼은 빼고, 그 자리를 왼쪽 위 사진 버튼에 준다 */
+  .gas-mobile-hide { display: none; }
+  /* 휴대폰 헤더는 좁아 테마 토글을 빼 사진 버튼 자리를 만든다 (기본 라이트 — 다크는 PC나 설정에서) */
+  .app-header-left { gap: 6px; }
+  .app-header-left .photo-upload-btn { position: relative; padding: 7px 8px; min-width: 32px; }
+  .app-header-left .photo-upload-badge {
+    position: absolute;
+    top: -6px;
+    right: -6px;
+  }
+  .gas-save-full { display: none; }
+  .gas-save-short { display: inline; }
+  .gas-save-status { padding: 5px 4px; font-size: 11px; }
   .recurring-due-badge-short {
     display: inline;
   }
@@ -2805,3 +2919,143 @@ label {
 .qr-code path {
   fill: var(--qr-fg);
 }
+
+/* ── 시작 골격 화면 (index.html #boot-splash · components/BootSkeleton) ──
+   앱 코드(GAS 번들 2.4MB)를 읽고 시트 장부를 받는 동안 흰 화면 대신 앱 모양 + 진행 단계를 먼저 보여 준다.
+   단계는 .boot[data-step] 하나로 — main.tsx(setBootStage)가 바꾼다. */
+.boot {
+  min-height: 100vh;
+  background: var(--bg);
+  color: var(--text);
+  font-family: Pretendard Variable, Pretendard, "Noto Sans KR", system-ui, sans-serif;
+}
+.boot-head {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  height: 52px;
+  padding: 0 16px;
+  border-bottom: 1px solid var(--border);
+  background: var(--surface);
+}
+.boot-brand { font-weight: 700; font-size: 15px; letter-spacing: -0.01em; }
+.boot-tabs { display: flex; gap: 8px; padding: 10px 16px; border-bottom: 1px solid var(--border-light); overflow: hidden; }
+.boot-tabs i { flex: 0 0 56px; height: 22px; border-radius: 6px; }
+.boot-main { max-width: 1200px; margin: 0 auto; padding: 16px; display: flex; flex-direction: column; gap: 12px; }
+.boot-status {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px 14px;
+  padding: 10px 14px;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  background: var(--surface);
+  font-size: 13px;
+  color: var(--text-secondary);
+}
+.boot-steps { display: flex; flex-wrap: wrap; gap: 4px 14px; margin: 0; padding: 0; list-style: none; }
+.boot-steps li { display: inline-flex; align-items: center; gap: 6px; color: var(--text-faint); }
+.boot-steps li::before {
+  content: "";
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  border: 1.5px solid currentColor;
+  box-sizing: border-box;
+}
+/* 진행 중 단계 — 글자 진하게 + 점이 깜빡임 */
+.boot[data-step="1"] [data-s="1"],
+.boot[data-step="2"] [data-s="2"],
+.boot[data-step="3"] [data-s="3"] { color: var(--text); font-weight: 600; }
+.boot[data-step="1"] [data-s="1"]::before,
+.boot[data-step="2"] [data-s="2"]::before,
+.boot[data-step="3"] [data-s="3"]::before { background: var(--accent); border-color: var(--accent); animation: boot-pulse 1s ease-in-out infinite; }
+/* 끝난 단계 — 채운 점 */
+.boot[data-step="2"] [data-s="1"],
+.boot[data-step="3"] [data-s="1"],
+.boot[data-step="3"] [data-s="2"] { color: var(--text-secondary); }
+.boot[data-step="2"] [data-s="1"]::before,
+.boot[data-step="3"] [data-s="1"]::before,
+.boot[data-step="3"] [data-s="2"]::before { background: var(--success); border-color: var(--success); }
+.boot-detail { margin-left: auto; font-variant-numeric: tabular-nums; color: var(--text-muted); font-size: 12px; }
+.boot-grid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 12px; }
+.boot-card {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding: 16px;
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  background: var(--surface);
+}
+.boot-card p { margin: 0; font-size: 13px; color: var(--text-muted); }
+.boot-card b { display: block; height: 30px; width: 62%; border-radius: 6px; }
+.boot-card i { display: block; height: 12px; border-radius: 4px; }
+.boot-card i:nth-of-type(2) { width: 80%; }
+.boot-card i:nth-of-type(3) { width: 55%; }
+.boot-tabs i,
+.boot-card b,
+.boot-card i,
+.boot-head i {
+  background: linear-gradient(90deg, var(--surface-hover) 25%, var(--border-light) 50%, var(--surface-hover) 75%);
+  background-size: 200% 100%;
+  animation: boot-shimmer 1.4s linear infinite;
+}
+.boot-head i { display: block; width: 72px; height: 18px; border-radius: 6px; margin-left: auto; }
+.boot-page { padding: 4px 0; display: flex; flex-direction: column; gap: 12px; }
+@keyframes boot-shimmer { from { background-position: 200% 0; } to { background-position: -200% 0; } }
+@keyframes boot-pulse { 50% { opacity: 0.35; } }
+@media (max-width: 768px) {
+  .boot-grid { grid-template-columns: 1fr; }
+  .boot-tabs { display: none; }
+}
+
+/* ── 사진 업로드 진행 패널 (components/PhotoUploadPanel) — 화면 아래 고정, 휴대폰은 하단 탭바 위 ── */
+.photo-upload-panel {
+  position: fixed;
+  right: 16px;
+  bottom: 16px;
+  z-index: 45; /* 하단 탭바(40) 위, 모달 백드롭(50) 아래 */
+  width: min(380px, calc(100vw - 32px));
+  max-height: 60vh;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 12px 14px;
+  border: 1px solid var(--border-strong);
+  border-radius: 12px;
+  background: var(--surface);
+  box-shadow: var(--shadow-lg);
+  font-size: 13px;
+  color: var(--text);
+}
+.photo-upload-panel-head { display: flex; align-items: center; gap: 8px; }
+.photo-upload-panel-head strong { flex: 1; font-size: 14px; }
+.photo-upload-panel-head .icon-action { margin-left: auto; }
+.photo-upload-panel.tone-ok .photo-upload-panel-head svg:first-child { color: var(--success); }
+.photo-upload-panel.tone-bad .photo-upload-panel-head svg:first-child { color: var(--danger); }
+.photo-upload-progress { height: 6px; border-radius: 3px; background: var(--surface-hover); overflow: hidden; }
+.photo-upload-progress span { display: block; height: 100%; background: var(--accent); transition: width 0.3s ease; }
+.photo-upload-panel.tone-ok .photo-upload-progress span { background: var(--success); }
+.photo-upload-hint { font-size: 12px; color: var(--text-muted); }
+.photo-upload-list { margin: 0; padding: 0; list-style: none; overflow-y: auto; display: flex; flex-direction: column; gap: 4px; }
+.photo-upload-list li { display: flex; flex-wrap: wrap; gap: 2px 8px; align-items: baseline; font-size: 12px; }
+.photo-upload-name { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--text-secondary); }
+.photo-upload-state { color: var(--text-muted); font-variant-numeric: tabular-nums; }
+.photo-upload-list li.st-ok .photo-upload-state { color: var(--success); }
+.photo-upload-list li.st-bad .photo-upload-state { color: var(--danger); font-weight: 600; }
+.photo-upload-error { flex-basis: 100%; color: var(--danger); font-size: 11px; }
+.photo-upload-retry { display: inline-flex; align-items: center; justify-content: center; gap: 6px; }
+@media (max-width: 768px) {
+  .photo-upload-panel {
+    left: 12px;
+    right: 12px;
+    width: auto;
+    bottom: calc(var(--bottom-nav-h) + env(safe-area-inset-bottom, 0px) + 8px);
+  }
+  /* 헤더 사진 버튼: 올리는 동안엔 휴대폰에서도 "3/7"을 보인다 */
+  .header-action.photo-upload-btn.is-uploading span { display: inline; }
+}
+.photo-upload-panel .spin { animation: spin 1s linear infinite; }
+.photo-upload-btn .spin { animation: spin 1s linear infinite; }

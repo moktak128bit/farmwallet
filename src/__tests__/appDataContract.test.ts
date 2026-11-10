@@ -19,7 +19,7 @@
  */
 import { describe, it, expect, beforeEach } from "vitest";
 import type { AppData } from "../types";
-import { getEmptyData, loadData, normalizeImportedData, saveData, toUserDataJson } from "../services/dataService";
+import { getEmptyData, loadData, migrateLegacyDateAccount, normalizeImportedData, saveData, toUserDataJson } from "../services/dataService";
 import { appDataFromTableBackupPayload, buildTableBackupFile } from "../utils/tableDataBackup";
 import { STORAGE_KEYS } from "../constants/config";
 
@@ -419,6 +419,8 @@ const FULL: Required<AppData> = {
       createdAt: "2026-02-01T00:00:00.000Z",
     },
   ],
+  // 데이트통장 — 기기 localStorage에서 장부로 옮긴 설정(시트 동기화). 존재하는 계좌 id
+  dateAccountId: "A1",
 };
 
 const ALL_KEYS = Object.keys(FULL) as AppDataKey[];
@@ -654,5 +656,44 @@ describe("AppData 계약 — getEmptyData / 테이블 백업 tables 키 집합",
     expect(file.format).toBe("farmwallet-table-backup-v1");
     expect(typeof file.schemaVersion).toBe("number");
     expect(typeof file.exportedAt).toBe("string");
+  });
+});
+
+describe("데이트통장 설정 — 기기 localStorage → 장부 1회 이관", () => {
+  beforeEach(() => localStorage.clear());
+  it("장부에 없고 기기 레거시 키가 있으면 장부로 옮긴다", () => {
+    localStorage.setItem(STORAGE_KEYS.DATE_ACCOUNT_ID, "A1");
+    const { dateAccountId: _omit, ...rest } = FULL;
+    void _omit;
+    const r = migrateLegacyDateAccount(rest as AppData);
+    expect(r).toMatchObject({ migrated: true, data: { dateAccountId: "A1" } });
+  });
+  it("장부 값(다른 기기에서 설정 → 시트)이 있으면 기기 값보다 우선한다", () => {
+    localStorage.setItem(STORAGE_KEYS.DATE_ACCOUNT_ID, "OTHER");
+    expect(migrateLegacyDateAccount(FULL).migrated).toBe(false);
+    expect(migrateLegacyDateAccount({ ...FULL, dateAccountId: "" }).data.dateAccountId).toBe("");
+  });
+  it("없는 계좌를 가리키는 레거시 값은 '선택 안 함'으로, 레거시 키가 없으면 미설정(undefined) 유지", () => {
+    const { dateAccountId: _omit, ...rest } = FULL;
+    void _omit;
+    localStorage.setItem(STORAGE_KEYS.DATE_ACCOUNT_ID, "GONE");
+    expect(migrateLegacyDateAccount(rest as AppData).data.dateAccountId).toBe("");
+    localStorage.clear();
+    expect(migrateLegacyDateAccount(rest as AppData)).toMatchObject({ migrated: false });
+    expect(migrateLegacyDateAccount(rest as AppData).data.dateAccountId).toBeUndefined();
+  });
+  it("loadData가 레거시 키를 장부로 옮기고 저장한다 → 다음 로드에서도 유지", () => {
+    const { dateAccountId: _omit, ...rest } = FULL;
+    void _omit;
+    saveData(rest as AppData);
+    localStorage.setItem(STORAGE_KEYS.DATE_ACCOUNT_ID, "A1");
+    expect(loadData().dateAccountId).toBe("A1");
+    localStorage.removeItem(STORAGE_KEYS.DATE_ACCOUNT_ID);
+    expect(loadData().dateAccountId).toBe("A1");
+  });
+  it("'선택 안 함'(\"\")도 테이블 백업·JSON 왕복에서 보존된다 (미설정 경고가 되살아나지 않게)", () => {
+    const none = { ...FULL, dateAccountId: "" };
+    expect(normalizeImportedData(appDataFromTableBackupPayload(buildTableBackupFile(none))).dateAccountId).toBe("");
+    expect(normalizeImportedData(JSON.parse(toUserDataJson(none))).dateAccountId).toBe("");
   });
 });

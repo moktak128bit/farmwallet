@@ -41,6 +41,28 @@ function render() {
 }
 
 describe("인사이트 수입 3종 정의", () => {
+  it("다른 해의 6월을 구분하고 이체만 있는 달과 급여가 있는 달을 섞지 않는다", () => {
+    const led = [
+      entry({ id: "opening", date: "2025-06-01", amount: 1_000_000, kind: "transfer", category: "이체", subCategory: "계좌이체", toAccountId: "a1" }),
+      entry({ id: "june-salary", date: "2026-06-25", amount: 2_900_000, kind: "income", category: "수입", subCategory: "급여", toAccountId: "a1" }),
+      entry({ id: "june-interest", date: "2026-06-21", amount: 3_000, kind: "income", category: "이자", toAccountId: "a1" }),
+    ];
+    const d = renderHook(() =>
+      useInsightsData(led, [], [], accounts, [], null, undefined, undefined, null, null, [], led)
+    ).result.current;
+    expect(d.ml["2025-06"]).toBe("2025.06");
+    expect(d.ml["2026-06"]).toBe("2026.06");
+    expect(d.salaryTrend).toEqual([
+      { l: "2025.06", salary: 0, nonSalary: 0 },
+      { l: "2026.06", salary: 2_900_000, nonSalary: 3_000 },
+    ]);
+    expect(d.salaryMonthly["2026-06"]).toBe(2_900_000);
+  });
+
+  it("한 해 안의 분석은 기존 월 표기를 유지한다", () => {
+    expect(render().ml["2026-02"]).toBe("2월");
+  });
+
   it("장부 > 실질 > 근로소득 순으로 정확히 분리된다", () => {
     const d = render();
     // 장부 = 급여900 + 배당30 + 정산50 + 용돈20 = 1,000만
@@ -75,10 +97,10 @@ describe("수입 추세·지표는 근로소득 기준", () => {
     expect(d.cumIE[d.cumIE.length - 1]["누적수입"]).toBe(9_000_000);
   });
 
-  it("순현금흐름·지출비율 분모는 근로소득", () => {
+  it("근로소득 잉여·지출비율 분모는 근로소득", () => {
     const d = render();
-    // 순현금흐름 = 근로소득900 − 지출300 − 투자0 = 600만
-    expect(d.netCashFlow).toBe(6_000_000);
+    // 근로소득 잉여 = 근로소득900 − 지출300 = 600만 (재테크는 빼지 않음)
+    expect(d.salarySurplus).toBe(6_000_000);
     // 지출/근로소득 = 300 / 900 = 33.3%
     expect(d.expToIncRatio).toBeCloseTo(33.33, 1);
   });
@@ -220,7 +242,7 @@ describe("인사이트 감사 2026-10-02", () => {
     expect(d.pInvest).toBe(0);
     expect(d.monthly["2026-01"].investment).toBe(0);
     expect(d.investTrend[0].amount).toBe(0);
-    expect(d.netCashFlow).toBe(3_000_000);
+    expect(d.salarySurplus).toBe(3_000_000);
     // 은행 → 증권 환전(다른 계좌 모드)·일반 입금은 여전히 증권 유입
     const led2 = [
       entry({ id: "fx2-from", amount: 1_400_000, kind: "transfer", category: "이체", subCategory: "환전이체", fromAccountId: "a1", date: "2026-01-10" }),
@@ -245,7 +267,7 @@ describe("인사이트 감사 2026-10-02", () => {
     expect(d.entryOutliers[0].amount).toBe(1_400_000);
   });
 
-  it("I6 이번 달을 고르면 '전월 대비'는 전월 동기(1~오늘 일)와 비교", () => {
+  it("I6 이번 달을 고르면 '전월 대비'는 전월 동기(1~마지막 기록일)와 비교", () => {
     freeze();
     const led = [
       exp("p1", 50_000, "2026-09-01"),
@@ -254,7 +276,7 @@ describe("인사이트 감사 2026-10-02", () => {
       exp("c1", 50_000, "2026-10-01"),
     ];
     const cur = run(led, "2026-10").prev!;
-    expect(cur.partialDay).toBe(2);
+    expect(cur.partialDay).toBe(1); // 오늘은 2일이지만 마지막 기록은 1일 — 기록 안 한 날을 '지출 감소'로 보지 않는다
     expect(cur.expense).toBe(50_000);   // 예전: 950,000 → "지출 감소 — 좋은 흐름" 허위
     expect(cur.salary).toBe(0);         // 예전: 3,000,000 → "근로소득 −100%"
   });

@@ -469,6 +469,10 @@ export function buildTableBackupFile(data: AppData): {
   if (data.dividendTrackingTicker !== undefined && data.dividendTrackingTicker !== null) {
     meta_kv.push({ key: "dividend_tracking_ticker", value: String(data.dividendTrackingTicker) });
   }
+  // 데이트통장 — ""(명시적 선택 안 함)도 보존해야 왕복 후 '미설정' 경고가 다시 뜨지 않는다
+  if (typeof data.dateAccountId === "string") {
+    meta_kv.push({ key: "date_account_id", value: data.dateAccountId });
+  }
 
   const us_ticker_order = (data.usTickers ?? [...DEFAULT_US_TICKERS]).map((ticker, sort_order) => ({
     sort_order,
@@ -542,6 +546,7 @@ export function appDataFromTableBackupPayload(raw: unknown): AppData {
   const metaRows = asArray<{ key?: string; value?: string }>(tables.meta_kv);
   const meta = new Map(metaRows.map((r) => [String(r.key ?? ""), String(r.value ?? "")]));
   const dividendTrackingTicker = meta.get("dividend_tracking_ticker") ?? "458730";
+  const dateAccountId = meta.get("date_account_id");
 
   const ledger = asArray<Record<string, unknown>>(tables.ledger_entries).map(rowToLedger);
 
@@ -663,6 +668,7 @@ export function appDataFromTableBackupPayload(raw: unknown): AppData {
     dividendTrackingTicker,
     isaPortfolio: isaFinal,
     savingsGoals: parseSavingsGoals(tables),
+    ...(dateAccountId !== undefined ? { dateAccountId } : {}),
     // 루트 schemaVersion을 보존해 normalizeImportedData가 올바른 버전 기준으로 마이그레이션
     ...(typeof root.schemaVersion === "number" ? { schemaVersion: root.schemaVersion } : {}),
     ...optionalFields

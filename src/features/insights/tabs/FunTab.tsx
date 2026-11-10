@@ -1,18 +1,21 @@
 import React from "react";
+import { CalendarDays, ListOrdered, PauseCircle, PiggyBank, Store, Timer, TrendingDown, TrendingUp, type LucideIcon } from "lucide-react";
 import { F, Card, Section, type D } from "../insightsShared";
+import { dayCapLabel } from "../../../utils/ledgerFreshness";
 
 export const FunTab = React.memo(function FunTab({ d }: { d: D }) {
   const fs = d.funStats;
-  const statCards: { icon: string; title: string; value: string; sub: string }[] = [];
+  // 아이콘은 lucide 라인 아이콘(본문 이모지 금지 — 디자인 규율). 최고·최저 기록은 완결 월만(slice).
+  const statCards: { Icon: LucideIcon; title: string; value: string; sub: string }[] = [];
 
-  if (fs.biggestSpendDay) statCards.push({ icon: "🔥", title: "역대 최고 지출일", value: F(fs.biggestSpendDay.total), sub: fs.biggestSpendDay.date });
-  if (fs.mostSpendMonth) statCards.push({ icon: "💸", title: "가장 많이 쓴 달", value: F(fs.mostSpendMonth.expense), sub: d.ml[fs.mostSpendMonth.month] || fs.mostSpendMonth.month });
-  if (fs.mostFrugalMonth) statCards.push({ icon: "🏆", title: "가장 절약한 달", value: F(fs.mostFrugalMonth.expense), sub: d.ml[fs.mostFrugalMonth.month] || fs.mostFrugalMonth.month });
-  if (fs.bestSavingsMonth) statCards.push({ icon: "💎", title: "최고 실질 저축률", value: `${fs.bestSavingsMonth.rate}%`, sub: d.ml[fs.bestSavingsMonth.month] || fs.bestSavingsMonth.month });
-  if (fs.longestZeroStreak > 0) statCards.push({ icon: "🧘", title: "최장 무지출 연속", value: `${fs.longestZeroStreak}일`, sub: "하루도 안 쓴 기록" });
-  if (fs.topStore) statCards.push({ icon: "🏪", title: "최다 이용처", value: fs.topStore.name, sub: `${fs.topStore.count}회 · ${F(fs.topStore.total)}` });
-  if (fs.daysToSpendIncome) statCards.push({ icon: "⏱️", title: "월급 소진 속도", value: `${fs.daysToSpendIncome}일`, sub: "근로소득 ÷ 일평균 지출" });
-  statCards.push({ icon: "📝", title: "일 평균 거래", value: `${fs.avgTxPerDay}건`, sub: `총 ${d.txCount.toLocaleString()}건` });
+  if (fs.biggestSpendDay) statCards.push({ Icon: CalendarDays, title: "역대 최고 지출일", value: F(fs.biggestSpendDay.total), sub: fs.biggestSpendDay.date });
+  if (fs.mostSpendMonth) statCards.push({ Icon: TrendingUp, title: "가장 많이 쓴 달", value: F(fs.mostSpendMonth.expense), sub: `${d.ml[fs.mostSpendMonth.month] || fs.mostSpendMonth.month} · 완결 월 중` });
+  if (fs.mostFrugalMonth) statCards.push({ Icon: TrendingDown, title: "가장 적게 쓴 달", value: F(fs.mostFrugalMonth.expense), sub: `${d.ml[fs.mostFrugalMonth.month] || fs.mostFrugalMonth.month} · 완결 월 중` });
+  if (fs.bestSavingsMonth) statCards.push({ Icon: PiggyBank, title: "최고 실질 저축률", value: `${fs.bestSavingsMonth.rate}%`, sub: `${d.ml[fs.bestSavingsMonth.month] || fs.bestSavingsMonth.month} · 완결 월 중` });
+  if (fs.longestZeroStreak > 0) statCards.push({ Icon: PauseCircle, title: "최장 무지출 연속", value: `${fs.longestZeroStreak}일`, sub: "기록된 날 기준" });
+  if (fs.topStore) statCards.push({ Icon: Store, title: "최다 이용처", value: fs.topStore.name, sub: `${fs.topStore.count}회 · ${F(fs.topStore.total)}` });
+  if (fs.daysToSpendIncome) statCards.push({ Icon: Timer, title: "월급 소진 속도", value: `${fs.daysToSpendIncome}일`, sub: "월 근로소득 ÷ 일평균 지출" });
+  statCards.push({ Icon: ListOrdered, title: "일 평균 기록", value: `${fs.avgTxPerDay}건`, sub: `전체 기록 ${d.txCount.toLocaleString()}건 (수입·이체 포함)` });
 
   // d.prev는 선택 월(selMonth)의 "직전 달" 합계 — 비교 대상도 선택 월이어야 한다.
   // (기간 마지막 월과 비교하면 엉뚱한 두 달을 비교하게 됨). 이번 달이면 전월도 1~오늘 일 동기(prev.partialDay).
@@ -30,7 +33,7 @@ export const FunTab = React.memo(function FunTab({ d }: { d: D }) {
         {statCards.map((s, i) => (
           <Card key={i} accent>
             <div style={{ textAlign: "center", padding: "8px 0" }}>
-              <div style={{ fontSize: 28, marginBottom: 4 }}>{s.icon}</div>
+              <s.Icon size={22} style={{ color: "var(--text-muted)", marginBottom: 4 }} aria-hidden />
               <div style={{ fontSize: 11, color: "var(--ins-faint)", fontWeight: 600, marginBottom: 6 }}>{s.title}</div>
               <div style={{ fontSize: 20, fontWeight: 800, color: "var(--text)" }}>{s.value}</div>
               <div style={{ fontSize: 11, color: "var(--ins-faint)", marginTop: 4 }}>{s.sub}</div>
@@ -60,11 +63,10 @@ export const FunTab = React.memo(function FunTab({ d }: { d: D }) {
         </Card>
 
         {prevComp && (
-          <Card title={d.prev?.partialDay != null ? `전월 동기(1~${d.prev.partialDay}일) 대비 변화` : "전월 대비 변화"}>
+          <Card title={d.prev?.partialDay != null ? `전월 동기(${dayCapLabel(d.prev.partialDay)}) 대비 변화` : "전월 대비 변화"}>
             <div style={{ fontSize: 13, lineHeight: 2 }}>
               <div>근로소득: <span style={{ fontWeight: 700, color: prevComp.incDiff >= 0 ? "var(--success)" : "var(--danger)" }}>{prevComp.incDiff >= 0 ? "+" : ""}{F(prevComp.incDiff)}</span></div>
               <div>지출: <span style={{ fontWeight: 700, color: prevComp.expDiff <= 0 ? "var(--success)" : "var(--danger)" }}>{prevComp.expDiff >= 0 ? "+" : ""}{F(prevComp.expDiff)}</span>
-                {prevComp.expDiff > 0 ? " (주의!)" : prevComp.expDiff < 0 ? " (절약!)" : ""}
               </div>
             </div>
           </Card>
@@ -84,12 +86,7 @@ export const FunTab = React.memo(function FunTab({ d }: { d: D }) {
         {fs.daysToSpendIncome && (
           <Card title="월급 소진 속도 분석">
             <div style={{ fontSize: 13, lineHeight: 1.8, color: "var(--text-secondary)" }}>
-              {fs.daysToSpendIncome >= 30
-                ? `월 근로소득을 다 쓰려면 ${fs.daysToSpendIncome}일이 걸립니다. 지출 대비 월급이 넉넉합니다!`
-                : fs.daysToSpendIncome >= 20
-                  ? `일 평균 지출 기준으로 ${fs.daysToSpendIncome}일이면 월 근로소득이 소진됩니다. 적정 수준입니다.`
-                  : `${fs.daysToSpendIncome}일이면 월 근로소득이 바닥납니다! 지출 감소 또는 수입 증대가 필요합니다.`
-              }
+              {`일 평균 지출(${F(d.dailyAvgExp)}원) 기준으로 월 근로소득을 다 쓰는 데 ${fs.daysToSpendIncome}일.`}
               <div style={{ marginTop: 8 }}>
                 <div style={{ display: "flex", justifyContent: "space-between", fontSize: 11, color: "var(--text-faint)", marginBottom: 4 }}>
                   <span>0일</span><span>30일</span>

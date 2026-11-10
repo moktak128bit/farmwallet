@@ -7,9 +7,9 @@
  *
  * 판정 규칙은 옮기기 전과 100% 동일하게 유지한다:
  *  - 급여성(salaryKeys): 활동 월의 40% 이상(최소 2개월) 등장하는 수입 중분류 + 명시 목록(급여·상여·수당),
- *    단 비근로 목록(캐시백·배당·이자·투자수익·환불·데이트통장 + 비실질)은 제외.
- *  - 투자/패시브(investIncKeys): 투자 계좌에서 발생한 수입 중분류(급여성 제외) + 명시 목록(배당·이자·투자수익),
- *    단 비패시브 목록(캐시백·환불·데이트통장 + 비실질)은 제외.
+ *    단 비근로 목록(캐시백·배당·이자·투자수익·환불·데이트통장·기타수입·기타 + 비실질)은 제외.
+ *  - 투자/패시브(investIncKeys): 금액의 절반 이상이 투자 계좌에서 발생한 수입 중분류(급여성 제외) + 명시 목록(배당·이자·투자수익),
+ *    단 비패시브 목록(캐시백·환불·데이트통장·기타수입·기타 + 비실질)은 제외.
  */
 import type { Account, LedgerEntry } from "../types";
 import { NON_REAL_INCOME } from "./realIncome";
@@ -71,21 +71,32 @@ export function computeIncomeNatureKeys(
   const ALWAYS_SALARY = ["상여", "급여", "수당"];
   for (const k of ALWAYS_SALARY) salaryKeys.add(k);
   // 자주 나타나도 회사소득이 아닌 카테고리 (빈도 자동감지 오분류 보정)
-  const NEVER_SALARY = ["캐시백", "배당", "이자", "투자수익", "환불", "데이트통장", ...NON_REAL_INCOME];
+  // "기타수입"·"기타"는 이름 그대로 잡수입 묶음 — 자주 나온다고 근로소득으로 올리면 회사소득·급여 비교가 부풀려진다
+  // (실장부: 기타수입 10/17개월 → 회사소득 그룹에 152만 섞임). 회사 돈이면 설정 ▸ 수입 성격 지정으로 근로 지정.
+  const NEVER_SALARY = ["캐시백", "배당", "이자", "투자수익", "환불", "데이트통장", "기타수입", "기타", ...NON_REAL_INCOME];
   for (const k of NEVER_SALARY) salaryKeys.delete(k);
 
   // 투자/패시브: 투자 계좌에서 발생하는 수입 중분류 (급여성 제외) + 명시적 목록
+  // 금액 과반 규칙: 그 중분류 금액의 절반 이상이 투자 계좌에서 발생해야 패시브. 예전엔 한 건만 들어와도
+  // 카테고리 전체가 패시브가 돼서, 실장부 "1원송금 3원 → ISA" 한 건 때문에 기타수입 152만이 패시브로 갔다.
   const investIncKeys = new Set<string>();
+  const subTotal = new Map<string, number>();
+  const subInInvest = new Map<string, number>();
   for (const l of ledger) {
-    if (l.kind !== "income" || Number(l.amount) <= 0) continue;
+    const amount = Number(l.amount);
+    if (l.kind !== "income" || !(amount > 0)) continue;
     const sub = l.subCategory || l.category || "";
     if (!sub || salaryKeys.has(sub)) continue;
-    if (invIds.has(l.toAccountId || "") || invIds.has(l.fromAccountId || "")) investIncKeys.add(sub);
+    subTotal.set(sub, (subTotal.get(sub) ?? 0) + amount);
+    if (invIds.has(l.toAccountId || "") || invIds.has(l.fromAccountId || "")) subInInvest.set(sub, (subInInvest.get(sub) ?? 0) + amount);
+  }
+  for (const [sub, inv] of subInInvest) {
+    if (inv * 2 >= (subTotal.get(sub) ?? 0)) investIncKeys.add(sub);
   }
   const ALWAYS_INVEST_INCOME = ["배당", "이자", "투자수익"];
   for (const k of ALWAYS_INVEST_INCOME) investIncKeys.add(k);
   // 투자계좌에 우연히 들어온 리워드·환급류가 "패시브" 분류 전체를 오염시키는 것 방지
-  const NEVER_INVEST_INCOME = ["캐시백", "환불", "데이트통장", ...NON_REAL_INCOME];
+  const NEVER_INVEST_INCOME = ["캐시백", "환불", "데이트통장", "기타수입", "기타", ...NON_REAL_INCOME];
   for (const k of NEVER_INVEST_INCOME) investIncKeys.delete(k);
 
   // 사용자 지정 우선 적용 — 자동감지 결과를 덮어쓴다.

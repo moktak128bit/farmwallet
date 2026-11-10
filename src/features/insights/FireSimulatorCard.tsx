@@ -1,6 +1,7 @@
 /**
  * FIRE 시뮬레이터 카드 — 인사이트 자산 탭 하단.
- *  - 기준선: utils/fireBaseline(연 실질지출·고정비·월 저축·TWR+배당수익률) — 장부 최근 12개 완료월.
+ *  - 기준선: utils/fireBaseline(연 실질지출·고정비·반복 가능한 월 저축·장기 수익률 가정) — 장부 최근 12개 완료월.
+ *    최근 1년 TWR은 참고로만 보여 준다(기대수익률에 쓰지 않음 — 한 해 −21%가 40년 복리로 투영되던 문제).
  *  - 투영: utils/fireProjection 결정론 3시나리오(보수/기준/낙관). 몬테카를로 없음.
  *  - 입력 3개(월 저축·수익률·은퇴 후 연 지출)는 로컬 state. 사용자가 건드린 값만
  *    localStorage(STORAGE_KEYS.FIRE_ASSUMPTIONS)에 덮어쓰기 형태로 저장 — AppData 무변경.
@@ -166,7 +167,7 @@ export const FireSimulatorCard: React.FC<Props> = ({ netWorthKRW }) => {
     writeOverrides({});
   }, []);
 
-  const monthlySaving = overrides.monthlySaving ?? Math.max(0, Math.round(baseline.monthlySavingKRW));
+  const monthlySaving = overrides.monthlySaving ?? Math.max(0, Math.round(baseline.sustainableMonthlySavingKRW));
   const returnPct = overrides.returnPct ?? Math.round(baseline.expectedReturnPct * 10) / 10;
   const retireSpendingAnnual = overrides.retireSpendingAnnual ?? Math.max(0, Math.round(baseline.annualRealExpense));
   const hasOverride = overrides.monthlySaving != null || overrides.returnPct != null || overrides.retireSpendingAnnual != null;
@@ -201,7 +202,7 @@ export const FireSimulatorCard: React.FC<Props> = ({ netWorthKRW }) => {
     baseline.annualRealExpense > 0 ? Math.round((baseline.annualFixedExpense / baseline.annualRealExpense) * 100) : null;
 
   // 슬라이더 상한 — 기준선의 2배와 고정 하한 중 큰 값 (기준선이 0이어도 조작 가능)
-  const savingMaxMan = Math.max(500, Math.ceil((baseline.monthlySavingKRW * 2) / MAN / 10) * 10);
+  const savingMaxMan = Math.max(500, Math.ceil((Math.max(baseline.monthlySavingKRW, baseline.sustainableMonthlySavingKRW) * 2) / MAN / 10) * 10);
   const spendMaxMan = Math.max(10_000, Math.ceil((baseline.annualRealExpense * 2) / MAN / 100) * 100);
 
   return (
@@ -210,10 +211,12 @@ export const FireSimulatorCard: React.FC<Props> = ({ netWorthKRW }) => {
         기준선: 최근 {baseline.coveredMonths > 0 ? `${baseline.coveredMonths}개 완료월` : "장부 없음"} ({baseline.windowStartMonth}~{baseline.windowEndMonth})
         · 연 실질 지출 <strong>{W(Math.round(baseline.annualRealExpense))}</strong>
         {fixedShare != null && <> (고정비 {W(Math.round(baseline.annualFixedExpense))}, {fixedShare}%)</>}
-        · 월 저축(재테크 유입, 투자손익 제외) <strong>{W(Math.round(baseline.monthlySavingKRW))}</strong>
-        · 기대수익률 <strong>{baseline.expectedReturnPct.toFixed(1)}%</strong>
-        {" "}({baseline.returnSource === "twr" ? `포트폴리오 1년 TWR ${twrAnnualPct != null ? twrAnnualPct.toFixed(1) : "–"}%` : "TWR 없음 → 기본 4%"}
-        {baseline.dividendYieldPct > 0 && ` + 배당 ${baseline.dividendYieldPct.toFixed(1)}%`}, 캡 −5~15%)
+        · 월 저축 <strong>{W(Math.round(baseline.sustainableMonthlySavingKRW))}</strong>
+        {baseline.monthlySurplusKRW != null && baseline.monthlySavingKRW > baseline.sustainableMonthlySavingKRW + 1
+          ? <> (재테크로 넣은 돈은 월 {W(Math.round(baseline.monthlySavingKRW))}이지만 대출·용돈 재원이 섞여 있어 실질 흑자 월 {W(Math.round(Math.max(0, baseline.monthlySurplusKRW)))}까지만 반복 가능한 저축으로 봅니다)</>
+          : " (재테크 유입, 투자손익 제외)"}
+        · 기대수익률 <strong>{baseline.expectedReturnPct.toFixed(1)}%</strong> (장기 가정 — 주식·채권·예금 혼합의 수십 년 평균을 보수적으로 잡은 명목 총수익)
+        {baseline.recentTwrPct != null && fxRate != null && <> · 참고: 최근 1년 포트폴리오 TWR {baseline.recentTwrPct.toFixed(1)}% (한 해 실적이라 기대수익률에 쓰지 않음)</>}
         · 인플레 {DEFAULT_INFLATION_PCT}% · 인출률 {DEFAULT_WITHDRAWAL_RATE_PCT}%
       </div>
 

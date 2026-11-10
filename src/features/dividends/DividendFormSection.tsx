@@ -521,7 +521,8 @@ export const DividendFormSection: React.FC<Props> = React.memo(function Dividend
             >
               <option value="">선택</option>
               {accounts
-                .filter((acc) => !acc.archived || acc.id === dividendForm.accountId)
+                // 배당·이자를 받을 수 없는 계좌(신용카드)·숨김 계좌 제외 — 이미 선택된 값은 유지(수정 중 사라짐 방지)
+                .filter((acc) => acc.id === dividendForm.accountId || (!acc.archived && acc.type !== "card"))
                 .map((acc) => (
                   <option key={acc.id} value={acc.id}>
                     {acc.name || acc.id}

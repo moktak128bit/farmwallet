@@ -86,7 +86,7 @@ describe("mergeFxBackfill", () => {
     expect(mergeFxBackfill(existing, [], today)).toBeNull();
   });
 
-  it("upsertDailyFx와 같은 압축 정책 — 180일 이전은 월당 마지막 1건", () => {
+  it("보강한 환율은 180일 이전도 일별로 보존한다", () => {
     const fetched = [
       { date: "2025-10-05", close: 1300 },
       { date: "2025-10-15", close: 1310 },
@@ -95,8 +95,8 @@ describe("mergeFxBackfill", () => {
     ];
     const r = mergeFxBackfill([], fetched, today)!;
     const oct = r.next.filter((f) => f.date.startsWith("2025-10"));
-    expect(oct).toEqual([{ date: "2025-10-30", rate: 1320 }]);
-    // 동일 입력을 upsertDailyFx로 적립해도 같은 압축 결과
+    expect(oct).toEqual(fetched.slice(0, 3).map((f) => ({ date: f.date, rate: f.close })));
+    // 이후 당일 환율을 적립해도 과거 일별 값이 유지된다.
     const viaUpsert = upsertDailyFx(
       fetched.filter((f) => f.date !== "2026-08-20").map((f) => ({ date: f.date, rate: f.close })),
       1385,

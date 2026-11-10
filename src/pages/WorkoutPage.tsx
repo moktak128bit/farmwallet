@@ -120,8 +120,18 @@ export const WorkoutView: React.FC<Props> = ({
     });
     const major: WorkoutBodyPart[] = ["가슴", "등", "어깨", "팔", "하체", "코어"];
     const missing = major.filter((p) => !partCount.get(p));
-    return { partCount, missing, weekStart, weekEndIso };
+    // 마지막 운동일 — 30일 넘게 기록이 없으면 '이번 주 부위 균형'은 의미가 없다(5개월째 "전 부위"가 뜨던 문제)
+    let lastWorkout: string | null = null;
+    entryByDate.forEach(({ entry }, date) => {
+      if (entry.type !== "workout" || date > today) return;
+      if (lastWorkout == null || date > lastWorkout) lastWorkout = date;
+    });
+    const daysSinceLast = lastWorkout != null
+      ? Math.round((parseDate(today).getTime() - parseDate(lastWorkout).getTime()) / 86400000)
+      : null;
+    return { partCount, missing, weekStart, weekEndIso, lastWorkout: lastWorkout as string | null, daysSinceLast };
   }, [today, entryByDate]);
+  const workoutDormant = weeklyBalance.daysSinceLast == null || weeklyBalance.daysSinceLast >= 30;
 
   const monthStats = useMemo(() => {
     const monthKey = currentMonth.slice(0, 7);
@@ -725,15 +735,24 @@ export const WorkoutView: React.FC<Props> = ({
 
       <MonthStats stats={monthStats} />
 
-      {/* 주간 부위 균형 알림 */}
-      {weeklyBalance.missing.length > 0 && (
+      {/* 쉬는 중 — 30일 이상 기록이 없으면 부위 알림 대신 한 줄 */}
+      {workoutDormant && (
+        <div className="hint" style={{ marginBottom: 16, fontSize: 13 }}>
+          {weeklyBalance.lastWorkout
+            ? `마지막 운동 ${weeklyBalance.daysSinceLast}일 전 (${weeklyBalance.lastWorkout})`
+            : "아직 운동 기록이 없습니다."}
+        </div>
+      )}
+
+      {/* 주간 부위 균형 알림 — 최근 30일 안에 운동한 경우만 */}
+      {!workoutDormant && weeklyBalance.missing.length > 0 && (
         <div className="card" style={{
           padding: "10px 14px", marginBottom: 16,
-          background: "rgba(251,191,36,0.08)",
-          borderLeft: "3px solid #f59e0b",
+          background: "var(--warning-light)",
+          borderLeft: "3px solid var(--warning)",
           fontSize: 13,
         }}>
-          <strong style={{ color: "#b45309" }}>이번 주 균형 알림</strong>
+          <strong style={{ color: "var(--warning)" }}>이번 주 균형 알림</strong>
           {" — "}
           <span style={{ color: "var(--text)" }}>
             아직 안 한 부위: <strong>{weeklyBalance.missing.join(", ")}</strong>

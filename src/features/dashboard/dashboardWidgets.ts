@@ -33,6 +33,8 @@ function isTaxSeasonKST(today: string): boolean {
 export const DASHBOARD_WIDGETS: DashboardWidgetDef[] = [
   // 첫 화면 — 질문 3열(이번 달 얼마 썼나 · 내 자산은 · 투자·배당은) + 확인할 일
   { id: "summary", label: "첫 화면 한눈에 보기 (이번 달·내 자산·투자·배당 + 확인할 일)" },
+  // 소득
+  { id: "annualTakeHome", label: "내 실질 월급 (최근 12개월 평균 실수령)" },
   // 자산·투자
   { id: "investmentSummary", label: "투자 자산·목표·기록" },
   { id: "investmentPerformance", label: "투자 성적표 (시장 대비 — TWR·벤치마크·리스크)" },

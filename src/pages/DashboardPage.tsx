@@ -46,6 +46,8 @@ import { computeIncomeNatureKeys } from "../utils/incomeClassification";
 import { isDashboardWidgetVisible, loadHiddenDashboardWidgets } from "../features/dashboard/dashboardWidgets";
 import { TaxActionsCard } from "../features/dashboard/TaxActionsCard";
 import { DashboardSection } from "../features/dashboard/DashboardSection";
+import { AnnualTakeHomeCard } from "../features/dashboard/AnnualTakeHomeCard";
+import { computeAnnualTakeHome } from "../utils/annualTakeHome";
 import { formatKRW, formatKrwCompact } from "../utils/formatter";
 import { buildDividendGrowth, resolveTrackedTickers } from "../utils/dividendGrowth";
 import { buildDividendPortfolio } from "../utils/dividendPortfolio";
@@ -429,6 +431,14 @@ export const DashboardView: React.FC<Props> = (props) => {
         ? "평가손익 시세 불러오는 중"
         : "평가손익 시세 없음"
       : `평가손익 ${Math.round(unrealizedNet) === 0 ? "" : unrealizedNet > 0 ? "+" : "−"}${formatKrwCompact(Math.abs(unrealizedNet))}원${unpricedCount > 0 ? ` (시세 없는 ${unpricedCount}종목 제외)` : ""}`;
+  // 내 실질 월급(최근 12개 완료월 근로소득 ÷ 12) — 인사이트 수입 탭과 같은 계산(utils/annualTakeHome)
+  const annualTakeHome = useMemo(
+    () => computeAnnualTakeHome({ ledger, salaryKeys, fxRate, curMonth: currentMonth }),
+    [ledger, salaryKeys, fxRate, currentMonth]
+  );
+  const takeHomeSummary = annualTakeHome
+    ? `월 ${formatKrwCompact(annualTakeHome.monthlyAvg)}원 · 1년 ${formatKrwCompact(annualTakeHome.total)}원 · 정기 ${formatKrwCompact(annualTakeHome.regularMedian)}원`
+    : undefined;
   const assetsSummary = `순자산 ${formatKrwCompact(balanceSheet.netWorth)}원 · 총자산 ${formatKrwCompact(balanceSheet.totalAssets)}원 · ${unrealizedLabel}`;
   const spendingSummary = `지출 ${formatKRW(Math.round(monthlySummary.expense))} · 재테크 ${formatKRW(Math.round(monthlySummary.investing))} · ${beforePayday ? "급여 전" : `수지 ${formatKRW(Math.round(monthlySummary.income - monthlySummary.expense))}`}`;
   const dividendsSummary = dividendPortfolio
@@ -465,6 +475,13 @@ export const DashboardView: React.FC<Props> = (props) => {
           dividend={dividendPortfolio}
           recurringMissing={recurringMissing}
         />
+      )}
+
+      {/* ── 소득: 내 실질 월급(최근 12개월 평균 실수령). 기본 펼침 — 접어도 접힌 줄에 월·연·정기 3개 숫자 ── */}
+      {show("annualTakeHome") && annualTakeHome && (
+        <DashboardSection id="income" title="소득 — 내 실질 월급" summary={takeHomeSummary} defaultOpen>
+          <AnnualTakeHomeCard data={annualTakeHome} />
+        </DashboardSection>
       )}
 
       {/* ── 자산·투자: 성과·추이·구성 차트 (기본 접힘, 접힌 줄에 순자산) ── */}

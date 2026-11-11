@@ -13,6 +13,8 @@ import { useFxRateValue } from "../../../context/FxRateContext";
 import { toKrwAmount } from "../../dashboard/summaryMath";
 import { isExcludedIncomeEntry } from "../../../utils/savingsRate";
 import { getThisMonthKST } from "../../../utils/date";
+import { computeIncomeNatureKeys } from "../../../utils/incomeClassification";
+import { computeTakeHomeTrend } from "../../../utils/annualTakeHome";
 
 // 그룹 색은 이름 고정 매핑 — incByGroup은 금액순 정렬이라 인덱스 기반이면 순서 따라 색이 바뀜
 const GROUP_COLOR_BY_NAME: Record<string, string> = {
@@ -116,6 +118,16 @@ export const IncomeTab = React.memo(function IncomeTab({ d }: { d: D }) {
   const ledger = useAppStore((s) => s.data.ledger);
   const fxRate = useFxRateValue();
   const facts = React.useMemo(() => buildIncomeFacts(ledger ?? [], d.months, fxRate), [ledger, d.months, fxRate]);
+  const accounts = useAppStore((s) => s.data.accounts);
+  const categoryTypes = useAppStore((s) => s.data.categoryPresets?.categoryTypes);
+  // 실질 월급 추이 — 각 완료월까지 12개월 평균 실수령(대시보드 "내 실질 월급"과 같은 정의, utils/annualTakeHome)
+  const takeHomeTrend = React.useMemo(() => {
+    const { salaryKeys } = computeIncomeNatureKeys(ledger ?? [], accounts ?? [], categoryTypes);
+    return computeTakeHomeTrend({ ledger: ledger ?? [], salaryKeys, fxRate, curMonth: getThisMonthKST() });
+  }, [ledger, accounts, categoryTypes, fxRate]);
+  const thNow = takeHomeTrend[takeHomeTrend.length - 1] ?? null;
+  const thFirstFull = takeHomeTrend.find((p) => !p.partial) ?? null;
+  const thYearAgo = takeHomeTrend.length >= 12 && !takeHomeTrend[0].partial ? takeHomeTrend[0] : null;
   // 근로소득 완료월 범위 (최소·최대 달) — 안정성 문장의 근거
   const curMonth = getThisMonthKST();
   const salaryDone = d.months.filter((m) => m < curMonth).map((m) => ({ m, v: d.salaryMonthly[m] ?? 0 })).filter((x) => x.v > 0);
@@ -293,6 +305,28 @@ export const IncomeTab = React.memo(function IncomeTab({ d }: { d: D }) {
 
       {/* ============ 추이·성장 ============ */}
       <Section storageKey="income-section-trends" title="추이·성장">
+        {thNow && (
+          <Card title="실질 월급 추이 — 그 달까지 12개월 평균 실수령" span={4}>
+            <div style={{ fontSize: 13, color: "var(--text-secondary)", marginBottom: 8, lineHeight: 1.6 }}>
+              {thYearAgo
+                ? `지금 월 ${F(thNow.monthlyAvg)}원 — 1년 전(${fmtMonth(thYearAgo.month)}까지 12개월) 월 ${F(thYearAgo.monthlyAvg)}원보다 ${thNow.monthlyAvg >= thYearAgo.monthlyAvg ? "+" : ""}${F(thNow.monthlyAvg - thYearAgo.monthlyAvg)}원 (${Pct((thNow.monthlyAvg / thYearAgo.monthlyAvg - 1) * 100)}).`
+                : thFirstFull && thFirstFull !== thNow
+                  ? `지금 월 ${F(thNow.monthlyAvg)}원 — 기록이 12개월 찬 첫 시점(${fmtMonth(thFirstFull.month)}) 월 ${F(thFirstFull.monthlyAvg)}원 대비 ${thNow.monthlyAvg >= thFirstFull.monthlyAvg ? "+" : ""}${F(thNow.monthlyAvg - thFirstFull.monthlyAvg)}원.`
+                  : `지금 월 ${F(thNow.monthlyAvg)}원.`}
+              {" "}상여·수당이 든 달이 12개월 창에 들어오고 나갈 때 움직입니다(월급날 전인 진행 중 달은 제외). 점선 구간은 기록이 12개월이 안 돼 있는 달로만 나눈 값.
+            </div>
+            <ResponsiveContainer width="100%" height={220}>
+              <LineChart data={takeHomeTrend.map((p) => ({ l: fmtMonth(p.month).slice(2), 평균: p.monthlyAvg, 부분: p.partial || p === thFirstFull ? p.monthlyAvg : null, 정식: p.partial ? null : p.monthlyAvg }))}>
+                <CartesianGrid strokeDasharray="3 3" stroke="var(--chart-grid)" />
+                <XAxis dataKey="l" tick={{ fontSize: 11 }} />
+                <YAxis tick={{ fontSize: 11 }} width={44} tickFormatter={(v: number) => F(v)} domain={["auto", "auto"]} />
+                <Tooltip formatter={(v: ValueType | undefined) => W(Number(v ?? 0))} />
+                <Line type="monotone" dataKey="부분" name="12개월 평균(기록 부족)" stroke="var(--chart-income)" strokeDasharray="4 3" dot={false} connectNulls isAnimationActive={false} />
+                <Line type="monotone" dataKey="정식" name="12개월 평균" stroke="var(--chart-income)" strokeWidth={2} dot={{ r: 2 }} isAnimationActive={false} />
+              </LineChart>
+            </ResponsiveContainer>
+          </Card>
+        )}
         <Card title={`근로소득 성장률 — MoM ${d.incomeGrowth.mom != null ? Pct(d.incomeGrowth.mom) : "–"} · YoY ${d.incomeGrowth.yoy != null ? Pct(d.incomeGrowth.yoy) : "–"} · 3M평균 ${d.incomeGrowth.avg3MoM != null ? Pct(d.incomeGrowth.avg3MoM) : "–"}${d.incomeGrowth.partialDay != null ? ` (이번 달 1~${d.incomeGrowth.partialDay}일 동기 비교)` : ""}`} span={4}>
           <ResponsiveContainer width="100%" height={240}>
             <ComposedChart data={monthlyInc}>

@@ -173,7 +173,8 @@ export const NotificationCenter: React.FC = () => {
         title={active.length > 0 ? `알림 ${active.length}건` : "알림"}
         aria-haspopup="dialog"
         aria-expanded={open}
-        style={{ position: "relative", width: 32, height: 32, border: "1px solid var(--border)" }}
+        // 폭 32px 고정 + 기본 button 패딩이면 아이콘 자리가 8px로 눌려 종이 점(◦)처럼 보였다 — 패딩 0, 가운데 정렬
+        style={{ position: "relative", width: 32, height: 32, padding: 0, display: "inline-flex", alignItems: "center", justifyContent: "center", border: "1px solid var(--border)" }}
       >
         <Bell size={16} />
         {active.length > 0 && (

@@ -422,7 +422,8 @@ export const PositionListSection: React.FC<PositionListSectionProps> = ({
                 )}
               </span>
             </h4>
-            <div>
+            {/* 11열 고정 폭 표(≈1,190px) — 창이 좁으면(태블릿·작은 노트북·사이드바 펼침) 표만 가로로 밀어 보게 */}
+            <div style={{ overflowX: "auto", WebkitOverflowScrolling: "touch" }}>
               <table className="data-table positions-table" style={{ width: "100%" }}>
                 {/* 컬럼 11개 (티커·종목명·시장·평가손익·수익률·현재가·평균단가·보유수량·총매입·총평가·작업) */}
                 <colgroup>

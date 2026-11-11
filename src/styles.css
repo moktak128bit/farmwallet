@@ -3092,3 +3092,32 @@ label {
   .app-root.sidebar-collapsed .sidebar { display: none; }
   .app-root.sidebar-collapsed .mobile-menu-btn { display: flex; width: 40px; height: 40px; }
 }
+
+/* ── 헤더 반응형 (2026-11-11) ──
+   769~1279px(태블릿·작은 노트북·창을 줄인 PC)에서 헤더 버튼 글자가 "검/색", "저/장"처럼 한 글자씩 꺾였다
+   (라벨이 다 보이도록 둔 채 공간이 모자람). 이 구간은 줄바꿈 금지 + 아이콘 위주(빠른 입력만 글자 유지). */
+.app-header-right > * { white-space: nowrap; }
+.header-action, .status-trigger { white-space: nowrap; flex: 0 0 auto; }
+@media (min-width: 769px) and (max-width: 1279px) {
+  .app-header { gap: 10px; }
+  .app-header-left { flex: 1 1 auto; min-width: 0; overflow: hidden; }
+  .app-header-right { flex: 0 0 auto; flex-wrap: nowrap; gap: 4px; }
+  .app-header-right .header-action:not(.strong) span,
+  .status-trigger span:not(.status-dot) { display: none; }
+  .app-header-right .header-action:not(.strong),
+  .status-trigger { padding: 6px 8px; min-width: 32px; justify-content: center; }
+  .app-header-right .icon-button { padding: 6px 8px; min-width: 32px; }
+  .gas-save-full { display: none; }
+  .gas-save-short { display: inline; }
+  .recurring-due-badge-full { display: none; }
+  .recurring-due-badge-short { display: inline; }
+}
+@media (min-width: 769px) and (max-width: 1023px) {
+  /* 탭 이름만 남기고 브랜드명은 뺀다(사진 버튼·접기 버튼 자리) */
+  .app-brand-name, .app-brand-sep { display: none; }
+  .app-brand-tab { color: var(--text); font-weight: 600; }
+}
+/* 아주 좁은 휴대폰: 탭 이름이 "대"·"D" 한 글자로 잘려 보였다 — 현재 탭은 하단 탭바가 보여 주므로 숨긴다 */
+@media (max-width: 420px) {
+  .app-brand { display: none; }
+}

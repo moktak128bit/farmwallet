@@ -8,6 +8,7 @@
  */
 import { useCallback, useMemo, useRef, useState } from "react";
 import { toast } from "react-hot-toast";
+import { create } from "zustand";
 import type { StockPrice, StockTrade, TickerInfo } from "../../types";
 import { fetchYahooQuotes, fetchTickersFromFile } from "../../yahooFinanceApi";
 import { fetchCryptoQuotes } from "../../coinGeckoApi";
@@ -61,6 +62,13 @@ export function shouldRefreshOnStocksTabEnter(
   if (!hasPositions) return false;
   return now - lastAttemptAt > STOCKS_TAB_REFRESH_GATE_MS;
 }
+
+/**
+ * 앱 전역 "지금 시세를 받는 중인가" — 훅 인스턴스(백그라운드·주식 탭)가 여럿이라 모듈 상태로 센다.
+ * 대시보드는 시세가 하나도 없을 때 이 값으로 '불러오는 중'과 '받지 못함'을 가른다
+ * (예전엔 시세가 없으면 갱신이 실패로 끝난 뒤에도 '시세 불러오는 중'이 영원히 남았다).
+ */
+export const useQuoteRefreshActivity = create<{ running: number }>(() => ({ running: 0 }));
 
 function markQuoteRefreshAttempt(): void {
   try {
@@ -222,6 +230,7 @@ export function useQuoteRefresh({
       }
       isRefreshingRef.current = true;
       markQuoteRefreshAttempt();
+      useQuoteRefreshActivity.setState((s) => ({ running: s.running + 1 }));
 
       onLog?.(`${logLabel} 시작...`, "info");
       try {
@@ -382,6 +391,7 @@ export function useQuoteRefresh({
       } finally {
         isRefreshingRef.current = false;
         setIsLoadingQuotes(false);
+        useQuoteRefreshActivity.setState((s) => ({ running: Math.max(0, s.running - 1) }));
       }
     },
     [

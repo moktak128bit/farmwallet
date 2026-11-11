@@ -68,7 +68,9 @@ export function useSheetBootAdoption(
 
     const current = useAppStore.getState().data;
     const currentJson = toUserDataJson(current);
-    const outcome = decideSheetAdoption(currentJson, result.dataJson, getGasSheetInfo().contentHash);
+    // 기기 사본 없이 열린 빈 장부(부팅 때 시트를 못 받아 빈 화면으로 연 경우)는 지킬 편집이 없다 — 조용히 시트로
+    const isEmpty = !current.ledger?.length && !current.trades?.length && !current.accounts?.length;
+    const outcome = isEmpty ? "sheet-newer" : decideSheetAdoption(currentJson, result.dataJson, getGasSheetInfo().contentHash);
     // 시트 장부 + 이 기기 자동 적립 시계열(환율·지수·스냅샷) — 어느 쪽 적립도 버리지 않는다
     const merged = mergeGistPayloadTimeSeries(result.dataJson, currentJson).json;
 

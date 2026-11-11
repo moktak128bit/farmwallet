@@ -51,6 +51,9 @@ import type { GistSyncHealth } from "../services/gistSyncStatus";
 
 const GIST_AUTO_SAVE_ERROR_TOAST_ID = "gist-auto-save-error";
 const GIST_SCHEMA_TOAST_ID = "gist-schema-too-new";
+/** 시트 자동 저장 실패 뒤 지연 재시도 — 30초부터 두 배씩, 최대 5분 */
+const PUSH_RETRY_BASE_MS = 30_000;
+const PUSH_RETRY_MAX_MS = 5 * 60_000;
 
 /**
  * 원격 불러오기 — 원격이 더 새 스키마(GistSchemaTooNewError)면 이 세션의 자동 동기화를 멈춘다.
@@ -252,6 +255,12 @@ export function useGistSync(
   }, [recordSyncOk, recordSyncFail]);
 
   const autoPushTimerRef = useRef<number | null>(null);
+  /**
+   * 자동 저장 실패 뒤 지연 재시도(GAS) — 예전엔 실패하면 다음 편집이나 앱 전환 때까지 다시 시도하지 않아,
+   * 서버가 잠깐 응답하지 않은 것만으로 편집이 시트에 안 올라간 채 남았다. 30초부터 두 배씩(최대 5분), 성공하면 초기화.
+   */
+  const pushRetryTimerRef = useRef<number | null>(null);
+  const pushRetryCountRef = useRef(0);
   const lastPushedPayloadRef = useRef<string>("");
   const hasMountedRef = useRef(false);
   const isPushingRef = useRef(false);
@@ -457,6 +466,9 @@ export function useGistSync(
             // (saveToGist가 파일을 만들거나 404 → 새 Gist 생성으로 처리하고, 성공하면 표식이 실제 해시로 바뀐다)
             onLog?.(`Gist: 원격에 FarmWallet 데이터 없음 — 저장 진행 (${message})`, "info");
           } else {
+            // GAS: 시트를 못 읽어 저장을 보류한 것도 실패로 — 아래 공통 실패 처리(상태 표시 '저장 실패'·지연 재시도)로.
+            // 여기서 조용히 끝내면 표시가 '저장 중…'에 멈추고 다시 시도하지도 않았다.
+            if (isGas()) throw pullErr;
             // 표식 상태에서 원격을 못 읽으면 올리지 않는다. 배지는 2회 연속 실패부터라 첫 실패도 보이도록
             // 일반 자동 저장 실패처럼 토스트도 띄운다 (토큰 미포함 문구)
             // 버전 조회 실패(R4) 경로는 fetchLatestVersion이 이미 1회 기록했다 — 실패 집계는 표식 상태만, 토스트는 둘 다
@@ -487,6 +499,7 @@ export function useGistSync(
       knownRemoteCommitRef.current = result.committedAt || result.updatedAt || nowIso;
       restoredRef.current = false;
       recordSyncOk();
+      pushRetryCountRef.current = 0;
       onLog?.("Gist 자동 저장 성공", "success");
       // 이전 실패 토스트가 있다면 정리
       toast.dismiss(GIST_AUTO_SAVE_ERROR_TOAST_ID);
@@ -496,11 +509,26 @@ export function useGistSync(
       onLog?.(`Gist 자동 저장 실패: ${message}`, "error");
       // 토스트로 사용자에게 가시화 — 모바일에서 백그라운드 suspend 등 조용한 실패 방지
       toast.error(`Gist 저장 실패: ${message}`, { id: GIST_AUTO_SAVE_ERROR_TOAST_ID });
+      if (isGas()) {
+        const delay = Math.min(PUSH_RETRY_MAX_MS, PUSH_RETRY_BASE_MS * 2 ** pushRetryCountRef.current);
+        pushRetryCountRef.current += 1;
+        if (pushRetryTimerRef.current) window.clearTimeout(pushRetryTimerRef.current);
+        pushRetryTimerRef.current = window.setTimeout(() => {
+          pushRetryTimerRef.current = null;
+          void runAutoPushRef.current();
+        }, delay);
+        onLog?.(`시트 자동 저장 ${Math.round(delay / 1000)}초 뒤 다시 시도`, "info");
+      }
     } finally {
       isPushingRef.current = false;
       setIsSyncing(false);
     }
   }, [autoSyncEnabled, onLog, fetchLatestVersion, recordSyncOk, recordSyncFail]);
+  const runAutoPushRef = useRef(runAutoPush);
+  runAutoPushRef.current = runAutoPush;
+  useEffect(() => () => {
+    if (pushRetryTimerRef.current) window.clearTimeout(pushRetryTimerRef.current);
+  }, []);
 
   /**
    * 수동 저장 — 사용자가 "저장" 버튼 클릭 시. 디바운스/dirty 체크 없이 즉시 푸시.

@@ -68,6 +68,7 @@ import { BalanceSheetStrip } from "../components/BalanceSheetStrip";
 import { buildClosedTradeRecords, summarizeRecords } from "../utils/investmentRecord";
 import { useFxRateValue } from "../context/FxRateContext";
 import { useAppStore } from "../store/appStore";
+import { useQuoteRefreshActivity } from "../features/stocks/useQuoteRefresh";
 import {
   getTodayKST,
   getMonthEndDate,
@@ -421,9 +422,12 @@ export const DashboardView: React.FC<Props> = (props) => {
     }
     return { openPositionCount: open, unpricedCount: unpriced };
   }, [positions, adjustedPrices]);
+  const quotesLoading = useQuoteRefreshActivity((s) => s.running > 0);
   const unrealizedLabel =
     openPositionCount > 0 && unpricedCount === openPositionCount
-      ? "평가손익 시세 불러오는 중"
+      ? quotesLoading
+        ? "평가손익 시세 불러오는 중"
+        : "평가손익 시세 없음"
       : `평가손익 ${Math.round(unrealizedNet) === 0 ? "" : unrealizedNet > 0 ? "+" : "−"}${formatKrwCompact(Math.abs(unrealizedNet))}원${unpricedCount > 0 ? ` (시세 없는 ${unpricedCount}종목 제외)` : ""}`;
   const assetsSummary = `순자산 ${formatKrwCompact(balanceSheet.netWorth)}원 · 총자산 ${formatKrwCompact(balanceSheet.totalAssets)}원 · ${unrealizedLabel}`;
   const spendingSummary = `지출 ${formatKRW(Math.round(monthlySummary.expense))} · 재테크 ${formatKRW(Math.round(monthlySummary.investing))} · ${beforePayday ? "급여 전" : `수지 ${formatKRW(Math.round(monthlySummary.income - monthlySummary.expense))}`}`;
@@ -454,6 +458,7 @@ export const DashboardView: React.FC<Props> = (props) => {
           nextLoan={nextLoan}
           invest={investmentTotals}
           allUnpriced={openPositionCount > 0 && unpricedCount === openPositionCount}
+          quotesLoading={quotesLoading}
           unpricedCount={unpricedCount}
           unrealizedPnl={openPositionCount > 0 && unpricedCount === openPositionCount ? null : unrealizedNet}
           excludedUnreliable={excludedUnreliable}

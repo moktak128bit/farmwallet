@@ -27,9 +27,47 @@ export function isGas(): boolean {
   return typeof window !== "undefined" && !!window.google?.script?.run;
 }
 
-/** 서버 함수 호출 — google.script.run을 Promise로. 실패 메시지는 서버 Error.message 그대로. */
-export function runServer<T = unknown>(fn: string, ...args: unknown[]): Promise<T> {
+/**
+ * 서버 함수별 응답 대기 한도(ms). google.script.run은 성공·실패 콜백이 영영 안 오는 경우가 있다
+ * (휴대폰 잠금·네트워크 전환·로그인 세션 만료·서버 6분 실행 한도 초과). 한도가 없으면 그 호출을 기다리는
+ * '저장 중'·'불러오는 중'이 영원히 남고, 재진입 가드(저장·원격 확인·시세 갱신·사진 업로드)가 풀리지 않아
+ * 이후 저장이 전부 막힌다. 한도가 지나면 실패로 처리하고, 늦게 온 응답은 버린다.
+ */
+const SERVER_TIMEOUT_MS: Record<string, number> = {
+  loadData: 90_000,
+  loadVersion: 90_000,
+  saveData: 120_000,
+  uploadPhoto: 180_000,
+  proxyFetch: 20_000,
+};
+const DEFAULT_SERVER_TIMEOUT_MS = 45_000;
+
+export function serverTimeoutMs(fn: string): number {
+  return SERVER_TIMEOUT_MS[fn] ?? DEFAULT_SERVER_TIMEOUT_MS;
+}
+
+/** 응답 대기 한도 초과 — 서버가 실제로는 처리했을 수도 있다(저장은 다음 확인에서 내용 비교로 판정) */
+export class ServerTimeoutError extends Error {
+  constructor(fn: string, ms: number) {
+    super(`서버 응답 없음 (${fn}, ${Math.round(ms / 1000)}초) — 네트워크 연결을 확인하고 다시 시도하세요`);
+    this.name = "ServerTimeoutError";
+  }
+}
+
+/** promise에 한도를 씌운다 — 한도가 지나면 ServerTimeoutError로 거절, 늦게 끝난 결과는 무시 */
+function withServerTimeout<T>(promise: Promise<T>, fn: string, ms: number): Promise<T> {
   return new Promise<T>((resolve, reject) => {
+    const timer = setTimeout(() => reject(new ServerTimeoutError(fn, ms)), ms);
+    promise.then(
+      (v) => { clearTimeout(timer); resolve(v); },
+      (e) => { clearTimeout(timer); reject(e); }
+    );
+  });
+}
+
+/** 서버 함수 호출 — google.script.run을 Promise로. 실패 메시지는 서버 Error.message 그대로. 응답 한도는 serverTimeoutMs. */
+export function runServer<T = unknown>(fn: string, ...args: unknown[]): Promise<T> {
+  const call = new Promise<T>((resolve, reject) => {
     const run = typeof window !== "undefined" ? window.google?.script?.run : undefined;
     if (!run) {
       reject(new Error("GAS 서버에 연결할 수 없습니다."));
@@ -51,20 +89,23 @@ export function runServer<T = unknown>(fn: string, ...args: unknown[]): Promise<
     }
     (target as (...a: unknown[]) => void).apply(runner, args);
   });
+  return withServerTimeout(call, fn, serverTimeoutMs(fn));
 }
 
 /**
  * 시작할 때 쓸 시트 장부 — index.html이 앱 코드를 읽기 전에 미리 보낸 loadData가 있으면 그 결과를 쓰고
  * (서버 왕복이 수 MB 코드 로딩과 겹친다), 없거나 실패했으면 지금 요청한다. 미리 받은 결과는 한 번만 쓴다 —
  * 이후 다시 부르면 항상 새로 요청(오래된 결과를 두 번 채택하지 않게).
+ * 미리 보낸 요청에도 같은 한도를 씌운다 — 응답이 끝내 안 오면 다시 요청하지 않고 실패로 넘긴다
+ * (같은 원인이면 또 기다리기만 한다. 부팅은 기기 사본으로 열고 백그라운드에서 다시 확인한다).
  */
 export function loadSheetForBoot(): Promise<GasLoadResult> {
   const pre = typeof window !== "undefined" ? window.__fwSheetPrefetch : undefined;
   if (!pre) return runServer<GasLoadResult>("loadData");
   window.__fwSheetPrefetch = undefined;
-  return pre.then(
+  return withServerTimeout(pre, "loadData", serverTimeoutMs("loadData")).then(
     (value) => value as GasLoadResult,
-    () => runServer<GasLoadResult>("loadData")
+    (err) => (err instanceof ServerTimeoutError ? Promise.reject(err) : runServer<GasLoadResult>("loadData"))
   );
 }
 

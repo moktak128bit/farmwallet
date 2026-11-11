@@ -20,6 +20,7 @@
     "test": "vitest run",
     "test:watch": "vitest",
     "test:smoke": "node scripts/smoke-test.mjs",
+    "stress:gas": "python scripts/gas-stress.py",
     "ci": "npm run -s check-text && npm run -s check-conventions && npm run -s lint && npm run -s test && npm run -s test:ledger-sync && npm run -s build && npm run -s test:smoke",
     "knip": "knip",
     "knip:report": "knip --reporter compact",

@@ -10,7 +10,7 @@
  */
 
 import { DATA_SCHEMA_VERSION, GIST_PUSH_RETRY, STORAGE_KEYS } from "../constants/config";
-import { deviceLabel, isGas, runServer, type GasLoadResult, recordGasSheetInfo } from "./gas";
+import { deviceLabel, isGas, runServer, ServerTimeoutError, type GasLoadResult, recordGasSheetInfo } from "./gas";
 import { canonicalUserPayload } from "../utils/timeSeriesMerge";
 
 /**
@@ -187,6 +187,9 @@ export async function saveToGistWithRetry(
       return await saveToGist(dataJson);
     } catch (err) {
       lastErr = err;
+      // GAS 응답 한도 초과는 이미 오래 기다린 뒤라 곧바로 다시 하지 않는다(3회면 수 분간 '저장 중') —
+      // 실패로 돌려 화면에 알리고, 재시도는 useGistSync의 지연 재시도에 맡긴다
+      if (err instanceof ServerTimeoutError) break;
       if (!isTransientGistError(err) || attempt >= GIST_PUSH_RETRY.MAX_ATTEMPTS) break;
       const delay = GIST_PUSH_RETRY.BASE_DELAY_MS * Math.pow(2, attempt - 1);
       options?.onAttempt?.(attempt, err instanceof Error ? err : new Error(String(err)));

@@ -42,6 +42,8 @@ interface Props {
   invest: InvestmentTotals;
   /** 보유 종목 전부 시세 없음 → 총 손익 미확정 */
   allUnpriced: boolean;
+  /** 지금 시세 갱신 중 — allUnpriced일 때 '불러오는 중'(true)과 '받지 못함'(false)을 가른다 */
+  quotesLoading: boolean;
   unpricedCount: number;
   /** 보유 종목 평가손익(시가 − 원가) — 주식 탭과 같은 숫자. 시세 미로드면 null */
   unrealizedPnl: number | null;
@@ -73,6 +75,7 @@ export const DashboardGlance: React.FC<Props> = React.memo(function DashboardGla
   nextLoan,
   invest,
   allUnpriced,
+  quotesLoading,
   unpricedCount,
   unrealizedPnl,
   excludedUnreliable,
@@ -243,7 +246,7 @@ export const DashboardGlance: React.FC<Props> = React.memo(function DashboardGla
           </span>
           <span className="glance-line" title="증권·코인 계좌의 지금 평가액 − 순입금 원금. 평가손익·매도 실현·배당·수수료가 모두 들어간 투자 총성과">
             {allUnpriced ? (
-              "총 손익 — 시세 불러오는 중"
+              quotesLoading ? "총 손익 — 시세 불러오는 중" : "총 손익 — 시세를 받지 못함 (주식 탭에서 다시 갱신)"
             ) : (
               <>
                 총 손익{" "}

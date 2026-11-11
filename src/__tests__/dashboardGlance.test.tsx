@@ -97,6 +97,7 @@ const baseProps = {
   nextLoan: { name: "초기창업패키지", maturityDate: "2028-12-31", balance: 5_000_000 },
   invest: { totalInvestmentAssets: 45_850_000, principal: 54_880_000, cumulativePnl: -9_030_000 },
   allUnpriced: false,
+  quotesLoading: false,
   unpricedCount: 0,
   unrealizedPnl: -12_040_000,
   excludedUnreliable: 0,
@@ -143,8 +144,14 @@ describe("DashboardGlance", () => {
   });
 
   it("시세 미로드면 총 손익을 숫자로 단정하지 않는다 + 환율 불명 제외 건수 표시", () => {
-    render(<DashboardGlance {...baseProps} allUnpriced unrealizedPnl={null} excludedUnreliable={7} />);
+    render(<DashboardGlance {...baseProps} allUnpriced quotesLoading unrealizedPnl={null} excludedUnreliable={7} />);
     expect(screen.getByText(/총 손익 — 시세 불러오는 중/)).toBeTruthy();
     expect(screen.getByText(/환율 불명 7건 제외/)).toBeTruthy();
+  });
+
+  it("시세 갱신이 끝났는데도 시세가 없으면 '불러오는 중'으로 남기지 않는다", () => {
+    render(<DashboardGlance {...baseProps} allUnpriced quotesLoading={false} unrealizedPnl={null} excludedUnreliable={0} />);
+    expect(screen.queryByText(/시세 불러오는 중/)).toBeNull();
+    expect(screen.getByText(/시세를 받지 못함/)).toBeTruthy();
   });
 });

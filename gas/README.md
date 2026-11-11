@@ -24,6 +24,7 @@
 ## 배포 순서
 1. `npm test` · `npm run lint` 통과
 2. `npm run build:gas` → `gas/index.html`
+2-1. **안정성 점검(필수)**: `npm run stress:gas -- <장부.json>` — 가짜 서버로 지연·실패·무응답 9가지 조건에서 12개 탭 순회·편집 저장·2분 방치를 돌려 렌더 루프·호출 루프·무한 로딩·저장 누락을 잰다. 하나라도 걸리면(종료 코드 1) 배포하지 않는다. 장부 JSON은 로컬 경로로만(실장부 커밋 금지). 결과·스크린샷은 `node_modules/.gas-stress/`. 빠른 확인은 `--quick`, 특정 조건만은 `normal,hang-save`처럼.
 3. 운영이 이 폴더와 같은지 확인: scratch 폴더에 `clasp pull` 해서 `Code.js` 비교 (다른 기기에서 고쳤을 수 있다)
 4. `cd gas && clasp push` → `clasp create-version "설명"` → 기존 웹앱 배포 ID에 `clasp deploy -i <배포ID> -V <버전>` (URL 유지)
 5. 문제가 있으면 같은 배포 ID를 이전 버전 번호로 되돌린다(`clasp deploy -i <배포ID> -V <이전버전>`)

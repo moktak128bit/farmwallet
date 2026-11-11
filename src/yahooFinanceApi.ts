@@ -4,7 +4,7 @@ import { parseEtfItemList, type EtfDiscountRow } from "./utils/etfDiscount";
 import { parseHistoricalCloses } from "./utils/yahooChartParse";
 import { parseChartWithDividends, type StockLookupData } from "./utils/stockLookup";
 import { STORAGE_KEYS } from "./constants/config";
-import { isGas, runServer } from "./services/gas";
+import { isGas, runServer, ServerTimeoutError } from "./services/gas";
 
 interface YahooQuoteResult {
   ticker: string;
@@ -525,6 +525,10 @@ interface FetchViaProxiesResult {
   saw429: boolean;
 }
 
+/** GAS proxyFetch가 응답 한도를 넘긴 뒤 다시 시도하기까지 */
+const GAS_PROXY_COOLDOWN_MS = 2 * 60 * 1000;
+let gasProxyDownUntil = 0;
+
 const defaultAccept = (res: { ok: boolean; status: number }, body: string): boolean =>
   res.ok && body.length > 0 && !body.includes("Not Found");
 
@@ -542,7 +546,8 @@ export async function fetchViaProxies(
   let saw429 = false;
 
   // GAS 웹앱: 서버 proxyFetch(UrlFetchApp — 허용 호스트만, 60초 캐시)가 1순위. 공개 CORS 프록시는 예비.
-  if (isGas()) {
+  // 서버가 응답 한도를 넘기면 잠시(GAS_PROXY_COOLDOWN_MS) 건너뛴다 — 종목마다 20초씩 기다리면 시세 갱신이 수 분간 '갱신 중'.
+  if (isGas() && Date.now() >= gasProxyDownUntil) {
     try {
       const res = await runServer<{ status: number; body: string }>("proxyFetch", innerUrl, options.encoding ?? "utf-8");
       if (res.status === 429) saw429 = true;
@@ -551,7 +556,8 @@ export async function fetchViaProxies(
         return { body: res.body, saw429 };
       }
       recordProxyResult("gas", false);
-    } catch {
+    } catch (err) {
+      if (err instanceof ServerTimeoutError) gasProxyDownUntil = Date.now() + GAS_PROXY_COOLDOWN_MS;
       recordProxyResult("gas", false);
     }
   }

@@ -197,7 +197,15 @@ async function boot(): Promise<void> {
       setBootStage(3, "");
       return;
     }
-    await adoptSheetData();
+    try {
+      await adoptSheetData();
+    } catch (error) {
+      // 사본 없이 시트를 못 받았다(응답 한도 초과·서버 오류) — 빈 화면으로 멈추지 않게 앱은 열고,
+      // 시트 확인을 백그라운드에서 한 번 더 한다(받으면 useSheetBootAdoption이 채택, 그동안 자동 저장 보류).
+      reportError("main.boot.adopt", error);
+      const { startBackgroundSheetCheck } = await import("./store/sheetBootStore");
+      startBackgroundSheetCheck();
+    }
   }
 }
 

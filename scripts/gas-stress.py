@@ -68,7 +68,7 @@ MOCK = r"""
     const r = { withSuccessHandler: (f) => make(f, fail), withFailureHandler: (f) => make(ok, f), withUserObject: () => r };
     for (const k of Object.keys(api)) r[k] = (...args) => {
       const id = ++seq; const t0 = performance.now();
-      log.calls.push({ fn: k, t: t0 }); log.pending[id] = { fn: k, t: t0 };
+      log.calls.push({ fn: k, t: t0, key: k === 'proxyFetch' ? String(args[0]).slice(0, 300) : '' }); log.pending[id] = { fn: k, t: t0 };
       const [lo, hi, failP, hang] = prof(k);
       if (hang) return;
       setTimeout(() => {
@@ -96,7 +96,7 @@ STATE_JS = r"""() => {
   const spin = document.querySelectorAll('.spin, .spinner, [class*="spinner"], .animate-spin').length;
   const pend = Object.values(s.pending).map(p => p.fn + '@' + Math.round((now - p.t) / 1000) + 's');
   const boundary = /앱 오류가 발생했습니다|탭 렌더 오류/.test(txt);
-  return { now, saveIndicator: indText, commits: s.commits, calls: s.calls.map(c => c.fn), pending: pend, busy, ariaBusy, spin, errors: s.errors.slice(-20), boundary, len: txt.length };
+  return { now, saveIndicator: indText, commits: s.commits, calls: s.calls.map(c => c.fn), keys: s.calls.map(c => c.key || ''), pending: pend, busy, ariaBusy, spin, errors: s.errors.slice(-20), boundary, len: txt.length };
 }"""
 
 
@@ -205,8 +205,23 @@ def run(sc_name, seed, html, out, quick):
         if rate > IDLE_COMMITS_PER_SEC:
             findings.append(f"[렌더 루프] 장시간 대기: 초당 React 커밋 {rate:.0f}회")
         for fn, n in counts.items():
-            if fn != "saveData" and n > max(3, long_sec / 10):
+            # 시세는 종목 수만큼 순차 호출되는 게 정상(느린 응답이면 대기 구간까지 이어짐) — 총 횟수가 아니라 같은 URL 반복으로 본다
+            if fn in ("saveData", "proxyFetch"):
+                continue
+            if n > max(3, long_sec / 10):
                 findings.append(f"[호출 루프] 장시간 대기: {long_sec}s 동안 {fn} {n}회")
+        url_counts = {}
+        for fn, key in zip(z["calls"][len(a["calls"]):], z["keys"][len(a["keys"]):]):
+            if fn == "proxyFetch":
+                url_counts[key] = url_counts.get(key, 0) + 1
+        if url_counts:
+            top_url, top_n = max(url_counts.items(), key=lambda kv: kv[1])
+            timeline[-1]["proxyFetchUrls"] = len(url_counts)
+            timeline[-1]["proxyFetchMaxSameUrl"] = top_n
+            # 환율은 실패 시 5초 간격 최대 3회 재시도(useFxRate, 총 4회 후 멈춤) — 늦게 뜬 앱에선 이 4회가 대기 구간에 들어온다.
+            # 끝없는 반복(5초 간격이면 40s에 8회, 150s에 30회)만 잡는다.
+            if top_n > max(4, long_sec / 20):
+                findings.append(f"[호출 루프] 장시간 대기: {long_sec}s 동안 같은 시세 URL {top_n}회 ({top_url[:80]})")
         stuck = [b for b in samples[0]["busy"] if all(b in s["busy"] for s in samples)]
         if stuck and not quick:
             findings.append(f"[무한 로딩] {long_sec}초 내내 풀리지 않음: {stuck}")

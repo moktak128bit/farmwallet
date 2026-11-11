@@ -76,6 +76,18 @@ describe("buildMonthlyReview — 동기 비교(진행 중인 달)", () => {
     expect(zero?.text).toContain("무지출일 29일 / 31일");
   });
 
+  it("헤드라인 수입은 실질 수입 — 대출 실행·용돈은 빠진다(장부 수입 합계는 numbers에 그대로)", () => {
+    const withLoan = [
+      ...ledger,
+      entry({ date: "2026-07-18", amount: 20_000_000, kind: "income", category: "수입", subCategory: "대출" }),
+      entry({ date: "2026-07-27", amount: 500_000, kind: "income", category: "수입", subCategory: "용돈" }),
+    ];
+    const r = review({ ledger: withLoan, month: "2026-07", todayIso: TODAY, fxRate: null });
+    expect(r.headline).toContain("실질 수입 1,000,000");
+    expect(r.headline).not.toContain("21,500,000");
+    expect(r.numbers.income).toBe(21_500_000);
+  });
+
   it("무지출일 전월 비교 — 전월 같은 기간(1~N일)의 무지출일과 차이를 붙인다", () => {
     const r = review({
       ledger: [...ledger, entry({ date: "2026-07-15", amount: 1_000 }), entry({ date: "2026-07-16", amount: 1_000 })],

@@ -346,7 +346,12 @@ export function buildMonthlyReview(input: MonthlyReviewInput): MonthlyReview {
   if (!hasData) {
     headline = `${monthLabel} 기록이 없습니다.`;
   } else {
-    const parts: string[] = [`수입 ${fmtWon(income)}`, `지출 ${fmtWon(expense)}`];
+    // 헤드라인 수입은 실질 수입 — 장부 수입(income)엔 대출 실행·용돈·데이트통장 분담금이 섞여
+    // "수입 2,441만"(대출 2,000만 포함)처럼 번 돈으로 읽히는 숫자가 나왔다. 장부 합계는 아래 수입 표에 그대로.
+    const parts: string[] = [
+      curFlow ? `실질 수입 ${fmtWon(Math.round(curFlow.realIncome))}` : `수입 ${fmtWon(income)}`,
+      `지출 ${fmtWon(expense)}`,
+    ];
     if (expCmp.diffPrevMonthPct != null && expCmp.previousMonth > 0) parts.push(`${compareLabel.prevMonth} 대비 지출 ${fmtPct(expCmp.diffPrevMonthPct)}`);
     if (realSavingsRate != null) parts.push(`실질 저축률 ${realSavingsRate.toFixed(1)}%`);
     headline = `${monthLabel} · ${parts.join(" · ")}`;

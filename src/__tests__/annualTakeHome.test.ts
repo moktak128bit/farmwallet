@@ -61,4 +61,27 @@ describe("내 실질 월급 — 최근 12개 완료월 근로소득 ÷ 12", () =
     const t = computeTakeHomeTrend({ ledger, salaryKeys, fxRate: 1400, curMonth: "2026-11" });
     expect(t[t.length - 1]).toMatchObject({ month: "2026-10", monthlyAvg: r.monthlyAvg, partial: false });
   });
+
+  it("기간 선택: 2025-12~2026-10(11개월) — 11로 나누고, 진행 중인 달을 넘는 끝은 지난달로 자른다", () => {
+    const a = computeAnnualTakeHome({ ledger, salaryKeys, fxRate: null, curMonth: "2026-11", range: { from: "2025-12", to: "2026-12" } })!;
+    expect(a.from).toBe("2025-12");
+    expect(a.to).toBe("2026-10");
+    expect(a.byMonth).toHaveLength(11);
+    expect(a.total).toBe(33_000_000 + 4_000_000 + 800_000);
+    expect(a.monthlyAvg).toBe(Math.round(37_800_000 / 11));
+  });
+
+  it("월별 상여·수당 내역에 가계부 메모가 붙는다", () => {
+    const dec = r.byMonth.find((m) => m.month === "2025-12")!;
+    expect(dec.extras).toEqual([{ key: "상여", amount: 4_000_000, desc: "상여" }]);
+    expect(dec.regular).toBe(3_000_000);
+  });
+
+  it("정기 월급에 '환급'이 섞인 달 — 평소(중앙값)보다 많은 만큼을 따로 알려 준다", () => {
+    const withRefund = ledger.map((l) => (l.date === "2026-02-25" ? { ...l, amount: 4_000_000, description: "급여 + 환급" } : l));
+    const x = computeAnnualTakeHome({ ledger: withRefund, salaryKeys, fxRate: null, curMonth: "2026-11" })!;
+    const feb = x.byMonth.find((m) => m.month === "2026-02")!;
+    expect(feb.refundNote).toBe("급여 + 환급");
+    expect(x.refundExtras).toEqual([{ month: "2026-02", aboveTypical: 1_000_000, note: "급여 + 환급" }]);
+  });
 });

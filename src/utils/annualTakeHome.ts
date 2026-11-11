@@ -21,6 +21,10 @@ interface TakeHomeMonth {
   regular: number;
   /** 그 밖의 근로소득(상여·수당 등) */
   extra: number;
+  /** 상여·수당 내역 — 항목·금액·가계부 메모(예: 상여 600,000 "추석 떡값") */
+  extras: Array<{ key: string; amount: number; desc: string }>;
+  /** 정기 월급에 연말정산 환급 등이 섞였다는 가계부 메모(설명에 "환급"이 든 경우) */
+  refundNote: string | null;
 }
 
 export interface AnnualTakeHome {
@@ -47,6 +51,11 @@ export interface AnnualTakeHome {
   prevTotal: number | null;
   /** 같은 창의 회사 퇴직연금 적립 — 합계에 넣지 않음 */
   retirement: number;
+  /**
+   * 정기 월급에 환급이 섞인 달 — 그 달 정기 월급 − 나머지 달 정기 월급 중앙값(추정, 양수일 때만).
+   * 가계부가 환급액을 따로 적지 않아 정확한 환급액이 아니라 "평소보다 많은 만큼"이다.
+   */
+  refundExtras: Array<{ month: string; aboveTypical: number; note: string }>;
 }
 
 const median = (xs: number[]): number => {
@@ -56,23 +65,42 @@ const median = (xs: number[]): number => {
   return a.length % 2 ? a[mid] : (a[mid - 1] + a[mid]) / 2;
 };
 
+/** from~to(포함) 사이 달 목록 */
+function monthRange(from: string, to: string): string[] {
+  const out: string[] = [];
+  for (let m = from; m <= to && out.length < 600; m = shiftMonth(m, 1)) out.push(m);
+  return out;
+}
+
 export function computeAnnualTakeHome(params: {
   ledger: LedgerEntry[];
   salaryKeys: Set<string>;
   fxRate: number | null;
-  /** 진행 중인 달 (YYYY-MM, KST) */
+  /** 진행 중인 달 (YYYY-MM, KST) — 기본 창의 기준이자 기간 상한(진행 중인 달은 넣지 않는다) */
   curMonth: string;
   windowMonths?: number;
+  /** 직접 고른 기간(YYYY-MM, 포함). 주면 windowMonths 대신 이 기간. to는 지난달을 넘지 못한다 */
+  range?: { from: string; to: string };
 }): AnnualTakeHome | null {
   const { ledger, salaryKeys, fxRate, curMonth } = params;
-  const n = params.windowMonths ?? 12;
-  const to = shiftMonth(curMonth, -1);
-  const from = shiftMonth(curMonth, -n);
-  const prevFrom = shiftMonth(curMonth, -2 * n);
-  const months: string[] = [];
-  for (let i = n; i >= 1; i--) months.push(shiftMonth(curMonth, -i));
+  const lastDone = shiftMonth(curMonth, -1);
+  let from: string;
+  let to: string;
+  if (params.range) {
+    to = params.range.to > lastDone ? lastDone : params.range.to;
+    from = params.range.from > to ? to : params.range.from;
+  } else {
+    const n0 = params.windowMonths ?? 12;
+    to = lastDone;
+    from = shiftMonth(curMonth, -n0);
+  }
+  const months = monthRange(from, to);
+  const n = months.length;
+  const prevFrom = shiftMonth(from, -n);
 
   const byMonth = new Map<string, Map<string, number>>();
+  const extrasByMonth = new Map<string, Array<{ key: string; amount: number; desc: string }>>();
+  const refundNoteByMonth = new Map<string, string>();
   let prev = 0;
   let retirement = 0;
   let firstRecordMonth: string | null = null;
@@ -90,6 +118,10 @@ export function computeAnnualTakeHome(params: {
       const row = byMonth.get(m) ?? new Map<string, number>();
       row.set(key, (row.get(key) ?? 0) + amt);
       byMonth.set(m, row);
+      const list = extrasByMonth.get(m) ?? [];
+      list.push({ key, amount: Math.round(amt), desc: (l.description ?? "").trim() });
+      extrasByMonth.set(m, list);
+      if ((l.description ?? "").includes("환급")) refundNoteByMonth.set(m, (l.description ?? "").trim());
     } else if (m >= prevFrom && m < from) {
       prev += amt;
     }
@@ -120,7 +152,8 @@ export function computeAnnualTakeHome(params: {
         else extra += v;
       }
     }
-    return { month: m, regular: Math.round(regular), extra: Math.round(extra) };
+    const extras = (extrasByMonth.get(m) ?? []).filter((x) => x.key !== regularKey);
+    return { month: m, regular: Math.round(regular), extra: Math.round(extra), extras, refundNote: refundNoteByMonth.get(m) ?? null };
   });
   const regularTotal = rows.reduce((s, r) => s + r.regular, 0);
   const extraTotal = rows.reduce((s, r) => s + r.extra, 0);
@@ -128,6 +161,14 @@ export function computeAnnualTakeHome(params: {
   // 기록이 창보다 늦게 시작했으면(1년 미만) 기록 시작 이후 개월 수로 나눈다 — 기록 전 달을 0원 월급으로 치지 않게
   const startMonth = firstRecordMonth && firstRecordMonth > from ? firstRecordMonth : from;
   const divisorMonths = months.filter((m) => m >= startMonth).length || n;
+  // 환급이 섞인 달 — 나머지 달 정기 월급 중앙값보다 많은 만큼(추정)
+  const refundExtras: AnnualTakeHome["refundExtras"] = [];
+  for (const r of rows) {
+    if (!r.refundNote) continue;
+    const typical = median(rows.filter((x) => x !== r && x.regular > 0).map((x) => x.regular));
+    const above = Math.round(r.regular - typical);
+    if (typical > 0 && above > 0) refundExtras.push({ month: r.month, aboveTypical: above, note: r.refundNote });
+  }
   const extraItems = [...totalByKey.entries()]
     .filter(([k]) => k !== regularKey)
     .map(([key, t]) => ({ key, total: Math.round(t) }))
@@ -148,6 +189,7 @@ export function computeAnnualTakeHome(params: {
     paidMonths: rows.filter((r) => r.regular + r.extra > 0).length,
     prevTotal: firstRecordMonth != null && firstRecordMonth <= prevFrom ? Math.round(prev) : null,
     retirement: Math.round(retirement),
+    refundExtras,
   };
 }
 

@@ -480,7 +480,7 @@ export const DashboardView: React.FC<Props> = (props) => {
       {/* ── 소득: 내 실질 월급(최근 12개월 평균 실수령). 기본 펼침 — 접어도 접힌 줄에 월·연·정기 3개 숫자 ── */}
       {show("annualTakeHome") && annualTakeHome && (
         <DashboardSection id="income" title="소득 — 내 실질 월급" summary={takeHomeSummary} defaultOpen>
-          <AnnualTakeHomeCard data={annualTakeHome} />
+          <AnnualTakeHomeCard ledger={ledger} salaryKeys={salaryKeys} fxRate={fxRate} curMonth={currentMonth} />
         </DashboardSection>
       )}
 
